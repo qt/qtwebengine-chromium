@@ -5,23 +5,27 @@ vars = {
   'pdfium_git': 'https://pdfium.googlesource.com',
 
   'android_ndk_revision': '5022f40f12953c02b2614c5f7beb981ec5d0e833',
-  'build_revision': '9bbfcd5cce0290376e46f3aeaca3475e96a67fdb',
-  'buildtools_revision': '099f1da55bfe8caa12266371a7eb983698fb1d87',
-  'catapult_revision': '8ff23141e1df724317e9f558644ce2a7d8afde54',
-  'clang_revision': 'b6f620b311665e2d96d0921833f54295b9bbf925',
+  'build_revision': 'b73bafdd0ff0efc8835de6e646b47eec0a2a38a4',
+  'buildtools_revision': '5fd66957f08bb752dca714a591c84587c9d70762',
+  'catapult_revision': '327256cb1c387e62a2c7e6960e2398867665fb51',
+  'clang_revision': '797371be0a75c9892d6acb486d0430915ea538a6',
   'cygwin_revision': 'c89e446b273697fadf3a10ff1007a97c0b7de6df',
   'gen_library_loader_revision': '916d4acd8b2cde67a390737dfba90b3c37de23a1',
   'gmock_revision': '29763965ab52f24565299976b936d1265cb6a271',
   'gtest_revision': '8245545b6dc9c4703e6496d1efd19e975ad2b038',
-  'icu_revision': 'c291cde264469b20ca969ce8832088acb21e0c48',
-  'pdfium_tests_revision': '6c769320872e6ca82da4adaec1a497237f71b543',
-  'skia_revision': '7942f22c607caf826a6a609b89338a569d0a30e7',
+  'icu_revision': '2341038bf72869a5683a893a2b319a48ffec7f62',
+  'pdfium_tests_revision': '06411790a46e6497e5293f921ea9aa9fb2615e41',
+  'skia_revision': 'b55ebf071dce33794f5518dcdc3a9af006285796',
   'tools_memory_revision': '427f10475e1a8d72424c29d00bf689122b738e5d',
-  'trace_event_revision': '54b8455be9505c2cb0cf5c26bb86739c236471aa',
-  'v8_revision': '453b746d88e3d047d3f6c4363f0fe42b6bd13638',
+  'trace_event_revision': '6232c13e4edb36c84c61653fdae5a4afb5af9745',
+  'v8_revision': 'a964163e6ac4f1124b22ea7e46b8afe26dec02e0',
 }
 
 deps = {
+  "base/trace_event/common":
+    Var('chromium_git') + "/chromium/src/base/trace_event/common.git@" +
+        Var('trace_event_revision'),
+
   "build":
     Var('chromium_git') + "/chromium/src/build.git@" + Var('build_revision'),
 
@@ -50,8 +54,9 @@ deps = {
     Var('chromium_git') + "/chromium/src/tools/generate_library_loader@" +
         Var('gen_library_loader_revision'),
 
+  # TODO(GYP): Remove this when no tools rely on GYP anymore.
   "tools/gyp":
-    Var('chromium_git') + "/external/gyp",
+    Var('chromium_git') + '/external/gyp.git' + '@' + 'c61b0b35c8396bfd59efc6cfc11401d912b0f510',
 
   "tools/memory":
     Var('chromium_git') + "/chromium/src/tools/memory@" +
@@ -59,10 +64,6 @@ deps = {
 
   "v8":
     Var('chromium_git') + "/v8/v8.git@" + Var('v8_revision'),
-
-  "v8/base/trace_event/common":
-    Var('chromium_git') + "/chromium/src/base/trace_event/common.git@" +
-        Var('trace_event_revision'),
 }
 
 deps_os = {
@@ -77,6 +78,11 @@ deps_os = {
       Var('chromium_git') + "/chromium/deps/cygwin@" + Var('cygwin_revision'),
   },
 }
+
+recursedeps = [
+  # buildtools provides clang_format, libc++, and libc++abi
+  'buildtools',
+]
 
 include_rules = [
   # Basic stuff that everyone can use.
@@ -126,24 +132,6 @@ hooks = [
                 '-s', 'pdfium/buildtools/linux64/gn.sha1',
     ],
   },
-  {
-    # Downloads the current stable linux sysroot to build/linux/ if needed.
-    # This sysroot updates at about the same rate that the chrome build deps
-    # change. This script is a no-op except for linux users who are doing
-    # official chrome builds or cross compiling.
-    'name': 'sysroot',
-    'pattern': '.',
-    'action': ['python',
-               'pdfium/build/linux/sysroot_scripts/install-sysroot.py',
-               '--running-as-hook'
-    ],
-  },
-  {
-    # A change to a .gyp, .gypi, or to GYP itself should run the generator.
-    'name': 'gyp',
-    'pattern': '.',
-    'action': ['python', 'pdfium/build_gyp/gyp_pdfium'],
-  },
   # Pull clang-format binaries using checked-in hashes.
   {
     'name': 'clang_format_win',
@@ -179,12 +167,11 @@ hooks = [
     ],
   },
   {
-    # Pull clang if needed or requested via GYP_DEFINES.
+    # Pull clang
     'name': 'clang',
     'pattern': '.',
     'action': ['python',
-               'pdfium/tools/clang/scripts/update.py',
-               '--if-needed'
+               'pdfium/tools/clang/scripts/update.py'
     ],
   },
   {

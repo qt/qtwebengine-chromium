@@ -13,9 +13,10 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/fileapi/mock_url_request_delegate.h"
 #include "content/browser/resource_context_impl.h"
@@ -121,9 +122,8 @@ std::unique_ptr<storage::BlobProtocolHandler> CreateMockBlobProtocolHandler(
     storage::BlobStorageContext* blob_storage_context) {
   // The FileSystemContext and task runner are not actually used but a
   // task runner is needed to avoid a DCHECK in BlobURLRequestJob ctor.
-  return base::WrapUnique(new storage::BlobProtocolHandler(
-      blob_storage_context, nullptr,
-      base::ThreadTaskRunnerHandle::Get().get()));
+  return base::MakeUnique<storage::BlobProtocolHandler>(
+      blob_storage_context, nullptr, base::ThreadTaskRunnerHandle::Get().get());
 }
 
 }  // namespace
@@ -156,6 +156,8 @@ class ServiceWorkerURLRequestJobTest
     records.push_back(
         ServiceWorkerDatabase::ResourceRecord(10, version_->script_url(), 100));
     version_->script_cache_map()->SetResources(records);
+    version_->set_fetch_handler_existence(
+        ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
 
     // Make the registration findable via storage functions.
     helper_->context()->storage()->LazyInitialize(base::Bind(&base::DoNothing));
@@ -305,7 +307,7 @@ class ServiceWorkerURLRequestJobTest
     // Simulate another worker kicking out the incumbent worker.  PostTask since
     // it might respond synchronously, and the MockURLRequestDelegate would
     // complain that the message loop isn't being run.
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::Bind(&ServiceWorkerVersion::SetStatus, version_,
                               ServiceWorkerVersion::REDUNDANT));
     base::RunLoop().RunUntilIdle();
@@ -373,10 +375,11 @@ class ProviderDeleteHelper : public EmbeddedWorkerTestHelper {
             blink::WebServiceWorkerResponseErrorUnknown, base::Time(),
             false /* response_is_in_cache_storage */,
             std::string() /* response_cache_storage_cache_name */,
-            ServiceWorkerHeaderList() /* cors_exposed_header_names */)));
+            ServiceWorkerHeaderList() /* cors_exposed_header_names */),
+        base::Time::Now()));
     SimulateSend(new ServiceWorkerHostMsg_FetchEventFinished(
         embedded_worker_id, event_finish_id,
-        blink::WebServiceWorkerEventResultCompleted));
+        blink::WebServiceWorkerEventResultCompleted, base::Time::Now()));
   }
 
  private:
@@ -456,10 +459,11 @@ class BlobResponder : public EmbeddedWorkerTestHelper {
             blink::WebServiceWorkerResponseErrorUnknown, base::Time(),
             false /* response_is_in_cache_storage */,
             std::string() /* response_cache_storage_cache_name */,
-            ServiceWorkerHeaderList() /* cors_exposed_header_names */)));
+            ServiceWorkerHeaderList() /* cors_exposed_header_names */),
+        base::Time::Now()));
     SimulateSend(new ServiceWorkerHostMsg_FetchEventFinished(
         embedded_worker_id, event_finish_id,
-        blink::WebServiceWorkerEventResultCompleted));
+        blink::WebServiceWorkerEventResultCompleted, base::Time::Now()));
   }
 
   std::string blob_uuid_;
@@ -539,10 +543,11 @@ class StreamResponder : public EmbeddedWorkerTestHelper {
             blink::WebServiceWorkerResponseErrorUnknown, base::Time(),
             false /* response_is_in_cache_storage */,
             std::string() /* response_cache_storage_cache_name */,
-            ServiceWorkerHeaderList() /* cors_exposed_header_names */)));
+            ServiceWorkerHeaderList() /* cors_exposed_header_names */),
+        base::Time::Now()));
     SimulateSend(new ServiceWorkerHostMsg_FetchEventFinished(
         embedded_worker_id, event_finish_id,
-        blink::WebServiceWorkerEventResultCompleted));
+        blink::WebServiceWorkerEventResultCompleted, base::Time::Now()));
   }
 
   const GURL stream_url_;
@@ -572,7 +577,7 @@ TEST_F(ServiceWorkerURLRequestJobTest, StreamResponse) {
     expected_response += kTestData;
     stream->AddData(kTestData, sizeof(kTestData) - 1);
   }
-  stream->Finalize();
+  stream->Finalize(net::OK);
 
   EXPECT_FALSE(HasWork());
   base::RunLoop().RunUntilIdle();
@@ -622,7 +627,7 @@ TEST_F(ServiceWorkerURLRequestJobTest, StreamResponse_DelayedRegistration) {
     expected_response += kTestData;
     stream->AddData(kTestData, sizeof(kTestData) - 1);
   }
-  stream->Finalize();
+  stream->Finalize(net::OK);
 
   EXPECT_FALSE(HasWork());
   base::RunLoop().RunUntilIdle();
@@ -664,7 +669,7 @@ TEST_F(ServiceWorkerURLRequestJobTest, StreamResponse_QuickFinalize) {
     expected_response += kTestData;
     stream->AddData(kTestData, sizeof(kTestData) - 1);
   }
-  stream->Finalize();
+  stream->Finalize(net::OK);
   SetUpWithHelper(new StreamResponder(stream_url));
 
   version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
@@ -723,7 +728,7 @@ TEST_F(ServiceWorkerURLRequestJobTest, StreamResponse_Flush) {
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(expected_response, url_request_delegate_.response_data());
   }
-  stream->Finalize();
+  stream->Finalize(net::OK);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(request_->status().is_success());
   EXPECT_EQ(200,
@@ -780,7 +785,7 @@ TEST_F(ServiceWorkerURLRequestJobTest, StreamResponseAndCancel) {
     expected_response += kTestData;
     stream->AddData(kTestData, sizeof(kTestData) - 1);
   }
-  stream->Finalize();
+  stream->Finalize(net::OK);
 
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request_->status().is_success());
@@ -824,7 +829,7 @@ TEST_F(ServiceWorkerURLRequestJobTest,
   ASSERT_FALSE(stream_context->registry()->GetStream(stream_url).get());
   for (int i = 0; i < 1024; ++i)
     stream->AddData(kTestData, sizeof(kTestData) - 1);
-  stream->Finalize();
+  stream->Finalize(net::OK);
 
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request_->status().is_success());
@@ -949,7 +954,7 @@ class EarlyResponseHelper : public EmbeddedWorkerTestHelper {
   void FinishWaitUntil() {
     SimulateSend(new ServiceWorkerHostMsg_FetchEventFinished(
         embedded_worker_id_, event_finish_id_,
-        blink::WebServiceWorkerEventResultCompleted));
+        blink::WebServiceWorkerEventResultCompleted, base::Time::Now()));
   }
 
  protected:
@@ -968,7 +973,8 @@ class EarlyResponseHelper : public EmbeddedWorkerTestHelper {
             blink::WebServiceWorkerResponseErrorUnknown, base::Time(),
             false /* response_is_in_cache_storage */,
             std::string() /* response_cache_storage_cache_name */,
-            ServiceWorkerHeaderList() /* cors_exposed_header_names */)));
+            ServiceWorkerHeaderList() /* cors_exposed_header_names */),
+        base::Time::Now()));
   }
 
  private:
@@ -1021,10 +1027,11 @@ class DelayedResponseHelper : public EmbeddedWorkerTestHelper {
             blink::WebServiceWorkerResponseErrorUnknown, base::Time(),
             false /* response_is_in_cache_storage */,
             std::string() /* response_cache_storage_cache_name */,
-            ServiceWorkerHeaderList() /* cors_exposed_header_names */)));
+            ServiceWorkerHeaderList() /* cors_exposed_header_names */),
+        base::Time::Now()));
     SimulateSend(new ServiceWorkerHostMsg_FetchEventFinished(
         embedded_worker_id_, event_finish_id_,
-        blink::WebServiceWorkerEventResultCompleted));
+        blink::WebServiceWorkerEventResultCompleted, base::Time::Now()));
   }
 
  protected:

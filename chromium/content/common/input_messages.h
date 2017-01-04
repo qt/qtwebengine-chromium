@@ -11,7 +11,6 @@
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/edit_command.h"
-#include "content/common/input/did_overscroll_params.h"
 #include "content/common/input/input_event.h"
 #include "content/common/input/input_event_ack.h"
 #include "content/common/input/input_event_ack_state.h"
@@ -27,6 +26,7 @@
 #include "content/common/input/touch_action.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/events/blink/did_overscroll_params.h"
 #include "ui/events/ipc/latency_info_param_traits.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
@@ -56,15 +56,9 @@ IPC_ENUM_TRAITS_MAX_VALUE(
         POINTER_ACTION_TYPE_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(content::InputEventDispatchType,
                           content::InputEventDispatchType::DISPATCH_TYPE_MAX)
-IPC_ENUM_TRAITS_VALIDATE(content::TouchAction, (
-    value >= 0 &&
-    value <= content::TOUCH_ACTION_MAX &&
-    (!(value & content::TOUCH_ACTION_NONE) ||
-        (value == content::TOUCH_ACTION_NONE)) &&
-    (!(value & content::TOUCH_ACTION_PINCH_ZOOM) ||
-        (value == content::TOUCH_ACTION_MANIPULATION))))
+IPC_ENUM_TRAITS_MAX_VALUE(content::TouchAction, content::TOUCH_ACTION_MAX)
 
-IPC_STRUCT_TRAITS_BEGIN(content::DidOverscrollParams)
+IPC_STRUCT_TRAITS_BEGIN(ui::DidOverscrollParams)
   IPC_STRUCT_TRAITS_MEMBER(accumulated_overscroll)
   IPC_STRUCT_TRAITS_MEMBER(latest_overscroll_delta)
   IPC_STRUCT_TRAITS_MEMBER(current_fling_velocity)
@@ -166,11 +160,15 @@ IPC_MESSAGE_ROUTED5(
     int, /* selectiont_start */
     int /* selection_end */)
 
-// This message confirms an ongoing composition.
-IPC_MESSAGE_ROUTED3(InputMsg_ImeConfirmComposition,
+// This message deletes the current composition, inserts specified text, and
+// moves the cursor.
+IPC_MESSAGE_ROUTED3(InputMsg_ImeCommitText,
                     base::string16 /* text */,
                     gfx::Range /* replacement_range */,
-                    bool /* keep_selection */)
+                    int /* relative_cursor_pos */)
+
+// This message inserts the ongoing composition.
+IPC_MESSAGE_ROUTED1(InputMsg_ImeFinishComposingText, bool /* keep_selection */)
 
 // This message notifies the renderer that the next key event is bound to one
 // or more pre-defined edit commands. If the next key event is not handled
@@ -262,6 +260,11 @@ IPC_MESSAGE_ROUTED0(InputMsg_ImeEventAck)
 IPC_MESSAGE_ROUTED0(InputMsg_RequestTextInputStateUpdate)
 #endif
 
+// Request from browser to update the cursor and composition information.
+IPC_MESSAGE_ROUTED2(InputMsg_RequestCompositionUpdate,
+                    bool /* immediate request */,
+                    bool /* monitor request */)
+
 IPC_MESSAGE_ROUTED0(InputMsg_SyntheticGestureCompleted)
 
 // -----------------------------------------------------------------------------
@@ -281,7 +284,7 @@ IPC_MESSAGE_ROUTED1(InputHostMsg_SetTouchAction,
 // Sent by the compositor when input scroll events are dropped due to bounds
 // restrictions on the root scroll offset.
 IPC_MESSAGE_ROUTED1(InputHostMsg_DidOverscroll,
-                    content::DidOverscrollParams /* params */)
+                    ui::DidOverscrollParams /* params */)
 
 // Sent by the compositor when a fling animation is stopped.
 IPC_MESSAGE_ROUTED0(InputHostMsg_DidStopFlinging)

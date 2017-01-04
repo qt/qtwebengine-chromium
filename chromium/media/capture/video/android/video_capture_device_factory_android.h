@@ -20,22 +20,29 @@ namespace media {
 class CAPTURE_EXPORT VideoCaptureDeviceFactoryAndroid
     : public VideoCaptureDeviceFactory {
  public:
-  static bool RegisterVideoCaptureDeviceFactory(JNIEnv* env);
   static base::android::ScopedJavaLocalRef<jobject> createVideoCaptureAndroid(
       int id,
       jlong nativeVideoCaptureDeviceAndroid);
 
-  VideoCaptureDeviceFactoryAndroid() {}
+  VideoCaptureDeviceFactoryAndroid() : test_mode_(false) {}
   ~VideoCaptureDeviceFactoryAndroid() override {}
 
-  std::unique_ptr<VideoCaptureDevice> Create(
-      const VideoCaptureDevice::Name& device_name) override;
-  void GetDeviceNames(VideoCaptureDevice::Names* device_names) override;
-  void GetDeviceSupportedFormats(
-      const VideoCaptureDevice::Name& device,
-      VideoCaptureFormats* supported_formats) override;
+  std::unique_ptr<VideoCaptureDevice> CreateDevice(
+      const VideoCaptureDeviceDescriptor& device_descriptor) override;
+  void GetDeviceDescriptors(
+      VideoCaptureDeviceDescriptors* device_descriptors) override;
+  void GetSupportedFormats(const VideoCaptureDeviceDescriptor& device,
+                           VideoCaptureFormats* supported_formats) override;
+
+  static bool IsLegacyOrDeprecatedDevice(const std::string& device_id);
+
+  // Configures all subsequent CreateDevice()s in test mode.
+  void ConfigureForTesting() { test_mode_ = true; }
 
  private:
+  // Switch to indicate that all created Java capturers will be in test mode.
+  bool test_mode_;
+
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureDeviceFactoryAndroid);
 };
 }  // namespace media

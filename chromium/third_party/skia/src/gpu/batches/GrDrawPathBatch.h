@@ -64,9 +64,8 @@ class GrDrawPathBatch final : public GrDrawPathBatchBase {
 public:
     DEFINE_BATCH_CLASS_ID
 
-    static GrDrawBatch* Create(const SkMatrix& viewMatrix, GrColor color,
-                               GrPathRendering::FillType fill, const GrPath* path) {
-        return new GrDrawPathBatch(viewMatrix, color, fill, path);
+    static GrDrawBatch* Create(const SkMatrix& viewMatrix, GrColor color, const GrPath* path) {
+        return new GrDrawPathBatch(viewMatrix, color, path);
     }
 
     const char* name() const override { return "DrawPath"; }
@@ -74,12 +73,10 @@ public:
     SkString dumpInfo() const override;
 
 private:
-    GrDrawPathBatch(const SkMatrix& viewMatrix, GrColor color, GrPathRendering::FillType fill,
-                    const GrPath* path)
-        : INHERITED(ClassID(), viewMatrix, color, fill)
+    GrDrawPathBatch(const SkMatrix& viewMatrix, GrColor color, const GrPath* path)
+        : INHERITED(ClassID(), viewMatrix, color, path->getFillType())
         , fPath(path) {
-        fBounds = path->getBounds();
-        viewMatrix.mapRect(&fBounds);
+        this->setTransformedBounds(path->getBounds(), viewMatrix, HasAABloat::kNo, IsZeroArea::kNo);
     }
 
     bool onCombineIfPossible(GrBatch* t, const GrCaps& caps) override { return false; }

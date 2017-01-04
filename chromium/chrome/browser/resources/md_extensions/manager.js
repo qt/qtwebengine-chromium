@@ -43,6 +43,8 @@ cr.define('extensions', function() {
   var Manager = Polymer({
     is: 'extensions-manager',
 
+    behaviors: [I18nBehavior],
+
     properties: {
       /** @type {extensions.Sidebar} */
       sidebar: Object,
@@ -73,12 +75,8 @@ cr.define('extensions', function() {
       },
     },
 
-    behaviors: [
-      I18nBehavior,
-    ],
-
     listeners: {
-      'items-list.extension-item-show-details': 'showItemDetails_',
+      'items-list.extension-item-show-details': 'onShouldShowItemDetails_',
     },
 
     created: function() {
@@ -92,6 +90,28 @@ cr.define('extensions', function() {
       this.listHelper_ = new ListHelper(this);
       this.sidebar.setListDelegate(this.listHelper_);
       this.readyPromiseResolver.resolve();
+    },
+
+    get keyboardShortcuts() {
+      return this.$['keyboard-shortcuts'];
+    },
+
+    get packDialog() {
+      return this.$['pack-dialog'];
+    },
+
+    get optionsDialog() {
+      return this.$['options-dialog'];
+    },
+
+    /**
+     * Shows the details view for a given item.
+     * @param {!chrome.developerPrivate.ExtensionInfo} data
+     */
+    showItemDetails: function(data) {
+      this.$['items-list'].willShowItemDetails(data.id);
+      this.$['details-view'].data = data;
+      this.changePage(Page.DETAIL_VIEW);
     },
 
     /**
@@ -238,13 +258,12 @@ cr.define('extensions', function() {
     },
 
     /**
-     * Shows the detailed view for a given item.
-     * @param {CustomEvent} e
+     * Handles the event for the user clicking on a details button.
+     * @param {!CustomEvent} e
      * @private
      */
-    showItemDetails_: function(e) {
-      this.$['details-view'].set('data', assert(e.detail.element.data));
-      this.changePage(Page.DETAIL_VIEW);
+    onShouldShowItemDetails_: function(e) {
+      this.showItemDetails(e.detail.element.data);
     },
 
     /** @private */
@@ -275,7 +294,7 @@ cr.define('extensions', function() {
           break;
       }
 
-      this.manager_.$['items-list'].set('items', assert(items));
+      this.manager_.$/* hack */ ['items-list'].set('items', assert(items));
       this.manager_.changePage(Page.ITEM_LIST);
     },
 
@@ -286,7 +305,7 @@ cr.define('extensions', function() {
 
     /** @override */
     showPackDialog: function() {
-      this.manager_.$['pack-dialog'].show();
+      this.manager_.packDialog.show();
     }
   };
 

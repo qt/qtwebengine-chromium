@@ -6,7 +6,8 @@
 
 #include <algorithm>
 
-#include "base/metrics/histogram.h"
+#include "base/format_macros.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
@@ -108,13 +109,8 @@ AudioInputSyncWriter::~AudioInputSyncWriter() {
                             AUDIO_CAPTURER_AUDIO_GLITCHES_MAX + 1);
 
   std::string log_string = base::StringPrintf(
-#if defined(COMPILER_MSVC)
-      "AISW: number of detected audio glitches: %Iu out of %Iu",
-#else
-      "AISW: number of detected audio glitches: %zu out of %zu",
-#endif
-      write_error_count_,
-      write_count_);
+      "AISW: number of detected audio glitches: %" PRIuS " out of %" PRIuS,
+      write_error_count_, write_count_);
   MediaStreamManager::SendMessageToNativeLog(log_string);
   DVLOG(1) << log_string;
 }

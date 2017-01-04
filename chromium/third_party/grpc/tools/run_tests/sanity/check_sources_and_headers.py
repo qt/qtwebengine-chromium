@@ -55,14 +55,16 @@ def target_has_header(target, name):
   for dep in target['deps']:
     if target_has_header(get_target(dep), name):
       return True
-  if name == 'src/core/lib/profiling/stap_probes.h':
+  if name in ['src/core/lib/profiling/stap_probes.h',
+              'src/proto/grpc/reflection/v1alpha/reflection.grpc.pb.h']:
     return True
   return False
 
 def produces_object(name):
   return os.path.splitext(name)[1] in ['.c', '.cc']
 
-obj_producer_to_source = {'c': {}, 'c++': {}, 'csharp': {}}
+c_ish = {}
+obj_producer_to_source = {'c': c_ish, 'c++': c_ish, 'csharp': {}}
 
 errors = 0
 for target in js:
@@ -85,7 +87,7 @@ for target in js:
               'target %s (%s) does not name header %s as a dependency' % (
                 target['name'], fn, m.group(1)))
             errors += 1
-  if target['type'] == 'lib':
+  if target['type'] in ['lib', 'filegroup']:
     for fn in target['src']:
       language = target['language']
       if produces_object(fn):

@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -202,7 +202,6 @@ void VideoCaptureGpuJpegDecoder::EstablishGpuChannelOnUIThread(
   DCHECK(BrowserGpuChannelHostFactory::instance());
 
   BrowserGpuChannelHostFactory::instance()->EstablishGpuChannel(
-      CAUSE_FOR_GPU_LAUNCH_JPEGDECODEACCELERATOR_INITIALIZE,
       base::Bind(&VideoCaptureGpuJpegDecoder::GpuChannelEstablishedOnUIThread,
                  task_runner, weak_this));
 }
@@ -210,11 +209,10 @@ void VideoCaptureGpuJpegDecoder::EstablishGpuChannelOnUIThread(
 // static
 void VideoCaptureGpuJpegDecoder::GpuChannelEstablishedOnUIThread(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    base::WeakPtr<VideoCaptureGpuJpegDecoder> weak_this) {
+    base::WeakPtr<VideoCaptureGpuJpegDecoder> weak_this,
+    scoped_refptr<gpu::GpuChannelHost> gpu_channel_host) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  scoped_refptr<gpu::GpuChannelHost> gpu_channel_host(
-      BrowserGpuChannelHostFactory::instance()->GetGpuChannel());
   task_runner->PostTask(
       FROM_HERE, base::Bind(&VideoCaptureGpuJpegDecoder::FinishInitialization,
                             weak_this, std::move(gpu_channel_host)));

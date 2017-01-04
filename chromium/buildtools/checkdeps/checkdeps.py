@@ -39,6 +39,7 @@ class DepsChecker(DepsBuilder):
 
   def __init__(self,
                base_directory=None,
+               extra_repos=[],
                verbose=False,
                being_tested=False,
                ignore_temp_rules=False,
@@ -53,7 +54,7 @@ class DepsChecker(DepsBuilder):
       ignore_temp_rules: Ignore rules that start with Rule.TEMP_ALLOW ("!").
     """
     DepsBuilder.__init__(
-        self, base_directory, verbose, being_tested, ignore_temp_rules)
+        self, base_directory, extra_repos, verbose, being_tested, ignore_temp_rules)
 
     self._skip_tests = skip_tests
     self._resolve_dotdot = resolve_dotdot
@@ -95,6 +96,39 @@ class DepsChecker(DepsBuilder):
         if file_status.HasViolations():
           self.results_formatter.AddError(file_status)
 
+  def CheckIncludesAndImports(self, added_lines, checker):
+    """Check new import/#include statements added in the change
+    being presubmit checked.
+
+    Args:
+      added_lines: ((file_path, (changed_line, changed_line, ...), ...)
+      checker: CppChecker/JavaChecker checker instance
+
+    Return:
+      A list of tuples, (bad_file_path, rule_type, rule_description)
+      where rule_type is one of Rule.DISALLOW or Rule.TEMP_ALLOW and
+      rule_description is human-readable. Empty if no problems.
+    """
+    problems = []
+    for file_path, changed_lines in added_lines:
+      if not checker.ShouldCheck(file_path):
+        continue
+      rules_for_file = self.GetDirectoryRules(os.path.dirname(file_path))
+      if not rules_for_file:
+        continue
+      for line in changed_lines:
+        is_include, violation = checker.CheckLine(
+            rules_for_file, line, file_path, True)
+        if not violation:
+          continue
+        rule_type = violation.violated_rule.allow
+        if rule_type == Rule.ALLOW:
+          continue
+        violation_text = results.NormalResultsFormatter.FormatViolation(
+            violation, self.verbose)
+        problems.append((file_path, rule_type, violation_text))
+    return problems
+
   def CheckAddedCppIncludes(self, added_includes):
     """This is used from PRESUBMIT.py to check new #include statements added in
     the change being presubmit checked.
@@ -107,27 +141,24 @@ class DepsChecker(DepsBuilder):
       where rule_type is one of Rule.DISALLOW or Rule.TEMP_ALLOW and
       rule_description is human-readable. Empty if no problems.
     """
-    cpp = cpp_checker.CppChecker(self.verbose, self._resolve_dotdot)
-    problems = []
-    for file_path, include_lines in added_includes:
-      if not cpp.IsCppFile(file_path):
-        continue
-      rules_for_file = self.GetDirectoryRules(os.path.dirname(file_path))
-      if not rules_for_file:
-        continue
-      for line in include_lines:
-        is_include, violation = cpp.CheckLine(
-            rules_for_file, line, file_path, True)
-        if not violation:
-          continue
-        rule_type = violation.violated_rule.allow
-        if rule_type == Rule.ALLOW:
-          continue
-        violation_text = results.NormalResultsFormatter.FormatViolation(
-            violation, self.verbose)
-        problems.append((file_path, rule_type, violation_text))
-    return problems
+    return self.CheckIncludesAndImports(
+        added_includes, cpp_checker.CppChecker(self.verbose))
 
+  def CheckAddedJavaImports(self, added_imports):
+    """This is used from PRESUBMIT.py to check new import statements added in
+    the change being presubmit checked.
+
+    Args:
+      added_imports: ((file_path, (import_line, import_line, ...), ...)
+
+    Return:
+      A list of tuples, (bad_file_path, rule_type, rule_description)
+      where rule_type is one of Rule.DISALLOW or Rule.TEMP_ALLOW and
+      rule_description is human-readable. Empty if no problems.
+    """
+    return self.CheckIncludesAndImports(
+        added_imports,
+        java_checker.JavaChecker(self.base_directory, self.verbose))
 
 def PrintUsage():
   print """Usage: python checkdeps.py [--root <root>] [tocheck]
@@ -154,6 +185,10 @@ def main():
       help='Specifies the repository root. This defaults '
            'to "../../.." relative to the script file, which '
            'will normally be the repository root.')
+  option_parser.add_option(
+      '', '--extra-repos',
+      action='append', dest='extra_repos', default=[],
+      help='Specifies extra repositories relative to root repository.')
   option_parser.add_option(
       '', '--ignore-temp-rules',
       action='store_true', dest='ignore_temp_rules', default=False,
@@ -187,6 +222,7 @@ def main():
   options, args = option_parser.parse_args()
 
   deps_checker = DepsChecker(options.base_directory,
+                             extra_repos=options.extra_repos,
                              verbose=options.verbose,
                              ignore_temp_rules=options.ignore_temp_rules,
                              skip_tests=options.skip_tests,

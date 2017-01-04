@@ -18,139 +18,161 @@
 namespace v8 {
 namespace internal {
 
+class ObjectLiteral;
+
 // List of code stubs used on all platforms.
-#define CODE_STUB_LIST_ALL_PLATFORMS(V)     \
-  /* PlatformCodeStubs */                   \
-  V(ArrayConstructor)                       \
-  V(BinaryOpICWithAllocationSite)           \
-  V(CallApiCallback)                        \
-  V(CallApiGetter)                          \
-  V(CallConstruct)                          \
-  V(CallIC)                                 \
-  V(CEntry)                                 \
-  V(CompareIC)                              \
-  V(DoubleToI)                              \
-  V(FunctionPrototype)                      \
-  V(InternalArrayConstructor)               \
-  V(JSEntry)                                \
-  V(KeyedLoadICTrampoline)                  \
-  V(LoadICTrampoline)                       \
-  V(LoadGlobalICTrampoline)                 \
-  V(CallICTrampoline)                       \
-  V(LoadIndexedString)                      \
-  V(MathPow)                                \
-  V(ProfileEntryHook)                       \
-  V(RecordWrite)                            \
-  V(RegExpExec)                             \
-  V(StoreBufferOverflow)                    \
-  V(StoreElement)                           \
-  V(StubFailureTrampoline)                  \
-  V(SubString)                              \
-  V(ToString)                               \
-  V(ToName)                                 \
-  V(ToObject)                               \
-  V(VectorStoreICTrampoline)                \
-  V(VectorKeyedStoreICTrampoline)           \
-  V(VectorStoreIC)                          \
-  V(VectorKeyedStoreIC)                     \
-  /* HydrogenCodeStubs */                   \
-  V(BinaryOpIC)                             \
-  V(BinaryOpWithAllocationSite)             \
-  V(CreateAllocationSite)                   \
-  V(CreateWeakCell)                         \
-  V(ElementsTransitionAndStore)             \
-  V(FastArrayPush)                          \
-  V(FastCloneRegExp)                        \
-  V(FastCloneShallowArray)                  \
-  V(FastFunctionBind)                       \
-  V(FastNewClosure)                         \
-  V(FastNewContext)                         \
-  V(FastNewObject)                          \
-  V(FastNewRestParameter)                   \
-  V(FastNewSloppyArguments)                 \
-  V(FastNewStrictArguments)                 \
-  V(GrowArrayElements)                      \
-  V(KeyedLoadGeneric)                       \
-  V(LoadScriptContextField)                 \
-  V(LoadDictionaryElement)                  \
-  V(NameDictionaryLookup)                   \
-  V(NumberToString)                         \
-  V(Typeof)                                 \
-  V(RegExpConstructResult)                  \
-  V(StoreFastElement)                       \
-  V(StoreGlobalViaContext)                  \
-  V(StoreScriptContextField)                \
-  V(StringAdd)                              \
-  V(ToBooleanIC)                            \
-  V(TransitionElementsKind)                 \
-  V(KeyedLoadIC)                            \
-  V(LoadIC)                                 \
-  V(LoadGlobalIC)                           \
-  /* TurboFanCodeStubs */                   \
-  V(AllocateHeapNumber)                     \
-  V(AllocateFloat32x4)                      \
-  V(AllocateInt32x4)                        \
-  V(AllocateUint32x4)                       \
-  V(AllocateBool32x4)                       \
-  V(AllocateInt16x8)                        \
-  V(AllocateUint16x8)                       \
-  V(AllocateBool16x8)                       \
-  V(AllocateInt8x16)                        \
-  V(AllocateUint8x16)                       \
-  V(AllocateBool8x16)                       \
-  V(ArrayNoArgumentConstructor)             \
-  V(ArraySingleArgumentConstructor)         \
-  V(ArrayNArgumentsConstructor)             \
-  V(StringLength)                           \
-  V(Add)                                    \
-  V(Subtract)                               \
-  V(Multiply)                               \
-  V(Divide)                                 \
-  V(Modulus)                                \
-  V(ShiftRight)                             \
-  V(ShiftRightLogical)                      \
-  V(ShiftLeft)                              \
-  V(BitwiseAnd)                             \
-  V(BitwiseOr)                              \
-  V(BitwiseXor)                             \
-  V(Inc)                                    \
-  V(InternalArrayNoArgumentConstructor)     \
-  V(InternalArraySingleArgumentConstructor) \
-  V(Dec)                                    \
-  V(FastCloneShallowObject)                 \
-  V(InstanceOf)                             \
-  V(LessThan)                               \
-  V(LessThanOrEqual)                        \
-  V(GreaterThan)                            \
-  V(GreaterThanOrEqual)                     \
-  V(Equal)                                  \
-  V(NotEqual)                               \
-  V(StrictEqual)                            \
-  V(StrictNotEqual)                         \
-  V(StringEqual)                            \
-  V(StringNotEqual)                         \
-  V(StringLessThan)                         \
-  V(StringLessThanOrEqual)                  \
-  V(StringGreaterThan)                      \
-  V(StringGreaterThanOrEqual)               \
-  V(ToBoolean)                              \
-  V(ToInteger)                              \
-  V(ToLength)                               \
-  V(HasProperty)                            \
-  V(LoadICTrampolineTF)                     \
-  V(LoadICTF)                               \
-  /* IC Handler stubs */                    \
-  V(KeyedLoadSloppyArguments)               \
-  V(KeyedStoreSloppyArguments)              \
-  V(LoadApiGetter)                          \
-  V(LoadConstant)                           \
-  V(LoadFastElement)                        \
-  V(LoadField)                              \
-  V(LoadIndexedInterceptor)                 \
-  V(StoreField)                             \
-  V(StoreGlobal)                            \
-  V(StoreInterceptor)                       \
-  V(StoreTransition)
+#define CODE_STUB_LIST_ALL_PLATFORMS(V)       \
+  /* --- PlatformCodeStubs --- */             \
+  V(ArrayConstructor)                         \
+  V(BinaryOpICWithAllocationSite)             \
+  V(CallApiCallback)                          \
+  V(CallApiGetter)                            \
+  V(CallConstruct)                            \
+  V(CallIC)                                   \
+  V(CEntry)                                   \
+  V(CompareIC)                                \
+  V(DoubleToI)                                \
+  V(FunctionPrototype)                        \
+  V(InternalArrayConstructor)                 \
+  V(JSEntry)                                  \
+  V(LoadIndexedString)                        \
+  V(MathPow)                                  \
+  V(ProfileEntryHook)                         \
+  V(RecordWrite)                              \
+  V(RegExpExec)                               \
+  V(StoreBufferOverflow)                      \
+  V(StoreElement)                             \
+  V(SubString)                                \
+  V(StoreIC)                                  \
+  V(KeyedStoreIC)                             \
+  V(KeyedLoadIC)                              \
+  V(LoadIC)                                   \
+  V(LoadGlobalIC)                             \
+  V(FastNewObject)                            \
+  V(FastNewRestParameter)                     \
+  V(FastNewSloppyArguments)                   \
+  V(FastNewStrictArguments)                   \
+  V(NameDictionaryLookup)                     \
+  /* This can be removed once there are no */ \
+  /* more deopting Hydrogen stubs. */         \
+  V(StubFailureTrampoline)                    \
+  /* These are only called from FCG */        \
+  /* They can be removed when only the TF  */ \
+  /* version of the corresponding stub is  */ \
+  /* used universally */                      \
+  V(CallICTrampoline)                         \
+  V(LoadICTrampoline)                         \
+  V(KeyedLoadICTrampoline)                    \
+  V(KeyedStoreICTrampoline)                   \
+  V(StoreICTrampoline)                        \
+  /* --- HydrogenCodeStubs --- */             \
+  V(NumberToString)                           \
+  V(StringAdd)                                \
+  /* These builtins w/ JS linkage are */      \
+  /* just fast-cases of C++ builtins. They */ \
+  /* require varg support from TF */          \
+  V(FastArrayPush)                            \
+  V(FastFunctionBind)                         \
+  /* These will be ported/eliminated */       \
+  /* as part of the new IC system, ask */     \
+  /* ishell before doing anything  */         \
+  V(KeyedLoadGeneric)                         \
+  V(LoadConstant)                             \
+  V(LoadDictionaryElement)                    \
+  V(LoadFastElement)                          \
+  V(LoadField)                                \
+  /* These should never be ported to TF */    \
+  /* because they are either used only by */  \
+  /* FCG/Crankshaft or are deprecated */      \
+  V(BinaryOpIC)                               \
+  V(BinaryOpWithAllocationSite)               \
+  V(ToBooleanIC)                              \
+  V(RegExpConstructResult)                    \
+  V(TransitionElementsKind)                   \
+  V(StoreGlobalViaContext)                    \
+  /* --- TurboFanCodeStubs --- */             \
+  V(AllocateHeapNumber)                       \
+  V(AllocateFloat32x4)                        \
+  V(AllocateInt32x4)                          \
+  V(AllocateUint32x4)                         \
+  V(AllocateBool32x4)                         \
+  V(AllocateInt16x8)                          \
+  V(AllocateUint16x8)                         \
+  V(AllocateBool16x8)                         \
+  V(AllocateInt8x16)                          \
+  V(AllocateUint8x16)                         \
+  V(AllocateBool8x16)                         \
+  V(ArrayNoArgumentConstructor)               \
+  V(ArraySingleArgumentConstructor)           \
+  V(ArrayNArgumentsConstructor)               \
+  V(CreateAllocationSite)                     \
+  V(CreateWeakCell)                           \
+  V(StringLength)                             \
+  V(Add)                                      \
+  V(AddWithFeedback)                          \
+  V(Subtract)                                 \
+  V(SubtractWithFeedback)                     \
+  V(Multiply)                                 \
+  V(MultiplyWithFeedback)                     \
+  V(Divide)                                   \
+  V(DivideWithFeedback)                       \
+  V(Modulus)                                  \
+  V(ModulusWithFeedback)                      \
+  V(ShiftRight)                               \
+  V(ShiftRightLogical)                        \
+  V(ShiftLeft)                                \
+  V(BitwiseAnd)                               \
+  V(BitwiseOr)                                \
+  V(BitwiseXor)                               \
+  V(Inc)                                      \
+  V(InternalArrayNoArgumentConstructor)       \
+  V(InternalArraySingleArgumentConstructor)   \
+  V(Dec)                                      \
+  V(ElementsTransitionAndStore)               \
+  V(FastCloneRegExp)                          \
+  V(FastCloneShallowArray)                    \
+  V(FastCloneShallowObject)                   \
+  V(FastNewClosure)                           \
+  V(FastNewFunctionContext)                   \
+  V(InstanceOf)                               \
+  V(LessThan)                                 \
+  V(LessThanOrEqual)                          \
+  V(GreaterThan)                              \
+  V(GreaterThanOrEqual)                       \
+  V(Equal)                                    \
+  V(NotEqual)                                 \
+  V(KeyedLoadSloppyArguments)                 \
+  V(KeyedStoreSloppyArguments)                \
+  V(LoadScriptContextField)                   \
+  V(StoreScriptContextField)                  \
+  V(StrictEqual)                              \
+  V(StrictNotEqual)                           \
+  V(ToInteger)                                \
+  V(ToLength)                                 \
+  V(HasProperty)                              \
+  V(ForInFilter)                              \
+  V(GetProperty)                              \
+  V(LoadICTF)                                 \
+  V(KeyedLoadICTF)                            \
+  V(StoreFastElement)                         \
+  V(StoreField)                               \
+  V(StoreGlobal)                              \
+  V(StoreICTF)                                \
+  V(StoreInterceptor)                         \
+  V(StoreMap)                                 \
+  V(StoreTransition)                          \
+  V(LoadApiGetter)                            \
+  V(LoadIndexedInterceptor)                   \
+  V(GrowArrayElements)                        \
+  V(ToObject)                                 \
+  V(Typeof)                                   \
+  /* These are only called from FGC and */    \
+  /* can be removed when we use ignition */   \
+  /* only */                                  \
+  V(LoadICTrampolineTF)                       \
+  V(LoadGlobalICTrampoline)                   \
+  V(KeyedLoadICTrampolineTF)                  \
+  V(StoreICTrampolineTF)
 
 // List of code stubs only used on ARM 32 bits platforms.
 #if V8_TARGET_ARCH_ARM
@@ -412,6 +434,20 @@ class CodeStub BASE_EMBEDDED {
   }                                                                            \
   DEFINE_CODE_STUB(NAME, SUPER)
 
+#define DEFINE_TURBOFAN_BINARY_OP_CODE_STUB_WITH_FEEDBACK(NAME, SUPER)        \
+ public:                                                                      \
+  static compiler::Node* Generate(                                            \
+      CodeStubAssembler* assembler, compiler::Node* left,                     \
+      compiler::Node* right, compiler::Node* slot_id,                         \
+      compiler::Node* type_feedback_vector, compiler::Node* context);         \
+  void GenerateAssembly(CodeStubAssembler* assembler) const override {        \
+    assembler->Return(                                                        \
+        Generate(assembler, assembler->Parameter(0), assembler->Parameter(1), \
+                 assembler->Parameter(2), assembler->Parameter(3),            \
+                 assembler->Parameter(4)));                                   \
+  }                                                                           \
+  DEFINE_CODE_STUB(NAME, SUPER)
+
 #define DEFINE_TURBOFAN_UNARY_OP_CODE_STUB(NAME, SUPER)                \
  public:                                                               \
   static compiler::Node* Generate(CodeStubAssembler* assembler,        \
@@ -423,6 +459,19 @@ class CodeStub BASE_EMBEDDED {
   }                                                                    \
   DEFINE_CODE_STUB(NAME, SUPER)
 
+#define DEFINE_TURBOFAN_UNARY_OP_CODE_STUB_WITH_FEEDBACK(NAME, SUPER)         \
+ public:                                                                      \
+  static compiler::Node* Generate(                                            \
+      CodeStubAssembler* assembler, compiler::Node* value,                    \
+      compiler::Node* context, compiler::Node* type_feedback_vector,          \
+      compiler::Node* slot_id);                                               \
+  void GenerateAssembly(CodeStubAssembler* assembler) const override {        \
+    assembler->Return(                                                        \
+        Generate(assembler, assembler->Parameter(0), assembler->Parameter(1), \
+                 assembler->Parameter(2), assembler->Parameter(3)));          \
+  }                                                                           \
+  DEFINE_CODE_STUB(NAME, SUPER)
+
 #define DEFINE_HANDLER_CODE_STUB(NAME, SUPER) \
  public:                                      \
   Handle<Code> GenerateCode() override;       \
@@ -430,14 +479,9 @@ class CodeStub BASE_EMBEDDED {
 
 #define DEFINE_CALL_INTERFACE_DESCRIPTOR(NAME)                          \
  public:                                                                \
+  typedef NAME##Descriptor Descriptor;                                  \
   CallInterfaceDescriptor GetCallInterfaceDescriptor() const override { \
-    return NAME##Descriptor(isolate());                                 \
-  }
-
-#define DEFINE_ON_STACK_CALL_INTERFACE_DESCRIPTOR(PARAMETER_COUNT)         \
- public:                                                                   \
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() const override {    \
-    return OnStackArgsDescriptorBase::ForArgs(isolate(), PARAMETER_COUNT); \
+    return Descriptor(isolate());                                       \
   }
 
 // There are some code stubs we just can't describe right now with a
@@ -483,8 +527,9 @@ class CodeStubDescriptor {
                   int hint_stack_parameter_count = -1,
                   StubFunctionMode function_mode = NOT_JS_FUNCTION_STUB_MODE);
 
-  void SetMissHandler(ExternalReference handler) {
-    miss_handler_ = handler;
+  void SetMissHandler(Runtime::FunctionId id) {
+    miss_handler_id_ = id;
+    miss_handler_ = ExternalReference(Runtime::FunctionForId(id), isolate_);
     has_miss_handler_ = true;
     // Our miss handler infrastructure doesn't currently support
     // variable stack parameter counts.
@@ -510,13 +555,18 @@ class CodeStubDescriptor {
     return call_descriptor().GetRegisterParameter(index);
   }
 
-  Type* GetParameterType(int index) const {
+  MachineType GetParameterType(int index) const {
     return call_descriptor().GetParameterType(index);
   }
 
   ExternalReference miss_handler() const {
     DCHECK(has_miss_handler_);
     return miss_handler_;
+  }
+
+  Runtime::FunctionId miss_handler_id() const {
+    DCHECK(has_miss_handler_);
+    return miss_handler_id_;
   }
 
   bool has_miss_handler() const {
@@ -541,6 +591,7 @@ class CodeStubDescriptor {
     return stack_parameter_count_.is_valid();
   }
 
+  Isolate* isolate_;
   CallInterfaceDescriptor call_descriptor_;
   Register stack_parameter_count_;
   // If hint_stack_parameter_count_ > 0, the code stub can optimize the
@@ -551,6 +602,7 @@ class CodeStubDescriptor {
   Address deoptimization_handler_;
 
   ExternalReference miss_handler_;
+  Runtime::FunctionId miss_handler_id_;
   bool has_miss_handler_;
 };
 
@@ -574,6 +626,8 @@ class HydrogenCodeStub : public CodeStub {
   bool IsUninitialized() const { return IsMissBits::decode(minor_key_); }
 
   Handle<Code> GenerateLightweightMissCode(ExternalReference miss);
+
+  Handle<Code> GenerateRuntimeTailCall(CodeStubDescriptor* descriptor);
 
   template<class StateType>
   void TraceTransition(StateType from, StateType to);
@@ -710,12 +764,31 @@ class AddStub final : public TurboFanCodeStub {
   DEFINE_TURBOFAN_BINARY_OP_CODE_STUB(Add, TurboFanCodeStub);
 };
 
+class AddWithFeedbackStub final : public TurboFanCodeStub {
+ public:
+  explicit AddWithFeedbackStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOpWithVector);
+  DEFINE_TURBOFAN_BINARY_OP_CODE_STUB_WITH_FEEDBACK(AddWithFeedback,
+                                                    TurboFanCodeStub);
+};
+
 class SubtractStub final : public TurboFanCodeStub {
  public:
   explicit SubtractStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
   DEFINE_TURBOFAN_BINARY_OP_CODE_STUB(Subtract, TurboFanCodeStub);
+};
+
+class SubtractWithFeedbackStub final : public TurboFanCodeStub {
+ public:
+  explicit SubtractWithFeedbackStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOpWithVector);
+  DEFINE_TURBOFAN_BINARY_OP_CODE_STUB_WITH_FEEDBACK(SubtractWithFeedback,
+                                                    TurboFanCodeStub);
 };
 
 class MultiplyStub final : public TurboFanCodeStub {
@@ -726,6 +799,16 @@ class MultiplyStub final : public TurboFanCodeStub {
   DEFINE_TURBOFAN_BINARY_OP_CODE_STUB(Multiply, TurboFanCodeStub);
 };
 
+class MultiplyWithFeedbackStub final : public TurboFanCodeStub {
+ public:
+  explicit MultiplyWithFeedbackStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOpWithVector);
+  DEFINE_TURBOFAN_BINARY_OP_CODE_STUB_WITH_FEEDBACK(MultiplyWithFeedback,
+                                                    TurboFanCodeStub);
+};
+
 class DivideStub final : public TurboFanCodeStub {
  public:
   explicit DivideStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
@@ -734,12 +817,32 @@ class DivideStub final : public TurboFanCodeStub {
   DEFINE_TURBOFAN_BINARY_OP_CODE_STUB(Divide, TurboFanCodeStub);
 };
 
+class DivideWithFeedbackStub final : public TurboFanCodeStub {
+ public:
+  explicit DivideWithFeedbackStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOpWithVector);
+  DEFINE_TURBOFAN_BINARY_OP_CODE_STUB_WITH_FEEDBACK(DivideWithFeedback,
+                                                    TurboFanCodeStub);
+};
+
 class ModulusStub final : public TurboFanCodeStub {
  public:
   explicit ModulusStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
   DEFINE_TURBOFAN_BINARY_OP_CODE_STUB(Modulus, TurboFanCodeStub);
+};
+
+class ModulusWithFeedbackStub final : public TurboFanCodeStub {
+ public:
+  explicit ModulusWithFeedbackStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOpWithVector);
+  DEFINE_TURBOFAN_BINARY_OP_CODE_STUB_WITH_FEEDBACK(ModulusWithFeedback,
+                                                    TurboFanCodeStub);
 };
 
 class ShiftRightStub final : public TurboFanCodeStub {
@@ -796,7 +899,7 @@ class IncStub final : public TurboFanCodeStub {
   explicit IncStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(CountOp);
-  DEFINE_TURBOFAN_UNARY_OP_CODE_STUB(Inc, TurboFanCodeStub);
+  DEFINE_TURBOFAN_UNARY_OP_CODE_STUB_WITH_FEEDBACK(Inc, TurboFanCodeStub);
 };
 
 class DecStub final : public TurboFanCodeStub {
@@ -804,7 +907,7 @@ class DecStub final : public TurboFanCodeStub {
   explicit DecStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(CountOp);
-  DEFINE_TURBOFAN_UNARY_OP_CODE_STUB(Dec, TurboFanCodeStub);
+  DEFINE_TURBOFAN_UNARY_OP_CODE_STUB_WITH_FEEDBACK(Dec, TurboFanCodeStub);
 };
 
 class InstanceOfStub final : public TurboFanCodeStub {
@@ -881,65 +984,6 @@ class StrictNotEqualStub final : public TurboFanCodeStub {
   DEFINE_TURBOFAN_BINARY_OP_CODE_STUB(StrictNotEqual, TurboFanCodeStub);
 };
 
-class StringEqualStub final : public TurboFanCodeStub {
- public:
-  explicit StringEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_TURBOFAN_CODE_STUB(StringEqual, TurboFanCodeStub);
-};
-
-class StringNotEqualStub final : public TurboFanCodeStub {
- public:
-  explicit StringNotEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_TURBOFAN_CODE_STUB(StringNotEqual, TurboFanCodeStub);
-};
-
-class StringLessThanStub final : public TurboFanCodeStub {
- public:
-  explicit StringLessThanStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_TURBOFAN_CODE_STUB(StringLessThan, TurboFanCodeStub);
-};
-
-class StringLessThanOrEqualStub final : public TurboFanCodeStub {
- public:
-  explicit StringLessThanOrEqualStub(Isolate* isolate)
-      : TurboFanCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_TURBOFAN_CODE_STUB(StringLessThanOrEqual, TurboFanCodeStub);
-};
-
-class StringGreaterThanStub final : public TurboFanCodeStub {
- public:
-  explicit StringGreaterThanStub(Isolate* isolate)
-      : TurboFanCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_TURBOFAN_CODE_STUB(StringGreaterThan, TurboFanCodeStub);
-};
-
-class StringGreaterThanOrEqualStub final : public TurboFanCodeStub {
- public:
-  explicit StringGreaterThanOrEqualStub(Isolate* isolate)
-      : TurboFanCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_TURBOFAN_CODE_STUB(StringGreaterThanOrEqual, TurboFanCodeStub);
-};
-
-class ToBooleanStub final : public TurboFanCodeStub {
- public:
-  explicit ToBooleanStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
-  DEFINE_TURBOFAN_UNARY_OP_CODE_STUB(ToBoolean, TurboFanCodeStub);
-};
-
 class ToIntegerStub final : public TurboFanCodeStub {
  public:
   explicit ToIntegerStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
@@ -965,7 +1009,7 @@ class StoreInterceptorStub : public TurboFanCodeStub {
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
   ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Store);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
   DEFINE_CODE_STUB(StoreInterceptor, TurboFanCodeStub);
 };
 
@@ -988,6 +1032,23 @@ class HasPropertyStub : public TurboFanCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(HasProperty);
   DEFINE_TURBOFAN_BINARY_OP_CODE_STUB(HasProperty, TurboFanCodeStub);
+};
+
+class ForInFilterStub : public TurboFanCodeStub {
+ public:
+  explicit ForInFilterStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ForInFilter);
+  DEFINE_TURBOFAN_BINARY_OP_CODE_STUB(ForInFilter, TurboFanCodeStub);
+};
+
+// ES6 [[Get]] operation.
+class GetPropertyStub : public TurboFanCodeStub {
+ public:
+  explicit GetPropertyStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(GetProperty);
+  DEFINE_TURBOFAN_CODE_STUB(GetProperty, TurboFanCodeStub);
 };
 
 enum StringAddFlags {
@@ -1013,75 +1074,50 @@ class NumberToStringStub final : public HydrogenCodeStub {
  public:
   explicit NumberToStringStub(Isolate* isolate) : HydrogenCodeStub(isolate) {}
 
-  // Parameters accessed via CodeStubGraphBuilder::GetParameter()
-  static const int kNumber = 0;
-
   DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_HYDROGEN_CODE_STUB(NumberToString, HydrogenCodeStub);
 };
 
-
-class TypeofStub final : public HydrogenCodeStub {
+class TypeofStub final : public TurboFanCodeStub {
  public:
-  explicit TypeofStub(Isolate* isolate) : HydrogenCodeStub(isolate) {}
-
-  // Parameters accessed via CodeStubGraphBuilder::GetParameter()
-  static const int kObject = 0;
-
-  static void GenerateAheadOfTime(Isolate* isolate);
+  explicit TypeofStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(Typeof);
-  DEFINE_HYDROGEN_CODE_STUB(Typeof, HydrogenCodeStub);
+  DEFINE_TURBOFAN_UNARY_OP_CODE_STUB(Typeof, TurboFanCodeStub);
 };
 
-
-class FastNewClosureStub : public HydrogenCodeStub {
+class FastNewClosureStub : public TurboFanCodeStub {
  public:
-  FastNewClosureStub(Isolate* isolate, LanguageMode language_mode,
-                     FunctionKind kind)
-      : HydrogenCodeStub(isolate) {
-    DCHECK(IsValidFunctionKind(kind));
-    set_sub_minor_key(LanguageModeBits::encode(language_mode) |
-                      FunctionKindBits::encode(kind));
-  }
+  explicit FastNewClosureStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  LanguageMode language_mode() const {
-    return LanguageModeBits::decode(sub_minor_key());
-  }
-
-  FunctionKind kind() const {
-    return FunctionKindBits::decode(sub_minor_key());
-  }
-
- private:
-  STATIC_ASSERT(LANGUAGE_END == 3);
-  class LanguageModeBits : public BitField<LanguageMode, 0, 2> {};
-  class FunctionKindBits : public BitField<FunctionKind, 2, 9> {};
+  static compiler::Node* Generate(CodeStubAssembler* assembler,
+                                  compiler::Node* shared_info,
+                                  compiler::Node* context);
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastNewClosure);
-  DEFINE_HYDROGEN_CODE_STUB(FastNewClosure, HydrogenCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(FastNewClosure, TurboFanCodeStub);
 };
 
-
-class FastNewContextStub final : public HydrogenCodeStub {
+class FastNewFunctionContextStub final : public TurboFanCodeStub {
  public:
-  static const int kMaximumSlots = 64;
+  static const int kMaximumSlots = 0x8000;
 
-  FastNewContextStub(Isolate* isolate, int slots) : HydrogenCodeStub(isolate) {
-    DCHECK(slots >= 0 && slots <= kMaximumSlots);
-    set_sub_minor_key(SlotsBits::encode(slots));
-  }
+  explicit FastNewFunctionContextStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
 
-  int slots() const { return SlotsBits::decode(sub_minor_key()); }
-
-  // Parameters accessed via CodeStubGraphBuilder::GetParameter()
-  static const int kFunction = 0;
+  static compiler::Node* Generate(CodeStubAssembler* assembler,
+                                  compiler::Node* function,
+                                  compiler::Node* slots,
+                                  compiler::Node* context);
 
  private:
-  class SlotsBits : public BitField<int, 0, 8> {};
+  // FastNewFunctionContextStub can only allocate closures which fit in the
+  // new space.
+  STATIC_ASSERT(((kMaximumSlots + Context::MIN_CONTEXT_SLOTS) * kPointerSize +
+                 FixedArray::kHeaderSize) < kMaxRegularHeapObjectSize);
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(FastNewContext);
-  DEFINE_HYDROGEN_CODE_STUB(FastNewContext, HydrogenCodeStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(FastNewFunctionContext);
+  DEFINE_TURBOFAN_CODE_STUB(FastNewFunctionContext, TurboFanCodeStub);
 };
 
 
@@ -1157,34 +1193,46 @@ class FastNewStrictArgumentsStub final : public PlatformCodeStub {
   class SkipStubFrameBits : public BitField<bool, 0, 1> {};
 };
 
-
-class FastCloneRegExpStub final : public HydrogenCodeStub {
+class FastCloneRegExpStub final : public TurboFanCodeStub {
  public:
-  explicit FastCloneRegExpStub(Isolate* isolate) : HydrogenCodeStub(isolate) {}
+  explicit FastCloneRegExpStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  static compiler::Node* Generate(CodeStubAssembler* assembler,
+                                  compiler::Node* closure,
+                                  compiler::Node* literal_index,
+                                  compiler::Node* pattern,
+                                  compiler::Node* flags,
+                                  compiler::Node* context);
 
  private:
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastCloneRegExp);
-  DEFINE_HYDROGEN_CODE_STUB(FastCloneRegExp, HydrogenCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(FastCloneRegExp, TurboFanCodeStub);
 };
 
-
-class FastCloneShallowArrayStub : public HydrogenCodeStub {
+class FastCloneShallowArrayStub : public TurboFanCodeStub {
  public:
   FastCloneShallowArrayStub(Isolate* isolate,
                             AllocationSiteMode allocation_site_mode)
-      : HydrogenCodeStub(isolate) {
-    set_sub_minor_key(AllocationSiteModeBits::encode(allocation_site_mode));
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = AllocationSiteModeBits::encode(allocation_site_mode);
   }
 
+  static compiler::Node* Generate(CodeStubAssembler* assembler,
+                                  compiler::Node* closure,
+                                  compiler::Node* literal_index,
+                                  compiler::Node* context,
+                                  CodeStubAssembler::Label* call_runtime,
+                                  AllocationSiteMode allocation_site_mode);
+
   AllocationSiteMode allocation_site_mode() const {
-    return AllocationSiteModeBits::decode(sub_minor_key());
+    return AllocationSiteModeBits::decode(minor_key_);
   }
 
  private:
   class AllocationSiteModeBits: public BitField<AllocationSiteMode, 0, 1> {};
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastCloneShallowArray);
-  DEFINE_HYDROGEN_CODE_STUB(FastCloneShallowArray, HydrogenCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(FastCloneShallowArray, TurboFanCodeStub);
 };
 
 class FastCloneShallowObjectStub : public TurboFanCodeStub {
@@ -1216,50 +1264,42 @@ class FastCloneShallowObjectStub : public TurboFanCodeStub {
   DEFINE_TURBOFAN_CODE_STUB(FastCloneShallowObject, TurboFanCodeStub);
 };
 
-
-class CreateAllocationSiteStub : public HydrogenCodeStub {
+class CreateAllocationSiteStub : public TurboFanCodeStub {
  public:
   explicit CreateAllocationSiteStub(Isolate* isolate)
-      : HydrogenCodeStub(isolate) { }
-
+      : TurboFanCodeStub(isolate) {}
   static void GenerateAheadOfTime(Isolate* isolate);
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(CreateAllocationSite);
-  DEFINE_HYDROGEN_CODE_STUB(CreateAllocationSite, HydrogenCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(CreateAllocationSite, TurboFanCodeStub);
 };
 
-
-class CreateWeakCellStub : public HydrogenCodeStub {
+class CreateWeakCellStub : public TurboFanCodeStub {
  public:
-  explicit CreateWeakCellStub(Isolate* isolate) : HydrogenCodeStub(isolate) {}
+  explicit CreateWeakCellStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   static void GenerateAheadOfTime(Isolate* isolate);
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(CreateWeakCell);
-  DEFINE_HYDROGEN_CODE_STUB(CreateWeakCell, HydrogenCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(CreateWeakCell, TurboFanCodeStub);
 };
 
-
-class GrowArrayElementsStub : public HydrogenCodeStub {
+class GrowArrayElementsStub : public TurboFanCodeStub {
  public:
-  GrowArrayElementsStub(Isolate* isolate, bool is_js_array, ElementsKind kind)
-      : HydrogenCodeStub(isolate) {
-    set_sub_minor_key(ElementsKindBits::encode(kind) |
-                      IsJsArrayBits::encode(is_js_array));
+  GrowArrayElementsStub(Isolate* isolate, ElementsKind kind)
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = ElementsKindBits::encode(GetHoleyElementsKind(kind));
   }
 
   ElementsKind elements_kind() const {
-    return ElementsKindBits::decode(sub_minor_key());
+    return ElementsKindBits::decode(minor_key_);
   }
-
-  bool is_js_array() const { return IsJsArrayBits::decode(sub_minor_key()); }
 
  private:
   class ElementsKindBits : public BitField<ElementsKind, 0, 8> {};
-  class IsJsArrayBits : public BitField<bool, ElementsKindBits::kNext, 1> {};
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(GrowArrayElements);
-  DEFINE_HYDROGEN_CODE_STUB(GrowArrayElements, HydrogenCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(GrowArrayElements, TurboFanCodeStub);
 };
 
 class FastArrayPushStub : public HydrogenCodeStub {
@@ -1326,7 +1366,7 @@ class InternalArrayConstructorStub: public PlatformCodeStub {
 
 class MathPowStub: public PlatformCodeStub {
  public:
-  enum ExponentType { INTEGER, DOUBLE, TAGGED, ON_STACK };
+  enum ExponentType { INTEGER, DOUBLE, TAGGED };
 
   MathPowStub(Isolate* isolate, ExponentType exponent_type)
       : PlatformCodeStub(isolate) {
@@ -1334,9 +1374,7 @@ class MathPowStub: public PlatformCodeStub {
   }
 
   CallInterfaceDescriptor GetCallInterfaceDescriptor() const override {
-    if (exponent_type() == ON_STACK) {
-      return OnStackArgsDescriptorBase::ForArgs(isolate(), 2);
-    } else if (exponent_type() == TAGGED) {
+    if (exponent_type() == TAGGED) {
       return MathPowTaggedDescriptor(isolate());
     } else if (exponent_type() == INTEGER) {
       return MathPowIntegerDescriptor(isolate());
@@ -1397,6 +1435,7 @@ class FunctionPrototypeStub : public PlatformCodeStub {
       : PlatformCodeStub(isolate) {}
 
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::LOAD_IC; }
 
   // TODO(mvstanton): only the receiver register is accessed. When this is
   // translated to a hydrogen code stub, a new CallInterfaceDescriptor
@@ -1415,6 +1454,7 @@ class LoadIndexedStringStub : public PlatformCodeStub {
       : PlatformCodeStub(isolate) {}
 
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::KEYED_LOAD_IC; }
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(Load);
   DEFINE_PLATFORM_CODE_STUB(LoadIndexedString, PlatformCodeStub);
@@ -1457,38 +1497,41 @@ class LoadFieldStub: public HandlerStub {
  private:
   class LoadFieldByIndexBits : public BitField<int, 0, 13> {};
 
+  // TODO(ishell): The stub uses only kReceiver parameter.
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
   DEFINE_HANDLER_CODE_STUB(LoadField, HandlerStub);
 };
 
-
-class KeyedLoadSloppyArgumentsStub : public HandlerStub {
+class KeyedLoadSloppyArgumentsStub : public TurboFanCodeStub {
  public:
   explicit KeyedLoadSloppyArgumentsStub(Isolate* isolate)
-      : HandlerStub(isolate) {}
+      : TurboFanCodeStub(isolate) {}
+
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::LOAD_IC; }
 
  protected:
-  Code::Kind kind() const override { return Code::KEYED_LOAD_IC; }
-
- private:
-  DEFINE_HANDLER_CODE_STUB(KeyedLoadSloppyArguments, HandlerStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
+  DEFINE_TURBOFAN_CODE_STUB(KeyedLoadSloppyArguments, TurboFanCodeStub);
 };
 
 
 class CommonStoreModeBits : public BitField<KeyedAccessStoreMode, 0, 3> {};
 
-class KeyedStoreSloppyArgumentsStub : public HandlerStub {
+class KeyedStoreSloppyArgumentsStub : public TurboFanCodeStub {
  public:
   explicit KeyedStoreSloppyArgumentsStub(Isolate* isolate,
                                          KeyedAccessStoreMode mode)
-      : HandlerStub(isolate) {
-    set_sub_minor_key(CommonStoreModeBits::encode(mode));
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = CommonStoreModeBits::encode(mode);
   }
 
- protected:
-  Code::Kind kind() const override { return Code::KEYED_STORE_IC; }
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
 
- private:
-  DEFINE_HANDLER_CODE_STUB(KeyedStoreSloppyArguments, HandlerStub);
+ protected:
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
+  DEFINE_TURBOFAN_CODE_STUB(KeyedStoreSloppyArguments, TurboFanCodeStub);
 };
 
 
@@ -1509,6 +1552,8 @@ class LoadConstantStub : public HandlerStub {
  private:
   class ConstantIndexBits : public BitField<int, 0, kSubMinorKeyBits> {};
 
+  // TODO(ishell): The stub uses only kReceiver parameter.
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
   DEFINE_HANDLER_CODE_STUB(LoadConstant, HandlerStub);
 };
 
@@ -1539,160 +1584,106 @@ class LoadApiGetterStub : public TurboFanCodeStub {
   DEFINE_TURBOFAN_CODE_STUB(LoadApiGetter, TurboFanCodeStub);
 };
 
-class StoreFieldStub : public HandlerStub {
+class StoreFieldStub : public TurboFanCodeStub {
  public:
   StoreFieldStub(Isolate* isolate, FieldIndex index,
                  Representation representation)
-      : HandlerStub(isolate) {
+      : TurboFanCodeStub(isolate) {
     int property_index_key = index.GetFieldAccessStubKey();
-    uint8_t repr = PropertyDetails::EncodeRepresentation(representation);
-    set_sub_minor_key(StoreFieldByIndexBits::encode(property_index_key) |
-                      RepresentationBits::encode(repr));
+    minor_key_ = StoreFieldByIndexBits::encode(property_index_key) |
+                 RepresentationBits::encode(representation.kind());
   }
 
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
+
   FieldIndex index() const {
-    int property_index_key = StoreFieldByIndexBits::decode(sub_minor_key());
+    int property_index_key = StoreFieldByIndexBits::decode(minor_key_);
     return FieldIndex::FromFieldAccessStubKey(property_index_key);
   }
 
-  Representation representation() {
-    uint8_t repr = RepresentationBits::decode(sub_minor_key());
-    return PropertyDetails::DecodeRepresentation(repr);
+  Representation representation() const {
+    return Representation::FromKind(RepresentationBits::decode(minor_key_));
   }
-
- protected:
-  Code::Kind kind() const override { return Code::STORE_IC; }
 
  private:
   class StoreFieldByIndexBits : public BitField<int, 0, 13> {};
-  class RepresentationBits : public BitField<uint8_t, 13, 4> {};
+  class RepresentationBits
+      : public BitField<Representation::Kind, StoreFieldByIndexBits::kNext, 4> {
+  };
+  STATIC_ASSERT(Representation::kNumRepresentations - 1 <
+                RepresentationBits::kMax);
 
-  DEFINE_HANDLER_CODE_STUB(StoreField, HandlerStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
+  DEFINE_TURBOFAN_CODE_STUB(StoreField, TurboFanCodeStub);
 };
 
-
-// Register and parameter access methods are specified here instead of in
-// the CallInterfaceDescriptor because the stub uses a different descriptor
-// if FLAG_vector_stores is on.
-class StoreTransitionHelper {
+class StoreMapStub : public TurboFanCodeStub {
  public:
-  static Register ReceiverRegister() {
-    return StoreTransitionDescriptor::ReceiverRegister();
-  }
+  explicit StoreMapStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  static Register NameRegister() {
-    return StoreTransitionDescriptor::NameRegister();
-  }
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
 
-  static Register ValueRegister() {
-    return StoreTransitionDescriptor::ValueRegister();
-  }
-
-  static Register SlotRegister() {
-    return VectorStoreTransitionDescriptor::SlotRegister();
-  }
-
-  static Register VectorRegister() {
-    return VectorStoreTransitionDescriptor::VectorRegister();
-  }
-
-  static Register MapRegister() {
-    return VectorStoreTransitionDescriptor::MapRegister();
-  }
-
-  static int ReceiverIndex() {
-    return StoreTransitionDescriptor::kReceiverIndex;
-  }
-
-  static int NameIndex() { return StoreTransitionDescriptor::kReceiverIndex; }
-
-  static int ValueIndex() { return StoreTransitionDescriptor::kValueIndex; }
-
-  static int MapIndex() {
-    DCHECK(static_cast<int>(VectorStoreTransitionDescriptor::kMapIndex) ==
-           static_cast<int>(StoreTransitionDescriptor::kMapIndex));
-    return StoreTransitionDescriptor::kMapIndex;
-  }
-
-  static int VectorIndex() {
-    if (HasVirtualSlotArg()) {
-      return VectorStoreTransitionDescriptor::kVirtualSlotVectorIndex;
-    }
-    return VectorStoreTransitionDescriptor::kVectorIndex;
-  }
-
-  // Some platforms don't have a slot arg.
-  static bool HasVirtualSlotArg() {
-    return SlotRegister().is(no_reg);
-  }
+ private:
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreTransition);
+  DEFINE_TURBOFAN_CODE_STUB(StoreMap, TurboFanCodeStub);
 };
 
-
-class StoreTransitionStub : public HandlerStub {
+class StoreTransitionStub : public TurboFanCodeStub {
  public:
   enum StoreMode {
-    StoreMapOnly,
     StoreMapAndValue,
     ExtendStorageAndStoreMapAndValue
   };
 
-  explicit StoreTransitionStub(Isolate* isolate) : HandlerStub(isolate) {
-    set_sub_minor_key(StoreModeBits::encode(StoreMapOnly));
-  }
-
-  StoreTransitionStub(Isolate* isolate, FieldIndex index,
+  StoreTransitionStub(Isolate* isolate, bool is_inobject,
                       Representation representation, StoreMode store_mode)
-      : HandlerStub(isolate) {
-    DCHECK(store_mode != StoreMapOnly);
-    int property_index_key = index.GetFieldAccessStubKey();
-    uint8_t repr = PropertyDetails::EncodeRepresentation(representation);
-    set_sub_minor_key(StoreFieldByIndexBits::encode(property_index_key) |
-                      RepresentationBits::encode(repr) |
-                      StoreModeBits::encode(store_mode));
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = IsInobjectBits::encode(is_inobject) |
+                 RepresentationBits::encode(representation.kind()) |
+                 StoreModeBits::encode(store_mode);
   }
 
-  FieldIndex index() const {
-    DCHECK(store_mode() != StoreMapOnly);
-    int property_index_key = StoreFieldByIndexBits::decode(sub_minor_key());
-    return FieldIndex::FromFieldAccessStubKey(property_index_key);
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
+
+  bool is_inobject() const { return IsInobjectBits::decode(minor_key_); }
+
+  Representation representation() const {
+    return Representation::FromKind(RepresentationBits::decode(minor_key_));
   }
 
-  Representation representation() {
-    DCHECK(store_mode() != StoreMapOnly);
-    uint8_t repr = RepresentationBits::decode(sub_minor_key());
-    return PropertyDetails::DecodeRepresentation(repr);
-  }
-
-  StoreMode store_mode() const {
-    return StoreModeBits::decode(sub_minor_key());
-  }
-
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() const override;
-
- protected:
-  Code::Kind kind() const override { return Code::STORE_IC; }
+  StoreMode store_mode() const { return StoreModeBits::decode(minor_key_); }
 
  private:
-  class StoreFieldByIndexBits : public BitField<int, 0, 13> {};
-  class RepresentationBits : public BitField<uint8_t, 13, 4> {};
-  class StoreModeBits : public BitField<StoreMode, 17, 2> {};
+  class IsInobjectBits : public BitField<bool, 0, 1> {};
+  class RepresentationBits
+      : public BitField<Representation::Kind, IsInobjectBits::kNext, 4> {};
+  STATIC_ASSERT(Representation::kNumRepresentations - 1 <
+                RepresentationBits::kMax);
+  class StoreModeBits
+      : public BitField<StoreMode, RepresentationBits::kNext, 1> {};
 
-  DEFINE_HANDLER_CODE_STUB(StoreTransition, HandlerStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreNamedTransition);
+  DEFINE_TURBOFAN_CODE_STUB(StoreTransition, TurboFanCodeStub);
 };
 
-
-class StoreGlobalStub : public HandlerStub {
+class StoreGlobalStub : public TurboFanCodeStub {
  public:
   StoreGlobalStub(Isolate* isolate, PropertyCellType type,
                   Maybe<PropertyCellConstantType> constant_type,
                   bool check_global)
-      : HandlerStub(isolate) {
+      : TurboFanCodeStub(isolate) {
     PropertyCellConstantType encoded_constant_type =
         constant_type.FromMaybe(PropertyCellConstantType::kSmi);
-    set_sub_minor_key(CellTypeBits::encode(type) |
-                      ConstantTypeBits::encode(encoded_constant_type) |
-                      CheckGlobalBits::encode(check_global));
+    minor_key_ = CellTypeBits::encode(type) |
+                 ConstantTypeBits::encode(encoded_constant_type) |
+                 CheckGlobalBits::encode(check_global);
   }
+
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
 
   static Handle<HeapObject> property_cell_placeholder(Isolate* isolate) {
     return isolate->factory()->uninitialized_value();
@@ -1714,38 +1705,28 @@ class StoreGlobalStub : public HandlerStub {
     return CodeStub::GetCodeCopy(pattern);
   }
 
-  Code::Kind kind() const override { return Code::STORE_IC; }
-
   PropertyCellType cell_type() const {
-    return CellTypeBits::decode(sub_minor_key());
+    return CellTypeBits::decode(minor_key_);
   }
 
   PropertyCellConstantType constant_type() const {
     DCHECK(PropertyCellType::kConstantType == cell_type());
-    return ConstantTypeBits::decode(sub_minor_key());
+    return ConstantTypeBits::decode(minor_key_);
   }
 
-  bool check_global() const { return CheckGlobalBits::decode(sub_minor_key()); }
-
-  Representation representation() {
-    return Representation::FromKind(
-        RepresentationBits::decode(sub_minor_key()));
-  }
-
-  void set_representation(Representation r) {
-    set_sub_minor_key(RepresentationBits::update(sub_minor_key(), r.kind()));
-  }
+  bool check_global() const { return CheckGlobalBits::decode(minor_key_); }
 
  private:
   class CellTypeBits : public BitField<PropertyCellType, 0, 2> {};
-  class ConstantTypeBits : public BitField<PropertyCellConstantType, 2, 2> {};
-  class RepresentationBits : public BitField<Representation::Kind, 4, 8> {};
-  class CheckGlobalBits : public BitField<bool, 12, 1> {};
+  class ConstantTypeBits
+      : public BitField<PropertyCellConstantType, CellTypeBits::kNext, 2> {};
+  class CheckGlobalBits : public BitField<bool, ConstantTypeBits::kNext, 1> {};
 
-  DEFINE_HANDLER_CODE_STUB(StoreGlobal, HandlerStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
+  DEFINE_TURBOFAN_CODE_STUB(StoreGlobal, TurboFanCodeStub);
 };
 
-
+// TODO(ishell): remove, once StoreGlobalIC is implemented.
 class StoreGlobalViaContextStub final : public PlatformCodeStub {
  public:
   static const int kMaximumDepth = 15;
@@ -1765,8 +1746,8 @@ class StoreGlobalViaContextStub final : public PlatformCodeStub {
  private:
   class DepthBits : public BitField<int, 0, 4> {};
   STATIC_ASSERT(DepthBits::kMax == kMaximumDepth);
-  class LanguageModeBits : public BitField<LanguageMode, 4, 2> {};
-  STATIC_ASSERT(LANGUAGE_END == 3);
+  class LanguageModeBits : public BitField<LanguageMode, 4, 1> {};
+  STATIC_ASSERT(LANGUAGE_END == 2);
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreGlobalViaContext);
   DEFINE_PLATFORM_CODE_STUB(StoreGlobalViaContext, PlatformCodeStub);
@@ -1784,12 +1765,10 @@ class CallApiCallbackStub : public PlatformCodeStub {
                             call_data_undefined, is_lazy) {}
 
   // CallApiCallbackStub for callback functions.
-  CallApiCallbackStub(Isolate* isolate, int argc, bool call_data_undefined)
-      : CallApiCallbackStub(isolate, argc, false, call_data_undefined, false) {}
-
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() const override {
-    return ApiCallbackDescriptorBase::ForArgs(isolate(), argc());
-  }
+  CallApiCallbackStub(Isolate* isolate, int argc, bool call_data_undefined,
+                      bool is_lazy)
+      : CallApiCallbackStub(isolate, argc, false, call_data_undefined,
+                            is_lazy) {}
 
  private:
   CallApiCallbackStub(Isolate* isolate, int argc, bool is_store,
@@ -1814,6 +1793,7 @@ class CallApiCallbackStub : public PlatformCodeStub {
   class ArgumentBits : public BitField<int, 2, kArgBits> {};
   class IsLazyAccessorBits : public BitField<bool, 3 + kArgBits, 1> {};
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ApiCallback);
   DEFINE_PLATFORM_CODE_STUB(CallApiCallback, PlatformCodeStub);
 };
 
@@ -1853,10 +1833,6 @@ class BinaryOpICStub : public HydrogenCodeStub {
   }
 
   void PrintState(std::ostream& os) const final;  // NOLINT
-
-  // Parameters accessed via CodeStubGraphBuilder::GetParameter()
-  static const int kLeft = 0;
-  static const int kRight = 1;
 
  private:
   static void GenerateAheadOfTime(Isolate* isolate,
@@ -1916,11 +1892,6 @@ class BinaryOpWithAllocationSiteStub final : public BinaryOpICStub {
 
   Code::Kind GetCodeKind() const final { return Code::STUB; }
 
-  // Parameters accessed via CodeStubGraphBuilder::GetParameter()
-  static const int kAllocationSite = 0;
-  static const int kLeft = 1;
-  static const int kRight = 2;
-
   DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOpWithAllocationSite);
   DEFINE_HYDROGEN_CODE_STUB(BinaryOpWithAllocationSite, BinaryOpICStub);
 };
@@ -1942,10 +1913,6 @@ class StringAddStub final : public HydrogenCodeStub {
   PretenureFlag pretenure_flag() const {
     return PretenureFlagBits::decode(sub_minor_key());
   }
-
-  // Parameters accessed via CodeStubGraphBuilder::GetParameter()
-  static const int kLeft = 0;
-  static const int kRight = 1;
 
  private:
   class StringAddFlagsBits : public BitField<StringAddFlags, 0, 3> {};
@@ -1969,9 +1936,19 @@ class CompareICStub : public PlatformCodeStub {
                  LeftStateBits::encode(left) | RightStateBits::encode(right) |
                  StateBits::encode(state);
   }
+  // Creates uninitialized compare stub.
+  CompareICStub(Isolate* isolate, Token::Value op)
+      : CompareICStub(isolate, op, CompareICState::UNINITIALIZED,
+                      CompareICState::UNINITIALIZED,
+                      CompareICState::UNINITIALIZED) {}
+
   CompareICStub(Isolate* isolate, ExtraICState extra_ic_state)
       : PlatformCodeStub(isolate) {
     minor_key_ = extra_ic_state;
+  }
+
+  ExtraICState GetExtraICState() const final {
+    return static_cast<ExtraICState>(minor_key_);
   }
 
   void set_known_map(Handle<Map> map) { known_map_ = map; }
@@ -2030,9 +2007,10 @@ class CEntryStub : public PlatformCodeStub {
  public:
   CEntryStub(Isolate* isolate, int result_size,
              SaveFPRegsMode save_doubles = kDontSaveFPRegs,
-             ArgvMode argv_mode = kArgvOnStack)
+             ArgvMode argv_mode = kArgvOnStack, bool builtin_exit_frame = false)
       : PlatformCodeStub(isolate) {
     minor_key_ = SaveDoublesBits::encode(save_doubles == kSaveFPRegs) |
+                 FrameTypeBits::encode(builtin_exit_frame) |
                  ArgvMode::encode(argv_mode == kArgvInRegister);
     DCHECK(result_size == 1 || result_size == 2 || result_size == 3);
     minor_key_ = ResultSizeBits::update(minor_key_, result_size);
@@ -2047,13 +2025,15 @@ class CEntryStub : public PlatformCodeStub {
  private:
   bool save_doubles() const { return SaveDoublesBits::decode(minor_key_); }
   bool argv_in_register() const { return ArgvMode::decode(minor_key_); }
+  bool is_builtin_exit() const { return FrameTypeBits::decode(minor_key_); }
   int result_size() const { return ResultSizeBits::decode(minor_key_); }
 
   bool NeedsImmovableCode() override;
 
   class SaveDoublesBits : public BitField<bool, 0, 1> {};
   class ArgvMode : public BitField<bool, 1, 1> {};
-  class ResultSizeBits : public BitField<int, 2, 3> {};
+  class FrameTypeBits : public BitField<bool, 2, 1> {};
+  class ResultSizeBits : public BitField<int, 3, 3> {};
 
   DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(CEntry, PlatformCodeStub);
@@ -2093,20 +2073,15 @@ class RegExpExecStub: public PlatformCodeStub {
  public:
   explicit RegExpExecStub(Isolate* isolate) : PlatformCodeStub(isolate) { }
 
-  DEFINE_ON_STACK_CALL_INTERFACE_DESCRIPTOR(4);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(RegExpExec);
   DEFINE_PLATFORM_CODE_STUB(RegExpExec, PlatformCodeStub);
 };
 
-
+// TODO(jgruber): Remove this once all uses in regexp.js have been removed.
 class RegExpConstructResultStub final : public HydrogenCodeStub {
  public:
   explicit RegExpConstructResultStub(Isolate* isolate)
       : HydrogenCodeStub(isolate) { }
-
-  // Parameters accessed via CodeStubGraphBuilder::GetParameter()
-  static const int kLength = 0;
-  static const int kIndex = 1;
-  static const int kInput = 2;
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(RegExpConstructResult);
   DEFINE_HYDROGEN_CODE_STUB(RegExpConstructResult, HydrogenCodeStub);
@@ -2309,7 +2284,7 @@ class KeyedLoadGenericStub : public HydrogenCodeStub {
 
   Code::Kind GetCodeKind() const override { return Code::KEYED_LOAD_IC; }
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Load);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
   DEFINE_HYDROGEN_CODE_STUB(KeyedLoadGeneric, HydrogenCodeStub);
 };
 
@@ -2367,10 +2342,21 @@ class KeyedLoadICTrampolineStub : public LoadICTrampolineStub {
   DEFINE_PLATFORM_CODE_STUB(KeyedLoadICTrampoline, LoadICTrampolineStub);
 };
 
-
-class VectorStoreICTrampolineStub : public PlatformCodeStub {
+class KeyedLoadICTrampolineTFStub : public LoadICTrampolineTFStub {
  public:
-  VectorStoreICTrampolineStub(Isolate* isolate, const StoreICState& state)
+  explicit KeyedLoadICTrampolineTFStub(Isolate* isolate)
+      : LoadICTrampolineTFStub(isolate) {}
+
+  void GenerateAssembly(CodeStubAssembler* assembler) const override;
+
+  Code::Kind GetCodeKind() const override { return Code::KEYED_LOAD_IC; }
+
+  DEFINE_CODE_STUB(KeyedLoadICTrampolineTF, LoadICTrampolineTFStub);
+};
+
+class StoreICTrampolineStub : public PlatformCodeStub {
+ public:
+  StoreICTrampolineStub(Isolate* isolate, const StoreICState& state)
       : PlatformCodeStub(isolate) {
     minor_key_ = state.GetExtraICState();
   }
@@ -2382,25 +2368,42 @@ class VectorStoreICTrampolineStub : public PlatformCodeStub {
   }
 
  protected:
-  StoreICState state() const {
-    return StoreICState(static_cast<ExtraICState>(minor_key_));
-  }
+  StoreICState state() const { return StoreICState(GetExtraICState()); }
 
  private:
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(VectorStoreICTrampoline);
-  DEFINE_PLATFORM_CODE_STUB(VectorStoreICTrampoline, PlatformCodeStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Store);
+  DEFINE_PLATFORM_CODE_STUB(StoreICTrampoline, PlatformCodeStub);
 };
 
-
-class VectorKeyedStoreICTrampolineStub : public VectorStoreICTrampolineStub {
+class StoreICTrampolineTFStub : public TurboFanCodeStub {
  public:
-  VectorKeyedStoreICTrampolineStub(Isolate* isolate, const StoreICState& state)
-      : VectorStoreICTrampolineStub(isolate, state) {}
+  StoreICTrampolineTFStub(Isolate* isolate, const StoreICState& state)
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = state.GetExtraICState();
+  }
+
+  void GenerateAssembly(CodeStubAssembler* assembler) const override;
+
+  Code::Kind GetCodeKind() const override { return Code::STORE_IC; }
+  ExtraICState GetExtraICState() const final {
+    return static_cast<ExtraICState>(minor_key_);
+  }
+
+ protected:
+  StoreICState state() const { return StoreICState(GetExtraICState()); }
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Store);
+  DEFINE_CODE_STUB(StoreICTrampolineTF, TurboFanCodeStub);
+};
+
+class KeyedStoreICTrampolineStub : public StoreICTrampolineStub {
+ public:
+  KeyedStoreICTrampolineStub(Isolate* isolate, const StoreICState& state)
+      : StoreICTrampolineStub(isolate, state) {}
 
   Code::Kind GetCodeKind() const override { return Code::KEYED_STORE_IC; }
 
-  DEFINE_PLATFORM_CODE_STUB(VectorKeyedStoreICTrampoline,
-                            VectorStoreICTrampolineStub);
+  DEFINE_PLATFORM_CODE_STUB(KeyedStoreICTrampoline, StoreICTrampolineStub);
 };
 
 
@@ -2488,10 +2491,20 @@ class KeyedLoadICStub : public PlatformCodeStub {
   void GenerateImpl(MacroAssembler* masm, bool in_frame);
 };
 
-
-class VectorStoreICStub : public PlatformCodeStub {
+class KeyedLoadICTFStub : public LoadICTFStub {
  public:
-  VectorStoreICStub(Isolate* isolate, const StoreICState& state)
+  explicit KeyedLoadICTFStub(Isolate* isolate) : LoadICTFStub(isolate) {}
+
+  void GenerateAssembly(CodeStubAssembler* assembler) const override;
+
+  Code::Kind GetCodeKind() const override { return Code::KEYED_LOAD_IC; }
+
+  DEFINE_CODE_STUB(KeyedLoadICTF, LoadICTFStub);
+};
+
+class StoreICStub : public PlatformCodeStub {
+ public:
+  StoreICStub(Isolate* isolate, const StoreICState& state)
       : PlatformCodeStub(isolate) {
     minor_key_ = state.GetExtraICState();
   }
@@ -2504,17 +2517,34 @@ class VectorStoreICStub : public PlatformCodeStub {
     return static_cast<ExtraICState>(minor_key_);
   }
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(VectorStoreIC);
-  DEFINE_PLATFORM_CODE_STUB(VectorStoreIC, PlatformCodeStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
+  DEFINE_PLATFORM_CODE_STUB(StoreIC, PlatformCodeStub);
 
  protected:
   void GenerateImpl(MacroAssembler* masm, bool in_frame);
 };
 
-
-class VectorKeyedStoreICStub : public PlatformCodeStub {
+class StoreICTFStub : public TurboFanCodeStub {
  public:
-  VectorKeyedStoreICStub(Isolate* isolate, const StoreICState& state)
+  StoreICTFStub(Isolate* isolate, const StoreICState& state)
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = state.GetExtraICState();
+  }
+
+  void GenerateAssembly(CodeStubAssembler* assembler) const override;
+
+  Code::Kind GetCodeKind() const override { return Code::STORE_IC; }
+  ExtraICState GetExtraICState() const final {
+    return static_cast<ExtraICState>(minor_key_);
+  }
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
+  DEFINE_CODE_STUB(StoreICTF, TurboFanCodeStub);
+};
+
+class KeyedStoreICStub : public PlatformCodeStub {
+ public:
+  KeyedStoreICStub(Isolate* isolate, const StoreICState& state)
       : PlatformCodeStub(isolate) {
     minor_key_ = state.GetExtraICState();
   }
@@ -2527,8 +2557,8 @@ class VectorKeyedStoreICStub : public PlatformCodeStub {
     return static_cast<ExtraICState>(minor_key_);
   }
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(VectorStoreIC);
-  DEFINE_PLATFORM_CODE_STUB(VectorKeyedStoreIC, PlatformCodeStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
+  DEFINE_PLATFORM_CODE_STUB(KeyedStoreIC, PlatformCodeStub);
 
  protected:
   void GenerateImpl(MacroAssembler* masm, bool in_frame);
@@ -2581,23 +2611,21 @@ class DoubleToIStub : public PlatformCodeStub {
   DEFINE_PLATFORM_CODE_STUB(DoubleToI, PlatformCodeStub);
 };
 
-
-class ScriptContextFieldStub : public HandlerStub {
+class ScriptContextFieldStub : public TurboFanCodeStub {
  public:
   ScriptContextFieldStub(Isolate* isolate,
                          const ScriptContextTable::LookupResult* lookup_result)
-      : HandlerStub(isolate) {
+      : TurboFanCodeStub(isolate) {
     DCHECK(Accepted(lookup_result));
-    STATIC_ASSERT(kContextIndexBits + kSlotIndexBits <= kSubMinorKeyBits);
-    set_sub_minor_key(ContextIndexBits::encode(lookup_result->context_index) |
-                      SlotIndexBits::encode(lookup_result->slot_index));
+    minor_key_ = ContextIndexBits::encode(lookup_result->context_index) |
+                 SlotIndexBits::encode(lookup_result->slot_index);
   }
 
-  int context_index() const {
-    return ContextIndexBits::decode(sub_minor_key());
-  }
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
 
-  int slot_index() const { return SlotIndexBits::decode(sub_minor_key()); }
+  int context_index() const { return ContextIndexBits::decode(minor_key_); }
+
+  int slot_index() const { return SlotIndexBits::decode(minor_key_); }
 
   static bool Accepted(const ScriptContextTable::LookupResult* lookup_result) {
     return ContextIndexBits::is_valid(lookup_result->context_index) &&
@@ -2611,7 +2639,7 @@ class ScriptContextFieldStub : public HandlerStub {
   class SlotIndexBits
       : public BitField<int, kContextIndexBits, kSlotIndexBits> {};
 
-  DEFINE_CODE_STUB_BASE(ScriptContextFieldStub, HandlerStub);
+  DEFINE_CODE_STUB_BASE(ScriptContextFieldStub, TurboFanCodeStub);
 };
 
 
@@ -2621,10 +2649,11 @@ class LoadScriptContextFieldStub : public ScriptContextFieldStub {
       Isolate* isolate, const ScriptContextTable::LookupResult* lookup_result)
       : ScriptContextFieldStub(isolate, lookup_result) {}
 
- private:
-  Code::Kind kind() const override { return Code::LOAD_IC; }
+  ExtraICState GetExtraICState() const override { return Code::LOAD_IC; }
 
-  DEFINE_HANDLER_CODE_STUB(LoadScriptContextField, ScriptContextFieldStub);
+ private:
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
+  DEFINE_TURBOFAN_CODE_STUB(LoadScriptContextField, ScriptContextFieldStub);
 };
 
 
@@ -2634,10 +2663,11 @@ class StoreScriptContextFieldStub : public ScriptContextFieldStub {
       Isolate* isolate, const ScriptContextTable::LookupResult* lookup_result)
       : ScriptContextFieldStub(isolate, lookup_result) {}
 
- private:
-  Code::Kind kind() const override { return Code::STORE_IC; }
+  ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
 
-  DEFINE_HANDLER_CODE_STUB(StoreScriptContextField, ScriptContextFieldStub);
+ private:
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
+  DEFINE_TURBOFAN_CODE_STUB(StoreScriptContextField, ScriptContextFieldStub);
 };
 
 
@@ -2669,43 +2699,42 @@ class LoadFastElementStub : public HandlerStub {
   class IsJSArrayBits: public BitField<bool, 8, 1> {};
   class CanConvertHoleToUndefined : public BitField<bool, 9, 1> {};
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
   DEFINE_HANDLER_CODE_STUB(LoadFastElement, HandlerStub);
 };
 
-
-class StoreFastElementStub : public HydrogenCodeStub {
+class StoreFastElementStub : public TurboFanCodeStub {
  public:
   StoreFastElementStub(Isolate* isolate, bool is_js_array,
                        ElementsKind elements_kind, KeyedAccessStoreMode mode)
-      : HydrogenCodeStub(isolate) {
-    set_sub_minor_key(CommonStoreModeBits::encode(mode) |
-                      ElementsKindBits::encode(elements_kind) |
-                      IsJSArrayBits::encode(is_js_array));
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = CommonStoreModeBits::encode(mode) |
+                 ElementsKindBits::encode(elements_kind) |
+                 IsJSArrayBits::encode(is_js_array);
   }
 
   static void GenerateAheadOfTime(Isolate* isolate);
 
-  bool is_js_array() const { return IsJSArrayBits::decode(sub_minor_key()); }
+  bool is_js_array() const { return IsJSArrayBits::decode(minor_key_); }
 
   ElementsKind elements_kind() const {
-    return ElementsKindBits::decode(sub_minor_key());
+    return ElementsKindBits::decode(minor_key_);
   }
 
   KeyedAccessStoreMode store_mode() const {
-    return CommonStoreModeBits::decode(sub_minor_key());
-  }
-
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() const override {
-    return VectorStoreICDescriptor(isolate());
+    return CommonStoreModeBits::decode(minor_key_);
   }
 
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::KEYED_STORE_IC; }
 
  private:
-  class ElementsKindBits : public BitField<ElementsKind, 3, 8> {};
-  class IsJSArrayBits : public BitField<bool, 11, 1> {};
+  class ElementsKindBits
+      : public BitField<ElementsKind, CommonStoreModeBits::kNext, 8> {};
+  class IsJSArrayBits : public BitField<bool, ElementsKindBits::kNext, 1> {};
 
-  DEFINE_HYDROGEN_CODE_STUB(StoreFastElement, HydrogenCodeStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
+  DEFINE_TURBOFAN_CODE_STUB(StoreFastElement, TurboFanCodeStub);
 };
 
 
@@ -2892,19 +2921,18 @@ class StoreElementStub : public PlatformCodeStub {
                  CommonStoreModeBits::encode(mode);
   }
 
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() const override {
-    return VectorStoreICDescriptor(isolate());
-  }
-
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::KEYED_STORE_IC; }
 
  private:
   ElementsKind elements_kind() const {
     return ElementsKindBits::decode(minor_key_);
   }
 
-  class ElementsKindBits : public BitField<ElementsKind, 3, 8> {};
+  class ElementsKindBits
+      : public BitField<ElementsKind, CommonStoreModeBits::kNext, 8> {};
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreWithVector);
   DEFINE_PLATFORM_CODE_STUB(StoreElement, PlatformCodeStub);
 };
 
@@ -2981,33 +3009,35 @@ class ToBooleanICStub : public HydrogenCodeStub {
 
 std::ostream& operator<<(std::ostream& os, const ToBooleanICStub::Types& t);
 
-class ElementsTransitionAndStoreStub : public HydrogenCodeStub {
+class ElementsTransitionAndStoreStub : public TurboFanCodeStub {
  public:
   ElementsTransitionAndStoreStub(Isolate* isolate, ElementsKind from_kind,
                                  ElementsKind to_kind, bool is_jsarray,
                                  KeyedAccessStoreMode store_mode)
-      : HydrogenCodeStub(isolate) {
-    set_sub_minor_key(CommonStoreModeBits::encode(store_mode) |
-                      FromBits::encode(from_kind) | ToBits::encode(to_kind) |
-                      IsJSArrayBits::encode(is_jsarray));
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = CommonStoreModeBits::encode(store_mode) |
+                 FromBits::encode(from_kind) | ToBits::encode(to_kind) |
+                 IsJSArrayBits::encode(is_jsarray);
   }
 
-  ElementsKind from_kind() const { return FromBits::decode(sub_minor_key()); }
-  ElementsKind to_kind() const { return ToBits::decode(sub_minor_key()); }
-  bool is_jsarray() const { return IsJSArrayBits::decode(sub_minor_key()); }
+  ElementsKind from_kind() const { return FromBits::decode(minor_key_); }
+  ElementsKind to_kind() const { return ToBits::decode(minor_key_); }
+  bool is_jsarray() const { return IsJSArrayBits::decode(minor_key_); }
   KeyedAccessStoreMode store_mode() const {
-    return CommonStoreModeBits::decode(sub_minor_key());
+    return CommonStoreModeBits::decode(minor_key_);
   }
 
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() const override;
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::KEYED_STORE_IC; }
 
  private:
-  class FromBits : public BitField<ElementsKind, 3, 8> {};
+  class FromBits
+      : public BitField<ElementsKind, CommonStoreModeBits::kNext, 8> {};
   class ToBits : public BitField<ElementsKind, 11, 8> {};
   class IsJSArrayBits : public BitField<bool, 19, 1> {};
 
-  DEFINE_HYDROGEN_CODE_STUB(ElementsTransitionAndStore, HydrogenCodeStub);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreTransition);
+  DEFINE_TURBOFAN_CODE_STUB(ElementsTransitionAndStore, TurboFanCodeStub);
 };
 
 
@@ -3073,38 +3103,32 @@ class StoreBufferOverflowStub : public PlatformCodeStub {
   DEFINE_PLATFORM_CODE_STUB(StoreBufferOverflow, PlatformCodeStub);
 };
 
-
-class SubStringStub : public PlatformCodeStub {
+class SubStringStub : public TurboFanCodeStub {
  public:
-  explicit SubStringStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
+  explicit SubStringStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  DEFINE_ON_STACK_CALL_INTERFACE_DESCRIPTOR(3);
-  DEFINE_PLATFORM_CODE_STUB(SubString, PlatformCodeStub);
+  static compiler::Node* Generate(CodeStubAssembler* assembler,
+                                  compiler::Node* string, compiler::Node* from,
+                                  compiler::Node* to, compiler::Node* context);
+
+  void GenerateAssembly(CodeStubAssembler* assembler) const override {
+    assembler->Return(Generate(assembler,
+                               assembler->Parameter(Descriptor::kString),
+                               assembler->Parameter(Descriptor::kFrom),
+                               assembler->Parameter(Descriptor::kTo),
+                               assembler->Parameter(Descriptor::kContext)));
+  }
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(SubString);
+  DEFINE_CODE_STUB(SubString, TurboFanCodeStub);
 };
 
-class ToStringStub final : public PlatformCodeStub {
+class ToObjectStub final : public TurboFanCodeStub {
  public:
-  explicit ToStringStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
+  explicit ToObjectStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
-  DEFINE_PLATFORM_CODE_STUB(ToString, PlatformCodeStub);
-};
-
-class ToNameStub final : public PlatformCodeStub {
- public:
-  explicit ToNameStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
-  DEFINE_PLATFORM_CODE_STUB(ToName, PlatformCodeStub);
-};
-
-
-class ToObjectStub final : public HydrogenCodeStub {
- public:
-  explicit ToObjectStub(Isolate* isolate) : HydrogenCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
-  DEFINE_HYDROGEN_CODE_STUB(ToObject, HydrogenCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(ToObject, TurboFanCodeStub);
 };
 
 #undef DEFINE_CALL_INTERFACE_DESCRIPTOR
@@ -3114,7 +3138,7 @@ class ToObjectStub final : public HydrogenCodeStub {
 #undef DEFINE_CODE_STUB
 #undef DEFINE_CODE_STUB_BASE
 
-extern Representation RepresentationFromType(Type* type);
+extern Representation RepresentationFromMachineType(MachineType type);
 
 }  // namespace internal
 }  // namespace v8

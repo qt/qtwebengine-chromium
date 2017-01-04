@@ -34,12 +34,12 @@ import re
 _log = logging.getLogger(__name__)
 
 conversion_patterns = (
-    (re.compile("^diff --git \w/(.+) \w/(?P<FilePath>.+)"), lambda matched: "Index: " + matched.group('FilePath') + "\n"),
-    (re.compile("^new file.*"), lambda matched: "\n"),
-    (re.compile("^index (([0-9a-f]{7}\.\.[0-9a-f]{7})|([0-9a-f]{40}\.\.[0-9a-f]{40})) [0-9]{6}"),
+    (re.compile(r"^diff --git \w/(.+) \w/(?P<FilePath>.+)"), lambda matched: "Index: " + matched.group('FilePath') + "\n"),
+    (re.compile(r"^new file.*"), lambda matched: "\n"),
+    (re.compile(r"^index (([0-9a-f]{7}\.\.[0-9a-f]{7})|([0-9a-f]{40}\.\.[0-9a-f]{40})) [0-9]{6}"),
      lambda matched: ("=" * 67) + "\n"),
-    (re.compile("^--- \w/(?P<FilePath>.+)"), lambda matched: "--- " + matched.group('FilePath') + "\n"),
-    (re.compile("^\+\+\+ \w/(?P<FilePath>.+)"), lambda matched: "+++ " + matched.group('FilePath') + "\n"),
+    (re.compile(r"^--- \w/(?P<FilePath>.+)"), lambda matched: "--- " + matched.group('FilePath') + "\n"),
+    (re.compile(r"^\+\+\+ \w/(?P<FilePath>.+)"), lambda matched: "+++ " + matched.group('FilePath') + "\n"),
 )
 
 index_pattern = re.compile(r"^Index: (?P<FilePath>.+)")
@@ -156,8 +156,7 @@ class DiffParser(object):
             lines_changed = lines_changed_pattern.match(line)
             if lines_changed:
                 if state != _DECLARED_FILE_PATH and state != _PROCESSING_CHUNK:
-                    _log.error('Unexpected line change without file path '
-                               'declaration: %r' % line)
+                    _log.error('Unexpected line change without file path declaration: %r', line)
                 old_diff_line = int(lines_changed.group('OldStartLine'))
                 new_diff_line = int(lines_changed.group('NewStartLine'))
                 state = _PROCESSING_CHUNK
@@ -178,6 +177,5 @@ class DiffParser(object):
                     # Nothing to do.  We may still have some added lines.
                     pass
                 else:
-                    _log.error('Unexpected diff format when parsing a '
-                               'chunk: %r' % line)
+                    _log.error('Unexpected diff format when parsing a chunk: %r', line)
         return files

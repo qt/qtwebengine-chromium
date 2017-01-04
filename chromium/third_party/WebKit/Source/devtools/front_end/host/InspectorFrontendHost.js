@@ -252,7 +252,7 @@ WebInspector.InspectorFrontendHostStub.prototype = {
      */
     loadNetworkResource: function(url, headers, streamId, callback)
     {
-        loadResourcePromise(url).then(function(text) {
+        Runtime.loadResourcePromise(url).then(function(text) {
             WebInspector.ResourceLoader.streamWrite(streamId, text);
             callback({statusCode : 200});
         }).catch(function() {
@@ -373,6 +373,14 @@ WebInspector.InspectorFrontendHostStub.prototype = {
     },
 
     /**
+     * @param {!Array<string>} certChain
+     * @override
+     */
+    showCertificateViewer: function(certChain)
+    {
+    },
+
+    /**
      * @override
      * @return {boolean}
      */
@@ -450,14 +458,14 @@ WebInspector.InspectorFrontendHostStub.prototype = {
  * @type {!InspectorFrontendHostAPI}
  */
 var InspectorFrontendHost = window.InspectorFrontendHost || null;
-
+window.InspectorFrontendHost = InspectorFrontendHost;
 (function(){
 
     function initializeInspectorFrontendHost()
     {
         if (!InspectorFrontendHost) {
             // Instantiate stub for web-hosted mode if necessary.
-            InspectorFrontendHost = new WebInspector.InspectorFrontendHostStub();
+            window.InspectorFrontendHost = InspectorFrontendHost = new WebInspector.InspectorFrontendHostStub();
         } else {
             // Otherwise add stubs for missing methods that are declared in the interface.
             var proto = WebInspector.InspectorFrontendHostStub.prototype;
@@ -494,12 +502,12 @@ var InspectorFrontendHost = window.InspectorFrontendHost || null;
 
         var descriptors = InspectorFrontendHostAPI.EventDescriptors;
         for (var i = 0; i < descriptors.length; ++i)
-            this[descriptors[i][0]] = this._dispatch.bind(this, descriptors[i][0], descriptors[i][1], descriptors[i][2]);
+            this[descriptors[i][1]] = this._dispatch.bind(this, descriptors[i][0], descriptors[i][2], descriptors[i][3]);
     }
 
     InspectorFrontendAPIImpl.prototype = {
         /**
-         * @param {string} name
+         * @param {symbol} name
          * @param {!Array.<string>} signature
          * @param {boolean} runOnceLoaded
          */

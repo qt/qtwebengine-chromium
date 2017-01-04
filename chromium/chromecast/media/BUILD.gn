@@ -16,6 +16,7 @@ group("media") {
 
 test("cast_media_unittests") {
   sources = [
+    "audio/cast_audio_mixer_unittest.cc",
     "audio/cast_audio_output_stream_unittest.cc",
     "base/media_resource_tracker_unittest.cc",
     "cma/backend/audio_video_pipeline_device_unittest.cc",
@@ -27,9 +28,6 @@ test("cast_media_unittests") {
     "cma/base/demuxer_stream_for_test.cc",
     "cma/base/demuxer_stream_for_test.h",
     "cma/base/multi_demuxer_stream_adapter_unittest.cc",
-    "cma/ipc/media_message_fifo_unittest.cc",
-    "cma/ipc/media_message_unittest.cc",
-    "cma/ipc_streamer/av_streamer_unittest.cc",
     "cma/pipeline/audio_video_pipeline_impl_unittest.cc",
     "cma/test/frame_generator_for_test.cc",
     "cma/test/frame_generator_for_test.h",
@@ -52,8 +50,6 @@ test("cast_media_unittests") {
     "//chromecast/media/audio",
     "//chromecast/media/cma/backend",
     "//chromecast/media/cma/base",
-    "//chromecast/media/cma/ipc",
-    "//chromecast/media/cma/ipc_streamer",
     "//chromecast/media/cma/pipeline",
     "//chromecast/public",
     "//media",

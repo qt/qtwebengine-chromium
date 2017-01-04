@@ -130,10 +130,12 @@ class TransportControllerTest : public testing::Test,
     channel2->SetConnectionCount(1);
   }
 
-  IceConfig CreateIceConfig(int receiving_timeout, bool gather_continually) {
+  IceConfig CreateIceConfig(
+      int receiving_timeout,
+      ContinualGatheringPolicy continual_gathering_policy) {
     IceConfig config;
     config.receiving_timeout = receiving_timeout;
-    config.gather_continually = gather_continually;
+    config.continual_gathering_policy = continual_gathering_policy;
     return config;
   }
 
@@ -196,10 +198,13 @@ TEST_F(TransportControllerTest, TestSetIceConfig) {
   FakeTransportChannel* channel1 = CreateChannel("audio", 1);
   ASSERT_NE(nullptr, channel1);
 
-  transport_controller_->SetIceConfig(CreateIceConfig(1000, true));
+  transport_controller_->SetIceConfig(
+      CreateIceConfig(1000, GATHER_CONTINUALLY));
   EXPECT_EQ(1000, channel1->receiving_timeout());
   EXPECT_TRUE(channel1->gather_continually());
 
+  transport_controller_->SetIceConfig(
+      CreateIceConfig(1000, GATHER_CONTINUALLY_AND_RECOVER));
   // Test that value stored in controller is applied to new channels.
   FakeTransportChannel* channel2 = CreateChannel("video", 1);
   ASSERT_NE(nullptr, channel2);
@@ -576,7 +581,6 @@ TEST_F(TransportControllerTest, TestSignalReceiving) {
 TEST_F(TransportControllerTest, TestSignalGatheringStateGathering) {
   FakeTransportChannel* channel = CreateChannel("audio", 1);
   ASSERT_NE(nullptr, channel);
-  channel->Connect();
   channel->MaybeStartGathering();
   // Should be in the gathering state as soon as any transport starts gathering.
   EXPECT_EQ_WAIT(kIceGatheringGathering, gathering_state_, kTimeout);
@@ -591,7 +595,6 @@ TEST_F(TransportControllerTest, TestSignalGatheringStateComplete) {
   FakeTransportChannel* channel3 = CreateChannel("data", 1);
   ASSERT_NE(nullptr, channel3);
 
-  channel3->Connect();
   channel3->MaybeStartGathering();
   EXPECT_EQ_WAIT(kIceGatheringGathering, gathering_state_, kTimeout);
   EXPECT_EQ(1, gathering_state_signal_count_);
@@ -604,9 +607,7 @@ TEST_F(TransportControllerTest, TestSignalGatheringStateComplete) {
   EXPECT_EQ(2, gathering_state_signal_count_);
 
   // Make remaining channels start and then finish gathering.
-  channel1->Connect();
   channel1->MaybeStartGathering();
-  channel2->Connect();
   channel2->MaybeStartGathering();
   EXPECT_EQ_WAIT(kIceGatheringGathering, gathering_state_, kTimeout);
   EXPECT_EQ(3, gathering_state_signal_count_);
@@ -688,7 +689,7 @@ TEST_F(TransportControllerTest, TestSignalingOccursOnSignalingThread) {
 // See: https://bugs.chromium.org/p/chromium/issues/detail?id=628676
 // TODO(deadbeef): Remove this when these old versions of Chrome reach a low
 // enough population.
-TEST_F(TransportControllerTest, IceRoleRedeterminedOnIceRestart) {
+TEST_F(TransportControllerTest, IceRoleRedeterminedOnIceRestartByDefault) {
   FakeTransportChannel* channel = CreateChannel("audio", 1);
   ASSERT_NE(nullptr, channel);
   std::string err;
@@ -714,6 +715,38 @@ TEST_F(TransportControllerTest, IceRoleRedeterminedOnIceRestart) {
   EXPECT_TRUE(transport_controller_->SetLocalTransportDescription(
       "audio", ice_restart_desc, CA_OFFER, &err));
   EXPECT_EQ(ICEROLE_CONTROLLING, channel->GetIceRole());
+}
+
+// Test that if the TransportController was created with the
+// |redetermine_role_on_ice_restart| parameter set to false, the role is *not*
+// redetermined on an ICE restart.
+TEST_F(TransportControllerTest, IceRoleNotRedetermined) {
+  bool redetermine_role = false;
+  transport_controller_.reset(new TransportControllerForTest(redetermine_role));
+  FakeTransportChannel* channel = CreateChannel("audio", 1);
+  ASSERT_NE(nullptr, channel);
+  std::string err;
+  // Do an initial offer answer, so that the next offer is an ICE restart.
+  transport_controller_->SetIceRole(ICEROLE_CONTROLLED);
+  TransportDescription remote_desc(std::vector<std::string>(), kIceUfrag1,
+                                   kIcePwd1, ICEMODE_FULL,
+                                   CONNECTIONROLE_ACTPASS, nullptr);
+  EXPECT_TRUE(transport_controller_->SetRemoteTransportDescription(
+      "audio", remote_desc, CA_OFFER, &err));
+  TransportDescription local_desc(std::vector<std::string>(), kIceUfrag2,
+                                  kIcePwd2, ICEMODE_FULL,
+                                  CONNECTIONROLE_ACTPASS, nullptr);
+  EXPECT_TRUE(transport_controller_->SetLocalTransportDescription(
+      "audio", local_desc, CA_ANSWER, &err));
+  EXPECT_EQ(ICEROLE_CONTROLLED, channel->GetIceRole());
+
+  // The endpoint that initiated an ICE restart should keep the existing role.
+  TransportDescription ice_restart_desc(std::vector<std::string>(), kIceUfrag3,
+                                        kIcePwd3, ICEMODE_FULL,
+                                        CONNECTIONROLE_ACTPASS, nullptr);
+  EXPECT_TRUE(transport_controller_->SetLocalTransportDescription(
+      "audio", ice_restart_desc, CA_OFFER, &err));
+  EXPECT_EQ(ICEROLE_CONTROLLED, channel->GetIceRole());
 }
 
 }  // namespace cricket {

@@ -13,7 +13,7 @@
 #import <GLKit/GLKit.h>
 
 #import "RTCOpenGLVideoRenderer.h"
-#import "WebRTC//RTCVideoFrame.h"
+#import "WebRTC/RTCVideoFrame.h"
 
 // RTCDisplayLinkTimer wraps a CADisplayLink and is set to fire every two screen
 // refreshes, which should be 30fps. We wrap the display link in order to avoid
@@ -93,6 +93,7 @@
 
 @implementation RTCEAGLVideoView {
   RTCDisplayLinkTimer *_timer;
+  EAGLContext *_glContext;
   // This flag should only be set and read on the main thread (e.g. by
   // setNeedsDisplay)
   BOOL _isDirty;
@@ -123,11 +124,12 @@
   if (!glContext) {
     glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
   }
-  _glRenderer = [[RTCOpenGLVideoRenderer alloc] initWithContext:glContext];
+  _glContext = glContext;
+  _glRenderer = [[RTCOpenGLVideoRenderer alloc] initWithContext:_glContext];
 
   // GLKView manages a framebuffer for us.
   _glkView = [[GLKView alloc] initWithFrame:CGRectZero
-                                    context:glContext];
+                                    context:_glContext];
   _glkView.drawableColorFormat = GLKViewDrawableColorFormatRGBA8888;
   _glkView.drawableDepthFormat = GLKViewDrawableDepthFormatNone;
   _glkView.drawableStencilFormat = GLKViewDrawableStencilFormatNone;
@@ -169,6 +171,9 @@
     [self teardownGL];
   }
   [_timer invalidate];
+  if (_glContext && [EAGLContext currentContext] == _glContext) {
+    [EAGLContext setCurrentContext:nil];
+  }
 }
 
 #pragma mark - UIView
@@ -210,10 +215,12 @@
 }
 
 - (void)renderFrame:(RTCVideoFrame *)frame {
+#if !TARGET_OS_IPHONE
   // Generate the i420 frame on video send thread instead of main thread.
   // TODO(tkchin): Remove this once RTCEAGLVideoView supports uploading
-  // CVPixelBuffer textures.
+  // CVPixelBuffer textures on OSX.
   [frame convertBufferIfNeeded];
+#endif
   self.videoFrame = frame;
 }
 

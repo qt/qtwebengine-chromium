@@ -25,11 +25,11 @@ tr.exportTo('tr.ui.b', function() {
 
     decorate: function() {
       ChartBase2DBrushX.prototype.decorate.call(this);
-      this.classList.add('line-chart');
+      Polymer.dom(this).classList.add('line-chart');
     },
 
     isDatumFieldSeries_: function(fieldName) {
-      return fieldName != 'x';
+      return fieldName !== 'x';
     },
 
     getXForDatum_: function(datum, index) {
@@ -39,13 +39,14 @@ tr.exportTo('tr.ui.b', function() {
     updateDataContents_: function(dataSel) {
       dataSel.selectAll('*').remove();
       var dataBySeriesKey = this.getDataBySeriesKey_();
-      var pathsSel = dataSel.selectAll('path').data(this.seriesKeys_);
+      var seriesKeys = [...this.seriesByKey_.keys()];
+      var pathsSel = dataSel.selectAll('path').data(seriesKeys);
       pathsSel.enter()
           .append('path')
           .attr('class', 'line')
           .style('stroke', function(key) {
-              return tr.ui.b.getColorOfKey(key);
-            })
+              return this.getDataSeries(key).color;
+            }.bind(this))
           .attr('d', function(key) {
               var line = d3.svg.line()
                 .x(function(d) { return this.xScale_(d.x); }.bind(this))

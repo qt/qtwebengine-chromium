@@ -11,13 +11,14 @@
 #define GrPaint_DEFINED
 
 #include "GrColor.h"
+#include "GrColorSpaceXform.h"
 #include "GrXferProcessor.h"
 #include "effects/GrPorterDuffXferProcessor.h"
 #include "GrFragmentProcessor.h"
 
+#include "SkBlendMode.h"
 #include "SkRefCnt.h"
 #include "SkRegion.h"
-#include "SkXfermode.h"
 
 /**
  * The paint describes how color and coverage are computed at each pixel by GrContext draw
@@ -77,6 +78,11 @@ public:
     bool getAllowSRGBInputs() const { return fAllowSRGBInputs; }
 
     /**
+     * Does one of the fragment processors need a field of distance vectors to the nearest edge?
+     */
+    bool usesDistanceVectorField() const { return fUsesDistanceVectorField; }
+
+    /**
      * Should rendering be gamma-correct, end-to-end. Causes sRGB render targets to behave
      * as such (with linear blending), and sRGB inputs to be filtered and decoded correctly.
      */
@@ -89,17 +95,22 @@ public:
         fXPFactory = std::move(xpFactory);
     }
 
+    void setPorterDuffXPFactory(SkBlendMode mode) {
+        fXPFactory = GrPorterDuffXPFactory::Make((SkXfermode::Mode)mode);
+    }
+
     void setPorterDuffXPFactory(SkXfermode::Mode mode) {
         fXPFactory = GrPorterDuffXPFactory::Make(mode);
     }
 
-    void setCoverageSetOpXPFactory(SkRegion::Op regionOp, bool invertCoverage = false); 
+    void setCoverageSetOpXPFactory(SkRegion::Op, bool invertCoverage = false);
 
     /**
      * Appends an additional color processor to the color computation.
      */
     void addColorFragmentProcessor(sk_sp<GrFragmentProcessor> fp) {
         SkASSERT(fp);
+        fUsesDistanceVectorField |= fp->usesDistanceVectorField();
         fColorFragmentProcessors.push_back(std::move(fp));
     }
 
@@ -108,6 +119,7 @@ public:
      */
     void addCoverageFragmentProcessor(sk_sp<GrFragmentProcessor> fp) {
         SkASSERT(fp);
+        fUsesDistanceVectorField |= fp->usesDistanceVectorField();
         fCoverageFragmentProcessors.push_back(std::move(fp));
     }
 
@@ -115,9 +127,10 @@ public:
      * Helpers for adding color or coverage effects that sample a texture. The matrix is applied
      * to the src space position to compute texture coordinates.
      */
-    void addColorTextureProcessor(GrTexture*, const SkMatrix&);
+    void addColorTextureProcessor(GrTexture*, sk_sp<GrColorSpaceXform>, const SkMatrix&);
     void addCoverageTextureProcessor(GrTexture*, const SkMatrix&);
-    void addColorTextureProcessor(GrTexture*, const SkMatrix&, const GrTextureParams&);
+    void addColorTextureProcessor(GrTexture*, sk_sp<GrColorSpaceXform>, const SkMatrix&,
+                                  const GrTextureParams&);
     void addCoverageTextureProcessor(GrTexture*, const SkMatrix&, const GrTextureParams&);
 
     int numColorFragmentProcessors() const { return fColorFragmentProcessors.count(); }
@@ -140,6 +153,7 @@ public:
         fAntiAlias = paint.fAntiAlias;
         fDisableOutputConversionToSRGB = paint.fDisableOutputConversionToSRGB;
         fAllowSRGBInputs = paint.fAllowSRGBInputs;
+        fUsesDistanceVectorField = paint.fUsesDistanceVectorField;
 
         fColor = paint.fColor;
         fColorFragmentProcessors = paint.fColorFragmentProcessors;
@@ -156,9 +170,21 @@ public:
      * coverage and color, so the actual values written to pixels with partial coverage may still
      * not seem constant, even if this function returns true.
      */
-    bool isConstantBlendedColor(GrColor* constantColor) const;
+    bool isConstantBlendedColor(GrColor* constantColor) const {
+        GrColor paintColor = this->getColor();
+        if (!fXPFactory && fColorFragmentProcessors.empty()) {
+            if (!GrColorIsOpaque(paintColor)) {
+                return false;
+            }
+            *constantColor = paintColor;
+            return true;
+        }
+        return this->internalIsConstantBlendedColor(paintColor, constantColor);
+    }
 
 private:
+    bool internalIsConstantBlendedColor(GrColor paintColor, GrColor* constantColor) const;
+
     mutable sk_sp<GrXPFactory>                fXPFactory;
     SkSTArray<4, sk_sp<GrFragmentProcessor>>  fColorFragmentProcessors;
     SkSTArray<2, sk_sp<GrFragmentProcessor>>  fCoverageFragmentProcessors;
@@ -166,6 +192,7 @@ private:
     bool                                      fAntiAlias;
     bool                                      fDisableOutputConversionToSRGB;
     bool                                      fAllowSRGBInputs;
+    bool                                      fUsesDistanceVectorField;
 
     GrColor4f                                 fColor;
 };

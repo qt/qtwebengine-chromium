@@ -8,6 +8,8 @@
 #include "base/android/jni_android.h"
 #include "jni/MediaSessionDelegate_jni.h"
 
+using base::android::JavaParamRef;
+
 namespace content {
 
 // static
@@ -23,7 +25,7 @@ MediaSessionDelegateAndroid::MediaSessionDelegateAndroid(
 MediaSessionDelegateAndroid::~MediaSessionDelegateAndroid() {
   JNIEnv* env = base::android::AttachCurrentThread();
   DCHECK(env);
-  Java_MediaSessionDelegate_tearDown(env, j_media_session_delegate_.obj());
+  Java_MediaSessionDelegate_tearDown(env, j_media_session_delegate_);
 }
 
 void MediaSessionDelegateAndroid::Initialize() {
@@ -35,19 +37,20 @@ void MediaSessionDelegateAndroid::Initialize() {
       reinterpret_cast<intptr_t>(this)));
 }
 
-bool MediaSessionDelegateAndroid::RequestAudioFocus(MediaSession::Type type) {
+bool MediaSessionDelegateAndroid::RequestAudioFocus(
+    AudioFocusManager::AudioFocusType audio_focus_type) {
   JNIEnv* env = base::android::AttachCurrentThread();
   DCHECK(env);
   return Java_MediaSessionDelegate_requestAudioFocus(
-      env, j_media_session_delegate_.obj(),
-      type == MediaSession::Type::Transient);
+      env, j_media_session_delegate_,
+      audio_focus_type ==
+          AudioFocusManager::AudioFocusType::GainTransientMayDuck);
 }
 
 void MediaSessionDelegateAndroid::AbandonAudioFocus() {
   JNIEnv* env = base::android::AttachCurrentThread();
   DCHECK(env);
-  Java_MediaSessionDelegate_abandonAudioFocus(
-      env, j_media_session_delegate_.obj());
+  Java_MediaSessionDelegate_abandonAudioFocus(env, j_media_session_delegate_);
 }
 
 void MediaSessionDelegateAndroid::OnSuspend(
@@ -73,9 +76,12 @@ void MediaSessionDelegateAndroid::OnResume(
   media_session_->Resume(MediaSession::SuspendType::SYSTEM);
 }
 
-void MediaSessionDelegateAndroid::OnSetVolumeMultiplier(
-    JNIEnv*, jobject, jdouble volume_multiplier) {
-  media_session_->SetVolumeMultiplier(volume_multiplier);
+void MediaSessionDelegateAndroid::OnStartDucking(JNIEnv*, jobject) {
+  media_session_->StartDucking();
+}
+
+void MediaSessionDelegateAndroid::OnStopDucking(JNIEnv*, jobject) {
+  media_session_->StopDucking();
 }
 
 void MediaSessionDelegateAndroid::RecordSessionDuck(

@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef COMPONENTS_DATA_REDUCTION_PROXY_CORE_BROWSER_DATA_REDUCTION_PROXY_PARAMS_H_
-#define COMPONENTS_DATA_REDUCTION_PROXY_CORE_BROWSER_DATA_REDUCTION_PROXY_PARAMS_H_
+#ifndef COMPONENTS_DATA_REDUCTION_PROXY_CORE_COMMON_DATA_REDUCTION_PROXY_PARAMS_H_
+#define COMPONENTS_DATA_REDUCTION_PROXY_CORE_COMMON_DATA_REDUCTION_PROXY_PARAMS_H_
 
 #include <string>
 #include <vector>
 
 #include "base/macros.h"
+#include "base/strings/string_piece.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_config_values.h"
 #include "net/proxy/proxy_server.h"
 #include "url/gurl.h"
@@ -49,7 +50,7 @@ bool IsIncludedInTrustedSpdyProxyFieldTrial();
 
 // Returns true if this client is part of the field trial that should display
 // a promotion for the data reduction proxy on Android One devices.
-bool IsIncludedInAndroidOnePromoFieldTrial(const char* build_fingerprint);
+bool IsIncludedInAndroidOnePromoFieldTrial(base::StringPiece build_fingerprint);
 
 // Returns the name of the Lo-Fi field trial.
 const char* GetLoFiFieldTrialName();
@@ -68,7 +69,7 @@ bool IsIncludedInLoFiControlFieldTrial();
 
 // Returns true if this client is part of the "Preview" group of the Lo-Fi field
 // trial.
-bool IsIncludedInLoFiPreviewFieldTrial();
+bool IsIncludedInLitePageFieldTrial();
 
 // Returns true if this client is part of the field trial that should enable
 // server experiments for the data reduction proxy.
@@ -98,10 +99,10 @@ bool IsLoFiSlowConnectionsOnlyViaFlags();
 // mode.
 bool IsLoFiDisabledViaFlags();
 
-// Returns true if this client has the command line switch to enable Lo-Fi
-// previews. This means a preview should be requested instead of placeholders
-// whenever Lo-Fi mode is on.
-bool AreLoFiPreviewsEnabledViaFlags();
+// Returns true if this client has the command line switch to enable lite pages.
+// This means a preview should be requested instead of placeholders whenever
+// Lo-Fi mode is on.
+bool AreLitePagesEnabledViaFlags();
 
 // Returns true if this client has the command line switch to enable forced
 // pageload metrics pingbacks on every page load.
@@ -116,6 +117,9 @@ bool WarnIfNoDataReductionProxy();
 bool IsIncludedInQuicFieldTrial();
 
 const char* GetQuicFieldTrialName();
+
+// Returns true if zero RTT for QUIC is enabled.
+bool IsZeroRttQuicEnabled();
 
 // Returns true if the Data Reduction Proxy config client should be used.
 bool IsConfigClientEnabled();
@@ -252,4 +256,5 @@ class DataReductionProxyParams : public DataReductionProxyConfigValues {
 };
 
 }  // namespace data_reduction_proxy
-#endif  // COMPONENTS_DATA_REDUCTION_PROXY_CORE_BROWSER_DATA_REDUCTION_PROXY_PARAMS_H_
+
+#endif  // COMPONENTS_DATA_REDUCTION_PROXY_CORE_COMMON_DATA_REDUCTION_PROXY_PARAMS_H_

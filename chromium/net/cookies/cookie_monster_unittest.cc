@@ -98,7 +98,7 @@ bool CookieValuePredicate(const std::string& true_value,
 
 struct CookieMonsterTestTraits {
   static std::unique_ptr<CookieStore> Create() {
-    return base::WrapUnique(new CookieMonster(nullptr, nullptr));
+    return base::MakeUnique<CookieMonster>(nullptr, nullptr);
   }
 
   static const bool supports_http_only = true;
@@ -112,7 +112,7 @@ struct CookieMonsterTestTraits {
 
 struct CookieMonsterEnforcingStrictSecure {
   static std::unique_ptr<CookieStore> Create() {
-    return base::WrapUnique(new CookieMonster(nullptr, nullptr));
+    return base::MakeUnique<CookieMonster>(nullptr, nullptr);
   }
 
   static const bool supports_http_only = true;
@@ -405,7 +405,7 @@ class CookieMonsterTestBase : public CookieStoreTest<T> {
                            base::SPLIT_WANT_ALL)) {
       DCHECK(!token.empty());
 
-      bool is_secure = token[token.size() - 1] == 'S';
+      bool is_secure = token.back() == 'S';
 
       // The second-to-last character is the priority. Grab and discard it.
       CookiePriority priority = CharToPriority(token[token.size() - 2]);
@@ -787,9 +787,8 @@ class CookieMonsterTestBase : public CookieStoreTest<T> {
 
   bool IsCookieInList(const CanonicalCookie& cookie, const CookieList& list) {
     for (CookieList::const_iterator it = list.begin(); it != list.end(); ++it) {
-      if (it->Source() == cookie.Source() && it->Name() == cookie.Name() &&
-          it->Value() == cookie.Value() && it->Domain() == cookie.Domain() &&
-          it->Path() == cookie.Path() &&
+      if (it->Name() == cookie.Name() && it->Value() == cookie.Value() &&
+          it->Domain() == cookie.Domain() && it->Path() == cookie.Path() &&
           it->CreationDate() == cookie.CreationDate() &&
           it->ExpiryDate() == cookie.ExpiryDate() &&
           it->LastAccessDate() == cookie.LastAccessDate() &&
@@ -2534,7 +2533,7 @@ TEST_F(CookieMonsterTest, FlushStore) {
   ASSERT_EQ(0, counter->callback_count());
 
   // Before initialization, FlushStore() should just run the callback.
-  cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter.get()));
+  cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(0, store->flush_count());
@@ -2549,7 +2548,7 @@ TEST_F(CookieMonsterTest, FlushStore) {
 
   // After initialization, FlushStore() should delegate to the store.
   GetAllCookies(cm.get());  // Force init.
-  cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter.get()));
+  cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(1, store->flush_count());
@@ -2570,7 +2569,7 @@ TEST_F(CookieMonsterTest, FlushStore) {
 
   ASSERT_EQ(2, counter->callback_count());
 
-  cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter.get()));
+  cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(3, counter->callback_count());
@@ -3071,16 +3070,25 @@ TEST_F(CookieMonsterStrictSecureTest, SetSecureCookies) {
   EXPECT_TRUE(SetCookie(cm.get(), https_url, "A=C;"));
 
   // If a non-secure cookie is created from a URL with an insecure scheme, and
-  // a secure cookie with the same name already exists, no matter what the path
-  // is, do not update the cookie.
+  // a secure cookie with the same name already exists, do not update the cookie
+  // if the new cookie's path matches the existing cookie's path.
+  //
+  // With an existing cookie whose path is '/', a cookie with the same name
+  // cannot be set on the same domain, regardless of path:
   EXPECT_TRUE(SetCookie(cm.get(), https_url, "A=B; Secure"));
   EXPECT_FALSE(SetCookie(cm.get(), http_url, "A=C; path=/"));
   EXPECT_FALSE(SetCookie(cm.get(), http_url, "A=C; path=/my/path"));
 
-  EXPECT_TRUE(SetCookie(cm.get(), https_url, "A=B; Secure; path=/my/path"));
-  EXPECT_FALSE(SetCookie(cm.get(), http_url, "A=C"));
-  EXPECT_FALSE(SetCookie(cm.get(), http_url, "A=C; path=/"));
-  EXPECT_FALSE(SetCookie(cm.get(), http_url, "A=C; path=/my/path"));
+  // But if the existing cookie has a path somewhere under the root, cookies
+  // with the same name may be set for paths which don't overlap the existing
+  // cookie.
+  EXPECT_TRUE(
+      SetCookie(cm.get(), https_url, "WITH_PATH=B; Secure; path=/my/path"));
+  EXPECT_TRUE(SetCookie(cm.get(), http_url, "WITH_PATH=C"));
+  EXPECT_TRUE(SetCookie(cm.get(), http_url, "WITH_PATH=C; path=/"));
+  EXPECT_TRUE(SetCookie(cm.get(), http_url, "WITH_PATH=C; path=/your/path"));
+  EXPECT_FALSE(SetCookie(cm.get(), http_url, "WITH_PATH=C; path=/my/path"));
+  EXPECT_FALSE(SetCookie(cm.get(), http_url, "WITH_PATH=C; path=/my/path/sub"));
 
   // If a non-secure cookie is created from a URL with an insecure scheme, and
   // a secure cookie with the same name already exists, if the domain strings
@@ -3354,13 +3362,13 @@ class CookieMonsterNotificationTest : public CookieMonsterTest {
 };
 
 void RecordCookieChanges(std::vector<CanonicalCookie>* out_cookies,
-                         std::vector<bool>* out_removes,
+                         std::vector<CookieStore::ChangeCause>* out_causes,
                          const CanonicalCookie& cookie,
-                         bool removed) {
+                         CookieStore::ChangeCause cause) {
   DCHECK(out_cookies);
   out_cookies->push_back(cookie);
-  if (out_removes)
-    out_removes->push_back(removed);
+  if (out_causes)
+    out_causes->push_back(cause);
 }
 
 TEST_F(CookieMonsterNotificationTest, NoNotifyWithNoCookie) {
@@ -3387,50 +3395,50 @@ TEST_F(CookieMonsterNotificationTest, NoNotifyWithInitialCookie) {
 
 TEST_F(CookieMonsterNotificationTest, NotifyOnSet) {
   std::vector<CanonicalCookie> cookies;
-  std::vector<bool> removes;
+  std::vector<CookieStore::ChangeCause> causes;
   std::unique_ptr<CookieStore::CookieChangedSubscription> sub(
       monster()->AddCallbackForCookie(
           test_url_, "abc",
-          base::Bind(&RecordCookieChanges, &cookies, &removes)));
+          base::Bind(&RecordCookieChanges, &cookies, &causes)));
   SetCookie(monster(), test_url_, "abc=def");
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1U, cookies.size());
-  EXPECT_EQ(1U, removes.size());
+  EXPECT_EQ(1U, causes.size());
 
   EXPECT_EQ("abc", cookies[0].Name());
   EXPECT_EQ("def", cookies[0].Value());
-  EXPECT_FALSE(removes[0]);
+  EXPECT_EQ(CookieStore::ChangeCause::INSERTED, causes[0]);
 }
 
 TEST_F(CookieMonsterNotificationTest, NotifyOnDelete) {
   std::vector<CanonicalCookie> cookies;
-  std::vector<bool> removes;
+  std::vector<CookieStore::ChangeCause> causes;
   std::unique_ptr<CookieStore::CookieChangedSubscription> sub(
       monster()->AddCallbackForCookie(
           test_url_, "abc",
-          base::Bind(&RecordCookieChanges, &cookies, &removes)));
+          base::Bind(&RecordCookieChanges, &cookies, &causes)));
   SetCookie(monster(), test_url_, "abc=def");
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1U, cookies.size());
-  EXPECT_EQ(1U, removes.size());
+  EXPECT_EQ(1U, causes.size());
 
   DeleteCookie(monster(), test_url_, "abc");
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(2U, cookies.size());
-  EXPECT_EQ(2U, removes.size());
+  EXPECT_EQ(2U, causes.size());
 
   EXPECT_EQ("abc", cookies[1].Name());
   EXPECT_EQ("def", cookies[1].Value());
-  EXPECT_TRUE(removes[1]);
+  EXPECT_EQ(CookieStore::ChangeCause::EXPLICIT, causes[1]);
 }
 
 TEST_F(CookieMonsterNotificationTest, NotifyOnUpdate) {
   std::vector<CanonicalCookie> cookies;
-  std::vector<bool> removes;
+  std::vector<CookieStore::ChangeCause> causes;
   std::unique_ptr<CookieStore::CookieChangedSubscription> sub(
       monster()->AddCallbackForCookie(
           test_url_, "abc",
-          base::Bind(&RecordCookieChanges, &cookies, &removes)));
+          base::Bind(&RecordCookieChanges, &cookies, &causes)));
   SetCookie(monster(), test_url_, "abc=def");
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1U, cookies.size());
@@ -3441,15 +3449,15 @@ TEST_F(CookieMonsterNotificationTest, NotifyOnUpdate) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(3U, cookies.size());
-  EXPECT_EQ(3U, removes.size());
+  EXPECT_EQ(3U, causes.size());
 
   EXPECT_EQ("abc", cookies[1].Name());
   EXPECT_EQ("def", cookies[1].Value());
-  EXPECT_TRUE(removes[1]);
+  EXPECT_EQ(CookieStore::ChangeCause::OVERWRITE, causes[1]);
 
   EXPECT_EQ("abc", cookies[2].Name());
   EXPECT_EQ("ghi", cookies[2].Value());
-  EXPECT_FALSE(removes[2]);
+  EXPECT_EQ(CookieStore::ChangeCause::INSERTED, causes[2]);
 }
 
 TEST_F(CookieMonsterNotificationTest, MultipleNotifies) {

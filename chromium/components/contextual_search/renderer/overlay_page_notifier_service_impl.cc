@@ -11,14 +11,14 @@
 namespace contextual_search {
 
 OverlayPageNotifierServiceImpl::OverlayPageNotifierServiceImpl(
-    OverlayJsRenderFrameObserver* observer,
-    mojo::InterfaceRequest<mojom::OverlayPageNotifierService> request)
-    : binding_(this, std::move(request)), overlay_js_observer_(observer) {}
+    base::WeakPtr<OverlayJsRenderFrameObserver> observer)
+    : overlay_js_observer_(observer) {}
 
 OverlayPageNotifierServiceImpl::~OverlayPageNotifierServiceImpl() {}
 
 void OverlayPageNotifierServiceImpl::NotifyIsContextualSearchOverlay() {
-  overlay_js_observer_->SetIsContextualSearchOverlay();
+  if (overlay_js_observer_ != nullptr)
+    overlay_js_observer_->SetIsContextualSearchOverlay();
 }
 
 }  // namespace contextual_search

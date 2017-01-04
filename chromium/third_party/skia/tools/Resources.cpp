@@ -27,26 +27,25 @@ void SetResourcePath(const char* resource) {
 
 bool GetResourceAsBitmap(const char* resource, SkBitmap* dst) {
     SkString resourcePath = GetResourcePath(resource);
-    SkAutoTUnref<SkData> resourceData(SkData::NewFromFileName(resourcePath.c_str()));
-    SkAutoTDelete<SkImageGenerator> gen(SkImageGenerator::NewFromEncoded(resourceData));
+    sk_sp<SkData> resourceData(SkData::MakeFromFileName(resourcePath.c_str()));
+    SkAutoTDelete<SkImageGenerator> gen(SkImageGenerator::NewFromEncoded(resourceData.get()));
     return gen && gen->tryGenerateBitmap(dst);
 }
 
 sk_sp<SkImage> GetResourceAsImage(const char* resource) {
     SkString path = GetResourcePath(resource);
-    sk_sp<SkData> resourceData(SkData::NewFromFileName(path.c_str()));
+    sk_sp<SkData> resourceData(SkData::MakeFromFileName(path.c_str()));
     return SkImage::MakeFromEncoded(resourceData);
 }
 
 SkStreamAsset* GetResourceAsStream(const char* resource) {
     SkString resourcePath = GetResourcePath(resource);
     SkAutoTDelete<SkFILEStream> stream(new SkFILEStream(resourcePath.c_str()));
-    if (stream->isValid()) {
-        return stream.release();
-    } else {
+    if (!stream->isValid()) {
         SkDebugf("Resource %s not found.\n", resource);
         return nullptr;
     }
+    return stream.release();
 }
 
 sk_sp<SkTypeface> MakeResourceAsTypeface(const char* resource) {

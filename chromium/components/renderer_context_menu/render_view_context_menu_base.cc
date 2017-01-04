@@ -161,9 +161,8 @@ RenderViewContextMenuBase::RenderViewContextMenuBase(
       browser_context_(source_web_contents_->GetBrowserContext()),
       menu_model_(this),
       render_frame_id_(render_frame_host->GetRoutingID()),
-      command_executed_(false),
-      render_process_id_(render_frame_host->GetProcess()->GetID()) {
-}
+      render_process_id_(render_frame_host->GetProcess()->GetID()),
+      command_executed_(false) {}
 
 RenderViewContextMenuBase::~RenderViewContextMenuBase() {
 }
@@ -373,11 +372,12 @@ RenderFrameHost* RenderViewContextMenuBase::GetRenderFrameHost() {
 
 // Controller functions --------------------------------------------------------
 
-void RenderViewContextMenuBase::OpenURL(
-    const GURL& url, const GURL& referring_url,
-    WindowOpenDisposition disposition,
-    ui::PageTransition transition) {
-  OpenURLWithExtraHeaders(url, referring_url, disposition, transition, "");
+void RenderViewContextMenuBase::OpenURL(const GURL& url,
+                                        const GURL& referring_url,
+                                        WindowOpenDisposition disposition,
+                                        ui::PageTransition transition) {
+  OpenURLWithExtraHeaders(url, referring_url, disposition, transition, "",
+                          false);
 }
 
 void RenderViewContextMenuBase::OpenURLWithExtraHeaders(
@@ -385,16 +385,19 @@ void RenderViewContextMenuBase::OpenURLWithExtraHeaders(
     const GURL& referring_url,
     WindowOpenDisposition disposition,
     ui::PageTransition transition,
-    const std::string& extra_headers) {
+    const std::string& extra_headers,
+    bool started_from_context_menu) {
   content::Referrer referrer = content::Referrer::SanitizeForRequest(
       url,
       content::Referrer(referring_url.GetAsReferrer(),
                         params_.referrer_policy));
 
-  if (params_.link_url == url && disposition != OFF_THE_RECORD)
+  if (params_.link_url == url &&
+      disposition != WindowOpenDisposition::OFF_THE_RECORD)
     params_.custom_context.link_followed = url;
 
-  OpenURLParams open_url_params(url, referrer, disposition, transition, false);
+  OpenURLParams open_url_params(url, referrer, disposition, transition, false,
+                                started_from_context_menu);
   if (!extra_headers.empty())
     open_url_params.extra_headers = extra_headers;
 

@@ -20,6 +20,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/extensions/api/automation_api_constants.h"
 #include "chrome/common/extensions/api/automation_internal.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
 #include "chrome/common/extensions/manifest_handlers/automation.h"
@@ -51,7 +52,6 @@ namespace extensions {
 
 namespace {
 
-const int kDesktopTreeID = 0;
 const char kCannotRequestAutomationOnPage[] =
     "Cannot request automation tree on url \"*\". "
     "Extension manifest must request permission to access this host.";
@@ -203,10 +203,7 @@ class AutomationWebContentsObserver
   void AccessibilityEventReceived(
       const std::vector<content::AXEventNotificationDetails>& details)
       override {
-    std::vector<content::AXEventNotificationDetails>::const_iterator iter =
-        details.begin();
-    for (; iter != details.end(); ++iter) {
-      const content::AXEventNotificationDetails& event = *iter;
+    for (const auto& event : details) {
       ExtensionMsg_AccessibilityEventParams params;
       params.tree_id = event.ax_tree_id;
       params.id = event.id;
@@ -214,9 +211,23 @@ class AutomationWebContentsObserver
       params.update = event.update;
       params.location_offset =
           web_contents()->GetContainerBounds().OffsetFromOrigin();
+      params.event_from = event.event_from;
 
       AutomationEventRouter* router = AutomationEventRouter::GetInstance();
       router->DispatchAccessibilityEvent(params);
+    }
+  }
+
+  void AccessibilityLocationChangesReceived(
+      const std::vector<content::AXLocationChangeNotificationDetails>& details)
+      override {
+    for (const auto& src : details) {
+      ExtensionMsg_AccessibilityLocationChangeParams dst;
+      dst.id = src.id;
+      dst.tree_id = src.ax_tree_id;
+      dst.new_location = src.new_location;
+      AutomationEventRouter* router = AutomationEventRouter::GetInstance();
+      router->DispatchAccessibilityLocationChange(dst);
     }
   }
 
@@ -325,7 +336,7 @@ AutomationInternalPerformActionFunction::Run() {
   std::unique_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  if (params->args.tree_id == kDesktopTreeID) {
+  if (params->args.tree_id == api::automation::kDesktopTreeID) {
 #if defined(USE_AURA)
     return RouteActionToAdapter(params.get(),
                                 AutomationManagerAura::GetInstance());
@@ -422,7 +433,7 @@ AutomationInternalQuerySelectorFunction::Run() {
   std::unique_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  if (params->args.tree_id == kDesktopTreeID) {
+  if (params->args.tree_id == api::automation::kDesktopTreeID) {
     return RespondNow(
         Error("domQuerySelector queries may not be used on the desktop."));
   }

@@ -42,7 +42,7 @@ WebInspector.AppManifestView = function()
     this._orientationField = this._presentationSection.appendField(WebInspector.UIString("Orientation"));
     this._displayField = this._presentationSection.appendField(WebInspector.UIString("Display"));
 
-    WebInspector.targetManager.observeTargets(this);
+    WebInspector.targetManager.observeTargets(this, WebInspector.Target.Capability.DOM);
 }
 
 WebInspector.AppManifestView.prototype = {
@@ -52,12 +52,12 @@ WebInspector.AppManifestView.prototype = {
      */
     targetAdded: function(target)
     {
-        if (this._target)
+        if (this._resourceTreeModel)
             return;
-        this._target = target;
-
+        var resourceTreeModel = WebInspector.ResourceTreeModel.fromTarget(target);
+        this._resourceTreeModel = resourceTreeModel;
         this._updateManifest();
-        WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.MainFrameNavigated, this._updateManifest, this);
+        resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.Events.MainFrameNavigated, this._updateManifest, this);
     },
 
     /**
@@ -70,7 +70,7 @@ WebInspector.AppManifestView.prototype = {
 
     _updateManifest: function()
     {
-        this._target.resourceTreeModel.fetchAppManifest(this._renderManifest.bind(this));
+        this._resourceTreeModel.fetchAppManifest(this._renderManifest.bind(this));
     },
 
     /**
@@ -98,9 +98,11 @@ WebInspector.AppManifestView.prototype = {
             this._startURLField.appendChild(WebInspector.linkifyResourceAsNode(/** @type {string} */(WebInspector.ParsedURL.completeURL(url, startURL)), undefined, undefined, undefined, undefined, startURL));
 
         this._themeColorSwatch.classList.toggle("hidden", !stringProperty("theme_color"));
-        this._themeColorSwatch.setColorText(stringProperty("theme_color") || "white");
+        var themeColor = WebInspector.Color.parse(stringProperty("theme_color") || "white") || WebInspector.Color.parse("white");
+        this._themeColorSwatch.setColor(/** @type {!WebInspector.Color} */ (themeColor));
         this._backgroundColorSwatch.classList.toggle("hidden", !stringProperty("background_color"));
-        this._backgroundColorSwatch.setColorText(stringProperty("background_color") || "white");
+        var backgroundColor = WebInspector.Color.parse(stringProperty("background_color") || "white") || WebInspector.Color.parse("white");
+        this._backgroundColorSwatch.setColor(/** @type {!WebInspector.Color} */ (backgroundColor));
 
         this._orientationField.textContent = stringProperty("orientation");
         this._displayField.textContent = stringProperty("display");
@@ -132,7 +134,7 @@ WebInspector.AppManifestView.prototype = {
     _addToHomescreen: function()
     {
         var target = WebInspector.targetManager.mainTarget();
-        if (target && target.isPage()) {
+        if (target && target.hasBrowserCapability()) {
             target.pageAgent().requestAppBanner();
             WebInspector.console.show();
         }

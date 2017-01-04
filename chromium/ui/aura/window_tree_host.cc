@@ -24,7 +24,9 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point3_f.h"
 #include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/icc_profile.h"
 
 namespace aura {
 
@@ -67,6 +69,8 @@ void WindowTreeHost::InitCompositor() {
   compositor_->SetScaleAndSize(GetDeviceScaleFactorFromDisplay(window()),
                                GetBounds().size());
   compositor_->SetRootLayer(window()->layer());
+  compositor_->SetDisplayColorSpace(
+      GetICCProfileForCurrentDisplay().GetColorSpace());
 }
 
 void WindowTreeHost::AddObserver(WindowTreeHostObserver* observer) {
@@ -114,10 +118,11 @@ void WindowTreeHost::UpdateRootWindowSize(const gfx::Size& host_size) {
   gfx::Rect bounds(output_surface_padding_.left(),
                    output_surface_padding_.top(), host_size.width(),
                    host_size.height());
-  gfx::RectF new_bounds(ui::ConvertRectToDIP(window()->layer(), bounds));
+  float scale_factor = ui::GetDeviceScaleFactor(window()->layer());
+  gfx::RectF new_bounds =
+      gfx::ScaleRect(gfx::RectF(bounds), 1.0f / scale_factor);
   window()->layer()->transform().TransformRect(&new_bounds);
-  window()->SetBounds(gfx::Rect(gfx::ToFlooredPoint(new_bounds.origin()),
-                                gfx::ToFlooredSize(new_bounds.size())));
+  window()->SetBounds(gfx::ToEnclosingRect(new_bounds));
 }
 
 void WindowTreeHost::ConvertPointToNativeScreen(gfx::Point* point) const {
@@ -303,6 +308,12 @@ void WindowTreeHost::OnHostLostWindowCapture() {
   Window* capture_window = client::GetCaptureWindow(window());
   if (capture_window && capture_window->GetRootWindow() == window())
     capture_window->ReleaseCapture();
+}
+
+gfx::ICCProfile WindowTreeHost::GetICCProfileForCurrentDisplay() {
+  // TODO(hubbe): Get the color space from the *current* monitor and
+  // update it when window is moved or color space configuration changes.
+  return gfx::ICCProfile::FromBestMonitor();
 }
 
 ui::EventProcessor* WindowTreeHost::GetEventProcessor() {

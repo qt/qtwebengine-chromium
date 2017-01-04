@@ -42,131 +42,110 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebString.h"
 #include "public/web/WebElementCollection.h"
+#include "public/web/WebOptionElement.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-bool WebInputElement::isTextField() const
-{
-    return constUnwrap<HTMLInputElement>()->isTextField();
+bool WebInputElement::isTextField() const {
+  return constUnwrap<HTMLInputElement>()->isTextField();
 }
 
-bool WebInputElement::isText() const
-{
-    return constUnwrap<HTMLInputElement>()->isTextField() && constUnwrap<HTMLInputElement>()->type() != InputTypeNames::number;
+bool WebInputElement::isText() const {
+  return constUnwrap<HTMLInputElement>()->isTextField() &&
+         constUnwrap<HTMLInputElement>()->type() != InputTypeNames::number;
 }
 
-bool WebInputElement::isEmailField() const
-{
-    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::email;
+bool WebInputElement::isEmailField() const {
+  return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::email;
 }
 
-bool WebInputElement::isPasswordField() const
-{
-    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::password;
+bool WebInputElement::isPasswordField() const {
+  return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::password;
 }
 
-bool WebInputElement::isImageButton() const
-{
-    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::image;
+bool WebInputElement::isImageButton() const {
+  return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::image;
 }
 
-bool WebInputElement::isRadioButton() const
-{
-    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::radio;
+bool WebInputElement::isRadioButton() const {
+  return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::radio;
 }
 
-bool WebInputElement::isCheckbox() const
-{
-    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::checkbox;
+bool WebInputElement::isCheckbox() const {
+  return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::checkbox;
 }
 
-int WebInputElement::maxLength() const
-{
-    int maxLen = constUnwrap<HTMLInputElement>()->maxLength();
-    return maxLen == -1 ? HTMLInputElement::maximumLength : maxLen;
+int WebInputElement::maxLength() const {
+  int maxLen = constUnwrap<HTMLInputElement>()->maxLength();
+  return maxLen == -1 ? HTMLInputElement::maximumLength : maxLen;
 }
 
-void WebInputElement::setActivatedSubmit(bool activated)
-{
-    unwrap<HTMLInputElement>()->setActivatedSubmit(activated);
+void WebInputElement::setActivatedSubmit(bool activated) {
+  unwrap<HTMLInputElement>()->setActivatedSubmit(activated);
 }
 
-int WebInputElement::size() const
-{
-    return constUnwrap<HTMLInputElement>()->size();
+int WebInputElement::size() const {
+  return constUnwrap<HTMLInputElement>()->size();
 }
 
-void WebInputElement::setEditingValue(const WebString& value)
-{
-    unwrap<HTMLInputElement>()->setEditingValue(value);
+void WebInputElement::setEditingValue(const WebString& value) {
+  unwrap<HTMLInputElement>()->setEditingValue(value);
 }
 
-bool WebInputElement::isValidValue(const WebString& value) const
-{
-    return constUnwrap<HTMLInputElement>()->isValidValue(value);
+bool WebInputElement::isValidValue(const WebString& value) const {
+  return constUnwrap<HTMLInputElement>()->isValidValue(value);
 }
 
-void WebInputElement::setChecked(bool nowChecked, bool sendEvents)
-{
-    unwrap<HTMLInputElement>()->setChecked(nowChecked, sendEvents ? DispatchInputAndChangeEvent : DispatchNoEvent);
+void WebInputElement::setChecked(bool nowChecked, bool sendEvents) {
+  unwrap<HTMLInputElement>()->setChecked(
+      nowChecked, sendEvents ? DispatchInputAndChangeEvent : DispatchNoEvent);
 }
 
-bool WebInputElement::isChecked() const
-{
-    return constUnwrap<HTMLInputElement>()->checked();
+bool WebInputElement::isChecked() const {
+  return constUnwrap<HTMLInputElement>()->checked();
 }
 
-bool WebInputElement::isMultiple() const
-{
-    return constUnwrap<HTMLInputElement>()->multiple();
+bool WebInputElement::isMultiple() const {
+  return constUnwrap<HTMLInputElement>()->multiple();
 }
 
-WebElementCollection WebInputElement::dataListOptions() const
-{
-    if (HTMLDataListElement* dataList = toHTMLDataListElement(constUnwrap<HTMLInputElement>()->list()))
-        return WebElementCollection(dataList->options());
-    return WebElementCollection();
+WebVector<WebOptionElement> WebInputElement::filteredDataListOptions() const {
+  return WebVector<WebOptionElement>(
+      constUnwrap<HTMLInputElement>()->filteredDataListOptions());
 }
 
-WebString WebInputElement::localizeValue(const WebString& proposedValue) const
-{
-    return constUnwrap<HTMLInputElement>()->localizeValue(proposedValue);
+WebString WebInputElement::localizeValue(const WebString& proposedValue) const {
+  return constUnwrap<HTMLInputElement>()->localizeValue(proposedValue);
 }
 
-int WebInputElement::defaultMaxLength()
-{
-    return HTMLInputElement::maximumLength;
+int WebInputElement::defaultMaxLength() {
+  return HTMLInputElement::maximumLength;
 }
 
-void WebInputElement::setShouldRevealPassword(bool value)
-{
-    unwrap<HTMLInputElement>()->setShouldRevealPassword(value);
+void WebInputElement::setShouldRevealPassword(bool value) {
+  unwrap<HTMLInputElement>()->setShouldRevealPassword(value);
 }
 
 WebInputElement::WebInputElement(HTMLInputElement* elem)
-    : WebFormControlElement(elem)
-{
+    : WebFormControlElement(elem) {}
+
+DEFINE_WEB_NODE_TYPE_CASTS(WebInputElement,
+                           isHTMLInputElement(constUnwrap<Node>()));
+
+WebInputElement& WebInputElement::operator=(HTMLInputElement* elem) {
+  m_private = elem;
+  return *this;
 }
 
-DEFINE_WEB_NODE_TYPE_CASTS(WebInputElement, isHTMLInputElement(constUnwrap<Node>()));
-
-WebInputElement& WebInputElement::operator=(HTMLInputElement* elem)
-{
-    m_private = elem;
-    return *this;
+WebInputElement::operator HTMLInputElement*() const {
+  return toHTMLInputElement(m_private.get());
 }
 
-WebInputElement::operator HTMLInputElement*() const
-{
-    return toHTMLInputElement(m_private.get());
-}
+WebInputElement* toWebInputElement(WebElement* webElement) {
+  if (!isHTMLInputElement(*webElement->unwrap<Element>()))
+    return 0;
 
-WebInputElement* toWebInputElement(WebElement* webElement)
-{
-    if (!isHTMLInputElement(*webElement->unwrap<Element>()))
-        return 0;
-
-    return static_cast<WebInputElement*>(webElement);
+  return static_cast<WebInputElement*>(webElement);
 }
-} // namespace blink
+}  // namespace blink

@@ -12,10 +12,12 @@
 #include "base/android/library_loader/library_loader_hooks.h"
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
-#include "blimp/client/app/android/blimp_jni_registrar.h"
+#include "blimp/client/app/android/blimp_app_jni_registrar.h"
 #include "blimp/client/app/blimp_startup.h"
+#include "blimp/client/public/android/blimp_jni_registrar.h"
 #include "jni/BlimpLibraryLoader_jni.h"
 #include "net/android/net_jni_registrar.h"
+#include "ui/android/ui_android_jni_registrar.h"
 #include "ui/gl/gl_surface.h"
 
 namespace {
@@ -40,6 +42,12 @@ bool RegisterJni(JNIEnv* env) {
   if (!blimp::client::RegisterBlimpJni(env))
     return false;
 
+  if (!blimp::client::RegisterBlimpAppJni(env))
+    return false;
+
+  if (!ui::RegisterUIAndroidJni(env))
+    return false;
+
   return true;
 }
 
@@ -48,7 +56,8 @@ bool RegisterJni(JNIEnv* env) {
 namespace blimp {
 namespace client {
 
-static jboolean StartBlimp(JNIEnv* env, const JavaParamRef<jclass>& clazz) {
+static jboolean StartBlimp(JNIEnv* env,
+                           const base::android::JavaParamRef<jclass>& clazz) {
   if (!InitializeMainMessageLoop())
     return false;
 

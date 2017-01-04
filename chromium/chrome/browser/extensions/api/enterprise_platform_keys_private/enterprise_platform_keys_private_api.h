@@ -27,14 +27,11 @@ class Profile;
 
 namespace chromeos {
 class CryptohomeClient;
+class InstallAttributes;
 }
 
 namespace cryptohome {
 class AsyncMethodCaller;
-}
-
-namespace policy {
-class EnterpriseInstallAttributes;
 }
 
 namespace user_prefs {
@@ -72,7 +69,7 @@ class EPKPChallengeKeyBase {
       chromeos::CryptohomeClient* cryptohome_client,
       cryptohome::AsyncMethodCaller* async_caller,
       chromeos::attestation::AttestationFlow* attestation_flow,
-      policy::EnterpriseInstallAttributes* install_attributes);
+      chromeos::InstallAttributes* install_attributes);
   virtual ~EPKPChallengeKeyBase();
 
   // Returns a trusted value from CroSettings indicating if the device
@@ -86,8 +83,9 @@ class EPKPChallengeKeyBase {
   // Returns true if the extension is white-listed in the user policy.
   bool IsExtensionWhitelisted() const;
 
-  // Returns true if the user is enterprise managed.
-  bool IsUserManaged() const;
+  // Returns true if the user is managed and is affiliated with the domain the
+  // device is enrolled to.
+  bool IsUserAffiliated() const;
 
   // Returns the enterprise domain the device is enrolled to.
   std::string GetEnterpriseDomain() const;
@@ -160,7 +158,7 @@ class EPKPChallengeKeyBase {
       bool success,
       const std::string& pem_certificate_chain);
 
-  policy::EnterpriseInstallAttributes* install_attributes_;
+  chromeos::InstallAttributes* install_attributes_;
 };
 
 class EPKPChallengeMachineKey : public EPKPChallengeKeyBase {
@@ -173,7 +171,7 @@ class EPKPChallengeMachineKey : public EPKPChallengeKeyBase {
       chromeos::CryptohomeClient* cryptohome_client,
       cryptohome::AsyncMethodCaller* async_caller,
       chromeos::attestation::AttestationFlow* attestation_flow,
-      policy::EnterpriseInstallAttributes* install_attributes);
+      chromeos::InstallAttributes* install_attributes);
   ~EPKPChallengeMachineKey() override;
 
   // Asynchronously run the flow to challenge a machine key in the |caller|
@@ -208,7 +206,7 @@ class EPKPChallengeUserKey : public EPKPChallengeKeyBase {
       chromeos::CryptohomeClient* cryptohome_client,
       cryptohome::AsyncMethodCaller* async_caller,
       chromeos::attestation::AttestationFlow* attestation_flow,
-      policy::EnterpriseInstallAttributes* install_attributes);
+      chromeos::InstallAttributes* install_attributes);
   ~EPKPChallengeUserKey() override;
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);

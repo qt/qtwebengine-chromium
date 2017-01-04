@@ -148,10 +148,6 @@ class RenderViewContextMenuBase : public ui::SimpleMenuModel::Delegate,
   virtual void HandleAuthorizeAllPlugins() = 0;
 #endif
 
-  // Returns the accelerator for given |command_id|.
-  bool GetAcceleratorForCommandId(int command_id,
-                                  ui::Accelerator* accelerator) override = 0;
-
   // Subclasses should send notification.
   virtual void NotifyMenuShown() = 0;
   virtual void NotifyURLOpened(const GURL& url,
@@ -167,7 +163,8 @@ class RenderViewContextMenuBase : public ui::SimpleMenuModel::Delegate,
   bool IsCustomItemEnabled(int id) const;
 
   // Opens the specified URL string in a new tab.
-  void OpenURL(const GURL& url, const GURL& referrer,
+  void OpenURL(const GURL& url,
+               const GURL& referrer,
                WindowOpenDisposition disposition,
                ui::PageTransition transition);
 
@@ -176,7 +173,8 @@ class RenderViewContextMenuBase : public ui::SimpleMenuModel::Delegate,
                                const GURL& referrer,
                                WindowOpenDisposition disposition,
                                ui::PageTransition transition,
-                               const std::string& extra_headers);
+                               const std::string& extra_headers,
+                               bool started_from_context_menu);
 
   content::ContextMenuParams params_;
   content::WebContents* const source_web_contents_;
@@ -186,6 +184,9 @@ class RenderViewContextMenuBase : public ui::SimpleMenuModel::Delegate,
 
   // Renderer's frame id.
   const int render_frame_id_;
+
+  // The RenderFrameHost's IDs.
+  const int render_process_id_;
 
   // Our observers.
   mutable base::ObserverList<RenderViewContextMenuObserver> observers_;
@@ -198,9 +199,6 @@ class RenderViewContextMenuBase : public ui::SimpleMenuModel::Delegate,
 
  private:
   bool AppendCustomItems();
-
-  // The RenderFrameHost's IDs.
-  const int render_process_id_;
 
   std::unique_ptr<ToolkitDelegate> toolkit_delegate_;
 

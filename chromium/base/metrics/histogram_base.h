@@ -92,7 +92,7 @@ class BASE_EXPORT HistogramBase {
   static const Sample kSampleType_MAX;  // INT_MAX
 
   enum Flags {
-    kNoFlags = 0,
+    kNoFlags = 0x0,
 
     // Histogram should be UMA uploaded.
     kUmaTargetedHistogramFlag = 0x1,
@@ -121,9 +121,6 @@ class BASE_EXPORT HistogramBase {
     // MemoryAllocator, and that loaded into the Histogram module before this
     // histogram is created.
     kIsPersistent = 0x40,
-
-    // Only for Histogram and its sub classes: fancy bucket-naming support.
-    kHexRangePrintingFlag = 0x8000,
   };
 
   // Histogram data inconsistency types.
@@ -135,10 +132,6 @@ class BASE_EXPORT HistogramBase {
     COUNT_LOW_ERROR = 0x8,
 
     NEVER_EXCEEDED_VALUE = 0x10,
-
-    // This value is used only in HistogramSnapshotManager for marking
-    // internally when new inconsistencies are found.
-    NEW_INCONSISTENCY_FOUND = 0x8000000
   };
 
   explicit HistogramBase(const std::string& name);

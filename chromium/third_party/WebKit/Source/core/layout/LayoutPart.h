@@ -31,56 +31,63 @@ namespace blink {
 
 // LayoutObject for frames via LayoutFrame and LayoutIFrame, and plugins via LayoutEmbeddedObject.
 class CORE_EXPORT LayoutPart : public LayoutReplaced {
-public:
-    explicit LayoutPart(Element*);
-    ~LayoutPart() override;
+ public:
+  explicit LayoutPart(Element*);
+  ~LayoutPart() override;
 
-    bool requiresAcceleratedCompositing() const;
+  bool requiresAcceleratedCompositing() const;
 
-    bool needsPreferredWidthsRecalculation() const final;
+  bool needsPreferredWidthsRecalculation() const final;
 
-    bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+  bool nodeAtPoint(HitTestResult&,
+                   const HitTestLocation& locationInContainer,
+                   const LayoutPoint& accumulatedOffset,
+                   HitTestAction) override;
 
-    void ref() { ++m_refCount; }
-    void deref();
+  void ref() { ++m_refCount; }
+  void deref();
 
-    Widget* widget() const;
+  Widget* widget() const;
 
-    void updateOnWidgetChange();
-    void updateWidgetGeometry();
+  LayoutRect replacedContentRect() const final;
 
-    bool isLayoutPart() const final { return true; }
-    virtual void paintContents(const PaintInfo&, const LayoutPoint&) const;
+  void updateOnWidgetChange();
+  void updateWidgetGeometry();
 
-    bool isThrottledFrameView() const;
+  bool isLayoutPart() const final { return true; }
+  virtual void paintContents(const PaintInfo&, const LayoutPoint&) const;
 
-protected:
-    PaintLayerType layerTypeRequired() const override;
+  bool isThrottledFrameView() const;
 
-    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) final;
-    void layout() override;
-    void paint(const PaintInfo&, const LayoutPoint&) const override;
-    CursorDirective getCursor(const LayoutPoint&, Cursor&) const final;
+ protected:
+  PaintLayerType layerTypeRequired() const override;
 
-    // Overridden to invalidate the child frame if any.
-    void invalidatePaintOfSubtreesIfNeeded(const PaintInvalidationState&) override;
+  void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) final;
+  void layout() override;
+  void paint(const PaintInfo&, const LayoutPoint&) const override;
+  CursorDirective getCursor(const LayoutPoint&, Cursor&) const final;
 
-private:
-    void updateWidgetGeometryInternal();
-    CompositingReasons additionalCompositingReasons() const override;
+  // Overridden to invalidate the child frame if any.
+  void invalidatePaintOfSubtreesIfNeeded(
+      const PaintInvalidationState&) override;
 
-    void willBeDestroyed() final;
-    void destroy() final;
+ private:
+  void updateWidgetGeometryInternal();
+  CompositingReasons additionalCompositingReasons() const override;
 
-    void setWidgetGeometry(const LayoutRect&);
+  void willBeDestroyed() final;
+  void destroy() final;
 
-    bool nodeAtPointOverWidget(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
+  bool nodeAtPointOverWidget(HitTestResult&,
+                             const HitTestLocation& locationInContainer,
+                             const LayoutPoint& accumulatedOffset,
+                             HitTestAction);
 
-    int m_refCount;
+  int m_refCount;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutPart, isLayoutPart());
 
-} // namespace blink
+}  // namespace blink
 
-#endif // LayoutPart_h
+#endif  // LayoutPart_h

@@ -14,7 +14,7 @@ void ArrayBufferTracker::RegisterNew(Heap* heap, JSArrayBuffer* buffer) {
   void* data = buffer->backing_store();
   if (!data) return;
 
-  size_t length = NumberToSize(heap->isolate(), buffer->byte_length());
+  size_t length = NumberToSize(buffer->byte_length());
   Page* page = Page::FromAddress(buffer->address());
   {
     base::LockGuard<base::Mutex> guard(page->mutex());
@@ -24,7 +24,7 @@ void ArrayBufferTracker::RegisterNew(Heap* heap, JSArrayBuffer* buffer) {
       tracker = page->local_tracker();
     }
     DCHECK_NOT_NULL(tracker);
-    tracker->Add(buffer, std::make_pair(data, length));
+    tracker->Add(buffer, length);
   }
   // We may go over the limit of externally allocated memory here. We call the
   // api function to trigger a GC in this case.
@@ -42,7 +42,7 @@ void ArrayBufferTracker::Unregister(Heap* heap, JSArrayBuffer* buffer) {
     base::LockGuard<base::Mutex> guard(page->mutex());
     LocalArrayBufferTracker* tracker = page->local_tracker();
     DCHECK_NOT_NULL(tracker);
-    length = tracker->Remove(buffer).second;
+    length = tracker->Remove(buffer);
   }
   heap->update_external_memory(-static_cast<intptr_t>(length));
 }
@@ -56,7 +56,8 @@ void LocalArrayBufferTracker::Add(Key key, const Value& value) {
 }
 
 LocalArrayBufferTracker::Value LocalArrayBufferTracker::Remove(Key key) {
-  TrackingMap::iterator it = array_buffers_.find(key);
+  TrackingData::iterator it = array_buffers_.find(key);
+  // Check that we indeed find a key to remove.
   DCHECK(it != array_buffers_.end());
   Value value = it->second;
   array_buffers_.erase(it);

@@ -5,7 +5,7 @@
 #include "ui/views/mus/window_tree_host_mus.h"
 
 #include "base/memory/ptr_util.h"
-#include "components/mus/public/cpp/window.h"
+#include "services/ui/public/cpp/window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event.h"
@@ -23,7 +23,7 @@ static uint32_t accelerated_widget_count = 1;
 // WindowTreeHostMus, public:
 
 WindowTreeHostMus::WindowTreeHostMus(NativeWidgetMus* native_widget,
-                                     mus::Window* window)
+                                     ui::Window* window)
     : native_widget_(native_widget) {
 // We need accelerated widget numbers to be different for each
 // window and fit in the smallest sizeof(AcceleratedWidget) uint32_t
@@ -38,11 +38,13 @@ WindowTreeHostMus::WindowTreeHostMus(NativeWidgetMus* native_widget,
   // TODO(markdittmer): Use correct device-scale-factor from |window|.
   OnAcceleratedWidgetAvailable(accelerated_widget, 1.f);
 
-  SetPlatformWindow(base::WrapUnique(new ui::StubWindow(
+  SetPlatformWindow(base::MakeUnique<ui::StubWindow>(
       this,
-      false)));  // Do not advertise accelerated widget; already set manually.
+      false));  // Do not advertise accelerated widget; already set manually.
 
-  // Initialize the stub platform window bounds to those of the mus::Window.
+  compositor()->SetWindow(window);
+
+  // Initialize the stub platform window bounds to those of the ui::Window.
   platform_window()->SetBounds(window->bounds());
 
   // The location of events is already transformed, and there is no way to
@@ -52,7 +54,7 @@ WindowTreeHostMus::WindowTreeHostMus(NativeWidgetMus* native_widget,
   dispatcher()->set_transform_events(false);
   compositor()->SetHostHasTransparentBackground(true);
 
-  input_method_.reset(new InputMethodMUS(this, window));
+  input_method_ = base::MakeUnique<InputMethodMus>(this, window);
   SetSharedInputMethod(input_method_.get());
 }
 
@@ -61,10 +63,13 @@ WindowTreeHostMus::~WindowTreeHostMus() {
   DestroyDispatcher();
 }
 
+void WindowTreeHostMus::InitInputMethod(shell::Connector* connector) {
+  input_method_->Init(connector);
+}
+
 void WindowTreeHostMus::DispatchEvent(ui::Event* event) {
   if (event->IsKeyEvent() && GetInputMethod()) {
     GetInputMethod()->DispatchKeyEvent(event->AsKeyEvent());
-    event->StopPropagation();
     return;
   }
   WindowTreeHostPlatform::DispatchEvent(event);
@@ -87,6 +92,11 @@ void WindowTreeHostMus::OnActivationChanged(bool active) {
 
 void WindowTreeHostMus::OnCloseRequest() {
   OnHostCloseRequested();
+}
+
+gfx::ICCProfile WindowTreeHostMus::GetICCProfileForCurrentDisplay() {
+  // TODO: This should read the profile from mus. crbug.com/647510
+  return gfx::ICCProfile();
 }
 
 }  // namespace views

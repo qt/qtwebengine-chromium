@@ -8,8 +8,6 @@
 #include "base/macros.h"
 #include "cc/base/cc_export.h"
 #include "cc/input/top_controls_state.h"
-#include "cc/output/output_surface.h"
-#include "cc/output/renderer_capabilities.h"
 #include "cc/trees/channel_main.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/proxy_common.h"
@@ -20,7 +18,8 @@ namespace cc {
 class AnimationEvents;
 class BeginFrameSource;
 class ChannelMain;
-class LayerTreeHost;
+class CompositorFrameSink;
+class LayerTreeHostInProcess;
 class LayerTreeMutator;
 
 // This class aggregates all interactions that the impl side of the compositor
@@ -29,12 +28,12 @@ class LayerTreeMutator;
 class CC_EXPORT ProxyMain : public Proxy {
  public:
   static std::unique_ptr<ProxyMain> CreateThreaded(
-      LayerTreeHost* layer_tree_host,
+      LayerTreeHostInProcess* layer_tree_host,
       TaskRunnerProvider* task_runner_provider);
 
   static std::unique_ptr<ProxyMain> CreateRemote(
       RemoteProtoChannel* remote_proto_channel,
-      LayerTreeHost* layer_tree_host,
+      LayerTreeHostInProcess* layer_tree_host,
       TaskRunnerProvider* task_runner_provider);
 
   ~ProxyMain() override;
@@ -49,20 +48,15 @@ class CC_EXPORT ProxyMain : public Proxy {
     COMMIT_PIPELINE_STAGE,
   };
 
-  // Virtual for testing.
-  virtual void DidCompleteSwapBuffers();
-  virtual void SetRendererCapabilities(
-      const RendererCapabilities& capabilities);
-  virtual void BeginMainFrameNotExpectedSoon();
-  virtual void DidCommitAndDrawFrame();
-  virtual void SetAnimationEvents(std::unique_ptr<AnimationEvents> events);
-  virtual void DidLoseOutputSurface();
-  virtual void RequestNewOutputSurface();
-  virtual void DidInitializeOutputSurface(
-      bool success,
-      const RendererCapabilities& capabilities);
-  virtual void DidCompletePageScaleAnimation();
-  virtual void BeginMainFrame(
+  void DidCompleteSwapBuffers();
+  void BeginMainFrameNotExpectedSoon();
+  void DidCommitAndDrawFrame();
+  void SetAnimationEvents(std::unique_ptr<AnimationEvents> events);
+  void DidLoseCompositorFrameSink();
+  void RequestNewCompositorFrameSink();
+  void DidInitializeCompositorFrameSink(bool success);
+  void DidCompletePageScaleAnimation();
+  void BeginMainFrame(
       std::unique_ptr<BeginMainFrameAndCommitState> begin_main_frame_state);
 
   ChannelMain* channel_main() const { return channel_main_.get(); }
@@ -77,19 +71,18 @@ class CC_EXPORT ProxyMain : public Proxy {
   }
 
  protected:
-  ProxyMain(LayerTreeHost* layer_tree_host,
+  ProxyMain(LayerTreeHostInProcess* layer_tree_host,
             TaskRunnerProvider* task_runner_provider);
 
  private:
   friend class ProxyMainForTest;
 
   // Proxy implementation.
-  void FinishAllRendering() override;
   bool IsStarted() const override;
   bool CommitToActiveTree() const override;
-  void SetOutputSurface(OutputSurface* output_surface) override;
+  void SetCompositorFrameSink(
+      CompositorFrameSink* compositor_frame_sink) override;
   void SetVisible(bool visible) override;
-  const RendererCapabilities& GetRendererCapabilities() const override;
   void SetNeedsAnimate() override;
   void SetNeedsUpdateLayers() override;
   void SetNeedsCommit() override;
@@ -100,13 +93,12 @@ class CC_EXPORT ProxyMain : public Proxy {
   bool CommitRequested() const override;
   bool BeginMainFrameRequested() const override;
   void MainThreadHasStoppedFlinging() override;
-  void Start(
-      std::unique_ptr<BeginFrameSource> external_begin_frame_source) override;
+  void Start() override;
   void Stop() override;
   bool SupportsImplScrolling() const override;
   void SetMutator(std::unique_ptr<LayerTreeMutator> mutator) override;
   bool MainFrameWillHappenForTesting() override;
-  void ReleaseOutputSurface() override;
+  void ReleaseCompositorFrameSink() override;
   void UpdateTopControlsState(TopControlsState constraints,
                               TopControlsState current,
                               bool animate) override;
@@ -120,7 +112,7 @@ class CC_EXPORT ProxyMain : public Proxy {
       CommitPipelineStage required_stage);
   bool IsMainThread() const;
 
-  LayerTreeHost* layer_tree_host_;
+  LayerTreeHostInProcess* layer_tree_host_;
 
   TaskRunnerProvider* task_runner_provider_;
 
@@ -143,8 +135,6 @@ class CC_EXPORT ProxyMain : public Proxy {
   bool started_;
 
   bool defer_commits_;
-
-  RendererCapabilities renderer_capabilities_;
 
   std::unique_ptr<ChannelMain> channel_main_;
 

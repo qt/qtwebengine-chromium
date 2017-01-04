@@ -5,6 +5,7 @@
 #ifndef SANDBOX_WIN_SRC_SANDBOX_TYPES_H_
 #define SANDBOX_WIN_SRC_SANDBOX_TYPES_H_
 
+#include "base/process/kill.h"
 #include "base/process/launch.h"
 
 namespace sandbox {
@@ -103,6 +104,8 @@ enum ResultCode : int {
   SBOX_ERROR_CANNOT_RESOLVE_INTERCEPTION_THUNK = 41,
   // Cannot write interception thunk to child process.
   SBOX_ERROR_CANNOT_WRITE_INTERCEPTION_THUNK = 42,
+  // Cannot find the base address of the new process.
+  SBOX_ERROR_CANNOT_FIND_BASE_ADDRESS = 43,
   // Placeholder for last item of the enum.
   SBOX_ERROR_LAST
 };
@@ -120,6 +123,10 @@ enum TerminationCodes {
   SBOX_FATAL_WARMUP = 7013,           // Failed to warmup.
   SBOX_FATAL_LAST
 };
+
+static_assert(SBOX_FATAL_MEMORY_EXCEEDED ==
+                  base::win::kSandboxFatalMemoryExceeded,
+              "Value for SBOX_FATAL_MEMORY_EXCEEDED must match base.");
 
 class BrokerServices;
 class TargetServices;

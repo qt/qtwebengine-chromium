@@ -72,20 +72,14 @@ class VideoCodingModule : public Module {
 
   enum ReceiverRobustness { kNone, kHardNack, kSoftNack, kReferenceSelection };
 
-  static VideoCodingModule* Create(
-      Clock* clock,
-      VideoEncoderRateObserver* encoder_rate_observer,
-      VCMQMSettingsCallback* qm_settings_callback);
+  static VideoCodingModule* Create(Clock* clock, EventFactory* event_factory);
 
   static VideoCodingModule* Create(
       Clock* clock,
-      VideoEncoderRateObserver* encoder_rate_observer,
       VCMQMSettingsCallback* qm_settings_callback,
       NackSender* nack_sender,
       KeyFrameRequestSender* keyframe_request_sender,
       EncodedImageCallback* pre_decode_image_callback);
-
-  static VideoCodingModule* Create(Clock* clock, EventFactory* event_factory);
 
   static VideoCodingModule* Create(
       Clock* clock,
@@ -471,15 +465,6 @@ class VideoCodingModule : public Module {
   // Setting a desired delay to the VCM receiver. Video rendering will be
   // delayed by at least desired_delay_ms.
   virtual int SetMinReceiverDelay(int desired_delay_ms) = 0;
-
-  // Lets the sender suspend video when the rate drops below
-  // |threshold_bps|, and turns back on when the rate goes back up above
-  // |threshold_bps| + |window_bps|.
-  virtual void SuspendBelowMinBitrate() = 0;
-
-  // Returns true if SuspendBelowMinBitrate is engaged and the video has been
-  // suspended due to bandwidth limitations; otherwise false.
-  virtual bool VideoSuspended() const = 0;
 
   virtual void RegisterPostEncodeImageCallback(
       EncodedImageCallback* post_encode_callback) = 0;

@@ -10,17 +10,14 @@
 #include <memory>
 
 #include "xfa/fxfa/app/xfa_ffnotify.h"
+#include "xfa/fxfa/parser/cxfa_containerlayoutitem.h"
+#include "xfa/fxfa/parser/cxfa_contentlayoutitem.h"
+#include "xfa/fxfa/parser/cxfa_document.h"
+#include "xfa/fxfa/parser/cxfa_layoutpagemgr.h"
+#include "xfa/fxfa/parser/cxfa_measurement.h"
 #include "xfa/fxfa/parser/cxfa_occur.h"
-#include "xfa/fxfa/parser/xfa_doclayout.h"
-#include "xfa/fxfa/parser/xfa_document.h"
-#include "xfa/fxfa/parser/xfa_document_layout_imp.h"
-#include "xfa/fxfa/parser/xfa_layout_appadapter.h"
-#include "xfa/fxfa/parser/xfa_layout_pagemgr_new.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
 #include "xfa/fxfa/parser/xfa_object.h"
-#include "xfa/fxfa/parser/xfa_parser.h"
-#include "xfa/fxfa/parser/xfa_parser_imp.h"
-#include "xfa/fxfa/parser/xfa_script.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
 namespace {
@@ -92,7 +89,6 @@ CXFA_ContentLayoutItem* CXFA_ItemLayoutProcessor::CreateContentLayoutItem(
     return pLayoutItem;
   }
   pLayoutItem = (CXFA_ContentLayoutItem*)pFormNode->GetDocument()
-                    ->GetParser()
                     ->GetNotify()
                     ->OnCreateLayoutItem(pFormNode);
   CXFA_ContentLayoutItem* pPrevLayoutItem =
@@ -122,7 +118,7 @@ FX_BOOL CXFA_ItemLayoutProcessor::FindLayoutItemSplitPos(
       case XFA_ATTRIBUTEENUM_None: {
         FX_BOOL bAnyChanged = FALSE;
         CXFA_Document* pDocument = pFormNode->GetDocument();
-        CXFA_FFNotify* pNotify = pDocument->GetParser()->GetNotify();
+        CXFA_FFNotify* pNotify = pDocument->GetNotify();
         FX_FLOAT fCurTopMargin = 0, fCurBottomMargin = 0;
         CXFA_Node* pMarginNode =
             pFormNode->GetFirstChildByClass(XFA_Element::Margin);
@@ -585,7 +581,7 @@ CXFA_ContentLayoutItem* CXFA_ItemLayoutProcessor::ExtractLayoutItem() {
   if (m_pOldLayoutItem->m_pPrev)
     m_pOldLayoutItem->m_pPrev->m_pNext = nullptr;
   CXFA_FFNotify* pNotify =
-      m_pOldLayoutItem->m_pFormNode->GetDocument()->GetParser()->GetNotify();
+      m_pOldLayoutItem->m_pFormNode->GetDocument()->GetNotify();
   CXFA_LayoutProcessor* pDocLayout =
       m_pOldLayoutItem->m_pFormNode->GetDocument()->GetDocLayout();
   CXFA_ContentLayoutItem* pOldLayoutItem = m_pOldLayoutItem;
@@ -647,8 +643,7 @@ static FX_BOOL XFA_ItemLayoutProcessor_FindBreakNode(
   return bFindRs;
 }
 static void XFA_DeleteLayoutGeneratedNode(CXFA_Node* pGenerateNode) {
-  CXFA_FFNotify* pNotify =
-      pGenerateNode->GetDocument()->GetParser()->GetNotify();
+  CXFA_FFNotify* pNotify = pGenerateNode->GetDocument()->GetNotify();
   CXFA_LayoutProcessor* pDocLayout =
       pGenerateNode->GetDocument()->GetDocLayout();
   CXFA_NodeIteratorTemplate<CXFA_Node, CXFA_TraverseStrategy_XFANode> sIterator(
@@ -1233,8 +1228,8 @@ static inline void XFA_ItemLayoutProcessor_UpdateWidgetSize(
     }
     case XFA_Element::Draw:
     case XFA_Element::Field: {
-      pNode->GetDocument()->GetParser()->GetNotify()->StartFieldDrawLayout(
-          pNode, fWidth, fHeight);
+      pNode->GetDocument()->GetNotify()->StartFieldDrawLayout(pNode, fWidth,
+                                                              fHeight);
       break;
     }
     default:
@@ -2896,7 +2891,7 @@ void CXFA_ItemLayoutProcessor::DoLayoutField() {
     return;
   }
   CXFA_Document* pDocument = m_pFormNode->GetDocument();
-  CXFA_FFNotify* pNotify = pDocument->GetParser()->GetNotify();
+  CXFA_FFNotify* pNotify = pDocument->GetNotify();
   FX_FLOAT fHeight = -1;
   FX_FLOAT fWidth = -1;
   pNotify->StartFieldDrawLayout(m_pFormNode, fWidth, fHeight);

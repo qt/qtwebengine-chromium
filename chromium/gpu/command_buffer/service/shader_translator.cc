@@ -161,8 +161,7 @@ ShaderTranslator::DestructionObserver::~DestructionObserver() {
 
 ShaderTranslator::ShaderTranslator()
     : compiler_(NULL),
-      driver_bug_workarounds_(static_cast<ShCompileOptions>(0)),
-      gl_shader_interm_output_(false) {
+      compile_options_(0) {
 }
 
 bool ShaderTranslator::Init(GLenum shader_type,
@@ -186,23 +185,28 @@ bool ShaderTranslator::Init(GLenum shader_type,
     compiler_ = ShConstructCompiler(shader_type, shader_spec,
                                     shader_output_language, resources);
   }
-  driver_bug_workarounds_ = driver_bug_workarounds;
-  gl_shader_interm_output_ = gl_shader_interm_output;
-  return compiler_ != NULL;
-}
 
-int ShaderTranslator::GetCompileOptions() const {
-  int compile_options =
+  compile_options_ =
       SH_OBJECT_CODE | SH_VARIABLES | SH_ENFORCE_PACKING_RESTRICTIONS |
       SH_LIMIT_EXPRESSION_COMPLEXITY | SH_LIMIT_CALL_STACK_DEPTH |
       SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
+  if (gl_shader_interm_output)
+    compile_options_ |= SH_INTERMEDIATE_TREE;
+  compile_options_ |= driver_bug_workarounds;
+  switch (shader_spec) {
+    case SH_WEBGL_SPEC:
+    case SH_WEBGL2_SPEC:
+      compile_options_ |= SH_INIT_OUTPUT_VARIABLES;
+      break;
+    default:
+      break;
+  }
 
-  if (gl_shader_interm_output_)
-    compile_options |= SH_INTERMEDIATE_TREE;
+  return compiler_ != NULL;
+}
 
-  compile_options |= driver_bug_workarounds_;
-
-  return compile_options;
+ShCompileOptions ShaderTranslator::GetCompileOptions() const {
+  return compile_options_;
 }
 
 bool ShaderTranslator::Translate(const std::string& shader_source,
@@ -257,7 +261,7 @@ std::string ShaderTranslator::GetStringForOptionsThatWouldAffectCompilation()
     const {
   DCHECK(compiler_ != NULL);
   return std::string(":CompileOptions:" +
-         base::IntToString(GetCompileOptions())) +
+         base::Uint64ToString(GetCompileOptions())) +
          ShGetBuiltInResourcesString(compiler_);
 }
 

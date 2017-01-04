@@ -28,7 +28,6 @@
 #include "SkSurface.h"
 #include "SkTextBlob.h"
 #include "SkTypeface.h"
-#include "SkXfermode.h"
 
 extern "C" {
     #include "lua.h"
@@ -59,7 +58,6 @@ DEF_MTNAME(SkShader)
 DEF_MTNAME(SkSurface)
 DEF_MTNAME(SkTextBlob)
 DEF_MTNAME(SkTypeface)
-DEF_MTNAME(SkXfermode)
 
 template <typename T> T* push_new(lua_State* L) {
     T* addr = (T*)lua_newuserdata(L, sizeof(T));
@@ -219,6 +217,11 @@ static void setarray_number(lua_State* L, int index, double value) {
 
 static void setarray_scalar(lua_State* L, int index, SkScalar value) {
     setarray_number(L, index, SkScalarToLua(value));
+}
+
+static void setarray_string(lua_State* L, int index, const char str[]) {
+    lua_pushstring(L, str);
+    lua_rawseti(L, -2, index);
 }
 
 void SkLua::pushBool(bool value, const char key[]) {
@@ -400,7 +403,7 @@ void SkLua::pushClipStackElement(const SkClipStack::Element& element, const char
             this->pushPath(element.getPath(), "path");
             break;
     }
-    this->pushString(region_op(element.getOp()), "op");
+    this->pushString(region_op((SkRegion::Op)element.getOp()), "op");
     this->pushBool(element.isAA(), "aa");
     CHECK_SETFIELD(key);
 }
@@ -638,24 +641,10 @@ static int lcanvas_getClipStack(lua_State* L) {
 int SkLua::lcanvas_getReducedClipStack(lua_State* L) {
 #if SK_SUPPORT_GPU
     const SkCanvas* canvas = get_ref<SkCanvas>(L, 1);
-    SkIRect queryBounds = canvas->getTopLayerBounds();
+    SkRect queryBounds = SkRect::Make(canvas->getTopLayerBounds());
+    const GrReducedClip reducedClip(*canvas->getClipStack(), queryBounds);
 
-    GrReducedClip::ElementList elements;
-    GrReducedClip::InitialState initialState;
-    int32_t genID;
-    SkIRect resultBounds;
-
-    const SkClipStack& stack = *canvas->getClipStack();
-
-    GrReducedClip::ReduceClipStack(stack,
-                                   queryBounds,
-                                   &elements,
-                                   &genID,
-                                   &initialState,
-                                   &resultBounds,
-                                   nullptr);
-
-    GrReducedClip::ElementList::Iter iter(elements);
+    GrReducedClip::ElementList::Iter iter(reducedClip.elements());
     int i = 0;
     lua_newtable(L);
     while(iter.get()) {
@@ -1082,24 +1071,7 @@ static int lpaint_getEffects(lua_State* L) {
     setfield_bool_if(L, "shader",      !!paint->getShader());
     setfield_bool_if(L, "colorFilter", !!paint->getColorFilter());
     setfield_bool_if(L, "imageFilter", !!paint->getImageFilter());
-    setfield_bool_if(L, "xfermode",    !!paint->getXfermode());
     return 1;
-}
-
-static int lpaint_getXfermode(lua_State* L) {
-    const SkPaint* paint = get_obj<SkPaint>(L, 1);
-    SkXfermode* xfermode = paint->getXfermode();
-    if (xfermode) {
-        push_ref(L, xfermode);
-        return 1;
-    }
-    return 0;
-}
-
-static int lpaint_setXfermode(lua_State* L) {
-    SkPaint* paint = get_obj<SkPaint>(L, 1);
-    paint->setXfermode(sk_ref_sp(get_ref<SkXfermode>(L, 2)));
-    return 0;
 }
 
 static int lpaint_getColorFilter(lua_State* L) {
@@ -1160,6 +1132,19 @@ static int lpaint_getPathEffect(lua_State* L) {
     return 0;
 }
 
+static int lpaint_getFillPath(lua_State* L) {
+    const SkPaint* paint = get_obj<SkPaint>(L, 1);
+    const SkPath* path = get_obj<SkPath>(L, 2);
+
+    SkPath fillpath;
+    paint->getFillPath(*path, &fillpath);
+
+    SkLua lua(L);
+    lua.pushPath(fillpath);
+
+    return 1;
+}
+
 static int lpaint_gc(lua_State* L) {
     get_obj<SkPaint>(L, 1)->~SkPaint();
     return 0;
@@ -1213,11 +1198,10 @@ static const struct luaL_Reg gSkPaint_Methods[] = {
     { "setColorFilter", lpaint_setColorFilter },
     { "getImageFilter", lpaint_getImageFilter },
     { "setImageFilter", lpaint_setImageFilter },
-    { "getXfermode", lpaint_getXfermode },
-    { "setXfermode", lpaint_setXfermode },
     { "getShader", lpaint_getShader },
     { "setShader", lpaint_setShader },
     { "getPathEffect", lpaint_getPathEffect },
+    { "getFillPath", lpaint_getFillPath },
     { "__gc", lpaint_gc },
     { nullptr, nullptr }
 };
@@ -1243,17 +1227,16 @@ static int lshader_isOpaque(lua_State* L) {
     return shader && shader->isOpaque();
 }
 
-static int lshader_isABitmap(lua_State* L) {
+static int lshader_isAImage(lua_State* L) {
     SkShader* shader = get_ref<SkShader>(L, 1);
     if (shader) {
-        SkBitmap bm;
         SkMatrix matrix;
         SkShader::TileMode modes[2];
-        if (shader->isABitmap(&bm, &matrix, modes)) {
+        if (SkImage* image = shader->isAImage(&matrix, modes)) {
             lua_newtable(L);
-            setfield_number(L, "genID", bm.pixelRef() ? bm.pixelRef()->getGenerationID() : 0);
-            setfield_number(L, "width", bm.width());
-            setfield_number(L, "height", bm.height());
+            setfield_number(L, "id", image->uniqueID());
+            setfield_number(L, "width", image->width());
+            setfield_number(L, "height", image->height());
             setfield_string(L, "tileX", mode2string(modes[0]));
             setfield_string(L, "tileY", mode2string(modes[1]));
             return 1;
@@ -1275,23 +1258,10 @@ static int lshader_asAGradient(lua_State* L) {
             info.fColorOffsets = pos.get();
             shader->asAGradient(&info);
 
-            bool containsHardStops = false;
-            bool isEvenlySpaced    = true;
-            for (int i = 1; i < info.fColorCount; i++) {
-                if (SkScalarNearlyEqual(info.fColorOffsets[i], info.fColorOffsets[i-1])) {
-                    containsHardStops = true;
-                }
-                if (!SkScalarNearlyEqual(info.fColorOffsets[i], i/(info.fColorCount - 1.0f))) {
-                    isEvenlySpaced = false;
-                }
-            }
-
             lua_newtable(L);
-            setfield_string(L,  "type",               gradtype2string(t));
-            setfield_string(L,  "tile",               mode2string(info.fTileMode));
-            setfield_number(L,  "colorCount",         info.fColorCount);
-            setfield_boolean(L, "containsHardStops",  containsHardStops);
-            setfield_boolean(L, "isEvenlySpaced",     isEvenlySpaced);
+            setfield_string(L,  "type",           gradtype2string(t));
+            setfield_string(L,  "tile",           mode2string(info.fTileMode));
+            setfield_number(L,  "colorCount",     info.fColorCount);
 
             lua_newtable(L);
             for (int i = 0; i < info.fColorCount; i++) {
@@ -1313,7 +1283,7 @@ static int lshader_gc(lua_State* L) {
 
 static const struct luaL_Reg gSkShader_Methods[] = {
     { "isOpaque",       lshader_isOpaque },
-    { "isABitmap",      lshader_isABitmap },
+    { "isAImage",       lshader_isAImage },
     { "asAGradient",    lshader_asAGradient },
     { "__gc",           lshader_gc },
     { nullptr, nullptr }
@@ -1345,24 +1315,6 @@ static int lpatheffect_gc(lua_State* L) {
 static const struct luaL_Reg gSkPathEffect_Methods[] = {
     { "asADash",        lpatheffect_asADash },
     { "__gc",           lpatheffect_gc },
-    { nullptr, nullptr }
-};
-
-///////////////////////////////////////////////////////////////////////////////
-
-static int lpxfermode_getTypeName(lua_State* L) {
-    lua_pushstring(L, get_ref<SkXfermode>(L, 1)->getTypeName());
-    return 1;
-}
-
-static int lpxfermode_gc(lua_State* L) {
-    get_ref<SkXfermode>(L, 1)->unref();
-    return 0;
-}
-
-static const struct luaL_Reg gSkXfermode_Methods[] = {
-    { "getTypeName",    lpxfermode_getTypeName },
-    { "__gc",           lpxfermode_gc },
     { nullptr, nullptr }
 };
 
@@ -1600,6 +1552,45 @@ static int lpath_countPoints(lua_State* L) {
     return 1;
 }
 
+static int lpath_getVerbs(lua_State* L) {
+    const SkPath* path = get_obj<SkPath>(L, 1);
+    SkPath::Iter iter(*path, false);
+    SkPoint pts[4];
+
+    lua_newtable(L);
+
+    bool done = false;
+    int i = 0;
+    do {
+        switch (iter.next(pts, true)) {
+            case SkPath::kMove_Verb:
+                setarray_string(L, ++i, "move");
+                break;
+            case SkPath::kClose_Verb:
+                setarray_string(L, ++i, "close");
+                break;
+            case SkPath::kLine_Verb:
+                setarray_string(L, ++i, "line");
+                break;
+            case SkPath::kQuad_Verb:
+                setarray_string(L, ++i, "quad");
+                break;
+            case SkPath::kConic_Verb:
+                setarray_string(L, ++i, "conic");
+                break;
+            case SkPath::kCubic_Verb:
+                setarray_string(L, ++i, "cubic");
+                break;
+            case SkPath::kDone_Verb:
+                setarray_string(L, ++i, "done");
+                done = true;
+                break;
+        }
+    } while (!done);
+
+    return 1;
+}
+
 static int lpath_reset(lua_State* L) {
     get_obj<SkPath>(L, 1)->reset();
     return 0;
@@ -1642,6 +1633,7 @@ static const struct luaL_Reg gSkPath_Methods[] = {
     { "getBounds", lpath_getBounds },
     { "getFillType", lpath_getFillType },
     { "getSegmentTypes", lpath_getSegmentTypes },
+    { "getVerbs", lpath_getVerbs },
     { "isConvex", lpath_isConvex },
     { "isEmpty", lpath_isEmpty },
     { "isRect", lpath_isRect },
@@ -2044,8 +2036,7 @@ static int lsk_newTextBlob(lua_State* L) {
     box.setText(text, strlen(text), paint);
 
     SkScalar newBottom;
-    SkAutoTUnref<SkTextBlob> blob(box.snapshotTextBlob(&newBottom));
-    push_ref<SkTextBlob>(L, blob);
+    push_ref<SkTextBlob>(L, box.snapshotTextBlob(&newBottom));
     SkLua(L).pushScalar(newBottom);
     return 2;
 }
@@ -2148,7 +2139,6 @@ void SkLua::Load(lua_State* L) {
     REG_CLASS(L, SkSurface);
     REG_CLASS(L, SkTextBlob);
     REG_CLASS(L, SkTypeface);
-    REG_CLASS(L, SkXfermode);
 }
 
 extern "C" int luaopen_skia(lua_State* L);

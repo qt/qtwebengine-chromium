@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!--
+Copyright 2016 The Chromium Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+
+<link rel="import" href="/tracing/value/diagnostics/breakdown.html">
+<link rel="import" href="/tracing/value/diagnostics/related_histogram_breakdown.html">
+<link rel="import" href="/tracing/value/histogram.html">
+<link rel="import" href="/tracing/value/ui/breakdown_span.html">
+<link rel="import" href="/tracing/value/ui/diagnostic_span.html">
+
+<script>
+'use strict';
+
+tr.b.unittest.testSuite(function() {
+  test('instantiate_RelatedHistogramBreakdown', function() {
+    var foo = new tr.v.Histogram('foo', tr.b.Unit.byName.timeDurationInMs);
+    var bar = new tr.v.Histogram('bar', tr.b.Unit.byName.timeDurationInMs);
+    for (var i = 0; i < 1e2; ++i) {
+      foo.addSample(Math.random());
+      bar.addSample(Math.random());
+    }
+    var breakdown = new tr.v.d.RelatedHistogramBreakdown();
+    breakdown.add(foo);
+    breakdown.add(bar);
+    var span = tr.v.ui.createDiagnosticSpan(breakdown);
+    assert.strictEqual('TR-V-UI-BREAKDOWN-SPAN', span.tagName);
+    this.addHTMLOutput(span);
+  });
+
+  test('instantiate_Breakdown', function() {
+    var breakdown = new tr.v.d.Breakdown();
+    breakdown.colorScheme =
+      tr.v.d.COLOR_SCHEME_CHROME_USER_FRIENDLY_CATEGORY_DRIVER;
+    breakdown.set('script', 42);
+    breakdown.set('style', 57);
+
+    // Test weird numbers.
+    breakdown.set('ba---a', NaN);
+    breakdown.set('inf', Infinity);
+    breakdown.set('-inf', -Infinity);
+    breakdown.set('goose egg', 0);
+    breakdown.set('<0', -1);
+
+    // Test round-tripping.
+    breakdown = tr.v.d.Diagnostic.fromDict(breakdown.asDict());
+
+    var span = tr.v.ui.createDiagnosticSpan(breakdown);
+    assert.strictEqual('TR-V-UI-BREAKDOWN-SPAN', span.tagName);
+    this.addHTMLOutput(span);
+  });
+});
+</script>

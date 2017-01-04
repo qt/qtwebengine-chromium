@@ -142,6 +142,9 @@ class VIEWS_EXPORT BridgedNativeWidget
   // being reordered in (or out of) the screen list.
   void OnVisibilityChanged();
 
+  // Called by the NSWindowDelegate when the system control tint changes.
+  void OnSystemControlTintChanged();
+
   // Called by the NSWindowDelegate on a scale factor or color space change.
   void OnBackingPropertiesChanged();
 
@@ -310,6 +313,11 @@ class VIEWS_EXPORT BridgedNativeWidget
   // If true, the window has been made visible or changed shape and the window
   // shadow needs to be invalidated when a frame is received for the new shape.
   bool invalidate_shadow_on_frame_swap_ = false;
+
+  // Whether the window's visibility is suppressed currently. For opaque non-
+  // modal windows, the window's alpha value is set to 0, till the frame from
+  // the compositor arrives to avoid "blinking".
+  bool initial_visibility_suppressed_ = false;
 
   AssociatedViews associated_views_;
 

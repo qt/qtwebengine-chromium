@@ -27,11 +27,11 @@ tr.exportTo('tr.b', function() {
     if (!(value instanceof Object)) {
       if (value === undefined || value === null)
         return value;
-      if (typeof value == 'string')
+      if (typeof value === 'string')
         return value.substring();
-      if (typeof value == 'boolean')
+      if (typeof value === 'boolean')
         return value;
-      if (typeof value == 'number')
+      if (typeof value === 'number')
         return value;
       throw new Error('Unrecognized: ' + typeof value);
     }
@@ -44,7 +44,7 @@ tr.exportTo('tr.b', function() {
       return res;
     }
 
-    if (object.__proto__ != Object.prototype)
+    if (object.__proto__ !== Object.prototype)
       throw new Error('Can only clone simple types');
     var res = {};
     for (var key in object) {
@@ -62,7 +62,7 @@ tr.exportTo('tr.b', function() {
       };
     }
 
-    if (typeof(e) == 'string') {
+    if (typeof(e) === 'string') {
       return {
         typeName: 'StringError',
         message: e,
@@ -100,9 +100,9 @@ tr.exportTo('tr.b', function() {
     return stack.slice(2);
   }
 
-  function getUsingPath(path, from_dict) {
+  function getUsingPath(path, fromDict) {
     var parts = path.split('.');
-    var cur = from_dict;
+    var cur = fromDict;
 
     for (var part; parts.length && (part = parts.shift());) {
       if (!parts.length) {
@@ -116,6 +116,18 @@ tr.exportTo('tr.b', function() {
     return undefined;
   }
 
+  /**
+   * Format date as a string "YYYY-MM-DD HH:mm:ss". The timezone is implicitly
+   * UTC. This format is based on the ISO format, but without milliseconds and
+   * the 'T' is replaced with a space for legibility.
+   *
+   * @param {!Date} date
+   * @return {string}
+   */
+  function formatDate(date) {
+    return date.toISOString().replace('T', ' ').slice(0, 19);
+  }
+
   return {
     addSingletonGetter: addSingletonGetter,
 
@@ -124,6 +136,7 @@ tr.exportTo('tr.b', function() {
     normalizeException: normalizeException,
     stackTrace: stackTrace,
     stackTraceAsString: stackTraceAsString,
+    formatDate: formatDate,
 
     getUsingPath: getUsingPath
   };

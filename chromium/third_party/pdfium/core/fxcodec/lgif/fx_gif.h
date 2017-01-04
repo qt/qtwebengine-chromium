@@ -9,7 +9,7 @@
 
 #include <setjmp.h>
 
-#include "core/fxcrt/include/fx_basic.h"
+#include "core/fxcrt/fx_basic.h"
 
 #define GIF_SIGNATURE "GIF"
 #define GIF_SIG_EXTENSION 0x21
@@ -291,6 +291,8 @@ int32_t gif_load_frame(gif_decompress_struct_p gif_ptr, int32_t frame_num);
 uint8_t* gif_read_data(gif_decompress_struct_p gif_ptr,
                        uint8_t** des_buf_pp,
                        uint32_t data_size);
+void gif_decoding_failure_at_tail_cleanup(gif_decompress_struct_p gif_ptr,
+                                          GifImage* gif_image_ptr);
 void gif_save_decoding_status(gif_decompress_struct_p gif_ptr, int32_t status);
 void gif_input_buffer(gif_decompress_struct_p gif_ptr,
                       uint8_t* src_buf,

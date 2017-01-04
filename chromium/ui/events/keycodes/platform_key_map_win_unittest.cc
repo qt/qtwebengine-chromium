@@ -12,42 +12,11 @@
 #include "ui/events/keycodes/dom/dom_key.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/events/keycodes/dom_us_layout_data.h"
+#include "ui/events/test/keyboard_layout.h"
 
 namespace ui {
 
 namespace {
-
-enum Layout {
-  LAYOUT_US,
-  LAYOUT_FR,
-  LAYOUT_KR,
-};
-
-// |LoadKeyboardLayout()| ensures the locale to be loaded into the system
-// (Similar to temporarily adding a locale in Control Panel), otherwise
-// |ToUnicodeEx()| will fall-back to the default locale.
-// See MSDN LoadKeyboardLayout():
-// https://msdn.microsoft.com/en-us/library/windows/desktop/ms646305(v=vs.85).aspx
-// And language constants and strings:
-// https://msdn.microsoft.com/en-us/library/windows/desktop/dd318693(v=vs.85).aspx
-HKL GetInputLocale(Layout layout) {
-  switch (layout) {
-    case LAYOUT_US:
-      return ::LoadKeyboardLayout(L"00000409", KLF_ACTIVATE);
-    case LAYOUT_FR:
-      return ::LoadKeyboardLayout(L"0000040c", KLF_ACTIVATE);
-    case LAYOUT_KR:
-      // |LoadKeyboardLayout(L"00000412", KLF_ACTIVATE)| returns the correct
-      // Korean locale, but it will fail on DrMemory tests.
-      // See https://crbug.com/612736#c6
-      // However we could bypass it since we are only testing non-printable keys
-      // on Korean locale.
-      // (This issue only happens on Korean and Japanese).
-      return reinterpret_cast<HKL>(0x04120412);
-    default:
-      return 0;
-  }
-}
 
 struct TestKey {
   KeyboardCode key_code;
@@ -69,8 +38,7 @@ class PlatformKeyMapTest : public testing::Test {
 
   void CheckKeyboardCodeToKeyString(const char* label,
                                     const PlatformKeyMap& keymap,
-                                    const TestKey& test_case,
-                                    HKL layout) {
+                                    const TestKey& test_case) {
     KeyboardCode key_code = test_case.key_code;
     EXPECT_STREQ(test_case.normal,
                  KeycodeConverter::DomKeyToKeyString(
@@ -112,6 +80,7 @@ class PlatformKeyMapTest : public testing::Test {
         << label;
   }
 
+  // Need this helper function to access private methods of |PlatformKeyMap|.
   DomKey DomKeyFromKeyboardCodeImpl(const PlatformKeyMap& keymap,
                                     KeyboardCode key_code,
                                     int flags) {
@@ -123,8 +92,7 @@ class PlatformKeyMapTest : public testing::Test {
 };
 
 TEST_F(PlatformKeyMapTest, USLayout) {
-  HKL layout = GetInputLocale(LAYOUT_US);
-  PlatformKeyMap keymap(layout);
+  PlatformKeyMap keymap(GetPlatformKeyboardLayout(KEYBOARD_LAYOUT_ENGLISH_US));
 
   const TestKey kUSLayoutTestCases[] = {
       //       n    s    c    a    sc   sa   ac
@@ -167,13 +135,12 @@ TEST_F(PlatformKeyMapTest, USLayout) {
   };
 
   for (const auto& test_case : kUSLayoutTestCases) {
-    CheckKeyboardCodeToKeyString("USLayout", keymap, test_case, layout);
+    CheckKeyboardCodeToKeyString("USLayout", keymap, test_case);
   }
 }
 
 TEST_F(PlatformKeyMapTest, FRLayout) {
-  HKL layout = GetInputLocale(LAYOUT_FR);
-  PlatformKeyMap keymap(layout);
+  PlatformKeyMap keymap(GetPlatformKeyboardLayout(KEYBOARD_LAYOUT_FRENCH));
 
   const TestKey kFRLayoutTestCases[] = {
       //       n     s    c    a       sc    sa   ac
@@ -216,13 +183,12 @@ TEST_F(PlatformKeyMapTest, FRLayout) {
   };
 
   for (const auto& test_case : kFRLayoutTestCases) {
-    CheckKeyboardCodeToKeyString("FRLayout", keymap, test_case, layout);
+    CheckKeyboardCodeToKeyString("FRLayout", keymap, test_case);
   }
 }
 
 TEST_F(PlatformKeyMapTest, NumPad) {
-  HKL layout = GetInputLocale(LAYOUT_US);
-  PlatformKeyMap keymap(layout);
+  PlatformKeyMap keymap(GetPlatformKeyboardLayout(KEYBOARD_LAYOUT_ENGLISH_US));
 
   const struct TestCase {
     KeyboardCode key_code;
@@ -271,7 +237,7 @@ TEST_F(PlatformKeyMapTest, NumPad) {
 }
 
 TEST_F(PlatformKeyMapTest, NonPrintableKey) {
-  HKL layout = GetInputLocale(LAYOUT_US);
+  HKL layout = GetPlatformKeyboardLayout(KEYBOARD_LAYOUT_ENGLISH_US);
   PlatformKeyMap keymap(layout);
 
   for (const auto& test_case : kNonPrintableCodeMap) {
@@ -310,26 +276,52 @@ TEST_F(PlatformKeyMapTest, NonPrintableKey) {
 TEST_F(PlatformKeyMapTest, KoreanSpecificKeys) {
   const struct TestCase {
     KeyboardCode key_code;
-    DomKey key;
+    DomKey kr_key;
+    DomKey us_key;
   } kKoreanTestCases[] = {
-      {VKEY_HANGUL, DomKey::HANGUL_MODE}, {VKEY_HANJA, DomKey::HANJA_MODE},
+      {VKEY_HANGUL, DomKey::HANGUL_MODE, DomKey::UNIDENTIFIED},
+      {VKEY_HANJA, DomKey::HANJA_MODE, DomKey::UNIDENTIFIED},
   };
 
-  // US English should not return values for these keys.
-  HKL us_layout = GetInputLocale(LAYOUT_US);
-  PlatformKeyMap us_keymap(us_layout);
+  PlatformKeyMap us_keymap(
+      GetPlatformKeyboardLayout(KEYBOARD_LAYOUT_ENGLISH_US));
+  PlatformKeyMap kr_keymap(GetPlatformKeyboardLayout(KEYBOARD_LAYOUT_KOREAN));
   for (const auto& test_case : kKoreanTestCases) {
-    EXPECT_EQ(DomKey::NONE, DomKeyFromKeyboardCodeImpl(
-                                us_keymap, test_case.key_code, EF_NONE))
+    EXPECT_EQ(test_case.us_key, DomKeyFromKeyboardCodeImpl(
+                                    us_keymap, test_case.key_code, EF_NONE))
+        << test_case.key_code;
+    EXPECT_EQ(test_case.kr_key, DomKeyFromKeyboardCodeImpl(
+                                    kr_keymap, test_case.key_code, EF_NONE))
         << test_case.key_code;
   }
+}
 
-  // Korean layout should return specific DomKey.
-  HKL ko_layout = GetInputLocale(LAYOUT_KR);
-  PlatformKeyMap ko_keymap(ko_layout);
-  for (const auto& test_case : kKoreanTestCases) {
-    EXPECT_EQ(test_case.key, DomKeyFromKeyboardCodeImpl(
-                                 ko_keymap, test_case.key_code, EF_NONE))
+TEST_F(PlatformKeyMapTest, JapaneseSpecificKeys) {
+  const struct TestCase {
+    KeyboardCode key_code;
+    DomKey jp_key;
+    DomKey us_key;
+  } kJapaneseTestCases[] = {
+      {VKEY_KANA, DomKey::KANA_MODE, DomKey::UNIDENTIFIED},
+      {VKEY_KANJI, DomKey::KANJI_MODE, DomKey::UNIDENTIFIED},
+      {VKEY_OEM_ATTN, DomKey::ALPHANUMERIC, DomKey::UNIDENTIFIED},
+      {VKEY_OEM_FINISH, DomKey::KATAKANA, DomKey::UNIDENTIFIED},
+      {VKEY_OEM_COPY, DomKey::HIRAGANA, DomKey::UNIDENTIFIED},
+      {VKEY_DBE_SBCSCHAR, DomKey::HANKAKU, DomKey::UNIDENTIFIED},
+      {VKEY_DBE_DBCSCHAR, DomKey::ZENKAKU, DomKey::UNIDENTIFIED},
+      {VKEY_OEM_BACKTAB, DomKey::ROMAJI, DomKey::UNIDENTIFIED},
+      {VKEY_ATTN, DomKey::KANA_MODE, DomKey::ATTN},
+  };
+
+  PlatformKeyMap us_keymap(
+      GetPlatformKeyboardLayout(KEYBOARD_LAYOUT_ENGLISH_US));
+  PlatformKeyMap jp_keymap(GetPlatformKeyboardLayout(KEYBOARD_LAYOUT_JAPANESE));
+  for (const auto& test_case : kJapaneseTestCases) {
+    EXPECT_EQ(test_case.us_key, DomKeyFromKeyboardCodeImpl(
+                                    us_keymap, test_case.key_code, EF_NONE))
+        << test_case.key_code;
+    EXPECT_EQ(test_case.jp_key, DomKeyFromKeyboardCodeImpl(
+                                    jp_keymap, test_case.key_code, EF_NONE))
         << test_case.key_code;
   }
 }

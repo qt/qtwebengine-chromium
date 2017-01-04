@@ -13,6 +13,7 @@
 #include "media/base/media_switches.h"
 #include "media/base/video_types.h"
 #include "media/base/video_util.h"
+#include "media/filters/h264_parser.h"
 #include "media/formats/mp4/avc.h"
 #include "media/formats/mp4/es_descriptor.h"
 #include "media/formats/mp4/rcheck.h"
@@ -285,7 +286,8 @@ bool ProtectionSchemeInfo::Parse(BoxReader* reader) {
 }
 
 MovieHeader::MovieHeader()
-    : creation_time(0),
+    : version(0),
+      creation_time(0),
       modification_time(0),
       timescale(0),
       duration(0),
@@ -298,8 +300,9 @@ FourCC MovieHeader::BoxType() const { return FOURCC_MVHD; }
 
 bool MovieHeader::Parse(BoxReader* reader) {
   RCHECK(reader->ReadFullBoxHeader());
+  version = reader->version();
 
-  if (reader->version() == 1) {
+  if (version == 1) {
     RCHECK(reader->Read8(&creation_time) &&
            reader->Read8(&modification_time) &&
            reader->Read4(&timescale) &&
@@ -665,10 +668,11 @@ bool VideoSampleEntry::Parse(BoxReader* reader) {
       std::unique_ptr<AVCDecoderConfigurationRecord> avcConfig(
           new AVCDecoderConfigurationRecord());
       RCHECK(reader->ReadChild(avcConfig.get()));
+      video_codec = kCodecH264;
+      video_codec_profile = H264Parser::ProfileIDCToVideoCodecProfile(
+          avcConfig->profile_indication);
       frame_bitstream_converter =
           make_scoped_refptr(new AVCBitstreamConverter(std::move(avcConfig)));
-      video_codec = kCodecH264;
-      video_codec_profile = H264PROFILE_MAIN;
       break;
     }
 #if BUILDFLAG(ENABLE_HEVC_DEMUXING)
@@ -679,9 +683,10 @@ bool VideoSampleEntry::Parse(BoxReader* reader) {
       std::unique_ptr<HEVCDecoderConfigurationRecord> hevcConfig(
           new HEVCDecoderConfigurationRecord());
       RCHECK(reader->ReadChild(hevcConfig.get()));
+      video_codec = kCodecHEVC;
+      video_codec_profile = hevcConfig->GetVideoProfile();
       frame_bitstream_converter =
           make_scoped_refptr(new HEVCBitstreamConverter(std::move(hevcConfig)));
-      video_codec = kCodecHEVC;
       break;
     }
 #endif

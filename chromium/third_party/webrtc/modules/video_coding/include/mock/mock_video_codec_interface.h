@@ -14,18 +14,18 @@
 #include <string>
 #include <vector>
 
-#include "testing/gmock/include/gmock/gmock.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/test/gmock.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
 
 class MockEncodedImageCallback : public EncodedImageCallback {
  public:
-  MOCK_METHOD3(Encoded,
-               int32_t(const EncodedImage& encodedImage,
-                       const CodecSpecificInfo* codecSpecificInfo,
-                       const RTPFragmentationHeader* fragmentation));
+  MOCK_METHOD3(OnEncodedImage,
+               Result(const EncodedImage& encodedImage,
+                      const CodecSpecificInfo* codecSpecificInfo,
+                      const RTPFragmentationHeader* fragmentation));
 };
 
 class MockVideoEncoder : public VideoEncoder {

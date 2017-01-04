@@ -41,6 +41,7 @@ namespace Grpc;
 class BaseStub
 {
     private $hostname;
+    private $hostname_override;
     private $channel;
 
     // a callback function
@@ -52,9 +53,14 @@ class BaseStub
      *  - 'update_metadata': (optional) a callback function which takes in a
      * metadata array, and returns an updated metadata array
      *  - 'grpc.primary_user_agent': (optional) a user-agent string
+     * @param $channel Channel An already created Channel object
      */
-    public function __construct($hostname, $opts)
+    public function __construct($hostname, $opts, $channel = null)
     {
+        $ssl_roots = file_get_contents(
+            dirname(__FILE__).'/../../../../etc/roots.pem');
+        ChannelCredentials::setDefaultRootsPem($ssl_roots);
+
         $this->hostname = $hostname;
         $this->update_metadata = null;
         if (isset($opts['update_metadata'])) {
@@ -70,6 +76,9 @@ class BaseStub
         } else {
             $opts['grpc.primary_user_agent'] = '';
         }
+        if (!empty($opts['grpc.ssl_target_name_override'])) {
+            $this->hostname_override = $opts['grpc.ssl_target_name_override'];
+        }
         $opts['grpc.primary_user_agent'] .=
             'grpc-php/'.$package_config['version'];
         if (!array_key_exists('credentials', $opts)) {
@@ -77,7 +86,15 @@ class BaseStub
                                  'required. Please see one of the '.
                                  'ChannelCredentials::create methods');
         }
-        $this->channel = new Channel($hostname, $opts);
+        if ($channel) {
+            if (!is_a($channel, 'Channel')) {
+                throw new \Exception('The channel argument is not a'.
+                                     'Channel object');
+            }
+            $this->channel = $channel;
+        } else {
+            $this->channel = new Channel($hostname, $opts);
+        }
     }
 
     /**
@@ -160,7 +177,12 @@ class BaseStub
         }
         $service_name = substr($method, 0, $last_slash_idx);
 
-        return 'https://'.$this->hostname.$service_name;
+        if ($this->hostname_override) {
+            $hostname = $this->hostname_override;
+        } else {
+            $hostname = $this->hostname;
+        }
+        return 'https://'.$hostname.$service_name;
     }
 
     /**

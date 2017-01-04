@@ -124,13 +124,20 @@ IMM32Manager::~IMM32Manager() {
 }
 
 void IMM32Manager::SetInputLanguage() {
-  // Retrieve the current keyboard layout from Windows and determine whether
-  // or not the current input context has IMEs.
-  // Also save its input language for language-specific operations required
-  // while composing a text.
-  HKL keyboard_layout = ::GetKeyboardLayout(0);
-  input_language_id_ =
-      static_cast<LANGID>(reinterpret_cast<uintptr_t>(keyboard_layout));
+  // Retrieve the current input language from the system's keyboard layout.
+  // Using GetKeyboardLayoutName instead of GetKeyboardLayout, because
+  // the language from GetKeyboardLayout is the language under where the
+  // keyboard layout is installed. And the language from GetKeyboardLayoutName
+  // indicates the language of the keyboard layout itself.
+  // See crbug.com/344834.
+  WCHAR keyboard_layout[KL_NAMELENGTH];
+  if (::GetKeyboardLayoutNameW(keyboard_layout)) {
+    input_language_id_ =
+        static_cast<LANGID>(
+            wcstol(&keyboard_layout[KL_NAMELENGTH >> 1], nullptr, 16));
+  } else {
+    input_language_id_ = 0x0409;  // Fallback to en-US.
+  }
 }
 
 void IMM32Manager::CreateImeWindow(HWND window_handle) {
@@ -283,8 +290,9 @@ void IMM32Manager::CompleteComposition(HWND window_handle, HIMC imm_context) {
   }
 }
 
-void IMM32Manager::GetCompositionInfo(HIMC imm_context, LPARAM lparam,
-                                  CompositionText* composition) {
+void IMM32Manager::GetCompositionInfo(HIMC imm_context,
+                                      LPARAM lparam,
+                                      CompositionText* composition) {
   // We only care about GCS_COMPATTR, GCS_COMPCLAUSE and GCS_CURSORPOS, and
   // convert them into underlines and selection range respectively.
   composition->underlines.clear();
@@ -319,28 +327,29 @@ void IMM32Manager::GetCompositionInfo(HIMC imm_context, LPARAM lparam,
   }
 
   // Set default underlines in case there is no clause information.
-  if (!composition->underlines.size()) {
-    CompositionUnderline underline;
-    underline.color = SK_ColorBLACK;
-    underline.background_color = SK_ColorTRANSPARENT;
-    if (target_start > 0) {
-      underline.start_offset = 0U;
-      underline.end_offset = static_cast<uint32_t>(target_start);
-      underline.thick = false;
-      composition->underlines.push_back(underline);
-    }
-    if (target_end > target_start) {
-      underline.start_offset = static_cast<uint32_t>(target_start);
-      underline.end_offset = static_cast<uint32_t>(target_end);
-      underline.thick = true;
-      composition->underlines.push_back(underline);
-    }
-    if (target_end < length) {
-      underline.start_offset = static_cast<uint32_t>(target_end);
-      underline.end_offset = static_cast<uint32_t>(length);
-      underline.thick = false;
-      composition->underlines.push_back(underline);
-    }
+  if (!composition->underlines.empty())
+    return;
+
+  CompositionUnderline underline;
+  underline.color = SK_ColorBLACK;
+  underline.background_color = SK_ColorTRANSPARENT;
+  if (target_start > 0) {
+    underline.start_offset = 0U;
+    underline.end_offset = static_cast<uint32_t>(target_start);
+    underline.thick = false;
+    composition->underlines.push_back(underline);
+  }
+  if (target_end > target_start) {
+    underline.start_offset = static_cast<uint32_t>(target_start);
+    underline.end_offset = static_cast<uint32_t>(target_end);
+    underline.thick = true;
+    composition->underlines.push_back(underline);
+  }
+  if (target_end < length) {
+    underline.start_offset = static_cast<uint32_t>(target_end);
+    underline.end_offset = static_cast<uint32_t>(length);
+    underline.thick = false;
+    composition->underlines.push_back(underline);
   }
 }
 
@@ -455,31 +464,10 @@ void IMM32Manager::SetUseCompositionWindow(bool use_composition_window) {
   use_composition_window_ = use_composition_window;
 }
 
-std::string IMM32Manager::GetInputLanguageName() const {
-  const LCID locale_id = MAKELCID(input_language_id_, SORT_DEFAULT);
-  // max size for LOCALE_SISO639LANGNAME and LOCALE_SISO3166CTRYNAME is 9.
-  wchar_t buffer[9];
-
-  // Get language id.
-  int length = ::GetLocaleInfo(locale_id, LOCALE_SISO639LANGNAME, &buffer[0],
-                               arraysize(buffer));
-  if (length <= 1)
-    return std::string();
-
-  std::string language;
-  base::WideToUTF8(buffer, length - 1, &language);
-  if (SUBLANGID(input_language_id_) == SUBLANG_NEUTRAL)
-    return language;
-
-  // Get region id.
-  length = ::GetLocaleInfo(locale_id, LOCALE_SISO3166CTRYNAME, &buffer[0],
-                           arraysize(buffer));
-  if (length <= 1)
-    return language;
-
-  std::string region;
-  base::WideToUTF8(buffer, length - 1, &region);
-  return language.append(1, '-').append(region);
+bool IMM32Manager::IsInputLanguageCJK() const {
+  LANGID lang = PRIMARYLANGID(input_language_id_);
+  return lang == LANG_CHINESE || lang == LANG_JAPANESE ||
+      lang == LANG_KOREAN;
 }
 
 void IMM32Manager::SetTextInputMode(HWND window_handle,

@@ -9,8 +9,10 @@
 #include <queue>
 #include <utility>
 
+#include "base/debug/dump_without_crashing.h"
+#include "base/i18n/rtl.h"
 #include "base/memory/ptr_util.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -20,6 +22,7 @@
 #include "content/common/page_state_serialization.h"
 #include "content/common/resource_request_body_impl.h"
 #include "content/common/site_isolation_policy.h"
+#include "content/public/browser/reload_type.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
@@ -38,8 +41,10 @@ int GetUniqueIDInConstructor() {
   return ++unique_id_counter;
 }
 
-void RecursivelyGenerateFrameEntries(const ExplodedFrameState& state,
-                                     NavigationEntryImpl::TreeNode* node) {
+void RecursivelyGenerateFrameEntries(
+    const ExplodedFrameState& state,
+    const std::vector<base::NullableString16>& referenced_files,
+    NavigationEntryImpl::TreeNode* node) {
   node->frame_entry = new FrameNavigationEntry(
       UTF16ToUTF8(state.target.string()), state.item_sequence_number,
       state.document_sequence_number, nullptr, nullptr,
@@ -49,16 +54,35 @@ void RecursivelyGenerateFrameEntries(const ExplodedFrameState& state,
 
   // Set a single-frame PageState on the entry.
   ExplodedPageState page_state;
+
+  // Copy the incoming PageState's list of referenced files into the main
+  // frame's PageState.  (We don't pass the list to subframes below.)
+  // TODO(creis): Grant access to this list for each process that renders
+  // this page, even for OOPIFs.  Eventually keep track of a verified list of
+  // files per frame, so that we only grant access to processes that need it.
+  if (referenced_files.size() > 0)
+    page_state.referenced_files = referenced_files;
+
   page_state.top = state;
   std::string data;
-  if (EncodePageState(page_state, &data))
-    node->frame_entry->set_page_state(PageState::CreateFromEncodedData(data));
+  EncodePageState(page_state, &data);
+  if (data.empty()) {
+    // Temporarily generate a minidump to diagnose https://crbug.com/568703.
+    base::debug::DumpWithoutCrashing();
+    NOTREACHED() << "Shouldn't generate an empty PageState.";
+  }
+  node->frame_entry->SetPageState(PageState::CreateFromEncodedData(data));
+
+  // Don't pass the file list to subframes, since that would result in multiple
+  // copies of it ending up in the combined list in GetPageState (via
+  // RecursivelyGenerateFrameState).
+  std::vector<base::NullableString16> empty_file_list;
 
   for (const ExplodedFrameState& child_state : state.children) {
     NavigationEntryImpl::TreeNode* child_node =
-        new NavigationEntryImpl::TreeNode(nullptr);
+        new NavigationEntryImpl::TreeNode(node, nullptr);
     node->children.push_back(child_node);
-    RecursivelyGenerateFrameEntries(child_state, child_node);
+    RecursivelyGenerateFrameEntries(child_state, empty_file_list, child_node);
   }
 }
 
@@ -92,21 +116,44 @@ void RecursivelyGenerateFrameState(
   }
 }
 
+// Walk the ancestor chain for both the |frame_tree_node| and the |node|.
+// Comparing the inputs directly is not performed, as this method assumes they
+// already match each other. Returns false if a mismatch in unique name or
+// ancestor chain is detected, otherwise true.
+bool InSameTreePosition(FrameTreeNode* frame_tree_node,
+                        NavigationEntryImpl::TreeNode* node) {
+  FrameTreeNode* ftn = frame_tree_node->parent();
+  NavigationEntryImpl::TreeNode* current_node = node->parent;
+  while (ftn && current_node) {
+    if (!current_node->MatchesFrame(ftn))
+      return false;
+
+    if ((!current_node->parent && ftn->parent()) ||
+        (current_node->parent && !ftn->parent())) {
+      return false;
+    }
+
+    ftn = ftn->parent();
+    current_node = current_node->parent;
+  }
+  return true;
+}
+
 }  // namespace
 
 int NavigationEntryImpl::kInvalidBindings = -1;
 
-NavigationEntryImpl::TreeNode::TreeNode(FrameNavigationEntry* frame_entry)
-    : frame_entry(frame_entry) {
-}
+NavigationEntryImpl::TreeNode::TreeNode(TreeNode* parent,
+                                        FrameNavigationEntry* frame_entry)
+    : parent(parent), frame_entry(frame_entry) {}
 
 NavigationEntryImpl::TreeNode::~TreeNode() {
 }
 
-bool NavigationEntryImpl::TreeNode::MatchesFrame(FrameTreeNode* frame_tree_node,
-                                                 bool is_root_tree_node) const {
+bool NavigationEntryImpl::TreeNode::MatchesFrame(
+    FrameTreeNode* frame_tree_node) const {
   // The root node is for the main frame whether the unique name matches or not.
-  if (is_root_tree_node)
+  if (!parent)
     return frame_tree_node->IsMainFrame();
 
   // Otherwise check the unique name for subframes.
@@ -116,24 +163,58 @@ bool NavigationEntryImpl::TreeNode::MatchesFrame(FrameTreeNode* frame_tree_node,
 
 std::unique_ptr<NavigationEntryImpl::TreeNode>
 NavigationEntryImpl::TreeNode::CloneAndReplace(
-    FrameTreeNode* frame_tree_node,
     FrameNavigationEntry* frame_navigation_entry,
-    bool is_root_tree_node) const {
-  if (frame_tree_node && MatchesFrame(frame_tree_node, is_root_tree_node)) {
-    // Replace this node in the cloned tree and prune its children.
-    return base::WrapUnique(
-        new NavigationEntryImpl::TreeNode(frame_navigation_entry));
-  }
-
-  // Clone the tree using a copy of the FrameNavigationEntry, without sharing.
-  // TODO(creis): Share FNEs unless it's for another tab.
+    bool clone_children_of_target,
+    FrameTreeNode* target_frame_tree_node,
+    FrameTreeNode* current_frame_tree_node,
+    TreeNode* parent_node) const {
+  // Clone this TreeNode, possibly replacing its FrameNavigationEntry.
+  bool is_target_frame =
+      target_frame_tree_node && MatchesFrame(target_frame_tree_node);
   std::unique_ptr<NavigationEntryImpl::TreeNode> copy(
-      new NavigationEntryImpl::TreeNode(frame_entry->Clone()));
+      new NavigationEntryImpl::TreeNode(
+          parent_node,
+          is_target_frame ? frame_navigation_entry : frame_entry->Clone()));
 
-  // Recursively clone the children.
-  for (auto& child : children) {
-    copy->children.push_back(
-        child->CloneAndReplace(frame_tree_node, frame_navigation_entry, false));
+  // Recursively clone the children if needed.
+  if (!is_target_frame || clone_children_of_target) {
+    for (size_t i = 0; i < children.size(); i++) {
+      NavigationEntryImpl::TreeNode* child = children[i];
+
+      // Don't check whether it's still in the tree if |current_frame_tree_node|
+      // is null.
+      if (!current_frame_tree_node) {
+        copy->children.push_back(child->CloneAndReplace(
+            frame_navigation_entry, clone_children_of_target,
+            target_frame_tree_node, nullptr, copy.get()));
+        continue;
+      }
+
+      // Otherwise, make sure the frame is still in the tree before cloning it.
+      // This is O(N^2) in the worst case because we need to look up each frame
+      // (and since we want to avoid a map of unique names, which can be very
+      // long).  To partly mitigate this, we add an optimization for the common
+      // case that the two child lists are the same length and are likely in the
+      // same order: we pick the starting offset of the inner loop to get O(N).
+      size_t ftn_child_count = current_frame_tree_node->child_count();
+      for (size_t j = 0; j < ftn_child_count; j++) {
+        size_t index = j;
+        // If the two lists of children are the same length, start looking at
+        // the same index as |child|.
+        if (children.size() == ftn_child_count)
+          index = (i + j) % ftn_child_count;
+
+        if (current_frame_tree_node->child_at(index)->unique_name() ==
+            child->frame_entry->frame_unique_name()) {
+          // Found |child| in the tree.  Clone it and break out of inner loop.
+          copy->children.push_back(child->CloneAndReplace(
+              frame_navigation_entry, clone_children_of_target,
+              target_frame_tree_node, current_frame_tree_node->child_at(index),
+              copy.get()));
+          break;
+        }
+      }
+    }
   }
 
   return copy;
@@ -171,7 +252,8 @@ NavigationEntryImpl::NavigationEntryImpl(
     const base::string16& title,
     ui::PageTransition transition_type,
     bool is_renderer_initiated)
-    : frame_tree_(new TreeNode(new FrameNavigationEntry("",
+    : frame_tree_(new TreeNode(nullptr,
+                               new FrameNavigationEntry("",
                                                         -1,
                                                         -1,
                                                         std::move(instance),
@@ -187,14 +269,16 @@ NavigationEntryImpl::NavigationEntryImpl(
       title_(title),
       page_id_(page_id),
       transition_type_(transition_type),
-      restore_type_(RESTORE_NONE),
+      restore_type_(RestoreType::NONE),
       is_overriding_user_agent_(false),
       http_status_code_(0),
       is_renderer_initiated_(is_renderer_initiated),
       should_replace_entry_(false),
       should_clear_history_list_(false),
       can_load_local_resources_(false),
-      frame_tree_node_id_(-1) {
+      frame_tree_node_id_(-1),
+      reload_type_(ReloadType::NONE),
+      started_from_context_menu_(false) {
 #if defined(OS_ANDROID)
   has_user_gesture_ = false;
 #endif
@@ -273,7 +357,7 @@ const base::string16& NavigationEntryImpl::GetTitle() const {
 
 void NavigationEntryImpl::SetPageState(const PageState& state) {
   if (!SiteIsolationPolicy::UseSubframeNavigationEntries()) {
-    frame_tree_->frame_entry->set_page_state(state);
+    frame_tree_->frame_entry->SetPageState(state);
     return;
   }
 
@@ -295,11 +379,12 @@ void NavigationEntryImpl::SetPageState(const PageState& state) {
   ExplodedPageState exploded_state;
   if (!DecodePageState(state.ToEncodedData(), &exploded_state) ||
       exploded_state.top.children.size() == 0U) {
-    frame_tree_->frame_entry->set_page_state(state);
+    frame_tree_->frame_entry->SetPageState(state);
     return;
   }
 
-  RecursivelyGenerateFrameEntries(exploded_state.top, frame_tree_.get());
+  RecursivelyGenerateFrameEntries(
+      exploded_state.top, exploded_state.referenced_files, frame_tree_.get());
 }
 
 PageState NavigationEntryImpl::GetPageState() const {
@@ -317,9 +402,7 @@ PageState NavigationEntryImpl::GetPageState() const {
                                 &exploded_state.referenced_files);
 
   std::string encoded_data;
-  if (!EncodePageState(exploded_state, &encoded_data))
-    return frame_tree_->frame_entry->page_state();
-
+  EncodePageState(exploded_state, &encoded_data);
   return PageState::CreateFromEncodedData(encoded_data);
 }
 
@@ -380,6 +463,12 @@ const base::string16& NavigationEntryImpl::GetTitleForDisplay() const {
     base::string16::size_type slashpos = title.rfind('/', lastpos);
     if (slashpos != base::string16::npos)
       title = title.substr(slashpos + 1);
+  } else if (base::i18n::StringContainsStrongRTLChars(title)) {
+    // Wrap the URL in an LTR embedding for proper handling of RTL characters.
+    // (RFC 3987 Section 4.1 states that "Bidirectional IRIs MUST be rendered in
+    // the same way as they would be if they were in a left-to-right
+    // embedding".)
+    base::i18n::WrapStringWithLTRFormatting(&title);
   }
 
   gfx::ElideString(title, kMaxTitleChars, &cached_display_title_);
@@ -479,15 +568,27 @@ int NavigationEntryImpl::GetHttpStatusCode() const {
 
 void NavigationEntryImpl::SetRedirectChain(
     const std::vector<GURL>& redirect_chain) {
-  redirect_chain_ = redirect_chain;
+  root_node()->frame_entry->set_redirect_chain(redirect_chain);
 }
 
 const std::vector<GURL>& NavigationEntryImpl::GetRedirectChain() const {
-  return redirect_chain_;
+  return root_node()->frame_entry->redirect_chain();
 }
 
 bool NavigationEntryImpl::IsRestored() const {
-  return restore_type_ != RESTORE_NONE;
+  return restore_type_ != RestoreType::NONE;
+}
+
+std::string NavigationEntryImpl::GetExtraHeaders() const {
+  return extra_headers_;
+}
+
+void NavigationEntryImpl::AddExtraHeaders(
+    const std::string& more_extra_headers) {
+  DCHECK(!more_extra_headers.empty());
+  if (!extra_headers_.empty())
+    extra_headers_ += "\r\n";
+  extra_headers_ += more_extra_headers;
 }
 
 void NavigationEntryImpl::SetCanLoadLocalResources(bool allow) {
@@ -518,19 +619,22 @@ void NavigationEntryImpl::ClearExtraData(const std::string& key) {
 }
 
 std::unique_ptr<NavigationEntryImpl> NavigationEntryImpl::Clone() const {
-  return NavigationEntryImpl::CloneAndReplace(nullptr, nullptr);
+  return NavigationEntryImpl::CloneAndReplace(nullptr, false, nullptr, nullptr);
 }
 
 std::unique_ptr<NavigationEntryImpl> NavigationEntryImpl::CloneAndReplace(
-    FrameTreeNode* frame_tree_node,
-    FrameNavigationEntry* frame_navigation_entry) const {
+    FrameNavigationEntry* frame_navigation_entry,
+    bool clone_children_of_target,
+    FrameTreeNode* target_frame_tree_node,
+    FrameTreeNode* root_frame_tree_node) const {
   std::unique_ptr<NavigationEntryImpl> copy =
       base::WrapUnique(new NavigationEntryImpl());
 
   // TODO(creis): Only share the same FrameNavigationEntries if cloning within
   // the same tab.
   copy->frame_tree_ = frame_tree_->CloneAndReplace(
-      frame_tree_node, frame_navigation_entry, true);
+      frame_navigation_entry, clone_children_of_target, target_frame_tree_node,
+      root_frame_tree_node, nullptr);
 
   // Copy most state over, unless cleared in ResetForCommit.
   // Don't copy unique_id_, otherwise it won't be unique.
@@ -560,10 +664,13 @@ std::unique_ptr<NavigationEntryImpl> NavigationEntryImpl::CloneAndReplace(
   copy->cached_display_title_ = cached_display_title_;
   // ResetForCommit: transferred_global_request_id_
   // ResetForCommit: should_replace_entry_
-  copy->redirect_chain_ = redirect_chain_;
   // ResetForCommit: should_clear_history_list_
   // ResetForCommit: frame_tree_node_id_
   // ResetForCommit: intent_received_timestamp_
+#if defined(OS_ANDROID)
+  copy->has_user_gesture_ = has_user_gesture_;
+#endif
+  // ResetForCommit: reload_type_
   copy->extra_data_ = extra_data_;
 
   return copy;
@@ -605,9 +712,6 @@ CommonNavigationParams NavigationEntryImpl::ConstructCommonNavigationParams(
 StartNavigationParams NavigationEntryImpl::ConstructStartNavigationParams()
     const {
   return StartNavigationParams(extra_headers(),
-#if defined(OS_ANDROID)
-                               has_user_gesture(),
-#endif
                                transferred_global_request_id().child_id,
                                transferred_global_request_id().request_id);
 }
@@ -615,6 +719,8 @@ StartNavigationParams NavigationEntryImpl::ConstructStartNavigationParams()
 RequestNavigationParams NavigationEntryImpl::ConstructRequestNavigationParams(
     const FrameNavigationEntry& frame_entry,
     bool is_same_document_history_load,
+    bool is_history_navigation_in_new_child,
+    const std::map<std::string, bool>& subframe_unique_names,
     bool has_committed_real_load,
     bool intended_as_new_entry,
     int pending_history_list_offset,
@@ -624,7 +730,7 @@ RequestNavigationParams NavigationEntryImpl::ConstructRequestNavigationParams(
   // completed navigation (whose previous redirects don't apply).
   std::vector<GURL> redirects;
   if (ui::PageTransitionIsNewNavigation(GetTransitionType())) {
-    redirects = GetRedirectChain();
+    redirects = frame_entry.redirect_chain();
   }
 
   int pending_offset_to_send = pending_history_list_offset;
@@ -639,12 +745,17 @@ RequestNavigationParams NavigationEntryImpl::ConstructRequestNavigationParams(
     current_length_to_send = 0;
   }
 
+  bool user_gesture = false;
+#if defined(OS_ANDROID)
+  user_gesture = has_user_gesture();
+#endif
   RequestNavigationParams request_params(
       GetIsOverridingUserAgent(), redirects, GetCanLoadLocalResources(),
       base::Time::Now(), frame_entry.page_state(), GetPageID(), GetUniqueID(),
-      is_same_document_history_load, has_committed_real_load,
-      intended_as_new_entry, pending_offset_to_send, current_offset_to_send,
-      current_length_to_send, IsViewSourceMode(), should_clear_history_list());
+      is_same_document_history_load, is_history_navigation_in_new_child,
+      subframe_unique_names, has_committed_real_load, intended_as_new_entry,
+      pending_offset_to_send, current_offset_to_send, current_length_to_send,
+      IsViewSourceMode(), should_clear_history_list(), user_gesture);
 #if defined(OS_ANDROID)
   if (GetDataURLAsString() &&
       GetDataURLAsString()->size() <= kMaxLengthOfDataURLString) {
@@ -675,6 +786,7 @@ void NavigationEntryImpl::ResetForCommit(FrameNavigationEntry* frame_entry) {
 
   set_should_clear_history_list(false);
   set_frame_tree_node_id(-1);
+  set_reload_type(ReloadType::NONE);
 
   if (frame_entry)
     frame_entry->set_source_site_instance(nullptr);
@@ -694,9 +806,18 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
     scoped_refptr<SiteInstanceImpl> source_site_instance,
     const GURL& url,
     const Referrer& referrer,
+    const std::vector<GURL>& redirect_chain,
     const PageState& page_state,
     const std::string& method,
     int64_t post_id) {
+  // We should only have an empty PageState if the navigation is new, and thus
+  // page ID is -1.
+  if (!page_state.IsValid() && GetPageID() != -1) {
+    // Temporarily generate a minidump to diagnose https://crbug.com/568703.
+    base::debug::DumpWithoutCrashing();
+    NOTREACHED() << "Shouldn't set an empty PageState.";
+  }
+
   // If this is called for the main frame, the FrameNavigationEntry is
   // guaranteed to exist, so just update it directly and return.
   if (frame_tree_node->IsMainFrame()) {
@@ -709,8 +830,8 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
     root_node()->frame_entry->UpdateEntry(
         frame_tree_node->unique_name(), item_sequence_number,
         document_sequence_number, site_instance,
-        std::move(source_site_instance), url, referrer, page_state, method,
-        post_id);
+        std::move(source_site_instance), url, referrer, redirect_chain,
+        page_state, method, post_id);
     return;
   }
 
@@ -728,11 +849,17 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
   const std::string& unique_name = frame_tree_node->unique_name();
   for (TreeNode* child : parent_node->children) {
     if (child->frame_entry->frame_unique_name() == unique_name) {
+      // If the document of the FrameNavigationEntry is changing, we must clear
+      // any child FrameNavigationEntries.
+      if (child->frame_entry->document_sequence_number() !=
+          document_sequence_number)
+        child->children.clear();
+
       // Update the existing FrameNavigationEntry (e.g., for replaceState).
-      child->frame_entry->UpdateEntry(unique_name, item_sequence_number,
-                                      document_sequence_number, site_instance,
-                                      std::move(source_site_instance), url,
-                                      referrer, page_state, method, post_id);
+      child->frame_entry->UpdateEntry(
+          unique_name, item_sequence_number, document_sequence_number,
+          site_instance, std::move(source_site_instance), url, referrer,
+          redirect_chain, page_state, method, post_id);
       return;
     }
   }
@@ -744,15 +871,85 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
       unique_name, item_sequence_number, document_sequence_number,
       site_instance, std::move(source_site_instance), url, referrer, method,
       post_id);
-  frame_entry->set_page_state(page_state);
+  frame_entry->SetPageState(page_state);
+  frame_entry->set_redirect_chain(redirect_chain);
   parent_node->children.push_back(
-      new NavigationEntryImpl::TreeNode(frame_entry));
+      new NavigationEntryImpl::TreeNode(parent_node, frame_entry));
 }
 
 FrameNavigationEntry* NavigationEntryImpl::GetFrameEntry(
     FrameTreeNode* frame_tree_node) const {
   NavigationEntryImpl::TreeNode* tree_node = FindFrameEntry(frame_tree_node);
   return tree_node ? tree_node->frame_entry.get() : nullptr;
+}
+
+std::map<std::string, bool> NavigationEntryImpl::GetSubframeUniqueNames(
+    FrameTreeNode* frame_tree_node) const {
+  std::map<std::string, bool> names;
+  NavigationEntryImpl::TreeNode* tree_node = FindFrameEntry(frame_tree_node);
+  if (tree_node) {
+    // Return the names of all immediate children.
+    for (TreeNode* child : tree_node->children) {
+      // Keep track of whether we would be loading about:blank, since the
+      // renderer should be allowed to just commit the initial blank frame if
+      // that was the default URL.  PageState doesn't matter there, because
+      // content injected into about:blank frames doesn't use it.
+      //
+      // Be careful not to include iframe srcdoc URLs in this check, which do
+      // need their PageState.  The committed URL in that case gets rewritten to
+      // about:blank, but we can detect it via the PageState's URL.
+      //
+      // See https://crbug.com/657896 for details.
+      bool is_about_blank = false;
+      ExplodedPageState exploded_page_state;
+      if (DecodePageState(child->frame_entry->page_state().ToEncodedData(),
+                          &exploded_page_state)) {
+        ExplodedFrameState frame_state = exploded_page_state.top;
+        if (UTF16ToUTF8(frame_state.url_string.string()) == url::kAboutBlankURL)
+          is_about_blank = true;
+      }
+
+      names[child->frame_entry->frame_unique_name()] = is_about_blank;
+    }
+  }
+  return names;
+}
+
+void NavigationEntryImpl::ClearStaleFrameEntriesForNewFrame(
+    FrameTreeNode* frame_tree_node) {
+  DCHECK(!frame_tree_node->IsMainFrame());
+
+  NavigationEntryImpl::TreeNode* node = nullptr;
+  std::queue<NavigationEntryImpl::TreeNode*> work_queue;
+  int count = 0;
+
+  work_queue.push(root_node());
+  while (!work_queue.empty()) {
+    node = work_queue.front();
+    work_queue.pop();
+
+    // Enqueue any children and keep looking if the current node doesn't match.
+    if (!node->MatchesFrame(frame_tree_node)) {
+      for (auto* child : node->children) {
+        work_queue.push(child);
+      }
+      continue;
+    }
+
+    // Remove the node from the tree if it is not in the same position in the
+    // tree of FrameNavigationEntries and the FrameTree.
+    if (!InSameTreePosition(frame_tree_node, node)) {
+      NavigationEntryImpl::TreeNode* parent_node = node->parent;
+      auto it = std::find(parent_node->children.begin(),
+                          parent_node->children.end(), node);
+      CHECK(it != parent_node->children.end());
+      parent_node->children.erase(it);
+    }
+    ++count;
+  }
+
+  // At most one match is expected, since it is based on unique frame name.
+  DCHECK_LE(count, 1);
 }
 
 void NavigationEntryImpl::SetScreenshotPNGData(
@@ -774,11 +971,11 @@ NavigationEntryImpl::TreeNode* NavigationEntryImpl::FindFrameEntry(
   while (!work_queue.empty()) {
     node = work_queue.front();
     work_queue.pop();
-    if (node->MatchesFrame(frame_tree_node, node == root_node()))
+    if (node->MatchesFrame(frame_tree_node))
       return node;
 
     // Enqueue any children and keep looking.
-    for (auto& child : node->children)
+    for (auto* child : node->children)
       work_queue.push(child);
   }
   return nullptr;

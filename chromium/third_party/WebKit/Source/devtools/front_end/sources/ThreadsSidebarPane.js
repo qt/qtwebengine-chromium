@@ -4,13 +4,12 @@
 
 /**
  * @constructor
- * @extends {WebInspector.SidebarPane}
+ * @extends {WebInspector.VBox}
  * @implements {WebInspector.TargetManager.Observer}
  */
 WebInspector.ThreadsSidebarPane = function()
 {
-    WebInspector.SidebarPane.call(this, WebInspector.UIString("Threads"));
-    this.setVisible(false);
+    WebInspector.VBox.call(this);
 
     /** @type {!Map.<!WebInspector.DebuggerModel, !WebInspector.UIList.Item>} */
     this._debuggerModelToListItems = new Map();
@@ -24,6 +23,7 @@ WebInspector.ThreadsSidebarPane = function()
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.DebuggerResumed, this._onDebuggerStateChanged, this);
     WebInspector.targetManager.addModelListener(WebInspector.RuntimeModel, WebInspector.RuntimeModel.Events.ExecutionContextChanged, this._onExecutionContextChanged, this);
     WebInspector.context.addFlavorChangeListener(WebInspector.Target, this._targetChanged, this);
+    WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.NameChanged, this._targetNameChanged, this);
     WebInspector.targetManager.observeTargets(this);
 }
 
@@ -34,15 +34,11 @@ WebInspector.ThreadsSidebarPane.prototype = {
      */
     targetAdded: function(target)
     {
-        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target)
-        if (!debuggerModel) {
-            this._updateVisibility();
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
+        if (!debuggerModel)
             return;
-        }
 
-        var executionContext = target.runtimeModel.defaultExecutionContext();
-        var label = executionContext && executionContext.label() ? executionContext.label() : target.name();
-        var listItem = new WebInspector.UIList.Item(label, "");
+        var listItem = new WebInspector.UIList.Item(this._titleForTarget(target), "");
         listItem.element.addEventListener("click", this._onListItemClick.bind(this, listItem), false);
         var currentTarget = WebInspector.context.flavor(WebInspector.Target);
         if (currentTarget === target)
@@ -52,13 +48,6 @@ WebInspector.ThreadsSidebarPane.prototype = {
         this._listItemsToTargets.set(listItem, target);
         this.threadList.addItem(listItem);
         this._updateDebuggerState(debuggerModel);
-        this._updateVisibility();
-    },
-
-    _updateVisibility: function()
-    {
-        this._wasVisibleAtLeastOnce = this._wasVisibleAtLeastOnce || this._debuggerModelToListItems.size > 1;
-        this.setVisible(this._wasVisibleAtLeastOnce);
     },
 
     /**
@@ -67,7 +56,7 @@ WebInspector.ThreadsSidebarPane.prototype = {
      */
     targetRemoved: function(target)
     {
-        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target)
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
         if (!debuggerModel)
             return;
         var listItem = this._debuggerModelToListItems.remove(debuggerModel);
@@ -75,7 +64,17 @@ WebInspector.ThreadsSidebarPane.prototype = {
             this._listItemsToTargets.remove(listItem);
             this.threadList.removeItem(listItem);
         }
-        this._updateVisibility();
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _targetNameChanged: function(event)
+    {
+        var target = /** @type {!WebInspector.Target} */ (event.data);
+        var listItem = this._listItemForTarget(target);
+        if (listItem)
+            listItem.setTitle(this._titleForTarget(target));
     },
 
     /**
@@ -83,12 +82,31 @@ WebInspector.ThreadsSidebarPane.prototype = {
      */
     _targetChanged: function(event)
     {
-        var newTarget = /** @type {!WebInspector.Target} */(event.data);
-        var debuggerModel = WebInspector.DebuggerModel.fromTarget(newTarget)
+        var listItem = this._listItemForTarget(/** @type {!WebInspector.Target} */ (event.data));
+        if (listItem)
+            this._selectListItem(listItem);
+    },
+
+    /**
+     * @param {!WebInspector.Target} target
+     * @return {?WebInspector.UIList.Item}
+     */
+    _listItemForTarget: function(target)
+    {
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
         if (!debuggerModel)
-            return;
-        var listItem =  /** @type {!WebInspector.UIList.Item} */ (this._debuggerModelToListItems.get(debuggerModel));
-        this._selectListItem(listItem);
+            return null;
+        return this._debuggerModelToListItems.get(debuggerModel) || null;
+    },
+
+    /**
+     * @param {!WebInspector.Target} target
+     * @return {string}
+     */
+    _titleForTarget: function(target)
+    {
+        var executionContext = target.runtimeModel.defaultExecutionContext();
+        return executionContext && executionContext.label() ? executionContext.label() : target.name();
     },
 
     /**
@@ -148,5 +166,5 @@ WebInspector.ThreadsSidebarPane.prototype = {
     },
 
 
-    __proto__: WebInspector.SidebarPane.prototype
+    __proto__: WebInspector.VBox.prototype
 }

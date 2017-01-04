@@ -36,6 +36,24 @@
 #include "libANGLE/renderer/gl/VertexArrayGL.h"
 #include "libANGLE/renderer/gl/renderergl_utils.h"
 
+namespace
+{
+
+std::vector<GLuint> GatherPaths(const std::vector<gl::Path *> &paths)
+{
+    std::vector<GLuint> ret;
+    ret.reserve(paths.size());
+
+    for (const auto *p : paths)
+    {
+        const auto *pathObj = rx::GetImplAs<rx::PathGL>(p);
+        ret.push_back(pathObj->getPathID());
+    }
+    return ret;
+}
+
+}  // namespace
+
 #ifndef NDEBUG
 static void INTERNAL_GL_APIENTRY LogGLDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
                                                    const GLchar *message, const void *userParam)
@@ -104,6 +122,7 @@ RendererGL::RendererGL(const FunctionsGL *functions, const egl::AttributeMap &at
 #ifndef NDEBUG
     if (mHasDebugOutput)
     {
+        mFunctions->enable(GL_DEBUG_OUTPUT);
         mFunctions->enable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
         mFunctions->debugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, nullptr, GL_TRUE);
         mFunctions->debugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, nullptr, GL_TRUE);
@@ -118,6 +137,17 @@ RendererGL::RendererGL(const FunctionsGL *functions, const egl::AttributeMap &at
     if (deviceType == EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE)
     {
         mSkipDrawCalls = true;
+    }
+
+    if (mWorkarounds.initializeCurrentVertexAttributes)
+    {
+        GLint maxVertexAttribs = 0;
+        mFunctions->getIntegerv(GL_MAX_VERTEX_ATTRIBS, &maxVertexAttribs);
+
+        for (GLint i = 0; i < maxVertexAttribs; ++i)
+        {
+            mFunctions->vertexAttrib4f(i, 0.0f, 0.0f, 0.0f, 1.0f);
+        }
     }
 }
 
@@ -315,6 +345,103 @@ void RendererGL::stencilThenCoverStrokePath(const gl::ContextState &state,
     ASSERT(mFunctions->getError() == GL_NO_ERROR);
 }
 
+void RendererGL::coverFillPathInstanced(const gl::ContextState &state,
+                                        const std::vector<gl::Path *> &paths,
+                                        GLenum coverMode,
+                                        GLenum transformType,
+                                        const GLfloat *transformValues)
+{
+    const auto &pathObjs = GatherPaths(paths);
+
+    mFunctions->coverFillPathInstancedNV(static_cast<GLsizei>(pathObjs.size()), GL_UNSIGNED_INT,
+                                         &pathObjs[0], 0, coverMode, transformType,
+                                         transformValues);
+
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
+}
+void RendererGL::coverStrokePathInstanced(const gl::ContextState &state,
+                                          const std::vector<gl::Path *> &paths,
+                                          GLenum coverMode,
+                                          GLenum transformType,
+                                          const GLfloat *transformValues)
+{
+    const auto &pathObjs = GatherPaths(paths);
+
+    mFunctions->coverStrokePathInstancedNV(static_cast<GLsizei>(pathObjs.size()), GL_UNSIGNED_INT,
+                                           &pathObjs[0], 0, coverMode, transformType,
+                                           transformValues);
+
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
+}
+void RendererGL::stencilFillPathInstanced(const gl::ContextState &state,
+                                          const std::vector<gl::Path *> &paths,
+                                          GLenum fillMode,
+                                          GLuint mask,
+                                          GLenum transformType,
+                                          const GLfloat *transformValues)
+{
+    const auto &pathObjs = GatherPaths(paths);
+
+    mFunctions->stencilFillPathInstancedNV(static_cast<GLsizei>(pathObjs.size()), GL_UNSIGNED_INT,
+                                           &pathObjs[0], 0, fillMode, mask, transformType,
+                                           transformValues);
+
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
+}
+void RendererGL::stencilStrokePathInstanced(const gl::ContextState &state,
+                                            const std::vector<gl::Path *> &paths,
+                                            GLint reference,
+                                            GLuint mask,
+                                            GLenum transformType,
+                                            const GLfloat *transformValues)
+{
+    const auto &pathObjs = GatherPaths(paths);
+
+    mFunctions->stencilStrokePathInstancedNV(static_cast<GLsizei>(pathObjs.size()), GL_UNSIGNED_INT,
+                                             &pathObjs[0], 0, reference, mask, transformType,
+                                             transformValues);
+
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
+}
+
+void RendererGL::stencilThenCoverFillPathInstanced(const gl::ContextState &state,
+                                                   const std::vector<gl::Path *> &paths,
+                                                   GLenum coverMode,
+                                                   GLenum fillMode,
+                                                   GLuint mask,
+                                                   GLenum transformType,
+                                                   const GLfloat *transformValues)
+{
+    const auto &pathObjs = GatherPaths(paths);
+
+    mFunctions->stencilThenCoverFillPathInstancedNV(
+        static_cast<GLsizei>(pathObjs.size()), GL_UNSIGNED_INT, &pathObjs[0], 0, fillMode, mask,
+        coverMode, transformType, transformValues);
+
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
+}
+void RendererGL::stencilThenCoverStrokePathInstanced(const gl::ContextState &state,
+                                                     const std::vector<gl::Path *> &paths,
+                                                     GLenum coverMode,
+                                                     GLint reference,
+                                                     GLuint mask,
+                                                     GLenum transformType,
+                                                     const GLfloat *transformValues)
+{
+    const auto &pathObjs = GatherPaths(paths);
+
+    mFunctions->stencilThenCoverStrokePathInstancedNV(
+        static_cast<GLsizei>(pathObjs.size()), GL_UNSIGNED_INT, &pathObjs[0], 0, reference, mask,
+        coverMode, transformType, transformValues);
+
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
+}
+
+GLenum RendererGL::getResetStatus()
+{
+    return mFunctions->getGraphicsResetStatus();
+}
+
 ContextImpl *RendererGL::createContext(const gl::ContextState &state)
 {
     return new ContextGL(state, this);
@@ -334,29 +461,6 @@ void RendererGL::pushGroupMarker(GLsizei length, const char *marker)
 void RendererGL::popGroupMarker()
 {
     mFunctions->popDebugGroup();
-}
-
-void RendererGL::notifyDeviceLost()
-{
-    UNIMPLEMENTED();
-}
-
-bool RendererGL::isDeviceLost() const
-{
-    UNIMPLEMENTED();
-    return bool();
-}
-
-bool RendererGL::testDeviceLost()
-{
-    UNIMPLEMENTED();
-    return bool();
-}
-
-bool RendererGL::testDeviceResettable()
-{
-    UNIMPLEMENTED();
-    return bool();
 }
 
 std::string RendererGL::getVendorString() const

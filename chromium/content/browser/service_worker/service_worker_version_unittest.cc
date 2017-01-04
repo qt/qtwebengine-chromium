@@ -10,6 +10,8 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
+#include "base/test/histogram_tester.h"
+#include "base/time/time.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
@@ -19,9 +21,10 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "content/public/test/test_mojo_service.mojom.h"
+#include "content/public/test/test_service.mojom.h"
 #include "content/public/test/test_utils.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "services/shell/public/cpp/interface_registry.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // IPC messages for testing ---------------------------------------------------
@@ -37,9 +40,10 @@ IPC_MESSAGE_ROUTED1(TestMsg_MessageFromWorker, int)
 IPC_MESSAGE_CONTROL1(TestMsg_TestEvent, int)
 IPC_MESSAGE_CONTROL2(TestMsg_TestEvent_Multiple, int, int)
 IPC_MESSAGE_ROUTED2(TestMsg_TestEventResult, int, std::string)
-IPC_MESSAGE_ROUTED2(TestMsg_TestSimpleEventResult,
+IPC_MESSAGE_ROUTED3(TestMsg_TestSimpleEventResult,
                     int,
-                    blink::WebServiceWorkerEventResult)
+                    blink::WebServiceWorkerEventResult,
+                    base::Time)
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerEventResult,
                           blink::WebServiceWorkerEventResultLast)
@@ -86,9 +90,10 @@ class MessageReceiver : public EmbeddedWorkerTestHelper {
 
   void SimulateSendSimpleEventResult(int embedded_worker_id,
                                      int request_id,
-                                     blink::WebServiceWorkerEventResult reply) {
-    SimulateSend(new TestMsg_TestSimpleEventResult(embedded_worker_id,
-                                                   request_id, reply));
+                                     blink::WebServiceWorkerEventResult reply,
+                                     base::Time dispatch_event_time) {
+    SimulateSend(new TestMsg_TestSimpleEventResult(
+        embedded_worker_id, request_id, reply, dispatch_event_time));
   }
 
  private:
@@ -155,10 +160,11 @@ base::Time GetYesterday() {
          base::TimeDelta::FromSeconds(1);
 }
 
-class TestMojoServiceImpl : public mojom::TestMojoService {
+class TestServiceImpl : public mojom::TestService {
  public:
-  static void Create(mojo::InterfaceRequest<mojom::TestMojoService> request) {
-    new TestMojoServiceImpl(std::move(request));
+  static void Create(mojo::InterfaceRequest<mojom::TestService> request) {
+    mojo::MakeStrongBinding(base::WrapUnique(new TestServiceImpl),
+                            std::move(request));
   }
 
   void DoSomething(const DoSomethingCallback& callback) override {
@@ -177,12 +183,13 @@ class TestMojoServiceImpl : public mojom::TestMojoService {
     callback.Run(mojo::String(""));
   }
 
- private:
-  explicit TestMojoServiceImpl(
-      mojo::InterfaceRequest<mojom::TestMojoService> request)
-      : binding_(this, std::move(request)) {}
+  void CreateSharedBuffer(const std::string& message,
+                          const CreateSharedBufferCallback& callback) override {
+    NOTREACHED();
+  }
 
-  mojo::StrongBinding<mojom::TestMojoService> binding_;
+ private:
+  explicit TestServiceImpl() {}
 };
 
 }  // namespace
@@ -221,6 +228,8 @@ class ServiceWorkerVersionTest : public testing::Test {
     records.push_back(
         ServiceWorkerDatabase::ResourceRecord(10, version_->script_url(), 100));
     version_->script_cache_map()->SetResources(records);
+    version_->set_fetch_handler_existence(
+        ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
 
     // Make the registration findable via storage functions.
     ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
@@ -239,7 +248,7 @@ class ServiceWorkerVersionTest : public testing::Test {
   }
 
   virtual std::unique_ptr<MessageReceiver> GetMessageReceiver() {
-    return base::WrapUnique(new MessageReceiver());
+    return base::MakeUnique<MessageReceiver>();
   }
 
   void TearDown() override {
@@ -266,7 +275,8 @@ class ServiceWorkerVersionTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
 
     // And finish request, as if a response to the event was received.
-    EXPECT_TRUE(version_->FinishRequest(request_id, true));
+    EXPECT_TRUE(version_->FinishRequest(request_id, true /* was_handled */,
+                                        base::Time::Now()));
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(SERVICE_WORKER_ERROR_MAX_VALUE, status);
   }
@@ -327,7 +337,7 @@ class ServiceWorkerFailToStartTest : public ServiceWorkerVersionTest {
   }
 
   std::unique_ptr<MessageReceiver> GetMessageReceiver() override {
-    return base::WrapUnique(new MessageReceiverDisallowStart());
+    return base::MakeUnique<MessageReceiverDisallowStart>();
   }
 
  private:
@@ -352,7 +362,7 @@ class ServiceWorkerStallInStoppingTest : public ServiceWorkerVersionTest {
   ServiceWorkerStallInStoppingTest() : ServiceWorkerVersionTest() {}
 
   std::unique_ptr<MessageReceiver> GetMessageReceiver() override {
-    return base::WrapUnique(new MessageReceiverDisallowStop());
+    return base::MakeUnique<MessageReceiverDisallowStop>();
   }
 
  private:
@@ -365,7 +375,7 @@ class MessageReceiverMojoTestService : public MessageReceiver {
   ~MessageReceiverMojoTestService() override {}
 
   void OnSetupMojo(shell::InterfaceRegistry* registry) override {
-    registry->AddInterface(base::Bind(&TestMojoServiceImpl::Create));
+    registry->AddInterface(base::Bind(&TestServiceImpl::Create));
   }
 
  private:
@@ -377,7 +387,7 @@ class ServiceWorkerVersionWithMojoTest : public ServiceWorkerVersionTest {
   ServiceWorkerVersionWithMojoTest() : ServiceWorkerVersionTest() {}
 
   std::unique_ptr<MessageReceiver> GetMessageReceiver() override {
-    return base::WrapUnique(new MessageReceiverMojoTestService());
+    return base::MakeUnique<MessageReceiverMojoTestService>();
   }
 
  private:
@@ -648,7 +658,8 @@ TEST_F(ServiceWorkerVersionTest, IdleTimeout) {
   int request_id =
       version_->StartRequest(ServiceWorkerMetrics::EventType::SYNC,
                              CreateReceiverOnCurrentThread(&status));
-  EXPECT_TRUE(version_->FinishRequest(request_id, true));
+  EXPECT_TRUE(version_->FinishRequest(request_id, true /* was_handled */,
+                                      base::Time::Now()));
 
   EXPECT_EQ(SERVICE_WORKER_OK, status);
   EXPECT_LT(idle_time, version_->idle_time_);
@@ -830,7 +841,8 @@ TEST_F(ServiceWorkerVersionTest, RequestTimeout) {
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SERVICE_WORKER_ERROR_TIMEOUT, status);
   EXPECT_EQ(EmbeddedWorkerStatus::STOPPED, version_->running_status());
-  EXPECT_FALSE(version_->FinishRequest(request_id, true));
+  EXPECT_FALSE(version_->FinishRequest(request_id, true /* was_handled */,
+                                       base::Time::Now()));
 }
 
 TEST_F(ServiceWorkerVersionTest, RequestCustomizedTimeout) {
@@ -853,7 +865,8 @@ TEST_F(ServiceWorkerVersionTest, RequestCustomizedTimeout) {
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SERVICE_WORKER_ERROR_TIMEOUT, status);
 
-  EXPECT_FALSE(version_->FinishRequest(request_id, true));
+  EXPECT_FALSE(version_->FinishRequest(request_id, true /* was_handled */,
+                                       base::Time::Now()));
 
   // CONTINUE_ON_TIMEOUT timeouts don't stop the service worker.
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version_->running_status());
@@ -879,7 +892,8 @@ TEST_F(ServiceWorkerVersionTest, RequestCustomizedTimeoutKill) {
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SERVICE_WORKER_ERROR_TIMEOUT, status);
 
-  EXPECT_FALSE(version_->FinishRequest(request_id, true));
+  EXPECT_FALSE(version_->FinishRequest(request_id, true /* was_handled */,
+                                       base::Time::Now()));
 
   // KILL_ON_TIMEOUT timeouts should stop the service worker.
   EXPECT_EQ(EmbeddedWorkerStatus::STOPPED, version_->running_status());
@@ -919,7 +933,8 @@ TEST_F(ServiceWorkerVersionTest, MixedRequestTimeouts) {
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version_->running_status());
 
   // Gracefully handle the sync event finishing after the timeout.
-  EXPECT_FALSE(version_->FinishRequest(sync_request_id, true));
+  EXPECT_FALSE(version_->FinishRequest(sync_request_id, true /* was_handled */,
+                                       base::Time::Now()));
 
   // Verify that the fetch times out later.
   version_->SetAllRequestExpirations(base::TimeTicks::Now());
@@ -928,7 +943,8 @@ TEST_F(ServiceWorkerVersionTest, MixedRequestTimeouts) {
   EXPECT_EQ(SERVICE_WORKER_ERROR_TIMEOUT, fetch_status);
 
   // Fetch request should no longer exist.
-  EXPECT_FALSE(version_->FinishRequest(fetch_request_id, true));
+  EXPECT_FALSE(version_->FinishRequest(fetch_request_id, true /* was_handled */,
+                                       base::Time::Now()));
 
   // Other timeouts do stop the service worker.
   EXPECT_EQ(EmbeddedWorkerStatus::STOPPED, version_->running_status());
@@ -1170,7 +1186,8 @@ TEST_F(ServiceWorkerVersionTest, RendererCrashDuringEvent) {
   EXPECT_EQ(EmbeddedWorkerStatus::STOPPED, version_->running_status());
 
   // Request already failed, calling finsh should return false.
-  EXPECT_FALSE(version_->FinishRequest(request_id, true));
+  EXPECT_FALSE(version_->FinishRequest(request_id, true /* was_handled */,
+                                       base::Time::Now()));
 }
 
 TEST_F(ServiceWorkerVersionWithMojoTest, MojoService) {
@@ -1187,15 +1204,16 @@ TEST_F(ServiceWorkerVersionWithMojoTest, MojoService) {
   int request_id = version_->StartRequest(
       ServiceWorkerMetrics::EventType::SYNC,
       CreateReceiverOnCurrentThread(&status, runner->QuitClosure()));
-  base::WeakPtr<mojom::TestMojoService> service =
-      version_->GetMojoServiceForRequest<mojom::TestMojoService>(request_id);
+  base::WeakPtr<mojom::TestService> service =
+      version_->GetMojoServiceForRequest<mojom::TestService>(request_id);
   service->DoSomething(runner->QuitClosure());
   runner->Run();
 
   // Mojo service does exist in worker, so error callback should not have been
   // called and FinishRequest should return true.
   EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_TRUE(version_->FinishRequest(request_id, true));
+  EXPECT_TRUE(version_->FinishRequest(request_id, true /* was_handled */,
+                                      base::Time::Now()));
 }
 
 TEST_F(ServiceWorkerVersionTest, NonExistentMojoService) {
@@ -1212,15 +1230,16 @@ TEST_F(ServiceWorkerVersionTest, NonExistentMojoService) {
   int request_id = version_->StartRequest(
       ServiceWorkerMetrics::EventType::SYNC,
       CreateReceiverOnCurrentThread(&status, runner->QuitClosure()));
-  base::WeakPtr<mojom::TestMojoService> service =
-      version_->GetMojoServiceForRequest<mojom::TestMojoService>(request_id);
+  base::WeakPtr<mojom::TestService> service =
+      version_->GetMojoServiceForRequest<mojom::TestService>(request_id);
   service->DoSomething(runner->QuitClosure());
   runner->Run();
 
   // Mojo service doesn't exist in worker, so error callback should have been
   // called and FinishRequest should return false.
   EXPECT_EQ(SERVICE_WORKER_ERROR_FAILED, status);
-  EXPECT_FALSE(version_->FinishRequest(request_id, true));
+  EXPECT_FALSE(version_->FinishRequest(request_id, true /* was_handled */,
+                                       base::Time::Now()));
 }
 
 TEST_F(ServiceWorkerVersionTest, DispatchEvent) {
@@ -1265,7 +1284,8 @@ TEST_F(ServiceWorkerVersionTest, DispatchEvent) {
   // Should not have timed out, so error callback should not have been
   // called and FinishRequest should return true.
   EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_TRUE(version_->FinishRequest(request_id, true));
+  EXPECT_TRUE(version_->FinishRequest(request_id, true /* was_handled */,
+                                      base::Time::Now()));
 }
 
 TEST_F(ServiceWorkerFailToStartTest, FailingWorkerUsesNewRendererProcess) {
@@ -1325,6 +1345,29 @@ TEST_F(ServiceWorkerFailToStartTest, FailingWorkerUsesNewRendererProcess) {
             version_->embedded_worker()->process_id());
   version_->StopWorker(CreateReceiverOnCurrentThread(&status));
   base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(ServiceWorkerFailToStartTest, RestartStalledWorker) {
+  ServiceWorkerStatusCode status1 = SERVICE_WORKER_ERROR_MAX_VALUE;
+  ServiceWorkerStatusCode status2 = SERVICE_WORKER_ERROR_MAX_VALUE;
+  version_->StartWorker(ServiceWorkerMetrics::EventType::FETCH_MAIN_FRAME,
+                        CreateReceiverOnCurrentThread(&status1));
+  base::RunLoop().RunUntilIdle();
+  // The default start mode is StartMode::STALL. So the callback of StartWorker
+  // is not called yet.
+  EXPECT_EQ(SERVICE_WORKER_ERROR_MAX_VALUE, status1);
+
+  // Set StartMode::SUCCEED. So the next start worker will be successful.
+  set_start_mode(MessageReceiverDisallowStart::StartMode::SUCCEED);
+
+  // StartWorker message will be sent again because OnStopped is called before
+  // OnStarted.
+  version_->StopWorker(CreateReceiverOnCurrentThread(&status2));
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(SERVICE_WORKER_OK, status1);
+  EXPECT_EQ(SERVICE_WORKER_OK, status2);
+  EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version_->running_status());
 }
 
 TEST_F(ServiceWorkerVersionTest, DispatchConcurrentEvent) {
@@ -1388,7 +1431,8 @@ TEST_F(ServiceWorkerVersionTest, DispatchConcurrentEvent) {
   EXPECT_EQ(request_id2, received_request_id2);
   EXPECT_EQ(reply2, received_data2);
   EXPECT_EQ(SERVICE_WORKER_OK, status2);
-  EXPECT_TRUE(version_->FinishRequest(request_id2, true));
+  EXPECT_TRUE(version_->FinishRequest(request_id2, true /* was_handled */,
+                                      base::Time::Now()));
 
   // Reply to first event.
   std::string reply1("hello world");
@@ -1401,7 +1445,8 @@ TEST_F(ServiceWorkerVersionTest, DispatchConcurrentEvent) {
   EXPECT_EQ(request_id2, received_request_id2);
   EXPECT_EQ(reply1, received_data1);
   EXPECT_EQ(SERVICE_WORKER_OK, status1);
-  EXPECT_TRUE(version_->FinishRequest(request_id1, true));
+  EXPECT_TRUE(version_->FinishRequest(request_id1, true /* was_handled */,
+                                      base::Time::Now()));
 }
 
 TEST_F(ServiceWorkerVersionTest, DispatchSimpleEvent_Completed) {
@@ -1434,7 +1479,7 @@ TEST_F(ServiceWorkerVersionTest, DispatchSimpleEvent_Completed) {
   // Simulate sending reply to event.
   helper_->SimulateSendSimpleEventResult(
       version_->embedded_worker()->embedded_worker_id(), request_id,
-      blink::WebServiceWorkerEventResultCompleted);
+      blink::WebServiceWorkerEventResultCompleted, base::Time::Now());
   runner->Run();
 
   // Verify callback was called with correct status.
@@ -1471,7 +1516,7 @@ TEST_F(ServiceWorkerVersionTest, DispatchSimpleEvent_Rejected) {
   // Simulate sending reply to event.
   helper_->SimulateSendSimpleEventResult(
       version_->embedded_worker()->embedded_worker_id(), request_id,
-      blink::WebServiceWorkerEventResultRejected);
+      blink::WebServiceWorkerEventResultRejected, base::Time::Now());
   runner->Run();
 
   // Verify callback was called with correct status.
@@ -1541,8 +1586,163 @@ TEST_F(ServiceWorkerVersionTest, DispatchEvent_MultipleResponse) {
   // Should not have timed out, so error callback should not have been
   // called and FinishRequest should return true.
   EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_TRUE(version_->FinishRequest(request_id1, true));
-  EXPECT_TRUE(version_->FinishRequest(request_id2, true));
+  EXPECT_TRUE(version_->FinishRequest(request_id1, true /* was_handled */,
+                                      base::Time::Now()));
+  EXPECT_TRUE(version_->FinishRequest(request_id2, true /* was_handled */,
+                                      base::Time::Now()));
+}
+
+class ServiceWorkerNavigationHintUMATest : public ServiceWorkerVersionTest {
+ protected:
+  ServiceWorkerNavigationHintUMATest() : ServiceWorkerVersionTest() {}
+
+  void StartWorker(ServiceWorkerMetrics::EventType purpose) {
+    ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
+    version_->StartWorker(purpose, CreateReceiverOnCurrentThread(&status));
+    base::RunLoop().RunUntilIdle();
+    EXPECT_EQ(SERVICE_WORKER_OK, status);
+  }
+
+  void StopWorker() {
+    ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
+    version_->StopWorker(CreateReceiverOnCurrentThread(&status));
+    base::RunLoop().RunUntilIdle();
+    EXPECT_EQ(SERVICE_WORKER_OK, status);
+  }
+
+  void SimpleNavigationHintTest(
+      ServiceWorkerMetrics::EventType purpose,
+      const char* changed_historam_name,
+      const std::vector<const char*>& unchanged_historam_names) {
+    version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+    StartWorker(purpose);
+    StopWorker();
+    histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, true, 0);
+    histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, false, 1);
+    histogram_tester_.ExpectBucketCount(changed_historam_name, true, 0);
+    histogram_tester_.ExpectBucketCount(changed_historam_name, false, 1);
+    for (const char* unchanged_historam_name : unchanged_historam_names)
+      histogram_tester_.ExpectTotalCount(unchanged_historam_name, 0);
+
+    StartWorker(purpose);
+    SimulateDispatchEvent(ServiceWorkerMetrics::EventType::MESSAGE);
+    StopWorker();
+    histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, true, 0);
+    histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, false, 2);
+    histogram_tester_.ExpectBucketCount(changed_historam_name, true, 0);
+    histogram_tester_.ExpectBucketCount(changed_historam_name, false, 2);
+    for (const char* unchanged_historam_name : unchanged_historam_names)
+      histogram_tester_.ExpectTotalCount(unchanged_historam_name, 0);
+
+    StartWorker(purpose);
+    SimulateDispatchEvent(ServiceWorkerMetrics::EventType::FETCH_MAIN_FRAME);
+    StopWorker();
+    histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, true, 1);
+    histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, false, 2);
+    histogram_tester_.ExpectBucketCount(changed_historam_name, true, 1);
+    histogram_tester_.ExpectBucketCount(changed_historam_name, false, 2);
+    for (const char* unchanged_historam_name : unchanged_historam_names)
+      histogram_tester_.ExpectTotalCount(unchanged_historam_name, 0);
+
+    StartWorker(purpose);
+    SimulateDispatchEvent(ServiceWorkerMetrics::EventType::FETCH_SUB_FRAME);
+    StopWorker();
+    histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, true, 2);
+    histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, false, 2);
+    histogram_tester_.ExpectBucketCount(changed_historam_name, true, 2);
+    histogram_tester_.ExpectBucketCount(changed_historam_name, false, 2);
+    for (const char* unchanged_historam_name : unchanged_historam_names)
+      histogram_tester_.ExpectTotalCount(unchanged_historam_name, 0);
+  }
+
+  static const char kNavigationHintPrecision[];
+  static const char kLinkMouseDown[];
+  static const char kLinkTapUnconfirmed[];
+  static const char kLinkTapDown[];
+
+  base::HistogramTester histogram_tester_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ServiceWorkerNavigationHintUMATest);
+};
+
+const char ServiceWorkerNavigationHintUMATest::kNavigationHintPrecision[] =
+    "ServiceWorker.NavigationHintPrecision";
+const char ServiceWorkerNavigationHintUMATest::kLinkMouseDown[] =
+    "ServiceWorker.NavigationHintPrecision.LINK_MOUSE_DOWN";
+const char ServiceWorkerNavigationHintUMATest::kLinkTapUnconfirmed[] =
+    "ServiceWorker.NavigationHintPrecision.LINK_TAP_UNCONFIRMED";
+const char ServiceWorkerNavigationHintUMATest::kLinkTapDown[] =
+    "ServiceWorker.NavigationHintPrecision.LINK_TAP_DOWN";
+
+TEST_F(ServiceWorkerNavigationHintUMATest, LinkMouseDown) {
+  SimpleNavigationHintTest(
+      ServiceWorkerMetrics::EventType::NAVIGATION_HINT_LINK_MOUSE_DOWN,
+      kLinkMouseDown, {kLinkTapUnconfirmed, kLinkTapDown});
+}
+
+TEST_F(ServiceWorkerNavigationHintUMATest, LinkTapUnconfirmed) {
+  SimpleNavigationHintTest(
+      ServiceWorkerMetrics::EventType::NAVIGATION_HINT_LINK_TAP_UNCONFIRMED,
+      kLinkTapUnconfirmed, {kLinkMouseDown, kLinkTapDown});
+}
+
+TEST_F(ServiceWorkerNavigationHintUMATest, LinkTapDown) {
+  SimpleNavigationHintTest(
+      ServiceWorkerMetrics::EventType::NAVIGATION_HINT_LINK_TAP_DOWN,
+      kLinkTapDown, {kLinkMouseDown, kLinkTapUnconfirmed});
+}
+
+TEST_F(ServiceWorkerNavigationHintUMATest, ConcurrentStart) {
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+  ServiceWorkerStatusCode status1 = SERVICE_WORKER_ERROR_MAX_VALUE;
+  ServiceWorkerStatusCode status2 = SERVICE_WORKER_ERROR_MAX_VALUE;
+  version_->StartWorker(ServiceWorkerMetrics::EventType::FETCH_MAIN_FRAME,
+                        CreateReceiverOnCurrentThread(&status1));
+  version_->StartWorker(
+      ServiceWorkerMetrics::EventType::NAVIGATION_HINT_LINK_MOUSE_DOWN,
+      CreateReceiverOnCurrentThread(&status2));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status1);
+  EXPECT_EQ(SERVICE_WORKER_OK, status2);
+  StopWorker();
+  // The first purpose of starting worker was not a navigation hint.
+  histogram_tester_.ExpectTotalCount(kNavigationHintPrecision, 0);
+
+  status1 = SERVICE_WORKER_ERROR_MAX_VALUE;
+  status2 = SERVICE_WORKER_ERROR_MAX_VALUE;
+  version_->StartWorker(
+      ServiceWorkerMetrics::EventType::NAVIGATION_HINT_LINK_MOUSE_DOWN,
+      CreateReceiverOnCurrentThread(&status2));
+  version_->StartWorker(ServiceWorkerMetrics::EventType::FETCH_MAIN_FRAME,
+                        CreateReceiverOnCurrentThread(&status1));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status1);
+  EXPECT_EQ(SERVICE_WORKER_OK, status2);
+  SimulateDispatchEvent(ServiceWorkerMetrics::EventType::FETCH_MAIN_FRAME);
+  StopWorker();
+  // The first purpose of starting worker was a navigation hint.
+  histogram_tester_.ExpectTotalCount(kNavigationHintPrecision, 1);
+  histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, true, 1);
+  histogram_tester_.ExpectBucketCount(kNavigationHintPrecision, false, 0);
+}
+
+TEST_F(ServiceWorkerNavigationHintUMATest, StartWhileStopping) {
+  StartWorker(ServiceWorkerMetrics::EventType::NAVIGATION_HINT_LINK_MOUSE_DOWN);
+  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
+  version_->StopWorker(CreateReceiverOnCurrentThread(&status));
+  EXPECT_EQ(EmbeddedWorkerStatus::STOPPING, version_->running_status());
+  histogram_tester_.ExpectTotalCount(kLinkMouseDown, 0);
+
+  StartWorker(ServiceWorkerMetrics::EventType::NAVIGATION_HINT_LINK_TAP_DOWN);
+  // The UMA for kLinkMouseDown must be recorded while restarting.
+  histogram_tester_.ExpectTotalCount(kLinkMouseDown, 1);
+  histogram_tester_.ExpectTotalCount(kLinkTapDown, 0);
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  StopWorker();
+  // The UMA for kLinkMouseDown must be recorded when the worker stopped.
+  histogram_tester_.ExpectTotalCount(kLinkMouseDown, 1);
+  histogram_tester_.ExpectTotalCount(kLinkTapDown, 1);
 }
 
 }  // namespace content

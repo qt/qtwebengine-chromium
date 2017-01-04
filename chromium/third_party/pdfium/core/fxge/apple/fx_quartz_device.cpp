@@ -4,20 +4,25 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/fx_ext.h"
 
 #ifndef _SKIA_SUPPORT_
 #include "core/fxge/agg/fx_agg_driver.h"
 #endif
 
+#include "core/fxcrt/fx_memory.h"
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_graphstatedata.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/dib_int.h"
+#include "core/fxge/fx_freetype.h"
 #include "core/fxge/ge/fx_text_int.h"
-#include "core/fxge/include/fx_freetype.h"
-#include "core/fxge/include/fx_ge.h"
+#include "third_party/base/ptr_util.h"
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
 #include "core/fxge/apple/apple_int.h"
-#include "core/fxge/include/fx_ge_apple.h"
+#include "core/fxge/apple/cfx_quartzdevice.h"
 #ifndef CGFLOAT_IS_DOUBLE
 #error Expected CGFLOAT_IS_DOUBLE to be defined by CoreGraphics headers
 #endif
@@ -741,7 +746,6 @@ FX_BOOL CFX_QuartzDeviceDriver::CG_DrawGlyphRun(
     int nChars,
     const FXTEXT_CHARPOS* pCharPos,
     CFX_Font* pFont,
-    CFX_FontCache* pCache,
     const CFX_Matrix* pGlyphMatrix,
     const CFX_Matrix* pObject2Device,
     FX_FLOAT font_size,
@@ -807,7 +811,6 @@ FX_BOOL CFX_QuartzDeviceDriver::CG_DrawGlyphRun(
 FX_BOOL CFX_QuartzDeviceDriver::DrawDeviceText(int nChars,
                                                const FXTEXT_CHARPOS* pCharPos,
                                                CFX_Font* pFont,
-                                               CFX_FontCache* pCache,
                                                const CFX_Matrix* pObject2Device,
                                                FX_FLOAT font_size,
                                                uint32_t color) {
@@ -827,8 +830,8 @@ FX_BOOL CFX_QuartzDeviceDriver::DrawDeviceText(int nChars,
   while (i < nChars) {
     if (pCharPos[i].m_bGlyphAdjust || font_size < 0) {
       if (i > 0) {
-        ret = CG_DrawGlyphRun(i, pCharPos, pFont, pCache, nullptr,
-                              pObject2Device, font_size, color);
+        ret = CG_DrawGlyphRun(i, pCharPos, pFont, nullptr, pObject2Device,
+                              font_size, color);
         if (!ret) {
           RestoreState(false);
           return ret;
@@ -844,8 +847,8 @@ FX_BOOL CFX_QuartzDeviceDriver::DrawDeviceText(int nChars,
             char_pos->m_AdjustMatrix[0], char_pos->m_AdjustMatrix[1],
             char_pos->m_AdjustMatrix[2], char_pos->m_AdjustMatrix[3], 0, 0);
       }
-      ret = CG_DrawGlyphRun(1, char_pos, pFont, pCache, &glphy_matrix,
-                            pObject2Device, font_size, color);
+      ret = CG_DrawGlyphRun(1, char_pos, pFont, &glphy_matrix, pObject2Device,
+                            font_size, color);
       if (!ret) {
         RestoreState(false);
         return ret;
@@ -859,7 +862,7 @@ FX_BOOL CFX_QuartzDeviceDriver::DrawDeviceText(int nChars,
     }
   }
   if (i > 0) {
-    ret = CG_DrawGlyphRun(i, pCharPos, pFont, pCache, nullptr, pObject2Device,
+    ret = CG_DrawGlyphRun(i, pCharPos, pFont, nullptr, pObject2Device,
                           font_size, color);
   }
   RestoreState(false);
@@ -1018,34 +1021,32 @@ FX_BOOL CFX_QuartzDevice::Attach(CGContextRef context, int32_t nDeviceClass) {
   }
   m_pContext = context;
   CGContextRetain(m_pContext);
-  IFX_RenderDeviceDriver* pDriver =
-      new CFX_QuartzDeviceDriver(m_pContext, nDeviceClass);
-  SetDeviceDriver(pDriver);
+  SetDeviceDriver(
+      pdfium::MakeUnique<CFX_QuartzDeviceDriver>(m_pContext, nDeviceClass));
   return TRUE;
 }
+
 FX_BOOL CFX_QuartzDevice::Attach(CFX_DIBitmap* pBitmap) {
   SetBitmap(pBitmap);
   m_pContext = createContextWithBitmap(pBitmap);
   if (!m_pContext)
     return FALSE;
 
-  IFX_RenderDeviceDriver* pDriver =
-      new CFX_QuartzDeviceDriver(m_pContext, FXDC_DISPLAY);
-  SetDeviceDriver(pDriver);
+  SetDeviceDriver(
+      pdfium::MakeUnique<CFX_QuartzDeviceDriver>(m_pContext, FXDC_DISPLAY));
   return TRUE;
 }
+
 FX_BOOL CFX_QuartzDevice::Create(int32_t width,
                                  int32_t height,
                                  FXDIB_Format format) {
   if ((uint8_t)format < 32) {
     return FALSE;
   }
-  CFX_DIBitmap* pBitmap = new CFX_DIBitmap;
-  if (!pBitmap->Create(width, height, format)) {
-    delete pBitmap;
+  std::unique_ptr<CFX_DIBitmap> pBitmap(new CFX_DIBitmap);
+  if (!pBitmap->Create(width, height, format))
     return FALSE;
-  }
   m_bOwnedBitmap = TRUE;
-  return Attach(pBitmap);
+  return Attach(pBitmap.release());
 }
 #endif  // _FXM_PLATFORM_  == _FXM_PLATFORM_APPLE_

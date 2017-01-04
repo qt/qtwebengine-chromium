@@ -22,13 +22,19 @@
 #include "net/cert/multi_threaded_cert_verifier.h"
 #include "net/cert/test_root_certs.h"
 #include "net/cert/x509_certificate.h"
+#include "net/log/net_log_with_source.h"
 #include "net/test/cert_test_util.h"
+#include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using net::test::IsError;
+using net::test::IsOk;
 
 namespace net {
 
@@ -147,12 +153,12 @@ TEST_F(NssHttpTest, TestAia) {
       CertVerifier::RequestParams(test_cert, "aia-host.invalid", flags,
                                   std::string(), CertificateList()),
       nullptr, &verify_result, test_callback.callback(), &request,
-      BoundNetLog());
-  ASSERT_EQ(ERR_IO_PENDING, error);
+      NetLogWithSource());
+  ASSERT_THAT(error, IsError(ERR_IO_PENDING));
 
   error = test_callback.WaitForResult();
 
-  EXPECT_EQ(OK, error);
+  EXPECT_THAT(error, IsOk());
 
   // Ensure that NSS made an AIA request for the missing intermediate.
   EXPECT_LT(0, request_count());

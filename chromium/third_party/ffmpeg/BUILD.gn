@@ -46,7 +46,7 @@ if (has_yasm_deps) {
 
     if (is_mac) {
       # Necessary to ensure symbols end up with a _ prefix; added by
-      # yasm_compile.gypi for Windows, but not Mac.
+      # yasm_assemble.gni for Windows, but not Mac.
       defines += [ "PREFIX" ]
     }
   }
@@ -123,7 +123,14 @@ config("ffmpegsumo_warnings") {
   }
 }
 
-source_set("ffmpeg_internal") {
+if (is_component_ffmpeg) {
+  link_target_type = "source_set"
+} else {
+  # This must be a static_library in non-component builds to avoid pulling
+  # in many large global arrays (and associated code) into chrome.dll.
+  link_target_type = "static_library"
+}
+target(link_target_type, "ffmpeg_internal") {
   sources = ffmpeg_c_sources + ffmpeg_gas_sources + [
     "$platform_config_root/config.h",
     "$platform_config_root/libavutil/avconfig.h",
@@ -138,7 +145,8 @@ source_set("ffmpeg_internal") {
     "_XOPEN_SOURCE=600",
     "PIC",
     # Disable deprecated features that generate spammy warnings.
-    # ffmpeg.gyp & media/ffmpeg/ffmpeg_common.h must be kept in sync.
+    # media/ffmpeg/ffmpeg_common.h defines these as well and must be kept
+    # in sync with this file.
     "FF_API_CONVERGENCE_DURATION=0",
     # Upstream libavcodec/utils.c still uses the deprecated
     # av_dup_packet(), causing deprecation warnings.
@@ -182,16 +190,14 @@ source_set("ffmpeg_internal") {
     # FFMmpeg require dead code elimination to be available in all build modes
     # and thus doesn't support wpo.
     configs += [ "//build/config/compiler:optimize_no_wpo" ]
-
-    # /analyze must be disabled for ffmpeg because of an internal compiler
-    # error in VS 2015 Update 1, fixed in Update 2.
-    # https://connect.microsoft.com/VisualStudio/feedback/details/2299303
-    configs -= [ "//build/config/win:vs_code_analysis" ]
   } else {
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 
   if (is_posix) {
+    # Remove default stack frames config so we can force -fomit-frame-pointer.
+    configs -= [ "//build/config/compiler:default_stack_frames" ]
+
     cflags += [
       "-fPIC",
       "-fomit-frame-pointer",

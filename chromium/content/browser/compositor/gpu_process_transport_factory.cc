@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/simple_thread.h"
@@ -18,17 +18,15 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "cc/base/histograms.h"
-#include "cc/output/compositor_frame.h"
-#include "cc/output/output_surface.h"
 #include "cc/output/texture_mailbox_deleter.h"
 #include "cc/output/vulkan_in_process_context_provider.h"
 #include "cc/raster/single_thread_task_graph_runner.h"
 #include "cc/raster/task_graph_runner.h"
 #include "cc/scheduler/begin_frame_source.h"
 #include "cc/scheduler/delay_based_time_source.h"
+#include "cc/surfaces/direct_compositor_frame_sink.h"
 #include "cc/surfaces/display.h"
 #include "cc/surfaces/display_scheduler.h"
-#include "cc/surfaces/surface_display_output_surface.h"
 #include "cc/surfaces/surface_manager.h"
 #include "components/display_compositor/compositor_overlay_candidate_validator.h"
 #include "components/display_compositor/gl_helper.h"
@@ -38,13 +36,10 @@
 #include "content/browser/compositor/offscreen_browser_compositor_output_surface.h"
 #include "content/browser/compositor/reflector_impl.h"
 #include "content/browser/compositor/software_browser_compositor_output_surface.h"
-#include "content/browser/compositor/software_output_device_mus.h"
-#include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
-#include "content/common/gpu_process_launch_causes.h"
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -52,15 +47,18 @@
 #include "gpu/command_buffer/client/shared_memory_limits.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
+#include "services/shell/runner/common/client_util.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_constants.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/layer.h"
+#include "ui/display/types/display_snapshot.h"
 #include "ui/gfx/geometry/size.h"
 
-#if defined(MOJO_RUNNER_CLIENT)
-#include "services/shell/runner/common/client_util.h"
+#if defined(USE_AURA)
+#include "content/browser/compositor/mus_browser_compositor_output_surface.h"
+#include "content/public/common/service_manager_connection.h"
 #endif
 
 #if defined(OS_WIN)
@@ -101,9 +99,14 @@ namespace {
 
 const int kNumRetriesBeforeSoftwareFallback = 4;
 
+bool IsUsingMus() {
+  return shell::ShellIsRemote();
+}
+
 scoped_refptr<content::ContextProviderCommandBuffer> CreateContextCommon(
     scoped_refptr<gpu::GpuChannelHost> gpu_channel_host,
     gpu::SurfaceHandle surface_handle,
+    bool need_alpha_channel,
     bool support_locking,
     content::ContextProviderCommandBuffer* shared_context_provider,
     content::command_buffer_metrics::ContextType type) {
@@ -115,7 +118,7 @@ scoped_refptr<content::ContextProviderCommandBuffer> CreateContextCommon(
   // - The shared main thread context (offscreen).
   // - The compositor context, which is used by the browser compositor
   //   (offscreen) for synchronization mostly, and by the display compositor
-  //   (onscreen) for actual GL drawing.
+  //   (onscreen, except for with mus) for actual GL drawing.
   // - The compositor worker context (offscreen) used for GPU raster.
   // So ask for capabilities needed by any of these cases (we can optimize by
   // branching on |surface_handle| being null if these needs diverge).
@@ -123,14 +126,18 @@ scoped_refptr<content::ContextProviderCommandBuffer> CreateContextCommon(
   // The default framebuffer for an offscreen context is not used, so it does
   // not need alpha, stencil, depth, antialiasing. The display compositor does
   // not use these things either, so we can request nothing here.
+  // The display compositor does not use these things either (except for alpha
+  // when using mus for non-opaque ui that overlaps the system's window
+  // borders), so we can request only that when needed.
   gpu::gles2::ContextCreationAttribHelper attributes;
-  attributes.alpha_size = -1;
+  attributes.alpha_size = need_alpha_channel ? 8 : -1;
   attributes.depth_size = 0;
   attributes.stencil_size = 0;
   attributes.samples = 0;
   attributes.sample_buffers = 0;
   attributes.bind_generates_resource = false;
   attributes.lose_context_when_out_of_memory = true;
+  attributes.buffer_preserved = false;
 
   constexpr bool automatic_flushes = false;
 
@@ -163,8 +170,7 @@ struct GpuProcessTransportFactory::PerCompositorData {
 };
 
 GpuProcessTransportFactory::GpuProcessTransportFactory()
-    : next_surface_id_namespace_(1u),
-      task_graph_runner_(new cc::SingleThreadTaskGraphRunner),
+    : task_graph_runner_(new cc::SingleThreadTaskGraphRunner),
       callback_factory_(this) {
   cc::SetClientNameForMetrics("Browser");
 
@@ -189,10 +195,10 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
 std::unique_ptr<cc::SoftwareOutputDevice>
 GpuProcessTransportFactory::CreateSoftwareOutputDevice(
     ui::Compositor* compositor) {
-#if defined(MOJO_RUNNER_CLIENT)
+#if defined(USE_AURA)
   if (shell::ShellIsRemote()) {
-    return std::unique_ptr<cc::SoftwareOutputDevice>(
-        new SoftwareOutputDeviceMus(compositor));
+    NOTREACHED();
+    return nullptr;
   }
 #endif
 
@@ -218,17 +224,18 @@ CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
   std::unique_ptr<display_compositor::CompositorOverlayCandidateValidator>
       validator;
 #if defined(USE_OZONE)
-  std::unique_ptr<ui::OverlayCandidatesOzone> overlay_candidates =
-      ui::OzonePlatform::GetInstance()
-          ->GetOverlayManager()
-          ->CreateOverlayCandidates(widget);
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (overlay_candidates &&
-      (command_line->HasSwitch(switches::kEnableHardwareOverlays) ||
-       command_line->HasSwitch(switches::kOzoneTestSingleOverlaySupport))) {
+  if (command_line->HasSwitch(switches::kEnableHardwareOverlays)) {
+    std::string enable_overlay_flag =
+        command_line->GetSwitchValueASCII(switches::kEnableHardwareOverlays);
+    std::unique_ptr<ui::OverlayCandidatesOzone> overlay_candidates =
+        ui::OzonePlatform::GetInstance()
+            ->GetOverlayManager()
+            ->CreateOverlayCandidates(widget);
     validator.reset(
         new display_compositor::CompositorOverlayCandidateValidatorOzone(
-            std::move(overlay_candidates)));
+            std::move(overlay_candidates),
+            enable_overlay_flag == "single-fullscreen"));
   }
 #elif defined(OS_MACOSX)
   // Overlays are only supported through the remote layer API.
@@ -251,19 +258,13 @@ CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
   return validator;
 }
 
-static bool ShouldCreateGpuOutputSurface(ui::Compositor* compositor) {
-#if defined(MOJO_RUNNER_CLIENT)
-  // Chrome running as a mojo app currently can only use software compositing.
-  // TODO(rjkroege): http://crbug.com/548451
-  if (shell::ShellIsRemote()) {
-    return false;
-  }
-#endif
-
+static bool ShouldCreateGpuCompositorFrameSink(ui::Compositor* compositor) {
 #if defined(OS_CHROMEOS)
   // Software fallback does not happen on Chrome OS.
   return true;
 #endif
+  if (IsUsingMus())
+    return true;
 
 #if defined(OS_WIN)
   if (::GetProp(compositor->widget(), kForceSoftwareCompositor) &&
@@ -274,15 +275,15 @@ static bool ShouldCreateGpuOutputSurface(ui::Compositor* compositor) {
   return GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor();
 }
 
-void GpuProcessTransportFactory::CreateOutputSurface(
+void GpuProcessTransportFactory::CreateCompositorFrameSink(
     base::WeakPtr<ui::Compositor> compositor) {
   DCHECK(!!compositor);
-  PerCompositorData* data = per_compositor_data_[compositor.get()];
+  PerCompositorData* data = per_compositor_data_[compositor.get()].get();
   if (!data) {
     data = CreatePerCompositorData(compositor.get());
   } else {
     // TODO(danakj): We can destroy the |data->display| here when the compositor
-    // destroys its OutputSurface before calling back here.
+    // destroys its CompositorFrameSink before calling back here.
     data->display_output_surface = nullptr;
     data->begin_frame_source = nullptr;
   }
@@ -293,24 +294,25 @@ void GpuProcessTransportFactory::CreateOutputSurface(
 #endif
 
   const bool use_vulkan = static_cast<bool>(SharedVulkanContextProvider());
-
   const bool create_gpu_output_surface =
-      ShouldCreateGpuOutputSurface(compositor.get());
+      ShouldCreateGpuCompositorFrameSink(compositor.get());
   if (create_gpu_output_surface && !use_vulkan) {
-    BrowserGpuChannelHostFactory::instance()->EstablishGpuChannel(
-        CAUSE_FOR_GPU_LAUNCH_SHARED_WORKER_THREAD_CONTEXT,
+    gpu::GpuChannelEstablishedCallback callback(
         base::Bind(&GpuProcessTransportFactory::EstablishedGpuChannel,
                    callback_factory_.GetWeakPtr(), compositor,
                    create_gpu_output_surface, 0));
+    DCHECK(gpu_channel_factory_);
+    gpu_channel_factory_->EstablishGpuChannel(callback);
   } else {
-    EstablishedGpuChannel(compositor, create_gpu_output_surface, 0);
+    EstablishedGpuChannel(compositor, create_gpu_output_surface, 0, nullptr);
   }
 }
 
 void GpuProcessTransportFactory::EstablishedGpuChannel(
     base::WeakPtr<ui::Compositor> compositor,
     bool create_gpu_output_surface,
-    int num_attempts) {
+    int num_attempts,
+    scoped_refptr<gpu::GpuChannelHost> established_channel_host) {
   if (!compositor)
     return;
 
@@ -320,14 +322,16 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   if (it == per_compositor_data_.end())
     return;
 
-  PerCompositorData* data = it->second;
+  PerCompositorData* data = it->second.get();
   DCHECK(data);
 
   if (num_attempts > kNumRetriesBeforeSoftwareFallback) {
+    bool fatal = IsUsingMus();
 #if defined(OS_CHROMEOS)
-    LOG(FATAL) << "Unable to create a UI graphics context, and cannot use "
-               << "software compositing on ChromeOS.";
+    fatal = true;
 #endif
+    LOG_IF(FATAL, fatal) << "Unable to create a UI graphics context, and "
+                         << "cannot use software compositing on ChromeOS.";
     create_gpu_output_surface = false;
   }
 
@@ -338,7 +342,6 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 
   scoped_refptr<cc::VulkanInProcessContextProvider> vulkan_context_provider =
       SharedVulkanContextProvider();
-
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
   if (create_gpu_output_surface && !vulkan_context_provider) {
     // Try to reuse existing worker context provider.
@@ -356,21 +359,19 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
     }
 
     scoped_refptr<gpu::GpuChannelHost> gpu_channel_host;
-    if (GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
-      // We attempted to do EstablishGpuChannel already, so we just use
-      // GetGpuChannel() instead of EstablishGpuChannelSync().
-      gpu_channel_host =
-          BrowserGpuChannelHostFactory::instance()->GetGpuChannel();
-    }
+    if (GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor())
+      gpu_channel_host = std::move(established_channel_host);
 
     if (!gpu_channel_host) {
       shared_worker_context_provider_ = nullptr;
     } else {
       if (!shared_worker_context_provider_) {
+        bool need_alpha_channel = false;
         const bool support_locking = true;
-        shared_worker_context_provider_ = CreateContextCommon(
-            gpu_channel_host, gpu::kNullSurfaceHandle, support_locking, nullptr,
-            command_buffer_metrics::BROWSER_WORKER_CONTEXT);
+        shared_worker_context_provider_ =
+            CreateContextCommon(gpu_channel_host, gpu::kNullSurfaceHandle,
+                                need_alpha_channel, support_locking, nullptr,
+                                command_buffer_metrics::BROWSER_WORKER_CONTEXT);
         // TODO(vadimt): Remove ScopedTracker below once crbug.com/125248 is
         // fixed. Tracking time in BindToCurrentThread.
         tracked_objects::ScopedTracker tracking_profile(
@@ -386,10 +387,17 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       // display compositor. It shares resources with the worker context, so if
       // we failed to make a worker context, just start over and try again.
       if (shared_worker_context_provider_) {
+        // For mus, we create an offscreen context for a mus window, and we will
+        // use CommandBufferProxyImpl::TakeFrontBuffer() to take the context's
+        // front buffer into a mailbox, insert a sync token, and send the
+        // mailbox+sync to the ui service process.
+        gpu::SurfaceHandle surface_handle =
+            IsUsingMus() ? gpu::kNullSurfaceHandle : data->surface_handle;
+        bool need_alpha_channel = IsUsingMus();
         bool support_locking = false;
         context_provider = CreateContextCommon(
-            std::move(gpu_channel_host), data->surface_handle, support_locking,
-            shared_worker_context_provider_.get(),
+            std::move(gpu_channel_host), surface_handle, need_alpha_channel,
+            support_locking, shared_worker_context_provider_.get(),
             command_buffer_metrics::DISPLAY_COMPOSITOR_ONSCREEN_CONTEXT);
         // TODO(vadimt): Remove ScopedTracker below once crbug.com/125248 is
         // fixed. Tracking time in BindToCurrentThread.
@@ -417,11 +425,12 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 
     if (!created_gpu_browser_compositor) {
       // Try again.
-      BrowserGpuChannelHostFactory::instance()->EstablishGpuChannel(
-          CAUSE_FOR_GPU_LAUNCH_SHARED_WORKER_THREAD_CONTEXT,
+      gpu::GpuChannelEstablishedCallback callback(
           base::Bind(&GpuProcessTransportFactory::EstablishedGpuChannel,
                      callback_factory_.GetWeakPtr(), compositor,
                      create_gpu_output_surface, num_attempts + 1));
+      DCHECK(gpu_channel_factory_);
+      gpu_channel_factory_->EstablishGpuChannel(callback);
       return;
     }
   }
@@ -456,46 +465,60 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   if (!display_output_surface) {
     if (!create_gpu_output_surface) {
       display_output_surface =
-          base::WrapUnique(new SoftwareBrowserCompositorOutputSurface(
+          base::MakeUnique<SoftwareBrowserCompositorOutputSurface>(
               CreateSoftwareOutputDevice(compositor.get()),
-              compositor->vsync_manager(), begin_frame_source.get()));
+              compositor->vsync_manager(), begin_frame_source.get());
     } else {
       DCHECK(context_provider);
       const auto& capabilities = context_provider->ContextCapabilities();
       if (data->surface_handle == gpu::kNullSurfaceHandle) {
         display_output_surface =
-            base::WrapUnique(new OffscreenBrowserCompositorOutputSurface(
+            base::MakeUnique<OffscreenBrowserCompositorOutputSurface>(
                 context_provider, compositor->vsync_manager(),
                 begin_frame_source.get(),
-                std::unique_ptr<display_compositor::
-                                    CompositorOverlayCandidateValidator>()));
+                std::unique_ptr<
+                    display_compositor::CompositorOverlayCandidateValidator>());
       } else if (capabilities.surfaceless) {
 #if defined(OS_MACOSX)
-        display_output_surface = base::WrapUnique(new GpuOutputSurfaceMac(
-            context_provider, data->surface_handle, compositor->vsync_manager(),
-            begin_frame_source.get(),
+        display_output_surface = base::MakeUnique<GpuOutputSurfaceMac>(
+            compositor->widget(), context_provider, data->surface_handle,
+            compositor->vsync_manager(), begin_frame_source.get(),
             CreateOverlayCandidateValidator(compositor->widget()),
-            BrowserGpuMemoryBufferManager::current()));
+            GetGpuMemoryBufferManager());
 #else
         display_output_surface =
-            base::WrapUnique(new GpuSurfacelessBrowserCompositorOutputSurface(
+            base::MakeUnique<GpuSurfacelessBrowserCompositorOutputSurface>(
                 context_provider, data->surface_handle,
                 compositor->vsync_manager(), begin_frame_source.get(),
                 CreateOverlayCandidateValidator(compositor->widget()),
-                GL_TEXTURE_2D, GL_RGB,
-                BrowserGpuMemoryBufferManager::current()));
+                GL_TEXTURE_2D, GL_RGB, ui::DisplaySnapshot::PrimaryFormat(),
+                GetGpuMemoryBufferManager());
 #endif
       } else {
         std::unique_ptr<display_compositor::CompositorOverlayCandidateValidator>
             validator;
+        const bool use_mus = IsUsingMus();
 #if !defined(OS_MACOSX)
         // Overlays are only supported on surfaceless output surfaces on Mac.
-        validator = CreateOverlayCandidateValidator(compositor->widget());
+        if (!use_mus)
+          validator = CreateOverlayCandidateValidator(compositor->widget());
 #endif
-        display_output_surface =
-            base::WrapUnique(new GpuBrowserCompositorOutputSurface(
-                context_provider, compositor->vsync_manager(),
-                begin_frame_source.get(), std::move(validator)));
+        if (!use_mus) {
+          display_output_surface =
+              base::MakeUnique<GpuBrowserCompositorOutputSurface>(
+                  context_provider, compositor->vsync_manager(),
+                  begin_frame_source.get(), std::move(validator));
+        } else {
+#if defined(USE_AURA)
+          display_output_surface =
+              base::MakeUnique<MusBrowserCompositorOutputSurface>(
+                  compositor->window(), context_provider,
+                  compositor->vsync_manager(), begin_frame_source.get(),
+                  std::move(validator));
+#else
+          NOTREACHED();
+#endif
+        }
       }
     }
   }
@@ -516,37 +539,37 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 
   // The Display owns and uses the |display_output_surface| created above.
   data->display = base::MakeUnique<cc::Display>(
-      surface_manager_.get(), HostSharedBitmapManager::current(),
-      BrowserGpuMemoryBufferManager::current(),
-      compositor->GetRendererSettings(),
-      compositor->surface_id_allocator()->id_namespace(),
-      std::move(begin_frame_source), std::move(display_output_surface),
-      std::move(scheduler), base::MakeUnique<cc::TextureMailboxDeleter>(
-                                compositor->task_runner().get()));
+      HostSharedBitmapManager::current(),
+      GetGpuMemoryBufferManager(),
+      compositor->GetRendererSettings(), std::move(begin_frame_source),
+      std::move(display_output_surface), std::move(scheduler),
+      base::MakeUnique<cc::TextureMailboxDeleter>(
+          compositor->task_runner().get()));
 
   // The |delegated_output_surface| is given back to the compositor, it
   // delegates to the Display as its root surface. Importantly, it shares the
   // same ContextProvider as the Display's output surface.
-  std::unique_ptr<cc::SurfaceDisplayOutputSurface> delegated_output_surface(
+  auto compositor_frame_sink =
       vulkan_context_provider
-          ? new cc::SurfaceDisplayOutputSurface(
-                surface_manager_.get(), compositor->surface_id_allocator(),
+          ? base::MakeUnique<cc::DirectCompositorFrameSink>(
+                compositor->frame_sink_id(), surface_manager_.get(),
                 data->display.get(),
                 static_cast<scoped_refptr<cc::VulkanContextProvider>>(
                     vulkan_context_provider))
-          : new cc::SurfaceDisplayOutputSurface(
-                surface_manager_.get(), compositor->surface_id_allocator(),
+          : base::MakeUnique<cc::DirectCompositorFrameSink>(
+                compositor->frame_sink_id(), surface_manager_.get(),
                 data->display.get(), context_provider,
-                shared_worker_context_provider_));
+                shared_worker_context_provider_);
   data->display->Resize(compositor->size());
   data->display->SetOutputIsSecure(data->output_is_secure);
-  compositor->SetOutputSurface(std::move(delegated_output_surface));
+  compositor->SetCompositorFrameSink(std::move(compositor_frame_sink));
 }
 
 std::unique_ptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
     ui::Compositor* source_compositor,
     ui::Layer* target_layer) {
-  PerCompositorData* source_data = per_compositor_data_[source_compositor];
+  PerCompositorData* source_data =
+      per_compositor_data_[source_compositor].get();
   DCHECK(source_data);
 
   std::unique_ptr<ReflectorImpl> reflector(
@@ -560,7 +583,7 @@ std::unique_ptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
 void GpuProcessTransportFactory::RemoveReflector(ui::Reflector* reflector) {
   ReflectorImpl* reflector_impl = static_cast<ReflectorImpl*>(reflector);
   PerCompositorData* data =
-      per_compositor_data_[reflector_impl->mirrored_compositor()];
+      per_compositor_data_[reflector_impl->mirrored_compositor()].get();
   DCHECK(data);
   data->reflector->Shutdown();
   data->reflector = nullptr;
@@ -570,13 +593,12 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
   PerCompositorDataMap::iterator it = per_compositor_data_.find(compositor);
   if (it == per_compositor_data_.end())
     return;
-  PerCompositorData* data = it->second;
+  PerCompositorData* data = it->second.get();
   DCHECK(data);
 #if !defined(GPU_SURFACE_HANDLE_IS_ACCELERATED_WINDOW)
   if (data->surface_handle)
     GpuSurfaceTracker::Get()->RemoveSurface(data->surface_handle);
 #endif
-  delete data;
   per_compositor_data_.erase(it);
   if (per_compositor_data_.empty()) {
     // Destroying the GLHelper may cause some async actions to be cancelled,
@@ -616,7 +638,7 @@ cc::SharedBitmapManager* GpuProcessTransportFactory::GetSharedBitmapManager() {
 
 gpu::GpuMemoryBufferManager*
 GpuProcessTransportFactory::GetGpuMemoryBufferManager() {
-  return BrowserGpuMemoryBufferManager::current();
+  return gpu_channel_factory_->GetGpuMemoryBufferManager();
 }
 
 cc::TaskGraphRunner* GpuProcessTransportFactory::GetTaskGraphRunner() {
@@ -627,13 +649,21 @@ ui::ContextFactory* GpuProcessTransportFactory::GetContextFactory() {
   return this;
 }
 
-std::unique_ptr<cc::SurfaceIdAllocator>
-GpuProcessTransportFactory::CreateSurfaceIdAllocator() {
-  std::unique_ptr<cc::SurfaceIdAllocator> allocator = base::WrapUnique(
-      new cc::SurfaceIdAllocator(next_surface_id_namespace_++));
-  if (GetSurfaceManager())
-    allocator->RegisterSurfaceIdNamespace(GetSurfaceManager());
-  return allocator;
+cc::FrameSinkId GpuProcessTransportFactory::AllocateFrameSinkId() {
+  return cc::FrameSinkId(0, next_sink_id_++);
+}
+
+void GpuProcessTransportFactory::SetDisplayVisible(ui::Compositor* compositor,
+                                                   bool visible) {
+  PerCompositorDataMap::iterator it = per_compositor_data_.find(compositor);
+  if (it == per_compositor_data_.end())
+    return;
+  PerCompositorData* data = it->second.get();
+  DCHECK(data);
+  // The compositor will always SetVisible on the Display once it is set up, so
+  // do nothing if |display| is null.
+  if (data->display)
+    data->display->SetVisible(visible);
 }
 
 void GpuProcessTransportFactory::ResizeDisplay(ui::Compositor* compositor,
@@ -641,7 +671,7 @@ void GpuProcessTransportFactory::ResizeDisplay(ui::Compositor* compositor,
   PerCompositorDataMap::iterator it = per_compositor_data_.find(compositor);
   if (it == per_compositor_data_.end())
     return;
-  PerCompositorData* data = it->second;
+  PerCompositorData* data = it->second.get();
   DCHECK(data);
   if (data->display)
     data->display->Resize(size);
@@ -653,8 +683,10 @@ void GpuProcessTransportFactory::SetDisplayColorSpace(
   PerCompositorDataMap::iterator it = per_compositor_data_.find(compositor);
   if (it == per_compositor_data_.end())
     return;
-  PerCompositorData* data = it->second;
+  PerCompositorData* data = it->second.get();
   DCHECK(data);
+  // The compositor will always SetColorSpace on the Display once it is set up,
+  // so do nothing if |display| is null.
   if (data->display)
     data->display->SetColorSpace(color_space);
 }
@@ -665,10 +697,23 @@ void GpuProcessTransportFactory::SetAuthoritativeVSyncInterval(
   PerCompositorDataMap::iterator it = per_compositor_data_.find(compositor);
   if (it == per_compositor_data_.end())
     return;
-  PerCompositorData* data = it->second;
+  PerCompositorData* data = it->second.get();
   DCHECK(data);
   if (data->begin_frame_source)
     data->begin_frame_source->SetAuthoritativeVSyncInterval(interval);
+}
+
+void GpuProcessTransportFactory::SetDisplayVSyncParameters(
+    ui::Compositor* compositor,
+    base::TimeTicks timebase,
+    base::TimeDelta interval) {
+  PerCompositorDataMap::iterator it = per_compositor_data_.find(compositor);
+  if (it == per_compositor_data_.end())
+    return;
+  PerCompositorData* data = it->second.get();
+  DCHECK(data);
+  if (data->begin_frame_source)
+    data->begin_frame_source->OnUpdateVSyncParameters(timebase, interval);
 }
 
 void GpuProcessTransportFactory::SetOutputIsSecure(ui::Compositor* compositor,
@@ -676,7 +721,7 @@ void GpuProcessTransportFactory::SetOutputIsSecure(ui::Compositor* compositor,
   PerCompositorDataMap::iterator it = per_compositor_data_.find(compositor);
   if (it == per_compositor_data_.end())
     return;
-  PerCompositorData* data = it->second;
+  PerCompositorData* data = it->second.get();
   DCHECK(data);
   data->output_is_secure = secure;
   if (data->display)
@@ -708,6 +753,12 @@ display_compositor::GLHelper* GpuProcessTransportFactory::GetGLHelper() {
   return gl_helper_.get();
 }
 
+void GpuProcessTransportFactory::SetGpuChannelEstablishFactory(
+    gpu::GpuChannelEstablishFactory* factory) {
+  DCHECK(!gpu_channel_factory_ || !factory);
+  gpu_channel_factory_ = factory;
+}
+
 #if defined(OS_MACOSX)
 void GpuProcessTransportFactory::SetCompositorSuspendedForRecycle(
     ui::Compositor* compositor,
@@ -715,7 +766,7 @@ void GpuProcessTransportFactory::SetCompositorSuspendedForRecycle(
   PerCompositorDataMap::iterator it = per_compositor_data_.find(compositor);
   if (it == per_compositor_data_.end())
     return;
-  PerCompositorData* data = it->second;
+  PerCompositorData* data = it->second.get();
   DCHECK(data);
   if (data->display_output_surface)
     data->display_output_surface->SetSurfaceSuspendedForRecycle(suspended);
@@ -729,18 +780,21 @@ GpuProcessTransportFactory::SharedMainThreadContextProvider() {
 
   if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor())
     return nullptr;
-  scoped_refptr<gpu::GpuChannelHost> gpu_channel_host(
-      BrowserGpuChannelHostFactory::instance()->EstablishGpuChannelSync(
-          CAUSE_FOR_GPU_LAUNCH_BROWSER_SHARED_MAIN_THREAD_CONTEXT));
+
+  DCHECK(gpu_channel_factory_);
+  scoped_refptr<gpu::GpuChannelHost> gpu_channel_host =
+      gpu_channel_factory_->EstablishGpuChannelSync();
   if (!gpu_channel_host)
     return nullptr;
 
   // We need a separate context from the compositor's so that skia and gl_helper
   // don't step on each other.
+  bool need_alpha_channel = false;
   bool support_locking = false;
   shared_main_thread_contexts_ = CreateContextCommon(
-      std::move(gpu_channel_host), gpu::kNullSurfaceHandle, support_locking,
-      nullptr, command_buffer_metrics::BROWSER_OFFSCREEN_MAINTHREAD_CONTEXT);
+      std::move(gpu_channel_host), gpu::kNullSurfaceHandle, need_alpha_channel,
+      support_locking, nullptr,
+      command_buffer_metrics::BROWSER_OFFSCREEN_MAINTHREAD_CONTEXT);
   shared_main_thread_contexts_->SetLostContextCallback(base::Bind(
       &GpuProcessTransportFactory::OnLostMainThreadSharedContextInsideCallback,
       callback_factory_.GetWeakPtr()));
@@ -762,7 +816,7 @@ GpuProcessTransportFactory::CreatePerCompositorData(
 
   gfx::AcceleratedWidget widget = compositor->widget();
 
-  PerCompositorData* data = new PerCompositorData;
+  auto data = base::MakeUnique<PerCompositorData>();
   if (widget == gfx::kNullAcceleratedWidget) {
     data->surface_handle = gpu::kNullSurfaceHandle;
   } else {
@@ -774,9 +828,9 @@ GpuProcessTransportFactory::CreatePerCompositorData(
 #endif
   }
 
-  per_compositor_data_[compositor] = data;
-
-  return data;
+  PerCompositorData* return_ptr = data.get();
+  per_compositor_data_[compositor] = std::move(data);
+  return return_ptr;
 }
 
 void GpuProcessTransportFactory::OnLostMainThreadSharedContextInsideCallback() {

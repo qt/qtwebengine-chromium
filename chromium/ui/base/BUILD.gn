@@ -23,10 +23,10 @@ build_ime = !is_ios
 # the host to load datapack and generate output in a format defined
 # by the platform (this is to support notifications).
 #
-# Introduce a standalone target that build on both 'host' and 'target'
-# toolset that just build the support to load datapack. The dependency
+# Introduce a standalone target that can build on both 'host' and 'target'
+# toolchains that just builds the support to load datapacks. The dependencies
 # should be kept minimal to have to build too many targets with multiple
-# toolsets.
+# toolchains.
 component("ui_data_pack") {
   sources = [
     "resource/data_pack.cc",
@@ -96,6 +96,8 @@ component("base") {
     "cocoa/controls/hyperlink_button_cell.mm",
     "cocoa/controls/hyperlink_text_view.h",
     "cocoa/controls/hyperlink_text_view.mm",
+    "cocoa/defaults_utils.h",
+    "cocoa/defaults_utils.mm",
     "cocoa/find_pasteboard.h",
     "cocoa/find_pasteboard.mm",
     "cocoa/flipped_view.h",
@@ -146,7 +148,6 @@ component("base") {
     "default_theme_provider_mac.mm",
     "device_form_factor.h",
     "device_form_factor_android.cc",
-    "device_form_factor_android.h",
     "device_form_factor_desktop.cc",
     "device_form_factor_ios.mm",
     "dragdrop/drag_drop_types.h",
@@ -161,6 +162,10 @@ component("base") {
     "dragdrop/drop_target_win.h",
     "dragdrop/os_exchange_data.cc",
     "dragdrop/os_exchange_data.h",
+    "dragdrop/os_exchange_data_provider_builder_mac.h",
+    "dragdrop/os_exchange_data_provider_builder_mac.mm",
+    "dragdrop/os_exchange_data_provider_factory.cc",
+    "dragdrop/os_exchange_data_provider_factory.h",
     "dragdrop/os_exchange_data_provider_mac.h",
     "dragdrop/os_exchange_data_provider_mac.mm",
     "dragdrop/os_exchange_data_provider_win.cc",
@@ -299,6 +304,7 @@ component("base") {
       "accelerators/accelerator_history.h",
       "accelerators/accelerator_manager.cc",
       "accelerators/accelerator_manager.h",
+      "accelerators/accelerator_manager_delegate.h",
       "base_window.cc",
       "base_window.h",
       "clipboard/clipboard.cc",
@@ -356,6 +362,7 @@ component("base") {
   defines = [ "UI_BASE_IMPLEMENTATION" ]
 
   public_deps = [
+    ":ui_data_pack",
     ":ui_features",
     "//base",
     "//skia",
@@ -371,7 +378,6 @@ component("base") {
     "//net",
     "//third_party/icu",
     "//third_party/zlib:zlib",
-    "//ui/base:ui_data_pack",
     "//ui/display",
     "//ui/events",
     "//ui/events/devices",
@@ -556,16 +562,15 @@ component("base") {
       "dragdrop/drop_target_event.h",
       "dragdrop/os_exchange_data.cc",
       "dragdrop/os_exchange_data.h",
+      "dragdrop/os_exchange_data_provider_factory.cc",
+      "dragdrop/os_exchange_data_provider_factory.h",
       "nine_image_painter_factory.cc",
       "nine_image_painter_factory.h",
     ]
   }
 
   if (is_android) {
-    deps += [
-      ":ui_base_jni_headers",
-      "//ui/android:ui_java",
-    ]
+    deps += [ ":ui_base_jni_headers" ]
 
     libs += [ "jnigraphics" ]
   }
@@ -611,7 +616,7 @@ component("base") {
   }
 }
 
-source_set("test_support") {
+static_library("test_support") {
   testonly = true
   sources = [
     "test/material_design_controller_test_api.cc",
@@ -711,9 +716,9 @@ bundle_data("ui_base_unittests_bundle_data") {
   ]
 }
 
-# GYP version: ui/base/ui_base_tests.gyp:ui_base_unittests
 test("ui_base_unittests") {
   sources = [
+    "clipboard/clipboard_mac_unittest.mm",
     "clipboard/clipboard_util_mac_unittest.mm",
     "l10n/l10n_util_mac_unittest.mm",
     "l10n/l10n_util_unittest.cc",
@@ -753,6 +758,7 @@ test("ui_base_unittests") {
   } else {  # !is_ios
     sources += [
       "accelerators/accelerator_manager_unittest.cc",
+      "accelerators/accelerator_unittest.cc",
       "accelerators/menu_label_accelerator_util_linux_unittest.cc",
       "clipboard/custom_data_helper_unittest.cc",
       "cocoa/base_view_unittest.mm",
@@ -792,9 +798,6 @@ test("ui_base_unittests") {
     ]
     if (is_linux && use_aura && !is_chromeos) {
       sources += [ "ime/input_method_auralinux_unittest.cc" ]
-    }
-    if (is_mac) {
-      sources += [ "resource/resource_bundle_mac_unittest.mm" ]
     }
     if (use_x11) {
       sources += [ "ime/composition_text_util_pango_unittest.cc" ]

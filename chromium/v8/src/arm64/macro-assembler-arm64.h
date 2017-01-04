@@ -742,6 +742,18 @@ class MacroAssembler : public Assembler {
   // csp must be aligned to 16 bytes.
   void PeekPair(const CPURegister& dst1, const CPURegister& dst2, int offset);
 
+  // Emit code that loads |parameter_index|'th parameter from the stack to
+  // the register according to the CallInterfaceDescriptor definition.
+  // |sp_to_caller_sp_offset_in_words| specifies the number of words pushed
+  // below the caller's sp.
+  template <class Descriptor>
+  void LoadParameterFromStack(
+      Register reg, typename Descriptor::ParameterIndices parameter_index,
+      int sp_to_ra_offset_in_words = 0) {
+    DCHECK(Descriptor::kPassLastArgsOnStack);
+    UNIMPLEMENTED();
+  }
+
   // Claim or drop stack space without actually accessing memory.
   //
   // In debug mode, both of these will write invalid data into the claimed or
@@ -1174,7 +1186,8 @@ class MacroAssembler : public Assembler {
                      int num_double_arguments);
 
   // Jump to a runtime routine.
-  void JumpToExternalReference(const ExternalReference& builtin);
+  void JumpToExternalReference(const ExternalReference& builtin,
+                               bool builtin_exit_frame = false);
 
   // Convenience function: call an external reference.
   void CallExternalReference(const ExternalReference& ext,
@@ -1641,6 +1654,9 @@ class MacroAssembler : public Assembler {
   void EnterFrame(StackFrame::Type type, bool load_constant_pool_pointer_reg);
   void LeaveFrame(StackFrame::Type type);
 
+  void EnterBuiltinFrame(Register context, Register target, Register argc);
+  void LeaveBuiltinFrame(Register context, Register target, Register argc);
+
   // Returns map with validated enum cache in object register.
   void CheckEnumCache(Register object, Register scratch0, Register scratch1,
                       Register scratch2, Register scratch3, Register scratch4,
@@ -1702,9 +1718,9 @@ class MacroAssembler : public Assembler {
   //
   // This function also stores the new frame information in the top frame, so
   // that the new frame becomes the current frame.
-  void EnterExitFrame(bool save_doubles,
-                      const Register& scratch,
-                      int extra_space = 0);
+  void EnterExitFrame(bool save_doubles, const Register& scratch,
+                      int extra_space = 0,
+                      StackFrame::Type frame_type = StackFrame::EXIT);
 
   // Leave the current exit frame, after a C function has returned to generated
   // (JavaScript) code.
@@ -2308,14 +2324,6 @@ class InlineSmiCheckInfo {
 }  // namespace internal
 }  // namespace v8
 
-#ifdef GENERATED_CODE_COVERAGE
-#error "Unsupported option"
-#define CODE_COVERAGE_STRINGIFY(x) #x
-#define CODE_COVERAGE_TOSTRING(x) CODE_COVERAGE_STRINGIFY(x)
-#define __FILE_LINE__ __FILE__ ":" CODE_COVERAGE_TOSTRING(__LINE__)
-#define ACCESS_MASM(masm) masm->stop(__FILE_LINE__); masm->
-#else
 #define ACCESS_MASM(masm) masm->
-#endif
 
 #endif  // V8_ARM64_MACRO_ASSEMBLER_ARM64_H_

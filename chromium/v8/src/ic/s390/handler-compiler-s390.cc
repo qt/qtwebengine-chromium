@@ -105,18 +105,32 @@ void NamedStoreHandlerCompiler::GenerateStoreViaSetter(
 void PropertyHandlerCompiler::PushVectorAndSlot(Register vector,
                                                 Register slot) {
   MacroAssembler* masm = this->masm();
-  __ Push(vector, slot);
+  STATIC_ASSERT(LoadWithVectorDescriptor::kSlot <
+                LoadWithVectorDescriptor::kVector);
+  STATIC_ASSERT(StoreWithVectorDescriptor::kSlot <
+                StoreWithVectorDescriptor::kVector);
+  STATIC_ASSERT(StoreTransitionDescriptor::kSlot <
+                StoreTransitionDescriptor::kVector);
+  __ Push(slot, vector);
 }
 
 void PropertyHandlerCompiler::PopVectorAndSlot(Register vector, Register slot) {
   MacroAssembler* masm = this->masm();
-  __ Pop(vector, slot);
+  __ Pop(slot, vector);
 }
 
 void PropertyHandlerCompiler::DiscardVectorAndSlot() {
   MacroAssembler* masm = this->masm();
   // Remove vector and slot.
   __ la(sp, MemOperand(sp, 2 * kPointerSize));
+}
+
+void PropertyHandlerCompiler::PushReturnAddress(Register tmp) {
+  // No-op. Return address is in lr register.
+}
+
+void PropertyHandlerCompiler::PopReturnAddress(Register tmp) {
+  // No-op. Return address is in lr register.
 }
 
 void PropertyHandlerCompiler::GenerateDictionaryNegativeLookup(
@@ -187,7 +201,8 @@ void NamedLoadHandlerCompiler::GenerateLoadFunctionPrototype(
 void PropertyHandlerCompiler::GenerateCheckPropertyCell(
     MacroAssembler* masm, Handle<JSGlobalObject> global, Handle<Name> name,
     Register scratch, Label* miss) {
-  Handle<PropertyCell> cell = JSGlobalObject::EnsurePropertyCell(global, name);
+  Handle<PropertyCell> cell = JSGlobalObject::EnsureEmptyPropertyCell(
+      global, name, PropertyCellType::kInvalidated);
   Isolate* isolate = masm->isolate();
   DCHECK(cell->value()->IsTheHole(isolate));
   Handle<WeakCell> weak_cell = isolate->factory()->NewWeakCell(cell);
@@ -309,29 +324,6 @@ void PropertyHandlerCompiler::GenerateApiAccessorCall(
   __ TailCallStub(&stub);
 }
 
-static void StoreIC_PushArgs(MacroAssembler* masm) {
-  __ Push(StoreDescriptor::ReceiverRegister(), StoreDescriptor::NameRegister(),
-          StoreDescriptor::ValueRegister(),
-          VectorStoreICDescriptor::SlotRegister(),
-          VectorStoreICDescriptor::VectorRegister());
-}
-
-void NamedStoreHandlerCompiler::GenerateSlow(MacroAssembler* masm) {
-  StoreIC_PushArgs(masm);
-
-  // The slow case calls into the runtime to complete the store without causing
-  // an IC miss that would otherwise cause a transition to the generic stub.
-  __ TailCallRuntime(Runtime::kStoreIC_Slow);
-}
-
-void ElementHandlerCompiler::GenerateStoreSlow(MacroAssembler* masm) {
-  StoreIC_PushArgs(masm);
-
-  // The slow case calls into the runtime to complete the store without causing
-  // an IC miss that would otherwise cause a transition to the generic stub.
-  __ TailCallRuntime(Runtime::kKeyedStoreIC_Slow);
-}
-
 #undef __
 #define __ ACCESS_MASM(masm())
 
@@ -345,11 +337,6 @@ void NamedStoreHandlerCompiler::GenerateRestoreName(Label* label,
 
 void NamedStoreHandlerCompiler::GenerateRestoreName(Handle<Name> name) {
   __ mov(this->name(), Operand(name));
-}
-
-void NamedStoreHandlerCompiler::RearrangeVectorAndSlot(
-    Register current_map, Register destination_map) {
-  DCHECK(false);  // Not implemented.
 }
 
 void NamedStoreHandlerCompiler::GenerateRestoreMap(Handle<Map> transition,
@@ -598,6 +585,10 @@ void NamedLoadHandlerCompiler::GenerateLoadInterceptor(Register holder_reg) {
                            holder());
 
   __ TailCallRuntime(Runtime::kLoadPropertyWithInterceptor);
+}
+
+void NamedStoreHandlerCompiler::ZapStackArgumentsRegisterAliases() {
+  STATIC_ASSERT(!StoreWithVectorDescriptor::kPassLastArgsOnStack);
 }
 
 Handle<Code> NamedStoreHandlerCompiler::CompileStoreCallback(

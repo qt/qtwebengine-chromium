@@ -13,8 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
+#include "net/base/net_export.h"
 #include "net/http/http_stream.h"
-#include "net/log/net_log.h"
 #include "net/spdy/spdy_read_queue.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
@@ -46,13 +46,12 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   int InitializeStream(const HttpRequestInfo* request_info,
                        RequestPriority priority,
-                       const BoundNetLog& net_log,
+                       const NetLogWithSource& net_log,
                        const CompletionCallback& callback) override;
 
   int SendRequest(const HttpRequestHeaders& headers,
                   HttpResponseInfo* response,
                   const CompletionCallback& callback) override;
-  UploadProgress GetUploadProgress() const override;
   int ReadResponseHeaders(const CompletionCallback& callback) override;
   int ReadResponseBody(IOBuffer* buf,
                        int buf_len,
@@ -80,8 +79,9 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   void GetSSLInfo(SSLInfo* ssl_info) override;
   void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override;
   bool GetRemoteEndpoint(IPEndPoint* endpoint) override;
-  Error GetSignedEKMForTokenBinding(crypto::ECPrivateKey* key,
-                                    std::vector<uint8_t>* out) override;
+  Error GetTokenBindingSignature(crypto::ECPrivateKey* key,
+                                 TokenBindingType tb_type,
+                                 std::vector<uint8_t>* out) override;
   void Drain(HttpNetworkSession* session) override;
   void PopulateNetErrorDetails(NetErrorDetails* details) override;
   void SetPriority(RequestPriority priority) override;
@@ -96,6 +96,10 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   void OnClose(int status) override;
 
  private:
+  // Helper function used to initialize private members and to set delegate on
+  // stream when stream is created.
+  void InitializeStreamHelper();
+
   // Helper function used for resetting stream from inside the stream.
   void ResetStreamInternal();
 
@@ -155,7 +159,7 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   const HttpRequestInfo* request_info_;
 
   // |response_info_| is the HTTP response data object which is filled in
-  // when a SYN_REPLY comes in for the stream.
+  // when a response HEADERS comes in for the stream.
   // It is not owned by this stream object, or point to |push_response_info_|.
   HttpResponseInfo* response_info_;
 
@@ -189,8 +193,8 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   bool direct_;
 
   SSLInfo ssl_info_;
-  bool was_npn_negotiated_;
-  NextProto protocol_negotiated_;
+  bool was_alpn_negotiated_;
+  NextProto negotiated_protocol_;
 
   base::WeakPtrFactory<SpdyHttpStream> weak_factory_;
 

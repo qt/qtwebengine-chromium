@@ -6,6 +6,7 @@
 #define V8_INTERPRETER_BYTECODE_ARRAY_ITERATOR_H_
 
 #include "src/handles.h"
+#include "src/interpreter/bytecode-register.h"
 #include "src/interpreter/bytecodes.h"
 #include "src/objects.h"
 #include "src/runtime/runtime.h"
@@ -30,6 +31,7 @@ class BytecodeArrayIterator {
   }
 
   uint32_t GetFlagOperand(int operand_index) const;
+  uint32_t GetUnsignedImmediateOperand(int operand_index) const;
   int32_t GetImmediateOperand(int operand_index) const;
   uint32_t GetIndexOperand(int operand_index) const;
   uint32_t GetRegisterCountOperand(int operand_index) const;

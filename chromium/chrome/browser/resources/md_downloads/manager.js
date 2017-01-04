@@ -12,9 +12,20 @@ cr.define('downloads', function() {
         type: Boolean,
       },
 
+      hasShadow_: {
+        type: Boolean,
+        value: false,
+        reflectToAttribute: true,
+      },
+
       items_: {
         type: Array,
         value: function() { return []; },
+      },
+
+      spinnerActive_: {
+        type: Boolean,
+        notify: true,
       },
     },
 
@@ -59,6 +70,7 @@ cr.define('downloads', function() {
       this.splice.apply(this, ['items_', index, 0].concat(list));
       this.updateHideDates_(index, index + list.length);
       this.removeAttribute('loading');
+      this.spinnerActive_ = false;
     },
 
     /** @private */
@@ -105,6 +117,7 @@ cr.define('downloads', function() {
         // Approaching the end of the scrollback. Attempt to load more items.
         downloads.ActionService.getInstance().loadMore();
       }
+      this.hasShadow_ = list.scrollTop > 0;
     },
 
     /** @private */

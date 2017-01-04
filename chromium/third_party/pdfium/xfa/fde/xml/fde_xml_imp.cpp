@@ -8,11 +8,13 @@
 
 #include <algorithm>
 
-#include "core/fxcrt/include/fx_safe_types.h"
+#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_safe_types.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
-#include "xfa/fgas/crt/fgas_system.h"
 
 namespace {
+
+const uint32_t kMaxCharRange = 0x10ffff;
 
 const uint16_t g_XMLValidCharRange[][2] = {{0x09, 0x09},
                                            {0x0A, 0x0A},
@@ -625,7 +627,7 @@ FX_FLOAT CFDE_XMLInstruction::GetFloat(const FX_WCHAR* pwsAttriName,
   int32_t iCount = m_Attributes.GetSize();
   for (int32_t i = 0; i < iCount; i += 2) {
     if (m_Attributes[i].Compare(pwsAttriName) == 0) {
-      return FX_wcstof(m_Attributes[i + 1].c_str());
+      return FXSYS_wcstof(m_Attributes[i + 1].c_str(), -1, nullptr);
     }
   }
   return fDefValue;
@@ -841,7 +843,7 @@ FX_FLOAT CFDE_XMLElement::GetFloat(const FX_WCHAR* pwsAttriName,
   int32_t iCount = m_Attributes.GetSize();
   for (int32_t i = 0; i < iCount; i += 2) {
     if (m_Attributes[i].Compare(pwsAttriName) == 0) {
-      return FX_wcstof(m_Attributes[i + 1].c_str());
+      return FXSYS_wcstof(m_Attributes[i + 1].c_str(), -1, nullptr);
     }
   }
   return fDefValue;
@@ -1617,10 +1619,10 @@ FDE_XmlSyntaxResult CFDE_XMLSyntaxParser::DoSyntaxParse() {
           m_pStart++;
           break;
         case FDE_XmlSyntaxState::SkipCommentOrDecl:
-          if (FX_wcsnicmp(m_pStart, L"--", 2) == 0) {
+          if (FXSYS_wcsnicmp(m_pStart, L"--", 2) == 0) {
             m_pStart += 2;
             m_syntaxParserState = FDE_XmlSyntaxState::SkipComment;
-          } else if (FX_wcsnicmp(m_pStart, L"[CDATA[", 7) == 0) {
+          } else if (FXSYS_wcsnicmp(m_pStart, L"[CDATA[", 7) == 0) {
             m_pStart += 7;
             m_syntaxParserState = FDE_XmlSyntaxState::SkipCData;
           } else {
@@ -1630,7 +1632,7 @@ FDE_XmlSyntaxResult CFDE_XMLSyntaxParser::DoSyntaxParse() {
           }
           break;
         case FDE_XmlSyntaxState::SkipCData: {
-          if (FX_wcsnicmp(m_pStart, L"]]>", 3) == 0) {
+          if (FXSYS_wcsnicmp(m_pStart, L"]]>", 3) == 0) {
             m_pStart += 3;
             syntaxParserResult = FDE_XmlSyntaxResult::CData;
             m_iTextDataLength = m_iDataLength;
@@ -1719,7 +1721,7 @@ FDE_XmlSyntaxResult CFDE_XMLSyntaxParser::DoSyntaxParse() {
           }
           break;
         case FDE_XmlSyntaxState::SkipComment:
-          if (FX_wcsnicmp(m_pStart, L"-->", 3) == 0) {
+          if (FXSYS_wcsnicmp(m_pStart, L"-->", 3) == 0) {
             m_pStart += 2;
             m_syntaxParserState = FDE_XmlSyntaxState::Text;
           }
@@ -1838,23 +1840,23 @@ FX_FILESIZE CFDE_XMLSyntaxParser::GetCurrentBinaryPos() const {
   return m_iParsedBytes + nDstLen;
 }
 
-void CFDE_XMLSyntaxParser::ParseTextChar(FX_WCHAR ch) {
+void CFDE_XMLSyntaxParser::ParseTextChar(FX_WCHAR character) {
   if (m_iIndexInBlock == m_iAllocStep) {
     m_pCurrentBlock = m_BlockBuffer.GetAvailableBlock(m_iIndexInBlock);
     if (!m_pCurrentBlock) {
       return;
     }
   }
-  m_pCurrentBlock[m_iIndexInBlock++] = ch;
+  m_pCurrentBlock[m_iIndexInBlock++] = character;
   m_iDataLength++;
-  if (m_iEntityStart > -1 && ch == L';') {
+  if (m_iEntityStart > -1 && character == L';') {
     CFX_WideString csEntity;
     m_BlockBuffer.GetTextData(csEntity, m_iEntityStart + 1,
                               (m_iDataLength - 1) - m_iEntityStart - 1);
     int32_t iLen = csEntity.GetLength();
     if (iLen > 0) {
       if (csEntity[0] == L'#') {
-        ch = 0;
+        uint32_t ch = 0;
         FX_WCHAR w;
         if (iLen > 1 && csEntity[1] == L'x') {
           for (int32_t i = 2; i < iLen; i++) {
@@ -1872,14 +1874,17 @@ void CFDE_XMLSyntaxParser::ParseTextChar(FX_WCHAR ch) {
         } else {
           for (int32_t i = 1; i < iLen; i++) {
             w = csEntity[i];
-            if (w < L'0' || w > L'9') {
+            if (w < L'0' || w > L'9')
               break;
-            }
             ch = ch * 10 + w - L'0';
           }
         }
-        if (ch != 0) {
-          m_BlockBuffer.SetTextChar(m_iEntityStart, ch);
+        if (ch > kMaxCharRange)
+          ch = ' ';
+
+        character = static_cast<FX_WCHAR>(ch);
+        if (character != 0) {
+          m_BlockBuffer.SetTextChar(m_iEntityStart, character);
           m_iEntityStart++;
         }
       } else {
@@ -1905,7 +1910,7 @@ void CFDE_XMLSyntaxParser::ParseTextChar(FX_WCHAR ch) {
     m_pCurrentBlock = m_BlockBuffer.GetAvailableBlock(m_iIndexInBlock);
     m_iEntityStart = -1;
   } else {
-    if (m_iEntityStart < 0 && ch == L'&') {
+    if (m_iEntityStart < 0 && character == L'&') {
       m_iEntityStart = m_iDataLength - 1;
     }
   }

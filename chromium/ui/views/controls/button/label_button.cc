@@ -12,7 +12,6 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "build/build_config.h"
-#include "ui/base/material_design/material_design_controller.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
@@ -92,7 +91,6 @@ namespace views {
 
 // static
 const int LabelButton::kHoverAnimationDurationMs = 170;
-const int LabelButton::kFocusRectInset = 3;
 const char LabelButton::kViewClassName[] = "LabelButton";
 
 LabelButton::LabelButton(ButtonListener* listener, const base::string16& text)
@@ -127,8 +125,7 @@ LabelButton::LabelButton(ButtonListener* listener, const base::string16& text)
   label_->SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
 
   // Inset the button focus rect from the actual border; roughly match Windows.
-  SetFocusPainter(Painter::CreateDashedFocusPainterWithInsets(gfx::Insets(
-      kFocusRectInset, kFocusRectInset, kFocusRectInset, kFocusRectInset)));
+  SetFocusPainter(Painter::CreateDashedFocusPainterWithInsets(gfx::Insets(3)));
 }
 
 LabelButton::~LabelButton() {}
@@ -190,6 +187,10 @@ void LabelButton::SetFontList(const gfx::FontList& font_list) {
     }
   }
   label_->SetFontList(cached_normal_font_list_);
+}
+
+void LabelButton::AdjustFontSize(int font_size_delta) {
+  LabelButton::SetFontList(GetFontList().DeriveWithSizeDelta(font_size_delta));
 }
 
 void LabelButton::SetElideBehavior(gfx::ElideBehavior elide_behavior) {
@@ -386,7 +387,13 @@ void LabelButton::EnableCanvasFlippingForRTLUI(bool flip) {
 }
 
 std::unique_ptr<LabelButtonBorder> LabelButton::CreateDefaultBorder() const {
-  return PlatformStyle::CreateLabelButtonBorder(style());
+  if (style_ != Button::STYLE_TEXTBUTTON)
+    return base::MakeUnique<LabelButtonAssetBorder>(style_);
+  std::unique_ptr<LabelButtonBorder> border =
+      base::MakeUnique<LabelButtonBorder>();
+  border->set_insets(views::LabelButtonAssetBorder::GetDefaultInsetsForStyle(
+      style_));
+  return border;
 }
 
 void LabelButton::SetBorder(std::unique_ptr<Border> border) {
@@ -422,6 +429,9 @@ void LabelButton::OnNativeThemeChanged(const ui::NativeTheme* theme) {
   ResetLabelEnabledColor();
   // Invalidate the layout to pickup the new insets from the border.
   InvalidateLayout();
+  // The entire button has to be repainted here, since the native theme can
+  // define the tint for the entire background/border/focus ring.
+  SchedulePaint();
 }
 
 void LabelButton::AddInkDropLayer(ui::Layer* ink_drop_layer) {
@@ -441,10 +451,9 @@ std::unique_ptr<views::InkDropRipple> LabelButton::CreateInkDropRipple() const {
   return GetText().empty()
              ? CreateDefaultInkDropRipple(
                    image()->GetMirroredBounds().CenterPoint())
-             : std::unique_ptr<views::InkDropRipple>(
-                   new views::FloodFillInkDropRipple(
-                       GetLocalBounds(), GetInkDropCenterBasedOnLastEvent(),
-                       GetInkDropBaseColor(), ink_drop_visible_opacity()));
+             : base::MakeUnique<views::FloodFillInkDropRipple>(
+                   GetLocalBounds(), GetInkDropCenterBasedOnLastEvent(),
+                   GetInkDropBaseColor(), ink_drop_visible_opacity());
 }
 
 std::unique_ptr<views::InkDropHighlight> LabelButton::CreateInkDropHighlight()
@@ -454,10 +463,10 @@ std::unique_ptr<views::InkDropHighlight> LabelButton::CreateInkDropHighlight()
   return GetText().empty()
              ? CreateDefaultInkDropHighlight(
                    gfx::RectF(image()->GetMirroredBounds()).CenterPoint())
-             : base::WrapUnique(new views::InkDropHighlight(
+             : base::MakeUnique<views::InkDropHighlight>(
                    size(), kInkDropSmallCornerRadius,
                    gfx::RectF(GetLocalBounds()).CenterPoint(),
-                   GetInkDropBaseColor()));
+                   GetInkDropBaseColor());
 }
 
 void LabelButton::StateChanged() {
@@ -481,11 +490,24 @@ void LabelButton::GetExtraParams(ui::NativeTheme::ExtraParams* params) const {
 
 void LabelButton::ResetColorsFromNativeTheme() {
   const ui::NativeTheme* theme = GetNativeTheme();
+  bool button_style = style() == STYLE_BUTTON;
+  // Button colors are used only for STYLE_BUTTON, otherwise we use label
+  // colors. As it turns out, these are almost always the same color anyway in
+  // pre-MD, although in the MD world labels and buttons get different colors.
+  // TODO(estade): simplify this by removing STYLE_BUTTON.
   SkColor colors[STATE_COUNT] = {
-    theme->GetSystemColor(ui::NativeTheme::kColorId_ButtonEnabledColor),
-    theme->GetSystemColor(ui::NativeTheme::kColorId_ButtonHoverColor),
-    theme->GetSystemColor(ui::NativeTheme::kColorId_ButtonHoverColor),
-    theme->GetSystemColor(ui::NativeTheme::kColorId_ButtonDisabledColor),
+      theme->GetSystemColor(button_style
+                                ? ui::NativeTheme::kColorId_ButtonEnabledColor
+                                : ui::NativeTheme::kColorId_LabelEnabledColor),
+      theme->GetSystemColor(button_style
+                                ? ui::NativeTheme::kColorId_ButtonHoverColor
+                                : ui::NativeTheme::kColorId_LabelEnabledColor),
+      theme->GetSystemColor(button_style
+                                ? ui::NativeTheme::kColorId_ButtonHoverColor
+                                : ui::NativeTheme::kColorId_LabelEnabledColor),
+      theme->GetSystemColor(button_style
+                                ? ui::NativeTheme::kColorId_ButtonDisabledColor
+                                : ui::NativeTheme::kColorId_LabelDisabledColor),
   };
 
   // Use hardcoded colors for inverted color scheme support and STYLE_BUTTON.
@@ -496,11 +518,11 @@ void LabelButton::ResetColorsFromNativeTheme() {
     label_->set_background(Background::CreateSolidBackground(SK_ColorBLACK));
     label_->SetAutoColorReadabilityEnabled(true);
     label_->SetShadows(gfx::ShadowValues());
-  } else if (style() == STYLE_BUTTON) {
-    PlatformStyle::ApplyLabelButtonTextStyle(label_, &colors);
-    label_->set_background(nullptr);
   } else {
+    if (style() == STYLE_BUTTON)
+      PlatformStyle::ApplyLabelButtonTextStyle(label_, &colors);
     label_->set_background(nullptr);
+    label_->SetAutoColorReadabilityEnabled(false);
   }
 
   for (size_t state = STATE_NORMAL; state < STATE_COUNT; ++state) {
@@ -541,6 +563,7 @@ void LabelButton::SetTextInternal(const base::string16& text) {
 void LabelButton::ChildPreferredSizeChanged(View* child) {
   ResetCachedPreferredSize();
   PreferredSizeChanged();
+  Layout();
 }
 
 ui::NativeTheme::Part LabelButton::GetThemePart() const {

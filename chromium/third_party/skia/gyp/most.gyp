@@ -27,6 +27,7 @@
         'pathops_skpclip.gyp:*',
         'dm.gyp:dm',
         'fuzz.gyp:fuzz',
+        'skslc.gyp:skslc',
       ],
       'conditions': [
         [ 'skia_gpu == 0', {
@@ -44,6 +45,11 @@
             'android_system.gyp:Viewer_APK',
           ],
         }],
+        ['skia_os == "android"', {
+          'dependencies!': [
+            'SampleApp.gyp:SampleApp',
+          ],
+        }],
         ['skia_os == "ios"', {
           'dependencies!': [
             'example.gyp:HelloWorld',
@@ -51,17 +57,12 @@
           ],
           'dependencies': ['iOSShell.gyp:iOSShell' ],
         }],
-        ['skia_os == "mac" or skia_os == "linux"', {
-          'dependencies': [ 
-            'nanomsg.gyp:*' ,
-          ],
-        }],
         ['skia_os in ["linux", "mac", "win"]', {
           'dependencies': [
             'skiaserve.gyp:skiaserve',
           ],
         }],
-        [ 'skia_os in ["win", "linux", "android"]', {
+        [ 'skia_os in ["win", "linux", "android", "mac"]', {
           'dependencies': [
             'viewer.gyp:viewer',
           ],

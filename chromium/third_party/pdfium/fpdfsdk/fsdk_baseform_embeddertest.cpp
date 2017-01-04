@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "fpdfsdk/include/fsdk_baseform.h"
-#include "fpdfsdk/include/fsdk_define.h"
-#include "fpdfsdk/include/fsdk_mgr.h"
+#include "fpdfsdk/cba_annotiterator.h"
+#include "fpdfsdk/cpdfsdk_annot.h"
+#include "fpdfsdk/cpdfsdk_document.h"
+#include "fpdfsdk/fsdk_define.h"
 #include "testing/embedder_test.h"
 #include "testing/embedder_test_mock_delegate.h"
 #include "testing/embedder_test_timer_handling_delegate.h"
@@ -26,9 +27,12 @@ class FSDKBaseFormEmbeddertest : public EmbedderTest {};
 
 TEST_F(FSDKBaseFormEmbeddertest, CBA_AnnotIterator) {
   EXPECT_TRUE(OpenDocument("annotiter.pdf"));
-  EXPECT_TRUE(LoadPage(0));
-  EXPECT_TRUE(LoadPage(1));
-  EXPECT_TRUE(LoadPage(2));
+  FPDF_PAGE page0 = LoadPage(0);
+  FPDF_PAGE page1 = LoadPage(1);
+  FPDF_PAGE page2 = LoadPage(2);
+  EXPECT_TRUE(page0);
+  EXPECT_TRUE(page1);
+  EXPECT_TRUE(page2);
 
   CFX_FloatRect LeftBottom(200, 200, 220, 220);
   CFX_FloatRect RightBottom(400, 201, 420, 221);
@@ -39,7 +43,8 @@ TEST_F(FSDKBaseFormEmbeddertest, CBA_AnnotIterator) {
       CPDFSDK_Document::FromFPDFFormHandle(form_handle());
   {
     // Page 0 specifies "row order".
-    CBA_AnnotIterator iter(pSDKDoc->GetPageView(0), "Widget", "");
+    CBA_AnnotIterator iter(pSDKDoc->GetPageView(0),
+                           CPDF_Annot::Subtype::WIDGET);
     CPDFSDK_Annot* pAnnot = iter.GetFirstAnnot();
     CheckRect(pAnnot->GetRect(), RightTop);
     pAnnot = iter.GetNextAnnot(pAnnot);
@@ -64,7 +69,8 @@ TEST_F(FSDKBaseFormEmbeddertest, CBA_AnnotIterator) {
   }
   {
     // Page 1 specifies "column order"
-    CBA_AnnotIterator iter(pSDKDoc->GetPageView(1), "Widget", "");
+    CBA_AnnotIterator iter(pSDKDoc->GetPageView(1),
+                           CPDF_Annot::Subtype::WIDGET);
     CPDFSDK_Annot* pAnnot = iter.GetFirstAnnot();
     CheckRect(pAnnot->GetRect(), RightTop);
     pAnnot = iter.GetNextAnnot(pAnnot);
@@ -89,7 +95,8 @@ TEST_F(FSDKBaseFormEmbeddertest, CBA_AnnotIterator) {
   }
   {
     // Page 2 specifies "struct order"
-    CBA_AnnotIterator iter(pSDKDoc->GetPageView(2), "Widget", "");
+    CBA_AnnotIterator iter(pSDKDoc->GetPageView(2),
+                           CPDF_Annot::Subtype::WIDGET);
     CPDFSDK_Annot* pAnnot = iter.GetFirstAnnot();
     CheckRect(pAnnot->GetRect(), LeftBottom);
     pAnnot = iter.GetNextAnnot(pAnnot);
@@ -112,4 +119,7 @@ TEST_F(FSDKBaseFormEmbeddertest, CBA_AnnotIterator) {
     pAnnot = iter.GetPrevAnnot(pAnnot);
     EXPECT_EQ(iter.GetLastAnnot(), pAnnot);
   }
+  UnloadPage(page2);
+  UnloadPage(page1);
+  UnloadPage(page0);
 }

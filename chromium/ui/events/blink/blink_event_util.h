@@ -7,7 +7,7 @@
 
 #include <memory>
 
-#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "ui/events/gesture_detection/motion_event.h"
 
 namespace base {
@@ -22,9 +22,11 @@ class WebTouchEvent;
 
 namespace gfx {
 class PointF;
+class Vector2d;
 }
 
 namespace ui {
+enum class DomCode;
 struct GestureEventData;
 struct GestureEventDetails;
 class MotionEvent;
@@ -50,8 +52,23 @@ std::unique_ptr<blink::WebInputEvent> ScaleWebInputEvent(
     const blink::WebInputEvent& event,
     float scale);
 
+// Transforms coordinates and other properties of |event|, by
+// 1) translating / shifting by |delta| and
+// 2) scaling by |scale|.
+// If |event| does not need to change, returns nullptr.
+// Otherwise, returns the transformed version of |event|.
+std::unique_ptr<blink::WebInputEvent> TranslateAndScaleWebInputEvent(
+    const blink::WebInputEvent& event,
+    const gfx::Vector2d& delta,
+    float scale);
+
 blink::WebPointerProperties::PointerType ToWebPointerType(
     MotionEvent::ToolType tool_type);
+
+int WebEventModifiersToEventFlags(int modifiers);
+
+blink::WebInputEvent::Modifiers DomCodeToWebInputEventModifiers(
+    ui::DomCode code);
 
 }  // namespace ui
 

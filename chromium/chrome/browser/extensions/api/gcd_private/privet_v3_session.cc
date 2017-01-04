@@ -10,6 +10,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -356,8 +357,8 @@ void PrivetV3Session::OnPairingConfirmDone(
   }
 
   std::string auth_code(hmac.DigestLength(), ' ');
-  if (!hmac.Sign(session_id_,
-                 reinterpret_cast<unsigned char*>(string_as_array(&auth_code)),
+  if (!hmac.Sign(session_id_, reinterpret_cast<unsigned char*>(
+                                  base::string_as_array(&auth_code)),
                  auth_code.size())) {
     LOG(FATAL) << "Signing failed";
     return callback.Run(Result::STATUS_SESSIONERROR);
@@ -486,7 +487,7 @@ net::URLFetcher* PrivetV3Session::CreateFetcher(
   FetcherDelegate* fetcher =
       new FetcherDelegate(weak_ptr_factory_.GetWeakPtr(), callback);
   if (!orphaned)
-    fetchers_.push_back(fetcher);
+    fetchers_.push_back(base::WrapUnique(fetcher));
   net::URLFetcher* url_fetcher =
       fetcher->CreateURLFetcher(url, request_type, orphaned);
   url_fetcher->SetLoadFlags(url_fetcher->GetLoadFlags() |
@@ -500,7 +501,14 @@ net::URLFetcher* PrivetV3Session::CreateFetcher(
 }
 
 void PrivetV3Session::DeleteFetcher(const FetcherDelegate* fetcher) {
-  fetchers_.erase(std::find(fetchers_.begin(), fetchers_.end(), fetcher));
+  for (std::vector<std::unique_ptr<FetcherDelegate>>::iterator iter =
+           fetchers_.begin();
+       iter != fetchers_.end(); ++iter) {
+    if (iter->get() == fetcher) {
+      fetchers_.erase(iter);
+      break;
+    }
+  }
 }
 
 void PrivetV3Session::Cancel() {

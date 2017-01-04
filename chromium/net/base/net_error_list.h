@@ -190,7 +190,7 @@ NET_ERROR(SOCKS_CONNECTION_FAILED, -120)
 NET_ERROR(SOCKS_CONNECTION_HOST_UNREACHABLE, -121)
 
 // The request to negotiate an alternate protocol failed.
-NET_ERROR(NPN_NEGOTIATION_FAILED, -122)
+NET_ERROR(ALPN_NEGOTIATION_FAILED, -122)
 
 // The peer sent an SSL no_renegotiation alert message.
 NET_ERROR(SSL_NO_RENEGOTIATION, -123)
@@ -314,9 +314,7 @@ NET_ERROR(WS_THROTTLE_QUEUE_TOO_LARGE, -154)
 // The SSL server certificate changed in a renegotiation.
 NET_ERROR(SSL_SERVER_CERT_CHANGED, -156)
 
-// The SSL server indicated that an unnecessary TLS version fallback was
-// performed.
-NET_ERROR(SSL_INAPPROPRIATE_FALLBACK, -157)
+// Error -157 was removed (SSL_INAPPROPRIATE_FALLBACK).
 
 // Certificate Transparency: All Signed Certificate Timestamps failed to verify.
 NET_ERROR(CT_NO_SCTS_VERIFIED_OK, -158)
@@ -342,9 +340,7 @@ NET_ERROR(SOCKET_SEND_BUFFER_SIZE_UNCHANGEABLE, -163)
 // library.
 NET_ERROR(SSL_CLIENT_AUTH_CERT_BAD_FORMAT, -164)
 
-// The SSL server requires falling back to a version older than the configured
-// minimum fallback version, and thus fallback failed.
-NET_ERROR(SSL_FALLBACK_BEYOND_MINIMUM_VERSION, -165)
+// Error -165 was removed (SSL_FALLBACK_BEYOND_MINIMUM_VERSION).
 
 // Resolving a hostname to an IP address list included the IPv4 address
 // "127.0.53.53". This is a special IP address which ICANN has recommended to
@@ -674,14 +670,14 @@ NET_ERROR(PROXY_HTTP_1_1_REQUIRED, -366)
 // The PAC script terminated fatally and must be reloaded.
 NET_ERROR(PAC_SCRIPT_TERMINATED, -367)
 
-// The certificate offered by the alternative server is not valid for the
-// origin, a violation of HTTP Alternative Services specification Section 2.1,
-// https://tools.ietf.org/id/draft-ietf-httpbis-alt-svc-06.html#host_auth.
-NET_ERROR(ALTERNATIVE_CERT_NOT_VALID_FOR_ORIGIN, -368)
-
+// Obsolete. Kept here to avoid reuse.
 // Request is throttled because of a Backoff header.
 // See: crbug.com/486891.
-NET_ERROR(TEMPORARY_BACKOFF, -369)
+// NET_ERROR(TEMPORARY_BACKOFF, -369)
+
+// The server was expected to return an HTTP/1.x response, but did not. Rather
+// than treat it as HTTP/0.9, this error is returned.
+NET_ERROR(INVALID_HTTP_RESPONSE, -370)
 
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)

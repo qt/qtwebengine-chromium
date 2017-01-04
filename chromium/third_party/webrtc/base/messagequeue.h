@@ -68,8 +68,11 @@ class MessageQueueManager {
 
   static MessageQueueManager* instance_;
   // This list contains all live MessageQueues.
-  std::vector<MessageQueue *> message_queues_;
+  std::vector<MessageQueue*> message_queues_ GUARDED_BY(crit_);
+
+  // Acquire this with DebugNonReentrantCritScope.
   CriticalSection crit_;
+  bool locked_ GUARDED_BY(crit_);
 };
 
 // Derive from this for specialized data
@@ -285,7 +288,6 @@ class MessageQueue {
 
   void WakeUpSocketServer();
 
-  bool fStop_;
   bool fPeekKeep_;
   Message msgPeek_;
   MessageList msgq_ GUARDED_BY(crit_);
@@ -296,6 +298,8 @@ class MessageQueue {
   bool fDestroyed_;
 
  private:
+  volatile int stop_;
+
   // The SocketServer might not be owned by MessageQueue.
   SocketServer* ss_ GUARDED_BY(ss_lock_);
   // Used if SocketServer ownership lies with |this|.

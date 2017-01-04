@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/system_wrappers/include/rtp_to_ntp.h"
+#include "webrtc/test/gtest.h"
 
 namespace webrtc {
 namespace {
@@ -134,6 +134,20 @@ TEST(WrapAroundTests, OldRtp_OldRtcpWrapped) {
   timestamp += 2*kTimestampTicksPerMs;
   int64_t timestamp_in_ms = -1;
   EXPECT_FALSE(RtpToNtpMs(timestamp, rtcp, &timestamp_in_ms));
+}
+
+TEST(RtpToNtpTests, FailsForDecreasingRtpTimestamp) {
+  const uint32_t kNtpSec1 = 3683354930;
+  const uint32_t kNtpFrac1 = 699925050;
+  const uint32_t kTimestamp1 = 2192705742;
+  const uint32_t kNtpSec2 = kNtpSec1;
+  const uint32_t kNtpFrac2 = kNtpFrac1 + kOneMsInNtpFrac;
+  const uint32_t kTimestamp2 = kTimestamp1 - kTimestampTicksPerMs;
+  RtcpList rtcp;
+  rtcp.push_front(RtcpMeasurement(kNtpSec1, kNtpFrac1, kTimestamp1));
+  rtcp.push_front(RtcpMeasurement(kNtpSec2, kNtpFrac2, kTimestamp2));
+  int64_t timestamp_in_ms = -1;
+  EXPECT_FALSE(RtpToNtpMs(kTimestamp1, rtcp, &timestamp_in_ms));
 }
 
 TEST(UpdateRtcpListTests, InjectRtcpSrWithEqualNtp) {

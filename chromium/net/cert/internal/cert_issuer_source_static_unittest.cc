@@ -5,6 +5,7 @@
 #include "net/cert/internal/cert_issuer_source_static.h"
 
 #include "base/bind.h"
+#include "net/cert/internal/cert_errors.h"
 #include "net/cert/internal/parsed_certificate.h"
 #include "net/cert/internal/test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,9 +37,13 @@ void NotCalled(CertIssuerSource::Request* req) {
                   "CERTIFICATE", &der);
   if (!r)
     return r;
-  *result = ParsedCertificate::CreateFromCertificateCopy(der, {});
-  if (!*result)
-    return ::testing::AssertionFailure() << "CreateFromCertificateCopy failed";
+  CertErrors errors;
+  *result = ParsedCertificate::Create(der, {}, &errors);
+  if (!*result) {
+    return ::testing::AssertionFailure()
+           << "ParsedCertificate::Create() failed:\n"
+           << errors.ToDebugString();
+  }
   return ::testing::AssertionSuccess();
 }
 
@@ -78,7 +83,7 @@ TEST_F(CertIssuerSourceStaticTest, NoMatch) {
   CertIssuerSourceStatic source;
   source.AddCert(root_);
 
-  std::vector<scoped_refptr<ParsedCertificate>> issuers;
+  ParsedCertificateList issuers;
   source.SyncGetIssuersOf(c1_.get(), &issuers);
   ASSERT_EQ(0U, issuers.size());
 }
@@ -87,7 +92,7 @@ TEST_F(CertIssuerSourceStaticTest, OneMatch) {
   CertIssuerSourceStatic source;
   AddAllCerts(&source);
 
-  std::vector<scoped_refptr<ParsedCertificate>> issuers;
+  ParsedCertificateList issuers;
   source.SyncGetIssuersOf(i1_1_.get(), &issuers);
   ASSERT_EQ(1U, issuers.size());
   EXPECT_TRUE(issuers[0] == root_);
@@ -102,7 +107,7 @@ TEST_F(CertIssuerSourceStaticTest, MultipleMatches) {
   CertIssuerSourceStatic source;
   AddAllCerts(&source);
 
-  std::vector<scoped_refptr<ParsedCertificate>> issuers;
+  ParsedCertificateList issuers;
   source.SyncGetIssuersOf(c1_.get(), &issuers);
 
   ASSERT_EQ(2U, issuers.size());
@@ -120,7 +125,7 @@ TEST_F(CertIssuerSourceStaticTest, SelfIssued) {
   CertIssuerSourceStatic source;
   AddAllCerts(&source);
 
-  std::vector<scoped_refptr<ParsedCertificate>> issuers;
+  ParsedCertificateList issuers;
   source.SyncGetIssuersOf(root_.get(), &issuers);
 
   ASSERT_EQ(1U, issuers.size());

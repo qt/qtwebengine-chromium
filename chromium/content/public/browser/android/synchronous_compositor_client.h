@@ -7,9 +7,14 @@
 
 #include "base/callback_forward.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/geometry/vector2d_f.h"
+
+namespace ui {
+class TouchHandleDrawable;
+}
 
 namespace content {
 
@@ -32,7 +37,6 @@ class SynchronousCompositorClient {
                                     int process_id,
                                     int routing_id) = 0;
 
-  // See LayerScrollOffsetDelegate for details.
   virtual void UpdateRootLayerState(SynchronousCompositor* compositor,
                                     const gfx::Vector2dF& total_scroll_offset,
                                     const gfx::Vector2dF& max_scroll_offset,
@@ -49,6 +53,12 @@ class SynchronousCompositorClient {
   virtual void PostInvalidate(SynchronousCompositor* compositor) = 0;
 
   virtual void DidUpdateContent(SynchronousCompositor* compositor) = 0;
+
+  virtual ui::TouchHandleDrawable* CreateDrawable() = 0;
+
+  virtual void OnDrawHardwareProcessFrameFuture(
+      const scoped_refptr<content::SynchronousCompositor::FrameFuture>&
+          frame_future) = 0;
 
  protected:
   SynchronousCompositorClient() {}

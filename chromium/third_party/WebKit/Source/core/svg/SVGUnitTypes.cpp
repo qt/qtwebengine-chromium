@@ -32,14 +32,17 @@
 
 namespace blink {
 
-template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGUnitTypes::SVGUnitType>()
-{
-    DEFINE_STATIC_LOCAL(SVGEnumerationStringEntries, entries, ());
-    if (entries.isEmpty()) {
-        entries.append(std::make_pair(SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE, "userSpaceOnUse"));
-        entries.append(std::make_pair(SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX, "objectBoundingBox"));
-    }
-    return entries;
+template <>
+const SVGEnumerationStringEntries&
+getStaticStringEntries<SVGUnitTypes::SVGUnitType>() {
+  DEFINE_STATIC_LOCAL(SVGEnumerationStringEntries, entries, ());
+  if (entries.isEmpty()) {
+    entries.append(std::make_pair(SVGUnitTypes::kSvgUnitTypeUserspaceonuse,
+                                  "userSpaceOnUse"));
+    entries.append(std::make_pair(SVGUnitTypes::kSvgUnitTypeObjectboundingbox,
+                                  "objectBoundingBox"));
+  }
+  return entries;
 }
 
-} // namespace blink
+}  // namespace blink

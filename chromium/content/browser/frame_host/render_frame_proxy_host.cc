@@ -19,6 +19,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/common/frame_owner_properties.h"
 #include "content/public/browser/browser_thread.h"
 #include "ipc/ipc_message.h"
 
@@ -183,21 +184,18 @@ bool RenderFrameProxyHost::InitRenderFrameProxy() {
         site_instance_.get());
   }
 
-  Send(new FrameMsg_NewFrameProxy(routing_id_,
-                                  frame_tree_node_->frame_tree()
-                                      ->GetRenderViewHost(site_instance_.get())
-                                      ->GetRoutingID(),
-                                  opener_routing_id,
-                                  parent_routing_id,
-                                  frame_tree_node_
-                                      ->current_replication_state()));
+  int view_routing_id = frame_tree_node_->frame_tree()
+      ->GetRenderViewHost(site_instance_.get())->GetRoutingID();
+  RenderProcessHostImpl::GetRendererInterface(GetProcess())->CreateFrameProxy(
+      routing_id_, view_routing_id, opener_routing_id, parent_routing_id,
+      frame_tree_node_->current_replication_state());
 
   render_frame_proxy_created_ = true;
 
-  // For subframes, initialize the proxy's WebFrameOwnerProperties only if they
+  // For subframes, initialize the proxy's FrameOwnerProperties only if they
   // differ from default values.
-  bool should_send_properties = frame_tree_node_->frame_owner_properties() !=
-                                blink::WebFrameOwnerProperties();
+  bool should_send_properties =
+      frame_tree_node_->frame_owner_properties() != FrameOwnerProperties();
   if (frame_tree_node_->parent() && should_send_properties) {
     Send(new FrameMsg_SetFrameOwnerProperties(
         routing_id_, frame_tree_node_->frame_owner_properties()));
@@ -256,7 +254,7 @@ void RenderFrameProxyHost::OnOpenURL(
 
   // Since this navigation targeted a specific RenderFrameProxy, it should stay
   // in the current tab.
-  DCHECK_EQ(CURRENT_TAB, params.disposition);
+  DCHECK_EQ(WindowOpenDisposition::CURRENT_TAB, params.disposition);
 
   // TODO(alexmos, creis): Figure out whether |params.user_gesture| needs to be
   // passed in as well.
@@ -370,8 +368,8 @@ void RenderFrameProxyHost::OnAdvanceFocus(blink::WebFocusType type,
 }
 
 void RenderFrameProxyHost::OnFrameFocused() {
-  frame_tree_node_->frame_tree()->SetFocusedFrame(frame_tree_node_,
-                                                  GetSiteInstance());
+  frame_tree_node_->current_frame_host()->delegate()->SetFocusedFrame(
+      frame_tree_node_, GetSiteInstance());
 }
 
 }  // namespace content

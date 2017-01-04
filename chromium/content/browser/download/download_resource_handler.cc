@@ -129,6 +129,15 @@ DownloadResourceHandler::~DownloadResourceHandler() {
   }
 }
 
+// static
+std::unique_ptr<ResourceHandler> DownloadResourceHandler::Create(
+    net::URLRequest* request) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  std::unique_ptr<ResourceHandler> handler(
+      new DownloadResourceHandler(request));
+  return handler;
+}
+
 bool DownloadResourceHandler::OnRequestRedirected(
     const net::RedirectInfo& redirect_info,
     ResourceResponse* response,
@@ -149,11 +158,6 @@ bool DownloadResourceHandler::OnWillStart(const GURL& url, bool* defer) {
   return true;
 }
 
-bool DownloadResourceHandler::OnBeforeNetworkStart(const GURL& url,
-                                                   bool* defer) {
-  return true;
-}
-
 // Create a new buffer, which will be handed to the download thread for file
 // writing and deletion.
 bool DownloadResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
@@ -169,7 +173,6 @@ bool DownloadResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
 
 void DownloadResourceHandler::OnResponseCompleted(
     const net::URLRequestStatus& status,
-    const std::string& security_info,
     bool* defer) {
   core_.OnResponseCompleted(status);
 }

@@ -43,7 +43,6 @@
 using namespace clang::ast_matchers;
 using clang::tooling::CommonOptionsParser;
 using clang::tooling::Replacement;
-using clang::tooling::Replacements;
 using llvm::StringRef;
 
 namespace {
@@ -60,11 +59,30 @@ AST_MATCHER(clang::FunctionDecl, isOverloadedOperator) {
   return Node.isOverloadedOperator();
 }
 
+AST_MATCHER(clang::CXXMethodDecl, isInstanceMethod) {
+  return Node.isInstance();
+}
+
 AST_MATCHER_P(clang::FunctionTemplateDecl,
               templatedDecl,
               clang::ast_matchers::internal::Matcher<clang::FunctionDecl>,
               InnerMatcher) {
   return InnerMatcher.matches(*Node.getTemplatedDecl(), Finder, Builder);
+}
+
+// If |InnerMatcher| matches |top|, then the returned matcher will match:
+// - |top::function|
+// - |top::Class::method|
+// - |top::internal::Class::method|
+AST_MATCHER_P(
+    clang::NestedNameSpecifier,
+    hasTopLevelPrefix,
+    clang::ast_matchers::internal::Matcher<clang::NestedNameSpecifier>,
+    InnerMatcher) {
+  const clang::NestedNameSpecifier* NodeToMatch = &Node;
+  while (NodeToMatch->getPrefix())
+    NodeToMatch = NodeToMatch->getPrefix();
+  return InnerMatcher.matches(*NodeToMatch, Finder, Builder);
 }
 
 // This will narrow CXXCtorInitializers down for both FieldDecls and
@@ -92,17 +110,6 @@ AST_MATCHER_P(clang::OverloadExpr,
       return false;
   }
   return true;
-}
-
-bool IsDeclContextInWTF(const clang::DeclContext* decl_context) {
-  auto* namespace_decl = clang::dyn_cast_or_null<clang::NamespaceDecl>(
-      decl_context->getEnclosingNamespaceContext());
-  if (!namespace_decl)
-    return false;
-  if (namespace_decl->getParent()->isTranslationUnit() &&
-      namespace_decl->getName() == "WTF")
-    return true;
-  return IsDeclContextInWTF(namespace_decl->getParent());
 }
 
 template <typename T>
@@ -175,8 +182,8 @@ bool IsBlacklistedMethod(const clang::CXXMethodDecl& decl) {
   clang::StringRef name = decl.getName();
 
   // These methods should never be renamed.
-  static const char* kBlacklistMethods[] = {"trace", "lock", "unlock",
-                                            "try_lock"};
+  static const char* kBlacklistMethods[] = {"trace", "traceImpl", "lock",
+                                            "unlock", "try_lock"};
   for (const auto& b : kBlacklistMethods) {
     if (name == b)
       return true;
@@ -283,16 +290,46 @@ bool IsProbablyConst(const clang::VarDecl& decl,
   return initializer->isEvaluatable(context);
 }
 
+AST_MATCHER_P(clang::QualType, hasString, std::string, ExpectedString) {
+  return ExpectedString == Node.getAsString();
+}
+
 bool GetNameForDecl(const clang::FunctionDecl& decl,
-                    const clang::ASTContext& context,
+                    clang::ASTContext& context,
                     std::string& name) {
   name = decl.getName().str();
   name[0] = clang::toUppercase(name[0]);
+
+  // Given
+  //   class Foo {};
+  //   using Bar = Foo;
+  //   Bar f1();  // <- |Bar| would be matched by hasString("Bar") below.
+  //   Bar f2();  // <- |Bar| would be matched by hasName("Foo") below.
+  // |type_with_same_name_as_function| matcher matches Bar and Foo return types.
+  auto type_with_same_name_as_function = qualType(anyOf(
+      hasString(name),  // hasString matches the type as spelled (Bar above).
+      hasDeclaration(namedDecl(hasName(name)))));  // hasDeclaration matches
+                                                   // resolved type (Foo above).
+  // |type_containing_same_name_as_function| matcher will match all of the
+  // return types below:
+  // - Foo foo()  // Direct application of |type_with_same_name_as_function|.
+  // - Foo* foo()  // |hasDescendant| traverses references/pointers.
+  // - RefPtr<Foo> foo()  // |hasDescendant| traverses template arguments.
+  auto type_containing_same_name_as_function =
+      qualType(anyOf(type_with_same_name_as_function,
+                     hasDescendant(type_with_same_name_as_function)));
+  // https://crbug.com/582312: Prepend "Get" if method name conflicts with
+  // return type.
+  auto conflict_matcher =
+      functionDecl(returns(type_containing_same_name_as_function));
+  if (!match(conflict_matcher, decl, context).empty())
+    name = "Get" + name;
+
   return true;
 }
 
 bool GetNameForDecl(const clang::EnumConstantDecl& decl,
-                    const clang::ASTContext& context,
+                    clang::ASTContext& context,
                     std::string& name) {
   StringRef original_name = decl.getName();
 
@@ -319,7 +356,7 @@ bool GetNameForDecl(const clang::EnumConstantDecl& decl,
 }
 
 bool GetNameForDecl(const clang::FieldDecl& decl,
-                    const clang::ASTContext& context,
+                    clang::ASTContext& context,
                     std::string& name) {
   StringRef original_name = decl.getName();
   bool member_prefix = original_name.startswith(kBlinkFieldPrefix);
@@ -338,13 +375,33 @@ bool GetNameForDecl(const clang::FieldDecl& decl,
 }
 
 bool GetNameForDecl(const clang::VarDecl& decl,
-                    const clang::ASTContext& context,
+                    clang::ASTContext& context,
                     std::string& name) {
   StringRef original_name = decl.getName();
 
   // Nothing to do for unnamed parameters.
-  if (clang::isa<clang::ParmVarDecl>(decl) && original_name.empty())
-    return false;
+  if (clang::isa<clang::ParmVarDecl>(decl)) {
+    if (original_name.empty())
+      return false;
+
+    // Check if |decl| and |decl.getLocation| are in sync.  We need to skip
+    // out-of-sync ParmVarDecls to avoid renaming buggy ParmVarDecls that
+    // 1) have decl.getLocation() pointing at a parameter declaration without a
+    // name, but 2) have decl.getName() retained from a template specialization
+    // of a method.  See also: https://llvm.org/bugs/show_bug.cgi?id=29145
+    clang::SourceLocation loc =
+        context.getSourceManager().getSpellingLoc(decl.getLocation());
+    auto parents = context.getParents(decl);
+    bool is_child_location_within_parent_source_range = std::all_of(
+        parents.begin(), parents.end(),
+        [&loc](const clang::ast_type_traits::DynTypedNode& parent) {
+          clang::SourceLocation begin = parent.getSourceRange().getBegin();
+          clang::SourceLocation end = parent.getSourceRange().getEnd();
+          return (begin < loc) && (loc < end);
+        });
+    if (!is_child_location_within_parent_source_range)
+      return false;
+  }
 
   // static class members match against VarDecls. Blink style dictates that
   // these should be prefixed with `s_`, so strip that off. Also check for `m_`
@@ -359,15 +416,6 @@ bool GetNameForDecl(const clang::VarDecl& decl,
     // Don't try to rename constants that already conform to Chrome style.
     if (original_name.size() >= 2 && original_name[0] == 'k' &&
         clang::isUppercase(original_name[1]))
-      return false;
-
-    // Struct consts in WTF do not become kFoo cuz stuff like type traits
-    // should stay as lowercase.
-    const clang::DeclContext* decl_context = decl.getDeclContext();
-    bool is_in_wtf = IsDeclContextInWTF(decl_context);
-    const clang::CXXRecordDecl* parent =
-        clang::dyn_cast_or_null<clang::CXXRecordDecl>(decl_context);
-    if (is_in_wtf && parent && parent->isStruct())
       return false;
 
     name = 'k';
@@ -394,14 +442,14 @@ bool GetNameForDecl(const clang::VarDecl& decl,
 }
 
 bool GetNameForDecl(const clang::FunctionTemplateDecl& decl,
-                    const clang::ASTContext& context,
+                    clang::ASTContext& context,
                     std::string& name) {
   clang::FunctionDecl* templated_function = decl.getTemplatedDecl();
   return GetNameForDecl(*templated_function, context, name);
 }
 
 bool GetNameForDecl(const clang::NamedDecl& decl,
-                    const clang::ASTContext& context,
+                    clang::ASTContext& context,
                     std::string& name) {
   if (auto* function = clang::dyn_cast<clang::FunctionDecl>(&decl))
     return GetNameForDecl(*function, context, name);
@@ -419,7 +467,7 @@ bool GetNameForDecl(const clang::NamedDecl& decl,
 }
 
 bool GetNameForDecl(const clang::UsingDecl& decl,
-                    const clang::ASTContext& context,
+                    clang::ASTContext& context,
                     std::string& name) {
   assert(decl.shadow_size() > 0);
 
@@ -491,7 +539,7 @@ struct TargetNodeTraits<clang::UnresolvedMemberExpr> {
 template <typename DeclNode, typename TargetNode>
 class RewriterBase : public MatchFinder::MatchCallback {
  public:
-  explicit RewriterBase(Replacements* replacements)
+  explicit RewriterBase(std::set<Replacement>* replacements)
       : replacements_(replacements) {}
 
   void run(const MatchFinder::MatchResult& result) override {
@@ -533,7 +581,7 @@ class RewriterBase : public MatchFinder::MatchCallback {
   }
 
  private:
-  Replacements* const replacements_;
+  std::set<Replacement>* const replacements_;
   std::unordered_map<std::string, std::string> replacement_names_;
 };
 
@@ -583,12 +631,32 @@ int main(int argc, const char* argv[]) {
                                  options.getSourcePathList());
 
   MatchFinder match_finder;
-  Replacements replacements;
+  std::set<Replacement> replacements;
 
-  auto in_blink_namespace =
-      decl(hasAncestor(namespaceDecl(anyOf(hasName("blink"), hasName("WTF")),
-                                     hasParent(translationUnitDecl()))),
-           unless(isExpansionInFileMatching(kGeneratedFileRegex)));
+  // Blink namespace matchers ========
+  auto blink_namespace_decl =
+      namespaceDecl(anyOf(hasName("blink"), hasName("WTF")),
+                    hasParent(translationUnitDecl()));
+
+  // Given top-level compilation unit:
+  //   namespace WTF {
+  //     void foo() {}
+  //   }
+  // matches |foo|.
+  auto decl_under_blink_namespace = decl(hasAncestor(blink_namespace_decl));
+
+  // Given top-level compilation unit:
+  //   void WTF::function() {}
+  //   void WTF::Class::method() {}
+  // matches |WTF::function| and |WTF::Class::method| decls.
+  auto decl_has_qualifier_to_blink_namespace =
+      declaratorDecl(has(nestedNameSpecifier(
+          hasTopLevelPrefix(specifiesNamespace(blink_namespace_decl)))));
+
+  auto in_blink_namespace = decl(
+      anyOf(decl_under_blink_namespace, decl_has_qualifier_to_blink_namespace,
+            hasAncestor(decl_has_qualifier_to_blink_namespace)),
+      unless(isExpansionInFileMatching(kGeneratedFileRegex)));
 
   // Field, variable, and enum declarations ========
   // Given
@@ -599,7 +667,14 @@ int main(int argc, const char* argv[]) {
   //   };
   // matches |x|, |y|, and |VALUE|.
   auto field_decl_matcher = id("decl", fieldDecl(in_blink_namespace));
-  auto var_decl_matcher = id("decl", varDecl(in_blink_namespace));
+  auto is_type_trait_value =
+      varDecl(hasName("value"), hasStaticStorageDuration(), isPublic(),
+              hasType(isConstQualified()), hasType(type(anyOf(
+                  booleanType(), enumType()))),
+              unless(hasAncestor(recordDecl(
+                  has(cxxMethodDecl(isUserProvided(), isInstanceMethod()))))));
+  auto var_decl_matcher =
+      id("decl", varDecl(in_blink_namespace, unless(is_type_trait_value)));
   auto enum_member_decl_matcher =
       id("decl", enumConstantDecl(in_blink_namespace));
 

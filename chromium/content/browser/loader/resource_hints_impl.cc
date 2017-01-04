@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <string>
+
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/browser_thread.h"
@@ -10,11 +12,11 @@
 #include "net/base/address_list.h"
 #include "net/base/load_flags.h"
 #include "net/dns/host_resolver.h"
-#include "net/dns/single_request_host_resolver.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_transaction_factory.h"
+#include "net/log/net_log_with_source.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 
@@ -22,8 +24,18 @@ namespace content {
 
 namespace {
 
+class RequestHolder {
+ public:
+  std::unique_ptr<net::HostResolver::Request>* GetRequest() {
+    return &request_;
+  }
+
+ private:
+  std::unique_ptr<net::HostResolver::Request> request_;
+};
+
 // Note that the lifetime of |request| and |addresses| is managed by the caller.
-void OnResolveComplete(net::SingleRequestHostResolver* request,
+void OnResolveComplete(RequestHolder* request_holder,
                        net::AddressList* addresses,
                        const net::CompletionCallback& callback,
                        int result) {
@@ -81,14 +93,16 @@ int PreresolveUrl(content::ResourceContext* resource_context,
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(resource_context);
 
+  RequestHolder* request_holder = new RequestHolder();
   net::AddressList* addresses = new net::AddressList;
-  net::SingleRequestHostResolver* resolver =
-      new net::SingleRequestHostResolver(resource_context->GetHostResolver());
+  net::HostResolver* resolver = resource_context->GetHostResolver();
   net::HostResolver::RequestInfo resolve_info(net::HostPortPair::FromURL(url));
-  return resolver->Resolve(resolve_info, net::IDLE, addresses,
-                           base::Bind(&OnResolveComplete, base::Owned(resolver),
-                                      base::Owned(addresses), callback),
-                           net::BoundNetLog());
+  resolve_info.set_is_speculative(true);
+  return resolver->Resolve(
+      resolve_info, net::IDLE, addresses,
+      base::Bind(&OnResolveComplete, base::Owned(request_holder),
+                 base::Owned(addresses), callback),
+      request_holder->GetRequest(), net::NetLogWithSource());
 }
 
 }  // namespace content

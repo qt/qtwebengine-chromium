@@ -8,14 +8,15 @@
 #include "src/accessors.h"
 #include "src/allocation.h"
 #include "src/ast/ast-type-bounds.h"
-#include "src/ast/ast.h"
 #include "src/ast/scopes.h"
 #include "src/bailout-reason.h"
+#include "src/compilation-info.h"
 #include "src/compiler.h"
 #include "src/crankshaft/compilation-phase.h"
 #include "src/crankshaft/hydrogen-instructions.h"
-#include "src/parsing/parser.h"
-#include "src/zone.h"
+#include "src/globals.h"
+#include "src/parsing/parse-info.h"
+#include "src/zone/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -35,7 +36,7 @@ class LiveRange;
 class HCompilationJob final : public CompilationJob {
  public:
   explicit HCompilationJob(Handle<JSFunction> function)
-      : CompilationJob(&info_, "Crankshaft"),
+      : CompilationJob(function->GetIsolate(), &info_, "Crankshaft"),
         zone_(function->GetIsolate()->allocator()),
         parse_info_(&zone_, function),
         info_(&parse_info_, function),
@@ -43,9 +44,9 @@ class HCompilationJob final : public CompilationJob {
         chunk_(nullptr) {}
 
  protected:
-  virtual Status CreateGraphImpl();
-  virtual Status OptimizeGraphImpl();
-  virtual Status GenerateCodeImpl();
+  virtual Status PrepareJobImpl();
+  virtual Status ExecuteJobImpl();
+  virtual Status FinalizeJobImpl();
 
  private:
   Zone zone_;
@@ -439,6 +440,13 @@ class HGraph final : public ZoneObject {
     return depends_on_empty_array_proto_elements_;
   }
 
+  void MarkDependsOnStringLengthOverflow() {
+    if (depends_on_string_length_overflow_) return;
+    info()->dependencies()->AssumePropertyCell(
+        isolate()->factory()->string_length_protector());
+    depends_on_string_length_overflow_ = true;
+  }
+
   bool has_uint32_instructions() {
     DCHECK(uint32_instructions_ == NULL || !uint32_instructions_->is_empty());
     return uint32_instructions_ != NULL;
@@ -514,6 +522,7 @@ class HGraph final : public ZoneObject {
   bool allow_code_motion_;
   bool use_optimistic_licm_;
   bool depends_on_empty_array_proto_elements_;
+  bool depends_on_string_length_overflow_;
   int type_change_checksum_;
   int maximum_environment_size_;
   int no_side_effects_scope_count_;
@@ -1056,14 +1065,16 @@ class HAllocationMode final BASE_EMBEDDED {
 class HGraphBuilder {
  public:
   explicit HGraphBuilder(CompilationInfo* info,
-                         CallInterfaceDescriptor descriptor)
+                         CallInterfaceDescriptor descriptor,
+                         bool track_positions)
       : info_(info),
         descriptor_(descriptor),
         graph_(NULL),
         current_block_(NULL),
         scope_(info->scope()),
         position_(SourcePosition::Unknown()),
-        start_position_(0) {}
+        start_position_(0),
+        track_positions_(track_positions) {}
   virtual ~HGraphBuilder() {}
 
   Scope* scope() const { return scope_; }
@@ -1395,7 +1406,7 @@ class HGraphBuilder {
                                    ElementsKind to_kind,
                                    bool is_jsarray);
 
-  HValue* BuildNumberToString(HValue* object, Type* type);
+  HValue* BuildNumberToString(HValue* object, AstType* type);
   HValue* BuildToNumber(HValue* input);
   HValue* BuildToObject(HValue* receiver);
 
@@ -1499,8 +1510,8 @@ class HGraphBuilder {
                         HValue** shift_amount);
 
   HValue* BuildBinaryOperation(Token::Value op, HValue* left, HValue* right,
-                               Type* left_type, Type* right_type,
-                               Type* result_type, Maybe<int> fixed_right_arg,
+                               AstType* left_type, AstType* right_type,
+                               AstType* result_type, Maybe<int> fixed_right_arg,
                                HAllocationMode allocation_mode,
                                BailoutId opt_id = BailoutId::None());
 
@@ -1513,10 +1524,10 @@ class HGraphBuilder {
 
   HValue* AddLoadJSBuiltin(int context_index);
 
-  HValue* EnforceNumberType(HValue* number, Type* expected);
-  HValue* TruncateToNumber(HValue* value, Type** expected);
+  HValue* EnforceNumberType(HValue* number, AstType* expected);
+  HValue* TruncateToNumber(HValue* value, AstType** expected);
 
-  void FinishExitWithHardDeoptimization(Deoptimizer::DeoptReason reason);
+  void FinishExitWithHardDeoptimization(DeoptimizeReason reason);
 
   void AddIncrementCounter(StatsCounter* counter);
 
@@ -1665,12 +1676,12 @@ class HGraphBuilder {
     void End();
     void EndUnreachable();
 
-    void Deopt(Deoptimizer::DeoptReason reason);
-    void ThenDeopt(Deoptimizer::DeoptReason reason) {
+    void Deopt(DeoptimizeReason reason);
+    void ThenDeopt(DeoptimizeReason reason) {
       Then();
       Deopt(reason);
     }
-    void ElseDeopt(Deoptimizer::DeoptReason reason) {
+    void ElseDeopt(DeoptimizeReason reason) {
       Else();
       Deopt(reason);
     }
@@ -1778,57 +1789,6 @@ class HGraphBuilder {
 
   HValue* BuildNewElementsCapacity(HValue* old_capacity);
 
-  class JSArrayBuilder final {
-   public:
-    JSArrayBuilder(HGraphBuilder* builder,
-                   ElementsKind kind,
-                   HValue* allocation_site_payload,
-                   HValue* constructor_function,
-                   AllocationSiteOverrideMode override_mode);
-
-    JSArrayBuilder(HGraphBuilder* builder,
-                   ElementsKind kind,
-                   HValue* constructor_function = NULL);
-
-    enum FillMode {
-      DONT_FILL_WITH_HOLE,
-      FILL_WITH_HOLE
-    };
-
-    ElementsKind kind() { return kind_; }
-    HAllocate* elements_location() { return elements_location_; }
-
-    HAllocate* AllocateEmptyArray();
-    HAllocate* AllocateArray(HValue* capacity,
-                             HValue* length_field,
-                             FillMode fill_mode = FILL_WITH_HOLE);
-    HValue* GetElementsLocation() { return elements_location_; }
-    HValue* EmitMapCode();
-
-   private:
-    Zone* zone() const { return builder_->zone(); }
-    int elements_size() const {
-      return IsFastDoubleElementsKind(kind_) ? kDoubleSize : kPointerSize;
-    }
-    HGraphBuilder* builder() { return builder_; }
-    HGraph* graph() { return builder_->graph(); }
-    int initial_capacity() {
-      STATIC_ASSERT(JSArray::kPreallocatedArrayElements > 0);
-      return JSArray::kPreallocatedArrayElements;
-    }
-
-    HValue* EmitInternalMapCode();
-
-    HGraphBuilder* builder_;
-    ElementsKind kind_;
-    AllocationSiteMode mode_;
-    HValue* allocation_site_payload_;
-    HValue* constructor_function_;
-    HAllocate* elements_location_;
-  };
-
-  HValue* BuildAllocateArrayFromLength(JSArrayBuilder* array_builder,
-                                       HValue* length_argument);
   HValue* BuildCalculateElementsSize(ElementsKind kind,
                                      HValue* capacity);
   HAllocate* AllocateJSArrayObject(AllocationSiteMode mode);
@@ -1884,20 +1844,6 @@ class HGraphBuilder {
                          HValue* length,
                          HValue* capacity);
 
-  HValue* BuildCloneShallowArrayCow(HValue* boilerplate,
-                                    HValue* allocation_site,
-                                    AllocationSiteMode mode,
-                                    ElementsKind kind);
-
-  HValue* BuildCloneShallowArrayEmpty(HValue* boilerplate,
-                                      HValue* allocation_site,
-                                      AllocationSiteMode mode);
-
-  HValue* BuildCloneShallowArrayNonEmpty(HValue* boilerplate,
-                                         HValue* allocation_site,
-                                         AllocationSiteMode mode,
-                                         ElementsKind kind);
-
   HValue* BuildElementIndexHash(HValue* index);
 
   void BuildCreateAllocationMemento(HValue* previous_object,
@@ -1910,7 +1856,7 @@ class HGraphBuilder {
 
   HInstruction* BuildGetNativeContext(HValue* closure);
   HInstruction* BuildGetNativeContext();
-  HInstruction* BuildGetScriptContext(int context_index);
+
   // Builds a loop version if |depth| is specified or unrolls the loop to
   // |depth_value| iterations otherwise.
   HValue* BuildGetParentContext(HValue* depth, int depth_value);
@@ -1923,14 +1869,14 @@ class HGraphBuilder {
 
  protected:
   void SetSourcePosition(int position) {
-    if (position != RelocInfo::kNoPosition) {
+    if (position != kNoSourcePosition) {
       position_.set_position(position - start_position_);
     }
     // Otherwise position remains unknown.
   }
 
   void EnterInlinedSource(int start_position, int id) {
-    if (top_info()->is_tracking_positions()) {
+    if (is_tracking_positions()) {
       start_position_ = start_position;
       position_.set_inlining_id(id);
     }
@@ -1940,7 +1886,7 @@ class HGraphBuilder {
   // the SourcePosition assuming that this position corresponds to the
   // same function as current position_.
   SourcePosition ScriptPositionToSourcePosition(int position) {
-    if (position == RelocInfo::kNoPosition) {
+    if (position == kNoSourcePosition) {
       return SourcePosition::Unknown();
     }
     SourcePosition pos = position_;
@@ -1950,6 +1896,8 @@ class HGraphBuilder {
 
   SourcePosition source_position() { return position_; }
   void set_source_position(SourcePosition position) { position_ = position; }
+
+  bool is_tracking_positions() { return track_positions_; }
 
   int TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
                            SourcePosition position);
@@ -1976,12 +1924,12 @@ class HGraphBuilder {
   Scope* scope_;
   SourcePosition position_;
   int start_position_;
+  bool track_positions_;
 };
-
 
 template <>
 inline HDeoptimize* HGraphBuilder::Add<HDeoptimize>(
-    Deoptimizer::DeoptReason reason, Deoptimizer::BailoutType type) {
+    DeoptimizeReason reason, Deoptimizer::BailoutType type) {
   if (type == Deoptimizer::SOFT) {
     isolate()->counters()->soft_deopts_requested()->Increment();
     if (FLAG_always_opt) return NULL;
@@ -1998,10 +1946,9 @@ inline HDeoptimize* HGraphBuilder::Add<HDeoptimize>(
   return instr;
 }
 
-
 template <>
 inline HInstruction* HGraphBuilder::AddUncasted<HDeoptimize>(
-    Deoptimizer::DeoptReason reason, Deoptimizer::BailoutType type) {
+    DeoptimizeReason reason, Deoptimizer::BailoutType type) {
   return Add<HDeoptimize>(reason, type);
 }
 
@@ -2112,8 +2059,10 @@ inline HContext* HGraphBuilder::New<HContext>() {
   return HContext::New(zone());
 }
 
-
-class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
+// This AstVistor is not final, and provides the AstVisitor methods as virtual
+// methods so they can be specialized by subclasses.
+class HOptimizedGraphBuilder : public HGraphBuilder,
+                               public AstVisitor<HOptimizedGraphBuilder> {
  public:
   // A class encapsulating (lazily-allocated) break and continue blocks for
   // a breakable statement.  Separated from BreakAndContinueScope so that it
@@ -2173,7 +2122,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     BreakAndContinueScope* next_;
   };
 
-  explicit HOptimizedGraphBuilder(CompilationInfo* info);
+  explicit HOptimizedGraphBuilder(CompilationInfo* info, bool track_positions);
 
   bool BuildGraph() override;
 
@@ -2193,7 +2142,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
 
   FunctionState* function_state() const { return function_state_; }
 
-  void VisitDeclarations(ZoneList<Declaration*>* declarations) override;
+  void VisitDeclarations(ZoneList<Declaration*>* declarations);
 
   AstTypeBounds* bounds() { return &bounds_; }
 
@@ -2265,16 +2214,12 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(IsJSProxy)                         \
   F(Call)                              \
   F(NewObject)                         \
-  F(ValueOf)                           \
-  F(StringCharFromCode)                \
   F(ToInteger)                         \
-  F(ToName)                            \
   F(ToObject)                          \
   F(ToString)                          \
   F(ToLength)                          \
   F(ToNumber)                          \
   F(IsJSReceiver)                      \
-  F(MathPow)                           \
   F(HasCachedArrayIndex)               \
   F(GetCachedArrayIndex)               \
   F(DebugBreakInOptimizedCode)         \
@@ -2295,9 +2240,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(TypedArrayGetLength)               \
   /* ArrayBuffer */                    \
   F(ArrayBufferGetByteLength)          \
-  /* Maths */                          \
-  F(DoubleHi)                          \
-  F(DoubleLo)                          \
   /* ES6 Collections */                \
   F(MapClear)                          \
   F(MapInitialize)                     \
@@ -2326,7 +2268,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   void VisitLogicalExpression(BinaryOperation* expr);
   void VisitArithmeticExpression(BinaryOperation* expr);
 
-  void VisitLoopBody(IterationStatement* stmt,
+  void VisitLoopBody(IterationStatement* stmt, BailoutId stack_check_id,
                      HBasicBlock* loop_entry);
 
   void BuildForInBody(ForInStatement* stmt, Variable* each_var,
@@ -2352,7 +2294,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   HBasicBlock* BuildLoopEntry(IterationStatement* statement);
 
   HBasicBlock* JoinContinue(IterationStatement* statement,
-                            HBasicBlock* exit_block,
+                            BailoutId continue_id, HBasicBlock* exit_block,
                             HBasicBlock* continue_block);
 
   HValue* Top() const { return environment()->Top(); }
@@ -2362,11 +2304,9 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
                                                 int index,
                                                 HEnvironment* env) {
     if (!FLAG_analyze_environment_liveness) return false;
-    // |this| and |arguments| are always live; zapping parameters isn't
-    // safe because function.arguments can inspect them at any time.
-    return !var->is_this() &&
-           !var->is_arguments() &&
-           env->is_local_index(index);
+    // Zapping parameters isn't safe because function.arguments can inspect them
+    // at any time.
+    return env->is_local_index(index);
   }
   void BindIfLive(Variable* var, HValue* value) {
     HEnvironment* env = environment();
@@ -2407,7 +2347,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
                        HBasicBlock* false_block);
 
   // Visit a list of expressions from left to right, each in a value context.
-  void VisitExpressions(ZoneList<Expression*>* exprs) override;
+  void VisitExpressions(ZoneList<Expression*>* exprs);
   void VisitExpressions(ZoneList<Expression*>* exprs,
                         ArgumentsAllowedFlag flag);
 
@@ -2416,10 +2356,10 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   template <class Instruction> HInstruction* PreProcessCall(Instruction* call);
   void PushArgumentsFromEnvironment(int count);
 
-  void SetUpScope(Scope* scope);
-  void VisitStatements(ZoneList<Statement*>* statements) override;
+  void SetUpScope(DeclarationScope* scope);
+  void VisitStatements(ZoneList<Statement*>* statements);
 
-#define DECLARE_VISIT(type) void Visit##type(type* node) override;
+#define DECLARE_VISIT(type) virtual void Visit##type(type* node);
   AST_NODE_LIST(DECLARE_VISIT)
 #undef DECLARE_VISIT
 
@@ -2443,10 +2383,8 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   void BuildFunctionApply(Call* expr);
   void BuildFunctionCall(Call* expr);
 
-  bool TryHandleArrayCall(Call* expr, HValue* function);
-  bool TryHandleArrayCallNew(CallNew* expr, HValue* function);
-  void BuildArrayCall(Expression* expr, int arguments_count, HValue* function,
-                      Handle<AllocationSite> cell);
+  template <class T>
+  bool TryHandleArrayCall(T* expr, HValue* function);
 
   enum ArrayIndexOfMode { kFirstIndexOf, kLastIndexOf };
   HValue* BuildArrayIndexOf(HValue* receiver,
@@ -2558,9 +2496,8 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     return handle(isolate()->native_context()->array_function());
   }
 
-  bool IsCallArrayInlineable(int argument_count, Handle<AllocationSite> site);
-  void BuildInlinedCallArray(Expression* expression, int argument_count,
-                             Handle<AllocationSite> site);
+  bool TryInlineArrayCall(Expression* expression, int argument_count,
+                          Handle<AllocationSite> site);
 
   void BuildInitializeInobjectProperties(HValue* receiver,
                                          Handle<Map> initial_map);
@@ -2766,8 +2703,8 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   };
 
   HControlInstruction* BuildCompareInstruction(
-      Token::Value op, HValue* left, HValue* right, Type* left_type,
-      Type* right_type, Type* combined_type, SourcePosition left_position,
+      Token::Value op, HValue* left, HValue* right, AstType* left_type,
+      AstType* right_type, AstType* combined_type, SourcePosition left_position,
       SourcePosition right_position, PushBeforeSimulateBehavior push_sim_result,
       BailoutId bailout_id);
 

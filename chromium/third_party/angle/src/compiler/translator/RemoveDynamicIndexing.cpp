@@ -11,6 +11,7 @@
 
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/IntermNode.h"
+#include "compiler/translator/IntermNodePatternMatcher.h"
 #include "compiler/translator/SymbolTable.h"
 
 namespace
@@ -91,21 +92,15 @@ TIntermBinary *CreateIndexDirectBaseSymbolNode(const TType &indexedType,
                                                const int index,
                                                TQualifier baseQualifier)
 {
-    TIntermBinary *indexNode = new TIntermBinary(EOpIndexDirect);
-    indexNode->setType(fieldType);
     TIntermSymbol *baseSymbol = CreateBaseSymbol(indexedType, baseQualifier);
-    indexNode->setLeft(baseSymbol);
-    indexNode->setRight(CreateIntConstantNode(index));
+    TIntermBinary *indexNode =
+        new TIntermBinary(EOpIndexDirect, baseSymbol, TIntermTyped::CreateIndexNode(index));
     return indexNode;
 }
 
 TIntermBinary *CreateAssignValueSymbolNode(TIntermTyped *targetNode, const TType &assignedValueType)
 {
-    TIntermBinary *assignNode = new TIntermBinary(EOpAssign);
-    assignNode->setType(assignedValueType);
-    assignNode->setLeft(targetNode);
-    assignNode->setRight(CreateValueSymbol(assignedValueType));
-    return assignNode;
+    return new TIntermBinary(EOpAssign, targetNode, CreateValueSymbol(assignedValueType));
 }
 
 TIntermTyped *EnsureSignedInt(TIntermTyped *node)
@@ -255,10 +250,9 @@ TIntermAggregate *GetIndexFunctionDefinition(TType type, bool write)
     TIntermAggregate *bodyNode = new TIntermAggregate(EOpSequence);
     bodyNode->getSequence()->push_back(switchNode);
 
-    TIntermBinary *cond = new TIntermBinary(EOpLessThan);
+    TIntermBinary *cond =
+        new TIntermBinary(EOpLessThan, CreateIndexSymbol(), CreateIntConstantNode(0));
     cond->setType(TType(EbtBool, EbpUndefined));
-    cond->setLeft(CreateIndexSymbol());
-    cond->setRight(CreateIntConstantNode(0));
 
     // Two blocks: one accesses (either reads or writes) the first element and returns,
     // the other accesses the last element.
@@ -286,7 +280,7 @@ TIntermAggregate *GetIndexFunctionDefinition(TType type, bool write)
         TIntermBranch *returnLastNode = new TIntermBranch(EOpReturn, indexLastNode);
         useLastBlock->getSequence()->push_back(returnLastNode);
     }
-    TIntermSelection *ifNode = new TIntermSelection(cond, useFirstBlock, nullptr);
+    TIntermIfElse *ifNode = new TIntermIfElse(cond, useFirstBlock, nullptr);
     bodyNode->getSequence()->push_back(ifNode);
     bodyNode->getSequence()->push_back(useLastBlock);
 
@@ -398,19 +392,24 @@ bool RemoveDynamicIndexingTraverser::visitBinary(Visit visit, TIntermBinary *nod
 
             // Init the temp variable holding the index
             TIntermAggregate *initIndex = createTempInitDeclaration(node->getRight());
-            TIntermSequence insertions;
-            insertions.push_back(initIndex);
-            insertStatementsInParentBlock(insertions);
+            insertStatementInParentBlock(initIndex);
             mUsedTreeInsertion = true;
 
             // Replace the index with the temp variable
             TIntermSymbol *tempIndex = createTempSymbol(node->getRight()->getType());
-            NodeUpdateEntry replaceIndex(node, node->getRight(), tempIndex, false);
-            mReplacements.push_back(replaceIndex);
+            queueReplacementWithParent(node, node->getRight(), tempIndex, OriginalNode::IS_DROPPED);
         }
-        else if (!node->getLeft()->isArray() && node->getLeft()->getBasicType() != EbtStruct)
+        else if (IntermNodePatternMatcher::IsDynamicIndexingOfVectorOrMatrix(node))
         {
             bool write = isLValueRequiredHere();
+
+#if defined(ANGLE_ENABLE_ASSERTS)
+            // Make sure that IntermNodePatternMatcher is consistent with the slightly differently
+            // implemented checks in this traverser.
+            IntermNodePatternMatcher matcher(
+                IntermNodePatternMatcher::kDynamicIndexingOfVectorOrMatrixInLValue);
+            ASSERT(matcher.match(node, getParentNode(), isLValueRequiredHere()) == write);
+#endif
 
             TType type = node->getLeft()->getType();
             mIndexedVecAndMatrixTypes.insert(type);
@@ -462,9 +461,7 @@ bool RemoveDynamicIndexingTraverser::visitBinary(Visit visit, TIntermBinary *nod
                     CreateIndexedWriteFunctionCall(node, tempIndex, createTempSymbol(fieldType));
                 insertionsAfter.push_back(indexedWriteCall);
                 insertStatementsInParentBlock(insertionsBefore, insertionsAfter);
-                NodeUpdateEntry replaceIndex(getParentNode(), node, createTempSymbol(fieldType),
-                                             false);
-                mReplacements.push_back(replaceIndex);
+                queueReplacement(node, createTempSymbol(fieldType), OriginalNode::IS_DROPPED);
                 mUsedTreeInsertion = true;
             }
             else
@@ -477,8 +474,7 @@ bool RemoveDynamicIndexingTraverser::visitBinary(Visit visit, TIntermBinary *nod
                 ASSERT(!mRemoveIndexSideEffectsInSubtree);
                 TIntermAggregate *indexingCall = CreateIndexFunctionCall(
                     node, node->getLeft(), EnsureSignedInt(node->getRight()));
-                NodeUpdateEntry replaceIndex(getParentNode(), node, indexingCall, false);
-                mReplacements.push_back(replaceIndex);
+                queueReplacement(node, indexingCall, OriginalNode::IS_DROPPED);
             }
         }
     }

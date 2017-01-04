@@ -17,7 +17,7 @@ namespace autofill {
 struct PasswordForm;
 }
 
-namespace sync_driver {
+namespace syncer {
 class SyncService;
 }
 
@@ -26,7 +26,7 @@ namespace password_manager_util {
 // Reports whether and how passwords are currently synced. In particular, for a
 // null |sync_service| returns NOT_SYNCING_PASSWORDS.
 password_manager::PasswordSyncState GetPasswordSyncState(
-    const sync_driver::SyncService* sync_service);
+    const syncer::SyncService* sync_service);
 
 // Finds the forms with a duplicate sync tags in |forms|. The first one of
 // the duplicated entries stays in |forms|, the others are moved to
@@ -42,7 +42,7 @@ void FindDuplicates(
 // Removes Android username-only credentials from |android_credentials|.
 // Transforms federated credentials into non zero-click ones.
 void TrimUsernameOnlyCredentials(
-    ScopedVector<autofill::PasswordForm>* android_credentials);
+    std::vector<std::unique_ptr<autofill::PasswordForm>>* android_credentials);
 
 // TODO(crbug.com/555132): Remove this when the migration from ScopedVector is
 // finished for PasswordForm.

@@ -17,6 +17,8 @@ elseif(UNIX)
   elseif (${ARCH} STREQUAL "x86")
     set(PERLASM_FLAGS "-fPIC -DOPENSSL_IA32_SSE2")
     set(PERLASM_STYLE elf)
+  elseif (${ARCH} STREQUAL "ppc64le")
+    set(PERLASM_STYLE ppc64le)
   else()
     set(PERLASM_STYLE elf)
   endif()
@@ -41,10 +43,11 @@ endif()
 function(perlasm dest src)
   add_custom_command(
     OUTPUT ${dest}
-    COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${src} ${PERLASM_STYLE} ${PERLASM_FLAGS} ${ARGN} > ${dest}
+    COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${src} ${PERLASM_STYLE} ${PERLASM_FLAGS} ${ARGN} ${dest}
     DEPENDS
     ${src}
     ${PROJECT_SOURCE_DIR}/crypto/perlasm/arm-xlate.pl
+    ${PROJECT_SOURCE_DIR}/crypto/perlasm/ppc-xlate.pl
     ${PROJECT_SOURCE_DIR}/crypto/perlasm/x86_64-xlate.pl
     ${PROJECT_SOURCE_DIR}/crypto/perlasm/x86asm.pl
     ${PROJECT_SOURCE_DIR}/crypto/perlasm/x86gas.pl
@@ -116,6 +119,7 @@ add_library(
   cpu-arm.c
   cpu-arm-linux.c
   cpu-intel.c
+  cpu-ppc64le.c
   crypto.c
   ex_data.c
   mem.c

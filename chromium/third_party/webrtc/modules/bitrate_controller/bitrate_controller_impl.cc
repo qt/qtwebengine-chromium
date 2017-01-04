@@ -15,6 +15,9 @@
 #include <map>
 #include <utility>
 
+#include "webrtc/base/checks.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 
 namespace webrtc {
@@ -29,7 +32,7 @@ class BitrateControllerImpl::RtcpBandwidthObserverImpl
   }
   // Received RTCP REMB or TMMBR.
   void OnReceivedEstimatedBitrate(uint32_t bitrate) override {
-    owner_->OnReceivedEstimatedBitrate(bitrate);
+    owner_->OnReceiverEstimatedBitrate(bitrate);
   }
   // Received RTCP receiver block.
   void OnReceivedRtcpReceiverReport(const ReportBlockList& report_blocks,
@@ -43,22 +46,28 @@ class BitrateControllerImpl::RtcpBandwidthObserverImpl
 
     // Compute the a weighted average of the fraction loss from all report
     // blocks.
-    for (ReportBlockList::const_iterator it = report_blocks.begin();
-        it != report_blocks.end(); ++it) {
+    for (const RTCPReportBlock& report_block : report_blocks) {
       std::map<uint32_t, uint32_t>::iterator seq_num_it =
-          ssrc_to_last_received_extended_high_seq_num_.find(it->sourceSSRC);
+          ssrc_to_last_received_extended_high_seq_num_.find(
+              report_block.sourceSSRC);
 
       int number_of_packets = 0;
-      if (seq_num_it != ssrc_to_last_received_extended_high_seq_num_.end())
-        number_of_packets = it->extendedHighSeqNum -
-            seq_num_it->second;
+      if (seq_num_it != ssrc_to_last_received_extended_high_seq_num_.end()) {
+        number_of_packets =
+            report_block.extendedHighSeqNum - seq_num_it->second;
+      }
 
-      fraction_lost_aggregate += number_of_packets * it->fractionLost;
+      fraction_lost_aggregate += number_of_packets * report_block.fractionLost;
       total_number_of_packets += number_of_packets;
 
       // Update last received for this SSRC.
-      ssrc_to_last_received_extended_high_seq_num_[it->sourceSSRC] =
-          it->extendedHighSeqNum;
+      ssrc_to_last_received_extended_high_seq_num_[report_block.sourceSSRC] =
+          report_block.extendedHighSeqNum;
+    }
+    if (total_number_of_packets < 0) {
+      LOG(LS_WARNING) << "Received report block where extended high sequence "
+                         "number goes backwards, ignoring.";
+      return;
     }
     if (total_number_of_packets == 0)
       fraction_lost_aggregate = 0;
@@ -67,6 +76,8 @@ class BitrateControllerImpl::RtcpBandwidthObserverImpl
           total_number_of_packets / 2) / total_number_of_packets;
     if (fraction_lost_aggregate > 255)
       return;
+
+    RTC_DCHECK_GE(total_number_of_packets, 0);
 
     owner_->OnReceivedRtcpReceiverReport(fraction_lost_aggregate, rtt,
                                          total_number_of_packets, now_ms);
@@ -79,20 +90,25 @@ class BitrateControllerImpl::RtcpBandwidthObserverImpl
 
 BitrateController* BitrateController::CreateBitrateController(
     Clock* clock,
-    BitrateObserver* observer) {
-  return new BitrateControllerImpl(clock, observer);
+    BitrateObserver* observer,
+    RtcEventLog* event_log) {
+  return new BitrateControllerImpl(clock, observer, event_log);
 }
 
-BitrateController* BitrateController::CreateBitrateController(Clock* clock) {
-  return new BitrateControllerImpl(clock, nullptr);
+BitrateController* BitrateController::CreateBitrateController(
+    Clock* clock,
+    RtcEventLog* event_log) {
+  return CreateBitrateController(clock, nullptr, event_log);
 }
 
 BitrateControllerImpl::BitrateControllerImpl(Clock* clock,
-                                             BitrateObserver* observer)
+                                             BitrateObserver* observer,
+                                             RtcEventLog* event_log)
     : clock_(clock),
       observer_(observer),
       last_bitrate_update_ms_(clock_->TimeInMilliseconds()),
-      bandwidth_estimation_(),
+      event_log_(event_log),
+      bandwidth_estimation_(event_log),
       reserved_bitrate_bps_(0),
       last_bitrate_bps_(0),
       last_fraction_loss_(0),
@@ -143,7 +159,7 @@ void BitrateControllerImpl::ResetBitrates(int bitrate_bps,
                                           int max_bitrate_bps) {
   {
     rtc::CritScope cs(&critsect_);
-    bandwidth_estimation_ = SendSideBandwidthEstimation();
+    bandwidth_estimation_ = SendSideBandwidthEstimation(event_log_);
     bandwidth_estimation_.SetBitrates(bitrate_bps, min_bitrate_bps,
                                       max_bitrate_bps);
   }
@@ -158,25 +174,29 @@ void BitrateControllerImpl::SetReservedBitrate(uint32_t reserved_bitrate_bps) {
   MaybeTriggerOnNetworkChanged();
 }
 
-void BitrateControllerImpl::SetEventLog(RtcEventLog* event_log) {
-  rtc::CritScope cs(&critsect_);
-  bandwidth_estimation_.SetEventLog(event_log);
-}
-
-void BitrateControllerImpl::OnReceivedEstimatedBitrate(uint32_t bitrate) {
+// This is called upon reception of REMB or TMMBR.
+void BitrateControllerImpl::OnReceiverEstimatedBitrate(uint32_t bitrate) {
   {
     rtc::CritScope cs(&critsect_);
     bandwidth_estimation_.UpdateReceiverEstimate(clock_->TimeInMilliseconds(),
                                                  bitrate);
+    BWE_TEST_LOGGING_PLOT(1, "REMB_kbps", clock_->TimeInMilliseconds(),
+                          bitrate / 1000);
   }
   MaybeTriggerOnNetworkChanged();
 }
 
-void BitrateControllerImpl::UpdateDelayBasedEstimate(uint32_t bitrate_bps) {
+void BitrateControllerImpl::OnDelayBasedBweResult(
+    const DelayBasedBwe::Result& result) {
+  if (!result.updated)
+    return;
   {
     rtc::CritScope cs(&critsect_);
     bandwidth_estimation_.UpdateDelayBasedEstimate(clock_->TimeInMilliseconds(),
-                                                   bitrate_bps);
+                                                   result.target_bitrate_bps);
+    if (result.probe) {
+      bandwidth_estimation_.SetSendBitrate(result.target_bitrate_bps);
+    }
   }
   MaybeTriggerOnNetworkChanged();
 }
@@ -247,6 +267,14 @@ bool BitrateControllerImpl::GetNetworkParameters(uint32_t* bitrate,
     last_reserved_bitrate_bps_ = reserved_bitrate_bps_;
     new_bitrate = true;
   }
+
+  BWE_TEST_LOGGING_PLOT(1, "fraction_loss_%", clock_->TimeInMilliseconds(),
+                        (last_fraction_loss_ * 100) / 256);
+  BWE_TEST_LOGGING_PLOT(1, "rtt_ms", clock_->TimeInMilliseconds(),
+                        last_rtt_ms_);
+  BWE_TEST_LOGGING_PLOT(1, "Target_bitrate_kbps", clock_->TimeInMilliseconds(),
+                        last_bitrate_bps_ / 1000);
+
   return new_bitrate;
 }
 

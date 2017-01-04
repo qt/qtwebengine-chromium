@@ -28,12 +28,16 @@
 #include "build/build_config.h"
 #include "chrome/browser/extensions/api/messaging/native_messaging_test_util.h"
 #include "chrome/browser/extensions/api/messaging/native_process_launcher.h"
-#include "chrome/common/extensions/features/feature_channel.h"
 #include "components/version_info/version_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/features/feature_channel.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_POSIX)
+#include "base/files/file_descriptor_watcher_posix.h"
+#endif
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -102,6 +106,9 @@ class NativeMessagingTest : public ::testing::Test,
   NativeMessagingTest()
       : current_channel_(version_info::Channel::DEV),
         thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
+#if defined(OS_POSIX)
+        file_descriptor_watcher_(base::MessageLoopForIO::current()),
+#endif
         channel_closed_(false) {}
 
   void SetUp() override { ASSERT_TRUE(temp_dir_.CreateUniqueTempDir()); }
@@ -145,7 +152,7 @@ class NativeMessagingTest : public ::testing::Test,
 
   base::FilePath CreateTempFileWithMessage(const std::string& message) {
     base::FilePath filename;
-    if (!base::CreateTemporaryFileInDir(temp_dir_.path(), &filename))
+    if (!base::CreateTemporaryFileInDir(temp_dir_.GetPath(), &filename))
       return base::FilePath();
 
     std::string message_with_header = FormatMessage(message);
@@ -164,6 +171,11 @@ class NativeMessagingTest : public ::testing::Test,
   std::unique_ptr<NativeMessageHost> native_message_host_;
   std::unique_ptr<base::RunLoop> run_loop_;
   content::TestBrowserThreadBundle thread_bundle_;
+#if defined(OS_POSIX)
+  // Required to watch a file descriptor from NativeMessageProcessHost.
+  base::FileDescriptorWatcher file_descriptor_watcher_;
+#endif
+
   std::string last_message_;
   std::unique_ptr<base::DictionaryValue> last_message_parsed_;
   bool channel_closed_;
@@ -171,7 +183,7 @@ class NativeMessagingTest : public ::testing::Test,
 
 // Read a single message from a local file.
 TEST_F(NativeMessagingTest, SingleSendMessageRead) {
-  base::FilePath temp_output_file = temp_dir_.path().AppendASCII("output");
+  base::FilePath temp_output_file = temp_dir_.GetPath().AppendASCII("output");
   base::FilePath temp_input_file = CreateTempFileWithMessage(kTestMessage);
   ASSERT_FALSE(temp_input_file.empty());
 
@@ -198,7 +210,7 @@ TEST_F(NativeMessagingTest, SingleSendMessageRead) {
 // Tests sending a single message. The message should get written to
 // |temp_file| and should match the contents of single_message_request.msg.
 TEST_F(NativeMessagingTest, SingleSendMessageWrite) {
-  base::FilePath temp_output_file = temp_dir_.path().AppendASCII("output");
+  base::FilePath temp_output_file = temp_dir_.GetPath().AppendASCII("output");
 
   base::File read_file;
 #if defined(OS_WIN)

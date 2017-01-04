@@ -10,6 +10,7 @@
 #include <tuple>
 
 #include "build/build_config.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/gfx_export.h"
 
@@ -55,18 +56,18 @@ class GFX_EXPORT Point {
   }
 
   void Offset(int delta_x, int delta_y) {
-    x_ += delta_x;
-    y_ += delta_y;
+    x_ = SafeAdd(x_, delta_x);
+    y_ = SafeAdd(y_, delta_y);
   }
 
   void operator+=(const Vector2d& vector) {
-    x_ += vector.x();
-    y_ += vector.y();
+    x_ = SafeAdd(x_, vector.x());
+    y_ = SafeAdd(y_, vector.y());
   }
 
   void operator-=(const Vector2d& vector) {
-    x_ -= vector.x();
-    y_ -= vector.y();
+    x_ = SafeSubtract(x_, vector.x());
+    y_ = SafeSubtract(y_, vector.y());
   }
 
   void SetToMin(const Point& other);
@@ -115,7 +116,8 @@ inline Point operator-(const Point& lhs, const Vector2d& rhs) {
 }
 
 inline Vector2d operator-(const Point& lhs, const Point& rhs) {
-  return Vector2d(lhs.x() - rhs.x(), lhs.y() - rhs.y());
+  return Vector2d(SafeSubtract(lhs.x(), rhs.x()),
+                  SafeSubtract(lhs.y(), rhs.y()));
 }
 
 inline Point PointAtOffsetFromOrigin(const Vector2d& offset_from_origin) {
@@ -123,8 +125,8 @@ inline Point PointAtOffsetFromOrigin(const Vector2d& offset_from_origin) {
 }
 
 // This is declared here for use in gtest-based unit tests but is defined in
-// the gfx_test_support target. Depend on that to use this in your unit test.
-// This should not be used in production code - call ToString() instead.
+// the //ui/gfx:test_support target. Depend on that to use this in your unit
+// test. This should not be used in production code - call ToString() instead.
 void PrintTo(const Point& point, ::std::ostream* os);
 
 // Helper methods to scale a gfx::Point to a new gfx::Point.

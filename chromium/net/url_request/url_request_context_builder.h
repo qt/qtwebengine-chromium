@@ -34,7 +34,7 @@
 #include "net/http/http_network_session.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_service.h"
-#include "net/quic/quic_protocol.h"
+#include "net/quic/core/quic_protocol.h"
 #include "net/socket/next_proto.h"
 #include "net/url_request/url_request_job_factory.h"
 
@@ -92,22 +92,20 @@ class NET_EXPORT URLRequestContextBuilder {
     HostMappingRules* host_mapping_rules;
     uint16_t testing_fixed_http_port;
     uint16_t testing_fixed_https_port;
-    bool enable_spdy31;
     bool enable_http2;
     bool enable_quic;
     std::string quic_user_agent_id;
     int quic_max_server_configs_stored_in_properties;
     bool quic_delay_tcp_race;
-    int quic_max_number_of_lossy_connections;
     std::unordered_set<std::string> quic_host_whitelist;
     bool quic_prefer_aes;
-    float quic_packet_loss_threshold;
     int quic_idle_connection_timeout_seconds;
     QuicTagVector quic_connection_options;
     bool quic_close_sessions_on_ip_change;
     bool quic_migrate_sessions_on_network_change;
     bool quic_migrate_sessions_early;
     bool quic_disable_bidirectional_streams;
+    bool quic_race_cert_verification;
   };
 
   URLRequestContextBuilder();
@@ -237,17 +235,6 @@ class NET_EXPORT URLRequestContextBuilder {
     http_network_session_params_.quic_delay_tcp_race = quic_delay_tcp_race;
   }
 
-  void set_quic_max_number_of_lossy_connections(
-      int quic_max_number_of_lossy_connections) {
-    http_network_session_params_.quic_max_number_of_lossy_connections =
-        quic_max_number_of_lossy_connections;
-  }
-
-  void set_quic_packet_loss_threshold(float quic_packet_loss_threshold) {
-    http_network_session_params_.quic_packet_loss_threshold =
-        quic_packet_loss_threshold;
-  }
-
   void set_quic_idle_connection_timeout_seconds(
       int quic_idle_connection_timeout_seconds) {
     http_network_session_params_.quic_idle_connection_timeout_seconds =
@@ -286,12 +273,13 @@ class NET_EXPORT URLRequestContextBuilder {
         quic_disable_bidirectional_streams;
   }
 
-  void set_throttling_enabled(bool throttling_enabled) {
-    throttling_enabled_ = throttling_enabled;
+  void set_quic_race_cert_verification(bool quic_race_cert_verification) {
+    http_network_session_params_.quic_race_cert_verification =
+        quic_race_cert_verification;
   }
 
-  void set_backoff_enabled(bool backoff_enabled) {
-    backoff_enabled_ = backoff_enabled;
+  void set_throttling_enabled(bool throttling_enabled) {
+    throttling_enabled_ = throttling_enabled;
   }
 
   void set_socket_performance_watcher_factory(
@@ -353,7 +341,6 @@ class NET_EXPORT URLRequestContextBuilder {
 #endif
   bool http_cache_enabled_;
   bool throttling_enabled_;
-  bool backoff_enabled_;
   bool sdch_enabled_;
   bool cookie_store_set_by_client_;
 

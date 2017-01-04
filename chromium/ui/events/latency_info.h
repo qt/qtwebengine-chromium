@@ -14,7 +14,6 @@
 
 #include "base/containers/small_map.h"
 #include "base/time/time.h"
-#include "base/trace_event/trace_event.h"
 #include "ui/events/events_base_export.h"
 #include "ui/gfx/geometry/point_f.h"
 
@@ -23,11 +22,17 @@
 #include "mojo/public/cpp/bindings/struct_traits.h"  // nogncheck
 #endif
 
+namespace base {
+namespace trace_event {
+class ConvertableToTraceFormat;
+}
+}
+
 namespace ui {
 
 #if !defined(OS_IOS)
 namespace mojom {
-class LatencyInfo;
+class LatencyInfoDataView;
 }
 #endif
 
@@ -238,7 +243,8 @@ class EVENTS_BASE_EXPORT LatencyInfo {
 
 #if !defined(OS_IOS)
   friend struct IPC::ParamTraits<ui::LatencyInfo>;
-  friend struct mojo::StructTraits<ui::mojom::LatencyInfo, ui::LatencyInfo>;
+  friend struct mojo::StructTraits<ui::mojom::LatencyInfoDataView,
+                                   ui::LatencyInfo>;
 #endif
 };
 

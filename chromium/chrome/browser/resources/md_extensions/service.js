@@ -23,7 +23,17 @@ cr.define('extensions', function() {
       this.manager_ = manager;
       this.manager_.sidebar.setDelegate(this);
       this.manager_.set('itemDelegate', this);
-      this.manager_.$['pack-dialog'].set('delegate', this);
+      this.manager_.packDialog.set('delegate', this);
+      var keyboardShortcuts = this.manager_.keyboardShortcuts;
+      keyboardShortcuts.addEventListener(
+          'shortcut-updated',
+          this.onExtensionCommandUpdated_.bind(this));
+      keyboardShortcuts.addEventListener(
+          'shortcut-capture-started',
+          this.onShortcutCaptureChanged_.bind(this, true));
+      keyboardShortcuts.addEventListener(
+          'shortcut-capture-ended',
+          this.onShortcutCaptureChanged_.bind(this, false));
       chrome.developerPrivate.onProfileStateChanged.addListener(
           this.onProfileStateChanged_.bind(this));
       chrome.developerPrivate.onItemStateChanged.addListener(
@@ -35,6 +45,15 @@ cr.define('extensions', function() {
         this.extensions_ = extensions;
         for (let extension of extensions)
           this.manager_.addItem(extension);
+
+        var id = new URLSearchParams(location.search).get('id');
+        if (id) {
+          var data = this.extensions_.find(function(e) {
+            return e.id == id;
+          });
+          if (data)
+            this.manager_.showItemDetails(data);
+        }
       }.bind(this));
       chrome.developerPrivate.getProfileConfiguration(
           this.onProfileStateChanged_.bind(this));
@@ -111,6 +130,34 @@ cr.define('extensions', function() {
       });
     },
 
+    /**
+     * Updates an extension command.
+     * @param {!CustomEvent} e
+     * @private
+     */
+    onExtensionCommandUpdated_: function(e) {
+      chrome.developerPrivate.updateExtensionCommand({
+        extensionId: e.detail.item,
+        commandName: e.detail.commandName,
+        keybinding: e.detail.keybinding,
+      });
+    },
+
+    /**
+     * Called when shortcut capturing changes in order to suspend or re-enable
+     * global shortcut handling. This is important so that the shortcuts aren't
+     * processed normally as the user types them.
+     * TODO(devlin): From very brief experimentation, it looks like preventing
+     * the default handling on the event also does this. Investigate more in the
+     * future.
+     * @param {boolean} isCapturing
+     * @param {!CustomEvent} e
+     * @private
+     */
+    onShortcutCaptureChanged_: function(isCapturing, e) {
+      chrome.developerPrivate.setShortcutHandlingSuspended(isCapturing);
+    },
+
     /** @override */
     deleteItem: function(id) {
       if (this.isDeleting_)
@@ -175,6 +222,18 @@ cr.define('extensions', function() {
     /** @override */
     repairItem: function(id) {
       chrome.developerPrivate.repairExtension(id);
+    },
+
+    /** @override */
+    showItemOptionsPage: function(id) {
+      var extension = this.extensions_.find(function(extension) {
+        return extension.id == id;
+      });
+      assert(extension && extension.optionsPage);
+      if (extension.optionsPage.openInTab)
+        chrome.developerPrivate.showOptions(id);
+      else
+        this.manager_.optionsDialog.show(extension);
     },
 
     /** @override */

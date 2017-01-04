@@ -238,6 +238,12 @@ void KeyboardUIContent::InitInsets(const gfx::Rect& new_bounds) {
     // the render process crashed.
     if (view) {
       aura::Window* window = view->GetNativeView();
+      // Added while we determine if RenderWidgetHostViewChildFrame can be
+      // changed to always return a non-null value: https://crbug.com/644726 .
+      // If we cannot guarantee a non-null value, then this may need to stay.
+      if (!window)
+        continue;
+
       if (ShouldWindowOverscroll(window)) {
         gfx::Rect window_bounds = window->GetBoundsInScreen();
         gfx::Rect intersect = gfx::IntersectRects(window_bounds,
@@ -296,12 +302,9 @@ const aura::Window* KeyboardUIContent::GetKeyboardRootWindow() const {
 
 void KeyboardUIContent::LoadContents(const GURL& url) {
   if (keyboard_contents_) {
-    content::OpenURLParams params(
-        url,
-        content::Referrer(),
-        SINGLETON_TAB,
-        ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
-        false);
+    content::OpenURLParams params(url, content::Referrer(),
+                                  WindowOpenDisposition::SINGLETON_TAB,
+                                  ui::PAGE_TRANSITION_AUTO_TOPLEVEL, false);
     keyboard_contents_->OpenURL(params);
   }
 }

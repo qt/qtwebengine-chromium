@@ -23,14 +23,6 @@ LayerProtoConverter::LayerProtoConverter() {}
 LayerProtoConverter::~LayerProtoConverter() {}
 
 // static
-void LayerProtoConverter::SerializeLayerHierarchy(
-    const scoped_refptr<Layer> root_layer,
-    proto::LayerNode* root_node) {
-  TRACE_EVENT0("cc.remote", "LayerProtoConverter::SerializeLayerHierarchy");
-  root_layer->ToLayerNodeProto(root_node);
-}
-
-// static
 scoped_refptr<Layer> LayerProtoConverter::DeserializeLayerHierarchy(
     scoped_refptr<Layer> existing_root,
     const proto::LayerNode& root_node,
@@ -57,9 +49,10 @@ void LayerProtoConverter::SerializeLayerProperties(
     LayerTreeHost* host,
     proto::LayerUpdate* layer_update) {
   TRACE_EVENT0("cc.remote", "LayerProtoConverter::SerializeLayerProperties");
-  for (auto layer : host->LayersThatShouldPushProperties())
-    layer->ToLayerPropertiesProto(layer_update);
-  host->LayersThatShouldPushProperties().clear();
+  const bool inputs_only = false;
+  for (auto* layer : host->GetLayerTree()->LayersThatShouldPushProperties())
+    layer->ToLayerPropertiesProto(layer_update, inputs_only);
+  host->GetLayerTree()->LayersThatShouldPushProperties().clear();
 }
 
 // static
@@ -85,7 +78,7 @@ void LayerProtoConverter::DeserializeLayerProperties(
 void LayerProtoConverter::RecursivelyFindAllLayers(Layer* root_layer,
                                                    LayerIdMap* layer_id_map) {
   LayerTreeHostCommon::CallFunctionForEveryLayer(
-      root_layer->layer_tree_host(),
+      root_layer->GetLayerTree(),
       [layer_id_map](Layer* layer) { (*layer_id_map)[layer->id()] = layer; });
 }
 

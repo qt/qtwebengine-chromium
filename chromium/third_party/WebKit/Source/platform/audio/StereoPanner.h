@@ -5,32 +5,43 @@
 #ifndef StereoPanner_h
 #define StereoPanner_h
 
-#include "platform/audio/Spatializer.h"
+#include "platform/PlatformExport.h"
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
-// Common type of stereo panner as found in normal audio mixing equipment.
-// See: http://webaudio.github.io/web-audio-api/#the-stereopannernode-interface
+class AudioBus;
 
-class PLATFORM_EXPORT StereoPanner final : public Spatializer {
-public:
-    explicit StereoPanner(float sampleRate);
+// Implement the equal-power panning algorithm for mono or stereo input. See:
+// https://webaudio.github.io/web-audio-api/#Spatialzation-equal-power-panning
 
-    void panWithSampleAccurateValues(const AudioBus* inputBus, AudioBus* outputBuf, const float* panValues, size_t framesToProcess) override;
-    void panToTargetValue(const AudioBus* inputBus, AudioBus* outputBuf, float panValue, size_t framesToProcess) override;
+class PLATFORM_EXPORT StereoPanner {
+  USING_FAST_MALLOC(StereoPanner);
+  WTF_MAKE_NONCOPYABLE(StereoPanner);
 
-    void reset() override { }
+ public:
+  static std::unique_ptr<StereoPanner> create(float sampleRate);
+  ~StereoPanner(){};
 
-    double tailTime() const override { return 0; }
-    double latencyTime() const override { return 0; }
+  void panWithSampleAccurateValues(const AudioBus* inputBus,
+                                   AudioBus* outputBus,
+                                   const float* panValues,
+                                   size_t framesToProcess);
+  void panToTargetValue(const AudioBus* inputBus,
+                        AudioBus* outputBus,
+                        float panValue,
+                        size_t framesToProcess);
 
-private:
-    bool m_isFirstRender;
-    double m_smoothingConstant;
+ private:
+  explicit StereoPanner(float sampleRate);
 
-    double m_pan;
+  bool m_isFirstRender;
+  double m_smoothingConstant;
+
+  double m_pan;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // StereoPanner_h
+#endif  // StereoPanner_h

@@ -1,8 +1,10 @@
 include_rules = [
+  "+components/data_use_measurement/core",
   "+components/variations",
   "+content/public/browser",
   "+content/public/common",
   "+content/public/test",
   "+crypto",
+  "+third_party/protobuf/src/google",
   "+net",
 ]

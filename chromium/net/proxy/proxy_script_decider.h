@@ -19,15 +19,20 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 #include "net/dns/host_resolver.h"
-#include "net/dns/single_request_host_resolver.h"
-#include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_resolver.h"
 #include "url/gurl.h"
 
+namespace base {
+class Value;
+}
+
 namespace net {
 
 class DhcpProxyScriptFetcher;
+class NetLog;
+class NetLogCaptureMode;
 class NetLogParameter;
 class ProxyResolver;
 class ProxyScriptFetcher;
@@ -183,7 +188,7 @@ class NET_EXPORT_PRIVATE ProxyScriptDecider {
   PacSourceList pac_sources_;
   State next_state_;
 
-  BoundNetLog net_log_;
+  NetLogWithSource net_log_;
 
   bool fetch_pac_bytes_;
 
@@ -199,7 +204,8 @@ class NET_EXPORT_PRIVATE ProxyScriptDecider {
 
   AddressList wpad_addresses_;
   base::OneShotTimer quick_check_timer_;
-  std::unique_ptr<SingleRequestHostResolver> host_resolver_;
+  HostResolver* host_resolver_;
+  std::unique_ptr<HostResolver::Request> request_;
   base::Time quick_check_start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyScriptDecider);

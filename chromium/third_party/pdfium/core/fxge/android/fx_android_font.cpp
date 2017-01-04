@@ -4,13 +4,14 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_system.h"
 
 #if _FX_OS_ == _FX_ANDROID_
 
 #include "core/fxge/android/fpf_skiafont.h"
 #include "core/fxge/android/fpf_skiafontmgr.h"
 #include "core/fxge/android/fx_android_font.h"
+#include "core/fxge/cfx_fontmapper.h"
 
 CFX_AndroidFontInfo::CFX_AndroidFontInfo() : m_pFontMgr(nullptr) {}
 CFX_AndroidFontInfo::~CFX_AndroidFontInfo() {}
@@ -85,10 +86,6 @@ void CFX_AndroidFontInfo::DeleteFont(void* hFont) {
     return;
 
   static_cast<CFPF_SkiaFont*>(hFont)->Release();
-}
-
-void* CFX_AndroidFontInfo::RetainFont(void* hFont) {
-  return nullptr;
 }
 
 #endif  // _FX_OS_ == _FX_ANDROID_

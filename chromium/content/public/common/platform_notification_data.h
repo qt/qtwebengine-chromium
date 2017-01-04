@@ -31,7 +31,8 @@ struct CONTENT_EXPORT PlatformNotificationAction {
   ~PlatformNotificationAction();
 
   // Type of the action (button or text input).
-  PlatformNotificationActionType type;
+  PlatformNotificationActionType type =
+      PLATFORM_NOTIFICATION_ACTION_TYPE_BUTTON;
 
   // Action name that the author can use to distinguish them.
   std::string action;
@@ -82,6 +83,10 @@ struct CONTENT_EXPORT PlatformNotificationData {
   // Tag of the notification. Notifications sharing both their origin and their
   // tag will replace the first displayed notification.
   std::string tag;
+
+  // URL of the image contents of the notification. May be empty if no url was
+  // specified.
+  GURL image;
 
   // URL of the icon which is to be displayed with the notification.
   GURL icon;

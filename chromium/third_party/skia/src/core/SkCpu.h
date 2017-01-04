@@ -22,21 +22,23 @@ struct SkCpu {
         F16C  = 1 << 7,
         FMA   = 1 << 8,
         AVX2  = 1 << 9,
+        BMI1  = 1 << 10,
+        BMI2  = 1 << 11,
+
+        // Handy alias for all the cool Haswell+ instructions.
+        HSW = AVX2 | BMI1 | BMI2 | F16C | FMA,
     };
     enum {
         NEON     = 1 << 0,
         NEON_FMA = 1 << 1,
         VFP_FP16 = 1 << 2,
+        CRC32    = 1 << 3,
     };
 
     static void CacheRuntimeFeatures();
     static bool Supports(uint32_t);
 private:
-#if defined(_MSC_VER) || !defined(SkCpu_IMPL)
-    static const uint32_t gCachedFeatures;
-#else
-    static       uint32_t gCachedFeatures;
-#endif
+    static uint32_t gCachedFeatures;
 };
 
 inline bool SkCpu::Supports(uint32_t mask) {
@@ -81,6 +83,10 @@ inline bool SkCpu::Supports(uint32_t mask) {
 
     #if defined(SK_CPU_ARM64)
     features |= NEON|NEON_FMA|VFP_FP16;
+    #endif
+
+    #if defined(SK_ARM_HAS_CRC32)
+    features |= CRC32;
     #endif
 
 #endif

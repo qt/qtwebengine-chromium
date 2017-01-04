@@ -5,9 +5,13 @@ unstable_protocols =								\
 	unstable/text-input/text-input-unstable-v1.xml				\
 	unstable/input-method/input-method-unstable-v1.xml			\
 	unstable/xdg-shell/xdg-shell-unstable-v5.xml				\
+	unstable/xdg-shell/xdg-shell-unstable-v6.xml				\
 	unstable/relative-pointer/relative-pointer-unstable-v1.xml		\
 	unstable/pointer-constraints/pointer-constraints-unstable-v1.xml	\
 	unstable/tablet/tablet-unstable-v1.xml			                \
+	unstable/tablet/tablet-unstable-v2.xml			                \
+	unstable/xdg-foreign/xdg-foreign-unstable-v1.xml			\
+	unstable/idle-inhibit/idle-inhibit-unstable-v1.xml			\
 	$(NULL)
 
 stable_protocols =								\

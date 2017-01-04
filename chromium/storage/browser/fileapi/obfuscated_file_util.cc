@@ -14,9 +14,9 @@
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
+#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -110,7 +110,7 @@ enum IsolatedOriginStatus {
 
 }  // namespace
 
-class ObfuscatedFileEnumerator
+class ObfuscatedFileEnumerator final
     : public FileSystemFileUtil::AbstractFileEnumerator {
  public:
   ObfuscatedFileEnumerator(
@@ -138,21 +138,21 @@ class ObfuscatedFileEnumerator
   ~ObfuscatedFileEnumerator() override {}
 
   base::FilePath Next() override {
-    ProcessRecurseQueue();
-    if (display_stack_.empty())
-      return base::FilePath();
-
-    current_file_id_ = display_stack_.back();
-    display_stack_.pop_back();
-
     FileInfo file_info;
-    base::FilePath platform_file_path;
-    base::File::Error error =
-        obfuscated_file_util_->GetFileInfoInternal(
-            db_, context_, root_url_, current_file_id_,
-            &file_info, &current_platform_file_info_, &platform_file_path);
-    if (error != base::File::FILE_OK)
-      return Next();
+    base::File::Error error;
+    do {
+      ProcessRecurseQueue();
+      if (display_stack_.empty())
+        return base::FilePath();
+
+      current_file_id_ = display_stack_.back();
+      display_stack_.pop_back();
+
+      base::FilePath platform_file_path;
+      error = obfuscated_file_util_->GetFileInfoInternal(
+          db_, context_, root_url_, current_file_id_,
+          &file_info, &current_platform_file_info_, &platform_file_path);
+    } while (error != base::File::FILE_OK);
 
     base::FilePath virtual_path =
         current_parent_virtual_path_.Append(file_info.name);
@@ -903,13 +903,12 @@ void ObfuscatedFileUtil::CloseFileSystemForOriginAndType(
     const GURL& origin,
     const std::string& type_string) {
   const std::string key_prefix = GetDirectoryDatabaseKey(origin, type_string);
-  for (DirectoryMap::iterator iter = directories_.lower_bound(key_prefix);
+  for (auto iter = directories_.lower_bound(key_prefix);
        iter != directories_.end();) {
     if (!base::StartsWith(iter->first, key_prefix,
                           base::CompareCase::SENSITIVE))
       break;
     DCHECK(type_string.empty() || iter->first == key_prefix);
-    std::unique_ptr<SandboxDirectoryDatabase> database(iter->second);
     directories_.erase(iter++);
   }
 }
@@ -928,13 +927,14 @@ void ObfuscatedFileUtil::DestroyDirectoryDatabase(
     const std::string& type_string) {
   // If |type_string| is empty, delete all filesystem types under |origin|.
   const std::string key_prefix = GetDirectoryDatabaseKey(origin, type_string);
-  for (DirectoryMap::iterator iter = directories_.lower_bound(key_prefix);
+  for (auto iter = directories_.lower_bound(key_prefix);
        iter != directories_.end();) {
     if (!base::StartsWith(iter->first, key_prefix,
                           base::CompareCase::SENSITIVE))
       break;
     DCHECK(type_string.empty() || iter->first == key_prefix);
-    std::unique_ptr<SandboxDirectoryDatabase> database(iter->second);
+    std::unique_ptr<SandboxDirectoryDatabase> database =
+        std::move(iter->second);
     directories_.erase(iter++);
 
     // Continue to destroy databases even if it failed because it doesn't affect
@@ -962,17 +962,18 @@ void ObfuscatedFileUtil::MaybePrepopulateDatabase(
   for (size_t i = 0; i < type_strings_to_prepopulate.size(); ++i) {
     const std::string type_string = type_strings_to_prepopulate[i];
     // Only handles known types.
-    if (!ContainsKey(known_type_strings_, type_string))
+    if (!base::ContainsKey(known_type_strings_, type_string))
       continue;
     base::File::Error error = base::File::FILE_ERROR_FAILED;
     base::FilePath path = GetDirectoryForOriginAndType(
         origin, type_string, false, &error);
     if (error != base::File::FILE_OK)
       continue;
-    std::unique_ptr<SandboxDirectoryDatabase> db(
-        new SandboxDirectoryDatabase(path, env_override_));
+    std::unique_ptr<SandboxDirectoryDatabase> db =
+        base::MakeUnique<SandboxDirectoryDatabase>(path, env_override_);
     if (db->Init(SandboxDirectoryDatabase::FAIL_ON_CORRUPTION)) {
-      directories_[GetDirectoryDatabaseKey(origin, type_string)] = db.release();
+      directories_[GetDirectoryDatabaseKey(origin, type_string)] =
+          std::move(db);
       MarkUsed();
       // Don't populate more than one database, as it may rather hurt
       // performance.
@@ -1168,10 +1169,10 @@ SandboxDirectoryDatabase* ObfuscatedFileUtil::GetDirectoryDatabase(
   if (key.empty())
     return NULL;
 
-  DirectoryMap::iterator iter = directories_.find(key);
+  auto iter = directories_.find(key);
   if (iter != directories_.end()) {
     MarkUsed();
-    return iter->second;
+    return iter->second.get();
   }
 
   base::File::Error error = base::File::FILE_OK;
@@ -1182,10 +1183,9 @@ SandboxDirectoryDatabase* ObfuscatedFileUtil::GetDirectoryDatabase(
     return NULL;
   }
   MarkUsed();
-  SandboxDirectoryDatabase* database =
-      new SandboxDirectoryDatabase(path, env_override_);
-  directories_[key] = database;
-  return database;
+  directories_[key] =
+      base::MakeUnique<SandboxDirectoryDatabase>(path, env_override_);
+  return directories_[key].get();
 }
 
 base::FilePath ObfuscatedFileUtil::GetDirectoryForOrigin(
@@ -1264,8 +1264,6 @@ void ObfuscatedFileUtil::MarkUsed() {
 
 void ObfuscatedFileUtil::DropDatabases() {
   origin_database_.reset();
-  STLDeleteContainerPairSecondPointers(
-      directories_.begin(), directories_.end());
   directories_.clear();
   timer_.reset();
 }

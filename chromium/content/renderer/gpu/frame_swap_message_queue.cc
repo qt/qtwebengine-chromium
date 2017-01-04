@@ -54,7 +54,7 @@ class VisualStateQueue : public FrameSwapMessageSubQueue {
   ~VisualStateQueue() override {
     for (VisualStateQueueMap::iterator i = queue_.begin(); i != queue_.end();
          i++) {
-      STLDeleteElements(&i->second);
+      base::STLDeleteElements(&i->second);
     }
   }
 
@@ -176,6 +176,7 @@ void FrameSwapMessageQueue::DidNotSwap(
   switch (reason) {
     case cc::SwapPromise::SWAP_FAILS:
     case cc::SwapPromise::COMMIT_NO_UPDATE:
+      DrainMessages(messages);
       swap_queue_->DrainMessages(source_frame_number, messages);
       visual_state_queue_->DrainMessages(source_frame_number, messages);
       break;
@@ -199,7 +200,7 @@ void FrameSwapMessageQueue::DrainMessages(
 
 std::unique_ptr<FrameSwapMessageQueue::SendMessageScope>
 FrameSwapMessageQueue::AcquireSendMessageScope() {
-  return base::WrapUnique(new SendMessageScopeImpl(&lock_));
+  return base::MakeUnique<SendMessageScopeImpl>(&lock_);
 }
 
 // static

@@ -87,7 +87,6 @@ class OcclusionTrackerTest : public testing::Test {
  protected:
   explicit OcclusionTrackerTest(bool opaque_layers)
       : opaque_layers_(opaque_layers),
-        client_(FakeLayerTreeHostClient::DIRECT_3D),
         host_(FakeLayerTreeHost::Create(&client_, &task_graph_runner_)),
         next_layer_impl_id_(1) {}
 
@@ -161,20 +160,6 @@ class OcclusionTrackerTest : public testing::Test {
     return layer_ptr;
   }
 
-  LayerImpl* CreateReplicaLayer(LayerImpl* owning_layer,
-                                const gfx::Transform& transform,
-                                const gfx::PointF& position,
-                                const gfx::Size& bounds) {
-    LayerTreeImpl* tree = host_->host_impl()->active_tree();
-    int id = next_layer_impl_id_++;
-    std::unique_ptr<TestContentLayerImpl> layer(
-        new TestContentLayerImpl(tree, id));
-    TestContentLayerImpl* layer_ptr = layer.get();
-    SetProperties(layer_ptr, transform, position, bounds);
-    SetReplica(owning_layer, std::move(layer));
-    return layer_ptr;
-  }
-
   LayerImpl* CreateMaskLayer(LayerImpl* owning_layer, const gfx::Size& bounds) {
     LayerTreeImpl* tree = host_->host_impl()->active_tree();
     int id = next_layer_impl_id_++;
@@ -200,7 +185,6 @@ class OcclusionTrackerTest : public testing::Test {
   void DestroyLayers() {
     host_->host_impl()->active_tree()->SetRootLayerForTesting(nullptr);
     render_surface_layer_list_impl_.clear();
-    replica_layers_.clear();
     mask_layers_.clear();
     ResetLayerIterator();
   }
@@ -294,15 +278,9 @@ class OcclusionTrackerTest : public testing::Test {
                      const gfx::Transform& transform,
                      const gfx::PointF& position,
                      const gfx::Size& bounds) {
-    layer->SetTransform(transform);
+    layer->test_properties()->transform = transform;
     layer->SetPosition(position);
     layer->SetBounds(bounds);
-  }
-
-  void SetReplica(LayerImpl* owning_layer, std::unique_ptr<LayerImpl> layer) {
-    // We need to set parent on replica layer for property tree building.
-    layer->test_properties()->parent = owning_layer;
-    owning_layer->test_properties()->SetReplicaLayer(std::move(layer));
   }
 
   void SetMask(LayerImpl* owning_layer, std::unique_ptr<LayerImpl> layer) {
@@ -317,7 +295,6 @@ class OcclusionTrackerTest : public testing::Test {
   LayerImplList render_surface_layer_list_impl_;
   LayerIterator layer_iterator_begin_;
   LayerIterator layer_iterator_;
-  LayerList replica_layers_;
   LayerList mask_layers_;
   int next_layer_impl_id_;
 };
@@ -923,17 +900,17 @@ class OcclusionTrackerTestFilters : public OcclusionTrackerTest {
     blur_layer->test_properties()->force_render_surface = true;
     FilterOperations filters;
     filters.Append(FilterOperation::CreateBlurFilter(10.f));
-    blur_layer->SetFilters(filters);
+    blur_layer->test_properties()->filters = filters;
 
     opaque_layer->test_properties()->force_render_surface = true;
     filters.Clear();
     filters.Append(FilterOperation::CreateGrayscaleFilter(0.5f));
-    opaque_layer->SetFilters(filters);
+    opaque_layer->test_properties()->filters = filters;
 
     opacity_layer->test_properties()->force_render_surface = true;
     filters.Clear();
     filters.Append(FilterOperation::CreateOpacityFilter(0.5f));
-    opacity_layer->SetFilters(filters);
+    opacity_layer->test_properties()->filters = filters;
 
     this->CalcDrawEtc(parent);
 
@@ -987,108 +964,6 @@ class OcclusionTrackerTestFilters : public OcclusionTrackerTest {
 };
 
 ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestFilters);
-
-class OcclusionTrackerTestReplicaDoesOcclude : public OcclusionTrackerTest {
- protected:
-  explicit OcclusionTrackerTestReplicaDoesOcclude(bool opaque_layers)
-      : OcclusionTrackerTest(opaque_layers) {}
-  void RunMyTest() override {
-    TestContentLayerImpl* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(100, 200));
-    LayerImpl* surface = this->CreateDrawingSurface(
-        parent, this->identity_matrix, gfx::PointF(), gfx::Size(50, 50), true);
-    this->CreateReplicaLayer(
-        surface, this->identity_matrix, gfx::PointF(0.f, 50.f), gfx::Size());
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip occlusion(gfx::Rect(0, 0, 1000, 1000));
-
-    this->VisitLayer(surface, &occlusion);
-
-    EXPECT_EQ(gfx::Rect(0, 0, 50, 50).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    this->VisitContributingSurface(surface, &occlusion);
-    this->EnterLayer(parent, &occlusion);
-
-    // The surface and replica should both be occluding the parent.
-    EXPECT_EQ(gfx::Rect(50, 100).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-  }
-};
-
-ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestReplicaDoesOcclude);
-
-class OcclusionTrackerTestReplicaWithClipping : public OcclusionTrackerTest {
- protected:
-  explicit OcclusionTrackerTestReplicaWithClipping(bool opaque_layers)
-      : OcclusionTrackerTest(opaque_layers) {}
-  void RunMyTest() override {
-    TestContentLayerImpl* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(100, 170));
-    parent->SetMasksToBounds(true);
-    LayerImpl* surface = this->CreateDrawingSurface(
-        parent, this->identity_matrix, gfx::PointF(0.f, 100.f),
-        gfx::Size(50, 50), true);
-    this->CreateReplicaLayer(
-        surface, this->identity_matrix, gfx::PointF(0.f, 50.f), gfx::Size());
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip occlusion(gfx::Rect(0, 0, 1000, 1000));
-
-    this->VisitLayer(surface, &occlusion);
-
-    // The surface layer's occlusion in its own space.
-    EXPECT_EQ(gfx::Rect(0, 0, 50, 50).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
-
-    this->VisitContributingSurface(surface, &occlusion);
-    this->EnterLayer(parent, &occlusion);
-
-    // The surface and replica should both be occluding the parent, the
-    // replica's occlusion is clipped by the parent.
-    EXPECT_EQ(gfx::Rect(0, 100, 50, 70).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
-  }
-};
-
-ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestReplicaWithClipping);
-
-class OcclusionTrackerTestReplicaWithMask : public OcclusionTrackerTest {
- protected:
-  explicit OcclusionTrackerTestReplicaWithMask(bool opaque_layers)
-      : OcclusionTrackerTest(opaque_layers) {}
-  void RunMyTest() override {
-    TestContentLayerImpl* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(100, 200));
-    LayerImpl* surface = this->CreateDrawingSurface(
-        parent, this->identity_matrix, gfx::PointF(0.f, 100.f),
-        gfx::Size(50, 50), true);
-    LayerImpl* replica = this->CreateReplicaLayer(
-        surface, this->identity_matrix, gfx::PointF(50.f, 50.f), gfx::Size());
-    this->CreateMaskLayer(replica, gfx::Size(10, 10));
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip occlusion(gfx::Rect(0, 0, 1000, 1000));
-
-    this->VisitLayer(surface, &occlusion);
-
-    EXPECT_EQ(gfx::Rect(0, 0, 50, 50).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    this->VisitContributingSurface(surface, &occlusion);
-    this->EnterLayer(parent, &occlusion);
-
-    // The replica should not be occluding the parent, since it has a mask
-    // applied to it.
-    EXPECT_EQ(gfx::Rect(0, 100, 50, 50).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-  }
-};
-
-ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestReplicaWithMask);
 
 class OcclusionTrackerTestOpaqueContentsRegionEmpty
     : public OcclusionTrackerTest {
@@ -1284,58 +1159,6 @@ class OcclusionTrackerTestSurfaceOcclusionTranslatesWithClipping
 ALL_OCCLUSIONTRACKER_TEST(
     OcclusionTrackerTestSurfaceOcclusionTranslatesWithClipping);
 
-class OcclusionTrackerTestSurfaceWithReplicaUnoccluded
-    : public OcclusionTrackerTest {
- protected:
-  explicit OcclusionTrackerTestSurfaceWithReplicaUnoccluded(bool opaque_layers)
-      : OcclusionTrackerTest(opaque_layers) {}
-  void RunMyTest() override {
-    TestContentLayerImpl* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(100, 200));
-    LayerImpl* surface =
-        this->CreateDrawingSurface(parent, this->identity_matrix, gfx::PointF(),
-                                   gfx::Size(100, 100), true);
-    this->CreateReplicaLayer(surface,
-                             this->identity_matrix,
-                             gfx::PointF(0.f, 100.f),
-                             gfx::Size(100, 100));
-    LayerImpl* topmost =
-        this->CreateDrawingLayer(parent, this->identity_matrix, gfx::PointF(),
-                                 gfx::Size(100, 110), true);
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip occlusion(gfx::Rect(0, 0, 1000, 1000));
-
-    // |topmost| occludes the surface, but not the entire surface's replica.
-    this->VisitLayer(topmost, &occlusion);
-
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(0, 0, 100, 110).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    this->VisitLayer(surface, &occlusion);
-
-    // Render target with replica ignores occlusion from outside.
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(0, 0, 100, 100).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    this->EnterContributingSurface(surface, &occlusion);
-
-    // Only occlusion from outside the surface occludes the surface/replica.
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_on_contributing_surface_from_outside_target()
-                  .ToString());
-    EXPECT_EQ(gfx::Rect(0, 0, 100, 110).ToString(),
-              occlusion.occlusion_on_contributing_surface_from_inside_target()
-                  .ToString());
-  }
-};
-
-ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestSurfaceWithReplicaUnoccluded);
-
 class OcclusionTrackerTestSurfaceChildOfSurface : public OcclusionTrackerTest {
  protected:
   explicit OcclusionTrackerTestSurfaceChildOfSurface(bool opaque_layers)
@@ -1437,11 +1260,6 @@ class OcclusionTrackerTestDontOccludePixelsNeededForBackgroundFilter
     FilterOperations filters;
     filters.Append(FilterOperation::CreateBlurFilter(10.f));
 
-    // Save the distance of influence for the blur effect.
-    int outset_top, outset_right, outset_bottom, outset_left;
-    filters.GetOutsets(
-        &outset_top, &outset_right, &outset_bottom, &outset_left);
-
     enum Direction {
       LEFT,
       RIGHT,
@@ -1469,12 +1287,14 @@ class OcclusionTrackerTestDontOccludePixelsNeededForBackgroundFilter
           occlusion_rect = gfx::Rect(0, 0, 50, 200);
           break;
         case RIGHT:
+          // This is the right edge; filtered_surface is scaled by half.
           occlusion_rect = gfx::Rect(100, 0, 50, 200);
           break;
         case TOP:
           occlusion_rect = gfx::Rect(0, 0, 200, 50);
           break;
         case BOTTOM:
+          // This is the bottom edge; filtered_surface is scaled by half.
           occlusion_rect = gfx::Rect(0, 100, 200, 50);
           break;
       }
@@ -1506,25 +1326,26 @@ class OcclusionTrackerTestDontOccludePixelsNeededForBackgroundFilter
                 occlusion.occlusion_from_outside_target().ToString());
 
       // The surface has a background blur, so it needs pixels that are
-      // currently considered occluded in order to be drawn. So the pixels it
-      // needs should be removed some the occluded area so that when we get to
-      // the parent they are drawn.
+      // currently considered occluded in order to be drawn. The pixels it
+      // needs should be removed from the occluded area, so that they are drawn
+      // when we get to the parent.
       this->VisitContributingSurface(filtered_surface, &occlusion);
       this->EnterLayer(parent, &occlusion);
 
+      // The spread due to a 10px blur is 30px.
       gfx::Rect expected_occlusion = occlusion_rect;
       switch (i) {
         case LEFT:
-          expected_occlusion.Inset(0, 0, outset_right, 0);
+          expected_occlusion.Inset(0, 0, 30, 0);
           break;
         case RIGHT:
-          expected_occlusion.Inset(outset_right, 0, 0, 0);
+          expected_occlusion.Inset(30, 0, 0, 0);
           break;
         case TOP:
-          expected_occlusion.Inset(0, 0, 0, outset_right);
+          expected_occlusion.Inset(0, 0, 0, 30);
           break;
         case BOTTOM:
-          expected_occlusion.Inset(0, outset_right, 0, 0);
+          expected_occlusion.Inset(0, 30, 0, 0);
           break;
       }
 
@@ -1539,6 +1360,127 @@ class OcclusionTrackerTestDontOccludePixelsNeededForBackgroundFilter
 
 ALL_OCCLUSIONTRACKER_TEST(
     OcclusionTrackerTestDontOccludePixelsNeededForBackgroundFilter);
+
+class OcclusionTrackerTestPixelsNeededForDropShadowBackgroundFilter
+    : public OcclusionTrackerTest {
+ protected:
+  explicit OcclusionTrackerTestPixelsNeededForDropShadowBackgroundFilter(
+      bool opaque_layers)
+      : OcclusionTrackerTest(opaque_layers) {}
+  void RunMyTest() override {
+    gfx::Transform scale_by_half;
+    scale_by_half.Scale(0.5, 0.5);
+
+    FilterOperations filters;
+    filters.Append(FilterOperation::CreateDropShadowFilter(gfx::Point(10, 10),
+                                                           5, SK_ColorBLACK));
+
+    enum Direction {
+      LEFT,
+      RIGHT,
+      TOP,
+      BOTTOM,
+      LAST_DIRECTION = BOTTOM,
+    };
+
+    for (int i = 0; i <= LAST_DIRECTION; ++i) {
+      SCOPED_TRACE(i);
+
+      // Make a 50x50 filtered surface that is adjacent to occluding layers
+      // which are above it in the z-order in various configurations. The
+      // surface is scaled to test that the pixel moving is done in the target
+      // space, where the background filter is applied.
+      TestContentLayerImpl* parent = this->CreateRoot(
+          this->identity_matrix, gfx::PointF(), gfx::Size(200, 200));
+      LayerImpl* filtered_surface = this->CreateDrawingLayer(
+          parent, scale_by_half, gfx::PointF(50.f, 50.f), gfx::Size(100, 100),
+          false);
+      filtered_surface->test_properties()->background_filters = filters;
+      gfx::Rect occlusion_rect;
+      switch (i) {
+        case LEFT:
+          occlusion_rect = gfx::Rect(0, 0, 50, 200);
+          break;
+        case RIGHT:
+          // This is the right edge; filtered_surface is scaled by half.
+          occlusion_rect = gfx::Rect(100, 0, 50, 200);
+          break;
+        case TOP:
+          occlusion_rect = gfx::Rect(0, 0, 200, 50);
+          break;
+        case BOTTOM:
+          // This is the bottom edge; filtered_surface is scaled by half.
+          occlusion_rect = gfx::Rect(0, 100, 200, 50);
+          break;
+      }
+
+      LayerImpl* occluding_layer = this->CreateDrawingLayer(
+          parent, this->identity_matrix, gfx::PointF(occlusion_rect.origin()),
+          occlusion_rect.size(), true);
+      occluding_layer->test_properties()->force_render_surface = false;
+      this->CalcDrawEtc(parent);
+
+      TestOcclusionTrackerWithClip occlusion(gfx::Rect(0, 0, 200, 200));
+
+      // This layer occludes pixels directly beside the filtered_surface.
+      // Because filtered surface blends pixels in a radius, it will need to see
+      // some of the pixels (up to radius far) underneath the occluding layers.
+      this->VisitLayer(occluding_layer, &occlusion);
+
+      EXPECT_EQ(occlusion_rect.ToString(),
+                occlusion.occlusion_from_inside_target().ToString());
+      EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
+
+      this->VisitLayer(filtered_surface, &occlusion);
+
+      // The occlusion is used fully inside the surface.
+      gfx::Rect occlusion_inside_surface =
+          occlusion_rect - gfx::Vector2d(50, 50);
+      EXPECT_TRUE(occlusion.occlusion_from_inside_target().IsEmpty());
+      EXPECT_EQ(occlusion_inside_surface.ToString(),
+                occlusion.occlusion_from_outside_target().ToString());
+
+      // The surface has a background filter, so it needs pixels that are
+      // currently considered occluded in order to be drawn. The pixels it
+      // needs should be removed from the occluded area, so that they are drawn
+      // when we get to the parent.
+      this->VisitContributingSurface(filtered_surface, &occlusion);
+      this->EnterLayer(parent, &occlusion);
+
+      gfx::Rect expected_occlusion;
+      switch (i) {
+        case LEFT:
+          // The right half of the occlusion is close enough to cast a shadow
+          // that would be visible in the background filter. The shadow reaches
+          // 3*5 + 10 = 25 pixels to the right.
+          expected_occlusion = gfx::Rect(0, 0, 25, 200);
+          break;
+        case RIGHT:
+          // The shadow spreads 3*5 - 10 = 5 pixels to the left, so the
+          // occlusion must recede by 5 to account for that.
+          expected_occlusion = gfx::Rect(105, 0, 45, 200);
+          break;
+        case TOP:
+          // Similar to LEFT.
+          expected_occlusion = gfx::Rect(0, 0, 200, 25);
+          break;
+        case BOTTOM:
+          // Similar to RIGHT.
+          expected_occlusion = gfx::Rect(0, 105, 200, 45);
+          break;
+      }
+
+      EXPECT_EQ(expected_occlusion.ToString(),
+                occlusion.occlusion_from_inside_target().ToString());
+      EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
+
+      this->DestroyLayers();
+    }
+  }
+};
+
+ALL_OCCLUSIONTRACKER_TEST(
+    OcclusionTrackerTestPixelsNeededForDropShadowBackgroundFilter);
 
 class OcclusionTrackerTestTwoBackgroundFiltersReduceOcclusionTwice
     : public OcclusionTrackerTest {
@@ -1573,11 +1515,6 @@ class OcclusionTrackerTestTwoBackgroundFiltersReduceOcclusionTwice
     filtered_surface1->test_properties()->background_filters = filters;
     filtered_surface2->test_properties()->background_filters = filters;
 
-    // Save the distance of influence for the blur effect.
-    int outset_top, outset_right, outset_bottom, outset_left;
-    filters.GetOutsets(
-        &outset_top, &outset_right, &outset_bottom, &outset_left);
-
     this->CalcDrawEtc(root);
 
     TestOcclusionTrackerWithClip occlusion(gfx::Rect(0, 0, 1000, 1000));
@@ -1594,11 +1531,10 @@ class OcclusionTrackerTestTwoBackgroundFiltersReduceOcclusionTwice
     this->VisitContributingSurface(filtered_surface1, &occlusion);
 
     // Test expectations in the target.
+    int blur_outset = 3;
     gfx::Rect expected_occlusion =
-        gfx::Rect(100 / 2 + outset_right * 2,
-                  100 / 2 + outset_bottom * 2,
-                  50 / 2 - (outset_left + outset_right) * 2,
-                  50 / 2 - (outset_top + outset_bottom) * 2);
+        gfx::Rect(100 / 2 + blur_outset * 2, 100 / 2 + blur_outset * 2,
+                  50 / 2 - blur_outset * 4, 50 / 2 - blur_outset * 4);
     EXPECT_EQ(expected_occlusion.ToString(),
               occlusion.occlusion_from_inside_target().ToString());
 
@@ -1622,25 +1558,18 @@ class OcclusionTrackerTestDontReduceOcclusionBelowBackgroundFilter
     gfx::Transform scale_by_half;
     scale_by_half.Scale(0.5, 0.5);
 
-    // Make a surface and its replica, each 50x50, with a smaller 30x30 layer
-    // centered below each.  The surface is scaled to test that the pixel moving
-    // is done in the target space, where the background filter is applied, but
-    // the surface appears at 50, 50 and the replica at 200, 50.
+    // Make a 50x50 surface, with a smaller 30x30 layer centered below it.
+    // The surface is scaled to test that the pixel moving is done in the target
+    // space, where the background filter is applied, and the surface appears at
+    // 50, 50.
     TestContentLayerImpl* parent = this->CreateRoot(
         this->identity_matrix, gfx::PointF(), gfx::Size(300, 150));
     LayerImpl* behind_surface_layer = this->CreateDrawingLayer(
         parent, this->identity_matrix, gfx::PointF(60.f, 60.f),
         gfx::Size(30, 30), true);
-    LayerImpl* behind_replica_layer = this->CreateDrawingLayer(
-        parent, this->identity_matrix, gfx::PointF(210.f, 60.f),
-        gfx::Size(30, 30), true);
     LayerImpl* filtered_surface =
         this->CreateDrawingLayer(parent, scale_by_half, gfx::PointF(50.f, 50.f),
                                  gfx::Size(100, 100), false);
-    this->CreateReplicaLayer(filtered_surface,
-                             this->identity_matrix,
-                             gfx::PointF(300.f, 0.f),
-                             gfx::Size());
 
     // Filters make the layer own a surface.
     filtered_surface->test_properties()->force_render_surface = true;
@@ -1657,14 +1586,9 @@ class OcclusionTrackerTestDontReduceOcclusionBelowBackgroundFilter
     this->VisitLayer(filtered_surface, &occlusion);
     this->VisitContributingSurface(filtered_surface, &occlusion);
 
-    this->VisitLayer(behind_replica_layer, &occlusion);
-
     // The layers behind the surface are not blurred, and their occlusion does
     // not change, until we leave the surface.  So it should not be modified by
     // the filter here.
-    gfx::Rect occlusion_behind_replica = gfx::Rect(210, 60, 30, 30);
-    EXPECT_EQ(occlusion_behind_replica.ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
     EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
 
     // Clear the occlusion so the |behind_surface_layer| can add its occlusion
@@ -1699,7 +1623,7 @@ class OcclusionTrackerTestDontReduceOcclusionIfBackgroundFilterIsOccluded
     // Make a 50x50 filtered surface that is completely occluded by an opaque
     // layer which is above it in the z-order.  The surface is
     // scaled to test that the pixel moving is done in the target space, where
-    // the background filter is applied, but the surface appears at 50, 50.
+    // the background filter is applied, and the surface appears at 50, 50.
     TestContentLayerImpl* parent = this->CreateRoot(
         this->identity_matrix, gfx::PointF(), gfx::Size(200, 150));
     LayerImpl* filtered_surface =
@@ -1761,31 +1685,20 @@ class OcclusionTrackerTestReduceOcclusionWhenBkgdFilterIsPartiallyOccluded
     gfx::Transform scale_by_half;
     scale_by_half.Scale(0.5, 0.5);
 
-    // Make a surface and its replica, each 50x50, that are partially occluded
-    // by opaque layers which are above them in the z-order.  The surface is
-    // scaled to test that the pixel moving is done in the target space, where
-    // the background filter is applied, but the surface appears at 50, 50 and
-    // the replica at 200, 50.
+    // Make a 50x50 surface which is partially occluded by opaque layers which
+    // are above it in the z-order.  The surface is scaled to test that the
+    // pixel moving is done in the target space, where the background filter is
+    // applied, but the surface appears at 50, 50.
     TestContentLayerImpl* parent = this->CreateRoot(
         this->identity_matrix, gfx::PointF(), gfx::Size(300, 150));
     LayerImpl* filtered_surface =
         this->CreateDrawingLayer(parent, scale_by_half, gfx::PointF(50.f, 50.f),
                                  gfx::Size(100, 100), false);
-    this->CreateReplicaLayer(filtered_surface,
-                             this->identity_matrix,
-                             gfx::PointF(300.f, 0.f),
-                             gfx::Size());
     LayerImpl* above_surface_layer = this->CreateDrawingLayer(
         parent, this->identity_matrix, gfx::PointF(70.f, 50.f),
         gfx::Size(30, 50), true);
-    LayerImpl* above_replica_layer = this->CreateDrawingLayer(
-        parent, this->identity_matrix, gfx::PointF(200.f, 50.f),
-        gfx::Size(30, 50), true);
     LayerImpl* beside_surface_layer = this->CreateDrawingLayer(
         parent, this->identity_matrix, gfx::PointF(90.f, 40.f),
-        gfx::Size(10, 10), true);
-    LayerImpl* beside_replica_layer = this->CreateDrawingLayer(
-        parent, this->identity_matrix, gfx::PointF(200.f, 40.f),
         gfx::Size(10, 10), true);
 
     // Filters make the layer own a surface.
@@ -1794,18 +1707,11 @@ class OcclusionTrackerTestReduceOcclusionWhenBkgdFilterIsPartiallyOccluded
     filters.Append(FilterOperation::CreateBlurFilter(3.f));
     filtered_surface->test_properties()->background_filters = filters;
 
-    // Save the distance of influence for the blur effect.
-    int outset_top, outset_right, outset_bottom, outset_left;
-    filters.GetOutsets(
-        &outset_top, &outset_right, &outset_bottom, &outset_left);
-
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip occlusion(gfx::Rect(0, 0, 1000, 1000));
 
-    this->VisitLayer(beside_replica_layer, &occlusion);
     this->VisitLayer(beside_surface_layer, &occlusion);
-    this->VisitLayer(above_replica_layer, &occlusion);
     this->VisitLayer(above_surface_layer, &occlusion);
 
     // The surface has a background blur, so it blurs non-opaque pixels below
@@ -1813,23 +1719,19 @@ class OcclusionTrackerTestReduceOcclusionWhenBkgdFilterIsPartiallyOccluded
     this->VisitLayer(filtered_surface, &occlusion);
     this->VisitContributingSurface(filtered_surface, &occlusion);
 
-    // The filter in the surface and replica are partially unoccluded. Only the
-    // unoccluded parts should reduce occlusion.  This means it will push back
-    // the occlusion that touches the unoccluded part (occlusion_above___), but
+    // The filter in the surface is partially unoccluded. Only the unoccluded
+    // parts should reduce occlusion.  This means it will push back the
+    // occlusion that touches the unoccluded part (occlusion_above___), but
     // it will not touch occlusion_beside____ since that is not beside the
     // unoccluded part of the surface, even though it is beside the occluded
     // part of the surface.
+    int blur_outset = 9;
     gfx::Rect occlusion_above_surface =
-        gfx::Rect(70 + outset_right, 50, 30 - outset_right, 50);
-    gfx::Rect occlusion_above_replica =
-        gfx::Rect(200, 50, 30 - outset_left, 50);
+        gfx::Rect(70 + blur_outset, 50, 30 - blur_outset, 50);
     gfx::Rect occlusion_beside_surface = gfx::Rect(90, 40, 10, 10);
-    gfx::Rect occlusion_beside_replica = gfx::Rect(200, 40, 10, 10);
 
     SimpleEnclosedRegion expected_occlusion;
-    expected_occlusion.Union(occlusion_beside_replica);
     expected_occlusion.Union(occlusion_beside_surface);
-    expected_occlusion.Union(occlusion_above_replica);
     expected_occlusion.Union(occlusion_above_surface);
 
     EXPECT_EQ(expected_occlusion.ToString(),
@@ -1865,7 +1767,8 @@ class OcclusionTrackerTestBlendModeDoesNotOcclude
 
     // Blend mode makes the layer own a surface.
     blend_mode_layer->test_properties()->force_render_surface = true;
-    blend_mode_layer->SetBlendMode(SkXfermode::kMultiply_Mode);
+    blend_mode_layer->test_properties()->blend_mode =
+        SkXfermode::kMultiply_Mode;
 
     this->CalcDrawEtc(parent);
 
@@ -1878,10 +1781,13 @@ class OcclusionTrackerTestBlendModeDoesNotOcclude
     EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
 
     this->VisitLayer(blend_mode_layer, &occlusion);
-    // |top_layer| occludes but not |blend_mode_layer|.
+    // |top_layer| and |blend_mode_layer| both occlude, since the blend mode
+    // gets applied by blend_mode_layer's render surface, not when drawing the
+    // layer itself.
+    EXPECT_EQ(gfx::Rect(100, 100).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
     EXPECT_EQ(gfx::Rect(10, 12, 20, 22).ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_TRUE(occlusion.occlusion_from_inside_target().IsEmpty());
 
     this->VisitContributingSurface(blend_mode_layer, &occlusion);
     // |top_layer| occludes but not |blend_mode_layer|.

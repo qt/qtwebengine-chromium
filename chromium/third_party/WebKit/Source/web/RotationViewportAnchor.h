@@ -10,13 +10,13 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/heap/Handle.h"
-#include "web/ViewportAnchor.h"
 
 namespace blink {
 
 class FrameView;
 class Node;
 class PageScaleConstraintsSet;
+class ScrollableArea;
 class VisualViewport;
 
 // The rotation anchor provides a way to anchor a viewport origin to a DOM node.
@@ -27,39 +27,49 @@ class VisualViewport;
 // viewport origin maintains its orientation relative to the anchor. If there is
 // no node or it is lost during the resize, we fall back to the resize anchor
 // logic.
-class RotationViewportAnchor : public ViewportAnchor {
-    STACK_ALLOCATED();
-public:
-    RotationViewportAnchor(FrameView& rootFrameView, VisualViewport&, const FloatSize& anchorInInnerViewCoords, PageScaleConstraintsSet&);
-    ~RotationViewportAnchor();
+class RotationViewportAnchor {
+  STACK_ALLOCATED();
 
-private:
-    void setAnchor();
-    void restoreToAnchor();
+ public:
+  RotationViewportAnchor(FrameView& rootFrameView,
+                         VisualViewport&,
+                         const FloatSize& anchorInInnerViewCoords,
+                         PageScaleConstraintsSet&);
+  ~RotationViewportAnchor();
 
-    FloatPoint getInnerOrigin(const FloatSize& innerSize) const;
+ private:
+  void setAnchor();
+  void restoreToAnchor();
 
-    void computeOrigins(const FloatSize& innerSize, IntPoint& mainFrameOffset, FloatPoint& visualViewportOffset) const;
+  FloatPoint getInnerOrigin(const FloatSize& innerSize) const;
 
-    float m_oldPageScaleFactor;
-    float m_oldMinimumPageScaleFactor;
+  void computeOrigins(const FloatSize& innerSize,
+                      IntPoint& mainFrameOffset,
+                      FloatPoint& visualViewportOffset) const;
+  ScrollableArea& layoutViewport() const;
 
-    // Inner viewport origin in the reference frame of the document in CSS pixels
-    FloatPoint m_visualViewportInDocument;
+  Member<FrameView> m_rootFrameView;
+  Member<VisualViewport> m_visualViewport;
 
-    // Inner viewport origin in the reference frame of the outer viewport
-    // normalized to the outer viewport size.
-    FloatSize m_normalizedVisualViewportOffset;
+  float m_oldPageScaleFactor;
+  float m_oldMinimumPageScaleFactor;
 
-    Member<Node> m_anchorNode;
-    LayoutRect m_anchorNodeBounds;
+  // Inner viewport origin in the reference frame of the document in CSS pixels
+  FloatPoint m_visualViewportInDocument;
 
-    FloatSize m_anchorInInnerViewCoords;
-    FloatSize m_anchorInNodeCoords;
+  // Inner viewport origin in the reference frame of the outer viewport
+  // normalized to the outer viewport size.
+  FloatSize m_normalizedVisualViewportOffset;
 
-    PageScaleConstraintsSet& m_pageScaleConstraintsSet;
+  Member<Node> m_anchorNode;
+  LayoutRect m_anchorNodeBounds;
+
+  FloatSize m_anchorInInnerViewCoords;
+  FloatSize m_anchorInNodeCoords;
+
+  PageScaleConstraintsSet& m_pageScaleConstraintsSet;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // RotationViewportAnchor_h
+#endif  // RotationViewportAnchor_h

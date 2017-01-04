@@ -11,8 +11,8 @@
 #include "chrome/browser/extensions/api/storage/settings_sync_processor.h"
 #include "chrome/browser/extensions/api/storage/settings_sync_util.h"
 #include "chrome/browser/extensions/api/storage/syncable_settings_storage.h"
+#include "components/sync/api/sync_error_factory.h"
 #include "content/public/browser/browser_thread.h"
-#include "sync/api/sync_error_factory.h"
 
 using content::BrowserThread;
 
@@ -31,7 +31,7 @@ void AddAllSyncData(const std::string& extension_id,
 }
 
 std::unique_ptr<base::DictionaryValue> EmptyDictionaryValue() {
-  return base::WrapUnique(new base::DictionaryValue());
+  return base::MakeUnique<base::DictionaryValue>();
 }
 
 ValueStoreFactory::ModelType ToFactoryModelType(syncer::ModelType sync_type) {

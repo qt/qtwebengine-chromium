@@ -26,6 +26,7 @@ class HttpResponseInfo;
 class HttpStreamParser;
 
 struct WebSocketExtensionParams;
+class WebSocketStreamRequest;
 
 class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
     : public WebSocketHandshakeStreamBase {
@@ -37,14 +38,14 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
       bool using_proxy,
       std::vector<std::string> requested_sub_protocols,
       std::vector<std::string> requested_extensions,
-      std::string* failure_message);
+      WebSocketStreamRequest* request);
 
   ~WebSocketBasicHandshakeStream() override;
 
   // HttpStreamBase methods
   int InitializeStream(const HttpRequestInfo* request_info,
                        RequestPriority priority,
-                       const BoundNetLog& net_log,
+                       const NetLogWithSource& net_log,
                        const CompletionCallback& callback) override;
   int SendRequest(const HttpRequestHeaders& request_headers,
                   HttpResponseInfo* response,
@@ -64,12 +65,12 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
   void GetSSLInfo(SSLInfo* ssl_info) override;
   void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override;
   bool GetRemoteEndpoint(IPEndPoint* endpoint) override;
-  Error GetSignedEKMForTokenBinding(crypto::ECPrivateKey* key,
-                                    std::vector<uint8_t>* out) override;
+  Error GetTokenBindingSignature(crypto::ECPrivateKey* key,
+                                 TokenBindingType tb_type,
+                                 std::vector<uint8_t>* out) override;
   void Drain(HttpNetworkSession* session) override;
   void SetPriority(RequestPriority priority) override;
   void PopulateNetErrorDetails(NetErrorDetails* details) override;
-  UploadProgress GetUploadProgress() const override;
   HttpStream* RenewStreamForAuth() override;
 
 
@@ -99,9 +100,9 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
   // OK if they are, otherwise returns ERR_INVALID_RESPONSE.
   int ValidateUpgradeResponse(const HttpResponseHeaders* headers);
 
-  HttpStreamParser* parser() const { return state_.parser(); }
+  void OnFailure(const std::string& message);
 
-  void set_failure_message(const std::string& failure_message);
+  HttpStreamParser* parser() const { return state_.parser(); }
 
   // The request URL.
   GURL url_;
@@ -139,7 +140,7 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
   // to avoid including extension-related header files here.
   std::unique_ptr<WebSocketExtensionParams> extension_params_;
 
-  std::string* failure_message_;
+  WebSocketStreamRequest* stream_request_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSocketBasicHandshakeStream);
 };

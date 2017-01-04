@@ -26,47 +26,53 @@
 #include "core/editing/commands/InsertNodeBeforeCommand.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "core/editing/EditingUtilities.h"
 
 namespace blink {
 
-InsertNodeBeforeCommand::InsertNodeBeforeCommand(Node* insertChild, Node* refChild,
+InsertNodeBeforeCommand::InsertNodeBeforeCommand(
+    Node* insertChild,
+    Node* refChild,
     ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
-    : SimpleEditCommand(refChild->document())
-    , m_insertChild(insertChild)
-    , m_refChild(refChild)
-    , m_shouldAssumeContentIsAlwaysEditable(shouldAssumeContentIsAlwaysEditable)
-{
-    DCHECK(m_insertChild);
-    DCHECK(!m_insertChild->parentNode()) << m_insertChild;
-    DCHECK(m_refChild);
-    DCHECK(m_refChild->parentNode()) << m_refChild;
+    : SimpleEditCommand(refChild->document()),
+      m_insertChild(insertChild),
+      m_refChild(refChild),
+      m_shouldAssumeContentIsAlwaysEditable(
+          shouldAssumeContentIsAlwaysEditable) {
+  DCHECK(m_insertChild);
+  DCHECK(!m_insertChild->parentNode()) << m_insertChild;
+  DCHECK(m_refChild);
+  DCHECK(m_refChild->parentNode()) << m_refChild;
 
-    DCHECK(m_refChild->parentNode()->hasEditableStyle() || !m_refChild->parentNode()->inActiveDocument()) << m_refChild->parentNode();
+  DCHECK(hasEditableStyle(*m_refChild->parentNode()) ||
+         !m_refChild->parentNode()->inActiveDocument())
+      << m_refChild->parentNode();
 }
 
-void InsertNodeBeforeCommand::doApply(EditingState*)
-{
-    ContainerNode* parent = m_refChild->parentNode();
-    if (!parent || (m_shouldAssumeContentIsAlwaysEditable == DoNotAssumeContentIsAlwaysEditable && !parent->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable)))
-        return;
-    DCHECK(parent->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable)) << parent;
+void InsertNodeBeforeCommand::doApply(EditingState*) {
+  ContainerNode* parent = m_refChild->parentNode();
+  document().updateStyleAndLayoutTree();
+  if (!parent || (m_shouldAssumeContentIsAlwaysEditable ==
+                      DoNotAssumeContentIsAlwaysEditable &&
+                  !hasEditableStyle(*parent)))
+    return;
+  DCHECK(hasEditableStyle(*parent)) << parent;
 
-    parent->insertBefore(m_insertChild.get(), m_refChild.get(), IGNORE_EXCEPTION);
+  parent->insertBefore(m_insertChild.get(), m_refChild.get(), IGNORE_EXCEPTION);
 }
 
-void InsertNodeBeforeCommand::doUnapply()
-{
-    if (!m_insertChild->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable))
-        return;
+void InsertNodeBeforeCommand::doUnapply() {
+  document().updateStyleAndLayoutTree();
+  if (!hasEditableStyle(*m_insertChild))
+    return;
 
-    m_insertChild->remove(IGNORE_EXCEPTION);
+  m_insertChild->remove(IGNORE_EXCEPTION);
 }
 
-DEFINE_TRACE(InsertNodeBeforeCommand)
-{
-    visitor->trace(m_insertChild);
-    visitor->trace(m_refChild);
-    SimpleEditCommand::trace(visitor);
+DEFINE_TRACE(InsertNodeBeforeCommand) {
+  visitor->trace(m_insertChild);
+  visitor->trace(m_refChild);
+  SimpleEditCommand::trace(visitor);
 }
 
-} // namespace blink
+}  // namespace blink

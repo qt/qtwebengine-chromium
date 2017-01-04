@@ -1,19 +1,39 @@
 {
-  "TestStudy1": [
-    {"group_name": "TestGroup1"}
-  ],
-  "TestStudy2": [
+  "TestTrial1": [
     {
-      "group_name": "TestGroup2",
-      "params": {
-        "x": "1",
-        "y": "2"
-      },
-      "enable_features": ["A", "B"],
-      "disable_features": ["C"]
+      "platforms": ["win"],
+      "experiments": [{"name": "TestGroup1"}]
     }
   ],
-  "TestStudy3": [
-    {"group_name": "TestGroup3", "enable_features": ["X"]}
+  "TestTrial2": [
+    {
+      "platforms": ["win"],
+      "experiments": [
+        {
+          "name": "TestGroup2",
+          "params": {
+            "x": "1",
+            "y": "2"
+          },
+          "enable_features": ["A", "B"],
+          "disable_features": ["C"]
+        },
+        {
+          "name": "TestGroup2-2",
+          "params": {
+            "x": "3",
+            "y": "4"
+          },
+          "enable_features": ["D", "E"],
+          "disable_features": ["F"]
+        }
+      ]
+    }
+  ],
+  "TestTrial3": [
+    {
+      "platforms": ["win"],
+      "experiments": [{"name": "TestGroup3", "enable_features": ["X"]}]
+    }
   ]
 }

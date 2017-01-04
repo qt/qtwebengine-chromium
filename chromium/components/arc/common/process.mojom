@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Next MinVersion: 5
+// Next MinVersion: 6
 
 module arc.mojom;
 
@@ -87,6 +87,13 @@ struct RunningAppProcessInfo {
 
   // Package names running in the process.
   [MinVersion=4] array<string>? packages;
+
+  // Whether this app is focused in ARC++ multi-window environment.
+  [MinVersion=5] bool is_focused;
+
+  // Last time the process was active. Milliseconds since boot.
+  // The clock is monotonic (comes from Android System.uptimeMillis()).
+  [MinVersion=5] int64 last_activity_time;
 };
 
 interface ProcessInstance {
@@ -99,13 +106,13 @@ interface ProcessInstance {
 
   // Sets oom_score_adj of a process.
   [MinVersion=2]
-  SetOomScoreAdj@2(uint32 pid, int32 score);
+  DeprecatedSetOomScoreAdj@2(uint32 pid, int32 score);
 
   // Disables Android built-in oom_adj adjustment.
   [MinVersion=2]
-  DisableBuiltinOomAdjustment@3();
+  DeprecatedDisableBuiltinOomAdjustment@3();
 
   // Disables Android lowmemorykiller.
   [MinVersion=3]
-  DisableLowMemoryKiller@4();
+  DeprecatedDisableLowMemoryKiller@4();
 };

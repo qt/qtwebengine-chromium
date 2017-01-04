@@ -5,9 +5,9 @@
 #include "src/profiler/profiler-listener.h"
 
 #include "src/deoptimizer.h"
-#include "src/interpreter/source-position-table.h"
 #include "src/profiler/cpu-profiler.h"
 #include "src/profiler/profile-generator-inl.h"
+#include "src/source-position-table.h"
 
 namespace v8 {
 namespace internal {
@@ -87,36 +87,24 @@ void ProfilerListener::CodeCreateEvent(CodeEventListener::LogEventsAndTags tag,
   Script* script = Script::cast(shared->script());
   JITLineInfoTable* line_table = NULL;
   if (script) {
-    if (abstract_code->IsCode()) {
-      Code* code = abstract_code->GetCode();
-      int start_position = shared->start_position();
-      int end_position = shared->end_position();
-      line_table = new JITLineInfoTable();
-      for (RelocIterator it(code); !it.done(); it.next()) {
-        RelocInfo* reloc_info = it.rinfo();
-        if (!RelocInfo::IsPosition(reloc_info->rmode())) continue;
-        int position = static_cast<int>(reloc_info->data());
-        // TODO(alph): in case of inlining the position may correspond
-        // to an inlined function source code. Do not collect positions
-        // that fall beyond the function source code. There's however a
-        // chance the inlined function has similar positions but in another
-        // script. So the proper fix is to store script_id in some form
-        // along with the inlined function positions.
-        if (position < start_position || position >= end_position) continue;
-        int pc_offset = static_cast<int>(reloc_info->pc() - code->address());
-        int line_number = script->GetLineNumber(position) + 1;
-        line_table->SetPosition(pc_offset, line_number);
-      }
-    } else {
-      BytecodeArray* bytecode = abstract_code->GetBytecodeArray();
-      line_table = new JITLineInfoTable();
-      interpreter::SourcePositionTableIterator it(
-          bytecode->source_position_table());
-      for (; !it.done(); it.Advance()) {
-        int line_number = script->GetLineNumber(it.source_position()) + 1;
-        int pc_offset = it.bytecode_offset() + BytecodeArray::kHeaderSize;
-        line_table->SetPosition(pc_offset, line_number);
-      }
+    line_table = new JITLineInfoTable();
+    int offset = abstract_code->IsCode() ? Code::kHeaderSize
+                                         : BytecodeArray::kHeaderSize;
+    int start_position = shared->start_position();
+    int end_position = shared->end_position();
+    for (SourcePositionTableIterator it(abstract_code->source_position_table());
+         !it.done(); it.Advance()) {
+      int position = it.source_position();
+      // TODO(alph): in case of inlining the position may correspond to an
+      // inlined function source code. Do not collect positions that fall
+      // beyond the function source code. There's however a chance the
+      // inlined function has similar positions but in another script. So
+      // the proper fix is to store script_id in some form along with the
+      // inlined function positions.
+      if (position < start_position || position >= end_position) continue;
+      int line_number = script->GetLineNumber(position) + 1;
+      int pc_offset = it.code_offset() + offset;
+      line_table->SetPosition(pc_offset, line_number);
     }
   }
   rec->entry = NewCodeEntry(
@@ -167,7 +155,7 @@ void ProfilerListener::CodeDeoptEvent(Code* code, Address pc,
   CodeDeoptEventRecord* rec = &evt_rec.CodeDeoptEventRecord_;
   Deoptimizer::DeoptInfo info = Deoptimizer::GetDeoptInfo(code, pc);
   rec->start = code->address();
-  rec->deopt_reason = Deoptimizer::GetDeoptReason(info.deopt_reason);
+  rec->deopt_reason = DeoptimizeReasonToString(info.deopt_reason);
   rec->position = info.position;
   rec->deopt_id = info.deopt_id;
   rec->pc = reinterpret_cast<void*>(pc);
@@ -295,7 +283,15 @@ void ProfilerListener::RecordDeoptInlinedFrames(CodeEntry* entry,
       it.Next();  // Skip height
       SharedFunctionInfo* shared = SharedFunctionInfo::cast(
           deopt_input_data->LiteralArray()->get(shared_info_id));
-      int source_position = Deoptimizer::ComputeSourcePosition(shared, ast_id);
+      int source_position;
+      if (opcode == Translation::INTERPRETED_FRAME) {
+        source_position =
+            Deoptimizer::ComputeSourcePositionFromBytecodeArray(shared, ast_id);
+      } else {
+        DCHECK(opcode == Translation::JS_FRAME);
+        source_position =
+            Deoptimizer::ComputeSourcePositionFromBaselineCode(shared, ast_id);
+      }
       int script_id = v8::UnboundScript::kNoScriptId;
       if (shared->script()->IsScript()) {
         Script* script = Script::cast(shared->script());
@@ -323,6 +319,7 @@ CodeEntry* ProfilerListener::NewCodeEntry(
 }
 
 void ProfilerListener::AddObserver(CodeEventObserver* observer) {
+  base::LockGuard<base::Mutex> guard(&mutex_);
   if (std::find(observers_.begin(), observers_.end(), observer) !=
       observers_.end())
     return;
@@ -330,6 +327,7 @@ void ProfilerListener::AddObserver(CodeEventObserver* observer) {
 }
 
 void ProfilerListener::RemoveObserver(CodeEventObserver* observer) {
+  base::LockGuard<base::Mutex> guard(&mutex_);
   auto it = std::find(observers_.begin(), observers_.end(), observer);
   if (it == observers_.end()) return;
   observers_.erase(it);

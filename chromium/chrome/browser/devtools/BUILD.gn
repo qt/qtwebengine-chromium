@@ -13,10 +13,8 @@ action("devtools_protocol_constants") {
     "//third_party/WebKit/Source/core/inspector:protocol_version",
   ]
   blink_protocol = "$root_gen_dir/blink/core/inspector/protocol.json"
-  browser_protocol = "//content/browser/devtools/browser_protocol.json"
   inputs = [
     blink_protocol,
-    browser_protocol,
   ]
   outputs = [
     "$target_gen_dir/devtools_protocol_constants.cc",
@@ -26,15 +24,11 @@ action("devtools_protocol_constants") {
   args = [ "chrome" ]
   args += rebase_path(outputs, root_build_dir)
   args += [ rebase_path(blink_protocol, root_build_dir) ]
-  args += [ rebase_path(browser_protocol, root_build_dir) ]
 }
 
-# GYP version: chrome/chrome_debugger.gypi:debugger
 static_library("devtools") {
   # Note: new sources and deps should be generally added in (!is_android) below.
   sources = [
-    "chrome_devtools_manager_delegate.cc",
-    "chrome_devtools_manager_delegate.h",
     "devtools_network_conditions.cc",
     "devtools_network_conditions.h",
     "devtools_network_controller.cc",
@@ -78,15 +72,14 @@ static_library("devtools") {
       "//chrome:strings",
       "//chrome/app/theme:theme_resources",
       "//chrome/common/extensions/api",
-      "//components/devtools_http_handler",
       "//net:http_server",
       "//skia",
       "//third_party/icu",
       "//third_party/leveldatabase",
     ]
     sources += [
-      "chrome_devtools_discovery_provider.cc",
-      "chrome_devtools_discovery_provider.h",
+      "chrome_devtools_manager_delegate.cc",
+      "chrome_devtools_manager_delegate.h",
       "device/adb/adb_client_socket.cc",
       "device/adb/adb_client_socket.h",
       "device/adb/adb_device_provider.cc",
@@ -121,8 +114,6 @@ static_library("devtools") {
       "devtools_file_system_indexer.h",
       "devtools_file_watcher.cc",
       "devtools_file_watcher.h",
-      "devtools_target_impl.cc",
-      "devtools_target_impl.h",
       "devtools_targets_ui.cc",
       "devtools_targets_ui.h",
       "devtools_toggle_action.cc",

@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -25,9 +26,6 @@
 #include "ui/gl/gl_surface_overlay.h"
 
 namespace gl {
-
-// Get default EGL display for GLSurfaceEGL (differs by platform).
-EGLNativeDisplayType GetPlatformDefaultEGLNativeDisplay();
 
 // If adding a new type, also add it to EGLDisplayType in
 // tools/metrics/histograms/histograms.xml. Don't remove or reorder entries.
@@ -57,9 +55,10 @@ class GL_EXPORT GLSurfaceEGL : public GLSurface {
   EGLConfig GetConfig() override;
   GLSurface::Format GetFormat() override;
 
-  static bool InitializeOneOff();
+  static bool InitializeOneOff(EGLNativeDisplayType native_display);
+  static void ResetForTesting();
   static EGLDisplay GetHardwareDisplay();
-  static EGLDisplay InitializeDisplay();
+  static EGLDisplay InitializeDisplay(EGLNativeDisplayType native_display);
   static EGLNativeDisplayType GetNativeDisplay();
 
   // These aren't particularly tied to surfaces, but since we already
@@ -79,6 +78,7 @@ class GL_EXPORT GLSurfaceEGL : public GLSurface {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GLSurfaceEGL);
+  static bool initialized_;
 };
 
 // Encapsulates an EGL surface bound to a view.
@@ -98,7 +98,12 @@ class GL_EXPORT NativeViewGLSurfaceEGL : public GLSurfaceEGL {
   gfx::SwapResult SwapBuffers() override;
   gfx::Size GetSize() override;
   EGLSurface GetHandle() override;
+  bool SupportsSwapBuffersWithDamage() override;
   bool SupportsPostSubBuffer() override;
+  gfx::SwapResult SwapBuffersWithDamage(int x,
+                                        int y,
+                                        int width,
+                                        int height) override;
   gfx::SwapResult PostSubBuffer(int x, int y, int width, int height) override;
   bool SupportsCommitOverlayPlanes() override;
   gfx::SwapResult CommitOverlayPlanes() override;
@@ -131,9 +136,11 @@ class GL_EXPORT NativeViewGLSurfaceEGL : public GLSurfaceEGL {
   // Commit the |pending_overlays_| and clear the vector. Returns false if any
   // fail to be committed.
   bool CommitAndClearPendingOverlays();
+  void UpdateSwapInterval();
 
   EGLSurface surface_;
   bool supports_post_sub_buffer_;
+  bool supports_swap_buffer_with_damage_;
   bool flips_vertically_;
 
   std::unique_ptr<gfx::VSyncProvider> vsync_provider_;

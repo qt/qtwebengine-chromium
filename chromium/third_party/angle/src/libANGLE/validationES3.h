@@ -32,6 +32,7 @@ bool ValidateES3TexImageParametersBase(ValidationContext *context,
                                        GLint border,
                                        GLenum format,
                                        GLenum type,
+                                       GLsizei imageSize,
                                        const GLvoid *pixels);
 
 bool ValidateES3TexStorageParameters(Context *context,
@@ -57,6 +58,7 @@ bool ValidateES3TexImage2DParameters(Context *context,
                                      GLint border,
                                      GLenum format,
                                      GLenum type,
+                                     GLsizei imageSize,
                                      const GLvoid *pixels);
 
 bool ValidateES3TexImage3DParameters(Context *context,
@@ -152,11 +154,6 @@ bool ValidateGetQueryObjectuiv(Context *context, GLuint id, GLenum pname, GLuint
 
 bool ValidateFramebufferTextureLayer(Context *context, GLenum target, GLenum attachment,
                                      GLuint texture, GLint level, GLint layer);
-
-bool ValidES3ReadFormatType(ValidationContext *context,
-                            GLenum internalFormat,
-                            GLenum format,
-                            GLenum type);
 
 bool ValidateES3RenderbufferStorageParameters(Context *context, GLenum target, GLsizei samples,
                                               GLenum internalformat, GLsizei width, GLsizei height);
@@ -309,6 +306,12 @@ bool ValidateFlushMappedBufferRange(Context *context,
                                     GLintptr offset,
                                     GLsizeiptr length);
 
+bool ValidateIndexedStateQuery(ValidationContext *context, GLenum pname, GLuint index);
+bool ValidateGetIntegeri_v(ValidationContext *context, GLenum target, GLuint index, GLint *data);
+bool ValidateGetInteger64i_v(ValidationContext *context,
+                             GLenum target,
+                             GLuint index,
+                             GLint64 *data);
 }  // namespace gl
 
 #endif // LIBANGLE_VALIDATION_ES3_H_

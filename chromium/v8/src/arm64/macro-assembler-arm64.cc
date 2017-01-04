@@ -1425,14 +1425,7 @@ void MacroAssembler::LoadTrueFalseRoots(Register true_root,
 
 void MacroAssembler::LoadHeapObject(Register result,
                                     Handle<HeapObject> object) {
-  AllowDeferredHandleDereference using_raw_address;
-  if (isolate()->heap()->InNewSpace(*object)) {
-    Handle<Cell> cell = isolate()->factory()->NewCell(object);
-    Mov(result, Operand(cell));
-    Ldr(result, FieldMemOperand(result, Cell::kValueOffset));
-  } else {
-    Mov(result, Operand(object));
-  }
+  Mov(result, Operand(object));
 }
 
 
@@ -1578,9 +1571,8 @@ void MacroAssembler::InNewSpace(Register object,
                                 Label* branch) {
   DCHECK(cond == eq || cond == ne);
   UseScratchRegisterScope temps(this);
-  const int mask =
-      (1 << MemoryChunk::IN_FROM_SPACE) | (1 << MemoryChunk::IN_TO_SPACE);
-  CheckPageFlag(object, temps.AcquireSameSizeAs(object), mask, cond, branch);
+  CheckPageFlag(object, temps.AcquireSameSizeAs(object),
+                MemoryChunk::kIsInNewSpaceMask, cond, branch);
 }
 
 
@@ -1766,13 +1758,13 @@ void MacroAssembler::CallExternalReference(const ExternalReference& ext,
   CallStub(&stub);
 }
 
-
-void MacroAssembler::JumpToExternalReference(const ExternalReference& builtin) {
+void MacroAssembler::JumpToExternalReference(const ExternalReference& builtin,
+                                             bool builtin_exit_frame) {
   Mov(x1, builtin);
-  CEntryStub stub(isolate(), 1);
+  CEntryStub stub(isolate(), 1, kDontSaveFPRegs, kArgvOnStack,
+                  builtin_exit_frame);
   Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
 }
-
 
 void MacroAssembler::TailCallRuntime(Runtime::FunctionId fid) {
   const Runtime::Function* function = Runtime::FunctionForId(fid);
@@ -2830,16 +2822,30 @@ void MacroAssembler::ExitFrameRestoreFPRegs() {
   }
 }
 
+void MacroAssembler::EnterBuiltinFrame(Register context, Register target,
+                                       Register argc) {
+  Push(lr, fp, context, target);
+  add(fp, jssp, Operand(2 * kPointerSize));
+  Push(argc);
+}
 
-void MacroAssembler::EnterExitFrame(bool save_doubles,
-                                    const Register& scratch,
-                                    int extra_space) {
+void MacroAssembler::LeaveBuiltinFrame(Register context, Register target,
+                                       Register argc) {
+  Pop(argc);
+  Pop(target, context, fp, lr);
+}
+
+void MacroAssembler::EnterExitFrame(bool save_doubles, const Register& scratch,
+                                    int extra_space,
+                                    StackFrame::Type frame_type) {
   DCHECK(jssp.Is(StackPointer()));
+  DCHECK(frame_type == StackFrame::EXIT ||
+         frame_type == StackFrame::BUILTIN_EXIT);
 
   // Set up the new stack frame.
   Push(lr, fp);
   Mov(fp, StackPointer());
-  Mov(scratch, Smi::FromInt(StackFrame::EXIT));
+  Mov(scratch, Smi::FromInt(frame_type));
   Push(scratch);
   Push(xzr);
   Mov(scratch, Operand(CodeObject()));
@@ -2948,7 +2954,7 @@ void MacroAssembler::SetCounter(StatsCounter* counter, int value,
   if (FLAG_native_code_counters && counter->Enabled()) {
     Mov(scratch1, value);
     Mov(scratch2, ExternalReference(counter));
-    Str(scratch1, MemOperand(scratch2));
+    Str(scratch1.W(), MemOperand(scratch2));
   }
 }
 
@@ -2958,9 +2964,9 @@ void MacroAssembler::IncrementCounter(StatsCounter* counter, int value,
   DCHECK(value != 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     Mov(scratch2, ExternalReference(counter));
-    Ldr(scratch1, MemOperand(scratch2));
-    Add(scratch1, scratch1, value);
-    Str(scratch1, MemOperand(scratch2));
+    Ldr(scratch1.W(), MemOperand(scratch2));
+    Add(scratch1.W(), scratch1.W(), value);
+    Str(scratch1.W(), MemOperand(scratch2));
   }
 }
 
@@ -3030,7 +3036,7 @@ void MacroAssembler::Allocate(int object_size,
                               Register scratch2,
                               Label* gc_required,
                               AllocationFlags flags) {
-  DCHECK(object_size <= Page::kMaxRegularHeapObjectSize);
+  DCHECK(object_size <= kMaxRegularHeapObjectSize);
   DCHECK((flags & ALLOCATION_FOLDED) == 0);
   if (!FLAG_inline_new) {
     if (emit_debug_code()) {
@@ -3189,7 +3195,7 @@ void MacroAssembler::Allocate(Register object_size, Register result,
 void MacroAssembler::FastAllocate(int object_size, Register result,
                                   Register scratch1, Register scratch2,
                                   AllocationFlags flags) {
-  DCHECK(object_size <= Page::kMaxRegularHeapObjectSize);
+  DCHECK(object_size <= kMaxRegularHeapObjectSize);
 
   DCHECK(!AreAliased(result, scratch1, scratch2));
   DCHECK(result.Is64Bits() && scratch1.Is64Bits() && scratch2.Is64Bits());
@@ -4646,16 +4652,18 @@ void MacroAssembler::Abort(BailoutReason reason) {
     // Avoid infinite recursion; Push contains some assertions that use Abort.
     NoUseRealAbortsScope no_real_aborts(this);
 
-    Mov(x0, Smi::FromInt(reason));
-    Push(x0);
+    // Check if Abort() has already been initialized.
+    DCHECK(isolate()->builtins()->Abort()->IsHeapObject());
+
+    Move(x1, Smi::FromInt(static_cast<int>(reason)));
 
     if (!has_frame_) {
       // We don't actually want to generate a pile of code for this, so just
       // claim there is a stack frame, without generating one.
       FrameScope scope(this, StackFrame::NONE);
-      CallRuntime(Runtime::kAbort);
+      Call(isolate()->builtins()->Abort(), RelocInfo::CODE_TARGET);
     } else {
-      CallRuntime(Runtime::kAbort);
+      Call(isolate()->builtins()->Abort(), RelocInfo::CODE_TARGET);
     }
   } else {
     // Load the string to pass to Printf.

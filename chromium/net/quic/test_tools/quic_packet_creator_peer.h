@@ -8,7 +8,7 @@
 #include <stddef.h>
 
 #include "base/macros.h"
-#include "net/quic/quic_protocol.h"
+#include "net/quic/core/quic_protocol.h"
 
 namespace net {
 class QuicPacketCreator;
@@ -28,11 +28,6 @@ class QuicPacketCreatorPeer {
       QuicPacketCreator* creator,
       QuicPacketNumberLength packet_number_length);
   static QuicPacketNumberLength GetPacketNumberLength(
-      QuicPacketCreator* creator);
-  static void SetNextPacketNumberLength(
-      QuicPacketCreator* creator,
-      QuicPacketNumberLength next_packet_number_length);
-  static QuicPacketNumberLength NextPacketNumberLength(
       QuicPacketCreator* creator);
   static void SetPacketNumber(QuicPacketCreator* creator, QuicPacketNumber s);
   static void FillPacketHeader(QuicPacketCreator* creator,

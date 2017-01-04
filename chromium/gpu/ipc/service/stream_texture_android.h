@@ -11,6 +11,7 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/unguessable_token.h"
 #include "gpu/command_buffer/service/gl_stream_texture_image.h"
 #include "gpu/ipc/service/gpu_command_buffer_stub.h"
 #include "ipc/ipc_listener.h"
@@ -56,6 +57,7 @@ class StreamTexture : public gpu::gles2::GLStreamTextureImage,
                             gfx::OverlayTransform transform,
                             const gfx::Rect& bounds_rect,
                             const gfx::RectF& crop_rect) override;
+  void Flush() override {}
   void OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
                     uint64_t process_tracing_id,
                     const std::string& dump_name) override;
@@ -79,6 +81,7 @@ class StreamTexture : public gpu::gles2::GLStreamTextureImage,
   // IPC message handlers:
   void OnStartListening();
   void OnEstablishPeer(int32_t primary_id, int32_t secondary_id);
+  void OnForwardForSurfaceRequest(const base::UnguessableToken& request_token);
   void OnSetSize(const gfx::Size& size) { size_ = size; }
 
   scoped_refptr<gl::SurfaceTexture> surface_texture_;
@@ -96,13 +99,6 @@ class StreamTexture : public gpu::gles2::GLStreamTextureImage,
   int32_t route_id_;
   bool has_listener_;
   uint32_t texture_id_;
-
-  unsigned framebuffer_;
-  unsigned vertex_shader_;
-  unsigned fragment_shader_;
-  unsigned program_;
-  unsigned vertex_buffer_;
-  int u_xform_location_;
 
   base::WeakPtrFactory<StreamTexture> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(StreamTexture);

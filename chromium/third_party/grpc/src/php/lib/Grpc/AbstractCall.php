@@ -34,11 +34,19 @@
 
 namespace Grpc;
 
+/**
+ * Class AbstractCall
+ * @package Grpc
+ */
 abstract class AbstractCall
 {
+    /**
+     * @var Call
+     */
     protected $call;
     protected $deserialize;
     protected $metadata;
+    protected $trailing_metadata;
 
     /**
      * Create a new Call wrapper object.
@@ -50,13 +58,15 @@ abstract class AbstractCall
      *                              the response
      * @param array    $options     Call options (optional)
      */
-    public function __construct(Channel $channel,
-                                $method,
-                                $deserialize,
-                                $options = [])
-    {
-        if (isset($options['timeout']) &&
-            is_numeric($timeout = $options['timeout'])) {
+    public function __construct(
+        Channel $channel,
+        $method,
+        $deserialize,
+        $options = []
+    ) {
+        if (array_key_exists('timeout', $options) &&
+            is_numeric($timeout = $options['timeout'])
+        ) {
             $now = Timeval::now();
             $delta = new Timeval($timeout);
             $deadline = $now->add($delta);
@@ -66,21 +76,32 @@ abstract class AbstractCall
         $this->call = new Call($channel, $method, $deadline);
         $this->deserialize = $deserialize;
         $this->metadata = null;
-        if (isset($options['call_credentials_callback']) &&
+        $this->trailing_metadata = null;
+        if (array_key_exists('call_credentials_callback', $options) &&
             is_callable($call_credentials_callback =
-                        $options['call_credentials_callback'])) {
+                $options['call_credentials_callback'])
+        ) {
             $call_credentials = CallCredentials::createFromPlugin(
-                $call_credentials_callback);
+                $call_credentials_callback
+            );
             $this->call->setCredentials($call_credentials);
         }
     }
 
     /**
-     * @return The metadata sent by the server.
+     * @return mixed The metadata sent by the server.
      */
     public function getMetadata()
     {
         return $this->metadata;
+    }
+
+    /**
+     * @return mixed The trailing metadata sent by the server.
+     */
+    public function getTrailingMetadata()
+    {
+        return $this->trailing_metadata;
     }
 
     /**
@@ -104,7 +125,7 @@ abstract class AbstractCall
      *
      * @param string $value The binary value to deserialize
      *
-     * @return The deserialized value
+     * @return mixed The deserialized value
      */
     protected function deserializeResponse($value)
     {

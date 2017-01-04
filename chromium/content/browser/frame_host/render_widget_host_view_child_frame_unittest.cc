@@ -11,6 +11,8 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_factory.h"
@@ -27,6 +29,11 @@
 #include "content/public/test/test_browser_context.h"
 #include "content/test/test_render_view_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_ANDROID)
+#include "content/browser/renderer_host/context_provider_factory_impl_android.h"
+#include "content/test/mock_gpu_channel_establish_factory.h"
+#endif
 
 namespace content {
 namespace {
@@ -78,6 +85,10 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
 #if !defined(OS_ANDROID)
     ImageTransportFactory::InitializeForUnitTests(
         base::WrapUnique(new NoTransportImageTransportFactory));
+#else
+    ContextProviderFactoryImpl::Initialize(&gpu_channel_factory_);
+    ui::ContextProviderFactory::SetInstance(
+        ContextProviderFactoryImpl::GetInstance());
 #endif
 
     MockRenderProcessHost* process_host =
@@ -85,7 +96,7 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
     int32_t routing_id = process_host->GetNextRoutingID();
     widget_host_ =
         new RenderWidgetHostImpl(&delegate_, process_host, routing_id, false);
-    view_ = new RenderWidgetHostViewChildFrame(widget_host_);
+    view_ = RenderWidgetHostViewChildFrame::Create(widget_host_);
 
     test_frame_connector_ = new MockCrossProcessFrameConnector();
     view_->SetCrossProcessFrameConnector(test_frame_connector_);
@@ -99,14 +110,20 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
 
     browser_context_.reset();
 
-    message_loop_.DeleteSoon(FROM_HERE, browser_context_.release());
-    message_loop_.RunUntilIdle();
+    message_loop_.task_runner()->DeleteSoon(FROM_HERE,
+                                            browser_context_.release());
+    base::RunLoop().RunUntilIdle();
 #if !defined(OS_ANDROID)
     ImageTransportFactory::Terminate();
+#else
+    ui::ContextProviderFactory::SetInstance(nullptr);
+    ContextProviderFactoryImpl::Terminate();
 #endif
   }
 
-  cc::SurfaceId surface_id() { return view_->surface_id_; }
+  cc::SurfaceId GetSurfaceId() const {
+    return cc::SurfaceId(view_->frame_sink_id_, view_->local_frame_id_);
+  }
 
  protected:
   base::MessageLoopForUI message_loop_;
@@ -118,6 +135,10 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
   RenderWidgetHostImpl* widget_host_;
   RenderWidgetHostViewChildFrame* view_;
   MockCrossProcessFrameConnector* test_frame_connector_;
+
+#if defined(OS_ANDROID)
+  MockGpuChannelEstablishFactory gpu_channel_factory_;
+#endif
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewChildFrameTest);
@@ -158,7 +179,7 @@ TEST_F(RenderWidgetHostViewChildFrameTest, SwapCompositorFrame) {
   view_->OnSwapCompositorFrame(
       0, CreateDelegatedFrame(scale_factor, view_size, view_rect));
 
-  cc::SurfaceId id = surface_id();
+  cc::SurfaceId id = GetSurfaceId();
   if (!id.is_null()) {
 #if !defined(OS_ANDROID)
     ImageTransportFactory* factory = ImageTransportFactory::GetInstance();

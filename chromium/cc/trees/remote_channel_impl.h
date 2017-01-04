@@ -5,6 +5,8 @@
 #ifndef CC_TREES_REMOTE_CHANNEL_IMPL_H_
 #define CC_TREES_REMOTE_CHANNEL_IMPL_H_
 
+#include <queue>
+
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "cc/base/cc_export.h"
@@ -16,7 +18,7 @@
 #include "cc/trees/remote_proto_channel.h"
 
 namespace cc {
-class LayerTreeHost;
+class LayerTreeHostInProcess;
 
 namespace proto {
 class CompositorMessage;
@@ -44,12 +46,12 @@ class CompositorMessageToMain;
 //                                                          .
 //                                                          .
 //                                          ProxyImpl::ScheduledActionBegin
-//                                                     OutputSurfaceCreation
+//                                                   CompositorFrameSinkCreation
 //                                                          |
-//                                         ChannelImpl::RequestNewOutputSurface
+//                                    ChannelImpl::RequestNewCompositorFrameSink
 //                                                          |
 // RemoteChannelImpl::                                      |
-//      RequestNewOutputSurface()<----PostTask--------------
+//      RequestNewCompositorFrameSink()<----PostTask--------------
 //              .
 //              .
 //              |
@@ -70,54 +72,44 @@ class CompositorMessageToMain;
 //
 // The RemoteChannelImpl receives and processes messages from the remote server
 // compositor on the main thread. The requests from ProxyImpl are received on
-// the impl thread which may be directed to the LayerTreeHost on the client
-// (for instance output surface requests) or sent to the LayerTreeHost on the
-// server. The messages to the server are created on the impl thread and sent
-// using the RemoteProtoChannel on the main thread.
+// the impl thread which may be directed to the LayerTreeHostInProcesson the
+// client (for instance output surface requests) or sent to the
+// LayerTreeHostInProcess on the server. The messages to the server are created
+// on the impl thread and sent using the RemoteProtoChannel on the main thread.
 class CC_EXPORT RemoteChannelImpl : public ChannelImpl,
                                     public RemoteProtoChannel::ProtoReceiver,
                                     public Proxy {
  public:
-  static std::unique_ptr<RemoteChannelImpl> Create(
-      LayerTreeHost* layer_tree_host,
-      RemoteProtoChannel* remote_proto_channel,
-      TaskRunnerProvider* task_runner_provider);
-
-  ~RemoteChannelImpl() override;
-
- protected:
-  RemoteChannelImpl(LayerTreeHost* layer_tree_host,
+  RemoteChannelImpl(LayerTreeHostInProcess* layer_tree_host,
                     RemoteProtoChannel* remote_proto_channel,
                     TaskRunnerProvider* task_runner_provider);
+  ~RemoteChannelImpl() override;
 
   // virtual for testing.
   virtual std::unique_ptr<ProxyImpl> CreateProxyImpl(
       ChannelImpl* channel_impl,
-      LayerTreeHost* layer_tree_host,
-      TaskRunnerProvider* task_runner_provider,
-      std::unique_ptr<BeginFrameSource> external_begin_frame_source);
+      LayerTreeHostInProcess* layer_tree_host,
+      TaskRunnerProvider* task_runner_provider);
 
  private:
   struct MainThreadOnly {
-    LayerTreeHost* layer_tree_host;
+    LayerTreeHostInProcess* layer_tree_host;
     RemoteProtoChannel* remote_proto_channel;
 
     bool started;
 
     // This is set to true if we lost the output surface and can not push any
     // commits to the impl thread.
-    bool waiting_for_output_surface_initialization;
+    bool waiting_for_compositor_frame_sink_initialization;
 
     // The queue of messages received from the server. The messages are added to
     // this queue if we are waiting for a new output surface to be initialized.
     std::queue<proto::CompositorMessageToImpl> pending_messages;
 
-    RendererCapabilities renderer_capabilities;
-
     base::WeakPtrFactory<RemoteChannelImpl> remote_channel_weak_factory;
 
     MainThreadOnly(RemoteChannelImpl*,
-                   LayerTreeHost* layer_tree_host,
+                   LayerTreeHostInProcess* layer_tree_host,
                    RemoteProtoChannel* remote_proto_channel);
     ~MainThreadOnly();
   };
@@ -138,13 +130,12 @@ class CC_EXPORT RemoteChannelImpl : public ChannelImpl,
       std::unique_ptr<proto::CompositorMessage> proto) override;
 
   // Proxy implementation
-  void FinishAllRendering() override;
   bool IsStarted() const override;
   bool CommitToActiveTree() const override;
-  void SetOutputSurface(OutputSurface* output_surface) override;
-  void ReleaseOutputSurface() override;
+  void SetCompositorFrameSink(
+      CompositorFrameSink* compositor_frame_sink) override;
+  void ReleaseCompositorFrameSink() override;
   void SetVisible(bool visible) override;
-  const RendererCapabilities& GetRendererCapabilities() const override;
   void SetNeedsAnimate() override;
   void SetNeedsUpdateLayers() override;
   void SetNeedsCommit() override;
@@ -155,8 +146,7 @@ class CC_EXPORT RemoteChannelImpl : public ChannelImpl,
   void MainThreadHasStoppedFlinging() override;
   bool CommitRequested() const override;
   bool BeginMainFrameRequested() const override;
-  void Start(
-      std::unique_ptr<BeginFrameSource> external_begin_frame_source) override;
+  void Start() override;
   void Stop() override;
   void SetMutator(std::unique_ptr<LayerTreeMutator> mutator) override;
   bool SupportsImplScrolling() const override;
@@ -168,16 +158,12 @@ class CC_EXPORT RemoteChannelImpl : public ChannelImpl,
   // Called on impl thread.
   // ChannelImpl implementation
   void DidCompleteSwapBuffers() override;
-  void SetRendererCapabilitiesMainCopy(
-      const RendererCapabilities& capabilities) override;
   void BeginMainFrameNotExpectedSoon() override;
   void DidCommitAndDrawFrame() override;
   void SetAnimationEvents(std::unique_ptr<AnimationEvents> queue) override;
-  void DidLoseOutputSurface() override;
-  void RequestNewOutputSurface() override;
-  void DidInitializeOutputSurface(
-      bool success,
-      const RendererCapabilities& capabilities) override;
+  void DidLoseCompositorFrameSink() override;
+  void RequestNewCompositorFrameSink() override;
+  void DidInitializeCompositorFrameSink(bool success) override;
   void DidCompletePageScaleAnimation() override;
   void BeginMainFrame(std::unique_ptr<BeginMainFrameAndCommitState>
                           begin_main_frame_state) override;
@@ -188,16 +174,14 @@ class CC_EXPORT RemoteChannelImpl : public ChannelImpl,
   void HandleProto(const proto::CompositorMessageToImpl& proto);
   void DidCompleteSwapBuffersOnMain();
   void DidCommitAndDrawFrameOnMain();
-  void DidLoseOutputSurfaceOnMain();
-  void RequestNewOutputSurfaceOnMain();
-  void DidInitializeOutputSurfaceOnMain(
-      bool success,
-      const RendererCapabilities& capabilities);
+  void DidLoseCompositorFrameSinkOnMain();
+  void RequestNewCompositorFrameSinkOnMain();
+  void DidInitializeCompositorFrameSinkOnMain(bool success);
   void SendMessageProtoOnMain(std::unique_ptr<proto::CompositorMessage> proto);
   void PostSetNeedsRedrawToImpl(const gfx::Rect& damaged_rect);
 
   void InitializeImplOnImpl(CompletionEvent* completion,
-                            LayerTreeHost* layer_tree_host);
+                            LayerTreeHostInProcess* layer_tree_host);
   void ShutdownImplOnImpl(CompletionEvent* completion);
 
   MainThreadOnly& main();

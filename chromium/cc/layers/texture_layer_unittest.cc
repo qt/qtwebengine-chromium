@@ -25,19 +25,20 @@
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/layers/texture_layer_impl.h"
-#include "cc/output/compositor_frame_ack.h"
 #include "cc/output/context_provider.h"
 #include "cc/resources/returned_resource.h"
+#include "cc/test/fake_compositor_frame_sink.h"
 #include "cc/test/fake_impl_task_runner_provider.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
-#include "cc/test/fake_output_surface.h"
 #include "cc/test/layer_test_common.h"
 #include "cc/test/layer_tree_test.h"
+#include "cc/test/stub_layer_tree_host_single_thread_client.h"
+#include "cc/test/test_compositor_frame_sink.h"
 #include "cc/test/test_task_graph_runner.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/blocking_task_runner.h"
-#include "cc/trees/layer_tree_host.h"
+#include "cc/trees/layer_tree_host_in_process.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -64,19 +65,21 @@ gpu::SyncToken SyncTokenFromUInt(uint32_t value) {
                         gpu::CommandBufferId::FromUnsafeValue(0x123), value);
 }
 
-class MockLayerTreeHost : public LayerTreeHost {
+class MockLayerTreeHost : public LayerTreeHostInProcess {
  public:
   static std::unique_ptr<MockLayerTreeHost> Create(
       FakeLayerTreeHostClient* client,
       TaskGraphRunner* task_graph_runner) {
-    LayerTreeHost::InitParams params;
+    LayerTreeHostInProcess::InitParams params;
     params.client = client;
     params.task_graph_runner = task_graph_runner;
     params.animation_host =
         AnimationHost::CreateForTesting(ThreadInstance::MAIN);
     LayerTreeSettings settings;
+    settings.verify_transform_tree_calculations = true;
+    settings.verify_clip_tree_calculations = true;
     params.settings = &settings;
-    return base::WrapUnique(new MockLayerTreeHost(client, &params));
+    return base::WrapUnique(new MockLayerTreeHost(&params));
   }
 
   MOCK_METHOD0(SetNeedsCommit, void());
@@ -85,12 +88,13 @@ class MockLayerTreeHost : public LayerTreeHost {
   MOCK_METHOD0(StopRateLimiter, void());
 
  private:
-  MockLayerTreeHost(FakeLayerTreeHostClient* client,
-                    LayerTreeHost::InitParams* params)
-      : LayerTreeHost(params, CompositorMode::SINGLE_THREADED) {
-    InitializeSingleThreaded(client, base::ThreadTaskRunnerHandle::Get(),
-                             nullptr);
+  explicit MockLayerTreeHost(LayerTreeHostInProcess::InitParams* params)
+      : LayerTreeHostInProcess(params, CompositorMode::SINGLE_THREADED) {
+    InitializeSingleThreaded(&single_thread_client_,
+                             base::ThreadTaskRunnerHandle::Get());
   }
+
+  StubLayerTreeHostSingleThreadClient single_thread_client_;
 };
 
 class FakeTextureLayerClient : public TextureLayerClient {
@@ -99,8 +103,7 @@ class FakeTextureLayerClient : public TextureLayerClient {
 
   bool PrepareTextureMailbox(
       TextureMailbox* mailbox,
-      std::unique_ptr<SingleReleaseCallback>* release_callback,
-      bool use_shared_memory) override {
+      std::unique_ptr<SingleReleaseCallback>* release_callback) override {
     if (!mailbox_changed_)
       return false;
 
@@ -206,9 +209,7 @@ struct CommonMailboxObjects {
 class TextureLayerTest : public testing::Test {
  public:
   TextureLayerTest()
-      : fake_client_(
-            FakeLayerTreeHostClient(FakeLayerTreeHostClient::DIRECT_3D)),
-        output_surface_(FakeOutputSurface::Create3d()),
+      : compositor_frame_sink_(FakeCompositorFrameSink::Create3d()),
         host_impl_(&task_runner_provider_,
                    &shared_bitmap_manager_,
                    &task_graph_runner_),
@@ -218,8 +219,9 @@ class TextureLayerTest : public testing::Test {
   void SetUp() override {
     layer_tree_host_ =
         MockLayerTreeHost::Create(&fake_client_, &task_graph_runner_);
+    layer_tree_ = layer_tree_host_->GetLayerTree();
     EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AnyNumber());
-    layer_tree_host_->SetViewportSize(gfx::Size(10, 10));
+    layer_tree_->SetViewportSize(gfx::Size(10, 10));
     Mock::VerifyAndClearExpectations(layer_tree_host_.get());
   }
 
@@ -227,16 +229,17 @@ class TextureLayerTest : public testing::Test {
     Mock::VerifyAndClearExpectations(layer_tree_host_.get());
     EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AnyNumber());
 
-    layer_tree_host_->SetRootLayer(nullptr);
+    layer_tree_->SetRootLayer(nullptr);
     layer_tree_host_ = nullptr;
   }
 
   std::unique_ptr<MockLayerTreeHost> layer_tree_host_;
+  LayerTree* layer_tree_;
   FakeImplTaskRunnerProvider task_runner_provider_;
   FakeLayerTreeHostClient fake_client_;
   TestSharedBitmapManager shared_bitmap_manager_;
   TestTaskGraphRunner task_graph_runner_;
-  std::unique_ptr<OutputSurface> output_surface_;
+  std::unique_ptr<CompositorFrameSink> compositor_frame_sink_;
   FakeLayerTreeHostImpl host_impl_;
   CommonMailboxObjects test_data_;
 };
@@ -244,7 +247,7 @@ class TextureLayerTest : public testing::Test {
 TEST_F(TextureLayerTest, CheckPropertyChangeCausesCorrectBehavior) {
   scoped_refptr<TextureLayer> test_layer =
       TextureLayer::CreateForMailbox(nullptr);
-  EXPECT_SET_NEEDS_COMMIT(1, layer_tree_host_->SetRootLayer(test_layer));
+  EXPECT_SET_NEEDS_COMMIT(1, layer_tree_->SetRootLayer(test_layer));
 
   // Test properties that should call SetNeedsCommit.  All properties need to
   // be set to new values in order for SetNeedsCommit to be called.
@@ -284,7 +287,7 @@ TEST_F(TextureLayerWithMailboxTest, ReplaceMailboxOnMainThreadBeforeCommit) {
   ASSERT_TRUE(test_layer.get());
 
   EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AnyNumber());
-  layer_tree_host_->SetRootLayer(test_layer);
+  layer_tree_->SetRootLayer(test_layer);
   Mock::VerifyAndClearExpectations(layer_tree_host_.get());
 
   EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AtLeast(1));
@@ -630,12 +633,30 @@ TEST_F(TextureLayerMailboxHolderTest, TwoCompositors_SecondImplRefShortcut) {
 
 class TextureLayerImplWithMailboxThreadedCallback : public LayerTreeTest {
  public:
-  TextureLayerImplWithMailboxThreadedCallback()
-      : callback_count_(0),
-        commit_count_(0) {}
+  TextureLayerImplWithMailboxThreadedCallback() = default;
+
+  std::unique_ptr<TestCompositorFrameSink> CreateCompositorFrameSink(
+      scoped_refptr<ContextProvider> compositor_context_provider,
+      scoped_refptr<ContextProvider> worker_context_provider) override {
+    bool synchronous_composite =
+        !HasImplThread() &&
+        !layer_tree_host()->GetSettings().single_thread_proxy_scheduler;
+    // Allow relaim resources for this test so that mailboxes in the display
+    // will be returned inside the commit that replaces them.
+    bool force_disable_reclaim_resources = false;
+    return base::MakeUnique<TestCompositorFrameSink>(
+        compositor_context_provider, std::move(worker_context_provider),
+        CreateDisplayOutputSurface(compositor_context_provider),
+        shared_bitmap_manager(), gpu_memory_buffer_manager(),
+        layer_tree_host()->GetSettings().renderer_settings,
+        ImplThreadTaskRunner(), synchronous_composite,
+        force_disable_reclaim_resources);
+  }
 
   // Make sure callback is received on main and doesn't block the impl thread.
-  void ReleaseCallback(const gpu::SyncToken& sync_token, bool lost_resource) {
+  void ReleaseCallback(char mailbox_char,
+                       const gpu::SyncToken& sync_token,
+                       bool lost_resource) {
     EXPECT_EQ(true, main_thread_.CalledOnValidThread());
     EXPECT_FALSE(lost_resource);
     ++callback_count_;
@@ -646,12 +667,15 @@ class TextureLayerImplWithMailboxThreadedCallback : public LayerTreeTest {
     std::unique_ptr<SingleReleaseCallback> callback =
         SingleReleaseCallback::Create(base::Bind(
             &TextureLayerImplWithMailboxThreadedCallback::ReleaseCallback,
-            base::Unretained(this)));
+            base::Unretained(this), mailbox_char));
     layer_->SetTextureMailbox(
         TextureMailbox(MailboxFromChar(mailbox_char),
                        SyncTokenFromUInt(static_cast<uint32_t>(mailbox_char)),
                        GL_TEXTURE_2D),
         std::move(callback));
+    // Damage the layer so we send a new frame with the new mailbox to the
+    // Display compositor.
+    layer_->SetNeedsDisplay();
   }
 
   void BeginTest() override {
@@ -666,8 +690,8 @@ class TextureLayerImplWithMailboxThreadedCallback : public LayerTreeTest {
     layer_->SetBounds(bounds);
 
     root_->AddChild(layer_);
-    layer_tree_host()->SetRootLayer(root_);
-    layer_tree_host()->SetViewportSize(bounds);
+    layer_tree()->SetRootLayer(root_);
+    layer_tree()->SetViewportSize(bounds);
     SetMailbox('1');
     EXPECT_EQ(0, callback_count_);
 
@@ -702,32 +726,17 @@ class TextureLayerImplWithMailboxThreadedCallback : public LayerTreeTest {
         layer_->SetTextureMailbox(TextureMailbox(), nullptr);
         break;
       case 4:
-        // With impl painting, the texture mailbox will still be on the impl
-        // thread when the commit finishes, because the layer is not drawble
-        // when it has no texture mailbox, and thus does not block the commit
-        // on activation. So, we wait for activation.
-        // TODO(danakj): fix this. crbug.com/277953
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 5:
         EXPECT_EQ(4, callback_count_);
         // Restore a mailbox for the next step.
         SetMailbox('5');
         break;
-      case 6:
+      case 5:
         // Case #5: remove layer from tree. Callback should *not* be called, the
         // mailbox is returned to the main thread.
         EXPECT_EQ(4, callback_count_);
         layer_->RemoveFromParent();
         break;
-      case 7:
-        // With impl painting, the texture mailbox will still be on the impl
-        // thread when the commit finishes, because the layer is not around to
-        // block the commit on activation anymore. So, we wait for activation.
-        // TODO(danakj): fix this. crbug.com/277953
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 8:
+      case 6:
         EXPECT_EQ(4, callback_count_);
         // Resetting the mailbox will call the callback now.
         layer_->SetTextureMailbox(TextureMailbox(), nullptr);
@@ -744,15 +753,13 @@ class TextureLayerImplWithMailboxThreadedCallback : public LayerTreeTest {
 
  private:
   base::ThreadChecker main_thread_;
-  int callback_count_;
-  int commit_count_;
+  int callback_count_ = 0;
+  int commit_count_ = 0;
   scoped_refptr<Layer> root_;
   scoped_refptr<TextureLayer> layer_;
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    TextureLayerImplWithMailboxThreadedCallback);
-
+SINGLE_AND_MULTI_THREAD_TEST_F(TextureLayerImplWithMailboxThreadedCallback);
 
 class TextureLayerMailboxIsActivatedDuringCommit : public LayerTreeTest {
  protected:
@@ -784,8 +791,8 @@ class TextureLayerMailboxIsActivatedDuringCommit : public LayerTreeTest {
     layer_->SetBounds(bounds);
 
     root_->AddChild(layer_);
-    layer_tree_host()->SetRootLayer(root_);
-    layer_tree_host()->SetViewportSize(bounds);
+    layer_tree()->SetRootLayer(root_);
+    layer_tree()->SetViewportSize(bounds);
     SetMailbox('1');
 
     PostSetNeedsCommitToMainThread();
@@ -799,13 +806,13 @@ class TextureLayerMailboxIsActivatedDuringCommit : public LayerTreeTest {
   void DidCommit() override {
     // The first frame doesn't cause anything to be returned so it does not
     // need to wait for activation.
-    if (layer_tree_host()->source_frame_number() > 1) {
+    if (layer_tree_host()->SourceFrameNumber() > 1) {
       base::AutoLock lock(activate_count_lock_);
       // The activate happened before commit is done on the main side.
-      EXPECT_EQ(activate_count_, layer_tree_host()->source_frame_number());
+      EXPECT_EQ(activate_count_, layer_tree_host()->SourceFrameNumber());
     }
 
-    switch (layer_tree_host()->source_frame_number()) {
+    switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
         // The first mailbox has been activated. Set a new mailbox, and
         // expect the next commit to finish *after* it is activated.
@@ -837,21 +844,20 @@ class TextureLayerMailboxIsActivatedDuringCommit : public LayerTreeTest {
   scoped_refptr<TextureLayer> layer_;
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    TextureLayerMailboxIsActivatedDuringCommit);
+// Flaky on windows and linux. https://crbug.com/641613
+#if !defined(OS_WIN) && !defined(OS_LINUX)
+SINGLE_AND_MULTI_THREAD_TEST_F(TextureLayerMailboxIsActivatedDuringCommit);
+#endif
 
 class TextureLayerImplWithMailboxTest : public TextureLayerTest {
  protected:
-  TextureLayerImplWithMailboxTest()
-      : fake_client_(
-          FakeLayerTreeHostClient(FakeLayerTreeHostClient::DIRECT_3D)) {}
-
   void SetUp() override {
     TextureLayerTest::SetUp();
     layer_tree_host_ =
         MockLayerTreeHost::Create(&fake_client_, &task_graph_runner_);
+    layer_tree_ = layer_tree_host_->GetLayerTree();
     host_impl_.SetVisible(true);
-    EXPECT_TRUE(host_impl_.InitializeRenderer(output_surface_.get()));
+    EXPECT_TRUE(host_impl_.InitializeRenderer(compositor_frame_sink_.get()));
   }
 
   bool WillDraw(TextureLayerImpl* layer, DrawMode mode) {
@@ -1049,9 +1055,8 @@ class TextureLayerNoExtraCommitForMailboxTest
   // TextureLayerClient implementation.
   bool PrepareTextureMailbox(
       TextureMailbox* texture_mailbox,
-      std::unique_ptr<SingleReleaseCallback>* release_callback,
-      bool use_shared_memory) override {
-    if (layer_tree_host()->source_frame_number() == 1) {
+      std::unique_ptr<SingleReleaseCallback>* release_callback) override {
+    if (layer_tree_host()->SourceFrameNumber() == 1) {
       // Once this has been committed, the mailbox will be released.
       *texture_mailbox = TextureMailbox();
       return true;
@@ -1066,9 +1071,6 @@ class TextureLayerNoExtraCommitForMailboxTest
   }
 
   void MailboxReleased(const gpu::SyncToken& sync_token, bool lost_resource) {
-    // Source frame number during callback is the same as the source frame
-    // on which it was released.
-    EXPECT_EQ(1, layer_tree_host()->source_frame_number());
     EXPECT_TRUE(sync_token.HasData());
     EndTest();
   }
@@ -1083,14 +1085,14 @@ class TextureLayerNoExtraCommitForMailboxTest
     texture_layer_->SetIsDrawable(true);
     root->AddChild(texture_layer_);
 
-    layer_tree_host()->SetRootLayer(root);
+    layer_tree()->SetRootLayer(root);
     LayerTreeTest::SetupTree();
   }
 
   void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
   void DidCommitAndDrawFrame() override {
-    switch (layer_tree_host()->source_frame_number()) {
+    switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
         EXPECT_FALSE(proxy()->MainFrameWillHappenForTesting());
         // Invalidate the texture layer to clear the mailbox before
@@ -1103,23 +1105,6 @@ class TextureLayerNoExtraCommitForMailboxTest
         NOTREACHED();
         break;
     }
-  }
-
-  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
-    ASSERT_TRUE(result);
-    DelegatedFrameData* delegated_frame_data =
-        output_surface()->last_sent_frame()->delegated_frame_data.get();
-    if (!delegated_frame_data)
-      return;
-
-    // Return all resources immediately.
-    TransferableResourceArray resources_to_return =
-        output_surface()->resources_held_by_parent();
-
-    CompositorFrameAck ack;
-    for (size_t i = 0; i < resources_to_return.size(); ++i)
-      output_surface()->ReturnResource(resources_to_return[i].id, &ack);
-    host_impl->ReclaimResources(&ack);
   }
 
   void AfterTest() override {}
@@ -1148,8 +1133,7 @@ class TextureLayerChangeInvisibleMailboxTest
   // TextureLayerClient implementation.
   bool PrepareTextureMailbox(
       TextureMailbox* mailbox,
-      std::unique_ptr<SingleReleaseCallback>* release_callback,
-      bool use_shared_memory) override {
+      std::unique_ptr<SingleReleaseCallback>* release_callback) override {
     ++prepare_called_;
     if (!mailbox_changed_)
       return false;
@@ -1192,7 +1176,7 @@ class TextureLayerChangeInvisibleMailboxTest
     texture_layer_->SetIsDrawable(true);
     parent_layer_->AddChild(texture_layer_);
 
-    layer_tree_host()->SetRootLayer(root);
+    layer_tree()->SetRootLayer(root);
     LayerTreeTest::SetupTree();
   }
 
@@ -1242,23 +1226,6 @@ class TextureLayerChangeInvisibleMailboxTest
     }
   }
 
-  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
-    ASSERT_TRUE(result);
-    DelegatedFrameData* delegated_frame_data =
-        output_surface()->last_sent_frame()->delegated_frame_data.get();
-    if (!delegated_frame_data)
-      return;
-
-    // Return all resources immediately.
-    TransferableResourceArray resources_to_return =
-        output_surface()->resources_held_by_parent();
-
-    CompositorFrameAck ack;
-    for (size_t i = 0; i < resources_to_return.size(); ++i)
-      output_surface()->ReturnResource(resources_to_return[i].id, &ack);
-    host_impl->ReclaimResources(&ack);
-  }
-
   void AfterTest() override {}
 
  private:
@@ -1285,8 +1252,7 @@ class TextureLayerReleaseResourcesBase
   // TextureLayerClient implementation.
   bool PrepareTextureMailbox(
       TextureMailbox* mailbox,
-      std::unique_ptr<SingleReleaseCallback>* release_callback,
-      bool use_shared_memory) override {
+      std::unique_ptr<SingleReleaseCallback>* release_callback) override {
     *mailbox = TextureMailbox(MailboxFromChar('1'), SyncTokenFromUInt(1),
                               GL_TEXTURE_2D);
     *release_callback = SingleReleaseCallback::Create(
@@ -1307,7 +1273,7 @@ class TextureLayerReleaseResourcesBase
     texture_layer->SetBounds(gfx::Size(10, 10));
     texture_layer->SetIsDrawable(true);
 
-    layer_tree_host()->root_layer()->AddChild(texture_layer);
+    layer_tree()->root_layer()->AddChild(texture_layer);
     texture_layer_id_ = texture_layer->id();
   }
 
@@ -1381,8 +1347,8 @@ class TextureLayerWithMailboxMainThreadDeleted : public LayerTreeTest {
     layer_->SetBounds(bounds);
 
     root_->AddChild(layer_);
-    layer_tree_host()->SetRootLayer(root_);
-    layer_tree_host()->SetViewportSize(bounds);
+    layer_tree()->SetRootLayer(root_);
+    layer_tree()->SetViewportSize(bounds);
   }
 
   void BeginTest() override {
@@ -1398,7 +1364,7 @@ class TextureLayerWithMailboxMainThreadDeleted : public LayerTreeTest {
   }
 
   void DidCommitAndDrawFrame() override {
-    switch (layer_tree_host()->source_frame_number()) {
+    switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
         // Delete the TextureLayer on the main thread while the mailbox is in
         // the impl tree.
@@ -1417,8 +1383,7 @@ class TextureLayerWithMailboxMainThreadDeleted : public LayerTreeTest {
   scoped_refptr<TextureLayer> layer_;
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    TextureLayerWithMailboxMainThreadDeleted);
+SINGLE_AND_MULTI_THREAD_TEST_F(TextureLayerWithMailboxMainThreadDeleted);
 
 class TextureLayerWithMailboxImplThreadDeleted : public LayerTreeTest {
  public:
@@ -1452,8 +1417,8 @@ class TextureLayerWithMailboxImplThreadDeleted : public LayerTreeTest {
     layer_->SetBounds(bounds);
 
     root_->AddChild(layer_);
-    layer_tree_host()->SetRootLayer(root_);
-    layer_tree_host()->SetViewportSize(bounds);
+    layer_tree()->SetRootLayer(root_);
+    layer_tree()->SetViewportSize(bounds);
   }
 
   void BeginTest() override {
@@ -1469,7 +1434,7 @@ class TextureLayerWithMailboxImplThreadDeleted : public LayerTreeTest {
   }
 
   void DidCommitAndDrawFrame() override {
-    switch (layer_tree_host()->source_frame_number()) {
+    switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
         // Remove the TextureLayer on the main thread while the mailbox is in
         // the impl tree, but don't delete the TextureLayer until after the impl
@@ -1491,8 +1456,7 @@ class TextureLayerWithMailboxImplThreadDeleted : public LayerTreeTest {
   scoped_refptr<TextureLayer> layer_;
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    TextureLayerWithMailboxImplThreadDeleted);
+SINGLE_AND_MULTI_THREAD_TEST_F(TextureLayerWithMailboxImplThreadDeleted);
 
 }  // namespace
 }  // namespace cc

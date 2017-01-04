@@ -33,12 +33,16 @@
     _iceBackupCandidatePairPingInterval;
 @synthesize keyType = _keyType;
 @synthesize iceCandidatePoolSize = _iceCandidatePoolSize;
+@synthesize shouldPruneTurnPorts = _shouldPruneTurnPorts;
+@synthesize shouldPresumeWritableWhenFullyRelayed =
+    _shouldPresumeWritableWhenFullyRelayed;
 
 - (instancetype)init {
   if (self = [super init]) {
     _iceServers = [NSMutableArray array];
     // Copy defaults.
-    webrtc::PeerConnectionInterface::RTCConfiguration config;
+    webrtc::PeerConnectionInterface::RTCConfiguration config(
+        webrtc::PeerConnectionInterface::RTCConfigurationType::kAggressive);
     _iceTransportPolicy =
         [[self class] transportPolicyForTransportsType:config.type];
     _bundlePolicy =
@@ -59,13 +63,16 @@
         config.ice_backup_candidate_pair_ping_interval;
     _keyType = RTCEncryptionKeyTypeECDSA;
     _iceCandidatePoolSize = config.ice_candidate_pool_size;
+    _shouldPruneTurnPorts = config.prune_turn_ports;
+    _shouldPresumeWritableWhenFullyRelayed =
+        config.presume_writable_when_fully_relayed;
   }
   return self;
 }
 
 - (NSString *)description {
   return [NSString stringWithFormat:
-      @"RTCConfiguration: {\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%d\n%d\n%d\n%d\n}\n",
+      @"RTCConfiguration: {\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%d\n%d\n%d\n%d\n%d\n%d\n}\n",
       _iceServers,
       [[self class] stringForTransportPolicy:_iceTransportPolicy],
       [[self class] stringForBundlePolicy:_bundlePolicy],
@@ -77,7 +84,9 @@
       _audioJitterBufferMaxPackets,
       _iceConnectionReceivingTimeout,
       _iceBackupCandidatePairPingInterval,
-      _iceCandidatePoolSize];
+      _iceCandidatePoolSize,
+      _shouldPruneTurnPorts,
+      _shouldPresumeWritableWhenFullyRelayed];
 }
 
 #pragma mark - Private
@@ -85,7 +94,8 @@
 - (webrtc::PeerConnectionInterface::RTCConfiguration *)
     createNativeConfiguration {
   std::unique_ptr<webrtc::PeerConnectionInterface::RTCConfiguration>
-      nativeConfig(new webrtc::PeerConnectionInterface::RTCConfiguration());
+      nativeConfig(new webrtc::PeerConnectionInterface::RTCConfiguration(
+          webrtc::PeerConnectionInterface::RTCConfigurationType::kAggressive));
 
   for (RTCIceServer *iceServer in _iceServers) {
     nativeConfig->servers.push_back(iceServer.nativeServer);
@@ -121,6 +131,9 @@
     nativeConfig->certificates.push_back(certificate);
   }
   nativeConfig->ice_candidate_pool_size = _iceCandidatePoolSize;
+  nativeConfig->prune_turn_ports = _shouldPruneTurnPorts ? true : false;
+  nativeConfig->presume_writable_when_fully_relayed =
+      _shouldPresumeWritableWhenFullyRelayed ? true : false;
 
   return nativeConfig.release();
 }

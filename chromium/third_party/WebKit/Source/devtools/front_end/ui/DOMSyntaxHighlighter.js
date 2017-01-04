@@ -65,7 +65,7 @@ WebInspector.DOMSyntaxHighlighter.prototype = {
         var plainTextStart;
         var line;
 
-        return self.runtime.instancePromise(WebInspector.TokenizerFactory).then(processTokens.bind(this));
+        return self.runtime.extension(WebInspector.TokenizerFactory).instance().then(processTokens.bind(this));
 
         /**
          * @param {!WebInspector.TokenizerFactory} tokenizerFactory
@@ -75,7 +75,7 @@ WebInspector.DOMSyntaxHighlighter.prototype = {
         {
             node.removeChildren();
             var tokenize = tokenizerFactory.createTokenizer(this._mimeType);
-            for (var i = lines[0].length ? 0 : 1; i < lines.length; ++i) {
+            for (var i = 0; i < lines.length; ++i) {
                 line = lines[i];
                 plainTextStart = 0;
                 tokenize(line, processToken.bind(this));

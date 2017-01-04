@@ -28,9 +28,9 @@
 #include "build/build_config.h"
 #include "content/grit/content_resources.h"
 #include "content/public/child/v8_value_converter.h"
-#include "content/public/common/browser_plugin_guest_mode.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/renderer/guest_mode.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "extensions/common/api/messaging/message.h"
@@ -41,6 +41,7 @@
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/features/behavior_feature.h"
 #include "extensions/common/features/feature.h"
+#include "extensions/common/features/feature_channel.h"
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/features/feature_util.h"
 #include "extensions/common/manifest.h"
@@ -581,10 +582,11 @@ void Dispatcher::DidCreateDocumentElement(blink::WebLocalFrame* frame) {
   if (extension && extension->is_extension() &&
       OptionsPageInfo::ShouldUseChromeStyle(extension) &&
       effective_document_url == OptionsPageInfo::GetOptionsPage(extension)) {
+    base::StringPiece extension_css =
+        ResourceBundle::GetSharedInstance().GetRawDataResource(
+            IDR_EXTENSION_CSS);
     frame->document().insertStyleSheet(
-        WebString::fromUTF8(ResourceBundle::GetSharedInstance()
-                                .GetRawDataResource(IDR_EXTENSION_CSS)
-                                .as_string()));
+        WebString::fromUTF8(extension_css.data(), extension_css.length()));
   }
 
   // In testing, the document lifetime events can happen after the render
@@ -708,7 +710,7 @@ std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
   resources.push_back(std::make_pair("guestViewEvents",
                                      IDR_GUEST_VIEW_EVENTS_JS));
 
-  if (content::BrowserPluginGuestMode::UseCrossProcessFramesForGuests()) {
+  if (content::GuestMode::UseCrossProcessFramesForGuests()) {
     resources.push_back(std::make_pair("guestViewIframe",
                                        IDR_GUEST_VIEW_IFRAME_JS));
     resources.push_back(std::make_pair("guestViewIframeContainer",
@@ -838,6 +840,8 @@ std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
   resources.push_back(
       std::make_pair("chrome/browser/media/router/mojo/media_router.mojom",
                      IDR_MEDIA_ROUTER_MOJOM_JS));
+  resources.push_back(std::make_pair("mojo/common/common_custom_types.mojom",
+                                     IDR_MOJO_COMMON_CUSTOM_TYPES_MOJOM_JS));
   resources.push_back(
       std::make_pair("media_router_bindings", IDR_MEDIA_ROUTER_BINDINGS_JS));
 #endif  // defined(ENABLE_MEDIA_ROUTER)
@@ -878,8 +882,7 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
       "event_natives",
       std::unique_ptr<NativeHandler>(new EventBindings(context)));
   module_system->RegisterNativeHandler(
-      "messaging_natives",
-      std::unique_ptr<NativeHandler>(MessagingBindings::Get(context)));
+      "messaging_natives", base::MakeUnique<MessagingBindings>(context));
   module_system->RegisterNativeHandler(
       "apiDefinitions", std::unique_ptr<NativeHandler>(
                             new ApiDefinitionsNatives(dispatcher, context)));
@@ -937,7 +940,7 @@ bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
   IPC_MESSAGE_HANDLER(ExtensionMsg_DispatchOnDisconnect, OnDispatchOnDisconnect)
   IPC_MESSAGE_HANDLER(ExtensionMsg_Loaded, OnLoaded)
   IPC_MESSAGE_HANDLER(ExtensionMsg_MessageInvoke, OnMessageInvoke)
-  IPC_MESSAGE_HANDLER(ExtensionMsg_SetChannel, OnSetChannel)
+  IPC_MESSAGE_HANDLER(ExtensionMsg_SetSessionInfo, OnSetSessionInfo)
   IPC_MESSAGE_HANDLER(ExtensionMsg_SetScriptingWhitelist,
                       OnSetScriptingWhitelist)
   IPC_MESSAGE_HANDLER(ExtensionMsg_SetSystemFont, OnSetSystemFont)
@@ -1112,8 +1115,16 @@ void Dispatcher::OnMessageInvoke(const std::string& extension_id,
       NULL, extension_id, module_name, function_name, args, user_gesture);
 }
 
-void Dispatcher::OnSetChannel(int channel) {
-  delegate_->SetChannel(channel);
+void Dispatcher::OnSetSessionInfo(version_info::Channel channel,
+                                  FeatureSessionType session_type) {
+  SetCurrentChannel(channel);
+  SetCurrentFeatureSessionType(session_type);
+
+  if (feature_util::ExtensionServiceWorkersEnabled()) {
+    // chrome-extension: resources should be allowed to register ServiceWorkers.
+    blink::WebSecurityPolicy::registerURLSchemeAsAllowingServiceWorkers(
+        blink::WebString::fromUTF8(extensions::kExtensionScheme));
+  }
 }
 
 void Dispatcher::OnSetScriptingWhitelist(
@@ -1276,8 +1287,7 @@ void Dispatcher::OnSetActivityLoggingEnabled(bool enabled) {
   user_script_set_manager_->set_activity_logging_enabled(enabled);
 }
 
-void Dispatcher::OnUserScriptsUpdated(const std::set<HostID>& changed_hosts,
-                                      const std::vector<UserScript*>& scripts) {
+void Dispatcher::OnUserScriptsUpdated(const std::set<HostID>& changed_hosts) {
   UpdateActiveExtensions();
 }
 
@@ -1412,7 +1422,7 @@ void Dispatcher::UpdateBindingsForContext(ScriptContext* context) {
           continue;
         }
 
-        if (context->IsAnyFeatureAvailableToContext(*map_entry.second.get())) {
+        if (context->IsAnyFeatureAvailableToContext(*map_entry.second)) {
           // TODO(lazyboy): RegisterBinding() uses |source_map_|, any thread
           // safety issue?
           RegisterBinding(map_entry.first, context);
@@ -1654,7 +1664,7 @@ void Dispatcher::RequireGuestViewModules(ScriptContext* context) {
   }
 
   if (requires_guest_view_module &&
-      content::BrowserPluginGuestMode::UseCrossProcessFramesForGuests()) {
+      content::GuestMode::UseCrossProcessFramesForGuests()) {
     module_system->Require("guestViewIframe");
     module_system->Require("guestViewIframeContainer");
   }

@@ -15,9 +15,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/attestation/attestation_ca_client.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
-#include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/install_attributes.h"
 #include "chrome/browser/extensions/chrome_extension_function_details.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -98,7 +98,7 @@ EPKPChallengeKeyBase::EPKPChallengeKeyBase(
     chromeos::CryptohomeClient* cryptohome_client,
     cryptohome::AsyncMethodCaller* async_caller,
     chromeos::attestation::AttestationFlow* attestation_flow,
-    policy::EnterpriseInstallAttributes* install_attributes) :
+    chromeos::InstallAttributes* install_attributes) :
     cryptohome_client_(cryptohome_client),
     async_caller_(async_caller),
     attestation_flow_(attestation_flow),
@@ -158,7 +158,7 @@ AccountId EPKPChallengeKeyBase::GetAccountId() const {
   return user->GetAccountId();
 }
 
-bool EPKPChallengeKeyBase::IsUserManaged() const {
+bool EPKPChallengeKeyBase::IsUserAffiliated() const {
   const user_manager::User* const user =
       user_manager::UserManager::Get()->FindUser(GetAccountId());
 
@@ -299,7 +299,7 @@ EPKPChallengeMachineKey::EPKPChallengeMachineKey(
     chromeos::CryptohomeClient* cryptohome_client,
     cryptohome::AsyncMethodCaller* async_caller,
     chromeos::attestation::AttestationFlow* attestation_flow,
-    policy::EnterpriseInstallAttributes* install_attributes) :
+    chromeos::InstallAttributes* install_attributes) :
     EPKPChallengeKeyBase(cryptohome_client,
                          async_caller,
                          attestation_flow,
@@ -329,8 +329,7 @@ void EPKPChallengeMachineKey::Run(
     return;
   }
 
-  // Check if the user domain is the same as the enrolled enterprise domain.
-  if (!IsUserManaged()) {
+  if (!IsUserAffiliated()) {
     callback_.Run(false, kUserNotManaged);
     return;
   }
@@ -414,7 +413,7 @@ EPKPChallengeUserKey::EPKPChallengeUserKey(
     chromeos::CryptohomeClient* cryptohome_client,
     cryptohome::AsyncMethodCaller* async_caller,
     chromeos::attestation::AttestationFlow* attestation_flow,
-    policy::EnterpriseInstallAttributes* install_attributes) :
+    chromeos::InstallAttributes* install_attributes) :
     EPKPChallengeKeyBase(cryptohome_client,
                          async_caller,
                          attestation_flow,
@@ -451,8 +450,7 @@ void EPKPChallengeUserKey::Run(scoped_refptr<UIThreadExtensionFunction> caller,
   }
 
   if (IsEnterpriseDevice()) {
-    // Check if the user domain is the same as the enrolled enterprise domain.
-    if (!IsUserManaged()) {
+    if (!IsUserAffiliated()) {
       callback_.Run(false, kUserNotManaged);
       return;
     }

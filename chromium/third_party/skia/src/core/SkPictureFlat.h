@@ -7,7 +7,7 @@
 #ifndef SkPictureFlat_DEFINED
 #define SkPictureFlat_DEFINED
 
-
+#include "SkCanvas.h"
 #include "SkChecksum.h"
 #include "SkChunkAlloc.h"
 #include "SkReadBuffer.h"
@@ -17,6 +17,13 @@
 #include "SkPtrRecorder.h"
 #include "SkTDynamicHash.h"
 
+/*
+ * Note: While adding new DrawTypes, it is necessary to add to the end of this list
+ *       and update LAST_DRAWTYPE_ENUM to avoid having the code read older skps wrong.
+ *       (which can cause segfaults)
+ *
+ *       Reordering can be done during version updates.
+ */
 enum DrawType {
     UNUSED,
     CLIP_PATH,
@@ -79,8 +86,16 @@ enum DrawType {
     DRAW_ANNOTATION,
     DRAW_DRAWABLE,
     DRAW_DRAWABLE_MATRIX,
+    DRAW_TEXT_RSXFORM,
 
-    LAST_DRAWTYPE_ENUM = DRAW_DRAWABLE_MATRIX,
+    TRANSLATE_Z,
+
+    DRAW_SHADOWED_PICTURE_LIGHTS,
+    DRAW_IMAGE_LATTICE,
+    DRAW_ARC,
+    DRAW_REGION,
+
+    LAST_DRAWTYPE_ENUM = DRAW_REGION
 };
 
 // In the 'match' method, this constant will match any flavor of DRAW_BITMAP*
@@ -98,6 +113,10 @@ enum DrawAtlasFlags {
     DRAW_ATLAS_HAS_CULL     = 1 << 1,
 };
 
+enum DrawTextRSXformFlags {
+    DRAW_TEXT_RSXFORM_HAS_CULL  = 1 << 0,
+};
+
 enum SaveLayerRecFlatFlags {
     SAVELAYERREC_HAS_BOUNDS     = 1 << 0,
     SAVELAYERREC_HAS_PAINT      = 1 << 1,
@@ -107,15 +126,15 @@ enum SaveLayerRecFlatFlags {
 
 ///////////////////////////////////////////////////////////////////////////////
 // clipparams are packed in 5 bits
-//  doAA:1 | regionOp:4
+//  doAA:1 | clipOp:4
 
-static inline uint32_t ClipParams_pack(SkRegion::Op op, bool doAA) {
+static inline uint32_t ClipParams_pack(SkCanvas::ClipOp op, bool doAA) {
     unsigned doAABit = doAA ? 1 : 0;
     return (doAABit << 4) | op;
 }
 
-static inline SkRegion::Op ClipParams_unpackRegionOp(uint32_t packed) {
-    return (SkRegion::Op)(packed & 0xF);
+static inline SkCanvas::ClipOp ClipParams_unpackRegionOp(uint32_t packed) {
+    return (SkCanvas::ClipOp)(packed & 0xF);
 }
 
 static inline bool ClipParams_unpackDoAA(uint32_t packed) {

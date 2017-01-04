@@ -22,6 +22,7 @@
 #include "libANGLE/Error.h"
 #include "libANGLE/HandleAllocator.h"
 #include "libANGLE/VertexAttribute.h"
+#include "libANGLE/Workarounds.h"
 #include "libANGLE/angletypes.h"
 
 namespace rx
@@ -67,9 +68,6 @@ class Context final : public ValidationContext
 
     void makeCurrent(egl::Surface *surface);
     void releaseSurface();
-
-    virtual void markContextLost();
-    bool isContextLost();
 
     // These create  and destroy methods are merely pass-throughs to
     // ResourceManager, which owns these object types
@@ -178,8 +176,14 @@ class Context final : public ValidationContext
     Query *getQuery(GLuint handle, bool create, GLenum type);
     Query *getQuery(GLuint handle) const;
     TransformFeedback *getTransformFeedback(GLuint handle) const;
-    LabeledObject *getLabeledObject(GLenum identifier, GLuint name) const;
-    LabeledObject *getLabeledObjectFromPtr(const void *ptr) const;
+    void objectLabel(GLenum identifier, GLuint name, GLsizei length, const GLchar *label);
+    void objectPtrLabel(const void *ptr, GLsizei length, const GLchar *label);
+    void getObjectLabel(GLenum identifier,
+                        GLuint name,
+                        GLsizei bufSize,
+                        GLsizei *length,
+                        GLchar *label) const;
+    void getObjectPtrLabel(const void *ptr, GLsizei bufSize, GLsizei *length, GLchar *label) const;
 
     Texture *getTargetTexture(GLenum target) const;
     Texture *getSamplerTexture(unsigned int sampler, GLenum type) const;
@@ -188,6 +192,10 @@ class Context final : public ValidationContext
 
     bool isSampler(GLuint samplerName) const;
 
+    bool isTextureGenerated(GLuint texture) const;
+    bool isBufferGenerated(GLuint buffer) const;
+    bool isRenderbufferGenerated(GLuint renderbuffer) const;
+    bool isFramebufferGenerated(GLuint framebuffer) const;
     bool isVertexArrayGenerated(GLuint vertexArray);
     bool isTransformFeedbackGenerated(GLuint vertexArray);
 
@@ -196,9 +204,9 @@ class Context final : public ValidationContext
     void getIntegerv(GLenum pname, GLint *params);
     void getInteger64v(GLenum pname, GLint64 *params);
     void getPointerv(GLenum pname, void **params) const;
-
-    bool getIndexedIntegerv(GLenum target, GLuint index, GLint *data);
-    bool getIndexedInteger64v(GLenum target, GLuint index, GLint64 *data);
+    void getBooleani_v(GLenum target, GLuint index, GLboolean *data);
+    void getIntegeri_v(GLenum target, GLuint index, GLint *data);
+    void getInteger64i_v(GLenum target, GLuint index, GLint64 *data);
 
     void activeTexture(GLenum texture);
     void blendColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
@@ -457,8 +465,28 @@ class Context final : public ValidationContext
                                  GLenum format,
                                  GLsizei imageSize,
                                  const GLvoid *data);
+    void copyTextureCHROMIUM(GLuint sourceId,
+                             GLuint destId,
+                             GLint internalFormat,
+                             GLenum destType,
+                             GLboolean unpackFlipY,
+                             GLboolean unpackPremultiplyAlpha,
+                             GLboolean unpackUnmultiplyAlpha);
+    void copySubTextureCHROMIUM(GLuint sourceId,
+                                GLuint destId,
+                                GLint xoffset,
+                                GLint yoffset,
+                                GLint x,
+                                GLint y,
+                                GLsizei width,
+                                GLsizei height,
+                                GLboolean unpackFlipY,
+                                GLboolean unpackPremultiplyAlpha,
+                                GLboolean unpackUnmultiplyAlpha);
 
     void generateMipmap(GLenum target);
+
+    GLboolean enableExtension(const char *name);
 
     Error flush();
     Error finish();
@@ -491,24 +519,84 @@ class Context final : public ValidationContext
     void coverStrokePath(GLuint path, GLenum coverMode);
     void stencilThenCoverFillPath(GLuint path, GLenum fillMode, GLuint mask, GLenum coverMode);
     void stencilThenCoverStrokePath(GLuint path, GLint reference, GLuint mask, GLenum coverMode);
+    void coverFillPathInstanced(GLsizei numPaths,
+                                GLenum pathNameType,
+                                const void *paths,
+                                GLuint pathBase,
+                                GLenum coverMode,
+                                GLenum transformType,
+                                const GLfloat *transformValues);
+    void coverStrokePathInstanced(GLsizei numPaths,
+                                  GLenum pathNameType,
+                                  const void *paths,
+                                  GLuint pathBase,
+                                  GLenum coverMode,
+                                  GLenum transformType,
+                                  const GLfloat *transformValues);
+    void stencilFillPathInstanced(GLsizei numPaths,
+                                  GLenum pathNameType,
+                                  const void *paths,
+                                  GLuint pathBAse,
+                                  GLenum fillMode,
+                                  GLuint mask,
+                                  GLenum transformType,
+                                  const GLfloat *transformValues);
+    void stencilStrokePathInstanced(GLsizei numPaths,
+                                    GLenum pathNameType,
+                                    const void *paths,
+                                    GLuint pathBase,
+                                    GLint reference,
+                                    GLuint mask,
+                                    GLenum transformType,
+                                    const GLfloat *transformValues);
+    void stencilThenCoverFillPathInstanced(GLsizei numPaths,
+                                           GLenum pathNameType,
+                                           const void *paths,
+                                           GLuint pathBase,
+                                           GLenum fillMode,
+                                           GLuint mask,
+                                           GLenum coverMode,
+                                           GLenum transformType,
+                                           const GLfloat *transformValues);
+    void stencilThenCoverStrokePathInstanced(GLsizei numPaths,
+                                             GLenum pathNameType,
+                                             const void *paths,
+                                             GLuint pathBase,
+                                             GLint reference,
+                                             GLuint mask,
+                                             GLenum coverMode,
+                                             GLenum transformType,
+                                             const GLfloat *transformValues);
+    void bindFragmentInputLocation(GLuint program, GLint location, const GLchar *name);
+    void programPathFragmentInputGen(GLuint program,
+                                     GLint location,
+                                     GLenum genMode,
+                                     GLint components,
+                                     const GLfloat *coeffs);
+
+    void bufferData(GLenum target, GLsizeiptr size, const GLvoid *data, GLenum usage);
+    void bufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const GLvoid *data);
 
     void handleError(const Error &error) override;
 
     GLenum getError();
+    void markContextLost();
+    bool isContextLost();
     GLenum getResetStatus();
-    virtual bool isResetNotificationEnabled();
+    bool isResetNotificationEnabled();
 
     const egl::Config *getConfig() const;
     EGLenum getClientType() const;
     EGLenum getRenderBuffer() const;
 
-    const std::string &getRendererString() const;
+    const char *getRendererString() const;
 
-    const std::string &getExtensionString() const;
-    const std::string &getExtensionString(size_t idx) const;
+    const char *getExtensionString() const;
+    const char *getExtensionString(size_t idx) const;
     size_t getExtensionStringCount() const;
 
     rx::ContextImpl *getImplementation() const { return mImplementation.get(); }
+    const Workarounds &getWorkarounds() const;
 
   private:
     void syncRendererState();
@@ -532,7 +620,12 @@ class Context final : public ValidationContext
     void initRendererString();
     void initExtensionStrings();
 
-    void initCaps();
+    void initCaps(bool webGLContext);
+    void updateCaps();
+    void initWorkarounds();
+
+    LabeledObject *getLabeledObject(GLenum identifier, GLuint name) const;
+    LabeledObject *getLabeledObjectFromPtr(const void *ptr) const;
 
     std::unique_ptr<rx::ContextImpl> mImplementation;
 
@@ -547,7 +640,8 @@ class Context final : public ValidationContext
 
     State mGLState;
 
-    int mClientVersion;
+    int mClientMajorVersion;
+    int mClientMinorVersion;
 
     const egl::Config *mConfig;
     EGLenum mClientType;
@@ -569,9 +663,9 @@ class Context final : public ValidationContext
     ResourceMap<TransformFeedback> mTransformFeedbackMap;
     HandleAllocator mTransformFeedbackAllocator;
 
-    std::string mRendererString;
-    std::string mExtensionString;
-    std::vector<std::string> mExtensionStrings;
+    const char *mRendererString;
+    const char *mExtensionString;
+    std::vector<const char *> mExtensionStrings;
 
     // Recorded errors
     typedef std::set<GLenum> ErrorSet;
@@ -581,6 +675,7 @@ class Context final : public ValidationContext
     bool mHasBeenCurrent;
     bool mContextLost;
     GLenum mResetStatus;
+    bool mContextLostForced;
     GLenum mResetStrategy;
     bool mRobustAccess;
     egl::Surface *mCurrentSurface;
@@ -595,6 +690,8 @@ class Context final : public ValidationContext
     State::DirtyObjects mClearDirtyObjects;
     State::DirtyBits mBlitDirtyBits;
     State::DirtyObjects mBlitDirtyObjects;
+
+    Workarounds mWorkarounds;
 };
 
 }  // namespace gl

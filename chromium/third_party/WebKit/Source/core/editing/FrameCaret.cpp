@@ -27,6 +27,7 @@
 
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
+#include "core/editing/SelectionEditor.h"
 #include "core/editing/commands/CompositeEditCommand.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
@@ -39,232 +40,237 @@
 
 namespace blink {
 
-FrameCaret::FrameCaret(LocalFrame* frame)
-    : m_frame(frame)
-    , m_previousCaretVisibility(CaretVisibility::Hidden)
-    , m_caretBlinkTimer(this, &FrameCaret::caretBlinkTimerFired)
-    , m_caretRectDirty(true)
-    , m_shouldPaintCaret(true)
-    , m_isCaretBlinkingSuspended(false)
-    , m_shouldShowBlockCursor(false)
-{
-    DCHECK(frame);
+FrameCaret::FrameCaret(LocalFrame* frame,
+                       const SelectionEditor& selectionEditor)
+    : m_selectionEditor(&selectionEditor),
+      m_frame(frame),
+      m_caretVisibility(CaretVisibility::Hidden),
+      m_previousCaretVisibility(CaretVisibility::Hidden),
+      m_caretBlinkTimer(this, &FrameCaret::caretBlinkTimerFired),
+      m_caretRectDirty(true),
+      m_shouldPaintCaret(true),
+      m_isCaretBlinkingSuspended(false),
+      m_shouldShowBlockCursor(false) {
+  DCHECK(frame);
 }
 
 FrameCaret::~FrameCaret() = default;
 
-DEFINE_TRACE(FrameCaret)
-{
-    visitor->trace(m_frame);
-    visitor->trace(m_previousCaretNode);
-    visitor->trace(m_caretPosition);
-    CaretBase::trace(visitor);
+DEFINE_TRACE(FrameCaret) {
+  visitor->trace(m_selectionEditor);
+  visitor->trace(m_frame);
+  visitor->trace(m_previousCaretNode);
+  CaretBase::trace(visitor);
 }
 
-void FrameCaret::setCaretPosition(const PositionWithAffinity& position)
-{
-    m_caretPosition = position;
+const PositionWithAffinity FrameCaret::caretPosition() const {
+  const VisibleSelection& selection =
+      m_selectionEditor->visibleSelection<EditingStrategy>();
+  if (!selection.isCaret())
+    return PositionWithAffinity();
+  return PositionWithAffinity(selection.start(), selection.affinity());
+}
+
+inline static bool shouldStopBlinkingDueToTypingCommand(LocalFrame* frame) {
+  return frame->editor().lastEditCommand() &&
+         frame->editor().lastEditCommand()->shouldStopCaretBlinking();
+}
+
+void FrameCaret::updateAppearance() {
+  // Paint a block cursor instead of a caret in overtype mode unless the caret
+  // is at the end of a line (in this case the FrameSelection will paint a
+  // blinking caret as usual).
+  bool paintBlockCursor =
+      m_shouldShowBlockCursor && isActive() &&
+      !isLogicalEndOfLine(createVisiblePositionDeprecated(caretPosition()));
+
+  bool shouldBlink = !paintBlockCursor && shouldBlinkCaret();
+
+  // If the caret moved, stop the blink timer so we can restart with a
+  // black caret in the new location.
+  if (!shouldBlink || shouldStopBlinkingDueToTypingCommand(m_frame))
+    stopCaretBlinkTimer();
+
+  // Start blinking with a black caret. Be sure not to restart if we're
+  // already blinking in the right location.
+  if (shouldBlink)
+    startBlinkCaret();
+}
+
+void FrameCaret::stopCaretBlinkTimer() {
+  if (m_caretBlinkTimer.isActive() || m_shouldPaintCaret)
     setCaretRectNeedsUpdate();
+  m_shouldPaintCaret = false;
+  m_caretBlinkTimer.stop();
 }
 
-void FrameCaret::clear()
-{
-    m_caretPosition = PositionWithAffinity();
-    setCaretRectNeedsUpdate();
+void FrameCaret::startBlinkCaret() {
+  // Start blinking with a black caret. Be sure not to restart if we're
+  // already blinking in the right location.
+  if (m_caretBlinkTimer.isActive())
+    return;
+
+  if (double blinkInterval = LayoutTheme::theme().caretBlinkInterval())
+    m_caretBlinkTimer.startRepeating(blinkInterval, BLINK_FROM_HERE);
+
+  m_shouldPaintCaret = true;
+  setCaretRectNeedsUpdate();
 }
 
-inline static bool shouldStopBlinkingDueToTypingCommand(LocalFrame* frame)
-{
-    return frame->editor().lastEditCommand() && frame->editor().lastEditCommand()->shouldStopCaretBlinking();
+void FrameCaret::setCaretVisibility(CaretVisibility visibility) {
+  if (m_caretVisibility == visibility)
+    return;
+
+  m_caretVisibility = visibility;
+
+  updateAppearance();
 }
 
-void FrameCaret::updateAppearance()
-{
-    // Paint a block cursor instead of a caret in overtype mode unless the caret is at the end of a line (in this case
-    // the FrameSelection will paint a blinking caret as usual).
-    bool paintBlockCursor = m_shouldShowBlockCursor && isActive() && !isLogicalEndOfLine(createVisiblePosition(m_caretPosition));
+void FrameCaret::setCaretRectNeedsUpdate() {
+  if (m_caretRectDirty)
+    return;
+  m_caretRectDirty = true;
 
-    bool shouldBlink = !paintBlockCursor && shouldBlinkCaret();
-
-    // If the caret moved, stop the blink timer so we can restart with a
-    // black caret in the new location.
-    if (!shouldBlink || shouldStopBlinkingDueToTypingCommand(m_frame))
-        stopCaretBlinkTimer();
-
-    // Start blinking with a black caret. Be sure not to restart if we're
-    // already blinking in the right location.
-    if (shouldBlink)
-        startBlinkCaret();
+  if (Page* page = m_frame->page())
+    page->animator().scheduleVisualUpdate(m_frame->localFrameRoot());
 }
 
-void FrameCaret::stopCaretBlinkTimer()
-{
-    if (m_caretBlinkTimer.isActive() || m_shouldPaintCaret)
-        setCaretRectNeedsUpdate();
-    m_shouldPaintCaret = false;
-    m_caretBlinkTimer.stop();
+bool FrameCaret::caretPositionIsValidForDocument(
+    const Document& document) const {
+  if (!isActive())
+    return true;
+
+  return caretPosition().position().document() == document &&
+         !caretPosition().position().isOrphan();
 }
 
-void FrameCaret::startBlinkCaret()
-{
-    // Start blinking with a black caret. Be sure not to restart if we're
-    // already blinking in the right location.
-    if (m_caretBlinkTimer.isActive())
-        return;
+void FrameCaret::invalidateCaretRect(bool forceInvalidation) {
+  if (!m_caretRectDirty)
+    return;
+  m_caretRectDirty = false;
 
-    if (double blinkInterval = LayoutTheme::theme().caretBlinkInterval())
-        m_caretBlinkTimer.startRepeating(blinkInterval, BLINK_FROM_HERE);
+  DCHECK(caretPositionIsValidForDocument(*m_frame->document()));
+  LayoutObject* layoutObject = nullptr;
+  LayoutRect newRect;
+  if (isActive())
+    newRect = localCaretRectOfPosition(caretPosition(), layoutObject);
+  Node* newNode = layoutObject ? layoutObject->node() : nullptr;
 
-    m_shouldPaintCaret = true;
-    setCaretRectNeedsUpdate();
+  // It's possible for the timer to be inactive even though we want to
+  // invalidate the caret. For example, when running as a layout test the
+  // caret blink interval could be zero and thus |m_caretBlinkTimer| will
+  // never be started. We provide |forceInvalidation| for use by paint
+  // invalidation internals where we need to invalidate the caret regardless
+  // of timer state.
+  if (!forceInvalidation && !m_caretBlinkTimer.isActive() &&
+      newNode == m_previousCaretNode && newRect == m_previousCaretRect &&
+      m_caretVisibility == m_previousCaretVisibility)
+    return;
 
+  LayoutViewItem view = m_frame->document()->layoutViewItem();
+  if (m_previousCaretNode &&
+      (shouldRepaintCaret(*m_previousCaretNode) || shouldRepaintCaret(view)))
+    invalidateLocalCaretRect(m_previousCaretNode.get(), m_previousCaretRect);
+  if (newNode && (shouldRepaintCaret(*newNode) || shouldRepaintCaret(view)))
+    invalidateLocalCaretRect(newNode, newRect);
+  m_previousCaretNode = newNode;
+  m_previousCaretRect = newRect;
+  m_previousCaretVisibility = m_caretVisibility;
 }
 
-void FrameCaret::setCaretVisibility(CaretVisibility visibility)
-{
-    if (getCaretVisibility() == visibility)
-        return;
+IntRect FrameCaret::absoluteCaretBounds() {
+  DCHECK_NE(m_frame->document()->lifecycle().state(),
+            DocumentLifecycle::InPaintInvalidation);
+  DCHECK(!m_frame->document()->needsLayoutTreeUpdate());
+  DocumentLifecycle::DisallowTransitionScope disallowTransition(
+      m_frame->document()->lifecycle());
 
-    CaretBase::setCaretVisibility(visibility);
-
-    updateAppearance();
-}
-
-void FrameCaret::setCaretRectNeedsUpdate()
-{
-    if (m_caretRectDirty)
-        return;
-    m_caretRectDirty = true;
-
-    if (Page* page = m_frame->page())
-        page->animator().scheduleVisualUpdate(m_frame->localFrameRoot());
-}
-
-bool FrameCaret::caretPositionIsValidForDocument(const Document& document) const
-{
-    if (!isActive())
-        return true;
-
-    return m_caretPosition.position().document() == document
-        && !m_caretPosition.position().isOrphan();
-}
-
-void FrameCaret::invalidateCaretRect()
-{
-    if (!m_caretRectDirty)
-        return;
-    m_caretRectDirty = false;
-
-    DCHECK(caretPositionIsValidForDocument(*m_frame->document()));
-    LayoutObject* layoutObject = nullptr;
-    LayoutRect newRect;
-    if (isActive())
-        newRect = localCaretRectOfPosition(m_caretPosition, layoutObject);
-    Node* newNode = layoutObject ? layoutObject->node() : nullptr;
-
-    if (!m_caretBlinkTimer.isActive()
-        && newNode == m_previousCaretNode
-        && newRect == m_previousCaretRect
-        && getCaretVisibility() == m_previousCaretVisibility)
-        return;
-
-    LayoutViewItem view = m_frame->document()->layoutViewItem();
-    if (m_previousCaretNode && (shouldRepaintCaret(*m_previousCaretNode) || shouldRepaintCaret(view)))
-        invalidateLocalCaretRect(m_previousCaretNode.get(), m_previousCaretRect);
-    if (newNode && (shouldRepaintCaret(*newNode) || shouldRepaintCaret(view)))
-        invalidateLocalCaretRect(newNode, newRect);
-    m_previousCaretNode = newNode;
-    m_previousCaretRect = newRect;
-    m_previousCaretVisibility = getCaretVisibility();
-}
-
-IntRect FrameCaret::absoluteCaretBounds()
-{
-    DCHECK_NE(m_frame->document()->lifecycle().state(), DocumentLifecycle::InPaintInvalidation);
-    m_frame->document()->updateStyleAndLayoutIgnorePendingStylesheets();
-    if (!isActive()) {
-        clearCaretRect();
-    }  else {
-        if (enclosingTextFormControl(m_caretPosition.position()))
-            updateCaretRect(PositionWithAffinity(isVisuallyEquivalentCandidate(m_caretPosition.position()) ? m_caretPosition.position() : Position(), m_caretPosition.affinity()));
-        else
-            updateCaretRect(createVisiblePosition(m_caretPosition));
+  if (!isActive()) {
+    clearCaretRect();
+  } else {
+    if (enclosingTextFormControl(caretPosition().position())) {
+      if (isVisuallyEquivalentCandidate(caretPosition().position()))
+        updateCaretRect(caretPosition());
+      else
+        updateCaretRect(createVisiblePosition(caretPosition()));
+    } else {
+      updateCaretRect(createVisiblePosition(caretPosition()));
     }
-    return absoluteBoundsForLocalRect(m_caretPosition.position().anchorNode(), localCaretRectWithoutUpdate());
+  }
+  return absoluteBoundsForLocalRect(caretPosition().position().anchorNode(),
+                                    localCaretRectWithoutUpdate());
 }
 
-void FrameCaret::setShouldShowBlockCursor(bool shouldShowBlockCursor)
-{
-    m_shouldShowBlockCursor = shouldShowBlockCursor;
+void FrameCaret::setShouldShowBlockCursor(bool shouldShowBlockCursor) {
+  m_shouldShowBlockCursor = shouldShowBlockCursor;
 
-    m_frame->document()->updateStyleAndLayoutIgnorePendingStylesheets();
+  m_frame->document()->updateStyleAndLayoutIgnorePendingStylesheets();
 
-    updateAppearance();
+  updateAppearance();
 }
 
-void FrameCaret::paintCaret(GraphicsContext& context, const LayoutPoint& paintOffset)
-{
-    if (!(isActive() && m_shouldPaintCaret))
-        return;
+void FrameCaret::paintCaret(GraphicsContext& context,
+                            const LayoutPoint& paintOffset) {
+  if (m_caretVisibility == CaretVisibility::Hidden)
+    return;
 
-    updateCaretRect(m_caretPosition);
-    CaretBase::paintCaret(m_caretPosition.position().anchorNode(), context, paintOffset, DisplayItem::Caret);
+  if (!(isActive() && m_shouldPaintCaret))
+    return;
+
+  updateCaretRect(caretPosition());
+  CaretBase::paintCaret(caretPosition().position().anchorNode(), context,
+                        paintOffset, DisplayItem::kCaret);
 }
 
-void FrameCaret::dataWillChange(const CharacterData& node)
-{
-    if (node == m_previousCaretNode) {
-        // This invalidation is eager, and intentionally uses stale state.
-        DisableCompositingQueryAsserts disabler;
-        invalidateLocalCaretRect(m_previousCaretNode.get(), m_previousCaretRect);
-    }
-}
-
-void FrameCaret::nodeWillBeRemoved(Node& node)
-{
-    if (node != m_previousCaretNode)
-        return;
-    // Hits in ManualTests/caret-paint-after-last-text-is-removed.html
+void FrameCaret::dataWillChange(const CharacterData& node) {
+  if (node == m_previousCaretNode) {
+    // This invalidation is eager, and intentionally uses stale state.
     DisableCompositingQueryAsserts disabler;
     invalidateLocalCaretRect(m_previousCaretNode.get(), m_previousCaretRect);
-    m_previousCaretNode = nullptr;
-    m_previousCaretRect = LayoutRect();
-    m_previousCaretVisibility = CaretVisibility::Hidden;
+  }
 }
 
-void FrameCaret::documentDetached()
-{
-    m_caretPosition = PositionWithAffinity();
-    m_caretBlinkTimer.stop();
-    m_previousCaretNode.clear();
+void FrameCaret::nodeWillBeRemoved(Node& node) {
+  if (node != m_previousCaretNode)
+    return;
+  // Hits in ManualTests/caret-paint-after-last-text-is-removed.html
+  DisableCompositingQueryAsserts disabler;
+  invalidateLocalCaretRect(m_previousCaretNode.get(), m_previousCaretRect);
+  m_previousCaretNode = nullptr;
+  m_previousCaretRect = LayoutRect();
+  m_previousCaretVisibility = CaretVisibility::Hidden;
 }
 
-bool FrameCaret::shouldBlinkCaret() const
-{
-    if (!caretIsVisible() || !isActive())
-        return false;
-
-    if (m_frame->settings() && m_frame->settings()->caretBrowsingEnabled())
-        return false;
-
-    Element* root = rootEditableElementOf(m_caretPosition.position());
-    if (!root)
-        return false;
-
-    Element* focusedElement = root->document().focusedElement();
-    if (!focusedElement)
-        return false;
-
-    return focusedElement->isShadowIncludingInclusiveAncestorOf(m_caretPosition.position().anchorNode());
+void FrameCaret::documentDetached() {
+  m_caretBlinkTimer.stop();
+  m_previousCaretNode.clear();
 }
 
-void FrameCaret::caretBlinkTimerFired(Timer<FrameCaret>*)
-{
-    DCHECK(caretIsVisible());
-    if (isCaretBlinkingSuspended() && m_shouldPaintCaret)
-        return;
-    m_shouldPaintCaret = !m_shouldPaintCaret;
-    setCaretRectNeedsUpdate();
+bool FrameCaret::shouldBlinkCaret() const {
+  if (m_caretVisibility != CaretVisibility::Visible || !isActive())
+    return false;
+
+  if (m_frame->settings() && m_frame->settings()->caretBrowsingEnabled())
+    return false;
+
+  Element* root = rootEditableElementOf(caretPosition().position());
+  if (!root)
+    return false;
+
+  Element* focusedElement = root->document().focusedElement();
+  if (!focusedElement)
+    return false;
+
+  return focusedElement->isShadowIncludingInclusiveAncestorOf(
+      caretPosition().position().anchorNode());
 }
 
-} // nemaspace blink
+void FrameCaret::caretBlinkTimerFired(TimerBase*) {
+  DCHECK_EQ(m_caretVisibility, CaretVisibility::Visible);
+  if (isCaretBlinkingSuspended() && m_shouldPaintCaret)
+    return;
+  m_shouldPaintCaret = !m_shouldPaintCaret;
+  setCaretRectNeedsUpdate();
+}
+
+}  // nemaspace blink

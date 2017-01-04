@@ -38,13 +38,13 @@ RUNTIME_FUNCTION(Runtime_ArrayBufferSliceImpl) {
 
   CHECK(!source.is_identical_to(target));
   size_t start = 0, target_length = 0;
-  CHECK(TryNumberToSize(isolate, *first, &start));
-  CHECK(TryNumberToSize(isolate, *new_length, &target_length));
-  CHECK(NumberToSize(isolate, target->byte_length()) >= target_length);
+  CHECK(TryNumberToSize(*first, &start));
+  CHECK(TryNumberToSize(*new_length, &target_length));
+  CHECK(NumberToSize(target->byte_length()) >= target_length);
 
   if (target_length == 0) return isolate->heap()->undefined_value();
 
-  size_t source_byte_length = NumberToSize(isolate, source->byte_length());
+  size_t source_byte_length = NumberToSize(source->byte_length());
   CHECK(start <= source_byte_length);
   CHECK(source_byte_length - start >= target_length);
   uint8_t* source_data = reinterpret_cast<uint8_t*>(source->backing_store());
@@ -66,7 +66,7 @@ RUNTIME_FUNCTION(Runtime_ArrayBufferNeuter) {
   CHECK(!array_buffer->is_shared());
   DCHECK(!array_buffer->is_external());
   void* backing_store = array_buffer->backing_store();
-  size_t byte_length = NumberToSize(isolate, array_buffer->byte_length());
+  size_t byte_length = NumberToSize(array_buffer->byte_length());
   array_buffer->set_is_external(true);
   isolate->heap()->UnregisterArrayBuffer(*array_buffer);
   array_buffer->Neuter();
@@ -117,13 +117,12 @@ RUNTIME_FUNCTION(Runtime_TypedArrayInitialize) {
 
   size_t byte_offset = 0;
   size_t byte_length = 0;
-  CHECK(TryNumberToSize(isolate, *byte_offset_object, &byte_offset));
-  CHECK(TryNumberToSize(isolate, *byte_length_object, &byte_length));
+  CHECK(TryNumberToSize(*byte_offset_object, &byte_offset));
+  CHECK(TryNumberToSize(*byte_length_object, &byte_length));
 
   if (maybe_buffer->IsJSArrayBuffer()) {
     Handle<JSArrayBuffer> buffer = Handle<JSArrayBuffer>::cast(maybe_buffer);
-    size_t array_buffer_byte_length =
-        NumberToSize(isolate, buffer->byte_length());
+    size_t array_buffer_byte_length = NumberToSize(buffer->byte_length());
     CHECK(byte_offset <= array_buffer_byte_length);
     CHECK(array_buffer_byte_length - byte_offset >= byte_length);
   } else {
@@ -201,10 +200,9 @@ RUNTIME_FUNCTION(Runtime_TypedArrayInitializeFromArrayLike) {
   size_t length = 0;
   if (source->IsJSTypedArray() &&
       JSTypedArray::cast(*source)->type() == array_type) {
-    length_obj = handle(JSTypedArray::cast(*source)->length(), isolate);
     length = JSTypedArray::cast(*source)->length_value();
   } else {
-    CHECK(TryNumberToSize(isolate, *length_obj, &length));
+    CHECK(TryNumberToSize(*length_obj, &length));
   }
 
   if ((length > static_cast<unsigned>(Smi::kMaxValue)) ||
@@ -247,6 +245,7 @@ RUNTIME_FUNCTION(Runtime_TypedArrayInitializeFromArrayLike) {
   Handle<Object> byte_length_obj(
       isolate->factory()->NewNumberFromSize(byte_length));
   holder->set_byte_length(*byte_length_obj);
+  length_obj = isolate->factory()->NewNumberFromSize(length);
   holder->set_length(*length_obj);
 
   Handle<FixedTypedArrayBase> elements =
@@ -261,8 +260,7 @@ RUNTIME_FUNCTION(Runtime_TypedArrayInitializeFromArrayLike) {
     if (typed_array->type() == holder->type()) {
       uint8_t* backing_store =
           static_cast<uint8_t*>(typed_array->GetBuffer()->backing_store());
-      size_t source_byte_offset =
-          NumberToSize(isolate, typed_array->byte_offset());
+      size_t source_byte_offset = NumberToSize(typed_array->byte_offset());
       memcpy(buffer->backing_store(), backing_store + source_byte_offset,
              byte_length);
       return isolate->heap()->true_value();
@@ -328,19 +326,19 @@ RUNTIME_FUNCTION(Runtime_TypedArraySetFastCases) {
   Handle<JSTypedArray> target(JSTypedArray::cast(*target_obj));
   Handle<JSTypedArray> source(JSTypedArray::cast(*source_obj));
   size_t offset = 0;
-  CHECK(TryNumberToSize(isolate, *offset_obj, &offset));
+  CHECK(TryNumberToSize(*offset_obj, &offset));
   size_t target_length = target->length_value();
   size_t source_length = source->length_value();
-  size_t target_byte_length = NumberToSize(isolate, target->byte_length());
-  size_t source_byte_length = NumberToSize(isolate, source->byte_length());
+  size_t target_byte_length = NumberToSize(target->byte_length());
+  size_t source_byte_length = NumberToSize(source->byte_length());
   if (offset > target_length || offset + source_length > target_length ||
       offset + source_length < offset) {  // overflow
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewRangeError(MessageTemplate::kTypedArraySetSourceTooLarge));
   }
 
-  size_t target_offset = NumberToSize(isolate, target->byte_offset());
-  size_t source_offset = NumberToSize(isolate, source->byte_offset());
+  size_t target_offset = NumberToSize(target->byte_offset());
+  size_t source_offset = NumberToSize(source->byte_offset());
   uint8_t* target_base =
       static_cast<uint8_t*>(target->GetBuffer()->backing_store()) +
       target_offset;
@@ -421,223 +419,5 @@ RUNTIME_FUNCTION(Runtime_IsSharedInteger32TypedArray) {
                                     obj->type() == kExternalInt32Array);
 }
 
-
-inline static bool NeedToFlipBytes(bool is_little_endian) {
-#ifdef V8_TARGET_LITTLE_ENDIAN
-  return !is_little_endian;
-#else
-  return is_little_endian;
-#endif
-}
-
-
-template <int n>
-inline void CopyBytes(uint8_t* target, uint8_t* source) {
-  for (int i = 0; i < n; i++) {
-    *(target++) = *(source++);
-  }
-}
-
-
-template <int n>
-inline void FlipBytes(uint8_t* target, uint8_t* source) {
-  source = source + (n - 1);
-  for (int i = 0; i < n; i++) {
-    *(target++) = *(source--);
-  }
-}
-
-
-template <typename T>
-inline static bool DataViewGetValue(Isolate* isolate,
-                                    Handle<JSDataView> data_view,
-                                    Handle<Object> byte_offset_obj,
-                                    bool is_little_endian, T* result) {
-  size_t byte_offset = 0;
-  if (!TryNumberToSize(isolate, *byte_offset_obj, &byte_offset)) {
-    return false;
-  }
-  Handle<JSArrayBuffer> buffer(JSArrayBuffer::cast(data_view->buffer()));
-
-  size_t data_view_byte_offset =
-      NumberToSize(isolate, data_view->byte_offset());
-  size_t data_view_byte_length =
-      NumberToSize(isolate, data_view->byte_length());
-  if (byte_offset + sizeof(T) > data_view_byte_length ||
-      byte_offset + sizeof(T) < byte_offset) {  // overflow
-    return false;
-  }
-
-  union Value {
-    T data;
-    uint8_t bytes[sizeof(T)];
-  };
-
-  Value value;
-  size_t buffer_offset = data_view_byte_offset + byte_offset;
-  DCHECK(NumberToSize(isolate, buffer->byte_length()) >=
-         buffer_offset + sizeof(T));
-  uint8_t* source =
-      static_cast<uint8_t*>(buffer->backing_store()) + buffer_offset;
-  if (NeedToFlipBytes(is_little_endian)) {
-    FlipBytes<sizeof(T)>(value.bytes, source);
-  } else {
-    CopyBytes<sizeof(T)>(value.bytes, source);
-  }
-  *result = value.data;
-  return true;
-}
-
-
-template <typename T>
-static bool DataViewSetValue(Isolate* isolate, Handle<JSDataView> data_view,
-                             Handle<Object> byte_offset_obj,
-                             bool is_little_endian, T data) {
-  size_t byte_offset = 0;
-  if (!TryNumberToSize(isolate, *byte_offset_obj, &byte_offset)) {
-    return false;
-  }
-  Handle<JSArrayBuffer> buffer(JSArrayBuffer::cast(data_view->buffer()));
-
-  size_t data_view_byte_offset =
-      NumberToSize(isolate, data_view->byte_offset());
-  size_t data_view_byte_length =
-      NumberToSize(isolate, data_view->byte_length());
-  if (byte_offset + sizeof(T) > data_view_byte_length ||
-      byte_offset + sizeof(T) < byte_offset) {  // overflow
-    return false;
-  }
-
-  union Value {
-    T data;
-    uint8_t bytes[sizeof(T)];
-  };
-
-  Value value;
-  value.data = data;
-  size_t buffer_offset = data_view_byte_offset + byte_offset;
-  DCHECK(NumberToSize(isolate, buffer->byte_length()) >=
-         buffer_offset + sizeof(T));
-  uint8_t* target =
-      static_cast<uint8_t*>(buffer->backing_store()) + buffer_offset;
-  if (NeedToFlipBytes(is_little_endian)) {
-    FlipBytes<sizeof(T)>(target, value.bytes);
-  } else {
-    CopyBytes<sizeof(T)>(target, value.bytes);
-  }
-  return true;
-}
-
-
-#define DATA_VIEW_GETTER(TypeName, Type, Converter)                        \
-  RUNTIME_FUNCTION(Runtime_DataViewGet##TypeName) {                        \
-    HandleScope scope(isolate);                                            \
-    DCHECK(args.length() == 3);                                            \
-    CONVERT_ARG_HANDLE_CHECKED(JSDataView, holder, 0);                     \
-    CONVERT_NUMBER_ARG_HANDLE_CHECKED(offset, 1);                          \
-    CONVERT_BOOLEAN_ARG_CHECKED(is_little_endian, 2);                      \
-    Type result;                                                           \
-    if (DataViewGetValue(isolate, holder, offset, is_little_endian,        \
-                         &result)) {                                       \
-      return *isolate->factory()->Converter(result);                       \
-    } else {                                                               \
-      THROW_NEW_ERROR_RETURN_FAILURE(                                      \
-          isolate,                                                         \
-          NewRangeError(MessageTemplate::kInvalidDataViewAccessorOffset)); \
-    }                                                                      \
-  }
-
-DATA_VIEW_GETTER(Uint8, uint8_t, NewNumberFromUint)
-DATA_VIEW_GETTER(Int8, int8_t, NewNumberFromInt)
-DATA_VIEW_GETTER(Uint16, uint16_t, NewNumberFromUint)
-DATA_VIEW_GETTER(Int16, int16_t, NewNumberFromInt)
-DATA_VIEW_GETTER(Uint32, uint32_t, NewNumberFromUint)
-DATA_VIEW_GETTER(Int32, int32_t, NewNumberFromInt)
-DATA_VIEW_GETTER(Float32, float, NewNumber)
-DATA_VIEW_GETTER(Float64, double, NewNumber)
-
-#undef DATA_VIEW_GETTER
-
-
-template <typename T>
-static T DataViewConvertValue(double value);
-
-
-template <>
-int8_t DataViewConvertValue<int8_t>(double value) {
-  return static_cast<int8_t>(DoubleToInt32(value));
-}
-
-
-template <>
-int16_t DataViewConvertValue<int16_t>(double value) {
-  return static_cast<int16_t>(DoubleToInt32(value));
-}
-
-
-template <>
-int32_t DataViewConvertValue<int32_t>(double value) {
-  return DoubleToInt32(value);
-}
-
-
-template <>
-uint8_t DataViewConvertValue<uint8_t>(double value) {
-  return static_cast<uint8_t>(DoubleToUint32(value));
-}
-
-
-template <>
-uint16_t DataViewConvertValue<uint16_t>(double value) {
-  return static_cast<uint16_t>(DoubleToUint32(value));
-}
-
-
-template <>
-uint32_t DataViewConvertValue<uint32_t>(double value) {
-  return DoubleToUint32(value);
-}
-
-
-template <>
-float DataViewConvertValue<float>(double value) {
-  return static_cast<float>(value);
-}
-
-
-template <>
-double DataViewConvertValue<double>(double value) {
-  return value;
-}
-
-
-#define DATA_VIEW_SETTER(TypeName, Type)                                   \
-  RUNTIME_FUNCTION(Runtime_DataViewSet##TypeName) {                        \
-    HandleScope scope(isolate);                                            \
-    DCHECK(args.length() == 4);                                            \
-    CONVERT_ARG_HANDLE_CHECKED(JSDataView, holder, 0);                     \
-    CONVERT_NUMBER_ARG_HANDLE_CHECKED(offset, 1);                          \
-    CONVERT_NUMBER_ARG_HANDLE_CHECKED(value, 2);                           \
-    CONVERT_BOOLEAN_ARG_CHECKED(is_little_endian, 3);                      \
-    Type v = DataViewConvertValue<Type>(value->Number());                  \
-    if (DataViewSetValue(isolate, holder, offset, is_little_endian, v)) {  \
-      return isolate->heap()->undefined_value();                           \
-    } else {                                                               \
-      THROW_NEW_ERROR_RETURN_FAILURE(                                      \
-          isolate,                                                         \
-          NewRangeError(MessageTemplate::kInvalidDataViewAccessorOffset)); \
-    }                                                                      \
-  }
-
-DATA_VIEW_SETTER(Uint8, uint8_t)
-DATA_VIEW_SETTER(Int8, int8_t)
-DATA_VIEW_SETTER(Uint16, uint16_t)
-DATA_VIEW_SETTER(Int16, int16_t)
-DATA_VIEW_SETTER(Uint32, uint32_t)
-DATA_VIEW_SETTER(Int32, int32_t)
-DATA_VIEW_SETTER(Float32, float)
-DATA_VIEW_SETTER(Float64, double)
-
-#undef DATA_VIEW_SETTER
 }  // namespace internal
 }  // namespace v8

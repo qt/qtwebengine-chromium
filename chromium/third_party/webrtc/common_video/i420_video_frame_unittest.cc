@@ -11,21 +11,15 @@
 #include <math.h>
 #include <string.h>
 
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/bind.h"
 #include "webrtc/test/fake_texture_frame.h"
 #include "webrtc/test/frame_utils.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/video_frame.h"
 
 namespace webrtc {
 
 namespace {
-
-int ExpectedSize(int plane_stride, int image_height, PlaneType type) {
-  if (type == kYPlane)
-    return plane_stride * image_height;
-  return plane_stride * ((image_height + 1) / 2);
-}
 
 rtc::scoped_refptr<I420Buffer> CreateGradient(int width, int height) {
   rtc::scoped_refptr<I420Buffer> buffer(
@@ -110,22 +104,6 @@ TEST(TestVideoFrame, WidthHeightValues) {
   EXPECT_EQ(789, frame.render_time_ms());
 }
 
-TEST(TestVideoFrame, SizeAllocation) {
-  VideoFrame frame;
-  frame. CreateEmptyFrame(10, 10, 12, 14, 220);
-  int height = frame.height();
-  int stride_y = frame.video_frame_buffer()->StrideY();
-  int stride_u = frame.video_frame_buffer()->StrideU();
-  int stride_v = frame.video_frame_buffer()->StrideV();
-  // Verify that allocated size was computed correctly.
-  EXPECT_EQ(ExpectedSize(stride_y, height, kYPlane),
-            frame.allocated_size(kYPlane));
-  EXPECT_EQ(ExpectedSize(stride_u, height, kUPlane),
-            frame.allocated_size(kUPlane));
-  EXPECT_EQ(ExpectedSize(stride_v, height, kVPlane),
-            frame.allocated_size(kVPlane));
-}
-
 TEST(TestVideoFrame, CopyFrame) {
   uint32_t timestamp = 1;
   int64_t ntp_time_ms = 2;
@@ -162,16 +140,14 @@ TEST(TestVideoFrame, CopyFrame) {
   EXPECT_EQ(kRotation, small_frame.rotation());
 
   // Frame of larger dimensions.
-  small_frame.CreateEmptyFrame(width, height,
-                               stride_y, stride_u, stride_v);
-  memset(small_frame.video_frame_buffer()->MutableDataY(), 1,
-         small_frame.allocated_size(kYPlane));
-  memset(small_frame.video_frame_buffer()->MutableDataU(), 2,
-         small_frame.allocated_size(kUPlane));
-  memset(small_frame.video_frame_buffer()->MutableDataV(), 3,
-         small_frame.allocated_size(kVPlane));
-  big_frame.CopyFrame(small_frame);
-  EXPECT_TRUE(test::FramesEqual(small_frame, big_frame));
+  rtc::scoped_refptr<I420Buffer> buffer =
+      I420Buffer::Create(width, height, stride_y, stride_u, stride_v);
+  memset(buffer->MutableDataY(), 1, width * height);
+  memset(buffer->MutableDataU(), 2, ((height + 1) / 2) * stride_u);
+  memset(buffer->MutableDataV(), 3, ((height + 1) / 2) * stride_u);
+  VideoFrame other_frame(buffer, 0, 0, webrtc::kVideoRotation_0);
+  big_frame.CopyFrame(other_frame);
+  EXPECT_TRUE(test::FramesEqual(other_frame, big_frame));
 }
 
 TEST(TestVideoFrame, ShallowCopy) {
@@ -256,11 +232,6 @@ TEST(TestVideoFrame, CopyBuffer) {
                                stride_uv, 8, 8));
   EXPECT_TRUE(test::EqualPlane(buffer_v, frame2.video_frame_buffer()->DataV(),
                                stride_uv, 8, 8));
-
-  // Compare size.
-  EXPECT_LE(kSizeY, frame2.allocated_size(kYPlane));
-  EXPECT_LE(kSizeUv, frame2.allocated_size(kUPlane));
-  EXPECT_LE(kSizeUv, frame2.allocated_size(kVPlane));
 }
 
 TEST(TestVideoFrame, FailToReuseAllocation) {

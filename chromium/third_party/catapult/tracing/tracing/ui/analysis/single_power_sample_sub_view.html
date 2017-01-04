@@ -5,27 +5,31 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
+<link rel="import" href="/tracing/base/iteration_helpers.html">
+<link rel="import" href="/tracing/base/unit.html">
 <link rel="import" href="/tracing/model/event_set.html">
 <link rel="import" href="/tracing/ui/analysis/analysis_sub_view.html">
 <link rel="import" href="/tracing/ui/base/table.html">
 <link rel="import" href="/tracing/value/ui/scalar_span.html">
-<link rel="import" href="/tracing/value/unit.html">
 
-<polymer-element name="tr-ui-a-power-sample-table">
+<dom-module id='tr-ui-a-power-sample-table'>
   <template>
     <style>
     :host {
       display: flex;
+      font-size: 12px;
     }
     </style>
     <tr-ui-b-table id="table"></tr-ui-b-table>
   </template>
-</polymer-element>
+</dom-module>
 
 <script>
 'use strict';
 
-Polymer('tr-ui-a-power-sample-table', {
+Polymer({
+  is: 'tr-ui-a-power-sample-table',
+
   ready: function() {
     this.$.table.tableColumns = [
       {
@@ -33,7 +37,7 @@ Polymer('tr-ui-a-power-sample-table', {
         width: '100px',
         value: function(row) {
           return tr.v.ui.createScalarSpan(row.start, {
-            unit: tr.v.Unit.byName.timeStampInMs
+            unit: tr.b.Unit.byName.timeStampInMs
           });
         }
       },
@@ -41,8 +45,8 @@ Polymer('tr-ui-a-power-sample-table', {
         title: 'Power',
         width: '100%',
         value: function(row) {
-          return tr.v.ui.createScalarSpan(row.power, {
-            unit: tr.v.Unit.byName.powerInWatts
+          return tr.v.ui.createScalarSpan(row.powerInW, {
+            unit: tr.b.Unit.byName.powerInWatts
           });
         }
       }
@@ -60,7 +64,7 @@ Polymer('tr-ui-a-power-sample-table', {
   },
 
   updateContents_: function() {
-    if (this.sample == undefined)
+    if (this.sample === undefined)
       this.$.table.tableRows = [];
     else
       this.$.table.tableRows = [this.sample];
@@ -69,8 +73,7 @@ Polymer('tr-ui-a-power-sample-table', {
 });
 </script>
 
-<polymer-element name="tr-ui-a-single-power-sample-sub-view"
-    extends="tr-ui-a-sub-view">
+<dom-module id='tr-ui-a-single-power-sample-sub-view'>
   <template>
     <style>
     :host { display: block; }
@@ -78,30 +81,40 @@ Polymer('tr-ui-a-power-sample-table', {
     <tr-ui-a-power-sample-table id="samplesTable">
     </tr-ui-a-power-sample-table>
   </template>
+</dom-module>
+<script>
+'use strict';
 
-  <script>
-  'use strict';
+Polymer({
+  is: 'tr-ui-a-single-power-sample-sub-view',
+  behaviors: [tr.ui.analysis.AnalysisSubView],
 
-  Polymer({
-    ready: function() {
-      this.currentSelection_ = undefined;
+  ready: function() {
+    this.currentSelection_ = undefined;
+  },
 
-    },
+  get selection() {
+    return this.currentSelection_;
+  },
 
-    get selection() {
-      return this.currentSelection_;
-    },
+  set selection(selection) {
+    this.currentSelection_ = selection;
+    this.updateContents_();
+  },
 
-    set selection(selection) {
-      this.currentSelection_ = selection;
-      this.updateContents_();
-    },
+  updateContents_: function() {
+    if (this.selection.length !== 1)
+      throw 'Cannot pass multiple samples to sample table.';
+    this.$.samplesTable.sample = tr.b.getOnlyElement(this.selection);
+  }
+});
 
-    updateContents_: function() {
-      if (this.selection.length != 1)
-        throw 'Cannot pass multiple samples to sample table.';
-      this.$.samplesTable.sample = this.selection[0];
-    }
-  });
-  </script>
-</polymer-element>
+tr.ui.analysis.AnalysisSubView.register(
+    'tr-ui-a-single-power-sample-sub-view',
+    tr.model.PowerSample,
+    {
+      multi: false,
+      title: 'Power Sample',
+    });
+
+</script>

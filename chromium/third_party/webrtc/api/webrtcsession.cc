@@ -17,13 +17,14 @@
 #include <utility>
 #include <vector>
 
+#include "webrtc/api/call/audio_sink.h"
 #include "webrtc/api/jsepicecandidate.h"
 #include "webrtc/api/jsepsessiondescription.h"
 #include "webrtc/api/peerconnectioninterface.h"
 #include "webrtc/api/sctputils.h"
 #include "webrtc/api/webrtcsessiondescriptionfactory.h"
-#include "webrtc/audio_sink.h"
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/bind.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
@@ -37,6 +38,10 @@
 #include "webrtc/pc/channel.h"
 #include "webrtc/pc/channelmanager.h"
 #include "webrtc/pc/mediasession.h"
+
+#ifdef HAVE_QUIC
+#include "webrtc/p2p/quic/quictransportchannel.h"
+#endif  // HAVE_QUIC
 
 using cricket::ContentInfo;
 using cricket::ContentInfos;
@@ -453,20 +458,21 @@ bool CheckForRemoteIceRestart(const SessionDescriptionInterface* old_desc,
   return false;
 }
 
-WebRtcSession::WebRtcSession(webrtc::MediaControllerInterface* media_controller,
-                             rtc::Thread* network_thread,
-                             rtc::Thread* worker_thread,
-                             rtc::Thread* signaling_thread,
-                             cricket::PortAllocator* port_allocator)
-    : worker_thread_(worker_thread),
+WebRtcSession::WebRtcSession(
+    webrtc::MediaControllerInterface* media_controller,
+    rtc::Thread* network_thread,
+    rtc::Thread* worker_thread,
+    rtc::Thread* signaling_thread,
+    cricket::PortAllocator* port_allocator,
+    std::unique_ptr<cricket::TransportController> transport_controller)
+    : network_thread_(network_thread),
+      worker_thread_(worker_thread),
       signaling_thread_(signaling_thread),
       // RFC 3264: The numeric value of the session id and version in the
       // o line MUST be representable with a "64 bit signed integer".
       // Due to this constraint session id |sid_| is max limited to LLONG_MAX.
       sid_(rtc::ToString(rtc::CreateRandomId64() & LLONG_MAX)),
-      transport_controller_(new cricket::TransportController(signaling_thread,
-                                                             network_thread,
-                                                             port_allocator)),
+      transport_controller_(std::move(transport_controller)),
       media_controller_(media_controller),
       channel_manager_(media_controller_->channel_manager()),
       ice_observer_(NULL),
@@ -487,6 +493,8 @@ WebRtcSession::WebRtcSession(webrtc::MediaControllerInterface* media_controller,
       this, &WebRtcSession::OnTransportControllerCandidatesGathered);
   transport_controller_->SignalCandidatesRemoved.connect(
       this, &WebRtcSession::OnTransportControllerCandidatesRemoved);
+  transport_controller_->SignalDtlsHandshakeError.connect(
+      this, &WebRtcSession::OnDtlsHandshakeError);
 }
 
 WebRtcSession::~WebRtcSession() {
@@ -505,6 +513,11 @@ WebRtcSession::~WebRtcSession() {
     SignalDataChannelDestroyed();
     channel_manager_->DestroyDataChannel(data_channel_.release());
   }
+#ifdef HAVE_QUIC
+  if (quic_data_transport_) {
+    quic_data_transport_.reset();
+  }
+#endif
   SignalDestroyed();
 
   LOG(LS_INFO) << "Session: " << id() << " is destroyed.";
@@ -545,7 +558,21 @@ bool WebRtcSession::Initialize(
   // PeerConnectionFactoryInterface::Options.
   if (rtc_configuration.enable_rtp_data_channel) {
     data_channel_type_ = cricket::DCT_RTP;
-  } else {
+  }
+#ifdef HAVE_QUIC
+  else if (rtc_configuration.enable_quic) {
+    // Use QUIC instead of DTLS when |enable_quic| is true.
+    data_channel_type_ = cricket::DCT_QUIC;
+    transport_controller_->use_quic();
+    if (dtls_enabled_) {
+      LOG(LS_INFO) << "Using QUIC instead of DTLS";
+    }
+    quic_data_transport_.reset(
+        new QuicDataTransport(signaling_thread(), worker_thread(),
+                              network_thread(), transport_controller_.get()));
+  }
+#endif  // HAVE_QUIC
+  else {
     // DTLS has to be enabled to use SCTP.
     if (!options.disable_sctp_data_channels && dtls_enabled_) {
       data_channel_type_ = cricket::DCT_SCTP;
@@ -1035,6 +1062,15 @@ bool WebRtcSession::EnableBundle(const cricket::ContentGroup& bundle) {
   const std::string& transport_name = *first_content_name;
   cricket::BaseChannel* first_channel = GetChannel(transport_name);
 
+#ifdef HAVE_QUIC
+  if (quic_data_transport_ &&
+      bundle.HasContentName(quic_data_transport_->content_name()) &&
+      quic_data_transport_->transport_name() != transport_name) {
+    LOG(LS_ERROR) << "Unable to BUNDLE " << quic_data_transport_->content_name()
+                  << " on " << transport_name << "with QUIC.";
+  }
+#endif
+
   auto maybe_set_transport = [this, bundle, transport_name,
                               first_channel](cricket::BaseChannel* ch) {
     if (!ch || !bundle.HasContentName(ch->content_name())) {
@@ -1128,14 +1164,29 @@ bool WebRtcSession::RemoveRemoteIceCandidates(
 
 cricket::IceConfig WebRtcSession::ParseIceConfig(
     const PeerConnectionInterface::RTCConfiguration& config) const {
+  cricket::ContinualGatheringPolicy gathering_policy;
+  // TODO(honghaiz): Add the third continual gathering policy in
+  // PeerConnectionInterface and map it to GATHER_CONTINUALLY_AND_RECOVER.
+  switch (config.continual_gathering_policy) {
+    case PeerConnectionInterface::GATHER_ONCE:
+      gathering_policy = cricket::GATHER_ONCE;
+      break;
+    case PeerConnectionInterface::GATHER_CONTINUALLY:
+      gathering_policy = cricket::GATHER_CONTINUALLY;
+      break;
+    default:
+      RTC_DCHECK(false);
+      gathering_policy = cricket::GATHER_ONCE;
+  }
   cricket::IceConfig ice_config;
   ice_config.receiving_timeout = config.ice_connection_receiving_timeout;
   ice_config.prioritize_most_likely_candidate_pairs =
       config.prioritize_most_likely_ice_candidate_pairs;
   ice_config.backup_connection_ping_interval =
       config.ice_backup_candidate_pair_ping_interval;
-  ice_config.gather_continually = (config.continual_gathering_policy ==
-                                   PeerConnectionInterface::GATHER_CONTINUALLY);
+  ice_config.continual_gathering_policy = gathering_policy;
+  ice_config.presume_writable_when_fully_relayed =
+      config.presume_writable_when_fully_relayed;
   return ice_config;
 }
 
@@ -1528,9 +1579,17 @@ void WebRtcSession::RemoveUnusedChannels(const SessionDescription* desc) {
 
   const cricket::ContentInfo* data_info =
       cricket::GetFirstDataContent(desc);
-  if ((!data_info || data_info->rejected) && data_channel_) {
-    SignalDataChannelDestroyed();
-    channel_manager_->DestroyDataChannel(data_channel_.release());
+  if (!data_info || data_info->rejected) {
+    if (data_channel_) {
+      SignalDataChannelDestroyed();
+      channel_manager_->DestroyDataChannel(data_channel_.release());
+    }
+#ifdef HAVE_QUIC
+    // Clean up the existing QuicDataTransport and its QuicTransportChannels.
+    if (quic_data_transport_) {
+      quic_data_transport_.reset();
+    }
+#endif
   }
 }
 
@@ -1644,6 +1703,15 @@ bool WebRtcSession::CreateVideoChannel(const cricket::ContentInfo* content,
 
 bool WebRtcSession::CreateDataChannel(const cricket::ContentInfo* content,
                                       const std::string* bundle_transport) {
+#ifdef HAVE_QUIC
+  if (data_channel_type_ == cricket::DCT_QUIC) {
+    RTC_DCHECK(transport_controller_->quic());
+    const std::string transport_name =
+        bundle_transport ? *bundle_transport : content->name;
+    quic_data_transport_->SetTransport(transport_name);
+    return true;
+  }
+#endif  // HAVE_QUIC
   bool sctp = (data_channel_type_ == cricket::DCT_SCTP);
   bool require_rtcp_mux =
       rtcp_mux_policy_ == PeerConnectionInterface::kRtcpMuxPolicyRequire;
@@ -1827,7 +1895,7 @@ bool WebRtcSession::ReadyToUseRemoteCandidate(
     const IceCandidateInterface* candidate,
     const SessionDescriptionInterface* remote_desc,
     bool* valid) {
-  *valid = true;;
+  *valid = true;
 
   const SessionDescriptionInterface* current_remote_desc =
       remote_desc ? remote_desc : remote_desc_.get();
@@ -1850,13 +1918,12 @@ bool WebRtcSession::ReadyToUseRemoteCandidate(
 
   cricket::ContentInfo content =
       current_remote_desc->description()->contents()[mediacontent_index];
-  cricket::BaseChannel* channel = GetChannel(content.name);
-  if (!channel) {
+
+  const std::string transport_name = GetTransportName(content.name);
+  if (transport_name.empty()) {
     return false;
   }
-
-  return transport_controller_->ReadyForRemoteCandidates(
-      channel->transport_name());
+  return transport_controller_->ReadyForRemoteCandidates(transport_name);
 }
 
 void WebRtcSession::OnTransportControllerGatheringState(
@@ -1993,4 +2060,27 @@ void WebRtcSession::OnSentPacket_w(const rtc::SentPacket& sent_packet) {
   media_controller_->call_w()->OnSentPacket(sent_packet);
 }
 
+const std::string WebRtcSession::GetTransportName(
+    const std::string& content_name) {
+  cricket::BaseChannel* channel = GetChannel(content_name);
+  if (!channel) {
+#ifdef HAVE_QUIC
+    if (data_channel_type_ == cricket::DCT_QUIC && quic_data_transport_ &&
+        content_name == quic_data_transport_->transport_name()) {
+      return quic_data_transport_->transport_name();
+    }
+#endif
+    // Return an empty string if failed to retrieve the transport name.
+    return "";
+  }
+  return channel->transport_name();
+}
+
+void WebRtcSession::OnDtlsHandshakeError(rtc::SSLHandshakeError error) {
+  if (metrics_observer_) {
+    metrics_observer_->IncrementEnumCounter(
+        webrtc::kEnumCounterDtlsHandshakeError, static_cast<int>(error),
+        static_cast<int>(rtc::SSLHandshakeError::MAX_VALUE));
+  }
+}
 }  // namespace webrtc

@@ -26,6 +26,7 @@ import json
 OS_ARCH_COMBOS = [
     ('linux', 'arm', 'linux32', [], 'S'),
     ('linux', 'aarch64', 'linux64', [], 'S'),
+    ('linux', 'ppc64le', 'ppc64le', [], 'S'),
     ('linux', 'x86', 'elf', ['-fPIC', '-DOPENSSL_IA32_SSE2'], 'S'),
     ('linux', 'x86_64', 'elf', [], 'S'),
     ('mac', 'x86', 'macosx', ['-fPIC', '-DOPENSSL_IA32_SSE2'], 'S'),
@@ -74,10 +75,12 @@ class Android(object):
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# This file is created by generate_build_files.py. Do not edit manually.
+
 """
 
   def ExtraFiles(self):
-    return ['android_compat_hacks.c', 'android_compat_keywrap.c']
+    return ['android_compat_keywrap.c']
 
   def PrintVariableSection(self, out, name, files):
     out.write('%s := \\\n' % name)
@@ -86,15 +89,84 @@ class Android(object):
     out.write('\n')
 
   def WriteFiles(self, files, asm_outputs):
+    # New Android.bp format
+    with open('sources.bp', 'w+') as blueprint:
+      blueprint.write(self.header.replace('#', '//'))
+
+      blueprint.write('cc_defaults {\n')
+      blueprint.write('    name: "libcrypto_sources",\n')
+      blueprint.write('    srcs: [\n')
+      for f in sorted(files['crypto'] + self.ExtraFiles()):
+        blueprint.write('        "%s",\n' % f)
+      blueprint.write('    ],\n')
+      blueprint.write('    target: {\n')
+
+      for ((osname, arch), asm_files) in asm_outputs:
+        if osname != 'linux':
+          continue
+        if arch == 'aarch64':
+          arch = 'arm64'
+
+        blueprint.write('        android_%s: {\n' % arch)
+        blueprint.write('            srcs: [\n')
+        for f in sorted(asm_files):
+          blueprint.write('                "%s",\n' % f)
+        blueprint.write('            ],\n')
+        blueprint.write('        },\n')
+
+        if arch == 'x86' or arch == 'x86_64':
+          blueprint.write('        linux_%s: {\n' % arch)
+          blueprint.write('            srcs: [\n')
+          for f in sorted(asm_files):
+            blueprint.write('                "%s",\n' % f)
+          blueprint.write('            ],\n')
+          blueprint.write('        },\n')
+
+      blueprint.write('    },\n')
+      blueprint.write('}\n\n')
+
+      blueprint.write('cc_defaults {\n')
+      blueprint.write('    name: "libssl_sources",\n')
+      blueprint.write('    srcs: [\n')
+      for f in sorted(files['ssl']):
+        blueprint.write('        "%s",\n' % f)
+      blueprint.write('    ],\n')
+      blueprint.write('}\n\n')
+
+      blueprint.write('cc_defaults {\n')
+      blueprint.write('    name: "bssl_sources",\n')
+      blueprint.write('    srcs: [\n')
+      for f in sorted(files['tool']):
+        blueprint.write('        "%s",\n' % f)
+      blueprint.write('    ],\n')
+      blueprint.write('}\n\n')
+
+      blueprint.write('cc_defaults {\n')
+      blueprint.write('    name: "boringssl_test_support_sources",\n')
+      blueprint.write('    srcs: [\n')
+      for f in sorted(files['test_support']):
+        blueprint.write('        "%s",\n' % f)
+      blueprint.write('    ],\n')
+      blueprint.write('}\n\n')
+
+      blueprint.write('cc_defaults {\n')
+      blueprint.write('    name: "boringssl_tests_sources",\n')
+      blueprint.write('    srcs: [\n')
+      for f in sorted(files['test']):
+        blueprint.write('        "%s",\n' % f)
+      blueprint.write('    ],\n')
+      blueprint.write('}\n')
+
+    # Legacy Android.mk format, only used by Trusty in new branches
     with open('sources.mk', 'w+') as makefile:
       makefile.write(self.header)
 
       crypto_files = files['crypto'] + self.ExtraFiles()
       self.PrintVariableSection(makefile, 'crypto_sources', crypto_files)
-      self.PrintVariableSection(makefile, 'ssl_sources', files['ssl'])
-      self.PrintVariableSection(makefile, 'tool_sources', files['tool'])
 
       for ((osname, arch), asm_files) in asm_outputs:
+        if osname != 'linux':
+          continue
         self.PrintVariableSection(
             makefile, '%s_%s_sources' % (osname, arch), asm_files)
 
@@ -142,6 +214,7 @@ class Bazel(object):
           out, 'crypto_internal_headers', files['crypto_internal_headers'])
       self.PrintVariableSection(out, 'crypto_sources', files['crypto'])
       self.PrintVariableSection(out, 'tool_sources', files['tool'])
+      self.PrintVariableSection(out, 'tool_headers', files['tool_headers'])
 
       for ((osname, arch), asm_files) in asm_outputs:
         self.PrintVariableSection(
@@ -151,9 +224,10 @@ class Bazel(object):
       out.write(self.header)
 
       out.write('test_support_sources = [\n')
-      for filename in (files['test_support'] +
-                       files['crypto_internal_headers'] +
-                       files['ssl_internal_headers']):
+      for filename in sorted(files['test_support'] +
+                             files['test_support_headers'] +
+                             files['crypto_internal_headers'] +
+                             files['ssl_internal_headers']):
         if os.path.basename(filename) == 'malloc.cc':
           continue
         out.write('    "%s",\n' % PathOf(filename))
@@ -251,8 +325,12 @@ class GN(object):
     with open('BUILD.generated.gni', 'w+') as out:
       out.write(self.header)
 
-      self.PrintVariableSection(out, 'crypto_sources', files['crypto'])
-      self.PrintVariableSection(out, 'ssl_sources', files['ssl'])
+      self.PrintVariableSection(out, 'crypto_sources',
+                                files['crypto'] + files['crypto_headers'] +
+                                files['crypto_internal_headers'])
+      self.PrintVariableSection(out, 'ssl_sources',
+                                files['ssl'] + files['ssl_headers'] +
+                                files['ssl_internal_headers'])
 
       for ((osname, arch), asm_files) in asm_outputs:
         self.PrintVariableSection(
@@ -267,7 +345,8 @@ class GN(object):
       out.write(self.header)
 
       self.PrintVariableSection(out, '_test_support_sources',
-                                files['test_support'])
+                                files['test_support'] +
+                                files['test_support_headers'])
       out.write('\n')
 
       out.write('template("create_tests") {\n')
@@ -321,10 +400,12 @@ class GYP(object):
     with open('boringssl.gypi', 'w+') as gypi:
       gypi.write(self.header + '{\n  \'variables\': {\n')
 
-      self.PrintVariableSection(
-          gypi, 'boringssl_ssl_sources', files['ssl'])
-      self.PrintVariableSection(
-          gypi, 'boringssl_crypto_sources', files['crypto'])
+      self.PrintVariableSection(gypi, 'boringssl_ssl_sources',
+                                files['ssl'] + files['ssl_headers'] +
+                                files['ssl_internal_headers'])
+      self.PrintVariableSection(gypi, 'boringssl_crypto_sources',
+                                files['crypto'] + files['crypto_headers'] +
+                                files['crypto_internal_headers'])
 
       for ((osname, arch), asm_files) in asm_outputs:
         self.PrintVariableSection(gypi, 'boringssl_%s_%s_sources' %
@@ -358,8 +439,9 @@ class GYP(object):
 
       test_gypi.write('  ],\n  \'variables\': {\n')
 
-      self.PrintVariableSection(
-          test_gypi, 'boringssl_test_support_sources', files['test_support'])
+      self.PrintVariableSection(test_gypi, 'boringssl_test_support_sources',
+                                files['test_support'] +
+                                files['test_support_headers'])
 
       test_gypi.write('    \'boringssl_test_targets\': [\n')
 
@@ -487,10 +569,8 @@ def PerlAsm(output_filename, input_filename, perlasm_style, extra_args):
   base_dir = os.path.dirname(output_filename)
   if not os.path.isdir(base_dir):
     os.makedirs(base_dir)
-  output = subprocess.check_output(
-      ['perl', input_filename, perlasm_style] + extra_args)
-  with open(output_filename, 'w+') as out_file:
-    out_file.write(output)
+  subprocess.check_call(
+      ['perl', input_filename, perlasm_style] + extra_args + [output_filename])
 
 
 def ArchForAsmFilename(filename):
@@ -507,6 +587,8 @@ def ArchForAsmFilename(filename):
     return ['aarch64']
   elif 'arm' in filename:
     return ['arm']
+  elif 'ppc' in filename:
+    return ['ppc64le']
   else:
     raise ValueError('Unknown arch for asm filename: ' + filename)
 
@@ -547,6 +629,7 @@ def main(platforms):
   crypto_c_files = FindCFiles(os.path.join('src', 'crypto'), NoTests)
   ssl_c_files = FindCFiles(os.path.join('src', 'ssl'), NoTests)
   tool_c_files = FindCFiles(os.path.join('src', 'tool'), NoTests)
+  tool_h_files = FindHeaderFiles(os.path.join('src', 'tool'), AllFiles)
 
   # Generate err_data.c
   with open('err_data.c', 'w+') as err_data:
@@ -610,8 +693,10 @@ def main(platforms):
       'ssl_headers': ssl_h_files,
       'ssl_internal_headers': ssl_internal_h_files,
       'tool': tool_c_files,
+      'tool_headers': tool_h_files,
       'test': test_c_files,
-      'test_support': test_support_h_files + test_support_c_files,
+      'test_support': test_support_c_files,
+      'test_support_headers': test_support_h_files,
       'tests': tests,
   }
 

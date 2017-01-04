@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/web_contents_sizer.h"
@@ -57,15 +58,24 @@ OffscreenTab* OffscreenTabsOwner::OpenNewTab(
   if (tabs_.size() >= kMaxOffscreenTabsPerExtension)
     return nullptr;  // Maximum number of offscreen tabs reached.
 
-  tabs_.push_back(new OffscreenTab(this));
+  // OffscreenTab cannot be created with MakeUnique<OffscreenTab> since the
+  // constructor is protected. So create it separately, and then move it to
+  // |tabs_| below.
+  std::unique_ptr<OffscreenTab> offscreen_tab(new OffscreenTab(this));
+  tabs_.push_back(std::move(offscreen_tab));
   tabs_.back()->Start(start_url, initial_size, optional_presentation_id);
-  return tabs_.back();
+  return tabs_.back().get();
 }
 
 void OffscreenTabsOwner::DestroyTab(OffscreenTab* tab) {
-  const auto it = std::find(tabs_.begin(), tabs_.end(), tab);
-  if (it != tabs_.end())
-    tabs_.erase(it);
+  for (std::vector<std::unique_ptr<OffscreenTab>>::iterator iter =
+           tabs_.begin();
+       iter != tabs_.end(); ++iter) {
+    if (iter->get() == tab) {
+      tabs_.erase(iter);
+      break;
+    }
+  }
 }
 
 OffscreenTab::OffscreenTab(OffscreenTabsOwner* owner)
@@ -98,7 +108,8 @@ void OffscreenTab::Start(const GURL& start_url,
 
   // Set initial size, if specified.
   if (!initial_size.IsEmpty())
-    ResizeWebContents(offscreen_tab_web_contents_.get(), initial_size);
+    ResizeWebContents(offscreen_tab_web_contents_.get(),
+                      gfx::Rect(initial_size));
 
   // Mute audio output.  When tab capture starts, the audio will be
   // automatically unmuted, but will be captured into the MediaStream.
@@ -227,7 +238,7 @@ void OffscreenTab::EnterFullscreenModeForTab(WebContents* contents,
       contents->GetRenderWidgetHostView()->GetViewBounds().size();
   if (contents->GetCapturerCount() >= 0 &&
       !contents->GetPreferredSize().IsEmpty()) {
-    ResizeWebContents(contents, contents->GetPreferredSize());
+    ResizeWebContents(contents, gfx::Rect(contents->GetPreferredSize()));
   }
 }
 
@@ -237,7 +248,7 @@ void OffscreenTab::ExitFullscreenModeForTab(WebContents* contents) {
   if (!in_fullscreen_mode())
     return;
 
-  ResizeWebContents(contents, non_fullscreen_size_);
+  ResizeWebContents(contents, gfx::Rect(non_fullscreen_size_));
   non_fullscreen_size_ = gfx::Size();
 }
 

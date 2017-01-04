@@ -7,11 +7,14 @@
 #include <string>
 #include <vector>
 
-#include "net/quic/crypto/quic_crypto_client_config.h"
-#include "net/quic/quic_chromium_client_session.h"
-#include "net/quic/quic_clock.h"
-#include "net/quic/quic_http_stream.h"
-#include "net/quic/quic_stream_factory.h"
+#include "net/cert/x509_certificate.h"
+#include "net/quic/chromium/quic_chromium_client_session.h"
+#include "net/quic/chromium/quic_http_stream.h"
+#include "net/quic/chromium/quic_stream_factory.h"
+#include "net/quic/core/crypto/quic_crypto_client_config.h"
+#include "net/quic/core/quic_clock.h"
+#include "net/test/cert_test_util.h"
+#include "net/test/test_data_directory.h"
 
 using std::string;
 using std::vector;
@@ -31,6 +34,12 @@ QuicCryptoClientConfig* QuicStreamFactoryPeer::GetCryptoConfig(
 bool QuicStreamFactoryPeer::HasActiveSession(QuicStreamFactory* factory,
                                              const QuicServerId& server_id) {
   return factory->HasActiveSession(server_id);
+}
+
+bool QuicStreamFactoryPeer::HasActiveCertVerifierJob(
+    QuicStreamFactory* factory,
+    const QuicServerId& server_id) {
+  return factory->HasActiveCertVerifierJob(server_id);
 }
 
 QuicChromiumClientSession* QuicStreamFactoryPeer::GetActiveSession(
@@ -62,15 +71,13 @@ void QuicStreamFactoryPeer::SetTaskRunner(QuicStreamFactory* factory,
   factory->task_runner_ = task_runner;
 }
 
-int QuicStreamFactoryPeer::GetNumberOfLossyConnections(
-    QuicStreamFactory* factory,
-    uint16_t port) {
-  return factory->number_of_lossy_connections_[port];
+QuicTime::Delta QuicStreamFactoryPeer::GetPingTimeout(
+    QuicStreamFactory* factory) {
+  return factory->ping_timeout_;
 }
 
-bool QuicStreamFactoryPeer::IsQuicDisabled(QuicStreamFactory* factory,
-                                           uint16_t port) {
-  return factory->IsQuicDisabled(port);
+bool QuicStreamFactoryPeer::IsQuicDisabled(QuicStreamFactory* factory) {
+  return factory->IsQuicDisabled();
 }
 
 bool QuicStreamFactoryPeer::GetDelayTcpRace(QuicStreamFactory* factory) {
@@ -80,6 +87,25 @@ bool QuicStreamFactoryPeer::GetDelayTcpRace(QuicStreamFactory* factory) {
 void QuicStreamFactoryPeer::SetDelayTcpRace(QuicStreamFactory* factory,
                                             bool delay_tcp_race) {
   factory->delay_tcp_race_ = delay_tcp_race;
+}
+
+bool QuicStreamFactoryPeer::GetRaceCertVerification(
+    QuicStreamFactory* factory) {
+  return factory->race_cert_verification_;
+}
+
+void QuicStreamFactoryPeer::SetRaceCertVerification(
+    QuicStreamFactory* factory,
+    bool race_cert_verification) {
+  factory->race_cert_verification_ = race_cert_verification;
+}
+
+QuicAsyncStatus QuicStreamFactoryPeer::StartCertVerifyJob(
+    QuicStreamFactory* factory,
+    const QuicServerId& server_id,
+    int cert_verify_flags,
+    const NetLogWithSource& net_log) {
+  return factory->StartCertVerifyJob(server_id, cert_verify_flags, net_log);
 }
 
 void QuicStreamFactoryPeer::SetYieldAfterPackets(QuicStreamFactory* factory,
@@ -99,16 +125,6 @@ size_t QuicStreamFactoryPeer::GetNumberOfActiveJobs(
   return (factory->active_jobs_[server_id]).size();
 }
 
-int QuicStreamFactoryPeer::GetNumTimeoutsWithOpenStreams(
-    QuicStreamFactory* factory) {
-  return factory->num_timeouts_with_open_streams_;
-}
-
-int QuicStreamFactoryPeer::GetNumPublicResetsPostHandshake(
-    QuicStreamFactory* factory) {
-  return factory->num_public_resets_post_handshake_;
-}
-
 void QuicStreamFactoryPeer::MaybeInitialize(QuicStreamFactory* factory) {
   factory->MaybeInitialize();
 }
@@ -119,8 +135,8 @@ bool QuicStreamFactoryPeer::HasInitializedData(QuicStreamFactory* factory) {
 
 bool QuicStreamFactoryPeer::SupportsQuicAtStartUp(QuicStreamFactory* factory,
                                                   HostPortPair host_port_pair) {
-  return ContainsKey(factory->quic_supported_servers_at_startup_,
-                     host_port_pair);
+  return base::ContainsKey(factory->quic_supported_servers_at_startup_,
+                           host_port_pair);
 }
 
 bool QuicStreamFactoryPeer::CryptoConfigCacheIsEmpty(
@@ -149,16 +165,23 @@ void QuicStreamFactoryPeer::CacheDummyServerConfig(
   string server_config(reinterpret_cast<const char*>(&scfg), sizeof(scfg));
   string source_address_token("test_source_address_token");
   string signature("test_signature");
-  string test_cert("test_cert");
+
   vector<string> certs;
-  certs.push_back(test_cert);
+  // Load a certificate that is valid for *.example.org
+  scoped_refptr<X509Certificate> cert(
+      ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem"));
+  DCHECK(cert);
+  std::string der_bytes;
+  DCHECK(X509Certificate::GetDEREncoded(cert->os_cert_handle(), &der_bytes));
+  certs.push_back(der_bytes);
 
   QuicCryptoClientConfig* crypto_config = &factory->crypto_config_;
   QuicCryptoClientConfig::CachedState* cached =
       crypto_config->LookupOrCreate(quic_server_id);
   QuicClock clock;
   cached->Initialize(server_config, source_address_token, certs, "", "",
-                     signature, clock.WallNow());
+                     signature, clock.WallNow(), QuicWallTime::Zero());
+  DCHECK(!cached->certs().empty());
 }
 
 QuicClientPushPromiseIndex* QuicStreamFactoryPeer::GetPushPromiseIndex(

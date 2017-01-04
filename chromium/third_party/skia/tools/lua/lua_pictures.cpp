@@ -39,8 +39,8 @@ DEFINE_string2(tailFunc, s, "", "Optional lua function to call at end");
 DEFINE_bool2(quiet, q, false, "Silence all non-error related output");
 
 static sk_sp<SkPicture> load_picture(const char path[]) {
-    SkAutoTDelete<SkStream> stream(SkStream::NewFromFile(path));
-    if (stream.get()) {
+    std::unique_ptr<SkStream> stream = SkStream::MakeFromFile(path);
+    if (stream) {
         return SkPicture::MakeFromStream(stream.get());
     }
     return nullptr;
@@ -85,9 +85,9 @@ int tool_main(int argc, char** argv) {
     SkLua L(summary);
 
     for (int i = 0; i < FLAGS_luaFile.count(); ++i) {
-        SkAutoDataUnref data(SkData::NewFromFileName(FLAGS_luaFile[i]));
-        if (nullptr == data.get()) {
-            data.reset(SkData::NewEmpty());
+        sk_sp<SkData> data(SkData::MakeFromFileName(FLAGS_luaFile[i]));
+        if (!data) {
+            data = SkData::MakeEmpty();
         }
         if (!FLAGS_quiet) {
             SkDebugf("loading %s...\n", FLAGS_luaFile[i]);

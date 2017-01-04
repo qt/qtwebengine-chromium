@@ -4,7 +4,6 @@
 
 import("//mojo/public/tools/bindings/mojom.gni")
 
-# GYP version: chrome/chrome_web_ui_mojo_bindings.gyp:webui_mojo_bindings
 mojom("mojo_bindings") {
   sources = [
     "site_engagement.mojom",
@@ -13,4 +12,6 @@ mojom("mojo_bindings") {
   public_deps = [
     "//url/mojo:url_mojom_gurl",
   ]
+
+  use_new_wrapper_types = false
 }

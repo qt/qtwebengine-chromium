@@ -8,7 +8,7 @@
 #include <stddef.h>
 
 #include "base/macros.h"
-#include "net/quic/quic_protocol.h"
+#include "net/quic/core/quic_protocol.h"
 
 namespace net {
 
@@ -21,6 +21,8 @@ class QuicStreamSequencerPeer {
   static size_t GetNumBufferedBytes(QuicStreamSequencer* sequencer);
 
   static QuicStreamOffset GetCloseOffset(QuicStreamSequencer* sequencer);
+
+  static bool IsUnderlyingBufferAllocated(QuicStreamSequencer* sequencer);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicStreamSequencerPeer);

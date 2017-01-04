@@ -5,22 +5,42 @@
 #include "core/css/CSSURIValue.h"
 
 #include "core/css/CSSMarkup.h"
+#include "core/dom/Document.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
+#include "core/fetch/FetchRequest.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-CSSURIValue::CSSURIValue(const String& str)
-    : CSSValue(URIClass)
-    , m_string(str) { }
+CSSURIValue::CSSURIValue(const String& urlString)
+    : CSSValue(URIClass), m_url(urlString), m_loadRequested(false) {}
 
-String CSSURIValue::customCSSText() const
-{
-    return serializeURI(m_string);
+CSSURIValue::~CSSURIValue() {}
+
+DocumentResource* CSSURIValue::load(Document& document) const {
+  if (!m_loadRequested) {
+    m_loadRequested = true;
+
+    FetchRequest request(ResourceRequest(document.completeURL(m_url)),
+                         FetchInitiatorTypeNames::css);
+    m_document =
+        DocumentResource::fetchSVGDocument(request, document.fetcher());
+  }
+  return m_document;
 }
 
-DEFINE_TRACE_AFTER_DISPATCH(CSSURIValue)
-{
-    CSSValue::traceAfterDispatch(visitor);
+String CSSURIValue::customCSSText() const {
+  return serializeURI(m_url);
 }
 
-} // namespace blink
+bool CSSURIValue::equals(const CSSURIValue& other) const {
+  return m_url == other.m_url;
+}
+
+DEFINE_TRACE_AFTER_DISPATCH(CSSURIValue) {
+  visitor->trace(m_document);
+  CSSValue::traceAfterDispatch(visitor);
+}
+
+}  // namespace blink

@@ -65,9 +65,7 @@
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
 #include "ipc/ipc_descriptors.h"
-#include "ipc/ipc_switches.h"
 #include "media/base/media.h"
-#include "sandbox/win/src/sandbox_types.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
 
@@ -81,6 +79,7 @@
 
 #include "base/trace_event/trace_event_etw_export_win.h"
 #include "base/win/process_startup_helper.h"
+#include "sandbox/win/src/sandbox_types.h"
 #include "ui/base/win/atl_module.h"
 #include "ui/display/win/dpi.h"
 #elif defined(OS_MACOSX)
@@ -121,9 +120,6 @@ extern int PpapiBrokerMain(const MainFunctionParams&);
 #endif
 extern int RendererMain(const content::MainFunctionParams&);
 extern int UtilityMain(const MainFunctionParams&);
-#if defined(OS_ANDROID)
-extern int DownloadMain(const MainFunctionParams&);
-#endif
 }  // namespace content
 
 namespace content {
@@ -391,9 +387,6 @@ int RunNamedProcessTypeMain(
     { switches::kUtilityProcess,     UtilityMain },
     { switches::kRendererProcess,    RendererMain },
     { switches::kGpuProcess,         GpuMain },
-#if defined(OS_ANDROID)
-    { switches::kDownloadProcess,    DownloadMain},
-#endif
 #endif  // !CHROME_MULTIPLE_DLL_BROWSER
   };
 
@@ -467,10 +460,11 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // See note at the initialization of ExitManager, below; basically,
     // only Android builds have the ctor/dtor handlers set up to use
     // TRACE_EVENT right away.
-    TRACE_EVENT0("startup,benchmark", "ContentMainRunnerImpl::Initialize");
+    TRACE_EVENT0("startup,benchmark,rail", "ContentMainRunnerImpl::Initialize");
 #endif  // OS_ANDROID
 
     base::GlobalDescriptors* g_fds = base::GlobalDescriptors::GetInstance();
+    ALLOW_UNUSED_LOCAL(g_fds);
 
     // On Android,
     // - setlocale() is not supported.
@@ -624,7 +618,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // Android tracing started at the beginning of the method.
     // Other OSes have to wait till we get here in order for all the memory
     // management setup to be completed.
-    TRACE_EVENT0("startup,benchmark", "ContentMainRunnerImpl::Initialize");
+    TRACE_EVENT0("startup,benchmark,rail", "ContentMainRunnerImpl::Initialize");
 #endif  // !OS_ANDROID
 
 #if defined(OS_MACOSX)
@@ -678,7 +672,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterPathProvider();
     RegisterContentSchemes(true);
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && (ICU_UTIL_DATA_IMPL == ICU_UTIL_DATA_FILE)
     int icudata_fd = g_fds->MaybeGet(kAndroidICUDataDescriptor);
     if (icudata_fd != -1) {
       auto icudata_region = g_fds->GetRegion(kAndroidICUDataDescriptor);
@@ -689,7 +683,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     }
 #else
     CHECK(base::i18n::InitializeICU());
-#endif  // OS_ANDROID
+#endif  // OS_ANDROID && (ICU_UTIL_DATA_IMPL == ICU_UTIL_DATA_FILE)
 
     base::StatisticsRecorder::Initialize();
 

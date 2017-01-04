@@ -4,10 +4,12 @@
 
 #include "gpu/ipc/client/gpu_memory_buffer_impl_io_surface.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "gpu/ipc/common/gpu_memory_buffer_support.h"
 #include "ui/gfx/buffer_format_util.h"
+#include "ui/gfx/icc_profile.h"
 #include "ui/gfx/mac/io_surface.h"
 
 namespace gpu {
@@ -107,6 +109,22 @@ void GpuMemoryBufferImplIOSurface::Unmap() {
 int GpuMemoryBufferImplIOSurface::stride(size_t plane) const {
   DCHECK_LT(plane, gfx::NumberOfPlanesForBufferFormat(format_));
   return IOSurfaceGetBytesPerRowOfPlane(io_surface_, plane);
+}
+
+void GpuMemoryBufferImplIOSurface::SetColorSpaceForScanout(
+    const gfx::ColorSpace& color_space) {
+  if (color_space == color_space_)
+    return;
+  color_space_ = color_space;
+  std::vector<char> icc_profile =
+      gfx::ICCProfile::FromColorSpace(color_space).GetData();
+  if (icc_profile.size()) {
+    base::ScopedCFTypeRef<CFDataRef> cf_data_icc_profile(CFDataCreate(
+        nullptr, reinterpret_cast<const UInt8*>(icc_profile.data()),
+        icc_profile.size()));
+    IOSurfaceSetValue(io_surface_, CFSTR("IOSurfaceColorSpace"),
+                      cf_data_icc_profile);
+  }
 }
 
 gfx::GpuMemoryBufferHandle GpuMemoryBufferImplIOSurface::GetHandle() const {

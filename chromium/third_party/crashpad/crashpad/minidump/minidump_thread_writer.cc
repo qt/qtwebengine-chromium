@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "minidump/minidump_thread_writer.h"
+
 #include <utility>
 
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "minidump/minidump_context_writer.h"
 #include "minidump/minidump_memory_writer.h"
-#include "minidump/minidump_thread_writer.h"
 #include "snapshot/memory_snapshot.h"
 #include "snapshot/thread_snapshot.h"
 #include "util/file/file_writer.h"
@@ -50,8 +51,8 @@ void MinidumpThreadWriter::InitializeFromSnapshot(
 
   const MemorySnapshot* stack_snapshot = thread_snapshot->Stack();
   if (stack_snapshot && stack_snapshot->Size() > 0) {
-    std::unique_ptr<MinidumpMemoryWriter> stack =
-        MinidumpMemoryWriter::CreateFromSnapshot(stack_snapshot);
+    std::unique_ptr<SnapshotMinidumpMemoryWriter> stack(
+        new SnapshotMinidumpMemoryWriter(stack_snapshot));
     SetStack(std::move(stack));
   }
 
@@ -67,7 +68,7 @@ const MINIDUMP_THREAD* MinidumpThreadWriter::MinidumpThread() const {
 }
 
 void MinidumpThreadWriter::SetStack(
-    std::unique_ptr<MinidumpMemoryWriter> stack) {
+    std::unique_ptr<SnapshotMinidumpMemoryWriter> stack) {
   DCHECK_EQ(state(), kStateMutable);
 
   stack_ = std::move(stack);
@@ -171,7 +172,7 @@ void MinidumpThreadListWriter::AddThread(
   DCHECK_EQ(state(), kStateMutable);
 
   if (memory_list_writer_) {
-    MinidumpMemoryWriter* stack = thread->Stack();
+    SnapshotMinidumpMemoryWriter* stack = thread->Stack();
     if (stack) {
       memory_list_writer_->AddExtraMemory(stack);
     }

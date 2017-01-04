@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/memory/memory_coordinator_client_registry.h"
 #include "base/time/clock.h"
 #include "base/time/default_clock.h"
 
@@ -15,10 +16,15 @@ SSLClientSessionCache::SSLClientSessionCache(const Config& config)
     : clock_(new base::DefaultClock),
       config_(config),
       cache_(config.max_entries),
-      lookups_since_flush_(0) {}
+      lookups_since_flush_(0) {
+  memory_pressure_listener_.reset(new base::MemoryPressureListener(base::Bind(
+      &SSLClientSessionCache::OnMemoryPressure, base::Unretained(this))));
+  base::MemoryCoordinatorClientRegistry::GetInstance()->Register(this);
+}
 
 SSLClientSessionCache::~SSLClientSessionCache() {
   Flush();
+  base::MemoryCoordinatorClientRegistry::GetInstance()->Unregister(this);
 }
 
 size_t SSLClientSessionCache::size() const {
@@ -42,7 +48,10 @@ ScopedSSL_SESSION SSLClientSessionCache::Lookup(const std::string& cache_key) {
     cache_.Erase(iter);
     return nullptr;
   }
-  return ScopedSSL_SESSION(SSL_SESSION_up_ref(iter->second->session.get()));
+
+  SSL_SESSION* session = iter->second->session.get();
+  SSL_SESSION_up_ref(session);
+  return ScopedSSL_SESSION(session);
 }
 
 void SSLClientSessionCache::Insert(const std::string& cache_key,
@@ -51,7 +60,8 @@ void SSLClientSessionCache::Insert(const std::string& cache_key,
 
   // Make a new entry.
   std::unique_ptr<CacheEntry> entry(new CacheEntry);
-  entry->session.reset(SSL_SESSION_up_ref(session));
+  SSL_SESSION_up_ref(session);
+  entry->session.reset(session);
   entry->creation_time = clock_->Now();
 
   // Takes ownership.
@@ -88,6 +98,38 @@ void SSLClientSessionCache::FlushExpiredSessions() {
     } else {
       ++iter;
     }
+  }
+}
+
+void SSLClientSessionCache::OnMemoryPressure(
+    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+  switch (memory_pressure_level) {
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
+      break;
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+      FlushExpiredSessions();
+      break;
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
+      Flush();
+      break;
+  }
+}
+
+void SSLClientSessionCache::OnMemoryStateChange(base::MemoryState state) {
+  // TODO(hajimehoshi): When the state changes, adjust the sizes of the caches
+  // to reduce the limits. SSLClientSessionCache doesn't have the ability to
+  // limit at present.
+  switch (state) {
+    case base::MemoryState::NORMAL:
+      break;
+    case base::MemoryState::THROTTLED:
+      Flush();
+      break;
+    case base::MemoryState::SUSPENDED:
+    // Note: Not supported at present. Fall through.
+    case base::MemoryState::UNKNOWN:
+      NOTREACHED();
+      break;
   }
 }
 

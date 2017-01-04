@@ -83,8 +83,32 @@ OPENSSL_EXPORT RSA *RSA_new_method(const ENGINE *engine);
  * reference count drops to zero. */
 OPENSSL_EXPORT void RSA_free(RSA *rsa);
 
-/* RSA_up_ref increments the reference count of |rsa|. */
+/* RSA_up_ref increments the reference count of |rsa| and returns one. */
 OPENSSL_EXPORT int RSA_up_ref(RSA *rsa);
+
+
+/* Properties. */
+
+/* RSA_get0_key sets |*out_n|, |*out_e|, and |*out_d|, if non-NULL, to |rsa|'s
+ * modulus, public exponent, and private exponent, respectively. If |rsa| is a
+ * public key, the private exponent will be set to NULL. */
+OPENSSL_EXPORT void RSA_get0_key(const RSA *rsa, const BIGNUM **out_n,
+                                 const BIGNUM **out_e, const BIGNUM **out_d);
+
+/* RSA_get0_factors sets |*out_p| and |*out_q|, if non-NULL, to |rsa|'s prime
+ * factors. If |rsa| is a public key, they will be set to NULL. If |rsa| is a
+ * multi-prime key, only the first two prime factors will be reported. */
+OPENSSL_EXPORT void RSA_get0_factors(const RSA *rsa, const BIGNUM **out_p,
+                                     const BIGNUM **out_q);
+
+/* RSA_get0_crt_params sets |*out_dmp1|, |*out_dmq1|, and |*out_iqmp|, if
+ * non-NULL, to |rsa|'s CRT parameters. These are d (mod p-1), d (mod q-1) and
+ * q^-1 (mod p), respectively. If |rsa| is a public key, each parameter will be
+ * set to NULL. If |rsa| is a multi-prime key, only the CRT parameters for the
+ * first two primes will be reported. */
+OPENSSL_EXPORT void RSA_get0_crt_params(const RSA *rsa, const BIGNUM **out_dmp1,
+                                        const BIGNUM **out_dmq1,
+                                        const BIGNUM **out_iqmp);
 
 
 /* Key generation. */
@@ -612,6 +636,17 @@ struct rsa_st {
 
 #if defined(__cplusplus)
 }  /* extern C */
+
+extern "C++" {
+
+namespace bssl {
+
+BORINGSSL_MAKE_DELETER(RSA, RSA_free)
+
+}  // namespace bssl
+
+}  /* extern C++ */
+
 #endif
 
 #define RSA_R_BAD_ENCODING 100

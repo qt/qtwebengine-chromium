@@ -7,13 +7,13 @@
 #ifndef CORE_FPDFDOC_CPVT_GENERATEAP_H_
 #define CORE_FPDFDOC_CPVT_GENERATEAP_H_
 
+#include "core/fpdfdoc/cpdf_defaultappearance.h"
+#include "core/fpdfdoc/cpdf_variabletext.h"
 #include "core/fpdfdoc/cpvt_color.h"
 #include "core/fpdfdoc/cpvt_dash.h"
-#include "core/fpdfdoc/include/cpdf_variabletext.h"
-#include "core/fpdfdoc/include/fpdf_doc.h"
-#include "core/fxcrt/include/fx_coordinates.h"
-#include "core/fxcrt/include/fx_string.h"
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/fx_system.h"
 
 class CPDF_Dictionary;
 class CPDF_Document;
@@ -21,16 +21,31 @@ class IPVT_FontMap;
 
 struct CPVT_WordRange;
 
-FX_BOOL FPDF_GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict);
+bool FPDF_GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict);
 
 class CPVT_GenerateAP {
  public:
-  static FX_BOOL GenerateTextFieldAP(CPDF_Document* pDoc,
-                                     CPDF_Dictionary* pAnnotDict);
-  static FX_BOOL GenerateComboBoxAP(CPDF_Document* pDoc,
-                                    CPDF_Dictionary* pAnnotDict);
-  static FX_BOOL GenerateListBoxAP(CPDF_Document* pDoc,
-                                   CPDF_Dictionary* pAnnotDict);
+  static bool GenerateCircleAP(CPDF_Document* pDoc,
+                               CPDF_Dictionary* pAnnotDict);
+  static bool GenerateComboBoxAP(CPDF_Document* pDoc,
+                                 CPDF_Dictionary* pAnnotDict);
+  static bool GenerateHighlightAP(CPDF_Document* pDoc,
+                                  CPDF_Dictionary* pAnnotDict);
+  static bool GenerateInkAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict);
+  static bool GenerateListBoxAP(CPDF_Document* pDoc,
+                                CPDF_Dictionary* pAnnotDict);
+  static bool GeneratePopupAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict);
+  static bool GenerateSquareAP(CPDF_Document* pDoc,
+                               CPDF_Dictionary* pAnnotDict);
+  static bool GenerateSquigglyAP(CPDF_Document* pDoc,
+                                 CPDF_Dictionary* pAnnotDict);
+  static bool GenerateStrikeOutAP(CPDF_Document* pDoc,
+                                  CPDF_Dictionary* pAnnotDict);
+  static bool GenerateTextAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict);
+  static bool GenerateTextFieldAP(CPDF_Document* pDoc,
+                                  CPDF_Dictionary* pAnnotDict);
+  static bool GenerateUnderlineAP(CPDF_Document* pDoc,
+                                  CPDF_Dictionary* pAnnotDict);
   static CFX_ByteString GenerateEditAP(IPVT_FontMap* pFontMap,
                                        CPDF_VariableText::Iterator* pIterator,
                                        const CFX_FloatPoint& ptOffset,
@@ -44,7 +59,7 @@ class CPVT_GenerateAP {
                                          BorderStyle nStyle,
                                          const CPVT_Dash& dash);
   static CFX_ByteString GenerateColorAP(const CPVT_Color& color,
-                                        const FX_BOOL& bFillOrStroke);
+                                        PaintOperation nOperation);
 
   static CFX_ByteString GetPDFWordString(IPVT_FontMap* pFontMap,
                                          int32_t nFontIndex,

@@ -13,6 +13,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/hash.h"
+#include "base/strings/string_piece.h"
 #include "components/safe_browsing_db/safebrowsing.pb.h"
 #include "net/url_request/url_request_status.h"
 #include "url/gurl.h"
@@ -22,6 +23,23 @@ class HttpRequestHeaders;
 }  // namespace net
 
 namespace safe_browsing {
+
+// The size of the hash prefix, in bytes. It should be between 4 to 32 (full
+// hash).
+typedef size_t PrefixSize;
+
+// The minimum expected size (in bytes) of a hash-prefix.
+const PrefixSize kMinHashPrefixLength = 4;
+
+// The maximum expected size (in bytes) of a hash-prefix. This represents the
+// length of a SHA256 hash.
+const PrefixSize kMaxHashPrefixLength = 32;
+
+// A hash prefix sent by the SafeBrowsing PVer4 service.
+typedef std::string HashPrefix;
+
+// A full SHA256 hash.
+typedef HashPrefix FullHash;
 
 typedef FetchThreatListUpdatesRequest::ListUpdateRequest ListUpdateRequest;
 typedef FetchThreatListUpdatesResponse::ListUpdateResponse ListUpdateResponse;
@@ -45,45 +63,104 @@ struct V4ProtocolConfig {
   ~V4ProtocolConfig();
 };
 
+// Different types of threats that SafeBrowsing protects against. This is the
+// type that's returned to the clients of SafeBrowsing in Chromium.
+enum SBThreatType {
+  // No threat at all.
+  SB_THREAT_TYPE_SAFE,
+
+  // The URL is being used for phishing.
+  SB_THREAT_TYPE_URL_PHISHING,
+
+  // The URL hosts malware.
+  SB_THREAT_TYPE_URL_MALWARE,
+
+  // The URL hosts unwanted programs.
+  SB_THREAT_TYPE_URL_UNWANTED,
+
+  // The download URL is malware.
+  SB_THREAT_TYPE_BINARY_MALWARE_URL,
+
+  // Url detected by the client-side phishing model.  Note that unlike the
+  // above values, this does not correspond to a downloaded list.
+  SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL,
+
+  // The Chrome extension or app (given by its ID) is malware.
+  SB_THREAT_TYPE_EXTENSION,
+
+  // Url detected by the client-side malware IP list. This IP list is part
+  // of the client side detection model.
+  SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL,
+
+  // Url leads to a blacklisted resource script. Note that no warnings should be
+  // shown on this threat type, but an incident report might be sent.
+  SB_THREAT_TYPE_BLACKLISTED_RESOURCE,
+
+  // Url abuses a permission API.
+  SB_THREAT_TYPE_API_ABUSE,
+};
+
 // The information required to uniquely identify each list the client is
 // interested in maintaining and downloading from the SafeBrowsing servers.
 // For example, for digests of Malware binaries on Windows:
 // platform_type = WINDOWS,
 // threat_entry_type = EXECUTABLE,
 // threat_type = MALWARE
-struct UpdateListIdentifier {
+struct ListIdentifier {
  public:
-  PlatformType platform_type;
-  ThreatEntryType threat_entry_type;
-  ThreatType threat_type;
+  ListIdentifier(PlatformType, ThreatEntryType, ThreatType);
+  explicit ListIdentifier(const ListUpdateResponse&);
 
-  UpdateListIdentifier(PlatformType, ThreatEntryType, ThreatType);
-  explicit UpdateListIdentifier(const ListUpdateResponse&);
-
-  bool operator==(const UpdateListIdentifier& other) const;
-  bool operator!=(const UpdateListIdentifier& other) const;
+  bool operator==(const ListIdentifier& other) const;
+  bool operator!=(const ListIdentifier& other) const;
   size_t hash() const;
 
+  PlatformType platform_type() const { return platform_type_; }
+  ThreatEntryType threat_entry_type() const { return threat_entry_type_; }
+  ThreatType threat_type() const { return threat_type_; }
+
  private:
-  UpdateListIdentifier();
+  PlatformType platform_type_;
+  ThreatEntryType threat_entry_type_;
+  ThreatType threat_type_;
+
+  ListIdentifier();
 };
 
-std::ostream& operator<<(std::ostream& os, const UpdateListIdentifier& id);
+std::ostream& operator<<(std::ostream& os, const ListIdentifier& id);
 
-// The set of interesting lists and ASCII filenames for their hash prefix
-// stores. The stores are created inside the user-data directory.
-// For instance, the UpdateListIdentifier could be for URL expressions for UwS
-// on Windows platform, and the corresponding file on disk could be named:
-// "uws_win_url.store"
-// TODO(vakh): Find the canonical place where these are defined and update the
-// comment to point to that place.
-typedef base::hash_map<UpdateListIdentifier, std::string> StoreFileNameMap;
+PlatformType GetCurrentPlatformType();
+const ListIdentifier GetChromeUrlApiId();
+const ListIdentifier GetUrlMalwareId();
+const ListIdentifier GetUrlSocEngId();
 
 // Represents the state of each store.
-typedef base::hash_map<UpdateListIdentifier, std::string> StoreStateMap;
+typedef base::hash_map<ListIdentifier, std::string> StoreStateMap;
 
 // Sever response, parsed in vector form.
 typedef std::vector<std::unique_ptr<ListUpdateResponse>> ParsedServerResponse;
+
+// TODO(vakh): Consider using a std::pair for this.
+// Holds the hash prefix and the store that it matched in.
+struct StoreAndHashPrefix {
+ public:
+  ListIdentifier list_id;
+  HashPrefix hash_prefix;
+
+  explicit StoreAndHashPrefix(ListIdentifier, HashPrefix);
+  ~StoreAndHashPrefix();
+
+  bool operator==(const StoreAndHashPrefix& other) const;
+  bool operator!=(const StoreAndHashPrefix& other) const;
+  size_t hash() const;
+
+ private:
+  StoreAndHashPrefix();
+};
+
+// Used to track the hash prefix and the store in which a full hash's prefix
+// matched.
+typedef std::vector<StoreAndHashPrefix> StoreAndHashPrefixes;
 
 // Enumerate failures for histogramming purposes.  DO NOT CHANGE THE
 // ORDERING OF THESE VALUES.
@@ -117,14 +194,29 @@ enum V4OperationResult {
 // A class that provides static methods related to the Pver4 protocol.
 class V4ProtocolManagerUtil {
  public:
-  // Record HTTP response code when there's no error in fetching an HTTP
-  // request, and the error code, when there is.
-  // |metric_name| is the name of the UMA metric to record the response code or
-  // error code against, |status| represents the status of the HTTP request, and
-  // |response code| represents the HTTP response code received from the server.
-  static void RecordHttpResponseOrErrorCode(const char* metric_name,
-                                            const net::URLRequestStatus& status,
-                                            int response_code);
+  // Canonicalizes url as per Google Safe Browsing Specification.
+  // See: https://developers.google.com/safe-browsing/v4/urls-hashing
+  static void CanonicalizeUrl(const GURL& url,
+                              std::string* canonicalized_hostname,
+                              std::string* canonicalized_path,
+                              std::string* canonicalized_query);
+
+  // This method returns the host suffix combinations from the hostname in the
+  // URL, as described here:
+  // https://developers.google.com/safe-browsing/v4/urls-hashing
+  static void GenerateHostVariantsToCheck(const std::string& host,
+                                          std::vector<std::string>* hosts);
+
+  // This method returns the path prefix combinations from the path in the
+  // URL, as described here:
+  // https://developers.google.com/safe-browsing/v4/urls-hashing
+  static void GeneratePathVariantsToCheck(const std::string& path,
+                                          const std::string& query,
+                                          std::vector<std::string>* paths);
+
+  // Given a URL, returns all the patterns we need to check.
+  static void GeneratePatternsToCheck(const GURL& url,
+                                      std::vector<std::string>* urls);
 
   // Generates a Pver4 request URL and sets the appropriate header values.
   // |request_base64| is the serialized request protocol buffer encoded in
@@ -145,12 +237,39 @@ class V4ProtocolManagerUtil {
   static base::TimeDelta GetNextBackOffInterval(size_t* error_count,
                                                 size_t* multiplier);
 
+  // Record HTTP response code when there's no error in fetching an HTTP
+  // request, and the error code, when there is.
+  // |metric_name| is the name of the UMA metric to record the response code or
+  // error code against, |status| represents the status of the HTTP request, and
+  // |response code| represents the HTTP response code received from the server.
+  static void RecordHttpResponseOrErrorCode(const char* metric_name,
+                                            const net::URLRequestStatus& status,
+                                            int response_code);
+
+  // Generate the set of FullHashes to check for |url|.
+  static void UrlToFullHashes(const GURL& url,
+                              std::unordered_set<FullHash>* full_hashes);
+
+  static bool FullHashToHashPrefix(const FullHash& full_hash,
+                                   PrefixSize prefix_size,
+                                   HashPrefix* hash_prefix);
+
+  static bool FullHashToSmallestHashPrefix(const FullHash& full_hash,
+                                           HashPrefix* hash_prefix);
+
+  static bool FullHashMatchesHashPrefix(const FullHash& full_hash,
+                                        const HashPrefix& hash_prefix);
+
+  static void SetClientInfoFromConfig(ClientInfo* client_info,
+                                      const V4ProtocolConfig& config);
+
  private:
   V4ProtocolManagerUtil(){};
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingV4ProtocolManagerUtilTest,
-                           TestBackOffLogic);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingV4ProtocolManagerUtilTest,
+  FRIEND_TEST_ALL_PREFIXES(V4ProtocolManagerUtilTest, TestBackOffLogic);
+  FRIEND_TEST_ALL_PREFIXES(V4ProtocolManagerUtilTest,
                            TestGetRequestUrlAndUpdateHeaders);
+  FRIEND_TEST_ALL_PREFIXES(V4ProtocolManagerUtilTest, UrlParsing);
+  FRIEND_TEST_ALL_PREFIXES(V4ProtocolManagerUtilTest, CanonicalizeUrl);
 
   // Composes a URL using |prefix|, |method| (e.g.: encodedFullHashes).
   // |request_base64|, |client_id|, |version| and |key_param|. |prefix|
@@ -163,16 +282,51 @@ class V4ProtocolManagerUtil {
   // Sets the HTTP headers expected by a standard PVer4 request.
   static void UpdateHeaders(net::HttpRequestHeaders* headers);
 
+  // Given a URL, returns all the hosts we need to check.  They are returned
+  // in order of size (i.e. b.c is first, then a.b.c).
+  static void GenerateHostsToCheck(const GURL& url,
+                                   std::vector<std::string>* hosts);
+
+  // Given a URL, returns all the paths we need to check.
+  static void GeneratePathsToCheck(const GURL& url,
+                                   std::vector<std::string>* paths);
+
+  static std::string RemoveConsecutiveChars(base::StringPiece str,
+                                            const char c);
+
   DISALLOW_COPY_AND_ASSIGN(V4ProtocolManagerUtil);
 };
+
+typedef std::unordered_set<ListIdentifier> StoresToCheck;
 
 }  // namespace safe_browsing
 
 namespace std {
 template <>
-struct hash<safe_browsing::UpdateListIdentifier> {
-  std::size_t operator()(const safe_browsing::UpdateListIdentifier& s) const {
-    return s.hash();
+struct hash<safe_browsing::PlatformType> {
+  std::size_t operator()(const safe_browsing::PlatformType& p) const {
+    return std::hash<unsigned int>()(p);
+  }
+};
+
+template <>
+struct hash<safe_browsing::ThreatEntryType> {
+  std::size_t operator()(const safe_browsing::ThreatEntryType& tet) const {
+    return std::hash<unsigned int>()(tet);
+  }
+};
+
+template <>
+struct hash<safe_browsing::ThreatType> {
+  std::size_t operator()(const safe_browsing::ThreatType& tt) const {
+    return std::hash<unsigned int>()(tt);
+  }
+};
+
+template <>
+struct hash<safe_browsing::ListIdentifier> {
+  std::size_t operator()(const safe_browsing::ListIdentifier& id) const {
+    return id.hash();
   }
 };
 }

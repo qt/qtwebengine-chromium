@@ -15,7 +15,6 @@
 #include "build/build_config.h"
 #include "content/renderer/media/audio_renderer_sink_cache.h"
 #include "media/audio/audio_device_description.h"
-#include "media/base/audio_hardware_config.h"
 #include "media/base/audio_renderer_mixer.h"
 #include "media/base/audio_renderer_mixer_input.h"
 
@@ -73,9 +72,13 @@ media::AudioParameters GetMixerOutputParams(
 
   // Force to 16-bit output for now since we know that works everywhere;
   // ChromeOS does not support other bit depths.
-  return media::AudioParameters(input_params.format(),
+  media::AudioParameters params(input_params.format(),
                                 input_params.channel_layout(),
                                 output_sample_rate, 16, output_buffer_size);
+
+  // Specify the latency info to be passed to the browser side.
+  params.set_latency_tag(latency);
+  return params;
 }
 
 void LogMixerUmaHistogram(media::AudioLatency::LatencyType latency, int value) {
@@ -202,7 +205,7 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
       mixer_output_params, sink, base::Bind(LogMixerUmaHistogram, latency));
   AudioRendererMixerReference mixer_reference = {mixer, 1, sink.get()};
   mixers_[key] = mixer_reference;
-  DVLOG(1) << __FUNCTION__ << " mixer: " << mixer << " latency: " << latency
+  DVLOG(1) << __func__ << " mixer: " << mixer << " latency: " << latency
            << "\n input: " << input_params.AsHumanReadableString()
            << "\noutput: " << mixer_output_params.AsHumanReadableString();
   return mixer;

@@ -4,7 +4,7 @@
 
 #include "core/dom/StyleChangeReason.h"
 
-#include "platform/TraceEvent.h"
+#include "platform/tracing/TraceEvent.h"
 #include "wtf/StaticConstructors.h"
 
 namespace blink {
@@ -19,7 +19,6 @@ const char ControlValue[] = "ControlValue";
 const char Control[] = "Control";
 const char DeclarativeContent[] = "Extension declarativeContent.css";
 const char DesignMode[] = "DesignMode";
-const char Drag[] = "Drag";
 const char FontSizeChange[] = "FontSizeChange";
 const char Fonts[] = "Fonts";
 const char FullScreen[] = "FullScreen";
@@ -29,44 +28,46 @@ const char Inspector[] = "Inspector";
 const char Language[] = "Language";
 const char LinkColorChange[] = "LinkColorChange";
 const char PlatformColorChange[] = "PlatformColorChange";
-const char PropagateInheritChangeToDistributedNodes[] = "PropagateInheritChangeToDistributedNodes";
+const char PropagateInheritChangeToDistributedNodes[] =
+    "PropagateInheritChangeToDistributedNodes";
+const char PropertyRegistration[] = "PropertyRegistration";
+const char PropertyUnregistration[] = "PropertyUnregistration";
 const char PseudoClass[] = "PseudoClass";
 const char SVGContainerSizeChange[] = "SVGContainerSizeChange";
 const char SVGCursor[] = "SVGCursor";
 const char SVGFilterLayerUpdate[] = "SVGFilterLayerUpdate";
 const char Settings[] = "Settings";
 const char Shadow[] = "Shadow";
-const char SiblingSelector[] = "SiblingSelector";
 const char StyleInvalidator[] = "StyleInvalidator";
 const char StyleSheetChange[] = "StyleSheetChange";
-const char Validate[] = "Validate";
 const char ViewportUnits[] = "ViewportUnits";
 const char VisitedLink[] = "VisitedLink";
 const char VisuallyOrdered[] = "VisuallyOrdered";
 const char WritingModeChange[] = "WritingModeChange";
 const char Zoom[] = "Zoom";
-} // namespace StyleChangeReason
+}  // namespace StyleChangeReason
 
 namespace StyleChangeExtraData {
 DEFINE_GLOBAL(AtomicString, Active)
 DEFINE_GLOBAL(AtomicString, Disabled)
+DEFINE_GLOBAL(AtomicString, Drag)
 DEFINE_GLOBAL(AtomicString, Focus)
 DEFINE_GLOBAL(AtomicString, Hover)
 DEFINE_GLOBAL(AtomicString, Past)
 DEFINE_GLOBAL(AtomicString, Unresolved)
 
-void init()
-{
-    DCHECK(isMainThread());
+void init() {
+  DCHECK(isMainThread());
 
-    new (NotNull, (void*)&Active) AtomicString(":active");
-    new (NotNull, (void*)&Disabled) AtomicString(":disabled");
-    new (NotNull, (void*)&Focus) AtomicString(":focus");
-    new (NotNull, (void*)&Hover) AtomicString(":hover");
-    new (NotNull, (void*)&Past) AtomicString(":past");
-    new (NotNull, (void*)&Unresolved) AtomicString(":unresolved");
+  new (NotNull, (void*)&Active) AtomicString(":active");
+  new (NotNull, (void*)&Disabled) AtomicString(":disabled");
+  new (NotNull, (void*)&Drag) AtomicString(":-webkit-drag");
+  new (NotNull, (void*)&Focus) AtomicString(":focus");
+  new (NotNull, (void*)&Hover) AtomicString(":hover");
+  new (NotNull, (void*)&Past) AtomicString(":past");
+  new (NotNull, (void*)&Unresolved) AtomicString(":unresolved");
 }
 
-} // namespace StyleChangeExtraData
+}  // namespace StyleChangeExtraData
 
-} // namespace blink
+}  // namespace blink

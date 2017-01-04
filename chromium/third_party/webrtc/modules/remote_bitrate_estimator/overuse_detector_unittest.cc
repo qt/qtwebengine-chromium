@@ -15,8 +15,6 @@
 #include <cstdlib>
 #include <memory>
 
-#include "testing/gtest/include/gtest/gtest.h"
-
 #include "webrtc/base/random.h"
 #include "webrtc/base/rate_statistics.h"
 #include "webrtc/common_types.h"
@@ -24,6 +22,7 @@
 #include "webrtc/modules/remote_bitrate_estimator/overuse_detector.h"
 #include "webrtc/modules/remote_bitrate_estimator/overuse_estimator.h"
 #include "webrtc/test/field_trial.h"
+#include "webrtc/test/gtest.h"
 
 namespace webrtc {
 namespace testing {
@@ -95,15 +94,12 @@ class OveruseDetectorTest : public ::testing::Test {
     uint32_t timestamp_delta;
     int64_t time_delta;
     int size_delta;
-    if (inter_arrival_->ComputeDeltas(rtp_timestamp,
-                                      receive_time_ms,
-                                      packet_size,
-                                      &timestamp_delta,
-                                      &time_delta,
-                                      &size_delta)) {
+    if (inter_arrival_->ComputeDeltas(
+            rtp_timestamp, receive_time_ms, receive_time_ms, packet_size,
+            &timestamp_delta, &time_delta, &size_delta)) {
       double timestamp_delta_ms = timestamp_delta / 90.0;
       overuse_estimator_->Update(time_delta, timestamp_delta_ms, size_delta,
-                                 overuse_detector_->State());
+                                 overuse_detector_->State(), receive_time_ms);
       overuse_detector_->Detect(
           overuse_estimator_->offset(), timestamp_delta_ms,
           overuse_estimator_->num_of_deltas(), receive_time_ms);
@@ -334,7 +330,7 @@ TEST_F(OveruseDetectorTest, MAYBE_LowGaussianVariance30Kbit3fps) {
   EXPECT_EQ(0, unique_overuse);
   int frames_until_overuse = RunUntilOveruse(packets_per_frame, packet_size,
       frame_duration_ms, sigma_ms, drift_per_frame_ms);
-  EXPECT_EQ(21, frames_until_overuse);
+  EXPECT_EQ(20, frames_until_overuse);
 }
 
 TEST_F(OveruseDetectorTest, LowGaussianVarianceFastDrift30Kbit3fps) {
@@ -396,7 +392,7 @@ TEST_F(OveruseDetectorTest, MAYBE_LowGaussianVariance100Kbit5fps) {
   EXPECT_EQ(0, unique_overuse);
   int frames_until_overuse = RunUntilOveruse(packets_per_frame, packet_size,
       frame_duration_ms, sigma_ms, drift_per_frame_ms);
-  EXPECT_EQ(21, frames_until_overuse);
+  EXPECT_EQ(20, frames_until_overuse);
 }
 
 #if defined(WEBRTC_ANDROID)
@@ -436,7 +432,7 @@ TEST_F(OveruseDetectorTest, MAYBE_LowGaussianVariance100Kbit10fps) {
   EXPECT_EQ(0, unique_overuse);
   int frames_until_overuse = RunUntilOveruse(packets_per_frame, packet_size,
       frame_duration_ms, sigma_ms, drift_per_frame_ms);
-  EXPECT_EQ(21, frames_until_overuse);
+  EXPECT_EQ(20, frames_until_overuse);
 }
 
 #if defined(WEBRTC_ANDROID)

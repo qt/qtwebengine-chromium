@@ -7,11 +7,11 @@
 #ifndef FPDFSDK_PDFWINDOW_PWL_UTILS_H_
 #define FPDFSDK_PDFWINDOW_PWL_UTILS_H_
 
-#include "core/fpdfdoc/include/cpvt_wordrange.h"
+#include "core/fpdfdoc/cpvt_wordrange.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
 
+class CFX_Edit;
 class CFX_PathData;
-class IFX_Edit;
 
 struct CPWL_Color;
 
@@ -76,7 +76,7 @@ T PWL_MAX(const T& i, const T& j) {
 
 class CPWL_Point : public CFX_FloatPoint {
  public:
-  CPWL_Point() : CFX_FloatPoint(0.0f, 0.0f) {}
+  CPWL_Point() {}
   CPWL_Point(FX_FLOAT fx, FX_FLOAT fy) : CFX_FloatPoint(fx, fy) {}
   CPWL_Point(const CPWL_Point& point) : CFX_FloatPoint(point.x, point.y) {}
 };
@@ -166,13 +166,13 @@ class CPWL_Utils {
                                                 int32_t nStyle,
                                                 const CPWL_Color& crText);
 
-  static CFX_ByteString GetEditAppStream(IFX_Edit* pEdit,
+  static CFX_ByteString GetEditAppStream(CFX_Edit* pEdit,
                                          const CFX_FloatPoint& ptOffset,
                                          const CPVT_WordRange* pRange = nullptr,
                                          FX_BOOL bContinuous = TRUE,
                                          uint16_t SubWord = 0);
   static CFX_ByteString GetEditSelAppStream(
-      IFX_Edit* pEdit,
+      CFX_Edit* pEdit,
       const CFX_FloatPoint& ptOffset,
       const CPVT_WordRange* pRange = nullptr);
   static CFX_ByteString GetTextAppStream(const CFX_FloatRect& rcBBox,

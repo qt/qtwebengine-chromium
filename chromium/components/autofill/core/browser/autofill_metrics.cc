@@ -265,6 +265,13 @@ void AutofillMetrics::LogCreditCardInfoBarMetric(InfoBarMetric metric) {
 }
 
 // static
+void AutofillMetrics::LogCreditCardFillingInfoBarMetric(InfoBarMetric metric) {
+  DCHECK_LT(metric, NUM_INFO_BAR_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Autofill.CreditCardFillingInfoBar", metric,
+                            NUM_INFO_BAR_METRICS);
+}
+
+// static
 void AutofillMetrics::LogSaveCardPromptMetric(SaveCardPromptMetric metric,
                                               bool is_uploading,
                                               bool is_reshow) {
@@ -522,6 +529,16 @@ void AutofillMetrics::LogStoredLocalCreditCardCount(size_t num_local_cards) {
 }
 
 // static
+void AutofillMetrics::LogStoredServerCreditCardCounts(
+    size_t num_masked_cards,
+    size_t num_unmasked_cards) {
+  UMA_HISTOGRAM_COUNTS_1000("Autofill.StoredServerCreditCardCount.Masked",
+                            num_masked_cards);
+  UMA_HISTOGRAM_COUNTS_1000("Autofill.StoredServerCreditCardCount.Unmasked",
+                            num_unmasked_cards);
+}
+
+// static
 void AutofillMetrics::LogNumberOfProfilesAtAutofillableFormSubmission(
     size_t num_profiles) {
   UMA_HISTOGRAM_COUNTS(
@@ -639,6 +656,11 @@ void AutofillMetrics::LogNumberOfProfilesRemovedDuringDedupe(
   // A maximum of 50 is enforced to reduce the number of generated buckets.
   UMA_HISTOGRAM_COUNTS_1000("Autofill.NumberOfProfilesRemovedDuringDedupe",
                             std::min(int(num_removed), 50));
+}
+
+// static
+void AutofillMetrics::LogIsQueriedCreditCardFormSecure(bool is_secure) {
+  UMA_HISTOGRAM_BOOLEAN("Autofill.QueriedCreditCardFormIsSecure", is_secure);
 }
 
 AutofillMetrics::FormEventLogger::FormEventLogger(bool is_for_credit_card)

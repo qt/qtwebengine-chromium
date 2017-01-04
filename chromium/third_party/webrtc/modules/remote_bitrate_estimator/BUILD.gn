@@ -7,17 +7,12 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("../../build/webrtc.gni")
-import("//testing/test.gni")
 
-declare_args() {
-  # Set this to true to enable BWE test logging.
-  rtc_enable_bwe_test_logging = false
-}
-
-source_set("remote_bitrate_estimator") {
+rtc_static_library("remote_bitrate_estimator") {
   sources = [
     "aimd_rate_control.cc",
     "aimd_rate_control.h",
+    "bwe_defines.cc",
     "include/bwe_defines.h",
     "include/remote_bitrate_estimator.h",
     "include/send_time_history.h",
@@ -35,8 +30,6 @@ source_set("remote_bitrate_estimator") {
     "remote_estimator_proxy.h",
     "send_time_history.cc",
     "test/bwe_test_logging.h",
-    "transport_feedback_adapter.cc",
-    "transport_feedback_adapter.h",
   ]
 
   if (rtc_enable_bwe_test_logging) {
@@ -46,12 +39,9 @@ source_set("remote_bitrate_estimator") {
     defines = [ "BWE_TEST_LOGGING_COMPILE_TIME_ENABLE=0" ]
   }
 
-  configs += [ "../..:common_config" ]
-  public_configs = [ "../..:common_inherited_config" ]
-
   if (is_clang) {
     # Suppress warnings from the Chromium Clang plugins (bugs.webrtc.org/163).
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
   deps = [
@@ -62,9 +52,10 @@ source_set("remote_bitrate_estimator") {
 }
 
 if (rtc_include_tests) {
-  source_set("bwe_simulator") {
+  rtc_static_library("bwe_simulator") {
     testonly = true
     sources = [
+      "bwe_simulations.cc",
       "test/bwe.cc",
       "test/bwe.h",
       "test/bwe_test.cc",
@@ -95,17 +86,13 @@ if (rtc_include_tests) {
 
     if (rtc_enable_bwe_test_logging) {
       defines = [ "BWE_TEST_LOGGING_COMPILE_TIME_ENABLE=1" ]
-      sources += [ "test/bwe_test_logging.cc" ]
     } else {
       defines = [ "BWE_TEST_LOGGING_COMPILE_TIME_ENABLE=0" ]
     }
 
-    configs += [ "../..:common_config" ]
-    public_configs = [ "../..:common_inherited_config" ]
-
     if (is_clang) {
       # Suppress warnings from the Chromium Clang plugins (bugs.webrtc.org/163).
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
     if (is_win) {

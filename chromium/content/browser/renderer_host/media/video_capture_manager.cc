@@ -39,6 +39,9 @@
 #if defined(USE_AURA)
 #include "content/browser/media/capture/desktop_capture_device_aura.h"
 #endif
+#if defined(OS_ANDROID)
+#include "content/browser/media/capture/screen_capture_device_android.h"
+#endif
 #endif
 
 #if defined(OS_MACOSX)
@@ -155,6 +158,19 @@ class VideoCaptureManager::DeviceEntry {
   base::ThreadChecker thread_checker_;
 };
 
+// Bundles a media::VideoCaptureDeviceDescriptor with corresponding supported
+// video formats.
+struct VideoCaptureManager::DeviceInfo {
+  DeviceInfo();
+  DeviceInfo(media::VideoCaptureDeviceDescriptor descriptor);
+  DeviceInfo(const DeviceInfo& other);
+  ~DeviceInfo();
+  DeviceInfo& operator=(const DeviceInfo& other);
+
+  media::VideoCaptureDeviceDescriptor descriptor;
+  media::VideoCaptureFormats supported_formats;
+};
+
 // Class used for queuing request for starting a device.
 class VideoCaptureManager::CaptureDeviceStartRequest {
  public:
@@ -222,6 +238,20 @@ VideoCaptureManager::DeviceEntry::video_capture_device() const {
   return video_capture_device_.get();
 }
 
+VideoCaptureManager::DeviceInfo::DeviceInfo() = default;
+
+VideoCaptureManager::DeviceInfo::DeviceInfo(
+    media::VideoCaptureDeviceDescriptor descriptor)
+    : descriptor(descriptor) {}
+
+VideoCaptureManager::DeviceInfo::DeviceInfo(
+    const VideoCaptureManager::DeviceInfo& other) = default;
+
+VideoCaptureManager::DeviceInfo::~DeviceInfo() = default;
+
+VideoCaptureManager::DeviceInfo& VideoCaptureManager::DeviceInfo::operator=(
+    const VideoCaptureManager::DeviceInfo& other) = default;
+
 VideoCaptureManager::CaptureDeviceStartRequest::CaptureDeviceStartRequest(
     int serial_id,
     media::VideoCaptureSessionId session_id,
@@ -264,16 +294,15 @@ void VideoCaptureManager::Unregister() {
   listener_ = nullptr;
 }
 
-void VideoCaptureManager::EnumerateDevices(MediaStreamType stream_type) {
+void VideoCaptureManager::EnumerateDevices(
+    const EnumerationCallback& client_callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DVLOG(1) << "VideoCaptureManager::EnumerateDevices, type " << stream_type;
-  DCHECK(listener_);
-  DCHECK_EQ(stream_type, MEDIA_DEVICE_VIDEO_CAPTURE);
+  DVLOG(1) << "VideoCaptureManager::EnumerateDevices";
 
 #if defined(OS_MACOSX)
-  if (NeedToInitializeCaptureDeviceApi(stream_type)) {
-    InitializeCaptureDeviceApiOnUIThread(
-        base::Bind(&VideoCaptureManager::EnumerateDevices, this, stream_type));
+  if (NeedToInitializeCaptureDeviceApi(MEDIA_DEVICE_VIDEO_CAPTURE)) {
+    InitializeCaptureDeviceApiOnUIThread(base::Bind(
+        &VideoCaptureManager::EnumerateDevices, this, client_callback));
     return;
   }
 #endif
@@ -281,17 +310,18 @@ void VideoCaptureManager::EnumerateDevices(MediaStreamType stream_type) {
   // Bind a callback to ConsolidateDevicesInfoOnDeviceThread() with an argument
   // for another callback to OnDevicesInfoEnumerated() to be run in the current
   // loop, i.e. IO loop. Pass a timer for UMA histogram collection.
-  base::Callback<void(std::unique_ptr<VideoCaptureDevice::Names>)>
+  base::Callback<void(std::unique_ptr<VideoCaptureDeviceDescriptors>)>
       devices_enumerated_callback = base::Bind(
           &VideoCaptureManager::ConsolidateDevicesInfoOnDeviceThread, this,
-          media::BindToCurrentLoop(
-              base::Bind(&VideoCaptureManager::OnDevicesInfoEnumerated, this,
-                         stream_type, base::Owned(new base::ElapsedTimer()))),
-          stream_type, devices_info_cache_);
+          media::BindToCurrentLoop(base::Bind(
+              &VideoCaptureManager::OnDevicesInfoEnumerated, this,
+              base::Owned(new base::ElapsedTimer()), client_callback)),
+          devices_info_cache_);
   // OK to use base::Unretained() since we own the VCDFactory and |this| is
   // bound in |devices_enumerated_callback|.
-  device_task_runner_->PostTask(FROM_HERE,
-      base::Bind(&media::VideoCaptureDeviceFactory::EnumerateDeviceNames,
+  device_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&media::VideoCaptureDeviceFactory::EnumerateDeviceDescriptors,
                  base::Unretained(video_capture_device_factory_.get()),
                  devices_enumerated_callback));
 }
@@ -384,7 +414,7 @@ void VideoCaptureManager::DoStopDevice(DeviceEntry* entry) {
 
   DVLOG(3) << "DoStopDevice. Send stop request for device = " << entry->id
            << " serial_id = " << entry->serial_id << ".";
-  entry->video_capture_controller()->DoLogOnIOThread(
+  entry->video_capture_controller()->OnLog(
       base::StringPrintf("Stopping device: id: %s", entry->id.c_str()));
 
   if (entry->video_capture_device()) {
@@ -430,16 +460,17 @@ void VideoCaptureManager::HandleQueuedStartRequest() {
       // We look up the device id from the renderer in our local enumeration
       // since the renderer does not have all the information that might be
       // held in the browser-side VideoCaptureDevice::Name structure.
-      const media::VideoCaptureDeviceInfo* found = GetDeviceInfoById(entry->id);
+      const DeviceInfo* found = GetDeviceInfoById(entry->id);
       if (found) {
-        entry->video_capture_controller()->DoLogOnIOThread(base::StringPrintf(
-            "Starting device: id: %s, name: %s, api: %s",
-            found->name.id().c_str(), found->name.GetNameAndModel().c_str(),
-            found->name.GetCaptureApiTypeString()));
+        entry->video_capture_controller()->OnLog(
+            base::StringPrintf("Starting device: id: %s, name: %s, api: %s",
+                               found->descriptor.device_id.c_str(),
+                               found->descriptor.GetNameAndModel().c_str(),
+                               found->descriptor.GetCaptureApiTypeString()));
 
         start_capture_function = base::Bind(
             &VideoCaptureManager::DoStartDeviceCaptureOnDeviceThread, this,
-            found->name, request->params(),
+            found->descriptor, request->params(),
             base::Passed(entry->video_capture_controller()->NewDeviceClient()));
       } else {
         // Errors from DoStartDeviceCaptureOnDeviceThread go via
@@ -451,8 +482,8 @@ void VideoCaptureManager::HandleQueuedStartRequest() {
             "Error on %s:%d: device %s unknown. Maybe recently disconnected?",
             __FILE__, __LINE__, entry->id.c_str());
         DLOG(ERROR) << log_message;
-        entry->video_capture_controller()->DoLogOnIOThread(log_message);
-        entry->video_capture_controller()->DoErrorOnIOThread();
+        entry->video_capture_controller()->OnLog(log_message);
+        entry->video_capture_controller()->OnError();
         // Drop the failed start request.
         device_start_queue_.pop_front();
 
@@ -489,8 +520,8 @@ void VideoCaptureManager::OnDeviceStarted(
     int serial_id,
     std::unique_ptr<VideoCaptureDevice> device) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(serial_id == device_start_queue_.begin()->serial_id());
-  DVLOG(3) << "OnDeviceStarted";
+  DCHECK_EQ(serial_id, device_start_queue_.begin()->serial_id());
+  DVLOG(3) << __func__;
   if (device_start_queue_.front().abort_start()) {
     // |device| can be null if creation failed in
     // DoStartDeviceCaptureOnDeviceThread.
@@ -516,6 +547,15 @@ void VideoCaptureManager::OnDeviceStarted(
       DCHECK(session_id != kFakeSessionId);
       MaybePostDesktopCaptureWindowId(session_id);
     }
+
+    auto request = photo_request_queue_.begin();
+    while(request != photo_request_queue_.end()) {
+      if (GetDeviceEntryBySessionId(request->first)->video_capture_device()) {
+        request->second.Run(entry->video_capture_device());
+        photo_request_queue_.erase(request);
+      }
+      ++request;
+    }
   }
 
   device_start_queue_.pop_front();
@@ -524,14 +564,15 @@ void VideoCaptureManager::OnDeviceStarted(
 
 std::unique_ptr<media::VideoCaptureDevice>
 VideoCaptureManager::DoStartDeviceCaptureOnDeviceThread(
-    const VideoCaptureDevice::Name& name,
+    const VideoCaptureDeviceDescriptor& descriptor,
     const media::VideoCaptureParams& params,
     std::unique_ptr<VideoCaptureDevice::Client> device_client) {
   SCOPED_UMA_HISTOGRAM_TIMER("Media.VideoCaptureManager.StartDeviceTime");
   DCHECK(IsOnDeviceThread());
 
   std::unique_ptr<VideoCaptureDevice> video_capture_device;
-  video_capture_device = video_capture_device_factory_->Create(name);
+  video_capture_device =
+      video_capture_device_factory_->CreateDevice(descriptor);
 
   if (!video_capture_device) {
     device_client->OnError(FROM_HERE, "Could not create capture device");
@@ -581,8 +622,15 @@ VideoCaptureManager::DoStartDesktopCaptureOnDeviceThread(
   if (desktop_id.type == DesktopMediaID::TYPE_WEB_CONTENTS) {
     video_capture_device.reset(WebContentsVideoCaptureDevice::Create(id));
     IncrementDesktopCaptureCounter(TAB_VIDEO_CAPTURER_CREATED);
+    if (desktop_id.audio_share) {
+      IncrementDesktopCaptureCounter(TAB_VIDEO_CAPTURER_CREATED_WITH_AUDIO);
+    } else {
+      IncrementDesktopCaptureCounter(TAB_VIDEO_CAPTURER_CREATED_WITHOUT_AUDIO);
+    }
   } else {
-#if defined(USE_AURA)
+#if defined(OS_ANDROID)
+    video_capture_device = base::MakeUnique<ScreenCaptureDeviceAndroid>();
+#elif defined(USE_AURA)
     video_capture_device = DesktopCaptureDeviceAura::Create(desktop_id);
 #endif
     if (!video_capture_device)
@@ -607,8 +655,7 @@ void VideoCaptureManager::StartCaptureForClient(
     VideoCaptureControllerEventHandler* client_handler,
     const DoneCB& done_cb) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DVLOG(1) << "VideoCaptureManager::StartCaptureForClient #" << session_id
-           << ", request: "
+  DVLOG(1) << __func__ << ", session_id = " << session_id << ", request: "
            << media::VideoCaptureFormat::ToString(params.requested_format);
 
   DeviceEntry* entry = GetOrCreateDeviceEntry(session_id, params);
@@ -660,21 +707,22 @@ void VideoCaptureManager::StopCaptureForClient(
     }
   } else {
     LogVideoCaptureEvent(VIDEO_CAPTURE_STOP_CAPTURE_DUE_TO_ERROR);
-    SessionMap::iterator it;
-    for (it = sessions_.begin(); it != sessions_.end(); ++it) {
-      if (it->second.type == entry->stream_type &&
-          it->second.id == entry->id) {
-        listener_->Aborted(it->second.type, it->first);
+    for (auto it : sessions_) {
+      if (it.second.type == entry->stream_type && it.second.id == entry->id) {
+        listener_->Aborted(it.second.type, it.first);
+        // Aborted() call might synchronously destroy |entry|, recheck.
+        entry = GetDeviceEntryByController(controller);
+        if (!entry)
+          return;
         break;
       }
     }
   }
 
   // Detach client from controller.
-  media::VideoCaptureSessionId session_id =
+  const media::VideoCaptureSessionId session_id =
       controller->RemoveClient(client_id, client_handler);
-  DVLOG(1) << "VideoCaptureManager::StopCaptureForClient, session_id = "
-           << session_id;
+  DVLOG(1) << __func__ << ", session_id = " << session_id;
 
   // If controller has no more clients, delete controller and device.
   DestroyDeviceEntryIfNoClients(entry);
@@ -691,11 +739,20 @@ void VideoCaptureManager::PauseCaptureForClient(
   if (!entry)
     NOTREACHED() << "Got Null entry while pausing capture";
 
-  // Do not pause Content Video Capture devices, e.g. Tab or Screen capture.
-  if (entry->stream_type != MEDIA_DEVICE_VIDEO_CAPTURE)
-    return;
-
+  const bool had_active_client = controller->HasActiveClient();
   controller->PauseClient(client_id, client_handler);
+  if (!had_active_client || controller->HasActiveClient())
+    return;
+  if (media::VideoCaptureDevice* device = entry->video_capture_device()) {
+    device_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&VideoCaptureDevice::MaybeSuspend,
+                   // Unretained is safe to use here because |device| would be
+                   // null if it was scheduled for shutdown and destruction, and
+                   // because this task is guaranteed to run before the task
+                   // that destroys the |device|.
+                   base::Unretained(device)));
+  }
 }
 
 void VideoCaptureManager::ResumeCaptureForClient(
@@ -712,11 +769,20 @@ void VideoCaptureManager::ResumeCaptureForClient(
   if (!entry)
     NOTREACHED() << "Got Null entry while resuming capture";
 
-  // Do not resume Content Video Capture devices, e.g. Tab or Screen capture.
-  if (entry->stream_type != MEDIA_DEVICE_VIDEO_CAPTURE)
-    return;
-
+  const bool had_active_client = controller->HasActiveClient();
   controller->ResumeClient(client_id, client_handler);
+  if (had_active_client || !controller->HasActiveClient())
+    return;
+  if (media::VideoCaptureDevice* device = entry->video_capture_device()) {
+    device_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&VideoCaptureDevice::Resume,
+                   // Unretained is safe to use here because |device| would be
+                   // null if it was scheduled for shutdown and destruction, and
+                   // because this task is guaranteed to run before the task
+                   // that destroys the |device|.
+                   base::Unretained(device)));
+  }
 }
 
 void VideoCaptureManager::RequestRefreshFrameForClient(
@@ -749,8 +815,7 @@ bool VideoCaptureManager::GetDeviceSupportedFormats(
   DVLOG(1) << "GetDeviceSupportedFormats for device: " << it->second.name;
 
   // Return all available formats of the device, regardless its started state.
-  media::VideoCaptureDeviceInfo* existing_device =
-      GetDeviceInfoById(it->second.id);
+  DeviceInfo* existing_device = GetDeviceInfoById(it->second.id);
   if (existing_device)
     *supported_formats = existing_device->supported_formats;
   return true;
@@ -832,34 +897,61 @@ void VideoCaptureManager::MaybePostDesktopCaptureWindowId(
 
 void VideoCaptureManager::GetPhotoCapabilities(
     int session_id,
-    media::ScopedResultCallback<
-        VideoCaptureDevice::GetPhotoCapabilitiesCallback> callback) {
+    VideoCaptureDevice::GetPhotoCapabilitiesCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  VideoCaptureDevice* device = GetVideoCaptureDeviceBySessionId(session_id);
-  if (!device)
+
+  const DeviceEntry* entry = GetDeviceEntryBySessionId(session_id);
+  if (!entry)
     return;
-  // Unretained(device) is safe to use here because |device| would be null if it
-  // was scheduled for shutdown and destruction, and because this task is
-  // guaranteed to run before the task that destroys the |device|.
-  device_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&VideoCaptureDevice::GetPhotoCapabilities,
-                            base::Unretained(device), base::Passed(&callback)));
+  VideoCaptureDevice* device = entry->video_capture_device();
+  if (device) {
+    VideoCaptureManager::DoGetPhotoCapabilities(std::move(callback), device);
+    return;
+  }
+  // |entry| is known but |device| is nullptr, queue up a request for later.
+  photo_request_queue_.emplace_back(
+      session_id, base::Bind(&VideoCaptureManager::DoGetPhotoCapabilities, this,
+                             base::Passed(&callback)));
+}
+
+void VideoCaptureManager::SetPhotoOptions(
+    int session_id,
+    media::mojom::PhotoSettingsPtr settings,
+    VideoCaptureDevice::SetPhotoOptionsCallback callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  const DeviceEntry* entry = GetDeviceEntryBySessionId(session_id);
+  if (!entry)
+    return;
+  VideoCaptureDevice* device = entry->video_capture_device();
+  if (device) {
+    VideoCaptureManager::DoSetPhotoOptions(std::move(callback),
+                                           std::move(settings), device);
+    return;
+  }
+  // |entry| is known but |device| is nullptr, queue up a request for later.
+  photo_request_queue_.emplace_back(
+      session_id, base::Bind(&VideoCaptureManager::DoSetPhotoOptions, this,
+                             base::Passed(&callback), base::Passed(&settings)));
 }
 
 void VideoCaptureManager::TakePhoto(
     int session_id,
-    media::ScopedResultCallback<VideoCaptureDevice::TakePhotoCallback>
-        callback) {
+    VideoCaptureDevice::TakePhotoCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  VideoCaptureDevice* device = GetVideoCaptureDeviceBySessionId(session_id);
-  if (!device)
+
+  const DeviceEntry* entry = GetDeviceEntryBySessionId(session_id);
+  if (!entry)
     return;
-  // Unretained(device) is safe to use here because |device| would be null if it
-  // was scheduled for shutdown and destruction, and because this task is
-  // guaranteed to run before the task that destroys the |device|.
-  device_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&VideoCaptureDevice::TakePhoto,
-                            base::Unretained(device), base::Passed(&callback)));
+  VideoCaptureDevice* device = entry->video_capture_device();
+  if (device) {
+    VideoCaptureManager::DoTakePhoto(std::move(callback), device);
+    return;
+  }
+  // |entry| is known but |device| is nullptr, queue up a request for later.
+  photo_request_queue_.emplace_back(
+      session_id, base::Bind(&VideoCaptureManager::DoTakePhoto, this,
+                             base::Passed(&callback)));
 }
 
 void VideoCaptureManager::DoStopDeviceOnDeviceThread(
@@ -893,30 +985,29 @@ void VideoCaptureManager::OnClosed(
 }
 
 void VideoCaptureManager::OnDevicesInfoEnumerated(
-    MediaStreamType stream_type,
     base::ElapsedTimer* timer,
-    const media::VideoCaptureDeviceInfos& new_devices_info_cache) {
+    const EnumerationCallback& client_callback,
+    const VideoCaptureManager::DeviceInfos& new_devices_info_cache) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   UMA_HISTOGRAM_TIMES(
       "Media.VideoCaptureManager.GetAvailableDevicesInfoOnDeviceThreadTime",
       timer->Elapsed());
-  if (!listener_) {
-    // Listener has been removed.
-    return;
-  }
   devices_info_cache_ = new_devices_info_cache;
 
-  MediaInternals::GetInstance()->UpdateVideoCaptureDeviceCapabilities(
-      devices_info_cache_);
-
-  // Walk the |devices_info_cache_| and transform from VCD::Name to
-  // StreamDeviceInfo for return purposes.
-  StreamDeviceInfoArray devices;
+  // Walk the |devices_info_cache_| and produce a
+  // media::VideoCaptureDeviceDescriptors for return purposes.
+  media::VideoCaptureDeviceDescriptors devices;
+  std::vector<std::tuple<media::VideoCaptureDeviceDescriptor,
+                         media::VideoCaptureFormats>>
+      descriptors_and_formats;
   for (const auto& it : devices_info_cache_) {
-    devices.push_back(StreamDeviceInfo(
-        stream_type, it.name.GetNameAndModel(), it.name.id()));
+    devices.emplace_back(it.descriptor);
+    descriptors_and_formats.emplace_back(it.descriptor, it.supported_formats);
+    MediaInternals::GetInstance()->UpdateVideoCaptureDeviceCapabilities(
+        descriptors_and_formats);
   }
-  listener_->DevicesEnumerated(stream_type, devices);
+
+  client_callback.Run(devices);
 }
 
 bool VideoCaptureManager::IsOnDeviceThread() const {
@@ -924,32 +1015,32 @@ bool VideoCaptureManager::IsOnDeviceThread() const {
 }
 
 void VideoCaptureManager::ConsolidateDevicesInfoOnDeviceThread(
-    base::Callback<void(const media::VideoCaptureDeviceInfos&)>
+    base::Callback<void(const VideoCaptureManager::DeviceInfos&)>
         on_devices_enumerated_callback,
-    MediaStreamType stream_type,
-    const media::VideoCaptureDeviceInfos& old_device_info_cache,
-    std::unique_ptr<VideoCaptureDevice::Names> names_snapshot) {
+    const VideoCaptureManager::DeviceInfos& old_device_info_cache,
+    std::unique_ptr<VideoCaptureDeviceDescriptors> descriptors_snapshot) {
   DCHECK(IsOnDeviceThread());
   // Construct |new_devices_info_cache| with the cached devices that are still
   // present in the system, and remove their names from |names_snapshot|, so we
   // keep there the truly new devices.
-  media::VideoCaptureDeviceInfos new_devices_info_cache;
+  VideoCaptureManager::DeviceInfos new_devices_info_cache;
   for (const auto& device_info : old_device_info_cache) {
-    for (VideoCaptureDevice::Names::iterator it = names_snapshot->begin();
-         it != names_snapshot->end(); ++it) {
-      if (device_info.name.id() == it->id()) {
+    for (VideoCaptureDeviceDescriptors::iterator it =
+             descriptors_snapshot->begin();
+         it != descriptors_snapshot->end(); ++it) {
+      if (device_info.descriptor.device_id == it->device_id) {
         new_devices_info_cache.push_back(device_info);
-        names_snapshot->erase(it);
+        descriptors_snapshot->erase(it);
         break;
       }
     }
   }
 
-  // Get the supported capture formats for the new devices in |names_snapshot|.
-  for (const auto& it : *names_snapshot) {
-    media::VideoCaptureDeviceInfo device_info(it, media::VideoCaptureFormats());
-    video_capture_device_factory_->GetDeviceSupportedFormats(
-        it, &(device_info.supported_formats));
+  // Get the device info for the new devices in |names_snapshot|.
+  for (const auto& it : *descriptors_snapshot) {
+    DeviceInfo device_info(it);
+    video_capture_device_factory_->GetSupportedFormats(
+        it, &device_info.supported_formats);
     ConsolidateCaptureFormats(&device_info.supported_formats);
     new_devices_info_cache.push_back(device_info);
   }
@@ -980,16 +1071,15 @@ void VideoCaptureManager::DestroyDeviceEntryIfNoClients(DeviceEntry* entry) {
   }
 }
 
-media::VideoCaptureDevice*
-VideoCaptureManager::GetVideoCaptureDeviceBySessionId(int session_id) {
+VideoCaptureManager::DeviceEntry*
+VideoCaptureManager::GetDeviceEntryBySessionId(int session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   SessionMap::const_iterator session_it = sessions_.find(session_id);
   if (session_it == sessions_.end())
     return nullptr;
 
-  DeviceEntry* const device_info =
-      GetDeviceEntryByTypeAndId(session_it->second.type, session_it->second.id);
-  return device_info ? device_info->video_capture_device() : nullptr;
+  return GetDeviceEntryByTypeAndId(session_it->second.type,
+                                   session_it->second.id);
 }
 
 VideoCaptureManager::DeviceEntry*
@@ -1029,10 +1119,10 @@ VideoCaptureManager::DeviceEntry* VideoCaptureManager::GetDeviceEntryBySerialId(
   return nullptr;
 }
 
-media::VideoCaptureDeviceInfo* VideoCaptureManager::GetDeviceInfoById(
+VideoCaptureManager::DeviceInfo* VideoCaptureManager::GetDeviceInfoById(
     const std::string& id) {
   for (auto& it : devices_info_cache_) {
-    if (it.name.id() == id)
+    if (it.descriptor.device_id == id)
       return &it;
   }
   return nullptr;
@@ -1072,12 +1162,47 @@ void VideoCaptureManager::SetDesktopCaptureWindowIdOnDeviceThread(
     media::VideoCaptureDevice* device,
     gfx::NativeViewId window_id) {
   DCHECK(IsOnDeviceThread());
-#if defined(ENABLE_SCREEN_CAPTURE)
+#if defined(ENABLE_SCREEN_CAPTURE) && !defined(OS_ANDROID)
   DesktopCaptureDevice* desktop_device =
       static_cast<DesktopCaptureDevice*>(device);
   desktop_device->SetNotificationWindowId(window_id);
   VLOG(2) << "Screen capture notification window passed on device thread.";
 #endif
+}
+
+void VideoCaptureManager::DoGetPhotoCapabilities(
+    VideoCaptureDevice::GetPhotoCapabilitiesCallback callback,
+    VideoCaptureDevice* device) {
+  // Unretained() is safe to use here because |device| would be null if it
+  // was scheduled for shutdown and destruction, and because this task is
+  // guaranteed to run before the task that destroys the |device|.
+  device_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&VideoCaptureDevice::GetPhotoCapabilities,
+                            base::Unretained(device), base::Passed(&callback)));
+}
+
+void VideoCaptureManager::DoSetPhotoOptions(
+    VideoCaptureDevice::SetPhotoOptionsCallback callback,
+    media::mojom::PhotoSettingsPtr settings,
+    VideoCaptureDevice* device) {
+  // Unretained() is safe to use here because |device| would be null if it
+  // was scheduled for shutdown and destruction, and because this task is
+  // guaranteed to run before the task that destroys the |device|.
+  device_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&VideoCaptureDevice::SetPhotoOptions, base::Unretained(device),
+                 base::Passed(&settings), base::Passed(&callback)));
+}
+
+void VideoCaptureManager::DoTakePhoto(
+    VideoCaptureDevice::TakePhotoCallback callback,
+    VideoCaptureDevice* device) {
+  // Unretained() is safe to use here because |device| would be null if it
+  // was scheduled for shutdown and destruction, and because this task is
+  // guaranteed to run before the task that destroys the |device|.
+  device_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&VideoCaptureDevice::TakePhoto,
+                            base::Unretained(device), base::Passed(&callback)));
 }
 
 #if defined(OS_MACOSX)

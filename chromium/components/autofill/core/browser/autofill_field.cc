@@ -11,7 +11,6 @@
 #include "base/i18n/string_search.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
-#include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -527,17 +526,6 @@ bool FillExpirationDateInput(const base::string16 &value,
   return true;
 }
 
-std::string Hash32Bit(const std::string& str) {
-  std::string hash_bin = base::SHA1HashString(str);
-  DCHECK_EQ(base::kSHA1Length, hash_bin.length());
-
-  uint32_t hash32 = ((hash_bin[0] & 0xFF) << 24) |
-                    ((hash_bin[1] & 0xFF) << 16) | ((hash_bin[2] & 0xFF) << 8) |
-                    (hash_bin[3] & 0xFF);
-
-  return base::UintToString(hash32);
-}
-
 base::string16 RemoveWhitespace(const base::string16& value) {
   base::string16 stripped_value;
   base::RemoveChars(value, base::kWhitespaceUTF16, &stripped_value);
@@ -554,7 +542,8 @@ AutofillField::AutofillField()
       phone_part_(IGNORED),
       credit_card_number_offset_(0),
       previously_autofilled_(false),
-      generation_type_(AutofillUploadContents::Field::NO_GENERATION) {}
+      generation_type_(AutofillUploadContents::Field::NO_GENERATION),
+      form_classifier_outcome_(AutofillUploadContents::Field::NO_OUTCOME) {}
 
 AutofillField::AutofillField(const FormFieldData& field,
                              const base::string16& unique_name)
@@ -568,7 +557,8 @@ AutofillField::AutofillField(const FormFieldData& field,
       credit_card_number_offset_(0),
       previously_autofilled_(false),
       parseable_name_(field.name),
-      generation_type_(AutofillUploadContents::Field::NO_GENERATION) {}
+      generation_type_(AutofillUploadContents::Field::NO_GENERATION),
+      form_classifier_outcome_(AutofillUploadContents::Field::NO_OUTCOME) {}
 
 AutofillField::~AutofillField() {}
 
@@ -641,10 +631,12 @@ bool AutofillField::IsEmpty() const {
   return value.empty();
 }
 
-std::string AutofillField::FieldSignature() const {
-  std::string field_name = base::UTF16ToUTF8(name);
-  std::string field_string = field_name + "&" + form_control_type;
-  return Hash32Bit(field_string);
+FieldSignature AutofillField::GetFieldSignature() const {
+  return CalculateFieldSignatureByNameAndType(name, form_control_type);
+}
+
+std::string AutofillField::FieldSignatureAsStr() const {
+  return base::UintToString(GetFieldSignature());
 }
 
 bool AutofillField::IsFieldFillable() const {

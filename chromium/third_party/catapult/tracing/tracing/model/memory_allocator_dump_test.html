@@ -5,11 +5,11 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
+<link rel="import" href="/tracing/base/unit.html">
 <link rel="import" href="/tracing/model/container_memory_dump.html">
 <link rel="import" href="/tracing/model/memory_allocator_dump.html">
 <link rel="import" href="/tracing/model/memory_dump_test_utils.html">
 <link rel="import" href="/tracing/value/numeric.html">
-<link rel="import" href="/tracing/value/unit.html">
 
 <script>
 'use strict';
@@ -20,9 +20,9 @@ tr.b.unittest.testSuite(function() {
   var MemoryAllocatorDumpLink = tr.model.MemoryAllocatorDumpLink;
   var ScalarNumeric = tr.v.ScalarNumeric;
   var unitlessNumber_smallerIsBetter =
-      tr.v.Unit.byName.unitlessNumber_smallerIsBetter;
-  var sizeInBytes = tr.v.Unit.byName.sizeInBytes;
-  var powerInWatts = tr.v.Unit.byName.powerInWatts;
+      tr.b.Unit.byName.unitlessNumber_smallerIsBetter;
+  var sizeInBytes = tr.b.Unit.byName.sizeInBytes;
+  var powerInWatts = tr.b.Unit.byName.powerInWatts;
   var newAllocatorDump = tr.model.MemoryDumpTestUtils.newAllocatorDump;
   var addChildDump = tr.model.MemoryDumpTestUtils.addChildDump;
   var checkDumpNumericsAndDiagnostics =
@@ -42,48 +42,50 @@ tr.b.unittest.testSuite(function() {
   test('memoryAllocatorDumps_aggregateNumericsRecursively', function() {
     var md = new ContainerMemoryDump(42);
 
-    var oilpanDump = newAllocatorDump(md, 'oilpan', {
-      'objects_count': new ScalarNumeric(unitlessNumber_smallerIsBetter, 7)
-    });
+    var oilpanDump = newAllocatorDump(md, 'oilpan', {numerics: {
+      objects_count: new ScalarNumeric(unitlessNumber_smallerIsBetter, 7)
+    }});
 
-    addChildDump(oilpanDump, 'bucket1', {
+    addChildDump(oilpanDump, 'bucket1', {numerics: {
       size: 512,
       objects_count: new ScalarNumeric(unitlessNumber_smallerIsBetter, 3),
       inner_size: 256,
       outer_size: 1024
-    });
+    }});
 
     var oilpanBucket2Dump = addChildDump(oilpanDump, 'bucket2');
 
     var oilpanBucket2StringsDump = addChildDump(oilpanBucket2Dump, 'strings', {
-      size: 512,
-      objects_count: new ScalarNumeric(unitlessNumber_smallerIsBetter, 4),
-      inner_size: 512,
-      outer_size: 2048
+      numerics: {
+        size: 512,
+        objects_count: new ScalarNumeric(unitlessNumber_smallerIsBetter, 4),
+        inner_size: 512,
+        outer_size: 2048
+      }
     });
 
     oilpanDump.aggregateNumericsRecursively();
 
     // oilpan has *some* numerics aggregated.
     checkDumpNumericsAndDiagnostics(oilpanDump, {
-      'objects_count': new ScalarNumeric(unitlessNumber_smallerIsBetter, 7),
-      'inner_size': 768,
-      'outer_size': 3072
+      objects_count: new ScalarNumeric(unitlessNumber_smallerIsBetter, 7),
+      inner_size: 768,
+      outer_size: 3072
     }, {});
 
     // oilpan/bucket2 has *all* numerics aggregated (except for size).
     checkDumpNumericsAndDiagnostics(oilpanBucket2Dump, {
-      'objects_count': new ScalarNumeric(unitlessNumber_smallerIsBetter, 4),
-      'inner_size': 512,
-      'outer_size': 2048
+      objects_count: new ScalarNumeric(unitlessNumber_smallerIsBetter, 4),
+      inner_size: 512,
+      outer_size: 2048
     }, {});
 
     // oilpan/bucket2/strings has *no* numerics aggregated.
     checkDumpNumericsAndDiagnostics(oilpanBucket2StringsDump, {
-      'size': 512,
-      'objects_count': new ScalarNumeric(unitlessNumber_smallerIsBetter, 4),
-      'inner_size': 512,
-      'outer_size': 2048
+      size: 512,
+      objects_count: new ScalarNumeric(unitlessNumber_smallerIsBetter, 4),
+      inner_size: 512,
+      outer_size: 2048
     }, {});
   });
 

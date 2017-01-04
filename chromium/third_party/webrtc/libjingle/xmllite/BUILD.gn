@@ -9,12 +9,12 @@
 import("../../build/webrtc.gni")
 
 group("xmllite") {
-  deps = [
+  public_deps = [
     ":rtc_xmllite",
   ]
 }
 
-source_set("rtc_xmllite") {
+rtc_static_library("rtc_xmllite") {
   sources = [
     "qname.cc",
     "qname.h",
@@ -43,12 +43,9 @@ source_set("rtc_xmllite") {
     ]
   }
 
-  configs += [ "../..:common_config" ]
-  public_configs = [ "../..:common_inherited_config" ]
-
   if (!build_with_chromium && is_clang) {
     # Suppress warnings from Chrome's Clang plugins.
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 }

@@ -7,15 +7,16 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "content/common/content_export.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/resource_throttle.h"
+#include "content/public/common/request_context_type.h"
 
 namespace net {
 class URLRequest;
 }
 
 namespace content {
-
 class ResourceDispatcherHostDelegate;
 
 // This ResourceThrottle is used to convey throttling information to the UI
@@ -25,7 +26,8 @@ class NavigationResourceThrottle : public ResourceThrottle {
  public:
   NavigationResourceThrottle(
       net::URLRequest* request,
-      ResourceDispatcherHostDelegate* resource_dispatcher_host_delegate);
+      ResourceDispatcherHostDelegate* resource_dispatcher_host_delegate,
+      RequestContextType request_context_type);
   ~NavigationResourceThrottle() override;
 
   // ResourceThrottle overrides:
@@ -35,11 +37,17 @@ class NavigationResourceThrottle : public ResourceThrottle {
   void WillProcessResponse(bool* defer) override;
   const char* GetNameForLogging() const override;
 
+  // Used in unit tests to make UI checks pass when they would fail due to no
+  // NavigationHandle being present in the RenderFrameHost.
+  CONTENT_EXPORT static void set_ui_checks_always_succeed_for_testing(
+      bool ui_checks_always_succeed);
+
  private:
   void OnUIChecksPerformed(NavigationThrottle::ThrottleCheckResult result);
 
   net::URLRequest* request_;
   ResourceDispatcherHostDelegate* resource_dispatcher_host_delegate_;
+  RequestContextType request_context_type_;
   base::WeakPtrFactory<NavigationResourceThrottle> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationResourceThrottle);

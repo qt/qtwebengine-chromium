@@ -514,7 +514,7 @@ void WriteFrameState(
   WriteReal(state.page_scale_factor, obj);
   WriteInteger64(state.item_sequence_number, obj);
   WriteInteger64(state.document_sequence_number, obj);
-  WriteInteger(state.referrer_policy, obj);
+  WriteInteger(static_cast<int>(state.referrer_policy), obj);
   WriteReal(state.visual_viewport_scroll_offset.x(), obj);
   WriteReal(state.visual_viewport_scroll_offset.y(), obj);
 
@@ -741,12 +741,11 @@ bool DecodePageState(const std::string& encoded, ExplodedPageState* exploded) {
   return !obj.parse_error;
 }
 
-bool EncodePageState(const ExplodedPageState& exploded, std::string* encoded) {
+void EncodePageState(const ExplodedPageState& exploded, std::string* encoded) {
   SerializeObject obj;
   obj.version = kCurrentVersion;
   WritePageState(exploded, &obj);
   *encoded = obj.GetAsString();
-  return true;
 }
 
 #if defined(OS_ANDROID)

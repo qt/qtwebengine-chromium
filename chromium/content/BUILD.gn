@@ -89,6 +89,7 @@ if (is_component_build) {
       "common/sandbox_linux/sandbox_seccomp_bpf_linux.cc",
       "common/send_zygote_child_ping_linux.cc",
       "public/common/content_switches.cc",
+      "public/common/mojo_channel_switches.cc",
     ]
     set_sources_assignment_filter(sources_assignment_filter)
 
@@ -96,6 +97,7 @@ if (is_component_build) {
 
     deps = [
       "//base",
+      "//sandbox/linux:sandbox",
     ]
   }
 } else {
@@ -118,6 +120,7 @@ grit("resources") {
   deps = [
     "//content/public/app:browser_manifest",
     "//content/public/app:gpu_manifest",
+    "//content/public/app:plugin_manifest",
     "//content/public/app:renderer_manifest",
     "//content/public/app:utility_manifest",
     "//services/catalog:manifest",

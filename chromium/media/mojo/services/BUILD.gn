@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 import("//media/media_options.gni")
-import("//mojo/public/mojo_application.gni")
-import("//mojo/public/mojo_application_manifest.gni")
+import("//services/shell/public/cpp/service.gni")
+import("//services/shell/public/service_manifest.gni")
 import("//testing/test.gni")
 
 config("mojo_media_config") {
@@ -102,21 +102,10 @@ component("services") {
 
   if (is_android) {
     sources += [
-      "mojo_provision_fetcher.cc",
-      "mojo_provision_fetcher.h",
-    ]
-  }
-
-  if (enable_test_mojo_media_client) {
-    defines += [ "ENABLE_TEST_MOJO_MEDIA_CLIENT" ]
-    sources += [
-      "test_mojo_media_client.cc",
-      "test_mojo_media_client.h",
-    ]
-  } else if (is_android) {
-    sources += [
       "android_mojo_media_client.cc",
       "android_mojo_media_client.h",
+      "mojo_provision_fetcher.cc",
+      "mojo_provision_fetcher.h",
     ]
   } else {
     sources += [
@@ -126,13 +115,11 @@ component("services") {
   }
 }
 
-mojo_native_application("media") {
+service("media") {
   testonly = true
 
   sources = [
     "main.cc",
-    "test_mojo_media_client.cc",
-    "test_mojo_media_client.h",
   ]
 
   public_deps = [
@@ -160,7 +147,7 @@ test("media_mojo_shell_unittests") {
     "//media/mojo/clients",
     "//media/mojo/common",
     "//media/mojo/interfaces",
-    "//services/shell/public/cpp:shell_test_support",
+    "//services/shell/public/cpp:service_test_support",
     "//services/shell/public/cpp/test:run_all_shelltests",
     "//testing/gmock",
     "//testing/gtest",
@@ -172,13 +159,13 @@ test("media_mojo_shell_unittests") {
   ]
 }
 
-mojo_application_manifest("media_manifest") {
-  application_name = "media"
+service_manifest("media_manifest") {
+  name = "media"
   source = "media_manifest.json"
 }
 
-mojo_application_manifest("test_manifest") {
-  application_name = "media_mojo_shell_unittests"
+service_manifest("test_manifest") {
+  name = "media_mojo_shell_unittests"
   type = "exe"
   source = "test_manifest.json"
 }
@@ -197,8 +184,8 @@ test("media_pipeline_integration_unittests") {
   ]
 }
 
-mojo_application_manifest("pipeline_test_manifest") {
-  application_name = "media_pipeline_integration_unittests"
+service_manifest("pipeline_test_manifest") {
+  name = "media_pipeline_integration_unittests"
   type = "exe"
   source = "pipeline_test_manifest.json"
 }

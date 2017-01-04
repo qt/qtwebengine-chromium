@@ -19,11 +19,15 @@
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/dns/dns_config_service.h"
 #include "net/dns/dns_socket_pool.h"
 #include "net/dns/dns_util.h"
+#include "net/log/net_log_event_type.h"
+#include "net/log/net_log_source.h"
+#include "net/log/net_log_with_source.h"
 #include "net/socket/stream_socket.h"
 #include "net/udp/datagram_client_socket.h"
 
@@ -109,8 +113,8 @@ DnsSession::DnsSession(const DnsConfig& config,
       net_log_(net_log),
       server_index_(0) {
   socket_pool_->Initialize(&config_.nameservers, net_log);
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "AsyncDNS.ServerCount", config_.nameservers.size(), 0, 10, 11);
+  UMA_HISTOGRAM_CUSTOM_COUNTS("AsyncDNS.ServerCount",
+                              config_.nameservers.size(), 1, 10, 11);
   UpdateTimeouts(NetworkChangeNotifier::GetConnectionType());
   InitializeServerStats();
   NetworkChangeNotifier::AddConnectionTypeObserver(this);
@@ -132,8 +136,8 @@ void DnsSession::UpdateTimeouts(NetworkChangeNotifier::ConnectionType type) {
 void DnsSession::InitializeServerStats() {
   server_stats_.clear();
   for (size_t i = 0; i < config_.nameservers.size(); ++i) {
-    server_stats_.push_back(base::WrapUnique(
-        new ServerStats(initial_timeout_, rtt_buckets_.Pointer())));
+    server_stats_.push_back(base::MakeUnique<ServerStats>(
+        initial_timeout_, rtt_buckets_.Pointer()));
   }
 }
 
@@ -187,8 +191,8 @@ unsigned DnsSession::NextGoodServerIndex(unsigned server_index) {
 }
 
 void DnsSession::RecordServerFailure(unsigned server_index) {
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "AsyncDNS.ServerFailureIndex", server_index, 0, 10, 11);
+  UMA_HISTOGRAM_CUSTOM_COUNTS("AsyncDNS.ServerFailureIndex", server_index, 1,
+                              10, 11);
   ++(server_stats_[server_index]->last_failure_count);
   server_stats_[server_index]->last_failure = base::Time::Now();
 }
@@ -269,14 +273,14 @@ base::TimeDelta DnsSession::NextTimeout(unsigned server_index, int attempt) {
 // Allocate a socket, already connected to the server address.
 std::unique_ptr<DnsSession::SocketLease> DnsSession::AllocateSocket(
     unsigned server_index,
-    const NetLog::Source& source) {
+    const NetLogSource& source) {
   std::unique_ptr<DatagramClientSocket> socket;
 
   socket = socket_pool_->AllocateSocket(server_index);
   if (!socket.get())
     return std::unique_ptr<SocketLease>();
 
-  socket->NetLog().BeginEvent(NetLog::TYPE_SOCKET_IN_USE,
+  socket->NetLog().BeginEvent(NetLogEventType::SOCKET_IN_USE,
                               source.ToEventParametersCallback());
 
   SocketLease* lease = new SocketLease(this, server_index, std::move(socket));
@@ -285,8 +289,14 @@ std::unique_ptr<DnsSession::SocketLease> DnsSession::AllocateSocket(
 
 std::unique_ptr<StreamSocket> DnsSession::CreateTCPSocket(
     unsigned server_index,
-    const NetLog::Source& source) {
+    const NetLogSource& source) {
   return socket_pool_->CreateTCPSocket(server_index, source);
+}
+
+void DnsSession::ApplyPersistentData(const base::Value& data) {}
+
+std::unique_ptr<const base::Value> DnsSession::GetPersistentData() const {
+  return std::unique_ptr<const base::Value>();
 }
 
 // Release a socket.
@@ -294,7 +304,7 @@ void DnsSession::FreeSocket(unsigned server_index,
                             std::unique_ptr<DatagramClientSocket> socket) {
   DCHECK(socket.get());
 
-  socket->NetLog().EndEvent(NetLog::TYPE_SOCKET_IN_USE);
+  socket->NetLog().EndEvent(NetLogEventType::SOCKET_IN_USE);
 
   socket_pool_->FreeSocket(server_index, std::move(socket));
 }

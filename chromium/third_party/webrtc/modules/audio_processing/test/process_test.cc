@@ -19,22 +19,25 @@
 #include <memory>
 
 #include "webrtc/base/format_macros.h"
+#include "webrtc/base/ignore_wundef.h"
 #include "webrtc/base/timeutils.h"
-#include "webrtc/common.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
+#include "webrtc/modules/audio_processing/include/config.h"
 #include "webrtc/modules/audio_processing/test/protobuf_utils.h"
 #include "webrtc/modules/audio_processing/test/test_utils.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/system_wrappers/include/cpu_features_wrapper.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/test/testsupport/perf_test.h"
+
+RTC_PUSH_IGNORING_WUNDEF()
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
-#include "gtest/gtest.h"
 #include "external/webrtc/webrtc/modules/audio_processing/debug.pb.h"
 #else
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/audio_processing/debug.pb.h"
 #endif
+RTC_POP_IGNORING_WUNDEF()
 
 namespace webrtc {
 
@@ -108,6 +111,7 @@ void usage() {
   printf("\n  -expns   Experimental noise suppression\n");
   printf("\n Level metrics (enabled by default)\n");
   printf("  --no_level_metrics\n");
+  printf("  --level_control\n");
   printf("\n");
   printf("Modifiers:\n");
   printf("  --noasm            Disable SSE optimization.\n");
@@ -176,6 +180,7 @@ void void_main(int argc, char* argv[]) {
   int extra_delay_ms = 0;
   int override_delay_ms = 0;
   Config config;
+  AudioProcessing::Config apm_config;
 
   ASSERT_EQ(apm->kNoError, apm->level_estimator()->Enable(true));
   for (int i = 1; i < argc; i++) {
@@ -260,6 +265,8 @@ void void_main(int argc, char* argv[]) {
                     static_cast<webrtc::EchoCancellation::SuppressionLevel>(
                         suppression_level)));
 
+    } else if (strcmp(argv[i], "--level_control") == 0) {
+      apm_config.level_controller.enabled = true;
     } else if (strcmp(argv[i], "--extended_filter") == 0) {
       config.Set<ExtendedFilter>(new ExtendedFilter(true));
 
@@ -448,6 +455,7 @@ void void_main(int argc, char* argv[]) {
       FAIL() << "Unrecognized argument " << argv[i];
     }
   }
+  apm->ApplyConfig(apm_config);
   apm->SetExtraOptions(config);
 
   // If we're reading a protobuf file, ensure a simulation hasn't also

@@ -13,6 +13,8 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "net/http/transport_security_state.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -28,14 +30,16 @@ class TransportSecurityPersisterTest : public testing::Test {
   }
 
   ~TransportSecurityPersisterTest() override {
-    base::MessageLoopForIO::current()->RunUntilIdle();
+    EXPECT_TRUE(base::MessageLoopForIO::IsCurrent());
+    base::RunLoop().RunUntilIdle();
   }
 
   void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    ASSERT_TRUE(base::MessageLoopForIO::IsCurrent());
     persister_.reset(new TransportSecurityPersister(
-        &state_, temp_dir_.path(),
-        base::MessageLoopForIO::current()->task_runner(), false));
+        &state_, temp_dir_.GetPath(), base::ThreadTaskRunnerHandle::Get(),
+        false));
   }
 
  protected:
@@ -139,7 +143,7 @@ TEST_F(TransportSecurityPersisterTest, SerializeData3) {
   // ImportantFileWriter, which has an asynchronous commit interval rather
   // than block.) Use a different basename just for cleanliness.
   base::FilePath path =
-      temp_dir_.path().AppendASCII("TransportSecurityPersisterTest");
+      temp_dir_.GetPath().AppendASCII("TransportSecurityPersisterTest");
   EXPECT_TRUE(base::WriteFile(path, serialized.c_str(), serialized.size()));
 
   // Read the data back.

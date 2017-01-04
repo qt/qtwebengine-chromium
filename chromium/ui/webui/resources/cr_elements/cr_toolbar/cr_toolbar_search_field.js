@@ -29,11 +29,26 @@ Polymer({
 
     /** @private */
     hasSearchText_: Boolean,
+
+    isSpinnerShown_: {
+      type: Boolean,
+      computed: 'computeIsSpinnerShown_(spinnerActive, showingSearch)'
+    }
   },
 
   listeners: {
     'tap': 'showSearch_',
     'searchInput.bind-value-changed': 'onBindValueChanged_',
+  },
+
+  /** @return {!HTMLInputElement} */
+  getSearchInput: function() {
+    return this.$.searchInput;
+  },
+
+  /** @return {boolean} */
+  isSearchFocused: function() {
+    return this.$.searchTerm.focused;
   },
 
   /**
@@ -46,13 +61,11 @@ Polymer({
   },
 
   /**
-   * @param {boolean} spinnerActive
-   * @param {boolean} showingSearch
    * @return {boolean}
    * @private
    */
-  isSpinnerShown_: function(spinnerActive, showingSearch) {
-    return spinnerActive && showingSearch;
+  computeIsSpinnerShown_: function() {
+    return this.spinnerActive && this.showingSearch;
   },
 
   /** @private */

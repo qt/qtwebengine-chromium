@@ -15,11 +15,11 @@
 
 #include <memory>
 
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_coding/neteq/tools/audio_sink.h"
 #include "webrtc/modules/audio_coding/neteq/tools/packet.h"
 #include "webrtc/modules/audio_coding/neteq/tools/packet_source.h"
+#include "webrtc/test/gtest.h"
 
 namespace webrtc {
 namespace test {
@@ -111,6 +111,8 @@ AcmReceiveTestOldApi::AcmReceiveTestOldApi(
       output_freq_hz_(output_freq_hz),
       exptected_output_channels_(exptected_output_channels) {
 }
+
+AcmReceiveTestOldApi::~AcmReceiveTestOldApi() = default;
 
 void AcmReceiveTestOldApi::RegisterDefaultCodecs() {
   CodecInst my_codec_param;

@@ -26,16 +26,18 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import optparse
 import unittest
 
 from webkitpy.common.system.outputcapture import OutputCapture
-from webkitpy.tool.mock_tool import MockOptions, MockTool
+from webkitpy.tool.mock_tool import MockWebKitPatch
 
 
 class CommandsTest(unittest.TestCase):
 
-    def assert_execute_outputs(self, command, args=None, expected_stdout="", expected_stderr="",
-                               expected_exception=None, expected_logs=None, options=MockOptions(), tool=MockTool()):
+    def assert_execute_outputs(
+            self, command, args=None, expected_stdout="", expected_stderr="",
+            expected_exception=None, expected_logs=None, options=optparse.Values(), tool=MockWebKitPatch()):
         args = args or []
         options.blocks = None
         options.cc = 'MOCK cc'
@@ -49,6 +51,6 @@ class CommandsTest(unittest.TestCase):
         options.update_changelogs = False
         options.quiet = True
         options.reviewer = 'MOCK reviewer'
-        command.bind_to_tool(tool)
-        OutputCapture().assert_outputs(self, command.execute, [options, args, tool], expected_stdout=expected_stdout,
-                                       expected_stderr=expected_stderr, expected_exception=expected_exception, expected_logs=expected_logs)
+        OutputCapture().assert_outputs(
+            self, command.execute, [options, args, tool], expected_stdout=expected_stdout,
+            expected_stderr=expected_stderr, expected_exception=expected_exception, expected_logs=expected_logs)

@@ -320,6 +320,9 @@ void VideoCapturerTrackSource::Initialize(
     }
   }
 
+  // Get default from the capturer, overridden by constraints, if any.
+  needs_denoising_ = video_capturer_->NeedsDenoising();
+
   if (constraints) {
     MediaConstraintsInterface::Constraints mandatory_constraints =
         constraints->GetMandatory();
@@ -374,19 +377,6 @@ void VideoCapturerTrackSource::Stop() {
   worker_thread_->Invoke<void>(
       RTC_FROM_HERE,
       rtc::Bind(&cricket::VideoCapturer::Stop, video_capturer_.get()));
-}
-
-void VideoCapturerTrackSource::Restart() {
-  if (started_) {
-    return;
-  }
-  if (!worker_thread_->Invoke<bool>(
-          RTC_FROM_HERE, rtc::Bind(&cricket::VideoCapturer::StartCapturing,
-                                   video_capturer_.get(), format_))) {
-    SetState(kEnded);
-    return;
-  }
-  started_ = true;
 }
 
 // OnStateChange listens to the cricket::VideoCapturer::SignalStateChange.

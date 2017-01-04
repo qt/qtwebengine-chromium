@@ -3,24 +3,29 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Certificate chain with an intermediary that uses MD5 to sign the target
+"""Certificate chain with an intermediate that uses MD5 to sign the target
 certificate. This is expected to fail because MD5 is too weak."""
 
 import common
 
-# Self-signed root certificate (part of trust store).
+# Self-signed root certificate (used as trust anchor).
 root = common.create_self_signed_root_certificate('Root')
 
-# Intermediary.
-intermediary = common.create_intermediary_certificate('Intermediary', root)
+# Intermediate.
+intermediate = common.create_intermediate_certificate('Intermediate', root)
 
 # Target certificate.
-target = common.create_end_entity_certificate('Target', intermediary)
+target = common.create_end_entity_certificate('Target', intermediate)
 target.set_signature_hash('md5')
 
-chain = [target, intermediary]
-trusted = [root]
+chain = [target, intermediate]
+trusted = common.TrustAnchor(root, constrained=False)
 time = common.DEFAULT_TIME
 verify_result = False
+errors = """[Context] Processing Certificate
+  index: 1
+      [Error] Invalid or unsupported signature algorithm
+        algorithm: 300D06092A864886F70D0101040500
+"""
 
-common.write_test_file(__doc__, chain, trusted, time, verify_result)
+common.write_test_file(__doc__, chain, trusted, time, verify_result, errors)

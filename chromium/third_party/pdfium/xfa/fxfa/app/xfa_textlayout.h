@@ -12,9 +12,9 @@
 
 #include "xfa/fde/css/fde_css.h"
 #include "xfa/fde/fde_gedevice.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
 #include "xfa/fgas/layout/fgas_rtfbreak.h"
 #include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
 
 #define XFA_LOADERCNTXTFLG_FILTERSPACE 0x001
 

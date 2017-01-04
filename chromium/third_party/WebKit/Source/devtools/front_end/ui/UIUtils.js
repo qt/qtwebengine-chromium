@@ -387,24 +387,25 @@ WebInspector._valueModificationDirection = function(event)
 /**
  * @param {string} hexString
  * @param {!Event} event
+ * @return {?string}
  */
 WebInspector._modifiedHexValue = function(hexString, event)
 {
     var direction = WebInspector._valueModificationDirection(event);
     if (!direction)
-        return hexString;
+        return null;
 
     var mouseEvent = /** @type {!MouseEvent} */(event);
     var number = parseInt(hexString, 16);
     if (isNaN(number) || !isFinite(number))
-        return hexString;
+        return null;
 
     var hexStrLen = hexString.length;
     var channelLen = hexStrLen / 3;
 
     // Colors are either rgb or rrggbb.
     if (channelLen !== 1 && channelLen !== 2)
-        return hexString;
+        return null;
 
     // Precision modifier keys work with both mousewheel and up/down keys.
     // When ctrl is pressed, increase R by 1.
@@ -438,12 +439,13 @@ WebInspector._modifiedHexValue = function(hexString, event)
 /**
  * @param {number} number
  * @param {!Event} event
+ * @return {?number}
  */
 WebInspector._modifiedFloatNumber = function(number, event)
 {
     var direction = WebInspector._valueModificationDirection(event);
     if (!direction)
-        return number;
+        return null;
 
     var mouseEvent = /** @type {!MouseEvent} */(event);
 
@@ -480,32 +482,28 @@ WebInspector._modifiedFloatNumber = function(number, event)
  */
 WebInspector.createReplacementString = function(wordString, event, customNumberHandler)
 {
-    var replacementString;
-    var prefix, suffix, number;
-
-    var matches;
-    matches = /(.*#)([\da-fA-F]+)(.*)/.exec(wordString);
+    var prefix;
+    var suffix;
+    var number;
+    var replacementString = null;
+    var matches = /(.*#)([\da-fA-F]+)(.*)/.exec(wordString);
     if (matches && matches.length) {
         prefix = matches[1];
         suffix = matches[3];
         number = WebInspector._modifiedHexValue(matches[2], event);
-
-        replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
+        if (number !== null)
+            replacementString = prefix + number + suffix;
     } else {
         matches = /(.*?)(-?(?:\d+(?:\.\d+)?|\.\d+))(.*)/.exec(wordString);
         if (matches && matches.length) {
             prefix = matches[1];
             suffix = matches[3];
             number = WebInspector._modifiedFloatNumber(parseFloat(matches[2]), event);
-
-            // Need to check for null explicitly.
-            if (number === null)
-                return null;
-
-            replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
+            if (number !== null)
+                replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
         }
     }
-    return replacementString || null;
+    return replacementString;
 }
 
 /**
@@ -586,6 +584,9 @@ Number.preciseMillisToString = function(ms, precision)
 }
 
 /** @type {!WebInspector.UIStringFormat} */
+WebInspector._microsFormat = new WebInspector.UIStringFormat("%.0f\u2009\u03bcs");
+
+/** @type {!WebInspector.UIStringFormat} */
 WebInspector._subMillisFormat = new WebInspector.UIStringFormat("%.2f\u2009ms");
 
 /** @type {!WebInspector.UIStringFormat} */
@@ -616,9 +617,11 @@ Number.millisToString = function(ms, higherResolution)
     if (ms === 0)
         return "0";
 
+    if (higherResolution && ms < 0.1)
+        return WebInspector._microsFormat.format(ms * 1000);
     if (higherResolution && ms < 1000)
         return WebInspector._subMillisFormat.format(ms);
-    else if (ms < 1000)
+    if (ms < 1000)
         return WebInspector._millisFormat.format(ms);
 
     var seconds = ms / 1000;
@@ -743,14 +746,6 @@ WebInspector.asyncStackTraceLabel = function(description)
 }
 
 /**
- * @return {string}
- */
-WebInspector.manageBlackboxingSettingsTabLabel = function()
-{
-    return WebInspector.UIString("Blackboxing");
-}
-
-/**
  * @param {!Element} element
  */
 WebInspector.installComponentRootStyles = function(element)
@@ -818,6 +813,7 @@ WebInspector.currentFocusElement = function()
 WebInspector._focusChanged = function(event)
 {
     var node = event.deepActiveElement();
+    WebInspector.Widget.focusWidgetForNode(node);
     WebInspector.setCurrentFocusElement(node);
 }
 
@@ -834,11 +830,11 @@ WebInspector._documentBlurred = function(document, event)
         WebInspector.setCurrentFocusElement(null);
 }
 
-WebInspector._textInputTypes = ["text", "search", "tel", "url", "email", "password"].keySet();
+WebInspector._textInputTypes = new Set(["text", "search", "tel", "url", "email", "password"]);
 WebInspector._isTextEditingElement = function(element)
 {
     if (element instanceof HTMLInputElement)
-        return element.type in WebInspector._textInputTypes;
+        return WebInspector._textInputTypes.has(element.type);
 
     if (element instanceof HTMLTextAreaElement)
         return true;
@@ -1049,12 +1045,18 @@ WebInspector.revertDomChanges = function(domChanges)
  */
 WebInspector.measurePreferredSize = function(element, containerElement)
 {
+    var oldParent = element.parentElement;
+    var oldNextSibling = element.nextSibling;
     containerElement = containerElement || element.ownerDocument.body;
     containerElement.appendChild(element);
     element.positionAt(0, 0);
     var result = new Size(element.offsetWidth, element.offsetHeight);
+
     element.positionAt(undefined, undefined);
-    element.remove();
+    if (oldParent)
+        oldParent.insertBefore(element, oldNextSibling);
+    else
+        element.remove();
     return result;
 }
 
@@ -1278,8 +1280,6 @@ WebInspector.initializeUIUtils = function(document, themeSetting)
     var body = /** @type {!Element} */ (document.body);
     WebInspector.appendStyle(body, "ui/inspectorStyle.css");
     WebInspector.appendStyle(body, "ui/popover.css");
-    WebInspector.appendStyle(body, "ui/sidebarPane.css");
-
 }
 
 /**
@@ -1288,7 +1288,7 @@ WebInspector.initializeUIUtils = function(document, themeSetting)
  */
 WebInspector.beautifyFunctionName = function(name)
 {
-    return name || WebInspector.UIString("(anonymous function)");
+    return name || WebInspector.UIString("(anonymous)");
 }
 
 /**
@@ -1371,6 +1371,22 @@ function createCheckboxLabel(title, checked, subtitle)
             element.subtitleElement.textContent = subtitle;
         }
     }
+    return element;
+}
+
+/**
+ * @return {!Element}
+ * @param {number} min
+ * @param {number} max
+ * @param {number} tabIndex
+ */
+function createSliderLabel(min, max, tabIndex)
+{
+    var element = createElement("label", "dt-slider");
+    element.sliderElement.min = min;
+    element.sliderElement.max = max;
+    element.sliderElement.step = 1;
+    element.sliderElement.tabIndex = tabIndex;
     return element;
 }
 
@@ -1504,6 +1520,15 @@ WebInspector.appendStyle = function(node, cssFile)
             this.checkboxElement.style.borderColor = color;
         },
 
+        /**
+         * @param {boolean} focus
+         * @this {Element}
+         */
+        set visualizeFocus(focus)
+        {
+            this.checkboxElement.classList.toggle("dt-checkbox-visualize-focus", focus);
+        },
+
         __proto__: HTMLLabelElement.prototype
     });
 
@@ -1525,6 +1550,62 @@ WebInspector.appendStyle = function(node, cssFile)
         set type(type)
         {
             this._iconElement.className = type;
+        },
+
+        __proto__: HTMLLabelElement.prototype
+    });
+
+    registerCustomElement("label", "dt-slider", {
+        /**
+         * @this {Element}
+         */
+        createdCallback: function()
+        {
+            var root = WebInspector.createShadowRootWithCoreStyles(this, "ui/slider.css");
+            this.sliderElement = createElementWithClass("input", "dt-range-input");
+            this.sliderElement.type = "range";
+            root.appendChild(this.sliderElement);
+        },
+
+        /**
+         * @param {number} amount
+         * @this {Element}
+         */
+        set value(amount)
+        {
+            this.sliderElement.value = amount;
+        },
+
+        /**
+         * @this {Element}
+         */
+        get value()
+        {
+            return this.sliderElement.value;
+        },
+
+        __proto__: HTMLLabelElement.prototype
+    });
+
+    registerCustomElement("label", "dt-small-bubble", {
+        /**
+         * @this {Element}
+         */
+        createdCallback: function()
+        {
+            var root = WebInspector.createShadowRootWithCoreStyles(this, "ui/smallBubble.css");
+            this._textElement = root.createChild("div");
+            this._textElement.className = "info";
+            this._textElement.createChild("content");
+        },
+
+        /**
+         * @param {string} type
+         * @this {Element}
+         */
+        set type(type)
+        {
+            this._textElement.className = type;
         },
 
         __proto__: HTMLLabelElement.prototype
@@ -1631,60 +1712,6 @@ WebInspector.bindInput = function(input, apply, validate, numeric)
 
 /**
  * @constructor
- */
-WebInspector.StringFormatter = function()
-{
-    this._processors = [];
-    this._regexes = [];
-}
-
-WebInspector.StringFormatter.prototype = {
-    /**
-     * @param {!RegExp} regex
-     * @param {function(string):!Node} handler
-     */
-    addProcessor: function(regex, handler)
-    {
-        this._regexes.push(regex);
-        this._processors.push(handler);
-    },
-
-    /**
-     * @param {string} text
-     * @return {!Node}
-     */
-    formatText: function(text)
-    {
-        return this._runProcessor(0, text);
-    },
-
-    /**
-     * @param {number} processorIndex
-     * @param {string} text
-     * @return {!Node}
-     */
-    _runProcessor: function(processorIndex, text)
-    {
-        if (processorIndex >= this._processors.length)
-            return createTextNode(text);
-
-        var container = createDocumentFragment();
-        var regex = this._regexes[processorIndex];
-        var processor = this._processors[processorIndex];
-
-        // Due to the nature of regex, |items| array has matched elements on its even indexes.
-        var items = text.replace(regex, "\0$1\0").split("\0");
-        for (var i = 0; i < items.length; ++i) {
-            var processedNode = i % 2 ? processor(items[i]) : this._runProcessor(processorIndex + 1, items[i]);
-            container.appendChild(processedNode);
-        }
-
-        return container;
-    }
-}
-
-/**
- * @constructor
  * @param {!WebInspector.Setting} setting
  */
 WebInspector.ThemeSupport = function(setting)
@@ -1717,6 +1744,14 @@ WebInspector.ThemeSupport.prototype = {
     hasTheme: function()
     {
         return this._themeName !== "default";
+    },
+
+    /**
+     * @return {string}
+     */
+    themeName: function()
+    {
+        return this._themeName;
     },
 
     /**
@@ -1854,10 +1889,9 @@ WebInspector.ThemeSupport.prototype = {
         if (name.indexOf("background") === -1)
             colorUsage |= WebInspector.ThemeSupport.ColorUsage.Foreground;
 
-        var colorRegex = /((?:rgb|hsl)a?\([^)]+\)|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|\b\w+\b(?!-))/g;
         output.push(name);
         output.push(":");
-        var items = value.replace(colorRegex, "\0$1\0").split("\0");
+        var items = value.replace(WebInspector.Color.Regex, "\0$1\0").split("\0");
         for (var i = 0; i < items.length; ++i)
             output.push(this.patchColor(items[i], colorUsage));
         if (style.getPropertyPriority(name))

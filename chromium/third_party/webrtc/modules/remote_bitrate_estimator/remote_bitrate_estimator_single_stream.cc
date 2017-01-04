@@ -21,6 +21,7 @@
 #include "webrtc/modules/remote_bitrate_estimator/overuse_estimator.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/metrics.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -54,7 +55,8 @@ RemoteBitrateEstimatorSingleStream::RemoteBitrateEstimatorSingleStream(
       observer_(observer),
       crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
       last_process_time_(-1),
-      process_interval_ms_(kProcessIntervalMs) {
+      process_interval_ms_(kProcessIntervalMs),
+      uma_recorded_(false) {
   assert(observer_);
   LOG(LS_INFO) << "RemoteBitrateEstimatorSingleStream: Instantiating.";
 }
@@ -71,6 +73,13 @@ void RemoteBitrateEstimatorSingleStream::IncomingPacket(
     int64_t arrival_time_ms,
     size_t payload_size,
     const RTPHeader& header) {
+  if (!uma_recorded_) {
+    BweNames type = BweNames::kReceiverTOffset;
+    if (!header.extension.hasTransmissionTimeOffset)
+      type = BweNames::kReceiverNoExtension;
+    RTC_HISTOGRAM_ENUMERATION(kBweTypeHistogram, type, BweNames::kBweNamesMax);
+    uma_recorded_ = true;
+  }
   uint32_t ssrc = header.ssrc;
   uint32_t rtp_timestamp = header.timestamp +
       header.extension.transmissionTimeOffset;
@@ -109,12 +118,12 @@ void RemoteBitrateEstimatorSingleStream::IncomingPacket(
   uint32_t timestamp_delta = 0;
   int64_t time_delta = 0;
   int size_delta = 0;
-  if (estimator->inter_arrival.ComputeDeltas(rtp_timestamp, arrival_time_ms,
-                                             payload_size, &timestamp_delta,
-                                             &time_delta, &size_delta)) {
+  if (estimator->inter_arrival.ComputeDeltas(
+          rtp_timestamp, arrival_time_ms, now_ms, payload_size,
+          &timestamp_delta, &time_delta, &size_delta)) {
     double timestamp_delta_ms = timestamp_delta * kTimestampToMs;
     estimator->estimator.Update(time_delta, timestamp_delta_ms, size_delta,
-                                estimator->detector.State());
+                                estimator->detector.State(), now_ms);
     estimator->detector.Detect(estimator->estimator.offset(),
                                timestamp_delta_ms,
                                estimator->estimator.num_of_deltas(), now_ms);

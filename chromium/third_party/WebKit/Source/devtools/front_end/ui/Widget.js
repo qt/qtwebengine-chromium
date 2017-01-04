@@ -41,12 +41,14 @@ WebInspector.Widget = function(isWebComponent)
     }
     this._isWebComponent = isWebComponent;
     this.element.__widget = this;
-    this._visible = true;
+    this._visible = false;
     this._isRoot = false;
     this._isShowing = false;
     this._children = [];
     this._hideOnDetach = false;
     this._notificationDepth = 0;
+    this._invalidationsSuspended = 0;
+    this._defaultFocusedChild = null;
 }
 
 WebInspector.Widget.prototype = {
@@ -93,6 +95,8 @@ WebInspector.Widget.prototype = {
      */
     shouldHideOnDetach: function()
     {
+        if (!this.element.parentElement)
+            return false;
         if (this._hideOnDetach)
             return true;
         for (var child of this._children) {
@@ -119,7 +123,7 @@ WebInspector.Widget.prototype = {
     {
         if (this._isRoot)
             return true;
-        return this._parentWidget && this._parentWidget.isShowing();
+        return !!this._parentWidget && this._parentWidget.isShowing();
     },
 
     /**
@@ -147,6 +151,14 @@ WebInspector.Widget.prototype = {
         this.restoreScrollPositions();
         this._notify(this.wasShown);
         this._callOnVisibleChildren(this._processWasShown);
+    },
+
+    _processWasDetachedFromHierarchy: function()
+    {
+        this._notify(this.wasDetachedFromHierarchy);
+        var copy = this._children.slice();
+        for (var widget of copy)
+            widget._processWasDetachedFromHierarchy();
     },
 
     _processWillHide: function()
@@ -196,6 +208,10 @@ WebInspector.Widget.prototype = {
     {
     },
 
+    wasDetachedFromHierarchy: function()
+    {
+    },
+
     onResize: function()
     {
     },
@@ -205,35 +221,61 @@ WebInspector.Widget.prototype = {
     },
 
     /**
-     * @param {?Element} parentElement
+     * @param {!Element} parentElement
      * @param {?Element=} insertBefore
      */
     show: function(parentElement, insertBefore)
     {
         WebInspector.Widget.__assert(parentElement, "Attempt to attach widget with no parent element");
 
-        // Update widget hierarchy.
-        if (this.element.parentElement !== parentElement) {
-            if (this.element.parentElement)
-                this.detach();
-
+        if (!this._isRoot) {
+            // Update widget hierarchy.
             var currentParent = parentElement;
             while (currentParent && !currentParent.__widget)
                 currentParent = currentParent.parentElementOrShadowHost();
-
-            if (currentParent) {
-                this._parentWidget = currentParent.__widget;
-                this._parentWidget._children.push(this);
-                this._isRoot = false;
-            } else
-                WebInspector.Widget.__assert(this._isRoot, "Attempt to attach widget to orphan node");
-        } else if (this._visible) {
-            return;
+            WebInspector.Widget.__assert(currentParent, "Attempt to attach widget to orphan node");
+            this.attach(currentParent.__widget);
         }
+
+        this.showWidget(parentElement, insertBefore);
+    },
+
+    /**
+     * @param {!WebInspector.Widget} parentWidget
+     */
+    attach: function(parentWidget)
+    {
+        if (parentWidget === this._parentWidget)
+            return;
+        if (this._parentWidget)
+            this.detach();
+        this._parentWidget = parentWidget;
+        this._parentWidget._children.push(this);
+        this._isRoot = false;
+    },
+
+    /**
+     * @param {!Element} parentElement
+     * @param {?Element=} insertBefore
+     */
+    showWidget: function(parentElement, insertBefore)
+    {
+        var currentParent = parentElement;
+        while (currentParent && !currentParent.__widget)
+            currentParent = currentParent.parentElementOrShadowHost();
+
+        if (this._isRoot)
+            WebInspector.Widget.__assert(!currentParent, "Attempt to show root widget under another widget");
+        else
+            WebInspector.Widget.__assert(currentParent && currentParent.__widget === this._parentWidget, "Attempt to show under node belonging to alien widget");
+
+        var wasVisible = this._visible;
+        if (wasVisible && this.element.parentElement === parentElement)
+            return;
 
         this._visible = true;
 
-        if (this._parentIsShowing())
+        if (!wasVisible && this._parentIsShowing())
             this._processWillShow();
 
         this.element.classList.remove("hidden");
@@ -247,7 +289,7 @@ WebInspector.Widget.prototype = {
                 WebInspector.Widget._originalAppendChild.call(parentElement, this.element);
         }
 
-        if (this._parentIsShowing())
+        if (!wasVisible && this._parentIsShowing())
             this._processWasShown();
 
         if (this._parentWidget && this._hasNonZeroConstraints())
@@ -256,48 +298,62 @@ WebInspector.Widget.prototype = {
             this._processOnResize();
     },
 
+    hideWidget: function()
+    {
+        if (!this._parentWidget)
+            return;
+        this._hideWidget();
+    },
+
     /**
      * @param {boolean=} overrideHideOnDetach
      */
-    detach: function(overrideHideOnDetach)
+    _hideWidget: function(overrideHideOnDetach)
     {
-        var parentElement = this.element.parentElement;
-        if (!parentElement)
+        if (!this._visible)
             return;
+        this._visible = false;
+        var parentElement = this.element.parentElement;
 
         if (this._parentIsShowing())
             this._processWillHide();
 
         if (!overrideHideOnDetach && this.shouldHideOnDetach()) {
             this.element.classList.add("hidden");
-            this._visible = false;
-            if (this._parentIsShowing())
-                this._processWasHidden();
-            if (this._parentWidget && this._hasNonZeroConstraints())
-                this._parentWidget.invalidateConstraints();
-            return;
+        } else {
+            // Force legal removal
+            WebInspector.Widget._decrementWidgetCounter(parentElement, this.element);
+            WebInspector.Widget._originalRemoveChild.call(parentElement, this.element);
         }
 
-        // Force legal removal
-        WebInspector.Widget._decrementWidgetCounter(parentElement, this.element);
-        WebInspector.Widget._originalRemoveChild.call(parentElement, this.element);
-
-        this._visible = false;
         if (this._parentIsShowing())
             this._processWasHidden();
+        if (this._parentWidget && this._hasNonZeroConstraints())
+            this._parentWidget.invalidateConstraints();
+    },
+
+    detach: function()
+    {
+        if (!this._parentWidget && !this._isRoot)
+            return;
+
+        if (this._visible)
+            this._hideWidget(true);
 
         // Update widget hierarchy.
         if (this._parentWidget) {
             var childIndex = this._parentWidget._children.indexOf(this);
             WebInspector.Widget.__assert(childIndex >= 0, "Attempt to remove non-child widget");
             this._parentWidget._children.splice(childIndex, 1);
+            if (this._parentWidget._defaultFocusedChild === this)
+                this._parentWidget._defaultFocusedChild = null;
             this._parentWidget.childWasDetached(this);
             var parent = this._parentWidget;
             this._parentWidget = null;
-            if (this._hasNonZeroConstraints())
-                parent.invalidateConstraints();
-        } else
+            this._processWasDetachedFromHierarchy();
+        } else {
             WebInspector.Widget.__assert(this._isRoot, "Removing non-root widget from DOM");
+        }
     },
 
     detachChildWidgets: function()
@@ -381,14 +437,6 @@ WebInspector.Widget.prototype = {
     },
 
     /**
-     * @return {!Element}
-     */
-    defaultFocusedElement: function()
-    {
-        return this._defaultFocusedElement || this.element;
-    },
-
-    /**
      * @param {!Element} element
      */
     setDefaultFocusedElement: function(element)
@@ -396,13 +444,34 @@ WebInspector.Widget.prototype = {
         this._defaultFocusedElement = element;
     },
 
+    /**
+     * @param {!WebInspector.Widget} child
+     */
+    setDefaultFocusedChild: function(child)
+    {
+        WebInspector.Widget.__assert(child._parentWidget === this, "Attempt to set non-child widget as default focused.");
+        this._defaultFocusedChild = child;
+    },
+
     focus: function()
     {
-        var element = this.defaultFocusedElement();
-        if (!element || element.isAncestor(this.element.ownerDocument.activeElement))
+        var element = this._defaultFocusedElement;
+        if (element && !element.isAncestor(this.element.ownerDocument.activeElement)) {
+            WebInspector.setCurrentFocusElement(element);
             return;
+        }
 
-        WebInspector.setCurrentFocusElement(element);
+        if (this._defaultFocusedChild && this._defaultFocusedChild._visible) {
+            this._defaultFocusedChild.focus();
+        } else {
+            for (var child of this._children) {
+                if (child._visible) {
+                    child.focus();
+                    break;
+                }
+            }
+        }
+
     },
 
     /**
@@ -420,11 +489,18 @@ WebInspector.Widget.prototype = {
     measurePreferredSize: function()
     {
         var document = this.element.ownerDocument;
+        var oldParent = this.element.parentElement;
+        var oldNextSibling = this.element.nextSibling;
+
         WebInspector.Widget._originalAppendChild.call(document.body, this.element);
         this.element.positionAt(0, 0);
         var result = new Size(this.element.offsetWidth, this.element.offsetHeight);
+
         this.element.positionAt(undefined, undefined);
-        WebInspector.Widget._originalRemoveChild.call(document.body, this.element);
+        if (oldParent)
+            WebInspector.Widget._originalInsertBefore.call(oldParent, this.element, oldNextSibling);
+        else
+            WebInspector.Widget._originalRemoveChild.call(document.body, this.element);
         return result;
     },
 
@@ -479,8 +555,25 @@ WebInspector.Widget.prototype = {
         return !!(constraints.minimum.width || constraints.minimum.height || constraints.preferred.width || constraints.preferred.height);
     },
 
+    suspendInvalidations()
+    {
+        ++this._invalidationsSuspended;
+    },
+
+    resumeInvalidations()
+    {
+        --this._invalidationsSuspended;
+        if (!this._invalidationsSuspended && this._invalidationsRequested)
+            this.invalidateConstraints();
+    },
+
     invalidateConstraints: function()
     {
+        if (this._invalidationsSuspended) {
+            this._invalidationsRequested = true;
+            return;
+        }
+        this._invalidationsRequested = false;
         var cached = this._cachedConstraints;
         delete this._cachedConstraints;
         var actual = this.constraints();
@@ -533,6 +626,26 @@ WebInspector.Widget.__assert = function(condition, message)
     if (!condition) {
         console.trace();
         throw new Error(message);
+    }
+}
+
+/**
+ * @param {?Node} node
+ */
+WebInspector.Widget.focusWidgetForNode = function(node)
+{
+    while (node) {
+        if (node.__widget)
+            break;
+        node = node.parentNodeOrShadowHost();
+    }
+    if (!node)
+        return;
+
+    var widget = node.__widget;
+    while (widget._parentWidget) {
+        widget._parentWidget._defaultFocusedChild = widget;
+        widget = widget._parentWidget;
     }
 }
 
@@ -627,27 +740,6 @@ WebInspector.VBoxWithResizeCallback.prototype = {
     onResize: function()
     {
         this._resizeCallback();
-    },
-
-    __proto__: WebInspector.VBox.prototype
-}
-
-/**
- * @constructor
- * @extends {WebInspector.VBox}
- */
-WebInspector.VBoxWithToolbarItems = function()
-{
-    WebInspector.VBox.call(this);
-}
-
-WebInspector.VBoxWithToolbarItems.prototype = {
-    /**
-     * @return {!Array<!WebInspector.ToolbarItem>}
-     */
-    toolbarItems: function()
-    {
-        return [];
     },
 
     __proto__: WebInspector.VBox.prototype

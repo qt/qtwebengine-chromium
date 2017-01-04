@@ -181,11 +181,6 @@ int32_t Context::CreateGpuMemoryBufferImage(size_t width,
   return -1;
 }
 
-int32_t Context::GetImageGpuMemoryBufferId(unsigned image_id) {
-  NOTIMPLEMENTED();
-  return -1;
-}
-
 void Context::SignalQuery(uint32_t query, const base::Closure& callback) {
   NOTIMPLEMENTED();
 }
@@ -264,7 +259,7 @@ bool Context::CreateService(gl::GLSurface* gl_surface) {
   scoped_refptr<gpu::gles2::ContextGroup> group(new gpu::gles2::ContextGroup(
       gpu_preferences_, nullptr, nullptr,
       new gpu::gles2::ShaderTranslatorCache(gpu_preferences_),
-      new gpu::gles2::FramebufferCompletenessCache, feature_info, true,
+      new gpu::gles2::FramebufferCompletenessCache, feature_info, true, nullptr,
       nullptr));
 
   std::unique_ptr<gpu::gles2::GLES2Decoder> decoder(

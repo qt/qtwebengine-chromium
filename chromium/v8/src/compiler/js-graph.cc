@@ -29,14 +29,22 @@ Node* JSGraph::ToNumberBuiltinConstant() {
                 HeapConstant(isolate()->builtins()->ToNumber()));
 }
 
-Node* JSGraph::CEntryStubConstant(int result_size) {
-  if (result_size == 1) {
-    return CACHED(kCEntryStubConstant,
-                  HeapConstant(CEntryStub(isolate(), 1).GetCode()));
+Node* JSGraph::CEntryStubConstant(int result_size, SaveFPRegsMode save_doubles,
+                                  ArgvMode argv_mode, bool builtin_exit_frame) {
+  if (save_doubles == kDontSaveFPRegs && argv_mode == kArgvOnStack &&
+      result_size == 1) {
+    CachedNode key = builtin_exit_frame
+                         ? kCEntryStubWithBuiltinExitFrameConstant
+                         : kCEntryStubConstant;
+    return CACHED(key,
+                  HeapConstant(CEntryStub(isolate(), result_size, save_doubles,
+                                          argv_mode, builtin_exit_frame)
+                                   .GetCode()));
   }
-  return HeapConstant(CEntryStub(isolate(), result_size).GetCode());
+  CEntryStub stub(isolate(), result_size, save_doubles, argv_mode,
+                  builtin_exit_frame);
+  return HeapConstant(stub.GetCode());
 }
-
 
 Node* JSGraph::EmptyFixedArrayConstant() {
   return CACHED(kEmptyFixedArrayConstant,
@@ -46,6 +54,20 @@ Node* JSGraph::EmptyFixedArrayConstant() {
 Node* JSGraph::EmptyLiteralsArrayConstant() {
   return CACHED(kEmptyLiteralsArrayConstant,
                 HeapConstant(factory()->empty_literals_array()));
+}
+
+Node* JSGraph::EmptyStringConstant() {
+  return CACHED(kEmptyStringConstant, HeapConstant(factory()->empty_string()));
+}
+
+Node* JSGraph::FixedArrayMapConstant() {
+  return CACHED(kFixedArrayMapConstant,
+                HeapConstant(factory()->fixed_array_map()));
+}
+
+Node* JSGraph::FixedDoubleArrayMapConstant() {
+  return CACHED(kFixedDoubleArrayMapConstant,
+                HeapConstant(factory()->fixed_double_array_map()));
 }
 
 Node* JSGraph::HeapNumberMapConstant() {
@@ -91,7 +113,6 @@ Node* JSGraph::NullConstant() {
 Node* JSGraph::ZeroConstant() {
   return CACHED(kZeroConstant, NumberConstant(0.0));
 }
-
 
 Node* JSGraph::OneConstant() {
   return CACHED(kOneConstant, NumberConstant(1.0));
@@ -147,6 +168,11 @@ Node* JSGraph::Constant(int32_t value) {
   return NumberConstant(value);
 }
 
+Node* JSGraph::Constant(uint32_t value) {
+  if (value == 0) return ZeroConstant();
+  if (value == 1) return OneConstant();
+  return NumberConstant(value);
+}
 
 Node* JSGraph::Int32Constant(int32_t value) {
   Node** loc = cache_.FindInt32Constant(value);

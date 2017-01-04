@@ -22,7 +22,7 @@ tr.b.unittest.testSuite(function() {
     container.id = 'track_view_container';
 
     var view = document.createElement('tr-ui-timeline-view');
-    view.appendChild(container);
+    Polymer.dom(view).appendChild(container);
     view.trackViewContainer_ = container;
     return view;
   }
@@ -32,7 +32,7 @@ tr.b.unittest.testSuite(function() {
     var withMetadata = opt_withMetadata !== undefined ?
         opt_withMetadata : true;
 
-    var num_tests = 50;
+    var numTests = 50;
     var testIndex = 0;
     var startTime = 0;
 
@@ -41,19 +41,19 @@ tr.b.unittest.testSuite(function() {
     io.showImportWarnings = false;
     model.importOptions = io;
 
-    for (testIndex = 0; testIndex < num_tests; ++testIndex) {
+    for (testIndex = 0; testIndex < numTests; ++testIndex) {
       var process = model.getOrCreateProcess(10000 + testIndex);
-      if (testIndex % 2 == 0) {
+      if (testIndex % 2 === 0) {
         var thread = process.getOrCreateThread('Thread Name Here');
-        thread.sliceGroup.pushSlice(new tr.model.Slice(
+        thread.sliceGroup.pushSlice(new tr.model.ThreadSlice(
             'foo', 'a', 0, startTime, {}, 1));
-        thread.sliceGroup.pushSlice(new tr.model.Slice(
+        thread.sliceGroup.pushSlice(new tr.model.ThreadSlice(
             'bar', 'b', 0, startTime + 23, {}, 10));
       } else {
         var thread = process.getOrCreateThread('Name');
-        thread.sliceGroup.pushSlice(new tr.model.Slice(
+        thread.sliceGroup.pushSlice(new tr.model.ThreadSlice(
             'foo', 'a', 0, startTime + 4, {}, 11));
-        thread.sliceGroup.pushSlice(new tr.model.Slice(
+        thread.sliceGroup.pushSlice(new tr.model.ThreadSlice(
             'bar', 'b', 0, startTime + 22, {}, 14));
       }
     }
@@ -111,12 +111,12 @@ tr.b.unittest.testSuite(function() {
     view.model = model11;
 
     var simpleButton1 = document.createElement('tr-ui-b-toolbar-button');
-    simpleButton1.textContent = 'M';
-    view.leftControls.appendChild(simpleButton1);
+    Polymer.dom(simpleButton1).textContent = 'M';
+    Polymer.dom(view.leftControls).appendChild(simpleButton1);
 
     var simpleButton2 = document.createElement('tr-ui-b-toolbar-button');
-    simpleButton2.textContent = 'am button';
-    view.leftControls.appendChild(simpleButton2);
+    Polymer.dom(simpleButton2).textContent = 'am button';
+    Polymer.dom(view.leftControls).appendChild(simpleButton2);
 
     this.addHTMLOutput(view);
   });
@@ -158,4 +158,3 @@ tr.b.unittest.testSuite(function() {
   });
 });
 </script>
-

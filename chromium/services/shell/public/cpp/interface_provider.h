@@ -5,6 +5,7 @@
 #ifndef SERVICES_SHELL_PUBLIC_CPP_INTERFACE_PROVIDER_H_
 #define SERVICES_SHELL_PUBLIC_CPP_INTERFACE_PROVIDER_H_
 
+#include "base/bind.h"
 #include "services/shell/public/interfaces/interface_provider.mojom.h"
 
 namespace shell {
@@ -18,6 +19,8 @@ namespace shell {
 // Connection.
 class InterfaceProvider {
  public:
+  using ForwardCallback = base::Callback<void(const std::string&,
+                                              mojo::ScopedMessagePipeHandle)>;
   class TestApi {
    public:
     explicit TestApi(InterfaceProvider* provider) : provider_(provider) {}
@@ -41,7 +44,16 @@ class InterfaceProvider {
   InterfaceProvider();
   ~InterfaceProvider();
 
+  // Binds this InterfaceProvider to an actual mojom::InterfaceProvider pipe.
+  // It is an error to call this on a forwarding InterfaceProvider, i.e. this
+  // call is exclusive to Forward().
   void Bind(mojom::InterfaceProviderPtr interface_provider);
+
+  // Sets this InterfaceProvider to forward all GetInterface() requests to
+  // |callback|. It is an error to call this on a bound InterfaceProvider, i.e.
+  // this call is exclusive to Bind(). In addition, and unlike Bind(), this MUST
+  // be called before any calls to GetInterface() are made.
+  void Forward(const ForwardCallback& callback);
 
   // Returns a raw pointer to the remote InterfaceProvider.
   mojom::InterfaceProvider* get() { return interface_provider_.get(); }
@@ -68,6 +80,19 @@ class InterfaceProvider {
   void GetInterface(const std::string& name,
                     mojo::ScopedMessagePipeHandle request_handle);
 
+  // Returns a callback to GetInterface<Interface>(). This can be passed to
+  // InterfaceRegistry::AddInterface() to forward requests.
+  template <typename Interface>
+  base::Callback<void(mojo::InterfaceRequest<Interface>)>
+  CreateInterfaceFactory() {
+    // InterfaceProvider::GetInterface() is overloaded, so static_cast to select
+    // the overload that takes an mojo::InterfaceRequest<Interface>.
+    return base::Bind(static_cast<void (InterfaceProvider::*)(
+                          mojo::InterfaceRequest<Interface>)>(
+                          &InterfaceProvider::GetInterface<Interface>),
+                      GetWeakPtr());
+  }
+
  private:
   void SetBinderForName(
       const std::string& name,
@@ -82,6 +107,10 @@ class InterfaceProvider {
 
   mojom::InterfaceProviderPtr interface_provider_;
   mojom::InterfaceProviderRequest pending_request_;
+
+  // A callback to receive all GetInterface() requests in lieu of the
+  // InterfaceProvider pipe.
+  ForwardCallback forward_callback_;
 
   base::WeakPtrFactory<InterfaceProvider> weak_factory_;
 

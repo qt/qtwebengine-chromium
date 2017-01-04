@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include <map>
+
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
@@ -20,8 +22,10 @@
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/reload_type.h"
+#include "content/public/browser/restore_type.h"
+#include "content/public/browser/ssl_status.h"
 #include "content/public/common/page_state.h"
-#include "content/public/common/ssl_status.h"
 
 namespace content {
 class ResourceRequestBodyImpl;
@@ -36,29 +40,31 @@ class CONTENT_EXPORT NavigationEntryImpl
   // history item.  The tree currently only tracks the main frame by default,
   // and is populated with subframe nodes in --site-per-process mode.
   struct TreeNode {
-    TreeNode(FrameNavigationEntry* frame_entry);
+    TreeNode(TreeNode* parent, FrameNavigationEntry* frame_entry);
     ~TreeNode();
 
     // Returns whether this TreeNode corresponds to |frame_tree_node|.  If this
-    // is called on the root TreeNode, then |is_root_tree_node| should be true
-    // and we only check if |frame_tree_node| is the main frame.  Otherwise, we
-    // check if the unique name matches.
-    bool MatchesFrame(FrameTreeNode* frame_tree_node,
-                      bool is_root_tree_node) const;
+    // is called on the root TreeNode, we only check if |frame_tree_node| is the
+    // main frame.  Otherwise, we check if the unique name matches.
+    bool MatchesFrame(FrameTreeNode* frame_tree_node) const;
 
     // Recursively makes a deep copy of TreeNode with copies of each of the
     // FrameNavigationEntries in the subtree.  Replaces the TreeNode
-    // corresponding to |frame_tree_node| (and all of its children) with a new
-    // TreeNode for |frame_navigation_entry|.  Pass nullptr for both parameters
-    // to make a complete clone.
-    // |is_root_tree_node| indicates whether this is being called on the root
-    // NavigationEntryImpl::TreeNode.
+    // corresponding to |target_frame_tree_node|, clearing all of its children
+    // unless |clone_children_of_target| is true.  This function omits any
+    // subframe history items that do not correspond to frames actually in the
+    // current page, using |current_frame_tree_node| (if present).
     // TODO(creis): For --site-per-process, share FrameNavigationEntries between
     // NavigationEntries of the same tab.
     std::unique_ptr<TreeNode> CloneAndReplace(
-        FrameTreeNode* frame_tree_node,
         FrameNavigationEntry* frame_navigation_entry,
-        bool is_root_tree_node) const;
+        bool clone_children_of_target,
+        FrameTreeNode* target_frame_tree_node,
+        FrameTreeNode* current_frame_tree_node,
+        TreeNode* parent_node) const;
+
+    // The parent of this node.
+    TreeNode* parent;
 
     // Ref counted pointer that keeps the FrameNavigationEntry alive as long as
     // it is needed by this node's NavigationEntry.
@@ -143,21 +149,31 @@ class CONTENT_EXPORT NavigationEntryImpl
   void SetRedirectChain(const std::vector<GURL>& redirects) override;
   const std::vector<GURL>& GetRedirectChain() const override;
   bool IsRestored() const override;
+  std::string GetExtraHeaders() const override;
+  void AddExtraHeaders(const std::string& extra_headers) override;
 
   // Creates a copy of this NavigationEntryImpl that can be modified
   // independently from the original.  Does not copy any value that would be
-  // cleared in ResetForCommit.
+  // cleared in ResetForCommit.  Unlike |CloneAndReplace|, this does not check
+  // whether the subframe history items are for frames that are still in the
+  // current page.
   std::unique_ptr<NavigationEntryImpl> Clone() const;
 
   // Like |Clone|, but replaces the FrameNavigationEntry corresponding to
-  // |frame_tree_node| (and all its children) with |frame_entry|.
+  // |target_frame_tree_node| with |frame_entry|, clearing all of its children
+  // unless |clone_children_of_target| is true.  This function omits any
+  // subframe history items that do not correspond to frames actually in the
+  // current page, using |root_frame_tree_node| (if present).
+  //
   // TODO(creis): Once we start sharing FrameNavigationEntries between
   // NavigationEntryImpls, we will need to support two versions of Clone: one
   // that shares the existing FrameNavigationEntries (for use within the same
   // tab) and one that draws them from a different pool (for use in a new tab).
   std::unique_ptr<NavigationEntryImpl> CloneAndReplace(
-      FrameTreeNode* frame_tree_node,
-      FrameNavigationEntry* frame_entry) const;
+      FrameNavigationEntry* frame_entry,
+      bool clone_children_of_target,
+      FrameTreeNode* target_frame_tree_node,
+      FrameTreeNode* root_frame_tree_node) const;
 
   // Helper functions to construct NavigationParameters for a navigation to this
   // NavigationEntry.
@@ -173,6 +189,8 @@ class CONTENT_EXPORT NavigationEntryImpl
   RequestNavigationParams ConstructRequestNavigationParams(
       const FrameNavigationEntry& frame_entry,
       bool is_same_document_history_load,
+      bool is_history_navigation_in_new_child,
+      const std::map<std::string, bool>& subframe_unique_names,
       bool has_committed_real_load,
       bool intended_as_new_entry,
       int pending_offset_to_send,
@@ -208,6 +226,7 @@ class CONTENT_EXPORT NavigationEntryImpl
       scoped_refptr<SiteInstanceImpl> source_site_instance,
       const GURL& url,
       const Referrer& referrer,
+      const std::vector<GURL>& redirect_chain,
       const PageState& page_state,
       const std::string& method,
       int64_t post_id);
@@ -216,8 +235,36 @@ class CONTENT_EXPORT NavigationEntryImpl
   // there is one in this NavigationEntry.
   FrameNavigationEntry* GetFrameEntry(FrameTreeNode* frame_tree_node) const;
 
+  // Returns a map of frame unique names to |is_about_blank| for immediate
+  // children of the TreeNode associated with |frame_tree_node|.  The renderer
+  // process will use this list of names to know whether to ask the browser
+  // process for a history item when new subframes are created during a
+  // back/forward navigation.  (|is_about_blank| can be used to skip the request
+  // if the frame's default URL is about:blank and the history item would be a
+  // no-op.  See https://crbug.com/657896.)
+  // TODO(creis): Send a data structure that also contains all corresponding
+  // same-process PageStates for the whole subtree, so that the renderer process
+  // only needs to ask the browser process to handle the cross-process cases.
+  // See https://crbug.com/639842.
+  std::map<std::string, bool> GetSubframeUniqueNames(
+      FrameTreeNode* frame_tree_node) const;
+
+  // Removes any subframe FrameNavigationEntries that match the unique name of
+  // |frame_tree_node|, and all of their children. There should be at most one,
+  // since collisions are avoided but leave old FrameNavigationEntries in the
+  // tree after their frame has been detached.
+  void ClearStaleFrameEntriesForNewFrame(FrameTreeNode* frame_tree_node);
+
   void set_unique_id(int unique_id) {
     unique_id_ = unique_id;
+  }
+
+  void set_started_from_context_menu(bool started_from_context_menu) {
+    started_from_context_menu_ = started_from_context_menu;
+  }
+
+  bool has_started_from_context_menu() const {
+    return started_from_context_menu_;
   }
 
   // The SiteInstance represents which pages must share processes. This is a
@@ -263,7 +310,7 @@ class CONTENT_EXPORT NavigationEntryImpl
     update_virtual_url_with_url_ = update;
   }
 
-  // Extra headers (separated by \n) to send during the request.
+  // Extra headers (separated by \r\n) to send during the request.
   void set_extra_headers(const std::string& extra_headers) {
     extra_headers_ = extra_headers;
   }
@@ -284,28 +331,20 @@ class CONTENT_EXPORT NavigationEntryImpl
     user_typed_url_ = user_typed_url;
   }
 
-  // Enumerations of the possible restore types.
-  enum RestoreType {
-    // Restore from the previous session.
-    RESTORE_LAST_SESSION_EXITED_CLEANLY,
-    RESTORE_LAST_SESSION_CRASHED,
-
-    // The entry has been restored from the current session. This is used when
-    // the user issues 'reopen closed tab'.
-    RESTORE_CURRENT_SESSION,
-
-    // The entry was not restored.
-    RESTORE_NONE
-  };
-
   // The RestoreType for this entry. This is set if the entry was retored. This
-  // is set to RESTORE_NONE once the entry is loaded.
+  // is set to RestoreType::NONE once the entry is loaded.
   void set_restore_type(RestoreType type) {
     restore_type_ = type;
   }
   RestoreType restore_type() const {
     return restore_type_;
   }
+
+  // The ReloadType for this entry.  This is set when a reload is requested.
+  // This is set to ReloadType::NONE if the entry isn't for a reload, or once
+  // the entry is loaded.
+  void set_reload_type(ReloadType type) { reload_type_ = type; }
+  ReloadType reload_type() const { return reload_type_; }
 
   void set_transferred_global_request_id(
       const GlobalRequestID& transferred_global_request_id) {
@@ -469,11 +508,6 @@ class CONTENT_EXPORT NavigationEntryImpl
   // doing the redirect).
   bool should_replace_entry_;
 
-  // This is used when transferring a pending entry from one process to another.
-  // We also send this data through session sync for offline analysis.
-  // It is preserved after commit but should not be persisted.
-  std::vector<GURL> redirect_chain_;
-
   // This is set to true when this entry's navigation should clear the session
   // history both on the renderer and browser side. The browser side history
   // won't be cleared until the renderer has committed this navigation. This
@@ -500,6 +534,13 @@ class CONTENT_EXPORT NavigationEntryImpl
   // Whether the URL load carries a user gesture.
   bool has_user_gesture_;
 #endif
+
+  // Used to store ReloadType for the entry.  This is ReloadType::NONE for
+  // non-reload navigations.  Reset at commit and not persisted.
+  ReloadType reload_type_;
+
+  // Determine if the navigation was started within a context menu.
+  bool started_from_context_menu_;
 
   // Used to store extra data to support browser features. This member is not
   // persisted, unless specific data is taken out/put back in at save/restore

@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "base/files/scoped_temp_dir.h"
+#include "base/guid.h"
 #include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -24,15 +25,18 @@ const int kExampleServiceWorkerRegistrationId = 42;
 
 const struct {
   const char* origin;
+  const char* tag;
   int64_t service_worker_registration_id;
 } kExampleNotificationData[] = {
-    {"https://example.com", 0},
-    {"https://example.com", kExampleServiceWorkerRegistrationId},
-    {"https://example.com", kExampleServiceWorkerRegistrationId},
-    {"https://example.com", kExampleServiceWorkerRegistrationId + 1},
-    {"https://chrome.com", 0},
-    {"https://chrome.com", 0},
-    {"https://chrome.com", kExampleServiceWorkerRegistrationId}};
+    {"https://example.com", "" /* tag */, 0},
+    {"https://example.com", "" /* tag */, kExampleServiceWorkerRegistrationId},
+    {"https://example.com", "" /* tag */, kExampleServiceWorkerRegistrationId},
+    {"https://example.com", "" /* tag */,
+     kExampleServiceWorkerRegistrationId + 1},
+    {"https://chrome.com", "" /* tag */, 0},
+    {"https://chrome.com", "" /* tag */, 0},
+    {"https://chrome.com", "" /* tag */, kExampleServiceWorkerRegistrationId},
+    {"https://chrome.com", "foo" /* tag */, 0}};
 
 class NotificationDatabaseTest : public ::testing::Test {
  protected:
@@ -51,25 +55,32 @@ class NotificationDatabaseTest : public ::testing::Test {
   // will be stored in |notification_id|.
   void CreateAndWriteNotification(NotificationDatabase* database,
                                   const GURL& origin,
+                                  const std::string& tag,
                                   int64_t service_worker_registration_id,
-                                  int64_t* notification_id) {
+                                  std::string* notification_id) {
+    DCHECK(notification_id);
+
     NotificationDatabaseData database_data;
+    database_data.notification_id = GenerateNotificationId();
     database_data.origin = origin;
     database_data.service_worker_registration_id =
         service_worker_registration_id;
+    database_data.notification_data.tag = tag;
 
     ASSERT_EQ(NotificationDatabase::STATUS_OK,
-              database->WriteNotificationData(origin, database_data,
-                                              notification_id));
+              database->WriteNotificationData(origin, database_data));
+
+    *notification_id = database_data.notification_id;
   }
 
   // Populates |database| with a series of example notifications that differ in
   // their origin and Service Worker registration id.
   void PopulateDatabaseWithExampleData(NotificationDatabase* database) {
-    int64_t notification_id;
+    std::string notification_id;
     for (size_t i = 0; i < arraysize(kExampleNotificationData); ++i) {
       ASSERT_NO_FATAL_FAILURE(CreateAndWriteNotification(
           database, GURL(kExampleNotificationData[i].origin),
+          kExampleNotificationData[i].tag,
           kExampleNotificationData[i].service_worker_registration_id,
           &notification_id));
     }
@@ -94,6 +105,9 @@ class NotificationDatabaseTest : public ::testing::Test {
         database->GetDBForTesting()->Put(leveldb::WriteOptions(), key, value);
     ASSERT_TRUE(status.ok());
   }
+
+  // Generates a random notification ID. The format of the ID is opaque.
+  std::string GenerateNotificationId() { return base::GenerateGUID(); }
 };
 
 TEST_F(NotificationDatabaseTest, OpenCloseMemory) {
@@ -122,7 +136,7 @@ TEST_F(NotificationDatabaseTest, OpenCloseFileSystem) {
   ASSERT_TRUE(database_dir.CreateUniqueTempDir());
 
   std::unique_ptr<NotificationDatabase> database(
-      CreateDatabaseOnFileSystem(database_dir.path()));
+      CreateDatabaseOnFileSystem(database_dir.GetPath()));
 
   // Should return false because the database does not exist on the file system.
   EXPECT_EQ(NotificationDatabase::STATUS_ERROR_NOT_FOUND,
@@ -137,7 +151,7 @@ TEST_F(NotificationDatabaseTest, OpenCloseFileSystem) {
 
   // Close the database, and re-open it without attempting to create it because
   // the files on the file system should still exist as expected.
-  database.reset(CreateDatabaseOnFileSystem(database_dir.path()));
+  database.reset(CreateDatabaseOnFileSystem(database_dir.GetPath()));
   EXPECT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(false /* create_if_missing */));
 }
@@ -147,7 +161,7 @@ TEST_F(NotificationDatabaseTest, DestroyDatabase) {
   ASSERT_TRUE(database_dir.CreateUniqueTempDir());
 
   std::unique_ptr<NotificationDatabase> database(
-      CreateDatabaseOnFileSystem(database_dir.path()));
+      CreateDatabaseOnFileSystem(database_dir.GetPath()));
 
   EXPECT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(true /* create_if_missing */));
@@ -159,7 +173,7 @@ TEST_F(NotificationDatabaseTest, DestroyDatabase) {
 
   // Try to re-open the database (but not re-create it). This should fail as
   // the files associated with the database should have been blown away.
-  database.reset(CreateDatabaseOnFileSystem(database_dir.path()));
+  database.reset(CreateDatabaseOnFileSystem(database_dir.GetPath()));
   EXPECT_EQ(NotificationDatabase::STATUS_ERROR_NOT_FOUND,
             database->Open(false /* create_if_missing */));
 }
@@ -169,34 +183,29 @@ TEST_F(NotificationDatabaseTest, NotificationIdIncrements) {
   ASSERT_TRUE(database_dir.CreateUniqueTempDir());
 
   std::unique_ptr<NotificationDatabase> database(
-      CreateDatabaseOnFileSystem(database_dir.path()));
+      CreateDatabaseOnFileSystem(database_dir.GetPath()));
 
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(true /* create_if_missing */));
 
+  EXPECT_EQ(database->GetNextPersistentNotificationId(), 1);
+  EXPECT_EQ(database->GetNextPersistentNotificationId(), 2);
+  EXPECT_EQ(database->GetNextPersistentNotificationId(), 3);
+
   GURL origin("https://example.com");
 
-  int64_t notification_id = 0;
+  std::string notification_id;
+  ASSERT_NO_FATAL_FAILURE(
+      CreateAndWriteNotification(database.get(), origin, "" /* tag */,
+                                 0 /* sw_registration_id */, &notification_id));
 
-  // Verify that getting two ids on the same database instance results in
-  // incrementing values. Notification ids will start at 1.
-  ASSERT_NO_FATAL_FAILURE(CreateAndWriteNotification(
-      database.get(), origin, 0 /* sw_registration_id */, &notification_id));
-  EXPECT_EQ(notification_id, 1);
-
-  ASSERT_NO_FATAL_FAILURE(CreateAndWriteNotification(
-      database.get(), origin, 0 /* sw_registration_id */, &notification_id));
-  EXPECT_EQ(notification_id, 2);
-
-  database.reset(CreateDatabaseOnFileSystem(database_dir.path()));
+  database.reset(CreateDatabaseOnFileSystem(database_dir.GetPath()));
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(false /* create_if_missing */));
 
-  // Verify that the next notification id was stored in the database, and
-  // continues where we expect it to be, even after closing and opening it.
-  ASSERT_NO_FATAL_FAILURE(CreateAndWriteNotification(
-      database.get(), origin, 0 /* sw_registration_id */, &notification_id));
-  EXPECT_EQ(notification_id, 3);
+  // Verify that the next persistent notification id was stored in the database,
+  // and continues where we expect it to be, even after closing and opening it.
+  EXPECT_EQ(database->GetNextPersistentNotificationId(), 4);
 }
 
 TEST_F(NotificationDatabaseTest, NotificationIdIncrementsStorage) {
@@ -206,19 +215,17 @@ TEST_F(NotificationDatabaseTest, NotificationIdIncrementsStorage) {
 
   GURL origin("https://example.com");
 
-  NotificationDatabaseData database_data;
-  database_data.notification_id = -1;
+  NotificationDatabaseData database_data, read_database_data;
+  database_data.notification_id = GenerateNotificationId();
 
-  int64_t notification_id = 0;
-  ASSERT_EQ(
-      NotificationDatabase::STATUS_OK,
-      database->WriteNotificationData(origin, database_data, &notification_id));
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->WriteNotificationData(origin, database_data));
 
-  ASSERT_EQ(
-      NotificationDatabase::STATUS_OK,
-      database->ReadNotificationData(notification_id, origin, &database_data));
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->ReadNotificationData(database_data.notification_id,
+                                           origin, &read_database_data));
 
-  EXPECT_EQ(notification_id, database_data.notification_id);
+  EXPECT_EQ(database_data.notification_id, read_database_data.notification_id);
 }
 
 TEST_F(NotificationDatabaseTest, NotificationIdCorruption) {
@@ -226,7 +233,7 @@ TEST_F(NotificationDatabaseTest, NotificationIdCorruption) {
   ASSERT_TRUE(database_dir.CreateUniqueTempDir());
 
   std::unique_ptr<NotificationDatabase> database(
-      CreateDatabaseOnFileSystem(database_dir.path()));
+      CreateDatabaseOnFileSystem(database_dir.GetPath()));
 
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(true /* create_if_missing */));
@@ -234,12 +241,10 @@ TEST_F(NotificationDatabaseTest, NotificationIdCorruption) {
   GURL origin("https://example.com");
 
   NotificationDatabaseData database_data;
-  int64_t notification_id = 0;
+  database_data.notification_id = GenerateNotificationId();
 
-  ASSERT_EQ(
-      NotificationDatabase::STATUS_OK,
-      database->WriteNotificationData(origin, database_data, &notification_id));
-  EXPECT_EQ(notification_id, 1);
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->WriteNotificationData(origin, database_data));
 
   // Deliberately write an invalid value as the next notification id. When
   // re-opening the database, the Open() method should realize that an invalid
@@ -247,7 +252,7 @@ TEST_F(NotificationDatabaseTest, NotificationIdCorruption) {
   ASSERT_NO_FATAL_FAILURE(
       WriteLevelDBKeyValuePair(database.get(), "NEXT_NOTIFICATION_ID", "-42"));
 
-  database.reset(CreateDatabaseOnFileSystem(database_dir.path()));
+  database.reset(CreateDatabaseOnFileSystem(database_dir.GetPath()));
   EXPECT_EQ(NotificationDatabase::STATUS_ERROR_CORRUPTED,
             database->Open(false /* create_if_missing */));
 }
@@ -262,7 +267,7 @@ TEST_F(NotificationDatabaseTest, ReadInvalidNotificationData) {
   // Reading the notification data for a notification that does not exist should
   // return the ERROR_NOT_FOUND status code.
   EXPECT_EQ(NotificationDatabase::STATUS_ERROR_NOT_FOUND,
-            database->ReadNotificationData(9001, GURL("https://chrome.com"),
+            database->ReadNotificationData("bad-id", GURL("https://chrome.com"),
                                            &database_data));
 }
 
@@ -271,28 +276,27 @@ TEST_F(NotificationDatabaseTest, ReadNotificationDataDifferentOrigin) {
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(true /* create_if_missing */));
 
-  int64_t notification_id = 0;
   GURL origin("https://example.com");
 
   NotificationDatabaseData database_data, read_database_data;
+  database_data.notification_id = GenerateNotificationId();
   database_data.notification_data.title = base::UTF8ToUTF16("My Notification");
 
-  ASSERT_EQ(
-      NotificationDatabase::STATUS_OK,
-      database->WriteNotificationData(origin, database_data, &notification_id));
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->WriteNotificationData(origin, database_data));
 
   // Reading the notification from the database when given a different origin
   // should return the ERROR_NOT_FOUND status code.
-  EXPECT_EQ(
-      NotificationDatabase::STATUS_ERROR_NOT_FOUND,
-      database->ReadNotificationData(
-          notification_id, GURL("https://chrome.com"), &read_database_data));
+  EXPECT_EQ(NotificationDatabase::STATUS_ERROR_NOT_FOUND,
+            database->ReadNotificationData(database_data.notification_id,
+                                           GURL("https://chrome.com"),
+                                           &read_database_data));
 
   // However, reading the notification from the database with the same origin
   // should return STATUS_OK and the associated notification data.
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
-            database->ReadNotificationData(notification_id, origin,
-                                           &read_database_data));
+            database->ReadNotificationData(database_data.notification_id,
+                                           origin, &read_database_data));
 
   EXPECT_EQ(database_data.notification_data.title,
             read_database_data.notification_data.title);
@@ -302,8 +306,6 @@ TEST_F(NotificationDatabaseTest, ReadNotificationDataReflection) {
   std::unique_ptr<NotificationDatabase> database(CreateDatabaseInMemory());
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(true /* create_if_missing */));
-
-  int64_t notification_id = 0;
 
   GURL origin("https://example.com");
 
@@ -318,26 +320,25 @@ TEST_F(NotificationDatabaseTest, ReadNotificationDataReflection) {
   notification_data.silent = true;
 
   NotificationDatabaseData database_data;
-  database_data.notification_id = notification_id;
+  database_data.notification_id = GenerateNotificationId();
   database_data.origin = origin;
   database_data.service_worker_registration_id = 42;
   database_data.notification_data = notification_data;
 
   // Write the constructed notification to the database, and then immediately
   // read it back from the database again as well.
-  ASSERT_EQ(
-      NotificationDatabase::STATUS_OK,
-      database->WriteNotificationData(origin, database_data, &notification_id));
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->WriteNotificationData(origin, database_data));
 
   NotificationDatabaseData read_database_data;
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
-            database->ReadNotificationData(notification_id, origin,
-                                           &read_database_data));
+            database->ReadNotificationData(database_data.notification_id,
+                                           origin, &read_database_data));
 
   // Verify that all members retrieved from the database are exactly the same
   // as the ones that were written to it. This tests the serialization behavior.
 
-  EXPECT_EQ(notification_id, read_database_data.notification_id);
+  EXPECT_EQ(database_data.notification_id, read_database_data.notification_id);
 
   EXPECT_EQ(database_data.origin, read_database_data.origin);
   EXPECT_EQ(database_data.service_worker_registration_id,
@@ -361,26 +362,35 @@ TEST_F(NotificationDatabaseTest, ReadWriteMultipleNotificationData) {
             database->Open(true /* create_if_missing */));
 
   GURL origin("https://example.com");
-  int64_t notification_id = 0;
+
+  std::vector<std::string> notification_ids;
+  std::string notification_id;
 
   // Write ten notifications to the database, each with a unique title and
   // notification id (it is the responsibility of the user to increment this).
   for (int i = 1; i <= 10; ++i) {
     ASSERT_NO_FATAL_FAILURE(CreateAndWriteNotification(
-        database.get(), origin, i /* sw_registration_id */, &notification_id));
-    EXPECT_EQ(notification_id, i);
+        database.get(), origin, "" /* tag */, i /* sw_registration_id */,
+        &notification_id));
+
+    EXPECT_FALSE(notification_id.empty());
+
+    notification_ids.push_back(notification_id);
   }
 
   NotificationDatabaseData database_data;
 
+  int64_t service_worker_registration_id = 1;
+
   // Read the ten notifications from the database, and verify that the titles
   // of each of them matches with how they were created.
-  for (int i = 1; i <= 10; ++i) {
+  for (const std::string& notification_id : notification_ids) {
     ASSERT_EQ(NotificationDatabase::STATUS_OK,
-              database->ReadNotificationData(i /* notification_id */, origin,
+              database->ReadNotificationData(notification_id, origin,
                                              &database_data));
 
-    EXPECT_EQ(i, database_data.service_worker_registration_id);
+    EXPECT_EQ(service_worker_registration_id++,
+              database_data.service_worker_registration_id);
   }
 }
 
@@ -390,8 +400,9 @@ TEST_F(NotificationDatabaseTest, DeleteInvalidNotificationData) {
             database->Open(true /* create_if_missing */));
 
   // Deleting non-existing notifications is not considered to be a failure.
-  ASSERT_EQ(NotificationDatabase::STATUS_OK,
-            database->DeleteNotificationData(9001, GURL("https://chrome.com")));
+  ASSERT_EQ(
+      NotificationDatabase::STATUS_OK,
+      database->DeleteNotificationData("bad-id", GURL("https://chrome.com")));
 }
 
 TEST_F(NotificationDatabaseTest, DeleteNotificationDataSameOrigin) {
@@ -399,14 +410,15 @@ TEST_F(NotificationDatabaseTest, DeleteNotificationDataSameOrigin) {
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(true /* create_if_missing */));
 
-  int64_t notification_id = 0;
+  const std::string notification_id = GenerateNotificationId();
 
   NotificationDatabaseData database_data;
+  database_data.notification_id = notification_id;
+
   GURL origin("https://example.com");
 
-  ASSERT_EQ(
-      NotificationDatabase::STATUS_OK,
-      database->WriteNotificationData(origin, database_data, &notification_id));
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->WriteNotificationData(origin, database_data));
 
   // Reading a notification after writing one should succeed.
   EXPECT_EQ(
@@ -427,14 +439,15 @@ TEST_F(NotificationDatabaseTest, DeleteNotificationDataDifferentOrigin) {
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->Open(true /* create_if_missing */));
 
-  int64_t notification_id = 0;
+  const std::string notification_id = GenerateNotificationId();
 
   NotificationDatabaseData database_data;
+  database_data.notification_id = notification_id;
+
   GURL origin("https://example.com");
 
-  ASSERT_EQ(
-      NotificationDatabase::STATUS_OK,
-      database->WriteNotificationData(origin, database_data, &notification_id));
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->WriteNotificationData(origin, database_data));
 
   // Attempting to delete the notification with a different origin, but with the
   // same |notification_id|, should not return an error (the notification could
@@ -518,18 +531,74 @@ TEST_F(NotificationDatabaseTest, DeleteAllNotificationDataForOrigin) {
 
   GURL origin("https://example.com:443");
 
-  std::set<int64_t> deleted_notification_set;
+  std::set<std::string> deleted_notification_ids;
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->DeleteAllNotificationDataForOrigin(
-                origin, &deleted_notification_set));
+                origin, "" /* tag */, &deleted_notification_ids));
 
-  EXPECT_EQ(4u, deleted_notification_set.size());
+  EXPECT_EQ(4u, deleted_notification_ids.size());
 
   std::vector<NotificationDatabaseData> notifications;
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->ReadAllNotificationDataForOrigin(origin, &notifications));
 
   EXPECT_EQ(0u, notifications.size());
+}
+
+TEST_F(NotificationDatabaseTest, DeleteAllNotificationDataForOriginWithTag) {
+  std::unique_ptr<NotificationDatabase> database(CreateDatabaseInMemory());
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->Open(true /* create_if_missing */));
+
+  ASSERT_NO_FATAL_FAILURE(PopulateDatabaseWithExampleData(database.get()));
+
+  GURL origin("https://chrome.com");
+
+  std::vector<NotificationDatabaseData> notifications;
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->ReadAllNotificationDataForOrigin(origin, &notifications));
+
+  const std::string& tag = "foo";
+
+  size_t notifications_with_tag = 0;
+  size_t notifications_without_tag = 0;
+
+  for (const auto& database_data : notifications) {
+    if (database_data.notification_data.tag == tag)
+      ++notifications_with_tag;
+    else
+      ++notifications_without_tag;
+  }
+
+  ASSERT_GT(notifications_with_tag, 0u);
+  ASSERT_GT(notifications_without_tag, 0u);
+
+  std::set<std::string> deleted_notification_ids;
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->DeleteAllNotificationDataForOrigin(
+                origin, "foo" /* tag */, &deleted_notification_ids));
+
+  EXPECT_EQ(notifications_with_tag, deleted_notification_ids.size());
+
+  std::vector<NotificationDatabaseData> updated_notifications;
+  ASSERT_EQ(NotificationDatabase::STATUS_OK,
+            database->ReadAllNotificationDataForOrigin(origin,
+                                                       &updated_notifications));
+
+  EXPECT_EQ(notifications_without_tag, updated_notifications.size());
+
+  size_t updated_notifications_with_tag = 0;
+  size_t updated_notifications_without_tag = 0;
+
+  for (const auto& database_data : updated_notifications) {
+    if (database_data.notification_data.tag == tag)
+      ++updated_notifications_with_tag;
+    else
+      ++updated_notifications_without_tag;
+  }
+
+  EXPECT_EQ(0u, updated_notifications_with_tag);
+  EXPECT_EQ(notifications_without_tag, updated_notifications_without_tag);
 }
 
 TEST_F(NotificationDatabaseTest, DeleteAllNotificationDataForOriginEmpty) {
@@ -539,12 +608,12 @@ TEST_F(NotificationDatabaseTest, DeleteAllNotificationDataForOriginEmpty) {
 
   GURL origin("https://example.com");
 
-  std::set<int64_t> deleted_notification_set;
+  std::set<std::string> deleted_notification_ids;
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->DeleteAllNotificationDataForOrigin(
-                origin, &deleted_notification_set));
+                origin, "" /* tag */, &deleted_notification_ids));
 
-  EXPECT_EQ(0u, deleted_notification_set.size());
+  EXPECT_EQ(0u, deleted_notification_ids.size());
 }
 
 TEST_F(NotificationDatabaseTest,
@@ -556,13 +625,13 @@ TEST_F(NotificationDatabaseTest,
   ASSERT_NO_FATAL_FAILURE(PopulateDatabaseWithExampleData(database.get()));
 
   GURL origin("https://example.com:443");
-  std::set<int64_t> deleted_notification_set;
+  std::set<std::string> deleted_notification_ids;
   ASSERT_EQ(NotificationDatabase::STATUS_OK,
             database->DeleteAllNotificationDataForServiceWorkerRegistration(
                 origin, kExampleServiceWorkerRegistrationId,
-                &deleted_notification_set));
+                &deleted_notification_ids));
 
-  EXPECT_EQ(2u, deleted_notification_set.size());
+  EXPECT_EQ(2u, deleted_notification_ids.size());
 
   std::vector<NotificationDatabaseData> notifications;
   ASSERT_EQ(NotificationDatabase::STATUS_OK,

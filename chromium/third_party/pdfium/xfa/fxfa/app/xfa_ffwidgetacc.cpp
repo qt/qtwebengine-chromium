@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <memory>
 
-#include "fxjse/include/cfxjse_value.h"
+#include "fxjs/cfxjse_value.h"
 #include "xfa/fde/tto/fde_textout.h"
 #include "xfa/fde/xml/fde_xml_imp.h"
 #include "xfa/fxfa/app/xfa_ffcheckbutton.h"
@@ -17,17 +17,17 @@
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
-#include "xfa/fxfa/include/cxfa_eventparam.h"
-#include "xfa/fxfa/include/xfa_ffapp.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffdocview.h"
-#include "xfa/fxfa/include/xfa_ffpageview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
-#include "xfa/fxfa/include/xfa_fontmgr.h"
-#include "xfa/fxfa/parser/xfa_document_layout_imp.h"
+#include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
+#include "xfa/fxfa/parser/cxfa_scriptcontext.h"
 #include "xfa/fxfa/parser/xfa_localevalue.h"
-#include "xfa/fxfa/parser/xfa_script.h"
-#include "xfa/fxfa/parser/xfa_script_imp.h"
+#include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
+#include "xfa/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffdocview.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/xfa_fontmgr.h"
 
 static void XFA_FFDeleteCalcData(void* pData) {
   if (pData) {
@@ -334,7 +334,7 @@ int32_t CXFA_WidgetAcc::ProcessEvent(CXFA_Event& event,
       break;
     case XFA_Element::Submit: {
       CXFA_Submit submit = event.GetSubmit();
-      return GetDoc()->GetDocProvider()->SubmitData(GetDoc(), submit);
+      return GetDoc()->GetDocEnvironment()->SubmitData(GetDoc(), submit);
     }
     default:
       break;

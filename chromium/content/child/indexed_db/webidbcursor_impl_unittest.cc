@@ -124,8 +124,7 @@ class MockContinueCallbacks : public StrictMock<MockWebIDBCallbacks> {
 
 class MockSyncMessageFilter : public IPC::SyncMessageFilter {
  public:
-  MockSyncMessageFilter()
-      : SyncMessageFilter(nullptr, false /* is_channel_send_thread_safe */) {}
+  MockSyncMessageFilter() : SyncMessageFilter(nullptr) {}
 
  private:
   ~MockSyncMessageFilter() override {}
@@ -139,8 +138,7 @@ class WebIDBCursorImplTest : public testing::Test {
     null_key_.assignNull();
     thread_safe_sender_ = new ThreadSafeSender(
         base::ThreadTaskRunnerHandle::Get(), new MockSyncMessageFilter);
-    dispatcher_ =
-        base::WrapUnique(new MockDispatcher(thread_safe_sender_.get()));
+    dispatcher_ = base::MakeUnique<MockDispatcher>(thread_safe_sender_.get());
   }
 
  protected:

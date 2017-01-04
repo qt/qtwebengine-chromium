@@ -26,69 +26,81 @@
 #ifndef FrameCaret_h
 #define FrameCaret_h
 
+#include "core/CoreExport.h"
 #include "core/editing/CaretBase.h"
 #include "platform/geometry/IntRect.h"
 
 namespace blink {
 
-class FrameCaret final : public CaretBase {
-public:
-    FrameCaret(LocalFrame*);
-    ~FrameCaret() override;
+class SelectionEditor;
 
-    void setCaretPosition(const PositionWithAffinity&);
-    void clear();
-    bool isActive() const { return m_caretPosition.isNotNull(); }
+enum class CaretVisibility { Visible, Hidden };
 
-    void updateAppearance();
+class CORE_EXPORT FrameCaret final : public CaretBase {
+ public:
+  FrameCaret(LocalFrame*, const SelectionEditor&);
+  ~FrameCaret() override;
 
-    // Used to suspend caret blinking while the mouse is down.
-    void setCaretBlinkingSuspended(bool suspended) { m_isCaretBlinkingSuspended = suspended; }
-    bool isCaretBlinkingSuspended() const { return m_isCaretBlinkingSuspended; }
-    void stopCaretBlinkTimer();
-    void startBlinkCaret();
+  bool isActive() const { return caretPosition().isNotNull(); }
 
-    void setCaretVisibility(CaretVisibility) override;
-    bool isCaretBoundsDirty() const { return m_caretRectDirty; }
-    void setCaretRectNeedsUpdate();
-    void invalidateCaretRect();
-    IntRect absoluteCaretBounds();
+  void updateAppearance();
 
-    bool shouldShowBlockCursor() const { return m_shouldShowBlockCursor; }
-    void setShouldShowBlockCursor(bool);
+  // Used to suspend caret blinking while the mouse is down.
+  void setCaretBlinkingSuspended(bool suspended) {
+    m_isCaretBlinkingSuspended = suspended;
+  }
+  bool isCaretBlinkingSuspended() const { return m_isCaretBlinkingSuspended; }
+  void stopCaretBlinkTimer();
+  void startBlinkCaret();
 
-    void paintCaret(GraphicsContext&, const LayoutPoint&);
+  void setCaretVisibility(CaretVisibility);
+  bool isCaretBoundsDirty() const { return m_caretRectDirty; }
+  void setCaretRectNeedsUpdate();
+  // If |forceInvalidation| is true the caret's previous and new rectangles
+  // are forcibly invalidated regardless of the state of the blink timer.
+  void invalidateCaretRect(bool forceInvalidation);
+  IntRect absoluteCaretBounds();
 
-    void dataWillChange(const CharacterData&);
-    void nodeWillBeRemoved(Node&);
+  bool shouldShowBlockCursor() const { return m_shouldShowBlockCursor; }
+  void setShouldShowBlockCursor(bool);
 
-    void documentDetached();
+  void paintCaret(GraphicsContext&, const LayoutPoint&);
 
-    // For unittests
-    bool shouldPaintCaretForTesting() const { return m_shouldPaintCaret; }
-    bool isPreviousCaretDirtyForTesting() const { return m_previousCaretNode; }
+  void dataWillChange(const CharacterData&);
+  void nodeWillBeRemoved(Node&);
 
-    DECLARE_VIRTUAL_TRACE();
+  void documentDetached();
 
-private:
-    bool shouldBlinkCaret() const;
-    void caretBlinkTimerFired(Timer<FrameCaret>*);
-    bool caretPositionIsValidForDocument(const Document&) const;
+  // For unittests
+  bool shouldPaintCaretForTesting() const { return m_shouldPaintCaret; }
+  bool isPreviousCaretDirtyForTesting() const { return m_previousCaretNode; }
 
-    PositionWithAffinity m_caretPosition;
-    const Member<LocalFrame> m_frame;
-    // The last node which painted the caret. Retained for clearing the old
-    // caret when it moves.
-    Member<Node> m_previousCaretNode;
-    LayoutRect m_previousCaretRect;
-    CaretVisibility m_previousCaretVisibility;
-    Timer<FrameCaret> m_caretBlinkTimer;
-    bool m_caretRectDirty : 1;
-    bool m_shouldPaintCaret : 1;
-    bool m_isCaretBlinkingSuspended : 1;
-    bool m_shouldShowBlockCursor : 1;
+  DECLARE_VIRTUAL_TRACE();
+
+ private:
+  friend class FrameSelectionTest;
+
+  const PositionWithAffinity caretPosition() const;
+
+  bool shouldBlinkCaret() const;
+  void caretBlinkTimerFired(TimerBase*);
+  bool caretPositionIsValidForDocument(const Document&) const;
+
+  const Member<const SelectionEditor> m_selectionEditor;
+  const Member<LocalFrame> m_frame;
+  // The last node which painted the caret. Retained for clearing the old
+  // caret when it moves.
+  Member<Node> m_previousCaretNode;
+  LayoutRect m_previousCaretRect;
+  CaretVisibility m_caretVisibility;
+  CaretVisibility m_previousCaretVisibility;
+  Timer<FrameCaret> m_caretBlinkTimer;
+  bool m_caretRectDirty : 1;
+  bool m_shouldPaintCaret : 1;
+  bool m_isCaretBlinkingSuspended : 1;
+  bool m_shouldShowBlockCursor : 1;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // FrameCaret_h
+#endif  // FrameCaret_h

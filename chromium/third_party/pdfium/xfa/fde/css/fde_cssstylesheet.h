@@ -7,9 +7,10 @@
 #ifndef XFA_FDE_CSS_FDE_CSSSTYLESHEET_H_
 #define XFA_FDE_CSS_FDE_CSSSTYLESHEET_H_
 
+#include <memory>
 #include <unordered_map>
 
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/fx_ext.h"
 #include "xfa/fde/css/fde_cssdeclaration.h"
 
 class CFDE_CSSSyntaxParser;
@@ -39,8 +40,6 @@ class CFDE_CSSSelector : public CFX_Target {
   CFDE_CSSSelector* m_pNext;
 };
 
-typedef CFX_ArrayTemplate<CFDE_CSSSelector*> CFDE_CSSSelectorArray;
-
 class CFDE_CSSStyleRule : public IFDE_CSSStyleRule, public CFX_Target {
  public:
   CFDE_CSSStyleRule();
@@ -52,7 +51,7 @@ class CFDE_CSSStyleRule : public IFDE_CSSStyleRule, public CFX_Target {
 
   CFDE_CSSDeclaration& GetDeclImp() { return m_Declaration; }
   void SetSelector(IFX_MemoryAllocator* pStaticStore,
-                   const CFDE_CSSSelectorArray& list);
+                   const CFX_ArrayTemplate<CFDE_CSSSelector*>& list);
 
  protected:
   CFDE_CSSDeclaration m_Declaration;
@@ -70,11 +69,11 @@ class CFDE_CSSMediaRule : public IFDE_CSSMediaRule, public CFX_Target {
   int32_t CountRules() const override;
   IFDE_CSSRule* GetRule(int32_t index) override;
 
-  CFDE_CSSRuleArray& GetArray() { return m_RuleArray; }
+  CFX_MassArrayTemplate<IFDE_CSSRule*>& GetArray() { return m_RuleArray; }
 
  protected:
   uint32_t m_dwMediaList;
-  CFDE_CSSRuleArray m_RuleArray;
+  CFX_MassArrayTemplate<IFDE_CSSRule*> m_RuleArray;
 };
 
 class CFDE_CSSFontFaceRule : public IFDE_CSSFontFaceRule, public CFX_Target {
@@ -122,21 +121,23 @@ class CFDE_CSSStyleSheet : public IFDE_CSSStyleSheet, public CFX_Target {
  protected:
   void Reset();
   FX_BOOL LoadFromSyntax(CFDE_CSSSyntaxParser* pSyntax);
-  FDE_CSSSYNTAXSTATUS LoadStyleRule(CFDE_CSSSyntaxParser* pSyntax,
-                                    CFDE_CSSRuleArray& ruleArray);
+  FDE_CSSSYNTAXSTATUS LoadStyleRule(
+      CFDE_CSSSyntaxParser* pSyntax,
+      CFX_MassArrayTemplate<IFDE_CSSRule*>& ruleArray);
   FDE_CSSSYNTAXSTATUS LoadImportRule(CFDE_CSSSyntaxParser* pSyntax);
   FDE_CSSSYNTAXSTATUS LoadPageRule(CFDE_CSSSyntaxParser* pSyntax);
   FDE_CSSSYNTAXSTATUS LoadMediaRule(CFDE_CSSSyntaxParser* pSyntax);
-  FDE_CSSSYNTAXSTATUS LoadFontFaceRule(CFDE_CSSSyntaxParser* pSyntax,
-                                       CFDE_CSSRuleArray& ruleArray);
+  FDE_CSSSYNTAXSTATUS LoadFontFaceRule(
+      CFDE_CSSSyntaxParser* pSyntax,
+      CFX_MassArrayTemplate<IFDE_CSSRule*>& ruleArray);
   FDE_CSSSYNTAXSTATUS SkipRuleSet(CFDE_CSSSyntaxParser* pSyntax);
   uint16_t m_wCodePage;
   uint16_t m_wRefCount;
   uint32_t m_dwMediaList;
-  IFX_MemoryAllocator* m_pAllocator;
-  CFDE_CSSRuleArray m_RuleArray;
+  std::unique_ptr<IFX_MemoryAllocator> m_pAllocator;
+  CFX_MassArrayTemplate<IFDE_CSSRule*> m_RuleArray;
   CFX_WideString m_szUrl;
-  CFDE_CSSSelectorArray m_Selectors;
+  CFX_ArrayTemplate<CFDE_CSSSelector*> m_Selectors;
   std::unordered_map<uint32_t, FX_WCHAR*> m_StringCache;
 };
 

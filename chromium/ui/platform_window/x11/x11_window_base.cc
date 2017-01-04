@@ -12,6 +12,7 @@
 #include <string>
 
 #include "base/strings/utf_string_conversions.h"
+#include "ui/base/x/x11_window_event_manager.h"
 #include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
@@ -19,8 +20,6 @@
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/gfx/geometry/rect.h"
-#include "ui/gfx/x/x11_atom_cache.h"
-#include "ui/gfx/x/x11_types.h"
 #include "ui/platform_window/platform_window_delegate.h"
 
 namespace ui {
@@ -91,7 +90,7 @@ void X11WindowBase::Create() {
                     LeaveWindowMask | ExposureMask | VisibilityChangeMask |
                     StructureNotifyMask | PropertyChangeMask |
                     PointerMotionMask;
-  XSelectInput(xdisplay_, xwindow_, event_mask);
+  xwindow_events_.reset(new ui::XScopedEventSelector(xwindow_, event_mask));
 
   // Setup XInput2 event mask.
   unsigned char mask[XIMaskLen(XI_LASTEVENT)];

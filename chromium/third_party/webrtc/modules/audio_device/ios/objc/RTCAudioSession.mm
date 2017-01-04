@@ -10,6 +10,8 @@
 
 #import "webrtc/modules/audio_device/ios/objc/RTCAudioSession.h"
 
+#import <UIKit/UIKit.h>
+
 #include "webrtc/base/atomicops.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/criticalsection.h"
@@ -36,6 +38,7 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
   BOOL _useManualAudio;
   BOOL _isAudioEnabled;
   BOOL _canPlayOrRecord;
+  BOOL _isInterrupted;
 }
 
 @synthesize session = _session;
@@ -63,7 +66,6 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
                selector:@selector(handleRouteChangeNotification:)
                    name:AVAudioSessionRouteChangeNotification
                  object:nil];
-    // TODO(tkchin): Maybe listen to SilenceSecondaryAudioHintNotification.
     [center addObserver:self
                selector:@selector(handleMediaServicesWereLost:)
                    name:AVAudioSessionMediaServicesWereLostNotification
@@ -71,6 +73,18 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
     [center addObserver:self
                selector:@selector(handleMediaServicesWereReset:)
                    name:AVAudioSessionMediaServicesWereResetNotification
+                 object:nil];
+    // Posted on the main thread when the primary audio from other applications
+    // starts and stops. Foreground applications may use this notification as a
+    // hint to enable or disable audio that is secondary.
+    [center addObserver:self
+               selector:@selector(handleSilenceSecondaryAudioHintNotification:)
+                   name:AVAudioSessionSilenceSecondaryAudioHintNotification
+                 object:nil];
+    // Also track foreground event in order to deal with interruption ended situation.
+    [center addObserver:self
+               selector:@selector(handleApplicationDidBecomeActive:)
+                   name:UIApplicationDidBecomeActiveNotification
                  object:nil];
   }
   return self;
@@ -93,12 +107,13 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
        "  inputNumberOfChannels: %ld\n"
        "  outputLatency: %f\n"
        "  inputLatency: %f\n"
+       "  outputVolume: %f\n"
        "}";
   NSString *description = [NSString stringWithFormat:format,
       self.category, (long)self.categoryOptions, self.mode,
       self.isActive, self.sampleRate, self.IOBufferDuration,
       self.outputNumberOfChannels, self.inputNumberOfChannels,
-      self.outputLatency, self.inputLatency];
+      self.outputLatency, self.inputLatency, self.outputVolume];
   return description;
 }
 
@@ -434,10 +449,12 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
     case AVAudioSessionInterruptionTypeBegan:
       RTCLog(@"Audio session interruption began.");
       self.isActive = NO;
+      self.isInterrupted = YES;
       [self notifyDidBeginInterruption];
       break;
     case AVAudioSessionInterruptionTypeEnded: {
       RTCLog(@"Audio session interruption ended.");
+      self.isInterrupted = NO;
       [self updateAudioSessionAfterEvent];
       NSNumber *optionsNumber =
           notification.userInfo[AVAudioSessionInterruptionOptionKey];
@@ -505,6 +522,33 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
   [self notifyMediaServicesWereReset];
 }
 
+- (void)handleSilenceSecondaryAudioHintNotification:(NSNotification *)notification {
+  // TODO(henrika): just adding logs here for now until we know if we are ever
+  // see this notification and might be affected by it or if further actions
+  // are required.
+  NSNumber *typeNumber =
+      notification.userInfo[AVAudioSessionSilenceSecondaryAudioHintTypeKey];
+  AVAudioSessionSilenceSecondaryAudioHintType type =
+      (AVAudioSessionSilenceSecondaryAudioHintType)typeNumber.unsignedIntegerValue;
+  switch (type) {
+    case AVAudioSessionSilenceSecondaryAudioHintTypeBegin:
+      RTCLog(@"Another application's primary audio has started.");
+      break;
+    case AVAudioSessionSilenceSecondaryAudioHintTypeEnd:
+      RTCLog(@"Another application's primary audio has stopped.");
+      break;
+  }
+}
+
+- (void)handleApplicationDidBecomeActive:(NSNotification *)notification {
+  if (self.isInterrupted) {
+    RTCLog(@"Application became active after an interruption. Treating as interruption end.");
+    self.isInterrupted = NO;
+    [self updateAudioSessionAfterEvent];
+    [self notifyDidEndInterruptionWithShouldResumeSession:YES];
+  }
+}
+
 #pragma mark - Private
 
 + (NSError *)lockError {
@@ -563,6 +607,21 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
 
 - (BOOL)canPlayOrRecord {
   return !self.useManualAudio || self.isAudioEnabled;
+}
+
+- (BOOL)isInterrupted {
+  @synchronized(self) {
+    return _isInterrupted;
+  }
+}
+
+- (void)setIsInterrupted:(BOOL)isInterrupted {
+  @synchronized(self) {
+    if (_isInterrupted == isInterrupted) {
+      return;
+   }
+   _isInterrupted = isInterrupted;
+  }
 }
 
 - (BOOL)checkLock:(NSError **)outError {

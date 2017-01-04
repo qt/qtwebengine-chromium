@@ -24,36 +24,29 @@ class CompositorFilterKeyframe;
 namespace blink {
 
 // A keyframed filter animation curve.
-class PLATFORM_EXPORT CompositorFilterAnimationCurve : public CompositorAnimationCurve {
-    WTF_MAKE_NONCOPYABLE(CompositorFilterAnimationCurve);
-public:
-    static std::unique_ptr<CompositorFilterAnimationCurve> create()
-    {
-        return wrapUnique(new CompositorFilterAnimationCurve());
-    }
-    ~CompositorFilterAnimationCurve() override;
+class PLATFORM_EXPORT CompositorFilterAnimationCurve
+    : public CompositorAnimationCurve {
+  WTF_MAKE_NONCOPYABLE(CompositorFilterAnimationCurve);
 
-    void addLinearKeyframe(const CompositorFilterKeyframe&);
-    void addCubicBezierKeyframe(const CompositorFilterKeyframe&, CubicBezierTimingFunction::EaseType);
-    // Adds the keyframe with a custom, bezier timing function. Note, it is
-    // assumed that x0 = y0, and x3 = y3 = 1.
-    void addCubicBezierKeyframe(const CompositorFilterKeyframe&, double x1, double y1, double x2, double y2);
-    void addStepsKeyframe(const CompositorFilterKeyframe&, int steps, StepsTimingFunction::StepPosition);
+ public:
+  static std::unique_ptr<CompositorFilterAnimationCurve> create() {
+    return wrapUnique(new CompositorFilterAnimationCurve());
+  }
+  ~CompositorFilterAnimationCurve() override;
 
-    void setLinearTimingFunction();
-    void setCubicBezierTimingFunction(CubicBezierTimingFunction::EaseType);
-    void setCubicBezierTimingFunction(double x1, double y1, double x2, double y2);
-    void setStepsTimingFunction(int numberOfSteps, StepsTimingFunction::StepPosition);
+  void addKeyframe(const CompositorFilterKeyframe&);
+  void setTimingFunction(const TimingFunction&);
+  void setScaledDuration(double);
 
-    // blink::CompositorAnimationCurve implementation.
-    std::unique_ptr<cc::AnimationCurve> cloneToAnimationCurve() const override;
+  // blink::CompositorAnimationCurve implementation.
+  std::unique_ptr<cc::AnimationCurve> cloneToAnimationCurve() const override;
 
-private:
-    CompositorFilterAnimationCurve();
+ private:
+  CompositorFilterAnimationCurve();
 
-    std::unique_ptr<cc::KeyframedFilterAnimationCurve> m_curve;
+  std::unique_ptr<cc::KeyframedFilterAnimationCurve> m_curve;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // CompositorFilterAnimationCurve_h
+#endif  // CompositorFilterAnimationCurve_h

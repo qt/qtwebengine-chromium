@@ -5,13 +5,13 @@
 #ifndef CC_IPC_COMPOSITOR_FRAME_METADATA_STRUCT_TRAITS_H_
 #define CC_IPC_COMPOSITOR_FRAME_METADATA_STRUCT_TRAITS_H_
 
-#include "cc/ipc/compositor_frame_metadata.mojom.h"
+#include "cc/ipc/compositor_frame_metadata.mojom-shared.h"
 #include "cc/output/compositor_frame_metadata.h"
 
 namespace mojo {
 
 template <>
-struct StructTraits<cc::mojom::CompositorFrameMetadata,
+struct StructTraits<cc::mojom::CompositorFrameMetadataDataView,
                     cc::CompositorFrameMetadata> {
   static float device_scale_factor(
       const cc::CompositorFrameMetadata& metadata) {
@@ -57,14 +57,33 @@ struct StructTraits<cc::mojom::CompositorFrameMetadata,
     return metadata.root_overflow_y_hidden;
   }
 
-  static gfx::Vector2dF location_bar_offset(
-      const cc::CompositorFrameMetadata& metadata) {
-    return metadata.location_bar_offset;
+  static bool may_contain_video(const cc::CompositorFrameMetadata& metadata) {
+    return metadata.may_contain_video;
   }
 
-  static gfx::Vector2dF location_bar_content_translation(
+  static bool is_resourceless_software_draw_with_scroll_or_animation(
       const cc::CompositorFrameMetadata& metadata) {
-    return metadata.location_bar_content_translation;
+    return metadata.is_resourceless_software_draw_with_scroll_or_animation;
+  }
+
+  static float top_controls_height(
+      const cc::CompositorFrameMetadata& metadata) {
+    return metadata.top_controls_height;
+  }
+
+  static float top_controls_shown_ratio(
+      const cc::CompositorFrameMetadata& metadata) {
+    return metadata.top_controls_shown_ratio;
+  }
+
+  static float bottom_controls_height(
+      const cc::CompositorFrameMetadata& metadata) {
+    return metadata.bottom_controls_height;
+  }
+
+  static float bottom_controls_shown_ratio(
+      const cc::CompositorFrameMetadata& metadata) {
+    return metadata.bottom_controls_shown_ratio;
   }
 
   static uint32_t root_background_color(

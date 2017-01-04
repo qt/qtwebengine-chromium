@@ -12,25 +12,33 @@
 #include <queue>
 
 #include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
+#include "mojo/public/cpp/bindings/bindings_export.h"
+#include "mojo/public/cpp/bindings/connection_error_callback.h"
 #include "mojo/public/cpp/bindings/connector.h"
-#include "mojo/public/cpp/bindings/lib/filter_chain.h"
+#include "mojo/public/cpp/bindings/filter_chain.h"
+#include "mojo/public/cpp/bindings/lib/control_message_handler.h"
+#include "mojo/public/cpp/bindings/lib/control_message_proxy.h"
+#include "mojo/public/cpp/bindings/message.h"
 
 namespace mojo {
 namespace internal {
 
 // TODO(yzshen): Consider removing this class and use MultiplexRouter in all
 // cases. crbug.com/594244
-class Router : public MessageReceiverWithResponder {
+class MOJO_CPP_BINDINGS_EXPORT Router
+    : NON_EXPORTED_BASE(public MessageReceiverWithResponder) {
  public:
   Router(ScopedMessagePipeHandle message_pipe,
          FilterChain filters,
          bool expects_sync_requests,
-         scoped_refptr<base::SingleThreadTaskRunner> runner);
+         scoped_refptr<base::SingleThreadTaskRunner> runner,
+         int interface_version);
   ~Router() override;
 
   // Sets the receiver to handle messages read from the message pipe that do
@@ -43,6 +51,12 @@ class Router : public MessageReceiverWithResponder {
   // encountered while reading from the pipe or waiting to read from the pipe.
   void set_connection_error_handler(const base::Closure& error_handler) {
     error_handler_ = error_handler;
+    error_with_reason_handler_.Reset();
+  }
+  void set_connection_error_with_reason_handler(
+      const ConnectionErrorWithReasonCallback& error_handler) {
+    error_with_reason_handler_ = error_handler;
+    error_handler_.Reset();
   }
 
   // Returns true if an error was encountered while reading from the pipe or
@@ -57,6 +71,8 @@ class Router : public MessageReceiverWithResponder {
     DCHECK(thread_checker_.CalledOnValidThread());
     return connector_.is_valid();
   }
+
+  void AddFilter(std::unique_ptr<MessageReceiver> filter);
 
   // Please note that this method shouldn't be called unless it results from an
   // explicit request of the user of bindings (e.g., the user sets an
@@ -89,6 +105,8 @@ class Router : public MessageReceiverWithResponder {
   }
 
   // See Binding for details of pause/resume.
+  // Note: This doesn't strictly pause incoming calls. If there are
+  // queued messages, they may be dispatched during pause.
   void PauseIncomingMethodCallProcessing() {
     DCHECK(thread_checker_.CalledOnValidThread());
     connector_.PauseIncomingMethodCallProcessing();
@@ -113,6 +131,14 @@ class Router : public MessageReceiverWithResponder {
     return !async_responders_.empty() || !sync_responses_.empty();
   }
 
+  ControlMessageProxy* control_message_proxy() {
+    return &control_message_proxy_;
+  }
+
+  bool SimulateReceivingMessageForTesting(Message* message) {
+    return filters_.Accept(message);
+  }
+
  private:
   // Maps from the id of a response to the MessageReceiver that handles the
   // response.
@@ -124,7 +150,7 @@ class Router : public MessageReceiverWithResponder {
     explicit SyncResponseInfo(bool* in_response_received);
     ~SyncResponseInfo();
 
-    std::unique_ptr<Message> response;
+    Message response;
 
     // Points to a stack-allocated variable.
     bool* response_received;
@@ -161,12 +187,15 @@ class Router : public MessageReceiverWithResponder {
   SyncResponseMap sync_responses_;
   uint64_t next_request_id_;
   bool testing_mode_;
-  std::queue<std::unique_ptr<Message>> pending_messages_;
+  std::queue<Message> pending_messages_;
   // Whether a task has been posted to trigger processing of
   // |pending_messages_|.
   bool pending_task_for_messages_;
   bool encountered_error_;
   base::Closure error_handler_;
+  ConnectionErrorWithReasonCallback error_with_reason_handler_;
+  ControlMessageProxy control_message_proxy_;
+  ControlMessageHandler control_message_handler_;
   base::ThreadChecker thread_checker_;
   base::WeakPtrFactory<Router> weak_factory_;
 };

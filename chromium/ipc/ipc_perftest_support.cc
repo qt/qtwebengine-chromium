@@ -20,6 +20,7 @@
 #include "base/test/perf_time_logger.h"
 #include "base/test/test_io_thread.h"
 #include "base/threading/thread.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "ipc/ipc_channel.h"
@@ -288,7 +289,7 @@ void IPCChannelPerfTestBase::RunTestChannelProxyPingPong(
     const std::vector<PingPongTestParams>& params) {
   io_thread_.reset(new base::TestIOThread(base::TestIOThread::kAutoStart));
   InitWithCustomMessageLoop("PerformanceClient",
-                            base::WrapUnique(new base::MessageLoop()));
+                            base::MakeUnique<base::MessageLoop>());
 
   // Set up IPC channel and start client.
   PerformanceChannelListener listener("ChannelProxy");
@@ -335,8 +336,9 @@ PingPongTestClient::~PingPongTestClient() {
 }
 
 std::unique_ptr<Channel> PingPongTestClient::CreateChannel(Listener* listener) {
-  return Channel::CreateClient(IPCTestBase::GetChannelName("PerformanceClient"),
-                               listener);
+  return Channel::CreateClient(
+      IPCTestBase::GetChannelName("PerformanceClient"), listener,
+      base::ThreadTaskRunnerHandle::Get());
 }
 
 int PingPongTestClient::RunMain() {

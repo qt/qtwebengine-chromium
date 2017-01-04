@@ -8,14 +8,15 @@
 
 #include <algorithm>
 
-#include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
-#include "core/fpdfapi/fpdf_page/include/cpdf_pageobject.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_number.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_stream.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
-#include "fpdfsdk/include/fsdk_define.h"
+#include "core/fpdfapi/page/cpdf_page.h"
+#include "core/fpdfapi/page/cpdf_pageobject.h"
+#include "core/fpdfapi/parser/cpdf_array.h"
+#include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_number.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
+#include "core/fpdfapi/parser/cpdf_stream_acc.h"
+#include "core/fpdfdoc/cpdf_annot.h"
+#include "fpdfsdk/fsdk_define.h"
 
 typedef CFX_ArrayTemplate<CPDF_Dictionary*> CPDF_ObjectArray;
 typedef CFX_ArrayTemplate<CFX_FloatRect> CPDF_RectArray;
@@ -54,7 +55,7 @@ void GetContentsRect(CPDF_Document* pDoc,
     rc.right = pPageObject->m_Right;
     rc.bottom = pPageObject->m_Bottom;
     rc.top = pPageObject->m_Top;
-    if (IsValiableRect(rc, pDict->GetRectBy("MediaBox")))
+    if (IsValiableRect(rc, pDict->GetRectFor("MediaBox")))
       pRectArray->Add(rc);
   }
 }
@@ -67,11 +68,11 @@ void ParserStream(CPDF_Dictionary* pPageDic,
     return;
   CFX_FloatRect rect;
   if (pStream->KeyExist("Rect"))
-    rect = pStream->GetRectBy("Rect");
+    rect = pStream->GetRectFor("Rect");
   else if (pStream->KeyExist("BBox"))
-    rect = pStream->GetRectBy("BBox");
+    rect = pStream->GetRectFor("BBox");
 
-  if (IsValiableRect(rect, pPageDic->GetRectBy("MediaBox")))
+  if (IsValiableRect(rect, pPageDic->GetRectFor("MediaBox")))
     pRectArray->Add(rect);
 
   pObjectArray->Add(pStream);
@@ -86,7 +87,7 @@ int ParserAnnots(CPDF_Document* pSourceDoc,
     return FLATTEN_FAIL;
 
   GetContentsRect(pSourceDoc, pPageDic, pRectArray);
-  CPDF_Array* pAnnots = pPageDic->GetArrayBy("Annots");
+  CPDF_Array* pAnnots = pPageDic->GetArrayFor("Annots");
   if (!pAnnots)
     return FLATTEN_NOTHINGTODO;
 
@@ -96,11 +97,11 @@ int ParserAnnots(CPDF_Document* pSourceDoc,
     if (!pAnnotDic)
       continue;
 
-    CFX_ByteString sSubtype = pAnnotDic->GetStringBy("Subtype");
+    CFX_ByteString sSubtype = pAnnotDic->GetStringFor("Subtype");
     if (sSubtype == "Popup")
       continue;
 
-    int nAnnotFlag = pAnnotDic->GetIntegerBy("F");
+    int nAnnotFlag = pAnnotDic->GetIntegerFor("F");
     if (nAnnotFlag & ANNOTFLAG_HIDDEN)
       continue;
 
@@ -184,29 +185,26 @@ CFX_FloatRect CalculateRect(CPDF_RectArray* pRectArray) {
 void SetPageContents(CFX_ByteString key,
                      CPDF_Dictionary* pPage,
                      CPDF_Document* pDocument) {
-  CPDF_Object* pContentsObj = pPage->GetStreamBy("Contents");
+  CPDF_Object* pContentsObj = pPage->GetStreamFor("Contents");
   if (!pContentsObj) {
-    pContentsObj = pPage->GetArrayBy("Contents");
+    pContentsObj = pPage->GetArrayFor("Contents");
   }
 
   if (!pContentsObj) {
     // Create a new contents dictionary
     if (!key.IsEmpty()) {
-      CPDF_Stream* pNewContents =
-          new CPDF_Stream(nullptr, 0, new CPDF_Dictionary);
-      pPage->SetAtReference("Contents", pDocument,
-                            pDocument->AddIndirectObject(pNewContents));
-
+      CPDF_Stream* pNewContents = new CPDF_Stream(
+          nullptr, 0, new CPDF_Dictionary(pDocument->GetByteStringPool()));
       CFX_ByteString sStream;
       sStream.Format("q 1 0 0 1 0 0 cm /%s Do Q", key.c_str());
-      pNewContents->SetData(sStream.raw_str(), sStream.GetLength(), FALSE,
-                            FALSE);
+      pNewContents->SetData(sStream.raw_str(), sStream.GetLength());
+      pPage->SetReferenceFor("Contents", pDocument,
+                             pDocument->AddIndirectObject(pNewContents));
     }
     return;
   }
 
   CPDF_Array* pContentsArray = nullptr;
-
   switch (pContentsObj->GetType()) {
     case CPDF_Object::STREAM: {
       pContentsArray = new CPDF_Array;
@@ -218,7 +216,7 @@ void SetPageContents(CFX_ByteString key,
       CFX_ByteString sBody =
           CFX_ByteString((const FX_CHAR*)acc.GetData(), acc.GetSize());
       sStream = sStream + sBody + "\nQ";
-      pContents->SetData(sStream.raw_str(), sStream.GetLength(), FALSE, FALSE);
+      pContents->SetData(sStream.raw_str(), sStream.GetLength());
       pContentsArray->AddReference(pDocument, dwObjNum);
       break;
     }
@@ -234,18 +232,17 @@ void SetPageContents(CFX_ByteString key,
   if (!pContentsArray)
     return;
 
-  uint32_t dwObjNum = pDocument->AddIndirectObject(pContentsArray);
-  pPage->SetAtReference("Contents", pDocument, dwObjNum);
+  pPage->SetReferenceFor("Contents", pDocument,
+                         pDocument->AddIndirectObject(pContentsArray));
 
   if (!key.IsEmpty()) {
-    CPDF_Stream* pNewContents =
-        new CPDF_Stream(nullptr, 0, new CPDF_Dictionary);
-    dwObjNum = pDocument->AddIndirectObject(pNewContents);
-    pContentsArray->AddReference(pDocument, dwObjNum);
-
+    CPDF_Stream* pNewContents = new CPDF_Stream(
+        nullptr, 0, new CPDF_Dictionary(pDocument->GetByteStringPool()));
     CFX_ByteString sStream;
     sStream.Format("q 1 0 0 1 0 0 cm /%s Do Q", key.c_str());
-    pNewContents->SetData(sStream.raw_str(), sStream.GetLength(), FALSE, FALSE);
+    pNewContents->SetData(sStream.raw_str(), sStream.GetLength());
+    pContentsArray->AddReference(pDocument,
+                                 pDocument->AddIndirectObject(pNewContents));
   }
 }
 
@@ -329,10 +326,10 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
 
   CFX_FloatRect rcOriginalCB;
   CFX_FloatRect rcMerger = CalculateRect(&RectArray);
-  CFX_FloatRect rcOriginalMB = pPageDict->GetRectBy("MediaBox");
+  CFX_FloatRect rcOriginalMB = pPageDict->GetRectFor("MediaBox");
 
   if (pPageDict->KeyExist("CropBox"))
-    rcOriginalMB = pPageDict->GetRectBy("CropBox");
+    rcOriginalMB = pPageDict->GetRectFor("CropBox");
 
   if (rcOriginalMB.IsEmpty()) {
     rcOriginalMB = CFX_FloatRect(0.0f, 0.0f, 612.0f, 792.0f);
@@ -348,7 +345,7 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
                                                           : rcMerger.bottom;
 
   if (pPageDict->KeyExist("ArtBox"))
-    rcOriginalCB = pPageDict->GetRectBy("ArtBox");
+    rcOriginalCB = pPageDict->GetRectFor("ArtBox");
   else
     rcOriginalCB = rcOriginalMB;
 
@@ -358,7 +355,7 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     pMediaBox->Add(new CPDF_Number(rcOriginalMB.bottom));
     pMediaBox->Add(new CPDF_Number(rcOriginalMB.right));
     pMediaBox->Add(new CPDF_Number(rcOriginalMB.top));
-    pPageDict->SetAt("MediaBox", pMediaBox);
+    pPageDict->SetFor("MediaBox", pMediaBox);
   }
 
   if (!rcOriginalCB.IsEmpty()) {
@@ -367,21 +364,23 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     pCropBox->Add(new CPDF_Number(rcOriginalCB.bottom));
     pCropBox->Add(new CPDF_Number(rcOriginalCB.right));
     pCropBox->Add(new CPDF_Number(rcOriginalCB.top));
-    pPageDict->SetAt("ArtBox", pCropBox);
+    pPageDict->SetFor("ArtBox", pCropBox);
   }
 
-  CPDF_Dictionary* pRes = pPageDict->GetDictBy("Resources");
+  CPDF_Dictionary* pRes = pPageDict->GetDictFor("Resources");
   if (!pRes) {
-    pRes = new CPDF_Dictionary;
-    pPageDict->SetAt("Resources", pRes);
+    pRes = new CPDF_Dictionary(pDocument->GetByteStringPool());
+    pPageDict->SetFor("Resources", pRes);
   }
 
-  CPDF_Stream* pNewXObject = new CPDF_Stream(nullptr, 0, new CPDF_Dictionary);
+  CPDF_Stream* pNewXObject = new CPDF_Stream(
+      nullptr, 0, new CPDF_Dictionary(pDocument->GetByteStringPool()));
+
   uint32_t dwObjNum = pDocument->AddIndirectObject(pNewXObject);
-  CPDF_Dictionary* pPageXObject = pRes->GetDictBy("XObject");
+  CPDF_Dictionary* pPageXObject = pRes->GetDictFor("XObject");
   if (!pPageXObject) {
-    pPageXObject = new CPDF_Dictionary;
-    pRes->SetAt("XObject", pPageXObject);
+    pPageXObject = new CPDF_Dictionary(pDocument->GetByteStringPool());
+    pRes->SetFor("XObject", pPageXObject);
   }
 
   CFX_ByteString key = "";
@@ -402,16 +401,16 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
   CPDF_Dictionary* pNewXORes = nullptr;
 
   if (!key.IsEmpty()) {
-    pPageXObject->SetAtReference(key, pDocument, dwObjNum);
+    pPageXObject->SetReferenceFor(key, pDocument, dwObjNum);
     CPDF_Dictionary* pNewOXbjectDic = pNewXObject->GetDict();
-    pNewXORes = new CPDF_Dictionary;
-    pNewOXbjectDic->SetAt("Resources", pNewXORes);
-    pNewOXbjectDic->SetAtName("Type", "XObject");
-    pNewOXbjectDic->SetAtName("Subtype", "Form");
-    pNewOXbjectDic->SetAtInteger("FormType", 1);
-    pNewOXbjectDic->SetAtName("Name", "FRM");
-    CFX_FloatRect rcBBox = pPageDict->GetRectBy("ArtBox");
-    pNewOXbjectDic->SetAtRect("BBox", rcBBox);
+    pNewXORes = new CPDF_Dictionary(pDocument->GetByteStringPool());
+    pNewOXbjectDic->SetFor("Resources", pNewXORes);
+    pNewOXbjectDic->SetNameFor("Type", "XObject");
+    pNewOXbjectDic->SetNameFor("Subtype", "Form");
+    pNewOXbjectDic->SetIntegerFor("FormType", 1);
+    pNewOXbjectDic->SetNameFor("Name", "FRM");
+    CFX_FloatRect rcBBox = pPageDict->GetRectFor("ArtBox");
+    pNewOXbjectDic->SetRectFor("BBox", rcBBox);
   }
 
   for (int i = 0; i < nStreams; i++) {
@@ -419,22 +418,22 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     if (!pAnnotDic)
       continue;
 
-    CFX_FloatRect rcAnnot = pAnnotDic->GetRectBy("Rect");
+    CFX_FloatRect rcAnnot = pAnnotDic->GetRectFor("Rect");
     rcAnnot.Normalize();
 
-    CFX_ByteString sAnnotState = pAnnotDic->GetStringBy("AS");
-    CPDF_Dictionary* pAnnotAP = pAnnotDic->GetDictBy("AP");
+    CFX_ByteString sAnnotState = pAnnotDic->GetStringFor("AS");
+    CPDF_Dictionary* pAnnotAP = pAnnotDic->GetDictFor("AP");
     if (!pAnnotAP)
       continue;
 
-    CPDF_Stream* pAPStream = pAnnotAP->GetStreamBy("N");
+    CPDF_Stream* pAPStream = pAnnotAP->GetStreamFor("N");
     if (!pAPStream) {
-      CPDF_Dictionary* pAPDic = pAnnotAP->GetDictBy("N");
+      CPDF_Dictionary* pAPDic = pAnnotAP->GetDictFor("N");
       if (!pAPDic)
         continue;
 
       if (!sAnnotState.IsEmpty()) {
-        pAPStream = pAPDic->GetStreamBy(sAnnotState);
+        pAPStream = pAPDic->GetStreamFor(sAnnotState);
       } else {
         auto it = pAPDic->begin();
         if (it != pAPDic->end()) {
@@ -453,13 +452,13 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
       continue;
 
     CPDF_Dictionary* pAPDic = pAPStream->GetDict();
-    CFX_Matrix matrix = pAPDic->GetMatrixBy("Matrix");
+    CFX_Matrix matrix = pAPDic->GetMatrixFor("Matrix");
 
     CFX_FloatRect rcStream;
     if (pAPDic->KeyExist("Rect"))
-      rcStream = pAPDic->GetRectBy("Rect");
+      rcStream = pAPDic->GetRectFor("Rect");
     else if (pAPDic->KeyExist("BBox"))
-      rcStream = pAPDic->GetRectBy("BBox");
+      rcStream = pAPDic->GetRectFor("BBox");
 
     if (rcStream.IsEmpty())
       continue;
@@ -469,28 +468,27 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     if (pObj) {
       CPDF_Dictionary* pObjDic = pObj->GetDict();
       if (pObjDic) {
-        pObjDic->SetAtName("Type", "XObject");
-        pObjDic->SetAtName("Subtype", "Form");
+        pObjDic->SetNameFor("Type", "XObject");
+        pObjDic->SetNameFor("Subtype", "Form");
       }
     }
 
-    CPDF_Dictionary* pXObject = pNewXORes->GetDictBy("XObject");
+    CPDF_Dictionary* pXObject = pNewXORes->GetDictFor("XObject");
     if (!pXObject) {
-      pXObject = new CPDF_Dictionary;
-      pNewXORes->SetAt("XObject", pXObject);
+      pXObject = new CPDF_Dictionary(pDocument->GetByteStringPool());
+      pNewXORes->SetFor("XObject", pXObject);
     }
 
     CFX_ByteString sFormName;
     sFormName.Format("F%d", i);
-    uint32_t dwStreamObjNum = pDocument->AddIndirectObject(pObj);
-    pXObject->SetAtReference(sFormName, pDocument, dwStreamObjNum);
+    pXObject->SetReferenceFor(sFormName, pDocument,
+                              pDocument->AddIndirectObject(pObj));
 
     CPDF_StreamAcc acc;
     acc.LoadAllData(pNewXObject);
 
     const uint8_t* pData = acc.GetData();
     CFX_ByteString sStream(pData, acc.GetSize());
-    CFX_ByteString sTemp;
 
     if (matrix.IsIdentity()) {
       matrix.a = 1.0f;
@@ -501,13 +499,14 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
       matrix.f = 0.0f;
     }
 
+    CFX_ByteString sTemp;
     CFX_Matrix m = GetMatrix(rcAnnot, rcStream, matrix);
     sTemp.Format("q %f 0 0 %f %f %f cm /%s Do Q\n", m.a, m.d, m.e, m.f,
                  sFormName.c_str());
     sStream += sTemp;
-    pNewXObject->SetData(sStream.raw_str(), sStream.GetLength(), FALSE, FALSE);
+    pNewXObject->SetData(sStream.raw_str(), sStream.GetLength());
   }
-  pPageDict->RemoveAt("Annots");
+  pPageDict->RemoveFor("Annots");
 
   ObjectArray.RemoveAll();
   RectArray.RemoveAll();

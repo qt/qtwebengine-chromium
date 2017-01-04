@@ -38,26 +38,37 @@ namespace blink {
 class InProcessWorkerObjectProxy;
 class WorkerThreadStartupData;
 
-class DedicatedWorkerThread final : public WorkerThread {
-public:
-    static std::unique_ptr<DedicatedWorkerThread> create(PassRefPtr<WorkerLoaderProxy>, InProcessWorkerObjectProxy&, double timeOrigin);
-    ~DedicatedWorkerThread() override;
+class CORE_EXPORT DedicatedWorkerThread : public WorkerThread {
+ public:
+  static std::unique_ptr<DedicatedWorkerThread> create(
+      PassRefPtr<WorkerLoaderProxy>,
+      InProcessWorkerObjectProxy&,
+      double timeOrigin);
+  ~DedicatedWorkerThread() override;
 
-    WorkerBackingThread& workerBackingThread() override { return *m_workerBackingThread; }
-    InProcessWorkerObjectProxy& workerObjectProxy() const { return m_workerObjectProxy; }
+  WorkerBackingThread& workerBackingThread() override {
+    return *m_workerBackingThread;
+  }
+  void clearWorkerBackingThread() override;
+  InProcessWorkerObjectProxy& workerObjectProxy() const {
+    return m_workerObjectProxy;
+  }
 
-protected:
-    WorkerGlobalScope* createWorkerGlobalScope(std::unique_ptr<WorkerThreadStartupData>) override;
-    void postInitialize() override;
+ protected:
+  DedicatedWorkerThread(PassRefPtr<WorkerLoaderProxy>,
+                        InProcessWorkerObjectProxy&,
+                        double timeOrigin);
+  WorkerOrWorkletGlobalScope* createWorkerGlobalScope(
+      std::unique_ptr<WorkerThreadStartupData>) override;
 
-private:
-    DedicatedWorkerThread(PassRefPtr<WorkerLoaderProxy>, InProcessWorkerObjectProxy&, double timeOrigin);
+ private:
+  friend class DedicatedWorkerThreadForTest;
 
-    std::unique_ptr<WorkerBackingThread> m_workerBackingThread;
-    InProcessWorkerObjectProxy& m_workerObjectProxy;
-    double m_timeOrigin;
+  std::unique_ptr<WorkerBackingThread> m_workerBackingThread;
+  InProcessWorkerObjectProxy& m_workerObjectProxy;
+  double m_timeOrigin;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // DedicatedWorkerThread_h
+#endif  // DedicatedWorkerThread_h

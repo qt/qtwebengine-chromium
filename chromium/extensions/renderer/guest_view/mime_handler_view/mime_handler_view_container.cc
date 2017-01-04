@@ -117,8 +117,10 @@ MimeHandlerViewContainer::MimeHandlerViewContainer(
 }
 
 MimeHandlerViewContainer::~MimeHandlerViewContainer() {
-  if (loader_)
+  if (loader_) {
+    DCHECK(is_embedded_);
     loader_->cancel();
+  }
 
   if (render_frame()) {
     g_mime_handler_view_container_map.Get()[render_frame()].erase(this);
@@ -139,7 +141,7 @@ MimeHandlerViewContainer::FromRenderFrame(content::RenderFrame* render_frame) {
 }
 
 void MimeHandlerViewContainer::OnReady() {
-  if (!render_frame())
+  if (!render_frame() || !is_embedded_)
     return;
 
   blink::WebFrame* frame = render_frame()->GetWebFrame();
@@ -205,6 +207,7 @@ v8::Local<v8::Object> MimeHandlerViewContainer::V8ScriptableObject(
 void MimeHandlerViewContainer::didReceiveData(blink::WebURLLoader* /* unused */,
                                               const char* data,
                                               int data_length,
+                                              int /* unused */,
                                               int /* unused */) {
   view_id_ += std::string(data, data_length);
 }
@@ -220,9 +223,7 @@ void MimeHandlerViewContainer::didFinishLoading(
 void MimeHandlerViewContainer::PostMessage(v8::Isolate* isolate,
                                            v8::Local<v8::Value> message) {
   if (!guest_loaded_) {
-    linked_ptr<v8::Global<v8::Value>> global(
-        new v8::Global<v8::Value>(isolate, message));
-    pending_messages_.push_back(global);
+    pending_messages_.push_back(v8::Global<v8::Value>(isolate, message));
     return;
   }
 
@@ -317,14 +318,17 @@ void MimeHandlerViewContainer::OnMimeHandlerViewGuestOnLoadCompleted(
   v8::HandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(frame->mainWorldScriptContext());
   for (const auto& pending_message : pending_messages_)
-    PostMessage(isolate, v8::Local<v8::Value>::New(isolate, *pending_message));
+    PostMessage(isolate, v8::Local<v8::Value>::New(isolate, pending_message));
 
   pending_messages_.clear();
 }
 
 void MimeHandlerViewContainer::CreateMimeHandlerViewGuest() {
   // The loader has completed loading |view_id_| so we can dispose it.
-  loader_.reset();
+  if (loader_) {
+    DCHECK(is_embedded_);
+    loader_.reset();
+  }
 
   DCHECK_NE(element_instance_id(), guest_view::kInstanceIDNone);
 

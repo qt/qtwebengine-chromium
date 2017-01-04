@@ -7,6 +7,21 @@
 namespace metrics {
 namespace prefs {
 
+// Array of strings that are each UMA logs that were supposed to be sent in the
+// first minute of a browser session. These logs include things like crash count
+// info, etc.
+// Deprecated by kMetricsInitialLogs.
+const char kDeprecatedMetricsInitialLogs[] =
+    "user_experience_metrics.initial_logs_list";
+
+// Array of strings that are each UMA logs that were not sent because the
+// browser terminated before these accumulated metrics could be sent. These
+// logs typically include histograms and memory reports, as well as ongoing
+// user activities.
+// Deprecated by kMetricsOngoingLogs.
+const char kDeprecatedMetricsOngoingLogs[] =
+    "user_experience_metrics.ongoing_logs_list";
+
 // Set once, to the current epoch time, on the first run of chrome on this
 // machine. Attached to metrics reports forever thereafter.
 const char kInstallDate[] = "uninstall_metrics.installation_date2";
@@ -23,11 +38,10 @@ const char kMetricsClientID[] = "user_experience_metrics.client_id2";
 // used for the value is metrics::MetricsServiceClient::EnableMetricsDefault.
 const char kMetricsDefaultOptIn[] = "user_experience_metrics.default_opt_in";
 
-// Array of strings that are each UMA logs that were supposed to be sent in the
-// first minute of a browser session. These logs include things like crash count
-// info, etc.
-const char kMetricsInitialLogs[] =
-    "user_experience_metrics.initial_logs_list";
+// Array of dictionaries that are each UMA logs that were supposed to be sent in
+// the first minute of a browser session. These logs include things like crash
+// count info, etc.
+const char kMetricsInitialLogs[] = "user_experience_metrics.initial_logs2";
 
 // The metrics entropy source.
 // Note: The name low_entropy_source2 is a result of creating
@@ -39,12 +53,11 @@ const char kMetricsLowEntropySource[] =
 // stored locally and never transmitted in metrics reports.
 const char kMetricsMachineId[] = "user_experience_metrics.machine_id";
 
-// Array of strings that are each UMA logs that were not sent because the
-// browser terminated before these accumulated metrics could be sent.  These
+// Array of dictionaries that are each UMA logs that were not sent because the
+// browser terminated before these accumulated metrics could be sent. These
 // logs typically include histograms and memory reports, as well as ongoing
 // user activities.
-const char kMetricsOngoingLogs[] =
-    "user_experience_metrics.ongoing_logs_list";
+const char kMetricsOngoingLogs[] = "user_experience_metrics.ongoing_logs2";
 
 // Boolean that indicates a cloned install has been detected and the metrics
 // client id and low entropy source should be reset.
@@ -55,8 +68,8 @@ const char kMetricsResetIds[] = "user_experience_metrics.reset_metrics_ids";
 const char kMetricsReportingEnabled[] =
     "user_experience_metrics.reporting_enabled";
 
-// Date/time when the user opted in to UMA and generated the client id for the
-// very first time (local machine time, stored as a 64-bit time_t value).
+// Date/time when the user opted in to UMA and generated the client id most
+// recently (local machine time, stored as a 64-bit time_t value).
 const char kMetricsReportingEnabledTimestamp[] =
     "user_experience_metrics.client_id_timestamp";
 
@@ -86,6 +99,16 @@ const char kStabilityChildProcessCrashCount[] =
 const char kStabilityCrashCount[] =
     "user_experience_metrics.stability.crash_count";
 
+// Number of times the initial stability log upload was deferred to the next
+// startup.
+const char kStabilityDeferredCount[] =
+    "user_experience_metrics.stability.deferred_count";
+
+// Number of times stability data was discarded. This is accumulated since the
+// last report, even across versions.
+const char kStabilityDiscardCount[] =
+    "user_experience_metrics.stability.discard_count";
+
 // Number of times the browser has been run under a debugger.
 const char kStabilityDebuggerPresent[] =
     "user_experience_metrics.stability.debugger_present";
@@ -110,6 +133,11 @@ const char kStabilityExtensionRendererCrashCount[] =
 // report.
 const char kStabilityExtensionRendererFailedLaunchCount[] =
     "user_experience_metrics.stability.extension_renderer_failed_launch_count";
+
+// Number of times an extension renderer process successfully launched since the
+// last report.
+const char kStabilityExtensionRendererLaunchCount[] =
+    "user_experience_metrics.stability.extension_renderer_launch_count";
 
 // Number of times the session end did not complete.
 const char kStabilityIncompleteSessionEndCount[] =
@@ -145,6 +173,11 @@ const char kStabilityRendererFailedLaunchCount[] =
 const char kStabilityRendererHangCount[] =
     "user_experience_metrics.stability.renderer_hang_count";
 
+// Number of times a renderer process successfully launched since the last
+// report.
+const char kStabilityRendererLaunchCount[] =
+    "user_experience_metrics.stability.renderer_launch_count";
+
 // Base64 encoded serialized UMA system profile proto from the previous session.
 const char kStabilitySavedSystemProfile[] =
     "user_experience_metrics.stability.saved_system_profile";
@@ -167,6 +200,11 @@ const char kStabilityStatsBuildTime[] =
 // metrics reported under current version reflect stability of the same version.
 const char kStabilityStatsVersion[] =
     "user_experience_metrics.stability.stats_version";
+
+// Number of times the version number stored in prefs did not match the
+// serialized system profile version number.
+const char kStabilityVersionMismatchCount[] =
+    "user_experience_metrics.stability.version_mismatch_count";
 
 // The keys below are strictly increasing counters over the lifetime of
 // a chrome installation. They are (optionally) sent up to the uninstall

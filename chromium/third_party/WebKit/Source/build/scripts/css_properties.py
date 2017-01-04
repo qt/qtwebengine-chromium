@@ -15,6 +15,7 @@ class CSSProperties(in_generator.Writer):
         'longhands': '',
         'interpolable': False,
         'inherited': False,
+        'independent': False,
         'font': False,
         'svg': False,
         'name_for_methods': None,
@@ -33,6 +34,7 @@ class CSSProperties(in_generator.Writer):
         # Typed OM annotations.
         'typedom_types': [],
         'keywords': [],
+        'keyword_only': False,
         'supports_percentage': False,
         'supports_multiple': False,
     }
@@ -40,6 +42,7 @@ class CSSProperties(in_generator.Writer):
     valid_values = {
         'interpolable': (True, False),
         'inherited': (True, False),
+        'independent': (True, False),
         'font': (True, False),
         'svg': (True, False),
         'custom_all': (True, False),
@@ -48,6 +51,7 @@ class CSSProperties(in_generator.Writer):
         'custom_value': (True, False),
         'builder_skip': (True, False),
         'direction_aware': (True, False),
+        'keyword_only': (True, False),
     }
 
     def __init__(self, file_paths):

@@ -8,6 +8,7 @@ var binding = require('binding').Binding.create('runtime');
 
 var messaging = require('messaging');
 var runtimeNatives = requireNative('runtime');
+var messagingNatives = requireNative('messaging_natives');
 var process = requireNative('process');
 var utils = require('utils');
 
@@ -31,7 +32,7 @@ if (contextType == 'BLESSED_EXTENSION' ||
   if (manifest.app && manifest.app.background) {
     // Get the background page if one exists. Otherwise, default to the current
     // window.
-    backgroundPage = runtimeNatives.GetExtensionViews(-1, 'BACKGROUND')[0];
+    backgroundPage = runtimeNatives.GetExtensionViews(-1, -1, 'BACKGROUND')[0];
     if (backgroundPage) {
       var GetModuleSystem = requireNative('v8_context').GetModuleSystem;
       backgroundRequire = GetModuleSystem(backgroundPage).require;
@@ -154,8 +155,8 @@ binding.registerCustomHook(function(binding, id, contextType) {
     var includeTlsChannelId =
       !!(connectInfo && connectInfo.includeTlsChannelId);
 
-    var portId = runtimeNatives.OpenChannelToExtension(targetId, name,
-                                                       includeTlsChannelId);
+    var portId = messagingNatives.OpenChannelToExtension(targetId, name,
+                                                         includeTlsChannelId);
     if (portId >= 0)
       return messaging.createPort(portId, name);
   });
@@ -168,7 +169,7 @@ binding.registerCustomHook(function(binding, id, contextType) {
 
   apiFunctions.setHandleRequest('connectNative',
                                 function(nativeAppName) {
-    var portId = runtimeNatives.OpenChannelToNativeApp(nativeAppName);
+    var portId = messagingNatives.OpenChannelToNativeApp(nativeAppName);
     if (portId >= 0)
       return messaging.createPort(portId, '');
     throw new Error('Error connecting to native app: ' + nativeAppName);
@@ -177,7 +178,8 @@ binding.registerCustomHook(function(binding, id, contextType) {
   apiFunctions.setCustomCallback('getBackgroundPage',
                                  function(name, request, callback, response) {
     if (callback) {
-      var bg = runtimeNatives.GetExtensionViews(-1, 'BACKGROUND')[0] || null;
+      var bg =
+          runtimeNatives.GetExtensionViews(-1, -1, 'BACKGROUND')[0] || null;
       callback(bg);
     }
   });

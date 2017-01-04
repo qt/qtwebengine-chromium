@@ -36,18 +36,15 @@
 #include "content/common/navigation_params.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
+#include "media/mojo/interfaces/service_factory.mojom.h"
 #include "net/http/http_response_headers.h"
+#include "services/shell/public/cpp/interface_factory.h"
 #include "services/shell/public/cpp/interface_registry.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
-#include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/WebKit/public/web/WebTreeScopeType.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/page_transition_types.h"
-
-#if defined(OS_ANDROID)
-#include "content/public/browser/android/service_registry_android.h"
-#endif
 
 class GURL;
 struct AccessibilityHostMsg_EventParams;
@@ -73,9 +70,9 @@ class WebBluetoothService;
 
 namespace content {
 
+class AssociatedInterfaceProviderImpl;
 class CrossProcessFrameConnector;
 class CrossSiteTransferringRequest;
-class FrameMojoShell;
 class FrameTree;
 class FrameTreeNode;
 class NavigationHandleImpl;
@@ -95,6 +92,7 @@ class WebBluetoothServiceImpl;
 struct ContentSecurityPolicyHeader;
 struct ContextMenuParams;
 struct FileChooserParams;
+struct FrameOwnerProperties;
 struct GlobalRequestID;
 struct FileChooserParams;
 struct Referrer;
@@ -104,7 +102,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
     : public RenderFrameHost,
       NON_EXPORTED_BASE(public mojom::FrameHost),
       public BrowserAccessibilityDelegate,
-      public SiteInstanceImpl::Observer {
+      public SiteInstanceImpl::Observer,
+      public NON_EXPORTED_BASE(
+          shell::InterfaceFactory<media::mojom::ServiceFactory>) {
  public:
   using AXTreeSnapshotCallback =
       base::Callback<void(
@@ -156,11 +156,15 @@ class CONTENT_EXPORT RenderFrameHostImpl
   RenderViewHost* GetRenderViewHost() override;
   shell::InterfaceRegistry* GetInterfaceRegistry() override;
   shell::InterfaceProvider* GetRemoteInterfaces() override;
+  AssociatedInterfaceProvider* GetRemoteAssociatedInterfaces() override;
   blink::WebPageVisibilityState GetVisibilityState() override;
   bool IsRenderFrameLive() override;
   int GetProxyCount() override;
   void FilesSelectedInChooser(const std::vector<FileChooserFileInfo>& files,
                               FileChooserParams::Mode permissions) override;
+  void RequestTextSurroundingSelection(
+      const TextSurroundingSelectionCallback& callback,
+      int max_length) override;
 
   // mojom::FrameHost
   void GetInterfaceProvider(
@@ -171,6 +175,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // IPC::Listener
   bool OnMessageReceived(const IPC::Message& msg) override;
+  void OnAssociatedInterfaceRequest(
+      const std::string& interface_name,
+      mojo::ScopedInterfaceEndpointHandle handle) override;
 
   // BrowserAccessibilityDelegate
   void AccessibilitySetFocus(int acc_obj_id) override;
@@ -192,9 +199,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   gfx::Rect AccessibilityGetViewBounds() const override;
   gfx::Point AccessibilityOriginInScreen(
       const gfx::Rect& bounds) const override;
-  gfx::Rect AccessibilityTransformToRootCoordSpace(
-      const gfx::Rect& bounds) override;
-  SiteInstance* AccessibilityGetSiteInstance() override;
   void AccessibilityHitTest(const gfx::Point& point) override;
   void AccessibilitySetAccessibilityFocus(int acc_obj_id) override;
   void AccessibilityFatalError() override;
@@ -203,6 +207,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // SiteInstanceImpl::Observer
   void RenderProcessGone(SiteInstanceImpl* site_instance) override;
+
+  // shell::InterfaceFactory<media::mojom::ServiceFactory>
+  void Create(const shell::Identity& remote_identity,
+              media::mojom::ServiceFactoryRequest request) override;
 
   // Creates a RenderFrame in the renderer process.
   bool CreateRenderFrame(int proxy_routing_id,
@@ -220,13 +228,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void Init();
 
   int routing_id() const { return routing_id_; }
-  void OnCreateChildFrame(
-      int new_routing_id,
-      blink::WebTreeScopeType scope,
-      const std::string& frame_name,
-      const std::string& frame_unique_name,
-      blink::WebSandboxFlags sandbox_flags,
-      const blink::WebFrameOwnerProperties& frame_owner_properties);
+  void OnCreateChildFrame(int new_routing_id,
+                          blink::WebTreeScopeType scope,
+                          const std::string& frame_name,
+                          const std::string& frame_unique_name,
+                          blink::WebSandboxFlags sandbox_flags,
+                          const FrameOwnerProperties& frame_owner_properties);
 
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
   RenderFrameHostDelegate* delegate() { return delegate_; }
@@ -449,6 +456,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // cross-process window.focus() calls.
   void SetFocusedFrame();
 
+  // This is used to clear focus inside an inner WebContents when focus shifts
+  // to a frame in the outer WebContents or a sibling WebContents.
+  void ClearFocusedFrame();
+
   // Deletes the current selection plus the specified number of characters
   // before and after the selection or caret.
   void ExtendSelectionAndDelete(size_t before, size_t after);
@@ -626,6 +637,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest, CrashSubframe);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            RenderViewHostIsNotReusedAfterDelayedSwapOutACK);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+                           LoadEventForwardingWhilePendingDeletion);
 
   // IPC Message handlers.
   void OnAddMessageToConsole(int32_t level,
@@ -635,6 +648,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDetach();
   void OnFrameFocused();
   void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
+  void OnCancelInitialHistoryLoad();
   void OnDocumentOnLoadCompleted(
       FrameMsg_UILoadMetricsReportType::Value report_type,
       base::TimeTicks ui_timestamp);
@@ -680,9 +694,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDidAssignPageId(int32_t page_id);
   void OnDidChangeSandboxFlags(int32_t frame_routing_id,
                                blink::WebSandboxFlags flags);
-  void OnDidChangeFrameOwnerProperties(
-      int32_t frame_routing_id,
-      const blink::WebFrameOwnerProperties& properties);
+  void OnDidChangeFrameOwnerProperties(int32_t frame_routing_id,
+                                       const FrameOwnerProperties& properties);
   void OnUpdateTitle(const base::string16& title,
                      blink::WebTextDirection title_direction);
   void OnUpdateEncoding(const std::string& encoding);
@@ -691,7 +704,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDispatchLoad();
   void OnAccessibilityEvents(
       const std::vector<AccessibilityHostMsg_EventParams>& params,
-      int reset_token);
+      int reset_token,
+      int ack_token);
   void OnAccessibilityLocationChanges(
       const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
   void OnAccessibilityFindInPageResult(
@@ -708,7 +722,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnSerializeAsMHTMLResponse(
       int job_id,
       bool success,
-      const std::set<std::string>& digests_of_uris_of_serialized_resources);
+      const std::set<std::string>& digests_of_uris_of_serialized_resources,
+      base::TimeDelta renderer_main_thread_time);
 
 #if defined(USE_EXTERNAL_POPUP_MENU)
   void OnShowPopup(const FrameHostMsg_ShowPopup_Params& params);
@@ -803,8 +818,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   FrameTreeNode* FindAndVerifyChild(int32_t child_frame_routing_id,
                                     bad_message::BadMessageReason reason);
 
-  // Creates a Web Bluetooth Service owned by the frame.
-  void CreateWebBluetoothService(
+  // Creates Web Bluetooth Service owned by the frame. Returns a raw pointer
+  // to it.
+  WebBluetoothServiceImpl* CreateWebBluetoothService(
       mojo::InterfaceRequest<blink::mojom::WebBluetoothService> request);
 
   // Deletes the Web Bluetooth Service owned by the frame.
@@ -957,10 +973,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   std::unique_ptr<shell::InterfaceRegistry> interface_registry_;
   std::unique_ptr<shell::InterfaceProvider> remote_interfaces_;
 
-#if defined(OS_ANDROID)
-  std::unique_ptr<ServiceRegistryAndroid> service_registry_android_;
-#endif
-
   std::unique_ptr<WebBluetoothServiceImpl> web_bluetooth_service_;
 
   // The object managing the accessibility tree for this frame.
@@ -1002,9 +1014,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // RFH.
   std::unique_ptr<PermissionServiceContext> permission_service_context_;
 
-  // The frame's Mojo Shell service.
-  std::unique_ptr<FrameMojoShell> frame_mojo_shell_;
-
   // Holder of Mojo connection with ImageDownloader service in RenderFrame.
   content::mojom::ImageDownloaderPtr mojo_image_downloader_;
 
@@ -1038,6 +1047,15 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   mojo::Binding<mojom::FrameHost> frame_host_binding_;
   mojom::FramePtr frame_;
+
+  // Callback for responding when
+  // |FrameHostMsg_TextSurroundingSelectionResponse| message comes.
+  TextSurroundingSelectionCallback text_surrounding_selection_callback_;
+
+  std::vector<std::unique_ptr<shell::InterfaceRegistry>> media_registries_;
+
+  std::unique_ptr<AssociatedInterfaceProviderImpl>
+      remote_associated_interfaces_;
 
   // NOTE: This must be the last member.
   base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;

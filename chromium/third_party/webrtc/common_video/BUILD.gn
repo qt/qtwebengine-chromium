@@ -7,7 +7,6 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("../build/webrtc.gni")
-import("//testing/test.gni")
 
 config("common_video_config") {
   include_dirs = [
@@ -16,7 +15,7 @@ config("common_video_config") {
   ]
 }
 
-source_set("common_video") {
+rtc_static_library("common_video") {
   sources = [
     "bitrate_adjuster.cc",
     "h264/h264_common.cc",
@@ -44,20 +43,17 @@ source_set("common_video") {
 
   include_dirs = [ "../modules/interface" ]
 
-  configs += [ "..:common_config" ]
-  public_configs = [
-    "..:common_inherited_config",
-    ":common_video_config",
-  ]
+  public_configs = [ ":common_video_config" ]
 
   if (is_clang) {
     # Suppress warnings from Chrome's Clang plugins.
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
   deps = [
     "..:webrtc_common",
+    "../base:rtc_task_queue",
     "../system_wrappers",
   ]
 
@@ -81,7 +77,19 @@ source_set("common_video") {
 }
 
 if (rtc_include_tests) {
-  test("common_video_unittests") {
+  common_video_resources = [ "//resources/foreman_cif.yuv" ]
+
+  if (is_ios) {
+    bundle_data("common_video_unittests_bundle_data") {
+      testonly = true
+      sources = common_video_resources
+      outputs = [
+        "{{bundle_resources_dir}}/{{source_file_part}}",
+      ]
+    }
+  }
+
+  rtc_test("common_video_unittests") {
     testonly = true
 
     sources = [
@@ -94,16 +102,13 @@ if (rtc_include_tests) {
       "libyuv/libyuv_unittest.cc",
     ]
 
-    configs += [ "..:common_config" ]
-    public_configs = [ "..:common_inherited_config" ]
-
     # TODO(jschuh): Bug 1348: fix this warning.
     configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
     if (is_clang) {
       # Suppress warnings from the Chromium Clang plugin.
       # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
     deps = [
@@ -115,14 +120,14 @@ if (rtc_include_tests) {
       "//testing/gtest",
     ]
 
+    data = common_video_resources
     if (is_android) {
       deps += [ "//testing/android/native_test:native_test_support" ]
+      shard_timeout = 900
+    }
 
-      # This needs to be kept in sync with the .isolate file.
-      # TODO(kjellander); Move this to android_assets targets instead.
-      data = [
-        "//resources/foreman_cif.yuv",
-      ]
+    if (is_ios) {
+      deps += [ ":common_video_unittests_bundle_data" ]
     }
   }
 }

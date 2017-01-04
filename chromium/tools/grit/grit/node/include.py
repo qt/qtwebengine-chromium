@@ -15,12 +15,11 @@ import grit.format.gzip_string
 import grit.format.html_inline
 import grit.format.rc
 import grit.format.rc_header
+from grit.format import minifier
 from grit.node import base
 
 class IncludeNode(base.Node):
   """An <include> element."""
-
-  RESERVED_HEADER = '\xff\x1f\x8b'
 
   def __init__(self):
     super(IncludeNode, self).__init__()
@@ -89,13 +88,15 @@ class IncludeNode(base.Node):
     from grit.format import rc_header
     id_map = rc_header.GetIds(self.GetRoot())
     id = id_map[self.GetTextualIds()[0]]
+    filename = self.ToRealPath(self.GetInputPath())
     if self.attrs['flattenhtml'] == 'true':
       allow_external_script = self.attrs['allowexternalscript'] == 'true'
       data = self._GetFlattenedData(allow_external_script=allow_external_script)
     else:
-      filename = self.ToRealPath(self.GetInputPath())
       data = util.ReadFile(filename, util.BINARY)
-
+    # Note that the minifier will only do anything if a minifier command
+    # has been set in the command line.
+    data = minifier.Minify(data, os.path.splitext(filename)[1])
     if 'compress' in self.attrs and self.attrs['compress'] == 'gzip':
       # We only use rsyncable compression on Linux.
       # We exclude ChromeOS since ChromeOS bots are Linux based but do not have
@@ -104,16 +105,6 @@ class IncludeNode(base.Node):
         data = grit.format.gzip_string.GzipStringRsyncable(data)
       else:
         data = grit.format.gzip_string.GzipString(data)
-      data = self.RESERVED_HEADER[0] + data
-    elif data[:3] == self.RESERVED_HEADER:
-      # We are reserving these 3 bytes as the header for gzipped files in the
-      # data pack. 1f:8b is the first two bytes of a gzipped header, and ff is
-      # a custom byte we throw in front of the gzip header so that we prevent
-      # accidentally throwing this error on a resource we gzipped beforehand and
-      # don't wish to compress again. If this exception is hit, change the first
-      # byte of RESERVED_HEADER, and then mirror that update in
-      # ui/base/resource/resource_bundle.h
-      raise exception.ReservedHeaderCollision()
 
     # Include does not care about the encoding, because it only returns binary
     # data.

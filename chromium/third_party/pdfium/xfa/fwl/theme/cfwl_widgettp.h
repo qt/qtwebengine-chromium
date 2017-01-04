@@ -10,11 +10,11 @@
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/include/fx_coordinates.h"
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_system.h"
 #include "xfa/fwl/core/fwl_error.h"
-#include "xfa/fxgraphics/include/cfx_graphics.h"
 #include "xfa/fwl/theme/cfwl_utils.h"
+#include "xfa/fxgraphics/cfx_graphics.h"
 
 enum class CFWL_WidgetCapacity {
   None = 0,
@@ -93,7 +93,6 @@ enum class CFWL_WidgetCapacity {
 
 class CFDE_TextOut;
 class CFGAS_GEFont;
-class CFWL_ArrowData;
 class CFWL_ThemeBackground;
 class CFWL_ThemePart;
 class CFWL_ThemeText;
@@ -233,48 +232,28 @@ void FWLTHEME_Release();
 uint32_t FWL_GetThemeLayout(uint32_t dwThemeID);
 uint32_t FWL_GetThemeColor(uint32_t dwThemeID);
 
-class CFWL_ArrowData {
- public:
-  static CFWL_ArrowData* GetInstance();
-  static FX_BOOL IsInstance();
-  static void DestroyInstance();
-  virtual ~CFWL_ArrowData();
-  void SetColorData(uint32_t dwID);
-
-  class CColorData {
-   public:
-    FX_ARGB clrBorder[4];
-    FX_ARGB clrStart[4];
-    FX_ARGB clrEnd[4];
-    FX_ARGB clrSign[4];
-  } * m_pColorData;
-
- protected:
-  CFWL_ArrowData();
-  static CFWL_ArrowData* m_pInstance;
-};
-
 class CFWL_FontData {
  public:
   CFWL_FontData();
   virtual ~CFWL_FontData();
+
   FX_BOOL Equal(const CFX_WideStringC& wsFontFamily,
                 uint32_t dwFontStyles,
                 uint16_t wCodePage);
   FX_BOOL LoadFont(const CFX_WideStringC& wsFontFamily,
                    uint32_t dwFontStyles,
                    uint16_t wCodePage);
-  CFGAS_GEFont* GetFont() const { return m_pFont; }
+  CFGAS_GEFont* GetFont() const { return m_pFont.get(); }
 
  protected:
   CFX_WideString m_wsFamily;
   uint32_t m_dwStyles;
   uint32_t m_dwCodePage;
-  CFGAS_GEFont* m_pFont;
-  IFGAS_FontMgr* m_pFontMgr;
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
-  CFX_FontSourceEnum_File* m_pFontSource;
+  std::unique_ptr<CFX_FontSourceEnum_File> m_pFontSource;
 #endif
+  std::unique_ptr<IFGAS_FontMgr> m_pFontMgr;
+  std::unique_ptr<CFGAS_GEFont> m_pFont;
 };
 
 class CFWL_FontManager {

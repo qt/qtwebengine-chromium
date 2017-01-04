@@ -23,17 +23,22 @@ base::FilePath MakeTestFilePath(const char* file) {
 
 namespace update_client {
 
-TEST(UpdateClientUtils, BuildProtocolRequest_DownloadPreference) {
-  const string emptystr;
+TEST(UpdateClientUtils, BuildProtocolRequest_ProdIdVersion) {
+  // Verifies that |prod_id| and |version| are serialized.
+  const string request =
+      BuildProtocolRequest("some_prod_id", "1.0", "", "", "", "", "", "");
+  EXPECT_NE(string::npos, request.find(" version=\"some_prod_id-1.0\" "));
+}
 
+TEST(UpdateClientUtils, BuildProtocolRequest_DownloadPreference) {
   // Verifies that an empty |download_preference| is not serialized.
-  const string request_no_dlpref = BuildProtocolRequest(
-      emptystr, emptystr, emptystr, emptystr, emptystr, emptystr, emptystr);
+  const string request_no_dlpref =
+      BuildProtocolRequest("", "", "", "", "", "", "", "");
   EXPECT_EQ(string::npos, request_no_dlpref.find(" dlpref="));
 
   // Verifies that |download_preference| is serialized.
-  const string request_with_dlpref = BuildProtocolRequest(
-      emptystr, emptystr, emptystr, emptystr, "some pref", emptystr, emptystr);
+  const string request_with_dlpref =
+      BuildProtocolRequest("", "", "", "", "", "some pref", "", "");
   EXPECT_NE(string::npos, request_with_dlpref.find(" dlpref=\"some pref\""));
 }
 
@@ -94,14 +99,14 @@ TEST(UpdateClientUtils, IsValidInstallerAttributeName) {
 
   const char* const valid_names[] = {"A", "Z", "a", "a-b", "A_B",
                                      "z", "0", "9", "-_"};
-  for (const auto& name : valid_names)
+  for (const char* name : valid_names)
     EXPECT_TRUE(IsValidInstallerAttribute(
         make_pair(std::string(name), std::string("value"))));
 
   const char* const invalid_names[] = {
       "",   "a=1", " name", "name ", "na me", "<name", "name>",
       "\"", "\\",  "\xaa",  ".",     ",",     ";",     "+"};
-  for (const auto& name : invalid_names)
+  for (const char* name : invalid_names)
     EXPECT_FALSE(IsValidInstallerAttribute(
         make_pair(std::string(name), std::string("value"))));
 }
@@ -119,13 +124,13 @@ TEST(UpdateClientUtils, IsValidInstallerAttributeValue) {
 
   const char* const valid_values[] = {"",  "a=1", "A", "Z",      "a",
                                       "z", "0",   "9", "-.,;+_="};
-  for (const auto& value : valid_values)
+  for (const char* value : valid_values)
     EXPECT_TRUE(IsValidInstallerAttribute(
         make_pair(std::string("name"), std::string(value))));
 
   const char* const invalid_values[] = {" ap", "ap ", "a p", "<ap",
                                         "ap>", "\"",  "\\",  "\xaa"};
-  for (const auto& value : invalid_values)
+  for (const char* value : invalid_values)
     EXPECT_FALSE(IsValidInstallerAttribute(
         make_pair(std::string("name"), std::string(value))));
 }

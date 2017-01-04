@@ -10,6 +10,7 @@
 
 #include "base/macros.h"
 #include "base/supports_user_data.h"
+#include "net/nqe/effective_connection_type.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -44,11 +45,23 @@ class DataReductionProxyData : public base::SupportsUserData::Data {
     session_key_ = session_key;
   }
 
-  // The URL of the request before redirects.
-  GURL original_request_url() const { return original_request_url_; }
-  void set_original_request_url(const GURL& original_request_url) {
-    original_request_url_ = original_request_url;
+  // The URL the frame is navigating to. This may change during the navigation
+  // when encountering a server redirect.
+  GURL request_url() const { return request_url_; }
+  void set_request_url(const GURL& request_url) { request_url_ = request_url; }
+
+  // The EffectiveConnectionType after the proxy is resolved. This is set for
+  // main frame requests only.
+  net::EffectiveConnectionType effective_connection_type() const {
+    return effective_connection_type_;
   }
+  void set_effective_connection_type(
+      const net::EffectiveConnectionType& effective_connection_type) {
+    effective_connection_type_ = effective_connection_type;
+  }
+
+  // Removes |this| from |request|.
+  static void ClearData(net::URLRequest* request);
 
   // Returns the Data from the URLRequest's UserData.
   static DataReductionProxyData* GetData(const net::URLRequest& request);
@@ -75,8 +88,13 @@ class DataReductionProxyData : public base::SupportsUserData::Data {
   // The session key used for this request or navigation.
   std::string session_key_;
 
-  // The URL of the request before redirects.
-  GURL original_request_url_;
+  // The URL the frame is navigating to. This may change during the navigation
+  // when encountering a server redirect.
+  GURL request_url_;
+
+  // The EffectiveConnectionType when the request or navigation starts. This is
+  // set for main frame requests only.
+  net::EffectiveConnectionType effective_connection_type_;
 
   DISALLOW_COPY_AND_ASSIGN(DataReductionProxyData);
 };

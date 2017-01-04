@@ -16,6 +16,10 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
                    VkPhysicalDevice physDev, uint32_t featureFlags, uint32_t extensionFlags)
     : INHERITED(contextOptions) {
     fCanUseGLSLForShaderModule = false;
+    fMustDoCopiesFromOrigin = false;
+    fAllowInitializationErrorOnTearDown = false;
+    fSupportsCopiesAsDraws = false;
+    fMustSubmitCommandsBeforeCopyOp = false;
 
     /**************************************************************************
     * GrDrawTargetCaps fields
@@ -25,13 +29,14 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     fNPOTTextureTileSupport = true;  // always available in Vulkan
     fTwoSidedStencilSupport = true;  // always available in Vulkan
     fStencilWrapOpsSupport = true; // always available in Vulkan
-    fDiscardRenderTargetSupport = false; //TODO: figure this out
+    fDiscardRenderTargetSupport = true;
     fReuseScratchTextures = true; //TODO: figure this out
     fGpuTracingSupport = false; //TODO: figure this out
     fCompressedTexSubImageSupport = false; //TODO: figure this out
     fOversizedStencilSupport = false; //TODO: figure this out
 
     fUseDrawInsteadOfClear = false;
+    fFenceSyncSupport = true;   // always available in Vulkan
 
     fMapBufferFlags = kNone_MapFlags; //TODO: figure this out
     fBufferMapThreshold = SK_MaxS32;  //TODO: figure this out
@@ -64,6 +69,16 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
         // Currently disabling this feature since it does not play well with validation layers which
         // expect a SPIR-V shader
         // fCanUseGLSLForShaderModule = true;
+    }
+
+    if (kQualcomm_VkVendor == properties.vendorID) {
+        fMustDoCopiesFromOrigin = true;
+        fAllowInitializationErrorOnTearDown = true;
+    }
+
+    if (kNvidia_VkVendor == properties.vendorID) {
+        fSupportsCopiesAsDraws = true;
+        fMustSubmitCommandsBeforeCopyOp = true;
     }
 
     this->applyOptionsOverrides(contextOptions);
@@ -105,11 +120,11 @@ void GrVkCaps::initSampleCount(const VkPhysicalDeviceProperties& properties) {
 void GrVkCaps::initGrCaps(const VkPhysicalDeviceProperties& properties,
                           const VkPhysicalDeviceMemoryProperties& memoryProperties,
                           uint32_t featureFlags) {
-    fMaxVertexAttributes = properties.limits.maxVertexInputAttributes;
+    fMaxVertexAttributes = SkTMin(properties.limits.maxVertexInputAttributes, (uint32_t)INT_MAX);
     // We could actually query and get a max size for each config, however maxImageDimension2D will
     // give the minimum max size across all configs. So for simplicity we will use that for now.
-    fMaxRenderTargetSize = properties.limits.maxImageDimension2D;
-    fMaxTextureSize = properties.limits.maxImageDimension2D;
+    fMaxRenderTargetSize = SkTMin(properties.limits.maxImageDimension2D, (uint32_t)INT_MAX);
+    fMaxTextureSize = SkTMin(properties.limits.maxImageDimension2D, (uint32_t)INT_MAX);
 
     this->initSampleCount(properties);
 
@@ -137,7 +152,16 @@ void GrVkCaps::initGLSLCaps(const VkPhysicalDeviceProperties& properties,
             glslCaps->fConfigTextureSwizzle[i] = GrSwizzle::RRRR();
             glslCaps->fConfigOutputSwizzle[i] = GrSwizzle::AAAA();
         } else {
-            glslCaps->fConfigTextureSwizzle[i] = GrSwizzle::RGBA();
+            if (kRGBA_4444_GrPixelConfig == config) {
+                // The vulkan spec does not require R4G4B4A4 to be supported for texturing so we
+                // store the data in a B4G4R4A4 texture and then swizzle it when doing texture reads
+                // or writing to outputs. Since we're not actually changing the data at all, the
+                // only extra work is the swizzle in the shader for all operations.
+                glslCaps->fConfigTextureSwizzle[i] = GrSwizzle::BGRA();
+                glslCaps->fConfigOutputSwizzle[i] = GrSwizzle::BGRA();
+            } else {
+                glslCaps->fConfigTextureSwizzle[i] = GrSwizzle::RGBA();
+            }
         }
     }
 
@@ -171,10 +195,12 @@ void GrVkCaps::initGLSLCaps(const VkPhysicalDeviceProperties& properties,
 
     glslCaps->fMaxVertexSamplers =
     glslCaps->fMaxGeometrySamplers =
-    glslCaps->fMaxFragmentSamplers = SkTMin(properties.limits.maxPerStageDescriptorSampledImages,
-                                            properties.limits.maxPerStageDescriptorSamplers);
-    glslCaps->fMaxCombinedSamplers = SkTMin(properties.limits.maxDescriptorSetSampledImages,
-                                            properties.limits.maxDescriptorSetSamplers);
+    glslCaps->fMaxFragmentSamplers = SkTMin(SkTMin(properties.limits.maxPerStageDescriptorSampledImages,
+                                                   properties.limits.maxPerStageDescriptorSamplers),
+                                            (uint32_t)INT_MAX);
+    glslCaps->fMaxCombinedSamplers = SkTMin(SkTMin(properties.limits.maxDescriptorSetSampledImages,
+                                                   properties.limits.maxDescriptorSetSamplers),
+                                            (uint32_t)INT_MAX);
 }
 
 bool stencil_format_supported(const GrVkInterface* interface,

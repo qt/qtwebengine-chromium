@@ -59,8 +59,8 @@ class ArrayBufferTracker : public AllStatic {
 // Never use directly but instead always call through |ArrayBufferTracker|.
 class LocalArrayBufferTracker {
  public:
-  typedef std::pair<void*, size_t> Value;
   typedef JSArrayBuffer* Key;
+  typedef size_t Value;
 
   enum CallbackResult { kKeepEntry, kUpdateEntry, kRemoveEntry };
   enum FreeMode { kFreeDead, kFreeAll };
@@ -81,7 +81,7 @@ class LocalArrayBufferTracker {
   // Callback should be of type:
   //   CallbackResult fn(JSArrayBuffer* buffer, JSArrayBuffer** new_buffer);
   template <typename Callback>
-  inline void Process(Callback callback);
+  void Process(Callback callback);
 
   bool IsEmpty() { return array_buffers_.empty(); }
 
@@ -90,10 +90,10 @@ class LocalArrayBufferTracker {
   }
 
  private:
-  typedef std::unordered_map<Key, Value> TrackingMap;
+  typedef std::unordered_map<Key, Value> TrackingData;
 
   Heap* heap_;
-  TrackingMap array_buffers_;
+  TrackingData array_buffers_;
 };
 
 }  // namespace internal

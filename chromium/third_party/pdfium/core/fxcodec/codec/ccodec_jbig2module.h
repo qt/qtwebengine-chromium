@@ -9,28 +9,47 @@
 
 #include <memory>
 
-#include "core/fxcrt/include/fx_basic.h"
+#include "core/fxcodec/fx_codec_def.h"
+#include "core/fxcrt/fx_basic.h"
 
+class CJBig2_Context;
+class CJBig2_Image;
 class CPDF_StreamAcc;
 class IFX_Pause;
+class JBig2_DocumentContext;
+
+class CCodec_Jbig2Context {
+ public:
+  CCodec_Jbig2Context();
+  ~CCodec_Jbig2Context();
+
+  uint32_t m_width;
+  uint32_t m_height;
+  CPDF_StreamAcc* m_pGlobalStream;
+  CPDF_StreamAcc* m_pSrcStream;
+  uint8_t* m_dest_buf;
+  uint32_t m_dest_pitch;
+  IFX_Pause* m_pPause;
+  std::unique_ptr<CJBig2_Context> m_pContext;
+};
 
 class CCodec_Jbig2Module {
  public:
   CCodec_Jbig2Module() {}
   ~CCodec_Jbig2Module();
 
-  void* CreateJbig2Context();
-  FXCODEC_STATUS StartDecode(void* pJbig2Context,
-                             std::unique_ptr<CFX_Deletable>* pContextHolder,
-                             uint32_t width,
-                             uint32_t height,
-                             CPDF_StreamAcc* src_stream,
-                             CPDF_StreamAcc* global_stream,
-                             uint8_t* dest_buf,
-                             uint32_t dest_pitch,
-                             IFX_Pause* pPause);
-  FXCODEC_STATUS ContinueDecode(void* pJbig2Context, IFX_Pause* pPause);
-  void DestroyJbig2Context(void* pJbig2Context);
+  FXCODEC_STATUS StartDecode(
+      CCodec_Jbig2Context* pJbig2Context,
+      std::unique_ptr<JBig2_DocumentContext>* pContextHolder,
+      uint32_t width,
+      uint32_t height,
+      CPDF_StreamAcc* src_stream,
+      CPDF_StreamAcc* global_stream,
+      uint8_t* dest_buf,
+      uint32_t dest_pitch,
+      IFX_Pause* pPause);
+  FXCODEC_STATUS ContinueDecode(CCodec_Jbig2Context* pJbig2Context,
+                                IFX_Pause* pPause);
 };
 
 #endif  // CORE_FXCODEC_CODEC_CCODEC_JBIG2MODULE_H_

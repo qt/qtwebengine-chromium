@@ -27,7 +27,7 @@ class LoginDatabaseIOSTest : public PlatformTest {
     ClearKeychain();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     base::FilePath login_db_path =
-        temp_dir_.path().AppendASCII("temp_login.db");
+        temp_dir_.GetPath().AppendASCII("temp_login.db");
     login_db_.reset(new password_manager::LoginDatabase(login_db_path));
     login_db_->Init();
   }
@@ -116,10 +116,8 @@ TEST_F(LoginDatabaseIOSTest, UpdateLogin) {
       login_db_->UpdateLogin(form);
   ASSERT_EQ(1u, changes.size());
 
-  form.password_value = base::string16();
-
   ScopedVector<PasswordForm> forms;
-  EXPECT_TRUE(login_db_->GetLogins(form, &forms));
+  EXPECT_TRUE(login_db_->GetLogins(PasswordStore::FormDigest(form), &forms));
 
   ASSERT_EQ(1U, forms.size());
   EXPECT_STREQ("secret", UTF16ToUTF8(forms[0]->password_value).c_str());
@@ -138,7 +136,7 @@ TEST_F(LoginDatabaseIOSTest, RemoveLogin) {
   ignore_result(login_db_->RemoveLogin(form));
 
   ScopedVector<PasswordForm> forms;
-  EXPECT_TRUE(login_db_->GetLogins(form, &forms));
+  EXPECT_TRUE(login_db_->GetLogins(PasswordStore::FormDigest(form), &forms));
 
   ASSERT_EQ(0U, forms.size());
   ASSERT_EQ(0U, GetKeychainSize());
@@ -171,8 +169,8 @@ TEST_F(LoginDatabaseIOSTest, RemoveLoginsCreatedBetween) {
   login_db_->RemoveLoginsCreatedBetween(base::Time::FromDoubleT(150),
                                         base::Time::FromDoubleT(250));
 
-  PasswordForm form;
-  form.signon_realm = "http://www.example.com";
+  PasswordStore::FormDigest form = {PasswordForm::SCHEME_HTML,
+                                    "http://www.example.com", GURL()};
   ScopedVector<PasswordForm> logins;
   EXPECT_TRUE(login_db_->GetLogins(form, &logins));
 

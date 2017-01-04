@@ -6,11 +6,11 @@
 
 #include "base/command_line.h"
 #include "base/location.h"
-#include "content/common/input/did_overscroll_params.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/input/input_event_filter.h"
 #include "content/renderer/input/input_handler_manager.h"
 #include "third_party/WebKit/public/platform/Platform.h"
+#include "ui/events/blink/did_overscroll_params.h"
 
 namespace content {
 
@@ -33,11 +33,24 @@ InputHandlerWrapper::InputHandlerWrapper(
 InputHandlerWrapper::~InputHandlerWrapper() {
 }
 
+void InputHandlerWrapper::NeedsMainFrame() {
+  main_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&RenderViewImpl::SetNeedsMainFrame, render_view_impl_));
+}
+
 void InputHandlerWrapper::TransferActiveWheelFlingAnimation(
     const blink::WebActiveWheelFlingParameters& params) {
   main_task_runner_->PostTask(
       FROM_HERE, base::Bind(&RenderViewImpl::TransferActiveWheelFlingAnimation,
                             render_view_impl_, params));
+}
+
+void InputHandlerWrapper::DispatchNonBlockingEventToMainThread(
+    ui::ScopedWebInputEvent event,
+    const ui::LatencyInfo& latency_info) {
+  input_handler_manager_->DispatchNonBlockingEventToMainThread(
+      routing_id_, std::move(event), latency_info);
 }
 
 void InputHandlerWrapper::WillShutdown() {
@@ -58,7 +71,7 @@ void InputHandlerWrapper::DidOverscroll(
     const gfx::Vector2dF& latest_overscroll_delta,
     const gfx::Vector2dF& current_fling_velocity,
     const gfx::PointF& causal_event_viewport_point) {
-  DidOverscrollParams params;
+  ui::DidOverscrollParams params;
   params.accumulated_overscroll = accumulated_overscroll;
   params.latest_overscroll_delta = latest_overscroll_delta;
   params.current_fling_velocity = current_fling_velocity;

@@ -46,13 +46,24 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothRemoteGattCharacteristicMac
       const std::string& identifier) const override;
   void StartNotifySession(const NotifySessionCallback& callback,
                           const ErrorCallback& error_callback) override;
+  void StopNotifySession(BluetoothGattNotifySession* session,
+                         const base::Closure& callback) override;
   void ReadRemoteCharacteristic(const ValueCallback& callback,
                                 const ErrorCallback& error_callback) override;
-  void WriteRemoteCharacteristic(const std::vector<uint8_t>& new_value,
+  void WriteRemoteCharacteristic(const std::vector<uint8_t>& value,
                                  const base::Closure& callback,
                                  const ErrorCallback& error_callback) override;
 
   DISALLOW_COPY_AND_ASSIGN(BluetoothRemoteGattCharacteristicMac);
+
+ protected:
+  void SubscribeToNotifications(BluetoothRemoteGattDescriptor* ccc_descriptor,
+                                const base::Closure& callback,
+                                const ErrorCallback& error_callback) override;
+  void UnsubscribeFromNotifications(
+      BluetoothRemoteGattDescriptor* ccc_descriptor,
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) override;
 
  private:
   friend class BluetoothRemoteGattServiceMac;

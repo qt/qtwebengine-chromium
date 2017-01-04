@@ -8,8 +8,7 @@
 #include "ui/gfx/vector_icons_public.h"
 
 TestToolbarModel::TestToolbarModel()
-    : perform_search_term_replacement_(false),
-      security_level_(security_state::SecurityStateModel::NONE),
+    : security_level_(security_state::SecurityStateModel::NONE),
 #if defined(TOOLKIT_VIEWS)
       icon_(gfx::VectorIconId::LOCATION_BAR_HTTP),
 #else
@@ -20,21 +19,12 @@ TestToolbarModel::TestToolbarModel()
 
 TestToolbarModel::~TestToolbarModel() {}
 
-base::string16 TestToolbarModel::GetText() const {
-  return text_;
-}
-
 base::string16 TestToolbarModel::GetFormattedURL(size_t* prefix_end) const {
   return text_;
 }
 
 GURL TestToolbarModel::GetURL() const {
   return url_;
-}
-
-bool TestToolbarModel::WouldPerformSearchTermReplacement(
-    bool ignore_editing) const {
-  return perform_search_term_replacement_;
 }
 
 security_state::SecurityStateModel::SecurityLevel
@@ -49,6 +39,10 @@ int TestToolbarModel::GetIcon() const {
 
 gfx::VectorIconId TestToolbarModel::GetVectorIcon() const {
   return icon_;
+}
+
+base::string16 TestToolbarModel::GetSecureVerboseText() const {
+  return base::string16();
 }
 
 base::string16 TestToolbarModel::GetEVCertName() const {

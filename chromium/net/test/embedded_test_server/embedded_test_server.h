@@ -20,7 +20,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
-#include "crypto/rsa_private_key.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_endpoint.h"
@@ -63,7 +62,7 @@ struct HttpRequest;
 //     return std::unique_ptr<HttpResponse>();
 //
 //   std::unique_ptr<BasicHttpResponse> http_response(new BasicHttpResponse());
-//   http_response->set_code(test_server::SUCCESS);
+//   http_response->set_code(net::HTTP_OK);
 //   http_response->set_content("hello");
 //   http_response->set_content_type("text/plain");
 //   return http_response;
@@ -278,8 +277,7 @@ class EmbeddedTestServer {
   GURL base_url_;
   IPEndPoint local_endpoint_;
 
-  // Owns the HttpConnection objects.
-  std::map<StreamSocket*, HttpConnection*> connections_;
+  std::map<StreamSocket*, std::unique_ptr<HttpConnection>> connections_;
 
   // Vector of registered and default request handlers and monitors.
   std::vector<HandleRequestCallback> request_handlers_;

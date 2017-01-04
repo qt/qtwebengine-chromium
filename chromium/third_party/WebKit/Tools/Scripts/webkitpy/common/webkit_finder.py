@@ -44,12 +44,16 @@ class WebKitFinder(object):
     def webkit_base(self):
         """Returns the absolute path to the top of the WebKit tree.
 
-        Raises an AssertionError if the top dir can't be determined."""
+        Raises an AssertionError if the top dir can't be determined.
+        """
         # Note: This code somewhat duplicates the code in
         # scm.find_checkout_root(). However, that code only works if the top
         # of the SCM repository also matches the top of the WebKit tree. Some SVN users
         # (the chromium test bots, for example), might only check out subdirectories like
         # Tools/Scripts. This code will also work if there is no SCM system at all.
+        # TODO(qyearsley): Remove duplicate code; we're not concerned with SVN users anymore.
+        # Also, instead of caching the result with a private instance variable, we can use
+        # the memoized decorator.
         if not self._webkit_base:
             self._webkit_base = self._webkit_base
             module_path = self._filesystem.abspath(self._filesystem.path_to_module(self.__module__))
@@ -80,6 +84,23 @@ class WebKitFinder(object):
 
     def perf_tests_dir(self):
         return self.path_from_webkit_base('PerformanceTests')
+
+    def layout_test_name(self, file_path):
+        """Returns a layout test name, given the path from the repo root.
+
+        Args:
+            file_path: A relative path from the root of the Chromium repo.
+
+        Returns:
+            The normalized layout test name, which is just the relative path from
+            the LayoutTests directory, using forward slash as the path separator.
+            Returns None if the given file is not in the LayoutTests directory.
+        """
+        layout_tests_abs_path = self._filesystem.join(self.webkit_base(), self.layout_tests_dir())
+        layout_tests_rel_path = self._filesystem.relpath(layout_tests_abs_path, self.chromium_base())
+        if not file_path.startswith(layout_tests_rel_path):
+            return None
+        return file_path[len(layout_tests_rel_path) + 1:]
 
     def depot_tools_base(self):
         if not self._depot_tools:

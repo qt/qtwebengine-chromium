@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "cc/surfaces/frame_sink_id.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/readback_types.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
@@ -14,17 +15,14 @@
 
 namespace cc {
 class CopyOutputResult;
-class SurfaceIdAllocator;
 class SurfaceManager;
 }  // namespace cc
 
 namespace content {
 
-CONTENT_EXPORT
-std::unique_ptr<cc::SurfaceIdAllocator> CreateSurfaceIdAllocator();
+CONTENT_EXPORT cc::FrameSinkId AllocateFrameSinkId();
 
-CONTENT_EXPORT
-cc::SurfaceManager* GetSurfaceManager();
+CONTENT_EXPORT cc::SurfaceManager* GetSurfaceManager();
 
 void CopyFromCompositingSurfaceHasResult(
     const gfx::Size& dst_size_in_pixel,

@@ -9,8 +9,8 @@
 
 #include <vector>
 
-#include "core/fxcrt/include/fx_basic.h"
-#include "fpdfsdk/jsapi/include/fxjs_v8.h"
+#include "core/fxcrt/fx_basic.h"
+#include "fxjs/fxjs_v8.h"
 
 class CJS_Array;
 class CJS_Date;
@@ -27,83 +27,70 @@ class CJS_Value {
     VT_boolean,
     VT_date,
     VT_object,
-    VT_fxobject,
     VT_null,
     VT_undefined
   };
 
-  CJS_Value(CJS_Runtime* pRuntime);
-  CJS_Value(CJS_Runtime* pRuntime, v8::Local<v8::Value> pValue, Type t);
+  explicit CJS_Value(CJS_Runtime* pRuntime);
+  CJS_Value(CJS_Runtime* pRuntime, v8::Local<v8::Value> pValue);
   CJS_Value(CJS_Runtime* pRuntime, const int& iValue);
   CJS_Value(CJS_Runtime* pRuntime, const double& dValue);
   CJS_Value(CJS_Runtime* pRuntime, const float& fValue);
   CJS_Value(CJS_Runtime* pRuntime, const bool& bValue);
-  CJS_Value(CJS_Runtime* pRuntime, v8::Local<v8::Object>);
-  CJS_Value(CJS_Runtime* pRuntime, CJS_Object*);
-  CJS_Value(CJS_Runtime* pRuntime, CJS_Document*);
+  CJS_Value(CJS_Runtime* pRuntime, CJS_Object* pObj);
   CJS_Value(CJS_Runtime* pRuntime, const FX_CHAR* pStr);
   CJS_Value(CJS_Runtime* pRuntime, const FX_WCHAR* pWstr);
-  CJS_Value(CJS_Runtime* pRuntime, CJS_Array& array);
-
-  ~CJS_Value();
+  CJS_Value(CJS_Runtime* pRuntime, const CJS_Array& array);
+  CJS_Value(CJS_Runtime* pRuntime, const CJS_Date& date);
+  CJS_Value(CJS_Runtime* pRuntime, const CJS_Object* object);
   CJS_Value(const CJS_Value& other);
 
-  void SetNull();
-  void Attach(v8::Local<v8::Value> pValue, Type t);
-  void Attach(CJS_Value* pValue);
+  ~CJS_Value();
+
+  void SetNull(CJS_Runtime* pRuntime);
+  void SetValue(const CJS_Value& other);
+  void Attach(v8::Local<v8::Value> pValue);
   void Detach();
 
-  Type GetType() const;
-  int ToInt() const;
-  bool ToBool() const;
-  double ToDouble() const;
-  float ToFloat() const;
-  CJS_Object* ToCJSObject() const;
-  CFX_WideString ToCFXWideString() const;
-  CFX_ByteString ToCFXByteString() const;
-  v8::Local<v8::Object> ToV8Object() const;
-  v8::Local<v8::Array> ToV8Array() const;
-  v8::Local<v8::Value> ToV8Value() const;
+  static Type GetValueType(v8::Local<v8::Value> value);
+  Type GetType() const { return GetValueType(m_pValue); }
+
+  int ToInt(CJS_Runtime* pRuntime) const;
+  bool ToBool(CJS_Runtime* pRuntime) const;
+  double ToDouble(CJS_Runtime* pRuntime) const;
+  float ToFloat(CJS_Runtime* pRuntime) const;
+  CJS_Object* ToCJSObject(CJS_Runtime* pRuntime) const;
+  CFX_WideString ToCFXWideString(CJS_Runtime* pRuntime) const;
+  CFX_ByteString ToCFXByteString(CJS_Runtime* pRuntime) const;
+  v8::Local<v8::Object> ToV8Object(CJS_Runtime* pRuntime) const;
+  v8::Local<v8::Array> ToV8Array(CJS_Runtime* pRuntime) const;
+  v8::Local<v8::Value> ToV8Value(CJS_Runtime* pRuntime) const;
 
   // Replace the current |m_pValue| with a v8::Number if possible
-  // to make one from the current |m_pValue|, updating |m_eType|
-  // as appropriate to indicate the result.
-  void MaybeCoerceToNumber();
+  // to make one from the current |m_pValue|.
+  void MaybeCoerceToNumber(CJS_Runtime* pRuntime);
 
-  void operator=(int iValue);
-  void operator=(bool bValue);
-  void operator=(double val);
-  void operator=(float val);
-  void operator=(CJS_Object* val);
-  void operator=(CJS_Document* val);
-  void operator=(v8::Local<v8::Object> val);
-  void operator=(CJS_Array& val);
-  void operator=(CJS_Date& val);
-  void operator=(const FX_WCHAR* pWstr);
-  void operator=(const FX_CHAR* pStr);
-  void operator=(CJS_Value value);
-
-  FX_BOOL IsArrayObject() const;
-  FX_BOOL IsDateObject() const;
-  FX_BOOL ConvertToArray(CJS_Array&) const;
-  FX_BOOL ConvertToDate(CJS_Date&) const;
-
-  CJS_Runtime* GetJSRuntime() const { return m_pJSRuntime; }
+  bool IsArrayObject() const;
+  bool IsDateObject() const;
+  bool ConvertToArray(CJS_Runtime* pRuntime, CJS_Array&) const;
+  bool ConvertToDate(CJS_Runtime* pRuntime, CJS_Date&) const;
 
  protected:
-  Type m_eType;
   v8::Local<v8::Value> m_pValue;
-  CJS_Runtime* m_pJSRuntime;
 };
 
-class CJS_PropValue : public CJS_Value {
+class CJS_PropValue {
  public:
-  CJS_PropValue(const CJS_Value&);
-  CJS_PropValue(CJS_Runtime* pRuntime);
+  explicit CJS_PropValue(CJS_Runtime* pRuntime);
+  CJS_PropValue(CJS_Runtime* pRuntime, const CJS_Value&);
   ~CJS_PropValue();
 
-  FX_BOOL IsSetting() const { return m_bIsSetting; }
-  FX_BOOL IsGetting() const { return !m_bIsSetting; }
+  void StartSetting() { m_bIsSetting = true; }
+  void StartGetting() { m_bIsSetting = false; }
+  bool IsSetting() const { return m_bIsSetting; }
+  bool IsGetting() const { return !m_bIsSetting; }
+  CJS_Runtime* GetJSRuntime() const { return m_pJSRuntime; }
+  CJS_Value* GetJSValue() { return &m_Value; }
 
   void operator<<(int val);
   void operator>>(int&) const;
@@ -126,39 +113,37 @@ class CJS_PropValue : public CJS_Value {
   void operator<<(CJS_Array& array);
   void operator<<(CJS_Date& date);
   void operator>>(CJS_Date& date) const;
-  operator v8::Local<v8::Value>() const;
-  void StartSetting();
-  void StartGetting();
 
  private:
-  FX_BOOL m_bIsSetting;
+  bool m_bIsSetting;
+  CJS_Value m_Value;
+  CJS_Runtime* const m_pJSRuntime;
 };
 
 class CJS_Array {
  public:
-  CJS_Array(CJS_Runtime* pRuntime);
-  virtual ~CJS_Array();
+  CJS_Array();
   CJS_Array(const CJS_Array& other);
+  virtual ~CJS_Array();
 
   void Attach(v8::Local<v8::Array> pArray);
-  void GetElement(unsigned index, CJS_Value& value);
-  void SetElement(unsigned index, CJS_Value value);
-  int GetLength();
-  FX_BOOL IsAttached();
-  operator v8::Local<v8::Array>();
+  void GetElement(CJS_Runtime* pRuntime,
+                  unsigned index,
+                  CJS_Value& value) const;
+  void SetElement(CJS_Runtime* pRuntime,
+                  unsigned index,
+                  const CJS_Value& value);
+  int GetLength(CJS_Runtime* pRuntime) const;
 
-  CJS_Runtime* GetJSRuntime() const { return m_pJSRuntime; }
+  v8::Local<v8::Array> ToV8Array(CJS_Runtime* pRuntime) const;
 
  private:
-  v8::Local<v8::Array> m_pArray;
-  CJS_Runtime* m_pJSRuntime;
+  mutable v8::Local<v8::Array> m_pArray;
 };
 
 class CJS_Date {
-  friend class CJS_Value;
-
  public:
-  CJS_Date(CJS_Runtime* pRuntime);
+  CJS_Date();
   CJS_Date(CJS_Runtime* pRuntime, double dMsec_time);
   CJS_Date(CJS_Runtime* pRuntime,
            int year,
@@ -168,39 +153,34 @@ class CJS_Date {
            int min,
            int sec);
   virtual ~CJS_Date();
-  void Attach(v8::Local<v8::Value> pDate);
 
-  int GetYear();
-  void SetYear(int iYear);
+  void Attach(v8::Local<v8::Date> pDate);
+  bool IsValidDate(CJS_Runtime* pRuntime) const;
 
-  int GetMonth();
-  void SetMonth(int iMonth);
+  int GetYear(CJS_Runtime* pRuntime) const;
+  void SetYear(CJS_Runtime* pRuntime, int iYear);
 
-  int GetDay();
-  void SetDay(int iDay);
+  int GetMonth(CJS_Runtime* pRuntime) const;
+  void SetMonth(CJS_Runtime* pRuntime, int iMonth);
 
-  int GetHours();
-  void SetHours(int iHours);
+  int GetDay(CJS_Runtime* pRuntime) const;
+  void SetDay(CJS_Runtime* pRuntime, int iDay);
 
-  int GetMinutes();
-  void SetMinutes(int minutes);
+  int GetHours(CJS_Runtime* pRuntime) const;
+  void SetHours(CJS_Runtime* pRuntime, int iHours);
 
-  int GetSeconds();
-  void SetSeconds(int seconds);
+  int GetMinutes(CJS_Runtime* pRuntime) const;
+  void SetMinutes(CJS_Runtime* pRuntime, int minutes);
 
-  operator v8::Local<v8::Value>();
-  operator double() const;
+  int GetSeconds(CJS_Runtime* pRuntime) const;
+  void SetSeconds(CJS_Runtime* pRuntime, int seconds);
 
-  CFX_WideString ToString() const;
-
-  static double
-  MakeDate(int year, int mon, int mday, int hour, int min, int sec, int ms);
-
-  FX_BOOL IsValidDate();
+  v8::Local<v8::Date> ToV8Date(CJS_Runtime* pRuntime) const;
+  double ToDouble(CJS_Runtime* pRuntime) const;
+  CFX_WideString ToString(CJS_Runtime* pRuntime) const;
 
  protected:
-  v8::Local<v8::Value> m_pDate;
-  CJS_Runtime* m_pJSRuntime;
+  v8::Local<v8::Date> m_pDate;
 };
 
 double JS_GetDateTime();

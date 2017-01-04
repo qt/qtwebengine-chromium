@@ -20,6 +20,10 @@
 #include "gpu/gpu_export.h"
 #include "ui/gfx/geometry/size.h"
 
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+typedef unsigned long VisualID;
+#endif
+
 namespace gpu {
 
 // Result for the various Collect*Info* functions below.
@@ -119,10 +123,6 @@ struct GPU_EXPORT GPUInfo {
   GPUInfo(const GPUInfo& other);
   ~GPUInfo();
 
-  bool SupportsAccelerated2dCanvas() const {
-    return !can_lose_context && !software_rendering;
-  }
-
   // The amount of time taken to get from the process starting to the message
   // loop being pumped.
   base::TimeDelta initialization_time;
@@ -138,7 +138,7 @@ struct GPU_EXPORT GPUInfo {
 
   // Version of DisplayLink driver installed. Zero if not installed.
   // http://crbug.com/177611.
-  Version display_link_version;
+  base::Version display_link_version;
 
   // Primary GPU, for exmaple, the discrete GPU in a dual GPU machine.
   GPUDevice gpu;
@@ -209,10 +209,6 @@ struct GPU_EXPORT GPUInfo {
   // reset detection or notification not available.
   uint32_t gl_reset_notification_strategy;
 
-  // The device semantics, i.e. whether the Vista and Windows 7 specific
-  // semantics are available.
-  bool can_lose_context;
-
   bool software_rendering;
 
   // Whether the driver uses direct rendering. True on most platforms, false on
@@ -243,6 +239,11 @@ struct GPU_EXPORT GPUInfo {
   VideoEncodeAcceleratorSupportedProfiles
       video_encode_accelerator_supported_profiles;
   bool jpeg_decode_accelerator_supported;
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  VisualID system_visual;
+  VisualID rgba_visual;
+#endif
 
   // Note: when adding new members, please remember to update EnumerateFields
   // in gpu_info.cc.

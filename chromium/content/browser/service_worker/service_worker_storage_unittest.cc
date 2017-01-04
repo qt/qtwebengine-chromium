@@ -62,15 +62,14 @@ ServiceWorkerStorage::StatusCallback MakeStatusCallback(
   return base::Bind(&StatusCallback, was_called, result);
 }
 
-void FindCallback(
-    bool* was_called,
-    ServiceWorkerStatusCode* result,
-    scoped_refptr<ServiceWorkerRegistration>* found,
-    ServiceWorkerStatusCode status,
-    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+void FindCallback(bool* was_called,
+                  ServiceWorkerStatusCode* result,
+                  scoped_refptr<ServiceWorkerRegistration>* found,
+                  ServiceWorkerStatusCode status,
+                  scoped_refptr<ServiceWorkerRegistration> registration) {
   *was_called = true;
   *result = status;
-  *found = registration;
+  *found = std::move(registration);
 }
 
 ServiceWorkerStorage::FindRegistrationCallback MakeFindCallback(
@@ -294,14 +293,15 @@ class ServiceWorkerStorageTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  base::FilePath GetUserDataDirectory() { return user_data_directory_.path(); }
-
   bool InitUserDataDirectory() {
-    return user_data_directory_.CreateUniqueTempDir();
+    if (!user_data_directory_.CreateUniqueTempDir())
+      return false;
+    user_data_directory_path_ = user_data_directory_.GetPath();
+    return true;
   }
 
   void InitializeTestHelper() {
-    helper_.reset(new EmbeddedWorkerTestHelper(GetUserDataDirectory()));
+    helper_.reset(new EmbeddedWorkerTestHelper(user_data_directory_path_));
     base::RunLoop().RunUntilIdle();
   }
 
@@ -434,7 +434,7 @@ class ServiceWorkerStorageTest : public testing::Test {
   }
 
   ServiceWorkerStatusCode UpdateToActiveState(
-      const scoped_refptr<ServiceWorkerRegistration>& registration) {
+      scoped_refptr<ServiceWorkerRegistration> registration) {
     bool was_called = false;
     ServiceWorkerStatusCode result = SERVICE_WORKER_ERROR_MAX_VALUE;
     storage()->UpdateToActiveState(registration.get(),
@@ -446,7 +446,7 @@ class ServiceWorkerStorageTest : public testing::Test {
   }
 
   void UpdateLastUpdateCheckTime(
-      const scoped_refptr<ServiceWorkerRegistration>& registration) {
+      scoped_refptr<ServiceWorkerRegistration> registration) {
     storage()->UpdateLastUpdateCheckTime(registration.get());
     base::RunLoop().RunUntilIdle();
   }
@@ -504,6 +504,7 @@ class ServiceWorkerStorageTest : public testing::Test {
 
   // user_data_directory_ must be declared first to preserve destructor order.
   base::ScopedTempDir user_data_directory_;
+  base::FilePath user_data_directory_path_;
   std::unique_ptr<EmbeddedWorkerTestHelper> helper_;
   TestBrowserThreadBundle browser_thread_bundle_;
 };
@@ -588,7 +589,6 @@ TEST_F(ServiceWorkerStorageTest, DisabledStorage) {
 
 TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   const GURL kScope("http://www.test.not/scope/");
-  const GURL kScript("http://www.test.not/script.js");
   const GURL kDocumentUrl("http://www.test.not/scope/document.html");
   const GURL kResource1("http://www.test.not/scope/resource1.js");
   const int64_t kResource1Size = 1591234;
@@ -628,7 +628,9 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
       new ServiceWorkerRegistration(kScope, kRegistrationId,
                                     context()->AsWeakPtr());
   scoped_refptr<ServiceWorkerVersion> live_version = new ServiceWorkerVersion(
-      live_registration.get(), kScript, kVersionId, context()->AsWeakPtr());
+      live_registration.get(), kResource1, kVersionId, context()->AsWeakPtr());
+  live_version->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_version->script_cache_map()->SetResources(resources);
   live_version->set_foreign_fetch_scopes(
@@ -934,6 +936,8 @@ TEST_F(ServiceWorkerStorageTest, StoreUserData) {
   records.push_back(ServiceWorkerDatabase::ResourceRecord(
       1, live_version->script_url(), 100));
   live_version->script_cache_map()->SetResources(records);
+  live_version->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_registration->SetWaitingVersion(live_version);
   EXPECT_EQ(SERVICE_WORKER_OK,
@@ -1506,6 +1510,8 @@ TEST_F(ServiceWorkerResourceStorageTest, UpdateRegistration) {
   records.push_back(ServiceWorkerDatabase::ResourceRecord(
       10, live_version->script_url(), 100));
   live_version->script_cache_map()->SetResources(records);
+  live_version->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
 
   // Writing the registration should move the old version's resources to the
   // purgeable list but keep them available.
@@ -1561,6 +1567,8 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   records1.push_back(ServiceWorkerDatabase::ResourceRecord(
       1, live_version1->script_url(), 100));
   live_version1->script_cache_map()->SetResources(records1);
+  live_version1->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version1->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_registration1->SetWaitingVersion(live_version1);
 
@@ -1578,6 +1586,8 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   records2.push_back(ServiceWorkerDatabase::ResourceRecord(
       2, live_version2->script_url(), 100));
   live_version2->script_cache_map()->SetResources(records2);
+  live_version2->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version2->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_registration2->SetWaitingVersion(live_version2);
 
@@ -1595,6 +1605,8 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   records3.push_back(ServiceWorkerDatabase::ResourceRecord(
       3, live_version3->script_url(), 100));
   live_version3->script_cache_map()->SetResources(records3);
+  live_version3->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version3->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_registration3->SetWaitingVersion(live_version3);
 
@@ -1656,6 +1668,8 @@ TEST_F(ServiceWorkerStorageDiskTest, OriginHasForeignFetchRegistrations) {
   records1.push_back(ServiceWorkerDatabase::ResourceRecord(
       1, live_version1->script_url(), 100));
   live_version1->script_cache_map()->SetResources(records1);
+  live_version1->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version1->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_version1->set_foreign_fetch_scopes(std::vector<GURL>(1, kScope1));
   live_registration1->SetWaitingVersion(live_version1);
@@ -1674,6 +1688,8 @@ TEST_F(ServiceWorkerStorageDiskTest, OriginHasForeignFetchRegistrations) {
   records2.push_back(ServiceWorkerDatabase::ResourceRecord(
       2, live_version2->script_url(), 100));
   live_version2->script_cache_map()->SetResources(records2);
+  live_version2->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version2->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_version2->set_foreign_fetch_scopes(std::vector<GURL>(1, kScope2));
   live_registration2->SetWaitingVersion(live_version2);
@@ -1692,6 +1708,8 @@ TEST_F(ServiceWorkerStorageDiskTest, OriginHasForeignFetchRegistrations) {
   records3.push_back(ServiceWorkerDatabase::ResourceRecord(
       3, live_version3->script_url(), 100));
   live_version3->script_cache_map()->SetResources(records3);
+  live_version3->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version3->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_registration3->SetWaitingVersion(live_version3);
 

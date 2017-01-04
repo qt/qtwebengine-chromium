@@ -42,8 +42,6 @@ class StreamResourceHandler : public ResourceHandler {
 
   bool OnWillStart(const GURL& url, bool* defer) override;
 
-  bool OnBeforeNetworkStart(const GURL& url, bool* defer) override;
-
   // Create a new buffer to store received data.
   bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                   int* buf_size,
@@ -53,7 +51,6 @@ class StreamResourceHandler : public ResourceHandler {
   bool OnReadCompleted(int bytes_read, bool* defer) override;
 
   void OnResponseCompleted(const net::URLRequestStatus& status,
-                           const std::string& sec_info,
                            bool* defer) override;
 
   void OnDataDownloaded(int bytes_downloaded) override;

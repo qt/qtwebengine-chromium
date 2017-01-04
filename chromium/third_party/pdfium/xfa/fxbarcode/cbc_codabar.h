@@ -7,9 +7,9 @@
 #ifndef XFA_FXBARCODE_CBC_CODABAR_H_
 #define XFA_FXBARCODE_CBC_CODABAR_H_
 
-#include "core/fxcrt/include/fx_coordinates.h"
-#include "core/fxcrt/include/fx_system.h"
-#include "core/fxge/include/fx_dib.h"
+#include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_system.h"
+#include "core/fxge/fx_dib.h"
 #include "xfa/fxbarcode/cbc_onecode.h"
 
 class CBC_Codabar : public CBC_OneCode {

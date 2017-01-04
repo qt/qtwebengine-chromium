@@ -10,7 +10,9 @@
 #include "base/trace_event/trace_event.h"
 #include "cc/layers/surface_layer_impl.h"
 #include "cc/output/swap_promise.h"
+#include "cc/surfaces/surface_sequence_generator.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/swap_promise_manager.h"
 
 namespace cc {
 
@@ -28,8 +30,9 @@ class SatisfySwapPromise : public SwapPromise {
     metadata->satisfies_sequences.push_back(sequence_.sequence);
   }
 
-  void DidNotSwap(DidNotSwapReason reason) override {
+  DidNotSwapAction DidNotSwap(DidNotSwapReason reason) override {
     satisfy_callback_.Run(sequence_);
+    return DidNotSwapAction::BREAK_PROMISE;
   }
   int64_t TraceId() const override { return 0; }
 
@@ -57,7 +60,7 @@ SurfaceLayer::~SurfaceLayer() {
   DCHECK(destroy_sequence_.is_null());
 }
 
-void SurfaceLayer::SetSurfaceId(SurfaceId surface_id,
+void SurfaceLayer::SetSurfaceId(const SurfaceId& surface_id,
                                 float scale,
                                 const gfx::Size& size) {
   SatisfyDestroySequence();
@@ -103,7 +106,9 @@ void SurfaceLayer::PushPropertiesTo(LayerImpl* layer) {
 void SurfaceLayer::CreateNewDestroySequence() {
   DCHECK(destroy_sequence_.is_null());
   if (layer_tree_host()) {
-    destroy_sequence_ = layer_tree_host()->CreateSurfaceSequence();
+    destroy_sequence_ = layer_tree_host()
+                            ->GetSurfaceSequenceGenerator()
+                            ->CreateSurfaceSequence();
     require_callback_.Run(surface_id_, destroy_sequence_);
   }
 }
@@ -114,7 +119,8 @@ void SurfaceLayer::SatisfyDestroySequence() {
   DCHECK(!destroy_sequence_.is_null());
   std::unique_ptr<SatisfySwapPromise> satisfy(
       new SatisfySwapPromise(destroy_sequence_, satisfy_callback_));
-  layer_tree_host()->QueueSwapPromise(std::move(satisfy));
+  layer_tree_host()->GetSwapPromiseManager()->QueueSwapPromise(
+      std::move(satisfy));
   destroy_sequence_ = SurfaceSequence();
 }
 

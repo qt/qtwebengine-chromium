@@ -2,15 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Closure compiler won't let this be declared inside cr.define().
-/** @enum {string} */
-var SourceType = {
-  WEBSTORE: 'webstore',
-  POLICY: 'policy',
-  SIDELOADED: 'sideloaded',
-  UNPACKED: 'unpacked',
-};
-
 cr.define('extensions', function() {
   /** @interface */
   var ItemDelegate = function() {};
@@ -50,17 +41,22 @@ cr.define('extensions', function() {
     setItemCollectsErrors: assertNotReached,
 
     /**
-     * @param {string} id,
+     * @param {string} id
      * @param {chrome.developerPrivate.ExtensionView} view
      */
     inspectItemView: assertNotReached,
 
     /** @param {string} id */
     repairItem: assertNotReached,
+
+    /** @param {string} id */
+    showItemOptionsPage: assertNotReached,
   };
 
   var Item = Polymer({
     is: 'extensions-item',
+
+    behaviors: [I18nBehavior],
 
     properties: {
       // The item's delegate, or null.
@@ -74,23 +70,20 @@ cr.define('extensions', function() {
         value: false,
       },
 
-      // Whether or not the expanded view of the item is shown.
-      showingDetails_: {
-        type: Boolean,
-        value: false,
-      },
-
       // The underlying ExtensionInfo itself. Public for use in declarative
       // bindings.
       /** @type {chrome.developerPrivate.ExtensionInfo} */
       data: {
         type: Object,
       },
-    },
 
-    behaviors: [
-      I18nBehavior,
-    ],
+      // Whether or not the expanded view of the item is shown.
+      /** @private */
+      showingDetails_: {
+        type: Boolean,
+        value: false,
+      },
+    },
 
     observers: [
       'observeIdVisibility_(inDevMode, showingDetails_, data.id)',
@@ -159,30 +152,11 @@ cr.define('extensions', function() {
     },
 
     /**
-     * @return {SourceType}
-     * @private
-     */
-    computeSource_: function() {
-      if (this.data.controlledInfo &&
-          this.data.controlledInfo.type ==
-              chrome.developerPrivate.ControllerType.POLICY) {
-        return SourceType.POLICY;
-      } else if (this.data.location ==
-                     chrome.developerPrivate.Location.THIRD_PARTY) {
-        return SourceType.SIDELOADED;
-      } else if (this.data.location ==
-                     chrome.developerPrivate.Location.UNPACKED) {
-        return SourceType.UNPACKED;
-      }
-      return SourceType.WEBSTORE;
-    },
-
-    /**
      * @return {string}
      * @private
      */
     computeSourceIndicatorIcon_: function() {
-      switch (this.computeSource_()) {
+      switch (extensions.getItemSource(this.data)) {
         case SourceType.POLICY:
           return 'communication:business';
         case SourceType.SIDELOADED:
@@ -200,17 +174,9 @@ cr.define('extensions', function() {
      * @private
      */
     computeSourceIndicatorText_: function() {
-      switch (this.computeSource_()) {
-        case SourceType.POLICY:
-          return loadTimeData.getString('itemSourcePolicy');
-        case SourceType.SIDELOADED:
-          return loadTimeData.getString('itemSourceSideloaded');
-        case SourceType.UNPACKED:
-          return loadTimeData.getString('itemSourceUnpacked');
-        case SourceType.WEBSTORE:
-          return '';
-      }
-      assertNotReached();
+      var sourceType = extensions.getItemSource(this.data);
+      return sourceType == SourceType.WEBSTORE ? '' :
+             extensions.getItemSourceString(sourceType);
     },
 
     /**

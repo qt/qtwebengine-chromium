@@ -6,8 +6,8 @@
 
 #include <utility>
 
-#include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface_client.h"
+#include "cc/output/output_surface_frame.h"
 #include "components/display_compositor/buffer_queue.h"
 #include "components/display_compositor/compositor_overlay_candidate_validator.h"
 #include "components/display_compositor/gl_helper.h"
@@ -28,12 +28,12 @@ GpuSurfacelessBrowserCompositorOutputSurface::
             overlay_candidate_validator,
         unsigned int target,
         unsigned int internalformat,
+        gfx::BufferFormat format,
         gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager)
     : GpuBrowserCompositorOutputSurface(std::move(context),
                                         std::move(vsync_manager),
                                         begin_frame_source,
                                         std::move(overlay_candidate_validator)),
-      internalformat_(internalformat),
       gpu_memory_buffer_manager_(gpu_memory_buffer_manager) {
   capabilities_.uses_default_gl_framebuffer = false;
   capabilities_.flipped_output_surface = true;
@@ -49,8 +49,8 @@ GpuSurfacelessBrowserCompositorOutputSurface::
   gl_helper_.reset(new display_compositor::GLHelper(
       context_provider_->ContextGL(), context_provider_->ContextSupport()));
   buffer_queue_.reset(new display_compositor::BufferQueue(
-      context_provider_->ContextGL(), target, internalformat_, gl_helper_.get(),
-      gpu_memory_buffer_manager_, surface_handle));
+      context_provider_->ContextGL(), target, internalformat, format,
+      gl_helper_.get(), gpu_memory_buffer_manager_, surface_handle));
   buffer_queue_->Initialize();
 }
 
@@ -69,16 +69,14 @@ unsigned GpuSurfacelessBrowserCompositorOutputSurface::GetOverlayTextureId()
 }
 
 void GpuSurfacelessBrowserCompositorOutputSurface::SwapBuffers(
-    cc::CompositorFrame frame) {
+    cc::OutputSurfaceFrame frame) {
   DCHECK(buffer_queue_);
-  buffer_queue_->SwapBuffers(frame.gl_frame_data->sub_buffer_rect);
+  DCHECK(reshape_size_ == frame.size);
+  // TODO(ccameron): What if a swap comes again before OnGpuSwapBuffersCompleted
+  // happens, we'd see the wrong swap size there?
+  swap_size_ = reshape_size_;
+  buffer_queue_->SwapBuffers(frame.sub_buffer_rect);
   GpuBrowserCompositorOutputSurface::SwapBuffers(std::move(frame));
-}
-
-void GpuSurfacelessBrowserCompositorOutputSurface::OnSwapBuffersComplete() {
-  DCHECK(buffer_queue_);
-  buffer_queue_->PageFlipComplete();
-  GpuBrowserCompositorOutputSurface::OnSwapBuffersComplete();
 }
 
 void GpuSurfacelessBrowserCompositorOutputSurface::BindFramebuffer() {
@@ -96,12 +94,11 @@ void GpuSurfacelessBrowserCompositorOutputSurface::Reshape(
     float scale_factor,
     const gfx::ColorSpace& color_space,
     bool alpha) {
+  reshape_size_ = size;
   GpuBrowserCompositorOutputSurface::Reshape(size, scale_factor, color_space,
                                              alpha);
   DCHECK(buffer_queue_);
-  // TODO(ccameron): Plumb the color profile to the output GpuMemoryBuffer.
-  // https://crbug.com/622133
-  buffer_queue_->Reshape(SurfaceSize(), scale_factor);
+  buffer_queue_->Reshape(size, scale_factor, color_space);
 }
 
 void GpuSurfacelessBrowserCompositorOutputSurface::OnGpuSwapBuffersCompleted(
@@ -116,10 +113,11 @@ void GpuSurfacelessBrowserCompositorOutputSurface::OnGpuSwapBuffersCompleted(
     buffer_queue_->RecreateBuffers();
     force_swap = true;
   }
+  buffer_queue_->PageFlipComplete();
   GpuBrowserCompositorOutputSurface::OnGpuSwapBuffersCompleted(
       latency_info, result, params_mac);
   if (force_swap)
-    client_->SetNeedsRedrawRect(gfx::Rect(SurfaceSize()));
+    client_->SetNeedsRedrawRect(gfx::Rect(swap_size_));
 }
 
 }  // namespace content

@@ -12,6 +12,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/extensions/api/automation_api_constants.h"
 #include "chrome/common/extensions/api/automation_internal.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
 #include "content/public/browser/notification_service.h"
@@ -19,6 +20,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "ui/accessibility/ax_enums.h"
 #include "ui/accessibility/ax_node_data.h"
 
@@ -61,7 +63,7 @@ void AutomationEventRouter::RegisterListenerWithDesktopPermission(
   Register(extension_id,
            listener_process_id,
            listener_routing_id,
-           0  /* desktop tree ID */,
+           api::automation::kDesktopTreeID,
            true);
 }
 
@@ -84,6 +86,23 @@ void AutomationEventRouter::DispatchAccessibilityEvent(
     rph->Send(new ExtensionMsg_AccessibilityEvent(listener.routing_id,
                                                   params,
                                                   listener.is_active_profile));
+  }
+}
+
+void AutomationEventRouter::DispatchAccessibilityLocationChange(
+    const ExtensionMsg_AccessibilityLocationChangeParams& params) {
+  for (const auto& listener : listeners_) {
+    // Skip listeners that don't want to listen to this tree.
+    if (!listener.desktop &&
+        listener.tree_ids.find(params.tree_id) == listener.tree_ids.end()) {
+      continue;
+    }
+
+    content::RenderProcessHost* rph =
+        content::RenderProcessHost::FromID(listener.process_id);
+    rph->Send(new ExtensionMsg_AccessibilityLocationChange(
+        listener.routing_id,
+        params));
   }
 }
 

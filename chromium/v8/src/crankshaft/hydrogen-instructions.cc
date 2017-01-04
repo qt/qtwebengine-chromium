@@ -259,7 +259,11 @@ bool Range::AddAndCheckOverflow(const Representation& r, Range* other) {
   bool may_overflow = false;
   lower_ = AddWithoutOverflow(r, lower_, other->lower(), &may_overflow);
   upper_ = AddWithoutOverflow(r, upper_, other->upper(), &may_overflow);
-  KeepOrder();
+  if (may_overflow) {
+    Clear();
+  } else {
+    KeepOrder();
+  }
 #ifdef DEBUG
   Verify();
 #endif
@@ -271,13 +275,21 @@ bool Range::SubAndCheckOverflow(const Representation& r, Range* other) {
   bool may_overflow = false;
   lower_ = SubWithoutOverflow(r, lower_, other->upper(), &may_overflow);
   upper_ = SubWithoutOverflow(r, upper_, other->lower(), &may_overflow);
-  KeepOrder();
+  if (may_overflow) {
+    Clear();
+  } else {
+    KeepOrder();
+  }
 #ifdef DEBUG
   Verify();
 #endif
   return may_overflow;
 }
 
+void Range::Clear() {
+  lower_ = kMinInt;
+  upper_ = kMaxInt;
+}
 
 void Range::KeepOrder() {
   if (lower_ > upper_) {
@@ -301,8 +313,12 @@ bool Range::MulAndCheckOverflow(const Representation& r, Range* other) {
   int v2 = MulWithoutOverflow(r, lower_, other->upper(), &may_overflow);
   int v3 = MulWithoutOverflow(r, upper_, other->lower(), &may_overflow);
   int v4 = MulWithoutOverflow(r, upper_, other->upper(), &may_overflow);
-  lower_ = Min(Min(v1, v2), Min(v3, v4));
-  upper_ = Max(Max(v1, v2), Max(v3, v4));
+  if (may_overflow) {
+    Clear();
+  } else {
+    lower_ = Min(Min(v1, v2), Min(v3, v4));
+    upper_ = Max(Max(v1, v2), Max(v3, v4));
+  }
 #ifdef DEBUG
   Verify();
 #endif
@@ -788,7 +804,6 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kContext:
     case HValue::kDebugBreak:
     case HValue::kDeclareGlobals:
-    case HValue::kDoubleBits:
     case HValue::kDummyUse:
     case HValue::kEnterInlined:
     case HValue::kEnvironmentMarker:
@@ -816,7 +831,6 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kStoreCodeEntry:
     case HValue::kStoreKeyed:
     case HValue::kStoreNamedField:
-    case HValue::kStoreNamedGeneric:
     case HValue::kStringCharCodeAt:
     case HValue::kStringCharFromCode:
     case HValue::kThisFunction:
@@ -866,7 +880,6 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kSimulate:
     case HValue::kStackCheck:
     case HValue::kStoreContextSlot:
-    case HValue::kStoreKeyedGeneric:
     case HValue::kStringAdd:
     case HValue::kStringCompareAndBranch:
     case HValue::kSub:
@@ -2173,6 +2186,32 @@ HConstant::HConstant(Handle<Object> object, Representation r)
           BooleanValueField::encode(object->BooleanValue()) |
           IsUndetectableField::encode(false) | IsCallableField::encode(false) |
           InstanceTypeField::encode(kUnknownInstanceType)) {
+  if (object->IsNumber()) {
+    double n = object->Number();
+    bool has_int32_value = IsInteger32(n);
+    bit_field_ = HasInt32ValueField::update(bit_field_, has_int32_value);
+    int32_value_ = DoubleToInt32(n);
+    bit_field_ = HasSmiValueField::update(
+        bit_field_, has_int32_value && Smi::IsValid(int32_value_));
+    if (std::isnan(n)) {
+      double_value_ = std::numeric_limits<double>::quiet_NaN();
+      // Canonicalize object with NaN value.
+      DCHECK(object->IsHeapObject());  // NaN can't be a Smi.
+      Isolate* isolate = HeapObject::cast(*object)->GetIsolate();
+      object = isolate->factory()->nan_value();
+      object_ = Unique<Object>::CreateUninitialized(object);
+    } else {
+      double_value_ = n;
+      // Canonicalize object with -0.0 value.
+      if (bit_cast<int64_t>(n) == bit_cast<int64_t>(-0.0)) {
+        DCHECK(object->IsHeapObject());  // -0.0 can't be a Smi.
+        Isolate* isolate = HeapObject::cast(*object)->GetIsolate();
+        object = isolate->factory()->minus_zero_value();
+        object_ = Unique<Object>::CreateUninitialized(object);
+      }
+    }
+    bit_field_ = HasDoubleValueField::update(bit_field_, true);
+  }
   if (object->IsHeapObject()) {
     Handle<HeapObject> heap_object = Handle<HeapObject>::cast(object);
     Isolate* isolate = heap_object->GetIsolate();
@@ -2187,16 +2226,6 @@ HConstant::HConstant(Handle<Object> object, Representation r)
     bit_field_ = HasStableMapValueField::update(
         bit_field_,
         HasMapValue() && Handle<Map>::cast(heap_object)->is_stable());
-  }
-  if (object->IsNumber()) {
-    double n = object->Number();
-    bool has_int32_value = IsInteger32(n);
-    bit_field_ = HasInt32ValueField::update(bit_field_, has_int32_value);
-    int32_value_ = DoubleToInt32(n);
-    bit_field_ = HasSmiValueField::update(
-        bit_field_, has_int32_value && Smi::IsValid(int32_value_));
-    double_value_ = n;
-    bit_field_ = HasDoubleValueField::update(bit_field_, true);
   }
 
   Initialize(r);
@@ -2248,7 +2277,6 @@ HConstant::HConstant(int32_t integer_value, Representation r,
   Initialize(r);
 }
 
-
 HConstant::HConstant(double double_value, Representation r,
                      bool is_not_in_new_space, Unique<Object> object)
     : object_(object),
@@ -2262,8 +2290,7 @@ HConstant::HConstant(double double_value, Representation r,
                                            !std::isnan(double_value)) |
                  IsUndetectableField::encode(false) |
                  InstanceTypeField::encode(kUnknownInstanceType)),
-      int32_value_(DoubleToInt32(double_value)),
-      double_value_(double_value) {
+      int32_value_(DoubleToInt32(double_value)) {
   bit_field_ = HasSmiValueField::update(
       bit_field_, HasInteger32Value() && Smi::IsValid(int32_value_));
   // It's possible to create a constant with a value in Smi-range but stored
@@ -2271,6 +2298,11 @@ HConstant::HConstant(double double_value, Representation r,
   bool could_be_heapobject = r.IsTagged() && !object.handle().is_null();
   bool is_smi = HasSmiValue() && !could_be_heapobject;
   set_type(is_smi ? HType::Smi() : HType::TaggedNumber());
+  if (std::isnan(double_value)) {
+    double_value_ = std::numeric_limits<double>::quiet_NaN();
+  } else {
+    double_value_ = double_value;
+  }
   Initialize(r);
 }
 
@@ -3005,14 +3037,6 @@ HValue* HLoadKeyedGeneric::Canonicalize() {
 }
 
 
-std::ostream& HStoreNamedGeneric::PrintDataTo(
-    std::ostream& os) const {  // NOLINT
-  Handle<String> n = Handle<String>::cast(name());
-  return os << NameOf(object()) << "." << n->ToCString().get() << " = "
-            << NameOf(value());
-}
-
-
 std::ostream& HStoreNamedField::PrintDataTo(std::ostream& os) const {  // NOLINT
   os << NameOf(object()) << access_ << " = " << NameOf(value());
   if (NeedsWriteBarrier()) os << " (write-barrier)";
@@ -3033,13 +3057,6 @@ std::ostream& HStoreKeyed::PrintDataTo(std::ostream& os) const {  // NOLINT
   os << "[" << NameOf(key());
   if (IsDehoisted()) os << " + " << base_offset();
   return os << "] = " << NameOf(value());
-}
-
-
-std::ostream& HStoreKeyedGeneric::PrintDataTo(
-    std::ostream& os) const {  // NOLINT
-  return os << NameOf(object()) << "[" << NameOf(key())
-            << "] = " << NameOf(value());
 }
 
 
@@ -3166,6 +3183,13 @@ bool HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
     return false;
   }
 
+  if (IsAllocationFoldingDominator()) {
+    if (FLAG_trace_allocation_folding) {
+      PrintF("#%d (%s) cannot fold into #%d (%s), already dominator\n", id(),
+             Mnemonic(), dominator->id(), dominator->Mnemonic());
+    }
+    return false;
+  }
 
   if (!IsFoldable(dominator_allocate)) {
     if (FLAG_trace_allocation_folding) {
@@ -3195,8 +3219,8 @@ bool HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
   int32_t new_dominator_size = dominator_size_constant + current_size_max_value;
 
   // Since we clear the first word after folded memory, we cannot use the
-  // whole Page::kMaxRegularHeapObjectSize memory.
-  if (new_dominator_size > Page::kMaxRegularHeapObjectSize - kPointerSize) {
+  // whole kMaxRegularHeapObjectSize memory.
+  if (new_dominator_size > kMaxRegularHeapObjectSize - kPointerSize) {
     if (FLAG_trace_allocation_folding) {
       PrintF("#%d (%s) cannot fold into #%d (%s) due to size: %d\n",
           id(), Mnemonic(), dominator_allocate->id(),
@@ -3215,17 +3239,6 @@ bool HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
     if (!dominator_allocate->MustAllocateDoubleAligned()) {
       dominator_allocate->MakeDoubleAligned();
     }
-  }
-
-  if (IsAllocationFoldingDominator()) {
-    DeleteAndReplaceWith(dominator_allocate);
-    if (FLAG_trace_allocation_folding) {
-      PrintF(
-          "#%d (%s) folded dominator into #%d (%s), new dominator size: %d\n",
-          id(), Mnemonic(), dominator_allocate->id(),
-          dominator_allocate->Mnemonic(), new_dominator_size);
-    }
-    return true;
   }
 
   if (!dominator_allocate->IsAllocationFoldingDominator()) {
@@ -3262,6 +3275,8 @@ std::ostream& HAllocate::PrintDataTo(std::ostream& os) const {  // NOLINT
   if (IsOldSpaceAllocation()) os << "P";
   if (MustAllocateDoubleAligned()) os << "A";
   if (MustPrefillWithFiller()) os << "F";
+  if (IsAllocationFoldingDominator()) os << "d";
+  if (IsAllocationFolded()) os << "f";
   return os << ")";
 }
 
@@ -3289,13 +3304,11 @@ bool HStoreKeyed::NeedsCanonicalization() {
       Representation from = HChange::cast(value())->from();
       return from.IsTagged() || from.IsHeapObject();
     }
-    case kLoadNamedField:
-    case kPhi: {
-      // Better safe than sorry...
-      return true;
-    }
-    default:
+    case kConstant:
+      // Double constants are canonicalized upon construction.
       return false;
+    default:
+      return !value()->IsBinaryOperation();
   }
 }
 

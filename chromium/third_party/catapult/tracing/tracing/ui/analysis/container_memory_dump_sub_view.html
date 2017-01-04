@@ -6,27 +6,34 @@ found in the LICENSE file.
 -->
 
 <link rel="import" href="/tracing/base/iteration_helpers.html">
-<link rel="import" href="/tracing/model/container_memory_dump.html">
+<link rel="import" href="/tracing/base/unit.html">
+<link rel="import" href="/tracing/model/model.html">
 <link rel="import" href="/tracing/ui/analysis/analysis_link.html">
 <link rel="import" href="/tracing/ui/analysis/analysis_sub_view.html">
 <link rel="import" href="/tracing/ui/analysis/memory_dump_header_pane.html">
 <link rel="import" href="/tracing/ui/analysis/stacked_pane_view.html">
 <link rel="import" href="/tracing/ui/base/dom_helpers.html">
 <link rel="import" href="/tracing/value/ui/scalar_span.html">
-<link rel="import" href="/tracing/value/unit.html">
 
-<polymer-element name="tr-ui-a-container-memory-dump-sub-view"
-    extends="tr-ui-a-sub-view">
+<dom-module id='tr-ui-a-container-memory-dump-sub-view'>
   <template>
+    <style>
+    tr-ui-b-table {
+      font-size: 12px;
+    }
+    </style>
     <div id="content"></div>
   </template>
-</polymer-element>
+</dom-module>
 <script>
 'use strict';
 
 tr.exportTo('tr.ui.analysis', function() {
 
-  Polymer('tr-ui-a-container-memory-dump-sub-view', {
+  Polymer({
+    is: 'tr-ui-a-container-memory-dump-sub-view',
+    behaviors: [tr.ui.analysis.AnalysisSubView],
+
     set selection(selection) {
       if (selection === undefined) {
         this.currentSelection_ = undefined;
@@ -67,7 +74,7 @@ tr.exportTo('tr.ui.analysis', function() {
     },
 
     updateContents_: function() {
-      this.$.content.textContent = '';
+      Polymer.dom(this.$.content).textContent = '';
 
       if (this.dumpsByContainerName_ === undefined)
         return;
@@ -87,7 +94,7 @@ tr.exportTo('tr.ui.analysis', function() {
           tr.b.dictionaryValues(this.dumpsByContainerName_)[0];
       var dumpView = this.ownerDocument.createElement(
           'tr-ui-a-stacked-pane-view');
-      this.$.content.appendChild(dumpView);
+      Polymer.dom(this.$.content).appendChild(dumpView);
       dumpView.setPaneBuilder(function() {
         var headerPane = document.createElement(
             'tr-ui-a-memory-dump-header-pane');
@@ -126,22 +133,23 @@ tr.exportTo('tr.ui.analysis', function() {
           singleDumpValue_: function(row) {
             var linkEl = ownerDocument.createElement('tr-ui-a-analysis-link');
             linkEl.setSelectionAndContent(new tr.model.EventSet([row]));
-            linkEl.appendChild(tr.v.ui.createScalarSpan(row.start, {
-              unit: tr.v.Unit.byName.timeStampInMs,
-              ownerDocument: ownerDocument
-            }));
+            Polymer.dom(linkEl).appendChild(tr.v.ui.createScalarSpan(
+                row.start, {
+                  unit: tr.b.Unit.byName.timeStampInMs,
+                  ownerDocument: ownerDocument
+                }));
             return linkEl;
           },
 
           groupedDumpValue_: function(row) {
             var linkEl = ownerDocument.createElement('tr-ui-a-analysis-link');
             linkEl.setSelectionAndContent(new tr.model.EventSet(row.subRows));
-            linkEl.appendChild(tr.ui.b.createSpan({
+            Polymer.dom(linkEl).appendChild(tr.ui.b.createSpan({
               ownerDocument: ownerDocument,
               textContent: row.subRows.length + ' memory dump' +
                   (row.subRows.length === 1 ? '' : 's') + ' in '
             }));
-            linkEl.appendChild(tr.ui.b.createSpan({
+            Polymer.dom(linkEl).appendChild(tr.ui.b.createSpan({
               ownerDocument: ownerDocument,
               textContent: row.containerName,
               bold: true
@@ -156,9 +164,41 @@ tr.exportTo('tr.ui.analysis', function() {
       table.tableRows = rows;
       table.showHeader = false;
       table.rebuild();
-      this.$.content.appendChild(table);
+      Polymer.dom(this.$.content).appendChild(table);
     }
   });
+
+  tr.ui.analysis.AnalysisSubView.register(
+      'tr-ui-a-container-memory-dump-sub-view',
+      tr.model.GlobalMemoryDump,
+      {
+        multi: false,
+        title: 'Global Memory Dump',
+      });
+
+  tr.ui.analysis.AnalysisSubView.register(
+      'tr-ui-a-container-memory-dump-sub-view',
+      tr.model.GlobalMemoryDump,
+      {
+        multi: true,
+        title: 'Global Memory Dumps',
+      });
+
+  tr.ui.analysis.AnalysisSubView.register(
+      'tr-ui-a-container-memory-dump-sub-view',
+      tr.model.ProcessMemoryDump,
+      {
+        multi: false,
+        title: 'Process Memory Dump',
+      });
+
+  tr.ui.analysis.AnalysisSubView.register(
+      'tr-ui-a-container-memory-dump-sub-view',
+      tr.model.ProcessMemoryDump,
+      {
+        multi: true,
+        title: 'Process Memory Dumps',
+      });
 
   return {};
 });

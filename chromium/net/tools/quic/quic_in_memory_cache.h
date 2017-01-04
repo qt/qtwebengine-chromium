@@ -17,7 +17,7 @@
 #include "base/memory/singleton.h"
 #include "base/strings/string_piece.h"
 #include "net/http/http_response_headers.h"
-#include "net/quic/spdy_utils.h"
+#include "net/quic/core/spdy_utils.h"
 #include "net/spdy/spdy_framer.h"
 #include "url/gurl.h"
 
@@ -233,6 +233,10 @@ class QuicInMemoryCache {
 
   // A map from request URL to associated server push responses (if any).
   std::multimap<std::string, ServerPushInfo> server_push_resources_;
+
+  // Protects against concurrent access from test threads setting responses, and
+  // server threads accessing those responses.
+  mutable base::Lock response_mutex_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicInMemoryCache);
 };

@@ -137,10 +137,12 @@ public:
     ~SkSpecialSurface_Gpu() override { }
 
     sk_sp<SkSpecialImage> onMakeImageSnapshot() override {
-        sk_sp<SkSpecialImage> tmp(SkSpecialImage::MakeFromGpu(this->subset(),
-                                                              kNeedNewImageUniqueID_SpecialImage,
-                                                              fDrawContext->asTexture(),
-                                                              &this->props()));
+        sk_sp<SkSpecialImage> tmp(SkSpecialImage::MakeFromGpu(
+                                                           this->subset(),
+                                                           kNeedNewImageUniqueID_SpecialImage,
+                                                           fDrawContext->asTexture(),
+                                                           sk_ref_sp(fDrawContext->getColorSpace()),
+                                                           &this->props()));
         fDrawContext = nullptr;
         return tmp;
     }
@@ -153,13 +155,15 @@ private:
 
 sk_sp<SkSpecialSurface> SkSpecialSurface::MakeRenderTarget(GrContext* context,
                                                            int width, int height,
-                                                           GrPixelConfig config) {
+                                                           GrPixelConfig config,
+                                                           sk_sp<SkColorSpace> colorSpace) {
     if (!context) {
         return nullptr;
     }
 
-    sk_sp<GrDrawContext> drawContext(context->newDrawContext(SkBackingFit::kApprox,
-                                                             width, height, config));
+    sk_sp<GrDrawContext> drawContext(context->makeDrawContext(SkBackingFit::kApprox,
+                                                              width, height, config,
+                                                              std::move(colorSpace)));
     if (!drawContext) {
         return nullptr;
     }

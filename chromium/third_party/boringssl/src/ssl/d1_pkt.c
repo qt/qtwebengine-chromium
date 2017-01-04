@@ -197,9 +197,11 @@ again:
   return -1;
 }
 
-int dtls1_read_app_data(SSL *ssl, uint8_t *buf, int len, int peek) {
+int dtls1_read_app_data(SSL *ssl, int *out_got_handshake, uint8_t *buf, int len,
+                        int peek) {
   assert(!SSL_in_init(ssl));
 
+  *out_got_handshake = 0;
   SSL3_RECORD *rr = &ssl->s3->rrec;
 
 again:
@@ -223,7 +225,8 @@ again:
       return -1;
     }
 
-    if (msg_hdr.type == SSL3_MT_FINISHED) {
+    if (msg_hdr.type == SSL3_MT_FINISHED &&
+        msg_hdr.seq == ssl->d1->handshake_read_seq - 1) {
       if (msg_hdr.frag_off == 0) {
         /* Retransmit our last flight of messages. If the peer sends the second
          * Finished, they may not have received ours. Only do this for the
@@ -232,7 +235,7 @@ again:
           return -1;
         }
 
-        dtls1_retransmit_buffered_messages(ssl);
+        dtls1_retransmit_outgoing_messages(ssl);
       }
 
       rr->length = 0;
@@ -309,8 +312,8 @@ again:
     return -1;
   }
 
-  ssl_do_msg_callback(ssl, 0 /* read */, ssl->version,
-                      SSL3_RT_CHANGE_CIPHER_SPEC, rr->data, rr->length);
+  ssl_do_msg_callback(ssl, 0 /* read */, SSL3_RT_CHANGE_CIPHER_SPEC, rr->data,
+                      rr->length);
 
   rr->length = 0;
   ssl_read_buffer_discard(ssl);
@@ -362,7 +365,7 @@ int dtls1_write_record(SSL *ssl, int type, const uint8_t *buf, size_t len,
 
   /* If we have an alert to send, lets send it */
   if (ssl->s3->alert_dispatch) {
-    int ret = ssl->method->ssl_dispatch_alert(ssl);
+    int ret = ssl->method->dispatch_alert(ssl);
     if (ret <= 0) {
       return ret;
     }
@@ -406,8 +409,8 @@ int dtls1_dispatch_alert(SSL *ssl) {
     BIO_flush(ssl->wbio);
   }
 
-  ssl_do_msg_callback(ssl, 1 /* write */, ssl->version, SSL3_RT_ALERT,
-                      ssl->s3->send_alert, 2);
+  ssl_do_msg_callback(ssl, 1 /* write */, SSL3_RT_ALERT, ssl->s3->send_alert,
+                      2);
 
   int alert = (ssl->s3->send_alert[0] << 8) | ssl->s3->send_alert[1];
   ssl_do_info_callback(ssl, SSL_CB_WRITE_ALERT, alert);

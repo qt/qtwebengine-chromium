@@ -4,12 +4,12 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "components/arc/instance_holder.h"
-#include "components/arc/test/fake_arc_bridge_instance.h"
 #include "components/arc/test/fake_arc_bridge_service.h"
 #include "components/arc/test/fake_notifications_instance.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,8 +26,8 @@ class MockMessageCenter : public message_center::FakeMessageCenter {
  public:
   MockMessageCenter() {}
   ~MockMessageCenter() override {
-    STLDeleteContainerPointers(
-        visible_notifications_.begin(), visible_notifications_.end());
+    base::STLDeleteContainerPointers(visible_notifications_.begin(),
+                                     visible_notifications_.end());
   }
 
   void AddNotification(
@@ -76,7 +76,7 @@ class NotificationsObserver
 class ArcNotificationManagerTest : public testing::Test {
  public:
   ArcNotificationManagerTest() {}
-  ~ArcNotificationManagerTest() override { loop_.RunUntilIdle(); }
+  ~ArcNotificationManagerTest() override { base::RunLoop().RunUntilIdle(); }
 
  protected:
   FakeArcBridgeService* service() { return service_.get(); }
@@ -114,9 +114,7 @@ class ArcNotificationManagerTest : public testing::Test {
   std::unique_ptr<MockMessageCenter> message_center_;
 
   void SetUp() override {
-    mojom::NotificationsInstancePtr arc_notifications_instance;
-    arc_notifications_instance_.reset(
-        new FakeNotificationsInstance(GetProxy(&arc_notifications_instance)));
+    arc_notifications_instance_.reset(new FakeNotificationsInstance());
     service_.reset(new FakeArcBridgeService());
     message_center_.reset(new MockMessageCenter());
 
@@ -125,11 +123,10 @@ class ArcNotificationManagerTest : public testing::Test {
 
     NotificationsObserver observer;
     service_->notifications()->AddObserver(&observer);
-    service_->OnNotificationsInstanceReady(
-        std::move(arc_notifications_instance));
+    service_->notifications()->SetInstance(arc_notifications_instance_.get());
 
     while (!observer.IsReady())
-      loop_.RunUntilIdle();
+      base::RunLoop().RunUntilIdle();
 
     service_->notifications()->RemoveObserver(&observer);
   }
@@ -166,8 +163,6 @@ TEST_F(ArcNotificationManagerTest, NotificationRemovedByChrome) {
     notification->delegate()->Close(true /* by_user */);
     // |notification| gets stale here.
   }
-
-  arc_notifications_instance()->WaitForIncomingMethodCall();
 
   ASSERT_EQ(1u, arc_notifications_instance()->events().size());
   EXPECT_EQ(key, arc_notifications_instance()->events().at(0).first);

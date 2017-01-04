@@ -17,8 +17,8 @@
 #include "GrGLTexture.h"
 #include "GrGLVertexArray.h"
 #include "GrGpu.h"
-#include "GrPipelineBuilder.h"
 #include "GrTypes.h"
+#include "GrWindowRectsState.h"
 #include "GrXferProcessor.h"
 #include "SkTArray.h"
 #include "SkTypes.h"
@@ -27,6 +27,8 @@ class GrGLBuffer;
 class GrPipeline;
 class GrNonInstancedMesh;
 class GrSwizzle;
+
+namespace gr_instanced { class GLInstancedRendering; }
 
 #ifdef SK_DEBUG
 #define PROGRAM_CACHE_STATS
@@ -54,8 +56,6 @@ public:
         return static_cast<GrGLPathRendering*>(pathRendering());
     }
 
-    void discard(GrRenderTarget*);
-
     // Used by GrGLProgram to configure OpenGL state.
     void bindTexture(int unitIdx, const GrTextureParams& params, bool allowSRGBInputs,
                      GrGLTexture* texture);
@@ -72,7 +72,7 @@ public:
                               GrPixelConfig srcConfig, DrawPreference*,
                               WritePixelTempDrawInfo*) override;
 
-    bool initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc) const override;
+    bool initDescForDstCopy(const GrRenderTarget* src, GrSurfaceDesc* desc) const override;
 
     // These functions should be used to bind GL objects. They track the GL state and skip redundant
     // bindings. Making the equivalent glBind calls directly will confuse the state tracking.
@@ -90,7 +90,7 @@ public:
     // returns the GL target the buffer was bound to.
     // When 'type' is kIndex_GrBufferType, this function will also implicitly bind the default VAO.
     // If the caller wishes to bind an index buffer to a specific VAO, it can call glBind directly.
-    GrGLenum bindBuffer(GrBufferType type, const GrGLBuffer*);
+    GrGLenum bindBuffer(GrBufferType type, const GrBuffer*);
 
     // Called by GrGLBuffer after its buffer object has been destroyed.
     void notifyBufferReleased(const GrGLBuffer*);
@@ -106,12 +106,12 @@ public:
     // The GrGLGpuCommandBuffer does not buffer up draws before submitting them to the gpu.
     // Thus this is the implementation of the clear call for the corresponding passthrough function
     // on GrGLGpuCommandBuffer.
-    void clear(const SkIRect& rect, GrColor color, GrRenderTarget* renderTarget);
+    void clear(const GrFixedClip&, GrColor, GrRenderTarget*);
 
     // The GrGLGpuCommandBuffer does not buffer up draws before submitting them to the gpu.
     // Thus this is the implementation of the clearStencil call for the corresponding passthrough
     // function on GrGLGpuCommandBuffer.
-    void clearStencilClip(const SkIRect& rect, bool insideClip, GrRenderTarget* renderTarget);
+    void clearStencilClip(const GrFixedClip&, bool insideStencilMask, GrRenderTarget*);
 
     const GrGLContext* glContextForTesting() const override {
         return &this->glContext();
@@ -144,6 +144,10 @@ public:
 
     void finishDrawTarget() override;
 
+    GrFence SK_WARN_UNUSED_RESULT insertFence() const override;
+    bool waitFence(GrFence, uint64_t timeout) const override;
+    void deleteFence(GrFence) const override;
+
 private:
     GrGLGpu(GrGLContext* ctx, GrContext* context);
 
@@ -164,6 +168,9 @@ private:
     GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&,
                                               GrWrapOwnership) override;
     GrRenderTarget* onWrapBackendTextureAsRenderTarget(const GrBackendTextureDesc&) override;
+
+    gr_instanced::InstancedRendering* onCreateInstancedRendering() override;
+
     // Given a GrPixelConfig return the index into the stencil format array on GrGLCaps to a
     // compatible stencil format, or negative if there is no compatible stencil format.
     int getCompatibleStencilIndex(GrPixelConfig config);
@@ -218,10 +225,8 @@ private:
                        const SkIRect& srcRect,
                        const SkIPoint& dstPoint) override;
 
-    void onGetMultisampleSpecs(GrRenderTarget*,
-                               const GrStencilSettings&,
-                               int* effectiveSampleCnt,
-                               SkAutoTDeleteArray<SkPoint>* sampleLocations) override;
+    void onGetMultisampleSpecs(GrRenderTarget*, const GrStencilSettings&,
+                               int* effectiveSampleCnt, SamplePattern*) override;
 
     // binds texture unit in GL
     void setTextureUnit(int unitIdx);
@@ -229,7 +234,8 @@ private:
     void setTextureSwizzle(int unitIdx, GrGLenum target, const GrGLenum swizzle[]);
 
     // Flushes state from GrPipeline to GL. Returns false if the state couldn't be set.
-    bool flushGLState(const GrPipeline& pipeline, const GrPrimitiveProcessor& primProc);
+    // willDrawPoints must be true if point primitives will be rendered after setting the GL state.
+    bool flushGLState(const GrPipeline&, const GrPrimitiveProcessor&, bool willDrawPoints);
 
     // Sets up vertex attribute pointers and strides. On return indexOffsetInBytes gives the offset
     // an into the index buffer. It does not account for vertices.startIndex() but rather the start
@@ -268,7 +274,8 @@ private:
         ~ProgramCache();
 
         void abandon();
-        GrGLProgram* refProgram(const GrGLGpu* gpu, const GrPipeline&, const GrPrimitiveProcessor&);
+        GrGLProgram* refProgram(const GrGLGpu*, const GrPipeline&, const GrPrimitiveProcessor&,
+                                bool hasPointSize);
 
     private:
         enum {
@@ -303,7 +310,7 @@ private:
     };
 
     void flushColorWrite(bool writeColor);
-    void flushDrawFace(GrPipelineBuilder::DrawFace face);
+    void flushDrawFace(GrDrawFace face);
 
     // flushes the scissor. see the note on flushBoundTextureAndParams about
     // flushing the scissor after that function is called.
@@ -313,6 +320,9 @@ private:
 
     // disables the scissor
     void disableScissor();
+
+    void flushWindowRectangles(const GrWindowRectsState&, const GrGLRenderTarget*);
+    void disableWindowRectangles();
 
     void initFSAASupport();
 
@@ -419,6 +429,42 @@ private:
         }
     } fHWScissorSettings;
 
+    class {
+    public:
+        bool valid() const { return kInvalidSurfaceOrigin != fRTOrigin; }
+        void invalidate() { fRTOrigin = kInvalidSurfaceOrigin; }
+        bool knownDisabled() const { return this->valid() && !fWindowState.enabled(); }
+        void setDisabled() {
+            fRTOrigin = kDefault_GrSurfaceOrigin;
+            fWindowState.setDisabled();
+        }
+
+        void set(GrSurfaceOrigin rtOrigin, const GrGLIRect& viewport,
+                 const GrWindowRectsState& windowState) {
+            fRTOrigin = rtOrigin;
+            fViewport = viewport;
+            fWindowState = windowState;
+        }
+
+        bool knownEqualTo(GrSurfaceOrigin rtOrigin, const GrGLIRect& viewport,
+                          const GrWindowRectsState& windowState) const {
+            if (!this->valid()) {
+                return false;
+            }
+            if (fWindowState.numWindows() && (fRTOrigin != rtOrigin || fViewport != viewport)) {
+                return false;
+            }
+            return fWindowState.cheapEqualTo(windowState);
+        }
+
+    private:
+        enum { kInvalidSurfaceOrigin = -1 };
+
+        int                  fRTOrigin;
+        GrGLIRect            fViewport;
+        GrWindowRectsState   fWindowState;
+    } fHWWindowRectsState;
+
     GrGLIRect                   fHWViewport;
 
     /**
@@ -467,7 +513,7 @@ private:
          *
          * The returned GrGLAttribArrayState should be used to set vertex attribute arrays.
          */
-        GrGLAttribArrayState* bindInternalVertexArray(GrGLGpu*, const GrGLBuffer* ibuff = nullptr);
+        GrGLAttribArrayState* bindInternalVertexArray(GrGLGpu*, const GrBuffer* ibuff = nullptr);
 
     private:
         GrGLuint                fBoundVertexArrayID;
@@ -516,7 +562,7 @@ private:
     TriState                    fHWStencilTestEnabled;
 
 
-    GrPipelineBuilder::DrawFace fHWDrawFace;
+    GrDrawFace                  fHWDrawFace;
     TriState                    fHWWriteToColor;
     uint32_t                    fHWBoundRenderTargetUniqueID;
     TriState                    fHWSRGBFramebuffer;
@@ -599,6 +645,7 @@ private:
 
     typedef GrGpu INHERITED;
     friend class GrGLPathRendering; // For accessing setTextureUnit.
+    friend class gr_instanced::GLInstancedRendering; // For accessing flushGLState.
 };
 
 #endif

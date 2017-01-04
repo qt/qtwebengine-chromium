@@ -57,7 +57,8 @@ void SctpSidAllocator::ReleaseSid(int sid) {
 }
 
 bool SctpSidAllocator::IsSidAvailable(int sid) const {
-  if (sid < 0 || sid > static_cast<int>(cricket::kMaxSctpSid)) {
+  if (sid < static_cast<int>(cricket::kMinSctpSid) ||
+      sid > static_cast<int>(cricket::kMaxSctpSid)) {
     return false;
   }
   return used_sids_.find(sid) == used_sids_.end();
@@ -297,10 +298,11 @@ void DataChannel::OnTransportChannelCreated() {
   }
 }
 
-// The underlying transport channel was destroyed.
-// This function makes sure the DataChannel is disconnected and changes state to
-// kClosed.
 void DataChannel::OnTransportChannelDestroyed() {
+  // This method needs to synchronously close the data channel, which means any
+  // queued data needs to be discarded.
+  queued_send_data_.Clear();
+  queued_control_data_.Clear();
   DoClose();
 }
 

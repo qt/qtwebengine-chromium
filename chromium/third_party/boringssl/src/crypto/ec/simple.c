@@ -964,7 +964,6 @@ int ec_GFp_simple_points_make_affine(const EC_GROUP *group, size_t num,
   BN_CTX *new_ctx = NULL;
   BIGNUM *tmp, *tmp_Z;
   BIGNUM **prod_Z = NULL;
-  size_t i;
   int ret = 0;
 
   if (num == 0) {
@@ -990,7 +989,7 @@ int ec_GFp_simple_points_make_affine(const EC_GROUP *group, size_t num,
     goto err;
   }
   memset(prod_Z, 0, num * sizeof(prod_Z[0]));
-  for (i = 0; i < num; i++) {
+  for (size_t i = 0; i < num; i++) {
     prod_Z[i] = BN_new();
     if (prod_Z[i] == NULL) {
       goto err;
@@ -1010,7 +1009,7 @@ int ec_GFp_simple_points_make_affine(const EC_GROUP *group, size_t num,
     }
   }
 
-  for (i = 1; i < num; i++) {
+  for (size_t i = 1; i < num; i++) {
     if (!BN_is_zero(&points[i]->Z)) {
       if (!group->meth->field_mul(group, prod_Z[i], prod_Z[i - 1],
                                   &points[i]->Z, ctx)) {
@@ -1023,10 +1022,16 @@ int ec_GFp_simple_points_make_affine(const EC_GROUP *group, size_t num,
     }
   }
 
-  /* Now use a single explicit inversion to replace every
-   * non-zero points[i]->Z by its inverse. */
-
-  if (!BN_mod_inverse(tmp, prod_Z[num - 1], &group->field, ctx)) {
+  /* Now use a single explicit inversion to replace every non-zero points[i]->Z
+   * by its inverse. We use |BN_mod_inverse_odd| instead of doing a constant-
+   * time inversion using Fermat's Little Theorem because this function is
+   * usually only used for converting multiples of a public key point to
+   * affine, and a public key point isn't secret. If we were to use Fermat's
+   * Little Theorem then the cost of the inversion would usually be so high
+   * that converting the multiples to affine would be counterproductive. */
+  int no_inverse;
+  if (!BN_mod_inverse_odd(tmp, &no_inverse, prod_Z[num - 1], &group->field,
+                          ctx)) {
     OPENSSL_PUT_ERROR(EC, ERR_R_BN_LIB);
     goto err;
   }
@@ -1041,7 +1046,7 @@ int ec_GFp_simple_points_make_affine(const EC_GROUP *group, size_t num,
     }
   }
 
-  for (i = num - 1; i > 0; --i) {
+  for (size_t i = num - 1; i > 0; --i) {
     /* Loop invariant: tmp is the product of the inverses of
      * points[0]->Z .. points[i]->Z (zero-valued inputs skipped). */
     if (BN_is_zero(&points[i]->Z)) {
@@ -1065,7 +1070,7 @@ int ec_GFp_simple_points_make_affine(const EC_GROUP *group, size_t num,
   }
 
   /* Finally, fix up the X and Y coordinates for all points. */
-  for (i = 0; i < num; i++) {
+  for (size_t i = 0; i < num; i++) {
     EC_POINT *p = points[i];
 
     if (!BN_is_zero(&p->Z)) {
@@ -1089,7 +1094,7 @@ err:
   BN_CTX_end(ctx);
   BN_CTX_free(new_ctx);
   if (prod_Z != NULL) {
-    for (i = 0; i < num; i++) {
+    for (size_t i = 0; i < num; i++) {
       if (prod_Z[i] == NULL) {
         break;
       }

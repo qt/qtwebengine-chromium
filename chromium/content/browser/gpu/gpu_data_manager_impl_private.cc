@@ -11,7 +11,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -37,6 +37,7 @@
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
 #include "gpu/ipc/common/memory_stats.h"
+#include "gpu/ipc/service/switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
@@ -48,13 +49,6 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #endif  // OS_WIN
-#if defined(OS_ANDROID)
-#include "media/base/media_switches.h"
-#include "ui/gfx/android/device_display_info.h"
-#endif  // OS_ANDROID
-#if defined(MOJO_SHELL_CLIENT) && defined(USE_AURA)
-#include "services/shell/runner/common/client_util.h"
-#endif
 
 namespace content {
 
@@ -214,9 +208,6 @@ void UpdateStats(const gpu::GPUInfo& gpu_info,
     histogram_pointer->Add(GetGpuBlacklistHistogramValueWin(value));
 #endif
   }
-
-  UMA_HISTOGRAM_SPARSE_SLOWLY("GPU.GLResetNotificationStrategy",
-      gpu_info.gl_reset_notification_strategy);
 }
 
 // Combine the integers into a string, seperated by ','.
@@ -269,11 +260,6 @@ enum BlockStatusHistogram {
 };
 
 bool ShouldDisableHardwareAcceleration() {
-#if defined(MOJO_SHELL_CLIENT) && defined(USE_AURA)
-  // TODO(rjkroege): Remove this when https://crbug.com/602519 is fixed.
-  if (shell::ShellIsRemote())
-    return true;
-#endif
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableGpu);
 }
@@ -398,8 +384,7 @@ void GpuDataManagerImplPrivate::RequestCompleteGpuInfoIfNeeded() {
 #else
       GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
 #endif
-      CAUSE_FOR_GPU_LAUNCH_GPUDATAMANAGER_REQUESTCOMPLETEGPUINFOIFNEEDED,
-      new GpuMsg_CollectGraphicsInfo());
+      true /* force_create */, new GpuMsg_CollectGraphicsInfo());
 }
 
 bool GpuDataManagerImplPrivate::IsEssentialGpuInfoAvailable() const {
@@ -420,7 +405,7 @@ bool GpuDataManagerImplPrivate::IsCompleteGpuInfoAvailable() const {
 
 void GpuDataManagerImplPrivate::RequestVideoMemoryUsageStatsUpdate() const {
   GpuProcessHost::SendOnIO(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
-                           CAUSE_FOR_GPU_LAUNCH_NO_LAUNCH,
+                           false /* force_create */,
                            new GpuMsg_GetVideoMemoryUsageStats());
 }
 
@@ -462,12 +447,6 @@ void GpuDataManagerImplPrivate::UnblockDomainFrom3DAPIs(const GURL& url) {
 
   blocked_domains_.erase(domain);
   timestamps_of_gpu_resets_.clear();
-}
-
-void GpuDataManagerImplPrivate::DisableGpuWatchdog() {
-  GpuProcessHost::SendOnIO(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
-                           CAUSE_FOR_GPU_LAUNCH_NO_LAUNCH,
-                           new GpuMsg_DisableWatchdog);
 }
 
 void GpuDataManagerImplPrivate::SetGLStrings(const std::string& gl_vendor,
@@ -549,9 +528,14 @@ void GpuDataManagerImplPrivate::Initialize() {
     // So mark it as collected.
     gpu_info.basic_info_state = gpu::kCollectInfoSuccess;
   } else {
-    TRACE_EVENT0("startup",
-      "GpuDataManagerImpl::Initialize:CollectBasicGraphicsInfo");
-    gpu::CollectBasicGraphicsInfo(&gpu_info);
+    // Skip collecting the basic driver info if SetGpuInfo() is already called.
+    if (IsCompleteGpuInfoAvailable()) {
+      gpu_info = gpu_info_;
+    } else {
+      TRACE_EVENT0("startup",
+                   "GpuDataManagerImpl::Initialize:CollectBasicGraphicsInfo");
+      gpu::CollectBasicGraphicsInfo(&gpu_info);
+    }
 
     if (command_line->HasSwitch(switches::kGpuTestingVendorId) &&
         command_line->HasSwitch(switches::kGpuTestingDeviceId)) {
@@ -583,11 +567,13 @@ void GpuDataManagerImplPrivate::Initialize() {
 
   std::string gpu_blacklist_string;
   std::string gpu_driver_bug_list_string;
-  if (!command_line->HasSwitch(switches::kIgnoreGpuBlacklist) &&
+  if (!force_osmesa &&
+      !command_line->HasSwitch(switches::kIgnoreGpuBlacklist) &&
       !command_line->HasSwitch(switches::kUseGpuInTests)) {
     gpu_blacklist_string = gpu::kSoftwareRenderingListJson;
   }
-  if (!command_line->HasSwitch(switches::kDisableGpuDriverBugWorkarounds)) {
+  if (!force_osmesa &&
+      !command_line->HasSwitch(switches::kDisableGpuDriverBugWorkarounds)) {
     gpu_driver_bug_list_string = gpu::kGpuDriverBugListJson;
   }
   InitializeImpl(gpu_blacklist_string,
@@ -620,30 +606,33 @@ void GpuDataManagerImplPrivate::UpdateGpuInfoHelper() {
 
     UpdateBlacklistedFeatures(features);
   }
+
+  std::set<std::string> disabled_ext_set;
+
+  // Merge disabled extensions from the command line with gpu driver bug list.
+  if (command_line) {
+    const std::vector<std::string>& disabled_command_line_exts =
+        base::SplitString(
+            command_line->GetSwitchValueASCII(switches::kDisableGLExtensions),
+            ", ;", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+    disabled_ext_set.insert(disabled_command_line_exts.begin(),
+                            disabled_command_line_exts.end());
+  }
+
   if (gpu_driver_bug_list_) {
     gpu_driver_bugs_ = gpu_driver_bug_list_->MakeDecision(
         gpu::GpuControlList::kOsAny, os_version, gpu_info_);
 
-    std::set<std::string> disabled_ext_set;
-
-    // Merge disabled extensions from the command line with gpu driver bug list.
-    if (command_line) {
-      const std::vector<std::string>& disabled_command_line_exts =
-          base::SplitString(
-              command_line->GetSwitchValueASCII(switches::kDisableGLExtensions),
-              ", ;", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-      disabled_ext_set.insert(disabled_command_line_exts.begin(),
-                              disabled_command_line_exts.end());
-    }
     const std::vector<std::string>& disabled_driver_bug_exts =
         gpu_driver_bug_list_->GetDisabledExtensions();
     disabled_ext_set.insert(disabled_driver_bug_exts.begin(),
                             disabled_driver_bug_exts.end());
-    disabled_extensions_ =
-        base::JoinString(std::vector<std::string>(disabled_ext_set.begin(),
-                                                  disabled_ext_set.end()),
-                         " ");
   }
+  disabled_extensions_ =
+      base::JoinString(std::vector<std::string>(disabled_ext_set.begin(),
+                                                disabled_ext_set.end()),
+                       " ");
+
   gpu::GpuDriverBugList::AppendWorkaroundsFromCommandLine(
       &gpu_driver_bugs_, *base::CommandLine::ForCurrentProcess());
 
@@ -704,9 +693,14 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
           switches::kUseGL);
   if (gpu_driver_bugs_.find(gpu::DISABLE_D3D11) != gpu_driver_bugs_.end())
     command_line->AppendSwitch(switches::kDisableD3D11);
+  if (gpu_driver_bugs_.find(gpu::DISABLE_ES3_GL_CONTEXT) !=
+      gpu_driver_bugs_.end()) {
+    command_line->AppendSwitch(switches::kDisableES3GLContext);
+  }
   if (gpu_driver_bugs_.find(gpu::DISABLE_DIRECT_COMPOSITION) !=
-      gpu_driver_bugs_.end())
+      gpu_driver_bugs_.end()) {
     command_line->AppendSwitch(switches::kDisableDirectComposition);
+  }
   if (use_swiftshader_) {
     command_line->AppendSwitchASCII(switches::kUseGL, "swiftshader");
   } else if ((IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL) ||
@@ -747,10 +741,16 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
     }
   }
 
-#if defined(OS_ANDROID)
-  if (command_line->HasSwitch(switches::kEnableThreadedTextureMailboxes) &&
-      IsDriverBugWorkaroundActive(gpu::AVDA_NO_EGLIMAGE_FOR_LUMINANCE_TEX)) {
-    command_line->AppendSwitch(switches::kDisableUnifiedMediaPipeline);
+  if (gpu_driver_bugs_.find(gpu::CREATE_DEFAULT_GL_CONTEXT) !=
+      gpu_driver_bugs_.end()) {
+    command_line->AppendSwitch(switches::kCreateDefaultGLContext);
+  }
+
+#if defined(OS_WIN)
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VPX_DECODE) &&
+      gpu_preferences) {
+    gpu_preferences->enable_accelerated_vpx_decode =
+        gpu::GpuPreferences::VPX_VENDOR_NONE;
   }
 #endif
 
@@ -869,6 +869,12 @@ void GpuDataManagerImplPrivate::DisableHardwareAcceleration() {
   NotifyGpuInfoUpdate();
 }
 
+void GpuDataManagerImplPrivate::SetGpuInfo(const gpu::GPUInfo& gpu_info) {
+  DCHECK(!is_initialized_);
+  gpu_info_ = gpu_info;
+  DCHECK(IsCompleteGpuInfoAvailable());
+}
+
 std::string GpuDataManagerImplPrivate::GetBlacklistVersion() const {
   if (gpu_blacklist_)
     return gpu_blacklist_->version();
@@ -945,8 +951,7 @@ void GpuDataManagerImplPrivate::HandleGpuSwitch() {
   ui::GpuSwitchingManager::GetInstance()->NotifyGpuSwitched();
   // Pass the notification to the GPU process to notify observers there.
   GpuProcessHost::SendOnIO(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
-                           CAUSE_FOR_GPU_LAUNCH_NO_LAUNCH,
-                           new GpuMsg_GpuSwitched);
+                           false /* force_create */, new GpuMsg_GpuSwitched);
 }
 
 bool GpuDataManagerImplPrivate::UpdateActiveGpu(uint32_t vendor_id,
@@ -1166,13 +1171,7 @@ void GpuDataManagerImplPrivate::UpdateGpuSwitchingManager(
     vendor_ids.push_back(device.vendor_id);
   }
   ui::GpuSwitchingManager::GetInstance()->SetGpuVendorIds(vendor_ids);
-
-  if (ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus()) {
-    if (gpu_driver_bugs_.count(gpu::FORCE_DISCRETE_GPU) == 1)
-      ui::GpuSwitchingManager::GetInstance()->ForceUseOfDiscreteGpu();
-    else if (gpu_driver_bugs_.count(gpu::FORCE_INTEGRATED_GPU) == 1)
-      ui::GpuSwitchingManager::GetInstance()->ForceUseOfIntegratedGpu();
-  }
+  gpu::InitializeDualGpusIfSupported(gpu_driver_bugs_);
 }
 
 void GpuDataManagerImplPrivate::NotifyGpuInfoUpdate() {
@@ -1233,11 +1232,6 @@ GpuDataManagerImplPrivate::Are3DAPIsBlockedAtTime(
     // Err on the side of caution, and assume that if a particular
     // domain shows up in the block map, it's there for a good
     // reason and don't let its presence there automatically expire.
-
-    UMA_HISTOGRAM_ENUMERATION("GPU.BlockStatusForClient3DAPIs",
-                              BLOCK_STATUS_SPECIFIC_DOMAIN_BLOCKED,
-                              BLOCK_STATUS_MAX);
-
     return GpuDataManagerImpl::DOMAIN_BLOCK_STATUS_BLOCKED;
   }
 

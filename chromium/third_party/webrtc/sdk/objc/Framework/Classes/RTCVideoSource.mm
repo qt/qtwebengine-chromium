@@ -10,73 +10,38 @@
 
 #import "RTCVideoSource+Private.h"
 
+#include "webrtc/base/checks.h"
+
 @implementation RTCVideoSource {
   rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> _nativeVideoSource;
 }
 
-- (RTCSourceState)state {
-  return [[self class] sourceStateForNativeState:_nativeVideoSource->state()];
+- (instancetype)initWithNativeVideoSource:
+    (rtc::scoped_refptr<webrtc::VideoTrackSourceInterface>)nativeVideoSource {
+  RTC_DCHECK(nativeVideoSource);
+  if (self = [super initWithNativeMediaSource:nativeVideoSource
+                                         type:RTCMediaSourceTypeVideo]) {
+    _nativeVideoSource = nativeVideoSource;
+  }
+  return self;
+}
+
+- (instancetype)initWithNativeMediaSource:
+    (rtc::scoped_refptr<webrtc::MediaSourceInterface>)nativeMediaSource
+                                     type:(RTCMediaSourceType)type {
+  RTC_NOTREACHED();
+  return nil;
 }
 
 - (NSString *)description {
-  return [NSString stringWithFormat:@"RTCVideoSource:\n%@",
-                                    [[self class] stringForState:self.state]];
+  NSString *stateString = [[self class] stringForState:self.state];
+  return [NSString stringWithFormat:@"RTCVideoSource( %p ): %@", self, stateString];
 }
 
 #pragma mark - Private
 
 - (rtc::scoped_refptr<webrtc::VideoTrackSourceInterface>)nativeVideoSource {
   return _nativeVideoSource;
-}
-
-- (instancetype)initWithNativeVideoSource:
-    (rtc::scoped_refptr<webrtc::VideoTrackSourceInterface>)nativeVideoSource {
-  NSParameterAssert(nativeVideoSource);
-  if (self = [super init]) {
-    _nativeVideoSource = nativeVideoSource;
-  }
-  return self;
-}
-
-+ (webrtc::MediaSourceInterface::SourceState)nativeSourceStateForState:
-    (RTCSourceState)state {
-  switch (state) {
-    case RTCSourceStateInitializing:
-      return webrtc::MediaSourceInterface::kInitializing;
-    case RTCSourceStateLive:
-      return webrtc::MediaSourceInterface::kLive;
-    case RTCSourceStateEnded:
-      return webrtc::MediaSourceInterface::kEnded;
-    case RTCSourceStateMuted:
-      return webrtc::MediaSourceInterface::kMuted;
-  }
-}
-
-+ (RTCSourceState)sourceStateForNativeState:
-    (webrtc::MediaSourceInterface::SourceState)nativeState {
-  switch (nativeState) {
-    case webrtc::MediaSourceInterface::kInitializing:
-      return RTCSourceStateInitializing;
-    case webrtc::MediaSourceInterface::kLive:
-      return RTCSourceStateLive;
-    case webrtc::MediaSourceInterface::kEnded:
-      return RTCSourceStateEnded;
-    case webrtc::MediaSourceInterface::kMuted:
-      return RTCSourceStateMuted;
-  }
-}
-
-+ (NSString *)stringForState:(RTCSourceState)state {
-  switch (state) {
-    case RTCSourceStateInitializing:
-      return @"Initializing";
-    case RTCSourceStateLive:
-      return @"Live";
-    case RTCSourceStateEnded:
-      return @"Ended";
-    case RTCSourceStateMuted:
-      return @"Muted";
-  }
 }
 
 @end

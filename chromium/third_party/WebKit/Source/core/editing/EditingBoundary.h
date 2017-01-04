@@ -29,16 +29,11 @@
 namespace blink {
 
 enum EditingBoundaryCrossingRule {
-    CanCrossEditingBoundary,
-    CannotCrossEditingBoundary,
-    CanSkipOverEditingBoundary
+  CanCrossEditingBoundary,
+  CannotCrossEditingBoundary,
+  CanSkipOverEditingBoundary
 };
 
-enum EditableType {
-    ContentIsEditable,
-    HasEditableAXRole
-};
+}  // namespace blink
 
-} // namespace blink
-
-#endif // EditingBoundary_h
+#endif  // EditingBoundary_h

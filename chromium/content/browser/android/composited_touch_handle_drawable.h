@@ -8,6 +8,7 @@
 #include "ui/touch_selection/touch_handle.h"
 
 #include "base/android/jni_android.h"
+#include "base/android/scoped_java_ref.h"
 #include "base/macros.h"
 #include "cc/layers/ui_resource_layer.h"
 
@@ -18,7 +19,7 @@ class CompositedTouchHandleDrawable : public ui::TouchHandleDrawable {
  public:
   CompositedTouchHandleDrawable(cc::Layer* root_layer,
                                 float dpi_scale,
-                                jobject context);
+                                const base::android::JavaRef<jobject>& context);
   ~CompositedTouchHandleDrawable() override;
 
   // ui::TouchHandleDrawable implementation.
@@ -30,8 +31,6 @@ class CompositedTouchHandleDrawable : public ui::TouchHandleDrawable {
   void SetAlpha(float alpha) override;
   gfx::RectF GetVisibleBounds() const override;
   float GetDrawableHorizontalPaddingRatio() const override;
-
-  static bool RegisterHandleViewResources(JNIEnv* env);
 
  private:
   void DetachLayer();

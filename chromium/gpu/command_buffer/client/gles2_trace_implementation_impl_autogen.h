@@ -1820,6 +1820,13 @@ GLboolean GLES2TraceImplementation::UnmapBuffer(GLenum target) {
   return gl_->UnmapBuffer(target);
 }
 
+void GLES2TraceImplementation::FlushMappedBufferRange(GLenum target,
+                                                      GLintptr offset,
+                                                      GLsizeiptr size) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::FlushMappedBufferRange");
+  gl_->FlushMappedBufferRange(target, offset, size);
+}
+
 void* GLES2TraceImplementation::MapTexSubImage2DCHROMIUM(GLenum target,
                                                          GLint level,
                                                          GLint xoffset,
@@ -1915,13 +1922,6 @@ GLuint GLES2TraceImplementation::CreateGpuMemoryBufferImageCHROMIUM(
       "gpu", "GLES2Trace::CreateGpuMemoryBufferImageCHROMIUM");
   return gl_->CreateGpuMemoryBufferImageCHROMIUM(width, height, internalformat,
                                                  usage);
-}
-
-void GLES2TraceImplementation::GetImageivCHROMIUM(GLuint image_id,
-                                                  GLenum param,
-                                                  GLint* data) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::GetImageivCHROMIUM");
-  gl_->GetImageivCHROMIUM(image_id, param, data);
 }
 
 void GLES2TraceImplementation::DescheduleUntilFinishedCHROMIUM() {
@@ -2149,23 +2149,29 @@ void GLES2TraceImplementation::ScheduleOverlayPlaneCHROMIUM(
       bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height);
 }
 
-void GLES2TraceImplementation::ScheduleCALayerCHROMIUM(
-    GLuint contents_texture_id,
-    const GLfloat* contents_rect,
+void GLES2TraceImplementation::ScheduleCALayerSharedStateCHROMIUM(
     GLfloat opacity,
-    GLuint background_color,
-    GLuint edge_aa_mask,
-    const GLfloat* bounds_rect,
     GLboolean is_clipped,
     const GLfloat* clip_rect,
     GLint sorting_context_id,
-    const GLfloat* transform,
+    const GLfloat* transform) {
+  TRACE_EVENT_BINARY_EFFICIENT0(
+      "gpu", "GLES2Trace::ScheduleCALayerSharedStateCHROMIUM");
+  gl_->ScheduleCALayerSharedStateCHROMIUM(opacity, is_clipped, clip_rect,
+                                          sorting_context_id, transform);
+}
+
+void GLES2TraceImplementation::ScheduleCALayerCHROMIUM(
+    GLuint contents_texture_id,
+    const GLfloat* contents_rect,
+    GLuint background_color,
+    GLuint edge_aa_mask,
+    const GLfloat* bounds_rect,
     GLuint filter) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::ScheduleCALayerCHROMIUM");
-  gl_->ScheduleCALayerCHROMIUM(contents_texture_id, contents_rect, opacity,
+  gl_->ScheduleCALayerCHROMIUM(contents_texture_id, contents_rect,
                                background_color, edge_aa_mask, bounds_rect,
-                               is_clipped, clip_rect, sorting_context_id,
-                               transform, filter);
+                               filter);
 }
 
 void GLES2TraceImplementation::ScheduleCALayerInUseQueryCHROMIUM(
@@ -2467,11 +2473,20 @@ GLint GLES2TraceImplementation::GetFragDataIndexEXT(GLuint program,
 void GLES2TraceImplementation::UniformMatrix4fvStreamTextureMatrixCHROMIUM(
     GLint location,
     GLboolean transpose,
-    const GLfloat* default_value) {
+    const GLfloat* transform) {
   TRACE_EVENT_BINARY_EFFICIENT0(
       "gpu", "GLES2Trace::UniformMatrix4fvStreamTextureMatrixCHROMIUM");
   gl_->UniformMatrix4fvStreamTextureMatrixCHROMIUM(location, transpose,
-                                                   default_value);
+                                                   transform);
+}
+
+void GLES2TraceImplementation::SwapBuffersWithDamageCHROMIUM(GLint x,
+                                                             GLint y,
+                                                             GLint width,
+                                                             GLint height) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu",
+                                "GLES2Trace::SwapBuffersWithDamageCHROMIUM");
+  gl_->SwapBuffersWithDamageCHROMIUM(x, y, width, height);
 }
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_TRACE_IMPLEMENTATION_IMPL_AUTOGEN_H_

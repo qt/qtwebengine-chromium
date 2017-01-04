@@ -22,52 +22,6 @@ class WebRtcVideoFrameTest : public VideoFrameTest<WebRtcVideoFrame> {
  public:
   WebRtcVideoFrameTest() {}
 
-  void TestInit(int cropped_width, int cropped_height,
-                webrtc::VideoRotation frame_rotation,
-                bool apply_rotation) {
-    const int frame_width = 1920;
-    const int frame_height = 1080;
-
-    // Build the CapturedFrame.
-    CapturedFrame captured_frame;
-    captured_frame.fourcc = FOURCC_I420;
-    captured_frame.time_stamp = rtc::TimeNanos();
-    captured_frame.rotation = frame_rotation;
-    captured_frame.width = frame_width;
-    captured_frame.height = frame_height;
-    captured_frame.data_size = (frame_width * frame_height) +
-        ((frame_width + 1) / 2) * ((frame_height + 1) / 2) * 2;
-    std::unique_ptr<uint8_t[]> captured_frame_buffer(
-        new uint8_t[captured_frame.data_size]);
-    // Initialize memory to satisfy DrMemory tests.
-    memset(captured_frame_buffer.get(), 0, captured_frame.data_size);
-    captured_frame.data = captured_frame_buffer.get();
-
-    // Create the new frame from the CapturedFrame.
-    WebRtcVideoFrame frame;
-    EXPECT_TRUE(
-        frame.Init(&captured_frame, cropped_width, cropped_height,
-                   apply_rotation));
-
-    // Verify the new frame.
-    EXPECT_EQ(captured_frame.time_stamp / rtc::kNumNanosecsPerMicrosec,
-              frame.timestamp_us());
-    if (apply_rotation)
-      EXPECT_EQ(webrtc::kVideoRotation_0, frame.rotation());
-    else
-      EXPECT_EQ(frame_rotation, frame.rotation());
-    // If |apply_rotation| and the frame rotation is 90 or 270, width and
-    // height are flipped.
-    if (apply_rotation && (frame_rotation == webrtc::kVideoRotation_90
-        || frame_rotation == webrtc::kVideoRotation_270)) {
-      EXPECT_EQ(cropped_width, frame.height());
-      EXPECT_EQ(cropped_height, frame.width());
-    } else {
-      EXPECT_EQ(cropped_width, frame.width());
-      EXPECT_EQ(cropped_height, frame.height());
-    }
-  }
-
   void SetFrameRotation(WebRtcVideoFrame* frame,
                         webrtc::VideoRotation rotation) {
     frame->rotation_ = rotation;
@@ -93,9 +47,6 @@ TEST_WEBRTCVIDEOFRAME(ConstructARGBWide)
 TEST_WEBRTCVIDEOFRAME(ConstructBGRA)
 TEST_WEBRTCVIDEOFRAME(Construct24BG)
 TEST_WEBRTCVIDEOFRAME(ConstructRaw)
-TEST_WEBRTCVIDEOFRAME(ConstructRGB565)
-TEST_WEBRTCVIDEOFRAME(ConstructARGB1555)
-TEST_WEBRTCVIDEOFRAME(ConstructARGB4444)
 
 TEST_WEBRTCVIDEOFRAME(ConstructI420Mirror)
 TEST_WEBRTCVIDEOFRAME(ConstructI420Rotate0)
@@ -154,103 +105,8 @@ TEST_WEBRTCVIDEOFRAME(ValidateI420HugeSize)
 // Re-evaluate once WebRTC switches to libyuv
 // TEST_WEBRTCVIDEOFRAME(ConstructYuy2AllSizes)
 // TEST_WEBRTCVIDEOFRAME(ConstructARGBAllSizes)
-TEST_WEBRTCVIDEOFRAME(ConvertToABGRBuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToABGRBufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToABGRBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGB1555Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGB1555BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGB1555BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGB4444Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGB4444BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGB4444BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGBBuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGBBufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToARGBBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToBGRABuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToBGRABufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToBGRABufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToRAWBuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToRAWBufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToRAWBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToRGB24Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToRGB24BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToRGB24BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToRGB565Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToRGB565BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToRGB565BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToI400Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToI400BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToI400BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToYUY2Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToYUY2BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToYUY2BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToUYVYBuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToUYVYBufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToUYVYBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromABGRBuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromABGRBufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromABGRBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGB1555Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGB1555BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGB1555BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGB4444Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGB4444BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGB4444BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGBBuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGBBufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromARGBBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromBGRABuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromBGRABufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromBGRABufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRAWBuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRAWBufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRAWBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRGB24Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRGB24BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRGB24BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRGB565Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRGB565BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromRGB565BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromI400Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromI400BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromI400BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromYUY2Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromYUY2BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromYUY2BufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromUYVYBuffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromUYVYBufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromUYVYBufferInverted)
 // TEST_WEBRTCVIDEOFRAME(ConvertToI422Buffer)
 // TEST_WEBRTCVIDEOFRAME(ConstructARGBBlackWhitePixel)
-
-TEST_WEBRTCVIDEOFRAME(Copy)
-TEST_WEBRTCVIDEOFRAME(CopyIsRef)
-
-// These functions test implementation-specific details.
-// Tests the Init function with different cropped size.
-TEST_F(WebRtcVideoFrameTest, InitEvenSize) {
-  TestInit(640, 360, webrtc::kVideoRotation_0, true);
-}
-
-TEST_F(WebRtcVideoFrameTest, InitOddWidth) {
-  TestInit(601, 480, webrtc::kVideoRotation_0, true);
-}
-
-TEST_F(WebRtcVideoFrameTest, InitOddHeight) {
-  TestInit(360, 765, webrtc::kVideoRotation_0, true);
-}
-
-TEST_F(WebRtcVideoFrameTest, InitOddWidthHeight) {
-  TestInit(355, 1021, webrtc::kVideoRotation_0, true);
-}
-
-TEST_F(WebRtcVideoFrameTest, InitRotated90ApplyRotation) {
-  TestInit(640, 360, webrtc::kVideoRotation_90, true);
-}
-
-TEST_F(WebRtcVideoFrameTest, InitRotated90DontApplyRotation) {
-  TestInit(640, 360, webrtc::kVideoRotation_90, false);
-}
 
 TEST_F(WebRtcVideoFrameTest, TextureInitialValues) {
   webrtc::test::FakeNativeHandle* dummy_handle =
@@ -258,34 +114,14 @@ TEST_F(WebRtcVideoFrameTest, TextureInitialValues) {
   webrtc::NativeHandleBuffer* buffer =
       new rtc::RefCountedObject<webrtc::test::FakeNativeHandleBuffer>(
           dummy_handle, 640, 480);
-  // Timestamp is converted from ns to us, so last three digits are lost.
-  WebRtcVideoFrame frame(buffer, 20000, webrtc::kVideoRotation_0);
+
+  WebRtcVideoFrame frame(buffer, webrtc::kVideoRotation_0, 20);
   EXPECT_EQ(dummy_handle, frame.video_frame_buffer()->native_handle());
   EXPECT_EQ(640, frame.width());
   EXPECT_EQ(480, frame.height());
-  EXPECT_EQ(20000, frame.GetTimeStamp());
   EXPECT_EQ(20, frame.timestamp_us());
   frame.set_timestamp_us(40);
-  EXPECT_EQ(40000, frame.GetTimeStamp());
   EXPECT_EQ(40, frame.timestamp_us());
-}
-
-TEST_F(WebRtcVideoFrameTest, CopyTextureFrame) {
-  webrtc::test::FakeNativeHandle* dummy_handle =
-      new webrtc::test::FakeNativeHandle();
-  webrtc::NativeHandleBuffer* buffer =
-      new rtc::RefCountedObject<webrtc::test::FakeNativeHandleBuffer>(
-          dummy_handle, 640, 480);
-  // Timestamp is converted from ns to us, so last three digits are lost.
-  WebRtcVideoFrame frame1(buffer, 20000, webrtc::kVideoRotation_0);
-  VideoFrame* frame2 = frame1.Copy();
-  EXPECT_EQ(frame1.video_frame_buffer()->native_handle(),
-            frame2->video_frame_buffer()->native_handle());
-  EXPECT_EQ(frame1.width(), frame2->width());
-  EXPECT_EQ(frame1.height(), frame2->height());
-  EXPECT_EQ(frame1.GetTimeStamp(), frame2->GetTimeStamp());
-  EXPECT_EQ(frame1.timestamp_us(), frame2->timestamp_us());
-  delete frame2;
 }
 
 TEST_F(WebRtcVideoFrameTest, ApplyRotationToFrame) {
@@ -296,22 +132,26 @@ TEST_F(WebRtcVideoFrameTest, ApplyRotationToFrame) {
 
   // Claim that this frame needs to be rotated for 90 degree.
   SetFrameRotation(&applied0, webrtc::kVideoRotation_90);
+  EXPECT_EQ(applied0.rotation(), webrtc::kVideoRotation_90);
 
   // Apply rotation on frame 1. Output should be different from frame 1.
-  WebRtcVideoFrame* applied90 =
-      const_cast<WebRtcVideoFrame*>(static_cast<const WebRtcVideoFrame*>(
-          applied0.GetCopyWithRotationApplied()));
-  EXPECT_TRUE(applied90);
-  EXPECT_EQ(applied90->rotation(), webrtc::kVideoRotation_0);
-  EXPECT_FALSE(IsEqual(applied0, *applied90, 0));
+  WebRtcVideoFrame applied90(
+      webrtc::I420Buffer::Rotate(applied0.video_frame_buffer(),
+                                 applied0.rotation()),
+      webrtc::kVideoRotation_0, applied0.timestamp_us());
+
+  EXPECT_EQ(applied90.rotation(), webrtc::kVideoRotation_0);
+  EXPECT_FALSE(IsEqual(applied0, applied90, 0));
 
   // Claim the frame 2 needs to be rotated for another 270 degree. The output
   // from frame 2 rotation should be the same as frame 1.
-  SetFrameRotation(applied90, webrtc::kVideoRotation_270);
-  const VideoFrame* applied360 = applied90->GetCopyWithRotationApplied();
-  EXPECT_TRUE(applied360);
-  EXPECT_EQ(applied360->rotation(), webrtc::kVideoRotation_0);
-  EXPECT_TRUE(IsEqual(applied0, *applied360, 0));
+  SetFrameRotation(&applied90, webrtc::kVideoRotation_270);
+  WebRtcVideoFrame applied360(
+      webrtc::I420Buffer::Rotate(applied90.video_frame_buffer(),
+                                 applied90.rotation()),
+      webrtc::kVideoRotation_0, applied90.timestamp_us());
+  EXPECT_EQ(applied360.rotation(), webrtc::kVideoRotation_0);
+  EXPECT_TRUE(IsEqual(applied0, applied360, 0));
 }
 
 }  // namespace cricket

@@ -31,7 +31,10 @@ class TestAXTreeDelegate : public AXTreeDelegate {
     }
   }
   void OnSubtreeWillBeDeleted(AXTree* tree, AXNode* node) override {}
+  void OnNodeWillBeReparented(AXTree* tree, AXNode* node) override {}
+  void OnSubtreeWillBeReparented(AXTree* tree, AXNode* node) override {}
   void OnNodeCreated(AXTree* tree, AXNode* node) override {}
+  void OnNodeReparented(AXTree* tree, AXNode* node) override {}
   void OnNodeChanged(AXTree* tree, AXNode* node) override {}
   void OnAtomicUpdateFinished(AXTree* tree,
                               bool root_changed,
@@ -69,6 +72,10 @@ TestAXNodeWrapper::~TestAXNodeWrapper() {
 
 const AXNodeData& TestAXNodeWrapper::GetData() {
   return node_->data();
+}
+
+gfx::NativeWindow TestAXNodeWrapper::GetTopLevelWidget() {
+  return nullptr;
 }
 
 gfx::NativeViewAccessible TestAXNodeWrapper::GetParent() {
@@ -113,6 +120,10 @@ void TestAXNodeWrapper::DoDefaultAction() {
 }
 
 bool TestAXNodeWrapper::SetStringValue(const base::string16& new_value) {
+  return false;
+}
+
+bool TestAXNodeWrapper::CanSetStringValue() {
   return false;
 }
 

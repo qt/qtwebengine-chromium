@@ -588,12 +588,6 @@ static int check_chain_extensions(X509_STORE_CTX *ctx)
     } else {
         allow_proxy_certs =
             ! !(ctx->param->flags & X509_V_FLAG_ALLOW_PROXY_CERTS);
-        /*
-         * A hack to keep people who don't want to modify their software
-         * happy
-         */
-        if (getenv("OPENSSL_ALLOW_PROXY_CERTS"))
-            allow_proxy_certs = 1;
         purpose = ctx->param->purpose;
     }
 
@@ -1007,13 +1001,25 @@ static int get_crl_sk(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509_CRL **pdcrl,
         crl = sk_X509_CRL_value(crls, i);
         reasons = *preasons;
         crl_score = get_crl_score(ctx, &crl_issuer, &reasons, crl, x);
-
-        if (crl_score > best_score) {
-            best_crl = crl;
-            best_crl_issuer = crl_issuer;
-            best_score = crl_score;
-            best_reasons = reasons;
+        if (crl_score < best_score || crl_score == 0)
+            continue;
+        /* If current CRL is equivalent use it if it is newer */
+        if (crl_score == best_score && best_crl != NULL) {
+            int day, sec;
+            if (ASN1_TIME_diff(&day, &sec, X509_CRL_get_lastUpdate(best_crl),
+                               X509_CRL_get_lastUpdate(crl)) == 0)
+                continue;
+            /*
+             * ASN1_TIME_diff never returns inconsistent signs for |day|
+             * and |sec|.
+             */
+            if (day <= 0 && sec <= 0)
+                continue;
         }
+        best_crl = crl;
+        best_crl_issuer = crl_issuer;
+        best_score = crl_score;
+        best_reasons = reasons;
     }
 
     if (best_crl) {
@@ -1753,9 +1759,7 @@ static int internal_verify(X509_STORE_CTX *ctx)
          * explicitly asked for. It doesn't add any security and just wastes
          * time.
          */
-        if (!xs->valid
-            && (xs != xi
-                || (ctx->param->flags & X509_V_FLAG_CHECK_SS_SIGNATURE))) {
+        if (xs != xi || (ctx->param->flags & X509_V_FLAG_CHECK_SS_SIGNATURE)) {
             if ((pkey = X509_get_pubkey(xi)) == NULL) {
                 ctx->error = X509_V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY;
                 ctx->current_cert = xi;
@@ -1774,8 +1778,6 @@ static int internal_verify(X509_STORE_CTX *ctx)
             EVP_PKEY_free(pkey);
             pkey = NULL;
         }
-
-        xs->valid = 1;
 
  check_cert:
         ok = check_cert_time(ctx, xs);

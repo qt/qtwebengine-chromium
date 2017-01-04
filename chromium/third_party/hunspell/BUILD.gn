@@ -18,7 +18,7 @@ config("hunspell_warnings") {
   }
 }
 
-source_set("hunspell") {
+static_library("hunspell") {
   sources = [
     "google/bdict.cc",
     "google/bdict.h",
@@ -119,6 +119,7 @@ fuzzer_test("hunspell_fuzzer") {
   ]
   deps = [
     ":hunspell",
+    "//base:base",
   ]
 
   # This is a dictionary for the fuzzer, not a spellcheck dictionary.

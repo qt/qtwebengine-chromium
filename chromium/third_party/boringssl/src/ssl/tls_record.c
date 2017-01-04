@@ -139,8 +139,7 @@ static int ssl_needs_record_splitting(const SSL *ssl) {
 }
 
 int ssl_record_sequence_update(uint8_t *seq, size_t seq_len) {
-  size_t i;
-  for (i = seq_len - 1; i < seq_len; i--) {
+  for (size_t i = seq_len - 1; i < seq_len; i--) {
     ++seq[i];
     if (seq[i] != 0) {
       return 1;
@@ -151,7 +150,7 @@ int ssl_record_sequence_update(uint8_t *seq, size_t seq_len) {
 }
 
 size_t ssl_record_prefix_len(const SSL *ssl) {
-  if (SSL_IS_DTLS(ssl)) {
+  if (SSL_is_dtls(ssl)) {
     return DTLS1_RT_HEADER_LENGTH +
            SSL_AEAD_CTX_explicit_nonce_len(ssl->s3->aead_read_ctx);
   } else {
@@ -161,7 +160,7 @@ size_t ssl_record_prefix_len(const SSL *ssl) {
 }
 
 size_t ssl_seal_align_prefix_len(const SSL *ssl) {
-  if (SSL_IS_DTLS(ssl)) {
+  if (SSL_is_dtls(ssl)) {
     return DTLS1_RT_HEADER_LENGTH +
            SSL_AEAD_CTX_explicit_nonce_len(ssl->s3->aead_write_ctx);
   } else {
@@ -177,7 +176,7 @@ size_t ssl_seal_align_prefix_len(const SSL *ssl) {
 
 size_t ssl_max_seal_overhead(const SSL *ssl) {
   size_t ret = SSL_AEAD_CTX_max_overhead(ssl->s3->aead_write_ctx);
-  if (SSL_IS_DTLS(ssl)) {
+  if (SSL_is_dtls(ssl)) {
     ret += DTLS1_RT_HEADER_LENGTH;
   } else {
     ret += SSL3_RT_HEADER_LENGTH;
@@ -187,7 +186,7 @@ size_t ssl_max_seal_overhead(const SSL *ssl) {
       ssl3_protocol_version(ssl) >= TLS1_3_VERSION) {
     ret += 1;
   }
-  if (!SSL_IS_DTLS(ssl) && ssl_needs_record_splitting(ssl)) {
+  if (!SSL_is_dtls(ssl) && ssl_needs_record_splitting(ssl)) {
     ret *= 2;
   }
   return ret;
@@ -233,7 +232,7 @@ enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type, CBS *out,
     return ssl_open_record_partial;
   }
 
-  ssl_do_msg_callback(ssl, 0 /* read */, 0, SSL3_RT_HEADER, in,
+  ssl_do_msg_callback(ssl, 0 /* read */, SSL3_RT_HEADER, in,
                       SSL3_RT_HEADER_LENGTH);
 
   /* Decrypt the body in-place. */
@@ -255,6 +254,13 @@ enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type, CBS *out,
   if (ssl->s3->have_version &&
       ssl3_protocol_version(ssl) >= TLS1_3_VERSION &&
       ssl->s3->aead_read_ctx != NULL) {
+    /* The outer record type is always application_data. */
+    if (type != SSL3_RT_APPLICATION_DATA) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_INVALID_OUTER_RECORD_TYPE);
+      *out_alert = SSL_AD_DECODE_ERROR;
+      return ssl_open_record_error;
+    }
+
     do {
       if (!CBS_get_last_u8(out, &type)) {
         OPENSSL_PUT_ERROR(SSL, SSL_R_DECRYPTION_FAILED_OR_BAD_RECORD_MAC);
@@ -343,7 +349,7 @@ static int do_seal_record(SSL *ssl, uint8_t *out, size_t *out_len,
 
   *out_len = SSL3_RT_HEADER_LENGTH + ciphertext_len;
 
-  ssl_do_msg_callback(ssl, 1 /* write */, 0, SSL3_RT_HEADER, out,
+  ssl_do_msg_callback(ssl, 1 /* write */, SSL3_RT_HEADER, out,
                       SSL3_RT_HEADER_LENGTH);
   return 1;
 }
@@ -360,7 +366,7 @@ int tls_seal_record(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
   /* TLS 1.3 hides the actual record type inside the encrypted data. */
   if (ssl->s3->have_version &&
       ssl3_protocol_version(ssl) >= TLS1_3_VERSION &&
-      ssl->s3->aead_read_ctx != NULL) {
+      ssl->s3->aead_write_ctx != NULL) {
     size_t padding = SSL3_RT_HEADER_LENGTH + 1;
 
     if (in_len > in_len + padding || max_out < in_len + padding) {
@@ -399,29 +405,6 @@ int tls_seal_record(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
   return 1;
 }
 
-void ssl_set_read_state(SSL *ssl, SSL_AEAD_CTX *aead_ctx) {
-  if (SSL_IS_DTLS(ssl)) {
-    ssl->d1->r_epoch++;
-    memset(&ssl->d1->bitmap, 0, sizeof(ssl->d1->bitmap));
-  }
-  memset(ssl->s3->read_sequence, 0, sizeof(ssl->s3->read_sequence));
-
-  SSL_AEAD_CTX_free(ssl->s3->aead_read_ctx);
-  ssl->s3->aead_read_ctx = aead_ctx;
-}
-
-void ssl_set_write_state(SSL *ssl, SSL_AEAD_CTX *aead_ctx) {
-  if (SSL_IS_DTLS(ssl)) {
-    ssl->d1->w_epoch++;
-    memcpy(ssl->d1->last_write_sequence, ssl->s3->write_sequence,
-           sizeof(ssl->s3->write_sequence));
-  }
-  memset(ssl->s3->write_sequence, 0, sizeof(ssl->s3->write_sequence));
-
-  SSL_AEAD_CTX_free(ssl->s3->aead_write_ctx);
-  ssl->s3->aead_write_ctx = aead_ctx;
-}
-
 enum ssl_open_record_t ssl_process_alert(SSL *ssl, uint8_t *out_alert,
                                          const uint8_t *in, size_t in_len) {
   /* Alerts records may not contain fragmented or multiple alerts. */
@@ -431,7 +414,7 @@ enum ssl_open_record_t ssl_process_alert(SSL *ssl, uint8_t *out_alert,
     return ssl_open_record_error;
   }
 
-  ssl_do_msg_callback(ssl, 0 /* read */, ssl->version, SSL3_RT_ALERT, in, in_len);
+  ssl_do_msg_callback(ssl, 0 /* read */, SSL3_RT_ALERT, in, in_len);
 
   const uint8_t alert_level = in[0];
   const uint8_t alert_descr = in[1];
@@ -445,6 +428,14 @@ enum ssl_open_record_t ssl_process_alert(SSL *ssl, uint8_t *out_alert,
       return ssl_open_record_close_notify;
     }
 
+    /* Warning alerts do not exist in TLS 1.3. */
+    if (ssl->s3->have_version &&
+        ssl3_protocol_version(ssl) >= TLS1_3_VERSION) {
+      *out_alert = SSL_AD_DECODE_ERROR;
+      OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_ALERT);
+      return ssl_open_record_error;
+    }
+
     ssl->s3->warning_alert_count++;
     if (ssl->s3->warning_alert_count > kMaxWarningAlerts) {
       *out_alert = SSL_AD_UNEXPECTED_MESSAGE;
@@ -456,7 +447,6 @@ enum ssl_open_record_t ssl_process_alert(SSL *ssl, uint8_t *out_alert,
 
   if (alert_level == SSL3_AL_FATAL) {
     ssl->s3->recv_shutdown = ssl_shutdown_fatal_alert;
-    SSL_CTX_remove_session(ssl->ctx, ssl->session);
 
     char tmp[16];
     OPENSSL_PUT_ERROR(SSL, SSL_AD_REASON_OFFSET + alert_descr);

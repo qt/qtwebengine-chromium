@@ -20,6 +20,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/thread_test_helper.h"
+#include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/indexed_db/indexed_db_class_factory.h"
@@ -140,7 +141,7 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
     qm->SetTemporaryGlobalOverrideQuota(bytes, storage::QuotaCallback());
     // Don't return until the quota has been set.
     scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB)));
+        BrowserThread::GetTaskRunnerForThread(BrowserThread::DB)));
     ASSERT_TRUE(helper->Run());
   }
 
@@ -151,7 +152,8 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
         base::Bind(&IndexedDBContext::GetOriginDiskUsage,
                    GetContext(),
                    GURL("file:///")),
-        base::Bind(&IndexedDBBrowserTest::DidGetDiskUsage, this));
+        base::Bind(&IndexedDBBrowserTest::DidGetDiskUsage,
+                   base::Unretained(this)));
     scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
         BrowserMainLoop::GetInstance()->indexed_db_thread()->task_runner()));
     EXPECT_TRUE(helper->Run());
@@ -165,7 +167,8 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
         GetContext()->TaskRunner(), FROM_HERE,
         base::Bind(&IndexedDBContextImpl::GetOriginBlobFileCount, GetContext(),
                    Origin(GURL("file:///"))),
-        base::Bind(&IndexedDBBrowserTest::DidGetBlobFileCount, this));
+        base::Bind(&IndexedDBBrowserTest::DidGetBlobFileCount,
+                   base::Unretained(this)));
     scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
         BrowserMainLoop::GetInstance()->indexed_db_thread()->task_runner()));
     EXPECT_TRUE(helper->Run());
@@ -204,13 +207,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CursorTestIncognito) {
              true /* incognito */);
 }
 
-// crbug.com/513787
-#if defined(ANDROID)
-#define MAYBE_CursorPrefetch DISABLED_CursorPrefetch
-#else
-#define MAYBE_CursorPrefetch CursorPrefetch
-#endif
-IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, MAYBE_CursorPrefetch) {
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CursorPrefetch) {
   SimpleTest(GetTestUrl("indexeddb", "cursor_prefetch.html"));
 }
 
@@ -425,9 +422,12 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, LevelDBLogFileTest) {
   base::FilePath log_file(FILE_PATH_LITERAL("LOG"));
   base::FilePath log_file_path =
       GetContext()->data_path().Append(leveldb_dir).Append(log_file);
-  int64_t size;
-  EXPECT_TRUE(base::GetFileSize(log_file_path, &size));
-  EXPECT_GT(size, 0);
+  {
+    base::ThreadRestrictions::ScopedAllowIO allow_io_for_test_verification;
+    int64_t size;
+    EXPECT_TRUE(base::GetFileSize(log_file_path, &size));
+    EXPECT_GT(size, 0);
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CanDeleteWhenOverQuotaTest) {

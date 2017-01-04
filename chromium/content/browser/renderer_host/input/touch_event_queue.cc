@@ -452,7 +452,7 @@ TouchEventQueue::TouchEventQueue(TouchEventQueueClient* client,
 
 TouchEventQueue::~TouchEventQueue() {
   if (!touch_queue_.empty())
-    STLDeleteElements(&touch_queue_);
+    base::STLDeleteElements(&touch_queue_);
 }
 
 void TouchEventQueue::QueueEvent(const TouchEventWithLatencyInfo& event) {
@@ -766,7 +766,10 @@ void TouchEventQueue::AckTouchEventToClient(
     InputEventAckState ack_result,
     const ui::LatencyInfo* optional_latency_info) {
   DCHECK(!dispatching_touch_ack_);
-  DCHECK(!touch_queue_.empty());
+  if (touch_queue_.empty()) {
+    NOTREACHED() << "Too many acks";
+    return;
+  }
   std::unique_ptr<CoalescedWebTouchEvent> acked_event(touch_queue_.front());
   DCHECK(acked_event);
 
@@ -792,10 +795,15 @@ void TouchEventQueue::SendTouchEventImmediately(
   if (dispatching_touch_)
     return;
 
+  if (touch->event.type == WebInputEvent::TouchStart)
+    touch->event.touchStartOrFirstTouchMove = true;
+
   // For touchmove events, compare touch points position from current event
   // to last sent event and update touch points state.
   if (touch->event.type == WebInputEvent::TouchMove) {
     CHECK(last_sent_touchevent_);
+    if (last_sent_touchevent_->type == WebInputEvent::TouchStart)
+      touch->event.touchStartOrFirstTouchMove = true;
     for (unsigned int i = 0; i < last_sent_touchevent_->touchesLength; ++i) {
       const WebTouchPoint& last_touch_point =
           last_sent_touchevent_->touches[i];

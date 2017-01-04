@@ -15,7 +15,7 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/media/webrtc_log_uploader.h"
+#include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_service.h"
@@ -100,11 +100,11 @@ class WebrtcLoggingPrivateApiTest : public ExtensionApiTest {
         function, ParamsToString(parameters), browser()));
     if (expect_results) {
       EXPECT_TRUE(result.get());
-      return result.get() != nullptr;
+      return result != nullptr;
     }
 
     EXPECT_FALSE(result.get());
-    return result.get() == nullptr;
+    return result == nullptr;
   }
 
   template<typename Function>
@@ -301,8 +301,8 @@ IN_PROC_BROWSER_TEST_F(WebrtcLoggingPrivateApiTest, TestStartStopUpload) {
   EXPECT_NE(std::string::npos, log_part.find("Cpu brand:"));
 
   // Check the multipart contents.
-  std::vector<std::string> multipart_lines;
-  base::SplitStringUsingSubstr(multipart, "\r\n", &multipart_lines);
+  std::vector<std::string> multipart_lines = base::SplitStringUsingSubstr(
+      multipart, "\r\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   ASSERT_EQ(31, static_cast<int>(multipart_lines.size()));
 
   EXPECT_STREQ(&boundary[0], multipart_lines[0].c_str());

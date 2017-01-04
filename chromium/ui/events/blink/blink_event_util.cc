@@ -14,13 +14,15 @@
 
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
 #include "ui/events/gesture_detection/motion_event.h"
 #include "ui/events/gesture_event_details.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/gfx/geometry/safe_integer_conversions.h"
+#include "ui/gfx/geometry/vector2d.h"
 
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
@@ -164,7 +166,7 @@ blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
     const MotionEvent& event,
     bool moved_beyond_slop_region) {
   static_assert(static_cast<int>(MotionEvent::MAX_TOUCH_POINT_COUNT) ==
-                    static_cast<int>(blink::WebTouchEvent::touchesLengthCap),
+                    static_cast<int>(blink::WebTouchEvent::kTouchesLengthCap),
                 "inconsistent maximum number of active touch points");
 
   blink::WebTouchEvent result;
@@ -180,7 +182,7 @@ blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
   result.uniqueTouchEventId = event.GetUniqueEventId();
   result.touchesLength =
       std::min(static_cast<unsigned>(event.GetPointerCount()),
-               static_cast<unsigned>(WebTouchEvent::touchesLengthCap));
+               static_cast<unsigned>(WebTouchEvent::kTouchesLengthCap));
   DCHECK_GT(result.touchesLength, 0U);
 
   for (size_t i = 0; i < result.touchesLength; ++i)
@@ -296,6 +298,7 @@ WebGestureEvent CreateWebGestureEvent(const GestureEventDetails& details,
       break;
     case ET_GESTURE_SCROLL_BEGIN:
       gesture.type = WebInputEvent::GestureScrollBegin;
+      gesture.data.scrollBegin.pointerCount = details.touch_points();
       gesture.data.scrollBegin.deltaXHint = details.scroll_x_hint();
       gesture.data.scrollBegin.deltaYHint = details.scroll_y_hint();
       break;
@@ -360,13 +363,22 @@ WebGestureEvent CreateWebGestureEventFromGestureEventData(
 std::unique_ptr<blink::WebInputEvent> ScaleWebInputEvent(
     const blink::WebInputEvent& event,
     float scale) {
+  return TranslateAndScaleWebInputEvent(event, gfx::Vector2d(0, 0), scale);
+}
+
+std::unique_ptr<blink::WebInputEvent> TranslateAndScaleWebInputEvent(
+    const blink::WebInputEvent& event,
+    const gfx::Vector2d& delta,
+    float scale) {
   std::unique_ptr<blink::WebInputEvent> scaled_event;
-  if (scale == 1.f)
+  if (scale == 1.f && delta.IsZero())
     return scaled_event;
   if (event.type == blink::WebMouseEvent::MouseWheel) {
     blink::WebMouseWheelEvent* wheel_event = new blink::WebMouseWheelEvent;
     scaled_event.reset(wheel_event);
     *wheel_event = static_cast<const blink::WebMouseWheelEvent&>(event);
+    wheel_event->x += delta.x();
+    wheel_event->y += delta.y();
     wheel_event->x *= scale;
     wheel_event->y *= scale;
     wheel_event->deltaX *= scale;
@@ -377,6 +389,8 @@ std::unique_ptr<blink::WebInputEvent> ScaleWebInputEvent(
     blink::WebMouseEvent* mouse_event = new blink::WebMouseEvent;
     scaled_event.reset(mouse_event);
     *mouse_event = static_cast<const blink::WebMouseEvent&>(event);
+    mouse_event->x += delta.x();
+    mouse_event->y += delta.y();
     mouse_event->x *= scale;
     mouse_event->y *= scale;
     mouse_event->windowX = mouse_event->x;
@@ -388,6 +402,8 @@ std::unique_ptr<blink::WebInputEvent> ScaleWebInputEvent(
     scaled_event.reset(touch_event);
     *touch_event = static_cast<const blink::WebTouchEvent&>(event);
     for (unsigned i = 0; i < touch_event->touchesLength; i++) {
+      touch_event->touches[i].position.x += delta.x();
+      touch_event->touches[i].position.y += delta.y();
       touch_event->touches[i].position.x *= scale;
       touch_event->touches[i].position.y *= scale;
       touch_event->touches[i].radiusX *= scale;
@@ -397,6 +413,8 @@ std::unique_ptr<blink::WebInputEvent> ScaleWebInputEvent(
     blink::WebGestureEvent* gesture_event = new blink::WebGestureEvent;
     scaled_event.reset(gesture_event);
     *gesture_event = static_cast<const blink::WebGestureEvent&>(event);
+    gesture_event->x += delta.x();
+    gesture_event->y += delta.y();
     gesture_event->x *= scale;
     gesture_event->y *= scale;
     switch (gesture_event->type) {
@@ -474,10 +492,53 @@ WebPointerProperties::PointerType ToWebPointerType(
     case MotionEvent::TOOL_TYPE_MOUSE:
       return WebPointerProperties::PointerType::Mouse;
     case MotionEvent::TOOL_TYPE_ERASER:
-      return WebPointerProperties::PointerType::Unknown;
+      return WebPointerProperties::PointerType::Eraser;
   }
   NOTREACHED() << "Invalid MotionEvent::ToolType = " << tool_type;
   return WebPointerProperties::PointerType::Unknown;
+}
+
+int WebEventModifiersToEventFlags(int modifiers) {
+  int flags = 0;
+
+  if (modifiers & blink::WebInputEvent::ShiftKey)
+    flags |= EF_SHIFT_DOWN;
+  if (modifiers & blink::WebInputEvent::ControlKey)
+    flags |= EF_CONTROL_DOWN;
+  if (modifiers & blink::WebInputEvent::AltKey)
+    flags |= EF_ALT_DOWN;
+  if (modifiers & blink::WebInputEvent::MetaKey)
+    flags |= EF_COMMAND_DOWN;
+  if (modifiers & blink::WebInputEvent::CapsLockOn)
+    flags |= EF_CAPS_LOCK_ON;
+  if (modifiers & blink::WebInputEvent::NumLockOn)
+    flags |= EF_NUM_LOCK_ON;
+  if (modifiers & blink::WebInputEvent::ScrollLockOn)
+    flags |= EF_SCROLL_LOCK_ON;
+  if (modifiers & blink::WebInputEvent::LeftButtonDown)
+    flags |= EF_LEFT_MOUSE_BUTTON;
+  if (modifiers & blink::WebInputEvent::MiddleButtonDown)
+    flags |= EF_MIDDLE_MOUSE_BUTTON;
+  if (modifiers & blink::WebInputEvent::RightButtonDown)
+    flags |= EF_RIGHT_MOUSE_BUTTON;
+  if (modifiers & blink::WebInputEvent::IsAutoRepeat)
+    flags |= EF_IS_REPEAT;
+
+  return flags;
+}
+
+blink::WebInputEvent::Modifiers DomCodeToWebInputEventModifiers(DomCode code) {
+  switch (KeycodeConverter::DomCodeToLocation(code)) {
+    case DomKeyLocation::LEFT:
+      return blink::WebInputEvent::IsLeft;
+    case DomKeyLocation::RIGHT:
+      return blink::WebInputEvent::IsRight;
+    case DomKeyLocation::NUMPAD:
+      return blink::WebInputEvent::IsKeyPad;
+    case DomKeyLocation::STANDARD:
+      break;
+  }
+  return static_cast<blink::WebInputEvent::Modifiers>(0);
 }
 
 }  // namespace ui

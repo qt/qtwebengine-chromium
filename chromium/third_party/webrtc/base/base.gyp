@@ -29,6 +29,7 @@
       'target_name': 'rtc_base_approved',
       'type': 'static_library',
       'sources': [
+        'arraysize.h',
         'array_view.h',
         'atomicops.h',
         'bind.h',
@@ -54,6 +55,11 @@
         'event_tracer.h',
         'exp_filter.cc',
         'exp_filter.h',
+        'file.cc',
+        'file.h',
+        'format_macros.h',
+        'function_view.h',
+        'ignore_wundef.h',
         'location.h',
         'location.cc',
         'md5.cc',
@@ -62,21 +68,27 @@
         'md5digest.h',
         'mod_ops.h',
         'onetimeevent.h',
+        'optional.cc',
         'optional.h',
         'platform_file.cc',
         'platform_file.h',
         'platform_thread.cc',
         'platform_thread.h',
         'platform_thread_types.h',
+        'race_checker.cc',
+        'race_checker.h',
         'random.cc',
         'random.h',
         'rate_statistics.cc',
         'rate_statistics.h',
+        'rate_limiter.cc',
+        'rate_limiter.h',
         'ratetracker.cc',
         'ratetracker.h',
         'refcount.h',
         'safe_conversions.h',
         'safe_conversions_impl.h',
+        'sanitizer.h',
         'scoped_ref_ptr.h',
         'stringencode.cc',
         'stringencode.h',
@@ -95,8 +107,19 @@
         'timeutils.cc',
         'timeutils.h',
         'trace_event.h',
+        'type_traits.h',
       ],
       'conditions': [
+        ['os_posix==1', {
+          'sources': [
+            'file_posix.cc',
+          ],
+        }],
+        ['OS=="win"', {
+          'sources': [
+            'file_win.cc',
+          ],
+        }],
         ['build_with_chromium==1', {
           'dependencies': [
             '<(DEPTH)/base/base.gyp:base',
@@ -125,6 +148,13 @@
             },
           },
         }], # OS=="mac" and build_with_chromium==0
+        ['OS=="android"', {
+          'link_settings': {
+            'libraries': [
+              '-llog',
+            ],
+          },
+        }],
       ],
     },
     {
@@ -134,33 +164,57 @@
         'rtc_base_approved',
       ],
       'sources': [
-        'task_queue.h',
-        'task_queue_posix.h',
+        'sequenced_task_checker.h',
+        'sequenced_task_checker_impl.cc',
+        'sequenced_task_checker_impl.h',
+        'weak_ptr.cc',
+        'weak_ptr.h',
       ],
       'conditions': [
-        ['build_libevent==1', {
-          'dependencies': [
-            '<(DEPTH)/base/third_party/libevent/libevent.gyp:libevent',
+        ['build_with_chromium==1', {
+          'include_dirs': [
+            '../../webrtc_overrides'
           ],
-        }],
-        ['enable_libevent==1', {
-          'sources': [
-            'task_queue_libevent.cc',
-            'task_queue_posix.cc',
+          'sources' : [
+            '../../webrtc_overrides/webrtc/base/task_queue.cc',
+            '../../webrtc_overrides/webrtc/base/task_queue.h',
+          ]
+        } , {
+          # If not build for chromium, use our own implementation.
+          'sources' : [
+            'task_queue.h',
+            'task_queue_posix.h',
           ],
-        }, {
-          # If not libevent, fall back to the other task queues.
           'conditions': [
-            ['OS=="mac" or OS=="ios"', {
-             'sources': [
-               'task_queue_gcd.cc',
-               'task_queue_posix.cc',
-             ],
+            ['build_libevent==1', {
+              'dependencies': [
+                '<(DEPTH)/base/third_party/libevent/libevent.gyp:libevent',
+              ],
             }],
-            ['OS=="win"', {
-              'sources': [ 'task_queue_win.cc' ],
-            }]
-          ],
+            ['enable_libevent==1', {
+              'sources': [
+                'task_queue_libevent.cc',
+                'task_queue_posix.cc',
+              ],
+              'defines': [ 'WEBRTC_BUILD_LIBEVENT' ],
+              'all_dependent_settings': {
+                'defines': [ 'WEBRTC_BUILD_LIBEVENT' ]
+              },
+            }, {
+              # If not libevent, fall back to the other task queues.
+              'conditions': [
+                ['OS=="mac" or OS=="ios"', {
+                 'sources': [
+                   'task_queue_gcd.cc',
+                   'task_queue_posix.cc',
+                 ],
+                }],
+                ['OS=="win"', {
+                  'sources': [ 'task_queue_win.cc' ],
+                }]
+              ],
+            }],
+          ]
         }],
       ],
     },
@@ -181,7 +235,7 @@
         'LOGGING=1',
       ],
       'sources': [
-        'arraysize.h',
+        'applefilesystem.mm',
         'asyncfile.cc',
         'asyncfile.h',
         'asyncinvoker.cc',
@@ -217,7 +271,6 @@
         'firewallsocketserver.h',
         'flags.cc',
         'flags.h',
-        'format_macros.h',
         'gunit_prod.h',
         'helpers.cc',
         'helpers.h',
@@ -230,7 +283,6 @@
         'httpcommon.h',
         'httprequest.cc',
         'httprequest.h',
-        'iosfilesystem.mm',
         'ipaddress.cc',
         'ipaddress.h',
         'linked_ptr.h',
@@ -315,12 +367,8 @@
         'taskrunner.h',
         'thread.cc',
         'thread.h',
-        'timing.cc',
-        'timing.h',
         'urlencode.cc',
         'urlencode.h',
-        'worker.cc',
-        'worker.h',
       ],
       # TODO(henrike): issue 3307, make rtc_base build without disabling
       # these flags.
@@ -335,10 +383,6 @@
           'HAVE_OPENSSL_SSL_H',
         ],
       },
-      'include_dirs': [
-        '../../third_party/jsoncpp/overrides/include',
-        '../../third_party/jsoncpp/source/include',
-      ],
       'conditions': [
         ['build_with_chromium==1', {
           'include_dirs': [
@@ -362,8 +406,6 @@
           },
         }, {
           'sources': [
-            'bandwidthsmoother.cc',
-            'bandwidthsmoother.h',
             'callback.h',
             'fileutils_mock.h',
             'httpserver.cc',
@@ -390,7 +432,6 @@
             'referencecountedsingletonfactory.h',
             'rollingaccumulator.h',
             'scopedptrcollection.h',
-            'sec_buffer.h',
             'sslconfig.h',
             'sslroots.h',
             'testbase64.h',
@@ -556,19 +597,6 @@
               },
             },
           },
-          'conditions': [
-            ['target_arch=="ia32"', {
-              'all_dependent_settings': {
-                'link_settings': {
-                  'xcode_settings': {
-                    'OTHER_LDFLAGS': [
-                      '-framework Carbon',
-                    ],
-                  },
-                },
-              },
-            }],
-          ],
         }],
         ['OS=="win" and nacl_untrusted_build==0', {
           'sources': [
@@ -616,11 +644,6 @@
               ],
             },
           }
-        }],
-        ['OS=="ios" or (OS=="mac" and target_arch!="ia32")', {
-          'defines': [
-            'CARBON_DEPRECATED=YES',
-          ],
         }],
         ['OS=="linux" or OS=="android"', {
           'sources': [

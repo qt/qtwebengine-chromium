@@ -4,21 +4,20 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "fpdfsdk/include/fsdk_actionhandler.h"
+#include "fpdfsdk/fsdk_actionhandler.h"
 
 #include <set>
 
-#include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
-#include "fpdfsdk/include/fsdk_define.h"
-#include "fpdfsdk/include/fsdk_mgr.h"
+#include "core/fpdfapi/parser/cpdf_array.h"
+#include "core/fpdfdoc/cpdf_formfield.h"
+#include "core/fpdfdoc/cpdf_interform.h"
+#include "fpdfsdk/cpdfsdk_document.h"
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fpdfsdk/cpdfsdk_interform.h"
+#include "fpdfsdk/fsdk_define.h"
 #include "fpdfsdk/javascript/ijs_context.h"
 #include "fpdfsdk/javascript/ijs_runtime.h"
 #include "third_party/base/stl_util.h"
-
-CPDFSDK_ActionHandler::CPDFSDK_ActionHandler()
-    : m_pFormActionHandler(new CPDFSDK_FormActionHandler) {}
-
-CPDFSDK_ActionHandler::~CPDFSDK_ActionHandler() {}
 
 FX_BOOL CPDFSDK_ActionHandler::DoAction_DocOpen(const CPDF_Action& action,
                                                 CPDFSDK_Document* pDocument) {
@@ -47,7 +46,7 @@ FX_BOOL CPDFSDK_ActionHandler::DoAction_FieldJavaScript(
     CPDFSDK_Document* pDocument,
     CPDF_FormField* pFormField,
     PDFSDK_FieldAction& data) {
-  CPDFDoc_Environment* pEnv = pDocument->GetEnv();
+  CPDFSDK_FormFillEnvironment* pEnv = pDocument->GetEnv();
   ASSERT(pEnv);
   if (pEnv->IsJSInitiated() && JsAction.GetType() == CPDF_Action::JavaScript) {
     CFX_WideString swJS = JsAction.GetJavaScript();
@@ -117,7 +116,7 @@ FX_BOOL CPDFSDK_ActionHandler::ExecuteDocumentOpenAction(
 
   visited->insert(pDict);
 
-  CPDFDoc_Environment* pEnv = pDocument->GetEnv();
+  CPDFSDK_FormFillEnvironment* pEnv = pDocument->GetEnv();
   ASSERT(pEnv);
   if (action.GetType() == CPDF_Action::JavaScript) {
     if (pEnv->IsJSInitiated()) {
@@ -149,7 +148,7 @@ FX_BOOL CPDFSDK_ActionHandler::ExecuteLinkAction(
 
   visited->insert(pDict);
 
-  CPDFDoc_Environment* pEnv = pDocument->GetEnv();
+  CPDFSDK_FormFillEnvironment* pEnv = pDocument->GetEnv();
   ASSERT(pEnv);
   if (action.GetType() == CPDF_Action::JavaScript) {
     if (pEnv->IsJSInitiated()) {
@@ -194,7 +193,7 @@ FX_BOOL CPDFSDK_ActionHandler::ExecuteDocumentPageAction(
 
   visited->insert(pDict);
 
-  CPDFDoc_Environment* pEnv = pDocument->GetEnv();
+  CPDFSDK_FormFillEnvironment* pEnv = pDocument->GetEnv();
   ASSERT(pEnv);
   if (action.GetType() == CPDF_Action::JavaScript) {
     if (pEnv->IsJSInitiated()) {
@@ -241,7 +240,7 @@ FX_BOOL CPDFSDK_ActionHandler::ExecuteFieldAction(
 
   visited->insert(pDict);
 
-  CPDFDoc_Environment* pEnv = pDocument->GetEnv();
+  CPDFSDK_FormFillEnvironment* pEnv = pDocument->GetEnv();
   ASSERT(pEnv);
   if (action.GetType() == CPDF_Action::JavaScript) {
     if (pEnv->IsJSInitiated()) {
@@ -278,7 +277,7 @@ FX_BOOL CPDFSDK_ActionHandler::ExecuteScreenAction(
 
   visited->insert(pDict);
 
-  CPDFDoc_Environment* pEnv = pDocument->GetEnv();
+  CPDFSDK_FormFillEnvironment* pEnv = pDocument->GetEnv();
   ASSERT(pEnv);
   if (action.GetType() == CPDF_Action::JavaScript) {
     if (pEnv->IsJSInitiated()) {
@@ -321,7 +320,7 @@ FX_BOOL CPDFSDK_ActionHandler::ExecuteBookMark(
 
   visited->insert(pDict);
 
-  CPDFDoc_Environment* pEnv = pDocument->GetEnv();
+  CPDFSDK_FormFillEnvironment* pEnv = pDocument->GetEnv();
   ASSERT(pEnv);
   if (action.GetType() == CPDF_Action::JavaScript) {
     if (pEnv->IsJSInitiated()) {
@@ -381,27 +380,19 @@ void CPDFSDK_ActionHandler::DoAction_NoJs(const CPDF_Action& action,
     case CPDF_Action::Movie:
       break;
     case CPDF_Action::Hide:
-      if (m_pFormActionHandler) {
-        m_pFormActionHandler->DoAction_Hide(action, pDocument);
-      }
+      DoAction_Hide(action, pDocument);
       break;
     case CPDF_Action::Named:
       DoAction_Named(pDocument, action);
       break;
     case CPDF_Action::SubmitForm:
-      if (m_pFormActionHandler) {
-        m_pFormActionHandler->DoAction_SubmitForm(action, pDocument);
-      }
+      DoAction_SubmitForm(action, pDocument);
       break;
     case CPDF_Action::ResetForm:
-      if (m_pFormActionHandler) {
-        m_pFormActionHandler->DoAction_ResetForm(action, pDocument);
-      }
+      DoAction_ResetForm(action, pDocument);
       break;
     case CPDF_Action::ImportData:
-      if (m_pFormActionHandler) {
-        m_pFormActionHandler->DoAction_ImportData(action, pDocument);
-      }
+      DoAction_ImportData(action, pDocument);
       break;
     case CPDF_Action::JavaScript:
       ASSERT(FALSE);
@@ -447,8 +438,8 @@ void CPDFSDK_ActionHandler::DoAction_GoTo(CPDFSDK_Document* pDocument,
     sizeOfAry = j;
   }
 
-  CPDFDoc_Environment* pApp = pDocument->GetEnv();
-  pApp->FFI_DoGoToAction(nPageIndex, nFitType, pPosAry, sizeOfAry);
+  CPDFSDK_FormFillEnvironment* pApp = pDocument->GetEnv();
+  pApp->DoGoToAction(nPageIndex, nFitType, pPosAry, sizeOfAry);
   delete[] pPosAry;
 }
 
@@ -462,9 +453,9 @@ void CPDFSDK_ActionHandler::DoAction_URI(CPDFSDK_Document* pDocument,
                                          const CPDF_Action& action) {
   ASSERT(action.GetDict());
 
-  CPDFDoc_Environment* pApp = pDocument->GetEnv();
+  CPDFSDK_FormFillEnvironment* pApp = pDocument->GetEnv();
   CFX_ByteString sURI = action.GetURI(pDocument->GetPDFDocument());
-  pApp->FFI_DoURIAction(sURI.c_str());
+  pApp->DoURIAction(sURI.c_str());
 }
 
 void CPDFSDK_ActionHandler::DoAction_Named(CPDFSDK_Document* pDocument,
@@ -472,7 +463,7 @@ void CPDFSDK_ActionHandler::DoAction_Named(CPDFSDK_Document* pDocument,
   ASSERT(action.GetDict());
 
   CFX_ByteString csName = action.GetNamedAction();
-  pDocument->GetEnv()->FFI_ExecuteNamedAction(csName.c_str());
+  pDocument->GetEnv()->ExecuteNamedAction(csName.c_str());
 }
 
 void CPDFSDK_ActionHandler::DoAction_SetOCGState(CPDFSDK_Document* pDocument,
@@ -604,8 +595,8 @@ void CPDFSDK_ActionHandler::RunDocumentPageJavaScript(
   pRuntime->ReleaseContext(pContext);
 }
 
-FX_BOOL CPDFSDK_FormActionHandler::DoAction_Hide(const CPDF_Action& action,
-                                                 CPDFSDK_Document* pDocument) {
+FX_BOOL CPDFSDK_ActionHandler::DoAction_Hide(const CPDF_Action& action,
+                                             CPDFSDK_Document* pDocument) {
   CPDFSDK_InterForm* pInterForm = pDocument->GetInterForm();
   if (pInterForm->DoAction_Hide(action)) {
     pDocument->SetChangeMark();
@@ -615,21 +606,20 @@ FX_BOOL CPDFSDK_FormActionHandler::DoAction_Hide(const CPDF_Action& action,
   return FALSE;
 }
 
-FX_BOOL CPDFSDK_FormActionHandler::DoAction_SubmitForm(
+FX_BOOL CPDFSDK_ActionHandler::DoAction_SubmitForm(
     const CPDF_Action& action,
     CPDFSDK_Document* pDocument) {
   CPDFSDK_InterForm* pInterForm = pDocument->GetInterForm();
   return pInterForm->DoAction_SubmitForm(action);
 }
 
-FX_BOOL CPDFSDK_FormActionHandler::DoAction_ResetForm(
-    const CPDF_Action& action,
-    CPDFSDK_Document* pDocument) {
+FX_BOOL CPDFSDK_ActionHandler::DoAction_ResetForm(const CPDF_Action& action,
+                                                  CPDFSDK_Document* pDocument) {
   CPDFSDK_InterForm* pInterForm = pDocument->GetInterForm();
   return pInterForm->DoAction_ResetForm(action);
 }
 
-FX_BOOL CPDFSDK_FormActionHandler::DoAction_ImportData(
+FX_BOOL CPDFSDK_ActionHandler::DoAction_ImportData(
     const CPDF_Action& action,
     CPDFSDK_Document* pDocument) {
   CPDFSDK_InterForm* pInterForm = pDocument->GetInterForm();

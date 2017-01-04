@@ -24,6 +24,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/network_interfaces.h"
 #include "net/dns/host_resolver.h"
+#include "net/log/net_log_with_source.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver_error_observer.h"
 #include "net/proxy/proxy_resolver_v8.h"
@@ -284,7 +285,7 @@ class Job : public base::RefCountedThreadSafe<Job>,
   // Handle to the outstanding request in the HostResolver, or NULL.
   // This is mutated and used on the origin thread, however it may be read by
   // the worker thread for some DCHECKS().
-  HostResolver::RequestHandle pending_dns_;
+  std::unique_ptr<HostResolver::Request> pending_dns_;
 
   // Indicates if the outstanding DNS request completed synchronously. Written
   // on the origin thread, and read by the worker thread.
@@ -338,8 +339,7 @@ Job::Job(const Job::Params* params,
       bindings_(std::move(bindings)),
       event_(base::WaitableEvent::ResetPolicy::MANUAL,
              base::WaitableEvent::InitialState::NOT_SIGNALED),
-      last_num_dns_(0),
-      pending_dns_(NULL) {
+      last_num_dns_(0) {
   CheckIsOnOriginThread();
 }
 
@@ -394,10 +394,7 @@ void Job::Cancel() {
 
   ReleaseCallback();
 
-  if (pending_dns_) {
-    host_resolver()->CancelRequest(pending_dns_);
-    pending_dns_ = NULL;
-  }
+  pending_dns_.reset();
 
   // The worker thread might be blocked waiting for DNS.
   event_.Signal();
@@ -710,11 +707,11 @@ void Job::DoDnsOperation() {
   if (cancelled_.IsSet())
     return;
 
-  HostResolver::RequestHandle dns_request = NULL;
+  std::unique_ptr<HostResolver::Request> dns_request;
   int result = host_resolver()->Resolve(
       MakeDnsRequestInfo(pending_dns_host_, pending_dns_op_), DEFAULT_PRIORITY,
       &pending_dns_addresses_, base::Bind(&Job::OnDnsOperationComplete, this),
-      &dns_request, bindings_->GetBoundNetLog());
+      &dns_request, bindings_->GetNetLogWithSource());
 
   pending_dns_completed_synchronously_ = result != ERR_IO_PENDING;
 
@@ -728,7 +725,7 @@ void Job::DoDnsOperation() {
     OnDnsOperationComplete(result);
   } else {
     DCHECK(dns_request);
-    pending_dns_ = dns_request;
+    pending_dns_ = std::move(dns_request);
     // OnDnsOperationComplete() will be called by host resolver on completion.
   }
 
@@ -747,7 +744,7 @@ void Job::OnDnsOperationComplete(int result) {
 
   SaveDnsToLocalCache(pending_dns_host_, pending_dns_op_, result,
                       pending_dns_addresses_);
-  pending_dns_ = NULL;
+  pending_dns_.reset();
 
   if (blocking_dns_) {
     event_.Signal();

@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/fx_ext.h"
 #include "xfa/fde/cfde_path.h"
 #include "xfa/fde/css/fde_csscache.h"
 #include "xfa/fde/css/fde_cssstyleselector.h"
@@ -17,9 +17,10 @@
 #include "xfa/fde/xml/fde_xml_imp.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fxfa/app/xfa_ffwidgetacc.h"
-#include "xfa/fxfa/include/xfa_ffapp.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_fontmgr.h"
+#include "xfa/fxfa/parser/cxfa_measurement.h"
+#include "xfa/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_fontmgr.h"
 
 CXFA_CSSTagProvider::CXFA_CSSTagProvider()
     : m_bTagAvailable(FALSE), m_bContent(FALSE) {}
@@ -95,8 +96,7 @@ void CXFA_TextParser::InitCSSData(CXFA_TextProvider* pTextProvider) {
     CXFA_FFDoc* pDoc = pTextProvider->GetDocNode();
     IFGAS_FontMgr* pFontMgr = pDoc->GetApp()->GetFDEFontMgr();
     ASSERT(pFontMgr);
-    m_pSelector.reset(new CFDE_CSSStyleSelector);
-    m_pSelector->SetFontMgr(pFontMgr);
+    m_pSelector.reset(new CFDE_CSSStyleSelector(pFontMgr));
     FX_FLOAT fFontSize = 10;
     CXFA_Font font = pTextProvider->GetFontNode();
     if (font) {
@@ -251,8 +251,8 @@ void CXFA_TextParser::DoParse(CFDE_XMLNode* pXMLContainer,
   if (!pXMLContainer || !pTextProvider || m_pAllocator) {
     return;
   }
-  m_pAllocator.reset(IFX_MemoryAllocator::Create(FX_ALLOCTYPE_Fixed, 32,
-                                                 sizeof(CXFA_CSSTagProvider)));
+  m_pAllocator = IFX_MemoryAllocator::Create(FX_ALLOCTYPE_Fixed, 32,
+                                             sizeof(CXFA_CSSTagProvider));
   InitCSSData(pTextProvider);
   IFDE_CSSComputedStyle* pRootStyle = CreateRootStyle(pTextProvider);
   ParseRichText(pXMLContainer, pRootStyle);
@@ -688,6 +688,7 @@ FX_BOOL CXFA_TextParser::GetTabstops(
   }
   return TRUE;
 }
+
 CXFA_TextLayout::CXFA_TextLayout(CXFA_TextProvider* pTextProvider)
     : m_bHasBlock(FALSE),
       m_pTextProvider(pTextProvider),
@@ -698,23 +699,36 @@ CXFA_TextLayout::CXFA_TextLayout(CXFA_TextProvider* pTextProvider)
       m_bBlockContinue(TRUE) {
   ASSERT(m_pTextProvider);
 }
+
 CXFA_TextLayout::~CXFA_TextLayout() {
   m_textParser.Reset();
   Unload();
 }
+
 void CXFA_TextLayout::Unload() {
-  int32_t iCount = m_pieceLines.GetSize();
-  for (int32_t i = 0; i < iCount; i++) {
+  for (int32_t i = 0; i < m_pieceLines.GetSize(); i++) {
     CXFA_PieceLine* pLine = m_pieceLines.GetAt(i);
+    for (int32_t i = 0; i < pLine->m_textPieces.GetSize(); i++) {
+      XFA_TextPiece* pPiece = pLine->m_textPieces.GetAt(i);
+      // Release text and widths in a text piece.
+      m_pAllocator->Free(pPiece->pszText);
+      m_pAllocator->Free(pPiece->pWidths);
+      // Release text piece.
+      FXTARGET_DeleteWith(XFA_TextPiece, m_pAllocator.get(), pPiece);
+    }
+    pLine->m_textPieces.RemoveAll();
+    // Release line.
     FXTARGET_DeleteWith(CXFA_PieceLine, m_pAllocator.get(), pLine);
   }
   m_pieceLines.RemoveAll();
   m_pBreak.reset();
   m_pAllocator.reset();
 }
+
 const CXFA_PieceLineArray* CXFA_TextLayout::GetPieceLines() {
   return &m_pieceLines;
 }
+
 void CXFA_TextLayout::GetTextDataNode() {
   if (!m_pTextProvider) {
     return;
@@ -1293,8 +1307,7 @@ FX_BOOL CXFA_TextLayout::Loader(const CFX_SizeF& szText,
                                 FX_FLOAT& fLinePos,
                                 FX_BOOL bSavePieces) {
   if (!m_pAllocator) {
-    m_pAllocator.reset(
-        IFX_MemoryAllocator::Create(FX_ALLOCTYPE_Static, 256, 0));
+    m_pAllocator = IFX_MemoryAllocator::Create(FX_ALLOCTYPE_Static, 256, 0);
   }
   GetTextDataNode();
   if (!m_pTextDataNode)

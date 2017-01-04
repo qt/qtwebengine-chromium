@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/common/content_export.h"
@@ -31,14 +32,25 @@ class SSLHostStateDelegate {
     ALLOWED
   };
 
+  // The types of nonsecure subresources that this class keeps track of.
+  enum InsecureContentType {
+    // A  MIXED subresource was loaded over HTTP on an HTTPS page.
+    MIXED_CONTENT,
+    // A CERT_ERRORS subresource was loaded over HTTPS with certificate
+    // errors on an HTTPS page.
+    CERT_ERRORS_CONTENT,
+  };
+
   // Records that |cert| is permitted to be used for |host| in the future, for
   // a specified |error| type.
   virtual void AllowCert(const std::string&,
                          const net::X509Certificate& cert,
                          net::CertStatus error) = 0;
 
-  // Clear all allow preferences.
-  virtual void Clear() = 0;
+  // Clear allow preferences matched by |host_filter|. If the filter is null,
+  // clear all preferences.
+  virtual void Clear(
+      const base::Callback<bool(const std::string&)>& host_filter) = 0;
 
   // Queries whether |cert| is allowed for |host| and |error|. Returns true in
   // |expired_previous_decision| if a previous user decision expired immediately
@@ -48,12 +60,17 @@ class SSLHostStateDelegate {
                                    net::CertStatus error,
                                    bool* expired_previous_decision) = 0;
 
-  // Records that a host has run insecure content.
-  virtual void HostRanInsecureContent(const std::string& host, int pid) = 0;
+  // Records that a host has run insecure content of the given |content_type|.
+  virtual void HostRanInsecureContent(const std::string& host,
+                                      int child_id,
+                                      InsecureContentType content_type) = 0;
 
-  // Returns whether the specified host ran insecure content.
-  virtual bool DidHostRunInsecureContent(const std::string& host,
-                                         int pid) const = 0;
+  // Returns whether the specified host ran insecure content of the given
+  // |content_type|.
+  virtual bool DidHostRunInsecureContent(
+      const std::string& host,
+      int child_id,
+      InsecureContentType content_type) const = 0;
 
   // Revokes all SSL certificate error allow exceptions made by the user for
   // |host|.

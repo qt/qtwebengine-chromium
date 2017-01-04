@@ -31,17 +31,16 @@
 #include "ui/gl/scoped_make_current.h"
 #include "ui/gl/sync_control_vsync_provider.h"
 
-#if defined(OS_ANDROID)
-#include <android/native_window_jni.h>
-#endif
-
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
 extern "C" {
 #include <X11/Xlib.h>
 #define Status int
 }
 #include "ui/base/x/x11_util_internal.h"  // nogncheck
-#include "ui/gfx/x/x11_switches.h"  // nogncheck
+#endif
+
+#if defined(OS_ANDROID)
+#include <android/native_window_jni.h>
 #endif
 
 #if !defined(EGL_FIXED_SIZE_ANGLE)
@@ -106,6 +105,8 @@ using ui::GetLastEGLErrorString;
 
 namespace gl {
 
+bool GLSurfaceEGL::initialized_ = false;
+
 #if defined(OS_WIN)
 unsigned int NativeViewGLSurfaceEGL::current_swap_generation_ = 0;
 unsigned int NativeViewGLSurfaceEGL::swaps_this_generation_ = 0;
@@ -116,10 +117,10 @@ const unsigned int MULTISWAP_FRAME_VSYNC_THRESHOLD = 60;
 
 namespace {
 
-EGLDisplay g_display;
-EGLNativeDisplayType g_native_display;
+EGLDisplay g_display = EGL_NO_DISPLAY;
+EGLNativeDisplayType g_native_display = EGL_DEFAULT_DISPLAY;
 
-const char* g_egl_extensions = NULL;
+const char* g_egl_extensions = nullptr;
 bool g_egl_create_context_robustness_supported = false;
 bool g_egl_sync_control_supported = false;
 bool g_egl_window_fixed_size_supported = false;
@@ -176,14 +177,11 @@ EGLDisplay GetPlatformANGLEDisplay(EGLNativeDisplayType native_display,
   }
 
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
-  std::string visualid_str =
-      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kX11VisualID);
-  unsigned int visualid = 0;
-  bool succeed = base::StringToUint(visualid_str, &visualid);
-  DCHECK(succeed);
+  Visual* visual;
+  ui::XVisualManager::GetInstance()->ChooseVisualForWindow(
+      true, &visual, nullptr, nullptr, nullptr);
   display_attribs.push_back(EGL_X11_VISUAL_ID_ANGLE);
-  display_attribs.push_back((EGLint)visualid);
+  display_attribs.push_back(static_cast<EGLint>(XVisualIDFromVisual(visual)));
 #endif
 
   display_attribs.push_back(EGL_NONE);
@@ -250,141 +248,135 @@ bool ValidateEglConfig(EGLDisplay display,
     return false;
   }
   if (*num_configs == 0) {
-    LOG(ERROR) << "No suitable EGL configs found.";
     return false;
   }
   return true;
 }
 
 EGLConfig ChooseConfig(GLSurface::Format format) {
-  static std::map<GLSurface::Format, EGLConfig> config_map;
-
-  if (config_map.find(format) != config_map.end()) {
-    return config_map[format];
-  }
-
   // Choose an EGL configuration.
   // On X this is only used for PBuffer surfaces.
-  EGLint renderable_type = EGL_OPENGL_ES2_BIT;
+  std::vector<EGLint> renderable_types;
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableUnsafeES3APIs)) {
-    renderable_type = EGL_OPENGL_ES3_BIT;
+    renderable_types.push_back(EGL_OPENGL_ES3_BIT);
   }
+  renderable_types.push_back(EGL_OPENGL_ES2_BIT);
 
   EGLint buffer_size = 32;
   EGLint alpha_size = 8;
 
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kWindowDepth)) {
-    std::string depth =
-        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kWindowDepth);
-
-    bool succeed = base::StringToInt(depth, &buffer_size);
-    DCHECK(succeed);
-
-    alpha_size = buffer_size == 32 ? 8 : 0;
-  }
+  ui::XVisualManager::GetInstance()->ChooseVisualForWindow(
+      true, nullptr, &buffer_size, nullptr, nullptr);
+  alpha_size = buffer_size == 32 ? 8 : 0;
 #endif
 
   EGLint surface_type = (format == GLSurface::SURFACE_SURFACELESS)
                             ? EGL_DONT_CARE
                             : EGL_WINDOW_BIT | EGL_PBUFFER_BIT;
 
-  EGLint config_attribs_8888[] = {
-    EGL_BUFFER_SIZE, buffer_size,
-    EGL_ALPHA_SIZE, alpha_size,
-    EGL_BLUE_SIZE, 8,
-    EGL_GREEN_SIZE, 8,
-    EGL_RED_SIZE, 8,
-    EGL_RENDERABLE_TYPE, renderable_type,
-    EGL_SURFACE_TYPE, surface_type,
-    EGL_NONE
-  };
+  for (auto renderable_type : renderable_types) {
+    EGLint config_attribs_8888[] = {EGL_BUFFER_SIZE,
+                                    buffer_size,
+                                    EGL_ALPHA_SIZE,
+                                    alpha_size,
+                                    EGL_BLUE_SIZE,
+                                    8,
+                                    EGL_GREEN_SIZE,
+                                    8,
+                                    EGL_RED_SIZE,
+                                    8,
+                                    EGL_RENDERABLE_TYPE,
+                                    renderable_type,
+                                    EGL_SURFACE_TYPE,
+                                    surface_type,
+                                    EGL_NONE};
 
-  EGLint* choose_attributes = config_attribs_8888;
-  EGLint config_attribs_565[] = {
-    EGL_BUFFER_SIZE, 16,
-    EGL_BLUE_SIZE, 5,
-    EGL_GREEN_SIZE, 6,
-    EGL_RED_SIZE, 5,
-    EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-    EGL_SURFACE_TYPE, surface_type,
-    EGL_NONE
-  };
-  if (format == GLSurface::SURFACE_RGB565) {
-    choose_attributes = config_attribs_565;
-  }
+    EGLint config_attribs_565[] = {EGL_BUFFER_SIZE,
+                                   16,
+                                   EGL_BLUE_SIZE,
+                                   5,
+                                   EGL_GREEN_SIZE,
+                                   6,
+                                   EGL_RED_SIZE,
+                                   5,
+                                   EGL_RENDERABLE_TYPE,
+                                   renderable_type,
+                                   EGL_SURFACE_TYPE,
+                                   surface_type,
+                                   EGL_NONE};
 
-  EGLint num_configs;
-  EGLint config_size = 1;
-  EGLConfig config = nullptr;
-  EGLConfig* config_data = &config;
-  // Validate if there are any configs for given attribs.
-  if (!ValidateEglConfig(g_display, choose_attributes, &num_configs)) {
-    return config;
-  }
-
-  std::unique_ptr<EGLConfig[]> matching_configs(new EGLConfig[num_configs]);
-  if (format == GLSurface::SURFACE_RGB565) {
-    config_size = num_configs;
-    config_data = matching_configs.get();
-  }
-
-  if (!eglChooseConfig(g_display, choose_attributes, config_data, config_size,
-                       &num_configs)) {
-    LOG(ERROR) << "eglChooseConfig failed with error "
-               << GetLastEGLErrorString();
-    return config;
-  }
-
-  if (format == GLSurface::SURFACE_RGB565) {
-    // Because of the EGL config sort order, we have to iterate
-    // through all of them (it'll put higher sum(R,G,B) bits
-    // first with the above attribs).
-    bool match_found = false;
-    for (int i = 0; i < num_configs; i++) {
-      EGLint red, green, blue, alpha;
-      // Read the relevant attributes of the EGLConfig.
-      if (eglGetConfigAttrib(g_display, matching_configs[i],
-                             EGL_RED_SIZE, &red) &&
-          eglGetConfigAttrib(g_display, matching_configs[i],
-                             EGL_BLUE_SIZE, &blue) &&
-          eglGetConfigAttrib(g_display, matching_configs[i],
-                             EGL_GREEN_SIZE, &green) &&
-          eglGetConfigAttrib(g_display, matching_configs[i],
-                             EGL_ALPHA_SIZE, &alpha) &&
-          alpha == 0 &&
-          red == 5 &&
-          green == 6 &&
-          blue == 5) {
-        config = matching_configs[i];
-        match_found = true;
-        break;
-      }
+    EGLint* choose_attributes = config_attribs_8888;
+    if (format == GLSurface::SURFACE_RGB565) {
+      choose_attributes = config_attribs_565;
     }
-    if (!match_found) {
-      // To fall back to default 32 bit format, choose with
-      // the right attributes again.
-      if (!ValidateEglConfig(g_display,
-                             config_attribs_8888,
+
+    EGLint num_configs;
+    EGLint config_size = 1;
+    EGLConfig config = nullptr;
+    EGLConfig* config_data = &config;
+    // Validate if there are any configs for given attribs.
+    if (!ValidateEglConfig(g_display, choose_attributes, &num_configs)) {
+      // Try the next renderable_type
+      continue;
+    }
+
+    std::unique_ptr<EGLConfig[]> matching_configs(new EGLConfig[num_configs]);
+    if (format == GLSurface::SURFACE_RGB565) {
+      config_size = num_configs;
+      config_data = matching_configs.get();
+    }
+
+    if (!eglChooseConfig(g_display, choose_attributes, config_data, config_size,
+                         &num_configs)) {
+      LOG(ERROR) << "eglChooseConfig failed with error "
+                 << GetLastEGLErrorString();
+      return config;
+    }
+
+    if (format == GLSurface::SURFACE_RGB565) {
+      // Because of the EGL config sort order, we have to iterate
+      // through all of them (it'll put higher sum(R,G,B) bits
+      // first with the above attribs).
+      bool match_found = false;
+      for (int i = 0; i < num_configs; i++) {
+        EGLint red, green, blue, alpha;
+        // Read the relevant attributes of the EGLConfig.
+        if (eglGetConfigAttrib(g_display, matching_configs[i], EGL_RED_SIZE,
+                               &red) &&
+            eglGetConfigAttrib(g_display, matching_configs[i], EGL_BLUE_SIZE,
+                               &blue) &&
+            eglGetConfigAttrib(g_display, matching_configs[i], EGL_GREEN_SIZE,
+                               &green) &&
+            eglGetConfigAttrib(g_display, matching_configs[i], EGL_ALPHA_SIZE,
+                               &alpha) &&
+            alpha == 0 && red == 5 && green == 6 && blue == 5) {
+          config = matching_configs[i];
+          match_found = true;
+          break;
+        }
+      }
+      if (!match_found) {
+        // To fall back to default 32 bit format, choose with
+        // the right attributes again.
+        if (!ValidateEglConfig(g_display, config_attribs_8888, &num_configs)) {
+          // Try the next renderable_type
+          continue;
+        }
+        if (!eglChooseConfig(g_display, config_attribs_8888, &config, 1,
                              &num_configs)) {
-        return config;
-      }
-      if (!eglChooseConfig(g_display,
-                           config_attribs_8888,
-                           &config,
-                           1,
-                           &num_configs)) {
-        LOG(ERROR) << "eglChooseConfig failed with error "
-                   << GetLastEGLErrorString();
-        return config;
+          LOG(ERROR) << "eglChooseConfig failed with error "
+                     << GetLastEGLErrorString();
+          return config;
+        }
       }
     }
+    return config;
   }
-  config_map[format] = config;
-  return config;
+
+  LOG(ERROR) << "No suitable EGL configs found.";
+  return nullptr;
 }
 
 }  // namespace
@@ -447,14 +439,35 @@ void GetEGLInitDisplays(bool supports_angle_d3d,
 
 GLSurfaceEGL::GLSurfaceEGL() {}
 
-bool GLSurfaceEGL::InitializeOneOff() {
-  static bool initialized = false;
-  if (initialized)
+GLSurface::Format GLSurfaceEGL::GetFormat() {
+  return format_;
+}
+
+EGLDisplay GLSurfaceEGL::GetDisplay() {
+  return g_display;
+}
+
+EGLConfig GLSurfaceEGL::GetConfig() {
+  if (!config_) {
+    config_ = ChooseConfig(format_);
+  }
+  return config_;
+}
+
+// static
+bool GLSurfaceEGL::InitializeOneOff(EGLNativeDisplayType native_display) {
+  if (initialized_)
     return true;
 
-  InitializeDisplay();
+  // Must be called before InitializeDisplay().
+  g_driver_egl.InitializeClientExtensionBindings();
+
+  InitializeDisplay(native_display);
   if (g_display == EGL_NO_DISPLAY)
     return false;
+
+  // Must be called after InitializeDisplay().
+  g_driver_egl.InitializeExtensionBindings();
 
   g_egl_extensions = eglQueryString(g_display, EGL_EXTENSIONS);
   g_egl_create_context_robustness_supported =
@@ -502,51 +515,59 @@ bool GLSurfaceEGL::InitializeOneOff() {
     }
   }
 #endif
-
-  initialized = true;
+  initialized_ = true;
 
   return true;
 }
 
-GLSurface::Format GLSurfaceEGL::GetFormat() {
-  return format_;
+// static
+void GLSurfaceEGL::ResetForTesting() {
+  if (g_display != EGL_NO_DISPLAY)
+    eglTerminate(g_display);
+  g_display = EGL_NO_DISPLAY;
+
+  g_egl_extensions = nullptr;
+  g_egl_create_context_robustness_supported = false;
+  g_egl_sync_control_supported = false;
+  g_egl_window_fixed_size_supported = false;
+  g_egl_surface_orientation_supported = false;
+  g_use_direct_composition = false;
+  g_egl_surfaceless_context_supported = false;
+
+  initialized_ = false;
 }
 
-EGLDisplay GLSurfaceEGL::GetDisplay() {
-  return g_display;
-}
-
-EGLConfig GLSurfaceEGL::GetConfig() {
-  if (!config_) {
-    config_ = ChooseConfig(format_);
-  }
-  return config_;
-}
-
+// static
 EGLDisplay GLSurfaceEGL::GetHardwareDisplay() {
   return g_display;
 }
 
+// static
 EGLNativeDisplayType GLSurfaceEGL::GetNativeDisplay() {
   return g_native_display;
 }
 
+// static
 const char* GLSurfaceEGL::GetEGLExtensions() {
   return g_egl_extensions;
 }
 
+// static
 bool GLSurfaceEGL::HasEGLExtension(const char* name) {
   return ExtensionsContain(GetEGLExtensions(), name);
 }
 
+// static
 bool GLSurfaceEGL::IsCreateContextRobustnessSupported() {
   return g_egl_create_context_robustness_supported;
 }
 
+// static
 bool GLSurfaceEGL::IsEGLSurfacelessContextSupported() {
   return g_egl_surfaceless_context_supported;
 }
 
+// static
 bool GLSurfaceEGL::IsDirectCompositionSupported() {
   return g_use_direct_composition;
 }
@@ -556,12 +577,13 @@ GLSurfaceEGL::~GLSurfaceEGL() {}
 // InitializeDisplay is necessary because the static binding code
 // needs a full Display init before it can query the Display extensions.
 // static
-EGLDisplay GLSurfaceEGL::InitializeDisplay() {
+EGLDisplay GLSurfaceEGL::InitializeDisplay(
+    EGLNativeDisplayType native_display) {
   if (g_display != EGL_NO_DISPLAY) {
     return g_display;
   }
 
-  g_native_display = GetPlatformDefaultEGLNativeDisplay();
+  g_native_display = native_display;
 
   // If EGL_EXT_client_extensions not supported this call to eglQueryString
   // will return NULL.
@@ -615,6 +637,7 @@ NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(EGLNativeWindowType window)
       enable_fixed_size_angle_(false),
       surface_(NULL),
       supports_post_sub_buffer_(false),
+      supports_swap_buffer_with_damage_(false),
       flips_vertically_(false),
       swap_interval_(1) {
 #if defined(OS_ANDROID)
@@ -707,6 +730,11 @@ bool NativeViewGLSurfaceEGL::Initialize(
     supports_post_sub_buffer_ = (surfaceVal && retVal) == EGL_TRUE;
   }
 
+  supports_swap_buffer_with_damage_ =
+      g_driver_egl.ext.b_EGL_KHR_swap_buffers_with_damage &&
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableSwapBuffersWithDamage);
+
   if (sync_provider)
     vsync_provider_.reset(sync_provider.release());
   else if (g_egl_sync_control_supported)
@@ -732,18 +760,16 @@ bool NativeViewGLSurfaceEGL::IsOffscreen() {
   return false;
 }
 
-gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffers() {
-  TRACE_EVENT2("gpu", "NativeViewGLSurfaceEGL:RealSwapBuffers",
-      "width", GetSize().width(),
-      "height", GetSize().height());
-
+void NativeViewGLSurfaceEGL::UpdateSwapInterval() {
 #if defined(OS_WIN)
-  if (swap_interval_ != 0) {
+  if (!g_use_direct_composition && (swap_interval_ != 0)) {
     // This code is a simple way of enforcing that we only vsync if one surface
     // is swapping per frame. This provides single window cases a stable refresh
     // while allowing multi-window cases to not slow down due to multiple syncs
     // on a single thread. A better way to fix this problem would be to have
-    // each surface present on its own thread.
+    // each surface present on its own thread. This is unnecessary with
+    // DirectComposition because that doesn't block swaps, but instead blocks
+    // the first draw into a surface during the next frame.
 
     if (current_swap_generation_ == swap_generation_) {
       if (swaps_this_generation_ > 1)
@@ -771,6 +797,14 @@ gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffers() {
     swaps_this_generation_++;
   }
 #endif
+}
+
+gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffers() {
+  TRACE_EVENT2("gpu", "NativeViewGLSurfaceEGL:RealSwapBuffers",
+      "width", GetSize().width(),
+      "height", GetSize().height());
+
+  UpdateSwapInterval();
 
   if (!CommitAndClearPendingOverlays()) {
     DVLOG(1) << "Failed to commit pending overlay planes.";
@@ -840,6 +874,10 @@ EGLSurface NativeViewGLSurfaceEGL::GetHandle() {
   return surface_;
 }
 
+bool NativeViewGLSurfaceEGL::SupportsSwapBuffersWithDamage() {
+  return supports_swap_buffer_with_damage_;
+}
+
 bool NativeViewGLSurfaceEGL::SupportsPostSubBuffer() {
   return supports_post_sub_buffer_;
 }
@@ -852,11 +890,38 @@ bool NativeViewGLSurfaceEGL::BuffersFlipped() const {
   return g_use_direct_composition;
 }
 
+gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffersWithDamage(int x,
+                                                              int y,
+                                                              int width,
+                                                              int height) {
+  DCHECK(supports_swap_buffer_with_damage_);
+  UpdateSwapInterval();
+  if (!CommitAndClearPendingOverlays()) {
+    DVLOG(1) << "Failed to commit pending overlay planes.";
+    return gfx::SwapResult::SWAP_FAILED;
+  }
+  if (flips_vertically_) {
+    // With EGL_SURFACE_ORIENTATION_INVERT_Y_ANGLE the contents are rendered
+    // inverted, but the damage rectangle is still measured from the
+    // bottom left.
+    y = GetSize().height() - y - height;
+  }
+
+  EGLint damage_rect[4] = {x, y, width, height};
+  if (!eglSwapBuffersWithDamageKHR(GetDisplay(), surface_, damage_rect, 1)) {
+    DVLOG(1) << "eglSwapBuffersWithDamageKHR failed with error "
+             << GetLastEGLErrorString();
+    return gfx::SwapResult::SWAP_FAILED;
+  }
+  return gfx::SwapResult::SWAP_ACK;
+}
+
 gfx::SwapResult NativeViewGLSurfaceEGL::PostSubBuffer(int x,
                                                       int y,
                                                       int width,
                                                       int height) {
   DCHECK(supports_post_sub_buffer_);
+  UpdateSwapInterval();
   if (!CommitAndClearPendingOverlays()) {
     DVLOG(1) << "Failed to commit pending overlay planes.";
     return gfx::SwapResult::SWAP_FAILED;

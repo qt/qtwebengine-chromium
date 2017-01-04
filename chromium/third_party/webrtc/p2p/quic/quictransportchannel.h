@@ -142,13 +142,11 @@ class QuicTransportChannel : public TransportChannelImpl,
   void SetIceTiebreaker(uint64_t tiebreaker) override {
     channel_->SetIceTiebreaker(tiebreaker);
   }
-  void SetIceCredentials(const std::string& ice_ufrag,
-                         const std::string& ice_pwd) override {
-    channel_->SetIceCredentials(ice_ufrag, ice_pwd);
+  void SetIceParameters(const IceParameters& ice_params) override {
+    channel_->SetIceParameters(ice_params);
   }
-  void SetRemoteIceCredentials(const std::string& ice_ufrag,
-                               const std::string& ice_pwd) override {
-    channel_->SetRemoteIceCredentials(ice_ufrag, ice_pwd);
+  void SetRemoteIceParameters(const IceParameters& ice_params) override {
+    channel_->SetRemoteIceParameters(ice_params);
   }
   void SetRemoteIceMode(IceMode mode) override {
     channel_->SetRemoteIceMode(mode);
@@ -165,9 +163,6 @@ class QuicTransportChannel : public TransportChannelImpl,
   }
   void SetIceConfig(const IceConfig& config) override {
     channel_->SetIceConfig(config);
-  }
-  void Connect() override {
-    channel_->Connect();
   }
 
   // QuicPacketWriter overrides.
@@ -213,6 +208,8 @@ class QuicTransportChannel : public TransportChannelImpl,
   QuicTransportState quic_state() const { return quic_state_; }
   // Creates a new QUIC stream that can send data.
   ReliableQuicStream* CreateQuicStream();
+
+  TransportChannelImpl* ice_transport_channel() { return channel_.get(); }
 
   // Emitted when |quic_| creates a QUIC stream to receive data from the remote
   // peer, when the stream did not exist previously.

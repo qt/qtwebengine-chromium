@@ -63,8 +63,9 @@ sk_sp<SkFlattenable> SkLinearGradient::CreateProc(SkReadBuffer& buffer) {
     SkPoint pts[2];
     pts[0] = buffer.readPoint();
     pts[1] = buffer.readPoint();
-    return SkGradientShader::MakeLinear(pts, desc.fColors, desc.fPos, desc.fCount, desc.fTileMode,
-                                        desc.fGradFlags, desc.fLocalMatrix);
+    return SkGradientShader::MakeLinear(pts, desc.fColors, std::move(desc.fColorSpace), desc.fPos,
+                                        desc.fCount, desc.fTileMode, desc.fGradFlags,
+                                        desc.fLocalMatrix);
 }
 
 void SkLinearGradient::flatten(SkWriteBuffer& buffer) const {
@@ -81,8 +82,8 @@ size_t SkLinearGradient::onContextSize(const ContextRec& rec) const {
 
 SkShader::Context* SkLinearGradient::onCreateContext(const ContextRec& rec, void* storage) const {
     return use_4f_context(rec, fGradFlags)
-        ? static_cast<SkShader::Context*>(new (storage) LinearGradient4fContext(*this, rec))
-        : static_cast<SkShader::Context*>(new (storage) LinearGradientContext(*this, rec));
+        ? CheckedCreateContext<LinearGradient4fContext>(storage, *this, rec)
+        : CheckedCreateContext<  LinearGradientContext>(storage, *this, rec);
 }
 
 // This swizzles SkColor into the same component order as SkPMColor, but does not actually
@@ -341,18 +342,48 @@ SkShader::GradientType SkLinearGradient::asAGradient(GradientInfo* info) const {
 
 #if SK_SUPPORT_GPU
 
+#include "GrColorSpaceXform.h"
 #include "glsl/GrGLSLCaps.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "SkGr.h"
 
 /////////////////////////////////////////////////////////////////////
 
-class GrGLLinearGradient : public GrGLGradientEffect {
+class GrLinearGradient : public GrGradientEffect {
 public:
+    class GLSLLinearProcessor;
 
-    GrGLLinearGradient(const GrProcessor&) {}
+    static sk_sp<GrFragmentProcessor> Make(const CreateArgs& args) {
+        return sk_sp<GrFragmentProcessor>(new GrLinearGradient(args));
+    }
 
-    virtual ~GrGLLinearGradient() { }
+    virtual ~GrLinearGradient() { }
+
+    const char* name() const override { return "Linear Gradient"; }
+
+private:
+    GrLinearGradient(const CreateArgs& args)
+        : INHERITED(args) {
+        this->initClassID<GrLinearGradient>();
+    }
+
+    GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
+
+    virtual void onGetGLSLProcessorKey(const GrGLSLCaps& caps,
+                                       GrProcessorKeyBuilder* b) const override;
+
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+
+    typedef GrGradientEffect INHERITED;
+};
+
+/////////////////////////////////////////////////////////////////////
+
+class GrLinearGradient::GLSLLinearProcessor : public GrGradientEffect::GLSLProcessor {
+public:
+    GLSLLinearProcessor(const GrProcessor&) {}
+
+    virtual ~GLSLLinearProcessor() { }
 
     virtual void emitCode(EmitArgs&) override;
 
@@ -361,48 +392,19 @@ public:
     }
 
 private:
-
-    typedef GrGLGradientEffect INHERITED;
+    typedef GrGradientEffect::GLSLProcessor INHERITED;
 };
 
 /////////////////////////////////////////////////////////////////////
 
-class GrLinearGradient : public GrGradientEffect {
-public:
+GrGLSLFragmentProcessor* GrLinearGradient::onCreateGLSLInstance() const {
+    return new GrLinearGradient::GLSLLinearProcessor(*this);
+}
 
-    static sk_sp<GrFragmentProcessor> Make(GrContext* ctx,
-                                           const SkLinearGradient& shader,
-                                           const SkMatrix& matrix,
-                                           SkShader::TileMode tm) {
-        return sk_sp<GrFragmentProcessor>(new GrLinearGradient(ctx, shader, matrix, tm));
-    }
-
-    virtual ~GrLinearGradient() { }
-
-    const char* name() const override { return "Linear Gradient"; }
-
-private:
-    GrLinearGradient(GrContext* ctx,
-                     const SkLinearGradient& shader,
-                     const SkMatrix& matrix,
-                     SkShader::TileMode tm)
-        : INHERITED(ctx, shader, matrix, tm) {
-        this->initClassID<GrLinearGradient>();
-    }
-
-    GrGLSLFragmentProcessor* onCreateGLSLInstance() const override {
-        return new GrGLLinearGradient(*this);
-    }
-
-    virtual void onGetGLSLProcessorKey(const GrGLSLCaps& caps,
-                                       GrProcessorKeyBuilder* b) const override {
-        GrGLLinearGradient::GenKey(*this, caps, b);
-    }
-
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
-
-    typedef GrGradientEffect INHERITED;
-};
+void GrLinearGradient::onGetGLSLProcessorKey(const GrGLSLCaps& caps,
+                                             GrProcessorKeyBuilder* b) const {
+    GrLinearGradient::GLSLLinearProcessor::GenKey(*this, caps, b);
+}
 
 /////////////////////////////////////////////////////////////////////
 
@@ -418,24 +420,27 @@ sk_sp<GrFragmentProcessor> GrLinearGradient::TestCreate(GrProcessorTestData* d) 
     SkShader::TileMode tm;
     int colorCount = RandomGradientParams(d->fRandom, colors, &stops, &tm);
     auto shader = SkGradientShader::MakeLinear(points, colors, stops, colorCount, tm);
-    sk_sp<GrFragmentProcessor> fp = shader->asFragmentProcessor(d->fContext,
-        GrTest::TestMatrix(d->fRandom), NULL, kNone_SkFilterQuality,
-        SkSourceGammaTreatment::kRespect);
+    SkMatrix viewMatrix = GrTest::TestMatrix(d->fRandom);
+    auto dstColorSpace = GrTest::TestColorSpace(d->fRandom);
+    sk_sp<GrFragmentProcessor> fp = shader->asFragmentProcessor(SkShader::AsFPArgs(
+        d->fContext, &viewMatrix, NULL, kNone_SkFilterQuality, dstColorSpace.get(),
+        SkSourceGammaTreatment::kRespect));
     GrAlwaysAssert(fp);
     return fp;
 }
 
 /////////////////////////////////////////////////////////////////////
 
-void GrGLLinearGradient::emitCode(EmitArgs& args) {
+void GrLinearGradient::GLSLLinearProcessor::emitCode(EmitArgs& args) {
     const GrLinearGradient& ge = args.fFp.cast<GrLinearGradient>();
     this->emitUniforms(args.fUniformHandler, ge);
-    SkString t = args.fFragBuilder->ensureFSCoords2D(args.fCoords, 0);
+    SkString t = args.fFragBuilder->ensureCoords2D(args.fTransformedCoords[0]);
     t.append(".x");
     this->emitColor(args.fFragBuilder,
                     args.fUniformHandler,
                     args.fGLSLCaps,
-                    ge, t.c_str(),
+                    ge,
+                    t.c_str(),
                     args.fOutputColor,
                     args.fInputColor,
                     args.fTexSamplers);
@@ -443,28 +448,27 @@ void GrGLLinearGradient::emitCode(EmitArgs& args) {
 
 /////////////////////////////////////////////////////////////////////
 
-sk_sp<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(
-                                                 GrContext* context,
-                                                 const SkMatrix& viewm,
-                                                 const SkMatrix* localMatrix,
-                                                 SkFilterQuality,
-                                                 SkSourceGammaTreatment) const {
-    SkASSERT(context);
+sk_sp<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(const AsFPArgs& args) const {
+    SkASSERT(args.fContext);
 
     SkMatrix matrix;
     if (!this->getLocalMatrix().invert(&matrix)) {
         return nullptr;
     }
-    if (localMatrix) {
+    if (args.fLocalMatrix) {
         SkMatrix inv;
-        if (!localMatrix->invert(&inv)) {
+        if (!args.fLocalMatrix->invert(&inv)) {
             return nullptr;
         }
         matrix.postConcat(inv);
     }
     matrix.postConcat(fPtsToUnit);
 
-    sk_sp<GrFragmentProcessor> inner(GrLinearGradient::Make(context, *this, matrix, fTileMode));
+    sk_sp<GrColorSpaceXform> colorSpaceXform = GrColorSpaceXform::Make(fColorSpace.get(),
+                                                                       args.fDstColorSpace);
+    sk_sp<GrFragmentProcessor> inner(GrLinearGradient::Make(
+        GrGradientEffect::CreateArgs(args.fContext, this, &matrix, fTileMode,
+                                     std::move(colorSpaceXform), SkToBool(args.fDstColorSpace))));
     return GrFragmentProcessor::MulOutputByInputAlpha(std::move(inner));
 }
 

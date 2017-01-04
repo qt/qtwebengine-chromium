@@ -208,7 +208,7 @@ void GpuChannelHost::AddRouteWithTaskRunner(
   io_task_runner->PostTask(
       FROM_HERE,
       base::Bind(&GpuChannelHost::MessageFilter::AddRoute,
-                 channel_filter_.get(), route_id, listener, task_runner));
+                 channel_filter_, route_id, listener, task_runner));
 }
 
 void GpuChannelHost::RemoveRoute(int route_id) {
@@ -216,7 +216,7 @@ void GpuChannelHost::RemoveRoute(int route_id) {
       factory_->GetIOThreadTaskRunner();
   io_task_runner->PostTask(
       FROM_HERE, base::Bind(&GpuChannelHost::MessageFilter::RemoveRoute,
-                            channel_filter_.get(), route_id));
+                            channel_filter_, route_id));
 }
 
 base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
@@ -263,14 +263,13 @@ gfx::GpuMemoryBufferHandle GpuChannelHost::ShareGpuMemoryBufferToGpuProcess(
         handle.native_pixmap_handle.fds.emplace_back(scoped_fd.release(),
                                                      true /* auto_close */);
       }
-      handle.native_pixmap_handle.strides_and_offsets =
-          source_handle.native_pixmap_handle.strides_and_offsets;
+      handle.native_pixmap_handle.planes =
+          source_handle.native_pixmap_handle.planes;
       *requires_sync_point = false;
       return handle;
     }
 #endif
     case gfx::IO_SURFACE_BUFFER:
-    case gfx::SURFACE_TEXTURE_BUFFER:
       *requires_sync_point = true;
       return source_handle;
     default:

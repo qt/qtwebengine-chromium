@@ -9,6 +9,7 @@
 
 #include <utility>
 
+#include "base/debug/activity_tracker.h"
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -47,6 +48,9 @@ bool WaitableEvent::IsSignaled() {
 }
 
 void WaitableEvent::Wait() {
+  // Record the event that this thread is blocking upon (for hang diagnosis).
+  base::debug::ScopedEventWaitActivity event_activity(this);
+
   base::ThreadRestrictions::AssertWaitAllowed();
   DWORD result = WaitForSingleObject(handle_.Get(), INFINITE);
   // It is most unexpected that this should ever fail.  Help consumers learn
@@ -55,8 +59,13 @@ void WaitableEvent::Wait() {
 }
 
 bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
-  base::ThreadRestrictions::AssertWaitAllowed();
+  // Record the event that this thread is blocking upon (for hang diagnosis).
+  base::debug::ScopedEventWaitActivity event_activity(this);
+
   DCHECK_GE(max_time, TimeDelta());
+  if (!max_time.is_zero())
+    base::ThreadRestrictions::AssertWaitAllowed();
+
   // Truncate the timeout to milliseconds. The API specifies that this method
   // can return in less than |max_time| (when returning false), as the argument
   // is the maximum time that a caller is willing to wait.
@@ -77,6 +86,11 @@ bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
 
 // static
 size_t WaitableEvent::WaitMany(WaitableEvent** events, size_t count) {
+  DCHECK(count) << "Cannot wait on no events";
+
+  // Record an event (the first) that this thread is blocking upon.
+  base::debug::ScopedEventWaitActivity event_activity(events[0]);
+
   base::ThreadRestrictions::AssertWaitAllowed();
   HANDLE handles[MAXIMUM_WAIT_OBJECTS];
   CHECK_LE(count, static_cast<size_t>(MAXIMUM_WAIT_OBJECTS))

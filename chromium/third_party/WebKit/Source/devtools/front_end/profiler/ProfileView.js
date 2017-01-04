@@ -5,13 +5,13 @@
 /**
  * @constructor
  * @implements {WebInspector.Searchable}
- * @extends {WebInspector.VBox}
+ * @extends {WebInspector.SimpleView}
  * @param {!WebInspector.ProfileDataGridNode.Formatter} nodeFormatter
  * @param {!Array<string>=} viewTypes
  */
 WebInspector.ProfileView = function(nodeFormatter, viewTypes)
 {
-    WebInspector.VBox.call(this);
+    WebInspector.SimpleView.call(this, WebInspector.UIString("Profile"));
 
     this._searchableView = new WebInspector.SearchableView(this);
     this._searchableView.setPlaceholder(WebInspector.UIString("Find by cost (>50ms), name or file"));
@@ -26,8 +26,8 @@ WebInspector.ProfileView = function(nodeFormatter, viewTypes)
     this._nodeFormatter = nodeFormatter;
 
     var columns = [];
-    columns.push({id: "self", title: this.columnHeader("self"), width: "120px", sort: WebInspector.DataGrid.Order.Descending, sortable: true});
-    columns.push({id: "total", title: this.columnHeader("total"), width: "120px", sortable: true});
+    columns.push({id: "self", title: this.columnHeader("self"), width: "120px", fixedWidth: true, sortable: true, sort: WebInspector.DataGrid.Order.Descending});
+    columns.push({id: "total", title: this.columnHeader("total"), width: "120px", fixedWidth: true, sortable: true});
     columns.push({id: "function", title: WebInspector.UIString("Function"), disclosure: true, sortable: true});
 
     this.dataGrid = new WebInspector.DataGrid(columns);
@@ -72,6 +72,21 @@ WebInspector.ProfileView.ViewTypes = {
     Heavy: "Heavy"
 }
 
+/**
+ * @param {!Array<!{title: string, value: string}>} entryInfo
+ * @return {!Element}
+ */
+WebInspector.ProfileView.buildPopoverTable = function(entryInfo)
+{
+    var table = createElement("table");
+    for (var entry of entryInfo) {
+        var row = table.createChild("tr");
+        row.createChild("td").textContent = entry.title;
+        row.createChild("td").textContent = entry.value;
+    }
+    return table;
+}
+
 WebInspector.ProfileView.prototype = {
     focus: function()
     {
@@ -110,9 +125,10 @@ WebInspector.ProfileView.prototype = {
     },
 
     /**
+     * @override
      * @return {!Array.<!WebInspector.ToolbarItem>}
      */
-    toolbarItems: function()
+    syncToolbarItems: function()
     {
         return [this.viewSelectComboBox, this.focusButton, this.excludeButton, this.resetButton];
     },
@@ -269,7 +285,7 @@ WebInspector.ProfileView.prototype = {
         var script = debuggerModel.scriptForId(node.scriptId);
         if (!script)
             return;
-        var location = /** @type {!WebInspector.DebuggerModel.Location} */ (debuggerModel.createRawLocation(script, node.lineNumber - 1, node.columnNumber ? node.columnNumber - 1 : node.columnNumber));
+        var location = /** @type {!WebInspector.DebuggerModel.Location} */ (debuggerModel.createRawLocation(script, node.lineNumber, node.columnNumber));
         WebInspector.Revealer.reveal(WebInspector.debuggerWorkspaceBinding.rawLocationToUILocation(location));
     },
 
@@ -366,7 +382,7 @@ WebInspector.ProfileView.prototype = {
         this.refresh();
     },
 
-    __proto__: WebInspector.VBox.prototype
+    __proto__: WebInspector.SimpleView.prototype
 }
 
 /**

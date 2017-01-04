@@ -8,10 +8,8 @@
 
 #include "base/logging.h"
 #include "build/build_config.h"
-#include "cc/output/compositor_frame.h"
-#include "cc/output/compositor_frame_ack.h"
-#include "cc/output/gl_frame_data.h"
 #include "cc/output/output_surface_client.h"
+#include "cc/output/output_surface_frame.h"
 #include "cc/resources/resource_provider.h"
 #include "components/display_compositor/compositor_overlay_candidate_validator.h"
 #include "content/browser/compositor/reflector_impl.h"
@@ -23,9 +21,6 @@
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 
-using cc::CompositorFrame;
-using cc::GLFrameData;
-using cc::ResourceProvider;
 using gpu::gles2::GLES2Interface;
 
 namespace content {
@@ -43,8 +38,6 @@ OffscreenBrowserCompositorOutputSurface::
                                      std::move(vsync_manager),
                                      begin_frame_source,
                                      std::move(overlay_candidate_validator)),
-      fbo_(0),
-      is_backbuffer_discarded_(false),
       weak_ptr_factory_(this) {
   capabilities_.uses_default_gl_framebuffer = false;
 }
@@ -55,8 +48,8 @@ OffscreenBrowserCompositorOutputSurface::
 }
 
 void OffscreenBrowserCompositorOutputSurface::EnsureBackbuffer() {
-  is_backbuffer_discarded_ = false;
-
+  bool update_source_texture = !reflector_texture_ || reflector_changed_;
+  reflector_changed_ = false;
   if (!reflector_texture_) {
     reflector_texture_.reset(new ReflectorTexture(context_provider()));
 
@@ -83,14 +76,17 @@ void OffscreenBrowserCompositorOutputSurface::EnsureBackbuffer() {
     gl->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                              GL_TEXTURE_2D, reflector_texture_->texture_id(),
                              0);
-    reflector_->OnSourceTextureMailboxUpdated(
-        reflector_texture_->mailbox());
   }
+
+  // The reflector may be created later or detached and re-attached,
+  // so don't assume it always exists. For example, ChromeOS always
+  // creates a reflector asynchronosly when creating this for software
+  // mirroring.  See |DisplayManager::CreateMirrorWindowAsyncIfAny|.
+  if (reflector_ && update_source_texture)
+    reflector_->OnSourceTextureMailboxUpdated(reflector_texture_->mailbox());
 }
 
 void OffscreenBrowserCompositorOutputSurface::DiscardBackbuffer() {
-  is_backbuffer_discarded_ = true;
-
   GLES2Interface* gl = context_provider_->ContextGL();
 
   if (reflector_texture_) {
@@ -122,8 +118,10 @@ void OffscreenBrowserCompositorOutputSurface::Reshape(
 
 void OffscreenBrowserCompositorOutputSurface::BindFramebuffer() {
   bool need_to_bind = !!reflector_texture_.get();
+
   EnsureBackbuffer();
   DCHECK(reflector_texture_.get());
+  DCHECK(fbo_);
 
   if (need_to_bind) {
     GLES2Interface* gl = context_provider_->ContextGL();
@@ -131,22 +129,18 @@ void OffscreenBrowserCompositorOutputSurface::BindFramebuffer() {
   }
 }
 
-GLenum
-OffscreenBrowserCompositorOutputSurface::GetFramebufferCopyTextureFormat() {
-  return GLCopyTextureInternalFormat(kFboTextureFormat);
-}
-
 void OffscreenBrowserCompositorOutputSurface::SwapBuffers(
-    cc::CompositorFrame frame) {
-  if (reflector_) {
-    if (frame.gl_frame_data->sub_buffer_rect ==
-        gfx::Rect(frame.gl_frame_data->size))
-      reflector_->OnSourceSwapBuffers();
-    else
-      reflector_->OnSourcePostSubBuffer(frame.gl_frame_data->sub_buffer_rect);
-  }
+    cc::OutputSurfaceFrame frame) {
+  gfx::Size surface_size = frame.size;
+  DCHECK(surface_size == surface_size_);
+  gfx::Rect swap_rect = frame.sub_buffer_rect;
 
-  client_->DidSwapBuffers();
+  if (reflector_) {
+    if (swap_rect == gfx::Rect(surface_size))
+      reflector_->OnSourceSwapBuffers(surface_size);
+    else
+      reflector_->OnSourcePostSubBuffer(swap_rect, surface_size);
+  }
 
   // TODO(oshima): sync with the reflector's SwapBuffersComplete
   // (crbug.com/520567).
@@ -158,18 +152,40 @@ void OffscreenBrowserCompositorOutputSurface::SwapBuffers(
   gpu::SyncToken sync_token;
   gl->GenUnverifiedSyncTokenCHROMIUM(fence_sync, sync_token.GetData());
   context_provider_->ContextSupport()->SignalSyncToken(
-      sync_token, base::Bind(&OutputSurface::OnSwapBuffersComplete,
-                             weak_ptr_factory_.GetWeakPtr()));
+      sync_token,
+      base::Bind(
+          &OffscreenBrowserCompositorOutputSurface::OnSwapBuffersComplete,
+          weak_ptr_factory_.GetWeakPtr()));
+}
+
+bool OffscreenBrowserCompositorOutputSurface::IsDisplayedAsOverlayPlane()
+    const {
+  return false;
+}
+
+unsigned OffscreenBrowserCompositorOutputSurface::GetOverlayTextureId() const {
+  return 0;
+}
+
+bool OffscreenBrowserCompositorOutputSurface::SurfaceIsSuspendForRecycle()
+    const {
+  return false;
+}
+
+GLenum
+OffscreenBrowserCompositorOutputSurface::GetFramebufferCopyTextureFormat() {
+  return GLCopyTextureInternalFormat(kFboTextureFormat);
 }
 
 void OffscreenBrowserCompositorOutputSurface::OnReflectorChanged() {
-  if (reflector_)
+  if (reflector_) {
+    reflector_changed_ = true;
     EnsureBackbuffer();
+  }
 }
 
-base::Closure
-OffscreenBrowserCompositorOutputSurface::CreateCompositionStartedCallback() {
-  return base::Closure();
+void OffscreenBrowserCompositorOutputSurface::OnSwapBuffersComplete() {
+  client_->DidSwapBuffersComplete();
 }
 
 }  // namespace content

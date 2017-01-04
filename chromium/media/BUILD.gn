@@ -11,6 +11,7 @@ import("//build/config/ui.gni")
 import("//media/media_options.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
+import("//third_party/ffmpeg/ffmpeg_options.gni")
 
 buildflag_header("media_features") {
   header = "media_features.h"
@@ -20,6 +21,12 @@ buildflag_header("media_features") {
     "ENABLE_HEVC_DEMUXING=$enable_hevc_demuxing",
     "ENABLE_MSE_MPEG2TS_STREAM_PARSER=$enable_mse_mpeg2ts_stream_parser",
   ]
+}
+
+if (proprietary_codecs && media_use_ffmpeg) {
+  assert(
+      ffmpeg_branding != "Chromium",
+      "proprietary codecs and ffmpeg_branding set to Chromium are incompatible")
 }
 
 # Common configuration for targets in the media directory.
@@ -113,6 +120,10 @@ component("media") {
     "cdm/player_tracker_impl.h",
     "cdm/supported_cdm_versions.cc",
     "cdm/supported_cdm_versions.h",
+    "device_monitors/device_monitor_mac.h",
+    "device_monitors/device_monitor_mac.mm",
+    "device_monitors/system_message_window_win.cc",
+    "device_monitors/system_message_window_win.h",
     "filters/audio_clock.cc",
     "filters/audio_clock.h",
     "filters/audio_renderer_algorithm.cc",
@@ -134,8 +145,6 @@ component("media") {
     "filters/decrypting_demuxer_stream.h",
     "filters/decrypting_video_decoder.cc",
     "filters/decrypting_video_decoder.h",
-    "filters/default_media_permission.cc",
-    "filters/default_media_permission.h",
     "filters/file_data_source.cc",
     "filters/frame_processor.cc",
     "filters/frame_processor.h",
@@ -149,8 +158,6 @@ component("media") {
     "filters/ivf_parser.h",
     "filters/jpeg_parser.cc",
     "filters/jpeg_parser.h",
-    "filters/media_source_state.cc",
-    "filters/media_source_state.h",
     "filters/memory_data_source.cc",
     "filters/memory_data_source.h",
     "filters/opus_audio_decoder.cc",
@@ -161,6 +168,8 @@ component("media") {
     "filters/pipeline_controller.h",
     "filters/source_buffer_range.cc",
     "filters/source_buffer_range.h",
+    "filters/source_buffer_state.cc",
+    "filters/source_buffer_state.h",
     "filters/source_buffer_stream.cc",
     "filters/source_buffer_stream.h",
     "filters/stream_parser_factory.cc",
@@ -173,10 +182,16 @@ component("media") {
     "filters/vp8_bool_decoder.h",
     "filters/vp8_parser.cc",
     "filters/vp8_parser.h",
+    "filters/vp9_bool_decoder.cc",
+    "filters/vp9_bool_decoder.h",
+    "filters/vp9_compressed_header_parser.cc",
+    "filters/vp9_compressed_header_parser.h",
     "filters/vp9_parser.cc",
     "filters/vp9_parser.h",
     "filters/vp9_raw_bits_reader.cc",
     "filters/vp9_raw_bits_reader.h",
+    "filters/vp9_uncompressed_header_parser.cc",
+    "filters/vp9_uncompressed_header_parser.h",
     "filters/webvtt_util.h",
     "filters/wsola_internals.cc",
     "filters/wsola_internals.h",
@@ -186,6 +201,8 @@ component("media") {
     "formats/webm/webm_audio_client.h",
     "formats/webm/webm_cluster_parser.cc",
     "formats/webm/webm_cluster_parser.h",
+    "formats/webm/webm_colour_parser.cc",
+    "formats/webm/webm_colour_parser.h",
     "formats/webm/webm_constants.cc",
     "formats/webm/webm_constants.h",
     "formats/webm/webm_content_encodings.cc",
@@ -341,7 +358,7 @@ component("media") {
       "//media/base/android:media_jni_headers",
     ]
 
-    # Only 64 bit builds are using android-21 NDK library, check common.gypi
+    # Only 64 bit builds are using the android-21 NDK library.
     if (current_cpu == "arm64" || current_cpu == "x64" ||
         current_cpu == "mips64el") {
       sources += [
@@ -363,7 +380,6 @@ component("media") {
   if (is_mac) {
     public_deps += [ "//media/base/mac" ]
     libs += [
-      "ApplicationServices.framework",  # Temporary hack around https://crbug.com/620127. Remove after https://crbug.com/622481 is fixed.
       "CoreFoundation.framework",
       "CoreGraphics.framework",
       "Foundation.framework",
@@ -404,8 +420,6 @@ component("media") {
       "formats/mp4/track_run_iterator.h",
       "formats/mpeg/adts_constants.cc",
       "formats/mpeg/adts_constants.h",
-      "formats/mpeg/adts_header_parser.cc",
-      "formats/mpeg/adts_header_parser.h",
       "formats/mpeg/adts_stream_parser.cc",
       "formats/mpeg/adts_stream_parser.h",
       "formats/mpeg/mpeg1_audio_stream_parser.cc",
@@ -457,6 +471,14 @@ component("media") {
     ]
   }
 
+  if (use_udev) {
+    deps += [ "//device/udev_linux" ]
+    sources += [
+      "device_monitors/device_monitor_udev.cc",
+      "device_monitors/device_monitor_udev.h",
+    ]
+  }
+
   public_deps += [
     ":media_features",
     ":shared_memory_support",
@@ -470,7 +492,7 @@ component("media") {
     "//base:i18n",
     "//base/third_party/dynamic_annotations",
     "//crypto",
-    "//crypto:platform",  # TODO(ajwong): This used to be provided by crypto.gyp via export_dependent_settings
+    "//crypto:platform",
     "//gpu/command_buffer/client:gles2_interface",
     "//gpu/command_buffer/common",
     "//skia",
@@ -484,7 +506,7 @@ component("media") {
   ]
 }
 
-source_set("cdm_paths") {
+static_library("cdm_paths") {
   sources = [
     "cdm/cdm_paths.cc",
     "cdm/cdm_paths.h",
@@ -492,28 +514,6 @@ source_set("cdm_paths") {
   deps = [
     "//base",
   ]
-}
-
-# Minimal media component for media/cast on iOS.
-if (is_ios) {
-  component("media_for_cast_ios") {
-    configs += [
-      ":media_config",
-      ":media_implementation",
-    ]
-    all_dependent_configs = [ ":media_dependent_config" ]
-    include_dirs = [ "." ]
-    libs = [ "CoreVideo.framework" ]
-
-    deps = [
-      ":shared_memory_support",
-      "//base",
-      "//gpu/command_buffer/common",
-      "//media/base:base_for_cast_ios",
-      "//media/base/mac",
-      "//ui/gfx/geometry",
-    ]
-  }
 }
 
 test("media_unittests") {
@@ -527,6 +527,7 @@ test("media_unittests") {
     "cdm/simple_cdm_allocator_unittest.cc",
     "cdm/simple_cdm_buffer.cc",
     "cdm/simple_cdm_buffer.h",
+    "device_monitors/system_message_window_win_unittest.cc",
     "filters/audio_clock_unittest.cc",
     "filters/audio_decoder_selector_unittest.cc",
     "filters/audio_renderer_algorithm_unittest.cc",
@@ -546,6 +547,7 @@ test("media_unittests") {
     "filters/jpeg_parser_unittest.cc",
     "filters/memory_data_source_unittest.cc",
     "filters/pipeline_controller_unittest.cc",
+    "filters/source_buffer_state_unittest.cc",
     "filters/source_buffer_stream_unittest.cc",
     "filters/video_cadence_estimator_unittest.cc",
     "filters/video_decoder_selector_unittest.cc",
@@ -564,6 +566,7 @@ test("media_unittests") {
     "formats/webm/tracks_builder.h",
     "formats/webm/webm_cluster_parser_unittest.cc",
     "formats/webm/webm_content_encodings_client_unittest.cc",
+    "formats/webm/webm_crypto_helpers_unittest.cc",
     "formats/webm/webm_parser_unittest.cc",
     "formats/webm/webm_stream_parser_unittest.cc",
     "formats/webm/webm_tracks_parser_unittest.cc",
@@ -756,7 +759,7 @@ test("audio_unittests") {
   ]
 }
 
-source_set("test_support") {
+static_library("test_support") {
   testonly = true
   sources = [
     "renderers/mock_gpu_memory_buffer_video_frame_pool.cc",
@@ -765,6 +768,8 @@ source_set("test_support") {
     "renderers/mock_gpu_video_accelerator_factories.h",
     "video/mock_video_decode_accelerator.cc",
     "video/mock_video_decode_accelerator.h",
+    "video/mock_video_encode_accelerator.cc",
+    "video/mock_video_encode_accelerator.h",
   ]
   public_deps = [
     ":media",
@@ -772,6 +777,7 @@ source_set("test_support") {
   ]
   deps = [
     "//base",
+    "//gpu/command_buffer/common",
     "//skia",
     "//testing/gmock",
     "//testing/gtest",
@@ -784,6 +790,8 @@ component("shared_memory_support") {
   sources = [
     "base/audio_bus.cc",
     "base/audio_bus.h",
+    "base/audio_latency.cc",
+    "base/audio_latency.h",
     "base/audio_parameters.cc",
     "base/audio_parameters.h",
     "base/audio_point.cc",
@@ -851,6 +859,7 @@ fuzzer_test("media_h264_parser_fuzzer") {
   deps = [
     ":media",
     "//base",
+    "//ui/gfx/geometry",
   ]
 }
 
@@ -887,4 +896,15 @@ fuzzer_test("media_vpx_video_decoder_fuzzer") {
   ]
   libfuzzer_options = [ "max_len = 400000" ]
   seed_corpus = "//media/test/data"
+}
+
+fuzzer_test("media_webm_muxer_fuzzer") {
+  sources = [
+    "muxers/webm_muxer_fuzzertest.cc",
+  ]
+  deps = [
+    ":media",
+    "//base",
+    "//third_party/libwebm",
+  ]
 }

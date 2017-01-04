@@ -54,12 +54,14 @@ class ExtensionType:    # RFC 6066 / 4366
     status_request = 5  # RFC 6066 / 4366
     srp = 12            # RFC 5054  
     cert_type = 9       # RFC 6091
+    alpn = 16           # RFC 7301
     signed_cert_timestamps = 18  # RFC 6962
     extended_master_secret = 23  # RFC 7627
     token_binding = 24           # draft-ietf-tokbind-negotiation
     tack = 0xF300
     supports_npn = 13172
     channel_id = 30032
+    renegotiation_info = 0xFF01 # RFC 5746
 
 class HashAlgorithm:
     none = 0

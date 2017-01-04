@@ -8,6 +8,8 @@
 
 namespace content {
 
+void RenderWidgetHostDelegate::GetScreenInfo(ScreenInfo*) {}
+
 bool RenderWidgetHostDelegate::PreHandleKeyboardEvent(
     const NativeWebKeyboardEvent& event,
     bool* is_keyboard_shortcut) {
@@ -68,6 +70,15 @@ bool RenderWidgetHostDelegate::HasMouseLock(
 }
 
 TextInputManager* RenderWidgetHostDelegate::GetTextInputManager() {
+  return nullptr;
+}
+
+bool RenderWidgetHostDelegate::IsHidden() {
+  return false;
+}
+
+RenderWidgetHostImpl* RenderWidgetHostDelegate::GetFullscreenRenderWidgetHost()
+    const {
   return nullptr;
 }
 

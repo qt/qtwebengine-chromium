@@ -20,6 +20,9 @@
 
 namespace {
 
+constexpr size_t kAddressSize = 6;
+constexpr char kInvalidAddress[] = "00:00:00:00:00:00";
+
 // SDP Service attribute IDs.
 constexpr uint16_t kServiceClassIDList = 0x0001;
 constexpr uint16_t kProtocolDescriptorList = 0x0004;
@@ -42,8 +45,6 @@ std::string StripNonHex(const std::string& str) {
 }  // namespace
 
 namespace mojo {
-
-// TODO(smbarber): Add unit tests for Bluetooth type converters.
 
 // static
 arc::mojom::BluetoothAddressPtr
@@ -69,47 +70,15 @@ std::string TypeConverter<std::string, arc::mojom::BluetoothAddress>::Convert(
 
   const mojo::Array<uint8_t>& bytes = address.address;
 
+  if (address.address.size() != kAddressSize)
+    return std::string(kInvalidAddress);
+
   for (size_t k = 0; k < bytes.size(); k++) {
     addr_stream << std::setw(2) << (unsigned int)bytes[k];
     addr_stream << ((k == bytes.size() - 1) ? "" : ":");
   }
 
   return addr_stream.str();
-}
-
-// static
-arc::mojom::BluetoothUUIDPtr
-TypeConverter<arc::mojom::BluetoothUUIDPtr, device::BluetoothUUID>::Convert(
-    const device::BluetoothUUID& uuid) {
-  std::string uuid_str = StripNonHex(uuid.canonical_value());
-
-  std::vector<uint8_t> address_bytes;
-  base::HexStringToBytes(uuid_str, &address_bytes);
-
-  arc::mojom::BluetoothUUIDPtr uuidp = arc::mojom::BluetoothUUID::New();
-  uuidp->uuid = mojo::Array<uint8_t>::From(address_bytes);
-
-  return uuidp;
-}
-
-// static
-device::BluetoothUUID
-TypeConverter<device::BluetoothUUID, arc::mojom::BluetoothUUIDPtr>::Convert(
-    const arc::mojom::BluetoothUUIDPtr& uuid) {
-  std::vector<uint8_t> address_bytes = uuid->uuid.To<std::vector<uint8_t>>();
-
-  // BluetoothUUID expects the format below with the dashes inserted.
-  // xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-  std::string uuid_str =
-      base::HexEncode(address_bytes.data(), address_bytes.size());
-  const size_t uuid_dash_pos[] = {8, 13, 18, 23};
-  for (auto pos : uuid_dash_pos)
-    uuid_str = uuid_str.insert(pos, "-");
-
-  device::BluetoothUUID result(uuid_str);
-
-  DCHECK(result.IsValid());
-  return result;
 }
 
 // static

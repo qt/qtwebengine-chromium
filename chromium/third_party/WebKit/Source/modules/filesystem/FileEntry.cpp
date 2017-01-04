@@ -34,28 +34,28 @@
 #include "core/fileapi/File.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/ErrorCallback.h"
+#include "modules/filesystem/FileSystemCallbacks.h"
 #include "modules/filesystem/FileWriterCallback.h"
 
 namespace blink {
 
 FileEntry::FileEntry(DOMFileSystemBase* fileSystem, const String& fullPath)
-    : Entry(fileSystem, fullPath)
-{
+    : Entry(fileSystem, fullPath) {}
+
+void FileEntry::createWriter(FileWriterCallback* successCallback,
+                             ErrorCallback* errorCallback) {
+  filesystem()->createWriter(this, successCallback,
+                             ScriptErrorCallback::wrap(errorCallback));
 }
 
-void FileEntry::createWriter(FileWriterCallback* successCallback, ErrorCallback* errorCallback)
-{
-    filesystem()->createWriter(this, successCallback, errorCallback);
+void FileEntry::file(BlobCallback* successCallback,
+                     ErrorCallback* errorCallback) {
+  filesystem()->createFile(this, successCallback,
+                           ScriptErrorCallback::wrap(errorCallback));
 }
 
-void FileEntry::file(BlobCallback* successCallback, ErrorCallback* errorCallback)
-{
-    filesystem()->createFile(this, successCallback, errorCallback);
+DEFINE_TRACE(FileEntry) {
+  Entry::trace(visitor);
 }
 
-DEFINE_TRACE(FileEntry)
-{
-    Entry::trace(visitor);
-}
-
-} // namespace blink
+}  // namespace blink

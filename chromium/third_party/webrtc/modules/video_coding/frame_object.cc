@@ -26,16 +26,35 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
                                uint16_t first_seq_num,
                                uint16_t last_seq_num,
                                size_t frame_size,
-                               int times_nacked)
+                               int times_nacked,
+                               int64_t received_time)
     : packet_buffer_(packet_buffer),
       first_seq_num_(first_seq_num),
       last_seq_num_(last_seq_num),
+      received_time_(received_time),
       times_nacked_(times_nacked) {
   size = frame_size;
   VCMPacket* packet = packet_buffer_->GetPacket(first_seq_num);
   if (packet) {
+    // TODO(philipel): Remove when encoded image is replaced by FrameObject.
+    // VCMEncodedFrame members
+    CopyCodecSpecific(&packet->video_header);
+    _completeFrame = true;
+    _payloadType = packet->payloadType;
+    _timeStamp = packet->timestamp;
+    ntp_time_ms_ = packet->ntp_time_ms_;
+    _buffer = new uint8_t[frame_size]();
+    _size = frame_size;
+    _length = frame_size;
+    _frameType = packet->frameType;
+    GetBitstream(_buffer);
+
+    // RtpFrameObject members
     frame_type_ = packet->frameType;
     codec_type_ = packet->codec;
+
+    // FrameObject members
+    timestamp = packet->timestamp;
   }
 }
 
@@ -65,6 +84,18 @@ VideoCodecType RtpFrameObject::codec_type() const {
 
 bool RtpFrameObject::GetBitstream(uint8_t* destination) const {
   return packet_buffer_->GetBitstream(*this, destination);
+}
+
+uint32_t RtpFrameObject::Timestamp() const {
+  return timestamp_;
+}
+
+int64_t RtpFrameObject::ReceivedTime() const {
+  return received_time_;
+}
+
+int64_t RtpFrameObject::RenderTime() const {
+  return _renderTimeMs;
 }
 
 RTPVideoTypeHeader* RtpFrameObject::GetCodecHeader() const {

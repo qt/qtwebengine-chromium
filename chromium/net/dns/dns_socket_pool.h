@@ -11,7 +11,6 @@
 #include "base/macros.h"
 #include "net/base/net_export.h"
 #include "net/base/rand_callback.h"
-#include "net/log/net_log.h"
 
 namespace net {
 
@@ -19,6 +18,7 @@ class ClientSocketFactory;
 class DatagramClientSocket;
 class IPEndPoint;
 class NetLog;
+struct NetLogSource;
 class StreamSocket;
 
 // A DnsSocketPool is an abstraction layer around a ClientSocketFactory that
@@ -26,7 +26,7 @@ class StreamSocket;
 // to DNS servers.
 class NET_EXPORT_PRIVATE DnsSocketPool {
  public:
-  virtual ~DnsSocketPool() { }
+  virtual ~DnsSocketPool();
 
   // Creates a DnsSocketPool that implements the default strategy for managing
   // sockets.  (This varies by platform; see DnsSocketPoolImpl in
@@ -53,7 +53,7 @@ class NET_EXPORT_PRIVATE DnsSocketPool {
       NetLog* net_log) = 0;
 
   // Allocates a socket that is already connected to the nameserver referenced
-  // by |server_index|.  May return a scoped_ptr to NULL if no sockets are
+  // by |server_index|.  May return a std::unique_ptr to NULL if no sockets are
   // available to reuse and the factory fails to produce a socket (or produces
   // one on which Connect fails).
   virtual std::unique_ptr<DatagramClientSocket> AllocateSocket(
@@ -67,7 +67,7 @@ class NET_EXPORT_PRIVATE DnsSocketPool {
   // Creates a StreamSocket from the factory for a transaction over TCP. These
   // sockets are not pooled.
   std::unique_ptr<StreamSocket> CreateTCPSocket(unsigned server_index,
-                                                const NetLog::Source& source);
+                                                const NetLogSource& source);
 
  protected:
   DnsSocketPool(ClientSocketFactory* socket_factory,
@@ -85,7 +85,7 @@ class NET_EXPORT_PRIVATE DnsSocketPool {
 
  private:
   ClientSocketFactory* socket_factory_;
-  const RandIntCallback& rand_int_callback_;
+  const RandIntCallback rand_int_callback_;
   NetLog* net_log_;
   const std::vector<IPEndPoint>* nameservers_;
   bool initialized_;

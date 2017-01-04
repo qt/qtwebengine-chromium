@@ -30,7 +30,6 @@
 #include "core/editing/Position.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/commands/ApplyBlockElementCommand.h"
-#include "core/editing/commands/EditAction.h"
 
 namespace blink {
 
@@ -39,27 +38,33 @@ class Element;
 class Range;
 
 class FormatBlockCommand final : public ApplyBlockElementCommand {
-public:
-    static FormatBlockCommand* create(Document& document, const QualifiedName& tagName)
-    {
-        return new FormatBlockCommand(document, tagName);
-    }
+ public:
+  static FormatBlockCommand* create(Document& document,
+                                    const QualifiedName& tagName) {
+    return new FormatBlockCommand(document, tagName);
+  }
 
-    bool preservesTypingStyle() const override { return true; }
+  bool preservesTypingStyle() const override { return true; }
 
-    static Element* elementForFormatBlockCommand(Range*);
-    bool didApply() const { return m_didApply; }
+  static Element* elementForFormatBlockCommand(Range*);
+  bool didApply() const { return m_didApply; }
 
-private:
-    FormatBlockCommand(Document&, const QualifiedName& tagName);
+ private:
+  FormatBlockCommand(Document&, const QualifiedName& tagName);
 
-    void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection, EditingState*) override;
-    void formatRange(const Position& start, const Position& end, const Position& endOfSelection, HTMLElement*&, EditingState*) override;
-    EditAction editingAction() const override { return EditActionFormatBlock; }
+  void formatSelection(const VisiblePosition& startOfSelection,
+                       const VisiblePosition& endOfSelection,
+                       EditingState*) override;
+  void formatRange(const Position& start,
+                   const Position& end,
+                   const Position& endOfSelection,
+                   HTMLElement*&,
+                   EditingState*) override;
+  InputEvent::InputType inputType() const;
 
-    bool m_didApply;
+  bool m_didApply;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // FormatBlockCommand_h
+#endif  // FormatBlockCommand_h

@@ -18,6 +18,9 @@ class CheckpointElimination final : public AdvancedReducer {
   ~CheckpointElimination() final {}
 
   Reduction Reduce(Node* node) final;
+
+ private:
+  Reduction ReduceCheckpoint(Node* node);
 };
 
 }  // namespace compiler

@@ -29,6 +29,7 @@
 """Unit tests for MockDRT."""
 
 import io
+import optparse
 import unittest
 
 from webkitpy.common.system.systemhost_mock import MockSystemHost
@@ -36,15 +37,11 @@ from webkitpy.layout_tests.port import mock_drt
 from webkitpy.layout_tests.port import port_testcase
 from webkitpy.layout_tests.port import test
 from webkitpy.layout_tests.port.factory import PortFactory
-from webkitpy.tool.mock_tool import MockOptions
-
-
-mock_options = MockOptions(configuration='Release')
 
 
 class MockDRTPortTest(port_testcase.PortTestCase):
 
-    def make_port(self, host=None, options=mock_options):
+    def make_port(self, host=None, options=optparse.Values({'configuration': 'Release'})):
         host = host or MockSystemHost()
         test.add_unit_tests_to_mock_filesystem(host.filesystem)
         return mock_drt.MockDRTPort(host, port_name='mock-mac', options=options)
@@ -77,6 +74,12 @@ class MockDRTPortTest(port_testcase.PortTestCase):
         pass
 
     def test_virtual_test_suites(self):
+        pass
+
+    def test_path_to_apache_config_file(self):
+        pass
+
+    def test_skipped_directories_for_symbols(self):
         pass
 
 
@@ -126,8 +129,8 @@ class MockDRTTest(unittest.TestCase):
         host = host or MockSystemHost()
         test.add_unit_tests_to_mock_filesystem(host.filesystem)
         port = PortFactory(host).get(port_name)
-        drt_input, drt_output = self.make_input_output(port, test_name,
-                                                       pixel_tests, expected_checksum, drt_output, drt_input=None, expected_text=expected_text)
+        drt_input, drt_output = self.make_input_output(
+            port, test_name, pixel_tests, expected_checksum, drt_output, drt_input=None, expected_text=expected_text)
 
         args = ['--run-layout-test', '--platform', port_name, '-']
         stdin = io.BytesIO(drt_input)

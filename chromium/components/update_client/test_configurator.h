@@ -14,14 +14,19 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "components/update_client/configurator.h"
-#include "net/url_request/url_request_test_util.h"
+#include "url/gurl.h"
 
-class GURL;
 class PrefService;
 
 namespace base {
 class SequencedTaskRunner;
+class SingleThreadTaskRunner;
 }  // namespace base
+
+namespace net {
+class TestURLRequestContextGetter;
+class URLRequestContextGetter;
+}  // namespace net
 
 namespace update_client {
 
@@ -64,6 +69,7 @@ class TestConfigurator : public Configurator {
   int UpdateDelay() const override;
   std::vector<GURL> UpdateUrl() const override;
   std::vector<GURL> PingUrl() const override;
+  std::string GetProdId() const override;
   base::Version GetBrowserVersion() const override;
   std::string GetChannel() const override;
   std::string GetBrand() const override;
@@ -73,18 +79,21 @@ class TestConfigurator : public Configurator {
   std::string GetDownloadPreference() const override;
   net::URLRequestContextGetter* RequestContext() const override;
   scoped_refptr<OutOfProcessPatcher> CreateOutOfProcessPatcher() const override;
-  bool DeltasEnabled() const override;
-  bool UseBackgroundDownloader() const override;
-  bool UseCupSigning() const override;
+  bool EnabledDeltas() const override;
+  bool EnabledComponentUpdates() const override;
+  bool EnabledBackgroundDownloader() const override;
+  bool EnabledCupSigning() const override;
   scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner()
       const override;
   PrefService* GetPrefService() const override;
+  bool IsPerUserInstall() const override;
 
   void SetBrand(const std::string& brand);
   void SetOnDemandTime(int seconds);
   void SetInitialDelay(int seconds);
   void SetDownloadPreference(const std::string& download_preference);
-  void SetUseCupSigning(bool use_cup_signing);
+  void SetEnabledCupSigning(bool use_cup_signing);
+  void SetEnabledComponentUpdates(bool enabled_component_updates);
   void SetUpdateCheckUrl(const GURL& url);
   void SetPingUrl(const GURL& url);
 
@@ -99,7 +108,8 @@ class TestConfigurator : public Configurator {
   int initial_time_;
   int ondemand_time_;
   std::string download_preference_;
-  bool use_cup_signing_;
+  bool enabled_cup_signing_;
+  bool enabled_component_updates_;
   GURL update_check_url_;
   GURL ping_url_;
 

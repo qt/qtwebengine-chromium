@@ -10,9 +10,11 @@
 #include "base/macros.h"
 #include "net/socket/client_socket_factory.h"
 
-namespace net {
-
+namespace base {
 class FuzzedDataProvider;
+}
+
+namespace net {
 
 // A socket factory that creates FuzzedSockets that share the same
 // FuzzedDataProvider. To behave consistently, the read operations on all
@@ -30,20 +32,20 @@ class FuzzedSocketFactory : public ClientSocketFactory {
   // creates. Other objects can also continue to consume |data_provider|, as
   // long as their calls into it are made on the CLientSocketFactory's thread
   // and the calls are deterministic.
-  explicit FuzzedSocketFactory(FuzzedDataProvider* data_provider);
+  explicit FuzzedSocketFactory(base::FuzzedDataProvider* data_provider);
   ~FuzzedSocketFactory() override;
 
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
-      const NetLog::Source& source) override;
+      const NetLogSource& source) override;
 
   std::unique_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       std::unique_ptr<SocketPerformanceWatcher> socket_performance_watcher,
       NetLog* net_log,
-      const NetLog::Source& source) override;
+      const NetLogSource& source) override;
 
   std::unique_ptr<SSLClientSocket> CreateSSLClientSocket(
       std::unique_ptr<ClientSocketHandle> transport_socket,
@@ -54,7 +56,7 @@ class FuzzedSocketFactory : public ClientSocketFactory {
   void ClearSSLSessionCache() override;
 
  private:
-  FuzzedDataProvider* data_provider_;
+  base::FuzzedDataProvider* data_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(FuzzedSocketFactory);
 };

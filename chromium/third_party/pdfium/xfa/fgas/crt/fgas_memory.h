@@ -7,8 +7,10 @@
 #ifndef XFA_FGAS_CRT_FGAS_MEMORY_H_
 #define XFA_FGAS_CRT_FGAS_MEMORY_H_
 
-#include "core/fxcrt/include/fx_memory.h"
-#include "core/fxcrt/include/fx_system.h"
+#include <memory>
+
+#include "core/fxcrt/fx_memory.h"
+#include "core/fxcrt/fx_system.h"
 
 enum FX_ALLOCTYPE {
   FX_ALLOCTYPE_Static,
@@ -21,9 +23,9 @@ class IFX_MemoryAllocator {
   virtual void* Alloc(size_t size) = 0;
   virtual void Free(void* pBlock) = 0;
 
-  static IFX_MemoryAllocator* Create(FX_ALLOCTYPE eType,
-                                     size_t chunkSize,
-                                     size_t blockSize);
+  static std::unique_ptr<IFX_MemoryAllocator> Create(FX_ALLOCTYPE eType,
+                                                     size_t chunkSize,
+                                                     size_t blockSize);
 };
 
 class CFX_Target {

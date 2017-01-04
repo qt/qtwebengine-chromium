@@ -12,10 +12,12 @@
 
 #include <math.h>
 
+#include "libyuv/convert_argb.h"
 #include "webrtc/examples/peerconnection/client/defaults.h"
 #include "webrtc/base/arraysize.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
+#include "webrtc/media/engine/webrtcvideoframe.h"
 
 ATOM MainWnd::wnd_class_ = 0;
 const wchar_t MainWnd::kClassName[] = L"WebRTC_MainWnd";
@@ -604,17 +606,23 @@ void MainWnd::VideoRenderer::OnFrame(
   {
     AutoLock<VideoRenderer> lock(this);
 
-    const cricket::VideoFrame* frame =
-        video_frame.GetCopyWithRotationApplied();
+    const cricket::WebRtcVideoFrame frame(
+        webrtc::I420Buffer::Rotate(video_frame.video_frame_buffer(),
+                                   video_frame.rotation()),
+        webrtc::kVideoRotation_0, video_frame.timestamp_us());
 
-    SetSize(frame->width(), frame->height());
+    SetSize(frame.width(), frame.height());
 
     ASSERT(image_.get() != NULL);
-    frame->ConvertToRgbBuffer(cricket::FOURCC_ARGB,
-                              image_.get(),
-                              bmi_.bmiHeader.biSizeImage,
-                              bmi_.bmiHeader.biWidth *
-                              bmi_.bmiHeader.biBitCount / 8);
+    rtc::scoped_refptr<webrtc::VideoFrameBuffer> buffer(
+        frame.video_frame_buffer());
+    libyuv::I420ToARGB(buffer->DataY(), buffer->StrideY(),
+                       buffer->DataU(), buffer->StrideU(),
+                       buffer->DataV(), buffer->StrideV(),
+                       image_.get(),
+                       bmi_.bmiHeader.biWidth *
+                           bmi_.bmiHeader.biBitCount / 8,
+                       buffer->width(), buffer->height());
   }
   InvalidateRect(wnd_, NULL, TRUE);
 }

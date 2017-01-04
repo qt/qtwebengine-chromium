@@ -100,7 +100,7 @@ class AwaitCompletionHelper {
     if (!already_quit_) {
       DCHECK(!start_);
       start_ = true;
-      base::MessageLoop::current()->Run();
+      base::RunLoop().Run();
     } else {
       DCHECK(!start_);
       already_quit_ = false;
@@ -301,8 +301,8 @@ class RemovePluginPrivateDataTester {
         filesystem_context_->GetAsyncFileUtil(
             storage::kFileSystemTypePluginPrivate);
     std::unique_ptr<storage::FileSystemOperationContext> operation_context =
-        base::WrapUnique(
-            new storage::FileSystemOperationContext(filesystem_context_));
+        base::MakeUnique<storage::FileSystemOperationContext>(
+            filesystem_context_);
     async_file_util->CreateOrOpen(
         std::move(operation_context), clearkey_file_,
         base::File::FLAG_OPEN | base::File::FLAG_WRITE,
@@ -347,8 +347,8 @@ class RemovePluginPrivateDataTester {
     storage::AsyncFileUtil* file_util = filesystem_context_->GetAsyncFileUtil(
         storage::kFileSystemTypePluginPrivate);
     std::unique_ptr<storage::FileSystemOperationContext> operation_context =
-        base::WrapUnique(
-            new storage::FileSystemOperationContext(filesystem_context_));
+        base::MakeUnique<storage::FileSystemOperationContext>(
+            filesystem_context_);
     operation_context->set_allowed_bytes_growth(
         storage::QuotaManager::kNoLimit);
     file_util->EnsureFileExists(
@@ -367,8 +367,8 @@ class RemovePluginPrivateDataTester {
     storage::AsyncFileUtil* file_util = filesystem_context_->GetAsyncFileUtil(
         storage::kFileSystemTypePluginPrivate);
     std::unique_ptr<storage::FileSystemOperationContext> operation_context =
-        base::WrapUnique(
-            new storage::FileSystemOperationContext(filesystem_context_));
+        base::MakeUnique<storage::FileSystemOperationContext>(
+            filesystem_context_);
     file_util->Touch(std::move(operation_context), file_url, time_stamp,
                      time_stamp,
                      base::Bind(&RemovePluginPrivateDataTester::OnFileTouched,
@@ -576,10 +576,9 @@ class StoragePartitionImplTest : public testing::Test {
   MockQuotaManager* GetMockManager() {
     if (!quota_manager_.get()) {
       quota_manager_ = new MockQuotaManager(
-          browser_context_->IsOffTheRecord(),
-          browser_context_->GetPath(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB).get(),
+          browser_context_->IsOffTheRecord(), browser_context_->GetPath(),
+          BrowserThread::GetTaskRunnerForThread(BrowserThread::IO).get(),
+          BrowserThread::GetTaskRunnerForThread(BrowserThread::DB).get(),
           browser_context_->GetSpecialStoragePolicy());
     }
     return quota_manager_.get();

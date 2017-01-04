@@ -9,8 +9,8 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/cursors/webcursor.h"
+#include "content/public/common/screen_info.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
-#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -115,7 +115,7 @@ bool ColorPicker::HandleMouseEvent(const blink::WebMouseEvent& event) {
   if (frame_.drawsNothing())
     return true;
 
-  if (event.button == blink::WebMouseEvent::ButtonLeft &&
+  if (event.button == blink::WebMouseEvent::Button::Left &&
       event.type == blink::WebInputEvent::MouseDown) {
     if (last_cursor_x_ < 0 || last_cursor_x_ >= frame_.width() ||
         last_cursor_y_ < 0 || last_cursor_y_ >= frame_.height()) {
@@ -165,9 +165,9 @@ void ColorPicker::UpdateCursor() {
   const float kPixelSize = 10;
 #endif
 
-  blink::WebScreenInfo screen_info;
-  view->GetScreenInfo(&screen_info);
-  double device_scale_factor = screen_info.deviceScaleFactor;
+  content::ScreenInfo screen_info;
+  host_->GetScreenInfo(&screen_info);
+  double device_scale_factor = screen_info.device_scale_factor;
 
   SkBitmap result;
   result.allocN32Pixels(kCursorSize * device_scale_factor,

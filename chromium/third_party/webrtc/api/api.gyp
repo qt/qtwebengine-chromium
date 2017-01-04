@@ -35,27 +35,26 @@
             'libjingle_peerconnection',
           ],
           'sources': [
-            'androidvideocapturer.cc',
-            'androidvideocapturer.h',
-            'java/jni/androidmediacodeccommon.h',
-            'java/jni/androidmediadecoder_jni.cc',
-            'java/jni/androidmediadecoder_jni.h',
-            'java/jni/androidmediaencoder_jni.cc',
-            'java/jni/androidmediaencoder_jni.h',
-            'java/jni/androidmetrics_jni.cc',
-            'java/jni/androidnetworkmonitor_jni.cc',
-            'java/jni/androidnetworkmonitor_jni.h',
-            'java/jni/androidvideocapturer_jni.cc',
-            'java/jni/androidvideocapturer_jni.h',
-            'java/jni/surfacetexturehelper_jni.cc',
-            'java/jni/surfacetexturehelper_jni.h',
-            'java/jni/classreferenceholder.cc',
-            'java/jni/classreferenceholder.h',
-            'java/jni/jni_helpers.cc',
-            'java/jni/jni_helpers.h',
-            'java/jni/native_handle_impl.cc',
-            'java/jni/native_handle_impl.h',
-            'java/jni/peerconnection_jni.cc',
+            'android/jni/androidmediacodeccommon.h',
+            'android/jni/androidmediadecoder_jni.cc',
+            'android/jni/androidmediadecoder_jni.h',
+            'android/jni/androidmediaencoder_jni.cc',
+            'android/jni/androidmediaencoder_jni.h',
+            'android/jni/androidmetrics_jni.cc',
+            'android/jni/androidnetworkmonitor_jni.cc',
+            'android/jni/androidnetworkmonitor_jni.h',
+            'android/jni/androidvideotracksource_jni.cc',
+            'android/jni/classreferenceholder.cc',
+            'android/jni/classreferenceholder.h',
+            'android/jni/jni_helpers.cc',
+            'android/jni/jni_helpers.h',
+            'android/jni/native_handle_impl.cc',
+            'android/jni/native_handle_impl.h',
+            'android/jni/peerconnection_jni.cc',
+            'android/jni/surfacetexturehelper_jni.cc',
+            'android/jni/surfacetexturehelper_jni.h',
+            'androidvideotracksource.cc',
+            'androidvideotracksource.h',
           ],
           'include_dirs': [
             '<(libyuv_dir)/include',
@@ -83,7 +82,7 @@
             'libjingle_peerconnection_jni',
           ],
           'sources': [
-           'java/jni/jni_onload.cc',
+           'android/jni/jni_onload.cc',
           ],
           'variables': {
             # This library uses native JNI exports; tell GYP so that the
@@ -96,11 +95,30 @@
   ],  # conditions
   'targets': [
     {
+      'target_name': 'call_api',
+      'type': 'static_library',
+      'dependencies': [
+        # TODO(kjellander): Add remaining dependencies when webrtc:4243 is done.
+        '<(webrtc_root)/base/base.gyp:rtc_base_approved',
+        '<(webrtc_root)/common.gyp:webrtc_common',
+        '<(webrtc_root)/modules/modules.gyp:audio_encoder_interface',
+      ],
+      'sources': [
+        'call/audio_receive_stream.h',
+        'call/audio_send_stream.h',
+        'call/audio_sink.h',
+        'call/audio_state.h',
+      ],
+    },
+    {
       'target_name': 'libjingle_peerconnection',
       'type': 'static_library',
       'dependencies': [
+        ':call_api',
+        ':rtc_stats_api',
         '<(webrtc_root)/media/media.gyp:rtc_media',
         '<(webrtc_root)/pc/pc.gyp:rtc_pc',
+        '<(webrtc_root)/stats/stats.gyp:rtc_stats',
       ],
       'sources': [
         'audiotrack.cc',
@@ -108,7 +126,6 @@
         'datachannel.cc',
         'datachannel.h',
         'datachannelinterface.h',
-        'dtlsidentitystore.h',
         'dtmfsender.cc',
         'dtmfsender.h',
         'dtmfsenderinterface.h',
@@ -142,6 +159,8 @@
         'proxy.h',
         'remoteaudiosource.cc',
         'remoteaudiosource.h',
+        'rtcstatscollector.cc',
+        'rtcstatscollector.h',
         'rtpparameters.h',
         'rtpreceiver.cc',
         'rtpreceiver.h',
@@ -199,5 +218,18 @@
         }],
       ],
     },  # target libjingle_peerconnection
+    {
+      # GN version: webrtc/api:rtc_stats_api
+      'target_name': 'rtc_stats_api',
+      'type': 'static_library',
+      'dependencies': [
+        '<(webrtc_root)/base/base.gyp:rtc_base_approved',
+      ],
+      'sources': [
+        'stats/rtcstats.h',
+        'stats/rtcstats_objects.h',
+        'stats/rtcstatsreport.h',
+      ],
+    },  # target rtc_stats_api
   ],  # targets
 }

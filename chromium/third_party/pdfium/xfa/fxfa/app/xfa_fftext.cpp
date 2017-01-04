@@ -9,11 +9,11 @@
 #include "xfa/fwl/core/fwl_widgetdef.h"
 #include "xfa/fxfa/app/xfa_ffdraw.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
-#include "xfa/fxfa/include/xfa_ffapp.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffpageview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
-#include "xfa/fxgraphics/include/cfx_graphics.h"
+#include "xfa/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxgraphics/cfx_graphics.h"
 
 CXFA_FFText::CXFA_FFText(CXFA_FFPageView* pPageView, CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFDraw(pPageView, pDataAcc) {}
@@ -135,7 +135,7 @@ FX_BOOL CXFA_FFText::OnLButtonUp(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) {
     return FALSE;
   }
   CXFA_FFDoc* pDoc = GetDoc();
-  pDoc->GetDocProvider()->GotoURL(pDoc, wsURLContent, FALSE);
+  pDoc->GetDocEnvironment()->GotoURL(pDoc, wsURLContent);
   return TRUE;
 }
 FWL_WidgetHit CXFA_FFText::OnHitTest(FX_FLOAT fx, FX_FLOAT fy) {

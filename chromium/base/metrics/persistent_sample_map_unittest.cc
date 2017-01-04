@@ -8,6 +8,7 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/metrics/persistent_histogram_allocator.h"
+#include "base/test/gtest_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -15,16 +16,16 @@ namespace {
 
 std::unique_ptr<PersistentHistogramAllocator> CreateHistogramAllocator(
     size_t bytes) {
-  return WrapUnique(new PersistentHistogramAllocator(
-      WrapUnique(new LocalPersistentMemoryAllocator(bytes, 0, ""))));
+  return MakeUnique<PersistentHistogramAllocator>(
+      MakeUnique<LocalPersistentMemoryAllocator>(bytes, 0, ""));
 }
 
 std::unique_ptr<PersistentHistogramAllocator> DuplicateHistogramAllocator(
     PersistentHistogramAllocator* original) {
-  return WrapUnique(
-      new PersistentHistogramAllocator(WrapUnique(new PersistentMemoryAllocator(
+  return MakeUnique<PersistentHistogramAllocator>(
+      MakeUnique<PersistentMemoryAllocator>(
           const_cast<void*>(original->data()), original->length(), 0,
-          original->Id(), original->Name(), false))));
+          original->Id(), original->Name(), false));
 }
 
 TEST(PersistentSampleMapTest, AccumulateTest) {
@@ -233,8 +234,6 @@ TEST(PersistentSampleMapIteratorTest, SkipEmptyRanges) {
   EXPECT_TRUE(it->Done());
 }
 
-// Only run this test on builds that support catching a DCHECK crash.
-#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)) && GTEST_HAS_DEATH_TEST
 TEST(PersistentSampleMapIteratorDeathTest, IterateDoneTest) {
   std::unique_ptr<PersistentHistogramAllocator> allocator =
       CreateHistogramAllocator(64 << 10);  // 64 KiB
@@ -248,16 +247,14 @@ TEST(PersistentSampleMapIteratorDeathTest, IterateDoneTest) {
   HistogramBase::Sample min;
   HistogramBase::Sample max;
   HistogramBase::Count count;
-  EXPECT_DEATH(it->Get(&min, &max, &count), "");
+  EXPECT_DCHECK_DEATH(it->Get(&min, &max, &count));
 
-  EXPECT_DEATH(it->Next(), "");
+  EXPECT_DCHECK_DEATH(it->Next());
 
   samples.Accumulate(1, 100);
   it = samples.Iterator();
   EXPECT_FALSE(it->Done());
 }
-#endif
-// (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)) && GTEST_HAS_DEATH_TEST
 
 }  // namespace
 }  // namespace base

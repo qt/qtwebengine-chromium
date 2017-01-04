@@ -8,7 +8,7 @@
 #include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
-#include "core/page/PageLifecycleObserver.h"
+#include "core/page/PageVisibilityObserver.h"
 #include "modules/ModulesExport.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebURL.h"
@@ -24,67 +24,71 @@ class ScriptPromiseResolver;
 // then subscribe to receive callbacks if the status for |url| were to
 // change. The object will only listen to changes when required.
 class MODULES_EXPORT PresentationAvailability final
-    : public EventTargetWithInlineData
-    , public ActiveScriptWrappable
-    , public ActiveDOMObject
-    , public PageLifecycleObserver
-    , public WebPresentationAvailabilityObserver {
-    USING_GARBAGE_COLLECTED_MIXIN(PresentationAvailability);
-    DEFINE_WRAPPERTYPEINFO();
-public:
-    static PresentationAvailability* take(ScriptPromiseResolver*, const KURL&, bool);
-    ~PresentationAvailability() override;
+    : public EventTargetWithInlineData,
+      public ActiveScriptWrappable,
+      public ActiveDOMObject,
+      public PageVisibilityObserver,
+      public WebPresentationAvailabilityObserver {
+  USING_GARBAGE_COLLECTED_MIXIN(PresentationAvailability);
+  DEFINE_WRAPPERTYPEINFO();
 
-    // EventTarget implementation.
-    const AtomicString& interfaceName() const override;
-    ExecutionContext* getExecutionContext() const override;
+ public:
+  static PresentationAvailability* take(ScriptPromiseResolver*,
+                                        const KURL&,
+                                        bool);
+  ~PresentationAvailability() override;
 
-    // WebPresentationAvailabilityObserver implementation.
-    void availabilityChanged(bool) override;
-    const WebURL url() const override;
+  // EventTarget implementation.
+  const AtomicString& interfaceName() const override;
+  ExecutionContext* getExecutionContext() const override;
 
-    // ActiveScriptWrappable implementation.
-    bool hasPendingActivity() const final;
+  // WebPresentationAvailabilityObserver implementation.
+  void availabilityChanged(bool) override;
+  const WebURL url() const override;
 
-    // ActiveDOMObject implementation.
-    void suspend() override;
-    void resume() override;
-    void stop() override;
+  // ScriptWrappable implementation.
+  bool hasPendingActivity() const final;
 
-    // PageLifecycleObserver implementation.
-    void pageVisibilityChanged() override;
+  // ActiveDOMObject implementation.
+  void suspend() override;
+  void resume() override;
+  void contextDestroyed() override;
 
-    bool value() const;
+  // PageVisibilityObserver implementation.
+  void pageVisibilityChanged() override;
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(change);
+  bool value() const;
 
-    DECLARE_VIRTUAL_TRACE();
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(change);
 
-protected:
-    // EventTarget implementation.
-    void addedEventListener(const AtomicString& eventType, RegisteredEventListener&) override;
+  DECLARE_VIRTUAL_TRACE();
 
-private:
-    // Current state of the ActiveDOMObject. It is Active when created. It
-    // becomes Suspended when suspend() is called and moves back to Active if
-    // resume() is called. It becomes Inactive when stop() is called or at
-    // destruction time.
-    enum class State : char {
-        Active,
-        Suspended,
-        Inactive,
-    };
+ protected:
+  // EventTarget implementation.
+  void addedEventListener(const AtomicString& eventType,
+                          RegisteredEventListener&) override;
 
-    PresentationAvailability(ExecutionContext*, const KURL&, bool);
+ private:
+  // Current state of the ActiveDOMObject. It is Active when created. It
+  // becomes Suspended when suspend() is called and moves back to Active if
+  // resume() is called. It becomes Inactive when stop() is called or at
+  // destruction time.
+  enum class State : char {
+    Active,
+    Suspended,
+    Inactive,
+  };
 
-    void setState(State);
-    void updateListening();
+  PresentationAvailability(ExecutionContext*, const KURL&, bool);
 
-    const KURL m_url;
-    bool m_value;
-    State m_state;
+  void setState(State);
+  void updateListening();
+
+  const KURL m_url;
+  bool m_value;
+  State m_state;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // PresentationAvailability_h
+#endif  // PresentationAvailability_h

@@ -164,11 +164,19 @@ bool PeerConnectionFactory::Initialize() {
       media_engine, worker_thread_, network_thread_));
 
   channel_manager_->SetVideoRtxEnabled(true);
+  channel_manager_->SetCryptoOptions(options_.crypto_options);
   if (!channel_manager_->Init()) {
     return false;
   }
 
   return true;
+}
+
+void PeerConnectionFactory::SetOptions(const Options& options) {
+  options_ = options;
+  if (channel_manager_) {
+    channel_manager_->SetCryptoOptions(options.crypto_options);
+  }
 }
 
 rtc::scoped_refptr<AudioSourceInterface>
@@ -218,17 +226,6 @@ bool PeerConnectionFactory::StartAecDump(rtc::PlatformFile file,
 void PeerConnectionFactory::StopAecDump() {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   channel_manager_->StopAecDump();
-}
-
-bool PeerConnectionFactory::StartRtcEventLog(rtc::PlatformFile file,
-                                             int64_t max_size_bytes) {
-  RTC_DCHECK(signaling_thread_->IsCurrent());
-  return channel_manager_->StartRtcEventLog(file, max_size_bytes);
-}
-
-void PeerConnectionFactory::StopRtcEventLog() {
-  RTC_DCHECK(signaling_thread_->IsCurrent());
-  channel_manager_->StopRtcEventLog();
 }
 
 rtc::scoped_refptr<PeerConnectionInterface>
@@ -309,6 +306,15 @@ webrtc::MediaControllerInterface* PeerConnectionFactory::CreateMediaController(
   RTC_DCHECK(signaling_thread_->IsCurrent());
   return MediaControllerInterface::Create(config, worker_thread_,
                                           channel_manager_.get());
+}
+
+cricket::TransportController* PeerConnectionFactory::CreateTransportController(
+    cricket::PortAllocator* port_allocator,
+    bool redetermine_role_on_ice_restart) {
+  RTC_DCHECK(signaling_thread_->IsCurrent());
+  return new cricket::TransportController(signaling_thread_, network_thread_,
+                                          port_allocator,
+                                          redetermine_role_on_ice_restart);
 }
 
 rtc::Thread* PeerConnectionFactory::signaling_thread() {

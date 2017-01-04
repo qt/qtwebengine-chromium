@@ -20,6 +20,7 @@ enum {
   kWasmDebugInfoWasmObj,
   kWasmDebugInfoWasmBytesHash,
   kWasmDebugInfoFunctionByteOffsets,
+  kWasmDebugInfoFunctionScripts,
   kWasmDebugInfoNumEntries
 };
 
@@ -31,11 +32,15 @@ ByteArray *GetOrCreateFunctionOffsetTable(Handle<WasmDebugInfo> debug_info) {
   FunctionOffsetsResult function_offsets;
   {
     DisallowHeapAllocation no_gc;
+    Handle<JSObject> wasm_object(debug_info->wasm_object(), isolate);
+    uint32_t num_imported_functions =
+        wasm::GetNumImportedFunctions(wasm_object);
     SeqOneByteString *wasm_bytes =
         wasm::GetWasmBytes(debug_info->wasm_object());
     const byte *bytes_start = wasm_bytes->GetChars();
     const byte *bytes_end = bytes_start + wasm_bytes->length();
-    function_offsets = wasm::DecodeWasmFunctionOffsets(bytes_start, bytes_end);
+    function_offsets = wasm::DecodeWasmFunctionOffsets(bytes_start, bytes_end,
+                                                       num_imported_functions);
   }
   DCHECK(function_offsets.ok());
   size_t array_size = 2 * kIntSize * function_offsets.val.size();
@@ -105,7 +110,9 @@ bool WasmDebugInfo::IsDebugInfo(Object *object) {
          IsWasmObject(arr->get(kWasmDebugInfoWasmObj)) &&
          arr->get(kWasmDebugInfoWasmBytesHash)->IsNumber() &&
          (arr->get(kWasmDebugInfoFunctionByteOffsets)->IsUndefined(isolate) ||
-          arr->get(kWasmDebugInfoFunctionByteOffsets)->IsByteArray());
+          arr->get(kWasmDebugInfoFunctionByteOffsets)->IsByteArray()) &&
+         (arr->get(kWasmDebugInfoFunctionScripts)->IsUndefined(isolate) ||
+          arr->get(kWasmDebugInfoFunctionScripts)->IsFixedArray());
 }
 
 WasmDebugInfo *WasmDebugInfo::cast(Object *object) {
@@ -117,9 +124,55 @@ JSObject *WasmDebugInfo::wasm_object() {
   return JSObject::cast(get(kWasmDebugInfoWasmObj));
 }
 
-bool WasmDebugInfo::SetBreakPoint(int byte_offset) {
-  // TODO(clemensh): Implement this.
-  return false;
+Script *WasmDebugInfo::GetFunctionScript(Handle<WasmDebugInfo> debug_info,
+                                         int func_index) {
+  Isolate *isolate = debug_info->GetIsolate();
+  Object *scripts_obj = debug_info->get(kWasmDebugInfoFunctionScripts);
+  Handle<FixedArray> scripts;
+  if (scripts_obj->IsUndefined(isolate)) {
+    int num_functions = wasm::GetNumberOfFunctions(debug_info->wasm_object());
+    scripts = isolate->factory()->NewFixedArray(num_functions, TENURED);
+    debug_info->set(kWasmDebugInfoFunctionScripts, *scripts);
+  } else {
+    scripts = handle(FixedArray::cast(scripts_obj), isolate);
+  }
+
+  DCHECK(func_index >= 0 && func_index < scripts->length());
+  Object *script_or_undef = scripts->get(func_index);
+  if (!script_or_undef->IsUndefined(isolate)) {
+    return Script::cast(script_or_undef);
+  }
+
+  Handle<Script> script =
+      isolate->factory()->NewScript(isolate->factory()->empty_string());
+  scripts->set(func_index, *script);
+
+  script->set_type(Script::TYPE_WASM);
+  script->set_wasm_object(debug_info->wasm_object());
+  script->set_wasm_function_index(func_index);
+
+  int hash = 0;
+  debug_info->get(kWasmDebugInfoWasmBytesHash)->ToInt32(&hash);
+  char buffer[32];
+  SNPrintF(ArrayVector(buffer), "wasm://%08x/%d", hash, func_index);
+  Handle<String> source_url =
+      isolate->factory()->NewStringFromAsciiChecked(buffer, TENURED);
+  script->set_source_url(*source_url);
+
+  int func_bytes_len =
+      GetFunctionOffsetAndLength(debug_info, func_index).second;
+  Handle<FixedArray> line_ends = isolate->factory()->NewFixedArray(1, TENURED);
+  line_ends->set(0, Smi::FromInt(func_bytes_len));
+  line_ends->set_map(isolate->heap()->fixed_cow_array_map());
+  script->set_line_ends(*line_ends);
+
+  // TODO(clemensh): Register with the debugger. Note that we cannot call into
+  // JS at this point since this function is called from within stack trace
+  // collection (which means we cannot call Debug::OnAfterCompile in its
+  // current form). See crbug.com/641065.
+  if (false) isolate->debug()->OnAfterCompile(script);
+
+  return *script;
 }
 
 Handle<String> WasmDebugInfo::DisassembleFunction(
@@ -130,7 +183,7 @@ Handle<String> WasmDebugInfo::DisassembleFunction(
     Vector<const uint8_t> bytes_vec = GetFunctionBytes(debug_info, func_index);
     DisallowHeapAllocation no_gc;
 
-    base::AccountingAllocator allocator;
+    AccountingAllocator allocator;
     bool ok = PrintAst(
         &allocator, FunctionBodyForTesting(bytes_vec.start(), bytes_vec.end()),
         disassembly_os, nullptr);
@@ -159,7 +212,7 @@ Handle<FixedArray> WasmDebugInfo::GetFunctionOffsetTable(
     Vector<const uint8_t> bytes_vec = GetFunctionBytes(debug_info, func_index);
     DisallowHeapAllocation no_gc;
 
-    v8::base::AccountingAllocator allocator;
+    AccountingAllocator allocator;
     bool ok = PrintAst(
         &allocator, FunctionBodyForTesting(bytes_vec.start(), bytes_vec.end()),
         null_stream, &offset_table_vec);

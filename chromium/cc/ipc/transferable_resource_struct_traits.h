@@ -5,13 +5,14 @@
 #ifndef CC_IPC_TRANSFERABLE_RESOURCE_STRUCT_TRAITS_H_
 #define CC_IPC_TRANSFERABLE_RESOURCE_STRUCT_TRAITS_H_
 
-#include "cc/ipc/transferable_resource.mojom.h"
+#include "cc/ipc/transferable_resource.mojom-shared.h"
 #include "cc/resources/transferable_resource.h"
 
 namespace mojo {
 
 template <>
-struct StructTraits<cc::mojom::TransferableResource, cc::TransferableResource> {
+struct StructTraits<cc::mojom::TransferableResourceDataView,
+                    cc::TransferableResource> {
   static uint32_t id(const cc::TransferableResource& resource) {
     return resource.id;
   }

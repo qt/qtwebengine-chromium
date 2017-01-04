@@ -15,6 +15,7 @@
 #include "base/containers/mru_cache.h"
 #include "base/hash.h"
 #include "base/memory/discardable_memory_allocator.h"
+#include "base/memory/memory_coordinator_client.h"
 #include "base/memory/ref_counted.h"
 #include "base/numerics/safe_math.h"
 #include "base/threading/thread_checker.h"
@@ -25,6 +26,7 @@
 #include "cc/resources/resource_format.h"
 #include "cc/tiles/image_decode_controller.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -60,6 +62,7 @@ class CC_EXPORT ImageDecodeControllerKey {
   gfx::Size target_size() const { return target_size_; }
 
   bool can_use_original_decode() const { return can_use_original_decode_; }
+  bool should_use_subrect() const { return should_use_subrect_; }
   size_t get_hash() const { return hash_; }
 
   // Helper to figure out how much memory the locked image represented by this
@@ -79,13 +82,15 @@ class CC_EXPORT ImageDecodeControllerKey {
                            const gfx::Rect& src_rect,
                            const gfx::Size& size,
                            SkFilterQuality filter_quality,
-                           bool can_use_original_decode);
+                           bool can_use_original_decode,
+                           bool should_use_subrect);
 
   uint32_t image_id_;
   gfx::Rect src_rect_;
   gfx::Size target_size_;
   SkFilterQuality filter_quality_;
   bool can_use_original_decode_;
+  bool should_use_subrect_;
   size_t hash_;
 };
 
@@ -98,7 +103,8 @@ struct ImageDecodeControllerKeyHash {
 
 class CC_EXPORT SoftwareImageDecodeController
     : public ImageDecodeController,
-      public base::trace_event::MemoryDumpProvider {
+      public base::trace_event::MemoryDumpProvider,
+      public base::MemoryCoordinatorClient {
  public:
   using ImageKey = ImageDecodeControllerKey;
   using ImageKeyHash = ImageDecodeControllerKeyHash;
@@ -230,6 +236,15 @@ class CC_EXPORT SoftwareImageDecodeController
   // does not scale the image. Like DecodeImageInternal, it should be called
   // with no lock acquired and it returns nullptr if the decoding failed.
   std::unique_ptr<DecodedImage> GetOriginalImageDecode(
+      sk_sp<const SkImage> image);
+
+  // GetSubrectImageDecode is similar to GetOriginalImageDecode in that no scale
+  // is performed on the image. However, we extract a subrect (copy it out) and
+  // only return this subrect in order to cache a smaller amount of memory. Note
+  // that this uses GetOriginalImageDecode to get the initial data, which
+  // ensures that we cache an unlocked version of the original image in case we
+  // need to extract multiple subrects (as would be the case in an atlas).
+  std::unique_ptr<DecodedImage> GetSubrectImageDecode(
       const ImageKey& key,
       sk_sp<const SkImage> image);
 
@@ -251,6 +266,9 @@ class CC_EXPORT SoftwareImageDecodeController
                                const char* cache_name,
                                base::trace_event::ProcessMemoryDump* pmd) const;
 
+  // Overriden from base::MemoryCoordinatorClient.
+  void OnMemoryStateChange(base::MemoryState state) override;
+
   std::unordered_map<ImageKey, scoped_refptr<TileTask>, ImageKeyHash>
       pending_image_tasks_;
 
@@ -270,6 +288,7 @@ class CC_EXPORT SoftwareImageDecodeController
   MemoryBudget locked_images_budget_;
 
   ResourceFormat format_;
+  size_t max_items_in_cache_;
 
   // Used to uniquely identify DecodedImages for memory traces.
   base::AtomicSequenceNumber next_tracing_id_;

@@ -9,6 +9,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
+#include "base/strings/string_number_conversions.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/media_log.h"
@@ -45,7 +46,7 @@ std::string DecryptingDemuxerStream::GetDisplayName() const {
 void DecryptingDemuxerStream::Initialize(DemuxerStream* stream,
                                          CdmContext* cdm_context,
                                          const PipelineStatusCB& status_cb) {
-  DVLOG(2) << __FUNCTION__;
+  DVLOG(2) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kUninitialized) << state_;
   DCHECK(stream);
@@ -77,7 +78,7 @@ void DecryptingDemuxerStream::Initialize(DemuxerStream* stream,
 }
 
 void DecryptingDemuxerStream::Read(const ReadCB& read_cb) {
-  DVLOG(3) << __FUNCTION__;
+  DVLOG(3) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kIdle) << state_;
   DCHECK(!read_cb.is_null());
@@ -90,7 +91,7 @@ void DecryptingDemuxerStream::Read(const ReadCB& read_cb) {
 }
 
 void DecryptingDemuxerStream::Reset(const base::Closure& closure) {
-  DVLOG(2) << __FUNCTION__ << " - state: " << state_;
+  DVLOG(2) << __func__ << " - state: " << state_;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ != kUninitialized) << state_;
   DCHECK(reset_cb_.is_null());
@@ -152,8 +153,22 @@ VideoRotation DecryptingDemuxerStream::video_rotation() {
   return demuxer_stream_->video_rotation();
 }
 
+bool DecryptingDemuxerStream::enabled() const {
+  return demuxer_stream_->enabled();
+}
+
+void DecryptingDemuxerStream::set_enabled(bool enabled,
+                                          base::TimeDelta timestamp) {
+  demuxer_stream_->set_enabled(enabled, timestamp);
+}
+
+void DecryptingDemuxerStream::SetStreamStatusChangeCB(
+    const StreamStatusChangeCB& cb) {
+  demuxer_stream_->SetStreamStatusChangeCB(cb);
+}
+
 DecryptingDemuxerStream::~DecryptingDemuxerStream() {
-  DVLOG(2) << __FUNCTION__ << " : state_ = " << state_;
+  DVLOG(2) << __func__ << " : state_ = " << state_;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (state_ == kUninitialized)
@@ -175,7 +190,7 @@ DecryptingDemuxerStream::~DecryptingDemuxerStream() {
 void DecryptingDemuxerStream::DecryptBuffer(
     DemuxerStream::Status status,
     const scoped_refptr<DecoderBuffer>& buffer) {
-  DVLOG(3) << __FUNCTION__;
+  DVLOG(3) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
   DCHECK(!read_cb_.is_null());
@@ -253,7 +268,7 @@ void DecryptingDemuxerStream::DecryptPendingBuffer() {
 void DecryptingDemuxerStream::DeliverBuffer(
     Decryptor::Status status,
     const scoped_refptr<DecoderBuffer>& decrypted_buffer) {
-  DVLOG(3) << __FUNCTION__ << " - status: " << status;
+  DVLOG(3) << __func__ << " - status: " << status;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDecrypt) << state_;
   DCHECK_NE(status, Decryptor::kNeedMoreData);
@@ -282,10 +297,16 @@ void DecryptingDemuxerStream::DeliverBuffer(
   }
 
   if (status == Decryptor::kNoKey) {
-    DVLOG(2) << "DoDeliverBuffer() - kNoKey";
-    MEDIA_LOG(DEBUG, media_log_) << GetDisplayName() << ": no key";
+    std::string key_id = pending_buffer_to_decrypt_->decrypt_config()->key_id();
+    std::string missing_key_id = base::HexEncode(key_id.data(), key_id.size());
+    DVLOG(1) << "DeliverBuffer() - no key for key ID " << missing_key_id;
+    MEDIA_LOG(INFO, media_log_) << GetDisplayName() << ": no key for key ID "
+                                << missing_key_id;
+
     if (need_to_try_again_if_nokey) {
       // The |state_| is still kPendingDecrypt.
+      MEDIA_LOG(INFO, media_log_) << GetDisplayName()
+                                  << ": key was added, resuming decrypt";
       DecryptPendingBuffer();
       return;
     }
@@ -316,6 +337,8 @@ void DecryptingDemuxerStream::OnKeyAdded() {
   }
 
   if (state_ == kWaitingForKey) {
+    MEDIA_LOG(INFO, media_log_) << GetDisplayName()
+                                << ": key added, resuming decrypt";
     state_ = kPendingDecrypt;
     DecryptPendingBuffer();
   }

@@ -22,22 +22,20 @@ namespace base {
 class SequencedTaskRunner;
 class Thread;
 
-// Helper to ensure that a file won't be corrupted by the write (for example on
-// application crash). Consider a naive way to save an important file F:
+// Helper for atomically writing a file to ensure that it won't be corrupted by
+// *application* crash during write (implemented as create, flush, rename).
 //
-// 1. Open F for writing, truncating it.
-// 2. Write new data to F.
+// As an added benefit, ImportantFileWriter makes it less likely that the file
+// is corrupted by *system* crash, though even if the ImportantFileWriter call
+// has already returned at the time of the crash it is not specified which
+// version of the file (old or new) is preserved. And depending on system
+// configuration (hardware and software) a significant likelihood of file
+// corruption may remain, thus using ImportantFileWriter is not a valid
+// substitute for file integrity checks and recovery codepaths for malformed
+// files.
 //
-// It's good when it works, but it gets very bad if step 2. doesn't complete.
-// It can be caused by a crash, a computer hang, or a weird I/O error. And you
-// end up with a broken file.
-//
-// To be safe, we don't start with writing directly to F. Instead, we write to
-// to a temporary file. Only after that write is successful, we rename the
-// temporary file to target filename.
-//
-// If you want to know more about this approach and ext3/ext4 fsync issues, see
-// http://blog.valerieaurora.org/2009/04/16/dont-panic-fsync-ext34-and-your-data/
+// Also note that ImportantFileWriter can be *really* slow (cf. File::Flush()
+// for details) and thus please don't block shutdown on ImportantFileWriter.
 class BASE_EXPORT ImportantFileWriter : public NonThreadSafe {
  public:
   // Used by ScheduleSave to lazily provide the data to be saved. Allows us
@@ -53,8 +51,9 @@ class BASE_EXPORT ImportantFileWriter : public NonThreadSafe {
     virtual ~DataSerializer() {}
   };
 
-  // Save |data| to |path| in an atomic manner (see the class comment above).
-  // Blocks and writes data on the current thread.
+  // Save |data| to |path| in an atomic manner. Blocks and writes data on the
+  // current thread. Does not guarantee file integrity across system crash (see
+  // the class comment above).
   static bool WriteFileAtomically(const FilePath& path, StringPiece data);
 
   // Initialize the writer.
@@ -95,25 +94,26 @@ class BASE_EXPORT ImportantFileWriter : public NonThreadSafe {
   // Serialize data pending to be saved and execute write on backend thread.
   void DoScheduledWrite();
 
-  // Registers |on_next_successful_write| to be called once, on the next
-  // successful write event. Only one callback can be set at once.
-  void RegisterOnNextSuccessfulWriteCallback(
-      const Closure& on_next_successful_write);
+  // Registers |before_next_write_callback| and |after_next_write_callback| to
+  // be synchronously invoked from WriteFileAtomically() before its next write
+  // and after its next write, respectively. The boolean passed to
+  // |after_next_write_callback| indicates whether the write was successful.
+  // Both callbacks must be thread safe as they will be called on |task_runner_|
+  // and may be called during Chrome shutdown.
+  // If called more than once before a write is scheduled on |task_runner|, the
+  // latest callbacks clobber the others.
+  void RegisterOnNextWriteCallbacks(
+      const Closure& before_next_write_callback,
+      const Callback<void(bool success)>& after_next_write_callback);
 
   TimeDelta commit_interval() const {
     return commit_interval_;
   }
 
  private:
-  // Helper method for WriteNow().
-  bool PostWriteTask(const Callback<bool()>& task);
-
-  // If |result| is true and |on_next_successful_write_| is set, invokes
-  // |on_successful_write_| and then resets it; no-ops otherwise.
-  void ForwardSuccessfulWrite(bool result);
-
-  // Invoked once and then reset on the next successful write event.
-  Closure on_next_successful_write_;
+  // Invoked synchronously on the next write event.
+  Closure before_next_write_callback_;
+  Callback<void(bool success)> after_next_write_callback_;
 
   // Path being written to.
   const FilePath path_;

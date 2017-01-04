@@ -10,6 +10,7 @@
 #include "net/base/ip_address.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "net/log/net_log_with_source.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/socket_performance_watcher.h"
 #include "net/socket/ssl_client_socket.h"
@@ -47,6 +48,7 @@ class TestUDPClientSocket : public DatagramClientSocket {
   }
   int SetReceiveBufferSize(int32_t) override { return OK; }
   int SetSendBufferSize(int32_t) override { return OK; }
+  int SetDoNotFragment() override { return OK; }
 
   void Close() override {}
   int GetPeerAddress(IPEndPoint* address) const override {
@@ -59,6 +61,7 @@ class TestUDPClientSocket : public DatagramClientSocket {
     *address = local_endpoint_;
     return OK;
   }
+  void UseNonBlockingIO() override {}
   int ConnectUsingNetwork(NetworkChangeNotifier::NetworkHandle network,
                           const IPEndPoint& address) override {
     NOTIMPLEMENTED();
@@ -83,10 +86,10 @@ class TestUDPClientSocket : public DatagramClientSocket {
     return OK;
   }
 
-  const BoundNetLog& NetLog() const override { return net_log_; }
+  const NetLogWithSource& NetLog() const override { return net_log_; }
 
  private:
-  BoundNetLog net_log_;
+  NetLogWithSource net_log_;
   const AddressMapping* mapping_;
   bool connected_;
   IPEndPoint local_endpoint_;
@@ -104,7 +107,7 @@ class TestSocketFactory : public ClientSocketFactory {
       DatagramSocket::BindType,
       const RandIntCallback&,
       NetLog*,
-      const NetLog::Source&) override {
+      const NetLogSource&) override {
     return std::unique_ptr<DatagramClientSocket>(
         new TestUDPClientSocket(&mapping_));
   }
@@ -112,7 +115,7 @@ class TestSocketFactory : public ClientSocketFactory {
       const AddressList&,
       std::unique_ptr<SocketPerformanceWatcher>,
       NetLog*,
-      const NetLog::Source&) override {
+      const NetLogSource&) override {
     NOTIMPLEMENTED();
     return std::unique_ptr<StreamSocket>();
   }

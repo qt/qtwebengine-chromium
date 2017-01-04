@@ -25,19 +25,28 @@ const size_t EncodedImage::kBufferPaddingBytesH264 = 8;
 
 VideoFrame::VideoFrame()
     : video_frame_buffer_(nullptr),
-      timestamp_(0),
+      timestamp_rtp_(0),
       ntp_time_ms_(0),
-      render_time_ms_(0),
+      timestamp_us_(0),
       rotation_(kVideoRotation_0) {}
+
+VideoFrame::VideoFrame(const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
+                       webrtc::VideoRotation rotation,
+                       int64_t timestamp_us)
+    : video_frame_buffer_(buffer),
+      timestamp_rtp_(0),
+      ntp_time_ms_(0),
+      timestamp_us_(timestamp_us),
+      rotation_(rotation) {}
 
 VideoFrame::VideoFrame(const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
                        uint32_t timestamp,
                        int64_t render_time_ms,
                        VideoRotation rotation)
     : video_frame_buffer_(buffer),
-      timestamp_(timestamp),
+      timestamp_rtp_(timestamp),
       ntp_time_ms_(0),
-      render_time_ms_(render_time_ms),
+      timestamp_us_(render_time_ms * rtc::kNumMicrosecsPerMillisec),
       rotation_(rotation) {
   RTC_DCHECK(buffer);
 }
@@ -55,9 +64,9 @@ void VideoFrame::CreateEmptyFrame(int width,
   RTC_DCHECK_GE(stride_v, half_width);
 
   // Creating empty frame - reset all values.
-  timestamp_ = 0;
+  timestamp_rtp_ = 0;
   ntp_time_ms_ = 0;
-  render_time_ms_ = 0;
+  timestamp_us_ = 0;
   rotation_ = kVideoRotation_0;
 
   // Allocate a new buffer.
@@ -78,10 +87,18 @@ void VideoFrame::CreateFrame(const uint8_t* buffer_y,
   const int expected_size_y = height * stride_y;
   const int expected_size_u = half_height * stride_u;
   const int expected_size_v = half_height * stride_v;
-  CreateEmptyFrame(width, height, stride_y, stride_u, stride_v);
-  memcpy(video_frame_buffer_->MutableDataY(), buffer_y, expected_size_y);
-  memcpy(video_frame_buffer_->MutableDataU(), buffer_u, expected_size_u);
-  memcpy(video_frame_buffer_->MutableDataV(), buffer_v, expected_size_v);
+  // Allocate a new buffer.
+  rtc::scoped_refptr<I420Buffer> buffer_ =
+      I420Buffer::Create(width, height, stride_y, stride_u, stride_v);
+
+  memcpy(buffer_->MutableDataY(), buffer_y, expected_size_y);
+  memcpy(buffer_->MutableDataU(), buffer_u, expected_size_u);
+  memcpy(buffer_->MutableDataV(), buffer_v, expected_size_v);
+
+  video_frame_buffer_ = buffer_;
+  timestamp_rtp_ = 0;
+  ntp_time_ms_ = 0;
+  timestamp_us_ = 0;
   rotation_ = rotation;
 }
 
@@ -110,32 +127,10 @@ void VideoFrame::CopyFrame(const VideoFrame& videoFrame) {
 
 void VideoFrame::ShallowCopy(const VideoFrame& videoFrame) {
   video_frame_buffer_ = videoFrame.video_frame_buffer();
-  timestamp_ = videoFrame.timestamp_;
+  timestamp_rtp_ = videoFrame.timestamp_rtp_;
   ntp_time_ms_ = videoFrame.ntp_time_ms_;
-  render_time_ms_ = videoFrame.render_time_ms_;
+  timestamp_us_ = videoFrame.timestamp_us_;
   rotation_ = videoFrame.rotation_;
-}
-
-// TODO(nisse): Delete. Besides test code, only one use, in
-// webrtcvideoengine2.cc:CreateBlackFrame.
-int VideoFrame::allocated_size(PlaneType type) const {
-  const int plane_height = (type == kYPlane) ? height() : (height() + 1) / 2;
-  int stride;
-  switch (type) {
-    case kYPlane:
-      stride = video_frame_buffer_->StrideY();
-      break;
-    case kUPlane:
-      stride = video_frame_buffer_->StrideU();
-      break;
-    case kVPlane:
-      stride = video_frame_buffer_->StrideV();
-      break;
-    default:
-      RTC_NOTREACHED();
-      return 0;
-  }
-  return plane_height * stride;
 }
 
 int VideoFrame::width() const {

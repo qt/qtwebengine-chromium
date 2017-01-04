@@ -6,8 +6,7 @@
 #define V8_INTERPRETER_INTERPRETER_INTRINSICS_H_
 
 #include "src/allocation.h"
-#include "src/base/smart-pointers.h"
-#include "src/builtins.h"
+#include "src/builtins/builtins.h"
 #include "src/frames.h"
 #include "src/interpreter/bytecodes.h"
 #include "src/interpreter/interpreter-assembler.h"
@@ -26,6 +25,7 @@ namespace interpreter {
 // expected number of arguments (-1 denoting argument count is variable).
 #define INTRINSICS_LIST(V)                              \
   V(Call, call, -1)                                     \
+  V(ClassOf, class_of, 1)                               \
   V(HasProperty, has_property, 2)                       \
   V(IsArray, is_array, 1)                               \
   V(IsJSProxy, is_js_proxy, 1)                          \
@@ -33,14 +33,12 @@ namespace interpreter {
   V(IsRegExp, is_regexp, 1)                             \
   V(IsSmi, is_smi, 1)                                   \
   V(IsTypedArray, is_typed_array, 1)                    \
-  V(MathPow, math_pow, 2)                               \
   V(NewObject, new_object, 2)                           \
   V(NumberToString, number_to_string, 1)                \
   V(RegExpConstructResult, reg_exp_construct_result, 3) \
   V(RegExpExec, reg_exp_exec, 4)                        \
   V(SubString, sub_string, 3)                           \
   V(ToString, to_string, 1)                             \
-  V(ToName, to_name, 1)                                 \
   V(ToLength, to_length, 1)                             \
   V(ToInteger, to_integer, 1)                           \
   V(ToNumber, to_number, 1)                             \

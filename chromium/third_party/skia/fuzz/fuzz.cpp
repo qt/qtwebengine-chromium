@@ -14,6 +14,8 @@
 #include "SkImageEncoder.h"
 #include "SkMallocPixelRef.h"
 #include "SkPicture.h"
+#include "SkPicture.h"
+#include "SkPicture.h"
 #include "SkStream.h"
 
 #include <cmath>
@@ -32,23 +34,23 @@ static int printUsage(const char* name) {
 }
 static uint8_t calculate_option(SkData*);
 
-static int fuzz_api(SkData*);
-static int fuzz_img(SkData*, uint8_t, uint8_t);
-static int fuzz_skp(SkData*);
-static int fuzz_icc(SkData*);
-static int fuzz_color_deserialize(SkData*);
+static int fuzz_api(sk_sp<SkData>);
+static int fuzz_img(sk_sp<SkData>, uint8_t, uint8_t);
+static int fuzz_skp(sk_sp<SkData>);
+static int fuzz_icc(sk_sp<SkData>);
+static int fuzz_color_deserialize(sk_sp<SkData>);
 
 int main(int argc, char** argv) {
     SkCommandLineFlags::Parse(argc, argv);
 
     const char* path = FLAGS_bytes.isEmpty() ? argv[0] : FLAGS_bytes[0];
-    SkAutoTUnref<SkData> bytes(SkData::NewFromFileName(path));
+    sk_sp<SkData> bytes(SkData::MakeFromFileName(path));
     if (!bytes) {
         SkDebugf("Could not read %s\n", path);
         return 2;
     }
 
-    uint8_t option = calculate_option(bytes);
+    uint8_t option = calculate_option(bytes.get());
 
     if (!FLAGS_type.isEmpty()) {
         switch (FLAGS_type[0][0]) {
@@ -86,7 +88,7 @@ static uint8_t calculate_option(SkData* bytes) {
     return total;
 }
 
-int fuzz_api(SkData* bytes) {
+int fuzz_api(sk_sp<SkData> bytes) {
     const char* name = FLAGS_name.isEmpty() ? "" : FLAGS_name[0];
 
     for (auto r = SkTRegistry<Fuzzable>::Head(); r; r = r->next()) {
@@ -115,7 +117,7 @@ static void dump_png(SkBitmap bitmap) {
     }
 }
 
-int fuzz_img(SkData* bytes, uint8_t scale, uint8_t mode) {
+int fuzz_img(sk_sp<SkData> bytes, uint8_t scale, uint8_t mode) {
     // We can scale 1x, 2x, 4x, 8x, 16x
     scale = scale % 5;
     float fscale = (float)pow(2.0f, scale);
@@ -194,7 +196,6 @@ int fuzz_img(SkData* bytes, uint8_t scale, uint8_t mode) {
             switch (codec->getScanlineOrder()) {
                 case SkCodec::kTopDown_SkScanlineOrder:
                 case SkCodec::kBottomUp_SkScanlineOrder:
-                case SkCodec::kNone_SkScanlineOrder:
                     // We do not need to check the return value.  On an incomplete
                     // image, memory will be filled with a default value.
                     codec->getScanlines(dst, height, rowBytes);
@@ -358,7 +359,7 @@ int fuzz_img(SkData* bytes, uint8_t scale, uint8_t mode) {
     return 0;
 }
 
-int fuzz_skp(SkData* bytes) {
+int fuzz_skp(sk_sp<SkData> bytes) {
     SkMemoryStream stream(bytes);
     SkDebugf("Decoding\n");
     sk_sp<SkPicture> pic(SkPicture::MakeFromStream(&stream));
@@ -379,7 +380,7 @@ int fuzz_skp(SkData* bytes) {
     return 0;
 }
 
-int fuzz_icc(SkData* bytes) {
+int fuzz_icc(sk_sp<SkData> bytes) {
     sk_sp<SkColorSpace> space(SkColorSpace::NewICC(bytes->data(), bytes->size()));
     if (!space) {
         SkDebugf("[terminated] Couldn't decode ICC.\n");
@@ -389,7 +390,7 @@ int fuzz_icc(SkData* bytes) {
     return 0;
 }
 
-int fuzz_color_deserialize(SkData* bytes) {
+int fuzz_color_deserialize(sk_sp<SkData> bytes) {
     sk_sp<SkColorSpace> space(SkColorSpace::Deserialize(bytes->data(), bytes->size()));
     if (!space) {
         SkDebugf("[terminated] Couldn't deserialize Colorspace.\n");
@@ -399,10 +400,16 @@ int fuzz_color_deserialize(SkData* bytes) {
     return 0;
 }
 
-Fuzz::Fuzz(SkData* bytes) : fBytes(SkSafeRef(bytes)), fNextByte(0) {}
+Fuzz::Fuzz(sk_sp<SkData> bytes) : fBytes(bytes), fNextByte(0) {}
 
 void Fuzz::signalBug   () { SkDebugf("Signal bug\n"); raise(SIGSEGV); }
 void Fuzz::signalBoring() { SkDebugf("Signal boring\n"); exit(0); }
+
+size_t Fuzz::size() { return fBytes->size(); }
+
+size_t Fuzz::remaining() {
+    return fBytes->size() - fNextByte;
+}
 
 template <typename T>
 T Fuzz::nextT() {

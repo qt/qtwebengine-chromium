@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <list>
 #include <memory>
 #include <queue>
 #include <vector>
@@ -99,6 +100,9 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   bool Initialize(const Config& config, Client* client) override;
   void Decode(const BitstreamBuffer& bitstream_buffer) override;
   void AssignPictureBuffers(const std::vector<PictureBuffer>& buffers) override;
+  void ImportBufferForPicture(
+      int32_t picture_buffer_id,
+      const gfx::GpuMemoryBufferHandle& gpu_memory_buffer_handles) override;
   void ReusePictureBuffer(int32_t picture_buffer_id) override;
   void Flush() override;
   void Reset() override;
@@ -133,10 +137,13 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
     kInitialized,    // Initialize() returned true; ready to start decoding.
     kDecoding,       // DecodeBufferInitial() successful; decoding frames.
     kResetting,      // Presently resetting.
-    kAfterReset,     // After Reset(), ready to start decoding again.
-    kChangingResolution,  // Performing resolution change, all remaining
-                          // pre-change frames decoded and processed.
-    kError,               // Error in kDecoding state.
+    // Performing resolution change and waiting for image processor to return
+    // all frames.
+    kChangingResolution,
+    // Requested new PictureBuffers via ProvidePictureBuffers(), awaiting
+    // AssignPictureBuffers().
+    kAwaitingPictureBuffers,
+    kError,  // Error in kDecoding state.
   };
 
   enum OutputRecordState {
@@ -180,10 +187,13 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
     EGLImageKHR egl_image;  // EGLImageKHR for the output buffer.
     EGLSyncKHR egl_sync;    // sync the compositor's use of the EGLImage.
     int32_t picture_id;     // picture buffer id as returned to PictureReady().
+    GLuint texture_id;
     bool cleared;           // Whether the texture is cleared and safe to render
                             // from. See TextureManager for details.
-    // Exported fds for image processor to import.
-    std::vector<base::ScopedFD> fds;
+    // Input fds of the processor. Exported from the decoder.
+    std::vector<base::ScopedFD> processor_input_fds;
+    // Output fds of the processor. Used only when OutputMode is IMPORT.
+    std::vector<base::ScopedFD> processor_output_fds;
   };
 
   //
@@ -215,6 +225,38 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   // Flush data for one decoded frame.
   bool FlushInputFrame();
 
+  // Allocate V4L2 buffers and assign them to |buffers| provided by the client
+  // via AssignPictureBuffers() on decoder thread.
+  void AssignPictureBuffersTask(const std::vector<PictureBuffer>& buffers);
+
+  // Use buffer backed by dmabuf file descriptors in |dmabuf_fds| for the
+  // OutputRecord associated with |picture_buffer_id|, taking ownership of the
+  // file descriptors. |stride| is the number of bytes from one row of pixels
+  // to the next row.
+  void ImportBufferForPictureTask(int32_t picture_buffer_id,
+                                  std::vector<base::ScopedFD> dmabuf_fds,
+                                  int32_t stride);
+
+  // Create an EGLImage for the buffer associated with V4L2 |buffer_index| and
+  // for |picture_buffer_id|, backed by dmabuf file descriptors in
+  // |passed_dmabuf_fds|, taking ownership of them.
+  // The buffer should be bound to |texture_id| and is of |size| and format
+  // described by |fourcc|.
+  void CreateEGLImageFor(size_t buffer_index,
+                         int32_t picture_buffer_id,
+                         std::vector<base::ScopedFD> dmabuf_fds,
+                         GLuint texture_id,
+                         const gfx::Size& size,
+                         uint32_t fourcc);
+
+  // Take the EGLImage |egl_image|, created for |picture_buffer_id|, and use it
+  // for OutputRecord at |buffer_index|. The buffer is backed by
+  // |passed_dmabuf_fds|, and the OutputRecord takes ownership of them.
+  void AssignEGLImage(size_t buffer_index,
+                      int32_t picture_buffer_id,
+                      EGLImageKHR egl_image,
+                      std::vector<base::ScopedFD> dmabuf_fds);
+
   // Service I/O on the V4L2 devices.  This task should only be scheduled from
   // DevicePollTask().  If |event_pending| is true, one or more events
   // on file descriptor are pending.
@@ -222,6 +264,10 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   // Handle the various device queues.
   void Enqueue();
   void Dequeue();
+  // Dequeue one input buffer. Return true if success.
+  bool DequeueInputBuffer();
+  // Dequeue one output buffer. Return true if success.
+  bool DequeueOutputBuffer();
 
   // Return true if there is a resolution change event pending.
   bool DequeueResolutionChangeEvent();
@@ -244,13 +290,18 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   // called any time a relevant queue could potentially be emptied: see
   // function definition.
   void NotifyFlushDoneIfNeeded();
+  // Returns true if VIDIOC_DECODER_CMD is supported.
+  bool IsDecoderCmdSupported();
+  // Send V4L2_DEC_CMD_START to the driver. Return true if success.
+  bool SendDecoderCmdStop();
 
-  // Reset() task.  This task will schedule a ResetDoneTask() that will send
-  // the NotifyResetDone callback, then set the decoder state to kResetting so
-  // that all intervening tasks will drain.
+  // Reset() task.  Drop all input buffers. If V4L2VDA is not doing resolution
+  // change or waiting picture buffers, call FinishReset.
   void ResetTask();
-  // ResetDoneTask() will set the decoder state back to kAfterReset, so
-  // subsequent decoding can continue.
+  // This will schedule a ResetDoneTask() that will send the NotifyResetDone
+  // callback, then set the decoder state to kResetting so that all intervening
+  // tasks will drain.
+  void FinishReset();
   void ResetDoneTask();
 
   // Device destruction task.
@@ -309,26 +360,32 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   bool CreateInputBuffers();
   bool CreateOutputBuffers();
 
+  // Destroy buffers.
+  void DestroyInputBuffers();
+  // In contrast to DestroyInputBuffers, which is called only on destruction,
+  // we call DestroyOutputBuffers also during playback, on resolution change.
+  // Even if anything fails along the way, we still want to go on and clean
+  // up as much as possible, so return false if this happens, so that the
+  // caller can error out on resolution change.
+  bool DestroyOutputBuffers();
+
   // Set input and output formats before starting decode.
   bool SetupFormats();
   // Return a usable input format of image processor. Return 0 if not found.
   uint32_t FindImageProcessorInputFormat();
   // Return a usable output format of image processor. Return 0 if not found.
   uint32_t FindImageProcessorOutputFormat();
+  // Reset image processor and drop all processing frames.
+  bool ResetImageProcessor();
+
+  bool CreateImageProcessor();
+  // Send a frame to the image processor to process. The index of decoder
+  // output buffer is |output_buffer_index| and its id is |bitstream_buffer_id|.
+  bool ProcessFrame(int32_t bitstream_buffer_id, int output_buffer_index);
 
   //
   // Methods run on child thread.
   //
-
-  // Destroy buffers.
-  void DestroyInputBuffers();
-  // In contrast to DestroyInputBuffers, which is called only from destructor,
-  // we call DestroyOutputBuffers also during playback, on resolution change.
-  // Even if anything fails along the way, we still want to go on and clean
-  // up as much as possible, so return false if this happens, so that the
-  // caller can error out on resolution change.
-  bool DestroyOutputBuffers();
-  void ResolutionChangeDestroyBuffers();
 
   // Send decoded pictures to PictureReady.
   void SendPictureReady();
@@ -377,6 +434,9 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   base::Thread decoder_thread_;
   // Decoder state machine state.
   State decoder_state_;
+
+  Config::OutputMode output_mode_;
+
   // BitstreamBuffer we're presently reading.
   std::unique_ptr<BitstreamBufferRef> decoder_current_bitstream_buffer_;
   // The V4L2Device this class is operating upon.
@@ -393,10 +453,21 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   int decoder_decode_buffer_tasks_scheduled_;
   // Picture buffers held by the client.
   int decoder_frames_at_client_;
+
   // Are we flushing?
   bool decoder_flushing_;
-  // Got a reset request while we were performing resolution change.
-  bool resolution_change_reset_pending_;
+  // True if VIDIOC_DECODER_CMD is supported.
+  bool decoder_cmd_supported_;
+  // True if flushing is waiting for last output buffer. After
+  // VIDIOC_DECODER_CMD is sent to the driver, this flag will be set to true to
+  // wait for the last output buffer. When this flag is true, flush done will
+  // not be sent. After an output buffer that has the flag V4L2_BUF_FLAG_LAST is
+  // received, this is set to false.
+  bool flush_awaiting_last_output_buffer_;
+
+  // Got a reset request while we were performing resolution change or waiting
+  // picture buffers.
+  bool reset_pending_;
   // Input queue for decoder_thread_: BitstreamBuffers in.
   std::queue<linked_ptr<BitstreamBufferRef>> decoder_input_queue_;
   // For H264 decode, hardware requires that we send it frame-sized chunks.
@@ -432,7 +503,7 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   int output_buffer_queued_count_;
   // Output buffers ready to use, as a FIFO since we want oldest-first to hide
   // synchronization latency with GL.
-  std::queue<int> free_output_buffers_;
+  std::list<int> free_output_buffers_;
   // Mapping of int index to output buffer record.
   std::vector<OutputRecord> output_buffer_map_;
   // Required size of DPB for decoding.
@@ -446,10 +517,6 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
 
   // The number of pictures that are sent to PictureReady and will be cleared.
   int picture_clearing_count_;
-
-  // Used by the decoder thread to wait for AssignPictureBuffers to arrive
-  // to avoid races with potential Reset requests.
-  base::WaitableEvent pictures_assigned_;
 
   // Output picture coded size.
   gfx::Size coded_size_;
@@ -483,7 +550,7 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
 
   // Image processor device, if one is in use.
   scoped_refptr<V4L2Device> image_processor_device_;
-  // Image processor. Created and destroyed on child thread.
+  // Image processor. Accessed on |decoder_thread_|.
   std::unique_ptr<V4L2ImageProcessor> image_processor_;
 
   // The V4L2Device EGLImage is created from.

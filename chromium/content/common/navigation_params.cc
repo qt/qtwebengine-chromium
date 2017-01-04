@@ -18,11 +18,11 @@ namespace content {
 bool ShouldMakeNetworkRequestForURL(const GURL& url) {
   CHECK(IsBrowserSideNavigationEnabled());
 
-  // Data URLs, Javascript URLs, about:blank, srcdoc should not send a request
+  // Javascript URLs, about:blank, srcdoc should not send a request
   // to the network stack.
   // TODO(clamy): same document navigations should not send requests to the
   // network stack. Neither should pushState/popState.
-  return !url.SchemeIs(url::kDataScheme) && url != GURL(url::kAboutBlankURL) &&
+  return url != GURL(url::kAboutBlankURL) &&
          !url.SchemeIs(url::kJavaScriptScheme) && !url.is_empty() &&
          !url.SchemeIs(url::kContentIDScheme) &&
          url != GURL(content::kAboutSrcDocURL);
@@ -102,25 +102,15 @@ BeginNavigationParams::BeginNavigationParams(
     const BeginNavigationParams& other) = default;
 
 StartNavigationParams::StartNavigationParams()
-    :
-#if defined(OS_ANDROID)
-      has_user_gesture(false),
-#endif
-      transferred_request_child_id(-1),
+    : transferred_request_child_id(-1),
       transferred_request_request_id(-1) {
 }
 
 StartNavigationParams::StartNavigationParams(
     const std::string& extra_headers,
-#if defined(OS_ANDROID)
-    bool has_user_gesture,
-#endif
     int transferred_request_child_id,
     int transferred_request_request_id)
     : extra_headers(extra_headers),
-#if defined(OS_ANDROID)
-      has_user_gesture(has_user_gesture),
-#endif
       transferred_request_child_id(transferred_request_child_id),
       transferred_request_request_id(transferred_request_request_id) {
 }
@@ -138,6 +128,7 @@ RequestNavigationParams::RequestNavigationParams()
       page_id(-1),
       nav_entry_id(0),
       is_same_document_history_load(false),
+      is_history_navigation_in_new_child(false),
       has_committed_real_load(false),
       intended_as_new_entry(false),
       pending_history_list_offset(-1),
@@ -145,7 +136,9 @@ RequestNavigationParams::RequestNavigationParams()
       current_history_list_length(0),
       is_view_source(false),
       should_clear_history_list(false),
-      should_create_service_worker(false) {}
+      should_create_service_worker(false),
+      service_worker_provider_id(kInvalidServiceWorkerProviderId),
+      has_user_gesture(false) {}
 
 RequestNavigationParams::RequestNavigationParams(
     bool is_overriding_user_agent,
@@ -156,13 +149,16 @@ RequestNavigationParams::RequestNavigationParams(
     int32_t page_id,
     int nav_entry_id,
     bool is_same_document_history_load,
+    bool is_history_navigation_in_new_child,
+    std::map<std::string, bool> subframe_unique_names,
     bool has_committed_real_load,
     bool intended_as_new_entry,
     int pending_history_list_offset,
     int current_history_list_offset,
     int current_history_list_length,
     bool is_view_source,
-    bool should_clear_history_list)
+    bool should_clear_history_list,
+    bool has_user_gesture)
     : is_overriding_user_agent(is_overriding_user_agent),
       redirects(redirects),
       can_load_local_resources(can_load_local_resources),
@@ -171,6 +167,8 @@ RequestNavigationParams::RequestNavigationParams(
       page_id(page_id),
       nav_entry_id(nav_entry_id),
       is_same_document_history_load(is_same_document_history_load),
+      is_history_navigation_in_new_child(is_history_navigation_in_new_child),
+      subframe_unique_names(subframe_unique_names),
       has_committed_real_load(has_committed_real_load),
       intended_as_new_entry(intended_as_new_entry),
       pending_history_list_offset(pending_history_list_offset),
@@ -178,7 +176,9 @@ RequestNavigationParams::RequestNavigationParams(
       current_history_list_length(current_history_list_length),
       is_view_source(is_view_source),
       should_clear_history_list(should_clear_history_list),
-      should_create_service_worker(false) {}
+      should_create_service_worker(false),
+      service_worker_provider_id(kInvalidServiceWorkerProviderId),
+      has_user_gesture(has_user_gesture) {}
 
 RequestNavigationParams::RequestNavigationParams(
     const RequestNavigationParams& other) = default;

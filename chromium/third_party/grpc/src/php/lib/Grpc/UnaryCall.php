@@ -43,7 +43,7 @@ class UnaryCall extends AbstractCall
     /**
      * Start the call.
      *
-     * @param $data The data to send
+     * @param mixed $data     The data to send
      * @param array $metadata Metadata to send with the call, if applicable
      * @param array $options  an array of options, possible keys:
      *                        'flags' => a number
@@ -66,7 +66,7 @@ class UnaryCall extends AbstractCall
     /**
      * Wait for the server to respond with data and a status.
      *
-     * @return [response data, status]
+     * @return array [response data, status]
      */
     public function wait()
     {
@@ -75,6 +75,9 @@ class UnaryCall extends AbstractCall
             OP_RECV_STATUS_ON_CLIENT => true,
         ]);
 
-        return [$this->deserializeResponse($event->message), $event->status];
+        $status = $event->status;
+        $this->trailing_metadata = $status->metadata;
+
+        return [$this->deserializeResponse($event->message), $status];
     }
 }

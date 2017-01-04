@@ -21,7 +21,6 @@
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
-#include "net/log/net_log.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_server.h"
@@ -38,6 +37,8 @@ namespace net {
 
 class DhcpProxyScriptFetcher;
 class HostResolver;
+class NetLog;
+class NetLogWithSource;
 class ProxyDelegate;
 class ProxyResolver;
 class ProxyResolverFactory;
@@ -152,21 +153,19 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // Profiling information for the request is saved to |net_log| if non-NULL.
   int ResolveProxy(const GURL& url,
                    const std::string& method,
-                   int load_flags,
                    ProxyInfo* results,
                    const CompletionCallback& callback,
                    PacRequest** pac_request,
                    ProxyDelegate* proxy_delegate,
-                   const BoundNetLog& net_log);
+                   const NetLogWithSource& net_log);
 
   // Returns true if the proxy information could be determined without spawning
   // an asynchronous task.  Otherwise, |result| is unmodified.
   bool TryResolveProxySynchronously(const GURL& raw_url,
                                     const std::string& method,
-                                    int load_flags,
                                     ProxyInfo* result,
                                     ProxyDelegate* proxy_delegate,
-                                    const BoundNetLog& net_log);
+                                    const NetLogWithSource& net_log);
 
   // This method is called after a failure to connect or resolve a host name.
   // It gives the proxy service an opportunity to reconsider the proxy to use.
@@ -184,13 +183,12 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // Profiling information for the request is saved to |net_log| if non-NULL.
   int ReconsiderProxyAfterError(const GURL& url,
                                 const std::string& method,
-                                int load_flags,
                                 int net_error,
                                 ProxyInfo* results,
                                 const CompletionCallback& callback,
                                 PacRequest** pac_request,
                                 ProxyDelegate* proxy_delegate,
-                                const BoundNetLog& net_log);
+                                const NetLogWithSource& net_log);
 
   // Explicitly trigger proxy fallback for the given |results| by updating our
   // list of bad proxies to include the first entry of |results|, and,
@@ -206,7 +204,7 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
       const ProxyInfo& results,
       base::TimeDelta retry_delay,
       const std::vector<ProxyServer>& additional_bad_proxies,
-      const BoundNetLog& net_log);
+      const NetLogWithSource& net_log);
 
   // Called to report that the last proxy connection succeeded.  If |proxy_info|
   // has a non empty proxy_retry_info map, the proxies that have been tried (and
@@ -356,7 +354,6 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // Otherwise it fills |result| with the proxy information for |url|.
   // Completing synchronously means we don't need to query ProxyResolver.
   int TryToCompleteSynchronously(const GURL& url,
-                                 int load_flags,
                                  ProxyDelegate* proxy_delegate,
                                  ProxyInfo* result);
 
@@ -365,12 +362,11 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // |TryToCompleteSynchronously|.
   int ResolveProxyHelper(const GURL& url,
                          const std::string& method,
-                         int load_flags,
                          ProxyInfo* results,
                          const CompletionCallback& callback,
                          PacRequest** pac_request,
                          ProxyDelegate* proxy_delegate,
-                         const BoundNetLog& net_log);
+                         const NetLogWithSource& net_log);
 
   // Cancels all of the requests sent to the ProxyResolver. These will be
   // restarted when calling SetReady().
@@ -391,11 +387,10 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // bad entries from the results list.
   int DidFinishResolvingProxy(const GURL& url,
                               const std::string& method,
-                              int load_flags,
                               ProxyDelegate* proxy_delegate,
                               ProxyInfo* result,
                               int result_code,
-                              const BoundNetLog& net_log,
+                              const NetLogWithSource& net_log,
                               base::TimeTicks start_time,
                               bool script_executed);
 

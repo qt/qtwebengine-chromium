@@ -25,6 +25,21 @@
 // OSX SDK being compiled against.
 // ----------------------------------------------------------------------------
 
+#if !defined(MAC_OS_X_VERSION_10_12) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
+
+// The protocol was formalized by the 10.12 SDK, but it was informally used
+// before.
+@protocol CAAnimationDelegate
+- (void)animationDidStart:(CAAnimation*)animation;
+- (void)animationDidStop:(CAAnimation*)animation finished:(BOOL)finished;
+@end
+
+@protocol CALayerDelegate
+@end
+
+#endif  // MAC_OS_X_VERSION_10_12
+
 #if !defined(MAC_OS_X_VERSION_10_11) || \
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_11
 
@@ -50,7 +65,7 @@ enum {
 };
 typedef NSUInteger NSSpringLoadingHighlight;
 
-#endif // MAC_OS_X_VERSION_10_11
+#endif  // MAC_OS_X_VERSION_10_11
 
 // ----------------------------------------------------------------------------
 // Define NSStrings only available in newer versions of the OSX SDK to force
@@ -95,6 +110,23 @@ BASE_EXPORT extern NSString* const NSAppearanceNameVibrantLight;
 
 @interface NSControl (MountainLionSDK)
 @property BOOL allowsExpansionToolTips;
+@end
+
+@interface NSNib (MountainLionSDK)
+- (BOOL)instantiateWithOwner:(id)owner
+             topLevelObjects:(NSArray**)topLevelObjects;
+@end
+
+@interface NSArray (MountainLionSDK)
+- (id)objectAtIndexedSubscript:(NSUInteger)idx;
+@end
+
+@interface NSDictionary (MountainLionSDK)
+- (id)objectForKeyedSubscript:(id)key;
+@end
+
+@interface NSMutableDictionary (MountainLionSDK)
+- (void)setObject:(id)obj forKeyedSubscript:(id<NSCopying>)key;
 @end
 
 #endif  // MAC_OS_X_VERSION_10_8
@@ -160,12 +192,6 @@ BASE_EXPORT extern NSString* const NSAppearanceNameVibrantLight;
 @property(readonly, nonatomic) NSUUID* identifier;
 @end
 
-@interface NSVisualEffectView (MavericksSDK)
-- (void)setState:(NSVisualEffectState)state;
-@end
-
-@class NSVisualEffectView;
-
 @class NSUserActivity;
 
 #endif  // MAC_OS_X_VERSION_10_9
@@ -203,6 +229,12 @@ BASE_EXPORT extern NSString* const NSAppearanceNameVibrantLight;
 @property(readonly) NSOperatingSystemVersion operatingSystemVersion;
 @end
 
+@interface NSVisualEffectView (YosemiteSDK)
+- (void)setState:(NSVisualEffectState)state;
+@end
+
+@class NSVisualEffectView;
+
 #endif  // MAC_OS_X_VERSION_10_10
 
 // Once Chrome no longer supports OSX 10.10.2, everything within this
@@ -219,6 +251,17 @@ BASE_EXPORT extern NSString* const NSAppearanceNameVibrantLight;
 @end
 
 #endif  // MAC_OS_X_VERSION_10_10
+
+// Once Chrome no longer supports OSX 10.11, everything within this
+// preprocessor block can be removed.
+#if !defined(MAC_OS_X_VERSION_10_12) || \
+    MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_12
+
+@interface NSWindow (SierraSDK)
+@property(class) BOOL allowsAutomaticWindowTabbing;
+@end
+
+#endif  // MAC_OS_X_VERSION_10_12
 
 // ----------------------------------------------------------------------------
 // The symbol for kCWSSIDDidChangeNotification is available in the

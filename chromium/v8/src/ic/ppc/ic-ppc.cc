@@ -425,10 +425,8 @@ void KeyedLoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   __ LoadRoot(vector, Heap::kDummyVectorRootIndex);
   __ LoadSmiLiteral(slot, Smi::FromInt(slot_index));
 
-  Code::Flags flags =
-      Code::RemoveHolderFromFlags(Code::ComputeHandlerFlags(Code::LOAD_IC));
-  masm->isolate()->stub_cache()->GenerateProbe(masm, Code::KEYED_LOAD_IC, flags,
-                                               receiver, key, r7, r8, r9, r10);
+  masm->isolate()->load_stub_cache()->GenerateProbe(masm, receiver, key, r7, r8,
+                                                    r9, r10);
   // Cache miss.
   GenerateMiss(masm);
 
@@ -453,10 +451,11 @@ void KeyedLoadIC::GenerateMegamorphic(MacroAssembler* masm) {
 
 
 static void StoreIC_PushArgs(MacroAssembler* masm) {
-  __ Push(StoreDescriptor::ReceiverRegister(), StoreDescriptor::NameRegister(),
-          StoreDescriptor::ValueRegister(),
-          VectorStoreICDescriptor::SlotRegister(),
-          VectorStoreICDescriptor::VectorRegister());
+  __ Push(StoreWithVectorDescriptor::ValueRegister(),
+          StoreWithVectorDescriptor::SlotRegister(),
+          StoreWithVectorDescriptor::VectorRegister(),
+          StoreWithVectorDescriptor::ReceiverRegister(),
+          StoreWithVectorDescriptor::NameRegister());
 }
 
 
@@ -466,6 +465,13 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
   __ TailCallRuntime(Runtime::kKeyedStoreIC_Miss);
 }
 
+void KeyedStoreIC::GenerateSlow(MacroAssembler* masm) {
+  StoreIC_PushArgs(masm);
+
+  // The slow case calls into the runtime to complete the store without causing
+  // an IC miss that would otherwise cause a transition to the generic stub.
+  __ TailCallRuntime(Runtime::kKeyedStoreIC_Slow);
+}
 
 static void KeyedStoreGenerateMegamorphicHelper(
     MacroAssembler* masm, Label* fast_object, Label* fast_double, Label* slow,
@@ -675,8 +681,8 @@ void KeyedStoreIC::GenerateMegamorphic(MacroAssembler* masm,
 
   // The handlers in the stub cache expect a vector and slot. Since we won't
   // change the IC from any downstream misses, a dummy vector can be used.
-  Register vector = VectorStoreICDescriptor::VectorRegister();
-  Register slot = VectorStoreICDescriptor::SlotRegister();
+  Register vector = StoreWithVectorDescriptor::VectorRegister();
+  Register slot = StoreWithVectorDescriptor::SlotRegister();
   DCHECK(!AreAliased(vector, slot, r8, r9, r10, r11));
   Handle<TypeFeedbackVector> dummy_vector =
       TypeFeedbackVector::DummyVector(masm->isolate());
@@ -685,10 +691,8 @@ void KeyedStoreIC::GenerateMegamorphic(MacroAssembler* masm,
   __ LoadRoot(vector, Heap::kDummyVectorRootIndex);
   __ LoadSmiLiteral(slot, Smi::FromInt(slot_index));
 
-  Code::Flags flags =
-      Code::RemoveHolderFromFlags(Code::ComputeHandlerFlags(Code::STORE_IC));
-  masm->isolate()->stub_cache()->GenerateProbe(
-      masm, Code::KEYED_STORE_IC, flags, receiver, key, r8, r9, r10, r11);
+  masm->isolate()->store_stub_cache()->GenerateProbe(masm, receiver, key, r8,
+                                                     r9, r10, r11);
   // Cache miss.
   __ b(&miss);
 
@@ -754,8 +758,8 @@ void StoreIC::GenerateNormal(MacroAssembler* masm) {
   DCHECK(receiver.is(r4));
   DCHECK(name.is(r5));
   DCHECK(value.is(r3));
-  DCHECK(VectorStoreICDescriptor::VectorRegister().is(r6));
-  DCHECK(VectorStoreICDescriptor::SlotRegister().is(r7));
+  DCHECK(StoreWithVectorDescriptor::VectorRegister().is(r6));
+  DCHECK(StoreWithVectorDescriptor::SlotRegister().is(r7));
 
   __ LoadP(dictionary, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
 

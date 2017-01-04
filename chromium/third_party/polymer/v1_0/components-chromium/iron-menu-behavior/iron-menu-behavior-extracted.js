@@ -123,15 +123,23 @@
     /**
      * Focuses the previous item (relative to the currently focused item) in the
      * menu, disabled items will be skipped.
+     * Loop until length + 1 to handle case of single item in menu.
      */
     _focusPrevious: function() {
       var length = this.items.length;
       var curFocusIndex = Number(this.indexOf(this.focusedItem));
-      for (var i = 1; i < length; i++) {
+
+      for (var i = 1; i < length + 1; i++) {
         var item = this.items[(curFocusIndex - i + length) % length];
         if (!item.hasAttribute('disabled')) {
+          var owner = Polymer.dom(item).getOwnerRoot() || document;
           this._setFocusedItem(item);
-          return;
+
+          // Focus might not have worked, if the element was hidden or not
+          // focusable. In that case, try again.
+          if (Polymer.dom(owner).activeElement == item) {
+            return;
+          }
         }
       }
     },
@@ -139,15 +147,23 @@
     /**
      * Focuses the next item (relative to the currently focused item) in the
      * menu, disabled items will be skipped.
+     * Loop until length + 1 to handle case of single item in menu.
      */
     _focusNext: function() {
       var length = this.items.length;
       var curFocusIndex = Number(this.indexOf(this.focusedItem));
-      for (var i = 1; i < length; i++) {
+
+      for (var i = 1; i < length + 1; i++) {
         var item = this.items[(curFocusIndex + i) % length];
         if (!item.hasAttribute('disabled')) {
+          var owner = Polymer.dom(item).getOwnerRoot() || document;
           this._setFocusedItem(item);
-          return;
+
+          // Focus might not have worked, if the element was hidden or not
+          // focusable. In that case, try again.
+          if (Polymer.dom(owner).activeElement == item) {
+            return;
+          }
         }
       }
     },

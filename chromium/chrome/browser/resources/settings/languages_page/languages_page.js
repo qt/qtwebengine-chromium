@@ -14,14 +14,6 @@ Polymer({
 
   properties: {
     /**
-     * The current active route.
-     */
-    currentRoute: {
-      type: Object,
-      notify: true,
-    },
-
-    /**
      * Preferences state.
      */
     prefs: {
@@ -39,6 +31,9 @@ Polymer({
       notify: true,
     },
 
+    /** @type {!LanguageHelper} */
+    languageHelper: Object,
+
     /** @private */
     spellCheckSecondary_: {
       type: String,
@@ -52,28 +47,24 @@ Polymer({
      */
     detailLanguage_: Object,
 
-    /** @private {!LanguageHelper} */
-    languageHelper_: Object,
-  },
-
-  /** @override */
-  created: function() {
-    this.languageHelper_ = LanguageHelperImpl.getInstance();
+    /** @private */
+    showAddLanguagesDialog_: Boolean,
   },
 
   /**
    * Handler for clicking a language on the main page, which selects the
    * language as the prospective UI language on Chrome OS and Windows.
-   * @param {!{model: !{item: !LanguageState}}} e
+   * @param {!Event} e The tap event.
    */
   onLanguageTap_: function(e) {
     // Only change the UI language on platforms that allow it.
-    if (!cr.isChromeOS && !cr.isWindows)
+    if ((!cr.isChromeOS && !cr.isWindows) || loadTimeData.getBoolean('isGuest'))
       return;
 
     // Set the prospective UI language. This won't take effect until a restart.
-    if (e.model.item.language.supportsUI)
-      this.languageHelper_.setUILanguage(e.model.item.language.code);
+    var tapEvent = /** @type {!{model: !{item: !LanguageState}}} */(e);
+    if (tapEvent.model.item.language.supportsUI)
+      this.languageHelper.setUILanguage(tapEvent.model.item.language.code);
   },
 
   /**
@@ -81,8 +72,8 @@ Polymer({
    * @param {!{target: Element, model: !{item: !LanguageState}}} e
    */
   onSpellCheckChange_: function(e) {
-    this.languageHelper_.toggleSpellCheck(e.model.item.language.code,
-                                          e.target.checked);
+    this.languageHelper.toggleSpellCheck(e.model.item.language.code,
+                                         e.target.checked);
   },
 
   /** @private */
@@ -91,34 +82,48 @@ Polymer({
   },
 
   /**
-   * Opens the Manage Languages page.
+   * Stamps and opens the Add Languages dialog, registering a listener to
+   * disable the dialog's dom-if again on close.
    * @private
    */
-  onManageLanguagesTap_: function() {
-    this.$.pages.setSubpageChain(['manage-languages']);
-    this.forceRenderList_('settings-manage-languages-page');
+  onAddLanguagesTap_: function() {
+    this.showAddLanguagesDialog_ = true;
+    this.async(function() {
+      var dialog = this.$$('settings-add-languages-dialog');
+      dialog.addEventListener('close', function() {
+        this.showAddLanguagesDialog_ = false;
+      }.bind(this));
+    });
   },
 
   /**
-   * @param {number} index Index of the language in the list of languages.
-   * @param {!Object} change Polymer change object for languages.enabled.*.
-   * @return {boolean} True if the given language is the first one in the list
-   *     of languages.
+   * @param {!LanguageState} language
+   * @return {boolean} True if |language| is first in the list of enabled
+   *     languages. Used to hide the "Move up" option.
    * @private
    */
-  isFirstLanguage_: function(index, change) {
-    return index == 0;
+  isFirstLanguage_: function(language) {
+    return language == this.languages.enabled[0];
   },
 
   /**
-   * @param {number} index Index of the language in the list of languages.
-   * @param {!Object} change Polymer change object for languages.enabled.*.
-   * @return {boolean} True if the given language is the last one in the list of
-   *     languages.
+   * @param {!LanguageState} language
+   * @return {boolean} True if |language| is first or second in the list of
+   *     enabled languages. Used to hide the "Move to top" option.
    * @private
    */
-  isLastLanguage_: function(index, change) {
-    return index == this.languages.enabled.length - 1;
+  isFirstOrSecondLanguage_: function(language) {
+    return this.languages.enabled.slice(0, 2).includes(language);
+  },
+
+  /**
+   * @param {!LanguageState} language
+   * @return {boolean} True if |language| is last in the list of enabled
+   *     languages. Used to hide the "Move down" option.
+   * @private
+   */
+  isLastLanguage_: function(language) {
+    return language == this.languages.enabled.slice(-1)[0];
   },
 
   /**
@@ -130,31 +135,135 @@ Polymer({
   },
 
   /**
-   * Moves the language up in the list.
-   * @param {!{model: !{item: !LanguageState}}} e
+   * @param {!LanguageState} languageState
+   * @param {string} prospectiveUILanguage The chosen UI language.
+   * @return {boolean} True if the given language cannot be set/unset as the
+   *     prospective UI language by the user.
    * @private
    */
-  onMoveUpTap_: function(e) {
-    this.languageHelper_.moveLanguage(e.model.item.language.code, -1);
+  disableUILanguageCheckbox_: function(languageState, prospectiveUILanguage) {
+    // UI language setting belongs to the primary user.
+    if (this.isSecondaryUser_())
+      return true;
+
+    // If the language cannot be a UI language, we can't set/unset it as the
+    // prospective UI language.
+    if (!languageState.language.supportsUI)
+      return true;
+
+    // If the language already is the prospective UI language, it can't be unset
+    // if it is also the *actual* UI language, as we wouldn't know what other
+    // language to set as the prospective UI language.
+    if (languageState.language.code == navigator.language &&
+        (!prospectiveUILanguage ||
+         languageState.language.code == prospectiveUILanguage)) {
+      return true;
+    }
+
+    // Otherwise, the prospective language can be changed to/from this language.
+    return false;
+  },
+
+  /**
+   * @return {boolean} True for a secondary user in a multi-profile session.
+   * @private
+   */
+  isSecondaryUser_: function() {
+    return cr.isChromeOS && loadTimeData.getBoolean('isSecondaryUser');
+  },
+
+  /**
+   * Handler for changes to the UI language checkbox.
+   * @param {!{target: !PaperCheckboxElement}} e
+   * @private
+   */
+  onUILanguageChange_: function(e) {
+    if (e.target.checked) {
+      this.languageHelper.setUILanguage(this.detailLanguage_.language.code);
+    } else if (this.detailLanguage_.language.code ==
+        this.languageHelper.getProspectiveUILanguage()) {
+      // Reset the chosen UI language to the actual UI language.
+      this.languageHelper.resetUILanguage();
+    }
+    /** @type {!CrSharedMenuElement} */(this.$.menu.get()).closeMenu();
+  },
+
+   /**
+   * @param {!chrome.languageSettingsPrivate.Language} language
+   * @param {string} targetLanguageCode The default translate target language.
+   * @return {boolean} True if the translate checkbox should be disabled.
+   * @private
+   */
+  disableTranslateCheckbox_: function(language, targetLanguageCode) {
+    if (!language.supportsTranslate)
+      return true;
+
+    return this.languageHelper.convertLanguageCodeForTranslate(language.code) ==
+        targetLanguageCode;
+  },
+
+  /**
+   * Handler for changes to the translate checkbox.
+   * @param {!{target: !PaperCheckboxElement}} e
+   * @private
+   */
+  onTranslateCheckboxChange_: function(e) {
+    if (e.target.checked) {
+      this.languageHelper.enableTranslateLanguage(
+          this.detailLanguage_.language.code);
+    } else {
+      this.languageHelper.disableTranslateLanguage(
+          this.detailLanguage_.language.code);
+    }
+    /** @type {!CrSharedMenuElement} */(this.$.menu.get()).closeMenu();
+  },
+
+  /**
+   * Returns "complex" if the menu includes checkboxes, which should change the
+   * spacing of items and show a separator in the menu.
+   * @param {boolean} translateEnabled
+   * @return {string}
+   */
+  getMenuClass_: function(translateEnabled) {
+    if (translateEnabled || cr.isChromeOS || cr.isWindows)
+      return 'complex';
+    return '';
+  },
+
+  /**
+   * Moves the language to the top of the list.
+   * @private
+   */
+  onMoveToTopTap_: function() {
+    /** @type {!CrSharedMenuElement} */(this.$.menu.get()).closeMenu();
+    this.languageHelper.moveLanguageToFront(this.detailLanguage_.language.code);
+  },
+
+  /**
+   * Moves the language up in the list.
+   * @private
+   */
+  onMoveUpTap_: function() {
+    /** @type {!CrSharedMenuElement} */(this.$.menu.get()).closeMenu();
+    this.languageHelper.moveLanguage(this.detailLanguage_.language.code, -1);
   },
 
   /**
    * Moves the language down in the list.
-   * @param {!{model: !{item: !LanguageState}}} e
    * @private
    */
-  onMoveDownTap_: function(e) {
-    this.languageHelper_.moveLanguage(e.model.item.language.code, 1);
+  onMoveDownTap_: function() {
+    /** @type {!CrSharedMenuElement} */(this.$.menu.get()).closeMenu();
+    this.languageHelper.moveLanguage(this.detailLanguage_.language.code, 1);
   },
 
   /**
-   * Opens the Language Detail page for the language.
-   * @param {!{model: !{item: !LanguageState}}} e
+   * Disables the language.
    * @private
    */
-  onShowLanguageDetailTap_: function(e) {
-    this.detailLanguage_ = e.model.item;
-    this.$.pages.setSubpageChain(['language-detail']);
+  onRemoveLanguageTap_: function() {
+    /** @type {!CrSharedMenuElement} */(this.$.menu.get()).closeMenu();
+    this.languageHelper.disableLanguage(this.detailLanguage_.language.code);
   },
 
   /**
@@ -163,7 +272,7 @@ Polymer({
    */
   onManageInputMethodsTap_: function() {
     assert(cr.isChromeOS);
-    this.$.pages.setSubpageChain(['manage-input-methods']);
+    settings.navigateTo(settings.Route.INPUT_METHODS);
   },
 
   /**
@@ -180,7 +289,7 @@ Polymer({
       return;
 
     // Set the input method.
-    this.languageHelper_.setCurrentInputMethod(e.model.item.id);
+    this.languageHelper.setCurrentInputMethod(e.model.item.id);
   },
 
   /**
@@ -191,7 +300,7 @@ Polymer({
    */
   onInputMethodOptionsTap_: function(e) {
     assert(cr.isChromeOS);
-    this.languageHelper_.openInputMethodOptions(e.model.item.id);
+    this.languageHelper.openInputMethodOptions(e.model.item.id);
   },
 
   /**
@@ -238,14 +347,14 @@ Polymer({
    */
   onEditDictionaryTap_: function() {
     assert(!cr.isMac);
-    this.$.pages.setSubpageChain(['edit-dictionary']);
+    settings.navigateTo(settings.Route.EDIT_DICTIONARY);
     this.forceRenderList_('settings-edit-dictionary-page');
   },
 
   /**
    * Checks whether the prospective UI language (the pref that indicates what
-   * language to use in Chrome) matches the current language. This pref is only
-   * on Chrome OS and Windows; we don't control the UI language elsewhere.
+   * language to use in Chrome) matches the current language. This pref is used
+   * only on Chrome OS and Windows; we don't control the UI language elsewhere.
    * @param {string} languageCode The language code identifying a language.
    * @param {string} prospectiveUILanguage The prospective UI language.
    * @return {boolean} True if the given language matches the prospective UI
@@ -254,7 +363,7 @@ Polymer({
    */
   isProspectiveUILanguage_: function(languageCode, prospectiveUILanguage) {
     assert(cr.isChromeOS || cr.isWindows);
-    return languageCode == this.languageHelper_.getProspectiveUILanguage();
+    return languageCode == this.languageHelper.getProspectiveUILanguage();
   },
 
    /**
@@ -262,8 +371,8 @@ Polymer({
     * @private
     */
   getProspectiveUILanguageName_: function() {
-    return this.languageHelper_.getLanguage(
-        this.languageHelper_.getProspectiveUILanguage()).displayName;
+    return this.languageHelper.getLanguage(
+        this.languageHelper.getProspectiveUILanguage()).displayName;
   },
 
   /**
@@ -279,17 +388,23 @@ Polymer({
    */
   getLanguageItemClass_: function(languageCode, prospectiveUILanguage,
       supportsUI) {
-    var classes = [];
-
-    if (cr.isChromeOS || cr.isWindows) {
-      if (supportsUI)
-        classes.push('list-button');  // Makes the item look "actionable".
-
-      if (this.isProspectiveUILanguage_(languageCode, prospectiveUILanguage))
-        classes.push('selected');
+    if ((cr.isChromeOS || cr.isWindows) &&
+        this.isProspectiveUILanguage_(languageCode, prospectiveUILanguage)) {
+      return 'selected';
     }
+    return '';
+  },
 
-    return classes.join(' ');
+   /**
+   * @param {string} languageCode The language code identifying a language.
+   * @param {string} prospectiveUILanguage The prospective UI language.
+   * @return {boolean} True if the prospective UI language is set to
+   *     |languageCode| but requires a restart to take effect.
+   * @private
+   */
+  isRestartRequired_: function(languageCode, prospectiveUILanguage) {
+    return prospectiveUILanguage == languageCode &&
+        navigator.language != languageCode;
   },
 
   /**
@@ -331,6 +446,60 @@ Polymer({
    */
   forceRenderList_: function(tagName) {
     this.$$(tagName).$$('iron-list').fire('iron-resize');
+  },
+
+  /**
+   * Opens or closes the shared menu at the location of the tapped item.
+   * @param {!Event} e
+   * @private
+   */
+  toggleMenu_: function(e) {
+    e.stopPropagation();  // Prevent the tap event from closing the menu.
+
+    this.detailLanguage_ =
+        /** @type {!{model: !{item: !LanguageState}}} */(e).model.item;
+
+    // Ensure the template has been stamped.
+    var menu = /** @type {?CrSharedMenuElement} */(this.$.menu.getIfExists());
+    if (!menu) {
+      menu = /** @type {!CrSharedMenuElement} */(this.$.menu.get());
+      this.initializeMenu_(menu);
+    }
+
+    menu.toggleMenu(/** @type {!Element} */(e.target));
+  },
+
+  /**
+   * Applies Chrome OS session tweaks to the menu.
+   * @param {!CrSharedMenuElement} menu
+   * @private
+   */
+  initializeMenu_: function(menu) {
+    // In a CrOS multi-user session, the primary user controls the UI language.
+    // TODO(michaelpg): The language selection should not be hidden, but should
+    // show a policy indicator. crbug.com/648498
+    if (this.isSecondaryUser_())
+      menu.querySelector('#uiLanguageItem').hidden = true;
+
+    // The UI language choice doesn't persist for guests.
+    if (cr.isChromeOS &&
+        (uiAccountTweaks.UIAccountTweaks.loggedInAsGuest() ||
+         uiAccountTweaks.UIAccountTweaks.loggedInAsPublicAccount())) {
+      menu.querySelector('#uiLanguageItem').hidden = true;
+    }
+  },
+
+  /**
+   * Handler for the restart button.
+   * @private
+   */
+  onRestartTap_: function() {
+<if expr="chromeos">
+    settings.LifetimeBrowserProxyImpl.getInstance().signOutAndRestart();
+</if>
+<if expr="not chromeos">
+    settings.LifetimeBrowserProxyImpl.getInstance().restart();
+</if>
   },
 });
 })();

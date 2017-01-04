@@ -4,6 +4,9 @@
 
 #include "extensions/browser/computed_hashes.h"
 
+#include <memory>
+#include <utility>
+
 #include "base/base64.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -133,13 +136,13 @@ ComputedHashes::Writer::~Writer() {
 void ComputedHashes::Writer::AddHashes(const base::FilePath& relative_path,
                                        int block_size,
                                        const std::vector<std::string>& hashes) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   base::ListValue* block_hashes = new base::ListValue();
-  file_list_->Append(dict);
   dict->SetString(kPathKey,
                   relative_path.NormalizePathSeparatorsTo('/').AsUTF8Unsafe());
   dict->SetInteger(kBlockSizeKey, block_size);
   dict->Set(kBlockHashesKey, block_hashes);
+  file_list_->Append(std::move(dict));
 
   for (std::vector<std::string>::const_iterator i = hashes.begin();
        i != hashes.end();
@@ -184,7 +187,7 @@ void ComputedHashes::ComputeHashesForContent(const std::string& contents,
     hashes->push_back(std::string());
     std::string* buffer = &(hashes->back());
     buffer->resize(crypto::kSHA256Length);
-    hash->Finish(string_as_array(buffer), buffer->size());
+    hash->Finish(base::string_as_array(buffer), buffer->size());
 
     // If |contents| is empty, then we want to just exit here.
     if (bytes_to_read == 0)

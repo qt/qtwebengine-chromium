@@ -8,6 +8,7 @@
 #include <deque>
 
 #include "src/base/bits.h"
+#include "src/heap/marking.h"
 #include "src/heap/spaces.h"
 #include "src/heap/store-buffer.h"
 
@@ -28,7 +29,7 @@ class MarkCompactCollector;
 class MarkingVisitor;
 class RootMarkingVisitor;
 
-class Marking : public AllStatic {
+class ObjectMarking : public AllStatic {
  public:
   INLINE(static MarkBit MarkBitFrom(Address addr)) {
     MemoryChunk* p = MemoryChunk::FromAddress(addr);
@@ -39,143 +40,12 @@ class Marking : public AllStatic {
     return MarkBitFrom(reinterpret_cast<Address>(obj));
   }
 
-  // Impossible markbits: 01
-  static const char* kImpossibleBitPattern;
-  INLINE(static bool IsImpossible(MarkBit mark_bit)) {
-    return !mark_bit.Get() && mark_bit.Next().Get();
-  }
-
-  // Black markbits: 11
-  static const char* kBlackBitPattern;
-  INLINE(static bool IsBlack(MarkBit mark_bit)) {
-    return mark_bit.Get() && mark_bit.Next().Get();
-  }
-
-  // White markbits: 00 - this is required by the mark bit clearer.
-  static const char* kWhiteBitPattern;
-  INLINE(static bool IsWhite(MarkBit mark_bit)) {
-    DCHECK(!IsImpossible(mark_bit));
-    return !mark_bit.Get();
-  }
-
-  // Grey markbits: 10
-  static const char* kGreyBitPattern;
-  INLINE(static bool IsGrey(MarkBit mark_bit)) {
-    return mark_bit.Get() && !mark_bit.Next().Get();
-  }
-
-  // IsBlackOrGrey assumes that the first bit is set for black or grey
-  // objects.
-  INLINE(static bool IsBlackOrGrey(MarkBit mark_bit)) { return mark_bit.Get(); }
-
-  INLINE(static void MarkBlack(MarkBit mark_bit)) {
-    mark_bit.Set();
-    mark_bit.Next().Set();
-  }
-
-  INLINE(static void MarkWhite(MarkBit mark_bit)) {
-    mark_bit.Clear();
-    mark_bit.Next().Clear();
-  }
-
-  INLINE(static void BlackToWhite(MarkBit markbit)) {
-    DCHECK(IsBlack(markbit));
-    markbit.Clear();
-    markbit.Next().Clear();
-  }
-
-  INLINE(static void GreyToWhite(MarkBit markbit)) {
-    DCHECK(IsGrey(markbit));
-    markbit.Clear();
-    markbit.Next().Clear();
-  }
-
-  INLINE(static void BlackToGrey(MarkBit markbit)) {
-    DCHECK(IsBlack(markbit));
-    markbit.Next().Clear();
-  }
-
-  INLINE(static void WhiteToGrey(MarkBit markbit)) {
-    DCHECK(IsWhite(markbit));
-    markbit.Set();
-  }
-
-  INLINE(static void WhiteToBlack(MarkBit markbit)) {
-    DCHECK(IsWhite(markbit));
-    markbit.Set();
-    markbit.Next().Set();
-  }
-
-  INLINE(static void GreyToBlack(MarkBit markbit)) {
-    DCHECK(IsGrey(markbit));
-    markbit.Next().Set();
-  }
-
-  INLINE(static void BlackToGrey(HeapObject* obj)) {
-    BlackToGrey(MarkBitFrom(obj));
-  }
-
-  INLINE(static void AnyToGrey(MarkBit markbit)) {
-    markbit.Set();
-    markbit.Next().Clear();
-  }
-
-  static void TransferMark(Heap* heap, Address old_start, Address new_start);
-
-#ifdef DEBUG
-  enum ObjectColor {
-    BLACK_OBJECT,
-    WHITE_OBJECT,
-    GREY_OBJECT,
-    IMPOSSIBLE_COLOR
-  };
-
-  static const char* ColorName(ObjectColor color) {
-    switch (color) {
-      case BLACK_OBJECT:
-        return "black";
-      case WHITE_OBJECT:
-        return "white";
-      case GREY_OBJECT:
-        return "grey";
-      case IMPOSSIBLE_COLOR:
-        return "impossible";
-    }
-    return "error";
-  }
-
-  static ObjectColor Color(HeapObject* obj) {
-    return Color(Marking::MarkBitFrom(obj));
-  }
-
-  static ObjectColor Color(MarkBit mark_bit) {
-    if (IsBlack(mark_bit)) return BLACK_OBJECT;
-    if (IsWhite(mark_bit)) return WHITE_OBJECT;
-    if (IsGrey(mark_bit)) return GREY_OBJECT;
-    UNREACHABLE();
-    return IMPOSSIBLE_COLOR;
-  }
-#endif
-
-  // Returns true if the transferred color is black.
-  INLINE(static bool TransferColor(HeapObject* from, HeapObject* to)) {
-    if (Page::FromAddress(to->address())->IsFlagSet(Page::BLACK_PAGE))
-      return true;
-    MarkBit from_mark_bit = MarkBitFrom(from);
-    MarkBit to_mark_bit = MarkBitFrom(to);
-    DCHECK(Marking::IsWhite(to_mark_bit));
-    if (from_mark_bit.Get()) {
-      to_mark_bit.Set();
-      if (from_mark_bit.Next().Get()) {
-        to_mark_bit.Next().Set();
-        return true;
-      }
-    }
-    return false;
+  static Marking::ObjectColor Color(HeapObject* obj) {
+    return Marking::Color(ObjectMarking::MarkBitFrom(obj));
   }
 
  private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(Marking);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ObjectMarking);
 };
 
 // ----------------------------------------------------------------------------
@@ -348,7 +218,19 @@ class MarkBitCellIterator BASE_EMBEDDED {
 
   inline void Advance() {
     cell_index_++;
-    cell_base_ += 32 * kPointerSize;
+    cell_base_ += Bitmap::kBitsPerCell * kPointerSize;
+  }
+
+  inline bool Advance(unsigned int new_cell_index) {
+    if (new_cell_index != cell_index_) {
+      DCHECK_GT(new_cell_index, cell_index_);
+      DCHECK_LE(new_cell_index, last_cell_index_);
+      unsigned int diff = new_cell_index - cell_index_;
+      cell_index_ = new_cell_index;
+      cell_base_ += diff * (Bitmap::kBitsPerCell * kPointerSize);
+      return true;
+    }
+    return false;
   }
 
   // Return the next mark bit cell. If there is no next it returns 0;
@@ -383,8 +265,6 @@ class LiveObjectIterator BASE_EMBEDDED {
         it_(chunk_),
         cell_base_(it_.CurrentCellBase()),
         current_cell_(*it_.CurrentCell()) {
-    // Black pages can not be iterated.
-    DCHECK(!chunk->IsFlagSet(Page::BLACK_PAGE));
   }
 
   HeapObject* Next();
@@ -406,20 +286,14 @@ class MarkCompactCollector {
    public:
     class SweeperTask;
 
-    enum SweepingMode { SWEEP_ONLY, SWEEP_AND_VISIT_LIVE_OBJECTS };
-    enum SkipListRebuildingMode { REBUILD_SKIP_LIST, IGNORE_SKIP_LIST };
     enum FreeListRebuildingMode { REBUILD_FREE_LIST, IGNORE_FREE_LIST };
     enum FreeSpaceTreatmentMode { IGNORE_FREE_SPACE, ZAP_FREE_SPACE };
-    enum SweepingParallelism { SWEEP_ON_MAIN_THREAD, SWEEP_IN_PARALLEL };
 
     typedef std::deque<Page*> SweepingList;
     typedef List<Page*> SweptList;
 
-    template <SweepingMode sweeping_mode, SweepingParallelism parallelism,
-              SkipListRebuildingMode skip_list_mode,
-              FreeListRebuildingMode free_list_mode,
-              FreeSpaceTreatmentMode free_space_mode>
-    static int RawSweep(PagedSpace* space, Page* p, ObjectVisitor* v);
+    static int RawSweep(Page* p, FreeListRebuildingMode free_list_mode,
+                        FreeSpaceTreatmentMode free_space_mode);
 
     explicit Sweeper(Heap* heap)
         : heap_(heap),
@@ -593,7 +467,7 @@ class MarkCompactCollector {
   static const size_t kMinMarkingDequeSize = 256 * KB;
 
   void EnsureMarkingDequeIsCommittedAndInitialize(size_t max_size) {
-    if (!marking_deque_.in_use()) {
+    if (!marking_deque()->in_use()) {
       EnsureMarkingDequeIsCommitted(max_size);
       InitializeMarkingDeque();
     }
@@ -616,18 +490,6 @@ class MarkCompactCollector {
 
   Sweeper& sweeper() { return sweeper_; }
 
-  void RegisterWrappersWithEmbedderHeapTracer();
-
-  void SetEmbedderHeapTracer(EmbedderHeapTracer* tracer);
-
-  EmbedderHeapTracer* embedder_heap_tracer() { return embedder_heap_tracer_; }
-
-  bool UsingEmbedderHeapTracer() { return embedder_heap_tracer(); }
-
-  void TracePossibleWrapper(JSObject* js_object);
-
-  void RegisterExternallyReferencedObject(Object** object);
-
  private:
   class EvacuateNewSpacePageVisitor;
   class EvacuateNewSpaceVisitor;
@@ -635,6 +497,7 @@ class MarkCompactCollector {
   class EvacuateRecordOnlyVisitor;
   class EvacuateVisitorBase;
   class HeapObjectVisitor;
+  class ObjectStatsVisitor;
 
   explicit MarkCompactCollector(Heap* heap);
 
@@ -644,6 +507,10 @@ class MarkCompactCollector {
   void ComputeEvacuationHeuristics(int area_size,
                                    int* target_fragmentation_percent,
                                    int* max_evacuated_bytes);
+
+  void VisitAllObjects(HeapObjectVisitor* visitor);
+
+  void RecordObjectStats();
 
   // Finishes GC, performs heap verification if enabled.
   void Finish();
@@ -810,8 +677,6 @@ class MarkCompactCollector {
   bool VisitLiveObjects(MemoryChunk* page, Visitor* visitor,
                         IterationMode mode);
 
-  void VisitLiveObjectsBody(Page* page, ObjectVisitor* visitor);
-
   void RecomputeLiveBytes(MemoryChunk* page);
 
   void ReleaseEvacuationCandidates();
@@ -864,11 +729,8 @@ class MarkCompactCollector {
   base::VirtualMemory* marking_deque_memory_;
   size_t marking_deque_memory_committed_;
   MarkingDeque marking_deque_;
-  std::vector<std::pair<void*, void*>> wrappers_to_trace_;
 
   CodeFlusher* code_flusher_;
-
-  EmbedderHeapTracer* embedder_heap_tracer_;
 
   List<Page*> evacuation_candidates_;
   List<Page*> newspace_evacuation_candidates_;
@@ -893,8 +755,7 @@ class EvacuationScope BASE_EMBEDDED {
   MarkCompactCollector* collector_;
 };
 
-
-const char* AllocationSpaceName(AllocationSpace space);
+V8_EXPORT_PRIVATE const char* AllocationSpaceName(AllocationSpace space);
 }  // namespace internal
 }  // namespace v8
 

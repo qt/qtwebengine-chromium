@@ -27,6 +27,7 @@
     readonly attribute DOMString type;
     readonly attribute EventTarget? target;
     readonly attribute EventTarget? currentTarget;
+    [RuntimeEnabled=ShadowDOMV1, MeasureAs=EventComposedPath, CallWith=ScriptState] sequence<EventTarget> composedPath();
 
     const unsigned short NONE = 0;
     const unsigned short CAPTURING_PHASE = 1;
@@ -46,26 +47,12 @@
 
     [Unforgeable] readonly attribute boolean isTrusted;
 
-    // TODO(majidvp): At the moment the actual return value type can either
-    // be: 
-    //  - DOMTimeStamp (i.e. long long): legacy type
-    //  - DOMHighResTimeStamp (i.e. double):  HighResEventTimeStamp REF is 
-    //    enabled 
-    // Below IDL definition uses DOMHighResTimeStamp because all DOMTimeStamp
-    // values can be represented in double type without any loss of precision.
-    // Once the feature is enabled by default the return value type will always
-    // match the definition here.
     [CallWith=ScriptState] readonly attribute DOMHighResTimeStamp timeStamp;
 
     // FIXME: initEvent()'s arguments should not be optional.
     [Measure] void initEvent([Default=Undefined] optional DOMString type,
                              [Default=Undefined] optional boolean bubbles,
                              [Default=Undefined] optional boolean cancelable);
-
-    // Shadow DOM
-    // https://w3c.github.io/webcomponents/spec/shadow/#extensions-to-event-interface
-    [MeasureAs=EventPath, CallWith=ScriptState] readonly attribute EventTarget[] path;
-    [RuntimeEnabled=ShadowDOMV1, MeasureAs=EventComposedPath, CallWith=ScriptState] sequence<EventTarget> composedPath();
 
     // Non-standard APIs
     const unsigned short MOUSEDOWN = 1;
@@ -87,4 +74,5 @@
     [MeasureAs=EventSrcElement] readonly attribute EventTarget srcElement;
     [MeasureAs=EventReturnValue, CallWith=ExecutionContext, ImplementedAs=legacyReturnValue] attribute boolean returnValue;
     [MeasureAs=EventCancelBubble, CallWith=ExecutionContext] attribute boolean cancelBubble;
+    [MeasureAs=EventPath, CallWith=ScriptState] readonly attribute EventTarget[] path;
 };

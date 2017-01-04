@@ -52,7 +52,7 @@ class RasterBufferImpl : public RasterBuffer {
     RasterBufferProvider::PlaybackToMemory(
         buffer->memory(0), resource_->format(), resource_->size(),
         buffer->stride(0), raster_source, raster_full_rect, raster_full_rect,
-        scale, playback_settings);
+        scale, lock_.sk_color_space(), playback_settings);
     buffer->Unmap();
   }
 
@@ -111,9 +111,14 @@ ResourceFormat ZeroCopyRasterBufferProvider::GetResourceFormat(
   return resource_provider_->best_texture_format();
 }
 
-bool ZeroCopyRasterBufferProvider::GetResourceRequiresSwizzle(
+bool ZeroCopyRasterBufferProvider::IsResourceSwizzleRequired(
     bool must_support_alpha) const {
   return ResourceFormatRequiresSwizzle(GetResourceFormat(must_support_alpha));
+}
+
+bool ZeroCopyRasterBufferProvider::CanPartialRasterIntoProvidedResource()
+    const {
+  return false;
 }
 
 void ZeroCopyRasterBufferProvider::Shutdown() {}

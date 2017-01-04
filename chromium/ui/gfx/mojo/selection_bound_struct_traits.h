@@ -5,7 +5,7 @@
 #ifndef UI_GFX_MOJO_SELECTION_BOUND_STRUCT_TRAITS_H_
 #define UI_GFX_MOJO_SELECTION_BOUND_STRUCT_TRAITS_H_
 
-#include "ui/gfx/mojo/selection_bound.mojom.h"
+#include "ui/gfx/mojo/selection_bound.mojom-shared.h"
 #include "ui/gfx/selection_bound.h"
 
 namespace mojo {
@@ -47,7 +47,7 @@ gfx::SelectionBound::Type MojoSelectionBoundTypeToGfx(
 }
 
 template <>
-struct StructTraits<gfx::mojom::SelectionBound, gfx::SelectionBound> {
+struct StructTraits<gfx::mojom::SelectionBoundDataView, gfx::SelectionBound> {
   static gfx::mojom::SelectionBoundType type(const gfx::SelectionBound& input) {
     return GfxSelectionBoundTypeToMojo(input.type());
   }

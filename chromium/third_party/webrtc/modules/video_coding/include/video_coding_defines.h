@@ -77,9 +77,7 @@ class VCMReceiveCallback {
 // and the name of the encoder.
 class VCMSendStatisticsCallback {
  public:
-  virtual void SendStatistics(uint32_t bitRate,
-                              uint32_t frameRate,
-                              const std::string& encoder_name) = 0;
+  virtual void SendStatistics(uint32_t bitRate, uint32_t frameRate) = 0;
 
  protected:
   virtual ~VCMSendStatisticsCallback() {}
@@ -124,12 +122,6 @@ class VCMProtectionCallback {
 
  protected:
   virtual ~VCMProtectionCallback() {}
-};
-
-class VideoEncoderRateObserver {
- public:
-  virtual ~VideoEncoderRateObserver() {}
-  virtual void OnSetRates(uint32_t bitrate_bps, int framerate) = 0;
 };
 
 // Callback class used for telling the user about what frame type needed to

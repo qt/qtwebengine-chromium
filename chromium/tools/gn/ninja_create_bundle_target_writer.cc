@@ -164,6 +164,9 @@ void NinjaCreateBundleTargetWriter::WriteCompileAssetsCatalogStep(
   out_ << " | ";
   path_output_.WriteFile(out_, input_dep);
   out_ << std::endl;
+
+  out_ << "  product_type = " << target_->bundle_data().product_type()
+       << std::endl;
 }
 
 OutputFile
@@ -174,9 +177,7 @@ NinjaCreateBundleTargetWriter::WriteCompileAssetsCatalogInputDepsStamp(
     return dependencies[0]->dependency_output_file();
 
   OutputFile xcassets_input_stamp_file =
-      OutputFile(RebasePath(GetTargetOutputDir(target_).value(),
-                            settings_->build_settings()->build_dir(),
-                            settings_->build_settings()->root_path_utf8()));
+      GetBuildDirForTargetAsOutputFile(target_, BuildDirType::OBJ);
   xcassets_input_stamp_file.value().append(target_->label().name());
   xcassets_input_stamp_file.value().append(".xcassets.inputdeps.stamp");
 
@@ -261,9 +262,7 @@ OutputFile NinjaCreateBundleTargetWriter::WriteCodeSigningInputDepsStamp(
                      dependencies.end());
 
   OutputFile code_signing_input_stamp_file =
-      OutputFile(RebasePath(GetTargetOutputDir(target_).value(),
-                            settings_->build_settings()->build_dir(),
-                            settings_->build_settings()->root_path_utf8()));
+      GetBuildDirForTargetAsOutputFile(target_, BuildDirType::OBJ);
   code_signing_input_stamp_file.value().append(target_->label().name());
   code_signing_input_stamp_file.value().append(".codesigning.inputdeps.stamp");
 

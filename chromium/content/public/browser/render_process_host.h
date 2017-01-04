@@ -11,6 +11,7 @@
 #include <list>
 
 #include "base/id_map.h"
+#include "base/memory/ptr_util.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/supports_user_data.h"
@@ -34,7 +35,6 @@ class MediaKeys;
 namespace shell {
 class Connection;
 class InterfaceProvider;
-class InterfaceRegistry;
 }
 
 namespace content {
@@ -63,6 +63,12 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
     }
     base::TerminationStatus status;
     int exit_code;
+  };
+
+  // Crash reporting mode for ShutdownForBadMessage.
+  enum class CrashReportMode {
+    NO_CRASH_DUMP,
+    GENERATE_CRASH_DUMP,
   };
 
   // General functions ---------------------------------------------------------
@@ -95,7 +101,10 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Most callers should not call this directly, but instead should call
   // bad_message::BadMessageReceived() or an equivalent method outside of the
   // content module.
-  virtual void ShutdownForBadMessage() = 0;
+  //
+  // If |crash_report_mode| is GENERATE_CRASH_DUMP, then a browser crash dump
+  // will be reported as well.
+  virtual void ShutdownForBadMessage(CrashReportMode crash_report_mode) = 0;
 
   // Track the count of visible widgets. Called by listeners to register and
   // unregister visibility.
@@ -220,8 +229,15 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void EnableAudioDebugRecordings(const base::FilePath& file) = 0;
   virtual void DisableAudioDebugRecordings() = 0;
 
-  virtual void EnableEventLogRecordings(const base::FilePath& file) = 0;
-  virtual void DisableEventLogRecordings() = 0;
+  // Starts a WebRTC event log for each peerconnection on the render process.
+  // A base file_path can be supplied, which will be extended to include several
+  // identifiers to ensure uniqueness. If a recording was already in progress,
+  // this call will return false and have no other effect.
+  virtual bool StartWebRTCEventLog(const base::FilePath& file_path) = 0;
+
+  // Stops recording a WebRTC event log for each peerconnection on the render
+  // process. If no recording was in progress, this call will return false.
+  virtual bool StopWebRTCEventLog() = 0;
 
   // When set, |callback| receives log messages regarding, for example, media
   // devices (webcams, mics, etc) that were initially requested in the render
@@ -251,20 +267,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // transferring it to a new renderer process.
   virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id) = 0;
 
-  // Notifies the renderer that the timezone configuration of the system might
-  // have changed.
-  virtual void NotifyTimezoneChange(const std::string& zone_id) = 0;
-
-  // Returns the shell::InterfaceRegistry the browser process uses to expose
-  // interfaces to the renderer.
-  virtual shell::InterfaceRegistry* GetInterfaceRegistry() = 0;
-
   // Returns the shell::InterfaceProvider the browser process can use to bind
   // interfaces exposed to it from the renderer.
   virtual shell::InterfaceProvider* GetRemoteInterfaces() = 0;
-
-  // Returns the shell connection for this process.
-  virtual shell::Connection* GetChildConnection() = 0;
 
   // Extracts any persistent-memory-allocator used for renderer metrics.
   // Ownership is passed to the caller. To support sharing of histogram data
@@ -291,20 +296,25 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const = 0;
 
-#if defined(ENABLE_BROWSER_CDMS)
-  // Returns the CDM instance associated with |render_frame_id| and |cdm_id|,
-  // or nullptr if not found.
-  virtual scoped_refptr<media::MediaKeys> GetCdm(int render_frame_id,
-                                                 int cdm_id) const = 0;
-#endif
-
   // Returns true if this process currently has backgrounded priority.
   virtual bool IsProcessBackgrounded() const = 0;
 
   // Called when the existence of the other renderer process which is connected
   // to the Worker in this renderer process has changed.
-  virtual void IncrementWorkerRefCount() = 0;
-  virtual void DecrementWorkerRefCount() = 0;
+  virtual void IncrementServiceWorkerRefCount() = 0;
+  virtual void DecrementServiceWorkerRefCount() = 0;
+  virtual void IncrementSharedWorkerRefCount() = 0;
+  virtual void DecrementSharedWorkerRefCount() = 0;
+
+  // Sets worker ref counts to zero. Called when the browser context will be
+  // destroyed so this RenderProcessHost can immediately die.
+  //
+  // After this is called, the Increment/DecrementWorkerRefCount functions must
+  // not be called.
+  virtual void ForceReleaseWorkerRefCounts() = 0;
+
+  // Returns true if ForceReleaseWorkerRefCounts was called.
+  virtual bool IsWorkerRefCountDisabled() = 0;
 
   // Purges and suspends the renderer process.
   virtual void PurgeAndSuspend() = 0;

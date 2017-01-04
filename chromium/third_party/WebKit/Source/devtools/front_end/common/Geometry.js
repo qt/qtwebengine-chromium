@@ -90,6 +90,26 @@ WebInspector.Geometry.Point.prototype = {
     },
 
     /**
+     * @param {!WebInspector.Geometry.Point} line
+     * @return {!WebInspector.Geometry.Point}
+     */
+    projectOn: function(line)
+    {
+        if (line.x === 0 && line.y === 0)
+            return new WebInspector.Geometry.Point(0, 0);
+        return line.scale((this.x * line.x + this.y * line.y) / (Math.pow(line.x, 2) + Math.pow(line.y, 2)));
+    },
+
+    /**
+     * @param {number} scalar
+     * @return {!WebInspector.Geometry.Point}
+     */
+    scale: function(scalar)
+    {
+        return new WebInspector.Geometry.Point(this.x * scalar, this.y * scalar);
+    },
+
+    /**
      * @override
      * @return {string}
      */
@@ -108,6 +128,9 @@ WebInspector.Geometry.CubicBezier = function(point1, point2)
 {
     this.controlPoints = [point1, point2];
 }
+
+/** @type {!RegExp} */
+WebInspector.Geometry.CubicBezier.Regex = /((cubic-bezier\([^)]+\))|\b(linear|ease-in-out|ease-in|ease-out|ease)\b)/g;
 
 WebInspector.Geometry.CubicBezier.KeywordValues = {
     "linear": "cubic-bezier(0, 0, 1, 1)",

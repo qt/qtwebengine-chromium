@@ -16,13 +16,13 @@
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
-#include "xfa/fxfa/include/cxfa_eventparam.h"
-#include "xfa/fxfa/include/xfa_ffapp.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffdocview.h"
-#include "xfa/fxfa/include/xfa_ffpageview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/parser/xfa_localevalue.h"
+#include "xfa/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffdocview.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 
 CXFA_FFTextEdit::CXFA_FFTextEdit(CXFA_FFPageView* pPageView,
                                  CXFA_WidgetAcc* pDataAcc)
@@ -111,7 +111,7 @@ FX_BOOL CXFA_FFTextEdit::OnLButtonDown(uint32_t dwFlags,
   ms.m_dwFlags = dwFlags;
   ms.m_fx = fx;
   ms.m_fy = fy;
-  ms.m_pDstTarget = m_pNormalWidget->m_pIface;
+  ms.m_pDstTarget = m_pNormalWidget->GetWidget();
   FWLToClient(ms.m_fx, ms.m_fy);
   TranslateFWLMessage(&ms);
   return TRUE;
@@ -146,7 +146,7 @@ FX_BOOL CXFA_FFTextEdit::OnRButtonUp(uint32_t dwFlags,
   if (!CXFA_FFField::OnRButtonUp(dwFlags, fx, fy))
     return FALSE;
 
-  GetDoc()->GetDocProvider()->PopupMenu(this, CFX_PointF(fx, fy), nullptr);
+  GetDoc()->GetDocEnvironment()->PopupMenu(this, CFX_PointF(fx, fy));
   return TRUE;
 }
 FX_BOOL CXFA_FFTextEdit::OnSetFocus(CXFA_FFWidget* pOldWidget) {
@@ -158,14 +158,14 @@ FX_BOOL CXFA_FFTextEdit::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   }
   CXFA_FFWidget::OnSetFocus(pOldWidget);
   CFWL_MsgSetFocus ms;
-  ms.m_pDstTarget = m_pNormalWidget->m_pIface;
+  ms.m_pDstTarget = m_pNormalWidget->GetWidget();
   ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
   return TRUE;
 }
 FX_BOOL CXFA_FFTextEdit::OnKillFocus(CXFA_FFWidget* pNewWidget) {
   CFWL_MsgKillFocus ms;
-  ms.m_pDstTarget = m_pNormalWidget->m_pIface;
+  ms.m_pDstTarget = m_pNormalWidget->GetWidget();
   ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
   m_dwStatus &= ~XFA_WidgetStatus_Focused;
@@ -387,18 +387,9 @@ void CXFA_FFTextEdit::OnTextFull(IFWL_Widget* pWidget) {
 }
 
 FX_BOOL CXFA_FFTextEdit::CheckWord(const CFX_ByteStringC& sWord) {
-  if (sWord.IsEmpty() || m_pDataAcc->GetUIType() != XFA_Element::TextEdit) {
+  if (sWord.IsEmpty() || m_pDataAcc->GetUIType() != XFA_Element::TextEdit)
     return TRUE;
-  }
-  return GetDoc()->GetDocProvider()->CheckWord(GetDoc(), sWord);
-}
-FX_BOOL CXFA_FFTextEdit::GetSuggestWords(
-    const CFX_ByteStringC& sWord,
-    std::vector<CFX_ByteString>& sSuggest) {
-  if (m_pDataAcc->GetUIType() != XFA_Element::TextEdit) {
-    return FALSE;
-  }
-  return GetDoc()->GetDocProvider()->GetSuggestWords(GetDoc(), sWord, sSuggest);
+  return FALSE;
 }
 
 void CXFA_FFTextEdit::OnProcessMessage(CFWL_Message* pMessage) {
@@ -426,8 +417,7 @@ void CXFA_FFTextEdit::OnProcessEvent(CFWL_Event* pEvent) {
     }
     case CFWL_EventType::GetSuggestedWords: {
       CFWL_EvtEdtGetSuggestWords* event = (CFWL_EvtEdtGetSuggestWords*)pEvent;
-      event->bSuggestWords = GetSuggestWords(event->bsWord.AsStringC(),
-                                             event->bsArraySuggestWords);
+      event->bSuggestWords = FALSE;
       break;
     }
     default:
@@ -782,7 +772,7 @@ void CXFA_FFDateTimeEdit::OnSelectChanged(IFWL_Widget* pWidget,
   CFWL_DateTimePicker* pDateTime = (CFWL_DateTimePicker*)m_pNormalWidget;
   pDateTime->SetEditText(wsDate);
   pDateTime->Update();
-  GetDoc()->GetDocProvider()->SetFocusWidget(GetDoc(), nullptr);
+  GetDoc()->GetDocEnvironment()->SetFocusWidget(GetDoc(), nullptr);
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Change;
   eParam.m_pTarget = m_pDataAcc;

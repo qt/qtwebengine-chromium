@@ -15,12 +15,11 @@
 
 #include <string>
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
-
-#include "webrtc/modules/audio_coding/neteq/mock/mock_audio_decoder.h"
 #include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/codecs/mock/mock_audio_decoder_factory.h"
+#include "webrtc/modules/audio_coding/neteq/mock/mock_audio_decoder.h"
+#include "webrtc/test/gmock.h"
+#include "webrtc/test/gtest.h"
 
 using testing::_;
 using testing::Invoke;
@@ -47,6 +46,21 @@ TEST(DecoderDatabase, InsertAndRemove) {
   EXPECT_TRUE(db.Empty());
 }
 
+TEST(DecoderDatabase, InsertAndRemoveAll) {
+  DecoderDatabase db(new rtc::RefCountedObject<MockAudioDecoderFactory>);
+  const std::string kCodecName1 = "Robert\'); DROP TABLE Students;";
+  const std::string kCodecName2 = "https://xkcd.com/327/";
+  EXPECT_EQ(DecoderDatabase::kOK,
+            db.RegisterPayload(0, NetEqDecoder::kDecoderPCMu, kCodecName1));
+  EXPECT_EQ(DecoderDatabase::kOK,
+            db.RegisterPayload(1, NetEqDecoder::kDecoderPCMa, kCodecName2));
+  EXPECT_EQ(2, db.Size());
+  EXPECT_FALSE(db.Empty());
+  db.RemoveAll();
+  EXPECT_EQ(0, db.Size());
+  EXPECT_TRUE(db.Empty());
+}
+
 TEST(DecoderDatabase, GetDecoderInfo) {
   rtc::scoped_refptr<MockAudioDecoderFactory> factory(
       new rtc::RefCountedObject<MockAudioDecoderFactory>);
@@ -66,25 +80,11 @@ TEST(DecoderDatabase, GetDecoderInfo) {
   const DecoderDatabase::DecoderInfo* info;
   info = db.GetDecoderInfo(kPayloadType);
   ASSERT_TRUE(info != NULL);
-  EXPECT_EQ(NetEqDecoder::kDecoderPCMu, info->codec_type);
+  EXPECT_TRUE(info->IsType("pcmu"));
   EXPECT_EQ(kCodecName, info->name);
   EXPECT_EQ(decoder, db.GetDecoder(kPayloadType));
   info = db.GetDecoderInfo(kPayloadType + 1);  // Other payload type.
   EXPECT_TRUE(info == NULL);  // Should not be found.
-}
-
-TEST(DecoderDatabase, GetRtpPayloadType) {
-  DecoderDatabase db(new rtc::RefCountedObject<MockAudioDecoderFactory>);
-  const uint8_t kPayloadType = 0;
-  const std::string kCodecName = "Robert\'); DROP TABLE Students;";
-  EXPECT_EQ(
-      DecoderDatabase::kOK,
-      db.RegisterPayload(kPayloadType, NetEqDecoder::kDecoderPCMu, kCodecName));
-  EXPECT_EQ(kPayloadType, db.GetRtpPayloadType(NetEqDecoder::kDecoderPCMu));
-  const uint8_t expected_value = DecoderDatabase::kRtpPayloadTypeError;
-  EXPECT_EQ(expected_value,
-            db.GetRtpPayloadType(
-                NetEqDecoder::kDecoderISAC));  // iSAC is not registered.
 }
 
 TEST(DecoderDatabase, GetDecoder) {
@@ -126,8 +126,8 @@ TEST(DecoderDatabase, TypeTests) {
   EXPECT_FALSE(db.IsComfortNoise(kPayloadTypePcmU));
   EXPECT_FALSE(db.IsDtmf(kPayloadTypePcmU));
   EXPECT_FALSE(db.IsRed(kPayloadTypePcmU));
-  EXPECT_FALSE(db.IsType(kPayloadTypePcmU, NetEqDecoder::kDecoderISAC));
-  EXPECT_TRUE(db.IsType(kPayloadTypePcmU, NetEqDecoder::kDecoderPCMu));
+  EXPECT_FALSE(db.IsType(kPayloadTypePcmU, "isac"));
+  EXPECT_TRUE(db.IsType(kPayloadTypePcmU, "pcmu"));
   EXPECT_TRUE(db.IsComfortNoise(kPayloadTypeCng));
   EXPECT_TRUE(db.IsDtmf(kPayloadTypeDtmf));
   EXPECT_TRUE(db.IsRed(kPayloadTypeRed));
@@ -149,7 +149,8 @@ TEST(DecoderDatabase, ExternalDecoder) {
   const DecoderDatabase::DecoderInfo* info;
   info = db.GetDecoderInfo(kPayloadType);
   ASSERT_TRUE(info != NULL);
-  EXPECT_EQ(NetEqDecoder::kDecoderPCMu, info->codec_type);
+  EXPECT_TRUE(info->IsType("pcmu"));
+  EXPECT_EQ(info->name, kCodecName);
   EXPECT_EQ(kCodecName, info->name);
   // Expect not to delete the decoder when removing it from the database, since
   // it was declared externally.
@@ -167,9 +168,8 @@ TEST(DecoderDatabase, CheckPayloadTypes) {
   // matter for the test).
   const int kNumPayloads = 10;
   for (uint8_t payload_type = 0; payload_type < kNumPayloads; ++payload_type) {
-    EXPECT_EQ(
-        DecoderDatabase::kOK,
-        db.RegisterPayload(payload_type, NetEqDecoder::kDecoderArbitrary, ""));
+    EXPECT_EQ(DecoderDatabase::kOK,
+              db.RegisterPayload(payload_type, NetEqDecoder::kDecoderPCMu, ""));
   }
   PacketList packet_list;
   for (int i = 0; i < kNumPayloads + 1; ++i) {

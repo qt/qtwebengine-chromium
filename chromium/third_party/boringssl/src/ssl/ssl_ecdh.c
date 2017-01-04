@@ -27,6 +27,7 @@
 #include <openssl/nid.h>
 
 #include "internal.h"
+#include "../crypto/internal.h"
 
 
 /* |EC_POINT| implementation. */
@@ -59,12 +60,9 @@ static int ssl_ec_point_offer(SSL_ECDH_CTX *ctx, CBB *out) {
   }
 
   /* Generate a private key. */
-  const BIGNUM *order = EC_GROUP_get0_order(group);
-  do {
-    if (!BN_rand_range(private_key, order)) {
-      goto err;
-    }
-  } while (BN_is_zero(private_key));
+  if (!BN_rand_range_ex(private_key, 1, EC_GROUP_get0_order(group))) {
+    goto err;
+  }
 
   /* Compute the corresponding public key and serialize it. */
   public_key = EC_POINT_new(group);
@@ -448,10 +446,20 @@ static const SSL_ECDH_METHOD kDHEMethod = {
     CBB_add_u16_length_prefixed,
 };
 
+static const SSL_ECDH_METHOD kCECPQ1Method = {
+    NID_undef, 0, "",
+    ssl_cecpq1_cleanup,
+    ssl_cecpq1_offer,
+    ssl_cecpq1_accept,
+    ssl_cecpq1_finish,
+    CBS_get_u16_length_prefixed,
+    CBB_add_u16_length_prefixed,
+};
+
 static const SSL_ECDH_METHOD kMethods[] = {
     {
         NID_X9_62_prime256v1,
-        SSL_GROUP_SECP256R1,
+        SSL_CURVE_SECP256R1,
         "P-256",
         ssl_ec_point_cleanup,
         ssl_ec_point_offer,
@@ -462,7 +470,7 @@ static const SSL_ECDH_METHOD kMethods[] = {
     },
     {
         NID_secp384r1,
-        SSL_GROUP_SECP384R1,
+        SSL_CURVE_SECP384R1,
         "P-384",
         ssl_ec_point_cleanup,
         ssl_ec_point_offer,
@@ -473,7 +481,7 @@ static const SSL_ECDH_METHOD kMethods[] = {
     },
     {
         NID_secp521r1,
-        SSL_GROUP_SECP521R1,
+        SSL_CURVE_SECP521R1,
         "P-521",
         ssl_ec_point_cleanup,
         ssl_ec_point_offer,
@@ -484,7 +492,7 @@ static const SSL_ECDH_METHOD kMethods[] = {
     },
     {
         NID_X25519,
-        SSL_GROUP_X25519,
+        SSL_CURVE_X25519,
         "X25519",
         ssl_x25519_cleanup,
         ssl_x25519_offer,
@@ -493,22 +501,10 @@ static const SSL_ECDH_METHOD kMethods[] = {
         CBS_get_u8_length_prefixed,
         CBB_add_u8_length_prefixed,
     },
-    {
-        NID_cecpq1,
-        SSL_GROUP_CECPQ1,
-        "CECPQ1",
-        ssl_cecpq1_cleanup,
-        ssl_cecpq1_offer,
-        ssl_cecpq1_accept,
-        ssl_cecpq1_finish,
-        CBS_get_u16_length_prefixed,
-        CBB_add_u16_length_prefixed,
-    },
 };
 
 static const SSL_ECDH_METHOD *method_from_group_id(uint16_t group_id) {
-  size_t i;
-  for (i = 0; i < sizeof(kMethods) / sizeof(kMethods[0]); i++) {
+  for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(kMethods); i++) {
     if (kMethods[i].group_id == group_id) {
       return &kMethods[i];
     }
@@ -517,8 +513,7 @@ static const SSL_ECDH_METHOD *method_from_group_id(uint16_t group_id) {
 }
 
 static const SSL_ECDH_METHOD *method_from_nid(int nid) {
-  size_t i;
-  for (i = 0; i < sizeof(kMethods) / sizeof(kMethods[0]); i++) {
+  for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(kMethods); i++) {
     if (kMethods[i].nid == nid) {
       return &kMethods[i];
     }
@@ -562,6 +557,25 @@ void SSL_ECDH_CTX_init_for_dhe(SSL_ECDH_CTX *ctx, DH *params) {
   ctx->data = params;
 }
 
+void SSL_ECDH_CTX_init_for_cecpq1(SSL_ECDH_CTX *ctx) {
+  SSL_ECDH_CTX_cleanup(ctx);
+
+  ctx->method = &kCECPQ1Method;
+}
+
+void SSL_ECDH_CTX_cleanup(SSL_ECDH_CTX *ctx) {
+  if (ctx->method == NULL) {
+    return;
+  }
+  ctx->method->cleanup(ctx);
+  ctx->method = NULL;
+  ctx->data = NULL;
+}
+
+uint16_t SSL_ECDH_CTX_get_id(const SSL_ECDH_CTX *ctx) {
+  return ctx->method->group_id;
+}
+
 int SSL_ECDH_CTX_get_key(SSL_ECDH_CTX *ctx, CBS *cbs, CBS *out) {
   if (ctx->method == NULL) {
     return 0;
@@ -574,15 +588,6 @@ int SSL_ECDH_CTX_add_key(SSL_ECDH_CTX *ctx, CBB *cbb, CBB *out_contents) {
     return 0;
   }
   return ctx->method->add_key(cbb, out_contents);
-}
-
-void SSL_ECDH_CTX_cleanup(SSL_ECDH_CTX *ctx) {
-  if (ctx->method == NULL) {
-    return;
-  }
-  ctx->method->cleanup(ctx);
-  ctx->method = NULL;
-  ctx->data = NULL;
 }
 
 int SSL_ECDH_CTX_offer(SSL_ECDH_CTX *ctx, CBB *out_public_key) {

@@ -4,89 +4,226 @@ Copyright (c) 2016 The Chromium Authors. All rights reserved.
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
+
 <link rel="import" href="/tracing/base/iteration_helpers.html">
 <link rel="import" href="/tracing/base/settings.html">
 <link rel="import" href="/tracing/ui/base/dropdown.html">
 
-<polymer-element name="tr-ui-b-grouping-table-groupby-picker">
+<dom-module id='tr-ui-b-grouping-table-groupby-picker'>
   <template>
     <style>
     :host {
       display: flex;
-      flex-direction: row;
       align-items: center;
     }
+
+    :host(:not([vertical])), :host(:not([vertical])) groups {
+      flex-direction: row;
+    }
+
+    :host([vertical]), :host([vertical]) groups {
+      flex-direction: column;
+    }
+
     groups {
       -webkit-user-select: none;
       display: flex;
-      flex-direction: row;
-      padding-left: 10px;
     }
 
-    group, possible-group {
+    possible-group {
       display: span;
       padding-right: 10px;
       padding-left: 10px;
     }
+    </style>
 
-    group {
-      border-left: 1px solid rgba(0,0,0,0);
+    <groups id="groups"></groups>
+    <tr-ui-b-dropdown id="add_group"></tr-ui-b-dropdown>
+  </template>
+</dom-module>
+
+<dom-module id="tr-ui-b-grouping-table-groupby-picker-group">
+  <template>
+    <style>
+    :host {
+      white-space: nowrap;
+      border: 3px solid white;
+      background-color: #dddddd;
       cursor: move;
     }
 
-    group.dragging {
-      opacity: 0.2;
+    :host(:not([vertical])) {
+      display: inline;
     }
 
-    group.drop-targeted {
-      border-left: 1px solid black;
+    :host([vertical]) {
+      display: block;
     }
 
+    :host(:not([vertical]).drop-before) {
+      border-left: 3px solid black;
+    }
+
+    :host([vertical].drop-before) {
+      border-top: 3px solid black;
+    }
+
+    :host(:not([vertical]).drop-after) {
+      border-right: 3px solid black;
+    }
+
+    :host([vertical].drop-after) {
+      border-bottom: 3px solid black;
+    }
+
+    :host([dragging]) {
+      opacity: 0.5;
+    }
 
     #remove {
-      cursor: default;
+      visibility: hidden;
+      padding-left: 3px;
+      width: 20px;
+      height: 20px;
+      cursor: auto;
     }
 
-    #remove:not([hovered]) {
-      visibility: hidden;
+    #key {
+      padding-right: 3px;
     }
     </style>
-    <groups>
-    </groups>
-    <tr-ui-b-dropdown id="add-group"></tr-ui-b-dropdown>
-  </template>
-</polymer-element>
 
-<template id="tr-ui-b-grouping-table-groupby-picker-group-template">
-  <span id="key"></span>
-  <span id="remove">&times;</span>
-</template>
+    <!-- TODO(eakuefner): Use an iron-icon here once
+         https://github.com/catapult-project/catapult/issues/2772 is fixed. -->
+    <span id="remove" on-click="remove_">&times;</span>
+    <span id="key"></span>
+  </template>
+</dom-module>
 
 <script>
 'use strict';
 
 tr.exportTo('tr.ui.b', function() {
-  var THIS_DOC = document._currentScript.ownerDocument;
+  var THIS_DOC = document.currentScript.ownerDocument;
 
-  Polymer('tr-ui-b-grouping-table-groupby-picker', {
+  Polymer({
+    is: 'tr-ui-b-grouping-table-groupby-picker-group',
+
     created: function() {
-      this.needsInit_ = true;
+      this.picker_ = undefined;
+      this.group_ = undefined;
+    },
+
+    ready: function() {
+      this.setAttribute('draggable', true);
+      this.addEventListener('mouseover', this.onMouseOver_.bind(this));
+      this.addEventListener('mouseleave', this.onMouseLeave_.bind(this));
+      this.addEventListener('dragstart', this.onDragStart_.bind(this));
+      this.addEventListener('dragover', this.onDragOver_.bind(this));
+    },
+
+    set group(g) {
+      this.group_ = g;
+      this.$.key.textContent = g.label;
+    },
+
+    get key() {
+      return this.group_.key;
+    },
+
+    get picker() {
+      return this.picker_;
+    },
+
+    set picker(picker) {
+      this.picker_ = picker;
+      this.vertical = picker.vertical;
+    },
+
+    // TODO(benjhayden): Use data-binding?
+    get vertical() {
+      return this.getAttribute('vertical');
+    },
+
+    set vertical(vertical) {
+      if (vertical)
+        this.setAttribute('vertical', true);
+      else
+        this.removeAttribute('vertical');
+    },
+
+    onMouseOver_: function(event) {
+      this.$.remove.style.visibility = 'visible';
+    },
+
+    onMouseLeave_: function(event) {
+      this.$.remove.style.visibility = 'hidden';
+    },
+
+    onDragStart_: function(event) {
+      event.dataTransfer.effectAllowed = 'move';
+      this.setAttribute('dragging', true);
+    },
+
+    onDragOver_: function(event) {
+      event.preventDefault();  // Allows us to drop.
+      event.dataTransfer.dropEffect = 'move';
+
+      this.picker.clearDragIndicators_();
+      if (this.picker.shouldDropBefore_(this, event)) {
+        this.classList.add('drop-before');
+        if (this.previousElementSibling)
+          this.previousElementSibling.classList.add('drop-after');
+      } else {
+        this.classList.add('drop-after');
+        if (this.nextElementSibling)
+          this.nextElementSibling.classList.add('drop-before');
+      }
+      return false;
+    },
+
+    remove_: function(event) {
+      var newKeys = this.picker.currentGroupKeys.slice();
+      newKeys.splice(newKeys.indexOf(this.key), 1);
+      this.picker.currentGroupKeys = newKeys;
+    }
+  });
+
+  Polymer({
+    is: 'tr-ui-b-grouping-table-groupby-picker',
+
+    created: function() {
+      this.currentGroupKeys_ = undefined;
       this.defaultGroupKeys_ = undefined;
       this.possibleGroups_ = [];
       this.settingsKey_ = [];
+    },
 
-      this.currentGroupKeys_ = undefined;
-
-      this.dragging_ = false;
+    ready: function() {
+      Polymer.dom(this.$.add_group.iconElement).textContent = 'Add another...';
+      this.addEventListener('dragend', this.onDragEnd_.bind(this));
+      this.addEventListener('drop', this.onDrop_.bind(this));
     },
 
     get defaultGroupKeys() {
       return this.defaultGroupKeys_;
     },
 
+    set vertical(vertical) {
+      if (vertical)
+        this.setAttribute('vertical', true);
+      else
+        this.removeAttribute('vertical');
+
+      for (var groupEl of this.$.groups.childNodes)
+        groupEl.vertical = vertical;
+    },
+
+    get vertical() {
+      return this.getAttribute('vertical');
+    },
+
     set defaultGroupKeys(defaultGroupKeys) {
-      if (!this.needsInit_)
-        throw new Error('Already initialized.');
       this.defaultGroupKeys_ = defaultGroupKeys;
       this.maybeInit_();
     },
@@ -96,8 +233,6 @@ tr.exportTo('tr.ui.b', function() {
     },
 
     set possibleGroups(possibleGroups) {
-      if (!this.needsInit_)
-        throw new Error('Already initialized.');
       this.possibleGroups_ = possibleGroups;
       this.maybeInit_();
     },
@@ -107,27 +242,16 @@ tr.exportTo('tr.ui.b', function() {
     },
 
     set settingsKey(settingsKey) {
-      if (!this.needsInit_)
-        throw new Error('Already initialized.');
       this.settingsKey_ = settingsKey;
       this.maybeInit_();
     },
 
     maybeInit_: function() {
-      if (!this.needsInit_)
+      if (!this.settingsKey_ ||
+          !this.defaultGroupKeys_ ||
+          !this.possibleGroups_) {
         return;
-
-      if (this.settingsKey_ === undefined)
-        return;
-      if (this.defaultGroupKeys_ === undefined)
-        return;
-      if (this.possibleGroups_ === undefined)
-        return;
-
-      this.needsInit_ = false;
-
-      var addGroupEl = this.shadowRoot.querySelector('#add-group');
-      addGroupEl.iconElement.textContent = 'Add another...';
+      }
 
       this.currentGroupKeys = tr.b.Settings.get(
         this.settingsKey_, this.defaultGroupKeys_);
@@ -139,12 +263,9 @@ tr.exportTo('tr.ui.b', function() {
 
     get currentGroups() {
       var groupsByKey = {};
-      this.possibleGroups_.forEach(function(group) {
+      for (var group of this.possibleGroups_)
         groupsByKey[group.key] = group;
-      });
-      return this.currentGroupKeys_.map(function(groupKey) {
-        return groupsByKey[groupKey];
-      });
+      return this.currentGroupKeys.map(groupKey => groupsByKey[groupKey]);
     },
 
     set currentGroupKeys(currentGroupKeys) {
@@ -154,156 +275,136 @@ tr.exportTo('tr.ui.b', function() {
       if (!(currentGroupKeys instanceof Array))
         throw new Error('Must be array');
 
-      this.currentGroupKeys_ = currentGroupKeys;
+      var availableGroupKeys = new Set();
+      for (var group of this.possibleGroups_)
+        availableGroupKeys.add(group.key);
+      this.currentGroupKeys_ = currentGroupKeys.filter(
+          k => availableGroupKeys.has(k));
       this.updateGroups_();
 
       tr.b.Settings.set(
         this.settingsKey_, this.currentGroupKeys_);
 
-      var e = new tr.b.Event('current-groups-changed');
-      this.dispatchEvent(e);
+      this.dispatchEvent(new tr.b.Event('current-groups-changed'));
+    },
+
+    /**
+     * @return {undefined|Element}
+     */
+    get draggingGroupElement() {
+      for (var group of this.$.groups.children)
+        if (group.getAttribute('dragging'))
+          return group;
+      return undefined;
+    },
+
+    shouldDropBefore_: function(groupEl, event) {
+      var dragBoxRect = this.draggingGroupElement.getBoundingClientRect();
+      var dropBoxRect = groupEl.getBoundingClientRect();
+      // compare horizontally if drag and drop overlap vertically
+      var dragVertRange = tr.b.Range.fromExplicitRange(
+          dragBoxRect.top, dragBoxRect.bottom);
+      var dropVertRange = tr.b.Range.fromExplicitRange(
+          dropBoxRect.top, dropBoxRect.bottom);
+      if (dragVertRange.intersectsRangeInclusive(dropVertRange))
+        return event.clientX < ((dropBoxRect.left + dropBoxRect.right) / 2);
+      return event.clientY < ((dropBoxRect.top + dropBoxRect.bottom) / 2);
+    },
+
+    clearDragIndicators_: function() {
+      for (var groupEl of this.$.groups.children) {
+        groupEl.classList.remove('drop-before');
+        groupEl.classList.remove('drop-after');
+      }
+    },
+
+    onDragEnd_: function(event) {
+      this.clearDragIndicators_();
+      for (var groupEl of this.$.groups.children)
+        groupEl.removeAttribute('dragging');
+    },
+
+    onDrop_: function(event) {
+      event.stopPropagation(); // stops the browser from redirecting.
+
+      var draggingGroupEl = this.draggingGroupElement;
+      var dropBeforeEl = undefined;
+      var dropAfterEl = undefined;
+      for (var groupEl of this.$.groups.children) {
+        if (groupEl.classList.contains('drop-before')) {
+          dropBeforeEl = groupEl;
+          break;
+        }
+        if (groupEl.classList.contains('drop-after')) {
+          dropAfterEl = groupEl;
+          break;
+        }
+      }
+
+      if (!dropBeforeEl && !dropAfterEl)
+        return;
+
+      this.$.groups.removeChild(draggingGroupEl);
+      var lastGroupEl = this.$.groups.children[
+          this.$.groups.children.length - 1];
+
+      if (dropBeforeEl)
+        this.$.groups.insertBefore(draggingGroupEl, dropBeforeEl);
+      else if (dropAfterEl === lastGroupEl)
+        this.$.groups.appendChild(draggingGroupEl);
+      else
+        this.$.groups.insertBefore(draggingGroupEl, dropAfterEl.nextSibling);
+
+      var currentGroupKeys = [];
+      for (var group of this.$.groups.children)
+        currentGroupKeys.push(group.key);
+      this.currentGroupKeys = currentGroupKeys;
+      return false;
     },
 
     updateGroups_: function() {
-      var groupsEl = this.shadowRoot.querySelector('groups');
-      var addGroupEl = this.shadowRoot.querySelector('#add-group');
-
-      groupsEl.textContent = '';
-      addGroupEl.textContent = '';
+      Polymer.dom(this.$.groups).textContent = '';
+      Polymer.dom(this.$.add_group).textContent = '';
 
       var unusedGroups = {};
       var groupsByKey = {};
-      this.possibleGroups_.forEach(function(group) {
+      for (var group of this.possibleGroups_) {
         unusedGroups[group.key] = group;
         groupsByKey[group.key] = group;
-      });
+      }
 
-      this.currentGroupKeys_.forEach(function(key) {
+      for (var key of this.currentGroupKeys_)
         delete unusedGroups[key];
-      });
 
       // Create groups.
-      var groupTemplateEl = THIS_DOC.querySelector(
-          '#tr-ui-b-grouping-table-groupby-picker-group-template');
-      this.currentGroupKeys_.forEach(function(key, index) {
+      for (var key of this.currentGroupKeys_) {
         var group = groupsByKey[key];
-        var groupEl = document.createElement('group');
-        groupEl.groupKey = key;
-        groupEl.appendChild(document.importNode(groupTemplateEl.content, true));
-        groupEl.querySelector('#key').textContent = group.label;
-        groupsEl.appendChild(groupEl);
-
-        this.configureRemoveButtonForGroup_(groupEl);
-        this.configureDragAndDropForGroup_(groupEl);
-      }, this);
+        var groupEl = document.createElement(
+            'tr-ui-b-grouping-table-groupby-picker-group');
+        groupEl.picker = this;
+        groupEl.group = group;
+        Polymer.dom(this.$.groups).appendChild(groupEl);
+      }
 
       // Adjust dropdown.
       tr.b.iterItems(unusedGroups, function(key, group) {
         var groupEl = document.createElement('possible-group');
-        groupEl.textContent = group.label;
+        Polymer.dom(groupEl).textContent = group.label;
         groupEl.addEventListener('click', function() {
           var newKeys = this.currentGroupKeys.slice();
           newKeys.push(key);
           this.currentGroupKeys = newKeys;
-          addGroupEl.close();
+          this.$.add_group.close();
         }.bind(this));
-        addGroupEl.appendChild(groupEl);
+        Polymer.dom(this.$.add_group).appendChild(groupEl);
       }, this);
 
       // Hide dropdown if needed.
-      if (tr.b.dictionaryLength(unusedGroups) == 0) {
-        addGroupEl.style.display = 'none';
+      if (tr.b.dictionaryLength(unusedGroups) === 0) {
+        this.$.add_group.style.display = 'none';
       } else {
-        addGroupEl.style.display = '';
+        this.$.add_group.style.display = '';
       }
-    },
-
-    configureRemoveButtonForGroup_: function(groupEl) {
-      var removeEl = groupEl.querySelector('#remove');
-      removeEl.addEventListener('click', function() {
-        var newKeys = this.currentGroupKeys.slice();
-        var i = newKeys.indexOf(groupEl.groupKey);
-        newKeys.splice(i, 1);
-        this.currentGroupKeys = newKeys;
-      }.bind(this));
-
-      groupEl.addEventListener('mouseenter', function() {
-        removeEl.setAttribute('hovered', true);
-      });
-      groupEl.addEventListener('mouseleave', function() {
-        removeEl.removeAttribute('hovered');
-      });
-    },
-
-    configureDragAndDropForGroup_: function(groupEl) {
-      var groupsEl = groupEl.parentElement;
-
-      groupEl.setAttribute('draggable', true);
-
-      groupEl.addEventListener('dragstart', function(e) {
-        e.dataTransfer.setData('groupKey', groupEl.groupKey);
-        groupEl.querySelector('#remove').removeAttribute('hovered');
-        groupEl.classList.add('dragging');
-        this.dragging_ = true;
-      }.bind(this));
-
-      groupEl.addEventListener('dragend', function(e) {
-        console.log(e.type, groupEl.groupKey);
-        for (var i = 0; i < groupsEl.children.length; i++)
-          groupsEl.children[i].classList.remove('drop-targeted');
-        groupEl.classList.remove('dragging');
-        this.dragging_ = false;
-      }.bind(this));
-
-      // Drop targeting.
-      groupEl.addEventListener('dragenter', function(e) {
-        if (!this.dragging_)
-          return;
-        groupEl.classList.add('drop-targeted');
-        if (this.dragging_)
-          e.preventDefault();
-      }.bind(this));
-
-      groupEl.addEventListener('dragleave', function(e) {
-        if (!this.dragging_)
-          return;
-        groupEl.classList.remove('drop-targeted');
-        e.preventDefault();
-      }.bind(this));
-
-
-      // Drop logic.
-      groupEl.addEventListener('dragover', function(e) {
-        if (!this.dragging_)
-          return;
-        e.preventDefault();
-        groupEl.classList.add('drop-targeted');
-      }.bind(this));
-
-      groupEl.addEventListener('drop', function(e) {
-        if (!this.dragging_)
-          return;
-
-        var srcKey = e.dataTransfer.getData('groupKey');
-        var dstKey = groupEl.groupKey;
-
-        if (srcKey === dstKey)
-          return;
-
-        var newKeys = this.currentGroupKeys_.slice();
-
-        var srcIndex = this.currentGroupKeys_.indexOf(srcKey);
-        newKeys.splice(srcIndex, 1);
-
-        var dstIndex = this.currentGroupKeys_.indexOf(dstKey);
-        newKeys.splice(dstIndex, 0, srcKey);
-
-        this.currentGroupKeys = newKeys;
-
-        e.dataTransfer.clearData();
-        e.preventDefault();
-        e.stopPropagation();
-      }.bind(this));
     }
   });
 

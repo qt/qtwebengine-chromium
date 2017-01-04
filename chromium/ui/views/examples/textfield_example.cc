@@ -8,6 +8,7 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "ui/events/event.h"
+#include "ui/gfx/color_palette.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/render_text.h"
 #include "ui/views/controls/button/label_button.h"
@@ -24,14 +25,15 @@ namespace examples {
 
 TextfieldExample::TextfieldExample()
    : ExampleBase("Textfield"),
-     name_(NULL),
-     password_(NULL),
-     read_only_(NULL),
-     show_password_(NULL),
-     clear_all_(NULL),
-     append_(NULL),
-     set_(NULL),
-     set_style_(NULL) {
+     name_(nullptr),
+     password_(nullptr),
+     disabled_(nullptr),
+     read_only_(nullptr),
+     show_password_(nullptr),
+     clear_all_(nullptr),
+     append_(nullptr),
+     set_(nullptr),
+     set_style_(nullptr) {
 }
 
 TextfieldExample::~TextfieldExample() {
@@ -42,10 +44,15 @@ void TextfieldExample::CreateExampleView(View* container) {
   password_ = new Textfield();
   password_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
   password_->set_placeholder_text(ASCIIToUTF16("password"));
+  disabled_ = new Textfield();
+  disabled_->SetEnabled(false);
+  disabled_->SetText(ASCIIToUTF16("disabled"));
   read_only_ = new Textfield();
   read_only_->SetReadOnly(true);
   read_only_->SetText(ASCIIToUTF16("read only"));
   show_password_ = new LabelButton(this, ASCIIToUTF16("Show password"));
+  set_background_ =
+      new LabelButton(this, ASCIIToUTF16("Set non-default background"));
   clear_all_ = new LabelButton(this, ASCIIToUTF16("Clear All"));
   append_ = new LabelButton(this, ASCIIToUTF16("Append"));
   set_ = new LabelButton(this, ASCIIToUTF16("Set"));
@@ -61,25 +68,24 @@ void TextfieldExample::CreateExampleView(View* container) {
                         0.2f, GridLayout::USE_PREF, 0, 0);
   column_set->AddColumn(GridLayout::FILL, GridLayout::FILL,
                         0.8f, GridLayout::USE_PREF, 0, 0);
-  layout->StartRow(0, 0);
-  layout->AddView(new Label(ASCIIToUTF16("Name:")));
-  layout->AddView(name_);
-  layout->StartRow(0, 0);
-  layout->AddView(new Label(ASCIIToUTF16("Password:")));
-  layout->AddView(password_);
-  layout->StartRow(0, 0);
-  layout->AddView(new Label(ASCIIToUTF16("Read Only:")));
-  layout->AddView(read_only_);
-  layout->StartRow(0, 0);
-  layout->AddView(show_password_);
-  layout->StartRow(0, 0);
-  layout->AddView(clear_all_);
-  layout->StartRow(0, 0);
-  layout->AddView(append_);
-  layout->StartRow(0, 0);
-  layout->AddView(set_);
-  layout->StartRow(0, 0);
-  layout->AddView(set_style_);
+
+  auto MakeRow = [layout](View* view1, View* view2) {
+    layout->StartRowWithPadding(0, 0, 0, 5);
+    layout->AddView(view1);
+    if (view2)
+      layout->AddView(view2);
+  };
+  MakeRow(new Label(ASCIIToUTF16("Name:")), name_);
+  MakeRow(new Label(ASCIIToUTF16("Password:")), password_);
+  MakeRow(new Label(ASCIIToUTF16("Disabled:")), disabled_);
+  MakeRow(new Label(ASCIIToUTF16("Read Only:")), read_only_);
+  MakeRow(new Label(ASCIIToUTF16("Name:")), nullptr);
+  MakeRow(show_password_, nullptr);
+  MakeRow(set_background_, nullptr);
+  MakeRow(clear_all_, nullptr);
+  MakeRow(append_, nullptr);
+  MakeRow(set_, nullptr);
+  MakeRow(set_style_, nullptr);
 }
 
 void TextfieldExample::ContentsChanged(Textfield* sender,
@@ -88,8 +94,8 @@ void TextfieldExample::ContentsChanged(Textfield* sender,
     PrintStatus("Name [%s]", UTF16ToUTF8(new_contents).c_str());
   } else if (sender == password_) {
     PrintStatus("Password [%s]", UTF16ToUTF8(new_contents).c_str());
-  } else if (sender == read_only_) {
-    PrintStatus("Read Only [%s]", UTF16ToUTF8(new_contents).c_str());
+  } else {
+    NOTREACHED();
   }
 }
 
@@ -107,18 +113,23 @@ bool TextfieldExample::HandleMouseEvent(Textfield* sender,
 void TextfieldExample::ButtonPressed(Button* sender, const ui::Event& event) {
   if (sender == show_password_) {
     PrintStatus("Password [%s]", UTF16ToUTF8(password_->text()).c_str());
+  } else if (sender == set_background_) {
+    password_->SetBackgroundColor(gfx::kGoogleRed300);
   } else if (sender == clear_all_) {
     base::string16 empty;
     name_->SetText(empty);
     password_->SetText(empty);
+    disabled_->SetText(empty);
     read_only_->SetText(empty);
   } else if (sender == append_) {
     name_->AppendText(ASCIIToUTF16("[append]"));
     password_->AppendText(ASCIIToUTF16("[append]"));
+    disabled_->SetText(ASCIIToUTF16("[append]"));
     read_only_->AppendText(ASCIIToUTF16("[append]"));
   } else if (sender == set_) {
     name_->SetText(ASCIIToUTF16("[set]"));
     password_->SetText(ASCIIToUTF16("[set]"));
+    disabled_->SetText(ASCIIToUTF16("[set]"));
     read_only_->SetText(ASCIIToUTF16("[set]"));
   } else if (sender == set_style_) {
     if (!name_->text().empty()) {

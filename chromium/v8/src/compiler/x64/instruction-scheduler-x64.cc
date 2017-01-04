@@ -36,10 +36,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64Imul32:
     case kX64ImulHigh32:
     case kX64UmulHigh32:
-    case kX64Idiv:
-    case kX64Idiv32:
-    case kX64Udiv:
-    case kX64Udiv32:
     case kX64Not:
     case kX64Not32:
     case kX64Neg:
@@ -67,8 +63,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kSSEFloat32Neg:
     case kSSEFloat32Sqrt:
     case kSSEFloat32Round:
-    case kSSEFloat32Max:
-    case kSSEFloat32Min:
     case kSSEFloat32ToFloat64:
     case kSSEFloat64Cmp:
     case kSSEFloat64Add:
@@ -80,7 +74,9 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kSSEFloat64Neg:
     case kSSEFloat64Sqrt:
     case kSSEFloat64Round:
+    case kSSEFloat32Max:
     case kSSEFloat64Max:
+    case kSSEFloat32Min:
     case kSSEFloat64Min:
     case kSSEFloat64ToFloat32:
     case kSSEFloat32ToInt32:
@@ -110,15 +106,11 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kAVXFloat32Sub:
     case kAVXFloat32Mul:
     case kAVXFloat32Div:
-    case kAVXFloat32Max:
-    case kAVXFloat32Min:
     case kAVXFloat64Cmp:
     case kAVXFloat64Add:
     case kAVXFloat64Sub:
     case kAVXFloat64Mul:
     case kAVXFloat64Div:
-    case kAVXFloat64Max:
-    case kAVXFloat64Min:
     case kAVXFloat64Abs:
     case kAVXFloat64Neg:
     case kAVXFloat32Abs:
@@ -131,14 +123,28 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64Lea:
     case kX64Dec32:
     case kX64Inc32:
+    case kX64Int32x4Create:
+    case kX64Int32x4ExtractLane:
       return (instr->addressing_mode() == kMode_None)
           ? kNoOpcodeFlags
           : kIsLoadOperation | kHasSideEffect;
 
+    case kX64Idiv:
+    case kX64Idiv32:
+    case kX64Udiv:
+    case kX64Udiv32:
+      return (instr->addressing_mode() == kMode_None)
+                 ? kMayNeedDeoptCheck
+                 : kMayNeedDeoptCheck | kIsLoadOperation | kHasSideEffect;
+
     case kX64Movsxbl:
     case kX64Movzxbl:
+    case kX64Movsxbq:
+    case kX64Movzxbq:
     case kX64Movsxwl:
     case kX64Movzxwl:
+    case kX64Movsxwq:
+    case kX64Movzxwq:
     case kX64Movsxlq:
       DCHECK(instr->InputCount() >= 1);
       return instr->InputAt(0)->IsRegister() ? kNoOpcodeFlags
@@ -149,6 +155,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
       return kHasSideEffect;
 
     case kX64Movl:
+    case kX64TrapMovl:
       if (instr->HasOutput()) {
         DCHECK(instr->InputCount() >= 1);
         return instr->InputAt(0)->IsRegister() ? kNoOpcodeFlags

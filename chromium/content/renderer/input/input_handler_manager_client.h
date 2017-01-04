@@ -11,48 +11,48 @@
 #include "content/common/content_export.h"
 #include "content/common/input/input_event_ack_state.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/events/blink/scoped_web_input_event.h"
 #include "ui/gfx/geometry/vector2d_f.h"
-
-namespace ui {
-class LatencyInfo;
-}
 
 namespace cc {
 class InputHandler;
 }
 
 namespace ui {
+class LatencyInfo;
 class SynchronousInputHandlerProxy;
+struct DidOverscrollParams;
 }
 
 namespace content {
-struct DidOverscrollParams;
+class InputHandlerManager;
 
 class CONTENT_EXPORT InputHandlerManagerClient {
  public:
   virtual ~InputHandlerManagerClient() {}
 
-  // The Manager will supply a |handler| when bound to the client. This is valid
-  // until the manager shuts down, at which point it supplies a null |handler|.
-  // The client should only makes calls to |handler| on the compositor thread.
-  typedef base::Callback<
-      InputEventAckState(int /*routing_id*/,
-                         const blink::WebInputEvent*,
-                         ui::LatencyInfo* latency_info)> Handler;
-
   // Called from the main thread.
-  virtual void SetBoundHandler(const Handler& handler) = 0;
+  virtual void SetInputHandlerManager(InputHandlerManager*) = 0;
+  virtual void NotifyInputEventHandled(int routing_id,
+                                       blink::WebInputEvent::Type type,
+                                       InputEventAckState ack_result) = 0;
+  virtual void ProcessRafAlignedInput(int routing_id) = 0;
 
   // Called from the compositor thread.
   virtual void RegisterRoutingID(int routing_id) = 0;
   virtual void UnregisterRoutingID(int routing_id) = 0;
+
+  // |HandleInputEvent| will respond to overscroll by calling the passed in
+  // callback.
+  // Otherwise |DidOverscroll| will be fired.
   virtual void DidOverscroll(int routing_id,
-                             const DidOverscrollParams& params) = 0;
+                             const ui::DidOverscrollParams& params) = 0;
   virtual void DidStartFlinging(int routing_id) = 0;
   virtual void DidStopFlinging(int routing_id) = 0;
-  virtual void NotifyInputEventHandled(int routing_id,
-                                       blink::WebInputEvent::Type type,
-                                       InputEventAckState ack_result) = 0;
+  virtual void DispatchNonBlockingEventToMainThread(
+      int routing_id,
+      ui::ScopedWebInputEvent event,
+      const ui::LatencyInfo& latency_info) = 0;
 
  protected:
   InputHandlerManagerClient() {}

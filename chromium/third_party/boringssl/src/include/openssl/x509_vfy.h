@@ -129,8 +129,6 @@ typedef struct x509_object_st
 		} data;
 	} X509_OBJECT;
 
-typedef struct x509_lookup_st X509_LOOKUP;
-
 DECLARE_STACK_OF(X509_LOOKUP)
 DECLARE_STACK_OF(X509_OBJECT)
 
@@ -162,7 +160,7 @@ typedef struct X509_VERIFY_PARAM_ID_st X509_VERIFY_PARAM_ID;
  * parameters used can be customized
  */
 
-typedef struct X509_VERIFY_PARAM_st
+struct X509_VERIFY_PARAM_st
 	{
 	char *name;
 	time_t check_time;	/* Time to use */
@@ -173,7 +171,7 @@ typedef struct X509_VERIFY_PARAM_st
 	int depth;		/* Verify depth */
 	STACK_OF(ASN1_OBJECT) *policies;	/* Permissible policies */
 	X509_VERIFY_PARAM_ID *id;	/* opaque ID data */
-	} X509_VERIFY_PARAM;
+	};
 
 DECLARE_STACK_OF(X509_VERIFY_PARAM)
 
@@ -437,10 +435,10 @@ OPENSSL_EXPORT int X509_OBJECT_idx_by_subject(STACK_OF(X509_OBJECT) *h, int type
 	     X509_NAME *name);
 OPENSSL_EXPORT X509_OBJECT *X509_OBJECT_retrieve_by_subject(STACK_OF(X509_OBJECT) *h,int type,X509_NAME *name);
 OPENSSL_EXPORT X509_OBJECT *X509_OBJECT_retrieve_match(STACK_OF(X509_OBJECT) *h, X509_OBJECT *x);
-OPENSSL_EXPORT void X509_OBJECT_up_ref_count(X509_OBJECT *a);
+OPENSSL_EXPORT int X509_OBJECT_up_ref_count(X509_OBJECT *a);
 OPENSSL_EXPORT void X509_OBJECT_free_contents(X509_OBJECT *a);
 OPENSSL_EXPORT X509_STORE *X509_STORE_new(void );
-OPENSSL_EXPORT void X509_STORE_up_ref(X509_STORE *store);
+OPENSSL_EXPORT int X509_STORE_up_ref(X509_STORE *store);
 OPENSSL_EXPORT void X509_STORE_free(X509_STORE *v);
 
 OPENSSL_EXPORT STACK_OF(X509)* X509_STORE_get1_certs(X509_STORE_CTX *st, X509_NAME *nm);

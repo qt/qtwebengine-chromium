@@ -139,7 +139,7 @@ WebInspector.TimelineFlameChartDataProviderBase.prototype = {
     /**
      * @override
      * @param {number} entryIndex
-     * @return {?Array.<!{title: string, value: (string|!Element)}>}
+     * @return {?Element}
      */
     prepareHighlightedEntryInfo: function(entryIndex)
     {
@@ -357,7 +357,7 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
                 return WebInspector.UIString("Blackboxed");
             var name = WebInspector.TimelineUIUtils.eventStyle(event).title;
             // TODO(yurys): support event dividers
-            var detailsText = WebInspector.TimelineUIUtils.buildDetailsTextForTraceEvent(event, this._model.target());
+            var detailsText = WebInspector.TimelineUIUtils.buildDetailsTextForTraceEvent(event, this._model.targetByEvent(event));
             if (event.name === WebInspector.TimelineModel.RecordType.JSFrame && detailsText)
                 return detailsText;
             return detailsText ? WebInspector.UIString("%s (%s)", name, detailsText) : name;
@@ -554,7 +554,7 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
     _appendAsyncEvents: function(asyncEvents)
     {
         var groups = WebInspector.TimelineModel.AsyncEventGroup;
-        var groupArray = Object.values(groups);
+        var groupArray = Object.keys(groups).map(key => groups[key]);
 
         groupArray.remove(groups.animation);
         groupArray.remove(groups.input);
@@ -635,7 +635,7 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
     /**
      * @override
      * @param {number} entryIndex
-     * @return {?Array.<!{title: string, value: (string|!Element)}>}
+     * @return {?Element}
      */
     prepareHighlightedEntryInfo: function(entryIndex)
     {
@@ -666,8 +666,8 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
         } else {
             return null;
         }
-        var value = createElement("div");
-        var root = WebInspector.createShadowRootWithCoreStyles(value, "timeline/timelineFlamechartPopover.css");
+        var element = createElement("div");
+        var root = WebInspector.createShadowRootWithCoreStyles(element, "timeline/timelineFlamechartPopover.css");
         var contents = root.createChild("div", "timeline-flamechart-popover");
         contents.createChild("span", "timeline-info-time").textContent = time;
         contents.createChild("span", "timeline-info-title").textContent = title;
@@ -675,7 +675,7 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
             warning.classList.add("timeline-info-warning");
             contents.appendChild(warning);
         }
-        return [{ title: "", value: value }];
+        return element;
     },
 
     /**
@@ -1136,7 +1136,7 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
     /**
      * @override
      * @param {number} index
-     * @return {?Array<!{title: string, value: (string|!Element)}>}
+     * @return {?Element}
      */
     prepareHighlightedEntryInfo: function(index)
     {
@@ -1144,8 +1144,8 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
         var request = /** @type {!WebInspector.TimelineModel.NetworkRequest} */ (this._requests[index]);
         if (!request.url)
             return null;
-        var value = createElement("div");
-        var root = WebInspector.createShadowRootWithCoreStyles(value, "timeline/timelineFlamechartPopover.css");
+        var element = createElement("div");
+        var root = WebInspector.createShadowRootWithCoreStyles(element, "timeline/timelineFlamechartPopover.css");
         var contents = root.createChild("div", "timeline-flamechart-popover");
         var duration = request.endTime - request.startTime;
         if (request.startTime && isFinite(duration))
@@ -1156,7 +1156,7 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
             div.style.color = this._colorForPriority(request.priority) || "black";
         }
         contents.createChild("span").textContent = request.url.trimMiddle(maxURLChars);
-        return [{ title: "", value: value }];
+        return element;
     },
 
     /**

@@ -94,8 +94,8 @@ GpuMemoryBufferImplSharedMemory::CreateFromHandle(
 
   return base::WrapUnique(new GpuMemoryBufferImplSharedMemory(
       handle.id, size, format, callback,
-      base::WrapUnique(new base::SharedMemory(handle.handle, false)),
-      handle.offset, handle.stride));
+      base::MakeUnique<base::SharedMemory>(handle.handle, false), handle.offset,
+      handle.stride));
 }
 
 // static
@@ -133,6 +133,7 @@ bool GpuMemoryBufferImplSharedMemory::IsSizeValidForFormat(
       // by the block size.
       return size.width() % 4 == 0 && size.height() % 4 == 0;
     case gfx::BufferFormat::R_8:
+    case gfx::BufferFormat::RG_88:
     case gfx::BufferFormat::BGR_565:
     case gfx::BufferFormat::RGBA_4444:
     case gfx::BufferFormat::RGBA_8888:

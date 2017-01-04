@@ -28,17 +28,21 @@ class Truncation final {
   }
 
   // Queries.
-  bool TruncatesToWord32() const {
+  bool IsUnused() const { return kind_ == TruncationKind::kNone; }
+  bool IsUsedAsBool() const {
+    return LessGeneral(kind_, TruncationKind::kBool);
+  }
+  bool IsUsedAsWord32() const {
     return LessGeneral(kind_, TruncationKind::kWord32);
   }
-  bool TruncatesToFloat64() const {
+  bool IsUsedAsFloat64() const {
     return LessGeneral(kind_, TruncationKind::kFloat64);
   }
-  bool TruncatesNaNToZero() {
+  bool IdentifiesNaNAndZero() {
     return LessGeneral(kind_, TruncationKind::kWord32) ||
            LessGeneral(kind_, TruncationKind::kBool);
   }
-  bool TruncatesUndefinedToZeroOrNaN() {
+  bool IdentifiesUndefinedAndNaNAndZero() {
     return LessGeneral(kind_, TruncationKind::kFloat64) ||
            LessGeneral(kind_, TruncationKind::kWord64);
   }
@@ -75,10 +79,28 @@ class Truncation final {
 
 enum class TypeCheckKind : uint8_t {
   kNone,
+  kSignedSmall,
   kSigned32,
-  kNumberOrUndefined,
-  kNumber
+  kNumber,
+  kNumberOrOddball
 };
+
+inline std::ostream& operator<<(std::ostream& os, TypeCheckKind type_check) {
+  switch (type_check) {
+    case TypeCheckKind::kNone:
+      return os << "None";
+    case TypeCheckKind::kSignedSmall:
+      return os << "SignedSmall";
+    case TypeCheckKind::kSigned32:
+      return os << "Signed32";
+    case TypeCheckKind::kNumber:
+      return os << "Number";
+    case TypeCheckKind::kNumberOrOddball:
+      return os << "NumberOrOddball";
+  }
+  UNREACHABLE();
+  return os;
+}
 
 // The {UseInfo} class is used to describe a use of an input of a node.
 //
@@ -120,15 +142,41 @@ class UseInfo {
   static UseInfo AnyTagged() {
     return UseInfo(MachineRepresentation::kTagged, Truncation::Any());
   }
+  static UseInfo TaggedSigned() {
+    return UseInfo(MachineRepresentation::kTaggedSigned, Truncation::Any());
+  }
+  static UseInfo TaggedPointer() {
+    return UseInfo(MachineRepresentation::kTaggedPointer, Truncation::Any());
+  }
 
   // Possibly deoptimizing conversions.
+  static UseInfo CheckedSignedSmallAsTaggedSigned() {
+    return UseInfo(MachineRepresentation::kTaggedSigned, Truncation::Any(),
+                   TypeCheckKind::kSignedSmall);
+  }
+  static UseInfo CheckedSignedSmallAsWord32() {
+    return UseInfo(MachineRepresentation::kWord32, Truncation::Any(),
+                   TypeCheckKind::kSignedSmall);
+  }
   static UseInfo CheckedSigned32AsWord32() {
     return UseInfo(MachineRepresentation::kWord32, Truncation::Any(),
                    TypeCheckKind::kSigned32);
   }
-  static UseInfo CheckedNumberOrUndefinedAsFloat64() {
+  static UseInfo CheckedNumberAsFloat64() {
+    return UseInfo(MachineRepresentation::kFloat64, Truncation::Float64(),
+                   TypeCheckKind::kNumber);
+  }
+  static UseInfo CheckedNumberAsWord32() {
+    return UseInfo(MachineRepresentation::kWord32, Truncation::Word32(),
+                   TypeCheckKind::kNumber);
+  }
+  static UseInfo CheckedNumberOrOddballAsFloat64() {
     return UseInfo(MachineRepresentation::kFloat64, Truncation::Any(),
-                   TypeCheckKind::kNumberOrUndefined);
+                   TypeCheckKind::kNumberOrOddball);
+  }
+  static UseInfo CheckedNumberOrOddballAsWord32() {
+    return UseInfo(MachineRepresentation::kWord32, Truncation::Word32(),
+                   TypeCheckKind::kNumberOrOddball);
   }
 
   // Undetermined representation.
@@ -175,6 +223,7 @@ class RepresentationChanger final {
   const Operator* Int32OperatorFor(IrOpcode::Value opcode);
   const Operator* Int32OverflowOperatorFor(IrOpcode::Value opcode);
   const Operator* Uint32OperatorFor(IrOpcode::Value opcode);
+  const Operator* Uint32OverflowOperatorFor(IrOpcode::Value opcode);
   const Operator* Float64OperatorFor(IrOpcode::Value opcode);
 
   MachineType TypeForBasePointer(const FieldAccess& access) {
@@ -196,8 +245,15 @@ class RepresentationChanger final {
   bool testing_type_errors_;  // If {true}, don't abort on a type error.
   bool type_error_;           // Set when a type error is detected.
 
+  Node* GetTaggedSignedRepresentationFor(Node* node,
+                                         MachineRepresentation output_rep,
+                                         Type* output_type, Node* use_node,
+                                         UseInfo use_info);
+  Node* GetTaggedPointerRepresentationFor(Node* node,
+                                          MachineRepresentation output_rep,
+                                          Type* output_type);
   Node* GetTaggedRepresentationFor(Node* node, MachineRepresentation output_rep,
-                                   Type* output_type);
+                                   Type* output_type, Truncation truncation);
   Node* GetFloat32RepresentationFor(Node* node,
                                     MachineRepresentation output_rep,
                                     Type* output_type, Truncation truncation);
@@ -212,14 +268,10 @@ class RepresentationChanger final {
                                 Type* output_type);
   Node* GetWord64RepresentationFor(Node* node, MachineRepresentation output_rep,
                                    Type* output_type);
-  Node* GetCheckedWord32RepresentationFor(Node* node,
-                                          MachineRepresentation output_rep,
-                                          Type* output_type, Node* use_node,
-                                          Truncation truncation,
-                                          TypeCheckKind check);
   Node* TypeError(Node* node, MachineRepresentation output_rep,
                   Type* output_type, MachineRepresentation use);
   Node* MakeTruncatedInt32Constant(double value);
+  Node* InsertChangeBitToTagged(Node* node);
   Node* InsertChangeFloat32ToFloat64(Node* node);
   Node* InsertChangeFloat64ToInt32(Node* node);
   Node* InsertChangeFloat64ToUint32(Node* node);

@@ -5,9 +5,13 @@
 #ifndef CONTENT_BROWSER_FRAME_HOST_NAVIGATOR_DELEGATE_H_
 #define CONTENT_BROWSER_FRAME_HOST_NAVIGATOR_DELEGATE_H_
 
+#include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_throttle.h"
+#include "content/public/browser/navigation_ui_data.h"
+#include "content/public/browser/reload_type.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
@@ -56,7 +60,10 @@ class CONTENT_EXPORT NavigatorDelegate {
   // A provisional load in |render_frame_host| failed.
   virtual void DidFailProvisionalLoadWithError(
       RenderFrameHostImpl* render_frame_host,
-      const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params) {}
+      const GURL& validated_url,
+      int error_code,
+      const base::string16& error_description,
+      bool was_ignored_by_handler) {}
 
   // Document load in |render_frame_host| failed.
   virtual void DidFailLoadWithError(
@@ -99,9 +106,8 @@ class CONTENT_EXPORT NavigatorDelegate {
 
   // Notifies the Navigator embedder that a navigation to the pending
   // NavigationEntry has started in the browser process.
-  virtual void DidStartNavigationToPendingEntry(
-      const GURL& url,
-      NavigationController::ReloadType reload_type) {}
+  virtual void DidStartNavigationToPendingEntry(const GURL& url,
+                                                ReloadType reload_type) {}
 
   // Opens a URL with the given parameters. See PageNavigator::OpenURL, which
   // this forwards to.
@@ -110,7 +116,7 @@ class CONTENT_EXPORT NavigatorDelegate {
 
   // Returns whether to continue a navigation that needs to transfer to a
   // different process between the load start and commit.
-  virtual bool ShouldTransferNavigation();
+  virtual bool ShouldTransferNavigation(bool is_main_frame_navigation);
 
   // Returns whether URLs for aborted browser-initiated navigations should be
   // preserved in the omnibox.  Defaults to false.
@@ -129,6 +135,20 @@ class CONTENT_EXPORT NavigatorDelegate {
 
   // The load progress was changed.
   virtual void DidChangeLoadProgress() {}
+
+  // Returns the NavigationThrottles to add to this navigation. Normally these
+  // are defined by the content/ embedder, except in the case of interstitials
+  // where no NavigationThrottles are added to the navigation.
+  virtual ScopedVector<NavigationThrottle> CreateThrottlesForNavigation(
+      NavigationHandle* navigation_handle);
+
+  // PlzNavigate
+  // Called at the start of the navigation to get opaque data the embedder
+  // wants to see passed to the corresponding URLRequest on the IO thread.
+  // In the case of a navigation to an interstitial, no call will be made to the
+  // embedder and |nullptr| is returned.
+  virtual std::unique_ptr<NavigationUIData> GetNavigationUIData(
+      NavigationHandle* navigation_handle);
 };
 
 }  // namspace content

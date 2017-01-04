@@ -15,7 +15,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/version.h"
 #include "extensions/browser/updater/extension_downloader_delegate.h"
@@ -81,9 +80,12 @@ class ExtensionDownloader : public net::URLFetcherDelegate,
   // In that case, no callbacks will be performed on the |delegate_|.
   // The |request_id| is passed on as is to the various |delegate_| callbacks.
   // This is used for example by ExtensionUpdater to keep track of when
-  // potentially concurrent update checks complete.
+  // potentially concurrent update checks complete. The |is_corrupt_reinstall|
+  // parameter is used to indicate in the request that we detected corruption in
+  // the local copy of the extension and we want to perform a reinstall of it.
   bool AddPendingExtension(const std::string& id,
                            const GURL& update_url,
+                           bool is_corrupt_reinstall,
                            int request_id);
 
   // Schedules a fetch of the manifest of all the extensions added with
@@ -178,12 +180,23 @@ class ExtensionDownloader : public net::URLFetcherDelegate,
     int oauth2_attempt_count;
   };
 
+  // Parameters for special cases that aren't used for most requests.
+  struct ExtraParams {
+    // Additional data to be passed up in the update request.
+    std::string update_url_data;
+
+    // Indicates whether this extension is being reinstalled due to corruption.
+    bool is_corrupt_reinstall;
+
+    ExtraParams();
+  };
+
   // Helper for AddExtension() and AddPendingExtension().
   bool AddExtensionData(const std::string& id,
                         const base::Version& version,
                         Manifest::Type extension_type,
                         const GURL& extension_update_url,
-                        const std::string& update_url_data,
+                        const ExtraParams& extra,
                         int request_id);
 
   // Adds all recorded stats taken so far to histogram counts.
@@ -286,8 +299,8 @@ class ExtensionDownloader : public net::URLFetcherDelegate,
   // extensions grouped together in one batch to avoid running into the limits
   // on the length of http GET requests, so there might be multiple
   // ManifestFetchData* objects with the same base_url.
-  typedef std::map<std::pair<int, GURL>,
-                   std::vector<linked_ptr<ManifestFetchData>>> FetchMap;
+  using FetchMap = std::map<std::pair<int, GURL>,
+                            std::vector<std::unique_ptr<ManifestFetchData>>>;
   FetchMap fetches_preparing_;
 
   // Outstanding url fetch requests for manifests and updates.

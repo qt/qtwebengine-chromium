@@ -245,14 +245,9 @@
   }
 
   if (self = [super init]) {
-    static dispatch_once_t initialization;
-    dispatch_once(&initialization, ^{
-      grpc_init();
-    });
-
     // Each completion queue consumes one thread. There's a trade to be made between creating and
     // consuming too many threads and having contention of multiple calls in a single completion
-    // queue. Currently we favor latency and use one per call.
+    // queue. Currently we use a singleton queue.
     _queue = [GRPCCompletionQueue completionQueue];
 
     _call = [[GRPCHost hostWithAddress:host] unmanagedCallWithPath:path completionQueue:_queue];

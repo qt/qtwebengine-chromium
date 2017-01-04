@@ -150,26 +150,46 @@ void BlobDispatcherHost::OnStartBuildingBlob(
   ChildProcessSecurityPolicyImpl* security_policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
   for (const DataElement& item : descriptions) {
-    if (item.type() == storage::DataElement::TYPE_FILE_FILESYSTEM) {
-      FileSystemURL filesystem_url(
-          file_system_context_->CrackURL(item.filesystem_url()));
-      if (!FileSystemURLIsValid(file_system_context_.get(), filesystem_url) ||
-          !security_policy->CanReadFileSystemFile(process_id_,
-                                                  filesystem_url)) {
-        async_builder_.CancelBuildingBlob(
-            uuid, IPCBlobCreationCancelCode::FILE_WRITE_FAILED, context);
-        Send(new BlobStorageMsg_CancelBuildingBlob(
-            uuid, IPCBlobCreationCancelCode::FILE_WRITE_FAILED));
-        return;
+    // For each source object that provides the data for the blob, ensure that
+    // this process has permission to read it.
+    switch (item.type()) {
+      case storage::DataElement::TYPE_FILE_FILESYSTEM: {
+        FileSystemURL filesystem_url(
+            file_system_context_->CrackURL(item.filesystem_url()));
+        if (!FileSystemURLIsValid(file_system_context_.get(), filesystem_url) ||
+            !security_policy->CanReadFileSystemFile(process_id_,
+                                                    filesystem_url)) {
+          async_builder_.CancelBuildingBlob(
+              uuid, IPCBlobCreationCancelCode::FILE_WRITE_FAILED, context);
+          Send(new BlobStorageMsg_CancelBuildingBlob(
+              uuid, IPCBlobCreationCancelCode::FILE_WRITE_FAILED));
+          return;
+        }
+        break;
       }
-    }
-    if (item.type() == storage::DataElement::TYPE_FILE &&
-        !security_policy->CanReadFile(process_id_, item.path())) {
-      async_builder_.CancelBuildingBlob(
-          uuid, IPCBlobCreationCancelCode::FILE_WRITE_FAILED, context);
-      Send(new BlobStorageMsg_CancelBuildingBlob(
-          uuid, IPCBlobCreationCancelCode::FILE_WRITE_FAILED));
-      return;
+      case storage::DataElement::TYPE_FILE: {
+        if (!security_policy->CanReadFile(process_id_, item.path())) {
+          async_builder_.CancelBuildingBlob(
+              uuid, IPCBlobCreationCancelCode::FILE_WRITE_FAILED, context);
+          Send(new BlobStorageMsg_CancelBuildingBlob(
+              uuid, IPCBlobCreationCancelCode::FILE_WRITE_FAILED));
+          return;
+        }
+        break;
+      }
+      case storage::DataElement::TYPE_BLOB:
+      case storage::DataElement::TYPE_BYTES_DESCRIPTION:
+      case storage::DataElement::TYPE_BYTES: {
+        // Bytes are already in hand; no need to check read permission.
+        // TODO(nick): For TYPE_BLOB, can we actually get here for blobs
+        // originally created by other processes? If so, is that cool?
+        break;
+      }
+      case storage::DataElement::TYPE_UNKNOWN:
+      case storage::DataElement::TYPE_DISK_CACHE_ENTRY: {
+        NOTREACHED();  // Should have been caught by IPC deserialization.
+        break;
+      }
     }
   }
 
@@ -304,12 +324,23 @@ void BlobDispatcherHost::OnDecrementBlobRefCount(const std::string& uuid) {
 void BlobDispatcherHost::OnRegisterPublicBlobURL(const GURL& public_url,
                                                  const std::string& uuid) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  BlobStorageContext* context = this->context();
+  ChildProcessSecurityPolicyImpl* security_policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+
+  // Blob urls have embedded origins. A frame should only be creating blob URLs
+  // in the origin of its current document. Make sure that the origin advertised
+  // on the URL is allowed to be rendered in this process.
+  if (!public_url.SchemeIsBlob() ||
+      !security_policy->CanCommitURL(process_id_, public_url)) {
+    bad_message::ReceivedBadMessage(this, bad_message::BDH_DISALLOWED_ORIGIN);
+    return;
+  }
   if (uuid.empty()) {
     bad_message::ReceivedBadMessage(this,
                                     bad_message::BDH_INVALID_URL_OPERATION);
     return;
   }
+  BlobStorageContext* context = this->context();
   if (!IsInUseInHost(uuid) || context->registry().IsURLMapped(public_url)) {
     UMA_HISTOGRAM_ENUMERATION("Storage.Blob.InvalidURLRegister", BDH_INCREMENT,
                               BDH_TRACING_ENUM_LAST);

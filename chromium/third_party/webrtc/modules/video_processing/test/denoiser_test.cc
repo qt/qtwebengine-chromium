@@ -125,6 +125,8 @@ TEST_F(VideoProcessingTest, MbDenoise) {
   EXPECT_EQ(COPY_BLOCK, decision);
 }
 
+// TODO(nisse): Refactor to not use test fixture. Can use some static
+// helper method to open the input file.
 TEST_F(VideoProcessingTest, Denoiser) {
   // Used in swap buffer.
   int denoised_frame_toggle = 0;
@@ -137,12 +139,11 @@ TEST_F(VideoProcessingTest, Denoiser) {
   rtc::scoped_refptr<I420Buffer> denoised_frame_sse_neon;
   rtc::scoped_refptr<I420Buffer> denoised_frame_prev_sse_neon;
 
-  std::unique_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
-  while (fread(video_buffer.get(), 1, frame_length_, source_file_) ==
-         frame_length_) {
-    // Using ConvertToI420 to add stride to the image.
-    EXPECT_EQ(0, ConvertToI420(kI420, video_buffer.get(), 0, 0, width_, height_,
-                               0, kVideoRotation_0, &video_frame_));
+  for (;;) {
+    rtc::scoped_refptr<VideoFrameBuffer> video_frame_buffer(
+        test::ReadI420Buffer(width_, height_, source_file_));
+    if (!video_frame_buffer)
+      break;
 
     rtc::scoped_refptr<I420Buffer>* p_denoised_c = &denoised_frame_c;
     rtc::scoped_refptr<I420Buffer>* p_denoised_prev_c = &denoised_frame_prev_c;
@@ -157,10 +158,10 @@ TEST_F(VideoProcessingTest, Denoiser) {
       p_denoised_sse_neon = &denoised_frame_prev_sse_neon;
       p_denoised_prev_sse_neon = &denoised_frame_sse_neon;
     }
-    denoiser_c.DenoiseFrame(video_frame_.video_frame_buffer(),
+    denoiser_c.DenoiseFrame(video_frame_buffer,
                             p_denoised_c, p_denoised_prev_c,
                             false);
-    denoiser_sse_neon.DenoiseFrame(video_frame_.video_frame_buffer(),
+    denoiser_sse_neon.DenoiseFrame(video_frame_buffer,
                                    p_denoised_sse_neon,
                                    p_denoised_prev_sse_neon, false);
     // Invert the flag.

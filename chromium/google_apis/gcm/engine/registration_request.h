@@ -49,8 +49,12 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
     UNKNOWN_ERROR,              // Unknown error.
     URL_FETCHING_FAILED,        // URL fetching failed.
     HTTP_NOT_OK,                // HTTP status was not OK.
-    RESPONSE_PARSING_FAILED,    // Registration response parsing failed.
+    NO_RESPONSE_BODY,           // No response body.
     REACHED_MAX_RETRIES,        // Reached maximum number of retries.
+    RESPONSE_PARSING_FAILED,    // Registration response parsing failed.
+    INTERNAL_SERVER_ERROR,      // Internal server error during request.
+    QUOTA_EXCEEDED,             // Registration quota exceeded.
+    TOO_MANY_REGISTRATIONS,     // Max registrations per device exceeded.
     // NOTE: always keep this entry at the end. Add new status types only
     // immediately above this line. Make sure to update the corresponding
     // histogram enum accordingly.
@@ -67,15 +71,24 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
   struct GCM_EXPORT RequestInfo {
     RequestInfo(uint64_t android_id,
                 uint64_t security_token,
-                const std::string& app_id);
+                const std::string& category,
+                const std::string& subtype);
     ~RequestInfo();
 
     // Android ID of the device.
     uint64_t android_id;
     // Security token of the device.
     uint64_t security_token;
-    // Application ID.
-    std::string app_id;
+
+    // Application ID used in Chrome to refer to registration/token's owner.
+    const std::string& app_id() const {
+      return subtype.empty() ? category : subtype;
+    }
+
+    // GCM category field.
+    std::string category;
+    // GCM subtype field.
+    std::string subtype;
   };
 
   // Encapsulates the custom logic that is needed to build and process the

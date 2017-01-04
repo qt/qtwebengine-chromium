@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/font_names_testing.h"
 
 #if defined(OS_WIN)
 #include "ui/gfx/platform_font_win.h"
@@ -145,17 +146,33 @@ TEST_F(FontTest, MAYBE_GetActualFontNameForTesting) {
       << "Your test environment seems to be missing Arial font, which is "
       << "needed for unittests.  Check if Arial font is installed.\n"
       << "********";
-  Font symbol("Symbol", 16);
-  EXPECT_EQ("symbol", base::ToLowerASCII(symbol.GetActualFontNameForTesting()))
+  Font symbol(kSymbolFontName, 16);
+  EXPECT_EQ(base::ToLowerASCII(kSymbolFontName),
+            base::ToLowerASCII(symbol.GetActualFontNameForTesting()))
       << "********\n"
-      << "Your test environment seems to be missing Symbol font, which is "
-      << "needed for unittests.  Check if Symbol font is installed.\n"
+      << "Your test environment seems to be missing the " << kSymbolFontName
+      << " font, which is "
+      << "needed for unittests.  Check if " << kSymbolFontName
+      << " font is installed.\n"
       << "********";
 
   const char* const invalid_font_name = "no_such_font_name";
   Font fallback_font(invalid_font_name, 16);
   EXPECT_NE(invalid_font_name,
             base::ToLowerASCII(fallback_font.GetActualFontNameForTesting()));
+}
+
+TEST_F(FontTest, DeriveFont) {
+  Font cf("Arial", 8);
+  const int kSizeDelta = 2;
+  Font cf_underlined =
+      cf.Derive(0, cf.GetStyle() | gfx::Font::UNDERLINE, cf.GetWeight());
+  Font cf_underlined_resized = cf_underlined.Derive(
+      kSizeDelta, cf_underlined.GetStyle(), cf_underlined.GetWeight());
+  EXPECT_EQ(cf.GetStyle() | gfx::Font::UNDERLINE,
+            cf_underlined_resized.GetStyle());
+  EXPECT_EQ(cf.GetFontSize() + kSizeDelta, cf_underlined_resized.GetFontSize());
+  EXPECT_EQ(cf.GetWeight(), cf_underlined_resized.GetWeight());
 }
 
 #if defined(OS_WIN)

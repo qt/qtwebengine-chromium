@@ -24,7 +24,6 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
-#include "content/browser/renderer_host/web_input_event_aura.h"
 #include "content/browser/web_contents/aura/gesture_nav_simple.h"
 #include "content/browser/web_contents/aura/overscroll_navigation_overlay.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -60,9 +59,11 @@
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/base/dragdrop/os_exchange_data_provider_factory.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/layer.h"
 #include "ui/display/screen.h"
+#include "ui/events/blink/web_input_event.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
@@ -467,6 +468,20 @@ class WebContentsViewAura::WindowObserver
       window->GetHost()->RemoveObserver(this);
   }
 
+  void OnWindowPropertyChanged(aura::Window* window,
+                               const void* key,
+                               intptr_t old) override {
+    if (key != aura::client::kMirroringEnabledKey)
+      return;
+    if (window->GetProperty(aura::client::kMirroringEnabledKey)) {
+      view_->web_contents_->IncrementCapturerCount(gfx::Size());
+      view_->web_contents_->UpdateWebContentsVisibility(true);
+    } else {
+      view_->web_contents_->DecrementCapturerCount();
+      view_->web_contents_->UpdateWebContentsVisibility(window->IsVisible());
+    }
+  }
+
   // Overridden WindowTreeHostObserver:
   void OnHostMoved(const aura::WindowTreeHost* host,
                    const gfx::Point& new_origin) override {
@@ -622,6 +637,47 @@ gfx::NativeView WebContentsViewAura::GetContentNativeView() const {
 gfx::NativeWindow WebContentsViewAura::GetTopLevelNativeWindow() const {
   gfx::NativeWindow window = window_->GetToplevelWindow();
   return window ? window : delegate_->GetNativeWindow();
+}
+
+namespace {
+
+void GetScreenInfoForWindow(ScreenInfo* results,
+                            aura::Window* window) {
+  display::Screen* screen = display::Screen::GetScreen();
+  const display::Display display = window
+                                       ? screen->GetDisplayNearestWindow(window)
+                                       : screen->GetPrimaryDisplay();
+  results->rect = display.bounds();
+  results->available_rect = display.work_area();
+  // TODO(derat|oshima): Don't hardcode this. Get this from display object.
+  results->depth = 24;
+  results->depth_per_component = 8;
+  results->is_monochrome = false;
+  results->device_scale_factor = display.device_scale_factor();
+
+  // The Display rotation and the ScreenInfo orientation are not the same
+  // angle. The former is the physical display rotation while the later is the
+  // rotation required by the content to be shown properly on the screen, in
+  // other words, relative to the physical display.
+  results->orientation_angle = display.RotationAsDegree();
+  if (results->orientation_angle == 90)
+    results->orientation_angle = 270;
+  else if (results->orientation_angle == 270)
+    results->orientation_angle = 90;
+
+  results->orientation_type =
+      RenderWidgetHostViewBase::GetOrientationTypeForDesktop(display);
+}
+
+}  // namespace
+
+// Static.
+void WebContentsView::GetDefaultScreenInfo(ScreenInfo* results) {
+  GetScreenInfoForWindow(results, NULL);
+}
+
+void WebContentsViewAura::GetScreenInfo(ScreenInfo* screen_info) const {
+  GetScreenInfoForWindow(screen_info, window_.get());
 }
 
 void WebContentsViewAura::GetContainerBounds(gfx::Rect *out) const {
@@ -833,10 +889,12 @@ void WebContentsViewAura::StartDragging(
   ui::TouchSelectionController* selection_controller = GetSelectionController();
   if (selection_controller)
     selection_controller->HideAndDisallowShowingAutomatically();
-  ui::OSExchangeData::Provider* provider = ui::OSExchangeData::CreateProvider();
-  PrepareDragData(drop_data, provider, web_contents_);
+  std::unique_ptr<ui::OSExchangeData::Provider> provider =
+      ui::OSExchangeDataProviderFactory::CreateProvider();
+  PrepareDragData(drop_data, provider.get(), web_contents_);
 
-  ui::OSExchangeData data(provider);  // takes ownership of |provider|.
+  ui::OSExchangeData data(
+      std::move(provider));  // takes ownership of |provider|.
 
   if (!image.isNull())
     drag_utils::SetDragImageOnDataObject(image, image_offset, &data);

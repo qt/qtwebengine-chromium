@@ -14,7 +14,6 @@
 #include "ui/ozone/platform/caca/caca_window.h"
 #include "ui/ozone/platform/caca/caca_window_manager.h"
 #include "ui/ozone/public/cursor_factory_ozone.h"
-#include "ui/ozone/public/gpu_platform_support.h"
 #include "ui/ozone/public/gpu_platform_support_host.h"
 #include "ui/ozone/public/input_controller.h"
 #include "ui/ozone/public/ozone_platform.h"
@@ -42,9 +41,6 @@ class OzonePlatformCaca : public OzonePlatform {
   InputController* GetInputController() override {
     return input_controller_.get();
   }
-  GpuPlatformSupport* GetGpuPlatformSupport() override {
-    return gpu_platform_support_.get();
-  }
   GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
     return gpu_platform_support_host_.get();
   }
@@ -62,7 +58,7 @@ class OzonePlatformCaca : public OzonePlatform {
   }
   std::unique_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()
       override {
-    return base::WrapUnique(new NativeDisplayDelegateOzone());
+    return base::MakeUnique<NativeDisplayDelegateOzone>();
   }
 
   void InitializeUI() override {
@@ -73,18 +69,22 @@ class OzonePlatformCaca : public OzonePlatform {
     gpu_platform_support_host_.reset(CreateStubGpuPlatformSupportHost());
     input_controller_ = CreateStubInputController();
     KeyboardLayoutEngineManager::SetKeyboardLayoutEngine(
-        base::WrapUnique(new NoKeyboardLayoutEngine()));
+        base::MakeUnique<NoKeyboardLayoutEngine>());
   }
 
   void InitializeGPU() override {
-    gpu_platform_support_.reset(CreateStubGpuPlatformSupport());
+    if (!window_manager_) {
+      // The return value of GetSurfaceFactoryOzone() must be non-null so a
+      // dummy instance of CacaWindowManager is needed to make the GPU
+      // initialization gracefully fail.
+      window_manager_.reset(new CacaWindowManager);
+    }
   }
 
  private:
   std::unique_ptr<CacaWindowManager> window_manager_;
   std::unique_ptr<CacaEventSource> event_source_;
   std::unique_ptr<CursorFactoryOzone> cursor_factory_ozone_;
-  std::unique_ptr<GpuPlatformSupport> gpu_platform_support_;
   std::unique_ptr<GpuPlatformSupportHost> gpu_platform_support_host_;
   std::unique_ptr<InputController> input_controller_;
   std::unique_ptr<OverlayManagerOzone> overlay_manager_;

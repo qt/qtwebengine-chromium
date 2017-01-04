@@ -20,7 +20,6 @@
 #include "media/mojo/services/mojo_cdm_promise.h"
 #include "media/mojo/services/mojo_cdm_service_context.h"
 #include "media/mojo/services/mojo_decryptor_service.h"
-#include "mojo/public/cpp/bindings/strong_binding.h"
 
 namespace media {
 
@@ -42,10 +41,8 @@ class MEDIA_MOJO_EXPORT MojoCdmService
   static scoped_refptr<MediaKeys> LegacyGetCdm(int cdm_id);
 
   // Constructs a MojoCdmService and strongly binds it to the |request|.
-  MojoCdmService(
-      base::WeakPtr<MojoCdmServiceContext> context,
-      CdmFactory* cdm_factory,
-      mojo::InterfaceRequest<mojom::ContentDecryptionModule> request);
+  MojoCdmService(base::WeakPtr<MojoCdmServiceContext> context,
+                 CdmFactory* cdm_factory);
 
   ~MojoCdmService() final;
 
@@ -85,18 +82,13 @@ class MEDIA_MOJO_EXPORT MojoCdmService
   // Callbacks for firing session events.
   void OnSessionMessage(const std::string& session_id,
                         MediaKeys::MessageType message_type,
-                        const std::vector<uint8_t>& message,
-                        const GURL& legacy_destination_url);
+                        const std::vector<uint8_t>& message);
   void OnSessionKeysChange(const std::string& session_id,
                            bool has_additional_usable_key,
                            CdmKeysInfo keys_info);
   void OnSessionExpirationUpdate(const std::string& session_id,
                                  const base::Time& new_expiry_time);
   void OnSessionClosed(const std::string& session_id);
-  void OnLegacySessionError(const std::string& session_id,
-                            MediaKeys::Exception exception,
-                            uint32_t system_code,
-                            const std::string& error_message);
 
   // Callback for when |decryptor_| loses connectivity.
   void OnDecryptorConnectionError();
@@ -106,7 +98,6 @@ class MEDIA_MOJO_EXPORT MojoCdmService
   // living in the same process.
   static int next_cdm_id_;
 
-  mojo::StrongBinding<mojom::ContentDecryptionModule> binding_;
   base::WeakPtr<MojoCdmServiceContext> context_;
 
   CdmFactory* cdm_factory_;

@@ -81,10 +81,16 @@ class OfflinePageModel : public base::SupportsUserData {
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
 
+  static const int64_t kInvalidOfflineId = 0;
+
   // Attempts to save a page addressed by |url| offline. Requires that the model
-  // is loaded.  Generates a new offline id and returns it.
+  // is loaded.  Generates a new offline id and returns
+  // it. |proposed_offline_id| is used for the offline_id for the saved file if
+  // it is non-zero.  If it is kInvalidOfflineId, a new, random ID will be
+  // generated.
   virtual void SavePage(const GURL& url,
                         const ClientId& client_id,
+                        int64_t proposed_offline_id,
                         std::unique_ptr<OfflinePageArchiver> archiver,
                         const SavePageCallback& callback) = 0;
 
@@ -93,22 +99,14 @@ class OfflinePageModel : public base::SupportsUserData {
   // will be updated. Requires that the model is loaded.
   virtual void MarkPageAccessed(int64_t offline_id) = 0;
 
-  // Wipes out all the data by deleting all saved files and clearing the store.
-  virtual void ClearAll(const base::Closure& callback) = 0;
-
   // Deletes pages based on |offline_ids|.
   virtual void DeletePagesByOfflineId(const std::vector<int64_t>& offline_ids,
                                       const DeletePageCallback& callback) = 0;
 
-  // Deletes offline pages matching the URL predicate.
-  virtual void DeletePagesByURLPredicate(
+  // Deletes cached offline pages matching the URL predicate.
+  virtual void DeleteCachedPagesByURLPredicate(
       const UrlPredicate& predicate,
       const DeletePageCallback& callback) = 0;
-
-  // Returns true via callback if there are offline pages in the given
-  // |name_space|.
-  virtual void HasPages(const std::string& name_space,
-                        const HasPagesCallback& callback) = 0;
 
   // Returns via callback all GURLs in |urls| that are equal to the online URL
   // of any offline page.
@@ -118,6 +116,10 @@ class OfflinePageModel : public base::SupportsUserData {
 
   // Gets all offline pages.
   virtual void GetAllPages(const MultipleOfflinePageItemCallback& callback) = 0;
+
+  // Gets all offline pages including expired ones.
+  virtual void GetAllPagesWithExpired(
+      const MultipleOfflinePageItemCallback& callback) = 0;
 
   // Gets all offline ids where the offline page has the matching client id.
   virtual void GetOfflineIdsForClientId(
@@ -142,46 +144,15 @@ class OfflinePageModel : public base::SupportsUserData {
   virtual const OfflinePageItem* MaybeGetPageByOfflineId(
       int64_t offline_id) const = 0;
 
-  // Returns the offline page that is stored under |offline_url|, if any.
-  virtual void GetPageByOfflineURL(
-      const GURL& offline_url,
-      const SingleOfflinePageItemCallback& callback) = 0;
-
-  // Returns an offline page that is stored as |offline_url|. A nullptr is
-  // returned if not found.
-  //
-  // This function is deprecated, and may return |nullptr| even if a page
-  // exists, depending on the implementation details of OfflinePageModel.
-  // Use |GetPageByOfflineURL| instead.
-  virtual const OfflinePageItem* MaybeGetPageByOfflineURL(
-      const GURL& offline_url) const = 0;
-
   // Returns the offline pages that are stored under |online_url|.
   virtual void GetPagesByOnlineURL(
       const GURL& online_url,
       const MultipleOfflinePageItemCallback& callback) = 0;
 
-  // Returns via callback an offline page saved for |online_url|, if any. The
-  // best page is chosen based on creation date; a more recently created offline
-  // page will be preferred over an older one. This API function does not
-  // respect namespaces, as it is used to choose which page is rendered in a
-  // tab. Today all namespaces are treated equally for the purposes of this
-  // selection.
-  virtual void GetBestPageForOnlineURL(
-      const GURL& online_url,
-      const SingleOfflinePageItemCallback callback) = 0;
-
   // Returns an offline page saved for |online_url|. A nullptr is returned if
   // not found.  See |GetBestPageForOnlineURL| for selection criteria.
   virtual const OfflinePageItem* MaybeGetBestPageForOnlineURL(
       const GURL& online_url) const = 0;
-
-  // Checks that all of the offline pages have corresponding offline copies,
-  // and all archived files have offline pages pointing to them.
-  // If a page is discovered to be missing an offline copy, its offline page
-  // metadata will be expired. If an archive file is discovered missing its
-  // offline page, it will be deleted.
-  virtual void CheckMetadataConsistency() = 0;
 
   // Marks pages with |offline_ids| as expired and deletes the associated
   // archive files.

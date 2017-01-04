@@ -10,7 +10,6 @@
 
 #include "webrtc/modules/audio_coding/neteq/decoder_database.h"
 
-#include <assert.h>
 #include <utility>  // pair
 
 #include "webrtc/base/checks.h"
@@ -27,60 +26,82 @@ DecoderDatabase::DecoderDatabase(
 
 DecoderDatabase::~DecoderDatabase() = default;
 
-DecoderDatabase::DecoderInfo::DecoderInfo(NetEqDecoder ct,
-                                          const std::string& nm)
-    : codec_type(ct),
-      name(nm),
-      audio_format_(acm2::RentACodec::NetEqDecoderToSdpAudioFormat(ct)),
+DecoderDatabase::DecoderInfo::DecoderInfo(const SdpAudioFormat& audio_format,
+                                          AudioDecoderFactory* factory)
+    : audio_format_(audio_format),
+      factory_(factory),
       external_decoder_(nullptr),
-      cng_decoder_(CngDecoder::Create(ct)) {}
+      cng_decoder_(CngDecoder::Create(audio_format)),
+      subtype_(SubtypeFromFormat(audio_format)) {}
 
 DecoderDatabase::DecoderInfo::DecoderInfo(NetEqDecoder ct,
-                                          const std::string& nm,
+                                          AudioDecoderFactory* factory)
+    : audio_format_(*acm2::RentACodec::NetEqDecoderToSdpAudioFormat(ct)),
+      factory_(factory),
+      external_decoder_(nullptr),
+      cng_decoder_(CngDecoder::Create(audio_format_)),
+      subtype_(SubtypeFromFormat(audio_format_)) {}
+
+DecoderDatabase::DecoderInfo::DecoderInfo(const SdpAudioFormat& audio_format,
                                           AudioDecoder* ext_dec)
-    : codec_type(ct),
-      name(nm),
-      audio_format_(acm2::RentACodec::NetEqDecoderToSdpAudioFormat(ct)),
-      external_decoder_(ext_dec) {
+    : audio_format_(audio_format),
+      factory_(nullptr),
+      external_decoder_(ext_dec),
+      subtype_(Subtype::kNormal) {
   RTC_CHECK(ext_dec);
 }
 
 DecoderDatabase::DecoderInfo::DecoderInfo(DecoderInfo&&) = default;
 DecoderDatabase::DecoderInfo::~DecoderInfo() = default;
 
-AudioDecoder* DecoderDatabase::DecoderInfo::GetDecoder(
-    AudioDecoderFactory* factory) {
+AudioDecoder* DecoderDatabase::DecoderInfo::GetDecoder() const {
+  if (subtype_ != Subtype::kNormal) {
+    // These are handled internally, so they have no AudioDecoder objects.
+    return nullptr;
+  }
   if (external_decoder_) {
     RTC_DCHECK(!decoder_);
     RTC_DCHECK(!cng_decoder_);
     return external_decoder_;
   }
-  RTC_DCHECK(audio_format_);
   if (!decoder_) {
-    decoder_ = factory->MakeAudioDecoder(*audio_format_);
+    // TODO(ossu): Keep a check here for now, since a number of tests create
+    // DecoderInfos without factories.
+    RTC_DCHECK(factory_);
+    decoder_ = factory_->MakeAudioDecoder(audio_format_);
   }
-  RTC_DCHECK(decoder_) << "Failed to create: " << *audio_format_;
+  RTC_DCHECK(decoder_) << "Failed to create: " << audio_format_;
   return decoder_.get();
 }
 
+bool DecoderDatabase::DecoderInfo::IsType(const char* name) const {
+  return STR_CASE_CMP(audio_format_.name.c_str(), name) == 0;
+}
+
+bool DecoderDatabase::DecoderInfo::IsType(const std::string& name) const {
+  return IsType(name.c_str());
+}
+
 rtc::Optional<DecoderDatabase::DecoderInfo::CngDecoder>
-DecoderDatabase::DecoderInfo::CngDecoder::Create(NetEqDecoder ct) {
-  const auto cng = [](int sample_rate_hz) {
-    return rtc::Optional<DecoderDatabase::DecoderInfo::CngDecoder>(
-        {sample_rate_hz});
-  };
-  switch (ct) {
-    case NetEqDecoder::kDecoderCNGnb:
-      return cng(8000);
-    case NetEqDecoder::kDecoderCNGwb:
-      return cng(16000);
-    case NetEqDecoder::kDecoderCNGswb32kHz:
-      return cng(32000);
-    case NetEqDecoder::kDecoderCNGswb48kHz:
-      return cng(48000);
-    default:
-      return rtc::Optional<DecoderDatabase::DecoderInfo::CngDecoder>();
+DecoderDatabase::DecoderInfo::CngDecoder::Create(const SdpAudioFormat& format) {
+  if (STR_CASE_CMP(format.name.c_str(), "CN") == 0) {
+    return rtc::Optional<CngDecoder>({format.clockrate_hz});
+  } else {
+    return rtc::Optional<CngDecoder>();
   }
+}
+
+DecoderDatabase::DecoderInfo::Subtype
+DecoderDatabase::DecoderInfo::SubtypeFromFormat(const SdpAudioFormat& format) {
+  if (STR_CASE_CMP(format.name.c_str(), "CN") == 0) {
+    return Subtype::kComfortNoise;
+  } else if (STR_CASE_CMP(format.name.c_str(), "telephone-event") == 0) {
+    return Subtype::kDtmf;
+  } else if (STR_CASE_CMP(format.name.c_str(), "red") == 0) {
+    return Subtype::kRed;
+  }
+
+  return Subtype::kNormal;
 }
 
 bool DecoderDatabase::Empty() const { return decoders_.empty(); }
@@ -99,10 +120,18 @@ int DecoderDatabase::RegisterPayload(uint8_t rtp_payload_type,
   if (rtp_payload_type > 0x7F) {
     return kInvalidRtpPayloadType;
   }
-  if (!CodecSupported(codec_type)) {
+  // kCodecArbitrary is only supported through InsertExternal.
+  if (codec_type == NetEqDecoder::kDecoderArbitrary ||
+      !CodecSupported(codec_type)) {
     return kCodecNotSupported;
   }
-  DecoderInfo info(codec_type, name);
+  const auto opt_format =
+      acm2::RentACodec::NetEqDecoderToSdpAudioFormat(codec_type);
+  if (!opt_format) {
+    return kCodecNotSupported;
+  }
+  DecoderInfo info(*opt_format, decoder_factory_);
+  info.name = name;
   auto ret =
       decoders_.insert(std::make_pair(rtp_payload_type, std::move(info)));
   if (ret.second == false) {
@@ -119,14 +148,17 @@ int DecoderDatabase::InsertExternal(uint8_t rtp_payload_type,
   if (rtp_payload_type > 0x7F) {
     return kInvalidRtpPayloadType;
   }
-  if (!CodecSupported(codec_type)) {
-    return kCodecNotSupported;
-  }
   if (!decoder) {
     return kInvalidPointer;
   }
+
+  const auto opt_db_format =
+      acm2::RentACodec::NetEqDecoderToSdpAudioFormat(codec_type);
+  const SdpAudioFormat format = opt_db_format.value_or({"arbitrary", 0, 0});
+
   std::pair<DecoderMap::iterator, bool> ret;
-  DecoderInfo info(codec_type, codec_name, decoder);
+  DecoderInfo info(format, decoder);
+  info.name = codec_name;
   ret = decoders_.insert(std::make_pair(rtp_payload_type, std::move(info)));
   if (ret.second == false) {
     // Database already contains a decoder with type |rtp_payload_type|.
@@ -149,6 +181,12 @@ int DecoderDatabase::Remove(uint8_t rtp_payload_type) {
   return kOK;
 }
 
+void DecoderDatabase::RemoveAll() {
+  decoders_.clear();
+  active_decoder_type_ = -1;      // No active decoder.
+  active_cng_decoder_type_ = -1;  // No active CNG decoder.
+}
+
 const DecoderDatabase::DecoderInfo* DecoderDatabase::GetDecoderInfo(
     uint8_t rtp_payload_type) const {
   DecoderMap::const_iterator it = decoders_.find(rtp_payload_type);
@@ -156,98 +194,35 @@ const DecoderDatabase::DecoderInfo* DecoderDatabase::GetDecoderInfo(
     // Decoder not found.
     return NULL;
   }
-  return &(*it).second;
-}
-
-uint8_t DecoderDatabase::GetRtpPayloadType(
-    NetEqDecoder codec_type) const {
-  DecoderMap::const_iterator it;
-  for (it = decoders_.begin(); it != decoders_.end(); ++it) {
-    if ((*it).second.codec_type == codec_type) {
-      // Match found.
-      return (*it).first;
-    }
-  }
-  // No match.
-  return kRtpPayloadTypeError;
-}
-
-AudioDecoder* DecoderDatabase::GetDecoder(uint8_t rtp_payload_type) {
-  if (IsDtmf(rtp_payload_type) || IsRed(rtp_payload_type) ||
-      IsComfortNoise(rtp_payload_type)) {
-    // These are not real decoders.
-    return NULL;
-  }
-  DecoderMap::iterator it = decoders_.find(rtp_payload_type);
-  if (it == decoders_.end()) {
-    // Decoder not found.
-    return NULL;
-  }
-  DecoderInfo* info = &(*it).second;
-  return info->GetDecoder(decoder_factory_.get());
-}
-
-bool DecoderDatabase::IsType(uint8_t rtp_payload_type,
-                             NetEqDecoder codec_type) const {
-  DecoderMap::const_iterator it = decoders_.find(rtp_payload_type);
-  if (it == decoders_.end()) {
-    // Decoder not found.
-    return false;
-  }
-  return ((*it).second.codec_type == codec_type);
-}
-
-bool DecoderDatabase::IsComfortNoise(uint8_t rtp_payload_type) const {
-  DecoderMap::const_iterator it = decoders_.find(rtp_payload_type);
-  if (it == decoders_.end()) {
-    // Decoder not found.
-    return false;
-  }
-  const auto& type = it->second.codec_type;
-  return type == NetEqDecoder::kDecoderCNGnb
-      || type == NetEqDecoder::kDecoderCNGwb
-      || type == NetEqDecoder::kDecoderCNGswb32kHz
-      || type == NetEqDecoder::kDecoderCNGswb48kHz;
-}
-
-bool DecoderDatabase::IsDtmf(uint8_t rtp_payload_type) const {
-  return IsType(rtp_payload_type, NetEqDecoder::kDecoderAVT);
-}
-
-bool DecoderDatabase::IsRed(uint8_t rtp_payload_type) const {
-  return IsType(rtp_payload_type, NetEqDecoder::kDecoderRED);
+  return &it->second;
 }
 
 int DecoderDatabase::SetActiveDecoder(uint8_t rtp_payload_type,
                                       bool* new_decoder) {
   // Check that |rtp_payload_type| exists in the database.
-  DecoderMap::const_iterator it = decoders_.find(rtp_payload_type);
-  if (it == decoders_.end()) {
+  const DecoderInfo *info = GetDecoderInfo(rtp_payload_type);
+  if (!info) {
     // Decoder not found.
     return kDecoderNotFound;
   }
-  RTC_CHECK(!IsComfortNoise(rtp_payload_type));
-  assert(new_decoder);
+  RTC_CHECK(!info->IsComfortNoise());
+  RTC_DCHECK(new_decoder);
   *new_decoder = false;
   if (active_decoder_type_ < 0) {
     // This is the first active decoder.
     *new_decoder = true;
   } else if (active_decoder_type_ != rtp_payload_type) {
     // Moving from one active decoder to another. Delete the first one.
-    DecoderMap::iterator it = decoders_.find(active_decoder_type_);
-    if (it == decoders_.end()) {
-      // Decoder not found. This should not be possible.
-      assert(false);
-      return kDecoderNotFound;
-    }
-    it->second.DropDecoder();
+    const DecoderInfo *old_info = GetDecoderInfo(active_decoder_type_);
+    RTC_DCHECK(old_info);
+    old_info->DropDecoder();
     *new_decoder = true;
   }
   active_decoder_type_ = rtp_payload_type;
   return kOK;
 }
 
-AudioDecoder* DecoderDatabase::GetActiveDecoder() {
+AudioDecoder* DecoderDatabase::GetActiveDecoder() const {
   if (active_decoder_type_ < 0) {
     // No active decoder.
     return NULL;
@@ -257,27 +232,22 @@ AudioDecoder* DecoderDatabase::GetActiveDecoder() {
 
 int DecoderDatabase::SetActiveCngDecoder(uint8_t rtp_payload_type) {
   // Check that |rtp_payload_type| exists in the database.
-  DecoderMap::const_iterator it = decoders_.find(rtp_payload_type);
-  if (it == decoders_.end()) {
+  const DecoderInfo *info = GetDecoderInfo(rtp_payload_type);
+  if (!info) {
     // Decoder not found.
     return kDecoderNotFound;
   }
   if (active_cng_decoder_type_ >= 0 &&
       active_cng_decoder_type_ != rtp_payload_type) {
     // Moving from one active CNG decoder to another. Delete the first one.
-    DecoderMap::iterator it = decoders_.find(active_cng_decoder_type_);
-    if (it == decoders_.end()) {
-      // Decoder not found. This should not be possible.
-      assert(false);
-      return kDecoderNotFound;
-    }
+    RTC_DCHECK(active_cng_decoder_);
     active_cng_decoder_.reset();
   }
   active_cng_decoder_type_ = rtp_payload_type;
   return kOK;
 }
 
-ComfortNoiseDecoder* DecoderDatabase::GetActiveCngDecoder() {
+ComfortNoiseDecoder* DecoderDatabase::GetActiveCngDecoder() const {
   if (active_cng_decoder_type_ < 0) {
     // No active CNG decoder.
     return NULL;
@@ -288,10 +258,40 @@ ComfortNoiseDecoder* DecoderDatabase::GetActiveCngDecoder() {
   return active_cng_decoder_.get();
 }
 
+AudioDecoder* DecoderDatabase::GetDecoder(uint8_t rtp_payload_type) const {
+  const DecoderInfo *info = GetDecoderInfo(rtp_payload_type);
+  return info ? info->GetDecoder() : nullptr;
+}
+
+bool DecoderDatabase::IsType(uint8_t rtp_payload_type, const char* name) const {
+  const DecoderInfo* info = GetDecoderInfo(rtp_payload_type);
+  return info && info->IsType(name);
+}
+
+bool DecoderDatabase::IsType(uint8_t rtp_payload_type,
+                             const std::string& name) const {
+  return IsType(rtp_payload_type, name.c_str());
+}
+
+bool DecoderDatabase::IsComfortNoise(uint8_t rtp_payload_type) const {
+  const DecoderInfo *info = GetDecoderInfo(rtp_payload_type);
+  return info && info->IsComfortNoise();
+}
+
+bool DecoderDatabase::IsDtmf(uint8_t rtp_payload_type) const {
+  const DecoderInfo *info = GetDecoderInfo(rtp_payload_type);
+  return info && info->IsDtmf();
+}
+
+bool DecoderDatabase::IsRed(uint8_t rtp_payload_type) const {
+  const DecoderInfo *info = GetDecoderInfo(rtp_payload_type);
+  return info && info->IsRed();
+}
+
 int DecoderDatabase::CheckPayloadTypes(const PacketList& packet_list) const {
   PacketList::const_iterator it;
   for (it = packet_list.begin(); it != packet_list.end(); ++it) {
-    if (decoders_.find((*it)->header.payloadType) == decoders_.end()) {
+    if (!GetDecoderInfo((*it)->header.payloadType)) {
       // Payload type is not found.
       LOG(LS_WARNING) << "CheckPayloadTypes: unknown RTP payload type "
                       << static_cast<int>((*it)->header.payloadType);
@@ -300,6 +300,5 @@ int DecoderDatabase::CheckPayloadTypes(const PacketList& packet_list) const {
   }
   return kOK;
 }
-
 
 }  // namespace webrtc

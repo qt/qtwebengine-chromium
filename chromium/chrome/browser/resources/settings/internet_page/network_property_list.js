@@ -4,26 +4,20 @@
 
 /**
  * @fileoverview Polymer element for displaying a list of network properties
- * in a list in the format:
- *    Key1.........Value1
- *    KeyTwo.......ValueTwo
- * This also supports editing fields inline for fields listed in editFieldTypes:
- *    KeyThree....._________
- * TODO(stevenjb): Translate the keys and (where appropriate) values.
+ * in a list. This also supports editing fields inline for fields listed in
+ * editFieldTypes.
  */
 Polymer({
   is: 'network-property-list',
 
-  behaviors: [CrPolicyNetworkBehavior],
+  behaviors: [I18nBehavior, CrPolicyNetworkBehavior],
 
   properties: {
     /**
      * The dictionary containing the properties to display.
      * @type {!Object|undefined}
      */
-    propertyDict: {
-      type: Object
-    },
+    propertyDict: {type: Object},
 
     /**
      * Fields to display.
@@ -31,7 +25,9 @@ Polymer({
      */
     fields: {
       type: Array,
-      value: function() { return []; }
+      value: function() {
+        return [];
+      },
     },
 
     /**
@@ -45,7 +41,15 @@ Polymer({
      */
     editFieldTypes: {
       type: Object,
-      value: function() { return {}; }
+      value: function() {
+        return {};
+      },
+    },
+
+    /** Prefix used to look up property key translations. */
+    prefix: {
+      type: String,
+      value: '',
     },
   },
 
@@ -63,8 +67,8 @@ Polymer({
     var curValue = this.get(field, this.propertyDict);
     if (typeof curValue == 'object') {
       // Extract the property from an ONC managed dictionary.
-      curValue =
-          CrOnc.getActiveValue(/** @type {!CrOnc.ManagedProperty} */(curValue));
+      curValue = CrOnc.getActiveValue(
+          /** @type {!CrOnc.ManagedProperty} */ (curValue));
     }
     var newValue = event.target.value;
     if (newValue == curValue)
@@ -78,90 +82,93 @@ Polymer({
    * @private
    */
   getPropertyLabel_: function(key) {
-    // TODO(stevenjb): Localize.
-    return key;
+    var oncKey = 'Onc' + this.prefix + key;
+    oncKey = oncKey.replace(/\./g, '-');
+    if (this.i18nExists(oncKey))
+      return this.i18n(oncKey);
+    // We do not provide translations for every possible network property key.
+    // For keys specific to a type, strip the type prefix.
+    var result = this.prefix + key;
+    for (let entry in chrome.networkingPrivate.NetworkType) {
+      let type = chrome.networkingPrivate.NetworkType[entry];
+      if (result.startsWith(type + '.')) {
+        result = result.substr(type.length + 1);
+        break;
+      }
+    }
+    return result;
   },
 
   /**
-   * @param {!Object} propertyDict
    * @param {string} key The property key.
    * @return {boolean} Whether or not the property exists in |propertyDict|.
    * @private
    */
-  hasPropertyValue_: function(propertyDict, key) {
-    var value = this.get(key, propertyDict);
+  hasPropertyValue_: function(key) {
+    var value = this.get(key, this.propertyDict);
     return value !== undefined && value !== '';
   },
 
   /**
-   * @param {!Object} propertyDict
-   * @param {!Object} editFieldTypes The editFieldTypes object.
+   * Generates a filter function dependent on propertyDict and editFieldTypes.
+   * @private
+   */
+  computeFilter_: function() {
+    return function(key) {
+      return this.showProperty_(key);
+    }.bind(this);
+  },
+
+  /**
    * @param {string} key The property key.
    * @return {boolean} Whether or not to show the property. Editable properties
    *     are always shown.
    * @private
    */
-  showProperty_: function(propertyDict, editFieldTypes, key) {
-    if (editFieldTypes.hasOwnProperty(key))
+  showProperty_: function(key) {
+    if (this.editFieldTypes.hasOwnProperty(key))
       return true;
-    return this.hasPropertyValue_(propertyDict, key);
+    return this.hasPropertyValue_(key);
   },
 
   /**
-   * @param {!Object} propertyDict
-   * @param {!Object} editFieldTypes The editFieldTypes object.
-   * @param {string} key The property key.
-   * @return {boolean} True if |key| exists in |propertiesDict| and is not
-   *     editable.
-   * @private
-   */
-  showNoEdit_: function(propertyDict, editFieldTypes, key) {
-    if (!this.hasPropertyValue_(propertyDict, key))
-      return false;
-    var property = /** @type {!CrOnc.ManagedProperty|undefined} */(
-      this.get(key, propertyDict));
-    if (this.isNetworkPolicyEnforced(property))
-      return true;
-    return !editFieldTypes[key];
-  },
-
-  /**
-   * @param {!Object} propertyDict
-   * @param {!Object} editFieldTypes The editFieldTypes object.
    * @param {string} key The property key.
    * @param {string} type The field type.
-   * @return {boolean} True if |key| exists in |propertyDict| and is of editable
-   *     type |type|.
+   * @return {boolean}
    * @private
    */
-  showEdit_: function(propertyDict, editFieldTypes, key, type) {
-    if (!this.hasPropertyValue_(propertyDict, key))
-      return false;
-    var property = /** @type {!CrOnc.ManagedProperty|undefined} */(
-        this.get(key, propertyDict));
+  isEditable_: function(key, type) {
+    var property = /** @type {!CrOnc.ManagedProperty|undefined} */ (
+        this.get(key, this.propertyDict));
     if (this.isNetworkPolicyEnforced(property))
       return false;
-    return editFieldTypes[key] == type;
+    var editType = this.editFieldTypes[key];
+    return editType !== undefined && (type == '' || editType == type);
   },
 
   /**
-   * @param {!Object} propertyDict
    * @param {string} key The property key.
    * @return {string} The text to display for the property value.
    * @private
    */
-  getPropertyValue_: function(propertyDict, key) {
-    var value = this.get(key, propertyDict);
+  getPropertyValue_: function(key) {
+    var value = this.get(key, this.propertyDict);
     if (value === undefined)
       return '';
     if (typeof value == 'object') {
       // Extract the property from an ONC managed dictionary
       value =
-          CrOnc.getActiveValue(/** @type {!CrOnc.ManagedProperty} */(value));
+          CrOnc.getActiveValue(/** @type {!CrOnc.ManagedProperty} */ (value));
     }
-    // TODO(stevenjb): Localize.
     if (typeof value == 'number' || typeof value == 'boolean')
       return value.toString();
-    return /** @type {string} */(value);
+    assert(typeof value == 'string');
+    let valueStr = /** @type {string} */ (value);
+    var oncKey = 'Onc' + this.prefix + key;
+    oncKey = oncKey.replace(/\./g, '-');
+    oncKey += '_' + valueStr;
+    if (this.i18nExists(oncKey))
+      return this.i18n(oncKey);
+    return valueStr;
   },
 });

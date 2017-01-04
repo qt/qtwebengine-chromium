@@ -59,7 +59,7 @@ WebInspector.ConsoleView = function()
 
     this._executionContextComboBox = new WebInspector.ToolbarComboBox(null, "console-context");
     this._executionContextComboBox.setMaxWidth(200);
-    this._executionContextModel = new WebInspector.ConsoleContextSelector(this._executionContextComboBox.selectElement());
+    this._consoleContextSelector = new WebInspector.ConsoleContextSelector(this._executionContextComboBox.selectElement());
 
     this._filter = new WebInspector.ConsoleViewFilter(this);
     this._filter.addEventListener(WebInspector.ConsoleViewFilter.Events.FilterChanged, this._updateMessageList.bind(this));
@@ -103,9 +103,7 @@ WebInspector.ConsoleView = function()
 
     this._promptElement = this._messagesElement.createChild("div", "source-code");
     this._promptElement.id = "console-prompt";
-    this._promptElement.spellcheck = false;
-
-    this._searchableView.setDefaultFocusedElement(this._promptElement);
+    this._promptElement.addEventListener("input", this._promptInput.bind(this), false);
 
     // FIXME: This is a workaround for the selection machinery bug. See crbug.com/410899
     var selectAllFixer = this._messagesElement.createChild("div", "console-view-fix-select-all");
@@ -130,19 +128,17 @@ WebInspector.ConsoleView = function()
     this._consoleMessages = [];
     this._viewMessageSymbol = Symbol("viewMessage");
 
-    this._prompt = new WebInspector.TextPromptWithHistory(WebInspector.ExecutionContextSelector.completionsForTextPromptInCurrentContext);
-    this._prompt.setSuggestBoxEnabled(true);
-    this._prompt.setAutocompletionTimeout(0);
-    this._prompt.renderAsBlock();
-    var proxyElement = this._prompt.attach(this._promptElement);
-    proxyElement.addEventListener("keydown", this._promptKeyDown.bind(this), false);
-
     this._consoleHistorySetting = WebInspector.settings.createLocalSetting("consoleHistory", []);
-    var historyData = this._consoleHistorySetting.get();
-    this._prompt.setHistoryData(historyData);
+
+    this._prompt = new WebInspector.ConsolePrompt();
+    this._prompt.show(this._promptElement);
+    this._prompt.element.addEventListener("keydown", this._promptKeyDown.bind(this), true);
 
     this._consoleHistoryAutocompleteSetting = WebInspector.moduleSetting("consoleHistoryAutocomplete");
     this._consoleHistoryAutocompleteSetting.addChangeListener(this._consoleHistoryAutocompleteChanged, this);
+
+    var historyData = this._consoleHistorySetting.get();
+    this._prompt.history().setHistoryData(historyData);
     this._consoleHistoryAutocompleteChanged();
 
     this._updateFilterStatus();
@@ -150,11 +146,15 @@ WebInspector.ConsoleView = function()
 
     this._registerWithMessageSink();
     WebInspector.targetManager.observeTargets(this);
-    WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.MainFrameNavigated, this._onMainFrameNavigated, this);
 
     this._initConsoleMessages();
 
     WebInspector.context.addFlavorChangeListener(WebInspector.ExecutionContext, this._executionContextChanged, this);
+
+    this._messagesElement.addEventListener("mousedown", this._updateStickToBottomOnMouseDown.bind(this), false);
+    this._messagesElement.addEventListener("mouseup", this._updateStickToBottomOnMouseUp.bind(this), false);
+    this._messagesElement.addEventListener("mouseleave", this._updateStickToBottomOnMouseUp.bind(this), false);
+    this._messagesElement.addEventListener("wheel", this._updateStickToBottomOnWheel.bind(this), false);
 }
 
 WebInspector.ConsoleView.persistedHistorySize = 300;
@@ -171,7 +171,7 @@ WebInspector.ConsoleView.prototype = {
     _clearHistory: function()
     {
         this._consoleHistorySetting.set([]);
-        this._prompt.setHistoryData([]);
+        this._prompt.history().setHistoryData([]);
     },
 
     _consoleHistoryAutocompleteChanged: function()
@@ -179,22 +179,13 @@ WebInspector.ConsoleView.prototype = {
         this._prompt.setAddCompletionsFromHistory(this._consoleHistoryAutocompleteSetting.get());
     },
 
-    /**
-     * @param {!WebInspector.Event} event
-     */
-    _onMainFrameNavigated: function(event)
-    {
-        if (!WebInspector.moduleSetting("preserveConsoleLog").get())
-            return;
-        var frame = /** @type {!WebInspector.ResourceTreeFrame} */(event.data);
-        WebInspector.console.log(WebInspector.UIString("Navigated to %s", frame.url));
-    },
-
     _initConsoleMessages: function()
     {
         var mainTarget = WebInspector.targetManager.mainTarget();
-        if (!mainTarget || !mainTarget.resourceTreeModel.cachedResourcesLoaded()) {
-            WebInspector.targetManager.addModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded, this._onResourceTreeModelLoaded, this);
+        var resourceTreeModel = mainTarget && WebInspector.ResourceTreeModel.fromTarget(mainTarget);
+        var resourcesLoaded = !resourceTreeModel || resourceTreeModel.cachedResourcesLoaded();
+        if (!mainTarget || !resourcesLoaded) {
+            WebInspector.targetManager.addModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.Events.CachedResourcesLoaded, this._onResourceTreeModelLoaded, this);
             return;
         }
         this._fetchMultitargetMessages();
@@ -208,7 +199,7 @@ WebInspector.ConsoleView.prototype = {
         var resourceTreeModel = event.target;
         if (resourceTreeModel.target() !== WebInspector.targetManager.mainTarget())
             return;
-        WebInspector.targetManager.removeModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded, this._onResourceTreeModelLoaded, this);
+        WebInspector.targetManager.removeModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.Events.CachedResourcesLoaded, this._onResourceTreeModelLoaded, this);
         this._fetchMultitargetMessages();
     },
 
@@ -219,6 +210,7 @@ WebInspector.ConsoleView.prototype = {
         WebInspector.multitargetConsoleModel.addEventListener(WebInspector.ConsoleModel.Events.MessageUpdated, this._onConsoleMessageUpdated, this);
         WebInspector.multitargetConsoleModel.addEventListener(WebInspector.ConsoleModel.Events.CommandEvaluated, this._commandEvaluated, this);
         WebInspector.multitargetConsoleModel.messages().forEach(this._addConsoleMessage, this);
+        this._viewport.invalidate();
     },
 
     /**
@@ -266,8 +258,8 @@ WebInspector.ConsoleView.prototype = {
     targetAdded: function(target)
     {
         this._viewport.invalidate();
-        if (WebInspector.targetManager.targets().length > 1 && WebInspector.targetManager.mainTarget().isPage())
-            this._showAllMessagesCheckbox.element.classList.toggle("hidden", false);
+        var hasMultipleCotexts = WebInspector.targetManager.targets(WebInspector.Target.Capability.JS).length > 1;
+        this._showAllMessagesCheckbox.element.classList.toggle("hidden", !hasMultipleCotexts);
     },
 
     /**
@@ -325,18 +317,9 @@ WebInspector.ConsoleView.prototype = {
         });
     },
 
-    /**
-     * @override
-     * @return {!Element}
-     */
-    defaultFocusedElement: function()
-    {
-        return this._promptElement;
-    },
-
     _executionContextChanged: function()
     {
-        this._prompt.clearAutoComplete(true);
+        this._prompt.clearAutocomplete();
         if (!this._showAllMessagesCheckbox.checked())
             this._updateMessageList();
     },
@@ -349,23 +332,22 @@ WebInspector.ConsoleView.prototype = {
     wasShown: function()
     {
         this._viewport.refresh();
-        if (!this._prompt.isCaretInsidePrompt())
-            this._prompt.moveCaretToEndOfPrompt();
+        this.focus();
     },
 
     focus: function()
     {
-        if (this._promptElement === WebInspector.currentFocusElement())
+        if (this._prompt.hasFocus())
             return;
         // Set caret position before setting focus in order to avoid scrolling
         // by focus().
         this._prompt.moveCaretToEndOfPrompt();
-        WebInspector.setCurrentFocusElement(this._promptElement);
+        this._prompt.focus();
     },
 
     restoreScrollPositions: function()
     {
-        if (this._viewport.scrolledToBottom())
+        if (this._viewport.stickToBottom())
             this._immediatelyScrollToBottom();
         else
             WebInspector.Widget.prototype.restoreScrollPositions.call(this);
@@ -375,7 +357,7 @@ WebInspector.ConsoleView.prototype = {
     {
         this._scheduleViewportRefresh();
         this._hidePromptSuggestBox();
-        if (this._viewport.scrolledToBottom())
+        if (this._viewport.stickToBottom())
             this._immediatelyScrollToBottom();
         for (var i = 0; i < this._visibleViewMessages.length; ++i)
             this._visibleViewMessages[i].onResize();
@@ -383,8 +365,7 @@ WebInspector.ConsoleView.prototype = {
 
     _hidePromptSuggestBox: function()
     {
-        this._prompt.hideSuggestBox();
-        this._prompt.clearAutoComplete(true);
+        this._prompt.clearAutocomplete();
     },
 
     _scheduleViewportRefresh: function()
@@ -395,6 +376,10 @@ WebInspector.ConsoleView.prototype = {
          */
         function invalidateViewport()
         {
+            if (this._muteViewportUpdates) {
+                this._maybeDirtyWhileMuted = true;
+                return Promise.resolve();
+            }
             if (this._needsFullUpdate) {
                 this._updateMessageList();
                 delete this._needsFullUpdate;
@@ -403,12 +388,28 @@ WebInspector.ConsoleView.prototype = {
             }
             return Promise.resolve();
         }
+        if (this._muteViewportUpdates) {
+            this._maybeDirtyWhileMuted = true;
+            this._scheduleViewportRefreshForTest(true);
+            return;
+        } else {
+            this._scheduleViewportRefreshForTest(false);
+        }
         this._viewportThrottler.schedule(invalidateViewport.bind(this));
+    },
+
+    /**
+     * @param {boolean} muted
+     */
+    _scheduleViewportRefreshForTest: function(muted)
+    {
+        // This functions is sniffed in tests.
     },
 
     _immediatelyScrollToBottom: function()
     {
         // This will scroll viewport and trigger its refresh.
+        this._viewport.setStickToBottom(true);
         this._promptElement.scrollIntoView(true);
     },
 
@@ -551,6 +552,7 @@ WebInspector.ConsoleView.prototype = {
         this._consoleMessages = [];
         this._updateMessageList();
         this._hidePromptSuggestBox();
+        this._viewport.setStickToBottom(true);
         this._linkifier.reset();
     },
 
@@ -611,7 +613,9 @@ WebInspector.ConsoleView.prototype = {
 
     _saveConsole: function()
     {
-        var filename = String.sprintf("%s-%d.log", WebInspector.targetManager.inspectedPageDomain(), Date.now());
+        var url = WebInspector.targetManager.mainTarget().inspectedURL();
+        var parsedURL = url.asParsedURL();
+        var filename = String.sprintf("%s-%d.log", parsedURL ? parsedURL.host : "console", Date.now());
         var stream = new WebInspector.FileOutputStream();
 
         var progressIndicator = new WebInspector.ProgressIndicator();
@@ -651,7 +655,9 @@ WebInspector.ConsoleView.prototype = {
             var lines = [];
             for (var i = 0; i < chunkSize && i + messageIndex < this.itemCount(); ++i) {
                 var message = this.itemElement(messageIndex + i);
-                lines.push(message.searchableElement().deepTextContent());
+                var messageContent = message.contentElement().deepTextContent();
+                for (var j = 0; j < message.repeatCount(); ++j)
+                    lines.push(messageContent);
             }
             messageIndex += i;
             stream.write(lines.join("\n") + "\n", writeNextChunk.bind(this));
@@ -708,8 +714,8 @@ WebInspector.ConsoleView.prototype = {
     _messagesClicked: function(event)
     {
         var targetElement = event.deepElementFromPoint();
-        if (!this._prompt.isCaretInsidePrompt() && (!targetElement || targetElement.isComponentSelectionCollapsed()))
-            this._prompt.moveCaretToEndOfPrompt();
+        if (!targetElement || targetElement.isComponentSelectionCollapsed())
+            this.focus();
         var groupMessage = event.target.enclosingNodeOrSelfWithClass("console-group-title");
         if (!groupMessage)
             return;
@@ -762,70 +768,43 @@ WebInspector.ConsoleView.prototype = {
         this._prompt.setText("");
     },
 
+    /**
+     * @param {!Event} event
+     */
     _promptKeyDown: function(event)
     {
-        if (isEnterKey(event)) {
-            this._enterKeyPressed(event);
+        var keyboardEvent = /** @type {!KeyboardEvent} */ (event);
+        if (keyboardEvent.key === "PageUp") {
+            this._updateStickToBottomOnWheel();
             return;
         }
 
-        var shortcut = WebInspector.KeyboardShortcut.makeKeyFromEvent(event);
+        var shortcut = WebInspector.KeyboardShortcut.makeKeyFromEvent(keyboardEvent);
         var handler = this._shortcuts[shortcut];
         if (handler) {
             handler();
-            event.preventDefault();
+            keyboardEvent.preventDefault();
         }
-    },
-
-    _enterKeyPressed: function(event)
-    {
-        if (event.altKey || event.ctrlKey || event.shiftKey)
-            return;
-
-        event.consume(true);
-
-        this._prompt.clearAutoComplete(true);
-
-        var str = this._prompt.text();
-        if (!str.length)
-            return;
-        this._appendCommand(str, true);
     },
 
     /**
      * @param {?WebInspector.RemoteObject} result
-     * @param {boolean} wasThrown
      * @param {!WebInspector.ConsoleMessage} originatingConsoleMessage
-     * @param {?RuntimeAgent.ExceptionDetails=} exceptionDetails
+     * @param {!RuntimeAgent.ExceptionDetails=} exceptionDetails
      */
-    _printResult: function(result, wasThrown, originatingConsoleMessage, exceptionDetails)
+    _printResult: function(result, originatingConsoleMessage, exceptionDetails)
     {
         if (!result)
             return;
 
-        var level = wasThrown ? WebInspector.ConsoleMessage.MessageLevel.Error : WebInspector.ConsoleMessage.MessageLevel.Log;
+        var level = !!exceptionDetails ? WebInspector.ConsoleMessage.MessageLevel.Error : WebInspector.ConsoleMessage.MessageLevel.Log;
         var message;
-        if (!wasThrown)
+        if (!exceptionDetails)
             message = new WebInspector.ConsoleMessage(result.target(), WebInspector.ConsoleMessage.MessageSource.JS, level, "", WebInspector.ConsoleMessage.MessageType.Result, undefined, undefined, undefined, undefined, [result]);
         else
-            message = new WebInspector.ConsoleMessage(result.target(), WebInspector.ConsoleMessage.MessageSource.JS, level, exceptionDetails.text, WebInspector.ConsoleMessage.MessageType.Result, exceptionDetails.url, exceptionDetails.line, exceptionDetails.column, undefined, [WebInspector.UIString("Uncaught"), result], exceptionDetails.stack, undefined, undefined, exceptionDetails.scriptId);
+            message = WebInspector.ConsoleMessage.fromException(result.target(), exceptionDetails, WebInspector.ConsoleMessage.MessageType.Result, undefined, undefined);
         message.setOriginatingMessage(originatingConsoleMessage);
         result.target().consoleModel.addMessage(message);
-    },
-
-    /**
-     * @param {string} text
-     * @param {boolean} useCommandLineAPI
-     */
-    _appendCommand: function(text, useCommandLineAPI)
-    {
-        this._prompt.setText("");
-        var currentExecutionContext = WebInspector.context.flavor(WebInspector.ExecutionContext);
-        if (currentExecutionContext) {
-            WebInspector.ConsoleModel.evaluateCommandInConsole(currentExecutionContext, text, useCommandLineAPI);
-            if (WebInspector.inspectorView.currentPanel() && WebInspector.inspectorView.currentPanel().name === "console")
-                WebInspector.userMetrics.actionTaken(WebInspector.UserMetrics.Action.CommandEvaluatedInConsolePanel);
-        }
     },
 
     /**
@@ -833,10 +812,10 @@ WebInspector.ConsoleView.prototype = {
      */
     _commandEvaluated: function(event)
     {
-        var data = /** @type {{result: ?WebInspector.RemoteObject, wasThrown: boolean, text: string, commandMessage: !WebInspector.ConsoleMessage}} */ (event.data);
-        this._prompt.pushHistoryItem(data.text);
-        this._consoleHistorySetting.set(this._prompt.historyData().slice(-WebInspector.ConsoleView.persistedHistorySize));
-        this._printResult(data.result, data.wasThrown, data.commandMessage, data.exceptionDetails);
+        var data = /** @type {{result: ?WebInspector.RemoteObject, text: string, commandMessage: !WebInspector.ConsoleMessage, exceptionDetails: (!RuntimeAgent.ExceptionDetails|undefined)}} */ (event.data);
+        this._prompt.history().pushHistoryItem(data.text);
+        this._consoleHistorySetting.set(this._prompt.history().historyData().slice(-WebInspector.ConsoleView.persistedHistorySize));
+        this._printResult(data.result, data.commandMessage, data.exceptionDetails);
     },
 
     /**
@@ -1015,6 +994,60 @@ WebInspector.ConsoleView.prototype = {
         highlightNode.scrollIntoViewIfNeeded();
     },
 
+    _updateStickToBottomOnMouseDown: function()
+    {
+        this._muteViewportUpdates = true;
+        this._viewport.setStickToBottom(false);
+        if (this._waitForScrollTimeout) {
+            clearTimeout(this._waitForScrollTimeout);
+            delete this._waitForScrollTimeout;
+        }
+    },
+
+    _updateStickToBottomOnMouseUp: function()
+    {
+        if (!this._muteViewportUpdates)
+            return;
+
+        // Delay querying isScrolledToBottom to give time for smooth scroll
+        // events to arrive. The value for the longest timeout duration is
+        // retrieved from crbug.com/575409.
+        this._waitForScrollTimeout = setTimeout(updateViewportState.bind(this), 200);
+
+        /**
+         * @this {!WebInspector.ConsoleView}
+         */
+        function updateViewportState()
+        {
+            this._muteViewportUpdates = false;
+            this._viewport.setStickToBottom(this._messagesElement.isScrolledToBottom());
+            if (this._maybeDirtyWhileMuted) {
+                this._scheduleViewportRefresh();
+                delete this._maybeDirtyWhileMuted;
+            }
+            delete this._waitForScrollTimeout;
+            this._updateViewportStickinessForTest();
+        }
+    },
+
+    _updateViewportStickinessForTest: function()
+    {
+        // This method is sniffed in tests.
+    },
+
+    _updateStickToBottomOnWheel: function()
+    {
+        this._updateStickToBottomOnMouseDown();
+        this._updateStickToBottomOnMouseUp();
+    },
+
+    _promptInput: function(event)
+    {
+        // Scroll to the bottom, except when the prompt is the only visible item.
+        if (this.itemCount() !== 0 && this._viewport.firstVisibleIndex() !== this.itemCount())
+            this._immediatelyScrollToBottom();
+    },
+
     __proto__: WebInspector.VBox.prototype
 }
 
@@ -1033,8 +1066,9 @@ WebInspector.ConsoleViewFilter = function(view)
     this._filterChanged = this.dispatchEventToListeners.bind(this, WebInspector.ConsoleViewFilter.Events.FilterChanged);
 };
 
+/** @enum {symbol} */
 WebInspector.ConsoleViewFilter.Events = {
-    FilterChanged: "FilterChanged"
+    FilterChanged: Symbol("FilterChanged")
 };
 
 WebInspector.ConsoleViewFilter.prototype = {
@@ -1173,26 +1207,17 @@ WebInspector.ConsoleCommand = function(message, linkifier, nestingLevel)
 WebInspector.ConsoleCommand.prototype = {
     /**
      * @override
-     * @return {!Element})
-     */
-    searchableElement: function()
-    {
-        return this.contentElement();
-    },
-
-    /**
-     * @override
      * @return {!Element}
      */
     contentElement: function()
     {
-        if (!this._element) {
-            this._element = createElementWithClass("div", "console-user-command");
-            this._element.message = this;
+        if (!this._contentElement) {
+            this._contentElement = createElementWithClass("div", "console-user-command");
+            this._contentElement.message = this;
 
             this._formattedCommand = createElementWithClass("span", "console-message-text source-code");
             this._formattedCommand.textContent = this.text.replaceControlCharacters();
-            this._element.appendChild(this._formattedCommand);
+            this._contentElement.appendChild(this._formattedCommand);
 
             if (this._formattedCommand.textContent.length < WebInspector.ConsoleCommand.MaxLengthToIgnoreHighlighter) {
                 var javascriptSyntaxHighlighter = new WebInspector.DOMSyntaxHighlighter("text/javascript", true);
@@ -1201,7 +1226,7 @@ WebInspector.ConsoleCommand.prototype = {
                 this._updateSearch();
             }
         }
-        return this._element;
+        return this._contentElement;
     },
 
     _updateSearch: function()
@@ -1232,16 +1257,6 @@ WebInspector.ConsoleCommandResult = function(message, linkifier, nestingLevel)
 }
 
 WebInspector.ConsoleCommandResult.prototype = {
-    /**
-     * @override
-     * @param {!WebInspector.RemoteObject} array
-     * @return {boolean}
-     */
-    useArrayPreviewInFormatter: function(array)
-    {
-        return false;
-    },
-
     /**
      * @override
      * @return {!Element}
@@ -1313,6 +1328,14 @@ WebInspector.ConsoleView.instance = function()
     return WebInspector.ConsoleView._instance;
 }
 
+WebInspector.ConsoleView.clearConsole = function()
+{
+    for (var target of WebInspector.targetManager.targets()) {
+        target.runtimeModel.discardConsoleEntries();
+        target.consoleModel.requestClearMessages();
+    }
+}
+
 /**
  * @constructor
  * @implements {WebInspector.ActionDelegate}
@@ -1335,7 +1358,7 @@ WebInspector.ConsoleView.ActionDelegate.prototype = {
             WebInspector.console.show();
             return true;
         case "console.clear":
-            WebInspector.ConsoleModel.clearConsole();
+            WebInspector.ConsoleView.clearConsole();
             return true;
         case "console.clear.history":
             WebInspector.ConsoleView.instance()._clearHistory();

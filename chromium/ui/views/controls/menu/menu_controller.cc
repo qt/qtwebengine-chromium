@@ -46,7 +46,7 @@
 #endif
 
 #if defined(USE_AURA)
-#include "ui/views/controls/menu/menu_key_event_handler.h"
+#include "ui/views/controls/menu/menu_pre_target_handler.h"
 #endif
 
 using base::Time;
@@ -420,7 +420,8 @@ MenuItemView* MenuController::Run(Widget* parent,
     }
   }
 
-  bool nested_menu = showing_;
+  // If we are already showing, this new menu is being nested. Such as context
+  // menus on top of normal menus.
   if (showing_) {
     // Only support nesting of blocking_run menus, nesting of
     // blocking/non-blocking shouldn't be needed.
@@ -437,10 +438,16 @@ MenuItemView* MenuController::Run(Widget* parent,
   } else {
     showing_ = true;
 
+    if (owner_)
+      owner_->RemoveObserver(this);
+    owner_ = parent;
+    if (owner_)
+      owner_->AddObserver(this);
+
 #if defined(USE_AURA)
-    // Only create a MenuKeyEventHandler for non-nested menus. Nested menus will
-    // use the existing one.
-    key_event_handler_.reset(new MenuKeyEventHandler);
+    // Only create a MenuPreTargetHandler for non-nested menus. Nested menus
+    // will use the existing one.
+    menu_pre_target_handler_.reset(new MenuPreTargetHandler(this, owner_));
 #endif
   }
 
@@ -448,12 +455,6 @@ MenuItemView* MenuController::Run(Widget* parent,
   pending_state_ = State();
   state_ = State();
   UpdateInitialLocation(bounds, position, context_menu);
-
-  if (owner_)
-    owner_->RemoveObserver(this);
-  owner_ = parent;
-  if (owner_)
-    owner_->AddObserver(this);
 
   // Set the selection, which opens the initial menu.
   SetSelection(root, SELECTION_OPEN_SUBMENU | SELECTION_UPDATE_IMMEDIATELY);
@@ -483,7 +484,7 @@ MenuItemView* MenuController::Run(Widget* parent,
   // appears totally broken.
   message_loop_depth_++;
   DCHECK_LE(message_loop_depth_, 2);
-  RunMessageLoop(nested_menu);
+  RunMessageLoop();
   message_loop_depth_--;
 
   if (ViewsDelegate::GetInstance())
@@ -531,7 +532,19 @@ void MenuController::Cancel(ExitType type) {
     // WARNING: the call to MenuClosed deletes us.
     return;
   }
-  ExitAsyncRun();
+
+  // On Windows and Linux the destruction of this menu's Widget leads to the
+  // teardown of the platform specific drag-and-drop Widget. Do not shutdown
+  // while dragging, leave the Widget hidden until drag-and-drop has completed,
+  // at which point all menus will be destroyed.
+  //
+  // If |type| is EXIT_ALL we update the state of the menu to not showing. So
+  // that during the completion of a drag we are not incorrectly reporting the
+  // visual state.
+  if (!drag_in_progress_)
+    ExitAsyncRun();
+  else if (type == EXIT_ALL)
+    showing_ = false;
 }
 
 void MenuController::AddNestedDelegate(
@@ -1014,11 +1027,23 @@ void MenuController::OnDragComplete(bool should_close) {
   // the event target.
   current_mouse_pressed_state_ = 0;
   current_mouse_event_target_ = nullptr;
-  if (showing_ && should_close && GetActiveInstance() == this) {
-    CloseAllNestedMenus();
-    Cancel(EXIT_ALL);
-  } else if (async_run_) {
-    ExitAsyncRun();
+
+  // Only attempt to close if the MenuHost said to.
+  if (should_close) {
+    if (showing_) {
+      // Close showing widgets.
+      if (GetActiveInstance() == this) {
+        CloseAllNestedMenus();
+        Cancel(EXIT_ALL);
+      }
+      // The above may have deleted us. If not perform a full shutdown.
+      if (GetActiveInstance() == this)
+        ExitAsyncRun();
+    } else if (exit_type_ == EXIT_ALL) {
+      // We may have been canceled during the drag. If so we still need to fully
+      // shutdown.
+      ExitAsyncRun();
+    }
   }
 }
 
@@ -1086,7 +1111,6 @@ void MenuController::OnWidgetDestroying(Widget* widget) {
   DCHECK_EQ(owner_, widget);
   owner_->RemoveObserver(this);
   owner_ = NULL;
-  message_loop_->ClearOwner();
 }
 
 bool MenuController::IsCancelAllTimerRunningForTest() {
@@ -1235,7 +1259,7 @@ void MenuController::StartDrag(SubmenuView* source,
       ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE);
   // MenuController may have been deleted if |async_run_| so check for an active
   // instance before accessing member variables.
-  if (GetActiveInstance())
+  if (GetActiveInstance() == this)
     did_initiate_drag_ = false;
 }
 
@@ -1387,8 +1411,8 @@ MenuController::~MenuController() {
   StopCancelAllTimer();
 }
 
-void MenuController::RunMessageLoop(bool nested_menu) {
-  message_loop_->Run(this, owner_, nested_menu);
+void MenuController::RunMessageLoop() {
+  message_loop_->Run();
 }
 
 bool MenuController::SendAcceleratorToHotTrackedView() {
@@ -1398,8 +1422,11 @@ bool MenuController::SendAcceleratorToHotTrackedView() {
 
   ui::Accelerator accelerator(ui::VKEY_RETURN, ui::EF_NONE);
   hot_view->AcceleratorPressed(accelerator);
-  CustomButton* button = static_cast<CustomButton*>(hot_view);
-  SetHotTrackedButton(button);
+  // An accelerator may have canceled the menu after activation.
+  if (GetActiveInstance()) {
+    CustomButton* button = static_cast<CustomButton*>(hot_view);
+    SetHotTrackedButton(button);
+  }
   return true;
 }
 
@@ -2610,7 +2637,7 @@ MenuItemView* MenuController::ExitMenuRun() {
     }
   } else {
 #if defined(USE_AURA)
-    key_event_handler_.reset();
+    menu_pre_target_handler_.reset();
 #endif
 
     showing_ = false;

@@ -10,9 +10,8 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/dlrr.h"
 
-#include "testing/gtest/include/gtest/gtest.h"
-
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
+#include "webrtc/test/gtest.h"
 
 using webrtc::rtcp::Dlrr;
 using webrtc::rtcp::ReceiveTimeInfo;
@@ -35,7 +34,7 @@ TEST(RtcpPacketDlrrTest, Empty) {
 
 TEST(RtcpPacketDlrrTest, Create) {
   Dlrr dlrr;
-  EXPECT_TRUE(dlrr.WithDlrrItem(kSsrc, kLastRR, kDelay));
+  EXPECT_TRUE(dlrr.AddDlrrItem(kSsrc, kLastRR, kDelay));
 
   ASSERT_EQ(kBlockSizeBytes, dlrr.BlockLength());
   uint8_t buffer[kBlockSizeBytes];
@@ -73,9 +72,9 @@ TEST(RtcpPacketDlrrTest, ParseFailsOnBadSize) {
 TEST(RtcpPacketDlrrTest, FailsOnTooManySubBlocks) {
   Dlrr dlrr;
   for (size_t i = 1; i <= Dlrr::kMaxNumberOfDlrrItems; ++i) {
-    EXPECT_TRUE(dlrr.WithDlrrItem(kSsrc + i, kLastRR + i, kDelay + i));
+    EXPECT_TRUE(dlrr.AddDlrrItem(kSsrc + i, kLastRR + i, kDelay + i));
   }
-  EXPECT_FALSE(dlrr.WithDlrrItem(kSsrc, kLastRR, kDelay));
+  EXPECT_FALSE(dlrr.AddDlrrItem(kSsrc, kLastRR, kDelay));
 }
 
 TEST(RtcpPacketDlrrTest, CreateAndParseMaxSubBlocks) {
@@ -85,7 +84,7 @@ TEST(RtcpPacketDlrrTest, CreateAndParseMaxSubBlocks) {
   // Create.
   Dlrr dlrr;
   for (size_t i = 1; i <= Dlrr::kMaxNumberOfDlrrItems; ++i) {
-    EXPECT_TRUE(dlrr.WithDlrrItem(kSsrc + i, kLastRR + i, kDelay + i));
+    EXPECT_TRUE(dlrr.AddDlrrItem(kSsrc + i, kLastRR + i, kDelay + i));
   }
   size_t used_buffer_size = dlrr.BlockLength();
   ASSERT_LE(used_buffer_size, kBufferSize);

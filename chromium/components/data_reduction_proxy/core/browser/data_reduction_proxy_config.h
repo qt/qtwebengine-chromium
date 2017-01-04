@@ -21,7 +21,8 @@
 #include "net/base/net_errors.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/network_interfaces.h"
-#include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
+#include "net/nqe/effective_connection_type.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_retry_info.h"
@@ -35,6 +36,7 @@ class SingleThreadTaskRunner;
 namespace net {
 class HostPortPair;
 class NetLog;
+class ProxyServer;
 class URLFetcher;
 class URLRequest;
 class URLRequestContextGetter;
@@ -92,9 +94,9 @@ class DataReductionProxyConfig
   // of the |DataReductionProxyConfig| instance, with the exception of
   // |config_values| which is owned by |this|. |event_creator| is used for
   // logging the start and end of a secure proxy check; |net_log| is used to
-  // create a net::BoundNetLog for correlating the start and end of the check.
-  // |config_values| contains the Data Reduction Proxy configuration values.
-  // |configurator| is the target for a configuration update.
+  // create a net::NetLogWithSource for correlating the start and end of the
+  // check. |config_values| contains the Data Reduction Proxy configuration
+  // values. |configurator| is the target for a configuration update.
   DataReductionProxyConfig(
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
       net::NetLog* net_log,
@@ -129,7 +131,7 @@ class DataReductionProxyConfig
       const net::URLRequest* request,
       DataReductionProxyTypeInfo* proxy_info) const;
 
-  // Returns true if the specified |host_port_pair| matches a Data Reduction
+  // Returns true if the specified |proxy_server| matches a Data Reduction
   // Proxy. If true, |proxy_info.proxy_servers.front()| will contain the name of
   // the proxy that matches. Subsequent entries in |proxy_info.proxy_servers|
   // will contain the name of the Data Reduction Proxy servers that would be
@@ -138,7 +140,7 @@ class DataReductionProxyConfig
   // can be NULL if the caller isn't interested in its values. Virtual for
   // testing.
   virtual bool IsDataReductionProxy(
-      const net::HostPortPair& host_port_pair,
+      const net::ProxyServer& proxy_server,
       DataReductionProxyTypeInfo* proxy_info) const;
 
   // Returns true if this request would be bypassed by the Data Reduction Proxy
@@ -310,8 +312,7 @@ class DataReductionProxyConfig
   // Returns true if |effective_connection_type| is at least as poor as
   // |lofi_effective_connection_type_threshold_|.
   bool IsEffectiveConnectionTypeSlowerThanThreshold(
-      net::NetworkQualityEstimator::EffectiveConnectionType
-          effective_connection_type) const;
+      net::EffectiveConnectionType effective_connection_type) const;
 
   std::unique_ptr<SecureProxyChecker> secure_proxy_checker_;
 
@@ -327,12 +328,12 @@ class DataReductionProxyConfig
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   // The caller must ensure that the |net_log_|, if set, outlives this instance.
-  // It is used to create new instances of |bound_net_log_| on secure proxy
-  // checks. |bound_net_log_| permits the correlation of the begin and end
-  // phases of a given secure proxy check, and a new one is created for each
-  // secure proxy check (with |net_log_| as a parameter).
+  // It is used to create new instances of |net_log_with_source_| on secure
+  // proxy checks. |net_log_with_source_| permits the correlation of the begin
+  // and end phases of a given secure proxy check, and a new one is created for
+  // each secure proxy check (with |net_log_| as a parameter).
   net::NetLog* net_log_;
-  net::BoundNetLog bound_net_log_;
+  net::NetLogWithSource net_log_with_source_;
 
   // The caller must ensure that the |configurator_| outlives this instance.
   DataReductionProxyConfigurator* configurator_;
@@ -346,8 +347,7 @@ class DataReductionProxyConfig
   // Thresholds from the field trial at which auto Lo-Fi is turned on.
   // If the effective connection type is at least as slow as
   // |lofi_effective_connection_type_threshold_|, Lo-Fi would be turned on.
-  net::NetworkQualityEstimator::EffectiveConnectionType
-      lofi_effective_connection_type_threshold_;
+  net::EffectiveConnectionType lofi_effective_connection_type_threshold_;
 
   // State of auto Lo-Fi is not changed more than once in any period of
   // duration shorter than |auto_lofi_hysteresis_|.

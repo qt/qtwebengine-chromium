@@ -20,7 +20,7 @@
 #include "cc/layers/picture_layer.h"
 #include "cc/playback/display_item_list.h"
 #include "cc/playback/recording_source.h"
-#include "cc/trees/layer_tree_host.h"
+#include "cc/trees/layer_tree.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "skia/ext/analysis_canvas.h"
 #include "third_party/skia/include/utils/SkPictureUtils.h"
@@ -39,11 +39,32 @@ const int kTimeCheckInterval = 1;
 
 const char* kModeSuffixes[RecordingSource::RECORDING_MODE_COUNT] = {
     "",
-    "_sk_null_canvas",
     "_painting_disabled",
     "_caching_disabled",
     "_construction_disabled",
-    "_subsequence_caching_disabled"};
+    "_subsequence_caching_disabled",
+    "_partial_invalidation"};
+
+ContentLayerClient::PaintingControlSetting
+RecordingModeToPaintingControlSetting(RecordingSource::RecordingMode mode) {
+  switch (mode) {
+    case RecordingSource::RECORD_NORMALLY:
+      return ContentLayerClient::PAINTING_BEHAVIOR_NORMAL_FOR_TEST;
+    case RecordingSource::RECORD_WITH_PAINTING_DISABLED:
+      return ContentLayerClient::DISPLAY_LIST_PAINTING_DISABLED;
+    case RecordingSource::RECORD_WITH_CACHING_DISABLED:
+      return ContentLayerClient::DISPLAY_LIST_CACHING_DISABLED;
+    case RecordingSource::RECORD_WITH_CONSTRUCTION_DISABLED:
+      return ContentLayerClient::DISPLAY_LIST_CONSTRUCTION_DISABLED;
+    case RecordingSource::RECORD_WITH_SUBSEQUENCE_CACHING_DISABLED:
+      return ContentLayerClient::SUBSEQUENCE_CACHING_DISABLED;
+    case RecordingSource::RECORD_WITH_PARTIAL_INVALIDATION:
+      return ContentLayerClient::PARTIAL_INVALIDATION;
+    case RecordingSource::RECORDING_MODE_COUNT:
+      NOTREACHED();
+  }
+  return ContentLayerClient::PAINTING_BEHAVIOR_NORMAL_FOR_TEST;
+}
 
 }  // namespace
 
@@ -54,7 +75,7 @@ RasterizeAndRecordBenchmark::RasterizeAndRecordBenchmark(
       record_repeat_count_(kDefaultRecordRepeatCount),
       settings_(std::move(value)),
       main_thread_benchmark_done_(false),
-      host_(nullptr),
+      layer_tree_(nullptr),
       weak_ptr_factory_(this) {
   base::DictionaryValue* settings = nullptr;
   settings_->GetAsDictionary(&settings);
@@ -69,10 +90,10 @@ RasterizeAndRecordBenchmark::~RasterizeAndRecordBenchmark() {
   weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
-void RasterizeAndRecordBenchmark::DidUpdateLayers(LayerTreeHost* host) {
-  host_ = host;
+void RasterizeAndRecordBenchmark::DidUpdateLayers(LayerTree* layer_tree) {
+  layer_tree_ = layer_tree;
   LayerTreeHostCommon::CallFunctionForEveryLayer(
-      host, [this](Layer* layer) { layer->RunMicroBenchmark(this); });
+      layer_tree, [this](Layer* layer) { layer->RunMicroBenchmark(this); });
 
   DCHECK(!results_.get());
   results_ = base::WrapUnique(new base::DictionaryValue);
@@ -111,7 +132,7 @@ RasterizeAndRecordBenchmark::CreateBenchmarkImpl(
 }
 
 void RasterizeAndRecordBenchmark::RunOnLayer(PictureLayer* layer) {
-  DCHECK(host_);
+  DCHECK(layer_tree_);
 
   if (!layer->DrawsContent())
     return;
@@ -121,30 +142,8 @@ void RasterizeAndRecordBenchmark::RunOnLayer(PictureLayer* layer) {
   for (int mode_index = 0; mode_index < RecordingSource::RECORDING_MODE_COUNT;
        mode_index++) {
     ContentLayerClient::PaintingControlSetting painting_control =
-        ContentLayerClient::PAINTING_BEHAVIOR_NORMAL_FOR_TEST;
-    switch (static_cast<RecordingSource::RecordingMode>(mode_index)) {
-      case RecordingSource::RECORD_NORMALLY:
-        // Already setup for normal recording.
-        break;
-      case RecordingSource::RECORD_WITH_SK_NULL_CANVAS:
-        // Not supported for Display List recording.
-        continue;
-      case RecordingSource::RECORD_WITH_PAINTING_DISABLED:
-        painting_control = ContentLayerClient::DISPLAY_LIST_PAINTING_DISABLED;
-        break;
-      case RecordingSource::RECORD_WITH_CACHING_DISABLED:
-        painting_control = ContentLayerClient::DISPLAY_LIST_CACHING_DISABLED;
-        break;
-      case RecordingSource::RECORD_WITH_CONSTRUCTION_DISABLED:
-        painting_control =
-            ContentLayerClient::DISPLAY_LIST_CONSTRUCTION_DISABLED;
-        break;
-      case RecordingSource::RECORD_WITH_SUBSEQUENCE_CACHING_DISABLED:
-        painting_control = ContentLayerClient::SUBSEQUENCE_CACHING_DISABLED;
-        break;
-      default:
-        NOTREACHED();
-    }
+        RecordingModeToPaintingControlSetting(
+            static_cast<RecordingSource::RecordingMode>(mode_index));
     base::TimeDelta min_time = base::TimeDelta::Max();
     size_t memory_used = 0;
 
@@ -161,7 +160,7 @@ void RasterizeAndRecordBenchmark::RunOnLayer(PictureLayer* layer) {
         if (display_list->ShouldBeAnalyzedForSolidColor()) {
           gfx::Size layer_size = layer->paint_properties().bounds;
           skia::AnalysisCanvas canvas(layer_size.width(), layer_size.height());
-          display_list->Raster(&canvas, nullptr, gfx::Rect(), 1.f);
+          display_list->Raster(&canvas, nullptr, gfx::Rect(layer_size), 1.f);
         }
 
         if (memory_used) {

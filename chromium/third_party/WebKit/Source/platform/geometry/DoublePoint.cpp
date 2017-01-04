@@ -5,27 +5,18 @@
 #include "platform/geometry/DoublePoint.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/geometry/LayoutPoint.h"
-
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 DoublePoint::DoublePoint(const LayoutPoint& p)
-    : m_x(p.x().toDouble())
-    , m_y(p.y().toDouble())
-{
-}
+    : m_x(p.x().toDouble()), m_y(p.y().toDouble()) {}
 
 DoublePoint::DoublePoint(const FloatSize& size)
-    : m_x(size.width()), m_y(size.height())
-{
+    : m_x(size.width()), m_y(size.height()) {}
+
+String DoublePoint::toString() const {
+  return String::format("%lg,%lg", x(), y());
 }
 
-#ifndef NDEBUG
-String DoublePoint::toString() const
-{
-    return String::format("%f,%f", x(), y());
-}
-#endif
-
-} // namespace blink
+}  // namespace blink

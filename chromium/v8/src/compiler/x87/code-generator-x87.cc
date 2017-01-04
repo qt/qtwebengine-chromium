@@ -4,7 +4,7 @@
 
 #include "src/compiler/code-generator.h"
 
-#include "src/ast/scopes.h"
+#include "src/compilation-info.h"
 #include "src/compiler/code-generator-impl.h"
 #include "src/compiler/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
@@ -191,21 +191,35 @@ class OutOfLineLoadInteger final : public OutOfLineCode {
   Register const result_;
 };
 
-
-class OutOfLineLoadFloat final : public OutOfLineCode {
+class OutOfLineLoadFloat32NaN final : public OutOfLineCode {
  public:
-  OutOfLineLoadFloat(CodeGenerator* gen, X87Register result)
+  OutOfLineLoadFloat32NaN(CodeGenerator* gen, X87Register result)
       : OutOfLineCode(gen), result_(result) {}
 
   void Generate() final {
     DCHECK(result_.code() == 0);
     USE(result_);
-    if (FLAG_debug_code && FLAG_enable_slow_asserts) {
-      __ VerifyX87StackDepth(1);
-    }
     __ fstp(0);
-    __ push(Immediate(0xffffffff));
-    __ push(Immediate(0x7fffffff));
+    __ push(Immediate(0xffc00000));
+    __ fld_s(MemOperand(esp, 0));
+    __ lea(esp, Operand(esp, kFloatSize));
+  }
+
+ private:
+  X87Register const result_;
+};
+
+class OutOfLineLoadFloat64NaN final : public OutOfLineCode {
+ public:
+  OutOfLineLoadFloat64NaN(CodeGenerator* gen, X87Register result)
+      : OutOfLineCode(gen), result_(result) {}
+
+  void Generate() final {
+    DCHECK(result_.code() == 0);
+    USE(result_);
+    __ fstp(0);
+    __ push(Immediate(0xfff80000));
+    __ push(Immediate(0x00000000));
     __ fld_d(MemOperand(esp, 0));
     __ lea(esp, Operand(esp, kDoubleSize));
   }
@@ -213,7 +227,6 @@ class OutOfLineLoadFloat final : public OutOfLineCode {
  private:
   X87Register const result_;
 };
-
 
 class OutOfLineTruncateDoubleToI final : public OutOfLineCode {
  public:
@@ -275,24 +288,22 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
 
 }  // namespace
 
-
-#define ASSEMBLE_CHECKED_LOAD_FLOAT(asm_instr)                          \
-  do {                                                                  \
-    auto result = i.OutputDoubleRegister();                             \
-    auto offset = i.InputRegister(0);                                   \
-    DCHECK(result.code() == 0);                                         \
-    if (instr->InputAt(1)->IsRegister()) {                              \
-      __ cmp(offset, i.InputRegister(1));                               \
-    } else {                                                            \
-      __ cmp(offset, i.InputImmediate(1));                              \
-    }                                                                   \
-    OutOfLineCode* ool = new (zone()) OutOfLineLoadFloat(this, result); \
-    __ j(above_equal, ool->entry());                                    \
-    __ fstp(0);                                                         \
-    __ asm_instr(i.MemoryOperand(2));                                   \
-    __ bind(ool->exit());                                               \
+#define ASSEMBLE_CHECKED_LOAD_FLOAT(asm_instr, OutOfLineLoadNaN)      \
+  do {                                                                \
+    auto result = i.OutputDoubleRegister();                           \
+    auto offset = i.InputRegister(0);                                 \
+    DCHECK(result.code() == 0);                                       \
+    if (instr->InputAt(1)->IsRegister()) {                            \
+      __ cmp(offset, i.InputRegister(1));                             \
+    } else {                                                          \
+      __ cmp(offset, i.InputImmediate(1));                            \
+    }                                                                 \
+    OutOfLineCode* ool = new (zone()) OutOfLineLoadNaN(this, result); \
+    __ j(above_equal, ool->entry());                                  \
+    __ fstp(0);                                                       \
+    __ asm_instr(i.MemoryOperand(2));                                 \
+    __ bind(ool->exit());                                             \
   } while (false)
-
 
 #define ASSEMBLE_CHECKED_LOAD_INTEGER(asm_instr)                          \
   do {                                                                    \
@@ -420,21 +431,7 @@ void CodeGenerator::AssembleDeconstructFrame() {
   __ pop(ebp);
 }
 
-void CodeGenerator::AssembleDeconstructActivationRecord(int stack_param_delta) {
-  int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
-  if (sp_slot_delta > 0) {
-    __ add(esp, Immediate(sp_slot_delta * kPointerSize));
-  }
-  frame_access_state()->SetFrameAccessToDefault();
-}
-
-
-void CodeGenerator::AssemblePrepareTailCall(int stack_param_delta) {
-  int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
-  if (sp_slot_delta < 0) {
-    __ sub(esp, Immediate(-sp_slot_delta * kPointerSize));
-    frame_access_state()->IncreaseSPDelta(-sp_slot_delta);
-  }
+void CodeGenerator::AssemblePrepareTailCall() {
   if (frame_access_state()->has_frame()) {
     __ mov(ebp, MemOperand(ebp, 0));
   }
@@ -477,6 +474,68 @@ void CodeGenerator::AssemblePopArgumentsAdaptorFrame(Register args_reg,
   __ pop(scratch1);
 
   __ bind(&done);
+}
+
+namespace {
+
+void AdjustStackPointerForTailCall(MacroAssembler* masm,
+                                   FrameAccessState* state,
+                                   int new_slot_above_sp,
+                                   bool allow_shrinkage = true) {
+  int current_sp_offset = state->GetSPToFPSlotCount() +
+                          StandardFrameConstants::kFixedSlotCountAboveFp;
+  int stack_slot_delta = new_slot_above_sp - current_sp_offset;
+  if (stack_slot_delta > 0) {
+    masm->sub(esp, Immediate(stack_slot_delta * kPointerSize));
+    state->IncreaseSPDelta(stack_slot_delta);
+  } else if (allow_shrinkage && stack_slot_delta < 0) {
+    masm->add(esp, Immediate(-stack_slot_delta * kPointerSize));
+    state->IncreaseSPDelta(stack_slot_delta);
+  }
+}
+
+}  // namespace
+
+void CodeGenerator::AssembleTailCallBeforeGap(Instruction* instr,
+                                              int first_unused_stack_slot) {
+  CodeGenerator::PushTypeFlags flags(kImmediatePush | kScalarPush);
+  ZoneVector<MoveOperands*> pushes(zone());
+  GetPushCompatibleMoves(instr, flags, &pushes);
+
+  if (!pushes.empty() &&
+      (LocationOperand::cast(pushes.back()->destination()).index() + 1 ==
+       first_unused_stack_slot)) {
+    X87OperandConverter g(this, instr);
+    for (auto move : pushes) {
+      LocationOperand destination_location(
+          LocationOperand::cast(move->destination()));
+      InstructionOperand source(move->source());
+      AdjustStackPointerForTailCall(masm(), frame_access_state(),
+                                    destination_location.index());
+      if (source.IsStackSlot()) {
+        LocationOperand source_location(LocationOperand::cast(source));
+        __ push(g.SlotToOperand(source_location.index()));
+      } else if (source.IsRegister()) {
+        LocationOperand source_location(LocationOperand::cast(source));
+        __ push(source_location.GetRegister());
+      } else if (source.IsImmediate()) {
+        __ push(Immediate(ImmediateOperand::cast(source).inline_value()));
+      } else {
+        // Pushes of non-scalar data types is not supported.
+        UNIMPLEMENTED();
+      }
+      frame_access_state()->IncreaseSPDelta(1);
+      move->Eliminate();
+    }
+  }
+  AdjustStackPointerForTailCall(masm(), frame_access_state(),
+                                first_unused_stack_slot, false);
+}
+
+void CodeGenerator::AssembleTailCallAfterGap(Instruction* instr,
+                                             int first_unused_stack_slot) {
+  AdjustStackPointerForTailCall(masm(), frame_access_state(),
+                                first_unused_stack_slot);
 }
 
 // Assembles an instruction after register allocation, producing machine code.
@@ -524,8 +583,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ VerifyX87StackDepth(1);
       }
       __ fstp(0);
-      int stack_param_delta = i.InputInt32(instr->InputCount() - 1);
-      AssembleDeconstructActivationRecord(stack_param_delta);
       if (arch_opcode == kArchTailCallCodeObjectFromJSFunction) {
         AssemblePopArgumentsAdaptorFrame(kJavaScriptCallArgCountRegister,
                                          no_reg, no_reg, no_reg);
@@ -539,15 +596,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ jmp(reg);
       }
       frame_access_state()->ClearSPDelta();
+      frame_access_state()->SetFrameAccessToDefault();
       break;
     }
     case kArchTailCallAddress: {
-      int stack_param_delta = i.InputInt32(instr->InputCount() - 1);
-      AssembleDeconstructActivationRecord(stack_param_delta);
       CHECK(!HasImmediateInput(instr, 0));
       Register reg = i.InputRegister(0);
       __ jmp(reg);
       frame_access_state()->ClearSPDelta();
+      frame_access_state()->SetFrameAccessToDefault();
       break;
     }
     case kArchCallJSFunction: {
@@ -592,14 +649,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ VerifyX87StackDepth(1);
       }
       __ fstp(0);
-      int stack_param_delta = i.InputInt32(instr->InputCount() - 1);
-      AssembleDeconstructActivationRecord(stack_param_delta);
       if (arch_opcode == kArchTailCallJSFunctionFromJSFunction) {
         AssemblePopArgumentsAdaptorFrame(kJavaScriptCallArgCountRegister,
                                          no_reg, no_reg, no_reg);
       }
       __ jmp(FieldOperand(func, JSFunction::kCodeEntryOffset));
       frame_access_state()->ClearSPDelta();
+      frame_access_state()->SetFrameAccessToDefault();
       break;
     }
     case kArchPrepareCallCFunction: {
@@ -610,7 +666,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArchPrepareTailCall:
-      AssemblePrepareTailCall(i.InputInt32(instr->InputCount() - 1));
+      AssemblePrepareTailCall();
       break;
     case kArchCallCFunction: {
       if (FLAG_debug_code && FLAG_enable_slow_asserts) {
@@ -687,8 +743,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
 
       Deoptimizer::BailoutType bailout_type =
           Deoptimizer::BailoutType(MiscField::decode(instr->opcode()));
-      CodeGenResult result =
-          AssembleDeoptimizerCall(deopt_state_id, bailout_type);
+      CodeGenResult result = AssembleDeoptimizerCall(
+          deopt_state_id, bailout_type, current_source_position_);
       if (result != kSuccess) return result;
       break;
     }
@@ -748,8 +804,23 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ lea(i.OutputRegister(), Operand(base, offset.offset()));
       break;
     }
+    case kIeee754Float64Acos:
+      ASSEMBLE_IEEE754_UNOP(acos);
+      break;
+    case kIeee754Float64Acosh:
+      ASSEMBLE_IEEE754_UNOP(acosh);
+      break;
+    case kIeee754Float64Asin:
+      ASSEMBLE_IEEE754_UNOP(asin);
+      break;
+    case kIeee754Float64Asinh:
+      ASSEMBLE_IEEE754_UNOP(asinh);
+      break;
     case kIeee754Float64Atan:
       ASSEMBLE_IEEE754_UNOP(atan);
+      break;
+    case kIeee754Float64Atanh:
+      ASSEMBLE_IEEE754_UNOP(atanh);
       break;
     case kIeee754Float64Atan2:
       ASSEMBLE_IEEE754_BINOP(atan2);
@@ -762,6 +833,9 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_IEEE754_UNOP(cos);
       __ X87SetFPUCW(0x037F);
       break;
+    case kIeee754Float64Cosh:
+      ASSEMBLE_IEEE754_UNOP(cosh);
+      break;
     case kIeee754Float64Expm1:
       __ X87SetFPUCW(0x027F);
       ASSEMBLE_IEEE754_UNOP(expm1);
@@ -769,9 +843,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kIeee754Float64Exp:
       ASSEMBLE_IEEE754_UNOP(exp);
-      break;
-    case kIeee754Float64Atanh:
-      ASSEMBLE_IEEE754_UNOP(atanh);
       break;
     case kIeee754Float64Log:
       ASSEMBLE_IEEE754_UNOP(log);
@@ -785,15 +856,31 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kIeee754Float64Log10:
       ASSEMBLE_IEEE754_UNOP(log10);
       break;
+    case kIeee754Float64Pow: {
+      // Keep the x87 FPU stack empty before calling stub code
+      __ fstp(0);
+      // Call the MathStub and put return value in stX_0
+      MathPowStub stub(isolate(), MathPowStub::DOUBLE);
+      __ CallStub(&stub);
+      /* Return value is in st(0) on x87. */
+      __ lea(esp, Operand(esp, 2 * kDoubleSize));
+      break;
+    }
     case kIeee754Float64Sin:
       __ X87SetFPUCW(0x027F);
       ASSEMBLE_IEEE754_UNOP(sin);
       __ X87SetFPUCW(0x037F);
       break;
+    case kIeee754Float64Sinh:
+      ASSEMBLE_IEEE754_UNOP(sinh);
+      break;
     case kIeee754Float64Tan:
       __ X87SetFPUCW(0x027F);
       ASSEMBLE_IEEE754_UNOP(tan);
       __ X87SetFPUCW(0x037F);
+      break;
+    case kIeee754Float64Tanh:
+      ASSEMBLE_IEEE754_UNOP(tanh);
       break;
     case kX87Add:
       if (HasImmediateInput(instr, 1)) {
@@ -1085,93 +1172,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ X87SetFPUCW(0x037F);
       break;
     }
-    case kX87Float32Max: {
-      Label check_nan_left, check_zero, return_left, return_right;
-      Condition condition = below;
-      if (FLAG_debug_code && FLAG_enable_slow_asserts) {
-        __ VerifyX87StackDepth(1);
-      }
-      __ fstp(0);
-      __ fld_s(MemOperand(esp, kFloatSize));
-      __ fld_s(MemOperand(esp, 0));
-      __ fld(1);
-      __ fld(1);
-      __ FCmp();
 
-      // At least one NaN.
-      // Return the second operands if one of the two operands is NaN
-      __ j(parity_even, &return_right, Label::kNear);
-      __ j(equal, &check_zero, Label::kNear);            // left == right.
-      __ j(condition, &return_left, Label::kNear);
-      __ jmp(&return_right, Label::kNear);
-
-      __ bind(&check_zero);
-      __ fld(0);
-      __ fldz();
-      __ FCmp();
-      __ j(not_equal, &return_left, Label::kNear);  // left == right != 0.
-
-      __ fadd(1);
-      __ jmp(&return_left, Label::kNear);
-
-      __ bind(&return_right);
-      __ fxch();
-
-      __ bind(&return_left);
-      __ fstp(0);
-      __ lea(esp, Operand(esp, 2 * kFloatSize));
-      break;
-    }
-    case kX87Float32Min: {
-      Label check_nan_left, check_zero, return_left, return_right;
-      Condition condition = above;
-      if (FLAG_debug_code && FLAG_enable_slow_asserts) {
-        __ VerifyX87StackDepth(1);
-      }
-      __ fstp(0);
-      __ fld_s(MemOperand(esp, kFloatSize));
-      __ fld_s(MemOperand(esp, 0));
-      __ fld(1);
-      __ fld(1);
-      __ FCmp();
-      // At least one NaN.
-      // Return the second operands if one of the two operands is NaN
-      __ j(parity_even, &return_right, Label::kNear);
-      __ j(equal, &check_zero, Label::kNear);            // left == right.
-      __ j(condition, &return_left, Label::kNear);
-      __ jmp(&return_right, Label::kNear);
-
-      __ bind(&check_zero);
-      __ fld(0);
-      __ fldz();
-      __ FCmp();
-      __ j(not_equal, &return_left, Label::kNear);  // left == right != 0.
-      // At this point, both left and right are either 0 or -0.
-      // Push st0 and st1 to stack, then pop them to temp registers and OR them,
-      // load it to left.
-      __ push(eax);
-      __ fld(1);
-      __ fld(1);
-      __ sub(esp, Immediate(2 * kPointerSize));
-      __ fstp_s(MemOperand(esp, 0));
-      __ fstp_s(MemOperand(esp, kPointerSize));
-      __ pop(eax);
-      __ xor_(MemOperand(esp, 0), eax);
-      __ fstp(0);
-      __ fld_s(MemOperand(esp, 0));
-      __ pop(eax);  // restore esp
-      __ pop(eax);  // restore esp
-      __ jmp(&return_left, Label::kNear);
-
-
-      __ bind(&return_right);
-      __ fxch();
-
-      __ bind(&return_left);
-      __ fstp(0);
-      __ lea(esp, Operand(esp, 2 * kFloatSize));
-      break;
-    }
     case kX87Float32Sqrt: {
       if (FLAG_debug_code && FLAG_enable_slow_asserts) {
         __ VerifyX87StackDepth(1);
@@ -1189,6 +1190,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ fstp(0);
       __ fld_s(MemOperand(esp, 0));
       __ fabs();
+      __ lea(esp, Operand(esp, kFloatSize));
+      break;
+    }
+    case kX87Float32Neg: {
+      if (FLAG_debug_code && FLAG_enable_slow_asserts) {
+        __ VerifyX87StackDepth(1);
+      }
+      __ fstp(0);
+      __ fld_s(MemOperand(esp, 0));
+      __ fchs();
       __ lea(esp, Operand(esp, kFloatSize));
       break;
     }
@@ -1286,9 +1297,44 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ lea(esp, Operand(esp, 2 * kDoubleSize));
       break;
     }
+    case kX87Float32Max: {
+      Label compare_swap, done_compare;
+      if (FLAG_debug_code && FLAG_enable_slow_asserts) {
+        __ VerifyX87StackDepth(1);
+      }
+      __ fstp(0);
+      __ fld_s(MemOperand(esp, kFloatSize));
+      __ fld_s(MemOperand(esp, 0));
+      __ fld(1);
+      __ fld(1);
+      __ FCmp();
+
+      auto ool =
+          new (zone()) OutOfLineLoadFloat32NaN(this, i.OutputDoubleRegister());
+      __ j(parity_even, ool->entry());
+      __ j(below, &done_compare, Label::kNear);
+      __ j(above, &compare_swap, Label::kNear);
+      __ push(eax);
+      __ lea(esp, Operand(esp, -kFloatSize));
+      __ fld(1);
+      __ fstp_s(Operand(esp, 0));
+      __ mov(eax, MemOperand(esp, 0));
+      __ and_(eax, Immediate(0x80000000));
+      __ lea(esp, Operand(esp, kFloatSize));
+      __ pop(eax);
+      __ j(zero, &done_compare, Label::kNear);
+
+      __ bind(&compare_swap);
+      __ bind(ool->exit());
+      __ fxch(1);
+
+      __ bind(&done_compare);
+      __ fstp(0);
+      __ lea(esp, Operand(esp, 2 * kFloatSize));
+      break;
+    }
     case kX87Float64Max: {
-      Label check_zero, return_left, return_right;
-      Condition condition = below;
+      Label compare_swap, done_compare;
       if (FLAG_debug_code && FLAG_enable_slow_asserts) {
         __ VerifyX87StackDepth(1);
       }
@@ -1298,29 +1344,69 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ fld(1);
       __ fld(1);
       __ FCmp();
-      __ j(parity_even, &return_right,
-           Label::kNear);  // At least one NaN, Return right.
-      __ j(equal, &check_zero, Label::kNear);  // left == right.
-      __ j(condition, &return_left, Label::kNear);
-      __ jmp(&return_right, Label::kNear);
 
-      __ bind(&check_zero);
-      __ fld(0);
-      __ fldz();
-      __ FCmp();
-      __ j(not_equal, &return_left, Label::kNear);  // left == right != 0.
+      auto ool =
+          new (zone()) OutOfLineLoadFloat64NaN(this, i.OutputDoubleRegister());
+      __ j(parity_even, ool->entry());
+      __ j(below, &done_compare, Label::kNear);
+      __ j(above, &compare_swap, Label::kNear);
+      __ push(eax);
+      __ lea(esp, Operand(esp, -kDoubleSize));
+      __ fld(1);
+      __ fstp_d(Operand(esp, 0));
+      __ mov(eax, MemOperand(esp, 4));
+      __ and_(eax, Immediate(0x80000000));
+      __ lea(esp, Operand(esp, kDoubleSize));
+      __ pop(eax);
+      __ j(zero, &done_compare, Label::kNear);
 
-      __ bind(&return_right);
-      __ fxch();
+      __ bind(&compare_swap);
+      __ bind(ool->exit());
+      __ fxch(1);
 
-      __ bind(&return_left);
+      __ bind(&done_compare);
       __ fstp(0);
       __ lea(esp, Operand(esp, 2 * kDoubleSize));
       break;
     }
+    case kX87Float32Min: {
+      Label compare_swap, done_compare;
+      if (FLAG_debug_code && FLAG_enable_slow_asserts) {
+        __ VerifyX87StackDepth(1);
+      }
+      __ fstp(0);
+      __ fld_s(MemOperand(esp, kFloatSize));
+      __ fld_s(MemOperand(esp, 0));
+      __ fld(1);
+      __ fld(1);
+      __ FCmp();
+
+      auto ool =
+          new (zone()) OutOfLineLoadFloat32NaN(this, i.OutputDoubleRegister());
+      __ j(parity_even, ool->entry());
+      __ j(above, &done_compare, Label::kNear);
+      __ j(below, &compare_swap, Label::kNear);
+      __ push(eax);
+      __ lea(esp, Operand(esp, -kFloatSize));
+      __ fld(0);
+      __ fstp_s(Operand(esp, 0));
+      __ mov(eax, MemOperand(esp, 0));
+      __ and_(eax, Immediate(0x80000000));
+      __ lea(esp, Operand(esp, kFloatSize));
+      __ pop(eax);
+      __ j(zero, &done_compare, Label::kNear);
+
+      __ bind(&compare_swap);
+      __ bind(ool->exit());
+      __ fxch(1);
+
+      __ bind(&done_compare);
+      __ fstp(0);
+      __ lea(esp, Operand(esp, 2 * kFloatSize));
+      break;
+    }
     case kX87Float64Min: {
-      Label check_zero, return_left, return_right;
-      Condition condition = above;
+      Label compare_swap, done_compare;
       if (FLAG_debug_code && FLAG_enable_slow_asserts) {
         __ VerifyX87StackDepth(1);
       }
@@ -1330,22 +1416,27 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ fld(1);
       __ fld(1);
       __ FCmp();
-      __ j(parity_even, &return_right,
-           Label::kNear);  // At least one NaN, return right value.
-      __ j(equal, &check_zero, Label::kNear);  // left == right.
-      __ j(condition, &return_left, Label::kNear);
-      __ jmp(&return_right, Label::kNear);
 
-      __ bind(&check_zero);
+      auto ool =
+          new (zone()) OutOfLineLoadFloat64NaN(this, i.OutputDoubleRegister());
+      __ j(parity_even, ool->entry());
+      __ j(above, &done_compare, Label::kNear);
+      __ j(below, &compare_swap, Label::kNear);
+      __ push(eax);
+      __ lea(esp, Operand(esp, -kDoubleSize));
       __ fld(0);
-      __ fldz();
-      __ FCmp();
-      __ j(not_equal, &return_left, Label::kNear);  // left == right != 0.
+      __ fstp_d(Operand(esp, 0));
+      __ mov(eax, MemOperand(esp, 4));
+      __ and_(eax, Immediate(0x80000000));
+      __ lea(esp, Operand(esp, kDoubleSize));
+      __ pop(eax);
+      __ j(zero, &done_compare, Label::kNear);
 
-      __ bind(&return_right);
-      __ fxch();
+      __ bind(&compare_swap);
+      __ bind(ool->exit());
+      __ fxch(1);
 
-      __ bind(&return_left);
+      __ bind(&done_compare);
       __ fstp(0);
       __ lea(esp, Operand(esp, 2 * kDoubleSize));
       break;
@@ -1357,6 +1448,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ fstp(0);
       __ fld_d(MemOperand(esp, 0));
       __ fabs();
+      __ lea(esp, Operand(esp, kDoubleSize));
+      break;
+    }
+    case kX87Float64Neg: {
+      if (FLAG_debug_code && FLAG_enable_slow_asserts) {
+        __ VerifyX87StackDepth(1);
+      }
+      __ fstp(0);
+      __ fld_d(MemOperand(esp, 0));
+      __ fchs();
       __ lea(esp, Operand(esp, kDoubleSize));
       break;
     }
@@ -1480,12 +1581,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ TruncateX87TOSToI(i.OutputRegister(0));
       __ test(i.OutputRegister(0), i.OutputRegister(0));
       __ j(positive, &success);
+      // Need to reserve the input float32 data.
+      __ fld(0);
       __ push(Immediate(INT32_MIN));
       __ fild_s(Operand(esp, 0));
       __ lea(esp, Operand(esp, kPointerSize));
       __ faddp();
       __ TruncateX87TOSToI(i.OutputRegister(0));
       __ or_(i.OutputRegister(0), Immediate(0x80000000));
+      // Only keep input float32 data in x87 stack when return.
+      __ fstp(0);
       __ bind(&success);
       if (!instr->InputAt(0)->IsFPRegister()) {
         __ fstp(0);
@@ -1881,10 +1986,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_CHECKED_LOAD_INTEGER(mov);
       break;
     case kCheckedLoadFloat32:
-      ASSEMBLE_CHECKED_LOAD_FLOAT(fld_s);
+      ASSEMBLE_CHECKED_LOAD_FLOAT(fld_s, OutOfLineLoadFloat32NaN);
       break;
     case kCheckedLoadFloat64:
-      ASSEMBLE_CHECKED_LOAD_FLOAT(fld_d);
+      ASSEMBLE_CHECKED_LOAD_FLOAT(fld_d, OutOfLineLoadFloat64NaN);
       break;
     case kCheckedStoreWord8:
       ASSEMBLE_CHECKED_STORE_INTEGER(mov_b);
@@ -2133,10 +2238,14 @@ void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
 }
 
 CodeGenerator::CodeGenResult CodeGenerator::AssembleDeoptimizerCall(
-    int deoptimization_id, Deoptimizer::BailoutType bailout_type) {
+    int deoptimization_id, Deoptimizer::BailoutType bailout_type,
+    SourcePosition pos) {
   Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
       isolate(), deoptimization_id, bailout_type);
   if (deopt_entry == nullptr) return kTooManyDeoptimizationBailouts;
+  DeoptimizeReason deoptimization_reason =
+      GetDeoptimizationReason(deoptimization_id);
+  __ RecordDeoptReason(deoptimization_reason, pos.raw(), deoptimization_id);
   __ call(deopt_entry, RelocInfo::RUNTIME_ENTRY);
   return kSuccess;
 }
@@ -2409,18 +2518,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     Constant src_constant = g.ToConstant(source);
     if (src_constant.type() == Constant::kHeapObject) {
       Handle<HeapObject> src = src_constant.ToHeapObject();
-      int slot;
-      if (IsMaterializableFromFrame(src, &slot)) {
-        if (destination->IsRegister()) {
-          Register dst = g.ToRegister(destination);
-          __ mov(dst, g.SlotToOperand(slot));
-        } else {
-          DCHECK(destination->IsStackSlot());
-          Operand dst = g.ToOperand(destination);
-          __ push(g.SlotToOperand(slot));
-          __ pop(dst);
-        }
-      } else if (destination->IsRegister()) {
+      if (destination->IsRegister()) {
         Register dst = g.ToRegister(destination);
         __ LoadHeapObject(dst, src);
       } else {

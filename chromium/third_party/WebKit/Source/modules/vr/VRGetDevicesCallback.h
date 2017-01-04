@@ -6,31 +6,30 @@
 #define VRGetDevicesCallback_h
 
 #include "device/vr/vr_service.mojom-blink.h"
+#include "modules/vr/VRDisplay.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebCallbacks.h"
-#include "public/platform/WebVector.h"
 
 namespace blink {
 
-class VRDisplayCollection;
 class ScriptPromiseResolver;
 
 // Success and failure callbacks for getDisplays.
-using WebVRGetDisplaysCallback = WebCallbacks<mojo::WTFArray<device::blink::VRDisplayPtr>, void>;
+using WebVRGetDisplaysCallback = WebCallbacks<VRDisplayVector, void>;
 class VRGetDevicesCallback final : public WebVRGetDisplaysCallback {
-    USING_FAST_MALLOC(VRGetDevicesCallback);
-public:
-    VRGetDevicesCallback(ScriptPromiseResolver*, VRDisplayCollection*);
-    ~VRGetDevicesCallback() override;
+  USING_FAST_MALLOC(VRGetDevicesCallback);
 
-    void onSuccess(mojo::WTFArray<device::blink::VRDisplayPtr>) override;
-    void onError() override;
+ public:
+  VRGetDevicesCallback(ScriptPromiseResolver*);
+  ~VRGetDevicesCallback() override;
 
-private:
-    Persistent<ScriptPromiseResolver> m_resolver;
-    Persistent<VRDisplayCollection> m_displays;
+  void onSuccess(VRDisplayVector) override;
+  void onError() override;
+
+ private:
+  Persistent<ScriptPromiseResolver> m_resolver;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // VRGetDevicesCallback_h
+#endif  // VRGetDevicesCallback_h

@@ -8,11 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 #include "webrtc/base/checks.h"
-#include "webrtc/common.h"
 #include "webrtc/config.h"
 #include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/test/call_test.h"
-#include "webrtc/test/encoder_settings.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 #include "webrtc/voice_engine/include/voe_codec.h"
@@ -62,8 +60,8 @@ void CallTest::RunBaseTest(BaseTest* test) {
     CreateReceiverCall(recv_config);
   }
   test->OnCallsCreated(sender_call_.get(), receiver_call_.get());
-  send_transport_.reset(test->CreateSendTransport(sender_call_.get()));
   receive_transport_.reset(test->CreateReceiveTransport());
+  send_transport_.reset(test->CreateSendTransport(sender_call_.get()));
 
   if (test->ShouldCreateReceivers()) {
     send_transport_->SetReceiver(receiver_call_->Receiver());
@@ -96,7 +94,11 @@ void CallTest::RunBaseTest(BaseTest* test) {
   }
 
   if (num_video_streams_ > 0) {
-    CreateFrameGeneratorCapturer();
+    int width = kDefaultWidth;
+    int height = kDefaultHeight;
+    int frame_rate = kDefaultFramerate;
+    test->ModifyVideoCaptureStartResolution(&width, &height, &frame_rate);
+    CreateFrameGeneratorCapturer(frame_rate, width, height);
     test->OnFrameGeneratorCapturerCreated(frame_generator_capturer_.get());
   }
 
@@ -187,7 +189,8 @@ void CallTest::CreateSendConfig(size_t num_video_streams,
         kFakeVideoSendPayloadType;
     video_send_config_.rtp.extensions.push_back(
         RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeExtensionId));
-    video_encoder_config_.streams = test::CreateVideoStreams(num_video_streams);
+    FillEncoderConfiguration(num_video_streams, &video_encoder_config_);
+
     for (size_t i = 0; i < num_video_streams; ++i)
       video_send_config_.rtp.ssrcs.push_back(kVideoSendSsrcs[i]);
     video_send_config_.rtp.extensions.push_back(RtpExtension(
@@ -211,6 +214,7 @@ void CallTest::CreateMatchingReceiveConfigs(Transport* rtcp_send_transport) {
     video_config.rtp.local_ssrc = kReceiverLocalVideoSsrc;
     for (const RtpExtension& extension : video_send_config_.rtp.extensions)
       video_config.rtp.extensions.push_back(extension);
+    video_config.renderer = &fake_renderer_;
     for (size_t i = 0; i < video_send_config_.rtp.ssrcs.size(); ++i) {
       VideoReceiveStream::Decoder decoder =
           test::CreateMatchingDecoder(video_send_config_.encoder_settings);
@@ -237,18 +241,21 @@ void CallTest::CreateMatchingReceiveConfigs(Transport* rtcp_send_transport) {
 }
 
 void CallTest::CreateFrameGeneratorCapturerWithDrift(Clock* clock,
-                                                     float speed) {
-  VideoStream stream = video_encoder_config_.streams.back();
+                                                     float speed,
+                                                     int framerate,
+                                                     int width,
+                                                     int height) {
   frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
-      video_send_stream_->Input(), stream.width, stream.height,
-      stream.max_framerate * speed, clock));
+      width, height, framerate * speed, clock));
+  video_send_stream_->SetSource(frame_generator_capturer_.get());
 }
 
-void CallTest::CreateFrameGeneratorCapturer() {
-  VideoStream stream = video_encoder_config_.streams.back();
-  frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
-      video_send_stream_->Input(), stream.width, stream.height,
-      stream.max_framerate, clock_));
+void CallTest::CreateFrameGeneratorCapturer(int framerate,
+                                            int width,
+                                            int height) {
+  frame_generator_capturer_.reset(
+      test::FrameGeneratorCapturer::Create(width, height, framerate, clock_));
+  video_send_stream_->SetSource(frame_generator_capturer_.get());
 }
 
 void CallTest::CreateFakeAudioDevices() {
@@ -267,7 +274,7 @@ void CallTest::CreateVideoStreams() {
   RTC_DCHECK(audio_receive_streams_.empty());
 
   video_send_stream_ = sender_call_->CreateVideoSendStream(
-      video_send_config_, video_encoder_config_);
+      video_send_config_.Copy(), video_encoder_config_.Copy());
   for (size_t i = 0; i < video_receive_configs_.size(); ++i) {
     video_receive_streams_.push_back(receiver_call_->CreateVideoReceiveStream(
         video_receive_configs_[i].Copy()));
@@ -312,9 +319,9 @@ void CallTest::CreateVoiceEngines() {
   voe_send_.codec = VoECodec::GetInterface(voe_send_.voice_engine);
   EXPECT_EQ(0, voe_send_.base->Init(fake_send_audio_device_.get(), nullptr,
                                     decoder_factory_));
-  Config voe_config;
-  voe_config.Set<VoicePacing>(new VoicePacing(true));
-  voe_send_.channel_id = voe_send_.base->CreateChannel(voe_config);
+  VoEBase::ChannelConfig config;
+  config.enable_voice_pacing = true;
+  voe_send_.channel_id = voe_send_.base->CreateChannel(config);
   EXPECT_GE(voe_send_.channel_id, 0);
 
   voe_recv_.voice_engine = VoiceEngine::Create();
@@ -347,6 +354,9 @@ void CallTest::DestroyVoiceEngines() {
   voe_recv_.voice_engine = nullptr;
 }
 
+const int CallTest::kDefaultWidth;
+const int CallTest::kDefaultHeight;
+const int CallTest::kDefaultFramerate;
 const int CallTest::kDefaultTimeoutMs = 30 * 1000;
 const int CallTest::kLongTimeoutMs = 120 * 1000;
 const uint8_t CallTest::kVideoSendPayloadType = 100;
@@ -404,6 +414,10 @@ void BaseTest::ModifyVideoConfigs(
     VideoSendStream::Config* send_config,
     std::vector<VideoReceiveStream::Config>* receive_configs,
     VideoEncoderConfig* encoder_config) {}
+
+void BaseTest::ModifyVideoCaptureStartResolution(int* width,
+                                                 int* heigt,
+                                                 int* frame_rate) {}
 
 void BaseTest::OnVideoStreamsCreated(
     VideoSendStream* send_stream,

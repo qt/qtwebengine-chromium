@@ -6,33 +6,46 @@ found in the LICENSE file.
 -->
 
 <link rel="import" href="/tracing/base/raf.html">
+<link rel="import" href="/tracing/metrics/metric_map_function.html">
 <link rel="import" href="/tracing/metrics/metric_registry.html">
 <link rel="import" href="/tracing/model/event_set.html">
+<link rel="import" href="/tracing/mre/mre_result.html">
 <link rel="import" href="/tracing/ui/base/dom_helpers.html">
 <link rel="import" href="/tracing/ui/side_panel/side_panel.html">
-<link rel="import" href="/tracing/value/ui/value_set_table.html">
+<link rel="import" href="/tracing/ui/side_panel/side_panel_registry.html">
 <link rel="import" href="/tracing/value/ui/value_set_view.html">
 <link rel="import" href="/tracing/value/value_set.html">
 
-<polymer-element name='tr-ui-sp-metrics-side-panel'
-    extends='tr-ui-side-panel'>
+<dom-module id="tr-ui-sp-metrics-side-panel">
   <template>
     <style>
     :host {
       display: flex;
       flex-direction: column;
     }
+    div#error {
+      color: red;
+    }
+    #results {
+      font-size: 12px;
+    }
     </style>
 
     <top-left-controls id="top_left_controls"></top-left-controls>
+
     <tr-v-ui-value-set-view id="results"></tr-v-ui-value-set-view>
+
+    <div id="error"></div>
   </template>
-</polymer-element>
+</dom-module>
 
 <script>
 'use strict';
 tr.exportTo('tr.ui', function() {
-  Polymer('tr-ui-sp-metrics-side-panel', {
+  Polymer({
+    is: 'tr-ui-sp-metrics-side-panel',
+    behaviors: [tr.ui.behaviors.SidePanel],
+
     ready: function() {
       this.model_ = undefined;
 
@@ -57,7 +70,7 @@ tr.exportTo('tr.ui', function() {
           this.settingsKey_,
           this.currentMetricName_,
           this.metrics_);
-      this.$.top_left_controls.appendChild(metricSelector);
+      Polymer.dom(this.$.top_left_controls).appendChild(metricSelector);
       metricSelector.addEventListener('change',
           this.onMetricChange_.bind(this));
       this.currentMetricTypeInfo_ =
@@ -66,7 +79,7 @@ tr.exportTo('tr.ui', function() {
 
       this.recomputeButton_ = tr.ui.b.createButton(
           'Recompute', this.onRecompute_, this);
-      this.$.top_left_controls.appendChild(this.recomputeButton_);
+      Polymer.dom(this.$.top_left_controls).appendChild(this.recomputeButton_);
     },
 
     /**
@@ -155,24 +168,15 @@ tr.exportTo('tr.ui', function() {
     },
 
     updateContents_: function() {
-      this.style.width = '';
-      tr.b.requestAnimationFrame(function() {
-        var width = this.$.results.getBoundingClientRect().width + 15;
-        this.style.width = width + 'px';
-      }, this);
+      Polymer.dom(this.$.error).textContent = '';
+      this.$.results.style.display = 'none';
 
       if (!this.model_) {
-        this.$.results.values = new tr.v.ValueSet([
-            new tr.v.FailureValue('missing', {
-              description: 'Missing model',
-              stack: ''
-            })
-        ]);
+        Polymer.dom(this.$.error).textContent = 'Missing model';
         return;
       }
 
-      var values = new tr.v.ValueSet();
-      var options = {};
+      var options = {metrics: [this.currentMetricName_]};
 
       if (this.currentMetricTypeInfo_ &&
           this.currentMetricTypeInfo_.metadata.supportsRangeOfInterest &&
@@ -182,15 +186,13 @@ tr.exportTo('tr.ui', function() {
 
       var startDate = new Date();
       try {
-        this.currentMetricTypeInfo_.constructor(values, this.model_, options);
+        var values = tr.metrics.runMetrics(this.model_, options);
       } catch (err) {
-        console.error(err.stack);
-        this.$.results.values = new tr.v.ValueSet([
-            new tr.v.FailureValue('error', {
-              description: err.message,
-              stack: err.stack
-            })
-        ]);
+        console.warn(
+            this.currentMetricName_ +
+            ' could not be computed for the current model:\n' +
+            err.stack);
+        Polymer.dom(this.$.error).textContent = err.message;
         return;
       }
 
@@ -199,8 +201,14 @@ tr.exportTo('tr.ui', function() {
         this.metricLatenciesMs_.shift();
 
       this.recomputeButton_.style.background = '';
+
+      this.$.results.style.display = '';
       this.$.results.values = values;
     }
+  });
+
+  tr.ui.side_panel.SidePanelRegistry.register(function() {
+    return document.createElement('tr-ui-sp-metrics-side-panel');
   });
 
   return {};

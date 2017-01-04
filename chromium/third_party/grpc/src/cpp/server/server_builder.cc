@@ -35,10 +35,9 @@
 
 #include <grpc++/impl/service_type.h>
 #include <grpc++/server.h>
-#include <grpc/support/cpu.h>
 #include <grpc/support/log.h>
+#include <grpc/support/useful.h>
 
-#include "include/grpc/support/useful.h"
 #include "src/cpp/server/thread_pool_interface.h"
 
 namespace grpc {
@@ -55,9 +54,10 @@ static void do_plugin_list_init(void) {
 ServerBuilder::ServerBuilder()
     : max_message_size_(-1), generic_service_(nullptr) {
   gpr_once_init(&once_init_plugin_list, do_plugin_list_init);
-  for (auto factory : (*g_plugin_factory_list)) {
-    std::unique_ptr<ServerBuilderPlugin> plugin = factory();
-    plugins_[plugin->name()] = std::move(plugin);
+  for (auto it = g_plugin_factory_list->begin();
+       it != g_plugin_factory_list->end(); it++) {
+    auto& factory = *it;
+    plugins_.emplace_back(factory());
   }
   // all compression algorithms enabled by default.
   enabled_compression_algorithms_bitset_ =
@@ -141,7 +141,7 @@ std::unique_ptr<Server> ServerBuilder::BuildAndStart() {
   bool has_sync_methods = false;
   for (auto it = services_.begin(); it != services_.end(); ++it) {
     if ((*it)->service->has_synchronous_methods()) {
-      if (thread_pool == nullptr) {
+      if (!thread_pool) {
         thread_pool.reset(CreateDefaultThreadPool());
         has_sync_methods = true;
         break;
@@ -153,14 +153,12 @@ std::unique_ptr<Server> ServerBuilder::BuildAndStart() {
     (*option)->UpdateArguments(&args);
     (*option)->UpdatePlugins(&plugins_);
   }
-  if (thread_pool == nullptr) {
-    for (auto plugin = plugins_.begin(); plugin != plugins_.end(); plugin++) {
-      if ((*plugin).second->has_sync_methods()) {
-        thread_pool.reset(CreateDefaultThreadPool());
-        has_sync_methods = true;
-        break;
-      }
+  for (auto plugin = plugins_.begin(); plugin != plugins_.end(); plugin++) {
+    if (!thread_pool && (*plugin)->has_sync_methods()) {
+      thread_pool.reset(CreateDefaultThreadPool());
+      has_sync_methods = true;
     }
+    (*plugin)->UpdateChannelArguments(&args);
   }
   if (max_message_size_ > 0) {
     args.SetInt(GRPC_ARG_MAX_MESSAGE_LENGTH, max_message_size_);
@@ -212,7 +210,7 @@ std::unique_ptr<Server> ServerBuilder::BuildAndStart() {
     }
   }
   for (auto plugin = plugins_.begin(); plugin != plugins_.end(); plugin++) {
-    (*plugin).second->InitServer(initializer);
+    (*plugin)->InitServer(initializer);
   }
   if (generic_service_) {
     server->RegisterAsyncGenericService(generic_service_);
@@ -238,7 +236,7 @@ std::unique_ptr<Server> ServerBuilder::BuildAndStart() {
     return nullptr;
   }
   for (auto plugin = plugins_.begin(); plugin != plugins_.end(); plugin++) {
-    (*plugin).second->Finish(initializer);
+    (*plugin)->Finish(initializer);
   }
   return server;
 }

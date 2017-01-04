@@ -64,8 +64,8 @@ uint32_t AXStateFromBlink(const blink::WebAXObject& o) {
   if (o.isEditable())
     state |= (1 << ui::AX_STATE_EDITABLE);
 
-  if (o.isEnabled())
-    state |= (1 << ui::AX_STATE_ENABLED);
+  if (!o.isEnabled())
+    state |= (1 << ui::AX_STATE_DISABLED);
 
   if (o.isSelected())
     state |= (1 << ui::AX_STATE_SELECTED);
@@ -101,6 +101,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_APPLICATION;
     case blink::WebAXRoleArticle:
       return ui::AX_ROLE_ARTICLE;
+    case blink::WebAXRoleAudio:
+      return ui::AX_ROLE_AUDIO;
     case blink::WebAXRoleBanner:
       return ui::AX_ROLE_BANNER;
     case blink::WebAXRoleBlockquote:
@@ -323,6 +325,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_UNKNOWN;
     case blink::WebAXRoleUserInterfaceTooltip:
       return ui::AX_ROLE_TOOLTIP;
+    case blink::WebAXRoleVideo:
+      return ui::AX_ROLE_VIDEO;
     case blink::WebAXRoleWebArea:
       return ui::AX_ROLE_ROOT_WEB_AREA;
     case blink::WebAXRoleLineBreak:
@@ -549,6 +553,17 @@ ui::AXDescriptionFrom AXDescriptionFromFromBlink(
   }
   NOTREACHED();
   return ui::AX_DESCRIPTION_FROM_NONE;
+}
+
+ui::AXTextAffinity AXTextAffinityFromBlink(blink::WebAXTextAffinity affinity) {
+  switch (affinity) {
+    case blink::WebAXTextAffinityUpstream:
+      return ui::AX_TEXT_AFFINITY_UPSTREAM;
+    case blink::WebAXTextAffinityDownstream:
+      return ui::AX_TEXT_AFFINITY_DOWNSTREAM;
+  }
+  NOTREACHED();
+  return ui::AX_TEXT_AFFINITY_DOWNSTREAM;
 }
 
 }  // namespace content.

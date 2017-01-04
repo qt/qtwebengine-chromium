@@ -13,6 +13,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_byteorder.h"
 #include "net/http/transport_security_state.h"
+#include "net/spdy/spdy_flags.h"
 #include "net/ssl/ssl_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -175,18 +176,16 @@ void TestHeadersHandler::OnHeaderBlockStart() {
 
 void TestHeadersHandler::OnHeader(base::StringPiece name,
                                   base::StringPiece value) {
-  auto it = block_.find(name);
-  if (it == block_.end()) {
-    block_[name] = value;
-  } else {
-    string new_value = it->second.as_string();
-    new_value.append((name == "cookie") ? "; " : string(1, '\0'));
-    value.AppendToString(&new_value);
-    block_.ReplaceOrAppendHeader(name, new_value);
-  }
+  block_.AppendValueOrAddHeader(name, value);
 }
 
 void TestHeadersHandler::OnHeaderBlockEnd(size_t header_bytes_parsed) {
+  header_bytes_parsed_ = header_bytes_parsed;
+}
+
+void TestHeadersHandler::OnHeaderBlockEnd(
+    size_t header_bytes_parsed,
+    size_t /* compressed_header_bytes_parsed */) {
   header_bytes_parsed_ = header_bytes_parsed;
 }
 

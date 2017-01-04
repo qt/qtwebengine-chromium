@@ -34,8 +34,23 @@ struct SkPictInfo {
         kPtrIs64Bit_Flag        = 1 << 2,
     };
 
+    SkPictInfo() : fVersion(~0U) {}
+
+    uint32_t getVersion() const {
+        SkASSERT(fVersion != ~0U);
+        return fVersion;
+    }
+
+    void setVersion(uint32_t version) {
+        SkASSERT(version != ~0U);
+        fVersion = version;
+    }
+
+public:
     char        fMagic[8];
+private:
     uint32_t    fVersion;
+public:
     SkRect      fCullRect;
     uint32_t    fFlags;
 };
@@ -64,7 +79,7 @@ public:
     // Does not affect ownership of SkStream.
     static SkPictureData* CreateFromStream(SkStream*,
                                            const SkPictInfo&,
-                                           SkPicture::InstallPixelRefProc,
+                                           SkImageDeserializer*,
                                            SkTypefacePlayback*);
     static SkPictureData* CreateFromBuffer(SkReadBuffer&, const SkPictInfo&);
 
@@ -85,13 +100,13 @@ protected:
     explicit SkPictureData(const SkPictInfo& info);
 
     // Does not affect ownership of SkStream.
-    bool parseStream(SkStream*, SkPicture::InstallPixelRefProc, SkTypefacePlayback*);
+    bool parseStream(SkStream*, SkImageDeserializer*, SkTypefacePlayback*);
     bool parseBuffer(SkReadBuffer& buffer);
 
 public:
-    const SkBitmap& getBitmap(SkReadBuffer* reader) const {
+    const SkImage* getBitmapAsImage(SkReadBuffer* reader) const {
         const int index = reader->readInt();
-        return reader->validateIndex(index, fBitmaps.count()) ? fBitmaps[index] : fEmptyBitmap;
+        return reader->validateIndex(index, fBitmapImageCount) ? fBitmapImageRefs[index] : nullptr;
     }
 
     const SkImage* getImage(SkReadBuffer* reader) const {
@@ -117,6 +132,9 @@ public:
 
     const SkPaint* getPaint(SkReadBuffer* reader) const {
         const int index = reader->readInt() - 1;
+        if (index == -1) {  // recorder wrote a zero for no paint (likely drawimage)
+            return nullptr;
+        }
         return reader->validateIndex(index, fPaints.count()) ? &fPaints[index] : nullptr;
     }
 
@@ -149,11 +167,10 @@ private:
     // these help us with reading/writing
     // Does not affect ownership of SkStream.
     bool parseStreamTag(SkStream*, uint32_t tag, uint32_t size,
-                        SkPicture::InstallPixelRefProc, SkTypefacePlayback*);
+                        SkImageDeserializer*, SkTypefacePlayback*);
     bool parseBufferTag(SkReadBuffer&, uint32_t tag, uint32_t size);
     void flattenToBuffer(SkWriteBuffer&) const;
 
-    SkTArray<SkBitmap> fBitmaps;
     SkTArray<SkPaint>  fPaints;
     SkTArray<SkPath>   fPaths;
 
@@ -170,6 +187,8 @@ private:
     int fTextBlobCount;
     const SkImage** fImageRefs;
     int fImageCount;
+    const SkImage** fBitmapImageRefs;
+    int fBitmapImageCount;
 
     SkPictureContentInfo fContentInfo;
 

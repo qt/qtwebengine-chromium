@@ -6,6 +6,8 @@
 
 #if V8_TARGET_ARCH_ARM
 
+#include <memory>
+
 #include "src/arm/simulator-arm.h"
 #include "src/codegen.h"
 #include "src/macro-assembler.h"
@@ -22,7 +24,6 @@ MemCopyUint8Function CreateMemCopyUint8Function(Isolate* isolate,
 #if defined(USE_SIMULATOR)
   return stub;
 #else
-  if (!CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) return stub;
   size_t actual_size;
   byte* buffer =
       static_cast<byte*>(base::OS::Allocate(1 * KB, &actual_size, true));
@@ -38,6 +39,7 @@ MemCopyUint8Function CreateMemCopyUint8Function(Isolate* isolate,
   Label less_4;
 
   if (CpuFeatures::IsSupported(NEON)) {
+    CpuFeatureScope scope(&masm, NEON);
     Label loop, less_256, less_128, less_64, less_32, _16_or_less, _8_or_less;
     Label size_less_than_8;
     __ pld(MemOperand(src, 0));
@@ -180,7 +182,6 @@ MemCopyUint16Uint8Function CreateMemCopyUint16Uint8Function(
 #if defined(USE_SIMULATOR)
   return stub;
 #else
-  if (!CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) return stub;
   size_t actual_size;
   byte* buffer =
       static_cast<byte*>(base::OS::Allocate(1 * KB, &actual_size, true));
@@ -193,6 +194,7 @@ MemCopyUint16Uint8Function CreateMemCopyUint16Uint8Function(
   Register src = r1;
   Register chars = r2;
   if (CpuFeatures::IsSupported(NEON)) {
+    CpuFeatureScope scope(&masm, NEON);
     Register temp = r3;
     Label loop;
 
@@ -746,7 +748,7 @@ CodeAgingHelper::CodeAgingHelper(Isolate* isolate) {
   // to avoid overloading the stack in stress conditions.
   // DONT_FLUSH is used because the CodeAgingHelper is initialized early in
   // the process, before ARM simulator ICache is setup.
-  base::SmartPointer<CodePatcher> patcher(
+  std::unique_ptr<CodePatcher> patcher(
       new CodePatcher(isolate, young_sequence_.start(),
                       young_sequence_.length() / Assembler::kInstrSize,
                       CodePatcher::DONT_FLUSH));

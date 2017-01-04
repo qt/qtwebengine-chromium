@@ -8,6 +8,7 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/browser/notifications/platform_notification_context_impl.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
@@ -37,7 +38,8 @@ class PlatformNotificationContextTest : public ::testing::Test {
   }
 
   // Callback to provide when writing a notification to the database.
-  void DidWriteNotificationData(bool success, int64_t notification_id) {
+  void DidWriteNotificationData(bool success,
+                                const std::string& notification_id) {
     success_ = success;
     notification_id_ = notification_id;
   }
@@ -80,8 +82,7 @@ class PlatformNotificationContextTest : public ::testing::Test {
 
  protected:
   // Creates a new PlatformNotificationContextImpl instance. When using this
-  // method, the underlying database will always be created in memory. The
-  // current message loop proxy will be used as the task runner.
+  // method, the underlying database will always be created in memory.
   PlatformNotificationContextImpl* CreatePlatformNotificationContext() {
     PlatformNotificationContextImpl* context =
         new PlatformNotificationContextImpl(base::FilePath(), &browser_context_,
@@ -111,7 +112,7 @@ class PlatformNotificationContextTest : public ::testing::Test {
   }
 
   // Returns the notification id of the notification last written.
-  int64_t notification_id() const { return notification_id_; }
+  const std::string& notification_id() const { return notification_id_; }
 
  private:
   TestBrowserThreadBundle thread_bundle_;
@@ -119,7 +120,7 @@ class PlatformNotificationContextTest : public ::testing::Test {
 
   bool success_;
   NotificationDatabaseData database_data_;
-  int64_t notification_id_;
+  std::string notification_id_;
 };
 
 TEST_F(PlatformNotificationContextTest, ReadNonExistentNotification) {
@@ -127,7 +128,7 @@ TEST_F(PlatformNotificationContextTest, ReadNonExistentNotification) {
       CreatePlatformNotificationContext();
 
   context->ReadNotificationData(
-      42 /* notification_id */, GURL("https://example.com"),
+      "invalid-notification-id", GURL("https://example.com"),
       base::Bind(&PlatformNotificationContextTest::DidReadNotificationData,
                  base::Unretained(this)));
 
@@ -154,7 +155,7 @@ TEST_F(PlatformNotificationContextTest, WriteReadNotification) {
 
   // The write operation should have succeeded with a notification id.
   ASSERT_TRUE(success());
-  EXPECT_GT(notification_id(), 0);
+  EXPECT_FALSE(notification_id().empty());
 
   context->ReadNotificationData(
       notification_id(), origin,
@@ -170,12 +171,75 @@ TEST_F(PlatformNotificationContextTest, WriteReadNotification) {
   EXPECT_EQ(notification_database_data.origin, read_database_data.origin);
 }
 
+TEST_F(PlatformNotificationContextTest, WriteReadReplacedNotification) {
+  scoped_refptr<PlatformNotificationContextImpl> context =
+      CreatePlatformNotificationContext();
+
+  const GURL origin("https://example.com");
+  const std::string tag = "foo";
+
+  NotificationDatabaseData notification_database_data;
+  notification_database_data.service_worker_registration_id =
+      kFakeServiceWorkerRegistrationId;
+  notification_database_data.origin = origin;
+  notification_database_data.notification_data.title =
+      base::ASCIIToUTF16("First");
+  notification_database_data.notification_data.tag = tag;
+
+  // Write the first notification with the given |tag|.
+  context->WriteNotificationData(
+      origin, notification_database_data,
+      base::Bind(&PlatformNotificationContextTest::DidWriteNotificationData,
+                 base::Unretained(this)));
+
+  base::RunLoop().RunUntilIdle();
+
+  std::string read_notification_id = notification_id();
+
+  // The write operation should have succeeded with a notification id.
+  ASSERT_TRUE(success());
+  EXPECT_FALSE(read_notification_id.empty());
+
+  notification_database_data.notification_data.title =
+      base::ASCIIToUTF16("Second");
+
+  // Write the second notification with the given |tag|.
+  context->WriteNotificationData(
+      origin, notification_database_data,
+      base::Bind(&PlatformNotificationContextTest::DidWriteNotificationData,
+                 base::Unretained(this)));
+
+  base::RunLoop().RunUntilIdle();
+
+  ASSERT_TRUE(success());
+  ASSERT_FALSE(notification_id().empty());
+  ASSERT_EQ(notification_id(), read_notification_id);
+
+  // Reading the notifications should only yield the second, replaced one.
+  std::vector<NotificationDatabaseData> notification_database_datas;
+  context->ReadAllNotificationDataForServiceWorkerRegistration(
+      origin, kFakeServiceWorkerRegistrationId,
+      base::Bind(&PlatformNotificationContextTest::DidReadAllNotificationDatas,
+                 base::Unretained(this), &notification_database_datas));
+
+  base::RunLoop().RunUntilIdle();
+
+  // The read operation should have succeeded, with the right notification.
+  ASSERT_TRUE(success());
+
+  ASSERT_EQ(1u, notification_database_datas.size());
+
+  EXPECT_EQ(tag, notification_database_datas[0].notification_data.tag);
+  EXPECT_EQ(base::ASCIIToUTF16("Second"),
+            notification_database_datas[0].notification_data.title);
+}
+
 TEST_F(PlatformNotificationContextTest, DeleteInvalidNotification) {
   scoped_refptr<PlatformNotificationContextImpl> context =
       CreatePlatformNotificationContext();
 
   context->DeleteNotificationData(
-      42 /* notification_id */, GURL("https://example.com"),
+      "invalid-notification-id", GURL("https://example.com"),
       base::Bind(&PlatformNotificationContextTest::DidDeleteNotificationData,
                  base::Unretained(this)));
 
@@ -203,7 +267,7 @@ TEST_F(PlatformNotificationContextTest, DeleteNotification) {
 
   // The write operation should have succeeded with a notification id.
   ASSERT_TRUE(success());
-  EXPECT_GT(notification_id(), 0);
+  EXPECT_FALSE(notification_id().empty());
 
   context->DeleteNotificationData(
       notification_id(), origin,
@@ -267,7 +331,7 @@ TEST_F(PlatformNotificationContextTest, ServiceWorkerUnregistered) {
   base::RunLoop().RunUntilIdle();
 
   ASSERT_TRUE(success());
-  EXPECT_GT(notification_id(), 0);
+  EXPECT_FALSE(notification_id().empty());
 
   ServiceWorkerStatusCode unregister_status;
 
@@ -307,7 +371,7 @@ TEST_F(PlatformNotificationContextTest, DestroyDatabaseOnStorageWiped) {
 
   // The write operation should have succeeded with a notification id.
   ASSERT_TRUE(success());
-  EXPECT_GT(notification_id(), 0);
+  EXPECT_FALSE(notification_id().empty());
 
   // Call the OnStorageWiped override from the ServiceWorkerContextObserver,
   // which indicates that the database should go away entirely.
@@ -333,20 +397,20 @@ TEST_F(PlatformNotificationContextTest, DestroyOnDiskDatabase) {
   // Manually construct the PlatformNotificationContextImpl because this test
   // requires the database to be created on the filesystem.
   scoped_refptr<PlatformNotificationContextImpl> context(
-      new PlatformNotificationContextImpl(database_dir.path(),
+      new PlatformNotificationContextImpl(database_dir.GetPath(),
                                           browser_context(), nullptr));
 
   OverrideTaskRunnerForTesting(context.get());
 
   // Trigger a read-operation to force creating the database.
   context->ReadNotificationData(
-      42 /* notification_id */, GURL("https://example.com"),
+      "invalid-notification-id", GURL("https://example.com"),
       base::Bind(&PlatformNotificationContextTest::DidReadNotificationData,
                  base::Unretained(this)));
 
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_FALSE(IsDirectoryEmpty(database_dir.path()));
+  EXPECT_FALSE(IsDirectoryEmpty(database_dir.GetPath()));
   EXPECT_FALSE(success());
 
   // Blow away the database by faking a Service Worker Context wipe-out.
@@ -355,7 +419,7 @@ TEST_F(PlatformNotificationContextTest, DestroyOnDiskDatabase) {
   base::RunLoop().RunUntilIdle();
 
   // The database's directory should be empty at this point.
-  EXPECT_TRUE(IsDirectoryEmpty(database_dir.path()));
+  EXPECT_TRUE(IsDirectoryEmpty(database_dir.GetPath()));
 }
 
 TEST_F(PlatformNotificationContextTest, ReadAllServiceWorkerDataEmpty) {

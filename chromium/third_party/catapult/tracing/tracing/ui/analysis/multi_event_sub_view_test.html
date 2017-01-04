@@ -19,7 +19,6 @@ tr.b.unittest.testSuite(function() {
   var Thread = tr.model.Thread;
   var EventSet = tr.model.EventSet;
   var newSliceEx = tr.c.TestUtils.newSliceEx;
-  var Slice = tr.model.Slice;
 
   test('differentTitles', function() {
     var model = new Model();
@@ -46,19 +45,16 @@ tr.b.unittest.testSuite(function() {
 
     var summaryTableEl = tr.b.findDeepElementMatching(
         viewEl, 'tr-ui-a-multi-event-summary-table');
-    assert.isDefined(summaryTableEl);
-
     assert.isTrue(summaryTableEl.showTotals);
     assert.equal(tr.b.dictionaryLength(summaryTableEl.eventsByTitle), 2);
 
     var selectionSummaryTableEl = tr.b.findDeepElementMatching(
         viewEl, 'tr-ui-a-selection-summary-table');
-    assert.isDefined(selectionSummaryTableEl);
     assert.equal(selectionSummaryTableEl.selection, selection);
 
-    var detailsTableEl = tr.b.findDeepElementMatching(
-        viewEl, 'tr-ui-a-multi-event-details-table');
-    assert.isUndefined(detailsTableEl);
+    var radioPickerEl =
+        tr.b.findDeepElementMatching(viewEl, 'tr-ui-b-radio-picker');
+    assert.equal(radioPickerEl.style.display, 'none');
   });
 
   test('sameTitles', function() {
@@ -83,20 +79,16 @@ tr.b.unittest.testSuite(function() {
 
     var summaryTableEl = tr.b.findDeepElementMatching(
         viewEl, 'tr-ui-a-multi-event-summary-table');
-    assert.isDefined(summaryTableEl);
-
     assert.isFalse(summaryTableEl.showTotals);
     assert.equal(tr.b.dictionaryLength(summaryTableEl.eventsByTitle), 1);
 
     var selectionSummaryTableEl = tr.b.findDeepElementMatching(
         viewEl, 'tr-ui-a-selection-summary-table');
-    assert.isDefined(selectionSummaryTableEl);
     assert.equal(selectionSummaryTableEl.selection, selection);
 
-    var detailsTableEl = tr.b.findDeepElementMatching(
-        viewEl, 'tr-ui-a-multi-event-details-table');
-        assert.isDefined(detailsTableEl);
-    assert.equal(detailsTableEl.selection, selection);
+    var radioPickerEl =
+        tr.b.findDeepElementMatching(viewEl, 'tr-ui-b-radio-picker');
+    assert.equal(radioPickerEl.style.display, 'block');
   });
 
 });

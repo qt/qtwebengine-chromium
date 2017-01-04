@@ -318,7 +318,7 @@ server_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
 		return (1);
 	}
 	if (first_length == 0) {
-		first_length = datalen;
+		first_length = (unsigned int)datalen;
 		gettimeofday(&start_time, NULL);
 	}
 	sum += datalen;
@@ -747,7 +747,7 @@ int main(int argc, char **argv)
 		}
 
 		if (use_cb) {
-			while (!done && (messages < (number_of_messages - 1))) {
+			while (done < 2 && (messages < (number_of_messages - 1))) {
 #ifdef _WIN32
 				Sleep(1000);
 #else

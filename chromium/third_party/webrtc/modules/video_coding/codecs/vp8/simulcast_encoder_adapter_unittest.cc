@@ -11,10 +11,10 @@
 #include <memory>
 #include <vector>
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/codecs/vp8/simulcast_encoder_adapter.h"
 #include "webrtc/modules/video_coding/codecs/vp8/simulcast_unittest.h"
+#include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/test/gmock.h"
 
 namespace webrtc {
 namespace testing {
@@ -118,11 +118,11 @@ class MockVideoEncoder : public VideoEncoder {
     return 0;
   }
 
-  int32_t Encode(const VideoFrame& inputImage,
-                 const CodecSpecificInfo* codecSpecificInfo,
-                 const std::vector<FrameType>* frame_types) /* override */ {
-    return encode_return_value_;
-  }
+  MOCK_METHOD3(
+      Encode,
+      int32_t(const VideoFrame& inputImage,
+              const CodecSpecificInfo* codecSpecificInfo,
+              const std::vector<FrameType>* frame_types) /* override */);
 
   int32_t RegisterEncodeCompleteCallback(
       EncodedImageCallback* callback) /* override */ {
@@ -133,6 +133,7 @@ class MockVideoEncoder : public VideoEncoder {
   int32_t Release() /* override */ { return 0; }
 
   int32_t SetRates(uint32_t newBitRate, uint32_t frameRate) /* override */ {
+    last_set_bitrate_ = static_cast<int32_t>(newBitRate);
     return 0;
   }
 
@@ -159,16 +160,14 @@ class MockVideoEncoder : public VideoEncoder {
   void set_supports_native_handle(bool enabled) {
     supports_native_handle_ = enabled;
   }
-
-  void set_encode_return_value(int value) {
-    encode_return_value_ = value;
-  }
+  int32_t last_set_bitrate() const { return last_set_bitrate_; }
 
   MOCK_CONST_METHOD0(ImplementationName, const char*());
 
  private:
   bool supports_native_handle_ = false;
-  int encode_return_value_ = WEBRTC_VIDEO_CODEC_OK;
+  int32_t last_set_bitrate_ = -1;
+
   VideoCodec codec_;
   EncodedImageCallback* callback_;
 };
@@ -247,16 +246,16 @@ class TestSimulcastEncoderAdapterFake : public ::testing::Test,
         last_encoded_image_simulcast_index_(-1) {}
   virtual ~TestSimulcastEncoderAdapterFake() {}
 
-  int32_t Encoded(const EncodedImage& encodedImage,
-                  const CodecSpecificInfo* codecSpecificInfo = NULL,
-                  const RTPFragmentationHeader* fragmentation = NULL) override {
-    last_encoded_image_width_ = encodedImage._encodedWidth;
-    last_encoded_image_height_ = encodedImage._encodedHeight;
-    if (codecSpecificInfo) {
+  Result OnEncodedImage(const EncodedImage& encoded_image,
+                        const CodecSpecificInfo* codec_specific_info,
+                        const RTPFragmentationHeader* fragmentation) override {
+    last_encoded_image_width_ = encoded_image._encodedWidth;
+    last_encoded_image_height_ = encoded_image._encodedHeight;
+    if (codec_specific_info) {
       last_encoded_image_simulcast_index_ =
-          codecSpecificInfo->codecSpecific.VP8.simulcastIdx;
+          codec_specific_info->codecSpecific.VP8.simulcastIdx;
     }
-    return 0;
+    return Result(Result::OK, encoded_image._timeStamp);
   }
 
   bool GetLastEncodedImageInfo(int* out_width,
@@ -429,6 +428,26 @@ TEST_F(TestSimulcastEncoderAdapterFake, SupportsNativeHandleForSingleStreams) {
   EXPECT_FALSE(adapter_->SupportsNativeHandle());
 }
 
+TEST_F(TestSimulcastEncoderAdapterFake, SetRatesUnderMinBitrate) {
+  TestVp8Simulcast::DefaultSettings(
+      &codec_, static_cast<const int*>(kTestTemporalLayerProfile));
+  codec_.minBitrate = 50;
+  codec_.numberOfSimulcastStreams = 1;
+  EXPECT_EQ(0, adapter_->InitEncode(&codec_, 1, 1200));
+
+  // Above min should be respected.
+  adapter_->SetRates(100, 30);
+  EXPECT_EQ(100, helper_->factory()->encoders()[0]->last_set_bitrate());
+
+  // Below min but non-zero should be replaced with the min bitrate.
+  adapter_->SetRates(15, 30);
+  EXPECT_EQ(50, helper_->factory()->encoders()[0]->last_set_bitrate());
+
+  // Zero should be passed on as is, since it means "pause".
+  adapter_->SetRates(0, 30);
+  EXPECT_EQ(0, helper_->factory()->encoders()[0]->last_set_bitrate());
+}
+
 TEST_F(TestSimulcastEncoderAdapterFake, SupportsImplementationName) {
   EXPECT_STREQ("SimulcastEncoderAdapter", adapter_->ImplementationName());
   TestVp8Simulcast::DefaultSettings(
@@ -452,9 +471,7 @@ TEST_F(TestSimulcastEncoderAdapterFake, SupportsImplementationName) {
 }
 
 TEST_F(TestSimulcastEncoderAdapterFake,
-       SupportsNativeHandleDisabledForMultipleStreams) {
-  // TODO(pbos): Implement actual test (verify that it works) when implemented
-  // for multiple streams.
+       SupportsNativeHandleForMultipleStreams) {
   TestVp8Simulcast::DefaultSettings(
       &codec_, static_cast<const int*>(kTestTemporalLayerProfile));
   codec_.numberOfSimulcastStreams = 3;
@@ -463,7 +480,47 @@ TEST_F(TestSimulcastEncoderAdapterFake,
   ASSERT_EQ(3u, helper_->factory()->encoders().size());
   for (MockVideoEncoder* encoder : helper_->factory()->encoders())
     encoder->set_supports_native_handle(true);
+  // If one encoder doesn't support it, then overall support is disabled.
+  helper_->factory()->encoders()[0]->set_supports_native_handle(false);
   EXPECT_FALSE(adapter_->SupportsNativeHandle());
+  // Once all do, then the adapter claims support.
+  helper_->factory()->encoders()[0]->set_supports_native_handle(true);
+  EXPECT_TRUE(adapter_->SupportsNativeHandle());
+}
+
+class FakeNativeHandleBuffer : public NativeHandleBuffer {
+ public:
+  FakeNativeHandleBuffer(void* native_handle, int width, int height)
+      : NativeHandleBuffer(native_handle, width, height) {}
+  rtc::scoped_refptr<VideoFrameBuffer> NativeToI420Buffer() override {
+    RTC_NOTREACHED();
+    return nullptr;
+  }
+};
+
+TEST_F(TestSimulcastEncoderAdapterFake,
+       NativeHandleForwardingForMultipleStreams) {
+  TestVp8Simulcast::DefaultSettings(
+      &codec_, static_cast<const int*>(kTestTemporalLayerProfile));
+  codec_.numberOfSimulcastStreams = 3;
+  // High start bitrate, so all streams are enabled.
+  codec_.startBitrate = 3000;
+  EXPECT_EQ(0, adapter_->InitEncode(&codec_, 1, 1200));
+  adapter_->RegisterEncodeCompleteCallback(this);
+  ASSERT_EQ(3u, helper_->factory()->encoders().size());
+  for (MockVideoEncoder* encoder : helper_->factory()->encoders())
+    encoder->set_supports_native_handle(true);
+  EXPECT_TRUE(adapter_->SupportsNativeHandle());
+
+  rtc::scoped_refptr<VideoFrameBuffer> buffer(
+      new rtc::RefCountedObject<FakeNativeHandleBuffer>(this, 1280, 720));
+  VideoFrame input_frame(buffer, 100, 1000, kVideoRotation_180);
+  // Expect calls with the given video frame verbatim, since it's a texture
+  // frame and can't otherwise be modified/resized.
+  for (MockVideoEncoder* encoder : helper_->factory()->encoders())
+    EXPECT_CALL(*encoder, Encode(::testing::Ref(input_frame), _, _)).Times(1);
+  std::vector<FrameType> frame_types(3, kVideoFrameKey);
+  EXPECT_EQ(0, adapter_->Encode(input_frame, NULL, &frame_types));
 }
 
 TEST_F(TestSimulcastEncoderAdapterFake, TestFailureReturnCodesFromEncodeCalls) {
@@ -474,21 +531,15 @@ TEST_F(TestSimulcastEncoderAdapterFake, TestFailureReturnCodesFromEncodeCalls) {
   adapter_->RegisterEncodeCompleteCallback(this);
   ASSERT_EQ(3u, helper_->factory()->encoders().size());
   // Tell the 2nd encoder to request software fallback.
-  helper_->factory()->encoders()[1]->set_encode_return_value(
-      WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE);
+  EXPECT_CALL(*helper_->factory()->encoders()[1], Encode(_, _, _))
+      .WillOnce(Return(WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE));
 
   // Send a fake frame and assert the return is software fallback.
-  VideoFrame input_frame;
   int half_width = (kDefaultWidth + 1) / 2;
-  input_frame.CreateEmptyFrame(kDefaultWidth, kDefaultHeight, kDefaultWidth,
-                                half_width, half_width);
-  memset(input_frame.video_frame_buffer()->MutableDataY(), 0,
-         input_frame.allocated_size(kYPlane));
-  memset(input_frame.video_frame_buffer()->MutableDataU(), 0,
-         input_frame.allocated_size(kUPlane));
-  memset(input_frame.video_frame_buffer()->MutableDataV(), 0,
-         input_frame.allocated_size(kVPlane));
-
+  rtc::scoped_refptr<I420Buffer> input_buffer = I420Buffer::Create(
+      kDefaultWidth, kDefaultHeight, kDefaultWidth, half_width, half_width);
+  input_buffer->InitializeData();
+  VideoFrame input_frame(input_buffer, 0, 0, webrtc::kVideoRotation_0);
   std::vector<FrameType> frame_types(3, kVideoFrameKey);
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE,
             adapter_->Encode(input_frame, nullptr, &frame_types));

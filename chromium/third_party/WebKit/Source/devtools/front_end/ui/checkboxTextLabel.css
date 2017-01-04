@@ -18,6 +18,10 @@ input {
     flex-shrink: 0;
 }
 
+input.dt-checkbox-visualize-focus:focus {
+    outline: auto 5px -webkit-focus-ring-color;
+}
+
 input.dt-checkbox-themed {
     -webkit-appearance: none;
     margin: 0 5px auto 2px;
@@ -48,7 +52,7 @@ input.dt-checkbox-themed:after {
     -webkit-mask-position: -128px -110px;
 }
 
-@media (-webkit-min-device-pixel-ratio: 1.5) {
+@media (-webkit-min-device-pixel-ratio: 1.1) {
 input.dt-checkbox-themed:after {
     -webkit-mask-image: url(Images/toolbarButtonGlyphs_2x.png);
 }

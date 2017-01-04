@@ -57,7 +57,7 @@ void WorkerPoolImpl::PostTask(const tracked_objects::Location& from_here,
   pool_->PostTask(from_here, task);
 }
 
-base::LazyInstance<WorkerPoolImpl> g_lazy_worker_pool =
+base::LazyInstance<WorkerPoolImpl>::Leaky g_lazy_worker_pool =
     LAZY_INSTANCE_INITIALIZER;
 
 class WorkerThread : public PlatformThread::Delegate {
@@ -150,8 +150,7 @@ void PosixDynamicThreadPool::AddTask(PendingTask* pending_task) {
   DCHECK(!terminated_)
       << "This thread pool is already terminated.  Do not post new tasks.";
 
-  pending_tasks_.push(*pending_task);
-  pending_task->task.Reset();
+  pending_tasks_.push(std::move(*pending_task));
 
   // We have enough worker threads.
   if (static_cast<size_t>(num_idle_threads_) >= pending_tasks_.size()) {
@@ -186,7 +185,7 @@ PendingTask PosixDynamicThreadPool::WaitForTask() {
     }
   }
 
-  PendingTask pending_task = pending_tasks_.front();
+  PendingTask pending_task = std::move(pending_tasks_.front());
   pending_tasks_.pop();
   return pending_task;
 }

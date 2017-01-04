@@ -7,15 +7,16 @@
 #include <utility>
 #include <vector>
 
-#include "ash/desktop_background/user_wallpaper_delegate.h"
-#include "ash/new_window_delegate.h"
+#include "ash/common/new_window_delegate.h"
+#include "ash/common/shell_delegate.h"
+#include "ash/common/wallpaper/wallpaper_delegate.h"
+#include "ash/common/wm_shell.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
+#include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
 #include "components/arc/intent_helper/activity_icon_loader.h"
 #include "components/arc/intent_helper/link_handler_model_impl.h"
 #include "components/arc/intent_helper/local_activity_resolver.h"
-#include "components/arc/set_wallpaper_delegate.h"
 #include "ui/base/layout.h"
 #include "url/gurl.h"
 
@@ -30,12 +31,10 @@ constexpr char kArcIntentHelperPackageName[] = "org.chromium.arc.intent_helper";
 ArcIntentHelperBridge::ArcIntentHelperBridge(
     ArcBridgeService* bridge_service,
     const scoped_refptr<ActivityIconLoader>& icon_loader,
-    std::unique_ptr<SetWallpaperDelegate> set_wallpaper_delegate,
     const scoped_refptr<LocalActivityResolver>& activity_resolver)
     : ArcService(bridge_service),
       binding_(this),
       icon_loader_(icon_loader),
-      set_wallpaper_delegate_(std::move(set_wallpaper_delegate)),
       activity_resolver_(activity_resolver) {
   DCHECK(thread_checker_.CalledOnValidThread());
   arc_bridge_service()->intent_helper()->AddObserver(this);
@@ -49,8 +48,10 @@ ArcIntentHelperBridge::~ArcIntentHelperBridge() {
 void ArcIntentHelperBridge::OnInstanceReady() {
   DCHECK(thread_checker_.CalledOnValidThread());
   ash::Shell::GetInstance()->set_link_handler_model_factory(this);
-  arc_bridge_service()->intent_helper()->instance()->Init(
-      binding_.CreateInterfacePtrAndBind());
+  auto* instance =
+      arc_bridge_service()->intent_helper()->GetInstanceForMethod("Init");
+  DCHECK(instance);
+  instance->Init(binding_.CreateInterfacePtrAndBind());
 }
 
 void ArcIntentHelperBridge::OnInstanceClosed() {
@@ -70,23 +71,24 @@ void ArcIntentHelperBridge::OnOpenDownloads() {
   // downloads by default, which is what we want.  However if it is open it will
   // simply be brought to the forgeground without forcibly being navigated to
   // downloads, which is probably not ideal.
-  ash::Shell::GetInstance()->new_window_delegate()->OpenFileManager();
+  ash::WmShell::Get()->new_window_delegate()->OpenFileManager();
 }
 
 void ArcIntentHelperBridge::OnOpenUrl(const mojo::String& url) {
   DCHECK(thread_checker_.CalledOnValidThread());
   GURL gurl(url.get());
-  ash::Shell::GetInstance()->delegate()->OpenUrlFromArc(gurl);
+  ash::WmShell::Get()->delegate()->OpenUrlFromArc(gurl);
 }
 
 void ArcIntentHelperBridge::OpenWallpaperPicker() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  ash::Shell::GetInstance()->user_wallpaper_delegate()->OpenSetWallpaperPage();
+  ash::WmShell::Get()->wallpaper_delegate()->OpenSetWallpaperPage();
 }
 
-void ArcIntentHelperBridge::SetWallpaper(mojo::Array<uint8_t> jpeg_data) {
+void ArcIntentHelperBridge::SetWallpaperDeprecated(
+    mojo::Array<uint8_t> jpeg_data) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  set_wallpaper_delegate_->SetWallpaper(jpeg_data.PassStorage());
+  LOG(ERROR) << "IntentHelper.SetWallpaper is deprecated";
 }
 
 std::unique_ptr<ash::LinkHandlerModel> ArcIntentHelperBridge::CreateModel(
@@ -106,16 +108,61 @@ bool ArcIntentHelperBridge::IsIntentHelperPackage(
 }
 
 // static
-mojo::Array<mojom::UrlHandlerInfoPtr>
+mojo::Array<mojom::IntentHandlerInfoPtr>
 ArcIntentHelperBridge::FilterOutIntentHelper(
-    mojo::Array<mojom::UrlHandlerInfoPtr> handlers) {
-  mojo::Array<mojom::UrlHandlerInfoPtr> handlers_filtered;
+    mojo::Array<mojom::IntentHandlerInfoPtr> handlers) {
+  mojo::Array<mojom::IntentHandlerInfoPtr> handlers_filtered;
   for (auto& handler : handlers) {
     if (IsIntentHelperPackage(handler->package_name.get()))
       continue;
     handlers_filtered.push_back(std::move(handler));
   }
   return handlers_filtered;
+}
+
+// static
+mojom::IntentHelperInstance*
+ArcIntentHelperBridge::GetIntentHelperInstanceWithErrorCode(
+    const std::string& method_name_for_logging,
+    uint32_t min_instance_version,
+    GetResult* out_error_code) {
+  ArcBridgeService* bridge_service = ArcBridgeService::Get();
+  if (!bridge_service) {
+    if (!ArcBridgeService::GetEnabled(base::CommandLine::ForCurrentProcess())) {
+      VLOG(2) << "ARC bridge is not supported.";
+      if (out_error_code)
+        *out_error_code = GetResult::FAILED_ARC_NOT_SUPPORTED;
+    } else {
+      VLOG(2) << "ARC bridge is not ready.";
+      if (out_error_code)
+        *out_error_code = GetResult::FAILED_ARC_NOT_READY;
+    }
+    return nullptr;
+  }
+
+  if (!bridge_service->intent_helper()->has_instance()) {
+    VLOG(2) << "ARC intent helper instance is not ready.";
+    if (out_error_code)
+      *out_error_code = GetResult::FAILED_ARC_NOT_READY;
+    return nullptr;
+  }
+
+  auto* instance = bridge_service->intent_helper()->GetInstanceForMethod(
+      method_name_for_logging, min_instance_version);
+  if (!instance) {
+    if (out_error_code)
+      *out_error_code = GetResult::FAILED_ARC_NOT_SUPPORTED;
+    return nullptr;
+  }
+  return instance;
+}
+
+// static
+mojom::IntentHelperInstance* ArcIntentHelperBridge::GetIntentHelperInstance(
+    const std::string& method_name_for_logging,
+    uint32_t min_instance_version) {
+  return GetIntentHelperInstanceWithErrorCode(method_name_for_logging,
+                                              min_instance_version, nullptr);
 }
 
 void ArcIntentHelperBridge::OnIntentFiltersUpdated(

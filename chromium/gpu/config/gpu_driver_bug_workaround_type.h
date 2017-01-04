@@ -13,12 +13,14 @@
 // throughout the table.
 // clang-format off
 #define GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)                   \
+  GPU_OP(ADD_AND_TRUE_TO_LOOP_CONDITION,                     \
+         add_and_true_to_loop_condition)                     \
   GPU_OP(AVDA_DONT_COPY_PICTURES,                            \
          avda_dont_copy_pictures)                            \
-  GPU_OP(AVDA_NO_EGLIMAGE_FOR_LUMINANCE_TEX,                 \
-         avda_no_eglimage_for_luminance_tex)                 \
   GPU_OP(AVOID_EGL_IMAGE_TARGET_TEXTURE_REUSE,               \
          avoid_egl_image_target_texture_reuse)               \
+  GPU_OP(AVOID_ONE_COMPONENT_EGL_IMAGES,                     \
+         avoid_one_component_egl_images)                     \
   GPU_OP(BROKEN_EGL_IMAGE_REF_COUNTING,                      \
          broken_egl_image_ref_counting)                      \
   GPU_OP(CLEAR_ALPHA_IN_READPIXELS,                          \
@@ -27,10 +29,14 @@
          clear_uniforms_before_first_program_use)            \
   GPU_OP(COUNT_ALL_IN_VARYINGS_PACKING,                      \
          count_all_in_varyings_packing)                      \
+  GPU_OP(CREATE_DEFAULT_GL_CONTEXT,                          \
+         create_default_gl_context)                          \
   GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
          disable_angle_instanced_arrays)                     \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
          disable_async_readpixels)                           \
+  GPU_OP(DISABLE_AV_SAMPLE_BUFFER_DISPLAY_LAYER,             \
+         disable_av_sample_buffer_display_layer)             \
   GPU_OP(DISABLE_BLEND_EQUATION_ADVANCED,                    \
          disable_blend_equation_advanced)                    \
   GPU_OP(DISABLE_CHROMIUM_FRAMEBUFFER_MULTISAMPLE,           \
@@ -45,8 +51,8 @@
          disable_discard_framebuffer)                        \
   GPU_OP(DISABLE_DXGI_ZERO_COPY_VIDEO,                       \
          disable_dxgi_zero_copy_video)                       \
-  GPU_OP(DISABLE_NV12_DXGI_VIDEO,                            \
-         disable_nv12_dxgi_video)                            \
+  GPU_OP(DISABLE_ES3_GL_CONTEXT,                             \
+         disable_es3_gl_context)                             \
   GPU_OP(DISABLE_EXT_DRAW_BUFFERS,                           \
          disable_ext_draw_buffers)                           \
   GPU_OP(DISABLE_FRAMEBUFFER_CMAA,                           \
@@ -55,26 +61,32 @@
          disable_gl_rgb_format)                              \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
-  GPU_OP(DISABLE_MULTISAMPLED_RENDER_TO_TEXTURE,             \
-         disable_multisampled_render_to_texture)             \
+  GPU_OP(DISABLE_NV12_DXGI_VIDEO,                            \
+         disable_nv12_dxgi_video)                            \
   GPU_OP(DISABLE_OVERLAY_CA_LAYERS,                          \
          disable_overlay_ca_layers)                          \
   GPU_OP(DISABLE_POST_SUB_BUFFERS_FOR_ONSCREEN_SURFACES,     \
          disable_post_sub_buffers_for_onscreen_surfaces)     \
   GPU_OP(DISABLE_PROGRAM_CACHE,                              \
          disable_program_cache)                              \
+  GPU_OP(DISABLE_PROGRAM_DISK_CACHE,                         \
+         disable_program_disk_cache)                         \
   GPU_OP(DISABLE_TEXTURE_CUBE_MAP_SEAMLESS,                  \
          disable_texture_cube_map_seamless)                  \
   GPU_OP(DISABLE_TEXTURE_STORAGE,                            \
          disable_texture_storage)                            \
   GPU_OP(DISABLE_TIMESTAMP_QUERIES,                          \
          disable_timestamp_queries)                          \
-  GPU_OP(DISABLE_WEBGL_MULTISAMPLING_COLOR_MASK_USAGE,       \
-         disable_webgl_multisampling_color_mask_usage)       \
+  GPU_OP(DISABLE_MULTISAMPLING_COLOR_MASK_USAGE,             \
+         disable_multisampling_color_mask_usage)             \
   GPU_OP(DISABLE_WEBGL_RGB_MULTISAMPLING_USAGE,              \
          disable_webgl_rgb_multisampling_usage)              \
+  GPU_OP(DO_TEXIMAGE_BEFORE_COPYTEXIMAGE_TO_CUBE_MAP,        \
+         do_teximage_before_copyteximage_to_cube_map)        \
   GPU_OP(ETC1_POWER_OF_TWO_ONLY,                             \
          etc1_power_of_two_only)                             \
+  GPU_OP(EMULATE_ABS_INT_FUNCTION,                           \
+         emulate_abs_int_function)                           \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
          exit_on_context_lost)                               \
   GPU_OP(FORCE_CUBE_COMPLETE,                                \
@@ -85,6 +97,8 @@
          force_discrete_gpu)                                 \
   GPU_OP(FORCE_INTEGRATED_GPU,                               \
          force_integrated_gpu)                               \
+  GPU_OP(GET_FRAG_DATA_INFO_BUG,                             \
+         get_frag_data_info_bug)                             \
   GPU_OP(GL_CLEAR_BROKEN,                                    \
          gl_clear_broken)                                    \
   GPU_OP(IGNORE_EGL_SYNC_FAILURES,                           \
@@ -93,8 +107,6 @@
          init_gl_position_in_vertex_shader)                  \
   GPU_OP(INIT_TEXTURE_MAX_ANISOTROPY,                        \
          init_texture_max_anisotropy)                        \
-  GPU_OP(INIT_VARYINGS_WITHOUT_STATIC_USE,                   \
-         init_varyings_without_static_use)                   \
   GPU_OP(INIT_VERTEX_ATTRIBUTES,                             \
          init_vertex_attributes)                             \
   GPU_OP(MAX_COPY_TEXTURE_CHROMIUM_SIZE_1048576,             \
@@ -111,20 +123,26 @@
          max_vertex_uniform_vectors_256)                     \
   GPU_OP(MSAA_IS_SLOW,                                       \
          msaa_is_slow)                                       \
-  GPU_OP(NEEDS_GLSL_BUILT_IN_FUNCTION_EMULATION,             \
-         needs_glsl_built_in_function_emulation)             \
   GPU_OP(NEEDS_OFFSCREEN_BUFFER_WORKAROUND,                  \
          needs_offscreen_buffer_workaround)                  \
   GPU_OP(PACK_PARAMETERS_WORKAROUND_WITH_PACK_BUFFER,        \
          pack_parameters_workaround_with_pack_buffer)        \
+  GPU_OP(REBIND_TRANSFORM_FEEDBACK_BEFORE_RESUME,            \
+         rebind_transform_feedback_before_resume)            \
   GPU_OP(REGENERATE_STRUCT_NAMES,                            \
          regenerate_struct_names)                            \
   GPU_OP(REMOVE_POW_WITH_CONSTANT_EXPONENT,                  \
          remove_pow_with_constant_exponent)                  \
+  GPU_OP(RESET_BASE_MIPMAP_LEVEL_BEFORE_TEXSTORAGE,          \
+         reset_base_mipmap_level_before_texstorage)          \
   GPU_OP(RESTORE_SCISSOR_ON_FBO_CHANGE,                      \
          restore_scissor_on_fbo_change)                      \
   GPU_OP(REVERSE_POINT_SPRITE_COORD_ORIGIN,                  \
          reverse_point_sprite_coord_origin)                  \
+  GPU_OP(REWRITE_DO_WHILE_LOOPS,                             \
+         rewrite_do_while_loops)                             \
+  GPU_OP(REWRITE_TEXELFETCHOFFSET_TO_TEXELFETCH,             \
+         rewrite_texelfetchoffset_to_texelfetch)             \
   GPU_OP(SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS,             \
          scalarize_vec_and_mat_constructor_args)             \
   GPU_OP(SET_TEXTURE_FILTER_BEFORE_GENERATING_MIPMAP,        \
@@ -153,8 +171,6 @@
          unpack_overlapping_rows_separately_unpack_buffer)   \
   GPU_OP(USE_CLIENT_SIDE_ARRAYS_FOR_STREAM_BUFFERS,          \
          use_client_side_arrays_for_stream_buffers)          \
-  GPU_OP(USE_CURRENT_PROGRAM_AFTER_SUCCESSFUL_LINK,          \
-         use_current_program_after_successful_link)          \
   GPU_OP(USE_INTERMEDIARY_FOR_COPY_TEXTURE_IMAGE,            \
          use_intermediary_for_copy_texture_image)            \
   GPU_OP(USE_NON_ZERO_SIZE_FOR_CLIENT_SIDE_STREAM_BUFFERS,   \

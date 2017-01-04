@@ -57,7 +57,7 @@ namespace Grpc.Core
         static readonly HashSet<Channel> registeredChannels = new HashSet<Channel>();
         static readonly HashSet<Server> registeredServers = new HashSet<Server>();
 
-        static ILogger logger = new ConsoleLogger();
+        static ILogger logger = new NullLogger();
 
         readonly object myLock = new object();
         readonly GrpcThreadPool threadPool;
@@ -104,7 +104,7 @@ namespace Grpc.Core
 
             if (instanceToShutdown != null)
             {
-                await instanceToShutdown.ShutdownAsync();
+                await instanceToShutdown.ShutdownAsync().ConfigureAwait(false);
             }
         }
 
@@ -351,8 +351,12 @@ namespace Grpc.Core
                 {
                     if (!hooksRegistered)
                     {
+                        // TODO(jtattermusch): register shutdownhooks for CoreCLR as well
+#if !NETSTANDARD1_5
+
                         AppDomain.CurrentDomain.ProcessExit += ShutdownHookHandler;
                         AppDomain.CurrentDomain.DomainUnload += ShutdownHookHandler;
+#endif
                     }
                     hooksRegistered = true;
                 }

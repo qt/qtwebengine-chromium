@@ -16,20 +16,13 @@ namespace metrics {
 // static
 bool MetricsServiceAccessor::IsMetricsReportingEnabled(
     PrefService* pref_service) {
-  return IsMetricsReportingEnabledWithPrefValue(
-      pref_service->GetBoolean(prefs::kMetricsReportingEnabled));
-}
-
-// static
-bool MetricsServiceAccessor::IsMetricsReportingEnabledWithPrefValue(
-    bool enabled_in_prefs) {
 #if defined(GOOGLE_CHROME_BUILD)
   // In official builds, disable metrics when reporting field trials are
   // forced; otherwise, use the value of the user's preference to determine
   // whether to enable metrics reporting.
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
              switches::kForceFieldTrials) &&
-         enabled_in_prefs;
+         pref_service->GetBoolean(prefs::kMetricsReportingEnabled);
 #else
   // In non-official builds, disable metrics reporting completely.
   return false;
@@ -43,6 +36,19 @@ bool MetricsServiceAccessor::RegisterSyntheticFieldTrial(
     const std::string& group_name) {
   return RegisterSyntheticFieldTrialWithNameAndGroupHash(
       metrics_service, HashName(trial_name), HashName(group_name));
+}
+
+// static
+bool MetricsServiceAccessor::RegisterSyntheticMultiGroupFieldTrial(
+    MetricsService* metrics_service,
+    const std::string& trial_name,
+    const std::vector<uint32_t>& group_name_hashes) {
+  if (!metrics_service)
+    return false;
+
+  metrics_service->RegisterSyntheticMultiGroupFieldTrial(HashName(trial_name),
+                                                         group_name_hashes);
+  return true;
 }
 
 // static

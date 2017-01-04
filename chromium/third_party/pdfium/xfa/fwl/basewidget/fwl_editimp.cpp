@@ -28,8 +28,8 @@
 #include "xfa/fwl/core/fwl_noteimp.h"
 #include "xfa/fwl/core/fwl_widgetimp.h"
 #include "xfa/fwl/core/ifwl_themeprovider.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
 namespace {
@@ -203,7 +203,6 @@ CFWL_EditImp::CFWL_EditImp(const CFWL_WidgetImpProperties& properties,
       m_fVAlignOffset(0.0f),
       m_fScrollOffsetX(0.0f),
       m_fScrollOffsetY(0.0f),
-      m_pEdtEngine(nullptr),
       m_bLButtonDown(FALSE),
       m_nSelStart(0),
       m_nLimit(-1),
@@ -223,7 +222,6 @@ CFWL_EditImp::CFWL_EditImp(const CFWL_WidgetImpProperties& properties,
 }
 
 CFWL_EditImp::~CFWL_EditImp() {
-  delete m_pEdtEngine;
   ClearRecord();
 }
 
@@ -898,26 +896,27 @@ void CFWL_EditImp::On_TextChanged(CFDE_TxtEdtEngine* pEdit,
   LayoutScrollBar();
   Repaint(&rtTemp);
 }
+
 void CFWL_EditImp::On_SelChanged(CFDE_TxtEdtEngine* pEdit) {
   CFX_RectF rtTemp;
   GetClientRect(rtTemp);
   Repaint(&rtTemp);
 }
+
 FX_BOOL CFWL_EditImp::On_PageLoad(CFDE_TxtEdtEngine* pEdit,
                                   int32_t nPageIndex,
                                   int32_t nPurpose) {
-  CFDE_TxtEdtEngine* pEdtEngine = m_pEdtEngine;
-  IFDE_TxtEdtPage* pPage = pEdtEngine->GetPage(nPageIndex);
+  IFDE_TxtEdtPage* pPage = m_pEdtEngine->GetPage(nPageIndex);
   if (!pPage)
     return FALSE;
   pPage->LoadPage(nullptr, nullptr);
   return TRUE;
 }
+
 FX_BOOL CFWL_EditImp::On_PageUnload(CFDE_TxtEdtEngine* pEdit,
                                     int32_t nPageIndex,
                                     int32_t nPurpose) {
-  CFDE_TxtEdtEngine* pEdtEngine = m_pEdtEngine;
-  IFDE_TxtEdtPage* pPage = pEdtEngine->GetPage(nPageIndex);
+  IFDE_TxtEdtPage* pPage = m_pEdtEngine->GetPage(nPageIndex);
   if (!pPage)
     return FALSE;
   pPage->UnloadPage(nullptr);
@@ -1630,7 +1629,7 @@ void CFWL_EditImp::InitScrollBar(FX_BOOL bVert) {
 
 void CFWL_EditImp::InitEngine() {
   if (!m_pEdtEngine)
-    m_pEdtEngine = new CFDE_TxtEdtEngine;
+    m_pEdtEngine.reset(new CFDE_TxtEdtEngine);
 }
 
 FX_BOOL FWL_ShowCaret(IFWL_Widget* pWidget,
@@ -1641,8 +1640,9 @@ FX_BOOL FWL_ShowCaret(IFWL_Widget* pWidget,
   if (!pXFAWidget)
     return FALSE;
 
-  IXFA_DocProvider* pDocProvider = pXFAWidget->GetDoc()->GetDocProvider();
-  if (!pDocProvider)
+  IXFA_DocEnvironment* pDocEnvironment =
+      pXFAWidget->GetDoc()->GetDocEnvironment();
+  if (!pDocEnvironment)
     return FALSE;
 
   if (bVisible) {
@@ -1650,10 +1650,10 @@ FX_BOOL FWL_ShowCaret(IFWL_Widget* pWidget,
     pXFAWidget->GetRotateMatrix(mt);
     CFX_RectF rt(*pRtAnchor);
     mt.TransformRect(rt);
-    pDocProvider->DisplayCaret(pXFAWidget, bVisible, &rt);
+    pDocEnvironment->DisplayCaret(pXFAWidget, bVisible, &rt);
     return TRUE;
   }
-  pDocProvider->DisplayCaret(pXFAWidget, bVisible, pRtAnchor);
+  pDocEnvironment->DisplayCaret(pXFAWidget, bVisible, pRtAnchor);
   return TRUE;
 }
 

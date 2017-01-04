@@ -23,7 +23,6 @@ extern const char ControlValue[];
 extern const char Control[];
 extern const char DeclarativeContent[];
 extern const char DesignMode[];
-extern const char Drag[];
 extern const char FontSizeChange[];
 extern const char Fonts[];
 extern const char FullScreen[];
@@ -34,27 +33,28 @@ extern const char Language[];
 extern const char LinkColorChange[];
 extern const char PlatformColorChange[];
 extern const char PropagateInheritChangeToDistributedNodes[];
+extern const char PropertyRegistration[];
+extern const char PropertyUnregistration[];
 extern const char PseudoClass[];
 extern const char SVGContainerSizeChange[];
 extern const char SVGCursor[];
 extern const char SVGFilterLayerUpdate[];
 extern const char Settings[];
 extern const char Shadow[];
-extern const char SiblingSelector[];
 extern const char StyleInvalidator[];
 extern const char StyleSheetChange[];
-extern const char Validate[];
 extern const char ViewportUnits[];
 extern const char VisitedLink[];
 extern const char VisuallyOrdered[];
 extern const char WritingModeChange[];
 extern const char Zoom[];
-} // namespace StyleChangeReason
+}  // namespace StyleChangeReason
 typedef const char StyleChangeReasonString[];
 
 namespace StyleChangeExtraData {
 extern const AtomicString& Active;
 extern const AtomicString& Disabled;
+extern const AtomicString& Drag;
 extern const AtomicString& Focus;
 extern const AtomicString& Hover;
 extern const AtomicString& Past;
@@ -69,41 +69,42 @@ void init();
 // |StyleChangeReasonForTracing| is strictly only for the tracing purpose as
 // described above. Blink logic must not depend on this value.
 class StyleChangeReasonForTracing {
-    DISALLOW_NEW();
-public:
-    static StyleChangeReasonForTracing create(StyleChangeReasonString reasonString)
-    {
-        return StyleChangeReasonForTracing(reasonString, nullAtom);
-    }
+  DISALLOW_NEW();
 
-    static StyleChangeReasonForTracing createWithExtraData(StyleChangeReasonString reasonString, const AtomicString& extraData)
-    {
-        return StyleChangeReasonForTracing(reasonString, extraData);
-    }
+ public:
+  static StyleChangeReasonForTracing create(
+      StyleChangeReasonString reasonString) {
+    return StyleChangeReasonForTracing(reasonString, nullAtom);
+  }
 
-    static StyleChangeReasonForTracing fromAttribute(const QualifiedName& attributeName)
-    {
-        return StyleChangeReasonForTracing(StyleChangeReason::Attribute, attributeName.localName());
-    }
+  static StyleChangeReasonForTracing createWithExtraData(
+      StyleChangeReasonString reasonString,
+      const AtomicString& extraData) {
+    return StyleChangeReasonForTracing(reasonString, extraData);
+  }
 
-    String reasonString() const { return String(m_reason); }
-    const AtomicString& getExtraData() const { return m_extraData; }
+  static StyleChangeReasonForTracing fromAttribute(
+      const QualifiedName& attributeName) {
+    return StyleChangeReasonForTracing(StyleChangeReason::Attribute,
+                                       attributeName.localName());
+  }
 
-private:
-    StyleChangeReasonForTracing(StyleChangeReasonString reasonString, const AtomicString& extraData)
-        : m_reason(reasonString)
-        , m_extraData(extraData)
-    {
-    }
+  String reasonString() const { return String(m_reason); }
+  const AtomicString& getExtraData() const { return m_extraData; }
 
-    // disable comparisons
-    void operator==(const StyleChangeReasonForTracing&) const { }
-    void operator!=(const StyleChangeReasonForTracing&) const { }
+ private:
+  StyleChangeReasonForTracing(StyleChangeReasonString reasonString,
+                              const AtomicString& extraData)
+      : m_reason(reasonString), m_extraData(extraData) {}
 
-    const char* m_reason;
-    AtomicString m_extraData;
+  // disable comparisons
+  void operator==(const StyleChangeReasonForTracing&) const {}
+  void operator!=(const StyleChangeReasonForTracing&) const {}
+
+  const char* m_reason;
+  AtomicString m_extraData;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // StyleChangeReason_h
+#endif  // StyleChangeReason_h

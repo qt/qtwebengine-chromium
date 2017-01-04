@@ -4,6 +4,7 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "ui/accessibility/ax_view_state.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/label.h"
@@ -30,16 +31,27 @@ class NativeViewAccessibilityTest : public ViewsTestBase {
 
   void SetUp() override {
     ViewsTestBase::SetUp();
-    button_.reset(new TestButton());
-    button_->SetSize(gfx::Size(20, 20));
-    button_accessibility_ = NativeViewAccessibility::Create(button_.get());
 
-    label_.reset(new Label);
-    button_->AddChildView(label_.get());
-    label_accessibility_ = NativeViewAccessibility::Create(label_.get());
+    widget_ = new views::Widget;
+    views::Widget::InitParams params =
+        CreateParams(views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
+    params.bounds = gfx::Rect(0, 0, 200, 200);
+    widget_->Init(params);
+
+    button_ = new TestButton();
+    button_->SetSize(gfx::Size(20, 20));
+    button_accessibility_ = NativeViewAccessibility::Create(button_);
+
+    label_ = new Label();
+    button_->AddChildView(label_);
+    label_accessibility_ = NativeViewAccessibility::Create(label_);
+
+    widget_->SetContentsView(button_);
   }
 
   void TearDown() override {
+    if (!widget_->IsClosed())
+      widget_->Close();
     button_accessibility_->Destroy();
     button_accessibility_ = NULL;
     label_accessibility_->Destroy();
@@ -48,9 +60,10 @@ class NativeViewAccessibilityTest : public ViewsTestBase {
   }
 
  protected:
-  std::unique_ptr<TestButton> button_;
+  views::Widget* widget_;
+  TestButton* button_;
   NativeViewAccessibility* button_accessibility_;
-  std::unique_ptr<Label> label_;
+  Label* label_;
   NativeViewAccessibility* label_accessibility_;
 };
 
@@ -60,7 +73,8 @@ TEST_F(NativeViewAccessibilityTest, RoleShouldMatch) {
 }
 
 TEST_F(NativeViewAccessibilityTest, BoundsShouldMatch) {
-  gfx::Rect bounds = button_accessibility_->GetData().location;
+  gfx::Rect bounds = gfx::ToEnclosingRect(
+      button_accessibility_->GetData().location);
   bounds.Offset(button_accessibility_->GetGlobalCoordinateOffset());
   EXPECT_EQ(button_->GetBoundsInScreen(), bounds);
 }

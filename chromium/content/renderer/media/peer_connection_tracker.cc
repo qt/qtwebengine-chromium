@@ -1,10 +1,14 @@
 // Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "content/renderer/media/peer_connection_tracker.h"
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include <memory>
+#include <utility>
 
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -271,7 +275,8 @@ static base::DictionaryValue* GetDictValueStats(const StatsReport& report) {
 
 // Builds a DictionaryValue from the StatsReport.
 // The caller takes the ownership of the returned value.
-static base::DictionaryValue* GetDictValue(const StatsReport& report) {
+static std::unique_ptr<base::DictionaryValue> GetDictValue(
+    const StatsReport& report) {
   std::unique_ptr<base::DictionaryValue> stats, result;
 
   stats.reset(GetDictValueStats(report));
@@ -286,7 +291,7 @@ static base::DictionaryValue* GetDictValue(const StatsReport& report) {
   result->SetString("id", report.id()->ToString());
   result->SetString("type", report.TypeToString());
 
-  return result.release();
+  return result;
 }
 
 class InternalStatsObserver : public webrtc::StatsObserver {
@@ -298,9 +303,9 @@ class InternalStatsObserver : public webrtc::StatsObserver {
     std::unique_ptr<base::ListValue> list(new base::ListValue());
 
     for (const auto* r : reports) {
-      base::DictionaryValue* report = GetDictValue(*r);
+      std::unique_ptr<base::DictionaryValue> report = GetDictValue(*r);
       if (report)
-        list->Append(report);
+        list->Append(std::move(report));
     }
 
     if (!list->empty()) {
@@ -343,6 +348,8 @@ bool PeerConnectionTracker::OnControlMessageReceived(
   IPC_BEGIN_MESSAGE_MAP(PeerConnectionTracker, message)
     IPC_MESSAGE_HANDLER(PeerConnectionTracker_GetAllStats, OnGetAllStats)
     IPC_MESSAGE_HANDLER(PeerConnectionTracker_OnSuspend, OnSuspend)
+    IPC_MESSAGE_HANDLER(PeerConnectionTracker_StartEventLog, OnStartEventLog)
+    IPC_MESSAGE_HANDLER(PeerConnectionTracker_StopEventLog, OnStopEventLog)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -377,6 +384,36 @@ void PeerConnectionTracker::OnSuspend() {
   for (PeerConnectionIdMap::iterator it = peer_connection_id_map_.begin();
        it != peer_connection_id_map_.end(); ++it) {
     it->first->CloseClientPeerConnection();
+  }
+}
+
+void PeerConnectionTracker::OnStartEventLog(int peer_connection_id,
+                                            IPC::PlatformFileForTransit file) {
+  DCHECK(main_thread_.CalledOnValidThread());
+  for (auto& it : peer_connection_id_map_) {
+    if (it.second == peer_connection_id) {
+#if defined(OS_ANDROID)
+      // A lower maximum filesize is used on Android because storage space is
+      // more scarce on mobile. This upper limit applies to each peerconnection
+      // individually, so the total amount of used storage can be a multiple of
+      // this.
+      const int64_t kMaxFilesizeBytes = 10000000;
+#else
+      const int64_t kMaxFilesizeBytes = 60000000;
+#endif
+      it.first->StartEventLog(file, kMaxFilesizeBytes);
+      return;
+    }
+  }
+}
+
+void PeerConnectionTracker::OnStopEventLog(int peer_connection_id) {
+  DCHECK(main_thread_.CalledOnValidThread());
+  for (auto& it : peer_connection_id_map_) {
+    if (it.second == peer_connection_id) {
+      it.first->StopEventLog();
+      return;
+    }
   }
 }
 

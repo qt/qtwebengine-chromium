@@ -134,6 +134,7 @@ TEST(DriveAPIParserTest, FileListParser) {
   EXPECT_EQ("application/octet-stream", file1.mime_type());
 
   EXPECT_FALSE(file1.labels().is_trashed());
+  EXPECT_FALSE(file1.labels().is_starred());
   EXPECT_FALSE(file1.shared());
 
   EXPECT_EQ(640, file1.image_media_metadata().width());
@@ -152,9 +153,6 @@ TEST(DriveAPIParserTest, FileListParser) {
 
   ASSERT_EQ(1U, file1.parents().size());
   EXPECT_EQ("0B4v7G8yEYAWHYW1OcExsUVZLABC", file1.parents()[0].file_id());
-  EXPECT_EQ(GURL("https://www.googleapis.com/drive/v2/files/"
-                 "0B4v7G8yEYAWHYW1OcExsUVZLABC"),
-            file1.parents()[0].parent_link());
 
   EXPECT_EQ("d41d8cd98f00b204e9800998ecf8427e", file1.md5_checksum());
   EXPECT_EQ(1000U, file1.file_size());
@@ -174,6 +172,7 @@ TEST(DriveAPIParserTest, FileListParser) {
   EXPECT_EQ("application/vnd.google-apps.document", file2.mime_type());
 
   EXPECT_TRUE(file2.labels().is_trashed());
+  EXPECT_TRUE(file2.labels().is_starred());
   EXPECT_TRUE(file2.shared());
 
   EXPECT_EQ(-1, file2.image_media_metadata().width());

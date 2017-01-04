@@ -18,8 +18,10 @@
 #include "device/usb/usb_device.h"
 #include "device/usb/usb_device_filter.h"
 #include "device/usb/usb_service.h"
+#include "mojo/common/common_type_converters.h"
 #include "mojo/public/cpp/bindings/array.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 
 namespace device {
 namespace usb {
@@ -31,18 +33,18 @@ void DeviceManagerImpl::Create(
   DCHECK(DeviceClient::Get());
   UsbService* usb_service = DeviceClient::Get()->GetUsbService();
   if (usb_service) {
-    new DeviceManagerImpl(permission_provider, usb_service, std::move(request));
+    mojo::MakeStrongBinding(
+        base::MakeUnique<DeviceManagerImpl>(permission_provider, usb_service),
+        std::move(request));
   }
 }
 
 DeviceManagerImpl::DeviceManagerImpl(
     base::WeakPtr<PermissionProvider> permission_provider,
-    UsbService* usb_service,
-    mojo::InterfaceRequest<DeviceManager> request)
+    UsbService* usb_service)
     : permission_provider_(permission_provider),
       usb_service_(usb_service),
       observer_(this),
-      binding_(this, std::move(request)),
       weak_factory_(this) {
   // This object owns itself and will be destroyed if the message pipe it is
   // bound to is closed, the message loop is destructed, or the UsbService is
@@ -63,7 +65,7 @@ void DeviceManagerImpl::GetDevices(EnumerationOptionsPtr options,
 }
 
 void DeviceManagerImpl::GetDevice(
-    const mojo::String& guid,
+    const std::string& guid,
     mojo::InterfaceRequest<Device> device_request) {
   scoped_refptr<UsbDevice> device = usb_service_->GetDevice(guid);
   if (!device)
@@ -71,6 +73,7 @@ void DeviceManagerImpl::GetDevice(
 
   if (permission_provider_ &&
       permission_provider_->HasDevicePermission(device)) {
+    // Owns itself.
     new DeviceImpl(device, DeviceInfo::From(*device), permission_provider_,
                    std::move(device_request));
   }
@@ -85,12 +88,12 @@ void DeviceManagerImpl::OnGetDevices(
     const GetDevicesCallback& callback,
     const std::vector<scoped_refptr<UsbDevice>>& devices) {
   std::vector<UsbDeviceFilter> filters;
-  if (options)
-    filters = options->filters.To<std::vector<UsbDeviceFilter>>();
+  if (options && options->filters)
+    filters = mojo::ConvertTo<std::vector<UsbDeviceFilter>>(*options->filters);
 
-  mojo::Array<DeviceInfoPtr> device_infos;
+  std::vector<DeviceInfoPtr> device_infos;
   for (const auto& device : devices) {
-    if (filters.empty() || UsbDeviceFilter::MatchesAny(device, filters)) {
+    if (UsbDeviceFilter::MatchesAny(device, filters)) {
       if (permission_provider_ &&
           permission_provider_->HasDevicePermission(device)) {
         device_infos.push_back(DeviceInfo::From(*device));

@@ -7,9 +7,8 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("../build/webrtc.gni")
-import("//testing/test.gni")
 
-source_set("video") {
+rtc_static_library("video") {
   sources = [
     "call_stats.cc",
     "call_stats.h",
@@ -25,6 +24,8 @@ source_set("video") {
     "report_block_stats.h",
     "rtp_stream_receiver.cc",
     "rtp_stream_receiver.h",
+    "rtp_streams_synchronizer.cc",
+    "rtp_streams_synchronizer.h",
     "send_delay_stats.cc",
     "send_delay_stats.h",
     "send_statistics_proxy.cc",
@@ -33,8 +34,6 @@ source_set("video") {
     "stats_counter.h",
     "stream_synchronization.cc",
     "stream_synchronization.h",
-    "video_capture_input.cc",
-    "video_capture_input.h",
     "video_decoder.cc",
     "video_encoder.cc",
     "video_receive_stream.cc",
@@ -47,24 +46,20 @@ source_set("video") {
     "vie_encoder.h",
     "vie_remb.cc",
     "vie_remb.h",
-    "vie_sync_module.cc",
-    "vie_sync_module.h",
   ]
-
-  configs += [ "..:common_config" ]
-  public_configs = [ "..:common_inherited_config" ]
 
   if (is_clang) {
     # Suppress warnings from Chrome's Clang plugins.
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
   deps = [
-    "..:rtc_event_log",
     "..:webrtc_common",
     "../base:rtc_base_approved",
+    "../base:rtc_task_queue",
     "../common_video",
+    "../logging:rtc_event_log_api",
     "../modules/bitrate_controller",
     "../modules/congestion_controller",
     "../modules/pacing",
@@ -81,7 +76,7 @@ source_set("video") {
 
 if (rtc_include_tests) {
   # TODO(pbos): Rename test suite.
-  source_set("video_tests") {
+  rtc_source_set("video_tests") {
     testonly = true
     sources = [
       "call_stats_unittest.cc",
@@ -94,10 +89,10 @@ if (rtc_include_tests) {
       "send_statistics_proxy_unittest.cc",
       "stats_counter_unittest.cc",
       "stream_synchronization_unittest.cc",
-      "video_capture_input_unittest.cc",
       "video_decoder_unittest.cc",
       "video_encoder_unittest.cc",
       "video_send_stream_tests.cc",
+      "vie_encoder_unittest.cc",
       "vie_remb_unittest.cc",
     ]
     deps = [
@@ -108,7 +103,7 @@ if (rtc_include_tests) {
     if (is_clang) {
       # Suppress warnings from the Chromium Clang plugin.
       # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
 }

@@ -44,8 +44,11 @@ WebInspector.RequestHeadersView = function(request)
     this._showRequestHeadersText = false;
     this._showResponseHeadersText = false;
 
-    var root = new TreeOutline(true);
-    root.element.classList.add("outline-disclosure");
+    var root = new TreeOutlineInShadow();
+    root.registerRequiredCSS("network/requestHeadersTree.css");
+    root.element.classList.add("request-headers-tree");
+    root.setFocusable(false);
+    root.makeDense();
     root.expandTreeElementsWhenArrowing = true;
     this.element.appendChild(root.element);
 
@@ -126,7 +129,7 @@ WebInspector.RequestHeadersView.prototype = {
         if (value === "")
             div.classList.add("empty-value");
         if (errorDecoding)
-            div.createChild("span", "error-message").textContent = WebInspector.UIString("(unable to decode value)");
+            div.createChild("span", "header-decode-error").textContent = WebInspector.UIString("(unable to decode value)");
         else
             div.textContent = value;
         return div;
@@ -370,7 +373,10 @@ WebInspector.RequestHeadersView.prototype = {
                 statusText += " " + WebInspector.UIString("(from ServiceWorker)");
                 statusTextElement.classList.add("status-from-cache");
             } else if (this._request.cached()) {
-                statusText += " " + WebInspector.UIString("(from cache)");
+                if (this._request.cachedInMemory())
+                    statusText += " " + WebInspector.UIString("(from memory cache)");
+                else
+                    statusText += " " + WebInspector.UIString("(from disk cache)");
                 statusTextElement.classList.add("status-from-cache");
             }
             statusTextElement.textContent = statusText;

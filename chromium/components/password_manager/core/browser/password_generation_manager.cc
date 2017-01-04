@@ -41,8 +41,8 @@ void PasswordGenerationManager::DetectFormsEligibleForGeneration(
       if (field->server_type() == autofill::ACCOUNT_CREATION_PASSWORD ||
           field->server_type() == autofill::NEW_PASSWORD) {
         forms_eligible_for_generation.push_back(
-            autofill::PasswordFormGenerationData{form->form_name(),
-                                                 form->target_url(), *field});
+            autofill::PasswordFormGenerationData{form->form_signature(),
+                                                 field->GetFieldSignature()});
         break;
       }
     }

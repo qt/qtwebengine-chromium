@@ -45,7 +45,7 @@ VideoReceiver::VideoReceiver(Clock* clock,
       _scheduleKeyRequest(false),
       drop_frames_until_keyframe_(false),
       max_nack_list_size_(0),
-      _codecDataBase(nullptr, nullptr),
+      _codecDataBase(nullptr),
       pre_decode_image_callback_(pre_decode_image_callback),
       _receiveStatsTimer(1000, clock_),
       _retransmissionTimer(10, clock_),
@@ -94,10 +94,6 @@ void VideoReceiver::Process() {
       RequestKeyFrame();
   }
 
-  if (_receiver.TimeUntilNextProcess() == 0) {
-    _receiver.Process();
-  }
-
   // Packet retransmission requests
   // TODO(holmer): Add API for changing Process interval and make sure it's
   // disabled when NACK is off.
@@ -138,8 +134,6 @@ int64_t VideoReceiver::TimeUntilNextProcess() {
   }
   timeUntilNextProcess =
       VCM_MIN(timeUntilNextProcess, _keyRequestTimer.TimeUntilProcess());
-  timeUntilNextProcess =
-      VCM_MIN(timeUntilNextProcess, _receiver.TimeUntilNextProcess());
 
   return timeUntilNextProcess;
 }

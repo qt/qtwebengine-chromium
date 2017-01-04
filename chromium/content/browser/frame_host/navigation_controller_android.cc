@@ -8,6 +8,8 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/callback.h"
+#include "base/strings/string16.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/public/browser/browser_context.h"
@@ -22,6 +24,10 @@ using base::android::ConvertJavaStringToUTF16;
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF16ToJavaString;
 using base::android::ConvertUTF8ToJavaString;
+using base::android::JavaParamRef;
+using base::android::JavaRef;
+using base::android::ScopedJavaLocalRef;
+
 namespace {
 
 // static
@@ -46,24 +52,16 @@ static base::android::ScopedJavaLocalRef<jobject> CreateJavaNavigationEntry(
     j_bitmap = gfx::ConvertToJavaBitmap(status.image.ToSkBitmap());
 
   return content::Java_NavigationControllerImpl_createNavigationEntry(
-      env,
-      index,
-      j_url.obj(),
-      j_virtual_url.obj(),
-      j_original_url.obj(),
-      j_title.obj(),
-      j_bitmap.obj(),
+      env, index, j_url, j_virtual_url, j_original_url, j_title, j_bitmap,
       entry->GetTransitionType());
 }
 
 static void AddNavigationEntryToHistory(JNIEnv* env,
-                                        jobject history,
+                                        const JavaRef<jobject>& history,
                                         content::NavigationEntry* entry,
                                         int index) {
   content::Java_NavigationControllerImpl_addToNavigationHistory(
-      env,
-      history,
-      CreateJavaNavigationEntry(env, entry, index).obj());
+      env, history, CreateJavaNavigationEntry(env, entry, index));
 }
 
 }  // namespace
@@ -85,7 +83,7 @@ NavigationControllerAndroid::NavigationControllerAndroid(
 }
 
 NavigationControllerAndroid::~NavigationControllerAndroid() {
-  Java_NavigationControllerImpl_destroy(AttachCurrentThread(), obj_.obj());
+  Java_NavigationControllerImpl_destroy(AttachCurrentThread(), obj_);
 }
 
 base::android::ScopedJavaLocalRef<jobject>
@@ -164,13 +162,6 @@ void NavigationControllerAndroid::ReloadBypassingCache(
     const JavaParamRef<jobject>& obj,
     jboolean check_for_repost) {
   navigation_controller_->ReloadBypassingCache(check_for_repost);
-}
-
-void NavigationControllerAndroid::ReloadDisableLoFi(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    jboolean check_for_repost) {
-  navigation_controller_->ReloadDisableLoFi(check_for_repost);
 }
 
 void NavigationControllerAndroid::RequestRestoreLoad(
@@ -325,7 +316,7 @@ void NavigationControllerAndroid::ClearSslPreferences(
   content::SSLHostStateDelegate* delegate =
       navigation_controller_->GetBrowserContext()->GetSSLHostStateDelegate();
   if (delegate)
-    delegate->Clear();
+    delegate->Clear(base::Callback<bool(const std::string&)>());
 }
 
 bool NavigationControllerAndroid::GetUseDesktopUserAgent(
@@ -428,6 +419,34 @@ void NavigationControllerAndroid::CopyStateFromAndPrune(
       reinterpret_cast<NavigationControllerAndroid*>(
           source_navigation_controller_android)->navigation_controller_,
       replace_entry);
+}
+
+ScopedJavaLocalRef<jstring> NavigationControllerAndroid::GetEntryExtraData(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj,
+    jint index,
+    const JavaParamRef<jstring>& jkey) {
+  if (index < 0 || index >= navigation_controller_->GetEntryCount())
+    return ScopedJavaLocalRef<jstring>();
+
+  std::string key = base::android::ConvertJavaStringToUTF8(env, jkey);
+  base::string16 value;
+  navigation_controller_->GetEntryAtIndex(index)->GetExtraData(key, &value);
+  return ConvertUTF16ToJavaString(env, value);
+}
+
+void NavigationControllerAndroid::SetEntryExtraData(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj,
+    jint index,
+    const JavaParamRef<jstring>& jkey,
+    const JavaParamRef<jstring>& jvalue) {
+  if (index < 0 || index >= navigation_controller_->GetEntryCount())
+    return;
+
+  std::string key = base::android::ConvertJavaStringToUTF8(env, jkey);
+  base::string16 value = base::android::ConvertJavaStringToUTF16(env, jvalue);
+  navigation_controller_->GetEntryAtIndex(index)->SetExtraData(key, value);
 }
 
 }  // namespace content

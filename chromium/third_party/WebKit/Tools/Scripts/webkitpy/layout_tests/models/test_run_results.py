@@ -334,6 +334,8 @@ def summarize_results(port_obj, expectations, initial_results,
     results['seconds_since_epoch'] = int(time.time())
     results['build_number'] = port_obj.get_option('build_number')
     results['builder_name'] = port_obj.get_option('builder_name')
+    if port_obj.get_option('order') == 'random':
+        results['random_order_seed'] = port_obj.get_option('seed')
 
     # Don't do this by default since it takes >100ms.
     # It's only used for rebaselining and uploading data to the flakiness dashboard.
@@ -344,8 +346,8 @@ def summarize_results(port_obj, expectations, initial_results,
         if scm:
             results['chromium_revision'] = str(scm.commit_position(path))
         else:
-            _log.warn('Failed to determine chromium commit position for %s, '
-                      'leaving "chromium_revision" key blank in full_results.json.'
-                      % path)
+            _log.warning('Failed to determine chromium commit position for %s, '
+                         'leaving "chromium_revision" key blank in full_results.json.',
+                         path)
 
     return results

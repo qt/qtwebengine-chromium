@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/location.h"
+#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -116,8 +117,8 @@ PrintJobWorker::PrintJobWorker(int render_process_id,
   // The object is created in the IO thread.
   DCHECK(owner_->RunsTasksOnCurrentThread());
 
-  printing_context_delegate_.reset(
-      new PrintingContextDelegate(render_process_id, render_view_id));
+  printing_context_delegate_ = base::MakeUnique<PrintingContextDelegate>(
+      render_process_id, render_view_id);
   printing_context_ = PrintingContext::Create(printing_context_delegate_.get());
 }
 
@@ -134,12 +135,12 @@ void PrintJobWorker::SetNewOwner(PrintJobWorkerOwner* new_owner) {
   owner_ = new_owner;
 }
 
-void PrintJobWorker::GetSettings(
-    bool ask_user_for_settings,
-    int document_page_count,
-    bool has_selection,
-    MarginType margin_type,
-    bool is_scripted) {
+void PrintJobWorker::GetSettings(bool ask_user_for_settings,
+                                 int document_page_count,
+                                 bool has_selection,
+                                 MarginType margin_type,
+                                 bool is_scripted,
+                                 bool is_modifiable) {
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DCHECK_EQ(page_number_, PageNumber::npos());
 
@@ -150,6 +151,7 @@ void PrintJobWorker::GetSettings(
   // should happen on the same thread. See http://crbug.com/73466
   // MessageLoop::current()->SetNestableTasksAllowed(true);
   printing_context_->set_margin_type(margin_type);
+  printing_context_->set_is_modifiable(is_modifiable);
 
   // When we delegate to a destination, we don't ask the user for settings.
   // TODO(mad): Ask the destination for settings.

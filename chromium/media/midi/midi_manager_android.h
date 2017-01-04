@@ -15,6 +15,7 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_vector.h"
+#include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "media/midi/midi_input_port_android.h"
 #include "media/midi/midi_manager.h"
@@ -36,6 +37,7 @@ class MidiManagerAndroid final : public MidiManager,
 
   // MidiManager implementation.
   void StartInitialization() override;
+  void Finalize() override;
   void DispatchSendMidiData(MidiManagerClient* client,
                             uint32_t port_index,
                             const std::vector<uint8_t>& data,
@@ -51,6 +53,9 @@ class MidiManagerAndroid final : public MidiManager,
   void OnInitialized(JNIEnv* env,
                      const base::android::JavaParamRef<jobject>& caller,
                      const base::android::JavaParamRef<jobjectArray>& devices);
+  void OnInitializationFailed(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& caller);
   void OnAttached(JNIEnv* env,
                   const base::android::JavaParamRef<jobject>& caller,
                   const base::android::JavaParamRef<jobject>& device);
@@ -81,7 +86,11 @@ class MidiManagerAndroid final : public MidiManager,
   base::hash_map<MidiOutputPortAndroid*, size_t> output_port_to_index_;
 
   base::android::ScopedJavaGlobalRef<jobject> raw_manager_;
-  std::unique_ptr<MidiScheduler> scheduler_;
+
+  // Lock to ensure the MidiScheduler is being destructed only once in
+  // Finalize() on Chrome_IOThread.
+  base::Lock scheduler_lock_;
+  std::unique_ptr<MidiScheduler> scheduler_;  // GUARDED_BY(scheduler_lock_)
 };
 
 }  // namespace midi

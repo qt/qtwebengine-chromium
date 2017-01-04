@@ -4443,7 +4443,7 @@ TIFFFetchDirectory(TIFF* tif, uint64 diroff, TIFFDirEntry** pdir,
 	static const char module[] = "TIFFFetchDirectory";
 
 	void* origdir;
-	uint16 dircount16;
+	uint16 dircount16 = 0;
 	uint32 dirsize;
 	TIFFDirEntry* dir;
 	uint8* ma;
@@ -5372,6 +5372,8 @@ TIFFFetchStripThing(TIFF* tif, TIFFDirEntry* dir, uint32 nstrips, uint64** lpp)
 	static const char module[] = "TIFFFetchStripThing";
 	enum TIFFReadDirEntryErr err;
 	uint64* data;
+	_TIFFfree(*lpp);
+	*lpp = 0;
 	err=TIFFReadDirEntryLong8Array(tif,dir,&data);
 	if (err!=TIFFReadDirEntryErrOk)
 	{

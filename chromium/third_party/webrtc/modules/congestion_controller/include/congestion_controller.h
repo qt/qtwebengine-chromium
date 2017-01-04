@@ -15,12 +15,12 @@
 
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/common_types.h"
+#include "webrtc/modules/congestion_controller/transport_feedback_adapter.h"
 #include "webrtc/modules/include/module.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/pacing/packet_router.h"
 #include "webrtc/modules/pacing/paced_sender.h"
 #include "webrtc/modules/remote_bitrate_estimator/remote_estimator_proxy.h"
-#include "webrtc/modules/remote_bitrate_estimator/transport_feedback_adapter.h"
 
 namespace rtc {
 struct SentPacket;
@@ -29,11 +29,13 @@ struct SentPacket;
 namespace webrtc {
 
 class BitrateController;
-class BitrateObserver;
 class Clock;
+class ProbeController;
 class ProcessThread;
+class RateLimiter;
 class RemoteBitrateEstimator;
 class RemoteBitrateObserver;
+class RtcEventLog;
 class TransportFeedbackObserver;
 
 class CongestionController : public CallStatsObserver, public Module {
@@ -52,17 +54,14 @@ class CongestionController : public CallStatsObserver, public Module {
    protected:
     virtual ~Observer() {}
   };
-  // Deprecated
-  // TODO(perkj): Remove once no other clients use this ctor.
-  CongestionController(Clock* clock,
-                       BitrateObserver* bitrate_observer,
-                       RemoteBitrateObserver* remote_bitrate_observer);
-  CongestionController(Clock* clock,
-                       Observer* observer,
-                       RemoteBitrateObserver* remote_bitrate_observer);
   CongestionController(Clock* clock,
                        Observer* observer,
                        RemoteBitrateObserver* remote_bitrate_observer,
+                       RtcEventLog* event_log);
+  CongestionController(Clock* clock,
+                       Observer* observer,
+                       RemoteBitrateObserver* remote_bitrate_observer,
+                       RtcEventLog* event_log,
                        std::unique_ptr<PacketRouter> packet_router,
                        std::unique_ptr<PacedSender> pacer);
   virtual ~CongestionController();
@@ -83,6 +82,7 @@ class CongestionController : public CallStatsObserver, public Module {
   virtual PacedSender* pacer() { return pacer_.get(); }
   virtual PacketRouter* packet_router() { return packet_router_.get(); }
   virtual TransportFeedbackObserver* GetTransportFeedbackObserver();
+  RateLimiter* GetRetransmissionRateLimiter();
 
   // SetAllocatedSendBitrateLimits sets bitrates limits imposed by send codec
   // settings.
@@ -121,9 +121,12 @@ class CongestionController : public CallStatsObserver, public Module {
   const std::unique_ptr<PacedSender> pacer_;
   const std::unique_ptr<RemoteBitrateEstimator> remote_bitrate_estimator_;
   const std::unique_ptr<BitrateController> bitrate_controller_;
+  const std::unique_ptr<ProbeController> probe_controller_;
+  const std::unique_ptr<RateLimiter> retransmission_rate_limiter_;
   RemoteEstimatorProxy remote_estimator_proxy_;
   TransportFeedbackAdapter transport_feedback_adapter_;
   int min_bitrate_bps_;
+  int max_bitrate_bps_;
   rtc::CriticalSection critsect_;
   uint32_t last_reported_bitrate_bps_ GUARDED_BY(critsect_);
   uint8_t last_reported_fraction_loss_ GUARDED_BY(critsect_);

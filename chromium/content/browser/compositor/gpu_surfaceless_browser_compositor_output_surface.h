@@ -33,12 +33,12 @@ class GpuSurfacelessBrowserCompositorOutputSurface
           overlay_candidate_validator,
       unsigned int target,
       unsigned int internalformat,
+      gfx::BufferFormat format,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
   ~GpuSurfacelessBrowserCompositorOutputSurface() override;
 
   // cc::OutputSurface implementation.
-  void SwapBuffers(cc::CompositorFrame frame) override;
-  void OnSwapBuffersComplete() override;
+  void SwapBuffers(cc::OutputSurfaceFrame frame) override;
   void BindFramebuffer() override;
   uint32_t GetFramebufferCopyTextureFormat() override;
   void Reshape(const gfx::Size& size,
@@ -55,7 +55,9 @@ class GpuSurfacelessBrowserCompositorOutputSurface
       const gpu::GpuProcessHostedCALayerTreeParamsMac* params_mac) override;
 
  private:
-  const unsigned int internalformat_;
+  gfx::Size reshape_size_;
+  gfx::Size swap_size_;
+
   std::unique_ptr<display_compositor::GLHelper> gl_helper_;
   std::unique_ptr<display_compositor::BufferQueue> buffer_queue_;
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;

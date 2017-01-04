@@ -10,11 +10,11 @@
 #include "webrtc/modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_packet_to_send.h"
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/random.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_header_extension.h"
+#include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
+#include "webrtc/test/gmock.h"
+#include "webrtc/test/gtest.h"
 
 using testing::ElementsAreArray;
 using testing::make_tuple;
@@ -174,12 +174,12 @@ TEST(RtpPacketTest, ParseMinimum) {
 }
 
 TEST(RtpPacketTest, ParseBuffer) {
-  rtc::Buffer unparsed(kMinimumPacket);
+  rtc::CopyOnWriteBuffer unparsed(kMinimumPacket);
   const uint8_t* raw = unparsed.data();
 
   RtpPacketReceived packet;
   EXPECT_TRUE(packet.Parse(std::move(unparsed)));
-  EXPECT_EQ(raw, packet.data());  // Expect packet took over the buffer.
+  EXPECT_EQ(raw, packet.data());  // Expect packet take the buffer without copy.
   EXPECT_EQ(kSeqNum, packet.SequenceNumber());
   EXPECT_EQ(kTimestamp, packet.Timestamp());
   EXPECT_EQ(kSsrc, packet.Ssrc());
@@ -221,6 +221,29 @@ TEST(RtpPacketTest, ParseWithInvalidSizedExtension) {
   // But shouldn't prevent reading payload.
   EXPECT_THAT(make_tuple(packet.payload(), packet.payload_size()),
               ElementsAreArray(kPayload));
+}
+
+TEST(RtpPacketTest, ParseWithOverSizedExtension) {
+  // clang-format off
+  const uint8_t bad_packet[] = {
+      0x90, kPayloadType, 0x00, kSeqNum,
+      0x65, 0x43, 0x12, 0x78,  // kTimestamp.
+      0x12, 0x34, 0x56, 0x78,  // kSsrc.
+      0xbe, 0xde, 0x00, 0x01,  // Extension of size 1x32bit word.
+      0x00,  // Add a byte of padding.
+            0x12,  // Extension id 1 size (2+1).
+                  0xda, 0x1a  // Only 2 bytes of extension payload.
+  };
+  // clang-format on
+  RtpPacketToSend::ExtensionManager extensions;
+  extensions.Register(TransmissionOffset::kId, 1);
+  RtpPacketReceived packet(&extensions);
+
+  // Parse should ignore bad extension and proceed.
+  EXPECT_TRUE(packet.Parse(bad_packet, sizeof(bad_packet)));
+  int32_t time_offset;
+  // But extracting extension should fail.
+  EXPECT_FALSE(packet.GetExtension<TransmissionOffset>(&time_offset));
 }
 
 TEST(RtpPacketTest, ParseWith2Extensions) {

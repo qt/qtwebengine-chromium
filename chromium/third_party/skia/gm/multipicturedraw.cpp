@@ -12,18 +12,18 @@
 #include "SkPictureRecorder.h"
 #include "SkSurface.h"
 
-static const SkScalar kRoot3Over2 = 0.86602545f;  // sin(60)
-static const SkScalar kRoot3      = 1.73205081f;
+constexpr SkScalar kRoot3Over2 = 0.86602545f;  // sin(60)
+constexpr SkScalar kRoot3      = 1.73205081f;
 
-static const int kHexSide = 30;
-static const int kNumHexX = 6;
-static const int kNumHexY = 6;
-static const int kPicWidth = kNumHexX * kHexSide;
-static const int kPicHeight = SkScalarCeilToInt((kNumHexY - 0.5f) * 2 * kHexSide * kRoot3Over2);
-static const SkScalar kInset = 20.0f;
-static const int kNumPictures = 4;
+constexpr int kHexSide = 30;
+constexpr int kNumHexX = 6;
+constexpr int kNumHexY = 6;
+constexpr int kPicWidth = kNumHexX * kHexSide;
+constexpr int kPicHeight = (int)((kNumHexY - 0.5f) * 2 * kHexSide * kRoot3Over2 + 0.5f);
+constexpr SkScalar kInset = 20.0f;
+constexpr int kNumPictures = 4;
 
-static const int kTriSide = 40;
+constexpr int kTriSide = 40;
 
 // Create a hexagon centered at (originX, originY)
 static SkPath make_hex_path(SkScalar originX, SkScalar originY) {
@@ -59,8 +59,7 @@ static sk_sp<SkPicture> make_hex_plane_picture(SkColor fillColor) {
 
     SkCanvas* canvas = recorder.beginRecording(SkIntToScalar(kPicWidth),
                                                SkIntToScalar(kPicHeight),
-                                               &bbhFactory,
-                                               SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag);
+                                               &bbhFactory);
 
     SkScalar xPos, yPos = 0;
 
@@ -107,9 +106,8 @@ static sk_sp<SkPicture> make_single_layer_hex_plane_picture() {
     SkPictureRecorder recorder;
     SkRTreeFactory bbhFactory;
 
-    static const SkScalar kBig = 10000.0f;
-    SkCanvas* canvas = recorder.beginRecording(kBig, kBig, &bbhFactory,
-                                               SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag);
+    constexpr SkScalar kBig = 10000.0f;
+    SkCanvas* canvas = recorder.beginRecording(kBig, kBig, &bbhFactory);
 
     canvas->saveLayer(nullptr, nullptr);
 
@@ -165,8 +163,7 @@ static sk_sp<SkPicture> make_tri_picture() {
 
     SkCanvas* canvas = recorder.beginRecording(SkIntToScalar(kPicWidth),
                                                SkIntToScalar(kPicHeight),
-                                               &bbhFactory,
-                                               SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag);
+                                               &bbhFactory);
     SkRect r = tri.getBounds();
     r.outset(2.0f, 2.0f);       // outset for stroke
     canvas->clipRect(r);
@@ -185,8 +182,7 @@ static sk_sp<SkPicture> make_sub_picture(const SkPicture* tri) {
 
     SkCanvas* canvas = recorder.beginRecording(SkIntToScalar(kPicWidth),
                                                SkIntToScalar(kPicHeight),
-                                               &bbhFactory,
-                                               SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag);
+                                               &bbhFactory);
 
     canvas->scale(1.0f/2.0f, 1.0f/2.0f);
 
@@ -220,10 +216,9 @@ static sk_sp<SkPicture> make_sierpinski_picture() {
 
     SkCanvas* canvas = recorder.beginRecording(SkIntToScalar(kPicWidth),
                                                SkIntToScalar(kPicHeight),
-                                               &bbhFactory,
-                                               SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag);
+                                               &bbhFactory);
 
-    static const int kNumLevels = 4;
+    constexpr int kNumLevels = 4;
     for (int i = 0; i < kNumLevels; ++i) {
         canvas->save();
             canvas->translate(kPicWidth/2 - (i+1) * (kTriSide/2.0f), 0.0f);
@@ -341,7 +336,7 @@ static void big_layer(SkCanvas* canvas, const SkPicture* pictures[kNumPictures])
     canvas->drawPicture(pictures[3]);
 }
 
-static const PFContentMtd gContentMthds[] = {
+constexpr PFContentMtd gContentMthds[] = {
     no_clip,
     rect_clip,
     rrect_clip,
@@ -362,8 +357,7 @@ static void create_content(SkMultiPictureDraw* mpd, PFContentMtd pfGen,
 
         SkCanvas* pictureCanvas = recorder.beginRecording(SkIntToScalar(kPicWidth),
                                                           SkIntToScalar(kPicHeight),
-                                                          &bbhFactory,
-                                                          SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag);
+                                                          &bbhFactory);
 
         (*pfGen)(pictureCanvas, pictures);
 
@@ -397,15 +391,15 @@ static void tiled(SkCanvas* finalCanvas, SkMultiPictureDraw* mpd,
                   PFContentMtd pfGen,
                   const SkPicture* pictures[kNumPictures],
                   SkTArray<ComposeStep> *composeSteps) {
-    static const int kNumTilesX = 2;
-    static const int kNumTilesY = 2;
-    static const int kTileWidth = kPicWidth / kNumTilesX;
-    static const int kTileHeight = kPicHeight / kNumTilesY;
+    const int kNumTilesX = 2;
+    const int kNumTilesY = 2;
+    const int kTileWidth = kPicWidth / kNumTilesX;
+    const int kTileHeight = kPicHeight / kNumTilesY;
 
     SkASSERT(kPicWidth == kNumTilesX * kTileWidth);
     SkASSERT(kPicHeight == kNumTilesY * kTileHeight);
 
-    static const SkColor colors[kNumTilesX][kNumTilesY] = {
+    const SkColor colors[kNumTilesX][kNumTilesY] = {
         { SK_ColorCYAN,   SK_ColorMAGENTA },
         { SK_ColorYELLOW, SK_ColorGREEN   }
     };
@@ -432,7 +426,7 @@ static void tiled(SkCanvas* finalCanvas, SkMultiPictureDraw* mpd,
     }
 }
 
-static const PFLayoutMtd gLayoutMthds[] = { simple, tiled };
+constexpr PFLayoutMtd gLayoutMthds[] = { simple, tiled };
 
 namespace skiagm {
     /**
@@ -456,7 +450,7 @@ namespace skiagm {
             kLast_Content = kBigLayer_Content
         };
 
-        static const int kContentCnt = kLast_Content + 1;
+        const int kContentCnt = kLast_Content + 1;
 
         enum Layout {
             kSimple_Layout,
@@ -465,7 +459,7 @@ namespace skiagm {
             kLast_Layout = kTiled_Layout
         };
 
-        static const int kLayoutCnt = kLast_Layout + 1;
+        const int kLayoutCnt = kLast_Layout + 1;
 
         MultiPictureDraw(Content content, Layout layout) : fContent(content), fLayout(layout) {
             SkASSERT(SK_ARRAY_COUNT(gLayoutMthds) == kLayoutCnt);
@@ -517,11 +511,11 @@ namespace skiagm {
         SkISize onISize() override { return SkISize::Make(kPicWidth, kPicHeight); }
 
         SkString onShortName() override {
-            static const char* gContentNames[] = {
+            const char* gContentNames[] = {
                 "noclip", "rectclip", "rrectclip", "pathclip",
                 "invpathclip", "sierpinski", "biglayer"
             };
-            static const char* gLayoutNames[] = { "simple", "tiled" };
+            const char* gLayoutNames[] = { "simple", "tiled" };
 
             SkASSERT(SK_ARRAY_COUNT(gLayoutNames) == kLayoutCnt);
             SkASSERT(SK_ARRAY_COUNT(gContentNames) == kContentCnt);

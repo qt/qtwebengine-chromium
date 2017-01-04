@@ -62,3 +62,83 @@ src:*LifecycleObserver.h*
 # https://crbug.com/568891
 src:*wtf/Vector.h*
 src:*wtf/PartitionAllocator.h*
+
+#############################################################################
+# Methods disabled due to perf considerations.
+
+# Skia
+
+# https://crbug.com/638064#c1
+fun:*SkPictureUtils*ApproximateBytesUsed*
+
+# https://crbug.com/638056#c1
+fun:*SkCanvas*onDrawRect*
+
+# https://crbug.com/638064
+fun:*SkCanvas*drawPicture*
+
+# https://crbug.com/638060
+fun:*SkCanvas*onDrawPicture*
+
+# https://crbug.com/638064#c2
+fun:*SkBaseDevice*accessPixels*
+
+# https://crbug.com/638056
+fun:*call_hline_blitter*
+fun:*do_scanline*
+fun:*antifilldot8*
+
+# Unclear what could be done here
+fun:*SkCanvas*drawRect*
+fun:*SkPictureGpuAnalyzer*analyzePicture*
+fun:*SkScalerContext*MakeRec*
+
+# CC
+
+# https://crbug.com/638056
+fun:*LayerTreeHost*NotifySwapPromiseMonitorsOfSetNeedsCommit*
+
+# WebKit
+# The entries below have not been categorized
+
+# blink::BoxClipper::BoxClipper
+fun:*blink*BoxClipper*LayoutBox*PaintInfo*LayoutPoint*ContentsClipBehavior*
+
+# blink::DrawingDisplayItem::DrawingDisplayItem
+fun:*blink*DrawingDisplayItem*DisplayItemClient*
+
+# cc::DisplayItemList::Inputs::~Inputs
+fun:*cc*DisplayItemList*Inputs*
+
+# StyleAttributeMutationScope::StyleAttributeMutationScope
+fun:*StyleAttributeMutationScope*AbstractPropertySetCSSStyleDeclaration*
+
+# StyleAttributeMutationScope::~StyleAttributeMutationScope
+fun:*StyleAttributeMutationScopeD2Ev*
+
+fun:*PaintInvalidationState*computePaintInvalidationRectInBacking*
+fun:*FrameTree*parent*
+fun:*FrameTree*traverseNext*
+fun:*PageAnimator*scheduleVisualUpdate*
+fun:*BlockPainter*paint*
+fun:*BlockPainter*paintObject*
+fun:*BlockPainter*intersectsPaintRect*
+fun:*ObjectPaintInvalidator*computePaintInvalidationReason*
+fun:*ObjectPaintInvalidator*invalidateSelectionIfNeeded*
+fun:*ObjectPaintInvalidator*invalidatePaintIfNeededWithComputedReason*
+fun:*StyleResolver*matchAllRules*
+fun:*ContiguousContainer*clear*
+fun:*GraphicsLayer*setNeedsDisplayInRect*
+fun:*PaintArtifact*appendToWebDisplayItemList*
+fun:*visualRectForDisplayItem*
+fun:*PaintController*commitNewDisplayItems*
+fun:*AdjustAndMarkTrait*mark*
+fun:*TraceTrait*trace*
+fun:*ChromeClientImpl*scheduleAnimation*
+fun:*blink*PODIntervalTree*searchForOverlapsFrom*
+fun:*borderPaddingWidthForBoxSizing*
+fun:*hasAspectRatio*
+fun:*nextBreakablePosition*
+fun:*shouldBeConsideredAsReplaced*
+fun:*supportsCachedOffsets*
+fun:*traceImpl*

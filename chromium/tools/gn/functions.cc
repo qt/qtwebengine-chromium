@@ -101,7 +101,7 @@ bool FillTargetBlockScope(const Scope* scope,
 
   // Set the target name variable to the current target, and mark it used
   // because we don't want to issue an error if the script ignores it.
-  const base::StringPiece target_name("target_name");
+  const base::StringPiece target_name(variables::kTargetName);
   block_scope->SetValue(target_name, Value(function, args[0].string_value()),
                         function);
   block_scope->MarkUsed(target_name);
@@ -612,10 +612,12 @@ const char kSetSourcesAssignmentFilter_Help[] =
     "\n"
     "  The sources assignment filter is a list of patterns that remove files\n"
     "  from the list implicitly whenever the \"sources\" variable is\n"
-    "  assigned to. This is intended to be used to globally filter out files\n"
-    "  with platform-specific naming schemes when they don't apply, for\n"
-    "  example, you may want to filter out all \"*_win.cc\" files on non-\n"
-    "  Windows platforms.\n"
+    "  assigned to. This will do nothing for non-lists.\n"
+    "\n"
+    "  This is intended to be used to globally filter out files with\n"
+    "  platform-specific naming schemes when they don't apply, for example\n"
+    "  you may want to filter out all \"*_win.cc\" files on non-Windows\n"
+    "  platforms.\n"
     "\n"
     "  Typically this will be called once in the master build config script\n"
     "  to set up the filter for the current platform. Subsequent calls will\n"
@@ -1012,7 +1014,6 @@ struct FunctionInfoInitializer {
     INSERT_FUNCTION(Template, false)
     INSERT_FUNCTION(Tool, false)
     INSERT_FUNCTION(Toolchain, false)
-    INSERT_FUNCTION(ToolchainArgs, false)
     INSERT_FUNCTION(WriteFile, false)
 
     #undef INSERT_FUNCTION
@@ -1036,13 +1037,14 @@ Value RunFunction(Scope* scope,
       function_map.find(name.value());
   if (found_function == function_map.end()) {
     // No built-in function matching this, check for a template.
-    const Template* templ =
-        scope->GetTemplate(function->function().value().as_string());
+    std::string template_name = function->function().value().as_string();
+    const Template* templ = scope->GetTemplate(template_name);
     if (templ) {
       Value args = args_list->Execute(scope, err);
       if (err->has_error())
         return Value();
-      return templ->Invoke(scope, function, args.list_value(), block, err);
+      return templ->Invoke(scope, function, template_name, args.list_value(),
+                           block, err);
     }
 
     *err = Err(name, "Unknown function.");

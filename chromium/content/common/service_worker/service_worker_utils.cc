@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "content/public/common/origin_util.h"
@@ -29,11 +30,6 @@ bool PathContainsDisallowedCharacter(const GURL& url) {
     return true;
   }
   return false;
-}
-
-bool AllOriginsMatch(const GURL& url_a, const GURL& url_b, const GURL& url_c) {
-  return url_a.GetOrigin() == url_b.GetOrigin() &&
-         url_a.GetOrigin() == url_c.GetOrigin();
 }
 
 }  // namespace
@@ -116,10 +112,17 @@ bool ServiceWorkerUtils::CanRegisterServiceWorker(const GURL& context_url,
   DCHECK(context_url.is_valid());
   DCHECK(pattern.is_valid());
   DCHECK(script_url.is_valid());
-  return AllOriginsMatch(context_url, pattern, script_url) &&
+  return ServiceWorkerUtils::PassOriginEqualitySecurityCheck<GURL>(
+             context_url, pattern, script_url) &&
          OriginCanAccessServiceWorkers(context_url) &&
          OriginCanAccessServiceWorkers(pattern) &&
          OriginCanAccessServiceWorkers(script_url);
+}
+
+// static
+bool ServiceWorkerUtils::IsMojoForServiceWorkerEnabled() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kMojoServiceWorker);
 }
 
 bool LongestScopeMatcher::MatchLongest(const GURL& scope) {

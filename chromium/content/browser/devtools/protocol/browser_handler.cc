@@ -4,21 +4,20 @@
 
 #include "content/browser/devtools/protocol/browser_handler.h"
 
+#include <algorithm>
+
+#include "base/bind.h"
+#include "content/browser/devtools/devtools_manager.h"
+#include "content/public/browser/devtools_manager_delegate.h"
+
 namespace content {
 namespace devtools {
 namespace browser {
 
-namespace {
-const char kTargetTypeWebContents[] = "web_contents";
-const char kTargetTypeFrame[] = "frame";
-const char kTargetTypeSharedWorker[] = "shared_worker";
-const char kTargetTypeServiceWorker[] = "service_worker";
-const char kTargetTypeServiceOther[] = "other";
-}
-
 using Response = DevToolsProtocolClient::Response;
 
-BrowserHandler::BrowserHandler() {
+BrowserHandler::BrowserHandler()
+    : weak_factory_(this) {
 }
 
 BrowserHandler::~BrowserHandler() {
@@ -28,63 +27,126 @@ void BrowserHandler::SetClient(std::unique_ptr<Client> client) {
   client_.swap(client);
 }
 
-static std::string GetTypeString(DevToolsAgentHost* agent_host) {
-  switch (agent_host->GetType()) {
-    case DevToolsAgentHost::TYPE_WEB_CONTENTS:
-      return kTargetTypeWebContents;
-    case DevToolsAgentHost::TYPE_FRAME:
-      return kTargetTypeFrame;
-    case DevToolsAgentHost::TYPE_SHARED_WORKER:
-      return kTargetTypeSharedWorker;
-    case DevToolsAgentHost::TYPE_SERVICE_WORKER:
-      return kTargetTypeServiceWorker;
-    default:
-      return kTargetTypeServiceOther;
-  }
+void BrowserHandler::Detached() {
+  for (const auto& host : attached_hosts_)
+    host->DetachClient(this);
+  attached_hosts_.clear();
 }
 
-Response BrowserHandler::GetTargets(TargetInfos* infos) {
-  DevToolsAgentHost::List agents = DevToolsAgentHost::GetOrCreateAll();
-  for (DevToolsAgentHost::List::iterator it = agents.begin();
-       it != agents.end(); ++it) {
-    DevToolsAgentHost* agent_host = (*it).get();
-    scoped_refptr<devtools::browser::TargetInfo> info =
-        devtools::browser::TargetInfo::Create()->
-            set_target_id(agent_host->GetId())->
-            set_type(GetTypeString(agent_host))->
-            set_title(agent_host->GetTitle())->
-            set_url(agent_host->GetURL().spec());
-  }
+Response BrowserHandler::CreateBrowserContext(std::string* out_context_id) {
+  // For layering reasons this needs to be handled by
+  // DevToolsManagerDelegate::HandleCommand.
+  return Response::ServerError("Not supported");
+}
+
+Response BrowserHandler::DisposeBrowserContext(const std::string& context_id,
+                                               bool* out_success) {
+  // For layering reasons this needs to be handled by
+  // DevToolsManagerDelegate::HandleCommand.
+  return Response::ServerError("Not supported");
+}
+
+Response BrowserHandler::CreateTarget(const std::string& url,
+                                      const int* width,
+                                      const int* height,
+                                      const std::string* context_id,
+                                      std::string* out_target_id) {
+  DevToolsManagerDelegate* delegate =
+      DevToolsManager::GetInstance()->delegate();
+  if (!delegate)
+    return Response::ServerError("Not supported");
+  scoped_refptr<content::DevToolsAgentHost> agent_host =
+      delegate->CreateNewTarget(GURL(url));
+  if (!agent_host)
+    return Response::ServerError("Not supported");
+  *out_target_id = agent_host->GetId();
   return Response::OK();
 }
 
-Response BrowserHandler::Attach(const std::string& targetId) {
+Response BrowserHandler::CloseTarget(const std::string& target_id,
+                                     bool* out_success) {
   scoped_refptr<DevToolsAgentHost> agent_host =
-      DevToolsAgentHost::GetForId(targetId);
+      DevToolsAgentHost::GetForId(target_id);
   if (!agent_host)
     return Response::ServerError("No target with given id found");
-  bool success = agent_host->AttachClient(this);
-  return success ? Response::OK() :
-                   Response::ServerError("Target is already being debugged");
+  *out_success = agent_host->Close();
+  return Response::OK();
 }
 
-Response BrowserHandler::Detach(const std::string& targetId) {
+Response BrowserHandler::GetTargets(DevToolsCommandId command_id) {
+  DevToolsAgentHost::DiscoverAllHosts(
+      base::Bind(&BrowserHandler::RespondToGetTargets,
+                 weak_factory_.GetWeakPtr(),
+                 command_id));
+  return Response::OK();
+}
+
+void BrowserHandler::RespondToGetTargets(
+    DevToolsCommandId command_id,
+    DevToolsAgentHost::List agents) {
+  std::vector<scoped_refptr<devtools::browser::TargetInfo>> infos;
+  for (const auto& agent_host : agents) {
+    scoped_refptr<devtools::browser::TargetInfo> info =
+        devtools::browser::TargetInfo::Create()->
+            set_target_id(agent_host->GetId())->
+            set_type(agent_host->GetType())->
+            set_title(agent_host->GetTitle())->
+            set_url(agent_host->GetURL().spec());
+    infos.push_back(info);
+  }
+  client_->SendGetTargetsResponse(
+      command_id,
+      GetTargetsResponse::Create()->set_target_info(std::move(infos)));
+}
+
+Response BrowserHandler::Attach(DevToolsCommandId command_id,
+                                const std::string& target_id) {
+  // Discover in order to get ahold of the items.
+  DevToolsAgentHost::DiscoverAllHosts(
+      base::Bind(&BrowserHandler::RespondToAttach,
+                 weak_factory_.GetWeakPtr(), command_id, target_id));
+  return Response::OK();
+}
+
+void BrowserHandler::RespondToAttach(DevToolsCommandId command_id,
+                                     const std::string& target_id,
+                                     DevToolsAgentHost::List agents) {
+  // We were discovering to get ahold of the items, discard them.
   scoped_refptr<DevToolsAgentHost> agent_host =
-      DevToolsAgentHost::GetForId(targetId);
-  if (!agent_host)
-    return Response::ServerError("No target with given id found");
-  bool success = agent_host->DetachClient(this);
-  return success ? Response::OK() :
-                   Response::ServerError("Target is not being debugged");
+      DevToolsAgentHost::GetForId(target_id);
+  bool success = false;
+  if (agent_host)
+    success = agent_host->AttachClient(this);
+  attached_hosts_.push_back(agent_host);
+  client_->SendAttachResponse(
+      command_id,
+      AttachResponse::Create()->set_success(success));
 }
 
-Response BrowserHandler::SendMessage(const std::string& targetId,
+Response BrowserHandler::Detach(const std::string& target_id,
+                                bool* out_success) {
+  scoped_refptr<DevToolsAgentHost> agent_host =
+      DevToolsAgentHost::GetForId(target_id);
+  auto it = std::find(
+      attached_hosts_.begin(), attached_hosts_.end(), agent_host);
+  if (it != attached_hosts_.end())
+    attached_hosts_.erase(it);
+  *out_success = agent_host && agent_host->DetachClient(this);
+  return Response::OK();
+}
+
+Response BrowserHandler::SendMessage(const std::string& target_id,
                                      const std::string& message) {
   scoped_refptr<DevToolsAgentHost> agent_host =
-      DevToolsAgentHost::GetForId(targetId);
+      DevToolsAgentHost::GetForId(target_id);
   if (!agent_host)
     return Response::ServerError("No target with given id found");
   agent_host->DispatchProtocolMessage(this, message);
+  return Response::OK();
+}
+
+Response BrowserHandler::SetRemoteLocations(
+    const std::vector<std::unique_ptr<base::DictionaryValue>>& locations) {
   return Response::OK();
 }
 
@@ -97,6 +159,10 @@ void BrowserHandler::DispatchProtocolMessage(
 
 void BrowserHandler::AgentHostClosed(DevToolsAgentHost* agent_host,
                                      bool replaced_with_another_client) {
+  auto it = std::find(
+      attached_hosts_.begin(), attached_hosts_.end(), agent_host);
+  if (it != attached_hosts_.end())
+    attached_hosts_.erase(it);
 }
 
 }  // namespace browser

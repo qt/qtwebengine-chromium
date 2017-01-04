@@ -10,6 +10,7 @@
 #include "core/events/Event.h"
 #include "modules/ModulesExport.h"
 #include "modules/payments/PaymentRequestUpdateEventInit.h"
+#include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
@@ -19,28 +20,34 @@ class PaymentUpdater;
 class ScriptState;
 
 class MODULES_EXPORT PaymentRequestUpdateEvent final : public Event {
-    DEFINE_WRAPPERTYPEINFO();
+  DEFINE_WRAPPERTYPEINFO();
 
-public:
-    ~PaymentRequestUpdateEvent() override;
+ public:
+  ~PaymentRequestUpdateEvent() override;
 
-    static PaymentRequestUpdateEvent* create();
-    static PaymentRequestUpdateEvent* create(const AtomicString& type, const PaymentRequestUpdateEventInit& = PaymentRequestUpdateEventInit());
+  static PaymentRequestUpdateEvent* create(
+      const AtomicString& type,
+      const PaymentRequestUpdateEventInit& = PaymentRequestUpdateEventInit());
 
-    void setPaymentDetailsUpdater(PaymentUpdater*);
+  void setPaymentDetailsUpdater(PaymentUpdater*);
 
-    void updateWith(ScriptState*, ScriptPromise, ExceptionState&);
+  void updateWith(ScriptState*, ScriptPromise, ExceptionState&);
 
-    DECLARE_VIRTUAL_TRACE();
+  DECLARE_VIRTUAL_TRACE();
 
-private:
-    PaymentRequestUpdateEvent();
-    PaymentRequestUpdateEvent(const AtomicString& type, const PaymentRequestUpdateEventInit&);
+  void onUpdateEventTimeoutForTesting();
 
-    Member<PaymentUpdater> m_updater;
-    bool m_waitForUpdate;
+ private:
+  PaymentRequestUpdateEvent(const AtomicString& type,
+                            const PaymentRequestUpdateEventInit&);
+
+  void onUpdateEventTimeout(TimerBase*);
+
+  Member<PaymentUpdater> m_updater;
+  bool m_waitForUpdate;
+  Timer<PaymentRequestUpdateEvent> m_abortTimer;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // PaymentRequestUpdateEvent_h
+#endif  // PaymentRequestUpdateEvent_h

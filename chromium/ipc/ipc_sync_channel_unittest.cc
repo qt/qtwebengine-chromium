@@ -991,12 +991,12 @@ class TestSyncMessageFilter : public SyncMessageFilter {
       base::WaitableEvent* shutdown_event,
       Worker* worker,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-      : SyncMessageFilter(shutdown_event, false),
+      : SyncMessageFilter(shutdown_event),
         worker_(worker),
         task_runner_(task_runner) {}
 
-  void OnFilterAdded(Sender* sender) override {
-    SyncMessageFilter::OnFilterAdded(sender);
+  void OnFilterAdded(Channel* channel) override {
+    SyncMessageFilter::OnFilterAdded(channel);
     task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&TestSyncMessageFilter::SendMessageOnHelperThread, this));
@@ -1810,7 +1810,12 @@ class VerifiedClient : public Worker {
     Worker::OverrideThread(listener_thread);
   }
 
-  void Run() override {
+  void OnChannelConnected(int32_t peer_pid) override {
+    ListenerThread()->task_runner()->PostTask(
+        FROM_HERE, base::Bind(&VerifiedClient::RunTestOnConnected, this));
+  }
+
+  void RunTestOnConnected() {
     std::string response;
     SyncMessage* msg = new SyncChannelNestedTestMsg_String(&response);
     bool result = Send(msg);

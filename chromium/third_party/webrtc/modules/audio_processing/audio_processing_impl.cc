@@ -10,7 +10,6 @@
 
 #include "webrtc/modules/audio_processing/audio_processing_impl.h"
 
-#include <assert.h>
 #include <algorithm>
 
 #include "webrtc/base/checks.h"
@@ -30,7 +29,10 @@
 #include "webrtc/modules/audio_processing/gain_control_for_experimental_agc.h"
 #include "webrtc/modules/audio_processing/gain_control_impl.h"
 #include "webrtc/modules/audio_processing/high_pass_filter_impl.h"
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
 #include "webrtc/modules/audio_processing/intelligibility/intelligibility_enhancer.h"
+#endif
+#include "webrtc/modules/audio_processing/level_controller/level_controller.h"
 #include "webrtc/modules/audio_processing/level_estimator_impl.h"
 #include "webrtc/modules/audio_processing/noise_suppression_impl.h"
 #include "webrtc/modules/audio_processing/transient/transient_suppressor.h"
@@ -49,6 +51,14 @@
 #endif
 #endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
 
+// Check to verify that the define for the intelligibility enhancer is properly
+// set.
+#if !defined(WEBRTC_INTELLIGIBILITY_ENHANCER) || \
+    (WEBRTC_INTELLIGIBILITY_ENHANCER != 0 &&     \
+     WEBRTC_INTELLIGIBILITY_ENHANCER != 1)
+#error "Set WEBRTC_INTELLIGIBILITY_ENHANCER to either 0 or 1"
+#endif
+
 #define RETURN_ON_ERR(expr) \
   do {                      \
     int err = (expr);       \
@@ -59,19 +69,7 @@
 
 namespace webrtc {
 
-const int AudioProcessing::kNativeSampleRatesHz[] = {
-    AudioProcessing::kSampleRate8kHz,
-    AudioProcessing::kSampleRate16kHz,
-#ifdef WEBRTC_ARCH_ARM_FAMILY
-    AudioProcessing::kSampleRate32kHz};
-#else
-    AudioProcessing::kSampleRate32kHz,
-    AudioProcessing::kSampleRate48kHz};
-#endif  // WEBRTC_ARCH_ARM_FAMILY
-const size_t AudioProcessing::kNumNativeSampleRates =
-    arraysize(AudioProcessing::kNativeSampleRatesHz);
-const int AudioProcessing::kMaxNativeSampleRateHz = AudioProcessing::
-    kNativeSampleRatesHz[AudioProcessing::kNumNativeSampleRates - 1];
+constexpr int AudioProcessing::kNativeSampleRatesHz[];
 
 namespace {
 
@@ -85,28 +83,127 @@ static bool LayoutHasKeyboard(AudioProcessing::ChannelLayout layout) {
       return true;
   }
 
-  assert(false);
+  RTC_NOTREACHED();
   return false;
 }
 
-bool is_multi_band(int sample_rate_hz) {
+bool SampleRateSupportsMultiBand(int sample_rate_hz) {
   return sample_rate_hz == AudioProcessing::kSampleRate32kHz ||
          sample_rate_hz == AudioProcessing::kSampleRate48kHz;
 }
 
-int ClosestHigherNativeRate(int min_proc_rate) {
-  for (int rate : AudioProcessing::kNativeSampleRatesHz) {
-    if (rate >= min_proc_rate) {
+int FindNativeProcessRateToUse(int minimum_rate, bool band_splitting_required) {
+#ifdef WEBRTC_ARCH_ARM_FAMILY
+  constexpr int kMaxSplittingNativeProcessRate =
+      AudioProcessing::kSampleRate32kHz;
+#else
+  constexpr int kMaxSplittingNativeProcessRate =
+      AudioProcessing::kSampleRate48kHz;
+#endif
+  static_assert(
+      kMaxSplittingNativeProcessRate <= AudioProcessing::kMaxNativeSampleRateHz,
+      "");
+  const int uppermost_native_rate = band_splitting_required
+                                        ? kMaxSplittingNativeProcessRate
+                                        : AudioProcessing::kSampleRate48kHz;
+
+  for (auto rate : AudioProcessing::kNativeSampleRatesHz) {
+    if (rate >= uppermost_native_rate) {
+      return uppermost_native_rate;
+    }
+    if (rate >= minimum_rate) {
       return rate;
     }
   }
-  return AudioProcessing::kMaxNativeSampleRateHz;
+  RTC_NOTREACHED();
+  return uppermost_native_rate;
 }
 
 }  // namespace
 
 // Throughout webrtc, it's assumed that success is represented by zero.
 static_assert(AudioProcessing::kNoError == 0, "kNoError must be zero");
+
+AudioProcessingImpl::ApmSubmoduleStates::ApmSubmoduleStates() {}
+
+bool AudioProcessingImpl::ApmSubmoduleStates::Update(
+    bool high_pass_filter_enabled,
+    bool echo_canceller_enabled,
+    bool mobile_echo_controller_enabled,
+    bool noise_suppressor_enabled,
+    bool intelligibility_enhancer_enabled,
+    bool beamformer_enabled,
+    bool adaptive_gain_controller_enabled,
+    bool level_controller_enabled,
+    bool voice_activity_detector_enabled,
+    bool level_estimator_enabled,
+    bool transient_suppressor_enabled) {
+  bool changed = false;
+  changed |= (high_pass_filter_enabled != high_pass_filter_enabled_);
+  changed |= (echo_canceller_enabled != echo_canceller_enabled_);
+  changed |=
+      (mobile_echo_controller_enabled != mobile_echo_controller_enabled_);
+  changed |= (noise_suppressor_enabled != noise_suppressor_enabled_);
+  changed |=
+      (intelligibility_enhancer_enabled != intelligibility_enhancer_enabled_);
+  changed |= (beamformer_enabled != beamformer_enabled_);
+  changed |=
+      (adaptive_gain_controller_enabled != adaptive_gain_controller_enabled_);
+  changed |= (level_controller_enabled != level_controller_enabled_);
+  changed |= (level_estimator_enabled != level_estimator_enabled_);
+  changed |=
+      (voice_activity_detector_enabled != voice_activity_detector_enabled_);
+  changed |= (transient_suppressor_enabled != transient_suppressor_enabled_);
+  if (changed) {
+    high_pass_filter_enabled_ = high_pass_filter_enabled;
+    echo_canceller_enabled_ = echo_canceller_enabled;
+    mobile_echo_controller_enabled_ = mobile_echo_controller_enabled;
+    noise_suppressor_enabled_ = noise_suppressor_enabled;
+    intelligibility_enhancer_enabled_ = intelligibility_enhancer_enabled;
+    beamformer_enabled_ = beamformer_enabled;
+    adaptive_gain_controller_enabled_ = adaptive_gain_controller_enabled;
+    level_controller_enabled_ = level_controller_enabled;
+    level_estimator_enabled_ = level_estimator_enabled;
+    voice_activity_detector_enabled_ = voice_activity_detector_enabled;
+    transient_suppressor_enabled_ = transient_suppressor_enabled;
+  }
+
+  changed |= first_update_;
+  first_update_ = false;
+  return changed;
+}
+
+bool AudioProcessingImpl::ApmSubmoduleStates::CaptureMultiBandSubModulesActive()
+    const {
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
+  return CaptureMultiBandProcessingActive() ||
+         intelligibility_enhancer_enabled_ || voice_activity_detector_enabled_;
+#else
+  return CaptureMultiBandProcessingActive() || voice_activity_detector_enabled_;
+#endif
+}
+
+bool AudioProcessingImpl::ApmSubmoduleStates::CaptureMultiBandProcessingActive()
+    const {
+  return high_pass_filter_enabled_ || echo_canceller_enabled_ ||
+         mobile_echo_controller_enabled_ || noise_suppressor_enabled_ ||
+         beamformer_enabled_ || adaptive_gain_controller_enabled_;
+}
+
+bool AudioProcessingImpl::ApmSubmoduleStates::RenderMultiBandSubModulesActive()
+    const {
+  return RenderMultiBandProcessingActive() || echo_canceller_enabled_ ||
+         mobile_echo_controller_enabled_ || adaptive_gain_controller_enabled_;
+}
+
+bool AudioProcessingImpl::ApmSubmoduleStates::RenderMultiBandProcessingActive()
+    const {
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
+  return intelligibility_enhancer_enabled_;
+#else
+  return false;
+#endif
+}
 
 struct AudioProcessingImpl::ApmPublicSubmodules {
   ApmPublicSubmodules() {}
@@ -123,28 +220,31 @@ struct AudioProcessingImpl::ApmPublicSubmodules {
 
   // Accessed internally from both render and capture.
   std::unique_ptr<TransientSuppressor> transient_suppressor;
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
   std::unique_ptr<IntelligibilityEnhancer> intelligibility_enhancer;
+#endif
 };
 
 struct AudioProcessingImpl::ApmPrivateSubmodules {
-  explicit ApmPrivateSubmodules(Beamformer<float>* beamformer)
+  explicit ApmPrivateSubmodules(NonlinearBeamformer* beamformer)
       : beamformer(beamformer) {}
   // Accessed internally from capture or during initialization
-  std::unique_ptr<Beamformer<float>> beamformer;
+  std::unique_ptr<NonlinearBeamformer> beamformer;
   std::unique_ptr<AgcManagerDirect> agc_manager;
+  std::unique_ptr<LevelController> level_controller;
 };
 
 AudioProcessing* AudioProcessing::Create() {
-  Config config;
+  webrtc::Config config;
   return Create(config, nullptr);
 }
 
-AudioProcessing* AudioProcessing::Create(const Config& config) {
+AudioProcessing* AudioProcessing::Create(const webrtc::Config& config) {
   return Create(config, nullptr);
 }
 
-AudioProcessing* AudioProcessing::Create(const Config& config,
-                                         Beamformer<float>* beamformer) {
+AudioProcessing* AudioProcessing::Create(const webrtc::Config& config,
+                                         NonlinearBeamformer* beamformer) {
   AudioProcessingImpl* apm = new AudioProcessingImpl(config, beamformer);
   if (apm->Initialize() != kNoError) {
     delete apm;
@@ -154,11 +254,11 @@ AudioProcessing* AudioProcessing::Create(const Config& config,
   return apm;
 }
 
-AudioProcessingImpl::AudioProcessingImpl(const Config& config)
+AudioProcessingImpl::AudioProcessingImpl(const webrtc::Config& config)
     : AudioProcessingImpl(config, nullptr) {}
 
-AudioProcessingImpl::AudioProcessingImpl(const Config& config,
-                                         Beamformer<float>* beamformer)
+AudioProcessingImpl::AudioProcessingImpl(const webrtc::Config& config,
+                                         NonlinearBeamformer* beamformer)
     : public_submodules_(new ApmPublicSubmodules()),
       private_submodules_(new ApmPrivateSubmodules(beamformer)),
       constants_(config.Get<ExperimentalAgc>().startup_min_volume,
@@ -175,8 +275,7 @@ AudioProcessingImpl::AudioProcessingImpl(const Config& config,
                config.Get<Beamforming>().array_geometry,
                config.Get<Beamforming>().target_direction),
       capture_nonlocked_(config.Get<Beamforming>().enabled,
-                         config.Get<Intelligibility>().enabled)
-{
+                         config.Get<Intelligibility>().enabled) {
   {
     rtc::CritScope cs_render(&crit_render_);
     rtc::CritScope cs_capture(&crit_capture_);
@@ -198,6 +297,8 @@ AudioProcessingImpl::AudioProcessingImpl(const Config& config,
     public_submodules_->gain_control_for_experimental_agc.reset(
         new GainControlForExperimentalAgc(
             public_submodules_->gain_control.get(), &crit_capture_));
+
+    private_submodules_->level_controller.reset(new LevelController());
   }
 
   SetExtraOptions(config);
@@ -222,25 +323,22 @@ int AudioProcessingImpl::Initialize() {
   return InitializeLocked();
 }
 
-int AudioProcessingImpl::Initialize(int input_sample_rate_hz,
-                                    int output_sample_rate_hz,
-                                    int reverse_sample_rate_hz,
-                                    ChannelLayout input_layout,
-                                    ChannelLayout output_layout,
-                                    ChannelLayout reverse_layout) {
+int AudioProcessingImpl::Initialize(int capture_input_sample_rate_hz,
+                                    int capture_output_sample_rate_hz,
+                                    int render_input_sample_rate_hz,
+                                    ChannelLayout capture_input_layout,
+                                    ChannelLayout capture_output_layout,
+                                    ChannelLayout render_input_layout) {
   const ProcessingConfig processing_config = {
-      {{input_sample_rate_hz,
-        ChannelsFromLayout(input_layout),
-        LayoutHasKeyboard(input_layout)},
-       {output_sample_rate_hz,
-        ChannelsFromLayout(output_layout),
-        LayoutHasKeyboard(output_layout)},
-       {reverse_sample_rate_hz,
-        ChannelsFromLayout(reverse_layout),
-        LayoutHasKeyboard(reverse_layout)},
-       {reverse_sample_rate_hz,
-        ChannelsFromLayout(reverse_layout),
-        LayoutHasKeyboard(reverse_layout)}}};
+      {{capture_input_sample_rate_hz, ChannelsFromLayout(capture_input_layout),
+        LayoutHasKeyboard(capture_input_layout)},
+       {capture_output_sample_rate_hz,
+        ChannelsFromLayout(capture_output_layout),
+        LayoutHasKeyboard(capture_output_layout)},
+       {render_input_sample_rate_hz, ChannelsFromLayout(render_input_layout),
+        LayoutHasKeyboard(render_input_layout)},
+       {render_input_sample_rate_hz, ChannelsFromLayout(render_input_layout),
+        LayoutHasKeyboard(render_input_layout)}}};
 
   return Initialize(processing_config);
 }
@@ -254,20 +352,36 @@ int AudioProcessingImpl::Initialize(const ProcessingConfig& processing_config) {
 
 int AudioProcessingImpl::MaybeInitializeRender(
     const ProcessingConfig& processing_config) {
-  return MaybeInitialize(processing_config);
+  return MaybeInitialize(processing_config, false);
 }
 
 int AudioProcessingImpl::MaybeInitializeCapture(
-    const ProcessingConfig& processing_config) {
-  return MaybeInitialize(processing_config);
+    const ProcessingConfig& processing_config,
+    bool force_initialization) {
+  return MaybeInitialize(processing_config, force_initialization);
 }
+
+#ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
+
+AudioProcessingImpl::ApmDebugDumpThreadState::ApmDebugDumpThreadState()
+    : event_msg(new audioproc::Event()) {}
+
+AudioProcessingImpl::ApmDebugDumpThreadState::~ApmDebugDumpThreadState() {}
+
+AudioProcessingImpl::ApmDebugDumpState::ApmDebugDumpState()
+    : debug_file(FileWrapper::Create()) {}
+
+AudioProcessingImpl::ApmDebugDumpState::~ApmDebugDumpState() {}
+
+#endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
 
 // Calls InitializeLocked() if any of the audio parameters have changed from
 // their current values (needs to be called while holding the crit_render_lock).
 int AudioProcessingImpl::MaybeInitialize(
-    const ProcessingConfig& processing_config) {
+    const ProcessingConfig& processing_config,
+    bool force_initialization) {
   // Called from both threads. Thread check is therefore not possible.
-  if (processing_config == formats_.api_format) {
+  if (processing_config == formats_.api_format && !force_initialization) {
     return kNoError;
   }
 
@@ -276,22 +390,23 @@ int AudioProcessingImpl::MaybeInitialize(
 }
 
 int AudioProcessingImpl::InitializeLocked() {
-  const int fwd_audio_buffer_channels =
+  const int capture_audiobuffer_num_channels =
       capture_nonlocked_.beamformer_enabled
           ? formats_.api_format.input_stream().num_channels()
           : formats_.api_format.output_stream().num_channels();
-  const int rev_audio_buffer_out_num_frames =
+  const int render_audiobuffer_num_output_frames =
       formats_.api_format.reverse_output_stream().num_frames() == 0
-          ? formats_.rev_proc_format.num_frames()
+          ? formats_.render_processing_format.num_frames()
           : formats_.api_format.reverse_output_stream().num_frames();
   if (formats_.api_format.reverse_input_stream().num_channels() > 0) {
     render_.render_audio.reset(new AudioBuffer(
         formats_.api_format.reverse_input_stream().num_frames(),
         formats_.api_format.reverse_input_stream().num_channels(),
-        formats_.rev_proc_format.num_frames(),
-        formats_.rev_proc_format.num_channels(),
-        rev_audio_buffer_out_num_frames));
-    if (rev_conversion_needed()) {
+        formats_.render_processing_format.num_frames(),
+        formats_.render_processing_format.num_channels(),
+        render_audiobuffer_num_output_frames));
+    if (formats_.api_format.reverse_input_stream() !=
+        formats_.api_format.reverse_output_stream()) {
       render_.render_converter = AudioConverter::Create(
           formats_.api_format.reverse_input_stream().num_channels(),
           formats_.api_format.reverse_input_stream().num_frames(),
@@ -307,21 +422,41 @@ int AudioProcessingImpl::InitializeLocked() {
   capture_.capture_audio.reset(
       new AudioBuffer(formats_.api_format.input_stream().num_frames(),
                       formats_.api_format.input_stream().num_channels(),
-                      capture_nonlocked_.fwd_proc_format.num_frames(),
-                      fwd_audio_buffer_channels,
+                      capture_nonlocked_.capture_processing_format.num_frames(),
+                      capture_audiobuffer_num_channels,
                       formats_.api_format.output_stream().num_frames()));
 
-  InitializeGainController();
-  InitializeEchoCanceller();
-  InitializeEchoControlMobile();
-  InitializeExperimentalAgc();
+  public_submodules_->gain_control->Initialize(num_proc_channels(),
+                                               proc_sample_rate_hz());
+  public_submodules_->echo_cancellation->Initialize(
+      proc_sample_rate_hz(), num_reverse_channels(), num_output_channels(),
+      num_proc_channels());
+  public_submodules_->echo_control_mobile->Initialize(
+      proc_split_sample_rate_hz(), num_reverse_channels(),
+      num_output_channels());
+  if (constants_.use_experimental_agc) {
+    if (!private_submodules_->agc_manager.get()) {
+      private_submodules_->agc_manager.reset(new AgcManagerDirect(
+          public_submodules_->gain_control.get(),
+          public_submodules_->gain_control_for_experimental_agc.get(),
+          constants_.agc_startup_min_volume));
+    }
+    private_submodules_->agc_manager->Initialize();
+    private_submodules_->agc_manager->SetCaptureMuted(
+        capture_.output_will_be_muted);
+  }
   InitializeTransient();
   InitializeBeamformer();
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
   InitializeIntelligibility();
-  InitializeHighPassFilter();
-  InitializeNoiseSuppression();
-  InitializeLevelEstimator();
-  InitializeVoiceDetection();
+#endif
+  public_submodules_->high_pass_filter->Initialize(num_proc_channels(),
+                                                   proc_sample_rate_hz());
+  public_submodules_->noise_suppression->Initialize(num_proc_channels(),
+                                                    proc_sample_rate_hz());
+  public_submodules_->voice_detection->Initialize(proc_split_sample_rate_hz());
+  public_submodules_->level_estimator->Initialize();
+  InitializeLevelController();
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
   if (debug_dump_.debug_file->is_open()) {
@@ -359,42 +494,82 @@ int AudioProcessingImpl::InitializeLocked(const ProcessingConfig& config) {
 
   formats_.api_format = config;
 
-  capture_nonlocked_.fwd_proc_format = StreamConfig(ClosestHigherNativeRate(
+  int capture_processing_rate = FindNativeProcessRateToUse(
       std::min(formats_.api_format.input_stream().sample_rate_hz(),
-               formats_.api_format.output_stream().sample_rate_hz())));
+               formats_.api_format.output_stream().sample_rate_hz()),
+      submodule_states_.CaptureMultiBandSubModulesActive() ||
+          submodule_states_.RenderMultiBandSubModulesActive());
 
-  int rev_proc_rate = ClosestHigherNativeRate(std::min(
-      formats_.api_format.reverse_input_stream().sample_rate_hz(),
-      formats_.api_format.reverse_output_stream().sample_rate_hz()));
+  capture_nonlocked_.capture_processing_format =
+      StreamConfig(capture_processing_rate);
+
+  int render_processing_rate = FindNativeProcessRateToUse(
+      std::min(formats_.api_format.reverse_input_stream().sample_rate_hz(),
+               formats_.api_format.reverse_output_stream().sample_rate_hz()),
+      submodule_states_.CaptureMultiBandSubModulesActive() ||
+          submodule_states_.RenderMultiBandSubModulesActive());
   // TODO(aluebs): Remove this restriction once we figure out why the 3-band
   // splitting filter degrades the AEC performance.
-  if (rev_proc_rate > kSampleRate32kHz) {
-    rev_proc_rate = is_rev_processed() ? kSampleRate32kHz : kSampleRate16kHz;
+  if (render_processing_rate > kSampleRate32kHz) {
+    render_processing_rate = submodule_states_.RenderMultiBandProcessingActive()
+                                 ? kSampleRate32kHz
+                                 : kSampleRate16kHz;
   }
-  // If the forward sample rate is 8 kHz, the reverse stream is also processed
+  // If the forward sample rate is 8 kHz, the render stream is also processed
   // at this rate.
-  if (capture_nonlocked_.fwd_proc_format.sample_rate_hz() == kSampleRate8kHz) {
-    rev_proc_rate = kSampleRate8kHz;
+  if (capture_nonlocked_.capture_processing_format.sample_rate_hz() ==
+      kSampleRate8kHz) {
+    render_processing_rate = kSampleRate8kHz;
   } else {
-    rev_proc_rate = std::max(rev_proc_rate, static_cast<int>(kSampleRate16kHz));
+    render_processing_rate =
+        std::max(render_processing_rate, static_cast<int>(kSampleRate16kHz));
   }
 
-  // Always downmix the reverse stream to mono for analysis. This has been
+  // Always downmix the render stream to mono for analysis. This has been
   // demonstrated to work well for AEC in most practical scenarios.
-  formats_.rev_proc_format = StreamConfig(rev_proc_rate, 1);
+  formats_.render_processing_format = StreamConfig(render_processing_rate, 1);
 
-  if (capture_nonlocked_.fwd_proc_format.sample_rate_hz() == kSampleRate32kHz ||
-      capture_nonlocked_.fwd_proc_format.sample_rate_hz() == kSampleRate48kHz) {
+  if (capture_nonlocked_.capture_processing_format.sample_rate_hz() ==
+          kSampleRate32kHz ||
+      capture_nonlocked_.capture_processing_format.sample_rate_hz() ==
+          kSampleRate48kHz) {
     capture_nonlocked_.split_rate = kSampleRate16kHz;
   } else {
     capture_nonlocked_.split_rate =
-        capture_nonlocked_.fwd_proc_format.sample_rate_hz();
+        capture_nonlocked_.capture_processing_format.sample_rate_hz();
   }
 
   return InitializeLocked();
 }
 
-void AudioProcessingImpl::SetExtraOptions(const Config& config) {
+void AudioProcessingImpl::ApplyConfig(const AudioProcessing::Config& config) {
+  AudioProcessing::Config config_to_use = config;
+
+  bool config_ok = LevelController::Validate(config_to_use.level_controller);
+  if (!config_ok) {
+    LOG(LS_ERROR) << "AudioProcessing module config error" << std::endl
+                  << "level_controller: "
+                  << LevelController::ToString(config_to_use.level_controller)
+                  << std::endl
+                  << "Reverting to default parameter set";
+    config_to_use.level_controller = AudioProcessing::Config::LevelController();
+  }
+
+  // Run in a single-threaded manner when applying the settings.
+  rtc::CritScope cs_render(&crit_render_);
+  rtc::CritScope cs_capture(&crit_capture_);
+
+  if (config.level_controller.enabled !=
+      capture_nonlocked_.level_controller_enabled) {
+    InitializeLevelController();
+    LOG(LS_INFO) << "Level controller activated: "
+                 << capture_nonlocked_.level_controller_enabled;
+    capture_nonlocked_.level_controller_enabled =
+        config.level_controller.enabled;
+  }
+}
+
+void AudioProcessingImpl::SetExtraOptions(const webrtc::Config& config) {
   // Run in a single-threaded manner when setting the extra options.
   rtc::CritScope cs_render(&crit_render_);
   rtc::CritScope cs_capture(&crit_capture_);
@@ -408,12 +583,14 @@ void AudioProcessingImpl::SetExtraOptions(const Config& config) {
     InitializeTransient();
   }
 
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
   if(capture_nonlocked_.intelligibility_enabled !=
      config.Get<Intelligibility>().enabled) {
     capture_nonlocked_.intelligibility_enabled =
         config.Get<Intelligibility>().enabled;
     InitializeIntelligibility();
   }
+#endif
 
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
   if (capture_nonlocked_.beamformer_enabled !=
@@ -430,7 +607,7 @@ void AudioProcessingImpl::SetExtraOptions(const Config& config) {
 
 int AudioProcessingImpl::proc_sample_rate_hz() const {
   // Used as callback from submodules, hence locking is not allowed.
-  return capture_nonlocked_.fwd_proc_format.sample_rate_hz();
+  return capture_nonlocked_.capture_processing_format.sample_rate_hz();
 }
 
 int AudioProcessingImpl::proc_split_sample_rate_hz() const {
@@ -440,7 +617,7 @@ int AudioProcessingImpl::proc_split_sample_rate_hz() const {
 
 size_t AudioProcessingImpl::num_reverse_channels() const {
   // Used as callback from submodules, hence locking is not allowed.
-  return formats_.rev_proc_format.num_channels();
+  return formats_.render_processing_format.num_channels();
 }
 
 size_t AudioProcessingImpl::num_input_channels() const {
@@ -506,6 +683,7 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
                                        float* const* dest) {
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessStream_StreamConfig");
   ProcessingConfig processing_config;
+  bool reinitialization_required = false;
   {
     // Acquire the capture lock in order to safely call the function
     // that retrieves the render side data. This function accesses apm
@@ -520,6 +698,7 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
     }
 
     processing_config = formats_.api_format;
+    reinitialization_required = UpdateActiveSubmoduleStates();
   }
 
   processing_config.input_stream() = input_config;
@@ -528,11 +707,12 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
   {
     // Do conditional reinitialization.
     rtc::CritScope cs_render(&crit_render_);
-    RETURN_ON_ERR(MaybeInitializeCapture(processing_config));
+    RETURN_ON_ERR(
+        MaybeInitializeCapture(processing_config, reinitialization_required));
   }
   rtc::CritScope cs_capture(&crit_capture_);
-  assert(processing_config.input_stream().num_frames() ==
-         formats_.api_format.input_stream().num_frames());
+  RTC_DCHECK_EQ(processing_config.input_stream().num_frames(),
+                formats_.api_format.input_stream().num_frames());
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
   if (debug_dump_.debug_file->is_open()) {
@@ -549,7 +729,7 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
 #endif
 
   capture_.capture_audio->CopyFrom(src, formats_.api_format.input_stream());
-  RETURN_ON_ERR(ProcessStreamLocked());
+  RETURN_ON_ERR(ProcessCaptureStreamLocked());
   capture_.capture_audio->CopyTo(formats_.api_format.output_stream(), dest);
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
@@ -596,6 +776,7 @@ int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
   }
 
   ProcessingConfig processing_config;
+  bool reinitialization_required = false;
   {
     // Aquire lock for the access of api_format.
     // The lock is released immediately due to the conditional
@@ -604,6 +785,8 @@ int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
     // TODO(ajm): The input and output rates and channels are currently
     // constrained to be identical in the int16 interface.
     processing_config = formats_.api_format;
+
+    reinitialization_required = UpdateActiveSubmoduleStates();
   }
   processing_config.input_stream().set_sample_rate_hz(frame->sample_rate_hz_);
   processing_config.input_stream().set_num_channels(frame->num_channels_);
@@ -613,7 +796,8 @@ int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
   {
     // Do conditional reinitialization.
     rtc::CritScope cs_render(&crit_render_);
-    RETURN_ON_ERR(MaybeInitializeCapture(processing_config));
+    RETURN_ON_ERR(
+        MaybeInitializeCapture(processing_config, reinitialization_required));
   }
   rtc::CritScope cs_capture(&crit_capture_);
   if (frame->samples_per_channel_ !=
@@ -623,6 +807,8 @@ int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
   if (debug_dump_.debug_file->is_open()) {
+    RETURN_ON_ERR(WriteConfigMessage(false));
+
     debug_dump_.capture.event_msg->set_type(audioproc::Event::STREAM);
     audioproc::Stream* msg = debug_dump_.capture.event_msg->mutable_stream();
     const size_t data_size =
@@ -632,8 +818,9 @@ int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
 #endif
 
   capture_.capture_audio->DeinterleaveFrom(frame);
-  RETURN_ON_ERR(ProcessStreamLocked());
-  capture_.capture_audio->InterleaveTo(frame, output_copy_needed());
+  RETURN_ON_ERR(ProcessCaptureStreamLocked());
+  capture_.capture_audio->InterleaveTo(
+      frame, submodule_states_.CaptureMultiBandProcessingActive());
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
   if (debug_dump_.debug_file->is_open()) {
@@ -650,7 +837,7 @@ int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
   return kNoError;
 }
 
-int AudioProcessingImpl::ProcessStreamLocked() {
+int AudioProcessingImpl::ProcessCaptureStreamLocked() {
   // Ensure that not both the AEC and AECM are active at the same time.
   // TODO(peah): Simplify once the public API Enable functions for these
   // are moved to APM.
@@ -670,28 +857,32 @@ int AudioProcessingImpl::ProcessStreamLocked() {
 
   MaybeUpdateHistograms();
 
-  AudioBuffer* ca = capture_.capture_audio.get();  // For brevity.
+  AudioBuffer* capture_buffer = capture_.capture_audio.get();  // For brevity.
 
   if (constants_.use_experimental_agc &&
       public_submodules_->gain_control->is_enabled()) {
     private_submodules_->agc_manager->AnalyzePreProcess(
-        ca->channels()[0], ca->num_channels(),
-        capture_nonlocked_.fwd_proc_format.num_frames());
+        capture_buffer->channels()[0], capture_buffer->num_channels(),
+        capture_nonlocked_.capture_processing_format.num_frames());
   }
 
-  if (fwd_analysis_needed()) {
-    ca->SplitIntoFrequencyBands();
+  if (submodule_states_.CaptureMultiBandSubModulesActive() &&
+      SampleRateSupportsMultiBand(
+          capture_nonlocked_.capture_processing_format.sample_rate_hz())) {
+    capture_buffer->SplitIntoFrequencyBands();
   }
 
   if (capture_nonlocked_.beamformer_enabled) {
-    private_submodules_->beamformer->ProcessChunk(*ca->split_data_f(),
-                                                  ca->split_data_f());
-    ca->set_num_channels(1);
+    private_submodules_->beamformer->AnalyzeChunk(
+        *capture_buffer->split_data_f());
+    // Discards all channels by the leftmost one.
+    capture_buffer->set_num_channels(1);
   }
 
-  public_submodules_->high_pass_filter->ProcessCaptureAudio(ca);
-  RETURN_ON_ERR(public_submodules_->gain_control->AnalyzeCaptureAudio(ca));
-  public_submodules_->noise_suppression->AnalyzeCaptureAudio(ca);
+  public_submodules_->high_pass_filter->ProcessCaptureAudio(capture_buffer);
+  RETURN_ON_ERR(
+      public_submodules_->gain_control->AnalyzeCaptureAudio(capture_buffer));
+  public_submodules_->noise_suppression->AnalyzeCaptureAudio(capture_buffer);
 
   // Ensure that the stream delay was set before the call to the
   // AEC ProcessCaptureAudio function.
@@ -701,21 +892,27 @@ int AudioProcessingImpl::ProcessStreamLocked() {
   }
 
   RETURN_ON_ERR(public_submodules_->echo_cancellation->ProcessCaptureAudio(
-      ca, stream_delay_ms()));
+      capture_buffer, stream_delay_ms()));
 
   if (public_submodules_->echo_control_mobile->is_enabled() &&
       public_submodules_->noise_suppression->is_enabled()) {
-    ca->CopyLowPassToReference();
+    capture_buffer->CopyLowPassToReference();
   }
-  public_submodules_->noise_suppression->ProcessCaptureAudio(ca);
+  public_submodules_->noise_suppression->ProcessCaptureAudio(capture_buffer);
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
   if (capture_nonlocked_.intelligibility_enabled) {
     RTC_DCHECK(public_submodules_->noise_suppression->is_enabled());
     int gain_db = public_submodules_->gain_control->is_enabled() ?
                   public_submodules_->gain_control->compression_gain_db() :
                   0;
+    float gain = std::pow(10.f, gain_db / 20.f);
+    gain *= capture_nonlocked_.level_controller_enabled ?
+            private_submodules_->level_controller->GetLastGain() :
+            1.f;
     public_submodules_->intelligibility_enhancer->SetCaptureNoiseEstimate(
-        public_submodules_->noise_suppression->NoiseEstimate(), gain_db);
+        public_submodules_->noise_suppression->NoiseEstimate(), gain);
   }
+#endif
 
   // Ensure that the stream delay was set before the call to the
   // AECM ProcessCaptureAudio function.
@@ -725,23 +922,29 @@ int AudioProcessingImpl::ProcessStreamLocked() {
   }
 
   RETURN_ON_ERR(public_submodules_->echo_control_mobile->ProcessCaptureAudio(
-      ca, stream_delay_ms()));
+      capture_buffer, stream_delay_ms()));
 
-  public_submodules_->voice_detection->ProcessCaptureAudio(ca);
+  if (capture_nonlocked_.beamformer_enabled) {
+    private_submodules_->beamformer->PostFilter(capture_buffer->split_data_f());
+  }
+
+  public_submodules_->voice_detection->ProcessCaptureAudio(capture_buffer);
 
   if (constants_.use_experimental_agc &&
       public_submodules_->gain_control->is_enabled() &&
       (!capture_nonlocked_.beamformer_enabled ||
        private_submodules_->beamformer->is_target_present())) {
     private_submodules_->agc_manager->Process(
-        ca->split_bands_const(0)[kBand0To8kHz], ca->num_frames_per_band(),
-        capture_nonlocked_.split_rate);
+        capture_buffer->split_bands_const(0)[kBand0To8kHz],
+        capture_buffer->num_frames_per_band(), capture_nonlocked_.split_rate);
   }
   RETURN_ON_ERR(public_submodules_->gain_control->ProcessCaptureAudio(
-      ca, echo_cancellation()->stream_has_echo()));
+      capture_buffer, echo_cancellation()->stream_has_echo()));
 
-  if (fwd_synthesis_needed()) {
-    ca->MergeFrequencyBands();
+  if (submodule_states_.CaptureMultiBandProcessingActive() &&
+      SampleRateSupportsMultiBand(
+          capture_nonlocked_.capture_processing_format.sample_rate_hz())) {
+    capture_buffer->MergeFrequencyBands();
   }
 
   // TODO(aluebs): Investigate if the transient suppression placement should be
@@ -753,14 +956,20 @@ int AudioProcessingImpl::ProcessStreamLocked() {
             : 1.f;
 
     public_submodules_->transient_suppressor->Suppress(
-        ca->channels_f()[0], ca->num_frames(), ca->num_channels(),
-        ca->split_bands_const_f(0)[kBand0To8kHz], ca->num_frames_per_band(),
-        ca->keyboard_data(), ca->num_keyboard_frames(), voice_probability,
+        capture_buffer->channels_f()[0], capture_buffer->num_frames(),
+        capture_buffer->num_channels(),
+        capture_buffer->split_bands_const_f(0)[kBand0To8kHz],
+        capture_buffer->num_frames_per_band(), capture_buffer->keyboard_data(),
+        capture_buffer->num_keyboard_frames(), voice_probability,
         capture_.key_pressed);
   }
 
+  if (capture_nonlocked_.level_controller_enabled) {
+    private_submodules_->level_controller->Process(capture_buffer);
+  }
+
   // The level estimator operates on the recombined data.
-  public_submodules_->level_estimator->ProcessStream(ca);
+  public_submodules_->level_estimator->ProcessStream(capture_buffer);
 
   capture_.was_stream_delay_set = false;
   return kNoError;
@@ -768,12 +977,12 @@ int AudioProcessingImpl::ProcessStreamLocked() {
 
 int AudioProcessingImpl::AnalyzeReverseStream(const float* const* data,
                                               size_t samples_per_channel,
-                                              int rev_sample_rate_hz,
+                                              int sample_rate_hz,
                                               ChannelLayout layout) {
   TRACE_EVENT0("webrtc", "AudioProcessing::AnalyzeReverseStream_ChannelLayout");
   rtc::CritScope cs(&crit_render_);
   const StreamConfig reverse_config = {
-      rev_sample_rate_hz, ChannelsFromLayout(layout), LayoutHasKeyboard(layout),
+      sample_rate_hz, ChannelsFromLayout(layout), LayoutHasKeyboard(layout),
   };
   if (samples_per_channel != reverse_config.num_frames()) {
     return kBadDataLengthError;
@@ -781,25 +990,23 @@ int AudioProcessingImpl::AnalyzeReverseStream(const float* const* data,
   return AnalyzeReverseStreamLocked(data, reverse_config, reverse_config);
 }
 
-int AudioProcessingImpl::ProcessReverseStream(
-    const float* const* src,
-    const StreamConfig& reverse_input_config,
-    const StreamConfig& reverse_output_config,
-    float* const* dest) {
+int AudioProcessingImpl::ProcessReverseStream(const float* const* src,
+                                              const StreamConfig& input_config,
+                                              const StreamConfig& output_config,
+                                              float* const* dest) {
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessReverseStream_StreamConfig");
   rtc::CritScope cs(&crit_render_);
-  RETURN_ON_ERR(AnalyzeReverseStreamLocked(src, reverse_input_config,
-                                           reverse_output_config));
-  if (is_rev_processed()) {
+  RETURN_ON_ERR(AnalyzeReverseStreamLocked(src, input_config, output_config));
+  if (submodule_states_.RenderMultiBandProcessingActive()) {
     render_.render_audio->CopyTo(formats_.api_format.reverse_output_stream(),
                                  dest);
-  } else if (render_check_rev_conversion_needed()) {
-    render_.render_converter->Convert(src, reverse_input_config.num_samples(),
-                                      dest,
-                                      reverse_output_config.num_samples());
+  } else if (formats_.api_format.reverse_input_stream() !=
+             formats_.api_format.reverse_output_stream()) {
+    render_.render_converter->Convert(src, input_config.num_samples(), dest,
+                                      output_config.num_samples());
   } else {
-    CopyAudioIfNeeded(src, reverse_input_config.num_frames(),
-                      reverse_input_config.num_channels(), dest);
+    CopyAudioIfNeeded(src, input_config.num_frames(),
+                      input_config.num_channels(), dest);
   }
 
   return kNoError;
@@ -807,22 +1014,22 @@ int AudioProcessingImpl::ProcessReverseStream(
 
 int AudioProcessingImpl::AnalyzeReverseStreamLocked(
     const float* const* src,
-    const StreamConfig& reverse_input_config,
-    const StreamConfig& reverse_output_config) {
+    const StreamConfig& input_config,
+    const StreamConfig& output_config) {
   if (src == nullptr) {
     return kNullPointerError;
   }
 
-  if (reverse_input_config.num_channels() == 0) {
+  if (input_config.num_channels() == 0) {
     return kBadNumberChannelsError;
   }
 
   ProcessingConfig processing_config = formats_.api_format;
-  processing_config.reverse_input_stream() = reverse_input_config;
-  processing_config.reverse_output_stream() = reverse_output_config;
+  processing_config.reverse_input_stream() = input_config;
+  processing_config.reverse_output_stream() = output_config;
 
   RETURN_ON_ERR(MaybeInitializeRender(processing_config));
-  assert(reverse_input_config.num_frames() ==
+  assert(input_config.num_frames() ==
          formats_.api_format.reverse_input_stream().num_frames());
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
@@ -843,7 +1050,7 @@ int AudioProcessingImpl::AnalyzeReverseStreamLocked(
 
   render_.render_audio->CopyFrom(src,
                                  formats_.api_format.reverse_input_stream());
-  return ProcessReverseStreamLocked();
+  return ProcessRenderStreamLocked();
 }
 
 int AudioProcessingImpl::ProcessReverseStream(AudioFrame* frame) {
@@ -894,34 +1101,40 @@ int AudioProcessingImpl::ProcessReverseStream(AudioFrame* frame) {
   }
 #endif
   render_.render_audio->DeinterleaveFrom(frame);
-  RETURN_ON_ERR(ProcessReverseStreamLocked());
-  if (is_rev_processed()) {
-    render_.render_audio->InterleaveTo(frame, true);
-  }
+  RETURN_ON_ERR(ProcessRenderStreamLocked());
+  render_.render_audio->InterleaveTo(
+      frame, submodule_states_.RenderMultiBandProcessingActive());
   return kNoError;
 }
 
-int AudioProcessingImpl::ProcessReverseStreamLocked() {
-  AudioBuffer* ra = render_.render_audio.get();  // For brevity.
-  if (rev_analysis_needed()) {
-    ra->SplitIntoFrequencyBands();
+int AudioProcessingImpl::ProcessRenderStreamLocked() {
+  AudioBuffer* render_buffer = render_.render_audio.get();  // For brevity.
+  if (submodule_states_.RenderMultiBandSubModulesActive() &&
+      SampleRateSupportsMultiBand(
+          formats_.render_processing_format.sample_rate_hz())) {
+    render_buffer->SplitIntoFrequencyBands();
   }
 
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
   if (capture_nonlocked_.intelligibility_enabled) {
     public_submodules_->intelligibility_enhancer->ProcessRenderAudio(
-        ra->split_channels_f(kBand0To8kHz), capture_nonlocked_.split_rate,
-        ra->num_channels());
+        render_buffer);
   }
+#endif
 
-  RETURN_ON_ERR(public_submodules_->echo_cancellation->ProcessRenderAudio(ra));
   RETURN_ON_ERR(
-      public_submodules_->echo_control_mobile->ProcessRenderAudio(ra));
+      public_submodules_->echo_cancellation->ProcessRenderAudio(render_buffer));
+  RETURN_ON_ERR(public_submodules_->echo_control_mobile->ProcessRenderAudio(
+      render_buffer));
   if (!constants_.use_experimental_agc) {
-    RETURN_ON_ERR(public_submodules_->gain_control->ProcessRenderAudio(ra));
+    RETURN_ON_ERR(
+        public_submodules_->gain_control->ProcessRenderAudio(render_buffer));
   }
 
-  if (rev_synthesis_needed()) {
-    ra->MergeFrequencyBands();
+  if (submodule_states_.RenderMultiBandProcessingActive() &&
+      SampleRateSupportsMultiBand(
+          formats_.render_processing_format.sample_rate_hz())) {
+    render_buffer->MergeFrequencyBands();
   }
 
   return kNoError;
@@ -1054,20 +1267,14 @@ int AudioProcessingImpl::StopDebugRecording() {
 }
 
 EchoCancellation* AudioProcessingImpl::echo_cancellation() const {
-  // Adding a lock here has no effect as it allows any access to the submodule
-  // from the returned pointer.
   return public_submodules_->echo_cancellation.get();
 }
 
 EchoControlMobile* AudioProcessingImpl::echo_control_mobile() const {
-  // Adding a lock here has no effect as it allows any access to the submodule
-  // from the returned pointer.
   return public_submodules_->echo_control_mobile.get();
 }
 
 GainControl* AudioProcessingImpl::gain_control() const {
-  // Adding a lock here has no effect as it allows any access to the submodule
-  // from the returned pointer.
   if (constants_.use_experimental_agc) {
     return public_submodules_->gain_control_for_experimental_agc.get();
   }
@@ -1075,113 +1282,36 @@ GainControl* AudioProcessingImpl::gain_control() const {
 }
 
 HighPassFilter* AudioProcessingImpl::high_pass_filter() const {
-  // Adding a lock here has no effect as it allows any access to the submodule
-  // from the returned pointer.
   return public_submodules_->high_pass_filter.get();
 }
 
 LevelEstimator* AudioProcessingImpl::level_estimator() const {
-  // Adding a lock here has no effect as it allows any access to the submodule
-  // from the returned pointer.
   return public_submodules_->level_estimator.get();
 }
 
 NoiseSuppression* AudioProcessingImpl::noise_suppression() const {
-  // Adding a lock here has no effect as it allows any access to the submodule
-  // from the returned pointer.
   return public_submodules_->noise_suppression.get();
 }
 
 VoiceDetection* AudioProcessingImpl::voice_detection() const {
-  // Adding a lock here has no effect as it allows any access to the submodule
-  // from the returned pointer.
   return public_submodules_->voice_detection.get();
 }
 
-bool AudioProcessingImpl::is_fwd_processed() const {
-  // The beamformer, noise suppressor and highpass filter
-  // modify the data.
-  if (capture_nonlocked_.beamformer_enabled ||
-      public_submodules_->high_pass_filter->is_enabled() ||
-      public_submodules_->noise_suppression->is_enabled() ||
-      public_submodules_->echo_cancellation->is_enabled() ||
-      public_submodules_->echo_control_mobile->is_enabled() ||
-      public_submodules_->gain_control->is_enabled()) {
-    return true;
-  }
-
-  // The capture data is otherwise unchanged.
-  return false;
+bool AudioProcessingImpl::UpdateActiveSubmoduleStates() {
+  return submodule_states_.Update(
+      public_submodules_->high_pass_filter->is_enabled(),
+      public_submodules_->echo_cancellation->is_enabled(),
+      public_submodules_->echo_control_mobile->is_enabled(),
+      public_submodules_->noise_suppression->is_enabled(),
+      capture_nonlocked_.intelligibility_enabled,
+      capture_nonlocked_.beamformer_enabled,
+      public_submodules_->gain_control->is_enabled(),
+      capture_nonlocked_.level_controller_enabled,
+      public_submodules_->voice_detection->is_enabled(),
+      public_submodules_->level_estimator->is_enabled(),
+      capture_.transient_suppressor_enabled);
 }
 
-bool AudioProcessingImpl::output_copy_needed() const {
-  // Check if we've upmixed or downmixed the audio.
-  return ((formats_.api_format.output_stream().num_channels() !=
-           formats_.api_format.input_stream().num_channels()) ||
-          is_fwd_processed() || capture_.transient_suppressor_enabled);
-}
-
-bool AudioProcessingImpl::fwd_synthesis_needed() const {
-  return (is_fwd_processed() &&
-          is_multi_band(capture_nonlocked_.fwd_proc_format.sample_rate_hz()));
-}
-
-bool AudioProcessingImpl::fwd_analysis_needed() const {
-  if (!is_fwd_processed() &&
-      !public_submodules_->voice_detection->is_enabled() &&
-      !capture_.transient_suppressor_enabled) {
-    // Only public_submodules_->level_estimator is enabled.
-    return false;
-  } else if (is_multi_band(
-                 capture_nonlocked_.fwd_proc_format.sample_rate_hz())) {
-    // Something besides public_submodules_->level_estimator is enabled, and we
-    // have super-wb.
-    return true;
-  }
-  return false;
-}
-
-bool AudioProcessingImpl::is_rev_processed() const {
-  return capture_nonlocked_.intelligibility_enabled;
-}
-
-bool AudioProcessingImpl::rev_synthesis_needed() const {
-  return (is_rev_processed() &&
-          is_multi_band(formats_.rev_proc_format.sample_rate_hz()));
-}
-
-bool AudioProcessingImpl::rev_analysis_needed() const {
-  return is_multi_band(formats_.rev_proc_format.sample_rate_hz()) &&
-         (is_rev_processed() ||
-          public_submodules_->echo_cancellation
-              ->is_enabled_render_side_query() ||
-          public_submodules_->echo_control_mobile
-              ->is_enabled_render_side_query() ||
-          public_submodules_->gain_control->is_enabled_render_side_query());
-}
-
-bool AudioProcessingImpl::render_check_rev_conversion_needed() const {
-  return rev_conversion_needed();
-}
-
-bool AudioProcessingImpl::rev_conversion_needed() const {
-  return (formats_.api_format.reverse_input_stream() !=
-          formats_.api_format.reverse_output_stream());
-}
-
-void AudioProcessingImpl::InitializeExperimentalAgc() {
-  if (constants_.use_experimental_agc) {
-    if (!private_submodules_->agc_manager.get()) {
-      private_submodules_->agc_manager.reset(new AgcManagerDirect(
-          public_submodules_->gain_control.get(),
-          public_submodules_->gain_control_for_experimental_agc.get(),
-          constants_.agc_startup_min_volume));
-    }
-    private_submodules_->agc_manager->Initialize();
-    private_submodules_->agc_manager->SetCaptureMuted(
-        capture_.output_will_be_muted);
-  }
-}
 
 void AudioProcessingImpl::InitializeTransient() {
   if (capture_.transient_suppressor_enabled) {
@@ -1189,9 +1319,8 @@ void AudioProcessingImpl::InitializeTransient() {
       public_submodules_->transient_suppressor.reset(new TransientSuppressor());
     }
     public_submodules_->transient_suppressor->Initialize(
-        capture_nonlocked_.fwd_proc_format.sample_rate_hz(),
-        capture_nonlocked_.split_rate,
-        num_proc_channels());
+        capture_nonlocked_.capture_processing_format.sample_rate_hz(),
+        capture_nonlocked_.split_rate, num_proc_channels());
   }
 }
 
@@ -1199,7 +1328,7 @@ void AudioProcessingImpl::InitializeBeamformer() {
   if (capture_nonlocked_.beamformer_enabled) {
     if (!private_submodules_->beamformer) {
       private_submodules_->beamformer.reset(new NonlinearBeamformer(
-          capture_.array_geometry, capture_.target_direction));
+          capture_.array_geometry, 1u, capture_.target_direction));
     }
     private_submodules_->beamformer->Initialize(kChunkSizeMs,
                                                 capture_nonlocked_.split_rate);
@@ -1207,48 +1336,19 @@ void AudioProcessingImpl::InitializeBeamformer() {
 }
 
 void AudioProcessingImpl::InitializeIntelligibility() {
+#if WEBRTC_INTELLIGIBILITY_ENHANCER
   if (capture_nonlocked_.intelligibility_enabled) {
     public_submodules_->intelligibility_enhancer.reset(
         new IntelligibilityEnhancer(capture_nonlocked_.split_rate,
                                     render_.render_audio->num_channels(),
+                                    render_.render_audio->num_bands(),
                                     NoiseSuppressionImpl::num_noise_bins()));
   }
+#endif
 }
 
-void AudioProcessingImpl::InitializeHighPassFilter() {
-  public_submodules_->high_pass_filter->Initialize(num_proc_channels(),
-                                                   proc_sample_rate_hz());
-}
-
-void AudioProcessingImpl::InitializeNoiseSuppression() {
-  public_submodules_->noise_suppression->Initialize(num_proc_channels(),
-                                                    proc_sample_rate_hz());
-}
-
-void AudioProcessingImpl::InitializeEchoCanceller() {
-  public_submodules_->echo_cancellation->Initialize(
-      proc_sample_rate_hz(), num_reverse_channels(), num_output_channels(),
-      num_proc_channels());
-}
-
-void AudioProcessingImpl::InitializeGainController() {
-  public_submodules_->gain_control->Initialize(num_proc_channels(),
-                                               proc_sample_rate_hz());
-}
-
-void AudioProcessingImpl::InitializeEchoControlMobile() {
-  public_submodules_->echo_control_mobile->Initialize(
-      proc_split_sample_rate_hz(),
-      num_reverse_channels(),
-      num_output_channels());
-}
-
-void AudioProcessingImpl::InitializeLevelEstimator() {
-  public_submodules_->level_estimator->Initialize();
-}
-
-void AudioProcessingImpl::InitializeVoiceDetection() {
-  public_submodules_->voice_detection->Initialize(proc_split_sample_rate_hz());
+void AudioProcessingImpl::InitializeLevelController() {
+  private_submodules_->level_controller->Initialize(proc_sample_rate_hz());
 }
 
 void AudioProcessingImpl::MaybeUpdateHistograms() {
@@ -1441,6 +1541,9 @@ int AudioProcessingImpl::WriteConfigMessage(bool forced) {
       public_submodules_->echo_cancellation->GetExperimentsDescription();
   // TODO(peah): Add semicolon-separated concatenations of experiment
   // descriptions for other submodules.
+  if (capture_nonlocked_.level_controller_enabled) {
+    experiments_description += "LevelController;";
+  }
   config.set_experiments_description(experiments_description);
 
   std::string serialized_config = config.SerializeAsString();
@@ -1460,5 +1563,29 @@ int AudioProcessingImpl::WriteConfigMessage(bool forced) {
   return kNoError;
 }
 #endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
+
+AudioProcessingImpl::ApmCaptureState::ApmCaptureState(
+    bool transient_suppressor_enabled,
+    const std::vector<Point>& array_geometry,
+    SphericalPointf target_direction)
+    : aec_system_delay_jumps(-1),
+      delay_offset_ms(0),
+      was_stream_delay_set(false),
+      last_stream_delay_ms(0),
+      last_aec_system_delay_ms(0),
+      stream_delay_jumps(-1),
+      output_will_be_muted(false),
+      key_pressed(false),
+      transient_suppressor_enabled(transient_suppressor_enabled),
+      array_geometry(array_geometry),
+      target_direction(target_direction),
+      capture_processing_format(kSampleRate16kHz),
+      split_rate(kSampleRate16kHz) {}
+
+AudioProcessingImpl::ApmCaptureState::~ApmCaptureState() = default;
+
+AudioProcessingImpl::ApmRenderState::ApmRenderState() = default;
+
+AudioProcessingImpl::ApmRenderState::~ApmRenderState() = default;
 
 }  // namespace webrtc

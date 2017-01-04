@@ -41,6 +41,8 @@
 #include "net/http/http_transaction.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log_event_type.h"
+#include "net/log/net_log_with_source.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_retry_info.h"
@@ -50,7 +52,6 @@
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request.h"
-#include "net/url_request/url_request_backoff_manager.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_job_factory.h"
@@ -194,14 +195,14 @@ class URLRequestHttpJob::HttpFilterContext : public FilterContext {
   int GetResponseCode() const override;
   const URLRequestContext* GetURLRequestContext() const override;
   void RecordPacketStats(StatisticSelector statistic) const override;
-  const BoundNetLog& GetNetLog() const override;
+  const NetLogWithSource& GetNetLog() const override;
 
  private:
   URLRequestHttpJob* job_;
 
   // URLRequestHttpJob may be detached from URLRequest, but we still need to
   // return something.
-  BoundNetLog dummy_log_;
+  NetLogWithSource dummy_log_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpFilterContext);
 };
@@ -257,7 +258,8 @@ void URLRequestHttpJob::HttpFilterContext::RecordPacketStats(
   job_->RecordPacketStats(statistic);
 }
 
-const BoundNetLog& URLRequestHttpJob::HttpFilterContext::GetNetLog() const {
+const NetLogWithSource& URLRequestHttpJob::HttpFilterContext::GetNetLog()
+    const {
   return job_->request() ? job_->request()->net_log() : dummy_log_;
 }
 
@@ -316,7 +318,6 @@ URLRequestHttpJob::URLRequestHttpJob(
                      base::Unretained(this))),
       awaiting_callback_(false),
       http_user_agent_settings_(http_user_agent_settings),
-      backoff_manager_(request->context()->backoff_manager()),
       total_received_bytes_from_previous_transactions_(0),
       total_sent_bytes_from_previous_transactions_(0),
       weak_factory_(this) {
@@ -425,24 +426,6 @@ void URLRequestHttpJob::NotifyBeforeSendHeadersCallback(
   }
 }
 
-void URLRequestHttpJob::NotifyBeforeNetworkStart(bool* defer) {
-  if (!request_)
-    return;
-  if (backoff_manager_) {
-    if ((request_->load_flags() & LOAD_MAYBE_USER_GESTURE) == 0 &&
-        backoff_manager_->ShouldRejectRequest(request()->url(),
-                                              request()->request_time())) {
-      *defer = true;
-      base::ThreadTaskRunnerHandle::Get()->PostTask(
-          FROM_HERE,
-          base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                     weak_factory_.GetWeakPtr(), ERR_TEMPORARY_BACKOFF));
-      return;
-    }
-  }
-  URLRequestJob::NotifyBeforeNetworkStart(defer);
-}
-
 void URLRequestHttpJob::NotifyHeadersComplete() {
   DCHECK(!response_info_);
 
@@ -454,9 +437,6 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
 
   if (!is_cached_content_ && throttling_entry_.get())
     throttling_entry_->UpdateWithResponse(GetResponseCode());
-
-  if (!is_cached_content_)
-    ProcessBackoffHeader();
 
   // The ordering of these calls is not important.
   ProcessStrictTransportSecurityHeader();
@@ -470,7 +450,7 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
     if (rv != SDCH_OK) {
       SdchManager::SdchErrorRecovery(rv);
       request()->net_log().AddEvent(
-          NetLog::TYPE_SDCH_DECODING_ERROR,
+          NetLogEventType::SDCH_DECODING_ERROR,
           base::Bind(&NetLogSdchResourceProblemCallback, rv));
     } else {
       const std::string name = "Get-Dictionary";
@@ -495,7 +475,7 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
           if (rv != SDCH_OK) {
             SdchManager::SdchErrorRecovery(rv);
             request_->net_log().AddEvent(
-                NetLog::TYPE_SDCH_DICTIONARY_ERROR,
+                NetLogEventType::SDCH_DICTIONARY_ERROR,
                 base::Bind(&NetLogSdchDictionaryFetchProblemCallback, rv,
                            sdch_dictionary_url, false));
           }
@@ -591,7 +571,7 @@ void URLRequestHttpJob::MaybeStartTransactionInternal(int result) {
     StartTransactionInternal();
   } else {
     std::string source("delegate");
-    request_->net_log().AddEvent(NetLog::TYPE_CANCELLED,
+    request_->net_log().AddEvent(NetLogEventType::CANCELLED,
                                  NetLog::StringCallback("source", &source));
     NotifyStartError(URLRequestStatus(URLRequestStatus::FAILED, result));
   }
@@ -640,9 +620,6 @@ void URLRequestHttpJob::StartTransactionInternal() {
     }
 
     if (rv == OK) {
-      transaction_->SetBeforeNetworkStartCallback(
-          base::Bind(&URLRequestHttpJob::NotifyBeforeNetworkStart,
-                     base::Unretained(this)));
       transaction_->SetBeforeHeadersSentCallback(
           base::Bind(&URLRequestHttpJob::NotifyBeforeSendHeadersCallback,
                      base::Unretained(this)));
@@ -692,7 +669,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
         advertise_sdch = false;
         SdchManager::SdchErrorRecovery(rv);
         request()->net_log().AddEvent(
-            NetLog::TYPE_SDCH_DECODING_ERROR,
+            NetLogEventType::SDCH_DECODING_ERROR,
             base::Bind(&NetLogSdchResourceProblemCallback, rv));
       }
     }
@@ -722,8 +699,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
 
     // Advertise "br" encoding only if transferred data is opaque to proxy.
     bool advertise_brotli = false;
-    if (request()->context()->enable_brotli())
-      advertise_brotli = request()->url().SchemeIsCryptographic();
+    if (request()->context()->enable_brotli()) {
+      if (request()->url().SchemeIsCryptographic() ||
+          IsLocalhost(request()->url().HostNoBrackets())) {
+        advertise_brotli = true;
+      }
+    }
 
     // Supply Accept-Encoding headers first so that it is more likely that they
     // will be in the first transmitted packet. This can sometimes make it
@@ -841,7 +822,7 @@ void URLRequestHttpJob::SaveCookiesAndNotifyHeadersComplete(int result) {
 
   if (result != OK) {
     std::string source("delegate");
-    request_->net_log().AddEvent(NetLog::TYPE_CANCELLED,
+    request_->net_log().AddEvent(NetLogEventType::CANCELLED,
                                  NetLog::StringCallback("source", &source));
     NotifyStartError(URLRequestStatus(URLRequestStatus::FAILED, result));
     return;
@@ -889,26 +870,6 @@ void URLRequestHttpJob::FetchResponseCookies(
     if (!value.empty())
       cookies->push_back(value);
   }
-}
-
-void URLRequestHttpJob::ProcessBackoffHeader() {
-  DCHECK(response_info_);
-
-  if (!backoff_manager_)
-    return;
-
-  TransportSecurityState* security_state =
-      request_->context()->transport_security_state();
-  const SSLInfo& ssl_info = response_info_->ssl_info;
-
-  // Only accept Backoff headers on HTTPS connections that have no
-  // certificate errors.
-  if (!ssl_info.is_valid() || IsCertStatusError(ssl_info.cert_status) ||
-      !security_state)
-    return;
-
-  backoff_manager_->UpdateWithResponse(request()->url(), GetResponseHeaders(),
-                                       base::Time::Now());
 }
 
 // NOTE: |ProcessStrictTransportSecurityHeader| and
@@ -1035,9 +996,9 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
           awaiting_callback_ = true;
         } else {
           std::string source("delegate");
-          request_->net_log().AddEvent(NetLog::TYPE_CANCELLED,
-                                       NetLog::StringCallback("source",
-                                                              &source));
+          request_->net_log().AddEvent(
+              NetLogEventType::CANCELLED,
+              NetLog::StringCallback("source", &source));
           OnCallToDelegateComplete();
           NotifyStartError(URLRequestStatus(URLRequestStatus::FAILED, error));
         }
@@ -1127,11 +1088,6 @@ void URLRequestHttpJob::SetExtraRequestHeaders(
 LoadState URLRequestHttpJob::GetLoadState() const {
   return transaction_.get() ?
       transaction_->GetLoadState() : LOAD_STATE_IDLE;
-}
-
-UploadProgress URLRequestHttpJob::GetUploadProgress() const {
-  return transaction_.get() ?
-      transaction_->GetUploadProgress() : UploadProgress();
 }
 
 bool URLRequestHttpJob::GetMimeType(std::string* mime_type) const {
@@ -1373,11 +1329,6 @@ void URLRequestHttpJob::ContinueDespiteLastError() {
                             weak_factory_.GetWeakPtr(), rv));
 }
 
-void URLRequestHttpJob::ResumeNetworkStart() {
-  DCHECK(transaction_.get());
-  transaction_->ResumeNetworkStart();
-}
-
 bool URLRequestHttpJob::ShouldFixMismatchedContentLength(int rv) const {
   // Some servers send the body compressed, but specify the content length as
   // the uncompressed size. Although this violates the HTTP spec we want to
@@ -1388,8 +1339,7 @@ bool URLRequestHttpJob::ShouldFixMismatchedContentLength(int rv) const {
     if (request_ && request_->response_headers()) {
       int64_t expected_length =
           request_->response_headers()->GetContentLength();
-      VLOG(1) << __FUNCTION__ << "() "
-              << "\"" << request_->url().spec() << "\""
+      VLOG(1) << __func__ << "() \"" << request_->url().spec() << "\""
               << " content-length = " << expected_length
               << " pre total = " << prefilter_bytes_read()
               << " post total = " << postfilter_bytes_read();
@@ -1490,6 +1440,10 @@ void URLRequestHttpJob::RecordTimer() {
   request_creation_time_ = base::Time();
 
   UMA_HISTOGRAM_MEDIUM_TIMES("Net.HttpTimeToFirstByte", to_start);
+  if (request_info_.upload_data_stream &&
+      request_info_.upload_data_stream->size() > 1024 * 1024) {
+    UMA_HISTOGRAM_MEDIUM_TIMES("Net.HttpTimeToFirstByte.LargeUpload", to_start);
+  }
 }
 
 void URLRequestHttpJob::ResetTimer() {
@@ -1625,7 +1579,8 @@ void URLRequestHttpJob::DoneWithRequest(CompletionCause reason) {
     NetworkQualityEstimator* network_quality_estimator =
         request()->context()->network_quality_estimator();
     if (network_quality_estimator)
-      network_quality_estimator->NotifyRequestCompleted(*request());
+      network_quality_estimator->NotifyRequestCompleted(
+          *request(), request_->status().error());
   }
 
   RecordPerfHistograms(reason);

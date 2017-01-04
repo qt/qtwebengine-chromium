@@ -4,16 +4,15 @@
 
 import("//mojo/public/tools/bindings/mojom.gni")
 
-# GYP version: mojo/mojo_base.gyp:mojo_application_bindings
 mojom("interfaces") {
   sources = [
     "capabilities.mojom",
     "connector.mojom",
     "interface_provider.mojom",
-    "shell.mojom",
-    "shell_client.mojom",
-    "shell_client_factory.mojom",
-    "shell_resolver.mojom",
+    "resolver.mojom",
+    "service.mojom",
+    "service_factory.mojom",
+    "service_manager.mojom",
   ]
 
   public_deps = [

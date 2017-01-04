@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef INCLUDE_LIBYUV_ROW_H_  // NOLINT
+#ifndef INCLUDE_LIBYUV_ROW_H_
 #define INCLUDE_LIBYUV_ROW_H_
 
 #include <stdlib.h>  // For malloc.
@@ -22,16 +22,9 @@ extern "C" {
 
 #define IS_ALIGNED(p, a) (!((uintptr_t)(p) & ((a) - 1)))
 
-#ifdef __cplusplus
-#define align_buffer_64(var, size)                                             \
-  uint8* var##_mem = reinterpret_cast<uint8*>(malloc((size) + 63));            \
-  uint8* var = reinterpret_cast<uint8*>                                        \
-      ((reinterpret_cast<intptr_t>(var##_mem) + 63) & ~63)
-#else
 #define align_buffer_64(var, size)                                             \
   uint8* var##_mem = (uint8*)(malloc((size) + 63));               /* NOLINT */ \
   uint8* var = (uint8*)(((intptr_t)(var##_mem) + 63) & ~63)       /* NOLINT */
-#endif
 
 #define free_aligned_buffer_64(var) \
   free(var##_mem);  \
@@ -40,6 +33,12 @@ extern "C" {
 #if defined(__pnacl__) || defined(__CLR_VER) || \
     (defined(__i386__) && !defined(__SSE2__))
 #define LIBYUV_DISABLE_X86
+#endif
+// MemorySanitizer does not support assembly code yet. http://crbug.com/344505
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+#define LIBYUV_DISABLE_X86
+#endif
 #endif
 // True if compiling for SSSE3 as a requirement.
 #if defined(__SSSE3__) || (defined(_M_IX86_FP) && (_M_IX86_FP >= 3))
@@ -98,6 +97,7 @@ extern "C" {
 #define HAS_ARGBTOUVROW_SSSE3
 #define HAS_ARGBTOYJROW_SSSE3
 #define HAS_ARGBTOYROW_SSSE3
+#define HAS_ARGBEXTRACTALPHAROW_SSE2
 #define HAS_BGRATOUVROW_SSSE3
 #define HAS_BGRATOYROW_SSSE3
 #define HAS_COPYROW_ERMS
@@ -140,6 +140,7 @@ extern "C" {
 #define HAS_YUY2TOUV422ROW_SSE2
 #define HAS_YUY2TOUVROW_SSE2
 #define HAS_YUY2TOYROW_SSE2
+#define HAS_HALFFLOATROW_SSE2
 
 // Effects:
 #define HAS_ARGBADDROW_SSE2
@@ -231,6 +232,7 @@ extern "C" {
 #define HAS_YUY2TOUV422ROW_AVX2
 #define HAS_YUY2TOUVROW_AVX2
 #define HAS_YUY2TOYROW_AVX2
+#define HAS_HALFFLOATROW_AVX2
 
 // Effects:
 #define HAS_ARGBADDROW_AVX2
@@ -255,7 +257,7 @@ extern "C" {
 #endif
 
 // The following are also available on x64 Visual C.
-#if !defined(LIBYUV_DISABLE_X86) && defined (_M_X64) && \
+#if !defined(LIBYUV_DISABLE_X86) && defined(_MSC_VER) && defined(_M_X64) && \
     (!defined(__clang__) || defined(__SSSE3__))
 #define HAS_I422ALPHATOARGBROW_SSSE3
 #define HAS_I422TOARGBROW_SSSE3
@@ -285,6 +287,7 @@ extern "C" {
 #define HAS_ARGBTOUVROW_NEON
 #define HAS_ARGBTOYJROW_NEON
 #define HAS_ARGBTOYROW_NEON
+#define HAS_ARGBEXTRACTALPHAROW_NEON
 #define HAS_BGRATOUVROW_NEON
 #define HAS_BGRATOYROW_NEON
 #define HAS_COPYROW_NEON
@@ -364,9 +367,19 @@ extern "C" {
 #endif
 #endif
 
-#if defined(_MSC_VER) && !defined(__CLR_VER)
+#if !defined(LIBYUV_DISABLE_MSA) && defined(__mips_msa)
+#define HAS_MIRRORROW_MSA
+#define HAS_ARGBMIRRORROW_MSA
+#define HAS_I422TOYUY2ROW_MSA
+#define HAS_I422TOUYVYROW_MSA
+#endif
+
+#if defined(_MSC_VER) && !defined(__CLR_VER) && !defined(__clang__)
+#if defined(VISUALC_HAS_AVX2)
+#define SIMD_ALIGNED(var) __declspec(align(32)) var
+#else
 #define SIMD_ALIGNED(var) __declspec(align(16)) var
-#define SIMD_ALIGNED32(var) __declspec(align(64)) var
+#endif
 typedef __declspec(align(16)) int16 vec16[8];
 typedef __declspec(align(16)) int32 vec32[4];
 typedef __declspec(align(16)) int8 vec8[16];
@@ -379,10 +392,13 @@ typedef __declspec(align(32)) int8 lvec8[32];
 typedef __declspec(align(32)) uint16 ulvec16[16];
 typedef __declspec(align(32)) uint32 ulvec32[8];
 typedef __declspec(align(32)) uint8 ulvec8[32];
-#elif defined(__GNUC__) && !defined(__pnacl__)
+#elif !defined(__pnacl__) && (defined(__GNUC__) || defined(__clang__))
 // Caveat GCC 4.2 to 4.7 have a known issue using vectors with const.
+#if defined(CLANG_HAS_AVX2) || defined(GCC_HAS_AVX2)
+#define SIMD_ALIGNED(var) var __attribute__((aligned(32)))
+#else
 #define SIMD_ALIGNED(var) var __attribute__((aligned(16)))
-#define SIMD_ALIGNED32(var) var __attribute__((aligned(64)))
+#endif
 typedef int16 __attribute__((vector_size(16))) vec16;
 typedef int32 __attribute__((vector_size(16))) vec32;
 typedef int8 __attribute__((vector_size(16))) vec8;
@@ -397,7 +413,6 @@ typedef uint32 __attribute__((vector_size(32))) ulvec32;
 typedef uint8 __attribute__((vector_size(32))) ulvec8;
 #else
 #define SIMD_ALIGNED(var) var
-#define SIMD_ALIGNED32(var) var
 typedef int16 vec16[8];
 typedef int32 vec32[4];
 typedef int8 vec8[16];
@@ -433,13 +448,13 @@ struct YuvConstants {
 #else
 // This struct is for Intel color conversion.
 struct YuvConstants {
-  lvec8 kUVToB;
-  lvec8 kUVToG;
-  lvec8 kUVToR;
-  lvec16 kUVBiasB;
-  lvec16 kUVBiasG;
-  lvec16 kUVBiasR;
-  lvec16 kYToRgb;
+  int8 kUVToB[32];
+  int8 kUVToG[32];
+  int8 kUVToR[32];
+  int16 kUVBiasB[16];
+  int16 kUVBiasG[16];
+  int16 kUVBiasR[16];
+  int16 kYToRgb[16];
 };
 
 // Offsets into YuvConstants structure
@@ -453,14 +468,14 @@ struct YuvConstants {
 #endif
 
 // Conversion matrix for YUV to RGB
-extern const struct YuvConstants kYuvI601Constants;  // BT.601
-extern const struct YuvConstants kYuvJPEGConstants;  // JPeg color space
-extern const struct YuvConstants kYuvH709Constants;  // BT.709
+extern const struct YuvConstants SIMD_ALIGNED(kYuvI601Constants);  // BT.601
+extern const struct YuvConstants SIMD_ALIGNED(kYuvJPEGConstants);  // JPeg
+extern const struct YuvConstants SIMD_ALIGNED(kYuvH709Constants);  // BT.709
 
 // Conversion matrix for YVU to BGR
-extern const struct YuvConstants kYvuI601Constants;  // BT.601
-extern const struct YuvConstants kYvuJPEGConstants;  // JPeg color space
-extern const struct YuvConstants kYvuH709Constants;  // BT.709
+extern const struct YuvConstants SIMD_ALIGNED(kYvuI601Constants);  // BT.601
+extern const struct YuvConstants SIMD_ALIGNED(kYvuJPEGConstants);  // JPeg
+extern const struct YuvConstants SIMD_ALIGNED(kYvuH709Constants);  // BT.709
 
 #if defined(__APPLE__) || defined(__x86_64__) || defined(__llvm__)
 #define OMITFP
@@ -796,11 +811,13 @@ void MirrorRow_AVX2(const uint8* src, uint8* dst, int width);
 void MirrorRow_SSSE3(const uint8* src, uint8* dst, int width);
 void MirrorRow_NEON(const uint8* src, uint8* dst, int width);
 void MirrorRow_DSPR2(const uint8* src, uint8* dst, int width);
+void MirrorRow_MSA(const uint8* src, uint8* dst, int width);
 void MirrorRow_C(const uint8* src, uint8* dst, int width);
 void MirrorRow_Any_AVX2(const uint8* src, uint8* dst, int width);
 void MirrorRow_Any_SSSE3(const uint8* src, uint8* dst, int width);
 void MirrorRow_Any_SSE2(const uint8* src, uint8* dst, int width);
 void MirrorRow_Any_NEON(const uint8* src, uint8* dst, int width);
+void MirrorRow_Any_MSA(const uint8* src, uint8* dst, int width);
 
 void MirrorUVRow_SSSE3(const uint8* src_uv, uint8* dst_u, uint8* dst_v,
                        int width);
@@ -813,10 +830,12 @@ void MirrorUVRow_C(const uint8* src_uv, uint8* dst_u, uint8* dst_v, int width);
 void ARGBMirrorRow_AVX2(const uint8* src, uint8* dst, int width);
 void ARGBMirrorRow_SSE2(const uint8* src, uint8* dst, int width);
 void ARGBMirrorRow_NEON(const uint8* src, uint8* dst, int width);
+void ARGBMirrorRow_MSA(const uint8* src, uint8* dst, int width);
 void ARGBMirrorRow_C(const uint8* src, uint8* dst, int width);
 void ARGBMirrorRow_Any_AVX2(const uint8* src, uint8* dst, int width);
 void ARGBMirrorRow_Any_SSE2(const uint8* src, uint8* dst, int width);
 void ARGBMirrorRow_Any_NEON(const uint8* src, uint8* dst, int width);
+void ARGBMirrorRow_Any_MSA(const uint8* src, uint8* dst, int width);
 
 void SplitUVRow_C(const uint8* src_uv, uint8* dst_u, uint8* dst_v, int width);
 void SplitUVRow_SSE2(const uint8* src_uv, uint8* dst_u, uint8* dst_v,
@@ -870,6 +889,14 @@ void ARGBCopyAlphaRow_Any_SSE2(const uint8* src_argb, uint8* dst_argb,
                                int width);
 void ARGBCopyAlphaRow_Any_AVX2(const uint8* src_argb, uint8* dst_argb,
                                int width);
+
+void ARGBExtractAlphaRow_C(const uint8* src_argb, uint8* dst_a, int width);
+void ARGBExtractAlphaRow_SSE2(const uint8* src_argb, uint8* dst_a, int width);
+void ARGBExtractAlphaRow_NEON(const uint8* src_argb, uint8* dst_a, int width);
+void ARGBExtractAlphaRow_Any_SSE2(const uint8* src_argb, uint8* dst_a,
+                                  int width);
+void ARGBExtractAlphaRow_Any_NEON(const uint8* src_argb, uint8* dst_a,
+                                  int width);
 
 void ARGBCopyYToAlphaRow_C(const uint8* src_y, uint8* dst_argb, int width);
 void ARGBCopyYToAlphaRow_SSE2(const uint8* src_y, uint8* dst_argb, int width);
@@ -1744,6 +1771,22 @@ void I422ToUYVYRow_Any_NEON(const uint8* src_y,
                             const uint8* src_u,
                             const uint8* src_v,
                             uint8* dst_uyvy, int width);
+void I422ToYUY2Row_MSA(const uint8* src_y,
+                       const uint8* src_u,
+                       const uint8* src_v,
+                       uint8* dst_yuy2, int width);
+void I422ToUYVYRow_MSA(const uint8* src_y,
+                       const uint8* src_u,
+                       const uint8* src_v,
+                       uint8* dst_uyvy, int width);
+void I422ToYUY2Row_Any_MSA(const uint8* src_y,
+                           const uint8* src_u,
+                           const uint8* src_v,
+                           uint8* dst_yuy2, int width);
+void I422ToUYVYRow_Any_MSA(const uint8* src_y,
+                           const uint8* src_u,
+                           const uint8* src_v,
+                           uint8* dst_uyvy, int width);
 
 // Effects related row functions.
 void ARGBAttenuateRow_C(const uint8* src_argb, uint8* dst_argb, int width);
@@ -1909,6 +1952,15 @@ void ARGBPolynomialRow_AVX2(const uint8* src_argb,
                             uint8* dst_argb, const float* poly,
                             int width);
 
+// Scale and convert to half float.
+void HalfFloatRow_C(const uint16* src, uint16* dst, float scale, int width);
+void HalfFloatRow_AVX2(const uint16* src, uint16* dst, float scale, int width);
+void HalfFloatRow_Any_AVX2(const uint16* src, uint16* dst, float scale,
+                           int width);
+void HalfFloatRow_SSE2(const uint16* src, uint16* dst, float scale, int width);
+void HalfFloatRow_Any_SSE2(const uint16* src, uint16* dst, float scale,
+                           int width);
+
 void ARGBLumaColorTableRow_C(const uint8* src_argb, uint8* dst_argb, int width,
                              const uint8* luma, uint32 lumacoeff);
 void ARGBLumaColorTableRow_SSSE3(const uint8* src_argb, uint8* dst_argb,
@@ -1920,4 +1972,4 @@ void ARGBLumaColorTableRow_SSSE3(const uint8* src_argb, uint8* dst_argb,
 }  // namespace libyuv
 #endif
 
-#endif  // INCLUDE_LIBYUV_ROW_H_  NOLINT
+#endif  // INCLUDE_LIBYUV_ROW_H_

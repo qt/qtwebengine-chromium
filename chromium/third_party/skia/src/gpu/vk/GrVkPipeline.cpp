@@ -11,7 +11,6 @@
 #include "GrPipeline.h"
 #include "GrVkCommandBuffer.h"
 #include "GrVkGpu.h"
-#include "GrVkProgramDesc.h"
 #include "GrVkRenderTarget.h"
 #include "GrVkUtil.h"
 
@@ -96,7 +95,7 @@ static void setup_input_assembly_state(GrPrimitiveType primitiveType,
 }
 
 
-VkStencilOp stencil_op_to_vk_stencil_op(GrStencilOp op) {
+static VkStencilOp stencil_op_to_vk_stencil_op(GrStencilOp op) {
     static const VkStencilOp gTable[] = {
         VK_STENCIL_OP_KEEP,                 // kKeep
         VK_STENCIL_OP_ZERO,                 // kZero
@@ -120,7 +119,7 @@ VkStencilOp stencil_op_to_vk_stencil_op(GrStencilOp op) {
     return gTable[(int)op];
 }
 
-VkCompareOp stencil_func_to_vk_compare_op(GrStencilTest test) {
+static VkCompareOp stencil_func_to_vk_compare_op(GrStencilTest test) {
     static const VkCompareOp gTable[] = {
         VK_COMPARE_OP_ALWAYS,              // kAlways
         VK_COMPARE_OP_NEVER,               // kNever
@@ -145,9 +144,8 @@ VkCompareOp stencil_func_to_vk_compare_op(GrStencilTest test) {
     return gTable[(int)test];
 }
 
-void setup_depth_stencil_state(const GrVkGpu* gpu,
-                               const GrStencilSettings& stencilSettings,
-                               VkPipelineDepthStencilStateCreateInfo* stencilInfo) {
+static void setup_depth_stencil_state(const GrStencilSettings& stencilSettings,
+                                      VkPipelineDepthStencilStateCreateInfo* stencilInfo) {
     memset(stencilInfo, 0, sizeof(VkPipelineDepthStencilStateCreateInfo));
     stencilInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     stencilInfo->pNext = nullptr;
@@ -187,10 +185,7 @@ void setup_depth_stencil_state(const GrVkGpu* gpu,
     stencilInfo->maxDepthBounds = 1.0f;
 }
 
-void setup_viewport_scissor_state(const GrVkGpu* gpu,
-                                  const GrPipeline& pipeline,
-                                  const GrVkRenderTarget* vkRT,
-                                  VkPipelineViewportStateCreateInfo* viewportInfo) {
+static void setup_viewport_scissor_state(VkPipelineViewportStateCreateInfo* viewportInfo) {
     memset(viewportInfo, 0, sizeof(VkPipelineViewportStateCreateInfo));
     viewportInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportInfo->pNext = nullptr;
@@ -205,10 +200,10 @@ void setup_viewport_scissor_state(const GrVkGpu* gpu,
     SkASSERT(viewportInfo->viewportCount == viewportInfo->scissorCount);
 }
 
-void setup_multisample_state(const GrPipeline& pipeline,
-                             const GrPrimitiveProcessor& primProc,
-                             const GrCaps* caps,
-                             VkPipelineMultisampleStateCreateInfo* multisampleInfo) {
+static void setup_multisample_state(const GrPipeline& pipeline,
+                                    const GrPrimitiveProcessor& primProc,
+                                    const GrCaps* caps,
+                                    VkPipelineMultisampleStateCreateInfo* multisampleInfo) {
     memset(multisampleInfo, 0, sizeof(VkPipelineMultisampleStateCreateInfo));
     multisampleInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampleInfo->pNext = nullptr;
@@ -287,7 +282,7 @@ static VkBlendOp blend_equation_to_vk_blend_op(GrBlendEquation equation) {
     return gTable[equation];
 }
 
-bool blend_coeff_refs_constant(GrBlendCoeff coeff) {
+static bool blend_coeff_refs_constant(GrBlendCoeff coeff) {
     static const bool gCoeffReferencesBlendConst[] = {
         false,
         false,
@@ -315,10 +310,9 @@ bool blend_coeff_refs_constant(GrBlendCoeff coeff) {
     // Individual enum asserts already made in blend_coeff_to_vk_blend
 }
 
-void setup_color_blend_state(const GrVkGpu* gpu,
-                             const GrPipeline& pipeline,
-                             VkPipelineColorBlendStateCreateInfo* colorBlendInfo,
-                             VkPipelineColorBlendAttachmentState* attachmentState) {
+static void setup_color_blend_state(const GrPipeline& pipeline,
+                                    VkPipelineColorBlendStateCreateInfo* colorBlendInfo,
+                                    VkPipelineColorBlendAttachmentState* attachmentState) {
     GrXferProcessor::BlendInfo blendInfo;
     pipeline.getXferProcessor().getBlendInfo(&blendInfo);
 
@@ -356,24 +350,23 @@ void setup_color_blend_state(const GrVkGpu* gpu,
     // colorBlendInfo->blendConstants is set dynamically
 }
 
-VkCullModeFlags draw_face_to_vk_cull_mode(GrPipelineBuilder::DrawFace drawFace) {
+static VkCullModeFlags draw_face_to_vk_cull_mode(GrDrawFace drawFace) {
     // Assumes that we've set the front face to be ccw
     static const VkCullModeFlags gTable[] = {
         VK_CULL_MODE_NONE,              // kBoth_DrawFace
         VK_CULL_MODE_BACK_BIT,          // kCCW_DrawFace, cull back face
         VK_CULL_MODE_FRONT_BIT,         // kCW_DrawFace, cull front face
     };
-    GR_STATIC_ASSERT(0 == GrPipelineBuilder::kBoth_DrawFace);
-    GR_STATIC_ASSERT(1 == GrPipelineBuilder::kCCW_DrawFace);
-    GR_STATIC_ASSERT(2 == GrPipelineBuilder::kCW_DrawFace);
-    SkASSERT((unsigned)drawFace <= 2);
+    GR_STATIC_ASSERT(0 == (int)GrDrawFace::kBoth);
+    GR_STATIC_ASSERT(1 == (int)GrDrawFace::kCCW);
+    GR_STATIC_ASSERT(2 == (int)GrDrawFace::kCW);
+    SkASSERT(-1 < (int)drawFace && (int)drawFace <= 2);
 
-    return gTable[drawFace];
+    return gTable[(int)drawFace];
 }
 
-void setup_raster_state(const GrVkGpu* gpu,
-    const GrPipeline& pipeline,
-    VkPipelineRasterizationStateCreateInfo* rasterInfo) {
+static void setup_raster_state(const GrPipeline& pipeline,
+                               VkPipelineRasterizationStateCreateInfo* rasterInfo) {
     memset(rasterInfo, 0, sizeof(VkPipelineRasterizationStateCreateInfo));
     rasterInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterInfo->pNext = nullptr;
@@ -390,10 +383,8 @@ void setup_raster_state(const GrVkGpu* gpu,
     rasterInfo->lineWidth = 1.0f;
 }
 
-void setup_dynamic_state(const GrVkGpu* gpu,
-                         const GrPipeline& pipeline,
-                         VkPipelineDynamicStateCreateInfo* dynamicInfo,
-                         VkDynamicState* dynamicStates) {
+static void setup_dynamic_state(VkPipelineDynamicStateCreateInfo* dynamicInfo,
+                                VkDynamicState* dynamicStates) {
     memset(dynamicInfo, 0, sizeof(VkPipelineDynamicStateCreateInfo));
     dynamicInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicInfo->pNext = VK_NULL_HANDLE;
@@ -424,12 +415,10 @@ GrVkPipeline* GrVkPipeline::Create(GrVkGpu* gpu, const GrPipeline& pipeline,
     setup_input_assembly_state(primitiveType, &inputAssemblyInfo);
 
     VkPipelineDepthStencilStateCreateInfo depthStencilInfo;
-    setup_depth_stencil_state(gpu, pipeline.getStencil(), &depthStencilInfo);
+    setup_depth_stencil_state(pipeline.getStencil(), &depthStencilInfo);
 
-    GrRenderTarget* rt = pipeline.getRenderTarget();
-    GrVkRenderTarget* vkRT = static_cast<GrVkRenderTarget*>(rt);
     VkPipelineViewportStateCreateInfo viewportInfo;
-    setup_viewport_scissor_state(gpu, pipeline, vkRT, &viewportInfo);
+    setup_viewport_scissor_state(&viewportInfo);
 
     VkPipelineMultisampleStateCreateInfo multisampleInfo;
     setup_multisample_state(pipeline, primProc, gpu->caps(), &multisampleInfo);
@@ -437,14 +426,14 @@ GrVkPipeline* GrVkPipeline::Create(GrVkGpu* gpu, const GrPipeline& pipeline,
     // We will only have one color attachment per pipeline.
     VkPipelineColorBlendAttachmentState attachmentStates[1];
     VkPipelineColorBlendStateCreateInfo colorBlendInfo;
-    setup_color_blend_state(gpu, pipeline, &colorBlendInfo, attachmentStates);
+    setup_color_blend_state(pipeline, &colorBlendInfo, attachmentStates);
 
     VkPipelineRasterizationStateCreateInfo rasterInfo;
-    setup_raster_state(gpu, pipeline, &rasterInfo);
+    setup_raster_state(pipeline, &rasterInfo);
 
     VkDynamicState dynamicStates[3];
     VkPipelineDynamicStateCreateInfo dynamicInfo;
-    setup_dynamic_state(gpu, pipeline, &dynamicInfo, dynamicStates);
+    setup_dynamic_state(&dynamicInfo, dynamicStates);
 
     VkGraphicsPipelineCreateInfo pipelineCreateInfo;
     memset(&pipelineCreateInfo, 0, sizeof(VkGraphicsPipelineCreateInfo));
@@ -484,10 +473,10 @@ void GrVkPipeline::freeGPUData(const GrVkGpu* gpu) const {
     GR_VK_CALL(gpu->vkInterface(), DestroyPipeline(gpu->device(), fPipeline, nullptr));
 }
 
-void set_dynamic_scissor_state(GrVkGpu* gpu,
-                               GrVkCommandBuffer* cmdBuffer,
-                               const GrPipeline& pipeline,
-                               const GrRenderTarget& target) {
+static void set_dynamic_scissor_state(GrVkGpu* gpu,
+                                      GrVkCommandBuffer* cmdBuffer,
+                                      const GrPipeline& pipeline,
+                                      const GrRenderTarget& target) {
     // We always use one scissor and if it is disabled we just make it the size of the RT
     const GrScissorState& scissorState = pipeline.getScissorState();
     VkRect2D scissor;
@@ -495,7 +484,7 @@ void set_dynamic_scissor_state(GrVkGpu* gpu,
         !scissorState.rect().contains(0, 0, target.width(), target.height())) {
         // This all assumes the scissorState has previously been clipped to the device space render
         // target.
-        scissor.offset.x = scissorState.rect().fLeft;
+        scissor.offset.x = SkTMax(scissorState.rect().fLeft, 0);
         scissor.extent.width = scissorState.rect().width();
         if (kTopLeft_GrSurfaceOrigin == target.origin()) {
             scissor.offset.y = scissorState.rect().fTop;
@@ -503,12 +492,11 @@ void set_dynamic_scissor_state(GrVkGpu* gpu,
             SkASSERT(kBottomLeft_GrSurfaceOrigin == target.origin());
             scissor.offset.y = target.height() - scissorState.rect().fBottom;
         }
+        scissor.offset.y = SkTMax(scissor.offset.y, 0);
         scissor.extent.height = scissorState.rect().height();
 
         SkASSERT(scissor.offset.x >= 0);
-        SkASSERT(scissor.offset.x + scissor.extent.width <= (uint32_t)target.width());
         SkASSERT(scissor.offset.y >= 0);
-        SkASSERT(scissor.offset.y + scissor.extent.height <= (uint32_t)target.height());
     } else {
         scissor.extent.width = target.width();
         scissor.extent.height = target.height();
@@ -518,9 +506,9 @@ void set_dynamic_scissor_state(GrVkGpu* gpu,
     cmdBuffer->setScissor(gpu, 0, 1, &scissor);
 }
 
-void set_dynamic_viewport_state(GrVkGpu* gpu,
-                                GrVkCommandBuffer* cmdBuffer,
-                                const GrRenderTarget& target) {
+static void set_dynamic_viewport_state(GrVkGpu* gpu,
+                                       GrVkCommandBuffer* cmdBuffer,
+                                       const GrRenderTarget& target) {
     // We always use one viewport the size of the RT
     VkViewport viewport;
     viewport.x = 0.0f;
@@ -532,9 +520,9 @@ void set_dynamic_viewport_state(GrVkGpu* gpu,
     cmdBuffer->setViewport(gpu, 0, 1, &viewport);
 }
 
-void set_dynamic_blend_constant_state(GrVkGpu* gpu,
-                                     GrVkCommandBuffer* cmdBuffer,
-                                     const GrPipeline& pipeline) {
+static void set_dynamic_blend_constant_state(GrVkGpu* gpu,
+                                             GrVkCommandBuffer* cmdBuffer,
+                                             const GrPipeline& pipeline) {
     GrXferProcessor::BlendInfo blendInfo;
     pipeline.getXferProcessor().getBlendInfo(&blendInfo);
     GrBlendCoeff srcCoeff = blendInfo.fSrcBlend;

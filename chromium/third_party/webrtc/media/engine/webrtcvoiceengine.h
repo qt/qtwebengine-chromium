@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/audio_state.h"
+#include "webrtc/api/call/audio_state.h"
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/networkroute.h"
@@ -24,7 +24,6 @@
 #include "webrtc/base/stream.h"
 #include "webrtc/base/thread_checker.h"
 #include "webrtc/call.h"
-#include "webrtc/common.h"
 #include "webrtc/config.h"
 #include "webrtc/media/base/rtputils.h"
 #include "webrtc/media/engine/webrtccommon.h"
@@ -109,14 +108,6 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
   // Stops AEC dump.
   void StopAecDump();
 
-  // Starts recording an RtcEventLog using an existing file until the log file
-  // reaches the maximum filesize or the StopRtcEventLog function is called.
-  // If the value of max_size_bytes is <= 0, no limit is used.
-  bool StartRtcEventLog(rtc::PlatformFile file, int64_t max_size_bytes);
-
-  // Stops recording the RtcEventLog.
-  void StopRtcEventLog();
-
  private:
   // Every option that is "set" will be applied. Every option not "set" will be
   // ignored. This allows us to selectively turn on and off different options
@@ -131,6 +122,8 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
   int CreateVoEChannel();
   webrtc::AudioDeviceModule* adm();
 
+  AudioCodecs CollectRecvCodecs() const;
+
   rtc::ThreadChecker signal_thread_checker_;
   rtc::ThreadChecker worker_thread_checker_;
 
@@ -140,20 +133,23 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
   // The primary instance of WebRtc VoiceEngine.
   std::unique_ptr<VoEWrapper> voe_wrapper_;
   rtc::scoped_refptr<webrtc::AudioState> audio_state_;
-  std::vector<AudioCodec> codecs_;
+  std::vector<AudioCodec> send_codecs_;
+  std::vector<AudioCodec> recv_codecs_;
   std::vector<WebRtcVoiceMediaChannel*> channels_;
-  webrtc::Config voe_config_;
+  webrtc::VoEBase::ChannelConfig channel_config_;
   bool is_dumping_aec_ = false;
 
   webrtc::AgcConfig default_agc_config_;
-  // Cache received extended_filter_aec, delay_agnostic_aec, experimental_ns and
-  // intelligibility_enhancer values, and apply them in case they are missing
-  // in the audio options. We need to do this because SetExtraOptions() will
-  // revert to defaults for options which are not provided.
+  // Cache received extended_filter_aec, delay_agnostic_aec, experimental_ns
+  // level controller, and intelligibility_enhancer values, and apply them
+  // in case they are missing in the audio options. We need to do this because
+  // SetExtraOptions() will revert to defaults for options which are not
+  // provided.
   rtc::Optional<bool> extended_filter_aec_;
   rtc::Optional<bool> delay_agnostic_aec_;
   rtc::Optional<bool> experimental_ns_;
   rtc::Optional<bool> intelligibility_enhancer_;
+  rtc::Optional<bool> level_control_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(WebRtcVoiceEngine);
 };
@@ -183,9 +179,7 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
       uint32_t ssrc,
       const webrtc::RtpParameters& parameters) override;
 
-  bool SetPlayout(bool playout) override;
-  bool PausePlayout();
-  bool ResumePlayout();
+  void SetPlayout(bool playout) override;
   void SetSend(bool send) override;
   bool SetAudioSend(uint32_t ssrc,
                     bool enable,
@@ -251,8 +245,7 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
   WebRtcVoiceEngine* engine() { return engine_; }
   int GetLastEngineError() { return engine()->GetLastEngineError(); }
   int GetOutputLevel(int channel);
-  bool SetPlayout(int channel, bool playout);
-  bool ChangePlayout(bool playout);
+  void ChangePlayout(bool playout);
   int CreateVoEChannel();
   bool DeleteVoEChannel(int channel);
   bool IsDefaultRecvStream(uint32_t ssrc) {

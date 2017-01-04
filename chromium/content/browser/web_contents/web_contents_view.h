@@ -19,6 +19,7 @@ class RenderViewHost;
 class RenderWidgetHost;
 class RenderWidgetHostViewBase;
 struct DropData;
+struct ScreenInfo;
 
 // The WebContentsView is an interface that is implemented by the platform-
 // dependent web contents views. The WebContents uses this interface to talk to
@@ -38,6 +39,12 @@ class WebContentsView {
   // Returns the outermost native view. This will be used as the parent for
   // dialog boxes.
   virtual gfx::NativeWindow GetTopLevelNativeWindow() const = 0;
+
+  // The following static method is implemented by each platform.
+  static void GetDefaultScreenInfo(ScreenInfo* results);
+
+  // Gets screen information for the window associated with this view.
+  virtual void GetScreenInfo(ScreenInfo* screen_info) const = 0;
 
   // Computes the rectangle for the native widget that contains the contents of
   // the tab in the screen coordinate system.

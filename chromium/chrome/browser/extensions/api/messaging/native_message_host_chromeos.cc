@@ -18,7 +18,6 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/arc/arc_support_host.h"
-#include "chrome/browser/extensions/api/messaging/native_messaging_test_util.h"
 #include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/constants.h"
@@ -96,19 +95,19 @@ struct BuiltInHost {
 std::unique_ptr<NativeMessageHost> CreateIt2MeHost() {
   std::unique_ptr<remoting::It2MeHostFactory> host_factory(
       new remoting::It2MeHostFactory());
-  host_factory->set_policy_service(g_browser_process->policy_service());
   std::unique_ptr<remoting::ChromotingHostContext> context =
       remoting::ChromotingHostContext::CreateForChromeOS(
           make_scoped_refptr(g_browser_process->system_request_context()),
-          content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::GetTaskRunnerForThread(
               content::BrowserThread::IO),
-          content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::GetTaskRunnerForThread(
               content::BrowserThread::UI),
-          content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::GetTaskRunnerForThread(
               content::BrowserThread::FILE));
   std::unique_ptr<NativeMessageHost> host(
-      new remoting::It2MeNativeMessagingHost(std::move(context),
-                                             std::move(host_factory)));
+      new remoting::It2MeNativeMessagingHost(
+          /*needs_elevation=*/false, g_browser_process->policy_service(),
+          std::move(context), std::move(host_factory)));
   return host;
 }
 

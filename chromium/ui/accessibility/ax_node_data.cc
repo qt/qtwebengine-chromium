@@ -60,7 +60,8 @@ typename std::vector<std::pair<FirstType, SecondType>>::const_iterator
 AXNodeData::AXNodeData()
     : id(-1),
       role(AX_ROLE_UNKNOWN),
-      state(0xFFFFFFFF) {
+      state(0xFFFFFFFF),
+      offset_container_id(-1) {
 }
 
 AXNodeData::~AXNodeData() {
@@ -78,6 +79,7 @@ AXNodeData::AXNodeData(const AXNodeData& other) {
   html_attributes = other.html_attributes;
   child_ids = other.child_ids;
   location = other.location;
+  offset_container_id = other.offset_container_id;
   if (other.transform)
     transform.reset(new gfx::Transform(*other.transform));
 }
@@ -94,8 +96,11 @@ AXNodeData& AXNodeData::operator=(AXNodeData other) {
   html_attributes = other.html_attributes;
   child_ids = other.child_ids;
   location = other.location;
+  offset_container_id = other.offset_container_id;
   if (other.transform)
     transform.reset(new gfx::Transform(*other.transform));
+  else
+    transform.reset(nullptr);
   return *this;
 }
 
@@ -342,6 +347,9 @@ std::string AXNodeData::ToString() const {
                    IntToString(location.y()) + ")-(" +
                    IntToString(location.width()) + ", " +
                    IntToString(location.height()) + ")";
+
+  if (offset_container_id != -1)
+    result += " offset_container_id=" + IntToString(offset_container_id);
 
   if (transform && !transform->IsIdentity())
     result += " transform=" + transform->ToString();
@@ -684,9 +692,6 @@ std::string AXNodeData::ToString() const {
       case AX_ATTR_LABELLEDBY_IDS:
         result += " labelledby_ids=" + IntVectorToString(values);
         break;
-      case AX_ATTR_LINE_BREAKS:
-        result += " line_breaks=" + IntVectorToString(values);
-        break;
       case AX_ATTR_MARKER_TYPES: {
         std::string types_str;
         for (size_t i = 0; i < values.size(); ++i) {
@@ -726,6 +731,9 @@ std::string AXNodeData::ToString() const {
         break;
       case AX_ATTR_CHARACTER_OFFSETS:
         result += " character_offsets=" + IntVectorToString(values);
+        break;
+      case AX_ATTR_CACHED_LINE_STARTS:
+        result += " cached_line_start_offsets=" + IntVectorToString(values);
         break;
       case AX_ATTR_WORD_STARTS:
         result += " word_starts=" + IntVectorToString(values);

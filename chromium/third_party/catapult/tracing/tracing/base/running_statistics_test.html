@@ -29,6 +29,10 @@ tr.b.unittest.testSuite(function() {
     assert.closeTo(Statistics.sum(data), run(data).sum, 1e-6);
     data = [2, 4, 4, 2];
     assert.closeTo(Statistics.sum(data), run(data).sum, 1e-6);
+    data = [Infinity, Infinity, Infinity, 4, 4, Infinity, 1];
+    assert.equal(Statistics.sum(data), run(data).sum, Infinity);
+    data = [-Infinity, -Infinity, 2, -Infinity, 5, -Infinity];
+    assert.equal(Statistics.sum(data), run(data).sum, -Infinity);
   });
 
   test('min', function() {
@@ -65,6 +69,26 @@ tr.b.unittest.testSuite(function() {
     assert.closeTo(Statistics.mean(data), run(data).mean, 1e-6);
     data = [2, 4, 4, 2];
     assert.closeTo(Statistics.mean(data), run(data).mean, 1e-6);
+    data = [Infinity, Infinity, Infinity, 4, 4, Infinity, 1];
+    assert.equal(Statistics.mean(data), run(data).mean, Infinity);
+    data = [-Infinity, -Infinity, 2, -Infinity, 5, -Infinity];
+    assert.equal(Statistics.mean(data), run(data).mean, -Infinity);
+  });
+
+  test('geometricMean', function() {
+    var data;
+    data = [];
+    assert.equal(Statistics.geometricMean(data), run(data).geometricMean);
+    data = [-1];
+    assert.equal(Statistics.geometricMean(data), run(data).geometricMean);
+    data = [1];
+    assert.equal(Statistics.geometricMean(data), run(data).geometricMean);
+    data = [1, 2, 3];
+    assert.closeTo(Statistics.geometricMean(data),
+        run(data).geometricMean, 1e-6);
+    data = [2, 4, 4, 2];
+    assert.closeTo(Statistics.geometricMean(data),
+        run(data).geometricMean, 1e-6);
   });
 
   test('variance', function() {
@@ -93,6 +117,7 @@ tr.b.unittest.testSuite(function() {
 
   test('merge', function() {
     var data1, data2, data, stats;
+
     data1 = [];
     data2 = [];
     data = data1.concat(data2);
@@ -103,6 +128,8 @@ tr.b.unittest.testSuite(function() {
     assert.equal(Statistics.mean(data), stats.mean);
     assert.equal(Statistics.variance(data), stats.variance);
     assert.equal(Statistics.stddev(data), stats.stddev);
+    assert.equal(Statistics.geometricMean(data), stats.geometricMean);
+
     data1 = [];
     data2 = [1, 2, 3];
     data = data1.concat(data2);
@@ -113,6 +140,8 @@ tr.b.unittest.testSuite(function() {
     assert.equal(Statistics.mean(data), stats.mean);
     assert.closeTo(Statistics.variance(data), stats.variance, 1e-6);
     assert.closeTo(Statistics.stddev(data), stats.stddev, 1e-6);
+    assert.closeTo(Statistics.geometricMean(data), stats.geometricMean, 1e-6);
+
     data1 = [1, 2, 3];
     data2 = [];
     data = data1.concat(data2);
@@ -123,6 +152,8 @@ tr.b.unittest.testSuite(function() {
     assert.equal(Statistics.mean(data), stats.mean);
     assert.closeTo(Statistics.variance(data), stats.variance, 1e-6);
     assert.closeTo(Statistics.stddev(data), stats.stddev, 1e-6);
+    assert.closeTo(Statistics.geometricMean(data), stats.geometricMean, 1e-6);
+
     data1 = [1, 2, 3];
     data2 = [10, 20, 100];
     data = data1.concat(data2);
@@ -133,6 +164,8 @@ tr.b.unittest.testSuite(function() {
     assert.equal(Statistics.mean(data), stats.mean);
     assert.closeTo(Statistics.variance(data), stats.variance, 1e-6);
     assert.closeTo(Statistics.stddev(data), stats.stddev, 1e-6);
+    assert.closeTo(Statistics.geometricMean(data), stats.geometricMean, 1e-6);
+
     data1 = [1, 1, 1, 1, 1];
     data2 = [10, 20, 10, 40];
     data = data1.concat(data2);
@@ -143,13 +176,20 @@ tr.b.unittest.testSuite(function() {
     assert.equal(Statistics.mean(data), stats.mean);
     assert.closeTo(Statistics.variance(data), stats.variance, 1e-6);
     assert.closeTo(Statistics.stddev(data), stats.stddev, 1e-6);
+    assert.closeTo(Statistics.geometricMean(data), stats.geometricMean, 1e-6);
   });
 
   test('serialization', function() {
-    var data;
-    data = [1, 2, 3];
-    var stats = run(data);
-    assert.deepEqual(stats, RunningStatistics.fromDict(stats.asDict()));
+    var data = [1, 2, 3];
+    var dict = run(data).asDict();
+    var cloneDict = RunningStatistics.fromDict(dict).asDict();
+    for (var field = 0; field < dict.length; ++field) {
+      assert.closeTo(dict[field], cloneDict[field], 1e-6);
+    }
+
+    // You can change this number, but when you do, please explain in your CL
+    // description why it changed.
+    assert.strictEqual(32, JSON.stringify(dict).length);
   });
 });
 </script>

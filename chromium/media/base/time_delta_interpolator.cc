@@ -17,8 +17,8 @@ namespace media {
 TimeDeltaInterpolator::TimeDeltaInterpolator(base::TickClock* tick_clock)
     : tick_clock_(tick_clock),
       interpolating_(false),
-      upper_bound_(kNoTimestamp()),
-      playback_rate_(1.0) {
+      upper_bound_(kNoTimestamp),
+      playback_rate_(0) {
   DCHECK(tick_clock_);
 }
 
@@ -46,17 +46,18 @@ void TimeDeltaInterpolator::SetPlaybackRate(double playback_rate) {
 }
 
 void TimeDeltaInterpolator::SetBounds(base::TimeDelta lower_bound,
-                                      base::TimeDelta upper_bound) {
+                                      base::TimeDelta upper_bound,
+                                      base::TimeTicks capture_time) {
   DCHECK(lower_bound <= upper_bound);
-  DCHECK(lower_bound != kNoTimestamp());
+  DCHECK(lower_bound != kNoTimestamp);
 
   lower_bound_ = std::max(base::TimeDelta(), lower_bound);
   upper_bound_ = std::max(base::TimeDelta(), upper_bound);
-  reference_ = tick_clock_->NowTicks();
+  reference_ = capture_time;
 }
 
 void TimeDeltaInterpolator::SetUpperBound(base::TimeDelta upper_bound) {
-  DCHECK(upper_bound != kNoTimestamp());
+  DCHECK(upper_bound != kNoTimestamp);
 
   lower_bound_ = GetInterpolatedTime();
   reference_ = tick_clock_->NowTicks();
@@ -72,7 +73,7 @@ base::TimeDelta TimeDeltaInterpolator::GetInterpolatedTime() {
   base::TimeDelta interpolated_time =
       lower_bound_ + base::TimeDelta::FromMicroseconds(now_us);
 
-  if (upper_bound_ == kNoTimestamp())
+  if (upper_bound_ == kNoTimestamp)
     return interpolated_time;
 
   return std::min(interpolated_time, upper_bound_);

@@ -7,10 +7,10 @@ found in the LICENSE file.
 
 <link rel="import" href="/tracing/base/range_utils.html">
 <link rel="import" href="/tracing/base/statistics.html">
+<link rel="import" href="/tracing/base/unit.html">
 <link rel="import" href="/tracing/model/compound_event_selection_state.html">
 <link rel="import" href="/tracing/model/event_set.html">
 <link rel="import" href="/tracing/model/timed_event.html">
-<link rel="import" href="/tracing/value/unit.html">
 
 <script>
 'use strict';
@@ -18,11 +18,11 @@ found in the LICENSE file.
 tr.exportTo('tr.model.um', function() {
   var CompoundEventSelectionState = tr.model.CompoundEventSelectionState;
 
-  function UserExpectation(parentModel, initiatorTitle, start, duration) {
+  function UserExpectation(parentModel, initiatorType, start, duration) {
     tr.model.TimedEvent.call(this, start);
     this.associatedEvents = new tr.model.EventSet();
     this.duration = duration;
-    this.initiatorTitle_ = initiatorTitle;
+    this.initiatorType_ = initiatorType;
     this.parentModel = parentModel;
     this.typeInfo_ = undefined;
 
@@ -30,6 +30,21 @@ tr.exportTo('tr.model.um', function() {
     // UserExpectation.
     this.sourceEvents = new tr.model.EventSet();
   }
+
+  // Strings used to name IRs.
+  var INITIATOR_TYPE = {
+    KEYBOARD: 'Keyboard',
+    MOUSE: 'Mouse',
+    MOUSE_WHEEL: 'MouseWheel',
+    TAP: 'Tap',
+    PINCH: 'Pinch',
+    FLING: 'Fling',
+    TOUCH: 'Touch',
+    SCROLL: 'Scroll',
+    CSS: 'CSS',
+    WEBGL: 'WebGL',
+    VIDEO: 'Video'
+  };
 
   UserExpectation.prototype = {
     __proto__: tr.model.TimedEvent.prototype,
@@ -65,7 +80,7 @@ tr.exportTo('tr.model.um', function() {
 
     get userFriendlyName() {
       return this.title + ' User Expectation at ' +
-          tr.v.Unit.byName.timeStampInMs.format(this.start);
+          tr.b.Unit.byName.timeStampInMs.format(this.start);
     },
 
     get stableId() {
@@ -73,8 +88,10 @@ tr.exportTo('tr.model.um', function() {
     },
 
     get typeInfo() {
-      if (!this.typeInfo_)
-        this.typeInfo_ = UserExpectation.findTypeInfo(this.constructor);
+      if (!this.typeInfo_) {
+        this.typeInfo_ = UserExpectation.subTypes.findTypeInfo(
+            this.constructor);
+      }
 
       // If you set Subclass.prototype = {}, then you must explicitly specify
       // constructor in that prototype object!
@@ -94,15 +111,15 @@ tr.exportTo('tr.model.um', function() {
       return this.typeInfo.metadata.stageTitle;
     },
 
-    get initiatorTitle() {
-      return this.initiatorTitle_;
+    get initiatorType() {
+      return this.initiatorType_;
     },
 
     get title() {
-      if (!this.initiatorTitle)
+      if (!this.initiatorType)
         return this.stageTitle;
 
-      return this.initiatorTitle + ' ' + this.stageTitle;
+      return this.initiatorType + ' ' + this.stageTitle;
     },
 
     /**
@@ -118,10 +135,11 @@ tr.exportTo('tr.model.um', function() {
     }
   };
 
+  var subTypes = {};
   var options = new tr.b.ExtensionRegistryOptions(tr.b.BASIC_REGISTRY_MODE);
-  tr.b.decorateExtensionRegistry(UserExpectation, options);
+  tr.b.decorateExtensionRegistry(subTypes, options);
 
-  UserExpectation.addEventListener('will-register', function(e) {
+  subTypes.addEventListener('will-register', function(e) {
     var metadata = e.typeInfo.metadata;
 
     if (metadata.stageTitle === undefined) {
@@ -138,14 +156,14 @@ tr.exportTo('tr.model.um', function() {
   tr.model.EventRegistry.register(
       UserExpectation,
       {
-        name: 'user-expectation',
-        pluralName: 'user-expectations',
-        singleViewElementName: 'tr-ui-a-single-user-expectation-sub-view',
-        multiViewElementName: 'tr-ui-a-multi-user-expectation-sub-view'
+        name: 'userExpectation',
+        pluralName: 'userExpectations',
+        subTypes: subTypes
       });
 
   return {
-    UserExpectation: UserExpectation
+    UserExpectation: UserExpectation,
+    INITIATOR_TYPE: INITIATOR_TYPE
   };
 });
 </script>

@@ -14,9 +14,11 @@
 #include <vector>
 
 #include "webrtc/call.h"
+#include "webrtc/test/encoder_settings.h"
 #include "webrtc/test/fake_audio_device.h"
 #include "webrtc/test/fake_decoder.h"
 #include "webrtc/test/fake_encoder.h"
+#include "webrtc/test/fake_videorenderer.h"
 #include "webrtc/test/frame_generator_capturer.h"
 #include "webrtc/test/rtp_rtcp_observer.h"
 
@@ -35,7 +37,9 @@ class CallTest : public ::testing::Test {
   virtual ~CallTest();
 
   static const size_t kNumSsrcs = 3;
-
+  static const int kDefaultWidth = 320;
+  static const int kDefaultHeight = 180;
+  static const int kDefaultFramerate = 30;
   static const int kDefaultTimeoutMs;
   static const int kLongTimeoutMs;
   static const uint8_t kVideoSendPayloadType;
@@ -69,8 +73,12 @@ class CallTest : public ::testing::Test {
                         Transport* send_transport);
   void CreateMatchingReceiveConfigs(Transport* rtcp_send_transport);
 
-  void CreateFrameGeneratorCapturerWithDrift(Clock* drift_clock, float speed);
-  void CreateFrameGeneratorCapturer();
+  void CreateFrameGeneratorCapturerWithDrift(Clock* drift_clock,
+                                             float speed,
+                                             int framerate,
+                                             int width,
+                                             int height);
+  void CreateFrameGeneratorCapturer(int framerate, int width, int height);
   void CreateFakeAudioDevices();
 
   void CreateVideoStreams();
@@ -103,6 +111,7 @@ class CallTest : public ::testing::Test {
   size_t num_video_streams_;
   size_t num_audio_streams_;
   rtc::scoped_refptr<AudioDecoderFactory> decoder_factory_;
+  test::FakeVideoRenderer fake_renderer_;
 
  private:
   // TODO(holmer): Remove once VoiceEngine is fully refactored to the new API.
@@ -154,6 +163,9 @@ class BaseTest : public RtpRtcpObserver {
       VideoSendStream::Config* send_config,
       std::vector<VideoReceiveStream::Config>* receive_configs,
       VideoEncoderConfig* encoder_config);
+  virtual void ModifyVideoCaptureStartResolution(int* width,
+                                                 int* heigt,
+                                                 int* frame_rate);
   virtual void OnVideoStreamsCreated(
       VideoSendStream* send_stream,
       const std::vector<VideoReceiveStream*>& receive_streams);

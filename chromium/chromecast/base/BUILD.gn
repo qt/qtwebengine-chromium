@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//chrome/version.gni")  # TODO layering violation!
+import("//build/util/process_version.gni")
 import("//chromecast/chromecast.gni")
 import("//testing/test.gni")
 
@@ -13,17 +13,19 @@ if (is_android) {
 declare_args() {
   # Denotes the type of Cast product. This is #defined as CAST_PRODUCT_TYPE in
   # version.h. This is an integer in the range [0-4].
-  cast_product_type = 0
-
-  # If true, IS_CAST_DEBUG_BUILD() will evaluate to 1 in version.h. Otherwise,
-  # it will evaluate to 0. Overriding this when is_debug=false is useful for
-  # doing engineering builds.
-  cast_is_debug = is_debug
+  if (is_android) {
+    cast_product_type = 4
+  } else {
+    cast_product_type = 0
+  }
 }
 
-assert(cast_product_type >= 0 && cast_product_type <= 4)
+if (is_android) {
+  assert(cast_product_type == 4)
+} else {
+  assert(cast_product_type >= 0 && cast_product_type <= 3)
+}
 
-# GYP target: chromecast.gyp:cast_base
 source_set("base") {
   sources = [
     "android/dumpstate_writer.cc",
@@ -39,15 +41,13 @@ source_set("base") {
     "cast_resource.h",
     "chromecast_config_android.cc",
     "chromecast_config_android.h",
-    "chromecast_switches.cc",
-    "chromecast_switches.h",
     "device_capabilities.h",
     "device_capabilities_impl.cc",
     "device_capabilities_impl.h",
     "error_codes.cc",
     "error_codes.h",
-    "init_command_line_shlib.cc",
-    "init_command_line_shlib.h",
+    "file_utils.cc",
+    "file_utils.h",
     "path_utils.cc",
     "path_utils.h",
     "pref_names.cc",
@@ -63,6 +63,8 @@ source_set("base") {
   ]
 
   public_deps = [
+    ":chromecast_switches",
+    ":init_shlib",
     "//chromecast/base/metrics",
     "//chromecast/public",
   ]
@@ -76,7 +78,35 @@ source_set("base") {
   }
 }
 
-# GYP target: n/a
+# chromecast related switch values
+# b/30398176 components that depend on switch values should depend on
+# this target directly instead of depend on //chromecast/base to avoid
+# unnecessary size increase.
+source_set("chromecast_switches") {
+  sources = [
+    "chromecast_switches.cc",
+    "chromecast_switches.h",
+  ]
+
+  deps = [
+    "//base",
+  ]
+}
+
+# command line initialization code for shared libs
+# b/30398176 shared libs that depend on InitCommandLineShlib() only should
+# use this target instead of //chromecast/base
+source_set("init_shlib") {
+  sources = [
+    "init_command_line_shlib.cc",
+    "init_command_line_shlib.h",
+  ]
+
+  deps = [
+    "//base",
+  ]
+}
+
 source_set("test_support") {
   sources = [
     "scoped_temp_file.cc",
@@ -89,11 +119,9 @@ source_set("test_support") {
   ]
 }
 
-# GYP target: chromecast_tests.gypi:cast_base_unittests
 test("cast_base_unittests") {
   sources = [
     "bind_to_task_runner_unittest.cc",
-    "chromecast_switches_unittest.cc",
     "device_capabilities_impl_unittest.cc",
     "error_codes_unittest.cc",
     "path_utils_unittest.cc",
@@ -169,6 +197,9 @@ process_version("cast_version") {
   template_file = "version.h.in"
   output = "$target_gen_dir/version.h"
 
+  sources = [
+    "//chrome/VERSION",
+  ]
   extra_args = [
     "-e",
     "VERSION_FULL=\"%s.%s.%s.%s\"%(MAJOR,MINOR,BUILD,PATCH)",
@@ -194,7 +225,6 @@ process_version("cast_version") {
 }
 
 if (is_android) {
-  # GYP target: chromecast.gyp:jni_headers
   generate_jni("jni_headers") {
     sources = [
       "java/src/org/chromium/chromecast/base/ChromecastConfigAndroid.java",
@@ -205,7 +235,6 @@ if (is_android) {
     jni_package = "chromecast"
   }
 
-  # GYP target: chromecast.gyp:cast_base_java
   android_library("base_java") {
     java_src_dir = "//chromecast/base/java/src"
     java_files = [

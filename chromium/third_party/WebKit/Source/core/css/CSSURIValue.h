@@ -6,35 +6,42 @@
 #define CSSURIValue_h
 
 #include "core/css/CSSValue.h"
+#include "core/fetch/DocumentResource.h"
 
 namespace blink {
 
+class Document;
+
 class CSSURIValue : public CSSValue {
-public:
-    static CSSURIValue* create(const String& str)
-    {
-        return new CSSURIValue(str);
-    }
+ public:
+  static CSSURIValue* create(const String& str) { return new CSSURIValue(str); }
+  ~CSSURIValue();
 
-    String value() const { return m_string; }
+  DocumentResource* cachedDocument() const { return m_document; }
+  DocumentResource* load(Document&) const;
 
-    String customCSSText() const;
+  const String& value() const { return m_url; }
+  const String& url() const { return m_url; }
 
-    bool equals(const CSSURIValue& other) const
-    {
-        return m_string == other.m_string;
-    }
+  String customCSSText() const;
 
-    DECLARE_TRACE_AFTER_DISPATCH();
+  bool loadRequested() const { return m_loadRequested; }
+  bool equals(const CSSURIValue&) const;
 
-private:
-    CSSURIValue(const String&);
+  DECLARE_TRACE_AFTER_DISPATCH();
 
-    String m_string;
+ private:
+  CSSURIValue(const String&);
+
+  String m_url;
+
+  // Document cache.
+  mutable Member<DocumentResource> m_document;
+  mutable bool m_loadRequested;
 };
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSURIValue, isURIValue());
 
-} // namespace blink
+}  // namespace blink
 
-#endif // CSSURIValue_h
+#endif  // CSSURIValue_h

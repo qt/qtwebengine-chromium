@@ -7,6 +7,7 @@
 #include "base/i18n/rtl.h"
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/autofill/core/common/autofill_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace autofill {
@@ -41,6 +42,11 @@ void FillVersion3Fields(FormFieldData* data) {
 
 void FillVersion5Fields(FormFieldData* data) {
   data->css_classes = base::ASCIIToUTF16("class1 class2");
+}
+
+void FillVersion6Fields(FormFieldData* data) {
+  data->properties_mask =
+      FieldPropertiesFlags::USER_TYPED | FieldPropertiesFlags::HAD_FOCUS;
 }
 
 void WriteSection1(const FormFieldData& data, base::Pickle* pickle) {
@@ -87,6 +93,10 @@ void WriteVersion3Specific(const FormFieldData& data, base::Pickle* pickle) {
 
 void WriteVersion5Specific(const FormFieldData& data, base::Pickle* pickle) {
   pickle->WriteString16(data.css_classes);
+}
+
+void WriteVersion6Specific(const FormFieldData& data, base::Pickle* pickle) {
+  pickle->WriteUInt32(data.properties_mask);
 }
 
 void SerializeInVersion1Format(const FormFieldData& data,
@@ -137,6 +147,18 @@ void SerializeInVersion5Format(const FormFieldData& data,
   WriteVersion5Specific(data, pickle);
 }
 
+void SerializeInVersion6Format(const FormFieldData& data,
+                               base::Pickle* pickle) {
+  WriteSection1(data, pickle);
+  WriteSection4(data, pickle);
+  WriteSection5(data, pickle);
+  WriteVersion2Specific(data, pickle);
+  WriteSection2(data, pickle);
+  WriteVersion3Specific(data, pickle);
+  WriteVersion5Specific(data, pickle);
+  WriteVersion6Specific(data, pickle);
+}
+
 }  // namespace
 
 TEST(FormFieldDataTest, SerializeAndDeserialize) {
@@ -145,6 +167,7 @@ TEST(FormFieldDataTest, SerializeAndDeserialize) {
   FillVersion2Fields(&data);
   FillVersion3Fields(&data);
   FillVersion5Fields(&data);
+  FillVersion6Fields(&data);
 
   base::Pickle pickle;
   SerializeFormFieldData(data, &pickle);
@@ -231,6 +254,25 @@ TEST(FormFieldDataTest, DeserializeVersion5) {
   base::Pickle pickle;
   pickle.WriteInt(5);
   SerializeInVersion5Format(data, &pickle);
+
+  base::PickleIterator iter(pickle);
+  FormFieldData actual;
+  EXPECT_TRUE(DeserializeFormFieldData(&iter, &actual));
+
+  EXPECT_TRUE(actual.SameFieldAs(data));
+}
+
+TEST(FormFieldDataTest, DeserializeVersion6) {
+  FormFieldData data;
+  FillCommonFields(&data);
+  FillVersion2Fields(&data);
+  FillVersion3Fields(&data);
+  FillVersion5Fields(&data);
+  FillVersion6Fields(&data);
+
+  base::Pickle pickle;
+  pickle.WriteInt(6);
+  SerializeInVersion6Format(data, &pickle);
 
   base::PickleIterator iter(pickle);
   FormFieldData actual;

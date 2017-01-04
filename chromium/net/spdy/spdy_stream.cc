@@ -18,6 +18,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
+#include "net/log/net_log.h"
+#include "net/log/net_log_capture_mode.h"
+#include "net/log/net_log_event_type.h"
 #include "net/spdy/spdy_buffer_producer.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_session.h"
@@ -50,7 +53,7 @@ std::unique_ptr<base::Value> NetLogSpdyStreamWindowUpdateCallback(
   return std::move(dict);
 }
 
-bool ContainsUppercaseAscii(const std::string& str) {
+bool ContainsUppercaseAscii(base::StringPiece str) {
   return std::any_of(str.begin(), str.end(), base::IsAsciiUpper<char>);
 }
 
@@ -58,15 +61,15 @@ bool ContainsUppercaseAscii(const std::string& str) {
 
 void SpdyStream::Delegate::OnTrailers(const SpdyHeaderBlock& trailers) {}
 
-// A wrapper around a stream that calls into ProduceSynStreamFrame().
-class SpdyStream::SynStreamBufferProducer : public SpdyBufferProducer {
+// A wrapper around a stream that calls into ProduceHeadersFrame().
+class SpdyStream::HeadersBufferProducer : public SpdyBufferProducer {
  public:
-  SynStreamBufferProducer(const base::WeakPtr<SpdyStream>& stream)
+  HeadersBufferProducer(const base::WeakPtr<SpdyStream>& stream)
       : stream_(stream) {
     DCHECK(stream_.get());
   }
 
-  ~SynStreamBufferProducer() override {}
+  ~HeadersBufferProducer() override {}
 
   std::unique_ptr<SpdyBuffer> ProduceBuffer() override {
     if (!stream_.get()) {
@@ -75,7 +78,7 @@ class SpdyStream::SynStreamBufferProducer : public SpdyBufferProducer {
     }
     DCHECK_GT(stream_->stream_id(), 0u);
     return std::unique_ptr<SpdyBuffer>(
-        new SpdyBuffer(stream_->ProduceSynStreamFrame()));
+        new SpdyBuffer(stream_->ProduceHeadersFrame()));
   }
 
  private:
@@ -88,7 +91,7 @@ SpdyStream::SpdyStream(SpdyStreamType type,
                        RequestPriority priority,
                        int32_t initial_send_window_size,
                        int32_t max_recv_window_size,
-                       const BoundNetLog& net_log)
+                       const NetLogWithSource& net_log)
     : type_(type),
       stream_id_(0),
       url_(url),
@@ -100,6 +103,7 @@ SpdyStream::SpdyStream(SpdyStreamType type,
       unacked_recv_window_bytes_(0),
       session_(session),
       delegate_(NULL),
+      request_headers_valid_(false),
       pending_send_status_(MORE_DATA_TO_SEND),
       request_time_(base::Time::Now()),
       response_headers_status_(RESPONSE_HEADERS_ARE_INCOMPLETE),
@@ -199,16 +203,17 @@ void SpdyStream::PushedStreamReplay() {
   }
 }
 
-std::unique_ptr<SpdySerializedFrame> SpdyStream::ProduceSynStreamFrame() {
+std::unique_ptr<SpdySerializedFrame> SpdyStream::ProduceHeadersFrame() {
   CHECK_EQ(io_state_, STATE_IDLE);
-  CHECK(request_headers_);
+  CHECK(request_headers_valid_);
   CHECK_GT(stream_id_, 0u);
 
   SpdyControlFlags flags =
       (pending_send_status_ == NO_MORE_DATA_TO_SEND) ?
       CONTROL_FLAG_FIN : CONTROL_FLAG_NONE;
-  std::unique_ptr<SpdySerializedFrame> frame(session_->CreateSynStream(
-      stream_id_, priority_, flags, request_headers_->Clone()));
+  std::unique_ptr<SpdySerializedFrame> frame(session_->CreateHeaders(
+      stream_id_, priority_, flags, std::move(request_headers_)));
+  request_headers_valid_ = false;
   send_time_ = base::TimeTicks::Now();
   return frame;
 }
@@ -277,7 +282,7 @@ void SpdyStream::IncreaseSendWindowSize(int32_t delta_window_size) {
   send_window_size_ += delta_window_size;
 
   net_log_.AddEvent(
-      NetLog::TYPE_HTTP2_STREAM_UPDATE_SEND_WINDOW,
+      NetLogEventType::HTTP2_STREAM_UPDATE_SEND_WINDOW,
       base::Bind(&NetLogSpdyStreamWindowUpdateCallback, stream_id_,
                  delta_window_size, send_window_size_));
 
@@ -300,7 +305,7 @@ void SpdyStream::DecreaseSendWindowSize(int32_t delta_window_size) {
   send_window_size_ -= delta_window_size;
 
   net_log_.AddEvent(
-      NetLog::TYPE_HTTP2_STREAM_UPDATE_SEND_WINDOW,
+      NetLogEventType::HTTP2_STREAM_UPDATE_SEND_WINDOW,
       base::Bind(&NetLogSpdyStreamWindowUpdateCallback, stream_id_,
                  -delta_window_size, send_window_size_));
 }
@@ -329,7 +334,7 @@ void SpdyStream::IncreaseRecvWindowSize(int32_t delta_window_size) {
 
   recv_window_size_ += delta_window_size;
   net_log_.AddEvent(
-      NetLog::TYPE_HTTP2_STREAM_UPDATE_RECV_WINDOW,
+      NetLogEventType::HTTP2_STREAM_UPDATE_RECV_WINDOW,
       base::Bind(&NetLogSpdyStreamWindowUpdateCallback, stream_id_,
                  delta_window_size, recv_window_size_));
 
@@ -359,7 +364,7 @@ void SpdyStream::DecreaseRecvWindowSize(int32_t delta_window_size) {
 
   recv_window_size_ -= delta_window_size;
   net_log_.AddEvent(
-      NetLog::TYPE_HTTP2_STREAM_UPDATE_RECV_WINDOW,
+      NetLogEventType::HTTP2_STREAM_UPDATE_RECV_WINDOW,
       base::Bind(&NetLogSpdyStreamWindowUpdateCallback, stream_id_,
                  -delta_window_size, recv_window_size_));
 }
@@ -463,14 +468,16 @@ int SpdyStream::OnAdditionalResponseHeadersReceived(
   return MergeWithResponseHeaders(additional_response_headers);
 }
 
-void SpdyStream::OnPushPromiseHeadersReceived(const SpdyHeaderBlock& headers) {
-  CHECK(!request_headers_.get());
+void SpdyStream::OnPushPromiseHeadersReceived(SpdyHeaderBlock headers) {
+  CHECK(!request_headers_valid_);
   CHECK_EQ(io_state_, STATE_IDLE);
   CHECK_EQ(type_, SPDY_PUSH_STREAM);
   DCHECK(!delegate_);
 
   io_state_ = STATE_RESERVED_REMOTE;
-  request_headers_.reset(new SpdyHeaderBlock(headers.Clone()));
+  request_headers_ = std::move(headers);
+  request_headers_valid_ = true;
+  url_from_header_block_ = GetUrlFromHeaderBlock(request_headers_);
 }
 
 void SpdyStream::OnDataReceived(std::unique_ptr<SpdyBuffer> buffer) {
@@ -561,11 +568,10 @@ void SpdyStream::OnPaddingConsumed(size_t len) {
 void SpdyStream::OnFrameWriteComplete(SpdyFrameType frame_type,
                                       size_t frame_size) {
   DCHECK_NE(type_, SPDY_PUSH_STREAM);
-  CHECK(frame_type == SYN_STREAM ||
-        frame_type == DATA) << frame_type;
+  CHECK(frame_type == HEADERS || frame_type == DATA) << frame_type;
 
-  int result = (frame_type == SYN_STREAM) ?
-      OnRequestHeadersSent() : OnDataSent(frame_size);
+  int result =
+      (frame_type == HEADERS) ? OnRequestHeadersSent() : OnDataSent(frame_size);
   if (result == ERR_IO_PENDING) {
     // The write operation hasn't completed yet.
     return;
@@ -585,7 +591,7 @@ void SpdyStream::OnFrameWriteComplete(SpdyFrameType frame_type,
   {
     base::WeakPtr<SpdyStream> weak_this = GetWeakPtr();
     write_handler_guard_ = true;
-    if (frame_type == SYN_STREAM) {
+    if (frame_type == HEADERS) {
       delegate_->OnRequestHeadersSent();
     } else {
       delegate_->OnDataSent();
@@ -631,12 +637,8 @@ int SpdyStream::OnDataSent(size_t frame_size) {
   }
 }
 
-SpdyMajorVersion SpdyStream::GetProtocolVersion() const {
-  return session_->GetProtocolVersion();
-}
-
 void SpdyStream::LogStreamError(int status, const std::string& description) {
-  net_log_.AddEvent(NetLog::TYPE_HTTP2_STREAM_ERROR,
+  net_log_.AddEvent(NetLogEventType::HTTP2_STREAM_ERROR,
                     base::Bind(&NetLogSpdyStreamErrorCallback, stream_id_,
                                status, &description));
 }
@@ -684,19 +686,20 @@ base::WeakPtr<SpdyStream> SpdyStream::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-int SpdyStream::SendRequestHeaders(
-    std::unique_ptr<SpdyHeaderBlock> request_headers,
-    SpdySendStatus send_status) {
+int SpdyStream::SendRequestHeaders(SpdyHeaderBlock request_headers,
+                                   SpdySendStatus send_status) {
   CHECK_NE(type_, SPDY_PUSH_STREAM);
   CHECK_EQ(pending_send_status_, MORE_DATA_TO_SEND);
-  CHECK(!request_headers_);
+  CHECK(!request_headers_valid_);
   CHECK(!pending_send_data_.get());
   CHECK_EQ(io_state_, STATE_IDLE);
   request_headers_ = std::move(request_headers);
+  request_headers_valid_ = true;
+  url_from_header_block_ = GetUrlFromHeaderBlock(request_headers_);
   pending_send_status_ = send_status;
-  session_->EnqueueStreamWrite(GetWeakPtr(), SYN_STREAM,
+  session_->EnqueueStreamWrite(GetWeakPtr(), HEADERS,
                                std::unique_ptr<SpdyBufferProducer>(
-                                   new SynStreamBufferProducer(GetWeakPtr())));
+                                   new HeadersBufferProducer(GetWeakPtr())));
   return ERR_IO_PENDING;
 }
 
@@ -713,11 +716,16 @@ void SpdyStream::SendData(IOBuffer* data,
   QueueNextDataFrame();
 }
 
-bool SpdyStream::GetSSLInfo(SSLInfo* ssl_info,
-                            bool* was_npn_negotiated,
-                            NextProto* protocol_negotiated) {
-  return session_->GetSSLInfo(
-      ssl_info, was_npn_negotiated, protocol_negotiated);
+bool SpdyStream::GetSSLInfo(SSLInfo* ssl_info) const {
+  return session_->GetSSLInfo(ssl_info);
+}
+
+bool SpdyStream::WasNpnNegotiated() const {
+  return session_->WasNpnNegotiated();
+}
+
+NextProto SpdyStream::GetNegotiatedProtocol() const {
+  return session_->GetNegotiatedProtocol();
 }
 
 void SpdyStream::PossiblyResumeIfSendStalled() {
@@ -726,7 +734,7 @@ void SpdyStream::PossiblyResumeIfSendStalled() {
   }
   if (send_stalled_by_flow_control_ && !session_->IsSendStalled() &&
       send_window_size_ > 0) {
-    net_log_.AddEvent(NetLog::TYPE_HTTP2_STREAM_FLOW_CONTROL_UNSTALLED,
+    net_log_.AddEvent(NetLogEventType::HTTP2_STREAM_FLOW_CONTROL_UNSTALLED,
                       NetLog::IntCallback("stream_id", stream_id_));
     send_stalled_by_flow_control_ = false;
     QueueNextDataFrame();
@@ -755,10 +763,6 @@ bool SpdyStream::IsReservedRemote() const {
   return io_state_ == STATE_RESERVED_REMOTE;
 }
 
-NextProto SpdyStream::GetProtocol() const {
-  return session_->protocol();
-}
-
 void SpdyStream::AddRawReceivedBytes(size_t received_bytes) {
   raw_received_bytes_ += received_bytes;
 }
@@ -779,17 +783,6 @@ bool SpdyStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
       load_timing_info->push_end = recv_last_byte_time_;
   }
   return result;
-}
-
-GURL SpdyStream::GetUrlFromHeaders() const {
-  if (!request_headers_)
-    return GURL();
-
-  return GetUrlFromHeaderBlock(*request_headers_, GetProtocolVersion());
-}
-
-bool SpdyStream::HasUrlFromHeaders() const {
-  return !GetUrlFromHeaders().is_empty();
 }
 
 void SpdyStream::UpdateHistograms() {
@@ -881,15 +874,14 @@ int SpdyStream::MergeWithResponseHeaders(
   for (SpdyHeaderBlock::const_iterator it = new_response_headers.begin();
       it != new_response_headers.end(); ++it) {
     // Disallow uppercase headers.
-    if (ContainsUppercaseAscii(it->first.as_string())) {
+    if (ContainsUppercaseAscii(it->first)) {
       session_->ResetStream(
           stream_id_, RST_STREAM_PROTOCOL_ERROR,
           "Upper case characters in header: " + it->first.as_string());
       return ERR_SPDY_PROTOCOL_ERROR;
     }
 
-    SpdyHeaderBlock::iterator it2 =
-        response_headers_.find(it->first.as_string());
+    SpdyHeaderBlock::iterator it2 = response_headers_.find(it->first);
     // Disallow duplicate headers.  This is just to be conservative.
     if (it2 != response_headers_.end()) {
       session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,

@@ -9,7 +9,7 @@
 
 #include <memory>
 
-#include "core/fxcrt/include/fx_basic.h"
+#include "core/fxcrt/fx_basic.h"
 #include "xfa/fxfa/fm2js/xfa_lexer.h"
 
 #define RUNTIMEFUNCTIONRETURNVALUE \
@@ -96,10 +96,10 @@ class CXFA_FMStringExpression : public CXFA_FMSimpleExpression {
   CFX_WideStringC m_wsString;
 };
 
-class CXFA_FMIdentifierExpressionn : public CXFA_FMSimpleExpression {
+class CXFA_FMIdentifierExpression : public CXFA_FMSimpleExpression {
  public:
-  CXFA_FMIdentifierExpressionn(uint32_t line, CFX_WideStringC wsIdentifier);
-  ~CXFA_FMIdentifierExpressionn() override;
+  CXFA_FMIdentifierExpression(uint32_t line, CFX_WideStringC wsIdentifier);
+  ~CXFA_FMIdentifierExpression() override;
   void ToJavaScript(CFX_WideTextBuf& javascript) override;
 
  private:

@@ -90,12 +90,6 @@ class TextureGL : public TextureImpl
     void syncState(size_t textureUnit) const;
     GLuint getTextureID() const;
 
-    gl::Error getAttachmentRenderTarget(const gl::FramebufferAttachment::Target &target,
-                                        FramebufferAttachmentRenderTarget **rtOut) override
-    {
-        return gl::Error(GL_OUT_OF_MEMORY, "Not supported on OpenGL");
-    }
-
     void setBaseLevel(GLuint) override {}
 
   private:
@@ -119,6 +113,14 @@ class TextureGL : public TextureImpl
                                             GLenum type,
                                             const gl::PixelUnpackState &unpack,
                                             const uint8_t *pixels);
+
+    gl::Error setSubImagePaddingWorkaround(GLenum target,
+                                           size_t level,
+                                           const gl::Box &area,
+                                           GLenum format,
+                                           GLenum type,
+                                           const gl::PixelUnpackState &unpack,
+                                           const uint8_t *pixels);
 
     const FunctionsGL *mFunctions;
     const WorkaroundsGL &mWorkarounds;

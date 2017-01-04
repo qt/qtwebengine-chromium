@@ -5,35 +5,45 @@
 {
   "type_name": "FieldTrialTestingConfig",
   "schema": [{
-    "field": "groups",
+    "field": "studies",
     "type": "array",
     "contents": {
-      "type_name": "FieldTrialTestingGroup",
+      "type_name": "FieldTrialTestingStudy",
       "type": "struct",
       "fields": [
-        {"field": "study", "type": "string"},
-        {"field": "group_name", "type": "string"},
+        {"field": "name", "type": "string"},
         {
-          "field": "params",
+          "field": "experiments",
           "type": "array",
           "contents": {
-            "type_name": "FieldTrialGroupParams",
+            "type_name": "FieldTrialTestingExperiment",
             "type": "struct",
             "fields": [
-              {"field": "key", "type": "string"},
-              {"field": "value", "type": "string"}
+              {"field": "name", "type": "string"},
+              {
+                "field": "params",
+                "type": "array",
+                "contents": {
+                  "type_name": "FieldTrialTestingExperimentParams",
+                  "type": "struct",
+                  "fields": [
+                    {"field": "key", "type": "string"},
+                    {"field": "value", "type": "string"}
+                  ]
+                }
+              },
+              {
+                "field": "enable_features",
+                "type": "array",
+                "contents": { "type": "string"}
+              },
+              {
+                "field": "disable_features",
+                "type": "array",
+                "contents": { "type": "string"}
+              }
             ]
           }
-        },
-        {
-          "field": "enable_features",
-          "type": "array",
-          "contents": { "type": "string"}
-        },
-        {
-          "field": "disable_features",
-          "type": "array",
-          "contents": { "type": "string"}
         }
       ]
     }

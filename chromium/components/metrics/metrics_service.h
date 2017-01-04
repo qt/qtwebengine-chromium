@@ -124,16 +124,6 @@ class MetricsService : public base::HistogramFlattener {
   // Returns true if the last session exited cleanly.
   bool WasLastShutdownClean() const;
 
-  // Returns the preferred entropy provider used to seed persistent activities
-  // based on whether or not metrics reporting will be permitted on this client.
-  //
-  // If metrics reporting is enabled, this method returns an entropy provider
-  // that has a high source of entropy, partially based on the client ID.
-  // Otherwise, it returns an entropy provider that is based on a low entropy
-  // source.
-  std::unique_ptr<const base::FieldTrial::EntropyProvider>
-  CreateEntropyProvider();
-
   // At startup, prefs needs to be called with a list of all the pref names and
   // types we'll be using.
   static void RegisterPrefs(PrefRegistrySimple* registry);
@@ -220,6 +210,9 @@ class MetricsService : public base::HistogramFlattener {
   // from any thread, but this function should be called on UI thread.
   UpdateUsagePrefCallbackType GetDataUseForwardingCallback();
 
+  // Merge any data from metrics providers into the global StatisticsRecorder.
+  void MergeHistogramDeltas();
+
  protected:
   // Exposed for testing.
   MetricsLogManager* log_manager() { return &log_manager_; }
@@ -259,8 +252,17 @@ class MetricsService : public base::HistogramFlattener {
   // registered at a time for a given trial_name. Only the last group name that
   // is registered for a given trial name will be recorded. The values passed
   // in must not correspond to any real field trial in the code.
+  // Note: Should not be used to replace trials that were registered with
+  // RegisterMultiGroupSyntheticFieldTrial().
   void RegisterSyntheticFieldTrial(
       const variations::SyntheticTrialGroup& trial_group);
+
+  // Similar to RegisterSyntheticFieldTrial(), but registers a synthetic trial
+  // that has multiple active groups for a given trial name hash. Any previous
+  // groups registered for |trial_name_hash| will be replaced.
+  void RegisterSyntheticMultiGroupFieldTrial(
+      uint32_t trial_name_hash,
+      const std::vector<uint32_t>& group_name_hashes);
 
   // Calls into the client to initialize some system profile metrics.
   void StartInitTask();
@@ -340,9 +342,10 @@ class MetricsService : public base::HistogramFlattener {
   // Prepares the initial stability log, which is only logged when the previous
   // run of Chrome crashed.  This log contains any stability metrics left over
   // from that previous run, and only these stability metrics.  It uses the
-  // system profile from the previous session.  Returns true if a log was
-  // created.
-  bool PrepareInitialStabilityLog();
+  // system profile from the previous session.  |prefs_previous_version| is used
+  // to validate the version number recovered from the system profile.  Returns
+  // true if a log was created.
+  bool PrepareInitialStabilityLog(const std::string& prefs_previous_version);
 
   // Prepares the initial metrics log, which includes startup histograms and
   // profiler data, as well as incremental stability-related metrics.
@@ -367,9 +370,6 @@ class MetricsService : public base::HistogramFlattener {
   // Records state that should be periodically saved, like uptime and
   // buffered plugin stability statistics.
   void RecordCurrentState(PrefService* pref);
-
-  // Checks whether events should currently be logged.
-  bool ShouldLogEvents();
 
   // Sets the value of the specified path in prefs and schedules a save.
   void RecordBooleanPrefValue(const char* path, bool value);
@@ -482,6 +482,8 @@ class MetricsService : public base::HistogramFlattener {
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest,
                            PermutedEntropyCacheClearedWhenLowEntropyReset);
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, RegisterSyntheticTrial);
+  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest,
+                           RegisterSyntheticMultiGroupFieldTrial);
 
   // Pointer used for obtaining data use pref updater callback on above layers.
   std::unique_ptr<DataUseTracker> data_use_tracker_;

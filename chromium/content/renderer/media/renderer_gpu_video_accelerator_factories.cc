@@ -50,7 +50,7 @@ RendererGpuVideoAcceleratorFactories::Create(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
     bool enable_gpu_memory_buffer_video_frames,
-    std::vector<unsigned> image_texture_targets,
+    const cc::BufferToTextureTargetMap& image_texture_targets,
     bool enable_video_accelerator) {
   RecordContextProviderPhaseUmaEnum(
       ContextProviderPhase::CONTEXT_PROVIDER_ACQUIRED);
@@ -66,7 +66,7 @@ RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
     bool enable_gpu_memory_buffer_video_frames,
-    std::vector<unsigned> image_texture_targets,
+    const cc::BufferToTextureTargetMap& image_texture_targets,
     bool enable_video_accelerator)
     : main_thread_task_runner_(main_thread_task_runner),
       task_runner_(task_runner),
@@ -78,7 +78,7 @@ RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
       image_texture_targets_(image_texture_targets),
       video_accelerator_enabled_(enable_video_accelerator),
       gpu_memory_buffer_manager_(
-          ChildThreadImpl::current()->gpu_memory_buffer_manager()),
+          RenderThreadImpl::current()->GetGpuMemoryBufferManager()),
       thread_safe_sender_(ChildThreadImpl::current()->thread_safe_sender()) {
   DCHECK(main_thread_task_runner_);
   DCHECK(gpu_channel_host_);
@@ -197,6 +197,16 @@ void RendererGpuVideoAcceleratorFactories::DeleteTexture(uint32_t texture_id) {
   DCHECK_EQ(gles2->GetError(), static_cast<GLenum>(GL_NO_ERROR));
 }
 
+gpu::SyncToken RendererGpuVideoAcceleratorFactories::CreateSyncToken() {
+  cc::ContextProvider::ScopedContextLock lock(context_provider_);
+  gpu::gles2::GLES2Interface* gl = lock.ContextGL();
+  gpu::SyncToken sync_token;
+  const GLuint64 fence_sync = gl->InsertFenceSyncCHROMIUM();
+  gl->ShallowFlushCHROMIUM();
+  gl->GenSyncTokenCHROMIUM(fence_sync, sync_token.GetData());
+  return sync_token;
+}
+
 void RendererGpuVideoAcceleratorFactories::WaitSyncToken(
     const gpu::SyncToken& sync_token) {
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -229,7 +239,10 @@ bool RendererGpuVideoAcceleratorFactories::
 
 unsigned RendererGpuVideoAcceleratorFactories::ImageTextureTarget(
     gfx::BufferFormat format) {
-  return image_texture_targets_[static_cast<int>(format)];
+  auto found = image_texture_targets_.find(cc::BufferToTextureTargetKey(
+      gfx::BufferUsage::GPU_READ_CPU_READ_WRITE, format));
+  DCHECK(found != image_texture_targets_.end());
+  return found->second;
 }
 
 media::VideoPixelFormat
@@ -265,7 +278,7 @@ std::unique_ptr<media::GpuVideoAcceleratorFactories::ScopedGLContextLock>
 RendererGpuVideoAcceleratorFactories::GetGLContextLock() {
   if (CheckContextLost())
     return nullptr;
-  return base::WrapUnique(new ScopedGLContextLockImpl(context_provider_));
+  return base::MakeUnique<ScopedGLContextLockImpl>(context_provider_);
 }
 
 std::unique_ptr<base::SharedMemory>

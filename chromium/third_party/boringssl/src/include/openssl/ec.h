@@ -78,9 +78,6 @@ extern "C" {
 /* Low-level operations on elliptic curves. */
 
 
-typedef struct ec_group_st EC_GROUP;
-typedef struct ec_point_st EC_POINT;
-
 /* point_conversion_form_t enumerates forms, as defined in X9.62 (ECDSA), for
  * the encoding of a elliptic curve point (x,y) */
 typedef enum {
@@ -89,7 +86,7 @@ typedef enum {
    * is. */
   POINT_CONVERSION_COMPRESSED = 2,
 
-  /* POINT_CONVERSION_COMPRESSED indicates that the point is encoded as
+  /* POINT_CONVERSION_UNCOMPRESSED indicates that the point is encoded as
    * z||x||y, where z is the octet 0x04. */
   POINT_CONVERSION_UNCOMPRESSED = 4,
 
@@ -315,15 +312,6 @@ OPENSSL_EXPORT int EC_GROUP_set_generator(EC_GROUP *group,
                                           const BIGNUM *order,
                                           const BIGNUM *cofactor);
 
-/* EC_GROUP_new_arbitrary calls |EC_GROUP_new_curve_GFp| and
- * |EC_GROUP_set_generator|.
- *
- * TODO(davidben): Remove this once
- * https://android-review.googlesource.com/#/c/207990/ has cycled in. */
-OPENSSL_EXPORT EC_GROUP *EC_GROUP_new_arbitrary(
-    const BIGNUM *p, const BIGNUM *a, const BIGNUM *b, const BIGNUM *gx,
-    const BIGNUM *gy, const BIGNUM *order, const BIGNUM *cofactor);
-
 /* EC_GROUP_get_order sets |*order| to the order of |group|, if it's not
  * NULL. It returns one on success and zero otherwise. |ctx| is ignored. Use
  * |EC_GROUP_get0_order| instead. */
@@ -368,6 +356,18 @@ OPENSSL_EXPORT size_t EC_get_builtin_curves(EC_builtin_curve *out_curves,
 
 #if defined(__cplusplus)
 }  /* extern C */
+
+extern "C++" {
+
+namespace bssl {
+
+BORINGSSL_MAKE_DELETER(EC_POINT, EC_POINT_free)
+BORINGSSL_MAKE_DELETER(EC_GROUP, EC_GROUP_free)
+
+}  // namespace bssl
+
+}  /* extern C++ */
+
 #endif
 
 #define EC_R_BUFFER_TOO_SMALL 100
@@ -401,5 +401,6 @@ OPENSSL_EXPORT size_t EC_get_builtin_curves(EC_builtin_curve *out_curves,
 #define EC_R_DECODE_ERROR 128
 #define EC_R_ENCODE_ERROR 129
 #define EC_R_GROUP_MISMATCH 130
+#define EC_R_INVALID_COFACTOR 131
 
 #endif  /* OPENSSL_HEADER_EC_H */

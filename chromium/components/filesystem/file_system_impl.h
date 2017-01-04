@@ -10,14 +10,13 @@
 #include "components/filesystem/public/interfaces/file_system.mojom.h"
 #include "components/filesystem/shared_temp_dir.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
-#include "mojo/public/cpp/bindings/strong_binding.h"
 
 namespace base {
 class FilePath;
 }
 
 namespace shell {
-class Connection;
+class Identity;
 }
 
 namespace filesystem {
@@ -30,22 +29,20 @@ class FileSystemImpl : public mojom::FileSystem {
  public:
   // |persistent_dir| is the directory served to callers of
   // |OpenPersistentFileSystem().
-  FileSystemImpl(shell::Connection* connection,
-                 mojo::InterfaceRequest<mojom::FileSystem> request,
+  FileSystemImpl(const shell::Identity& remote_identity,
                  base::FilePath persistent_dir,
                  scoped_refptr<LockTable> lock_table);
   ~FileSystemImpl() override;
 
   // |Files| implementation:
-  void OpenTempDirectory(mojo::InterfaceRequest<mojom::Directory> directory,
+  void OpenTempDirectory(mojom::DirectoryRequest directory,
                          const OpenTempDirectoryCallback& callback) override;
   void OpenPersistentFileSystem(
-      mojo::InterfaceRequest<mojom::Directory> directory,
+      mojom::DirectoryRequest directory,
       const OpenPersistentFileSystemCallback& callback) override;
 
  private:
   const std::string remote_application_name_;
-  mojo::StrongBinding<mojom::FileSystem> binding_;
   scoped_refptr<LockTable> lock_table_;
 
   base::FilePath persistent_dir_;

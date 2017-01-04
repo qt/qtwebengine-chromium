@@ -39,8 +39,6 @@ class BrowserAccessibilityManagerAuraLinux;
 class BrowserAccessibilityManagerMac;
 #endif
 
-class SiteInstance;
-
 // For testing.
 CONTENT_EXPORT ui::AXTreeUpdate MakeAXTreeUpdate(
     const ui::AXNodeData& node,
@@ -85,9 +83,6 @@ class CONTENT_EXPORT BrowserAccessibilityDelegate {
   virtual gfx::Rect AccessibilityGetViewBounds() const = 0;
   virtual gfx::Point AccessibilityOriginInScreen(
       const gfx::Rect& bounds) const = 0;
-  virtual gfx::Rect AccessibilityTransformToRootCoordSpace(
-      const gfx::Rect& bounds) = 0;
-  virtual SiteInstance* AccessibilityGetSiteInstance() = 0;
   virtual void AccessibilityHitTest(
       const gfx::Point& point) = 0;
   virtual void AccessibilitySetAccessibilityFocus(int acc_obj_id) = 0;
@@ -320,6 +315,13 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
                                         int* child_index1,
                                         int* child_index2);
 
+  // Sets |out_is_before| to true if |object1| comes before |object2|
+  // in tree order (pre-order traversal), and false if the objects are the
+  // same or not in the same tree.
+  static ui::AXTreeOrder CompareNodes(
+      const BrowserAccessibility& object1,
+      const BrowserAccessibility& object2);
+
   static std::vector<const BrowserAccessibility*> FindTextOnlyObjectsInRange(
       const BrowserAccessibility& start_object,
       const BrowserAccessibility& end_object);
@@ -336,6 +338,12 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
       const BrowserAccessibility& end_object,
       int end_offset);
 
+  static gfx::Rect GetPageBoundsForRange(
+      const BrowserAccessibility& start_object,
+      int start_offset,
+      const BrowserAccessibility& end_object,
+      int end_offset);
+
   // Accessors.
   AXTreeIDRegistry::AXTreeID ax_tree_id() const { return ax_tree_id_; }
 
@@ -346,7 +354,10 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   void OnTreeDataChanged(ui::AXTree* tree) override;
   void OnNodeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
   void OnSubtreeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
+  void OnNodeWillBeReparented(ui::AXTree* tree, ui::AXNode* node) override;
+  void OnSubtreeWillBeReparented(ui::AXTree* tree, ui::AXNode* node) override;
   void OnNodeCreated(ui::AXTree* tree, ui::AXNode* node) override;
+  void OnNodeReparented(ui::AXTree* tree, ui::AXNode* node) override;
   void OnNodeChanged(ui::AXTree* tree, ui::AXNode* node) override;
   void OnAtomicUpdateFinished(
       ui::AXTree* tree,

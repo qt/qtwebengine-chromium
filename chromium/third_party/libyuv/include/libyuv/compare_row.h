@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef INCLUDE_LIBYUV_COMPARE_ROW_H_  // NOLINT
+#ifndef INCLUDE_LIBYUV_COMPARE_ROW_H_
 #define INCLUDE_LIBYUV_COMPARE_ROW_H_
 
 #include "libyuv/basic_types.h"
@@ -21,6 +21,12 @@ extern "C" {
 #if defined(__pnacl__) || defined(__CLR_VER) || \
     (defined(__i386__) && !defined(__SSE2__))
 #define LIBYUV_DISABLE_X86
+#endif
+// MemorySanitizer does not support assembly code yet. http://crbug.com/344505
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+#define LIBYUV_DISABLE_X86
+#endif
 #endif
 
 // Visual C 2012 required for AVX2.
@@ -75,4 +81,4 @@ uint32 HashDjb2_AVX2(const uint8* src, int count, uint32 seed);
 }  // namespace libyuv
 #endif
 
-#endif  // INCLUDE_LIBYUV_COMPARE_ROW_H_  NOLINT
+#endif  // INCLUDE_LIBYUV_COMPARE_ROW_H_

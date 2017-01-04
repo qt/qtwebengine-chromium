@@ -7,9 +7,9 @@
 #ifndef XFA_FXBARCODE_CBC_EAN13_H_
 #define XFA_FXBARCODE_CBC_EAN13_H_
 
-#include "core/fxcrt/include/fx_string.h"
-#include "core/fxcrt/include/fx_system.h"
-#include "core/fxge/include/fx_dib.h"
+#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/fx_system.h"
+#include "core/fxge/fx_dib.h"
 #include "xfa/fxbarcode/cbc_onecode.h"
 
 class CBC_EAN13 : public CBC_OneCode {

@@ -23,6 +23,7 @@
 #include "device/serial/test_serial_io_handler.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace device {
@@ -70,12 +71,13 @@ class SerialConnectionTest : public testing::Test {
   void SetUp() override {
     message_loop_.reset(new base::MessageLoop);
     mojo::InterfacePtr<serial::SerialService> service;
-    new SerialServiceImpl(
-        new SerialConnectionFactory(
-            base::Bind(&SerialConnectionTest::CreateIoHandler,
-                       base::Unretained(this)),
-            base::ThreadTaskRunnerHandle::Get()),
-        std::unique_ptr<SerialDeviceEnumerator>(new FakeSerialDeviceEnumerator),
+    mojo::MakeStrongBinding(
+        base::MakeUnique<SerialServiceImpl>(
+            new SerialConnectionFactory(
+                base::Bind(&SerialConnectionTest::CreateIoHandler,
+                           base::Unretained(this)),
+                base::ThreadTaskRunnerHandle::Get()),
+            base::MakeUnique<FakeSerialDeviceEnumerator>()),
         mojo::GetProxy(&service));
     service.set_connection_error_handler(base::Bind(
         &SerialConnectionTest::OnConnectionError, base::Unretained(this)));
@@ -145,7 +147,7 @@ class SerialConnectionTest : public testing::Test {
     expected_event_ = EVENT_NONE;
     ASSERT_TRUE(message_loop_);
     ASSERT_TRUE(!stop_run_loop_.is_null());
-    message_loop_->PostTask(FROM_HERE, stop_run_loop_);
+    message_loop_->task_runner()->PostTask(FROM_HERE, stop_run_loop_);
   }
 
   scoped_refptr<SerialIoHandler> CreateIoHandler() {

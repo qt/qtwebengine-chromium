@@ -32,6 +32,7 @@
 #define Timing_h
 
 #include "core/style/DataEquivalency.h"
+#include "platform/animation/CompositorAnimation.h"
 #include "platform/animation/TimingFunction.h"
 #include "wtf/Allocator.h"
 #include "wtf/MathExtras.h"
@@ -40,87 +41,69 @@
 namespace blink {
 
 struct Timing {
-    USING_FAST_MALLOC(Timing);
-public:
-    enum FillMode {
-        FillModeAuto,
-        FillModeNone,
-        FillModeForwards,
-        FillModeBackwards,
-        FillModeBoth
-    };
+  USING_FAST_MALLOC(Timing);
 
-    static String fillModeString(FillMode);
+ public:
+  using FillMode = CompositorAnimation::FillMode;
+  using PlaybackDirection = CompositorAnimation::Direction;
 
-    enum PlaybackDirection {
-        PlaybackDirectionNormal,
-        PlaybackDirectionReverse,
-        PlaybackDirectionAlternate,
-        PlaybackDirectionAlternateReverse
-    };
+  static String fillModeString(FillMode);
+  static String playbackDirectionString(PlaybackDirection);
 
-    static String playbackDirectionString(PlaybackDirection);
+  static const Timing& defaults() {
+    DEFINE_STATIC_LOCAL(Timing, timing, ());
+    return timing;
+  }
 
-    static const Timing& defaults()
-    {
-        DEFINE_STATIC_LOCAL(Timing, timing, ());
-        return timing;
-    }
+  Timing()
+      : startDelay(0),
+        endDelay(0),
+        fillMode(FillMode::AUTO),
+        iterationStart(0),
+        iterationCount(1),
+        iterationDuration(std::numeric_limits<double>::quiet_NaN()),
+        playbackRate(1),
+        direction(PlaybackDirection::NORMAL),
+        timingFunction(LinearTimingFunction::shared()) {}
 
-    Timing()
-        : startDelay(0)
-        , endDelay(0)
-        , fillMode(FillModeAuto)
-        , iterationStart(0)
-        , iterationCount(1)
-        , iterationDuration(std::numeric_limits<double>::quiet_NaN())
-        , playbackRate(1)
-        , direction(PlaybackDirectionNormal)
-        , timingFunction(LinearTimingFunction::shared())
-    {
-    }
+  void assertValid() const {
+    DCHECK(std::isfinite(startDelay));
+    DCHECK(std::isfinite(endDelay));
+    DCHECK(std::isfinite(iterationStart));
+    DCHECK_GE(iterationStart, 0);
+    DCHECK_GE(iterationCount, 0);
+    DCHECK(std::isnan(iterationDuration) || iterationDuration >= 0);
+    DCHECK(std::isfinite(playbackRate));
+    DCHECK(timingFunction);
+  }
 
-    void assertValid() const
-    {
-        ASSERT(std::isfinite(startDelay));
-        ASSERT(std::isfinite(endDelay));
-        ASSERT(std::isfinite(iterationStart));
-        ASSERT(iterationStart >= 0);
-        ASSERT(iterationCount >= 0);
-        ASSERT(std::isnan(iterationDuration) || iterationDuration >= 0);
-        ASSERT(std::isfinite(playbackRate));
-        ASSERT(timingFunction);
-    }
+  bool operator==(const Timing& other) const {
+    return startDelay == other.startDelay && endDelay == other.endDelay &&
+           fillMode == other.fillMode &&
+           iterationStart == other.iterationStart &&
+           iterationCount == other.iterationCount &&
+           ((std::isnan(iterationDuration) &&
+             std::isnan(other.iterationDuration)) ||
+            iterationDuration == other.iterationDuration) &&
+           playbackRate == other.playbackRate && direction == other.direction &&
+           dataEquivalent(timingFunction.get(), other.timingFunction.get());
+  }
 
-    bool operator==(const Timing &other) const
-    {
-        return startDelay == other.startDelay
-            && endDelay == other.endDelay
-            && fillMode == other.fillMode
-            && iterationStart == other.iterationStart
-            && iterationCount == other.iterationCount
-            && ((std::isnan(iterationDuration) && std::isnan(other.iterationDuration)) || iterationDuration == other.iterationDuration)
-            && playbackRate == other.playbackRate
-            && direction == other.direction
-            && dataEquivalent(timingFunction.get(), other.timingFunction.get());
-    }
+  bool operator!=(const Timing& other) const { return !(*this == other); }
 
-    bool operator!=(const Timing &other) const
-    {
-        return !(*this == other);
-    }
+  double startDelay;
+  double endDelay;
+  FillMode fillMode;
+  double iterationStart;
+  double iterationCount;
+  double iterationDuration;
 
-    double startDelay;
-    double endDelay;
-    FillMode fillMode;
-    double iterationStart;
-    double iterationCount;
-    double iterationDuration;
-    double playbackRate;
-    PlaybackDirection direction;
-    RefPtr<TimingFunction> timingFunction;
+  // TODO(crbug.com/630915) Remove playbackRate
+  double playbackRate;
+  PlaybackDirection direction;
+  RefPtr<TimingFunction> timingFunction;
 };
 
-} // namespace blink
+}  // namespace blink
 
 #endif

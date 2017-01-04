@@ -39,6 +39,8 @@
 
 #if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
 #define CS_DEBUG_CHECKS 1
+#else
+#define CS_DEBUG_CHECKS 0
 #endif
 
 #if CS_DEBUG_CHECKS
@@ -61,12 +63,10 @@ class LOCKABLE CriticalSection {
   bool TryEnter() const EXCLUSIVE_TRYLOCK_FUNCTION(true);
   void Leave() const UNLOCK_FUNCTION();
 
+ private:
   // Use only for RTC_DCHECKing.
   bool CurrentThreadIsOwner() const;
-  // Use only for RTC_DCHECKing.
-  bool IsLocked() const;
 
- private:
 #if defined(WEBRTC_WIN)
   mutable CRITICAL_SECTION crit_;
 #elif defined(WEBRTC_POSIX)

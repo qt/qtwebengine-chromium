@@ -194,9 +194,12 @@ DevToolsAPIImpl.prototype = {
         this._dispatchOnInspectorFrontendAPI("fileSystemAdded", ["", fileSystem]);
     },
 
-    fileSystemFilesChanged: function(path)
+    /**
+     * @param {!Array<string>} changedPaths
+     */
+    fileSystemFilesChanged: function(changedPaths)
     {
-        this._dispatchOnInspectorFrontendAPI("fileSystemFilesChanged", [path]);
+        this._dispatchOnInspectorFrontendAPI("fileSystemFilesChanged", [changedPaths]);
     },
 
     /**
@@ -670,6 +673,14 @@ InspectorFrontendHostImpl.prototype = {
     },
 
     /**
+     * @param {!Array<string>} certChain
+     */
+    showCertificateViewer: function(certChain)
+    {
+        DevToolsAPI.sendMessageToEmbedder("showCertificateViewer", [JSON.stringify(certChain)], null);
+    },
+
+    /**
      * @override
      * @return {boolean}
      */
@@ -981,30 +992,6 @@ function installObjectObserve()
     window.Object.observe = objectObserve;
 }
 
-/**
- * @suppressGlobalPropertiesCheck
- */
-function sanitizeRemoteFrontendUrl()
-{
-    var remoteBaseRegexp = /^https:\/\/chrome-devtools-frontend\.appspot\.com\/serve_file\/@[0-9a-zA-Z]+\/?$/;
-    var remoteFrontendUrlRegexp = /^https:\/\/chrome-devtools-frontend\.appspot\.com\/serve_rev\/@?[0-9a-zA-Z]+\/(devtools|inspector)\.html$/;
-    var queryParams = location.search;
-    if (!queryParams)
-        return;
-    var params = queryParams.substring(1).split("&");
-    for (var i = 0; i < params.length; ++i) {
-        var pair = params[i].split("=");
-        var name = pair.shift();
-        var value = pair.join("=");
-        if (name === "remoteFrontendUrl" && !remoteFrontendUrlRegexp.test(value))
-            location.search = "";
-        if (name === "remoteBase" && !remoteBaseRegexp.test(value))
-            location.search = "";
-        if (name === "settings")
-            location.search = "";
-    }
-}
-
 var staticKeyIdentifiers = new Map([
     [0x12, "Alt"],
     [0x11, "Control"],
@@ -1079,11 +1066,10 @@ function keyCodeToKeyIdentifier(keyCode)
 
 /**
  * @suppressGlobalPropertiesCheck
+ * @suppress {checkTypes}
  */
 function installBackwardsCompatibility()
 {
-    sanitizeRemoteFrontendUrl();
-
     if (window.location.search.indexOf("remoteFrontend") === -1)
         return;
 
@@ -1142,6 +1128,14 @@ function installBackwardsCompatibility()
 
     // Support for legacy (<M49) frontends.
     Event.prototype.deepPath = undefined;
+
+    // Support for legacy (<53) frontends.
+    window.FileError = {
+        NOT_FOUND_ERR: DOMException.NOT_FOUND_ERR,
+        ABORT_ERR: DOMException.ABORT_ERR,
+        INVALID_MODIFICATION_ERR: DOMException.INVALID_MODIFICATION_ERR,
+        NOT_READABLE_ERR: 0  // No matching DOMException, so code will be 0.
+    };
 }
 
 function windowLoaded()
@@ -1150,13 +1144,10 @@ function windowLoaded()
     installBackwardsCompatibility();
 }
 
-sanitizeRemoteFrontendUrl();
 if (window.document.head && (window.document.readyState === "complete" || window.document.readyState === "interactive"))
     installBackwardsCompatibility();
 else
     window.addEventListener("DOMContentLoaded", windowLoaded, false);
-
-})(window);
 
 if (!DOMTokenList.prototype.__originalDOMTokenListToggle) {
     DOMTokenList.prototype.__originalDOMTokenListToggle = DOMTokenList.prototype.toggle;
@@ -1167,3 +1158,5 @@ if (!DOMTokenList.prototype.__originalDOMTokenListToggle) {
         return this.__originalDOMTokenListToggle(token, !!force);
     }
 }
+
+})(window);

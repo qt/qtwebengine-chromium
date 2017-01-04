@@ -7,14 +7,14 @@
 #ifndef FPDFSDK_JAVASCRIPT_IJS_RUNTIME_H_
 #define FPDFSDK_JAVASCRIPT_IJS_RUNTIME_H_
 
-#include "core/fxcrt/include/fx_string.h"
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/fx_system.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fxjse/include/fxjse.h"
+#include "fxjs/fxjse.h"
 #endif  // PDF_ENABLE_XFA
 
-class CPDFDoc_Environment;
+class CPDFSDK_FormFillEnvironment;
 class CPDFSDK_Document;
 class IJS_Context;
 
@@ -23,7 +23,7 @@ class IJS_Runtime {
  public:
   static void Initialize(unsigned int slot, void* isolate);
   static void Destroy();
-  static IJS_Runtime* Create(CPDFDoc_Environment* pEnv);
+  static IJS_Runtime* Create(CPDFSDK_FormFillEnvironment* pEnv);
   virtual ~IJS_Runtime() {}
 
   virtual IJS_Context* NewContext() = 0;
@@ -31,7 +31,8 @@ class IJS_Runtime {
   virtual IJS_Context* GetCurrentContext() = 0;
   virtual void SetReaderDocument(CPDFSDK_Document* pReaderDoc) = 0;
   virtual CPDFSDK_Document* GetReaderDocument() = 0;
-  virtual int Execute(const CFX_WideString& script, CFX_WideString* info) = 0;
+  virtual int ExecuteScript(const CFX_WideString& script,
+                            CFX_WideString* info) = 0;
 
 #ifdef PDF_ENABLE_XFA
   virtual FX_BOOL GetValueByName(const CFX_ByteStringC& utf8Name,

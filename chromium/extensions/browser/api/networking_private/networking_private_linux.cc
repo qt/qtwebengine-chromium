@@ -83,7 +83,7 @@ std::unique_ptr<base::ListValue> CopyNetworkMapToList(
   std::unique_ptr<base::ListValue> network_list(new base::ListValue);
 
   for (const auto& network : network_map) {
-    network_list->Append(network.second->DeepCopy());
+    network_list->Append(network.second->CreateDeepCopy());
   }
 
   return network_list;
@@ -937,15 +937,14 @@ void NetworkingPrivateLinux::AddOrUpdateAccessPoint(
 
   if (existing_access_point_iter == network_map->end()) {
     // Unseen access point. Add it to the map.
-    network_map->insert(NetworkMap::value_type(
-        ssid, linked_ptr<base::DictionaryValue>(access_point.release())));
+    network_map->insert(NetworkMap::value_type(ssid, std::move(access_point)));
   } else {
     // Already seen access point. Update the record if this is the connected
     // record or if the signal strength is higher. But don't override a weaker
     // access point if that is the one that is connected.
     int existing_signal_strength;
-    linked_ptr<base::DictionaryValue>& existing_access_point =
-        existing_access_point_iter->second;
+    base::DictionaryValue* existing_access_point =
+        existing_access_point_iter->second.get();
     existing_access_point->GetInteger(kAccessPointInfoWifiSignalStrengthDotted,
                                       &existing_signal_strength);
 
@@ -985,7 +984,7 @@ void NetworkingPrivateLinux::MapSecurityFlagsToString(uint32_t security_flags,
 }
 
 bool NetworkingPrivateLinux::GetConnectedAccessPoint(
-    dbus::ObjectPath device_path,
+    const dbus::ObjectPath& device_path,
     dbus::ObjectPath* access_point_path) {
   AssertOnDBusThread();
   dbus::MethodCall method_call(DBUS_INTERFACE_PROPERTIES,

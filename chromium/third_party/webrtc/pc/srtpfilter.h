@@ -22,22 +22,20 @@
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/sigslotrepeater.h"
 #include "webrtc/base/sslstreamadapter.h"
+#include "webrtc/base/thread_checker.h"
 #include "webrtc/media/base/cryptoparams.h"
 #include "webrtc/p2p/base/sessiondescription.h"
 
 // Forward declaration to avoid pulling in libsrtp headers here
 struct srtp_event_data_t;
-struct srtp_ctx_t;
-struct srtp_policy_t;
+
+// Libsrtp V1/V2 compatibility hack.
+// TODO(mattdr): Remove this #define after libsrtp 2.0 is in.
+#define srtp_ctx_t_ srtp_ctx_t
+
+struct srtp_ctx_t_;
 
 namespace cricket {
-
-// Key is 128 bits and salt is 112 bits == 30 bytes. B64 bloat => 40 bytes.
-extern const int SRTP_MASTER_KEY_BASE64_LEN;
-
-// Needed for DTLS-SRTP
-extern const int SRTP_MASTER_KEY_KEY_LEN;
-extern const int SRTP_MASTER_KEY_SALT_LEN;
 
 class SrtpSession;
 class SrtpStat;
@@ -139,7 +137,9 @@ class SrtpFilter {
                        CryptoParams* selected_params);
   bool ApplyParams(const CryptoParams& send_params,
                    const CryptoParams& recv_params);
-  static bool ParseKeyParams(const std::string& params, uint8_t* key, int len);
+  static bool ParseKeyParams(const std::string& params,
+                             uint8_t* key,
+                             size_t len);
 
  private:
   enum State {
@@ -184,10 +184,10 @@ class SrtpSession {
 
   // Configures the session for sending data using the specified
   // cipher-suite and key. Receiving must be done by a separate session.
-  bool SetSend(int cs, const uint8_t* key, int len);
+  bool SetSend(int cs, const uint8_t* key, size_t len);
   // Configures the session for receiving data using the specified
   // cipher-suite and key. Sending must be done by a separate session.
-  bool SetRecv(int cs, const uint8_t* key, int len);
+  bool SetRecv(int cs, const uint8_t* key, size_t len);
 
   // Encrypts/signs an individual RTP/RTCP packet, in-place.
   // If an HMAC is used, this will increase the packet size.
@@ -217,7 +217,7 @@ class SrtpSession {
       SignalSrtpError;
 
  private:
-  bool SetKey(int type, int cs, const uint8_t* key, int len);
+  bool SetKey(int type, int cs, const uint8_t* key, size_t len);
     // Returns send stream current packet index from srtp db.
   bool GetSendStreamPacketIndex(void* data, int in_len, int64_t* index);
 
@@ -225,9 +225,8 @@ class SrtpSession {
   void HandleEvent(const srtp_event_data_t* ev);
   static void HandleEventThunk(srtp_event_data_t* ev);
 
-  static std::list<SrtpSession*>* sessions();
-
-  srtp_ctx_t* session_;
+  rtc::ThreadChecker thread_checker_;
+  srtp_ctx_t_* session_;
   int rtp_auth_tag_len_;
   int rtcp_auth_tag_len_;
   std::unique_ptr<SrtpStat> srtp_stat_;

@@ -5,13 +5,13 @@
 #ifndef CC_IPC_RENDER_PASS_ID_STRUCT_TRAITS_H_
 #define CC_IPC_RENDER_PASS_ID_STRUCT_TRAITS_H_
 
-#include "cc/ipc/render_pass_id.mojom.h"
+#include "cc/ipc/render_pass_id.mojom-shared.h"
 #include "cc/quads/render_pass_id.h"
 
 namespace mojo {
 
 template <>
-struct StructTraits<cc::mojom::RenderPassId, cc::RenderPassId> {
+struct StructTraits<cc::mojom::RenderPassIdDataView, cc::RenderPassId> {
   static int layer_id(const cc::RenderPassId& id) { return id.layer_id; }
 
   static uint32_t index(const cc::RenderPassId& id) { return id.index; }

@@ -42,12 +42,15 @@ class TOutputTraverser : public TIntermTraverser
   protected:
     void visitSymbol(TIntermSymbol *) override;
     void visitConstantUnion(TIntermConstantUnion *) override;
+    bool visitSwizzle(Visit visit, TIntermSwizzle *node) override;
     bool visitBinary(Visit visit, TIntermBinary *) override;
     bool visitUnary(Visit visit, TIntermUnary *) override;
-    bool visitSelection(Visit visit, TIntermSelection *) override;
+    bool visitTernary(Visit visit, TIntermTernary *node) override;
+    bool visitIfElse(Visit visit, TIntermIfElse *node) override;
     bool visitAggregate(Visit visit, TIntermAggregate *) override;
     bool visitLoop(Visit visit, TIntermLoop *) override;
     bool visitBranch(Visit visit, TIntermBranch *) override;
+    // TODO: Add missing visit functions
 };
 
 //
@@ -80,6 +83,14 @@ void TOutputTraverser::visitSymbol(TIntermSymbol *node)
 
     sink << "'" << node->getSymbol() << "' ";
     sink << "(" << node->getCompleteString() << ")\n";
+}
+
+bool TOutputTraverser::visitSwizzle(Visit visit, TIntermSwizzle *node)
+{
+    TInfoSinkBase &out = sink;
+    OutputTreeText(out, node, mDepth);
+    out << "vector swizzle";
+    return true;
 }
 
 bool TOutputTraverser::visitBinary(Visit visit, TIntermBinary *node)
@@ -150,9 +161,6 @@ bool TOutputTraverser::visitBinary(Visit visit, TIntermBinary *node)
         break;
       case EOpIndexDirectInterfaceBlock:
         out << "direct index for interface block";
-        break;
-      case EOpVectorSwizzle:
-        out << "vector swizzle";
         break;
 
       case EOpAdd:
@@ -457,14 +465,46 @@ bool TOutputTraverser::visitAggregate(Visit visit, TIntermAggregate *node)
     return true;
 }
 
-bool TOutputTraverser::visitSelection(Visit visit, TIntermSelection *node)
+bool TOutputTraverser::visitTernary(Visit visit, TIntermTernary *node)
 {
     TInfoSinkBase &out = sink;
 
     OutputTreeText(out, node, mDepth);
 
-    out << "Test condition and select";
+    out << "Ternary selection";
     out << " (" << node->getCompleteString() << ")\n";
+
+    ++mDepth;
+
+    OutputTreeText(sink, node, mDepth);
+    out << "Condition\n";
+    node->getCondition()->traverse(this);
+
+    OutputTreeText(sink, node, mDepth);
+    if (node->getTrueExpression())
+    {
+        out << "true case\n";
+        node->getTrueExpression()->traverse(this);
+    }
+    if (node->getFalseExpression())
+    {
+        OutputTreeText(sink, node, mDepth);
+        out << "false case\n";
+        node->getFalseExpression()->traverse(this);
+    }
+
+    --mDepth;
+
+    return false;
+}
+
+bool TOutputTraverser::visitIfElse(Visit visit, TIntermIfElse *node)
+{
+    TInfoSinkBase &out = sink;
+
+    OutputTreeText(out, node, mDepth);
+
+    out << "If test\n";
 
     ++mDepth;
 

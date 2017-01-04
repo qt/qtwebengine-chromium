@@ -14,7 +14,10 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_request_info.h"
 #include "net/http/mock_allow_http_auth_preferences.h"
+#include "net/log/net_log_with_source.h"
 #include "net/ssl/ssl_info.h"
+#include "net/test/gtest_util.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -25,6 +28,9 @@
 #elif defined(OS_POSIX)
 #include "net/http/mock_gssapi_library_posix.h"
 #endif
+
+using net::test::IsError;
+using net::test::IsOk;
 
 namespace net {
 
@@ -211,8 +217,8 @@ class HttpAuthHandlerNegotiateTest : public PlatformTest {
     std::unique_ptr<HttpAuthHandler> generic_handler;
     SSLInfo null_ssl_info;
     int rv = factory_->CreateAuthHandlerFromString(
-        "Negotiate", HttpAuth::AUTH_SERVER, null_ssl_info, gurl, BoundNetLog(),
-        &generic_handler);
+        "Negotiate", HttpAuth::AUTH_SERVER, null_ssl_info, gurl,
+        NetLogWithSource(), &generic_handler);
     if (rv != OK)
       return rv;
     HttpAuthHandlerNegotiate* negotiate_handler =
@@ -320,7 +326,7 @@ TEST_F(HttpAuthHandlerNegotiateTest, CnameAsync) {
   std::string token;
   EXPECT_EQ(ERR_IO_PENDING, auth_handler->GenerateAuthToken(
       NULL, &request_info, callback.callback(), &token));
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
 #if defined(OS_WIN)
   EXPECT_EQ("HTTP/canonical.example.com", auth_handler->spn());
 #elif defined(OS_POSIX)
@@ -343,7 +349,7 @@ TEST_F(HttpAuthHandlerNegotiateTest, ServerNotInKerberosDatabase) {
   std::string token;
   EXPECT_EQ(ERR_IO_PENDING, auth_handler->GenerateAuthToken(
       NULL, &request_info, callback.callback(), &token));
-  EXPECT_EQ(ERR_MISSING_AUTH_CREDENTIALS, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsError(ERR_MISSING_AUTH_CREDENTIALS));
 }
 
 // This test is only for GSSAPI, as we can't use explicit credentials with
@@ -359,7 +365,7 @@ TEST_F(HttpAuthHandlerNegotiateTest, NoKerberosCredentials) {
   std::string token;
   EXPECT_EQ(ERR_IO_PENDING, auth_handler->GenerateAuthToken(
       NULL, &request_info, callback.callback(), &token));
-  EXPECT_EQ(ERR_MISSING_AUTH_CREDENTIALS, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsError(ERR_MISSING_AUTH_CREDENTIALS));
 }
 
 #if defined(DLOPEN_KERBEROS)
@@ -370,18 +376,15 @@ TEST_F(HttpAuthHandlerNegotiateTest, MissingGSSAPI) {
       new HttpAuthHandlerNegotiate::Factory());
   negotiate_factory->set_host_resolver(host_resolver);
   negotiate_factory->set_http_auth_preferences(&http_auth_preferences);
-  negotiate_factory->set_library(base::WrapUnique(
-      new GSSAPISharedLibrary("/this/library/does/not/exist")));
+  negotiate_factory->set_library(
+      base::MakeUnique<GSSAPISharedLibrary>("/this/library/does/not/exist"));
 
   GURL gurl("http://www.example.com");
   std::unique_ptr<HttpAuthHandler> generic_handler;
   int rv = negotiate_factory->CreateAuthHandlerFromString(
-      "Negotiate",
-      HttpAuth::AUTH_SERVER,
-      gurl,
-      BoundNetLog(),
+      "Negotiate", HttpAuth::AUTH_SERVER, gurl, NetLogWithSource(),
       &generic_handler);
-  EXPECT_EQ(ERR_UNSUPPORTED_AUTH_SCHEME, rv);
+  EXPECT_THAT(rv, IsError(ERR_UNSUPPORTED_AUTH_SCHEME));
   EXPECT_TRUE(generic_handler.get() == NULL);
 }
 #endif  // defined(DLOPEN_KERBEROS)

@@ -68,29 +68,6 @@
                 'linux/video_capture_linux.h',
               ],
             }],  # linux
-            ['OS=="mac"', {
-              'sources': [
-                'mac/qtkit/video_capture_qtkit.h',
-                'mac/qtkit/video_capture_qtkit.mm',
-                'mac/qtkit/video_capture_qtkit_info.h',
-                'mac/qtkit/video_capture_qtkit_info.mm',
-                'mac/qtkit/video_capture_qtkit_info_objc.h',
-                'mac/qtkit/video_capture_qtkit_info_objc.mm',
-                'mac/qtkit/video_capture_qtkit_objc.h',
-                'mac/qtkit/video_capture_qtkit_objc.mm',
-                'mac/qtkit/video_capture_qtkit_utility.h',
-                'mac/video_capture_mac.mm',
-              ],
-              'link_settings': {
-                'xcode_settings': {
-                  'OTHER_LDFLAGS': [
-                    '-framework Cocoa',
-                    '-framework CoreVideo',
-                    '-framework QTKit',
-                  ],
-                },
-              },
-            }],  # mac
             ['OS=="win"', {
               'dependencies': [
                 '<(DEPTH)/third_party/winsdk_samples/winsdk_samples.gyp:directshow_baseclasses',
@@ -133,16 +110,16 @@
                 },
               },
             }],
-            ['OS=="ios"', {
+            ['OS=="ios" or OS=="mac"', {
               'sources': [
-                'ios/device_info_ios.h',
-                'ios/device_info_ios.mm',
-                'ios/device_info_ios_objc.h',
-                'ios/device_info_ios_objc.mm',
-                'ios/rtc_video_capture_ios_objc.h',
-                'ios/rtc_video_capture_ios_objc.mm',
-                'ios/video_capture_ios.h',
-                'ios/video_capture_ios.mm',
+                'objc/device_info.h',
+                'objc/device_info.mm',
+                'objc/device_info_objc.h',
+                'objc/device_info_objc.mm',
+                'objc/rtc_video_capture_objc.h',
+                'objc/rtc_video_capture_objc.mm',
+                'objc/video_capture.h',
+                'objc/video_capture.mm',
               ],
               'xcode_settings': {
                 'CLANG_ENABLE_OBJC_ARC': 'YES',
@@ -153,6 +130,14 @@
                     '-framework AVFoundation',
                     '-framework CoreMedia',
                     '-framework CoreVideo',
+                  ],
+                },
+              },
+            }],  # ios
+            ['OS=="ios"', {
+              'all_dependent_settings': {
+                'xcode_settings': {
+                  'OTHER_LDFLAGS': [
                     '-framework UIKit',
                   ],
                 },
@@ -162,61 +147,6 @@
         },
       ],
     }], # build_with_chromium==0
-    ['include_tests==1 and OS!="android"', {
-      'targets': [
-        {
-          'target_name': 'video_capture_tests',
-          'type': '<(gtest_target_type)',
-          'dependencies': [
-            'video_capture_module',
-            'video_capture_module_internal_impl',
-            'webrtc_utility',
-            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/test/test.gyp:video_test_common',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
-          ],
-          'sources': [
-            'test/video_capture_unittest.cc',
-            'test/video_capture_main_mac.mm',
-          ],
-          'conditions': [
-            ['OS=="mac" or OS=="linux"', {
-              'cflags': [
-                '-Wno-write-strings',
-              ],
-              'ldflags': [
-                '-lpthread -lm',
-              ],
-            }],
-            ['OS=="linux"', {
-              'libraries': [
-                '-lrt',
-                '-lXext',
-                '-lX11',
-              ],
-            }],
-            ['OS=="mac"', {
-              'dependencies': [
-                # Link with a special main for mac so we can use the webcam.
-                '<(webrtc_root)/test/test.gyp:test_support_main_threaded_mac',
-              ],
-              'xcode_settings': {
-                # TODO(andrew): CoreAudio and AudioToolbox shouldn't be needed.
-                'OTHER_LDFLAGS': [
-                  '-framework Foundation -framework AppKit -framework Cocoa -framework OpenGL -framework CoreVideo -framework CoreAudio -framework AudioToolbox',
-                ],
-              },
-            }], # OS=="mac"
-            ['OS!="mac"', {
-              'dependencies': [
-                # Otherwise, use the regular main.
-                '<(webrtc_root)/test/test.gyp:test_support_main',
-              ],
-            }], # OS!="mac"
-          ] # conditions
-        },
-      ], # targets
-    }],
   ],
 }
 

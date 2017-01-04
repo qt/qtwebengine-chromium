@@ -22,6 +22,8 @@
 #include <openssl/crypto.h>
 #include <openssl/err.h>
 
+#include "../internal.h"
+
 
 enum encoding_relation {
   // canonical indicates that the encoding is the expected encoding of the
@@ -98,15 +100,14 @@ static const TestVector kTestVectors[] = {
      "=======\n"},
 };
 
-static const size_t kNumTests = sizeof(kTestVectors) / sizeof(kTestVectors[0]);
+static const size_t kNumTests = OPENSSL_ARRAY_SIZE(kTestVectors);
 
 // RemoveNewlines returns a copy of |in| with all '\n' characters removed.
 static std::string RemoveNewlines(const char *in) {
   std::string ret;
   const size_t in_len = strlen(in);
 
-  size_t i;
-  for (i = 0; i < in_len; i++) {
+  for (size_t i = 0; i < in_len; i++) {
     if (in[i] != '\n') {
       ret.push_back(in[i]);
     }

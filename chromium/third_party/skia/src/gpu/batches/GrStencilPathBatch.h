@@ -33,7 +33,7 @@ public:
 
     const char* name() const override { return "StencilPath"; }
 
-    uint32_t renderTargetUniqueID() const override { return fRenderTarget.get()->getUniqueID(); }
+    uint32_t renderTargetUniqueID() const override { return fRenderTarget.get()->uniqueID(); }
     GrRenderTarget* renderTarget() const override { return fRenderTarget.get(); }
 
     SkString dumpInfo() const override {
@@ -59,7 +59,7 @@ private:
     , fScissor(scissor)
     , fRenderTarget(renderTarget)
     , fPath(path) {
-        fBounds = path->getBounds();
+        this->setBounds(path->getBounds(), HasAABloat::kNo, IsZeroArea::kNo);
     }
 
     bool onCombineIfPossible(GrBatch* t, const GrCaps& caps) override { return false; }

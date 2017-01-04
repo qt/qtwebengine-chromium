@@ -7,16 +7,18 @@
 #ifndef XFA_FXFA_PARSER_XFA_LOCALE_H_
 #define XFA_FXFA_PARSER_XFA_LOCALE_H_
 
+#include <memory>
+
 #include "xfa/fgas/localization/fgas_locale.h"
 #include "xfa/fxfa/parser/xfa_object.h"
 
 class CXFA_XMLLocale : public IFX_Locale {
  public:
-  CXFA_XMLLocale(CXML_Element* pLocaleData);
+  explicit CXFA_XMLLocale(std::unique_ptr<CXML_Element> pLocaleData);
+  ~CXFA_XMLLocale() override;
 
   // IFX_Locale
-  void Release() override;
-  CFX_WideString GetName() override;
+  CFX_WideString GetName() const override;
   void GetNumbericSymbol(FX_LOCALENUMSYMBOL eType,
                          CFX_WideString& wsNumSymbol) const override;
 
@@ -40,8 +42,6 @@ class CXFA_XMLLocale : public IFX_Locale {
                      CFX_WideString& wsPattern) const override;
 
  protected:
-  ~CXFA_XMLLocale() override;
-
   void GetPattern(CXML_Element* pElement,
                   const CFX_ByteStringC& bsTag,
                   const CFX_WideStringC& wsName,
@@ -51,16 +51,16 @@ class CXFA_XMLLocale : public IFX_Locale {
                                    FX_BOOL bAbbr) const;
 
  private:
-  CXML_Element* m_pLocaleData;
+  std::unique_ptr<CXML_Element> m_pLocaleData;
 };
 
 class CXFA_NodeLocale : public IFX_Locale {
  public:
   CXFA_NodeLocale(CXFA_Node* pLocale);
+  ~CXFA_NodeLocale() override;
 
   // IFX_Locale
-  void Release() override;
-  CFX_WideString GetName() override;
+  CFX_WideString GetName() const override;
   void GetNumbericSymbol(FX_LOCALENUMSYMBOL eType,
                          CFX_WideString& wsNumSymbol) const override;
 
@@ -84,8 +84,6 @@ class CXFA_NodeLocale : public IFX_Locale {
                      CFX_WideString& wsPattern) const override;
 
  protected:
-  ~CXFA_NodeLocale() override;
-
   CXFA_Node* GetNodeByName(CXFA_Node* pParent,
                            const CFX_WideStringC& wsName) const;
   CFX_WideString GetSymbol(XFA_Element eElement,
@@ -94,7 +92,7 @@ class CXFA_NodeLocale : public IFX_Locale {
                                    int index,
                                    FX_BOOL bAbbr) const;
 
-  CXFA_Node* m_pLocale;
+  CXFA_Node* const m_pLocale;
 };
 
 #endif  // XFA_FXFA_PARSER_XFA_LOCALE_H_

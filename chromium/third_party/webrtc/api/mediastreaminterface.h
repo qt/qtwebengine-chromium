@@ -25,16 +25,9 @@
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/base/optional.h"
 #include "webrtc/media/base/mediachannel.h"
+#include "webrtc/media/base/videoframe.h"
 #include "webrtc/media/base/videosinkinterface.h"
 #include "webrtc/media/base/videosourceinterface.h"
-
-namespace cricket {
-
-class AudioRenderer;
-class VideoRenderer;
-class VideoFrame;
-
-}  // namespace cricket
 
 namespace webrtc {
 
@@ -112,9 +105,6 @@ class VideoTrackSourceInterface
     int input_width;
     int input_height;
   };
-
-  virtual void Stop() = 0;
-  virtual void Restart() = 0;
 
   // Indicates that parameters suitable for screencasts should be automatically
   // applied to RtpSenders.

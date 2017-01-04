@@ -15,7 +15,7 @@
 #include "base/command_line.h"
 #include "base/containers/hash_tables.h"
 #include "base/files/file_util.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"
@@ -55,9 +55,6 @@ HistoryDatabase::~HistoryDatabase() {
 
 sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
   db_.set_histogram_tag("History");
-
-  // Set the exceptional sqlite error handler.
-  db_.set_error_callback(error_callback_);
 
   // Set the database page size to something a little larger to give us
   // better performance (we're typically seek rather than bandwidth limited).
@@ -201,8 +198,19 @@ TopHostsList HistoryDatabase::TopHosts(size_t num_hosts) {
       std::max(base::Time::Now() - base::TimeDelta::FromDays(30), base::Time());
 
   sql::Statement url_sql(db_.GetUniqueStatement(
-      "SELECT url, visit_count FROM urls WHERE last_visit_time > ?"));
+      "SELECT u.url, u.visit_count "
+      "FROM urls u JOIN visits v ON u.id = v.url "
+      "WHERE last_visit_time > ? "
+      "AND (v.transition & ?) != 0 "              // CHAIN_END
+      "AND (transition & ?) NOT IN (?, ?, ?)"));  // NO SUBFRAME or
+                                                  // KEYWORD_GENERATED
+
   url_sql.BindInt64(0, one_month_ago.ToInternalValue());
+  url_sql.BindInt(1, ui::PAGE_TRANSITION_CHAIN_END);
+  url_sql.BindInt(2, ui::PAGE_TRANSITION_CORE_MASK);
+  url_sql.BindInt(3, ui::PAGE_TRANSITION_AUTO_SUBFRAME);
+  url_sql.BindInt(4, ui::PAGE_TRANSITION_MANUAL_SUBFRAME);
+  url_sql.BindInt(5, ui::PAGE_TRANSITION_KEYWORD_GENERATED);
 
   // Collect a map from host to visit count.
   base::hash_map<std::string, int> host_count;
@@ -259,7 +267,13 @@ void HistoryDatabase::CommitTransaction() {
 }
 
 void HistoryDatabase::RollbackTransaction() {
-  db_.RollbackTransaction();
+  // If Init() returns with a failure status, the Transaction created there will
+  // be destructed and rolled back. HistoryBackend might try to kill the
+  // database after that, at which point it will try to roll back a non-existing
+  // transaction. This will crash on a DCHECK. So transaction_nesting() is
+  // checked first.
+  if (db_.transaction_nesting())
+    db_.RollbackTransaction();
 }
 
 bool HistoryDatabase::RecreateAllTablesButURL() {
@@ -294,6 +308,11 @@ void HistoryDatabase::TrimMemory(bool aggressively) {
 
 bool HistoryDatabase::Raze() {
   return db_.Raze();
+}
+
+std::string HistoryDatabase::GetDiagnosticInfo(int extended_error,
+                                               sql::Statement* statement) {
+  return db_.GetDiagnosticInfo(extended_error, statement);
 }
 
 bool HistoryDatabase::SetSegmentID(VisitID visit_id, SegmentID segment_id) {

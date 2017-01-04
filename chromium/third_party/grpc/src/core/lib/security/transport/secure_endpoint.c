@@ -38,6 +38,8 @@
 #include <grpc/support/slice_buffer.h>
 #include <grpc/support/sync.h>
 #include "src/core/lib/debug/trace.h"
+#include "src/core/lib/profiling/timers.h"
+#include "src/core/lib/security/transport/tsi_error.h"
 #include "src/core/lib/support/string.h"
 #include "src/core/lib/tsi/transport_security_interface.h"
 
@@ -126,7 +128,7 @@ static void flush_read_staging_buffer(secure_endpoint *ep, uint8_t **cur,
 }
 
 static void call_read_cb(grpc_exec_ctx *exec_ctx, secure_endpoint *ep,
-                         bool success) {
+                         grpc_error *error) {
   if (grpc_trace_secure_endpoint) {
     size_t i;
     for (i = 0; i < ep->read_buffer->count; i++) {
@@ -137,11 +139,12 @@ static void call_read_cb(grpc_exec_ctx *exec_ctx, secure_endpoint *ep,
     }
   }
   ep->read_buffer = NULL;
-  grpc_exec_ctx_enqueue(exec_ctx, ep->read_cb, success, NULL);
+  grpc_exec_ctx_sched(exec_ctx, ep->read_cb, error, NULL);
   SECURE_ENDPOINT_UNREF(exec_ctx, ep, "read");
 }
 
-static void on_read(grpc_exec_ctx *exec_ctx, void *user_data, bool success) {
+static void on_read(grpc_exec_ctx *exec_ctx, void *user_data,
+                    grpc_error *error) {
   unsigned i;
   uint8_t keep_looping = 0;
   tsi_result result = TSI_OK;
@@ -149,9 +152,10 @@ static void on_read(grpc_exec_ctx *exec_ctx, void *user_data, bool success) {
   uint8_t *cur = GPR_SLICE_START_PTR(ep->read_staging_buffer);
   uint8_t *end = GPR_SLICE_END_PTR(ep->read_staging_buffer);
 
-  if (!success) {
+  if (error != GRPC_ERROR_NONE) {
     gpr_slice_buffer_reset_and_unref(ep->read_buffer);
-    call_read_cb(exec_ctx, ep, 0);
+    call_read_cb(exec_ctx, ep, GRPC_ERROR_CREATE_REFERENCING(
+                                   "Secure read failed", &error, 1));
     return;
   }
 
@@ -208,11 +212,12 @@ static void on_read(grpc_exec_ctx *exec_ctx, void *user_data, bool success) {
 
   if (result != TSI_OK) {
     gpr_slice_buffer_reset_and_unref(ep->read_buffer);
-    call_read_cb(exec_ctx, ep, 0);
+    call_read_cb(exec_ctx, ep, grpc_set_tsi_error_result(
+                                   GRPC_ERROR_CREATE("Unwrap failed"), result));
     return;
   }
 
-  call_read_cb(exec_ctx, ep, 1);
+  call_read_cb(exec_ctx, ep, GRPC_ERROR_NONE);
 }
 
 static void endpoint_read(grpc_exec_ctx *exec_ctx, grpc_endpoint *secure_ep,
@@ -226,7 +231,7 @@ static void endpoint_read(grpc_exec_ctx *exec_ctx, grpc_endpoint *secure_ep,
   if (ep->leftover_bytes.count) {
     gpr_slice_buffer_swap(&ep->leftover_bytes, &ep->source_buffer);
     GPR_ASSERT(ep->leftover_bytes.count == 0);
-    on_read(exec_ctx, ep, 1);
+    on_read(exec_ctx, ep, GRPC_ERROR_NONE);
     return;
   }
 
@@ -244,6 +249,8 @@ static void flush_write_staging_buffer(secure_endpoint *ep, uint8_t **cur,
 
 static void endpoint_write(grpc_exec_ctx *exec_ctx, grpc_endpoint *secure_ep,
                            gpr_slice_buffer *slices, grpc_closure *cb) {
+  GPR_TIMER_BEGIN("secure_endpoint.endpoint_write", 0);
+
   unsigned i;
   tsi_result result = TSI_OK;
   secure_endpoint *ep = (secure_endpoint *)secure_ep;
@@ -315,11 +322,16 @@ static void endpoint_write(grpc_exec_ctx *exec_ctx, grpc_endpoint *secure_ep,
   if (result != TSI_OK) {
     /* TODO(yangg) do different things according to the error type? */
     gpr_slice_buffer_reset_and_unref(&ep->output_buffer);
-    grpc_exec_ctx_enqueue(exec_ctx, cb, false, NULL);
+    grpc_exec_ctx_sched(
+        exec_ctx, cb,
+        grpc_set_tsi_error_result(GRPC_ERROR_CREATE("Wrap failed"), result),
+        NULL);
+    GPR_TIMER_END("secure_endpoint.endpoint_write", 0);
     return;
   }
 
   grpc_endpoint_write(exec_ctx, ep->wrapped_ep, &ep->output_buffer, cb);
+  GPR_TIMER_END("secure_endpoint.endpoint_write", 0);
 }
 
 static void endpoint_shutdown(grpc_exec_ctx *exec_ctx,
@@ -353,11 +365,19 @@ static char *endpoint_get_peer(grpc_endpoint *secure_ep) {
   return grpc_endpoint_get_peer(ep->wrapped_ep);
 }
 
-static const grpc_endpoint_vtable vtable = {
-    endpoint_read,           endpoint_write,
-    endpoint_add_to_pollset, endpoint_add_to_pollset_set,
-    endpoint_shutdown,       endpoint_destroy,
-    endpoint_get_peer};
+static grpc_workqueue *endpoint_get_workqueue(grpc_endpoint *secure_ep) {
+  secure_endpoint *ep = (secure_endpoint *)secure_ep;
+  return grpc_endpoint_get_workqueue(ep->wrapped_ep);
+}
+
+static const grpc_endpoint_vtable vtable = {endpoint_read,
+                                            endpoint_write,
+                                            endpoint_get_workqueue,
+                                            endpoint_add_to_pollset,
+                                            endpoint_add_to_pollset_set,
+                                            endpoint_shutdown,
+                                            endpoint_destroy,
+                                            endpoint_get_peer};
 
 grpc_endpoint *grpc_secure_endpoint_create(
     struct tsi_frame_protector *protector, grpc_endpoint *transport,

@@ -43,6 +43,34 @@ class MockGLInterface {
     NOTREACHED();
   }
 
+  void CopySubTextureCHROMIUM(GLuint /*sourceId*/,
+                              GLuint /*destId*/,
+                              GLint /*xoffset*/,
+                              GLint /*yoffset*/,
+                              GLint /*x*/,
+                              GLint /*y*/,
+                              GLsizei /*width*/,
+                              GLsizei /*height*/,
+                              GLboolean /*unpackFlipY*/,
+                              GLboolean /*unpackPremultiplyAlpha*/,
+                              GLboolean /*unpackUnmultiplyAlpha*/) {
+    NOTREACHED();
+  }
+
+  void TexImage3DRobustANGLE(GLenum target,
+                             GLint level,
+                             GLint internalformat,
+                             GLsizei width,
+                             GLsizei height,
+                             GLsizei depth,
+                             GLint border,
+                             GLenum format,
+                             GLenum type,
+                             GLsizei bufSize,
+                             const void* pixels) {
+    NOTREACHED();
+  }
+
   void TexSubImage3D(
       GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
       GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
@@ -53,6 +81,21 @@ class MockGLInterface {
     } else {
       NOTREACHED();
     }
+  }
+
+  void TexSubImage3DRobustANGLE(GLenum target,
+                                GLint level,
+                                GLint xoffset,
+                                GLint yoffset,
+                                GLint zoffset,
+                                GLsizei width,
+                                GLsizei height,
+                                GLsizei depth,
+                                GLenum format,
+                                GLenum type,
+                                GLsizei bufSize,
+                                const void* pixels) {
+    NOTREACHED();
   }
 
   MOCK_METHOD10(TexSubImage3DNoData,

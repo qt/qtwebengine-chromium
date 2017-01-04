@@ -9,12 +9,15 @@
 #include <algorithm>
 #include <cctype>
 
-#include "core/fxcrt/include/fx_basic.h"
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/cfx_string_pool_template.h"
+#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/fx_ext.h"
 #include "third_party/base/numerics/safe_math.h"
 
 template class CFX_StringDataTemplate<FX_WCHAR>;
 template class CFX_StringCTemplate<FX_WCHAR>;
+template class CFX_StringPoolTemplate<CFX_WideString>;
+template struct std::hash<CFX_WideString>;
 
 namespace {
 
@@ -180,6 +183,9 @@ bool CFX_WideString::operator==(const CFX_WideStringC& str) const {
 }
 
 bool CFX_WideString::operator==(const CFX_WideString& other) const {
+  if (m_pData == other.m_pData)
+    return true;
+
   if (IsEmpty())
     return other.IsEmpty();
 
@@ -189,6 +195,15 @@ bool CFX_WideString::operator==(const CFX_WideString& other) const {
   return other.m_pData->m_nDataLength == m_pData->m_nDataLength &&
          wmemcmp(other.m_pData->m_String, m_pData->m_String,
                  m_pData->m_nDataLength) == 0;
+}
+
+bool CFX_WideString::operator<(const CFX_WideString& str) const {
+  if (m_pData == str.m_pData)
+    return false;
+
+  int result =
+      wmemcmp(c_str(), str.c_str(), std::min(GetLength(), str.GetLength()));
+  return result < 0 || (result == 0 && GetLength() < str.GetLength());
 }
 
 void CFX_WideString::AssignCopy(const FX_WCHAR* pSrcData, FX_STRSIZE nSrcLen) {

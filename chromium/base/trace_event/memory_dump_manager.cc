@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/allocator/features.h"
 #include "base/atomic_sequence_num.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
@@ -31,10 +32,6 @@
 
 #if defined(OS_ANDROID)
 #include "base/trace_event/java_heap_dump_provider_android.h"
-#endif
-
-#if defined(OS_WIN)
-#include "base/trace_event/winheap_dump_provider_win.h"
 #endif
 
 namespace base {
@@ -110,8 +107,6 @@ const uint64_t MemoryDumpManager::kInvalidTracingProcessId = 0;
 const char* const MemoryDumpManager::kSystemAllocatorPoolName =
 #if defined(MALLOC_MEMORY_TRACING_SUPPORTED)
     MallocDumpProvider::kAllocatedObjects;
-#elif defined(OS_WIN)
-    WinHeapDumpProvider::kAllocatedObjects;
 #else
     nullptr;
 #endif
@@ -204,10 +199,6 @@ void MemoryDumpManager::Initialize(MemoryDumpManagerDelegate* delegate,
 #if defined(OS_ANDROID)
   RegisterDumpProvider(JavaHeapDumpProvider::GetInstance(), "JavaHeap",
                        nullptr);
-#endif
-
-#if defined(OS_WIN)
-  RegisterDumpProvider(WinHeapDumpProvider::GetInstance(), "WinHeap", nullptr);
 #endif
 
   // If tracing was enabled before initializing MemoryDumpManager, we missed the
@@ -681,14 +672,14 @@ void MemoryDumpManager::OnTraceLogEnabled() {
     TRACE_EVENT_API_ADD_METADATA_EVENT(
         TraceLog::GetCategoryGroupEnabled("__metadata"), "stackFrames",
         "stackFrames",
-        WrapUnique(new SessionStateConvertableProxy<StackFrameDeduplicator>(
-            session_state, &MemoryDumpSessionState::stack_frame_deduplicator)));
+        MakeUnique<SessionStateConvertableProxy<StackFrameDeduplicator>>(
+            session_state, &MemoryDumpSessionState::stack_frame_deduplicator));
 
     TRACE_EVENT_API_ADD_METADATA_EVENT(
         TraceLog::GetCategoryGroupEnabled("__metadata"), "typeNames",
         "typeNames",
-        WrapUnique(new SessionStateConvertableProxy<TypeNameDeduplicator>(
-            session_state, &MemoryDumpSessionState::type_name_deduplicator)));
+        MakeUnique<SessionStateConvertableProxy<TypeNameDeduplicator>>(
+            session_state, &MemoryDumpSessionState::type_name_deduplicator));
   }
 
   {

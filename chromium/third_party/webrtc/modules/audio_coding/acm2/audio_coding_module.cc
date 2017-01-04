@@ -45,8 +45,11 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   void RegisterExternalSendCodec(
       AudioEncoder* external_speech_encoder) override;
 
-  void ModifyEncoder(
-      FunctionView<void(std::unique_ptr<AudioEncoder>*)> modifier) override;
+  void ModifyEncoder(rtc::FunctionView<void(std::unique_ptr<AudioEncoder>*)>
+                         modifier) override;
+
+  void QueryEncoder(
+      rtc::FunctionView<void(const AudioEncoder*)> query) override;
 
   // Get current send codec.
   rtc::Optional<CodecInst> SendCodec() const override;
@@ -121,7 +124,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   int RegisterReceiveCodec(const CodecInst& receive_codec) override;
   int RegisterReceiveCodec(
       const CodecInst& receive_codec,
-      FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory) override;
+      rtc::FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory) override;
 
   int RegisterExternalReceiveCodec(int rtp_payload_type,
                                    AudioDecoder* external_decoder,
@@ -221,7 +224,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 
   int RegisterReceiveCodecUnlocked(
       const CodecInst& codec,
-      FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory)
+      rtc::FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory)
       EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
 
   int Add10MsDataInternal(const AudioFrame& audio_frame, InputData* input_data)
@@ -474,6 +477,11 @@ int32_t AudioCodingModuleImpl::Encode(const InputData& input_data) {
   if (!HaveValidEncoder("Process"))
     return -1;
 
+  if(!first_frame_) {
+    RTC_DCHECK(IsNewerTimestamp(input_data.input_timestamp, last_timestamp_))
+        << "Time should not move backwards";
+  }
+
   // Scale the timestamp to the codec's RTP timestamp rate.
   uint32_t rtp_timestamp =
       first_frame_ ? input_data.input_timestamp
@@ -580,7 +588,7 @@ void AudioCodingModuleImpl::RegisterExternalSendCodec(
 }
 
 void AudioCodingModuleImpl::ModifyEncoder(
-    FunctionView<void(std::unique_ptr<AudioEncoder>*)> modifier) {
+    rtc::FunctionView<void(std::unique_ptr<AudioEncoder>*)> modifier) {
   rtc::CritScope lock(&acm_crit_sect_);
 
   // Wipe the encoder factory, so that everything that relies on it will fail.
@@ -591,6 +599,12 @@ void AudioCodingModuleImpl::ModifyEncoder(
   }
 
   modifier(&encoder_stack_);
+}
+
+void AudioCodingModuleImpl::QueryEncoder(
+    rtc::FunctionView<void(const AudioEncoder*)> query) {
+  rtc::CritScope lock(&acm_crit_sect_);
+  query(encoder_stack_.get());
 }
 
 // Get current send codec.
@@ -754,7 +768,8 @@ int AudioCodingModuleImpl::PreprocessToAddData(const AudioFrame& in_frame,
     expected_codec_ts_ = in_frame.timestamp_;
     first_10ms_data_ = true;
   } else if (in_frame.timestamp_ != expected_in_ts_) {
-    // TODO(turajs): Do we need a warning here.
+    LOG(LS_WARNING) << "Unexpected input timestamp: " << in_frame.timestamp_
+                    << ", expected: " << expected_in_ts_;
     expected_codec_ts_ +=
         (in_frame.timestamp_ - expected_in_ts_) *
         static_cast<uint32_t>(
@@ -766,9 +781,19 @@ int AudioCodingModuleImpl::PreprocessToAddData(const AudioFrame& in_frame,
 
   if (!down_mix && !resample) {
     // No pre-processing is required.
+    if (expected_in_ts_ == expected_codec_ts_) {
+      // If we've never resampled, we can use the input frame as-is
+      *ptr_out = &in_frame;
+    } else {
+      // Otherwise we'll need to alter the timestamp. Since in_frame is const,
+      // we'll have to make a copy of it.
+      preprocess_frame_.CopyFrom(in_frame);
+      preprocess_frame_.timestamp_ = expected_codec_ts_;
+      *ptr_out = &preprocess_frame_;
+    }
+
     expected_in_ts_ += static_cast<uint32_t>(in_frame.samples_per_channel_);
     expected_codec_ts_ += static_cast<uint32_t>(in_frame.samples_per_channel_);
-    *ptr_out = &in_frame;
     return 0;
   }
 
@@ -924,10 +949,8 @@ int AudioCodingModuleImpl::InitializeReceiverSafe() {
   // If the receiver is already initialized then we want to destroy any
   // existing decoders. After a call to this function, we should have a clean
   // start-up.
-  if (receiver_initialized_) {
-    if (receiver_.RemoveAllCodecs() < 0)
-      return -1;
-  }
+  if (receiver_initialized_)
+    receiver_.RemoveAllCodecs();
   receiver_.ResetInitialDelay();
   receiver_.SetMinimumDelay(0);
   receiver_.SetMaximumDelay(0);
@@ -973,14 +996,14 @@ int AudioCodingModuleImpl::RegisterReceiveCodec(const CodecInst& codec) {
 
 int AudioCodingModuleImpl::RegisterReceiveCodec(
     const CodecInst& codec,
-    FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory) {
+    rtc::FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory) {
   rtc::CritScope lock(&acm_crit_sect_);
   return RegisterReceiveCodecUnlocked(codec, isac_factory);
 }
 
 int AudioCodingModuleImpl::RegisterReceiveCodecUnlocked(
     const CodecInst& codec,
-    FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory) {
+    rtc::FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory) {
   RTC_DCHECK(receiver_initialized_);
   if (codec.channels > 2) {
     LOG_F(LS_ERROR) << "Unsupported number of channels: " << codec.channels;
@@ -1243,6 +1266,16 @@ void AudioCodingModuleImpl::GetDecodingCallStatistics(
 }
 
 }  // namespace
+
+AudioCodingModule::Config::Config()
+    : id(0), neteq_config(), clock(Clock::GetRealTimeClock()) {
+  // Post-decode VAD is disabled by default in NetEq, however, Audio
+  // Conference Mixer relies on VAD decisions and fails without them.
+  neteq_config.enable_post_decode_vad = true;
+}
+
+AudioCodingModule::Config::Config(const Config&) = default;
+AudioCodingModule::Config::~Config() = default;
 
 // Create module
 AudioCodingModule* AudioCodingModule::Create(int id) {

@@ -27,8 +27,6 @@
 #include "extensions/common/features/simple_feature.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "extensions/grit/extensions_resources.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
 namespace extensions {
@@ -40,12 +38,7 @@ const char* kChildKinds[] = {
   "events"
 };
 
-base::StringPiece ReadFromResource(int resource_id) {
-  return ResourceBundle::GetSharedInstance().GetRawDataResource(
-      resource_id);
-}
-
-std::unique_ptr<base::ListValue> LoadSchemaList(
+std::unique_ptr<base::DictionaryValue> LoadSchemaDictionary(
     const std::string& name,
     const base::StringPiece& schema) {
   std::string error_message;
@@ -63,8 +56,9 @@ std::unique_ptr<base::ListValue> LoadSchemaList(
       error_message.c_str());
 
   CHECK(result.get()) << error_message << " for schema " << schema;
-  CHECK(result->IsType(base::Value::TYPE_LIST)) << " for schema " << schema;
-  return base::ListValue::From(std::move(result));
+  CHECK(result->IsType(base::Value::TYPE_DICTIONARY)) << " for schema "
+                                                      << schema;
+  return base::DictionaryValue::From(std::move(result));
 }
 
 const base::DictionaryValue* FindListItem(const base::ListValue* list,
@@ -105,70 +99,10 @@ struct Static {
   std::unique_ptr<ExtensionAPI> api;
 };
 
-base::LazyInstance<Static> g_lazy_instance = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<Static>::Leaky g_lazy_instance = LAZY_INSTANCE_INITIALIZER;
 
 // May override |g_lazy_instance| for a test.
 ExtensionAPI* g_shared_instance_for_test = NULL;
-
-// If it exists and does not already specify a namespace, then the value stored
-// with key |key| in |schema| will be updated to |schema_namespace| + "." +
-// |schema[key]|.
-void MaybePrefixFieldWithNamespace(const std::string& schema_namespace,
-                                   base::DictionaryValue* schema,
-                                   const std::string& key) {
-  if (!schema->HasKey(key))
-    return;
-
-  std::string old_id;
-  CHECK(schema->GetString(key, &old_id));
-  if (old_id.find(".") == std::string::npos)
-    schema->SetString(key, schema_namespace + "." + old_id);
-}
-
-// Modify all "$ref" keys anywhere in |schema| to be prefxied by
-// |schema_namespace| if they do not already specify a namespace.
-void PrefixRefsWithNamespace(const std::string& schema_namespace,
-                             base::Value* value) {
-  base::ListValue* list = NULL;
-  base::DictionaryValue* dict = NULL;
-  if (value->GetAsList(&list)) {
-    for (const auto& i : *list) {
-      PrefixRefsWithNamespace(schema_namespace, i.get());
-    }
-  } else if (value->GetAsDictionary(&dict)) {
-    MaybePrefixFieldWithNamespace(schema_namespace, dict, "$ref");
-    for (base::DictionaryValue::Iterator i(*dict); !i.IsAtEnd(); i.Advance()) {
-      base::Value* value = NULL;
-      CHECK(dict->GetWithoutPathExpansion(i.key(), &value));
-      PrefixRefsWithNamespace(schema_namespace, value);
-    }
-  }
-}
-
-// Modify all objects in the "types" section of the schema to be prefixed by
-// |schema_namespace| if they do not already specify a namespace.
-void PrefixTypesWithNamespace(const std::string& schema_namespace,
-                              base::DictionaryValue* schema) {
-  if (!schema->HasKey("types"))
-    return;
-
-  // Add the namespace to all of the types defined in this schema
-  base::ListValue *types = NULL;
-  CHECK(schema->GetList("types", &types));
-  for (size_t i = 0; i < types->GetSize(); ++i) {
-    base::DictionaryValue *type = NULL;
-    CHECK(types->GetDictionary(i, &type));
-    MaybePrefixFieldWithNamespace(schema_namespace, type, "id");
-    MaybePrefixFieldWithNamespace(schema_namespace, type, "customBindings");
-  }
-}
-
-// Modify the schema so that all types are fully qualified.
-void PrefixWithNamespace(const std::string& schema_namespace,
-                         base::DictionaryValue* schema) {
-  PrefixTypesWithNamespace(schema_namespace, schema);
-  PrefixRefsWithNamespace(schema_namespace, schema);
-}
 
 }  // namespace
 
@@ -213,25 +147,11 @@ ExtensionAPI::OverrideSharedInstanceForTest::~OverrideSharedInstanceForTest() {
 
 void ExtensionAPI::LoadSchema(const std::string& name,
                               const base::StringPiece& schema) {
-  std::unique_ptr<base::ListValue> schema_list(LoadSchemaList(name, schema));
+  std::unique_ptr<base::DictionaryValue> schema_dict(
+      LoadSchemaDictionary(name, schema));
   std::string schema_namespace;
-  extensions::ExtensionsClient* extensions_client =
-      extensions::ExtensionsClient::Get();
-  DCHECK(extensions_client);
-  while (!schema_list->empty()) {
-    base::DictionaryValue* schema = NULL;
-    {
-      std::unique_ptr<base::Value> value;
-      schema_list->Remove(schema_list->GetSize() - 1, &value);
-      CHECK(value.release()->GetAsDictionary(&schema));
-    }
-
-    CHECK(schema->GetString("namespace", &schema_namespace));
-    PrefixWithNamespace(schema_namespace, schema);
-    schemas_[schema_namespace] = make_linked_ptr(schema);
-    if (!extensions_client->IsAPISchemaGenerated(schema_namespace))
-      CHECK_EQ(1u, unloaded_schemas_.erase(schema_namespace));
-  }
+  CHECK(schema_dict->GetString("namespace", &schema_namespace));
+  schemas_[schema_namespace] = std::move(schema_dict);
 }
 
 ExtensionAPI::ExtensionAPI() : default_configuration_initialized_(false) {
@@ -245,19 +165,7 @@ void ExtensionAPI::InitDefaultConfiguration() {
   for (size_t i = 0; i < arraysize(names); ++i)
     RegisterDependencyProvider(names[i], FeatureProvider::GetByName(names[i]));
 
-  ExtensionsClient::Get()->RegisterAPISchemaResources(this);
-
-  RegisterSchemaResource("declarativeWebRequest",
-                         IDR_EXTENSION_API_JSON_DECLARATIVE_WEBREQUEST);
-  RegisterSchemaResource("webViewRequest",
-                         IDR_EXTENSION_API_JSON_WEB_VIEW_REQUEST);
-
   default_configuration_initialized_ = true;
-}
-
-void ExtensionAPI::RegisterSchemaResource(const std::string& name,
-                                          int resource_id) {
-  unloaded_schemas_[name] = resource_id;
 }
 
 void ExtensionAPI::RegisterDependencyProvider(const std::string& name,
@@ -304,6 +212,26 @@ bool ExtensionAPI::IsAvailableToWebUI(const std::string& name,
   return IsAvailable(name, NULL, Feature::WEBUI_CONTEXT, url).is_available();
 }
 
+base::StringPiece ExtensionAPI::GetSchemaStringPiece(
+    const std::string& api_name) {
+  DCHECK_EQ(api_name, GetAPINameFromFullName(api_name, nullptr));
+  StringPieceMap::iterator cached = schema_strings_.find(api_name);
+  if (cached != schema_strings_.end())
+    return cached->second;
+
+  ExtensionsClient* client = ExtensionsClient::Get();
+  DCHECK(client);
+  if (default_configuration_initialized_ &&
+      client->IsAPISchemaGenerated(api_name)) {
+    base::StringPiece schema = client->GetAPISchema(api_name);
+    CHECK(!schema.empty());
+    schema_strings_[api_name] = schema;
+    return schema;
+  }
+
+  return base::StringPiece();
+}
+
 const base::DictionaryValue* ExtensionAPI::GetSchema(
     const std::string& full_name) {
   std::string child_name;
@@ -314,21 +242,10 @@ const base::DictionaryValue* ExtensionAPI::GetSchema(
   if (maybe_schema != schemas_.end()) {
     result = maybe_schema->second.get();
   } else {
-    // Might not have loaded yet; or might just not exist.
-    UnloadedSchemaMap::iterator maybe_schema_resource =
-        unloaded_schemas_.find(api_name);
-    extensions::ExtensionsClient* extensions_client =
-        extensions::ExtensionsClient::Get();
-    DCHECK(extensions_client);
-    if (maybe_schema_resource != unloaded_schemas_.end()) {
-      LoadSchema(maybe_schema_resource->first,
-                 ReadFromResource(maybe_schema_resource->second));
-    } else if (default_configuration_initialized_ &&
-               extensions_client->IsAPISchemaGenerated(api_name)) {
-      LoadSchema(api_name, extensions_client->GetAPISchema(api_name));
-    } else {
-      return NULL;
-    }
+    base::StringPiece schema_string = GetSchemaStringPiece(api_name);
+    if (schema_string.empty())
+      return nullptr;
+    LoadSchema(api_name, schema_string);
 
     maybe_schema = schemas_.find(api_name);
     CHECK(schemas_.end() != maybe_schema);
@@ -364,23 +281,17 @@ Feature* ExtensionAPI::GetFeatureDependency(const std::string& full_name) {
 std::string ExtensionAPI::GetAPINameFromFullName(const std::string& full_name,
                                                  std::string* child_name) {
   std::string api_name_candidate = full_name;
-  extensions::ExtensionsClient* extensions_client =
-      extensions::ExtensionsClient::Get();
+  ExtensionsClient* extensions_client = ExtensionsClient::Get();
   DCHECK(extensions_client);
   while (true) {
-    if (schemas_.find(api_name_candidate) != schemas_.end() ||
-        extensions_client->IsAPISchemaGenerated(api_name_candidate) ||
-        unloaded_schemas_.find(api_name_candidate) != unloaded_schemas_.end()) {
-      std::string result = api_name_candidate;
-
+    if (IsKnownAPI(api_name_candidate, extensions_client)) {
       if (child_name) {
-        if (result.length() < full_name.length())
-          *child_name = full_name.substr(result.length() + 1);
+        if (api_name_candidate.length() < full_name.length())
+          *child_name = full_name.substr(api_name_candidate.length() + 1);
         else
           *child_name = "";
       }
-
-      return result;
+      return api_name_candidate;
     }
 
     size_t last_dot_index = api_name_candidate.rfind('.');
@@ -390,8 +301,15 @@ std::string ExtensionAPI::GetAPINameFromFullName(const std::string& full_name,
     api_name_candidate = api_name_candidate.substr(0, last_dot_index);
   }
 
-  *child_name = "";
+  if (child_name)
+    *child_name = "";
   return std::string();
+}
+
+bool ExtensionAPI::IsKnownAPI(const std::string& name,
+                              ExtensionsClient* client) {
+  return schemas_.find(name) != schemas_.end() ||
+         client->IsAPISchemaGenerated(name);
 }
 
 }  // namespace extensions

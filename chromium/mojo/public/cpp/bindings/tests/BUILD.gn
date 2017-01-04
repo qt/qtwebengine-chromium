@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("../../../mojo_application.gni")
-
 source_set("tests") {
   testonly = true
 
@@ -13,20 +11,24 @@ source_set("tests") {
     "associated_interface_unittest.cc",
     "bind_task_runner_unittest.cc",
     "binding_callback_unittest.cc",
+    "binding_set_unittest.cc",
     "binding_unittest.cc",
     "buffer_unittest.cc",
     "connector_unittest.cc",
     "constant_unittest.cc",
     "container_test_util.cc",
     "container_test_util.h",
+    "data_view_unittest.cc",
     "equals_unittest.cc",
     "handle_passing_unittest.cc",
+    "hash_unittest.cc",
     "interface_ptr_unittest.cc",
     "map_common_test.h",
     "map_unittest.cc",
     "message_queue.cc",
     "message_queue.h",
     "multiplex_router_unittest.cc",
+    "report_bad_message_unittest.cc",
     "request_response_unittest.cc",
     "router_test_util.cc",
     "router_test_util.h",
@@ -46,10 +48,12 @@ source_set("tests") {
 
   deps = [
     ":mojo_public_bindings_test_utils",
+    "//mojo/edk/system",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
     "//mojo/public/cpp/test_support:test_utils",
     "//mojo/public/interfaces/bindings/tests:test_associated_interfaces",
+    "//mojo/public/interfaces/bindings/tests:test_export_component",
     "//mojo/public/interfaces/bindings/tests:test_interfaces",
     "//mojo/public/interfaces/bindings/tests:test_interfaces_experimental",
     "//mojo/public/interfaces/bindings/tests:test_struct_traits_interfaces",
@@ -83,6 +87,7 @@ if (!is_ios) {
       "map_common_test.h",
       "variant_test_util.h",
       "wtf_array_unittest.cc",
+      "wtf_hash_unittest.cc",
       "wtf_map_unittest.cc",
       "wtf_types_unittest.cc",
     ]
@@ -91,6 +96,7 @@ if (!is_ios) {
       "//mojo/public/cpp/bindings",
       "//mojo/public/cpp/system",
       "//mojo/public/interfaces/bindings/tests:test_interfaces",
+      "//mojo/public/interfaces/bindings/tests:test_interfaces_blink",
       "//mojo/public/interfaces/bindings/tests:test_wtf_types",
       "//mojo/public/interfaces/bindings/tests:test_wtf_types_blink",
       "//testing/gtest",

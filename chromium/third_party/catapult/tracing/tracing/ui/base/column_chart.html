@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<!--
+Copyright (c) 2014 The Chromium Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+
+<link rel="import" href="/tracing/ui/base/chart_base_2d_brushable_x.html">
+
+<script>
+'use strict';
+
+tr.exportTo('tr.ui.b', function() {
+  var ColorScheme = tr.b.ColorScheme;
+  var ChartBase2DBrushX = tr.ui.b.ChartBase2DBrushX;
+
+  // @constructor
+  var ColumnChart = tr.ui.b.define('column-chart', ChartBase2DBrushX);
+
+  ColumnChart.prototype = {
+    __proto__: ChartBase2DBrushX.prototype,
+
+    decorate: function() {
+      ChartBase2DBrushX.prototype.decorate.call(this);
+      Polymer.dom(this).classList.add('column-chart');
+
+      // ColumnChart allows bars to have arbitrary, non-uniform widths. Bars
+      // need not all be the same width. The width of each bar is automatically
+      // computed from the bar's x-coordinate and that of the next bar, which
+      // can not define the width of the last bar. This is the width (in the
+      // xScale's domain (as opposed to the xScale's range (which is measured in
+      // pixels))) of the last bar. When there are at least 2 bars, this is
+      // computed as the average width of the bars. When there is a single bar,
+      // this must default to a non-zero number so that the width of the only
+      // bar will not be zero.
+      this.xCushion_ = 1;
+
+      this.isStacked_ = false;
+    },
+
+    set isStacked(stacked) {
+      this.isStacked_ = true;
+      this.updateContents_();
+    },
+
+    get isStacked() {
+      return this.isStacked_;
+    },
+
+    isDatumFieldSeries_: function(fieldName) {
+      return fieldName !== 'x';
+    },
+
+    getXForDatum_: function(datum, index) {
+      return datum.x;
+    },
+
+    updateScales_: function() {
+      if (this.data_.length === 0)
+        return;
+
+      var xDifferences = 0;
+      var currentX = undefined;
+      var previousX = undefined;
+      var yRange = new tr.b.Range();
+      this.data_.forEach(function(datum, index) {
+        previousX = currentX;
+        currentX = this.getXForDatum_(datum, index);
+        if (previousX !== undefined) {
+          xDifferences += currentX - previousX;
+        }
+
+        for (var [key, series] of this.seriesByKey_) {
+          // Allow for sparse data
+          if (datum[key] !== undefined)
+            yRange.addValue(datum[key]);
+        }
+      }, this);
+
+      // X.
+      // Leave a cushion on the right so that the last rect doesn't
+      // exceed the chart boundaries. The last rect's width is set to the
+      // average width of the rects, which is chart.width / data.length.
+      var width = this.chartAreaSize.width;
+      this.xScale_.range([0, width]);
+      var domain = d3.extent(this.data_, this.getXForDatum_.bind(this));
+      if (this.data_.length > 1)
+        this.xCushion_ = xDifferences / (this.data_.length - 1);
+      this.xScale_.domain([domain[0], domain[1] + this.xCushion_]);
+
+      // Y.
+      this.yScale_.range([this.chartAreaSize.height, 0]);
+      this.yScale_.domain(this.getYScaleDomain_(yRange.min, yRange.max));
+    },
+
+    getYScaleDomain_: function(minValue, maxValue) {
+      if (!this.isStacked) {
+        return ChartBase2DBrushX.prototype.getYScaleDomain_.call(
+            this, minValue, maxValue);
+      }
+
+      var range = new tr.b.Range();
+      range.addValue(0);
+      this.data_.forEach(function(datum, index) {
+        var sum = 0;
+        for (var [key, series] of this.seriesByKey_) {
+          if (datum[key] === undefined)
+            continue;
+          sum += datum[key];
+        }
+        range.addValue(sum);
+      }, this);
+      return [range.min, range.max];
+    },
+
+    getStackedRectsForDatum_: function(datum, index) {
+      var stacks = [];
+      var bottom = this.yScale_.range()[0];
+      var sum = 0;
+      for (var [key, series] of this.seriesByKey_) {
+        if (datum[key] === undefined || !this.isSeriesEnabled(key))
+          continue;
+        sum += datum[key];
+        var heightPx = bottom - this.yScale_(sum);
+        bottom -= heightPx;
+        stacks.push({
+          key: key,
+          value: datum[key],
+          color: this.getDataSeries(key).color,
+          heightPx: heightPx,
+          topPx: bottom
+        });
+      }
+      return stacks;
+    },
+
+    getRectsForDatum_: function(datum, index) {
+      if (this.isStacked)
+        return this.getStackedRectsForDatum_(datum, index);
+
+      var stacks = [];
+      for (var [key, series] of this.seriesByKey_) {
+        if (datum[key] === undefined || !this.isSeriesEnabled(key))
+          continue;
+        var topPx = this.yScale_(Math.max(datum[key], this.getYScaleMin_()));
+        stacks.push({
+          key: key,
+          value: datum[key],
+          topPx: topPx,
+          heightPx: this.yScale_.range()[0] - topPx,
+          color: this.getDataSeries(key).color
+        });
+      }
+      stacks.sort(function(a, b) {
+        return b.topPx - a.topPx;
+      });
+      return stacks;
+    },
+
+    drawHoverValueBox_: function(rect) {
+      var seriesKeys = [...this.seriesByKey_.keys()];
+      var chartAreaSel = d3.select(this.chartAreaElement);
+      chartAreaSel.selectAll('.hover').remove();
+      var keyWidthPx = 0;
+      var keyHeightPx = 0;
+      if (seriesKeys.length > 1) {
+        keyWidthPx = tr.ui.b.getSVGTextWidth(
+            this.chartAreaElement, rect.key) + 5;
+        keyHeightPx = 16;
+      }
+      var valueWidthPx = tr.ui.b.getSVGTextWidth(
+          this.chartAreaElement, rect.value) + 5;
+      var valueHeightPx = 16;
+      var hoverLeftPx = rect.leftPx + (rect.widthPx / 2);
+
+      chartAreaSel
+        .append('rect')
+        .attr('class', 'hover')
+        .attr('fill', 'white')
+        .attr('x', hoverLeftPx)
+        .attr('y', rect.topPx)
+        .attr('width', Math.max(keyWidthPx, valueWidthPx))
+        .attr('height', keyHeightPx + valueHeightPx);
+
+      if (seriesKeys.length > 1) {
+        chartAreaSel
+          .append('text')
+          .attr('class', 'hover')
+          .attr('fill', rect.color)
+          .attr('x', hoverLeftPx + 2)
+          .attr('y', rect.topPx + keyHeightPx - 3)
+          .text(rect.key);
+      }
+
+      chartAreaSel
+        .append('text')
+        .attr('class', 'hover')
+        .attr('fill', rect.color)
+        .attr('x', hoverLeftPx + 2)
+        .attr('y', rect.topPx + keyHeightPx + valueHeightPx - 3)
+        .text(rect.value);
+    },
+
+    clearHoverValueBox_: function() {
+      d3.select(this.chartAreaElement).selectAll('.hover').remove();
+    },
+
+    drawRect_: function(rect, sel) {
+      sel.append('rect')
+        .attr('fill', rect.color)
+        .attr('x', rect.leftPx)
+        .attr('y', rect.topPx)
+        .attr('width', rect.widthPx)
+        .attr('height', rect.heightPx)
+        .on('mouseenter', this.drawHoverValueBox_.bind(this, rect))
+        .on('mouseleave', this.clearHoverValueBox_.bind(this));
+    },
+
+    updateDataContents_: function(dataSel) {
+      dataSel.selectAll('*').remove();
+      var chartAreaSel = d3.select(this.chartAreaElement);
+      var seriesKeys = [...this.seriesByKey_.keys()];
+      var rectsSel = dataSel.selectAll('path').data(seriesKeys);
+      this.data_.forEach(function(datum, index) {
+        var currentX = this.getXForDatum_(datum, index);
+        var width = undefined;
+        if (index < (this.data_.length - 1)) {
+          var nextX = this.getXForDatum_(this.data_[index + 1], index + 1);
+          width = nextX - currentX;
+        } else {
+          width = this.xCushion_;
+        }
+        for (var rect of this.getRectsForDatum_(datum, index)) {
+          rect.leftPx = this.xScale_(currentX);
+          rect.rightPx = this.xScale_(currentX + width);
+          rect.widthPx = rect.rightPx - rect.leftPx;
+          this.drawRect_(rect, rectsSel.enter());
+        }
+      }, this);
+      rectsSel.exit().remove();
+    }
+  };
+
+  return {
+    ColumnChart: ColumnChart,
+  };
+});
+</script>

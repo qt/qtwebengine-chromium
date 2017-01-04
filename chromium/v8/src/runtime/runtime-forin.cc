@@ -26,7 +26,6 @@ MaybeHandle<HeapObject> Enumerate(Handle<JSReceiver> receiver) {
   FastKeyAccumulator accumulator(isolate, receiver,
                                  KeyCollectionMode::kIncludePrototypes,
                                  ENUMERABLE_STRINGS);
-  accumulator.set_filter_proxy_keys(false);
   accumulator.set_is_for_in(true);
   // Test if we have an enum cache for {receiver}.
   if (!accumulator.is_receiver_simple_enum()) {
@@ -65,7 +64,9 @@ MaybeHandle<Object> HasEnumerableProperty(Isolate* isolate,
           Handle<Object> prototype;
           ASSIGN_RETURN_ON_EXCEPTION(isolate, prototype,
                                      JSProxy::GetPrototype(proxy), Object);
-          if (prototype->IsNull(isolate)) break;
+          if (prototype->IsNull(isolate)) {
+            return isolate->factory()->undefined_value();
+          }
           // We already have a stack-check in JSProxy::GetPrototype.
           return HasEnumerableProperty(
               isolate, Handle<JSReceiver>::cast(prototype), key);
@@ -97,11 +98,6 @@ MaybeHandle<Object> HasEnumerableProperty(Isolate* isolate,
     }
   }
   return isolate->factory()->undefined_value();
-}
-
-MaybeHandle<Object> Filter(Handle<JSReceiver> receiver, Handle<Object> key) {
-  Isolate* const isolate = receiver->GetIsolate();
-  return HasEnumerableProperty(isolate, receiver, key);
 }
 
 }  // namespace
@@ -144,24 +140,24 @@ RUNTIME_FUNCTION_RETURN_TRIPLE(Runtime_ForInPrepare) {
   return MakeTriple(*cache_type, *cache_array, Smi::FromInt(cache_length));
 }
 
-
-RUNTIME_FUNCTION(Runtime_ForInDone) {
-  SealHandleScope scope(isolate);
+RUNTIME_FUNCTION(Runtime_ForInHasProperty) {
+  HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
-  CONVERT_SMI_ARG_CHECKED(index, 0);
-  CONVERT_SMI_ARG_CHECKED(length, 1);
-  DCHECK_LE(0, index);
-  DCHECK_LE(index, length);
-  return isolate->heap()->ToBoolean(index == length);
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, receiver, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result, HasEnumerableProperty(isolate, receiver, key));
+  return isolate->heap()->ToBoolean(!result->IsUndefined(isolate));
 }
-
 
 RUNTIME_FUNCTION(Runtime_ForInFilter) {
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, receiver, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
-  RETURN_RESULT_OR_FAILURE(isolate, Filter(receiver, key));
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           HasEnumerableProperty(isolate, receiver, key));
 }
 
 
@@ -177,17 +173,8 @@ RUNTIME_FUNCTION(Runtime_ForInNext) {
   if (receiver->map() == *cache_type) {
     return *key;
   }
-  RETURN_RESULT_OR_FAILURE(isolate, Filter(receiver, key));
-}
-
-
-RUNTIME_FUNCTION(Runtime_ForInStep) {
-  SealHandleScope scope(isolate);
-  DCHECK_EQ(1, args.length());
-  CONVERT_SMI_ARG_CHECKED(index, 0);
-  DCHECK_LE(0, index);
-  DCHECK_LT(index, Smi::kMaxValue);
-  return Smi::FromInt(index + 1);
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           HasEnumerableProperty(isolate, receiver, key));
 }
 
 }  // namespace internal

@@ -13,11 +13,11 @@
 #include "xfa/fwl/lightwidget/cfwl_listbox.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
-#include "xfa/fxfa/include/cxfa_eventparam.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffdocview.h"
-#include "xfa/fxfa/include/xfa_ffpageview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffdocview.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 
 CXFA_FFListBox::CXFA_FFListBox(CXFA_FFPageView* pPageView,
                                CXFA_WidgetAcc* pDataAcc)
@@ -287,7 +287,7 @@ FX_BOOL CXFA_FFComboBox::OnRButtonUp(uint32_t dwFlags,
   if (!CXFA_FFField::OnRButtonUp(dwFlags, fx, fy))
     return FALSE;
 
-  GetDoc()->GetDocProvider()->PopupMenu(this, CFX_PointF(fx, fy), nullptr);
+  GetDoc()->GetDocEnvironment()->PopupMenu(this, CFX_PointF(fx, fy));
   return TRUE;
 }
 FX_BOOL CXFA_FFComboBox::OnKillFocus(CXFA_FFWidget* pNewWidget) {

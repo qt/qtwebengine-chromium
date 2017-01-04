@@ -16,6 +16,8 @@ source_set("common") {
     "display_util.h",
     "egl_util.cc",
     "egl_util.h",
+    "gl_ozone_egl.cc",
+    "gl_ozone_egl.h",
     "gpu/ozone_gpu_message_generator.cc",
     "gpu/ozone_gpu_message_generator.h",
     "gpu/ozone_gpu_message_params.cc",
@@ -29,6 +31,10 @@ source_set("common") {
 
   public_deps = [
     "//ui/ozone:ozone_base",
+  ]
+
+  deps = [
+    "//ui/gl",
   ]
 
   visibility = [ "//ui/ozone/platform/*" ]

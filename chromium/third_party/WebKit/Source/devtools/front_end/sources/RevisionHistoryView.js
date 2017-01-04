@@ -35,12 +35,11 @@
 WebInspector.RevisionHistoryView = function()
 {
     WebInspector.VBox.call(this);
-    this.registerRequiredCSS("sources/revisionHistory.css");
-    this.element.classList.add("revision-history-drawer");
     this._uiSourceCodeItems = new Map();
 
-    this._treeOutline = new TreeOutline();
-    this._treeOutline.element.classList.add("outline-disclosure");
+    this._treeOutline = new TreeOutlineInShadow();
+    this._treeOutline.registerRequiredCSS("sources/revisionHistory.css");
+    this._treeOutline.makeDense();
     this.element.appendChild(this._treeOutline.element);
 
     /**
@@ -64,17 +63,9 @@ WebInspector.RevisionHistoryView = function()
  */
 WebInspector.RevisionHistoryView.showHistory = function(uiSourceCode)
 {
-    /**
-     * @param {?WebInspector.Widget} view
-     */
-    function revealSource(view)
-    {
-        console.assert(view && view instanceof WebInspector.RevisionHistoryView);
-        var historyView = /** @type {!WebInspector.RevisionHistoryView} */(view);
-        historyView._revealUISourceCode(uiSourceCode);
-    }
-
-    WebInspector.inspectorView.showViewInDrawer("sources.history").then(revealSource);
+    WebInspector.viewManager.showView("sources.history");
+    var historyView = /** @type {!WebInspector.RevisionHistoryView} */ (self.runtime.sharedInstance(WebInspector.RevisionHistoryView));
+    historyView._revealUISourceCode(uiSourceCode);
 }
 
 WebInspector.RevisionHistoryView.prototype = {

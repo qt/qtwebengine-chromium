@@ -16,7 +16,7 @@
 #include "base/memory/discardable_memory.h"
 #include "base/memory/discardable_shared_memory.h"
 #include "base/memory/ptr_util.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/process/memory.h"
 #include "base/process/process_metrics.h"
 #include "base/strings/string_number_conversions.h"
@@ -113,8 +113,7 @@ ChildDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
     size_t size) {
   base::AutoLock lock(lock_);
 
-  // TODO(reveman): Temporary diagnostics for http://crbug.com/577786.
-  CHECK_NE(size, 0u);
+  DCHECK_NE(size, 0u);
 
   UMA_HISTOGRAM_CUSTOM_COUNTS("Memory.DiscardableAllocationSize",
                               size / 1024,  // In KB
@@ -167,8 +166,7 @@ ChildDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
     // at least one span from the free lists.
     MemoryUsageChanged(heap_.GetSize(), heap_.GetSizeOfFreeLists());
 
-    return base::WrapUnique(
-        new DiscardableMemoryImpl(this, std::move(free_span)));
+    return base::MakeUnique<DiscardableMemoryImpl>(this, std::move(free_span));
   }
 
   // Release purged memory to free up the address space before we attempt to
@@ -210,7 +208,7 @@ ChildDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
 
   MemoryUsageChanged(heap_.GetSize(), heap_.GetSizeOfFreeLists());
 
-  return base::WrapUnique(new DiscardableMemoryImpl(this, std::move(new_span)));
+  return base::MakeUnique<DiscardableMemoryImpl>(this, std::move(new_span));
 }
 
 bool ChildDiscardableSharedMemoryManager::OnMemoryDump(

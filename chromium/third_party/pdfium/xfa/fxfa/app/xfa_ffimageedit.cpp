@@ -11,10 +11,10 @@
 #include "xfa/fwl/core/ifwl_app.h"
 #include "xfa/fwl/lightwidget/cfwl_picturebox.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffdocview.h"
-#include "xfa/fxfa/include/xfa_ffpageview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffdocview.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 
 CXFA_FFImageEdit::CXFA_FFImageEdit(CXFA_FFPageView* pPageView,
                                    CXFA_WidgetAcc* pDataAcc)
@@ -97,7 +97,7 @@ FX_BOOL CXFA_FFImageEdit::OnLButtonDown(uint32_t dwFlags,
   ms.m_dwFlags = dwFlags;
   ms.m_fx = fx;
   ms.m_fy = fy;
-  ms.m_pDstTarget = m_pNormalWidget->m_pIface;
+  ms.m_pDstTarget = m_pNormalWidget->GetWidget();
   FWLToClient(ms.m_fx, ms.m_fy);
   TranslateFWLMessage(&ms);
   return TRUE;

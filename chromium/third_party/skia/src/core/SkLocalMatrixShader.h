@@ -26,10 +26,7 @@ public:
     }
 
 #if SK_SUPPORT_GPU
-    sk_sp<GrFragmentProcessor> asFragmentProcessor(
-                                            GrContext* context, const SkMatrix& viewM,
-                                            const SkMatrix* localMatrix, SkFilterQuality fq,
-                                            SkSourceGammaTreatment gammaTreatment) const override;
+    sk_sp<GrFragmentProcessor> asFragmentProcessor(const AsFPArgs&) const override;
 #endif
 
     SkShader* refAsALocalMatrixShader(SkMatrix* localMatrix) const override {
@@ -50,9 +47,15 @@ protected:
         return fProxyShader->contextSize(rec);
     }
 
+    SkImage* onIsAImage(SkMatrix* matrix, TileMode* mode) const override {
+        return fProxyShader->isAImage(matrix, mode);
+    }
+
+#ifdef SK_SUPPORT_LEGACY_SHADER_ISABITMAP
     bool onIsABitmap(SkBitmap* bitmap, SkMatrix* matrix, TileMode* mode) const override {
         return fProxyShader->isABitmap(bitmap, matrix, mode);
     }
+#endif
 
 private:
     SkAutoTUnref<SkShader> fProxyShader;

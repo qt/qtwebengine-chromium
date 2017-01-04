@@ -198,9 +198,10 @@ void ExtractProtocolControlMessageFields(const BlimpMessage& message,
   switch (message.protocol_control().connection_message_case()) {
     case ProtocolControlMessage::kStartConnection:
       AddField("subtype", "START_CONNECTION", output);
-      AddField("client_token",
-               message.protocol_control().start_connection().client_token(),
-               output);
+      AddField(
+          "client_token",
+          message.protocol_control().start_connection().client_auth_token(),
+          output);
       AddField("protocol_version",
                message.protocol_control().start_connection().protocol_version(),
                output);
@@ -300,6 +301,43 @@ void ExtractBlobChannelMessageFields(const BlimpMessage& message,
   }
 }
 
+// Logs fields from GEOLOCATION messages.
+void ExtractGeolocationMessageFields(const BlimpMessage& message,
+                                     LogFields* output) {
+  switch (message.geolocation().type_case()) {
+    case GeolocationMessage::TypeCase::kSetInterestLevel:
+      AddField("subtype", "SET_INTEREST_LEVEL", output);
+      AddField("level", message.geolocation().set_interest_level().level(),
+               output);
+      break;
+    case GeolocationMessage::TypeCase::kRequestRefresh:
+      AddField("subtype", "REQUEST_REFRESH", output);
+      break;
+    case GeolocationMessage::TypeCase::kCoordinates: {
+      const GeolocationCoordinatesMessage& coordinates =
+          message.geolocation().coordinates();
+      AddField("subtype", "COORDINATES", output);
+      AddField("latitude", coordinates.latitude(), output);
+      AddField("longitude", coordinates.longitude(), output);
+      AddField("altitude", coordinates.altitude(), output);
+      AddField("accuracy", coordinates.accuracy(), output);
+      AddField("altitude_accuracy", coordinates.altitude_accuracy(), output);
+      AddField("heading", coordinates.heading(), output);
+      AddField("speed", coordinates.speed(), output);
+      break;
+    }
+    case GeolocationMessage::TypeCase::kError:
+      AddField("subtype", "ERROR", output);
+      AddField("error_code", message.geolocation().error().error_code(),
+               output);
+      AddField("error_message", message.geolocation().error().error_message(),
+               output);
+      break;
+    case GeolocationMessage::TypeCase::TYPE_NOT_SET:
+      break;
+  }
+}
+
 }  // namespace
 
 std::ostream& operator<<(std::ostream& out, const BlimpMessage& message) {
@@ -341,6 +379,10 @@ std::ostream& operator<<(std::ostream& out, const BlimpMessage& message) {
     case BlimpMessage::kIme:
       AddField("type", "IME", &fields);
       ExtractImeMessageFields(message, &fields);
+      break;
+    case BlimpMessage::kGeolocation:
+      AddField("type", "GEOLOCATION", &fields);
+      ExtractGeolocationMessageFields(message, &fields);
       break;
     case BlimpMessage::FEATURE_NOT_SET:
       AddField("type", "<UNKNOWN>", &fields);

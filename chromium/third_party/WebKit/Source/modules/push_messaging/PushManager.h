@@ -12,37 +12,36 @@
 namespace blink {
 
 class ExceptionState;
-class PushSubscriptionOptions;
+class PushSubscriptionOptionsInit;
 class ScriptPromise;
 class ScriptState;
 class ServiceWorkerRegistration;
-struct WebPushSubscriptionOptions;
 
-class MODULES_EXPORT PushManager final : public GarbageCollected<PushManager>, public ScriptWrappable {
-    DEFINE_WRAPPERTYPEINFO();
-public:
-    static PushManager* create(ServiceWorkerRegistration* registration)
-    {
-        return new PushManager(registration);
-    }
+class MODULES_EXPORT PushManager final : public GarbageCollected<PushManager>,
+                                         public ScriptWrappable {
+  DEFINE_WRAPPERTYPEINFO();
 
-    ScriptPromise subscribe(ScriptState*, const PushSubscriptionOptions&,
-        ExceptionState&);
-    ScriptPromise getSubscription(ScriptState*);
-    ScriptPromise permissionState(ScriptState*, const PushSubscriptionOptions&,
-        ExceptionState&);
+ public:
+  static PushManager* create(ServiceWorkerRegistration* registration) {
+    return new PushManager(registration);
+  }
 
-    DECLARE_TRACE();
+  ScriptPromise subscribe(ScriptState*,
+                          const PushSubscriptionOptionsInit&,
+                          ExceptionState&);
+  ScriptPromise getSubscription(ScriptState*);
+  ScriptPromise permissionState(ScriptState*,
+                                const PushSubscriptionOptionsInit&,
+                                ExceptionState&);
 
-    static WebPushSubscriptionOptions toWebPushSubscriptionOptions(
-        const PushSubscriptionOptions&, ExceptionState&);
+  DECLARE_TRACE();
 
-private:
-    explicit PushManager(ServiceWorkerRegistration*);
+ private:
+  explicit PushManager(ServiceWorkerRegistration*);
 
-    Member<ServiceWorkerRegistration> m_registration;
+  Member<ServiceWorkerRegistration> m_registration;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // PushManager_h
+#endif  // PushManager_h

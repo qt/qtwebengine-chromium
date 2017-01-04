@@ -12,16 +12,15 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "components/prefs/pref_service.h"
+#include "components/sync/api/sync_change.h"
+#include "components/sync/api/sync_error_factory.h"
+#include "components/sync/protocol/preference_specifics.pb.h"
+#include "components/sync/protocol/sync.pb.h"
 #include "components/syncable_prefs/pref_model_associator_client.h"
 #include "components/syncable_prefs/pref_service_syncable.h"
-#include "sync/api/sync_change.h"
-#include "sync/api/sync_error_factory.h"
-#include "sync/protocol/preference_specifics.pb.h"
-#include "sync/protocol/sync.pb.h"
 
 using syncer::PREFERENCES;
 using syncer::PRIORITY_PREFERENCES;
@@ -70,8 +69,6 @@ PrefModelAssociator::~PrefModelAssociator() {
   DCHECK(CalledOnValidThread());
   pref_service_ = NULL;
 
-  STLDeleteContainerPairSecondPointers(synced_pref_observers_.begin(),
-                                       synced_pref_observers_.end());
   synced_pref_observers_.clear();
 }
 
@@ -157,6 +154,14 @@ void PrefModelAssociator::InitPrefAndAssociate(
   // we'll send the new user controlled value to the syncer.
 }
 
+void PrefModelAssociator::RegisterMergeDataFinishedCallback(
+    const base::Closure& callback) {
+  if (!models_associated_)
+    callback_list_.push_back(callback);
+  else
+    callback.Run();
+}
+
 syncer::SyncMergeResult PrefModelAssociator::MergeDataAndStartSyncing(
     syncer::ModelType type,
     const syncer::SyncDataList& initial_sync_data,
@@ -212,6 +217,10 @@ syncer::SyncMergeResult PrefModelAssociator::MergeDataAndStartSyncing(
       sync_processor_->ProcessSyncChanges(FROM_HERE, new_changes));
   if (merge_result.error().IsSet())
     return merge_result;
+
+  for (const auto& callback : callback_list_)
+    callback.Run();
+  callback_list_.clear();
 
   models_associated_ = true;
   pref_service_->OnIsSyncingChanged();
@@ -287,10 +296,8 @@ base::Value* PrefModelAssociator::MergeListValues(const base::Value& from_value,
       static_cast<const base::ListValue&>(to_value);
   base::ListValue* result = to_list_value.DeepCopy();
 
-  for (base::ListValue::const_iterator i = from_list_value.begin();
-       i != from_list_value.end(); ++i) {
-    base::Value* value = (*i)->DeepCopy();
-    result->AppendIfNotPresent(value);
+  for (const auto& value : from_list_value) {
+    result->AppendIfNotPresent(value->CreateDeepCopy());
   }
   return result;
 }
@@ -432,21 +439,20 @@ bool PrefModelAssociator::IsPrefSynced(const std::string& name) const {
 
 void PrefModelAssociator::AddSyncedPrefObserver(const std::string& name,
     SyncedPrefObserver* observer) {
-  SyncedPrefObserverList* observers = synced_pref_observers_[name];
-  if (observers == NULL) {
-    observers = new SyncedPrefObserverList;
-    synced_pref_observers_[name] = observers;
-  }
+  std::unique_ptr<SyncedPrefObserverList>& observers =
+      synced_pref_observers_[name];
+  if (!observers)
+    observers = base::MakeUnique<SyncedPrefObserverList>();
+
   observers->AddObserver(observer);
 }
 
 void PrefModelAssociator::RemoveSyncedPrefObserver(const std::string& name,
     SyncedPrefObserver* observer) {
-  SyncedPrefObserverMap::iterator observer_iter =
-      synced_pref_observers_.find(name);
+  auto observer_iter = synced_pref_observers_.find(name);
   if (observer_iter == synced_pref_observers_.end())
     return;
-  SyncedPrefObserverList* observers = observer_iter->second;
+  SyncedPrefObserverList* observers = observer_iter->second.get();
   observers->RemoveObserver(observer);
 }
 
@@ -528,11 +534,10 @@ void PrefModelAssociator::SetPrefService(PrefServiceSyncable* pref_service) {
 
 void PrefModelAssociator::NotifySyncedPrefObservers(const std::string& path,
                                                     bool from_sync) const {
-  SyncedPrefObserverMap::const_iterator observer_iter =
-      synced_pref_observers_.find(path);
+  auto observer_iter = synced_pref_observers_.find(path);
   if (observer_iter == synced_pref_observers_.end())
     return;
-  SyncedPrefObserverList* observers = observer_iter->second;
+  SyncedPrefObserverList* observers = observer_iter->second.get();
   FOR_EACH_OBSERVER(SyncedPrefObserver, *observers,
                     OnSyncedPrefChanged(path, from_sync));
 }

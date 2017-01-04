@@ -7,11 +7,13 @@
 #ifndef CORE_FXGE_ANDROID_FX_ANDROID_FONT_H_
 #define CORE_FXGE_ANDROID_FX_ANDROID_FONT_H_
 
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_system.h"
 
 #if _FX_OS_ == _FX_ANDROID_
 
-#include "core/fxge/include/fx_font.h"
+#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/fx_font.h"
+#include "core/fxge/ifx_systemfontinfo.h"
 
 class CFPF_SkiaFontMgr;
 
@@ -38,7 +40,6 @@ class CFX_AndroidFontInfo : public IFX_SystemFontInfo {
   FX_BOOL GetFaceName(void* hFont, CFX_ByteString& name) override;
   FX_BOOL GetFontCharset(void* hFont, int& charset) override;
   void DeleteFont(void* hFont) override;
-  void* RetainFont(void* hFont) override;
 
  protected:
   CFPF_SkiaFontMgr* m_pFontMgr;

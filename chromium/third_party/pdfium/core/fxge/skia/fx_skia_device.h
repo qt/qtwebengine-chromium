@@ -7,13 +7,16 @@
 
 #if defined(_SKIA_SUPPORT_)
 
-#include "core/fxge/include/ifx_renderdevicedriver.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/ifx_renderdevicedriver.h"
 
 class SkCanvas;
 class SkMatrix;
 class SkPaint;
 class SkPath;
 class SkPictureRecorder;
+class SkiaState;
+struct FXTEXT_CHARPOS;
 struct SkIRect;
 
 class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
@@ -81,6 +84,12 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
                     int dest_left,
                     int dest_top,
                     int blend_type) override;
+  bool SetBitsWithMask(const CFX_DIBSource* pBitmap,
+                       const CFX_DIBSource* pMask,
+                       int dest_left,
+                       int dest_top,
+                       int bitmap_alpha,
+                       int blend_type) override;
   FX_BOOL StretchDIBits(const CFX_DIBSource* pBitmap,
                         uint32_t color,
                         int dest_left,
@@ -103,10 +112,15 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
 
   void CancelDIBits(void* handle) override {}
 
+  bool DrawBitsWithMask(const CFX_DIBSource* pBitmap,
+                        const CFX_DIBSource* pMask,
+                        int bitmap_alpha,
+                        const CFX_Matrix* pMatrix,
+                        int blend_type);
+
   FX_BOOL DrawDeviceText(int nChars,
                          const FXTEXT_CHARPOS* pCharPos,
                          CFX_Font* pFont,
-                         CFX_FontCache* pCache,
                          const CFX_Matrix* pObject2Device,
                          FX_FLOAT font_size,
                          uint32_t color) override;
@@ -122,15 +136,22 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
   void PaintStroke(SkPaint* spaint,
                    const CFX_GraphStateData* pGraphState,
                    const SkMatrix& matrix);
+  void Clear(uint32_t color);
+  void Flush();
   SkPictureRecorder* GetRecorder() const { return m_pRecorder; }
-  void PreMultiply();
+  static void PreMultiply(CFX_DIBitmap* pDIBitmap);
+  SkCanvas* SkiaCanvas() { return m_pCanvas; }
+  void DebugVerifyBitmapIsPreMultiplied() const;
+  void Dump() const;
 
  private:
+  friend class SkiaState;
+
   CFX_DIBitmap* m_pBitmap;
   CFX_DIBitmap* m_pOriDevice;
   SkCanvas* m_pCanvas;
   SkPictureRecorder* const m_pRecorder;
-  FX_BOOL m_bRgbByteOrder;
+  std::unique_ptr<SkiaState> m_pCache;
   FX_BOOL m_bGroupKnockout;
 };
 #endif  // defined(_SKIA_SUPPORT_)

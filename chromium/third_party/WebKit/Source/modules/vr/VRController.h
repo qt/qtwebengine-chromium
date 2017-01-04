@@ -5,53 +5,72 @@
 #ifndef VRController_h
 #define VRController_h
 
-#include "core/frame/LocalFrameLifecycleObserver.h"
+#include "core/dom/ContextLifecycleObserver.h"
+#include "core/dom/Document.h"
 #include "device/vr/vr_service.mojom-blink.h"
-#include "modules/ModulesExport.h"
-#include "platform/Supplementable.h"
+#include "modules/vr/VRDisplay.h"
+#include "mojo/public/cpp/bindings/binding.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
 
 #include <memory>
 
 namespace blink {
 
-class ServiceRegistry;
+class NavigatorVR;
 class VRGetDevicesCallback;
 
-class MODULES_EXPORT VRController final
-    : public GarbageCollectedFinalized<VRController>
-    , public Supplement<LocalFrame>
-    , public LocalFrameLifecycleObserver {
-    USING_GARBAGE_COLLECTED_MIXIN(VRController);
-    WTF_MAKE_NONCOPYABLE(VRController);
-public:
-    virtual ~VRController();
+class VRController final : public GarbageCollectedFinalized<VRController>,
+                           public device::blink::VRServiceClient,
+                           public ContextLifecycleObserver {
+  USING_GARBAGE_COLLECTED_MIXIN(VRController);
+  WTF_MAKE_NONCOPYABLE(VRController);
 
-    void getDisplays(std::unique_ptr<VRGetDevicesCallback>);
+ public:
+  VRController(NavigatorVR*);
+  virtual ~VRController();
 
-    device::blink::VRPosePtr getPose(unsigned index);
+  // VRService.
+  void getDisplays(ScriptPromiseResolver*);
+  device::blink::VRPosePtr getPose(unsigned index);
+  void resetPose(unsigned index);
+  void requestPresent(ScriptPromiseResolver*,
+                      unsigned index,
+                      bool secureOrigin);
+  void exitPresent(unsigned index);
+  void submitFrame(unsigned index, device::blink::VRPosePtr);
+  void updateLayerBounds(unsigned index,
+                         device::blink::VRLayerBoundsPtr leftBounds,
+                         device::blink::VRLayerBoundsPtr rightBounds);
 
-    void resetPose(unsigned index);
+  VRDisplay* createOrUpdateDisplay(const device::blink::VRDisplayPtr&);
+  VRDisplayVector updateDisplays(mojo::WTFArray<device::blink::VRDisplayPtr>);
+  VRDisplay* getDisplayForIndex(unsigned index);
 
-    static void provideTo(LocalFrame&, ServiceRegistry*);
-    static VRController* from(LocalFrame&);
-    static const char* supplementName();
+  DECLARE_VIRTUAL_TRACE();
 
-    DECLARE_VIRTUAL_TRACE();
+ private:
+  // Binding callbacks.
+  void onGetDisplays(mojo::WTFArray<device::blink::VRDisplayPtr>);
+  void onPresentComplete(ScriptPromiseResolver*, unsigned index, bool success);
 
-private:
-    VRController(LocalFrame&, ServiceRegistry*);
+  // VRServiceClient.
+  void OnDisplayChanged(device::blink::VRDisplayPtr) override;
+  void OnExitPresent(unsigned index) override;
+  void OnDisplayConnected(device::blink::VRDisplayPtr) override;
+  void OnDisplayDisconnected(unsigned) override;
 
-    // Inherited from LocalFrameLifecycleObserver.
-    void willDetachFrameHost() override;
+  // ContextLifecycleObserver.
+  void contextDestroyed() override;
 
-    // Binding callbacks.
-    void onGetDisplays(mojo::WTFArray<device::blink::VRDisplayPtr>);
+  Member<NavigatorVR> m_navigatorVR;
+  VRDisplayVector m_displays;
 
-    Deque<std::unique_ptr<VRGetDevicesCallback>> m_pendingGetDevicesCallbacks;
-    device::blink::VRServicePtr m_service;
+  Deque<std::unique_ptr<VRGetDevicesCallback>> m_pendingGetDevicesCallbacks;
+  device::blink::VRServicePtr m_service;
+  mojo::Binding<device::blink::VRServiceClient> m_binding;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // VRController_h
+#endif  // VRController_h

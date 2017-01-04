@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/stl_util.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/indexed_db/indexed_db_key_builders.h"
 #include "content/child/thread_safe_sender.h"
@@ -29,6 +30,7 @@ using blink::WebIDBMetadata;
 using blink::WebIDBKey;
 using blink::WebIDBKeyPath;
 using blink::WebIDBKeyRange;
+using blink::WebIDBObserver;
 using blink::WebString;
 using blink::WebVector;
 
@@ -76,20 +78,27 @@ void WebIDBDatabaseImpl::deleteObjectStore(long long transaction_id,
       ipc_database_id_, transaction_id, object_store_id));
 }
 
+void WebIDBDatabaseImpl::renameObjectStore(long long transaction_id,
+                                           long long object_store_id,
+                                           const blink::WebString& new_name) {
+  thread_safe_sender_->Send(new IndexedDBHostMsg_DatabaseRenameObjectStore(
+      ipc_database_id_, transaction_id, object_store_id, new_name));
+}
+
 void WebIDBDatabaseImpl::createTransaction(
     long long transaction_id,
-    WebIDBDatabaseCallbacks* callbacks,
     const WebVector<long long>& object_store_ids,
     blink::WebIDBTransactionMode mode) {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   dispatcher->RequestIDBDatabaseCreateTransaction(
-      ipc_database_id_, transaction_id, callbacks, object_store_ids, mode);
+      ipc_database_id_, transaction_id, object_store_ids, mode);
 }
 
 void WebIDBDatabaseImpl::close() {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
+  dispatcher->RemoveIDBObservers(observer_ids_);
   dispatcher->RequestIDBDatabaseClose(ipc_database_id_,
                                       ipc_database_callbacks_id_);
 }
@@ -98,6 +107,32 @@ void WebIDBDatabaseImpl::versionChangeIgnored() {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   dispatcher->NotifyIDBDatabaseVersionChangeIgnored(ipc_database_id_);
+}
+
+int32_t WebIDBDatabaseImpl::addObserver(
+    std::unique_ptr<WebIDBObserver> observer,
+    long long transaction_id) {
+  IndexedDBDispatcher* dispatcher =
+      IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
+
+  int32_t observer_id = dispatcher->AddIDBObserver(
+      ipc_database_id_, transaction_id, std::move(observer));
+  observer_ids_.insert(observer_id);
+  return observer_id;
+}
+
+void WebIDBDatabaseImpl::removeObservers(
+    const WebVector<int32_t>& observer_ids_to_remove) {
+  std::vector<int32_t> remove_observer_ids(
+      observer_ids_to_remove.data(),
+      observer_ids_to_remove.data() + observer_ids_to_remove.size());
+  for (int32_t id : observer_ids_to_remove)
+    observer_ids_.erase(id);
+
+  IndexedDBDispatcher* dispatcher =
+      IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
+  dispatcher->RemoveIDBObserversFromDatabase(ipc_database_id_,
+                                             remove_observer_ids);
 }
 
 void WebIDBDatabaseImpl::get(long long transaction_id,
@@ -277,6 +312,14 @@ void WebIDBDatabaseImpl::deleteIndex(long long transaction_id,
                                      long long index_id) {
   thread_safe_sender_->Send(new IndexedDBHostMsg_DatabaseDeleteIndex(
       ipc_database_id_, transaction_id, object_store_id, index_id));
+}
+
+void WebIDBDatabaseImpl::renameIndex(long long transaction_id,
+                                     long long object_store_id,
+                                     long long index_id,
+                                     const WebString& new_name) {
+  thread_safe_sender_->Send(new IndexedDBHostMsg_DatabaseRenameIndex(
+      ipc_database_id_, transaction_id, object_store_id, index_id, new_name));
 }
 
 void WebIDBDatabaseImpl::abort(long long transaction_id) {

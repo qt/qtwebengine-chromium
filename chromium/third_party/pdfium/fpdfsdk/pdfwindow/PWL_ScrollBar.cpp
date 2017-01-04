@@ -6,14 +6,10 @@
 
 #include "fpdfsdk/pdfwindow/PWL_ScrollBar.h"
 
-#include "core/fxge/include/fx_ge.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "fpdfsdk/pdfwindow/PWL_Utils.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
-
-#define IsFloatZero(f) ((f) < 0.0001 && (f) > -0.0001)
-#define IsFloatBigger(fa, fb) ((fa) > (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatSmaller(fa, fb) ((fa) < (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatEqual(fa, fb) IsFloatZero((fa) - (fb))
 
 PWL_FLOATRANGE::PWL_FLOATRANGE() {
   Default();
@@ -822,15 +818,14 @@ void CPWL_ScrollBar::OnNotify(CPWL_Wnd* pWnd,
       }
       break;
     case PNM_SETSCROLLINFO: {
-      if (PWL_SCROLL_INFO* pInfo = (PWL_SCROLL_INFO*)lParam) {
-        if (FXSYS_memcmp(&m_OriginInfo, pInfo, sizeof(PWL_SCROLL_INFO)) != 0) {
-          m_OriginInfo = *pInfo;
-          FX_FLOAT fMax =
-              pInfo->fContentMax - pInfo->fContentMin - pInfo->fPlateWidth;
-          fMax = fMax > 0.0f ? fMax : 0.0f;
-          SetScrollRange(0, fMax, pInfo->fPlateWidth);
-          SetScrollStep(pInfo->fBigStep, pInfo->fSmallStep);
-        }
+      PWL_SCROLL_INFO* pInfo = reinterpret_cast<PWL_SCROLL_INFO*>(lParam);
+      if (pInfo && *pInfo != m_OriginInfo) {
+        m_OriginInfo = *pInfo;
+        FX_FLOAT fMax =
+            pInfo->fContentMax - pInfo->fContentMin - pInfo->fPlateWidth;
+        fMax = fMax > 0.0f ? fMax : 0.0f;
+        SetScrollRange(0, fMax, pInfo->fPlateWidth);
+        SetScrollStep(pInfo->fBigStep, pInfo->fSmallStep);
       }
     } break;
     case PNM_SETSCROLLPOS: {
@@ -1187,13 +1182,12 @@ void CPWL_ScrollBar::CreateChildWnd(const PWL_CREATEPARAM& cp) {
 
 void CPWL_ScrollBar::TimerProc() {
   PWL_SCROLL_PRIVATEDATA sTemp = m_sData;
-
   if (m_bMinOrMax)
     m_sData.SubSmall();
   else
     m_sData.AddSmall();
 
-  if (FXSYS_memcmp(&m_sData, &sTemp, sizeof(PWL_SCROLL_PRIVATEDATA)) != 0) {
+  if (sTemp != m_sData) {
     MovePosButton(TRUE);
     NotifyScrollWindow();
   }

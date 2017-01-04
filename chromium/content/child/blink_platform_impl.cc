@@ -35,8 +35,6 @@
 #include "blink/public/resources/grit/blink_resources.h"
 #include "build/build_config.h"
 #include "components/mime_util/mime_util.h"
-#include "components/scheduler/child/web_task_runner_impl.h"
-#include "components/scheduler/child/webthread_impl_for_worker_scheduler.h"
 #include "content/app/resources/grit/content_resources.h"
 #include "content/app/strings/grit/content_strings.h"
 #include "content/child/background_sync/background_sync_provider.h"
@@ -44,14 +42,11 @@
 #include "content/child/content_child_helpers.h"
 #include "content/child/notifications/notification_dispatcher.h"
 #include "content/child/notifications/notification_manager.h"
-#include "content/child/permissions/permission_dispatcher.h"
-#include "content/child/permissions/permission_dispatcher_thread_proxy.h"
 #include "content/child/push_messaging/push_dispatcher.h"
 #include "content/child/push_messaging/push_provider.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/web_url_loader_impl.h"
 #include "content/child/web_url_request_util.h"
-#include "content/child/websocket_bridge.h"
 #include "content/child/worker_thread_registry.h"
 #include "content/public/common/content_client.h"
 #include "net/base/data_url.h"
@@ -61,6 +56,7 @@
 #include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/scheduler/child/webthread_impl_for_worker_scheduler.h"
 #include "ui/base/layout.h"
 #include "ui/events/gestures/blink/web_gesture_curve_impl.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
@@ -73,7 +69,7 @@ using blink::WebThemeEngine;
 using blink::WebURL;
 using blink::WebURLError;
 using blink::WebURLLoader;
-using scheduler::WebThreadImplForWorkerScheduler;
+using blink::scheduler::WebThreadImplForWorkerScheduler;
 
 namespace content {
 
@@ -98,8 +94,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_CALENDAR_WEEK_DESCRIPTION;
     case WebLocalizedString::AXCheckedCheckBoxActionVerb:
       return IDS_AX_CHECKED_CHECK_BOX_ACTION_VERB;
-    case WebLocalizedString::AXDateTimeFieldEmptyValueText:
-      return IDS_AX_DATE_TIME_FIELD_EMPTY_VALUE_TEXT;
     case WebLocalizedString::AXDayOfMonthFieldText:
       return IDS_AX_DAY_OF_MONTH_FIELD_TEXT;
     case WebLocalizedString::AXDefaultActionVerb:
@@ -148,10 +142,14 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON;
     case WebLocalizedString::AXMediaHideClosedCaptionsButton:
       return IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_BUTTON;
-    case WebLocalizedString::AxMediaCastOffButton:
+    case WebLocalizedString::AXMediaCastOffButton:
       return IDS_AX_MEDIA_CAST_OFF_BUTTON;
-    case WebLocalizedString::AxMediaCastOnButton:
+    case WebLocalizedString::AXMediaCastOnButton:
       return IDS_AX_MEDIA_CAST_ON_BUTTON;
+    case WebLocalizedString::AXMediaDownloadButton:
+      return IDS_AX_MEDIA_DOWNLOAD_BUTTON;
+    case WebLocalizedString::AXMediaOverflowButton:
+      return IDS_AX_MEDIA_OVERFLOW_BUTTON;
     case WebLocalizedString::AXMediaAudioElementHelp:
       return IDS_AX_MEDIA_AUDIO_ELEMENT_HELP;
     case WebLocalizedString::AXMediaVideoElementHelp:
@@ -184,10 +182,12 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON_HELP;
     case WebLocalizedString::AXMediaHideClosedCaptionsButtonHelp:
       return IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_BUTTON_HELP;
-    case WebLocalizedString::AxMediaCastOffButtonHelp:
+    case WebLocalizedString::AXMediaCastOffButtonHelp:
       return IDS_AX_MEDIA_CAST_OFF_BUTTON_HELP;
-    case WebLocalizedString::AxMediaCastOnButtonHelp:
+    case WebLocalizedString::AXMediaCastOnButtonHelp:
       return IDS_AX_MEDIA_CAST_ON_BUTTON_HELP;
+    case WebLocalizedString::AXMediaOverflowButtonHelp:
+      return IDS_AX_MEDIA_OVERFLOW_BUTTON_HELP;
     case WebLocalizedString::AXMillisecondFieldText:
       return IDS_AX_MILLISECOND_FIELD_TEXT;
     case WebLocalizedString::AXMinuteFieldText:
@@ -250,6 +250,26 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_OTHER_TIME_LABEL;
     case WebLocalizedString::OtherWeekLabel:
       return IDS_FORM_OTHER_WEEK_LABEL;
+    case WebLocalizedString::OverflowMenuCaptions:
+      return IDS_MEDIA_OVERFLOW_MENU_CLOSED_CAPTIONS;
+    case WebLocalizedString::OverflowMenuCast:
+      return IDS_MEDIA_OVERFLOW_MENU_CAST;
+    case WebLocalizedString::OverflowMenuEnterFullscreen:
+      return IDS_MEDIA_OVERFLOW_MENU_ENTER_FULLSCREEN;
+    case WebLocalizedString::OverflowMenuExitFullscreen:
+      return IDS_MEDIA_OVERFLOW_MENU_EXIT_FULLSCREEN;
+    case WebLocalizedString::OverflowMenuStopCast:
+      return IDS_MEDIA_OVERFLOW_MENU_STOP_CAST;
+    case WebLocalizedString::OverflowMenuMute:
+      return IDS_MEDIA_OVERFLOW_MENU_MUTE;
+    case WebLocalizedString::OverflowMenuUnmute:
+      return IDS_MEDIA_OVERFLOW_MENU_UNMUTE;
+    case WebLocalizedString::OverflowMenuPlay:
+      return IDS_MEDIA_OVERFLOW_MENU_PLAY;
+    case WebLocalizedString::OverflowMenuPause:
+      return IDS_MEDIA_OVERFLOW_MENU_PAUSE;
+    case WebLocalizedString::OverflowMenuDownload:
+      return IDS_MEDIA_OVERFLOW_MENU_DOWNLOAD;
     case WebLocalizedString::PlaceholderForDayOfMonthField:
       return IDS_FORM_PLACEHOLDER_FOR_DAY_OF_MONTH_FIELD;
     case WebLocalizedString::PlaceholderForMonthField:
@@ -348,22 +368,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
   return -1;
 }
 
-class TraceLogObserverAdapter
-    : public base::trace_event::TraceLog::EnabledStateObserver {
- public:
-  TraceLogObserverAdapter(
-      blink::Platform::TraceLogEnabledStateObserver* observer)
-      : observer_(observer) {}
-
-  void OnTraceLogEnabled() override { observer_->onTraceLogEnabled(); }
-
-  void OnTraceLogDisabled() override { observer_->onTraceLogDisabled(); }
-
- private:
-  blink::Platform::TraceLogEnabledStateObserver* observer_;
-  DISALLOW_COPY_AND_ASSIGN(TraceLogObserverAdapter);
-};
-
 // TODO(skyostil): Ensure that we always have an active task runner when
 // constructing the platform.
 BlinkPlatformImpl::BlinkPlatformImpl()
@@ -386,15 +390,13 @@ void BlinkPlatformImpl::InternalInit() {
     notification_dispatcher_ =
         ChildThreadImpl::current()->notification_dispatcher();
     push_dispatcher_ = ChildThreadImpl::current()->push_dispatcher();
-    permission_client_.reset(new PermissionDispatcher(
-        ChildThreadImpl::current()->GetRemoteInterfaces()));
     main_thread_sync_provider_.reset(
         new BackgroundSyncProvider(main_thread_task_runner_.get()));
   }
 }
 
 void BlinkPlatformImpl::WaitUntilWebThreadTLSUpdate(
-    scheduler::WebThreadBase* thread) {
+    blink::scheduler::WebThreadBase* thread) {
   base::WaitableEvent event(base::WaitableEvent::ResetPolicy::AUTOMATIC,
                             base::WaitableEvent::InitialState::NOT_SIGNALED);
   thread->GetTaskRunner()->PostTask(
@@ -412,10 +414,6 @@ void BlinkPlatformImpl::UpdateWebThreadTLS(blink::WebThread* thread,
 }
 
 BlinkPlatformImpl::~BlinkPlatformImpl() {
-}
-
-blink::WebSocketHandle* BlinkPlatformImpl::createWebSocketHandle() {
-  return new WebSocketBridge;
 }
 
 WebString BlinkPlatformImpl::userAgent() {
@@ -458,7 +456,7 @@ blink::WebThread* BlinkPlatformImpl::createThread(const char* name) {
 }
 
 void BlinkPlatformImpl::SetCompositorThread(
-    scheduler::WebThreadBase* compositor_thread) {
+    blink::scheduler::WebThreadBase* compositor_thread) {
   compositor_thread_ = compositor_thread;
   if (compositor_thread_)
     WaitUntilWebThreadTLSUpdate(compositor_thread_);
@@ -471,26 +469,6 @@ blink::WebThread* BlinkPlatformImpl::currentThread() {
 void BlinkPlatformImpl::recordAction(const blink::UserMetricsAction& name) {
     if (ChildThread* child_thread = ChildThread::Get())
         child_thread->RecordComputedAction(name.action());
-}
-
-void BlinkPlatformImpl::addTraceLogEnabledStateObserver(
-    TraceLogEnabledStateObserver* observer) {
-  TraceLogObserverAdapter* adapter = new TraceLogObserverAdapter(observer);
-  bool did_insert =
-      trace_log_observers_.add(observer, base::WrapUnique(adapter)).second;
-  DCHECK(did_insert);
-  base::trace_event::TraceLog::GetInstance()->AddEnabledStateObserver(adapter);
-}
-
-void BlinkPlatformImpl::removeTraceLogEnabledStateObserver(
-    TraceLogEnabledStateObserver* observer) {
-  std::unique_ptr<TraceLogObserverAdapter> adapter =
-      trace_log_observers_.take_and_erase(observer);
-  DCHECK(adapter);
-  DCHECK(base::trace_event::TraceLog::GetInstance()->HasEnabledStateObserver(
-      adapter.get()));
-  base::trace_event::TraceLog::GetInstance()->RemoveEnabledStateObserver(
-      adapter.get());
 }
 
 namespace {
@@ -674,6 +652,12 @@ const DataResource kDataResources[] = {
     {"mediaplayerSubtitlesIconNew",
      IDR_MEDIAPLAYER_SUBTITLES_ICON_NEW,
      ui::SCALE_FACTOR_100P},
+    {"mediaplayerOverflowMenu",
+     IDR_MEDIAPLAYER_OVERFLOW_MENU_ICON,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerDownloadIcon",
+     IDR_MEDIAPLAYER_DOWNLOAD_ICON,
+     ui::SCALE_FACTOR_100P},
     {"searchCancel", IDR_SEARCH_CANCEL, ui::SCALE_FACTOR_100P},
     {"searchCancelPressed", IDR_SEARCH_CANCEL_PRESSED, ui::SCALE_FACTOR_100P},
     {"textAreaResizeCorner", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_100P},
@@ -685,25 +669,26 @@ const DataResource kDataResources[] = {
     {"html.css", IDR_UASTYLE_HTML_CSS, ui::SCALE_FACTOR_NONE},
     {"quirks.css", IDR_UASTYLE_QUIRKS_CSS, ui::SCALE_FACTOR_NONE},
     {"view-source.css", IDR_UASTYLE_VIEW_SOURCE_CSS, ui::SCALE_FACTOR_NONE},
-#if defined(OS_ANDROID)
+    // Not limited to Android since it's used for mobile layouts in inspector.
     {"themeChromiumAndroid.css",
      IDR_UASTYLE_THEME_CHROMIUM_ANDROID_CSS,
      ui::SCALE_FACTOR_NONE},
+    // Not limited to Android since it's used for mobile layouts in inspector.
     {"fullscreenAndroid.css",
       IDR_UASTYLE_FULLSCREEN_ANDROID_CSS,
       ui::SCALE_FACTOR_NONE},
+    // Not limited to Android since it's used for mobile layouts in inspector.
     {"mediaControlsAndroid.css",
      IDR_UASTYLE_MEDIA_CONTROLS_ANDROID_CSS,
      ui::SCALE_FACTOR_NONE},
+    // Not limited to Android since it's used for mobile layouts in inspector.
     {"mediaControlsAndroidNew.css",
      IDR_UASTYLE_MEDIA_CONTROLS_ANDROID_NEW_CSS,
      ui::SCALE_FACTOR_NONE},
-#endif
-#if !defined(OS_WIN)
+    // Not limited to Linux since it's used for mobile layouts in inspector.
     {"themeChromiumLinux.css",
      IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS,
      ui::SCALE_FACTOR_NONE},
-#endif
     {"themeInputMultipleFields.css",
      IDR_UASTYLE_THEME_INPUT_MULTIPLE_FIELDS_CSS,
      ui::SCALE_FACTOR_NONE},
@@ -879,17 +864,6 @@ blink::WebPushProvider* BlinkPlatformImpl::pushProvider() {
 
   return PushProvider::ThreadSpecificInstance(thread_safe_sender_.get(),
                                               push_dispatcher_.get());
-}
-
-blink::WebPermissionClient* BlinkPlatformImpl::permissionClient() {
-  if (!permission_client_.get())
-    return nullptr;
-
-  if (IsMainThread())
-    return permission_client_.get();
-
-  return PermissionDispatcherThreadProxy::GetThreadInstance(
-      main_thread_task_runner_.get(), permission_client_.get());
 }
 
 blink::WebSyncProvider* BlinkPlatformImpl::backgroundSyncProvider() {

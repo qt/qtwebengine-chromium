@@ -6,18 +6,18 @@
 
 #include "public/fpdf_text.h"
 
-#include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
-#include "core/fpdfdoc/include/fpdf_doc.h"
-#include "core/fpdftext/include/cpdf_linkextract.h"
-#include "core/fpdftext/include/cpdf_textpage.h"
-#include "core/fpdftext/include/cpdf_textpagefind.h"
-#include "fpdfsdk/include/fsdk_define.h"
+#include "core/fpdfapi/page/cpdf_page.h"
+#include "core/fpdfdoc/cpdf_viewerpreferences.h"
+#include "core/fpdftext/cpdf_linkextract.h"
+#include "core/fpdftext/cpdf_textpage.h"
+#include "core/fpdftext/cpdf_textpagefind.h"
+#include "fpdfsdk/fsdk_define.h"
 #include "third_party/base/numerics/safe_conversions.h"
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
-#include "fpdfsdk/fpdfxfa/include/fpdfxfa_page.h"
+#include "fpdfsdk/fpdfxfa/cpdfxfa_document.h"
+#include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #endif  // PDF_ENABLE_XFA
 
 #ifdef _WIN32

@@ -37,18 +37,13 @@ bool AbsoluteSendTime::IsSupportedFor(MediaType type) {
   return true;
 }
 
-bool AbsoluteSendTime::Parse(const uint8_t* data, uint32_t* value) {
-  *value = ByteReader<uint32_t, 3>::ReadBigEndian(data);
+bool AbsoluteSendTime::Parse(const uint8_t* data, uint32_t* time_24bits) {
+  *time_24bits = ByteReader<uint32_t, 3>::ReadBigEndian(data);
   return true;
 }
 
 bool AbsoluteSendTime::Write(uint8_t* data, int64_t time_ms) {
-  const uint32_t kAbsSendTimeFraction = 18;
-  uint32_t time_24_bits =
-      static_cast<uint32_t>(((time_ms << kAbsSendTimeFraction) + 500) / 1000) &
-      0x00FFFFFF;
-
-  ByteWriter<uint32_t, 3>::WriteBigEndian(data, time_24_bits);
+  ByteWriter<uint32_t, 3>::WriteBigEndian(data, MsTo24Bits(time_ms));
   return true;
 }
 
@@ -124,14 +119,14 @@ bool TransmissionOffset::IsSupportedFor(MediaType type) {
   return false;
 }
 
-bool TransmissionOffset::Parse(const uint8_t* data, int32_t* value) {
-  *value = ByteReader<int32_t, 3>::ReadBigEndian(data);
+bool TransmissionOffset::Parse(const uint8_t* data, int32_t* rtp_time) {
+  *rtp_time = ByteReader<int32_t, 3>::ReadBigEndian(data);
   return true;
 }
 
-bool TransmissionOffset::Write(uint8_t* data, int64_t value) {
-  RTC_CHECK_LE(value, 0x00ffffff);
-  ByteWriter<int32_t, 3>::WriteBigEndian(data, value);
+bool TransmissionOffset::Write(uint8_t* data, int32_t rtp_time) {
+  RTC_DCHECK_LE(rtp_time, 0x00ffffff);
+  ByteWriter<int32_t, 3>::WriteBigEndian(data, rtp_time);
   return true;
 }
 
@@ -182,7 +177,7 @@ bool VideoOrientation::IsSupportedFor(MediaType type) {
 }
 
 bool VideoOrientation::Parse(const uint8_t* data, VideoRotation* rotation) {
-  *rotation = ConvertCVOByteToVideoRotation(data[0] & 0x03);
+  *rotation = ConvertCVOByteToVideoRotation(data[0]);
   return true;
 }
 
@@ -200,4 +195,52 @@ bool VideoOrientation::Write(uint8_t* data, uint8_t value) {
   data[0] = value;
   return true;
 }
+
+//   0                   1                   2                   3
+//   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//  |  ID   | len=2 |   MIN delay           |   MAX delay           |
+//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+constexpr RTPExtensionType PlayoutDelayLimits::kId;
+constexpr uint8_t PlayoutDelayLimits::kValueSizeBytes;
+const char* PlayoutDelayLimits::kName =
+    "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay";
+bool PlayoutDelayLimits::IsSupportedFor(MediaType type) {
+  switch (type) {
+    case MediaType::ANY:
+    case MediaType::VIDEO:
+      return true;
+    case MediaType::AUDIO:
+    case MediaType::DATA:
+      return false;
+  }
+  RTC_NOTREACHED();
+  return false;
+}
+
+bool PlayoutDelayLimits::Parse(const uint8_t* data,
+                               PlayoutDelay* playout_delay) {
+  RTC_DCHECK(playout_delay);
+  uint32_t raw = ByteReader<uint32_t, 3>::ReadBigEndian(data);
+  uint16_t min_raw = (raw >> 12);
+  uint16_t max_raw = (raw & 0xfff);
+  if (min_raw > max_raw)
+    return false;
+  playout_delay->min_ms = min_raw * kGranularityMs;
+  playout_delay->max_ms = max_raw * kGranularityMs;
+  return true;
+}
+
+bool PlayoutDelayLimits::Write(uint8_t* data,
+                               const PlayoutDelay& playout_delay) {
+  RTC_DCHECK_LE(0, playout_delay.min_ms);
+  RTC_DCHECK_LE(playout_delay.min_ms, playout_delay.max_ms);
+  RTC_DCHECK_LE(playout_delay.max_ms, kMaxMs);
+  // Convert MS to value to be sent on extension header.
+  uint32_t min_delay = playout_delay.min_ms / kGranularityMs;
+  uint32_t max_delay = playout_delay.max_ms / kGranularityMs;
+  ByteWriter<uint32_t, 3>::WriteBigEndian(data, (min_delay << 12) | max_delay);
+  return true;
+}
+
 }  // namespace webrtc

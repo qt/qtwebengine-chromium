@@ -8,6 +8,7 @@
 #include <deque>
 
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/common/content_export.h"
 #include "content/common/input/input_event_ack_state.h"
@@ -17,9 +18,8 @@ namespace content {
 
 // The duration in which a ScrollEnd will be sent after the last
 // ScrollUpdate was sent for wheel based gesture scrolls.
-// Set the default wheel transaction to 0ms until
-// crbug.com/526463 is fully implemented.
-const int64_t kDefaultWheelScrollTransactionMs = 0;  // 100;
+// This value is used only if |enable_scroll_latching_| is true.
+const int64_t kDefaultWheelScrollLatchingTransactionMs = 100;
 
 class QueuedWebMouseWheelEvent;
 
@@ -47,7 +47,7 @@ class CONTENT_EXPORT MouseWheelEventQueue {
   // |scroll_transaction_ms| is the duration in which the
   // ScrollEnd should be sent after a ScrollUpdate.
   MouseWheelEventQueue(MouseWheelEventQueueClient* client,
-                       int64_t scroll_transaction_ms);
+                       bool enable_scroll_latching);
 
   ~MouseWheelEventQueue();
 
@@ -96,6 +96,9 @@ class CONTENT_EXPORT MouseWheelEventQueue {
   // True if a non-synthetic GSE needs to be sent because a non-synthetic
   // GSB has been sent in the past.
   bool needs_scroll_end_;
+
+  // True if the touchpad and wheel scroll latching is enabled.
+  bool enable_scroll_latching_;
 
   int64_t scroll_transaction_ms_;
   blink::WebGestureDevice scrolling_device_;

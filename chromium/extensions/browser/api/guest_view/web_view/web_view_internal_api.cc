@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/guid.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -53,6 +54,8 @@ const char kViewInstanceIdError[] = "view_instance_id is missing.";
 const char kDuplicatedContentScriptNamesError[] =
     "The given content script name already exists.";
 
+const char kGeneratedScriptFilePrefix[] = "generated_script_file:";
+
 uint32_t MaskForKey(const char* key) {
   if (strcmp(key, kAppCacheKey) == 0)
     return webview::WEB_VIEW_REMOVE_DATA_MASK_APPCACHE;
@@ -86,43 +89,51 @@ HostID GenerateHostIDFromEmbedder(const extensions::Extension* extension,
 
 // Creates content script files when parsing InjectionItems of "js" or "css"
 // proterties, and stores them in the |result|.
-void AddScriptFiles(const GURL& owner_base_url,
-                    const extensions::Extension* extension,
-                    const InjectionItems& items,
-                    UserScript::FileList* result) {
+void ParseScriptFiles(const GURL& owner_base_url,
+                      const extensions::Extension* extension,
+                      const InjectionItems& items,
+                      UserScript::FileList* list) {
+  DCHECK(list->empty());
+  list->reserve((items.files ? items.files->size() : 0) + (items.code ? 1 : 0));
   // files:
   if (items.files) {
     for (const std::string& relative : *items.files) {
       GURL url = owner_base_url.Resolve(relative);
       if (extension) {
         ExtensionResource resource = extension->GetResource(relative);
-        result->push_back(UserScript::File(resource.extension_root(),
-                                           resource.relative_path(), url));
+
+        list->push_back(base::MakeUnique<extensions::UserScript::File>(
+            resource.extension_root(), resource.relative_path(), url));
       } else {
-        result->push_back(extensions::UserScript::File(base::FilePath(),
-                                                       base::FilePath(), url));
+        list->push_back(base::MakeUnique<extensions::UserScript::File>(
+            base::FilePath(), base::FilePath(), url));
       }
     }
   }
   // code:
   if (items.code) {
-    extensions::UserScript::File file((base::FilePath()), (base::FilePath()),
-                                      GURL());
-    file.set_content(*items.code);
-    result->push_back(file);
+    GURL url = owner_base_url.Resolve(base::StringPrintf(
+        "%s%s", kGeneratedScriptFilePrefix, base::GenerateGUID().c_str()));
+    std::unique_ptr<extensions::UserScript::File> file(
+        new extensions::UserScript::File(base::FilePath(), base::FilePath(),
+                                         url));
+    file->set_content(*items.code);
+    list->push_back(std::move(file));
   }
 }
 
 // Parses the values stored in ContentScriptDetails, and constructs a
-// UserScript.
-bool ParseContentScript(const ContentScriptDetails& script_value,
-                        const extensions::Extension* extension,
-                        const GURL& owner_base_url,
-                        UserScript* script,
-                        std::string* error) {
+// user script.
+std::unique_ptr<extensions::UserScript> ParseContentScript(
+    const ContentScriptDetails& script_value,
+    const extensions::Extension* extension,
+    const GURL& owner_base_url,
+    std::string* error) {
   // matches (required):
   if (script_value.matches.empty())
-    return false;
+    return std::unique_ptr<extensions::UserScript>();
+
+  std::unique_ptr<extensions::UserScript> script(new extensions::UserScript());
 
   // The default for WebUI is not having special access, but we can change that
   // if needed.
@@ -135,7 +146,7 @@ bool ParseContentScript(const ContentScriptDetails& script_value,
     URLPattern pattern(UserScript::ValidUserScriptSchemes(allowed_everywhere));
     if (pattern.Parse(match) != URLPattern::PARSE_SUCCESS) {
       *error = errors::kInvalidMatches;
-      return false;
+      return std::unique_ptr<extensions::UserScript>();
     }
     script->add_url_pattern(pattern);
   }
@@ -150,7 +161,7 @@ bool ParseContentScript(const ContentScriptDetails& script_value,
 
       if (pattern.Parse(exclude_match) != URLPattern::PARSE_SUCCESS) {
         *error = errors::kInvalidExcludeMatches;
-        return false;
+        return std::unique_ptr<extensions::UserScript>();
       }
       script->add_exclude_url_pattern(pattern);
     }
@@ -180,14 +191,14 @@ bool ParseContentScript(const ContentScriptDetails& script_value,
 
   // css:
   if (script_value.css) {
-    AddScriptFiles(owner_base_url, extension, *script_value.css,
-                   &script->css_scripts());
+    ParseScriptFiles(owner_base_url, extension, *script_value.css,
+                     &script->css_scripts());
   }
 
   // js:
   if (script_value.js) {
-    AddScriptFiles(owner_base_url, extension, *script_value.js,
-                   &script->js_scripts());
+    ParseScriptFiles(owner_base_url, extension, *script_value.js,
+                     &script->js_scripts());
   }
 
   // all_frames:
@@ -206,42 +217,42 @@ bool ParseContentScript(const ContentScriptDetails& script_value,
       script->add_exclude_glob(glob);
   }
 
-  return true;
+  return script;
 }
 
-bool ParseContentScripts(
+std::unique_ptr<extensions::UserScriptList> ParseContentScripts(
     const std::vector<ContentScriptDetails>& content_script_list,
     const extensions::Extension* extension,
     const HostID& host_id,
     bool incognito_enabled,
     const GURL& owner_base_url,
-    std::set<UserScript>* result,
     std::string* error) {
   if (content_script_list.empty())
-    return false;
+    return std::unique_ptr<extensions::UserScriptList>();
 
+  std::unique_ptr<extensions::UserScriptList> result(
+      new extensions::UserScriptList());
   std::set<std::string> names;
   for (const ContentScriptDetails& script_value : content_script_list) {
     const std::string& name = script_value.name;
     if (!names.insert(name).second) {
       // The name was already in the list.
       *error = kDuplicatedContentScriptNamesError;
-      return false;
+      return std::unique_ptr<extensions::UserScriptList>();
     }
 
-    UserScript script;
-    if (!ParseContentScript(script_value, extension, owner_base_url, &script,
-                            error))
-      return false;
-
-    script.set_id(UserScript::GenerateUserScriptID());
-    script.set_name(name);
-    script.set_incognito_enabled(incognito_enabled);
-    script.set_host_id(host_id);
-    script.set_consumer_instance_type(UserScript::WEBVIEW);
-    result->insert(script);
+    std::unique_ptr<extensions::UserScript> script =
+        ParseContentScript(script_value, extension, owner_base_url, error);
+    if (!script)
+      return std::unique_ptr<extensions::UserScriptList>();
+    script->set_id(UserScript::GenerateUserScriptID());
+    script->set_name(name);
+    script->set_incognito_enabled(incognito_enabled);
+    script->set_host_id(host_id);
+    script->set_consumer_instance_type(extensions::UserScript::WEBVIEW);
+    result->push_back(std::move(script));
   }
-  return true;
+  return result;
 }
 
 }  // namespace
@@ -440,7 +451,7 @@ bool WebViewInternalExecuteCodeFunction::LoadFileForWebUI(
 
   url_fetcher_.reset(new WebUIURLFetcher(
       this->browser_context(), render_frame_host()->GetProcess()->GetID(),
-      render_view_host_do_not_use()->GetRoutingID(), file_url, callback));
+      render_frame_host()->GetRoutingID(), file_url, callback));
   url_fetcher_->Start();
   return true;
 }
@@ -500,23 +511,24 @@ WebViewInternalAddContentScriptsFunction::Run() {
 
   GURL owner_base_url(
       render_frame_host()->GetSiteInstance()->GetSiteURL().GetWithEmptyPath());
-  std::set<UserScript> result;
-
   content::WebContents* sender_web_contents = GetSenderWebContents();
   HostID host_id = GenerateHostIDFromEmbedder(extension(), sender_web_contents);
   bool incognito_enabled = browser_context()->IsOffTheRecord();
 
-  if (!ParseContentScripts(params->content_script_list, extension(), host_id,
-                           incognito_enabled, owner_base_url, &result, &error_))
-    return RespondNow(Error(error_));
+  std::string error;
+  std::unique_ptr<UserScriptList> result =
+      ParseContentScripts(params->content_script_list, extension(), host_id,
+                          incognito_enabled, owner_base_url, &error);
+  if (!result)
+    return RespondNow(Error(error));
 
   WebViewContentScriptManager* manager =
       WebViewContentScriptManager::Get(browser_context());
   DCHECK(manager);
 
   manager->AddContentScripts(
-      sender_web_contents->GetRenderProcessHost()->GetID(),
-      render_view_host_do_not_use(), params->instance_id, host_id, result);
+      sender_web_contents->GetRenderProcessHost()->GetID(), render_frame_host(),
+      params->instance_id, host_id, std::move(result));
 
   return RespondNow(NoArguments());
 }
@@ -771,11 +783,12 @@ WebViewInternalLoadDataWithBaseUrlFunction::Run() {
   std::string virtual_url =
       params->virtual_url ? *params->virtual_url : params->data_url;
 
+  std::string error;
   bool successful = guest_->LoadDataWithBaseURL(
-      params->data_url, params->base_url, virtual_url, &error_);
+      params->data_url, params->base_url, virtual_url, &error);
   if (successful)
     return RespondNow(NoArguments());
-  return RespondNow(Error(error_));
+  return RespondNow(Error(error));
 }
 
 WebViewInternalGoFunction::WebViewInternalGoFunction() {

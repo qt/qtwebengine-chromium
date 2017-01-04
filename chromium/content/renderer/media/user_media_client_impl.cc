@@ -19,6 +19,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/renderer/media/local_media_stream_audio_source.h"
 #include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_constraints_util.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
@@ -186,7 +187,7 @@ UserMediaClientImpl::~UserMediaClientImpl() {
   // Force-close all outstanding user media requests and local sources here,
   // before the outstanding WeakPtrs are invalidated, to ensure a clean
   // shutdown.
-  FrameWillClose();
+  WillCommitProvisionalLoad();
 }
 
 void UserMediaClientImpl::requestUserMedia(
@@ -329,16 +330,6 @@ void UserMediaClientImpl::requestMediaDevices(
       security_origin);
 }
 
-void UserMediaClientImpl::cancelMediaDevicesRequest(
-    const blink::WebMediaDevicesRequest& media_devices_request) {
-  DCHECK(CalledOnValidThread());
-  MediaDevicesRequestInfo* request =
-      FindMediaDevicesRequestInfo(media_devices_request);
-  if (!request)
-    return;
-  CancelAndDeleteMediaDevicesRequest(request);
-}
-
 void UserMediaClientImpl::requestSources(
     const blink::WebMediaStreamTrackSourcesRequest& sources_request) {
   // We don't call UpdateWebRTCMethodCount() here to track the API count in UMA
@@ -466,10 +457,6 @@ void UserMediaClientImpl::OnStreamGeneratedForCancelledRequest(
 
 void UserMediaClientImpl::FinalizeEnumerateDevices(
     MediaDevicesRequestInfo* request) {
-  // All devices are ready for copying. We use a hashed audio output device id
-  // as the group id for input and output audio devices. If an input device
-  // doesn't have an associated output device, we use the input device's own id.
-  // We don't support group id for video devices, that's left empty.
   blink::WebVector<blink::WebMediaDeviceInfo>
       devices(request->audio_input_devices.size() +
               request->video_input_devices.size() +
@@ -477,15 +464,11 @@ void UserMediaClientImpl::FinalizeEnumerateDevices(
   for (size_t i = 0; i  < request->audio_input_devices.size(); ++i) {
     const MediaStreamDevice& device = request->audio_input_devices[i].device;
     DCHECK_EQ(device.type, MEDIA_DEVICE_AUDIO_CAPTURE);
-    std::string group_id = base::UintToString(base::Hash(
-        !device.matched_output_device_id.empty() ?
-            device.matched_output_device_id :
-            device.id));
-    devices[i].initialize(
-        blink::WebString::fromUTF8(device.id),
-        blink::WebMediaDeviceInfo::MediaDeviceKindAudioInput,
-        blink::WebString::fromUTF8(device.name),
-        blink::WebString::fromUTF8(group_id));
+
+    devices[i].initialize(blink::WebString::fromUTF8(device.id),
+                          blink::WebMediaDeviceInfo::MediaDeviceKindAudioInput,
+                          blink::WebString::fromUTF8(device.name),
+                          blink::WebString::fromUTF8(device.group_id));
   }
   size_t offset = request->audio_input_devices.size();
   for (size_t i = 0; i  < request->video_input_devices.size(); ++i) {
@@ -505,7 +488,7 @@ void UserMediaClientImpl::FinalizeEnumerateDevices(
         blink::WebString::fromUTF8(device.id),
         blink::WebMediaDeviceInfo::MediaDeviceKindAudioOutput,
         blink::WebString::fromUTF8(device.name),
-        blink::WebString::fromUTF8(base::UintToString(base::Hash(device.id))));
+        blink::WebString::fromUTF8(device.group_id));
   }
 
   EnumerateDevicesSucceded(&request->media_devices_request, devices);
@@ -640,9 +623,18 @@ void UserMediaClientImpl::InitializeSourceObject(
 MediaStreamAudioSource* UserMediaClientImpl::CreateAudioSource(
     const StreamDeviceInfo& device,
     const blink::WebMediaConstraints& constraints) {
-  // TODO(miu): In a soon-upcoming change, I'll be providing an alternative
-  // MediaStreamAudioSource that bypasses audio processing for the non-WebRTC
-  // use cases. http://crbug.com/577881
+  // If the audio device is a loopback device (for screen capture), or if the
+  // constraints/effects parameters indicate no audio processing is needed,
+  // create an efficient, direct-path MediaStreamAudioSource instance.
+  if (IsScreenCaptureMediaType(device.device.type) ||
+      !MediaStreamAudioProcessor::WouldModifyAudio(
+          constraints, device.device.input.effects)) {
+    return new LocalMediaStreamAudioSource(RenderFrameObserver::routing_id(),
+                                           device);
+  }
+
+  // The audio device is not associated with screen capture and also requires
+  // processing.
   ProcessedLocalAudioSource* source = new ProcessedLocalAudioSource(
       RenderFrameObserver::routing_id(), device, dependency_factory_);
   source->SetSourceConstraints(constraints);
@@ -1036,7 +1028,7 @@ void UserMediaClientImpl::CancelAndDeleteMediaDevicesRequest(
   NOTREACHED();
 }
 
-void UserMediaClientImpl::FrameWillClose() {
+void UserMediaClientImpl::WillCommitProvisionalLoad() {
   // Cancel all outstanding UserMediaRequests.
   DeleteAllUserMediaRequests();
 

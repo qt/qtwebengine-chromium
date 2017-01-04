@@ -53,7 +53,7 @@ WebInspector.DOMNode = function(domModel, doc, isInShadowTree, payload)
     this._nodeValue = payload.nodeValue;
     this._pseudoType = payload.pseudoType;
     this._shadowRootType = payload.shadowRootType;
-    this._frameId = payload.frameId || null;
+    this._frameOwnerFrameId = payload.frameId || null;
     this._xmlVersion = payload.xmlVersion;
 
     this._shadowRoots = [];
@@ -141,6 +141,9 @@ WebInspector.DOMNode.ShadowRootTypes = {
     Open: "open",
     Closed: "closed"
 }
+
+/** @typedef {{name: string, value: string, _node: WebInspector.DOMNode}} */
+WebInspector.DOMNode.Attribute;
 
 WebInspector.DOMNode.prototype = {
     /**
@@ -272,7 +275,7 @@ WebInspector.DOMNode.prototype = {
      */
     isInsertionPoint: function()
     {
-        return !this.isXMLNode() && (this._nodeName === "SHADOW" || this._nodeName === "CONTENT");
+        return !this.isXMLNode() && (this._nodeName === "SHADOW" || this._nodeName === "CONTENT" || this._nodeName === "SLOT");
     },
 
     /**
@@ -427,7 +430,7 @@ WebInspector.DOMNode.prototype = {
     },
 
     /**
-     * @return {!Object}
+     * @return {!Array<!WebInspector.DOMNode.Attribute>}
      */
     attributes: function()
     {
@@ -600,10 +603,10 @@ WebInspector.DOMNode.prototype = {
      */
     frameId: function()
     {
-        var node = this;
-        while (!node._frameId && node.parentNode)
+        var node = this.parentNode || this;
+        while (!node._frameOwnerFrameId && node.parentNode)
             node = node.parentNode;
-        return node._frameId;
+        return node._frameOwnerFrameId;
     },
 
     /**
@@ -961,6 +964,20 @@ WebInspector.DOMNode.prototype = {
         this._agent.setInspectedNode(node.id);
     },
 
+    /**
+     *  @return {?WebInspector.DOMNode}
+     */
+    enclosingElementOrSelf: function()
+    {
+        var node = this;
+        if (node && node.nodeType() === Node.TEXT_NODE && node.parentNode)
+            node = node.parentNode;
+
+        if (node && node.nodeType() !== Node.ELEMENT_NODE)
+            node = null;
+        return node;
+    },
+
     __proto__: WebInspector.SDKObject.prototype
 }
 
@@ -1095,25 +1112,25 @@ WebInspector.DOMModel = function(target) {
     this._agent.enable();
 }
 
+/** @enum {symbol} */
 WebInspector.DOMModel.Events = {
-    AttrModified: "AttrModified",
-    AttrRemoved: "AttrRemoved",
-    CharacterDataModified: "CharacterDataModified",
-    DOMMutated: "DOMMutated",
-    NodeInserted: "NodeInserted",
-    NodeInspected: "NodeInspected",
-    NodeHighlightedInOverlay: "NodeHighlightedInOverlay",
-    NodeRemoved: "NodeRemoved",
-    DocumentUpdated: "DocumentUpdated",
-    ChildNodeCountUpdated: "ChildNodeCountUpdated",
-    UndoRedoRequested: "UndoRedoRequested",
-    UndoRedoCompleted: "UndoRedoCompleted",
-    DistributedNodesChanged: "DistributedNodesChanged",
-    ModelSuspended: "ModelSuspended",
-    InspectModeWillBeToggled: "InspectModeWillBeToggled",
-    MarkersChanged: "MarkersChanged"
+    AttrModified: Symbol("AttrModified"),
+    AttrRemoved: Symbol("AttrRemoved"),
+    CharacterDataModified: Symbol("CharacterDataModified"),
+    DOMMutated: Symbol("DOMMutated"),
+    NodeInserted: Symbol("NodeInserted"),
+    NodeInspected: Symbol("NodeInspected"),
+    NodeHighlightedInOverlay: Symbol("NodeHighlightedInOverlay"),
+    NodeRemoved: Symbol("NodeRemoved"),
+    DocumentUpdated: Symbol("DocumentUpdated"),
+    ChildNodeCountUpdated: Symbol("ChildNodeCountUpdated"),
+    UndoRedoRequested: Symbol("UndoRedoRequested"),
+    UndoRedoCompleted: Symbol("UndoRedoCompleted"),
+    DistributedNodesChanged: Symbol("DistributedNodesChanged"),
+    ModelSuspended: Symbol("ModelSuspended"),
+    InspectModeWillBeToggled: Symbol("InspectModeWillBeToggled"),
+    MarkersChanged: Symbol("MarkersChanged")
 }
-
 
 /**
  * @param {!WebInspector.RemoteObject} object
@@ -1267,7 +1284,7 @@ WebInspector.DOMModel.prototype = {
      */
     pushNodesByBackendIdsToFrontend: function(backendNodeIds, callback)
     {
-        var backendNodeIdsArray = Array.from(backendNodeIds.values());
+        var backendNodeIdsArray = backendNodeIds.valuesArray();
         /**
          * @param {?Array<!DOMAgent.NodeId>} nodeIds
          * @this {!WebInspector.DOMModel}
@@ -1716,6 +1733,36 @@ WebInspector.DOMModel.prototype = {
         if (this._searchId) {
             this._agent.discardSearchResults(this._searchId);
             delete this._searchId;
+        }
+    },
+
+    /**
+     * @param {!DOMAgent.NodeId} nodeId
+     * @return {!Promise<!Array<string>>}
+     */
+    classNamesPromise: function(nodeId)
+    {
+        return new Promise(promiseBody.bind(this));
+
+        /**
+         * @param {function(!Array<string>)} fulfill
+         * @this {WebInspector.DOMModel}
+         */
+        function promiseBody(fulfill)
+        {
+            this._agent.collectClassNamesFromSubtree(nodeId, classNamesCallback);
+
+            /**
+             * @param {?string} error
+             * @param {?Array<string>} classNames
+             */
+            function classNamesCallback(error, classNames)
+            {
+                if (!error && classNames)
+                    fulfill(classNames);
+                else
+                    fulfill([]);
+            }
         }
     },
 

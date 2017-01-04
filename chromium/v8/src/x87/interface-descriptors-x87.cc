@@ -20,6 +20,11 @@ void CallInterfaceDescriptor::DefaultInitializePlatformSpecific(
                                    default_stub_registers);
 }
 
+const Register FastNewFunctionContextDescriptor::FunctionRegister() {
+  return edi;
+}
+const Register FastNewFunctionContextDescriptor::SlotsRegister() { return eax; }
+
 const Register LoadDescriptor::ReceiverRegister() { return edx; }
 const Register LoadDescriptor::NameRegister() { return ecx; }
 const Register LoadDescriptor::SlotRegister() { return eax; }
@@ -30,27 +35,15 @@ const Register LoadWithVectorDescriptor::VectorRegister() { return ebx; }
 const Register StoreDescriptor::ReceiverRegister() { return edx; }
 const Register StoreDescriptor::NameRegister() { return ecx; }
 const Register StoreDescriptor::ValueRegister() { return eax; }
+const Register StoreDescriptor::SlotRegister() { return edi; }
 
+const Register StoreWithVectorDescriptor::VectorRegister() { return ebx; }
 
-const Register VectorStoreICTrampolineDescriptor::SlotRegister() { return edi; }
+const Register StoreTransitionDescriptor::SlotRegister() { return no_reg; }
 
+const Register StoreTransitionDescriptor::VectorRegister() { return ebx; }
 
-const Register VectorStoreICDescriptor::VectorRegister() { return ebx; }
-
-
-const Register VectorStoreTransitionDescriptor::SlotRegister() {
-  return no_reg;
-}
-
-
-const Register VectorStoreTransitionDescriptor::VectorRegister() { return ebx; }
-
-
-const Register VectorStoreTransitionDescriptor::MapRegister() { return edi; }
-
-
-const Register StoreTransitionDescriptor::MapRegister() { return ebx; }
-
+const Register StoreTransitionDescriptor::MapRegister() { return edi; }
 
 const Register StoreGlobalViaContextDescriptor::SlotRegister() { return ebx; }
 const Register StoreGlobalViaContextDescriptor::ValueRegister() { return eax; }
@@ -77,13 +70,6 @@ const Register GrowArrayElementsDescriptor::KeyRegister() { return ebx; }
 void FastNewClosureDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {ebx};
-  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
-}
-
-
-void FastNewContextDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {edi};
   data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
@@ -307,6 +293,17 @@ void BinaryOpWithAllocationSiteDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
+void BinaryOpWithVectorDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  // register state
+  // edx -- lhs
+  // eax -- rhs
+  // edi -- slot id
+  // ebx -- vector
+  Register registers[] = {edx, eax, edi, ebx};
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
+
 void CountOpDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {eax};
@@ -358,7 +355,7 @@ void ArgumentAdaptorDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
-void ApiCallbackDescriptorBase::InitializePlatformSpecific(
+void ApiCallbackDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {
       edi,  // callee
@@ -393,7 +390,19 @@ void InterpreterPushArgsAndConstructDescriptor::InitializePlatformSpecific(
       eax,  // argument count (not including receiver)
       edx,  // new target
       edi,  // constructor
-      ebx,  // address of first argument
+      ebx,  // allocation site feedback
+      ecx,  // address of first argument
+  };
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
+
+void InterpreterPushArgsAndConstructArrayDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {
+      eax,  // argument count (not including receiver)
+      edx,  // target to the call. It is checked to be Array function.
+      ebx,  // allocation site feedback
+      ecx,  // address of first argument
   };
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }

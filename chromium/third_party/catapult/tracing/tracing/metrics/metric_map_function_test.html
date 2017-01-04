@@ -5,17 +5,17 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
-<link rel="import" href="/perf_insights/mre/mre_result.html">
 <link rel="import" href="/tracing/core/test_utils.html">
 <link rel="import" href="/tracing/extras/importer/trace_event_importer.html">
 <link rel="import" href="/tracing/metrics/metric_map_function.html">
 <link rel="import" href="/tracing/metrics/sample_metric.html">
+<link rel="import" href="/tracing/mre/mre_result.html">
 
 <script>
 'use strict';
 
 tr.b.unittest.testSuite(function() {
-  var test_utils = tr.c.TestUtils;
+  var TestUtils = tr.c.TestUtils;
   var ThreadSlice = tr.model.ThreadSlice;
 
   test('metricMapTest', function() {
@@ -23,19 +23,19 @@ tr.b.unittest.testSuite(function() {
       {name: 'a', args: {}, pid: 52, ts: 524, cat: 'foo', tid: 53, ph: 'B'},
       {name: 'a', args: {}, pid: 52, ts: 560, cat: 'foo', tid: 53, ph: 'E'}
     ];
-    var m = test_utils.newModelWithEvents(JSON.stringify(events), {
+    var m = TestUtils.newModelWithEvents(JSON.stringify(events), {
       shiftWorldToZero: false,
       pruneEmptyContainers: false,
       trackDetailedModelStats: true,
       customizeModelCallback: function(m) {
         var p1 = m.getOrCreateProcess(1);
         var t2 = p1.getOrCreateThread(2);
-        var t2_s1 = t2.sliceGroup.pushSlice(test_utils.newSliceEx({
+        t2.sliceGroup.pushSlice(TestUtils.newSliceEx({
           type: ThreadSlice,
           name: 'some_slice',
           start: 0, end: 10
         }));
-        var t2_s2 = t2.sliceGroup.pushSlice(test_utils.newSliceEx({
+        t2.sliceGroup.pushSlice(TestUtils.newSliceEx({
           type: ThreadSlice,
           name: 'some_slice',
           start: 20, end: 30
@@ -44,18 +44,21 @@ tr.b.unittest.testSuite(function() {
     });
 
     assert.throw(function() {
-      var result = new pi.mre.MreResult();
+      var result = new tr.mre.MreResult();
       tr.metrics.metricMapFunction(result, m, {});
-    }, Error, 'A metric name should be specified.');
+    }, Error, 'Metric names should be specified.');
 
     assert.throw(function() {
-      var result = new pi.mre.MreResult();
-      tr.metrics.metricMapFunction(result, m, {'metric': 'wrongMetric'});
+      var result = new tr.mre.MreResult();
+      tr.metrics.metricMapFunction(result, m, {'metrics': ['wrongMetric']});
     }, Error, '"wrongMetric" is not a registered metric.');
 
-    var result = new pi.mre.MreResult();
-    tr.metrics.metricMapFunction(result, m, {'metric': 'sampleMetric'});
-    assert.property(result.pairs, 'values');
+    var result = new tr.mre.MreResult();
+    tr.metrics.metricMapFunction(result, m, {'metrics': ['sampleMetric']});
+    assert.property(result.pairs, 'histograms');
+    assert.equal(result.pairs.histograms.length, 1);
+    assert.property(result.pairs, 'scalars');
+    assert.equal(result.pairs.scalars.length, 6);
   });
 });
 </script>

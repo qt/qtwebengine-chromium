@@ -462,7 +462,7 @@ Visit.prototype.loadFavicon_ = function(faviconDiv) {
     img.onload = this.onLargeFaviconLoadedAndroid_.bind(this, faviconDiv);
     img.src = 'chrome://large-icon/' + desiredPixelSize + '/' + this.url_;
   } else {
-    faviconDiv.style.backgroundImage = cr.icon.getFaviconImageSet(this.url_);
+    faviconDiv.style.backgroundImage = cr.icon.getFavicon(this.url_);
   }
 };
 
@@ -939,6 +939,7 @@ function HistoryView(model) {
   this.model_ = model;
   this.pageIndex_ = 0;
   this.lastDisplayed_ = [];
+  this.hasRenderedResults_ = false;
 
   this.model_.setView(this);
 
@@ -1121,6 +1122,15 @@ HistoryView.prototype.onModelReady = function(doneLoading) {
     // Hide the search field if it is empty and there are no results.
     var isSearch = this.model_.getSearchText().length > 0;
     $('search-field').hidden = !(hasResults || isSearch);
+  }
+
+  if (!this.hasRenderedResults_) {
+    this.hasRenderedResults_ = true;
+    setTimeout(function() {
+      chrome.send(
+          'metricsHandler:recordTime',
+          ['History.ResultsRenderedTime', window.performance.now()]);
+    });
   }
 };
 

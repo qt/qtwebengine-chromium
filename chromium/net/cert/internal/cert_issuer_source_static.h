@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "base/strings/string_piece.h"
+#include "net/base/net_export.h"
 #include "net/cert/internal/cert_issuer_source.h"
 
 namespace net {
@@ -23,9 +24,8 @@ class NET_EXPORT CertIssuerSourceStatic : public CertIssuerSource {
   void AddCert(scoped_refptr<ParsedCertificate> cert);
 
   // CertIssuerSource implementation:
-  void SyncGetIssuersOf(
-      const ParsedCertificate* cert,
-      std::vector<scoped_refptr<ParsedCertificate>>* issuers) override;
+  void SyncGetIssuersOf(const ParsedCertificate* cert,
+                        ParsedCertificateList* issuers) override;
   void AsyncGetIssuersOf(const ParsedCertificate* cert,
                          const IssuerCallback& issuers_callback,
                          std::unique_ptr<Request>* out_req) override;

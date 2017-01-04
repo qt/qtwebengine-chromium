@@ -6,14 +6,16 @@
 
 #include "fpdfsdk/formfiller/cffl_combobox.h"
 
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cba_fontmap.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
-#include "fpdfsdk/formfiller/cffl_iformfiller.h"
-#include "fpdfsdk/include/fsdk_common.h"
-#include "fpdfsdk/include/fsdk_mgr.h"
+#include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
+#include "fpdfsdk/fsdk_common.h"
 #include "fpdfsdk/pdfwindow/PWL_ComboBox.h"
 
-CFFL_ComboBox::CFFL_ComboBox(CPDFDoc_Environment* pApp, CPDFSDK_Annot* pAnnot)
+CFFL_ComboBox::CFFL_ComboBox(CPDFSDK_FormFillEnvironment* pApp,
+                             CPDFSDK_Annot* pAnnot)
     : CFFL_FormFiller(pApp, pAnnot), m_pFontMap(nullptr) {
   m_State.nIndex = 0;
   m_State.nStart = 0;
@@ -23,6 +25,11 @@ CFFL_ComboBox::CFFL_ComboBox(CPDFDoc_Environment* pApp, CPDFSDK_Annot* pAnnot)
 CFFL_ComboBox::~CFFL_ComboBox() {
   for (const auto& it : m_Maps)
     it.second->InvalidateFocusHandler(this);
+
+  // See comment in cffl_formfiller.h.
+  // The font map should be stored somewhere more appropriate so it will live
+  // until the PWL_Edit is done with it. pdfium:566
+  DestroyWindows();
   delete m_pFontMap;
 }
 
@@ -48,7 +55,7 @@ CPWL_Wnd* CFFL_ComboBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
 
-  CFFL_IFormFiller* pFormFiller = m_pApp->GetIFormFiller();
+  CFFL_InteractiveFormFiller* pFormFiller = m_pEnv->GetInteractiveFormFiller();
   pWnd->SetFillerNotify(pFormFiller);
 
   int32_t nCurSel = m_pWidget->GetSelectedIndex(0);
@@ -59,17 +66,17 @@ CPWL_Wnd* CFFL_ComboBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
     swText = m_pWidget->GetOptionLabel(nCurSel);
 
   for (int32_t i = 0, sz = m_pWidget->CountOptions(); i < sz; i++) {
-    pWnd->AddString(m_pWidget->GetOptionLabel(i).c_str());
+    pWnd->AddString(m_pWidget->GetOptionLabel(i));
   }
 
   pWnd->SetSelect(nCurSel);
-  pWnd->SetText(swText.c_str());
+  pWnd->SetText(swText);
   return pWnd;
 }
 
 FX_BOOL CFFL_ComboBox::OnChar(CPDFSDK_Annot* pAnnot,
-                              FX_UINT nChar,
-                              FX_UINT nFlags) {
+                              uint32_t nChar,
+                              uint32_t nFlags) {
   return CFFL_FormFiller::OnChar(pAnnot, nChar, nFlags);
 }
 
@@ -166,7 +173,7 @@ void CFFL_ComboBox::SetActionData(CPDFSDK_PageView* pPageView,
               static_cast<CPWL_ComboBox*>(GetPDFWindow(pPageView, FALSE))) {
         if (CPWL_Edit* pEdit = pComboBox->GetEdit()) {
           pEdit->SetSel(fa.nSelStart, fa.nSelEnd);
-          pEdit->ReplaceSel(fa.sChange.c_str());
+          pEdit->ReplaceSel(fa.sChange);
         }
       }
       break;
@@ -213,7 +220,7 @@ void CFFL_ComboBox::RestoreState(CPDFSDK_PageView* pPageView) {
       pComboBox->SetSelect(m_State.nIndex);
     } else {
       if (CPWL_Edit* pEdit = pComboBox->GetEdit()) {
-        pEdit->SetText(m_State.sValue.c_str());
+        pEdit->SetText(m_State.sValue);
         pEdit->SetSel(m_State.nStart, m_State.nEnd);
       }
     }
@@ -253,7 +260,7 @@ FX_BOOL CFFL_ComboBox::IsFieldFull(CPDFSDK_PageView* pPageView) {
 #endif  // PDF_ENABLE_XFA
 
 void CFFL_ComboBox::OnSetFocus(CPWL_Wnd* pWnd) {
-  ASSERT(m_pApp);
+  ASSERT(m_pEnv);
 
   if (pWnd->GetClassName() == PWL_CLASSNAME_EDIT) {
     CPWL_Edit* pEdit = (CPWL_Edit*)pWnd;
@@ -265,19 +272,8 @@ void CFFL_ComboBox::OnSetFocus(CPWL_Wnd* pWnd) {
     int nCharacters = wsText.GetLength();
     CFX_ByteString bsUTFText = wsText.UTF16LE_Encode();
     unsigned short* pBuffer = (unsigned short*)bsUTFText.c_str();
-    m_pApp->FFI_OnSetFieldInputFocus(m_pWidget->GetFormField(), pBuffer,
-                                     nCharacters, TRUE);
-
-    pEdit->SetEditNotify(this);
+    m_pEnv->OnSetFieldInputFocus(pBuffer, nCharacters, TRUE);
   }
-}
-
-void CFFL_ComboBox::OnKillFocus(CPWL_Wnd* pWnd) {
-  ASSERT(m_pApp);
-}
-
-void CFFL_ComboBox::OnAddUndo(CPWL_Edit* pEdit) {
-  ASSERT(pEdit);
 }
 
 CFX_WideString CFFL_ComboBox::GetSelectExportText() {

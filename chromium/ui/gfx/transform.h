@@ -68,7 +68,6 @@ class GFX_EXPORT Transform {
             SkMScalar col2row2,
             SkMScalar x_translation,
             SkMScalar y_translation);
-  ~Transform() {}
 
   bool operator==(const Transform& rhs) const { return matrix_ == rhs.matrix_; }
   bool operator!=(const Transform& rhs) const { return matrix_ != rhs.matrix_; }
@@ -97,7 +96,9 @@ class GFX_EXPORT Transform {
 
   // Applies the current transformation on a translation and assigns the result
   // to |this|.
+  void Translate(const Vector2dF& offset);
   void Translate(SkMScalar x, SkMScalar y);
+  void Translate3d(const Vector3dF& offset);
   void Translate3d(SkMScalar x, SkMScalar y, SkMScalar z);
 
   // Applies the current transformation on a skew and assigns the result
@@ -278,8 +279,8 @@ class GFX_EXPORT Transform {
 };
 
 // This is declared here for use in gtest-based unit tests but is defined in
-// the gfx_test_support target. Depend on that to use this in your unit test.
-// This should not be used in production code - call ToString() instead.
+// the //ui/gfx:test_support target. Depend on that to use this in your unit
+// test. This should not be used in production code - call ToString() instead.
 void PrintTo(const Transform& transform, ::std::ostream* os);
 
 }  // namespace gfx

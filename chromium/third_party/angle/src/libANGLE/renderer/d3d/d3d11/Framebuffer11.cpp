@@ -29,7 +29,7 @@ namespace rx
 
 namespace
 {
-gl::Error InvalidateAttachmentSwizzles(const gl::FramebufferAttachment *attachment)
+gl::Error MarkAttachmentsDirty(const gl::FramebufferAttachment *attachment)
 {
     if (attachment && attachment->type() == GL_TEXTURE)
     {
@@ -45,7 +45,7 @@ gl::Error InvalidateAttachmentSwizzles(const gl::FramebufferAttachment *attachme
             TextureStorage11 *texStorage11 = GetAs<TextureStorage11>(texStorage);
             ASSERT(texStorage11);
 
-            texStorage11->invalidateSwizzleCacheLevel(attachment->mipLevel());
+            texStorage11->markLevelDirty(attachment->mipLevel());
         }
     }
 
@@ -89,18 +89,18 @@ Framebuffer11::~Framebuffer11()
 {
 }
 
-gl::Error Framebuffer11::invalidateSwizzles() const
+gl::Error Framebuffer11::markAttachmentsDirty() const
 {
     for (const auto &colorAttachment : mState.getColorAttachments())
     {
         if (colorAttachment.isAttached())
         {
-            ANGLE_TRY(InvalidateAttachmentSwizzles(&colorAttachment));
+            ANGLE_TRY(MarkAttachmentsDirty(&colorAttachment));
         }
     }
 
-    ANGLE_TRY(InvalidateAttachmentSwizzles(mState.getDepthAttachment()));
-    ANGLE_TRY(InvalidateAttachmentSwizzles(mState.getStencilAttachment()));
+    ANGLE_TRY(MarkAttachmentsDirty(mState.getDepthAttachment()));
+    ANGLE_TRY(MarkAttachmentsDirty(mState.getStencilAttachment()));
 
     return gl::NoError();
 }
@@ -128,7 +128,7 @@ gl::Error Framebuffer11::clearImpl(ContextImpl *context, const ClearParameters &
         ANGLE_TRY(clearer->clearFramebuffer(clearParams, mState));
     }
 
-    ANGLE_TRY(invalidateSwizzles());
+    ANGLE_TRY(markAttachmentsDirty());
 
     return gl::NoError();
 }
@@ -262,13 +262,6 @@ gl::Error Framebuffer11::readPixelsImpl(const gl::Rectangle &area,
     gl::Buffer *packBuffer = pack.pixelBuffer.get();
     if (packBuffer != nullptr)
     {
-        if (pack.rowLength != 0 || pack.skipRows != 0 || pack.skipPixels != 0)
-        {
-            UNIMPLEMENTED();
-            return gl::Error(GL_INVALID_OPERATION,
-                             "Unimplemented pixel store parameters in readPixelsImpl");
-        }
-
         Buffer11 *packBufferStorage = GetImplAs<Buffer11>(packBuffer);
         PackPixelsParams packParams(area, format, type, static_cast<GLuint>(outputPitch), pack,
                                     reinterpret_cast<ptrdiff_t>(pixels));
@@ -358,14 +351,14 @@ gl::Error Framebuffer11::blitImpl(const gl::Rectangle &sourceArea,
                                                   blitDepth, blitStencil));
     }
 
-    ANGLE_TRY(invalidateSwizzles());
+    ANGLE_TRY(markAttachmentsDirty());
     return gl::NoError();
 }
 
 GLenum Framebuffer11::getRenderTargetImplementationFormat(RenderTargetD3D *renderTarget) const
 {
     RenderTarget11 *renderTarget11 = GetAs<RenderTarget11>(renderTarget);
-    return d3d11::GetANGLEFormatSet(renderTarget11->getANGLEFormat()).glInternalFormat;
+    return renderTarget11->getFormatSet().format.fboImplementationInternalFormat;
 }
 
 void Framebuffer11::updateColorRenderTarget(size_t colorIndex)

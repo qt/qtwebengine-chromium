@@ -87,12 +87,9 @@ static int GetAudioBuffer(struct AVCodecContext* s, AVFrame* frame, int flags) {
   // Determine how big the buffer should be and allocate it. FFmpeg may adjust
   // how big each channel data is in order to meet the alignment policy, so
   // we need to take this into consideration.
-  int buffer_size_in_bytes =
-      av_samples_get_buffer_size(&frame->linesize[0],
-                                 channels,
-                                 frame->nb_samples,
-                                 format,
-                                 AudioBuffer::kChannelAlignment);
+  int buffer_size_in_bytes = av_samples_get_buffer_size(
+      &frame->linesize[0], channels, frame->nb_samples, format,
+      0 /* align, use ffmpeg default */);
   // Check for errors from av_samples_get_buffer_size().
   if (buffer_size_in_bytes < 0)
     return buffer_size_in_bytes;
@@ -225,7 +222,7 @@ void FFmpegAudioDecoder::DecodeBuffer(
 
   // Make sure we are notified if http://crbug.com/49709 returns.  Issue also
   // occurs with some damaged files.
-  if (!buffer->end_of_stream() && buffer->timestamp() == kNoTimestamp()) {
+  if (!buffer->end_of_stream() && buffer->timestamp() == kNoTimestamp) {
     DVLOG(1) << "Received a buffer without timestamps!";
     decode_cb.Run(DecodeStatus::DECODE_ERROR);
     return;

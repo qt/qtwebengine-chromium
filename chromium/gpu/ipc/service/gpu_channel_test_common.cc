@@ -33,9 +33,6 @@ void TestGpuChannelManagerDelegate::DidLoseContext(
     error::ContextLostReason reason,
     const GURL& active_url) {}
 
-void TestGpuChannelManagerDelegate::GpuMemoryUmaStats(
-    const GPUMemoryUmaStats& params) {}
-
 void TestGpuChannelManagerDelegate::StoreShaderToDisk(
     int32_t client_id,
     const std::string& key,
@@ -75,12 +72,12 @@ std::unique_ptr<GpuChannel> TestGpuChannelManager::CreateGpuChannel(
     bool preempts,
     bool allow_view_command_buffers,
     bool allow_real_time_streams) {
-  return base::WrapUnique(new TestGpuChannel(
+  return base::MakeUnique<TestGpuChannel>(
       this, sync_point_manager(), share_group(), mailbox_manager(),
       preempts ? preemption_flag() : nullptr,
       preempts ? nullptr : preemption_flag(), task_runner_.get(),
       io_task_runner_.get(), client_id, client_tracing_id,
-      allow_view_command_buffers, allow_real_time_streams));
+      allow_view_command_buffers, allow_real_time_streams);
 }
 
 TestGpuChannel::TestGpuChannel(GpuChannelManager* gpu_channel_manager,
@@ -120,6 +117,7 @@ base::ProcessId TestGpuChannel::GetClientPID() const {
 }
 
 IPC::ChannelHandle TestGpuChannel::Init(base::WaitableEvent* shutdown_event) {
+  channel_id_ = "ChannelMojo-gpu";
   filter_->OnFilterAdded(&sink_);
   return IPC::ChannelHandle(channel_id());
 }

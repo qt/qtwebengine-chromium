@@ -47,7 +47,7 @@ void DetachableResourceHandler::Detach() {
     net::URLRequestStatus status(net::URLRequestStatus::CANCELED,
                                  net::ERR_ABORTED);
     bool defer_ignored = false;
-    next_handler_->OnResponseCompleted(status, std::string(), &defer_ignored);
+    next_handler_->OnResponseCompleted(status, &defer_ignored);
     DCHECK(!defer_ignored);
     // If |next_handler_| were to defer its shutdown in OnResponseCompleted,
     // this would destroy it anyway. Fortunately, AsyncResourceHandler never
@@ -128,19 +128,6 @@ bool DetachableResourceHandler::OnWillStart(const GURL& url, bool* defer) {
   return ret;
 }
 
-bool DetachableResourceHandler::OnBeforeNetworkStart(const GURL& url,
-                                                     bool* defer) {
-  DCHECK(!is_deferred_);
-
-  if (!next_handler_)
-    return true;
-
-  bool ret =
-      next_handler_->OnBeforeNetworkStart(url, &is_deferred_);
-  *defer = is_deferred_;
-  return ret;
-}
-
 bool DetachableResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                            int* buf_size,
                                            int min_size) {
@@ -170,7 +157,6 @@ bool DetachableResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
 
 void DetachableResourceHandler::OnResponseCompleted(
     const net::URLRequestStatus& status,
-    const std::string& security_info,
     bool* defer) {
   // No DCHECK(!is_deferred_) as the request may have been cancelled while
   // deferred.
@@ -180,7 +166,7 @@ void DetachableResourceHandler::OnResponseCompleted(
 
   is_finished_ = true;
 
-  next_handler_->OnResponseCompleted(status, security_info, &is_deferred_);
+  next_handler_->OnResponseCompleted(status, &is_deferred_);
   *defer = is_deferred_;
 }
 

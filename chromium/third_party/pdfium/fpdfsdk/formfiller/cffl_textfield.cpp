@@ -6,19 +6,24 @@
 
 #include "fpdfsdk/formfiller/cffl_textfield.h"
 
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cba_fontmap.h"
-#include "fpdfsdk/include/fsdk_common.h"
-#include "fpdfsdk/include/fsdk_mgr.h"
+#include "fpdfsdk/fsdk_common.h"
+#include "third_party/base/ptr_util.h"
 
-CFFL_TextField::CFFL_TextField(CPDFDoc_Environment* pApp, CPDFSDK_Annot* pAnnot)
-    : CFFL_FormFiller(pApp, pAnnot), m_pFontMap(nullptr) {
-  m_State.nStart = m_State.nEnd = 0;
-}
+CFFL_TextField::CFFL_TextField(CPDFSDK_FormFillEnvironment* pApp,
+                               CPDFSDK_Annot* pAnnot)
+    : CFFL_FormFiller(pApp, pAnnot) {}
 
 CFFL_TextField::~CFFL_TextField() {
   for (const auto& it : m_Maps)
     it.second->InvalidateFocusHandler(this);
-  delete m_pFontMap;
+
+  // See comment in cffl_formfiller.h.
+  // The font map should be stored somewhere more appropriate so it will live
+  // until the PWL_Edit is done with it. pdfium:566
+  DestroyWindows();
 }
 
 PWL_CREATEPARAM CFFL_TextField::GetCreateParam() {
@@ -67,9 +72,11 @@ PWL_CREATEPARAM CFFL_TextField::GetCreateParam() {
       break;
   }
 
-  if (!m_pFontMap)
-    m_pFontMap = new CBA_FontMap(m_pWidget, m_pApp->GetSysHandler());
-  cp.pFontMap = m_pFontMap;
+  if (!m_pFontMap) {
+    m_pFontMap =
+        pdfium::MakeUnique<CBA_FontMap>(m_pWidget, m_pEnv->GetSysHandler());
+  }
+  cp.pFontMap = m_pFontMap.get();
   cp.pFocusHandler = this;
 
   return cp;
@@ -80,9 +87,7 @@ CPWL_Wnd* CFFL_TextField::NewPDFWindow(const PWL_CREATEPARAM& cp,
   CPWL_Edit* pWnd = new CPWL_Edit();
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
-
-  CFFL_IFormFiller* pIFormFiller = m_pApp->GetIFormFiller();
-  pWnd->SetFillerNotify(pIFormFiller);
+  pWnd->SetFillerNotify(m_pEnv->GetInteractiveFormFiller());
 
   int32_t nMaxLen = m_pWidget->GetMaxLen();
   CFX_WideString swValue = m_pWidget->GetValue();
@@ -96,13 +101,13 @@ CPWL_Wnd* CFFL_TextField::NewPDFWindow(const PWL_CREATEPARAM& cp,
     }
   }
 
-  pWnd->SetText(swValue.c_str());
+  pWnd->SetText(swValue);
   return pWnd;
 }
 
 FX_BOOL CFFL_TextField::OnChar(CPDFSDK_Annot* pAnnot,
-                               FX_UINT nChar,
-                               FX_UINT nFlags) {
+                               uint32_t nChar,
+                               uint32_t nFlags) {
   switch (nChar) {
     case FWL_VKEY_Return:
       if (!(m_pWidget->GetFieldFlags() & FIELDFLAG_MULTILINE)) {
@@ -110,8 +115,8 @@ FX_BOOL CFFL_TextField::OnChar(CPDFSDK_Annot* pAnnot,
         ASSERT(pPageView);
         m_bValid = !m_bValid;
         CFX_FloatRect rcAnnot = pAnnot->GetRect();
-        m_pApp->FFI_Invalidate(pAnnot->GetUnderlyingPage(), rcAnnot.left,
-                               rcAnnot.top, rcAnnot.right, rcAnnot.bottom);
+        m_pEnv->Invalidate(pAnnot->GetUnderlyingPage(), rcAnnot.left,
+                           rcAnnot.top, rcAnnot.right, rcAnnot.bottom);
 
         if (m_bValid) {
           if (CPWL_Wnd* pWnd = GetPDFWindow(pPageView, TRUE))
@@ -193,7 +198,7 @@ void CFFL_TextField::SetActionData(CPDFSDK_PageView* pPageView,
       if (CPWL_Edit* pEdit = (CPWL_Edit*)GetPDFWindow(pPageView, FALSE)) {
         pEdit->SetFocus();
         pEdit->SetSel(fa.nSelStart, fa.nSelEnd);
-        pEdit->ReplaceSel(fa.sChange.c_str());
+        pEdit->ReplaceSel(fa.sChange);
       }
       break;
     default:
@@ -229,7 +234,7 @@ void CFFL_TextField::RestoreState(CPDFSDK_PageView* pPageView) {
   ASSERT(pPageView);
 
   if (CPWL_Edit* pWnd = (CPWL_Edit*)GetPDFWindow(pPageView, TRUE)) {
-    pWnd->SetText(m_State.sValue.c_str());
+    pWnd->SetText(m_State.sValue);
     pWnd->SetSel(m_State.nStart, m_State.nEnd);
   }
 }
@@ -266,7 +271,7 @@ FX_BOOL CFFL_TextField::IsFieldFull(CPDFSDK_PageView* pPageView) {
 #endif  // PDF_ENABLE_XFA
 
 void CFFL_TextField::OnSetFocus(CPWL_Wnd* pWnd) {
-  ASSERT(m_pApp);
+  ASSERT(m_pEnv);
   if (pWnd->GetClassName() == PWL_CLASSNAME_EDIT) {
     CPWL_Edit* pEdit = (CPWL_Edit*)pWnd;
     pEdit->SetCharSet(FXFONT_GB2312_CHARSET);
@@ -277,13 +282,6 @@ void CFFL_TextField::OnSetFocus(CPWL_Wnd* pWnd) {
     int nCharacters = wsText.GetLength();
     CFX_ByteString bsUTFText = wsText.UTF16LE_Encode();
     unsigned short* pBuffer = (unsigned short*)bsUTFText.c_str();
-    m_pApp->FFI_OnSetFieldInputFocus(m_pWidget->GetFormField(), pBuffer,
-                                     nCharacters, TRUE);
-
-    pEdit->SetEditNotify(this);
+    m_pEnv->OnSetFieldInputFocus(pBuffer, nCharacters, TRUE);
   }
 }
-
-void CFFL_TextField::OnKillFocus(CPWL_Wnd* pWnd) {}
-
-void CFFL_TextField::OnAddUndo(CPWL_Edit* pEdit) {}

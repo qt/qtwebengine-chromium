@@ -96,21 +96,12 @@ class PushMessagingMessageFilter : public BrowserMessageFilter {
 
   void OnUnsubscribe(int request_id, int64_t service_worker_registration_id);
 
-  void UnsubscribeHavingGottenIds(
+  void UnsubscribeHavingGottenSenderId(
       int request_id,
       int64_t service_worker_registration_id,
       const GURL& requesting_origin,
-      const std::vector<std::string>& push_subscription_and_sender_ids,
+      const std::vector<std::string>& sender_id,
       ServiceWorkerStatusCode service_worker_status);
-
-  // Called via PostTask from UI thread.
-  void ClearRegistrationData(int request_id,
-                             int64_t service_worker_registration_id,
-                             PushUnregistrationStatus unregistration_status);
-
-  void DidClearRegistrationData(int request_id,
-                                PushUnregistrationStatus unregistration_status,
-                                ServiceWorkerStatusCode service_worker_status);
 
   // Called both from IO thread, and via PostTask from UI thread.
   void DidUnregister(int request_id,
@@ -121,19 +112,15 @@ class PushMessagingMessageFilter : public BrowserMessageFilter {
   void OnGetSubscription(int request_id,
                          int64_t service_worker_registration_id);
 
-  void DidGetSenderInfo(int request_id,
-                        int64_t service_worker_registration_id,
-                        const std::vector<std::string>& sender_info,
-                        ServiceWorkerStatusCode status);
-
-  void DidGetSubscription(int request_id,
-                          int64_t service_worker_registration_id,
-                          bool uses_standard_protocol,
-                          const std::vector<std::string>& push_subscription_id,
-                          ServiceWorkerStatusCode status);
+  void DidGetSubscription(
+      int request_id,
+      int64_t service_worker_registration_id,
+      const std::vector<std::string>& push_subscription_id_and_sender_info,
+      ServiceWorkerStatusCode service_worker_status);
 
   void DidGetSubscriptionKeys(int request_id,
                               const GURL& endpoint,
+                              const std::string& sender_info,
                               bool success,
                               const std::vector<uint8_t>& p256dh,
                               const std::vector<uint8_t>& auth);

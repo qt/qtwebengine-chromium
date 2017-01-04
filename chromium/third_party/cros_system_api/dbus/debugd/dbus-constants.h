@@ -11,6 +11,8 @@ const char kDebugdServicePath[] = "/org/chromium/debugd";
 const char kDebugdServiceName[] = "org.chromium.debugd";
 
 // Methods.
+const char kCupsAddPrinter[] = "CupsAddPrinter";
+const char kCupsRemovePrinter[] = "CupsRemovePrinter";
 const char kDumpDebugLogs[] = "DumpDebugLogs";
 const char kGetDebugLogs[] = "GetDebugLogs";
 const char kGetInterfaces[] = "GetInterfaces";
@@ -40,6 +42,7 @@ const char kConfigureSshServer[] = "ConfigureSshServer";
 const char kSetUserPassword[] = "SetUserPassword";
 const char kEnableChromeDevFeatures[] = "EnableChromeDevFeatures";
 const char kQueryDevFeatures[] = "QueryDevFeatures";
+const char kSetOomScoreAdj[] = "SetOomScoreAdj";
 
 // Values.
 enum DevFeatureFlag {

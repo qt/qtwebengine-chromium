@@ -31,6 +31,7 @@
 #ifndef LocalFileSystem_h
 #define LocalFileSystem_h
 
+#include "core/frame/LocalFrame.h"
 #include "core/workers/WorkerClients.h"
 #include "platform/FileSystemType.h"
 #include "platform/Supplementable.h"
@@ -46,46 +47,57 @@ class CallbackWrapper;
 class FileSystemClient;
 class ExecutionContext;
 class KURL;
-class LocalFrame;
 class WebFileSystem;
 
-class LocalFileSystem final : public GarbageCollectedFinalized<LocalFileSystem>, public Supplement<LocalFrame>, public Supplement<WorkerClients> {
-    USING_GARBAGE_COLLECTED_MIXIN(LocalFileSystem);
-    WTF_MAKE_NONCOPYABLE(LocalFileSystem);
-public:
-    static LocalFileSystem* create(std::unique_ptr<FileSystemClient>);
-    ~LocalFileSystem();
+class LocalFileSystem final : public GarbageCollectedFinalized<LocalFileSystem>,
+                              public Supplement<LocalFrame>,
+                              public Supplement<WorkerClients> {
+  USING_GARBAGE_COLLECTED_MIXIN(LocalFileSystem);
+  WTF_MAKE_NONCOPYABLE(LocalFileSystem);
 
-    void resolveURL(ExecutionContext*, const KURL&, std::unique_ptr<AsyncFileSystemCallbacks>);
-    void requestFileSystem(ExecutionContext*, FileSystemType, long long size, std::unique_ptr<AsyncFileSystemCallbacks>);
-    void deleteFileSystem(ExecutionContext*, FileSystemType, std::unique_ptr<AsyncFileSystemCallbacks>);
+ public:
+  static LocalFileSystem* create(std::unique_ptr<FileSystemClient>);
+  ~LocalFileSystem();
 
-    FileSystemClient* client() const { return m_client.get(); }
+  void resolveURL(ExecutionContext*,
+                  const KURL&,
+                  std::unique_ptr<AsyncFileSystemCallbacks>);
+  void requestFileSystem(ExecutionContext*,
+                         FileSystemType,
+                         long long size,
+                         std::unique_ptr<AsyncFileSystemCallbacks>);
+  void deleteFileSystem(ExecutionContext*,
+                        FileSystemType,
+                        std::unique_ptr<AsyncFileSystemCallbacks>);
 
-    static const char* supplementName();
-    static LocalFileSystem* from(ExecutionContext&);
+  FileSystemClient* client() const { return m_client.get(); }
 
-    DEFINE_INLINE_VIRTUAL_TRACE()
-    {
-        Supplement<LocalFrame>::trace(visitor);
-        Supplement<WorkerClients>::trace(visitor);
-    }
+  static const char* supplementName();
+  static LocalFileSystem* from(ExecutionContext&);
 
-private:
-    explicit LocalFileSystem(std::unique_ptr<FileSystemClient>);
+  DECLARE_VIRTUAL_TRACE();
 
-    WebFileSystem* getFileSystem() const;
-    void fileSystemNotAvailable(ExecutionContext*, CallbackWrapper*);
+ private:
+  explicit LocalFileSystem(std::unique_ptr<FileSystemClient>);
 
-    void requestFileSystemAccessInternal(ExecutionContext*, std::unique_ptr<WTF::Closure> allowed, std::unique_ptr<WTF::Closure> denied);
-    void fileSystemNotAllowedInternal(ExecutionContext*, CallbackWrapper*);
-    void fileSystemAllowedInternal(ExecutionContext*, FileSystemType, CallbackWrapper*);
-    void resolveURLInternal(ExecutionContext*, const KURL&, CallbackWrapper*);
-    void deleteFileSystemInternal(ExecutionContext*, FileSystemType, CallbackWrapper*);
+  WebFileSystem* getFileSystem() const;
+  void fileSystemNotAvailable(ExecutionContext*, CallbackWrapper*);
 
-    std::unique_ptr<FileSystemClient> m_client;
+  void requestFileSystemAccessInternal(ExecutionContext*,
+                                       std::unique_ptr<WTF::Closure> allowed,
+                                       std::unique_ptr<WTF::Closure> denied);
+  void fileSystemNotAllowedInternal(ExecutionContext*, CallbackWrapper*);
+  void fileSystemAllowedInternal(ExecutionContext*,
+                                 FileSystemType,
+                                 CallbackWrapper*);
+  void resolveURLInternal(ExecutionContext*, const KURL&, CallbackWrapper*);
+  void deleteFileSystemInternal(ExecutionContext*,
+                                FileSystemType,
+                                CallbackWrapper*);
+
+  std::unique_ptr<FileSystemClient> m_client;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // LocalFileSystem_h
+#endif  // LocalFileSystem_h

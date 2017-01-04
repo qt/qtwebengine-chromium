@@ -15,6 +15,10 @@
 
 class GURL;
 
+namespace net {
+class HttpResponseHeaders;
+}  // namespace net
+
 namespace content {
 class NavigationData;
 class NavigationThrottle;
@@ -86,6 +90,9 @@ class CONTENT_EXPORT NavigationHandle {
   // browser process. Corresponds to Navigation Timing API.
   virtual const base::TimeTicks& NavigationStart() = 0;
 
+  // Whether or not the navigation was started within a context menu.
+  virtual bool WasStartedFromContextMenu() const = 0;
+
   // Parameters available at network request start time ------------------------
   //
   // The following parameters are only available when the network request is
@@ -148,7 +155,16 @@ class CONTENT_EXPORT NavigationHandle {
   virtual bool HasCommitted() = 0;
 
   // Whether the navigation resulted in an error page.
+  // Note that if an error page reloads, this will return true even though
+  // GetNetErrorCode will be net::OK.
   virtual bool IsErrorPage() = 0;
+
+  // Returns the response headers for the request, or nullptr if there aren't
+  // any response headers or they have not been received yet. The response
+  // headers may change during the navigation (e.g. after encountering a server
+  // redirect). The headers returned should not be modified, as modifications
+  // will not be reflected in the network stack.
+  virtual const net::HttpResponseHeaders* GetResponseHeaders() = 0;
 
   // Resumes a navigation that was previously deferred by a NavigationThrottle.
   virtual void Resume() = 0;
@@ -165,7 +181,9 @@ class CONTENT_EXPORT NavigationHandle {
 
   static std::unique_ptr<NavigationHandle> CreateNavigationHandleForTesting(
       const GURL& url,
-      RenderFrameHost* render_frame_host);
+      RenderFrameHost* render_frame_host,
+      bool committed = false,
+      net::Error error = net::OK);
 
   // Registers a NavigationThrottle for tests. The throttle can
   // modify the request, pause the request or cancel the request. This will
@@ -191,6 +209,15 @@ class CONTENT_EXPORT NavigationHandle {
                                     bool new_method_is_post,
                                     const GURL& new_referrer_url,
                                     bool new_is_external_protocol) = 0;
+
+  // Simulates the reception of the network response.
+  virtual NavigationThrottle::ThrottleCheckResult
+  CallWillProcessResponseForTesting(
+      RenderFrameHost* render_frame_host,
+      const std::string& raw_response_headers) = 0;
+
+  // Simulates the navigation being committed.
+  virtual void CallDidCommitNavigationForTesting(const GURL& url) = 0;
 
   // The NavigationData that the embedder returned from
   // ResourceDispatcherHostDelegate::GetNavigationData during commit. This will

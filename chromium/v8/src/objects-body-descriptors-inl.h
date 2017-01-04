@@ -76,6 +76,7 @@ void BodyDescriptorBase::IterateBodyImpl(Heap* heap, HeapObject* obj,
 
 
 template <typename ObjectVisitor>
+DISABLE_CFI_PERF
 void BodyDescriptorBase::IteratePointers(HeapObject* obj, int start_offset,
                                          int end_offset, ObjectVisitor* v) {
   v->VisitPointers(HeapObject::RawField(obj, start_offset),
@@ -84,6 +85,7 @@ void BodyDescriptorBase::IteratePointers(HeapObject* obj, int start_offset,
 
 
 template <typename StaticVisitor>
+DISABLE_CFI_PERF
 void BodyDescriptorBase::IteratePointers(Heap* heap, HeapObject* obj,
                                          int start_offset, int end_offset) {
   StaticVisitor::VisitPointers(heap, obj,
@@ -355,6 +357,8 @@ class Code::BodyDescriptor final : public BodyDescriptorBase {
   STATIC_ASSERT(kHandlerTableOffset + kPointerSize ==
                 kDeoptimizationDataOffset);
   STATIC_ASSERT(kDeoptimizationDataOffset + kPointerSize ==
+                kSourcePositionTableOffset);
+  STATIC_ASSERT(kSourcePositionTableOffset + kPointerSize ==
                 kTypeFeedbackInfoOffset);
   STATIC_ASSERT(kTypeFeedbackInfoOffset + kPointerSize == kNextCodeLinkOffset);
 
@@ -461,7 +465,6 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3) {
     case JS_PROMISE_TYPE:
     case JS_CONTEXT_EXTENSION_OBJECT_TYPE:
     case JS_GENERATOR_OBJECT_TYPE:
-    case JS_MODULE_TYPE:
     case JS_VALUE_TYPE:
     case JS_DATE_TYPE:
     case JS_ARRAY_TYPE:
@@ -471,6 +474,7 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3) {
     case JS_MAP_TYPE:
     case JS_SET_ITERATOR_TYPE:
     case JS_MAP_ITERATOR_TYPE:
+    case JS_STRING_ITERATOR_TYPE:
     case JS_REGEXP_TYPE:
     case JS_GLOBAL_PROXY_TYPE:
     case JS_GLOBAL_OBJECT_TYPE:

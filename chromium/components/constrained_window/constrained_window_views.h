@@ -42,10 +42,29 @@ void UpdateWidgetModalDialogPosition(
     views::Widget* widget,
     web_modal::ModalDialogHost* dialog_host);
 
+// Returns the top level WebContents of |initiator_web_contents|.
+content::WebContents* GetTopLevelWebContents(
+    content::WebContents* initiator_web_contents);
+
+// Shows the dialog with a new SingleWebContentsDialogManager. The dialog will
+// notify via WillClose() when it is being destroyed.
+void ShowModalDialog(gfx::NativeWindow dialog,
+                     content::WebContents* web_contents);
+
 // Calls CreateWebModalDialogViews, shows the dialog, and returns its widget.
 views::Widget* ShowWebModalDialogViews(
     views::WidgetDelegate* dialog,
     content::WebContents* initiator_web_contents);
+
+#if defined(OS_MACOSX)
+// Like ShowWebModalDialogViews, but used to show a native dialog "sheet" on
+// Mac. Sheets are always modal to their parent window. To make them tab-modal,
+// this provides an invisible tab-modal overlay window managed by
+// WebContentsModalDialogManager, which can host a dialog sheet.
+views::Widget* ShowWebModalDialogWithOverlayViews(
+    views::WidgetDelegate* dialog,
+    content::WebContents* initiator_web_contents);
+#endif
 
 // Create a widget for |dialog| that is modal to |web_contents|.
 // The modal type of |dialog->GetModalType()| must be ui::MODAL_TYPE_CHILD.
@@ -59,6 +78,6 @@ views::Widget* CreateWebModalDialogViews(views::WidgetDelegate* dialog,
 views::Widget* CreateBrowserModalDialogViews(views::DialogDelegate* dialog,
                                              gfx::NativeWindow parent);
 
-}  // namespace constrained window
+}  // namespace constrained_window
 
 #endif  // COMPONENTS_CONSTRAINED_WINDOW_CONSTRAINED_WINDOW_VIEWS_H_

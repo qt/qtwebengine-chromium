@@ -4,10 +4,11 @@ Copyright (c) 2014 The Chromium Authors. All rights reserved.
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
+
 <link rel="import" href="/tracing/base/range.html">
+<link rel="import" href="/tracing/ui/base/chart_base.html">
 <link rel="import" href="/tracing/ui/base/d3.html">
 <link rel="import" href="/tracing/ui/base/dom_helpers.html">
-<link rel="import" href="/tracing/ui/base/chart_base.html">
 <link rel="stylesheet" href="/tracing/ui/base/pie_chart.css">
 
 <script>
@@ -15,7 +16,6 @@ found in the LICENSE file.
 
 tr.exportTo('tr.ui.b', function() {
   var ChartBase = tr.ui.b.ChartBase;
-  var getColorOfKey = tr.ui.b.getColorOfKey;
 
   var MIN_RADIUS = 100;
 
@@ -29,10 +29,9 @@ tr.exportTo('tr.ui.b', function() {
 
     decorate: function() {
       ChartBase.prototype.decorate.call(this);
-      this.classList.add('pie-chart');
+      Polymer.dom(this).classList.add('pie-chart');
 
       this.data_ = undefined;
-      this.seriesKeys_ = undefined;
 
       var chartAreaSel = d3.select(this.chartAreaElement);
       var pieGroupSel = chartAreaSel.append('g')
@@ -54,6 +53,9 @@ tr.exportTo('tr.ui.b', function() {
       return this.data_;
     },
 
+    get titleMarginPx() {
+      return 40;
+    },
 
     /**
      * @param {Array} data Data for the chart, where each element in the array
@@ -64,28 +66,19 @@ tr.exportTo('tr.ui.b', function() {
         // Figure out the label values in the data set. E.g. from
         //   [{label: 'a', ...}, {label: 'b', ...}]
         // we would commpute ['a', 'y']. These become the series keys.
-        var seriesKeys = [];
+        // Don't clear seriesByKey_; the caller might have put state in it using
+        // getDataSeries() before setting data.
         var seenSeriesKeys = {};
         data.forEach(function(d) {
           var k = d.label;
           if (seenSeriesKeys[k])
             throw new Error('Label ' + k + ' has been used already');
-          seriesKeys.push(k);
+          this.getDataSeries(k);
           seenSeriesKeys[k] = true;
         }, this);
-        this.seriesKeys_ = seriesKeys;
-      } else {
-        this.seriesKeys_ = undefined;
       }
       this.data_ = data;
       this.updateContents_();
-    },
-
-    get margin() {
-      var margin = {top: 0, right: 0, bottom: 0, left: 0};
-      if (this.chartTitle_)
-        margin.top += 40;
-      return margin;
     },
 
     getMinSize: function() {
@@ -98,14 +91,14 @@ tr.exportTo('tr.ui.b', function() {
       labelSel.each(function(l) {
         var r = this.getBoundingClientRect();
         maxLabelWidth = Math.max(maxLabelWidth, r.width + 32);
-        if (this.style.textAnchor == 'end') {
+        if (this.style.textAnchor === 'end') {
           leftTextHeightSum += r.height;
         } else {
           rightTextHeightSum += r.height;
         }
       });
 
-      var titleWidth = this.querySelector(
+      var titleWidth = Polymer.dom(this).querySelector(
           '#title').getBoundingClientRect().width;
       var margin = this.margin;
       var marginWidth = margin.left + margin.right;
@@ -117,12 +110,6 @@ tr.exportTo('tr.ui.b', function() {
                                         leftTextHeightSum,
                                         rightTextHeightSum) * 1.25
       };
-    },
-
-
-    getLegendKeys_: function() {
-      // This class creates its own legend, instead of using ChartBase.
-      return undefined;
     },
 
     updateScales_: function(width, height) {
@@ -178,9 +165,10 @@ tr.exportTo('tr.ui.b', function() {
         .attr('class', 'arc')
         .attr('fill', function(d, i) {
             var origData = this.data_[i];
-            var highlighted = (origData.label ===
-                               this.currentHighlightedLegendKey);
-            return getColorOfKey(origData.label, highlighted);
+            var dataSeries = this.getDataSeries(origData.label);
+            if (origData.label === this.currentHighlightedLegendKey)
+              return dataSeries.highlightedColor;
+            return dataSeries.color;
           }.bind(this))
         .attr('d', pathsArc)
         .on('click', function(d, i) {
@@ -208,6 +196,14 @@ tr.exportTo('tr.ui.b', function() {
           })
         .attr('dy', '.35em')
         .style('text-anchor', 'middle')
+        .on('mouseenter', function(d, i) {
+            var origData = this.data_[i];
+            this.pushTempHighlightedLegendKey(origData.label);
+          }.bind(this))
+        .on('mouseleave', function(d, i) {
+            var origData = this.data_[i];
+            this.popTempHighlightedLegendKey(origData.label);
+          }.bind(this))
         .text(function(d, i) {
             var origData = this.data_[i];
             if (origData.valueText === undefined)
@@ -263,9 +259,11 @@ tr.exportTo('tr.ui.b', function() {
       var that = this;
       pathsGroupSel.selectAll('.arc').each(function(d, i) {
         var origData = that.data_[i];
-        var highlighted = origData.label == that.currentHighlightedLegendKey;
-        var color = getColorOfKey(origData.label, highlighted);
-        this.style.fill = color;
+        var dataSeries = that.getDataSeries(origData.label);
+        if (origData.label === that.currentHighlightedLegendKey)
+          this.style.fill = dataSeries.highlightedColor;
+        else
+          this.style.fill = dataSeries.color;
       });
     }
   };

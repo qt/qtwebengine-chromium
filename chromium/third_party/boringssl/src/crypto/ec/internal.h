@@ -96,15 +96,6 @@ struct ec_method_st {
   int (*mul)(const EC_GROUP *group, EC_POINT *r, const BIGNUM *g_scalar,
              const EC_POINT *p, const BIGNUM *p_scalar, BN_CTX *ctx);
 
-  /* |check_pub_key_order| checks that the public key is in the proper subgroup
-   * by checking that |pub_key*group->order| is the point at infinity. This may
-   * be NULL for |EC_METHOD|s specialized for prime-order curves (i.e. with
-   * cofactor one), as this check is not necessary for such curves (See section
-   * A.3 of the NSA's "Suite B Implementer's Guide to FIPS 186-3
-   * (ECDSA)"). */
-  int (*check_pub_key_order)(const EC_GROUP *group, const EC_POINT *pub_key,
-                             BN_CTX *ctx);
-
   /* 'field_mul' and 'field_sqr' can be used by 'add' and 'dbl' so that the
    * same implementations of point operations can be used with different
    * optimized implementations of expensive field operations: */
@@ -118,13 +109,13 @@ struct ec_method_st {
                       BN_CTX *); /* e.g. from Montgomery */
 } /* EC_METHOD */;
 
-const EC_METHOD* EC_GFp_mont_method(void);
+extern const EC_METHOD EC_GFp_mont_method;
 
 struct ec_group_st {
   const EC_METHOD *meth;
 
   EC_POINT *generator;
-  BIGNUM order, cofactor;
+  BIGNUM order;
 
   int curve_name; /* optional NID for named curve */
 
@@ -231,12 +222,12 @@ int ec_point_set_Jprojective_coordinates_GFp(const EC_GROUP *group,
 
 void ec_GFp_nistp_recode_scalar_bits(uint8_t *sign, uint8_t *digit, uint8_t in);
 
-const EC_METHOD *EC_GFp_nistp224_method(void);
-const EC_METHOD *EC_GFp_nistp256_method(void);
+extern const EC_METHOD EC_GFp_nistp224_method;
+extern const EC_METHOD EC_GFp_nistp256_method;
 
-/* Returns GFp methods using montgomery multiplication, with x86-64
- * optimized P256. See http://eprint.iacr.org/2013/816. */
-const EC_METHOD *EC_GFp_nistz256_method(void);
+/* EC_GFp_nistz256_method is a GFp method using montgomery multiplication, with
+ * x86-64 optimized P256. See http://eprint.iacr.org/2013/816. */
+extern const EC_METHOD EC_GFp_nistz256_method;
 
 struct ec_key_st {
   EC_GROUP *group;
@@ -260,9 +251,6 @@ struct curve_data {
   const char *comment;
   /* param_len is the number of bytes needed to store a field element. */
   uint8_t param_len;
-  /* cofactor is the cofactor of the group (i.e. the number of elements in the
-   * group divided by the size of the main subgroup. */
-  uint8_t cofactor; /* promoted to BN_ULONG */
   /* data points to an array of 6*|param_len| bytes which hold the field
    * elements of the following (in big-endian order): prime, a, b, generator x,
    * generator y, order. */
@@ -274,7 +262,7 @@ struct built_in_curve {
   uint8_t oid[8];
   uint8_t oid_len;
   const struct curve_data *data;
-  const EC_METHOD *(*method)(void);
+  const EC_METHOD *method;
 };
 
 /* OPENSSL_built_in_curves is terminated with an entry where |nid| is

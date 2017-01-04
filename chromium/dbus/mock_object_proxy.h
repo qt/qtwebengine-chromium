@@ -56,6 +56,10 @@ class MockObjectProxy : public ObjectProxy {
                     const std::string& signal_name,
                     SignalCallback signal_callback,
                     OnConnectedCallback on_connected_callback));
+  MOCK_METHOD1(SetNameOwnerChangedCallback,
+               void(NameOwnerChangedCallback callback));
+  MOCK_METHOD1(WaitForServiceToBeAvailable,
+               void(WaitForServiceToBeAvailableCallback callback));
   MOCK_METHOD0(Detach, void());
 
  protected:

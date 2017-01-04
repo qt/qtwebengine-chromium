@@ -79,11 +79,7 @@ bool WidgetDelegate::ShouldShowWindowTitle() const {
 }
 
 bool WidgetDelegate::ShouldShowCloseButton() const {
-#if defined(OS_MACOSX)
-  return false;
-#else
   return true;
-#endif
 }
 
 bool WidgetDelegate::ShouldHandleSystemCommands() const {
@@ -206,6 +202,10 @@ Widget* WidgetDelegateView::GetWidget() {
 
 const Widget* WidgetDelegateView::GetWidget() const {
   return View::GetWidget();
+}
+
+views::View* WidgetDelegateView::GetContentsView() {
+  return this;
 }
 
 const char* WidgetDelegateView::GetClassName() const {

@@ -27,6 +27,7 @@ class SerialIoHandlerPosix : public SerialIoHandler,
   void CancelReadImpl() override;
   void CancelWriteImpl() override;
   bool ConfigurePortImpl() override;
+  bool PostOpen() override;
   bool Flush() const override;
   serial::DeviceControlSignalsPtr GetControlSignals() const override;
   bool SetControlSignals(
@@ -48,6 +49,11 @@ class SerialIoHandlerPosix : public SerialIoHandler,
       scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner);
   ~SerialIoHandlerPosix() override;
+
+  bool AttemptRead(bool within_read);
+  void RunReadCompleted(bool within_read,
+                        int bytes_read,
+                        serial::ReceiveError error);
 
   // base::MessageLoopForIO::Watcher implementation.
   void OnFileCanWriteWithoutBlocking(int fd) override;

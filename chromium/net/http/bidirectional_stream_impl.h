@@ -8,9 +8,11 @@
 #include <stdint.h>
 
 #include <memory>
+#include <vector>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_export.h"
 #include "net/socket/next_proto.h"
 
@@ -20,8 +22,8 @@ class Timer;
 
 namespace net {
 
-class BoundNetLog;
 class IOBuffer;
+class NetLogWithSource;
 class SpdyHeaderBlock;
 struct BidirectionalStreamRequestInfo;
 
@@ -97,7 +99,7 @@ class NET_EXPORT_PRIVATE BidirectionalStreamImpl {
   // sent only when SendRequestHeaders() is invoked or with next
   // SendData/SendvData.
   virtual void Start(const BidirectionalStreamRequestInfo* request_info,
-                     const BoundNetLog& net_log,
+                     const NetLogWithSource& net_log,
                      bool send_request_headers_automatically,
                      BidirectionalStreamImpl::Delegate* delegate,
                      std::unique_ptr<base::Timer> timer) = 0;
@@ -134,10 +136,6 @@ class NET_EXPORT_PRIVATE BidirectionalStreamImpl {
                          const std::vector<int>& lengths,
                          bool end_stream) = 0;
 
-  // Cancels the stream. No Delegate method will be called. Any pending
-  // operations may or may not succeed.
-  virtual void Cancel() = 0;
-
   // Returns the protocol used by this stream. If stream has not been
   // established, return kProtoUnknown.
   virtual NextProto GetProtocol() const = 0;
@@ -152,6 +150,11 @@ class NET_EXPORT_PRIVATE BidirectionalStreamImpl {
   // not including proxy overhead. Note that some SPDY frames such as pings are
   // not associated with any stream, and are not included in this value.
   virtual int64_t GetTotalSentBytes() const = 0;
+
+  // Populates the connection establishment part of |load_timing_info|, and
+  // socket reuse info. Return true if LoadTimingInfo is obtained successfully
+  // and false otherwise.
+  virtual bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BidirectionalStreamImpl);

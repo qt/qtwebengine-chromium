@@ -82,13 +82,13 @@ class CategorizedWorkerPool::CategorizedWorkerPoolSequencedTaskRunner
       // Treat any tasks that are enqueued through the SequencedTaskRunner as
       // FOREGROUND priority. We don't have enough information to know the
       // actual priority of such tasks, so we run them as soon as possible.
-      cc::TaskGraph::Node node(graph_task.get(), cc::TASK_CATEGORY_FOREGROUND,
+      cc::TaskGraph::Node node(graph_task, cc::TASK_CATEGORY_FOREGROUND,
                                0u /* priority */, dependencies);
       if (dependencies) {
-        graph_.edges.push_back(
-            cc::TaskGraph::Edge(graph_.nodes.back().task, node.task));
+        graph_.edges.push_back(cc::TaskGraph::Edge(
+            graph_.nodes.back().task.get(), node.task.get()));
       }
-      graph_.nodes.push_back(node);
+      graph_.nodes.push_back(std::move(node));
     }
     task_graph_runner_->ScheduleTasks(namespace_token_, &graph_);
     completed_tasks_.clear();
@@ -136,9 +136,7 @@ void CategorizedWorkerPool::Start(int num_threads) {
 
   for (int i = 0; i < num_threads; i++) {
     std::unique_ptr<base::SimpleThread> thread(new CategorizedWorkerPoolThread(
-        base::StringPrintf("CompositorTileWorker%u",
-                           static_cast<unsigned>(threads_.size() + 1))
-            .c_str(),
+        base::StringPrintf("CompositorTileWorker%d", i + 1).c_str(),
         base::SimpleThread::Options(), this, foreground_categories,
         &has_ready_to_run_foreground_tasks_cv_));
     thread->Start();
@@ -152,7 +150,7 @@ void CategorizedWorkerPool::Start(int num_threads) {
   // Use background priority for background thread.
   base::SimpleThread::Options thread_options;
 #if !defined(OS_MACOSX)
-  thread_options.set_priority(base::ThreadPriority::BACKGROUND);
+  thread_options.priority = base::ThreadPriority::BACKGROUND;
 #endif
 
   std::unique_ptr<base::SimpleThread> thread(new CategorizedWorkerPoolThread(
@@ -351,7 +349,6 @@ void CategorizedWorkerPool::RunTaskInCategoryWithLockAcquired(
   lock_.AssertAcquired();
 
   auto prioritized_task = work_queue_.GetNextTaskToRun(category);
-  cc::Task* task = prioritized_task.task;
 
   // There may be more work available, so wake up another worker thread.
   SignalHasReadyToRunTasksWithLockAcquired();
@@ -359,14 +356,14 @@ void CategorizedWorkerPool::RunTaskInCategoryWithLockAcquired(
   {
     base::AutoUnlock unlock(lock_);
 
-    task->RunOnWorkerThread();
+    prioritized_task.task->RunOnWorkerThread();
   }
 
-  work_queue_.CompleteTask(prioritized_task);
+  auto* task_namespace = prioritized_task.task_namespace;
+  work_queue_.CompleteTask(std::move(prioritized_task));
 
   // If namespace has finished running all tasks, wake up origin threads.
-  if (work_queue_.HasFinishedRunningTasksInNamespace(
-          prioritized_task.task_namespace))
+  if (work_queue_.HasFinishedRunningTasksInNamespace(task_namespace))
     has_namespaces_with_finished_running_tasks_cv_.Signal();
 }
 

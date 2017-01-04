@@ -11,9 +11,9 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/values.h"
-#include "chrome/common/extensions/features/feature_channel.h"
 #include "components/version_info/version_info.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/features/feature_channel.h"
 #include "extensions/common/file_util.h"
 #include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -37,12 +37,12 @@ class StorageSchemaManifestHandlerTest : public testing::Test {
 
   scoped_refptr<Extension> CreateExtension(const std::string& schema) {
     std::string error;
-    scoped_refptr<Extension> extension = Extension::Create(
-        temp_dir_.path(), Manifest::UNPACKED, manifest_,
-        Extension::NO_FLAGS, "", &error);
+    scoped_refptr<Extension> extension =
+        Extension::Create(temp_dir_.GetPath(), Manifest::UNPACKED, manifest_,
+                          Extension::NO_FLAGS, "", &error);
     if (!extension.get())
       return NULL;
-    base::FilePath schema_path = temp_dir_.path().AppendASCII("schema.json");
+    base::FilePath schema_path = temp_dir_.GetPath().AppendASCII("schema.json");
     if (schema.empty()) {
       base::DeleteFile(schema_path, false);
     } else {

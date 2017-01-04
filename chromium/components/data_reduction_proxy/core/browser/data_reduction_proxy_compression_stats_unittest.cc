@@ -23,6 +23,7 @@
 #include "components/data_reduction_proxy/core/browser/data_use_group.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
+#include "components/data_reduction_proxy/proto/data_store.pb.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/testing_pref_service.h"
@@ -178,7 +179,8 @@ class DataReductionProxyCompressionStatsTest : public testing::Test {
     base::ListValue* update = compression_stats_->GetList(pref);
     update->Clear();
     for (size_t i = 0; i < kNumDaysInHistory; ++i) {
-      update->Insert(0, new base::StringValue(base::Int64ToString(0)));
+      update->Insert(
+          0, base::MakeUnique<base::StringValue>(base::Int64ToString(0)));
     }
   }
 
@@ -517,7 +519,7 @@ TEST_F(DataReductionProxyCompressionStatsTest,
   SetInt64(prefs::kHttpOriginalContentLength, kOriginalLength);
   SetInt64(prefs::kHttpReceivedContentLength, kReceivedLength);
 
-  stats_value.reset(compression_stats()->HistoricNetworkStatsInfoToValue());
+  stats_value = compression_stats()->HistoricNetworkStatsInfoToValue();
   EXPECT_TRUE(stats_value->GetAsDictionary(&dict));
   VerifyPrefs(dict);
 }
@@ -536,7 +538,7 @@ TEST_F(DataReductionProxyCompressionStatsTest,
   SetInt64(prefs::kHttpOriginalContentLength, kOriginalLength);
   SetInt64(prefs::kHttpReceivedContentLength, kReceivedLength);
 
-  stats_value.reset(compression_stats()->HistoricNetworkStatsInfoToValue());
+  stats_value = compression_stats()->HistoricNetworkStatsInfoToValue();
   EXPECT_TRUE(stats_value->GetAsDictionary(&dict));
   VerifyPrefs(dict);
 }
@@ -548,7 +550,8 @@ TEST_F(DataReductionProxyCompressionStatsTest,
       data_reduction_proxy::switches::kClearDataReductionProxyDataSavings);
 
   base::ListValue list_value;
-  list_value.Insert(0, new base::StringValue(base::Int64ToString(1234)));
+  list_value.Insert(
+      0, base::MakeUnique<base::StringValue>(base::Int64ToString(1234)));
   pref_service()->Set(prefs::kDailyHttpOriginalContentLength, list_value);
 
   ResetCompressionStatsWithDelay(
@@ -562,7 +565,8 @@ TEST_F(DataReductionProxyCompressionStatsTest,
 TEST_F(DataReductionProxyCompressionStatsTest,
        ClearPrefsOnRestartDisabled) {
   base::ListValue list_value;
-  list_value.Insert(0, new base::StringValue(base::Int64ToString(1234)));
+  list_value.Insert(
+      0, base::MakeUnique<base::StringValue>(base::Int64ToString(1234)));
   pref_service()->Set(prefs::kDailyHttpOriginalContentLength, list_value);
 
   ResetCompressionStatsWithDelay(
@@ -598,6 +602,28 @@ TEST_F(DataReductionProxyCompressionStatsTest, TotalLengths) {
             GetInt64(data_reduction_proxy::prefs::kHttpReceivedContentLength));
   EXPECT_FALSE(IsDataReductionProxyEnabled());
   EXPECT_EQ(kOriginalLength * 2,
+            GetInt64(data_reduction_proxy::prefs::kHttpOriginalContentLength));
+}
+
+TEST_F(DataReductionProxyCompressionStatsTest, TotalLengthsUpdate) {
+  const int64_t kOriginalLength = 200;
+  const int64_t kReceivedLength = 100;
+
+  compression_stats()->UpdateDataSavings(std::string(), kReceivedLength,
+                                         kOriginalLength);
+
+  EXPECT_EQ(0,
+            GetInt64(data_reduction_proxy::prefs::kHttpReceivedContentLength));
+  EXPECT_EQ(kOriginalLength - kReceivedLength,
+            GetInt64(data_reduction_proxy::prefs::kHttpOriginalContentLength));
+
+  // Record the same numbers again, and total lengths should be doubled.
+  compression_stats()->UpdateDataSavings(std::string(), kReceivedLength,
+                                         kOriginalLength);
+
+  EXPECT_EQ(0,
+            GetInt64(data_reduction_proxy::prefs::kHttpReceivedContentLength));
+  EXPECT_EQ(kOriginalLength * 2 - kReceivedLength * 2,
             GetInt64(data_reduction_proxy::prefs::kHttpOriginalContentLength));
 }
 
@@ -1064,8 +1090,8 @@ TEST_F(DataReductionProxyCompressionStatsTest, RecordDataUsageSingleSite) {
   RecordDataUsage("https://www.foo.com", 1000, 1250, now);
 
   auto expected_data_usage =
-      base::WrapUnique(new std::vector<data_reduction_proxy::DataUsageBucket>(
-          kNumExpectedBuckets));
+      base::MakeUnique<std::vector<data_reduction_proxy::DataUsageBucket>>(
+          kNumExpectedBuckets);
   data_reduction_proxy::PerConnectionDataUsage* connection_usage =
       expected_data_usage->at(kNumExpectedBuckets - 1).add_connection_usage();
   data_reduction_proxy::PerSiteDataUsage* site_usage =
@@ -1094,15 +1120,15 @@ TEST_F(DataReductionProxyCompressionStatsTest, DisableDataUsageRecording) {
 
   // Data usage on disk must be deleted.
   auto expected_data_usage1 =
-      base::WrapUnique(new std::vector<data_reduction_proxy::DataUsageBucket>(
-          kNumExpectedBuckets));
+      base::MakeUnique<std::vector<data_reduction_proxy::DataUsageBucket>>(
+          kNumExpectedBuckets);
   DataUsageLoadVerifier verifier1(std::move(expected_data_usage1));
   LoadHistoricalDataUsage(base::Bind(&DataUsageLoadVerifier::OnLoadDataUsage,
                                      base::Unretained(&verifier1)));
 
   // Public API must return an empty array.
-  auto expected_data_usage2 = base::WrapUnique(
-      new std::vector<data_reduction_proxy::DataUsageBucket>());
+  auto expected_data_usage2 =
+      base::MakeUnique<std::vector<data_reduction_proxy::DataUsageBucket>>();
   DataUsageLoadVerifier verifier2(std::move(expected_data_usage2));
   GetHistoricalDataUsage(base::Bind(&DataUsageLoadVerifier::OnLoadDataUsage,
                                     base::Unretained(&verifier2)),
@@ -1120,8 +1146,8 @@ TEST_F(DataReductionProxyCompressionStatsTest, RecordDataUsageMultipleSites) {
   RecordDataUsage("http://foobar.com", 1002, 1252, now);
 
   auto expected_data_usage =
-      base::WrapUnique(new std::vector<data_reduction_proxy::DataUsageBucket>(
-          kNumExpectedBuckets));
+      base::MakeUnique<std::vector<data_reduction_proxy::DataUsageBucket>>(
+          kNumExpectedBuckets);
   data_reduction_proxy::PerConnectionDataUsage* connection_usage =
       expected_data_usage->at(kNumExpectedBuckets - 1).add_connection_usage();
   data_reduction_proxy::PerSiteDataUsage* site_usage =
@@ -1161,8 +1187,8 @@ TEST_F(DataReductionProxyCompressionStatsTest,
   RecordDataUsage("https://bar.com", 1001, 1251, now);
 
   auto expected_data_usage =
-      base::WrapUnique(new std::vector<data_reduction_proxy::DataUsageBucket>(
-          kNumExpectedBuckets));
+      base::MakeUnique<std::vector<data_reduction_proxy::DataUsageBucket>>(
+          kNumExpectedBuckets);
   data_reduction_proxy::PerConnectionDataUsage* connection_usage =
       expected_data_usage->at(kNumExpectedBuckets - 2).add_connection_usage();
   data_reduction_proxy::PerSiteDataUsage* site_usage =
@@ -1232,8 +1258,8 @@ TEST_F(DataReductionProxyCompressionStatsTest, DeleteHistoricalDataUsage) {
   base::RunLoop().RunUntilIdle();
 
   auto expected_data_usage =
-      base::WrapUnique(new std::vector<data_reduction_proxy::DataUsageBucket>(
-          kNumExpectedBuckets));
+      base::MakeUnique<std::vector<data_reduction_proxy::DataUsageBucket>>(
+          kNumExpectedBuckets);
   DataUsageLoadVerifier verifier(std::move(expected_data_usage));
 
   GetHistoricalDataUsage(base::Bind(&DataUsageLoadVerifier::OnLoadDataUsage,
@@ -1262,8 +1288,8 @@ TEST_F(DataReductionProxyCompressionStatsTest, DeleteBrowsingHistory) {
   ASSERT_TRUE(DataUsageMap()->empty());
 
   auto expected_data_usage =
-      base::WrapUnique(new std::vector<data_reduction_proxy::DataUsageBucket>(
-          kNumExpectedBuckets));
+      base::MakeUnique<std::vector<data_reduction_proxy::DataUsageBucket>>(
+          kNumExpectedBuckets);
   data_reduction_proxy::PerConnectionDataUsage* connection_usage =
       expected_data_usage->at(kNumExpectedBuckets - 1).add_connection_usage();
   data_reduction_proxy::PerSiteDataUsage* site_usage =
@@ -1282,8 +1308,8 @@ TEST_F(DataReductionProxyCompressionStatsTest, DeleteBrowsingHistory) {
   base::RunLoop().RunUntilIdle();
 
   expected_data_usage =
-      base::WrapUnique(new std::vector<data_reduction_proxy::DataUsageBucket>(
-          kNumExpectedBuckets));
+      base::MakeUnique<std::vector<data_reduction_proxy::DataUsageBucket>>(
+          kNumExpectedBuckets);
   DataUsageLoadVerifier verifier2(std::move(expected_data_usage));
   LoadHistoricalDataUsage(base::Bind(&DataUsageLoadVerifier::OnLoadDataUsage,
                                      base::Unretained(&verifier2)));

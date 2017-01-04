@@ -24,6 +24,11 @@ MetricsServicesManager::MetricsServicesManager(
 
 MetricsServicesManager::~MetricsServicesManager() {}
 
+std::unique_ptr<const base::FieldTrial::EntropyProvider>
+MetricsServicesManager::CreateEntropyProvider() {
+  return client_->CreateEntropyProvider();
+}
+
 metrics::MetricsService* MetricsServicesManager::GetMetricsService() {
   DCHECK(thread_checker_.CalledOnValidThread());
   return GetMetricsServiceClient()->GetMetricsService();
@@ -85,6 +90,8 @@ void MetricsServicesManager::UpdateRunningServices() {
     return;
   }
 
+  client_->UpdateRunningServices(may_record_, may_upload_);
+
   if (may_record_) {
     if (!metrics->recording_active())
       metrics->Start();
@@ -116,7 +123,7 @@ void MetricsServicesManager::UpdateRunningServices() {
 }
 
 void MetricsServicesManager::UpdateUploadPermissions(bool may_upload) {
-  return UpdatePermissions(client_->IsMetricsReportingEnabled(), may_upload);
+  UpdatePermissions(client_->IsMetricsReportingEnabled(), may_upload);
 }
 
 }  // namespace metrics_services_manager

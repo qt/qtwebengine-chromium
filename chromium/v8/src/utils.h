@@ -200,6 +200,23 @@ T Min(T a, T b) {
   return a < b ? a : b;
 }
 
+// Returns the maximum of the two parameters according to JavaScript semantics.
+template <typename T>
+T JSMax(T x, T y) {
+  if (std::isnan(x)) return x;
+  if (std::isnan(y)) return y;
+  if (std::signbit(x) < std::signbit(y)) return x;
+  return x > y ? x : y;
+}
+
+// Returns the maximum of the two parameters according to JavaScript semantics.
+template <typename T>
+T JSMin(T x, T y) {
+  if (std::isnan(x)) return x;
+  if (std::isnan(y)) return y;
+  if (std::signbit(x) < std::signbit(y)) return y;
+  return x > y ? y : x;
+}
 
 // Returns the absolute value of its argument.
 template <typename T>
@@ -217,6 +234,10 @@ inline double Floor(double x) {
 }
 
 inline double Pow(double x, double y) {
+  if (y == 0.0) return 1.0;
+  if (std::isnan(y) || ((x == 1 || x == -1) && std::isinf(y))) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
 #if (defined(__MINGW64_VERSION_MAJOR) &&                              \
      (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)) || \
     defined(V8_OS_AIX)
@@ -305,8 +326,9 @@ class BitFieldBase {
   static T decode(U value) {
     return static_cast<T>((value & kMask) >> shift);
   }
-};
 
+  STATIC_ASSERT((kNext - 1) / 8 < sizeof(U));
+};
 
 template <class T, int shift, int size>
 class BitField8 : public BitFieldBase<T, shift, size, uint8_t> {};
@@ -415,7 +437,7 @@ void init_memcopy_functions(Isolate* isolate);
 const int kMinComplexMemCopy = 64;
 
 // Copy memory area. No restrictions.
-void MemMove(void* dest, const void* src, size_t size);
+V8_EXPORT_PRIVATE void MemMove(void* dest, const void* src, size_t size);
 typedef void (*MemMoveFunction)(void* dest, const void* src, size_t size);
 
 // Keep the distinction of "move" vs. "copy" for the benefit of other
@@ -426,7 +448,7 @@ V8_INLINE void MemCopy(void* dest, const void* src, size_t size) {
 #elif defined(V8_HOST_ARCH_ARM)
 typedef void (*MemCopyUint8Function)(uint8_t* dest, const uint8_t* src,
                                      size_t size);
-extern MemCopyUint8Function memcopy_uint8_function;
+V8_EXPORT_PRIVATE extern MemCopyUint8Function memcopy_uint8_function;
 V8_INLINE void MemCopyUint8Wrapper(uint8_t* dest, const uint8_t* src,
                                    size_t chars) {
   memcpy(dest, src, chars);
@@ -437,7 +459,8 @@ V8_INLINE void MemCopy(void* dest, const void* src, size_t size) {
   (*memcopy_uint8_function)(reinterpret_cast<uint8_t*>(dest),
                             reinterpret_cast<const uint8_t*>(src), size);
 }
-V8_INLINE void MemMove(void* dest, const void* src, size_t size) {
+V8_EXPORT_PRIVATE V8_INLINE void MemMove(void* dest, const void* src,
+                                         size_t size) {
   memmove(dest, src, size);
 }
 
@@ -455,7 +478,7 @@ V8_INLINE void MemCopyUint16Uint8(uint16_t* dest, const uint8_t* src,
 #elif defined(V8_HOST_ARCH_MIPS)
 typedef void (*MemCopyUint8Function)(uint8_t* dest, const uint8_t* src,
                                      size_t size);
-extern MemCopyUint8Function memcopy_uint8_function;
+V8_EXPORT_PRIVATE extern MemCopyUint8Function memcopy_uint8_function;
 V8_INLINE void MemCopyUint8Wrapper(uint8_t* dest, const uint8_t* src,
                                    size_t chars) {
   memcpy(dest, src, chars);
@@ -466,7 +489,8 @@ V8_INLINE void MemCopy(void* dest, const void* src, size_t size) {
   (*memcopy_uint8_function)(reinterpret_cast<uint8_t*>(dest),
                             reinterpret_cast<const uint8_t*>(src), size);
 }
-V8_INLINE void MemMove(void* dest, const void* src, size_t size) {
+V8_EXPORT_PRIVATE V8_INLINE void MemMove(void* dest, const void* src,
+                                         size_t size) {
   memmove(dest, src, size);
 }
 #else
@@ -474,7 +498,8 @@ V8_INLINE void MemMove(void* dest, const void* src, size_t size) {
 V8_INLINE void MemCopy(void* dest, const void* src, size_t size) {
   memcpy(dest, src, size);
 }
-V8_INLINE void MemMove(void* dest, const void* src, size_t size) {
+V8_EXPORT_PRIVATE V8_INLINE void MemMove(void* dest, const void* src,
+                                         size_t size) {
   memmove(dest, src, size);
 }
 const int kMinComplexMemCopy = 16 * kPointerSize;
@@ -1099,13 +1124,6 @@ inline void MemsetPointer(T** dest, U* value, int counter) {
 #define STOS "stosq"
 #endif
 #endif
-#if defined(__native_client__)
-  // This STOS sequence does not validate for x86_64 Native Client.
-  // Here we #undef STOS to force use of the slower C version.
-  // TODO(bradchen): Profile V8 and implement a faster REP STOS
-  // here if the profile indicates it matters.
-#undef STOS
-#endif
 
 #if defined(MEMORY_SANITIZER)
   // MemorySanitizer does not understand inline assembly.
@@ -1506,22 +1524,22 @@ inline uintptr_t GetCurrentStackPosition() {
 
 template <typename V>
 static inline V ReadUnalignedValue(const void* p) {
-#if !(V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64)
+#if !(V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_ARM)
   return *reinterpret_cast<const V*>(p);
-#else
+#else   // V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_ARM
   V r;
   memmove(&r, p, sizeof(V));
   return r;
-#endif  // V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
+#endif  // V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_ARM
 }
 
 template <typename V>
 static inline void WriteUnalignedValue(void* p, V value) {
-#if !(V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64)
+#if !(V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_ARM)
   *(reinterpret_cast<V*>(p)) = value;
-#else   // V8_TARGET_ARCH_MIPS
+#else   // V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_ARM
   memmove(p, &value, sizeof(V));
-#endif  // V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
+#endif  // V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_ARM
 }
 
 static inline double ReadFloatValue(const void* p) {
@@ -1552,6 +1570,33 @@ static inline void WriteUnalignedUInt32(void* p, uint32_t value) {
   WriteUnalignedValue(p, value);
 }
 
+template <typename V>
+static inline V ReadLittleEndianValue(const void* p) {
+#if defined(V8_TARGET_LITTLE_ENDIAN)
+  return ReadUnalignedValue<V>(p);
+#elif defined(V8_TARGET_BIG_ENDIAN)
+  V ret = 0;
+  const byte* src = reinterpret_cast<const byte*>(p);
+  byte* dst = reinterpret_cast<byte*>(&ret);
+  for (size_t i = 0; i < sizeof(V); i++) {
+    dst[i] = src[sizeof(V) - i - 1];
+  }
+  return ret;
+#endif  // V8_TARGET_LITTLE_ENDIAN
+}
+
+template <typename V>
+static inline void WriteLittleEndianValue(void* p, V value) {
+#if defined(V8_TARGET_LITTLE_ENDIAN)
+  WriteUnalignedValue<V>(p, value);
+#elif defined(V8_TARGET_BIG_ENDIAN)
+  byte* src = reinterpret_cast<byte*>(&value);
+  byte* dst = reinterpret_cast<byte*>(p);
+  for (size_t i = 0; i < sizeof(V); i++) {
+    dst[i] = src[sizeof(V) - i - 1];
+  }
+#endif  // V8_TARGET_LITTLE_ENDIAN
+}
 }  // namespace internal
 }  // namespace v8
 

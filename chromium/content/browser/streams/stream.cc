@@ -77,6 +77,11 @@ void Stream::Abort() {
   ClearBuffer();
   can_add_data_ = false;
   registry_->UnregisterStream(url());
+  // Notify the observer that something happens. Read will return
+  // STREAM_ABORTED.
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE,
+      base::Bind(&Stream::OnDataAvailable, weak_ptr_factory_.GetWeakPtr()));
 }
 
 void Stream::AddData(scoped_refptr<net::IOBuffer> buffer, size_t size) {
@@ -113,11 +118,11 @@ void Stream::Flush() {
   writer_->Flush();
 }
 
-void Stream::Finalize() {
+void Stream::Finalize(int status) {
   if (!writer_.get())
     return;
 
-  writer_->Close(0);
+  writer_->Close(status);
   writer_.reset();
 
   // Continue asynchronously.
@@ -180,6 +185,10 @@ void Stream::CloseHandle() {
   registry_->UnregisterStream(url());
   if (write_observer_)
     write_observer_->OnClose(this);
+}
+
+int Stream::GetStatus() {
+  return reader_->GetStatus();
 }
 
 void Stream::OnSpaceAvailable() {

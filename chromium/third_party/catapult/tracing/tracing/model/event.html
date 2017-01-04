@@ -6,6 +6,7 @@ found in the LICENSE file.
 -->
 
 <link rel="import" href="/tracing/base/guid.html">
+<link rel="import" href="/tracing/base/range.html">
 <link rel="import" href="/tracing/model/event_set.html">
 <link rel="import" href="/tracing/model/selectable_item.html">
 <link rel="import" href="/tracing/model/selection_state.html">
@@ -46,6 +47,12 @@ tr.exportTo('tr.model', function() {
       return undefined;
     },
 
+    get range() {
+      var range = new tr.b.Range();
+      this.addBoundsToRange(range);
+      return range;
+    },
+
     // Empty by default. Lazily initialized on an instance in
     // addAssociatedAlert(). See #1930.
     associatedAlerts: IMMUTABLE_EMPTY_SET,
@@ -56,10 +63,10 @@ tr.exportTo('tr.model', function() {
       this.associatedAlerts.push(alert);
     },
 
-    /** Adds the range of timestamps for this event to the specified range. */
-    addBoundsToRange: function(range) {
-      throw new Error('Not implemented');
-    }
+    // Adds the range of timestamps for this event to the specified range.
+    // If this is not overridden in subclass, it means that type of event
+    // doesn't have timestamps.
+    addBoundsToRange: function(range) {}
   };
 
   return {

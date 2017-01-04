@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -78,6 +78,7 @@ void DriverEGL::InitializeStaticBindings() {
   fn.eglGetSyncAttribKHRFn = reinterpret_cast<eglGetSyncAttribKHRProc>(
       GetGLProcAddress("eglGetSyncAttribKHR"));
   fn.eglGetSyncValuesCHROMIUMFn = 0;
+  fn.eglImageFlushExternalEXTFn = 0;
   fn.eglInitializeFn =
       reinterpret_cast<eglInitializeProc>(GetGLProcAddress("eglInitialize"));
   fn.eglMakeCurrentFn =
@@ -108,6 +109,7 @@ void DriverEGL::InitializeStaticBindings() {
       GetGLProcAddress("eglSurfaceAttrib"));
   fn.eglSwapBuffersFn =
       reinterpret_cast<eglSwapBuffersProc>(GetGLProcAddress("eglSwapBuffers"));
+  fn.eglSwapBuffersWithDamageKHRFn = 0;
   fn.eglSwapIntervalFn = reinterpret_cast<eglSwapIntervalProc>(
       GetGLProcAddress("eglSwapInterval"));
   fn.eglTerminateFn =
@@ -121,7 +123,7 @@ void DriverEGL::InitializeStaticBindings() {
   fn.eglWaitSyncKHRFn = 0;
 }
 
-void DriverEGL::InitializeExtensionBindings() {
+void DriverEGL::InitializeClientExtensionBindings() {
   std::string client_extensions(GetClientExtensions());
   client_extensions += " ";
   ALLOW_UNUSED_LOCAL(client_extensions);
@@ -135,6 +137,9 @@ void DriverEGL::InitializeExtensionBindings() {
         reinterpret_cast<eglGetPlatformDisplayEXTProc>(
             GetGLProcAddress("eglGetPlatformDisplayEXT"));
   }
+}
+
+void DriverEGL::InitializeExtensionBindings() {
   std::string extensions(GetPlatformExtensions());
   extensions += " ";
   ALLOW_UNUSED_LOCAL(extensions);
@@ -152,6 +157,8 @@ void DriverEGL::InitializeExtensionBindings() {
       std::string::npos;
   ext.b_EGL_CHROMIUM_sync_control =
       extensions.find("EGL_CHROMIUM_sync_control ") != std::string::npos;
+  ext.b_EGL_EXT_image_flush_external =
+      extensions.find("EGL_EXT_image_flush_external ") != std::string::npos;
   ext.b_EGL_KHR_fence_sync =
       extensions.find("EGL_KHR_fence_sync ") != std::string::npos;
   ext.b_EGL_KHR_gl_texture_2D_image =
@@ -166,6 +173,8 @@ void DriverEGL::InitializeExtensionBindings() {
   ext.b_EGL_KHR_stream_consumer_gltexture =
       extensions.find("EGL_KHR_stream_consumer_gltexture ") !=
       std::string::npos;
+  ext.b_EGL_KHR_swap_buffers_with_damage =
+      extensions.find("EGL_KHR_swap_buffers_with_damage ") != std::string::npos;
   ext.b_EGL_KHR_wait_sync =
       extensions.find("EGL_KHR_wait_sync ") != std::string::npos;
   ext.b_EGL_NV_post_sub_buffer =
@@ -214,6 +223,13 @@ void DriverEGL::InitializeExtensionBindings() {
     fn.eglGetSyncValuesCHROMIUMFn =
         reinterpret_cast<eglGetSyncValuesCHROMIUMProc>(
             GetGLProcAddress("eglGetSyncValuesCHROMIUM"));
+  }
+
+  debug_fn.eglImageFlushExternalEXTFn = 0;
+  if (ext.b_EGL_EXT_image_flush_external) {
+    fn.eglImageFlushExternalEXTFn =
+        reinterpret_cast<eglImageFlushExternalEXTProc>(
+            GetGLProcAddress("eglImageFlushExternalEXT"));
   }
 
   debug_fn.eglPostSubBufferNVFn = 0;
@@ -280,6 +296,13 @@ void DriverEGL::InitializeExtensionBindings() {
     fn.eglStreamPostD3DTextureNV12ANGLEFn =
         reinterpret_cast<eglStreamPostD3DTextureNV12ANGLEProc>(
             GetGLProcAddress("eglStreamPostD3DTextureNV12ANGLE"));
+  }
+
+  debug_fn.eglSwapBuffersWithDamageKHRFn = 0;
+  if (ext.b_EGL_KHR_swap_buffers_with_damage) {
+    fn.eglSwapBuffersWithDamageKHRFn =
+        reinterpret_cast<eglSwapBuffersWithDamageKHRProc>(
+            GetGLProcAddress("eglSwapBuffersWithDamageKHR"));
   }
 
   debug_fn.eglWaitSyncKHRFn = 0;
@@ -681,6 +704,20 @@ Debug_eglGetSyncValuesCHROMIUM(EGLDisplay dpy,
   return result;
 }
 
+static EGLBoolean GL_BINDING_CALL
+Debug_eglImageFlushExternalEXT(EGLDisplay dpy,
+                               EGLImageKHR image,
+                               const EGLAttrib* attrib_list) {
+  GL_SERVICE_LOG("eglImageFlushExternalEXT"
+                 << "(" << dpy << ", " << image << ", "
+                 << static_cast<const void*>(attrib_list) << ")");
+  DCHECK(g_driver_egl.debug_fn.eglImageFlushExternalEXTFn != nullptr);
+  EGLBoolean result =
+      g_driver_egl.debug_fn.eglImageFlushExternalEXTFn(dpy, image, attrib_list);
+  GL_SERVICE_LOG("GL_RESULT: " << result);
+  return result;
+}
+
 static EGLBoolean GL_BINDING_CALL Debug_eglInitialize(EGLDisplay dpy,
                                                       EGLint* major,
                                                       EGLint* minor) {
@@ -943,6 +980,21 @@ static EGLBoolean GL_BINDING_CALL Debug_eglSwapBuffers(EGLDisplay dpy,
   return result;
 }
 
+static EGLBoolean GL_BINDING_CALL
+Debug_eglSwapBuffersWithDamageKHR(EGLDisplay dpy,
+                                  EGLSurface surface,
+                                  EGLint* rects,
+                                  EGLint n_rects) {
+  GL_SERVICE_LOG("eglSwapBuffersWithDamageKHR"
+                 << "(" << dpy << ", " << surface << ", "
+                 << static_cast<const void*>(rects) << ", " << n_rects << ")");
+  DCHECK(g_driver_egl.debug_fn.eglSwapBuffersWithDamageKHRFn != nullptr);
+  EGLBoolean result = g_driver_egl.debug_fn.eglSwapBuffersWithDamageKHRFn(
+      dpy, surface, rects, n_rects);
+  GL_SERVICE_LOG("GL_RESULT: " << result);
+  return result;
+}
+
 static EGLBoolean GL_BINDING_CALL Debug_eglSwapInterval(EGLDisplay dpy,
                                                         EGLint interval) {
   GL_SERVICE_LOG("eglSwapInterval"
@@ -1128,6 +1180,10 @@ void DriverEGL::InitializeDebugBindings() {
     debug_fn.eglGetSyncValuesCHROMIUMFn = fn.eglGetSyncValuesCHROMIUMFn;
     fn.eglGetSyncValuesCHROMIUMFn = Debug_eglGetSyncValuesCHROMIUM;
   }
+  if (!debug_fn.eglImageFlushExternalEXTFn) {
+    debug_fn.eglImageFlushExternalEXTFn = fn.eglImageFlushExternalEXTFn;
+    fn.eglImageFlushExternalEXTFn = Debug_eglImageFlushExternalEXT;
+  }
   if (!debug_fn.eglInitializeFn) {
     debug_fn.eglInitializeFn = fn.eglInitializeFn;
     fn.eglInitializeFn = Debug_eglInitialize;
@@ -1213,6 +1269,10 @@ void DriverEGL::InitializeDebugBindings() {
   if (!debug_fn.eglSwapBuffersFn) {
     debug_fn.eglSwapBuffersFn = fn.eglSwapBuffersFn;
     fn.eglSwapBuffersFn = Debug_eglSwapBuffers;
+  }
+  if (!debug_fn.eglSwapBuffersWithDamageKHRFn) {
+    debug_fn.eglSwapBuffersWithDamageKHRFn = fn.eglSwapBuffersWithDamageKHRFn;
+    fn.eglSwapBuffersWithDamageKHRFn = Debug_eglSwapBuffersWithDamageKHR;
   }
   if (!debug_fn.eglSwapIntervalFn) {
     debug_fn.eglSwapIntervalFn = fn.eglSwapIntervalFn;
@@ -1424,6 +1484,13 @@ EGLBoolean EGLApiBase::eglGetSyncValuesCHROMIUMFn(EGLDisplay dpy,
   return driver_->fn.eglGetSyncValuesCHROMIUMFn(dpy, surface, ust, msc, sbc);
 }
 
+EGLBoolean EGLApiBase::eglImageFlushExternalEXTFn(
+    EGLDisplay dpy,
+    EGLImageKHR image,
+    const EGLAttrib* attrib_list) {
+  return driver_->fn.eglImageFlushExternalEXTFn(dpy, image, attrib_list);
+}
+
 EGLBoolean EGLApiBase::eglInitializeFn(EGLDisplay dpy,
                                        EGLint* major,
                                        EGLint* minor) {
@@ -1549,6 +1616,14 @@ EGLBoolean EGLApiBase::eglSurfaceAttribFn(EGLDisplay dpy,
 
 EGLBoolean EGLApiBase::eglSwapBuffersFn(EGLDisplay dpy, EGLSurface surface) {
   return driver_->fn.eglSwapBuffersFn(dpy, surface);
+}
+
+EGLBoolean EGLApiBase::eglSwapBuffersWithDamageKHRFn(EGLDisplay dpy,
+                                                     EGLSurface surface,
+                                                     EGLint* rects,
+                                                     EGLint n_rects) {
+  return driver_->fn.eglSwapBuffersWithDamageKHRFn(dpy, surface, rects,
+                                                   n_rects);
 }
 
 EGLBoolean EGLApiBase::eglSwapIntervalFn(EGLDisplay dpy, EGLint interval) {
@@ -1789,6 +1864,14 @@ EGLBoolean TraceEGLApi::eglGetSyncValuesCHROMIUMFn(EGLDisplay dpy,
   return egl_api_->eglGetSyncValuesCHROMIUMFn(dpy, surface, ust, msc, sbc);
 }
 
+EGLBoolean TraceEGLApi::eglImageFlushExternalEXTFn(
+    EGLDisplay dpy,
+    EGLImageKHR image,
+    const EGLAttrib* attrib_list) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceGLAPI::eglImageFlushExternalEXT")
+  return egl_api_->eglImageFlushExternalEXTFn(dpy, image, attrib_list);
+}
+
 EGLBoolean TraceEGLApi::eglInitializeFn(EGLDisplay dpy,
                                         EGLint* major,
                                         EGLint* minor) {
@@ -1940,6 +2023,15 @@ EGLBoolean TraceEGLApi::eglSurfaceAttribFn(EGLDisplay dpy,
 EGLBoolean TraceEGLApi::eglSwapBuffersFn(EGLDisplay dpy, EGLSurface surface) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceGLAPI::eglSwapBuffers")
   return egl_api_->eglSwapBuffersFn(dpy, surface);
+}
+
+EGLBoolean TraceEGLApi::eglSwapBuffersWithDamageKHRFn(EGLDisplay dpy,
+                                                      EGLSurface surface,
+                                                      EGLint* rects,
+                                                      EGLint n_rects) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu",
+                                "TraceGLAPI::eglSwapBuffersWithDamageKHR")
+  return egl_api_->eglSwapBuffersWithDamageKHRFn(dpy, surface, rects, n_rects);
 }
 
 EGLBoolean TraceEGLApi::eglSwapIntervalFn(EGLDisplay dpy, EGLint interval) {

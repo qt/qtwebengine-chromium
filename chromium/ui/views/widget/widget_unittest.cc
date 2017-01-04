@@ -7,7 +7,6 @@
 #include <set>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -46,11 +45,6 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
-#endif
-
-#if defined(USE_X11) && !defined(OS_CHROMEOS)
-#include "ui/base/x/x11_util_internal.h"  // nogncheck
-#include "ui/gfx/x/x11_switches.h"        // nogncheck
 #endif
 
 namespace views {
@@ -935,11 +929,7 @@ TEST_F(WidgetObserverTest, WidgetBoundsChangedNative) {
 
   // Move, but don't change the size.
   widget->SetBounds(gfx::Rect(110, 110, 170, 100));
-  // Currently fails on Mus. http://crbug.com/622575.
-  if (IsMus())
-    EXPECT_FALSE(widget_bounds_changed());
-  else
-    EXPECT_TRUE(widget_bounds_changed());
+  EXPECT_TRUE(widget_bounds_changed());
   reset();
 
   // Moving to the same place does nothing.
@@ -1996,8 +1986,6 @@ class GetNativeThemeFromDestructorView : public WidgetDelegateView {
   GetNativeThemeFromDestructorView() {}
   ~GetNativeThemeFromDestructorView() override { VerifyNativeTheme(); }
 
-  View* GetContentsView() override { return this; }
-
  private:
   void VerifyNativeTheme() {
     ASSERT_TRUE(GetNativeTheme() != NULL);
@@ -2088,6 +2076,7 @@ class WidgetBoundsObserver : public WidgetObserver {
   // WidgetObserver:
   void OnWidgetDestroying(Widget* widget) override {
     EXPECT_TRUE(widget->GetNativeWindow());
+    EXPECT_TRUE(Widget::GetWidgetForNativeWindow(widget->GetNativeWindow()));
     bounds_ = widget->GetWindowBoundsInScreen();
   }
 
@@ -3640,6 +3629,8 @@ TEST_F(WidgetTest, WidgetRemovalsObserverCalledWhenMovingBetweenWidgets) {
 
 #if defined(OS_WIN)
 
+namespace {
+
 // Provides functionality to create a window modal dialog.
 class ModalDialogDelegate : public DialogDelegateView {
 public:
@@ -3654,6 +3645,8 @@ private:
 
   DISALLOW_COPY_AND_ASSIGN(ModalDialogDelegate);
 };
+
+}  // namespace
 
 // Tests the case where an intervening owner popup window is destroyed out from
 // under the currently active modal top-level window. In this instance, the
@@ -3743,16 +3736,6 @@ void InitializeWidgetForOpacity(
     Widget& widget,
     Widget::InitParams init_params,
     const Widget::InitParams::WindowOpacity opacity) {
-#if defined(USE_X11)
-  // On Linux, transparent visuals is currently not activated by default.
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  command_line->AppendSwitch(switches::kEnableTransparentVisuals);
-
-  int depth = 0;
-  ui::ChooseVisualForWindow(NULL, &depth);
-  EXPECT_EQ(depth, 32);
-#endif
-
   init_params.opacity = opacity;
   init_params.show_state = ui::SHOW_STATE_NORMAL;
   init_params.bounds = gfx::Rect(0, 0, 500, 500);
@@ -3760,31 +3743,79 @@ void InitializeWidgetForOpacity(
   init_params.native_widget =
       CreatePlatformDesktopNativeWidgetImpl(init_params, &widget, nullptr);
   widget.Init(init_params);
+}
+
+class CompositingWidgetTest : public views::test::WidgetTest {
+ public:
+  CompositingWidgetTest()
+      : widget_types_{Widget::InitParams::TYPE_WINDOW,
+                      Widget::InitParams::TYPE_PANEL,
+                      Widget::InitParams::TYPE_WINDOW_FRAMELESS,
+                      Widget::InitParams::TYPE_CONTROL,
+                      Widget::InitParams::TYPE_POPUP,
+                      Widget::InitParams::TYPE_MENU,
+                      Widget::InitParams::TYPE_TOOLTIP,
+                      Widget::InitParams::TYPE_BUBBLE,
+                      Widget::InitParams::TYPE_DRAG} {}
+  ~CompositingWidgetTest() override {}
+
+  void CheckAllWidgetsForOpacity(
+      const Widget::InitParams::WindowOpacity opacity) {
+    for (const auto& widget_type : widget_types_) {
+#if defined(OS_MACOSX)
+      // Tooltips are native on Mac. See BridgedNativeWidget::Init.
+      if (widget_type == Widget::InitParams::TYPE_TOOLTIP)
+        continue;
+#elif defined(OS_WIN)
+      // Other widget types would require to create a parent window and the
+      // the purpose of this test is mainly X11 in the first place.
+      if (widget_type != Widget::InitParams::TYPE_WINDOW)
+        continue;
+#endif
+      Widget widget;
+      InitializeWidgetForOpacity(widget, CreateParams(widget_type), opacity);
+
+      // Use NativeWidgetAura directly.
+      if (IsMus() &&
+          (widget_type == Widget::InitParams::TYPE_WINDOW_FRAMELESS ||
+           widget_type == Widget::InitParams::TYPE_CONTROL))
+        continue;
+
+      EXPECT_EQ(IsNativeWindowTransparent(widget.GetNativeWindow()),
+                widget.ShouldWindowContentsBeTransparent());
+
+      // When using the Mandoline UI Service, the translucency does not rely on
+      // the widget type.
+      if (IsMus())
+        continue;
 
 #if defined(USE_X11)
-  EXPECT_TRUE(widget.IsTranslucentWindowOpacitySupported());
+      if (HasCompositingManager() &&
+          (widget_type == Widget::InitParams::TYPE_DRAG ||
+           widget_type == Widget::InitParams::TYPE_WINDOW)) {
+        EXPECT_TRUE(widget.IsTranslucentWindowOpacitySupported());
+      } else {
+        EXPECT_FALSE(widget.IsTranslucentWindowOpacitySupported());
+      }
 #endif
-}
+    }
+  }
+
+ protected:
+  const std::vector<Widget::InitParams::Type> widget_types_;
+
+  DISALLOW_COPY_AND_ASSIGN(CompositingWidgetTest);
+};
 
 }  // namespace
 
 // Test opacity when compositing is enabled.
-TEST_F(WidgetTest, Transparency_DesktopWidgetInferOpacity) {
-  Widget widget;
-  InitializeWidgetForOpacity(widget,
-                             CreateParams(Widget::InitParams::TYPE_WINDOW),
-                             Widget::InitParams::INFER_OPACITY);
-  EXPECT_EQ(IsNativeWindowTransparent(widget.GetNativeWindow()),
-            widget.ShouldWindowContentsBeTransparent());
+TEST_F(CompositingWidgetTest, Transparency_DesktopWidgetInferOpacity) {
+  CheckAllWidgetsForOpacity(Widget::InitParams::INFER_OPACITY);
 }
 
-TEST_F(WidgetTest, Transparency_DesktopWidgetOpaque) {
-  Widget widget;
-  InitializeWidgetForOpacity(widget,
-                             CreateParams(Widget::InitParams::TYPE_WINDOW),
-                             Widget::InitParams::OPAQUE_WINDOW);
-  EXPECT_EQ(IsNativeWindowTransparent(widget.GetNativeWindow()),
-            widget.ShouldWindowContentsBeTransparent());
+TEST_F(CompositingWidgetTest, Transparency_DesktopWidgetOpaque) {
+  CheckAllWidgetsForOpacity(Widget::InitParams::OPAQUE_WINDOW);
 }
 
 // Failing on Mac. http://cbrug.com/623421
@@ -3795,13 +3826,8 @@ TEST_F(WidgetTest, Transparency_DesktopWidgetOpaque) {
 #define MAYBE_Transparency_DesktopWidgetTranslucent \
     Transparency_DesktopWidgetTranslucent
 #endif
-TEST_F(WidgetTest, MAYBE_Transparency_DesktopWidgetTranslucent) {
-  Widget widget;
-  InitializeWidgetForOpacity(widget,
-                             CreateParams(Widget::InitParams::TYPE_WINDOW),
-                             Widget::InitParams::TRANSLUCENT_WINDOW);
-  EXPECT_EQ(IsNativeWindowTransparent(widget.GetNativeWindow()),
-            widget.ShouldWindowContentsBeTransparent());
+TEST_F(CompositingWidgetTest, MAYBE_Transparency_DesktopWidgetTranslucent) {
+  CheckAllWidgetsForOpacity(Widget::InitParams::TRANSLUCENT_WINDOW);
 }
 
 #endif  // !defined(OS_CHROMEOS)

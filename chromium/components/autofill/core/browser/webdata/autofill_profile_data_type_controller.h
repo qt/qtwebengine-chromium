@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/scoped_observer.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
-#include "components/sync_driver/non_ui_data_type_controller.h"
+#include "components/sync/driver/non_ui_data_type_controller.h"
 
 namespace autofill {
 class AutofillWebDataService;
@@ -21,26 +21,24 @@ namespace browser_sync {
 
 // Controls syncing of the AUTOFILL_PROFILE data type.
 class AutofillProfileDataTypeController
-    : public sync_driver::NonUIDataTypeController,
+    : public syncer::NonUIDataTypeController,
       public autofill::PersonalDataManagerObserver {
  public:
+  // |dump_stack| is called when an unrecoverable error occurs.
   AutofillProfileDataTypeController(
-      const scoped_refptr<base::SingleThreadTaskRunner>& ui_thread,
       const scoped_refptr<base::SingleThreadTaskRunner>& db_thread,
-      const base::Closure& error_callback,
-      sync_driver::SyncClient* sync_client,
+      const base::Closure& dump_stack,
+      syncer::SyncClient* sync_client,
       const scoped_refptr<autofill::AutofillWebDataService>& web_data_service);
+  ~AutofillProfileDataTypeController() override;
 
   // NonUIDataTypeController:
-  syncer::ModelType type() const override;
   syncer::ModelSafeGroup model_safe_group() const override;
 
   // PersonalDataManagerObserver:
   void OnPersonalDataChanged() override;
 
  protected:
-  ~AutofillProfileDataTypeController() override;
-
   // NonUIDataTypeController:
   bool PostTaskOnBackendThread(const tracked_objects::Location& from_here,
                                const base::Closure& task) override;
@@ -51,14 +49,11 @@ class AutofillProfileDataTypeController
   // Callback to notify that WebDatabase has loaded.
   void WebDatabaseLoaded();
 
-  // A reference to the UI thread's task runner.
-  const scoped_refptr<base::SingleThreadTaskRunner> ui_thread_;
-
   // A reference to the DB thread's task runner.
   const scoped_refptr<base::SingleThreadTaskRunner> db_thread_;
 
   // A pointer to the sync client.
-  sync_driver::SyncClient* const sync_client_;
+  syncer::SyncClient* const sync_client_;
 
   // A reference to the AutofillWebDataService for this controller.
   scoped_refptr<autofill::AutofillWebDataService> web_data_service_;

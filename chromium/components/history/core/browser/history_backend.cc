@@ -16,6 +16,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_enumerator.h"
+#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
@@ -24,7 +25,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "components/favicon_base/favicon_util.h"
 #include "components/favicon_base/select_favicon_frames.h"
 #include "components/history/core/browser/download_constants.h"
 #include "components/history/core/browser/download_row.h"
@@ -68,12 +71,14 @@ using base::TimeTicks;
 namespace history {
 
 namespace {
+
 void RunUnlessCanceled(
     const base::Closure& closure,
     const base::CancelableTaskTracker::IsCanceledCallback& is_canceled) {
   if (!is_canceled.Run())
     closure.Run();
 }
+
 }  // namespace
 
 // How long we'll wait to do a commit, so that things are batched together.
@@ -102,7 +107,7 @@ MostVisitedURL MakeMostVisitedURL(const PageUsageData& page_data,
     mv.redirects.push_back(mv.url);
   } else {
     mv.redirects = redirects;
-    if (mv.redirects[mv.redirects.size() - 1] != mv.url) {
+    if (mv.redirects.back() != mv.url) {
       // The last url must be the target url.
       mv.redirects.push_back(mv.url);
     }
@@ -215,8 +220,6 @@ HistoryBackend::HistoryBackend(
 
 HistoryBackend::~HistoryBackend() {
   DCHECK(!scheduled_commit_) << "Deleting without cleanup";
-  STLDeleteContainerPointers(queued_history_db_tasks_.begin(),
-                             queued_history_db_tasks_.end());
   queued_history_db_tasks_.clear();
 
   // Release stashed embedder object before cleaning up the databases.
@@ -518,7 +521,7 @@ void HistoryBackend::AddPage(const HistoryAddPageArgs& request) {
     // Update the segment for this visit. KEYWORD_GENERATED visits should not
     // result in changing most visited, so we don't update segments (most
     // visited db).
-    if (!is_keyword_generated) {
+    if (!is_keyword_generated && request.consider_for_ntp_most_visited) {
       UpdateSegments(request.url, from_visit_id, last_ids.second, t,
                      request.time);
 
@@ -588,9 +591,10 @@ void HistoryBackend::AddPage(const HistoryAddPageArgs& request) {
       last_ids = AddPageVisit(redirects[redirect_index], request.time,
                               last_ids.second, t, request.visit_source);
       if (t & ui::PAGE_TRANSITION_CHAIN_START) {
-        // Update the segment for this visit.
-        UpdateSegments(redirects[redirect_index], from_visit_id,
-                       last_ids.second, t, request.time);
+        if (request.consider_for_ntp_most_visited) {
+          UpdateSegments(redirects[redirect_index], from_visit_id,
+                         last_ids.second, t, request.time);
+        }
 
         // Update the visit_details for this visit.
         UpdateVisitDuration(from_visit_id, request.time);
@@ -652,14 +656,11 @@ void HistoryBackend::InitImpl(
   db_->set_error_callback(base::Bind(&HistoryBackend::DatabaseErrorCallback,
                                      base::Unretained(this)));
 
+  db_diagnostics_.clear();
   sql::InitStatus status = db_->Init(history_name);
   switch (status) {
     case sql::INIT_OK:
       break;
-    case sql::INIT_TOO_NEW:
-      delegate_->NotifyProfileError(status);
-      db_.reset();
-      return;
     case sql::INIT_FAILURE: {
       // A null db_ will cause all calls on this object to notice this error
       // and to not continue. If the error callback scheduled killing the
@@ -669,7 +670,10 @@ void HistoryBackend::InitImpl(
       if (kill_db)
         KillHistoryDatabase();
       UMA_HISTOGRAM_BOOLEAN("History.AttemptedToFixProfileError", kill_db);
-      delegate_->NotifyProfileError(status);
+    }  // Falls through.
+    case sql::INIT_TOO_NEW: {
+      db_diagnostics_ += sql::GetCorruptFileDiagnosticsInfo(history_name);
+      delegate_->NotifyProfileError(status, db_diagnostics_);
       db_.reset();
       return;
     }
@@ -1177,7 +1181,15 @@ bool HistoryBackend::CreateDownload(const DownloadRow& history_info) {
   if (!db_)
     return false;
   bool success = db_->CreateDownload(history_info);
+#if defined(OS_ANDROID)
+  // On android, browser process can get easily killed. Download will no longer
+  // be able to resume and the temporary file will linger forever if the
+  // download is not committed before that. Do the commit right away to avoid
+  // uncommitted download entry if browser is killed.
+  Commit();
+#else
   ScheduleCommit();
+#endif
   return success;
 }
 
@@ -1209,10 +1221,6 @@ void HistoryBackend::RemoveDownloads(const std::set<uint32_t>& ids) {
                         (1000 * micros) / num_downloads_deleted);
   }
   DCHECK_GE(ids.size(), num_downloads_deleted);
-  if (ids.size() < num_downloads_deleted)
-    return;
-  UMA_HISTOGRAM_COUNTS("Download.DatabaseRemoveDownloadsCountNotRemoved",
-                       ids.size() - num_downloads_deleted);
 }
 
 void HistoryBackend::QueryHistory(const base::string16& text_query,
@@ -1539,14 +1547,20 @@ void HistoryBackend::GetFaviconsForURL(
     int icon_types,
     const std::vector<int>& desired_sizes,
     std::vector<favicon_base::FaviconRawBitmapResult>* bitmap_results) {
+  TRACE_EVENT0("browser", "HistoryBackend::GetFaviconsForURL");
   DCHECK(bitmap_results);
   GetFaviconsFromDB(page_url, icon_types, desired_sizes, bitmap_results);
+
+  if (desired_sizes.size() == 1)
+    bitmap_results->assign(1, favicon_base::ResizeFaviconBitmapResult(
+                                  *bitmap_results, desired_sizes[0]));
 }
 
 void HistoryBackend::GetFaviconForID(
     favicon_base::FaviconID favicon_id,
     int desired_size,
     std::vector<favicon_base::FaviconRawBitmapResult>* bitmap_results) {
+  TRACE_EVENT0("browser", "HistoryBackend::GetFaviconForID");
   std::vector<favicon_base::FaviconID> favicon_ids;
   favicon_ids.push_back(favicon_id);
   std::vector<int> desired_sizes;
@@ -1555,6 +1569,9 @@ void HistoryBackend::GetFaviconForID(
   // Get results from DB.
   GetFaviconBitmapResultsForBestMatch(favicon_ids, desired_sizes,
                                       bitmap_results);
+
+  bitmap_results->assign(1, favicon_base::ResizeFaviconBitmapResult(
+                                *bitmap_results, desired_size));
 }
 
 void HistoryBackend::UpdateFaviconMappingsAndFetch(
@@ -2227,7 +2244,7 @@ void HistoryBackend::ScheduleCommit() {
   scheduled_commit_ = new CommitLaterTask(this);
   task_runner_->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&CommitLaterTask::RunCommit, scheduled_commit_.get()),
+      base::Bind(&CommitLaterTask::RunCommit, scheduled_commit_),
       base::TimeDelta::FromSeconds(kCommitIntervalSeconds));
 }
 
@@ -2241,26 +2258,24 @@ void HistoryBackend::CancelScheduledCommit() {
 void HistoryBackend::ProcessDBTaskImpl() {
   if (!db_) {
     // db went away, release all the refs.
-    STLDeleteContainerPointers(queued_history_db_tasks_.begin(),
-                               queued_history_db_tasks_.end());
     queued_history_db_tasks_.clear();
     return;
   }
 
   // Remove any canceled tasks.
   while (!queued_history_db_tasks_.empty()) {
-    QueuedHistoryDBTask* task = queued_history_db_tasks_.front();
+    QueuedHistoryDBTask* task = queued_history_db_tasks_.front().get();
     if (!task->is_canceled())
       break;
 
-    delete task;
     queued_history_db_tasks_.pop_front();
   }
   if (queued_history_db_tasks_.empty())
     return;
 
   // Run the first task.
-  std::unique_ptr<QueuedHistoryDBTask> task(queued_history_db_tasks_.front());
+  std::unique_ptr<QueuedHistoryDBTask> task =
+      std::move(queued_history_db_tasks_.front());
   queued_history_db_tasks_.pop_front();
   if (task->Run(this, db_.get())) {
     // The task is done, notify the callback.
@@ -2268,7 +2283,7 @@ void HistoryBackend::ProcessDBTaskImpl() {
   } else {
     // The task wants to run some more. Schedule it at the end of the current
     // tasks, and process it after an invoke later.
-    queued_history_db_tasks_.push_back(task.release());
+    queued_history_db_tasks_.push_back(std::move(task));
     task_runner_->PostTask(
         FROM_HERE, base::Bind(&HistoryBackend::ProcessDBTaskImpl, this));
   }
@@ -2411,6 +2426,9 @@ void HistoryBackend::URLsNoLongerBookmarked(const std::set<GURL>& urls) {
 void HistoryBackend::DatabaseErrorCallback(int error, sql::Statement* stmt) {
   if (!scheduled_kill_db_ && sql::IsErrorCatastrophic(error)) {
     scheduled_kill_db_ = true;
+
+    db_diagnostics_ = db_->GetDiagnosticInfo(error, stmt);
+
     // Don't just do the close/delete here, as we are being called by |db| and
     // that seems dangerous.
     // TODO(shess): Consider changing KillHistoryDatabase() to use
@@ -2460,8 +2478,8 @@ void HistoryBackend::ProcessDBTask(
     scoped_refptr<base::SingleThreadTaskRunner> origin_loop,
     const base::CancelableTaskTracker::IsCanceledCallback& is_canceled) {
   bool scheduled = !queued_history_db_tasks_.empty();
-  queued_history_db_tasks_.push_back(
-      new QueuedHistoryDBTask(std::move(task), origin_loop, is_canceled));
+  queued_history_db_tasks_.push_back(base::MakeUnique<QueuedHistoryDBTask>(
+      std::move(task), origin_loop, is_canceled));
   if (!scheduled)
     ProcessDBTaskImpl();
 }

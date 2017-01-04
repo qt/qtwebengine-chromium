@@ -44,10 +44,20 @@ struct CandidatesData : public rtc::MessageData {
 
 TransportController::TransportController(rtc::Thread* signaling_thread,
                                          rtc::Thread* network_thread,
-                                         PortAllocator* port_allocator)
+                                         PortAllocator* port_allocator,
+                                         bool redetermine_role_on_ice_restart)
     : signaling_thread_(signaling_thread),
       network_thread_(network_thread),
-      port_allocator_(port_allocator) {}
+      port_allocator_(port_allocator),
+      redetermine_role_on_ice_restart_(redetermine_role_on_ice_restart) {}
+
+TransportController::TransportController(rtc::Thread* signaling_thread,
+                                         rtc::Thread* network_thread,
+                                         PortAllocator* port_allocator)
+    : TransportController(signaling_thread,
+                          network_thread,
+                          port_allocator,
+                          true) {}
 
 TransportController::~TransportController() {
   network_thread_->Invoke<void>(
@@ -191,6 +201,8 @@ TransportChannel* TransportController::CreateTransportChannel_n(
       this, &TransportController::OnChannelRoleConflict_n);
   channel->SignalStateChanged.connect(
       this, &TransportController::OnChannelStateChanged_n);
+  channel->SignalDtlsHandshakeError.connect(
+      this, &TransportController::OnDtlsHandshakeError);
   channels_.insert(channels_.end(), RefCountedChannel(channel))->AddRef();
   // Adding a channel could cause aggregate state to change.
   UpdateAggregateStates_n();
@@ -448,11 +460,12 @@ bool TransportController::SetLocalTransportDescription_n(
 
   // Older versions of Chrome expect the ICE role to be re-determined when an
   // ICE restart occurs, and also don't perform conflict resolution correctly,
-  // so for now we can't safely stop doing this.
+  // so for now we can't safely stop doing this, unless the application opts in
+  // by setting |redetermine_role_on_ice_restart_| to false.
   // See: https://bugs.chromium.org/p/chromium/issues/detail?id=628676
   // TODO(deadbeef): Remove this when these old versions of Chrome reach a low
   // enough population.
-  if (transport->local_description() &&
+  if (redetermine_role_on_ice_restart_ && transport->local_description() &&
       IceCredentialsChanged(transport->local_description()->ice_ufrag,
                             transport->local_description()->ice_pwd,
                             tdesc.ice_ufrag, tdesc.ice_pwd)) {
@@ -461,6 +474,7 @@ bool TransportController::SetLocalTransportDescription_n(
     SetIceRole(new_ice_role);
   }
 
+  LOG(LS_INFO) << "Set local transport description on " << transport_name;
   return transport->SetLocalTransportDescription(tdesc, action, err);
 }
 
@@ -480,6 +494,7 @@ bool TransportController::SetRemoteTransportDescription_n(
     return true;
   }
 
+  LOG(LS_INFO) << "Set remote transport description on " << transport_name;
   return transport->SetRemoteTransportDescription(tdesc, action, err);
 }
 
@@ -683,6 +698,10 @@ void TransportController::UpdateAggregateStates_n() {
         RTC_FROM_HERE, this, MSG_ICEGATHERINGSTATE,
         new rtc::TypedMessageData<IceGatheringState>(new_gathering_state));
   }
+}
+
+void TransportController::OnDtlsHandshakeError(rtc::SSLHandshakeError error) {
+  SignalDtlsHandshakeError(error);
 }
 
 }  // namespace cricket

@@ -26,8 +26,8 @@ base::FilePath GetManifestPath(const base::FilePath& package_dir,
   // TODO(beng): think more about how this should be done for exe targets.
   std::string type = shell::GetNameType(name);
   std::string path = shell::GetNamePath(name);
-  if (type == shell::kNameType_Mojo) {
-    return package_dir.AppendASCII(kMojoApplicationsDirName).AppendASCII(
+  if (type == shell::kNameType_Service) {
+    return package_dir.AppendASCII(kPackagesDirName).AppendASCII(
         path + "/manifest.json");
   }
   if (type == shell::kNameType_Exe)
@@ -36,13 +36,13 @@ base::FilePath GetManifestPath(const base::FilePath& package_dir,
 }
 
 
-base::FilePath GetPackagePath(const base::FilePath& package_dir,
-                              const std::string& name) {
+base::FilePath GetExecutablePath(const base::FilePath& package_dir,
+                                 const std::string& name) {
   std::string type = shell::GetNameType(name);
-  if (type == shell::kNameType_Mojo) {
+  if (type == shell::kNameType_Service) {
     // It's still a mojo: URL, use the default mapping scheme.
     const std::string host = shell::GetNamePath(name);
-    return package_dir.AppendASCII(host + "/" + host + ".mojo");
+    return package_dir.AppendASCII(host + "/" + host + ".library");
   }
   if (type == shell::kNameType_Exe) {
 #if defined OS_WIN
@@ -69,7 +69,7 @@ std::unique_ptr<Entry> ProcessManifest(
   std::unique_ptr<Entry> entry = Entry::Deserialize(*dictionary);
   if (!entry)
     return nullptr;
-  entry->set_path(GetPackagePath(package_dir, entry->name()));
+  entry->set_path(GetExecutablePath(package_dir, entry->name()));
   return entry;
 }
 
@@ -106,8 +106,9 @@ void ScanDir(
     // Skip over subdirs that contain only manifests, they're artifacts of the
     // build (e.g. for applications that are packaged into others) and are not
     // valid standalone packages.
-    base::FilePath package_path = GetPackagePath(package_dir, entry->name());
-    if (entry->name() != "mojo:shell" && entry->name() != "mojo:catalog" &&
+    base::FilePath package_path = GetExecutablePath(package_dir, entry->name());
+    if (entry->name() != "service:shell" &&
+        entry->name() != "service:catalog" &&
         !base::PathExists(package_path)) {
       continue;
     }
@@ -126,15 +127,16 @@ std::unique_ptr<Entry> ReadManifest(const base::FilePath& package_dir,
       GetManifestPath(package_dir, mojo_name), package_dir);
   if (!entry) {
     entry.reset(new Entry(mojo_name));
-    entry->set_path(GetPackagePath(
-        package_dir.AppendASCII(kMojoApplicationsDirName), mojo_name));
+    entry->set_path(GetExecutablePath(
+        package_dir.AppendASCII(kPackagesDirName), mojo_name));
   }
   return entry;
 }
 
 void AddEntryToCache(EntryCache* cache, std::unique_ptr<Entry> entry) {
-  for (auto child : entry->applications())
-    AddEntryToCache(cache, base::WrapUnique(child));
+  std::vector<std::unique_ptr<Entry>> children = entry->TakeChildren();
+  for (auto& child : children)
+    AddEntryToCache(cache, std::move(child));
   (*cache)[entry->name()] = std::move(entry);
 }
 
@@ -177,25 +179,24 @@ void Reader::CreateEntryForName(
     const std::string& mojo_name,
     EntryCache* cache,
     const CreateEntryForNameCallback& entry_created_callback) {
-  std::string manifest_contents;
-  if (manifest_provider_ &&
-      manifest_provider_->GetApplicationManifest(mojo_name,
-                                                 &manifest_contents)) {
+  if (manifest_provider_) {
     std::unique_ptr<base::Value> manifest_root =
-        base::JSONReader::Read(manifest_contents);
-    base::PostTaskAndReplyWithResult(
-        file_task_runner_.get(), FROM_HERE,
-        base::Bind(&ProcessManifest, base::Passed(&manifest_root),
-                   system_package_dir_),
-        base::Bind(&Reader::OnReadManifest, weak_factory_.GetWeakPtr(), cache,
-                   entry_created_callback));
-  } else {
-    base::PostTaskAndReplyWithResult(
-        file_task_runner_.get(), FROM_HERE,
-        base::Bind(&ReadManifest, system_package_dir_, mojo_name),
-        base::Bind(&Reader::OnReadManifest, weak_factory_.GetWeakPtr(), cache,
-                   entry_created_callback));
+        manifest_provider_->GetManifest(mojo_name);
+    if (manifest_root) {
+      base::PostTaskAndReplyWithResult(
+          file_task_runner_.get(), FROM_HERE,
+          base::Bind(&ProcessManifest, base::Passed(&manifest_root),
+                     system_package_dir_),
+          base::Bind(&Reader::OnReadManifest, weak_factory_.GetWeakPtr(), cache,
+                     entry_created_callback));
+      return;
+    }
   }
+  base::PostTaskAndReplyWithResult(
+      file_task_runner_.get(), FROM_HERE,
+      base::Bind(&ReadManifest, system_package_dir_, mojo_name),
+      base::Bind(&Reader::OnReadManifest, weak_factory_.GetWeakPtr(), cache,
+                  entry_created_callback));
 }
 
 Reader::Reader(ManifestProvider* manifest_provider)

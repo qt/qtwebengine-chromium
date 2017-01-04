@@ -7,6 +7,8 @@
 #ifndef FPDFSDK_FORMFILLER_CFFL_TEXTFIELD_H_
 #define FPDFSDK_FORMFILLER_CFFL_TEXTFIELD_H_
 
+#include <memory>
+
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 
 #define BF_ALIGN_LEFT 0
@@ -16,23 +18,25 @@
 class CBA_FontMap;
 
 struct FFL_TextFieldState {
+  FFL_TextFieldState() : nStart(0), nEnd(0) {}
+
   int nStart;
   int nEnd;
   CFX_WideString sValue;
 };
 
-class CFFL_TextField : public CFFL_FormFiller,
-                       public IPWL_FocusHandler,
-                       public IPWL_Edit_Notify {
+class CFFL_TextField : public CFFL_FormFiller, public IPWL_FocusHandler {
  public:
-  CFFL_TextField(CPDFDoc_Environment* pApp, CPDFSDK_Annot* pAnnot);
+  CFFL_TextField(CPDFSDK_FormFillEnvironment* pApp, CPDFSDK_Annot* pAnnot);
   ~CFFL_TextField() override;
 
   // CFFL_FormFiller:
   PWL_CREATEPARAM GetCreateParam() override;
   CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
                          CPDFSDK_PageView* pPageView) override;
-  FX_BOOL OnChar(CPDFSDK_Annot* pAnnot, FX_UINT nChar, FX_UINT nFlags) override;
+  FX_BOOL OnChar(CPDFSDK_Annot* pAnnot,
+                 uint32_t nChar,
+                 uint32_t nFlags) override;
   FX_BOOL IsDataChanged(CPDFSDK_PageView* pPageView) override;
   void SaveData(CPDFSDK_PageView* pPageView) override;
   void GetActionData(CPDFSDK_PageView* pPageView,
@@ -51,10 +55,6 @@ class CFFL_TextField : public CFFL_FormFiller,
 
   // IPWL_FocusHandler:
   void OnSetFocus(CPWL_Wnd* pWnd) override;
-  void OnKillFocus(CPWL_Wnd* pWnd) override;
-
-  // IPWL_Edit_Notify:
-  void OnAddUndo(CPWL_Edit* pEdit) override;
 
 #ifdef PDF_ENABLE_XFA
   // CFFL_FormFiller:
@@ -62,7 +62,7 @@ class CFFL_TextField : public CFFL_FormFiller,
 #endif  // PDF_ENABLE_XFA
 
  private:
-  CBA_FontMap* m_pFontMap;
+  std::unique_ptr<CBA_FontMap> m_pFontMap;
   FFL_TextFieldState m_State;
 };
 

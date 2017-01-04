@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#define SkCpu_IMPL
 #include "SkCpu.h"
 #include "SkOnce.h"
 
@@ -53,6 +52,8 @@
 
             cpuid7(abcd);
             if (abcd[1] & (1<<5)) { features |= SkCpu::AVX2; }
+            if (abcd[1] & (1<<3)) { features |= SkCpu::BMI1; }
+            if (abcd[1] & (1<<8)) { features |= SkCpu::BMI2; }
         }
         return features;
     }
@@ -60,7 +61,7 @@
 #elif defined(SK_CPU_ARM32)         && \
       defined(SK_BUILD_FOR_ANDROID) && \
      !defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)
-    #include <cpu-features.h>
+    #include "cpu-features.h"
 
     static uint32_t read_cpu_features() {
         uint32_t features = 0;
@@ -72,6 +73,19 @@
         return features;
     }
 
+#elif defined(SK_CPU_ARM64)         && \
+      defined(SK_BUILD_FOR_ANDROID) && \
+     !defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)
+    #include "cpu-features.h"
+
+    static uint32_t read_cpu_features() {
+        uint32_t features = 0;
+
+        uint64_t android_features = android_getCpuFeatures();
+        if (android_features & ANDROID_CPU_ARM64_FEATURE_CRC32) { features |= SkCpu::CRC32; }
+        return features;
+    }
+
 #else
     static uint32_t read_cpu_features() {
         return 0;
@@ -79,17 +93,9 @@
 
 #endif
 
-#if defined(_MSC_VER)
-    const uint32_t SkCpu::gCachedFeatures = read_cpu_features();
+uint32_t SkCpu::gCachedFeatures = 0;
 
-    void SkCpu::CacheRuntimeFeatures() {}
-
-#else
-    uint32_t SkCpu::gCachedFeatures = 0;
-
-    void SkCpu::CacheRuntimeFeatures() {
-        static SkOnce once;
-        once([] { gCachedFeatures = read_cpu_features(); });
-    }
-
-#endif
+void SkCpu::CacheRuntimeFeatures() {
+    static SkOnce once;
+    once([] { gCachedFeatures = read_cpu_features(); });
+}

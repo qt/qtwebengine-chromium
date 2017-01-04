@@ -4,7 +4,6 @@
 
 #include "headless/lib/browser/headless_browser_main_parts.h"
 
-#include "components/devtools_http_handler/devtools_http_handler.h"
 #include "headless/lib/browser/headless_browser_context_impl.h"
 #include "headless/lib/browser/headless_browser_impl.h"
 #include "headless/lib/browser/headless_devtools.h"
@@ -16,8 +15,8 @@ namespace headless {
 
 namespace {
 
-void PlatformInitialize() {
-  HeadlessScreen* screen = HeadlessScreen::Create(gfx::Size());
+void PlatformInitialize(const gfx::Size& screen_size) {
+  HeadlessScreen* screen = HeadlessScreen::Create(screen_size);
   display::Screen::SetScreenInstance(screen);
 }
 
@@ -27,29 +26,25 @@ void PlatformExit() {
 }  // namespace
 
 HeadlessBrowserMainParts::HeadlessBrowserMainParts(HeadlessBrowserImpl* browser)
-    : browser_(browser) {}
+    : browser_(browser)
+    , devtools_http_handler_started_(false) {}
 
 HeadlessBrowserMainParts::~HeadlessBrowserMainParts() {}
 
 void HeadlessBrowserMainParts::PreMainMessageLoopRun() {
-  browser_context_.reset(new HeadlessBrowserContextImpl(ProtocolHandlerMap(),
-                                                        browser_->options()));
   if (browser_->options()->devtools_endpoint.address().IsValid()) {
-    devtools_http_handler_ =
-        CreateLocalDevToolsHttpHandler(browser_context_.get());
+    StartLocalDevToolsHttpHandler(browser_->options());
+    devtools_http_handler_started_ = true;
   }
-  PlatformInitialize();
+  PlatformInitialize(browser_->options()->window_size);
 }
 
 void HeadlessBrowserMainParts::PostMainMessageLoopRun() {
-  browser_context_.reset();
-  devtools_http_handler_.reset();
+  if (devtools_http_handler_started_) {
+    StopLocalDevToolsHttpHandler();
+    devtools_http_handler_started_ = false;
+  }
   PlatformExit();
-}
-
-HeadlessBrowserContextImpl* HeadlessBrowserMainParts::default_browser_context()
-    const {
-  return browser_context_.get();
 }
 
 }  // namespace headless

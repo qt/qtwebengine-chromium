@@ -7,7 +7,10 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <memory>
 #include <set>
+#include <type_traits>
+#include <utility>
 
 #include "base/containers/hash_tables.h"
 #include "base/logging.h"
@@ -40,14 +43,16 @@ class IDMap {
   using KeyType = K;
 
  private:
-  typedef base::hash_map<KeyType, T*> HashTable;
+  using V = typename std::
+      conditional<OS == IDMapExternalPointer, T*, std::unique_ptr<T>>::type;
+  using HashTable = base::hash_map<KeyType, V>;
 
  public:
   IDMap() : iteration_depth_(0), next_id_(1), check_on_null_data_(false) {
     // A number of consumers of IDMap create it on one thread but always
     // access it from a different, but consistent, thread (or sequence)
-    // post-construction. The first call to CalledOnValidSequencedThread()
-    // will re-bind it.
+    // post-construction. The first call to CalledOnValidSequence() will re-bind
+    // it.
     sequence_checker_.DetachFromSequence();
   }
 
@@ -56,7 +61,6 @@ class IDMap {
     // thread. However, all the accesses may take place on another thread (or
     // sequence), such as the IO thread. Detaching again to clean this up.
     sequence_checker_.DetachFromSequence();
-    Releaser<OS, 0>::release_all(&data_);
   }
 
   // Sets whether Add and Replace should DCHECK if passed in NULL data.
@@ -64,29 +68,33 @@ class IDMap {
   void set_check_on_null_data(bool value) { check_on_null_data_ = value; }
 
   // Adds a view with an automatically generated unique ID. See AddWithID.
-  KeyType Add(T* data) {
-    DCHECK(sequence_checker_.CalledOnValidSequencedThread());
-    DCHECK(!check_on_null_data_ || data);
-    KeyType this_id = next_id_;
-    DCHECK(data_.find(this_id) == data_.end()) << "Inserting duplicate item";
-    data_[this_id] = data;
-    next_id_++;
-    return this_id;
+  // (This unique_ptr<> variant will not compile in IDMapExternalPointer mode.)
+  KeyType Add(std::unique_ptr<T> data) {
+    return AddInternal(std::move(data));
   }
 
   // Adds a new data member with the specified ID. The ID must not be in
   // the list. The caller either must generate all unique IDs itself and use
   // this function, or allow this object to generate IDs and call Add. These
-  // two methods may not be mixed, or duplicate IDs may be generated
+  // two methods may not be mixed, or duplicate IDs may be generated.
+  // (This unique_ptr<> variant will not compile in IDMapExternalPointer mode.)
+  void AddWithID(std::unique_ptr<T> data, KeyType id) {
+    AddWithIDInternal(std::move(data), id);
+  }
+
+  // http://crbug.com/647091: Raw pointer Add()s in IDMapOwnPointer mode are
+  // deprecated.  Users of IDMapOwnPointer should transition to the unique_ptr
+  // variant above, and the following methods should only be used in
+  // IDMapExternalPointer mode.
+  KeyType Add(T* data) {
+    return AddInternal(V(data));
+  }
   void AddWithID(T* data, KeyType id) {
-    DCHECK(sequence_checker_.CalledOnValidSequencedThread());
-    DCHECK(!check_on_null_data_ || data);
-    DCHECK(data_.find(id) == data_.end()) << "Inserting duplicate item";
-    data_[id] = data;
+    AddWithIDInternal(V(data), id);
   }
 
   void Remove(KeyType id) {
-    DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+    DCHECK(sequence_checker_.CalledOnValidSequence());
     typename HashTable::iterator i = data_.find(id);
     if (i == data_.end()) {
       NOTREACHED() << "Attempting to remove an item not in the list";
@@ -94,36 +102,29 @@ class IDMap {
     }
 
     if (iteration_depth_ == 0) {
-      Releaser<OS, 0>::release(i->second);
       data_.erase(i);
     } else {
       removed_ids_.insert(id);
     }
   }
 
-  // Replaces the value for |id| with |new_data| and returns a pointer to the
-  // existing value. If there is no entry for |id|, the map is not altered and
-  // nullptr is returned. The OwnershipSemantics of the map have no effect on
-  // how the existing value is treated, the IDMap does not delete the existing
-  // value being replaced.
-  T* Replace(KeyType id, T* new_data) {
-    DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+  // Replaces the value for |id| with |new_data| and returns the existing value
+  // (as a unique_ptr<> if in IDMapOwnPointer mode).  Should only be called with
+  // an already added id.
+  V Replace(KeyType id, V new_data) {
+    DCHECK(sequence_checker_.CalledOnValidSequence());
     DCHECK(!check_on_null_data_ || new_data);
     typename HashTable::iterator i = data_.find(id);
-    if (i == data_.end()) {
-      NOTREACHED() << "Attempting to replace an item not in the list";
-      return nullptr;
-    }
+    DCHECK(i != data_.end());
 
-    T* temp = i->second;
-    i->second = new_data;
-    return temp;
+    std::swap(i->second, new_data);
+    return new_data;
   }
 
   void Clear() {
-    DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+    DCHECK(sequence_checker_.CalledOnValidSequence());
     if (iteration_depth_ == 0) {
-      Releaser<OS, 0>::release_all(&data_);
+      data_.clear();
     } else {
       for (typename HashTable::iterator i = data_.begin();
            i != data_.end(); ++i)
@@ -132,20 +133,20 @@ class IDMap {
   }
 
   bool IsEmpty() const {
-    DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+    DCHECK(sequence_checker_.CalledOnValidSequence());
     return size() == 0u;
   }
 
   T* Lookup(KeyType id) const {
-    DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+    DCHECK(sequence_checker_.CalledOnValidSequence());
     typename HashTable::const_iterator i = data_.find(id);
     if (i == data_.end())
-      return NULL;
-    return i->second;
+      return nullptr;
+    return &*i->second;
   }
 
   size_t size() const {
-    DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+    DCHECK(sequence_checker_.CalledOnValidSequence());
     return data_.size() - removed_ids_.size();
   }
 
@@ -180,7 +181,7 @@ class IDMap {
     }
 
     ~Iterator() {
-      DCHECK(map_->sequence_checker_.CalledOnValidSequencedThread());
+      DCHECK(map_->sequence_checker_.CalledOnValidSequence());
 
       // We're going to decrement iteration depth. Make sure it's greater than
       // zero so that it doesn't become negative.
@@ -191,29 +192,29 @@ class IDMap {
     }
 
     bool IsAtEnd() const {
-      DCHECK(map_->sequence_checker_.CalledOnValidSequencedThread());
+      DCHECK(map_->sequence_checker_.CalledOnValidSequence());
       return iter_ == map_->data_.end();
     }
 
     KeyType GetCurrentKey() const {
-      DCHECK(map_->sequence_checker_.CalledOnValidSequencedThread());
+      DCHECK(map_->sequence_checker_.CalledOnValidSequence());
       return iter_->first;
     }
 
     ReturnType* GetCurrentValue() const {
-      DCHECK(map_->sequence_checker_.CalledOnValidSequencedThread());
-      return iter_->second;
+      DCHECK(map_->sequence_checker_.CalledOnValidSequence());
+      return &*iter_->second;
     }
 
     void Advance() {
-      DCHECK(map_->sequence_checker_.CalledOnValidSequencedThread());
+      DCHECK(map_->sequence_checker_.CalledOnValidSequence());
       ++iter_;
       SkipRemovedEntries();
     }
 
    private:
     void Init() {
-      DCHECK(map_->sequence_checker_.CalledOnValidSequencedThread());
+      DCHECK(map_->sequence_checker_.CalledOnValidSequence());
       ++map_->iteration_depth_;
       SkipRemovedEntries();
     }
@@ -234,24 +235,22 @@ class IDMap {
   typedef Iterator<const T> const_iterator;
 
  private:
+  KeyType AddInternal(V data) {
+    DCHECK(sequence_checker_.CalledOnValidSequence());
+    DCHECK(!check_on_null_data_ || data);
+    KeyType this_id = next_id_;
+    DCHECK(data_.find(this_id) == data_.end()) << "Inserting duplicate item";
+    data_[this_id] = std::move(data);
+    next_id_++;
+    return this_id;
+  }
 
-  // The dummy parameter is there because C++ standard does not allow
-  // explicitly specialized templates inside classes
-  template<IDMapOwnershipSemantics OI, int dummy> struct Releaser {
-    static inline void release(T* ptr) {}
-    static inline void release_all(HashTable* table) {}
-  };
-
-  template<int dummy> struct Releaser<IDMapOwnPointer, dummy> {
-    static inline void release(T* ptr) { delete ptr;}
-    static inline void release_all(HashTable* table) {
-      for (typename HashTable::iterator i = table->begin();
-           i != table->end(); ++i) {
-        delete i->second;
-      }
-      table->clear();
-    }
-  };
+  void AddWithIDInternal(V data, KeyType id) {
+    DCHECK(sequence_checker_.CalledOnValidSequence());
+    DCHECK(!check_on_null_data_ || data);
+    DCHECK(data_.find(id) == data_.end()) << "Inserting duplicate item";
+    data_[id] = std::move(data);
+  }
 
   void Compact() {
     DCHECK_EQ(0, iteration_depth_);

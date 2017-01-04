@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
+#include "net/log/net_log_with_source.h"
 #include "net/websockets/websocket_basic_handshake_stream.h"
 #include "net/websockets/websocket_handshake_request_info.h"
 #include "net/websockets/websocket_handshake_response_info.h"
@@ -33,7 +34,7 @@ class DeterministicKeyWebSocketHandshakeStreamCreateHelper
       : WebSocketHandshakeStreamCreateHelper(connect_delegate,
                                              requested_subprotocols) {}
 
-  void OnStreamCreated(WebSocketBasicHandshakeStream* stream) override {
+  void OnBasicStreamCreated(WebSocketBasicHandshakeStream* stream) override {
     stream->SetWebSocketKeyForTesting("dGhlIHNhbXBsZSBub25jZQ==");
   }
 
@@ -114,10 +115,10 @@ void WebSocketStreamCreateTestBase::CreateAndConnectStream(
   std::unique_ptr<WebSocketHandshakeStreamCreateHelper> create_helper(
       new DeterministicKeyWebSocketHandshakeStreamCreateHelper(delegate,
                                                                sub_protocols));
-  stream_request_ = CreateAndConnectStreamForTesting(
+  stream_request_ = WebSocketStream::CreateAndConnectStreamForTesting(
       socket_url, std::move(create_helper), origin, first_party_for_cookies,
       additional_headers, url_request_context_host_.GetURLRequestContext(),
-      BoundNetLog(), std::move(connect_delegate),
+      NetLogWithSource(), std::move(connect_delegate),
       timer ? std::move(timer)
             : std::unique_ptr<base::Timer>(new base::Timer(false, false)));
 }

@@ -21,6 +21,7 @@
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/video_frame_metadata.h"
 #include "media/base/video_types.h"
+#include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -67,14 +68,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
     // meaningful name and handle it appropriately in all cases.
     STORAGE_DMABUFS = 5,  // Each plane is stored into a DmaBuf.
 #endif
-#if defined(VIDEO_HOLE)
-    // Indicates protected media that needs to be directly rendered to hw. It
-    // is, in principle, platform independent, see http://crbug.com/323157 and
-    // https://groups.google.com/a/google.com/d/topic/chrome-gpu/eIM1RwarUmk/discussion
-    STORAGE_HOLE = 6,
-#endif
-    STORAGE_GPU_MEMORY_BUFFERS = 7,
-    STORAGE_MOJO_SHARED_BUFFER = 8,
+    STORAGE_GPU_MEMORY_BUFFERS = 6,
+    STORAGE_MOJO_SHARED_BUFFER = 7,
     STORAGE_LAST = STORAGE_MOJO_SHARED_BUFFER,
   };
 
@@ -272,11 +267,6 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   static scoped_refptr<VideoFrame> CreateTransparentFrame(
       const gfx::Size& size);
 
-#if defined(VIDEO_HOLE)
-  // Allocates a hole frame.
-  static scoped_refptr<VideoFrame> CreateHoleFrame(const gfx::Size& size);
-#endif  // defined(VIDEO_HOLE)
-
   static size_t NumPlanes(VideoPixelFormat format);
 
   // Returns the required allocation size for a (tightly packed) frame of the
@@ -321,6 +311,10 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Returns true if |frame| has textures with any StorageType and should not be
   // accessed via data(), visible_data() etc.
   bool HasTextures() const;
+
+  // Returns the color space of this frame's content.
+  gfx::ColorSpace ColorSpace() const;
+  void set_color_space(const gfx::ColorSpace& color_space);
 
   VideoPixelFormat format() const { return format_; }
   StorageType storage_type() const { return storage_type_; }
@@ -573,6 +567,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   // Generated at construction time.
   const int unique_id_;
+
+  gfx::ColorSpace color_space_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoFrame);
 };

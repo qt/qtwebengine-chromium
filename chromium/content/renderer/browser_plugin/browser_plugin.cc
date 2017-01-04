@@ -21,6 +21,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/browser_plugin_delegate.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/renderer/accessibility/render_accessibility_impl.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/cursor_utils.h"
@@ -28,6 +29,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/sad_plugin.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -164,6 +166,19 @@ void BrowserPlugin::Attach() {
       attach_params));
 
   attached_ = true;
+
+  // Post an update event to the associated accessibility object.
+  auto* render_frame =
+      RenderFrameImpl::FromRoutingID(render_frame_routing_id());
+  if (render_frame && render_frame->render_accessibility() && container()) {
+    blink::WebElement element = container()->element();
+    blink::WebAXObject ax_element = element.accessibilityObject();
+    if (!ax_element.isDetached()) {
+      render_frame->render_accessibility()->HandleAXEvent(
+          ax_element,
+          ui::AX_EVENT_CHILDREN_CHANGED);
+    }
+  }
 }
 
 void BrowserPlugin::Detach() {
@@ -183,8 +198,9 @@ void BrowserPlugin::DidCommitCompositorFrame() {
 
 void BrowserPlugin::OnAdvanceFocus(int browser_plugin_instance_id,
                                    bool reverse) {
-  auto render_frame = RenderFrameImpl::FromRoutingID(render_frame_routing_id());
-  auto render_view = render_frame ? render_frame->GetRenderView() : nullptr;
+  auto* render_frame =
+      RenderFrameImpl::FromRoutingID(render_frame_routing_id());
+  auto* render_view = render_frame ? render_frame->GetRenderView() : nullptr;
   if (!render_view)
     return;
   render_view->GetWebView()->advanceFocus(reverse);
@@ -204,8 +220,9 @@ void BrowserPlugin::OnSetCursor(int browser_plugin_instance_id,
 
 void BrowserPlugin::OnSetMouseLock(int browser_plugin_instance_id,
                                    bool enable) {
-  auto render_frame = RenderFrameImpl::FromRoutingID(render_frame_routing_id());
-  auto render_view = static_cast<RenderViewImpl*>(
+  auto* render_frame =
+      RenderFrameImpl::FromRoutingID(render_frame_routing_id());
+  auto* render_view = static_cast<RenderViewImpl*>(
       render_frame ? render_frame->GetRenderView() : nullptr);
   if (enable) {
     if (mouse_locked_ || !render_view)
@@ -259,8 +276,9 @@ void BrowserPlugin::UpdateGuestFocusState(blink::WebFocusType focus_type) {
 
 bool BrowserPlugin::ShouldGuestBeFocused() const {
   bool embedder_focused = false;
-  auto render_frame = RenderFrameImpl::FromRoutingID(render_frame_routing_id());
-  auto render_view = static_cast<RenderViewImpl*>(
+  auto* render_frame =
+      RenderFrameImpl::FromRoutingID(render_frame_routing_id());
+  auto* render_view = static_cast<RenderViewImpl*>(
       render_frame ? render_frame->GetRenderView() : nullptr);
   if (render_view)
     embedder_focused = render_view->has_focus();
@@ -320,8 +338,9 @@ void BrowserPlugin::destroy() {
 
   container_ = nullptr;
   // Will be a no-op if the mouse is not currently locked.
-  auto render_frame = RenderFrameImpl::FromRoutingID(render_frame_routing_id());
-  auto render_view = static_cast<RenderViewImpl*>(
+  auto* render_frame =
+      RenderFrameImpl::FromRoutingID(render_frame_routing_id());
+  auto* render_view = static_cast<RenderViewImpl*>(
       render_frame ? render_frame->GetRenderView() : nullptr);
   if (render_view)
     render_view->mouse_lock_dispatcher()->OnLockTargetDestroyed(this);
@@ -366,7 +385,7 @@ void BrowserPlugin::updateGeometry(const WebRect& plugin_rect_in_viewport,
   // Convert the plugin_rect_in_viewport to window coordinates, which is css.
   WebRect rect_in_css(plugin_rect_in_viewport);
   blink::WebView* webview = container()->document().frame()->view();
-  RenderView::FromWebView(webview)->GetWidget()->convertViewportToWindow(
+  RenderViewImpl::FromWebView(webview)->GetWidget()->convertViewportToWindow(
       &rect_in_css);
   view_rect_ = rect_in_css;
 
@@ -535,17 +554,24 @@ bool BrowserPlugin::setComposition(
   return true;
 }
 
-bool BrowserPlugin::confirmComposition(
-    const blink::WebString& text,
-    blink::WebWidget::ConfirmCompositionBehavior selectionBehavior) {
+bool BrowserPlugin::commitText(const blink::WebString& text,
+                               int relative_cursor_pos) {
   if (!attached())
     return false;
-  bool keep_selection = (selectionBehavior == blink::WebWidget::KeepSelection);
+
+  BrowserPluginManager::Get()->Send(new BrowserPluginHostMsg_ImeCommitText(
+      browser_plugin_instance_id_, text.utf8(), relative_cursor_pos));
+  // TODO(kochi): This assumes the IPC handling always succeeds.
+  return true;
+}
+
+bool BrowserPlugin::finishComposingText(
+    blink::WebWidget::ConfirmCompositionBehavior selection_behavior) {
+  if (!attached())
+    return false;
+  bool keep_selection = (selection_behavior == blink::WebWidget::KeepSelection);
   BrowserPluginManager::Get()->Send(
-      new BrowserPluginHostMsg_ImeConfirmComposition(
-          browser_plugin_instance_id_,
-          text.utf8(),
-          keep_selection));
+      new BrowserPluginHostMsg_ImeFinishComposingText(keep_selection));
   // TODO(kochi): This assumes the IPC handling always succeeds.
   return true;
 }

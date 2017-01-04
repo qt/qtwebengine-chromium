@@ -10,7 +10,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -97,7 +97,7 @@ void StunProberTrial::SaveHistogramData() {
   int count = 0;
   int total_requests_sent = 0;
   int total_responses_received = 0;
-  for (auto& prober : probers_) {
+  for (auto* prober : probers_) {
     ++count;
 
     // Get the stats.

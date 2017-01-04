@@ -47,7 +47,7 @@ void DidFindRegistration(
     ServiceWorkerStatusCode* status_out,
     const base::Closure& quit_closure,
     ServiceWorkerStatusCode status,
-    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+    scoped_refptr<ServiceWorkerRegistration> registration) {
   *status_out = status;
   quit_closure.Run();
 }
@@ -97,6 +97,8 @@ class ServiceWorkerReadFromCacheJobTest : public testing::Test {
     resources.push_back(main_script_);
     resources.push_back(imported_script_);
     version_->script_cache_map()->SetResources(resources);
+    version_->set_fetch_handler_existence(
+        ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
     ASSERT_EQ(SERVICE_WORKER_OK, StoreRegistration());
     ASSERT_TRUE(WriteResource(main_script_.resource_id));
     ASSERT_TRUE(WriteResource(imported_script_.resource_id));
@@ -192,10 +194,10 @@ TEST_F(ServiceWorkerReadFromCacheJobTest, ReadMainScript) {
       url_request_context_->CreateRequest(main_script_.url,
                                           net::DEFAULT_PRIORITY, &delegate_);
   test_job_interceptor_->set_main_intercept_job(
-      base::WrapUnique(new ServiceWorkerReadFromCacheJob(
+      base::MakeUnique<ServiceWorkerReadFromCacheJob>(
           request.get(), nullptr /* NetworkDelegate */,
           RESOURCE_TYPE_SERVICE_WORKER, context()->AsWeakPtr(), version_,
-          main_script_.resource_id)));
+          main_script_.resource_id));
   StartAndWaitForRequest(request.get());
 
   EXPECT_EQ(net::URLRequestStatus::SUCCESS, request->status().status());
@@ -210,9 +212,9 @@ TEST_F(ServiceWorkerReadFromCacheJobTest, ReadImportedScript) {
       url_request_context_->CreateRequest(imported_script_.url,
                                           net::DEFAULT_PRIORITY, &delegate_);
   test_job_interceptor_->set_main_intercept_job(
-      base::WrapUnique(new ServiceWorkerReadFromCacheJob(
+      base::MakeUnique<ServiceWorkerReadFromCacheJob>(
           request.get(), nullptr /* NetworkDelegate */, RESOURCE_TYPE_SCRIPT,
-          context()->AsWeakPtr(), version_, imported_script_.resource_id)));
+          context()->AsWeakPtr(), version_, imported_script_.resource_id));
   StartAndWaitForRequest(request.get());
 
   EXPECT_EQ(net::URLRequestStatus::SUCCESS, request->status().status());
@@ -231,10 +233,10 @@ TEST_F(ServiceWorkerReadFromCacheJobTest, ResourceNotFound) {
           &delegate_);
   const int64_t kNonexistentResourceId = 100;
   test_job_interceptor_->set_main_intercept_job(
-      base::WrapUnique(new ServiceWorkerReadFromCacheJob(
+      base::MakeUnique<ServiceWorkerReadFromCacheJob>(
           request.get(), nullptr /* NetworkDelegate */,
           RESOURCE_TYPE_SERVICE_WORKER, context()->AsWeakPtr(), version_,
-          kNonexistentResourceId)));
+          kNonexistentResourceId));
   StartAndWaitForRequest(request.get());
 
   EXPECT_EQ(net::URLRequestStatus::FAILED, request->status().status());

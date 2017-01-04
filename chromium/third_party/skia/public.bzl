@@ -55,13 +55,20 @@ def skia_glob(srcs):
 ## PRIVATE_HDRS
 ################################################################################
 
-PRIVATE_HDRS_LIST = [
-    "include/private/**/*",
-    "src/utils/SkWhitelistChecksums.cpp",
+PRIVATE_HDRS_INCLUDE_LIST = [
+    "include/private/**/*.h",
+    "src/**/*.inc",
 ]
 
 PRIVATE_HDRS = struct(
-    include = PRIVATE_HDRS_LIST,
+    include = PRIVATE_HDRS_INCLUDE_LIST,
+)
+
+ALL_HDRS = struct(
+    include = [
+        "src/**/*.h",
+        "include/**/*.h",
+    ],
 )
 
 ################################################################################
@@ -80,13 +87,15 @@ BASE_SRCS_ALL = struct(
         "third_party/ktx/*.cpp",
         "third_party/ktx/*.h",
     ],
-    exclude = PRIVATE_HDRS_LIST + [
+    # Note: PRIVATE_HDRS_INCLUDE_LIST is excluded from BASE_SRCS_ALL here
+    # because they are required to appear in srcs for some rules but hdrs for
+    # other rules. See internal cl/119566959.
+    exclude = PRIVATE_HDRS_INCLUDE_LIST + [
         # Exclude platform-dependent files.
         "src/android/*",
         "src/codec/*",
         "src/device/xps/*",  # Windows-only. Move to ports?
         "src/doc/*_XPS.cpp",  # Windows-only. Move to ports?
-        "src/fonts/SkFontMgr_fontconfig.cpp",
         "src/gpu/gl/android/*",
         "src/gpu/gl/egl/*",
         "src/gpu/gl/glfw/*",
@@ -114,20 +123,20 @@ BASE_SRCS_ALL = struct(
 
         # Exclude files that don't compile with the current DEFINES.
         "src/gpu/gl/mesa/*",  # Requires SK_MESA define.
-        "src/svg/parser/*",  # Missing SkSVG.h.
+        "src/svg/**/*",  # Depends on XML.
+        "src/xml/**/*",
 
         # Conflicting dependencies among Lua versions. See cl/107087297.
         "src/utils/SkLua*",
 
         # Not used.
-        "src/animator/**/*",
         "src/views/**/*",
-        "src/xml/SkBML_Verbs.h",
-        "src/xml/SkBML_XMLParser.cpp",
-        "src/xml/SkXMLPullParser.cpp",
 
         # Currently exclude all vulkan specific files
         "src/gpu/vk/*",
+
+        # Defines main.
+        "src/sksl/SkSLMain.cpp",
     ],
 )
 
@@ -136,7 +145,6 @@ BASE_SRCS_UNIX = struct(
     include = [
         "src/android/*",
         "src/codec/*",
-        "src/fonts/SkFontMgr_fontconfig.cpp",
         "src/gpu/gl/GrGLDefaultInterface_none.cpp",
         "src/images/*",
         "src/opts/**/*.cpp",
@@ -155,8 +163,9 @@ BASE_SRCS_UNIX = struct(
         # Included in :opts_sse4 library.
         "src/opts/*SSE4*",
         "src/opts/*sse4*",
-        # Included in :opts_avx or :opts_avx2
+        # Included in :opts_avx or :opts_hsw
         "src/opts/*avx*",
+        "src/opts/*hsw*",
         "src/opts/SkBitmapProcState_opts_none.cpp",
         "src/opts/SkBlitMask_opts_none.cpp",
         "src/opts/SkBlitRow_opts_none.cpp",
@@ -168,7 +177,6 @@ BASE_SRCS_UNIX = struct(
         "src/ports/*mozalloc*",
         "src/ports/*nacl*",
         "src/ports/*win*",
-        "src/ports/SkFontConfigInterface_direct_factory.cpp",
         "src/ports/SkFontMgr_custom_directory_factory.cpp",
         "src/ports/SkFontMgr_custom_embedded_factory.cpp",
         "src/ports/SkFontMgr_custom_empty_factory.cpp",
@@ -216,8 +224,6 @@ BASE_SRCS_ANDROID = struct(
         "src/ports/*nacl*",
         "src/ports/*win*",
         "src/ports/SkDebug_stdio.cpp",
-        "src/ports/SkFontConfigInterface_direct_factory.cpp",
-        "src/ports/SkFontConfigInterface_direct_google3_factory.cpp",
         "src/ports/SkFontMgr_custom_directory_factory.cpp",
         "src/ports/SkFontMgr_custom_embedded_factory.cpp",
         "src/ports/SkFontMgr_custom_empty_factory.cpp",
@@ -272,8 +278,6 @@ BASE_SRCS_IOS = struct(
         "src/ports/*nacl*",
         "src/ports/*win*",
         "src/ports/SkFontMgr_custom.cpp",
-        "src/ports/SkFontConfigInterface_direct_factory.cpp",
-        "src/ports/SkFontConfigInterface_direct_google3_factory.cpp",
         "src/ports/SkFontMgr_custom_directory_factory.cpp",
         "src/ports/SkFontMgr_custom_embedded_factory.cpp",
         "src/ports/SkFontMgr_custom_empty_factory.cpp",
@@ -284,7 +288,7 @@ BASE_SRCS_IOS = struct(
 )
 
 ################################################################################
-## SSSE3/SSE4/AVX/AVX2 SRCS
+## SSSE3/SSE4/AVX/HSW SRCS
 ################################################################################
 
 SSSE3_SRCS = struct(
@@ -307,9 +311,9 @@ AVX_SRCS = struct(
     ],
 )
 
-AVX2_SRCS = struct(
+HSW_SRCS = struct(
     include = [
-        "src/opts/*_avx2.cpp",
+        "src/opts/*_hsw.cpp",
     ],
 )
 
@@ -321,12 +325,10 @@ BASE_HDRS = struct(
     include = [
         "include/**/*.h",
     ],
-    exclude = PRIVATE_HDRS_LIST + [
+    exclude = PRIVATE_HDRS_INCLUDE_LIST + [
         # Not used.
         "include/animator/**/*",
         "include/views/**/*",
-        "include/xml/SkBML_WXMLParser.h",
-        "include/xml/SkBML_XMLParser.h",
     ],
 )
 
@@ -340,7 +342,7 @@ BASE_DEPS_UNIX = [
     ":opts_ssse3",
     ":opts_sse4",
     ":opts_avx",
-    ":opts_avx2",
+    ":opts_hsw",
 ]
 
 BASE_DEPS_ANDROID = []
@@ -380,6 +382,7 @@ INCLUDES = [
     "src/ports",
     "src/pdf",
     "src/sfnt",
+    "src/sksl",
     "src/utils",
     "third_party/etc1",
     "third_party/ktx",
@@ -398,22 +401,34 @@ DM_SRCS_ALL = struct(
         "gm/*.h",
         "tests/*.cpp",
         "tests/*.h",
+        "tools/BigPathBench.inc",
         "tools/CrashHandler.cpp",
         "tools/CrashHandler.h",
         "tools/ProcStats.cpp",
         "tools/ProcStats.h",
         "tools/Resources.cpp",
         "tools/Resources.h",
+        "tools/SkJSONCPP.h",
+        "tools/UrlDataManager.cpp",
+        "tools/UrlDataManager.h",
+        "tools/debugger/*.cpp",
+        "tools/debugger/*.h",
         "tools/flags/*.cpp",
         "tools/flags/*.h",
         "tools/gpu/**/*.cpp",
         "tools/gpu/**/*.h",
         "tools/picture_utils.cpp",
+        "tools/picture_utils.h",
         "tools/random_parse_path.cpp",
         "tools/random_parse_path.h",
         "tools/sk_tool_utils.cpp",
         "tools/sk_tool_utils.h",
+        "tools/sk_tool_utils_flags.h",
         "tools/sk_tool_utils_font.cpp",
+        "tools/test_font_monospace.inc",
+        "tools/test_font_sans_serif.inc",
+        "tools/test_font_serif.inc",
+        "tools/test_font_index.inc",
         "tools/timer/*.cpp",
         "tools/timer/*.h",
     ],
@@ -423,8 +438,8 @@ DM_SRCS_ALL = struct(
         "tests/PathOpsSkpClipTest.cpp",  # Alternate main.
         "tests/skia_test.cpp",  # Old main.
         "tests/SkpSkGrTest.cpp",  # Alternate main.
+        "tests/SVGDeviceTest.cpp",
         "tools/gpu/gl/angle/*",
-        "tools/gpu/gl/command_buffer/*",
         "tools/gpu/gl/egl/*",
         "tools/gpu/gl/glx/*",
         "tools/gpu/gl/iOS/*",
@@ -472,9 +487,9 @@ DM_INCLUDES = [
     "src/pathops",
     "src/pipe/utils",
     "src/ports",
-    "tools/debugger",
     "tests",
     "tools",
+    "tools/debugger",
     "tools/flags",
     "tools/gpu",
     "tools/timer",
@@ -514,10 +529,12 @@ def DM_ARGS(base_dir, asan):
         "~Matrix",
         "~PathOpsCubic",
         "~PathOpsFailOp",
+        "~PathOpsOpCubicsThreaded",
         "~PathOpsOpLoopsThreaded",
         "~PathOpsSimplify",
         "~PathOpsTightBoundsQuads",
         "~Point",
+        "~sk_linear_to_srgb",
     ]
   return [
       "--src %s" % " ".join(source),
@@ -551,7 +568,7 @@ DEFINES_UNIX = [
     "PNG_SKIP_SETJMP_CHECK",
     "SK_BUILD_FOR_UNIX",
     "SK_SAMPLES_FOR_X",
-    "SK_SFNTLY_SUBSETTER",
+    "SK_PDF_USE_SFNTLY",
     "SK_CODEC_DECODES_RAW",
     "SK_HAS_GIF_LIBRARY",
     "SK_HAS_JPEG_LIBRARY",
@@ -582,17 +599,24 @@ DEFINES_ALL = [
     # Turn on a few Google3-specific build fixes.
     "GOOGLE3",
     # Staging flags for API changes
+    "SK_SUPPORT_LEGACY_ACCESSBITMAP",
+    "SK_SUPPORT_LEGACY_ARITHMETICMODE",
     "SK_SUPPORT_LEGACY_COLORFILTER_PTR",
     "SK_SUPPORT_LEGACY_CREATESHADER_PTR",
+    "SK_SUPPORT_LEGACY_IMAGEFACTORY",
     "SK_SUPPORT_LEGACY_IMAGEFILTER_PTR",
+    "SK_SUPPORT_LEGACY_MASKFILTER_PTR",
     "SK_SUPPORT_LEGACY_MINOR_EFFECT_PTR",
     "SK_SUPPORT_LEGACY_NEW_SURFACE_API",
     "SK_SUPPORT_LEGACY_PATHEFFECT_PTR",
     "SK_SUPPORT_LEGACY_PICTURE_PTR",
-    "SK_SUPPORT_LEGACY_MASKFILTER_PTR",
-    "SK_SUPPORT_LEGACY_IMAGEFACTORY",
-    "SK_SUPPORT_LEGACY_XFERMODE_PTR",
     "SK_SUPPORT_LEGACY_TYPEFACE_PTR",
+    "SK_SUPPORT_LEGACY_XFERMODE_PTR",
+    "SK_SUPPORT_LEGACY_PICTUREINSTALLPIXELREF",
+    "SK_SUPPORT_LEGACY_STREAM_DATA",
+    "SK_SUPPORT_LEGACY_CLIP_REGIONOPS",
+    "SK_SUPPORT_LEGACY_SHADER_ISABITMAP",
+    "SK_SUPPORT_LEGACY_XFERMODE_OBJECT",
 ]
 
 ################################################################################

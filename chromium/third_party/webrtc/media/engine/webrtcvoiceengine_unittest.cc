@@ -75,7 +75,9 @@ TEST(WebRtcVoiceEngineTestStubLibrary, StartupShutdown) {
   cricket::FakeWebRtcVoiceEngine voe;
   EXPECT_FALSE(voe.IsInited());
   {
-    cricket::WebRtcVoiceEngine engine(&adm, nullptr, new FakeVoEWrapper(&voe));
+    cricket::WebRtcVoiceEngine engine(
+        &adm, webrtc::MockAudioDecoderFactory::CreateUnusedFactory(),
+        new FakeVoEWrapper(&voe));
     EXPECT_TRUE(voe.IsInited());
   }
   EXPECT_FALSE(voe.IsInited());
@@ -96,12 +98,13 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
 
   explicit WebRtcVoiceEngineTestFake(const char* field_trials)
       : call_(webrtc::Call::Config()), override_field_trials_(field_trials) {
+    auto factory = webrtc::MockAudioDecoderFactory::CreateUnusedFactory();
     EXPECT_CALL(adm_, AddRef()).WillOnce(Return(0));
     EXPECT_CALL(adm_, Release()).WillOnce(Return(0));
     EXPECT_CALL(adm_, BuiltInAECIsAvailable()).WillOnce(Return(false));
     EXPECT_CALL(adm_, BuiltInAGCIsAvailable()).WillOnce(Return(false));
     EXPECT_CALL(adm_, BuiltInNSIsAvailable()).WillOnce(Return(false));
-    engine_.reset(new cricket::WebRtcVoiceEngine(&adm_, nullptr,
+    engine_.reset(new cricket::WebRtcVoiceEngine(&adm_, factory,
                                                  new FakeVoEWrapper(&voe_)));
     send_parameters_.codecs.push_back(kPcmuCodec);
     recv_parameters_.codecs.push_back(kPcmuCodec);
@@ -447,7 +450,8 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
     stats.decoding_plc = 1234;
     stats.decoding_cng = 5678;
     stats.decoding_plc_cng = 9012;
-    stats.capture_start_ntp_time_ms = 3456;
+    stats.decoding_muted_output = 3456;
+    stats.capture_start_ntp_time_ms = 7890;
     return stats;
   }
   void SetAudioReceiveStreamStats() {
@@ -482,6 +486,7 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
     EXPECT_EQ(info.decoding_plc, stats.decoding_plc);
     EXPECT_EQ(info.decoding_cng, stats.decoding_cng);
     EXPECT_EQ(info.decoding_plc_cng, stats.decoding_plc_cng);
+    EXPECT_EQ(info.decoding_muted_output, stats.decoding_muted_output);
     EXPECT_EQ(info.capture_start_ntp_time_ms, stats.capture_start_ntp_time_ms);
   }
 
@@ -753,14 +758,13 @@ TEST_F(WebRtcVoiceEngineTestFake, SetRecvCodecsWhilePlaying) {
   parameters.codecs.push_back(kIsacCodec);
   parameters.codecs.push_back(kCn16000Codec);
   EXPECT_TRUE(channel_->SetRecvParameters(parameters));
-  EXPECT_TRUE(channel_->SetPlayout(true));
+  channel_->SetPlayout(true);
   EXPECT_TRUE(channel_->SetRecvParameters(parameters));
 
   // Changing the payload type of a codec should fail.
   parameters.codecs[0].id = 127;
   EXPECT_FALSE(channel_->SetRecvParameters(parameters));
-  int channel_num = voe_.GetLastChannel();
-  EXPECT_TRUE(voe_.GetPlayout(channel_num));
+  EXPECT_TRUE(GetRecvStream(kSsrc1).started());
 }
 
 // Test that we can add a codec while playing.
@@ -770,12 +774,11 @@ TEST_F(WebRtcVoiceEngineTestFake, AddRecvCodecsWhilePlaying) {
   parameters.codecs.push_back(kIsacCodec);
   parameters.codecs.push_back(kCn16000Codec);
   EXPECT_TRUE(channel_->SetRecvParameters(parameters));
-  EXPECT_TRUE(channel_->SetPlayout(true));
+  channel_->SetPlayout(true);
 
   parameters.codecs.push_back(kOpusCodec);
   EXPECT_TRUE(channel_->SetRecvParameters(parameters));
-  int channel_num = voe_.GetLastChannel();
-  EXPECT_TRUE(voe_.GetPlayout(channel_num));
+  EXPECT_TRUE(GetRecvStream(kSsrc1).started());
   webrtc::CodecInst gcodec;
   EXPECT_TRUE(cricket::WebRtcVoiceEngine::ToCodecInst(kOpusCodec, &gcodec));
   EXPECT_EQ(kOpusCodec.id, gcodec.pltype);
@@ -2173,12 +2176,11 @@ TEST_F(WebRtcVoiceEngineTestFake, SendStateWhenStreamsAreRecreated) {
 // Test that we can create a channel and start playing out on it.
 TEST_F(WebRtcVoiceEngineTestFake, Playout) {
   EXPECT_TRUE(SetupRecvStream());
-  int channel_num = voe_.GetLastChannel();
   EXPECT_TRUE(channel_->SetRecvParameters(recv_parameters_));
-  EXPECT_TRUE(channel_->SetPlayout(true));
-  EXPECT_TRUE(voe_.GetPlayout(channel_num));
-  EXPECT_TRUE(channel_->SetPlayout(false));
-  EXPECT_FALSE(voe_.GetPlayout(channel_num));
+  channel_->SetPlayout(true);
+  EXPECT_TRUE(GetRecvStream(kSsrc1).started());
+  channel_->SetPlayout(false);
+  EXPECT_FALSE(GetRecvStream(kSsrc1).started());
 }
 
 // Test that we can add and remove send streams.
@@ -2332,50 +2334,41 @@ TEST_F(WebRtcVoiceEngineTestFake, GetStatsWithMultipleSendStreams) {
 // We can receive on multiple streams while sending one stream.
 TEST_F(WebRtcVoiceEngineTestFake, PlayoutWithMultipleStreams) {
   EXPECT_TRUE(SetupSendStream());
-  int channel_num1 = voe_.GetLastChannel();
 
   // Start playout without a receive stream.
   EXPECT_TRUE(channel_->SetSendParameters(send_parameters_));
-  EXPECT_TRUE(channel_->SetPlayout(true));
-  EXPECT_FALSE(voe_.GetPlayout(channel_num1));
+  channel_->SetPlayout(true);
 
   // Adding another stream should enable playout on the new stream only.
   EXPECT_TRUE(AddRecvStream(kSsrc2));
-  int channel_num2 = voe_.GetLastChannel();
   SetSend(channel_, true);
   EXPECT_TRUE(GetSendStream(kSsrc1).IsSending());
 
   // Make sure only the new stream is played out.
-  EXPECT_FALSE(voe_.GetPlayout(channel_num1));
-  EXPECT_TRUE(voe_.GetPlayout(channel_num2));
+  EXPECT_TRUE(GetRecvStream(kSsrc2).started());
 
   // Adding yet another stream should have stream 2 and 3 enabled for playout.
   EXPECT_TRUE(AddRecvStream(kSsrc3));
-  int channel_num3 = voe_.GetLastChannel();
-  EXPECT_FALSE(voe_.GetPlayout(channel_num1));
-  EXPECT_TRUE(voe_.GetPlayout(channel_num2));
-  EXPECT_TRUE(voe_.GetPlayout(channel_num3));
+  EXPECT_TRUE(GetRecvStream(kSsrc2).started());
+  EXPECT_TRUE(GetRecvStream(kSsrc3).started());
 
   // Stop sending.
   SetSend(channel_, false);
   EXPECT_FALSE(GetSendStream(kSsrc1).IsSending());
 
   // Stop playout.
-  EXPECT_TRUE(channel_->SetPlayout(false));
-  EXPECT_FALSE(voe_.GetPlayout(channel_num1));
-  EXPECT_FALSE(voe_.GetPlayout(channel_num2));
-  EXPECT_FALSE(voe_.GetPlayout(channel_num3));
+  channel_->SetPlayout(false);
+  EXPECT_FALSE(GetRecvStream(kSsrc2).started());
+  EXPECT_FALSE(GetRecvStream(kSsrc3).started());
 
-  // Restart playout and make sure only recv streams are played out.
-  EXPECT_TRUE(channel_->SetPlayout(true));
-  EXPECT_FALSE(voe_.GetPlayout(channel_num1));
-  EXPECT_TRUE(voe_.GetPlayout(channel_num2));
-  EXPECT_TRUE(voe_.GetPlayout(channel_num3));
+  // Restart playout and make sure recv streams are played out.
+  channel_->SetPlayout(true);
+  EXPECT_TRUE(GetRecvStream(kSsrc2).started());
+  EXPECT_TRUE(GetRecvStream(kSsrc3).started());
 
-  // Now remove the recv streams and verify that the send stream doesn't play.
+  // Now remove the recv streams.
   EXPECT_TRUE(channel_->RemoveRecvStream(3));
   EXPECT_TRUE(channel_->RemoveRecvStream(2));
-  EXPECT_FALSE(voe_.GetPlayout(channel_num1));
 }
 
 // Test that we can create a channel configured for Codian bridges,
@@ -2739,18 +2732,6 @@ TEST_F(WebRtcVoiceEngineTestFake, InsertDtmfOnSendStreamAsCaller) {
 // Test the InsertDtmf on specified send stream as callee.
 TEST_F(WebRtcVoiceEngineTestFake, InsertDtmfOnSendStreamAsCallee) {
   TestInsertDtmf(kSsrc1, false);
-}
-
-TEST_F(WebRtcVoiceEngineTestFake, TestSetPlayoutError) {
-  EXPECT_TRUE(SetupSendStream());
-  EXPECT_TRUE(channel_->SetSendParameters(send_parameters_));
-  SetSend(channel_, true);
-  EXPECT_TRUE(AddRecvStream(2));
-  EXPECT_TRUE(AddRecvStream(3));
-  EXPECT_TRUE(channel_->SetPlayout(true));
-  voe_.set_playout_fail_channel(voe_.GetLastChannel() - 1);
-  EXPECT_TRUE(channel_->SetPlayout(false));
-  EXPECT_FALSE(channel_->SetPlayout(true));
 }
 
 TEST_F(WebRtcVoiceEngineTestFake, SetAudioOptions) {
@@ -3359,22 +3340,27 @@ TEST_F(WebRtcVoiceEngineTestFake, OnReadyToSendSignalsNetworkState) {
             call_.GetNetworkState(webrtc::MediaType::VIDEO));
 }
 
+// Test that playout is still started after changing parameters
+TEST_F(WebRtcVoiceEngineTestFake, PreservePlayoutWhenRecreateRecvStream) {
+  SetupRecvStream();
+  channel_->SetPlayout(true);
+  EXPECT_TRUE(GetRecvStream(kSsrc1).started());
+
+  // Changing RTP header extensions will recreate the AudioReceiveStream.
+  cricket::AudioRecvParameters parameters;
+  parameters.extensions.push_back(
+      webrtc::RtpExtension(webrtc::RtpExtension::kAudioLevelUri, 12));
+  channel_->SetRecvParameters(parameters);
+
+  EXPECT_TRUE(GetRecvStream(kSsrc1).started());
+}
+
 // Tests that the library initializes and shuts down properly.
 TEST(WebRtcVoiceEngineTest, StartupShutdown) {
-  using testing::_;
-  using testing::AnyNumber;
-
   // If the VoiceEngine wants to gather available codecs early, that's fine but
   // we never want it to create a decoder at this stage.
-  rtc::scoped_refptr<webrtc::MockAudioDecoderFactory> factory =
-      new rtc::RefCountedObject<webrtc::MockAudioDecoderFactory>;
-  ON_CALL(*factory.get(), GetSupportedFormats())
-      .WillByDefault(Return(std::vector<webrtc::SdpAudioFormat>()));
-  EXPECT_CALL(*factory.get(), GetSupportedFormats())
-      .Times(AnyNumber());
-  EXPECT_CALL(*factory.get(), MakeAudioDecoderMock(_, _)).Times(0);
-
-  cricket::WebRtcVoiceEngine engine(nullptr, factory);
+  cricket::WebRtcVoiceEngine engine(
+      nullptr, webrtc::MockAudioDecoderFactory::CreateUnusedFactory());
   std::unique_ptr<webrtc::Call> call(
       webrtc::Call::Create(webrtc::Call::Config()));
   cricket::VoiceMediaChannel* channel = engine.CreateChannel(
@@ -3389,7 +3375,8 @@ TEST(WebRtcVoiceEngineTest, StartupShutdownWithExternalADM) {
   EXPECT_CALL(adm, AddRef()).Times(3).WillRepeatedly(Return(0));
   EXPECT_CALL(adm, Release()).Times(3).WillRepeatedly(Return(0));
   {
-    cricket::WebRtcVoiceEngine engine(&adm, nullptr);
+    cricket::WebRtcVoiceEngine engine(
+        &adm, webrtc::MockAudioDecoderFactory::CreateUnusedFactory());
     std::unique_ptr<webrtc::Call> call(
         webrtc::Call::Create(webrtc::Call::Config()));
     cricket::VoiceMediaChannel* channel = engine.CreateChannel(
@@ -3400,8 +3387,6 @@ TEST(WebRtcVoiceEngineTest, StartupShutdownWithExternalADM) {
 }
 
 // Tests that the library is configured with the codecs we want.
-// TODO(ossu): This test should move into the builtin audio codecs module
-// eventually.
 TEST(WebRtcVoiceEngineTest, HasCorrectCodecs) {
   // TODO(ossu): These tests should move into a future "builtin audio codecs"
   // module.
@@ -3457,10 +3442,13 @@ TEST(WebRtcVoiceEngineTest, HasCorrectCodecs) {
       cricket::AudioCodec(0, "", 0, 5000, 1), nullptr));
 
   // Verify the payload id of common audio codecs, including CN, ISAC, and G722.
-  cricket::WebRtcVoiceEngine engine(nullptr,
-                                    webrtc::CreateBuiltinAudioDecoderFactory());
+  // TODO(ossu): Why are the payload types of codecs with non-static payload
+  // type assignments checked here? It shouldn't really matter.
+  cricket::WebRtcVoiceEngine engine(
+      nullptr, webrtc::MockAudioDecoderFactory::CreateUnusedFactory());
   for (std::vector<cricket::AudioCodec>::const_iterator it =
-      engine.send_codecs().begin(); it != engine.send_codecs().end(); ++it) {
+           engine.send_codecs().begin();
+       it != engine.send_codecs().end(); ++it) {
     if (it->name == "CN" && it->clockrate == 16000) {
       EXPECT_EQ(105, it->id);
     } else if (it->name == "CN" && it->clockrate == 32000) {
@@ -3485,7 +3473,8 @@ TEST(WebRtcVoiceEngineTest, HasCorrectCodecs) {
 
 // Tests that VoE supports at least 32 channels
 TEST(WebRtcVoiceEngineTest, Has32Channels) {
-  cricket::WebRtcVoiceEngine engine(nullptr, nullptr);
+  cricket::WebRtcVoiceEngine engine(
+      nullptr, webrtc::MockAudioDecoderFactory::CreateUnusedFactory());
   std::unique_ptr<webrtc::Call> call(
       webrtc::Call::Create(webrtc::Call::Config()));
 

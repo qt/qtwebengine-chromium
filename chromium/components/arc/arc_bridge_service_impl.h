@@ -25,16 +25,27 @@ namespace arc {
 
 // Real IPC based ArcBridgeService that is used in production.
 class ArcBridgeServiceImpl : public ArcBridgeService,
-                             public ArcBridgeBootstrap::Delegate {
+                             public ArcBridgeBootstrap::Observer {
  public:
-  explicit ArcBridgeServiceImpl(std::unique_ptr<ArcBridgeBootstrap> bootstrap);
-  ~ArcBridgeServiceImpl() override;
+  // This is the factory interface to inject ArcBridgeBootstrap instance
+  // for testing purpose.
+  using ArcBridgeBootstrapFactory =
+      base::Callback<std::unique_ptr<ArcBridgeBootstrap>()>;
 
-  void SetDetectedAvailability(bool available) override;
+  ArcBridgeServiceImpl();
+  ~ArcBridgeServiceImpl() override;
 
   void HandleStartup() override;
 
   void Shutdown() override;
+
+  // Inject a factory to create ArcBridgeBootstrap instance for testing
+  // purpose. |factory| must not be null.
+  void SetArcBridgeBootstrapFactoryForTesting(
+      const ArcBridgeBootstrapFactory& factory);
+
+  // Returns the current bootstrap instance for testing purpose.
+  ArcBridgeBootstrap* GetBootstrapForTesting() { return bootstrap_.get(); }
 
   // Normally, reconnecting after connection shutdown happens after a short
   // delay. When testing, however, we'd like it to happen immediately to avoid
@@ -54,19 +65,11 @@ class ArcBridgeServiceImpl : public ArcBridgeService,
   // Stops the running instance.
   void StopInstance();
 
-  // ArcBridgeBootstrap::Delegate:
-  void OnConnectionEstablished(mojom::ArcBridgeInstancePtr instance) override;
+  // ArcBridgeBootstrap::Observer:
+  void OnReady() override;
   void OnStopped(StopReason reason) override;
 
-  // Called when the bridge channel is closed. This typically only happens when
-  // the ARC instance crashes. This is not called during shutdown.
-  void OnChannelClosed();
-
   std::unique_ptr<ArcBridgeBootstrap> bootstrap_;
-
-  // Mojo endpoints.
-  mojo::Binding<mojom::ArcBridgeHost> binding_;
-  mojom::ArcBridgeInstancePtr instance_ptr_;
 
   // If the user's session has started.
   bool session_started_;
@@ -77,6 +80,9 @@ class ArcBridgeServiceImpl : public ArcBridgeService,
 
   // Delay the reconnection.
   bool use_delay_before_reconnecting_ = true;
+
+  // Factory to inject a fake ArcBridgeBootstrap instance for testing.
+  ArcBridgeBootstrapFactory factory_;
 
   // WeakPtrFactory to use callbacks.
   base::WeakPtrFactory<ArcBridgeServiceImpl> weak_factory_;

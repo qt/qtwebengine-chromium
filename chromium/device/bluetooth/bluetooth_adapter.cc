@@ -55,6 +55,11 @@ void BluetoothAdapter::RemoveObserver(BluetoothAdapter::Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
+bool BluetoothAdapter::HasObserver(BluetoothAdapter::Observer* observer) {
+  DCHECK(observer);
+  return observers_.HasObserver(observer);
+}
+
 void BluetoothAdapter::StartDiscoverySession(
     const DiscoverySessionCallback& callback,
     const ErrorCallback& error_callback) {
@@ -117,13 +122,13 @@ const BluetoothDevice* BluetoothAdapter::GetDevice(
   std::string canonicalized_address =
       BluetoothDevice::CanonicalizeAddress(address);
   if (canonicalized_address.empty())
-    return NULL;
+    return nullptr;
 
   DevicesMap::const_iterator iter = devices_.find(canonicalized_address);
   if (iter != devices_.end())
     return iter->second;
 
-  return NULL;
+  return nullptr;
 }
 
 void BluetoothAdapter::AddPairingDelegate(
@@ -336,7 +341,7 @@ BluetoothAdapter::GetMergedDiscoveryFilterHelper(
   bool first_merge = true;
 
   std::set<BluetoothDiscoverySession*> temp(discovery_sessions_);
-  for (const auto& iter : temp) {
+  for (auto* iter : temp) {
     const BluetoothDiscoveryFilter* curr_filter = iter->GetDiscoveryFilter();
 
     if (!iter->IsActive())
@@ -378,7 +383,7 @@ void BluetoothAdapter::RemoveTimedOutDevices() {
 
     bool device_expired =
         (base::Time::NowFromSystemTime() - last_update_time) > timeoutSec;
-    VLOG(1) << "device: " << device->GetAddress()
+    VLOG(3) << "device: " << device->GetAddress()
             << ", last_update: " << last_update_time
             << ", exp: " << device_expired;
 
@@ -386,6 +391,8 @@ void BluetoothAdapter::RemoveTimedOutDevices() {
       ++it;
       continue;
     }
+
+    VLOG(1) << "Removing device: " << device->GetAddress();
     DevicesMap::iterator next = it;
     next++;
     std::unique_ptr<BluetoothDevice> removed_device =

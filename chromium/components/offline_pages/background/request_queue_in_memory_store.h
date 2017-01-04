@@ -11,10 +11,9 @@
 
 #include "base/macros.h"
 #include "components/offline_pages/background/request_queue_store.h"
+#include "components/offline_pages/background/save_page_request.h"
 
 namespace offline_pages {
-
-class SavePageRequest;
 
 // Interface for classes storing save page requests.
 class RequestQueueInMemoryStore : public RequestQueueStore {
@@ -24,11 +23,15 @@ class RequestQueueInMemoryStore : public RequestQueueStore {
 
   // RequestQueueStore implementaiton.
   void GetRequests(const GetRequestsCallback& callback) override;
-  void AddOrUpdateRequest(const SavePageRequest& request,
-                          const UpdateCallback& callback) override;
+  void AddRequest(const SavePageRequest& offline_page,
+                  const AddCallback& callback) override;
+  void UpdateRequests(const std::vector<SavePageRequest>& requests,
+                      const UpdateCallback& callback) override;
   void RemoveRequests(const std::vector<int64_t>& request_ids,
-                      const RemoveCallback& callback) override;
+                      const UpdateCallback& callback) override;
+
   void Reset(const ResetCallback& callback) override;
+  StoreState state() const override;
 
  private:
   typedef std::map<int64_t, SavePageRequest> RequestsMap;

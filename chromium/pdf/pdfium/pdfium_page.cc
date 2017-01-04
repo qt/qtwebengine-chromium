@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/numerics/safe_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -82,14 +83,15 @@ PDFiumPage::PDFiumPage(PDFiumEngine* engine,
                        const pp::Rect& r,
                        bool available)
     : engine_(engine),
-      page_(NULL),
-      text_page_(NULL),
+      page_(nullptr),
+      text_page_(nullptr),
       index_(i),
       loading_count_(0),
       rect_(r),
       calculated_links_(false),
-      available_(available) {
-}
+      available_(available) {}
+
+PDFiumPage::PDFiumPage(const PDFiumPage& that) = default;
 
 PDFiumPage::~PDFiumPage() {
   DCHECK_EQ(0, loading_count_);
@@ -102,7 +104,7 @@ void PDFiumPage::Unload() {
 
   if (text_page_) {
     FPDFText_ClosePage(text_page_);
-    text_page_ = NULL;
+    text_page_ = nullptr;
   }
 
   if (page_) {
@@ -110,14 +112,14 @@ void PDFiumPage::Unload() {
       FORM_OnBeforeClosePage(page_, engine_->form());
     }
     FPDF_ClosePage(page_);
-    page_ = NULL;
+    page_ = nullptr;
   }
 }
 
 FPDF_PAGE PDFiumPage::GetPage() {
   ScopedUnsupportedFeature scoped_unsupported_feature(engine_);
   if (!available_)
-    return NULL;
+    return nullptr;
   if (!page_) {
     ScopedLoadCounter scoped_load(this);
     page_ = FPDF_LoadPage(engine_->doc(), index_);
@@ -131,7 +133,7 @@ FPDF_PAGE PDFiumPage::GetPage() {
 FPDF_PAGE PDFiumPage::GetPrintPage() {
   ScopedUnsupportedFeature scoped_unsupported_feature(engine_);
   if (!available_)
-    return NULL;
+    return nullptr;
   if (!page_) {
     ScopedLoadCounter scoped_load(this);
     page_ = FPDF_LoadPage(engine_->doc(), index_);
@@ -146,13 +148,13 @@ void PDFiumPage::ClosePrintPage() {
 
   if (page_) {
     FPDF_ClosePage(page_);
-    page_ = NULL;
+    page_ = nullptr;
   }
 }
 
 FPDF_TEXTPAGE PDFiumPage::GetTextPage() {
   if (!available_)
-    return NULL;
+    return nullptr;
   if (!text_page_) {
     ScopedLoadCounter scoped_load(this);
     text_page_ = FPDFText_LoadPage(GetPage());
@@ -319,7 +321,7 @@ PDFiumPage::Area PDFiumPage::GetLinkTarget(
       case PDFACTION_URI: {
           if (target) {
             size_t buffer_size =
-                FPDFAction_GetURIPath(engine_->doc(), action, NULL, 0);
+                FPDFAction_GetURIPath(engine_->doc(), action, nullptr, 0);
             if (buffer_size > 0) {
               PDFiumAPIStringBufferAdapter<std::string> api_string_adapter(
                   &target->url, buffer_size, true);
@@ -403,7 +405,7 @@ void PDFiumPage::CalculateLinks() {
   int count = FPDFLink_CountWebLinks(links);
   for (int i = 0; i < count; ++i) {
     base::string16 url;
-    int url_length = FPDFLink_GetURL(links, i, NULL, 0);
+    int url_length = FPDFLink_GetURL(links, i, nullptr, 0);
     if (url_length > 0) {
       PDFiumAPIStringBufferAdapter<base::string16> api_string_adapter(
           &url, url_length, true);
@@ -460,21 +462,29 @@ pp::Rect PDFiumPage::PageToScreen(const pp::Point& offset,
   if (!available_)
     return pp::Rect();
 
-  int new_left, new_top, new_right, new_bottom;
-  FPDF_PageToDevice(
-      page_,
-      static_cast<int>((rect_.x() - offset.x()) * zoom),
-      static_cast<int>((rect_.y() - offset.y()) * zoom),
-      static_cast<int>(ceil(rect_.width() * zoom)),
-      static_cast<int>(ceil(rect_.height() * zoom)),
-      rotation, left, top, &new_left, &new_top);
-  FPDF_PageToDevice(
-      page_,
-      static_cast<int>((rect_.x() - offset.x()) * zoom),
-      static_cast<int>((rect_.y() - offset.y()) * zoom),
-      static_cast<int>(ceil(rect_.width() * zoom)),
-      static_cast<int>(ceil(rect_.height() * zoom)),
-      rotation, right, bottom, &new_right, &new_bottom);
+  double start_x = (rect_.x() - offset.x()) * zoom;
+  double start_y = (rect_.y() - offset.y()) * zoom;
+  double size_x = rect_.width() * zoom;
+  double size_y = rect_.height() * zoom;
+  if (!base::IsValueInRangeForNumericType<int>(start_x) ||
+      !base::IsValueInRangeForNumericType<int>(start_y) ||
+      !base::IsValueInRangeForNumericType<int>(size_x) ||
+      !base::IsValueInRangeForNumericType<int>(size_y)) {
+    return pp::Rect();
+  }
+
+  int new_left;
+  int new_top;
+  int new_right;
+  int new_bottom;
+  FPDF_PageToDevice(page_, static_cast<int>(start_x), static_cast<int>(start_y),
+                    static_cast<int>(ceil(size_x)),
+                    static_cast<int>(ceil(size_y)), rotation, left, top,
+                    &new_left, &new_top);
+  FPDF_PageToDevice(page_, static_cast<int>(start_x), static_cast<int>(start_y),
+                    static_cast<int>(ceil(size_x)),
+                    static_cast<int>(ceil(size_y)), rotation, right, bottom,
+                    &new_right, &new_bottom);
 
   // If the PDF is rotated, the horizontal/vertical coordinates could be
   // flipped.  See
@@ -484,8 +494,17 @@ pp::Rect PDFiumPage::PageToScreen(const pp::Point& offset,
   if (new_bottom < new_top)
     std::swap(new_bottom, new_top);
 
-  return pp::Rect(
-      new_left, new_top, new_right - new_left + 1, new_bottom - new_top + 1);
+  base::CheckedNumeric<int32_t> new_size_x = new_right;
+  new_size_x -= new_left;
+  new_size_x += 1;
+  base::CheckedNumeric<int32_t> new_size_y = new_bottom;
+  new_size_y -= new_top;
+  new_size_y += 1;
+  if (!new_size_x.IsValid() || !new_size_y.IsValid())
+    return pp::Rect();
+
+  return pp::Rect(new_left, new_top, new_size_x.ValueOrDie(),
+                  new_size_y.ValueOrDie());
 }
 
 PDFiumPage::ScopedLoadCounter::ScopedLoadCounter(PDFiumPage* page)
@@ -497,10 +516,10 @@ PDFiumPage::ScopedLoadCounter::~ScopedLoadCounter() {
   page_->loading_count_--;
 }
 
-PDFiumPage::Link::Link() {
-}
+PDFiumPage::Link::Link() = default;
 
-PDFiumPage::Link::~Link() {
-}
+PDFiumPage::Link::Link(const Link& that) = default;
+
+PDFiumPage::Link::~Link() = default;
 
 }  // namespace chrome_pdf

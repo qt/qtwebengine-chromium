@@ -26,6 +26,8 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# pylint: disable=relative-import
+
 """Generate template values for attributes.
 
 Extends IdlType with property |constructor_type_name|.
@@ -35,7 +37,7 @@ Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 
 import idl_types
 from idl_types import inherits_interface
-from v8_globals import includes, interfaces
+from v8_globals import includes
 import v8_types
 import v8_utilities
 from v8_utilities import (cpp_name_or_partial, capitalize, cpp_name, has_extended_attribute,
@@ -44,7 +46,19 @@ from v8_utilities import (cpp_name_or_partial, capitalize, cpp_name, has_extende
                           is_legacy_interface_type_checking)
 
 
-def attribute_context(interface, attribute):
+def attribute_context(interface, attribute, interfaces):
+    """Creates a Jinja template context for an attribute of an interface.
+
+    Args:
+        interface: An interface which |attribute| belongs to
+        attribute: An attribute to create the context for
+        interfaces: A dict which maps an interface name to the definition
+            which can be referred if needed
+
+    Returns:
+        A Jinja template context for |attribute|
+    """
+
     idl_type = attribute.idl_type
     base_idl_type = idl_type.base_type
     extended_attributes = attribute.extended_attributes
@@ -168,6 +182,7 @@ def attribute_context(interface, attribute):
         'reflect_only': extended_attribute_value_as_list(attribute, 'ReflectOnly'),
         'runtime_enabled_function': v8_utilities.runtime_enabled_function_name(attribute),  # [RuntimeEnabled]
         'runtime_feature_name': v8_utilities.runtime_feature_name(attribute),  # [RuntimeEnabled]
+        'secure_context_test': v8_utilities.secure_context(attribute, interface),  # [SecureContext]
         'should_be_exposed_to_script': not (is_implemented_in_private_script and is_only_exposed_to_private_script),
         'world_suffixes': (
             ['', 'ForMainWorld']
@@ -180,14 +195,7 @@ def attribute_context(interface, attribute):
     if not has_custom_getter(attribute):
         getter_context(interface, attribute, context)
     if not has_custom_setter(attribute) and has_setter(interface, attribute):
-        setter_context(interface, attribute, context)
-
-    # [OriginTrialEnabled]
-    # TODO(iclelland): Allow origin trials on static interfaces
-    # (crbug.com/614352)
-    if context['origin_trial_feature_name'] and context['on_interface']:
-        raise Exception('[OriginTrialEnabled] cannot be specified on static '
-                        'attributes: %s.%s' % (interface.name, attribute.name))
+        setter_context(interface, attribute, interfaces, context)
 
     return context
 
@@ -195,6 +203,7 @@ def attribute_context(interface, attribute):
 def filter_has_accessor_configuration(attributes):
     return [attribute for attribute in attributes if
             not (attribute['exposed_test'] or
+                 attribute['secure_context_test'] or
                  attribute['origin_trial_enabled_function'] or
                  attribute['runtime_enabled_function']) and
             not attribute['is_data_type_property'] and
@@ -204,6 +213,7 @@ def filter_has_accessor_configuration(attributes):
 def filter_has_attribute_configuration(attributes):
     return [attribute for attribute in attributes if
             not (attribute['exposed_test'] or
+                 attribute['secure_context_test'] or
                  attribute['origin_trial_enabled_function'] or
                  attribute['runtime_enabled_function']) and
             attribute['is_data_type_property'] and
@@ -216,17 +226,18 @@ def filter_origin_trial_enabled(attributes):
             not attribute['exposed_test']]
 
 
-def filter_runtime_enabled(attributes):
+def filter_purely_runtime_enabled(attributes):
     return [attribute for attribute in attributes if
-            attribute['runtime_feature_name'] and
-            not attribute['exposed_test']]
+            not (attribute['exposed_test'] or
+                 attribute['secure_context_test']) and
+            attribute['runtime_feature_name']]
 
 
 def attribute_filters():
     return {'has_accessor_configuration': filter_has_accessor_configuration,
             'has_attribute_configuration': filter_has_attribute_configuration,
             'origin_trial_enabled_attributes': filter_origin_trial_enabled,
-            'runtime_enabled_attributes': filter_runtime_enabled}
+            'purely_runtime_enabled_attributes': filter_purely_runtime_enabled}
 
 
 ################################################################################
@@ -368,7 +379,7 @@ def is_keep_alive_for_gc(interface, attribute):
 # Setter
 ################################################################################
 
-def setter_context(interface, attribute, context):
+def setter_context(interface, attribute, interfaces, context):
     if 'PutForwards' in attribute.extended_attributes:
         # Use target interface and attribute in place of original interface and
         # attribute from this point onwards.
@@ -447,9 +458,9 @@ def setter_expression(interface, attribute, context):
         if (interface.name in ['Window', 'WorkerGlobalScope'] and
                 attribute.name == 'onerror'):
             includes.add('bindings/core/v8/V8ErrorHandler.h')
-            arguments.append('V8EventListenerList::findOrCreateWrapper<V8ErrorHandler>(v8Value, true, ScriptState::current(info.GetIsolate()))')
+            arguments.append('V8EventListenerHelper::ensureEventListener<V8ErrorHandler>(v8Value, true, ScriptState::current(info.GetIsolate()))')
         else:
-            arguments.append('V8EventListenerList::getEventListener(ScriptState::current(info.GetIsolate()), v8Value, true, ListenerFindOrCreate)')
+            arguments.append('V8EventListenerHelper::getEventListener(ScriptState::current(info.GetIsolate()), v8Value, true, ListenerFindOrCreate)')
     else:
         arguments.append('cppValue')
     if context['is_setter_raises_exception']:

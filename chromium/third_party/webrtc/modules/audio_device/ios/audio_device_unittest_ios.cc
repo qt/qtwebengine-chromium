@@ -16,8 +16,6 @@
 #include <string>
 #include <vector>
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/arraysize.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/format_macros.h"
@@ -29,6 +27,8 @@
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/event_wrapper.h"
 #include "webrtc/system_wrappers/include/sleep.h"
+#include "webrtc/test/gmock.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 using std::cout;
@@ -380,6 +380,7 @@ class MockAudioTransport : public AudioTransport {
                         const uint32_t currentMicLevel,
                         const bool keyPressed,
                         uint32_t& newMicLevel));
+
   MOCK_METHOD8(NeedMorePlayData,
                int32_t(const size_t nSamples,
                        const size_t nBytesPerSample,
@@ -389,6 +390,23 @@ class MockAudioTransport : public AudioTransport {
                        size_t& nSamplesOut,
                        int64_t* elapsed_time_ms,
                        int64_t* ntp_time_ms));
+
+  MOCK_METHOD6(PushCaptureData,
+               void(int voe_channel,
+                    const void* audio_data,
+                    int bits_per_sample,
+                    int sample_rate,
+                    size_t number_of_channels,
+                    size_t number_of_frames));
+
+  MOCK_METHOD7(PullRenderData,
+               void(int bits_per_sample,
+                    int sample_rate,
+                    size_t number_of_channels,
+                    size_t number_of_frames,
+                    void* audio_data,
+                    int64_t* elapsed_time_ms,
+                    int64_t* ntp_time_ms));
 
   // Set default actions of the mock object. We are delegating to fake
   // implementations (of AudioStreamInterface) here.
@@ -565,7 +583,6 @@ class AudioDeviceTest : public ::testing::Test {
   }
 
   void StartPlayout() {
-    EXPECT_FALSE(audio_device()->PlayoutIsInitialized());
     EXPECT_FALSE(audio_device()->Playing());
     EXPECT_EQ(0, audio_device()->InitPlayout());
     EXPECT_TRUE(audio_device()->PlayoutIsInitialized());
@@ -576,11 +593,9 @@ class AudioDeviceTest : public ::testing::Test {
   void StopPlayout() {
     EXPECT_EQ(0, audio_device()->StopPlayout());
     EXPECT_FALSE(audio_device()->Playing());
-    EXPECT_FALSE(audio_device()->PlayoutIsInitialized());
   }
 
   void StartRecording() {
-    EXPECT_FALSE(audio_device()->RecordingIsInitialized());
     EXPECT_FALSE(audio_device()->Recording());
     EXPECT_EQ(0, audio_device()->InitRecording());
     EXPECT_TRUE(audio_device()->RecordingIsInitialized());

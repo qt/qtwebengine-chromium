@@ -154,9 +154,9 @@ base::Lock g_characteristic_value_changed_registrations_lock;
 
 // Function to be registered to OS to monitor Bluetooth LE GATT event. It is
 // invoked in BluetoothApis.dll thread.
-void OnGetGattEventWin(BTH_LE_GATT_EVENT_TYPE type,
-                       PVOID event_parameter,
-                       PVOID context) {
+void CALLBACK OnGetGattEventWin(BTH_LE_GATT_EVENT_TYPE type,
+                                PVOID event_parameter,
+                                PVOID context) {
   if (type != CharacteristicValueChangedEvent) {
     // Right now, only characteristic value changed event is supported.
     NOTREACHED();
@@ -257,8 +257,9 @@ void BluetoothTaskManagerWin::RemoveObserver(Observer* observer) {
 
 void BluetoothTaskManagerWin::Initialize() {
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-  worker_pool_ = new base::SequencedWorkerPool(kNumThreadsInWorkerPool,
-                                               kBluetoothThreadName);
+  worker_pool_ = new base::SequencedWorkerPool(
+      kNumThreadsInWorkerPool, kBluetoothThreadName,
+      base::TaskPriority::USER_VISIBLE);
   InitializeWithBluetoothTaskRunner(
       worker_pool_->GetSequencedTaskRunnerWithShutdownBehavior(
           worker_pool_->GetSequenceToken(),
@@ -787,7 +788,7 @@ bool BluetoothTaskManagerWin::SearchForGattServiceDevicePaths(
     return false;
   }
 
-  for (auto gatt_service_device : gatt_service_devices) {
+  for (auto* gatt_service_device : gatt_service_devices) {
     // Only care about the service devices with |device_address|.
     if (BluetoothAddressToCanonicalString(gatt_service_device->address) !=
         device_address) {
@@ -811,8 +812,8 @@ bool BluetoothTaskManagerWin::SearchForGattServiceDevicePaths(
 
     // Associate service device to corresponding service record. Attribute
     // handle is unique on one device.
-    for (auto gatt_service : gatt_services) {
-      for (auto service_record_state : *service_record_states) {
+    for (auto* gatt_service : gatt_services) {
+      for (auto* service_record_state : *service_record_states) {
         if (service_record_state->attribute_handle ==
             gatt_service->attribute_handle) {
           service_record_state->path = gatt_service_device->path;

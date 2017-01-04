@@ -96,7 +96,6 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
     switch (operation) {
 
     case ASN1_OP_NEW_POST:
-        ret->valid = 0;
         ret->name = NULL;
         ret->ex_flags = 0;
         ret->ex_pathlen = -1;
@@ -143,10 +142,10 @@ IMPLEMENT_ASN1_FUNCTIONS(X509)
 
 IMPLEMENT_ASN1_DUP_FUNCTION(X509)
 
-X509 *X509_up_ref(X509 *x)
+int X509_up_ref(X509 *x)
 {
     CRYPTO_refcount_inc(&x->references);
-    return x;
+    return 1;
 }
 
 int X509_get_ex_new_index(long argl, void *argp, CRYPTO_EX_unused * unused,

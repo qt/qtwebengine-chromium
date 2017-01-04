@@ -15,20 +15,23 @@
 #include "base/macros.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/linked_hash_map.h"
-#include "net/quic/crypto/quic_compressed_certs_cache.h"
-#include "net/quic/crypto/quic_random.h"
-#include "net/quic/quic_blocked_writer_interface.h"
-#include "net/quic/quic_connection.h"
-#include "net/quic/quic_protocol.h"
-#include "net/quic/quic_server_session_base.h"
+#include "net/quic/core/crypto/quic_compressed_certs_cache.h"
+#include "net/quic/core/crypto/quic_random.h"
+#include "net/quic/core/quic_blocked_writer_interface.h"
+#include "net/quic/core/quic_buffered_packet_store.h"
+#include "net/quic/core/quic_connection.h"
+#include "net/quic/core/quic_crypto_server_stream.h"
+#include "net/quic/core/quic_protocol.h"
+#include "net/quic/core/quic_server_session_base.h"
+
 #include "net/tools/quic/quic_process_packet_interface.h"
 #include "net/tools/quic/quic_time_wait_list_manager.h"
+#include "net/tools/quic/stateless_rejector.h"
 
 namespace net {
 
 class QuicConfig;
 class QuicCryptoServerConfig;
-class QuicServerSessionBase;
 
 namespace test {
 class QuicDispatcherPeer;
@@ -37,7 +40,8 @@ class QuicDispatcherPeer;
 class QuicDispatcher : public QuicServerSessionBase::Visitor,
                        public ProcessPacketInterface,
                        public QuicBlockedWriterInterface,
-                       public QuicFramerVisitorInterface {
+                       public QuicFramerVisitorInterface,
+                       public QuicBufferedPacketStore::VisitorInterface {
  public:
   // Ideally we'd have a linked_hash_set: the  boolean is unused.
   typedef linked_hash_map<QuicBlockedWriterInterface*,
@@ -47,9 +51,9 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
 
   QuicDispatcher(const QuicConfig& config,
                  const QuicCryptoServerConfig* crypto_config,
-                 const QuicVersionVector& supported_versions,
+                 QuicVersionManager* version_manager,
                  std::unique_ptr<QuicConnectionHelperInterface> helper,
-                 std::unique_ptr<QuicServerSessionBase::Helper> session_helper,
+                 std::unique_ptr<QuicCryptoServerStream::Helper> session_helper,
                  std::unique_ptr<QuicAlarmFactory> alarm_factory);
 
   ~QuicDispatcher() override;
@@ -84,6 +88,9 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
   // Called whenever the time wait list manager adds a new connection to the
   // time-wait list.
   void OnConnectionAddedToTimeWaitList(QuicConnectionId connection_id) override;
+
+  void OnPacketBeingDispatchedToSession(
+      QuicServerSessionBase* session) override {}
 
   typedef std::unordered_map<QuicConnectionId, QuicServerSessionBase*>
       SessionMap;
@@ -139,10 +146,21 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
   bool OnPathCloseFrame(const QuicPathCloseFrame& frame) override;
   void OnPacketComplete() override;
 
+  // QuicBufferedPacketStore::VisitorInterface implementation.
+  void OnExpiredPackets(QuicConnectionId connection_id,
+                        QuicBufferedPacketStore::BufferedPacketList
+                            early_arrived_packets) override;
+
+  // Create connections for previously buffered CHLOs as many as allowed.
+  virtual void ProcessBufferedChlos(size_t max_connections_to_create);
+
+  // Return true if there is CHLO buffered.
+  virtual bool HasChlosBuffered() const;
+
  protected:
   virtual QuicServerSessionBase* CreateQuicSession(
       QuicConnectionId connection_id,
-      const IPEndPoint& client_address);
+      const IPEndPoint& client_address) = 0;
 
   // Called when a connection is rejected statelessly.
   virtual void OnConnectionRejectedStatelessly();
@@ -163,6 +181,8 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
     kFateProcess,
     // Put the connection ID into time-wait state and send a public reset.
     kFateTimeWait,
+    // Buffer the packet.
+    kFateBuffer,
     // Drop the packet (ignore and give no response).
     kFateDrop,
   };
@@ -176,12 +196,22 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
   // will be owned by the dispatcher as time_wait_list_manager_
   virtual QuicTimeWaitListManager* CreateQuicTimeWaitListManager();
 
+  // Called when |current_packet_| is a data packet that has arrived before
+  // the CHLO or it is any kind of packet while a CHLO on same connection has
+  // already been in the buffer.
+  void BufferEarlyPacket(QuicConnectionId connection_id);
+
+  // Called when |current_packet_| is a CHLO packet. Creates a new connection
+  // and delivers any buffered packets for that connection id.
+  void ProcessChlo();
+
   QuicTimeWaitListManager* time_wait_list_manager() {
     return time_wait_list_manager_.get();
   }
 
   const QuicVersionVector& GetSupportedVersions();
 
+  QuicConnectionId current_connection_id() { return current_connection_id_; }
   const IPEndPoint& current_server_address() { return current_server_address_; }
   const IPEndPoint& current_client_address() { return current_client_address_; }
   const QuicReceivedPacket& current_packet() { return *current_packet_; }
@@ -198,7 +228,7 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
 
   QuicConnectionHelperInterface* helper() { return helper_.get(); }
 
-  QuicServerSessionBase::Helper* session_helper() {
+  QuicCryptoServerStream::Helper* session_helper() {
     return session_helper_.get();
   }
 
@@ -225,8 +255,21 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
   virtual bool OnUnauthenticatedUnknownPublicHeader(
       const QuicPacketPublicHeader& header);
 
+  // Called when a new connection starts to be handled by this dispatcher.
+  // Either this connection is created or its packets is buffered while waiting
+  // for CHLO.
+  virtual void OnNewConnectionAdded(QuicConnectionId connection_id);
+
+  bool HasBufferedPackets(QuicConnectionId connection_id);
+
+  // Called when BufferEarlyPacket() fail to buffer the packet.
+  virtual void OnBufferPacketFailure(
+      QuicBufferedPacketStore::EnqueuePacketResult result,
+      QuicConnectionId connection_id);
+
  private:
   friend class net::test::QuicDispatcherPeer;
+  friend class StatelessRejectorProcessDoneCallback;
 
   // Removes the session from the session map and write blocked list, and adds
   // the ConnectionId to the time-wait list.  If |session_closed_statelessly| is
@@ -236,11 +279,33 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
   bool HandlePacketForTimeWait(const QuicPacketPublicHeader& header);
 
   // Attempts to reject the connection statelessly, if stateless rejects are
-  // possible and if the current packet contains a CHLO message.
-  // Returns a fate which describes what subsequent processing should be
-  // performed on the packets, like ValidityChecks.
-  QuicPacketFate MaybeRejectStatelessly(QuicConnectionId connection_id,
-                                        const QuicPacketHeader& header);
+  // possible and if the current packet contains a CHLO message.  Determines a
+  // fate which describes what subsequent processing should be performed on the
+  // packets, like ValidityChecks, and invokes ProcessUnauthenticatedHeaderFate.
+  void MaybeRejectStatelessly(QuicConnectionId connection_id,
+                              const QuicPacketHeader& header);
+
+  // Deliver |packets| to |session| for further processing.
+  void DeliverPacketsToSession(
+      const std::list<QuicBufferedPacketStore::BufferedPacket>& packets,
+      QuicServerSessionBase* session);
+
+  // Perform the appropriate actions on the current packet based on |fate| -
+  // either process, buffer, or drop it.
+  void ProcessUnauthenticatedHeaderFate(QuicPacketFate fate,
+                                        QuicConnectionId connection_id,
+                                        QuicPacketNumber packet_number);
+
+  // Invoked when StatelessRejector::Process completes.
+  void OnStatelessRejectorProcessDone(
+      std::unique_ptr<StatelessRejector> rejector,
+      QuicPacketNumber packet_number,
+      QuicVersion first_version);
+
+  void set_new_sessions_allowed_per_event_loop(
+      int16_t new_sessions_allowed_per_event_loop) {
+    new_sessions_allowed_per_event_loop_ = new_sessions_allowed_per_event_loop;
+  }
 
   const QuicConfig& config_;
 
@@ -264,7 +329,7 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
   std::unique_ptr<QuicConnectionHelperInterface> helper_;
 
   // The helper used for all sessions.
-  std::unique_ptr<QuicServerSessionBase::Helper> session_helper_;
+  std::unique_ptr<QuicCryptoServerStream::Helper> session_helper_;
 
   // Creates alarms.
   std::unique_ptr<QuicAlarmFactory> alarm_factory_;
@@ -275,17 +340,9 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
   // The writer to write to the socket with.
   std::unique_ptr<QuicPacketWriter> writer_;
 
-  // This vector contains QUIC versions which we currently support.
-  // This should be ordered such that the highest supported version is the first
-  // element, with subsequent elements in descending order (versions can be
-  // skipped as necessary).
-  QuicVersionVector supported_versions_;
-
-  // FLAGS_quic_disable_pre_30
-  bool disable_quic_pre_30_;
-  // The list of versions that may be supported by this dispatcher.
-  // |supported_versions| is derived from this list and |disable_quic_pre_30_|.
-  const QuicVersionVector allowed_supported_versions_;
+  // Packets which are buffered until a connection can be created to handle
+  // them.
+  QuicBufferedPacketStore buffered_packets_;
 
   // Information about the packet currently being handled.
   IPEndPoint current_client_address_;
@@ -293,11 +350,18 @@ class QuicDispatcher : public QuicServerSessionBase::Visitor,
   const QuicReceivedPacket* current_packet_;
   QuicConnectionId current_connection_id_;
 
+  // Used to get the supported versions based on flag. Does not own.
+  QuicVersionManager* version_manager_;
+
   QuicFramer framer_;
 
   // The last error set by SetLastError(), which is called by
   // framer_visitor_->OnError().
   QuicErrorCode last_error_;
+
+  // A backward counter of how many new sessions can be create within current
+  // event loop. When reaches 0, it means can't create sessions for now.
+  int16_t new_sessions_allowed_per_event_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicDispatcher);
 };

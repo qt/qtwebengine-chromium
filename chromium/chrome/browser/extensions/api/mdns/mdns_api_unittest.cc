@@ -10,7 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ptr_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_base.h"
@@ -44,10 +43,8 @@ void AddEventListener(
     extensions::EventListenerMap::ListenerList* listener_list) {
   std::unique_ptr<base::DictionaryValue> filter(new base::DictionaryValue);
   filter->SetString(kEventFilterServiceTypeKey, service_type);
-  listener_list->push_back(make_linked_ptr(
-      EventListener::ForExtension(kEventFilterServiceTypeKey, extension_id,
-                                  nullptr, std::move(filter))
-          .release()));
+  listener_list->push_back(EventListener::ForExtension(
+      kEventFilterServiceTypeKey, extension_id, nullptr, std::move(filter)));
 }
 
 class NullDelegate : public EventListenerMap::Delegate {
@@ -73,18 +70,18 @@ class MockedMDnsAPI : public MDnsAPI {
 
 std::unique_ptr<KeyedService> MockedMDnsAPITestingFactoryFunction(
     content::BrowserContext* context) {
-  return base::WrapUnique(new MockedMDnsAPI(context));
+  return base::MakeUnique<MockedMDnsAPI>(context);
 }
 
 std::unique_ptr<KeyedService> MDnsAPITestingFactoryFunction(
     content::BrowserContext* context) {
-  return base::WrapUnique(new MDnsAPI(context));
+  return base::MakeUnique<MDnsAPI>(context);
 }
 
 std::unique_ptr<KeyedService> BuildEventRouter(
     content::BrowserContext* context) {
-  return base::WrapUnique(
-      new extensions::EventRouter(context, ExtensionPrefs::Get(context)));
+  return base::MakeUnique<extensions::EventRouter>(
+      context, ExtensionPrefs::Get(context));
 }
 
 // For ExtensionService interface when it requires a path that is not used.
@@ -129,8 +126,8 @@ class MockEventRouter : public EventRouter {
 
 std::unique_ptr<KeyedService> MockEventRouterFactoryFunction(
     content::BrowserContext* context) {
-  return base::WrapUnique(
-      new MockEventRouter(context, ExtensionPrefs::Get(context)));
+  return base::MakeUnique<MockEventRouter>(context,
+                                           ExtensionPrefs::Get(context));
 }
 
 class EventServiceListSizeMatcher
@@ -376,7 +373,7 @@ TEST_F(MDnsAPITest, ExtensionRespectsWhitelist) {
   scoped_refptr<extensions::Extension> extension =
       CreateExtension("Dinosaur networker", false, kExtId);
   ExtensionRegistry::Get(browser_context())->AddEnabled(extension);
-  ASSERT_EQ(Manifest::TYPE_EXTENSION, extension.get()->GetType());
+  ASSERT_EQ(Manifest::TYPE_EXTENSION, extension->GetType());
 
   // There is a whitelist of mdns service types extensions may access, which
   // includes "_testing._tcp.local" and exludes "_trex._tcp.local"
@@ -426,7 +423,7 @@ TEST_F(MDnsAPITest, PlatformAppsNotSubjectToWhitelist) {
   scoped_refptr<extensions::Extension> extension =
       CreateExtension("Dinosaur networker", true, kExtId);
   ExtensionRegistry::Get(browser_context())->AddEnabled(extension);
-  ASSERT_TRUE(extension.get()->is_platform_app());
+  ASSERT_TRUE(extension->is_platform_app());
 
   base::DictionaryValue filter;
   filter.SetString(kEventFilterServiceTypeKey, "_trex._tcp.local");

@@ -440,7 +440,7 @@ message SystemProfileProto {
   // Figures that can be used to generate application stability metrics.
   // All values are counts of events since the last time that these
   // values were reported.
-  // Next tag: 26
+  // Next tag: 28
   message Stability {
     // Total amount of time that the program was running, in seconds,
     // since the last time a log was recorded, as measured using a client-side
@@ -458,17 +458,19 @@ message SystemProfileProto {
     // This field was added for M-35.
     optional int64 uptime_sec = 23;
 
-    // Page loads along with renderer crashes, hangs and failed launches, since
-    // page load count roughly corresponds to usage.
+    // Page loads along with renderer launches, crashes, hangs and failed
+    // launches, since page load count roughly corresponds to usage.
     optional int32 page_load_count = 2;
     optional int32 renderer_crash_count = 3;
     optional int32 renderer_hang_count = 4;
     optional int32 renderer_failed_launch_count = 24;
+    optional int32 renderer_launch_count = 26;
 
-    // Number of renderer crashes and failed launches that were for extensions.
-    // These are not counted in the renderer counts above.
+    // Number of renderer launches, crashes and failed launches that were for
+    // extensions. These are not counted in the renderer counts above.
     optional int32 extension_renderer_crash_count = 5;
     optional int32 extension_renderer_failed_launch_count = 25;
+    optional int32 extension_renderer_launch_count = 27;
 
     // Number of non-renderer child process crashes.
     optional int32 child_process_crash_count = 6;
@@ -602,10 +604,10 @@ message SystemProfileProto {
     // be consistent between manufacturers.
     optional int32 manufacture_week = 6;
 
-    // Max horizontal resolution in pixels.
+    // Selected horizontal resolution in pixels.
     optional int32 horizontal_resolution = 7;
 
-    // Max vertical resolution in pixels.
+    // Selected vertical resolution in pixels.
     optional int32 vertical_resolution = 8;
 
     // Audio capabilities of the device.
@@ -651,7 +653,6 @@ message SystemProfileProto {
         DIGITAL = 1;
       }
       optional OutputMode output_mode = 6;
-
     }
     repeated AudioDescription audio_description = 9;
 
@@ -704,6 +705,50 @@ message SystemProfileProto {
       optional int32 num_aborted_unrecognized = 7;
     }
     repeated CECCommand cec_command = 13;
+
+    // Selected Frame rate
+    optional int32 frame_rate = 14;
+
+    // Selected color encoding.
+    enum ColorEncoding {
+      COLOR_ENCODING_UNKNOWN = 0;
+      COLOR_ENCODING_RGB = 1;
+      COLOR_ENCODING_YUV444 = 2;
+      COLOR_ENCODING_YUV422 = 3;
+      COLOR_ENCODING_YUV420 = 4;
+    }
+    optional ColorEncoding color_encoding = 15;
+
+    // Selected bit-depth.
+    optional int32 bit_depth = 16;
+
+    // Devices's max TMDS char rate.
+    optional int32 tmds = 17;
+
+    // HDR10 support.
+    optional bool hdr10_support = 18;
+
+    // Dolby vision support.
+    optional bool dolby_vision_support = 19;
+
+    // Supported EOTFs.
+    // EOTF support according to the spec:
+    //   eotf_support & 0x1 -> SDR supported
+    //   (eotf_support > 1) & 0x1 -> traditional HDR supported
+    //   (eotf_support > 2) & 0x1 -> ST2084 supported
+    optional int32 eotf_support = 20;
+
+    // Supports YUV.
+    optional bool yuv_support = 21;
+
+    // Supports YUV_420.
+    optional bool yuv_420_support = 22;
+
+    // The maximum HDCP version supported by the sink.
+    optional int32 maximum_supported_hdcp_version = 23;
+
+    // The current HDCP version negotiated with the sink.
+    optional int32 current_hdcp_version = 24;
   }
   repeated ExternalAudioVideoDevice external_audio_video_device = 14;
 

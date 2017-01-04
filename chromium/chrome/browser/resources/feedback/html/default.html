@@ -10,6 +10,7 @@
 <script src="chrome://resources/js/load_time_data.js"></script>
 <script src="chrome://resources/js/i18n_template_no_process.js"></script>
 <script src="chrome://resources/js/util.js"></script>
+<script src="../js/data.js"></script>
 <script src="../js/take_screenshot.js"></script>
 <script src="../js/topbar_handlers.js"></script>
 <script src="../js/feedback.js"></script>
@@ -27,7 +28,7 @@
   <div id="srt-prompt" class="content">
     <img src="../../../../../components/resources/sadtab.svg" class="srt-image">
     <p i18n-content="srtPromptBody" class="srt-body"></p>
-    <div class="buttons-pane">
+    <div class="buttons-pane top-buttons">
       <button id="srt-decline-button" class="white-button"
           i18n-content="srtPromptDeclineButton">
       </button>
@@ -38,6 +39,9 @@
   </div>
   <div id="content-pane" class="content">
     <textarea id="description-text" aria-labelledby="title-bar"></textarea>
+    <div>
+      <p id="additional-info-label" i18n-content="additionalInfo"><p>
+    </div>
     <div id="page-url" class="text-field-container">
       <label id="page-url-label" i18n-content="page-url"></label>
       <input id="page-url-text" aria-labelledby="page-url-label" type="text">

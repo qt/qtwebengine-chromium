@@ -9,6 +9,7 @@
 #ifndef LIBANGLE_RENDERER_D3D_D3D11_BUFFER11_H_
 #define LIBANGLE_RENDERER_D3D_D3D11_BUFFER11_H_
 
+#include <array>
 #include <map>
 
 #include "libANGLE/angletypes.h"
@@ -68,8 +69,8 @@ class Buffer11 : public BufferD3D
     void invalidateStaticData() override;
 
     // BufferImpl implementation
-    gl::Error setData(const void *data, size_t size, GLenum usage) override;
-    gl::Error setSubData(const void *data, size_t size, size_t offset) override;
+    gl::Error setData(GLenum target, const void *data, size_t size, GLenum usage) override;
+    gl::Error setSubData(GLenum target, const void *data, size_t size, size_t offset) override;
     gl::Error copySubData(BufferImpl *source,
                           GLintptr sourceOffset,
                           GLintptr destOffset,
@@ -100,7 +101,7 @@ class Buffer11 : public BufferD3D
         unsigned int lruCount;
     };
 
-    gl::Error markBufferUsage();
+    gl::Error markBufferUsage(BufferUsage usage);
     gl::ErrorOrResult<NativeStorage *> getStagingStorage();
     gl::ErrorOrResult<PackStorage *> getPackStorage();
     gl::ErrorOrResult<SystemMemoryStorage *> getSystemMemoryStorage();
@@ -113,14 +114,21 @@ class Buffer11 : public BufferD3D
                                                                      GLsizeiptr size);
 
     BufferStorage *allocateStorage(BufferUsage usage);
-    void updateSystemMemoryDeallocThreshold();
+    void updateDeallocThreshold(BufferUsage usage);
+
+    // Free the storage if we decide it isn't being used very often.
+    gl::Error checkForDeallocation(BufferUsage usage);
 
     Renderer11 *mRenderer;
     size_t mSize;
 
     BufferStorage *mMappedStorage;
 
-    std::vector<BufferStorage *> mBufferStorages;
+    std::array<BufferStorage *, BUFFER_USAGE_COUNT> mBufferStorages;
+
+    // These two arrays are used to track when to free unused storage.
+    std::array<unsigned int, BUFFER_USAGE_COUNT> mDeallocThresholds;
+    std::array<unsigned int, BUFFER_USAGE_COUNT> mIdleness;
 
     // Cache of D3D11 constant buffer for specific ranges of buffer data.
     // This is used to emulate UBO ranges on 11.0 devices.
@@ -129,12 +137,6 @@ class Buffer11 : public BufferD3D
     ConstantBufferCache mConstantBufferRangeStoragesCache;
     size_t mConstantBufferStorageAdditionalSize;
     unsigned int mMaxConstantBufferLruCount;
-
-    typedef std::pair<ID3D11Buffer *, ID3D11ShaderResourceView *> BufferSRVPair;
-    std::map<DXGI_FORMAT, BufferSRVPair> mBufferResourceViews;
-
-    unsigned int mReadUsageCount;
-    unsigned int mSystemMemoryDeallocThreshold;
 
     angle::BroadcastChannel mStaticBroadcastChannel;
     angle::BroadcastChannel mDirectBroadcastChannel;

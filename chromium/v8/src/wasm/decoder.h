@@ -5,13 +5,14 @@
 #ifndef V8_WASM_DECODER_H_
 #define V8_WASM_DECODER_H_
 
+#include <memory>
+
 #include "src/base/compiler-specific.h"
-#include "src/base/smart-pointers.h"
 #include "src/flags.h"
 #include "src/signature.h"
 #include "src/utils.h"
 #include "src/wasm/wasm-result.h"
-#include "src/zone-containers.h"
+#include "src/zone/zone-containers.h"
 
 namespace v8 {
 namespace internal {
@@ -24,12 +25,6 @@ namespace wasm {
   } while (false)
 #else
 #define TRACE(...)
-#endif
-
-#if !(V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_ARM)
-#define UNALIGNED_ACCESS_OK 1
-#else
-#define UNALIGNED_ACCESS_OK 0
 #endif
 
 // A helper utility to decode bytes, integers, fields, varints, etc, from
@@ -125,47 +120,19 @@ class Decoder {
   // Reads a single 16-bit unsigned integer (little endian).
   inline uint16_t read_u16(const byte* ptr) {
     DCHECK(ptr >= start_ && (ptr + 2) <= end_);
-#if V8_TARGET_LITTLE_ENDIAN && UNALIGNED_ACCESS_OK
-    return *reinterpret_cast<const uint16_t*>(ptr);
-#else
-    uint16_t b0 = ptr[0];
-    uint16_t b1 = ptr[1];
-    return (b1 << 8) | b0;
-#endif
+    return ReadLittleEndianValue<uint16_t>(ptr);
   }
 
   // Reads a single 32-bit unsigned integer (little endian).
   inline uint32_t read_u32(const byte* ptr) {
     DCHECK(ptr >= start_ && (ptr + 4) <= end_);
-#if V8_TARGET_LITTLE_ENDIAN && UNALIGNED_ACCESS_OK
-    return *reinterpret_cast<const uint32_t*>(ptr);
-#else
-    uint32_t b0 = ptr[0];
-    uint32_t b1 = ptr[1];
-    uint32_t b2 = ptr[2];
-    uint32_t b3 = ptr[3];
-    return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
-#endif
+    return ReadLittleEndianValue<uint32_t>(ptr);
   }
 
   // Reads a single 64-bit unsigned integer (little endian).
   inline uint64_t read_u64(const byte* ptr) {
     DCHECK(ptr >= start_ && (ptr + 8) <= end_);
-#if V8_TARGET_LITTLE_ENDIAN && UNALIGNED_ACCESS_OK
-    return *reinterpret_cast<const uint64_t*>(ptr);
-#else
-    uint32_t b0 = ptr[0];
-    uint32_t b1 = ptr[1];
-    uint32_t b2 = ptr[2];
-    uint32_t b3 = ptr[3];
-    uint32_t low = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
-    uint32_t b4 = ptr[4];
-    uint32_t b5 = ptr[5];
-    uint32_t b6 = ptr[6];
-    uint32_t b7 = ptr[7];
-    uint64_t high = (b7 << 24) | (b6 << 16) | (b5 << 8) | b4;
-    return (high << 32) | low;
-#endif
+    return ReadLittleEndianValue<uint64_t>(ptr);
   }
 
   // Reads a 8-bit unsigned integer (byte) and advances {pc_}.
@@ -241,6 +208,19 @@ class Decoder {
 
   // Consume {size} bytes and send them to the bit bucket, advancing {pc_}.
   void consume_bytes(int size) {
+    TRACE("  +%d  %-20s: %d bytes\n", static_cast<int>(pc_ - start_), "skip",
+          size);
+    if (checkAvailable(size)) {
+      pc_ += size;
+    } else {
+      pc_ = limit_;
+    }
+  }
+
+  // Consume {size} bytes and send them to the bit bucket, advancing {pc_}.
+  void consume_bytes(uint32_t size, const char* name = "skip") {
+    TRACE("  +%d  %-20s: %d bytes\n", static_cast<int>(pc_ - start_), name,
+          size);
     if (checkAvailable(size)) {
       pc_ += size;
     } else {
@@ -281,7 +261,7 @@ class Decoder {
       va_start(arguments, format);
       base::OS::VSNPrintF(buffer, kMaxErrorMsg - 1, format, arguments);
       va_end(arguments);
-      error_msg_.Reset(buffer);
+      error_msg_.reset(buffer);
       error_pc_ = pc;
       error_pt_ = pt;
       onFirstError();
@@ -314,7 +294,7 @@ class Decoder {
       result.error_pc = error_pc_;
       result.error_pt = error_pt_;
       // transfer ownership of the error to the result.
-      result.error_msg.Reset(error_msg_.Detach());
+      result.error_msg.reset(error_msg_.release());
     } else {
       result.error_code = kSuccess;
     }
@@ -330,11 +310,11 @@ class Decoder {
     end_ = end;
     error_pc_ = nullptr;
     error_pt_ = nullptr;
-    error_msg_.Reset(nullptr);
+    error_msg_.reset();
   }
 
   bool ok() const { return error_pc_ == nullptr; }
-  bool failed() const { return !error_msg_.is_empty(); }
+  bool failed() const { return !!error_msg_; }
   bool more() const { return pc_ < limit_; }
 
   const byte* start() { return start_; }
@@ -348,7 +328,7 @@ class Decoder {
   const byte* end_;
   const byte* error_pc_;
   const byte* error_pt_;
-  base::SmartArrayPointer<char> error_msg_;
+  std::unique_ptr<char[]> error_msg_;
 
  private:
   template <typename IntType, bool is_signed>

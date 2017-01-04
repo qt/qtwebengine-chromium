@@ -34,7 +34,7 @@
       'conditions': [
         [ '"x86" in skia_arch_type and skia_os != "ios"', {
           'cflags': [ '-msse2' ],
-          'dependencies': [ 'opts_ssse3', 'opts_sse41', 'opts_sse42', 'opts_avx', 'opts_avx2' ],
+          'dependencies': [ 'opts_ssse3', 'opts_sse41', 'opts_sse42', 'opts_avx', 'opts_hsw' ],
           'sources': [ '<@(sse2_sources)' ],
         }],
 
@@ -71,6 +71,7 @@
 
         [ 'skia_arch_type == "arm64"', {
           'sources': [ '<@(arm64_sources)' ],
+          'dependencies': [ 'opts_crc32' ]
         }],
 
         [ 'skia_android_framework', {
@@ -80,6 +81,22 @@
             '-fomit-frame-pointer',
           ]
         }],
+      ],
+    },
+    {
+      'target_name': 'opts_crc32',
+      'product_name': 'skia_opts_crc32',
+      'type': 'static_library',
+      'standalone_static_library': 1,
+      'dependencies': [ 'core.gyp:*' ],
+      'include_dirs': [
+          '../include/private',
+          '../src/core',
+          '../src/utils',
+      ],
+      'sources': [ '<@(crc32_sources)' ],
+      'conditions': [
+        [ 'not skia_android_framework', { 'cflags': [ '-march=armv8-a+crc' ] }],
       ],
     },
     {
@@ -154,8 +171,8 @@
       ],
     },
     {
-      'target_name': 'opts_avx2',
-      'product_name': 'skia_opts_avx2',
+      'target_name': 'opts_hsw',
+      'product_name': 'skia_opts_hsw',
       'type': 'static_library',
       'standalone_static_library': 1,
       'dependencies': [ 'core.gyp:*' ],
@@ -164,11 +181,15 @@
           '../src/core',
           '../src/utils',
       ],
-      'sources': [ '<@(avx2_sources)' ],
+      'sources': [ '<@(hsw_sources)' ],
       'msvs_settings': { 'VCCLCompilerTool': { 'EnableEnhancedInstructionSet': '5' } },
-      'xcode_settings': { 'OTHER_CPLUSPLUSFLAGS': [ '-mavx2' ] },
+      'xcode_settings': {
+          'OTHER_CPLUSPLUSFLAGS': [ '-mavx2', '-mbmi', '-mbmi2', '-mf16c', '-mfma' ]
+      },
       'conditions': [
-        [ 'not skia_android_framework', { 'cflags': [ '-mavx2' ] }],
+        [ 'not skia_android_framework', {
+            'cflags': [ '-mavx2', '-mbmi', '-mbmi2', '-mf16c', '-mfma' ]
+        }],
       ],
     },
     {

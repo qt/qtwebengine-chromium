@@ -37,13 +37,7 @@
 #include <grpc/support/port_platform.h>
 #include <grpc/support/slice.h>
 
-/* Common definitions for frame handling in the chttp2 transport */
-
-typedef enum {
-  GRPC_CHTTP2_PARSE_OK,
-  GRPC_CHTTP2_STREAM_ERROR,
-  GRPC_CHTTP2_CONNECTION_ERROR
-} grpc_chttp2_parse_error;
+#include "src/core/lib/iomgr/error.h"
 
 /* defined in internal.h */
 typedef struct grpc_chttp2_stream_parsing grpc_chttp2_stream_parsing;
@@ -57,8 +51,6 @@ typedef struct grpc_chttp2_transport_parsing grpc_chttp2_transport_parsing;
 #define GRPC_CHTTP2_FRAME_PING 6
 #define GRPC_CHTTP2_FRAME_GOAWAY 7
 #define GRPC_CHTTP2_FRAME_WINDOW_UPDATE 8
-
-#define GRPC_CHTTP2_MAX_PAYLOAD_LENGTH ((1 << 14) - 1)
 
 #define GRPC_CHTTP2_DATA_FLAG_END_STREAM 1
 #define GRPC_CHTTP2_FLAG_ACK 1

@@ -47,8 +47,7 @@ class MEDIA_EXPORT SkCanvasVideoRenderer {
   void Paint(const scoped_refptr<VideoFrame>& video_frame,
              SkCanvas* canvas,
              const gfx::RectF& dest_rect,
-             uint8_t alpha,
-             SkXfermode::Mode mode,
+             SkPaint& paint,
              VideoRotation video_rotation,
              const Context3D& context_3d);
 
@@ -100,6 +99,11 @@ class MEDIA_EXPORT SkCanvasVideoRenderer {
   // never be painted again, so we can release the resource.
   void ResetCache();
 
+  void CorrectLastImageDimensions(const SkIRect& visible_rect);
+
+  // Used for unit test.
+  SkISize LastImageDimensionsForTesting();
+
  private:
   // Update the cache holding the most-recently-painted frame. Returns false
   // if the image couldn't be updated.
@@ -109,12 +113,15 @@ class MEDIA_EXPORT SkCanvasVideoRenderer {
   // Last image used to draw to the canvas.
   sk_sp<SkImage> last_image_;
   // Timestamp of the videoframe used to generate |last_image_|.
-  base::TimeDelta last_timestamp_ = media::kNoTimestamp();
+  base::TimeDelta last_timestamp_ = media::kNoTimestamp;
   // If |last_image_| is not used for a while, it's deleted to save memory.
   base::DelayTimer last_image_deleting_timer_;
 
   // Used for DCHECKs to ensure method calls executed in the correct thread.
   base::ThreadChecker thread_checker_;
+
+  // Used for unit test.
+  SkISize last_image_dimensions_for_testing_;
 
   DISALLOW_COPY_AND_ASSIGN(SkCanvasVideoRenderer);
 };

@@ -7,19 +7,23 @@
 
 #include <string>
 
+class PrefService;
+
 namespace base {
 struct Feature;
 }
 
-namespace sync_driver {
+namespace syncer {
 class SyncService;
 }
 
-class PrefService;
-
 namespace autofill {
 
+extern const base::Feature kAutofillCreditCardAssist;
+extern const base::Feature kAutofillCreditCardSigninPromo;
 extern const base::Feature kAutofillProfileCleanup;
+extern const base::Feature kAutofillScanCardholderName;
+extern const char kCreditCardSigninPromoImpressionLimitParamKey[];
 
 // Returns true if autofill should be enabled. See also
 // IsInAutofillSuggestionsDisabledExperiment below.
@@ -34,6 +38,16 @@ bool IsInAutofillSuggestionsDisabledExperiment();
 // Returns whether the Autofill profile cleanup feature is enabled.
 bool IsAutofillProfileCleanupEnabled();
 
+// Returns whether the Autofill credit card signin promo should be shown.
+bool IsAutofillCreditCardSigninPromoEnabled();
+
+// Returns whether the Autofill credit card assist infobar should be shown.
+bool IsAutofillCreditCardAssistEnabled();
+
+// Returns the maximum number of impressions of the credit card signin promo, or
+// 0 if there are no limits.
+int GetCreditCardSigninPromoImpressionLimit();
+
 // Returns true if the user should be offered to locally store unmasked cards.
 // This controls whether the option is presented at all rather than the default
 // response of the option.
@@ -43,7 +57,7 @@ bool OfferStoreUnmaskedCards();
 // requires the appropriate flags and user settings to be true and the user to
 // be a member of a supported domain.
 bool IsCreditCardUploadEnabled(const PrefService* pref_service,
-                               const sync_driver::SyncService* sync_service,
+                               const syncer::SyncService* sync_service,
                                const std::string& user_email);
 
 }  // namespace autofill

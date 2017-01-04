@@ -12,6 +12,7 @@
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/geometry_test_utils.h"
+#include "cc/test/stub_layer_tree_host_single_thread_client.h"
 #include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -45,15 +46,12 @@ class TestUIResourceLayer : public UIResourceLayer {
 };
 
 class UIResourceLayerTest : public testing::Test {
- public:
-  UIResourceLayerTest() : fake_client_(FakeLayerTreeHostClient::DIRECT_3D) {}
-
  protected:
   void SetUp() override {
     layer_tree_host_ =
         FakeLayerTreeHost::Create(&fake_client_, &task_graph_runner_);
     layer_tree_host_->InitializeSingleThreaded(
-        &fake_client_, base::ThreadTaskRunnerHandle::Get(), nullptr);
+        &single_thread_client_, base::ThreadTaskRunnerHandle::Get());
   }
 
   void TearDown() override {
@@ -61,6 +59,7 @@ class UIResourceLayerTest : public testing::Test {
   }
 
   FakeLayerTreeHostClient fake_client_;
+  StubLayerTreeHostSingleThreadClient single_thread_client_;
   TestTaskGraphRunner task_graph_runner_;
   std::unique_ptr<FakeLayerTreeHost> layer_tree_host_;
 };
@@ -72,7 +71,7 @@ TEST_F(UIResourceLayerTest, SetBitmap) {
 
   layer_tree_host_->SetRootLayer(test_layer);
   Mock::VerifyAndClearExpectations(layer_tree_host_.get());
-  EXPECT_EQ(test_layer->layer_tree_host(), layer_tree_host_.get());
+  EXPECT_EQ(test_layer->GetLayerTreeHostForTesting(), layer_tree_host_.get());
 
   test_layer->SavePaintProperties();
   test_layer->Update();
@@ -96,7 +95,7 @@ TEST_F(UIResourceLayerTest, SetUIResourceId) {
 
   layer_tree_host_->SetRootLayer(test_layer);
   Mock::VerifyAndClearExpectations(layer_tree_host_.get());
-  EXPECT_EQ(test_layer->layer_tree_host(), layer_tree_host_.get());
+  EXPECT_EQ(test_layer->GetLayerTreeHostForTesting(), layer_tree_host_.get());
 
   test_layer->SavePaintProperties();
   test_layer->Update();
@@ -104,8 +103,9 @@ TEST_F(UIResourceLayerTest, SetUIResourceId) {
   EXPECT_FALSE(test_layer->DrawsContent());
 
   bool is_opaque = false;
-  std::unique_ptr<ScopedUIResource> resource = ScopedUIResource::Create(
-      layer_tree_host_.get(), UIResourceBitmap(gfx::Size(10, 10), is_opaque));
+  std::unique_ptr<ScopedUIResource> resource =
+      ScopedUIResource::Create(layer_tree_host_->GetUIResourceManager(),
+                               UIResourceBitmap(gfx::Size(10, 10), is_opaque));
   test_layer->SetUIResourceId(resource->id());
   test_layer->Update();
 
@@ -113,8 +113,9 @@ TEST_F(UIResourceLayerTest, SetUIResourceId) {
 
   // ID is preserved even when you set ID first and attach it to the tree.
   layer_tree_host_->SetRootLayer(nullptr);
-  std::unique_ptr<ScopedUIResource> shared_resource = ScopedUIResource::Create(
-      layer_tree_host_.get(), UIResourceBitmap(gfx::Size(5, 5), is_opaque));
+  std::unique_ptr<ScopedUIResource> shared_resource =
+      ScopedUIResource::Create(layer_tree_host_->GetUIResourceManager(),
+                               UIResourceBitmap(gfx::Size(5, 5), is_opaque));
   test_layer->SetUIResourceId(shared_resource->id());
   layer_tree_host_->SetRootLayer(test_layer);
   EXPECT_EQ(shared_resource->id(), test_layer->GetUIResourceId());

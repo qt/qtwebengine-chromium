@@ -45,28 +45,6 @@ enum SamplerType
     SAMPLER_VERTEX
 };
 
-template <typename T>
-struct Color
-{
-    T red;
-    T green;
-    T blue;
-    T alpha;
-
-    Color() : red(0), green(0), blue(0), alpha(0) { }
-    Color(T r, T g, T b, T a) : red(r), green(g), blue(b), alpha(a) { }
-};
-
-template <typename T>
-bool operator==(const Color<T> &a, const Color<T> &b);
-
-template <typename T>
-bool operator!=(const Color<T> &a, const Color<T> &b);
-
-typedef Color<float> ColorF;
-typedef Color<int> ColorI;
-typedef Color<unsigned int> ColorUI;
-
 struct Rectangle
 {
     Rectangle() : x(0), y(0), width(0), height(0) {}
@@ -219,59 +197,39 @@ struct SamplerState
 bool operator==(const SamplerState &a, const SamplerState &b);
 bool operator!=(const SamplerState &a, const SamplerState &b);
 
-struct PixelUnpackState
+struct PixelStoreStateBase
 {
     BindingPointer<Buffer> pixelBuffer;
-    GLint alignment;
-    GLint rowLength;
-    GLint skipRows;
-    GLint skipPixels;
-    GLint imageHeight;
-    GLint skipImages;
-
-    PixelUnpackState()
-        : alignment(4),
-          rowLength(0),
-          skipRows(0),
-          skipPixels(0),
-          imageHeight(0),
-          skipImages(0)
-    {}
-
-    PixelUnpackState(GLint alignmentIn, GLint rowLengthIn)
-        : alignment(alignmentIn),
-          rowLength(rowLengthIn),
-          skipRows(0),
-          skipPixels(0),
-          imageHeight(0),
-          skipImages(0)
-    {}
+    GLint alignment   = 4;
+    GLint rowLength   = 0;
+    GLint skipRows    = 0;
+    GLint skipPixels  = 0;
+    GLint imageHeight = 0;
+    GLint skipImages  = 0;
 };
 
-struct PixelPackState
+struct PixelUnpackState : PixelStoreStateBase
 {
-    BindingPointer<Buffer> pixelBuffer;
-    GLint alignment;
-    bool reverseRowOrder;
-    GLint rowLength;
-    GLint skipRows;
-    GLint skipPixels;
+    PixelUnpackState() {}
 
-    PixelPackState()
-        : alignment(4),
-          reverseRowOrder(false),
-          rowLength(0),
-          skipRows(0),
-          skipPixels(0)
-    {}
+    PixelUnpackState(GLint alignmentIn, GLint rowLengthIn)
+    {
+        alignment = alignmentIn;
+        rowLength = rowLengthIn;
+    }
+};
 
-    explicit PixelPackState(GLint alignmentIn, bool reverseRowOrderIn)
-        : alignment(alignmentIn),
-          reverseRowOrder(reverseRowOrderIn),
-          rowLength(0),
-          skipRows(0),
-          skipPixels(0)
-    {}
+struct PixelPackState : PixelStoreStateBase
+{
+    PixelPackState() {}
+
+    PixelPackState(GLint alignmentIn, bool reverseRowOrderIn)
+        : reverseRowOrder(reverseRowOrderIn)
+    {
+        alignment = alignmentIn;
+    }
+
+    bool reverseRowOrder = false;
 };
 
 // Used in Program and VertexArray.

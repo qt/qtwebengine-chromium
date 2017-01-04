@@ -38,105 +38,98 @@
 
 namespace blink {
 
-void FileWriterSync::write(Blob* data, ExceptionState& exceptionState)
-{
-    ASSERT(data);
-    ASSERT(writer());
-    ASSERT(m_complete);
+void FileWriterSync::write(Blob* data, ExceptionState& exceptionState) {
+  ASSERT(data);
+  ASSERT(writer());
+  ASSERT(m_complete);
 
-    prepareForWrite();
-    writer()->write(position(), data->uuid());
-    ASSERT(m_complete);
-    if (m_error) {
-        FileError::throwDOMException(exceptionState, m_error);
-        return;
-    }
-    setPosition(position() + data->size());
-    if (position() > length())
-        setLength(position());
+  prepareForWrite();
+  writer()->write(position(), data->uuid());
+  ASSERT(m_complete);
+  if (m_error) {
+    FileError::throwDOMException(exceptionState, m_error);
+    return;
+  }
+  setPosition(position() + data->size());
+  if (position() > length())
+    setLength(position());
 }
 
-void FileWriterSync::seek(long long position, ExceptionState& exceptionState)
-{
-    ASSERT(writer());
-    ASSERT(m_complete);
-    seekInternal(position);
+void FileWriterSync::seek(long long position, ExceptionState& exceptionState) {
+  ASSERT(writer());
+  ASSERT(m_complete);
+  seekInternal(position);
 }
 
-void FileWriterSync::truncate(long long offset, ExceptionState& exceptionState)
-{
-    ASSERT(writer());
-    ASSERT(m_complete);
-    if (offset < 0) {
-        exceptionState.throwDOMException(InvalidStateError, FileError::invalidStateErrorMessage);
-        return;
-    }
-    prepareForWrite();
-    writer()->truncate(offset);
-    ASSERT(m_complete);
-    if (m_error) {
-        FileError::throwDOMException(exceptionState, m_error);
-        return;
-    }
-    if (offset < position())
-        setPosition(offset);
-    setLength(offset);
+void FileWriterSync::truncate(long long offset,
+                              ExceptionState& exceptionState) {
+  ASSERT(writer());
+  ASSERT(m_complete);
+  if (offset < 0) {
+    exceptionState.throwDOMException(InvalidStateError,
+                                     FileError::invalidStateErrorMessage);
+    return;
+  }
+  prepareForWrite();
+  writer()->truncate(offset);
+  ASSERT(m_complete);
+  if (m_error) {
+    FileError::throwDOMException(exceptionState, m_error);
+    return;
+  }
+  if (offset < position())
+    setPosition(offset);
+  setLength(offset);
 }
 
-void FileWriterSync::didWrite(long long bytes, bool complete)
-{
-    ASSERT(m_error == FileError::OK);
-    ASSERT(!m_complete);
-#if ENABLE(ASSERT)
-    m_complete = complete;
-#else
-    ASSERT_UNUSED(complete, complete);
+void FileWriterSync::didWrite(long long bytes, bool complete) {
+  DCHECK_EQ(FileError::kOK, m_error);
+#if DCHECK_IS_ON()
+  DCHECK(!m_complete);
+  m_complete = complete;
 #endif
 }
 
-void FileWriterSync::didTruncate()
-{
-    ASSERT(m_error == FileError::OK);
-    ASSERT(!m_complete);
-#if ENABLE(ASSERT)
-    m_complete = true;
+void FileWriterSync::didTruncate() {
+  DCHECK_EQ(FileError::kOK, m_error);
+#if DCHECK_IS_ON()
+  DCHECK(!m_complete);
+  m_complete = true;
 #endif
 }
 
-void FileWriterSync::didFail(WebFileError error)
-{
-    ASSERT(m_error == FileError::OK);
-    m_error = static_cast<FileError::ErrorCode>(error);
-    ASSERT(!m_complete);
-#if ENABLE(ASSERT)
-    m_complete = true;
+void FileWriterSync::didFail(WebFileError error) {
+  DCHECK_EQ(FileError::kOK, m_error);
+  m_error = static_cast<FileError::ErrorCode>(error);
+#if DCHECK_IS_ON()
+  DCHECK(!m_complete);
+  m_complete = true;
 #endif
 }
 
 FileWriterSync::FileWriterSync()
-    : m_error(FileError::OK)
-#if ENABLE(ASSERT)
-    , m_complete(true)
+    : m_error(FileError::kOK)
+#if DCHECK_IS_ON()
+      ,
+      m_complete(true)
 #endif
 {
 }
 
-void FileWriterSync::prepareForWrite()
-{
-    ASSERT(m_complete);
-    m_error = FileError::OK;
-#if ENABLE(ASSERT)
-    m_complete = false;
+void FileWriterSync::prepareForWrite() {
+#if DCHECK_IS_ON()
+  DCHECK(m_complete);
+#endif
+  m_error = FileError::kOK;
+#if DCHECK_IS_ON()
+  m_complete = false;
 #endif
 }
 
-FileWriterSync::~FileWriterSync()
-{
+FileWriterSync::~FileWriterSync() {}
+
+DEFINE_TRACE(FileWriterSync) {
+  FileWriterBase::trace(visitor);
 }
 
-DEFINE_TRACE(FileWriterSync)
-{
-    FileWriterBase::trace(visitor);
-}
-
-} // namespace blink
+}  // namespace blink

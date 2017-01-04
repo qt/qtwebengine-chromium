@@ -34,7 +34,7 @@ bool SyncHandleRegistry::RegisterHandle(const Handle& handle,
                                         const HandleCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  if (ContainsKey(handles_, handle))
+  if (base::ContainsKey(handles_, handle))
     return false;
 
   MojoResult result = MojoAddHandle(wait_set_handle_.get().value(),
@@ -48,7 +48,7 @@ bool SyncHandleRegistry::RegisterHandle(const Handle& handle,
 
 void SyncHandleRegistry::UnregisterHandle(const Handle& handle) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!ContainsKey(handles_, handle))
+  if (!base::ContainsKey(handles_, handle))
     return;
 
   MojoResult result =
@@ -107,6 +107,11 @@ SyncHandleRegistry::SyncHandleRegistry() {
 
 SyncHandleRegistry::~SyncHandleRegistry() {
   DCHECK(thread_checker_.CalledOnValidThread());
+
+  // If this breaks, it is likely that the global variable is bulit into and
+  // accessed from multiple modules.
+  CHECK_EQ(this, g_current_sync_handle_watcher.Pointer()->Get());
+
   g_current_sync_handle_watcher.Pointer()->Set(nullptr);
 }
 

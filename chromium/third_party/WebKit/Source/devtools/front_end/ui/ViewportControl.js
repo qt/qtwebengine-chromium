@@ -54,14 +54,18 @@ WebInspector.ViewportControl = function(provider)
     this.element.addEventListener("copy", this._onCopy.bind(this), false);
     this.element.addEventListener("dragstart", this._onDragStart.bind(this), false);
 
-    this._firstVisibleIndex = 0;
-    this._lastVisibleIndex = -1;
+    this._firstActiveIndex = 0;
+    this._lastActiveIndex = -1;
     this._renderedItems = [];
     this._anchorSelection = null;
     this._headSelection = null;
-    this._stickToBottom = false;
-    this._scrolledToBottom = true;
     this._itemCount = 0;
+
+    // Listen for any changes to descendants and trigger a refresh. This ensures
+    // that items updated asynchronously will not break stick-to-bottom behavior
+    // if they change the scroll height.
+    this._observer = new MutationObserver(this.refresh.bind(this));
+    this._observerConfig = { childList: true, subtree: true };
 }
 
 /**
@@ -145,9 +149,9 @@ WebInspector.ViewportControl.prototype = {
     /**
      * @return {boolean}
      */
-    scrolledToBottom: function()
+    stickToBottom: function()
     {
-        return this._scrolledToBottom;
+        return this._stickToBottom;
     },
 
     /**
@@ -156,6 +160,10 @@ WebInspector.ViewportControl.prototype = {
     setStickToBottom: function(value)
     {
         this._stickToBottom = value;
+        if (this._stickToBottom)
+            this._observer.observe(this._contentElement, this._observerConfig);
+        else
+            this._observer.disconnect();
     },
 
     /**
@@ -197,7 +205,7 @@ WebInspector.ViewportControl.prototype = {
         delete this._cumulativeHeights;
         delete this._cachedProviderElements;
         this._itemCount = this._provider.itemCount();
-        this._innerRefresh(false);
+        this.refresh();
     },
 
     /**
@@ -222,13 +230,13 @@ WebInspector.ViewportControl.prototype = {
             return;
         if (!this._itemCount)
             return;
-        var firstVisibleIndex = this._firstVisibleIndex;
-        var lastVisibleIndex = this._lastVisibleIndex;
+        var firstActiveIndex = this._firstActiveIndex;
+        var lastActiveIndex = this._lastActiveIndex;
         var height = 0;
         this._cumulativeHeights = new Int32Array(this._itemCount);
         for (var i = 0; i < this._itemCount; ++i) {
-            if (firstVisibleIndex <= i && i <= lastVisibleIndex)
-                height += this._renderedItems[i - firstVisibleIndex].element().offsetHeight;
+            if (firstActiveIndex <= i && i <= lastActiveIndex)
+                height += this._renderedItems[i - firstActiveIndex].element().offsetHeight;
             else
                 height += this._provider.fastHeight(i);
             this._cumulativeHeights[i] = height;
@@ -279,7 +287,7 @@ WebInspector.ViewportControl.prototype = {
     _updateSelectionModel: function(selection)
     {
         var range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
-        if (!range || selection.isCollapsed) {
+        if (!range || selection.isCollapsed || !this.element.hasSelection()) {
             this._headSelection = null;
             this._anchorSelection = null;
             return false;
@@ -291,7 +299,7 @@ WebInspector.ViewportControl.prototype = {
         var hasVisibleSelection = false;
         for (var i = 0; i < this._renderedItems.length; ++i) {
             if (range.intersectsNode(this._renderedItems[i].element())) {
-                var index = i + this._firstVisibleIndex;
+                var index = i + this._firstActiveIndex;
                 firstSelected = Math.min(firstSelected, index);
                 lastSelected = Math.max(lastSelected, index);
                 hasVisibleSelection = true;
@@ -347,26 +355,26 @@ WebInspector.ViewportControl.prototype = {
     {
         var anchorElement = null;
         var anchorOffset;
-        if (this._firstVisibleIndex <= this._anchorSelection.item && this._anchorSelection.item <= this._lastVisibleIndex) {
+        if (this._firstActiveIndex <= this._anchorSelection.item && this._anchorSelection.item <= this._lastActiveIndex) {
             anchorElement = this._anchorSelection.node;
             anchorOffset = this._anchorSelection.offset;
         } else {
-            if (this._anchorSelection.item < this._firstVisibleIndex)
+            if (this._anchorSelection.item < this._firstActiveIndex)
                 anchorElement = this._topGapElement;
-            else if (this._anchorSelection.item > this._lastVisibleIndex)
+            else if (this._anchorSelection.item > this._lastActiveIndex)
                 anchorElement = this._bottomGapElement;
             anchorOffset = this._selectionIsBackward ? 1 : 0;
         }
 
         var headElement = null;
         var headOffset;
-        if (this._firstVisibleIndex <= this._headSelection.item && this._headSelection.item <= this._lastVisibleIndex) {
+        if (this._firstActiveIndex <= this._headSelection.item && this._headSelection.item <= this._lastActiveIndex) {
             headElement = this._headSelection.node;
             headOffset = this._headSelection.offset;
         } else {
-            if (this._headSelection.item < this._firstVisibleIndex)
+            if (this._headSelection.item < this._firstActiveIndex)
                 headElement = this._topGapElement;
-            else if (this._headSelection.item > this._lastVisibleIndex)
+            else if (this._headSelection.item > this._lastActiveIndex)
                 headElement = this._bottomGapElement;
             headOffset = this._selectionIsBackward ? 0 : 1;
         }
@@ -376,13 +384,13 @@ WebInspector.ViewportControl.prototype = {
 
     refresh: function()
     {
-        this._innerRefresh(false);
+        this._observer.disconnect();
+        this._innerRefresh();
+        if (this._stickToBottom)
+            this._observer.observe(this._contentElement, this._observerConfig);
     },
 
-    /**
-     * @param {boolean} isUserGesture
-     */
-    _innerRefresh: function(isUserGesture)
+    _innerRefresh: function()
     {
         if (!this._visibleHeight())
             return;  // Do nothing for invisible controls.
@@ -394,8 +402,8 @@ WebInspector.ViewportControl.prototype = {
             this._contentElement.removeChildren();
             this._topGapElement.style.height = "0px";
             this._bottomGapElement.style.height = "0px";
-            this._firstVisibleIndex = -1;
-            this._lastVisibleIndex = -1;
+            this._firstActiveIndex = -1;
+            this._lastActiveIndex = -1;
             return;
         }
 
@@ -404,31 +412,32 @@ WebInspector.ViewportControl.prototype = {
 
         var visibleFrom = this.element.scrollTop;
         var visibleHeight = this._visibleHeight();
-        this._scrolledToBottom = this.element.isScrolledToBottom();
         var isInvalidating = !this._cumulativeHeights;
 
         for (var i = 0; i < this._renderedItems.length; ++i) {
             // Tolerate 1-pixel error due to double-to-integer rounding errors.
-            if (this._cumulativeHeights && Math.abs(this._cachedItemHeight(this._firstVisibleIndex + i) - this._renderedItems[i].element().offsetHeight) > 1)
+            if (this._cumulativeHeights && Math.abs(this._cachedItemHeight(this._firstActiveIndex + i) - this._renderedItems[i].element().offsetHeight) > 1)
                 delete this._cumulativeHeights;
         }
         this._rebuildCumulativeHeightsIfNeeded();
-        var oldFirstVisibleIndex = this._firstVisibleIndex;
-        var oldLastVisibleIndex = this._lastVisibleIndex;
-
-        var shouldStickToBottom = !isUserGesture && this._stickToBottom && this._scrolledToBottom;
-
-        if (shouldStickToBottom) {
-            this._lastVisibleIndex = this._itemCount - 1;
-            this._firstVisibleIndex = Math.max(this._itemCount - Math.ceil(visibleHeight / this._provider.minimumRowHeight()), 0);
+        var oldFirstActiveIndex = this._firstActiveIndex;
+        var oldLastActiveIndex = this._lastActiveIndex;
+        var activeHeight = visibleHeight * 2;
+        // When the viewport is scrolled to the bottom, using the cumulative heights estimate is not
+        // precise enough to determine next visible indices. This stickToBottom check avoids extra
+        // calls to refresh in those cases.
+        if (this._stickToBottom) {
+            this._firstActiveIndex = Math.max(this._itemCount - Math.ceil(activeHeight / this._provider.minimumRowHeight()), 0);
+            this._lastActiveIndex = this._itemCount - 1;
         } else {
-            this._firstVisibleIndex = Math.max(Array.prototype.lowerBound.call(this._cumulativeHeights, visibleFrom + 1), 0);
+            this._firstActiveIndex = Math.max(Array.prototype.lowerBound.call(this._cumulativeHeights, visibleFrom + 1 - (activeHeight - visibleHeight) / 2), 0);
             // Proactively render more rows in case some of them will be collapsed without triggering refresh. @see crbug.com/390169
-            this._lastVisibleIndex = this._firstVisibleIndex + Math.ceil(visibleHeight / this._provider.minimumRowHeight()) - 1;
-            this._lastVisibleIndex = Math.min(this._lastVisibleIndex, this._itemCount - 1);
+            this._lastActiveIndex = this._firstActiveIndex + Math.ceil(activeHeight / this._provider.minimumRowHeight()) - 1;
+            this._lastActiveIndex = Math.min(this._lastActiveIndex, this._itemCount - 1);
         }
-        var topGapHeight = this._cumulativeHeights[this._firstVisibleIndex - 1] || 0;
-        var bottomGapHeight = this._cumulativeHeights[this._cumulativeHeights.length - 1] - this._cumulativeHeights[this._lastVisibleIndex];
+
+        var topGapHeight = this._cumulativeHeights[this._firstActiveIndex - 1] || 0;
+        var bottomGapHeight = this._cumulativeHeights[this._cumulativeHeights.length - 1] - this._cumulativeHeights[this._lastActiveIndex];
 
         /**
          * @this {WebInspector.ViewportControl}
@@ -445,12 +454,12 @@ WebInspector.ViewportControl.prototype = {
         if (isInvalidating)
             this._fullViewportUpdate(prepare.bind(this));
         else
-            this._partialViewportUpdate(oldFirstVisibleIndex, oldLastVisibleIndex, prepare.bind(this));
+            this._partialViewportUpdate(oldFirstActiveIndex, oldLastActiveIndex, prepare.bind(this));
         this._contentElement.style.removeProperty("height");
         // Should be the last call in the method as it might force layout.
         if (shouldRestoreSelection)
             this._restoreSelection(selection);
-        if (shouldStickToBottom)
+        if (this._stickToBottom)
             this.element.scrollTop = 10000000;
     },
 
@@ -464,7 +473,7 @@ WebInspector.ViewportControl.prototype = {
         prepare();
         this._renderedItems = [];
         this._contentElement.removeChildren();
-        for (var i = this._firstVisibleIndex; i <= this._lastVisibleIndex; ++i) {
+        for (var i = this._firstActiveIndex; i <= this._lastActiveIndex; ++i) {
             var viewportElement = this._providerElement(i);
             this._contentElement.appendChild(viewportElement.element());
             this._renderedItems.push(viewportElement);
@@ -474,16 +483,16 @@ WebInspector.ViewportControl.prototype = {
     },
 
     /**
-     * @param {number} oldFirstVisibleIndex
-     * @param {number} oldLastVisibleIndex
+     * @param {number} oldFirstActiveIndex
+     * @param {number} oldLastActiveIndex
      * @param {function()} prepare
      */
-    _partialViewportUpdate: function(oldFirstVisibleIndex, oldLastVisibleIndex, prepare)
+    _partialViewportUpdate: function(oldFirstActiveIndex, oldLastActiveIndex, prepare)
     {
         var willBeHidden = [];
         for (var i = 0; i < this._renderedItems.length; ++i) {
-            var index = oldFirstVisibleIndex + i;
-            if (index < this._firstVisibleIndex || this._lastVisibleIndex < index)
+            var index = oldFirstActiveIndex + i;
+            if (index < this._firstActiveIndex || this._lastActiveIndex < index)
                 willBeHidden.push(this._renderedItems[i]);
         }
         for (var i = 0; i < willBeHidden.length; ++i)
@@ -495,7 +504,7 @@ WebInspector.ViewportControl.prototype = {
         this._renderedItems = [];
         var anchor = this._contentElement.firstChild;
         var wasShown = [];
-        for (var i = this._firstVisibleIndex; i <= this._lastVisibleIndex; ++i) {
+        for (var i = this._firstActiveIndex; i <= this._lastActiveIndex; ++i) {
             var viewportElement = this._providerElement(i);
             var element = viewportElement.element();
             if (element !== anchor) {
@@ -558,7 +567,7 @@ WebInspector.ViewportControl.prototype = {
     {
         var chars = 0;
         var node = itemElement;
-        while ((node = node.traverseNextTextNode()) && node !== container)
+        while ((node = node.traverseNextTextNode()) && !node.isSelfOrDescendant(container))
             chars += node.textContent.length;
         return chars + offset;
     },
@@ -568,7 +577,7 @@ WebInspector.ViewportControl.prototype = {
      */
     _onScroll: function(event)
     {
-        this._innerRefresh(event.isTrusted);
+        this.refresh();
     },
 
     /**
@@ -576,7 +585,8 @@ WebInspector.ViewportControl.prototype = {
      */
     firstVisibleIndex: function()
     {
-        return this._firstVisibleIndex;
+        var firstVisibleIndex = Math.max(Array.prototype.lowerBound.call(this._cumulativeHeights, this.element.scrollTop + 1), 0);
+        return Math.max(firstVisibleIndex, this._firstActiveIndex);
     },
 
     /**
@@ -584,7 +594,12 @@ WebInspector.ViewportControl.prototype = {
      */
     lastVisibleIndex: function()
     {
-        return this._lastVisibleIndex;
+        var lastVisibleIndex;
+        if (this._stickToBottom)
+            lastVisibleIndex = this._itemCount - 1;
+        else
+            lastVisibleIndex = this.firstVisibleIndex() + Math.ceil(this._visibleHeight() / this._provider.minimumRowHeight()) - 1;
+        return Math.min(lastVisibleIndex, this._lastActiveIndex);
     },
 
     /**
@@ -592,11 +607,11 @@ WebInspector.ViewportControl.prototype = {
      */
     renderedElementAt: function(index)
     {
-        if (index < this._firstVisibleIndex)
+        if (index < this._firstActiveIndex)
             return null;
-        if (index > this._lastVisibleIndex)
+        if (index > this._lastActiveIndex)
             return null;
-        return this._renderedItems[index - this._firstVisibleIndex].element();
+        return this._renderedItems[index - this._firstActiveIndex].element();
     },
 
     /**
@@ -605,13 +620,15 @@ WebInspector.ViewportControl.prototype = {
      */
     scrollItemIntoView: function(index, makeLast)
     {
-        if (index > this._firstVisibleIndex && index < this._lastVisibleIndex)
+        var firstVisibleIndex = this.firstVisibleIndex();
+        var lastVisibleIndex = this.lastVisibleIndex();
+        if (index > firstVisibleIndex && index < lastVisibleIndex)
             return;
         if (makeLast)
             this.forceScrollItemToBeLast(index);
-        else if (index <= this._firstVisibleIndex)
+        else if (index <= firstVisibleIndex)
             this.forceScrollItemToBeFirst(index);
-        else if (index >= this._lastVisibleIndex)
+        else if (index >= lastVisibleIndex)
             this.forceScrollItemToBeLast(index);
     },
 
@@ -620,9 +637,12 @@ WebInspector.ViewportControl.prototype = {
      */
     forceScrollItemToBeFirst: function(index)
     {
+        this.setStickToBottom(false);
         this._rebuildCumulativeHeightsIfNeeded();
         this.element.scrollTop = index > 0 ? this._cumulativeHeights[index - 1] : 0;
-        this._innerRefresh(false);
+        if (this.element.isScrolledToBottom())
+            this.setStickToBottom(true);
+        this.refresh();
     },
 
     /**
@@ -630,9 +650,12 @@ WebInspector.ViewportControl.prototype = {
      */
     forceScrollItemToBeLast: function(index)
     {
+        this.setStickToBottom(false);
         this._rebuildCumulativeHeightsIfNeeded();
         this.element.scrollTop = this._cumulativeHeights[index] - this._visibleHeight();
-        this._innerRefresh(false);
+        if (this.element.isScrolledToBottom())
+            this.setStickToBottom(true);
+        this.refresh();
     },
 
     /**

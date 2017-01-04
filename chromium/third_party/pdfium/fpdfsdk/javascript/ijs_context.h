@@ -7,8 +7,8 @@
 #ifndef FPDFSDK_JAVASCRIPT_IJS_CONTEXT_H_
 #define FPDFSDK_JAVASCRIPT_IJS_CONTEXT_H_
 
-#include "core/fxcrt/include/fx_string.h"
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/fx_system.h"
 
 class CPDF_Bookmark;
 class CPDF_FormField;
@@ -124,8 +124,6 @@ class IJS_Context {
   virtual void OnBatchExec(CPDFSDK_Document* pTarget) = 0;
   virtual void OnConsole_Exec() = 0;
   virtual void OnExternal_Exec() = 0;
-
-  virtual void EnableMessageBox(FX_BOOL bEnable) = 0;
 
  protected:
   virtual ~IJS_Context() {}

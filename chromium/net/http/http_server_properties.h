@@ -17,8 +17,8 @@
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
-#include "net/quic/quic_bandwidth.h"
-#include "net/quic/quic_server_id.h"
+#include "net/quic/core/quic_bandwidth.h"
+#include "net/quic/core/quic_server_id.h"
 #include "net/socket/next_proto.h"
 #include "net/spdy/spdy_framer.h"  // TODO(willchan): Reconsider this.
 #include "net/spdy/spdy_protocol.h"
@@ -51,7 +51,8 @@ enum AlternateProtocolUsage {
 };
 
 // Log a histogram to reflect |usage|.
-NET_EXPORT void HistogramAlternateProtocolUsage(AlternateProtocolUsage usage);
+NET_EXPORT void HistogramAlternateProtocolUsage(AlternateProtocolUsage usage,
+                                                bool proxy_server_used);
 
 enum BrokenAlternateProtocolLocation {
   BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB = 0,
@@ -66,26 +67,12 @@ NET_EXPORT void HistogramBrokenAlternateProtocolLocation(
     BrokenAlternateProtocolLocation location);
 
 enum AlternateProtocol {
-  NPN_SPDY_3_1,
-  ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION = NPN_SPDY_3_1,
-  NPN_SPDY_MINIMUM_VERSION = NPN_SPDY_3_1,
   NPN_HTTP_2,
-  NPN_SPDY_MAXIMUM_VERSION = NPN_HTTP_2,
   QUIC,
-  ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION = QUIC,
   UNINITIALIZED_ALTERNATE_PROTOCOL,
 };
 
-// Simply returns whether |protocol| is between
-// ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION and
-// ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION (inclusive).
 NET_EXPORT bool IsAlternateProtocolValid(AlternateProtocol protocol);
-
-enum AlternateProtocolSize {
-  NUM_VALID_ALTERNATE_PROTOCOLS =
-    ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION -
-    ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION + 1,
-};
 
 NET_EXPORT const char* AlternateProtocolToString(AlternateProtocol protocol);
 NET_EXPORT AlternateProtocol AlternateProtocolFromString(
@@ -234,6 +221,9 @@ class NET_EXPORT HttpServerProperties {
 
   // Returns true if |server| supports a network protocol which honors
   // request prioritization.
+  // Note that this also implies that the server supports request
+  // multiplexing, since priorities imply a relationship between
+  // multiple requests.
   virtual bool SupportsRequestPriority(const url::SchemeHostPort& server) = 0;
 
   // Returns the value set by SetSupportsSpdy(). If not set, returns false.
@@ -265,7 +255,8 @@ class NET_EXPORT HttpServerProperties {
   // Set a single alternative service for |origin|.  Previous alternative
   // services for |origin| are discarded.
   // |alternative_service.host| may be empty.
-  // Return true if |alternative_service_map_| is changed.
+  // Return true if |alternative_service_map_| has changed significantly enough
+  // that it should be persisted to disk.
   virtual bool SetAlternativeService(
       const url::SchemeHostPort& origin,
       const AlternativeService& alternative_service,
@@ -274,7 +265,9 @@ class NET_EXPORT HttpServerProperties {
   // Set alternative services for |origin|.  Previous alternative services for
   // |origin| are discarded.
   // Hostnames in |alternative_service_info_vector| may be empty.
-  // Return true if |alternative_service_map_| is changed.
+  // |alternative_service_info_vector| may be empty.
+  // Return true if |alternative_service_map_| has changed significantly enough
+  // that it should be persisted to disk.
   virtual bool SetAlternativeServices(
       const url::SchemeHostPort& origin,
       const AlternativeServiceInfoVector& alternative_service_info_vector) = 0;

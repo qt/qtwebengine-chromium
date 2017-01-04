@@ -4,11 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/fxfa/include/xfa_rendercontext.h"
+#include "xfa/fxfa/xfa_rendercontext.h"
 
-#include "xfa/fxfa/include/xfa_ffpageview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
-#include "xfa/fxgraphics/include/cfx_graphics.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxgraphics/cfx_graphics.h"
 
 namespace {
 

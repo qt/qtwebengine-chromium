@@ -32,7 +32,6 @@ std::string RebaseOne(Scope* scope,
 
 TEST(RebasePath, Strings) {
   TestWithScope setup;
-  setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
   Scope* scope = setup.scope();
   scope->set_source_dir(SourceDir("//tools/gn/"));
 
@@ -52,9 +51,7 @@ TEST(RebasePath, Strings) {
   EXPECT_EQ("foo/", RebaseOne(scope, "//foo/", "//", "//"));
   EXPECT_EQ("../../foo/bar", RebaseOne(scope, "//foo/bar", "//out/Debug", "."));
   EXPECT_EQ("./", RebaseOne(scope, "//foo/", "//foo/", "//"));
-  // Thie one is technically correct but could be simplified to "." if
-  // necessary.
-  EXPECT_EQ("../foo", RebaseOne(scope, "//foo", "//foo", "//"));
+  EXPECT_EQ(".", RebaseOne(scope, "//foo", "//foo", "//"));
 
   // Test slash conversion.
   EXPECT_EQ("foo/bar", RebaseOne(scope, "foo/bar", ".", "."));
@@ -151,7 +148,6 @@ TEST(RebasePath, StringsSystemPaths) {
 // Test list input.
 TEST(RebasePath, List) {
   TestWithScope setup;
-  setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
   setup.scope()->set_source_dir(SourceDir("//tools/gn/"));
 
   std::vector<Value> args;
@@ -175,7 +171,6 @@ TEST(RebasePath, List) {
 
 TEST(RebasePath, Errors) {
   TestWithScope setup;
-  setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
 
   // No arg input should issue an error.
   Err err;

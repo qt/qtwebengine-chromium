@@ -7,8 +7,8 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/test_extension_dir.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/extensions/features/feature_channel.h"
 #include "components/version_info/version_info.h"
+#include "extensions/common/features/feature_channel.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "ui/gfx/image/image.h"
 
@@ -72,7 +72,7 @@ IN_PROC_BROWSER_TEST_F(SetIconAPITest, Overview) {
       "  });\n"
       "});\n");
   ExtensionTestMessageListener ready("ready", false);
-  const Extension* extension = LoadExtension(ext_dir_.unpacked_path());
+  const Extension* extension = LoadExtension(ext_dir_.UnpackedPath());
   ASSERT_TRUE(extension);
   const ExtensionAction* page_action =
       ExtensionActionManager::Get(browser()->profile())->

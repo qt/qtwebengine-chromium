@@ -40,12 +40,22 @@ Polymer({
     }
   },
 
+  // Since the iron-list for extensions is enclosed in a dom-if, observe both
+  // |extensions| and |showExtensionsList_|.
+  observers: ['extensionsChanged_(extensions, showExtensionsList_)'],
+
   /** @override */
   ready: function() {
     settings.SearchEnginesBrowserProxyImpl.getInstance().
         getSearchEnginesList().then(this.enginesChanged_.bind(this));
     this.addWebUIListener(
         'search-engines-changed', this.enginesChanged_.bind(this));
+  },
+
+  /** @private */
+  extensionsChanged_: function() {
+    if (this.showExtensionsList_ && this.$.extensions)
+      this.$.extensions.notifyResize();
   },
 
   /**
@@ -66,7 +76,7 @@ Polymer({
       // Register listener to detect when the dialog is closed. Flip the boolean
       // once closed to force a restamp next time it is shown such that the
       // previous dialog's contents are cleared.
-      dialog.addEventListener('iron-overlay-closed', function() {
+      dialog.addEventListener('close', function() {
         this.showAddSearchEngineDialog_ = false;
       }.bind(this));
     }.bind(this));

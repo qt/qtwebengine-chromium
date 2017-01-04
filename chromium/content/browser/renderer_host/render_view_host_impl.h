@@ -36,7 +36,6 @@
 #include "ui/base/window_open_disposition.h"
 
 class SkBitmap;
-struct ViewHostMsg_CreateWindow_Params;
 
 namespace content {
 
@@ -46,6 +45,10 @@ class SessionStorageNamespace;
 struct FileChooserFileInfo;
 struct FileChooserParams;
 struct FrameReplicationState;
+
+namespace mojom {
+class CreateNewWindowParams;
+}
 
 // This implements the RenderViewHost interface that is exposed to
 // embedders of content, and adds things only visible to content.
@@ -216,12 +219,6 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   // Tells the renderer view to focus the first (last if reverse is true) node.
   void SetInitialFocus(bool reverse);
 
-  // Notifies the RenderViewHost that its load state changed.
-  void LoadStateChanged(const GURL& url,
-                        const net::LoadStateWithParam& load_state,
-                        uint64_t upload_position,
-                        uint64_t upload_size);
-
   bool SuddenTerminationAllowed() const;
   void set_sudden_termination_allowed(bool enabled) {
     sudden_termination_allowed_ = enabled;
@@ -231,7 +228,7 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   void CreateNewWindow(int32_t route_id,
                        int32_t main_frame_route_id,
                        int32_t main_frame_widget_route_id,
-                       const ViewHostMsg_CreateWindow_Params& params,
+                       const mojom::CreateNewWindowParams& params,
                        SessionStorageNamespace* session_storage_namespace);
 
   // Creates a new RenderWidget with the given route id.  |popup_type| indicates
@@ -241,6 +238,10 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   // Creates a full screen RenderWidget.
   void CreateNewFullscreenWidget(int32_t route_id);
 
+  // Send RenderViewReady to observers once the process is launched, but not
+  // re-entrantly.
+  void PostRenderViewReady();
+
   // TODO(creis): Remove after debugging https:/crbug.com/575245.
   int main_frame_routing_id() const {
     return main_frame_routing_id_;
@@ -249,10 +250,6 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   void set_main_frame_routing_id(int routing_id) {
     main_frame_routing_id_ = routing_id;
   }
-
-  void OnTextSurroundingSelectionResponse(const base::string16& content,
-                                          size_t start_offset,
-                                          size_t end_offset);
 
   // Increases the refcounting on this RVH. This is done by the FrameTree on
   // creation of a RenderFrameHost or RenderFrameProxyHost.
@@ -325,9 +322,6 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            NavigateMainFrameToChildSite);
 
-  // Send RenderViewReady to observers once the process is launched, but not
-  // re-entrantly.
-  void PostRenderViewReady();
   void RenderViewReady();
 
   // TODO(creis): Move to a private namespace on RenderFrameHostImpl.

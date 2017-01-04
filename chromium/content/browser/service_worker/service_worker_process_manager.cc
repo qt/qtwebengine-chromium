@@ -64,7 +64,10 @@ ServiceWorkerProcessManager::~ServiceWorkerProcessManager() {
   DCHECK(IsShutdown())
       << "Call Shutdown() before destroying |this|, so that racing method "
       << "invocations don't use a destroyed BrowserContext.";
-  DCHECK(instance_info_.empty());
+  // TODO(horo): Remove after collecting crash data.
+  // Temporary checks to verify that ServiceWorkerProcessManager doesn't prevent
+  // render process hosts from shutting down: crbug.com/639193
+  CHECK(instance_info_.empty());
 }
 
 void ServiceWorkerProcessManager::Shutdown() {
@@ -77,7 +80,8 @@ void ServiceWorkerProcessManager::Shutdown() {
   for (std::map<int, ProcessInfo>::const_iterator it = instance_info_.begin();
        it != instance_info_.end();
        ++it) {
-    RenderProcessHost::FromID(it->second.process_id)->DecrementWorkerRefCount();
+    RenderProcessHost::FromID(it->second.process_id)
+        ->DecrementServiceWorkerRefCount();
   }
   instance_info_.clear();
 }
@@ -189,15 +193,13 @@ void ServiceWorkerProcessManager::AllocateWorkerProcess(
     return;
   }
 
-  // TODO(nhiroki): Make sure the instance info is not mixed up.
-  // (http://crbug.com/568915)
-  CHECK(!ContainsKey(instance_info_, embedded_worker_id))
+  DCHECK(!base::ContainsKey(instance_info_, embedded_worker_id))
       << embedded_worker_id << " already has a process allocated";
 
   if (can_use_existing_process) {
     int process_id = FindAvailableProcess(pattern);
     if (process_id != ChildProcessHost::kInvalidUniqueID) {
-      RenderProcessHost::FromID(process_id)->IncrementWorkerRefCount();
+      RenderProcessHost::FromID(process_id)->IncrementServiceWorkerRefCount();
       instance_info_.insert(
           std::make_pair(embedded_worker_id, ProcessInfo(process_id)));
       BrowserThread::PostTask(
@@ -229,7 +231,7 @@ void ServiceWorkerProcessManager::AllocateWorkerProcess(
   instance_info_.insert(
       std::make_pair(embedded_worker_id, ProcessInfo(site_instance)));
 
-  rph->IncrementWorkerRefCount();
+  rph->IncrementServiceWorkerRefCount();
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::Bind(callback, SERVICE_WORKER_OK, rph->GetID(),
                                      true /* is_new_process */, settings));
@@ -278,7 +280,7 @@ void ServiceWorkerProcessManager::ReleaseWorkerProcess(int embedded_worker_id) {
         << "Process " << info->second.process_id
         << " was destroyed unexpectedly. Did we actually hold a reference?";
   }
-  rph->DecrementWorkerRefCount();
+  rph->DecrementServiceWorkerRefCount();
   instance_info_.erase(info);
 }
 

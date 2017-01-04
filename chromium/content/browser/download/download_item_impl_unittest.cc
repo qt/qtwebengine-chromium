@@ -254,13 +254,14 @@ class DownloadItemTest : public testing::Test {
 
   ~DownloadItemTest() {
     RunAllPendingInMessageLoops();
-    STLDeleteElements(&allocated_downloads_);
+    base::STLDeleteElements(&allocated_downloads_);
   }
 
   DownloadItemImpl* CreateDownloadItemWithCreateInfo(
       std::unique_ptr<DownloadCreateInfo> info) {
-    DownloadItemImpl* download = new DownloadItemImpl(
-        &delegate_, next_download_id_++, *(info.get()), net::BoundNetLog());
+    DownloadItemImpl* download =
+        new DownloadItemImpl(&delegate_, next_download_id_++, *(info.get()),
+                             net::NetLogWithSource());
     allocated_downloads_.insert(download);
     return download;
   }
@@ -272,7 +273,7 @@ class DownloadItemTest : public testing::Test {
     create_info_->download_id = ++next_download_id_;
     DownloadItemImpl* download =
         new DownloadItemImpl(&delegate_, create_info_->download_id,
-                             *create_info_, net::BoundNetLog());
+                             *create_info_, net::NetLogWithSource());
     allocated_downloads_.insert(download);
     return download;
   }
@@ -1309,10 +1310,12 @@ TEST_F(DownloadItemTest, EnabledActionsForNormalDownload) {
 }
 
 TEST_F(DownloadItemTest, EnabledActionsForTemporaryDownload) {
+  // A download created with a non-empty FilePath is considered a temporary
+  // download.
+  create_info()->save_info->file_path = base::FilePath(kDummyTargetPath);
   DownloadItemImpl* item = CreateDownloadItem();
   MockDownloadFile* download_file =
       DoIntermediateRename(item, DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS);
-  item->SetIsTemporary(true);
 
   // InProgress Temporary
   ASSERT_EQ(DownloadItem::IN_PROGRESS, item->GetState());

@@ -14,7 +14,7 @@
 #include "base/strings/stringprintf.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
-#include "net/quic/quic_bug_tracker.h"
+#include "net/quic/core/quic_bug_tracker.h"
 #include "net/spdy/spdy_http_utils.h"
 
 using base::FilePath;
@@ -69,7 +69,7 @@ class ResourceFileImpl : public net::QuicInMemoryCache::ResourceFile {
     body_ = StringPiece(file_contents_.data() + headers_end,
                         file_contents_.size() - headers_end);
 
-    CreateSpdyHeadersFromHttpResponse(*http_headers_, HTTP2, &spdy_headers_);
+    CreateSpdyHeadersFromHttpResponse(*http_headers_, &spdy_headers_);
   }
 
  private:
@@ -119,9 +119,10 @@ void QuicInMemoryCache::ResourceFile::SetHostPathFromBase(StringPiece base) {
 }
 
 StringPiece QuicInMemoryCache::ResourceFile::RemoveScheme(StringPiece url) {
-  if (url.starts_with("https://")) {
+  if (base::StartsWith(url, "https://", base::CompareCase::INSENSITIVE_ASCII)) {
     url.remove_prefix(8);
-  } else if (url.starts_with("http://")) {
+  } else if (base::StartsWith(url, "http://",
+                              base::CompareCase::INSENSITIVE_ASCII)) {
     url.remove_prefix(7);
   }
   return url;
@@ -142,6 +143,8 @@ QuicInMemoryCache* QuicInMemoryCache::GetInstance() {
 const QuicInMemoryCache::Response* QuicInMemoryCache::GetResponse(
     StringPiece host,
     StringPiece path) const {
+  base::AutoLock lock(response_mutex_);
+
   ResponseMap::const_iterator it = responses_.find(GetKey(host, path));
   if (it == responses_.end()) {
     DVLOG(1) << "Get response for resource failed: host " << host << " path "
@@ -178,6 +181,7 @@ void QuicInMemoryCache::AddSimpleResponseWithServerPushResources(
 }
 
 void QuicInMemoryCache::AddDefaultResponse(Response* response) {
+  base::AutoLock lock(response_mutex_);
   default_response_.reset(response);
 }
 
@@ -208,7 +212,8 @@ void QuicInMemoryCache::AddSpecialResponse(StringPiece host,
 QuicInMemoryCache::QuicInMemoryCache() {}
 
 void QuicInMemoryCache::ResetForTests() {
-  STLDeleteValues(&responses_);
+  base::AutoLock lock(response_mutex_);
+  base::STLDeleteValues(&responses_);
   server_push_resources_.clear();
 }
 
@@ -268,6 +273,8 @@ void QuicInMemoryCache::InitializeFromDirectory(const string& cache_directory) {
 
 list<ServerPushInfo> QuicInMemoryCache::GetServerPushResources(
     string request_url) {
+  base::AutoLock lock(response_mutex_);
+
   list<ServerPushInfo> resources;
   auto resource_range = server_push_resources_.equal_range(request_url);
   for (auto it = resource_range.first; it != resource_range.second; ++it) {
@@ -279,7 +286,10 @@ list<ServerPushInfo> QuicInMemoryCache::GetServerPushResources(
 }
 
 QuicInMemoryCache::~QuicInMemoryCache() {
-  STLDeleteValues(&responses_);
+  {
+    base::AutoLock lock(response_mutex_);
+    base::STLDeleteValues(&responses_);
+  }
 }
 
 void QuicInMemoryCache::AddResponseImpl(StringPiece host,
@@ -288,9 +298,11 @@ void QuicInMemoryCache::AddResponseImpl(StringPiece host,
                                         SpdyHeaderBlock response_headers,
                                         StringPiece response_body,
                                         SpdyHeaderBlock response_trailers) {
+  base::AutoLock lock(response_mutex_);
+
   DCHECK(!host.empty()) << "Host must be populated, e.g. \"www.google.com\"";
   string key = GetKey(host, path);
-  if (ContainsKey(responses_, key)) {
+  if (base::ContainsKey(responses_, key)) {
     QUIC_BUG << "Response for '" << key << "' already exists!";
     return;
   }
@@ -321,13 +333,22 @@ void QuicInMemoryCache::MaybeAddServerPushResources(
     DVLOG(1) << "Add request-resource association: request url " << request_url
              << " push url " << push_resource.request_url
              << " response headers " << push_resource.headers.DebugString();
-    server_push_resources_.insert(std::make_pair(request_url, push_resource));
+    {
+      base::AutoLock lock(response_mutex_);
+      server_push_resources_.insert(std::make_pair(request_url, push_resource));
+    }
     string host = push_resource.request_url.host();
     if (host.empty()) {
       host = request_host.as_string();
     }
     string path = push_resource.request_url.path();
-    if (responses_.find(GetKey(host, path)) == responses_.end()) {
+    bool found_existing_response = false;
+    {
+      base::AutoLock lock(response_mutex_);
+      found_existing_response =
+          base::ContainsKey(responses_, GetKey(host, path));
+    }
+    if (!found_existing_response) {
       // Add a server push response to responses map, if it is not in the map.
       StringPiece body = push_resource.body;
       DVLOG(1) << "Add response for push resource: host " << host << " path "
@@ -339,6 +360,7 @@ void QuicInMemoryCache::MaybeAddServerPushResources(
 
 bool QuicInMemoryCache::PushResourceExistsInCache(string original_request_url,
                                                   ServerPushInfo resource) {
+  base::AutoLock lock(response_mutex_);
   auto resource_range =
       server_push_resources_.equal_range(original_request_url);
   for (auto it = resource_range.first; it != resource_range.second; ++it) {

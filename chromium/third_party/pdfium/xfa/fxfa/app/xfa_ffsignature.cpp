@@ -7,9 +7,9 @@
 #include "xfa/fxfa/app/xfa_ffsignature.h"
 
 #include "xfa/fxfa/app/xfa_fffield.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffpageview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 
 CXFA_FFSignature::CXFA_FFSignature(CXFA_FFPageView* pPageView,
                                    CXFA_WidgetAcc* pDataAcc)
@@ -34,11 +34,8 @@ void CXFA_FFSignature::RenderWidget(CFX_Graphics* pGS,
   DrawBorder(pGS, borderUI, m_rtUI, &mtRotate);
   RenderCaption(pGS, &mtRotate);
   DrawHighlight(pGS, &mtRotate, dwStatus, FALSE);
-  CFX_RectF rtWidget = m_rtUI;
-  IXFA_DocProvider* pDocProvider = m_pDataAcc->GetDoc()->GetDocProvider();
-  ASSERT(pDocProvider);
-  pDocProvider->RenderCustomWidget(this, pGS, &mtRotate, rtWidget);
 }
+
 FX_BOOL CXFA_FFSignature::OnMouseEnter() {
   return FALSE;
 }

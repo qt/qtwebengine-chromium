@@ -27,6 +27,8 @@
 // https://html.spec.whatwg.org/#the-workerglobalscope-common-interface
 
 [
+    ActiveScriptWrappable,
+    DependentLifetime,
     Exposed=Worker,
 ] interface WorkerGlobalScope : EventTarget {
     readonly attribute WorkerGlobalScope self;
@@ -42,6 +44,7 @@
     [RaisesException] void importScripts(DOMString... urls);
     readonly attribute WorkerNavigator navigator;
 
+
     // Console API
     // https://console.spec.whatwg.org/#console-interface
     // [Replaceable] readonly attribute Console console;
@@ -55,6 +58,10 @@
     // Unhandled Promise Rejection Events
     attribute EventHandler onrejectionhandled;
     attribute EventHandler onunhandledrejection;
+
+    // Secure Contexts
+    // https://w3c.github.io/webappsec-secure-contexts/#dom-windoworworkerglobalscope-issecurecontext
+    [ImplementedAs=isSecureContextForBindings] readonly attribute boolean isSecureContext;
 };
 
 WorkerGlobalScope implements WindowBase64;

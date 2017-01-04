@@ -6,7 +6,7 @@
 
 #include <limits>
 
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
 #include "content/common/dom_storage/dom_storage_map.h"
 #include "content/renderer/dom_storage/dom_storage_proxy.h"
@@ -171,7 +171,7 @@ void DOMStorageCachedArea::Prime(int connection_id) {
   // above what we see in practice, since histograms can't change.
   UMA_HISTOGRAM_CUSTOM_COUNTS("LocalStorage.RendererLocalStorageSizeInKB",
                               local_storage_size_kb,
-                              0, 6 * 1024, 50);
+                              1, 6 * 1024, 50);
   if (local_storage_size_kb < 100) {
     UMA_HISTOGRAM_TIMES(
         "LocalStorage.RendererTimeToPrimeLocalStorageUnder100KB",

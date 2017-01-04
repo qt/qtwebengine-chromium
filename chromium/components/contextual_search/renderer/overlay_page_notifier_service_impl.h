@@ -6,17 +6,16 @@
 #define COMPONENTS_CONTEXTUAL_SEARCH_RENDERER_OVERLAY_PAGE_NOTIFIER_SERVICE_IMPL_H_
 
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "components/contextual_search/common/overlay_page_notifier_service.mojom.h"
 #include "components/contextual_search/renderer/overlay_js_render_frame_observer.h"
-#include "mojo/public/cpp/bindings/strong_binding.h"
 
 namespace contextual_search {
 
 class OverlayJsRenderFrameObserver;
 
 // mojom::OverlayPageNotifierService is responsible for listening to the browser
-// for
-// messages about whether a page is presented in an overlay panel.
+// for messages about whether a page is presented in an overlay panel.
 // No message is received if the page is not presented in an overlay panel.
 // This service should be removed from the registry once the page is done
 // loading.
@@ -24,16 +23,14 @@ class OverlayPageNotifierServiceImpl
     : public mojom::OverlayPageNotifierService {
  public:
   explicit OverlayPageNotifierServiceImpl(
-      OverlayJsRenderFrameObserver* observer,
-      mojo::InterfaceRequest<mojom::OverlayPageNotifierService> request);
+      base::WeakPtr<OverlayJsRenderFrameObserver> observer);
   ~OverlayPageNotifierServiceImpl() override;
 
   // Implementation of mojo interface OverlayPageNotifierService.
   void NotifyIsContextualSearchOverlay() override;
 
  private:
-  mojo::StrongBinding<mojom::OverlayPageNotifierService> binding_;
-  OverlayJsRenderFrameObserver* overlay_js_observer_;
+  base::WeakPtr<OverlayJsRenderFrameObserver> overlay_js_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(OverlayPageNotifierServiceImpl);
 };

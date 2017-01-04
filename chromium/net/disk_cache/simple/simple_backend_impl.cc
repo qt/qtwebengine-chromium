@@ -65,7 +65,9 @@ class LeakySequencedWorkerPool {
  public:
   LeakySequencedWorkerPool()
       : sequenced_worker_pool_(
-            new SequencedWorkerPool(kMaxWorkerThreads, kThreadNamePrefix)) {}
+            new SequencedWorkerPool(kMaxWorkerThreads,
+                                    kThreadNamePrefix,
+                                    base::TaskPriority::USER_BLOCKING)) {}
 
   void FlushForTesting() { sequenced_worker_pool_->FlushForTesting(); }
 
@@ -253,8 +255,8 @@ int SimpleBackendImpl::Init(const CompletionCallback& completion_callback) {
 
   index_.reset(new SimpleIndex(
       base::ThreadTaskRunnerHandle::Get(), this, cache_type_,
-      base::WrapUnique(new SimpleIndexFile(cache_thread_, worker_pool_.get(),
-                                           cache_type_, path_))));
+      base::MakeUnique<SimpleIndexFile>(cache_thread_, worker_pool_.get(),
+                                        cache_type_, path_)));
   index_->ExecuteWhenReady(
       base::Bind(&RecordIndexLoad, cache_type_, base::TimeTicks::Now()));
 

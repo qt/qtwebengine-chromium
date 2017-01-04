@@ -27,8 +27,7 @@ namespace cc {
 class BeginFrameSource;
 class LayerTreeDebugState;
 class LayerTreeMutator;
-class OutputSurface;
-struct RendererCapabilities;
+class CompositorFrameSink;
 
 // Abstract interface responsible for proxying commands from the main-thread
 // side of the compositor over to the compositor implementation.
@@ -36,20 +35,17 @@ class CC_EXPORT Proxy {
  public:
   virtual ~Proxy() {}
 
-  virtual void FinishAllRendering() = 0;
-
   virtual bool IsStarted() const = 0;
   virtual bool CommitToActiveTree() const = 0;
 
-  // Will call LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted
+  // Will call LayerTreeHost::OnCreateAndInitializeCompositorFrameSinkAttempted
   // with the result of this function.
-  virtual void SetOutputSurface(OutputSurface* output_surface) = 0;
+  virtual void SetCompositorFrameSink(
+      CompositorFrameSink* compositor_frame_sink) = 0;
 
-  virtual void ReleaseOutputSurface() = 0;
+  virtual void ReleaseCompositorFrameSink() = 0;
 
   virtual void SetVisible(bool visible) = 0;
-
-  virtual const RendererCapabilities& GetRendererCapabilities() const = 0;
 
   virtual void SetNeedsAnimate() = 0;
   virtual void SetNeedsUpdateLayers() = 0;
@@ -69,9 +65,9 @@ class CC_EXPORT Proxy {
   virtual bool BeginMainFrameRequested() const = 0;
 
   // Must be called before using the proxy.
-  virtual void Start(
-      std::unique_ptr<BeginFrameSource> external_begin_frame_source) = 0;
-  virtual void Stop() = 0;   // Must be called before deleting the proxy.
+  virtual void Start() = 0;
+  // Must be called before deleting the proxy.
+  virtual void Stop() = 0;
 
   virtual void SetMutator(std::unique_ptr<LayerTreeMutator> mutator) = 0;
 

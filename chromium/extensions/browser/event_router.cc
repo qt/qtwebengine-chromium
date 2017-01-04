@@ -408,13 +408,14 @@ void EventRouter::AddFilterToEvent(const std::string& event_name,
   if (!filtered_events)
     filtered_events = update.Create();
 
-  ListValue* filter_list = NULL;
+  ListValue* filter_list = nullptr;
   if (!filtered_events->GetList(event_name, &filter_list)) {
     filter_list = new ListValue;
-    filtered_events->SetWithoutPathExpansion(event_name, filter_list);
+    filtered_events->SetWithoutPathExpansion(event_name,
+                                             base::WrapUnique(filter_list));
   }
 
-  filter_list->Append(filter->DeepCopy());
+  filter_list->Append(filter->CreateDeepCopy());
 }
 
 void EventRouter::RemoveFilterFromEvent(const std::string& event_name,
@@ -503,7 +504,7 @@ void EventRouter::DispatchEventImpl(const std::string& restrict_to_extension_id,
       if (listener->process()) {
         EventDispatchIdentifier dispatch_id(listener->GetBrowserContext(),
                                             listener->extension_id());
-        if (!ContainsKey(already_dispatched, dispatch_id)) {
+        if (!base::ContainsKey(already_dispatched, dispatch_id)) {
           DispatchEventToProcess(listener->extension_id(),
                                  listener->listener_url(), listener->process(),
                                  event, listener->filter(),

@@ -7,21 +7,20 @@
 //   test_config.json
 // DO NOT EDIT.
 
-#ifndef TEST_OUPUT_H_
-#define TEST_OUPUT_H_
+#ifndef TEST_OUTPUT_H_
+#define TEST_OUTPUT_H_
 
 #include <cstddef>
 
 
-struct FieldTrialGroupParams {
+struct FieldTrialTestingExperimentParams {
   const char* const key;
   const char* const value;
 };
 
-struct FieldTrialTestingGroup {
-  const char* const study;
-  const char* const group_name;
-  const FieldTrialGroupParams * params;
+struct FieldTrialTestingExperiment {
+  const char* const name;
+  const FieldTrialTestingExperimentParams * params;
   const size_t params_size;
   const char* const * enable_features;
   const size_t enable_features_size;
@@ -29,12 +28,18 @@ struct FieldTrialTestingGroup {
   const size_t disable_features_size;
 };
 
+struct FieldTrialTestingStudy {
+  const char* const name;
+  const FieldTrialTestingExperiment * experiments;
+  const size_t experiments_size;
+};
+
 struct FieldTrialTestingConfig {
-  const FieldTrialTestingGroup * groups;
-  const size_t groups_size;
+  const FieldTrialTestingStudy * studies;
+  const size_t studies_size;
 };
 
 
 extern const FieldTrialTestingConfig kFieldTrialConfig;
 
-#endif  // TEST_OUPUT_H_
+#endif  // TEST_OUTPUT_H_

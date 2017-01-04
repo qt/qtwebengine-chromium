@@ -119,7 +119,7 @@ void GrGLPathRendering::onStencilPath(const StencilPathArgs& args, const GrPath*
     GrGLGpu* gpu = this->gpu();
     SkASSERT(gpu->caps()->shaderCaps()->pathRenderingSupport());
     gpu->flushColorWrite(false);
-    gpu->flushDrawFace(GrPipelineBuilder::kBoth_DrawFace);
+    gpu->flushDrawFace(GrDrawFace::kBoth);
 
     GrGLRenderTarget* rt = static_cast<GrGLRenderTarget*>(args.fRenderTarget);
     SkISize size = SkISize::Make(rt->width(), rt->height());
@@ -149,7 +149,7 @@ void GrGLPathRendering::onDrawPath(const GrPipeline& pipeline,
                                    const GrPrimitiveProcessor& primProc,
                                    const GrStencilSettings& stencilPassSettings,
                                    const GrPath* path) {
-    if (!this->gpu()->flushGLState(pipeline, primProc)) {
+    if (!this->gpu()->flushGLState(pipeline, primProc, false)) {
         return;
     }
     const GrGLPath* glPath = static_cast<const GrGLPath*>(path);
@@ -181,7 +181,7 @@ void GrGLPathRendering::onDrawPaths(const GrPipeline& pipeline,
                                     PathTransformType transformType, int count) {
     SkDEBUGCODE(verify_floats(transformValues, gXformType2ComponentCount[transformType] * count));
 
-    if (!this->gpu()->flushGLState(pipeline, primProc)) {
+    if (!this->gpu()->flushGLState(pipeline, primProc, false)) {
         return;
     }
     this->flushPathStencilSettings(stencilPassSettings);

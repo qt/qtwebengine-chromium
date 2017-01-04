@@ -27,42 +27,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-.resources.panel .sidebar {
-    padding-left: 0;
-    z-index: 10;
-    display: block;
-}
-
-.resources.panel .sidebar li {
-    height: 18px;
-    white-space: nowrap;
-    padding-top: 1px;
-    padding: 16px 0;
-}
-
-.resources.panel .sidebar li.selected {
-    color: white;
-}
-
-.resources.panel .sidebar li.selected .selection {
-    background-color: rgb(160, 160, 160);
-    border-top: 1px solid #979797;
-}
-
-.resources.panel .sidebar :focus li.selected .selection {
-    background-color: rgb(56, 121, 217);
-    border-top: 1px solid rgb(68, 128, 200);
-}
-
-.resources.panel .sidebar .icon {
-    width: 16px;
-    height: 16px;
-    position: relative;
-    top: 3px;
-    margin-top: -3px;
-    display: inline-block;
-}
-
 .resources-toolbar {
     border-top: 1px solid #ccc;
     background-color: #eee;
@@ -137,20 +101,20 @@ li.selected .base-storage-tree-element-subtitle {
     height: 10px;
     margin-top: -7px;
     -webkit-user-select: none;
-    background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 352px 168px;
+    background-image: url(Images/smallIcons.png);
+    background-size: 190px 30px;
 }
 
-@media (-webkit-min-device-pixel-ratio: 1.5) {
+@media (-webkit-min-device-pixel-ratio: 1.1) {
 .database-user-query::before,
 .database-query-prompt::before,
 .database-query-result::before {
-    background-image: url(Images/toolbarButtonGlyphs_2x.png);
+    background-image: url(Images/smallIcons_2x.png);
 }
 } /* media */
 
 .database-query-prompt::before {
-    background-position: -192px -96px;
+    background-position: -20px -20px;
 }
 
 .database-user-query {
@@ -162,7 +126,7 @@ li.selected .base-storage-tree-element-subtitle {
 }
 
 .database-user-query::before {
-    background-position: -192px -107px;
+    background-position: 0 -20px;
 }
 
 .database-query-text {
@@ -184,7 +148,7 @@ li.selected .base-storage-tree-element-subtitle {
 }
 
 .database-query-result.error::before {
-    background-position: -213px -96px;
+    background-position: -20px 0;
 }
 
 .resource-sidebar-tree-item .icon {
@@ -213,5 +177,5 @@ li.selected .base-storage-tree-element-subtitle {
 }
 
 .resources-sidebar {
-    padding-left: 0;
+    padding: 0;
 }

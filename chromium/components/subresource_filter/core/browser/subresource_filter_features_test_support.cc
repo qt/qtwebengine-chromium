@@ -22,12 +22,24 @@ const char kTestExperimentGroupName[] = "GroupNameShouldNotMatter";
 
 ScopedSubresourceFilterFeatureToggle::ScopedSubresourceFilterFeatureToggle(
     base::FeatureList::OverrideState feature_state,
-    const std::string& maximum_activation_state) {
-  base::FeatureList::ClearInstanceForTesting();
+    const std::string& maximum_activation_state,
+    const std::string& activation_scope)
+    : ScopedSubresourceFilterFeatureToggle(feature_state,
+                                           maximum_activation_state,
+                                           activation_scope,
+                                           std::string()) {}
+
+ScopedSubresourceFilterFeatureToggle::ScopedSubresourceFilterFeatureToggle(
+    base::FeatureList::OverrideState feature_state,
+    const std::string& maximum_activation_state,
+    const std::string& activation_scope,
+    const std::string& activation_lists) {
   variations::testing::ClearAllVariationParams();
 
   std::map<std::string, std::string> variation_params;
   variation_params[kActivationStateParameterName] = maximum_activation_state;
+  variation_params[kActivationScopeParameterName] = activation_scope;
+  variation_params[kActivationListsParameterName] = activation_lists;
   EXPECT_TRUE(variations::AssociateVariationParams(
       kTestFieldTrialName, kTestExperimentGroupName, variation_params));
 
@@ -37,12 +49,24 @@ ScopedSubresourceFilterFeatureToggle::ScopedSubresourceFilterFeatureToggle(
   std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
   feature_list->RegisterFieldTrialOverride(kSafeBrowsingSubresourceFilter.name,
                                            feature_state, field_trial);
-  base::FeatureList::SetInstance(std::move(feature_list));
+
+  // Since we are adding a scoped feature list after browser start, copy over
+  // the existing feature list to prevent inconsistency.
+  base::FeatureList* existing_feature_list = base::FeatureList::GetInstance();
+  if (existing_feature_list) {
+    std::string enabled_features;
+    std::string disabled_features;
+    base::FeatureList::GetInstance()->GetFeatureOverrides(&enabled_features,
+                                                          &disabled_features);
+    feature_list->InitializeFromCommandLine(enabled_features,
+                                            disabled_features);
+  }
+
+  scoped_feature_list_.InitWithFeatureList(std::move(feature_list));
 }
 
 ScopedSubresourceFilterFeatureToggle::~ScopedSubresourceFilterFeatureToggle() {
   variations::testing::ClearAllVariationParams();
-  base::FeatureList::ClearInstanceForTesting();
 }
 
 }  // namespace testing

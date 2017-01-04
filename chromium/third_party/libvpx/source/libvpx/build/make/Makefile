@@ -26,7 +26,7 @@ test-no-data-check:: .DEFAULT
 testdata:: .DEFAULT
 utiltest: .DEFAULT
 exampletest-no-data-check utiltest-no-data-check: .DEFAULT
-
+test_%: .DEFAULT ;
 
 # Note: md5sum is not installed on OS X, but openssl is. Openssl may not be
 # installed on cygwin, so we need to autodetect here.
@@ -418,7 +418,6 @@ ifneq ($(call enabled,DIST-SRCS),)
     DIST-SRCS-yes            += build/make/gen_asm_deps.sh
     DIST-SRCS-yes            += build/make/Makefile
     DIST-SRCS-$(CONFIG_MSVS)  += build/make/gen_msvs_def.sh
-    DIST-SRCS-$(CONFIG_MSVS)  += build/make/gen_msvs_proj.sh
     DIST-SRCS-$(CONFIG_MSVS)  += build/make/gen_msvs_sln.sh
     DIST-SRCS-$(CONFIG_MSVS)  += build/make/gen_msvs_vcxproj.sh
     DIST-SRCS-$(CONFIG_MSVS)  += build/make/msvs_common.sh
@@ -449,3 +448,5 @@ all: $(BUILD_TARGETS)
 install:: $(INSTALL_TARGETS)
 dist: $(INSTALL_TARGETS)
 test::
+
+.SUFFIXES:  # Delete default suffix rules

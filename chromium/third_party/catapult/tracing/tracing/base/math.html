@@ -31,6 +31,13 @@ found in the LICENSE file.
 'use strict';
 
 tr.exportTo('tr.b', function() {
+  /* Returns true when x and y are within delta of each other. */
+  function approximately(x, y, delta) {
+    if (delta === undefined)
+      delta = 1e-9;
+    return Math.abs(x - y) < delta;
+  }
+
   function clamp(x, lo, hi) {
     return Math.min(Math.max(x, lo), hi);
   }
@@ -80,13 +87,13 @@ tr.exportTo('tr.b', function() {
     return sign * y;
   }
 
-  var tmp_vec2 = vec2.create();
-  var tmp_vec2b = vec2.create();
-  var tmp_vec4 = vec4.create();
-  var tmp_mat2d = mat2d.create();
+  var tmpVec2 = vec2.create();
+  var tmpVec2b = vec2.create();
+  var tmpVec4 = vec4.create();
+  var tmpMat2d = mat2d.create();
 
   vec2.createFromArray = function(arr) {
-    if (arr.length != 2)
+    if (arr.length !== 2)
       throw new Error('Should be length 2');
     var v = vec2.create();
     vec2.set(v, arr[0], arr[1]);
@@ -105,9 +112,9 @@ tr.exportTo('tr.b', function() {
 
   vec2.addTwoScaledUnitVectors = function(out, u1, scale1, u2, scale2) {
     // out = u1 * scale1 + u2 * scale2
-    vec2.scale(tmp_vec2, u1, scale1);
-    vec2.scale(tmp_vec2b, u2, scale2);
-    vec2.add(out, tmp_vec2, tmp_vec2b);
+    vec2.scale(tmpVec2, u1, scale1);
+    vec2.scale(tmpVec2b, u2, scale2);
+    vec2.add(out, tmpVec2, tmpVec2b);
   };
 
   vec2.interpolatePiecewiseFunction = function(points, x) {
@@ -133,13 +140,13 @@ tr.exportTo('tr.b', function() {
   };
 
   mat2d.translateXY = function(out, x, y) {
-    vec2.set(tmp_vec2, x, y);
-    mat2d.translate(out, out, tmp_vec2);
+    vec2.set(tmpVec2, x, y);
+    mat2d.translate(out, out, tmpVec2);
   };
 
   mat2d.scaleXY = function(out, x, y) {
-    vec2.set(tmp_vec2, x, y);
-    mat2d.scale(out, out, tmp_vec2);
+    vec2.set(tmpVec2, x, y);
+    mat2d.scale(out, out, tmpVec2);
   };
 
   vec4.unitize = function(out, a) {
@@ -151,11 +158,12 @@ tr.exportTo('tr.b', function() {
   };
 
   vec2.copyFromVec4 = function(out, a) {
-    vec4.unitize(tmp_vec4, a);
-    vec2.copy(out, tmp_vec4);
+    vec4.unitize(tmpVec4, a);
+    vec2.copy(out, tmpVec4);
   };
 
   return {
+    approximately: approximately,
     clamp: clamp,
     lerp: lerp,
     normalize: normalize,

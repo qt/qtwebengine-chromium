@@ -21,13 +21,12 @@
 #include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 
 namespace webrtc {
+
 VCMGenericEncoder::VCMGenericEncoder(
     VideoEncoder* encoder,
-    VideoEncoderRateObserver* rate_observer,
     VCMEncodedFrameCallback* encoded_frame_callback,
     bool internal_source)
     : encoder_(encoder),
-      rate_observer_(rate_observer),
       vcm_encoded_frame_callback_(encoded_frame_callback),
       internal_source_(internal_source),
       encoder_params_({0, 0, 0, 0}),
@@ -36,6 +35,7 @@ VCMGenericEncoder::VCMGenericEncoder(
 VCMGenericEncoder::~VCMGenericEncoder() {}
 
 int32_t VCMGenericEncoder::Release() {
+  RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   TRACE_EVENT0("webrtc", "VCMGenericEncoder::Release");
   return encoder_->Release();
 }
@@ -43,6 +43,7 @@ int32_t VCMGenericEncoder::Release() {
 int32_t VCMGenericEncoder::InitEncode(const VideoCodec* settings,
                                       int32_t number_of_cores,
                                       size_t max_payload_size) {
+  RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   TRACE_EVENT0("webrtc", "VCMGenericEncoder::InitEncode");
   is_screenshare_ = settings->mode == VideoCodecMode::kScreensharing;
   if (encoder_->InitEncode(settings, number_of_cores, max_payload_size) != 0) {
@@ -58,6 +59,7 @@ int32_t VCMGenericEncoder::InitEncode(const VideoCodec* settings,
 int32_t VCMGenericEncoder::Encode(const VideoFrame& frame,
                                   const CodecSpecificInfo* codec_specific,
                                   const std::vector<FrameType>& frame_types) {
+  RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   TRACE_EVENT1("webrtc", "VCMGenericEncoder::Encode", "timestamp",
                frame.timestamp());
 
@@ -75,11 +77,8 @@ int32_t VCMGenericEncoder::Encode(const VideoFrame& frame,
   return result;
 }
 
-const char* VCMGenericEncoder::ImplementationName() const {
-  return encoder_->ImplementationName();
-}
-
 void VCMGenericEncoder::SetEncoderParameters(const EncoderParameters& params) {
+  RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   bool channel_parameters_have_changed;
   bool rates_have_changed;
   {
@@ -97,10 +96,6 @@ void VCMGenericEncoder::SetEncoderParameters(const EncoderParameters& params) {
   if (rates_have_changed) {
     uint32_t target_bitrate_kbps = (params.target_bitrate + 500) / 1000;
     encoder_->SetRates(target_bitrate_kbps, params.input_frame_rate);
-    if (rate_observer_) {
-      rate_observer_->OnSetRates(params.target_bitrate,
-                                 params.input_frame_rate);
-    }
   }
 }
 
@@ -110,11 +105,13 @@ EncoderParameters VCMGenericEncoder::GetEncoderParameters() const {
 }
 
 int32_t VCMGenericEncoder::SetPeriodicKeyFrames(bool enable) {
+  RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   return encoder_->SetPeriodicKeyFrames(enable);
 }
 
 int32_t VCMGenericEncoder::RequestFrame(
     const std::vector<FrameType>& frame_types) {
+  RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   VideoFrame image;
   return encoder_->Encode(image, NULL, &frame_types);
 }
@@ -124,10 +121,12 @@ bool VCMGenericEncoder::InternalSource() const {
 }
 
 void VCMGenericEncoder::OnDroppedFrame() {
+  RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   encoder_->OnDroppedFrame();
 }
 
 bool VCMGenericEncoder::SupportsNativeHandle() const {
+  RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   return encoder_->SupportsNativeHandle();
 }
 
@@ -140,23 +139,25 @@ VCMEncodedFrameCallback::VCMEncodedFrameCallback(
 
 VCMEncodedFrameCallback::~VCMEncodedFrameCallback() {}
 
-int32_t VCMEncodedFrameCallback::Encoded(
+EncodedImageCallback::Result VCMEncodedFrameCallback::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific,
     const RTPFragmentationHeader* fragmentation_header) {
   TRACE_EVENT_INSTANT1("webrtc", "VCMEncodedFrameCallback::Encoded",
                        "timestamp", encoded_image._timeStamp);
-  int ret_val = post_encode_callback_->Encoded(encoded_image, codec_specific,
-                                               fragmentation_header);
-  if (ret_val < 0)
-    return ret_val;
+  Result result = post_encode_callback_->OnEncodedImage(
+      encoded_image, codec_specific, fragmentation_header);
+  if (result.error != Result::OK)
+    return result;
 
   if (media_opt_) {
     media_opt_->UpdateWithEncodedData(encoded_image);
-    if (internal_source_)
-      return media_opt_->DropFrame();  // Signal to encoder to drop next frame.
+    if (internal_source_) {
+      // Signal to encoder to drop next frame.
+      result.drop_next_frame = media_opt_->DropFrame();
+    }
   }
-  return VCM_OK;
+  return result;
 }
 
 }  // namespace webrtc

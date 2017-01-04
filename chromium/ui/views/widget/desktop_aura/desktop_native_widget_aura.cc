@@ -37,6 +37,7 @@
 #include "ui/views/widget/desktop_aura/desktop_screen_position_client.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
 #include "ui/views/widget/drop_helper.h"
+#include "ui/views/widget/focus_manager_event_handler.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/tooltip_manager_aura.h"
@@ -208,27 +209,6 @@ class DesktopNativeWidgetAuraWindowTreeClient :
 
 }  // namespace
 
-class FocusManagerEventHandler : public ui::EventHandler {
- public:
-  explicit FocusManagerEventHandler(
-      DesktopNativeWidgetAura* desktop_native_widget_aura)
-      : desktop_native_widget_aura_(desktop_native_widget_aura) {}
-
-  // Implementation of ui::EventHandler:
-  void OnKeyEvent(ui::KeyEvent* event) override {
-    Widget* widget = desktop_native_widget_aura_->GetWidget();
-    if (widget && widget->GetFocusManager()->GetFocusedView() &&
-        !widget->GetFocusManager()->OnKeyEvent(*event)) {
-      event->StopPropagation();
-    }
-  }
-
- private:
-  DesktopNativeWidgetAura* desktop_native_widget_aura_;
-
-  DISALLOW_COPY_AND_ASSIGN(FocusManagerEventHandler);
-};
-
 class RootWindowDestructionObserver : public aura::WindowObserver {
  public:
   explicit RootWindowDestructionObserver(DesktopNativeWidgetAura* parent)
@@ -315,6 +295,8 @@ void DesktopNativeWidgetAura::OnHostClosed() {
   window_tree_client_.reset();  // Uses host_->dispatcher() at destruction.
 
   capture_client_.reset();  // Uses host_->dispatcher() at destruction.
+
+  focus_manager_event_handler_.reset();
 
   // FocusController uses |content_window_|. Destroy it now so that we don't
   // have to worry about the possibility of FocusController attempting to use
@@ -515,8 +497,8 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   }
 
   if (params.type == Widget::InitParams::TYPE_WINDOW) {
-    focus_manager_event_handler_.reset(new FocusManagerEventHandler(this));
-    host_->window()->AddPreTargetHandler(focus_manager_event_handler_.get());
+    focus_manager_event_handler_ = base::MakeUnique<FocusManagerEventHandler>(
+        GetWidget(), host_->window());
   }
 
   event_client_.reset(new DesktopEventClient);
@@ -651,6 +633,9 @@ void DesktopNativeWidgetAura::SetWindowIcons(const gfx::ImageSkia& window_icon,
                                              const gfx::ImageSkia& app_icon) {
   if (content_window_)
     desktop_window_tree_host_->SetWindowIcons(window_icon, app_icon);
+
+  NativeWidgetAura::AssignIconToAuraWindow(content_window_, window_icon,
+                                           app_icon);
 }
 
 void DesktopNativeWidgetAura::InitModalType(ui::ModalType modal_type) {
@@ -704,12 +689,9 @@ void DesktopNativeWidgetAura::StackAtTop() {
     desktop_window_tree_host_->StackAtTop();
 }
 
-void DesktopNativeWidgetAura::StackBelow(gfx::NativeView native_view) {
-}
-
-void DesktopNativeWidgetAura::SetShape(SkRegion* shape) {
+void DesktopNativeWidgetAura::SetShape(std::unique_ptr<SkRegion> shape) {
   if (content_window_)
-    desktop_window_tree_host_->SetShape(shape);
+    desktop_window_tree_host_->SetShape(std::move(shape));
 }
 
 void DesktopNativeWidgetAura::Close() {
@@ -743,6 +725,7 @@ void DesktopNativeWidgetAura::Hide() {
 
 void DesktopNativeWidgetAura::ShowMaximizedWithBounds(
       const gfx::Rect& restored_bounds) {
+  // IsVisible() should check the same objects here for visibility.
   if (!content_window_)
     return;
   desktop_window_tree_host_->ShowMaximizedWithBounds(restored_bounds);
@@ -750,6 +733,7 @@ void DesktopNativeWidgetAura::ShowMaximizedWithBounds(
 }
 
 void DesktopNativeWidgetAura::ShowWithWindowState(ui::WindowShowState state) {
+  // IsVisible() should check the same objects here for visibility.
   if (!content_window_)
     return;
   desktop_window_tree_host_->ShowWindowWithState(state);
@@ -757,7 +741,13 @@ void DesktopNativeWidgetAura::ShowWithWindowState(ui::WindowShowState state) {
 }
 
 bool DesktopNativeWidgetAura::IsVisible() const {
-  return content_window_ && desktop_window_tree_host_->IsVisible();
+  // The objects checked here should be the same objects changed in
+  // ShowWithWindowState and ShowMaximizedWithBounds. For example, MS Windows
+  // platform code might show the desktop window tree host early, meaning we
+  // aren't fully visible as we haven't shown the content window. Callers may
+  // short-circuit a call to show this widget if they think its already visible.
+  return content_window_ && content_window_->IsVisible() &&
+      desktop_window_tree_host_->IsVisible();
 }
 
 void DesktopNativeWidgetAura::Activate() {
@@ -786,6 +776,11 @@ bool DesktopNativeWidgetAura::IsAlwaysOnTop() const {
 void DesktopNativeWidgetAura::SetVisibleOnAllWorkspaces(bool always_visible) {
   if (content_window_)
     desktop_window_tree_host_->SetVisibleOnAllWorkspaces(always_visible);
+}
+
+bool DesktopNativeWidgetAura::IsVisibleOnAllWorkspaces() const {
+  return content_window_ &&
+         desktop_window_tree_host_->IsVisibleOnAllWorkspaces();
 }
 
 void DesktopNativeWidgetAura::Maximize() {

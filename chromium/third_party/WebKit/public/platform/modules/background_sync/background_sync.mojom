@@ -4,6 +4,7 @@
 
 module blink.mojom;
 
+import "mojo/common/common_custom_types.mojom";
 import "third_party/WebKit/public/platform/modules/serviceworker/service_worker_event_status.mojom";
 
 enum BackgroundSyncNetworkState {
@@ -49,5 +50,6 @@ interface BackgroundSyncService {
 
 interface BackgroundSyncServiceClient {
   Sync(string tag, BackgroundSyncEventLastChance last_chance)
-      => (ServiceWorkerEventStatus status);
+      => (ServiceWorkerEventStatus status,
+          mojo.common.mojom.Time dispatch_event_time);
 };

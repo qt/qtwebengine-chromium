@@ -137,6 +137,10 @@ class IdlDefinitions(object):
             callback_function.accept(visitor)
         for dictionary in self.dictionaries.itervalues():
             dictionary.accept(visitor)
+        for enumeration in self.enumerations.itervalues():
+            enumeration.accept(visitor)
+        for implement in self.implements:
+            implement.accept(visitor)
         for typedef in self.typedefs.itervalues():
             typedef.accept(visitor)
 
@@ -169,9 +173,16 @@ class IdlCallbackFunction(TypedObject):
     def __init__(self, idl_name, node):
         children = node.GetChildren()
         num_children = len(children)
-        if num_children != 2:
-            raise ValueError('Expected 2 children, got %s' % num_children)
-        type_node, arguments_node = children
+        if num_children < 2 or num_children > 3:
+            raise ValueError('Expected 2 or 3 children, got %s' % num_children)
+        type_node = children[0]
+        arguments_node = children[1]
+        if num_children == 3:
+            ext_attributes_node = children[2]
+            self.extended_attributes = (
+                ext_attributes_node_to_extended_attributes(idl_name, ext_attributes_node))
+        else:
+            self.extended_attributes = {}
         arguments_node_class = arguments_node.GetClass()
         if arguments_node_class != 'Arguments':
             raise ValueError('Expected Arguments node, got %s' % arguments_node_class)
@@ -253,6 +264,9 @@ class IdlEnum(object):
         self.values = []
         for child in node.GetChildren():
             self.values.append(child.GetName())
+
+    def accept(self, visitor):
+        visitor.visit_enumeration(self)
 
 
 ################################################################################
@@ -661,14 +675,6 @@ class IdlArgument(TypedObject):
             else:
                 raise ValueError('Unrecognized node class: %s' % child_class)
 
-    def __getstate__(self):
-        # FIXME: Return a picklable object which has enough information to
-        # unpickle.
-        return {}
-
-    def __setstate__(self, state):
-        pass
-
     def accept(self, visitor):
         visitor.visit_argument(self)
 
@@ -836,6 +842,9 @@ class IdlImplement(object):
     def __init__(self, node):
         self.left_interface = node.GetName()
         self.right_interface = node.GetProperty('REFERENCE')
+
+    def accept(self, visitor):
+        visitor.visit_implement(self)
 
 
 ################################################################################
@@ -1091,6 +1100,12 @@ class Visitor(object):
 
     def visit_dictionary_member(self, member):
         self.visit_typed_object(member)
+
+    def visit_enumeration(self, enumeration):
+        pass
+
+    def visit_implement(self, implement):
+        pass
 
     def visit_interface(self, interface):
         pass

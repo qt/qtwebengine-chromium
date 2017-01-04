@@ -24,9 +24,7 @@ tr.b.unittest.testSuite(function() {
     });
     var values = new tr.v.ValueSet();
     tr.metrics.sh.hazardMetric(values, model);
-    var valueDicts = values.valueDicts;
-    assert.equal(1, valueDicts.length);
-    return valueDicts[0];
+    return tr.b.getOnlyElement(values);
   }
 
   test('minimalHazard', function() {
@@ -39,8 +37,8 @@ tr.b.unittest.testSuite(function() {
         duration: duration
       }));
     });
-    assert.notEqual(0, value.numeric.value);
-    assert.closeTo(value.numeric.value, 0.1611, 1e-5);
+    assert.notEqual(0, value.average);
+    assert.closeTo(value.average, 0.1611, 1e-5);
   });
 
   test('maximalHazard', function() {
@@ -52,7 +50,7 @@ tr.b.unittest.testSuite(function() {
         duration: 2200
       }));
     });
-    assert.closeTo(value.numeric.value, 1, 1e-5);
+    assert.closeTo(value.average, 1, 1e-5);
   });
 
   test('blendedHazards', function() {
@@ -82,7 +80,7 @@ tr.b.unittest.testSuite(function() {
         duration: 400
       }));
     });
-    assert.closeTo(0.92144, value.numeric.value, 1e-4);
+    assert.closeTo(0.92144, value.average, 1e-4);
   });
 });
 </script>

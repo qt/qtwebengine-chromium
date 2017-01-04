@@ -15,16 +15,12 @@ component("native_theme") {
     "native_theme_android.h",
     "native_theme_base.cc",
     "native_theme_base.h",
-    "native_theme_dark_win.cc",
-    "native_theme_dark_win.h",
     "native_theme_mac.h",
     "native_theme_mac.mm",
     "native_theme_observer.cc",
     "native_theme_observer.h",
     "native_theme_switches.cc",
     "native_theme_switches.h",
-    "native_theme_win.cc",
-    "native_theme_win.h",
   ]
 
   if (use_aura) {
@@ -34,13 +30,6 @@ component("native_theme") {
       "native_theme_dark_aura.cc",
       "native_theme_dark_aura.h",
     ]
-
-    if (is_win) {
-      sources += [
-        "native_theme_aurawin.cc",
-        "native_theme_aurawin.h",
-      ]
-    }
   }
 
   defines = [ "NATIVE_THEME_IMPLEMENTATION" ]
@@ -58,10 +47,34 @@ component("native_theme") {
 
   if (is_mac) {
     libs = [
-      "AppKit.framework",
-      "ApplicationServices.framework",  # Temporary hack around https://crbug.com/620127. Remove after https://crbug.com/622481 is fixed.
       "CoreGraphics.framework",
+      "AppKit.framework",
     ]
+  }
+}
+
+if (is_win) {
+  component("native_theme_browser") {
+    defines = [ "NATIVE_THEME_IMPLEMENTATION" ]
+
+    # These files cannot work in the renderer on Windows.
+    sources = [
+      "native_theme_dark_win.cc",
+      "native_theme_dark_win.h",
+      "native_theme_win.cc",
+      "native_theme_win.h",
+    ]
+
+    deps = [
+      ":native_theme",
+      "//base",
+      "//ui/base",
+      "//ui/display",
+      "//ui/gfx",
+    ]
+  }
+} else {
+  source_set("native_theme_browser") {
   }
 }
 
@@ -82,6 +95,7 @@ test("native_theme_unittests") {
     "//base/test:test_support",
     "//skia:skia",
     "//testing/gtest",
+    "//ui/base",
     "//ui/gfx/geometry:geometry",
   ]
 }

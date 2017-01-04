@@ -43,19 +43,6 @@ static const struct {
 };
 }  // namespace
 
-#ifdef SK_SUPPORT_LEGACY_DOCUMENT_API
-void SkPDFMetadata::SetMetadataByKey(const SkString& key,
-                                     const SkString& value,
-                                     SkDocument::PDFMetadata* metadata) {
-    for (const auto keyValuePtr : gMetadataKeys) {
-        if (key.equals(keyValuePtr.key)) {
-            metadata->*(keyValuePtr.valuePtr) = value;
-        }
-    }
-}
-
-#endif
-
 sk_sp<SkPDFObject> SkPDFMetadata::MakeDocumentInformationDict(
         const SkDocument::PDFMetadata& metadata) {
     auto dict = sk_make_sp<SkPDFDict>();
@@ -168,12 +155,11 @@ class PDFXMLObject final : public SkPDFObject {
 public:
     PDFXMLObject(SkString xml) : fXML(std::move(xml)) {}
     void emitObject(SkWStream* stream,
-                    const SkPDFObjNumMap& omap,
-                    const SkPDFSubstituteMap& smap) const override {
+                    const SkPDFObjNumMap& omap) const override {
         SkPDFDict dict("Metadata");
         dict.insertName("Subtype", "XML");
         dict.insertInt("Length", fXML.size());
-        dict.emitObject(stream, omap, smap);
+        dict.emitObject(stream, omap);
         static const char streamBegin[] = " stream\n";
         stream->write(streamBegin, strlen(streamBegin));
         // Do not compress this.  The standard requires that a
@@ -314,7 +300,7 @@ sk_sp<SkPDFObject> SkPDFMetadata::MakeXMPObject(
                                     "</pdf:Keywords>\n");
     // TODO: in theory, keywords can be a list too.
 
-    SkString producer("<pdf:Producer>SKPDF_PRODUCER</pdf:Producer>\n");
+    SkString producer("<pdf:Producer>" SKPDF_PRODUCER "</pdf:Producer>\n");
     if (!metadata.fProducer.isEmpty()) {
         // TODO: register a developer prefix to make
         // <skia:SKPDF_CUSTOM_PRODUCER_KEY> a real XML tag.

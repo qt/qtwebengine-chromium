@@ -10,26 +10,37 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "net/log/net_log_event_type.h"
+#include "net/log/net_log_source.h"
 #include "net/log/test_net_log.h"
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
+#include "net/test/gtest_util.h"
 #include "net/test/net_test_suite.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+
+#if defined(OS_ANDROID)
+#include "base/android/build_info.h"
+#endif
 
 #if defined(OS_IOS)
 #include <TargetConditionals.h>
 #endif
+
+using net::test::IsError;
+using net::test::IsOk;
 
 namespace net {
 
@@ -160,14 +171,12 @@ void UDPSocketTest::ConnectTest(bool use_nonblocking_io) {
   CreateUDPAddress("127.0.0.1", kPort, &bind_address);
   TestNetLog server_log;
   std::unique_ptr<UDPServerSocket> server(
-      new UDPServerSocket(&server_log, NetLog::Source()));
-#if defined(OS_WIN)
+      new UDPServerSocket(&server_log, NetLogSource()));
   if (use_nonblocking_io)
     server->UseNonBlockingIO();
-#endif
   server->AllowAddressReuse();
   int rv = server->Listen(bind_address);
-  ASSERT_EQ(OK, rv);
+  ASSERT_THAT(rv, IsOk());
 
   // Setup the client.
   IPEndPoint server_address;
@@ -175,14 +184,12 @@ void UDPSocketTest::ConnectTest(bool use_nonblocking_io) {
   TestNetLog client_log;
   std::unique_ptr<UDPClientSocket> client(
       new UDPClientSocket(DatagramSocket::DEFAULT_BIND, RandIntCallback(),
-                          &client_log, NetLog::Source()));
-#if defined(OS_WIN)
+                          &client_log, NetLogSource()));
   if (use_nonblocking_io)
     client->UseNonBlockingIO();
-#endif
 
   rv = client->Connect(server_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   // Client sends to the server.
   rv = WriteSocket(client.get(), simple_message);
@@ -206,7 +213,7 @@ void UDPSocketTest::ConnectTest(bool use_nonblocking_io) {
   rv = server->RecvFrom(
       buffer_.get(), kMaxRead, &recv_from_address_,
       base::Bind(&ReadCompleteCallback, &read_result, run_loop.QuitClosure()));
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
 
   // Client sends to the server.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -226,33 +233,40 @@ void UDPSocketTest::ConnectTest(bool use_nonblocking_io) {
   server_log.GetEntries(&server_entries);
   EXPECT_EQ(5u, server_entries.size());
   EXPECT_TRUE(
-      LogContainsBeginEvent(server_entries, 0, NetLog::TYPE_SOCKET_ALIVE));
-  EXPECT_TRUE(LogContainsEvent(
-      server_entries, 1, NetLog::TYPE_UDP_BYTES_RECEIVED, NetLog::PHASE_NONE));
-  EXPECT_TRUE(LogContainsEvent(server_entries, 2, NetLog::TYPE_UDP_BYTES_SENT,
-                               NetLog::PHASE_NONE));
-  EXPECT_TRUE(LogContainsEvent(
-      server_entries, 3, NetLog::TYPE_UDP_BYTES_RECEIVED, NetLog::PHASE_NONE));
+      LogContainsBeginEvent(server_entries, 0, NetLogEventType::SOCKET_ALIVE));
+  EXPECT_TRUE(LogContainsEvent(server_entries, 1,
+                               NetLogEventType::UDP_BYTES_RECEIVED,
+                               NetLogEventPhase::NONE));
+  EXPECT_TRUE(LogContainsEvent(server_entries, 2,
+                               NetLogEventType::UDP_BYTES_SENT,
+                               NetLogEventPhase::NONE));
+  EXPECT_TRUE(LogContainsEvent(server_entries, 3,
+                               NetLogEventType::UDP_BYTES_RECEIVED,
+                               NetLogEventPhase::NONE));
   EXPECT_TRUE(
-      LogContainsEndEvent(server_entries, 4, NetLog::TYPE_SOCKET_ALIVE));
+      LogContainsEndEvent(server_entries, 4, NetLogEventType::SOCKET_ALIVE));
 
   // Check the client's log.
   TestNetLogEntry::List client_entries;
   client_log.GetEntries(&client_entries);
   EXPECT_EQ(7u, client_entries.size());
   EXPECT_TRUE(
-      LogContainsBeginEvent(client_entries, 0, NetLog::TYPE_SOCKET_ALIVE));
+      LogContainsBeginEvent(client_entries, 0, NetLogEventType::SOCKET_ALIVE));
   EXPECT_TRUE(
-      LogContainsBeginEvent(client_entries, 1, NetLog::TYPE_UDP_CONNECT));
-  EXPECT_TRUE(LogContainsEndEvent(client_entries, 2, NetLog::TYPE_UDP_CONNECT));
-  EXPECT_TRUE(LogContainsEvent(client_entries, 3, NetLog::TYPE_UDP_BYTES_SENT,
-                               NetLog::PHASE_NONE));
-  EXPECT_TRUE(LogContainsEvent(
-      client_entries, 4, NetLog::TYPE_UDP_BYTES_RECEIVED, NetLog::PHASE_NONE));
-  EXPECT_TRUE(LogContainsEvent(client_entries, 5, NetLog::TYPE_UDP_BYTES_SENT,
-                               NetLog::PHASE_NONE));
+      LogContainsBeginEvent(client_entries, 1, NetLogEventType::UDP_CONNECT));
   EXPECT_TRUE(
-      LogContainsEndEvent(client_entries, 6, NetLog::TYPE_SOCKET_ALIVE));
+      LogContainsEndEvent(client_entries, 2, NetLogEventType::UDP_CONNECT));
+  EXPECT_TRUE(LogContainsEvent(client_entries, 3,
+                               NetLogEventType::UDP_BYTES_SENT,
+                               NetLogEventPhase::NONE));
+  EXPECT_TRUE(LogContainsEvent(client_entries, 4,
+                               NetLogEventType::UDP_BYTES_RECEIVED,
+                               NetLogEventPhase::NONE));
+  EXPECT_TRUE(LogContainsEvent(client_entries, 5,
+                               NetLogEventType::UDP_BYTES_SENT,
+                               NetLogEventPhase::NONE));
+  EXPECT_TRUE(
+      LogContainsEndEvent(client_entries, 6, NetLogEventType::SOCKET_ALIVE));
 }
 
 TEST_F(UDPSocketTest, Connect) {
@@ -288,18 +302,18 @@ TEST_F(UDPSocketTest, Broadcast) {
 
   TestNetLog server1_log, server2_log;
   std::unique_ptr<UDPServerSocket> server1(
-      new UDPServerSocket(&server1_log, NetLog::Source()));
+      new UDPServerSocket(&server1_log, NetLogSource()));
   std::unique_ptr<UDPServerSocket> server2(
-      new UDPServerSocket(&server2_log, NetLog::Source()));
+      new UDPServerSocket(&server2_log, NetLogSource()));
   server1->AllowAddressReuse();
   server1->AllowBroadcast();
   server2->AllowAddressReuse();
   server2->AllowBroadcast();
 
   int rv = server1->Listen(listen_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
   rv = server2->Listen(listen_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   rv = SendToSocket(server1.get(), first_message, broadcast_address);
   ASSERT_EQ(static_cast<int>(first_message.size()), rv);
@@ -351,28 +365,24 @@ class TestPrng {
 };
 
 TEST_F(UDPSocketTest, ConnectRandomBind) {
-  std::vector<UDPClientSocket*> sockets;
+  std::vector<std::unique_ptr<UDPClientSocket>> sockets;
   IPEndPoint peer_address;
   CreateUDPAddress("127.0.0.1", 53, &peer_address);
 
   // Create and connect sockets and save port numbers.
   std::deque<int> used_ports;
   for (int i = 0; i < kBindRetries; ++i) {
-    UDPClientSocket* socket =
-        new UDPClientSocket(DatagramSocket::DEFAULT_BIND,
-                            RandIntCallback(),
-                            NULL,
-                            NetLog::Source());
-    sockets.push_back(socket);
-    EXPECT_EQ(OK, socket->Connect(peer_address));
+    UDPClientSocket* socket = new UDPClientSocket(
+        DatagramSocket::DEFAULT_BIND, RandIntCallback(), NULL, NetLogSource());
+    sockets.push_back(base::WrapUnique(socket));
+    EXPECT_THAT(socket->Connect(peer_address), IsOk());
 
     IPEndPoint client_address;
-    EXPECT_EQ(OK, socket->GetLocalAddress(&client_address));
+    EXPECT_THAT(socket->GetLocalAddress(&client_address), IsOk());
     used_ports.push_back(client_address.port());
   }
 
   // Free the last socket, its local port is still in |used_ports|.
-  delete sockets.back();
   sockets.pop_back();
 
   TestPrng test_prng(used_ports);
@@ -381,15 +391,13 @@ TEST_F(UDPSocketTest, ConnectRandomBind) {
 
   // Create a socket with random binding policy and connect.
   std::unique_ptr<UDPClientSocket> test_socket(new UDPClientSocket(
-      DatagramSocket::RANDOM_BIND, rand_int_cb, NULL, NetLog::Source()));
-  EXPECT_EQ(OK, test_socket->Connect(peer_address));
+      DatagramSocket::RANDOM_BIND, rand_int_cb, NULL, NetLogSource()));
+  EXPECT_THAT(test_socket->Connect(peer_address), IsOk());
 
   // Make sure that the last port number in the |used_ports| was used.
   IPEndPoint client_address;
-  EXPECT_EQ(OK, test_socket->GetLocalAddress(&client_address));
+  EXPECT_THAT(test_socket->GetLocalAddress(&client_address), IsOk());
   EXPECT_EQ(used_ports.back(), client_address.port());
-
-  STLDeleteElements(&sockets);
 }
 
 // Return a privileged port (under 1024) so binding will fail.
@@ -411,9 +419,9 @@ TEST_F(UDPSocketTest, MAYBE_ConnectFail) {
 
   std::unique_ptr<UDPSocket> socket(new UDPSocket(DatagramSocket::RANDOM_BIND,
                                                   base::Bind(&PrivilegedRand),
-                                                  NULL, NetLog::Source()));
+                                                  NULL, NetLogSource()));
   int rv = socket->Open(peer_address.GetFamily());
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
   rv = socket->Connect(peer_address);
   // Connect should have failed since we couldn't bind to that port,
   EXPECT_NE(OK, rv);
@@ -438,27 +446,25 @@ TEST_F(UDPSocketTest, VerifyConnectBindsAddr) {
   // Setup the first server to listen.
   IPEndPoint bind_address;
   CreateUDPAddress("127.0.0.1", kPort1, &bind_address);
-  UDPServerSocket server1(NULL, NetLog::Source());
+  UDPServerSocket server1(NULL, NetLogSource());
   server1.AllowAddressReuse();
   int rv = server1.Listen(bind_address);
-  ASSERT_EQ(OK, rv);
+  ASSERT_THAT(rv, IsOk());
 
   // Setup the second server to listen.
   CreateUDPAddress("127.0.0.1", kPort2, &bind_address);
-  UDPServerSocket server2(NULL, NetLog::Source());
+  UDPServerSocket server2(NULL, NetLogSource());
   server2.AllowAddressReuse();
   rv = server2.Listen(bind_address);
-  ASSERT_EQ(OK, rv);
+  ASSERT_THAT(rv, IsOk());
 
   // Setup the client, connected to server 1.
   IPEndPoint server_address;
   CreateUDPAddress("127.0.0.1", kPort1, &server_address);
-  UDPClientSocket client(DatagramSocket::DEFAULT_BIND,
-                         RandIntCallback(),
-                         NULL,
-                         NetLog::Source());
+  UDPClientSocket client(DatagramSocket::DEFAULT_BIND, RandIntCallback(), NULL,
+                         NetLogSource());
   rv = client.Connect(server_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   // Client sends to server1.
   rv = WriteSocket(&client, simple_message);
@@ -471,7 +477,7 @@ TEST_F(UDPSocketTest, VerifyConnectBindsAddr) {
   // Get the client's address.
   IPEndPoint client_address;
   rv = client.GetLocalAddress(&client_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   // Server2 sends reply.
   rv = SendToSocket(&server2, foreign_message,
@@ -513,10 +519,8 @@ TEST_F(UDPSocketTest, ClientGetLocalPeerAddresses) {
     EXPECT_TRUE(ip_address.AssignFromIPLiteral(tests[i].local_address));
     IPEndPoint local_address(ip_address, 80);
 
-    UDPClientSocket client(DatagramSocket::DEFAULT_BIND,
-                           RandIntCallback(),
-                           NULL,
-                           NetLog::Source());
+    UDPClientSocket client(DatagramSocket::DEFAULT_BIND, RandIntCallback(),
+                           NULL, NetLogSource());
     int rv = client.Connect(remote_address);
     if (tests[i].may_fail && rv == ERR_ADDRESS_UNREACHABLE) {
       // Connect() may return ERR_ADDRESS_UNREACHABLE for IPv6
@@ -528,7 +532,7 @@ TEST_F(UDPSocketTest, ClientGetLocalPeerAddresses) {
 
     IPEndPoint fetched_local_address;
     rv = client.GetLocalAddress(&fetched_local_address);
-    EXPECT_EQ(OK, rv);
+    EXPECT_THAT(rv, IsOk());
 
     // TODO(mbelshe): figure out how to verify the IP and port.
     //                The port is dynamically generated by the udp stack.
@@ -538,7 +542,7 @@ TEST_F(UDPSocketTest, ClientGetLocalPeerAddresses) {
 
     IPEndPoint fetched_remote_address;
     rv = client.GetPeerAddress(&fetched_remote_address);
-    EXPECT_EQ(OK, rv);
+    EXPECT_THAT(rv, IsOk());
 
     EXPECT_EQ(remote_address, fetched_remote_address);
   }
@@ -547,9 +551,9 @@ TEST_F(UDPSocketTest, ClientGetLocalPeerAddresses) {
 TEST_F(UDPSocketTest, ServerGetLocalAddress) {
   IPEndPoint bind_address;
   CreateUDPAddress("127.0.0.1", 0, &bind_address);
-  UDPServerSocket server(NULL, NetLog::Source());
+  UDPServerSocket server(NULL, NetLogSource());
   int rv = server.Listen(bind_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   IPEndPoint local_address;
   rv = server.GetLocalAddress(&local_address);
@@ -563,22 +567,66 @@ TEST_F(UDPSocketTest, ServerGetLocalAddress) {
 TEST_F(UDPSocketTest, ServerGetPeerAddress) {
   IPEndPoint bind_address;
   CreateUDPAddress("127.0.0.1", 0, &bind_address);
-  UDPServerSocket server(NULL, NetLog::Source());
+  UDPServerSocket server(NULL, NetLogSource());
   int rv = server.Listen(bind_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   IPEndPoint peer_address;
   rv = server.GetPeerAddress(&peer_address);
   EXPECT_EQ(rv, ERR_SOCKET_NOT_CONNECTED);
 }
 
+TEST_F(UDPSocketTest, ClientSetDoNotFragment) {
+  for (std::string ip : {"127.0.0.1", "::1"}) {
+    LOG(INFO) << "ip: " << ip;
+    UDPClientSocket client(DatagramSocket::DEFAULT_BIND, RandIntCallback(),
+                           nullptr, NetLogSource());
+    IPAddress ip_address;
+    EXPECT_TRUE(ip_address.AssignFromIPLiteral(ip));
+    IPEndPoint remote_address(ip_address, 80);
+    int rv = client.Connect(remote_address);
+    // May fail on IPv6 is IPv6 is not configured.
+    if (ip_address.IsIPv6() && rv == ERR_ADDRESS_UNREACHABLE)
+      return;
+    EXPECT_THAT(rv, IsOk());
+
+#if defined(OS_MACOSX)
+    EXPECT_EQ(ERR_NOT_IMPLEMENTED, client.SetDoNotFragment());
+#else
+    rv = client.SetDoNotFragment();
+    EXPECT_THAT(rv, IsOk());
+#endif
+  }
+}
+
+TEST_F(UDPSocketTest, ServerSetDoNotFragment) {
+  for (std::string ip : {"127.0.0.1", "::1"}) {
+    LOG(INFO) << "ip: " << ip;
+    IPEndPoint bind_address;
+    CreateUDPAddress(ip, 0, &bind_address);
+    UDPServerSocket server(nullptr, NetLogSource());
+    int rv = server.Listen(bind_address);
+    // May fail on IPv6 is IPv6 is not configure
+    if (bind_address.address().IsIPv6() && rv == ERR_ADDRESS_INVALID)
+      return;
+    EXPECT_THAT(rv, IsOk());
+
+#if defined(OS_MACOSX)
+    EXPECT_EQ(ERR_NOT_IMPLEMENTED, server.SetDoNotFragment());
+#else
+    rv = server.SetDoNotFragment();
+    EXPECT_THAT(rv, IsOk());
+#endif
+  }
+}
+
 // Close the socket while read is pending.
 TEST_F(UDPSocketTest, CloseWithPendingRead) {
   IPEndPoint bind_address;
   CreateUDPAddress("127.0.0.1", 0, &bind_address);
-  UDPServerSocket server(NULL, NetLog::Source());
+  UDPServerSocket server(NULL, NetLogSource());
   int rv = server.Listen(bind_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   TestCompletionCallback callback;
   IPEndPoint from;
@@ -608,16 +656,14 @@ TEST_F(UDPSocketTest, MAYBE_JoinMulticastGroup) {
   IPAddress group_ip;
   EXPECT_TRUE(group_ip.AssignFromIPLiteral(kGroup));
 
-  UDPSocket socket(DatagramSocket::DEFAULT_BIND,
-                   RandIntCallback(),
-                   NULL,
-                   NetLog::Source());
-  EXPECT_EQ(OK, socket.Open(bind_address.GetFamily()));
-  EXPECT_EQ(OK, socket.Bind(bind_address));
-  EXPECT_EQ(OK, socket.JoinGroup(group_ip));
+  UDPSocket socket(DatagramSocket::DEFAULT_BIND, RandIntCallback(), NULL,
+                   NetLogSource());
+  EXPECT_THAT(socket.Open(bind_address.GetFamily()), IsOk());
+  EXPECT_THAT(socket.Bind(bind_address), IsOk());
+  EXPECT_THAT(socket.JoinGroup(group_ip), IsOk());
   // Joining group multiple times.
   EXPECT_NE(OK, socket.JoinGroup(group_ip));
-  EXPECT_EQ(OK, socket.LeaveGroup(group_ip));
+  EXPECT_THAT(socket.LeaveGroup(group_ip), IsOk());
   // Leaving group multiple times.
   EXPECT_NE(OK, socket.LeaveGroup(group_ip));
 
@@ -629,20 +675,18 @@ TEST_F(UDPSocketTest, MulticastOptions) {
   IPEndPoint bind_address;
   CreateUDPAddress("0.0.0.0", kPort, &bind_address);
 
-  UDPSocket socket(DatagramSocket::DEFAULT_BIND,
-                   RandIntCallback(),
-                   NULL,
-                   NetLog::Source());
+  UDPSocket socket(DatagramSocket::DEFAULT_BIND, RandIntCallback(), NULL,
+                   NetLogSource());
   // Before binding.
-  EXPECT_EQ(OK, socket.SetMulticastLoopbackMode(false));
-  EXPECT_EQ(OK, socket.SetMulticastLoopbackMode(true));
-  EXPECT_EQ(OK, socket.SetMulticastTimeToLive(0));
-  EXPECT_EQ(OK, socket.SetMulticastTimeToLive(3));
+  EXPECT_THAT(socket.SetMulticastLoopbackMode(false), IsOk());
+  EXPECT_THAT(socket.SetMulticastLoopbackMode(true), IsOk());
+  EXPECT_THAT(socket.SetMulticastTimeToLive(0), IsOk());
+  EXPECT_THAT(socket.SetMulticastTimeToLive(3), IsOk());
   EXPECT_NE(OK, socket.SetMulticastTimeToLive(-1));
-  EXPECT_EQ(OK, socket.SetMulticastInterface(0));
+  EXPECT_THAT(socket.SetMulticastInterface(0), IsOk());
 
-  EXPECT_EQ(OK, socket.Open(bind_address.GetFamily()));
-  EXPECT_EQ(OK, socket.Bind(bind_address));
+  EXPECT_THAT(socket.Open(bind_address.GetFamily()), IsOk());
+  EXPECT_THAT(socket.Bind(bind_address), IsOk());
 
   EXPECT_NE(OK, socket.SetMulticastLoopbackMode(false));
   EXPECT_NE(OK, socket.SetMulticastTimeToLive(0));
@@ -656,14 +700,12 @@ TEST_F(UDPSocketTest, MulticastOptions) {
 TEST_F(UDPSocketTest, SetDSCP) {
   // Setup the server to listen.
   IPEndPoint bind_address;
-  UDPSocket client(DatagramSocket::DEFAULT_BIND,
-                   RandIntCallback(),
-                   NULL,
-                   NetLog::Source());
+  UDPSocket client(DatagramSocket::DEFAULT_BIND, RandIntCallback(), NULL,
+                   NetLogSource());
   // We need a real IP, but we won't actually send anything to it.
   CreateUDPAddress("8.8.8.8", 9999, &bind_address);
   int rv = client.Open(bind_address.GetFamily());
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   rv = client.Connect(bind_address);
   if (rv != OK) {
@@ -671,7 +713,7 @@ TEST_F(UDPSocketTest, SetDSCP) {
     CreateUDPAddress("127.0.0.1", 9999, &bind_address);
     rv = client.Connect(bind_address);
   }
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   client.SetDiffServCodePoint(DSCP_NO_CHANGE);
   client.SetDiffServCodePoint(DSCP_AF41);
@@ -680,6 +722,53 @@ TEST_F(UDPSocketTest, SetDSCP) {
   client.SetDiffServCodePoint(DSCP_NO_CHANGE);
   client.SetDiffServCodePoint(DSCP_DEFAULT);
   client.Close();
+}
+
+TEST_F(UDPSocketTest, TestBindToNetwork) {
+  UDPSocket socket(DatagramSocket::RANDOM_BIND, base::Bind(&PrivilegedRand),
+                   NULL, NetLogSource());
+  ASSERT_EQ(OK, socket.Open(ADDRESS_FAMILY_IPV4));
+  // Test unsuccessful binding, by attempting to bind to a bogus NetworkHandle.
+  int rv = socket.BindToNetwork(65536);
+#if !defined(OS_ANDROID)
+  EXPECT_EQ(ERR_NOT_IMPLEMENTED, rv);
+#else
+  if (base::android::BuildInfo::GetInstance()->sdk_int() <
+      base::android::SDK_VERSION_LOLLIPOP) {
+    EXPECT_EQ(ERR_NOT_IMPLEMENTED, rv);
+  } else if (base::android::BuildInfo::GetInstance()->sdk_int() >=
+             base::android::SDK_VERSION_LOLLIPOP &&
+             base::android::BuildInfo::GetInstance()->sdk_int() <
+             base::android::SDK_VERSION_MARSHMALLOW) {
+    // On Lollipop, we assume if the user has a NetworkHandle that they must
+    // have gotten it from a legitimate source, so if binding to the network
+    // fails it's assumed to be because the network went away so
+    // ERR_NETWORK_CHANGED is returned. In this test the network never existed
+    // anyhow.  ConnectivityService.MAX_NET_ID is 65535, so 65536 won't be used.
+    EXPECT_EQ(ERR_NETWORK_CHANGED, rv);
+  } else if (base::android::BuildInfo::GetInstance()->sdk_int() >=
+             base::android::SDK_VERSION_MARSHMALLOW) {
+    // On Marshmallow and newer releases, the NetworkHandle is munged by
+    // Network.getNetworkHandle() and 65536 isn't munged so it's rejected.
+    EXPECT_EQ(ERR_INVALID_ARGUMENT, rv);
+  }
+
+  if (base::android::BuildInfo::GetInstance()->sdk_int() >=
+      base::android::SDK_VERSION_LOLLIPOP) {
+    EXPECT_EQ(
+        ERR_INVALID_ARGUMENT,
+        socket.BindToNetwork(NetworkChangeNotifier::kInvalidNetworkHandle));
+
+    // Test successful binding, if possible.
+    if (NetworkChangeNotifier::AreNetworkHandlesSupported()) {
+      NetworkChangeNotifier::NetworkHandle network_handle =
+          NetworkChangeNotifier::GetDefaultNetwork();
+      if (network_handle != NetworkChangeNotifier::kInvalidNetworkHandle) {
+        EXPECT_EQ(OK, socket.BindToNetwork(network_handle));
+      }
+    }
+  }
+#endif
 }
 
 }  // namespace
@@ -766,18 +855,16 @@ TEST_F(UDPSocketTest, SetDSCPFake) {
   IPEndPoint bind_address;
   // We need a real IP, but we won't actually send anything to it.
   CreateUDPAddress("8.8.8.8", 9999, &bind_address);
-  UDPSocket client(DatagramSocket::DEFAULT_BIND,
-                   RandIntCallback(),
-                   NULL,
-                   NetLog::Source());
+  UDPSocket client(DatagramSocket::DEFAULT_BIND, RandIntCallback(), NULL,
+                   NetLogSource());
   int rv = client.SetDiffServCodePoint(DSCP_AF41);
-  EXPECT_EQ(ERR_SOCKET_NOT_CONNECTED, rv);
+  EXPECT_THAT(rv, IsError(ERR_SOCKET_NOT_CONNECTED));
 
   rv = client.Open(bind_address.GetFamily());
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   rv = client.Connect(bind_address);
-  EXPECT_EQ(OK, rv);
+  EXPECT_THAT(rv, IsOk());
 
   QwaveAPI& qos(QwaveAPI::Get());
   qos.create_handle_func_ = FakeQOSCreateHandleFAIL;
@@ -787,24 +874,24 @@ TEST_F(UDPSocketTest, SetDSCPFake) {
   qos.set_flow_func_ = FakeQOSSetFlow;
   qos.qwave_supported_ = true;
 
-  EXPECT_EQ(OK, client.SetDiffServCodePoint(DSCP_NO_CHANGE));
+  EXPECT_THAT(client.SetDiffServCodePoint(DSCP_NO_CHANGE), IsOk());
   EXPECT_EQ(ERROR_NOT_SUPPORTED, client.SetDiffServCodePoint(DSCP_AF41));
   qos.create_handle_func_ = FakeQOSCreateHandle;
   g_expected_dscp = DSCP_AF41;
   g_expected_traffic_type = QOSTrafficTypeAudioVideo;
-  EXPECT_EQ(OK, client.SetDiffServCodePoint(DSCP_AF41));
+  EXPECT_THAT(client.SetDiffServCodePoint(DSCP_AF41), IsOk());
   g_expected_dscp = DSCP_DEFAULT;
   g_expected_traffic_type = QOSTrafficTypeBestEffort;
-  EXPECT_EQ(OK, client.SetDiffServCodePoint(DSCP_DEFAULT));
+  EXPECT_THAT(client.SetDiffServCodePoint(DSCP_DEFAULT), IsOk());
   g_expected_dscp = DSCP_CS2;
   g_expected_traffic_type = QOSTrafficTypeExcellentEffort;
-  EXPECT_EQ(OK, client.SetDiffServCodePoint(DSCP_CS2));
+  EXPECT_THAT(client.SetDiffServCodePoint(DSCP_CS2), IsOk());
   g_expected_dscp = DSCP_CS3;
   g_expected_traffic_type = QOSTrafficTypeExcellentEffort;
-  EXPECT_EQ(OK, client.SetDiffServCodePoint(DSCP_NO_CHANGE));
+  EXPECT_THAT(client.SetDiffServCodePoint(DSCP_NO_CHANGE), IsOk());
   g_expected_dscp = DSCP_DEFAULT;
   g_expected_traffic_type = QOSTrafficTypeBestEffort;
-  EXPECT_EQ(OK, client.SetDiffServCodePoint(DSCP_DEFAULT));
+  EXPECT_THAT(client.SetDiffServCodePoint(DSCP_DEFAULT), IsOk());
   client.Close();
 }
 #endif

@@ -50,6 +50,7 @@ PacketDroppingTestWriter::PacketDroppingTestWriter()
     : clock_(nullptr),
       cur_buffer_size_(0),
       num_calls_to_write_(0),
+      max_allowed_packet_size_(std::numeric_limits<QuicByteCount>::max()),
       config_mutex_(),
       fake_packet_loss_percentage_(0),
       fake_drop_first_n_packets_(0),
@@ -81,6 +82,7 @@ WriteResult PacketDroppingTestWriter::WritePacket(
     const IPAddress& self_address,
     const IPEndPoint& peer_address,
     PerPacketOptions* options) {
+  CHECK_LE(buf_len, max_allowed_packet_size_);
   ++num_calls_to_write_;
   ReleaseOldPackets();
 
@@ -118,14 +120,14 @@ WriteResult PacketDroppingTestWriter::WritePacket(
     }
 
     // Queue it to be sent.
-    QuicTime send_time = clock_->ApproximateNow().Add(fake_packet_delay_);
+    QuicTime send_time = clock_->ApproximateNow() + fake_packet_delay_;
     if (!fake_bandwidth_.IsZero()) {
       // Calculate a time the bandwidth limit would impose.
       QuicTime::Delta bandwidth_delay = QuicTime::Delta::FromMicroseconds(
           (buf_len * kNumMicrosPerSecond) / fake_bandwidth_.ToBytesPerSecond());
       send_time = delayed_packets_.empty()
-                      ? send_time.Add(bandwidth_delay)
-                      : delayed_packets_.back().send_time.Add(bandwidth_delay);
+                      ? send_time + bandwidth_delay
+                      : delayed_packets_.back().send_time + bandwidth_delay;
     }
     std::unique_ptr<PerPacketOptions> delayed_options;
     if (options != nullptr) {

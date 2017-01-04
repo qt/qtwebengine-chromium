@@ -16,6 +16,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/scripting_permissions_modifier.h"
 #include "chrome/browser/extensions/test_extension_dir.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
@@ -44,13 +45,24 @@ namespace extensions {
 namespace {
 
 std::unique_ptr<KeyedService> BuildAPI(content::BrowserContext* context) {
-  return base::WrapUnique(new DeveloperPrivateAPI(context));
+  return base::MakeUnique<DeveloperPrivateAPI>(context);
 }
 
 std::unique_ptr<KeyedService> BuildEventRouter(
     content::BrowserContext* profile) {
-  return base::WrapUnique(
-      new EventRouter(profile, ExtensionPrefs::Get(profile)));
+  return base::MakeUnique<EventRouter>(profile, ExtensionPrefs::Get(profile));
+}
+
+bool HasAllUrlsPermission(const Extension* extension,
+                          content::BrowserContext* context) {
+  return ScriptingPermissionsModifier(context, extension).IsAllowedOnAllUrls();
+}
+
+bool HasPrefsPermission(bool (*has_pref)(const std::string&,
+                                         content::BrowserContext*),
+                        content::BrowserContext* context,
+                        const std::string& id) {
+  return has_pref(id, context);
 }
 
 }  // namespace
@@ -74,10 +86,9 @@ class DeveloperPrivateApiUnitTest : public ExtensionServiceTestBase {
   const Extension* LoadSimpleExtension();
 
   // Tests modifying the extension's configuration.
-  void TestExtensionPrefSetting(
-      bool (*has_pref)(const std::string&, content::BrowserContext*),
-      const std::string& key,
-      const std::string& extension_id);
+  void TestExtensionPrefSetting(const base::Callback<bool()>& has_pref,
+                                const std::string& key,
+                                const std::string& extension_id);
 
   testing::AssertionResult TestPackExtensionFunction(
       const base::ListValue& args,
@@ -95,7 +106,7 @@ class DeveloperPrivateApiUnitTest : public ExtensionServiceTestBase {
   std::unique_ptr<TestBrowserWindow> browser_window_;
   std::unique_ptr<Browser> browser_;
 
-  ScopedVector<TestExtensionDir> test_extension_dirs_;
+  std::vector<std::unique_ptr<TestExtensionDir>> test_extension_dirs_;
 
   DISALLOW_COPY_AND_ASSIGN(DeveloperPrivateApiUnitTest);
 };
@@ -104,7 +115,7 @@ bool DeveloperPrivateApiUnitTest::RunFunction(
     const scoped_refptr<UIThreadExtensionFunction>& function,
     const base::ListValue& args) {
   return extension_function_test_utils::RunFunction(
-      function.get(), base::WrapUnique(args.DeepCopy()), browser(),
+      function.get(), args.CreateDeepCopy(), browser(),
       extension_function_test_utils::NONE);
 }
 
@@ -117,8 +128,8 @@ const Extension* DeveloperPrivateApiUnitTest::LoadUnpackedExtension() {
       " \"permissions\": [\"*://*/*\"]"
       "}";
 
-  test_extension_dirs_.push_back(new TestExtensionDir);
-  TestExtensionDir* dir = test_extension_dirs_.back();
+  test_extension_dirs_.push_back(base::MakeUnique<TestExtensionDir>());
+  TestExtensionDir* dir = test_extension_dirs_.back().get();
   dir->WriteManifest(kManifest);
 
   // TODO(devlin): We should extract out methods to load an unpacked extension
@@ -127,9 +138,9 @@ const Extension* DeveloperPrivateApiUnitTest::LoadUnpackedExtension() {
   TestExtensionRegistryObserver registry_observer(registry());
   scoped_refptr<UnpackedInstaller> installer(
       UnpackedInstaller::Create(service()));
-  installer->Load(dir->unpacked_path());
+  installer->Load(dir->UnpackedPath());
   base::FilePath extension_path =
-      base::MakeAbsoluteFilePath(dir->unpacked_path());
+      base::MakeAbsoluteFilePath(dir->UnpackedPath());
   const Extension* extension = nullptr;
   do {
     extension = registry_observer.WaitForExtensionLoaded();
@@ -161,33 +172,43 @@ const Extension* DeveloperPrivateApiUnitTest::LoadSimpleExtension() {
 }
 
 void DeveloperPrivateApiUnitTest::TestExtensionPrefSetting(
-    bool (*has_pref)(const std::string&, content::BrowserContext*),
+    const base::Callback<bool()>& has_pref,
     const std::string& key,
     const std::string& extension_id) {
   scoped_refptr<UIThreadExtensionFunction> function(
       new api::DeveloperPrivateUpdateExtensionConfigurationFunction());
 
-  base::ListValue args;
-  base::DictionaryValue* parameters = new base::DictionaryValue();
-  parameters->SetString("extensionId", extension_id);
-  parameters->SetBoolean(key, true);
-  args.Append(parameters);
+  EXPECT_FALSE(has_pref.Run()) << key;
 
-  EXPECT_FALSE(has_pref(extension_id, profile())) << key;
+  {
+    auto parameters = base::MakeUnique<base::DictionaryValue>();
+    parameters->SetString("extensionId", extension_id);
+    parameters->SetBoolean(key, true);
 
-  EXPECT_FALSE(RunFunction(function, args)) << key;
-  EXPECT_EQ(std::string("This action requires a user gesture."),
-            function->GetError());
+    base::ListValue args;
+    args.Append(std::move(parameters));
+    EXPECT_FALSE(RunFunction(function, args)) << key;
+    EXPECT_EQ("This action requires a user gesture.", function->GetError());
 
-  ExtensionFunction::ScopedUserGestureForTests scoped_user_gesture;
-  function = new api::DeveloperPrivateUpdateExtensionConfigurationFunction();
-  EXPECT_TRUE(RunFunction(function, args)) << key;
-  EXPECT_TRUE(has_pref(extension_id, profile())) << key;
+    ExtensionFunction::ScopedUserGestureForTests scoped_user_gesture;
+    function = new api::DeveloperPrivateUpdateExtensionConfigurationFunction();
+    EXPECT_TRUE(RunFunction(function, args)) << key;
+    EXPECT_TRUE(has_pref.Run()) << key;
+  }
 
-  parameters->SetBoolean(key, false);
-  function = new api::DeveloperPrivateUpdateExtensionConfigurationFunction();
-  EXPECT_TRUE(RunFunction(function, args)) << key;
-  EXPECT_FALSE(has_pref(extension_id, profile())) << key;
+  {
+    auto parameters = base::MakeUnique<base::DictionaryValue>();
+    parameters->SetString("extensionId", extension_id);
+    parameters->SetBoolean(key, false);
+
+    base::ListValue args;
+    args.Append(std::move(parameters));
+
+    ExtensionFunction::ScopedUserGestureForTests scoped_user_gesture;
+    function = new api::DeveloperPrivateUpdateExtensionConfigurationFunction();
+    EXPECT_TRUE(RunFunction(function, args)) << key;
+    EXPECT_FALSE(has_pref.Run()) << key;
+  }
 }
 
 testing::AssertionResult DeveloperPrivateApiUnitTest::TestPackExtensionFunction(
@@ -253,12 +274,18 @@ TEST_F(DeveloperPrivateApiUnitTest,
       FeatureSwitch::scripts_require_action(), true);
   // Sadly, we need a "real" directory here, because toggling prefs causes
   // a reload (which needs a path).
-  std::string id = LoadUnpackedExtension()->id();
+  const Extension* extension = LoadUnpackedExtension();
+  const std::string& id = extension->id();
 
-  TestExtensionPrefSetting(&util::IsIncognitoEnabled, "incognitoAccess", id);
-  TestExtensionPrefSetting(&util::AllowFileAccess, "fileAccess", id);
   TestExtensionPrefSetting(
-      &util::AllowedScriptingOnAllUrls, "runOnAllUrls", id);
+      base::Bind(&HasPrefsPermission, &util::IsIncognitoEnabled, profile(), id),
+      "incognitoAccess", id);
+  TestExtensionPrefSetting(
+      base::Bind(&HasPrefsPermission, &util::AllowFileAccess, profile(), id),
+      "fileAccess", id);
+  TestExtensionPrefSetting(
+      base::Bind(&HasAllUrlsPermission, extension, profile()), "runOnAllUrls",
+      id);
 }
 
 // Test developerPrivate.reload.
@@ -286,11 +313,12 @@ TEST_F(DeveloperPrivateApiUnitTest, DeveloperPrivatePackFunction) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   base::FilePath root_path = data_dir().AppendASCII("good_unpacked");
-  ASSERT_TRUE(base::CopyDirectory(root_path, temp_dir.path(), true));
+  ASSERT_TRUE(base::CopyDirectory(root_path, temp_dir.GetPath(), true));
 
-  base::FilePath temp_root_path = temp_dir.path().Append(root_path.BaseName());
-  base::FilePath crx_path = temp_dir.path().AppendASCII("good_unpacked.crx");
-  base::FilePath pem_path = temp_dir.path().AppendASCII("good_unpacked.pem");
+  base::FilePath temp_root_path =
+      temp_dir.GetPath().Append(root_path.BaseName());
+  base::FilePath crx_path = temp_dir.GetPath().AppendASCII("good_unpacked.crx");
+  base::FilePath pem_path = temp_dir.GetPath().AppendASCII("good_unpacked.pem");
 
   EXPECT_FALSE(base::PathExists(crx_path))
       << "crx should not exist before the test is run!";

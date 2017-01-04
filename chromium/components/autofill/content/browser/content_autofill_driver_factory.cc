@@ -16,7 +16,6 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
-#include "ipc/ipc_message_macros.h"
 
 namespace autofill {
 
@@ -95,20 +94,14 @@ ContentAutofillDriver* ContentAutofillDriverFactory::DriverForFrame(
   return mapping == frame_driver_map_.end() ? nullptr : mapping->second.get();
 }
 
-bool ContentAutofillDriverFactory::OnMessageReceived(
-    const IPC::Message& message,
-    content::RenderFrameHost* render_frame_host) {
-  return frame_driver_map_[render_frame_host]->HandleMessage(message);
-}
-
 void ContentAutofillDriverFactory::RenderFrameCreated(
     content::RenderFrameHost* render_frame_host) {
   auto insertion_result =
       frame_driver_map_.insert(std::make_pair(render_frame_host, nullptr));
   // This is called twice for the main frame.
   if (insertion_result.second) {  // This was the first time.
-    insertion_result.first->second = base::WrapUnique(new ContentAutofillDriver(
-        render_frame_host, client_, app_locale_, enable_download_manager_));
+    insertion_result.first->second = base::MakeUnique<ContentAutofillDriver>(
+        render_frame_host, client_, app_locale_, enable_download_manager_);
   }
 }
 

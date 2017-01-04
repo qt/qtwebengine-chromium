@@ -24,6 +24,7 @@ namespace GrVkMemory {
     bool AllocAndBindBufferMemory(const GrVkGpu* gpu,
                                   VkBuffer buffer,
                                   GrVkBuffer::Type type,
+                                  bool dynamic,
                                   GrVkAlloc* alloc);
     void FreeBufferMemory(const GrVkGpu* gpu, GrVkBuffer::Type type, const GrVkAlloc& alloc);
 
@@ -36,42 +37,81 @@ namespace GrVkMemory {
     VkPipelineStageFlags LayoutToPipelineStageFlags(const VkImageLayout layout);
 
     VkAccessFlags LayoutToSrcAccessMask(const VkImageLayout layout);
+
+    void FlushMappedAlloc(const GrVkGpu* gpu, const GrVkAlloc& alloc);
+    void InvalidateMappedAlloc(const GrVkGpu* gpu, const GrVkAlloc& alloc);
 }
 
-class GrVkSubHeap {
+class GrVkFreeListAlloc {
 public:
-    GrVkSubHeap(const GrVkGpu* gpu, uint32_t memoryTypeIndex, 
-                VkDeviceSize size, VkDeviceSize alignment);
-    ~GrVkSubHeap();
+    GrVkFreeListAlloc(VkDeviceSize size, VkDeviceSize alignment)
+        : fSize(size)
+        , fAlignment(alignment)
+        , fFreeSize(size)
+        , fLargestBlockSize(size)
+        , fLargestBlockOffset(0) {
+        Block* block = fFreeList.addToTail();
+        block->fOffset = 0;
+        block->fSize = fSize;
+    }
+    ~GrVkFreeListAlloc() {
+        this->reset();
+    }
 
-    uint32_t  memoryTypeIndex() const { return fMemoryTypeIndex;  }
     VkDeviceSize size() const { return fSize; }
     VkDeviceSize alignment() const { return fAlignment; }
     VkDeviceSize freeSize() const { return fFreeSize; }
     VkDeviceSize largestBlockSize() const { return fLargestBlockSize; }
-    VkDeviceMemory memory() { return fAlloc; }
 
     bool unallocated() const { return fSize == fFreeSize; }
 
-    bool alloc(VkDeviceSize size, GrVkAlloc* alloc);
-    void free(const GrVkAlloc& alloc);
+protected:
+    bool alloc(VkDeviceSize requestedSize, VkDeviceSize* allocOffset, VkDeviceSize* allocSize);
+    void free(VkDeviceSize allocOffset, VkDeviceSize allocSize);
 
-private:
+    void reset() {
+        fSize = 0;
+        fAlignment = 0;
+        fFreeSize = 0;
+        fLargestBlockSize = 0;
+        fFreeList.reset();
+    }
+
     struct Block {
         VkDeviceSize fOffset;
         VkDeviceSize fSize;
     };
     typedef SkTLList<Block, 16> FreeList;
 
-    const GrVkGpu* fGpu;
-    uint32_t       fMemoryTypeIndex;
     VkDeviceSize   fSize;
     VkDeviceSize   fAlignment;
     VkDeviceSize   fFreeSize;
     VkDeviceSize   fLargestBlockSize;
     VkDeviceSize   fLargestBlockOffset;
-    VkDeviceMemory fAlloc;
     FreeList       fFreeList;
+};
+
+class GrVkSubHeap : public GrVkFreeListAlloc {
+public:
+    GrVkSubHeap(const GrVkGpu* gpu, uint32_t memoryTypeIndex, uint32_t heapIndex,
+                VkDeviceSize size, VkDeviceSize alignment);
+    ~GrVkSubHeap();
+
+    uint32_t memoryTypeIndex() const { return fMemoryTypeIndex; }
+    VkDeviceMemory memory() { return fAlloc; }
+
+    bool alloc(VkDeviceSize requestedSize, GrVkAlloc* alloc);
+    void free(const GrVkAlloc& alloc);
+
+private:
+    const GrVkGpu* fGpu;
+#ifdef SK_DEBUG
+    uint32_t       fHeapIndex;
+#endif    
+    uint32_t       fMemoryTypeIndex;
+    VkDeviceMemory fAlloc;
+
+    typedef GrVkFreeListAlloc INHERITED;
 };
 
 class GrVkHeap {
@@ -93,26 +133,29 @@ public:
         }
     }
 
-    ~GrVkHeap();
+    ~GrVkHeap() {}
 
     VkDeviceSize allocSize() const { return fAllocSize; }
     VkDeviceSize usedSize() const { return fUsedSize; }
 
-    bool alloc(VkDeviceSize size, VkDeviceSize alignment, uint32_t memoryTypeIndex, 
-               GrVkAlloc* alloc) {
+    bool alloc(VkDeviceSize size, VkDeviceSize alignment, uint32_t memoryTypeIndex,
+               uint32_t heapIndex, GrVkAlloc* alloc) {
         SkASSERT(size > 0);
-        return (*this.*fAllocFunc)(size, alignment, memoryTypeIndex, alloc);
+        return (*this.*fAllocFunc)(size, alignment, memoryTypeIndex, heapIndex, alloc);
     }
     bool free(const GrVkAlloc& alloc);
 
 private:
-    typedef bool (GrVkHeap::*AllocFunc)(VkDeviceSize size, VkDeviceSize alignment, 
-                                        uint32_t memoryTypeIndex, GrVkAlloc* alloc);
+    typedef bool (GrVkHeap::*AllocFunc)(VkDeviceSize size, VkDeviceSize alignment,
+                                        uint32_t memoryTypeIndex, uint32_t heapIndex,
+                                        GrVkAlloc* alloc);
 
-    bool subAlloc(VkDeviceSize size, VkDeviceSize alignment, 
-                  uint32_t memoryTypeIndex, GrVkAlloc* alloc);
+    bool subAlloc(VkDeviceSize size, VkDeviceSize alignment,
+                  uint32_t memoryTypeIndex, uint32_t heapIndex,
+                  GrVkAlloc* alloc);
     bool singleAlloc(VkDeviceSize size, VkDeviceSize alignment,
-                     uint32_t memoryTypeIndex, GrVkAlloc* alloc);
+                     uint32_t memoryTypeIndex, uint32_t heapIndex,
+                     GrVkAlloc* alloc);
 
     const GrVkGpu*         fGpu;
     VkDeviceSize           fSubHeapSize;

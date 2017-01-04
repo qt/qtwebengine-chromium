@@ -7,13 +7,14 @@
 #ifndef XFA_FWL_CORE_FWL_NOTEIMP_H_
 #define XFA_FWL_CORE_FWL_NOTEIMP_H_
 
+#include <memory>
 #include <unordered_map>
 
 #include "xfa/fwl/core/cfwl_event.h"
 #include "xfa/fwl/core/cfwl_message.h"
 #include "xfa/fwl/core/fwl_error.h"
 #include "xfa/fwl/core/ifwl_widget.h"
-#include "xfa/fxgraphics/include/cfx_graphics.h"
+#include "xfa/fxgraphics/cfx_graphics.h"
 
 enum FWL_KeyFlag {
   FWL_KEYFLAG_Ctrl = 1 << 0,
@@ -115,7 +116,7 @@ class CFWL_NoteDriver {
   IFWL_Widget* m_pHover;
   IFWL_Widget* m_pFocus;
   IFWL_Widget* m_pGrab;
-  CFWL_NoteLoop* m_pNoteLoop;
+  std::unique_ptr<CFWL_NoteLoop> m_pNoteLoop;
 };
 
 class CFWL_EventTarget {
@@ -147,7 +148,7 @@ class CFWL_ToolTipContainer final {
   ~CFWL_ToolTipContainer();
 
   CFWL_ToolTipImp* m_pToolTipImp;
-  CFWL_CoreToolTipDP* m_ToolTipDp;
+  std::unique_ptr<CFWL_CoreToolTipDP> m_pToolTipDp;
 
  private:
   static CFWL_ToolTipContainer* s_pInstance;

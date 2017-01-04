@@ -15,7 +15,8 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/dns/host_resolver_impl.h"
-#include "net/dns/single_request_host_resolver.h"
+#include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
 
 namespace net {
 
@@ -60,16 +61,16 @@ void ResolverThread::Run() {
   net::HostResolver::Options options;
   options.max_concurrent_resolves = 6;
   options.max_retry_attempts = 3u;
-  std::unique_ptr<net::HostResolverImpl> resolver_impl(
+  std::unique_ptr<net::HostResolverImpl> resolver(
       new net::HostResolverImpl(options, &net_log));
-  SingleRequestHostResolver resolver(resolver_impl.get());
 
+  std::unique_ptr<net::HostResolver::Request> request;
   HostPortPair host_port_pair(host_, 80);
-  rv_ = resolver.Resolve(HostResolver::RequestInfo(host_port_pair),
-                         DEFAULT_PRIORITY, addresses_,
-                         base::Bind(&ResolverThread::OnResolutionComplete,
-                                    weak_factory_.GetWeakPtr()),
-                         BoundNetLog());
+  rv_ = resolver->Resolve(HostResolver::RequestInfo(host_port_pair),
+                          DEFAULT_PRIORITY, addresses_,
+                          base::Bind(&ResolverThread::OnResolutionComplete,
+                                     weak_factory_.GetWeakPtr()),
+                          &request, NetLogWithSource());
 
   if (rv_ != ERR_IO_PENDING)
     return;

@@ -9,18 +9,19 @@
 #include <memory>
 #include <string>
 
+#include "ash/common/system/accessibility_observer.h"
 #include "ash/common/wm/window_state_observer.h"
 #include "base/macros.h"
 #include "base/strings/string16.h"
 #include "components/exo/surface_delegate.h"
 #include "components/exo/surface_observer.h"
+#include "components/exo/wm_helper.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/hit_test.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/views/widget/widget_delegate.h"
-#include "ui/wm/public/activation_change_observer.h"
 
 namespace ash {
 class WindowResizer;
@@ -42,9 +43,10 @@ class ShellSurface : public SurfaceDelegate,
                      public SurfaceObserver,
                      public views::WidgetDelegate,
                      public views::View,
+                     public ash::AccessibilityObserver,
                      public ash::wm::WindowStateObserver,
                      public aura::WindowObserver,
-                     public aura::client::ActivationChangeObserver {
+                     public WMHelper::ActivationObserver {
  public:
   ShellSurface(Surface* surface,
                ShellSurface* parent,
@@ -112,8 +114,8 @@ class ShellSurface : public SurfaceDelegate,
   // Set fullscreen state for shell surface.
   void SetFullscreen(bool fullscreen);
 
-  // Pins the shell surface.
-  void SetPinned(bool pinned);
+  // Pins the shell surface. |trusted| flag is ignored when |pinned| is false.
+  void SetPinned(bool pinned, bool trusted);
 
   // Set title for surface.
   void SetTitle(const base::string16& title);
@@ -194,6 +196,10 @@ class ShellSurface : public SurfaceDelegate,
   // Overridden from views::View:
   gfx::Size GetPreferredSize() const override;
 
+  // Overridden from ash::AccessibilityObserver:
+  void OnAccessibilityModeChanged(
+      ash::AccessibilityNotificationVisibility notify) override;
+
   // Overridden from ash::wm::WindowStateObserver:
   void OnPreWindowStateTypeChange(ash::wm::WindowState* window_state,
                                   ash::wm::WindowStateType old_type) override;
@@ -206,9 +212,8 @@ class ShellSurface : public SurfaceDelegate,
                              const gfx::Rect& new_bounds) override;
   void OnWindowDestroying(aura::Window* window) override;
 
-  // Overridden from aura::client::ActivationChangeObserver:
+  // Overridden from WMHelper::ActivationObserver:
   void OnWindowActivated(
-      aura::client::ActivationChangeObserver::ActivationReason reason,
       aura::Window* gained_active,
       aura::Window* lost_active) override;
 
@@ -219,9 +224,7 @@ class ShellSurface : public SurfaceDelegate,
   // Overridden from ui::AcceleratorTarget:
   bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
 
-  const aura::Window* shadow_underlay_for_test() const {
-    return shadow_underlay_;
-  }
+  aura::Window* shadow_underlay() { return shadow_underlay_; }
 
  private:
   class ScopedConfigure;
@@ -292,6 +295,7 @@ class ShellSurface : public SurfaceDelegate,
   int pending_resize_component_ = HTCAPTION;
   aura::Window* shadow_overlay_ = nullptr;
   aura::Window* shadow_underlay_ = nullptr;
+  std::unique_ptr<ui::EventHandler> shadow_underlay_event_handler_;
   gfx::Rect shadow_content_bounds_;
   std::deque<Config> pending_configs_;
   std::unique_ptr<ash::WindowResizer> resizer_;

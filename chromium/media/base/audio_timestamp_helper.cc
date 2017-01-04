@@ -9,9 +9,22 @@
 
 namespace media {
 
+// static
+base::TimeDelta AudioTimestampHelper::FramesToTime(int64_t frames,
+                                                   int samples_per_second) {
+  DCHECK_GE(samples_per_second, 0);
+  return base::TimeDelta::FromMicroseconds(
+      frames * base::Time::kMicrosecondsPerSecond / samples_per_second);
+}
+
+// static
+int64_t AudioTimestampHelper::TimeToFrames(base::TimeDelta time,
+                                           int samples_per_second) {
+  return time.InSecondsF() * samples_per_second;
+}
+
 AudioTimestampHelper::AudioTimestampHelper(int samples_per_second)
-    : base_timestamp_(kNoTimestamp()),
-      frame_count_(0) {
+    : base_timestamp_(kNoTimestamp), frame_count_(0) {
   DCHECK_GT(samples_per_second, 0);
   double fps = samples_per_second;
   microseconds_per_frame_ = base::Time::kMicrosecondsPerSecond / fps;
@@ -28,7 +41,7 @@ base::TimeDelta AudioTimestampHelper::base_timestamp() const {
 
 void AudioTimestampHelper::AddFrames(int frame_count) {
   DCHECK_GE(frame_count, 0);
-  DCHECK(base_timestamp_ != kNoTimestamp());
+  DCHECK(base_timestamp_ != kNoTimestamp);
   frame_count_ += frame_count;
 }
 
@@ -43,7 +56,7 @@ base::TimeDelta AudioTimestampHelper::GetFrameDuration(int frame_count) const {
 }
 
 int64_t AudioTimestampHelper::GetFramesToTarget(base::TimeDelta target) const {
-  DCHECK(base_timestamp_ != kNoTimestamp());
+  DCHECK(base_timestamp_ != kNoTimestamp);
   DCHECK(target >= base_timestamp_);
 
   int64_t delta_in_us = (target - GetTimestamp()).InMicroseconds();
@@ -67,7 +80,7 @@ int64_t AudioTimestampHelper::GetFramesToTarget(base::TimeDelta target) const {
 base::TimeDelta AudioTimestampHelper::ComputeTimestamp(
     int64_t frame_count) const {
   DCHECK_GE(frame_count, 0);
-  DCHECK(base_timestamp_ != kNoTimestamp());
+  DCHECK(base_timestamp_ != kNoTimestamp);
   double frames_us = microseconds_per_frame_ * frame_count;
   return base_timestamp_ + base::TimeDelta::FromMicroseconds(frames_us);
 }

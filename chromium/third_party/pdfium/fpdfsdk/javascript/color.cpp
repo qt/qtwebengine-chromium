@@ -57,39 +57,43 @@ color::color(CJS_Object* pJSObject) : CJS_EmbedObj(pJSObject) {
 
 color::~color() {}
 
-void color::ConvertPWLColorToArray(const CPWL_Color& color, CJS_Array& array) {
+void color::ConvertPWLColorToArray(CJS_Runtime* pRuntime,
+                                   const CPWL_Color& color,
+                                   CJS_Array* array) {
   switch (color.nColorType) {
     case COLORTYPE_TRANSPARENT:
-      array.SetElement(0, CJS_Value(array.GetJSRuntime(), "T"));
+      array->SetElement(pRuntime, 0, CJS_Value(pRuntime, "T"));
       break;
     case COLORTYPE_GRAY:
-      array.SetElement(0, CJS_Value(array.GetJSRuntime(), "G"));
-      array.SetElement(1, CJS_Value(array.GetJSRuntime(), color.fColor1));
+      array->SetElement(pRuntime, 0, CJS_Value(pRuntime, "G"));
+      array->SetElement(pRuntime, 1, CJS_Value(pRuntime, color.fColor1));
       break;
     case COLORTYPE_RGB:
-      array.SetElement(0, CJS_Value(array.GetJSRuntime(), "RGB"));
-      array.SetElement(1, CJS_Value(array.GetJSRuntime(), color.fColor1));
-      array.SetElement(2, CJS_Value(array.GetJSRuntime(), color.fColor2));
-      array.SetElement(3, CJS_Value(array.GetJSRuntime(), color.fColor3));
+      array->SetElement(pRuntime, 0, CJS_Value(pRuntime, "RGB"));
+      array->SetElement(pRuntime, 1, CJS_Value(pRuntime, color.fColor1));
+      array->SetElement(pRuntime, 2, CJS_Value(pRuntime, color.fColor2));
+      array->SetElement(pRuntime, 3, CJS_Value(pRuntime, color.fColor3));
       break;
     case COLORTYPE_CMYK:
-      array.SetElement(0, CJS_Value(array.GetJSRuntime(), "CMYK"));
-      array.SetElement(1, CJS_Value(array.GetJSRuntime(), color.fColor1));
-      array.SetElement(2, CJS_Value(array.GetJSRuntime(), color.fColor2));
-      array.SetElement(3, CJS_Value(array.GetJSRuntime(), color.fColor3));
-      array.SetElement(4, CJS_Value(array.GetJSRuntime(), color.fColor4));
+      array->SetElement(pRuntime, 0, CJS_Value(pRuntime, "CMYK"));
+      array->SetElement(pRuntime, 1, CJS_Value(pRuntime, color.fColor1));
+      array->SetElement(pRuntime, 2, CJS_Value(pRuntime, color.fColor2));
+      array->SetElement(pRuntime, 3, CJS_Value(pRuntime, color.fColor3));
+      array->SetElement(pRuntime, 4, CJS_Value(pRuntime, color.fColor4));
       break;
   }
 }
 
-void color::ConvertArrayToPWLColor(CJS_Array& array, CPWL_Color& color) {
-  int nArrayLen = array.GetLength();
+void color::ConvertArrayToPWLColor(CJS_Runtime* pRuntime,
+                                   const CJS_Array& array,
+                                   CPWL_Color* color) {
+  int nArrayLen = array.GetLength(pRuntime);
   if (nArrayLen < 1)
     return;
 
-  CJS_Value value(array.GetJSRuntime());
-  array.GetElement(0, value);
-  CFX_ByteString sSpace = value.ToCFXByteString();
+  CJS_Value value(pRuntime);
+  array.GetElement(pRuntime, 0, value);
+  CFX_ByteString sSpace = value.ToCFXByteString(pRuntime);
 
   double d1 = 0;
   double d2 = 0;
@@ -97,51 +101,52 @@ void color::ConvertArrayToPWLColor(CJS_Array& array, CPWL_Color& color) {
   double d4 = 0;
 
   if (nArrayLen > 1) {
-    array.GetElement(1, value);
-    d1 = value.ToDouble();
+    array.GetElement(pRuntime, 1, value);
+    d1 = value.ToDouble(pRuntime);
   }
 
   if (nArrayLen > 2) {
-    array.GetElement(2, value);
-    d2 = value.ToDouble();
+    array.GetElement(pRuntime, 2, value);
+    d2 = value.ToDouble(pRuntime);
   }
 
   if (nArrayLen > 3) {
-    array.GetElement(3, value);
-    d3 = value.ToDouble();
+    array.GetElement(pRuntime, 3, value);
+    d3 = value.ToDouble(pRuntime);
   }
 
   if (nArrayLen > 4) {
-    array.GetElement(4, value);
-    d4 = value.ToDouble();
+    array.GetElement(pRuntime, 4, value);
+    d4 = value.ToDouble(pRuntime);
   }
 
   if (sSpace == "T") {
-    color = CPWL_Color(COLORTYPE_TRANSPARENT);
+    *color = CPWL_Color(COLORTYPE_TRANSPARENT);
   } else if (sSpace == "G") {
-    color = CPWL_Color(COLORTYPE_GRAY, (FX_FLOAT)d1);
+    *color = CPWL_Color(COLORTYPE_GRAY, (FX_FLOAT)d1);
   } else if (sSpace == "RGB") {
-    color = CPWL_Color(COLORTYPE_RGB, (FX_FLOAT)d1, (FX_FLOAT)d2, (FX_FLOAT)d3);
+    *color =
+        CPWL_Color(COLORTYPE_RGB, (FX_FLOAT)d1, (FX_FLOAT)d2, (FX_FLOAT)d3);
   } else if (sSpace == "CMYK") {
-    color = CPWL_Color(COLORTYPE_CMYK, (FX_FLOAT)d1, (FX_FLOAT)d2, (FX_FLOAT)d3,
-                       (FX_FLOAT)d4);
+    *color = CPWL_Color(COLORTYPE_CMYK, (FX_FLOAT)d1, (FX_FLOAT)d2,
+                        (FX_FLOAT)d3, (FX_FLOAT)d4);
   }
 }
 
-#define JS_IMPLEMENT_COLORPROP(prop, var)                 \
-  FX_BOOL color::prop(IJS_Context* cc, CJS_PropValue& vp, \
-                      CFX_WideString& sError) {           \
-    CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc); \
-    CJS_Array array(pRuntime);                            \
-    if (vp.IsGetting()) {                                 \
-      ConvertPWLColorToArray(var, array);                 \
-      vp << array;                                        \
-    } else {                                              \
-      if (!vp.ConvertToArray(array))                      \
-        return FALSE;                                     \
-      ConvertArrayToPWLColor(array, var);                 \
-    }                                                     \
-    return TRUE;                                          \
+#define JS_IMPLEMENT_COLORPROP(prop, var)                    \
+  FX_BOOL color::prop(IJS_Context* cc, CJS_PropValue& vp,    \
+                      CFX_WideString& sError) {              \
+    CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);    \
+    CJS_Array array;                                         \
+    if (vp.IsGetting()) {                                    \
+      ConvertPWLColorToArray(pRuntime, var, &array);         \
+      vp << array;                                           \
+    } else {                                                 \
+      if (!vp.GetJSValue()->ConvertToArray(pRuntime, array)) \
+        return FALSE;                                        \
+      ConvertArrayToPWLColor(pRuntime, array, &var);         \
+    }                                                        \
+    return TRUE;                                             \
   }
 
 JS_IMPLEMENT_COLORPROP(transparent, m_crTransparent)
@@ -166,14 +171,14 @@ FX_BOOL color::convert(IJS_Context* cc,
     return FALSE;
 
   CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
-  CJS_Array aSource(pRuntime);
-  if (!params[0].ConvertToArray(aSource))
+  CJS_Array aSource;
+  if (!params[0].ConvertToArray(pRuntime, aSource))
     return FALSE;
 
   CPWL_Color crSource;
-  ConvertArrayToPWLColor(aSource, crSource);
+  ConvertArrayToPWLColor(pRuntime, aSource, &crSource);
 
-  CFX_ByteString sDestSpace = params[1].ToCFXByteString();
+  CFX_ByteString sDestSpace = params[1].ToCFXByteString(pRuntime);
   int nColorType = COLORTYPE_TRANSPARENT;
 
   if (sDestSpace == "T") {
@@ -186,11 +191,11 @@ FX_BOOL color::convert(IJS_Context* cc,
     nColorType = COLORTYPE_CMYK;
   }
 
-  CJS_Array aDest(pRuntime);
+  CJS_Array aDest;
   CPWL_Color crDest = crSource;
   crDest.ConvertColorType(nColorType);
-  ConvertPWLColorToArray(crDest, aDest);
-  vRet = aDest;
+  ConvertPWLColorToArray(pRuntime, crDest, &aDest);
+  vRet = CJS_Value(pRuntime, aDest);
 
   return TRUE;
 }
@@ -203,18 +208,18 @@ FX_BOOL color::equal(IJS_Context* cc,
     return FALSE;
 
   CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
-  CJS_Array array1(pRuntime);
-  CJS_Array array2(pRuntime);
-  if (!params[0].ConvertToArray(array1))
+  CJS_Array array1;
+  CJS_Array array2;
+  if (!params[0].ConvertToArray(pRuntime, array1))
     return FALSE;
-  if (!params[1].ConvertToArray(array2))
+  if (!params[1].ConvertToArray(pRuntime, array2))
     return FALSE;
 
   CPWL_Color color1;
   CPWL_Color color2;
-  ConvertArrayToPWLColor(array1, color1);
-  ConvertArrayToPWLColor(array2, color2);
+  ConvertArrayToPWLColor(pRuntime, array1, &color1);
+  ConvertArrayToPWLColor(pRuntime, array2, &color2);
   color1.ConvertColorType(color2.nColorType);
-  vRet = color1 == color2;
+  vRet = CJS_Value(pRuntime, color1 == color2);
   return TRUE;
 }

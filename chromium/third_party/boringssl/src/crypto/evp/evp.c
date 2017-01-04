@@ -108,9 +108,9 @@ void EVP_PKEY_free(EVP_PKEY *pkey) {
   OPENSSL_free(pkey);
 }
 
-EVP_PKEY *EVP_PKEY_up_ref(EVP_PKEY *pkey) {
+int EVP_PKEY_up_ref(EVP_PKEY *pkey) {
   CRYPTO_refcount_inc(&pkey->references);
-  return pkey;
+  return 1;
 }
 
 int EVP_PKEY_is_opaque(const EVP_PKEY *pkey) {
@@ -301,6 +301,8 @@ EC_KEY *EVP_PKEY_get1_EC_KEY(EVP_PKEY *pkey) {
   }
   return ec_key;
 }
+
+DH *EVP_PKEY_get0_DH(EVP_PKEY *pkey) { return NULL; }
 
 int EVP_PKEY_assign(EVP_PKEY *pkey, int type, void *key) {
   if (!EVP_PKEY_set_type(pkey, type)) {

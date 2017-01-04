@@ -13,6 +13,7 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/media/surface_view_manager_messages_android.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "media/base/surface_manager.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -20,9 +21,8 @@ namespace content {
 namespace {
 void SendDestroyingVideoSurfaceOnIO(int surface_id,
                                     const base::Closure& done_cb) {
-  GpuProcessHost* host =
-      GpuProcessHost::Get(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
-                          CAUSE_FOR_GPU_LAUNCH_NO_LAUNCH);
+  GpuProcessHost* host = GpuProcessHost::Get(
+      GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED, false /* force_create */);
   if (host)
     host->SendDestroyingVideoSurface(surface_id, done_cb);
   else
@@ -51,7 +51,7 @@ void BrowserSurfaceViewManager::SetVideoSurface(gl::ScopedJavaSurface surface) {
     // surface directly, so there's no need to add a valid native widget here.
     surface_id_ = GpuSurfaceTracker::Get()->AddSurfaceForNativeWidget(
         gfx::kNullAcceleratedWidget);
-    RegisterViewSurface(surface_id_, surface.j_surface().obj());
+    RegisterViewSurface(surface_id_, surface.j_surface());
     SendSurfaceID(surface_id_);
   }
 }
@@ -82,10 +82,15 @@ void BrowserSurfaceViewManager::OnCreateFullscreenSurface(
     return;
   }
 
-  ContentViewCore* cvc = ContentViewCore::FromWebContents(
-      WebContents::FromRenderFrameHost(render_frame_host_));
-  content_video_view_.reset(new ContentVideoView(this, cvc));
-  OnNaturalSizeChanged(video_natural_size);
+  WebContents* web_contents =
+      WebContents::FromRenderFrameHost(render_frame_host_);
+  if (!web_contents->GetDelegate())
+    return;
+  ContentViewCore* cvc = ContentViewCore::FromWebContents(web_contents);
+  content_video_view_.reset(
+      new ContentVideoView(this, cvc,
+          web_contents->GetDelegate()->GetContentVideoViewEmbedder(),
+          video_natural_size));
 }
 
 void BrowserSurfaceViewManager::OnNaturalSizeChanged(const gfx::Size& size) {

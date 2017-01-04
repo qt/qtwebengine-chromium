@@ -316,8 +316,8 @@ typedef struct _IPDF_JsPlatform {
 #define FXCT_HAND 5
 
 /**
- * Declares of a pointer type to the callback function for the FFI_SetTimer
- *method.
+ * Function signature for the callback function passed to the FFI_SetTimer
+ * method.
  * Parameters:
  *          idEvent     -   Identifier of the timer.
  * Return value:
@@ -356,12 +356,12 @@ typedef struct _FPDF_SYSTEMTIME {
  * @name Macro Definitions for Right Context Menu Features Of XFA Fields
  */
 /*@{*/
-#define FXFA_MEMU_COPY 1
-#define FXFA_MEMU_CUT 2
-#define FXFA_MEMU_SELECTALL 4
-#define FXFA_MEMU_UNDO 8
-#define FXFA_MEMU_REDO 16
-#define FXFA_MEMU_PASTE 32
+#define FXFA_MENU_COPY 1
+#define FXFA_MENU_CUT 2
+#define FXFA_MENU_SELECTALL 4
+#define FXFA_MENU_UNDO 8
+#define FXFA_MENU_REDO 16
+#define FXFA_MENU_PASTE 32
 /*@}*/
 
 // file type
@@ -490,19 +490,18 @@ typedef struct _FPDF_FORMFILLINFO {
 
   /**
   * Method: FFI_SetTimer
-  *           This method installs a system timer. A time-out value is
-  * specified,
-  *           and every time a time-out occurs, the system passes a message to
-  *           the TimerProc callback function.
+  *       This method installs a system timer. An interval value is specified,
+  *       and every time that interval elapses, the system must call into the
+  *       callback function with the timer ID as returned by this function.
   * Interface Version:
-  *           1
+  *       1
   * Implementation Required:
-  *           yes
+  *       yes
   * Parameters:
   *       pThis       -   Pointer to the interface structure itself.
   *       uElapse     -   Specifies the time-out value, in milliseconds.
   *       lpTimerFunc -   A pointer to the callback function-TimerCallback.
-  *   Return value:
+  * Return value:
   *       The timer identifier of the new timer if the function is successful.
   *       An application passes this value to the FFI_KillTimer method to kill
   *       the timer. Nonzero if it is successful; otherwise, it is zero.
@@ -513,16 +512,16 @@ typedef struct _FPDF_FORMFILLINFO {
 
   /**
   * Method: FFI_KillTimer
-  *           This method kills the timer event identified by nIDEvent, set by
-  * an earlier call to FFI_SetTimer.
+  *       This method uninstalls a system timer identified by nIDEvent, as
+  *       set by an earlier call to FFI_SetTimer.
   * Interface Version:
-  *           1
+  *       1
   * Implementation Required:
-  *           yes
+  *       yes
   * Parameters:
   *       pThis       -   Pointer to the interface structure itself.
-  *       nTimerID    -   The timer ID return by FFI_SetTimer function.
-  *   Return value:
+  *       nTimerID    -   The timer ID returned by FFI_SetTimer function.
+  * Return value:
   *       None.
   * */
   void (*FFI_KillTimer)(struct _FPDF_FORMFILLINFO* pThis, int nTimerID);
@@ -611,6 +610,8 @@ typedef struct _FPDF_FORMFILLINFO {
   * Return value:
   *       The page rotation. Should be 0(0 degree),1(90 degree),2(180
   * degree),3(270 degree), in a clockwise direction.
+  *
+  * Note: Unused.
   * */
   int (*FFI_GetRotation)(struct _FPDF_FORMFILLINFO* pThis, FPDF_PAGE page);
 
@@ -684,10 +685,20 @@ typedef struct _FPDF_FORMFILLINFO {
   * Parameters:
   *       pThis           -   Pointer to the interface structure itself.
   *       nPageIndex      -   The index of the PDF page.
-  *       zoomMode        -   The zoom mode for viewing page.See Macros
-  *"PDFZOOM_XXX" defined in "fpdfdoc.h".
+  *       zoomMode        -   The zoom mode for viewing page. See below.
   *       fPosArray       -   The float array which carries the position info.
   *       sizeofArray     -   The size of float array.
+  *
+  * PDFZoom values:
+  *   - XYZ = 1
+  *   - FITPAGE = 2
+  *   - FITHORZ = 3
+  *   - FITVERT = 4
+  *   - FITRECT = 5
+  *   - FITBBOX = 6
+  *   - FITBHORZ = 7
+  *   - FITBVERT = 8
+  *
   * Return value:
   *       None.
   * Comments:
@@ -861,7 +872,7 @@ typedef struct _FPDF_FORMFILLINFO {
   *function.
   *       hWidget         -   Handle to XFA fields.
   *       menuFlag        -   The menu flags. Please refer to macro definition
-  *of FXFA_MEMU_XXX and this can be one or a combination of these macros.
+  *of FXFA_MENU_XXX and this can be one or a combination of these macros.
   *       x               -   X position of the client area in PDF page
   *coordinate.
   *       y               -   Y position of the client area in PDF page
@@ -1474,7 +1485,8 @@ DLLEXPORT void STDCALL FPDF_RemoveFormFieldHighlight(FPDF_FORMHANDLE hHandle);
 
 /**
 * Function: FPDF_FFLDraw
-*           Render FormFeilds on a page to a device independent bitmap.
+*           Render FormFields and popup window on a page to a device independent
+*bitmap.
 * Parameters:
 *           hHandle     -   Handle to the form fill module. Returned by
 *FPDFDOC_InitFormFillEnvironment.
@@ -1499,13 +1511,15 @@ DLLEXPORT void STDCALL FPDF_RemoveFormFieldHighlight(FPDF_FORMHANDLE hHandle);
 * Return Value:
 *           None.
 * Comments:
-*           This method is designed to only render annotations and FormFields on
-*the page.
-*           Without FPDF_ANNOT specified for flags, Rendering functions such as
-*FPDF_RenderPageBitmap or FPDF_RenderPageBitmap_Start will only render page
-*contents(without annotations) to a bitmap.
-*           In order to implement the FormFill functions,Implementation should
-*call this method after rendering functions finish rendering the page contents.
+*           This function is designed to render annotations that are
+*user-interactive, which are widget annotation (for FormFields) and popup
+*annotation.
+*           With FPDF_ANNOT flag, this function will render popup annotation
+*when users mouse-hover on non-widget annotation. Regardless of FPDF_ANNOT flag,
+*this function will always render widget annotations for FormFields.
+*           In order to implement the FormFill functions, implementation should
+*call this function after rendering functions, such as FPDF_RenderPageBitmap or
+*FPDF_RenderPageBitmap_Start, finish rendering the page contents.
 **/
 DLLEXPORT void STDCALL FPDF_FFLDraw(FPDF_FORMHANDLE hHandle,
                                     FPDF_BITMAP bitmap,

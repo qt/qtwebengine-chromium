@@ -4,10 +4,13 @@
 # found in the LICENSE file.
 
 import argparse
+import codecs
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+tracing_path = os.path.abspath(os.path.join(
+  os.path.dirname(os.path.realpath(__file__)), '..'))
+sys.path.append(tracing_path)
 from tracing_build import html2trace
 
 
@@ -38,8 +41,9 @@ def main():
   else:
     gzipped_output = args.trace_path.endswith('.gz')
 
-  saved_paths = html2trace.CopyTraceDataFromHTMLFilePath(
-      args.html_path, args.trace_path, gzipped_output)
+  with codecs.open(args.html_path, mode='r', encoding='utf-8') as html_file:
+    saved_paths = html2trace.CopyTraceDataFromHTMLFilePath(
+        html_file, args.trace_path, gzipped_output)
 
   if not args.quiet:
     print '\n'.join(saved_paths)

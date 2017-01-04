@@ -18,12 +18,18 @@
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/log/net_log_with_source.h"
 #include "net/log/test_net_log.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/stream_socket.h"
 #include "net/socket/transport_client_socket_pool_test_util.h"
+#include "net/test/gtest_util.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using net::test::IsError;
+using net::test::IsOk;
 
 namespace net {
 
@@ -177,12 +183,12 @@ TEST_F(TransportClientSocketPoolTest, Basic) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("a", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool_, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool_, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
   TestLoadTimingInfoConnectedNotReused(handle);
@@ -199,7 +205,7 @@ TEST_F(TransportClientSocketPoolTest, SetResolvePriorityOnInit) {
     EXPECT_EQ(ERR_IO_PENDING,
               handle.Init("a", params_, priority,
                           ClientSocketPool::RespectLimits::ENABLED,
-                          callback.callback(), &pool_, BoundNetLog()));
+                          callback.callback(), &pool_, NetLogWithSource()));
     EXPECT_EQ(priority, host_resolver_->last_request_priority());
   }
 }
@@ -215,11 +221,12 @@ TEST_F(TransportClientSocketPoolTest, InitHostResolutionFailure) {
   EXPECT_EQ(ERR_IO_PENDING,
             handle.Init("a", dest, kDefaultPriority,
                         ClientSocketPool::RespectLimits::ENABLED,
-                        callback.callback(), &pool_, BoundNetLog()));
-  EXPECT_EQ(ERR_NAME_NOT_RESOLVED, callback.WaitForResult());
+                        callback.callback(), &pool_, NetLogWithSource()));
+  EXPECT_THAT(callback.WaitForResult(), IsError(ERR_NAME_NOT_RESOLVED));
   ASSERT_EQ(1u, handle.connection_attempts().size());
   EXPECT_TRUE(handle.connection_attempts()[0].endpoint.address().empty());
-  EXPECT_EQ(ERR_NAME_NOT_RESOLVED, handle.connection_attempts()[0].result);
+  EXPECT_THAT(handle.connection_attempts()[0].result,
+              IsError(ERR_NAME_NOT_RESOLVED));
 }
 
 TEST_F(TransportClientSocketPoolTest, InitConnectionFailure) {
@@ -230,51 +237,53 @@ TEST_F(TransportClientSocketPoolTest, InitConnectionFailure) {
   EXPECT_EQ(ERR_IO_PENDING,
             handle.Init("a", params_, kDefaultPriority,
                         ClientSocketPool::RespectLimits::ENABLED,
-                        callback.callback(), &pool_, BoundNetLog()));
-  EXPECT_EQ(ERR_CONNECTION_FAILED, callback.WaitForResult());
+                        callback.callback(), &pool_, NetLogWithSource()));
+  EXPECT_THAT(callback.WaitForResult(), IsError(ERR_CONNECTION_FAILED));
   ASSERT_EQ(1u, handle.connection_attempts().size());
   EXPECT_EQ("127.0.0.1:80",
             handle.connection_attempts()[0].endpoint.ToString());
-  EXPECT_EQ(ERR_CONNECTION_FAILED, handle.connection_attempts()[0].result);
+  EXPECT_THAT(handle.connection_attempts()[0].result,
+              IsError(ERR_CONNECTION_FAILED));
 
   // Make the host resolutions complete synchronously this time.
   host_resolver_->set_synchronous_mode(true);
   EXPECT_EQ(ERR_CONNECTION_FAILED,
             handle.Init("a", params_, kDefaultPriority,
                         ClientSocketPool::RespectLimits::ENABLED,
-                        callback.callback(), &pool_, BoundNetLog()));
+                        callback.callback(), &pool_, NetLogWithSource()));
   ASSERT_EQ(1u, handle.connection_attempts().size());
   EXPECT_EQ("127.0.0.1:80",
             handle.connection_attempts()[0].endpoint.ToString());
-  EXPECT_EQ(ERR_CONNECTION_FAILED, handle.connection_attempts()[0].result);
+  EXPECT_THAT(handle.connection_attempts()[0].result,
+              IsError(ERR_CONNECTION_FAILED));
 }
 
 TEST_F(TransportClientSocketPoolTest, PendingRequests) {
   // First request finishes asynchronously.
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, (*requests())[0]->WaitForResult());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT((*requests())[0]->WaitForResult(), IsOk());
 
   // Make all subsequent host resolutions complete synchronously.
   host_resolver_->set_synchronous_mode(true);
 
   // Rest of them finish synchronously, until we reach the per-group limit.
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
 
   // The rest are pending since we've used all active sockets.
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", HIGHEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOWEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOWEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", MEDIUM));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOW));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", HIGHEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOWEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", MEDIUM));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", MEDIUM));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", HIGHEST));
+  EXPECT_THAT(StartRequest("a", HIGHEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", LOWEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", LOWEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", MEDIUM), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", LOW), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", HIGHEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", LOWEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", MEDIUM), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", MEDIUM), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", HIGHEST), IsError(ERR_IO_PENDING));
 
   ReleaseAllConnections(ClientSocketPoolTest::KEEP_ALIVE);
 
@@ -309,34 +318,34 @@ TEST_F(TransportClientSocketPoolTest, PendingRequests) {
 
 TEST_F(TransportClientSocketPoolTest, PendingRequests_NoKeepAlive) {
   // First request finishes asynchronously.
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, (*requests())[0]->WaitForResult());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT((*requests())[0]->WaitForResult(), IsOk());
 
   // Make all subsequent host resolutions complete synchronously.
   host_resolver_->set_synchronous_mode(true);
 
   // Rest of them finish synchronously, until we reach the per-group limit.
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
 
   // The rest are pending since we've used all active sockets.
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
 
   ReleaseAllConnections(ClientSocketPoolTest::NO_KEEP_ALIVE);
 
   // The pending requests should finish successfully.
-  EXPECT_EQ(OK, (*requests())[6]->WaitForResult());
-  EXPECT_EQ(OK, (*requests())[7]->WaitForResult());
-  EXPECT_EQ(OK, (*requests())[8]->WaitForResult());
-  EXPECT_EQ(OK, (*requests())[9]->WaitForResult());
-  EXPECT_EQ(OK, (*requests())[10]->WaitForResult());
+  EXPECT_THAT((*requests())[6]->WaitForResult(), IsOk());
+  EXPECT_THAT((*requests())[7]->WaitForResult(), IsOk());
+  EXPECT_THAT((*requests())[8]->WaitForResult(), IsOk());
+  EXPECT_THAT((*requests())[9]->WaitForResult(), IsOk());
+  EXPECT_THAT((*requests())[10]->WaitForResult(), IsOk());
 
   EXPECT_EQ(static_cast<int>(requests()->size()),
             client_socket_factory_.allocation_count());
@@ -354,7 +363,7 @@ TEST_F(TransportClientSocketPoolTest, CancelRequestClearGroup) {
   EXPECT_EQ(ERR_IO_PENDING,
             handle.Init("a", params_, kDefaultPriority,
                         ClientSocketPool::RespectLimits::ENABLED,
-                        callback.callback(), &pool_, BoundNetLog()));
+                        callback.callback(), &pool_, NetLogWithSource()));
   handle.Reset();
 }
 
@@ -367,15 +376,15 @@ TEST_F(TransportClientSocketPoolTest, TwoRequestsCancelOne) {
   EXPECT_EQ(ERR_IO_PENDING,
             handle.Init("a", params_, kDefaultPriority,
                         ClientSocketPool::RespectLimits::ENABLED,
-                        callback.callback(), &pool_, BoundNetLog()));
+                        callback.callback(), &pool_, NetLogWithSource()));
   EXPECT_EQ(ERR_IO_PENDING,
             handle2.Init("a", params_, kDefaultPriority,
                          ClientSocketPool::RespectLimits::ENABLED,
-                         callback2.callback(), &pool_, BoundNetLog()));
+                         callback2.callback(), &pool_, NetLogWithSource()));
 
   handle.Reset();
 
-  EXPECT_EQ(OK, callback2.WaitForResult());
+  EXPECT_THAT(callback2.WaitForResult(), IsOk());
   handle2.Reset();
 }
 
@@ -387,7 +396,7 @@ TEST_F(TransportClientSocketPoolTest, ConnectCancelConnect) {
   EXPECT_EQ(ERR_IO_PENDING,
             handle.Init("a", params_, kDefaultPriority,
                         ClientSocketPool::RespectLimits::ENABLED,
-                        callback.callback(), &pool_, BoundNetLog()));
+                        callback.callback(), &pool_, NetLogWithSource()));
 
   handle.Reset();
 
@@ -395,7 +404,7 @@ TEST_F(TransportClientSocketPoolTest, ConnectCancelConnect) {
   EXPECT_EQ(ERR_IO_PENDING,
             handle.Init("a", params_, kDefaultPriority,
                         ClientSocketPool::RespectLimits::ENABLED,
-                        callback2.callback(), &pool_, BoundNetLog()));
+                        callback2.callback(), &pool_, NetLogWithSource()));
 
   host_resolver_->set_synchronous_mode(true);
   // At this point, handle has two ConnectingSockets out for it.  Due to the
@@ -407,7 +416,7 @@ TEST_F(TransportClientSocketPoolTest, ConnectCancelConnect) {
   // If the first one is not cancelled, it will advance the load state, and
   // then the second one will crash.
 
-  EXPECT_EQ(OK, callback2.WaitForResult());
+  EXPECT_THAT(callback2.WaitForResult(), IsOk());
   EXPECT_FALSE(callback.have_result());
 
   handle.Reset();
@@ -415,29 +424,29 @@ TEST_F(TransportClientSocketPoolTest, ConnectCancelConnect) {
 
 TEST_F(TransportClientSocketPoolTest, CancelRequest) {
   // First request finishes asynchronously.
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, (*requests())[0]->WaitForResult());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT((*requests())[0]->WaitForResult(), IsOk());
 
   // Make all subsequent host resolutions complete synchronously.
   host_resolver_->set_synchronous_mode(true);
 
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsOk());
 
   // Reached per-group limit, queue up requests.
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOWEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", HIGHEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", HIGHEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", MEDIUM));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", MEDIUM));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOW));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", HIGHEST));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOW));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOW));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", LOWEST));
+  EXPECT_THAT(StartRequest("a", LOWEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", HIGHEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", HIGHEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", MEDIUM), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", MEDIUM), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", LOW), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", HIGHEST), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", LOW), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", LOW), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", LOWEST), IsError(ERR_IO_PENDING));
 
   // Cancel a request.
   size_t index_to_cancel = kMaxSocketsPerGroup + 2;
@@ -490,7 +499,7 @@ class RequestSocketCallback : public TestCompletionCallbackBase {
  private:
   void OnComplete(int result) {
     SetResult(result);
-    ASSERT_EQ(OK, result);
+    ASSERT_THAT(result, IsOk());
 
     if (!within_callback_) {
       // Don't allow reuse of the socket.  Disconnect it and then release it and
@@ -508,8 +517,8 @@ class RequestSocketCallback : public TestCompletionCallbackBase {
           TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT));
       int rv = handle_->Init("a", dest, LOWEST,
                              ClientSocketPool::RespectLimits::ENABLED,
-                             callback(), pool_, BoundNetLog());
-      EXPECT_EQ(OK, rv);
+                             callback(), pool_, NetLogWithSource());
+      EXPECT_THAT(rv, IsOk());
     }
   }
 
@@ -529,14 +538,14 @@ TEST_F(TransportClientSocketPoolTest, RequestTwice) {
       TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT));
   int rv =
       handle.Init("a", dest, LOWEST, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool_, BoundNetLog());
-  ASSERT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool_, NetLogWithSource());
+  ASSERT_THAT(rv, IsError(ERR_IO_PENDING));
 
   // The callback is going to request "www.google.com". We want it to complete
   // synchronously this time.
   host_resolver_->set_synchronous_mode(true);
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
 
   handle.Reset();
 }
@@ -548,15 +557,15 @@ TEST_F(TransportClientSocketPoolTest, CancelActiveRequestWithPendingRequests) {
       MockTransportClientSocketFactory::MOCK_PENDING_CLIENT_SOCKET);
 
   // Queue up all the requests
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
-  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
+  EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
 
   // Now, kMaxSocketsPerGroup requests should be active.  Let's cancel them.
   ASSERT_LE(kMaxSocketsPerGroup, static_cast<int>(requests()->size()));
@@ -565,7 +574,7 @@ TEST_F(TransportClientSocketPoolTest, CancelActiveRequestWithPendingRequests) {
 
   // Let's wait for the rest to complete now.
   for (size_t i = kMaxSocketsPerGroup; i < requests()->size(); ++i) {
-    EXPECT_EQ(OK, (*requests())[i]->WaitForResult());
+    EXPECT_THAT((*requests())[i]->WaitForResult(), IsOk());
     (*requests())[i]->handle()->Reset();
   }
 
@@ -582,10 +591,11 @@ TEST_F(TransportClientSocketPoolTest, FailingActiveRequestWithPendingRequests) {
 
   // Queue up all the requests
   for (int i = 0; i < kNumRequests; i++)
-    EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
+    EXPECT_THAT(StartRequest("a", kDefaultPriority), IsError(ERR_IO_PENDING));
 
   for (int i = 0; i < kNumRequests; i++)
-    EXPECT_EQ(ERR_CONNECTION_FAILED, (*requests())[i]->WaitForResult());
+    EXPECT_THAT((*requests())[i]->WaitForResult(),
+                IsError(ERR_CONNECTION_FAILED));
 }
 
 TEST_F(TransportClientSocketPoolTest, IdleSocketLoadTiming) {
@@ -593,12 +603,12 @@ TEST_F(TransportClientSocketPoolTest, IdleSocketLoadTiming) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("a", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool_, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool_, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
   TestLoadTimingInfoConnectedNotReused(handle);
@@ -611,8 +621,8 @@ TEST_F(TransportClientSocketPoolTest, IdleSocketLoadTiming) {
   EXPECT_EQ(1, pool_.IdleSocketCount());
 
   rv = handle.Init("a", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                   callback.callback(), &pool_, BoundNetLog());
-  EXPECT_EQ(OK, rv);
+                   callback.callback(), &pool_, NetLogWithSource());
+  EXPECT_THAT(rv, IsOk());
   EXPECT_EQ(0, pool_.IdleSocketCount());
   TestLoadTimingInfoConnectedReused(handle);
 }
@@ -622,12 +632,12 @@ TEST_F(TransportClientSocketPoolTest, ResetIdleSocketsOnIPAddressChange) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("a", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool_, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool_, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
 
@@ -679,8 +689,8 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketConnect) {
     ClientSocketHandle handle;
     int rv =
         handle.Init("b", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                    callback.callback(), &pool_, BoundNetLog());
-    EXPECT_EQ(ERR_IO_PENDING, rv);
+                    callback.callback(), &pool_, NetLogWithSource());
+    EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
     EXPECT_FALSE(handle.is_initialized());
     EXPECT_FALSE(handle.socket());
 
@@ -694,7 +704,7 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketConnect) {
     // Let the appropriate socket connect.
     base::RunLoop().RunUntilIdle();
 
-    EXPECT_EQ(OK, callback.WaitForResult());
+    EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_TRUE(handle.is_initialized());
     EXPECT_TRUE(handle.socket());
 
@@ -722,8 +732,8 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketCancel) {
     ClientSocketHandle handle;
     int rv =
         handle.Init("c", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                    callback.callback(), &pool_, BoundNetLog());
-    EXPECT_EQ(ERR_IO_PENDING, rv);
+                    callback.callback(), &pool_, NetLogWithSource());
+    EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
     EXPECT_FALSE(handle.is_initialized());
     EXPECT_FALSE(handle.socket());
 
@@ -769,8 +779,8 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterStall) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("b", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool_, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool_, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
@@ -788,11 +798,12 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterStall) {
   // Let the appropriate socket connect.
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_EQ(ERR_CONNECTION_FAILED, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsError(ERR_CONNECTION_FAILED));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
   ASSERT_EQ(1u, handle.connection_attempts().size());
-  EXPECT_EQ(ERR_CONNECTION_FAILED, handle.connection_attempts()[0].result);
+  EXPECT_THAT(handle.connection_attempts()[0].result,
+              IsError(ERR_CONNECTION_FAILED));
   EXPECT_EQ(0, pool_.IdleSocketCount());
   handle.Reset();
 
@@ -820,8 +831,8 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterDelay) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("b", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool_, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool_, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
@@ -839,11 +850,12 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterDelay) {
   // Let the appropriate socket connect.
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_EQ(ERR_CONNECTION_FAILED, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsError(ERR_CONNECTION_FAILED));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
   ASSERT_EQ(1u, handle.connection_attempts().size());
-  EXPECT_EQ(ERR_CONNECTION_FAILED, handle.connection_attempts()[0].result);
+  EXPECT_THAT(handle.connection_attempts()[0].result,
+              IsError(ERR_CONNECTION_FAILED));
   handle.Reset();
 
   // Reset for the next case.
@@ -876,12 +888,12 @@ TEST_F(TransportClientSocketPoolTest, IPv6FallbackSocketIPv4FinishesFirst) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("a", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
   IPEndPoint endpoint;
@@ -892,7 +904,7 @@ TEST_F(TransportClientSocketPoolTest, IPv6FallbackSocketIPv4FinishesFirst) {
   ConnectionAttempts attempts;
   handle.socket()->GetConnectionAttempts(&attempts);
   ASSERT_EQ(1u, attempts.size());
-  EXPECT_EQ(ERR_CONNECTION_FAILED, attempts[0].result);
+  EXPECT_THAT(attempts[0].result, IsError(ERR_CONNECTION_FAILED));
   EXPECT_TRUE(attempts[0].endpoint.address().IsIPv6());
 
   EXPECT_EQ(2, client_socket_factory_.allocation_count());
@@ -927,12 +939,12 @@ TEST_F(TransportClientSocketPoolTest, IPv6FallbackSocketIPv6FinishesFirst) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("a", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
   IPEndPoint endpoint;
@@ -944,7 +956,7 @@ TEST_F(TransportClientSocketPoolTest, IPv6FallbackSocketIPv6FinishesFirst) {
   ConnectionAttempts attempts;
   handle.socket()->GetConnectionAttempts(&attempts);
   ASSERT_EQ(1u, attempts.size());
-  EXPECT_EQ(ERR_CONNECTION_FAILED, attempts[0].result);
+  EXPECT_THAT(attempts[0].result, IsError(ERR_CONNECTION_FAILED));
   EXPECT_TRUE(attempts[0].endpoint.address().IsIPv4());
 
   EXPECT_EQ(2, client_socket_factory_.allocation_count());
@@ -968,12 +980,12 @@ TEST_F(TransportClientSocketPoolTest, IPv6NoIPv4AddressesToFallbackTo) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("a", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
   IPEndPoint endpoint;
@@ -1000,12 +1012,12 @@ TEST_F(TransportClientSocketPoolTest, IPv4HasNoFallback) {
   ClientSocketHandle handle;
   int rv =
       handle.Init("a", params_, LOW, ClientSocketPool::RespectLimits::ENABLED,
-                  callback.callback(), &pool, BoundNetLog());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
+                  callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
   IPEndPoint endpoint;
@@ -1033,8 +1045,8 @@ TEST_F(TransportClientSocketPoolTest, TCPFastOpenOnIPv4WithNoFallback) {
   // Enable TCP FastOpen in TransportSocketParams.
   scoped_refptr<TransportSocketParams> params = CreateParamsForTCPFastOpen();
   handle.Init("a", params, LOW, ClientSocketPool::RespectLimits::ENABLED,
-              callback.callback(), &pool, BoundNetLog());
-  EXPECT_EQ(OK, callback.WaitForResult());
+              callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(socket_data.IsUsingTCPFastOpen());
 }
 
@@ -1059,8 +1071,8 @@ TEST_F(TransportClientSocketPoolTest, TCPFastOpenOnIPv6WithNoFallback) {
   // Enable TCP FastOpen in TransportSocketParams.
   scoped_refptr<TransportSocketParams> params = CreateParamsForTCPFastOpen();
   handle.Init("a", params, LOW, ClientSocketPool::RespectLimits::ENABLED,
-              callback.callback(), &pool, BoundNetLog());
-  EXPECT_EQ(OK, callback.WaitForResult());
+              callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_TRUE(socket_data.IsUsingTCPFastOpen());
 }
 
@@ -1089,8 +1101,8 @@ TEST_F(TransportClientSocketPoolTest,
   // Enable TCP FastOpen in TransportSocketParams.
   scoped_refptr<TransportSocketParams> params = CreateParamsForTCPFastOpen();
   handle.Init("a", params, LOW, ClientSocketPool::RespectLimits::ENABLED,
-              callback.callback(), &pool, BoundNetLog());
-  EXPECT_EQ(OK, callback.WaitForResult());
+              callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   // Verify that the socket used is connected to the fallback IPv4 address.
   IPEndPoint endpoint;
   handle.socket()->GetPeerAddress(&endpoint);
@@ -1121,8 +1133,8 @@ TEST_F(TransportClientSocketPoolTest,
   // Enable TCP FastOpen in TransportSocketParams.
   scoped_refptr<TransportSocketParams> params = CreateParamsForTCPFastOpen();
   handle.Init("a", params, LOW, ClientSocketPool::RespectLimits::ENABLED,
-              callback.callback(), &pool, BoundNetLog());
-  EXPECT_EQ(OK, callback.WaitForResult());
+              callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
   IPEndPoint endpoint;
   handle.socket()->GetPeerAddress(&endpoint);
   // Verify that the socket used is connected to the IPv6 address.

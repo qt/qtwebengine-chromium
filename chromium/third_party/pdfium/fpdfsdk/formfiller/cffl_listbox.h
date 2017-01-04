@@ -7,6 +7,7 @@
 #ifndef FPDFSDK_FORMFILLER_CFFL_LISTBOX_H_
 #define FPDFSDK_FORMFILLER_CFFL_LISTBOX_H_
 
+#include <memory>
 #include <set>
 
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
@@ -15,14 +16,16 @@ class CBA_FontMap;
 
 class CFFL_ListBox : public CFFL_FormFiller {
  public:
-  CFFL_ListBox(CPDFDoc_Environment* pApp, CPDFSDK_Annot* pWidget);
+  CFFL_ListBox(CPDFSDK_FormFillEnvironment* pApp, CPDFSDK_Annot* pWidget);
   ~CFFL_ListBox() override;
 
   // CFFL_FormFiller
   PWL_CREATEPARAM GetCreateParam() override;
   CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
                          CPDFSDK_PageView* pPageView) override;
-  FX_BOOL OnChar(CPDFSDK_Annot* pAnnot, FX_UINT nChar, FX_UINT nFlags) override;
+  FX_BOOL OnChar(CPDFSDK_Annot* pAnnot,
+                 uint32_t nChar,
+                 uint32_t nFlags) override;
   FX_BOOL IsDataChanged(CPDFSDK_PageView* pPageView) override;
   void SaveData(CPDFSDK_PageView* pPageView) override;
   void GetActionData(CPDFSDK_PageView* pPageView,
@@ -37,7 +40,7 @@ class CFFL_ListBox : public CFFL_FormFiller {
                            FX_BOOL bRestoreValue) override;
 
  private:
-  CBA_FontMap* m_pFontMap;
+  std::unique_ptr<CBA_FontMap> m_pFontMap;
   std::set<int> m_OriginSelections;
   CFX_ArrayTemplate<int> m_State;
 };

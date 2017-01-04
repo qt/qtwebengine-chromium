@@ -54,7 +54,7 @@ class RasterBufferImpl : public RasterBuffer {
     RasterBufferProvider::PlaybackToMemory(
         lock_.sk_bitmap().getPixels(), resource_->format(), resource_->size(),
         stride, raster_source, raster_full_rect, playback_rect, scale,
-        playback_settings);
+        lock_.sk_color_space(), playback_settings);
   }
 
  private:
@@ -103,9 +103,13 @@ ResourceFormat BitmapRasterBufferProvider::GetResourceFormat(
   return resource_provider_->best_texture_format();
 }
 
-bool BitmapRasterBufferProvider::GetResourceRequiresSwizzle(
+bool BitmapRasterBufferProvider::IsResourceSwizzleRequired(
     bool must_support_alpha) const {
   return ResourceFormatRequiresSwizzle(GetResourceFormat(must_support_alpha));
+}
+
+bool BitmapRasterBufferProvider::CanPartialRasterIntoProvidedResource() const {
+  return true;
 }
 
 void BitmapRasterBufferProvider::Shutdown() {}

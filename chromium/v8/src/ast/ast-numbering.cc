@@ -10,17 +10,17 @@
 namespace v8 {
 namespace internal {
 
-class AstNumberingVisitor final : public AstVisitor {
+class AstNumberingVisitor final : public AstVisitor<AstNumberingVisitor> {
  public:
   AstNumberingVisitor(Isolate* isolate, Zone* zone)
-      : AstVisitor(),
-        isolate_(isolate),
+      : isolate_(isolate),
         zone_(zone),
         next_id_(BailoutId::FirstUsable().ToInt()),
         yield_count_(0),
         properties_(zone),
         slot_cache_(zone),
-        dont_optimize_reason_(kNoReason) {
+        dont_optimize_reason_(kNoReason),
+        catch_prediction_(HandlerTable::UNCAUGHT) {
     InitializeAstVisitor(isolate);
   }
 
@@ -28,7 +28,7 @@ class AstNumberingVisitor final : public AstVisitor {
 
  private:
 // AST node visitor interface.
-#define DEFINE_VISIT(type) void Visit##type(type* node) override;
+#define DEFINE_VISIT(type) void Visit##type(type* node);
   AST_NODE_LIST(DEFINE_VISIT)
 #undef DEFINE_VISIT
 
@@ -36,10 +36,10 @@ class AstNumberingVisitor final : public AstVisitor {
   void VisitPropertyReference(Property* node);
   void VisitReference(Expression* expr);
 
-  void VisitStatements(ZoneList<Statement*>* statements) override;
-  void VisitDeclarations(ZoneList<Declaration*>* declarations) override;
+  void VisitStatements(ZoneList<Statement*>* statements);
+  void VisitDeclarations(ZoneList<Declaration*>* declarations);
   void VisitArguments(ZoneList<Expression*>* arguments);
-  void VisitObjectLiteralProperty(ObjectLiteralProperty* property);
+  void VisitLiteralProperty(LiteralProperty* property);
 
   int ReserveIdRange(int n) {
     int tmp = next_id_;
@@ -56,12 +56,7 @@ class AstNumberingVisitor final : public AstVisitor {
     DisableSelfOptimization();
   }
   void DisableCrankshaft(BailoutReason reason) {
-    if (FLAG_turbo_shipping) {
-      properties_.flags() |= AstProperties::kDontCrankshaft;
-    } else {
-      dont_optimize_reason_ = reason;
-      DisableSelfOptimization();
-    }
+    properties_.flags() |= AstProperties::kDontCrankshaft;
   }
 
   template <typename Node>
@@ -80,6 +75,7 @@ class AstNumberingVisitor final : public AstVisitor {
   // The slot cache allows us to reuse certain feedback vector slots.
   FeedbackVectorSlotCache slot_cache_;
   BailoutReason dont_optimize_reason_;
+  HandlerTable::CatchPrediction catch_prediction_;
 
   DEFINE_AST_VISITOR_SUBCLASS_MEMBERS();
   DISALLOW_COPY_AND_ASSIGN(AstNumberingVisitor);
@@ -88,13 +84,6 @@ class AstNumberingVisitor final : public AstVisitor {
 
 void AstNumberingVisitor::VisitVariableDeclaration(VariableDeclaration* node) {
   IncrementNodeCount();
-  VisitVariableProxy(node->proxy());
-}
-
-
-void AstNumberingVisitor::VisitExportDeclaration(ExportDeclaration* node) {
-  IncrementNodeCount();
-  DisableOptimization(kExportDeclaration);
   VisitVariableProxy(node->proxy());
 }
 
@@ -197,13 +186,6 @@ void AstNumberingVisitor::VisitSuperCallReference(SuperCallReference* node) {
 }
 
 
-void AstNumberingVisitor::VisitImportDeclaration(ImportDeclaration* node) {
-  IncrementNodeCount();
-  DisableOptimization(kImportDeclaration);
-  VisitVariableProxy(node->proxy());
-}
-
-
 void AstNumberingVisitor::VisitExpressionStatement(ExpressionStatement* node) {
   IncrementNodeCount();
   Visit(node->expression());
@@ -220,7 +202,6 @@ void AstNumberingVisitor::VisitYield(Yield* node) {
   node->set_yield_id(yield_count_);
   yield_count_++;
   IncrementNodeCount();
-  ReserveFeedbackSlots(node);
   node->set_base_id(ReserveIdRange(Yield::num_ids()));
   Visit(node->generator_object());
   Visit(node->expression());
@@ -266,9 +247,29 @@ void AstNumberingVisitor::VisitFunctionDeclaration(FunctionDeclaration* node) {
 
 void AstNumberingVisitor::VisitCallRuntime(CallRuntime* node) {
   IncrementNodeCount();
-  ReserveFeedbackSlots(node);
   node->set_base_id(ReserveIdRange(CallRuntime::num_ids()));
   VisitArguments(node->arguments());
+  // To support catch prediction within async/await:
+  //
+  // The AstNumberingVisitor is when catch prediction currently occurs, and it
+  // is the only common point that has access to this information. The parser
+  // just doesn't know yet. Take the following two cases of catch prediction:
+  //
+  // try { await fn(); } catch (e) { }
+  // try { await fn(); } finally { }
+  //
+  // When parsing the await that we want to mark as caught or uncaught, it's
+  // not yet known whether it will be followed by a 'finally' or a 'catch.
+  // The AstNumberingVisitor is what learns whether it is caught. To make
+  // the information available later to the runtime, the AstNumberingVisitor
+  // has to stash it somewhere. Changing the runtime function into another
+  // one in ast-numbering seemed like a simple and straightforward solution to
+  // that problem.
+  if (node->is_jsruntime() &&
+      node->context_index() == Context::ASYNC_FUNCTION_AWAIT_CAUGHT_INDEX &&
+      catch_prediction_ == HandlerTable::ASYNC_AWAIT) {
+    node->set_context_index(Context::ASYNC_FUNCTION_AWAIT_UNCAUGHT_INDEX);
+  }
 }
 
 
@@ -306,7 +307,18 @@ void AstNumberingVisitor::VisitWhileStatement(WhileStatement* node) {
 void AstNumberingVisitor::VisitTryCatchStatement(TryCatchStatement* node) {
   IncrementNodeCount();
   DisableCrankshaft(kTryCatchStatement);
-  Visit(node->try_block());
+  {
+    const HandlerTable::CatchPrediction old_prediction = catch_prediction_;
+    // This node uses its own prediction, unless it's "uncaught", in which case
+    // we adopt the prediction of the outer try-block.
+    HandlerTable::CatchPrediction catch_prediction = node->catch_prediction();
+    if (catch_prediction != HandlerTable::UNCAUGHT) {
+      catch_prediction_ = catch_prediction;
+    }
+    node->set_catch_prediction(catch_prediction_);
+    Visit(node->try_block());
+    catch_prediction_ = old_prediction;
+  }
   Visit(node->catch_block());
 }
 
@@ -314,6 +326,9 @@ void AstNumberingVisitor::VisitTryCatchStatement(TryCatchStatement* node) {
 void AstNumberingVisitor::VisitTryFinallyStatement(TryFinallyStatement* node) {
   IncrementNodeCount();
   DisableCrankshaft(kTryFinallyStatement);
+  // We can't know whether the finally block will override ("catch") an
+  // exception thrown in the try block, so we just adopt the outer prediction.
+  node->set_catch_prediction(catch_prediction_);
   Visit(node->try_block());
   Visit(node->finally_block());
 }
@@ -359,6 +374,7 @@ void AstNumberingVisitor::VisitBinaryOperation(BinaryOperation* node) {
   node->set_base_id(ReserveIdRange(BinaryOperation::num_ids()));
   Visit(node->left());
   Visit(node->right());
+  ReserveFeedbackSlots(node);
 }
 
 
@@ -367,6 +383,7 @@ void AstNumberingVisitor::VisitCompareOperation(CompareOperation* node) {
   node->set_base_id(ReserveIdRange(CompareOperation::num_ids()));
   Visit(node->left());
   Visit(node->right());
+  ReserveFeedbackSlots(node);
 }
 
 
@@ -402,7 +419,6 @@ void AstNumberingVisitor::VisitForOfStatement(ForOfStatement* node) {
   Visit(node->assign_each());
   Visit(node->body());
   node->set_yield_count(yield_count_ - node->first_yield_id());
-  ReserveFeedbackSlots(node);
 }
 
 
@@ -442,6 +458,7 @@ void AstNumberingVisitor::VisitCaseClause(CaseClause* node) {
   node->set_base_id(ReserveIdRange(CaseClause::num_ids()));
   if (!node->is_default()) Visit(node->label());
   VisitStatements(node->statements());
+  ReserveFeedbackSlots(node);
 }
 
 
@@ -468,7 +485,7 @@ void AstNumberingVisitor::VisitClassLiteral(ClassLiteral* node) {
     VisitVariableProxy(node->class_variable_proxy());
   }
   for (int i = 0; i < node->properties()->length(); i++) {
-    VisitObjectLiteralProperty(node->properties()->at(i));
+    VisitLiteralProperty(node->properties()->at(i));
   }
   ReserveFeedbackSlots(node);
 }
@@ -478,7 +495,7 @@ void AstNumberingVisitor::VisitObjectLiteral(ObjectLiteral* node) {
   IncrementNodeCount();
   node->set_base_id(ReserveIdRange(node->num_ids()));
   for (int i = 0; i < node->properties()->length(); i++) {
-    VisitObjectLiteralProperty(node->properties()->at(i));
+    VisitLiteralProperty(node->properties()->at(i));
   }
   node->BuildConstantProperties(isolate_);
   // Mark all computed expressions that are bound to a key that
@@ -488,14 +505,11 @@ void AstNumberingVisitor::VisitObjectLiteral(ObjectLiteral* node) {
   ReserveFeedbackSlots(node);
 }
 
-
-void AstNumberingVisitor::VisitObjectLiteralProperty(
-    ObjectLiteralProperty* node) {
+void AstNumberingVisitor::VisitLiteralProperty(LiteralProperty* node) {
   if (node->is_computed_name()) DisableCrankshaft(kComputedPropertyName);
   Visit(node->key());
   Visit(node->value());
 }
-
 
 void AstNumberingVisitor::VisitArrayLiteral(ArrayLiteral* node) {
   IncrementNodeCount();
@@ -566,23 +580,24 @@ void AstNumberingVisitor::VisitRewritableExpression(
 
 
 bool AstNumberingVisitor::Renumber(FunctionLiteral* node) {
-  Scope* scope = node->scope();
+  DeclarationScope* scope = node->scope();
   if (scope->new_target_var()) DisableCrankshaft(kSuperReference);
-  if (scope->calls_eval()) DisableOptimization(kFunctionCallsEval);
+  if (scope->calls_eval()) DisableCrankshaft(kFunctionCallsEval);
   if (scope->arguments() != NULL && !scope->arguments()->IsStackAllocated()) {
     DisableCrankshaft(kContextAllocatedArguments);
   }
 
-  int rest_index;
-  if (scope->rest_parameter(&rest_index)) {
+  if (scope->rest_parameter() != nullptr) {
     DisableCrankshaft(kRestParameter);
   }
 
   if (IsGeneratorFunction(node->kind()) || IsAsyncFunction(node->kind())) {
-    // TODO(neis): We may want to allow Turbofan optimization here if
-    // --turbo-from-bytecode is set and we know that Ignition is used.
-    // Unfortunately we can't express that here.
-    DisableOptimization(kGenerator);
+    // Generators can be optimized if --turbo-from-bytecode is set.
+    if (FLAG_turbo_from_bytecode) {
+      DisableCrankshaft(kGenerator);
+    } else {
+      DisableOptimization(kGenerator);
+    }
   }
 
   VisitDeclarations(scope->declarations());

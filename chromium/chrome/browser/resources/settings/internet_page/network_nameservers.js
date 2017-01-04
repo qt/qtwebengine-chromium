@@ -5,9 +5,6 @@
 /**
  * @fileoverview Polymer element for displaying network nameserver options.
  */
-(function() {
-'use strict';
-
 Polymer({
   is: 'network-nameservers',
 
@@ -19,55 +16,62 @@ Polymer({
      */
     networkProperties: {
       type: Object,
-      observer: 'networkPropertiesChanged_'
+      observer: 'networkPropertiesChanged_',
     },
 
-    /**
-     * Whether or not the nameservers can be edited.
-     */
+    /** Whether or not the nameservers can be edited. */
     editable: {
       type: Boolean,
-      value: false
+      value: false,
     },
 
     /**
      * Array of nameserver addresses stored as strings.
-     * @type {!Array<string>}
+     * @private {!Array<string>}
      */
-    nameservers: {
+    nameservers_: {
       type: Array,
-      value: function() { return []; }
+      value: function() {
+        return [];
+      },
     },
 
     /**
      * The selected nameserver type.
+     * @private
      */
-    nameserversType: {
+    nameserversType_: {
       type: String,
-      value: 'automatic'
+      value: 'automatic',
     },
 
     /**
      * Array of nameserver types.
+     * @private
      */
     nameserverTypeNames_: {
       type: Array,
       value: ['automatic', 'google', 'custom'],
-      readOnly: true
+      readOnly: true,
     },
   },
 
-  /** @const */ GoogleNameservers: ['8.8.4.4', '8.8.8.8'],
+  /** @const */
+  GOOGLE_NAMESERVERS: [
+    '8.8.4.4',
+    '8.8.8.8',
+  ],
+
+  /** @const */
+  MAX_NAMESERVERS: 4,
 
   /**
    * Saved nameservers when switching to 'automatic'.
-   * @type {!Array<string>}
+   * @private {!Array<string>}
    */
   savedNameservers_: [],
 
-  /**
-   * Polymer networkProperties changed method.
-   */
+  /** @private */
   networkPropertiesChanged_: function(newValue, oldValue) {
     if (!this.networkProperties)
       return;
@@ -87,72 +91,71 @@ Polymer({
         CrOnc.getActiveValue(this.networkProperties.NameServersConfigType);
     var type;
     if (configType == CrOnc.IPConfigType.STATIC) {
-      if (nameservers.join(',') == this.GoogleNameservers.join(','))
+      if (nameservers.join(',') == this.GOOGLE_NAMESERVERS.join(',')) {
         type = 'google';
-      else
+      } else {
         type = 'custom';
+      }
     } else {
       type = 'automatic';
     }
-    this.nameserversType = type;
-    this.$$('#type').selectedIndex = this.getSelectedIndex_(type);
-
-    this.nameservers = nameservers;
+    this.setNameservers_(type, nameservers);
   },
 
   /**
-   * @param {string} nameserversType The nameservers type.
-   * @return {number} The selected index for |nameserversType|.
+   * @param {string} nameserversType
+   * @param {!Array<string>} nameservers
    * @private
    */
-  getSelectedIndex_: function(nameserversType) {
-    var idx = this.nameserverTypeNames_.indexOf(nameserversType);
-    if (idx != -1)
-      return idx;
-    console.error('Unexpected type: ' + nameserversType);
-    return 0;
+  setNameservers_: function(nameserversType, nameservers) {
+    this.nameserversType_ = nameserversType;
+    if (nameserversType == 'custom') {
+      // Add empty entries for unset custom nameservers.
+      for (let i = nameservers.length; i < this.MAX_NAMESERVERS; ++i)
+        nameservers[i] = '';
+    }
+    this.nameservers_ = nameservers;
   },
 
   /**
-   * @param {string} nameserversType The nameservers type.
-   * @return {string} The description for |nameserversType|.
+   * @param {string} type The nameservers type.
+   * @return {string} The description for |type|.
    * @private
    */
-  nameserverTypeDesc_: function(nameserversType) {
+  nameserverTypeDesc_: function(type) {
     // TODO(stevenjb): Translate.
-    if (nameserversType == 'custom')
+    if (type == 'custom')
       return 'Custom name servers';
-    if (nameserversType == 'google')
+    if (type == 'google')
       return 'Google name servers';
     return 'Automatic name servers';
   },
 
   /**
-   * @param {boolean} editable The editable state.
-   * @param {string} nameserversType The nameservers type.
    * @return {boolean} True if the nameservers are editable.
    * @private
    */
-  canEdit_: function(editable, nameserversType) {
-    return editable && nameserversType == 'custom';
+  canEdit_: function() {
+    return this.editable && this.nameserversType_ == 'custom';
   },
 
   /**
    * Event triggered when the selected type changes. Updates nameservers and
    * sends the change value if necessary.
-   * @param {Event} event The select node change event.
+   * @param {!{detail: !{selected: string}}} e
    * @private
    */
-  onTypeChange_: function(event) {
-    if (this.nameserversType == 'custom')
-      this.savedNameservers_ = this.nameservers;
-    var type = this.nameserverTypeNames_[event.target.selectedIndex];
-    this.nameserversType = type;
+  onTypeChange_: function(e) {
+    if (this.nameserversType_ == 'custom')
+      this.savedNameservers_ = this.nameservers_;
+    var type = e.detail.selected;
+    this.nameserversType_ = type;
     if (type == 'custom') {
+      // Restore the saved nameservers.
+      this.setNameservers_(type, this.savedNameservers_);
+      // Only send custom nameservers if they are not empty.
       if (this.savedNameservers_.length == 0)
-        return;  // Don't change nameservers until onValueChange_().
-      // Restore the saved nameservers and send them.
-      this.nameservers = this.savedNameservers_;
+        return;
     }
     this.sendNameServers_();
   },
@@ -162,7 +165,7 @@ Polymer({
    * @private
    */
   onValueChange_: function() {
-    if (this.nameserversType != 'custom') {
+    if (this.nameserversType_ != 'custom') {
       // If a user inputs Google nameservers in the custom nameservers fields,
       // |nameserversType| will change to 'google' so don't send the values.
       return;
@@ -175,34 +178,34 @@ Polymer({
    * @private
    */
   sendNameServers_: function() {
-    var type = this.nameserversType;
+    var type = this.nameserversType_;
 
-    var nameservers;
     if (type == 'custom') {
-      nameservers = [];
-      for (let i = 0; i < 4; ++i) {
+      let nameservers = [];
+      for (let i = 0; i < this.MAX_NAMESERVERS; ++i) {
         let id = 'nameserver' + i;
-        let nameserver = this.$$('#' + id).value;
-        if (nameserver)
-          nameservers.push(nameserver);
+        let nameserverInput = this.$$('#' + id);
+        let nameserver = '';
+        if (nameserverInput)
+          nameserver = this.$$('#' + id).value;
+        nameservers.push(nameserver);
       }
       this.fire('nameservers-change', {
         field: 'NameServers',
-        value: nameservers
+        value: nameservers,
       });
     } else if (type == 'google') {
-      nameservers = this.GoogleNameservers;
+      let nameservers = this.GOOGLE_NAMESERVERS;
       this.fire('nameservers-change', {
         field: 'NameServers',
-        value: nameservers
+        value: nameservers,
       });
     } else {
       // automatic
       this.fire('nameservers-change', {
         field: 'NameServersConfigType',
-        value: CrOnc.IPConfigType.DHCP
+        value: CrOnc.IPConfigType.DHCP,
       });
     }
   },
 });
-})();

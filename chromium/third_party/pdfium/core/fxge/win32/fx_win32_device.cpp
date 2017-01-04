@@ -4,29 +4,35 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxge/include/fx_ge.h"
+#include <crtdbg.h>
 
 #include <algorithm>
 #include <memory>
 #include <vector>
 
-#if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
-#include <crtdbg.h>
-
-#include "core/fxcodec/include/fx_codec.h"
+#include "core/fxcodec/fx_codec.h"
+#include "core/fxcrt/fx_memory.h"
+#include "core/fxcrt/fx_system.h"
+#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_graphstatedata.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/cfx_windowsdevice.h"
+#include "core/fxge/dib/dib_int.h"
+#include "core/fxge/fx_font.h"
+#include "core/fxge/fx_freetype.h"
+#include "core/fxge/ge/cfx_folderfontinfo.h"
+#include "core/fxge/ge/fx_text_int.h"
+#include "core/fxge/ifx_systemfontinfo.h"
+#include "core/fxge/win32/cfx_windowsdib.h"
+#include "core/fxge/win32/dwrite_int.h"
+#include "core/fxge/win32/win32_int.h"
+#include "third_party/base/ptr_util.h"
+#include "third_party/base/stl_util.h"
 
 #ifndef _SKIA_SUPPORT_
 #include "core/fxge/agg/fx_agg_driver.h"
 #endif
-
-#include "core/fxge/dib/dib_int.h"
-#include "core/fxge/ge/fx_text_int.h"
-#include "core/fxge/include/fx_font.h"
-#include "core/fxge/include/fx_freetype.h"
-#include "core/fxge/include/fx_ge_win32.h"
-#include "core/fxge/win32/dwrite_int.h"
-#include "core/fxge/win32/win32_int.h"
-#include "third_party/base/stl_util.h"
 
 namespace {
 
@@ -451,7 +457,7 @@ FX_BOOL CFX_Win32FontInfo::EnumFontList(CFX_FontMapper* pMapper) {
   m_pMapper = pMapper;
   LOGFONTA lf;
   FXSYS_memset(&lf, 0, sizeof(LOGFONTA));
-  lf.lfCharSet = DEFAULT_CHARSET;
+  lf.lfCharSet = FXFONT_DEFAULT_CHARSET;
   lf.lfFaceName[0] = 0;
   lf.lfPitchAndFamily = 0;
   EnumFontFamiliesExA(m_hDC, &lf, (FONTENUMPROCA)FontEnumProc, (uintptr_t) this,
@@ -465,13 +471,13 @@ CFX_ByteString CFX_Win32FontInfo::FindFont(const CFX_ByteString& name) {
 
   for (size_t i = 0; i < m_pMapper->m_InstalledTTFonts.size(); ++i) {
     CFX_ByteString thisname = m_pMapper->m_InstalledTTFonts[i];
-    if (thisname[0] == ' ') {
-      if (thisname.Mid(1, name.GetLength()) == name) {
-        return m_pMapper->m_InstalledTTFonts[i + 1];
-      }
-    } else if (thisname.Left(name.GetLength()) == name) {
+    if (thisname.Left(name.GetLength()) == name)
       return m_pMapper->m_InstalledTTFonts[i];
-    }
+  }
+  for (size_t i = 0; i < m_pMapper->m_LocalizedTTFonts.size(); ++i) {
+    CFX_ByteString thisname = m_pMapper->m_LocalizedTTFonts[i].first;
+    if (thisname.Left(name.GetLength()) == name)
+      return m_pMapper->m_LocalizedTTFonts[i].second;
   }
   return CFX_ByteString();
 }
@@ -492,7 +498,7 @@ void* CFX_Win32FallbackFontInfo::MapFont(int weight,
     case FXFONT_SHIFTJIS_CHARSET:
     case FXFONT_GB2312_CHARSET:
     case FXFONT_CHINESEBIG5_CHARSET:
-    case FXFONT_HANGEUL_CHARSET:
+    case FXFONT_HANGUL_CHARSET:
     default:
       bCJK = FALSE;
       break;
@@ -584,17 +590,17 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       iExact = TRUE;
       break;
     }
-  if (charset == ANSI_CHARSET || charset == SYMBOL_CHARSET) {
-    charset = DEFAULT_CHARSET;
+  if (charset == FXFONT_ANSI_CHARSET || charset == FXFONT_SYMBOL_CHARSET) {
+    charset = FXFONT_DEFAULT_CHARSET;
   }
   int subst_pitch_family = pitch_family;
   switch (charset) {
-    case SHIFTJIS_CHARSET:
+    case FXFONT_SHIFTJIS_CHARSET:
       subst_pitch_family = FF_ROMAN;
       break;
-    case CHINESEBIG5_CHARSET:
-    case HANGUL_CHARSET:
-    case GB2312_CHARSET:
+    case FXFONT_CHINESEBIG5_CHARSET:
+    case FXFONT_HANGUL_CHARSET:
+    case FXFONT_GB2312_CHARSET:
       subst_pitch_family = 0;
       break;
   }
@@ -621,20 +627,20 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       return hFont;
   }
   ::DeleteObject(hFont);
-  if (charset == DEFAULT_CHARSET)
+  if (charset == FXFONT_DEFAULT_CHARSET)
     return nullptr;
 
   switch (charset) {
-    case SHIFTJIS_CHARSET:
+    case FXFONT_SHIFTJIS_CHARSET:
       GetJapanesePreference(face, weight, pitch_family);
       break;
-    case GB2312_CHARSET:
+    case FXFONT_GB2312_CHARSET:
       GetGBPreference(face, weight, pitch_family);
       break;
-    case HANGUL_CHARSET:
+    case FXFONT_HANGUL_CHARSET:
       face = "Gulim";
       break;
-    case CHINESEBIG5_CHARSET:
+    case FXFONT_CHINESEBIG5_CHARSET:
       if (face.Find("MSung") >= 0) {
         face = "MingLiU";
       } else {
@@ -1111,7 +1117,7 @@ FX_BOOL CGdiDeviceDriver::SetClip_PathFill(const CFX_PathData* pPathData,
   if (pPathData->GetPointCount() == 5) {
     CFX_FloatRect rectf;
     if (pPathData->IsRect(pMatrix, &rectf)) {
-      FX_RECT rect = rectf.GetOutterRect();
+      FX_RECT rect = rectf.GetOuterRect();
       IntersectClipRect(m_hDC, rect.left, rect.top, rect.right, rect.bottom);
       return TRUE;
     }
@@ -1253,7 +1259,7 @@ FX_BOOL CGdiDisplayDriver::SetDIBits(const CFX_DIBSource* pSource,
     return SetDIBits(&bitmap, 0, &src_rect, left, top, FXDIB_BLEND_NORMAL);
   }
   CFX_DIBExtractor temp(pSource);
-  CFX_DIBitmap* pBitmap = temp;
+  CFX_DIBitmap* pBitmap = temp.GetBitmap();
   if (!pBitmap)
     return FALSE;
   return GDI_SetDIBits(pBitmap, pSrcRect, left, top);
@@ -1335,7 +1341,7 @@ FX_BOOL CGdiDisplayDriver::StretchDIBits(const CFX_DIBSource* pSource,
         (CWin32Platform*)CFX_GEModule::Get()->GetPlatformData();
     if (pPlatform->m_GdiplusExt.IsAvailable() && !pSource->IsCmykImage()) {
       CFX_DIBExtractor temp(pSource);
-      CFX_DIBitmap* pBitmap = temp;
+      CFX_DIBitmap* pBitmap = temp.GetBitmap();
       if (!pBitmap)
         return FALSE;
       return pPlatform->m_GdiplusExt.StretchDIBits(
@@ -1346,7 +1352,7 @@ FX_BOOL CGdiDisplayDriver::StretchDIBits(const CFX_DIBSource* pSource,
                                  dest_width, dest_height, pClipRect, flags);
   }
   CFX_DIBExtractor temp(pSource);
-  CFX_DIBitmap* pBitmap = temp;
+  CFX_DIBitmap* pBitmap = temp.GetBitmap();
   if (!pBitmap)
     return FALSE;
   return GDI_StretchDIBits(pBitmap, dest_left, dest_top, dest_width,
@@ -1364,7 +1370,7 @@ FX_BOOL CGdiDisplayDriver::StartDIBits(const CFX_DIBSource* pBitmap,
 }
 
 CFX_WindowsDevice::CFX_WindowsDevice(HDC hDC) {
-  SetDeviceDriver(CreateDriver(hDC));
+  SetDeviceDriver(pdfium::WrapUnique(CreateDriver(hDC)));
 }
 
 CFX_WindowsDevice::~CFX_WindowsDevice() {}
@@ -1384,41 +1390,3 @@ IFX_RenderDeviceDriver* CFX_WindowsDevice::CreateDriver(HDC hDC) {
     return new CGdiPrinterDriver(hDC);
   return new CGdiDisplayDriver(hDC);
 }
-
-CFX_WinBitmapDevice::CFX_WinBitmapDevice(int width,
-                                         int height,
-                                         FXDIB_Format format) {
-  BITMAPINFOHEADER bmih;
-  FXSYS_memset(&bmih, 0, sizeof(BITMAPINFOHEADER));
-  bmih.biSize = sizeof(BITMAPINFOHEADER);
-  bmih.biBitCount = format & 0xff;
-  bmih.biHeight = -height;
-  bmih.biPlanes = 1;
-  bmih.biWidth = width;
-  void* pBufferPtr;
-  m_hBitmap = CreateDIBSection(nullptr, reinterpret_cast<BITMAPINFO*>(&bmih),
-                               DIB_RGB_COLORS, &pBufferPtr, nullptr, 0);
-  if (!m_hBitmap)
-    return;
-
-  uint8_t* pBuffer = static_cast<uint8_t*>(pBufferPtr);
-  CFX_DIBitmap* pBitmap = new CFX_DIBitmap;
-  pBitmap->Create(width, height, format, pBuffer);
-  SetBitmap(pBitmap);
-  m_hDC = ::CreateCompatibleDC(nullptr);
-  m_hOldBitmap = (HBITMAP)SelectObject(m_hDC, m_hBitmap);
-  IFX_RenderDeviceDriver* pDriver = new CGdiDisplayDriver(m_hDC);
-  SetDeviceDriver(pDriver);
-}
-
-CFX_WinBitmapDevice::~CFX_WinBitmapDevice() {
-  if (m_hDC) {
-    SelectObject(m_hDC, m_hOldBitmap);
-    DeleteDC(m_hDC);
-  }
-  if (m_hBitmap)
-    DeleteObject(m_hBitmap);
-  delete GetBitmap();
-}
-
-#endif  // _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_

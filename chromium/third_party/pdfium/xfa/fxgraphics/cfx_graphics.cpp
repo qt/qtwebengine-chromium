@@ -4,10 +4,14 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/fxgraphics/include/cfx_graphics.h"
+#include "xfa/fxgraphics/cfx_graphics.h"
 
 #include <memory>
 
+#include "core/fxge/cfx_fxgedevice.h"
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_renderdevice.h"
+#include "core/fxge/cfx_unicodeencoding.h"
 #include "xfa/fxgraphics/cagg_graphics.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
@@ -566,9 +570,7 @@ const FX_HATCHDATA hatchBitmapData[FX_HATCHSTYLE_Total] = {
 }  // namespace
 
 CFX_Graphics::CFX_Graphics()
-    : m_type(FX_CONTEXT_None),
-      m_renderDevice(nullptr),
-      m_aggGraphics(nullptr) {}
+    : m_type(FX_CONTEXT_None), m_renderDevice(nullptr) {}
 
 FWL_Error CFX_Graphics::Create(CFX_RenderDevice* renderDevice,
                                FX_BOOL isAntialiasing) {
@@ -595,13 +597,11 @@ FWL_Error CFX_Graphics::Create(int32_t width,
 
   m_type = FX_CONTEXT_Device;
   m_info.isAntialiasing = isAntialiasing;
-  m_aggGraphics = new CAGG_Graphics;
+  m_aggGraphics.reset(new CAGG_Graphics);
   return m_aggGraphics->Create(this, width, height, format);
 }
 
-CFX_Graphics::~CFX_Graphics() {
-  delete m_aggGraphics;
-}
+CFX_Graphics::~CFX_Graphics() {}
 
 FWL_Error CFX_Graphics::GetDeviceCap(const int32_t capID,
                                      FX_DeviceCap& capVal) {
@@ -1294,9 +1294,8 @@ FWL_Error CFX_Graphics::RenderDeviceShowText(const CFX_PointF& point,
     m.Concat(*matrix);
   }
   FX_BOOL result = m_renderDevice->DrawNormalText(
-      length, charPos, m_info.font, CFX_GEModule::Get()->GetFontCache(),
-      -m_info.fontSize * m_info.fontHScale, &m, m_info.fillColor->m_info.argb,
-      FXTEXT_CLEARTYPE);
+      length, charPos, m_info.font, -m_info.fontSize * m_info.fontHScale, &m,
+      m_info.fillColor->m_info.argb, FXTEXT_CLEARTYPE);
   if (!result)
     return FWL_Error::Indefinite;
   FX_Free(charPos);

@@ -36,14 +36,15 @@ class BluetoothClassicDeviceMac : public BluetoothDeviceMac {
   uint16_t GetProductID() const override;
   uint16_t GetDeviceID() const override;
   uint16_t GetAppearance() const override;
+  base::Optional<std::string> GetName() const override;
   bool IsPaired() const override;
   bool IsConnected() const override;
   bool IsGattConnected() const override;
   bool IsConnectable() const override;
   bool IsConnecting() const override;
-  UUIDList GetUUIDs() const override;
-  int16_t GetInquiryRSSI() const override;
-  int16_t GetInquiryTxPower() const override;
+  UUIDSet GetUUIDs() const override;
+  base::Optional<int8_t> GetInquiryRSSI() const override;
+  base::Optional<int8_t> GetInquiryTxPower() const override;
   bool ExpectingPinCode() const override;
   bool ExpectingPasskey() const override;
   bool ExpectingConfirmation() const override;
@@ -72,7 +73,7 @@ class BluetoothClassicDeviceMac : public BluetoothDeviceMac {
       const GattConnectionCallback& callback,
       const ConnectErrorCallback& error_callback) override;
 
-  base::Time GetLastUpdateTime() const;
+  base::Time GetLastUpdateTime() const override;
 
   // Returns the Bluetooth address for the |device|. The returned address has a
   // normalized format (see below).
@@ -80,7 +81,6 @@ class BluetoothClassicDeviceMac : public BluetoothDeviceMac {
 
  protected:
   // BluetoothDevice override
-  std::string GetDeviceName() const override;
   void CreateGattConnectionImpl() override;
   void DisconnectGatt() override;
 

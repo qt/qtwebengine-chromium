@@ -21,8 +21,10 @@
 #include "cc/quads/shared_quad_state.h"
 #include "cc/trees/damage_tracker.h"
 #include "cc/trees/draw_property_utils.h"
+#include "cc/trees/effect_node.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/occlusion.h"
+#include "cc/trees/transform_node.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/transform.h"
@@ -32,6 +34,7 @@ namespace cc {
 RenderSurfaceImpl::RenderSurfaceImpl(LayerImpl* owning_layer)
     : owning_layer_(owning_layer),
       surface_property_changed_(false),
+      ancestor_property_changed_(false),
       contributes_to_drawn_surface_(false),
       nearest_occlusion_immune_ancestor_(nullptr),
       target_render_surface_layer_index_history_(0),
@@ -45,9 +48,9 @@ RenderSurfaceImpl* RenderSurfaceImpl::render_target() {
   EffectTree& effect_tree =
       owning_layer_->layer_tree_impl()->property_trees()->effect_tree;
   EffectNode* node = effect_tree.Node(EffectTreeIndex());
-  EffectNode* target_node = effect_tree.Node(node->data.target_id);
+  EffectNode* target_node = effect_tree.Node(node->target_id);
   if (target_node->id != 0)
-    return target_node->data.render_surface;
+    return target_node->render_surface;
   else
     return this;
 }
@@ -56,9 +59,9 @@ const RenderSurfaceImpl* RenderSurfaceImpl::render_target() const {
   const EffectTree& effect_tree =
       owning_layer_->layer_tree_impl()->property_trees()->effect_tree;
   const EffectNode* node = effect_tree.Node(EffectTreeIndex());
-  const EffectNode* target_node = effect_tree.Node(node->data.target_id);
+  const EffectNode* target_node = effect_tree.Node(node->target_id);
   if (target_node->id != 0)
-    return target_node->data.render_surface;
+    return target_node->render_surface;
   else
     return this;
 }
@@ -75,19 +78,17 @@ gfx::RectF RenderSurfaceImpl::DrawableContentRect() const {
     return gfx::RectF();
 
   gfx::Rect surface_content_rect = content_rect();
-  if (!owning_layer_->filters().IsEmpty()) {
+  const FilterOperations& filters = Filters();
+  if (!filters.IsEmpty()) {
     const gfx::Transform& owning_layer_draw_transform =
         owning_layer_->DrawTransform();
     DCHECK(owning_layer_draw_transform.IsScale2d());
-    surface_content_rect = owning_layer_->filters().MapRect(
+    surface_content_rect = filters.MapRect(
         surface_content_rect, owning_layer_draw_transform.matrix());
   }
   gfx::RectF drawable_content_rect = MathUtil::MapClippedRect(
       draw_transform(), gfx::RectF(surface_content_rect));
-  if (HasReplica()) {
-    drawable_content_rect.Union(MathUtil::MapClippedRect(
-        replica_draw_transform(), gfx::RectF(surface_content_rect)));
-  } else if (!owning_layer_->filters().IsEmpty() && is_clipped()) {
+  if (!filters.IsEmpty() && is_clipped()) {
     // Filter could move pixels around, but still need to be clipped.
     drawable_content_rect.Intersect(gfx::RectF(clip_rect()));
   }
@@ -103,65 +104,53 @@ gfx::RectF RenderSurfaceImpl::DrawableContentRect() const {
   return drawable_content_rect;
 }
 
-SkColor RenderSurfaceImpl::GetDebugBorderColor() const {
-  return DebugColors::SurfaceBorderColor();
+SkXfermode::Mode RenderSurfaceImpl::BlendMode() const {
+  return OwningEffectNode()->blend_mode;
 }
 
-SkColor RenderSurfaceImpl::GetReplicaDebugBorderColor() const {
-  return DebugColors::SurfaceReplicaBorderColor();
+bool RenderSurfaceImpl::UsesDefaultBlendMode() const {
+  return BlendMode() == SkXfermode::kSrcOver_Mode;
+}
+
+SkColor RenderSurfaceImpl::GetDebugBorderColor() const {
+  return DebugColors::SurfaceBorderColor();
 }
 
 float RenderSurfaceImpl::GetDebugBorderWidth() const {
   return DebugColors::SurfaceBorderWidth(owning_layer_->layer_tree_impl());
 }
 
-float RenderSurfaceImpl::GetReplicaDebugBorderWidth() const {
-  return DebugColors::SurfaceReplicaBorderWidth(
-      owning_layer_->layer_tree_impl());
-}
-
 int RenderSurfaceImpl::OwningLayerId() const {
   return owning_layer_ ? owning_layer_->id() : 0;
 }
 
-bool RenderSurfaceImpl::HasReplica() const {
-  return OwningEffectNode()->data.replica_layer_id != -1;
-}
-
-const LayerImpl* RenderSurfaceImpl::ReplicaLayer() const {
-  int replica_layer_id = OwningEffectNode()->data.replica_layer_id;
-  return owning_layer_->layer_tree_impl()->LayerById(replica_layer_id);
-}
-
-LayerImpl* RenderSurfaceImpl::ReplicaLayer() {
-  int replica_layer_id = OwningEffectNode()->data.replica_layer_id;
-  return owning_layer_->layer_tree_impl()->LayerById(replica_layer_id);
-}
-
 LayerImpl* RenderSurfaceImpl::MaskLayer() {
-  int mask_layer_id = OwningEffectNode()->data.mask_layer_id;
+  int mask_layer_id = OwningEffectNode()->mask_layer_id;
   return owning_layer_->layer_tree_impl()->LayerById(mask_layer_id);
 }
 
 bool RenderSurfaceImpl::HasMask() const {
-  return OwningEffectNode()->data.mask_layer_id != -1;
+  return OwningEffectNode()->mask_layer_id != EffectTree::kInvalidNodeId;
 }
 
-LayerImpl* RenderSurfaceImpl::ReplicaMaskLayer() {
-  int replica_mask_layer_id = OwningEffectNode()->data.replica_mask_layer_id;
-  return owning_layer_->layer_tree_impl()->LayerById(replica_mask_layer_id);
+const FilterOperations& RenderSurfaceImpl::Filters() const {
+  return OwningEffectNode()->filters;
 }
 
-bool RenderSurfaceImpl::HasReplicaMask() const {
-  return OwningEffectNode()->data.replica_mask_layer_id != -1;
+gfx::PointF RenderSurfaceImpl::FiltersOrigin() const {
+  return OwningEffectNode()->filters_origin;
+}
+
+gfx::Transform RenderSurfaceImpl::FiltersTransform() const {
+  return owning_layer_->DrawTransform();
 }
 
 const FilterOperations& RenderSurfaceImpl::BackgroundFilters() const {
-  return OwningEffectNode()->data.background_filters;
+  return OwningEffectNode()->background_filters;
 }
 
 bool RenderSurfaceImpl::HasCopyRequest() const {
-  return OwningEffectNode()->data.has_copy_request;
+  return OwningEffectNode()->has_copy_request;
 }
 
 int RenderSurfaceImpl::TransformTreeIndex() const {
@@ -202,7 +191,7 @@ void RenderSurfaceImpl::SetContentRectForTesting(const gfx::Rect& rect) {
 }
 
 gfx::Rect RenderSurfaceImpl::CalculateClippedAccumulatedContentRect() {
-  if (ReplicaLayer() || HasCopyRequest() || !is_clipped())
+  if (HasCopyRequest() || !is_clipped())
     return accumulated_content_rect();
 
   if (accumulated_content_rect().IsEmpty())
@@ -310,15 +299,33 @@ bool RenderSurfaceImpl::SurfacePropertyChanged() const {
   //   change. As of now, these are the only two properties that can be affected
   //   by descendant layers.
   //
-  // - all other property changes come from the owning layer (or some ancestor
-  //   layer that propagates its change to the owning layer).
+  // - all other property changes come from the surface's property tree nodes
+  //   (or some ancestor node that propagates its change to one of these nodes).
   //
   DCHECK(owning_layer_);
-  return surface_property_changed_ || owning_layer_->LayerPropertyChanged();
+  return surface_property_changed_ || AncestorPropertyChanged();
 }
 
 bool RenderSurfaceImpl::SurfacePropertyChangedOnlyFromDescendant() const {
-  return surface_property_changed_ && !owning_layer_->LayerPropertyChanged();
+  return surface_property_changed_ && !AncestorPropertyChanged();
+}
+
+bool RenderSurfaceImpl::AncestorPropertyChanged() const {
+  const PropertyTrees* property_trees =
+      owning_layer_->layer_tree_impl()->property_trees();
+  return ancestor_property_changed_ || property_trees->full_tree_damaged ||
+         property_trees->transform_tree.Node(TransformTreeIndex())
+             ->transform_changed ||
+         property_trees->effect_tree.Node(EffectTreeIndex())->effect_changed;
+}
+
+void RenderSurfaceImpl::NoteAncestorPropertyChanged() {
+  ancestor_property_changed_ = true;
+}
+
+void RenderSurfaceImpl::ResetPropertyChangedFlags() {
+  surface_property_changed_ = false;
+  ancestor_property_changed_ = false;
 }
 
 void RenderSurfaceImpl::ClearLayerLists() {
@@ -356,11 +363,11 @@ void RenderSurfaceImpl::AppendQuads(RenderPass* render_pass,
 
   SharedQuadState* shared_quad_state =
       render_pass->CreateAndAppendSharedQuadState();
-  shared_quad_state->SetAll(
-      draw_transform, content_rect().size(), content_rect(),
-      draw_properties_.clip_rect, draw_properties_.is_clipped,
-      draw_properties_.draw_opacity, owning_layer_->blend_mode(),
-      owning_layer_->sorting_context_id());
+  shared_quad_state->SetAll(draw_transform, content_rect().size(),
+                            content_rect(), draw_properties_.clip_rect,
+                            draw_properties_.is_clipped,
+                            draw_properties_.draw_opacity, BlendMode(),
+                            owning_layer_->sorting_context_id());
 
   if (owning_layer_->ShowDebugBorders()) {
     DebugBorderDrawQuad* debug_border_quad =
@@ -381,8 +388,8 @@ void RenderSurfaceImpl::AppendQuads(RenderPass* render_pass,
         MathUtil::ComputeTransform2dScaleComponents(owning_layer_draw_transform,
                                                     1.f);
     gfx::SizeF unclipped_mask_target_size = gfx::ScaleSize(
-        gfx::SizeF(owning_layer_->bounds()), owning_layer_draw_scale.x(),
-        owning_layer_draw_scale.y());
+        gfx::SizeF(OwningEffectNode()->unscaled_mask_target_size),
+        owning_layer_draw_scale.x(), owning_layer_draw_scale.y());
     mask_uv_scale = gfx::Vector2dF(1.0f / unclipped_mask_target_size.width(),
                                    1.0f / unclipped_mask_target_size.height());
   }
@@ -395,8 +402,8 @@ void RenderSurfaceImpl::AppendQuads(RenderPass* render_pass,
       render_pass->CreateAndAppendDrawQuad<RenderPassDrawQuad>();
   quad->SetNew(shared_quad_state, content_rect(), visible_layer_rect,
                render_pass_id, mask_resource_id, mask_uv_scale,
-               mask_texture_size, owning_layer_->filters(),
-               owning_layer_to_target_scale, BackgroundFilters());
+               mask_texture_size, Filters(), owning_layer_to_target_scale,
+               FiltersOrigin(), BackgroundFilters());
 }
 
 }  // namespace cc

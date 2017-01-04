@@ -31,15 +31,13 @@ class Region;
 
 class CC_EXPORT RecordingSource {
  public:
-  // TODO(schenney) Remove RECORD_WITH_SK_NULL_CANVAS when we no longer
-  // support a non-Slimming Paint path.
   enum RecordingMode {
     RECORD_NORMALLY,
-    RECORD_WITH_SK_NULL_CANVAS,
     RECORD_WITH_PAINTING_DISABLED,
     RECORD_WITH_CACHING_DISABLED,
     RECORD_WITH_CONSTRUCTION_DISABLED,
     RECORD_WITH_SUBSEQUENCE_CACHING_DISABLED,
+    RECORD_WITH_PARTIAL_INVALIDATION,
     RECORDING_MODE_COUNT,  // Must be the last entry.
   };
 
@@ -48,14 +46,14 @@ class CC_EXPORT RecordingSource {
 
   void ToProtobuf(proto::RecordingSource* proto) const;
   void FromProtobuf(const proto::RecordingSource& proto,
-                    ClientPictureCache* client_picture_cache,
-                    std::vector<uint32_t>* used_engine_picture_ids);
+                    const scoped_refptr<DisplayItemList>& display_list,
+                    const gfx::Rect& recorded_viewport);
 
-  bool UpdateAndExpandInvalidation(ContentLayerClient* painter,
-                                   Region* invalidation,
+  bool UpdateAndExpandInvalidation(Region* invalidation,
                                    const gfx::Size& layer_size,
-                                   int frame_number,
-                                   RecordingMode recording_mode);
+                                   const gfx::Rect& new_recorded_viewport);
+  void UpdateDisplayItemList(const scoped_refptr<DisplayItemList>& display_list,
+                             const size_t& painter_reported_memory_usage);
   gfx::Size GetSize() const;
   void SetEmptyBounds();
   void SetSlowdownRasterScaleFactor(int factor);
@@ -68,15 +66,10 @@ class CC_EXPORT RecordingSource {
   // These functions are virtual for testing.
   virtual scoped_refptr<RasterSource> CreateRasterSource(
       bool can_use_lcd_text) const;
-  virtual bool IsSuitableForGpuRasterization() const;
-
-  gfx::Rect recorded_viewport() const { return recorded_viewport_; }
 
   const DisplayItemList* GetDisplayItemList();
 
  protected:
-  void Clear();
-
   gfx::Rect recorded_viewport_;
   gfx::Size size_;
   int slow_down_raster_scale_factor_for_debug_;
@@ -86,7 +79,6 @@ class CC_EXPORT RecordingSource {
   bool clear_canvas_with_debug_color_;
   SkColor solid_color_;
   SkColor background_color_;
-
   scoped_refptr<DisplayItemList> display_list_;
   size_t painter_reported_memory_usage_;
 
@@ -94,6 +86,7 @@ class CC_EXPORT RecordingSource {
   void UpdateInvalidationForNewViewport(const gfx::Rect& old_recorded_viewport,
                                         const gfx::Rect& new_recorded_viewport,
                                         Region* invalidation);
+
   void FinishDisplayItemListUpdate();
 
   friend class RasterSource;

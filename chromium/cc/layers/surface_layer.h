@@ -32,12 +32,21 @@ class CC_EXPORT SurfaceLayer : public Layer {
       const SatisfyCallback& satisfy_callback,
       const RequireCallback& require_callback);
 
-  void SetSurfaceId(SurfaceId surface_id, float scale, const gfx::Size& size);
+  void SetSurfaceId(const SurfaceId& surface_id,
+                    float scale,
+                    const gfx::Size& size);
 
   // Layer overrides.
   std::unique_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
   void SetLayerTreeHost(LayerTreeHost* host) override;
   void PushPropertiesTo(LayerImpl* layer) override;
+
+  SurfaceId surface_id() const { return surface_id_; }
+  const gfx::Size& surface_size() const { return surface_size_; }
+  float surface_scale() const { return surface_scale_; }
+
+  const SatisfyCallback& satisfy_callback() const { return satisfy_callback_; }
+  const RequireCallback& require_callback() const { return require_callback_; }
 
  protected:
   SurfaceLayer(const SatisfyCallback& satisfy_callback,

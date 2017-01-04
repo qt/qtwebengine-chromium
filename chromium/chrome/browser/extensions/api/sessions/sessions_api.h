@@ -19,7 +19,7 @@
 
 class Profile;
 
-namespace sync_driver {
+namespace sync_sessions {
 struct SyncedSession;
 }
 
@@ -36,13 +36,11 @@ class SessionsGetRecentlyClosedFunction : public ChromeSyncExtensionFunction {
 
  private:
   api::tabs::Tab CreateTabModel(const sessions::TabRestoreService::Tab& tab,
-                                int session_id,
-                                int selected_index);
+                                bool active);
   std::unique_ptr<api::windows::Window> CreateWindowModel(
-      const sessions::TabRestoreService::Window& window,
-      int session_id);
+      const sessions::TabRestoreService::Window& window);
   std::unique_ptr<api::sessions::Session> CreateSessionModel(
-      const sessions::TabRestoreService::Entry* entry);
+      const sessions::TabRestoreService::Entry& entry);
 };
 
 class SessionsGetDevicesFunction : public ChromeSyncExtensionFunction {
@@ -55,7 +53,7 @@ class SessionsGetDevicesFunction : public ChromeSyncExtensionFunction {
   api::tabs::Tab CreateTabModel(const std::string& session_tag,
                                 const sessions::SessionTab& tab,
                                 int tab_index,
-                                int selected_index);
+                                bool active);
   std::unique_ptr<api::windows::Window> CreateWindowModel(
       const sessions::SessionWindow& window,
       const std::string& session_tag);
@@ -63,7 +61,7 @@ class SessionsGetDevicesFunction : public ChromeSyncExtensionFunction {
       const sessions::SessionWindow& window,
       const std::string& session_tag);
   api::sessions::Device CreateDeviceModel(
-      const sync_driver::SyncedSession* session);
+      const sync_sessions::SyncedSession* session);
 };
 
 class SessionsRestoreFunction : public ChromeSyncExtensionFunction {

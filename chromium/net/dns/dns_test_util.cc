@@ -171,7 +171,7 @@ class MockTransactionFactory : public DnsTransactionFactory {
       const std::string& hostname,
       uint16_t qtype,
       const DnsTransactionFactory::CallbackType& callback,
-      const BoundNetLog&) override {
+      const NetLogWithSource&) override {
     MockTransaction* transaction =
         new MockTransaction(rules_, hostname, qtype, callback);
     if (transaction->delayed())
@@ -219,6 +219,12 @@ DnsTransactionFactory* MockDnsClient::GetTransactionFactory() {
 
 AddressSorter* MockDnsClient::GetAddressSorter() {
   return address_sorter_.get();
+}
+
+void MockDnsClient::ApplyPersistentData(const base::Value& data) {}
+
+std::unique_ptr<const base::Value> MockDnsClient::GetPersistentData() const {
+  return std::unique_ptr<const base::Value>();
 }
 
 void MockDnsClient::CompleteDelayedTransactions() {

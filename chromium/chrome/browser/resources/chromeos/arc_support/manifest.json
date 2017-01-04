@@ -3,7 +3,7 @@
      "background": {
         "scripts": [ "background.js" ]
      },
-     "content_security_policy": "default-src 'self'; style-src 'self' chrome://resources/ 'unsafe-inline'; font-src 'self' chrome://resources/; img-src 'self' data:; script-src chrome://resources/ 'self'"
+     "content_security_policy": "default-src 'self'; style-src 'self' chrome://resources/ 'unsafe-inline'; font-src 'self' chrome://resources/; img-src 'self' data: chrome://theme/; script-src chrome://resources/ 'self'"
   },
   "description": "Play Store",
   "display_in_launcher": false,
@@ -12,7 +12,8 @@
   "manifest_version": 2,
   "name": "Play Store",
   "icons": {
-    "48": "icon/48.png"
+    "48": "icon/48.png",
+    "96": "icon/96.png"
   },
   "permissions": [ "webview",
                    "browser",

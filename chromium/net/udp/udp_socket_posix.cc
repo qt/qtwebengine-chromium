@@ -28,6 +28,9 @@
 #include "net/base/network_activity_monitor.h"
 #include "net/base/sockaddr_storage.h"
 #include "net/log/net_log.h"
+#include "net/log/net_log_event_type.h"
+#include "net/log/net_log_source.h"
+#include "net/log/net_log_source_type.h"
 #include "net/socket/socket_descriptor.h"
 #include "net/udp/udp_net_log_parameters.h"
 
@@ -74,7 +77,7 @@ int GetIPv4AddressFromIndex(int socket, uint32_t index, uint32_t* address) {
 UDPSocketPosix::UDPSocketPosix(DatagramSocket::BindType bind_type,
                                const RandIntCallback& rand_int_cb,
                                net::NetLog* net_log,
-                               const net::NetLog::Source& source)
+                               const net::NetLogSource& source)
     : socket_(kInvalidSocket),
       addr_family_(0),
       is_connected_(false),
@@ -88,9 +91,9 @@ UDPSocketPosix::UDPSocketPosix(DatagramSocket::BindType bind_type,
       read_buf_len_(0),
       recv_from_address_(NULL),
       write_buf_len_(0),
-      net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_UDP_SOCKET)),
+      net_log_(NetLogWithSource::Make(net_log, NetLogSourceType::UDP_SOCKET)),
       bound_network_(NetworkChangeNotifier::kInvalidNetworkHandle) {
-  net_log_.BeginEvent(NetLog::TYPE_SOCKET_ALIVE,
+  net_log_.BeginEvent(NetLogEventType::SOCKET_ALIVE,
                       source.ToEventParametersCallback());
   if (bind_type == DatagramSocket::RANDOM_BIND)
     DCHECK(!rand_int_cb.is_null());
@@ -98,7 +101,7 @@ UDPSocketPosix::UDPSocketPosix(DatagramSocket::BindType bind_type,
 
 UDPSocketPosix::~UDPSocketPosix() {
   Close();
-  net_log_.EndEvent(NetLog::TYPE_SOCKET_ALIVE);
+  net_log_.EndEvent(NetLogEventType::SOCKET_ALIVE);
 }
 
 int UDPSocketPosix::Open(AddressFamily address_family) {
@@ -180,7 +183,7 @@ int UDPSocketPosix::GetLocalAddress(IPEndPoint* address) const {
       return ERR_ADDRESS_INVALID;
     local_address_.reset(address.release());
     net_log_.AddEvent(
-        NetLog::TYPE_UDP_LOCAL_ADDRESS,
+        NetLogEventType::UDP_LOCAL_ADDRESS,
         CreateNetLogUDPConnectCallback(local_address_.get(), bound_network_));
   }
 
@@ -273,10 +276,10 @@ int UDPSocketPosix::SendToOrWrite(IOBuffer* buf,
 
 int UDPSocketPosix::Connect(const IPEndPoint& address) {
   DCHECK_NE(socket_, kInvalidSocket);
-  net_log_.BeginEvent(NetLog::TYPE_UDP_CONNECT,
+  net_log_.BeginEvent(NetLogEventType::UDP_CONNECT,
                       CreateNetLogUDPConnectCallback(&address, bound_network_));
   int rv = InternalConnect(address);
-  net_log_.EndEventWithNetErrorCode(NetLog::TYPE_UDP_CONNECT, rv);
+  net_log_.EndEventWithNetErrorCode(NetLogEventType::UDP_CONNECT, rv);
   is_connected_ = (rv == OK);
   return rv;
 }
@@ -346,27 +349,55 @@ int UDPSocketPosix::BindToNetwork(
       base::android::SDK_VERSION_LOLLIPOP) {
     return ERR_NOT_IMPLEMENTED;
   }
-  // NOTE(pauljensen): This does rely on Android implementation details, but
-  // these details are unlikely to change.
-  typedef int (*SetNetworkForSocket)(unsigned netId, int socketFd);
-  static SetNetworkForSocket setNetworkForSocket;
-  // This is racy, but all racers should come out with the same answer so it
-  // shouldn't matter.
-  if (!setNetworkForSocket) {
-    // Android's netd client library should always be loaded in our address
-    // space as it shims socket() which was used to create |socket_|.
-    base::FilePath file(base::GetNativeLibraryName("netd_client"));
-    // Use RTLD_NOW to match Android's prior loading of the library:
-    // http://androidxref.com/6.0.0_r5/xref/bionic/libc/bionic/NetdClient.cpp#37
-    // Use RTLD_NOLOAD to assert that the library is already loaded and
-    // avoid doing any disk IO.
-    void* dl = dlopen(file.value().c_str(), RTLD_NOW | RTLD_NOLOAD);
-    setNetworkForSocket =
-        reinterpret_cast<SetNetworkForSocket>(dlsym(dl, "setNetworkForSocket"));
+  int rv;
+  // On Android M and newer releases use supported NDK API. On Android L use
+  // setNetworkForSocket from libnetd_client.so.
+  if (base::android::BuildInfo::GetInstance()->sdk_int() >=
+      base::android::SDK_VERSION_MARSHMALLOW) {
+    // See declaration of android_setsocknetwork() here:
+    // http://androidxref.com/6.0.0_r1/xref/development/ndk/platforms/android-M/include/android/multinetwork.h#65
+    // Function cannot be called directly as it will cause app to fail to load
+    // on pre-marshmallow devices.
+    typedef int (*MarshmallowSetNetworkForSocket)(int64_t netId, int socketFd);
+    static MarshmallowSetNetworkForSocket marshmallowSetNetworkForSocket;
+    // This is racy, but all racers should come out with the same answer so it
+    // shouldn't matter.
+    if (!marshmallowSetNetworkForSocket) {
+      base::FilePath file(base::GetNativeLibraryName("android"));
+      void* dl = dlopen(file.value().c_str(), RTLD_NOW);
+      marshmallowSetNetworkForSocket =
+          reinterpret_cast<MarshmallowSetNetworkForSocket>(
+              dlsym(dl, "android_setsocknetwork"));
+    }
+    if (!marshmallowSetNetworkForSocket)
+      return ERR_NOT_IMPLEMENTED;
+    rv = marshmallowSetNetworkForSocket(network, socket_);
+    if (rv)
+      rv = errno;
+  } else {
+    // NOTE(pauljensen): This does rely on Android implementation details, but
+    // they won't change because Lollipop is already released.
+    typedef int (*LollipopSetNetworkForSocket)(unsigned netId, int socketFd);
+    static LollipopSetNetworkForSocket lollipopSetNetworkForSocket;
+    // This is racy, but all racers should come out with the same answer so it
+    // shouldn't matter.
+    if (!lollipopSetNetworkForSocket) {
+      // Android's netd client library should always be loaded in our address
+      // space as it shims socket() which was used to create |socket_|.
+      base::FilePath file(base::GetNativeLibraryName("netd_client"));
+      // Use RTLD_NOW to match Android's prior loading of the library:
+      // http://androidxref.com/6.0.0_r5/xref/bionic/libc/bionic/NetdClient.cpp#37
+      // Use RTLD_NOLOAD to assert that the library is already loaded and
+      // avoid doing any disk IO.
+      void* dl = dlopen(file.value().c_str(), RTLD_NOW | RTLD_NOLOAD);
+      lollipopSetNetworkForSocket =
+          reinterpret_cast<LollipopSetNetworkForSocket>(
+              dlsym(dl, "setNetworkForSocket"));
+    }
+    if (!lollipopSetNetworkForSocket)
+      return ERR_NOT_IMPLEMENTED;
+    rv = -lollipopSetNetworkForSocket(network, socket_);
   }
-  if (!setNetworkForSocket)
-    return ERR_NOT_IMPLEMENTED;
-  int rv = setNetworkForSocket(network, socket_);
   // If |network| has since disconnected, |rv| will be ENONET.  Surface this as
   // ERR_NETWORK_CHANGED, rather than MapSystemError(ENONET) which gives back
   // the less descriptive ERR_FAILED.
@@ -397,6 +428,37 @@ int UDPSocketPosix::SetSendBufferSize(int32_t size) {
   return rv == 0 ? OK : MapSystemError(errno);
 }
 
+int UDPSocketPosix::SetDoNotFragment() {
+  DCHECK_NE(socket_, kInvalidSocket);
+  DCHECK(CalledOnValidThread());
+
+#if !defined(IP_PMTUDISC_DO)
+  return ERR_NOT_IMPLEMENTED;
+#else
+  if (addr_family_ == AF_INET6) {
+    int val = IPV6_PMTUDISC_DO;
+    if (setsockopt(socket_, IPPROTO_IPV6, IPV6_MTU_DISCOVER, &val,
+                   sizeof(val)) != 0) {
+      return MapSystemError(errno);
+    }
+
+    int v6_only = false;
+    socklen_t v6_only_len = sizeof(v6_only);
+    if (getsockopt(socket_, IPPROTO_IPV6, IPV6_V6ONLY, &v6_only,
+                   &v6_only_len) != 0) {
+      return MapSystemError(errno);
+    }
+
+    if (v6_only)
+      return OK;
+  }
+
+  int val = IP_PMTUDISC_DO;
+  int rv = setsockopt(socket_, IPPROTO_IP, IP_MTU_DISCOVER, &val, sizeof(val));
+  return rv == 0 ? OK : MapSystemError(errno);
+#endif
+}
+
 int UDPSocketPosix::AllowAddressReuse() {
   DCHECK_NE(socket_, kInvalidSocket);
   DCHECK(CalledOnValidThread());
@@ -416,10 +478,15 @@ int UDPSocketPosix::SetBroadcast(bool broadcast) {
   // SO_REUSEPORT on OSX permits multiple processes to each receive
   // UDP multicast or broadcast datagrams destined for the bound
   // port.
+  // This is only being set on OSX because its behavior is platform dependent
+  // and we are playing it safe by only setting it on platforms where things
+  // break.
   rv = setsockopt(socket_, SOL_SOCKET, SO_REUSEPORT, &value, sizeof(value));
-#else
-  rv = setsockopt(socket_, SOL_SOCKET, SO_BROADCAST, &value, sizeof(value));
+  if (rv != 0)
+    return MapSystemError(errno);
 #endif  // defined(OS_MACOSX)
+  rv = setsockopt(socket_, SOL_SOCKET, SO_BROADCAST, &value, sizeof(value));
+
   return rv == 0 ? OK : MapSystemError(errno);
 }
 
@@ -473,7 +540,8 @@ void UDPSocketPosix::LogRead(int result,
                              socklen_t addr_len,
                              const sockaddr* addr) const {
   if (result < 0) {
-    net_log_.AddEventWithNetErrorCode(NetLog::TYPE_UDP_RECEIVE_ERROR, result);
+    net_log_.AddEventWithNetErrorCode(NetLogEventType::UDP_RECEIVE_ERROR,
+                                      result);
     return;
   }
 
@@ -483,11 +551,9 @@ void UDPSocketPosix::LogRead(int result,
 
     IPEndPoint address;
     bool is_address_valid = address.FromSockAddr(addr, addr_len);
-    net_log_.AddEvent(
-        NetLog::TYPE_UDP_BYTES_RECEIVED,
-        CreateNetLogUDPDataTranferCallback(
-            result, bytes,
-            is_address_valid ? &address : NULL));
+    net_log_.AddEvent(NetLogEventType::UDP_BYTES_RECEIVED,
+                      CreateNetLogUDPDataTranferCallback(
+                          result, bytes, is_address_valid ? &address : NULL));
   }
 
   NetworkActivityMonitor::GetInstance()->IncrementBytesReceived(result);
@@ -510,13 +576,13 @@ void UDPSocketPosix::LogWrite(int result,
                               const char* bytes,
                               const IPEndPoint* address) const {
   if (result < 0) {
-    net_log_.AddEventWithNetErrorCode(NetLog::TYPE_UDP_SEND_ERROR, result);
+    net_log_.AddEventWithNetErrorCode(NetLogEventType::UDP_SEND_ERROR, result);
     return;
   }
 
   if (net_log_.IsCapturing()) {
     net_log_.AddEvent(
-        NetLog::TYPE_UDP_BYTES_SENT,
+        NetLogEventType::UDP_BYTES_SENT,
         CreateNetLogUDPDataTranferCallback(result, bytes, address));
   }
 

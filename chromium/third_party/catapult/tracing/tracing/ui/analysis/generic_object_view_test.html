@@ -5,11 +5,11 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
+<link rel="import" href="/tracing/base/unit.html">
 <link rel="import" href="/tracing/model/object_instance.html">
 <link rel="import" href="/tracing/ui/analysis/generic_object_view.html">
 <link rel="import" href="/tracing/ui/base/deep_utils.html">
 <link rel="import" href="/tracing/value/numeric.html">
-<link rel="import" href="/tracing/value/unit.html">
 
 <script>
 'use strict';
@@ -18,19 +18,19 @@ tr.b.unittest.testSuite(function() {
   test('undefinedValue', function() {
     var view = document.createElement('tr-ui-a-generic-object-view');
     view.object = undefined;
-    assert.equal(view.$.content.textContent, 'undefined');
+    assert.equal(Polymer.dom(view.$.content).textContent, 'undefined');
   });
 
   test('nullValue', function() {
     var view = document.createElement('tr-ui-a-generic-object-view');
     view.object = null;
-    assert.equal(view.$.content.textContent, 'null');
+    assert.equal(Polymer.dom(view.$.content).textContent, 'null');
   });
 
   test('stringValue', function() {
     var view = document.createElement('tr-ui-a-generic-object-view');
     view.object = 'string value';
-    assert.equal(view.$.content.textContent, '"string value"');
+    assert.equal(Polymer.dom(view.$.content).textContent, '"string value"');
   });
 
   test('multiLineStringValue', function() {
@@ -65,13 +65,13 @@ tr.b.unittest.testSuite(function() {
   test('booleanValue', function() {
     var view = document.createElement('tr-ui-a-generic-object-view');
     view.object = false;
-    assert.equal(view.$.content.textContent, 'false');
+    assert.equal(Polymer.dom(view.$.content).textContent, 'false');
   });
 
   test('numberValue', function() {
     var view = document.createElement('tr-ui-a-generic-object-view');
     view.object = 3.14159;
-    assert.equal(view.$.content.textContent, '3.14159');
+    assert.equal(Polymer.dom(view.$.content).textContent, '3.14159');
   });
 
   test('objectSnapshotValue', function() {
@@ -179,14 +179,14 @@ tr.b.unittest.testSuite(function() {
   test('timeDurationValue', function() {
     var view = document.createElement('tr-ui-a-generic-object-view');
     view.object =
-        new tr.v.ScalarNumeric(tr.v.Unit.byName.timeDurationInMs, 3);
+        new tr.v.ScalarNumeric(tr.b.Unit.byName.timeDurationInMs, 3);
     assert.isDefined(tr.b.findDeepElementMatching(
       view.$.content, 'tr-v-ui-scalar-span'));
   });
 
   test('timeStampValue', function() {
     var view = document.createElement('tr-ui-a-generic-object-view');
-    view.object = new tr.v.ScalarNumeric(tr.v.Unit.byName.timeStampInMs, 3);
+    view.object = new tr.v.ScalarNumeric(tr.b.Unit.byName.timeStampInMs, 3);
     assert.isDefined(tr.b.findDeepElementMatching(
       view.$.content, 'tr-v-ui-scalar-span'));
   });
@@ -194,13 +194,23 @@ tr.b.unittest.testSuite(function() {
   test('scalarValue', function() {
     var view = document.createElement('tr-ui-a-generic-object-view');
     view.object =
-        new tr.v.ScalarNumeric(tr.v.Unit.byName.normalizedPercentage, .3);
+        new tr.v.ScalarNumeric(tr.b.Unit.byName.normalizedPercentage, .3);
     var m = tr.b.findDeepElementMatching(
         view.$.content, 'tr-v-ui-scalar-span');
     assert.isDefined(m);
     assert.equal(m.value, .3);
-    assert.equal(m.unit, tr.v.Unit.byName.normalizedPercentage);
+    assert.equal(m.unit, tr.b.Unit.byName.normalizedPercentage);
   });
 
+  test('httpLink', function() {
+    var view = document.createElement('tr-ui-a-generic-object-view');
+    var url = 'https://google.com/chrome';
+    view.object = {a: url};
+    this.addHTMLOutput(view);
+    var a = tr.b.findDeepElementMatching(view.$.content, 'a');
+    assert.isDefined(a);
+    assert.strictEqual(url, a.href);
+    assert.strictEqual(url, a.textContent);
+  });
 });
 </script>

@@ -37,7 +37,10 @@ cr.define('offlineInternals', function() {
       row.appendChild(checkboxCell);
 
       var cell = document.createElement('td');
-      cell.textContent = pages[i].onlineUrl;
+      var link = document.createElement('a');
+      link.setAttribute('href', pages[i].onlineUrl);
+      link.textContent = pages[i].onlineUrl;
+      cell.appendChild(link);
       row.appendChild(cell);
 
       cell = document.createElement('td');
@@ -46,6 +49,10 @@ cr.define('offlineInternals', function() {
 
       cell = document.createElement('td');
       cell.textContent = Math.round(pages[i].size / 1024);
+      row.appendChild(cell);
+
+      cell = document.createElement('td');
+      cell.textContent = pages[i].isExpired;
       row.appendChild(cell);
 
       storedPagesTable.appendChild(row);
@@ -64,6 +71,15 @@ cr.define('offlineInternals', function() {
 
     for (var i = 0; i < requests.length; i++) {
       var row = document.createElement('tr');
+
+      var checkboxCell = document.createElement('td');
+      var checkbox = document.createElement('input');
+      checkbox.setAttribute('type', 'checkbox');
+      checkbox.setAttribute('name', 'requests');
+      checkbox.setAttribute('value', requests[i].id);
+
+      checkboxCell.appendChild(checkbox);
+      row.appendChild(checkboxCell);
 
       var cell = document.createElement('td');
       cell.textContent = requests[i].onlineUrl;
@@ -102,6 +118,9 @@ cr.define('offlineInternals', function() {
   function refreshAll() {
     browserProxy_.getStoredPages().then(fillStoredPages);
     browserProxy_.getRequestQueue().then(fillRequestQueue);
+    browserProxy_.getNetworkStatus().then(function(networkStatus) {
+      $('current-status').textContent = networkStatus;
+    });
     refreshLog();
   }
 
@@ -109,7 +128,28 @@ cr.define('offlineInternals', function() {
    * Delete all pages in the offline store.
    */
   function deleteAllPages() {
-    browserProxy_.deleteAllPages().then(pagesDeleted);
+    var checkboxes = document.getElementsByName('stored');
+    var selectedIds = [];
+
+    for (var i = 0; i < checkboxes.length; i++) {
+      selectedIds.push(checkboxes[i].value);
+    }
+
+    browserProxy_.deleteSelectedPages(selectedIds).then(pagesDeleted);
+  }
+
+  /**
+   * Delete all pending SavePageRequest items in the request queue.
+   */
+  function deleteAllRequests() {
+    var checkboxes = document.getElementsByName('requests');
+    var selectedIds = [];
+
+    for (var i = 0; i < checkboxes.length; i++) {
+      selectedIds.push(checkboxes[i].value);
+    }
+
+    browserProxy_.deleteSelectedRequests(selectedIds).then(requestsDeleted);
   }
 
   /**
@@ -119,6 +159,14 @@ cr.define('offlineInternals', function() {
   function pagesDeleted(status) {
     $('page-actions-info').textContent = status;
     browserProxy_.getStoredPages().then(fillStoredPages);
+  }
+
+  /**
+   * Callback when requests are deleted.
+   */
+  function requestsDeleted(status) {
+    $('request-queue-actions-info').textContent = status;
+    browserProxy_.getRequestQueue().then(fillRequestQueue);
   }
 
   /**
@@ -161,6 +209,21 @@ cr.define('offlineInternals', function() {
   }
 
   /**
+   * Delete selected SavePageRequest items from the request queue.
+   */
+  function deleteSelectedRequests() {
+    var checkboxes = document.getElementsByName('requests');
+    var selectedIds = [];
+
+    for (var i = 0; i < checkboxes.length; i++) {
+      if (checkboxes[i].checked)
+        selectedIds.push(checkboxes[i].value);
+    }
+
+    browserProxy_.deleteSelectedRequests(selectedIds).then(requestsDeleted);
+  }
+
+  /**
    * Refreshes the logs.
    */
   function refreshLog() {
@@ -169,20 +232,68 @@ cr.define('offlineInternals', function() {
   }
 
   function initialize() {
-    $('clear-all').onclick = deleteAllPages;
-    $('clear-selected').onclick = deleteSelectedPages;
+    /**
+     * @param {!boolean} enabled Whether to enable Logging.
+     */
+    function togglePageModelLog(enabled) {
+      browserProxy_.setRecordPageModel(enabled);
+      $('model-status').textContent = enabled ? 'On' : 'Off';
+    }
+
+    /**
+     * @param {!boolean} enabled Whether to enable Logging.
+     */
+    function toggleRequestQueueLog(enabled) {
+      browserProxy_.setRecordRequestQueue(enabled);
+      $('request-status').textContent = enabled ? 'On' : 'Off';
+    }
+
+    var incognito = loadTimeData.getBoolean('isIncognito');
+    $('delete-all-pages').disabled = incognito;
+    $('delete-selected-pages').disabled = incognito;
+    $('delete-all-requests').disabled = incognito;
+    $('delete-selected-requests').disabled = incognito;
+    $('log-model-on').disabled = incognito;
+    $('log-model-off').disabled = incognito;
+    $('log-request-on').disabled = incognito;
+    $('log-request-off').disabled = incognito;
+    $('refresh').disabled = incognito;
+
+    $('delete-all-pages').onclick = deleteAllPages;
+    $('delete-selected-pages').onclick = deleteSelectedPages;
+    $('delete-all-requests').onclick = deleteAllRequests;
+    $('delete-selected-requests').onclick = deleteSelectedRequests;
     $('refresh').onclick = refreshAll;
     $('download').onclick = download;
-    $('log-model-on').onclick =
-        browserProxy_.setRecordPageModel.bind(browserProxy_, true);
-    $('log-model-off').onclick =
-        browserProxy_.setRecordPageModel.bind(browserProxy_, false);
-    $('log-request-on').onclick =
-        browserProxy_.setRecordRequestQueue.bind(browserProxy_, true);
-    $('log-request-off').onclick =
-        browserProxy_.setRecordRequestQueue.bind(browserProxy_, false);
+    $('log-model-on').onclick = togglePageModelLog.bind(this, true);
+    $('log-model-off').onclick = togglePageModelLog.bind(this, false);
+    $('log-request-on').onclick = toggleRequestQueueLog.bind(this, true);
+    $('log-request-off').onclick = toggleRequestQueueLog.bind(this, false);
     $('refresh-logs').onclick = refreshLog;
-    refreshAll();
+    $('add-to-queue').onclick = function() {
+      var saveUrls = $('url').value.split(',');
+      var counter = saveUrls.length;
+      $('save-url-state').textContent = '';
+      for (let i = 0; i < saveUrls.length; i++) {
+        browserProxy_.addToRequestQueue(saveUrls[i])
+            .then(function(state) {
+              if (state) {
+                $('save-url-state').textContent +=
+                    saveUrls[i] + ' has been added to queue.\n';
+                $('url').value = '';
+                counter--;
+                if (counter == 0) {
+                  browserProxy_.getRequestQueue().then(fillRequestQueue);
+                }
+              } else {
+                $('save-url-state').textContent +=
+                    saveUrls[i] + ' failed to be added to queue.\n';
+              }
+            });
+      }
+    };
+    if (!incognito)
+      refreshAll();
   }
 
   // Return an object with all of the exports.

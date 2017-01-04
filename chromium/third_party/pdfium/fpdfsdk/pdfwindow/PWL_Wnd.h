@@ -7,12 +7,14 @@
 #ifndef FPDFSDK_PDFWINDOW_PWL_WND_H_
 #define FPDFSDK_PDFWINDOW_PWL_WND_H_
 
+#include <memory>
 #include <vector>
 
-#include "core/fpdfdoc/include/fpdf_doc.h"
-#include "core/fxcrt/include/fx_basic.h"
+#include "core/fpdfdoc/cpdf_formcontrol.h"
+#include "core/fxcrt/fx_basic.h"
 #include "fpdfsdk/cfx_systemhandler.h"
 
+class CPDFSDK_Widget;
 class CPWL_MsgControl;
 class CPWL_ScrollBar;
 class CPWL_Timer;
@@ -182,7 +184,6 @@ class IPWL_FocusHandler {
  public:
   virtual ~IPWL_FocusHandler() {}
   virtual void OnSetFocus(CPWL_Wnd* pWnd) = 0;
-  virtual void OnKillFocus(CPWL_Wnd* pWnd) = 0;
 };
 
 struct PWL_CREATEPARAM {
@@ -197,7 +198,7 @@ struct PWL_CREATEPARAM {
   IPWL_FocusHandler* pFocusHandler;   // optional
   uint32_t dwFlags;                   // optional
   CPWL_Color sBackgroundColor;        // optional
-  FX_HWND hAttachedWnd;               // required for no-reader framework
+  CPDFSDK_Widget* pAttachedWidget;    // required for no-reader framework
   BorderStyle nBorderStyle;           // optional
   int32_t dwBorderWidth;              // optional
   CPWL_Color sBorderColor;            // optional
@@ -239,7 +240,7 @@ class CPWL_TimerHandler {
   virtual CFX_SystemHandler* GetSystemHandler() const = 0;
 
  private:
-  CPWL_Timer* m_pTimer;
+  std::unique_ptr<CPWL_Timer> m_pTimer;
 };
 
 class CPWL_Wnd : public CPWL_TimerHandler {
@@ -389,7 +390,6 @@ class CPWL_Wnd : public CPWL_TimerHandler {
 
   void PWLtoWnd(const CFX_FloatPoint& point, int32_t& x, int32_t& y) const;
   FX_RECT PWLtoWnd(const CFX_FloatRect& rect) const;
-  FX_HWND GetAttachedHWnd() const;
 
   FX_BOOL IsWndCaptureMouse(const CPWL_Wnd* pWnd) const;
   FX_BOOL IsWndCaptureKeyboard(const CPWL_Wnd* pWnd) const;

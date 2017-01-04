@@ -7,7 +7,7 @@
 
 #include "src/identity-map.h"
 #include "src/interpreter/bytecodes.h"
-#include "src/zone-containers.h"
+#include "src/zone/zone-containers.h"
 
 namespace v8 {
 namespace internal {
@@ -32,10 +32,10 @@ class ConstantArrayBuilder final BASE_EMBEDDED {
   static const size_t k32BitCapacity =
       kMaxUInt32 - k16BitCapacity - k8BitCapacity + 1;
 
-  ConstantArrayBuilder(Isolate* isolate, Zone* zone);
+  ConstantArrayBuilder(Zone* zone, Handle<Object> the_hole_value);
 
   // Generate a fixed array of constants based on inserted objects.
-  Handle<FixedArray> ToFixedArray();
+  Handle<FixedArray> ToFixedArray(Isolate* isolate);
 
   // Returns the object in the constant pool array that at index
   // |index|.
@@ -48,14 +48,21 @@ class ConstantArrayBuilder final BASE_EMBEDDED {
   // present. Returns the array index associated with the object.
   size_t Insert(Handle<Object> object);
 
+  // Allocates an empty entry and returns the array index associated with the
+  // reservation. Entry can be inserted by calling InsertReservedEntry().
+  size_t AllocateEntry();
+
+  // Inserts the given object into an allocated entry.
+  void InsertAllocatedEntry(size_t index, Handle<Object> object);
+
   // Creates a reserved entry in the constant pool and returns
   // the size of the operand that'll be required to hold the entry
   // when committed.
   OperandSize CreateReservedEntry();
 
   // Commit reserved entry and returns the constant pool index for the
-  // object.
-  size_t CommitReservedEntry(OperandSize operand_size, Handle<Object> object);
+  // SMI value.
+  size_t CommitReservedEntry(OperandSize operand_size, Smi* value);
 
   // Discards constant pool reservation.
   void DiscardReservedEntry(OperandSize operand_size);
@@ -63,7 +70,8 @@ class ConstantArrayBuilder final BASE_EMBEDDED {
  private:
   typedef uint32_t index_t;
 
-  index_t AllocateEntry(Handle<Object> object);
+  index_t AllocateIndex(Handle<Object> object);
+  index_t AllocateReservedEntry(Smi* value);
 
   struct ConstantArraySlice final : public ZoneObject {
     ConstantArraySlice(Zone* zone, size_t start_index, size_t capacity,
@@ -72,6 +80,8 @@ class ConstantArrayBuilder final BASE_EMBEDDED {
     void Unreserve();
     size_t Allocate(Handle<Object> object);
     Handle<Object> At(size_t index) const;
+    void InsertAt(size_t index, Handle<Object> object);
+    bool AllElementsAreUnique() const;
 
     inline size_t available() const { return capacity() - reserved() - size(); }
     inline size_t reserved() const { return reserved_; }
@@ -91,14 +101,19 @@ class ConstantArrayBuilder final BASE_EMBEDDED {
     DISALLOW_COPY_AND_ASSIGN(ConstantArraySlice);
   };
 
-  const ConstantArraySlice* IndexToSlice(size_t index) const;
+  ConstantArraySlice* IndexToSlice(size_t index) const;
   ConstantArraySlice* OperandSizeToSlice(OperandSize operand_size) const;
 
-  IdentityMap<index_t>* constants_map() { return &constants_map_; }
+  Handle<Object> the_hole_value() const { return the_hole_value_; }
 
-  Isolate* isolate_;
   ConstantArraySlice* idx_slice_[3];
-  IdentityMap<index_t> constants_map_;
+  base::TemplateHashMapImpl<Address, index_t, base::KeyEqualityMatcher<Address>,
+                            ZoneAllocationPolicy>
+      constants_map_;
+  ZoneMap<Smi*, index_t> smi_map_;
+  ZoneVector<std::pair<Smi*, index_t>> smi_pairs_;
+  Zone* zone_;
+  Handle<Object> the_hole_value_;
 };
 
 }  // namespace interpreter

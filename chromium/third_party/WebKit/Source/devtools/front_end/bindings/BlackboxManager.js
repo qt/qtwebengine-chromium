@@ -5,13 +5,11 @@
 /**
  * @constructor
  * @param {!WebInspector.DebuggerWorkspaceBinding} debuggerWorkspaceBinding
- * @param {!WebInspector.NetworkMapping} networkMapping
  * @implements {WebInspector.TargetManager.Observer}
  */
-WebInspector.BlackboxManager = function(debuggerWorkspaceBinding, networkMapping)
+WebInspector.BlackboxManager = function(debuggerWorkspaceBinding)
 {
     this._debuggerWorkspaceBinding = debuggerWorkspaceBinding;
-    this._networkMapping = networkMapping;
 
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.ParsedScriptSource, this._parsedScriptSource, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.GlobalObjectCleared, this._globalObjectCleared, this);
@@ -85,9 +83,12 @@ WebInspector.BlackboxManager.prototype = {
      */
     isBlackboxedRawLocation: function(location)
     {
-        var positions = this._scriptPositions(location.script());
+        var script = location.script();
+        if (!script)
+            return false;
+        var positions = this._scriptPositions(script);
         if (!positions)
-            return this._isBlackboxedScript(location.script());
+            return this._isBlackboxedScript(script);
         var index = positions.lowerBound(location, comparator);
         return !!(index % 2);
 
@@ -98,9 +99,9 @@ WebInspector.BlackboxManager.prototype = {
          */
         function comparator(a, b)
         {
-            if (a.lineNumber !== b.line)
-                return a.lineNumber - b.line;
-            return a.columnNumber - b.column;
+            if (a.lineNumber !== b.lineNumber)
+                return a.lineNumber - b.lineNumber;
+            return a.columnNumber - b.columnNumber;
         }
     },
 
@@ -148,26 +149,26 @@ WebInspector.BlackboxManager.prototype = {
         if (!previousScriptState)
             return Promise.resolve();
 
-        var mappings = sourceMap.mappings().slice();
-        mappings.sort(mappingComparator);
-
+        var hasBlackboxedMappings = sourceMap.sourceURLs().some((url) => this.isBlackboxedURL(url));
+        var mappings = hasBlackboxedMappings ? sourceMap.mappings().slice() : [];
         if (!mappings.length) {
             if (previousScriptState.length > 0)
                 return this._setScriptState(script, []);
             return Promise.resolve();
         }
+        mappings.sort(mappingComparator);
 
         var currentBlackboxed = false;
         var isBlackboxed = false;
         var positions = [];
         // If content in script file begin is not mapped and one or more ranges are blackboxed then blackbox it.
         if (mappings[0].lineNumber !== 0 || mappings[0].columnNumber !== 0) {
-            positions.push({ line: 0, column: 0});
+            positions.push({ lineNumber: 0, columnNumber: 0});
             currentBlackboxed = true;
         }
         for (var mapping of mappings) {
             if (mapping.sourceURL && currentBlackboxed !== this.isBlackboxedURL(mapping.sourceURL)) {
-                positions.push({ line: mapping.lineNumber, column: mapping.columnNumber });
+                positions.push({ lineNumber: mapping.lineNumber, columnNumber: mapping.columnNumber });
                 currentBlackboxed = !currentBlackboxed;
             }
             isBlackboxed = currentBlackboxed || isBlackboxed;
@@ -192,12 +193,7 @@ WebInspector.BlackboxManager.prototype = {
      */
     _uiSourceCodeURL: function(uiSourceCode)
     {
-        var networkURL = this._networkMapping.networkURL(uiSourceCode);
-        var projectType = uiSourceCode.project().type();
-        if (projectType === WebInspector.projectTypes.Debugger)
-            return null;
-        var url = projectType === WebInspector.projectTypes.Formatter ? uiSourceCode.url() : networkURL;
-        return url ? url : null;
+        return uiSourceCode.project().type() === WebInspector.projectTypes.Debugger ? null : uiSourceCode.url();
     },
 
     /**
@@ -346,7 +342,7 @@ WebInspector.BlackboxManager.prototype = {
     _addScript: function(script)
     {
         var blackboxed = this._isBlackboxedScript(script);
-        return this._setScriptState(script, blackboxed ? [ { line: 0, column: 0 } ] : []);
+        return this._setScriptState(script, blackboxed ? [ { lineNumber: 0, columnNumber: 0 } ] : []);
     },
 
     /**
@@ -393,7 +389,7 @@ WebInspector.BlackboxManager.prototype = {
             var hasChanged = false;
             hasChanged = previousScriptState.length !== positions.length;
             for (var i = 0; !hasChanged && i < positions.length; ++i)
-                hasChanged = positions[i].line !== previousScriptState[i].line || positions[i].column !== previousScriptState[i].column;
+                hasChanged = positions[i].lineNumber !== previousScriptState[i].lineNumber || positions[i].columnNumber !== previousScriptState[i].columnNumber;
             if (!hasChanged)
                 return Promise.resolve();
         } else {

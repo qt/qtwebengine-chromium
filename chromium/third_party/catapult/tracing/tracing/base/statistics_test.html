@@ -8,6 +8,9 @@ found in the LICENSE file.
 <script>
 'use strict';
 
+// TODO(charliea): Remove:
+/* eslint-disable catapult-camelcase */
+
 tr.b.unittest.testSuite(function() {
   var Statistics = tr.b.Statistics;
 
@@ -19,27 +22,27 @@ tr.b.unittest.testSuite(function() {
   function relax(samples, opt_iterations) {
     opt_iterations = opt_iterations || 10;
     for (var i = 0; i < opt_iterations; i++) {
-      var voronoi_boundaries = [];
+      var voronoiBoundaries = [];
       for (var j = 1; j < samples.length; j++)
-        voronoi_boundaries.push((samples[j] + samples[j - 1]) * 0.5);
+        voronoiBoundaries.push((samples[j] + samples[j - 1]) * 0.5);
 
-      var relaxed_samples = [];
-      relaxed_samples.push(samples[0]);
+      var relaxedSamples = [];
+      relaxedSamples.push(samples[0]);
       for (var j = 1; j < samples.length - 1; j++) {
-        relaxed_samples.push(
-            (voronoi_boundaries[j - 1] + voronoi_boundaries[j]) * 0.5);
+        relaxedSamples.push(
+            (voronoiBoundaries[j - 1] + voronoiBoundaries[j]) * 0.5);
       }
-      relaxed_samples.push(samples[samples.length - 1]);
-      samples = relaxed_samples;
+      relaxedSamples.push(samples[samples.length - 1]);
+      samples = relaxedSamples;
     }
     return samples;
   }
 
-  function createRandomSamples(num_samples) {
+  function createRandomSamples(numSamples) {
     var samples = [];
     var position = 0.0;
     samples.push(position);
-    for (var i = 1; i < num_samples; i++) {
+    for (var i = 1; i < numSamples; i++) {
       position += Math.random();
       samples.push(position);
     }
@@ -145,7 +148,33 @@ tr.b.unittest.testSuite(function() {
   });
 
   test('meanBasic', function() {
-    assert.equal(Statistics.mean([1, 2, 3]), 2);
+    assert.closeTo(Statistics.mean([1, 2, 3]), 2, 1e-6);
+    assert.closeTo(Statistics.mean(new Set([1, 2, 3])), 2, 1e-6);
+  });
+
+  test('geometricMean', function() {
+    assert.strictEqual(1, Statistics.geometricMean([]));
+    assert.strictEqual(1, Statistics.geometricMean([1]));
+    assert.strictEqual(0, Statistics.geometricMean([-1]));
+    assert.strictEqual(0, Statistics.geometricMean([0]));
+    assert.strictEqual(0, Statistics.geometricMean([1, 2, 3, 0]));
+    assert.strictEqual(0, Statistics.geometricMean([1, 2, 3, -1]));
+    assert.strictEqual(1, Statistics.geometricMean([1, 1, 1]));
+    assert.strictEqual(2, Statistics.geometricMean([2]));
+    assert.closeTo(Math.sqrt(6), Statistics.geometricMean([2, 3]), 1e-6);
+    assert.closeTo(6, Statistics.geometricMean(new Set([4, 9])), 1e-6);
+
+    var samples = [];
+    for (var i = 0; i < 1e3; ++i)
+      samples.push(Number.MAX_SAFE_INTEGER);
+    assert.closeTo(Number.MAX_SAFE_INTEGER, Statistics.geometricMean(samples),
+        Number.MAX_SAFE_INTEGER * 1e-13);
+
+    samples = [];
+    for (var i = 0; i < 1e3; ++i)
+      samples.push(Number.MAX_VALUE / 1e3);
+    assert.closeTo(Number.MAX_VALUE / 1e3, Statistics.geometricMean(samples),
+        Number.MAX_VALUE * 1e-13);
   });
 
   test('weightedMean', function() {
@@ -319,9 +348,9 @@ tr.b.unittest.testSuite(function() {
       var samples = createRandomSamples(10);
       var samples = Statistics.normalizeSamples(samples).normalized_samples;
       var d = Statistics.discrepancy(samples);
-      var relaxed_samples = relax(samples);
-      var d_relaxed = Statistics.discrepancy(relaxed_samples);
-      assert.isBelow(d_relaxed, d);
+      var relaxedSamples = relax(samples);
+      var dRelaxed = Statistics.discrepancy(relaxedSamples);
+      assert.isBelow(dRelaxed, d);
     }
   });
 
@@ -366,43 +395,43 @@ tr.b.unittest.testSuite(function() {
   });
 
   test('timestampsDiscrepancy', function() {
-    var time_stamps = [];
-    var d_abs = Statistics.timestampsDiscrepancy(time_stamps, true);
-    assert.equal(d_abs, 0.0);
+    var timestamps = [];
+    var dAbs = Statistics.timestampsDiscrepancy(timestamps, true);
+    assert.equal(dAbs, 0.0);
 
-    time_stamps = [4];
-    d_abs = Statistics.timestampsDiscrepancy(time_stamps, true);
-    assert.equal(d_abs, 0.5);
+    timestamps = [4];
+    dAbs = Statistics.timestampsDiscrepancy(timestamps, true);
+    assert.equal(dAbs, 0.5);
 
-    var time_stamps_a = [0, 1, 2, 3, 5, 6];
-    var time_stamps_b = [0, 1, 2, 3, 5, 7];
-    var time_stamps_c = [0, 2, 3, 4];
-    var time_stamps_d = [0, 2, 3, 4, 5];
-
-
-    var d_abs_a = Statistics.timestampsDiscrepancy(time_stamps_a, true);
-    var d_abs_b = Statistics.timestampsDiscrepancy(time_stamps_b, true);
-    var d_abs_c = Statistics.timestampsDiscrepancy(time_stamps_c, true);
-    var d_abs_d = Statistics.timestampsDiscrepancy(time_stamps_d, true);
-    var d_rel_a = Statistics.timestampsDiscrepancy(time_stamps_a, false);
-    var d_rel_b = Statistics.timestampsDiscrepancy(time_stamps_b, false);
-    var d_rel_c = Statistics.timestampsDiscrepancy(time_stamps_c, false);
-    var d_rel_d = Statistics.timestampsDiscrepancy(time_stamps_d, false);
+    var timestampsA = [0, 1, 2, 3, 5, 6];
+    var timestampsB = [0, 1, 2, 3, 5, 7];
+    var timestampsC = [0, 2, 3, 4];
+    var timestampsD = [0, 2, 3, 4, 5];
 
 
-    assert.isBelow(d_abs_a, d_abs_b);
-    assert.isBelow(d_rel_a, d_rel_b);
-    assert.isBelow(d_rel_d, d_rel_c);
-    assert.closeTo(d_abs_d, d_abs_c, 0.0001);
+    var dAbsA = Statistics.timestampsDiscrepancy(timestampsA, true);
+    var dAbsB = Statistics.timestampsDiscrepancy(timestampsB, true);
+    var dAbsC = Statistics.timestampsDiscrepancy(timestampsC, true);
+    var dAbsD = Statistics.timestampsDiscrepancy(timestampsD, true);
+    var dRelA = Statistics.timestampsDiscrepancy(timestampsA, false);
+    var dRelB = Statistics.timestampsDiscrepancy(timestampsB, false);
+    var dRelC = Statistics.timestampsDiscrepancy(timestampsC, false);
+    var dRelD = Statistics.timestampsDiscrepancy(timestampsD, false);
+
+
+    assert.isBelow(dAbsA, dAbsB);
+    assert.isBelow(dRelA, dRelB);
+    assert.isBelow(dRelD, dRelC);
+    assert.closeTo(dAbsD, dAbsC, 0.0001);
   });
 
   test('discrepancyMultipleRanges', function() {
     var samples = [[0.0, 1.2, 2.3, 3.3], [6.3, 7.5, 8.4], [4.2, 5.4, 5.9]];
-    var d_0 = Statistics.timestampsDiscrepancy(samples[0]);
-    var d_1 = Statistics.timestampsDiscrepancy(samples[1]);
-    var d_2 = Statistics.timestampsDiscrepancy(samples[2]);
+    var d0 = Statistics.timestampsDiscrepancy(samples[0]);
+    var d1 = Statistics.timestampsDiscrepancy(samples[1]);
+    var d2 = Statistics.timestampsDiscrepancy(samples[2]);
     var d = Statistics.timestampsDiscrepancy(samples);
-    assert.equal(d, Math.max(d_0, d_1, d_2));
+    assert.equal(d, Math.max(d0, d1, d2));
   });
 
   /**
@@ -414,8 +443,8 @@ tr.b.unittest.testSuite(function() {
       var samples = createRandomSamples(10);
       samples = Statistics.normalizeSamples(samples).normalized_samples;
       var d = Statistics.discrepancy(samples);
-      var d_approx = Statistics.discrepancy(samples, 500);
-      assert.closeTo(d, d_approx, 0.01);
+      var dApprox = Statistics.discrepancy(samples, 500);
+      assert.closeTo(d, dApprox, 0.01);
     }
   });
 
@@ -428,16 +457,24 @@ tr.b.unittest.testSuite(function() {
     d = Statistics.durationsDiscrepancy(durations);
     assert.equal(d, 4.0);
 
-    var durations_a = [1, 1, 1, 1, 1];
-    var durations_b = [1, 1, 2, 1, 1];
-    var durations_c = [1, 2, 1, 2, 1];
+    var durationsA = [1, 1, 1, 1, 1];
+    var durationsB = [1, 1, 2, 1, 1];
+    var durationsC = [1, 2, 1, 2, 1];
 
-    var d_a = Statistics.durationsDiscrepancy(durations_a);
-    var d_b = Statistics.durationsDiscrepancy(durations_b);
-    var d_c = Statistics.durationsDiscrepancy(durations_c);
+    var dA = Statistics.durationsDiscrepancy(durationsA);
+    var dB = Statistics.durationsDiscrepancy(durationsB);
+    var dC = Statistics.durationsDiscrepancy(durationsC);
 
-    assert.isBelow(d_a, d_b);
-    assert.isBelow(d_b, d_c);
+    assert.isBelow(dA, dB);
+    assert.isBelow(dB, dC);
+  });
+
+  test('uniformlySampleArray', function() {
+    var samples = ['A', 'B', 'C', 'D', 'E'];
+    for (var i = samples.length; i >= 0; --i) {
+      Statistics.uniformlySampleArray(samples, i);
+      assert.lengthOf(samples, i);
+    }
   });
 
   test('uniformlySampleStream', function() {
@@ -482,20 +519,20 @@ tr.b.unittest.testSuite(function() {
    // x < 0.01
     var sampleA = [1, 2, 2.1, 2.2, 2, 1];
     var sampleB = [12, 13, 13.1, 13.2, 13, 12];
-    var results = Statistics.mwu.test(sampleA, sampleB);
+    var results = Statistics.mwu(sampleA, sampleB);
     assert.isBelow(results.p, 0.1);
 
     // 0.01 < x < 0.1
     sampleA = [1, 2, 2.1, 2.2, 2, 1];
     sampleB = [2, 3, 3.1, 3.2, 3, 2];
-    results = Statistics.mwu.test(sampleA, sampleB);
+    results = Statistics.mwu(sampleA, sampleB);
     assert.isBelow(results.p, 0.1);
     assert.isAbove(results.p, 0.01);
 
     // 0.1 < x
     sampleA = [1, 2, 2.1, 2.2, 2, 1];
     sampleB = [1, 2, 2.1, 2.2, 2, 1];
-    results = Statistics.mwu.test(sampleA, sampleB);
+    results = Statistics.mwu(sampleA, sampleB);
     assert.isAbove(results.p, 0.1);
   });
 
@@ -509,33 +546,32 @@ tr.b.unittest.testSuite(function() {
         6.915150e+0, 7.881740e+0, 1.131160e+1, 9.959400e+0, 9.030880e+0
     ];
     // Identical samples should not cause the null to be rejected.
-    var results = Statistics.mwu.test(longRepeatingSample, longRepeatingSample);
+    var results = Statistics.mwu(longRepeatingSample, longRepeatingSample);
     assert.isAbove(results.p, 0.05);
-    results = Statistics.mwu.test(normallyDistributedSample,
+    results = Statistics.mwu(normallyDistributedSample,
         normallyDistributedSample);
     assert.isAbove(results.p, 0.05);
-    results = Statistics.mwu.test(singleLargeValue, singleLargeValue);
+    results = Statistics.mwu(singleLargeValue, singleLargeValue);
 
     // A single value is generally not sufficient to reject the null, no matter
     // how far off it is.
-    results = Statistics.mwu.test(normallyDistributedSample, singleLargeValue);
+    results = Statistics.mwu(normallyDistributedSample, singleLargeValue);
     assert.isAbove(results.p, 0.05);
 
     // A single value way outside the first sample may be enough to reject,
     // if the first sample is large enough.
-    results = Statistics.mwu.test(longRepeatingSample, singleLargeValue);
+    results = Statistics.mwu(longRepeatingSample, singleLargeValue);
     assert.isBelow(results.p, 0.005);
 
     // Empty samples should not be comparable.
-    results = Statistics.mwu.test(emptySample, emptySample);
+    results = Statistics.mwu(emptySample, emptySample);
     assert(isNaN(results.p));
 
     // The result of comparing a sample against an empty sample should not be a
     // valid p value. NOTE: The current implementation returns 0, it is up to
     // the caller to interpret this.
-    results = Statistics.mwu.test(normallyDistributedSample, emptySample);
+    results = Statistics.mwu(normallyDistributedSample, emptySample);
     assert(!results.p);
   });
-
 });
 </script>

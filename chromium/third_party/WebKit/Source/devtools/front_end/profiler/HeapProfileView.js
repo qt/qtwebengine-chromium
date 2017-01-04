@@ -221,9 +221,16 @@ WebInspector.SamplingHeapProfileHeader.prototype = {
  */
 WebInspector.SamplingHeapProfileNode = function(node)
 {
-    WebInspector.ProfileNode.call(this, node.functionName, node.scriptId, node.url, node.lineNumber, node.columnNumber);
+    var callFrame = node.callFrame || /** @type {!RuntimeAgent.CallFrame} */ ({
+        // Backward compatibility for old CpuProfileNode format.
+        functionName: node["functionName"],
+        scriptId: node["scriptId"],
+        url: node["url"],
+        lineNumber: node["lineNumber"] - 1,
+        columnNumber: node["columnNumber"] - 1
+    });
+    WebInspector.ProfileNode.call(this, callFrame);
     this.self = node.selfSize;
-    this.callUID = `${this.frame.functionName}@${this.frame.scriptId}:${this.frame.lineNumber}`;
 }
 
 WebInspector.SamplingHeapProfileNode.prototype = {
@@ -298,12 +305,11 @@ WebInspector.HeapProfileView.NodeFormatter.prototype = {
     /**
      * @override
      * @param  {!WebInspector.ProfileDataGridNode} node
-     * @return {!Element}
+     * @return {?Element}
      */
     linkifyNode: function(node)
     {
-        var callFrame = node.profileNode.frame;
-        return this._profileView.linkifier().linkifyConsoleCallFrame(this._profileView.target(), callFrame, "profile-node-file");
+        return this._profileView.linkifier().maybeLinkifyConsoleCallFrame(this._profileView.target(), node.profileNode.callFrame, "profile-node-file");
     }
 }
 
@@ -366,7 +372,7 @@ WebInspector.HeapFlameChartDataProvider.prototype = {
         var count = nodesCount(this._profile.root);
         /** @type {!Array<!WebInspector.ProfileNode>} */
         var entryNodes = new Array(count);
-        var entryLevels = new Uint8Array(count);
+        var entryLevels = new Uint16Array(count);
         var entryTotalTimes = new Float32Array(count);
         var entryStartTimes = new Float64Array(count);
         var depth = 0;
@@ -403,7 +409,7 @@ WebInspector.HeapFlameChartDataProvider.prototype = {
     /**
      * @override
      * @param {number} entryIndex
-     * @return {?Array<!{title: string, value: (string|!Element)}>}
+     * @return {?Element}
      */
     prepareHighlightedEntryInfo: function(entryIndex)
     {
@@ -423,10 +429,11 @@ WebInspector.HeapFlameChartDataProvider.prototype = {
         pushEntryInfoRow(WebInspector.UIString("Self size"), Number.bytesToString(node.self));
         pushEntryInfoRow(WebInspector.UIString("Total size"), Number.bytesToString(node.total));
         var linkifier = new WebInspector.Linkifier();
-        var text = (new WebInspector.Linkifier()).linkifyConsoleCallFrame(this._target, node.frame).textContent;
+        var link = linkifier.maybeLinkifyConsoleCallFrame(this._target, node.callFrame);
+        if (link)
+            pushEntryInfoRow(WebInspector.UIString("URL"), link.textContent);
         linkifier.dispose();
-        pushEntryInfoRow(WebInspector.UIString("URL"), text);
-        return entryInfo;
+        return WebInspector.ProfileView.buildPopoverTable(entryInfo);
     },
 
     __proto__: WebInspector.ProfileFlameChartDataProvider.prototype

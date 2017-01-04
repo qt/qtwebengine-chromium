@@ -4,6 +4,7 @@
 
 #include "content/browser/devtools/service_worker_devtools_manager.h"
 
+#include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
@@ -117,10 +118,8 @@ void ServiceWorkerDevToolsManager::WorkerReadyForInspection(
                     WorkerReadyForInspection(host.get()));
 
   // Then bring up UI for the ones not picked by other clients.
-  if (host->IsPausedForDebugOnStart() && !host->IsAttached()) {
-    host->Inspect(RenderProcessHost::FromID(worker_process_id)->
-        GetBrowserContext());
-  }
+  if (host->IsPausedForDebugOnStart() && !host->IsAttached())
+    static_cast<DevToolsAgentHostImpl*>(host.get())->Inspect();
 }
 
 void ServiceWorkerDevToolsManager::WorkerVersionInstalled(int worker_process_id,
@@ -146,13 +145,6 @@ void ServiceWorkerDevToolsManager::WorkerVersionDoomed(int worker_process_id,
   scoped_refptr<ServiceWorkerDevToolsAgentHost> host = it->second;
   host->WorkerVersionDoomed();
   FOR_EACH_OBSERVER(Observer, observer_list_, WorkerVersionDoomed(host.get()));
-}
-
-void ServiceWorkerDevToolsManager::WorkerStopIgnored(int worker_process_id,
-                                                      int worker_route_id) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  // TODO(pfeldman): Show a console message to tell the user that UA didn't
-  // terminate the worker because devtools is attached.
 }
 
 void ServiceWorkerDevToolsManager::WorkerDestroyed(int worker_process_id,

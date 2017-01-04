@@ -92,6 +92,8 @@ void MemoryOptimizer::VisitNode(Node* node, AllocationState const* state) {
     case IrOpcode::kIfException:
     case IrOpcode::kLoad:
     case IrOpcode::kStore:
+    case IrOpcode::kRetain:
+    case IrOpcode::kUnsafePointerAdd:
       return VisitOtherEffect(node, state);
     default:
       break;
@@ -105,7 +107,38 @@ void MemoryOptimizer::VisitAllocate(Node* node, AllocationState const* state) {
   Node* size = node->InputAt(0);
   Node* effect = node->InputAt(1);
   Node* control = node->InputAt(2);
-  PretenureFlag pretenure = OpParameter<PretenureFlag>(node->op());
+  PretenureFlag pretenure = PretenureFlagOf(node->op());
+
+  // Propagate tenuring from outer allocations to inner allocations, i.e.
+  // when we allocate an object in old space and store a newly allocated
+  // child object into the pretenured object, then the newly allocated
+  // child object also should get pretenured to old space.
+  if (pretenure == TENURED) {
+    for (Edge const edge : node->use_edges()) {
+      Node* const user = edge.from();
+      if (user->opcode() == IrOpcode::kStoreField && edge.index() == 0) {
+        Node* const child = user->InputAt(1);
+        if (child->opcode() == IrOpcode::kAllocate &&
+            PretenureFlagOf(child->op()) == NOT_TENURED) {
+          NodeProperties::ChangeOp(child, node->op());
+          break;
+        }
+      }
+    }
+  } else {
+    DCHECK_EQ(NOT_TENURED, pretenure);
+    for (Edge const edge : node->use_edges()) {
+      Node* const user = edge.from();
+      if (user->opcode() == IrOpcode::kStoreField && edge.index() == 1) {
+        Node* const parent = user->InputAt(0);
+        if (parent->opcode() == IrOpcode::kAllocate &&
+            PretenureFlagOf(parent->op()) == TENURED) {
+          pretenure = TENURED;
+          break;
+        }
+      }
+    }
+  }
 
   // Determine the top/limit addresses.
   Node* top_address = jsgraph()->ExternalConstant(
@@ -120,9 +153,9 @@ void MemoryOptimizer::VisitAllocate(Node* node, AllocationState const* state) {
   // Check if we can fold this allocation into a previous allocation represented
   // by the incoming {state}.
   Int32Matcher m(size);
-  if (m.HasValue() && m.Value() < Page::kMaxRegularHeapObjectSize) {
+  if (m.HasValue() && m.Value() < kMaxRegularHeapObjectSize) {
     int32_t const object_size = m.Value();
-    if (state->size() <= Page::kMaxRegularHeapObjectSize - object_size &&
+    if (state->size() <= kMaxRegularHeapObjectSize - object_size &&
         state->group()->pretenure() == pretenure) {
       // We can fold this Allocate {node} into the allocation {group}
       // represented by the given {state}. Compute the upper bound for
@@ -280,8 +313,9 @@ void MemoryOptimizer::VisitAllocate(Node* node, AllocationState const* state) {
 
     control = graph()->NewNode(common()->Merge(2), if_true, if_false);
     effect = graph()->NewNode(common()->EffectPhi(2), etrue, efalse, control);
-    value = graph()->NewNode(common()->Phi(MachineRepresentation::kTagged, 2),
-                             vtrue, vfalse, control);
+    value = graph()->NewNode(
+        common()->Phi(MachineRepresentation::kTaggedPointer, 2), vtrue, vfalse,
+        control);
 
     // Create an unfoldable allocation group.
     AllocationGroup* group =
@@ -370,23 +404,28 @@ void MemoryOptimizer::VisitOtherEffect(Node* node,
 }
 
 Node* MemoryOptimizer::ComputeIndex(ElementAccess const& access, Node* key) {
-  Node* index = key;
-  int element_size_shift =
+  Node* index;
+  if (machine()->Is64()) {
+    // On 64-bit platforms, we need to feed a Word64 index to the Load and
+    // Store operators. Since LoadElement or StoreElement don't do any bounds
+    // checking themselves, we can be sure that the {key} was already checked
+    // and is in valid range, so we can do the further address computation on
+    // Word64 below, which ideally allows us to fuse the address computation
+    // with the actual memory access operation on Intel platforms.
+    index = graph()->NewNode(machine()->ChangeUint32ToUint64(), key);
+  } else {
+    index = key;
+  }
+  int const element_size_shift =
       ElementSizeLog2Of(access.machine_type.representation());
   if (element_size_shift) {
-    index = graph()->NewNode(machine()->Word32Shl(), index,
-                             jsgraph()->Int32Constant(element_size_shift));
+    index = graph()->NewNode(machine()->WordShl(), index,
+                             jsgraph()->IntPtrConstant(element_size_shift));
   }
-  const int fixed_offset = access.header_size - access.tag();
+  int const fixed_offset = access.header_size - access.tag();
   if (fixed_offset) {
-    index = graph()->NewNode(machine()->Int32Add(), index,
-                             jsgraph()->Int32Constant(fixed_offset));
-  }
-  if (machine()->Is64()) {
-    // TODO(turbofan): This is probably only correct for typed arrays, and only
-    // if the typed arrays are at most 2GiB in size, which happens to match
-    // exactly our current situation.
-    index = graph()->NewNode(machine()->ChangeUint32ToUint64(), index);
+    index = graph()->NewNode(machine()->IntAdd(), index,
+                             jsgraph()->IntPtrConstant(fixed_offset));
   }
   return index;
 }

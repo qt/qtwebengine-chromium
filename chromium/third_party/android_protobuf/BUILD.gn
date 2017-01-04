@@ -12,7 +12,6 @@ if (current_toolchain == host_toolchain) {
     ]
   }
 
-  # GYP: //third_party/android_protobuf/android_protobuf.gyp:android_protoc
   executable("android_protoc") {
     configs -= [
       "//build/config/compiler:chromium_code",
@@ -146,10 +145,12 @@ if (current_toolchain == host_toolchain) {
 if (is_android) {
   import("//build/config/android/rules.gni")
 
-  # GYP: //third_party/android_protobuf/android_protobuf.gyp:protobuf_nano_javalib
   android_library("protobuf_nano_javalib") {
     chromium_code = false
     java_files = [
+      "src/java/src/device/main/java/com/google/protobuf/nano/android/ParcelableExtendableMessageNano.java",
+      "src/java/src/device/main/java/com/google/protobuf/nano/android/ParcelableMessageNano.java",
+      "src/java/src/device/main/java/com/google/protobuf/nano/android/ParcelableMessageNanoCreator.java",
       "src/java/src/main/java/com/google/protobuf/nano/CodedInputByteBufferNano.java",
       "src/java/src/main/java/com/google/protobuf/nano/CodedOutputByteBufferNano.java",
       "src/java/src/main/java/com/google/protobuf/nano/ExtendableMessageNano.java",

@@ -12,6 +12,8 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "media/base/video_capturer_source.h"
@@ -86,7 +88,7 @@ class CONTENT_EXPORT CanvasCaptureHandler final
   const blink::WebSize size_;
   gfx::Size last_size;
   std::vector<uint8_t> temp_data_;
-  size_t row_bytes_;
+  size_t temp_data_stride_;
   SkImageInfo image_info_;
   media::VideoFramePool frame_pool_;
 

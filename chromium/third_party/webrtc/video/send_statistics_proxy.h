@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/exp_filter.h"
@@ -36,7 +37,6 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
                             public StreamDataCountersCallback,
                             public BitrateStatisticsObserver,
                             public FrameCountObserver,
-                            public VideoEncoderRateObserver,
                             public SendSideDelayObserver {
  public:
   static const int kStatsTimeoutMs;
@@ -53,18 +53,17 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   // Used to update incoming frame rate.
   void OnIncomingFrame(int width, int height);
 
-  void OnEncoderStatsUpdate(uint32_t framerate,
-                            uint32_t bitrate,
-                            const std::string& encoder_name);
+  void OnEncoderStatsUpdate(uint32_t framerate, uint32_t bitrate);
   void OnSuspendChange(bool is_suspended);
   void OnInactiveSsrc(uint32_t ssrc);
 
   // Used to indicate change in content type, which may require a change in
-  // how stats are collected.
-  void SetContentType(VideoEncoderConfig::ContentType content_type);
+  // how stats are collected and set the configured preferred media bitrate.
+  void OnEncoderReconfigured(const VideoEncoderConfig& encoder_config,
+                             uint32_t preferred_bitrate_bps);
 
-  // Implements VideoEncoderRateObserver.
-  void OnSetRates(uint32_t bitrate_bps, int framerate) override;
+  // Used to update the encoder target rate.
+  void OnSetEncoderTargetRate(uint32_t bitrate_bps);
 
   // Implements CpuOveruseMetricsObserver.
   void OnEncodedFrameTimeMeasured(int encode_time_ms,
@@ -86,8 +85,8 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
                            uint32_t ssrc) override;
 
   // From BitrateStatisticsObserver.
-  void Notify(const BitrateStatistics& total_stats,
-              const BitrateStatistics& retransmit_stats,
+  void Notify(uint32_t total_bitrate_bps,
+              uint32_t retransmit_bitrate_bps,
               uint32_t ssrc) override;
 
   // From FrameCountObserver.
@@ -137,9 +136,11 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
       EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
   Clock* const clock_;
-  const VideoSendStream::Config config_;
+  const std::string payload_name_;
+  const VideoSendStream::Config::Rtp rtp_config_;
   rtc::CriticalSection crit_;
   VideoEncoderConfig::ContentType content_type_ GUARDED_BY(crit_);
+  const int64_t start_ms_;
   VideoSendStream::Stats stats_ GUARDED_BY(crit_);
   uint32_t last_sent_frame_timestamp_ GUARDED_BY(crit_);
   std::map<uint32_t, StatsUpdateTimes> update_times_ GUARDED_BY(crit_);
@@ -154,7 +155,7 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
                         Clock* clock);
     ~UmaSamplesContainer();
 
-    void UpdateHistograms(const VideoSendStream::Config& config,
+    void UpdateHistograms(const VideoSendStream::Config::Rtp& rtp_config,
                           const VideoSendStream::Stats& current_stats);
 
     const std::string uma_prefix_;

@@ -5,10 +5,9 @@
   "capabilities": {
     "required": {
       "*": { "classes": [ "app", "test" ] },
-      "mojo:ash": {
+      "service:ash": {
         "interfaces": [
-          "mus::mojom::AcceleratorRegistrar",
-          "ash::mojom::UserWindowController"
+          "ui::mojom::AcceleratorRegistrar"
         ]
       }
     }

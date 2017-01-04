@@ -15,14 +15,15 @@
 #include "base/macros.h"
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
-#include "net/quic/proto/cached_network_parameters.pb.h"
-#include "net/quic/quic_framer.h"
-#include "net/quic/quic_packet_creator.h"
-#include "net/quic/quic_protocol.h"
+#include "net/quic/core/proto/cached_network_parameters.pb.h"
+#include "net/quic/core/quic_framer.h"
+#include "net/quic/core/quic_packet_creator.h"
+#include "net/quic/core/quic_protocol.h"
 #include "net/tools/balsa/balsa_frame.h"
 #include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_client.h"
 #include "net/tools/quic/test_tools/simple_client.h"
+#include "testing/gmock/include/gmock/gmock.h"
 
 using base::StringPiece;
 
@@ -30,6 +31,7 @@ namespace net {
 
 class ProofVerifier;
 
+class ProofVerifier;
 class QuicPacketWriterWrapper;
 
 namespace test {
@@ -37,7 +39,7 @@ namespace test {
 class HTTPMessage;
 class MockableQuicClient;
 
-// A quic client which allows mocking out writes.
+// A quic client which allows mocking out reads and writes.
 class MockableQuicClient : public QuicClient {
  public:
   MockableQuicClient(IPEndPoint server_address,
@@ -51,7 +53,19 @@ class MockableQuicClient : public QuicClient {
                      const QuicVersionVector& supported_versions,
                      EpollServer* epoll_server);
 
+  MockableQuicClient(IPEndPoint server_address,
+                     const QuicServerId& server_id,
+                     const QuicConfig& config,
+                     const QuicVersionVector& supported_versions,
+                     EpollServer* epoll_server,
+                     std::unique_ptr<ProofVerifier> proof_verifier);
+
   ~MockableQuicClient() override;
+
+  void ProcessPacket(const IPEndPoint& self_address,
+                     const IPEndPoint& peer_address,
+                     const QuicReceivedPacket& packet) override;
+
   QuicPacketWriter* CreateQuicPacketWriter() override;
   QuicConnectionId GenerateNewConnectionId() override;
   void UseWriter(QuicPacketWriterWrapper* writer);
@@ -60,11 +74,21 @@ class MockableQuicClient : public QuicClient {
       const CachedNetworkParameters& cached_network_params) {
     cached_network_paramaters_ = cached_network_params;
   }
+  const QuicReceivedPacket* last_incoming_packet() {
+    return last_incoming_packet_.get();
+  }
+  void set_track_last_incoming_packet(bool track) {
+    track_last_incoming_packet_ = track;
+  }
 
  private:
   QuicConnectionId override_connection_id_;  // ConnectionId to use, if nonzero
   QuicPacketWriterWrapper* test_writer_;
   CachedNetworkParameters cached_network_paramaters_;
+  // The last incoming packet, iff |track_last_incoming_packet_| is true.
+  std::unique_ptr<QuicReceivedPacket> last_incoming_packet_;
+  // If true, copy each packet from ProcessPacket into |last_incoming_packet_|
+  bool track_last_incoming_packet_;
 
   DISALLOW_COPY_AND_ASSIGN(MockableQuicClient);
 };
@@ -81,6 +105,11 @@ class QuicTestClient : public test::SimpleClient,
                  const std::string& server_hostname,
                  const QuicConfig& config,
                  const QuicVersionVector& supported_versions);
+  QuicTestClient(IPEndPoint server_address,
+                 const std::string& server_hostname,
+                 const QuicConfig& config,
+                 const QuicVersionVector& supported_versions,
+                 std::unique_ptr<ProofVerifier> proof_verifier);
 
   ~QuicTestClient() override;
 
@@ -111,8 +140,7 @@ class QuicTestClient : public test::SimpleClient,
   void Disconnect() override;
   IPEndPoint local_address() const override;
   void ClearPerRequestState() override;
-  void WaitForResponseForMs(int timeout_ms) override;
-  void WaitForInitialResponseForMs(int timeout_ms) override;
+  void WaitUntil(int timeout_ms, std::function<bool()> trigger) override;
   ssize_t Send(const void* buffer, size_t size) override;
   bool response_complete() const override;
   bool response_headers_complete() const override;
@@ -157,6 +185,8 @@ class QuicTestClient : public test::SimpleClient,
   // ConnectionId instead of a random one.
   void UseConnectionId(QuicConnectionId connection_id);
 
+  // Update internal stream_ pointer and perform accompanying housekeeping.
+  void SetStream(QuicSpdyClientStream* stream);
   // Returns nullptr if the maximum number of streams have already been created.
   QuicSpdyClientStream* GetOrCreateStream();
 
@@ -202,6 +232,10 @@ class QuicTestClient : public test::SimpleClient,
 
   size_t num_responses() const { return num_responses_; }
 
+  void set_server_address(const IPEndPoint& server_address) {
+    client_->set_server_address(server_address);
+  }
+
   // Explicitly set the SNI value for this client, overriding the default
   // behavior which extracts the SNI value from the request URL.
   void OverrideSni(const std::string& sni) {
@@ -219,12 +253,12 @@ class QuicTestClient : public test::SimpleClient,
  private:
   class TestClientDataToResend : public QuicClient::QuicDataToResend {
    public:
-    TestClientDataToResend(BalsaHeaders* headers,
-                           StringPiece body,
+    TestClientDataToResend(std::unique_ptr<SpdyHeaderBlock> headers,
+                           base::StringPiece body,
                            bool fin,
                            QuicTestClient* test_client,
                            QuicAckListenerInterface* delegate)
-        : QuicClient::QuicDataToResend(headers, body, fin),
+        : QuicClient::QuicDataToResend(std::move(headers), body, fin),
           test_client_(test_client),
           delegate_(delegate) {}
 
@@ -257,6 +291,8 @@ class QuicTestClient : public test::SimpleClient,
 
   SpdyPriority priority_;
   std::string response_;
+  // bytes_read_ and bytes_written_ are updated only when stream_ is released;
+  // prefer bytes_read() and bytes_written() member functions.
   uint64_t bytes_read_;
   uint64_t bytes_written_;
   // The number of uncompressed HTTP header bytes received.

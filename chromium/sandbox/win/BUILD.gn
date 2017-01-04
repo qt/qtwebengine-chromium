@@ -154,31 +154,18 @@ static_library("sandbox") {
     ]
   }
 
+  # Disable sanitizer coverage in the sandbox code. The sandbox code runs before
+  # sanitizer coverage can initialize. http://crbug.com/484711
+  configs -= [ "//build/config/sanitizers:default_sanitizer_flags" ]
+  configs +=
+      [ "//build/config/sanitizers:default_sanitizer_flags_but_coverage" ]
+
   configs += [ "//build/config:precompiled_headers" ]
 
   deps = [
     "//base",
     "//base:base_static",
   ]
-  if (current_cpu == "x86") {
-    deps += [ ":copy_wow_helper" ]
-  }
-}
-
-if (current_cpu == "x86") {
-  # Make a target that copies the wow_helper files to the out dir.
-  #
-  # TODO(brettw) we can probably just build this now that we have proper
-  # toolchain support.
-  copy("copy_wow_helper") {
-    sources = [
-      "wow_helper/wow_helper.exe",
-      "wow_helper/wow_helper.pdb",
-    ]
-    outputs = [
-      "$root_out_dir/{{source_file_part}}",
-    ]
-  }
 }
 
 test("sbox_integration_tests") {

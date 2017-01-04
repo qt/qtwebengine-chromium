@@ -64,11 +64,13 @@ class RampUpTester : public test::EndToEndTest {
   const size_t num_audio_streams_;
   const bool rtx_;
   const bool red_;
+  Call* sender_call_;
   VideoSendStream* send_stream_;
   test::PacketTransport* send_transport_;
 
  private:
   typedef std::map<uint32_t, uint32_t> SsrcMap;
+  class VideoStreamFactory;
 
   Call::Config GetSenderCallConfig() override;
   void OnVideoStreamsCreated(
@@ -99,7 +101,6 @@ class RampUpTester : public test::EndToEndTest {
   SsrcMap rtx_ssrc_map_;
 
   rtc::PlatformThread poller_thread_;
-  Call* sender_call_;
 };
 
 class RampUpDownUpTester : public RampUpTester {

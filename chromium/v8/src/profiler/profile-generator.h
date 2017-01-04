@@ -6,14 +6,16 @@
 #define V8_PROFILER_PROFILE_GENERATOR_H_
 
 #include <map>
-#include "include/v8-profiler.h"
 #include "src/allocation.h"
 #include "src/base/hashmap.h"
-#include "src/compiler.h"
+#include "src/log.h"
 #include "src/profiler/strings-storage.h"
+#include "src/source-position.h"
 
 namespace v8 {
 namespace internal {
+
+struct TickSample;
 
 // Provides a mapping from the offsets within generated code to
 // the source line.
@@ -72,18 +74,17 @@ class CodeEntry {
 
   void set_deopt_info(const char* deopt_reason, SourcePosition position,
                       int deopt_id) {
-    DCHECK(deopt_position_.IsUnknown());
+    DCHECK(!has_deopt_info());
     deopt_reason_ = deopt_reason;
     deopt_position_ = position;
     deopt_id_ = deopt_id;
   }
   CpuProfileDeoptInfo GetDeoptInfo();
-  const char* deopt_reason() const { return deopt_reason_; }
-  SourcePosition deopt_position() const { return deopt_position_; }
-  bool has_deopt_info() const { return !deopt_position_.IsUnknown(); }
+  bool has_deopt_info() const { return deopt_id_ != kNoDeoptimizationId; }
   void clear_deopt_info() {
     deopt_reason_ = kNoDeoptReason;
     deopt_position_ = SourcePosition::Unknown();
+    deopt_id_ = kNoDeoptimizationId;
   }
 
   void FillFunctionInfo(SharedFunctionInfo* shared);
@@ -220,10 +221,10 @@ class ProfileNode {
   CodeEntry* entry_;
   unsigned self_ticks_;
   // Mapping from CodeEntry* to ProfileNode*
-  base::HashMap children_;
+  base::CustomMatcherHashMap children_;
   List<ProfileNode*> children_list_;
   unsigned id_;
-  base::HashMap line_ticks_;
+  base::CustomMatcherHashMap line_ticks_;
 
   std::vector<CpuProfileDeoptInfo> deopt_infos_;
 
@@ -260,7 +261,7 @@ class ProfileTree {
   Isolate* isolate_;
 
   unsigned next_function_id_;
-  base::HashMap function_ids_;
+  base::CustomMatcherHashMap function_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileTree);
 };

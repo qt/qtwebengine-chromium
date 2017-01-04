@@ -63,6 +63,8 @@ inline StackHandler* StackFrame::top_handler() const {
 
 
 inline Code* StackFrame::LookupCode() const {
+  // TODO(jgruber): This should really check that pc is within the returned
+  // code's instruction range [instruction_start(), instruction_end()[.
   return GetContainingCode(isolate(), pc());
 }
 
@@ -98,6 +100,35 @@ inline ExitFrame::ExitFrame(StackFrameIteratorBase* iterator)
     : StackFrame(iterator) {
 }
 
+inline BuiltinExitFrame::BuiltinExitFrame(StackFrameIteratorBase* iterator)
+    : ExitFrame(iterator) {}
+
+inline Object* BuiltinExitFrame::receiver_slot_object() const {
+  // The receiver is the first argument on the frame.
+  // fp[1]: return address.
+  // fp[2]: the last argument (new target).
+  // fp[4]: argc.
+  // fp[2 + argc - 1]: receiver.
+  Object* argc_slot = argc_slot_object();
+  DCHECK(argc_slot->IsSmi());
+  int argc = Smi::cast(argc_slot)->value();
+
+  const int receiverOffset =
+      BuiltinExitFrameConstants::kNewTargetOffset + (argc - 1) * kPointerSize;
+  return Memory::Object_at(fp() + receiverOffset);
+}
+
+inline Object* BuiltinExitFrame::argc_slot_object() const {
+  return Memory::Object_at(fp() + BuiltinExitFrameConstants::kArgcOffset);
+}
+
+inline Object* BuiltinExitFrame::target_slot_object() const {
+  return Memory::Object_at(fp() + BuiltinExitFrameConstants::kTargetOffset);
+}
+
+inline Object* BuiltinExitFrame::new_target_slot_object() const {
+  return Memory::Object_at(fp() + BuiltinExitFrameConstants::kNewTargetOffset);
+}
 
 inline StandardFrame::StandardFrame(StackFrameIteratorBase* iterator)
     : StackFrame(iterator) {
@@ -111,14 +142,6 @@ inline Object* StandardFrame::GetExpression(int index) const {
 
 inline void StandardFrame::SetExpression(int index, Object* value) {
   Memory::Object_at(GetExpressionAddress(index)) = value;
-}
-
-
-inline Object* StandardFrame::context() const {
-  const int offset = StandardFrameConstants::kContextOffset;
-  Object* maybe_result = Memory::Object_at(fp() + offset);
-  DCHECK(!maybe_result->IsSmi());
-  return maybe_result;
 }
 
 
@@ -165,12 +188,6 @@ Address JavaScriptFrame::GetParameterSlot(int index) const {
   return caller_sp() + parameter_offset;
 }
 
-
-Object* JavaScriptFrame::GetParameter(int index) const {
-  return Memory::Object_at(GetParameterSlot(index));
-}
-
-
 inline Address JavaScriptFrame::GetOperandSlot(int index) const {
   Address base = fp() + JavaScriptFrameConstants::kLocal0Offset;
   DCHECK(IsAddressAligned(base, kPointerSize));
@@ -213,7 +230,6 @@ inline Object* JavaScriptFrame::function_slot_object() const {
   const int offset = JavaScriptFrameConstants::kFunctionOffset;
   return Memory::Object_at(fp() + offset);
 }
-
 
 inline StubFrame::StubFrame(StackFrameIteratorBase* iterator)
     : StandardFrame(iterator) {
@@ -306,7 +322,8 @@ WasmFrame* StackTraceFrameIterator::wasm_frame() const {
 
 inline StackFrame* SafeStackFrameIterator::frame() const {
   DCHECK(!done());
-  DCHECK(frame_->is_java_script() || frame_->is_exit());
+  DCHECK(frame_->is_java_script() || frame_->is_exit() ||
+         frame_->is_builtin_exit());
   return frame_;
 }
 

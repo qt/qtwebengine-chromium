@@ -77,13 +77,13 @@ task 'dlls' do
   grpc_config = ENV['GRPC_CONFIG'] || 'opt'
   verbose = ENV['V'] || '0'
 
-  env = 'CPPFLAGS="-D_WIN32_WINNT=0x600 -DUNICODE -D_UNICODE" '
+  env = 'CPPFLAGS="-D_WIN32_WINNT=0x600 -DUNICODE -D_UNICODE -Wno-unused-variable -Wno-unused-result" '
   env += 'LDFLAGS=-static '
   env += 'SYSTEM=MINGW32 '
   env += 'EMBED_ZLIB=true '
   env += 'BUILDDIR=/tmp '
   env += "V=#{verbose} "
-  out = '/tmp/libs/opt/grpc-0.dll'
+  out = '/tmp/libs/opt/grpc-1.dll'
 
   w64 = { cross: 'x86_64-w64-mingw32', out: 'grpc_c.64.ruby' }
   w32 = { cross: 'i686-w64-mingw32', out: 'grpc_c.32.ruby' }
@@ -100,13 +100,15 @@ desc 'Build the native gem file under rake_compiler_dock'
 task 'gem:native' do
   verbose = ENV['V'] || '0'
 
+  grpc_config = ENV['GRPC_CONFIG'] || 'opt'
+
   if RUBY_PLATFORM =~ /darwin/
     FileUtils.touch 'grpc_c.32.ruby'
     FileUtils.touch 'grpc_c.64.ruby'
-    system "rake cross native gem RUBY_CC_VERSION=2.3.0:2.2.2:2.1.5:2.0.0 V=#{verbose}"
+    system "rake cross native gem RUBY_CC_VERSION=2.3.0:2.2.2:2.1.5:2.0.0 V=#{verbose} GRPC_CONFIG=#{grpc_config}"
   else
     Rake::Task['dlls'].execute
-    docker_for_windows "bundle && rake cross native gem RUBY_CC_VERSION=2.3.0:2.2.2:2.1.5:2.0.0 V=#{verbose}"
+    docker_for_windows "bundle && rake cross native gem RUBY_CC_VERSION=2.3.0:2.2.2:2.1.5:2.0.0 V=#{verbose} GRPC_CONFIG=#{grpc_config}"
   end
 end
 

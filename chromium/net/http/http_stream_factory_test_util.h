@@ -12,7 +12,11 @@
 #include "net/http/http_stream_factory_impl_job.h"
 #include "net/http/http_stream_factory_impl_job_controller.h"
 #include "net/proxy/proxy_info.h"
+#include "net/proxy/proxy_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
+
+using testing::_;
+using testing::Invoke;
 
 namespace net {
 
@@ -109,13 +113,12 @@ class MockHttpStreamFactoryImplJob : public HttpStreamFactoryImpl::Job {
                                HostPortPair destination,
                                GURL origin_url,
                                AlternativeService alternative_service,
+                               const ProxyServer& alternative_proxy_server,
                                NetLog* net_log);
 
   ~MockHttpStreamFactoryImplJob() override;
 
-  MOCK_METHOD1(Start, void(HttpStreamRequest::StreamType stream_type));
-
-  MOCK_METHOD1(MarkOtherJobComplete, void(const Job& job));
+  MOCK_METHOD0(Resume, void());
 
   MOCK_METHOD0(Orphan, void());
 };
@@ -151,14 +154,34 @@ class TestJobFactory : public HttpStreamFactoryImpl::JobFactory {
       AlternativeService alternative_service,
       NetLog* net_log) override;
 
+  HttpStreamFactoryImpl::Job* CreateJob(
+      HttpStreamFactoryImpl::Job::Delegate* delegate,
+      HttpStreamFactoryImpl::JobType job_type,
+      HttpNetworkSession* session,
+      const HttpRequestInfo& request_info,
+      RequestPriority priority,
+      const SSLConfig& server_ssl_config,
+      const SSLConfig& proxy_ssl_config,
+      HostPortPair destination,
+      GURL origin_url,
+      const ProxyServer& alternative_proxy_server,
+      NetLog* net_log) override;
+
   MockHttpStreamFactoryImplJob* main_job() const { return main_job_; }
   MockHttpStreamFactoryImplJob* alternative_job() const {
     return alternative_job_;
   }
 
+  void UseDifferentURLForMainJob(GURL url) {
+    override_main_job_url_ = true;
+    main_job_alternative_url_ = url;
+  }
+
  private:
   MockHttpStreamFactoryImplJob* main_job_;
   MockHttpStreamFactoryImplJob* alternative_job_;
+  bool override_main_job_url_;
+  GURL main_job_alternative_url_;
 };
 
 }  // namespace net

@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
+#include "mojo/public/cpp/bindings/lib/validation_util.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 
 namespace mojo {
@@ -118,7 +119,8 @@ bool Router::HandleIncomingMessageThunk::Accept(Message* message) {
 Router::Router(ScopedMessagePipeHandle message_pipe,
                FilterChain filters,
                bool expects_sync_requests,
-               scoped_refptr<base::SingleThreadTaskRunner> runner)
+               scoped_refptr<base::SingleThreadTaskRunner> runner,
+               int interface_version)
     : thunk_(this),
       filters_(std::move(filters)),
       connector_(std::move(message_pipe),
@@ -129,16 +131,22 @@ Router::Router(ScopedMessagePipeHandle message_pipe,
       testing_mode_(false),
       pending_task_for_messages_(false),
       encountered_error_(false),
+      control_message_proxy_(this),
+      control_message_handler_(interface_version),
       weak_factory_(this) {
   filters_.SetSink(&thunk_);
   if (expects_sync_requests)
     connector_.AllowWokenUpBySyncWatchOnSameThread();
-  connector_.set_incoming_receiver(filters_.GetHead());
+  connector_.set_incoming_receiver(&filters_);
   connector_.set_connection_error_handler(
       base::Bind(&Router::OnConnectionError, base::Unretained(this)));
 }
 
 Router::~Router() {}
+
+void Router::AddFilter(std::unique_ptr<MessageReceiver> filter) {
+  filters_.Append(std::move(filter));
+}
 
 bool Router::Accept(Message* message) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -171,19 +179,17 @@ bool Router::AcceptWithResponder(Message* message, MessageReceiver* responder) {
   bool response_received = false;
   std::unique_ptr<MessageReceiver> sync_responder(responder);
   sync_responses_.insert(std::make_pair(
-      request_id, base::WrapUnique(new SyncResponseInfo(&response_received))));
+      request_id, base::MakeUnique<SyncResponseInfo>(&response_received)));
 
   base::WeakPtr<Router> weak_self = weak_factory_.GetWeakPtr();
   connector_.SyncWatch(&response_received);
   // Make sure that this instance hasn't been destroyed.
   if (weak_self) {
-    DCHECK(ContainsKey(sync_responses_, request_id));
+    DCHECK(base::ContainsKey(sync_responses_, request_id));
     auto iter = sync_responses_.find(request_id);
     DCHECK_EQ(&response_received, iter->second->response_received);
-    if (response_received) {
-      std::unique_ptr<Message> response = std::move(iter->second->response);
-      ignore_result(sync_responder->Accept(response.get()));
-    }
+    if (response_received)
+      ignore_result(sync_responder->Accept(&iter->second->response));
     sync_responses_.erase(iter);
   }
 
@@ -204,9 +210,7 @@ bool Router::HandleIncomingMessage(Message* message) {
       connector_.during_sync_handle_watcher_callback();
   if (!message->has_flag(Message::kFlagIsSync) &&
       (during_sync_call || !pending_messages_.empty())) {
-    std::unique_ptr<Message> pending_message(new Message);
-    message->MoveTo(pending_message.get());
-    pending_messages_.push(std::move(pending_message));
+    pending_messages_.emplace(std::move(*message));
 
     if (!pending_task_for_messages_) {
       pending_task_for_messages_ = true;
@@ -227,10 +231,10 @@ void Router::HandleQueuedMessages() {
 
   base::WeakPtr<Router> weak_self = weak_factory_.GetWeakPtr();
   while (!pending_messages_.empty()) {
-    std::unique_ptr<Message> message(std::move(pending_messages_.front()));
+    Message message(std::move(pending_messages_.front()));
     pending_messages_.pop();
 
-    bool result = HandleMessageInternal(message.get());
+    bool result = HandleMessageInternal(&message);
     if (!weak_self)
       return;
 
@@ -250,13 +254,17 @@ void Router::HandleQueuedMessages() {
 }
 
 bool Router::HandleMessageInternal(Message* message) {
-  if (message->has_flag(Message::kFlagExpectsResponse)) {
-    if (!incoming_receiver_)
-      return false;
+  DCHECK(!encountered_error_);
 
+  if (message->has_flag(Message::kFlagExpectsResponse)) {
     MessageReceiverWithStatus* responder = new ResponderThunk(
         weak_factory_.GetWeakPtr(), connector_.task_runner());
-    bool ok = incoming_receiver_->AcceptWithResponder(message, responder);
+    bool ok = false;
+    if (mojo::internal::ControlMessageHandler::IsControlMessage(message)) {
+      ok = control_message_handler_.AcceptWithResponder(message, responder);
+    } else {
+      ok = incoming_receiver_->AcceptWithResponder(message, responder);
+    }
     if (!ok)
       delete responder;
     return ok;
@@ -270,8 +278,7 @@ bool Router::HandleMessageInternal(Message* message) {
         DCHECK(testing_mode_);
         return false;
       }
-      it->second->response.reset(new Message());
-      message->MoveTo(it->second->response.get());
+      it->second->response = std::move(*message);
       *it->second->response_received = true;
       return true;
     }
@@ -285,8 +292,8 @@ bool Router::HandleMessageInternal(Message* message) {
     async_responders_.erase(it);
     return responder->Accept(message);
   } else {
-    if (!incoming_receiver_)
-      return false;
+    if (mojo::internal::ControlMessageHandler::IsControlMessage(message))
+      return control_message_handler_.Accept(message);
 
     return incoming_receiver_->Accept(message);
   }
@@ -312,9 +319,24 @@ void Router::OnConnectionError() {
     return;
   }
 
+  control_message_proxy_.OnConnectionError();
+
   encountered_error_ = true;
-  if (!error_handler_.is_null())
+
+  // The callbacks may hold on to resources. There is no need to keep them any
+  // longer.
+  async_responders_.clear();
+
+  if (!error_handler_.is_null()) {
     error_handler_.Run();
+  } else if (!error_with_reason_handler_.is_null()) {
+    // Make a copy on the stack. If we directly pass a reference to a member of
+    // |control_message_handler_|, that reference will be invalidated as soon as
+    // the user destroys the interface endpoint.
+    std::string description = control_message_handler_.disconnect_description();
+    error_with_reason_handler_.Run(
+        control_message_handler_.disconnect_custom_reason(), description);
+  }
 }
 
 // ----------------------------------------------------------------------------

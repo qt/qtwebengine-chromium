@@ -32,7 +32,7 @@ namespace base {
 //
 //  - If you only ever keep a couple of items and have very simple usage,
 //    consider whether a using a vector and brute-force searching it will be
-//    the most efficient. It's not a lot of generated code (less then a
+//    the most efficient. It's not a lot of generated code (less than a
 //    red-black tree if your key is "weird" and not eliminated as duplicate of
 //    something else) and will probably be faster and do fewer heap allocations
 //    than std::map if you have just a couple of items.
@@ -510,8 +510,8 @@ class SmallMap {
     size_ = 0;
   }
 
-  // Invalidates iterators.
-  void erase(const iterator& position) {
+  // Invalidates iterators. Returns iterator following the last removed element.
+  iterator erase(const iterator& position) {
     if (size_ >= 0) {
       int i = position.array_iter_ - array_;
       array_[i].Destroy();
@@ -519,10 +519,11 @@ class SmallMap {
       if (i != size_) {
         array_[i].InitFromMove(std::move(array_[size_]));
         array_[size_].Destroy();
+        return iterator(array_ + i);
       }
-    } else {
-      map_->erase(position.hash_iter_);
+      return end();
     }
+    return iterator(map_->erase(position.hash_iter_));
   }
 
   size_t erase(const key_type& key) {
@@ -574,17 +575,13 @@ class SmallMap {
 
   // We want to call constructors and destructors manually, but we don't
   // want to allocate and deallocate the memory used for them separately.
-  // So, we use this crazy ManualConstructor class.
+  // So, we use this crazy ManualConstructor class. Since C++11 it's possible
+  // to use objects in unions like this, but the ManualDestructor syntax is
+  // a bit better and doesn't have limitations on object type.
   //
   // Since array_ and map_ are mutually exclusive, we'll put them in a
-  // union, too.  We add in a dummy_ value which quiets MSVC from otherwise
-  // giving an erroneous "union member has copy constructor" error message
-  // (C2621). This dummy member has to come before array_ to quiet the
-  // compiler.
-  //
-  // TODO(brettw) remove this and use C++11 unions when we require C++11.
+  // union.
   union {
-    ManualConstructor<value_type> dummy_;
     ManualConstructor<value_type> array_[kArraySize];
     ManualConstructor<NormalMap> map_;
   };

@@ -8,16 +8,19 @@
 
 import("../../build/webrtc.gni")
 
-source_set("congestion_controller") {
+rtc_static_library("congestion_controller") {
   sources = [
     "congestion_controller.cc",
     "delay_based_bwe.cc",
     "delay_based_bwe.h",
     "include/congestion_controller.h",
+    "probe_bitrate_estimator.cc",
+    "probe_bitrate_estimator.h",
+    "probe_controller.cc",
+    "probe_controller.h",
+    "transport_feedback_adapter.cc",
+    "transport_feedback_adapter.h",
   ]
-
-  configs += [ "../..:common_config" ]
-  public_configs = [ "../..:common_inherited_config" ]
 
   # TODO(jschuh): Bug 1348: fix this warning.
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
@@ -25,12 +28,11 @@ source_set("congestion_controller") {
   if (is_clang) {
     # Suppress warnings from Chrome's Clang plugins.
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
   deps = [
     "../bitrate_controller",
     "../pacing",
-    "../remote_bitrate_estimator",
   ]
 }

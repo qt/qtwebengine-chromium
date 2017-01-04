@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "testing/js_embedder_test.h"
+#include "third_party/base/ptr_util.h"
 
 JSEmbedderTest::JSEmbedderTest()
     : m_pArrayBufferAllocator(new FXJS_ArrayBufferAllocator),
@@ -21,13 +22,13 @@ void JSEmbedderTest::SetUp() {
   v8::Isolate::Scope isolate_scope(m_pIsolate);
   v8::HandleScope handle_scope(m_pIsolate);
   FXJS_PerIsolateData::SetUp(m_pIsolate);
-  FXJS_InitializeRuntime(m_pIsolate, nullptr, &m_pPersistentContext,
-                         &m_StaticObjects);
+  m_Engine = pdfium::MakeUnique<CFXJS_Engine>(m_pIsolate);
+  m_Engine->InitializeEngine();
 }
 
 void JSEmbedderTest::TearDown() {
-  FXJS_ReleaseRuntime(m_pIsolate, &m_pPersistentContext, &m_StaticObjects);
-  m_pPersistentContext.Reset();
+  m_Engine->ReleaseEngine();
+  m_Engine.reset();
   EmbedderTest::TearDown();
   m_pIsolate->Dispose();
   m_pIsolate = nullptr;
@@ -38,5 +39,5 @@ v8::Isolate* JSEmbedderTest::isolate() {
 }
 
 v8::Local<v8::Context> JSEmbedderTest::GetV8Context() {
-  return m_pPersistentContext.Get(m_pIsolate);
+  return m_Engine->GetPersistentContext();
 }

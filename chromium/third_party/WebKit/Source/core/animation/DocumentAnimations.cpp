@@ -31,8 +31,8 @@
 #include "core/animation/DocumentAnimations.h"
 
 #include "core/animation/AnimationClock.h"
-#include "core/animation/AnimationTimeline.h"
 #include "core/animation/CompositorPendingAnimations.h"
+#include "core/animation/DocumentTimeline.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
@@ -44,38 +44,39 @@ namespace blink {
 
 namespace {
 
-void updateAnimationTiming(Document& document, TimingUpdateReason reason)
-{
-    document.timeline().serviceAnimations(reason);
+void updateAnimationTiming(Document& document, TimingUpdateReason reason) {
+  document.timeline().serviceAnimations(reason);
 }
 
-} // namespace
+}  // namespace
 
-void DocumentAnimations::updateAnimationTimingForAnimationFrame(Document& document)
-{
-    updateAnimationTiming(document, TimingUpdateForAnimationFrame);
+void DocumentAnimations::updateAnimationTimingForAnimationFrame(
+    Document& document) {
+  updateAnimationTiming(document, TimingUpdateForAnimationFrame);
 }
 
-bool DocumentAnimations::needsAnimationTimingUpdate(const Document& document)
-{
-    return document.timeline().hasOutdatedAnimation() || document.timeline().needsAnimationTimingUpdate();
+bool DocumentAnimations::needsAnimationTimingUpdate(const Document& document) {
+  return document.timeline().hasOutdatedAnimation() ||
+         document.timeline().needsAnimationTimingUpdate();
 }
 
-void DocumentAnimations::updateAnimationTimingIfNeeded(Document& document)
-{
-    if (needsAnimationTimingUpdate(document))
-        updateAnimationTiming(document, TimingUpdateOnDemand);
+void DocumentAnimations::updateAnimationTimingIfNeeded(Document& document) {
+  if (needsAnimationTimingUpdate(document))
+    updateAnimationTiming(document, TimingUpdateOnDemand);
 }
 
-void DocumentAnimations::updateCompositorAnimations(Document& document)
-{
-    ASSERT(document.lifecycle().state() == DocumentLifecycle::CompositingClean);
-    if (document.compositorPendingAnimations().update()) {
-        ASSERT(document.view());
-        document.view()->scheduleAnimation();
-    }
+void DocumentAnimations::updateAnimations(Document& document) {
+  if (!RuntimeEnabledFeatures::slimmingPaintV2Enabled())
+    DCHECK(document.lifecycle().state() >= DocumentLifecycle::CompositingClean);
+  else
+    DCHECK(document.lifecycle().state() >= DocumentLifecycle::LayoutClean);
 
-    document.timeline().scheduleNextService();
+  if (document.compositorPendingAnimations().update()) {
+    DCHECK(document.view());
+    document.view()->scheduleAnimation();
+  }
+
+  document.timeline().scheduleNextService();
 }
 
-} // namespace blink
+}  // namespace blink

@@ -138,7 +138,7 @@ WebInspector.ProfileFlameChartDataProvider.prototype = {
     /**
      * @override
      * @param {number} entryIndex
-     * @return {?Array<!{title: string, value: (string|!Element)}>}
+     * @return {?Element}
      */
     prepareHighlightedEntryInfo: function(entryIndex)
     {
@@ -178,8 +178,7 @@ WebInspector.ProfileFlameChartDataProvider.prototype = {
             this._boldFont = "bold " + this._font;
         }
         var node = this._entryNodes[entryIndex];
-        var reason = node.deoptReason;
-        return (reason && reason !== "no reason") ? this._boldFont : this._font;
+        return node.deoptReason ? this._boldFont : this._font;
     },
 
     /**

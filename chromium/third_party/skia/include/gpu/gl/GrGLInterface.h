@@ -155,6 +155,7 @@ public:
         GrGLFunction<GrGLDrawElementsProc> fDrawElements;
         GrGLFunction<GrGLDrawElementsIndirectProc> fDrawElementsIndirect;
         GrGLFunction<GrGLDrawElementsInstancedProc> fDrawElementsInstanced;
+        GrGLFunction<GrGLDrawRangeElementsProc> fDrawRangeElements;
         GrGLFunction<GrGLEnableProc> fEnable;
         GrGLFunction<GrGLEnableVertexAttribArrayProc> fEnableVertexAttribArray;
         GrGLFunction<GrGLEndQueryProc> fEndQuery;
@@ -451,6 +452,11 @@ public:
         // OpenGL 3.1
         GrGLFunction<GrGLTextureBufferProc> fTextureBuffer;
 
+        /* ARB_sync */
+        GrGLFunction<GrGLFenceSyncProc> fFenceSync;
+        GrGLFunction<GrGLClientWaitSyncProc> fClientWaitSync;
+        GrGLFunction<GrGLDeleteSyncProc> fDeleteSync;
+
         /* KHR_debug */
         GrGLFunction<GrGLDebugMessageControlProc> fDebugMessageControl;
         GrGLFunction<GrGLDebugMessageInsertProc> fDebugMessageInsert;
@@ -459,6 +465,9 @@ public:
         GrGLFunction<GrGLPushDebugGroupProc> fPushDebugGroup;
         GrGLFunction<GrGLPopDebugGroupProc> fPopDebugGroup;
         GrGLFunction<GrGLObjectLabelProc> fObjectLabel;
+
+        /* EXT_window_rectangles */
+        GrGLFunction<GrGLWindowRectanglesProc> fWindowRectangles;
 
         /* EGL functions */
         GrGLFunction<GrEGLCreateImageProc> fEGLCreateImage;

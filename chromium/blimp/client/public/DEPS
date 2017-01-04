@@ -1,0 +1,9 @@
+include_rules = [
+  "+base",
+  "-blimp",
+  "+blimp/client/public",
+  "+cc/surfaces",
+  "+components/keyed_service/core",
+  "-content",
+  "+url",
+]

@@ -38,6 +38,7 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_status_code.h"
 #include "net/log/test_net_log.h"
+#include "net/nqe/effective_connection_type.h"
 #include "net/nqe/external_estimate_provider.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/proxy/proxy_server.h"
@@ -163,9 +164,9 @@ class DataReductionProxyConfigTest : public testing::Test {
 
   std::unique_ptr<DataReductionProxyConfig> BuildConfig(
       std::unique_ptr<DataReductionProxyParams> params) {
-    return base::WrapUnique(new DataReductionProxyConfig(
+    return base::MakeUnique<DataReductionProxyConfig>(
         task_runner(), test_context_->net_log(), std::move(params),
-        test_context_->configurator(), test_context_->event_creator()));
+        test_context_->configurator(), test_context_->event_creator());
   }
 
   MockDataReductionProxyConfig* config() {
@@ -589,48 +590,39 @@ TEST_F(DataReductionProxyConfigTest, AreProxiesBypassedRetryDelay) {
 
 TEST_F(DataReductionProxyConfigTest, IsDataReductionProxyWithParams) {
   const struct {
-    net::HostPortPair host_port_pair;
+    net::ProxyServer proxy_server;
     bool fallback_allowed;
     bool expected_result;
-    net::HostPortPair expected_first;
-    net::HostPortPair expected_second;
+    net::ProxyServer expected_first;
+    net::ProxyServer expected_second;
     bool expected_is_fallback;
   } tests[] = {
       {net::ProxyServer::FromURI(TestDataReductionProxyParams::DefaultOrigin(),
-                                 net::ProxyServer::SCHEME_HTTP)
-           .host_port_pair(),
+                                 net::ProxyServer::SCHEME_HTTP),
        true, true,
        net::ProxyServer::FromURI(TestDataReductionProxyParams::DefaultOrigin(),
-                                 net::ProxyServer::SCHEME_HTTP)
-           .host_port_pair(),
+                                 net::ProxyServer::SCHEME_HTTP),
        net::ProxyServer::FromURI(
            TestDataReductionProxyParams::DefaultFallbackOrigin(),
-           net::ProxyServer::SCHEME_HTTP)
-           .host_port_pair(),
+           net::ProxyServer::SCHEME_HTTP),
        false},
       {net::ProxyServer::FromURI(TestDataReductionProxyParams::DefaultOrigin(),
-                                 net::ProxyServer::SCHEME_HTTP)
-           .host_port_pair(),
+                                 net::ProxyServer::SCHEME_HTTP),
        false, true,
        net::ProxyServer::FromURI(TestDataReductionProxyParams::DefaultOrigin(),
-                                 net::ProxyServer::SCHEME_HTTP)
-           .host_port_pair(),
-       net::HostPortPair::FromURL(GURL()), false},
+                                 net::ProxyServer::SCHEME_HTTP),
+       net::ProxyServer(), false},
       {net::ProxyServer::FromURI(
            TestDataReductionProxyParams::DefaultFallbackOrigin(),
-           net::ProxyServer::SCHEME_HTTP)
-           .host_port_pair(),
+           net::ProxyServer::SCHEME_HTTP),
        true, true, net::ProxyServer::FromURI(
                        TestDataReductionProxyParams::DefaultFallbackOrigin(),
-                       net::ProxyServer::SCHEME_HTTP)
-                       .host_port_pair(),
-       net::HostPortPair::FromURL(GURL()), true},
+                       net::ProxyServer::SCHEME_HTTP),
+       net::ProxyServer(), true},
       {net::ProxyServer::FromURI(
            TestDataReductionProxyParams::DefaultFallbackOrigin(),
-           net::ProxyServer::SCHEME_HTTP)
-           .host_port_pair(),
-       false, false, net::HostPortPair::FromURL(GURL()),
-       net::HostPortPair::FromURL(GURL()), false},
+           net::ProxyServer::SCHEME_HTTP),
+       false, false, net::ProxyServer(), net::ProxyServer(), false},
   };
   for (size_t i = 0; i < arraysize(tests); ++i) {
     int flags = DataReductionProxyParams::kAllowed;
@@ -646,30 +638,23 @@ TEST_F(DataReductionProxyConfigTest, IsDataReductionProxyWithParams) {
                                      event_creator()));
     EXPECT_EQ(
         tests[i].expected_result,
-        config->IsDataReductionProxy(tests[i].host_port_pair, &proxy_type_info))
+        config->IsDataReductionProxy(tests[i].proxy_server, &proxy_type_info))
         << i;
-    EXPECT_EQ(
-        net::ProxyServer::FromURI(tests[i].expected_first.ToString(),
-                                  net::ProxyServer::SCHEME_HTTP).is_valid(),
-        proxy_type_info.proxy_servers.size() >= 1 &&
-            proxy_type_info.proxy_servers[0].is_valid())
+    EXPECT_EQ(tests[i].expected_first.is_valid(),
+              proxy_type_info.proxy_servers.size() >= 1 &&
+                  proxy_type_info.proxy_servers[0].is_valid())
         << i;
     if (proxy_type_info.proxy_servers.size() >= 1 &&
         proxy_type_info.proxy_servers[0].is_valid()) {
-      EXPECT_TRUE(tests[i].expected_first.Equals(
-          proxy_type_info.proxy_servers[0].host_port_pair()))
-          << i;
+      EXPECT_EQ(tests[i].expected_first, proxy_type_info.proxy_servers[0]) << i;
     }
-    EXPECT_EQ(
-        net::ProxyServer::FromURI(tests[i].expected_second.ToString(),
-                                  net::ProxyServer::SCHEME_HTTP).is_valid(),
-        proxy_type_info.proxy_servers.size() >= 2 &&
-            proxy_type_info.proxy_servers[1].is_valid())
+    EXPECT_EQ(tests[i].expected_second.is_valid(),
+              proxy_type_info.proxy_servers.size() >= 2 &&
+                  proxy_type_info.proxy_servers[1].is_valid())
         << i;
     if (proxy_type_info.proxy_servers.size() >= 2 &&
         proxy_type_info.proxy_servers[1].is_valid()) {
-      EXPECT_TRUE(tests[i].expected_second.Equals(
-          proxy_type_info.proxy_servers[1].host_port_pair()))
+      EXPECT_EQ(tests[i].expected_second, proxy_type_info.proxy_servers[1])
           << i;
     }
 
@@ -687,35 +672,56 @@ TEST_F(DataReductionProxyConfigTest, IsDataReductionProxyWithMutableConfig) {
   proxies_for_http.push_back(net::ProxyServer::FromURI(
       "quic://anotherorigin.net:443", net::ProxyServer::SCHEME_HTTP));
   const struct {
-    net::HostPortPair host_port_pair;
+    net::ProxyServer proxy_server;
     bool expected_result;
     std::vector<net::ProxyServer> expected_proxies;
     size_t expected_proxy_index;
   } tests[] = {
       {
-          proxies_for_http[0].host_port_pair(), true,
+          proxies_for_http[0], true,
           std::vector<net::ProxyServer>(proxies_for_http.begin(),
                                         proxies_for_http.end()),
           0,
       },
       {
-          proxies_for_http[1].host_port_pair(), true,
+          proxies_for_http[1], true,
           std::vector<net::ProxyServer>(proxies_for_http.begin() + 1,
                                         proxies_for_http.end()),
           1,
       },
       {
-          proxies_for_http[2].host_port_pair(), true,
+          proxies_for_http[2], true,
           std::vector<net::ProxyServer>(proxies_for_http.begin() + 2,
                                         proxies_for_http.end()),
           2,
       },
       {
-          net::HostPortPair(), false, std::vector<net::ProxyServer>(), 0,
+          net::ProxyServer(), false, std::vector<net::ProxyServer>(), 0,
       },
       {
-          net::HostPortPair::FromString("https://otherorigin.net:443"), false,
-          std::vector<net::ProxyServer>(), 0,
+          net::ProxyServer(
+              net::ProxyServer::SCHEME_HTTPS,
+              net::HostPortPair::FromString("otherorigin.net:443")),
+          false, std::vector<net::ProxyServer>(), 0,
+      },
+      {
+          // Verifies that when determining if a proxy is a valid data reduction
+          // proxy, only the host port pairs are compared.
+          net::ProxyServer::FromURI("origin.net:443",
+                                    net::ProxyServer::SCHEME_QUIC),
+          true, std::vector<net::ProxyServer>(proxies_for_http.begin(),
+                                              proxies_for_http.end()),
+          0,
+      },
+      {
+          net::ProxyServer::FromURI("origin2.net:443",
+                                    net::ProxyServer::SCHEME_HTTPS),
+          false, std::vector<net::ProxyServer>(), 0,
+      },
+      {
+          net::ProxyServer::FromURI("origin2.net:443",
+                                    net::ProxyServer::SCHEME_QUIC),
+          false, std::vector<net::ProxyServer>(), 0,
       },
   };
 
@@ -728,7 +734,7 @@ TEST_F(DataReductionProxyConfigTest, IsDataReductionProxyWithMutableConfig) {
   for (const auto& test : tests) {
     DataReductionProxyTypeInfo proxy_type_info;
     EXPECT_EQ(test.expected_result, config->IsDataReductionProxy(
-                                        test.host_port_pair, &proxy_type_info));
+                                        test.proxy_server, &proxy_type_info));
     EXPECT_THAT(proxy_type_info.proxy_servers,
                 testing::ContainerEq(test.expected_proxies));
     EXPECT_EQ(test.expected_proxy_index, proxy_type_info.proxy_index);
@@ -844,7 +850,8 @@ TEST_F(DataReductionProxyConfigTest, LoFiOn) {
     net::TestDelegate delegate_;
     std::unique_ptr<net::URLRequest> request =
         context_.CreateRequest(GURL(), net::IDLE, &delegate_);
-    request->SetLoadFlags(request->load_flags() | net::LOAD_MAIN_FRAME);
+    request->SetLoadFlags(request->load_flags() |
+                          net::LOAD_MAIN_FRAME_DEPRECATED);
     bool should_enable_lofi = config()->ShouldEnableLoFiMode(*request.get());
     if (tests[i].expect_bucket_count != 0) {
       histogram_tester.ExpectBucketCount(
@@ -865,40 +872,35 @@ class TestNetworkQualityEstimator : public net::NetworkQualityEstimator {
       : NetworkQualityEstimator(
             std::unique_ptr<net::ExternalEstimateProvider>(),
             variation_params),
-        effective_connection_type_(
-            net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_UNKNOWN),
+        effective_connection_type_(net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN),
         recent_effective_connection_type_(
-            net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_UNKNOWN) {}
+            net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN) {}
 
   ~TestNetworkQualityEstimator() override {}
 
-  EffectiveConnectionType GetEffectiveConnectionType() const override {
+  net::EffectiveConnectionType GetEffectiveConnectionType() const override {
     return effective_connection_type_;
   }
 
-  EffectiveConnectionType GetRecentEffectiveConnectionType(
+  net::EffectiveConnectionType GetRecentEffectiveConnectionType(
       const base::TimeTicks& start_time) const override {
     return recent_effective_connection_type_;
   }
 
   void SetEffectiveConnectionType(
-      net::NetworkQualityEstimator::EffectiveConnectionType
-          effective_connection_type) {
+      net::EffectiveConnectionType effective_connection_type) {
     effective_connection_type_ = effective_connection_type;
   }
 
   void SetRecentEffectiveConnectionType(
-      net::NetworkQualityEstimator::EffectiveConnectionType
-          recent_effective_connection_type) {
+      net::EffectiveConnectionType recent_effective_connection_type) {
     recent_effective_connection_type_ = recent_effective_connection_type;
   }
 
  private:
   // Estimate of the quality of the network.
-  net::NetworkQualityEstimator::EffectiveConnectionType
-      effective_connection_type_;
-  net::NetworkQualityEstimator::EffectiveConnectionType
-      recent_effective_connection_type_;
+  net::EffectiveConnectionType effective_connection_type_;
+  net::EffectiveConnectionType recent_effective_connection_type_;
 
   base::TimeDelta rtt_since_;
 };
@@ -944,9 +946,8 @@ TEST_F(DataReductionProxyConfigTest, AutoLoFiParams) {
   };
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    net::NetworkQualityEstimator::EffectiveConnectionType
-        expected_effective_connection_type =
-            net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G;
+    net::EffectiveConnectionType expected_effective_connection_type =
+        net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G;
     int expected_hysteresis_sec = 360;
 
     if (tests[i].lofi_flag_group) {
@@ -954,8 +955,7 @@ TEST_F(DataReductionProxyConfigTest, AutoLoFiParams) {
       base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
           switches::kDataReductionProxyLoFi,
           switches::kDataReductionProxyLoFiValueSlowConnectionsOnly);
-      expected_effective_connection_type =
-          net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_2G;
+      expected_effective_connection_type = net::EFFECTIVE_CONNECTION_TYPE_2G;
       expected_hysteresis_sec = 361;
     }
 
@@ -979,7 +979,7 @@ TEST_F(DataReductionProxyConfigTest, AutoLoFiParams) {
   // Network quality improved. However, network should still be marked as slow
   // because of hysteresis.
   test_network_quality_estimator.SetEffectiveConnectionType(
-      net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_BROADBAND);
+      net::EFFECTIVE_CONNECTION_TYPE_4G);
   EXPECT_TRUE(config.IsNetworkQualityProhibitivelySlow(
       &test_network_quality_estimator));
 
@@ -1023,7 +1023,7 @@ TEST_F(DataReductionProxyConfigTest, AutoLoFiMissingParams) {
 
   config.PopulateAutoLoFiParams();
 
-  EXPECT_EQ(net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
+  EXPECT_EQ(net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
             config.lofi_effective_connection_type_threshold_);
   EXPECT_EQ(base::TimeDelta::FromSeconds(60), config.auto_lofi_hysteresis_);
 }
@@ -1039,9 +1039,8 @@ TEST_F(DataReductionProxyConfigTest, AutoLoFiParamsSlowConnectionsFlag) {
 
   config.PopulateAutoLoFiParams();
 
-  net::NetworkQualityEstimator::EffectiveConnectionType
-      expected_effective_connection_type =
-          net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G;
+  net::EffectiveConnectionType expected_effective_connection_type =
+      net::EffectiveConnectionType::EFFECTIVE_CONNECTION_TYPE_SLOW_2G;
   int hysteresis_sec = 60;
   EXPECT_EQ(expected_effective_connection_type,
             config.lofi_effective_connection_type_threshold_);
@@ -1054,14 +1053,14 @@ TEST_F(DataReductionProxyConfigTest, AutoLoFiParamsSlowConnectionsFlag) {
 
   // Network is slow.
   test_network_quality_estimator.SetEffectiveConnectionType(
-      net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G);
+      net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G);
   EXPECT_TRUE(config.IsNetworkQualityProhibitivelySlow(
       &test_network_quality_estimator));
 
   // Network quality improved. However, network should still be marked as slow
   // because of hysteresis.
   test_network_quality_estimator.SetEffectiveConnectionType(
-      net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_2G);
+      net::EFFECTIVE_CONNECTION_TYPE_2G);
   EXPECT_TRUE(config.IsNetworkQualityProhibitivelySlow(
       &test_network_quality_estimator));
 
@@ -1075,7 +1074,7 @@ TEST_F(DataReductionProxyConfigTest, AutoLoFiParamsSlowConnectionsFlag) {
 
   // Changing the network quality has no effect because of hysteresis.
   test_network_quality_estimator.SetEffectiveConnectionType(
-      net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G);
+      net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G);
   EXPECT_FALSE(config.IsNetworkQualityProhibitivelySlow(
       &test_network_quality_estimator));
 
@@ -1113,37 +1112,30 @@ TEST_F(DataReductionProxyConfigTest, LoFiAccuracy) {
   const struct {
     std::string description;
     std::string field_trial_group;
-    net::NetworkQualityEstimator::EffectiveConnectionType
-        effective_connection_type;
-    net::NetworkQualityEstimator::EffectiveConnectionType
-        recent_effective_connection_type;
+    net::EffectiveConnectionType effective_connection_type;
+    net::EffectiveConnectionType recent_effective_connection_type;
     bool expect_network_quality_slow;
     uint32_t bucket_to_check;
     uint32_t expected_bucket_count;
   } tests[] = {
       {"Predicted slow, actually slow, Enabled group", "Enabled",
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, true, 0,
-       1},
+       net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
+       net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, true, 0, 1},
       {"Predicted slow, actually slow, Enabled_NoControl group",
-       "Enabled_NoControl",
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, true, 0,
-       1},
+       "Enabled_NoControl", net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
+       net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, true, 0, 1},
       {"Predicted slow, actually slow, Control group", "Control",
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, true, 0,
-       1},
+       net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
+       net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, true, 0, 1},
       {"Predicted slow, actually not slow", "Enabled",
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_2G, true, 1, 1},
+       net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
+       net::EFFECTIVE_CONNECTION_TYPE_2G, true, 1, 1},
       {"Predicted not slow, actually slow", "Enabled",
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_2G,
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, false,
-       2, 1},
+       net::EFFECTIVE_CONNECTION_TYPE_2G,
+       net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, false, 2, 1},
       {"Predicted not slow, actually not slow", "Enabled",
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_2G,
-       net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_2G, false, 3, 1},
+       net::EFFECTIVE_CONNECTION_TYPE_2G, net::EFFECTIVE_CONNECTION_TYPE_2G,
+       false, 3, 1},
   };
 
   for (const auto& test : tests) {
@@ -1220,9 +1212,9 @@ TEST_F(DataReductionProxyConfigTest, LoFiAccuracyNonZeroDelay) {
   base::HistogramTester histogram_tester;
   // Network was predicted to be slow and actually was slow.
   test_network_quality_estimator.SetEffectiveConnectionType(
-      net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G);
+      net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G);
   test_network_quality_estimator.SetRecentEffectiveConnectionType(
-      net::NetworkQualityEstimator::EFFECTIVE_CONNECTION_TYPE_SLOW_2G);
+      net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G);
   ASSERT_TRUE(config.IsNetworkQualityProhibitivelySlow(
       &test_network_quality_estimator));
   tick_clock->Advance(base::TimeDelta::FromSeconds(1));

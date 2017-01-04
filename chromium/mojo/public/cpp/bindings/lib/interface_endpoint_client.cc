@@ -17,6 +17,7 @@
 #include "mojo/public/cpp/bindings/associated_group.h"
 #include "mojo/public/cpp/bindings/associated_group_controller.h"
 #include "mojo/public/cpp/bindings/interface_endpoint_controller.h"
+#include "mojo/public/cpp/bindings/lib/validation_util.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 
 namespace mojo {
@@ -132,34 +133,43 @@ bool InterfaceEndpointClient::HandleIncomingMessageThunk::Accept(
 InterfaceEndpointClient::InterfaceEndpointClient(
     ScopedInterfaceEndpointHandle handle,
     MessageReceiverWithResponderStatus* receiver,
-    std::unique_ptr<MessageFilter> payload_validator,
+    std::unique_ptr<MessageReceiver> payload_validator,
     bool expect_sync_requests,
-    scoped_refptr<base::SingleThreadTaskRunner> runner)
+    scoped_refptr<base::SingleThreadTaskRunner> runner,
+    uint32_t interface_version)
     : handle_(std::move(handle)),
       incoming_receiver_(receiver),
-      payload_validator_(std::move(payload_validator)),
       thunk_(this),
+      filters_(&thunk_),
       next_request_id_(1),
       encountered_error_(false),
       task_runner_(std::move(runner)),
+      control_message_proxy_(this),
+      control_message_handler_(interface_version),
       weak_ptr_factory_(this) {
   DCHECK(handle_.is_valid());
   DCHECK(handle_.is_local());
 
   // TODO(yzshen): the way to use validator (or message filter in general)
   // directly is a little awkward.
-  payload_validator_->set_sink(&thunk_);
+  if (payload_validator)
+    filters_.Append(std::move(payload_validator));
 
   controller_ = handle_.group_controller()->AttachEndpointClient(
       handle_, this, task_runner_);
   if (expect_sync_requests)
     controller_->AllowWokenUpBySyncWatchOnSameThread();
+
+  base::MessageLoop::current()->AddDestructionObserver(this);
 }
 
 InterfaceEndpointClient::~InterfaceEndpointClient() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  handle_.group_controller()->DetachEndpointClient(handle_);
+  StopObservingIfNecessary();
+
+  if (handle_.is_valid())
+    handle_.group_controller()->DetachEndpointClient(handle_);
 }
 
 AssociatedGroup* InterfaceEndpointClient::associated_group() {
@@ -184,6 +194,11 @@ ScopedInterfaceEndpointHandle InterfaceEndpointClient::PassHandle() {
   handle_.group_controller()->DetachEndpointClient(handle_);
 
   return std::move(handle_);
+}
+
+void InterfaceEndpointClient::AddFilter(
+    std::unique_ptr<MessageReceiver> filter) {
+  filters_.Append(std::move(filter));
 }
 
 void InterfaceEndpointClient::RaiseError() {
@@ -234,20 +249,18 @@ bool InterfaceEndpointClient::AcceptWithResponder(Message* message,
   bool response_received = false;
   std::unique_ptr<MessageReceiver> sync_responder(responder);
   sync_responses_.insert(std::make_pair(
-      request_id, base::WrapUnique(new SyncResponseInfo(&response_received))));
+      request_id, base::MakeUnique<SyncResponseInfo>(&response_received)));
 
   base::WeakPtr<InterfaceEndpointClient> weak_self =
       weak_ptr_factory_.GetWeakPtr();
   controller_->SyncWatch(&response_received);
   // Make sure that this instance hasn't been destroyed.
   if (weak_self) {
-    DCHECK(ContainsKey(sync_responses_, request_id));
+    DCHECK(base::ContainsKey(sync_responses_, request_id));
     auto iter = sync_responses_.find(request_id);
     DCHECK_EQ(&response_received, iter->second->response_received);
-    if (response_received) {
-      std::unique_ptr<Message> response = std::move(iter->second->response);
-      ignore_result(sync_responder->Accept(response.get()));
-    }
+    if (response_received)
+      ignore_result(sync_responder->Accept(&iter->second->response));
     sync_responses_.erase(iter);
   }
 
@@ -257,8 +270,7 @@ bool InterfaceEndpointClient::AcceptWithResponder(Message* message,
 
 bool InterfaceEndpointClient::HandleIncomingMessage(Message* message) {
   DCHECK(thread_checker_.CalledOnValidThread());
-
-  return payload_validator_->Accept(message);
+  return filters_.Accept(message);
 }
 
 void InterfaceEndpointClient::NotifyError() {
@@ -267,20 +279,38 @@ void InterfaceEndpointClient::NotifyError() {
   if (encountered_error_)
     return;
   encountered_error_ = true;
-  if (!error_handler_.is_null())
+
+  // The callbacks may hold on to resources. There is no need to keep them any
+  // longer.
+  async_responders_.clear();
+
+  control_message_proxy_.OnConnectionError();
+
+  if (!error_handler_.is_null()) {
     error_handler_.Run();
+  } else if (!error_with_reason_handler_.is_null()) {
+    // Make a copy on the stack. If we directly pass a reference to a member of
+    // |control_message_handler_|, that reference will be invalidated as soon as
+    // the user destroys the interface endpoint.
+    std::string description = control_message_handler_.disconnect_description();
+    error_with_reason_handler_.Run(
+        control_message_handler_.disconnect_custom_reason(), description);
+  }
 }
 
 bool InterfaceEndpointClient::HandleValidatedMessage(Message* message) {
   DCHECK_EQ(handle_.id(), message->interface_id());
+  DCHECK(!encountered_error_);
 
   if (message->has_flag(Message::kFlagExpectsResponse)) {
-    if (!incoming_receiver_)
-      return false;
-
     MessageReceiverWithStatus* responder =
         new ResponderThunk(weak_ptr_factory_.GetWeakPtr(), task_runner_);
-    bool ok = incoming_receiver_->AcceptWithResponder(message, responder);
+    bool ok = false;
+    if (mojo::internal::ControlMessageHandler::IsControlMessage(message)) {
+      ok = control_message_handler_.AcceptWithResponder(message, responder);
+    } else {
+      ok = incoming_receiver_->AcceptWithResponder(message, responder);
+    }
     if (!ok)
       delete responder;
     return ok;
@@ -291,8 +321,7 @@ bool InterfaceEndpointClient::HandleValidatedMessage(Message* message) {
       auto it = sync_responses_.find(request_id);
       if (it == sync_responses_.end())
         return false;
-      it->second->response.reset(new Message());
-      message->MoveTo(it->second->response.get());
+      it->second->response = std::move(*message);
       *it->second->response_received = true;
       return true;
     }
@@ -304,11 +333,24 @@ bool InterfaceEndpointClient::HandleValidatedMessage(Message* message) {
     async_responders_.erase(it);
     return responder->Accept(message);
   } else {
-    if (!incoming_receiver_)
-      return false;
+    if (mojo::internal::ControlMessageHandler::IsControlMessage(message))
+      return control_message_handler_.Accept(message);
 
     return incoming_receiver_->Accept(message);
   }
+}
+
+void InterfaceEndpointClient::StopObservingIfNecessary() {
+  if (!observing_message_loop_destruction_)
+    return;
+
+  observing_message_loop_destruction_ = false;
+  base::MessageLoop::current()->RemoveDestructionObserver(this);
+}
+
+void InterfaceEndpointClient::WillDestroyCurrentMessageLoop() {
+  StopObservingIfNecessary();
+  NotifyError();
 }
 
 }  // namespace mojo

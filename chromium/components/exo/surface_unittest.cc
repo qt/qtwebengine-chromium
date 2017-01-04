@@ -5,6 +5,7 @@
 #include "base/bind.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/delegated_frame_data.h"
+#include "cc/quads/texture_draw_quad.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_manager.h"
 #include "components/exo/buffer.h"
@@ -128,7 +129,7 @@ TEST_F(SurfaceTest, SetBufferScale) {
       surface->content_size().ToString());
 }
 
-TEST_F(SurfaceTest, RecreateLayer) {
+TEST_F(SurfaceTest, MirrorLayers) {
   gfx::Size buffer_size(512, 512);
   std::unique_ptr<Buffer> buffer(
       new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(buffer_size)));
@@ -140,7 +141,7 @@ TEST_F(SurfaceTest, RecreateLayer) {
   EXPECT_EQ(buffer_size, surface->window()->bounds().size());
   EXPECT_EQ(buffer_size, surface->window()->layer()->bounds().size());
   std::unique_ptr<ui::LayerTreeOwner> old_layer_owner =
-      ::wm::RecreateLayers(surface->window(), nullptr);
+      ::wm::MirrorLayers(surface->window(), false /* sync_bounds */);
   EXPECT_EQ(buffer_size, surface->window()->bounds().size());
   EXPECT_EQ(buffer_size, surface->window()->layer()->bounds().size());
   EXPECT_EQ(buffer_size, old_layer_owner->root()->bounds().size());
@@ -188,7 +189,7 @@ TEST_F(SurfaceTest, SetCrop) {
 }
 
 const cc::DelegatedFrameData* GetFrameFromSurface(Surface* surface) {
-  cc::SurfaceId surface_id = surface->surface_id();
+  cc::SurfaceId surface_id = surface->GetSurfaceId();
   cc::SurfaceManager* surface_manager =
       aura::Env::GetInstance()->context_factory()->GetSurfaceManager();
   const cc::CompositorFrame& frame =
@@ -212,6 +213,27 @@ TEST_F(SurfaceTest, SetBlendMode) {
   EXPECT_FALSE(frame_data->render_pass_list.back()
                    ->quad_list.back()
                    ->ShouldDrawWithBlending());
+}
+
+TEST_F(SurfaceTest, OverlayCandidate) {
+  gfx::Size buffer_size(1, 1);
+  std::unique_ptr<Buffer> buffer(new Buffer(
+      exo_test_helper()->CreateGpuMemoryBuffer(buffer_size), 0, 0, true, true));
+  std::unique_ptr<Surface> surface(new Surface);
+
+  surface->Attach(buffer.get());
+  surface->Commit();
+
+  const cc::DelegatedFrameData* frame_data = GetFrameFromSurface(surface.get());
+  ASSERT_EQ(1u, frame_data->render_pass_list.size());
+  ASSERT_EQ(1u, frame_data->render_pass_list.back()->quad_list.size());
+  cc::DrawQuad* draw_quad =
+      frame_data->render_pass_list.back()->quad_list.back();
+  ASSERT_EQ(cc::DrawQuad::TEXTURE_CONTENT, draw_quad->material);
+
+  const cc::TextureDrawQuad* texture_quad =
+      cc::TextureDrawQuad::MaterialCast(draw_quad);
+  EXPECT_FALSE(texture_quad->resource_size_in_pixels().IsEmpty());
 }
 
 TEST_F(SurfaceTest, SetAlpha) {

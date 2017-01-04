@@ -37,10 +37,21 @@ cr.define('downloads', function() {
         value: false,
       },
 
+      isMalware_: {
+        computed: 'computeIsMalware_(isDangerous_, data.danger_type)',
+        type: Boolean,
+        value: false,
+      },
+
       isInProgress_: {
         computed: 'computeIsInProgress_(data.state)',
         type: Boolean,
         value: false,
+      },
+
+      pauseOrResumeText_: {
+        computed: 'computePauseOrResumeText_(isInProgress_, data.resume)',
+        type: String,
       },
 
       showCancel_: {
@@ -51,12 +62,6 @@ cr.define('downloads', function() {
 
       showProgress_: {
         computed: 'computeShowProgress_(showCancel_, data.percent)',
-        type: Boolean,
-        value: false,
-      },
-
-      isMalware_: {
-        computed: 'computeIsMalware_(isDangerous_, data.danger_type)',
         type: Boolean,
         value: false,
       },
@@ -139,16 +144,18 @@ cr.define('downloads', function() {
           var fileName = data.file_name;
           switch (data.danger_type) {
             case downloads.DangerType.DANGEROUS_FILE:
-              return loadTimeData.getStringF('dangerFileDesc', fileName);
+             return loadTimeData.getString('dangerFileDesc');
+
             case downloads.DangerType.DANGEROUS_URL:
-              return loadTimeData.getString('dangerUrlDesc');
-            case downloads.DangerType.DANGEROUS_CONTENT:  // Fall through.
+            case downloads.DangerType.DANGEROUS_CONTENT:
             case downloads.DangerType.DANGEROUS_HOST:
-              return loadTimeData.getStringF('dangerContentDesc', fileName);
+             return loadTimeData.getString('dangerDownloadDesc');
+
             case downloads.DangerType.UNCOMMON_CONTENT:
-              return loadTimeData.getStringF('dangerUncommonDesc', fileName);
+             return loadTimeData.getString('dangerUncommonDesc');
+
             case downloads.DangerType.POTENTIALLY_UNWANTED:
-              return loadTimeData.getStringF('dangerSettingsDesc', fileName);
+             return loadTimeData.getString('dangerSettingsDesc');
           }
           break;
 
@@ -184,6 +191,15 @@ cr.define('downloads', function() {
            this.data.danger_type == downloads.DangerType.DANGEROUS_HOST ||
            this.data.danger_type == downloads.DangerType.DANGEROUS_URL ||
            this.data.danger_type == downloads.DangerType.POTENTIALLY_UNWANTED);
+    },
+
+    /** @private */
+    computePauseOrResumeText_: function() {
+      if (this.isInProgress_)
+        return loadTimeData.getString('controlPause');
+      if (this.data.resume)
+        return loadTimeData.getString('controlResume');
+      return '';
     },
 
     /** @private */
@@ -275,18 +291,16 @@ cr.define('downloads', function() {
     },
 
     /** @private */
-    onPauseTap_: function() {
-      downloads.ActionService.getInstance().pause(this.data.id);
+    onPauseOrResumeTap_: function() {
+      if (this.isInProgress_)
+        downloads.ActionService.getInstance().pause(this.data.id);
+      else
+        downloads.ActionService.getInstance().resume(this.data.id);
     },
 
     /** @private */
     onRemoveTap_: function() {
       downloads.ActionService.getInstance().remove(this.data.id);
-    },
-
-    /** @private */
-    onResumeTap_: function() {
-      downloads.ActionService.getInstance().resume(this.data.id);
     },
 
     /** @private */

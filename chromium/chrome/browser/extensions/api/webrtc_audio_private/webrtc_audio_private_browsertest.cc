@@ -23,7 +23,7 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/media/webrtc_log_uploader.h"
+#include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -138,7 +138,8 @@ class WebrtcAudioPrivateTest : public AudioWaitingExtensionTest {
     if (!audio_manager->GetTaskRunner()->BelongsToCurrentThread()) {
       audio_manager->GetTaskRunner()->PostTask(
           FROM_HERE,
-          base::Bind(&WebrtcAudioPrivateTest::GetAudioDeviceNames, this,
+          base::Bind(&WebrtcAudioPrivateTest::GetAudioDeviceNames,
+                     base::Unretained(this),
                      EnumerationFunc, device_names));
       enumeration_event_.Wait();
     } else {
@@ -159,8 +160,8 @@ class WebrtcAudioPrivateTest : public AudioWaitingExtensionTest {
       content::BrowserThread::PostTask(
           content::BrowserThread::UI, FROM_HERE,
           base::Bind(&WebrtcAudioPrivateTest::GetIDInOrigin,
-                     this, resource_context, origin, raw_device_id,
-                     id_in_origin));
+                     base::Unretained(this),
+                     resource_context, origin, raw_device_id, id_in_origin));
       enumeration_event_.Wait();
     } else {
       *id_in_origin = content::GetHMACForMediaDeviceID(
@@ -376,12 +377,12 @@ IN_PROC_BROWSER_TEST_F(WebrtcAudioPrivateTest, MAYBE_TriggerEvent) {
       WebrtcAudioPrivateEventService::GetFactoryInstance()->Get(profile());
 
   // Just trigger, without any extension listening.
-  service->OnDevicesChanged(base::SystemMonitor::DEVTYPE_AUDIO_CAPTURE);
+  service->OnDevicesChanged(base::SystemMonitor::DEVTYPE_AUDIO);
 
   // Now load our test extension and do it again.
   const extensions::Extension* extension = LoadExtension(
       test_data_dir_.AppendASCII("webrtc_audio_private_event_listener"));
-  service->OnDevicesChanged(base::SystemMonitor::DEVTYPE_AUDIO_CAPTURE);
+  service->OnDevicesChanged(base::SystemMonitor::DEVTYPE_AUDIO);
 
   // Check that the extension got the notification.
   std::string result = ExecuteScriptInBackgroundPage(extension->id(),

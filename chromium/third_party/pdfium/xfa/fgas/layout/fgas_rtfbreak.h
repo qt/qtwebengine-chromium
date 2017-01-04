@@ -7,8 +7,8 @@
 #ifndef XFA_FGAS_LAYOUT_FGAS_RTFBREAK_H_
 #define XFA_FGAS_LAYOUT_FGAS_RTFBREAK_H_
 
-#include "core/fxcrt/include/fx_basic.h"
-#include "core/fxcrt/include/fx_ucd.h"
+#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/fx_ucd.h"
 #include "xfa/fgas/crt/fgas_memory.h"
 #include "xfa/fgas/crt/fgas_utils.h"
 #include "xfa/fgas/layout/fgas_textbreak.h"
@@ -288,10 +288,10 @@ class CFX_RTFBreak {
   int32_t m_iBoundaryStart;
   int32_t m_iBoundaryEnd;
   uint32_t m_dwLayoutStyles;
-  FX_BOOL m_bPagination;
-  FX_BOOL m_bVertical;
-  FX_BOOL m_bSingleLine;
-  FX_BOOL m_bCharCode;
+  bool m_bPagination;
+  bool m_bVertical;
+  bool m_bSingleLine;
+  bool m_bCharCode;
   CFGAS_GEFont* m_pFont;
   int32_t m_iFontHeight;
   int32_t m_iFontSize;

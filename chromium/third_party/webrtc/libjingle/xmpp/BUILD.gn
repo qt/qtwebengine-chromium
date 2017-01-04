@@ -9,7 +9,7 @@
 import("../../build/webrtc.gni")
 
 group("xmpp") {
-  deps = [
+  public_deps = [
     ":rtc_xmpp",
   ]
 }
@@ -30,7 +30,7 @@ config("xmpp_inherited_config") {
   ]
 }
 
-source_set("rtc_xmpp") {
+rtc_static_library("rtc_xmpp") {
   cflags = []
   sources = [
     "asyncsocket.h",
@@ -74,15 +74,9 @@ source_set("rtc_xmpp") {
     ]
   }
 
-  configs += [
-    "../..:common_config",
-    ":xmpp_warnings_config",
-  ]
+  configs += [ ":xmpp_warnings_config" ]
 
-  public_configs = [
-    "../..:common_inherited_config",
-    ":xmpp_inherited_config",
-  ]
+  public_configs = [ ":xmpp_inherited_config" ]
 
   if (build_with_chromium) {
     if (is_nacl) {
@@ -148,7 +142,7 @@ source_set("rtc_xmpp") {
     if (is_clang) {
       # Suppress warnings from Chrome's Clang plugins.
       # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
 

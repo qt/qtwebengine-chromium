@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "base/stl_util.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
 #include "net/base/request_priority.h"
@@ -28,11 +27,12 @@ ReportSender::ReportSender(URLRequestContext* request_context,
       error_callback_(error_callback) {}
 
 ReportSender::~ReportSender() {
-  // Cancel all of the uncompleted requests.
-  STLDeleteElements(&inflight_requests_);
 }
 
-void ReportSender::Send(const GURL& report_uri, const std::string& report) {
+void ReportSender::Send(const GURL& report_uri,
+                        base::StringPiece content_type,
+                        base::StringPiece report) {
+  DCHECK(!content_type.empty());
   std::unique_ptr<URLRequest> url_request =
       request_context_->CreateRequest(report_uri, DEFAULT_PRIORITY, this);
 
@@ -43,15 +43,20 @@ void ReportSender::Send(const GURL& report_uri, const std::string& report) {
   }
   url_request->SetLoadFlags(load_flags);
 
+  HttpRequestHeaders extra_headers;
+  extra_headers.SetHeader(HttpRequestHeaders::kContentType, content_type);
+  url_request->SetExtraRequestHeaders(extra_headers);
+
   url_request->set_method("POST");
 
+  std::vector<char> report_data(report.begin(), report.end());
   std::unique_ptr<UploadElementReader> reader(
-      UploadOwnedBytesElementReader::CreateWithString(report));
+      new UploadOwnedBytesElementReader(&report_data));
   url_request->set_upload(
       ElementsUploadDataStream::CreateWithReader(std::move(reader), 0));
 
   URLRequest* raw_url_request = url_request.get();
-  inflight_requests_.insert(url_request.release());
+  inflight_requests_[raw_url_request] = std::move(url_request);
   raw_url_request->Start();
 }
 
@@ -59,16 +64,16 @@ void ReportSender::SetErrorCallback(const ErrorCallback& error_callback) {
   error_callback_ = error_callback;
 }
 
-void ReportSender::OnResponseStarted(URLRequest* request) {
-  if (!request->status().is_success()) {
+void ReportSender::OnResponseStarted(URLRequest* request, int net_error) {
+  DCHECK_NE(ERR_IO_PENDING, net_error);
+
+  if (net_error != OK) {
     DVLOG(1) << "Failed to send report for " << request->url().host();
     if (!error_callback_.is_null())
-      error_callback_.Run(request->url(), request->status().error());
+      error_callback_.Run(request->url(), net_error);
   }
 
   CHECK_GT(inflight_requests_.erase(request), 0u);
-  // Clean up the request, which cancels it.
-  delete request;
 }
 
 void ReportSender::OnReadCompleted(URLRequest* request, int bytes_read) {

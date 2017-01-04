@@ -13,6 +13,9 @@
 
 typedef unsigned long XAtom;
 typedef unsigned long XID;
+typedef unsigned long VisualID;
+typedef struct _XcursorImage XcursorImage;
+typedef union _XEvent XEvent;
 typedef struct _XImage XImage;
 typedef struct _XGC *GC;
 typedef struct _XDisplay XDisplay;
@@ -80,4 +83,3 @@ GFX_EXPORT void PutARGBImage(XDisplay* display,
 }  // namespace gfx
 
 #endif  // UI_GFX_X_X11_UTIL_H_
-

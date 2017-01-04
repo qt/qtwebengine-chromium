@@ -28,33 +28,7 @@ typedef ZoneMap<MoveKey, unsigned, MoveKeyCompare> MoveMap;
 typedef ZoneSet<InstructionOperand, CompareOperandModuloType> OperandSet;
 
 bool Blocks(const OperandSet& set, const InstructionOperand& operand) {
-  if (set.find(operand) != set.end()) return true;
-  // Only FP registers on archs with non-simple aliasing need extra checks.
-  if (!operand.IsFPRegister() || kSimpleFPAliasing) return false;
-
-  const LocationOperand& loc = LocationOperand::cast(operand);
-  MachineRepresentation rep = loc.representation();
-  MachineRepresentation other_fp_rep = rep == MachineRepresentation::kFloat64
-                                           ? MachineRepresentation::kFloat32
-                                           : MachineRepresentation::kFloat64;
-  const RegisterConfiguration* config = RegisterConfiguration::Turbofan();
-  if (config->fp_aliasing_kind() != RegisterConfiguration::COMBINE) {
-    // Overlap aliasing case.
-    return set.find(LocationOperand(loc.kind(), loc.location_kind(),
-                                    other_fp_rep, loc.register_code())) !=
-           set.end();
-  }
-  // Combine aliasing case.
-  int alias_base_index = -1;
-  int aliases = config->GetAliases(rep, loc.register_code(), other_fp_rep,
-                                   &alias_base_index);
-  while (aliases--) {
-    int aliased_reg = alias_base_index + aliases;
-    if (set.find(LocationOperand(loc.kind(), loc.location_kind(), other_fp_rep,
-                                 aliased_reg)) != set.end())
-      return true;
-  }
-  return false;
+  return set.find(operand) != set.end();
 }
 
 int FindFirstNonEmptySlot(const Instruction* instr) {
@@ -145,7 +119,7 @@ void MoveOptimizer::RemoveClobberedDestinations(Instruction* instruction) {
 
   // The ret instruction makes any assignment before it unnecessary, except for
   // the one for its input.
-  if (instruction->opcode() == ArchOpcode::kArchRet) {
+  if (instruction->IsRet() || instruction->IsTailCall()) {
     for (MoveOperands* move : *moves) {
       if (inputs.find(move->destination()) == inputs.end()) {
         move->Eliminate();
@@ -450,7 +424,7 @@ void MoveOptimizer::OptimizeMerge(InstructionBlock* block) {
 namespace {
 
 bool IsSlot(const InstructionOperand& op) {
-  return op.IsStackSlot() || op.IsDoubleStackSlot();
+  return op.IsStackSlot() || op.IsFPStackSlot();
 }
 
 

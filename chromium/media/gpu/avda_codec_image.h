@@ -28,8 +28,7 @@ class AVDACodecImage : public gpu::gles2::GLStreamTextureImage {
   AVDACodecImage(int picture_buffer_id,
                  const scoped_refptr<AVDASharedState>& shared_state,
                  VideoCodecBridge* codec,
-                 const base::WeakPtr<gpu::gles2::GLES2Decoder>& decoder,
-                 const scoped_refptr<gl::SurfaceTexture>& surface_texture);
+                 const base::WeakPtr<gpu::gles2::GLES2Decoder>& decoder);
 
   // gl::GLImage implementation
   void Destroy(bool have_context) override;
@@ -46,6 +45,7 @@ class AVDACodecImage : public gpu::gles2::GLStreamTextureImage {
                             gfx::OverlayTransform transform,
                             const gfx::Rect& bounds_rect,
                             const gfx::RectF& crop_rect) override;
+  void Flush() override {}
   void OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
                     uint64_t process_tracing_id,
                     const std::string& dump_name) override;
@@ -143,15 +143,11 @@ class AVDACodecImage : public gpu::gles2::GLStreamTextureImage {
 
   const base::WeakPtr<gpu::gles2::GLES2Decoder> decoder_;
 
-  // The SurfaceTexture to render to. This is null when rendering to a
-  // SurfaceView.
-  const scoped_refptr<gl::SurfaceTexture> surface_texture_;
+  // Indicates if we're rendering to a SurfaceTexture or not.
+  const bool has_surface_texture_;
 
   // The texture that we're attached to.
   gpu::gles2::Texture* texture_;
-
-  // Texture matrix of the front buffer of the surface texture.
-  float gl_matrix_[16];
 
   // The picture buffer id attached to this image.
   int picture_buffer_id_;

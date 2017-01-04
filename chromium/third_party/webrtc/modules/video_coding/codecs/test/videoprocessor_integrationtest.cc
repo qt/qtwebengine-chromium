@@ -10,16 +10,15 @@
 
 #include <math.h>
 
-#include "testing/gtest/include/gtest/gtest.h"
-
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
 #include "webrtc/modules/video_coding/codecs/test/packet_manipulator.h"
 #include "webrtc/modules/video_coding/codecs/test/videoprocessor.h"
-#include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
+#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/include/video_coding.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/test/testsupport/frame_reader.h"
 #include "webrtc/test/testsupport/frame_writer.h"
@@ -226,7 +225,8 @@ class VideoProcessorIntegrationTest : public testing::Test {
         break;
     }
     frame_reader_ = new webrtc::test::FrameReaderImpl(
-        config_.input_filename, config_.frame_length_in_bytes);
+        config_.input_filename, config_.codec_settings->width,
+        config_.codec_settings->height);
     frame_writer_ = new webrtc::test::FrameWriterImpl(
         config_.output_filename, config_.frame_length_in_bytes);
     ASSERT_TRUE(frame_reader_->Init());
@@ -690,7 +690,7 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeBitRateVP9) {
                      false, true, false);
   // Metrics for expected quality.
   QualityMetrics quality_metrics;
-  SetQualityMetrics(&quality_metrics, 35.7, 30.0, 0.90, 0.85);
+  SetQualityMetrics(&quality_metrics, 35.5, 30.0, 0.90, 0.85);
   // Metrics for rate control.
   RateControlMetrics rc_metrics[3];
   SetRateControlMetrics(rc_metrics, 0, 0, 30, 20, 20, 30, 0, 1);

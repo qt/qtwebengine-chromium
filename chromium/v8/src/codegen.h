@@ -69,7 +69,7 @@ namespace internal {
 
 
 class CompilationInfo;
-
+class EhFrameWriter;
 
 class CodeGenerator {
  public:
@@ -78,7 +78,9 @@ class CodeGenerator {
 
   // Allocate and install the code.
   static Handle<Code> MakeCodeEpilogue(MacroAssembler* masm,
-                                       CompilationInfo* info);
+                                       EhFrameWriter* unwinding,
+                                       CompilationInfo* info,
+                                       Handle<Object> self_reference);
 
   // Print the code after compiling it.
   static void PrintCode(Handle<Code> code, CompilationInfo* info);

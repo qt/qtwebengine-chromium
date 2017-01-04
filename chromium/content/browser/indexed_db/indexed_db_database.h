@@ -10,6 +10,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <queue>
 #include <string>
 #include <utility>
@@ -21,6 +22,7 @@
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_metadata.h"
+#include "content/browser/indexed_db/indexed_db_observer.h"
 #include "content/browser/indexed_db/indexed_db_pending_connection.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
 #include "content/browser/indexed_db/list_set.h"
@@ -39,6 +41,8 @@ class IndexedDBFactory;
 class IndexedDBKey;
 class IndexedDBKeyPath;
 class IndexedDBKeyRange;
+class IndexedDBObservation;
+class IndexedDBObserverChanges;
 class IndexedDBTransaction;
 struct IndexedDBValue;
 
@@ -70,12 +74,16 @@ class CONTENT_EXPORT IndexedDBDatabase
   void AddObjectStore(const IndexedDBObjectStoreMetadata& metadata,
                       int64_t new_max_object_store_id);
   void RemoveObjectStore(int64_t object_store_id);
+  void SetObjectStoreName(int64_t object_store_id, const base::string16& name);
   void AddIndex(int64_t object_store_id,
                 const IndexedDBIndexMetadata& metadata,
                 int64_t new_max_index_id);
   void RemoveIndex(int64_t object_store_id, int64_t index_id);
+  void SetIndexName(int64_t object_store_id,
+                    int64_t index_id,
+                    const base::string16& name);
 
-  void OpenConnection(const IndexedDBPendingConnection& connection);
+  void OpenConnection(std::unique_ptr<IndexedDBPendingConnection> connection);
   void DeleteDatabase(scoped_refptr<IndexedDBCallbacks> callbacks);
   const IndexedDBDatabaseMetadata& metadata() const { return metadata_; }
 
@@ -85,10 +93,17 @@ class CONTENT_EXPORT IndexedDBDatabase
                          const IndexedDBKeyPath& key_path,
                          bool auto_increment);
   void DeleteObjectStore(int64_t transaction_id, int64_t object_store_id);
-  void CreateTransaction(int64_t transaction_id,
-                         IndexedDBConnection* connection,
-                         const std::vector<int64_t>& object_store_ids,
-                         blink::WebIDBTransactionMode mode);
+  void RenameObjectStore(int64_t transaction_id,
+                         int64_t object_store_id,
+                         const base::string16& new_name);
+
+  // Returns a pointer to a newly created transaction. The object is owned
+  // by |transaction_coordinator_|.
+  IndexedDBTransaction* CreateTransaction(
+      int64_t transaction_id,
+      IndexedDBConnection* connection,
+      const std::vector<int64_t>& object_store_ids,
+      blink::WebIDBTransactionMode mode);
   void Close(IndexedDBConnection* connection, bool forced);
   void ForceClose();
 
@@ -111,6 +126,10 @@ class CONTENT_EXPORT IndexedDBDatabase
   void DeleteIndex(int64_t transaction_id,
                    int64_t object_store_id,
                    int64_t index_id);
+  void RenameIndex(int64_t transaction_id,
+                   int64_t object_store_id,
+                   int64_t index_id,
+                   const base::string16& new_name);
 
   IndexedDBTransactionCoordinator& transaction_coordinator() {
     return transaction_coordinator_;
@@ -124,6 +143,19 @@ class CONTENT_EXPORT IndexedDBDatabase
 
   // Called by transactions to report failure committing to the backing store.
   void TransactionCommitFailed(const leveldb::Status& status);
+
+  void AddPendingObserver(int64_t transaction_id,
+                          int32_t observer_id,
+                          const IndexedDBObserver::Options& options);
+  void RemovePendingObservers(IndexedDBConnection* connection,
+                              const std::vector<int32_t>& pending_observer_ids);
+
+  void FilterObservation(IndexedDBTransaction*,
+                         int64_t object_store_id,
+                         blink::WebIDBOperationType type,
+                         const IndexedDBKeyRange& key_range);
+  void SendObservations(
+      std::map<int32_t, std::unique_ptr<IndexedDBObserverChanges>> change_map);
 
   void Get(int64_t transaction_id,
            int64_t object_store_id,
@@ -141,7 +173,7 @@ class CONTENT_EXPORT IndexedDBDatabase
   void Put(int64_t transaction_id,
            int64_t object_store_id,
            IndexedDBValue* value,
-           ScopedVector<storage::BlobDataHandle>* handles,
+           std::vector<std::unique_ptr<storage::BlobDataHandle>>* handles,
            std::unique_ptr<IndexedDBKey> key,
            blink::WebIDBPutMode mode,
            scoped_refptr<IndexedDBCallbacks> callbacks,
@@ -175,15 +207,14 @@ class CONTENT_EXPORT IndexedDBDatabase
              scoped_refptr<IndexedDBCallbacks> callbacks);
 
   // Number of connections that have progressed passed initial open call.
-  size_t ConnectionCount() const;
-  // Number of open calls that are blocked on other connections.
-  size_t PendingOpenCount() const;
-  // Number of pending upgrades (0 or 1). Also included in ConnectionCount().
-  size_t PendingUpgradeCount() const;
-  // Number of running upgrades (0 or 1). Also included in ConnectionCount().
-  size_t RunningUpgradeCount() const;
-  // Number of pending deletes, blocked on other connections.
-  size_t PendingDeleteCount() const;
+  size_t ConnectionCount() const { return connections_.size(); }
+
+  // Number of active open/delete calls (running or blocked on other
+  // connections).
+  size_t ActiveOpenDeleteCount() const { return active_request_ ? 1 : 0; }
+
+  // Number of open/delete calls that are waiting their turn.
+  size_t PendingOpenDeleteCount() const { return pending_requests_.size(); }
 
   // Asynchronous tasks scheduled within transactions:
   void CreateObjectStoreAbortOperation(int64_t object_store_id,
@@ -193,9 +224,11 @@ class CONTENT_EXPORT IndexedDBDatabase
   void DeleteObjectStoreAbortOperation(
       const IndexedDBObjectStoreMetadata& object_store_metadata,
       IndexedDBTransaction* transaction);
+  void RenameObjectStoreAbortOperation(int64_t object_store_id,
+                                       const base::string16& old_name,
+                                       IndexedDBTransaction* transaction);
   void VersionChangeOperation(int64_t version,
                               scoped_refptr<IndexedDBCallbacks> callbacks,
-                              std::unique_ptr<IndexedDBConnection> connection,
                               IndexedDBTransaction* transaction);
   void VersionChangeAbortOperation(int64_t previous_version,
                                    IndexedDBTransaction* transaction);
@@ -207,6 +240,10 @@ class CONTENT_EXPORT IndexedDBDatabase
                                  IndexedDBTransaction* transaction);
   void DeleteIndexAbortOperation(int64_t object_store_id,
                                  const IndexedDBIndexMetadata& index_metadata,
+                                 IndexedDBTransaction* transaction);
+  void RenameIndexAbortOperation(int64_t object_store_id,
+                                 int64_t index_id,
+                                 const base::string16& old_name,
                                  IndexedDBTransaction* transaction);
   void GetOperation(int64_t object_store_id,
                     int64_t index_id,
@@ -256,29 +293,23 @@ class CONTENT_EXPORT IndexedDBDatabase
   friend class base::RefCounted<IndexedDBDatabase>;
   friend class IndexedDBClassFactory;
 
-  class PendingDeleteCall;
-  class PendingSuccessCall;
-  class PendingUpgradeCall;
+  class ConnectionRequest;
+  class OpenRequest;
+  class DeleteRequest;
 
-  typedef std::map<int64_t, IndexedDBTransaction*> TransactionMap;
-  typedef list_set<IndexedDBConnection*> ConnectionSet;
-
-  bool IsOpenConnectionBlocked() const;
   leveldb::Status OpenInternal();
-  void RunVersionChangeTransaction(
-      scoped_refptr<IndexedDBCallbacks> callbacks,
-      std::unique_ptr<IndexedDBConnection> connection,
-      int64_t transaction_id,
-      int64_t requested_version);
-  void RunVersionChangeTransactionFinal(
-      scoped_refptr<IndexedDBCallbacks> callbacks,
-      std::unique_ptr<IndexedDBConnection> connection,
-      int64_t transaction_id,
-      int64_t requested_version);
-  void ProcessPendingCalls();
 
-  bool IsDeleteDatabaseBlocked() const;
-  void DeleteDatabaseFinal(scoped_refptr<IndexedDBCallbacks> callbacks);
+  // Called internally when an open or delete request comes in. Processes
+  // the queue immediately if there are no other requests.
+  void AppendRequest(std::unique_ptr<ConnectionRequest> request);
+
+  // Called by requests when complete. The request will be freed, so the
+  // request must do no other work after calling this. If there are pending
+  // requests, the queue will be synchronously processed.
+  void RequestComplete(ConnectionRequest* request);
+
+  // Pop the first request from the queue and start it.
+  void ProcessRequestQueue();
 
   std::unique_ptr<IndexedDBConnection> CreateConnection(
       scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks,
@@ -302,14 +333,25 @@ class CONTENT_EXPORT IndexedDBDatabase
 
   IndexedDBTransactionCoordinator transaction_coordinator_;
 
-  TransactionMap transactions_;
-  std::queue<IndexedDBPendingConnection> pending_open_calls_;
-  std::unique_ptr<PendingUpgradeCall>
-      pending_run_version_change_transaction_call_;
-  std::unique_ptr<PendingSuccessCall> pending_second_half_open_;
-  std::list<PendingDeleteCall*> pending_delete_calls_;
+  std::map<int64_t, IndexedDBTransaction*> transactions_;
 
-  ConnectionSet connections_;
+  list_set<IndexedDBConnection*> connections_;
+
+  // This holds the first open or delete request that is currently being
+  // processed. The request has already broadcast OnVersionChange if
+  // necessary.
+  std::unique_ptr<ConnectionRequest> active_request_;
+
+  // This holds open or delete requests that are waiting for the active
+  // request to be completed. The requests have not yet broadcast
+  // OnVersionChange (if necessary).
+  std::queue<std::unique_ptr<ConnectionRequest>> pending_requests_;
+
+  // The |processing_pending_requests_| flag is set while ProcessRequestQueue()
+  // is executing. It prevents rentrant calls if the active request completes
+  // synchronously.
+  bool processing_pending_requests_ = false;
+
   bool experimental_web_platform_features_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexedDBDatabase);

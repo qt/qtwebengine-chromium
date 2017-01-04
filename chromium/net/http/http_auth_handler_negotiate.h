@@ -11,6 +11,7 @@
 #include "build/build_config.h"
 #include "net/base/address_list.h"
 #include "net/base/net_export.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_auth_handler.h"
 #include "net/http/http_auth_handler_factory.h"
 
@@ -25,8 +26,6 @@
 namespace net {
 
 class HttpAuthPreferences;
-class HostResolver;
-class SingleRequestHostResolver;
 
 // Handler for WWW-Authenticate: Negotiate protocol.
 //
@@ -67,7 +66,7 @@ class NET_EXPORT_PRIVATE HttpAuthHandlerNegotiate : public HttpAuthHandler {
                           const GURL& origin,
                           CreateReason reason,
                           int digest_nonce_count,
-                          const BoundNetLog& net_log,
+                          const NetLogWithSource& net_log,
                           std::unique_ptr<HttpAuthHandler>* handler) override;
 
    private:
@@ -137,7 +136,7 @@ class NET_EXPORT_PRIVATE HttpAuthHandlerNegotiate : public HttpAuthHandler {
 
   // Members which are needed for DNS lookup + SPN.
   AddressList address_list_;
-  std::unique_ptr<SingleRequestHostResolver> single_resolve_;
+  std::unique_ptr<net::HostResolver::Request> request_;
 
   // Things which should be consistent after first call to GenerateAuthToken.
   bool already_called_;

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "fpdfsdk/javascript/JS_Define.h"
+#include "fpdfsdk/javascript/JS_KeyValue.h"
 
 class CJS_GlobalData;
 class CJS_GlobalVariableArray;
@@ -20,7 +21,7 @@ struct JSGlobalData {
   JSGlobalData();
   ~JSGlobalData();
 
-  int nType;  // 0:int 1:bool 2:string 3:obj
+  JS_GlobalDataType nType;
   double dData;
   bool bData;
   CFX_ByteString sData;
@@ -46,14 +47,14 @@ class JSGlobalAlternate : public CJS_EmbedObj {
   FX_BOOL DelProperty(IJS_Context* cc,
                       const FX_WCHAR* propname,
                       CFX_WideString& sError);
-  void Initial(CPDFDoc_Environment* pApp);
+  void Initial(CPDFSDK_FormFillEnvironment* pEnv);
 
  private:
   void UpdateGlobalPersistentVariables();
   void CommitGlobalPersisitentVariables(IJS_Context* cc);
   void DestroyGlobalPersisitentVariables();
   FX_BOOL SetGlobalVariables(const CFX_ByteString& propname,
-                             int nType,
+                             JS_GlobalDataType nType,
                              double dData,
                              bool bData,
                              const CFX_ByteString& sData,
@@ -67,7 +68,7 @@ class JSGlobalAlternate : public CJS_EmbedObj {
   std::map<CFX_ByteString, JSGlobalData*> m_mapGlobal;
   CFX_WideString m_sFilePath;
   CJS_GlobalData* m_pGlobalData;
-  CPDFDoc_Environment* m_pApp;
+  CPDFSDK_FormFillEnvironment* m_pEnv;
 };
 
 class CJS_Global : public CJS_Object {

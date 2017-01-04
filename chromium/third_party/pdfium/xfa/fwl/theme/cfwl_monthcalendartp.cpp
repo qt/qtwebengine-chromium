@@ -49,26 +49,25 @@ const int kSeparatorY = kHeaderHeight + kDatesCellHeight + kSeparatorDOffset;
 
 }  // namespace
 
-CFWL_MonthCalendarTP::CFWL_MonthCalendarTP() {
-  m_pThemeData = new MCThemeData;
+CFWL_MonthCalendarTP::CFWL_MonthCalendarTP() : m_pThemeData(new MCThemeData) {
   SetThemeData(0);
 }
 
-CFWL_MonthCalendarTP::~CFWL_MonthCalendarTP() {
-  delete m_pThemeData;
-}
+CFWL_MonthCalendarTP::~CFWL_MonthCalendarTP() {}
 
 bool CFWL_MonthCalendarTP::IsValidWidget(IFWL_Widget* pWidget) {
   return pWidget && pWidget->GetClassID() == FWL_Type::MonthCalendar;
 }
+
 uint32_t CFWL_MonthCalendarTP::SetThemeID(IFWL_Widget* pWidget,
                                           uint32_t dwThemeID,
                                           FX_BOOL bChildren) {
-  if (m_pThemeData) {
+  if (m_pThemeData)
     SetThemeData(FWL_GetThemeColor(dwThemeID));
-  }
+
   return CFWL_WidgetTP::SetThemeID(pWidget, dwThemeID, bChildren);
 }
+
 FX_BOOL CFWL_MonthCalendarTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
     return FALSE;
@@ -462,6 +461,7 @@ FX_BOOL CFWL_MonthCalendarTP::DrawHSeperator(CFWL_ThemeBackground* pParams,
   pParams->m_pGraphics->RestoreGraphState();
   return TRUE;
 }
+
 FX_BOOL CFWL_MonthCalendarTP::DrawWeekNumSep(CFWL_ThemeBackground* pParams,
                                              CFX_Matrix* pMatrix) {
   CFX_Path path;
@@ -477,6 +477,7 @@ FX_BOOL CFWL_MonthCalendarTP::DrawWeekNumSep(CFWL_ThemeBackground* pParams,
   pParams->m_pGraphics->RestoreGraphState();
   return TRUE;
 }
+
 FX_BOOL CFWL_MonthCalendarTP::DrawDatesInBK(CFWL_ThemeBackground* pParams,
                                             CFX_Matrix* pMatrix) {
   pParams->m_pGraphics->SaveGraphState();
@@ -487,8 +488,7 @@ FX_BOOL CFWL_MonthCalendarTP::DrawDatesInBK(CFWL_ThemeBackground* pParams,
     rtSelDay = pParams->m_rtPart;
     path.AddRectangle(rtSelDay.left, rtSelDay.top, rtSelDay.width,
                       rtSelDay.height);
-    CFX_Color clrSelDayBK;
-    clrSelDayBK = m_pThemeData->clrDatesSelectedBK;
+    CFX_Color clrSelDayBK(m_pThemeData->clrDatesSelectedBK);
     pParams->m_pGraphics->SetFillColor(&clrSelDayBK);
     pParams->m_pGraphics->FillPath(&path, FXFILL_WINDING, pMatrix);
   } else if (pParams->m_dwStates & CFWL_PartState_Hovered) {
@@ -498,14 +498,14 @@ FX_BOOL CFWL_MonthCalendarTP::DrawDatesInBK(CFWL_ThemeBackground* pParams,
     rtSelDay = pParams->m_rtPart;
     path.AddRectangle(rtSelDay.left, rtSelDay.top, rtSelDay.width,
                       rtSelDay.height);
-    CFX_Color clrSelDayBK;
-    clrSelDayBK = m_pThemeData->clrDatesHoverBK;
+    CFX_Color clrSelDayBK(m_pThemeData->clrDatesHoverBK);
     pParams->m_pGraphics->SetFillColor(&clrSelDayBK);
     pParams->m_pGraphics->FillPath(&path, FXFILL_WINDING, pMatrix);
   }
   pParams->m_pGraphics->RestoreGraphState();
   return FALSE;
 }
+
 FX_BOOL CFWL_MonthCalendarTP::DrawDatesInCircle(CFWL_ThemeBackground* pParams,
                                                 CFX_Matrix* pMatrix) {
   CFX_Path path;
@@ -515,13 +515,13 @@ FX_BOOL CFWL_MonthCalendarTP::DrawDatesInCircle(CFWL_ThemeBackground* pParams,
   path.AddRectangle(rtSelDay.left, rtSelDay.top, rtSelDay.width,
                     rtSelDay.height);
   pParams->m_pGraphics->SaveGraphState();
-  CFX_Color clrSelDayBK;
-  clrSelDayBK = m_pThemeData->clrDatesCircle;
+  CFX_Color clrSelDayBK(m_pThemeData->clrDatesCircle);
   pParams->m_pGraphics->SetStrokeColor(&clrSelDayBK);
   pParams->m_pGraphics->StrokePath(&path, pMatrix);
   pParams->m_pGraphics->RestoreGraphState();
   return TRUE;
 }
+
 FX_BOOL CFWL_MonthCalendarTP::DrawTodayCircle(CFWL_ThemeBackground* pParams,
                                               CFX_Matrix* pMatrix) {
   CFX_Path path;
@@ -531,8 +531,7 @@ FX_BOOL CFWL_MonthCalendarTP::DrawTodayCircle(CFWL_ThemeBackground* pParams,
   path.AddRectangle(rtTodayCircle.left, rtTodayCircle.top, rtTodayCircle.width,
                     rtTodayCircle.height);
   pParams->m_pGraphics->SaveGraphState();
-  CFX_Color clrTodayCircle;
-  clrTodayCircle = m_pThemeData->clrDatesCircle;
+  CFX_Color clrTodayCircle(m_pThemeData->clrDatesCircle);
   pParams->m_pGraphics->SetStrokeColor(&clrTodayCircle);
   pParams->m_pGraphics->StrokePath(&path, pMatrix);
   pParams->m_pGraphics->RestoreGraphState();

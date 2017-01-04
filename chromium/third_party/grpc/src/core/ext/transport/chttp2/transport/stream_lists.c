@@ -298,8 +298,15 @@ int grpc_chttp2_list_pop_waiting_for_concurrency(
 }
 
 void grpc_chttp2_list_add_check_read_ops(
-    grpc_chttp2_transport_global *transport_global,
+    grpc_exec_ctx *exec_ctx, grpc_chttp2_transport_global *transport_global,
     grpc_chttp2_stream_global *stream_global) {
+  grpc_chttp2_transport *t = TRANSPORT_FROM_GLOBAL(transport_global);
+  if (!t->executor.check_read_ops_scheduled) {
+    grpc_combiner_execute_finally(exec_ctx, t->executor.combiner,
+                                  &t->initiate_read_flush_locked,
+                                  GRPC_ERROR_NONE, false);
+    t->executor.check_read_ops_scheduled = true;
+  }
   stream_list_add(TRANSPORT_FROM_GLOBAL(transport_global),
                   STREAM_FROM_GLOBAL(stream_global),
                   GRPC_CHTTP2_LIST_CHECK_READ_OPS);
@@ -329,6 +336,7 @@ void grpc_chttp2_list_add_writing_stalled_by_transport(
     grpc_chttp2_transport_writing *transport_writing,
     grpc_chttp2_stream_writing *stream_writing) {
   grpc_chttp2_stream *stream = STREAM_FROM_WRITING(stream_writing);
+  gpr_log(GPR_DEBUG, "writing stalled %d", stream->global.id);
   if (!stream->included[GRPC_CHTTP2_LIST_WRITING_STALLED_BY_TRANSPORT]) {
     GRPC_CHTTP2_STREAM_REF(&stream->global, "chttp2_writing_stalled");
   }
@@ -336,27 +344,28 @@ void grpc_chttp2_list_add_writing_stalled_by_transport(
                   GRPC_CHTTP2_LIST_WRITING_STALLED_BY_TRANSPORT);
 }
 
-void grpc_chttp2_list_flush_writing_stalled_by_transport(
-    grpc_exec_ctx *exec_ctx, grpc_chttp2_transport_writing *transport_writing,
-    bool is_window_available) {
+bool grpc_chttp2_list_flush_writing_stalled_by_transport(
+    grpc_exec_ctx *exec_ctx, grpc_chttp2_transport_writing *transport_writing) {
   grpc_chttp2_stream *stream;
+  bool out = false;
   grpc_chttp2_transport *transport = TRANSPORT_FROM_WRITING(transport_writing);
   while (stream_list_pop(transport, &stream,
                          GRPC_CHTTP2_LIST_WRITING_STALLED_BY_TRANSPORT)) {
-    if (is_window_available) {
-      grpc_chttp2_become_writable(&transport->global, &stream->global);
-    } else {
-      grpc_chttp2_list_add_stalled_by_transport(transport_writing,
-                                                &stream->writing);
-    }
+    gpr_log(GPR_DEBUG, "move %d from writing stalled to just stalled",
+            stream->global.id);
+    grpc_chttp2_list_add_stalled_by_transport(transport_writing,
+                                              &stream->writing);
     GRPC_CHTTP2_STREAM_UNREF(exec_ctx, &stream->global,
                              "chttp2_writing_stalled");
+    out = true;
   }
+  return out;
 }
 
 void grpc_chttp2_list_add_stalled_by_transport(
     grpc_chttp2_transport_writing *transport_writing,
     grpc_chttp2_stream_writing *stream_writing) {
+  gpr_log(GPR_DEBUG, "stalled %d", stream_writing->id);
   stream_list_add(TRANSPORT_FROM_WRITING(transport_writing),
                   STREAM_FROM_WRITING(stream_writing),
                   GRPC_CHTTP2_LIST_STALLED_BY_TRANSPORT);

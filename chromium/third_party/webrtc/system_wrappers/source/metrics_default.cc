@@ -232,15 +232,14 @@ Histogram* HistogramFactoryGetEnumeration(const std::string& name,
   return map->GetEnumerationHistogram(name, boundary);
 }
 
-// Fast path. Adds |sample| to cached |histogram_pointer|.
-void HistogramAdd(Histogram* histogram_pointer,
-                  const std::string& name,
-                  int sample) {
-  if (!histogram_pointer)
-    return;
-
+const std::string& GetHistogramName(Histogram* histogram_pointer) {
   RtcHistogram* ptr = reinterpret_cast<RtcHistogram*>(histogram_pointer);
-  RTC_DCHECK_EQ(name, ptr->name()) << "The name should not vary.";
+  return ptr->name();
+}
+
+// Fast path. Adds |sample| to cached |histogram_pointer|.
+void HistogramAdd(Histogram* histogram_pointer, int sample) {
+  RtcHistogram* ptr = reinterpret_cast<RtcHistogram*>(histogram_pointer);
   ptr->Add(sample);
 }
 

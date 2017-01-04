@@ -4,6 +4,7 @@
 
 #include "media/cdm/simple_cdm_allocator.h"
 
+#include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "media/base/video_frame.h"
 #include "media/cdm/cdm_helpers.h"
@@ -68,7 +69,7 @@ cdm::Buffer* SimpleCdmAllocator::CreateCdmBuffer(size_t capacity) {
 
 // Creates a new SimpleCdmVideoFrame on every request.
 std::unique_ptr<VideoFrameImpl> SimpleCdmAllocator::CreateCdmVideoFrame() {
-  return base::WrapUnique(new SimpleCdmVideoFrame());
+  return base::MakeUnique<SimpleCdmVideoFrame>();
 }
 
 }  // namespace media

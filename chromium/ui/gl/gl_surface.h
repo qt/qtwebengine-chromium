@@ -26,6 +26,10 @@ class Transform;
 class VSyncProvider;
 }
 
+namespace ui {
+struct CARendererLayerParams;
+}
+
 namespace gl {
 
 class GLContext;
@@ -81,6 +85,9 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Get the underlying platform specific surface "handle".
   virtual void* GetHandle() = 0;
 
+  // Returns whether or not the surface supports SwapBuffersWithDamage
+  virtual bool SupportsSwapBuffersWithDamage();
+
   // Returns whether or not the surface supports PostSubBuffer.
   virtual bool SupportsPostSubBuffer();
 
@@ -92,7 +99,7 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
 
   // Returns the internal frame buffer object name if the surface is backed by
   // FBO. Otherwise returns 0.
-  virtual unsigned int GetBackingFrameBufferObject();
+  virtual unsigned int GetBackingFramebufferObject();
 
   typedef base::Callback<void(gfx::SwapResult)> SwapCompletionCallback;
   // Swaps front and back buffers. This has no effect for off-screen
@@ -101,6 +108,12 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // SwapBufferAck till that data is available. The callback should be run on
   // the calling thread (i.e. same thread SwapBuffersAsync is called)
   virtual void SwapBuffersAsync(const SwapCompletionCallback& callback);
+
+  // Swap buffers with damage rect.
+  virtual gfx::SwapResult SwapBuffersWithDamage(int x,
+                                                int y,
+                                                int width,
+                                                int height);
 
   // Copy part of the backbuffer to the frontbuffer.
   virtual gfx::SwapResult PostSubBuffer(int x, int y, int width, int height);
@@ -147,6 +160,10 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Get the platfrom specific configuration for this surface, if available.
   virtual void* GetConfig();
 
+  // Get the key corresponding to the set of GLSurfaces that can be made current
+  // with this GLSurface.
+  virtual unsigned long GetCompatibilityKey();
+
   // Get the GL pixel format of the surface, if available.
   virtual GLSurface::Format GetFormat();
 
@@ -173,17 +190,8 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
 
   // Schedule a CALayer to be shown at swap time.
   // All arguments correspond to their CALayer properties.
-  virtual bool ScheduleCALayer(GLImage* contents_image,
-                               const gfx::RectF& contents_rect,
-                               float opacity,
-                               unsigned background_color,
-                               unsigned edge_aa_mask,
-                               const gfx::RectF& rect,
-                               bool is_clipped,
-                               const gfx::RectF& clip_rect,
-                               const gfx::Transform& transform,
-                               int sorting_content_id,
-                               unsigned filter);
+  virtual bool ScheduleCALayer(const ui::CARendererLayerParams& params);
+
   struct GL_EXPORT CALayerInUseQuery {
     CALayerInUseQuery();
     explicit CALayerInUseQuery(const CALayerInUseQuery&);
@@ -237,6 +245,10 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
   bool IsOffscreen() override;
   gfx::SwapResult SwapBuffers() override;
   void SwapBuffersAsync(const SwapCompletionCallback& callback) override;
+  gfx::SwapResult SwapBuffersWithDamage(int x,
+                                        int y,
+                                        int width,
+                                        int height) override;
   gfx::SwapResult PostSubBuffer(int x, int y, int width, int height) override;
   void PostSubBufferAsync(int x,
                           int y,
@@ -246,18 +258,20 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
   gfx::SwapResult CommitOverlayPlanes() override;
   void CommitOverlayPlanesAsync(
       const SwapCompletionCallback& callback) override;
+  bool SupportsSwapBuffersWithDamage() override;
   bool SupportsPostSubBuffer() override;
   bool SupportsCommitOverlayPlanes() override;
   bool SupportsAsyncSwap() override;
   gfx::Size GetSize() override;
   void* GetHandle() override;
-  unsigned int GetBackingFrameBufferObject() override;
+  unsigned int GetBackingFramebufferObject() override;
   bool OnMakeCurrent(GLContext* context) override;
   bool SetBackbufferAllocation(bool allocated) override;
   void SetFrontbufferAllocation(bool allocated) override;
   void* GetShareHandle() override;
   void* GetDisplay() override;
   void* GetConfig() override;
+  unsigned long GetCompatibilityKey() override;
   GLSurface::Format GetFormat() override;
   gfx::VSyncProvider* GetVSyncProvider() override;
   bool ScheduleOverlayPlane(int z_order,

@@ -10,10 +10,11 @@
 
 #include "webrtc/modules/audio_coding/neteq/timestamp_scaler.h"
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/neteq/mock/mock_decoder_database.h"
 #include "webrtc/modules/audio_coding/neteq/packet.h"
+#include "webrtc/test/gmock.h"
+#include "webrtc/test/gtest.h"
 
 using ::testing::Return;
 using ::testing::ReturnNull;
@@ -23,8 +24,9 @@ namespace webrtc {
 
 TEST(TimestampScaler, TestNoScaling) {
   MockDecoderDatabase db;
+  auto factory = CreateBuiltinAudioDecoderFactory();
   // Use PCMu, because it doesn't use scaled timestamps.
-  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderPCMu, "");
+  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderPCMu, factory);
   static const uint8_t kRtpPayloadType = 0;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadType))
       .WillRepeatedly(Return(&info));
@@ -43,8 +45,9 @@ TEST(TimestampScaler, TestNoScaling) {
 
 TEST(TimestampScaler, TestNoScalingLargeStep) {
   MockDecoderDatabase db;
+  auto factory = CreateBuiltinAudioDecoderFactory();
   // Use PCMu, because it doesn't use scaled timestamps.
-  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderPCMu, "");
+  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderPCMu, factory);
   static const uint8_t kRtpPayloadType = 0;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadType))
       .WillRepeatedly(Return(&info));
@@ -68,8 +71,9 @@ TEST(TimestampScaler, TestNoScalingLargeStep) {
 
 TEST(TimestampScaler, TestG722) {
   MockDecoderDatabase db;
+  auto factory = CreateBuiltinAudioDecoderFactory();
   // Use G722, which has a factor 2 scaling.
-  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, "");
+  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, factory);
   static const uint8_t kRtpPayloadType = 17;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadType))
       .WillRepeatedly(Return(&info));
@@ -92,8 +96,9 @@ TEST(TimestampScaler, TestG722) {
 
 TEST(TimestampScaler, TestG722LargeStep) {
   MockDecoderDatabase db;
+  auto factory = CreateBuiltinAudioDecoderFactory();
   // Use G722, which has a factor 2 scaling.
-  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, "");
+  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, factory);
   static const uint8_t kRtpPayloadType = 17;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadType))
       .WillRepeatedly(Return(&info));
@@ -120,9 +125,12 @@ TEST(TimestampScaler, TestG722LargeStep) {
 
 TEST(TimestampScaler, TestG722WithCng) {
   MockDecoderDatabase db;
+  auto factory = CreateBuiltinAudioDecoderFactory();
   // Use G722, which has a factor 2 scaling.
-  const DecoderDatabase::DecoderInfo info_g722(NetEqDecoder::kDecoderG722, "");
-  const DecoderDatabase::DecoderInfo info_cng(NetEqDecoder::kDecoderCNGwb, "");
+  const DecoderDatabase::DecoderInfo info_g722(NetEqDecoder::kDecoderG722,
+                                               factory);
+  const DecoderDatabase::DecoderInfo info_cng(NetEqDecoder::kDecoderCNGwb,
+                                              factory);
   static const uint8_t kRtpPayloadTypeG722 = 17;
   static const uint8_t kRtpPayloadTypeCng = 13;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadTypeG722))
@@ -161,8 +169,9 @@ TEST(TimestampScaler, TestG722WithCng) {
 // as many tests here.
 TEST(TimestampScaler, TestG722Packet) {
   MockDecoderDatabase db;
+  auto factory = CreateBuiltinAudioDecoderFactory();
   // Use G722, which has a factor 2 scaling.
-  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, "");
+  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, factory);
   static const uint8_t kRtpPayloadType = 17;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadType))
       .WillRepeatedly(Return(&info));
@@ -189,8 +198,9 @@ TEST(TimestampScaler, TestG722Packet) {
 // we are not doing as many tests here.
 TEST(TimestampScaler, TestG722PacketList) {
   MockDecoderDatabase db;
+  auto factory = CreateBuiltinAudioDecoderFactory();
   // Use G722, which has a factor 2 scaling.
-  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, "");
+  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, factory);
   static const uint8_t kRtpPayloadType = 17;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadType))
       .WillRepeatedly(Return(&info));
@@ -218,8 +228,9 @@ TEST(TimestampScaler, TestG722PacketList) {
 
 TEST(TimestampScaler, TestG722Reset) {
   MockDecoderDatabase db;
+  auto factory = CreateBuiltinAudioDecoderFactory();
   // Use G722, which has a factor 2 scaling.
-  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, "");
+  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderG722, factory);
   static const uint8_t kRtpPayloadType = 17;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadType))
       .WillRepeatedly(Return(&info));
@@ -258,7 +269,8 @@ TEST(TimestampScaler, TestG722Reset) {
 // timestamp scaler.
 TEST(TimestampScaler, TestOpusLargeStep) {
   MockDecoderDatabase db;
-  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderOpus, "");
+  auto factory = CreateBuiltinAudioDecoderFactory();
+  const DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderOpus, factory);
   static const uint8_t kRtpPayloadType = 17;
   EXPECT_CALL(db, GetDecoderInfo(kRtpPayloadType))
       .WillRepeatedly(Return(&info));

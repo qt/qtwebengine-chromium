@@ -40,35 +40,6 @@ function getFilenameFromURL(url) {
 }
 
 /**
- * Called when navigation happens in the current tab.
- * @param {boolean} isInTab Indicates if the PDF viewer is displayed in a tab.
- * @param {boolean} isSourceFileUrl Indicates if the navigation source is a
- *     file:// URL.
- * @param {string} url The url to be opened in the current tab.
- */
-function onNavigateInCurrentTab(isInTab, isSourceFileUrl, url) {
-  // When the PDFviewer is inside a browser tab, prefer the tabs API because
-  // it can navigate from one file:// URL to another.
-  if (chrome.tabs && isInTab && isSourceFileUrl)
-    chrome.tabs.update({url: url});
-  else
-    window.location.href = url;
-}
-
-/**
- * Called when navigation happens in the new tab.
- * @param {string} url The url to be opened in the new tab.
- */
-function onNavigateInNewTab(url) {
-  // Prefer the tabs API because it guarantees we can just open a new tab.
-  // window.open doesn't have this guarantee.
-  if (chrome.tabs)
-    chrome.tabs.create({url: url});
-  else
-    window.open(url);
-}
-
-/**
  * Whether keydown events should currently be ignored. Events are ignored when
  * an editable element has focus, to allow for proper editing controls.
  * @param {HTMLElement} activeElement The currently selected DOM node.
@@ -130,8 +101,8 @@ function PDFViewer(browserApi) {
 
   this.delayedScriptingMessages_ = [];
 
-  this.isPrintPreview_ = this.originalUrl_.indexOf(
-                             'chrome://print') == 0;
+  this.isPrintPreview_ = location.origin === 'chrome://print';
+
   // Parse open pdf parameters.
   this.paramsParser_ =
       new OpenPDFParamsParser(this.getNamedDestination_.bind(this));
@@ -187,8 +158,7 @@ function PDFViewer(browserApi) {
   window.addEventListener('message', this.handleScriptingMessage.bind(this),
                           false);
 
-  this.plugin_.setAttribute('src',
-                            this.originalUrl_);
+  this.plugin_.setAttribute('src', this.originalUrl_);
   this.plugin_.setAttribute('stream-url',
                             this.browserApi_.getStreamInfo().streamUrl);
   var headers = '';
@@ -202,8 +172,12 @@ function PDFViewer(browserApi) {
   this.plugin_.setAttribute('background-color', backgroundColor);
   this.plugin_.setAttribute('top-toolbar-height', topToolbarHeight);
 
-  if (!this.browserApi_.getStreamInfo().embedded)
+  if (this.browserApi_.getStreamInfo().embedded) {
+    this.plugin_.setAttribute('top-level-url',
+                              this.browserApi_.getStreamInfo().tabUrl);
+  } else {
     this.plugin_.setAttribute('full-frame', '');
+  }
   document.body.appendChild(this.plugin_);
 
   // Setup the button event listeners.
@@ -229,8 +203,7 @@ function PDFViewer(browserApi) {
     this.plugin_.addEventListener('mouseup',
         this.toolbar_.hideDropdowns.bind(this.toolbar_));
 
-    this.toolbar_.docTitle =
-        getFilenameFromURL(this.originalUrl_);
+    this.toolbar_.docTitle = getFilenameFromURL(this.originalUrl_);
   }
 
   document.body.addEventListener('change-page', function(e) {
@@ -238,7 +211,10 @@ function PDFViewer(browserApi) {
   }.bind(this));
 
   document.body.addEventListener('navigate', function(e) {
-    this.navigator_.navigate(e.detail.uri, e.detail.newtab);
+    var disposition =
+        e.detail.newtab ? Navigator.WindowOpenDisposition.NEW_BACKGROUND_TAB :
+                          Navigator.WindowOpenDisposition.CURRENT_TAB;
+    this.navigator_.navigate(e.detail.uri, disposition);
   }.bind(this));
 
   this.toolbarManager_ =
@@ -257,14 +233,9 @@ function PDFViewer(browserApi) {
   document.addEventListener('mouseout', this.handleMouseEvent_.bind(this));
 
   var isInTab = this.browserApi_.getStreamInfo().tabId != -1;
-  var isSourceFileUrl =
-      this.originalUrl_.indexOf('file://') == 0;
-  this.navigator_ = new Navigator(this.originalUrl_,
-                                  this.viewport_, this.paramsParser_,
-                                  onNavigateInCurrentTab.bind(undefined,
-                                                              isInTab,
-                                                              isSourceFileUrl),
-                                  onNavigateInNewTab);
+  this.navigator_ = new Navigator(
+      this.originalUrl_, this.viewport_, this.paramsParser_,
+      new NavigatorDelegate(isInTab));
   this.viewportScroller_ =
       new ViewportScroller(this.viewport_, this.plugin_, window);
 
@@ -376,7 +347,7 @@ PDFViewer.prototype = {
           this.viewport.position = position;
         }
         return;
-      case 65:  // a key.
+      case 65:  // 'a' key.
         if (e.ctrlKey || e.metaKey) {
           this.plugin_.postMessage({
             type: 'selectAll'
@@ -385,17 +356,21 @@ PDFViewer.prototype = {
           e.preventDefault();
         }
         return;
-      case 71: // g key.
+      case 71: // 'g' key.
         if (this.toolbar_ && (e.ctrlKey || e.metaKey) && e.altKey) {
           this.toolbarManager_.showToolbars();
           this.toolbar_.selectPageNumber();
         }
         return;
-      case 219:  // left bracket.
+      case 219:  // Left bracket key.
         if (e.ctrlKey)
           this.rotateCounterClockwise_();
         return;
-      case 221:  // right bracket.
+      case 220:  // Backslash key.
+        if (e.ctrlKey)
+          this.zoomToolbar_.fitToggleFromHotKey();
+        return;
+      case 221:  // Right bracket key.
         if (e.ctrlKey)
           this.rotateClockwise_();
         return;
@@ -441,6 +416,10 @@ PDFViewer.prototype = {
     });
   },
 
+  /**
+   * @private
+   * Set zoom to "fit to page".
+   */
   fitToPage_: function() {
     this.viewport_.fitToPage();
     this.toolbarManager_.forceHideTopToolbar();
@@ -557,9 +536,13 @@ PDFViewer.prototype = {
    * @param {Object} strings Dictionary of translated strings
    */
   handleStrings_: function(strings) {
-    window.loadTimeData.data = strings;
-    i18nTemplate.process(document, loadTimeData);
-    this.zoomToolbar_.updateTooltips();
+    document.documentElement.dir = strings.textdirection;
+    document.documentElement.lang = strings.language;
+
+    $('toolbar').strings = strings;
+    $('zoom-toolbar').strings = strings;
+    $('password-screen').strings = strings;
+    $('error-screen').strings = strings;
   },
 
   /**
@@ -623,10 +606,13 @@ PDFViewer.prototype = {
         break;
       case 'navigate':
         // If in print preview, always open a new tab.
-        if (this.isPrintPreview_)
-          this.navigator_.navigate(message.data.url, true);
-        else
-          this.navigator_.navigate(message.data.url, message.data.newTab);
+        if (this.isPrintPreview_) {
+          this.navigator_.navigate(
+              message.data.url,
+              Navigator.WindowOpenDisposition.NEW_BACKGROUND_TAB);
+        } else {
+          this.navigator_.navigate(message.data.url, message.data.disposition);
+        }
         break;
       case 'setScrollPosition':
         var position = this.viewport_.position;
@@ -643,8 +629,7 @@ PDFViewer.prototype = {
         if (message.data.title) {
           document.title = message.data.title;
         } else {
-          document.title =
-              getFilenameFromURL(this.originalUrl_);
+          document.title = getFilenameFromURL(this.originalUrl_);
         }
         this.bookmarks_ = message.data.bookmarks;
         if (this.toolbar_) {
@@ -656,8 +641,7 @@ PDFViewer.prototype = {
         this.viewportScroller_.setEnableScrolling(message.data.isSelecting);
         break;
       case 'getNamedDestinationReply':
-        this.paramsParser_.onNamedDestinationReceived(
-            message.data.pageNumber);
+        this.paramsParser_.onNamedDestinationReceived(message.data.pageNumber);
         break;
       case 'formFocusChange':
         this.isFormFieldFocused_ = message.data.focused;

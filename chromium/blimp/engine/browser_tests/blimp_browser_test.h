@@ -7,6 +7,8 @@
 
 #include <memory>
 
+#include "base/synchronization/waitable_event.h"
+#include "base/threading/thread_restrictions.h"
 #include "content/public/test/browser_test_base.h"
 
 namespace base {
@@ -33,13 +35,21 @@ class BlimpBrowserTest : public content::BrowserTestBase {
   // exit.
   void QuitRunLoop();
 
+  // Tells RunUntilCompletion() to break and discontinue processing UI & IO
+  // thread MessageLoops.
+  void SignalCompletion();
+
  protected:
   BlimpBrowserTest();
   ~BlimpBrowserTest() override;
 
-  // Run an asynchronous test in a nested run loop. The caller should call
-  // QuitRunLoop() to notify that the test should finish.
-  void RunUntilQuit();
+  // Processes tasks in the UI and IO thread until SignalCompletion() is
+  // called.
+  void RunUntilCompletion();
+
+  // Allow the UI thread to wait.  This bypasses base::ThreadRestrictions and is
+  // used for client/engine integration tests.
+  void AllowUIWaits();
 
   engine::BlimpEngineSession* GetEngineSession();
 
@@ -50,15 +60,25 @@ class BlimpBrowserTest : public content::BrowserTestBase {
 
   // content::BrowserTestBase implementation.
   void RunTestOnMainThreadLoop() override;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
   void SetUpOnMainThread() override;
   void TearDownOnMainThread() override;
-  void SetUpCommandLine(base::CommandLine* command_line) override;
 
  private:
-  void OnGetEnginePort(uint16_t port);
+  // Receives the port number from an asynchronously connected socket.
+  // Calls SignalCompletion() when set.
+  void OnGetEnginePortCompletion(uint16_t port);
 
   uint16_t engine_port_;
-  std::unique_ptr<base::RunLoop> run_loop_;
+
+  // Used to signal the completion of asynchronous processing to
+  // RunUntilCompletion().
+  base::WaitableEvent completion_event_;
+
+  // Used to allow UI thread waits.  This is useful for integration tests that
+  // require setting up client components, as testing those sometimes requires
+  // setting up GL contexts that might block.
+  std::unique_ptr<base::ThreadRestrictions::ScopedAllowWait> allow_ui_waits_;
 
   DISALLOW_COPY_AND_ASSIGN(BlimpBrowserTest);
 };

@@ -5,26 +5,88 @@
 'use strict';
 
 /**
+ * Creates a new NavigatorDelegate for calling browser-specific functions to
+ * do the actual navigating.
+ * @param {boolean} isInTab Indicates if the PDF viewer is displayed in a tab.
+ */
+function NavigatorDelegate(isInTab) {
+  this.isInTab_ = isInTab;
+}
+
+/**
  * Creates a new Navigator for navigating to links inside or outside the PDF.
  * @param {string} originalUrl The original page URL.
  * @param {Object} viewport The viewport info of the page.
  * @param {Object} paramsParser The object for URL parsing.
- * @param {Function} navigateInCurrentTabCallback The Callback function that
- *    gets called when navigation happens in the current tab.
- * @param {Function} navigateInNewTabCallback The Callback function that gets
- *    called when navigation happens in the new tab.
+ * @param {Object} navigatorDelegate The object with callback functions that
+ *    get called when navigation happens in the current tab, a new tab,
+ *    and a new window.
  */
-function Navigator(originalUrl,
-                   viewport,
-                   paramsParser,
-                   navigateInCurrentTabCallback,
-                   navigateInNewTabCallback) {
+function Navigator(originalUrl, viewport, paramsParser, navigatorDelegate) {
   this.originalUrl_ = originalUrl;
   this.viewport_ = viewport;
   this.paramsParser_ = paramsParser;
-  this.navigateInCurrentTabCallback_ = navigateInCurrentTabCallback;
-  this.navigateInNewTabCallback_ = navigateInNewTabCallback;
+  this.navigatorDelegate_ = navigatorDelegate;
 }
+
+NavigatorDelegate.prototype = {
+  /**
+   * @public
+   * Called when navigation should happen in the current tab.
+   * @param {string} url The url to be opened in the current tab.
+   */
+  navigateInCurrentTab: function(url) {
+    // When the PDFviewer is inside a browser tab, prefer the tabs API because
+    // it can navigate from one file:// URL to another.
+    if (chrome.tabs && this.isInTab_)
+      chrome.tabs.update({url: url});
+    else
+      window.location.href = url;
+  },
+
+  /**
+   * @public
+   * Called when navigation should happen in the new tab.
+   * @param {string} url The url to be opened in the new tab.
+   * @param {boolean} active Indicates if the new tab should be the active tab.
+   */
+  navigateInNewTab: function(url, active) {
+    // Prefer the tabs API because it guarantees we can just open a new tab.
+    // window.open doesn't have this guarantee.
+    if (chrome.tabs)
+      chrome.tabs.create({url: url, active: active});
+    else
+      window.open(url);
+  },
+
+  /**
+   * @public
+   * Called when navigation should happen in the new window.
+   * @param {string} url The url to be opened in the new window.
+   */
+  navigateInNewWindow: function(url) {
+    // Prefer the windows API because it guarantees we can just open a new
+    // window. window.open with '_blank' argument doesn't have this guarantee.
+    if (chrome.windows)
+      chrome.windows.create({url: url});
+    else
+      window.open(url, '_blank');
+  }
+};
+
+/**
+ * Represents options when navigating to a new url. C++ counterpart of
+ * the enum is in ui/base/window_open_disposition.h. This enum represents
+ * the only values that are passed from Plugin.
+ * @enum {number}
+ */
+Navigator.WindowOpenDisposition = {
+  CURRENT_TAB: 1,
+  NEW_FOREGROUND_TAB: 3,
+  NEW_BACKGROUND_TAB: 4,
+  NEW_WINDOW: 6,
+  SAVE_TO_DISK: 7
+};
 
 Navigator.prototype = {
   /**
@@ -32,10 +94,10 @@ Navigator.prototype = {
    * Function to navigate to the given URL. This might involve navigating
    * within the PDF page or opening a new url (in the same tab or a new tab).
    * @param {string} url The URL to navigate to.
-   * @param {boolean} newTab Whether to perform the navigation in a new tab or
-   *    in the current tab.
+   * @param {number} disposition The window open disposition when
+   *    navigating to the new URL.
    */
-  navigate: function(url, newTab) {
+  navigate: function(url, disposition) {
     if (url.length == 0)
       return;
 
@@ -58,11 +120,28 @@ Navigator.prototype = {
     if (!this.isValidUrl_(url))
       return;
 
-    if (newTab) {
-      this.navigateInNewTabCallback_(url);
-    } else {
-      this.paramsParser_.getViewportFromUrlParams(
-          url, this.onViewportReceived_.bind(this));
+    switch (disposition) {
+      case Navigator.WindowOpenDisposition.CURRENT_TAB:
+        this.paramsParser_.getViewportFromUrlParams(
+            url, this.onViewportReceived_.bind(this));
+        break;
+      case Navigator.WindowOpenDisposition.NEW_BACKGROUND_TAB:
+        this.navigatorDelegate_.navigateInNewTab(url, false);
+        break;
+      case Navigator.WindowOpenDisposition.NEW_FOREGROUND_TAB:
+        this.navigatorDelegate_.navigateInNewTab(url, true);
+        break;
+      case Navigator.WindowOpenDisposition.NEW_WINDOW:
+        this.navigatorDelegate_.navigateInNewWindow(url);
+        break;
+      case Navigator.WindowOpenDisposition.SAVE_TO_DISK:
+        // TODO(jaepark): Alt + left clicking a link in PDF should
+        // download the link.
+        this.paramsParser_.getViewportFromUrlParams(
+            url, this.onViewportReceived_.bind(this));
+        break;
+      default:
+        break;
     }
   },
 
@@ -87,24 +166,29 @@ Navigator.prototype = {
     if (pageNumber != undefined && originalUrl == newUrl)
       this.viewport_.goToPage(pageNumber);
     else
-      this.navigateInCurrentTabCallback_(viewportPosition.url);
+      this.navigatorDelegate_.navigateInCurrentTab(viewportPosition.url);
   },
 
   /**
    * @private
-   * Checks if the URL starts with a scheme and s not just a scheme.
+   * Checks if the URL starts with a scheme and is not just a scheme.
    * @param {string} The input URL
    * @return {boolean} Whether the url is valid.
    */
   isValidUrl_: function(url) {
     // Make sure |url| starts with a valid scheme.
-    if (url.indexOf('http://') != 0 &&
-        url.indexOf('https://') != 0 &&
-        url.indexOf('ftp://') != 0 &&
-        url.indexOf('file://') != 0 &&
-        url.indexOf('mailto:') != 0) {
+    if (!url.startsWith('http://') &&
+        !url.startsWith('https://') &&
+        !url.startsWith('ftp://') &&
+        !url.startsWith('file://') &&
+        !url.startsWith('mailto:')) {
       return false;
     }
+
+    // Navigations to file:-URLs are only allowed from file:-URLs.
+    if (url.startsWith('file:') && !this.originalUrl_.startsWith('file:'))
+      return false;
+
 
     // Make sure |url| is not only a scheme.
     if (url == 'http://' ||

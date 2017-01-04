@@ -23,7 +23,6 @@ SaveFileResourceHandler::SaveFileResourceHandler(
     int render_process_host_id,
     int render_frame_routing_id,
     const GURL& url,
-    SaveFileManager* manager,
     AuthorizationState authorization_state)
     : ResourceHandler(request),
       save_item_id_(save_item_id),
@@ -32,7 +31,7 @@ SaveFileResourceHandler::SaveFileResourceHandler(
       render_frame_routing_id_(render_frame_routing_id),
       url_(url),
       content_length_(0),
-      save_manager_(manager),
+      save_manager_(SaveFileManager::Get()),
       authorization_state_(authorization_state) {}
 
 SaveFileResourceHandler::~SaveFileResourceHandler() {
@@ -63,11 +62,6 @@ bool SaveFileResourceHandler::OnWillStart(const GURL& url, bool* defer) {
   return authorization_state_ == AuthorizationState::AUTHORIZED;
 }
 
-bool SaveFileResourceHandler::OnBeforeNetworkStart(const GURL& url,
-                                                   bool* defer) {
-  return true;
-}
-
 bool SaveFileResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                          int* buf_size,
                                          int min_size) {
@@ -96,7 +90,6 @@ bool SaveFileResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
 
 void SaveFileResourceHandler::OnResponseCompleted(
     const net::URLRequestStatus& status,
-    const std::string& security_info,
     bool* defer) {
   if (authorization_state_ != AuthorizationState::AUTHORIZED)
     DCHECK(!status.is_success());

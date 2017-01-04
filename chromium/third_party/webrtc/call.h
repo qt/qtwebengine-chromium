@@ -13,12 +13,13 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/common_types.h"
-#include "webrtc/audio_receive_stream.h"
-#include "webrtc/audio_send_stream.h"
-#include "webrtc/audio_state.h"
+#include "webrtc/api/call/audio_receive_stream.h"
+#include "webrtc/api/call/audio_send_stream.h"
+#include "webrtc/api/call/audio_state.h"
 #include "webrtc/base/networkroute.h"
+#include "webrtc/base/platform_file.h"
 #include "webrtc/base/socket.h"
+#include "webrtc/common_types.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
 
@@ -91,6 +92,8 @@ class Call {
   };
 
   struct Stats {
+    std::string ToString(int64_t time_ms) const;
+
     int send_bandwidth_bps = 0;       // Estimated available send bandwidth.
     int max_padding_bitrate_bps = 0;  // Cumulative configured max padding.
     int recv_bandwidth_bps = 0;       // Estimated available receive bandwidth.
@@ -110,8 +113,8 @@ class Call {
       AudioReceiveStream* receive_stream) = 0;
 
   virtual VideoSendStream* CreateVideoSendStream(
-      const VideoSendStream::Config& config,
-      const VideoEncoderConfig& encoder_config) = 0;
+      VideoSendStream::Config config,
+      VideoEncoderConfig encoder_config) = 0;
   virtual void DestroyVideoSendStream(VideoSendStream* send_stream) = 0;
 
   virtual VideoReceiveStream* CreateVideoReceiveStream(
@@ -147,6 +150,10 @@ class Call {
       const rtc::NetworkRoute& network_route) = 0;
 
   virtual void OnSentPacket(const rtc::SentPacket& sent_packet) = 0;
+
+  virtual bool StartEventLog(rtc::PlatformFile log_file,
+                             int64_t max_size_bytes) = 0;
+  virtual void StopEventLog() = 0;
 
   virtual ~Call() {}
 };

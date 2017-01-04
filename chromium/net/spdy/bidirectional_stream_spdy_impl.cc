@@ -38,15 +38,17 @@ BidirectionalStreamSpdyImpl::BidirectionalStreamSpdyImpl(
       closed_stream_status_(ERR_FAILED),
       closed_stream_received_bytes_(0),
       closed_stream_sent_bytes_(0),
+      closed_has_load_timing_info_(false),
       weak_factory_(this) {}
 
 BidirectionalStreamSpdyImpl::~BidirectionalStreamSpdyImpl() {
-  Cancel();
+  // Sends a RST to the remote if the stream is destroyed before it completes.
+  ResetStream();
 }
 
 void BidirectionalStreamSpdyImpl::Start(
     const BidirectionalStreamRequestInfo* request_info,
-    const BoundNetLog& net_log,
+    const NetLogWithSource& net_log,
     bool /*send_request_headers_automatically*/,
     BidirectionalStreamImpl::Delegate* delegate,
     std::unique_ptr<base::Timer> timer) {
@@ -151,15 +153,6 @@ void BidirectionalStreamSpdyImpl::SendvData(
                     end_stream ? NO_MORE_DATA_TO_SEND : MORE_DATA_TO_SEND);
 }
 
-void BidirectionalStreamSpdyImpl::Cancel() {
-  if (delegate_) {
-    delegate_ = nullptr;
-    // Cancel any pending callback.
-    weak_factory_.InvalidateWeakPtrs();
-  }
-  ResetStream();
-}
-
 NextProto BidirectionalStreamSpdyImpl::GetProtocol() const {
   return negotiated_protocol_;
 }
@@ -184,10 +177,27 @@ int64_t BidirectionalStreamSpdyImpl::GetTotalSentBytes() const {
   return stream_->raw_sent_bytes();
 }
 
+bool BidirectionalStreamSpdyImpl::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  if (stream_closed_) {
+    if (!closed_has_load_timing_info_)
+      return false;
+    *load_timing_info = closed_load_timing_info_;
+    return true;
+  }
+
+  // If |stream_| isn't created or has ID 0, return false. This is to match
+  // the implementation in SpdyHttpStream.
+  if (!stream_ || stream_->stream_id() == 0)
+    return false;
+
+  return stream_->GetLoadTimingInfo(load_timing_info);
+}
+
 void BidirectionalStreamSpdyImpl::OnRequestHeadersSent() {
   DCHECK(stream_);
 
-  negotiated_protocol_ = stream_->GetProtocol();
+  negotiated_protocol_ = kProtoHTTP2;
   if (delegate_)
     delegate_->OnStreamReady(/*request_headers_sent=*/true);
 }
@@ -246,6 +256,8 @@ void BidirectionalStreamSpdyImpl::OnClose(int status) {
   closed_stream_status_ = status;
   closed_stream_received_bytes_ = stream_->raw_received_bytes();
   closed_stream_sent_bytes_ = stream_->raw_sent_bytes();
+  closed_has_load_timing_info_ =
+      stream_->GetLoadTimingInfo(&closed_load_timing_info_);
 
   if (status != OK) {
     NotifyError(status);
@@ -260,15 +272,14 @@ void BidirectionalStreamSpdyImpl::OnClose(int status) {
 }
 
 int BidirectionalStreamSpdyImpl::SendRequestHeadersHelper() {
-  std::unique_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock);
+  SpdyHeaderBlock headers;
   HttpRequestInfo http_request_info;
   http_request_info.url = request_info_->url;
   http_request_info.method = request_info_->method;
   http_request_info.extra_headers = request_info_->extra_headers;
 
   CreateSpdyHeadersFromHttpRequest(
-      http_request_info, http_request_info.extra_headers,
-      stream_->GetProtocolVersion(), true, headers.get());
+      http_request_info, http_request_info.extra_headers, true, &headers);
   return stream_->SendRequestHeaders(std::move(headers),
                                      request_info_->end_stream_on_headers
                                          ? NO_MORE_DATA_TO_SEND

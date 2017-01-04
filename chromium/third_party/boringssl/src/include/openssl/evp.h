@@ -89,8 +89,8 @@ OPENSSL_EXPORT EVP_PKEY *EVP_PKEY_new(void);
  * itself. */
 OPENSSL_EXPORT void EVP_PKEY_free(EVP_PKEY *pkey);
 
-/* EVP_PKEY_up_ref increments the reference count of |pkey| and returns it. */
-OPENSSL_EXPORT EVP_PKEY *EVP_PKEY_up_ref(EVP_PKEY *pkey);
+/* EVP_PKEY_up_ref increments the reference count of |pkey| and returns one. */
+OPENSSL_EXPORT int EVP_PKEY_up_ref(EVP_PKEY *pkey);
 
 /* EVP_PKEY_is_opaque returns one if |pkey| is opaque. Opaque keys are backed by
  * custom implementations which do not expose key material and parameters. It is
@@ -721,6 +721,9 @@ OPENSSL_EXPORT EVP_PKEY *d2i_PrivateKey(int type, EVP_PKEY **out,
 OPENSSL_EXPORT EVP_PKEY *d2i_AutoPrivateKey(EVP_PKEY **out, const uint8_t **inp,
                                             long len);
 
+/* EVP_PKEY_get0_DH returns NULL. */
+OPENSSL_EXPORT DH *EVP_PKEY_get0_DH(EVP_PKEY *pkey);
+
 
 /* Private structures. */
 
@@ -747,6 +750,17 @@ struct evp_pkey_st {
 
 #if defined(__cplusplus)
 }  /* extern C */
+
+extern "C++" {
+namespace bssl {
+
+BORINGSSL_MAKE_DELETER(EVP_PKEY, EVP_PKEY_free)
+BORINGSSL_MAKE_DELETER(EVP_PKEY_CTX, EVP_PKEY_CTX_free)
+
+}  // namespace bssl
+
+}  /* extern C++ */
+
 #endif
 
 #define EVP_R_BUFFER_TOO_SMALL 100

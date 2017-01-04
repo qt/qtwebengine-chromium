@@ -19,9 +19,33 @@
 #include "webrtc/base/trace_event.h"
 
 namespace rtc {
+namespace {
 
 const int kMaxMsgLatency = 150;  // 150 ms
 const int kSlowDispatchLoggingThreshold = 50;  // 50 ms
+
+class SCOPED_LOCKABLE DebugNonReentrantCritScope {
+ public:
+  DebugNonReentrantCritScope(const CriticalSection* cs, bool* locked)
+      EXCLUSIVE_LOCK_FUNCTION(cs)
+      : cs_(cs), locked_(locked) {
+    cs_->Enter();
+    ASSERT(!*locked_);
+    *locked_ = true;
+  }
+
+  ~DebugNonReentrantCritScope() UNLOCK_FUNCTION() {
+    *locked_ = false;
+    cs_->Leave();
+  }
+
+ private:
+  const CriticalSection* const cs_;
+  bool* locked_;
+
+  RTC_DISALLOW_COPY_AND_ASSIGN(DebugNonReentrantCritScope);
+};
+}  // namespace
 
 //------------------------------------------------------------------
 // MessageQueueManager
@@ -40,7 +64,7 @@ bool MessageQueueManager::IsInitialized() {
   return instance_ != NULL;
 }
 
-MessageQueueManager::MessageQueueManager() {}
+MessageQueueManager::MessageQueueManager() : locked_(false) {}
 
 MessageQueueManager::~MessageQueueManager() {
 }
@@ -49,13 +73,7 @@ void MessageQueueManager::Add(MessageQueue *message_queue) {
   return Instance()->AddInternal(message_queue);
 }
 void MessageQueueManager::AddInternal(MessageQueue *message_queue) {
-  // MessageQueueManager methods should be non-reentrant, so we
-  // ASSERT that is the case.  If any of these ASSERT, please
-  // contact bpm or jbeda.
-#if CS_DEBUG_CHECKS  // CurrentThreadIsOwner returns true by default.
-  ASSERT(!crit_.CurrentThreadIsOwner());
-#endif
-  CritScope cs(&crit_);
+  DebugNonReentrantCritScope cs(&crit_, &locked_);
   message_queues_.push_back(message_queue);
 }
 
@@ -66,16 +84,13 @@ void MessageQueueManager::Remove(MessageQueue *message_queue) {
   return Instance()->RemoveInternal(message_queue);
 }
 void MessageQueueManager::RemoveInternal(MessageQueue *message_queue) {
-#if CS_DEBUG_CHECKS  // CurrentThreadIsOwner returns true by default.
-  ASSERT(!crit_.CurrentThreadIsOwner());  // See note above.
-#endif
   // If this is the last MessageQueue, destroy the manager as well so that
   // we don't leak this object at program shutdown. As mentioned above, this is
   // not thread-safe, but this should only happen at program termination (when
   // the ThreadManager is destroyed, and threads are no longer active).
   bool destroy = false;
   {
-    CritScope cs(&crit_);
+    DebugNonReentrantCritScope cs(&crit_, &locked_);
     std::vector<MessageQueue *>::iterator iter;
     iter = std::find(message_queues_.begin(), message_queues_.end(),
                      message_queue);
@@ -97,10 +112,7 @@ void MessageQueueManager::Clear(MessageHandler *handler) {
   return Instance()->ClearInternal(handler);
 }
 void MessageQueueManager::ClearInternal(MessageHandler *handler) {
-#if CS_DEBUG_CHECKS  // CurrentThreadIsOwner returns true by default.
-  ASSERT(!crit_.CurrentThreadIsOwner());  // See note above.
-#endif
-  CritScope cs(&crit_);
+  DebugNonReentrantCritScope cs(&crit_, &locked_);
   std::vector<MessageQueue *>::iterator iter;
   for (iter = message_queues_.begin(); iter != message_queues_.end(); iter++)
     (*iter)->Clear(handler);
@@ -114,20 +126,34 @@ void MessageQueueManager::ProcessAllMessageQueues() {
 }
 
 void MessageQueueManager::ProcessAllMessageQueuesInternal() {
-#if CS_DEBUG_CHECKS  // CurrentThreadIsOwner returns true by default.
-  ASSERT(!crit_.CurrentThreadIsOwner());  // See note above.
-#endif
-  // Post a delayed message at the current time and wait for it to be dispatched
-  // on all queues, which will ensure that all messages that came before it were
-  // also dispatched.
-  volatile int queues_not_done;
-  auto functor = [&queues_not_done] { AtomicOps::Decrement(&queues_not_done); };
-  FunctorMessageHandler<void, decltype(functor)> handler(functor);
+  // This works by posting a delayed message at the current time and waiting
+  // for it to be dispatched on all queues, which will ensure that all messages
+  // that came before it were also dispatched.
+  volatile int queues_not_done = 0;
+
+  // This class is used so that whether the posted message is processed, or the
+  // message queue is simply cleared, queues_not_done gets decremented.
+  class ScopedIncrement : public MessageData {
+   public:
+    ScopedIncrement(volatile int* value) : value_(value) {
+      AtomicOps::Increment(value_);
+    }
+    ~ScopedIncrement() override { AtomicOps::Decrement(value_); }
+
+   private:
+    volatile int* value_;
+  };
+
   {
-    CritScope cs(&crit_);
-    queues_not_done = static_cast<int>(message_queues_.size());
+    DebugNonReentrantCritScope cs(&crit_, &locked_);
     for (MessageQueue* queue : message_queues_) {
-      queue->PostDelayed(RTC_FROM_HERE, 0, &handler);
+      if (queue->IsQuitting()) {
+        // If the queue is quitting, it's done processing messages so it can
+        // be ignored. If we tried to post a message to it, it would be dropped.
+        continue;
+      }
+      queue->PostDelayed(RTC_FROM_HERE, 0, nullptr, MQID_DISPOSE,
+                         new ScopedIncrement(&queues_not_done));
     }
   }
   // Note: One of the message queues may have been on this thread, which is why
@@ -141,8 +167,12 @@ void MessageQueueManager::ProcessAllMessageQueuesInternal() {
 //------------------------------------------------------------------
 // MessageQueue
 MessageQueue::MessageQueue(SocketServer* ss, bool init_queue)
-    : fStop_(false), fPeekKeep_(false),
-      dmsgq_next_num_(0), fInitialized_(false), fDestroyed_(false), ss_(ss) {
+    : fPeekKeep_(false),
+      dmsgq_next_num_(0),
+      fInitialized_(false),
+      fDestroyed_(false),
+      stop_(0),
+      ss_(ss) {
   RTC_DCHECK(ss);
   // Currently, MessageQueue holds a socket server, and is the base class for
   // Thread.  It seems like it makes more sense for Thread to hold the socket
@@ -214,16 +244,16 @@ void MessageQueue::WakeUpSocketServer() {
 }
 
 void MessageQueue::Quit() {
-  fStop_ = true;
+  AtomicOps::ReleaseStore(&stop_, 1);
   WakeUpSocketServer();
 }
 
 bool MessageQueue::IsQuitting() {
-  return fStop_;
+  return AtomicOps::AcquireLoad(&stop_) != 0;
 }
 
 void MessageQueue::Restart() {
-  fStop_ = false;
+  AtomicOps::ReleaseStore(&stop_, 0);
 }
 
 bool MessageQueue::Peek(Message *pmsg, int cmsWait) {
@@ -307,7 +337,7 @@ bool MessageQueue::Get(Message *pmsg, int cmsWait, bool process_io) {
       return true;
     }
 
-    if (fStop_)
+    if (IsQuitting())
       break;
 
     // Which is shorter, the delay wait or the asked wait?
@@ -348,7 +378,7 @@ void MessageQueue::Post(const Location& posted_from,
                         uint32_t id,
                         MessageData* pdata,
                         bool time_sensitive) {
-  if (fStop_)
+  if (IsQuitting())
     return;
 
   // Keep thread safe
@@ -404,7 +434,7 @@ void MessageQueue::DoDelayPost(const Location& posted_from,
                                MessageHandler* phandler,
                                uint32_t id,
                                MessageData* pdata) {
-  if (fStop_) {
+  if (IsQuitting()) {
     return;
   }
 

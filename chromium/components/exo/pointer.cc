@@ -4,15 +4,17 @@
 
 #include "components/exo/pointer.h"
 
-#include "ash/common/display/display_info.h"
 #include "ash/common/shell_window_ids.h"
 #include "ash/display/display_manager.h"
-#include "ash/shell.h"
 #include "components/exo/pointer_delegate.h"
 #include "components/exo/pointer_stylus_delegate.h"
 #include "components/exo/surface.h"
+#include "components/exo/wm_helper.h"
+#include "ui/aura/client/cursor_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
+#include "ui/display/manager/managed_display_info.h"
+#include "ui/display/screen.h"
 #include "ui/events/event.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 #include "ui/views/widget/widget.h"
@@ -42,12 +44,9 @@ Pointer::Pointer(PointerDelegate* delegate)
       surface_(nullptr),
       focus_(nullptr),
       cursor_scale_(1.0f) {
-  ash::Shell* ash_shell = ash::Shell::GetInstance();
-  ash_shell->AddPreTargetHandler(this);
-
-  wm::CursorManager* cursor_manager = ash_shell->cursor_manager();
-  DCHECK(cursor_manager);
-  cursor_manager->AddObserver(this);
+  auto* helper = WMHelper::GetInstance();
+  helper->AddPreTargetHandler(this);
+  helper->AddCursorObserver(this);
 }
 
 Pointer::~Pointer() {
@@ -63,16 +62,18 @@ Pointer::~Pointer() {
   if (widget_)
     widget_->CloseNow();
 
-  ash::Shell* ash_shell = ash::Shell::GetInstance();
-  DCHECK(ash_shell->cursor_manager());
-  ash_shell->cursor_manager()->RemoveObserver(this);
-  ash_shell->RemovePreTargetHandler(this);
+  auto* helper = WMHelper::GetInstance();
+  helper->RemoveCursorObserver(this);
+  helper->RemovePreTargetHandler(this);
 }
 
 void Pointer::SetCursor(Surface* surface, const gfx::Point& hotspot) {
   // Early out if the pointer doesn't have a surface in focus.
   if (!focus_)
     return;
+
+  if (!widget_)
+    CreatePointerWidget();
 
   // If surface is different than the current pointer surface then remove the
   // current surface and add the new surface.
@@ -105,7 +106,7 @@ void Pointer::SetCursor(Surface* surface, const gfx::Point& hotspot) {
       surface_->window()->Show();
 
     // Show widget now that cursor has been defined.
-    if (!widget_->IsVisible())
+    if (!widget_->IsVisible() && !is_direct_input_)
       widget_->Show();
   }
 
@@ -132,6 +133,13 @@ void Pointer::SetStylusDelegate(PointerStylusDelegate* delegate) {
 void Pointer::OnMouseEvent(ui::MouseEvent* event) {
   Surface* target = GetEffectiveTargetForEvent(event);
 
+  auto new_pointer_type = pointer_type_;
+  if ((event->flags() & ui::EF_IS_SYNTHESIZED) == 0) {
+    new_pointer_type = event->pointer_details().pointer_type;
+    if (new_pointer_type == ui::EventPointerType::POINTER_TYPE_UNKNOWN)
+      new_pointer_type = ui::EventPointerType::POINTER_TYPE_MOUSE;
+  }
+
   // If target is different than the current pointer focus then we need to
   // generate enter and leave events.
   if (target != focus_) {
@@ -149,9 +157,10 @@ void Pointer::OnMouseEvent(ui::MouseEvent* event) {
       delegate_->OnPointerEnter(target, event->location_f(),
                                 event->button_flags());
       location_ = event->location_f();
-      // Defaulting pointer_type to POINTER_TYPE_MOUSE prevents the tool change
-      // event from being fired when using a mouse.
-      pointer_type_ = ui::EventPointerType::POINTER_TYPE_MOUSE;
+      if (stylus_delegate_) {
+        stylus_delegate_->OnPointerToolChange(new_pointer_type);
+        pointer_type_ = new_pointer_type;
+      }
 
       focus_ = target;
       focus_->AddSurfaceObserver(this);
@@ -159,13 +168,45 @@ void Pointer::OnMouseEvent(ui::MouseEvent* event) {
     delegate_->OnPointerFrame();
   }
 
-  // Report changes in pointer type. We treat unknown devices as a mouse.
-  auto new_pointer_type = event->pointer_details().pointer_type;
-  if (new_pointer_type == ui::EventPointerType::POINTER_TYPE_UNKNOWN)
-    new_pointer_type = ui::EventPointerType::POINTER_TYPE_MOUSE;
+  // Report changes in pointer type.
   if (focus_ && stylus_delegate_ && new_pointer_type != pointer_type_) {
     stylus_delegate_->OnPointerToolChange(new_pointer_type);
     pointer_type_ = new_pointer_type;
+  }
+
+  if (focus_ && event->IsMouseEvent() && event->type() != ui::ET_MOUSE_EXITED) {
+    bool send_frame = false;
+
+    // Generate motion event if location changed. We need to check location
+    // here as mouse movement can generate both "moved" and "entered" events
+    // but OnPointerMotion should only be called if location changed since
+    // OnPointerEnter was called.
+    if (!SameLocation(event, location_)) {
+      location_ = event->location_f();
+      delegate_->OnPointerMotion(event->time_stamp(), location_);
+      send_frame = true;
+    }
+    if (stylus_delegate_ &&
+        pointer_type_ != ui::EventPointerType::POINTER_TYPE_MOUSE) {
+      constexpr float kEpsilon = std::numeric_limits<float>::epsilon();
+      gfx::Vector2dF new_tilt = gfx::Vector2dF(event->pointer_details().tilt_x,
+                                               event->pointer_details().tilt_y);
+      if (std::abs(new_tilt.x() - tilt_.x()) > kEpsilon ||
+          std::abs(new_tilt.y() - tilt_.y()) > kEpsilon) {
+        tilt_ = new_tilt;
+        stylus_delegate_->OnPointerTilt(event->time_stamp(), new_tilt);
+        send_frame = true;
+      }
+
+      float new_force = event->pointer_details().force;
+      if (std::abs(new_force - force_) > kEpsilon) {
+        force_ = new_force;
+        stylus_delegate_->OnPointerForce(event->time_stamp(), new_force);
+        send_frame = true;
+      }
+    }
+    if (send_frame)
+      delegate_->OnPointerFrame();
   }
 
   switch (event->type()) {
@@ -176,42 +217,6 @@ void Pointer::OnMouseEvent(ui::MouseEvent* event) {
                                    event->changed_button_flags(),
                                    event->type() == ui::ET_MOUSE_PRESSED);
         delegate_->OnPointerFrame();
-      }
-      break;
-    case ui::ET_MOUSE_MOVED:
-    case ui::ET_MOUSE_DRAGGED:
-      if (focus_) {
-        bool send_frame = false;
-        // Generate motion event if location changed. We need to check location
-        // here as mouse movement can generate both "moved" and "entered" events
-        // but OnPointerMotion should only be called if location changed since
-        // OnPointerEnter was called.
-        if (!SameLocation(event, location_)) {
-          location_ = event->location_f();
-          delegate_->OnPointerMotion(event->time_stamp(), location_);
-          send_frame = true;
-        }
-        if (stylus_delegate_ &&
-            pointer_type_ != ui::EventPointerType::POINTER_TYPE_MOUSE) {
-          constexpr float kEpsilon = std::numeric_limits<float>::epsilon();
-          gfx::Vector2dF new_tilt = gfx::Vector2dF(
-              event->pointer_details().tilt_x, event->pointer_details().tilt_y);
-          if (std::abs(new_tilt.x() - tilt_.x()) > kEpsilon ||
-              std::abs(new_tilt.y() - tilt_.y()) > kEpsilon) {
-            tilt_ = new_tilt;
-            stylus_delegate_->OnPointerTilt(event->time_stamp(), new_tilt);
-            send_frame = true;
-          }
-
-          float new_force = event->pointer_details().force;
-          if (std::abs(new_force - force_) > kEpsilon) {
-            force_ = new_force;
-            stylus_delegate_->OnPointerForce(event->time_stamp(), new_force);
-            send_frame = true;
-          }
-        }
-        if (send_frame)
-          delegate_->OnPointerFrame();
       }
       break;
     case ui::ET_SCROLL:
@@ -244,6 +249,8 @@ void Pointer::OnMouseEvent(ui::MouseEvent* event) {
         delegate_->OnPointerFrame();
       }
       break;
+    case ui::ET_MOUSE_MOVED:
+    case ui::ET_MOUSE_DRAGGED:
     case ui::ET_MOUSE_ENTERED:
     case ui::ET_MOUSE_EXITED:
     case ui::ET_MOUSE_CAPTURE_CHANGED:
@@ -253,20 +260,25 @@ void Pointer::OnMouseEvent(ui::MouseEvent* event) {
       break;
   }
 
+  if ((event->flags() & ui::EF_IS_SYNTHESIZED) == 0)
+    is_direct_input_ = (event->flags() & ui::EF_DIRECT_INPUT) != 0;
+
   // Update cursor widget to reflect current focus and pointer location.
-  if (focus_) {
+  if (focus_ && !is_direct_input_) {
     if (!widget_)
       CreatePointerWidget();
 
     // Update cursor location if mouse event caused it to change.
     gfx::Point mouse_location = aura::Env::GetInstance()->last_mouse_location();
-    if (mouse_location != widget_->GetNativeWindow()->bounds().origin()) {
-      gfx::Rect bounds = widget_->GetNativeWindow()->bounds();
+    gfx::Rect bounds = widget_->GetWindowBoundsInScreen();
+    if (mouse_location != bounds.origin()) {
       bounds.set_origin(mouse_location);
-      widget_->GetNativeWindow()->SetBounds(bounds);
+      widget_->SetBounds(bounds);
     }
 
     UpdateCursorScale();
+    if (!widget_->IsVisible())
+      widget_->Show();
   } else {
     if (widget_ && widget_->IsVisible())
       widget_->Hide();
@@ -321,9 +333,8 @@ void Pointer::CreatePointerWidget() {
   params.shadow_type = views::Widget::InitParams::SHADOW_TYPE_NONE;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.accept_events = false;
-  params.parent =
-      ash::Shell::GetContainer(ash::Shell::GetPrimaryRootWindow(),
-                               ash::kShellWindowId_MouseCursorContainer);
+  params.parent = WMHelper::GetInstance()->GetContainer(
+      ash::kShellWindowId_MouseCursorContainer);
   widget_.reset(new views::Widget);
   widget_->Init(params);
   widget_->GetNativeWindow()->set_owned_by_parent(false);
@@ -347,13 +358,10 @@ void Pointer::UpdateCursorScale() {
   display::Display display =
       display::Screen::GetScreen()->GetDisplayNearestWindow(
           widget_->GetNativeWindow());
-  float ui_scale = ash::Shell::GetInstance()
-                       ->display_manager()
+  float ui_scale = WMHelper::GetInstance()
                        ->GetDisplayInfo(display.id())
                        .GetEffectiveUIScale();
-
-  ash::Shell* ash_shell = ash::Shell::GetInstance();
-  if (ash_shell->cursor_manager()->GetCursorSet() == ui::CURSOR_SET_LARGE)
+  if (WMHelper::GetInstance()->GetCursorSet() == ui::CURSOR_SET_LARGE)
     ui_scale *= kLargeCursorScale;
 
   if (ui_scale != cursor_scale_) {

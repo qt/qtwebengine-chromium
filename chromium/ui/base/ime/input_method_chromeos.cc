@@ -25,8 +25,6 @@
 #include "ui/base/ime/ime_engine_handler_interface.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/event.h"
-#include "ui/events/keycodes/dom/dom_code.h"
-#include "ui/events/keycodes/dom/dom_key.h"
 #include "ui/gfx/geometry/rect.h"
 
 namespace {
@@ -233,15 +231,6 @@ void InputMethodChromeOS::CancelComposition(const TextInputClient* client) {
     ResetContext();
 }
 
-void InputMethodChromeOS::OnInputLocaleChanged() {
-  // Not supported.
-}
-
-std::string InputMethodChromeOS::GetInputLocale() {
-  // Not supported.
-  return "";
-}
-
 bool InputMethodChromeOS::IsCandidatePopupOpen() const {
   // TODO(yukishiino): Implement this method.
   return false;
@@ -364,9 +353,9 @@ void InputMethodChromeOS::ProcessFilteredKeyPressEvent(ui::KeyEvent* event) {
   }
   ui::KeyEvent fabricated_event(ET_KEY_PRESSED,
                                 VKEY_PROCESSKEY,
-                                ui::DomCode::NONE,
+                                event->code(),
                                 event->flags(),
-                                ui::DomKey::NONE,
+                                event->GetDomKey(),
                                 event->time_stamp());
   ignore_result(DispatchKeyEventPostIME(&fabricated_event));
   if (fabricated_event.stopped_propagation())
@@ -458,6 +447,11 @@ void InputMethodChromeOS::CommitText(const std::string& text) {
   const base::string16 utf16_text = base::UTF8ToUTF16(text);
   if (utf16_text.empty())
     return;
+
+  if (!CanComposeInline()) {
+    // Hides the candidate window for preedit text.
+    UpdateCompositionText(CompositionText(), 0, false);
+  }
 
   // Append the text to the buffer, because commit signal might be fired
   // multiple times when processing a key event.

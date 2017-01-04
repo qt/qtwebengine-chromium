@@ -7,13 +7,15 @@
 #ifndef FPDFSDK_JAVASCRIPT_CJS_CONTEXT_H_
 #define FPDFSDK_JAVASCRIPT_CJS_CONTEXT_H_
 
-#include "core/fxcrt/include/fx_string.h"
-#include "core/fxcrt/include/fx_system.h"
+#include <memory>
+
+#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/fx_system.h"
 #include "fpdfsdk/javascript/ijs_context.h"
 
 class CJS_EventHandler;
 class CJS_Runtime;
-class CPDFDoc_Environment;
+class CPDFSDK_FormFillEnvironment;
 
 class CJS_Context : public IJS_Context {
  public:
@@ -119,20 +121,17 @@ class CJS_Context : public IJS_Context {
   void OnBatchExec(CPDFSDK_Document* pTarget) override;
   void OnConsole_Exec() override;
   void OnExternal_Exec() override;
-  void EnableMessageBox(FX_BOOL bEnable) override;
 
-  FX_BOOL IsMsgBoxEnabled() const { return m_bMsgBoxEnable; }
   CJS_Runtime* GetJSRuntime() const { return m_pRuntime; }
-  CJS_EventHandler* GetEventHandler() const { return m_pEventHandler; }
+  CJS_EventHandler* GetEventHandler() const { return m_pEventHandler.get(); }
 
-  CPDFDoc_Environment* GetReaderApp();
+  CPDFSDK_FormFillEnvironment* GetReaderEnv();
   CPDFSDK_Document* GetReaderDocument();
 
  private:
-  CJS_Runtime* m_pRuntime;
-  CJS_EventHandler* m_pEventHandler;
+  CJS_Runtime* const m_pRuntime;
+  std::unique_ptr<CJS_EventHandler> m_pEventHandler;
   FX_BOOL m_bBusy;
-  FX_BOOL m_bMsgBoxEnable;
 };
 
 #endif  // FPDFSDK_JAVASCRIPT_CJS_CONTEXT_H_

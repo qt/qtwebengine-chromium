@@ -28,7 +28,6 @@
 #include "cc/resources/shared_bitmap.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
-#include "content/common/edit_command.h"
 #include "content/common/frame_message_enums.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/page_message_enums.h"
@@ -65,7 +64,6 @@
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
 #include "content/renderer/android/renderer_date_time_picker.h"
-#include "third_party/WebKit/public/web/WebContentDetectionResult.h"
 #endif
 
 #if defined(COMPILER_MSVC)
@@ -77,7 +75,6 @@
 
 class SkBitmap;
 struct PP_NetAddress_Private;
-struct ViewMsg_New_Params;
 struct ViewMsg_StopFinding_Params;
 
 namespace base {
@@ -134,6 +131,10 @@ struct FileChooserFileInfo;
 struct RenderViewImplParams;
 struct ResizeParams;
 
+namespace mojom {
+class CreateViewParams;
+}
+
 #if defined(OS_ANDROID)
 class WebMediaPlayerProxyAndroid;
 #endif
@@ -161,14 +162,14 @@ class CONTENT_EXPORT RenderViewImpl
   // |proxy_routing_id| is specified, so a RenderFrameProxy can be created for
   // this RenderView's main RenderFrame.
   static RenderViewImpl* Create(CompositorDependencies* compositor_deps,
-                                const ViewMsg_New_Params& params,
+                                const mojom::CreateViewParams& params,
                                 bool was_created_by_renderer);
 
   // Used by content_layouttest_support to hook into the creation of
   // RenderViewImpls.
   static void InstallCreateHook(RenderViewImpl* (*create_render_view_impl)(
       CompositorDependencies* compositor_deps,
-      const ViewMsg_New_Params&));
+      const mojom::CreateViewParams&));
 
   // Returns the RenderViewImpl containing the given WebView.
   static RenderViewImpl* FromWebView(blink::WebView* webview);
@@ -178,6 +179,9 @@ class CONTENT_EXPORT RenderViewImpl
 
   // May return NULL when the view is closing.
   blink::WebView* webview() const;
+
+  // Returns the RenderWidget for this RenderView.
+  RenderWidget* GetWidget() const;
 
   const WebPreferences& webkit_preferences() const {
     return webkit_preferences_;
@@ -237,12 +241,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   void AttachWebFrameWidget(blink::WebFrameWidget* frame_widget);
 
-  // Plugin-related functions --------------------------------------------------
-
-#if defined(ENABLE_PLUGINS)
-  PepperPluginInstanceImpl* GetFocusedPepperPlugin();
-#endif  // ENABLE_PLUGINS
-
   void TransferActiveWheelFlingAnimation(
       const blink::WebActiveWheelFlingParameters& params);
 
@@ -284,7 +282,6 @@ class CONTENT_EXPORT RenderViewImpl
   // blink::WebWidgetClient implementation ------------------------------------
 
   // Most methods are handled by RenderWidget.
-  void didFocus() override;
   void show(blink::WebNavigationPolicy policy) override;
   void didHandleGestureEvent(const blink::WebGestureEvent& event,
                              bool event_cancelled) override;
@@ -293,35 +290,24 @@ class CONTENT_EXPORT RenderViewImpl
 
   // TODO(lfg): Remove once WebViewClient no longer inherits from
   // WebWidgetClient.
-  bool allowsBrokenNullLayerTreeView() const override;
   void closeWidgetSoon() override;
   void convertViewportToWindow(blink::WebRect* rect) override;
   void convertWindowToViewport(blink::WebFloatRect* rect) override;
-  void didAutoResize(const blink::WebSize& newSize) override;
-  void didChangeCursor(const blink::WebCursorInfo& info) override;
-  void didInvalidateRect(const blink::WebRect& rect) override;
-  void didMeaningfulLayout(blink::WebMeaningfulLayout layout_type) override;
   void didOverscroll(const blink::WebFloatSize& overscrollDelta,
                      const blink::WebFloatSize& accumulatedOverscroll,
                      const blink::WebFloatPoint& positionInViewport,
                      const blink::WebFloatSize& velocityInViewport) override;
-  void didUpdateTextOfFocusedElementByNonUserInput() override;
   void hasTouchEventHandlers(bool has_handlers) override;
-  blink::WebLayerTreeView* layerTreeView() override;
   void resetInputMethod() override;
-  blink::WebRect rootWindowRect() override;
-  void scheduleAnimation() override;
   blink::WebScreenInfo screenInfo() override;
   void setToolTipText(const blink::WebString&,
                       blink::WebTextDirection hint) override;
   void setTouchAction(blink::WebTouchAction touchAction) override;
-  void setWindowRect(const blink::WebRect& rect) override;
   void showImeIfNeeded() override;
   void showUnhandledTapUIIfNeeded(const blink::WebPoint& tappedPosition,
                                   const blink::WebNode& tappedNode,
                                   bool pageChanged) override;
-  blink::WebRect windowRect() override;
-  blink::WebRect windowResizerRect() override;
+  blink::WebWidgetClient* widgetClient() override;
 
   // blink::WebViewClient implementation --------------------------------------
 
@@ -338,7 +324,6 @@ class CONTENT_EXPORT RenderViewImpl
       const blink::WebString& path,
       blink::WebFileChooserCompletion* chooser_completion) override;
   void didCancelCompositionOnSelectionChange() override;
-  bool handleCurrentKeyboardEvent() override;
   void SetValidationMessageDirection(base::string16* main_text,
                                      blink::WebTextDirection main_text_hint,
                                      base::string16* sub_text,
@@ -383,12 +368,15 @@ class CONTENT_EXPORT RenderViewImpl
   virtual double zoomFactorToZoomLevel(double factor) const;
   void draggableRegionsChanged() override;
   void pageImportanceSignalsChanged() override;
+  void didAutoResize(const blink::WebSize& newSize) override;
+  blink::WebRect rootWindowRect() override;
+  void didFocus() override;
 
 #if defined(OS_ANDROID)
   void scheduleContentIntent(const blink::WebURL& intent,
                              bool is_main_frame) override;
   void cancelScheduledContentIntents() override;
-  blink::WebContentDetectionResult detectContentAround(
+  blink::WebURL detectContentIntentAt(
       const blink::WebHitTestResult& touch_hit) override;
 
   // Only used on Android since all other platforms implement
@@ -401,7 +389,6 @@ class CONTENT_EXPORT RenderViewImpl
   // RenderView implementation -------------------------------------------------
 
   bool Send(IPC::Message* message) override;
-  RenderWidget* GetWidget() const override;
   RenderFrameImpl* GetMainRenderFrame() override;
   int GetRoutingID() const override;
   gfx::Size GetSize() const override;
@@ -413,13 +400,10 @@ class CONTENT_EXPORT RenderViewImpl
   bool ShouldDisplayScrollbars(int width, int height) const override;
   int GetEnabledBindings() const override;
   bool GetContentStateImmediately() const override;
-  void DidStartLoading() override;
-  void DidStopLoading() override;
   void Repaint(const gfx::Size& size) override;
   void SetEditCommandForNextKeyEvent(const std::string& name,
                                      const std::string& value) override;
   void ClearEditCommands() override;
-  SSLStatus GetSSLStatusOfFrame(blink::WebFrame* frame) const override;
   const std::string& GetAcceptLanguages() const override;
 #if defined(OS_ANDROID)
   void UpdateTopControlsState(TopControlsState constraints,
@@ -428,7 +412,6 @@ class CONTENT_EXPORT RenderViewImpl
 #endif
   void ConvertViewportToWindowViaWidget(blink::WebRect* rect) override;
   gfx::RectF ElementBoundsInWindow(const blink::WebElement& element) override;
-  float GetDeviceScaleFactorForTest() const override;
   bool HasAddedInputHandler() const override;
 
   gfx::Point ConvertWindowPointToViewport(const gfx::Point& point);
@@ -441,36 +424,22 @@ class CONTENT_EXPORT RenderViewImpl
 
  protected:
   // RenderWidget overrides:
+  blink::WebWidget* GetWebWidget() const override;
   void CloseForFrame() override;
   void Close() override;
   void OnResize(const ResizeParams& params) override;
   void OnSetFocus(bool enable) override;
   GURL GetURLForGraphicsContext3D() override;
-  void OnImeSetComposition(
-      const base::string16& text,
-      const std::vector<blink::WebCompositionUnderline>& underlines,
-      const gfx::Range& replacement_range,
-      int selection_start,
-      int selection_end) override;
-  void OnImeConfirmComposition(const base::string16& text,
-                               const gfx::Range& replacement_range,
-                               bool keep_selection) override;
   void OnOrientationChange() override;
-  ui::TextInputType GetTextInputType() override;
-  void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) override;
-  void GetCompositionCharacterBounds(
-      std::vector<gfx::Rect>* character_bounds_in_window) override;
-  void GetCompositionRange(gfx::Range* range) override;
-  bool CanComposeInline() override;
   void DidCommitCompositorFrame() override;
   void DidCompletePageScaleAnimation() override;
   void OnDeviceScaleFactorChanged() override;
   void ResizeWebWidget() override;
 
   RenderViewImpl(CompositorDependencies* compositor_deps,
-                 const ViewMsg_New_Params& params);
+                 const mojom::CreateViewParams& params);
 
-  void Initialize(const ViewMsg_New_Params& params,
+  void Initialize(const mojom::CreateViewParams& params,
                   bool was_created_by_renderer);
   void SetScreenMetricsEmulationParameters(
       bool enabled,
@@ -557,7 +526,6 @@ class CONTENT_EXPORT RenderViewImpl
   void RenderWidgetFocusChangeComplete() override;
   bool DoesRenderWidgetHaveTouchEventHandlersAt(
       const gfx::Point& point) const override;
-  void RenderWidgetDidHandleKeyEvent() override;
   bool RenderWidgetWillHandleGestureEvent(
       const blink::WebGestureEvent& event) override;
   bool RenderWidgetWillHandleMouseEvent(
@@ -591,7 +559,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnExecuteEditCommand(const std::string& name, const std::string& value);
   void OnMoveCaret(const gfx::Point& point);
   void OnScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
-  void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
   void OnAllowBindings(int enabled_bindings_flags);
   void OnAllowScriptToClose(bool script_can_close);
   void OnCancelDownload(int32_t download_id);
@@ -635,23 +602,20 @@ class CONTENT_EXPORT RenderViewImpl
                         const blink::WebPluginAction& action);
   void OnMoveOrResizeStarted();
   void OnReleaseDisambiguationPopupBitmap(const cc::SharedBitmapId& id);
-  void OnResetPageEncodingToDefault();
   void OnSetActive(bool active);
   void OnSetBackgroundOpaque(bool opaque);
   void OnExitFullscreen();
   void OnSetHistoryOffsetAndLength(int history_offset, int history_length);
   void OnSetInitialFocus(bool reverse);
-  void OnSetPageEncoding(const std::string& encoding_name);
   void OnSetRendererPrefs(const RendererPreferences& renderer_prefs);
   void OnSetWebUIProperty(const std::string& name, const std::string& value);
   void OnSetZoomLevelForLoadingURL(const GURL& url, double zoom_level);
   void OnSuppressDialogsUntilSwapOut();
-  void OnThemeChanged();
   void OnUpdateTargetURLAck();
   void OnUpdateWebPreferences(const WebPreferences& prefs);
   void OnSetPageScale(float page_scale_factor);
   void OnZoom(PageZoom zoom);
-  void OnForceRedraw(int request_id);
+  void OnForceRedraw(const ui::LatencyInfo& latency_info);
   void OnSelectWordAroundCaret();
 #if defined(OS_ANDROID)
   void OnUndoScrollFocusedEditableNodeIntoRect();
@@ -721,6 +685,13 @@ class CONTENT_EXPORT RenderViewImpl
   void set_navigation_gesture(NavigationGesture gesture) {
     navigation_gesture_ = gesture;
   }
+
+// Platform specific theme preferences if any are updated here.
+#if defined(OS_WIN)
+  void UpdateThemePrefs();
+#else
+  void UpdateThemePrefs() {}
+#endif
 
   void UpdateWebViewWithDeviceScaleFactor();
 
@@ -910,10 +881,6 @@ class CONTENT_EXPORT RenderViewImpl
   // is passed to us upon creation.  WebKit asks for this ID upon first use and
   // uses it whenever asking the browser process to allocate new storage areas.
   int64_t session_storage_namespace_id_;
-
-  // Stores edit commands associated to the next key event.
-  // Shall be cleared as soon as the next key event is processed.
-  EditCommands edit_commands_;
 
   // All the registered observers.  We expect this list to be small, so vector
   // is fine.

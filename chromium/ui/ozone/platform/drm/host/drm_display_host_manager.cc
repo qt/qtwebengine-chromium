@@ -145,11 +145,11 @@ DrmDisplayHostManager::DrmDisplayHostManager(
       GetAvailableDisplayControllerInfos(primary_drm_device_handle_->fd());
   has_dummy_display_ = !display_infos.empty();
   for (size_t i = 0; i < display_infos.size(); ++i) {
-    displays_.push_back(base::WrapUnique(new DrmDisplayHost(
+    displays_.push_back(base::MakeUnique<DrmDisplayHost>(
         proxy_, CreateDisplaySnapshotParams(
                     display_infos[i], primary_drm_device_handle_->fd(),
                     primary_drm_device_handle_->sys_path(), 0, gfx::Point()),
-        true /* is_dummy */)));
+        true /* is_dummy */));
   }
 }
 
@@ -306,6 +306,30 @@ void DrmDisplayHostManager::OnRemoveGraphicsDevice(
   ProcessEvent();
 }
 
+void DrmDisplayHostManager::OnGpuProcessLaunched() {
+  std::unique_ptr<DrmDeviceHandle> handle =
+      std::move(primary_drm_device_handle_);
+  {
+    base::ThreadRestrictions::ScopedAllowIO allow_io;
+
+    drm_devices_.clear();
+    drm_devices_[primary_graphics_card_path_] =
+        MapDevPathToSysPath(primary_graphics_card_path_);
+
+    if (!handle) {
+      handle.reset(new DrmDeviceHandle());
+      if (!handle->Initialize(primary_graphics_card_path_,
+                              drm_devices_[primary_graphics_card_path_]))
+        LOG(FATAL) << "Failed to open primary graphics card";
+    }
+  }
+
+  // Send the primary device first since this is used to initialize graphics
+  // state.
+  proxy_->GpuAddGraphicsDevice(drm_devices_[primary_graphics_card_path_],
+                               base::FileDescriptor(handle->PassFD()));
+}
+
 void DrmDisplayHostManager::OnGpuThreadReady() {
   // If in the middle of a configuration, just respond with the old list of
   // displays. This is fine, since after the DRM resources are initialized and
@@ -328,28 +352,6 @@ void DrmDisplayHostManager::OnGpuThreadReady() {
   if (!relinquish_display_control_callback_.is_null())
     GpuRelinquishedDisplayControl(false);
 
-  std::unique_ptr<DrmDeviceHandle> handle =
-      std::move(primary_drm_device_handle_);
-  {
-    base::ThreadRestrictions::ScopedAllowIO allow_io;
-
-    drm_devices_.clear();
-    drm_devices_[primary_graphics_card_path_] =
-        MapDevPathToSysPath(primary_graphics_card_path_);
-
-    if (!handle) {
-      handle.reset(new DrmDeviceHandle());
-      if (!handle->Initialize(primary_graphics_card_path_,
-                              drm_devices_[primary_graphics_card_path_]))
-        LOG(FATAL) << "Failed to open primary graphics card";
-    }
-  }
-
-  // Send the primary device first since this is used to initialize graphics
-  // state.
-  proxy_->GpuAddGraphicsDevice(drm_devices_[primary_graphics_card_path_],
-                               base::FileDescriptor(handle->PassFD()));
-
   device_manager_->ScanDevices(this);
   NotifyDisplayDelegate();
 }
@@ -364,8 +366,8 @@ void DrmDisplayHostManager::GpuHasUpdatedNativeDisplays(
     auto it = std::find_if(old_displays.begin(), old_displays.end(),
                            FindDrmDisplayHostById(params[i].display_id));
     if (it == old_displays.end()) {
-      displays_.push_back(base::WrapUnique(
-          new DrmDisplayHost(proxy_, params[i], false /* is_dummy */)));
+      displays_.push_back(base::MakeUnique<DrmDisplayHost>(
+          proxy_, params[i], false /* is_dummy */));
     } else {
       (*it)->UpdateDisplaySnapshot(params[i]);
       displays_.push_back(std::move(*it));

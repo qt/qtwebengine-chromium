@@ -21,8 +21,15 @@ int BlimpPermissionManager::RequestPermission(
     content::PermissionType permission,
     content::RenderFrameHost* render_frame_host,
     const GURL& origin,
+    bool user_gesture,
     const base::Callback<void(blink::mojom::PermissionStatus)>& callback) {
-  callback.Run(blink::mojom::PermissionStatus::DENIED);
+  if (permission == content::PermissionType::GEOLOCATION) {
+    VLOG(1) << "Geolocation permission granted.";
+    callback.Run(blink::mojom::PermissionStatus::GRANTED);
+  } else {
+    VLOG(1) << "Permission denied.";
+    callback.Run(blink::mojom::PermissionStatus::DENIED);
+  }
   return kNoPendingOperation;
 }
 
@@ -30,6 +37,7 @@ int BlimpPermissionManager::RequestPermissions(
     const std::vector<content::PermissionType>& permission,
     content::RenderFrameHost* render_frame_host,
     const GURL& requesting_origin,
+    bool user_gesture,
     const base::Callback<
         void(const std::vector<blink::mojom::PermissionStatus>&)>& callback) {
   callback.Run(std::vector<blink::mojom::PermissionStatus>(

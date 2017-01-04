@@ -21,6 +21,7 @@ using XWindow = unsigned long;
 namespace ui {
 
 class X11HotplugEventHandler;
+class XScopedEventSelector;
 
 // Responsible for notifying X11EventSource when new XEvents are available and
 // processing/dispatching XEvents. Implementations will likely be a
@@ -51,6 +52,11 @@ class EVENTS_EXPORT X11EventSource {
   // available X events.
   void DispatchXEvents();
 
+  // Dispatches a given event immediately. This is to facilitate sequential
+  // interaction between the gtk event loop (used for IME) and the
+  // main X11 event loop.
+  void DispatchXEventNow(XEvent* event);
+
   // Blocks on the X11 event queue until we receive notification from the
   // xserver that |w| has been mapped; StructureNotifyMask events on |w| are
   // pulled out from the queue and dispatched out of order.
@@ -65,11 +71,11 @@ class EVENTS_EXPORT X11EventSource {
   void BlockUntilWindowUnmapped(XID window);
 
   XDisplay* display() { return display_; }
-  Time last_seen_server_time() const { return last_seen_server_time_; }
 
-  // Explicitly asks the X11 server for the current timestamp, and updates
-  // |last_seen_server_time| with this value.
-  Time UpdateLastSeenServerTime();
+  // Returns the timestamp of the event currently being dispatched.  Falls back
+  // on GetCurrentServerTime() if there's no event being dispatched, or if the
+  // current event does not have a timestamp.
+  Time GetTimestamp();
 
   void StopCurrentEventStream();
   void OnDispatcherListChanged();
@@ -87,6 +93,10 @@ class EVENTS_EXPORT X11EventSource {
   // Dispatch all encountered events prior to the one we're blocking on.
   void BlockOnWindowStructureEvent(XID window, int type);
 
+  // Explicitly asks the X11 server for the current timestamp, and updates
+  // |last_seen_server_time_| with this value.
+  Time GetCurrentServerTime();
+
  private:
   static X11EventSource* instance_;
 
@@ -95,13 +105,14 @@ class EVENTS_EXPORT X11EventSource {
   // The connection to the X11 server used to receive the events.
   XDisplay* display_;
 
-  // The last timestamp seen in an XEvent.
-  Time last_seen_server_time_;
+  // The timestamp of the event being dispatched.
+  Time event_timestamp_;
 
   // State necessary for UpdateLastSeenServerTime
   bool dummy_initialized_;
   XWindow dummy_window_;
   XAtom dummy_atom_;
+  std::unique_ptr<XScopedEventSelector> dummy_window_events_;
 
   // Keeps track of whether this source should continue to dispatch all the
   // available events.

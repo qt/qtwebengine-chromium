@@ -227,7 +227,8 @@ bool GServicesSettings::UpdateFromCheckinResponse(
       return false;
     }
 
-    if (settings_diff && name.find(kDeleteSettingPrefix) == 0) {
+    if (settings_diff && base::StartsWith(name, kDeleteSettingPrefix,
+                                          base::CompareCase::SENSITIVE)) {
       std::string setting_to_delete =
           name.substr(arraysize(kDeleteSettingPrefix) - 1);
       new_settings.erase(setting_to_delete);
@@ -304,7 +305,7 @@ GURL GServicesSettings::GetMCSMainEndpoint() const {
   else
     mcs_hostname = kDefaultMCSHostname;
 
-  // Get alternative secure port or use defualt.
+  // Get alternative secure port or use default.
   int mcs_secure_port = 0;
   iter = settings_.find(kMCSSecurePortKey);
   if (iter == settings_.end() || iter->second.empty() ||

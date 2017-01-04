@@ -28,8 +28,10 @@
 
 #include "base/bind.h"
 #include "base/containers/hash_tables.h"
+#include "base/feature_list.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -39,10 +41,13 @@
 #include "base/threading/thread_checker.h"
 #include "base/timer/timer.h"
 #include "base/win/message_window.h"
+#include "base/win/windows_version.h"
 #include "device/usb/usb_ids.h"
+#include "media/midi/midi_manager_winrt.h"
 #include "media/midi/midi_message_queue.h"
 #include "media/midi/midi_message_util.h"
 #include "media/midi/midi_port_info.h"
+#include "media/midi/midi_switches.h"
 
 namespace media {
 namespace midi {
@@ -445,7 +450,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
           input_devices.push_back(it.first);
       }
       {
-        for (const auto handle : input_devices) {
+        for (auto* handle : input_devices) {
           MMRESULT result = midiInClose(handle);
           if (result == MIDIERR_STILLPLAYING) {
             result = midiInReset(handle);
@@ -466,7 +471,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
           output_devices.push_back(it.first);
       }
       {
-        for (const auto handle : output_devices) {
+        for (auto* handle : output_devices) {
           MMRESULT result = midiOutClose(handle);
           if (result == MIDIERR_STILLPLAYING) {
             result = midiOutReset(handle);
@@ -501,7 +506,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
 
     UpdateDeviceList();
 
-    task_thread_.message_loop()->PostTask(
+    task_thread_.task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&MidiServiceWinImpl::CompleteInitializationOnTaskThread,
                    base::Unretained(this), Result::OK));
@@ -529,13 +534,13 @@ class MidiServiceWinImpl : public MidiServiceWin,
     }
     const auto now = base::TimeTicks::Now();
     if (now < time) {
-      sender_thread_.message_loop()->PostDelayedTask(
+      sender_thread_.task_runner()->PostDelayedTask(
           FROM_HERE, base::Bind(&MidiServiceWinImpl::SendOnSenderThread,
                                 base::Unretained(this), port_number,
                                 state->port_age, data, time),
           time - now);
     } else {
-      sender_thread_.message_loop()->PostTask(
+      sender_thread_.task_runner()->PostTask(
           FROM_HERE, base::Bind(&MidiServiceWinImpl::SendOnSenderThread,
                                 base::Unretained(this), port_number,
                                 state->port_age, data, time));
@@ -549,7 +554,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
       return;
 
     switch (device_type) {
-      case base::SystemMonitor::DEVTYPE_AUDIO_CAPTURE:
+      case base::SystemMonitor::DEVTYPE_AUDIO:
       case base::SystemMonitor::DEVTYPE_VIDEO_CAPTURE:
         // Add case of other unrelated device types here.
         return;
@@ -585,7 +590,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
   }
 
   void UpdateDeviceList() {
-    task_thread_.message_loop()->PostTask(
+    task_thread_.task_runner()->PostTask(
         FROM_HERE, base::Bind(&MidiServiceWinImpl::UpdateDeviceListOnTaskThread,
                               base::Unretained(this)));
   }
@@ -665,7 +670,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
       input_ports_[port_number]->port_age = input_ports_ages_[port_number];
     }
     // Several initial startup tasks cannot be done in MIM_OPEN handler.
-    task_thread_.message_loop()->PostTask(
+    task_thread_.task_runner()->PostTask(
         FROM_HERE, base::Bind(&MidiServiceWinImpl::StartInputDeviceOnTaskThread,
                               base::Unretained(this), midi_in_handle));
     if (add_new_port) {
@@ -676,11 +681,11 @@ class MidiServiceWinImpl : public MidiServiceWin,
           base::WideToUTF8(state_device_info.product_name),
           MmversionToString(state_device_info.driver_version),
           MIDI_PORT_OPENED);
-      task_thread_.message_loop()->PostTask(
+      task_thread_.task_runner()->PostTask(
           FROM_HERE, base::Bind(&MidiServiceWinImpl::AddInputPortOnTaskThread,
                                 base::Unretained(this), port_info));
     } else {
-      task_thread_.message_loop()->PostTask(
+      task_thread_.task_runner()->PostTask(
           FROM_HERE,
           base::Bind(&MidiServiceWinImpl::SetInputPortStateOnTaskThread,
                      base::Unretained(this), port_number,
@@ -710,7 +715,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
     // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757286.aspx
     const base::TimeTicks event_time =
         state->start_time + base::TimeDelta::FromMilliseconds(elapsed_ms);
-    task_thread_.message_loop()->PostTask(
+    task_thread_.task_runner()->PostTask(
         FROM_HERE, base::Bind(&MidiServiceWinImpl::ReceiveMidiDataOnTaskThread,
                               base::Unretained(this), state->port_index, data,
                               event_time));
@@ -747,7 +752,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
       // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757286.aspx
       const base::TimeTicks event_time =
           state->start_time + base::TimeDelta::FromMilliseconds(elapsed_ms);
-      task_thread_.message_loop()->PostTask(
+      task_thread_.task_runner()->PostTask(
           FROM_HERE,
           base::Bind(&MidiServiceWinImpl::ReceiveMidiDataOnTaskThread,
                      base::Unretained(this), state->port_index, data,
@@ -772,7 +777,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
       input_ports_ages_[port_number] += 1;
       unused_input_ports_[device_info].push(port_number);
     }
-    task_thread_.message_loop()->PostTask(
+    task_thread_.task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&MidiServiceWinImpl::SetInputPortStateOnTaskThread,
                    base::Unretained(this), port_number,
@@ -854,11 +859,11 @@ class MidiServiceWinImpl : public MidiServiceWin,
           base::WideToUTF8(state_device_info.product_name),
           MmversionToString(state_device_info.driver_version),
           MIDI_PORT_OPENED);
-      task_thread_.message_loop()->PostTask(
+      task_thread_.task_runner()->PostTask(
           FROM_HERE, base::Bind(&MidiServiceWinImpl::AddOutputPortOnTaskThread,
                                 base::Unretained(this), port_info));
     } else {
-      task_thread_.message_loop()->PostTask(
+      task_thread_.task_runner()->PostTask(
           FROM_HERE,
           base::Bind(&MidiServiceWinImpl::SetOutputPortStateOnTaskThread,
                      base::Unretained(this), port_number, MIDI_PORT_CONNECTED));
@@ -895,7 +900,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
       unused_output_ports_[device_info].push(port_number);
       state->closed = true;
     }
-    task_thread_.message_loop()->PostTask(
+    task_thread_.task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&MidiServiceWinImpl::SetOutputPortStateOnTaskThread,
                    base::Unretained(this), port_number,
@@ -1188,6 +1193,9 @@ void MidiManagerWin::OnReceiveMidiData(uint32_t port_index,
 }
 
 MidiManager* MidiManager::Create() {
+  if (base::FeatureList::IsEnabled(features::kMidiManagerWinrt) &&
+      base::win::GetVersion() >= base::win::VERSION_WIN10)
+    return new MidiManagerWinrt();
   return new MidiManagerWin();
 }
 

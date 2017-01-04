@@ -44,10 +44,12 @@ class VIEWS_EXAMPLES_EXPORT TextfieldExample : public ExampleBase,
   // Textfields for name and password.
   Textfield* name_;
   Textfield* password_;
+  Textfield* disabled_;
   Textfield* read_only_;
 
   // Various buttons to control textfield.
   LabelButton* show_password_;
+  LabelButton* set_background_;
   LabelButton* clear_all_;
   LabelButton* append_;
   LabelButton* set_;

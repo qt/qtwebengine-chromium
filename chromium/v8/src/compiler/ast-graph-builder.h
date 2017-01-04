@@ -32,11 +32,15 @@ class TypeHintAnalysis;
 // underlying AST. The produced graph can either be compiled into a
 // stand-alone function or be wired into another graph for the purposes
 // of function inlining.
-class AstGraphBuilder : public AstVisitor {
+// This AstVistor is not final, and provides the AstVisitor methods as virtual
+// methods so they can be specialized by subclasses.
+class AstGraphBuilder : public AstVisitor<AstGraphBuilder> {
  public:
   AstGraphBuilder(Zone* local_zone, CompilationInfo* info, JSGraph* jsgraph,
+                  float invocation_frequency,
                   LoopAssignmentAnalysis* loop_assignment = nullptr,
                   TypeHintAnalysis* type_hint_analysis = nullptr);
+  virtual ~AstGraphBuilder() {}
 
   // Creates a graph by visiting the entire AST.
   bool CreateGraph(bool stack_check = true);
@@ -51,13 +55,13 @@ class AstGraphBuilder : public AstVisitor {
   }
 
  protected:
-#define DECLARE_VISIT(type) void Visit##type(type* node) override;
+#define DECLARE_VISIT(type) virtual void Visit##type(type* node);
   // Visiting functions for AST nodes make this an AstVisitor.
   AST_NODE_LIST(DECLARE_VISIT)
 #undef DECLARE_VISIT
 
   // Visiting function for declarations list is overridden.
-  void VisitDeclarations(ZoneList<Declaration*>* declarations) override;
+  void VisitDeclarations(ZoneList<Declaration*>* declarations);
 
  private:
   class AstContext;
@@ -71,13 +75,13 @@ class AstGraphBuilder : public AstVisitor {
   class ControlScopeForCatch;
   class ControlScopeForFinally;
   class Environment;
-  class FrameStateBeforeAndAfter;
   friend class ControlBuilder;
 
   Isolate* isolate_;
   Zone* local_zone_;
   CompilationInfo* info_;
   JSGraph* jsgraph_;
+  float const invocation_frequency_;
   Environment* environment_;
   AstContext* ast_context_;
 
@@ -96,7 +100,6 @@ class AstGraphBuilder : public AstVisitor {
   SetOncePointer<Node> new_target_;
 
   // Tracks how many try-blocks are currently entered.
-  int try_catch_nesting_level_;
   int try_nesting_level_;
 
   // Temporary storage for building node input lists.
@@ -263,6 +266,9 @@ class AstGraphBuilder : public AstVisitor {
   uint32_t ComputeBitsetForDynamicGlobal(Variable* variable);
   uint32_t ComputeBitsetForDynamicContext(Variable* variable);
 
+  // Computes the frequency for JSCallFunction and JSCallConstruct nodes.
+  float ComputeCallFrequency(FeedbackVectorSlot slot) const;
+
   // ===========================================================================
   // The following build methods all generate graph fragments and return one
   // resulting node. The operand stack height remains the same, variables and
@@ -277,8 +283,8 @@ class AstGraphBuilder : public AstVisitor {
   // Builder to create an arguments object if it is used.
   Node* BuildArgumentsObject(Variable* arguments);
 
-  // Builder to create an array of rest parameters if used
-  Node* BuildRestArgumentsArray(Variable* rest, int index);
+  // Builder to create an array of rest parameters if used.
+  Node* BuildRestArgumentsArray(Variable* rest);
 
   // Builder that assigns to the {.this_function} internal variable if needed.
   Node* BuildThisFunctionVariable(Variable* this_function_var);
@@ -341,8 +347,7 @@ class AstGraphBuilder : public AstVisitor {
   // Builder for adding the [[HomeObject]] to a value if the value came from a
   // function literal and needs a home object. Do nothing otherwise.
   Node* BuildSetHomeObject(Node* value, Node* home_object,
-                           ObjectLiteralProperty* property,
-                           int slot_number = 0);
+                           LiteralProperty* property, int slot_number = 0);
 
   // Builders for error reporting at runtime.
   Node* BuildThrowError(Node* exception, BailoutId bailout_id);
@@ -414,7 +419,8 @@ class AstGraphBuilder : public AstVisitor {
   void VisitForValues(ZoneList<Expression*>* exprs);
 
   // Common for all IterationStatement bodies.
-  void VisitIterationBody(IterationStatement* stmt, LoopBuilder* loop);
+  void VisitIterationBody(IterationStatement* stmt, LoopBuilder* loop,
+                          BailoutId stack_check_id);
 
   // Dispatched from VisitCall.
   void VisitCallSuper(Call* expr);
@@ -445,15 +451,11 @@ class AstGraphBuilder : public AstVisitor {
   // Dispatched from VisitForInStatement.
   void VisitForInAssignment(Expression* expr, Node* value,
                             const VectorSlotPair& feedback,
-                            BailoutId bailout_id_before,
-                            BailoutId bailout_id_after);
+                            BailoutId bailout_id);
 
   // Dispatched from VisitObjectLiteral.
   void VisitObjectLiteralAccessor(Node* home_object,
                                   ObjectLiteralProperty* property);
-
-  // Dispatched from VisitClassLiteral.
-  void VisitClassLiteralContents(ClassLiteral* expr);
 
   DEFINE_AST_VISITOR_SUBCLASS_MEMBERS();
   DISALLOW_COPY_AND_ASSIGN(AstGraphBuilder);
@@ -470,7 +472,8 @@ class AstGraphBuilder : public AstVisitor {
 //
 class AstGraphBuilder::Environment : public ZoneObject {
  public:
-  Environment(AstGraphBuilder* builder, Scope* scope, Node* control_dependency);
+  Environment(AstGraphBuilder* builder, DeclarationScope* scope,
+              Node* control_dependency);
 
   int parameters_count() const { return parameters_count_; }
   int locals_count() const { return locals_count_; }
@@ -539,6 +542,10 @@ class AstGraphBuilder::Environment : public ZoneObject {
                                          OutputFrameStateCombine::Ignore(),
                    bool node_has_exception = false);
 
+  // Inserts a loop exit control node and renames the environment.
+  // This is useful for loop peeling to insert phis at loop exits.
+  void PrepareForLoopExit(Node* loop, BitVector* assigned_variables);
+
   // Control dependency tracked by this environment.
   Node* GetControlDependency() { return control_dependency_; }
   void UpdateControlDependency(Node* dependency) {
@@ -572,6 +579,11 @@ class AstGraphBuilder::Environment : public ZoneObject {
   // Copies this environment at a loop header control-flow point.
   Environment* CopyForLoop(BitVector* assigned, bool is_osr = false);
 
+  // Copies this environment for Osr entry. This only produces environment
+  // of the right shape, the caller is responsible for filling in the right
+  // values and dependencies.
+  Environment* CopyForOsrEntry();
+
  private:
   AstGraphBuilder* builder_;
   int parameters_count_;
@@ -601,7 +613,8 @@ class AstGraphBuilder::Environment : public ZoneObject {
   bool IsLivenessBlockConsistent();
 
   // Prepare environment to be used as loop header.
-  void PrepareForLoop(BitVector* assigned, bool is_osr = false);
+  void PrepareForLoop(BitVector* assigned);
+  void PrepareForOsrEntry();
 };
 
 }  // namespace compiler

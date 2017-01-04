@@ -1,9 +1,8 @@
 include_rules = [
   "+cc/switches.h", # For cc command line switches.
-  "+components/mus/public",
   "+components/display_compositor",
+  "+services/ui/public",
   "+third_party/zlib",
-  "+third_party/libyuv",
 
   # The renderer_host files should only call upwards in the layering via the
   # delegate interfaces.
@@ -22,7 +21,6 @@ specific_include_rules = {
     "+content/public/browser/web_contents_view.h",
   ],
   "render_process_host_impl\.cc": [
-    "+components/mus/common/switches.h",
     "+content/browser/frame_host/render_frame_message_filter.h",
   ],
   "render_widget_host_view_mac\.mm": [
@@ -40,5 +38,10 @@ specific_include_rules = {
   ],
   "render_widget_host_view_aura\.cc": [
     "+content/browser/frame_host",
+  ],
+  # TODO(kenrb): RenderWidgetHostViewChildFrame should eventually be moved
+  # to content/renderer_host, at which time this can be removed.
+  "render_widget_host_input_event_router.cc": [
+    "+content/browser/frame_host/render_widget_host_view_child_frame.h",
   ],
 }

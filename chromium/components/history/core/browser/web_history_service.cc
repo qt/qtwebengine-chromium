@@ -10,14 +10,17 @@
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "components/history/core/browser/history_service_observer.h"
+#include "components/history/core/browser/web_history_service_observer.h"
 #include "components/signin/core/browser/signin_manager.h"
-#include "components/sync_driver/sync_util.h"
+#include "components/sync/driver/sync_util.h"
+#include "components/sync/protocol/history_status.pb.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_token_service.h"
@@ -28,7 +31,6 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "sync/protocol/history_status.pb.h"
 #include "ui/base/device_form_factor.h"
 #include "url/gurl.h"
 
@@ -302,11 +304,11 @@ GURL GetQueryUrl(const base::string16& text_query,
 // Creates a DictionaryValue to hold the parameters for a deletion.
 // Ownership is passed to the caller.
 // |url| may be empty, indicating a time-range deletion.
-base::DictionaryValue* CreateDeletion(
+std::unique_ptr<base::DictionaryValue> CreateDeletion(
     const std::string& min_time,
     const std::string& max_time,
     const GURL& url) {
-  base::DictionaryValue* deletion = new base::DictionaryValue;
+  std::unique_ptr<base::DictionaryValue> deletion(new base::DictionaryValue);
   deletion->SetString("type", "CHROME_HISTORY");
   if (url.is_valid())
     deletion->SetString("url", url.spec());
@@ -334,10 +336,18 @@ WebHistoryService::WebHistoryService(
 }
 
 WebHistoryService::~WebHistoryService() {
-  STLDeleteElements(&pending_expire_requests_);
-  STLDeleteElements(&pending_audio_history_requests_);
-  STLDeleteElements(&pending_web_and_app_activity_requests_);
-  STLDeleteElements(&pending_other_forms_of_browsing_history_requests_);
+  base::STLDeleteElements(&pending_expire_requests_);
+  base::STLDeleteElements(&pending_audio_history_requests_);
+  base::STLDeleteElements(&pending_web_and_app_activity_requests_);
+  base::STLDeleteElements(&pending_other_forms_of_browsing_history_requests_);
+}
+
+void WebHistoryService::AddObserver(WebHistoryServiceObserver* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void WebHistoryService::RemoveObserver(WebHistoryServiceObserver* observer) {
+  observer_list_.RemoveObserver(observer);
 }
 
 WebHistoryService::Request* WebHistoryService::CreateRequest(
@@ -419,8 +429,9 @@ void WebHistoryService::ExpireHistory(
 
   std::unique_ptr<Request> request(CreateRequest(url, completion_callback));
   request->SetPostData(post_data);
-  request->Start();
+  Request* request_ptr = request.get();
   pending_expire_requests_.insert(request.release());
+  request_ptr->Start();
 }
 
 void WebHistoryService::ExpireHistoryBetween(
@@ -501,8 +512,8 @@ void WebHistoryService::QueryOtherFormsOfBrowsingHistory(
       callback);
 
   // Find the Sync request URL.
-  GURL url =
-      GetSyncServiceURL(*base::CommandLine::ForCurrentProcess(), channel);
+  GURL url = syncer::GetSyncServiceURL(*base::CommandLine::ForCurrentProcess(),
+                                       channel);
   GURL::Replacements replace_path;
   std::string new_path =
       url.path() + kQueryOtherFormsOfBrowsingHistoryUrlSuffix;
@@ -513,7 +524,7 @@ void WebHistoryService::QueryOtherFormsOfBrowsingHistory(
   Request* request = CreateRequest(url, completion_callback);
 
   // Set the Sync-specific user agent.
-  std::string user_agent = MakeUserAgentForSync(
+  std::string user_agent = syncer::MakeUserAgentForSync(
       channel, ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_TABLET);
   request->SetUserAgent(user_agent);
 
@@ -552,6 +563,13 @@ void WebHistoryService::ExpireHistoryCompletionCallback(
     if (response_value)
       response_value->GetString("version_info", &server_version_info_);
   }
+
+  // Inform the observers about the history deletion.
+  if (response_value.get() && success) {
+    FOR_EACH_OBSERVER(WebHistoryServiceObserver, observer_list_,
+                      OnWebHistoryDeleted());
+  }
+
   callback.Run(response_value.get() && success);
 }
 

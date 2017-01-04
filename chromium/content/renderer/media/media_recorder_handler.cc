@@ -92,7 +92,7 @@ bool MediaRecorderHandler::canSupportMimeType(
   std::vector<std::string> codecs_list;
   media::ParseCodecString(web_codecs.utf8(), &codecs_list, true /* strip */);
   for (const auto& codec : codecs_list) {
-    const auto found = std::find_if(
+    auto* const* found = std::find_if(
         &codecs[0], &codecs[codecs_count], [&codec](const char* name) {
           return base::EqualsCaseInsensitiveASCII(codec, name);
         });
@@ -161,7 +161,7 @@ bool MediaRecorderHandler::start(int timeslice) {
   media_stream_.audioTracks(audio_tracks);
 
   if (video_tracks.isEmpty() && audio_tracks.isEmpty()) {
-    LOG(WARNING) << __FUNCTION__ << ": no media tracks.";
+    LOG(WARNING) << __func__ << ": no media tracks.";
     return false;
   }
 
@@ -176,7 +176,7 @@ bool MediaRecorderHandler::start(int timeslice) {
           blink::WebMediaStreamSource::ReadyStateEnded;
 
   if (!use_video_tracks && !use_audio_tracks) {
-    LOG(WARNING) << __FUNCTION__ << ": no tracks to be recorded.";
+    LOG(WARNING) << __func__ << ": no tracks to be recorded.";
     return false;
   }
 
@@ -199,7 +199,7 @@ bool MediaRecorderHandler::start(int timeslice) {
         media::BindToCurrentLoop(base::Bind(
             &MediaRecorderHandler::OnEncodedVideo, weak_factory_.GetWeakPtr()));
 
-    video_recorders_.push_back(new VideoTrackRecorder(
+    video_recorders_.emplace_back(new VideoTrackRecorder(
         codec_id_, video_track, on_encoded_video_cb, video_bits_per_second_));
   }
 
@@ -217,7 +217,7 @@ bool MediaRecorderHandler::start(int timeslice) {
         media::BindToCurrentLoop(base::Bind(
             &MediaRecorderHandler::OnEncodedAudio, weak_factory_.GetWeakPtr()));
 
-    audio_recorders_.push_back(new AudioTrackRecorder(
+    audio_recorders_.emplace_back(new AudioTrackRecorder(
         audio_track, on_encoded_audio_cb, audio_bits_per_second_));
   }
 
@@ -298,20 +298,20 @@ void MediaRecorderHandler::WriteData(base::StringPiece data) {
 void MediaRecorderHandler::OnVideoFrameForTesting(
     const scoped_refptr<media::VideoFrame>& frame,
     const TimeTicks& timestamp) {
-  for (auto* recorder : video_recorders_)
+  for (const auto& recorder : video_recorders_)
     recorder->OnVideoFrameForTesting(frame, timestamp);
 }
 
 void MediaRecorderHandler::OnAudioBusForTesting(
     const media::AudioBus& audio_bus,
     const base::TimeTicks& timestamp) {
-  for (auto* recorder : audio_recorders_)
+  for (const auto& recorder : audio_recorders_)
     recorder->OnData(audio_bus, timestamp);
 }
 
 void MediaRecorderHandler::SetAudioFormatForTesting(
     const media::AudioParameters& params) {
-  for (auto* recorder : audio_recorders_)
+  for (const auto& recorder : audio_recorders_)
     recorder->OnSetFormat(params);
 }
 

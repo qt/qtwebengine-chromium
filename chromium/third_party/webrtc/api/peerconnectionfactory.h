@@ -31,9 +31,7 @@ namespace webrtc {
 
 class PeerConnectionFactory : public PeerConnectionFactoryInterface {
  public:
-  void SetOptions(const Options& options) override {
-    options_ = options;
-  }
+  void SetOptions(const Options& options) override;
 
   // Deprecated, use version without constraints.
   rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
@@ -80,15 +78,21 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
 
   bool StartAecDump(rtc::PlatformFile file, int64_t max_size_bytes) override;
   void StopAecDump() override;
-  bool StartRtcEventLog(rtc::PlatformFile file) override {
-    return StartRtcEventLog(file, -1);
-  }
+  // TODO(ivoc) Remove after Chrome is updated.
+  bool StartRtcEventLog(rtc::PlatformFile file) override { return false; }
+  // TODO(ivoc) Remove after Chrome is updated.
   bool StartRtcEventLog(rtc::PlatformFile file,
-                        int64_t max_size_bytes) override;
-  void StopRtcEventLog() override;
+                        int64_t max_size_bytes) override {
+    return false;
+  }
+  // TODO(ivoc) Remove after Chrome is updated.
+  void StopRtcEventLog() override {}
 
   virtual webrtc::MediaControllerInterface* CreateMediaController(
       const cricket::MediaConfig& config) const;
+  virtual cricket::TransportController* CreateTransportController(
+      cricket::PortAllocator* port_allocator,
+      bool redetermine_role_on_ice_restart);
   virtual rtc::Thread* signaling_thread();
   virtual rtc::Thread* worker_thread();
   virtual rtc::Thread* network_thread();

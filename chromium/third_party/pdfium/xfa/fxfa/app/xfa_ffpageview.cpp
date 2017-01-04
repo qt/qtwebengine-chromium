@@ -4,7 +4,7 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
 
 #include "xfa/fde/fde_render.h"
 #include "xfa/fxfa/app/xfa_ffcheckbutton.h"
@@ -14,9 +14,9 @@
 #include "xfa/fxfa/app/xfa_ffpushbutton.h"
 #include "xfa/fxfa/app/xfa_fftextedit.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffdocview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffdocview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 
 namespace {
 
@@ -91,6 +91,24 @@ bool PageWidgetFilter(CXFA_FFWidget* pWidget,
   return (dwFilter & dwStatus) == dwFilter;
 }
 
+bool IsLayoutElement(XFA_Element eElement, bool bLayoutContainer) {
+  switch (eElement) {
+    case XFA_Element::Draw:
+    case XFA_Element::Field:
+    case XFA_Element::InstanceManager:
+      return !bLayoutContainer;
+    case XFA_Element::Area:
+    case XFA_Element::Subform:
+    case XFA_Element::ExclGroup:
+    case XFA_Element::SubformSet:
+    case XFA_Element::PageArea:
+    case XFA_Element::Form:
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace
 
 CXFA_FFPageView::CXFA_FFPageView(CXFA_FFDocView* pDocView, CXFA_Node* pPageArea)
@@ -103,15 +121,13 @@ CXFA_FFDocView* CXFA_FFPageView::GetDocView() const {
 }
 
 void CXFA_FFPageView::GetPageViewRect(CFX_RectF& rtPage) const {
-  CFX_SizeF sz;
-  GetPageSize(sz);
-  rtPage.Set(0, 0, sz);
+  rtPage.Set(0, 0, GetPageSize());
 }
+
 void CXFA_FFPageView::GetDisplayMatrix(CFX_Matrix& mt,
                                        const CFX_Rect& rtDisp,
                                        int32_t iRotate) const {
-  CFX_SizeF sz;
-  GetPageSize(sz);
+  CFX_SizeF sz = GetPageSize();
   CFX_RectF fdePage;
   fdePage.Set(0, 0, sz.x, sz.y);
   GetPageMatrix(mt, fdePage, rtDisp, iRotate, 0);
@@ -373,8 +389,7 @@ void CXFA_FFTabOrderPageWidgetIterator::OrderContainer(
       CXFA_TabParam* pParam = new CXFA_TabParam;
       pParam->m_pWidget = hWidget;
       tabParams.Add(pParam);
-      if (XFA_IsLayoutElement(pSearchItem->GetFormNode()->GetElementType(),
-                              TRUE)) {
+      if (IsLayoutElement(pSearchItem->GetFormNode()->GetElementType(), true)) {
         OrderContainer(sIterator, pSearchItem, pParam, bCurrentItem,
                        bContentArea, bMarsterPage);
       }

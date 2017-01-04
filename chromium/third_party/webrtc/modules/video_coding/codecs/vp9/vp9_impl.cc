@@ -81,6 +81,7 @@ VP9EncoderImpl::VP9EncoderImpl()
       // Use two spatial when screensharing with flexible mode.
       spatial_layer_(new ScreenshareLayersVP9(2)) {
   memset(&codec_, 0, sizeof(codec_));
+  memset(&svc_internal_.svc_params, 0, sizeof(vpx_svc_extra_cfg_t));
   uint32_t seed = rtc::Time32();
   srand(seed);
 }
@@ -559,6 +560,7 @@ void VP9EncoderImpl::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
                                            uint32_t timestamp) {
   assert(codec_specific != NULL);
   codec_specific->codecType = kVideoCodecVP9;
+  codec_specific->codec_name = ImplementationName();
   CodecSpecificInfoVP9* vp9_info = &(codec_specific->codecSpecific.VP9);
   // TODO(asapersson): Set correct value.
   vp9_info->inter_pic_predicted =
@@ -929,14 +931,16 @@ int VP9DecoderImpl::Decode(const EncodedImage& input_image,
   // It may be released by libvpx during future vpx_codec_decode or
   // vpx_codec_destroy calls.
   img = vpx_codec_get_frame(decoder_, &iter);
-  int ret = ReturnFrame(img, input_image._timeStamp);
+  int ret = ReturnFrame(img, input_image._timeStamp, input_image.ntp_time_ms_);
   if (ret != 0) {
     return ret;
   }
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
+int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img,
+                                uint32_t timestamp,
+                                int64_t ntp_time_ms) {
   if (img == NULL) {
     // Decoder OK and NULL image => No show frame.
     return WEBRTC_VIDEO_CODEC_NO_OUTPUT;
@@ -962,6 +966,7 @@ int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
 
   VideoFrame decoded_image(img_wrapped_buffer, timestamp,
                            0 /* render_time_ms */, webrtc::kVideoRotation_0);
+  decoded_image.set_ntp_time_ms(ntp_time_ms);
 
   int ret = decode_complete_callback_->Decoded(decoded_image);
   if (ret != 0)

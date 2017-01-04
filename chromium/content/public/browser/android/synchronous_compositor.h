@@ -10,7 +10,9 @@
 #include <memory>
 
 #include "base/memory/ref_counted.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
+#include "cc/resources/returned_resource.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
@@ -51,27 +53,51 @@ class CONTENT_EXPORT SynchronousCompositor {
     Frame(Frame&& rhs);
     Frame& operator=(Frame&& rhs);
 
-    uint32_t output_surface_id;
+    uint32_t compositor_frame_sink_id;
     std::unique_ptr<cc::CompositorFrame> frame;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(Frame);
   };
 
-  // "On demand" hardware draw. The content is first clipped to |damage_area|,
-  // then transformed through |transform|, and finally clipped to |view_size|.
+  class FrameFuture : public base::RefCountedThreadSafe<FrameFuture> {
+   public:
+    FrameFuture();
+    void setFrame(std::unique_ptr<Frame> frame);
+    std::unique_ptr<Frame> getFrame();
+
+   private:
+    friend class base::RefCountedThreadSafe<FrameFuture>;
+    ~FrameFuture();
+
+    base::WaitableEvent waitable_event_;
+    std::unique_ptr<Frame> frame_;
+#if DCHECK_IS_ON()
+    bool waited_ = false;
+#endif
+  };
+
+  // "On demand" hardware draw. Parameters are used by compositor for this draw.
+  // |viewport_size| is the current size to improve results during resize.
+  // |viewport_rect_for_tile_priority| and |transform_for_tile_priority| are
+  // used to customize the tiling decisions of compositor.
   virtual Frame DemandDrawHw(
-      const gfx::Size& surface_size,
-      const gfx::Transform& transform,
-      const gfx::Rect& viewport,
-      const gfx::Rect& clip,
+      const gfx::Size& viewport_size,
+      const gfx::Rect& viewport_rect_for_tile_priority,
+      const gfx::Transform& transform_for_tile_priority) = 0;
+
+  // Same as DemandDrawHw, but uses asynchronous IPC messages. Calls
+  // SynchronousCompositorClient::OnDrawHardwareProcessFrame to return the
+  // frame.
+  virtual void DemandDrawHwAsync(
+      const gfx::Size& viewport_size,
       const gfx::Rect& viewport_rect_for_tile_priority,
       const gfx::Transform& transform_for_tile_priority) = 0;
 
   // For delegated rendering, return resources from parent compositor to this.
   // Note that all resources must be returned before ReleaseHwDraw.
-  virtual void ReturnResources(uint32_t output_surface_id,
-                               const cc::CompositorFrameAck& frame_ack) = 0;
+  virtual void ReturnResources(uint32_t compositor_frame_sink_id,
+                               const cc::ReturnedResourceArray& resources) = 0;
 
   // "On demand" SW draw, into the supplied canvas (observing the transform
   // and clip set there-in).

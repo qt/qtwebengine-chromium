@@ -5,8 +5,8 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "core/fxcodec/codec/codec_int.h"
-#include "core/fxcodec/include/fx_codec.h"
-#include "core/fxge/include/fx_dib.h"
+#include "core/fxcodec/fx_codec.h"
+#include "core/fxge/fx_dib.h"
 
 extern "C" {
 #include "third_party/libtiff/tiffiop.h"
@@ -77,6 +77,10 @@ void _TIFFmemcpy(void* des, const void* src, tmsize_t size) {
 
 int _TIFFmemcmp(const void* ptr1, const void* ptr2, tmsize_t size) {
   return FXSYS_memcmp(ptr1, ptr2, (size_t)size);
+}
+
+int _TIFFIfMultiplicationOverflow(tmsize_t op1, tmsize_t op2) {
+  return op1 > std::numeric_limits<tmsize_t>::max() / op2;
 }
 
 TIFFErrorHandler _TIFFwarningHandler = nullptr;
@@ -253,7 +257,7 @@ bool CCodec_TiffContext::IsSupport(const CFX_DIBitmap* pDIBitmap) const {
   if (TIFFIsTiled(m_tif_ctx))
     return false;
 
-  uint16_t photometric;
+  uint16_t photometric = 0;
   if (!TIFFGetField(m_tif_ctx, TIFFTAG_PHOTOMETRIC, &photometric))
     return false;
 
@@ -272,7 +276,7 @@ bool CCodec_TiffContext::IsSupport(const CFX_DIBitmap* pDIBitmap) const {
     default:
       return false;
   }
-  uint16_t planarconfig;
+  uint16_t planarconfig = 0;
   if (!TIFFGetFieldDefaulted(m_tif_ctx, TIFFTAG_PLANARCONFIG, &planarconfig))
     return false;
 
@@ -280,9 +284,9 @@ bool CCodec_TiffContext::IsSupport(const CFX_DIBitmap* pDIBitmap) const {
 }
 
 void CCodec_TiffContext::SetPalette(CFX_DIBitmap* pDIBitmap, uint16_t bps) {
-  uint16_t* red_orig;
-  uint16_t* green_orig;
-  uint16_t* blue_orig;
+  uint16_t* red_orig = nullptr;
+  uint16_t* green_orig = nullptr;
+  uint16_t* blue_orig = nullptr;
   TIFFGetField(m_tif_ctx, TIFFTAG_COLORMAP, &red_orig, &green_orig, &blue_orig);
   for (int32_t i = (1L << bps) - 1; i >= 0; i--) {
 #define CVT(x) ((uint16_t)((x) >> 8))
@@ -417,8 +421,8 @@ bool CCodec_TiffContext::Decode(CFX_DIBitmap* pDIBitmap) {
       return true;
     }
   }
-  uint16_t spp;
-  uint16_t bps;
+  uint16_t spp = 0;
+  uint16_t bps = 0;
   TIFFGetField(m_tif_ctx, TIFFTAG_SAMPLESPERPIXEL, &spp);
   TIFFGetField(m_tif_ctx, TIFFTAG_BITSPERSAMPLE, &bps);
   uint32_t bpp = bps * spp;

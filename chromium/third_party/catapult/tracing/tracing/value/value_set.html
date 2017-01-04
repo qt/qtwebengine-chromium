@@ -6,67 +6,66 @@ found in the LICENSE file.
 -->
 
 <link rel="import" href="/tracing/base/iteration_helpers.html">
-<link rel="import" href="/tracing/value/numeric.html">
-<link rel="import" href="/tracing/value/unit.html">
-<link rel="import" href="/tracing/value/value.html">
+<link rel="import" href="/tracing/value/histogram.html">
 
 <script>
 'use strict';
 
 tr.exportTo('tr.v', function() {
-  var SUMMARY_VALUE_MAP_DIAGNOSTIC_NAME = 'summary values';
-  var ITERATION_INFO_DIAGNOSTIC_NAME = 'iteration';
-
-  function ValueSet(opt_values) {
-    this.values_ = {};
-
-    if (opt_values !== undefined)
-      opt_values.forEach(this.addValue, this);
+  /*
+   * See ValueSet.groupHistogramsRecursively() and
+   * tr-ui-b-grouping-table-groupby-picker.
+   */
+  class HistogramGrouping {
+    /**
+     * @param {string} key
+     * @param {!function(!tr.v.Histogram):string} callback
+     * @param {string=} opt_label
+     */
+    constructor(key, callback, opt_label) {
+      this.key = key;
+      this.callback = callback;
+      this.label = opt_label || key;
+    }
   }
 
-  ValueSet.prototype = {
+  class ValueSet {
+    constructor(opt_values) {
+      this.values_ = new Map();
+
+      if (opt_values !== undefined)
+        for (var value of opt_values)
+          this.addHistogram(value);
+    }
+
     get valueDicts() {
-      return this.map(function(v) {
-        return v.asDict();
-      });
-    },
+      return this.map(v => v.asDict());
+    }
 
-    lookup: function(guid) {
-      return this.values_[guid];
-    },
+    lookup(guid) {
+      return this.values_.get(guid);
+    }
 
-    /**
-     * @param {!function(!tr.v.Value):*} callback
-     * @param {*=} opt_this
-     */
-    map: function(callback, opt_this) {
-      return tr.b.dictionaryValues(this.values_).map(
-          callback, opt_this || this);
-    },
+    get length() {
+      return this.values_.size;
+    }
 
-    get organizedByName() {
-      return this.getValuesOrganizedByCallback(function(value) {
-        return value.name;
-      });
-    },
+    toArray() {
+      return [...this];
+    }
+
+    *[Symbol.iterator]() {
+      for (var [guid, value] of this.values_)
+        yield value;
+    }
 
     /**
-     * @param {!function(!tr.v.Value):*} callback
+     * @param {!function(!tr.v.Histogram):*} callback
      * @param {*=} opt_this
-     * @return {!Object}
      */
-    getValuesOrganizedByCallback: function(callback, opt_this) {
-      var valuesByCallback = {};
-      tr.b.iterItems(this.values_, function(guid, value) {
-        var key = callback.call(opt_this || this, value);
-        if (key === undefined)
-          return;
-        if (valuesByCallback[key] === undefined)
-          valuesByCallback[key] = [];
-        valuesByCallback[key].push(value);
-      });
-      return valuesByCallback;
-    },
+    map(callback, opt_this) {
+      return this.toArray().map(callback, opt_this || this);
+    }
 
     /**
      * Convert Values from dicts and add them.
@@ -74,11 +73,9 @@ tr.exportTo('tr.v', function() {
      *
      * @param {Array.<Object>} dicts
      */
-    addValuesFromDicts: function(dicts) {
-      dicts.forEach(function(dict) {
-        var value = tr.v.Value.fromDict(dict);
-        this.addValue(value);
-      }, this);
+    addValuesFromDicts(dicts) {
+      for (var dict of dicts)
+        this.addHistogram(tr.v.Histogram.fromDict(dict));
 
       // Now resolve the RelatedValueSet references between values.
       // This resolution process must wait until all new values are added in
@@ -88,81 +85,146 @@ tr.exportTo('tr.v', function() {
       // The expected running time is this: for each value (hundreds to
       // thousands?), for each diagnostic that is a RelatedValueSet (0-5?), for
       // each ValueRef (0-10?), do a hash lookup (constant time?).
-      tr.b.iterItems(this.values_, function(guid, value) {
-        value.diagnostics.forEach(function(name, diagnostic) {
+      for (var value of this) {
+        for (var [name, diagnostic] of value.diagnostics) {
           if ((diagnostic instanceof tr.v.d.RelatedValueSet) ||
-              (diagnostic instanceof tr.v.d.RelatedValueMap))
+              (diagnostic instanceof tr.v.d.RelatedValueMap)) {
             diagnostic.resolve(this);
-        }, this);
-      }, this);
-    },
+          }
+        }
+
+        // In addition to Values, we must also look inside of Histogram samples.
+        for (var bin of value.allBins) {
+          for (var dm of bin.diagnosticMaps) {
+            for (var [name, diagnostic] of dm) {
+              if ((diagnostic instanceof tr.v.d.RelatedValueSet) ||
+                  (diagnostic instanceof tr.v.d.RelatedValueMap)) {
+                diagnostic.resolve(this);
+              }
+            }
+          }
+        }
+      }
+    }
 
     /**
      * Find the Values that are not contained in any other Values'
      * RelatedValueSet or RelatedValueMap diagnostics.
      *
-     * @return {!Array.<!tr.v.Value>}
+     * @return {!Array.<!tr.v.Histogram>}
      */
     get sourceValues() {
-      var sourceValues = tr.b.cloneDictionary(this.values_);
-      // If a Value is in a RelatedValueSet or RelatedValueMap, then it is not a
-      // source Value.
-      this.map(function(value) {
-        value.diagnostics.forEach(function(name, diagnostic) {
-          if ((diagnostic instanceof tr.v.d.RelatedValueSet) ||
-              (diagnostic instanceof tr.v.d.RelatedValueMap)) {
-            diagnostic.values.forEach(function(relatedValue) {
-              delete sourceValues[relatedValue.guid];
-            });
+      var sourceValues = new Map(this.values_);
+      // If a Histogram is in a RelatedValueSet or RelatedValueMap, which can be
+      // owned either by Values or by numeric samples, then it is not a
+      // source Histogram.
+      function deleteSourceValues(diagnosticMap) {
+        for (var [name, diagnostic] of diagnosticMap) {
+          if (diagnostic instanceof tr.v.d.RelatedValueSet)
+            for (var relatedValue of diagnostic)
+              sourceValues.delete(relatedValue.guid);
+          else if (diagnostic instanceof tr.v.d.RelatedValueMap)
+            for (var [name, relatedValue] of diagnostic)
+              sourceValues.delete(relatedValue.guid);
+        }
+      }
+
+      for (var hist of this) {
+        deleteSourceValues(hist.diagnostics);
+        for (var b of hist.allBins) {
+          for (var dm of b.diagnosticMaps) {
+            deleteSourceValues(dm);
           }
-        }, this);
-      }, this);
-      return tr.b.dictionaryValues(sourceValues);
-    },
-
-    getValuesWithName: function(name) {
-      return tr.b.dictionaryValues(this.values_).filter(function(value) {
-        return value.name.indexOf(name) > -1;
-      });
-    },
-
-    addValue: function(v) {
-      if (this.values_[v.guid]) {
-        var err = new Error('Tried to add same value twice');
-        err.name = 'ValueError';
-        throw err;
+        }
       }
-
-      this.values_[v.guid] = v;
-
-      if (v.numeric instanceof tr.v.Numeric) {
-        ValueSet.computeSummaryValuesForNumericValue(v).forEach(function(s) {
-          this.addValue(s);
-        }, this);
-      }
+      return new ValueSet([...sourceValues.values()]);
     }
-  };
 
-  ValueSet.computeSummaryValuesForNumericValue = function(value) {
-    if (!(value instanceof tr.v.NumericValue &&
-          value.numeric instanceof tr.v.Numeric))
-      throw new Error('Tried to compute summary values for non-numeric');
+    getValuesNamed(name) {
+      return this.toArray().filter(h => h.name === name);
+    }
 
-    var summaryValueMap = new tr.v.d.RelatedValueMap();
-    value.diagnostics.add(SUMMARY_VALUE_MAP_DIAGNOSTIC_NAME, summaryValueMap);
-    var options = {description: value.description};
-    var stats = value.numeric.getSummarizedScalarNumericsWithNames();
-    return stats.map(function(stat) {
-      var summaryValue = new tr.v.NumericValue(
-          value.name + '_' + stat.name, stat.scalar, options);
-      summaryValueMap.set(stat.name, summaryValue);
-      return summaryValue;
-    });
+    /**
+     * @param {!tr.v.Histogram} h
+     */
+    addHistogram(h) {
+      if (this.values_.get(h.guid))
+        throw new Error('Cannot add same Histogram twice');
+
+      this.values_.set(h.guid, h);
+    }
+
+    /**
+     * Return a nested Map, whose keys are strings and leaf values are Arrays of
+     * Histograms.
+     * See GROUPINGS for example |groupings|.
+     * Groupings are skipped when |opt_skipGroupingCallback| is specified and
+     * returns true.
+     *
+     * @typedef {!Array.<tr.v.Histogram>} HistogramArray
+     * @typedef {!Map.<string,!(HistogramArray|HistogramArrayMap)>}
+     *   HistogramArrayMap
+     * @typedef {!Map.<string,!HistogramArray>} LeafHistogramArrayMap
+     *
+     * @param {!Array.<!tr.v.HistogramGrouping>} groupings
+     * @param {!function(!Grouping, !LeafHistogramArrayMap):boolean=}
+     *   opt_skipGroupingCallback
+     *
+     * @return {!(HistogramArray|HistogramArrayMap)}
+     */
+    groupHistogramsRecursively(groupings, opt_skipGroupingCallback) {
+      function recurse(histograms, level) {
+        if (level === groupings.length) {
+          return histograms;  // recursion base case
+        }
+
+        var grouping = groupings[level]
+        var groupedHistograms = tr.b.groupIntoMap(
+            histograms, grouping.callback);
+
+        if (opt_skipGroupingCallback && opt_skipGroupingCallback(
+              grouping, groupedHistograms)) {
+          return recurse(histograms, level + 1);
+        }
+
+        for (var [key, group] of groupedHistograms) {
+          groupedHistograms.set(key, recurse(group, level + 1));
+        }
+
+        return groupedHistograms;
+      }
+
+      return recurse(this.toArray(), 0);
+    }
+  }
+
+  // This does not contain storyGroupingKeys!
+  ValueSet.GROUPINGS = {
+    HISTOGRAM_NAME: new HistogramGrouping('name', h => h.name),
+
+    BENCHMARK_NAME: new HistogramGrouping('benchmark',
+        h => tr.v.d.IterationInfo.getField(h, 'benchmarkName', '')),
+
+    BENCHMARK_START: new HistogramGrouping('time',
+        h => tr.v.d.IterationInfo.getField(h, 'benchmarkStartString', '')),
+
+    STORYSET_REPEAT: new HistogramGrouping('storyset repeat',
+        h => tr.v.d.IterationInfo.getField(
+            h, 'storysetRepeatCounterLabel', 0)),
+
+    STORY_REPEAT: new HistogramGrouping('story repeat',
+        h => tr.v.d.IterationInfo.getField(
+            h, 'storyRepeatCounterLabel', 0)),
+
+    STORY_NAME: new HistogramGrouping('story',
+        h => tr.v.d.IterationInfo.getField(h, 'storyDisplayName', '')),
+
+    DISPLAY_LABEL: new HistogramGrouping('label',
+        h => tr.v.d.IterationInfo.getField(h, 'displayLabel', 'Value'))
   };
 
   return {
-    SUMMARY_VALUE_MAP_DIAGNOSTIC_NAME: SUMMARY_VALUE_MAP_DIAGNOSTIC_NAME,
-    ITERATION_INFO_DIAGNOSTIC_NAME: ITERATION_INFO_DIAGNOSTIC_NAME,
+    HistogramGrouping: HistogramGrouping,
     ValueSet: ValueSet
   };
 });

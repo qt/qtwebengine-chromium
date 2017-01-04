@@ -16,20 +16,28 @@ class LayoutRect;
 class LayoutImage;
 
 class ImagePainter {
-    STACK_ALLOCATED();
-public:
-    ImagePainter(const LayoutImage& layoutImage) : m_layoutImage(layoutImage) { }
+  STACK_ALLOCATED();
 
-    void paint(const PaintInfo&, const LayoutPoint& paintOffset);
-    void paintReplaced(const PaintInfo&, const LayoutPoint& paintOffset);
-    void paintIntoRect(GraphicsContext&, const LayoutRect&);
+ public:
+  ImagePainter(const LayoutImage& layoutImage) : m_layoutImage(layoutImage) {}
 
-private:
-    void paintAreaElementFocusRing(const PaintInfo&, const LayoutPoint& paintOffset);
+  void paint(const PaintInfo&, const LayoutPoint& paintOffset);
+  void paintReplaced(const PaintInfo&, const LayoutPoint& paintOffset);
 
-    const LayoutImage& m_layoutImage;
+  // Paint the image into |destRect|, after clipping by |contentRect|. Both
+  // |destRect| and |contentRect| should be in local coordinates plus the paint
+  // offset.
+  void paintIntoRect(GraphicsContext&,
+                     const LayoutRect& destRect,
+                     const LayoutRect& contentRect);
+
+ private:
+  void paintAreaElementFocusRing(const PaintInfo&,
+                                 const LayoutPoint& paintOffset);
+
+  const LayoutImage& m_layoutImage;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // ImagePainter_h
+#endif  // ImagePainter_h

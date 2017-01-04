@@ -140,6 +140,7 @@ class IdlType(IdlTypeBase):
     # to support types like short?[] vs. short[]?, instead of treating these
     # as orthogonal properties (via flags).
     callback_functions = set(STANDARD_CALLBACK_FUNCTIONS)
+    experimental_callback_functions = {}
     callback_interfaces = set()
     dictionaries = set()
     enums = {}  # name -> values
@@ -169,6 +170,10 @@ class IdlType(IdlTypeBase):
     @property
     def is_callback_function(self):
         return self.base_type in IdlType.callback_functions
+
+    @property
+    def is_experimental_callback_function(self):  # pylint: disable=C0103
+        return self.base_type in IdlType.experimental_callback_functions
 
     @property
     def is_callback_interface(self):
@@ -234,6 +239,10 @@ class IdlType(IdlTypeBase):
     @classmethod
     def set_callback_functions(cls, new_callback_functions):
         cls.callback_functions.update(new_callback_functions)
+
+    @classmethod
+    def set_experimental_callback_functions(cls, new_callback_functions):
+        cls.experimental_callback_functions.update(new_callback_functions)
 
     @classmethod
     def set_callback_interfaces(cls, new_callback_interfaces):
@@ -363,6 +372,14 @@ class IdlArrayOrSequenceType(IdlTypeBase):
         return True
 
     @property
+    def is_array_type(self):
+        return False
+
+    @property
+    def is_sequence_type(self):
+        return False
+
+    @property
     def is_frozen_array(self):
         return False
 
@@ -391,6 +408,10 @@ class IdlArrayType(IdlArrayOrSequenceType):
     def name(self):
         return self.element_type.name + 'Array'
 
+    @property
+    def is_array_type(self):
+        return True
+
 
 class IdlSequenceType(IdlArrayOrSequenceType):
     def __init__(self, element_type):
@@ -402,6 +423,10 @@ class IdlSequenceType(IdlArrayOrSequenceType):
     @property
     def name(self):
         return self.element_type.name + 'Sequence'
+
+    @property
+    def is_sequence_type(self):
+        return True
 
 
 class IdlFrozenArrayType(IdlArrayOrSequenceType):
@@ -418,7 +443,6 @@ class IdlFrozenArrayType(IdlArrayOrSequenceType):
     @property
     def is_frozen_array(self):
         return True
-
 
 
 ################################################################################

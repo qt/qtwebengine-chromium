@@ -35,7 +35,7 @@ BRANDINGS = [
 USAGE = """Usage: %prog TARGET_OS TARGET_ARCH [options] -- [configure_args]
 
 Valid combinations are android     [ia32|x64|mipsel|mips64el|arm-neon|arm64]
-                       linux       [ia32|x64|mipsel|arm|arm-neon|arm64]
+                       linux       [ia32|x64|mipsel|mips64el|arm|arm-neon|arm64]
                        linux-noasm [x64]
                        mac         [x64]
                        win         [ia32|x64]
@@ -51,6 +51,9 @@ Platform specific build notes:
   linux mipsel:
     Script must be run inside of ChromeOS SimpleChrome setup:
         cros chrome-sdk --board=mipsel-o32-generic --use-external-config
+
+  linux mips64el:
+    Script can run on a normal Ubuntu with mips64el cross-toolchain in $PATH.
 
   linux arm/arm-neon:
     Script must be run inside of ChromeOS SimpleChrome setup:
@@ -229,11 +232,11 @@ def BuildFFmpeg(target_os, target_arch, host_os, host_arch, parallel_jobs,
           'Host arch : %s\n'
           'Target arch : %s\n' % (host_os, target_os, host_arch, target_arch))
 
-  if target_arch in ('arm', 'arm-neon'):
+  if target_arch in ('arm', 'arm-neon', 'arm64'):
     RewriteFile(
         os.path.join(config_dir, 'config.h'),
         r'(#define HAVE_VFP_ARGS [01])',
-        r'/* \1 -- Disabled to allow softfp/hardfp selection at gyp time */')
+        (r'/* \1 -- softfp/hardfp selection is done by the chrome build */'))
 
 
 def main(argv):
@@ -243,7 +246,7 @@ def main(argv):
                     help='Branding to build; determines e.g. supported codecs')
   parser.add_option('--config-only', action='store_true',
                     help='Skip the build step. Useful when a given platform '
-                    'is not necessary for generate_gyp.py')
+                    'is not necessary for generate_gn.py')
   options, args = parser.parse_args(argv)
 
   if len(args) < 2:
@@ -398,7 +401,8 @@ def main(argv):
             # av_get_cpu_flags() is run outside of the sandbox when enabled.
             '--enable-neon',
             '--extra-cflags=-mtune=generic-armv7-a',
-            # NOTE: softfp/hardfp selected at gyp time.
+            # Enabling softfp lets us choose either softfp or hardfp when doing
+            # the chrome build.
             '--extra-cflags=-mfloat-abi=softfp',
         ])
         if target_arch == 'arm-neon':
@@ -417,7 +421,7 @@ def main(argv):
             '--target-os=linux',
             '--cross-prefix=armv7a-cros-linux-gnueabi-',
             '--extra-cflags=-mtune=cortex-a8',
-            # NOTE: softfp/hardfp selected at gyp time.
+            # NOTE: we don't need softfp for this hardware.
             '--extra-cflags=-mfloat-abi=hard',
         ])
 
@@ -464,14 +468,30 @@ def main(argv):
           '--disable-mipsdsp',
           '--disable-mipsdspr2',
       ])
-    elif target_arch == 'mips64el' and target_os == "android":
-      configure_flags['Common'].extend([
-          '--arch=mips',
-          '--cpu=i6400',
-          '--extra-cflags=-mhard-float',
-          '--extra-cflags=-mips64r6',
-          '--disable-msa',
+    elif target_arch == 'mips64el':
+      if target_os != "android":
+        configure_flags['Common'].extend([
+            '--enable-cross-compile',
+            '--cross-prefix=mips64el-linux-gnuabi64-',
+            '--target-os=linux',
+            '--arch=mips',
+            '--extra-cflags=-mips64r2',
+            '--extra-cflags=-EL',
+            '--extra-ldflags=-mips64r2',
+            '--extra-ldflags=-EL',
+            '--disable-mipsfpu',
+            '--disable-mipsdsp',
+            '--disable-mipsdspr2',
+            '--disable-mips32r2',
       ])
+      else:
+        configure_flags['Common'].extend([
+            '--arch=mips',
+            '--cpu=i6400',
+            '--extra-cflags=-mhard-float',
+            '--extra-cflags=-mips64r6',
+            '--disable-msa',
+        ])
     else:
       print('Error: Unknown target arch %r for target OS %r!' % (
           target_arch, target_os), file=sys.stderr)

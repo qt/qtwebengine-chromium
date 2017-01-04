@@ -13,6 +13,7 @@
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_collections.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/trees/layer_tree.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
 
@@ -33,7 +34,7 @@ void SynchronizeTreesInternal(LayerTreeType* source_tree,
 
   PushLayerList(&old_layer_map, source_tree, tree_impl);
 
-  for (int id : property_trees->effect_tree.mask_replica_layer_ids()) {
+  for (int id : property_trees->effect_tree.mask_layer_ids()) {
     std::unique_ptr<LayerImpl> layer_impl(ReuseOrCreateLayerImpl(
         &old_layer_map, source_tree->LayerById(id), tree_impl));
     tree_impl->AddLayer(std::move(layer_impl));
@@ -45,8 +46,8 @@ void TreeSynchronizer::SynchronizeTrees(Layer* layer_root,
   if (!layer_root) {
     tree_impl->DetachLayers();
   } else {
-    SynchronizeTreesInternal(layer_root->layer_tree_host(), tree_impl,
-                             layer_root->layer_tree_host()->property_trees());
+    SynchronizeTreesInternal(layer_root->GetLayerTree(), tree_impl,
+                             layer_root->GetLayerTree()->property_trees());
   }
 }
 
@@ -104,7 +105,7 @@ void TreeSynchronizer::PushLayerProperties(LayerTreeImpl* pending_tree,
                               active_tree);
 }
 
-void TreeSynchronizer::PushLayerProperties(LayerTreeHost* host_tree,
+void TreeSynchronizer::PushLayerProperties(LayerTree* host_tree,
                                            LayerTreeImpl* impl_tree) {
   PushLayerPropertiesInternal(host_tree->LayersThatShouldPushProperties(),
                               impl_tree);

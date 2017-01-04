@@ -23,8 +23,10 @@
 #include "content/renderer/media/webmediaplayer_ms_compositor.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_thread_impl.h"
+#include "media/base/media_content_type.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_rotation.h"
 #include "media/base/video_types.h"
 #include "media/blink/webmediaplayer_util.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
@@ -57,6 +59,7 @@ WebMediaPlayerMS::WebMediaPlayerMS(
       paused_(true),
       render_frame_suspended_(false),
       received_first_frame_(false),
+      video_rotation_(media::VIDEO_ROTATION_0),
       media_log_(media_log),
       renderer_factory_(std::move(factory)),
       media_task_runner_(media_task_runner),
@@ -70,7 +73,7 @@ WebMediaPlayerMS::WebMediaPlayerMS(
       volume_(1.0),
       volume_multiplier_(1.0),
       should_play_upon_shown_(false) {
-  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << __func__;
   DCHECK(client);
   if (delegate_)
     delegate_id_ = delegate_->AddObserver(this);
@@ -80,7 +83,7 @@ WebMediaPlayerMS::WebMediaPlayerMS(
 }
 
 WebMediaPlayerMS::~WebMediaPlayerMS() {
-  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
 
   // Destruct compositor resources in the proper order.
@@ -108,7 +111,7 @@ WebMediaPlayerMS::~WebMediaPlayerMS() {
 void WebMediaPlayerMS::load(LoadType load_type,
                             const blink::WebMediaPlayerSource& source,
                             CORSMode /*cors_mode*/) {
-  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
 
   // TODO(acolwell): Change this to DCHECK_EQ(load_type, LoadTypeMediaStream)
@@ -162,7 +165,7 @@ void WebMediaPlayerMS::load(LoadType load_type,
 }
 
 void WebMediaPlayerMS::play() {
-  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PLAY));
@@ -183,14 +186,14 @@ void WebMediaPlayerMS::play() {
     // here, but that is treated as an unknown duration and assumed to be
     // interactive. See http://crbug.com/595297 for more details.
     delegate_->DidPlay(delegate_id_, hasVideo(), hasAudio(), false,
-                       base::TimeDelta::FromSeconds(1));
+                       media::MediaContentType::Uncontrollable);
   }
 
   paused_ = false;
 }
 
 void WebMediaPlayerMS::pause() {
-  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
 
   should_play_upon_shown_ = false;
@@ -227,7 +230,7 @@ void WebMediaPlayerMS::setRate(double rate) {
 }
 
 void WebMediaPlayerMS::setVolume(double volume) {
-  DVLOG(1) << __FUNCTION__ << "(volume=" << volume << ")";
+  DVLOG(1) << __func__ << "(volume=" << volume << ")";
   DCHECK(thread_checker_.CalledOnValidThread());
   volume_ = volume;
   if (audio_renderer_.get())
@@ -238,7 +241,7 @@ void WebMediaPlayerMS::setSinkId(
     const blink::WebString& sink_id,
     const blink::WebSecurityOrigin& security_origin,
     blink::WebSetSinkIdCallbacks* web_callback) {
-  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
   const media::OutputDeviceStatusCB callback =
       media::ConvertToOutputDeviceStatusCB(web_callback);
@@ -266,6 +269,11 @@ bool WebMediaPlayerMS::hasAudio() const {
 
 blink::WebSize WebMediaPlayerMS::naturalSize() const {
   DCHECK(thread_checker_.CalledOnValidThread());
+  if (video_rotation_ == media::VIDEO_ROTATION_90 ||
+      video_rotation_ == media::VideoRotation::VIDEO_ROTATION_270) {
+    const gfx::Size& current_size = compositor_->GetCurrentSize();
+    return blink::WebSize(current_size.height(), current_size.width());
+  }
   return blink::WebSize(compositor_->GetCurrentSize());
 }
 
@@ -295,13 +303,13 @@ double WebMediaPlayerMS::currentTime() const {
 }
 
 blink::WebMediaPlayer::NetworkState WebMediaPlayerMS::getNetworkState() const {
-  DVLOG(1) << __FUNCTION__ << ", state:" << network_state_;
+  DVLOG(1) << __func__ << ", state:" << network_state_;
   DCHECK(thread_checker_.CalledOnValidThread());
   return network_state_;
 }
 
 blink::WebMediaPlayer::ReadyState WebMediaPlayerMS::getReadyState() const {
-  DVLOG(1) << __FUNCTION__ << ", state:" << ready_state_;
+  DVLOG(1) << __func__ << ", state:" << ready_state_;
   DCHECK(thread_checker_.CalledOnValidThread());
   return ready_state_;
 }
@@ -327,9 +335,8 @@ bool WebMediaPlayerMS::didLoadingProgress() {
 
 void WebMediaPlayerMS::paint(blink::WebCanvas* canvas,
                              const blink::WebRect& rect,
-                             unsigned char alpha,
-                             SkXfermode::Mode mode) {
-  DVLOG(3) << __FUNCTION__;
+                             SkPaint& paint) {
+  DVLOG(3) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
 
   const scoped_refptr<media::VideoFrame> frame =
@@ -346,8 +353,8 @@ void WebMediaPlayerMS::paint(blink::WebCanvas* canvas,
     DCHECK(context_3d.gl);
   }
   const gfx::RectF dest_rect(rect.x, rect.y, rect.width, rect.height);
-  video_renderer_.Paint(frame, canvas, dest_rect, alpha, mode,
-                        media::VIDEO_ROTATION_0, context_3d);
+  video_renderer_.Paint(frame, canvas, dest_rect, paint,
+                        video_rotation_, context_3d);
 }
 
 bool WebMediaPlayerMS::hasSingleSecurityOrigin() const {
@@ -415,10 +422,10 @@ void WebMediaPlayerMS::OnShown() {
 #endif  // defined(OS_ANDROID)
 }
 
-void WebMediaPlayerMS::OnSuspendRequested(bool must_suspend) {
+bool WebMediaPlayerMS::OnSuspendRequested(bool must_suspend) {
 #if defined(OS_ANDROID)
   if (!must_suspend)
-    return;
+    return false;
 
   if (!paused_) {
     pause();
@@ -430,6 +437,7 @@ void WebMediaPlayerMS::OnSuspendRequested(bool must_suspend) {
 
   render_frame_suspended_ = true;
 #endif
+  return true;
 }
 
 void WebMediaPlayerMS::OnPlay() {
@@ -478,7 +486,7 @@ bool WebMediaPlayerMS::copyVideoTextureToPlatformTexture(
 
 void WebMediaPlayerMS::OnFrameAvailable(
     const scoped_refptr<media::VideoFrame>& frame) {
-  DVLOG(3) << __FUNCTION__;
+  DVLOG(3) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
 
   if (render_frame_suspended_)
@@ -501,8 +509,11 @@ void WebMediaPlayerMS::OnFrameAvailable(
     SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
 
     if (video_frame_provider_.get()) {
+      ignore_result(frame->metadata()->GetRotation(
+          media::VideoFrameMetadata::ROTATION, &video_rotation_));
+
       video_weblayer_.reset(new cc_blink::WebLayerImpl(
-          cc::VideoLayer::Create(compositor_.get(), media::VIDEO_ROTATION_0)));
+          cc::VideoLayer::Create(compositor_.get(), video_rotation_)));
       video_weblayer_->layer()->SetContentsOpaque(is_opaque);
       video_weblayer_->SetContentsOpaqueIsFixed(true);
       get_client()->setWebLayer(video_weblayer_.get());
@@ -520,7 +531,7 @@ void WebMediaPlayerMS::OnFrameAvailable(
 }
 
 void WebMediaPlayerMS::RepaintInternal() {
-  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
   get_client()->repaint();
 }

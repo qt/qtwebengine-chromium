@@ -225,7 +225,6 @@ Operand::Operand(Handle<Object> handle) {
   // Verify all Objects referred by code are NOT in new space.
   Object* obj = *handle;
   if (obj->IsHeapObject()) {
-    DCHECK(!HeapObject::cast(obj)->GetHeap()->InNewSpace(obj));
     imm32_ = reinterpret_cast<intptr_t>(handle.location());
     rmode_ = RelocInfo::EMBEDDED_OBJECT;
   } else {
@@ -284,11 +283,9 @@ const Instr kLwSwInstrTypeMask = 0xffe00000;
 const Instr kLwSwInstrArgumentMask  = ~kLwSwInstrTypeMask;
 const Instr kLwSwOffsetMask = kImm16Mask;
 
-
 Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
     : AssemblerBase(isolate, buffer, buffer_size),
-      recorded_ast_id_(TypeFeedbackId::None()),
-      positions_recorder_(this) {
+      recorded_ast_id_(TypeFeedbackId::None()) {
   reloc_info_writer.Reposition(buffer_ + buffer_size_, pc_);
 
   last_trampoline_pool_end_ = 0;
@@ -1977,7 +1974,11 @@ void Assembler::stop(const char* msg, uint32_t code) {
   // The Simulator will handle the stop instruction and get the message address.
   // On MIPS stop() is just a special kind of break_().
   break_(code, true);
-  emit(reinterpret_cast<Instr>(msg));
+  // Do not embed the message string address! We used to do this, but that
+  // made snapshots created from position-independent executable builds
+  // non-deterministic.
+  // TODO(yangguo): remove this field entirely.
+  nop();
 #endif
 }
 
@@ -2452,6 +2453,11 @@ void Assembler::mul_d(FPURegister fd, FPURegister fs, FPURegister ft) {
   GenInstrRegister(COP1, D, ft, fs, fd, MUL_D);
 }
 
+void Assembler::madd_s(FPURegister fd, FPURegister fr, FPURegister fs,
+                       FPURegister ft) {
+  DCHECK(IsMipsArchVariant(kMips32r2));
+  GenInstrRegister(COP1X, fr, ft, fs, fd, MADD_S);
+}
 
 void Assembler::madd_d(FPURegister fd, FPURegister fr, FPURegister fs,
     FPURegister ft) {
@@ -2459,6 +2465,37 @@ void Assembler::madd_d(FPURegister fd, FPURegister fr, FPURegister fs,
   GenInstrRegister(COP1X, fr, ft, fs, fd, MADD_D);
 }
 
+void Assembler::msub_s(FPURegister fd, FPURegister fr, FPURegister fs,
+                       FPURegister ft) {
+  DCHECK(IsMipsArchVariant(kMips32r2));
+  GenInstrRegister(COP1X, fr, ft, fs, fd, MSUB_S);
+}
+
+void Assembler::msub_d(FPURegister fd, FPURegister fr, FPURegister fs,
+                       FPURegister ft) {
+  DCHECK(IsMipsArchVariant(kMips32r2));
+  GenInstrRegister(COP1X, fr, ft, fs, fd, MSUB_D);
+}
+
+void Assembler::maddf_s(FPURegister fd, FPURegister fs, FPURegister ft) {
+  DCHECK(IsMipsArchVariant(kMips32r6));
+  GenInstrRegister(COP1, S, ft, fs, fd, MADDF_S);
+}
+
+void Assembler::maddf_d(FPURegister fd, FPURegister fs, FPURegister ft) {
+  DCHECK(IsMipsArchVariant(kMips32r6));
+  GenInstrRegister(COP1, D, ft, fs, fd, MADDF_D);
+}
+
+void Assembler::msubf_s(FPURegister fd, FPURegister fs, FPURegister ft) {
+  DCHECK(IsMipsArchVariant(kMips32r6));
+  GenInstrRegister(COP1, S, ft, fs, fd, MSUBF_S);
+}
+
+void Assembler::msubf_d(FPURegister fd, FPURegister fs, FPURegister ft) {
+  DCHECK(IsMipsArchVariant(kMips32r6));
+  GenInstrRegister(COP1, D, ft, fs, fd, MSUBF_D);
+}
 
 void Assembler::div_s(FPURegister fd, FPURegister fs, FPURegister ft) {
   GenInstrRegister(COP1, S, ft, fs, fd, DIV_S);
@@ -3009,9 +3046,7 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
   if (rmode >= RelocInfo::COMMENT &&
       rmode <= RelocInfo::DEBUG_BREAK_SLOT_AT_TAIL_CALL) {
     // Adjust code for new modes.
-    DCHECK(RelocInfo::IsDebugBreakSlot(rmode)
-           || RelocInfo::IsComment(rmode)
-           || RelocInfo::IsPosition(rmode));
+    DCHECK(RelocInfo::IsDebugBreakSlot(rmode) || RelocInfo::IsComment(rmode));
     // These modes do not need an entry in the constant pool.
   }
   if (!RelocInfo::IsNone(rinfo.rmode())) {

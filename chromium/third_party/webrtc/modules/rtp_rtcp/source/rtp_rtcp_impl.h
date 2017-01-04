@@ -11,7 +11,6 @@
 #ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_RTCP_IMPL_H_
 #define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_RTCP_IMPL_H_
 
-#include <list>
 #include <set>
 #include <utility>
 #include <vector>
@@ -27,7 +26,7 @@
 
 namespace webrtc {
 
-class ModuleRtpRtcpImpl : public RtpRtcp {
+class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
  public:
   explicit ModuleRtpRtcpImpl(const RtpRtcp::Configuration& configuration);
 
@@ -90,8 +89,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   RTCPSender::FeedbackState GetFeedbackState();
 
-  int CurrentSendFrequencyHz() const;
-
   void SetRtxSendStatus(int mode) override;
   int RtxSendStatus() const override;
 
@@ -112,14 +109,15 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   // Used by the codec module to deliver a video or audio frame for
   // packetization.
-  int32_t SendOutgoingData(FrameType frame_type,
-                           int8_t payload_type,
-                           uint32_t time_stamp,
-                           int64_t capture_time_ms,
-                           const uint8_t* payload_data,
-                           size_t payload_size,
-                           const RTPFragmentationHeader* fragmentation = NULL,
-                           const RTPVideoHeader* rtp_video_hdr = NULL) override;
+  bool SendOutgoingData(FrameType frame_type,
+                        int8_t payload_type,
+                        uint32_t time_stamp,
+                        int64_t capture_time_ms,
+                        const uint8_t* payload_data,
+                        size_t payload_size,
+                        const RTPFragmentationHeader* fragmentation,
+                        const RTPVideoHeader* rtp_video_header,
+                        uint32_t* transport_frame_id_out) override;
 
   bool TimeToSendPacket(uint32_t ssrc,
                         uint16_t sequence_number,
@@ -204,7 +202,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   void SetTMMBRStatus(bool enable) override;
 
-  void SetTMMBN(const std::vector<rtcp::TmmbItem>* bounding_set);
+  void SetTmmbn(std::vector<rtcp::TmmbItem> bounding_set) override;
 
   uint16_t MaxPayloadLength() const override;
 
@@ -265,12 +263,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
                                     uint16_t time_ms,
                                     uint8_t level) override;
 
-  // Set payload type for Redundant Audio Data RFC 2198.
-  int32_t SetSendREDPayloadType(int8_t payload_type) override;
-
-  // Get payload type for Redundant Audio Data RFC 2198.
-  int32_t SendREDPayloadType(int8_t* payload_type) const override;
-
   // Store the audio level in d_bov for header-extension-for-audio-level-
   // indication.
   int32_t SetAudioLevel(uint8_t level_d_bov) override;
@@ -284,8 +276,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   // Send a request for a keyframe.
   int32_t RequestKeyFrame() override;
-
-  void SetTargetSendBitrate(uint32_t bitrate_bps) override;
 
   void SetGenericFECStatus(bool enable,
                            uint8_t payload_type_red,
@@ -302,9 +292,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
                        uint32_t* NTPfrac,
                        uint32_t* remote_sr) const;
 
-  bool LastReceivedXrReferenceTimeInfo(RtcpReceiveTimeInfo* info) const;
-
-  int32_t BoundingSet(bool* tmmbr_owner, TMMBRSet* bounding_set_rec);
+  std::vector<rtcp::TmmbItem> BoundingSet(bool* tmmbr_owner);
 
   void BitrateSent(uint32_t* total_rate,
                    uint32_t* video_rate,
@@ -319,10 +307,11 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   StreamDataCountersCallback* GetSendChannelRtpStatisticsCallback()
       const override;
 
-  void OnReceivedNACK(const std::list<uint16_t>& nack_sequence_numbers);
-  void OnReceivedRtcpReportBlocks(const ReportBlockList& report_blocks);
-
-  void OnRequestSendReport();
+  void OnReceivedNack(
+      const std::vector<uint16_t>& nack_sequence_numbers) override;
+  void OnReceivedRtcpReportBlocks(
+      const ReportBlockList& report_blocks) override;
+  void OnRequestSendReport() override;
 
  protected:
   bool UpdateRTCPReceiveInformationTimers();

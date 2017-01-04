@@ -48,11 +48,12 @@ function TreeOutline(nonFocusable)
     this.element = this.contentElement;
 }
 
+/** @enum {symbol} */
 TreeOutline.Events = {
-    ElementAttached: "ElementAttached",
-    ElementExpanded: "ElementExpanded",
-    ElementCollapsed: "ElementCollapsed",
-    ElementSelected: "ElementSelected"
+    ElementAttached: Symbol("ElementAttached"),
+    ElementExpanded: Symbol("ElementExpanded"),
+    ElementCollapsed: Symbol("ElementCollapsed"),
+    ElementSelected: Symbol("ElementSelected")
 }
 
 TreeOutline.prototype = {
@@ -341,6 +342,11 @@ TreeOutlineInShadow.prototype = {
         this._disclosureElement.classList.add("tree-outline-disclosure-hide-overflow");
     },
 
+    makeDense: function()
+    {
+        this.contentElement.classList.add("tree-outline-dense");
+    },
+
     __proto__: TreeOutline.prototype
 }
 
@@ -362,7 +368,6 @@ function TreeElement(title, expandable)
     if (title)
         this.title = title;
     this._listItemNode.addEventListener("mousedown", this._handleMouseDown.bind(this), false);
-    this._listItemNode.addEventListener("selectstart", this._treeElementSelectStart.bind(this), false);
     this._listItemNode.addEventListener("click", this._treeElementToggled.bind(this), false);
     this._listItemNode.addEventListener("dblclick", this._handleDoubleClick.bind(this), false);
 
@@ -773,25 +778,10 @@ TreeElement.prototype = {
     /**
      * @param {!Event} event
      */
-    _treeElementSelectStart: function(event)
-    {
-        event.currentTarget._selectionStarted = true;
-    },
-
-    /**
-     * @param {!Event} event
-     */
     _treeElementToggled: function(event)
     {
         var element = event.currentTarget;
-        if (element._selectionStarted) {
-            delete element._selectionStarted;
-            var selection = element.getComponentSelection();
-            if (selection && !selection.isCollapsed && element.isSelfOrAncestor(selection.anchorNode) && element.isSelfOrAncestor(selection.focusNode))
-                return;
-        }
-
-        if (element.treeElement !== this)
+        if (element.treeElement !== this || element.hasSelection())
             return;
 
         var toggleOnClick = this.toggleOnClick && !this.selectable;
@@ -824,8 +814,6 @@ TreeElement.prototype = {
         var element = event.currentTarget;
         if (!element)
             return;
-        delete element._selectionStarted;
-
         if (!this.selectable)
             return;
         if (element.treeElement !== this)

@@ -13,55 +13,6 @@
   ],
   'targets': [
     {
-      'target_name': 'channel_transport',
-      'type': 'static_library',
-      'dependencies': [
-        '<(DEPTH)/testing/gtest.gyp:gtest',
-        '<(webrtc_root)/common.gyp:webrtc_common',
-        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
-      ],
-      'sources': [
-        'channel_transport/channel_transport.cc',
-        'channel_transport/channel_transport.h',
-        'channel_transport/traffic_control_win.cc',
-        'channel_transport/traffic_control_win.h',
-        'channel_transport/udp_socket_manager_posix.cc',
-        'channel_transport/udp_socket_manager_posix.h',
-        'channel_transport/udp_socket_manager_wrapper.cc',
-        'channel_transport/udp_socket_manager_wrapper.h',
-        'channel_transport/udp_socket_posix.cc',
-        'channel_transport/udp_socket_posix.h',
-        'channel_transport/udp_socket_wrapper.cc',
-        'channel_transport/udp_socket_wrapper.h',
-        'channel_transport/udp_socket2_manager_win.cc',
-        'channel_transport/udp_socket2_manager_win.h',
-        'channel_transport/udp_socket2_win.cc',
-        'channel_transport/udp_socket2_win.h',
-        'channel_transport/udp_transport.h',
-        'channel_transport/udp_transport_impl.cc',
-        'channel_transport/udp_transport_impl.h',
-      ],
-      'msvs_disabled_warnings': [
-        4302,  # cast truncation
-      ],
-      'conditions': [
-        ['OS=="win" and clang==1', {
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              'AdditionalOptions': [
-                # Disable warnings failing when compiling with Clang on Windows.
-                # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
-                '-Wno-parentheses-equality',
-                '-Wno-reorder',
-                '-Wno-tautological-constant-out-of-range-compare',
-                '-Wno-unused-private-field',
-              ],
-            },
-          },
-        }],
-      ],  # conditions.
-    },
-    {
       'target_name': 'video_test_common',
       'type': 'static_library',
       'sources': [
@@ -127,9 +78,14 @@
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(webrtc_root)/base/base.gyp:gtest_prod',
+        '<(webrtc_root)/base/base.gyp:rtc_base_approved',
+        '<(webrtc_root)/common_video/common_video.gyp:common_video',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
+        'video_test_common',
       ],
       'sources': [
+        'gmock.h',
+        'gtest.h',
         'testsupport/fileutils.cc',
         'testsupport/fileutils.h',
         'testsupport/frame_reader.cc',
@@ -137,6 +93,8 @@
         'testsupport/frame_writer.cc',
         'testsupport/frame_writer.h',
         'testsupport/iosfileutils.mm',
+        'testsupport/metrics/video_metrics.h',
+        'testsupport/metrics/video_metrics.cc',
         'testsupport/mock/mock_frame_reader.h',
         'testsupport/mock/mock_frame_writer.h',
         'testsupport/packet_reader.cc',
@@ -196,45 +154,6 @@
       ],
     },
     {
-      'target_name': 'test_support_unittests',
-      'type': '<(gtest_target_type)',
-      'dependencies': [
-        'channel_transport',
-        'test_common',
-        'test_support_main',
-        '<(webrtc_root)/modules/modules.gyp:video_capture',
-        '<(DEPTH)/testing/gmock.gyp:gmock',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
-      ],
-      'sources': [
-        'fake_network_pipe_unittest.cc',
-        'frame_generator_unittest.cc',
-        'rtp_file_reader_unittest.cc',
-        'rtp_file_writer_unittest.cc',
-        'channel_transport/udp_transport_unittest.cc',
-        'channel_transport/udp_socket_manager_unittest.cc',
-        'channel_transport/udp_socket_wrapper_unittest.cc',
-        'testsupport/always_passing_unittest.cc',
-        'testsupport/unittest_utils.h',
-        'testsupport/fileutils_unittest.cc',
-        'testsupport/frame_reader_unittest.cc',
-        'testsupport/frame_writer_unittest.cc',
-        'testsupport/packet_reader_unittest.cc',
-        'testsupport/perf_test_unittest.cc',
-      ],
-      # Disable warnings to enable Win64 build, issue 1323.
-      'msvs_disabled_warnings': [
-        4267,  # size_t to int truncation.
-      ],
-      'conditions': [
-        ['OS=="android"', {
-          'dependencies': [
-            '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
-          ],
-        }],
-      ],
-    },
-   {
      'target_name': 'test_common',
      'type': 'static_library',
      'sources': [
@@ -258,6 +177,7 @@
        'fake_encoder.h',
        'fake_network_pipe.cc',
        'fake_network_pipe.h',
+       'fake_videorenderer.h',
        'frame_generator_capturer.cc',
        'frame_generator_capturer.h',
        'layer_filtering_transport.cc',
@@ -272,7 +192,6 @@
        'statistics.h',
        'vcm_capturer.cc',
        'vcm_capturer.h',
-       'video_capturer.cc',
        'video_capturer.h',
        'win/run_loop_win.cc',
      ],
@@ -294,7 +213,6 @@
        '<(webrtc_root)/webrtc.gyp:webrtc',
        'rtp_test_utils',
        'test_support',
-       'video_test_common',
      ],
     },
     {
@@ -374,56 +292,5 @@
        ],
      },
     },
-  ],
-  'conditions': [
-    ['OS=="android"', {
-      'targets': [
-        {
-          'target_name': 'test_support_unittests_apk_target',
-          'type': 'none',
-          'dependencies': [
-            '<(android_tests_path):test_support_unittests_apk',
-          ],
-        },
-      ],
-      'conditions': [
-        ['test_isolation_mode != "noop"',
-          {
-            'targets': [
-              {
-                'target_name': 'test_support_unittests_apk_run',
-                'type': 'none',
-                'dependencies': [
-                  '<(android_tests_path):test_support_unittests_apk',
-                ],
-                'includes': [
-                  '../build/isolate.gypi',
-                ],
-                'sources': [
-                  'test_support_unittests_apk.isolate',
-                ],
-              },
-            ],
-          },
-        ],
-      ],
-    }],  # OS=="android"
-    ['test_isolation_mode != "noop"', {
-      'targets': [
-        {
-          'target_name': 'test_support_unittests_run',
-          'type': 'none',
-          'dependencies': [
-            'test_support_unittests',
-          ],
-          'includes': [
-            '../build/isolate.gypi',
-          ],
-          'sources': [
-            'test_support_unittests.isolate',
-          ],
-        },
-      ],
-    }],
   ],
 }

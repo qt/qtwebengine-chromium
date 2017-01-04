@@ -35,8 +35,7 @@ LOG_HANDLER_NAME = 'MeteredStreamLogHandler'
 
 
 class MeteredStream(object):
-    """
-    This class implements a stream wrapper that has 'meters' as well as
+    """This class implements a stream wrapper that has 'meters' as well as
     regular output. A 'meter' is a single line of text that can be erased
     and rewritten repeatedly, without producing multiple lines of output. It
     can be used to produce effects like progress bars.
@@ -115,7 +114,6 @@ class MeteredStream(object):
         self.write(self._ensure_newline(txt), now, pid)
 
     def _erase_last_partial_line(self):
-        num_chars = len(self._last_partial_line)
         self._stream.write(self._erasure(self._last_partial_line))
         self._last_partial_line = ''
 

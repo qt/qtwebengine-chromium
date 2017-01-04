@@ -99,11 +99,6 @@ void GpuDataManagerImpl::UnblockDomainFrom3DAPIs(const GURL& url) {
   private_->UnblockDomainFrom3DAPIs(url);
 }
 
-void GpuDataManagerImpl::DisableGpuWatchdog() {
-  base::AutoLock auto_lock(lock_);
-  private_->DisableGpuWatchdog();
-}
-
 void GpuDataManagerImpl::SetGLStrings(const std::string& gl_vendor,
                                       const std::string& gl_renderer,
                                       const std::string& gl_version) {
@@ -132,6 +127,11 @@ void GpuDataManagerImpl::GetDisabledExtensions(
     std::string* disabled_extensions) const {
   base::AutoLock auto_lock(lock_);
   private_->GetDisabledExtensions(disabled_extensions);
+}
+
+void GpuDataManagerImpl::SetGpuInfo(const gpu::GPUInfo& gpu_info) {
+  base::AutoLock auto_lock(lock_);
+  private_->SetGpuInfo(gpu_info);
 }
 
 void GpuDataManagerImpl::Initialize() {

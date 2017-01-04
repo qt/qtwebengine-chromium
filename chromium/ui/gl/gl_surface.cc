@@ -51,6 +51,10 @@ bool GLSurface::DeferDraws() {
   return false;
 }
 
+bool GLSurface::SupportsSwapBuffersWithDamage() {
+  return false;
+}
+
 bool GLSurface::SupportsPostSubBuffer() {
   return false;
 }
@@ -63,12 +67,19 @@ bool GLSurface::SupportsAsyncSwap() {
   return false;
 }
 
-unsigned int GLSurface::GetBackingFrameBufferObject() {
+unsigned int GLSurface::GetBackingFramebufferObject() {
   return 0;
 }
 
 void GLSurface::SwapBuffersAsync(const SwapCompletionCallback& callback) {
   NOTREACHED();
+}
+
+gfx::SwapResult GLSurface::SwapBuffersWithDamage(int x,
+                                                 int y,
+                                                 int width,
+                                                 int height) {
+  return gfx::SwapResult::SWAP_FAILED;
 }
 
 gfx::SwapResult GLSurface::PostSubBuffer(int x, int y, int width, int height) {
@@ -119,6 +130,10 @@ void* GLSurface::GetConfig() {
   return NULL;
 }
 
+unsigned long GLSurface::GetCompatibilityKey() {
+  return 0;
+}
+
 GLSurface::Format GLSurface::GetFormat() {
   NOTIMPLEMENTED();
   return SURFACE_DEFAULT;
@@ -137,17 +152,7 @@ bool GLSurface::ScheduleOverlayPlane(int z_order,
   return false;
 }
 
-bool GLSurface::ScheduleCALayer(GLImage* contents_image,
-                                const gfx::RectF& contents_rect,
-                                float opacity,
-                                unsigned background_color,
-                                unsigned edge_aa_mask,
-                                const gfx::RectF& rect,
-                                bool is_clipped,
-                                const gfx::RectF& clip_rect,
-                                const gfx::Transform& transform,
-                                int sorting_content_id,
-                                unsigned filter) {
+bool GLSurface::ScheduleCALayer(const ui::CARendererLayerParams& params) {
   NOTIMPLEMENTED();
   return false;
 }
@@ -235,6 +240,13 @@ void GLSurfaceAdapter::SwapBuffersAsync(
   surface_->SwapBuffersAsync(callback);
 }
 
+gfx::SwapResult GLSurfaceAdapter::SwapBuffersWithDamage(int x,
+                                                        int y,
+                                                        int width,
+                                                        int height) {
+  return surface_->SwapBuffersWithDamage(x, y, width, height);
+}
+
 gfx::SwapResult GLSurfaceAdapter::PostSubBuffer(int x,
                                                 int y,
                                                 int width,
@@ -260,6 +272,10 @@ void GLSurfaceAdapter::CommitOverlayPlanesAsync(
   surface_->CommitOverlayPlanesAsync(callback);
 }
 
+bool GLSurfaceAdapter::SupportsSwapBuffersWithDamage() {
+  return surface_->SupportsSwapBuffersWithDamage();
+}
+
 bool GLSurfaceAdapter::SupportsPostSubBuffer() {
   return surface_->SupportsPostSubBuffer();
 }
@@ -280,8 +296,8 @@ void* GLSurfaceAdapter::GetHandle() {
   return surface_->GetHandle();
 }
 
-unsigned int GLSurfaceAdapter::GetBackingFrameBufferObject() {
-  return surface_->GetBackingFrameBufferObject();
+unsigned int GLSurfaceAdapter::GetBackingFramebufferObject() {
+  return surface_->GetBackingFramebufferObject();
 }
 
 bool GLSurfaceAdapter::OnMakeCurrent(GLContext* context) {
@@ -306,6 +322,10 @@ void* GLSurfaceAdapter::GetDisplay() {
 
 void* GLSurfaceAdapter::GetConfig() {
   return surface_->GetConfig();
+}
+
+unsigned long GLSurfaceAdapter::GetCompatibilityKey() {
+  return surface_->GetCompatibilityKey();
 }
 
 GLSurface::Format GLSurfaceAdapter::GetFormat() {

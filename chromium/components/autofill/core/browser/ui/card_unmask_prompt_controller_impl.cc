@@ -269,6 +269,8 @@ bool CardUnmaskPromptControllerImpl::CanStoreLocally() const {
     return false;
   if (reason_ == AutofillClient::UNMASK_FOR_PAYMENT_REQUEST)
     return false;
+  if (card_.record_type() == CreditCard::LOCAL_CARD)
+    return false;
   return OfferStoreUnmaskedCards();
 }
 
@@ -322,7 +324,10 @@ bool CardUnmaskPromptControllerImpl::InputExpirationIsValid(
 
 base::TimeDelta CardUnmaskPromptControllerImpl::GetSuccessMessageDuration()
     const {
-  return base::TimeDelta::FromMilliseconds(500);
+  return base::TimeDelta::FromMilliseconds(
+      card_.record_type() == CreditCard::LOCAL_CARD ||
+              reason_ == AutofillClient::UNMASK_FOR_PAYMENT_REQUEST
+          ? 0 : 500);
 }
 
 }  // namespace autofill

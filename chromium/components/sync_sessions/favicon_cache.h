@@ -26,9 +26,9 @@
 #include "components/history/core/browser/history_service_observer.h"
 #include "components/history/core/browser/history_types.h"
 #include "components/sessions/core/session_id.h"
-#include "sync/api/sync_change.h"
-#include "sync/api/sync_error_factory.h"
-#include "sync/api/syncable_service.h"
+#include "components/sync/api/sync_change.h"
+#include "components/sync/api/sync_error_factory.h"
+#include "components/sync/api/syncable_service.h"
 #include "url/gurl.h"
 
 namespace chrome {
@@ -43,7 +43,7 @@ namespace history {
 class HistoryService;
 }
 
-namespace browser_sync {
+namespace sync_sessions {
 
 enum IconSize {
   SIZE_INVALID,
@@ -250,6 +250,6 @@ class FaviconCache : public syncer::SyncableService,
   DISALLOW_COPY_AND_ASSIGN(FaviconCache);
 };
 
-}  // namespace browser_sync
+}  // namespace sync_sessions
 
 #endif  // COMPONENTS_SYNC_SESSIONS_FAVICON_CACHE_H_

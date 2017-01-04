@@ -8,7 +8,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -191,6 +193,13 @@ bool PrintSettingsFromJobSettings(const base::DictionaryValue& job_settings,
   settings->set_duplex_mode(static_cast<DuplexMode>(duplex_mode));
   settings->set_color(static_cast<ColorModel>(color));
 
+#if defined(OS_WIN)
+  // Modifiable implies HTML and not other formats like PDF.
+  bool can_modify = false;
+  if (job_settings.GetBoolean(kSettingPreviewModifiable, &can_modify))
+    settings->set_print_text_with_gdi(can_modify);
+#endif
+
   return true;
 }
 
@@ -209,10 +218,10 @@ void PrintSettingsToJobSettingsDebug(const PrintSettings& settings,
     base::ListValue* page_range_array = new base::ListValue;
     job_settings->Set(kSettingPageRange, page_range_array);
     for (size_t i = 0; i < settings.ranges().size(); ++i) {
-      base::DictionaryValue* dict = new base::DictionaryValue;
-      page_range_array->Append(dict);
+      std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
       dict->SetInteger(kSettingPageRangeFrom, settings.ranges()[i].from + 1);
       dict->SetInteger(kSettingPageRangeTo, settings.ranges()[i].to + 1);
+      page_range_array->Append(std::move(dict));
     }
   }
 

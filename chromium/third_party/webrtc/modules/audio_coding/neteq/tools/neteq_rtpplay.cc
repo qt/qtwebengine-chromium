@@ -15,6 +15,7 @@
 #include <stdlib.h>  // For strtoul.
 
 #include <algorithm>
+#include <ios>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -72,6 +73,13 @@ bool ValidatePayloadType(const char* flagname, int32_t value) {
 bool ValidateSsrcValue(const char* flagname, const std::string& str) {
   uint32_t dummy_ssrc;
   return ParseSsrc(str, &dummy_ssrc);
+}
+
+static bool ValidateExtensionId(const char* flagname, int32_t value) {
+  if (value > 0 && value <= 255)  // Value is ok.
+    return true;
+  printf("Invalid value for --%s: %d\n", flagname, static_cast<int>(value));
+  return false;
 }
 
 // Define command line flags.
@@ -136,6 +144,12 @@ DEFINE_string(ssrc,
               "starting with 0x)");
 const bool hex_ssrc_dummy =
     google::RegisterFlagValidator(&FLAGS_ssrc, &ValidateSsrcValue);
+DEFINE_int32(audio_level, 1, "Extension ID for audio level (RFC 6464)");
+const bool audio_level_dummy =
+    google::RegisterFlagValidator(&FLAGS_audio_level, &ValidateExtensionId);
+DEFINE_int32(abs_send_time, 3, "Extension ID for absolute sender time");
+const bool abs_send_time_dummy =
+    google::RegisterFlagValidator(&FLAGS_abs_send_time, &ValidateExtensionId);
 
 // Maps a codec type to a printable name string.
 std::string CodecName(NetEqDecoder codec) {
@@ -232,6 +246,8 @@ class FilterSsrcInput : public NetEqInput {
   FilterSsrcInput(std::unique_ptr<NetEqInput> source, uint32_t ssrc)
       : source_(std::move(source)), ssrc_(ssrc) {
     FindNextWithCorrectSsrc();
+    RTC_CHECK(source_->NextHeader()) << "Found no packet with SSRC = 0x"
+                                     << std::hex << ssrc_;
   }
 
   // All methods but PopPacket() simply relay to the |source_| object.
@@ -297,13 +313,18 @@ int RunTest(int argc, char* argv[]) {
     return 0;
   }
 
+  // Gather RTP header extensions in a map.
+  NetEqPacketSourceInput::RtpHeaderExtensionMap rtp_ext_map = {
+      {FLAGS_audio_level, kRtpExtensionAudioLevel},
+      {FLAGS_abs_send_time, kRtpExtensionAbsoluteSendTime}};
+
   const std::string input_file_name = argv[1];
   std::unique_ptr<NetEqInput> input;
   if (RtpFileSource::ValidRtpDump(input_file_name) ||
       RtpFileSource::ValidPcap(input_file_name)) {
-    input.reset(new NetEqRtpDumpInput(input_file_name));
+    input.reset(new NetEqRtpDumpInput(input_file_name, rtp_ext_map));
   } else {
-    input.reset(new NetEqEventLogInput(input_file_name));
+    input.reset(new NetEqEventLogInput(input_file_name, rtp_ext_map));
   }
 
   std::cout << "Input file: " << input_file_name << std::endl;

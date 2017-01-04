@@ -5,12 +5,18 @@
 #ifndef UI_ANDROID_RESOURCES_RESOURCE_MANAGER_IMPL_H_
 #define UI_ANDROID_RESOURCES_RESOURCE_MANAGER_IMPL_H_
 
-#include "base/id_map.h"
+#include <memory>
+
 #include "base/macros.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/android/resources/resource_manager.h"
 #include "ui/android/ui_android_export.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
+
+namespace cc {
+class UIResourceManager;
+}  // namespace cc
 
 namespace ui {
 
@@ -21,11 +27,14 @@ class UI_ANDROID_EXPORT ResourceManagerImpl : public ResourceManager {
   explicit ResourceManagerImpl(gfx::NativeWindow native_window);
   ~ResourceManagerImpl() override;
 
-  void Init(cc::LayerTreeHost* host);
+  void Init(cc::UIResourceManager* ui_resource_manager);
 
   // ResourceManager implementation.
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject() override;
   Resource* GetResource(AndroidResourceType res_type, int res_id) override;
+  Resource* GetStaticResourceWithTint(
+      int res_id, SkColor tint_color) override;
+  void RemoveUnusedTints(const std::unordered_set<int>& used_tints) override;
   void PreloadResource(AndroidResourceType res_type, int res_id) override;
   CrushedSpriteResource* GetCrushedSpriteResource(
       int bitmap_res_id, int metadata_res_id) override;
@@ -60,6 +69,8 @@ class UI_ANDROID_EXPORT ResourceManagerImpl : public ResourceManager {
       const base::android::JavaRef<jobject>& jobj,
       jint bitmap_res_id,
       const base::android::JavaRef<jobject>& bitmap);
+  void ClearTintedResourceCache(JNIEnv* env,
+      const base::android::JavaRef<jobject>& jobj);
 
   static bool RegisterResourceManager(JNIEnv* env);
 
@@ -79,13 +90,16 @@ class UI_ANDROID_EXPORT ResourceManagerImpl : public ResourceManager {
                                                     int metadata_res_id,
                                                     bool reloading);
 
-  typedef IDMap<Resource, IDMapOwnPointer> ResourceMap;
-  typedef IDMap<CrushedSpriteResource, IDMapOwnPointer>
-      CrushedSpriteResourceMap;
+  using ResourceMap = std::unordered_map<int, std::unique_ptr<Resource>>;
+  using CrushedSpriteResourceMap =
+      std::unordered_map<int, std::unique_ptr<CrushedSpriteResource>>;
+  using TintedResourceMap =
+      std::unordered_map<SkColor, std::unique_ptr<ResourceMap>>;
 
-  cc::LayerTreeHost* host_;
+  cc::UIResourceManager* ui_resource_manager_;
   ResourceMap resources_[ANDROID_RESOURCE_TYPE_COUNT];
   CrushedSpriteResourceMap crushed_sprite_resources_;
+  TintedResourceMap tinted_resources_;
 
   base::android::ScopedJavaGlobalRef<jobject> java_obj_;
 

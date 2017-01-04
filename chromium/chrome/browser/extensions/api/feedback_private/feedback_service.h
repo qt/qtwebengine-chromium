@@ -11,7 +11,6 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/blob_reader.h"
 #include "chrome/browser/feedback/system_logs/scrubbed_system_logs_fetcher.h"
@@ -30,7 +29,12 @@ using SystemInformationList =
 // the pieces are available.
 class FeedbackService : public base::SupportsWeakPtr<FeedbackService> {
  public:
+  // Callback invoked when the feedback report is ready to be sent.
+  // True will be passed to indicate that it is being successfully sent now,
+  // and false to indicate that it will be delayed (usually due to being
+  // offline).
   using SendFeedbackCallback = base::Callback<void(bool)>;
+
   using GetSystemInformationCallback =
       base::Callback<void(const SystemInformationList&)>;
 

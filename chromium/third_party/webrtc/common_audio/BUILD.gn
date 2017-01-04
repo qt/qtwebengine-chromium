@@ -8,7 +8,6 @@
 
 import("//build/config/arm.gni")
 import("../build/webrtc.gni")
-import("//testing/test.gni")
 
 config("common_audio_config") {
   include_dirs = [
@@ -18,7 +17,7 @@ config("common_audio_config") {
   ]
 }
 
-source_set("common_audio") {
+rtc_static_library("common_audio") {
   sources = [
     "audio_converter.cc",
     "audio_converter.h",
@@ -173,17 +172,12 @@ source_set("common_audio") {
     cflags = [ "/wd4334" ]  # Ignore warning on shift operator promotion.
   }
 
-  configs += [ "..:common_config" ]
-
-  public_configs = [
-    "..:common_inherited_config",
-    ":common_audio_config",
-  ]
+  public_configs = [ ":common_audio_config" ]
 
   if (is_clang) {
     # Suppress warnings from Chrome's Clang plugins.
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
   if (current_cpu == "x86" || current_cpu == "x64") {
@@ -192,7 +186,7 @@ source_set("common_audio") {
 }
 
 if (current_cpu == "x86" || current_cpu == "x64") {
-  source_set("common_audio_sse2") {
+  rtc_static_library("common_audio_sse2") {
     sources = [
       "fir_filter_sse.cc",
       "resampler/sinc_resampler_sse.cc",
@@ -202,18 +196,16 @@ if (current_cpu == "x86" || current_cpu == "x64") {
       cflags = [ "-msse2" ]
     }
 
-    configs += [ "..:common_inherited_config" ]
-
     if (is_clang) {
       # Suppress warnings from Chrome's Clang plugins.
       # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
 }
 
 if (rtc_build_with_neon) {
-  source_set("common_audio_neon") {
+  rtc_static_library("common_audio_neon") {
     sources = [
       "fir_filter_neon.cc",
       "resampler/sinc_resampler_neon.cc",
@@ -226,7 +218,7 @@ if (rtc_build_with_neon) {
       # Enable compilation for the NEON instruction set. This is needed
       # since //build/config/arm.gni only enables NEON for iOS, not Android.
       # This provides the same functionality as webrtc/build/arm_neon.gypi.
-      configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
+      suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
       cflags = [ "-mfpu=neon" ]
     }
 
@@ -239,19 +231,16 @@ if (rtc_build_with_neon) {
       ]
     }
 
-    configs += [ "..:common_config" ]
-    public_configs = [ "..:common_inherited_config" ]
-
     if (is_clang) {
       # Suppress warnings from Chrome's Clang plugins.
       # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
 }
 
 if (rtc_include_tests) {
-  test("common_audio_unittests") {
+  rtc_test("common_audio_unittests") {
     testonly = true
 
     sources = [
@@ -259,6 +248,7 @@ if (rtc_include_tests) {
       "audio_ring_buffer_unittest.cc",
       "audio_util_unittest.cc",
       "blocker_unittest.cc",
+      "channel_buffer_unittest.cc",
       "fir_filter_unittest.cc",
       "lapped_transform_unittest.cc",
       "real_fourier_unittest.cc",
@@ -283,12 +273,9 @@ if (rtc_include_tests) {
     ]
 
     # Does not compile on iOS for arm: webrtc:5544.
-    if (!is_ios || target_cpu != "arm" || target_cpu != "arm64") {
+    if (!is_ios || target_cpu != "arm") {
       sources += [ "resampler/sinc_resampler_unittest.cc" ]
     }
-
-    configs += [ "..:common_config" ]
-    public_configs = [ "..:common_inherited_config" ]
 
     if (rtc_use_openmax_dl) {
       defines = [ "RTC_USE_OPENMAX_DL" ]
@@ -297,7 +284,7 @@ if (rtc_include_tests) {
     if (is_clang) {
       # Suppress warnings from the Chromium Clang plugin.
       # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
     deps = [
@@ -309,6 +296,8 @@ if (rtc_include_tests) {
 
     if (is_android) {
       deps += [ "//testing/android/native_test:native_test_support" ]
+
+      shard_timeout = 900
     }
   }
 }

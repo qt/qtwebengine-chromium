@@ -4,11 +4,12 @@
 
 #include "src/compiler/code-generator.h"
 
-#include "src/ast/scopes.h"
+#include "src/compilation-info.h"
 #include "src/compiler/code-generator-impl.h"
 #include "src/compiler/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/osr.h"
+#include "src/wasm/wasm-module.h"
 #include "src/x64/assembler-x64.h"
 #include "src/x64/macro-assembler-x64.h"
 
@@ -132,6 +133,11 @@ class X64OperandConverter : public InstructionOperandConverter {
         int32_t disp = InputInt32(NextOffset(offset));
         return Operand(index, scale, disp);
       }
+      case kMode_Root: {
+        Register base = kRootRegister;
+        int32_t disp = InputInt32(NextOffset(offset));
+        return Operand(base, disp);
+      }
       case kMode_None:
         UNREACHABLE();
         return Operand(no_reg, 0);
@@ -164,35 +170,59 @@ class OutOfLineLoadZero final : public OutOfLineCode {
   Register const result_;
 };
 
-
-class OutOfLineLoadNaN final : public OutOfLineCode {
+class OutOfLineLoadFloat32NaN final : public OutOfLineCode {
  public:
-  OutOfLineLoadNaN(CodeGenerator* gen, XMMRegister result)
+  OutOfLineLoadFloat32NaN(CodeGenerator* gen, XMMRegister result)
       : OutOfLineCode(gen), result_(result) {}
 
-  void Generate() final { __ Pcmpeqd(result_, result_); }
+  void Generate() final {
+    __ Xorps(result_, result_);
+    __ Divss(result_, result_);
+  }
 
  private:
   XMMRegister const result_;
 };
 
+class OutOfLineLoadFloat64NaN final : public OutOfLineCode {
+ public:
+  OutOfLineLoadFloat64NaN(CodeGenerator* gen, XMMRegister result)
+      : OutOfLineCode(gen), result_(result) {}
+
+  void Generate() final {
+    __ Xorpd(result_, result_);
+    __ Divsd(result_, result_);
+  }
+
+ private:
+  XMMRegister const result_;
+};
 
 class OutOfLineTruncateDoubleToI final : public OutOfLineCode {
  public:
   OutOfLineTruncateDoubleToI(CodeGenerator* gen, Register result,
-                             XMMRegister input)
-      : OutOfLineCode(gen), result_(result), input_(input) {}
+                             XMMRegister input,
+                             UnwindingInfoWriter* unwinding_info_writer)
+      : OutOfLineCode(gen),
+        result_(result),
+        input_(input),
+        unwinding_info_writer_(unwinding_info_writer) {}
 
   void Generate() final {
     __ subp(rsp, Immediate(kDoubleSize));
+    unwinding_info_writer_->MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                      kDoubleSize);
     __ Movsd(MemOperand(rsp, 0), input_);
     __ SlowTruncateToI(result_, rsp, 0);
     __ addp(rsp, Immediate(kDoubleSize));
+    unwinding_info_writer_->MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                      -kDoubleSize);
   }
 
  private:
   Register const result_;
   XMMRegister const input_;
+  UnwindingInfoWriter* const unwinding_info_writer_;
 };
 
 
@@ -234,6 +264,40 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
   Register const scratch0_;
   Register const scratch1_;
   RecordWriteMode const mode_;
+};
+
+class WasmOutOfLineTrap final : public OutOfLineCode {
+ public:
+  WasmOutOfLineTrap(CodeGenerator* gen, Address pc, bool frame_elided,
+                    Register context, int32_t position)
+      : OutOfLineCode(gen),
+        pc_(pc),
+        frame_elided_(frame_elided),
+        context_(context),
+        position_(position) {}
+
+  void Generate() final {
+    // TODO(eholk): record pc_ and the current pc in a table so that
+    // the signal handler can find it.
+    USE(pc_);
+
+    if (frame_elided_) {
+      __ EnterFrame(StackFrame::WASM);
+    }
+
+    wasm::TrapReason trap_id = wasm::kTrapMemOutOfBounds;
+    int trap_reason = wasm::WasmOpcodes::TrapReasonToMessageId(trap_id);
+    __ Push(Smi::FromInt(trap_reason));
+    __ Push(Smi::FromInt(position_));
+    __ Move(rsi, context_);
+    __ CallRuntime(Runtime::kThrowWasmError);
+  }
+
+ private:
+  Address pc_;
+  bool frame_elided_;
+  Register context_;
+  int32_t position_;
 };
 
 }  // namespace
@@ -372,7 +436,7 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
     }                                                                  \
   } while (0)
 
-#define ASSEMBLE_CHECKED_LOAD_FLOAT(asm_instr)                               \
+#define ASSEMBLE_CHECKED_LOAD_FLOAT(asm_instr, OutOfLineLoadNaN)             \
   do {                                                                       \
     auto result = i.OutputDoubleRegister();                                  \
     auto buffer = i.InputRegister(0);                                        \
@@ -622,25 +686,12 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
   } while (false)
 
 void CodeGenerator::AssembleDeconstructFrame() {
+  unwinding_info_writer_.MarkFrameDeconstructed(__ pc_offset());
   __ movq(rsp, rbp);
   __ popq(rbp);
 }
 
-void CodeGenerator::AssembleDeconstructActivationRecord(int stack_param_delta) {
-  int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
-  if (sp_slot_delta > 0) {
-    __ addq(rsp, Immediate(sp_slot_delta * kPointerSize));
-  }
-  frame_access_state()->SetFrameAccessToDefault();
-}
-
-
-void CodeGenerator::AssemblePrepareTailCall(int stack_param_delta) {
-  int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
-  if (sp_slot_delta < 0) {
-    __ subq(rsp, Immediate(-sp_slot_delta * kPointerSize));
-    frame_access_state()->IncreaseSPDelta(-sp_slot_delta);
-  }
+void CodeGenerator::AssemblePrepareTailCall() {
   if (frame_access_state()->has_frame()) {
     __ movq(rbp, MemOperand(rbp, 0));
   }
@@ -672,6 +723,68 @@ void CodeGenerator::AssemblePopArgumentsAdaptorFrame(Register args_reg,
   __ bind(&done);
 }
 
+namespace {
+
+void AdjustStackPointerForTailCall(MacroAssembler* masm,
+                                   FrameAccessState* state,
+                                   int new_slot_above_sp,
+                                   bool allow_shrinkage = true) {
+  int current_sp_offset = state->GetSPToFPSlotCount() +
+                          StandardFrameConstants::kFixedSlotCountAboveFp;
+  int stack_slot_delta = new_slot_above_sp - current_sp_offset;
+  if (stack_slot_delta > 0) {
+    masm->subq(rsp, Immediate(stack_slot_delta * kPointerSize));
+    state->IncreaseSPDelta(stack_slot_delta);
+  } else if (allow_shrinkage && stack_slot_delta < 0) {
+    masm->addq(rsp, Immediate(-stack_slot_delta * kPointerSize));
+    state->IncreaseSPDelta(stack_slot_delta);
+  }
+}
+
+}  // namespace
+
+void CodeGenerator::AssembleTailCallBeforeGap(Instruction* instr,
+                                              int first_unused_stack_slot) {
+  CodeGenerator::PushTypeFlags flags(kImmediatePush | kScalarPush);
+  ZoneVector<MoveOperands*> pushes(zone());
+  GetPushCompatibleMoves(instr, flags, &pushes);
+
+  if (!pushes.empty() &&
+      (LocationOperand::cast(pushes.back()->destination()).index() + 1 ==
+       first_unused_stack_slot)) {
+    X64OperandConverter g(this, instr);
+    for (auto move : pushes) {
+      LocationOperand destination_location(
+          LocationOperand::cast(move->destination()));
+      InstructionOperand source(move->source());
+      AdjustStackPointerForTailCall(masm(), frame_access_state(),
+                                    destination_location.index());
+      if (source.IsStackSlot()) {
+        LocationOperand source_location(LocationOperand::cast(source));
+        __ Push(g.SlotToOperand(source_location.index()));
+      } else if (source.IsRegister()) {
+        LocationOperand source_location(LocationOperand::cast(source));
+        __ Push(source_location.GetRegister());
+      } else if (source.IsImmediate()) {
+        __ Push(Immediate(ImmediateOperand::cast(source).inline_value()));
+      } else {
+        // Pushes of non-scalar data types is not supported.
+        UNIMPLEMENTED();
+      }
+      frame_access_state()->IncreaseSPDelta(1);
+      move->Eliminate();
+    }
+  }
+  AdjustStackPointerForTailCall(masm(), frame_access_state(),
+                                first_unused_stack_slot, false);
+}
+
+void CodeGenerator::AssembleTailCallAfterGap(Instruction* instr,
+                                             int first_unused_stack_slot) {
+  AdjustStackPointerForTailCall(masm(), frame_access_state(),
+                                first_unused_stack_slot);
+}
+
 // Assembles an instruction after register allocation, producing machine code.
 CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     Instruction* instr) {
@@ -695,8 +808,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kArchTailCallCodeObjectFromJSFunction:
     case kArchTailCallCodeObject: {
-      int stack_param_delta = i.InputInt32(instr->InputCount() - 1);
-      AssembleDeconstructActivationRecord(stack_param_delta);
       if (arch_opcode == kArchTailCallCodeObjectFromJSFunction) {
         AssemblePopArgumentsAdaptorFrame(kJavaScriptCallArgCountRegister,
                                          i.TempRegister(0), i.TempRegister(1),
@@ -710,16 +821,18 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ addp(reg, Immediate(Code::kHeaderSize - kHeapObjectTag));
         __ jmp(reg);
       }
+      unwinding_info_writer_.MarkBlockWillExit();
       frame_access_state()->ClearSPDelta();
+      frame_access_state()->SetFrameAccessToDefault();
       break;
     }
     case kArchTailCallAddress: {
-      int stack_param_delta = i.InputInt32(instr->InputCount() - 1);
-      AssembleDeconstructActivationRecord(stack_param_delta);
       CHECK(!HasImmediateInput(instr, 0));
       Register reg = i.InputRegister(0);
       __ jmp(reg);
+      unwinding_info_writer_.MarkBlockWillExit();
       frame_access_state()->ClearSPDelta();
+      frame_access_state()->SetFrameAccessToDefault();
       break;
     }
     case kArchCallJSFunction: {
@@ -743,8 +856,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ cmpp(rsi, FieldOperand(func, JSFunction::kContextOffset));
         __ Assert(equal, kWrongFunctionContext);
       }
-      int stack_param_delta = i.InputInt32(instr->InputCount() - 1);
-      AssembleDeconstructActivationRecord(stack_param_delta);
       if (arch_opcode == kArchTailCallJSFunctionFromJSFunction) {
         AssemblePopArgumentsAdaptorFrame(kJavaScriptCallArgCountRegister,
                                          i.TempRegister(0), i.TempRegister(1),
@@ -752,6 +863,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       __ jmp(FieldOperand(func, JSFunction::kCodeEntryOffset));
       frame_access_state()->ClearSPDelta();
+      frame_access_state()->SetFrameAccessToDefault();
       break;
     }
     case kArchPrepareCallCFunction: {
@@ -762,7 +874,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArchPrepareTailCall:
-      AssemblePrepareTailCall(i.InputInt32(instr->InputCount() - 1));
+      AssemblePrepareTailCall();
       break;
     case kArchCallCFunction: {
       int const num_parameters = MiscField::decode(instr->opcode());
@@ -803,8 +915,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
           BuildTranslation(instr, -1, 0, OutputFrameStateCombine::Ignore());
       Deoptimizer::BailoutType bailout_type =
           Deoptimizer::BailoutType(MiscField::decode(instr->opcode()));
-      CodeGenResult result =
-          AssembleDeoptimizerCall(deopt_state_id, bailout_type);
+      CodeGenResult result = AssembleDeoptimizerCall(
+          deopt_state_id, bailout_type, current_source_position_);
       if (result != kSuccess) return result;
       break;
     }
@@ -827,7 +939,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArchTruncateDoubleToI: {
       auto result = i.OutputRegister();
       auto input = i.InputDoubleRegister(0);
-      auto ool = new (zone()) OutOfLineTruncateDoubleToI(this, result, input);
+      auto ool = new (zone()) OutOfLineTruncateDoubleToI(
+          this, result, input, &unwinding_info_writer_);
       // We use Cvttsd2siq instead of Cvttsd2si due to performance reasons. The
       // use of Cvttsd2siq requires the movl below to avoid sign extension.
       __ Cvttsd2siq(result, input);
@@ -867,20 +980,35 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ leaq(i.OutputRegister(), Operand(base, offset.offset()));
       break;
     }
+    case kIeee754Float64Acos:
+      ASSEMBLE_IEEE754_UNOP(acos);
+      break;
+    case kIeee754Float64Acosh:
+      ASSEMBLE_IEEE754_UNOP(acosh);
+      break;
+    case kIeee754Float64Asin:
+      ASSEMBLE_IEEE754_UNOP(asin);
+      break;
+    case kIeee754Float64Asinh:
+      ASSEMBLE_IEEE754_UNOP(asinh);
+      break;
     case kIeee754Float64Atan:
       ASSEMBLE_IEEE754_UNOP(atan);
       break;
-    case kIeee754Float64Atan2:
-      ASSEMBLE_IEEE754_BINOP(atan2);
-      break;
     case kIeee754Float64Atanh:
       ASSEMBLE_IEEE754_UNOP(atanh);
+      break;
+    case kIeee754Float64Atan2:
+      ASSEMBLE_IEEE754_BINOP(atan2);
       break;
     case kIeee754Float64Cbrt:
       ASSEMBLE_IEEE754_UNOP(cbrt);
       break;
     case kIeee754Float64Cos:
       ASSEMBLE_IEEE754_UNOP(cos);
+      break;
+    case kIeee754Float64Cosh:
+      ASSEMBLE_IEEE754_UNOP(cosh);
       break;
     case kIeee754Float64Exp:
       ASSEMBLE_IEEE754_UNOP(exp);
@@ -900,11 +1028,25 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kIeee754Float64Log10:
       ASSEMBLE_IEEE754_UNOP(log10);
       break;
+    case kIeee754Float64Pow: {
+      // TODO(bmeurer): Improve integration of the stub.
+      __ Movsd(xmm2, xmm0);
+      MathPowStub stub(isolate(), MathPowStub::DOUBLE);
+      __ CallStub(&stub);
+      __ Movsd(xmm0, xmm3);
+      break;
+    }
     case kIeee754Float64Sin:
       ASSEMBLE_IEEE754_UNOP(sin);
       break;
+    case kIeee754Float64Sinh:
+      ASSEMBLE_IEEE754_UNOP(sinh);
+      break;
     case kIeee754Float64Tan:
       ASSEMBLE_IEEE754_UNOP(tan);
+      break;
+    case kIeee754Float64Tanh:
+      ASSEMBLE_IEEE754_UNOP(tanh);
       break;
     case kX64Add32:
       ASSEMBLE_BINOP(addl);
@@ -1109,12 +1251,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kSSEFloat32Sqrt:
       ASSEMBLE_SSE_UNOP(sqrtss);
       break;
-    case kSSEFloat32Max:
-      ASSEMBLE_SSE_BINOP(maxss);
-      break;
-    case kSSEFloat32Min:
-      ASSEMBLE_SSE_BINOP(minss);
-      break;
     case kSSEFloat32ToFloat64:
       ASSEMBLE_SSE_UNOP(Cvtss2sd);
       break;
@@ -1160,6 +1296,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kSSEFloat64Mod: {
       __ subq(rsp, Immediate(kDoubleSize));
+      unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                       kDoubleSize);
       // Move values to st(0) and st(1).
       __ Movsd(Operand(rsp, 0), i.InputDoubleRegister(1));
       __ fld_d(Operand(rsp, 0));
@@ -1180,7 +1318,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ shrl(rax, Immediate(8));
         __ andl(rax, Immediate(0xFF));
         __ pushq(rax);
+        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                         kPointerSize);
         __ popfq();
+        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                         -kPointerSize);
       }
       __ j(parity_even, &mod_loop);
       // Move output to stack and clean up.
@@ -1188,14 +1330,120 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ fstp_d(Operand(rsp, 0));
       __ Movsd(i.OutputDoubleRegister(), Operand(rsp, 0));
       __ addq(rsp, Immediate(kDoubleSize));
+      unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                       -kDoubleSize);
       break;
     }
-    case kSSEFloat64Max:
-      ASSEMBLE_SSE_BINOP(maxsd);
+    case kSSEFloat32Max: {
+      Label compare_nan, compare_swap, done_compare;
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Ucomiss(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        __ Ucomiss(i.InputDoubleRegister(0), i.InputOperand(1));
+      }
+      auto ool =
+          new (zone()) OutOfLineLoadFloat32NaN(this, i.OutputDoubleRegister());
+      __ j(parity_even, ool->entry());
+      __ j(above, &done_compare, Label::kNear);
+      __ j(below, &compare_swap, Label::kNear);
+      __ Movmskps(kScratchRegister, i.InputDoubleRegister(0));
+      __ testl(kScratchRegister, Immediate(1));
+      __ j(zero, &done_compare, Label::kNear);
+      __ bind(&compare_swap);
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Movss(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        __ Movss(i.InputDoubleRegister(0), i.InputOperand(1));
+      }
+      __ bind(&done_compare);
+      __ bind(ool->exit());
       break;
-    case kSSEFloat64Min:
-      ASSEMBLE_SSE_BINOP(minsd);
+    }
+    case kSSEFloat32Min: {
+      Label compare_swap, done_compare;
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Ucomiss(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        __ Ucomiss(i.InputDoubleRegister(0), i.InputOperand(1));
+      }
+      auto ool =
+          new (zone()) OutOfLineLoadFloat32NaN(this, i.OutputDoubleRegister());
+      __ j(parity_even, ool->entry());
+      __ j(below, &done_compare, Label::kNear);
+      __ j(above, &compare_swap, Label::kNear);
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Movmskps(kScratchRegister, i.InputDoubleRegister(1));
+      } else {
+        __ Movss(kScratchDoubleReg, i.InputOperand(1));
+        __ Movmskps(kScratchRegister, kScratchDoubleReg);
+      }
+      __ testl(kScratchRegister, Immediate(1));
+      __ j(zero, &done_compare, Label::kNear);
+      __ bind(&compare_swap);
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Movss(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        __ Movss(i.InputDoubleRegister(0), i.InputOperand(1));
+      }
+      __ bind(&done_compare);
+      __ bind(ool->exit());
       break;
+    }
+    case kSSEFloat64Max: {
+      Label compare_nan, compare_swap, done_compare;
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Ucomisd(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        __ Ucomisd(i.InputDoubleRegister(0), i.InputOperand(1));
+      }
+      auto ool =
+          new (zone()) OutOfLineLoadFloat64NaN(this, i.OutputDoubleRegister());
+      __ j(parity_even, ool->entry());
+      __ j(above, &done_compare, Label::kNear);
+      __ j(below, &compare_swap, Label::kNear);
+      __ Movmskpd(kScratchRegister, i.InputDoubleRegister(0));
+      __ testl(kScratchRegister, Immediate(1));
+      __ j(zero, &done_compare, Label::kNear);
+      __ bind(&compare_swap);
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Movsd(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        __ Movsd(i.InputDoubleRegister(0), i.InputOperand(1));
+      }
+      __ bind(&done_compare);
+      __ bind(ool->exit());
+      break;
+    }
+    case kSSEFloat64Min: {
+      Label compare_swap, done_compare;
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Ucomisd(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        __ Ucomisd(i.InputDoubleRegister(0), i.InputOperand(1));
+      }
+      auto ool =
+          new (zone()) OutOfLineLoadFloat64NaN(this, i.OutputDoubleRegister());
+      __ j(parity_even, ool->entry());
+      __ j(below, &done_compare, Label::kNear);
+      __ j(above, &compare_swap, Label::kNear);
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Movmskpd(kScratchRegister, i.InputDoubleRegister(1));
+      } else {
+        __ Movsd(kScratchDoubleReg, i.InputOperand(1));
+        __ Movmskpd(kScratchRegister, kScratchDoubleReg);
+      }
+      __ testl(kScratchRegister, Immediate(1));
+      __ j(zero, &done_compare, Label::kNear);
+      __ bind(&compare_swap);
+      if (instr->InputAt(1)->IsFPRegister()) {
+        __ Movsd(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        __ Movsd(i.InputDoubleRegister(0), i.InputOperand(1));
+      }
+      __ bind(&done_compare);
+      __ bind(ool->exit());
+      break;
+    }
     case kSSEFloat64Abs: {
       // TODO(bmeurer): Use RIP relative 128-bit constants.
       __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
@@ -1211,7 +1459,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kSSEFloat64Sqrt:
-      ASSEMBLE_SSE_UNOP(sqrtsd);
+      ASSEMBLE_SSE_UNOP(Sqrtsd);
       break;
     case kSSEFloat64Round: {
       CpuFeatureScope sse_scope(masm(), SSE4_1);
@@ -1506,12 +1754,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // when there is a (v)mulss depending on the result.
       __ Movaps(i.OutputDoubleRegister(), i.OutputDoubleRegister());
       break;
-    case kAVXFloat32Max:
-      ASSEMBLE_AVX_BINOP(vmaxss);
-      break;
-    case kAVXFloat32Min:
-      ASSEMBLE_AVX_BINOP(vminss);
-      break;
     case kAVXFloat64Cmp: {
       CpuFeatureScope avx_scope(masm(), AVX);
       if (instr->InputAt(1)->IsFPRegister()) {
@@ -1535,12 +1777,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // Don't delete this mov. It may improve performance on some CPUs,
       // when there is a (v)mulsd depending on the result.
       __ Movapd(i.OutputDoubleRegister(), i.OutputDoubleRegister());
-      break;
-    case kAVXFloat64Max:
-      ASSEMBLE_AVX_BINOP(vmaxsd);
-      break;
-    case kAVXFloat64Min:
-      ASSEMBLE_AVX_BINOP(vminsd);
       break;
     case kAVXFloat32Abs: {
       // TODO(bmeurer): Use RIP relative 128-bit constants.
@@ -1610,6 +1846,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_MOVX(movzxbl);
       __ AssertZeroExtended(i.OutputRegister());
       break;
+    case kX64Movsxbq:
+      ASSEMBLE_MOVX(movsxbq);
+      break;
+    case kX64Movzxbq:
+      ASSEMBLE_MOVX(movzxbq);
+      __ AssertZeroExtended(i.OutputRegister());
+      break;
     case kX64Movb: {
       size_t index = 0;
       Operand operand = i.MemoryOperand(&index);
@@ -1628,6 +1871,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_MOVX(movzxwl);
       __ AssertZeroExtended(i.OutputRegister());
       break;
+    case kX64Movsxwq:
+      ASSEMBLE_MOVX(movsxwq);
+      break;
+    case kX64Movzxwq:
+      ASSEMBLE_MOVX(movzxwq);
+      __ AssertZeroExtended(i.OutputRegister());
+      break;
     case kX64Movw: {
       size_t index = 0;
       Operand operand = i.MemoryOperand(&index);
@@ -1639,6 +1889,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kX64Movl:
+    case kX64TrapMovl:
       if (instr->HasOutput()) {
         if (instr->addressing_mode() == kMode_None) {
           if (instr->InputAt(0)->IsRegister()) {
@@ -1647,7 +1898,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
             __ movl(i.OutputRegister(), i.InputOperand(0));
           }
         } else {
+          Address pc = __ pc();
           __ movl(i.OutputRegister(), i.MemoryOperand());
+
+          if (arch_opcode == kX64TrapMovl) {
+            bool frame_elided = !frame_access_state()->has_frame();
+            new (zone()) WasmOutOfLineTrap(this, pc, frame_elided,
+                                           i.InputRegister(2), i.InputInt32(3));
+          }
         }
         __ AssertZeroExtended(i.OutputRegister());
       } else {
@@ -1769,18 +2027,26 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       if (HasImmediateInput(instr, 0)) {
         __ pushq(i.InputImmediate(0));
         frame_access_state()->IncreaseSPDelta(1);
+        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                         kPointerSize);
       } else {
         if (instr->InputAt(0)->IsRegister()) {
           __ pushq(i.InputRegister(0));
           frame_access_state()->IncreaseSPDelta(1);
+          unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                           kPointerSize);
         } else if (instr->InputAt(0)->IsFPRegister()) {
           // TODO(titzer): use another machine instruction?
           __ subq(rsp, Immediate(kDoubleSize));
           frame_access_state()->IncreaseSPDelta(kDoubleSize / kPointerSize);
+          unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                           kDoubleSize);
           __ Movsd(Operand(rsp, 0), i.InputDoubleRegister(0));
         } else {
           __ pushq(i.InputOperand(0));
           frame_access_state()->IncreaseSPDelta(1);
+          unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                           kPointerSize);
         }
       }
       break;
@@ -1811,6 +2077,18 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ xchgl(i.InputRegister(index), operand);
       break;
     }
+    case kX64Int32x4Create: {
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
+      XMMRegister dst = i.OutputSimd128Register();
+      __ Movd(dst, i.InputRegister(0));
+      __ shufps(dst, dst, 0x0);
+      break;
+    }
+    case kX64Int32x4ExtractLane: {
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
+      __ Pextrd(i.OutputRegister(), i.InputSimd128Register(0), i.InputInt8(1));
+      break;
+    }
     case kCheckedLoadInt8:
       ASSEMBLE_CHECKED_LOAD_INTEGER(movsxbl);
       break;
@@ -1830,10 +2108,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_CHECKED_LOAD_INTEGER(movq);
       break;
     case kCheckedLoadFloat32:
-      ASSEMBLE_CHECKED_LOAD_FLOAT(Movss);
+      ASSEMBLE_CHECKED_LOAD_FLOAT(Movss, OutOfLineLoadFloat32NaN);
       break;
     case kCheckedLoadFloat64:
-      ASSEMBLE_CHECKED_LOAD_FLOAT(Movsd);
+      ASSEMBLE_CHECKED_LOAD_FLOAT(Movsd, OutOfLineLoadFloat64NaN);
       break;
     case kCheckedStoreWord8:
       ASSEMBLE_CHECKED_STORE_INTEGER(movb);
@@ -2031,10 +2309,14 @@ void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
 }
 
 CodeGenerator::CodeGenResult CodeGenerator::AssembleDeoptimizerCall(
-    int deoptimization_id, Deoptimizer::BailoutType bailout_type) {
+    int deoptimization_id, Deoptimizer::BailoutType bailout_type,
+    SourcePosition pos) {
   Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
       isolate(), deoptimization_id, bailout_type);
   if (deopt_entry == nullptr) return kTooManyDeoptimizationBailouts;
+  DeoptimizeReason deoptimization_reason =
+      GetDeoptimizationReason(deoptimization_id);
+  __ RecordDeoptReason(deoptimization_reason, pos.raw(), deoptimization_id);
   __ call(deopt_entry, RelocInfo::RUNTIME_ENTRY);
   return kSuccess;
 }
@@ -2073,6 +2355,8 @@ void CodeGenerator::FinishFrame(Frame* frame) {
 void CodeGenerator::AssembleConstructFrame() {
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
   if (frame_access_state()->has_frame()) {
+    int pc_base = __ pc_offset();
+
     if (descriptor->IsCFunctionCall()) {
       __ pushq(rbp);
       __ movq(rbp, rsp);
@@ -2080,6 +2364,10 @@ void CodeGenerator::AssembleConstructFrame() {
       __ Prologue(this->info()->GeneratePreagedPrologue());
     } else {
       __ StubPrologue(info()->GetOutputStackFrameType());
+    }
+
+    if (!descriptor->IsJSFunctionCall() || !info()->GeneratePreagedPrologue()) {
+      unwinding_info_writer_.MarkFrameConstructed(pc_base);
     }
   }
   int shrink_slots = frame()->GetSpillSlotCount();
@@ -2154,6 +2442,8 @@ void CodeGenerator::AssembleReturn() {
     __ addp(rsp, Immediate(stack_size));
   }
 
+  unwinding_info_writer_.MarkBlockWillExit();
+
   if (descriptor->IsCFunctionCall()) {
     AssembleDeconstructFrame();
   } else if (frame_access_state()->has_frame()) {
@@ -2217,7 +2507,11 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
             if (value == 0) {
               __ xorl(dst, dst);
             } else {
-              __ movl(dst, Immediate(value));
+              if (src.rmode() == RelocInfo::WASM_MEMORY_SIZE_REFERENCE) {
+                __ movl(dst, Immediate(value, src.rmode()));
+              } else {
+                __ movl(dst, Immediate(value));
+              }
             }
           }
           break;
@@ -2245,10 +2539,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
         case Constant::kHeapObject: {
           Handle<HeapObject> src_object = src.ToHeapObject();
           Heap::RootListIndex index;
-          int slot;
-          if (IsMaterializableFromFrame(src_object, &slot)) {
-            __ movp(dst, g.SlotToOperand(slot));
-          } else if (IsMaterializableFromRoot(src_object, &index)) {
+          if (IsMaterializableFromRoot(src_object, &index)) {
             __ LoadRoot(dst, index);
           } else {
             __ Move(dst, src_object);
@@ -2291,18 +2582,34 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     } else {
       DCHECK(destination->IsFPStackSlot());
       Operand dst = g.ToOperand(destination);
-      __ Movsd(dst, src);
+      MachineRepresentation rep =
+          LocationOperand::cast(source)->representation();
+      if (rep != MachineRepresentation::kSimd128) {
+        __ Movsd(dst, src);
+      } else {
+        __ Movups(dst, src);
+      }
     }
   } else if (source->IsFPStackSlot()) {
     DCHECK(destination->IsFPRegister() || destination->IsFPStackSlot());
     Operand src = g.ToOperand(source);
+    MachineRepresentation rep = LocationOperand::cast(source)->representation();
     if (destination->IsFPRegister()) {
       XMMRegister dst = g.ToDoubleRegister(destination);
-      __ Movsd(dst, src);
+      if (rep != MachineRepresentation::kSimd128) {
+        __ Movsd(dst, src);
+      } else {
+        __ Movups(dst, src);
+      }
     } else {
       Operand dst = g.ToOperand(destination);
-      __ Movsd(kScratchDoubleReg, src);
-      __ Movsd(dst, kScratchDoubleReg);
+      if (rep != MachineRepresentation::kSimd128) {
+        __ Movsd(kScratchDoubleReg, src);
+        __ Movsd(dst, kScratchDoubleReg);
+      } else {
+        __ Movups(kScratchDoubleReg, src);
+        __ Movups(dst, kScratchDoubleReg);
+      }
     }
   } else {
     UNREACHABLE();
@@ -2326,25 +2633,45 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
     Register src = g.ToRegister(source);
     __ pushq(src);
     frame_access_state()->IncreaseSPDelta(1);
+    unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                     kPointerSize);
     Operand dst = g.ToOperand(destination);
     __ movq(src, dst);
     frame_access_state()->IncreaseSPDelta(-1);
     dst = g.ToOperand(destination);
     __ popq(dst);
+    unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                     -kPointerSize);
   } else if ((source->IsStackSlot() && destination->IsStackSlot()) ||
              (source->IsFPStackSlot() && destination->IsFPStackSlot())) {
     // Memory-memory.
-    Register tmp = kScratchRegister;
     Operand src = g.ToOperand(source);
     Operand dst = g.ToOperand(destination);
-    __ movq(tmp, dst);
-    __ pushq(src);
-    frame_access_state()->IncreaseSPDelta(1);
-    src = g.ToOperand(source);
-    __ movq(src, tmp);
-    frame_access_state()->IncreaseSPDelta(-1);
-    dst = g.ToOperand(destination);
-    __ popq(dst);
+    MachineRepresentation rep = LocationOperand::cast(source)->representation();
+    if (rep != MachineRepresentation::kSimd128) {
+      Register tmp = kScratchRegister;
+      __ movq(tmp, dst);
+      __ pushq(src);
+      unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                       kPointerSize);
+      frame_access_state()->IncreaseSPDelta(1);
+      src = g.ToOperand(source);
+      __ movq(src, tmp);
+      frame_access_state()->IncreaseSPDelta(-1);
+      dst = g.ToOperand(destination);
+      __ popq(dst);
+      unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                       -kPointerSize);
+    } else {
+      // Use the XOR trick to swap without a temporary.
+      __ Movups(kScratchDoubleReg, src);
+      __ Xorps(kScratchDoubleReg, dst);  // scratch contains src ^ dst.
+      __ Movups(src, kScratchDoubleReg);
+      __ Xorps(kScratchDoubleReg, dst);  // scratch contains src.
+      __ Movups(dst, kScratchDoubleReg);
+      __ Xorps(kScratchDoubleReg, src);  // scratch contains dst.
+      __ Movups(src, kScratchDoubleReg);
+    }
   } else if (source->IsFPRegister() && destination->IsFPRegister()) {
     // XMM register-register swap.
     XMMRegister src = g.ToDoubleRegister(source);
@@ -2356,9 +2683,16 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
     // XMM register-memory swap.
     XMMRegister src = g.ToDoubleRegister(source);
     Operand dst = g.ToOperand(destination);
-    __ Movsd(kScratchDoubleReg, src);
-    __ Movsd(src, dst);
-    __ Movsd(dst, kScratchDoubleReg);
+    MachineRepresentation rep = LocationOperand::cast(source)->representation();
+    if (rep != MachineRepresentation::kSimd128) {
+      __ Movsd(kScratchDoubleReg, src);
+      __ Movsd(src, dst);
+      __ Movsd(dst, kScratchDoubleReg);
+    } else {
+      __ Movups(kScratchDoubleReg, src);
+      __ Movups(src, dst);
+      __ Movups(dst, kScratchDoubleReg);
+    }
   } else {
     // No other combinations are possible.
     UNREACHABLE();
@@ -2381,7 +2715,7 @@ void CodeGenerator::EnsureSpaceForLazyDeopt() {
   int space_needed = Deoptimizer::patch_size();
   // Ensure that we have enough space after the previous lazy-bailout
   // instruction for patching the code here.
-  int current_pc = masm()->pc_offset();
+  int current_pc = __ pc_offset();
   if (current_pc < last_lazy_deopt_pc_ + space_needed) {
     int padding_size = last_lazy_deopt_pc_ + space_needed - current_pc;
     __ Nop(padding_size);

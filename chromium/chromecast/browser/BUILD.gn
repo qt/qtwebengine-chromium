@@ -2,9 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/ui.gni")
 import("//chromecast/chromecast.gni")
 import("//testing/test.gni")
-import("//build/config/ui.gni")
+import("//tools/grit/grit_rule.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -30,6 +31,8 @@ source_set("browser") {
     "cast_download_manager_delegate.h",
     "cast_http_user_agent_settings.cc",
     "cast_http_user_agent_settings.h",
+    "cast_media_blocker.cc",
+    "cast_media_blocker.h",
     "cast_net_log.cc",
     "cast_net_log.h",
     "cast_network_delegate.cc",
@@ -40,8 +43,8 @@ source_set("browser") {
     "cast_quota_permission_context.h",
     "cast_resource_dispatcher_host_delegate.cc",
     "cast_resource_dispatcher_host_delegate.h",
-    "devtools/cast_dev_tools_delegate.cc",
-    "devtools/cast_dev_tools_delegate.h",
+    "devtools/cast_devtools_delegate.cc",
+    "devtools/cast_devtools_delegate.h",
     "devtools/remote_debugging_server.cc",
     "devtools/remote_debugging_server.h",
     "geolocation/cast_access_token_store.cc",
@@ -83,14 +86,15 @@ source_set("browser") {
     "//chromecast/base",
     "//chromecast/base:cast_sys_info",
     "//chromecast/base:cast_version",
+    "//chromecast/browser:resources",
     "//chromecast/common",
     "//chromecast/common/media",
+    "//chromecast/graphics",
     "//chromecast/media",
     "//chromecast/net",
     "//chromecast/service",
     "//components/crash/content/app",
     "//components/crash/content/browser",
-    "//components/devtools_http_handler:devtools_http_handler",
     "//components/metrics",
     "//components/metrics:gpu",
     "//components/metrics:net",
@@ -100,12 +104,12 @@ source_set("browser") {
     # isn't needed. crbug.com/541577
     "//components/metrics:ui",
     "//components/network_hints/browser",
-    "//components/network_session_configurator:switches",
     "//components/prefs",
     "//content",
     "//content/public/browser",
     "//content/public/common",
     "//content/public/utility",
+    "//device/geolocation",
     "//gpu",
     "//ipc",
     "//media",
@@ -126,20 +130,30 @@ source_set("browser") {
 
     deps += [
       "//build/linux:fontconfig",
-      "//chromecast/graphics",
       "//components/metrics:serialization",
       "//ui/aura",
     ]
   } else if (is_android) {
-    deps += [
-      ":jni_headers",
-      "//components/external_video_surface",
-    ]
+    deps += [ ":jni_headers" ]
   }
 
   if (use_ozone) {
     deps += [ "//ui/ozone" ]
   }
+}
+
+grit("resources") {
+  visibility = [
+    ":browser",
+    "//chromecast:cast_shell_pak",
+  ]
+  source = "cast_browser_resources.grd"
+  use_qualified_include = true
+  output_dir = "$root_gen_dir/chromecast/browser"
+  outputs = [
+    "grit/cast_browser_resources.h",
+    "cast_browser_resources.pak",
+  ]
 }
 
 source_set("test_support") {
@@ -159,7 +173,7 @@ source_set("test_support") {
   public_deps = [
     ":browser",
     "//chromecast:cast_shell_common",
-    "//content/test:browsertest_base",
+    "//content/test:test_support",
   ]
 
   deps = [
@@ -168,7 +182,6 @@ source_set("test_support") {
     "//chromecast/base",
     "//content/public/browser",
     "//content/public/common",
-    "//content/test:test_support",
     "//testing/gtest",
   ]
 }
@@ -180,6 +193,7 @@ config("browser_test_config") {
 test("cast_shell_browser_test") {
   sources = [
     "test/chromecast_shell_browser_test.cc",
+    "test/chromecast_shell_media_blocking_browser_test.cc",
   ]
 
   configs += [ ":browser_test_config" ]
@@ -188,7 +202,6 @@ test("cast_shell_browser_test") {
     ":test_support",
     "//base",
     "//chromecast:chromecast_features",
-    "//content/test:browsertest_base",
     "//content/test:test_support",
     "//media/base:test_support",
     "//testing/gtest",

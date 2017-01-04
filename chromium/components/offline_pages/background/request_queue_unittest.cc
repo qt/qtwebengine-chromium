@@ -24,10 +24,13 @@ namespace {
 const int64_t kRequestId = 42;
 const GURL kUrl("http://example.com");
 const ClientId kClientId("bookmark", "1234");
+const int64_t kRetryCount = 2;
 // Data for request 2.
 const int64_t kRequestId2 = 77;
 const GURL kUrl2("http://test.com");
 const ClientId kClientId2("bookmark", "567");
+const bool kUserRequested = true;
+const int64_t kRequestId3 = 99;
 }  // namespace
 
 // TODO(fgorski): Add tests for store failures in add/remove/get.
@@ -45,9 +48,10 @@ class RequestQueueTest : public testing::Test {
   void AddRequestDone(AddRequestResult result, const SavePageRequest& request);
   // Callback for getting requests.
   void GetRequestsDone(GetRequestsResult result,
-                       const std::vector<SavePageRequest>& requests);
-  // Callback for removing request.
-  void RemoveRequestDone(UpdateRequestResult result);
+                       std::vector<std::unique_ptr<SavePageRequest>> requests);
+
+  void UpdateRequestDone(UpdateRequestResult result);
+  void UpdateRequestsDone(std::unique_ptr<UpdateRequestsResult> result);
 
   RequestQueue* queue() { return queue_.get(); }
 
@@ -56,23 +60,28 @@ class RequestQueueTest : public testing::Test {
     return last_added_request_.get();
   }
 
-  UpdateRequestResult last_remove_result() const { return last_remove_result_; }
+  UpdateRequestResult last_update_result() const { return last_update_result_; }
 
   GetRequestsResult last_get_requests_result() const {
     return last_get_requests_result_;
   }
-  const std::vector<SavePageRequest>& last_requests() const {
+
+  const std::vector<std::unique_ptr<SavePageRequest>>& last_requests() const {
     return last_requests_;
+  }
+
+  UpdateRequestsResult* update_requests_result() const {
+    return update_requests_result_.get();
   }
 
  private:
   AddRequestResult last_add_result_;
   std::unique_ptr<SavePageRequest> last_added_request_;
-
-  UpdateRequestResult last_remove_result_;
+  std::unique_ptr<UpdateRequestsResult> update_requests_result_;
+  UpdateRequestResult last_update_result_;
 
   GetRequestsResult last_get_requests_result_;
-  std::vector<SavePageRequest> last_requests_;
+  std::vector<std::unique_ptr<SavePageRequest>> last_requests_;
 
   std::unique_ptr<RequestQueue> queue_;
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
@@ -81,7 +90,7 @@ class RequestQueueTest : public testing::Test {
 
 RequestQueueTest::RequestQueueTest()
     : last_add_result_(AddRequestResult::STORE_FAILURE),
-      last_remove_result_(UpdateRequestResult::STORE_FAILURE),
+      last_update_result_(UpdateRequestResult::STORE_FAILURE),
       last_get_requests_result_(GetRequestsResult::STORE_FAILURE),
       task_runner_(new base::TestSimpleTaskRunner),
       task_runner_handle_(task_runner_) {}
@@ -106,13 +115,18 @@ void RequestQueueTest::AddRequestDone(AddRequestResult result,
 
 void RequestQueueTest::GetRequestsDone(
     GetRequestsResult result,
-    const std::vector<SavePageRequest>& requests) {
+    std::vector<std::unique_ptr<SavePageRequest>> requests) {
   last_get_requests_result_ = result;
-  last_requests_ = requests;
+  last_requests_ = std::move(requests);
 }
 
-void RequestQueueTest::RemoveRequestDone(UpdateRequestResult result) {
-  last_remove_result_ = result;
+void RequestQueueTest::UpdateRequestDone(UpdateRequestResult result) {
+  last_update_result_ = result;
+}
+
+void RequestQueueTest::UpdateRequestsDone(
+    std::unique_ptr<UpdateRequestsResult> result) {
+  update_requests_result_ = std::move(result);
 }
 
 TEST_F(RequestQueueTest, GetRequestsEmpty) {
@@ -125,7 +139,8 @@ TEST_F(RequestQueueTest, GetRequestsEmpty) {
 
 TEST_F(RequestQueueTest, AddRequest) {
   base::Time creation_time = base::Time::Now();
-  SavePageRequest request(kRequestId, kUrl, kClientId, creation_time);
+  SavePageRequest request(
+      kRequestId, kUrl, kClientId, creation_time, kUserRequested);
   queue()->AddRequest(request, base::Bind(&RequestQueueTest::AddRequestDone,
                                           base::Unretained(this)));
   PumpLoop();
@@ -142,17 +157,24 @@ TEST_F(RequestQueueTest, AddRequest) {
 
 TEST_F(RequestQueueTest, RemoveRequest) {
   base::Time creation_time = base::Time::Now();
-  SavePageRequest request(kRequestId, kUrl, kClientId, creation_time);
+  SavePageRequest request(
+      kRequestId, kUrl, kClientId, creation_time, kUserRequested);
   queue()->AddRequest(request, base::Bind(&RequestQueueTest::AddRequestDone,
                                           base::Unretained(this)));
   PumpLoop();
   ASSERT_EQ(kRequestId, last_added_request()->request_id());
 
-  queue()->RemoveRequest(
-      kRequestId,
-      base::Bind(&RequestQueueTest::RemoveRequestDone, base::Unretained(this)));
+  std::vector<int64_t> remove_requests{kRequestId};
+  queue()->RemoveRequests(remove_requests,
+                          base::Bind(&RequestQueueTest::UpdateRequestsDone,
+                                     base::Unretained(this)));
   PumpLoop();
-  ASSERT_EQ(UpdateRequestResult::SUCCESS, last_remove_result());
+  EXPECT_EQ(1ul, update_requests_result()->item_statuses.size());
+  EXPECT_EQ(kRequestId, update_requests_result()->item_statuses.at(0).first);
+  EXPECT_EQ(ItemActionStatus::SUCCESS,
+            update_requests_result()->item_statuses.at(0).second);
+  EXPECT_EQ(1UL, update_requests_result()->updated_items.size());
+  EXPECT_EQ(request, update_requests_result()->updated_items.at(0));
 
   queue()->GetRequests(
       base::Bind(&RequestQueueTest::GetRequestsDone, base::Unretained(this)));
@@ -161,16 +183,132 @@ TEST_F(RequestQueueTest, RemoveRequest) {
   ASSERT_EQ(0ul, last_requests().size());
 }
 
+TEST_F(RequestQueueTest, RemoveSeveralRequests) {
+  base::Time creation_time = base::Time::Now();
+  SavePageRequest request(kRequestId, kUrl, kClientId, creation_time,
+                          kUserRequested);
+  queue()->AddRequest(request, base::Bind(&RequestQueueTest::AddRequestDone,
+                                          base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(kRequestId, last_added_request()->request_id());
+
+  SavePageRequest request2(kRequestId2, kUrl2, kClientId2, creation_time,
+                           kUserRequested);
+  queue()->AddRequest(request2, base::Bind(&RequestQueueTest::AddRequestDone,
+                                           base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(kRequestId2, last_added_request()->request_id());
+
+  std::vector<int64_t> remove_requests;
+  remove_requests.push_back(kRequestId);
+  remove_requests.push_back(kRequestId2);
+  remove_requests.push_back(kRequestId3);
+  queue()->RemoveRequests(remove_requests,
+                          base::Bind(&RequestQueueTest::UpdateRequestsDone,
+                                     base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(3ul, update_requests_result()->item_statuses.size());
+  ASSERT_EQ(kRequestId, update_requests_result()->item_statuses.at(0).first);
+  ASSERT_EQ(ItemActionStatus::SUCCESS,
+            update_requests_result()->item_statuses.at(0).second);
+  ASSERT_EQ(kRequestId2, update_requests_result()->item_statuses.at(1).first);
+  ASSERT_EQ(ItemActionStatus::SUCCESS,
+            update_requests_result()->item_statuses.at(1).second);
+  ASSERT_EQ(kRequestId3, update_requests_result()->item_statuses.at(2).first);
+  ASSERT_EQ(ItemActionStatus::NOT_FOUND,
+            update_requests_result()->item_statuses.at(2).second);
+  EXPECT_EQ(2UL, update_requests_result()->updated_items.size());
+  EXPECT_EQ(request, update_requests_result()->updated_items.at(0));
+  EXPECT_EQ(request2, update_requests_result()->updated_items.at(1));
+
+  queue()->GetRequests(
+      base::Bind(&RequestQueueTest::GetRequestsDone, base::Unretained(this)));
+  PumpLoop();
+
+  // Verify both requests are no longer in the queue.
+  ASSERT_EQ(GetRequestsResult::SUCCESS, last_get_requests_result());
+  ASSERT_EQ(0ul, last_requests().size());
+}
+
+TEST_F(RequestQueueTest, PauseAndResume) {
+  base::Time creation_time = base::Time::Now();
+  SavePageRequest request(kRequestId, kUrl, kClientId, creation_time,
+                          kUserRequested);
+  queue()->AddRequest(request, base::Bind(&RequestQueueTest::AddRequestDone,
+                                          base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(kRequestId, last_added_request()->request_id());
+
+  queue()->GetRequests(
+      base::Bind(&RequestQueueTest::GetRequestsDone, base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(GetRequestsResult::SUCCESS, last_get_requests_result());
+  ASSERT_EQ(1ul, last_requests().size());
+
+  std::vector<int64_t> request_ids;
+  request_ids.push_back(kRequestId);
+
+  // Pause the request.
+  queue()->ChangeRequestsState(request_ids,
+                               SavePageRequest::RequestState::PAUSED,
+                               base::Bind(&RequestQueueTest::UpdateRequestsDone,
+                                          base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(1ul, update_requests_result()->item_statuses.size());
+  ASSERT_EQ(kRequestId, update_requests_result()->item_statuses.at(0).first);
+  ASSERT_EQ(ItemActionStatus::SUCCESS,
+            update_requests_result()->item_statuses.at(0).second);
+  ASSERT_EQ(1ul, update_requests_result()->updated_items.size());
+  ASSERT_EQ(SavePageRequest::RequestState::PAUSED,
+            update_requests_result()->updated_items.at(0).request_state());
+
+  queue()->GetRequests(
+      base::Bind(&RequestQueueTest::GetRequestsDone, base::Unretained(this)));
+  PumpLoop();
+
+  // Verify the request is paused.
+  ASSERT_EQ(GetRequestsResult::SUCCESS, last_get_requests_result());
+  ASSERT_EQ(1ul, last_requests().size());
+  ASSERT_EQ(SavePageRequest::RequestState::PAUSED,
+            last_requests().at(0)->request_state());
+
+  // Resume the request.
+  queue()->ChangeRequestsState(request_ids,
+                               SavePageRequest::RequestState::AVAILABLE,
+                               base::Bind(&RequestQueueTest::UpdateRequestsDone,
+                                          base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(1ul, update_requests_result()->item_statuses.size());
+  ASSERT_EQ(kRequestId, update_requests_result()->item_statuses.at(0).first);
+  ASSERT_EQ(ItemActionStatus::SUCCESS,
+            update_requests_result()->item_statuses.at(0).second);
+  ASSERT_EQ(1ul, update_requests_result()->updated_items.size());
+  ASSERT_EQ(SavePageRequest::RequestState::AVAILABLE,
+            update_requests_result()->updated_items.at(0).request_state());
+
+  queue()->GetRequests(
+      base::Bind(&RequestQueueTest::GetRequestsDone, base::Unretained(this)));
+  PumpLoop();
+
+  // Verify the request is no longer paused.
+  ASSERT_EQ(GetRequestsResult::SUCCESS, last_get_requests_result());
+  ASSERT_EQ(1ul, last_requests().size());
+  ASSERT_EQ(SavePageRequest::RequestState::AVAILABLE,
+            last_requests().at(0)->request_state());
+}
+
 // A longer test populating the request queue with more than one item, properly
 // listing multiple items and removing the right item.
 TEST_F(RequestQueueTest, MultipleRequestsAddGetRemove) {
   base::Time creation_time = base::Time::Now();
-  SavePageRequest request1(kRequestId, kUrl, kClientId, creation_time);
+  SavePageRequest request1(
+      kRequestId, kUrl, kClientId, creation_time, kUserRequested);
   queue()->AddRequest(request1, base::Bind(&RequestQueueTest::AddRequestDone,
                                            base::Unretained(this)));
   PumpLoop();
   ASSERT_EQ(request1.request_id(), last_added_request()->request_id());
-  SavePageRequest request2(kRequestId2, kUrl2, kClientId2, creation_time);
+  SavePageRequest request2(
+      kRequestId2, kUrl2, kClientId2, creation_time, kUserRequested);
   queue()->AddRequest(request2, base::Bind(&RequestQueueTest::AddRequestDone,
                                            base::Unretained(this)));
   PumpLoop();
@@ -182,18 +320,68 @@ TEST_F(RequestQueueTest, MultipleRequestsAddGetRemove) {
   ASSERT_EQ(GetRequestsResult::SUCCESS, last_get_requests_result());
   ASSERT_EQ(2ul, last_requests().size());
 
-  queue()->RemoveRequest(
-      request1.request_id(),
-      base::Bind(&RequestQueueTest::RemoveRequestDone, base::Unretained(this)));
+  std::vector<int64_t> remove_requests;
+  remove_requests.push_back(request1.request_id());
+  queue()->RemoveRequests(remove_requests,
+                          base::Bind(&RequestQueueTest::UpdateRequestsDone,
+                                     base::Unretained(this)));
   PumpLoop();
-  ASSERT_EQ(UpdateRequestResult::SUCCESS, last_remove_result());
+  ASSERT_EQ(1ul, update_requests_result()->item_statuses.size());
+  ASSERT_EQ(kRequestId, update_requests_result()->item_statuses.at(0).first);
+  ASSERT_EQ(ItemActionStatus::SUCCESS,
+            update_requests_result()->item_statuses.at(0).second);
 
   queue()->GetRequests(
       base::Bind(&RequestQueueTest::GetRequestsDone, base::Unretained(this)));
   PumpLoop();
   ASSERT_EQ(GetRequestsResult::SUCCESS, last_get_requests_result());
   ASSERT_EQ(1ul, last_requests().size());
-  ASSERT_EQ(request2.request_id(), last_requests()[0].request_id());
+  ASSERT_EQ(request2.request_id(), last_requests().at(0)->request_id());
+}
+
+TEST_F(RequestQueueTest, UpdateRequest) {
+  // First add a request.  Retry count will be set to 0.
+  base::Time creation_time = base::Time::Now();
+  SavePageRequest request(
+      kRequestId, kUrl, kClientId, creation_time, kUserRequested);
+  queue()->AddRequest(request, base::Bind(&RequestQueueTest::AddRequestDone,
+                                          base::Unretained(this)));
+  PumpLoop();
+
+  // Update the request, ensure it succeeded.
+  request.set_completed_attempt_count(kRetryCount);
+  queue()->UpdateRequest(
+      request,
+      base::Bind(&RequestQueueTest::UpdateRequestDone, base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(UpdateRequestResult::SUCCESS, last_update_result());
+
+  // Get the request, and verify the update took effect.
+  queue()->GetRequests(
+      base::Bind(&RequestQueueTest::GetRequestsDone, base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(GetRequestsResult::SUCCESS, last_get_requests_result());
+  ASSERT_EQ(1ul, last_requests().size());
+  ASSERT_EQ(kRetryCount, last_requests().at(0)->completed_attempt_count());
+}
+
+TEST_F(RequestQueueTest, UpdateRequestNotPresent) {
+  // First add a request.  Retry count will be set to 0.
+  base::Time creation_time = base::Time::Now();
+  SavePageRequest request1(
+      kRequestId, kUrl, kClientId, creation_time, kUserRequested);
+  SavePageRequest request2(
+      kRequestId2, kUrl2, kClientId2, creation_time, kUserRequested);
+  queue()->AddRequest(request2, base::Bind(&RequestQueueTest::AddRequestDone,
+                                           base::Unretained(this)));
+  PumpLoop();
+
+  // Try to update request1 when only request2 is in the queue.
+  queue()->UpdateRequest(
+      request1,
+      base::Bind(&RequestQueueTest::UpdateRequestDone, base::Unretained(this)));
+  PumpLoop();
+  ASSERT_EQ(UpdateRequestResult::REQUEST_DOES_NOT_EXIST, last_update_result());
 }
 
 }  // namespace offline_pages

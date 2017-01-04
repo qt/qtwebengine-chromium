@@ -35,16 +35,14 @@ class Checker(object):
 
   _MAP_FILE_FORMAT = "%s.map"
 
-  def __init__(self, verbose=False, strict=False):
+  def __init__(self, verbose=False):
     """
     Args:
       verbose: Whether this class should output diagnostic messages.
-      strict: Whether the Closure Compiler should be invoked more strictly.
     """
     self._runner_jar = os.path.join(_CURRENT_DIR, "runner", "runner.jar")
     self._temp_files = []
     self._verbose = verbose
-    self._strict = strict
     self._error_filter = error_filter.PromiseErrorFilter()
 
   def _nuke_temp_files(self):
@@ -186,13 +184,14 @@ class Checker(object):
     return tmp_file.name
 
   def _run_js_check(self, sources, out_file=None, externs=None,
-                    closure_args=None):
+                    runner_args=None, closure_args=None):
     """Check |sources| for type errors.
 
     Args:
       sources: Files to check.
       out_file: A file where the compiled output is written to.
       externs: @extern files that inform the compiler about custom globals.
+      runner_args: Arguments passed to runner.jar.
       closure_args: Arguments passed directly to the Closure compiler.
 
     Returns:
@@ -208,11 +207,11 @@ class Checker(object):
       args += ["--js_output_file=%s" % out_file]
       args += ["--create_source_map=%s" % (self._MAP_FILE_FORMAT % out_file)]
 
-    if externs:
-      args += ["--externs=%s" % e for e in externs]
+    args += ["--externs=%s" % e for e in externs or []]
 
-    if closure_args:
-      args += ["--%s" % arg for arg in closure_args]
+    closure_args = closure_args or []
+    closure_args += ["summary_detail_level=3"]
+    args += ["--%s" % arg for arg in closure_args]
 
     args_file_content = " %s" % " ".join(args)
     self._log_debug("Args: %s" % args_file_content.strip())
@@ -220,8 +219,9 @@ class Checker(object):
     args_file = self._create_temp_file(args_file_content)
     self._log_debug("Args file: %s" % args_file)
 
-    runner_args = ["--compiler-args-file=%s" % args_file]
-    _, stderr = self._run_jar(self._runner_jar, runner_args)
+    processed_runner_args = ["--%s" % arg for arg in runner_args or []]
+    processed_runner_args += ["--compiler-args-file=%s" % args_file]
+    _, stderr = self._run_jar(self._runner_jar, processed_runner_args)
 
     errors = stderr.strip().split("\n\n")
     maybe_summary = errors.pop()
@@ -243,7 +243,7 @@ class Checker(object):
     return errors, stderr
 
   def check(self, source_file, out_file=None, depends=None, externs=None,
-            closure_args=None):
+            runner_args=None, closure_args=None):
     """Closure compiler |source_file| while checking for errors.
 
     Args:
@@ -251,6 +251,7 @@ class Checker(object):
       out_file: A file where the compiled output is written to.
       depends: Files that |source_file| requires to run (e.g. earlier <script>).
       externs: @extern files that inform the compiler about custom globals.
+      runner_args: Arguments passed to runner.jar.
       closure_args: Arguments passed directly to the Closure compiler.
 
     Returns:
@@ -280,6 +281,7 @@ class Checker(object):
 
     errors, stderr = self._run_js_check([self._expanded_file],
                                         out_file=out_file, externs=externs,
+                                        runner_args=runner_args,
                                         closure_args=closure_args)
     filtered_errors = self._filter_errors(errors)
     cleaned_errors = map(self._clean_up_error, filtered_errors)
@@ -295,13 +297,14 @@ class Checker(object):
     return bool(cleaned_errors), stderr
 
   def check_multiple(self, sources, out_file=None, externs=None,
-                     closure_args=None):
+                     runner_args=None, closure_args=None):
     """Closure compile a set of files and check for errors.
 
     Args:
       sources: An array of files to check.
       out_file: A file where the compiled output is written to.
       externs: @extern files that inform the compiler about custom globals.
+      runner_args: Arguments passed to runner.jar.
       closure_args: Arguments passed directly to the Closure compiler.
 
     Returns:
@@ -310,6 +313,7 @@ class Checker(object):
     """
     errors, stderr = self._run_js_check(sources, out_file=out_file,
                                         externs=externs,
+                                        runner_args=runner_args,
                                         closure_args=closure_args)
     self._nuke_temp_files()
     return bool(errors), stderr
@@ -321,24 +325,25 @@ if __name__ == "__main__":
   parser.add_argument("sources", nargs=argparse.ONE_OR_MORE,
                       help="Path to a source file to typecheck")
   single_file_group = parser.add_mutually_exclusive_group()
-  single_file_group.add_argument("--single-file", dest="single_file",
+  single_file_group.add_argument("--single_file", dest="single_file",
                                  action="store_true",
                                  help="Process each source file individually")
-  # TODO(twellington): remove --no-single-file and use len(opts.sources).
-  single_file_group.add_argument("--no-single-file", dest="single_file",
+  # TODO(twellington): remove --no_single_file and use len(opts.sources).
+  single_file_group.add_argument("--no_single_file", dest="single_file",
                                  action="store_false",
                                  help="Process all source files as a group")
   parser.add_argument("-d", "--depends", nargs=argparse.ZERO_OR_MORE)
   parser.add_argument("-e", "--externs", nargs=argparse.ZERO_OR_MORE)
-  parser.add_argument("-o", "--out-file", dest="out_file",
+  parser.add_argument("-o", "--out_file",
                       help="A file where the compiled output is written to")
-  parser.add_argument("-c", "--closure-args", dest="closure_args",
-                      nargs=argparse.ZERO_OR_MORE,
+  parser.add_argument("-r", "--runner_args", nargs=argparse.ZERO_OR_MORE,
+                      help="Arguments passed to runner.jar")
+  parser.add_argument("-c", "--closure_args", nargs=argparse.ZERO_OR_MORE,
                       help="Arguments passed directly to the Closure compiler")
   parser.add_argument("-v", "--verbose", action="store_true",
                       help="Show more information as this script runs")
 
-  parser.set_defaults(single_file=True, strict=False)
+  parser.set_defaults(single_file=True)
   opts = parser.parse_args()
 
   depends = opts.depends or []
@@ -349,7 +354,7 @@ if __name__ == "__main__":
 
   externs.add(os.path.join(_CURRENT_DIR, "externs", "polymer-1.0.js"))
 
-  checker = Checker(verbose=opts.verbose, strict=opts.strict)
+  checker = Checker(verbose=opts.verbose)
   if opts.single_file:
     for source in sources:
       # Normalize source to the current directory.
@@ -359,6 +364,7 @@ if __name__ == "__main__":
 
       found_errors, _ = checker.check(source, out_file=opts.out_file,
                                       depends=depends, externs=externs,
+                                      runner_args=opts.runner_args,
                                       closure_args=opts.closure_args)
       if found_errors:
         sys.exit(1)
@@ -367,6 +373,7 @@ if __name__ == "__main__":
         sources,
         out_file=opts.out_file,
         externs=externs,
+        runner_args=opts.runner_args,
         closure_args=opts.closure_args)
     if found_errors:
       print stderr

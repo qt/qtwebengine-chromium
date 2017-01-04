@@ -43,12 +43,6 @@ class CC_EXPORT VideoFrameExternalResources {
     RGBA_RESOURCE,
     STREAM_TEXTURE_RESOURCE,
 
-#if defined(VIDEO_HOLE)
-    // TODO(danakj): Implement this with a solid color layer instead of a video
-    // frame and video layer.
-    HOLE,
-#endif  // defined(VIDEO_HOLE)
-
     // TODO(danakj): Remove this and abstract TextureMailbox into
     // "ExternalResource" that can hold a hardware or software backing.
     SOFTWARE_RESOURCE
@@ -67,6 +61,7 @@ class CC_EXPORT VideoFrameExternalResources {
   // After a lookup, subtract offset and multiply by multiplier.
   float offset;
   float multiplier;
+  uint32_t bits_per_channel;
 
   VideoFrameExternalResources();
   VideoFrameExternalResources(const VideoFrameExternalResources& other);
@@ -84,6 +79,15 @@ class CC_EXPORT VideoResourceUpdater
 
   VideoFrameExternalResources CreateExternalResourcesFromVideoFrame(
       scoped_refptr<media::VideoFrame> video_frame);
+
+  // Convert an array of short integers into an array of half-floats.
+  // |src| is an array of integers in range 0 .. 2^{bits_per_channel} - 1
+  // |num| is number of entries in input and output array.
+  // The numbers stored in |dst| will be half floats in range 0.0..1.0
+  static void MakeHalfFloats(const uint16_t* src,
+                             int bits_per_channel,
+                             size_t num,
+                             uint16_t* dst);
 
  private:
   class PlaneResource {
@@ -135,8 +139,26 @@ class CC_EXPORT VideoResourceUpdater
   // This needs to be a container where iterators can be erased without
   // invalidating other iterators.
   typedef std::list<PlaneResource> ResourceList;
+
+  // Obtain a resource of the right format by either recycling an
+  // unreferenced but appropriately formatted resource, or by
+  // allocating a new resource.
+  // Additionally, if the |unique_id| and |plane_index| match, then
+  // it is assumed that the resource has the right data already and will only be
+  // used for reading, and so is returned even if it is still referenced.
+  // Passing -1 for |plane_index| avoids returning referenced
+  // resources.
+  ResourceList::iterator RecycleOrAllocateResource(
+      const gfx::Size& resource_size,
+      ResourceFormat resource_format,
+      const gfx::ColorSpace& color_space,
+      bool software_resource,
+      bool immutable_hint,
+      int unique_id,
+      int plane_index);
   ResourceList::iterator AllocateResource(const gfx::Size& plane_size,
                                           ResourceFormat format,
+                                          const gfx::ColorSpace& color_space,
                                           bool has_mailbox,
                                           bool immutable_hint);
   void DeleteResource(ResourceList::iterator resource_it);

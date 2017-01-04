@@ -99,7 +99,7 @@ bool SinkInputPin::IsMediaTypeValid(const AM_MEDIA_TYPE* media_type) {
 #ifndef NDEBUG
   WCHAR guid_str[128];
   StringFromGUID2(sub_type, guid_str, arraysize(guid_str));
-  DVLOG(2) << __FUNCTION__ << " unsupported media type: " << guid_str;
+  DVLOG(2) << __func__ << " unsupported media type: " << guid_str;
 #endif
   return false;
 }
@@ -191,24 +191,25 @@ bool SinkInputPin::GetValidMediaType(int index, AM_MEDIA_TYPE* media_type) {
 
 HRESULT SinkInputPin::Receive(IMediaSample* sample) {
   const int length = sample->GetActualDataLength();
-  uint8_t* buffer = NULL;
 
-  if (length <= 0) {
-    DLOG(WARNING) << "Media sample length is 0 or less.";
+  if (length <= 0 ||
+      static_cast<size_t>(length) < resulting_format_.ImageAllocationSize()) {
+    DLOG(WARNING) << "Wrong media sample length: " << length;
     return S_FALSE;
   }
 
+  uint8_t* buffer = nullptr;
   if (FAILED(sample->GetPointer(&buffer)))
     return S_FALSE;
 
   REFERENCE_TIME start_time, end_time;
-  base::TimeDelta timestamp = media::kNoTimestamp();
+  base::TimeDelta timestamp = media::kNoTimestamp;
   if (SUCCEEDED(sample->GetTime(&start_time, &end_time))) {
     DCHECK(start_time <= end_time);
     timestamp = base::TimeDelta::FromMicroseconds(start_time / 10);
   }
 
-  observer_->FrameReceived(buffer, length, timestamp);
+  observer_->FrameReceived(buffer, length, resulting_format_, timestamp);
   return S_OK;
 }
 

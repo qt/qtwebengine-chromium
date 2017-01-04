@@ -211,7 +211,7 @@ class Simulator {
   // Call on program start.
   static void Initialize(Isolate* isolate);
 
-  static void TearDown(base::HashMap* i_cache, Redirection* first);
+  static void TearDown(base::CustomMatcherHashMap* i_cache, Redirection* first);
 
   // V8 generally calls into generated JS code with 5 parameters and into
   // generated RegExp code with 7 parameters. This is a convenience function,
@@ -233,7 +233,8 @@ class Simulator {
   char* last_debugger_input() { return last_debugger_input_; }
 
   // ICache checking.
-  static void FlushICache(base::HashMap* i_cache, void* start, size_t size);
+  static void FlushICache(base::CustomMatcherHashMap* i_cache, void* start,
+                          size_t size);
 
   // Returns true if pc register contains one of the 'special_values' defined
   // below (bad_lr, end_sim_pc).
@@ -281,6 +282,7 @@ class Simulator {
   // Byte Reverse
   inline int16_t ByteReverse(int16_t hword);
   inline int32_t ByteReverse(int32_t word);
+  inline int64_t ByteReverse(int64_t dword);
 
   // Read and write memory.
   inline uint8_t ReadBU(intptr_t addr);
@@ -296,6 +298,7 @@ class Simulator {
 
   inline uint32_t ReadWU(intptr_t addr, Instruction* instr);
   inline int32_t ReadW(intptr_t addr, Instruction* instr);
+  inline int64_t ReadW64(intptr_t addr, Instruction* instr);
   inline void WriteW(intptr_t addr, uint32_t value, Instruction* instr);
   inline void WriteW(intptr_t addr, int32_t value, Instruction* instr);
 
@@ -443,9 +446,12 @@ class Simulator {
   void ExecuteInstruction(Instruction* instr, bool auto_incr_pc = true);
 
   // ICache.
-  static void CheckICache(base::HashMap* i_cache, Instruction* instr);
-  static void FlushOnePage(base::HashMap* i_cache, intptr_t start, int size);
-  static CachePage* GetCachePage(base::HashMap* i_cache, void* page);
+  static void CheckICache(base::CustomMatcherHashMap* i_cache,
+                          Instruction* instr);
+  static void FlushOnePage(base::CustomMatcherHashMap* i_cache, intptr_t start,
+                           int size);
+  static CachePage* GetCachePage(base::CustomMatcherHashMap* i_cache,
+                                 void* page);
 
   // Runtime call support.
   static void* RedirectExternalReference(
@@ -480,7 +486,7 @@ class Simulator {
   char* last_debugger_input_;
 
   // Icache simulation
-  base::HashMap* i_cache_;
+  base::CustomMatcherHashMap* i_cache_;
 
   // Registered breakpoints.
   Instruction* break_pc_;

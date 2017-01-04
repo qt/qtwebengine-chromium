@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
+#include "cc/output/overlay_strategy_fullscreen.h"
 #include "cc/output/overlay_strategy_single_on_top.h"
 #include "cc/output/overlay_strategy_underlay.h"
 #include "ui/ozone/public/overlay_candidates_ozone.h"
@@ -29,8 +30,10 @@ static gfx::BufferFormat GetBufferFormat(cc::ResourceFormat overlay_format) {
 
 CompositorOverlayCandidateValidatorOzone::
     CompositorOverlayCandidateValidatorOzone(
-        std::unique_ptr<ui::OverlayCandidatesOzone> overlay_candidates)
+        std::unique_ptr<ui::OverlayCandidatesOzone> overlay_candidates,
+        bool single_fullscreen)
     : overlay_candidates_(std::move(overlay_candidates)),
+      single_fullscreen_(single_fullscreen),
       software_mirror_active_(false) {}
 
 CompositorOverlayCandidateValidatorOzone::
@@ -38,10 +41,14 @@ CompositorOverlayCandidateValidatorOzone::
 
 void CompositorOverlayCandidateValidatorOzone::GetStrategies(
     cc::OverlayProcessor::StrategyList* strategies) {
-  strategies->push_back(
-      base::WrapUnique(new cc::OverlayStrategySingleOnTop(this)));
-  strategies->push_back(
-      base::WrapUnique(new cc::OverlayStrategyUnderlay(this)));
+  if (single_fullscreen_) {
+    strategies->push_back(
+        base::MakeUnique<cc::OverlayStrategyFullscreen>(this));
+  } else {
+    strategies->push_back(
+        base::MakeUnique<cc::OverlayStrategySingleOnTop>(this));
+    strategies->push_back(base::MakeUnique<cc::OverlayStrategyUnderlay>(this));
+  }
 }
 
 bool CompositorOverlayCandidateValidatorOzone::AllowCALayerOverlays() {
@@ -52,8 +59,16 @@ void CompositorOverlayCandidateValidatorOzone::CheckOverlaySupport(
     cc::OverlayCandidateList* surfaces) {
   // SW mirroring copies out of the framebuffer, so we can't remove any
   // quads for overlaying, otherwise the output is incorrect.
-  if (software_mirror_active_)
+  if (software_mirror_active_) {
+    for (size_t i = 0; i < surfaces->size(); i++) {
+      surfaces->at(i).overlay_handled = false;
+    }
     return;
+  }
+
+  if (single_fullscreen_) {
+    return;  // No need for validation for single fullscreen.
+  }
 
   DCHECK_GE(2U, surfaces->size());
   ui::OverlayCandidatesOzone::OverlaySurfaceCandidateList ozone_surface_list;

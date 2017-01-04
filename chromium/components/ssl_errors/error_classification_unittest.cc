@@ -6,6 +6,7 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_split.h"
 #include "base/time/default_clock.h"
 #include "base/time/default_tick_clock.h"
@@ -192,8 +193,8 @@ TEST_F(SSLErrorClassificationTest, GetClockState) {
   network_time::NetworkTimeTracker::RegisterPrefs(pref_service.registry());
   base::MessageLoop loop;
   network_time::NetworkTimeTracker network_time_tracker(
-      base::WrapUnique(new base::DefaultClock()),
-      base::WrapUnique(new base::DefaultTickClock()), &pref_service,
+      base::MakeUnique<base::DefaultClock>(),
+      base::MakeUnique<base::DefaultTickClock>(), &pref_service,
       new net::TestURLRequestContextGetter(
           base::ThreadTaskRunnerHandle::Get()));
 

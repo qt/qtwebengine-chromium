@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
@@ -39,8 +40,8 @@ struct InteractionsStats {
 bool operator==(const InteractionsStats& lhs, const InteractionsStats& rhs);
 
 // Returns an element from |stats| with |username| or nullptr if not found.
-InteractionsStats* FindStatsByUsername(
-    const std::vector<std::unique_ptr<InteractionsStats>>& stats,
+const InteractionsStats* FindStatsByUsername(
+    const std::vector<const InteractionsStats*>& stats,
     const base::string16& username);
 
 // Represents the 'stats' table in the Login Database.
@@ -71,9 +72,13 @@ class StatisticsTable {
   // Returns the statistics for |domain| if it exists.
   std::vector<std::unique_ptr<InteractionsStats>> GetRows(const GURL& domain);
 
-  // Removes the statistics between the dates. Returns true if the SQL completed
-  // successfully.
-  bool RemoveStatsBetween(base::Time delete_begin, base::Time delete_end);
+  // Removes the statistics between the dates. If |origin_filter| is not null,
+  // only statistics for matching origins are removed. Returns true if the SQL
+  // completed successfully.
+  bool RemoveStatsByOriginAndTime(
+      const base::Callback<bool(const GURL&)>& origin_filter,
+      base::Time delete_begin,
+      base::Time delete_end);
 
  private:
   sql::Connection* db_;

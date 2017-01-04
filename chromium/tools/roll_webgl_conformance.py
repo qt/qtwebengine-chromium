@@ -14,16 +14,20 @@ import time
 
 extra_trybots = [
   {
-    "mastername": "tryserver.chromium.win",
+    "mastername": "master.tryserver.chromium.win",
     "buildernames": ["win_optional_gpu_tests_rel"]
   },
   {
-    "mastername": "tryserver.chromium.mac",
+    "mastername": "master.tryserver.chromium.mac",
     "buildernames": ["mac_optional_gpu_tests_rel"]
   },
   {
-    "mastername": "tryserver.chromium.linux",
+    "mastername": "master.tryserver.chromium.linux",
     "buildernames": ["linux_optional_gpu_tests_rel"]
+  },
+  {
+    "mastername": "master.tryserver.chromium.android",
+    "buildernames": ["android_optional_gpu_tests_rel"]
   },
 ]
 

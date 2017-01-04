@@ -4,6 +4,7 @@
 
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_io_data.h"
 
+#include <string>
 #include <utility>
 
 #include "base/bind.h"
@@ -29,7 +30,6 @@
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
 #include "net/base/load_flags.h"
-#include "net/log/net_log.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
@@ -223,9 +223,9 @@ void DataReductionProxyIOData::SetPingbackReportingFraction(
 std::unique_ptr<net::URLRequestInterceptor>
 DataReductionProxyIOData::CreateInterceptor() {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
-  return base::WrapUnique(new DataReductionProxyInterceptor(
+  return base::MakeUnique<DataReductionProxyInterceptor>(
       config_.get(), config_client_.get(), bypass_stats_.get(),
-      event_creator_.get()));
+      event_creator_.get());
 }
 
 std::unique_ptr<DataReductionProxyNetworkDelegate>
@@ -250,9 +250,9 @@ DataReductionProxyIOData::CreateNetworkDelegate(
 std::unique_ptr<DataReductionProxyDelegate>
 DataReductionProxyIOData::CreateProxyDelegate() const {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
-  return base::WrapUnique(new DataReductionProxyDelegate(
+  return base::MakeUnique<DataReductionProxyDelegate>(
       config_.get(), configurator_.get(), event_creator_.get(),
-      bypass_stats_.get(), net_log_));
+      bypass_stats_.get(), net_log_);
 }
 
 // TODO(kundaji): Rename this method to something more descriptive.
@@ -287,7 +287,7 @@ void DataReductionProxyIOData::SetDataReductionProxyConfiguration(
 
 bool DataReductionProxyIOData::ShouldEnableLoFiMode(
     const net::URLRequest& request) {
-  DCHECK((request.load_flags() & net::LOAD_MAIN_FRAME) != 0);
+  DCHECK((request.load_flags() & net::LOAD_MAIN_FRAME_DEPRECATED) != 0);
   if (!config_ || (config_->IsBypassedByDataReductionProxyLocalRules(
                       request, configurator_->GetProxyConfig()))) {
     return false;

@@ -34,10 +34,8 @@
 
           ['build_with_chromium==1', {
             'webrtc_root%': '<(DEPTH)/third_party/webrtc',
-            'android_tests_path%': '<(DEPTH)/third_party/webrtc/build/android_tests_noop.gyp',
           }, {
             'webrtc_root%': '<(DEPTH)/webrtc',
-            'android_tests_path%': '<(DEPTH)/webrtc/build/android_tests.gyp',
           }],
 
           # Controls whether we use libevent on posix platforms.
@@ -57,7 +55,6 @@
       'build_libevent%': '<(build_libevent)',
       'enable_libevent%': '<(enable_libevent)',
       'webrtc_root%': '<(webrtc_root)',
-      'android_tests_path%': '<(android_tests_path)',
       'webrtc_vp8_dir%': '<(webrtc_root)/modules/video_coding/codecs/vp8',
       'webrtc_vp9_dir%': '<(webrtc_root)/modules/video_coding/codecs/vp9',
       'include_ilbc%': '<(include_ilbc)',
@@ -69,7 +66,6 @@
     'build_libevent%': '<(build_libevent)',
     'enable_libevent%': '<(enable_libevent)',
     'webrtc_root%': '<(webrtc_root)',
-    'android_tests_path%': '<(android_tests_path)',
     'test_runner_path': '<(DEPTH)/webrtc/build/android/test_runner.py',
     'webrtc_vp8_dir%': '<(webrtc_vp8_dir)',
     'webrtc_vp9_dir%': '<(webrtc_vp9_dir)',
@@ -98,6 +94,13 @@
     # Set to 1 to enable code coverage on Linux using the gcov library.
     'coverage%': 0,
 
+    # Set to "func", "block", "edge" for coverage generation.
+    # At unit test runtime set UBSAN_OPTIONS="coverage=1".
+    # It is recommend to set include_examples=0.
+    # Use llvm's sancov -html-report for human readable reports.
+    # See http://clang.llvm.org/docs/SanitizerCoverage.html .
+    'webrtc_sanitize_coverage%': "",
+
     # Remote bitrate estimator logging/plotting.
     'enable_bwe_test_logging%': 0,
 
@@ -110,6 +113,13 @@
 
     # Enables the use of protocol buffers for debug recordings.
     'enable_protobuf%': 1,
+
+    # Disable the code for the intelligibility enhancer by default.
+    'enable_intelligibility_enhancer%': 0,
+
+    # Selects whether debug dumps for the audio processing module
+    # should be generated.
+    'apm_debug_dump%': 0,
 
     # Disable these to not build components which can be externally provided.
     'build_expat%': 1,
@@ -153,10 +163,6 @@
     # Disable this to skip building source requiring GTK.
     'use_gtk%': 1,
 
-    # Enable this to use HW H.264 encoder/decoder on iOS/Mac PeerConnections.
-    # Enabling this may break interop with Android clients that support H264.
-    'use_objc_h264%': 0,
-
     # Enable this to prevent extern symbols from being hidden on iOS builds.
     # The chromium settings we inherit hide symbols by default on Release
     # builds. We want our symbols to be visible when distributing WebRTC via
@@ -165,6 +171,10 @@
 
     # Determines whether QUIC code will be built.
     'use_quic%': 0,
+
+    # By default, use normal platform audio support or dummy audio, but don't
+    # use file-based audio playout and record.
+    'use_dummy_audio_file_devices%': 0,
 
     'conditions': [
       # Enable this to build OpenH264 encoder/FFmpeg decoder. This is supported
@@ -305,6 +315,10 @@
           '../..',
         ],
       }, {
+         'includes': [
+           # Rules for excluding e.g. foo_win.cc from the build on non-Windows.
+           'filename_rules.gypi',
+         ],
          # Include the top-level dir so the WebRTC code can use full paths.
         'include_dirs': [
           '../..',
@@ -342,11 +356,6 @@
               '-Winconsistent-missing-override',
             ],
           }],
-        ],
-      }],
-      ['enable_libevent==1', {
-        'defines': [
-          'WEBRTC_BUILD_LIBEVENT',
         ],
       }],
       ['target_arch=="arm64"', {
@@ -404,6 +413,17 @@
         'ldflags': [ '--coverage' ],
         'link_settings': { 'libraries': [ '-lgcov' ] },
       }],
+     ['webrtc_sanitize_coverage!=""', {
+        'cflags': [ '-fsanitize-coverage=<(webrtc_sanitize_coverage)' ],
+        'ldflags': [ '-fsanitize-coverage=<(webrtc_sanitize_coverage)' ],
+     }],
+     ['webrtc_sanitize_coverage!="" and OS=="mac"', {
+        'xcode_settings': {
+            'OTHER_CFLAGS': [
+               '-fsanitize-coverage=func',
+            ],
+         },
+      }],
       ['os_posix==1', {
         # For access to standard POSIXish features, use WEBRTC_POSIX instead of
         # a more specific macro.
@@ -422,11 +442,6 @@
           'GCC_INLINES_ARE_PRIVATE_EXTERN': 'NO',
           'GCC_SYMBOLS_PRIVATE_EXTERN': 'NO',
         }
-      }],
-      ['OS=="ios" and use_objc_h264==1', {
-        'defines': [
-          'WEBRTC_OBJC_H264',
-        ],
       }],
       ['OS=="linux"', {
         'defines': [

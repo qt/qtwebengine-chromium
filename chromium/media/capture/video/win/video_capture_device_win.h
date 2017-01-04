@@ -64,7 +64,8 @@ class VideoCaptureDeviceWin : public VideoCaptureDevice,
   static VideoPixelFormat TranslateMediaSubtypeToPixelFormat(
       const GUID& sub_type);
 
-  explicit VideoCaptureDeviceWin(const Name& device_name);
+  explicit VideoCaptureDeviceWin(
+      const VideoCaptureDeviceDescriptor& device_descriptor);
   ~VideoCaptureDeviceWin() override;
   // Opens the device driver for this device.
   bool Init();
@@ -74,6 +75,7 @@ class VideoCaptureDeviceWin : public VideoCaptureDevice,
       const VideoCaptureParams& params,
       std::unique_ptr<VideoCaptureDevice::Client> client) override;
   void StopAndDeAllocate() override;
+  void TakePhoto(TakePhotoCallback callback) override;
 
  private:
   enum InternalState {
@@ -86,14 +88,16 @@ class VideoCaptureDeviceWin : public VideoCaptureDevice,
   // Implements SinkFilterObserver.
   void FrameReceived(const uint8_t* buffer,
                      int length,
+                     const VideoCaptureFormat& format,
                      base::TimeDelta timestamp) override;
 
   bool CreateCapabilityMap();
   void SetAntiFlickerInCaptureFilter(const VideoCaptureParams& params);
   void SetErrorState(const tracked_objects::Location& from_here,
-                     const std::string& reason);
+                     const std::string& reason,
+                     HRESULT hr);
 
-  const Name device_name_;
+  const VideoCaptureDeviceDescriptor device_descriptor_;
   InternalState state_;
   std::unique_ptr<VideoCaptureDevice::Client> client_;
 
@@ -110,9 +114,10 @@ class VideoCaptureDeviceWin : public VideoCaptureDevice,
 
   // Map of all capabilities this device support.
   CapabilityList capabilities_;
-  VideoCaptureFormat capture_format_;
 
   base::TimeTicks first_ref_time_;
+
+  std::queue<TakePhotoCallback> take_photo_callbacks_;
 
   base::ThreadChecker thread_checker_;
 

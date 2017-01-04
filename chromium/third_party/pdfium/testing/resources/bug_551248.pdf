@@ -66,11 +66,14 @@ endobj
 50 0 obj <<
 >>
 stream
-function startDelay()
-{
-  app.alert("hello world");
+function fireTimeOut() {
+  app.alert("timer fired");
 }
-app.setTimeOut("startDelay()", 3000);
+function fireInterval() {
+  app.alert("interval fired");
+}
+app.setTimeOut("fireTimeOut()", 3000);
+app.setInterval("fireInterval()", 2000);
 endstream
 endobj
 xref
@@ -130,5 +133,5 @@ trailer <<
   /Root 1 0 R
 >>
 startxref
-954
+1055
 %%EOF

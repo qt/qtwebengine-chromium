@@ -11,6 +11,7 @@
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "media/base/demuxer_stream_provider.h"
+#include "media/base/pipeline_status.h"
 #include "media/base/renderer_client.h"
 #include "media/base/video_renderer_sink.h"
 #include "media/mojo/clients/mojo_demuxer_stream_impl.h"
@@ -27,7 +28,8 @@ MojoRenderer::MojoRenderer(
       video_overlay_factory_(std::move(video_overlay_factory)),
       video_renderer_sink_(video_renderer_sink),
       remote_renderer_info_(remote_renderer.PassInterface()),
-      binding_(this) {
+      client_binding_(this),
+      media_time_interpolator_(&media_clock_) {
   DVLOG(1) << __FUNCTION__;
 }
 
@@ -53,6 +55,21 @@ void MojoRenderer::Initialize(DemuxerStreamProvider* demuxer_stream_provider,
 
   demuxer_stream_provider_ = demuxer_stream_provider;
   init_cb_ = init_cb;
+
+  switch (demuxer_stream_provider_->GetType()) {
+    case DemuxerStreamProvider::Type::STREAM:
+      InitializeRendererFromStreams(client);
+      break;
+    case DemuxerStreamProvider::Type::URL:
+      InitializeRendererFromUrl(client);
+      break;
+  }
+}
+
+void MojoRenderer::InitializeRendererFromStreams(
+    media::RendererClient* client) {
+  DVLOG(1) << __FUNCTION__;
+  DCHECK(task_runner_->BelongsToCurrentThread());
 
   // Create audio and video mojom::DemuxerStream and bind its lifetime to
   // the pipe.
@@ -87,12 +104,33 @@ void MojoRenderer::Initialize(DemuxerStreamProvider* demuxer_stream_provider,
 
   BindRemoteRendererIfNeeded();
 
+  mojom::RendererClientAssociatedPtrInfo client_ptr_info;
+  client_binding_.Bind(&client_ptr_info, remote_renderer_.associated_group());
+
   // Using base::Unretained(this) is safe because |this| owns
   // |remote_renderer_|, and the callback won't be dispatched if
   // |remote_renderer_| is destroyed.
   remote_renderer_->Initialize(
-      binding_.CreateInterfacePtrAndBind(), std::move(audio_stream),
-      std::move(video_stream),
+      std::move(client_ptr_info), std::move(audio_stream),
+      std::move(video_stream), base::nullopt,
+      base::Bind(&MojoRenderer::OnInitialized, base::Unretained(this), client));
+}
+
+void MojoRenderer::InitializeRendererFromUrl(media::RendererClient* client) {
+  DVLOG(2) << __FUNCTION__;
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  BindRemoteRendererIfNeeded();
+
+  mojom::RendererClientAssociatedPtrInfo client_ptr_info;
+  client_binding_.Bind(&client_ptr_info, remote_renderer_.associated_group());
+
+  // Using base::Unretained(this) is safe because |this| owns
+  // |remote_renderer_|, and the callback won't be dispatched if
+  // |remote_renderer_| is destroyed.
+  remote_renderer_->Initialize(
+      std::move(client_ptr_info), mojom::DemuxerStreamPtr(),
+      mojom::DemuxerStreamPtr(), demuxer_stream_provider_->GetUrl(),
       base::Bind(&MojoRenderer::OnInitialized, base::Unretained(this), client));
 }
 
@@ -136,34 +174,46 @@ void MojoRenderer::Flush(const base::Closure& flush_cb) {
     return;
   }
 
+  {
+    base::AutoLock auto_lock(lock_);
+    if (media_time_interpolator_.interpolating())
+      media_time_interpolator_.StopInterpolating();
+  }
+
   flush_cb_ = flush_cb;
   remote_renderer_->Flush(
       base::Bind(&MojoRenderer::OnFlushed, base::Unretained(this)));
 }
 
 void MojoRenderer::StartPlayingFrom(base::TimeDelta time) {
-  DVLOG(2) << __FUNCTION__;
+  DVLOG(2) << __FUNCTION__ << "(" << time << ")";
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(remote_renderer_.is_bound());
 
   {
     base::AutoLock auto_lock(lock_);
-    time_ = time;
+    media_time_interpolator_.SetBounds(time, time, media_clock_.NowTicks());
+    media_time_interpolator_.StartInterpolating();
   }
 
-  remote_renderer_->StartPlayingFrom(time.InMicroseconds());
+  remote_renderer_->StartPlayingFrom(time);
 }
 
 void MojoRenderer::SetPlaybackRate(double playback_rate) {
-  DVLOG(2) << __FUNCTION__;
+  DVLOG(2) << __FUNCTION__ << "(" << playback_rate << ")";
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(remote_renderer_.is_bound());
 
   remote_renderer_->SetPlaybackRate(playback_rate);
+
+  {
+    base::AutoLock auto_lock(lock_);
+    media_time_interpolator_.SetPlaybackRate(playback_rate);
+  }
 }
 
 void MojoRenderer::SetVolume(float volume) {
-  DVLOG(2) << __FUNCTION__;
+  DVLOG(2) << __FUNCTION__ << "(" << volume << ")";
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(remote_renderer_.is_bound());
 
@@ -172,14 +222,18 @@ void MojoRenderer::SetVolume(float volume) {
 
 base::TimeDelta MojoRenderer::GetMediaTime() {
   base::AutoLock auto_lock(lock_);
-  DVLOG(3) << __FUNCTION__ << ": " << time_.InMilliseconds() << " ms";
-  return time_;
+  return media_time_interpolator_.GetInterpolatedTime();
 }
 
 bool MojoRenderer::HasAudio() {
   DVLOG(1) << __FUNCTION__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(remote_renderer_.is_bound());
+
+  if (demuxer_stream_provider_->GetType() == DemuxerStreamProvider::Type::URL) {
+    NOTIMPLEMENTED();
+    return false;
+  }
 
   return !!demuxer_stream_provider_->GetStream(DemuxerStream::AUDIO);
 }
@@ -189,15 +243,23 @@ bool MojoRenderer::HasVideo() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(remote_renderer_.is_bound());
 
+  if (demuxer_stream_provider_->GetType() == DemuxerStreamProvider::Type::URL) {
+    NOTIMPLEMENTED();
+    return false;
+  }
+
   return !!demuxer_stream_provider_->GetStream(DemuxerStream::VIDEO);
 }
 
-void MojoRenderer::OnTimeUpdate(int64_t time_usec, int64_t max_time_usec) {
-  DVLOG(3) << __FUNCTION__ << ": " << time_usec << ", " << max_time_usec;
+void MojoRenderer::OnTimeUpdate(base::TimeDelta time,
+                                base::TimeDelta max_time,
+                                base::TimeTicks capture_time) {
+  DVLOG(4) << __FUNCTION__ << "(" << time << ", " << max_time << ", "
+           << capture_time << ")";
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   base::AutoLock auto_lock(lock_);
-  time_ = base::TimeDelta::FromMicroseconds(time_usec);
+  media_time_interpolator_.SetBounds(time, max_time, capture_time);
 }
 
 void MojoRenderer::OnBufferingStateChange(mojom::BufferingState state) {
@@ -210,6 +272,13 @@ void MojoRenderer::OnEnded() {
   DVLOG(1) << __FUNCTION__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   client_->OnEnded();
+}
+
+void MojoRenderer::InitiateScopedSurfaceRequest(
+    const ReceiveSurfaceRequestTokenCB& receive_request_token_cb) {
+  DVLOG(1) << __FUNCTION__;
+
+  remote_renderer_->InitiateScopedSurfaceRequest(receive_request_token_cb);
 }
 
 void MojoRenderer::OnError() {
@@ -233,10 +302,27 @@ void MojoRenderer::OnVideoNaturalSizeChange(const gfx::Size& size) {
   client_->OnVideoNaturalSizeChange(size);
 }
 
+void MojoRenderer::OnDurationChange(base::TimeDelta duration) {
+  DVLOG(2) << __FUNCTION__ << ": duration" << duration;
+  client_->OnDurationChange(duration);
+}
+
 void MojoRenderer::OnVideoOpacityChange(bool opaque) {
   DVLOG(2) << __FUNCTION__ << ": " << opaque;
   DCHECK(task_runner_->BelongsToCurrentThread());
   client_->OnVideoOpacityChange(opaque);
+}
+
+void MojoRenderer::OnStatisticsUpdate(const PipelineStatistics& stats) {
+  DVLOG(3) << __FUNCTION__;
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  client_->OnStatisticsUpdate(stats);
+}
+
+void MojoRenderer::OnWaitingForDecryptionKey() {
+  DVLOG(1) << __FUNCTION__;
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  client_->OnWaitingForDecryptionKey();
 }
 
 void MojoRenderer::OnConnectionError() {

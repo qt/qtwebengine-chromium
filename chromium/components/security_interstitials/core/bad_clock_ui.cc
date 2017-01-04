@@ -42,6 +42,7 @@ void BadClockUI::PopulateStringsForHTML(base::DictionaryValue* load_time_data) {
   common_string_util::PopulateSSLLayoutStrings(cert_error_, load_time_data);
   common_string_util::PopulateSSLDebuggingStrings(ssl_info_, time_triggered_,
                                                   load_time_data);
+  common_string_util::PopulateNewIconStrings(load_time_data);
 
   // Clock-specific strings.
   PopulateClockStrings(load_time_data);
@@ -106,6 +107,9 @@ void BadClockUI::HandleCommand(SecurityInterstitialCommands command) {
       break;
     case CMD_OPEN_REPORTING_PRIVACY:
       controller_->OpenExtendedReportingPrivacyPolicy();
+      break;
+    case CMD_OPEN_WHITEPAPER:
+      controller_->OpenExtendedReportingWhitepaper();
       break;
     case CMD_PROCEED:
     case CMD_OPEN_HELP_CENTER:

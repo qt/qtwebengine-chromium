@@ -14,6 +14,7 @@
 #include "ipc/param_traits_macros.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_relative_bounds.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/gfx/transform.h"
 
@@ -39,6 +40,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::AXContentNodeData)
   IPC_STRUCT_TRAITS_MEMBER(html_attributes)
   IPC_STRUCT_TRAITS_MEMBER(child_ids)
   IPC_STRUCT_TRAITS_MEMBER(content_int_attributes)
+  IPC_STRUCT_TRAITS_MEMBER(offset_container_id)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::AXContentTreeData)
@@ -54,8 +56,10 @@ IPC_STRUCT_TRAITS_BEGIN(content::AXContentTreeData)
   IPC_STRUCT_TRAITS_MEMBER(focus_id)
   IPC_STRUCT_TRAITS_MEMBER(sel_anchor_object_id)
   IPC_STRUCT_TRAITS_MEMBER(sel_anchor_offset)
+  IPC_STRUCT_TRAITS_MEMBER(sel_anchor_affinity)
   IPC_STRUCT_TRAITS_MEMBER(sel_focus_object_id)
   IPC_STRUCT_TRAITS_MEMBER(sel_focus_offset)
+  IPC_STRUCT_TRAITS_MEMBER(sel_focus_affinity)
   IPC_STRUCT_TRAITS_MEMBER(routing_id)
   IPC_STRUCT_TRAITS_MEMBER(parent_routing_id)
 IPC_STRUCT_TRAITS_END()
@@ -77,15 +81,17 @@ IPC_STRUCT_BEGIN(AccessibilityHostMsg_EventParams)
 
   // ID of the node that the event applies to.
   IPC_STRUCT_MEMBER(int, id)
+
+  // The source of this event.
+  IPC_STRUCT_MEMBER(ui::AXEventFrom, event_from)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(AccessibilityHostMsg_LocationChangeParams)
   // ID of the object whose location is changing.
   IPC_STRUCT_MEMBER(int, id)
 
-  // The object's new location, in frame-relative coordinates (same
-  // as the coordinates in AccessibilityNodeData).
-  IPC_STRUCT_MEMBER(gfx::Rect, new_location)
+  // The object's new location info.
+  IPC_STRUCT_MEMBER(ui::AXRelativeBounds, new_location)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(AccessibilityHostMsg_FindInPageResultParams)
@@ -178,8 +184,10 @@ IPC_MESSAGE_ROUTED1(AccessibilityMsg_SetAccessibilityFocus,
                     int /* object id */)
 
 // Tells the render view that a AccessibilityHostMsg_Events
-// message was processed and it can send addition events.
-IPC_MESSAGE_ROUTED0(AccessibilityMsg_Events_ACK)
+// message was processed and it can send additional events. The argument
+// must be the same as the ack_token passed to AccessibilityHostMsg_Events.
+IPC_MESSAGE_ROUTED1(AccessibilityMsg_Events_ACK,
+                    int /* ack_token */)
 
 // Tell the renderer to reset and send a new accessibility tree from
 // scratch because the browser is out of sync. It passes a sequential
@@ -204,15 +212,17 @@ IPC_MESSAGE_ROUTED1(AccessibilityMsg_SnapshotTree,
 // Messages sent from the renderer to the browser.
 
 // Sent to notify the browser about renderer accessibility events.
-// The browser responds with a AccessibilityMsg_Events_ACK.
+// The browser responds with a AccessibilityMsg_Events_ACK with the same
+// ack_token.
 // The second parameter, reset_token, is set if this IPC was sent in response
 // to a reset request from the browser. When the browser requests a reset,
 // it ignores incoming IPCs until it sees one with the correct reset token.
 // Any other time, it ignores IPCs with a reset token.
-IPC_MESSAGE_ROUTED2(
+IPC_MESSAGE_ROUTED3(
     AccessibilityHostMsg_Events,
     std::vector<AccessibilityHostMsg_EventParams> /* events */,
-    int /* reset_token */)
+    int /* reset_token */,
+    int /* ack_token */)
 
 // Sent to update the browser of the location of accessibility objects.
 IPC_MESSAGE_ROUTED1(

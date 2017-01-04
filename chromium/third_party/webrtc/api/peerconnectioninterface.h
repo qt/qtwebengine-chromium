@@ -60,6 +60,7 @@
 #include "webrtc/api/dtmfsenderinterface.h"
 #include "webrtc/api/jsep.h"
 #include "webrtc/api/mediastreaminterface.h"
+#include "webrtc/api/rtcstatscollector.h"
 #include "webrtc/api/rtpreceiverinterface.h"
 #include "webrtc/api/rtpsenderinterface.h"
 #include "webrtc/api/statstypes.h"
@@ -227,6 +228,15 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     GATHER_CONTINUALLY
   };
 
+  enum class RTCConfigurationType {
+    // A configuration that is safer to use, despite not having the best
+    // performance. Currently this is the default configuration.
+    kSafe,
+    // An aggressive configuration that has better performance, although it
+    // may be riskier and may need extra support in the application.
+    kAggressive
+  };
+
   // TODO(hbos): Change into class with private data and public getters.
   // TODO(nisse): In particular, accessing fields directly from an
   // application is brittle, since the organization mirrors the
@@ -239,6 +249,23 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // in the implementation. To do that, we need getter and setter
     // methods for all settings which are of interest to applications,
     // Chrome in particular.
+
+    RTCConfiguration() = default;
+    RTCConfiguration(RTCConfigurationType type) {
+      if (type == RTCConfigurationType::kAggressive) {
+        // These parameters are also defined in Java and IOS configurations,
+        // so their values may be overwritten by the Java or IOS configuration.
+        bundle_policy = kBundlePolicyMaxBundle;
+        rtcp_mux_policy = kRtcpMuxPolicyRequire;
+        ice_connection_receiving_timeout =
+            kAggressiveIceConnectionReceivingTimeout;
+
+        // These parameters are not defined in Java or IOS configuration,
+        // so their values will not be overwritten.
+        enable_ice_renomination = true;
+        redetermine_role_on_ice_restart = false;
+      }
+    }
 
     bool dscp() { return media_config.enable_dscp; }
     void set_dscp(bool enable) { media_config.enable_dscp = enable; }
@@ -272,6 +299,8 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     static const int kUndefined = -1;
     // Default maximum number of packets in the audio jitter buffer.
     static const int kAudioJitterBufferMaxPackets = 50;
+    // ICE connection receiving timeout for aggressive configuration.
+    static const int kAggressiveIceConnectionReceivingTimeout = 1000;
     // TODO(pthatcher): Rename this ice_transport_type, but update
     // Chromium at the same time.
     IceTransportsType type = kAll;
@@ -296,10 +325,21 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // default applies.
     bool disable_ipv6 = false;
     bool enable_rtp_data_channel = false;
+    bool enable_quic = false;
     rtc::Optional<int> screencast_min_bitrate;
     rtc::Optional<bool> combined_audio_video_bwe;
     rtc::Optional<bool> enable_dtls_srtp;
     int ice_candidate_pool_size = 0;
+    bool prune_turn_ports = false;
+    // If set to true, this means the ICE transport should presume TURN-to-TURN
+    // candidate pairs will succeed, even before a binding response is received.
+    bool presume_writable_when_fully_relayed = false;
+    // If true, "renomination" will be added to the ice options in the transport
+    // description.
+    bool enable_ice_renomination = false;
+    // If true, ICE role is redetermined when peerconnection sets a local
+    // transport description that indicates an ICE restart.
+    bool redetermine_role_on_ice_restart = true;
   };
 
   struct RTCOfferAnswerOptions {
@@ -309,18 +349,13 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // The default value for constraint offerToReceiveX:true.
     static const int kOfferToReceiveMediaTrue = 1;
 
-    int offer_to_receive_video;
-    int offer_to_receive_audio;
-    bool voice_activity_detection;
-    bool ice_restart;
-    bool use_rtp_mux;
+    int offer_to_receive_video = kUndefined;
+    int offer_to_receive_audio = kUndefined;
+    bool voice_activity_detection = true;
+    bool ice_restart = false;
+    bool use_rtp_mux = true;
 
-    RTCOfferAnswerOptions()
-        : offer_to_receive_video(kUndefined),
-          offer_to_receive_audio(kUndefined),
-          voice_activity_detection(true),
-          ice_restart(false),
-          use_rtp_mux(true) {}
+    RTCOfferAnswerOptions() = default;
 
     RTCOfferAnswerOptions(int offer_to_receive_video,
                           int offer_to_receive_audio,
@@ -406,6 +441,12 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   virtual bool GetStats(StatsObserver* observer,
                         MediaStreamTrackInterface* track,
                         StatsOutputLevel level) = 0;
+  // Gets stats using the new stats collection API, see webrtc/api/stats/. These
+  // will replace old stats collection API when the new API has matured enough.
+  // TODO(hbos): Default implementation that does nothing only exists as to not
+  // break third party projects. As soon as they have been updated this should
+  // be changed to "= 0;".
+  virtual void GetStats(RTCStatsCollectorCallback* callback) {}
 
   virtual rtc::scoped_refptr<DataChannelInterface> CreateDataChannel(
       const std::string& label,
@@ -485,9 +526,27 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   // TODO(bemasc): Remove ice_state when callers are changed to
   // IceConnection/GatheringState.
   // Returns the current IceState.
-  virtual IceState ice_state() = 0;
+  virtual IceState ice_state() {
+      RTC_NOTREACHED();
+    return kIceNew;
+  }
   virtual IceConnectionState ice_connection_state() = 0;
   virtual IceGatheringState ice_gathering_state() = 0;
+
+  // Starts RtcEventLog using existing file. Takes ownership of |file| and
+  // passes it on to Call, which will take the ownership. If the
+  // operation fails the file will be closed. The logging will stop
+  // automatically after 10 minutes have passed, or when the StopRtcEventLog
+  // function is called.
+  // TODO(ivoc): Make this pure virtual when Chrome is updated.
+  virtual bool StartRtcEventLog(rtc::PlatformFile file,
+                                int64_t max_size_bytes) {
+    return false;
+  }
+
+  // Stops logging the RtcEventLog.
+  // TODO(ivoc): Make this pure virtual when Chrome is updated.
+  virtual void StopRtcEventLog() {}
 
   // Terminates all media and closes the transport.
   virtual void Close() = 0;
@@ -578,7 +637,8 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
           disable_sctp_data_channels(false),
           disable_network_monitor(false),
           network_ignore_mask(rtc::kDefaultNetworkIgnoreMask),
-          ssl_max_version(rtc::SSL_PROTOCOL_DTLS_12) {}
+          ssl_max_version(rtc::SSL_PROTOCOL_DTLS_12),
+          crypto_options(rtc::CryptoOptions::NoGcm()) {}
     bool disable_encryption;
     bool disable_sctp_data_channels;
     bool disable_network_monitor;
@@ -592,6 +652,9 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
     // supported by both ends will be used for the connection, i.e. if one
     // party supports DTLS 1.0 and the other DTLS 1.2, DTLS 1.0 will be used.
     rtc::SSLProtocolVersion ssl_max_version;
+
+    // Sets crypto related options, e.g. enabled cipher suites.
+    rtc::CryptoOptions crypto_options;
   };
 
   virtual void SetOptions(const Options& options) = 0;
@@ -655,25 +718,19 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // Stops logging the AEC dump.
   virtual void StopAecDump() = 0;
 
-  // Starts RtcEventLog using existing file. Takes ownership of |file| and
-  // passes it on to VoiceEngine, which will take the ownership. If the
-  // operation fails the file will be closed. The logging will stop
-  // automatically after 10 minutes have passed, or when the StopRtcEventLog
-  // function is called. A maximum filesize in bytes can be set, the logging
-  // will be stopped before exceeding this limit. If max_size_bytes is set to a
-  // value <= 0, no limit will be used.
-  // This function as well as the StopRtcEventLog don't really belong on this
-  // interface, this is a temporary solution until we move the logging object
-  // from inside voice engine to webrtc::Call, which will happen when the VoE
-  // restructuring effort is further along.
-  // TODO(ivoc): Move this into being:
-  //             PeerConnection => MediaController => webrtc::Call.
+  // This function is deprecated and will be removed when Chrome is updated to
+  // use the equivalent function on PeerConnectionInterface.
+  // TODO(ivoc) Remove after Chrome is updated.
   virtual bool StartRtcEventLog(rtc::PlatformFile file,
                                 int64_t max_size_bytes) = 0;
-  // Deprecated, use the version above.
+  // This function is deprecated and will be removed when Chrome is updated to
+  // use the equivalent function on PeerConnectionInterface.
+  // TODO(ivoc) Remove after Chrome is updated.
   virtual bool StartRtcEventLog(rtc::PlatformFile file) = 0;
 
-  // Stops logging the RtcEventLog.
+  // This function is deprecated and will be removed when Chrome is updated to
+  // use the equivalent function on PeerConnectionInterface.
+  // TODO(ivoc) Remove after Chrome is updated.
   virtual void StopRtcEventLog() = 0;
 
  protected:

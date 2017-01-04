@@ -13,26 +13,29 @@
 namespace blink {
 
 class DOMWindow;
-class ExecutionContext;
 class PaintWorklet;
 class Worklet;
 
-class MODULES_EXPORT WindowPaintWorklet final : public GarbageCollected<WindowPaintWorklet>, public Supplement<LocalDOMWindow>, public DOMWindowProperty {
-    USING_GARBAGE_COLLECTED_MIXIN(WindowPaintWorklet);
-public:
-    static WindowPaintWorklet& from(LocalDOMWindow&);
-    static Worklet* paintWorklet(ExecutionContext*, DOMWindow&);
-    PaintWorklet* paintWorklet(ExecutionContext*) const;
+class MODULES_EXPORT WindowPaintWorklet final
+    : public GarbageCollected<WindowPaintWorklet>,
+      public Supplement<LocalDOMWindow>,
+      public DOMWindowProperty {
+  USING_GARBAGE_COLLECTED_MIXIN(WindowPaintWorklet);
 
-    DECLARE_TRACE();
+ public:
+  static WindowPaintWorklet& from(LocalDOMWindow&);
+  static Worklet* paintWorklet(DOMWindow&);
+  PaintWorklet* paintWorklet();
 
-private:
-    explicit WindowPaintWorklet(LocalDOMWindow&);
-    static const char* supplementName();
+  DECLARE_TRACE();
 
-    mutable Member<PaintWorklet> m_paintWorklet;
+ private:
+  explicit WindowPaintWorklet(LocalDOMWindow&);
+  static const char* supplementName();
+
+  Member<PaintWorklet> m_paintWorklet;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // WindowPaintWorklet_h
+#endif  // WindowPaintWorklet_h

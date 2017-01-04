@@ -5,7 +5,6 @@
 #include "ui/views/controls/button/custom_button.h"
 
 #include "ui/accessibility/ax_view_state.h"
-#include "ui/base/material_design/material_design_controller.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -163,15 +162,17 @@ bool CustomButton::OnMousePressed(const ui::MouseEvent& event) {
 bool CustomButton::OnMouseDragged(const ui::MouseEvent& event) {
   if (state_ != STATE_DISABLED) {
     const bool should_enter_pushed = ShouldEnterPushedState(event);
+    const bool should_show_pending =
+        should_enter_pushed && notify_action_ == NOTIFY_ON_RELEASE && !InDrag();
     if (HitTestPoint(event.location())) {
       SetState(should_enter_pushed ? STATE_PRESSED : STATE_HOVERED);
-      if (!InDrag() && should_enter_pushed &&
+      if (should_show_pending &&
           ink_drop()->GetTargetInkDropState() == views::InkDropState::HIDDEN) {
         AnimateInkDrop(views::InkDropState::ACTION_PENDING, &event);
       }
     } else {
       SetState(STATE_NORMAL);
-      if (!InDrag() && should_enter_pushed &&
+      if (should_show_pending &&
           ink_drop()->GetTargetInkDropState() ==
               views::InkDropState::ACTION_PENDING) {
         AnimateInkDrop(views::InkDropState::HIDDEN, &event);
@@ -201,11 +202,9 @@ void CustomButton::OnMouseReleased(const ui::MouseEvent& event) {
 
 void CustomButton::OnMouseCaptureLost() {
   // Starting a drag results in a MouseCaptureLost. Reset button state.
-  // TODO(varkha) While in drag only reset the state with Material Design.
-  // The same logic may applies everywhere so gather any feedback and update.
-  bool reset_button_state =
-      !InDrag() || ui::MaterialDesignController::IsModeMaterial();
-  if (state_ != STATE_DISABLED && reset_button_state)
+  // TODO(varkha): Reset the state even while in drag. The same logic may
+  // applies everywhere so gather any feedback and update.
+  if (state_ != STATE_DISABLED)
     SetState(STATE_NORMAL);
   AnimateInkDrop(views::InkDropState::HIDDEN, nullptr /* event */);
 }
@@ -468,8 +467,13 @@ void CustomButton::NotifyClick(const ui::Event& event) {
 }
 
 void CustomButton::OnClickCanceled(const ui::Event& event) {
-  AnimateInkDrop(views::InkDropState::HIDDEN,
-                 ui::LocatedEvent::FromIfValid(&event));
+  if (ink_drop()->GetTargetInkDropState() ==
+          views::InkDropState::ACTION_PENDING ||
+      ink_drop()->GetTargetInkDropState() ==
+          views::InkDropState::ALTERNATE_ACTION_PENDING) {
+    AnimateInkDrop(views::InkDropState::HIDDEN,
+                   ui::LocatedEvent::FromIfValid(&event));
+  }
   Button::OnClickCanceled(event);
 }
 

@@ -70,7 +70,8 @@ class MEDIA_EXPORT VideoRendererImpl
                   const PipelineStatusCB& init_cb) override;
   void Flush(const base::Closure& callback) override;
   void StartPlayingFrom(base::TimeDelta timestamp) override;
-  void OnTimeStateChanged(bool time_progressing) override;
+  void OnTimeProgressing() override;
+  void OnTimeStopped() override;
 
   void SetTickClockForTesting(std::unique_ptr<base::TickClock> tick_clock);
   void SetGpuMemoryBufferVideoForTesting(
@@ -124,6 +125,7 @@ class MEDIA_EXPORT VideoRendererImpl
   bool HaveEnoughData_Locked();
   void TransitionToHaveEnough_Locked();
   void TransitionToHaveNothing();
+  void TransitionToHaveNothing_Locked();
 
   // Runs |statistics_cb_| with |frames_decoded_| and |frames_dropped_|, resets
   // them to 0.

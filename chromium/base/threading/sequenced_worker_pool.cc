@@ -10,10 +10,12 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "base/atomic_sequence_num.h"
+#include "base/atomicops.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/critical_closure.h"
@@ -25,6 +27,8 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
+#include "base/task_scheduler/post_task.h"
+#include "base/task_scheduler/task_scheduler.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/simple_thread.h"
 #include "base/threading/thread_local.h"
@@ -34,6 +38,7 @@
 #include "base/trace_event/heap_profiler.h"
 #include "base/trace_event/trace_event.h"
 #include "base/tracked_objects.h"
+#include "base/tracking_info.h"
 #include "build/build_config.h"
 
 #if defined(OS_MACOSX)
@@ -43,12 +48,39 @@
 #endif
 
 #if !defined(OS_NACL)
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #endif
 
 namespace base {
 
 namespace {
+
+// An enum representing the state of all pools. Any given non-test process
+// should only ever transition from NONE_ACTIVE to one of the active states.
+// Transitions between actives states are unexpected. The
+// REDIRECTED_TO_TASK_SCHEDULER transition occurs when
+// RedirectToTaskSchedulerForProcess() is called. The WORKER_CREATED transition
+// occurs when a Worker needs to be created because the first task was posted
+// and the state is still NONE_ACTIVE. In a test process, a transition to
+// NONE_ACTIVE occurs when ResetRedirectToTaskSchedulerForProcessForTesting() is
+// called.
+//
+// |g_all_pools_state| uses relaxed atomic operations to ensure no data race
+// between reads/writes, strict memory ordering isn't required per no other
+// state being inferred from its value. Explicit synchronization (e.g. locks or
+// events) would be overkill (it's fine for other threads to still see
+// NONE_ACTIVE after the first Worker was created -- this is not possible for
+// REDIRECTED_TO_TASK_SCHEDULER per its API requesting to be invoked while no
+// other threads are active).
+//
+// TODO(gab): Remove this if http://crbug.com/622400 fails (SequencedWorkerPool
+// will be phased out completely otherwise).
+enum AllPoolsState : subtle::Atomic32 {
+  NONE_ACTIVE,
+  WORKER_CREATED,
+  REDIRECTED_TO_TASK_SCHEDULER,
+};
+subtle::Atomic32 g_all_pools_state = AllPoolsState::NONE_ACTIVE;
 
 struct SequencedTask : public TrackingInfo  {
   SequencedTask()
@@ -91,6 +123,14 @@ struct SequencedTaskLessThan {
     return lhs.sequence_task_number < rhs.sequence_task_number;
   }
 };
+
+// Create a process-wide unique ID to represent this task in trace events. This
+// will be mangled with a Process ID hash to reduce the likelyhood of colliding
+// with MessageLoop pointers on other processes.
+uint64_t GetTaskTraceID(const SequencedTask& task, void* pool) {
+  return (static_cast<uint64_t>(task.trace_id) << 32) |
+         static_cast<uint64_t>(reinterpret_cast<intptr_t>(pool));
+}
 
 // SequencedWorkerPoolTaskRunner ---------------------------------------------
 // A TaskRunner which posts tasks to a SequencedWorkerPool with a
@@ -142,14 +182,17 @@ bool SequencedWorkerPoolTaskRunner::RunsTasksOnCurrentThread() const {
   return pool_->RunsTasksOnCurrentThread();
 }
 
-// SequencedWorkerPoolSequencedTaskRunner ------------------------------------
+}  // namespace
+
+// SequencedWorkerPool::PoolSequencedTaskRunner ------------------------------
 // A SequencedTaskRunner which posts tasks to a SequencedWorkerPool with a
 // fixed sequence token.
 //
 // Note that this class is RefCountedThreadSafe (inherited from TaskRunner).
-class SequencedWorkerPoolSequencedTaskRunner : public SequencedTaskRunner {
+class SequencedWorkerPool::PoolSequencedTaskRunner
+    : public SequencedTaskRunner {
  public:
-  SequencedWorkerPoolSequencedTaskRunner(
+  PoolSequencedTaskRunner(
       scoped_refptr<SequencedWorkerPool> pool,
       SequencedWorkerPool::SequenceToken token,
       SequencedWorkerPool::WorkerShutdown shutdown_behavior);
@@ -166,7 +209,7 @@ class SequencedWorkerPoolSequencedTaskRunner : public SequencedTaskRunner {
                                   TimeDelta delay) override;
 
  private:
-  ~SequencedWorkerPoolSequencedTaskRunner() override;
+  ~PoolSequencedTaskRunner() override;
 
   const scoped_refptr<SequencedWorkerPool> pool_;
 
@@ -174,25 +217,25 @@ class SequencedWorkerPoolSequencedTaskRunner : public SequencedTaskRunner {
 
   const SequencedWorkerPool::WorkerShutdown shutdown_behavior_;
 
-  DISALLOW_COPY_AND_ASSIGN(SequencedWorkerPoolSequencedTaskRunner);
+  DISALLOW_COPY_AND_ASSIGN(PoolSequencedTaskRunner);
 };
 
-SequencedWorkerPoolSequencedTaskRunner::SequencedWorkerPoolSequencedTaskRunner(
-    scoped_refptr<SequencedWorkerPool> pool,
-    SequencedWorkerPool::SequenceToken token,
-    SequencedWorkerPool::WorkerShutdown shutdown_behavior)
+SequencedWorkerPool::PoolSequencedTaskRunner::
+    PoolSequencedTaskRunner(
+        scoped_refptr<SequencedWorkerPool> pool,
+        SequencedWorkerPool::SequenceToken token,
+        SequencedWorkerPool::WorkerShutdown shutdown_behavior)
     : pool_(std::move(pool)),
       token_(token),
       shutdown_behavior_(shutdown_behavior) {}
 
-SequencedWorkerPoolSequencedTaskRunner::
-~SequencedWorkerPoolSequencedTaskRunner() {
-}
+SequencedWorkerPool::PoolSequencedTaskRunner::
+    ~PoolSequencedTaskRunner() = default;
 
-bool SequencedWorkerPoolSequencedTaskRunner::PostDelayedTask(
-    const tracked_objects::Location& from_here,
-    const Closure& task,
-    TimeDelta delay) {
+bool SequencedWorkerPool::PoolSequencedTaskRunner::
+    PostDelayedTask(const tracked_objects::Location& from_here,
+                    const Closure& task,
+                    TimeDelta delay) {
   if (delay.is_zero()) {
     return pool_->PostSequencedWorkerTaskWithShutdownBehavior(
         token_, from_here, task, shutdown_behavior_);
@@ -200,28 +243,19 @@ bool SequencedWorkerPoolSequencedTaskRunner::PostDelayedTask(
   return pool_->PostDelayedSequencedWorkerTask(token_, from_here, task, delay);
 }
 
-bool SequencedWorkerPoolSequencedTaskRunner::RunsTasksOnCurrentThread() const {
+bool SequencedWorkerPool::PoolSequencedTaskRunner::
+    RunsTasksOnCurrentThread() const {
   return pool_->IsRunningSequenceOnCurrentThread(token_);
 }
 
-bool SequencedWorkerPoolSequencedTaskRunner::PostNonNestableDelayedTask(
-    const tracked_objects::Location& from_here,
-    const Closure& task,
-    TimeDelta delay) {
+bool SequencedWorkerPool::PoolSequencedTaskRunner::
+    PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
+                               const Closure& task,
+                               TimeDelta delay) {
   // There's no way to run nested tasks, so simply forward to
   // PostDelayedTask.
   return PostDelayedTask(from_here, task, delay);
 }
-
-// Create a process-wide unique ID to represent this task in trace events. This
-// will be mangled with a Process ID hash to reduce the likelyhood of colliding
-// with MessageLoop pointers on other processes.
-uint64_t GetTaskTraceID(const SequencedTask& task, void* pool) {
-  return (static_cast<uint64_t>(task.trace_id) << 32) |
-         static_cast<uint64_t>(reinterpret_cast<intptr_t>(pool));
-}
-
-}  // namespace
 
 // Worker ---------------------------------------------------------------------
 
@@ -247,6 +281,14 @@ class SequencedWorkerPool::Worker : public SimpleThread {
     is_processing_task_ = true;
     task_sequence_token_ = token;
     task_shutdown_behavior_ = shutdown_behavior;
+
+    // It is dangerous for tasks with CONTINUE_ON_SHUTDOWN to access a class
+    // that implements a non-leaky base::Singleton because they are generally
+    // destroyed before the process terminates via an AtExitManager
+    // registration. This will trigger a DCHECK to warn of such cases. See the
+    // comment about CONTINUE_ON_SHUTDOWN for more details.
+    ThreadRestrictions::SetSingletonAllowed(task_shutdown_behavior_ !=
+                                            CONTINUE_ON_SHUTDOWN);
   }
 
   // Indicates that the task has finished running.
@@ -292,8 +334,10 @@ class SequencedWorkerPool::Inner {
  public:
   // Take a raw pointer to |worker| to avoid cycles (since we're owned
   // by it).
-  Inner(SequencedWorkerPool* worker_pool, size_t max_threads,
+  Inner(SequencedWorkerPool* worker_pool,
+        size_t max_threads,
         const std::string& thread_name_prefix,
+        base::TaskPriority task_priority,
         TestingObserver* observer);
 
   ~Inner();
@@ -315,11 +359,6 @@ class SequencedWorkerPool::Inner {
   bool RunsTasksOnCurrentThread() const;
 
   bool IsRunningSequenceOnCurrentThread(SequenceToken sequence_token) const;
-
-  bool IsRunningSequence(SequenceToken sequence_token) const;
-
-  void SetRunningTaskInfoForCurrentThread(SequenceToken sequence_token,
-                                          WorkerShutdown shutdown_behavior);
 
   void CleanupForTesting();
 
@@ -348,6 +387,19 @@ class SequencedWorkerPool::Inner {
     CLEANUP_FINISHING,
     CLEANUP_DONE,
   };
+
+  // Helper used by PostTask() to complete the work when redirection is on.
+  // Returns true if the task may run at some point in the future and false if
+  // it will definitely not run.
+  // Coalesce upon resolution of http://crbug.com/622400.
+  bool PostTaskToTaskScheduler(const SequencedTask& sequenced,
+                               const TimeDelta& delay);
+
+  // Returns the TaskScheduler TaskRunner for the specified |sequence_token_id|
+  // and |traits|.
+  scoped_refptr<TaskRunner> GetTaskSchedulerTaskRunner(
+      int sequence_token_id,
+      const TaskTraits& traits);
 
   // Called from within the lock, this converts the given token name into a
   // token ID, creating a new one if necessary.
@@ -397,7 +449,7 @@ class SequencedWorkerPool::Inner {
   // 0 or more. The caller should then call FinishStartingAdditionalThread to
   // complete initialization once the lock is released.
   //
-  // If another thread is not necessary, returne 0;
+  // If another thread is not necessary, return 0;
   //
   // See the implementedion for more.
   int PrepareToStartAdditionalThreadIfHelpful();
@@ -497,6 +549,27 @@ class SequencedWorkerPool::Inner {
 
   TestingObserver* const testing_observer_;
 
+  // Members below are used for the experimental redirection to TaskScheduler.
+  // TODO(gab): Remove these if http://crbug.com/622400 fails
+  // (SequencedWorkerPool will be phased out completely otherwise).
+
+  // The TaskPriority to be used for SequencedWorkerPool tasks redirected to the
+  // TaskScheduler as an experiment (unused otherwise).
+  const base::TaskPriority task_priority_;
+
+  // A map of SequenceToken IDs to TaskScheduler TaskRunners used to redirect
+  // sequenced tasks to the TaskScheduler.
+  std::unordered_map<int, scoped_refptr<TaskRunner>> sequenced_task_runner_map_;
+
+  // TaskScheduler TaskRunners to redirect unsequenced tasks to the
+  // TaskScheduler. Indexed by TaskShutdownBehavior.
+  scoped_refptr<TaskRunner> unsequenced_task_runners_[3];
+
+  // A dummy TaskRunner obtained from TaskScheduler with the same TaskTraits as
+  // used by this SequencedWorkerPool to query for RunsTasksOnCurrentThread().
+  // Mutable so it can be lazily instantiated from RunsTasksOnCurrentThread().
+  mutable scoped_refptr<TaskRunner> runs_tasks_on_verifier_;
+
   DISALLOW_COPY_AND_ASSIGN(Inner);
 };
 
@@ -510,6 +583,8 @@ SequencedWorkerPool::Worker::Worker(
       worker_pool_(std::move(worker_pool)),
       task_shutdown_behavior_(BLOCK_SHUTDOWN),
       is_processing_task_(false) {
+  DCHECK_EQ(AllPoolsState::WORKER_CREATED,
+            subtle::NoBarrier_Load(&g_all_pools_state));
   Start();
 }
 
@@ -517,6 +592,9 @@ SequencedWorkerPool::Worker::~Worker() {
 }
 
 void SequencedWorkerPool::Worker::Run() {
+  DCHECK_EQ(AllPoolsState::WORKER_CREATED,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
 #if defined(OS_WIN)
   win::ScopedCOMInitializer com_initializer;
 #endif
@@ -552,11 +630,11 @@ LazyInstance<ThreadLocalPointer<SequencedWorkerPool::Worker>>::Leaky
 
 // Inner definitions ---------------------------------------------------------
 
-SequencedWorkerPool::Inner::Inner(
-    SequencedWorkerPool* worker_pool,
-    size_t max_threads,
-    const std::string& thread_name_prefix,
-    TestingObserver* observer)
+SequencedWorkerPool::Inner::Inner(SequencedWorkerPool* worker_pool,
+                                  size_t max_threads,
+                                  const std::string& thread_name_prefix,
+                                  base::TaskPriority task_priority,
+                                  TestingObserver* observer)
     : worker_pool_(worker_pool),
       lock_(),
       has_work_cv_(&lock_),
@@ -574,7 +652,10 @@ SequencedWorkerPool::Inner::Inner(
       cleanup_state_(CLEANUP_DONE),
       cleanup_idlers_(0),
       cleanup_cv_(&lock_),
-      testing_observer_(observer) {}
+      testing_observer_(observer),
+      task_priority_(task_priority) {
+  DCHECK_GT(max_threads_, 1U);
+}
 
 SequencedWorkerPool::Inner::~Inner() {
   // You must call Shutdown() before destroying the pool.
@@ -624,6 +705,7 @@ bool SequencedWorkerPool::Inner::PostTask(
   int create_thread_id = 0;
   {
     AutoLock lock(lock_);
+
     if (shutdown_called_) {
       // Don't allow a new task to be posted if it doesn't block shutdown.
       if (shutdown_behavior != BLOCK_SHUTDOWN)
@@ -659,64 +741,161 @@ bool SequencedWorkerPool::Inner::PostTask(
     if (optional_token_name)
       sequenced.sequence_token_id = LockedGetNamedTokenID(*optional_token_name);
 
-    pending_tasks_.insert(sequenced);
-    if (shutdown_behavior == BLOCK_SHUTDOWN)
-      blocking_shutdown_pending_task_count_++;
+    if (subtle::NoBarrier_Load(&g_all_pools_state) ==
+        AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER) {
+      if (!PostTaskToTaskScheduler(sequenced, delay))
+        return false;
+    } else {
+      pending_tasks_.insert(sequenced);
 
-    create_thread_id = PrepareToStartAdditionalThreadIfHelpful();
+      if (sequenced.shutdown_behavior == BLOCK_SHUTDOWN)
+        blocking_shutdown_pending_task_count_++;
+
+      create_thread_id = PrepareToStartAdditionalThreadIfHelpful();
+    }
   }
 
-  // Actually start the additional thread or signal an existing one now that
-  // we're outside the lock.
-  if (create_thread_id)
-    FinishStartingAdditionalThread(create_thread_id);
-  else
-    SignalHasWork();
+  if (subtle::NoBarrier_Load(&g_all_pools_state) !=
+      AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER) {
+    // Actually start the additional thread or signal an existing one outside
+    // the lock.
+    if (create_thread_id)
+      FinishStartingAdditionalThread(create_thread_id);
+    else
+      SignalHasWork();
+  }
+
+#if DCHECK_IS_ON()
+  {
+    AutoLock lock_for_dcheck(lock_);
+    // Some variables are exposed in both modes for convenience but only really
+    // intended for one of them at runtime, confirm exclusive usage here.
+    if (subtle::NoBarrier_Load(&g_all_pools_state) ==
+        AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER) {
+      DCHECK(pending_tasks_.empty());
+      DCHECK_EQ(0, create_thread_id);
+    } else {
+      DCHECK(sequenced_task_runner_map_.empty());
+    }
+  }
+#endif  // DCHECK_IS_ON()
 
   return true;
 }
 
+bool SequencedWorkerPool::Inner::PostTaskToTaskScheduler(
+    const SequencedTask& sequenced,
+    const TimeDelta& delay) {
+  DCHECK_EQ(AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
+  lock_.AssertAcquired();
+
+  // Confirm that the TaskScheduler's shutdown behaviors use the same
+  // underlying values as SequencedWorkerPool.
+  static_assert(
+      static_cast<int>(TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN) ==
+          static_cast<int>(CONTINUE_ON_SHUTDOWN),
+      "TaskShutdownBehavior and WorkerShutdown enum mismatch for "
+      "CONTINUE_ON_SHUTDOWN.");
+  static_assert(static_cast<int>(TaskShutdownBehavior::SKIP_ON_SHUTDOWN) ==
+                    static_cast<int>(SKIP_ON_SHUTDOWN),
+                "TaskShutdownBehavior and WorkerShutdown enum mismatch for "
+                "SKIP_ON_SHUTDOWN.");
+  static_assert(static_cast<int>(TaskShutdownBehavior::BLOCK_SHUTDOWN) ==
+                    static_cast<int>(BLOCK_SHUTDOWN),
+                "TaskShutdownBehavior and WorkerShutdown enum mismatch for "
+                "BLOCK_SHUTDOWN.");
+
+  const TaskShutdownBehavior task_shutdown_behavior =
+      static_cast<TaskShutdownBehavior>(sequenced.shutdown_behavior);
+  const TaskTraits traits = TaskTraits()
+                                .WithFileIO()
+                                .WithPriority(task_priority_)
+                                .WithShutdownBehavior(task_shutdown_behavior);
+  return GetTaskSchedulerTaskRunner(sequenced.sequence_token_id, traits)
+      ->PostDelayedTask(sequenced.posted_from, sequenced.task, delay);
+}
+
+scoped_refptr<TaskRunner>
+SequencedWorkerPool::Inner::GetTaskSchedulerTaskRunner(
+    int sequence_token_id,
+    const TaskTraits& traits) {
+  DCHECK_EQ(AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
+  lock_.AssertAcquired();
+
+  static_assert(
+      static_cast<int>(TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN) == 0,
+      "TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN must be equal to 0 to be "
+      "used as an index in |unsequenced_task_runners_|.");
+  static_assert(static_cast<int>(TaskShutdownBehavior::SKIP_ON_SHUTDOWN) == 1,
+                "TaskShutdownBehavior::SKIP_ON_SHUTDOWN must be equal to 1 to "
+                "be used as an index in |unsequenced_task_runners_|.");
+  static_assert(static_cast<int>(TaskShutdownBehavior::BLOCK_SHUTDOWN) == 2,
+                "TaskShutdownBehavior::BLOCK_SHUTDOWN must be equal to 2 to be "
+                "used as an index in |unsequenced_task_runners_|.");
+  static_assert(arraysize(unsequenced_task_runners_) == 3,
+                "The size of |unsequenced_task_runners_| doesn't match the "
+                "number of shutdown behaviors.");
+
+  scoped_refptr<TaskRunner>& task_runner =
+      sequence_token_id ? sequenced_task_runner_map_[sequence_token_id]
+                        : unsequenced_task_runners_[static_cast<int>(
+                              traits.shutdown_behavior())];
+
+  // TODO(fdoray): DCHECK that all tasks posted to the same sequence have the
+  // same shutdown behavior.
+
+  if (!task_runner) {
+    ExecutionMode execution_mode =
+        sequence_token_id ? ExecutionMode::SEQUENCED : ExecutionMode::PARALLEL;
+    task_runner = CreateTaskRunnerWithTraits(traits, execution_mode);
+  }
+
+  return task_runner;
+}
+
 bool SequencedWorkerPool::Inner::RunsTasksOnCurrentThread() const {
   AutoLock lock(lock_);
-  return ContainsKey(threads_, PlatformThread::CurrentId());
+  if (subtle::NoBarrier_Load(&g_all_pools_state) ==
+      AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER) {
+    if (!runs_tasks_on_verifier_) {
+      runs_tasks_on_verifier_ = CreateTaskRunnerWithTraits(
+          TaskTraits().WithFileIO().WithPriority(task_priority_),
+          ExecutionMode::PARALLEL);
+    }
+    return runs_tasks_on_verifier_->RunsTasksOnCurrentThread();
+  } else {
+    return ContainsKey(threads_, PlatformThread::CurrentId());
+  }
 }
 
 bool SequencedWorkerPool::Inner::IsRunningSequenceOnCurrentThread(
     SequenceToken sequence_token) const {
-  AutoLock lock(lock_);
-  ThreadMap::const_iterator found = threads_.find(PlatformThread::CurrentId());
-  if (found == threads_.end())
-    return false;
-  return found->second->is_processing_task() &&
-         sequence_token.Equals(found->second->task_sequence_token());
-}
-
-bool SequencedWorkerPool::Inner::IsRunningSequence(
-    SequenceToken sequence_token) const {
   DCHECK(sequence_token.IsValid());
-  AutoLock lock(lock_);
-  return !IsSequenceTokenRunnable(sequence_token.id_);
-}
 
-void SequencedWorkerPool::Inner::SetRunningTaskInfoForCurrentThread(
-    SequenceToken sequence_token,
-    WorkerShutdown shutdown_behavior) {
   AutoLock lock(lock_);
-  ThreadMap::const_iterator found = threads_.find(PlatformThread::CurrentId());
-  DCHECK(found != threads_.end());
-  DCHECK(found->second->is_processing_task());
-  DCHECK(!found->second->task_sequence_token().IsValid());
-  found->second->set_running_task_info(sequence_token, shutdown_behavior);
 
-  // Mark the sequence token as in use.
-  bool success = current_sequences_.insert(sequence_token.id_).second;
-  DCHECK(success);
+  if (subtle::NoBarrier_Load(&g_all_pools_state) ==
+      AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER) {
+    const auto sequenced_task_runner_it =
+        sequenced_task_runner_map_.find(sequence_token.id_);
+    return sequenced_task_runner_it != sequenced_task_runner_map_.end() &&
+           sequenced_task_runner_it->second->RunsTasksOnCurrentThread();
+  } else {
+    ThreadMap::const_iterator found =
+        threads_.find(PlatformThread::CurrentId());
+    return found != threads_.end() && found->second->is_processing_task() &&
+           sequence_token.Equals(found->second->task_sequence_token());
+  }
 }
 
 // See https://code.google.com/p/chromium/issues/detail?id=168415
 void SequencedWorkerPool::Inner::CleanupForTesting() {
-  DCHECK(!RunsTasksOnCurrentThread());
-  base::ThreadRestrictions::ScopedAllowWait allow_wait;
+  DCHECK_NE(subtle::NoBarrier_Load(&g_all_pools_state),
+            AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER);
   AutoLock lock(lock_);
   CHECK_EQ(CLEANUP_DONE, cleanup_state_);
   if (shutdown_called_)
@@ -744,7 +923,13 @@ void SequencedWorkerPool::Inner::Shutdown(
     if (shutdown_called_)
       return;
     shutdown_called_ = true;
+
     max_blocking_tasks_after_shutdown_ = max_new_blocking_tasks_after_shutdown;
+
+    if (subtle::NoBarrier_Load(&g_all_pools_state) !=
+        AllPoolsState::WORKER_CREATED) {
+      return;
+    }
 
     // Tickle the threads. This will wake up a waiting one so it will know that
     // it can exit, which in turn will wake up any other waiting ones.
@@ -783,6 +968,8 @@ bool SequencedWorkerPool::Inner::IsShutdownInProgress() {
 }
 
 void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
+  DCHECK_EQ(AllPoolsState::WORKER_CREATED,
+            subtle::NoBarrier_Load(&g_all_pools_state));
   {
     AutoLock lock(lock_);
     DCHECK(thread_being_created_);
@@ -837,11 +1024,6 @@ void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
 
           tracked_objects::ThreadData::TallyRunOnNamedThreadIfTracking(
               task, stopwatch);
-
-          // Update the sequence token in case it has been set from within the
-          // task, so it can be removed from the set of currently running
-          // sequences in DidRunWorkerTask() below.
-          task.sequence_token_id = this_worker->task_sequence_token().id_;
 
           // Make sure our task is erased outside the lock for the
           // same reason we do this with delete_these_oustide_lock.
@@ -922,6 +1104,9 @@ void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
 }
 
 void SequencedWorkerPool::Inner::HandleCleanup() {
+  DCHECK_EQ(AllPoolsState::WORKER_CREATED,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
   lock_.AssertAcquired();
   if (cleanup_state_ == CLEANUP_DONE)
     return;
@@ -987,6 +1172,9 @@ SequencedWorkerPool::Inner::GetWorkStatus SequencedWorkerPool::Inner::GetWork(
     SequencedTask* task,
     TimeDelta* wait_time,
     std::vector<Closure>* delete_these_outside_lock) {
+  DCHECK_EQ(AllPoolsState::WORKER_CREATED,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
   lock_.AssertAcquired();
 
   // Find the next task with a sequence token that's not currently in use.
@@ -1073,6 +1261,9 @@ SequencedWorkerPool::Inner::GetWorkStatus SequencedWorkerPool::Inner::GetWork(
 }
 
 int SequencedWorkerPool::Inner::WillRunWorkerTask(const SequencedTask& task) {
+  DCHECK_EQ(AllPoolsState::WORKER_CREATED,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
   lock_.AssertAcquired();
 
   // Mark the task's sequence number as in use.
@@ -1104,6 +1295,9 @@ int SequencedWorkerPool::Inner::WillRunWorkerTask(const SequencedTask& task) {
 }
 
 void SequencedWorkerPool::Inner::DidRunWorkerTask(const SequencedTask& task) {
+  DCHECK_EQ(AllPoolsState::WORKER_CREATED,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
   lock_.AssertAcquired();
 
   if (task.shutdown_behavior != CONTINUE_ON_SHUTDOWN) {
@@ -1117,6 +1311,9 @@ void SequencedWorkerPool::Inner::DidRunWorkerTask(const SequencedTask& task) {
 
 bool SequencedWorkerPool::Inner::IsSequenceTokenRunnable(
     int sequence_token_id) const {
+  DCHECK_NE(AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
   lock_.AssertAcquired();
   return !sequence_token_id ||
       current_sequences_.find(sequence_token_id) ==
@@ -1124,6 +1321,9 @@ bool SequencedWorkerPool::Inner::IsSequenceTokenRunnable(
 }
 
 int SequencedWorkerPool::Inner::PrepareToStartAdditionalThreadIfHelpful() {
+  DCHECK_NE(AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
   lock_.AssertAcquired();
   // How thread creation works:
   //
@@ -1174,8 +1374,18 @@ int SequencedWorkerPool::Inner::PrepareToStartAdditionalThreadIfHelpful() {
 
 void SequencedWorkerPool::Inner::FinishStartingAdditionalThread(
     int thread_number) {
+  DCHECK_NE(AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
   // Called outside of the lock.
   DCHECK_GT(thread_number, 0);
+
+  if (subtle::NoBarrier_Load(&g_all_pools_state) !=
+      AllPoolsState::WORKER_CREATED) {
+    DCHECK_EQ(AllPoolsState::NONE_ACTIVE,
+              subtle::NoBarrier_Load(&g_all_pools_state));
+    subtle::NoBarrier_Store(&g_all_pools_state, AllPoolsState::WORKER_CREATED);
+  }
 
   // The worker is assigned to the list when the thread actually starts, which
   // will manage the memory of the pointer.
@@ -1183,6 +1393,9 @@ void SequencedWorkerPool::Inner::FinishStartingAdditionalThread(
 }
 
 void SequencedWorkerPool::Inner::SignalHasWork() {
+  DCHECK_NE(AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+
   has_work_cv_.Signal();
   if (testing_observer_) {
     testing_observer_->OnHasWork();
@@ -1190,6 +1403,8 @@ void SequencedWorkerPool::Inner::SignalHasWork() {
 }
 
 bool SequencedWorkerPool::Inner::CanShutdown() const {
+  DCHECK_EQ(AllPoolsState::WORKER_CREATED,
+            subtle::NoBarrier_Load(&g_all_pools_state));
   lock_.AssertAcquired();
   // See PrepareToStartAdditionalThreadIfHelpful for how thread creation works.
   return !thread_being_created_ &&
@@ -1227,44 +1442,48 @@ SequencedWorkerPool::GetWorkerPoolForCurrentThread() {
 }
 
 // static
-scoped_refptr<SequencedTaskRunner>
-SequencedWorkerPool::GetSequencedTaskRunnerForCurrentThread() {
-  Worker* worker = Worker::GetForCurrentThread();
-
-  // If there is no worker, this thread is not a worker thread. Otherwise, it is
-  // currently running a task (sequenced or unsequenced).
-  if (!worker)
-    return nullptr;
-
-  scoped_refptr<SequencedWorkerPool> pool = worker->worker_pool();
-  SequenceToken sequence_token = worker->task_sequence_token();
-  WorkerShutdown shutdown_behavior = worker->task_shutdown_behavior();
-  if (!sequence_token.IsValid()) {
-    // Create a new sequence token and bind this thread to it, to make sure that
-    // a task posted to the SequencedTaskRunner we are going to return is not
-    // immediately going to run on a different thread.
-    sequence_token = Inner::GetSequenceToken();
-    pool->inner_->SetRunningTaskInfoForCurrentThread(sequence_token,
-                                                     shutdown_behavior);
-  }
-
-  DCHECK(pool->IsRunningSequenceOnCurrentThread(sequence_token));
-  return new SequencedWorkerPoolSequencedTaskRunner(
-      std::move(pool), sequence_token, shutdown_behavior);
+void SequencedWorkerPool::RedirectToTaskSchedulerForProcess() {
+  DCHECK(TaskScheduler::GetInstance());
+  // Hitting this DCHECK indicates that a task was posted to a
+  // SequencedWorkerPool before the TaskScheduler was initialized and
+  // redirected, posting task to SequencedWorkerPools needs to at least be
+  // delayed until after that point.
+  DCHECK_EQ(AllPoolsState::NONE_ACTIVE,
+            subtle::NoBarrier_Load(&g_all_pools_state));
+  subtle::NoBarrier_Store(&g_all_pools_state,
+                          AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER);
 }
 
-SequencedWorkerPool::SequencedWorkerPool(size_t max_threads,
-                                         const std::string& thread_name_prefix)
-    : constructor_task_runner_(ThreadTaskRunnerHandle::Get()),
-      inner_(new Inner(this, max_threads, thread_name_prefix, NULL)) {
+// static
+void SequencedWorkerPool::ResetRedirectToTaskSchedulerForProcessForTesting() {
+  // This can be called when the current state is REDIRECTED_TO_TASK_SCHEDULER
+  // to stop redirecting tasks. It can also be called when the current state is
+  // WORKER_CREATED to allow RedirectToTaskSchedulerForProcess() to be called
+  // (RedirectToTaskSchedulerForProcess() cannot be called after a worker has
+  // been created if this isn't called).
+  subtle::NoBarrier_Store(&g_all_pools_state, AllPoolsState::NONE_ACTIVE);
 }
 
 SequencedWorkerPool::SequencedWorkerPool(size_t max_threads,
                                          const std::string& thread_name_prefix,
+                                         base::TaskPriority task_priority)
+    : constructor_task_runner_(ThreadTaskRunnerHandle::Get()),
+      inner_(new Inner(this,
+                       max_threads,
+                       thread_name_prefix,
+                       task_priority,
+                       NULL)) {}
+
+SequencedWorkerPool::SequencedWorkerPool(size_t max_threads,
+                                         const std::string& thread_name_prefix,
+                                         base::TaskPriority task_priority,
                                          TestingObserver* observer)
     : constructor_task_runner_(ThreadTaskRunnerHandle::Get()),
-      inner_(new Inner(this, max_threads, thread_name_prefix, observer)) {
-}
+      inner_(new Inner(this,
+                       max_threads,
+                       thread_name_prefix,
+                       task_priority,
+                       observer)) {}
 
 SequencedWorkerPool::~SequencedWorkerPool() {}
 
@@ -1295,7 +1514,7 @@ scoped_refptr<SequencedTaskRunner> SequencedWorkerPool::GetSequencedTaskRunner(
 scoped_refptr<SequencedTaskRunner>
 SequencedWorkerPool::GetSequencedTaskRunnerWithShutdownBehavior(
     SequenceToken token, WorkerShutdown shutdown_behavior) {
-  return new SequencedWorkerPoolSequencedTaskRunner(
+  return new PoolSequencedTaskRunner(
       this, token, shutdown_behavior);
 }
 
@@ -1378,18 +1597,16 @@ bool SequencedWorkerPool::RunsTasksOnCurrentThread() const {
   return inner_->RunsTasksOnCurrentThread();
 }
 
-bool SequencedWorkerPool::IsRunningSequenceOnCurrentThread(
-    SequenceToken sequence_token) const {
-  return inner_->IsRunningSequenceOnCurrentThread(sequence_token);
-}
-
-bool SequencedWorkerPool::IsRunningSequence(
-    SequenceToken sequence_token) const {
-  return inner_->IsRunningSequence(sequence_token);
-}
-
 void SequencedWorkerPool::FlushForTesting() {
-  inner_->CleanupForTesting();
+  DCHECK(!RunsTasksOnCurrentThread());
+  base::ThreadRestrictions::ScopedAllowWait allow_wait;
+  if (subtle::NoBarrier_Load(&g_all_pools_state) ==
+      AllPoolsState::REDIRECTED_TO_TASK_SCHEDULER) {
+    // TODO(gab): Remove this if http://crbug.com/622400 fails.
+    TaskScheduler::GetInstance()->FlushForTesting();
+  } else {
+    inner_->CleanupForTesting();
+  }
 }
 
 void SequencedWorkerPool::SignalHasWorkForTesting() {
@@ -1403,6 +1620,11 @@ void SequencedWorkerPool::Shutdown(int max_new_blocking_tasks_after_shutdown) {
 
 bool SequencedWorkerPool::IsShutdownInProgress() {
   return inner_->IsShutdownInProgress();
+}
+
+bool SequencedWorkerPool::IsRunningSequenceOnCurrentThread(
+    SequenceToken sequence_token) const {
+  return inner_->IsRunningSequenceOnCurrentThread(sequence_token);
 }
 
 }  // namespace base

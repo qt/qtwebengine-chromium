@@ -6,6 +6,7 @@
 #define NET_HTTP_HTTP_STREAM_FACTORY_IMPL_JOB_H_
 
 #include <memory>
+#include <utility>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -19,9 +20,10 @@
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_stream_factory_impl.h"
-#include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
+#include "net/proxy/proxy_server.h"
 #include "net/proxy/proxy_service.h"
-#include "net/quic/quic_stream_factory.h"
+#include "net/quic/chromium/quic_stream_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/socket/ssl_client_socket.h"
@@ -35,6 +37,8 @@ class HttpAuthController;
 class HttpNetworkSession;
 class HttpStream;
 class SpdySessionPool;
+class NetLog;
+struct SSLConfig;
 class QuicHttpStream;
 
 // An HttpStreamRequestImpl exists for each stream which is in progress of being
@@ -96,6 +100,16 @@ class HttpStreamFactoryImpl::Job {
                                   const ProxyInfo& used_proxy_info,
                                   HttpAuthController* auth_controller) = 0;
 
+    // Invoked when |job| has completed proxy resolution. The delegate may
+    // create an alternative proxy server job to fetch the request.
+    virtual void OnResolveProxyComplete(
+        Job* job,
+        const HttpRequestInfo& request_info,
+        RequestPriority priority,
+        const SSLConfig& server_ssl_config,
+        const SSLConfig& proxy_ssl_config,
+        HttpStreamRequest::StreamType stream_type) = 0;
+
     // Invoked to notify the Request and Factory of the readiness of new
     // SPDY session.
     virtual void OnNewSpdySessionReady(
@@ -115,6 +129,13 @@ class HttpStreamFactoryImpl::Job {
         Job* job,
         const ConnectionAttempts& attempts) = 0;
 
+    // Invoked when |job| finishes initiating a connection.
+    virtual void OnConnectionInitialized(Job* job, int rv) = 0;
+
+    // Return false if |job| can advance to the next state. Otherwise, |job|
+    // will wait for Job::Resume() to be called before advancing.
+    virtual bool ShouldWait(Job* job) = 0;
+
     // Called when |job| determines the appropriate |spdy_session_key| for the
     // Request. Note that this does not mean that SPDY is necessarily supported
     // for this SpdySessionKey, since we may need to wait for NPN to complete
@@ -125,10 +146,12 @@ class HttpStreamFactoryImpl::Job {
     // Remove session from the SpdySessionRequestMap.
     virtual void RemoveRequestFromSpdySessionRequestMapForJob(Job* job) = 0;
 
-    virtual const BoundNetLog* GetNetLog(Job* job) const = 0;
+    virtual const NetLogWithSource* GetNetLog(Job* job) const = 0;
 
     virtual WebSocketHandshakeStreamBase::CreateHelper*
     websocket_handshake_stream_create_helper() = 0;
+
+    virtual void MaybeSetWaitTimeForMainJob(const base::TimeDelta& delay) = 0;
 
     virtual bool for_websockets() = 0;
   };
@@ -147,9 +170,14 @@ class HttpStreamFactoryImpl::Job {
       GURL origin_url,
       NetLog* net_log);
 
-  // Constructor for alternative Job.
-  // Job is owned by |delegate|, hence |delegate| is valid for the
-  // lifetime of the Job.
+  // Constructor for the alternative Job. The Job is owned by |delegate|, hence
+  // |delegate| is valid for the lifetime of the Job. If |alternative_service|
+  // is initialized, then the Job will use the alternative service. On the
+  // other hand, if |alternative_proxy_server| is a valid proxy server, then the
+  // job will use that instead of using ProxyService for proxy resolution.
+  // Further, if |alternative_proxy_server| is a valid but bad proxy, then
+  // fallback proxies are not used. It is illegal to call this with an
+  // initialized |alternative_service|, and a valid |alternative_proxy_server|.
   Job(Delegate* delegate,
       JobType job_type,
       HttpNetworkSession* session,
@@ -160,12 +188,13 @@ class HttpStreamFactoryImpl::Job {
       HostPortPair destination,
       GURL origin_url,
       AlternativeService alternative_service,
+      const ProxyServer& alternative_proxy_server,
       NetLog* net_log);
   virtual ~Job();
 
   // Start initiates the process of creating a new HttpStream.
   // |delegate_| will be notified upon completion.
-  virtual void Start(HttpStreamRequest::StreamType stream_type);
+  void Start(HttpStreamRequest::StreamType stream_type);
 
   // Preconnect will attempt to request |num_streams| sockets from the
   // appropriate ClientSocketPool.
@@ -174,14 +203,9 @@ class HttpStreamFactoryImpl::Job {
   int RestartTunnelWithProxyAuth(const AuthCredentials& credentials);
   LoadState GetLoadState() const;
 
-  // Tells |this| to wait for |job| to resume it.
-  void WaitFor(Job* job);
-
-  // Tells |this| that |job| has determined it still needs to continue
-  // connecting, so allow |this| to continue after the specified |delay|. If
-  // this is not called, then |request_| is expected to cancel |this| by
-  // deleting it.
-  void Resume(Job* job, const base::TimeDelta& delay);
+  // Tells |this| that |delegate_| has determined it still needs to continue
+  // connecting.
+  virtual void Resume();
 
   // Called to detach |this| Job. May resume the other Job, will disconnect
   // the socket for |this| Job, and notify |delegate| upon completion.
@@ -190,10 +214,10 @@ class HttpStreamFactoryImpl::Job {
   void SetPriority(RequestPriority priority);
 
   RequestPriority priority() const { return priority_; }
-  bool was_npn_negotiated() const;
-  NextProto protocol_negotiated() const;
+  bool was_alpn_negotiated() const;
+  NextProto negotiated_protocol() const;
   bool using_spdy() const;
-  const BoundNetLog& net_log() const { return net_log_; }
+  const NetLogWithSource& net_log() const { return net_log_; }
   HttpStreamRequest::StreamType stream_type() const { return stream_type_; }
 
   std::unique_ptr<HttpStream> ReleaseStream() { return std::move(stream_); }
@@ -204,46 +228,48 @@ class HttpStreamFactoryImpl::Job {
     return std::move(bidirectional_stream_impl_);
   }
 
+  bool is_waiting() const { return next_state_ == STATE_WAIT_COMPLETE; }
   const SSLConfig& server_ssl_config() const;
   const SSLConfig& proxy_ssl_config() const;
   const ProxyInfo& proxy_info() const;
 
-  // Called to indicate that this job succeeded, and some other jobs
-  // will be orphaned.
-  void ReportJobSucceededForRequest();
-
-  // Marks that the other |job| has completed.
-  virtual void MarkOtherJobComplete(const Job& job);
-
   JobType job_type() const { return job_type_; }
 
+  const AlternativeService alternative_service() const {
+    return alternative_service_;
+  }
+
+  const ProxyServer alternative_proxy_server() const {
+    return alternative_proxy_server_;
+  }
+
+  bool using_existing_quic_session() const {
+    return using_existing_quic_session_;
+  }
+
  private:
-  FRIEND_TEST_ALL_PREFIXES(HttpStreamFactoryImplRequestTest, DelayMainJob);
+  friend class HttpStreamFactoryImplJobPeer;
 
   enum State {
     STATE_START,
     STATE_RESOLVE_PROXY,
     STATE_RESOLVE_PROXY_COMPLETE,
 
-    // Note that when Alternate-Protocol says we can connect to an alternate
-    // port using a different protocol, we have the choice of communicating over
-    // the original protocol, or speaking the alternate protocol (currently,
-    // only npn-spdy) over an alternate port. For a cold page load, the http
-    // connection that delivers the http response that has the
-    // Alternate-Protocol header will already be warm. So, blocking the next
-    // http request on establishing a new npn-spdy connection would incur extra
-    // latency. Even if the http connection was not reused, establishing a new
-    // http connection is typically faster than npn-spdy, since npn-spdy
-    // requires a SSL handshake. Therefore, we start both the http and the
-    // npn-spdy jobs in parallel. In order not to unnecessarily waste sockets,
-    // we have the http job block on the npn-spdy job after proxy resolution.
-    // The npn-spdy job will Resume() the http job if, in
-    // STATE_INIT_CONNECTION_COMPLETE, it detects an error or does not find an
-    // existing SpdySession. In that case, the http and npn-spdy jobs will race.
-    // When QUIC protocol is used by the npn-spdy job, then http job will wait
-    // for |wait_time_| when the http job was resumed.
-    STATE_WAIT_FOR_JOB,
-    STATE_WAIT_FOR_JOB_COMPLETE,
+    // The main and alternative jobs are started in parallel.  The main job
+    // waits after it finishes proxy resolution.  The alternative job never
+    // waits.
+    //
+    // An HTTP/2 alternative job notifies the JobController in DoInitConnection
+    // unless it can pool to an existing SpdySession.  JobController, in turn,
+    // resumes the main job.
+    //
+    // A QUIC alternative job notifies the JobController in DoInitConnection
+    // regardless of whether it pools to an existing QUIC session, but the main
+    // job is only resumed after some delay.
+    //
+    // If the main job is resumed, then it races the alternative job.
+    STATE_WAIT,
+    STATE_WAIT_COMPLETE,
 
     STATE_INIT_CONNECTION,
     STATE_INIT_CONNECTION_COMPLETE,
@@ -257,61 +283,6 @@ class HttpStreamFactoryImpl::Job {
     STATE_DONE,
     STATE_NONE
   };
-
-  enum JobStatus {
-    STATUS_RUNNING,
-    STATUS_FAILED,
-    STATUS_BROKEN,
-    STATUS_SUCCEEDED
-  };
-
-  // Wrapper class for SpdySessionPool methods to enforce certificate
-  // requirements for SpdySessions.
-  class ValidSpdySessionPool {
-   public:
-    ValidSpdySessionPool(SpdySessionPool* spdy_session_pool,
-                         GURL& origin_url,
-                         bool is_spdy_alternative);
-
-    // Returns OK if a SpdySession was not found (in which case |spdy_session|
-    // is set to nullptr), or if one was found (in which case |spdy_session| is
-    // set to it) and it has an associated SSL certificate with is valid for
-    // |origin_url_|, or if this requirement does not apply because the Job is
-    // not a SPDY alternative job.  Returns the appropriate error code
-    // otherwise,
-    // in which case |spdy_session| should not be used.
-    int FindAvailableSession(const SpdySessionKey& key,
-                             const BoundNetLog& net_log,
-                             base::WeakPtr<SpdySession>* spdy_session);
-
-    // Creates a SpdySession and sets |spdy_session| to point to it.  Returns OK
-    // if the associated SSL certificate is valid for |origin_url_|, or if this
-    // requirement does not apply because the Job is not a SPDY alternative job.
-    // Returns the appropriate error code otherwise, in which case
-    // |spdy_session| should not be used.
-    int CreateAvailableSessionFromSocket(
-        const SpdySessionKey& key,
-        std::unique_ptr<ClientSocketHandle> connection,
-        const BoundNetLog& net_log,
-        int certificate_error_code,
-        bool is_secure,
-        base::WeakPtr<SpdySession>* spdy_session);
-
-   private:
-    // Returns OK if |spdy_session| has an associated SSL certificate with is
-    // valid for |origin_url_|, or if this requirement does not apply because
-    // the Job is not a SPDY alternative job, or if |spdy_session| is null.
-    // Returns appropriate error code otherwise.
-    int CheckAlternativeServiceValidityForOrigin(
-        base::WeakPtr<SpdySession> spdy_session);
-
-    SpdySessionPool* const spdy_session_pool_;
-    const GURL origin_url_;
-    const bool is_spdy_alternative_;
-  };
-
-  // Resume the |this| job after the specified |wait_time_|.
-  void ResumeAfterDelay();
 
   void OnStreamReadyCallback();
   void OnBidirectionalStreamImplReadyCallback();
@@ -331,6 +302,7 @@ class HttpStreamFactoryImpl::Job {
   int RunLoop(int result);
   int DoLoop(int result);
   int StartInternal();
+  int DoInitConnectionImpl();
 
   // Each of these methods corresponds to a State value.  Those with an input
   // argument receive the result from the previous state.  If a method returns
@@ -339,8 +311,8 @@ class HttpStreamFactoryImpl::Job {
   int DoStart();
   int DoResolveProxy();
   int DoResolveProxyComplete(int result);
-  int DoWaitForJob();
-  int DoWaitForJobComplete(int result);
+  int DoWait();
+  int DoWaitComplete(int result);
   int DoInitConnection();
   int DoInitConnectionComplete(int result);
   int DoWaitingUserAction(int result);
@@ -398,13 +370,8 @@ class HttpStreamFactoryImpl::Job {
   // Called to handle a client certificate request.
   int HandleCertificateRequest(int error);
 
-  // Moves this stream request into SPDY mode.
-  void SwitchToSpdyMode();
-
   // Should we force QUIC for this stream request.
   bool ShouldForceQuic() const;
-
-  void MaybeMarkAlternativeServiceBroken();
 
   ClientSocketPoolManager::SocketGroupType GetSocketGroup() const;
 
@@ -421,14 +388,14 @@ class HttpStreamFactoryImpl::Job {
                               const SpdySessionKey& spdy_session_key,
                               const GURL& origin_url,
                               const AddressList& addresses,
-                              const BoundNetLog& net_log);
+                              const NetLogWithSource& net_log);
 
   const HttpRequestInfo request_info_;
   RequestPriority priority_;
   ProxyInfo proxy_info_;
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
-  const BoundNetLog net_log_;
+  const NetLogWithSource net_log_;
 
   CompletionCallback io_callback_;
   std::unique_ptr<ClientSocketHandle> connection_;
@@ -439,33 +406,23 @@ class HttpStreamFactoryImpl::Job {
 
   // The server we are trying to reach, could be that of the origin or of the
   // alternative service (after applying host mapping rules).
-  HostPortPair destination_;
+  const HostPortPair destination_;
 
   // The origin url we're trying to reach. This url may be different from the
   // original request when host mapping rules are set-up.
-  GURL origin_url_;
+  const GURL origin_url_;
 
   // AlternativeService for this Job if this is an alternative Job.
   const AlternativeService alternative_service_;
 
-  // AlternativeService for the other Job if this is not an alternative Job.
-  AlternativeService other_job_alternative_service_;
+  // Alternative proxy server that should be used by |this| to fetch the
+  // request.
+  const ProxyServer alternative_proxy_server_;
 
   // Unowned. |this| job is owned by |delegate_|.
   Delegate* delegate_;
 
-  JobType job_type_;
-
-  // This is the Job we're dependent on. It will notify us if/when it's OK to
-  // proceed.
-  Job* blocking_job_;
-
-  // |waiting_job_| is a Job waiting to see if |this| can reuse a connection.
-  // If |this| is unable to do so, we'll notify |waiting_job_| that it's ok to
-  // proceed and then race the two Jobs.
-  Job* waiting_job_;
-
-  base::TimeDelta wait_time_;
+  const JobType job_type_;
 
   // True if handling a HTTPS request, or using SPDY with SSL
   bool using_ssl_;
@@ -483,9 +440,6 @@ class HttpStreamFactoryImpl::Job {
   // Force quic for a specific port.
   int force_quic_port_;
 
-  // The certificate error while using SPDY over SSL for insecure URLs.
-  int spdy_certificate_error_;
-
   scoped_refptr<HttpAuthController>
       auth_controllers_[HttpAuth::AUTH_NUM_TARGETS];
 
@@ -497,17 +451,15 @@ class HttpStreamFactoryImpl::Job {
   std::unique_ptr<WebSocketHandshakeStreamBase> websocket_stream_;
   std::unique_ptr<BidirectionalStreamImpl> bidirectional_stream_impl_;
 
-  // True if we negotiated NPN.
-  bool was_npn_negotiated_;
+  // True if we negotiated ALPN.
+  bool was_alpn_negotiated_;
 
   // Protocol negotiated with the server.
-  NextProto protocol_negotiated_;
+  NextProto negotiated_protocol_;
 
   // 0 if we're not preconnecting. Otherwise, the number of streams to
   // preconnect.
   int num_streams_;
-
-  std::unique_ptr<ValidSpdySessionPool> valid_spdy_session_pool_;
 
   // Initialized when we create a new SpdySession.
   base::WeakPtr<SpdySession> new_spdy_session_;
@@ -517,10 +469,6 @@ class HttpStreamFactoryImpl::Job {
 
   // Only used if |new_spdy_session_| is non-NULL.
   bool spdy_session_direct_;
-
-  JobStatus job_status_;
-  JobStatus other_job_status_;
-  base::TimeTicks job_stream_ready_start_time_;
 
   // Type of stream that is requested.
   HttpStreamRequest::StreamType stream_type_;
@@ -535,7 +483,7 @@ class HttpStreamFactoryImpl::JobFactory {
  public:
   virtual ~JobFactory() {}
 
-  // Creates an alternative Job.
+  // Creates an alternative service Job.
   virtual HttpStreamFactoryImpl::Job* CreateJob(
       HttpStreamFactoryImpl::Job::Delegate* delegate,
       HttpStreamFactoryImpl::JobType job_type,
@@ -547,6 +495,20 @@ class HttpStreamFactoryImpl::JobFactory {
       HostPortPair destination,
       GURL origin_url,
       AlternativeService alternative_service,
+      NetLog* net_log) = 0;
+
+  // Creates an alternative proxy server Job.
+  virtual HttpStreamFactoryImpl::Job* CreateJob(
+      HttpStreamFactoryImpl::Job::Delegate* delegate,
+      HttpStreamFactoryImpl::JobType job_type,
+      HttpNetworkSession* session,
+      const HttpRequestInfo& request_info,
+      RequestPriority priority,
+      const SSLConfig& server_ssl_config,
+      const SSLConfig& proxy_ssl_config,
+      HostPortPair destination,
+      GURL origin_url,
+      const ProxyServer& alternative_proxy_server,
       NetLog* net_log) = 0;
 
   // Creates a non-alternative Job.

@@ -79,6 +79,17 @@
           },
 
           /**
+           * By default, the dropdown will constrain scrolling on the page
+           * to itself when opened.
+           * Set to true in order to prevent scroll from being constrained
+           * to the dropdown when it opens.
+           */
+          allowOutsideScroll: {
+            type: Boolean,
+            value: false
+          },
+
+          /**
            * Set to true to disable the floating label. Bind this to the
            * `<paper-input-container>`'s `noLabelFloat` property.
            */
@@ -122,7 +133,17 @@
           verticalAlign: {
             type: String,
             value: 'top'
-          }
+          },
+
+          /**
+           * If true, the `horizontalAlign` and `verticalAlign` properties will
+           * be considered preferences instead of strict requirements when
+           * positioning the dropdown and may be changed if doing so reduces
+           * the area of the dropdown falling outside of `fitInto`.
+           */
+          dynamicAlign: {
+            type: Boolean
+          },
         },
 
         listeners: {
@@ -216,7 +237,7 @@
           if (!selectedItem) {
             value = '';
           } else {
-            value = selectedItem.label || selectedItem.textContent.trim();
+            value = selectedItem.label || selectedItem.getAttribute('label') || selectedItem.textContent.trim();
           }
 
           this._setValue(value);

@@ -7,6 +7,7 @@
 #include "cc/layers/render_pass_sink.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/quads/shared_quad_state.h"
+#include "cc/test/fake_compositor_frame_sink.h"
 #include "cc/test/fake_impl_task_runner_provider.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
@@ -22,14 +23,14 @@
 namespace cc {
 namespace {
 
-#define EXECUTE_AND_VERIFY_SURFACE_CHANGED(code_to_test)                       \
-  render_surface->ResetPropertyChangedFlag();                                  \
-  code_to_test;                                                                \
+#define EXECUTE_AND_VERIFY_SURFACE_CHANGED(code_to_test) \
+  render_surface->ResetPropertyChangedFlags();           \
+  code_to_test;                                          \
   EXPECT_TRUE(render_surface->SurfacePropertyChanged())
 
-#define EXECUTE_AND_VERIFY_SURFACE_DID_NOT_CHANGE(code_to_test)                \
-  render_surface->ResetPropertyChangedFlag();                                  \
-  code_to_test;                                                                \
+#define EXECUTE_AND_VERIFY_SURFACE_DID_NOT_CHANGE(code_to_test) \
+  render_surface->ResetPropertyChangedFlags();                  \
+  code_to_test;                                                 \
   EXPECT_FALSE(render_surface->SurfacePropertyChanged())
 
 TEST(RenderSurfaceTest, VerifySurfaceChangesAreTrackedProperly) {
@@ -49,6 +50,8 @@ TEST(RenderSurfaceTest, VerifySurfaceChangesAreTrackedProperly) {
   RenderSurfaceImpl* render_surface = owning_layer->render_surface();
   gfx::Rect test_rect(3, 4, 5, 6);
   host_impl.active_tree()->ResetAllChangeTracking();
+  host_impl.active_tree()->SetRootLayerForTesting(std::move(owning_layer));
+  host_impl.active_tree()->BuildPropertyTreesForTesting();
 
   // Currently, the content_rect, clip_rect, and
   // owning_layer->layerPropertyChanged() are the only sources of change.
@@ -56,7 +59,10 @@ TEST(RenderSurfaceTest, VerifySurfaceChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_SURFACE_CHANGED(
       render_surface->SetContentRectForTesting(test_rect));
 
-  owning_layer->OnOpacityAnimated(0.5f);
+  host_impl.active_tree()->property_trees()->effect_tree.OnOpacityAnimated(
+      0.5f,
+      host_impl.active_tree()->root_layer_for_testing()->effect_tree_index(),
+      host_impl.active_tree());
   EXPECT_TRUE(render_surface->SurfacePropertyChanged());
   host_impl.active_tree()->ResetAllChangeTracking();
 
@@ -79,8 +85,6 @@ TEST(RenderSurfaceTest, VerifySurfaceChangesAreTrackedProperly) {
       render_surface->SetDrawOpacity(0.5f));
   EXECUTE_AND_VERIFY_SURFACE_DID_NOT_CHANGE(
       render_surface->SetDrawTransform(dummy_matrix));
-  EXECUTE_AND_VERIFY_SURFACE_DID_NOT_CHANGE(
-      render_surface->SetReplicaDrawTransform(dummy_matrix));
   EXECUTE_AND_VERIFY_SURFACE_DID_NOT_CHANGE(render_surface->ClearLayerLists());
 }
 
@@ -88,6 +92,8 @@ TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectSharedQuadState) {
   FakeImplTaskRunnerProvider task_runner_provider;
   TestSharedBitmapManager shared_bitmap_manager;
   TestTaskGraphRunner task_graph_runner;
+  std::unique_ptr<CompositorFrameSink> compositor_frame_sink =
+      FakeCompositorFrameSink::Create3d();
   FakeLayerTreeHostImpl host_impl(&task_runner_provider, &shared_bitmap_manager,
                                   &task_graph_runner);
   std::unique_ptr<LayerImpl> root_layer =
@@ -99,12 +105,15 @@ TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectSharedQuadState) {
   ASSERT_TRUE(owning_layer->render_surface());
 
   SkXfermode::Mode blend_mode = SkXfermode::kSoftLight_Mode;
-  owning_layer->SetBlendMode(blend_mode);
+  owning_layer->test_properties()->blend_mode = blend_mode;
   RenderSurfaceImpl* render_surface = owning_layer->render_surface();
 
   root_layer->test_properties()->AddChild(std::move(owning_layer));
   host_impl.active_tree()->SetRootLayerForTesting(std::move(root_layer));
+  host_impl.SetVisible(true);
+  host_impl.InitializeRenderer(compositor_frame_sink.get());
   host_impl.active_tree()->BuildLayerListAndPropertyTreesForTesting();
+  host_impl.active_tree()->UpdateDrawProperties(false /* update_lcd_text */);
 
   gfx::Rect content_rect(0, 0, 50, 50);
   gfx::Rect clip_rect(5, 5, 40, 40);

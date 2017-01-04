@@ -7,16 +7,16 @@ See [build](build.md) for instructions on how to build Blimp.
 
 ### Installing the client
 
-Install the Blimp APK with the following:
+Install the Chrome Public APK with the following:
 
 ```bash
-./build/android/adb_install_apk.py $(PRODUCT_DIR)/apks/Blimp.apk
+./build/android/adb_install_apk.py $(PRODUCT_DIR)/apks/ChromePublic.apk
 ```
 
-This is equivalent to just running:
+This is mostly equivalent to just running:
 
 ```bash
-adb install $(PRODUCT_DIR)/apks/Blimp.apk
+adb install $(PRODUCT_DIR)/apks/ChromePublic.apk
 ```
 
 ### Setting up command line flags
@@ -24,24 +24,39 @@ adb install $(PRODUCT_DIR)/apks/Blimp.apk
 Set up any command line flags with:
 
 ```bash
-./build/android/adb_blimp_command_line --your-flag-here
+./build/android/adb_chrome_public_command_line --your-flag-here
 ```
 
 To see your current command line, run `adb_blimp_command_line` without any
 arguments.
 
-The Blimp client reads command line arguments from the file
-`/data/local/blimp-command-line` and the above script reads/writes that file.
+The Chrome APK blimp client reads command line arguments from the file
+`/data/local/chrome-command-line` and the above script reads/writes that file.
 Typical format of the file is `chrome --your-flag-here`. So one can use `adb`
 directly to create the file:
 
 ```bash
 echo 'chrome --engine-ip=10.0.2.2 --engine-port=25467 --engine-transport=tcp' \
-  '--blimp-client-token-path=/data/data/org.chromium.blimp/blimp_client_token' \
-  '--vmodule="*=1""' > /tmp/blimp-command-line
-adb push /tmp/blimp-command-line /data/local/blimp-command-line
-adb shell start chmod 0664 /data/local/blimp-command-line
+  '--blimp-client-token-path=/data/data/org.chromium.chrome/blimp_client_token' \
+  '--vmodule="*=1""' > /tmp/chrome-command-line
+adb push /tmp/chrome-command-line /data/local/chrome-command-line
+adb shell start chmod 0664 /data/local/chrome-command-line
 ```
+
+### Forcefully enabling the blimp client
+
+Usually, the end user will have to manually enable blimp by using the Blimp
+panel in the application settings, but for developers it might be beneficial to
+skip this check by forcefully enabling the blimp client.
+
+You can do this by adding the command line flag:
+```
+--enable-blimp
+```
+
+*Note:* This still does not skip the authentication checks for the assigner. You
+will still have to either pass in the `--engine-ip=...` argument or sign in
+with a valid account.
 
 ### Instructing client to connect to specific host
 
@@ -68,26 +83,26 @@ the client. One can do this by running the following command:
 
 ```bash
 adb push /path/to/blimp_client_token \
-  /data/data/org.chromium.blimp/blimp_client_token
+  /data/data/org.chromium.chrome/blimp_client_token
 ```
 
 To have the client use the given client auth token file, use the
 `--blimp-client-token-path` flag (e.g.
-`--blimp-client-token-path=/data/data/org.chromium.blimp/blimp_client_token`)
+`--blimp-client-token-path=/data/data/org.chromium.chrome/blimp_client_token`)
 
 An example of a client token file is
 [test_client_token](https://code.google.com/p/chromium/codesearch#chromium/src/blimp/test/data/test_client_token).
 
 ### Start the Client
-Run the Blimp APK with:
+Run the Chrome Public APK with:
 
 ```bash
-./build/android/adb_run_blimp_client
+./build/android/adb_run_chrome_public
 ```
 The script under the cover uses adb to start the application:
 
 ```bash
-adb shell am start -a android.intent.action.VIEW -n org.chromium.blimp/org.chromium.blimp.BlimpRendererActivity
+adb shell am start -a android.intent.action.VIEW -n org.chromium.chrome/com.google.android.apps.chrome.Main
 ```
 
 ### Connecting to an Engine running on a workstation
@@ -137,15 +152,34 @@ Here are a few gotchas:
 
 ## Linux Client
 
-The Linux client is used for development purpose while the Android client is
-shipped. The Linux client is built as part of the `blimp` target.
+The Linux client is useful for development purposes where the full Android UI is
+not required.
+
+Build with the following commands:
+```
+gn gen out-linux/Client
+ninja -C out-linux/Client blimp_shell
+```
+
+
 To run it with local logging enabled, execute:
 
 ```bash
-./out-linux/Debug/blimp_shell \
+./out-linux/Client/blimp_shell \
   --user-data-dir=/tmp/blimpclient \
   --enable-logging=stderr \
-  --vmodule="*=1"
+  --vmodule="*=1" \
+  --engine-ip=127.0.0.1 \
+  --engine-port=25467 \
+  --engine-transport=tcp \
+  --blimp-client-token-path=/tmp/blimpengine-token
+```
+
+**PS:** Create the `/tmp/blimpengine-token` file with any sequence of
+characters. For example:
+
+```
+echo "anything" > /tmp/blimpengine-token
 ```
 
 ## Running the engine
@@ -163,7 +197,10 @@ The following flags are required to start an Engine instance:
 * `--disable-cached-picture-raster`: Ensures that rasterized content is not
   destroyed before serialization.
 * `--android-fonts-path=$PATH`: Path to where the fonts are located.
-  Typically this would be `out-linux/Debug/gen/third_party/blimp_fonts`.
+  If the Android client is Kitkat system, this would be
+  `out-linux/Debug/gen/third_party/blimp_fonts/font_bundle/kitkat/`.
+  If the Android client is Marshmallow system, this would be
+  `out-linux/Debug/gen/third_party/blimp_fonts/font_bundle/marshmallow/`.
 * `--disable-remote-fonts`: Disables downloading of custom web fonts in the
   renderer.
 
@@ -173,8 +210,74 @@ One can start the engine using these flags:
 
 ```bash
 out-linux/Debug/blimp_engine_app \
-  --android-fonts-path=out-linux/Debug/gen/third_party/blimp_fonts \
+  --android-fonts-path=out-linux/Debug/gen/third_party/blimp_fonts/font_bundle/marshmallow/ \
   --blimp-client-token-path=/tmp/blimpengine-token \
   --enable-logging=stderr \
   --vmodule="blimp*=1"
 ```
+
+## Running client engine integration with script
+
+When building the target `blimp` on a Linux host, a script is created which
+automates running the Blimp client and starting the engine. Setting up the
+environment like this is much quicker than executing each of the steps
+separately. It is used for development purpose as well as running tests under
+integration environment.
+
+### Generate the script
+
+The script is wrapped as an command `client_engine_integration` and ends up in
+`out-linux/Debug/bin/` which is generated with building engine. Command should be with
+the positional argument `{start,run,load,stop}`.
+
+### Running the script
+
+One can use the script to set up engine and connect it with client, then start client.
+
+#### Option A
+
+1.  `{start}` Start engine & forwarder:
+
+    ```bash
+    out-linux/Debug/bin/client_engine_integration start
+    ```
+
+    Engine runs until when you run the script with `{stop}` as the positional argument.
+
+2.  After engine starting successfully, run `{load}` client which installs apk in
+    device and runs blimp.
+
+    ```bash
+    out-linux/Debug/bin/client_engine_integration load -p/--apk-path /path/to/apk
+    ```
+
+    You are now ready to run tests or do development.
+
+    Instead of `{load}`, if want to manually install/launch the client can also do
+    e.g. the incremental install:
+
+    ```bash
+    ninja -C out-android/Debug blimp chrome_public_apk_incremental && \
+        out-android/Debug/bin/install_chrome_public_apk_incremental
+    ```
+
+3.  `{stop}` Stops the engine & the forwarder:
+
+    ```bash
+    out-linux/Debug/bin/client_engine_integration stop
+    ```
+
+#### Option B
+
+1.  `{run}` Start and keep running engine & forwarder.
+    Script keeps running and auto-checking engine process. Is responsible for
+    killing engine if keyboard interrupts or client gets killed.
+
+    ```bash
+    out-linux/Debug/bin/client_engine_integration run
+    ```
+
+2.  Same as step 2 in Option A.
+
+3.  Engine should be auto-killed by keyboard stopping the `{run}` script or the client
+    gets wiped out. `{stop}` works as well.

@@ -27,7 +27,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 """Abstract base class of Port-specific entry points for the layout tests
-test infrastructure (the Port and Driver classes)."""
+test infrastructure (the Port and Driver classes).
+"""
 
 import collections
 import cgi
@@ -58,6 +59,7 @@ from webkitpy.layout_tests.port.factory import PortFactory
 from webkitpy.layout_tests.servers import apache_http
 from webkitpy.layout_tests.servers import pywebsocket
 from webkitpy.layout_tests.servers import wptserve
+from functools import reduce  # pylint: disable=redefined-builtin
 
 _log = logging.getLogger(__name__)
 
@@ -300,11 +302,15 @@ class Port(object):
         return [self._filesystem.join(path, suite.name) for path in self.default_baseline_search_path()]
 
     def baseline_search_path(self):
-        return self.get_option('additional_platform_directory', []) + self._compare_baseline() + self.default_baseline_search_path()
+        return (self.get_option('additional_platform_directory', []) +
+                self._flag_specific_baseline_search_path() +
+                self._compare_baseline() +
+                self.default_baseline_search_path())
 
     def default_baseline_search_path(self):
         """Return a list of absolute paths to directories to search under for
-        baselines. The directories are searched in order."""
+        baselines. The directories are searched in order.
+        """
         return map(self._webkit_baseline_path, self.FALLBACK_PATHS[self.version()])
 
     @memoized
@@ -330,10 +336,10 @@ class Port(object):
         """
         if not self._filesystem.exists(path_to_file):
             if more_logging:
-                _log.error('Unable to find %s' % file_description)
-                _log.error('    at %s' % path_to_file)
+                _log.error('Unable to find %s', file_description)
+                _log.error('    at %s', path_to_file)
                 if override_step:
-                    _log.error('    %s' % override_step)
+                    _log.error('    %s', override_step)
                     _log.error('')
             return False
         return True
@@ -373,7 +379,7 @@ class Port(object):
     def _check_driver(self):
         driver_path = self._path_to_driver()
         if not self._filesystem.exists(driver_path):
-            _log.error("%s was not found at %s" % (self.driver_name(), driver_path))
+            _log.error("%s was not found at %s", self.driver_name(), driver_path)
             return False
         return True
 
@@ -415,7 +421,7 @@ class Port(object):
         """Checks whether image_diff binary exists."""
         image_diff_path = self._path_to_image_diff()
         if not self._filesystem.exists(image_diff_path):
-            _log.error("image_diff was not found at %s" % image_diff_path)
+            _log.error("image_diff was not found at %s", image_diff_path)
             return False
         return True
 
@@ -432,7 +438,7 @@ class Port(object):
 
         if not self._filesystem.exists(self._pretty_patch_path):
             if more_logging:
-                _log.warning("Unable to find %s; can't generate pretty patches." % self._pretty_patch_path)
+                _log.warning("Unable to find %s; can't generate pretty patches.", self._pretty_patch_path)
                 _log.warning('')
             return False
 
@@ -531,7 +537,8 @@ class Port(object):
 
     def diff_text(self, expected_text, actual_text, expected_filename, actual_filename):
         """Returns a string containing the diff of the two text strings
-        in 'unified diff' format."""
+        in 'unified diff' format.
+        """
 
         # The filenames show up in the diff output, make sure they're
         # raw bytes and not unicode, so that they don't trigger join()
@@ -565,7 +572,8 @@ class Port(object):
 
     def expected_baselines_by_extension(self, test_name):
         """Returns a dict mapping baseline suffix to relative path for each baseline in
-        a test. For reftests, it returns ".==" or ".!=" instead of the suffix."""
+        a test. For reftests, it returns ".==" or ".!=" instead of the suffix.
+        """
         # FIXME: The name similarity between this and expected_baselines() below, is unfortunate.
         # We should probably rename them both.
         baseline_dict = {}
@@ -693,7 +701,8 @@ class Port(object):
     def expected_text(self, test_name):
         """Returns the text output we expect the test to produce, or None
         if we don't expect there to be any text output.
-        End-of-line characters are normalized to '\n'."""
+        End-of-line characters are normalized to '\n'.
+        """
         # FIXME: DRT output is actually utf-8, but since we don't decode the
         # output from DRT (instead treating it as a binary string), we read the
         # baselines as a binary string, too.
@@ -722,7 +731,7 @@ class Port(object):
             split_line = line.split()
             if len(split_line) == 4:
                 # FIXME: Probably one of mozilla's extensions in the reftest.list format. Do we need to support this?
-                _log.warning("unsupported reftest.list line '%s' in %s" % (line, reftest_list_path))
+                _log.warning("unsupported reftest.list line '%s' in %s", line, reftest_list_path)
                 continue
             if len(split_line) < 3:
                 continue
@@ -938,9 +947,9 @@ class Port(object):
         for search_path in skipped_file_paths:
             filename = self._filesystem.join(self._webkit_baseline_path(search_path), "Skipped")
             if not self._filesystem.exists(filename):
-                _log.debug("Skipped does not exist: %s" % filename)
+                _log.debug("Skipped does not exist: %s", filename)
                 continue
-            _log.debug("Using Skipped file: %s" % filename)
+            _log.debug("Using Skipped file: %s", filename)
             skipped_file_contents = self._filesystem.read_text_file(filename)
             tests_to_skip.extend(self._tests_from_skipped_file_contents(skipped_file_contents))
         return tests_to_skip
@@ -964,7 +973,8 @@ class Port(object):
     def name(self):
         """Returns a name that uniquely identifies this particular type of port
         (e.g., "mac-snowleopard" or "linux-trusty" and can be passed
-        to factory.get() to instantiate the port."""
+        to factory.get() to instantiate the port.
+        """
         return self._name
 
     def operating_system(self):
@@ -976,7 +986,8 @@ class Port(object):
         'leopard' or 'win7'.
 
         This is used to help identify the exact port when parsing test
-        expectations, determining search paths, and logging information."""
+        expectations, determining search paths, and logging information.
+        """
         return self._version
 
     def architecture(self):
@@ -994,7 +1005,8 @@ class Port(object):
 
     def relative_test_filename(self, filename):
         """Returns a test_name a relative unix-style path for a filename under the LayoutTests
-        directory. Ports may legitimately return abspaths here if no relpath makes sense."""
+        directory. Ports may legitimately return abspaths here if no relpath makes sense.
+        """
         # Ports that run on windows need to override this method to deal with
         # filenames with backslashes in them.
         if filename.startswith(self.layout_tests_dir()):
@@ -1005,7 +1017,8 @@ class Port(object):
     @memoized
     def abspath_for_test(self, test_name):
         """Returns the full path to the file for a given test name. This is the
-        inverse of relative_test_filename()."""
+        inverse of relative_test_filename().
+        """
         return self._filesystem.join(self.layout_tests_dir(), test_name)
 
     def results_directory(self):
@@ -1023,6 +1036,9 @@ class Port(object):
 
     def inspector_build_directory(self):
         return self._build_path('resources', 'inspector')
+
+    def inspector_debug_directory(self):
+        return self.path_from_webkit_base('Source', 'devtools', 'front_end')
 
     def default_results_directory(self):
         """Absolute path to the default place to store the test results."""
@@ -1050,25 +1066,11 @@ class Port(object):
             self._image_differ.stop()
             self._image_differ = None
 
-    # FIXME: os.environ access should be moved to onto a common/system class to be more easily mockable.
-    def _value_or_default_from_environ(self, name, default=None):
-        if name in os.environ:
-            return os.environ[name]
-        return default
-
-    def _copy_value_from_environ_if_set(self, clean_env, name):
-        if name in os.environ:
-            clean_env[name] = os.environ[name]
-
     def setup_environ_for_server(self):
-        # We intentionally copy only a subset of os.environ when
+        # We intentionally copy only a subset of the environment when
         # launching subprocesses to ensure consistent test results.
-        clean_env = {
-            'LOCAL_RESOURCE_ROOT': self.layout_tests_dir(),  # FIXME: Is this used?
-        }
+        clean_env = {}
         variables_to_copy = [
-            'WEBKIT_TESTFONTS',  # FIXME: Is this still used?
-            'WEBKITOUTPUTDIR',   # FIXME: Is this still used?
             'CHROME_DEVEL_SANDBOX',
             'CHROME_IPC_LOGGING',
             'ASAN_OPTIONS',
@@ -1088,7 +1090,7 @@ class Port(object):
                 'DBUS_SESSION_BUS_ADDRESS',
                 'XDG_DATA_DIRS',
             ]
-            clean_env['DISPLAY'] = self._value_or_default_from_environ('DISPLAY', ':1')
+            clean_env['DISPLAY'] = self.host.environ.get('DISPLAY', ':1')
         if self.host.platform.is_mac():
             clean_env['DYLD_LIBRARY_PATH'] = self._build_path()
             variables_to_copy += [
@@ -1107,7 +1109,8 @@ class Port(object):
             ]
 
         for variable in variables_to_copy:
-            self._copy_value_from_environ_if_set(clean_env, variable)
+            if variable in self.host.environ:
+                clean_env[variable] = self.host.environ[variable]
 
         for string_variable in self.get_option('additional_env_var', []):
             [name, value] = string_variable.split('=', 1)
@@ -1117,7 +1120,8 @@ class Port(object):
 
     def show_results_html_file(self, results_filename):
         """This routine should display the HTML file pointed at by
-        results_filename in a users' browser."""
+        results_filename in a users' browser.
+        """
         return self.host.user.open_url(abspath_to_uri(self.host.platform, results_filename))
 
     def create_driver(self, worker_number, no_timeout=False):
@@ -1127,10 +1131,11 @@ class Port(object):
     def start_helper(self):
         """If a port needs to reconfigure graphics settings or do other
         things to ensure a known test configuration, it should override this
-        method."""
+        method.
+        """
         helper_path = self._path_to_helper()
         if helper_path:
-            _log.debug("Starting layout helper %s" % helper_path)
+            _log.debug("Starting layout helper %s", helper_path)
             # Note: Not thread safe: http://bugs.python.org/issue2320
             self._helper = self._executive.popen([helper_path],
                                                  stdin=self._executive.PIPE, stdout=self._executive.PIPE, stderr=None)
@@ -1140,13 +1145,15 @@ class Port(object):
 
     def requires_http_server(self):
         """Does the port require an HTTP server for running tests? This could
-        be the case when the tests aren't run on the host platform."""
+        be the case when the tests aren't run on the host platform.
+        """
         return False
 
     def start_http_server(self, additional_dirs, number_of_drivers):
         """Start a web server. Raise an error if it can't start or is already running.
 
-        Ports can stub this out if they don't need a web server to be running."""
+        Ports can stub this out if they don't need a web server to be running.
+        """
         assert not self._http_server, 'Already running an http server.'
 
         server = apache_http.ApacheHTTP(self, self.results_directory(),
@@ -1158,7 +1165,8 @@ class Port(object):
     def start_websocket_server(self):
         """Start a web server. Raise an error if it can't start or is already running.
 
-        Ports can stub this out if they don't need a websocket server to be running."""
+        Ports can stub this out if they don't need a websocket server to be running.
+        """
         assert not self._websocket_server, 'Already running a websocket server.'
 
         server = pywebsocket.PyWebSocket(self, self.results_directory())
@@ -1180,7 +1188,8 @@ class Port(object):
     def start_wptserve(self):
         """Start a WPT web server. Raise an error if it can't start or is already running.
 
-        Ports can stub this out if they don't need a WPT web server to be running."""
+        Ports can stub this out if they don't need a WPT web server to be running.
+        """
         assert not self._wpt_server, 'Already running an http server.'
         assert self.is_wptserve_enabled(), 'Cannot start server if WPT is not enabled.'
 
@@ -1204,7 +1213,8 @@ class Port(object):
     def stop_helper(self):
         """Shut down the test helper if it is running. Do nothing if
         it isn't, or it isn't available. If a port overrides start_helper()
-        it must override this routine as well."""
+        it must override this routine as well.
+        """
         if self._helper:
             _log.debug("Stopping layout test helper")
             try:
@@ -1242,7 +1252,8 @@ class Port(object):
     @memoized
     def all_test_configurations(self):
         """Returns a list of TestConfiguration instances, representing all available
-        test configurations for this port."""
+        test configurations for this port.
+        """
         return self._generate_all_test_configurations()
 
     # FIXME: Belongs on a Platform object.
@@ -1254,7 +1265,8 @@ class Port(object):
         (precise, trusty) -> linux  # Change specific name of Linux distro to a more generic term.
 
         Returns a dictionary, each key representing a macro term ('win', for example),
-        and value being a list of valid configuration specifiers (such as ['vista', 'win7'])."""
+        and value being a list of valid configuration specifiers (such as ['vista', 'win7']).
+        """
         return self.CONFIGURATION_SPECIFIER_MACROS
 
     def _generate_all_test_configurations(self):
@@ -1274,6 +1286,11 @@ class Port(object):
         return [self._filesystem.join(self.layout_tests_dir(), 'FlagExpectations', flag.lstrip('-'))
                 for flag in self.get_option('additional_driver_flag', [])]
 
+    def _flag_specific_baseline_search_path(self):
+        # TODO(skobes): Baselines specific to both flag and platform?
+        return [self._filesystem.join(self.layout_tests_dir(), 'flag-specific', flag.lstrip('-'))
+                for flag in self.get_option('additional_driver_flag', [])]
+
     def expectations_dict(self):
         """Returns an OrderedDict of name -> expectations strings.
         The names are expected to be (but not required to be) paths in the filesystem.
@@ -1281,7 +1298,8 @@ class Port(object):
         so don't use names that are paths if they're not paths.
         Generally speaking the ordering should be files in the filesystem in cascade order
         (TestExpectations followed by Skipped, if the port honors both formats),
-        then any built-in expectations (e.g., from compile-time exclusions), then --additional-expectations options."""
+        then any built-in expectations (e.g., from compile-time exclusions), then --additional-expectations options.
+        """
         # FIXME: rename this to test_expectations() once all the callers are updated to know about the ordered dict.
         expectations = collections.OrderedDict()
 
@@ -1292,10 +1310,10 @@ class Port(object):
         for path in self.get_option('additional_expectations', []):
             expanded_path = self._filesystem.expanduser(path)
             if self._filesystem.exists(expanded_path):
-                _log.debug("reading additional_expectations from path '%s'" % path)
+                _log.debug("reading additional_expectations from path '%s'", path)
                 expectations[path] = self._filesystem.read_text_file(expanded_path)
             else:
-                _log.warning("additional_expectations path '%s' does not exist" % path)
+                _log.warning("additional_expectations path '%s' does not exist", path)
         return expectations
 
     def bot_expectations(self):
@@ -1317,7 +1335,7 @@ class Port(object):
             return expectations.flakes_by_path(ignore_mode == 'very-flaky')
         if ignore_mode == 'unexpected':
             return expectations.unexpected_results_by_path()
-        _log.warning("Unexpected ignore mode: '%s'." % ignore_mode)
+        _log.warning("Unexpected ignore mode: '%s'.", ignore_mode)
         return {}
 
     def expectations_files(self):
@@ -1368,7 +1386,8 @@ class Port(object):
 
     def _run_wdiff(self, actual_filename, expected_filename):
         """Runs wdiff and may throw exceptions.
-        This is mostly a hook for unit testing."""
+        This is mostly a hook for unit testing.
+        """
         # Diffs are treated as binary as they may include multiple files
         # with conflicting encodings.  Thus we do not decode the output.
         command = self._wdiff_command(actual_filename, expected_filename)
@@ -1381,7 +1400,8 @@ class Port(object):
     def wdiff_text(self, actual_filename, expected_filename):
         """Returns a string of HTML indicating the word-level diff of the
         contents of the two filenames. Returns an empty string if word-level
-        diffing isn't available."""
+        diffing isn't available.
+        """
         if not self.wdiff_available():
             return ""
         try:
@@ -1394,7 +1414,7 @@ class Port(object):
                 return ""
             raise
         except ScriptError as e:
-            _log.error("Failed to run wdiff: %s" % e)
+            _log.error("Failed to run wdiff: %s", e)
             self._wdiff_available = False
             return self._wdiff_error_html
 
@@ -1415,13 +1435,13 @@ class Port(object):
         except OSError as e:
             # If the system is missing ruby log the error and stop trying.
             self._pretty_patch_available = False
-            _log.error("Failed to run PrettyPatch (%s): %s" % (command, e))
+            _log.error("Failed to run PrettyPatch (%s): %s", command, e)
             return self._pretty_patch_error_html
         except ScriptError as e:
             # If ruby failed to run for some reason, log the command
             # output and stop trying.
             self._pretty_patch_available = False
-            _log.error("Failed to run PrettyPatch (%s):\n%s" % (command, e.message_with_output()))
+            _log.error("Failed to run PrettyPatch (%s):\n%s", command, e.message_with_output())
             return self._pretty_patch_error_html
 
     def default_configuration(self):
@@ -1445,8 +1465,9 @@ class Port(object):
         If the WEBKIT_HTTP_SERVER_CONF_PATH environment variable is set, its
         contents will be used instead.
 
-        This is needed only by ports that use the apache_http_server module."""
-        config_file_from_env = os.environ.get('WEBKIT_HTTP_SERVER_CONF_PATH')
+        This is needed only by ports that use the apache_http_server module.
+        """
+        config_file_from_env = self.host.environ.get('WEBKIT_HTTP_SERVER_CONF_PATH')
         if config_file_from_env:
             if not self._filesystem.exists(config_file_from_env):
                 raise IOError('%s was not found on the system' % config_file_from_env)
@@ -1491,20 +1512,23 @@ class Port(object):
         is used to help configure the system for the test run, or None
         if no helper is needed.
 
-        This is likely only used by start/stop_helper()."""
+        This is likely only used by start/stop_helper().
+        """
         return None
 
     def _path_to_image_diff(self):
         """Returns the full path to the image_diff binary, or None if it is not available.
 
-        This is likely used only by diff_image()"""
+        This is likely used only by diff_image()
+        """
         return self._build_path('image_diff')
 
     @memoized
     def _path_to_wdiff(self):
         """Returns the full path to the wdiff binary, or None if it is not available.
 
-        This is likely used only by wdiff_text()"""
+        This is likely used only by wdiff_text()
+        """
         for path in ("/usr/bin/wdiff", "/usr/bin/dwdiff"):
             if self._filesystem.exists(path):
                 return path
@@ -1512,7 +1536,8 @@ class Port(object):
 
     def _webkit_baseline_path(self, platform):
         """Return the  full path to the top of the baseline tree for a
-        given platform."""
+        given platform.
+        """
         return self._filesystem.join(self.layout_tests_dir(), 'platform', platform)
 
     def _driver_class(self):
@@ -1536,7 +1561,7 @@ class Port(object):
             llvm_symbolizer_path = self.path_from_chromium_base(
                 'third_party', 'llvm-build', 'Release+Asserts', 'bin', 'llvm-symbolizer')
             if self._filesystem.exists(llvm_symbolizer_path):
-                env = os.environ.copy()
+                env = self.host.environ.copy()
                 env['LLVM_SYMBOLIZER_PATH'] = llvm_symbolizer_path
             else:
                 env = None
@@ -1544,7 +1569,8 @@ class Port(object):
             sanitizer_strip_path_prefix = 'Release/../../'
             if self._filesystem.exists(sanitizer_filter_path):
                 stderr = self._executive.run_command(
-                    ['flock', sys.executable, sanitizer_filter_path, sanitizer_strip_path_prefix], input=stderr, decode_output=False, env=env)
+                    ['flock', sys.executable, sanitizer_filter_path, sanitizer_strip_path_prefix],
+                    input=stderr, decode_output=False, env=env)
 
         name_str = name or '<unknown process name>'
         pid_str = str(pid or '<unknown>')
@@ -1677,7 +1703,7 @@ class Port(object):
             try:
                 symbols += self._executive.run_command(['nm', path_to_module], error_handler=self._executive.ignore_error)
             except OSError as e:
-                _log.warn("Failed to run nm: %s.  Can't determine supported features correctly." % e)
+                _log.warning("Failed to run nm: %s.  Can't determine supported features correctly.", e)
         return symbols
 
     # Ports which use compile-time feature detection should define this method and return

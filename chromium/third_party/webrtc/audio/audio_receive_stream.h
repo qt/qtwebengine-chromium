@@ -13,8 +13,8 @@
 
 #include <memory>
 
-#include "webrtc/audio_receive_stream.h"
-#include "webrtc/audio_state.h"
+#include "webrtc/api/call/audio_receive_stream.h"
+#include "webrtc/api/call/audio_state.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/thread_checker.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
@@ -22,6 +22,7 @@
 namespace webrtc {
 class CongestionController;
 class RemoteBitrateEstimator;
+class RtcEventLog;
 
 namespace voe {
 class ChannelProxy;
@@ -33,7 +34,8 @@ class AudioReceiveStream final : public webrtc::AudioReceiveStream {
  public:
   AudioReceiveStream(CongestionController* congestion_controller,
                      const webrtc::AudioReceiveStream::Config& config,
-                     const rtc::scoped_refptr<webrtc::AudioState>& audio_state);
+                     const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
+                     webrtc::RtcEventLog* event_log);
   ~AudioReceiveStream() override;
 
   // webrtc::AudioReceiveStream implementation.

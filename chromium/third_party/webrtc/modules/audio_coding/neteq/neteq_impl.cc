@@ -14,11 +14,13 @@
 #include <memory.h>  // memset
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/safe_conversions.h"
+#include "webrtc/base/sanitizer.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
@@ -39,18 +41,13 @@
 #include "webrtc/modules/audio_coding/neteq/normal.h"
 #include "webrtc/modules/audio_coding/neteq/packet_buffer.h"
 #include "webrtc/modules/audio_coding/neteq/packet.h"
-#include "webrtc/modules/audio_coding/neteq/payload_splitter.h"
+#include "webrtc/modules/audio_coding/neteq/red_payload_splitter.h"
 #include "webrtc/modules/audio_coding/neteq/post_decode_vad.h"
 #include "webrtc/modules/audio_coding/neteq/preemptive_expand.h"
 #include "webrtc/modules/audio_coding/neteq/sync_buffer.h"
 #include "webrtc/modules/audio_coding/neteq/tick_timer.h"
 #include "webrtc/modules/audio_coding/neteq/timestamp_scaler.h"
 #include "webrtc/modules/include/module_common_types.h"
-
-// Modify the code to obtain backwards bit-exactness. Once bit-exactness is no
-// longer required, this #define should be removed (and the code that it
-// enables).
-#define LEGACY_BITEXACT
 
 namespace webrtc {
 
@@ -68,7 +65,7 @@ NetEqImpl::Dependencies::Dependencies(
       dtmf_tone_generator(new DtmfToneGenerator),
       packet_buffer(
           new PacketBuffer(config.max_packets_in_buffer, tick_timer.get())),
-      payload_splitter(new PayloadSplitter),
+      red_payload_splitter(new RedPayloadSplitter),
       timestamp_scaler(new TimestampScaler(*decoder_database)),
       accelerate_factory(new AccelerateFactory),
       expand_factory(new ExpandFactory),
@@ -87,7 +84,7 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
       dtmf_buffer_(std::move(deps.dtmf_buffer)),
       dtmf_tone_generator_(std::move(deps.dtmf_tone_generator)),
       packet_buffer_(std::move(deps.packet_buffer)),
-      payload_splitter_(std::move(deps.payload_splitter)),
+      red_payload_splitter_(std::move(deps.red_payload_splitter)),
       timestamp_scaler_(std::move(deps.timestamp_scaler)),
       vad_(new PostDecodeVad()),
       expand_factory_(std::move(deps.expand_factory)),
@@ -100,8 +97,6 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
       new_codec_(false),
       timestamp_(0),
       reset_decoder_(false),
-      current_rtp_payload_type_(0xFF),      // Invalid RTP payload type.
-      current_cng_rtp_payload_type_(0xFF),  // Invalid RTP payload type.
       ssrc_(0),
       first_packet_(true),
       error_code_(0),
@@ -139,24 +134,11 @@ NetEqImpl::~NetEqImpl() = default;
 int NetEqImpl::InsertPacket(const WebRtcRTPHeader& rtp_header,
                             rtc::ArrayView<const uint8_t> payload,
                             uint32_t receive_timestamp) {
+  rtc::MsanCheckInitialized(payload);
   TRACE_EVENT0("webrtc", "NetEqImpl::InsertPacket");
   rtc::CritScope lock(&crit_sect_);
   int error =
-      InsertPacketInternal(rtp_header, payload, receive_timestamp, false);
-  if (error != 0) {
-    error_code_ = error;
-    return kFail;
-  }
-  return kOK;
-}
-
-int NetEqImpl::InsertSyncPacket(const WebRtcRTPHeader& rtp_header,
-                                uint32_t receive_timestamp) {
-  rtc::CritScope lock(&crit_sect_);
-  const uint8_t kSyncPayload[] = { 's', 'y', 'n', 'c' };
-  int error =
-      InsertPacketInternal(rtp_header, kSyncPayload, receive_timestamp, true);
-
+      InsertPacketInternal(rtp_header, payload, receive_timestamp);
   if (error != 0) {
     error_code_ = error;
     return kFail;
@@ -211,13 +193,13 @@ int NetEqImpl::GetAudio(AudioFrame* audio_frame, bool* muted) {
   TRACE_EVENT0("webrtc", "NetEqImpl::GetAudio");
   rtc::CritScope lock(&crit_sect_);
   int error = GetAudioInternal(audio_frame, muted);
-  RTC_DCHECK_EQ(
-      audio_frame->sample_rate_hz_,
-      rtc::checked_cast<int>(audio_frame->samples_per_channel_ * 100));
   if (error != 0) {
     error_code_ = error;
     return kFail;
   }
+  RTC_DCHECK_EQ(
+      audio_frame->sample_rate_hz_,
+      rtc::checked_cast<int>(audio_frame->samples_per_channel_ * 100));
   SetAudioFrameActivityAndType(vad_->enabled(), LastOutputType(),
                                last_vad_activity_, audio_frame);
   last_vad_activity_ = audio_frame->vad_activity_;
@@ -301,6 +283,7 @@ int NetEqImpl::RemovePayloadType(uint8_t rtp_payload_type) {
   rtc::CritScope lock(&crit_sect_);
   int ret = decoder_database_->Remove(rtp_payload_type);
   if (ret == DecoderDatabase::kOK) {
+    packet_buffer_->DiscardPacketsWithPayloadType(rtp_payload_type);
     return kOK;
   } else if (ret == DecoderDatabase::kDecoderNotFound) {
     error_code_ = kDecoderNotFound;
@@ -308,6 +291,11 @@ int NetEqImpl::RemovePayloadType(uint8_t rtp_payload_type) {
     error_code_ = kOtherError;
   }
   return kFail;
+}
+
+void NetEqImpl::RemoveAllPayloadTypes() {
+  rtc::CritScope lock(&crit_sect_);
+  decoder_database_->RemoveAll();
 }
 
 bool NetEqImpl::SetMinimumDelay(int delay_ms) {
@@ -349,8 +337,7 @@ int NetEqImpl::CurrentDelayMs() const {
   // Sum up the samples in the packet buffer with the future length of the sync
   // buffer, and divide the sum by the sample rate.
   const size_t delay_samples =
-      packet_buffer_->NumSamplesInBuffer(decoder_database_.get(),
-                                         decoder_frame_length_) +
+      packet_buffer_->NumSamplesInBuffer(decoder_frame_length_) +
       sync_buffer_->FutureLength();
   // The division below will truncate.
   const int delay_ms =
@@ -395,8 +382,7 @@ int NetEqImpl::NetworkStatistics(NetEqNetworkStatistics* stats) {
   rtc::CritScope lock(&crit_sect_);
   assert(decoder_database_.get());
   const size_t total_samples_in_buffers =
-      packet_buffer_->NumSamplesInBuffer(decoder_database_.get(),
-                                         decoder_frame_length_) +
+      packet_buffer_->NumSamplesInBuffer(decoder_frame_length_) +
       sync_buffer_->FutureLength();
   assert(delay_manager_.get());
   assert(decision_logic_.get());
@@ -448,6 +434,38 @@ rtc::Optional<uint32_t> NetEqImpl::GetPlayoutTimestamp() const {
 int NetEqImpl::last_output_sample_rate_hz() const {
   rtc::CritScope lock(&crit_sect_);
   return last_output_sample_rate_hz_;
+}
+
+rtc::Optional<CodecInst> NetEqImpl::GetDecoder(int payload_type) const {
+  rtc::CritScope lock(&crit_sect_);
+  const DecoderDatabase::DecoderInfo* di =
+      decoder_database_->GetDecoderInfo(payload_type);
+  if (!di) {
+    return rtc::Optional<CodecInst>();
+  }
+
+  // Create a CodecInst with some fields set. The remaining fields are zeroed,
+  // but we tell MSan to consider them uninitialized.
+  CodecInst ci = {0};
+  rtc::MsanMarkUninitialized(rtc::MakeArrayView(&ci, 1));
+  ci.pltype = payload_type;
+  std::strncpy(ci.plname, di->name.c_str(), sizeof(ci.plname));
+  ci.plname[sizeof(ci.plname) - 1] = '\0';
+  ci.plfreq = di->IsRed() || di->IsDtmf() ? 8000 : di->SampleRateHz();
+  AudioDecoder* const decoder = di->GetDecoder();
+  ci.channels = decoder ? decoder->Channels() : 1;
+  return rtc::Optional<CodecInst>(ci);
+}
+
+rtc::Optional<SdpAudioFormat> NetEqImpl::GetDecoderFormat(
+    int payload_type) const {
+  rtc::CritScope lock(&crit_sect_);
+  const DecoderDatabase::DecoderInfo* const di =
+      decoder_database_->GetDecoderInfo(payload_type);
+  if (!di) {
+    return rtc::Optional<SdpAudioFormat>();  // Payload type not registered.
+  }
+  return rtc::Optional<SdpAudioFormat>(di->GetFormat());
 }
 
 int NetEqImpl::SetTargetNumberOfChannels() {
@@ -527,31 +545,12 @@ Operations NetEqImpl::last_operation_for_test() const {
 
 int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
                                     rtc::ArrayView<const uint8_t> payload,
-                                    uint32_t receive_timestamp,
-                                    bool is_sync_packet) {
+                                    uint32_t receive_timestamp) {
   if (payload.empty()) {
     LOG_F(LS_ERROR) << "payload is empty";
     return kInvalidPointer;
   }
-  // Sanity checks for sync-packets.
-  if (is_sync_packet) {
-    if (decoder_database_->IsDtmf(rtp_header.header.payloadType) ||
-        decoder_database_->IsRed(rtp_header.header.payloadType) ||
-        decoder_database_->IsComfortNoise(rtp_header.header.payloadType)) {
-      LOG_F(LS_ERROR) << "Sync-packet with an unacceptable payload type "
-                      << static_cast<int>(rtp_header.header.payloadType);
-      return kSyncPacketNotAccepted;
-    }
-    if (first_packet_ ||
-        rtp_header.header.payloadType != current_rtp_payload_type_ ||
-        rtp_header.header.ssrc != ssrc_) {
-      // Even if |current_rtp_payload_type_| is 0xFF, sync-packet isn't
-      // accepted.
-      LOG_F(LS_ERROR)
-          << "Changing codec, SSRC or first packet with sync-packet.";
-      return kSyncPacketNotAccepted;
-    }
-  }
+
   PacketList packet_list;
   RTPHeader main_header;
   {
@@ -566,17 +565,9 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     packet->header.timestamp = rtp_header.header.timestamp;
     packet->header.ssrc = rtp_header.header.ssrc;
     packet->header.numCSRCs = 0;
-    packet->payload_length = payload.size();
-    packet->primary = true;
+    packet->payload.SetData(payload.data(), payload.size());
     // Waiting time will be set upon inserting the packet in the buffer.
     RTC_DCHECK(!packet->waiting_time);
-    packet->payload = new uint8_t[packet->payload_length];
-    packet->sync_packet = is_sync_packet;
-    if (!packet->payload) {
-      LOG_F(LS_ERROR) << "Payload pointer is NULL.";
-    }
-    assert(!payload.empty());  // Already checked above.
-    memcpy(packet->payload, payload.data(), packet->payload_length);
     // Insert packet in a packet list.
     packet_list.push_back(packet);
     // Save main payloads header for later.
@@ -603,7 +594,6 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
 
     // Update codecs.
     timestamp_ = main_header.timestamp;
-    current_rtp_payload_type_ = main_header.payloadType;
 
     // Reset timestamp scaling.
     timestamp_scaler_->Reset();
@@ -613,19 +603,17 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
   }
 
   // Update RTCP statistics, only for regular packets.
-  if (!is_sync_packet)
-    rtcp_.Update(main_header, receive_timestamp);
+  rtcp_.Update(main_header, receive_timestamp);
 
   // Check for RED payload type, and separate payloads into several packets.
   if (decoder_database_->IsRed(main_header.payloadType)) {
-    assert(!is_sync_packet);  // We had a sanity check for this.
-    if (payload_splitter_->SplitRed(&packet_list) != PayloadSplitter::kOK) {
+    if (!red_payload_splitter_->SplitRed(&packet_list)) {
       PacketBuffer::DeleteAllPackets(&packet_list);
       return kRedundancySplitError;
     }
     // Only accept a few RED payloads of the same type as the main data,
     // DTMF events and CNG.
-    payload_splitter_->CheckRedPayloads(&packet_list, *decoder_database_);
+    red_payload_splitter_->CheckRedPayloads(&packet_list, *decoder_database_);
     // Update the stored main payload header since the main payload has now
     // changed.
     memcpy(&main_header, &packet_list.front()->header, sizeof(main_header));
@@ -647,15 +635,12 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
   while (it != packet_list.end()) {
     Packet* current_packet = (*it);
     assert(current_packet);
-    assert(current_packet->payload);
+    assert(!current_packet->payload.empty());
     if (decoder_database_->IsDtmf(current_packet->header.payloadType)) {
-      assert(!current_packet->sync_packet);  // We had a sanity check for this.
       DtmfEvent event;
-      int ret = DtmfBuffer::ParseEvent(
-          current_packet->header.timestamp,
-          current_packet->payload,
-          current_packet->payload_length,
-          &event);
+      int ret = DtmfBuffer::ParseEvent(current_packet->header.timestamp,
+                                       current_packet->payload.data(),
+                                       current_packet->payload.size(), &event);
       if (ret != DtmfBuffer::kOK) {
         PacketBuffer::DeleteAllPackets(&packet_list);
         return kDtmfParsingError;
@@ -664,8 +649,6 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
         PacketBuffer::DeleteAllPackets(&packet_list);
         return kDtmfInsertError;
       }
-      // TODO(hlundin): Let the destructor of Packet handle the payload.
-      delete [] current_packet->payload;
       delete current_packet;
       it = packet_list.erase(it);
     } else {
@@ -673,48 +656,56 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     }
   }
 
-  // Check for FEC in packets, and separate payloads into several packets.
-  int ret = payload_splitter_->SplitFec(&packet_list, decoder_database_.get());
-  if (ret != PayloadSplitter::kOK) {
-    PacketBuffer::DeleteAllPackets(&packet_list);
-    switch (ret) {
-      case PayloadSplitter::kUnknownPayloadType:
-        return kUnknownRtpPayloadType;
-      default:
-        return kOtherError;
-    }
-  }
-
-  // Split payloads into smaller chunks. This also verifies that all payloads
-  // are of a known payload type. SplitAudio() method is protected against
-  // sync-packets.
-  ret = payload_splitter_->SplitAudio(&packet_list, *decoder_database_);
-  if (ret != PayloadSplitter::kOK) {
-    PacketBuffer::DeleteAllPackets(&packet_list);
-    switch (ret) {
-      case PayloadSplitter::kUnknownPayloadType:
-        return kUnknownRtpPayloadType;
-      case PayloadSplitter::kFrameSplitError:
-        return kFrameSplitError;
-      default:
-        return kOtherError;
-    }
-  }
-
-  // Update bandwidth estimate, if the packet is not sync-packet nor comfort
-  // noise.
-  if (!packet_list.empty() && !packet_list.front()->sync_packet &&
+  // Update bandwidth estimate, if the packet is not comfort noise.
+  if (!packet_list.empty() &&
       !decoder_database_->IsComfortNoise(main_header.payloadType)) {
     // The list can be empty here if we got nothing but DTMF payloads.
     AudioDecoder* decoder =
         decoder_database_->GetDecoder(main_header.payloadType);
     assert(decoder);  // Should always get a valid object, since we have
     // already checked that the payload types are known.
-    decoder->IncomingPacket(packet_list.front()->payload,
-                            packet_list.front()->payload_length,
+    decoder->IncomingPacket(packet_list.front()->payload.data(),
+                            packet_list.front()->payload.size(),
                             packet_list.front()->header.sequenceNumber,
                             packet_list.front()->header.timestamp,
                             receive_timestamp);
+  }
+
+  PacketList parsed_packet_list;
+  while (!packet_list.empty()) {
+    std::unique_ptr<Packet> packet(packet_list.front());
+    packet_list.pop_front();
+    const DecoderDatabase::DecoderInfo* info =
+        decoder_database_->GetDecoderInfo(packet->header.payloadType);
+    if (!info) {
+      LOG(LS_WARNING) << "SplitAudio unknown payload type";
+      return kUnknownRtpPayloadType;
+    }
+
+    if (info->IsComfortNoise()) {
+      // Carry comfort noise packets along.
+      parsed_packet_list.push_back(packet.release());
+    } else {
+      std::vector<AudioDecoder::ParseResult> results =
+          info->GetDecoder()->ParsePayload(std::move(packet->payload),
+                                           packet->header.timestamp);
+      const RTPHeader& original_header = packet->header;
+      const Packet::Priority original_priority = packet->priority;
+      for (auto& result : results) {
+        RTC_DCHECK(result.frame);
+        // Reuse the packet if possible.
+        if (!packet) {
+          packet.reset(new Packet);
+          packet->header = original_header;
+        }
+        packet->header.timestamp = result.timestamp;
+        RTC_DCHECK_GE(result.priority, 0);
+        packet->priority.codec_level = result.priority;
+        packet->priority.red_level = original_priority.red_level;
+        packet->frame = std::move(result.frame);
+        parsed_packet_list.push_back(packet.release());
+      }
+    }
   }
 
   if (nack_enabled_) {
@@ -722,24 +713,23 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     if (update_sample_rate_and_channels) {
       nack_->Reset();
     }
-    nack_->UpdateLastReceivedPacket(packet_list.front()->header.sequenceNumber,
-                                    packet_list.front()->header.timestamp);
+    nack_->UpdateLastReceivedPacket(
+        parsed_packet_list.front()->header.sequenceNumber,
+        parsed_packet_list.front()->header.timestamp);
   }
 
   // Insert packets in buffer.
   const size_t buffer_length_before_insert =
       packet_buffer_->NumPacketsInBuffer();
-  ret = packet_buffer_->InsertPacketList(
-      &packet_list,
-      *decoder_database_,
-      &current_rtp_payload_type_,
+  const int ret = packet_buffer_->InsertPacketList(
+      &parsed_packet_list, *decoder_database_, &current_rtp_payload_type_,
       &current_cng_rtp_payload_type_);
   if (ret == PacketBuffer::kFlushed) {
     // Reset DSP timestamp etc. if packet buffer flushed.
     new_codec_ = true;
     update_sample_rate_and_channels = true;
   } else if (ret != PacketBuffer::kOK) {
-    PacketBuffer::DeleteAllPackets(&packet_list);
+    PacketBuffer::DeleteAllPackets(&parsed_packet_list);
     return kOtherError;
   }
 
@@ -749,12 +739,10 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     new_codec_ = true;
   }
 
-  if (current_rtp_payload_type_ != 0xFF) {
-    const DecoderDatabase::DecoderInfo* dec_info =
-        decoder_database_->GetDecoderInfo(current_rtp_payload_type_);
-    if (!dec_info) {
-      assert(false);  // Already checked that the payload type is known.
-    }
+  if (current_rtp_payload_type_) {
+    RTC_DCHECK(decoder_database_->GetDecoderInfo(*current_rtp_payload_type_))
+        << "Payload type " << static_cast<int>(*current_rtp_payload_type_)
+        << " is unknown where it shouldn't be";
   }
 
   if (update_sample_rate_and_channels && !packet_buffer_->Empty()) {
@@ -792,7 +780,8 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
   const DecoderDatabase::DecoderInfo* dec_info =
           decoder_database_->GetDecoderInfo(main_header.payloadType);
   assert(dec_info);  // Already checked that the payload type is known.
-  delay_manager_->LastDecoderType(dec_info->codec_type);
+  delay_manager_->LastDecodedWasCngOrDtmf(dec_info->IsComfortNoise() ||
+                                          dec_info->IsDtmf());
   if (delay_manager_->last_pack_cng_or_dtmf() == 0) {
     // Calculate the total speech length carried in each packet.
     const size_t buffer_length_after_insert =
@@ -1161,15 +1150,8 @@ int NetEqImpl::GetDecision(Operations* operation,
         return -1;
       }
       timestamp_ = header->timestamp;
-      if (*operation == kRfc3389CngNoPacket
-#ifndef LEGACY_BITEXACT
-          // Without this check, it can happen that a non-CNG packet is sent to
-          // the CNG decoder as if it was a SID frame. This is clearly a bug,
-          // but is kept for now to maintain bit-exactness with the test
-          // vectors.
-          && decoder_database_->IsComfortNoise(header->payloadType)
-#endif
-      ) {
+      if (*operation == kRfc3389CngNoPacket &&
+          decoder_database_->IsComfortNoise(header->payloadType)) {
         // Change decision to CNG packet, since we do have a CNG packet, but it
         // was considered too early to use. Now, use it anyway.
         *operation = kRfc3389Cng;
@@ -1388,16 +1370,6 @@ int NetEqImpl::Decode(PacketList* packet_list, Operations* operation,
     reset_decoder_ = false;
   }
 
-#ifdef LEGACY_BITEXACT
-  // Due to a bug in old SignalMCU, it could happen that CNG operation was
-  // decided, but a speech packet was provided. The speech packet will be used
-  // to update the comfort noise decoder, as if it was a SID frame, which is
-  // clearly wrong.
-  if (*operation == kRfc3389Cng) {
-    return 0;
-  }
-#endif
-
   *decoded_length = 0;
   // Update codec-internal PLC state.
   if ((*operation == kMerge) && decoder && decoder->HasDecodePlc()) {
@@ -1495,44 +1467,29 @@ int NetEqImpl::DecodeLoop(PacketList* packet_list, const Operations& operation,
            operation == kFastAccelerate || operation == kMerge ||
            operation == kPreemptiveExpand);
     packet_list->pop_front();
-    size_t payload_length = packet->payload_length;
-    int decode_length;
-    if (packet->sync_packet) {
-      // Decode to silence with the same frame size as the last decode.
-      memset(&decoded_buffer_[*decoded_length], 0,
-             decoder_frame_length_ * decoder->Channels() *
-                 sizeof(decoded_buffer_[0]));
-      decode_length = rtc::checked_cast<int>(decoder_frame_length_);
-    } else if (!packet->primary) {
-      // This is a redundant payload; call the special decoder method.
-      decode_length = decoder->DecodeRedundant(
-          packet->payload, packet->payload_length, fs_hz_,
-          (decoded_buffer_length_ - *decoded_length) * sizeof(int16_t),
-          &decoded_buffer_[*decoded_length], speech_type);
-    } else {
-      decode_length =
-          decoder->Decode(
-              packet->payload, packet->payload_length, fs_hz_,
-              (decoded_buffer_length_ - *decoded_length) * sizeof(int16_t),
-              &decoded_buffer_[*decoded_length], speech_type);
-    }
-
-    delete[] packet->payload;
+    auto opt_result = packet->frame->Decode(
+        rtc::ArrayView<int16_t>(&decoded_buffer_[*decoded_length],
+                                decoded_buffer_length_ - *decoded_length));
     delete packet;
     packet = NULL;
-    if (decode_length > 0) {
-      *decoded_length += decode_length;
-      // Update |decoder_frame_length_| with number of samples per channel.
-      decoder_frame_length_ =
-          static_cast<size_t>(decode_length) / decoder->Channels();
-    } else if (decode_length < 0) {
+    if (opt_result) {
+      const auto& result = *opt_result;
+      *speech_type = result.speech_type;
+      if (result.num_decoded_samples > 0) {
+        *decoded_length += rtc::checked_cast<int>(result.num_decoded_samples);
+        // Update |decoder_frame_length_| with number of samples per channel.
+        decoder_frame_length_ =
+            result.num_decoded_samples / decoder->Channels();
+      }
+    } else {
       // Error.
-      LOG(LS_WARNING) << "Decode " << decode_length << " " << payload_length;
+      // TODO(ossu): What to put here?
+      LOG(LS_WARNING) << "Decode error";
       *decoded_length = -1;
       PacketBuffer::DeleteAllPackets(packet_list);
       break;
     }
-    if (*decoded_length > static_cast<int>(decoded_buffer_length_)) {
+    if (*decoded_length > rtc::checked_cast<int>(decoded_buffer_length_)) {
       // Guard against overflow.
       LOG(LS_WARNING) << "Decoded too much.";
       PacketBuffer::DeleteAllPackets(packet_list);
@@ -1792,29 +1749,8 @@ int NetEqImpl::DoRfc3389Cng(PacketList* packet_list, bool play_dtmf) {
     Packet* packet = packet_list->front();
     packet_list->pop_front();
     if (!decoder_database_->IsComfortNoise(packet->header.payloadType)) {
-#ifdef LEGACY_BITEXACT
-      // This can happen due to a bug in GetDecision. Change the payload type
-      // to a CNG type, and move on. Note that this means that we are in fact
-      // sending a non-CNG payload to the comfort noise decoder for decoding.
-      // Clearly wrong, but will maintain bit-exactness with legacy.
-      if (fs_hz_ == 8000) {
-        packet->header.payloadType =
-            decoder_database_->GetRtpPayloadType(NetEqDecoder::kDecoderCNGnb);
-      } else if (fs_hz_ == 16000) {
-        packet->header.payloadType =
-            decoder_database_->GetRtpPayloadType(NetEqDecoder::kDecoderCNGwb);
-      } else if (fs_hz_ == 32000) {
-        packet->header.payloadType = decoder_database_->GetRtpPayloadType(
-            NetEqDecoder::kDecoderCNGswb32kHz);
-      } else if (fs_hz_ == 48000) {
-        packet->header.payloadType = decoder_database_->GetRtpPayloadType(
-            NetEqDecoder::kDecoderCNGswb48kHz);
-      }
-      assert(decoder_database_->IsComfortNoise(packet->header.payloadType));
-#else
       LOG(LS_ERROR) << "Trying to decode non-CNG payload as CNG.";
       return kOtherError;
-#endif
     }
     // UpdateParameters() deletes |packet|.
     if (comfort_noise_->UpdateParameters(packet) ==
@@ -1995,7 +1931,7 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
     return -1;
   }
   uint32_t first_timestamp = header->timestamp;
-  int extracted_samples = 0;
+  size_t extracted_samples = 0;
 
   // Packet extraction loop.
   do {
@@ -2011,7 +1947,7 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
     }
     stats_.PacketsDiscarded(discard_count);
     stats_.StoreWaitingTime(packet->waiting_time->ElapsedMs());
-    assert(packet->payload_length > 0);
+    RTC_DCHECK(!packet->empty());
     packet_list->push_back(packet);  // Store packet in list.
 
     if (first_packet) {
@@ -2028,31 +1964,23 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
     }
 
     // Store number of extracted samples.
-    int packet_duration = 0;
-    AudioDecoder* decoder = decoder_database_->GetDecoder(
-        packet->header.payloadType);
-    if (decoder) {
-      if (packet->sync_packet) {
-        packet_duration = rtc::checked_cast<int>(decoder_frame_length_);
-      } else {
-        if (packet->primary) {
-          packet_duration = decoder->PacketDuration(packet->payload,
-                                                    packet->payload_length);
-        } else {
-          packet_duration = decoder->
-              PacketDurationRedundant(packet->payload, packet->payload_length);
-          stats_.SecondaryDecodedSamples(packet_duration);
-        }
+    size_t packet_duration = 0;
+    if (packet->frame) {
+      packet_duration = packet->frame->Duration();
+      // TODO(ossu): Is this the correct way to track Opus FEC packets?
+      if (packet->priority.codec_level > 0) {
+        stats_.SecondaryDecodedSamples(rtc::checked_cast<int>(packet_duration));
       }
     } else if (!decoder_database_->IsComfortNoise(packet->header.payloadType)) {
       LOG(LS_WARNING) << "Unknown payload type "
                       << static_cast<int>(packet->header.payloadType);
-      assert(false);
+      RTC_NOTREACHED();
     }
-    if (packet_duration <= 0) {
+
+    if (packet_duration == 0) {
       // Decoder did not return a packet duration. Assume that the packet
       // contains the same number of samples as the previous one.
-      packet_duration = rtc::checked_cast<int>(decoder_frame_length_);
+      packet_duration = decoder_frame_length_;
     }
     extracted_samples = packet->header.timestamp - first_timestamp +
         packet_duration;
@@ -2071,8 +1999,7 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
       }
       prev_sequence_number = header->sequenceNumber;
     }
-  } while (extracted_samples < rtc::checked_cast<int>(required_samples) &&
-           next_packet_available);
+  } while (extracted_samples < required_samples && next_packet_available);
 
   if (extracted_samples > 0) {
     // Delete old packets only when we are going to decode something. Otherwise,
@@ -2082,7 +2009,7 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
     packet_buffer_->DiscardAllOldPackets(timestamp_);
   }
 
-  return extracted_samples;
+  return rtc::checked_cast<int>(extracted_samples);
 }
 
 void NetEqImpl::UpdatePlcComponents(int fs_hz, size_t channels) {

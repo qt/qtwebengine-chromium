@@ -4,9 +4,10 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcodec/include/fx_codec.h"
+#include "core/fxcodec/fx_codec.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/dib/dib_int.h"
-#include "core/fxge/include/fx_ge.h"
+#include "core/fxge/ge/cfx_cliprgn.h"
 
 namespace {
 
@@ -4693,7 +4694,7 @@ FX_BOOL CFX_DIBitmap::CompositeRect(int left,
     int index = 0;
     if (m_pPalette) {
       for (int i = 0; i < 2; i++) {
-        if (m_pPalette[i] == color) {
+        if (m_pPalette.get()[i] == color) {
           index = i;
         }
       }

@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,12 +33,15 @@ struct IndexedDBHostMsg_DatabaseCreateTransaction_Params;
 struct IndexedDBHostMsg_DatabaseDeleteRange_Params;
 struct IndexedDBHostMsg_DatabaseGet_Params;
 struct IndexedDBHostMsg_DatabaseGetAll_Params;
+struct IndexedDBHostMsg_DatabaseObserve_Params;
 struct IndexedDBHostMsg_DatabaseOpenCursor_Params;
 struct IndexedDBHostMsg_DatabasePut_Params;
 struct IndexedDBHostMsg_DatabaseSetIndexKeys_Params;
 struct IndexedDBHostMsg_FactoryDeleteDatabase_Params;
 struct IndexedDBHostMsg_FactoryGetDatabaseNames_Params;
 struct IndexedDBHostMsg_FactoryOpen_Params;
+struct IndexedDBMsg_Observation;
+struct IndexedDBMsg_ObserverChanges;
 
 namespace url {
 class Origin;
@@ -51,6 +55,8 @@ class IndexedDBCursor;
 class IndexedDBKey;
 class IndexedDBKeyPath;
 class IndexedDBKeyRange;
+class IndexedDBObservation;
+class IndexedDBObserverChanges;
 struct IndexedDBDatabaseMetadata;
 
 // Handles all IndexedDB related messages from a particular renderer process.
@@ -61,16 +67,15 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
                           net::URLRequestContextGetter* request_context_getter,
                           IndexedDBContextImpl* indexed_db_context,
                           ChromeBlobStorageContext* blob_storage_context);
-  IndexedDBDispatcherHost(int ipc_process_id,
-                          net::URLRequestContext* request_context,
-                          IndexedDBContextImpl* indexed_db_context,
-                          ChromeBlobStorageContext* blob_storage_context);
 
   static ::IndexedDBDatabaseMetadata ConvertMetadata(
       const content::IndexedDBDatabaseMetadata& metadata);
+  static IndexedDBMsg_ObserverChanges ConvertObserverChanges(
+      std::unique_ptr<IndexedDBObserverChanges> changes);
+  static IndexedDBMsg_Observation ConvertObservation(
+      const IndexedDBObservation* observation);
 
   // BrowserMessageFilter implementation.
-  void OnChannelConnected(int32_t peer_pid) override;
   void OnChannelClosing() override;
   void OnDestruct() const override;
   base::TaskRunner* OverrideTaskRunnerForMessage(
@@ -110,14 +115,16 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
 
   std::string HoldBlobData(const IndexedDBBlobInfo& blob_info);
 
+  // True if the channel is closing/closed and outstanding requests
+  // can be abandoned. Only access on IndexedDB thread.
+  bool IsOpen() const;
+
  private:
   // Friends to enable OnDestruct() delegation.
   friend class BrowserThread;
   friend class base::DeleteHelper<IndexedDBDispatcherHost>;
 
   // Used in nested classes.
-  typedef std::map<std::string, std::pair<storage::BlobDataHandle*, int>>
-      BlobDataHandleMap;
   typedef std::map<int64_t, int64_t> TransactionIDToDatabaseIDMap;
   typedef std::map<int64_t, uint64_t> TransactionIDToSizeMap;
   typedef std::map<int64_t, url::Origin> TransactionIDToOriginMap;
@@ -168,11 +175,19 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnDeleteObjectStore(int32_t ipc_database_id,
                              int64_t transaction_id,
                              int64_t object_store_id);
+    void OnRenameObjectStore(int32_t ipc_database_id,
+                             int64_t transaction_id,
+                             int64_t object_store_id,
+                             const base::string16& new_name);
     void OnCreateTransaction(
         const IndexedDBHostMsg_DatabaseCreateTransaction_Params&);
     void OnClose(int32_t ipc_database_id);
     void OnVersionChangeIgnored(int32_t ipc_database_id);
     void OnDestroyed(int32_t ipc_database_id);
+
+    void OnObserve(const IndexedDBHostMsg_DatabaseObserve_Params&);
+    void OnUnobserve(int32_t ipc_database_id,
+                     const std::vector<int32_t>& observer_ids_to_remove);
 
     void OnGet(const IndexedDBHostMsg_DatabaseGet_Params& params);
     void OnGetAll(const IndexedDBHostMsg_DatabaseGetAll_Params& params);
@@ -180,7 +195,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     // before posting to the IDB TaskRunner for the rest of the job.
     void OnPutWrapper(const IndexedDBHostMsg_DatabasePut_Params& params);
     void OnPut(const IndexedDBHostMsg_DatabasePut_Params& params,
-               std::vector<storage::BlobDataHandle*> handles);
+               std::vector<std::unique_ptr<storage::BlobDataHandle>> handles);
     void OnSetIndexKeys(
         const IndexedDBHostMsg_DatabaseSetIndexKeys_Params& params);
     void OnSetIndexesReady(int32_t ipc_database_id,
@@ -202,6 +217,11 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
                        int64_t transaction_id,
                        int64_t object_store_id,
                        int64_t index_id);
+    void OnRenameIndex(int32_t ipc_database_id,
+                       int64_t transaction_id,
+                       int64_t object_store_id,
+                       int64_t index_id,
+                       const base::string16& new_name);
 
     void OnAbort(int32_t ipc_database_id, int64_t transaction_id);
     void OnCommit(int32_t ipc_database_id, int64_t transaction_id);
@@ -281,22 +301,26 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
       const IndexedDBHostMsg_FactoryDeleteDatabase_Params& p);
 
   void OnAckReceivedBlobs(const std::vector<std::string>& uuids);
-  void OnPutHelper(const IndexedDBHostMsg_DatabasePut_Params& params,
-                   std::vector<storage::BlobDataHandle*> handles);
+  void OnPutHelper(
+      const IndexedDBHostMsg_DatabasePut_Params& params,
+      std::vector<std::unique_ptr<storage::BlobDataHandle>> handles);
 
   void ResetDispatcherHosts();
   void DropBlobData(const std::string& uuid);
 
-  // The getter holds the context until OnChannelConnected() can be called from
-  // the IO thread, which will extract the net::URLRequestContext from it.
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
-  net::URLRequestContext* request_context_;
   scoped_refptr<IndexedDBContextImpl> indexed_db_context_;
   scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
 
-  BlobDataHandleMap blob_data_handle_map_;
+  // Maps blob uuid to a pair (handle, ref count). Entry is added and/or count
+  // is incremented in HoldBlobData(), and count is decremented and/or entry
+  // removed in DropBlobData().
+  std::map<std::string,
+           std::pair<std::unique_ptr<storage::BlobDataHandle>, int>>
+      blob_data_handle_map_;
 
   // Only access on IndexedDB thread.
+  bool is_open_ = true;
   std::unique_ptr<DatabaseDispatcherHost> database_dispatcher_host_;
   std::unique_ptr<CursorDispatcherHost> cursor_dispatcher_host_;
 

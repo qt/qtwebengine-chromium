@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <list>
+#include <map>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -67,6 +67,25 @@ struct Options {
   std::string font_directory;
 };
 
+struct FPDF_FORMFILLINFO_PDFiumTest : public FPDF_FORMFILLINFO {
+  // Hold a map of the currently loaded pages in order to avoid them
+  // to get loaded twice.
+  std::map<int, FPDF_PAGE> loadedPages;
+
+  // Hold a pointer of FPDF_FORMHANDLE so that PDFium app hooks can
+  // make use of it.
+  FPDF_FORMHANDLE formHandle;
+};
+
+struct AvailDeleter {
+  inline void operator()(FPDF_AVAIL avail) const { FPDFAvail_Destroy(avail); }
+};
+
+static FPDF_FORMFILLINFO_PDFiumTest* ToPDFiumTestFormFillInfo(
+    FPDF_FORMFILLINFO* formFillInfo) {
+  return static_cast<FPDF_FORMFILLINFO_PDFiumTest*>(formFillInfo);
+}
+
 static bool CheckDimensions(int stride, int width, int height) {
   if (stride < 0 || width < 0 || height < 0)
     return false;
@@ -95,10 +114,10 @@ static void WritePpm(const char* pdf_name, int num, const void* buffer_void,
   fprintf(fp, "P6\n# PDF test render\n%d %d\n255\n", width, height);
   // Source data is B, G, R, unused.
   // Dest data is R, G, B.
-  char* result = new char[out_len];
+  std::vector<char> result(out_len);
   for (int h = 0; h < height; ++h) {
     const char* src_line = buffer + (stride * h);
-    char* dest_line = result + (width * h * 3);
+    char* dest_line = result.data() + (width * h * 3);
     for (int w = 0; w < width; ++w) {
       // R
       dest_line[w * 3] = src_line[(w * 4) + 2];
@@ -108,8 +127,7 @@ static void WritePpm(const char* pdf_name, int num, const void* buffer_void,
       dest_line[(w * 3) + 2] = src_line[w * 4];
     }
   }
-  fwrite(result, out_len, 1, fp);
-  delete[] result;
+  fwrite(result.data(), out_len, 1, fp);
   fclose(fp);
 }
 
@@ -242,7 +260,7 @@ void WriteEmf(FPDF_PAGE page, const char* pdf_name, int num) {
 #endif
 
 #ifdef PDF_ENABLE_SKIA
-void WriteSkp(const char* pdf_name, int num, const void* recorder) {
+void WriteSkp(const char* pdf_name, int num, SkPictureRecorder* recorder) {
   char filename[256];
   int chars_formatted =
       snprintf(filename, sizeof(filename), "%s.%d.skp", pdf_name, num);
@@ -253,8 +271,7 @@ void WriteSkp(const char* pdf_name, int num, const void* recorder) {
     return;
   }
 
-  SkPictureRecorder* r = (SkPictureRecorder*)recorder;
-  sk_sp<SkPicture> picture(r->finishRecordingAsPicture());
+  sk_sp<SkPicture> picture(recorder->finishRecordingAsPicture());
   SkFILEWStream wStream(filename);
   picture->serialize(&wStream);
 }
@@ -362,10 +379,11 @@ void ExampleUnsupportedHandler(UNSUPPORT_INFO*, int type) {
 }
 
 bool ParseCommandLine(const std::vector<std::string>& args,
-                      Options* options, std::list<std::string>* files) {
-  if (args.empty()) {
+                      Options* options,
+                      std::vector<std::string>* files) {
+  if (args.empty())
     return false;
-  }
+
   options->exe_path = args[0];
   size_t cur_idx = 1;
   for (; cur_idx < args.size(); ++cur_idx) {
@@ -447,9 +465,9 @@ bool ParseCommandLine(const std::vector<std::string>& args,
       break;
     }
   }
-  for (size_t i = cur_idx; i < args.size(); i++) {
+  for (size_t i = cur_idx; i < args.size(); i++)
     files->push_back(args[i]);
-  }
+
   return true;
 }
 
@@ -521,27 +539,49 @@ void SendPageEvents(const FPDF_FORMHANDLE& form,
   }
 }
 
+FPDF_PAGE GetPageForIndex(FPDF_FORMFILLINFO* param,
+                          FPDF_DOCUMENT doc,
+                          int index) {
+  FPDF_FORMFILLINFO_PDFiumTest* formFillInfo = ToPDFiumTestFormFillInfo(param);
+  auto& loadedPages = formFillInfo->loadedPages;
+
+  auto iter = loadedPages.find(index);
+  if (iter != loadedPages.end())
+    return iter->second;
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, index);
+  if (!page)
+    return nullptr;
+
+  FPDF_FORMHANDLE& formHandle = formFillInfo->formHandle;
+
+  FORM_OnAfterLoadPage(page, formHandle);
+  FORM_DoPageAAction(page, formHandle, FPDFPAGE_AACTION_OPEN);
+
+  loadedPages[index] = page;
+  return page;
+}
+
 bool RenderPage(const std::string& name,
-                const FPDF_DOCUMENT& doc,
-                const FPDF_FORMHANDLE& form,
+                FPDF_DOCUMENT doc,
+                FPDF_FORMHANDLE& form,
+                FPDF_FORMFILLINFO_PDFiumTest& formFillInfo,
                 const int page_index,
                 const Options& options,
                 const std::string& events) {
-  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
-  if (!page) {
+  FPDF_PAGE page = GetPageForIndex(&formFillInfo, doc, page_index);
+  if (!page)
     return false;
-  }
+
   FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
-  FORM_OnAfterLoadPage(page, form);
-  FORM_DoPageAAction(page, form, FPDFPAGE_AACTION_OPEN);
 
   if (options.send_events)
     SendPageEvents(form, page, events);
 
   double scale = 1.0;
-  if (!options.scale_factor_as_string.empty()) {
+  if (!options.scale_factor_as_string.empty())
     std::stringstream(options.scale_factor_as_string) >> scale;
-  }
+
   int width = static_cast<int>(FPDF_GetPageWidth(page) * scale);
   int height = static_cast<int>(FPDF_GetPageHeight(page) * scale);
   int alpha = FPDFPage_HasTransparency(page) ? 1 : 0;
@@ -549,9 +589,9 @@ bool RenderPage(const std::string& name,
   if (bitmap) {
     FPDF_DWORD fill_color = alpha ? 0x00000000 : 0xFFFFFFFF;
     FPDFBitmap_FillRect(bitmap, 0, 0, width, height, fill_color);
-    FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, 0);
+    FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT);
 
-    FPDF_FFLDraw(form, bitmap, page, 0, 0, width, height, 0, 0);
+    FPDF_FFLDraw(form, bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT);
     int stride = FPDFBitmap_GetStride(bitmap);
     const char* buffer =
         reinterpret_cast<const char*>(FPDFBitmap_GetBuffer(bitmap));
@@ -581,7 +621,8 @@ bool RenderPage(const std::string& name,
 #ifdef PDF_ENABLE_SKIA
       case OUTPUT_SKP: {
         std::unique_ptr<SkPictureRecorder> recorder(
-            (SkPictureRecorder*)FPDF_RenderPageSkp(page, width, height));
+            reinterpret_cast<SkPictureRecorder*>(
+                FPDF_RenderPageSkp(page, width, height)));
         FPDF_FFLRecord(form, recorder.get(), page, 0, 0, width, height, 0, 0);
         WriteSkp(name.c_str(), page_index, recorder.get());
       } break;
@@ -594,6 +635,9 @@ bool RenderPage(const std::string& name,
   } else {
     fprintf(stderr, "Page was too large to be rendered.\n");
   }
+
+  formFillInfo.loadedPages.erase(page_index);
+
   FORM_DoPageAAction(page, form, FPDFPAGE_AACTION_CLOSE);
   FORM_OnBeforeClosePage(page, form);
   FPDFText_ClosePage(text_page);
@@ -614,13 +658,13 @@ void RenderPdf(const std::string& name,
   platform_callbacks.Doc_gotoPage = ExampleDocGotoPage;
   platform_callbacks.Doc_mail = ExampleDocMail;
 
-  FPDF_FORMFILLINFO form_callbacks;
-  memset(&form_callbacks, '\0', sizeof(form_callbacks));
+  FPDF_FORMFILLINFO_PDFiumTest form_callbacks = {};
 #ifdef PDF_ENABLE_XFA
   form_callbacks.version = 2;
 #else   // PDF_ENABLE_XFA
   form_callbacks.version = 1;
 #endif  // PDF_ENABLE_XFA
+  form_callbacks.FFI_GetPage = GetPageForIndex;
   form_callbacks.m_pJsPlatform = &platform_callbacks;
 
   TestLoader loader(pBuf, len);
@@ -644,15 +688,17 @@ void RenderPdf(const std::string& name,
   int nRet = PDF_DATA_NOTAVAIL;
   bool bIsLinearized = false;
   FPDF_AVAIL pdf_avail = FPDFAvail_Create(&file_avail, &file_access);
+  std::unique_ptr<void, AvailDeleter> scoped_pdf_avail_deleter(pdf_avail);
 
   if (FPDFAvail_IsLinearized(pdf_avail) == PDF_LINEARIZED) {
     doc = FPDFAvail_GetDocument(pdf_avail, nullptr);
     if (doc) {
-      while (nRet == PDF_DATA_NOTAVAIL) {
+      while (nRet == PDF_DATA_NOTAVAIL)
         nRet = FPDFAvail_IsDocAvail(pdf_avail, &hints);
-      }
+
       if (nRet == PDF_DATA_ERROR) {
         fprintf(stderr, "Unknown error in checking if doc was available.\n");
+        FPDF_CloseDocument(doc);
         return;
       }
       nRet = FPDFAvail_IsFormAvail(pdf_avail, &hints);
@@ -660,6 +706,7 @@ void RenderPdf(const std::string& name,
         fprintf(stderr,
                 "Error %d was returned in checking if form was available.\n",
                 nRet);
+        FPDF_CloseDocument(doc);
         return;
       }
       bIsLinearized = true;
@@ -698,16 +745,17 @@ void RenderPdf(const std::string& name,
     }
     fprintf(stderr, ".\n");
 
-    FPDFAvail_Destroy(pdf_avail);
     return;
   }
 
   (void)FPDF_GetDocPermissions(doc);
 
   FPDF_FORMHANDLE form = FPDFDOC_InitFormFillEnvironment(doc, &form_callbacks);
+  form_callbacks.formHandle = form;
+
 #ifdef PDF_ENABLE_XFA
-  int docType = DOCTYPE_PDF;
-  if (FPDF_HasXFAField(doc, &docType) && docType != DOCTYPE_PDF &&
+  int doc_type = DOCTYPE_PDF;
+  if (FPDF_HasXFAField(doc, &doc_type) && doc_type != DOCTYPE_PDF &&
       !FPDF_LoadXFA(doc)) {
     fprintf(stderr, "LoadXFA unsuccessful, continuing anyway.\n");
   }
@@ -724,36 +772,27 @@ void RenderPdf(const std::string& name,
   for (int i = 0; i < page_count; ++i) {
     if (bIsLinearized) {
       nRet = PDF_DATA_NOTAVAIL;
-      while (nRet == PDF_DATA_NOTAVAIL) {
+      while (nRet == PDF_DATA_NOTAVAIL)
         nRet = FPDFAvail_IsPageAvail(pdf_avail, i, &hints);
-      }
+
       if (nRet == PDF_DATA_ERROR) {
         fprintf(stderr, "Unknown error in checking if page %d is available.\n",
                 i);
+        FPDFDOC_ExitFormFillEnvironment(form);
+        FPDF_CloseDocument(doc);
         return;
       }
     }
-    if (RenderPage(name, doc, form, i, options, events)) {
+    if (RenderPage(name, doc, form, form_callbacks, i, options, events))
       ++rendered_pages;
-    } else {
+    else
       ++bad_pages;
-    }
   }
 
   FORM_DoDocumentAAction(form, FPDFDOC_AACTION_WC);
 
-#ifdef PDF_ENABLE_XFA
-  // Note: The shut down order here is the reverse of the non-XFA branch order.
-  // Need to work out if this is required, and if it is, the lifetimes of
-  // objects owned by |doc| that |form| reference.
-  FPDF_CloseDocument(doc);
-  FPDFDOC_ExitFormFillEnvironment(form);
-#else  // PDF_ENABLE_XFA
   FPDFDOC_ExitFormFillEnvironment(form);
   FPDF_CloseDocument(doc);
-#endif  // PDF_ENABLE_XFA
-
-  FPDFAvail_Destroy(pdf_avail);
 
   fprintf(stderr, "Rendered %d pages.\n", rendered_pages);
   if (bad_pages)
@@ -781,19 +820,20 @@ static void ShowConfig() {
   printf("%s\n", config.c_str());
 }
 
-static const char usage_string[] =
+static const char kUsageString[] =
     "Usage: pdfium_test [OPTION] [FILE]...\n"
     "  --show-config     - print build options and exit\n"
     "  --send-events     - send input described by .evt file\n"
     "  --bin-dir=<path>  - override path to v8 external data\n"
     "  --font-dir=<path> - override path to external fonts\n"
     "  --scale=<number>  - scale output size by number (e.g. 0.5)\n"
-    "  --txt - write page text in UTF32-LE <pdf-name>.<page-number>.txt\n"
 #ifdef _WIN32
     "  --bmp - write page images <pdf-name>.<page-number>.bmp\n"
     "  --emf - write page meta files <pdf-name>.<page-number>.emf\n"
 #endif  // _WIN32
+    "  --txt - write page text in UTF32-LE <pdf-name>.<page-number>.txt\n"
     "  --png - write page images <pdf-name>.<page-number>.png\n"
+    "  --ppm - write page images <pdf-name>.<page-number>.ppm\n"
 #ifdef PDF_ENABLE_SKIA
     "  --skp - write page images <pdf-name>.<page-number>.skp\n"
 #endif
@@ -802,9 +842,9 @@ static const char usage_string[] =
 int main(int argc, const char* argv[]) {
   std::vector<std::string> args(argv, argv + argc);
   Options options;
-  std::list<std::string> files;
+  std::vector<std::string> files;
   if (!ParseCommandLine(args, &options, &files)) {
-    fprintf(stderr, "%s", usage_string);
+    fprintf(stderr, "%s", kUsageString);
     return 1;
   }
 
@@ -851,9 +891,7 @@ int main(int argc, const char* argv[]) {
 
   FSDK_SetUnSpObjProcessHandler(&unsuppored_info);
 
-  while (!files.empty()) {
-    std::string filename = files.front();
-    files.pop_front();
+  for (const std::string& filename : files) {
     size_t file_length = 0;
     std::unique_ptr<char, pdfium::FreeDeleter> file_contents =
         GetFileContents(filename.c_str(), &file_length);

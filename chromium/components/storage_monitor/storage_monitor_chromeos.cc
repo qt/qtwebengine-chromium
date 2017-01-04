@@ -13,7 +13,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/storage_monitor/media_storage_util.h"
-#include "components/storage_monitor/media_transfer_protocol_device_observer_linux.h"
+#include "components/storage_monitor/media_transfer_protocol_device_observer_chromeos.h"
 #include "components/storage_monitor/removable_device_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
@@ -111,7 +111,7 @@ void StorageMonitorCros::Init() {
   }
 
   media_transfer_protocol_device_observer_.reset(
-      new MediaTransferProtocolDeviceObserverLinux(
+      new MediaTransferProtocolDeviceObserverChromeOS(
           receiver(), media_transfer_protocol_manager_.get()));
 }
 
@@ -162,7 +162,7 @@ void StorageMonitorCros::OnMountEvent(
 
   switch (event) {
     case DiskMountManager::MOUNTING: {
-      if (ContainsKey(mount_map_, mount_info.mount_path)) {
+      if (base::ContainsKey(mount_map_, mount_info.mount_path)) {
         NOTREACHED();
         return;
       }
@@ -210,7 +210,7 @@ bool StorageMonitorCros::GetStorageInfoForPath(
     return false;
 
   base::FilePath current = path;
-  while (!ContainsKey(mount_map_, current.value()) &&
+  while (!base::ContainsKey(mount_map_, current.value()) &&
          current != current.DirName()) {
     current = current.DirName();
   }
@@ -280,7 +280,7 @@ void StorageMonitorCros::AddMountedPath(
     bool has_dcim) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  if (ContainsKey(mount_map_, mount_info.mount_path)) {
+  if (base::ContainsKey(mount_map_, mount_info.mount_path)) {
     // CheckExistingMountPointsOnUIThread() added the mount point information
     // in the map before the device attached handler is called. Therefore, an
     // entry for the device already exists in the map.

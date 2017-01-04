@@ -13,11 +13,13 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/bluetooth_advertisement.h"
 #include "device/bluetooth/dbus/bluez_dbus_manager.h"
 #include "device/bluetooth/dbus/fake_bluetooth_le_advertisement_service_provider.h"
+#include "device/bluetooth/dbus/fake_bluetooth_le_advertising_manager_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using device::BluetoothAdapter;
@@ -82,7 +84,7 @@ class BluetoothAdvertisementBlueZTest : public testing::Test {
     BluetoothAdapterFactory::GetAdapter(
         base::Bind(&BluetoothAdvertisementBlueZTest::GetAdapterCallback,
                    base::Unretained(this)));
-    base::MessageLoop::current()->Run();
+    base::RunLoop().Run();
   }
 
   // Called whenever BluetoothAdapter is retrieved successfully.
@@ -98,16 +100,16 @@ class BluetoothAdvertisementBlueZTest : public testing::Test {
 
   std::unique_ptr<BluetoothAdvertisement::Data> CreateAdvertisementData() {
     std::unique_ptr<BluetoothAdvertisement::Data> data =
-        base::WrapUnique(new BluetoothAdvertisement::Data(
-            BluetoothAdvertisement::ADVERTISEMENT_TYPE_BROADCAST));
+        base::MakeUnique<BluetoothAdvertisement::Data>(
+            BluetoothAdvertisement::ADVERTISEMENT_TYPE_BROADCAST);
     data->set_service_uuids(
-        base::WrapUnique(new BluetoothAdvertisement::UUIDList()));
+        base::MakeUnique<BluetoothAdvertisement::UUIDList>());
     data->set_manufacturer_data(
-        base::WrapUnique(new BluetoothAdvertisement::ManufacturerData()));
+        base::MakeUnique<BluetoothAdvertisement::ManufacturerData>());
     data->set_solicit_uuids(
-        base::WrapUnique(new BluetoothAdvertisement::UUIDList()));
+        base::MakeUnique<BluetoothAdvertisement::UUIDList>());
     data->set_service_data(
-        base::WrapUnique(new BluetoothAdvertisement::ServiceData()));
+        base::MakeUnique<BluetoothAdvertisement::ServiceData>());
     return data;
   }
 
@@ -123,7 +125,7 @@ class BluetoothAdvertisementBlueZTest : public testing::Test {
         base::Bind(&BluetoothAdvertisementBlueZTest::AdvertisementErrorCallback,
                    base::Unretained(this)));
 
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     return advertisement_;
   }
 
@@ -135,7 +137,7 @@ class BluetoothAdvertisementBlueZTest : public testing::Test {
         base::Bind(&BluetoothAdvertisementBlueZTest::AdvertisementErrorCallback,
                    base::Unretained(this)));
 
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   void TriggerReleased(scoped_refptr<BluetoothAdvertisement> advertisement) {
@@ -206,15 +208,35 @@ TEST_F(BluetoothAdvertisementBlueZTest, RegisterSucceeded) {
   ExpectSuccess();
 }
 
-TEST_F(BluetoothAdvertisementBlueZTest, DoubleRegisterFailed) {
+TEST_F(BluetoothAdvertisementBlueZTest, DoubleRegisterSucceeded) {
   scoped_refptr<BluetoothAdvertisement> advertisement = CreateAdvertisement();
   ExpectSuccess();
   EXPECT_TRUE(advertisement);
 
-  // Creating a second advertisement should give us an error.
+  // Creating a second advertisement should still be fine.
   scoped_refptr<BluetoothAdvertisement> advertisement2 = CreateAdvertisement();
+  ExpectSuccess();
+  EXPECT_TRUE(advertisement2);
+}
+
+TEST_F(BluetoothAdvertisementBlueZTest, RegisterTooManyFailed) {
+  // Register the maximum available number of advertisements.
+  constexpr size_t kMaxBluezAdvertisements =
+      bluez::FakeBluetoothLEAdvertisingManagerClient::kMaxBluezAdvertisements;
+
+  std::vector<scoped_refptr<BluetoothAdvertisement>> advertisements;
+  scoped_refptr<BluetoothAdvertisement> current_advertisement;
+  for (size_t i = 0; i < kMaxBluezAdvertisements; i++) {
+    current_advertisement = CreateAdvertisement();
+    ExpectSuccess();
+    EXPECT_TRUE(current_advertisement);
+    advertisements.emplace_back(std::move(current_advertisement));
+  }
+
+  // The next advertisement should fail to register.
+  current_advertisement = CreateAdvertisement();
   ExpectError(BluetoothAdvertisement::ERROR_ADVERTISEMENT_ALREADY_EXISTS);
-  EXPECT_FALSE(advertisement2);
+  EXPECT_FALSE(current_advertisement);
 }
 
 TEST_F(BluetoothAdvertisementBlueZTest, DoubleUnregisterFailed) {

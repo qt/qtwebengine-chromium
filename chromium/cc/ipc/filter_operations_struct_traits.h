@@ -5,13 +5,13 @@
 #ifndef CC_IPC_FILTER_OPERATIONS_STRUCT_TRAITS_H_
 #define CC_IPC_FILTER_OPERATIONS_STRUCT_TRAITS_H_
 
-#include "cc/ipc/filter_operations.mojom.h"
+#include "cc/ipc/filter_operations.mojom-shared.h"
 #include "cc/output/filter_operations.h"
 
 namespace mojo {
 
 template <>
-struct StructTraits<cc::mojom::FilterOperations, cc::FilterOperations> {
+struct StructTraits<cc::mojom::FilterOperationsDataView, cc::FilterOperations> {
   static const std::vector<cc::FilterOperation>& operations(
       const cc::FilterOperations& operations) {
     return operations.operations();

@@ -25,10 +25,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ChromeRuntimeUnprivileged) {
   ASSERT_TRUE(
       LoadExtension(test_data_dir_.AppendASCII("runtime/content_script")));
 
-  // The content script runs on webpage.html.
+  // The content script runs on this page.
   extensions::ResultCatcher catcher;
   ui_test_utils::NavigateToURL(browser(),
-                               embedded_test_server()->GetURL("/webpage.html"));
+                               embedded_test_server()->GetURL("/title1.html"));
   EXPECT_TRUE(catcher.GetNextResult()) << message_;
 }
 
@@ -97,7 +97,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_ChromeRuntimeReload) {
   dir.WriteManifest(kManifest);
   dir.WriteFile(FILE_PATH_LITERAL("background.js"), "console.log('loaded');");
 
-  const Extension* extension = LoadExtension(dir.unpacked_path());
+  const Extension* extension = LoadExtension(dir.UnpackedPath());
   ASSERT_TRUE(extension);
   const std::string extension_id = extension->id();
 

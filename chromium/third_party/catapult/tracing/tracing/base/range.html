@@ -7,6 +7,7 @@ found in the LICENSE file.
 
 <link rel="import" href="/tracing/base/base.html">
 <link rel="import" href="/tracing/base/iteration_helpers.html">
+<link rel="import" href="/tracing/base/math.html">
 
 <script>
 'use strict';
@@ -20,7 +21,7 @@ tr.exportTo('tr.b', function() {
     this.isEmpty_ = true;
     this.min_ = undefined;
     this.max_ = undefined;
-  };
+  }
 
   Range.prototype = {
     __proto__: Object.prototype,
@@ -102,10 +103,10 @@ tr.exportTo('tr.b', function() {
     equals: function(that) {
       if (this.isEmpty && that.isEmpty)
         return true;
-      if (this.isEmpty != that.isEmpty)
+      if (this.isEmpty !== that.isEmpty)
         return false;
-      return this.min === that.min &&
-          this.max === that.max;
+      return (tr.b.approximately(this.min, that.min) &&
+          tr.b.approximately(this.max, that.max));
     },
 
     containsExplicitRangeInclusive: function(min, max) {
@@ -154,6 +155,14 @@ tr.exportTo('tr.b', function() {
       if (range.isEmpty)
         return false;
       return this.intersectsExplicitRangeExclusive(range.min_, range.max_);
+    },
+
+    findExplicitIntersectionDuration: function(min, max) {
+      var min = Math.max(this.min, min);
+      var max = Math.min(this.max, max);
+      if (max < min)
+        return 0;
+      return max - min;
     },
 
     findIntersection: function(range) {
@@ -257,6 +266,9 @@ tr.exportTo('tr.b', function() {
 
     return 0;
   };
+
+  Range.PERCENT_RANGE = Range.fromExplicitRange(0, 1);
+  Object.freeze(Range.PERCENT_RANGE);
 
   return {
     Range: Range

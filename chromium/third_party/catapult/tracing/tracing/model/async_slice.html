@@ -5,9 +5,8 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
-<link rel="import" href="/tracing/base/extension_registry.html">
+<link rel="import" href="/tracing/base/unit.html">
 <link rel="import" href="/tracing/model/timed_event.html">
-<link rel="import" href="/tracing/value/unit.html">
 
 <script>
 'use strict';
@@ -66,7 +65,7 @@ tr.exportTo('tr.model', function() {
 
     if (opt_argsStripped !== undefined)
       this.argsStripped = opt_argsStripped;
-  };
+  }
 
   AsyncSlice.prototype = {
     __proto__: tr.model.TimedEvent.prototype,
@@ -94,7 +93,7 @@ tr.exportTo('tr.model', function() {
 
     get userFriendlyName() {
       return 'Async slice ' + this.title + ' at ' +
-          tr.v.Unit.byName.timeStampInMs.format(this.start);
+          tr.b.Unit.byName.timeStampInMs.format(this.start);
     },
 
     get stableId() {
@@ -117,7 +116,7 @@ tr.exportTo('tr.model', function() {
         return undefined;
 
       for (var i = 0; i < this.subSlices.length; i++) {
-        if (this.subSlices[i].title == targetTitle)
+        if (this.subSlices[i].title === targetTitle)
           return this.subSlices[i];
         var slice = this.subSlices[i].findDescendentSlice(targetTitle);
         if (slice) return slice;
@@ -125,11 +124,11 @@ tr.exportTo('tr.model', function() {
       return undefined;
     },
 
-    iterateAllDescendents: function(callback, opt_this) {
-      this.subSlices.forEach(callback, opt_this);
-      this.subSlices.forEach(function(subSlice) {
-        subSlice.iterateAllDescendents(callback, opt_this);
-      }, opt_this);
+    enumerateAllDescendents: function*() {
+      for (var slice of this.subSlices)
+        yield slice;
+      for (var slice of this.subSlices)
+        yield * slice.enumerateAllDescendents();
     },
 
     compareTo: function(that) {
@@ -141,17 +140,9 @@ tr.exportTo('tr.model', function() {
       AsyncSlice,
       {
         name: 'asyncSlice',
-        pluralName: 'asyncSlices',
-        singleViewElementName: 'tr-ui-a-single-async-slice-sub-view',
-        multiViewElementName: 'tr-ui-a-multi-async-slice-sub-view'
+        pluralName: 'asyncSlices'
       });
 
-
-  var options = new tr.b.ExtensionRegistryOptions(
-      tr.b.TYPE_BASED_REGISTRY_MODE);
-  options.mandatoryBaseClass = AsyncSlice;
-  options.defaultConstructor = AsyncSlice;
-  tr.b.decorateExtensionRegistry(AsyncSlice, options);
 
   return {
     AsyncSlice: AsyncSlice

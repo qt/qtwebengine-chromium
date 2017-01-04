@@ -614,6 +614,9 @@ void* MapBufferRange(GLenum target,
                      GLsizeiptr size,
                      GLbitfield access) override;
 GLboolean UnmapBuffer(GLenum target) override;
+void FlushMappedBufferRange(GLenum target,
+                            GLintptr offset,
+                            GLsizeiptr size) override;
 void* MapTexSubImage2DCHROMIUM(GLenum target,
                                GLint level,
                                GLint xoffset,
@@ -655,7 +658,6 @@ GLuint CreateGpuMemoryBufferImageCHROMIUM(GLsizei width,
                                           GLsizei height,
                                           GLenum internalformat,
                                           GLenum usage) override;
-void GetImageivCHROMIUM(GLuint image_id, GLenum param, GLint* data) override;
 void DescheduleUntilFinishedCHROMIUM() override;
 void GetTranslatedShaderSourceANGLE(GLuint shader,
                                     GLsizei bufsize,
@@ -733,16 +735,16 @@ void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                   GLfloat uv_y,
                                   GLfloat uv_width,
                                   GLfloat uv_height) override;
+void ScheduleCALayerSharedStateCHROMIUM(GLfloat opacity,
+                                        GLboolean is_clipped,
+                                        const GLfloat* clip_rect,
+                                        GLint sorting_context_id,
+                                        const GLfloat* transform) override;
 void ScheduleCALayerCHROMIUM(GLuint contents_texture_id,
                              const GLfloat* contents_rect,
-                             GLfloat opacity,
                              GLuint background_color,
                              GLuint edge_aa_mask,
                              const GLfloat* bounds_rect,
-                             GLboolean is_clipped,
-                             const GLfloat* clip_rect,
-                             GLint sorting_context_id,
-                             const GLfloat* transform,
                              GLuint filter) override;
 void ScheduleCALayerInUseQueryCHROMIUM(GLsizei count,
                                        const GLuint* textures) override;
@@ -854,5 +856,9 @@ GLint GetFragDataIndexEXT(GLuint program, const char* name) override;
 void UniformMatrix4fvStreamTextureMatrixCHROMIUM(
     GLint location,
     GLboolean transpose,
-    const GLfloat* default_value) override;
+    const GLfloat* transform) override;
+void SwapBuffersWithDamageCHROMIUM(GLint x,
+                                   GLint y,
+                                   GLint width,
+                                   GLint height) override;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_STUB_AUTOGEN_H_

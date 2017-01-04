@@ -36,63 +36,42 @@
 #include "wtf/text/StringHash.h"
 #include <memory>
 
-namespace blink {
-
-// TODO(hajimehoshi): CompressibleStringTable should be moved from blink to WTF
-// namespace. Fix this forward declaration when we do this.
-class CompressibleStringTable;
-
-typedef void (*CompressibleStringTableDestructor)(CompressibleStringTable*);
-
-}
-
 namespace WTF {
 
 class AtomicStringTable;
 struct ICUConverterWrapper;
 
 class WTF_EXPORT WTFThreadData {
-    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
-    WTF_MAKE_NONCOPYABLE(WTFThreadData);
-public:
-    WTFThreadData();
-    ~WTFThreadData();
+  DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
+  WTF_MAKE_NONCOPYABLE(WTFThreadData);
 
-    AtomicStringTable& getAtomicStringTable()
-    {
-        return *m_atomicStringTable;
-    }
+ public:
+  WTFThreadData();
+  ~WTFThreadData();
 
-    blink::CompressibleStringTable* compressibleStringTable()
-    {
-        return m_compressibleStringTable;
-    }
+  AtomicStringTable& getAtomicStringTable() { return *m_atomicStringTable; }
 
-    ICUConverterWrapper& cachedConverterICU() { return *m_cachedConverterICU; }
+  ICUConverterWrapper& cachedConverterICU() { return *m_cachedConverterICU; }
 
-private:
-    std::unique_ptr<AtomicStringTable> m_atomicStringTable;
-    blink::CompressibleStringTable* m_compressibleStringTable;
-    blink::CompressibleStringTableDestructor m_compressibleStringTableDestructor;
-    std::unique_ptr<ICUConverterWrapper> m_cachedConverterICU;
+ private:
+  std::unique_ptr<AtomicStringTable> m_atomicStringTable;
+  std::unique_ptr<ICUConverterWrapper> m_cachedConverterICU;
 
-    static ThreadSpecific<WTFThreadData>* staticData;
-    friend WTFThreadData& wtfThreadData();
-    friend class blink::CompressibleStringTable;
+  static ThreadSpecific<WTFThreadData>* staticData;
+  friend WTFThreadData& wtfThreadData();
 };
 
-inline WTFThreadData& wtfThreadData()
-{
-    // WTFThreadData is used on main thread before it could possibly be used
-    // on secondary ones, so there is no need for synchronization here.
-    if (!WTFThreadData::staticData)
-        WTFThreadData::staticData = new ThreadSpecific<WTFThreadData>;
-    return **WTFThreadData::staticData;
+inline WTFThreadData& wtfThreadData() {
+  // WTFThreadData is used on main thread before it could possibly be used
+  // on secondary ones, so there is no need for synchronization here.
+  if (!WTFThreadData::staticData)
+    WTFThreadData::staticData = new ThreadSpecific<WTFThreadData>;
+  return **WTFThreadData::staticData;
 }
 
-} // namespace WTF
+}  // namespace WTF
 
 using WTF::WTFThreadData;
 using WTF::wtfThreadData;
 
-#endif // WTFThreadData_h
+#endif  // WTFThreadData_h

@@ -44,8 +44,8 @@ const char kSlowDownRasterScaleFactor[] = "slow-down-raster-scale-factor";
 // Compress tile textures for GPUs supporting it.
 const char kEnableTileCompression[] = "enable-tile-compression";
 
-// Use a BeginFrame signal from browser to renderer to schedule rendering.
-const char kEnableBeginFrameScheduling[] = "enable-begin-frame-scheduling";
+// Enable color space aware rasterization and compositing.
+const char kEnableColorCorrectRendering[] = "enable-color-correct-rendering";
 
 // Enables the GPU benchmarking extension
 const char kEnableGpuBenchmarking[] = "enable-gpu-benchmarking";
@@ -54,6 +54,11 @@ const char kEnableGpuBenchmarking[] = "enable-gpu-benchmarking";
 // layer compositing.
 const char kShowCompositedLayerBorders[] = "show-composited-layer-borders";
 const char kUIShowCompositedLayerBorders[] = "ui-show-layer-borders";
+
+// Renders a green border around GL composited texture quads to help
+// debug and study overlay support.
+const char kGlCompositedTextureQuadBorder[] =
+    "gl-composited-texture-quad-border";
 
 // Draws a heads-up-display showing Frames Per Second as well as GPU memory
 // usage. If you also use --enable-logging=stderr --vmodule="head*=1" then FPS
@@ -78,12 +83,6 @@ const char kUIShowSurfaceDamageRects[] = "ui-show-surface-damage-rects";
 // layer.
 const char kShowScreenSpaceRects[] = "show-screenspace-rects";
 const char kUIShowScreenSpaceRects[] = "ui-show-screenspace-rects";
-
-// Show rects in the HUD around the screen-space transformed bounds of every
-// layer's replica, when they have one.
-const char kShowReplicaScreenSpaceRects[] = "show-replica-screenspace-rects";
-const char kUIShowReplicaScreenSpaceRects[] =
-    "ui-show-replica-screenspace-rects";
 
 // Switches cc machinery to use layer lists instead of layer trees
 const char kEnableLayerLists[] = "enable-layer-lists";

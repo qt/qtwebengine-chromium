@@ -13,9 +13,12 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
+#include "net/base/load_timing_info.h"
+#include "net/base/net_export.h"
 #include "net/http/bidirectional_stream_impl.h"
 #include "net/http/http_stream_factory.h"
-#include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
 
 class GURL;
 
@@ -154,11 +157,6 @@ class NET_EXPORT BidirectionalStream
                  const std::vector<int>& lengths,
                  bool end_stream);
 
-  // If |stream_request_| is non-NULL, cancel it. If |stream_impl_| is
-  // established, cancel it. No delegate method will be called after Cancel().
-  // Any pending operations may or may not succeed.
-  void Cancel();
-
   // Returns the protocol used by this stream. If stream has not been
   // established, return kProtoUnknown.
   NextProto GetProtocol() const;
@@ -175,8 +173,8 @@ class NET_EXPORT BidirectionalStream
   // not associated with any stream, and are not included in this value.
   int64_t GetTotalSentBytes() const;
 
-  // TODO(xunjieli): Implement a method to do flow control and a method to ping
-  // remote end point.
+  // Gets LoadTimingInfo of this stream.
+  void GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
 
  private:
   // BidirectionalStreamImpl::Delegate implementation:
@@ -218,9 +216,11 @@ class NET_EXPORT BidirectionalStream
   // Helper method to notify delegate if there is an error.
   void NotifyFailed(int error);
 
+  void UpdateHistograms();
+
   // BidirectionalStreamRequestInfo used when requesting the stream.
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info_;
-  const BoundNetLog net_log_;
+  const NetLogWithSource net_log_;
 
   HttpNetworkSession* session_;
 
@@ -247,6 +247,13 @@ class NET_EXPORT BidirectionalStream
   std::vector<scoped_refptr<IOBuffer>> write_buffer_list_;
   // List of buffer length.
   std::vector<int> write_buffer_len_list_;
+
+  // TODO(xunjieli): Remove this once LoadTimingInfo has response end.
+  base::TimeTicks read_end_time_;
+
+  // Load timing info of this stream. |connect_timing| is obtained when headers
+  // are received. Other fields are populated at different stages of the request
+  LoadTimingInfo load_timing_info_;
 
   base::WeakPtrFactory<BidirectionalStream> weak_factory_;
 

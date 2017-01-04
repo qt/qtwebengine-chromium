@@ -55,8 +55,8 @@ std::vector<LiveTab*> InMemoryTabRestoreService::RestoreMostRecentEntry(
   return helper_.RestoreMostRecentEntry(context);
 }
 
-TabRestoreService::Tab* InMemoryTabRestoreService::RemoveTabEntryById(
-    SessionID::id_type id) {
+std::unique_ptr<TabRestoreService::Tab>
+InMemoryTabRestoreService::RemoveTabEntryById(SessionID::id_type id) {
   return helper_.RemoveTabEntryById(id);
 }
 
@@ -79,6 +79,10 @@ bool InMemoryTabRestoreService::IsLoaded() const {
 
 void InMemoryTabRestoreService::DeleteLastSession() {
   // See comment above.
+}
+
+bool InMemoryTabRestoreService::IsRestoring() const {
+  return helper_.IsRestoring();
 }
 
 void InMemoryTabRestoreService::Shutdown() {

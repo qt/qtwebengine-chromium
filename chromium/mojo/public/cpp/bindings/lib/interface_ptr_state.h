@@ -9,6 +9,7 @@
 
 #include <algorithm>  // For |std::swap()|.
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "base/bind.h"
@@ -19,11 +20,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "mojo/public/cpp/bindings/associated_group.h"
+#include "mojo/public/cpp/bindings/connection_error_callback.h"
+#include "mojo/public/cpp/bindings/filter_chain.h"
 #include "mojo/public/cpp/bindings/interface_endpoint_client.h"
 #include "mojo/public/cpp/bindings/interface_id.h"
 #include "mojo/public/cpp/bindings/interface_ptr_info.h"
+#include "mojo/public/cpp/bindings/lib/control_message_handler.h"
 #include "mojo/public/cpp/bindings/lib/control_message_proxy.h"
-#include "mojo/public/cpp/bindings/lib/filter_chain.h"
 #include "mojo/public/cpp/bindings/lib/multiplex_router.h"
 #include "mojo/public/cpp/bindings/lib/router.h"
 #include "mojo/public/cpp/bindings/message_header_validator.h"
@@ -64,12 +67,10 @@ class InterfacePtrState<Interface, false> {
   void QueryVersion(const base::Callback<void(uint32_t)>& callback) {
     ConfigureProxyIfNecessary();
 
-    // Do a static cast in case the interface contains methods with the same
-    // name. It is safe to capture |this| because the callback won't be run
-    // after this object goes away.
-    static_cast<ControlMessageProxy*>(proxy_)->QueryVersion(
-        base::Bind(&InterfacePtrState::OnQueryVersion, base::Unretained(this),
-                   callback));
+    // It is safe to capture |this| because the callback won't be run after this
+    // object goes away.
+    router_->control_message_proxy()->QueryVersion(base::Bind(
+        &InterfacePtrState::OnQueryVersion, base::Unretained(this), callback));
   }
 
   void RequireVersion(uint32_t version) {
@@ -79,9 +80,19 @@ class InterfacePtrState<Interface, false> {
       return;
 
     version_ = version;
-    // Do a static cast in case the interface contains methods with the same
-    // name.
-    static_cast<ControlMessageProxy*>(proxy_)->RequireVersion(version);
+    router_->control_message_proxy()->RequireVersion(version);
+  }
+
+  void FlushForTesting() {
+    ConfigureProxyIfNecessary();
+    router_->control_message_proxy()->FlushForTesting();
+  }
+
+  void SendDisconnectReason(uint32_t custom_reason,
+                            const std::string& description) {
+    ConfigureProxyIfNecessary();
+    router_->control_message_proxy()->SendDisconnectReason(custom_reason,
+                                                           description);
   }
 
   void Swap(InterfacePtrState* other) {
@@ -108,13 +119,6 @@ class InterfacePtrState<Interface, false> {
 
   bool HasAssociatedInterfaces() const { return false; }
 
-  bool WaitForIncomingResponse() {
-    ConfigureProxyIfNecessary();
-
-    DCHECK(router_);
-    return router_->WaitForIncomingMessage(MOJO_DEADLINE_INDEFINITE);
-  }
-
   // After this method is called, the object is in an invalid state and
   // shouldn't be reused.
   InterfacePtrInfo<Interface> PassInterface() {
@@ -133,6 +137,14 @@ class InterfacePtrState<Interface, false> {
 
     DCHECK(router_);
     router_->set_connection_error_handler(error_handler);
+  }
+
+  void set_connection_error_with_reason_handler(
+      const ConnectionErrorWithReasonCallback& error_handler) {
+    ConfigureProxyIfNecessary();
+
+    DCHECK(router_);
+    router_->set_connection_error_with_reason_handler(error_handler);
   }
 
   // Returns true if bound and awaiting a response to a message.
@@ -164,8 +176,10 @@ class InterfacePtrState<Interface, false> {
     filters.Append<MessageHeaderValidator>(Interface::Name_);
     filters.Append<typename Interface::ResponseValidator_>();
 
+    // The version is only queried from the client so the value passed here
+    // will not be used.
     router_ = new Router(std::move(handle_), std::move(filters), false,
-                         std::move(runner_));
+                         std::move(runner_), 0u);
 
     proxy_ = new Proxy(router_);
   }
@@ -216,13 +230,10 @@ class InterfacePtrState<Interface, true> {
   void QueryVersion(const base::Callback<void(uint32_t)>& callback) {
     ConfigureProxyIfNecessary();
 
-
-    // Do a static cast in case the interface contains methods with the same
-    // name. It is safe to capture |this| because the callback won't be run
-    // after this object goes away.
-    static_cast<ControlMessageProxy*>(proxy_.get())->QueryVersion(
-        base::Bind(&InterfacePtrState::OnQueryVersion, base::Unretained(this),
-                   callback));
+    // It is safe to capture |this| because the callback won't be run after this
+    // object goes away.
+    endpoint_client_->control_message_proxy()->QueryVersion(base::Bind(
+        &InterfacePtrState::OnQueryVersion, base::Unretained(this), callback));
   }
 
   void RequireVersion(uint32_t version) {
@@ -232,9 +243,19 @@ class InterfacePtrState<Interface, true> {
       return;
 
     version_ = version;
-    // Do a static cast in case the interface contains methods with the same
-    // name.
-    static_cast<ControlMessageProxy*>(proxy_.get())->RequireVersion(version);
+    endpoint_client_->control_message_proxy()->RequireVersion(version);
+  }
+
+  void FlushForTesting() {
+    ConfigureProxyIfNecessary();
+    endpoint_client_->control_message_proxy()->FlushForTesting();
+  }
+
+  void SendDisconnectReason(uint32_t custom_reason,
+                            const std::string& description) {
+    ConfigureProxyIfNecessary();
+    endpoint_client_->control_message_proxy()->SendDisconnectReason(
+        custom_reason, description);
   }
 
   void Swap(InterfacePtrState* other) {
@@ -265,13 +286,6 @@ class InterfacePtrState<Interface, true> {
     return router_ ? router_->HasAssociatedEndpoints() : false;
   }
 
-  bool WaitForIncomingResponse() {
-    ConfigureProxyIfNecessary();
-
-    DCHECK(router_);
-    return router_->WaitForIncomingMessage(MOJO_DEADLINE_INDEFINITE);
-  }
-
   // After this method is called, the object is in an invalid state and
   // shouldn't be reused.
   InterfacePtrInfo<Interface> PassInterface() {
@@ -292,6 +306,14 @@ class InterfacePtrState<Interface, true> {
 
     DCHECK(endpoint_client_);
     endpoint_client_->set_connection_error_handler(error_handler);
+  }
+
+  void set_connection_error_with_reason_handler(
+      const ConnectionErrorWithReasonCallback& error_handler) {
+    ConfigureProxyIfNecessary();
+
+    DCHECK(endpoint_client_);
+    endpoint_client_->set_connection_error_with_reason_handler(error_handler);
   }
 
   // Returns true if bound and awaiting a response to a message.
@@ -323,12 +345,21 @@ class InterfacePtrState<Interface, true> {
     if (!handle_.is_valid())
       return;
 
-    router_ = new MultiplexRouter(true, std::move(handle_), runner_);
+    MultiplexRouter::Config config =
+        Interface::PassesAssociatedKinds_
+            ? MultiplexRouter::MULTI_INTERFACE
+            : (Interface::HasSyncMethods_
+                   ? MultiplexRouter::SINGLE_INTERFACE_WITH_SYNC_METHODS
+                   : MultiplexRouter::SINGLE_INTERFACE);
+    router_ = new MultiplexRouter(std::move(handle_), config, true, runner_);
     router_->SetMasterInterfaceName(Interface::Name_);
     endpoint_client_.reset(new InterfaceEndpointClient(
         router_->CreateLocalEndpointHandle(kMasterInterfaceId), nullptr,
         base::WrapUnique(new typename Interface::ResponseValidator_()), false,
-        std::move(runner_)));
+        std::move(runner_),
+        // The version is only queried from the client so the value passed here
+        // will not be used.
+        0u));
     proxy_.reset(new Proxy(endpoint_client_.get()));
     proxy_->serialization_context()->group_controller =
         endpoint_client_->group_controller();

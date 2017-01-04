@@ -7,8 +7,9 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include <stdio.h>
+#include "webrtc/video/video_quality_test.h"
 
+#include <stdio.h>
 #include <algorithm>
 #include <deque>
 #include <map>
@@ -16,36 +17,106 @@
 #include <string>
 #include <vector>
 
-#include "testing/gtest/include/gtest/gtest.h"
-
 #include "webrtc/base/checks.h"
 #include "webrtc/base/event.h"
 #include "webrtc/base/format_macros.h"
 #include "webrtc/base/optional.h"
+#include "webrtc/base/platform_file.h"
 #include "webrtc/base/timeutils.h"
 #include "webrtc/call.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/system_wrappers/include/cpu_info.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/test/layer_filtering_transport.h"
 #include "webrtc/test/run_loop.h"
 #include "webrtc/test/statistics.h"
 #include "webrtc/test/testsupport/fileutils.h"
+#include "webrtc/test/vcm_capturer.h"
 #include "webrtc/test/video_renderer.h"
-#include "webrtc/video/video_quality_test.h"
+#include "webrtc/voice_engine/include/voe_base.h"
+#include "webrtc/voice_engine/include/voe_codec.h"
+
+namespace {
+
+constexpr int kSendStatsPollingIntervalMs = 1000;
+constexpr int kPayloadTypeH264 = 122;
+constexpr int kPayloadTypeVP8 = 123;
+constexpr int kPayloadTypeVP9 = 124;
+constexpr size_t kMaxComparisons = 10;
+constexpr char kSyncGroup[] = "av_sync";
+constexpr int kOpusMinBitrate = 6000;
+constexpr int kOpusBitrateFb = 32000;
+
+struct VoiceEngineState {
+  VoiceEngineState()
+      : voice_engine(nullptr),
+        base(nullptr),
+        codec(nullptr),
+        send_channel_id(-1),
+        receive_channel_id(-1) {}
+
+  webrtc::VoiceEngine* voice_engine;
+  webrtc::VoEBase* base;
+  webrtc::VoECodec* codec;
+  int send_channel_id;
+  int receive_channel_id;
+};
+
+void CreateVoiceEngine(VoiceEngineState* voe,
+                       rtc::scoped_refptr<webrtc::AudioDecoderFactory>
+                           decoder_factory) {
+  voe->voice_engine = webrtc::VoiceEngine::Create();
+  voe->base = webrtc::VoEBase::GetInterface(voe->voice_engine);
+  voe->codec = webrtc::VoECodec::GetInterface(voe->voice_engine);
+  EXPECT_EQ(0, voe->base->Init(nullptr, nullptr, decoder_factory));
+  webrtc::VoEBase::ChannelConfig config;
+  config.enable_voice_pacing = true;
+  voe->send_channel_id = voe->base->CreateChannel(config);
+  EXPECT_GE(voe->send_channel_id, 0);
+  voe->receive_channel_id = voe->base->CreateChannel();
+  EXPECT_GE(voe->receive_channel_id, 0);
+}
+
+void DestroyVoiceEngine(VoiceEngineState* voe) {
+  voe->base->DeleteChannel(voe->send_channel_id);
+  voe->send_channel_id = -1;
+  voe->base->DeleteChannel(voe->receive_channel_id);
+  voe->receive_channel_id = -1;
+  voe->base->Release();
+  voe->base = nullptr;
+  voe->codec->Release();
+  voe->codec = nullptr;
+
+  webrtc::VoiceEngine::Delete(voe->voice_engine);
+  voe->voice_engine = nullptr;
+}
+
+class VideoStreamFactory
+    : public webrtc::VideoEncoderConfig::VideoStreamFactoryInterface {
+ public:
+  explicit VideoStreamFactory(const std::vector<webrtc::VideoStream>& streams)
+      : streams_(streams) {}
+
+ private:
+  std::vector<webrtc::VideoStream> CreateEncoderStreams(
+      int width,
+      int height,
+      const webrtc::VideoEncoderConfig& encoder_config) override {
+    return streams_;
+  }
+
+  std::vector<webrtc::VideoStream> streams_;
+};
+
+}  // namespace
 
 namespace webrtc {
-
-static const int kSendStatsPollingIntervalMs = 1000;
-static const int kPayloadTypeH264 = 122;
-static const int kPayloadTypeVP8 = 123;
-static const int kPayloadTypeVP9 = 124;
 
 class VideoAnalyzer : public PacketReceiver,
                       public Transport,
                       public rtc::VideoSinkInterface<VideoFrame>,
-                      public VideoCaptureInput,
                       public EncodedFrameObserver {
  public:
   VideoAnalyzer(test::LayerFilteringTransport* transport,
@@ -56,10 +127,10 @@ class VideoAnalyzer : public PacketReceiver,
                 FILE* graph_data_output_file,
                 const std::string& graph_title,
                 uint32_t ssrc_to_analyze)
-      : input_(nullptr),
-        transport_(transport),
+      : transport_(transport),
         receiver_(nullptr),
         send_stream_(nullptr),
+        captured_frame_forwarder_(this),
         test_label_(test_label),
         graph_data_output_file_(graph_data_output_file),
         graph_title_(graph_title),
@@ -115,6 +186,19 @@ class VideoAnalyzer : public PacketReceiver,
 
   virtual void SetReceiver(PacketReceiver* receiver) { receiver_ = receiver; }
 
+  void SetSendStream(VideoSendStream* stream) {
+    rtc::CritScope lock(&crit_);
+    RTC_DCHECK(!send_stream_);
+    send_stream_ = stream;
+  }
+
+  rtc::VideoSinkInterface<VideoFrame>* InputInterface() {
+    return &captured_frame_forwarder_;
+  }
+  rtc::VideoSourceInterface<VideoFrame>* OutputInterface() {
+    return &captured_frame_forwarder_;
+  }
+
   DeliveryStatus DeliverPacket(MediaType media_type,
                                const uint8_t* packet,
                                size_t length,
@@ -142,17 +226,6 @@ class VideoAnalyzer : public PacketReceiver,
   void MeasuredEncodeTiming(int64_t ntp_time_ms, int encode_time_ms) {
     rtc::CritScope crit(&comparison_lock_);
     samples_encode_time_ms_[ntp_time_ms] = encode_time_ms;
-  }
-
-  void IncomingCapturedFrame(const VideoFrame& video_frame) override {
-    VideoFrame copy = video_frame;
-    copy.set_timestamp(copy.ntp_time_ms() * 90);
-    {
-      rtc::CritScope lock(&crit_);
-      frames_.push_back(copy);
-    }
-
-    input_->IncomingCapturedFrame(video_frame);
   }
 
   void PreEncodeOnFrame(const VideoFrame& video_frame) {
@@ -292,10 +365,8 @@ class VideoAnalyzer : public PacketReceiver,
   }
   EncodedFrameObserver* encode_timing_proxy() { return &encode_timing_proxy_; }
 
-  VideoCaptureInput* input_;
   test::LayerFilteringTransport* const transport_;
   PacketReceiver* receiver_;
-  VideoSendStream* send_stream_;
 
  private:
   struct FrameComparison {
@@ -408,10 +479,16 @@ class VideoAnalyzer : public PacketReceiver,
 
     VideoFrame reference_copy;
     VideoFrame render_copy;
-    reference_copy.CopyFrame(reference);
-    render_copy.CopyFrame(render);
 
     rtc::CritScope crit(&comparison_lock_);
+    if (comparisons_.size() < kMaxComparisons) {
+      reference_copy.CopyFrame(reference);
+      render_copy.CopyFrame(render);
+    } else {
+      // Copy the time to ensure that delay calculations can still be made.
+      reference_copy.set_ntp_time_ms(reference.ntp_time_ms());
+      render_copy.set_ntp_time_ms(render.ntp_time_ms());
+    }
     comparisons_.push_back(FrameComparison(reference_copy, render_copy, dropped,
                                            send_time_ms, recv_time_ms,
                                            render_time_ms, encoded_size));
@@ -546,8 +623,12 @@ class VideoAnalyzer : public PacketReceiver,
 
   void PerformFrameComparison(const FrameComparison& comparison) {
     // Perform expensive psnr and ssim calculations while not holding lock.
-    double psnr = I420PSNR(&comparison.reference, &comparison.render);
-    double ssim = I420SSIM(&comparison.reference, &comparison.render);
+    double psnr = -1.0;
+    double ssim = -1.0;
+    if (!comparison.reference.IsZeroSize()) {
+      psnr = I420PSNR(&comparison.reference, &comparison.render);
+      ssim = I420SSIM(&comparison.reference, &comparison.render);
+    }
 
     int64_t input_time_ms = comparison.reference.ntp_time_ms();
 
@@ -558,8 +639,10 @@ class VideoAnalyzer : public PacketReceiver,
                  comparison.recv_time_ms, comparison.render_time_ms,
                  comparison.encoded_frame_size, psnr, ssim));
     }
-    psnr_.AddSample(psnr);
-    ssim_.AddSample(ssim);
+    if (psnr >= 0.0)
+      psnr_.AddSample(psnr);
+    if (ssim >= 0.0)
+      ssim_.AddSample(ssim);
 
     if (comparison.dropped) {
       ++dropped_frames_;
@@ -631,6 +714,60 @@ class VideoAnalyzer : public PacketReceiver,
     }
   }
 
+  // Implements VideoSinkInterface to receive captured frames from a
+  // FrameGeneratorCapturer. Implements VideoSourceInterface to be able to act
+  // as a source to VideoSendStream.
+  // It forwards all input frames to the VideoAnalyzer for later comparison and
+  // forwards the captured frames to the VideoSendStream.
+  class CapturedFrameForwarder : public rtc::VideoSinkInterface<VideoFrame>,
+                                 public rtc::VideoSourceInterface<VideoFrame> {
+   public:
+    explicit CapturedFrameForwarder(VideoAnalyzer* analyzer)
+        : analyzer_(analyzer), send_stream_input_(nullptr) {}
+
+   private:
+    void OnFrame(const VideoFrame& video_frame) override {
+      VideoFrame copy = video_frame;
+      copy.set_timestamp(copy.ntp_time_ms() * 90);
+
+      analyzer_->AddCapturedFrameForComparison(video_frame);
+      rtc::CritScope lock(&crit_);
+      if (send_stream_input_)
+        send_stream_input_->OnFrame(video_frame);
+    }
+
+    // Called when |send_stream_.SetSource()| is called.
+    void AddOrUpdateSink(rtc::VideoSinkInterface<VideoFrame>* sink,
+                         const rtc::VideoSinkWants& wants) override {
+      rtc::CritScope lock(&crit_);
+      RTC_DCHECK(!send_stream_input_ || send_stream_input_ == sink);
+      send_stream_input_ = sink;
+    }
+
+    // Called by |send_stream_| when |send_stream_.SetSource()| is called.
+    void RemoveSink(rtc::VideoSinkInterface<VideoFrame>* sink) override {
+      rtc::CritScope lock(&crit_);
+      RTC_DCHECK(sink == send_stream_input_);
+      send_stream_input_ = nullptr;
+    }
+
+    VideoAnalyzer* const analyzer_;
+    rtc::CriticalSection crit_;
+    rtc::VideoSinkInterface<VideoFrame>* send_stream_input_ GUARDED_BY(crit_);
+  };
+
+  void AddCapturedFrameForComparison(const VideoFrame& video_frame) {
+    rtc::CritScope lock(&crit_);
+    RTC_DCHECK_EQ(0u, video_frame.timestamp());
+    // Frames from the capturer does not have a rtp timestamp. Create one so it
+    // can be used for comparison.
+    VideoFrame copy = video_frame;
+    copy.set_timestamp(copy.ntp_time_ms() * 90);
+    frames_.push_back(copy);
+  }
+
+  VideoSendStream* send_stream_;
+  CapturedFrameForwarder captured_frame_forwarder_;
   const std::string test_label_;
   FILE* const graph_data_output_file_;
   const std::string graph_title_;
@@ -679,7 +816,8 @@ class VideoAnalyzer : public PacketReceiver,
   rtc::Event done_;
 };
 
-VideoQualityTest::VideoQualityTest() : clock_(Clock::GetRealTimeClock()) {}
+VideoQualityTest::VideoQualityTest()
+    : clock_(Clock::GetRealTimeClock()), receive_logs_(0), send_logs_(0) {}
 
 void VideoQualityTest::TestBody() {}
 
@@ -893,7 +1031,16 @@ void VideoQualityTest::SetupCommon(Transport* send_transport,
 
   video_encoder_config_.min_transmit_bitrate_bps =
       params_.common.min_transmit_bps;
-  video_encoder_config_.streams = params_.ss.streams;
+
+  video_encoder_config_.number_of_streams = params_.ss.streams.size();
+  video_encoder_config_.max_bitrate_bps = 0;
+  for (size_t i = 0; i < params_.ss.streams.size(); ++i) {
+    video_encoder_config_.max_bitrate_bps +=
+        params_.ss.streams[i].max_bitrate_bps;
+  }
+  video_encoder_config_.video_stream_factory =
+      new rtc::RefCountedObject<VideoStreamFactory>(params_.ss.streams);
+
   video_encoder_config_.spatial_layers = params_.ss.spatial_layers;
 
   CreateMatchingReceiveConfigs(recv_transport);
@@ -913,21 +1060,23 @@ void VideoQualityTest::SetupScreenshare() {
   // Fill out codec settings.
   video_encoder_config_.content_type = VideoEncoderConfig::ContentType::kScreen;
   if (params_.common.codec == "VP8") {
-    codec_settings_.VP8 = VideoEncoder::GetDefaultVp8Settings();
-    codec_settings_.VP8.denoisingOn = false;
-    codec_settings_.VP8.frameDroppingOn = false;
-    codec_settings_.VP8.numberOfTemporalLayers =
+    VideoCodecVP8 vp8_settings = VideoEncoder::GetDefaultVp8Settings();
+    vp8_settings.denoisingOn = false;
+    vp8_settings.frameDroppingOn = false;
+    vp8_settings.numberOfTemporalLayers =
         static_cast<unsigned char>(params_.common.num_temporal_layers);
-    video_encoder_config_.encoder_specific_settings = &codec_settings_.VP8;
+    video_encoder_config_.encoder_specific_settings = new rtc::RefCountedObject<
+        VideoEncoderConfig::Vp8EncoderSpecificSettings>(vp8_settings);
   } else if (params_.common.codec == "VP9") {
-    codec_settings_.VP9 = VideoEncoder::GetDefaultVp9Settings();
-    codec_settings_.VP9.denoisingOn = false;
-    codec_settings_.VP9.frameDroppingOn = false;
-    codec_settings_.VP9.numberOfTemporalLayers =
+    VideoCodecVP9 vp9_settings = VideoEncoder::GetDefaultVp9Settings();
+    vp9_settings.denoisingOn = false;
+    vp9_settings.frameDroppingOn = false;
+    vp9_settings.numberOfTemporalLayers =
         static_cast<unsigned char>(params_.common.num_temporal_layers);
-    video_encoder_config_.encoder_specific_settings = &codec_settings_.VP9;
-    codec_settings_.VP9.numberOfSpatialLayers =
+    vp9_settings.numberOfSpatialLayers =
         static_cast<unsigned char>(params_.ss.num_spatial_layers);
+    video_encoder_config_.encoder_specific_settings = new rtc::RefCountedObject<
+        VideoEncoderConfig::Vp9EncoderSpecificSettings>(vp9_settings);
   }
 
   // Setup frame generator.
@@ -962,21 +1111,20 @@ void VideoQualityTest::SetupScreenshare() {
   }
 }
 
-void VideoQualityTest::CreateCapturer(VideoCaptureInput* input) {
+void VideoQualityTest::CreateCapturer() {
   if (params_.screenshare.enabled) {
     test::FrameGeneratorCapturer* frame_generator_capturer =
-        new test::FrameGeneratorCapturer(
-            clock_, input, frame_generator_.release(), params_.common.fps);
+        new test::FrameGeneratorCapturer(clock_, frame_generator_.release(),
+                                         params_.common.fps);
     EXPECT_TRUE(frame_generator_capturer->Init());
     capturer_.reset(frame_generator_capturer);
   } else {
     if (params_.video.clip_name.empty()) {
-      capturer_.reset(test::VideoCapturer::Create(input, params_.common.width,
-                                                  params_.common.height,
-                                                  params_.common.fps, clock_));
+      capturer_.reset(test::VcmCapturer::Create(
+          params_.common.width, params_.common.height, params_.common.fps));
     } else {
       capturer_.reset(test::FrameGeneratorCapturer::CreateFromYuvFile(
-          input, test::ResourcePath(params_.video.clip_name, "yuv"),
+          test::ResourcePath(params_.video.clip_name, "yuv"),
           params_.common.width, params_.common.height, params_.common.fps,
           clock_));
       ASSERT_TRUE(capturer_) << "Could not create capturer for "
@@ -989,6 +1137,7 @@ void VideoQualityTest::CreateCapturer(VideoCaptureInput* input) {
 void VideoQualityTest::RunWithAnalyzer(const Params& params) {
   params_ = params;
 
+  RTC_CHECK(!params_.audio);
   // TODO(ivica): Merge with RunWithRenderer and use a flag / argument to
   // differentiate between the analyzer and the renderer case.
   CheckParams();
@@ -1060,11 +1209,15 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     SetupScreenshare();
 
   CreateVideoStreams();
-  analyzer.input_ = video_send_stream_->Input();
-  analyzer.send_stream_ = video_send_stream_;
+  analyzer.SetSendStream(video_send_stream_);
+  video_send_stream_->SetSource(analyzer.OutputInterface());
 
-  CreateCapturer(&analyzer);
+  CreateCapturer();
+  rtc::VideoSinkWants wants;
+  capturer_->AddOrUpdateSink(analyzer.InputInterface(), wants);
 
+  StartEncodedFrameLogs(video_send_stream_);
+  StartEncodedFrameLogs(video_receive_streams_[0]);
   video_send_stream_->Start();
   for (VideoReceiveStream* receive_stream : video_receive_streams_)
     receive_stream->Start();
@@ -1086,7 +1239,7 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     fclose(graph_data_output_file);
 }
 
-void VideoQualityTest::RunWithVideoRenderer(const Params& params) {
+void VideoQualityTest::RunWithRenderers(const Params& params) {
   params_ = params;
   CheckParams();
 
@@ -1110,6 +1263,15 @@ void VideoQualityTest::RunWithVideoRenderer(const Params& params) {
   // match the full stack tests.
   Call::Config call_config;
   call_config.bitrate_config = params_.common.call_bitrate_config;
+
+  ::VoiceEngineState voe;
+  if (params_.audio) {
+    CreateVoiceEngine(&voe, decoder_factory_);
+    AudioState::Config audio_state_config;
+    audio_state_config.voice_engine = voe.voice_engine;
+    call_config.audio_state = AudioState::Create(audio_state_config);
+  }
+
   std::unique_ptr<Call> call(Call::Create(call_config));
 
   test::LayerFilteringTransport transport(
@@ -1122,8 +1284,13 @@ void VideoQualityTest::RunWithVideoRenderer(const Params& params) {
 
   SetupCommon(&transport, &transport);
 
-  video_send_config_.local_renderer = local_preview.get();
+  video_send_config_.pre_encode_callback = local_preview.get();
   video_receive_configs_[stream_id].renderer = loopback_video.get();
+  if (params_.audio && params_.audio_video_sync)
+    video_receive_configs_[stream_id].sync_group = kSyncGroup;
+
+  video_send_config_.suspend_below_min_bitrate =
+      params_.common.suspend_below_min_bitrate;
 
   if (params.common.fec) {
     video_send_config_.rtp.fec.red_payload_type = kRedPayloadType;
@@ -1137,26 +1304,122 @@ void VideoQualityTest::RunWithVideoRenderer(const Params& params) {
   if (params_.screenshare.enabled)
     SetupScreenshare();
 
-  video_send_stream_ =
-      call->CreateVideoSendStream(video_send_config_, video_encoder_config_);
-  VideoReceiveStream* receive_stream =
+  video_send_stream_ = call->CreateVideoSendStream(
+      video_send_config_.Copy(), video_encoder_config_.Copy());
+  VideoReceiveStream* video_receive_stream =
       call->CreateVideoReceiveStream(video_receive_configs_[stream_id].Copy());
-  CreateCapturer(video_send_stream_->Input());
+  CreateCapturer();
+  video_send_stream_->SetSource(capturer_.get());
 
-  receive_stream->Start();
+  AudioReceiveStream* audio_receive_stream = nullptr;
+  if (params_.audio) {
+    audio_send_config_ = AudioSendStream::Config(&transport);
+    audio_send_config_.voe_channel_id = voe.send_channel_id;
+    audio_send_config_.rtp.ssrc = kAudioSendSsrc;
+
+    // Add extension to enable audio send side BWE, and allow audio bit rate
+    // adaptation.
+    audio_send_config_.rtp.extensions.clear();
+    if (params_.common.send_side_bwe) {
+      audio_send_config_.rtp.extensions.push_back(webrtc::RtpExtension(
+          webrtc::RtpExtension::kTransportSequenceNumberUri,
+          test::kTransportSequenceNumberExtensionId));
+      audio_send_config_.min_bitrate_kbps = kOpusMinBitrate / 1000;
+      audio_send_config_.max_bitrate_kbps = kOpusBitrateFb / 1000;
+    }
+
+    audio_send_stream_ = call->CreateAudioSendStream(audio_send_config_);
+
+    AudioReceiveStream::Config audio_config;
+    audio_config.rtp.local_ssrc = kReceiverLocalAudioSsrc;
+    audio_config.rtcp_send_transport = &transport;
+    audio_config.voe_channel_id = voe.receive_channel_id;
+    audio_config.rtp.remote_ssrc = audio_send_config_.rtp.ssrc;
+    audio_config.rtp.transport_cc = params_.common.send_side_bwe;
+    audio_config.rtp.extensions = audio_send_config_.rtp.extensions;
+    audio_config.decoder_factory = decoder_factory_;
+    if (params_.audio_video_sync)
+      audio_config.sync_group = kSyncGroup;
+
+    audio_receive_stream = call->CreateAudioReceiveStream(audio_config);
+
+    const CodecInst kOpusInst = {120, "OPUS", 48000, 960, 2, 64000};
+    EXPECT_EQ(0, voe.codec->SetSendCodec(voe.send_channel_id, kOpusInst));
+  }
+
+  StartEncodedFrameLogs(video_receive_stream);
+  StartEncodedFrameLogs(video_send_stream_);
+
+  // Start sending and receiving video.
+  video_receive_stream->Start();
   video_send_stream_->Start();
   capturer_->Start();
 
+  if (params_.audio) {
+    // Start receiving audio.
+    audio_receive_stream->Start();
+    EXPECT_EQ(0, voe.base->StartPlayout(voe.receive_channel_id));
+    EXPECT_EQ(0, voe.base->StartReceive(voe.receive_channel_id));
+
+    // Start sending audio.
+    audio_send_stream_->Start();
+    EXPECT_EQ(0, voe.base->StartSend(voe.send_channel_id));
+  }
+
   test::PressEnterToContinue();
 
+  if (params_.audio) {
+    // Stop sending audio.
+    EXPECT_EQ(0, voe.base->StopSend(voe.send_channel_id));
+    audio_send_stream_->Stop();
+
+    // Stop receiving audio.
+    EXPECT_EQ(0, voe.base->StopReceive(voe.receive_channel_id));
+    EXPECT_EQ(0, voe.base->StopPlayout(voe.receive_channel_id));
+    audio_receive_stream->Stop();
+  }
+
+  // Stop receiving and sending video.
   capturer_->Stop();
   video_send_stream_->Stop();
-  receive_stream->Stop();
+  video_receive_stream->Stop();
 
-  call->DestroyVideoReceiveStream(receive_stream);
+  call->DestroyVideoReceiveStream(video_receive_stream);
   call->DestroyVideoSendStream(video_send_stream_);
 
+  if (params_.audio) {
+     call->DestroyAudioSendStream(audio_send_stream_);
+     call->DestroyAudioReceiveStream(audio_receive_stream);
+  }
+
   transport.StopSending();
+  if (params_.audio)
+    DestroyVoiceEngine(&voe);
+}
+
+void VideoQualityTest::StartEncodedFrameLogs(VideoSendStream* stream) {
+  if (!params_.common.encoded_frame_base_path.empty()) {
+    std::ostringstream str;
+    str << send_logs_++;
+    std::string prefix =
+        params_.common.encoded_frame_base_path + "." + str.str() + ".send.";
+    stream->EnableEncodedFrameRecording(
+        std::vector<rtc::PlatformFile>(
+            {rtc::CreatePlatformFile(prefix + "1.ivf"),
+             rtc::CreatePlatformFile(prefix + "2.ivf"),
+             rtc::CreatePlatformFile(prefix + "3.ivf")}),
+        10000000);
+  }
+}
+void VideoQualityTest::StartEncodedFrameLogs(VideoReceiveStream* stream) {
+  if (!params_.common.encoded_frame_base_path.empty()) {
+    std::ostringstream str;
+    str << receive_logs_++;
+    std::string path =
+        params_.common.encoded_frame_base_path + "." + str.str() + ".recv.ivf";
+    stream->EnableEncodedFrameRecording(rtc::CreatePlatformFile(path),
+                                        10000000);
+  }
 }
 
 }  // namespace webrtc

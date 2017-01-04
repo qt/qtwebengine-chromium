@@ -5,9 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "SkArithmeticMode.h"
+#include "SkArithmeticModePriv.h"
 #include "SkColorPriv.h"
 #include "SkNx.h"
+#include "SkRasterPipeline.h"
 #include "SkReadBuffer.h"
 #include "SkString.h"
 #include "SkUnPreMultiply.h"
@@ -37,6 +38,14 @@ public:
                                                 sk_sp<GrFragmentProcessor> dst) const override;
     sk_sp<GrXPFactory> asXPFactory() const override;
 #endif
+
+    bool isArithmetic(SkArithmeticParams* params) const override {
+        if (params) {
+            memcpy(params->fK, fK, 4 * sizeof(float));
+            params->fEnforcePMColor = fEnforcePMColor;
+        }
+        return true;
+    }
 
 private:
     void flatten(SkWriteBuffer& buffer) const override {

@@ -27,7 +27,7 @@ import zipfile
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://chromium.googlesource.com/chromium/src/+/master/docs/updating_clang.md
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION = '274142'
+CLANG_REVISION = '282487'
 
 use_head_revision = 'LLVM_FORCE_HEAD_REVISION' in os.environ
 if use_head_revision:
@@ -71,7 +71,7 @@ BINUTILS_BIN_DIR = os.path.join(BINUTILS_DIR, BINUTILS_DIR,
                                 'Linux_x64', 'Release', 'bin')
 BFD_PLUGINS_DIR = os.path.join(BINUTILS_DIR, 'Linux_x64', 'Release',
                                'lib', 'bfd-plugins')
-VERSION = '3.9.0'
+VERSION = '4.0.0'
 ANDROID_NDK_DIR = os.path.join(
     CHROMIUM_DIR, 'third_party', 'android_tools', 'ndk')
 
@@ -299,16 +299,16 @@ def CreateChromeToolsShim():
 
 
 def DownloadHostGcc(args):
-  """Downloads gcc 4.8.2 and makes sure args.gcc_toolchain is set."""
+  """Downloads gcc 4.8.5 and makes sure args.gcc_toolchain is set."""
   if not sys.platform.startswith('linux') or args.gcc_toolchain:
     return
   # Unconditionally download a prebuilt gcc to guarantee the included libstdc++
   # works on Ubuntu Precise.
-  gcc_dir = os.path.join(LLVM_BUILD_TOOLS_DIR, 'gcc482precise')
+  gcc_dir = os.path.join(LLVM_BUILD_TOOLS_DIR, 'gcc485precise')
   if not os.path.exists(gcc_dir):
-    print 'Downloading pre-built GCC 4.8.2...'
+    print 'Downloading pre-built GCC 4.8.5...'
     DownloadAndUnpack(
-        CDS_URL + '/tools/gcc482precise.tgz', LLVM_BUILD_TOOLS_DIR)
+        CDS_URL + '/tools/gcc485precise.tgz', LLVM_BUILD_TOOLS_DIR)
   args.gcc_toolchain = gcc_dir
 
 
@@ -333,7 +333,7 @@ def AddGnuWinToPath():
     return
 
   gnuwin_dir = os.path.join(LLVM_BUILD_TOOLS_DIR, 'gnuwin')
-  GNUWIN_VERSION = '4'
+  GNUWIN_VERSION = '5'
   GNUWIN_STAMP = os.path.join(gnuwin_dir, 'stamp')
   if ReadStampFile(GNUWIN_STAMP) == GNUWIN_VERSION:
     print 'GNU Win tools already up to date.'
@@ -371,6 +371,24 @@ def CopyDiaDllTo(target_dir):
   dia_path = os.path.join(GetVSVersion().Path(), 'DIA SDK', 'bin', 'amd64')
   dia_dll = os.path.join(dia_path, DIA_DLL[GetVSVersion().ShortName()])
   CopyFile(dia_dll, target_dir)
+
+
+def VeryifyVersionOfBuiltClangMatchesVERSION():
+  """Checks that `clang --version` outputs VERSION.  If this fails, VERSION
+  in this file is out-of-date and needs to be updated (possibly in an
+  `if use_head_revision:` block in main() first)."""
+  clang = os.path.join(LLVM_BUILD_DIR, 'bin', 'clang')
+  if sys.platform == 'win32':
+    # TODO: Parse `clang-cl /?` output for built clang's version and check that
+    # to check the binary we're actually shipping? But clang-cl.exe is just
+    # a copy of clang.exe, so this does check the same thing.
+    clang += '.exe'
+  version_out = subprocess.check_output([clang, '--version'])
+  version_out = re.match(r'clang version ([0-9.]+)', version_out).group(1)
+  if version_out != VERSION:
+    print ('unexpected clang version %s (not %s), update VERSION in update.py'
+           % (version_out, VERSION))
+    sys.exit(1)
 
 
 def UpdateClang(args):
@@ -648,7 +666,7 @@ def UpdateClang(args):
   elif sys.platform.startswith('linux'):
     RunCommand(['strip', os.path.join(LLVM_BUILD_DIR, 'bin', 'clang')])
 
-  # TODO(thakis): Check that `clang --version` matches VERSION.
+  VeryifyVersionOfBuiltClangMatchesVERSION()
 
   # Do an out-of-tree build of compiler-rt.
   # On Windows, this is used to get the 32-bit ASan run-time.
@@ -668,6 +686,8 @@ def UpdateClang(args):
   compiler_rt_args = base_cmake_args + [
       '-DCMAKE_C_FLAGS=' + ' '.join(cflags),
       '-DCMAKE_CXX_FLAGS=' + ' '.join(cxxflags)]
+  if sys.platform == 'darwin':
+    compiler_rt_args += ['-DCOMPILER_RT_ENABLE_IOS=ON']
   if sys.platform != 'win32':
     compiler_rt_args += ['-DLLVM_CONFIG_PATH=' +
                          os.path.join(LLVM_BUILD_DIR, 'bin', 'llvm-config'),
@@ -736,21 +756,21 @@ def UpdateClang(args):
 
   if args.with_android:
     make_toolchain = os.path.join(
-        ANDROID_NDK_DIR, 'build', 'tools', 'make-standalone-toolchain.sh')
+        ANDROID_NDK_DIR, 'build', 'tools', 'make_standalone_toolchain.py')
     for target_arch in ['aarch64', 'arm', 'i686']:
       # Make standalone Android toolchain for target_arch.
       toolchain_dir = os.path.join(
           LLVM_BUILD_DIR, 'android-toolchain-' + target_arch)
       RunCommand([
           make_toolchain,
-          '--platform=android-' + ('21' if target_arch == 'aarch64' else '19'),
-          '--install-dir="%s"' % toolchain_dir,
-          '--system=linux-x86_64',
+          '--api=' + ('21' if target_arch == 'aarch64' else '19'),
+          '--force',
+          '--install-dir=%s' % toolchain_dir,
           '--stl=stlport',
-          '--toolchain=' + {
-              'aarch64': 'aarch64-linux-android-4.9',
-              'arm': 'arm-linux-androideabi-4.9',
-              'i686': 'x86-4.9',
+          '--arch=' + {
+              'aarch64': 'arm64',
+              'arm': 'arm',
+              'i686': 'x86',
           }[target_arch]])
       # Android NDK r9d copies a broken unwind.h into the toolchain, see
       # http://crbug.com/357890

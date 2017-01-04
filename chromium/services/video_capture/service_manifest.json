@@ -1,0 +1,13 @@
+{
+  "manifest_version":  1,
+  "name": "service:video_capture",
+  "display_name": "Video Capture",
+  "capabilities": {
+    "provided": {
+      "tests": ["*"]
+    },
+    "required": {
+      "service:shell": { "classes": [ "shell:all_users" ] }
+    }
+  }
+}

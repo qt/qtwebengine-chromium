@@ -8,6 +8,7 @@ found in the LICENSE file.
 <link rel="import" href="/tracing/base/iteration_helpers.html">
 <link rel="import" href="/tracing/base/range_utils.html">
 <link rel="import" href="/tracing/base/statistics.html">
+<link rel="import" href="/tracing/base/unit.html">
 <link rel="import" href="/tracing/core/auditor.html">
 <link rel="import" href="/tracing/model/alert.html">
 <link rel="import" href="/tracing/model/frame.html">
@@ -15,7 +16,6 @@ found in the LICENSE file.
 <link rel="import" href="/tracing/model/thread_time_slice.html">
 <link rel="import" href="/tracing/model/user_model/response_expectation.html">
 <link rel="import" href="/tracing/value/numeric.html">
-<link rel="import" href="/tracing/value/unit.html">
 
 <script>
 'use strict';
@@ -33,7 +33,7 @@ tr.exportTo('tr.e.audits', function() {
   var Alert = tr.model.Alert;
   var EventInfo = tr.model.EventInfo;
   var ScalarNumeric = tr.v.ScalarNumeric;
-  var timeDurationInMs = tr.v.Unit.byName.timeDurationInMs;
+  var timeDurationInMs = tr.b.Unit.byName.timeDurationInMs;
 
   // TODO: extract from VSYNC, since not all devices have vsync near 60fps
   var EXPECTED_FRAME_TIME_MS = 16.67;
@@ -89,7 +89,7 @@ tr.exportTo('tr.e.audits', function() {
     var helper = model.getOrCreateHelper(AndroidModelHelper);
     if (helper.apps.length || helper.surfaceFlinger)
       this.helper = helper;
-  };
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Rendering / RenderThread alerts - only available on SDK 22+
@@ -163,7 +163,7 @@ tr.exportTo('tr.e.audits', function() {
     var uploadRegEx = /^Generate Path Texture$/;
 
     var events = frame.associatedEvents.filter(function(event) {
-      return event.title == 'Generate Path Texture';
+      return event.title === 'Generate Path Texture';
     });
     var start = Statistics.min(events, getStart);
     var duration = Statistics.sum(events, getDuration);
@@ -196,7 +196,7 @@ tr.exportTo('tr.e.audits', function() {
         pixelsUploaded += parseInt(match[1]) * parseInt(match[2]);
       }
     });
-    if (events.length == 0 || duration < 3)
+    if (events.length === 0 || duration < 3)
       return undefined;
 
     var mPixels = (pixelsUploaded / 1000000).toFixed(2) + ' million';
@@ -222,19 +222,15 @@ tr.exportTo('tr.e.audits', function() {
     });
     var duration = Statistics.sum(events, getCpuDuration);
 
-    if (events.length == 0 || duration < 3)
+    if (events.length === 0 || duration < 3)
       return undefined;
 
     // simplifying assumption - check for *any* inflation.
     // TODO(ccraik): make 'inflate' slices associated events.
     var hasInflation = false;
-    for (var i = 0; i < events.length; i++) {
-      if (events[i] instanceof tr.model.Slice &&
-          events[i].findDescendentSlice('inflate')) {
+    for (var event of events)
+      if (event.findDescendentSlice('inflate'))
         hasInflation = true;
-        break;
-      }
-    }
 
     var start = Statistics.min(events, getStart);
     var args = { 'Time spent': new ScalarNumeric(timeDurationInMs, duration) };
@@ -259,7 +255,7 @@ tr.exportTo('tr.e.audits', function() {
     });
     var duration = Statistics.sum(events, getCpuDuration);
 
-    if (events.length == 0 || duration < 3)
+    if (events.length === 0 || duration < 3)
       return undefined;
 
     var start = Statistics.min(events, getStart);
@@ -308,8 +304,8 @@ tr.exportTo('tr.e.audits', function() {
           .build());
   AndroidAuditor.getBlockingGcAlert_ = function(frame) {
     var events = frame.associatedEvents.filter(function(event) {
-      return event.title == 'DVM Suspend' ||
-          event.title == 'GC: Wait For Concurrent';
+      return event.title === 'DVM Suspend' ||
+          event.title === 'GC: Wait For Concurrent';
     });
     var blockedDuration = Statistics.sum(events, getDuration);
     if (blockedDuration < 3)
@@ -361,7 +357,7 @@ tr.exportTo('tr.e.audits', function() {
     // only alert if frame not running for > 3ms. Note that we expect a frame
     // to never describe intentionally idle time.
     if (!(SCHEDULING_STATE.RUNNING in totalStats) ||
-        totalDuration == 0 ||
+        totalDuration === 0 ||
         totalDuration - totalStats[SCHEDULING_STATE.RUNNING] < 3)
       return;
 
@@ -386,7 +382,7 @@ tr.exportTo('tr.e.audits', function() {
       // SurfaceFlinger first, other processes sorted by slice count
       this.model.getAllProcesses().forEach(function(process) {
         if (this.helper.surfaceFlinger &&
-            process == this.helper.surfaceFlinger.process) {
+            process === this.helper.surfaceFlinger.process) {
           if (!process.name)
             process.name = 'SurfaceFlinger';
           process.sortIndex = Number.NEGATIVE_INFINITY;
@@ -411,9 +407,9 @@ tr.exportTo('tr.e.audits', function() {
 
       // ensure sequential, relative order for UI/Render/Worker threads
       this.model.getAllThreads().forEach(function(thread) {
-        if (thread.tid == thread.parent.pid)
+        if (thread.tid === thread.parent.pid)
           thread.sortIndex = -3;
-        if (thread.name == 'RenderThread')
+        if (thread.name === 'RenderThread')
           thread.sortIndex = -2;
         if (/^hwuiTask/.test(thread.name))
           thread.sortIndex = -1;
@@ -488,8 +484,8 @@ tr.exportTo('tr.e.audits', function() {
           alerts.push.apply(alerts, AndroidAuditor.getSaveLayerAlerts_(frame));
 
           // skip most alerts for neutral or good frames
-          if (frame.perfClass == FRAME_PERF_CLASS.NEUTRAL ||
-              frame.perfClass == FRAME_PERF_CLASS.GOOD)
+          if (frame.perfClass === FRAME_PERF_CLASS.NEUTRAL ||
+              frame.perfClass === FRAME_PERF_CLASS.GOOD)
             return;
 
           var alert = AndroidAuditor.getPathAlert_(frame);
@@ -563,18 +559,18 @@ tr.exportTo('tr.e.audits', function() {
   Auditor.register(AndroidAuditor);
 
   function AppAnnotator() {
-    this.titleInfoLookup = {};
-    this.titleParentLookup = {};
+    this.titleInfoLookup = new Map();
+    this.titleParentLookup = new Map();
     this.build_();
   }
 
   AppAnnotator.prototype = {
     build_: function() {
       var registerEventInfo = function(dict) {
-        this.titleInfoLookup[dict.title] = new EventInfo(
-            dict.title, dict.description, dict.docLinks);
+        this.titleInfoLookup.set(dict.title, new EventInfo(
+            dict.title, dict.description, dict.docLinks));
         if (dict.parents)
-          this.titleParentLookup[dict.title] = dict.parents;
+          this.titleParentLookup.set(dict.title, dict.parents);
       }.bind(this);
 
       registerEventInfo({
@@ -716,23 +712,22 @@ tr.exportTo('tr.e.audits', function() {
         if (!expectedParentNames)
           return true;
         return expectedParentNames.some(function(name) {
-          return name in parentNames;
+          return parentNames.has(name);
         });
       };
 
-
       // Set EventInfo on the slice if it matches title, and parent.
-      if (slice.title in this.titleInfoLookup) {
-        if (checkExpectedParentNames(this.titleParentLookup[slice.title]))
-          slice.info = this.titleInfoLookup[slice.title];
+      if (this.titleInfoLookup.has(slice.title)) {
+        if (checkExpectedParentNames(this.titleParentLookup.get(slice.title)))
+          slice.info = this.titleInfoLookup.get(slice.title);
       }
 
       // Push slice into parentNames, and recurse over subSlices.
       if (slice.subSlices.length > 0) {
         // Increment title in parentName dict.
-        if (!(slice.title in parentNames))
-          parentNames[slice.title] = 0;
-        parentNames[slice.title]++;
+        if (!parentNames.has(slice.title))
+          parentNames.set(slice.title, 0);
+        parentNames.set(slice.title, parentNames.get(slice.title) + 1);
 
         // Recurse over subSlices.
         slice.subSlices.forEach(function(subSlice) {
@@ -740,15 +735,15 @@ tr.exportTo('tr.e.audits', function() {
         }, this);
 
         // Decrement title in parentName dict.
-        parentNames[slice.title]--;
-        if (parentNames[slice.title] == 0)
+        parentNames.set(slice.title, parentNames.get(slice.title) - 1);
+        if (parentNames.get(slice.title) === 0)
           delete parentNames[slice.title];
       }
     },
 
     applyEventInfos: function(sliceGroup) {
       sliceGroup.topLevelSlices.forEach(function(slice) {
-        this.applyEventInfosRecursive_({}, slice);
+        this.applyEventInfosRecursive_(new Map(), slice);
       }, this);
     }
   };

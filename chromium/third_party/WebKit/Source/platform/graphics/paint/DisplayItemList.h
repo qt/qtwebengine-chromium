@@ -21,62 +21,59 @@ struct PaintChunk;
 // each derived display item; the ideal value is the least common multiple.
 // Currently the limiting factor is TransformationMatrix (in
 // BeginTransform3DDisplayItem), which requests 16-byte alignment.
-static const size_t kDisplayItemAlignment = WTF_ALIGN_OF(BeginTransform3DDisplayItem);
-static const size_t kMaximumDisplayItemSize = sizeof(BeginTransform3DDisplayItem);
+static const size_t kDisplayItemAlignment =
+    WTF_ALIGN_OF(BeginTransform3DDisplayItem);
+static const size_t kMaximumDisplayItemSize =
+    sizeof(BeginTransform3DDisplayItem);
 
 // A container for a list of display items.
-class PLATFORM_EXPORT DisplayItemList : public ContiguousContainer<DisplayItem, kDisplayItemAlignment> {
-public:
-    DisplayItemList(size_t initialSizeBytes)
-        : ContiguousContainer(kMaximumDisplayItemSize, initialSizeBytes) {}
-    DisplayItemList(DisplayItemList&& source)
-        : ContiguousContainer(std::move(source))
-        , m_visualRects(std::move(source.m_visualRects))
-        , m_beginItemIndices(std::move(source.m_beginItemIndices))
-    {}
+class PLATFORM_EXPORT DisplayItemList
+    : public ContiguousContainer<DisplayItem, kDisplayItemAlignment> {
+ public:
+  DisplayItemList(size_t initialSizeBytes)
+      : ContiguousContainer(kMaximumDisplayItemSize, initialSizeBytes) {}
+  DisplayItemList(DisplayItemList&& source)
+      : ContiguousContainer(std::move(source)),
+        m_visualRects(std::move(source.m_visualRects)) {}
 
-    DisplayItemList& operator=(DisplayItemList&& source)
-    {
-        ContiguousContainer::operator=(std::move(source));
-        m_visualRects = std::move(source.m_visualRects);
-        m_beginItemIndices = std::move(source.m_beginItemIndices);
-        return *this;
-    }
+  DisplayItemList& operator=(DisplayItemList&& source) {
+    ContiguousContainer::operator=(std::move(source));
+    m_visualRects = std::move(source.m_visualRects);
+    return *this;
+  }
 
-    DisplayItem& appendByMoving(DisplayItem&, const IntRect& visualRect, SkPictureGpuAnalyzer&);
+  DisplayItem& appendByMoving(DisplayItem&);
 
-    IntRect visualRect(unsigned index) const
-    {
-        ASSERT(index < m_visualRects.size());
-        return m_visualRects[index];
-    }
+  bool hasVisualRect(size_t index) const {
+    return index < m_visualRects.size();
+  }
+  IntRect visualRect(size_t index) const {
+    DCHECK(hasVisualRect(index));
+    return m_visualRects[index];
+  }
 
-    void appendVisualRect(const IntRect& visualRect);
+  void appendVisualRect(const IntRect& visualRect);
 
-    // Useful for iterating with a range-based for loop.
-    template <typename Iterator>
-    class Range {
-    public:
-        Range(const Iterator& begin, const Iterator& end)
-            : m_begin(begin), m_end(end) {}
-        Iterator begin() const { return m_begin; }
-        Iterator end() const { return m_end; }
-    private:
-        Iterator m_begin;
-        Iterator m_end;
-    };
-    Range<iterator> itemsInPaintChunk(const PaintChunk&);
-    Range<const_iterator> itemsInPaintChunk(const PaintChunk&) const;
+  // Useful for iterating with a range-based for loop.
+  template <typename Iterator>
+  class Range {
+   public:
+    Range(const Iterator& begin, const Iterator& end)
+        : m_begin(begin), m_end(end) {}
+    Iterator begin() const { return m_begin; }
+    Iterator end() const { return m_end; }
 
-private:
-    // If we're currently within a paired display item block, unions the
-    // given visual rect with the begin display item's visual rect.
-    void growCurrentBeginItemVisualRect(const IntRect& visualRect);
+   private:
+    Iterator m_begin;
+    Iterator m_end;
+  };
+  Range<iterator> itemsInPaintChunk(const PaintChunk&);
+  Range<const_iterator> itemsInPaintChunk(const PaintChunk&) const;
 
-    Vector<IntRect> m_visualRects;
-    Vector<size_t> m_beginItemIndices;
+ private:
+  Vector<IntRect> m_visualRects;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // DisplayItemList_h
+#endif  // DisplayItemList_h

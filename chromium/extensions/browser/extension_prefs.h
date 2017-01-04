@@ -11,19 +11,18 @@
 #include <vector>
 
 #include "base/macros.h"
-#include "base/memory/linked_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
+#include "components/sync/api/string_ordinal.h"
 #include "extensions/browser/blacklist_state.h"
 #include "extensions/browser/extension_scoped_prefs.h"
 #include "extensions/browser/install_flag.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/url_pattern_set.h"
-#include "sync/api/string_ordinal.h"
 
 class ExtensionPrefValueMap;
 class PrefService;
@@ -59,7 +58,7 @@ class URLPatternSet;
 //       maintains as the underlying extensions change.
 class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
  public:
-  typedef std::vector<linked_ptr<ExtensionInfo> > ExtensionsInfo;
+  using ExtensionsInfo = std::vector<std::unique_ptr<ExtensionInfo>>;
 
   // Vector containing identifiers for preferences.
   typedef std::set<std::string> PrefKeySet;
@@ -279,10 +278,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   // TODO(oleg): Make method names consistent here, in extension service and in
   // blacklist.
   std::set<std::string> GetBlacklistedExtensions() const;
-
-  // Sets whether the extension with |id| is blacklisted.
-  void SetExtensionBlacklisted(const std::string& extension_id,
-                               bool is_blacklisted);
 
   // Returns the version string for the currently installed extension, or
   // the empty string if not found.
@@ -587,6 +582,12 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
                                const std::string& pref_key,
                                URLPatternSet* result,
                                int valid_schemes) const;
+
+  // DEPRECATED. Use GetExtensionBlacklistState() instead.
+  // TODO(atuchin): Remove this once all clients are updated.
+  // Sets whether the extension with |id| is blacklisted.
+  void SetExtensionBlacklisted(const std::string& extension_id,
+                               bool is_blacklisted);
 
   // Converts |new_value| to a list of strings and sets the |pref_key| pref
   // belonging to |extension_id|.

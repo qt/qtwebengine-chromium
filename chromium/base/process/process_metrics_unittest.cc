@@ -286,13 +286,13 @@ TEST_F(SystemMetricsTest, ParseVmstat) {
     "pgrefill_high 0\n"
     "pgrefill_movable 0\n";
   EXPECT_TRUE(ParseProcVmstat(valid_input1, &meminfo));
-  EXPECT_EQ(meminfo.pswpin, 179);
-  EXPECT_EQ(meminfo.pswpout, 406);
-  EXPECT_EQ(meminfo.pgmajfault, 487192);
+  EXPECT_EQ(179LU, meminfo.pswpin);
+  EXPECT_EQ(406LU, meminfo.pswpout);
+  EXPECT_EQ(487192LU, meminfo.pgmajfault);
   EXPECT_TRUE(ParseProcVmstat(valid_input2, &meminfo));
-  EXPECT_EQ(meminfo.pswpin, 12);
-  EXPECT_EQ(meminfo.pswpout, 901);
-  EXPECT_EQ(meminfo.pgmajfault, 2023);
+  EXPECT_EQ(12LU, meminfo.pswpin);
+  EXPECT_EQ(901LU, meminfo.pswpout);
+  EXPECT_EQ(2023LU, meminfo.pgmajfault);
 }
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
@@ -488,7 +488,7 @@ MULTIPROCESS_TEST_MAIN(ChildMain) {
 TEST(ProcessMetricsTest, GetOpenFdCount) {
   ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  const FilePath temp_path = temp_dir.path();
+  const FilePath temp_path = temp_dir.GetPath();
   CommandLine child_command_line(GetMultiProcessTestChildBaseCommandLine());
   child_command_line.AppendSwitchPath(kTempDirFlag, temp_path);
   Process child = SpawnMultiProcessTestChild(

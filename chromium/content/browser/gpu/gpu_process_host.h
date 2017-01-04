@@ -21,12 +21,10 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu_process_launch_causes.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/config/gpu_info.h"
-#include "gpu/ipc/common/gpu_memory_uma_stats.h"
 #include "gpu/ipc/common/surface_handle.h"
 #include "ipc/ipc_sender.h"
 #include "ipc/message_filter.h"
@@ -35,6 +33,10 @@
 #include "url/gurl.h"
 
 struct GPUCreateCommandBufferConfig;
+
+namespace base {
+class Thread;
+}
 
 namespace IPC {
 struct ChannelHandle;
@@ -45,11 +47,14 @@ struct GpuPreferences;
 struct SyncToken;
 }
 
+namespace shell {
+class InterfaceProvider;
+}
+
 namespace content {
 class BrowserChildProcessHostImpl;
 class GpuMainThread;
 class InProcessChildThreadParams;
-class MojoChildConnection;
 class RenderWidgetHostViewFrameSubscriber;
 class ShaderDiskCache;
 
@@ -83,31 +88,32 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   static bool gpu_enabled() { return gpu_enabled_; }
   static int gpu_crash_count() { return gpu_crash_count_; }
 
-  // Creates a new GpuProcessHost or gets an existing one, resulting in the
-  // launching of a GPU process if required.  Returns null on failure. It
-  // is not safe to store the pointer once control has returned to the message
-  // loop as it can be destroyed. Instead store the associated GPU host ID.
-  // This could return NULL if GPU access is not allowed (blacklisted).
+  // Creates a new GpuProcessHost (if |force_create| is turned on) or gets an
+  // existing one, resulting in the launching of a GPU process if required.
+  // Returns null on failure. It is not safe to store the pointer once control
+  // has returned to the message loop as it can be destroyed. Instead store the
+  // associated GPU host ID.  This could return NULL if GPU access is not
+  // allowed (blacklisted).
   CONTENT_EXPORT static GpuProcessHost* Get(GpuProcessKind kind,
-                                            CauseForGpuLaunch cause);
+                                            bool force_create = true);
 
   // Retrieves a list of process handles for all gpu processes.
   static void GetProcessHandles(
       const GpuDataManager::GetGpuProcessHandlesCallback& callback);
 
   // Helper function to send the given message to the GPU process on the IO
-  // thread.  Calls Get and if a host is returned, sends it.  Can be called from
-  // any thread.  Deletes the message if it cannot be sent.
+  // thread. Calls Get and if a host is returned, sends it. |force_create| can
+  // be set to force the creation of GpuProcessHost if one doesn't already
+  // exist. This function can be called from any thread. Deletes the message if
+  // it cannot be sent.
   CONTENT_EXPORT static void SendOnIO(GpuProcessKind kind,
-                                      CauseForGpuLaunch cause,
+                                      bool force_create,
                                       IPC::Message* message);
 
   CONTENT_EXPORT static void RegisterGpuMainThreadFactory(
       GpuMainThreadFactoryFunction create);
 
-  // BrowserChildProcessHostDelegate implementation.
-  shell::InterfaceRegistry* GetInterfaceRegistry() override;
-  shell::InterfaceProvider* GetRemoteInterfaces() override;
+  shell::InterfaceProvider* GetRemoteInterfaces();
 
   // Get the GPU process host for the GPU process with the given ID. Returns
   // null if the process no longer exists.
@@ -162,6 +168,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void LoadedShader(const std::string& key, const std::string& data);
 
  private:
+  class ConnectionFilterImpl;
+
   static bool ValidateHost(GpuProcessHost* host);
 
   GpuProcessHost(int host_id, GpuProcessKind kind);
@@ -191,7 +199,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                         gpu::error::ContextLostReason reason,
                         const GURL& url);
   void OnDidDestroyOffscreenContext(const GURL& url);
-  void OnGpuMemoryUmaStatsReceived(const gpu::GPUMemoryUmaStats& stats);
   void OnFieldTrialActivated(const std::string& trial_name);
 
 #if defined(OS_WIN)
@@ -206,8 +213,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                      const std::string& key,
                      const std::string& shader);
 
-  bool LaunchGpuProcess(const std::string& channel_id,
-                        gpu::GpuPreferences* gpu_preferences);
+  bool LaunchGpuProcess(gpu::GpuPreferences* gpu_preferences);
 
   void SendOutstandingReplies();
 
@@ -280,20 +286,11 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // automatic execution of 3D content from those domains.
   std::multiset<GURL> urls_with_live_offscreen_contexts_;
 
-  // Statics kept around to send to UMA histograms on GPU process lost.
-  bool uma_memory_stats_received_;
-  gpu::GPUMemoryUmaStats uma_memory_stats_;
-
   typedef std::map<int32_t, scoped_refptr<ShaderDiskCache>>
       ClientIdToShaderCacheMap;
   ClientIdToShaderCacheMap client_id_to_shader_cache_;
 
   std::string shader_prefix_key_;
-
-  // Browser-side Mojo endpoint which sets up a Mojo channel with the child
-  // process and contains the browser's InterfaceRegistry.
-  const std::string child_token_;
-  std::unique_ptr<MojoChildConnection> mojo_child_connection_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuProcessHost);
 };

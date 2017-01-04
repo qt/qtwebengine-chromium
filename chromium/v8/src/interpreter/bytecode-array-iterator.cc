@@ -4,6 +4,7 @@
 
 #include "src/interpreter/bytecode-array-iterator.h"
 
+#include "src/interpreter/bytecode-decoder.h"
 #include "src/interpreter/interpreter-intrinsics.h"
 #include "src/objects-inl.h"
 
@@ -70,8 +71,8 @@ uint32_t BytecodeArrayIterator::GetUnsignedOperand(
       current_prefix_offset() +
       Bytecodes::GetOperandOffset(current_bytecode(), operand_index,
                                   current_operand_scale());
-  return Bytecodes::DecodeUnsignedOperand(operand_start, operand_type,
-                                          current_operand_scale());
+  return BytecodeDecoder::DecodeUnsignedOperand(operand_start, operand_type,
+                                                current_operand_scale());
 }
 
 int32_t BytecodeArrayIterator::GetSignedOperand(
@@ -86,14 +87,21 @@ int32_t BytecodeArrayIterator::GetSignedOperand(
       current_prefix_offset() +
       Bytecodes::GetOperandOffset(current_bytecode(), operand_index,
                                   current_operand_scale());
-  return Bytecodes::DecodeSignedOperand(operand_start, operand_type,
-                                        current_operand_scale());
+  return BytecodeDecoder::DecodeSignedOperand(operand_start, operand_type,
+                                              current_operand_scale());
 }
 
 uint32_t BytecodeArrayIterator::GetFlagOperand(int operand_index) const {
   DCHECK_EQ(Bytecodes::GetOperandType(current_bytecode(), operand_index),
             OperandType::kFlag8);
   return GetUnsignedOperand(operand_index, OperandType::kFlag8);
+}
+
+uint32_t BytecodeArrayIterator::GetUnsignedImmediateOperand(
+    int operand_index) const {
+  DCHECK_EQ(Bytecodes::GetOperandType(current_bytecode(), operand_index),
+            OperandType::kUImm);
+  return GetUnsignedOperand(operand_index, OperandType::kUImm);
 }
 
 int32_t BytecodeArrayIterator::GetImmediateOperand(int operand_index) const {
@@ -124,19 +132,19 @@ Register BytecodeArrayIterator::GetRegisterOperand(int operand_index) const {
       current_prefix_offset() +
       Bytecodes::GetOperandOffset(current_bytecode(), operand_index,
                                   current_operand_scale());
-  return Bytecodes::DecodeRegisterOperand(operand_start, operand_type,
-                                          current_operand_scale());
+  return BytecodeDecoder::DecodeRegisterOperand(operand_start, operand_type,
+                                                current_operand_scale());
 }
 
 int BytecodeArrayIterator::GetRegisterOperandRange(int operand_index) const {
   DCHECK_LE(operand_index, Bytecodes::NumberOfOperands(current_bytecode()));
   const OperandType* operand_types =
       Bytecodes::GetOperandTypes(current_bytecode());
-  DCHECK(Bytecodes::IsRegisterOperandType(operand_types[operand_index]));
-  if (operand_types[operand_index + 1] == OperandType::kRegCount) {
+  OperandType operand_type = operand_types[operand_index];
+  DCHECK(Bytecodes::IsRegisterOperandType(operand_type));
+  if (operand_type == OperandType::kRegList) {
     return GetRegisterCountOperand(operand_index + 1);
   } else {
-    OperandType operand_type = operand_types[operand_index];
     return Bytecodes::GetNumberOfRegistersRepresentedBy(operand_type);
   }
 }

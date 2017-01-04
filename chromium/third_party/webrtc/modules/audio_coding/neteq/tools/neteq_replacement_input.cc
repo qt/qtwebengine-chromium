@@ -84,11 +84,17 @@ void NetEqReplacementInput::ReplacePacket() {
 
   rtc::Optional<RTPHeader> next_hdr = source_->NextHeader();
   RTC_DCHECK(next_hdr);
-  uint8_t payload[8];
-  uint32_t input_frame_size_timestamps =
-      next_hdr->timestamp - packet_->header.header.timestamp;
+  uint8_t payload[12];
+  uint32_t input_frame_size_timestamps = last_frame_size_timestamps_;
+  if (next_hdr->sequenceNumber == packet_->header.header.sequenceNumber + 1) {
+    // Packets are in order.
+    input_frame_size_timestamps =
+        next_hdr->timestamp - packet_->header.header.timestamp;
+    last_frame_size_timestamps_ = input_frame_size_timestamps;
+  }
   FakeDecodeFromFile::PrepareEncoded(packet_->header.header.timestamp,
-                                     input_frame_size_timestamps, payload);
+                                     input_frame_size_timestamps,
+                                     packet_->payload.size(), payload);
   packet_->payload.SetData(payload);
   packet_->header.header.payloadType = replacement_payload_type_;
   return;

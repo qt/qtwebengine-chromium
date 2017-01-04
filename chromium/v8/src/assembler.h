@@ -36,7 +36,8 @@
 #define V8_ASSEMBLER_H_
 
 #include "src/allocation.h"
-#include "src/builtins.h"
+#include "src/builtins/builtins.h"
+#include "src/deoptimize-reason.h"
 #include "src/isolate.h"
 #include "src/log.h"
 #include "src/register-configuration.h"
@@ -79,8 +80,13 @@ class AssemblerBase: public Malloced {
   void set_enabled_cpu_features(uint64_t features) {
     enabled_cpu_features_ = features;
   }
+  // Features are usually enabled by CpuFeatureScope, which also asserts that
+  // the features are supported before they are enabled.
   bool IsEnabled(CpuFeature f) {
     return (enabled_cpu_features_ & (static_cast<uint64_t>(1) << f)) != 0;
+  }
+  void EnableCpuFeature(CpuFeature f) {
+    enabled_cpu_features_ |= (static_cast<uint64_t>(1) << f);
   }
 
   bool is_constant_pool_available() const {
@@ -183,15 +189,22 @@ class PredictableCodeSizeScope {
 // Enable a specified feature within a scope.
 class CpuFeatureScope BASE_EMBEDDED {
  public:
+  enum CheckPolicy {
+    kCheckSupported,
+    kDontCheckSupported,
+  };
+
 #ifdef DEBUG
-  CpuFeatureScope(AssemblerBase* assembler, CpuFeature f);
+  CpuFeatureScope(AssemblerBase* assembler, CpuFeature f,
+                  CheckPolicy check = kCheckSupported);
   ~CpuFeatureScope();
 
  private:
   AssemblerBase* assembler_;
   uint64_t old_enabled_;
 #else
-  CpuFeatureScope(AssemblerBase* assembler, CpuFeature f) {}
+  CpuFeatureScope(AssemblerBase* assembler, CpuFeature f,
+                  CheckPolicy check = kCheckSupported) {}
 #endif
 };
 
@@ -224,6 +237,8 @@ class CpuFeatures : public AllStatic {
   }
 
   static inline bool SupportsCrankshaft();
+
+  static inline bool SupportsSimd128();
 
   static inline unsigned icache_line_size() {
     DCHECK(icache_line_size_ != 0);
@@ -352,17 +367,6 @@ enum ICacheFlushMode { FLUSH_ICACHE_IF_NEEDED, SKIP_ICACHE_FLUSH };
 
 class RelocInfo {
  public:
-  // The constant kNoPosition is used with the collecting of source positions
-  // in the relocation information. Two types of source positions are collected
-  // "position" (RelocMode position) and "statement position" (RelocMode
-  // statement_position). The "position" is collected at places in the source
-  // code which are of interest when making stack traces to pin-point the source
-  // location of a stack frame as close as possible. The "statement position" is
-  // collected at the beginning at each statement, and is used to indicate
-  // possible break locations. kNoPosition is used to indicate an
-  // invalid/uninitialized position value.
-  static const int kNoPosition = -1;
-
   // This string is used to add padding comments to the reloc info in cases
   // where we are not sure to have enough space for patching in during
   // lazy deoptimization. This is the case if we have indirect calls for which
@@ -394,8 +398,6 @@ class RelocInfo {
     // Everything after runtime_entry (inclusive) is not GC'ed.
     RUNTIME_ENTRY,
     COMMENT,
-    POSITION,            // See comment for kNoPosition above.
-    STATEMENT_POSITION,  // See comment for kNoPosition above.
 
     // Additional code inserted for debug break slot.
     DEBUG_BREAK_SLOT_AT_POSITION,
@@ -417,8 +419,9 @@ class RelocInfo {
     CONST_POOL,
     VENEER_POOL,
 
-    DEOPT_REASON,  // Deoptimization reason index.
-    DEOPT_ID,      // Deoptimization inlining id.
+    DEOPT_POSITION,  // Deoptimization source position.
+    DEOPT_REASON,    // Deoptimization reason index.
+    DEOPT_ID,        // Deoptimization inlining id.
 
     // This is not an actual reloc mode, but used to encode a long pc jump that
     // cannot be encoded as part of another record.
@@ -475,17 +478,14 @@ class RelocInfo {
   static inline bool IsVeneerPool(Mode mode) {
     return mode == VENEER_POOL;
   }
+  static inline bool IsDeoptPosition(Mode mode) {
+    return mode == DEOPT_POSITION;
+  }
   static inline bool IsDeoptReason(Mode mode) {
     return mode == DEOPT_REASON;
   }
   static inline bool IsDeoptId(Mode mode) {
     return mode == DEOPT_ID;
-  }
-  static inline bool IsPosition(Mode mode) {
-    return mode == POSITION || mode == STATEMENT_POSITION;
-  }
-  static inline bool IsStatementPosition(Mode mode) {
-    return mode == STATEMENT_POSITION;
   }
   static inline bool IsExternalReference(Mode mode) {
     return mode == EXTERNAL_REFERENCE;
@@ -564,18 +564,18 @@ class RelocInfo {
   uint32_t wasm_memory_size_reference();
   void update_wasm_memory_reference(
       Address old_base, Address new_base, uint32_t old_size, uint32_t new_size,
-      ICacheFlushMode icache_flush_mode = SKIP_ICACHE_FLUSH);
+      ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
   void update_wasm_global_reference(
       Address old_base, Address new_base,
-      ICacheFlushMode icache_flush_mode = SKIP_ICACHE_FLUSH);
+      ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
+  void set_target_address(
+      Address target,
+      WriteBarrierMode write_barrier_mode = UPDATE_WRITE_BARRIER,
+      ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
 
   // this relocation applies to;
   // can only be called if IsCodeTarget(rmode_) || IsRuntimeEntry(rmode_)
   INLINE(Address target_address());
-  INLINE(void set_target_address(
-      Address target,
-      WriteBarrierMode write_barrier_mode = UPDATE_WRITE_BARRIER,
-      ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED));
   INLINE(Object* target_object());
   INLINE(Handle<Object> target_object_handle(Assembler* origin));
   INLINE(void set_target_object(
@@ -667,9 +667,7 @@ class RelocInfo {
 #endif
 
   static const int kCodeTargetMask = (1 << (LAST_CODE_ENUM + 1)) - 1;
-  static const int kPositionMask = 1 << POSITION | 1 << STATEMENT_POSITION;
-  static const int kDataMask =
-      (1 << CODE_TARGET_WITH_ID) | kPositionMask | (1 << COMMENT);
+  static const int kDataMask = (1 << CODE_TARGET_WITH_ID) | (1 << COMMENT);
   static const int kDebugBreakSlotMask = 1 << DEBUG_BREAK_SLOT_AT_POSITION |
                                          1 << DEBUG_BREAK_SLOT_AT_RETURN |
                                          1 << DEBUG_BREAK_SLOT_AT_CALL;
@@ -698,24 +696,8 @@ class RelocInfo {
 // lower addresses.
 class RelocInfoWriter BASE_EMBEDDED {
  public:
-  RelocInfoWriter()
-      : pos_(NULL),
-        last_pc_(NULL),
-        last_id_(0),
-        last_position_(0),
-        last_mode_(RelocInfo::NUMBER_OF_MODES),
-        next_position_candidate_pos_delta_(0),
-        next_position_candidate_pc_delta_(0),
-        next_position_candidate_flushed_(true) {}
-  RelocInfoWriter(byte* pos, byte* pc)
-      : pos_(pos),
-        last_pc_(pc),
-        last_id_(0),
-        last_position_(0),
-        last_mode_(RelocInfo::NUMBER_OF_MODES),
-        next_position_candidate_pos_delta_(0),
-        next_position_candidate_pc_delta_(0),
-        next_position_candidate_flushed_(true) {}
+  RelocInfoWriter() : pos_(NULL), last_pc_(NULL), last_id_(0) {}
+  RelocInfoWriter(byte* pos, byte* pc) : pos_(pos), last_pc_(pc), last_id_(0) {}
 
   byte* pos() const { return pos_; }
   byte* last_pc() const { return last_pc_; }
@@ -728,8 +710,6 @@ class RelocInfoWriter BASE_EMBEDDED {
     pos_ = pos;
     last_pc_ = pc;
   }
-
-  void Finish() { FlushPosition(); }
 
   // Max size (bytes) of a written RelocInfo. Longest encoding is
   // ExtraTag, VariableLengthPCJump, ExtraTag, pc_delta, data_delta.
@@ -748,18 +728,11 @@ class RelocInfoWriter BASE_EMBEDDED {
   inline void WriteModeAndPC(uint32_t pc_delta, RelocInfo::Mode rmode);
   inline void WriteIntData(int data_delta);
   inline void WriteData(intptr_t data_delta);
-  inline void WritePosition(int pc_delta, int pos_delta, RelocInfo::Mode rmode);
-
-  void FlushPosition();
 
   byte* pos_;
   byte* last_pc_;
   int last_id_;
-  int last_position_;
   RelocInfo::Mode last_mode_;
-  int next_position_candidate_pos_delta_;
-  uint32_t next_position_candidate_pc_delta_;
-  bool next_position_candidate_flushed_;
 
   DISALLOW_COPY_AND_ASSIGN(RelocInfoWriter);
 };
@@ -805,13 +778,11 @@ class RelocIterator: public Malloced {
   int GetShortDataTypeTag();
   void ReadShortTaggedPC();
   void ReadShortTaggedId();
-  void ReadShortTaggedPosition();
   void ReadShortTaggedData();
 
   void AdvanceReadPC();
   void AdvanceReadId();
   void AdvanceReadInt();
-  void AdvanceReadPosition();
   void AdvanceReadData();
 
   // If the given mode is wanted, set it in rinfo_ and return true.
@@ -827,7 +798,6 @@ class RelocIterator: public Malloced {
   bool done_;
   int mode_mask_;
   int last_id_;
-  int last_position_;
   DISALLOW_COPY_AND_ASSIGN(RelocIterator);
 };
 
@@ -902,7 +872,7 @@ class ExternalReference BASE_EMBEDDED {
 
   ExternalReference() : address_(NULL) {}
 
-  ExternalReference(Builtins::CFunctionId id, Isolate* isolate);
+  ExternalReference(Address address, Isolate* isolate);
 
   ExternalReference(ApiFunction* ptr, Type type, Isolate* isolate);
 
@@ -970,10 +940,10 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference wasm_word64_ctz(Isolate* isolate);
   static ExternalReference wasm_word32_popcnt(Isolate* isolate);
   static ExternalReference wasm_word64_popcnt(Isolate* isolate);
+  static ExternalReference wasm_float64_pow(Isolate* isolate);
 
   static ExternalReference f64_acos_wrapper_function(Isolate* isolate);
   static ExternalReference f64_asin_wrapper_function(Isolate* isolate);
-  static ExternalReference f64_pow_wrapper_function(Isolate* isolate);
   static ExternalReference f64_mod_wrapper_function(Isolate* isolate);
 
   // Log support.
@@ -1017,7 +987,6 @@ class ExternalReference BASE_EMBEDDED {
 
   static ExternalReference mod_two_doubles_operation(Isolate* isolate);
   static ExternalReference power_double_double_function(Isolate* isolate);
-  static ExternalReference power_double_int_function(Isolate* isolate);
 
   static ExternalReference handle_scope_next_address(Isolate* isolate);
   static ExternalReference handle_scope_limit_address(Isolate* isolate);
@@ -1034,12 +1003,23 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference address_of_the_hole_nan();
   static ExternalReference address_of_uint32_bias();
 
+  // Static variables containing simd constants.
+  static ExternalReference address_of_float_abs_constant();
+  static ExternalReference address_of_float_neg_constant();
+  static ExternalReference address_of_double_abs_constant();
+  static ExternalReference address_of_double_neg_constant();
+
   // IEEE 754 functions.
+  static ExternalReference ieee754_acos_function(Isolate* isolate);
+  static ExternalReference ieee754_acosh_function(Isolate* isolate);
+  static ExternalReference ieee754_asin_function(Isolate* isolate);
+  static ExternalReference ieee754_asinh_function(Isolate* isolate);
   static ExternalReference ieee754_atan_function(Isolate* isolate);
-  static ExternalReference ieee754_atan2_function(Isolate* isolate);
   static ExternalReference ieee754_atanh_function(Isolate* isolate);
+  static ExternalReference ieee754_atan2_function(Isolate* isolate);
   static ExternalReference ieee754_cbrt_function(Isolate* isolate);
   static ExternalReference ieee754_cos_function(Isolate* isolate);
+  static ExternalReference ieee754_cosh_function(Isolate* isolate);
   static ExternalReference ieee754_exp_function(Isolate* isolate);
   static ExternalReference ieee754_expm1_function(Isolate* isolate);
   static ExternalReference ieee754_log_function(Isolate* isolate);
@@ -1047,7 +1027,9 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference ieee754_log10_function(Isolate* isolate);
   static ExternalReference ieee754_log2_function(Isolate* isolate);
   static ExternalReference ieee754_sin_function(Isolate* isolate);
+  static ExternalReference ieee754_sinh_function(Isolate* isolate);
   static ExternalReference ieee754_tan_function(Isolate* isolate);
+  static ExternalReference ieee754_tanh_function(Isolate* isolate);
 
   static ExternalReference page_flags(Page* page);
 
@@ -1064,9 +1046,6 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference is_profiling_address(Isolate* isolate);
   static ExternalReference invoke_function_callback(Isolate* isolate);
   static ExternalReference invoke_accessor_getter_callback(Isolate* isolate);
-
-  static ExternalReference virtual_handler_register(Isolate* isolate);
-  static ExternalReference virtual_slot_register(Isolate* isolate);
 
   static ExternalReference runtime_function_table_address(Isolate* isolate);
 
@@ -1134,41 +1113,6 @@ bool operator!=(ExternalReference, ExternalReference);
 size_t hash_value(ExternalReference);
 
 std::ostream& operator<<(std::ostream&, ExternalReference);
-
-
-// -----------------------------------------------------------------------------
-// Position recording support
-
-class AssemblerPositionsRecorder : public PositionsRecorder {
- public:
-  explicit AssemblerPositionsRecorder(Assembler* assembler)
-      : assembler_(assembler),
-        current_position_(RelocInfo::kNoPosition),
-        written_position_(RelocInfo::kNoPosition),
-        current_statement_position_(RelocInfo::kNoPosition),
-        written_statement_position_(RelocInfo::kNoPosition) {}
-
-  // Set current position to pos.
-  void RecordPosition(int pos);
-
-  // Set current statement position to pos.
-  void RecordStatementPosition(int pos);
-
- private:
-  // Write recorded positions to relocation information.
-  void WriteRecordedPositions();
-
-  Assembler* assembler_;
-
-  int current_position_;
-  int written_position_;
-
-  int current_statement_position_;
-  int written_statement_position_;
-
-  DISALLOW_COPY_AND_ASSIGN(AssemblerPositionsRecorder);
-};
-
 
 // -----------------------------------------------------------------------------
 // Utility functions

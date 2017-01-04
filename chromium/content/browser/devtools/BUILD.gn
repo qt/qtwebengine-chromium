@@ -4,16 +4,15 @@
 
 import("//tools/grit/grit_rule.gni")
 
-# In GYP: devtools_resources target.
 group("resources") {
   public_deps = [
     ":devtools_resources",
   ]
 }
 
-# In GYP: devtools_resources action in the devtools_resources target.
 grit("devtools_resources") {
   source = "$root_gen_dir/devtools/devtools_resources.grd"
+  source_is_generated = true
 
   # TOOD(brettw) remove this so the output file goes into the target_gen_dir,
   # but keep this for not for GYP compat.
@@ -43,10 +42,8 @@ action("gen_devtools_protocol_handler") {
            "devtools_protocol_handler_generator.py"
 
   blink_protocol = "$root_gen_dir/blink/core/inspector/protocol.json"
-  browser_protocol = "browser_protocol.json"
   inputs = [
     blink_protocol,
-    browser_protocol,
   ]
 
   outputs = [

@@ -4,7 +4,10 @@
 
 import("//testing/test.gni")
 
-component("ui_chromeos") {
+assert(is_chromeos)
+
+component("chromeos") {
+  output_name = "ui_chromeos"
   sources = [
     "accelerometer/accelerometer_util.cc",
     "accelerometer/accelerometer_util.h",
@@ -34,6 +37,8 @@ component("ui_chromeos") {
     "network/network_list.cc",
     "network/network_list.h",
     "network/network_list_delegate.h",
+    "network/network_list_md.cc",
+    "network/network_list_md.h",
     "network/network_list_view_base.cc",
     "network/network_list_view_base.h",
     "network/network_state_notifier.cc",
@@ -80,7 +85,7 @@ test("ui_chromeos_unittests") {
     "touch_exploration_controller_unittest.cc",
   ]
   deps = [
-    ":ui_chromeos",
+    ":chromeos",
     "//base/test:test_support",
     "//chromeos",
     "//skia",
@@ -93,5 +98,9 @@ test("ui_chromeos_unittests") {
     "//ui/resources:ui_test_pak",
     "//ui/views",
     "//ui/views:test_support",
+  ]
+  data = [
+    "$root_out_dir/locales/en-US.pak",
+    "$root_out_dir/ui_test.pak",
   ]
 }

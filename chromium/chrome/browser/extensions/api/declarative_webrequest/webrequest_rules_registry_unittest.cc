@@ -14,6 +14,7 @@
 #include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "base/test/values_test_util.h"
 #include "base/values.h"
@@ -93,7 +94,7 @@ class WebRequestRulesRegistryTest : public testing::Test {
 
   void TearDown() override {
     // Make sure that deletion traits of all registries are executed.
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   // Returns a rule that roughly matches http://*.example.com and
@@ -288,8 +289,10 @@ TEST_F(WebRequestRulesRegistryTest, AddRulesImpl) {
   for (std::set<const WebRequestRule*>::const_iterator it = matches.begin();
        it != matches.end(); ++it)
     matches_ids.insert((*it)->id());
-  EXPECT_TRUE(ContainsKey(matches_ids, std::make_pair(kExtensionId, kRuleId1)));
-  EXPECT_TRUE(ContainsKey(matches_ids, std::make_pair(kExtensionId, kRuleId2)));
+  EXPECT_TRUE(
+      base::ContainsKey(matches_ids, std::make_pair(kExtensionId, kRuleId1)));
+  EXPECT_TRUE(
+      base::ContainsKey(matches_ids, std::make_pair(kExtensionId, kRuleId2)));
 
   GURL foobar_url("http://www.foobar.com");
   std::unique_ptr<net::URLRequest> foobar_request(

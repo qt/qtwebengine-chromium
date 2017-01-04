@@ -33,8 +33,8 @@
 #include "ui/accessibility/tree_generator.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/accelerators/accelerator_controller.h"
-#include "ash/shell.h"
+#include "ash/common/accelerators/accelerator_controller.h"
+#include "ash/common/wm_shell.h"
 #include "chrome/browser/ui/aura/accessibility/automation_manager_aura.h"
 #endif
 
@@ -125,10 +125,23 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, Location) {
       << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, Location2) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "location2.html"))
+      << message_;
+}
+
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, BoundsForRange) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs",
                                   "bounds_for_range.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, LineStartOffsets) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(
+      RunExtensionSubtest("automation/tests/tabs", "line_start_offsets.html"))
       << message_;
 }
 
@@ -154,18 +167,15 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, TabsAutomationHostsPermissions) {
 }
 
 #if defined(USE_AURA)
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, Desktop) {
+// Flaky, see http://crbug.com/637525
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DISABLED_Desktop) {
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "desktop.html"))
       << message_;
 }
 
 #if defined(OS_CHROMEOS)
-#if defined(MEMORY_SANITIZER)
-#define MAYBE_DesktopInitialFocus DISABLED_DesktopInitialFocus
-#else
-#define MAYBE_DesktopInitialFocus DesktopInitialFocus
-#endif
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, MAYBE_DesktopInitialFocus) {
+// TODO(crbug.com/615908): Flaky on CrOS sanitizers.
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DISABLED_DesktopInitialFocus) {
   ASSERT_TRUE(
       RunExtensionSubtest("automation/tests/desktop", "initial_focus.html"))
       << message_;
@@ -187,7 +197,7 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopFocusIframe) {
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopFocusViews) {
   AutomationManagerAura::GetInstance()->Enable(browser()->profile());
   // Trigger the shelf subtree to be computed.
-  ash::Shell::GetInstance()->accelerator_controller()->PerformActionIfEnabled(
+  ash::WmShell::Get()->accelerator_controller()->PerformActionIfEnabled(
       ash::FOCUS_SHELF);
 
   ASSERT_TRUE(
@@ -205,7 +215,7 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopNotRequested) {
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopActions) {
   AutomationManagerAura::GetInstance()->Enable(browser()->profile());
   // Trigger the shelf subtree to be computed.
-  ash::Shell::GetInstance()->accelerator_controller()->PerformActionIfEnabled(
+  ash::WmShell::Get()->accelerator_controller()->PerformActionIfEnabled(
       ash::FOCUS_SHELF);
 
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "actions.html"))

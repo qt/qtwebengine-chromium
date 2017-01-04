@@ -10,7 +10,8 @@
 #ifndef V8_MESSAGES_H_
 #define V8_MESSAGES_H_
 
-#include "src/base/smart-pointers.h"
+#include <memory>
+
 #include "src/handles.h"
 #include "src/list.h"
 
@@ -18,6 +19,8 @@ namespace v8 {
 namespace internal {
 
 // Forward declarations.
+class AbstractCode;
+class FrameArray;
 class JSMessageObject;
 class LookupIterator;
 class SourceInfo;
@@ -41,34 +44,173 @@ class MessageLocation {
   Handle<JSFunction> function_;
 };
 
-
-class CallSite {
+class StackFrameBase {
  public:
-  CallSite(Isolate* isolate, Handle<JSObject> call_site_obj);
+  virtual ~StackFrameBase() {}
 
-  Handle<Object> GetFileName();
-  Handle<Object> GetFunctionName();
-  Handle<Object> GetScriptNameOrSourceUrl();
-  Handle<Object> GetMethodName();
+  virtual Handle<Object> GetReceiver() const = 0;
+  virtual Handle<Object> GetFunction() const = 0;
+
+  virtual Handle<Object> GetFileName() = 0;
+  virtual Handle<Object> GetFunctionName() = 0;
+  virtual Handle<Object> GetScriptNameOrSourceUrl() = 0;
+  virtual Handle<Object> GetMethodName() = 0;
+  virtual Handle<Object> GetTypeName() = 0;
+  virtual Handle<Object> GetEvalOrigin() = 0;
+
+  virtual int GetPosition() const = 0;
   // Return 1-based line number, including line offset.
-  int GetLineNumber();
+  virtual int GetLineNumber() = 0;
   // Return 1-based column number, including column offset if first line.
-  int GetColumnNumber();
-  bool IsNative();
-  bool IsToplevel();
-  bool IsEval();
-  bool IsConstructor();
+  virtual int GetColumnNumber() = 0;
 
-  bool IsJavaScript() { return !fun_.is_null(); }
-  bool IsWasm() { return !wasm_obj_.is_null(); }
+  virtual bool IsNative() = 0;
+  virtual bool IsToplevel() = 0;
+  virtual bool IsEval() = 0;
+  virtual bool IsConstructor() = 0;
+  virtual bool IsStrict() const = 0;
+
+  virtual MaybeHandle<String> ToString() = 0;
+};
+
+class JSStackFrame : public StackFrameBase {
+ public:
+  JSStackFrame(Isolate* isolate, Handle<Object> receiver,
+               Handle<JSFunction> function, Handle<AbstractCode> code,
+               int offset);
+  virtual ~JSStackFrame() {}
+
+  Handle<Object> GetReceiver() const override { return receiver_; }
+  Handle<Object> GetFunction() const override;
+
+  Handle<Object> GetFileName() override;
+  Handle<Object> GetFunctionName() override;
+  Handle<Object> GetScriptNameOrSourceUrl() override;
+  Handle<Object> GetMethodName() override;
+  Handle<Object> GetTypeName() override;
+  Handle<Object> GetEvalOrigin() override;
+
+  int GetPosition() const override;
+  int GetLineNumber() override;
+  int GetColumnNumber() override;
+
+  bool IsNative() override;
+  bool IsToplevel() override;
+  bool IsEval() override;
+  bool IsConstructor() override;
+  bool IsStrict() const override { return is_strict_; }
+
+  MaybeHandle<String> ToString() override;
+
+ private:
+  JSStackFrame();
+  void FromFrameArray(Isolate* isolate, Handle<FrameArray> array, int frame_ix);
+
+  bool HasScript() const;
+  Handle<Script> GetScript() const;
+
+  Isolate* isolate_;
+
+  Handle<Object> receiver_;
+  Handle<JSFunction> function_;
+  Handle<AbstractCode> code_;
+  int offset_;
+
+  bool force_constructor_;
+  bool is_strict_;
+
+  friend class FrameArrayIterator;
+};
+
+class WasmStackFrame : public StackFrameBase {
+ public:
+  virtual ~WasmStackFrame() {}
+
+  Handle<Object> GetReceiver() const override { return wasm_obj_; }
+  Handle<Object> GetFunction() const override;
+
+  Handle<Object> GetFileName() override { return Null(); }
+  Handle<Object> GetFunctionName() override;
+  Handle<Object> GetScriptNameOrSourceUrl() override { return Null(); }
+  Handle<Object> GetMethodName() override { return Null(); }
+  Handle<Object> GetTypeName() override { return Null(); }
+  Handle<Object> GetEvalOrigin() override { return Null(); }
+
+  int GetPosition() const override;
+  int GetLineNumber() override { return wasm_func_index_; }
+  int GetColumnNumber() override { return -1; }
+
+  bool IsNative() override { return false; }
+  bool IsToplevel() override { return false; }
+  bool IsEval() override { return false; }
+  bool IsConstructor() override { return false; }
+  bool IsStrict() const override { return false; }
+
+  MaybeHandle<String> ToString() override;
+
+ private:
+  void FromFrameArray(Isolate* isolate, Handle<FrameArray> array, int frame_ix);
+  Handle<Object> Null() const;
+
+  Isolate* isolate_;
+
+  Handle<Object> wasm_obj_;
+  uint32_t wasm_func_index_;
+  Handle<AbstractCode> code_;
+  int offset_;
+
+  friend class FrameArrayIterator;
+};
+
+class FrameArrayIterator {
+ public:
+  FrameArrayIterator(Isolate* isolate, Handle<FrameArray> array,
+                     int frame_ix = 0);
+
+  StackFrameBase* Frame();
+
+  bool HasNext() const;
+  void Next();
 
  private:
   Isolate* isolate_;
-  Handle<Object> receiver_;
-  Handle<JSFunction> fun_;
-  int32_t pos_ = -1;
-  Handle<JSObject> wasm_obj_;
-  uint32_t wasm_func_index_ = static_cast<uint32_t>(-1);
+
+  Handle<FrameArray> array_;
+  int next_frame_ix_;
+
+  WasmStackFrame wasm_frame_;
+  JSStackFrame js_frame_;
+};
+
+// Determines how stack trace collection skips frames.
+enum FrameSkipMode {
+  // Unconditionally skips the first frame. Used e.g. when the Error constructor
+  // is called, in which case the first frame is always a BUILTIN_EXIT frame.
+  SKIP_FIRST,
+  // Skip all frames until a specified caller function is seen.
+  SKIP_UNTIL_SEEN,
+  SKIP_NONE,
+};
+
+class ErrorUtils : public AllStatic {
+ public:
+  static MaybeHandle<Object> Construct(
+      Isolate* isolate, Handle<JSFunction> target, Handle<Object> new_target,
+      Handle<Object> message, FrameSkipMode mode, Handle<Object> caller,
+      bool suppress_detailed_trace);
+
+  static MaybeHandle<String> ToString(Isolate* isolate, Handle<Object> recv);
+
+  static MaybeHandle<Object> MakeGenericError(
+      Isolate* isolate, Handle<JSFunction> constructor, int template_index,
+      Handle<Object> arg0, Handle<Object> arg1, Handle<Object> arg2,
+      FrameSkipMode mode);
+
+  // Formats a textual stack trace from the given structured stack trace.
+  // Note that this can call arbitrary JS code through Error.prepareStackTrace.
+  static MaybeHandle<Object> FormatStackTrace(Isolate* isolate,
+                                              Handle<JSObject> error,
+                                              Handle<Object> stack_trace);
 };
 
 #define MESSAGE_TEMPLATES(T)                                                   \
@@ -112,6 +254,7 @@ class CallSite {
   T(ConstructorNotFunction, "Constructor % requires 'new'")                    \
   T(ConstructorNotReceiver, "The .constructor property is not an object")      \
   T(CurrencyCode, "Currency code is required with currency style.")            \
+  T(CyclicModuleDependency, "Detected cycle while resolving name '%'")         \
   T(DataViewNotArrayBuffer,                                                    \
     "First argument to DataView constructor must be an ArrayBuffer")           \
   T(DateType, "this is not a Date object.")                                    \
@@ -128,6 +271,8 @@ class CallSite {
   T(FunctionBind, "Bind must be called on a function")                         \
   T(GeneratorRunning, "Generator is already running")                          \
   T(IllegalInvocation, "Illegal invocation")                                   \
+  T(ImmutablePrototypeSet,                                                     \
+    "Immutable prototype object '%' cannot have their prototype set")          \
   T(IncompatibleMethodReceiver, "Method % called on incompatible receiver %")  \
   T(InstanceofNonobjectProto,                                                  \
     "Function has non-object prototype '%' in instanceof check")               \
@@ -327,8 +472,9 @@ class CallSite {
   T(InvalidCurrencyCode, "Invalid currency code: %")                           \
   T(InvalidDataViewAccessorOffset,                                             \
     "Offset is outside the bounds of the DataView")                            \
-  T(InvalidDataViewLength, "Invalid data view length")                         \
-  T(InvalidDataViewOffset, "Start offset is outside the bounds of the buffer") \
+  T(InvalidDataViewLength, "Invalid DataView length %")                        \
+  T(InvalidDataViewOffset,                                                     \
+    "Start offset % is outside the bounds of the buffer")                      \
   T(InvalidHint, "Invalid hint: %")                                            \
   T(InvalidLanguageTag, "Invalid language tag: %")                             \
   T(InvalidWeakMapKey, "Invalid value used as weak map key")                   \
@@ -353,6 +499,7 @@ class CallSite {
   T(UnsupportedTimeZone, "Unsupported time zone specified %")                  \
   T(ValueOutOfRange, "Value % out of range for % options property %")          \
   /* SyntaxError */                                                            \
+  T(AmbiguousExport, "Multiple star exports provide name '%'")                 \
   T(BadGetterArity, "Getter must not have any formal parameters.")             \
   T(BadSetterArity, "Setter must have exactly one formal parameter.")          \
   T(ConstructorIsAccessor, "Class constructor may not be an accessor")         \
@@ -405,8 +552,6 @@ class CallSite {
   T(NoCatchOrFinally, "Missing catch or finally after try")                    \
   T(NotIsvar, "builtin %%IS_VAR: not a variable")                              \
   T(ParamAfterRest, "Rest parameter must be last formal parameter")            \
-  T(InvalidRestParameter,                                                      \
-    "Rest parameter must be an identifier or destructuring pattern")           \
   T(PushPastSafeLength,                                                        \
     "Pushing % elements on an array-like of length % "                         \
     "is disallowed, as the total surpasses 2**53-1")                           \
@@ -448,19 +593,10 @@ class CallSite {
   T(UnexpectedEOS, "Unexpected end of input")                                  \
   T(UnexpectedFunctionSent,                                                    \
     "function.sent expression is not allowed outside a generator")             \
-  T(UnexpectedInsideTailCall, "Unexpected expression inside tail call")        \
   T(UnexpectedReserved, "Unexpected reserved word")                            \
   T(UnexpectedStrictReserved, "Unexpected strict mode reserved word")          \
   T(UnexpectedSuper, "'super' keyword unexpected here")                        \
-  T(UnexpectedSloppyTailCall,                                                  \
-    "Tail call expressions are not allowed in non-strict mode")                \
   T(UnexpectedNewTarget, "new.target expression is not allowed here")          \
-  T(UnexpectedTailCall, "Tail call expression is not allowed here")            \
-  T(UnexpectedTailCallInCatchBlock,                                            \
-    "Tail call expression in catch block when finally block is also present")  \
-  T(UnexpectedTailCallInForInOf, "Tail call expression in for-in/of body")     \
-  T(UnexpectedTailCallInTryBlock, "Tail call expression in try block")         \
-  T(UnexpectedTailCallOfEval, "Tail call of a direct eval is not allowed")     \
   T(UnexpectedTemplateString, "Unexpected template string")                    \
   T(UnexpectedToken, "Unexpected token %")                                     \
   T(UnexpectedTokenIdentifier, "Unexpected identifier")                        \
@@ -468,6 +604,7 @@ class CallSite {
   T(UnexpectedTokenString, "Unexpected string")                                \
   T(UnexpectedTokenRegExp, "Unexpected regular expression")                    \
   T(UnknownLabel, "Undefined label '%'")                                       \
+  T(UnresolvableExport, "Module does not provide an export named '%'")         \
   T(UnterminatedArgList, "missing ) after argument list")                      \
   T(UnterminatedRegExp, "Invalid regular expression: missing /")               \
   T(UnterminatedTemplate, "Unterminated template literal")                     \
@@ -489,7 +626,20 @@ class CallSite {
   T(WasmTrapRemByZero, "remainder by zero")                                    \
   T(WasmTrapFloatUnrepresentable, "integer result unrepresentable")            \
   T(WasmTrapFuncInvalid, "invalid function")                                   \
-  T(WasmTrapFuncSigMismatch, "function signature mismatch")
+  T(WasmTrapFuncSigMismatch, "function signature mismatch")                    \
+  T(WasmTrapInvalidIndex, "invalid index into function table")                 \
+  T(WasmTrapTypeError, "invalid type")                                         \
+  /* DataCloneError messages */                                                \
+  T(DataCloneError, "% could not be cloned.")                                  \
+  T(DataCloneErrorNeuteredArrayBuffer,                                         \
+    "An ArrayBuffer is neutered and could not be cloned.")                     \
+  T(DataCloneErrorSharedArrayBufferNotTransferred,                             \
+    "A SharedArrayBuffer could not be cloned. SharedArrayBuffer must be "      \
+    "transferred.")                                                            \
+  T(DataCloneDeserializationError, "Unable to deserialize cloned data.")       \
+  T(DataCloneDeserializationVersionError,                                      \
+    "Unable to deserialize cloned data due to invalid or unsupported "         \
+    "version.")
 
 class MessageTemplate {
  public:
@@ -529,8 +679,8 @@ class MessageHandler {
   static void DefaultMessageReport(Isolate* isolate, const MessageLocation* loc,
                                    Handle<Object> message_obj);
   static Handle<String> GetMessage(Isolate* isolate, Handle<Object> data);
-  static base::SmartArrayPointer<char> GetLocalizedMessage(Isolate* isolate,
-                                                           Handle<Object> data);
+  static std::unique_ptr<char[]> GetLocalizedMessage(Isolate* isolate,
+                                                     Handle<Object> data);
 };
 
 

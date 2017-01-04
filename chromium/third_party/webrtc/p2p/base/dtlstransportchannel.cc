@@ -138,12 +138,6 @@ DtlsTransportChannelWrapper::DtlsTransportChannelWrapper(
 DtlsTransportChannelWrapper::~DtlsTransportChannelWrapper() {
 }
 
-void DtlsTransportChannelWrapper::Connect() {
-  // We should only get a single call to Connect.
-  ASSERT(dtls_state() == DTLS_TRANSPORT_NEW);
-  channel_->Connect();
-}
-
 bool DtlsTransportChannelWrapper::SetLocalCertificate(
     const rtc::scoped_refptr<rtc::RTCCertificate>& certificate) {
   if (dtls_active_) {
@@ -185,7 +179,7 @@ bool DtlsTransportChannelWrapper::SetSslMaxProtocolVersion(
 }
 
 bool DtlsTransportChannelWrapper::SetSslRole(rtc::SSLRole role) {
-  if (dtls_state() == DTLS_TRANSPORT_CONNECTED) {
+  if (dtls_) {
     if (ssl_role_ != role) {
       LOG(LS_ERROR) << "SSL Role can't be reversed after the session is setup.";
       return false;
@@ -241,18 +235,41 @@ bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
   }
 
   // At this point we know we are doing DTLS
+  bool fingerprint_changing = remote_fingerprint_value_.size() > 0u;
   remote_fingerprint_value_ = std::move(remote_fingerprint_value);
   remote_fingerprint_algorithm_ = digest_alg;
 
-  bool reconnect = (dtls_ != nullptr);
+  if (dtls_ && !fingerprint_changing) {
+    // This can occur if DTLS is set up before a remote fingerprint is
+    // received. For instance, if we set up DTLS due to receiving an early
+    // ClientHello.
+    rtc::SSLPeerCertificateDigestError err;
+    if (!dtls_->SetPeerCertificateDigest(
+            remote_fingerprint_algorithm_,
+            reinterpret_cast<unsigned char*>(remote_fingerprint_value_.data()),
+            remote_fingerprint_value_.size(), &err)) {
+      LOG_J(LS_ERROR, this) << "Couldn't set DTLS certificate digest.";
+      set_dtls_state(DTLS_TRANSPORT_FAILED);
+      // If the error is "verification failed", don't return false, because
+      // this means the fingerprint was formatted correctly but didn't match
+      // the certificate from the DTLS handshake. Thus the DTLS state should go
+      // to "failed", but SetRemoteDescription shouldn't fail.
+      return err == rtc::SSLPeerCertificateDigestError::VERIFICATION_FAILED;
+    }
+    return true;
+  }
+
+  // If the fingerprint is changing, we'll tear down the DTLS association and
+  // create a new one, resetting our state.
+  if (dtls_ && fingerprint_changing) {
+    dtls_.reset(nullptr);
+    set_dtls_state(DTLS_TRANSPORT_NEW);
+    set_writable(false);
+  }
 
   if (!SetupDtls()) {
     set_dtls_state(DTLS_TRANSPORT_FAILED);
     return false;
-  }
-
-  if (reconnect) {
-    Reconnect();
   }
 
   return true;
@@ -284,7 +301,10 @@ bool DtlsTransportChannelWrapper::SetupDtls() {
   dtls_->SetMaxProtocolVersion(ssl_max_version_);
   dtls_->SetServerRole(ssl_role_);
   dtls_->SignalEvent.connect(this, &DtlsTransportChannelWrapper::OnDtlsEvent);
-  if (!dtls_->SetPeerCertificateDigest(
+  dtls_->SignalSSLHandshakeError.connect(
+      this, &DtlsTransportChannelWrapper::OnDtlsHandshakeError);
+  if (remote_fingerprint_value_.size() &&
+      !dtls_->SetPeerCertificateDigest(
           remote_fingerprint_algorithm_,
           reinterpret_cast<unsigned char*>(remote_fingerprint_value_.data()),
           remote_fingerprint_value_.size())) {
@@ -303,6 +323,10 @@ bool DtlsTransportChannelWrapper::SetupDtls() {
   }
 
   LOG_J(LS_INFO, this) << "DTLS setup complete.";
+
+  // If the underlying channel is already writable at this point, we may be
+  // able to start DTLS right away.
+  MaybeStartDtls();
   return true;
 }
 
@@ -399,6 +423,10 @@ int DtlsTransportChannelWrapper::SendPacket(
   }
 }
 
+bool DtlsTransportChannelWrapper::IsDtlsConnected() {
+  return dtls_ && dtls_->IsTlsConnected();
+}
+
 // The state transition logic here is as follows:
 // (1) If we're not doing DTLS-SRTP, then the state is just the
 //     state of the underlying impl()
@@ -425,15 +453,7 @@ void DtlsTransportChannelWrapper::OnWritableState(TransportChannel* channel) {
 
   switch (dtls_state()) {
     case DTLS_TRANSPORT_NEW:
-      // This should never fail:
-      // Because we are operating in a nonblocking mode and all
-      // incoming packets come in via OnReadPacket(), which rejects
-      // packets in this state, the incoming queue must be empty. We
-      // ignore write errors, thus any errors must be because of
-      // configuration and therefore are our fault.
-      // Note that in non-debug configurations, failure in
-      // MaybeStartDtls() changes the state to DTLS_TRANSPORT_FAILED.
-      VERIFY(MaybeStartDtls());
+      MaybeStartDtls();
       break;
     case DTLS_TRANSPORT_CONNECTED:
       // Note: SignalWritableState fired by set_writable.
@@ -487,6 +507,14 @@ void DtlsTransportChannelWrapper::OnReadPacket(
         LOG_J(LS_INFO, this) << "Caching DTLS ClientHello packet until DTLS is "
                              << "started.";
         cached_client_hello_.SetData(data, size);
+        // If we haven't started setting up DTLS yet (because we don't have a
+        // remote fingerprint/role), we can use the client hello as a clue that
+        // the peer has chosen the client role, and proceed with the handshake.
+        // The fingerprint will be verified when it's set.
+        if (!dtls_ && local_certificate_) {
+          SetSslRole(rtc::SSL_SERVER);
+          SetupDtls();
+        }
       } else {
         LOG_J(LS_INFO, this) << "Not a DTLS ClientHello packet; dropping.";
       }
@@ -560,8 +588,20 @@ void DtlsTransportChannelWrapper::OnDtlsEvent(rtc::StreamInterface* dtls,
   if (sig & rtc::SE_READ) {
     char buf[kMaxDtlsPacketLen];
     size_t read;
-    if (dtls_->Read(buf, sizeof(buf), &read, NULL) == rtc::SR_SUCCESS) {
+    int read_error;
+    rtc::StreamResult ret = dtls_->Read(buf, sizeof(buf), &read, &read_error);
+    if (ret == rtc::SR_SUCCESS) {
       SignalReadPacket(this, buf, read, rtc::CreatePacketTime(0), 0);
+    } else if (ret == rtc::SR_EOS) {
+      // Remote peer shut down the association with no error.
+      LOG_J(LS_INFO, this) << "DTLS channel closed";
+      set_writable(false);
+      set_dtls_state(DTLS_TRANSPORT_CLOSED);
+    } else if (ret == rtc::SR_ERROR) {
+      // Remote peer shut down the association with an error.
+      LOG_J(LS_INFO, this) << "DTLS channel error, code=" << read_error;
+      set_writable(false);
+      set_dtls_state(DTLS_TRANSPORT_FAILED);
     }
   }
   if (sig & rtc::SE_CLOSE) {
@@ -577,12 +617,19 @@ void DtlsTransportChannelWrapper::OnDtlsEvent(rtc::StreamInterface* dtls,
   }
 }
 
-bool DtlsTransportChannelWrapper::MaybeStartDtls() {
+void DtlsTransportChannelWrapper::MaybeStartDtls() {
   if (dtls_ && channel_->writable()) {
-    if (dtls_->StartSSLWithPeer()) {
+    if (dtls_->StartSSL()) {
+      // This should never fail:
+      // Because we are operating in a nonblocking mode and all
+      // incoming packets come in via OnReadPacket(), which rejects
+      // packets in this state, the incoming queue must be empty. We
+      // ignore write errors, thus any errors must be because of
+      // configuration and therefore are our fault.
+      RTC_DCHECK(false) << "StartSSL failed.";
       LOG_J(LS_ERROR, this) << "Couldn't start DTLS handshake";
       set_dtls_state(DTLS_TRANSPORT_FAILED);
-      return false;
+      return;
     }
     LOG_J(LS_INFO, this)
       << "DtlsTransportChannelWrapper: Started DTLS handshake";
@@ -603,7 +650,6 @@ bool DtlsTransportChannelWrapper::MaybeStartDtls() {
       cached_client_hello_.Clear();
     }
   }
-  return true;
 }
 
 // Called from OnReadPacket when a DTLS packet is received.
@@ -678,12 +724,9 @@ void DtlsTransportChannelWrapper::OnChannelStateChanged(
   SignalStateChanged(this);
 }
 
-void DtlsTransportChannelWrapper::Reconnect() {
-  set_dtls_state(DTLS_TRANSPORT_NEW);
-  set_writable(false);
-  if (channel_->writable()) {
-    OnWritableState(channel_);
-  }
+void DtlsTransportChannelWrapper::OnDtlsHandshakeError(
+    rtc::SSLHandshakeError error) {
+  SignalDtlsHandshakeError(error);
 }
 
 }  // namespace cricket

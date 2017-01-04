@@ -14,22 +14,22 @@ void StubOfflinePageModel::RemoveObserver(Observer* observer) {}
 void StubOfflinePageModel::SavePage(
     const GURL& url,
     const ClientId& client_id,
+    int64_t proposed_offline_id,
     std::unique_ptr<OfflinePageArchiver> archiver,
     const SavePageCallback& callback) {}
 void StubOfflinePageModel::MarkPageAccessed(int64_t offline_id) {}
-void StubOfflinePageModel::ClearAll(const base::Closure& callback) {}
 void StubOfflinePageModel::DeletePagesByOfflineId(
     const std::vector<int64_t>& offline_ids,
     const DeletePageCallback& callback) {}
-void StubOfflinePageModel::DeletePagesByURLPredicate(
+void StubOfflinePageModel::DeleteCachedPagesByURLPredicate(
     const UrlPredicate& predicate,
     const DeletePageCallback& callback) {}
-void StubOfflinePageModel::HasPages(const std::string& name_space,
-                                    const HasPagesCallback& callback) {}
 void StubOfflinePageModel::CheckPagesExistOffline(
     const std::set<GURL>& urls,
     const CheckPagesExistOfflineCallback& callback) {}
 void StubOfflinePageModel::GetAllPages(
+    const MultipleOfflinePageItemCallback& callback) {}
+void StubOfflinePageModel::GetAllPagesWithExpired(
     const MultipleOfflinePageItemCallback& callback) {}
 void StubOfflinePageModel::GetOfflineIdsForClientId(
     const ClientId& client_id,
@@ -46,24 +46,13 @@ const OfflinePageItem* StubOfflinePageModel::MaybeGetPageByOfflineId(
     int64_t offline_id) const {
   return nullptr;
 }
-void StubOfflinePageModel::GetPageByOfflineURL(
-    const GURL& offline_url,
-    const SingleOfflinePageItemCallback& callback) {}
-const OfflinePageItem* StubOfflinePageModel::MaybeGetPageByOfflineURL(
-    const GURL& offline_url) const {
-  return nullptr;
-}
 void StubOfflinePageModel::GetPagesByOnlineURL(
     const GURL& online_url,
     const MultipleOfflinePageItemCallback& callback) {}
-void StubOfflinePageModel::GetBestPageForOnlineURL(
-    const GURL& online_url,
-    const SingleOfflinePageItemCallback callback) {}
 const OfflinePageItem* StubOfflinePageModel::MaybeGetBestPageForOnlineURL(
     const GURL& online_url) const {
   return nullptr;
 }
-void StubOfflinePageModel::CheckMetadataConsistency() {}
 void StubOfflinePageModel::ExpirePages(
     const std::vector<int64_t>& offline_ids,
     const base::Time& expiration_time,

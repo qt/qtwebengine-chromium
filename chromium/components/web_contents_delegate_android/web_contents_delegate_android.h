@@ -72,6 +72,7 @@ class WebContentsDelegateAndroid : public content::WebContentsDelegate {
   void RendererUnresponsive(content::WebContents* source) override;
   void RendererResponsive(content::WebContents* source) override;
   void WebContentsCreated(content::WebContents* source_contents,
+                          int opener_render_process_id,
                           int opener_render_frame_id,
                           const std::string& frame_name,
                           const GURL& target_url,
@@ -101,6 +102,9 @@ class WebContentsDelegateAndroid : public content::WebContentsDelegate {
       const content::NativeWebKeyboardEvent& event) override;
   bool TakeFocus(content::WebContents* source, bool reverse) override;
   void ShowRepostFormWarningDialog(content::WebContents* source) override;
+  base::android::ScopedJavaLocalRef<jobject>
+      GetContentVideoViewEmbedder() override;
+  bool ShouldBlockMediaRequest(const GURL& url) override;
   void EnterFullscreenModeForTab(content::WebContents* web_contents,
                                  const GURL& origin) override;
   void ExitFullscreenModeForTab(content::WebContents* web_contents) override;
@@ -127,8 +131,6 @@ class WebContentsDelegateAndroid : public content::WebContentsDelegate {
 
   std::unique_ptr<ValidationMessageBubbleAndroid> validation_message_bubble_;
 };
-
-bool RegisterWebContentsDelegateAndroid(JNIEnv* env);
 
 }  // namespace web_contents_delegate_android
 

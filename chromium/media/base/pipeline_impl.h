@@ -32,7 +32,7 @@ class TextRenderer;
 //   [ *Created ]                       [ Any State ]
 //         | Start()                         | Stop() / SetError()
 //         V                                 V
-//   [ InitXXX (for each filter) ]      [ Stopping ]
+//   [ Starting ]                       [ Stopping ]
 //         |                                 |
 //         V                                 V
 //   [ Playing ] <---------.            [ Stopped ]
@@ -96,6 +96,15 @@ class MEDIA_EXPORT PipelineImpl : public Pipeline {
   void SetCdm(CdmContext* cdm_context,
               const CdmAttachedCB& cdm_attached_cb) override;
 
+  // |enabledTrackIds| contains track ids of enabled audio tracks.
+  void OnEnabledAudioTracksChanged(
+      const std::vector<MediaTrack::Id>& enabledTrackIds) override;
+
+  // |trackId| either empty, which means no video track is selected, or contain
+  // one element - the selected video track id.
+  void OnSelectedVideoTrackChanged(
+      const std::vector<MediaTrack::Id>& selectedTrackId) override;
+
  private:
   friend class MediaLog;
   class RendererWrapper;
@@ -105,8 +114,7 @@ class MEDIA_EXPORT PipelineImpl : public Pipeline {
   // from MediaLog.
   enum State {
     kCreated,
-    kInitDemuxer,
-    kInitRenderer,
+    kStarting,
     kSeeking,
     kPlaying,
     kStopping,
@@ -130,8 +138,8 @@ class MEDIA_EXPORT PipelineImpl : public Pipeline {
   void OnVideoOpacityChange(bool opaque);
 
   // Task completion callbacks from RendererWrapper.
-  void OnSeekDone(base::TimeDelta start_time);
-  void OnSuspendDone(base::TimeDelta suspend_time);
+  void OnSeekDone();
+  void OnSuspendDone();
 
   // Parameters passed in the constructor.
   const scoped_refptr<base::SingleThreadTaskRunner> media_task_runner_;
@@ -161,6 +169,10 @@ class MEDIA_EXPORT PipelineImpl : public Pipeline {
 
   // Current duration as reported by Demuxer.
   base::TimeDelta duration_;
+
+  // Set by GetMediaTime(), used to prevent the current media time value as
+  // reported to JavaScript from going backwards in time.
+  mutable base::TimeDelta last_media_time_;
 
   base::ThreadChecker thread_checker_;
   base::WeakPtrFactory<PipelineImpl> weak_factory_;

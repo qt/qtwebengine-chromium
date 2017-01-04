@@ -30,6 +30,7 @@ class WebString;
 namespace media {
 class MediaLog;
 class VideoFrame;
+enum VideoRotation;
 }
 
 namespace cc_blink {
@@ -105,8 +106,7 @@ class CONTENT_EXPORT WebMediaPlayerMS
   // Methods for painting.
   void paint(blink::WebCanvas* canvas,
              const blink::WebRect& rect,
-             unsigned char alpha,
-             SkXfermode::Mode mode) override;
+             SkPaint& paint) override;
   media::SkCanvasVideoRenderer* GetSkCanvasVideoRenderer();
   void ResetCanvasCache();
 
@@ -146,7 +146,7 @@ class CONTENT_EXPORT WebMediaPlayerMS
   // WebMediaPlayerDelegate::Observer implementation.
   void OnHidden() override;
   void OnShown() override;
-  void OnSuspendRequested(bool must_suspend) override;
+  bool OnSuspendRequested(bool must_suspend) override;
   void OnPlay() override;
   void OnPause() override;
   void OnVolumeMultiplierUpdate(double multiplier) override;
@@ -205,6 +205,7 @@ class CONTENT_EXPORT WebMediaPlayerMS
   bool paused_;
   bool render_frame_suspended_;
   bool received_first_frame_;
+  media::VideoRotation video_rotation_;
 
   scoped_refptr<media::MediaLog> media_log_;
 

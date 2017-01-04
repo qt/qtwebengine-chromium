@@ -12,48 +12,6 @@
 namespace v8 {
 namespace internal {
 
-
-// Perform string match of pattern on subject, starting at start index.
-// Caller must ensure that 0 <= start_index <= sub->length(),
-// and should check that pat->length() + start_index <= sub->length().
-int StringMatch(Isolate* isolate, Handle<String> sub, Handle<String> pat,
-                int start_index) {
-  DCHECK(0 <= start_index);
-  DCHECK(start_index <= sub->length());
-
-  int pattern_length = pat->length();
-  if (pattern_length == 0) return start_index;
-
-  int subject_length = sub->length();
-  if (start_index + pattern_length > subject_length) return -1;
-
-  sub = String::Flatten(sub);
-  pat = String::Flatten(pat);
-
-  DisallowHeapAllocation no_gc;  // ensure vectors stay valid
-  // Extract flattened substrings of cons strings before getting encoding.
-  String::FlatContent seq_sub = sub->GetFlatContent();
-  String::FlatContent seq_pat = pat->GetFlatContent();
-
-  // dispatch on type of strings
-  if (seq_pat.IsOneByte()) {
-    Vector<const uint8_t> pat_vector = seq_pat.ToOneByteVector();
-    if (seq_sub.IsOneByte()) {
-      return SearchString(isolate, seq_sub.ToOneByteVector(), pat_vector,
-                          start_index);
-    }
-    return SearchString(isolate, seq_sub.ToUC16Vector(), pat_vector,
-                        start_index);
-  }
-  Vector<const uc16> pat_vector = seq_pat.ToUC16Vector();
-  if (seq_sub.IsOneByte()) {
-    return SearchString(isolate, seq_sub.ToOneByteVector(), pat_vector,
-                        start_index);
-  }
-  return SearchString(isolate, seq_sub.ToUC16Vector(), pat_vector, start_index);
-}
-
-
 // This may return an empty MaybeHandle if an exception is thrown or
 // we abort due to reaching the recursion limit.
 MaybeHandle<String> StringReplaceOneCharWithString(
@@ -85,7 +43,7 @@ MaybeHandle<String> StringReplaceOneCharWithString(
 
     return subject;
   } else {
-    int index = StringMatch(isolate, subject, search, 0);
+    int index = String::IndexOf(isolate, subject, search, 0);
     if (index == -1) return subject;
     *found = true;
     Handle<String> first = isolate->factory()->NewSubString(subject, 0, index);
@@ -141,143 +99,15 @@ RUNTIME_FUNCTION(Runtime_StringIndexOf) {
   if (!index->ToArrayIndex(&start_index)) return Smi::FromInt(-1);
 
   CHECK(start_index <= static_cast<uint32_t>(sub->length()));
-  int position = StringMatch(isolate, sub, pat, start_index);
+  int position = String::IndexOf(isolate, sub, pat, start_index);
   return Smi::FromInt(position);
 }
-
-
-template <typename schar, typename pchar>
-static int StringMatchBackwards(Vector<const schar> subject,
-                                Vector<const pchar> pattern, int idx) {
-  int pattern_length = pattern.length();
-  DCHECK(pattern_length >= 1);
-  DCHECK(idx + pattern_length <= subject.length());
-
-  if (sizeof(schar) == 1 && sizeof(pchar) > 1) {
-    for (int i = 0; i < pattern_length; i++) {
-      uc16 c = pattern[i];
-      if (c > String::kMaxOneByteCharCode) {
-        return -1;
-      }
-    }
-  }
-
-  pchar pattern_first_char = pattern[0];
-  for (int i = idx; i >= 0; i--) {
-    if (subject[i] != pattern_first_char) continue;
-    int j = 1;
-    while (j < pattern_length) {
-      if (pattern[j] != subject[i + j]) {
-        break;
-      }
-      j++;
-    }
-    if (j == pattern_length) {
-      return i;
-    }
-  }
-  return -1;
-}
-
 
 RUNTIME_FUNCTION(Runtime_StringLastIndexOf) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 3);
-
-  CONVERT_ARG_HANDLE_CHECKED(String, sub, 0);
-  CONVERT_ARG_HANDLE_CHECKED(String, pat, 1);
-  CONVERT_ARG_HANDLE_CHECKED(Object, index, 2);
-
-  uint32_t start_index = 0;
-  if (!index->ToArrayIndex(&start_index)) return Smi::FromInt(-1);
-
-  uint32_t pat_length = pat->length();
-  uint32_t sub_length = sub->length();
-
-  if (start_index + pat_length > sub_length) {
-    start_index = sub_length - pat_length;
-  }
-
-  if (pat_length == 0) {
-    return Smi::FromInt(start_index);
-  }
-
-  sub = String::Flatten(sub);
-  pat = String::Flatten(pat);
-
-  int position = -1;
-  DisallowHeapAllocation no_gc;  // ensure vectors stay valid
-
-  String::FlatContent sub_content = sub->GetFlatContent();
-  String::FlatContent pat_content = pat->GetFlatContent();
-
-  if (pat_content.IsOneByte()) {
-    Vector<const uint8_t> pat_vector = pat_content.ToOneByteVector();
-    if (sub_content.IsOneByte()) {
-      position = StringMatchBackwards(sub_content.ToOneByteVector(), pat_vector,
-                                      start_index);
-    } else {
-      position = StringMatchBackwards(sub_content.ToUC16Vector(), pat_vector,
-                                      start_index);
-    }
-  } else {
-    Vector<const uc16> pat_vector = pat_content.ToUC16Vector();
-    if (sub_content.IsOneByte()) {
-      position = StringMatchBackwards(sub_content.ToOneByteVector(), pat_vector,
-                                      start_index);
-    } else {
-      position = StringMatchBackwards(sub_content.ToUC16Vector(), pat_vector,
-                                      start_index);
-    }
-  }
-
-  return Smi::FromInt(position);
-}
-
-
-RUNTIME_FUNCTION(Runtime_StringLocaleCompare) {
   HandleScope handle_scope(isolate);
-  DCHECK(args.length() == 2);
-
-  CONVERT_ARG_HANDLE_CHECKED(String, str1, 0);
-  CONVERT_ARG_HANDLE_CHECKED(String, str2, 1);
-
-  if (str1.is_identical_to(str2)) return Smi::FromInt(0);  // Equal.
-  int str1_length = str1->length();
-  int str2_length = str2->length();
-
-  // Decide trivial cases without flattening.
-  if (str1_length == 0) {
-    if (str2_length == 0) return Smi::FromInt(0);  // Equal.
-    return Smi::FromInt(-str2_length);
-  } else {
-    if (str2_length == 0) return Smi::FromInt(str1_length);
-  }
-
-  int end = str1_length < str2_length ? str1_length : str2_length;
-
-  // No need to flatten if we are going to find the answer on the first
-  // character.  At this point we know there is at least one character
-  // in each string, due to the trivial case handling above.
-  int d = str1->Get(0) - str2->Get(0);
-  if (d != 0) return Smi::FromInt(d);
-
-  str1 = String::Flatten(str1);
-  str2 = String::Flatten(str2);
-
-  DisallowHeapAllocation no_gc;
-  String::FlatContent flat1 = str1->GetFlatContent();
-  String::FlatContent flat2 = str2->GetFlatContent();
-
-  for (int i = 0; i < end; i++) {
-    if (flat1.Get(i) != flat2.Get(i)) {
-      return Smi::FromInt(flat1.Get(i) - flat2.Get(i));
-    }
-  }
-
-  return Smi::FromInt(str1_length - str2_length);
+  return String::LastIndexOf(isolate, args.at<Object>(0), args.at<Object>(1),
+                             isolate->factory()->undefined_value());
 }
-
 
 RUNTIME_FUNCTION(Runtime_SubString) {
   HandleScope scope(isolate);
@@ -292,15 +122,19 @@ RUNTIME_FUNCTION(Runtime_SubString) {
     CONVERT_SMI_ARG_CHECKED(to_number, 2);
     start = from_number;
     end = to_number;
-  } else {
+  } else if (args[1]->IsNumber() && args[2]->IsNumber()) {
     CONVERT_DOUBLE_ARG_CHECKED(from_number, 1);
     CONVERT_DOUBLE_ARG_CHECKED(to_number, 2);
     start = FastD2IChecked(from_number);
     end = FastD2IChecked(to_number);
+  } else {
+    return isolate->ThrowIllegalOperation();
   }
-  RUNTIME_ASSERT(end >= start);
-  RUNTIME_ASSERT(start >= 0);
-  RUNTIME_ASSERT(end <= string->length());
+  // The following condition is intentionally robust because the SubStringStub
+  // delegates here and we test this in cctest/test-strings/RobustSubStringStub.
+  if (end < start || start < 0 || end > string->length()) {
+    return isolate->ThrowIllegalOperation();
+  }
   isolate->counters()->sub_string_runtime()->Increment();
 
   return *isolate->factory()->NewSubString(string, start, end);
@@ -310,9 +144,15 @@ RUNTIME_FUNCTION(Runtime_SubString) {
 RUNTIME_FUNCTION(Runtime_StringAdd) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
-  CONVERT_ARG_HANDLE_CHECKED(String, str1, 0);
-  CONVERT_ARG_HANDLE_CHECKED(String, str2, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, obj1, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, obj2, 1);
   isolate->counters()->string_add_runtime()->Increment();
+  MaybeHandle<String> maybe_str1(Object::ToString(isolate, obj1));
+  MaybeHandle<String> maybe_str2(Object::ToString(isolate, obj2));
+  Handle<String> str1;
+  Handle<String> str2;
+  maybe_str1.ToHandle(&str1);
+  maybe_str2.ToHandle(&str2);
   RETURN_RESULT_OR_FAILURE(isolate,
                            isolate->factory()->NewConsString(str1, str2));
 }
@@ -431,7 +271,7 @@ RUNTIME_FUNCTION(Runtime_StringBuilderConcat) {
   CONVERT_ARG_HANDLE_CHECKED(String, special, 2);
 
   size_t actual_array_length = 0;
-  CHECK(TryNumberToSize(isolate, array->length(), &actual_array_length));
+  CHECK(TryNumberToSize(array->length(), &actual_array_length));
   CHECK(array_length >= 0);
   CHECK(static_cast<size_t>(array_length) <= actual_array_length);
 

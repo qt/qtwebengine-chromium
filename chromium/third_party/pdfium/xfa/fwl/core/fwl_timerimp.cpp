@@ -5,10 +5,10 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "xfa/fwl/core/fwl_appimp.h"
+#include "xfa/fwl/core/ifwl_adaptertimermgr.h"
 #include "xfa/fwl/core/ifwl_app.h"
 #include "xfa/fwl/core/ifwl_timer.h"
-#include "xfa/fwl/core/include/ifwl_adaptertimermgr.h"
-#include "xfa/fxfa/include/xfa_ffapp.h"
+#include "xfa/fxfa/xfa_ffapp.h"
 
 IFWL_TimerInfo* IFWL_Timer::StartTimer(uint32_t dwElapse, bool bImmediately) {
   CXFA_FFApp* pAdapterNative = FWL_GetAdapterNative();

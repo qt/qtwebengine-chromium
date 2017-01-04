@@ -36,6 +36,7 @@ import signal
 import subprocess
 import sys
 import time
+import threading
 
 from webkitpy.common.system.outputtee import Tee
 from webkitpy.common.system.filesystem import FileSystem
@@ -126,7 +127,8 @@ class Executive(object):
 
     def kill_process(self, pid):
         """Attempts to kill the given pid.
-        Will fail silently if pid does not exist or insufficient permissions."""
+        Will fail silently if pid does not exist or insufficient permissions.
+        """
         if sys.platform == "win32":
             # We only use taskkill.exe on windows (not cygwin) because subprocess.pid
             # is a CYGWIN pid and taskkill.exe expects a windows pid.
@@ -148,7 +150,7 @@ class Executive(object):
             except OSError as e:
                 if e.errno == errno.EAGAIN:
                     if retries_left <= 0:
-                        _log.warn("Failed to kill pid %s.  Too many EAGAIN errors." % pid)
+                        _log.warning("Failed to kill pid %s.  Too many EAGAIN errors.", pid)
                     continue
                 if e.errno == errno.ESRCH:  # The process does not exist.
                     return
@@ -244,7 +246,7 @@ class Executive(object):
                 pid = line[1]
                 if process_name_filter(process_name):
                     running_pids.append(int(pid))
-            except (ValueError, IndexError) as e:
+            except (ValueError, IndexError):
                 pass
 
         return sorted(running_pids)
@@ -332,7 +334,8 @@ class Executive(object):
 
     def command_for_printing(self, args):
         """Returns a print-ready string representing command args.
-        The string should be copy/paste ready for execution in a shell."""
+        The string should be copy/paste ready for execution in a shell.
+        """
         args = self._stringify_args(args)
         escaped_args = []
         for arg in args:
@@ -348,6 +351,7 @@ class Executive(object):
                     cwd=None,
                     env=None,
                     input=None,
+                    timeout_seconds=None,
                     error_handler=None,
                     return_exit_code=False,
                     return_stderr=True,
@@ -366,6 +370,11 @@ class Executive(object):
                              cwd=cwd,
                              env=env,
                              close_fds=self._should_close_fds())
+
+        if timeout_seconds:
+            timer = threading.Timer(timeout_seconds, process.kill)
+            timer.start()
+
         output = process.communicate(string_to_communicate)[0]
 
         # run_command automatically decodes to unicode() unless explicitly told not to.
@@ -376,8 +385,11 @@ class Executive(object):
         # http://bugs.python.org/issue1731717
         exit_code = process.wait()
 
+        if timeout_seconds:
+            timer.cancel()
+
         if debug_logging:
-            _log.debug('"%s" took %.2fs' % (self.command_for_printing(args), time.time() - start_time))
+            _log.debug('"%s" took %.2fs', self.command_for_printing(args), time.time() - start_time)
 
         if return_exit_code:
             return exit_code

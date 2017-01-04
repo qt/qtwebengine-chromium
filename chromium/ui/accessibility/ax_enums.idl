@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(nektar): Migrate entire file to Mojoq.
 // These should be kept in sync with third_party/WebKit/public/web/WebAXEnums.h
 // until the Chromium and Blink trees are merged.
 [camel_case_enum_to_string=true] namespace ui {
 
   // For new entries to the following three enums, also add to
-  // chrome/common/extensions/api/automation.idl.
+  // chrome/common/extensions/api/automation.idl. This is enforced
+  // by a PRESUBMIT check.
   //
   // Explanation of the comments next to these events:
   //
@@ -38,6 +40,7 @@
     hover,
     invalid_status_changed,    // Implicit
     layout_complete,           // Web
+    live_region_created,       // Implicit
     live_region_changed,       // Web
     load_complete,             // Web
     location_changed,          // Web
@@ -72,6 +75,7 @@
     annotation,
     application,
     article,
+    audio,
     banner,
     blockquote,
     // TODO(nektar): Remove busy_indicator because it's used nowhere.
@@ -190,21 +194,19 @@
     tree,
     unknown,
     tooltip,
+    video,
     web_area,
     web_view,
     window
   };
 
-  // TODO(dmazzoni): switch content/ to use AX_STATE_DISABLED instead of
-  // !AX_STATE_ENABLED.
   enum AXState {
     busy,
     checked,
     collapsed,
     default,
-    disabled,  // ui/views only
+    disabled,
     editable,
-    enabled,   // content only
     expanded,
     focusable,
     haspopup,
@@ -389,9 +391,6 @@
     flowto_ids,
     labelledby_ids,
 
-    // For static text. Character indices where line breaks occur.
-    line_breaks,
-
     // For static text. These int lists must be the same size; they represent
     // the start and end character offset of each marker. Examples of markers
     // include spelling and grammar errors, and find-in-page matches.
@@ -415,6 +414,12 @@
     // within the object's bounds, the second offset is the right coordinate
     // of the second character, and so on.
     character_offsets,
+    
+    // Used for caching. Do not read directly. Use
+    // |AXNode::GetOrComputeLineStartOffsets|
+    // For all text fields and content editable roots: A list of the start
+    // offsets of each line inside this object.
+    cached_line_starts,
 
     // For inline text. These int lists must be the same size; they represent
     // the start and end character offset of each word within this text.
@@ -422,13 +427,18 @@
     word_ends
   };
 
-  [cpp_enum_prefix_override="ax_marker_type"] enum AXMarkerType {
+  enum AXMarkerType {
+    // Assignments are ignored by the parser, but are kept here for clarity.
     spelling = 1,
     grammar = 2,
-    text_match = 4
+    spelling_grammar = 3,
+    text_match = 4,
+    spelling_text_match = 5,
+    grammar_text_match = 6,
+    spelling_grammar_text_match = 7
   };
 
-  [cpp_enum_prefix_override="ax_text_direction"] enum AXTextDirection {
+  enum AXTextDirection {
     ltr,
     rtl,
     ttb,
@@ -437,8 +447,8 @@
 
   // A Java counterpart will be generated for this enum.
   // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.ui.accessibility
-  // TODO(nektar): Fix compiler to create bit fields.
   [cpp_enum_prefix_override="ax"] enum AXTextStyle {
+    // Assignments are ignored by the parser, but are kept here for clarity.
     text_style_bold = 1,
     text_style_italic = 2,
     text_style_bold_italic = 3,
@@ -446,10 +456,17 @@
     text_style_bold_underline = 5,
     text_style_italic_underline = 6,
     text_style_bold_italic_underline = 7,
-    text_style_line_through = 8
+    text_style_line_through = 8,
+    text_style_bold_line_through = 9,
+    text_style_italic_line_through = 10,
+    text_style_bold_italic_line_through = 11,
+    text_style_underline_line_through = 12,
+    text_style_bold_underline_line_through = 13,
+    text_style_italic_underline_line_through = 14,
+    text_style_bold_italic_underline_line_through = 15
   };
 
-  [cpp_enum_prefix_override="ax_aria_current_state"] enum AXAriaCurrentState {
+  enum AXAriaCurrentState {
     false,
     true,
     page,
@@ -459,7 +476,7 @@
     time
   };
 
-  [cpp_enum_prefix_override="ax_invalid_state"] enum AXInvalidState {
+  enum AXInvalidState {
     false,
     true,
     spelling,
@@ -467,14 +484,14 @@
     other
   };
 
-  [cpp_enum_prefix_override="ax_sort_direction"] enum AXSortDirection {
+  enum AXSortDirection {
     unsorted,
     ascending,
     descending,
     other
   };
 
-  [cpp_enum_prefix_override="ax_name_from"] enum AXNameFrom {
+  enum AXNameFrom {
     uninitialized,
     attribute,
     contents,
@@ -483,12 +500,18 @@
     value
   };
 
-  [cpp_enum_prefix_override="ax_description_from"] enum AXDescriptionFrom {
-    uninitialized = 0,
+  enum AXDescriptionFrom {
+    uninitialized,
     attribute,
     contents,
     placeholder,
     related_element
+  };
+
+  enum AXEventFrom {
+    user,
+    page,
+    action
   };
 
   // Touch gestures on Chrome OS.
@@ -510,5 +533,25 @@
     swipe_up_4,
     swipe_right_4,
     swipe_down_4
+  };
+
+  enum AXTextAffinity {
+    downstream,
+    upstream
+  };
+
+  // Compares two nodes in an accessibility tree in pre-order traversal.
+  enum AXTreeOrder {
+    // Not in the same tree, or other error.
+    undefined,
+
+    // First node is before the second one.
+    before,
+
+    // Nodes are the same.
+    equal,
+
+    // First node is after the second one.
+    after
   };
 };

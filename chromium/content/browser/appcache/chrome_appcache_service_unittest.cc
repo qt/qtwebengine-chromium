@@ -7,6 +7,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
+#include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "content/browser/appcache/appcache_database.h"
 #include "content/browser/appcache/appcache_storage_impl.h"
@@ -104,18 +105,18 @@ ChromeAppCacheServiceTest::CreateAppCacheServiceImpl(
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&ChromeAppCacheService::InitializeOnIOThread,
-                 appcache_service.get(), appcache_path,
+                 appcache_service, appcache_path,
                  browser_context_.GetResourceContext(),
                  base::RetainedRef(mock_request_context_getter), mock_policy));
   // Steps needed to initialize the storage of AppCache data.
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   if (init_storage) {
     AppCacheStorageImpl* storage =
         static_cast<AppCacheStorageImpl*>(
             appcache_service->storage());
     storage->database_->db_connection();
     storage->disk_cache();
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
   return appcache_service;
 }
@@ -140,7 +141,7 @@ void ChromeAppCacheServiceTest::InsertDataIntoAppCache(
 TEST_F(ChromeAppCacheServiceTest, KeepOnDestruction) {
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   base::FilePath appcache_path =
-      temp_dir_.path().Append(kTestingAppCacheDirname);
+      temp_dir_.GetPath().Append(kTestingAppCacheDirname);
 
   // Create a ChromeAppCacheService and insert data into it
   scoped_refptr<ChromeAppCacheService> appcache_service =
@@ -151,7 +152,7 @@ TEST_F(ChromeAppCacheServiceTest, KeepOnDestruction) {
 
   // Test: delete the ChromeAppCacheService
   appcache_service = NULL;
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   // Recreate the appcache (for reading the data back)
   appcache_service = CreateAppCacheServiceImpl(appcache_path, false);
@@ -171,13 +172,13 @@ TEST_F(ChromeAppCacheServiceTest, KeepOnDestruction) {
 
   // Delete and let cleanup tasks run prior to returning.
   appcache_service = NULL;
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(ChromeAppCacheServiceTest, SaveSessionState) {
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   base::FilePath appcache_path =
-      temp_dir_.path().Append(kTestingAppCacheDirname);
+      temp_dir_.GetPath().Append(kTestingAppCacheDirname);
 
   // Create a ChromeAppCacheService and insert data into it
   scoped_refptr<ChromeAppCacheService> appcache_service =
@@ -191,7 +192,7 @@ TEST_F(ChromeAppCacheServiceTest, SaveSessionState) {
 
   // Test: delete the ChromeAppCacheService
   appcache_service = NULL;
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   // Recreate the appcache (for reading the data back)
   appcache_service = CreateAppCacheServiceImpl(appcache_path, false);
@@ -211,7 +212,7 @@ TEST_F(ChromeAppCacheServiceTest, SaveSessionState) {
 
   // Delete and let cleanup tasks run prior to returning.
   appcache_service = NULL;
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 }  // namespace content

@@ -12,6 +12,7 @@ source_set("browser") {
     "geolocation_updater_provider.mm",
     "signin/chrome_identity.h",
     "signin/chrome_identity.mm",
+    "signin/chrome_identity_browser_opener.h",
     "signin/chrome_identity_interaction_manager.h",
     "signin/chrome_identity_interaction_manager.mm",
     "signin/chrome_identity_service.h",
@@ -20,10 +21,12 @@ source_set("browser") {
     "signin/signin_error_provider.mm",
     "signin/signin_resources_provider.h",
     "signin/signin_resources_provider.mm",
+    "ui/app_rating_prompt.h",
     "ui/default_ios_web_view_factory.h",
     "ui/default_ios_web_view_factory.mm",
     "ui/infobar_view_delegate.h",
     "ui/infobar_view_protocol.h",
+    "ui/text_field_styling.h",
     "updatable_resource_provider.h",
     "updatable_resource_provider.mm",
   ]
@@ -43,6 +46,12 @@ source_set("test_support") {
   testonly = true
 
   sources = [
+    "signin/fake_chrome_identity.h",
+    "signin/fake_chrome_identity.mm",
+    "signin/fake_chrome_identity_interaction_manager.h",
+    "signin/fake_chrome_identity_interaction_manager.mm",
+    "signin/fake_chrome_identity_service.h",
+    "signin/fake_chrome_identity_service.mm",
     "test_chrome_browser_provider.h",
     "test_chrome_browser_provider.mm",
     "test_chrome_provider_initializer.h",
@@ -55,6 +64,7 @@ source_set("test_support") {
     ":browser",
     "//base",
     "//components/signin/ios/browser:test_support",
+    "//testing/gmock",
     "//testing/gtest",
   ]
 }

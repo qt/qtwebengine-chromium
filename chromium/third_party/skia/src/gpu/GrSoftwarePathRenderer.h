@@ -18,21 +18,21 @@ class GrTextureProvider;
  */
 class GrSoftwarePathRenderer : public GrPathRenderer {
 public:
-    GrSoftwarePathRenderer(GrTextureProvider* texProvider) : fTexProvider(texProvider) { }
+    GrSoftwarePathRenderer(GrTextureProvider* texProvider, bool allowCaching)
+            : fTexProvider(texProvider)
+            , fAllowCaching(allowCaching) {}
 private:
     static void DrawNonAARect(GrDrawContext* drawContext,
-                              const GrPaint* paint,
-                              const GrUserStencilSettings* userStencilSettings,
+                              const GrPaint& paint,
+                              const GrUserStencilSettings& userStencilSettings,
                               const GrClip& clip,
-                              GrColor color,
                               const SkMatrix& viewMatrix,
                               const SkRect& rect,
                               const SkMatrix& localMatrix);
     static void DrawAroundInvPath(GrDrawContext* drawContext,
-                                  const GrPaint* paint,
-                                  const GrUserStencilSettings* userStencilSettings,
+                                  const GrPaint& paint,
+                                  const GrUserStencilSettings& userStencilSettings,
                                   const GrClip& clip,
-                                  GrColor color,
                                   const SkMatrix& viewMatrix,
                                   const SkIRect& devClipBounds,
                                   const SkIRect& devPathBounds);
@@ -47,6 +47,7 @@ private:
 
 private:
     GrTextureProvider*     fTexProvider;
+    bool                   fAllowCaching;
 
     typedef GrPathRenderer INHERITED;
 };

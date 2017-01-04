@@ -51,7 +51,7 @@ ExtensionsAPIClient::CreateExtensionOptionsGuestDelegate(
 std::unique_ptr<guest_view::GuestViewManagerDelegate>
 ExtensionsAPIClient::CreateGuestViewManagerDelegate(
     content::BrowserContext* context) const {
-  return base::WrapUnique(new ExtensionsGuestViewManagerDelegate(context));
+  return base::MakeUnique<ExtensionsGuestViewManagerDelegate>(context);
 }
 
 std::unique_ptr<MimeHandlerViewGuestDelegate>
@@ -96,6 +96,10 @@ ExtensionsAPIClient::CreateVirtualKeyboardDelegate() const {
 
 ManagementAPIDelegate* ExtensionsAPIClient::CreateManagementAPIDelegate()
     const {
+  return nullptr;
+}
+
+MetricsPrivateDelegate* ExtensionsAPIClient::GetMetricsPrivateDelegate() {
   return nullptr;
 }
 

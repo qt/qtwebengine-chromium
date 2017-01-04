@@ -57,7 +57,7 @@ Polymer({
       this.actionButtonText_ = loadTimeData.getString('save');
 
       // If editing an existing search engine, pre-populate the input fields.
-      this.searchEngine_ = this.model.displayName;
+      this.searchEngine_ = this.model.name;
       this.keyword_ = this.model.keyword;
       this.queryUrl_ = this.model.url;
     } else {
@@ -66,7 +66,7 @@ Polymer({
       this.actionButtonText_ = loadTimeData.getString('add');
     }
 
-    this.addEventListener('iron-overlay-canceled', function() {
+    this.addEventListener('cancel', function() {
       this.browserProxy_.searchEngineEditCancelled();
     }.bind(this));
   },
@@ -76,7 +76,7 @@ Polymer({
     this.updateActionButtonState_();
     this.browserProxy_.searchEngineEditStarted(
         this.model ? this.model.modelIndex : this.DEFAULT_MODEL_INDEX);
-    this.$.dialog.open();
+    this.$.dialog.showModal();
   },
 
   /** @private */
@@ -98,6 +98,14 @@ Polymer({
   validate_: function(event) {
     var inputElement = Polymer.dom(event).localTarget;
 
+    // If element is empty, disable the action button, but don't show the red
+    // invalid message.
+    if (inputElement.value == '') {
+      inputElement.invalid = false;
+      this.updateActionButtonState_();
+      return;
+    }
+
     this.browserProxy_.validateSearchEngineInput(
         inputElement.id, inputElement.value).then(function(isValid) {
       inputElement.invalid = !isValid;
@@ -110,7 +118,7 @@ Polymer({
     var allValid = [
       this.$.searchEngine, this.$.keyword, this.$.queryUrl
     ].every(function(inputElement) {
-      return !inputElement.invalid && inputElement.value.length != 0;
+      return !inputElement.invalid && inputElement.value.length > 0;
     });
     this.$.actionButton.disabled = !allValid;
   },

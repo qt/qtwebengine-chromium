@@ -44,6 +44,10 @@ std::string GetIndexedOutputWavFilename(const std::string& wav_name,
 
 }  // namespace
 
+SimulationSettings::SimulationSettings() = default;
+SimulationSettings::SimulationSettings(const SimulationSettings&) = default;
+SimulationSettings::~SimulationSettings() = default;
+
 void CopyToAudioFrame(const ChannelBuffer<float>& src, AudioFrame* dest) {
   RTC_CHECK_EQ(src.num_channels(), dest->num_channels_);
   RTC_CHECK_EQ(src.num_frames(), dest->samples_per_channel_);
@@ -54,6 +58,12 @@ void CopyToAudioFrame(const ChannelBuffer<float>& src, AudioFrame* dest) {
     }
   }
 }
+
+AudioProcessingSimulator::AudioProcessingSimulator(
+    const SimulationSettings& settings)
+    : settings_(settings) {}
+
+AudioProcessingSimulator::~AudioProcessingSimulator() = default;
 
 AudioProcessingSimulator::ScopedTimer::~ScopedTimer() {
   int64_t interval = rtc::TimeNanos() - start_time_;
@@ -208,6 +218,7 @@ void AudioProcessingSimulator::DestroyAudioProcessor() {
 
 void AudioProcessingSimulator::CreateAudioProcessor() {
   Config config;
+  AudioProcessing::Config apm_config;
   if (settings_.use_bf && *settings_.use_bf) {
     config.Set<Beamforming>(new Beamforming(
         true, ParseArrayGeometry(*settings_.microphone_positions),
@@ -223,6 +234,9 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
   if (settings_.use_aec3) {
     config.Set<EchoCanceller3>(new EchoCanceller3(*settings_.use_aec3));
   }
+  if (settings_.use_lc) {
+    apm_config.level_controller.enabled = *settings_.use_lc;
+  }
   if (settings_.use_refined_adaptive_filter) {
     config.Set<RefinedAdaptiveFilter>(
         new RefinedAdaptiveFilter(*settings_.use_refined_adaptive_filter));
@@ -233,6 +247,9 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
                                               *settings_.use_delay_agnostic));
 
   ap_.reset(AudioProcessing::Create(config));
+  RTC_CHECK(ap_);
+
+  ap_->ApplyConfig(apm_config);
 
   if (settings_.use_aec) {
     RTC_CHECK_EQ(AudioProcessing::kNoError,

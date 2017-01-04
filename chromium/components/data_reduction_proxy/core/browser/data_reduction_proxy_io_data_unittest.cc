@@ -23,6 +23,7 @@
 #include "components/prefs/testing_pref_service.h"
 #include "net/http/http_network_session.h"
 #include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
@@ -109,7 +110,6 @@ TEST_F(DataReductionProxyIODataTest, TestConstruction) {
       io_data->basic_url_request_context_getter_.get()->GetURLRequestContext();
   const net::HttpNetworkSession::Params* http_params =
       request_context->GetNetworkSessionParams();
-  EXPECT_FALSE(http_params->enable_spdy31);
   EXPECT_FALSE(http_params->enable_http2);
   EXPECT_FALSE(http_params->enable_quic);
 
@@ -138,8 +138,8 @@ TEST_F(DataReductionProxyIODataTest, TestConstruction) {
 
   // Creating a second delegate with bypass statistics tracking should result
   // in usage stats being created.
-  io_data->CreateNetworkDelegate(
-      base::WrapUnique(new CountingNetworkDelegate()), true);
+  io_data->CreateNetworkDelegate(base::MakeUnique<CountingNetworkDelegate>(),
+                                 true);
   EXPECT_NE(nullptr, io_data->bypass_stats());
 
   io_data->ShutdownOnUIThread();
@@ -167,13 +167,13 @@ TEST_F(DataReductionProxyIODataTest, TestResetBadProxyListOnDisableDataSaver) {
           ->proxy_service();
   net::ProxyInfo proxy_info;
   proxy_info.UseNamedProxy("http://foo2.com");
-  net::BoundNetLog bound_net_log;
+  net::NetLogWithSource net_log_with_source;
   const net::ProxyRetryInfoMap& bad_proxy_list =
       proxy_service->proxy_retry_info();
 
   // Simulate network error to add proxies to the bad proxy list.
   proxy_service->MarkProxiesAsBadUntil(proxy_info, base::TimeDelta::FromDays(1),
-                                       proxies, bound_net_log);
+                                       proxies, net_log_with_source);
   base::RunLoop().RunUntilIdle();
 
   // Verify that there are 2 proxies in the bad proxies list.

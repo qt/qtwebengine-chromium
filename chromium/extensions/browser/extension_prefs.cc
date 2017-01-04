@@ -202,7 +202,7 @@ class ScopedExtensionPrefUpdate : public DictionaryPrefUpdate {
     if (!dict->GetDictionary(extension_id_, &extension)) {
       // Extension pref does not exist, create it.
       extension = new base::DictionaryValue();
-      dict->SetWithoutPathExpansion(extension_id_, extension);
+      dict->SetWithoutPathExpansion(extension_id_, base::WrapUnique(extension));
     }
     return extension;
   }
@@ -298,16 +298,16 @@ T* ExtensionPrefs::ScopedUpdate<T, type_enum_value>::Get() {
 template <typename T, base::Value::Type type_enum_value>
 T* ExtensionPrefs::ScopedUpdate<T, type_enum_value>::Create() {
   base::DictionaryValue* dict = update_.Get();
-  base::DictionaryValue* extension = NULL;
-  base::Value* key_value = NULL;
-  T* value_as_t = NULL;
+  base::DictionaryValue* extension = nullptr;
+  base::Value* key_value = nullptr;
+  T* value_as_t = nullptr;
   if (!dict->GetDictionary(extension_id_, &extension)) {
     extension = new base::DictionaryValue;
-    dict->SetWithoutPathExpansion(extension_id_, extension);
+    dict->SetWithoutPathExpansion(extension_id_, base::WrapUnique(extension));
   }
   if (!extension->Get(key_, &key_value)) {
     value_as_t = new T;
-    extension->SetWithoutPathExpansion(key_, value_as_t);
+    extension->SetWithoutPathExpansion(key_, base::WrapUnique(value_as_t));
   } else {
     // It would be nice to CHECK that this doesn't happen, but since prefs can
     // get into a mangled state, we can't really do that. Instead, handle it
@@ -322,7 +322,7 @@ T* ExtensionPrefs::ScopedUpdate<T, type_enum_value>::Create() {
           base::IntToString(static_cast<int>(key_value->GetType())));
       base::debug::DumpWithoutCrashing();
       value_as_t = new T();
-      extension->SetWithoutPathExpansion(key_, value_as_t);
+      extension->SetWithoutPathExpansion(key_, base::WrapUnique(value_as_t));
     } else {
       value_as_t = static_cast<T*>(key_value);
     }
@@ -348,10 +348,9 @@ ExtensionPrefs* ExtensionPrefs::Create(
     ExtensionPrefValueMap* extension_pref_value_map,
     bool extensions_disabled,
     const std::vector<ExtensionPrefsObserver*>& early_observers) {
-  return ExtensionPrefs::Create(browser_context, prefs, root_dir,
-                                extension_pref_value_map, extensions_disabled,
-                                early_observers,
-                                base::WrapUnique(new TimeProvider()));
+  return ExtensionPrefs::Create(
+      browser_context, prefs, root_dir, extension_pref_value_map,
+      extensions_disabled, early_observers, base::MakeUnique<TimeProvider>());
 }
 
 // static
@@ -609,8 +608,8 @@ std::unique_ptr<const PermissionSet> ExtensionPrefs::ReadPrefAsPermissionSet(
       extension_id, JoinPrefs(pref_key, kPrefScriptableHosts),
       &scriptable_hosts, UserScript::ValidUserScriptSchemes());
 
-  return base::WrapUnique(new PermissionSet(apis, manifest_permissions,
-                                            explicit_hosts, scriptable_hosts));
+  return base::MakeUnique<PermissionSet>(apis, manifest_permissions,
+                                         explicit_hosts, scriptable_hosts);
 }
 
 // Set the API or Manifest permissions.
@@ -1282,7 +1281,7 @@ ExtensionPrefs::GetInstalledExtensionsInfo() const {
     std::unique_ptr<ExtensionInfo> info =
         GetInstalledExtensionInfo(extension_id.key());
     if (info)
-      extensions_info->push_back(linked_ptr<ExtensionInfo>(info.release()));
+      extensions_info->push_back(std::move(info));
   }
 
   return extensions_info;
@@ -1305,7 +1304,7 @@ ExtensionPrefs::GetUninstalledExtensionsInfo() const {
     std::unique_ptr<ExtensionInfo> info =
         GetInstalledInfoHelper(extension_id.key(), ext);
     if (info)
-      extensions_info->push_back(linked_ptr<ExtensionInfo>(info.release()));
+      extensions_info->push_back(std::move(info));
   }
 
   return extensions_info;
@@ -1436,7 +1435,7 @@ ExtensionPrefs::GetAllDelayedInstallInfo() const {
     std::unique_ptr<ExtensionInfo> info =
         GetDelayedInstallInfo(extension_id.key());
     if (info)
-      extensions_info->push_back(linked_ptr<ExtensionInfo>(info.release()));
+      extensions_info->push_back(std::move(info));
   }
 
   return extensions_info;

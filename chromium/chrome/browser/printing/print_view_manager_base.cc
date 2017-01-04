@@ -10,6 +10,7 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
@@ -39,6 +40,11 @@
 
 #if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/printing/print_error_dialog.h"
+#endif
+
+#if defined(OS_WIN)
+#include "base/command_line.h"
+#include "chrome/common/chrome_switches.h"
 #endif
 
 using base::TimeDelta;
@@ -157,7 +163,8 @@ void PrintViewManagerBase::OnDidPrintPage(
       web_contents()->Stop();
       return;
     }
-    shared_buf.reset(new base::SharedMemory(params.metafile_data_handle, true));
+    shared_buf =
+        base::MakeUnique<base::SharedMemory>(params.metafile_data_handle, true);
     if (!shared_buf->Map(params.data_size)) {
       NOTREACHED() << "couldn't map";
       web_contents()->Stop();
@@ -183,14 +190,18 @@ void PrintViewManagerBase::OnDidPrintPage(
   }
 
 #if defined(OS_WIN)
+  print_job_->AppendPrintedPage(params.page_number);
   if (metafile_must_be_valid) {
     scoped_refptr<base::RefCountedBytes> bytes = new base::RefCountedBytes(
         reinterpret_cast<const unsigned char*>(shared_buf->memory()),
         params.data_size);
 
     document->DebugDumpData(bytes.get(), FILE_PATH_LITERAL(".pdf"));
+    // TODO(thestig): Figure out why rendering text with GDI results in random
+    // missing characters for some users. https://crbug.com/658606
     print_job_->StartPdfToEmfConversion(
-        bytes, params.page_size, params.content_area);
+        bytes, params.page_size, params.content_area,
+        false /* print_text_with_gdi? */);
   }
 #else
   // Update the rendered document. It will send notifications to the listener.
@@ -525,7 +536,7 @@ void PrintViewManagerBase::ReleasePrinterQuery() {
     return;
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&PrinterQuery::StopWorker, printer_query.get()));
+      base::Bind(&PrinterQuery::StopWorker, printer_query));
 }
 
 }  // namespace printing

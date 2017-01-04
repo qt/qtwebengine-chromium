@@ -294,16 +294,6 @@ enum NotificationType {
   // No details are expected.
   NOTIFICATION_OUTDATED_INSTALL_NO_AU,
 
-  // Software incompatibility notifications ----------------------------------
-
-  // Sent when Chrome has finished compiling the list of loaded modules (and
-  // other modules of interest). No details are expected.
-  NOTIFICATION_MODULE_LIST_ENUMERATED,
-
-  // Sent when Chrome is done scanning the module list and when the user has
-  // acknowledged the module incompatibility. No details are expected.
-  NOTIFICATION_MODULE_INCOMPATIBILITY_ICON_CHANGE,
-
   // Content Settings --------------------------------------------------------
 
   // Sent when the collect cookies dialog is shown. The source is a
@@ -334,7 +324,7 @@ enum NotificationType {
   // Sent when a download is initiated. It is possible that the download will
   // not actually begin due to the DownloadRequestLimiter cancelling it
   // prematurely.
-  // The source is the corresponding RenderViewHost. There are no details.
+  // The source is the corresponding WebContents. There are no details.
   NOTIFICATION_DOWNLOAD_INITIATED,
 
   // Misc --------------------------------------------------------------------
@@ -445,10 +435,6 @@ enum NotificationType {
   // menu has been created and shown.
   NOTIFICATION_RENDER_VIEW_CONTEXT_MENU_SHOWN,
 
-  // Sent when the Instant Controller determines whether an Instant tab supports
-  // the Instant API or not.
-  NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
-
   // Sent when the CaptivePortalService checks if we're behind a captive portal.
   // The Source is the Profile the CaptivePortalService belongs to, and the
   // Details are a Details<CaptivePortalService::CheckResults>.
@@ -492,34 +478,6 @@ enum NotificationType {
   // Sent by the PluginPrefs when there is a change of plugin enable/disable
   // status. The source is the profile.
   NOTIFICATION_PLUGIN_ENABLE_STATUS_CHANGED,
-
-  // Panels Notifications. The Panels are small browser windows near the bottom
-  // of the screen.
-  // Sent when all nonblocking bounds animations are finished across panels.
-  // Used only in unit testing.
-  NOTIFICATION_PANEL_BOUNDS_ANIMATIONS_FINISHED,
-
-  // Sent when panel gains/loses focus.
-  // The source is the Panel, no details.
-  // Used only in unit testing.
-  NOTIFICATION_PANEL_CHANGED_ACTIVE_STATUS,
-
-  // Sent when panel is minimized/restored/shows title only etc.
-  // The source is the Panel, no details.
-  NOTIFICATION_PANEL_CHANGED_EXPANSION_STATE,
-
-  // Sent when panel app icon is loaded.
-  // Used only in unit testing.
-  NOTIFICATION_PANEL_APP_ICON_LOADED,
-
-  // Sent when panel collection get updated.
-  // The source is the PanelCollection, no details.
-  // Used only in coordination with notification balloons.
-  NOTIFICATION_PANEL_COLLECTION_UPDATED,
-
-  // Sent when panel is closed.
-  // The source is the Panel, no details.
-  NOTIFICATION_PANEL_CLOSED,
 
   // Sent when a global error has changed and the error UI should update it
   // self. The source is a Source<Profile> containing the profile for the

@@ -11,19 +11,16 @@
 
 namespace blink {
 
-class SpellCheckerTest : public EditingTestBase {
-};
+class SpellCheckerTest : public EditingTestBase {};
 
-TEST_F(SpellCheckerTest, AdvanceToNextMisspellingWithEmptyInputNoCrash)
-{
-    setBodyContent("<input placeholder='placeholder'>abc");
-    updateAllLifecyclePhases();
-    Element* input = document().querySelector("input", ASSERT_NO_EXCEPTION);
-    input->focus();
-    document().settings()->setUnifiedTextCheckerEnabled(true);
-    // Do not crash in AdvanceToNextMisspelling command.
-    EXPECT_TRUE(document().frame()->editor().executeCommand("AdvanceToNextMisspelling"));
-    document().settings()->setUnifiedTextCheckerEnabled(false);
+TEST_F(SpellCheckerTest, AdvanceToNextMisspellingWithEmptyInputNoCrash) {
+  setBodyContent("<input placeholder='placeholder'>abc");
+  updateAllLifecyclePhases();
+  Element* input = document().querySelector("input");
+  input->focus();
+  // Do not crash in AdvanceToNextMisspelling command.
+  EXPECT_TRUE(
+      document().frame()->editor().executeCommand("AdvanceToNextMisspelling"));
 }
 
-} // namespace blink
+}  // namespace blink

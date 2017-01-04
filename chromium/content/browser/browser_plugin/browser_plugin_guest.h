@@ -253,6 +253,11 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   void ResendEventToEmbedder(const blink::WebInputEvent& event);
 
+  // TODO(ekaramad): Remove this once https://crbug.com/642826 is resolved.
+  bool can_use_cross_process_frames() const {
+    return can_use_cross_process_frames_;
+  }
+
  protected:
 
   // BrowserPluginGuest is a WebContentsObserver of |web_contents| and
@@ -339,10 +344,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
       const std::vector<blink::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
-  void OnImeConfirmComposition(
-      int instance_id,
-      const std::string& text,
-      bool keep_selection);
+  void OnImeCommitText(int instance_id,
+                       const std::string& text,
+                       int relative_cursor_pos);
+  void OnImeFinishComposingText(bool keep_selection);
   void OnExtendSelectionAndDelete(int instance_id, int before, int after);
   void OnImeCancelComposition();
 #if defined(OS_MACOSX) || defined(USE_AURA)
@@ -445,6 +450,11 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   std::deque<linked_ptr<IPC::Message> > pending_messages_;
 
   BrowserPluginGuestDelegate* const delegate_;
+
+  // Whether or not this BrowserPluginGuest can use cross process frames. This
+  // means when we have --use-cross-process-frames-for-guests on, the
+  // WebContents associated with this BrowserPluginGuest has OOPIF structure.
+  bool can_use_cross_process_frames_;
 
   // Weak pointer used to ask GeolocationPermissionContext about geolocation
   // permission.

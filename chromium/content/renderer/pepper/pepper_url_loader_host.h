@@ -45,7 +45,7 @@ class PepperURLLoaderHost : public ppapi::host::ResourceHost,
       ppapi::host::HostMessageContext* context) override;
 
   // blink::WebURLLoaderClient implementation.
-  void willFollowRedirect(blink::WebURLLoader* loader,
+  bool willFollowRedirect(blink::WebURLLoader* loader,
                           blink::WebURLRequest& new_request,
                           const blink::WebURLResponse& redir_response) override;
   void didSendData(blink::WebURLLoader* loader,
@@ -59,7 +59,8 @@ class PepperURLLoaderHost : public ppapi::host::ResourceHost,
   void didReceiveData(blink::WebURLLoader* loader,
                       const char* data,
                       int data_length,
-                      int encoded_data_length) override;
+                      int encoded_data_length,
+                      int encoded_body_length) override;
   void didFinishLoading(blink::WebURLLoader* loader,
                         double finish_time,
                         int64_t total_encoded_data_length) override;

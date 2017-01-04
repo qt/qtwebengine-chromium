@@ -6,11 +6,11 @@
 #define V8_TYPE_INFO_H_
 
 #include "src/allocation.h"
+#include "src/ast/ast-types.h"
 #include "src/contexts.h"
 #include "src/globals.h"
 #include "src/parsing/token.h"
-#include "src/types.h"
-#include "src/zone.h"
+#include "src/zone/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -18,6 +18,7 @@ namespace internal {
 // Forward declarations.
 class SmallMapList;
 class FeedbackNexus;
+class StubCache;
 
 class TypeFeedbackOracle: public ZoneObject {
  public:
@@ -76,29 +77,25 @@ class TypeFeedbackOracle: public ZoneObject {
   uint16_t ToBooleanTypes(TypeFeedbackId id);
 
   // Get type information for arithmetic operations and compares.
-  void BinaryType(TypeFeedbackId id,
-                  Type** left,
-                  Type** right,
-                  Type** result,
+  void BinaryType(TypeFeedbackId id, FeedbackVectorSlot slot, AstType** left,
+                  AstType** right, AstType** result,
                   Maybe<int>* fixed_right_arg,
                   Handle<AllocationSite>* allocation_site,
                   Token::Value operation);
 
-  void CompareType(TypeFeedbackId id,
-                   Type** left,
-                   Type** right,
-                   Type** combined);
+  void CompareType(TypeFeedbackId id, FeedbackVectorSlot slot, AstType** left,
+                   AstType** right, AstType** combined);
 
-  Type* CountType(TypeFeedbackId id);
+  AstType* CountType(TypeFeedbackId id, FeedbackVectorSlot slot);
 
   Zone* zone() const { return zone_; }
   Isolate* isolate() const { return isolate_; }
 
  private:
-  void CollectReceiverTypes(FeedbackVectorSlot slot, Handle<Name> name,
-                            Code::Flags flags, SmallMapList* types);
-  void CollectReceiverTypes(FeedbackNexus* nexus, Handle<Name> name,
-                            Code::Flags flags, SmallMapList* types);
+  void CollectReceiverTypes(StubCache* stub_cache, FeedbackVectorSlot slot,
+                            Handle<Name> name, SmallMapList* types);
+  void CollectReceiverTypes(StubCache* stub_cache, FeedbackNexus* nexus,
+                            Handle<Name> name, SmallMapList* types);
 
   // Returns true if there is at least one string map and if
   // all maps are string maps.

@@ -65,8 +65,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
   gfx::ScopedCanvas scoped_canvas(canvas);
   const float scale = canvas->UndoDeviceScaleFactor();
 
-  gfx::RectF border_rect_f((gfx::SizeF(size)));
-  border_rect_f.Scale(scale);
+  gfx::RectF border_rect_f(gfx::ScaleToEnclosingRect(gfx::Rect(size), scale));
   const SkScalar scaled_corner_radius = SkFloatToScalar(radius_ * scale);
 
   SkPaint paint;
@@ -344,20 +343,20 @@ Painter* Painter::CreateImageGridPainter(const int image_ids[]) {
 
 // static
 std::unique_ptr<Painter> Painter::CreateDashedFocusPainter() {
-  return base::WrapUnique(new DashedFocusPainter(gfx::Insets()));
+  return base::MakeUnique<DashedFocusPainter>(gfx::Insets());
 }
 
 // static
 std::unique_ptr<Painter> Painter::CreateDashedFocusPainterWithInsets(
     const gfx::Insets& insets) {
-  return base::WrapUnique(new DashedFocusPainter(insets));
+  return base::MakeUnique<DashedFocusPainter>(insets);
 }
 
 // static
 std::unique_ptr<Painter> Painter::CreateSolidFocusPainter(
     SkColor color,
     const gfx::Insets& insets) {
-  return base::WrapUnique(new SolidFocusPainter(color, insets));
+  return base::MakeUnique<SolidFocusPainter>(color, insets);
 }
 
 // HorizontalPainter ----------------------------------------------------------

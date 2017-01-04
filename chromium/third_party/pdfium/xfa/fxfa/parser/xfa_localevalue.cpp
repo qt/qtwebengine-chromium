@@ -6,14 +6,11 @@
 
 #include "xfa/fxfa/parser/xfa_localevalue.h"
 
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/fx_ext.h"
 #include "xfa/fgas/localization/fgas_localeimp.h"
-#include "xfa/fxfa/parser/xfa_doclayout.h"
-#include "xfa/fxfa/parser/xfa_document.h"
+#include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
 #include "xfa/fxfa/parser/xfa_object.h"
-#include "xfa/fxfa/parser/xfa_parser.h"
-#include "xfa/fxfa/parser/xfa_script.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
 static const FX_DOUBLE fraction_scales[] = {0.1,

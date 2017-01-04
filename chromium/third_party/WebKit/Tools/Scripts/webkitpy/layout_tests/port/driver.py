@@ -55,7 +55,8 @@ class DriverInput(object):
 
 class DriverOutput(object):
     """Groups information about a output from driver for easy passing
-    and post-processing of data."""
+    and post-processing of data.
+    """
 
     def __init__(self, text, image, image_hash, audio, crash=False,
                  test_time=0, measurements=None, timeout=False, error='', crashed_process_name='??',
@@ -131,8 +132,11 @@ class Driver(object):
         self._measurements = {}
         if self._port.get_option("profile"):
             profiler_name = self._port.get_option("profiler")
-            self._profiler = ProfilerFactory.create_profiler(self._port.host,
-                                                             self._port._path_to_driver(), self._port.results_directory(), profiler_name)
+            self._profiler = ProfilerFactory.create_profiler(
+                self._port.host,
+                self._port._path_to_driver(),  # pylint: disable=protected-access
+                self._port.results_directory(),
+                profiler_name)
         else:
             self._profiler = None
 
@@ -266,7 +270,6 @@ class Driver(object):
         This returns the test name for a given URI, e.g., if you passed in
         "file:///src/LayoutTests/fast/html/keygen.html" it would return
         "fast/html/keygen.html".
-
         """
 
         # This looks like a bit of a hack, since the uri is used instead of test name.
@@ -307,7 +310,7 @@ class Driver(object):
 
     def _start(self, pixel_tests, per_test_args, wait_for_ready=True):
         self.stop()
-        self._driver_tempdir = self._port._filesystem.mkdtemp(prefix='%s-' % self._port.driver_name())
+        self._driver_tempdir = self._port.host.filesystem.mkdtemp(prefix='%s-' % self._port.driver_name())
         server_name = self._port.driver_name()
         environment = self._port.setup_environ_for_server()
         environment = self._setup_environ_for_driver(environment)
@@ -334,7 +337,7 @@ class Driver(object):
             line = server_process.read_stdout_line(deadline)
 
         if server_process.timed_out or server_process.has_crashed():
-            _log.error('Failed to start the %s process: \n%s' % (server_process.name(), output))
+            _log.error('Failed to start the %s process: \n%s', server_process.name(), output)
             return False
 
         return True
@@ -356,7 +359,7 @@ class Driver(object):
                 self._profiler.profile_after_exit()
 
         if self._driver_tempdir:
-            self._port._filesystem.rmtree(str(self._driver_tempdir))
+            self._port.host.filesystem.rmtree(str(self._driver_tempdir))
             self._driver_tempdir = None
 
         self._current_cmd_line = None
@@ -383,13 +386,13 @@ class Driver(object):
         elif (error_line.startswith("#CRASHED - ")
               or error_line.startswith("#PROCESS UNRESPONSIVE - ")):
             # WebKitTestRunner uses this to report that the WebProcess subprocess crashed.
-            match = re.match('#(?:CRASHED|PROCESS UNRESPONSIVE) - (\S+)', error_line)
+            match = re.match(r'#(?:CRASHED|PROCESS UNRESPONSIVE) - (\S+)', error_line)
             self._crashed_process_name = match.group(1) if match else 'WebProcess'
-            match = re.search('pid (\d+)', error_line)
+            match = re.search(r'pid (\d+)', error_line)
             pid = int(match.group(1)) if match else None
             self._crashed_pid = pid
             # FIXME: delete this after we're sure this code is working :)
-            _log.debug('%s crash, pid = %s, error_line = %s' % (self._crashed_process_name, str(pid), error_line))
+            _log.debug('%s crash, pid = %s, error_line = %s', self._crashed_process_name, str(pid), error_line)
             if error_line.startswith("#PROCESS UNRESPONSIVE - "):
                 self._subprocess_was_unresponsive = True
                 self._port.sample_process(self._crashed_process_name, self._crashed_pid)
@@ -401,7 +404,7 @@ class Driver(object):
     def _check_for_leak(self, error_line):
         if error_line.startswith("#LEAK - "):
             self._leaked = True
-            match = re.match('#LEAK - (\S+) pid (\d+) (.+)\n', error_line)
+            match = re.match(r'#LEAK - (\S+) pid (\d+) (.+)\n', error_line)
             self._leak_log = match.group(3)
         return self._leaked
 

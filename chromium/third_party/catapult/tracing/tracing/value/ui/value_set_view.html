@@ -5,83 +5,205 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
-<link rel="import" href="/tracing/ui/base/polymer_utils.html">
 <link rel="import" href="/tracing/ui/base/tab_view.html">
+<link rel="import" href="/tracing/ui/brushing_state_controller.html">
+<link rel="import" href="/tracing/value/ui/value_set_table.html">
 
-<polymer-element name='tr-v-ui-value-set-view'>
+<dom-module id="tr-v-ui-value-set-view">
   <template>
-    <tr-ui-a-tab-view id="container"></tr-ui-a-tab-view>
+    <style>
+      :host {
+        font-family: sans-serif;
+      };
+    </style>
+
+    <tr-v-ui-value-set-table id="valueSetTable"></tr-v-ui-value-set-table>
   </template>
-</polymer-element>
+</dom-module>
 
 <script>
 'use strict';
-tr.exportTo('tr.ui', function() {
-  var VALUE_SET_VIEW_ELEMENT_NAMES = [];
+tr.exportTo('tr.v.ui', function() {
+  function NullBrushingStateController() {
+    this.parentController = undefined;
+  }
 
-  var SELECTED_TAB_SETTINGS_KEY = 'tr-v-ui-value-set-view-element-name';
+  NullBrushingStateController.prototype = {
+    __proto__: tr.c.BrushingStateController.prototype,
 
-  Polymer('tr-v-ui-value-set-view', {
-    ready: function() {
-      this.$.container.addEventListener(
-        'selected-tab-change', this.onSelectedTabChange_.bind(this));
+    dispatchChangeEvent_: function() {
+      if (this.parentController)
+        this.parentController.dispatchChangeEvent_();
     },
 
-    onSelectedTabChange_: function() {
-      if (!this.$.container.selectedTab)
-        return;
+    get model() {
+      if (!this.parentController)
+        return undefined;
+      return this.parentController.model;
+    },
 
-      tr.b.Settings.set(
-          SELECTED_TAB_SETTINGS_KEY,
-          this.$.container.selectedTab.tagName.toLowerCase());
+    get trackView() {
+      if (!this.parentController)
+        return undefined;
+      return this.parentController.trackView;
+    },
+
+    get viewport() {
+      if (!this.parentController)
+        return undefined;
+      return this.parentController.viewport;
+    },
+
+    get historyEnabled() {
+      if (!this.parentController)
+        return undefined;
+      return this.parentController.historyEnabled;
+    },
+
+    set historyEnabled(historyEnabled) {
+      if (this.parentController)
+        this.parentController.historyEnabled = historyEnabled;
+    },
+
+    modelWillChange: function() {
+      if (this.parentController)
+        this.parentController.modelWillChange();
+    },
+
+    modelDidChange: function() {
+      if (this.parentController)
+        this.parentController.modelDidChange();
+    },
+
+    onUserInitiatedSelectionChange_: function() {
+      if (this.parentController)
+        this.parentController.onUserInitiatedSelectionChange_();
+    },
+
+    onPopState_: function(e) {
+      if (this.parentController)
+        this.parentController.onPopState_(e);
+    },
+
+    get selection() {
+      if (!this.parentController)
+        return undefined;
+      return this.parentController.selection;
+    },
+
+    get findMatches() {
+      if (!this.parentController)
+        return undefined;
+      return this.parentController.findMatches;
+    },
+
+    get selectionOfInterest() {
+      if (!this.parentController)
+        return undefined;
+      return this.parentController.selectionOfInterest;
+    },
+
+    get currentBrushingState() {
+      if (!this.parentController)
+        return undefined;
+      return this.parentController.currentBrushingState;
+    },
+
+    set currentBrushingState(newBrushingState) {
+      if (this.parentController)
+        this.parentController.currentBrushingState = newBrushingState;
+    },
+
+    addAllEventsMatchingFilterToSelectionAsTask: function(filter, selection) {
+      if (this.parentController) {
+        this.parentController.addAllEventsMatchingFilterToSelectionAsTask(
+            filter, selection);
+      }
+    },
+
+    findTextChangedTo: function(allPossibleMatches) {
+      if (this.parentController)
+        this.parentController.findTextChangedTo(allPossibleMatches);
+    },
+
+    findFocusChangedTo: function(currentFocus) {
+      if (this.parentController)
+        this.parentController.findFocusChangedTo(currentFocus);
+    },
+
+    findTextCleared: function() {
+      if (this.parentController)
+        this.parentController.findTextCleared();
+    },
+
+    uiStateFromString: function(string) {
+      if (this.parentController)
+        this.parentController.uiStateFromString(string);
+    },
+
+    navToPosition: function(uiState, showNavLine) {
+      if (this.parentController)
+        this.parentController.navToPosition(uiState, showNavLine);
+    },
+
+    changeSelectionFromTimeline: function(selection) {
+      if (this.parentController)
+        this.parentController.changeSelectionFromTimeline(selection);
+    },
+
+    showScriptControlSelection: function(selection) {
+      if (this.parentController)
+        this.parentController.showScriptControlSelection(selection);
+    },
+
+    changeSelectionFromRequestSelectionChangeEvent: function(selection) {
+      if (this.parentController) {
+        this.parentController.changeSelectionFromRequestSelectionChangeEvent(
+            selection);
+      }
+    },
+
+    changeAnalysisViewRelatedEvents: function(eventSet) {
+      if (this.parentController && (eventSet instanceof tr.model.EventSet))
+        this.parentController.changeAnalysisViewRelatedEvents(eventSet);
+    },
+
+    changeAnalysisLinkHoveredEvents: function(eventSet) {
+      if (this.parentController && (eventSet instanceof tr.model.EventSet))
+        this.parentController.changeAnalysisLinkHoveredEvents(eventSet);
+    },
+
+    getViewSpecificBrushingState: function(viewId) {
+      if (this.parentController)
+        this.parentController.getViewSpecificBrushingState(viewId);
+    },
+
+    changeViewSpecificBrushingState: function(viewId, newState) {
+      if (this.parentController)
+        this.parentController.changeViewSpecificBrushingState(viewId, newState);
+    }
+  };
+
+  Polymer({
+    is: 'tr-v-ui-value-set-view',
+
+    ready: function() {
+      this.brushingStateController = new NullBrushingStateController();
+    },
+
+    attached: function() {
+      this.brushingStateController.parentController =
+          tr.c.BrushingStateController.getControllerForElement(this.parentNode);
     },
 
     /**
      * @param {!tr.v.ValueSet} values
      */
     set values(values) {
-      this.$.container.textContent = '';
-
-      var initialTabElementName = tr.b.Settings.get(
-          SELECTED_TAB_SETTINGS_KEY, undefined);
-
-      VALUE_SET_VIEW_ELEMENT_NAMES.forEach(function(elementName, index) {
-        var view = document.createElement(elementName);
-        if (!view.supportsValueSet(values))
-          return;
-
-        view.values = values;
-
-        if (elementName.toLowerCase() === initialTabElementName)
-          view.setAttribute('selected', true);
-
-        view.setAttribute('tab-label', view.tabLabel);
-
-        this.$.container.appendChild(view);
-      }, this);
-
-      if (this.$.container.children.length === 1) {
-        this.$.container.tabsHidden = true;
-      } else if (this.$.container.selectedTab === undefined) {
-        this.$.container.children[0].setAttribute('selected', true);
-      }
+      this.$.valueSetTable.values = values;
     }
   });
 
-  /**
-   * Register the name of a polymer element that supports displaying ValueSets.
-   *
-   * @param {string} elementName
-   */
-  function registerValueSetView(elementName) {
-    if (!tr.ui.b.getPolymerElementNamed(elementName))
-      throw new Error('Element not registered: ' + elementName);
-
-    VALUE_SET_VIEW_ELEMENT_NAMES.push(elementName);
-  }
-
-  return {
-    registerValueSetView: registerValueSetView
-  };
+  return {};
 });
 </script>

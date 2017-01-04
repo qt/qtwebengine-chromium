@@ -15,7 +15,6 @@
 #include "webrtc/p2p/base/fakeportallocator.h"
 #include "webrtc/p2p/base/portallocator.h"
 
-static const char kSessionId[] = "session id";
 static const char kContentName[] = "test content";
 // Based on ICE_UFRAG_LENGTH
 static const char kIceUfrag[] = "UF00";
@@ -35,11 +34,10 @@ class PortAllocatorTest : public testing::Test, public sigslot::has_slots<> {
   void SetConfigurationWithPoolSize(int candidate_pool_size) {
     allocator_->SetConfiguration(cricket::ServerAddresses(),
                                  std::vector<cricket::RelayServerConfig>(),
-                                 candidate_pool_size);
+                                 candidate_pool_size, false);
   }
 
   std::unique_ptr<cricket::FakePortAllocatorSession> CreateSession(
-      const std::string& sid,
       const std::string& content_name,
       int component,
       const std::string& ice_ufrag,
@@ -47,8 +45,7 @@ class PortAllocatorTest : public testing::Test, public sigslot::has_slots<> {
     return std::unique_ptr<cricket::FakePortAllocatorSession>(
         static_cast<cricket::FakePortAllocatorSession*>(
             allocator_
-                ->CreateSession(sid, content_name, component, ice_ufrag,
-                                ice_pwd)
+                ->CreateSession(content_name, component, ice_ufrag, ice_pwd)
                 .release()));
   }
 
@@ -95,7 +92,7 @@ TEST_F(PortAllocatorTest, TestDefaults) {
 // candidate filter are applied as expected.
 TEST_F(PortAllocatorTest, CreateSession) {
   allocator_->set_candidate_filter(cricket::CF_RELAY);
-  auto session = CreateSession(kSessionId, kContentName, 1, kIceUfrag, kIcePwd);
+  auto session = CreateSession(kContentName, 1, kIceUfrag, kIcePwd);
   ASSERT_NE(nullptr, session);
   EXPECT_EQ(cricket::CF_RELAY, session->candidate_filter());
   EXPECT_EQ(kContentName, session->content_name());
@@ -107,14 +104,14 @@ TEST_F(PortAllocatorTest, CreateSession) {
 TEST_F(PortAllocatorTest, SetConfigurationUpdatesIceServers) {
   cricket::ServerAddresses stun_servers_1 = {stun_server_1};
   std::vector<cricket::RelayServerConfig> turn_servers_1 = {turn_server_1};
-  allocator_->SetConfiguration(stun_servers_1, turn_servers_1, 0);
+  allocator_->SetConfiguration(stun_servers_1, turn_servers_1, 0, false);
   EXPECT_EQ(stun_servers_1, allocator_->stun_servers());
   EXPECT_EQ(turn_servers_1, allocator_->turn_servers());
 
   // Update with a different set of servers.
   cricket::ServerAddresses stun_servers_2 = {stun_server_2};
   std::vector<cricket::RelayServerConfig> turn_servers_2 = {turn_server_2};
-  allocator_->SetConfiguration(stun_servers_2, turn_servers_2, 0);
+  allocator_->SetConfiguration(stun_servers_2, turn_servers_2, 0, false);
   EXPECT_EQ(stun_servers_2, allocator_->stun_servers());
   EXPECT_EQ(turn_servers_2, allocator_->turn_servers());
 }
@@ -182,14 +179,14 @@ TEST_F(PortAllocatorTest,
        SetConfigurationRecreatesPooledSessionsWhenIceServersChange) {
   cricket::ServerAddresses stun_servers_1 = {stun_server_1};
   std::vector<cricket::RelayServerConfig> turn_servers_1 = {turn_server_1};
-  allocator_->SetConfiguration(stun_servers_1, turn_servers_1, 1);
+  allocator_->SetConfiguration(stun_servers_1, turn_servers_1, 1, false);
   EXPECT_EQ(stun_servers_1, allocator_->stun_servers());
   EXPECT_EQ(turn_servers_1, allocator_->turn_servers());
 
   // Update with a different set of servers (and also change pool size).
   cricket::ServerAddresses stun_servers_2 = {stun_server_2};
   std::vector<cricket::RelayServerConfig> turn_servers_2 = {turn_server_2};
-  allocator_->SetConfiguration(stun_servers_2, turn_servers_2, 2);
+  allocator_->SetConfiguration(stun_servers_2, turn_servers_2, 2, false);
   EXPECT_EQ(stun_servers_2, allocator_->stun_servers());
   EXPECT_EQ(turn_servers_2, allocator_->turn_servers());
   auto session_1 = TakePooledSession();

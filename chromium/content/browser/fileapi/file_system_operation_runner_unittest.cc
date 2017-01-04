@@ -61,7 +61,7 @@ class FileSystemOperationRunnerTest : public testing::Test {
 
   void SetUp() override {
     ASSERT_TRUE(base_.CreateUniqueTempDir());
-    base::FilePath base_dir = base_.path();
+    base::FilePath base_dir = base_.GetPath();
     file_system_context_ = CreateFileSystemContextForTesting(nullptr, base_dir);
   }
 
@@ -190,11 +190,11 @@ class MultiThreadFileSystemOperationRunnerTest : public testing::Test {
   void SetUp() override {
     ASSERT_TRUE(base_.CreateUniqueTempDir());
 
-    base::FilePath base_dir = base_.path();
+    base::FilePath base_dir = base_.GetPath();
     ScopedVector<storage::FileSystemBackend> additional_providers;
     file_system_context_ = new FileSystemContext(
         base::ThreadTaskRunnerHandle::Get().get(),
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE).get(),
+        BrowserThread::GetTaskRunnerForThread(BrowserThread::FILE).get(),
         storage::ExternalMountPoints::CreateRefCounted().get(),
         make_scoped_refptr(new MockSpecialStoragePolicy()).get(), nullptr,
         std::move(additional_providers),

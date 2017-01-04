@@ -5,14 +5,24 @@
 #ifndef CONTENT_RENDERER_GPU_RENDER_WIDGET_COMPOSITOR_DELEGATE_H_
 #define CONTENT_RENDERER_GPU_RENDER_WIDGET_COMPOSITOR_DELEGATE_H_
 
+#include <memory>
+#include <vector>
+
+#include "content/common/content_export.h"
+
 namespace blink {
 class WebWidget;
-struct WebScreenInfo;
 }
 
 namespace cc {
 class BeginFrameSource;
-class OutputSurface;
+class CopyOutputRequest;
+class CompositorFrameSink;
+class SwapPromise;
+}
+
+namespace gfx {
+class Vector2dF;
 }
 
 namespace content {
@@ -33,13 +43,9 @@ class CONTENT_EXPORT RenderWidgetCompositorDelegate {
   // Notifies that the compositor has issed a BeginMainFrame.
   virtual void BeginMainFrame(double frame_time_sec) = 0;
 
-  // Requests an OutputSurface to render into.
-  virtual std::unique_ptr<cc::OutputSurface> CreateOutputSurface(
+  // Requests a CompositorFrameSink to submit to.
+  virtual std::unique_ptr<cc::CompositorFrameSink> CreateCompositorFrameSink(
       bool fallback) = 0;
-
-  // Requests an external BeginFrameSource from the delegate.
-  virtual std::unique_ptr<cc::BeginFrameSource>
-  CreateExternalBeginFrameSource() = 0;
 
   // Notifies that the draw commands for a committed frame have been issued.
   virtual void DidCommitAndDrawCompositorFrame() = 0;
@@ -82,6 +88,11 @@ class CONTENT_EXPORT RenderWidgetCompositorDelegate {
   // to signal to flow control mechanisms that a frame is beginning, not to
   // perform actual painting work.
   virtual void WillBeginCompositorFrame() = 0;
+
+  // For use in layout test mode only, attempts to copy the full content of the
+  // compositor.
+  virtual std::unique_ptr<cc::SwapPromise> RequestCopyOfOutputForLayoutTest(
+      std::unique_ptr<cc::CopyOutputRequest> request) = 0;
 
  protected:
   virtual ~RenderWidgetCompositorDelegate() {}

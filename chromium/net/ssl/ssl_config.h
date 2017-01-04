@@ -26,6 +26,7 @@ enum {
   SSL_PROTOCOL_VERSION_TLS1 = 0x0301,
   SSL_PROTOCOL_VERSION_TLS1_1 = 0x0302,
   SSL_PROTOCOL_VERSION_TLS1_2 = 0x0303,
+  SSL_PROTOCOL_VERSION_TLS1_3 = 0x0304,
 };
 
 enum TokenBindingParam {
@@ -40,9 +41,6 @@ NET_EXPORT extern const uint16_t kDefaultSSLVersionMin;
 // Default maximum protocol version.
 NET_EXPORT extern const uint16_t kDefaultSSLVersionMax;
 
-// Default minimum protocol version that it's acceptable to fallback to.
-NET_EXPORT extern const uint16_t kDefaultSSLVersionFallbackMin;
-
 // A collection of SSL-related configuration settings.
 struct NET_EXPORT SSLConfig {
   // Default to revocation checking.
@@ -54,11 +52,6 @@ struct NET_EXPORT SSLConfig {
   // The expected cert status is written to |cert_status|. |*cert_status| can
   // be NULL if user doesn't care about the cert status.
   bool IsAllowedBadCert(X509Certificate* cert, CertStatus* cert_status) const;
-
-  // Same as above except works with DER encoded certificates instead
-  // of X509Certificate.
-  bool IsAllowedBadCert(const base::StringPiece& der_cert,
-                        CertStatus* cert_status) const;
 
   // Returns the set of flags to use for certificate verification, which is a
   // bitwise OR of CertVerifier::VerifyFlags that represent this SSLConfig's
@@ -81,18 +74,16 @@ struct NET_EXPORT SSLConfig {
   // certificate chain chains to a local (non-public) trust anchor.
   bool rev_checking_required_local_anchors;
 
+  // sha1_local_anchors_enabled is true if SHA-1 signed certificates issued by a
+  // local (non-public) trust anchor should be allowed.
+  bool sha1_local_anchors_enabled;
+
   // The minimum and maximum protocol versions that are enabled.
   // (Use the SSL_PROTOCOL_VERSION_xxx enumerators defined above.)
   // SSL 2.0 and SSL 3.0 are not supported. If version_max < version_min, it
   // means no protocol versions are enabled.
   uint16_t version_min;
   uint16_t version_max;
-
-  // version_fallback_min contains the minimum version that is acceptable to
-  // fallback to. Versions before this may be tried to see whether they would
-  // have succeeded and thus to give a better message to the user, but the
-  // resulting connection won't be used in these cases.
-  uint16_t version_fallback_min;
 
   // Presorted list of cipher suites which should be explicitly prevented from
   // being used in addition to those disabled by the net built-in policy.
@@ -136,10 +127,12 @@ struct NET_EXPORT SSLConfig {
 
   struct NET_EXPORT CertAndStatus {
     CertAndStatus();
+    CertAndStatus(scoped_refptr<X509Certificate> cert, CertStatus status);
+    CertAndStatus(const CertAndStatus&);
     ~CertAndStatus();
 
-    std::string der_cert;
-    CertStatus cert_status;
+    scoped_refptr<X509Certificate> cert;
+    CertStatus cert_status = 0;
   };
 
   // Add any known-bad SSL certificate (with its cert status) to
@@ -153,10 +146,6 @@ struct NET_EXPORT SSLConfig {
 
   bool verify_ev_cert;  // True if we should verify the certificate for EV.
 
-  bool version_fallback;  // True if we are falling back to an older protocol
-                          // version (one still needs to decrement
-                          // version_max).
-
   // If cert_io_enabled is false, then certificate verification will not
   // result in additional HTTP requests. (For example: to fetch missing
   // intermediates or to perform OCSP/CRL fetches.) It also implies that online
@@ -168,16 +157,6 @@ struct NET_EXPORT SSLConfig {
   // Layer Protocol Negotation), in decreasing order of preference.  Protocols
   // will be advertised in this order during TLS handshake.
   NextProtoVector alpn_protos;
-
-  // The list of application level protocols supported with NPN (Next Protocol
-  // Negotiation).  The last item on the list is selected if there is no overlap
-  // between |npn_protos| and the protocols supported by the server, otherwise
-  // server preference is observed and the order of |npn_protos| is irrelevant.
-  // Note that due to NSS limitations, ports which use NSS will use
-  // |alpn_protos| for both ALPN and NPN. However, if |npn_protos| is empty, NPN
-  // will still be disabled.
-  // TODO(bnc): Deprecate NPN, see https://crbug.com/526713.
-  NextProtoVector npn_protos;
 
   // True if renegotiation should be allowed for the default application-level
   // protocol when the peer negotiates neither ALPN nor NPN.

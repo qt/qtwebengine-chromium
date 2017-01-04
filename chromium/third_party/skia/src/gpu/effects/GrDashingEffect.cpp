@@ -282,13 +282,17 @@ private:
         // compute bounds
         SkScalar halfStrokeWidth = 0.5f * geometry.fSrcStrokeWidth;
         SkScalar xBloat = SkPaint::kButt_Cap == cap ? 0 : halfStrokeWidth;
-        fBounds.set(geometry.fPtsRot[0], geometry.fPtsRot[1]);
-        fBounds.outset(xBloat, halfStrokeWidth);
+        SkRect bounds;
+        bounds.set(geometry.fPtsRot[0], geometry.fPtsRot[1]);
+        bounds.outset(xBloat, halfStrokeWidth);
 
         // Note, we actually create the combined matrix here, and save the work
         SkMatrix& combinedMatrix = fGeoData[0].fSrcRotInv;
         combinedMatrix.postConcat(geometry.fViewMatrix);
-        combinedMatrix.mapRect(&fBounds);
+
+        IsZeroArea zeroArea = geometry.fSrcStrokeWidth ? IsZeroArea::kNo : IsZeroArea::kYes;
+        HasAABloat aaBloat = (aaMode == AAMode::kNone) ? HasAABloat ::kNo : HasAABloat::kYes;
+        this->setTransformedBounds(bounds, combinedMatrix, aaBloat, zeroArea);
     }
 
     void initBatchTracker(const GrXPOverridesForBatch& overrides) override {
@@ -655,7 +659,7 @@ private:
         }
 
         fGeoData.push_back_n(that->geoData()->count(), that->geoData()->begin());
-        this->joinBounds(that->bounds());
+        this->joinBounds(*that);
         return true;
     }
 
@@ -813,15 +817,8 @@ public:
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&) override;
-
-    void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLSLProgramDataManager& pdman,
-                          int index,
-                          const SkTArray<const GrCoordTransform*, true>& transforms) override {
-        this->setTransformDataHelper<DashingCircleEffect>(primProc, pdman, index, transforms);
-    }
-
+    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&,
+                 FPCoordTransformIter&& transformIter) override;
 private:
     UniformHandle fParamUniform;
     UniformHandle fColorUniform;
@@ -874,8 +871,7 @@ void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                          gpArgs->fPositionVar,
                          dce.inPosition()->fName,
                          dce.localMatrix(),
-                         args.fTransformsIn,
-                         args.fTransformsOut);
+                         args.fFPCoordTransformHandler);
 
     // transforms all points so that we can compare them to our test circle
     fragBuilder->codeAppendf("float xShifted = %s.x - floor(%s.x / %s.z) * %s.z;",
@@ -896,7 +892,8 @@ void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 }
 
 void GLDashingCircleEffect::setData(const GrGLSLProgramDataManager& pdman,
-                                    const GrPrimitiveProcessor& processor) {
+                                    const GrPrimitiveProcessor& processor,
+                                    FPCoordTransformIter&& transformIter)  {
     const DashingCircleEffect& dce = processor.cast<DashingCircleEffect>();
     if (dce.color() != fColor) {
         float c[4];
@@ -904,6 +901,7 @@ void GLDashingCircleEffect::setData(const GrGLSLProgramDataManager& pdman,
         pdman.set4fv(fColorUniform, 1, c);
         fColor = dce.color();
     }
+    this->setTransformDataHelper(dce.localMatrix(), pdman, &transformIter);
 }
 
 void GLDashingCircleEffect::GenKey(const GrGeometryProcessor& gp,
@@ -945,10 +943,9 @@ DashingCircleEffect::DashingCircleEffect(GrColor color,
     , fUsesLocalCoords(usesLocalCoords)
     , fAAMode(aaMode) {
     this->initClassID<DashingCircleEffect>();
-    fInPosition = &this->addVertexAttrib(Attribute("inPosition", kVec2f_GrVertexAttribType));
-    fInDashParams = &this->addVertexAttrib(Attribute("inDashParams", kVec3f_GrVertexAttribType));
-    fInCircleParams = &this->addVertexAttrib(Attribute("inCircleParams",
-                                                       kVec2f_GrVertexAttribType));
+    fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType);
+    fInDashParams = &this->addVertexAttrib("inDashParams", kVec3f_GrVertexAttribType);
+    fInCircleParams = &this->addVertexAttrib("inCircleParams", kVec2f_GrVertexAttribType);
 }
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DashingCircleEffect);
@@ -1033,14 +1030,8 @@ public:
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&) override;
-
-    void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLSLProgramDataManager& pdman,
-                          int index,
-                          const SkTArray<const GrCoordTransform*, true>& transforms) override {
-        this->setTransformDataHelper<DashingLineEffect>(primProc, pdman, index, transforms);
-    }
+    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&,
+                 FPCoordTransformIter&& iter) override;
 
 private:
     GrColor       fColor;
@@ -1089,8 +1080,7 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                          gpArgs->fPositionVar,
                          de.inPosition()->fName,
                          de.localMatrix(),
-                         args.fTransformsIn,
-                         args.fTransformsOut);
+                         args.fFPCoordTransformHandler);
 
     // transforms all points so that we can compare them to our test rect
     fragBuilder->codeAppendf("float xShifted = %s.x - floor(%s.x / %s.z) * %s.z;",
@@ -1129,7 +1119,8 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 }
 
 void GLDashingLineEffect::setData(const GrGLSLProgramDataManager& pdman,
-                                  const GrPrimitiveProcessor& processor) {
+                                  const GrPrimitiveProcessor& processor,
+                                  FPCoordTransformIter&& transformIter) {
     const DashingLineEffect& de = processor.cast<DashingLineEffect>();
     if (de.color() != fColor) {
         float c[4];
@@ -1137,6 +1128,7 @@ void GLDashingLineEffect::setData(const GrGLSLProgramDataManager& pdman,
         pdman.set4fv(fColorUniform, 1, c);
         fColor = de.color();
     }
+    this->setTransformDataHelper(de.localMatrix(), pdman, &transformIter);
 }
 
 void GLDashingLineEffect::GenKey(const GrGeometryProcessor& gp,
@@ -1178,9 +1170,9 @@ DashingLineEffect::DashingLineEffect(GrColor color,
     , fUsesLocalCoords(usesLocalCoords)
     , fAAMode(aaMode) {
     this->initClassID<DashingLineEffect>();
-    fInPosition = &this->addVertexAttrib(Attribute("inPosition", kVec2f_GrVertexAttribType));
-    fInDashParams = &this->addVertexAttrib(Attribute("inDashParams", kVec3f_GrVertexAttribType));
-    fInRectParams = &this->addVertexAttrib(Attribute("inRect", kVec4f_GrVertexAttribType));
+    fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType);
+    fInDashParams = &this->addVertexAttrib("inDashParams", kVec3f_GrVertexAttribType);
+    fInRectParams = &this->addVertexAttrib("inRect", kVec4f_GrVertexAttribType);
 }
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DashingLineEffect);
@@ -1240,7 +1232,7 @@ DRAW_BATCH_TEST_DEFINE(DashBatch) {
     }
 
     // pick random cap
-    SkPaint::Cap cap = SkPaint::Cap(random->nextULessThan(SkPaint::Cap::kCapCount));
+    SkPaint::Cap cap = SkPaint::Cap(random->nextULessThan(SkPaint::kCapCount));
 
     SkScalar intervals[2];
 

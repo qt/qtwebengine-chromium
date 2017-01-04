@@ -6,7 +6,7 @@
 
 #include <list>
 
-#include "net/quic/reliable_quic_stream.h"
+#include "net/quic/core/reliable_quic_stream.h"
 
 using base::StringPiece;
 
@@ -91,6 +91,12 @@ void ReliableQuicStreamPeer::WriteOrBufferData(
     bool fin,
     QuicAckListenerInterface* ack_notifier_delegate) {
   stream->WriteOrBufferData(data, fin, ack_notifier_delegate);
+}
+
+// static
+net::QuicStreamSequencer* ReliableQuicStreamPeer::sequencer(
+    ReliableQuicStream* stream) {
+  return &(stream->sequencer_);
 }
 
 }  // namespace test

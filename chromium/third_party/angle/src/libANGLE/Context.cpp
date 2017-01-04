@@ -12,6 +12,7 @@
 #include <iterator>
 #include <sstream>
 #include <string.h>
+#include <vector>
 
 #include "common/matrix_utils.h"
 #include "common/platform.h"
@@ -34,11 +35,65 @@
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/validationES.h"
+#include "libANGLE/Workarounds.h"
 #include "libANGLE/renderer/ContextImpl.h"
 #include "libANGLE/renderer/EGLImplFactory.h"
+#include "libANGLE/queryconversions.h"
 
 namespace
 {
+
+template <typename T>
+std::vector<gl::Path *> GatherPaths(gl::ResourceManager &resourceManager,
+                                    GLsizei numPaths,
+                                    const void *paths,
+                                    GLuint pathBase)
+{
+    std::vector<gl::Path *> ret;
+    ret.reserve(numPaths);
+
+    const auto *nameArray = static_cast<const T *>(paths);
+
+    for (GLsizei i = 0; i < numPaths; ++i)
+    {
+        const GLuint pathName = nameArray[i] + pathBase;
+
+        ret.push_back(resourceManager.getPath(pathName));
+    }
+
+    return ret;
+}
+
+std::vector<gl::Path *> GatherPaths(gl::ResourceManager &resourceManager,
+                                    GLsizei numPaths,
+                                    GLenum pathNameType,
+                                    const void *paths,
+                                    GLuint pathBase)
+{
+    switch (pathNameType)
+    {
+        case GL_UNSIGNED_BYTE:
+            return GatherPaths<GLubyte>(resourceManager, numPaths, paths, pathBase);
+
+        case GL_BYTE:
+            return GatherPaths<GLbyte>(resourceManager, numPaths, paths, pathBase);
+
+        case GL_UNSIGNED_SHORT:
+            return GatherPaths<GLushort>(resourceManager, numPaths, paths, pathBase);
+
+        case GL_SHORT:
+            return GatherPaths<GLshort>(resourceManager, numPaths, paths, pathBase);
+
+        case GL_UNSIGNED_INT:
+            return GatherPaths<GLuint>(resourceManager, numPaths, paths, pathBase);
+
+        case GL_INT:
+            return GatherPaths<GLint>(resourceManager, numPaths, paths, pathBase);
+    }
+
+    UNREACHABLE();
+    return std::vector<gl::Path *>();
+}
 
 template <typename T>
 gl::Error GetQueryObjectParameter(gl::Context *context, GLuint id, GLenum pname, T *params)
@@ -84,9 +139,14 @@ void MarkTransformFeedbackBufferUsage(gl::TransformFeedback *transformFeedback)
 }
 
 // Attribute map queries.
-EGLint GetClientVersion(const egl::AttributeMap &attribs)
+EGLint GetClientMajorVersion(const egl::AttributeMap &attribs)
 {
     return static_cast<EGLint>(attribs.get(EGL_CONTEXT_CLIENT_VERSION, 1));
+}
+
+EGLint GetClientMinorVersion(const egl::AttributeMap &attribs)
+{
+    return static_cast<EGLint>(attribs.get(EGL_CONTEXT_MINOR_VERSION, 0));
 }
 
 GLenum GetResetStrategy(const egl::AttributeMap &attribs)
@@ -120,6 +180,46 @@ bool GetNoError(const egl::AttributeMap &attribs)
     return (attribs.get(EGL_CONTEXT_OPENGL_NO_ERROR_KHR, EGL_FALSE) == EGL_TRUE);
 }
 
+bool GetWebGLContext(const egl::AttributeMap &attribs)
+{
+    return (attribs.get(EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE, EGL_FALSE) == EGL_TRUE);
+}
+
+bool GetBindGeneratesResource(const egl::AttributeMap &attribs)
+{
+    return (attribs.get(EGL_CONTEXT_BIND_GENERATES_RESOURCE_CHROMIUM, EGL_TRUE) == EGL_TRUE);
+}
+
+std::string GetObjectLabelFromPointer(GLsizei length, const GLchar *label)
+{
+    std::string labelName;
+    if (label != nullptr)
+    {
+        size_t labelLength = length < 0 ? strlen(label) : length;
+        labelName          = std::string(label, labelLength);
+    }
+    return labelName;
+}
+
+void GetObjectLabelBase(const std::string &objectLabel,
+                        GLsizei bufSize,
+                        GLsizei *length,
+                        GLchar *label)
+{
+    size_t writeLength = objectLabel.length();
+    if (label != nullptr && bufSize > 0)
+    {
+        writeLength = std::min(static_cast<size_t>(bufSize) - 1, objectLabel.length());
+        std::copy(objectLabel.begin(), objectLabel.begin() + writeLength, label);
+        label[writeLength] = '\0';
+    }
+
+    if (length != nullptr)
+    {
+        *length = static_cast<GLsizei>(writeLength);
+    }
+}
+
 }  // anonymous namespace
 
 namespace gl
@@ -129,7 +229,9 @@ Context::Context(rx::EGLImplFactory *implFactory,
                  const egl::Config *config,
                  const Context *shareContext,
                  const egl::AttributeMap &attribs)
-    : ValidationContext(GetClientVersion(attribs),
+
+    : ValidationContext(GetClientMajorVersion(attribs),
+                        GetClientMinorVersion(attribs),
                         &mGLState,
                         mCaps,
                         mTextureCaps,
@@ -139,12 +241,14 @@ Context::Context(rx::EGLImplFactory *implFactory,
                         GetNoError(attribs)),
       mImplementation(implFactory->createContext(mState)),
       mCompiler(nullptr),
-      mClientVersion(GetClientVersion(attribs)),
+      mClientMajorVersion(GetClientMajorVersion(attribs)),
+      mClientMinorVersion(GetClientMinorVersion(attribs)),
       mConfig(config),
       mClientType(EGL_OPENGL_ES_API),
       mHasBeenCurrent(false),
       mContextLost(false),
       mResetStatus(GL_NO_ERROR),
+      mContextLostForced(false),
       mResetStrategy(GetResetStrategy(attribs)),
       mRobustAccess(GetRobustAccess(attribs)),
       mCurrentSurface(nullptr),
@@ -152,9 +256,11 @@ Context::Context(rx::EGLImplFactory *implFactory,
 {
     ASSERT(!mRobustAccess);  // Unimplemented
 
-    initCaps();
+    initCaps(GetWebGLContext(attribs));
+    initWorkarounds();
 
-    mGLState.initialize(mCaps, mExtensions, mClientVersion, GetDebug(attribs));
+    mGLState.initialize(mCaps, mExtensions, mClientMajorVersion, GetDebug(attribs),
+                        GetBindGeneratesResource(attribs));
 
     mFenceNVHandleAllocator.setBaseHandle(0);
 
@@ -182,7 +288,7 @@ Context::Context(rx::EGLImplFactory *implFactory,
     Texture *zeroTextureCube = new Texture(mImplementation.get(), 0, GL_TEXTURE_CUBE_MAP);
     mZeroTextures[GL_TEXTURE_CUBE_MAP].set(zeroTextureCube);
 
-    if (mClientVersion >= 3)
+    if (mClientMajorVersion >= 3)
     {
         // TODO: These could also be enabled via extension
         Texture *zeroTexture3D = new Texture(mImplementation.get(), 0, GL_TEXTURE_3D);
@@ -218,7 +324,7 @@ Context::Context(rx::EGLImplFactory *implFactory,
     bindPixelPackBuffer(0);
     bindPixelUnpackBuffer(0);
 
-    if (mClientVersion >= 3)
+    if (mClientMajorVersion >= 3)
     {
         // [OpenGL ES 3.0.2] section 2.14.1 pg 85:
         // In the initial state, a default transform feedback object is bound and treated as
@@ -392,19 +498,6 @@ void Context::releaseSurface()
 
     mCurrentSurface->setIsCurrent(false);
     mCurrentSurface = nullptr;
-}
-
-// NOTE: this function should not assume that this context is current!
-void Context::markContextLost()
-{
-    if (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT)
-        mResetStatus = GL_UNKNOWN_CONTEXT_RESET_EXT;
-    mContextLost = true;
-}
-
-bool Context::isContextLost()
-{
-    return mContextLost;
 }
 
 GLuint Context::createBuffer()
@@ -804,6 +897,49 @@ LabeledObject *Context::getLabeledObjectFromPtr(const void *ptr) const
     return getFenceSync(reinterpret_cast<GLsync>(const_cast<void *>(ptr)));
 }
 
+void Context::objectLabel(GLenum identifier, GLuint name, GLsizei length, const GLchar *label)
+{
+    LabeledObject *object = getLabeledObject(identifier, name);
+    ASSERT(object != nullptr);
+
+    std::string labelName = GetObjectLabelFromPointer(length, label);
+    object->setLabel(labelName);
+}
+
+void Context::objectPtrLabel(const void *ptr, GLsizei length, const GLchar *label)
+{
+    LabeledObject *object = getLabeledObjectFromPtr(ptr);
+    ASSERT(object != nullptr);
+
+    std::string labelName = GetObjectLabelFromPointer(length, label);
+    object->setLabel(labelName);
+}
+
+void Context::getObjectLabel(GLenum identifier,
+                             GLuint name,
+                             GLsizei bufSize,
+                             GLsizei *length,
+                             GLchar *label) const
+{
+    LabeledObject *object = getLabeledObject(identifier, name);
+    ASSERT(object != nullptr);
+
+    const std::string &objectLabel = object->getLabel();
+    GetObjectLabelBase(objectLabel, bufSize, length, label);
+}
+
+void Context::getObjectPtrLabel(const void *ptr,
+                                GLsizei bufSize,
+                                GLsizei *length,
+                                GLchar *label) const
+{
+    LabeledObject *object = getLabeledObjectFromPtr(ptr);
+    ASSERT(object != nullptr);
+
+    const std::string &objectLabel = object->getLabel();
+    GetObjectLabelBase(objectLabel, bufSize, length, label);
+}
+
 bool Context::isSampler(GLuint samplerName) const
 {
     return mResourceManager->isSampler(samplerName);
@@ -1171,8 +1307,12 @@ void Context::getIntegerv(GLenum pname, GLint *params)
       case GL_MAX_FRAGMENT_INPUT_COMPONENTS:            *params = mCaps.maxFragmentInputComponents;                     break;
       case GL_MIN_PROGRAM_TEXEL_OFFSET:                 *params = mCaps.minProgramTexelOffset;                          break;
       case GL_MAX_PROGRAM_TEXEL_OFFSET:                 *params = mCaps.maxProgramTexelOffset;                          break;
-      case GL_MAJOR_VERSION:                            *params = mClientVersion;                                       break;
-      case GL_MINOR_VERSION:                            *params = 0;                                                    break;
+      case GL_MAJOR_VERSION:
+          *params = mClientMajorVersion;
+          break;
+      case GL_MINOR_VERSION:
+          *params = mClientMinorVersion;
+          break;
       case GL_MAX_ELEMENTS_INDICES:                     *params = mCaps.maxElementsIndices;                             break;
       case GL_MAX_ELEMENTS_VERTICES:                    *params = mCaps.maxElementsVertices;                            break;
       case GL_MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS: *params = mCaps.maxTransformFeedbackInterleavedComponents; break;
@@ -1228,7 +1368,129 @@ void Context::getIntegerv(GLenum pname, GLint *params)
       case GL_GPU_DISJOINT_EXT:
           *params = mImplementation->getGPUDisjoint();
           break;
-
+      case GL_MAX_FRAMEBUFFER_WIDTH:
+          *params = mCaps.maxFramebufferWidth;
+          break;
+      case GL_MAX_FRAMEBUFFER_HEIGHT:
+          *params = mCaps.maxFramebufferHeight;
+          break;
+      case GL_MAX_FRAMEBUFFER_SAMPLES:
+          *params = mCaps.maxFramebufferSamples;
+          break;
+      case GL_MAX_SAMPLE_MASK_WORDS:
+          *params = mCaps.maxSampleMaskWords;
+          break;
+      case GL_MAX_COLOR_TEXTURE_SAMPLES:
+          *params = mCaps.maxColorTextureSamples;
+          break;
+      case GL_MAX_DEPTH_TEXTURE_SAMPLES:
+          *params = mCaps.maxDepthTextureSamples;
+          break;
+      case GL_MAX_INTEGER_SAMPLES:
+          *params = mCaps.maxIntegerSamples;
+          break;
+      case GL_MAX_VERTEX_ATTRIB_RELATIVE_OFFSET:
+          *params = mCaps.maxVertexAttribRelativeOffset;
+          break;
+      case GL_MAX_VERTEX_ATTRIB_BINDINGS:
+          *params = mCaps.maxVertexAttribBindings;
+          break;
+      case GL_MAX_VERTEX_ATTRIB_STRIDE:
+          *params = mCaps.maxVertexAttribStride;
+          break;
+      case GL_MAX_VERTEX_ATOMIC_COUNTER_BUFFERS:
+          *params = mCaps.maxVertexAtomicCounterBuffers;
+          break;
+      case GL_MAX_VERTEX_ATOMIC_COUNTERS:
+          *params = mCaps.maxVertexAtomicCounters;
+          break;
+      case GL_MAX_VERTEX_IMAGE_UNIFORMS:
+          *params = mCaps.maxVertexImageUniforms;
+          break;
+      case GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS:
+          *params = mCaps.maxVertexShaderStorageBlocks;
+          break;
+      case GL_MAX_FRAGMENT_ATOMIC_COUNTER_BUFFERS:
+          *params = mCaps.maxFragmentAtomicCounterBuffers;
+          break;
+      case GL_MAX_FRAGMENT_ATOMIC_COUNTERS:
+          *params = mCaps.maxFragmentAtomicCounters;
+          break;
+      case GL_MAX_FRAGMENT_IMAGE_UNIFORMS:
+          *params = mCaps.maxFragmentImageUniforms;
+          break;
+      case GL_MAX_FRAGMENT_SHADER_STORAGE_BLOCKS:
+          *params = mCaps.maxFragmentShaderStorageBlocks;
+          break;
+      case GL_MIN_PROGRAM_TEXTURE_GATHER_OFFSET:
+          *params = mCaps.minProgramTextureGatherOffset;
+          break;
+      case GL_MAX_PROGRAM_TEXTURE_GATHER_OFFSET:
+          *params = mCaps.maxProgramTextureGatherOffset;
+          break;
+      case GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS:
+          *params = mCaps.maxComputeWorkGroupInvocations;
+          break;
+      case GL_MAX_COMPUTE_UNIFORM_BLOCKS:
+          *params = mCaps.maxComputeUniformBlocks;
+          break;
+      case GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS:
+          *params = mCaps.maxComputeTextureImageUnits;
+          break;
+      case GL_MAX_COMPUTE_SHARED_MEMORY_SIZE:
+          *params = mCaps.maxComputeSharedMemorySize;
+          break;
+      case GL_MAX_COMPUTE_UNIFORM_COMPONENTS:
+          *params = mCaps.maxComputeUniformComponents;
+          break;
+      case GL_MAX_COMPUTE_ATOMIC_COUNTER_BUFFERS:
+          *params = mCaps.maxComputeAtomicCounterBuffers;
+          break;
+      case GL_MAX_COMPUTE_ATOMIC_COUNTERS:
+          *params = mCaps.maxComputeAtomicCounters;
+          break;
+      case GL_MAX_COMPUTE_IMAGE_UNIFORMS:
+          *params = mCaps.maxComputeImageUniforms;
+          break;
+      case GL_MAX_COMBINED_COMPUTE_UNIFORM_COMPONENTS:
+          *params = mCaps.maxCombinedComputeUniformComponents;
+          break;
+      case GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS:
+          *params = mCaps.maxComputeShaderStorageBlocks;
+          break;
+      case GL_MAX_COMBINED_SHADER_OUTPUT_RESOURCES:
+          *params = mCaps.maxCombinedShaderOutputResources;
+          break;
+      case GL_MAX_UNIFORM_LOCATIONS:
+          *params = mCaps.maxUniformLocations;
+          break;
+      case GL_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS:
+          *params = mCaps.maxAtomicCounterBufferBindings;
+          break;
+      case GL_MAX_ATOMIC_COUNTER_BUFFER_SIZE:
+          *params = mCaps.maxAtomicCounterBufferSize;
+          break;
+      case GL_MAX_COMBINED_ATOMIC_COUNTER_BUFFERS:
+          *params = mCaps.maxCombinedAtomicCounterBuffers;
+          break;
+      case GL_MAX_COMBINED_ATOMIC_COUNTERS:
+          *params = mCaps.maxCombinedAtomicCounters;
+          break;
+      case GL_MAX_IMAGE_UNITS:
+          *params = mCaps.maxImageUnits;
+          break;
+      case GL_MAX_COMBINED_IMAGE_UNIFORMS:
+          *params = mCaps.maxCombinedImageUniforms;
+          break;
+      case GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS:
+          *params = mCaps.maxShaderStorageBufferBindings;
+          break;
+      case GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS:
+          *params = mCaps.maxCombinedShaderStorageBlocks;
+          break;
+      case GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT:
+          *params = mCaps.shaderStorageBufferOffsetAlignment;
+          break;
       default:
           mGLState.getIntegerv(mState, pname, params);
           break;
@@ -1261,6 +1523,10 @@ void Context::getInteger64v(GLenum pname, GLint64 *params)
       case GL_TIMESTAMP_EXT:
           *params = mImplementation->getTimestamp();
           break;
+
+      case GL_MAX_SHADER_STORAGE_BLOCK_SIZE:
+          *params = mCaps.maxShaderStorageBlockSize;
+          break;
       default:
         UNREACHABLE();
         break;
@@ -1272,22 +1538,79 @@ void Context::getPointerv(GLenum pname, void **params) const
     mGLState.getPointerv(pname, params);
 }
 
-bool Context::getIndexedIntegerv(GLenum target, GLuint index, GLint *data)
+void Context::getIntegeri_v(GLenum target, GLuint index, GLint *data)
 {
     // Queries about context capabilities and maximums are answered by Context.
     // Queries about current GL state values are answered by State.
-    // Indexed integer queries all refer to current state, so this function is a
-    // mere passthrough.
-    return mGLState.getIndexedIntegerv(target, index, data);
+
+    GLenum nativeType;
+    unsigned int numParams;
+    bool queryStatus = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
+    UNUSED_ASSERTION_VARIABLE(queryStatus);
+    ASSERT(queryStatus);
+
+    if (nativeType == GL_INT)
+    {
+        switch (target)
+        {
+            case GL_MAX_COMPUTE_WORK_GROUP_COUNT:
+                ASSERT(index < 3u);
+                *data = mCaps.maxComputeWorkGroupCount[index];
+                break;
+            case GL_MAX_COMPUTE_WORK_GROUP_SIZE:
+                ASSERT(index < 3u);
+                *data = mCaps.maxComputeWorkGroupSize[index];
+                break;
+            default:
+                mGLState.getIntegeri_v(target, index, data);
+        }
+    }
+    else
+    {
+        CastIndexedStateValues(this, nativeType, target, index, numParams, data);
+    }
 }
 
-bool Context::getIndexedInteger64v(GLenum target, GLuint index, GLint64 *data)
+void Context::getInteger64i_v(GLenum target, GLuint index, GLint64 *data)
 {
     // Queries about context capabilities and maximums are answered by Context.
     // Queries about current GL state values are answered by State.
-    // Indexed integer queries all refer to current state, so this function is a
-    // mere passthrough.
-    return mGLState.getIndexedInteger64v(target, index, data);
+
+    GLenum nativeType;
+    unsigned int numParams;
+    bool queryStatus = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
+    UNUSED_ASSERTION_VARIABLE(queryStatus);
+    ASSERT(queryStatus);
+
+    if (nativeType == GL_INT_64_ANGLEX)
+    {
+        mGLState.getInteger64i_v(target, index, data);
+    }
+    else
+    {
+        CastIndexedStateValues(this, nativeType, target, index, numParams, data);
+    }
+}
+
+void Context::getBooleani_v(GLenum target, GLuint index, GLboolean *data)
+{
+    // Queries about context capabilities and maximums are answered by Context.
+    // Queries about current GL state values are answered by State.
+
+    GLenum nativeType;
+    unsigned int numParams;
+    bool queryStatus = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
+    UNUSED_ASSERTION_VARIABLE(queryStatus);
+    ASSERT(queryStatus);
+
+    if (nativeType == GL_BOOL)
+    {
+        mGLState.getBooleani_v(target, index, data);
+    }
+    else
+    {
+        CastIndexedStateValues(this, nativeType, target, index, numParams, data);
+    }
 }
 
 Error Context::drawArrays(GLenum mode, GLint first, GLsizei count)
@@ -1471,11 +1794,147 @@ void Context::stencilThenCoverStrokePath(GLuint path,
     mImplementation->stencilThenCoverStrokePath(pathObj, reference, mask, coverMode);
 }
 
+void Context::coverFillPathInstanced(GLsizei numPaths,
+                                     GLenum pathNameType,
+                                     const void *paths,
+                                     GLuint pathBase,
+                                     GLenum coverMode,
+                                     GLenum transformType,
+                                     const GLfloat *transformValues)
+{
+    const auto &pathObjects =
+        GatherPaths(*mResourceManager, numPaths, pathNameType, paths, pathBase);
+
+    // TODO(svaisanen@nvidia.com): maybe sync only state required for path rendering?
+    syncRendererState();
+
+    mImplementation->coverFillPathInstanced(pathObjects, coverMode, transformType, transformValues);
+}
+
+void Context::coverStrokePathInstanced(GLsizei numPaths,
+                                       GLenum pathNameType,
+                                       const void *paths,
+                                       GLuint pathBase,
+                                       GLenum coverMode,
+                                       GLenum transformType,
+                                       const GLfloat *transformValues)
+{
+    const auto &pathObjects =
+        GatherPaths(*mResourceManager, numPaths, pathNameType, paths, pathBase);
+
+    // TODO(svaisanen@nvidia.com): maybe sync only state required for path rendering?
+    syncRendererState();
+
+    mImplementation->coverStrokePathInstanced(pathObjects, coverMode, transformType,
+                                              transformValues);
+}
+
+void Context::stencilFillPathInstanced(GLsizei numPaths,
+                                       GLenum pathNameType,
+                                       const void *paths,
+                                       GLuint pathBase,
+                                       GLenum fillMode,
+                                       GLuint mask,
+                                       GLenum transformType,
+                                       const GLfloat *transformValues)
+{
+    const auto &pathObjects =
+        GatherPaths(*mResourceManager, numPaths, pathNameType, paths, pathBase);
+
+    // TODO(svaisanen@nvidia.com): maybe sync only state required for path rendering?
+    syncRendererState();
+
+    mImplementation->stencilFillPathInstanced(pathObjects, fillMode, mask, transformType,
+                                              transformValues);
+}
+
+void Context::stencilStrokePathInstanced(GLsizei numPaths,
+                                         GLenum pathNameType,
+                                         const void *paths,
+                                         GLuint pathBase,
+                                         GLint reference,
+                                         GLuint mask,
+                                         GLenum transformType,
+                                         const GLfloat *transformValues)
+{
+    const auto &pathObjects =
+        GatherPaths(*mResourceManager, numPaths, pathNameType, paths, pathBase);
+
+    // TODO(svaisanen@nvidia.com): maybe sync only state required for path rendering?
+    syncRendererState();
+
+    mImplementation->stencilStrokePathInstanced(pathObjects, reference, mask, transformType,
+                                                transformValues);
+}
+
+void Context::stencilThenCoverFillPathInstanced(GLsizei numPaths,
+                                                GLenum pathNameType,
+                                                const void *paths,
+                                                GLuint pathBase,
+                                                GLenum fillMode,
+                                                GLuint mask,
+                                                GLenum coverMode,
+                                                GLenum transformType,
+                                                const GLfloat *transformValues)
+{
+    const auto &pathObjects =
+        GatherPaths(*mResourceManager, numPaths, pathNameType, paths, pathBase);
+
+    // TODO(svaisanen@nvidia.com): maybe sync only state required for path rendering?
+    syncRendererState();
+
+    mImplementation->stencilThenCoverFillPathInstanced(pathObjects, coverMode, fillMode, mask,
+                                                       transformType, transformValues);
+}
+
+void Context::stencilThenCoverStrokePathInstanced(GLsizei numPaths,
+                                                  GLenum pathNameType,
+                                                  const void *paths,
+                                                  GLuint pathBase,
+                                                  GLint reference,
+                                                  GLuint mask,
+                                                  GLenum coverMode,
+                                                  GLenum transformType,
+                                                  const GLfloat *transformValues)
+{
+    const auto &pathObjects =
+        GatherPaths(*mResourceManager, numPaths, pathNameType, paths, pathBase);
+
+    // TODO(svaisanen@nvidia.com): maybe sync only state required for path rendering?
+    syncRendererState();
+
+    mImplementation->stencilThenCoverStrokePathInstanced(pathObjects, coverMode, reference, mask,
+                                                         transformType, transformValues);
+}
+
+void Context::bindFragmentInputLocation(GLuint program, GLint location, const GLchar *name)
+{
+    auto *programObject = getProgram(program);
+
+    programObject->bindFragmentInputLocation(location, name);
+}
+
+void Context::programPathFragmentInputGen(GLuint program,
+                                          GLint location,
+                                          GLenum genMode,
+                                          GLint components,
+                                          const GLfloat *coeffs)
+{
+    auto *programObject = getProgram(program);
+
+    programObject->pathFragmentInputGen(location, genMode, components, coeffs);
+}
+
 void Context::handleError(const Error &error)
 {
     if (error.isError())
     {
-        mErrors.insert(error.getCode());
+        GLenum code = error.getCode();
+        mErrors.insert(code);
+        if (code == GL_OUT_OF_MEMORY && getWorkarounds().loseContextOnOutOfMemory)
+        {
+            markContextLost();
+        }
 
         if (!error.getMessage().empty())
         {
@@ -1502,32 +1961,61 @@ GLenum Context::getError()
     }
 }
 
+// NOTE: this function should not assume that this context is current!
+void Context::markContextLost()
+{
+    if (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT)
+    {
+        mResetStatus = GL_UNKNOWN_CONTEXT_RESET_EXT;
+        mContextLostForced = true;
+    }
+    mContextLost     = true;
+}
+
+bool Context::isContextLost()
+{
+    return mContextLost;
+}
+
 GLenum Context::getResetStatus()
 {
-    //TODO(jmadill): needs MANGLE reworking
-    if (mResetStatus == GL_NO_ERROR && !mContextLost)
+    // Even if the application doesn't want to know about resets, we want to know
+    // as it will allow us to skip all the calls.
+    if (mResetStrategy == GL_NO_RESET_NOTIFICATION_EXT)
     {
-        // mResetStatus will be set by the markContextLost callback
-        // in the case a notification is sent
-        if (mImplementation->testDeviceLost())
+        if (!mContextLost && mImplementation->getResetStatus() != GL_NO_ERROR)
         {
-            mImplementation->notifyDeviceLost();
+            mContextLost = true;
         }
+
+        // EXT_robustness, section 2.6: If the reset notification behavior is
+        // NO_RESET_NOTIFICATION_EXT, then the implementation will never deliver notification of
+        // reset events, and GetGraphicsResetStatusEXT will always return NO_ERROR.
+        return GL_NO_ERROR;
     }
 
-    GLenum status = mResetStatus;
-
-    if (mResetStatus != GL_NO_ERROR)
+    // The GL_EXT_robustness spec says that if a reset is encountered, a reset
+    // status should be returned at least once, and GL_NO_ERROR should be returned
+    // once the device has finished resetting.
+    if (!mContextLost)
     {
-        ASSERT(mContextLost);
+        ASSERT(mResetStatus == GL_NO_ERROR);
+        mResetStatus = mImplementation->getResetStatus();
 
-        if (mImplementation->testDeviceResettable())
+        if (mResetStatus != GL_NO_ERROR)
         {
-            mResetStatus = GL_NO_ERROR;
+            mContextLost = true;
         }
     }
+    else if (!mContextLostForced && mResetStatus != GL_NO_ERROR)
+    {
+        // If markContextLost was used to mark the context lost then
+        // assume that is not recoverable, and continue to report the
+        // lost reset status for the lifetime of this context.
+        mResetStatus = mImplementation->getResetStatus();
+    }
 
-    return status;
+    return mResetStatus;
 }
 
 bool Context::isResetNotificationEnabled()
@@ -1612,13 +2100,36 @@ Framebuffer *Context::checkFramebufferAllocation(GLuint framebuffer)
     return framebufferIt->second;
 }
 
+bool Context::isTextureGenerated(GLuint texture) const
+{
+    return mResourceManager->isTextureGenerated(texture);
+}
+
+bool Context::isBufferGenerated(GLuint buffer) const
+{
+    return mResourceManager->isBufferGenerated(buffer);
+}
+
+bool Context::isRenderbufferGenerated(GLuint renderbuffer) const
+{
+    return mResourceManager->isRenderbufferGenerated(renderbuffer);
+}
+
+bool Context::isFramebufferGenerated(GLuint framebuffer) const
+{
+    ASSERT(mFramebufferMap.find(0) != mFramebufferMap.end());
+    return mFramebufferMap.find(framebuffer) != mFramebufferMap.end();
+}
+
 bool Context::isVertexArrayGenerated(GLuint vertexArray)
 {
+    ASSERT(mVertexArrayMap.find(0) != mVertexArrayMap.end());
     return mVertexArrayMap.find(vertexArray) != mVertexArrayMap.end();
 }
 
 bool Context::isTransformFeedbackGenerated(GLuint transformFeedback)
 {
+    ASSERT(mTransformFeedbackMap.find(0) != mTransformFeedbackMap.end());
     return mTransformFeedbackMap.find(transformFeedback) != mTransformFeedbackMap.end();
 }
 
@@ -1829,26 +2340,30 @@ void Context::initRendererString()
     mRendererString = MakeStaticString(rendererString.str());
 }
 
-const std::string &Context::getRendererString() const
+const char *Context::getRendererString() const
 {
     return mRendererString;
 }
 
 void Context::initExtensionStrings()
 {
-    mExtensionStrings = mExtensions.getStrings();
+    for (const auto &extensionString : mExtensions.getStrings())
+    {
+        mExtensionStrings.push_back(MakeStaticString(extensionString));
+    }
 
     std::ostringstream combinedStringStream;
-    std::copy(mExtensionStrings.begin(), mExtensionStrings.end(), std::ostream_iterator<std::string>(combinedStringStream, " "));
-    mExtensionString = combinedStringStream.str();
+    std::copy(mExtensionStrings.begin(), mExtensionStrings.end(),
+              std::ostream_iterator<const char *>(combinedStringStream, " "));
+    mExtensionString = MakeStaticString(combinedStringStream.str());
 }
 
-const std::string &Context::getExtensionString() const
+const char *Context::getExtensionString() const
 {
     return mExtensionString;
 }
 
-const std::string &Context::getExtensionString(size_t idx) const
+const char *Context::getExtensionString(size_t idx) const
 {
     return mExtensionStrings[idx];
 }
@@ -1879,7 +2394,7 @@ bool Context::hasActiveTransformFeedback(GLuint program) const
     return false;
 }
 
-void Context::initCaps()
+void Context::initCaps(bool webGLContext)
 {
     mCaps = mImplementation->getNativeCaps();
 
@@ -1887,7 +2402,7 @@ void Context::initCaps()
 
     mLimitations = mImplementation->getNativeLimitations();
 
-    if (mClientVersion < 3)
+    if (mClientMajorVersion < 3)
     {
         // Disable ES3+ extensions
         mExtensions.colorBufferFloat = false;
@@ -1895,7 +2410,7 @@ void Context::initCaps()
         mExtensions.textureNorm16         = false;
     }
 
-    if (mClientVersion > 2)
+    if (mClientMajorVersion > 2)
     {
         // FIXME(geofflang): Don't support EXT_sRGB in non-ES2 contexts
         //mExtensions.sRGB = false;
@@ -1904,6 +2419,7 @@ void Context::initCaps()
     // Some extensions are always available because they are implemented in the GL layer.
     mExtensions.bindUniformLocation = true;
     mExtensions.vertexArrayObject   = true;
+    mExtensions.bindGeneratesResource = true;
 
     // Enable the no error extension if the context was created with the flag.
     mExtensions.noError = mSkipValidation;
@@ -1915,6 +2431,9 @@ void Context::initCaps()
     mExtensions.maxDebugGroupStackDepth = 1024;
     mExtensions.maxLabelLength          = 1024;
 
+    // Explicitly enable GL_ANGLE_robust_client_memory
+    mExtensions.robustClientMemory = true;
+
     // Apply implementation limits
     mCaps.maxVertexAttributes = std::min<GLuint>(mCaps.maxVertexAttributes, MAX_VERTEX_ATTRIBS);
     mCaps.maxVertexUniformBlocks = std::min<GLuint>(mCaps.maxVertexUniformBlocks, IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS);
@@ -1922,7 +2441,25 @@ void Context::initCaps()
 
     mCaps.maxFragmentInputComponents = std::min<GLuint>(mCaps.maxFragmentInputComponents, IMPLEMENTATION_MAX_VARYING_VECTORS * 4);
 
+    // WebGL compatibility
+    mExtensions.webglCompatibility = webGLContext;
+    for (const auto &extensionInfo : GetExtensionInfoMap())
+    {
+        // If this context is for WebGL, disable all enableable extensions
+        if (webGLContext && extensionInfo.second.Enableable)
+        {
+            mExtensions.*(extensionInfo.second.ExtensionsMember) = false;
+        }
+    }
+
+    // Generate texture caps
+    updateCaps();
+}
+
+void Context::updateCaps()
+{
     mCaps.compressedTextureFormats.clear();
+    mTextureCaps.clear();
 
     const TextureCapsMap &rendererFormats = mImplementation->getNativeTextureCaps();
     for (TextureCapsMap::const_iterator i = rendererFormats.begin(); i != rendererFormats.end(); i++)
@@ -1936,11 +2473,11 @@ void Context::initCaps()
         // Caps are AND'd with the renderer caps because some core formats are still unsupported in
         // ES3.
         formatCaps.texturable =
-            formatCaps.texturable && formatInfo.textureSupport(mClientVersion, mExtensions);
+            formatCaps.texturable && formatInfo.textureSupport(mClientMajorVersion, mExtensions);
         formatCaps.renderable =
-            formatCaps.renderable && formatInfo.renderSupport(mClientVersion, mExtensions);
+            formatCaps.renderable && formatInfo.renderSupport(mClientMajorVersion, mExtensions);
         formatCaps.filterable =
-            formatCaps.filterable && formatInfo.filterSupport(mClientVersion, mExtensions);
+            formatCaps.filterable && formatInfo.filterSupport(mClientMajorVersion, mExtensions);
 
         // OpenGL ES does not support multisampling with integer formats
         if (!formatInfo.renderSupport || formatInfo.componentType == GL_INT || formatInfo.componentType == GL_UNSIGNED_INT)
@@ -1955,6 +2492,13 @@ void Context::initCaps()
 
         mTextureCaps.insert(format, formatCaps);
     }
+}
+
+void Context::initWorkarounds()
+{
+    // Lose the context upon out of memory error if the application is
+    // expecting to watch for those events.
+    mWorkarounds.loseContextOnOutOfMemory = (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT);
 }
 
 void Context::syncRendererState()
@@ -2049,6 +2593,11 @@ void Context::readPixels(GLint x,
                          GLenum type,
                          GLvoid *pixels)
 {
+    if (width == 0 || height == 0)
+    {
+        return;
+    }
+
     syncStateForReadPixels();
 
     Framebuffer *framebufferObject = mGLState.getReadFramebuffer();
@@ -2087,6 +2636,11 @@ void Context::copyTexSubImage2D(GLenum target,
                                 GLsizei width,
                                 GLsizei height)
 {
+    if (width == 0 || height == 0)
+    {
+        return;
+    }
+
     // Only sync the read FBO
     mGLState.syncDirtyObject(GL_READ_FRAMEBUFFER);
 
@@ -2109,6 +2663,11 @@ void Context::copyTexSubImage3D(GLenum target,
                                 GLsizei width,
                                 GLsizei height)
 {
+    if (width == 0 || height == 0)
+    {
+        return;
+    }
+
     // Only sync the read FBO
     mGLState.syncDirtyObject(GL_READ_FRAMEBUFFER);
 
@@ -2461,6 +3020,78 @@ void Context::generateMipmap(GLenum target)
     handleError(texture->generateMipmap());
 }
 
+GLboolean Context::enableExtension(const char *name)
+{
+    const ExtensionInfoMap &extensionInfos = GetExtensionInfoMap();
+    ASSERT(extensionInfos.find(name) != extensionInfos.end());
+    const auto &extension = extensionInfos.at(name);
+    ASSERT(extension.Enableable);
+
+    if (mExtensions.*(extension.ExtensionsMember))
+    {
+        // Extension already enabled
+        return GL_TRUE;
+    }
+
+    const auto &nativeExtensions = mImplementation->getNativeExtensions();
+    if (!(nativeExtensions.*(extension.ExtensionsMember)))
+    {
+        // Underlying implementation does not support this valid extension
+        return GL_FALSE;
+    }
+
+    mExtensions.*(extension.ExtensionsMember) = true;
+    updateCaps();
+    initExtensionStrings();
+    return GL_TRUE;
+}
+
+void Context::copyTextureCHROMIUM(GLuint sourceId,
+                                  GLuint destId,
+                                  GLint internalFormat,
+                                  GLenum destType,
+                                  GLboolean unpackFlipY,
+                                  GLboolean unpackPremultiplyAlpha,
+                                  GLboolean unpackUnmultiplyAlpha)
+{
+    syncStateForTexImage();
+
+    gl::Texture *sourceTexture = getTexture(sourceId);
+    gl::Texture *destTexture   = getTexture(destId);
+    handleError(destTexture->copyTexture(internalFormat, destType, unpackFlipY == GL_TRUE,
+                                         unpackPremultiplyAlpha == GL_TRUE,
+                                         unpackUnmultiplyAlpha == GL_TRUE, sourceTexture));
+}
+
+void Context::copySubTextureCHROMIUM(GLuint sourceId,
+                                     GLuint destId,
+                                     GLint xoffset,
+                                     GLint yoffset,
+                                     GLint x,
+                                     GLint y,
+                                     GLsizei width,
+                                     GLsizei height,
+                                     GLboolean unpackFlipY,
+                                     GLboolean unpackPremultiplyAlpha,
+                                     GLboolean unpackUnmultiplyAlpha)
+{
+    // Zero sized copies are valid but no-ops
+    if (width == 0 || height == 0)
+    {
+        return;
+    }
+
+    syncStateForTexImage();
+
+    gl::Texture *sourceTexture = getTexture(sourceId);
+    gl::Texture *destTexture   = getTexture(destId);
+    Offset offset(xoffset, yoffset, 0);
+    Rectangle area(x, y, width, height);
+    handleError(destTexture->copySubTexture(offset, area, unpackFlipY == GL_TRUE,
+                                            unpackPremultiplyAlpha == GL_TRUE,
+                                            unpackUnmultiplyAlpha == GL_TRUE, sourceTexture));
+}
+
 void Context::getBufferPointerv(GLenum target, GLenum /*pname*/, void **params)
 {
     Buffer *buffer = mGLState.getTargetBuffer(target);
@@ -2675,42 +3306,42 @@ void Context::pixelStorei(GLenum pname, GLint param)
             break;
 
         case GL_UNPACK_ROW_LENGTH:
-            ASSERT((getClientVersion() >= 3) || getExtensions().unpackSubimage);
+            ASSERT((getClientMajorVersion() >= 3) || getExtensions().unpackSubimage);
             mGLState.setUnpackRowLength(param);
             break;
 
         case GL_UNPACK_IMAGE_HEIGHT:
-            ASSERT(getClientVersion() >= 3);
+            ASSERT(getClientMajorVersion() >= 3);
             mGLState.setUnpackImageHeight(param);
             break;
 
         case GL_UNPACK_SKIP_IMAGES:
-            ASSERT(getClientVersion() >= 3);
+            ASSERT(getClientMajorVersion() >= 3);
             mGLState.setUnpackSkipImages(param);
             break;
 
         case GL_UNPACK_SKIP_ROWS:
-            ASSERT((getClientVersion() >= 3) || getExtensions().unpackSubimage);
+            ASSERT((getClientMajorVersion() >= 3) || getExtensions().unpackSubimage);
             mGLState.setUnpackSkipRows(param);
             break;
 
         case GL_UNPACK_SKIP_PIXELS:
-            ASSERT((getClientVersion() >= 3) || getExtensions().unpackSubimage);
+            ASSERT((getClientMajorVersion() >= 3) || getExtensions().unpackSubimage);
             mGLState.setUnpackSkipPixels(param);
             break;
 
         case GL_PACK_ROW_LENGTH:
-            ASSERT((getClientVersion() >= 3) || getExtensions().packSubimage);
+            ASSERT((getClientMajorVersion() >= 3) || getExtensions().packSubimage);
             mGLState.setPackRowLength(param);
             break;
 
         case GL_PACK_SKIP_ROWS:
-            ASSERT((getClientVersion() >= 3) || getExtensions().packSubimage);
+            ASSERT((getClientMajorVersion() >= 3) || getExtensions().packSubimage);
             mGLState.setPackSkipRows(param);
             break;
 
         case GL_PACK_SKIP_PIXELS:
-            ASSERT((getClientVersion() >= 3) || getExtensions().packSubimage);
+            ASSERT((getClientMajorVersion() >= 3) || getExtensions().packSubimage);
             mGLState.setPackSkipPixels(param);
             break;
 
@@ -2919,6 +3550,30 @@ void Context::pushDebugGroup(GLenum source, GLuint id, GLsizei length, const GLc
 void Context::popDebugGroup()
 {
     mGLState.getDebug().popGroup();
+}
+
+void Context::bufferData(GLenum target, GLsizeiptr size, const GLvoid *data, GLenum usage)
+{
+    Buffer *buffer = mGLState.getTargetBuffer(target);
+    ASSERT(buffer);
+    handleError(buffer->bufferData(target, data, size, usage));
+}
+
+void Context::bufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const GLvoid *data)
+{
+    if (data == nullptr)
+    {
+        return;
+    }
+
+    Buffer *buffer = mGLState.getTargetBuffer(target);
+    ASSERT(buffer);
+    handleError(buffer->bufferSubData(target, data, size, offset));
+}
+
+const Workarounds &Context::getWorkarounds() const
+{
+    return mWorkarounds;
 }
 
 }  // namespace gl

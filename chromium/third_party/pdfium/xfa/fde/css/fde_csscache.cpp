@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/fx_ext.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
 
 FDE_CSSCacheItem::FDE_CSSCacheItem(IFDE_CSSStyleSheet* p)
@@ -53,12 +53,12 @@ FDE_CSSTagCache::FDE_CSSTagCache(const FDE_CSSTagCache& it)
       iClassIndex(0),
       dwClassHashs(1) {
   if (it.dwClassHashs.GetSize() > 0)
-    dwClassHashs.Copy(it.dwClassHashs);
+    dwClassHashs.Copy(it.dwClassHashs, 0, -1);
 }
 
 FDE_CSSTagCache::~FDE_CSSTagCache() {}
 
-CFDE_CSSAccelerator::CFDE_CSSAccelerator() {}
+CFDE_CSSAccelerator::CFDE_CSSAccelerator() : m_Stack(100) {}
 
 CFDE_CSSAccelerator::~CFDE_CSSAccelerator() {}
 

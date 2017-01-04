@@ -31,6 +31,11 @@ namespace extensions {
 
 namespace {
 
+// These two strings are injected before and after the Greasemonkey API and
+// user script to wrap it in an anonymous scope.
+const char kUserScriptHead[] = "(function (unsafeWindow) {\n";
+const char kUserScriptTail[] = "\n})(window);";
+
 GURL GetDocumentUrlForFrame(blink::WebLocalFrame* frame) {
   GURL data_source_url = ScriptContext::GetDataSourceURLForFrame(frame);
   if (!data_source_url.is_empty() && frame->isViewSourceModeEnabled()) {
@@ -58,7 +63,7 @@ void UserScriptSet::RemoveObserver(Observer* observer) {
 
 void UserScriptSet::GetActiveExtensionIds(
     std::set<std::string>* ids) const {
-  for (const UserScript* script : scripts_) {
+  for (const std::unique_ptr<UserScript>& script : scripts_) {
     if (script->host_id().type() != HostID::EXTENSIONS)
       continue;
     DCHECK(!script->extension_id().empty());
@@ -73,9 +78,9 @@ void UserScriptSet::GetInjections(
     UserScript::RunLocation run_location,
     bool log_activity) {
   GURL document_url = GetDocumentUrlForFrame(render_frame->GetWebFrame());
-  for (const UserScript* script : scripts_) {
+  for (const std::unique_ptr<UserScript>& script : scripts_) {
     std::unique_ptr<ScriptInjection> injection = GetInjectionForScript(
-        script, render_frame, tab_id, run_location, document_url,
+        script.get(), render_frame, tab_id, run_location, document_url,
         false /* is_declarative */, log_activity);
     if (injection.get())
       injections->push_back(std::move(injection));
@@ -113,6 +118,7 @@ bool UserScriptSet::UpdateUserScripts(base::SharedMemoryHandle shared_memory,
   CHECK(iter.ReadUInt32(&num_scripts));
 
   scripts_.clear();
+  script_sources_.clear();
   scripts_.reserve(num_scripts);
   for (uint32_t i = 0; i < num_scripts; ++i) {
     std::unique_ptr<UserScript> script(new UserScript());
@@ -125,14 +131,14 @@ bool UserScriptSet::UpdateUserScripts(base::SharedMemoryHandle shared_memory,
       const char* body = NULL;
       int body_length = 0;
       CHECK(iter.ReadData(&body, &body_length));
-      script->js_scripts()[j].set_external_content(
+      script->js_scripts()[j]->set_external_content(
           base::StringPiece(body, body_length));
     }
     for (size_t j = 0; j < script->css_scripts().size(); ++j) {
       const char* body = NULL;
       int body_length = 0;
       CHECK(iter.ReadData(&body, &body_length));
-      script->css_scripts()[j].set_external_content(
+      script->css_scripts()[j]->set_external_content(
           base::StringPiece(body, body_length));
     }
 
@@ -150,9 +156,8 @@ bool UserScriptSet::UpdateUserScripts(base::SharedMemoryHandle shared_memory,
     scripts_.push_back(std::move(script));
   }
 
-  FOR_EACH_OBSERVER(Observer,
-                    observers_,
-                    OnUserScriptsUpdated(changed_hosts, scripts_.get()));
+  FOR_EACH_OBSERVER(Observer, observers_,
+                    OnUserScriptsUpdated(changed_hosts, scripts_));
   return true;
 }
 
@@ -163,11 +168,11 @@ std::unique_ptr<ScriptInjection> UserScriptSet::GetDeclarativeScriptInjection(
     UserScript::RunLocation run_location,
     const GURL& document_url,
     bool log_activity) {
-  for (const UserScript* script : scripts_) {
+  for (const std::unique_ptr<UserScript>& script : scripts_) {
     if (script->id() == script_id) {
-      return GetInjectionForScript(script, render_frame, tab_id, run_location,
-                                   document_url, true /* is_declarative */,
-                                   log_activity);
+      return GetInjectionForScript(script.get(), render_frame, tab_id,
+                                   run_location, document_url,
+                                   true /* is_declarative */, log_activity);
     }
   }
   return std::unique_ptr<ScriptInjection>();
@@ -225,6 +230,48 @@ std::unique_ptr<ScriptInjection> UserScriptSet::GetInjectionForScript(
                                         log_activity));
   }
   return injection;
+}
+
+blink::WebString UserScriptSet::GetJsSource(const UserScript::File& file,
+                                            bool emulate_greasemonkey) {
+  const GURL& url = file.url();
+  std::map<GURL, blink::WebString>::iterator iter = script_sources_.find(url);
+  if (iter != script_sources_.end())
+    return iter->second;
+
+  base::StringPiece script_content = file.GetContent();
+  blink::WebString source;
+  if (emulate_greasemonkey) {
+    // We add this dumb function wrapper for user scripts to emulate what
+    // Greasemonkey does. |script_content| becomes:
+    // concat(kUserScriptHead, script_content, kUserScriptTail).
+    std::string content;
+    content.reserve(strlen(kUserScriptHead) + script_content.length() +
+                    strlen(kUserScriptTail));
+    content.append(kUserScriptHead);
+    script_content.AppendToString(&content);
+    content.append(kUserScriptTail);
+    source = blink::WebString::fromUTF8(content);
+  } else {
+    source = blink::WebString::fromUTF8(script_content.data(),
+                                        script_content.length());
+  }
+  script_sources_[url] = source;
+  return source;
+}
+
+blink::WebString UserScriptSet::GetCssSource(const UserScript::File& file) {
+  const GURL& url = file.url();
+  std::map<GURL, blink::WebString>::iterator iter = script_sources_.find(url);
+  if (iter != script_sources_.end())
+    return iter->second;
+
+  base::StringPiece script_content = file.GetContent();
+  return script_sources_
+      .insert(std::make_pair(
+          url, blink::WebString::fromUTF8(script_content.data(),
+                                          script_content.length())))
+      .first->second;
 }
 
 }  // namespace extensions

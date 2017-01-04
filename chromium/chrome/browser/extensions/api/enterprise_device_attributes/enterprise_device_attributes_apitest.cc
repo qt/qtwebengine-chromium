@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/affiliation_test_helper.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
-#include "chrome/browser/chromeos/policy/stub_enterprise_install_attributes.h"
+#include "chrome/browser/chromeos/settings/stub_install_attributes.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -15,6 +16,7 @@
 #include "chromeos/login/user_names.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
+#include "components/policy/policy_constants.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/account_id/account_id.h"
 #include "components/user_manager/user_manager.h"
@@ -25,7 +27,6 @@
 #include "extensions/browser/test_extension_registry_observer.h"
 #include "extensions/test/result_catcher.h"
 #include "net/test/url_request/url_request_mock_http_job.h"
-#include "policy/policy_constants.h"
 
 namespace {
 
@@ -96,8 +97,8 @@ class EnterpriseDeviceAttributesTest :
         affiliated_account_id_.GetUserEmail(), user_affiliation_ids);
 
     // Set up fake install attributes.
-    std::unique_ptr<policy::StubEnterpriseInstallAttributes> attributes(
-        new policy::StubEnterpriseInstallAttributes());
+    std::unique_ptr<chromeos::StubInstallAttributes> attributes =
+        base::MakeUnique<chromeos::StubInstallAttributes>();
 
     attributes->SetRegistrationUser(affiliated_account_id_.GetUserEmail());
     policy::BrowserPolicyConnectorChromeOS::SetInstallAttributesForTesting(

@@ -268,7 +268,7 @@ RUNTIME_FUNCTION(Runtime_OptimizeObjectForAddingMultipleProperties) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
   CONVERT_SMI_ARG_CHECKED(properties, 1);
   // Conservative upper limit to prevent fuzz tests from going OOM.
-  RUNTIME_ASSERT(properties <= 100000);
+  if (properties > 100000) return isolate->ThrowIllegalOperation();
   if (object->HasFastProperties() && !object->IsJSGlobalProxy()) {
     JSObject::NormalizeProperties(object, KEEP_INOBJECT_PROPERTIES, properties,
                                   "OptimizeForAdding");
@@ -358,7 +358,6 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
       isolate, KeyedGetObjectProperty(isolate, receiver_obj, key_obj));
 }
 
-
 RUNTIME_FUNCTION(Runtime_AddNamedProperty) {
   HandleScope scope(isolate);
   DCHECK_EQ(4, args.length());
@@ -419,6 +418,7 @@ RUNTIME_FUNCTION(Runtime_AppendElement) {
 
   CONVERT_ARG_HANDLE_CHECKED(JSArray, array, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 1);
+  CHECK(!value->IsTheHole(isolate));
 
   uint32_t index;
   CHECK(array->length()->ToArrayIndex(&index));
@@ -437,8 +437,7 @@ RUNTIME_FUNCTION(Runtime_SetProperty) {
   CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
-  CONVERT_LANGUAGE_MODE_ARG_CHECKED(language_mode_arg, 3);
-  LanguageMode language_mode = language_mode_arg;
+  CONVERT_LANGUAGE_MODE_ARG_CHECKED(language_mode, 3);
 
   RETURN_RESULT_OR_FAILURE(
       isolate,
@@ -485,8 +484,8 @@ RUNTIME_FUNCTION(Runtime_DeleteProperty_Strict) {
 RUNTIME_FUNCTION(Runtime_HasProperty) {
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
-  CONVERT_ARG_HANDLE_CHECKED(Object, key, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Object, object, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
 
   // Check that {object} is actually a receiver.
   if (!object->IsJSReceiver()) {
@@ -505,21 +504,6 @@ RUNTIME_FUNCTION(Runtime_HasProperty) {
   Maybe<bool> maybe = JSReceiver::HasProperty(receiver, name);
   if (!maybe.IsJust()) return isolate->heap()->exception();
   return isolate->heap()->ToBoolean(maybe.FromJust());
-}
-
-
-RUNTIME_FUNCTION(Runtime_PropertyIsEnumerable) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 2);
-
-  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, object, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Name, key, 1);
-
-  Maybe<PropertyAttributes> maybe =
-      JSReceiver::GetOwnPropertyAttributes(object, key);
-  if (!maybe.IsJust()) return isolate->heap()->exception();
-  if (maybe.FromJust() == ABSENT) return isolate->heap()->false_value();
-  return isolate->heap()->ToBoolean((maybe.FromJust() & DONT_ENUM) == 0);
 }
 
 
@@ -693,6 +677,38 @@ RUNTIME_FUNCTION(Runtime_DefineDataPropertyInLiteral) {
   return *object;
 }
 
+RUNTIME_FUNCTION(Runtime_DefineDataProperty) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 5);
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, receiver, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
+  CONVERT_PROPERTY_ATTRIBUTES_CHECKED(attrs, 3);
+  CONVERT_SMI_ARG_CHECKED(set_function_name, 4);
+
+  if (set_function_name) {
+    DCHECK(value->IsJSFunction());
+    JSFunction::SetName(Handle<JSFunction>::cast(value), name,
+                        isolate->factory()->empty_string());
+  }
+
+  PropertyDescriptor desc;
+  desc.set_writable(!(attrs & ReadOnly));
+  desc.set_enumerable(!(attrs & DontEnum));
+  desc.set_configurable(!(attrs & DontDelete));
+  desc.set_value(value);
+
+  Maybe<bool> result = JSReceiver::DefineOwnProperty(isolate, receiver, name,
+                                                     &desc, Object::DONT_THROW);
+  RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
+  if (result.IsNothing()) {
+    DCHECK(isolate->has_pending_exception());
+    return isolate->heap()->exception();
+  }
+
+  return *receiver;
+}
+
 // Return property without being observable by accessors or interceptors.
 RUNTIME_FUNCTION(Runtime_GetDataProperty) {
   HandleScope scope(isolate);
@@ -702,6 +718,15 @@ RUNTIME_FUNCTION(Runtime_GetDataProperty) {
   return *JSReceiver::GetDataProperty(object, name);
 }
 
+RUNTIME_FUNCTION(Runtime_GetConstructorName) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+
+  CHECK(!object->IsUndefined(isolate) && !object->IsNull(isolate));
+  Handle<JSReceiver> recv = Object::ToObject(isolate, object).ToHandleChecked();
+  return *JSReceiver::GetConstructorName(recv);
+}
 
 RUNTIME_FUNCTION(Runtime_HasFastPackedElements) {
   SealHandleScope shs(isolate);
@@ -801,16 +826,6 @@ RUNTIME_FUNCTION(Runtime_ToPrimitive_Number) {
   RETURN_RESULT_OR_FAILURE(
       isolate, Object::ToPrimitive(input, ToPrimitiveHint::kNumber));
 }
-
-
-RUNTIME_FUNCTION(Runtime_ToPrimitive_String) {
-  HandleScope scope(isolate);
-  DCHECK_EQ(1, args.length());
-  CONVERT_ARG_HANDLE_CHECKED(Object, input, 0);
-  RETURN_RESULT_OR_FAILURE(
-      isolate, Object::ToPrimitive(input, ToPrimitiveHint::kString));
-}
-
 
 RUNTIME_FUNCTION(Runtime_ToNumber) {
   HandleScope scope(isolate);
@@ -943,6 +958,33 @@ RUNTIME_FUNCTION(Runtime_CreateDataProperty) {
       JSReceiver::CreateDataProperty(&it, value, Object::THROW_ON_ERROR),
       isolate->heap()->exception());
   return *value;
+}
+
+RUNTIME_FUNCTION(Runtime_LoadModuleExport) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(String, name, 0);
+  Handle<Module> module(isolate->context()->module());
+  return *Module::LoadExport(module, name);
+}
+
+RUNTIME_FUNCTION(Runtime_LoadModuleImport) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 2);
+  CONVERT_ARG_HANDLE_CHECKED(String, name, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Smi, module_request, 1);
+  Handle<Module> module(isolate->context()->module());
+  return *Module::LoadImport(module, name, module_request->value());
+}
+
+RUNTIME_FUNCTION(Runtime_StoreModuleExport) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 2);
+  CONVERT_ARG_HANDLE_CHECKED(String, name, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 1);
+  Handle<Module> module(isolate->context()->module());
+  Module::StoreExport(module, name, value);
+  return isolate->heap()->undefined_value();
 }
 
 }  // namespace internal

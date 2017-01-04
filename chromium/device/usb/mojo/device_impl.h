@@ -6,6 +6,7 @@
 #define DEVICE_USB_MOJO_DEVICE_IMPL_H_
 
 #include <stdint.h>
+#include <vector>
 
 #include "base/callback_forward.h"
 #include "base/macros.h"
@@ -16,8 +17,8 @@
 #include "device/usb/public/interfaces/device.mojom.h"
 #include "device/usb/usb_device.h"
 #include "device/usb/usb_device_handle.h"
+#include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
-#include "mojo/public/cpp/bindings/strong_binding.h"
 
 namespace net {
 class IOBuffer;
@@ -36,7 +37,7 @@ class DeviceImpl : public Device, public device::UsbDevice::Observer {
   DeviceImpl(scoped_refptr<UsbDevice> device,
              DeviceInfoPtr device_info,
              base::WeakPtr<PermissionProvider> permission_provider,
-             mojo::InterfaceRequest<Device> request);
+             DeviceRequest request);
   ~DeviceImpl() override;
 
  private:
@@ -74,7 +75,7 @@ class DeviceImpl : public Device, public device::UsbDevice::Observer {
                          uint32_t timeout,
                          const ControlTransferInCallback& callback) override;
   void ControlTransferOut(ControlTransferParamsPtr params,
-                          mojo::Array<uint8_t> data,
+                          const std::vector<uint8_t>& data,
                           uint32_t timeout,
                           const ControlTransferOutCallback& callback) override;
   void GenericTransferIn(uint8_t endpoint_number,
@@ -82,18 +83,18 @@ class DeviceImpl : public Device, public device::UsbDevice::Observer {
                          uint32_t timeout,
                          const GenericTransferInCallback& callback) override;
   void GenericTransferOut(uint8_t endpoint_number,
-                          mojo::Array<uint8_t> data,
+                          const std::vector<uint8_t>& data,
                           uint32_t timeout,
                           const GenericTransferOutCallback& callback) override;
   void IsochronousTransferIn(
       uint8_t endpoint_number,
-      mojo::Array<uint32_t> packet_lengths,
+      const std::vector<uint32_t>& packet_lengths,
       uint32_t timeout,
       const IsochronousTransferInCallback& callback) override;
   void IsochronousTransferOut(
       uint8_t endpoint_number,
-      mojo::Array<uint8_t> data,
-      mojo::Array<uint32_t> packet_lengths,
+      const std::vector<uint8_t>& data,
+      const std::vector<uint32_t>& packet_lengths,
       uint32_t timeout,
       const IsochronousTransferOutCallback& callback) override;
 
@@ -109,7 +110,7 @@ class DeviceImpl : public Device, public device::UsbDevice::Observer {
   // has been closed.
   scoped_refptr<UsbDeviceHandle> device_handle_;
 
-  mojo::StrongBinding<Device> binding_;
+  mojo::Binding<Device> binding_;
   base::WeakPtrFactory<DeviceImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceImpl);

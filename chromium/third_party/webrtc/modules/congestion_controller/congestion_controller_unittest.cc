@@ -8,15 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/modules/pacing/mock/mock_paced_sender.h"
+#include "webrtc/call/mock/mock_rtc_event_log.h"
+#include "webrtc/modules/bitrate_controller/include/bitrate_controller.h"
 #include "webrtc/modules/congestion_controller/include/congestion_controller.h"
 #include "webrtc/modules/congestion_controller/include/mock/mock_congestion_controller.h"
+#include "webrtc/modules/pacing/mock/mock_paced_sender.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/mock/mock_remote_bitrate_observer.h"
 #include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/test/gmock.h"
+#include "webrtc/test/gtest.h"
 
 using testing::_;
+using testing::AtLeast;
 using testing::NiceMock;
 using testing::Return;
 using testing::SaveArg;
@@ -34,9 +37,9 @@ class CongestionControllerTest : public ::testing::Test {
     pacer_ = new NiceMock<MockPacedSender>();
     std::unique_ptr<PacedSender> pacer(pacer_);  // Passes ownership.
     std::unique_ptr<PacketRouter> packet_router(new PacketRouter());
-    controller_.reset(
-        new CongestionController(&clock_, &observer_, &remote_bitrate_observer_,
-                                 std::move(packet_router), std::move(pacer)));
+    controller_.reset(new CongestionController(
+        &clock_, &observer_, &remote_bitrate_observer_, &event_log_,
+        std::move(packet_router), std::move(pacer)));
     bandwidth_observer_.reset(
         controller_->GetBitrateController()->CreateRtcpBandwidthObserver());
 
@@ -51,6 +54,7 @@ class CongestionControllerTest : public ::testing::Test {
   StrictMock<MockCongestionObserver> observer_;
   NiceMock<MockPacedSender>* pacer_;
   NiceMock<MockRemoteBitrateObserver> remote_bitrate_observer_;
+  NiceMock<MockRtcEventLog> event_log_;
   std::unique_ptr<RtcpBandwidthObserver> bandwidth_observer_;
   std::unique_ptr<CongestionController> controller_;
   const uint32_t kInitialBitrateBps = 60000;
@@ -165,6 +169,22 @@ TEST_F(CongestionControllerTest,
       .WillOnce(Return(PacedSender::kMaxQueueLengthMs - 1));
   EXPECT_CALL(observer_, OnNetworkChanged(kInitialBitrateBps * 2, _, _));
   controller_->Process();
+}
+
+TEST_F(CongestionControllerTest, GetPacerQueuingDelayMs) {
+  EXPECT_CALL(observer_, OnNetworkChanged(_, _, _)).Times(AtLeast(1));
+
+  const int64_t kQueueTimeMs = 123;
+  EXPECT_CALL(*pacer_, QueueInMs()).WillRepeatedly(Return(kQueueTimeMs));
+  EXPECT_EQ(kQueueTimeMs, controller_->GetPacerQueuingDelayMs());
+
+  // Expect zero pacer delay when network is down.
+  controller_->SignalNetworkState(kNetworkDown);
+  EXPECT_EQ(0, controller_->GetPacerQueuingDelayMs());
+
+  // Network is up, pacer delay should be reported.
+  controller_->SignalNetworkState(kNetworkUp);
+  EXPECT_EQ(kQueueTimeMs, controller_->GetPacerQueuingDelayMs());
 }
 
 }  // namespace test

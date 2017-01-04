@@ -891,6 +891,263 @@ double __kernel_tan(double x, double y, int iy) {
 
 }  // namespace
 
+/* acos(x)
+ * Method :
+ *      acos(x)  = pi/2 - asin(x)
+ *      acos(-x) = pi/2 + asin(x)
+ * For |x|<=0.5
+ *      acos(x) = pi/2 - (x + x*x^2*R(x^2))     (see asin.c)
+ * For x>0.5
+ *      acos(x) = pi/2 - (pi/2 - 2asin(sqrt((1-x)/2)))
+ *              = 2asin(sqrt((1-x)/2))
+ *              = 2s + 2s*z*R(z)        ...z=(1-x)/2, s=sqrt(z)
+ *              = 2f + (2c + 2s*z*R(z))
+ *     where f=hi part of s, and c = (z-f*f)/(s+f) is the correction term
+ *     for f so that f+c ~ sqrt(z).
+ * For x<-0.5
+ *      acos(x) = pi - 2asin(sqrt((1-|x|)/2))
+ *              = pi - 0.5*(s+s*z*R(z)), where z=(1-|x|)/2,s=sqrt(z)
+ *
+ * Special cases:
+ *      if x is NaN, return x itself;
+ *      if |x|>1, return NaN with invalid signal.
+ *
+ * Function needed: sqrt
+ */
+double acos(double x) {
+  static const double
+      one = 1.00000000000000000000e+00,     /* 0x3FF00000, 0x00000000 */
+      pi = 3.14159265358979311600e+00,      /* 0x400921FB, 0x54442D18 */
+      pio2_hi = 1.57079632679489655800e+00, /* 0x3FF921FB, 0x54442D18 */
+      pio2_lo = 6.12323399573676603587e-17, /* 0x3C91A626, 0x33145C07 */
+      pS0 = 1.66666666666666657415e-01,     /* 0x3FC55555, 0x55555555 */
+      pS1 = -3.25565818622400915405e-01,    /* 0xBFD4D612, 0x03EB6F7D */
+      pS2 = 2.01212532134862925881e-01,     /* 0x3FC9C155, 0x0E884455 */
+      pS3 = -4.00555345006794114027e-02,    /* 0xBFA48228, 0xB5688F3B */
+      pS4 = 7.91534994289814532176e-04,     /* 0x3F49EFE0, 0x7501B288 */
+      pS5 = 3.47933107596021167570e-05,     /* 0x3F023DE1, 0x0DFDF709 */
+      qS1 = -2.40339491173441421878e+00,    /* 0xC0033A27, 0x1C8A2D4B */
+      qS2 = 2.02094576023350569471e+00,     /* 0x40002AE5, 0x9C598AC8 */
+      qS3 = -6.88283971605453293030e-01,    /* 0xBFE6066C, 0x1B8D0159 */
+      qS4 = 7.70381505559019352791e-02;     /* 0x3FB3B8C5, 0xB12E9282 */
+
+  double z, p, q, r, w, s, c, df;
+  int32_t hx, ix;
+  GET_HIGH_WORD(hx, x);
+  ix = hx & 0x7fffffff;
+  if (ix >= 0x3ff00000) { /* |x| >= 1 */
+    uint32_t lx;
+    GET_LOW_WORD(lx, x);
+    if (((ix - 0x3ff00000) | lx) == 0) { /* |x|==1 */
+      if (hx > 0)
+        return 0.0; /* acos(1) = 0  */
+      else
+        return pi + 2.0 * pio2_lo; /* acos(-1)= pi */
+    }
+    return (x - x) / (x - x); /* acos(|x|>1) is NaN */
+  }
+  if (ix < 0x3fe00000) {                            /* |x| < 0.5 */
+    if (ix <= 0x3c600000) return pio2_hi + pio2_lo; /*if|x|<2**-57*/
+    z = x * x;
+    p = z * (pS0 + z * (pS1 + z * (pS2 + z * (pS3 + z * (pS4 + z * pS5)))));
+    q = one + z * (qS1 + z * (qS2 + z * (qS3 + z * qS4)));
+    r = p / q;
+    return pio2_hi - (x - (pio2_lo - x * r));
+  } else if (hx < 0) { /* x < -0.5 */
+    z = (one + x) * 0.5;
+    p = z * (pS0 + z * (pS1 + z * (pS2 + z * (pS3 + z * (pS4 + z * pS5)))));
+    q = one + z * (qS1 + z * (qS2 + z * (qS3 + z * qS4)));
+    s = sqrt(z);
+    r = p / q;
+    w = r * s - pio2_lo;
+    return pi - 2.0 * (s + w);
+  } else { /* x > 0.5 */
+    z = (one - x) * 0.5;
+    s = sqrt(z);
+    df = s;
+    SET_LOW_WORD(df, 0);
+    c = (z - df * df) / (s + df);
+    p = z * (pS0 + z * (pS1 + z * (pS2 + z * (pS3 + z * (pS4 + z * pS5)))));
+    q = one + z * (qS1 + z * (qS2 + z * (qS3 + z * qS4)));
+    r = p / q;
+    w = r * s + c;
+    return 2.0 * (df + w);
+  }
+}
+
+/* acosh(x)
+ * Method :
+ *      Based on
+ *              acosh(x) = log [ x + sqrt(x*x-1) ]
+ *      we have
+ *              acosh(x) := log(x)+ln2, if x is large; else
+ *              acosh(x) := log(2x-1/(sqrt(x*x-1)+x)) if x>2; else
+ *              acosh(x) := log1p(t+sqrt(2.0*t+t*t)); where t=x-1.
+ *
+ * Special cases:
+ *      acosh(x) is NaN with signal if x<1.
+ *      acosh(NaN) is NaN without signal.
+ */
+double acosh(double x) {
+  static const double
+      one = 1.0,
+      ln2 = 6.93147180559945286227e-01; /* 0x3FE62E42, 0xFEFA39EF */
+  double t;
+  int32_t hx;
+  uint32_t lx;
+  EXTRACT_WORDS(hx, lx, x);
+  if (hx < 0x3ff00000) { /* x < 1 */
+    return (x - x) / (x - x);
+  } else if (hx >= 0x41b00000) { /* x > 2**28 */
+    if (hx >= 0x7ff00000) {      /* x is inf of NaN */
+      return x + x;
+    } else {
+      return log(x) + ln2; /* acosh(huge)=log(2x) */
+    }
+  } else if (((hx - 0x3ff00000) | lx) == 0) {
+    return 0.0;                 /* acosh(1) = 0 */
+  } else if (hx > 0x40000000) { /* 2**28 > x > 2 */
+    t = x * x;
+    return log(2.0 * x - one / (x + sqrt(t - one)));
+  } else { /* 1<x<2 */
+    t = x - one;
+    return log1p(t + sqrt(2.0 * t + t * t));
+  }
+}
+
+/* asin(x)
+ * Method :
+ *      Since  asin(x) = x + x^3/6 + x^5*3/40 + x^7*15/336 + ...
+ *      we approximate asin(x) on [0,0.5] by
+ *              asin(x) = x + x*x^2*R(x^2)
+ *      where
+ *              R(x^2) is a rational approximation of (asin(x)-x)/x^3
+ *      and its remez error is bounded by
+ *              |(asin(x)-x)/x^3 - R(x^2)| < 2^(-58.75)
+ *
+ *      For x in [0.5,1]
+ *              asin(x) = pi/2-2*asin(sqrt((1-x)/2))
+ *      Let y = (1-x), z = y/2, s := sqrt(z), and pio2_hi+pio2_lo=pi/2;
+ *      then for x>0.98
+ *              asin(x) = pi/2 - 2*(s+s*z*R(z))
+ *                      = pio2_hi - (2*(s+s*z*R(z)) - pio2_lo)
+ *      For x<=0.98, let pio4_hi = pio2_hi/2, then
+ *              f = hi part of s;
+ *              c = sqrt(z) - f = (z-f*f)/(s+f)         ...f+c=sqrt(z)
+ *      and
+ *              asin(x) = pi/2 - 2*(s+s*z*R(z))
+ *                      = pio4_hi+(pio4-2s)-(2s*z*R(z)-pio2_lo)
+ *                      = pio4_hi+(pio4-2f)-(2s*z*R(z)-(pio2_lo+2c))
+ *
+ * Special cases:
+ *      if x is NaN, return x itself;
+ *      if |x|>1, return NaN with invalid signal.
+ */
+double asin(double x) {
+  static const double
+      one = 1.00000000000000000000e+00, /* 0x3FF00000, 0x00000000 */
+      huge = 1.000e+300,
+      pio2_hi = 1.57079632679489655800e+00, /* 0x3FF921FB, 0x54442D18 */
+      pio2_lo = 6.12323399573676603587e-17, /* 0x3C91A626, 0x33145C07 */
+      pio4_hi = 7.85398163397448278999e-01, /* 0x3FE921FB, 0x54442D18 */
+                                            /* coefficient for R(x^2) */
+      pS0 = 1.66666666666666657415e-01,     /* 0x3FC55555, 0x55555555 */
+      pS1 = -3.25565818622400915405e-01,    /* 0xBFD4D612, 0x03EB6F7D */
+      pS2 = 2.01212532134862925881e-01,     /* 0x3FC9C155, 0x0E884455 */
+      pS3 = -4.00555345006794114027e-02,    /* 0xBFA48228, 0xB5688F3B */
+      pS4 = 7.91534994289814532176e-04,     /* 0x3F49EFE0, 0x7501B288 */
+      pS5 = 3.47933107596021167570e-05,     /* 0x3F023DE1, 0x0DFDF709 */
+      qS1 = -2.40339491173441421878e+00,    /* 0xC0033A27, 0x1C8A2D4B */
+      qS2 = 2.02094576023350569471e+00,     /* 0x40002AE5, 0x9C598AC8 */
+      qS3 = -6.88283971605453293030e-01,    /* 0xBFE6066C, 0x1B8D0159 */
+      qS4 = 7.70381505559019352791e-02;     /* 0x3FB3B8C5, 0xB12E9282 */
+
+  double t, w, p, q, c, r, s;
+  int32_t hx, ix;
+
+  t = 0;
+  GET_HIGH_WORD(hx, x);
+  ix = hx & 0x7fffffff;
+  if (ix >= 0x3ff00000) { /* |x|>= 1 */
+    uint32_t lx;
+    GET_LOW_WORD(lx, x);
+    if (((ix - 0x3ff00000) | lx) == 0) /* asin(1)=+-pi/2 with inexact */
+      return x * pio2_hi + x * pio2_lo;
+    return (x - x) / (x - x);       /* asin(|x|>1) is NaN */
+  } else if (ix < 0x3fe00000) {     /* |x|<0.5 */
+    if (ix < 0x3e400000) {          /* if |x| < 2**-27 */
+      if (huge + x > one) return x; /* return x with inexact if x!=0*/
+    } else {
+      t = x * x;
+    }
+    p = t * (pS0 + t * (pS1 + t * (pS2 + t * (pS3 + t * (pS4 + t * pS5)))));
+    q = one + t * (qS1 + t * (qS2 + t * (qS3 + t * qS4)));
+    w = p / q;
+    return x + x * w;
+  }
+  /* 1> |x|>= 0.5 */
+  w = one - fabs(x);
+  t = w * 0.5;
+  p = t * (pS0 + t * (pS1 + t * (pS2 + t * (pS3 + t * (pS4 + t * pS5)))));
+  q = one + t * (qS1 + t * (qS2 + t * (qS3 + t * qS4)));
+  s = sqrt(t);
+  if (ix >= 0x3FEF3333) { /* if |x| > 0.975 */
+    w = p / q;
+    t = pio2_hi - (2.0 * (s + s * w) - pio2_lo);
+  } else {
+    w = s;
+    SET_LOW_WORD(w, 0);
+    c = (t - w * w) / (s + w);
+    r = p / q;
+    p = 2.0 * s * r - (pio2_lo - 2.0 * c);
+    q = pio4_hi - 2.0 * w;
+    t = pio4_hi - (p - q);
+  }
+  if (hx > 0)
+    return t;
+  else
+    return -t;
+}
+/* asinh(x)
+ * Method :
+ *      Based on
+ *              asinh(x) = sign(x) * log [ |x| + sqrt(x*x+1) ]
+ *      we have
+ *      asinh(x) := x  if  1+x*x=1,
+ *               := sign(x)*(log(x)+ln2)) for large |x|, else
+ *               := sign(x)*log(2|x|+1/(|x|+sqrt(x*x+1))) if|x|>2, else
+ *               := sign(x)*log1p(|x| + x^2/(1 + sqrt(1+x^2)))
+ */
+double asinh(double x) {
+  static const double
+      one = 1.00000000000000000000e+00, /* 0x3FF00000, 0x00000000 */
+      ln2 = 6.93147180559945286227e-01, /* 0x3FE62E42, 0xFEFA39EF */
+      huge = 1.00000000000000000000e+300;
+
+  double t, w;
+  int32_t hx, ix;
+  GET_HIGH_WORD(hx, x);
+  ix = hx & 0x7fffffff;
+  if (ix >= 0x7ff00000) return x + x; /* x is inf or NaN */
+  if (ix < 0x3e300000) {              /* |x|<2**-28 */
+    if (huge + x > one) return x;     /* return x inexact except 0 */
+  }
+  if (ix > 0x41b00000) { /* |x| > 2**28 */
+    w = log(fabs(x)) + ln2;
+  } else if (ix > 0x40000000) { /* 2**28 > |x| > 2.0 */
+    t = fabs(x);
+    w = log(2.0 * t + one / (sqrt(x * x + one) + t));
+  } else { /* 2.0 > |x| > 2**-28 */
+    t = x * x;
+    w = log1p(fabs(x) + t / (one + sqrt(one + t)));
+  }
+  if (hx > 0) {
+    return w;
+  } else {
+    return -w;
+  }
+}
+
 /* atan(x)
  * Method
  *   1. Reduce x to positive by atan(x) = -atan(-x).
@@ -2306,6 +2563,182 @@ double tan(double x) {
     /* 1 -> n even, -1 -> n odd */
     return __kernel_tan(y[0], y[1], 1 - ((n & 1) << 1));
   }
+}
+
+/*
+ * ES6 draft 09-27-13, section 20.2.2.12.
+ * Math.cosh
+ * Method :
+ * mathematically cosh(x) if defined to be (exp(x)+exp(-x))/2
+ *      1. Replace x by |x| (cosh(x) = cosh(-x)).
+ *      2.
+ *                                                      [ exp(x) - 1 ]^2
+ *          0        <= x <= ln2/2  :  cosh(x) := 1 + -------------------
+ *                                                         2*exp(x)
+ *
+ *                                                 exp(x) + 1/exp(x)
+ *          ln2/2    <= x <= 22     :  cosh(x) := -------------------
+ *                                                        2
+ *          22       <= x <= lnovft :  cosh(x) := exp(x)/2
+ *          lnovft   <= x <= ln2ovft:  cosh(x) := exp(x/2)/2 * exp(x/2)
+ *          ln2ovft  <  x           :  cosh(x) := huge*huge (overflow)
+ *
+ * Special cases:
+ *      cosh(x) is |x| if x is +INF, -INF, or NaN.
+ *      only cosh(0)=1 is exact for finite x.
+ */
+double cosh(double x) {
+  static const double KCOSH_OVERFLOW = 710.4758600739439;
+  static const double one = 1.0, half = 0.5;
+  static volatile double huge = 1.0e+300;
+
+  int32_t ix;
+
+  /* High word of |x|. */
+  GET_HIGH_WORD(ix, x);
+  ix &= 0x7fffffff;
+
+  // |x| in [0,0.5*log2], return 1+expm1(|x|)^2/(2*exp(|x|))
+  if (ix < 0x3fd62e43) {
+    double t = expm1(fabs(x));
+    double w = one + t;
+    // For |x| < 2^-55, cosh(x) = 1
+    if (ix < 0x3c800000) return w;
+    return one + (t * t) / (w + w);
+  }
+
+  // |x| in [0.5*log2, 22], return (exp(|x|)+1/exp(|x|)/2
+  if (ix < 0x40360000) {
+    double t = exp(fabs(x));
+    return half * t + half / t;
+  }
+
+  // |x| in [22, log(maxdouble)], return half*exp(|x|)
+  if (ix < 0x40862e42) return half * exp(fabs(x));
+
+  // |x| in [log(maxdouble), overflowthreshold]
+  if (fabs(x) <= KCOSH_OVERFLOW) {
+    double w = exp(half * fabs(x));
+    double t = half * w;
+    return t * w;
+  }
+
+  /* x is INF or NaN */
+  if (ix >= 0x7ff00000) return x * x;
+
+  // |x| > overflowthreshold.
+  return huge * huge;
+}
+
+/*
+ * ES6 draft 09-27-13, section 20.2.2.30.
+ * Math.sinh
+ * Method :
+ * mathematically sinh(x) if defined to be (exp(x)-exp(-x))/2
+ *      1. Replace x by |x| (sinh(-x) = -sinh(x)).
+ *      2.
+ *                                                  E + E/(E+1)
+ *          0        <= x <= 22     :  sinh(x) := --------------, E=expm1(x)
+ *                                                      2
+ *
+ *          22       <= x <= lnovft :  sinh(x) := exp(x)/2
+ *          lnovft   <= x <= ln2ovft:  sinh(x) := exp(x/2)/2 * exp(x/2)
+ *          ln2ovft  <  x           :  sinh(x) := x*shuge (overflow)
+ *
+ * Special cases:
+ *      sinh(x) is |x| if x is +Infinity, -Infinity, or NaN.
+ *      only sinh(0)=0 is exact for finite x.
+ */
+double sinh(double x) {
+  static const double KSINH_OVERFLOW = 710.4758600739439,
+                      TWO_M28 =
+                          3.725290298461914e-9,  // 2^-28, empty lower half
+      LOG_MAXD = 709.7822265625;  // 0x40862e42 00000000, empty lower half
+  static const double shuge = 1.0e307;
+
+  double h = (x < 0) ? -0.5 : 0.5;
+  // |x| in [0, 22]. return sign(x)*0.5*(E+E/(E+1))
+  double ax = fabs(x);
+  if (ax < 22) {
+    // For |x| < 2^-28, sinh(x) = x
+    if (ax < TWO_M28) return x;
+    double t = expm1(ax);
+    if (ax < 1) {
+      return h * (2 * t - t * t / (t + 1));
+    }
+    return h * (t + t / (t + 1));
+  }
+  // |x| in [22, log(maxdouble)], return 0.5 * exp(|x|)
+  if (ax < LOG_MAXD) return h * exp(ax);
+  // |x| in [log(maxdouble), overflowthreshold]
+  // overflowthreshold = 710.4758600739426
+  if (ax <= KSINH_OVERFLOW) {
+    double w = exp(0.5 * ax);
+    double t = h * w;
+    return t * w;
+  }
+  // |x| > overflowthreshold or is NaN.
+  // Return Infinity of the appropriate sign or NaN.
+  return x * shuge;
+}
+
+/* Tanh(x)
+ * Return the Hyperbolic Tangent of x
+ *
+ * Method :
+ *                                 x    -x
+ *                                e  - e
+ *  0. tanh(x) is defined to be -----------
+ *                                 x    -x
+ *                                e  + e
+ *  1. reduce x to non-negative by tanh(-x) = -tanh(x).
+ *  2.  0      <= x <  2**-28 : tanh(x) := x with inexact if x != 0
+ *                                          -t
+ *      2**-28 <= x <  1      : tanh(x) := -----; t = expm1(-2x)
+ *                                         t + 2
+ *                                               2
+ *      1      <= x <  22     : tanh(x) := 1 - -----; t = expm1(2x)
+ *                                             t + 2
+ *      22     <= x <= INF    : tanh(x) := 1.
+ *
+ * Special cases:
+ *      tanh(NaN) is NaN;
+ *      only tanh(0)=0 is exact for finite argument.
+ */
+double tanh(double x) {
+  static const volatile double tiny = 1.0e-300;
+  static const double one = 1.0, two = 2.0, huge = 1.0e300;
+  double t, z;
+  int32_t jx, ix;
+
+  GET_HIGH_WORD(jx, x);
+  ix = jx & 0x7fffffff;
+
+  /* x is INF or NaN */
+  if (ix >= 0x7ff00000) {
+    if (jx >= 0)
+      return one / x + one; /* tanh(+-inf)=+-1 */
+    else
+      return one / x - one; /* tanh(NaN) = NaN */
+  }
+
+  /* |x| < 22 */
+  if (ix < 0x40360000) {            /* |x|<22 */
+    if (ix < 0x3e300000) {          /* |x|<2**-28 */
+      if (huge + x > one) return x; /* tanh(tiny) = tiny with inexact */
+    }
+    if (ix >= 0x3ff00000) { /* |x|>=1  */
+      t = expm1(two * fabs(x));
+      z = one - two / (t + two);
+    } else {
+      t = expm1(-two * fabs(x));
+      z = -t / (t + two);
+    }
+    /* |x| >= 22, return +-1 */
+  } else {
+    z = one - tiny; /* raise inexact flag */
+  }
+  return (jx >= 0) ? z : -z;
 }
 
 }  // namespace ieee754

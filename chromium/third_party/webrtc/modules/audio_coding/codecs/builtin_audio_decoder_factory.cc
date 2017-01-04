@@ -129,8 +129,33 @@ NamedDecoderConstructor decoder_constructors[] = {
 
 class BuiltinAudioDecoderFactory : public AudioDecoderFactory {
  public:
-  std::vector<SdpAudioFormat> GetSupportedFormats() override {
-    FATAL() << "Not implemented yet!";
+  std::vector<AudioCodecSpec> GetSupportedDecoders() override {
+    static std::vector<AudioCodecSpec> specs = {
+#ifdef WEBRTC_CODEC_OPUS
+      { { "opus", 48000, 2, {
+            {"minptime", "10" },
+            {"useinbandfec", "1" }
+          }
+        }, false
+      },
+#endif
+#if (defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX))
+      { { "isac", 16000, 1 }, true },
+#endif
+#if (defined(WEBRTC_CODEC_ISAC))
+      { { "isac", 32000, 1 }, true },
+#endif
+#ifdef WEBRTC_CODEC_G722
+      { { "G722", 8000,  1 }, true },
+#endif
+#ifdef WEBRTC_CODEC_ILBC
+      { { "iLBC", 8000,  1 }, true },
+#endif
+      { { "PCMU", 8000,  1 }, true },
+      { { "PCMA", 8000,  1 }, true }
+    };
+
+    return specs;
   }
 
   std::unique_ptr<AudioDecoder> MakeAudioDecoder(

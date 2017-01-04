@@ -13,13 +13,13 @@
 
 #include "base/macros.h"
 #include "components/sessions/core/session_id.h"
-#include "sync/api/sync_change_processor.h"
+#include "components/sync/api/sync_change_processor.h"
 
 namespace syncer {
 class SyncChangeProcessor;
-}
+}  // namespace syncer
 
-namespace browser_sync {
+namespace sync_sessions {
 
 // A pool for managing free/used tab sync nodes for the *local* session.
 // Performs lazy creation of sync nodes when necessary.
@@ -159,6 +159,6 @@ class TabNodePool {
   DISALLOW_COPY_AND_ASSIGN(TabNodePool);
 };
 
-}  // namespace browser_sync
+}  // namespace sync_sessions
 
 #endif  // COMPONENTS_SYNC_SESSIONS_TAB_NODE_POOL_H_

@@ -39,7 +39,7 @@ class KeyAccumulator final BASE_EMBEDDED {
   static MaybeHandle<FixedArray> GetKeys(
       Handle<JSReceiver> object, KeyCollectionMode mode, PropertyFilter filter,
       GetKeysConversion keys_conversion = GetKeysConversion::kKeepNumbers,
-      bool filter_proxy_keys = true, bool is_for_in = false);
+      bool is_for_in = false);
 
   Handle<FixedArray> GetKeys(
       GetKeysConversion convert = GetKeysConversion::kKeepNumbers);
@@ -53,8 +53,8 @@ class KeyAccumulator final BASE_EMBEDDED {
       Handle<AccessCheckInfo> access_check_info, Handle<JSReceiver> receiver,
       Handle<JSObject> object);
 
-  static Handle<FixedArray> GetEnumPropertyKeys(Isolate* isolate,
-                                                Handle<JSObject> object);
+  static Handle<FixedArray> GetOwnEnumPropertyKeys(Isolate* isolate,
+                                                   Handle<JSObject> object);
 
   void AddKey(Object* key, AddKeyConversion convert = DO_NOT_CONVERT);
   void AddKey(Handle<Object> key, AddKeyConversion convert = DO_NOT_CONVERT);
@@ -64,13 +64,26 @@ class KeyAccumulator final BASE_EMBEDDED {
   // Jump to the next level, pushing the current |levelLength_| to
   // |levelLengths_| and adding a new list to |elements_|.
   Isolate* isolate() { return isolate_; }
+  // Filter keys based on their property descriptors.
   PropertyFilter filter() { return filter_; }
-  void set_filter_proxy_keys(bool filter) { filter_proxy_keys_ = filter; }
+  // The collection mode defines whether we collect the keys from the prototype
+  // chain or only look at the receiver.
+  KeyCollectionMode mode() { return mode_; }
+  // In case of for-in loops we have to treat JSProxy keys differently and
+  // deduplicate them. Additionally we convert JSProxy keys back to array
+  // indices.
   void set_is_for_in(bool value) { is_for_in_ = value; }
   void set_skip_indices(bool value) { skip_indices_ = value; }
+  // The last_non_empty_prototype is used to limit the prototypes for which
+  // we have to keep track of non-enumerable keys that can shadow keys
+  // repeated on the prototype chain.
   void set_last_non_empty_prototype(Handle<JSReceiver> object) {
     last_non_empty_prototype_ = object;
   }
+  // Shadowing keys are used to filter keys. This happens when non-enumerable
+  // keys appear again on the prototype chain.
+  void AddShadowingKey(Object* key);
+  void AddShadowingKey(Handle<Object> key);
 
  private:
   Maybe<bool> CollectOwnKeys(Handle<JSReceiver> receiver,
@@ -79,29 +92,34 @@ class KeyAccumulator final BASE_EMBEDDED {
                                     Handle<JSProxy> proxy);
   Maybe<bool> CollectOwnJSProxyTargetKeys(Handle<JSProxy> proxy,
                                           Handle<JSReceiver> target);
-
   Maybe<bool> AddKeysFromJSProxy(Handle<JSProxy> proxy,
                                  Handle<FixedArray> keys);
-
+  bool IsShadowed(Handle<Object> key);
+  bool HasShadowingKeys();
   Handle<OrderedHashSet> keys() { return Handle<OrderedHashSet>::cast(keys_); }
 
   Isolate* isolate_;
   // keys_ is either an Handle<OrderedHashSet> or in the case of own JSProxy
-  // keys a Handle<FixedArray>.
+  // keys a Handle<FixedArray>. The OrderedHashSet is in-place converted to the
+  // result list, a FixedArray containing all collected keys.
   Handle<FixedArray> keys_;
   Handle<JSReceiver> last_non_empty_prototype_;
+  Handle<ObjectHashSet> shadowing_keys_;
   KeyCollectionMode mode_;
   PropertyFilter filter_;
-  bool filter_proxy_keys_ = true;
   bool is_for_in_ = false;
   bool skip_indices_ = false;
+  // For all the keys on the first receiver adding a shadowing key we can skip
+  // the shadow check.
+  bool skip_shadow_check_ = true;
 
   DISALLOW_COPY_AND_ASSIGN(KeyAccumulator);
 };
 
 // The FastKeyAccumulator handles the cases where there are no elements on the
 // prototype chain and forwords the complex/slow cases to the normal
-// KeyAccumulator.
+// KeyAccumulator. This significantly speeds up the cases where the OWN_ONLY
+// case where we do not have to walk the prototype chain.
 class FastKeyAccumulator {
  public:
   FastKeyAccumulator(Isolate* isolate, Handle<JSReceiver> receiver,
@@ -112,7 +130,6 @@ class FastKeyAccumulator {
 
   bool is_receiver_simple_enum() { return is_receiver_simple_enum_; }
   bool has_empty_prototype() { return has_empty_prototype_; }
-  void set_filter_proxy_keys(bool filter) { filter_proxy_keys_ = filter; }
   void set_is_for_in(bool value) { is_for_in_ = value; }
 
   MaybeHandle<FixedArray> GetKeys(
@@ -128,7 +145,6 @@ class FastKeyAccumulator {
   Handle<JSReceiver> last_non_empty_prototype_;
   KeyCollectionMode mode_;
   PropertyFilter filter_;
-  bool filter_proxy_keys_ = true;
   bool is_for_in_ = false;
   bool is_receiver_simple_enum_ = false;
   bool has_empty_prototype_ = false;

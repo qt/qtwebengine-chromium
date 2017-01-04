@@ -7,7 +7,7 @@
 #ifndef FPDFSDK_FORMFILLER_CFFL_COMBOBOX_H_
 #define FPDFSDK_FORMFILLER_CFFL_COMBOBOX_H_
 
-#include "core/fxcrt/include/fx_string.h"
+#include "core/fxcrt/fx_string.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 
 class CBA_FontMap;
@@ -19,18 +19,18 @@ struct FFL_ComboBoxState {
   CFX_WideString sValue;
 };
 
-class CFFL_ComboBox : public CFFL_FormFiller,
-                      public IPWL_FocusHandler,
-                      public IPWL_Edit_Notify {
+class CFFL_ComboBox : public CFFL_FormFiller, public IPWL_FocusHandler {
  public:
-  CFFL_ComboBox(CPDFDoc_Environment* pApp, CPDFSDK_Annot* pWidget);
+  CFFL_ComboBox(CPDFSDK_FormFillEnvironment* pApp, CPDFSDK_Annot* pWidget);
   ~CFFL_ComboBox() override;
 
   // CFFL_FormFiller:
   PWL_CREATEPARAM GetCreateParam() override;
   CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
                          CPDFSDK_PageView* pPageView) override;
-  FX_BOOL OnChar(CPDFSDK_Annot* pAnnot, FX_UINT nChar, FX_UINT nFlags) override;
+  FX_BOOL OnChar(CPDFSDK_Annot* pAnnot,
+                 uint32_t nChar,
+                 uint32_t nFlags) override;
   FX_BOOL IsDataChanged(CPDFSDK_PageView* pPageView) override;
   void SaveData(CPDFSDK_PageView* pPageView) override;
   void GetActionData(CPDFSDK_PageView* pPageView,
@@ -49,10 +49,6 @@ class CFFL_ComboBox : public CFFL_FormFiller,
 
   // IPWL_FocusHandler:
   void OnSetFocus(CPWL_Wnd* pWnd) override;
-  void OnKillFocus(CPWL_Wnd* pWnd) override;
-
-  // IPWL_Edit_Notify:
-  void OnAddUndo(CPWL_Edit* pEdit) override;
 
 #ifdef PDF_ENABLE_XFA
   // CFFL_FormFiller:

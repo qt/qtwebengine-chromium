@@ -49,6 +49,7 @@ function defineCommonExtensionSymbols(apiPrivate)
         PreviousSearchResult: "previousSearchResult"
     };
 
+    /** @enum {string} */
     apiPrivate.Events = {
         AuditStarted: "audit-started-",
         ButtonClicked: "button-clicked-",
@@ -56,16 +57,20 @@ function defineCommonExtensionSymbols(apiPrivate)
         NetworkRequestFinished: "network-request-finished",
         OpenResource: "open-resource",
         PanelSearch: "panel-search-",
+        RecordingStarted: "trace-recording-started-",
+        RecordingStopped: "trace-recording-stopped-",
         ResourceAdded: "resource-added",
         ResourceContentCommitted: "resource-content-committed",
         ViewShown: "view-shown-",
         ViewHidden: "view-hidden-"
     };
 
+    /** @enum {string} */
     apiPrivate.Commands = {
         AddAuditCategory: "addAuditCategory",
         AddAuditResult: "addAuditResult",
         AddRequestHeaders: "addRequestHeaders",
+        AddTraceProvider: "addTraceProvider",
         ApplyStyleSheet: "applyStyleSheet",
         CreatePanel: "createPanel",
         CreateSidebarPane: "createSidebarPane",
@@ -83,6 +88,7 @@ function defineCommonExtensionSymbols(apiPrivate)
         SetOpenResourceHandler: "setOpenResourceHandler",
         SetResourceContent: "setResourceContent",
         SetSidebarContent: "setSidebarContent",
+        SetSidebarHeight: "setSidebarHeight",
         SetSidebarPage: "setSidebarPage",
         ShowPanel: "showPanel",
         StopAuditCategoryRun: "stopAuditCategoryRun",
@@ -93,11 +99,14 @@ function defineCommonExtensionSymbols(apiPrivate)
 }
 
 /**
+ * @param {!ExtensionDescriptor} extensionInfo
+ * @param {string} inspectedTabId
+ * @param {string} themeName
  * @param {number} injectedScriptId
- * @return {!Object}
+ * @param {function(!Object, !Object)} testHook
  * @suppressGlobalPropertiesCheck
  */
-function injectedExtensionAPI(injectedScriptId)
+function injectedExtensionAPI(extensionInfo, inspectedTabId, themeName, testHook, injectedScriptId)
 {
 
 var apiPrivate = {};
@@ -177,6 +186,7 @@ function InspectorExtensionAPI()
     this.inspectedWindow = new InspectedWindow();
     this.panels = new Panels();
     this.network = new Network();
+    this.timeline = new Timeline();
     defineDeprecatedProperty(this, "webInspector", "resources", "network");
 }
 
@@ -389,20 +399,6 @@ function defineDeprecatedProperty(object, className, oldName, newName)
     object.__defineGetter__(oldName, getter);
 }
 
-function defineDeprecatedMethod(object, className, oldName)
-{
-    var warningGiven = false;
-    function noop()
-    {
-        if (warningGiven)
-            return;
-
-        console.warn(className + "." + oldName + " is deprecated, please don't use it. It is a no-op.");
-        warningGiven = true;
-    }
-    object[oldName] = noop;
-}
-
 function extractCallbackArgument(args)
 {
     var lastArgument = args[args.length - 1];
@@ -496,10 +492,14 @@ ExtensionPanelImpl.prototype = {
 function ExtensionSidebarPaneImpl(id)
 {
     ExtensionViewImpl.call(this, id);
-    defineDeprecatedMethod(this, "ExtensionSidebarPane", "setHeight");
 }
 
 ExtensionSidebarPaneImpl.prototype = {
+    setHeight: function(height)
+    {
+        extensionServer.sendRequest({ command: commands.SetSidebarHeight, id: this._id, height: height });
+    },
+
     setExpression: function(expression, rootTitle, evaluateOptions)
     {
         var request = {
@@ -549,6 +549,37 @@ ButtonImpl.prototype = {
         extensionServer.sendRequest(request);
     }
 };
+
+/**
+ * @constructor
+ */
+function Timeline()
+{
+}
+
+Timeline.prototype = {
+    /**
+     * @param {string} categoryName
+     * @param {string} categoryTooltip
+     * @return {!TraceProvider}
+     */
+    addTraceProvider: function(categoryName, categoryTooltip)
+    {
+        var id = "extension-trace-provider-" + extensionServer.nextObjectId();
+        extensionServer.sendRequest({ command: commands.AddTraceProvider, id: id, categoryName: categoryName, categoryTooltip: categoryTooltip});
+        return new TraceProvider(id);
+    }
+}
+
+/**
+ * @constructor
+ * @param {string} id
+ */
+function TraceProvider(id)
+{
+    this.onRecordingStarted = new EventSink(events.RecordingStarted + id);
+    this.onRecordingStopped = new EventSink(events.RecordingStopped + id);
+}
 
 /**
  * @constructor
@@ -808,6 +839,11 @@ ResourceImpl.prototype = {
     }
 }
 
+function getTabId()
+{
+    return inspectedTabId;
+}
+
 var keyboardEventRequestQueue = [];
 var forwardTimer = null;
 
@@ -863,7 +899,7 @@ function ExtensionServerClient()
     this._port.addEventListener("message", this._onMessage.bind(this), false);
     this._port.start();
 
-    window.parent.postMessage("registerExtension", [ channel.port2 ], "*");
+    window.parent.postMessage("registerExtension", "*", [ channel.port2 ]);
 }
 
 ExtensionServerClient.prototype = {
@@ -949,77 +985,58 @@ function populateInterfaceClass(interfaze, implementation)
     }
 }
 
-// extensionServer is a closure variable defined by the glue below -- make sure we fail if it's not there.
-if (!extensionServer)
-    extensionServer = new ExtensionServerClient();
+var extensionServer = new ExtensionServerClient();
+var coreAPI = new InspectorExtensionAPI();
 
-return new InspectorExtensionAPI();
-}
+var chrome = window.chrome || {};
+// Override chrome.devtools as a workaround for a error-throwing getter being exposed
+// in extension pages loaded into a non-extension process (only happens for remote client
+// extensions)
+var devtools_descriptor = Object.getOwnPropertyDescriptor(chrome, "devtools");
+if (!devtools_descriptor || devtools_descriptor.get)
+    Object.defineProperty(chrome, "devtools", { value: {}, enumerable: true });
 
-/**
- * @suppress {checkVars, checkTypes}
- */
-function platformExtensionAPI(coreAPI)
-{
-    function getTabId()
-    {
-        return tabId;
-    }
-    var chrome = window.chrome || {};
-    // Override chrome.devtools as a workaround for a error-throwing getter being exposed
-    // in extension pages loaded into a non-extension process (only happens for remote client
-    // extensions)
-    var devtools_descriptor = Object.getOwnPropertyDescriptor(chrome, "devtools");
-    if (!devtools_descriptor || devtools_descriptor.get)
-        Object.defineProperty(chrome, "devtools", { value: {}, enumerable: true });
-    // Only expose tabId on chrome.devtools.inspectedWindow, not webInspector.inspectedWindow.
-    chrome.devtools.inspectedWindow = {};
-    chrome.devtools.inspectedWindow.__defineGetter__("tabId", getTabId);
-    chrome.devtools.inspectedWindow.__proto__ = coreAPI.inspectedWindow;
-    chrome.devtools.network = coreAPI.network;
-    chrome.devtools.panels = coreAPI.panels;
+// Only expose tabId on chrome.devtools.inspectedWindow, not webInspector.inspectedWindow.
+chrome.devtools.inspectedWindow = {};
+chrome.devtools.inspectedWindow.__defineGetter__("tabId", getTabId);
+chrome.devtools.inspectedWindow.__proto__ = coreAPI.inspectedWindow;
+chrome.devtools.network = coreAPI.network;
+chrome.devtools.panels = coreAPI.panels;
+chrome.devtools.panels.themeName = themeName;
 
-    // default to expose experimental APIs for now.
-    if (extensionInfo.exposeExperimentalAPIs !== false) {
-        chrome.experimental = chrome.experimental || {};
-        chrome.experimental.devtools = chrome.experimental.devtools || {};
+// default to expose experimental APIs for now.
+if (extensionInfo.exposeExperimentalAPIs !== false) {
+    chrome.experimental = chrome.experimental || {};
+    chrome.experimental.devtools = chrome.experimental.devtools || {};
 
-        var properties = Object.getOwnPropertyNames(coreAPI);
-        for (var i = 0; i < properties.length; ++i) {
-            var descriptor = Object.getOwnPropertyDescriptor(coreAPI, properties[i]);
+    var properties = Object.getOwnPropertyNames(coreAPI);
+    for (var i = 0; i < properties.length; ++i) {
+        var descriptor = Object.getOwnPropertyDescriptor(coreAPI, properties[i]);
+        if (descriptor)
             Object.defineProperty(chrome.experimental.devtools, properties[i], descriptor);
-        }
-        chrome.experimental.devtools.inspectedWindow = chrome.devtools.inspectedWindow;
     }
-    if (extensionInfo.exposeWebInspectorNamespace)
-        window.webInspector = coreAPI;
+    chrome.experimental.devtools.inspectedWindow = chrome.devtools.inspectedWindow;
+}
+
+if (extensionInfo.exposeWebInspectorNamespace)
+    window.webInspector = coreAPI;
+testHook(extensionServer, coreAPI);
 }
 
 /**
  * @param {!ExtensionDescriptor} extensionInfo
  * @param {string} inspectedTabId
+ * @param {string} themeName
+ * @param {function(!Object, !Object)|undefined} testHook
  * @return {string}
  */
-function buildPlatformExtensionAPI(extensionInfo, inspectedTabId)
+function buildExtensionAPIInjectedScript(extensionInfo, inspectedTabId, themeName, testHook)
 {
-    return "var extensionInfo = " + JSON.stringify(extensionInfo) + ";" +
-       "var tabId = " + inspectedTabId + ";" +
-       platformExtensionAPI.toString();
-}
-
-/**
- * @param {!ExtensionDescriptor} extensionInfo
- * @param {string} inspectedTabId
- * @return {string}
- */
-function buildExtensionAPIInjectedScript(extensionInfo, inspectedTabId)
-{
+    var argumentsJSON = [extensionInfo, inspectedTabId || null, themeName].map(_ => JSON.stringify(_)).join(",");
+    if (!testHook)
+        testHook = () => {};
     return "(function(injectedScriptId){ " +
-        "var extensionServer;" +
         defineCommonExtensionSymbols.toString() + ";" +
-        injectedExtensionAPI.toString() + ";" +
-        buildPlatformExtensionAPI(extensionInfo, inspectedTabId) + ";" +
-        "platformExtensionAPI(injectedExtensionAPI(injectedScriptId));" +
-        "return {};" +
+        "(" + injectedExtensionAPI.toString() + ")(" + argumentsJSON + "," + testHook + ", injectedScriptId);" +
         "})";
 }

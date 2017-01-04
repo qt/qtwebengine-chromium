@@ -171,6 +171,7 @@ namespace internal {
   /* Scanner-internal use only. */                                   \
   T(WHITESPACE, NULL, 0)                                             \
   T(UNINITIALIZED, NULL, 0)                                          \
+  T(REGEXP_LITERAL, NULL, 0)                                         \
                                                                      \
   /* ES6 Template Literals */                                        \
   T(TEMPLATE_SPAN, NULL, 0)                                          \
@@ -199,7 +200,7 @@ class Token {
   }
 
   static bool IsIdentifier(Value tok, LanguageMode language_mode,
-                           bool is_generator, bool is_module) {
+                           bool is_generator, bool disallow_await) {
     switch (tok) {
       case IDENTIFIER:
       case ASYNC:
@@ -212,7 +213,7 @@ class Token {
       case YIELD:
         return !is_generator && is_sloppy(language_mode);
       case AWAIT:
-        return !is_module;
+        return !disallow_await;
       default:
         return false;
     }
@@ -325,6 +326,11 @@ class Token {
     return string_[tok];
   }
 
+  static uint8_t StringLength(Value tok) {
+    DCHECK(tok < NUM_TOKENS);
+    return string_length_[tok];
+  }
+
   // Returns the precedence > 0 for binary and compare
   // operators; returns 0 otherwise.
   static int Precedence(Value tok) {
@@ -335,6 +341,7 @@ class Token {
  private:
   static const char* const name_[NUM_TOKENS];
   static const char* const string_[NUM_TOKENS];
+  static const uint8_t string_length_[NUM_TOKENS];
   static const int8_t precedence_[NUM_TOKENS];
   static const char token_type[NUM_TOKENS];
 };

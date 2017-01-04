@@ -13,7 +13,7 @@
 
 #include "base/debug/alias.h"
 #include "base/files/file_path.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
@@ -29,7 +29,7 @@ namespace history {
 
 namespace {
 
-// Reason for dropping a particular record.
+// Reason for dropping a particular record. Used for UMA.
 enum DroppedReason {
   DROPPED_REASON_BAD_STATE = 0,
   DROPPED_REASON_BAD_DANGER_TYPE = 1,
@@ -425,7 +425,7 @@ void DownloadDatabase::QueryDownloads(std::vector<DownloadRow>* results) {
                                 dropped_reason,
                                 DROPPED_REASON_MAX + 1);
     } else {
-      DCHECK(!ContainsKey(info_map, info->id));
+      DCHECK(!base::ContainsKey(info_map, info->id));
       uint32_t id = info->id;
       info_map[id] = info.release();
     }
@@ -453,8 +453,8 @@ void DownloadDatabase::QueryDownloads(std::vector<DownloadRow>* results) {
 
     // Confirm the id has already been seen--if it hasn't, discard the
     // record.
-    DCHECK(ContainsKey(info_map, id));
-    if (!ContainsKey(info_map, id))
+    DCHECK(base::ContainsKey(info_map, id));
+    if (!base::ContainsKey(info_map, id))
       continue;
 
     // Confirm all previous URLs in the chain have already been seen;
@@ -624,7 +624,6 @@ bool DownloadDatabase::CreateDownload(const DownloadRow& info) {
     count_urls.BindInt(0, info.id);
     if (count_urls.Step()) {
       bool corrupt_urls = count_urls.ColumnInt(0) > 0;
-      UMA_HISTOGRAM_BOOLEAN("Download.DatabaseCorruptUrls", corrupt_urls);
       if (corrupt_urls) {
         // There should not be any URLs in downloads_url_chains for this
         // info.id.  If there are, we don't want them to interfere with

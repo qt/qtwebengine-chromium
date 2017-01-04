@@ -16,16 +16,17 @@
 
 #include "base/macros.h"
 #include "net/base/linked_hash_map.h"
-#include "net/quic/quic_blocked_writer_interface.h"
-#include "net/quic/quic_connection.h"
-#include "net/quic/quic_framer.h"
-#include "net/quic/quic_packet_writer.h"
-#include "net/quic/quic_protocol.h"
-#include "net/quic/quic_server_session_base.h"
+#include "net/quic/core/quic_blocked_writer_interface.h"
+#include "net/quic/core/quic_connection.h"
+#include "net/quic/core/quic_framer.h"
+#include "net/quic/core/quic_packet_writer.h"
+#include "net/quic/core/quic_protocol.h"
+#include "net/quic/core/quic_server_session_base.h"
 
 namespace net {
 
 namespace test {
+class QuicDispatcherPeer;
 class QuicTimeWaitListManagerPeer;
 }  // namespace test
 
@@ -113,6 +114,7 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface {
       const QuicPublicResetPacket& packet);
 
  private:
+  friend class test::QuicDispatcherPeer;
   friend class test::QuicTimeWaitListManagerPeer;
 
   // Internal structure to store pending public reset packets.

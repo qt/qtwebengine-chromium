@@ -324,7 +324,7 @@ struct ip {
 	u_char    ip_ttl;
 	u_char    ip_p;
 	u_short   ip_sum;
-    struct in_addr ip_src, ip_dst;
+	struct in_addr ip_src, ip_dst;
 };
 
 struct ifaddrs {
@@ -345,7 +345,7 @@ struct udphdr {
 };
 
 struct iovec {
-	unsigned long len;
+	size_t len;
 	char *buf;
 };
 
@@ -762,14 +762,6 @@ MALLOC_DECLARE(SCTP_M_SOCKOPT);
 	umem_cache_destroy(zone);
 #endif
 
-/* global struct ifaddrs used in sctp_init_ifns_for_vrf getifaddrs call
- *  but references to fields are needed to persist as the vrf is queried.
- *  getifaddrs allocates memory that needs to be freed with a freeifaddrs
- *  call; this global is used to call freeifaddrs upon in sctp_pcb_finish
- */
-extern struct ifaddrs *g_interfaces;
-
-
 /*
  * __Userspace__ Defining sctp_hashinit_flags() and sctp_hashdestroy() for userland.
  */
@@ -1034,8 +1026,10 @@ int sctp_userspace_get_mtu_from_ifn(uint32_t if_index, int af);
 struct sockaddr_conn {
 #ifdef HAVE_SCONN_LEN
 	uint8_t sconn_len;
-#endif
 	uint8_t sconn_family;
+#else
+	uint16_t sconn_family;
+#endif
 	uint16_t sconn_port;
 	void *sconn_addr;
 };

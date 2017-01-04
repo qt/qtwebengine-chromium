@@ -16,9 +16,11 @@
 #include "base/pickle.h"
 #include "base/process/process_handle.h"
 #include "base/rand_util.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_checker.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/win/scoped_handle.h"
 #include "ipc/attachment_broker.h"
 #include "ipc/ipc_listener.h"
@@ -392,6 +394,8 @@ bool ChannelWin::CreatePipe(const IPC::ChannelHandle &channel_handle,
 }
 
 bool ChannelWin::Connect() {
+  DCHECK(base::MessageLoopForIO::IsCurrent());
+
   WillConnect();
 
   DLOG_IF(WARNING, thread_check_.get()) << "Connect called more than once";
@@ -412,13 +416,10 @@ bool ChannelWin::Connect() {
     // Complete setup asynchronously. By not setting input_state_.is_pending
     // to true, we indicate to OnIOCompleted that this is the special
     // initialization signal.
-    base::MessageLoopForIO::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::Bind(&ChannelWin::OnIOCompleted,
-                   weak_factory_.GetWeakPtr(),
-                   &input_state_.context,
-                   0,
-                   0));
+        base::Bind(&ChannelWin::OnIOCompleted, weak_factory_.GetWeakPtr(),
+                   &input_state_.context, 0, 0));
   }
 
   if (!waiting_connect_)

@@ -7,11 +7,11 @@
 #ifndef CORE_FXGE_ANDROID_FPF_SKIAFONT_H_
 #define CORE_FXGE_ANDROID_FPF_SKIAFONT_H_
 
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_system.h"
 
 #if _FX_OS_ == _FX_ANDROID_
 
-#include "core/fxge/include/fx_font.h"
+#include "core/fxge/fx_font.h"
 
 class CFPF_SkiaFontDescriptor;
 class CFPF_SkiaFontMgr;

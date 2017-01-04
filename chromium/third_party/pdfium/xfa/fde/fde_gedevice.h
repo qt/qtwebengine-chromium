@@ -7,13 +7,14 @@
 #ifndef XFA_FDE_FDE_GEDEVICE_H_
 #define XFA_FDE_FDE_GEDEVICE_H_
 
-#include "core/fxge/include/fx_ge.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "xfa/fgas/crt/fgas_memory.h"
 
 class CFDE_Brush;
 class CFDE_Path;
 class CFDE_Pen;
 class CFGAS_GEFont;
+class CFX_GraphStateData;
 
 class CFDE_RenderDevice : public CFX_Target {
  public:
@@ -116,10 +117,9 @@ class CFDE_RenderDevice : public CFX_Target {
                     FX_FLOAT fPenWidth,
                     CFX_GraphStateData& graphState);
 
-  CFX_RenderDevice* m_pDevice;
+  CFX_RenderDevice* const m_pDevice;
   CFX_RectF m_rtClip;
   FX_BOOL m_bOwnerDevice;
-  FXTEXT_CHARPOS* m_pCharPos;
   int32_t m_iCharCount;
 };
 

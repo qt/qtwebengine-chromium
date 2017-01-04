@@ -16,6 +16,7 @@
 #include "cc/trees/layer_tree_host_impl.h"
 
 namespace cc {
+class LayerTreeHostInProcess;
 
 // This class aggregates all the interactions that the main side of the
 // compositor needs to have with the impl side. It is created and owned by the
@@ -23,49 +24,37 @@ namespace cc {
 class CC_EXPORT ProxyImpl : public NON_EXPORTED_BASE(LayerTreeHostImplClient),
                             public NON_EXPORTED_BASE(SchedulerClient) {
  public:
-  static std::unique_ptr<ProxyImpl> Create(
-      ChannelImpl* channel_impl,
-      LayerTreeHost* layer_tree_host,
-      TaskRunnerProvider* task_runner_provider,
-      std::unique_ptr<BeginFrameSource> external_begin_frame_source);
-
+  ProxyImpl(ChannelImpl* channel_impl,
+            LayerTreeHostInProcess* layer_tree_host,
+            TaskRunnerProvider* task_runner_provider);
   ~ProxyImpl() override;
 
   // Virtual for testing.
-  virtual void UpdateTopControlsStateOnImpl(TopControlsState constraints,
-                                            TopControlsState current,
-                                            bool animate);
-  virtual void InitializeOutputSurfaceOnImpl(OutputSurface* output_surface);
-  virtual void InitializeMutatorOnImpl(
-      std::unique_ptr<LayerTreeMutator> mutator);
-  virtual void MainThreadHasStoppedFlingingOnImpl();
-  virtual void SetInputThrottledUntilCommitOnImpl(bool is_throttled);
-  virtual void SetDeferCommitsOnImpl(bool defer_commits) const;
-  virtual void SetNeedsRedrawOnImpl(const gfx::Rect& damage_rect);
-  virtual void SetNeedsCommitOnImpl();
-  virtual void BeginMainFrameAbortedOnImpl(
+  void UpdateTopControlsStateOnImpl(TopControlsState constraints,
+                                    TopControlsState current,
+                                    bool animate);
+  void InitializeCompositorFrameSinkOnImpl(
+      CompositorFrameSink* compositor_frame_sink);
+  void InitializeMutatorOnImpl(std::unique_ptr<LayerTreeMutator> mutator);
+  void MainThreadHasStoppedFlingingOnImpl();
+  void SetInputThrottledUntilCommitOnImpl(bool is_throttled);
+  void SetDeferCommitsOnImpl(bool defer_commits) const;
+  void SetNeedsRedrawOnImpl(const gfx::Rect& damage_rect);
+  void SetNeedsCommitOnImpl();
+  void BeginMainFrameAbortedOnImpl(
       CommitEarlyOutReason reason,
-      base::TimeTicks main_thread_start_time);
-  virtual void FinishAllRenderingOnImpl(CompletionEvent* completion);
-  virtual void SetVisibleOnImpl(bool visible);
-  virtual void ReleaseOutputSurfaceOnImpl(CompletionEvent* completion);
-  virtual void FinishGLOnImpl(CompletionEvent* completion);
-  virtual void StartCommitOnImpl(CompletionEvent* completion,
-                                 LayerTreeHost* layer_tree_host,
+      base::TimeTicks main_thread_start_time,
+      std::vector<std::unique_ptr<SwapPromise>> swap_promises);
+  void SetVisibleOnImpl(bool visible);
+  void ReleaseCompositorFrameSinkOnImpl(CompletionEvent* completion);
+  void FinishGLOnImpl(CompletionEvent* completion);
+  void NotifyReadyToCommitOnImpl(CompletionEvent* completion,
+                                 LayerTreeHostInProcess* layer_tree_host,
                                  base::TimeTicks main_thread_start_time,
                                  bool hold_commit_for_activation);
 
   void MainFrameWillHappenOnImplForTesting(CompletionEvent* completion,
                                            bool* main_frame_will_happen);
-  void BlockNotifyReadyToActivateForTesting(bool block);
-  CompletionEvent* ActivationCompletionEventForTesting();
-
- protected:
-  // protected for testing.
-  ProxyImpl(ChannelImpl* channel_impl,
-            LayerTreeHost* layer_tree_host,
-            TaskRunnerProvider* task_runner_provider,
-            std::unique_ptr<BeginFrameSource> external_begin_frame_source);
 
  private:
   // The members of this struct should be accessed on the impl thread only when
@@ -73,28 +62,19 @@ class CC_EXPORT ProxyImpl : public NON_EXPORTED_BASE(LayerTreeHostImplClient),
   struct BlockedMainCommitOnly {
     BlockedMainCommitOnly();
     ~BlockedMainCommitOnly();
-    LayerTreeHost* layer_tree_host;
+    LayerTreeHostInProcess* layer_tree_host;
   };
 
-  friend class ProxyImplForTest;
-
   // LayerTreeHostImplClient implementation
-  void UpdateRendererCapabilitiesOnImplThread() override;
-  void DidLoseOutputSurfaceOnImplThread() override;
-  void CommitVSyncParameters(base::TimeTicks timebase,
-                             base::TimeDelta interval) override;
+  void DidLoseCompositorFrameSinkOnImplThread() override;
   void SetBeginFrameSource(BeginFrameSource* source) override;
-  void SetEstimatedParentDrawTime(base::TimeDelta draw_time) override;
-  void DidSwapBuffersOnImplThread() override;
   void DidSwapBuffersCompleteOnImplThread() override;
   void OnCanDrawStateChanged(bool can_draw) override;
   void NotifyReadyToActivate() override;
   void NotifyReadyToDraw() override;
-  // Please call these 3 functions through
-  // LayerTreeHostImpl's SetNeedsRedraw(), SetNeedsRedrawRect() and
-  // SetNeedsOneBeginImplFrame().
+  // Please call these 2 functions through
+  // LayerTreeHostImpl's SetNeedsRedraw() and SetNeedsOneBeginImplFrame().
   void SetNeedsRedrawOnImplThread() override;
-  void SetNeedsRedrawRectOnImplThread(const gfx::Rect& dirty_rect) override;
   void SetNeedsOneBeginImplFrameOnImplThread() override;
   void SetNeedsPrepareTilesOnImplThread() override;
   void SetNeedsCommitOnImplThread() override;
@@ -109,7 +89,7 @@ class CC_EXPORT ProxyImpl : public NON_EXPORTED_BASE(LayerTreeHostImplClient),
   void WillPrepareTiles() override;
   void DidPrepareTiles() override;
   void DidCompletePageScaleAnimationOnImplThread() override;
-  void OnDrawForOutputSurface(bool resourceless_software_draw) override;
+  void OnDrawForCompositorFrameSink(bool resourceless_software_draw) override;
 
   // SchedulerClient implementation
   void WillBeginImplFrame(const BeginFrameArgs& args) override;
@@ -119,9 +99,9 @@ class CC_EXPORT ProxyImpl : public NON_EXPORTED_BASE(LayerTreeHostImplClient),
   DrawResult ScheduledActionDrawAndSwapForced() override;
   void ScheduledActionCommit() override;
   void ScheduledActionActivateSyncTree() override;
-  void ScheduledActionBeginOutputSurfaceCreation() override;
+  void ScheduledActionBeginCompositorFrameSinkCreation() override;
   void ScheduledActionPrepareTiles() override;
-  void ScheduledActionInvalidateOutputSurface() override;
+  void ScheduledActionInvalidateCompositorFrameSink() override;
   void SendBeginMainFrameNotExpectedSoon() override;
 
   DrawResult DrawAndSwapInternal(bool forced_draw);
@@ -152,10 +132,6 @@ class CC_EXPORT ProxyImpl : public NON_EXPORTED_BASE(LayerTreeHostImplClient),
   TaskRunnerProvider* task_runner_provider_;
 
   DelayedUniqueNotifier smoothness_priority_expiration_notifier_;
-
-  std::unique_ptr<BeginFrameSource> external_begin_frame_source_;
-  std::unique_ptr<BeginFrameSource> unthrottled_begin_frame_source_;
-  std::unique_ptr<SyntheticBeginFrameSource> synthetic_begin_frame_source_;
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
 

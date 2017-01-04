@@ -4,6 +4,8 @@
 
 #include "base/synchronization/lock_impl.h"
 
+#include "base/debug/activity_tracker.h"
+
 namespace base {
 namespace internal {
 
@@ -16,6 +18,8 @@ bool LockImpl::Try() {
 }
 
 void LockImpl::Lock() {
+  // Commented out pending https://crbug.com/652432
+  // base::debug::ScopedLockAcquireActivity lock_activity(this);
   ::AcquireSRWLockExclusive(&native_handle_);
 }
 

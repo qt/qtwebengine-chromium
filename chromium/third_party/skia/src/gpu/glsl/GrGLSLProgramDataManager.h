@@ -12,6 +12,7 @@
 #include "SkTypes.h"
 
 class SkMatrix;
+class SkMatrix44;
 
 /** Manages the resources used by a shader program.
  * The resources are objects the program uses to communicate with the
@@ -27,6 +28,7 @@ public:
      *  array of uniforms. arrayCount must be <= the array count of the uniform.
      */
     virtual void set1i(UniformHandle, int32_t) const = 0;
+    virtual void set1iv(UniformHandle, int arrayCount, const int v[]) const = 0;
     virtual void set1f(UniformHandle, float v0) const = 0;
     virtual void set1fv(UniformHandle, int arrayCount, const float v[]) const = 0;
     virtual void set2f(UniformHandle, float, float) const = 0;
@@ -46,6 +48,9 @@ public:
 
     // convenience method for uploading a SkMatrix to a 3x3 matrix uniform
     void setSkMatrix(UniformHandle, const SkMatrix&) const;
+
+    // convenience method for uploading a SkMatrix44 to a 4x4 matrix uniform
+    void setSkMatrix44(UniformHandle, const SkMatrix44&) const;
 
     // for nvpr only
     GR_DEFINE_RESOURCE_HANDLE_CLASS(VaryingHandle);

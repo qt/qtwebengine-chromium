@@ -11,7 +11,7 @@
 #include "base/macros.h"
 #include "content/common/content_export.h"
 #include "net/http/http_response_info.h"
-#include "net/nqe/network_quality_estimator.h"
+#include "net/nqe/effective_connection_type.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 
 namespace content {
@@ -20,29 +20,11 @@ class CONTENT_EXPORT WebURLResponseExtraDataImpl :
     public NON_EXPORTED_BASE(blink::WebURLResponse::ExtraData) {
  public:
   explicit WebURLResponseExtraDataImpl(
-      const std::string& npn_negotiated_protocol);
+      const std::string& alpn_negotiated_protocol);
   ~WebURLResponseExtraDataImpl() override;
 
-  const std::string& npn_negotiated_protocol() const {
-    return npn_negotiated_protocol_;
-  }
-
-  // Flag whether this request was loaded via an explicit proxy
-  // (HTTP, SOCKS, etc).
-  bool was_fetched_via_proxy() const {
-    return was_fetched_via_proxy_;
-  }
-  void set_was_fetched_via_proxy(bool was_fetched_via_proxy) {
-    was_fetched_via_proxy_ = was_fetched_via_proxy;
-  }
-
-  // The proxy server used if this request was loaded via an explicit proxy
-  // (HTTP, SOCKS, etc).
-  net::HostPortPair proxy_server() const {
-    return proxy_server_;
-  }
-  void set_proxy_server(net::HostPortPair proxy_server) {
-    proxy_server_ = proxy_server;
+  const std::string& alpn_negotiated_protocol() const {
+    return alpn_negotiated_protocol_;
   }
 
   /// Flag whether this request was loaded via the SPDY protocol or not.
@@ -66,11 +48,9 @@ class CONTENT_EXPORT WebURLResponseExtraDataImpl :
   // Flag whether this request was loaded after the
   // TLS/Next-Protocol-Negotiation was used.
   // This is related to SPDY.
-  bool was_npn_negotiated() const {
-    return was_npn_negotiated_;
-  }
-  void set_was_npn_negotiated(bool was_npn_negotiated) {
-    was_npn_negotiated_ = was_npn_negotiated;
+  bool was_alpn_negotiated() const { return was_alpn_negotiated_; }
+  void set_was_alpn_negotiated(bool was_alpn_negotiated) {
+    was_alpn_negotiated_ = was_alpn_negotiated;
   }
 
   // Flag whether this request was made when "Alternate-Protocol: xxx"
@@ -91,28 +71,23 @@ class CONTENT_EXPORT WebURLResponseExtraDataImpl :
   bool is_using_lofi() const { return is_using_lofi_; }
   void set_is_using_lofi(bool is_using_lofi) { is_using_lofi_ = is_using_lofi; }
 
-  net::NetworkQualityEstimator::EffectiveConnectionType
-  effective_connection_type() const {
+  net::EffectiveConnectionType effective_connection_type() const {
     return effective_connection_type_;
   }
   void set_effective_connection_type(
-      net::NetworkQualityEstimator::EffectiveConnectionType
-          effective_connection_type) {
+      net::EffectiveConnectionType effective_connection_type) {
     effective_connection_type_ = effective_connection_type;
   }
 
  private:
-  std::string npn_negotiated_protocol_;
+  std::string alpn_negotiated_protocol_;
   bool is_ftp_directory_listing_;
-  bool was_fetched_via_proxy_;
-  net::HostPortPair proxy_server_;
   bool was_fetched_via_spdy_;
-  bool was_npn_negotiated_;
+  bool was_alpn_negotiated_;
   net::HttpResponseInfo::ConnectionInfo connection_info_;
   bool was_alternate_protocol_available_;
   bool is_using_lofi_;
-  net::NetworkQualityEstimator::EffectiveConnectionType
-      effective_connection_type_;
+  net::EffectiveConnectionType effective_connection_type_;
 
   DISALLOW_COPY_AND_ASSIGN(WebURLResponseExtraDataImpl);
 };

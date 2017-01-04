@@ -4,12 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxge/include/fx_ge.h"
-
-#if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
 #include <windows.h>
 
-#include "core/fxge/include/fx_ge_win32.h"
+#include "core/fxcrt/fx_system.h"
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/win32/cfx_windowsdib.h"
 #include "core/fxge/win32/win32_int.h"
 
 CFX_ByteString CFX_WindowsDIB::GetBitmapInfo(const CFX_DIBitmap* pBitmap) {
@@ -189,88 +188,6 @@ CFX_DIBitmap* CFX_WindowsDIB::LoadDIBitmap(WINDIB_Open_Args_ args) {
   return pDIBitmap;
 }
 
-CFX_DIBitmap* CFX_WindowsDIB::LoadFromDDB(HDC hDC,
-                                          HBITMAP hBitmap,
-                                          uint32_t* pPalette,
-                                          uint32_t palsize) {
-  FX_BOOL bCreatedDC = !hDC;
-  if (bCreatedDC) {
-    hDC = CreateCompatibleDC(nullptr);
-  }
-  BITMAPINFOHEADER bmih;
-  FXSYS_memset(&bmih, 0, sizeof bmih);
-  bmih.biSize = sizeof bmih;
-  GetDIBits(hDC, hBitmap, 0, 0, nullptr, (BITMAPINFO*)&bmih, DIB_RGB_COLORS);
-  int width = bmih.biWidth;
-  int height = abs(bmih.biHeight);
-  bmih.biHeight = -height;
-  bmih.biCompression = BI_RGB;
-  CFX_DIBitmap* pDIBitmap = new CFX_DIBitmap;
-  int ret = 0;
-  if (bmih.biBitCount == 1 || bmih.biBitCount == 8) {
-    int size = sizeof(BITMAPINFOHEADER) + 8;
-    if (bmih.biBitCount == 8) {
-      size += sizeof(uint32_t) * 254;
-    }
-    BITMAPINFO* pbmih = (BITMAPINFO*)FX_Alloc(uint8_t, size);
-    pbmih->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    pbmih->bmiHeader.biBitCount = bmih.biBitCount;
-    pbmih->bmiHeader.biCompression = BI_RGB;
-    pbmih->bmiHeader.biHeight = -height;
-    pbmih->bmiHeader.biPlanes = 1;
-    pbmih->bmiHeader.biWidth = bmih.biWidth;
-    if (!pDIBitmap->Create(bmih.biWidth, height, bmih.biBitCount == 1
-                                                     ? FXDIB_1bppRgb
-                                                     : FXDIB_8bppRgb)) {
-      delete pDIBitmap;
-      FX_Free(pbmih);
-      if (bCreatedDC) {
-        DeleteDC(hDC);
-      }
-      return nullptr;
-    }
-    ret = GetDIBits(hDC, hBitmap, 0, height, pDIBitmap->GetBuffer(),
-                    (BITMAPINFO*)pbmih, DIB_RGB_COLORS);
-    FX_Free(pbmih);
-    pbmih = nullptr;
-    pDIBitmap->CopyPalette(pPalette, palsize);
-  } else {
-    if (bmih.biBitCount <= 24) {
-      bmih.biBitCount = 24;
-    } else {
-      bmih.biBitCount = 32;
-    }
-    if (!pDIBitmap->Create(bmih.biWidth, height,
-                           bmih.biBitCount == 24 ? FXDIB_Rgb : FXDIB_Rgb32)) {
-      delete pDIBitmap;
-      if (bCreatedDC) {
-        DeleteDC(hDC);
-      }
-      return nullptr;
-    }
-    ret = GetDIBits(hDC, hBitmap, 0, height, pDIBitmap->GetBuffer(),
-                    (BITMAPINFO*)&bmih, DIB_RGB_COLORS);
-    if (ret != 0 && bmih.biBitCount == 32) {
-      int pitch = pDIBitmap->GetPitch();
-      for (int row = 0; row < height; row++) {
-        uint8_t* dest_scan = (uint8_t*)(pDIBitmap->GetBuffer() + row * pitch);
-        for (int col = 0; col < width; col++) {
-          dest_scan[3] = 255;
-          dest_scan += 4;
-        }
-      }
-    }
-  }
-  if (ret == 0) {
-    delete pDIBitmap;
-    pDIBitmap = nullptr;
-  }
-  if (bCreatedDC) {
-    DeleteDC(hDC);
-  }
-  return pDIBitmap;
-}
-
 CFX_WindowsDIB::CFX_WindowsDIB(HDC hDC, int width, int height) {
   Create(width, height, FXDIB_Rgb, (uint8_t*)1);
   BITMAPINFOHEADER bmih;
@@ -299,4 +216,3 @@ void CFX_WindowsDIB::LoadFromDevice(HDC hDC, int left, int top) {
 void CFX_WindowsDIB::SetToDevice(HDC hDC, int left, int top) {
   ::BitBlt(hDC, left, top, m_Width, m_Height, m_hMemDC, 0, 0, SRCCOPY);
 }
-#endif

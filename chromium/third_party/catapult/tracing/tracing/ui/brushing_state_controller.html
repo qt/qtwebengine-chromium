@@ -7,11 +7,11 @@ found in the LICENSE file.
 
 <link rel="import" href="/tracing/base/event_target.html">
 <link rel="import" href="/tracing/base/task.html">
-<link rel="import" href="/tracing/ui/brushing_state.html">
-<link rel="import" href="/tracing/ui/timeline_viewport.html">
-<link rel="import" href="/tracing/ui/base/ui_state.html">
 <link rel="import" href="/tracing/model/event_set.html">
 <link rel="import" href="/tracing/model/selection_state.html">
+<link rel="import" href="/tracing/ui/base/ui_state.html">
+<link rel="import" href="/tracing/ui/brushing_state.html">
+<link rel="import" href="/tracing/ui/timeline_viewport.html">
 
 <script>
 'use strict';
@@ -76,14 +76,14 @@ tr.exportTo('tr.c', function() {
 
     modelWillChange: function() {
       if (this.currentBrushingState_.isAppliedToModel)
-        this.currentBrushingState_.unapplyFromModelSelectionState();
+        this.currentBrushingState_.unapplyFromEventSelectionStates();
     },
 
     modelDidChange: function() {
       this.selections_ = {};
 
       this.currentBrushingState_ = new BrushingState();
-      this.currentBrushingState_.applyToModelSelectionState(this.model);
+      this.currentBrushingState_.applyToEventSelectionStates(this.model);
 
       var e = new tr.b.Event('model-changed', false, false);
       this.dispatchEvent(e);
@@ -153,12 +153,11 @@ tr.exportTo('tr.c', function() {
       }
 
       if (this.currentBrushingState_.isAppliedToModel)
-        this.currentBrushingState_.unapplyFromModelSelectionState();
+        this.currentBrushingState_.unapplyFromEventSelectionStates();
 
       this.currentBrushingState_ = newBrushingState;
 
-      if (this.model)
-        this.currentBrushingState_.applyToModelSelectionState(this.model);
+      this.currentBrushingState_.applyToEventSelectionStates(this.model);
 
       this.dispatchChangeEvent_();
     },
@@ -291,8 +290,8 @@ tr.exportTo('tr.c', function() {
 
       // Possibly inside a shadow DOM.
       var currentNode = currentElement;
-      while (currentNode.parentNode)
-        currentNode = currentNode.parentNode;
+      while (Polymer.dom(currentNode).parentNode)
+        currentNode = Polymer.dom(currentNode).parentNode;
       currentElement = currentNode.host;
     }
     return undefined;

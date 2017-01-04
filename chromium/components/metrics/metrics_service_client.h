@@ -41,13 +41,6 @@ class MetricsServiceClient {
   // when metrics recording gets enabled.
   virtual void SetMetricsClientId(const std::string& client_id) = 0;
 
-  // Notifies the client that recording is disabled, so that other services
-  // (such as crash reporting) can clear any association with metrics.
-  virtual void OnRecordingDisabled() = 0;
-
-  // Whether there's an "off the record" (aka "Incognito") session active.
-  virtual bool IsOffTheRecordSessionActive() = 0;
-
   // Returns the product value to use in uploaded reports, which will be used to
   // set the ChromeUserMetricsExtension.product field. See comments on that
   // field on why it's an int32_t rather than an enum.

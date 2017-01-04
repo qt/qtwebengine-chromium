@@ -11,7 +11,7 @@
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -56,6 +56,23 @@ const ProviderNamesSourceMapEntry kProviderNamesSourceMap[] = {
     {"extension", content_settings::SETTING_SOURCE_EXTENSION},
     {"preference", content_settings::SETTING_SOURCE_USER},
     {"default", content_settings::SETTING_SOURCE_USER},
+};
+
+// Enum describing the status of domain to origin migration of content settings.
+// Migration will be done twice: once upon construction of the
+// HostContentSettingsMap (before syncing any content settings) and once after
+// sync has finished. We always migrate before sync to ensure that settings will
+// get migrated even if a user doesn't have sync enabled. We migrate after sync
+// to ensure that any sync'd settings will be migrated. Once these events have
+// occurred, we won't perform migration again.
+enum DomainToOriginMigrationStatus {
+  // Haven't been migrated at all.
+  NOT_MIGRATED,
+  // Have done migration in the constructor of HostContentSettingsMap.
+  MIGRATED_BEFORE_SYNC,
+  // Have done migration both in HostContentSettingsMap construction and and
+  // after sync is finished. No migration will happen after this point.
+  MIGRATED_AFTER_SYNC,
 };
 
 static_assert(
@@ -118,11 +135,11 @@ content_settings::PatternPair GetPatternsFromScopingType(
   content_settings::PatternPair patterns;
 
   switch (scoping_type) {
-    case WebsiteSettingsInfo::TOP_LEVEL_DOMAIN_ONLY_SCOPE:
     case WebsiteSettingsInfo::REQUESTING_DOMAIN_ONLY_SCOPE:
       patterns.first = ContentSettingsPattern::FromURL(primary_url);
       patterns.second = ContentSettingsPattern::Wildcard();
       break;
+    case WebsiteSettingsInfo::TOP_LEVEL_ORIGIN_ONLY_SCOPE:
     case WebsiteSettingsInfo::REQUESTING_ORIGIN_ONLY_SCOPE:
       patterns.first = ContentSettingsPattern::FromURLNoWildcard(primary_url);
       patterns.second = ContentSettingsPattern::Wildcard();
@@ -147,7 +164,8 @@ HostContentSettingsMap::HostContentSettingsMap(PrefService* prefs,
       used_from_thread_id_(base::PlatformThread::CurrentId()),
 #endif
       prefs_(prefs),
-      is_off_the_record_(is_incognito_profile || is_guest_profile) {
+      is_off_the_record_(is_incognito_profile || is_guest_profile),
+      weak_ptr_factory_(this) {
   DCHECK(!(is_incognito_profile && is_guest_profile));
 
   content_settings::PolicyProvider* policy_provider =
@@ -172,7 +190,7 @@ HostContentSettingsMap::HostContentSettingsMap(PrefService* prefs,
   content_settings_providers_[DEFAULT_PROVIDER] = default_provider;
 
   MigrateKeygenSettings();
-
+  MigrateDomainScopedSettings(false);
   RecordExceptionMetrics();
 }
 
@@ -183,6 +201,8 @@ void HostContentSettingsMap::RegisterProfilePrefs(
   content_settings::ContentSettingsRegistry::GetInstance();
 
   registry->RegisterIntegerPref(prefs::kContentSettingsWindowLastTabIndex, 0);
+  registry->RegisterIntegerPref(prefs::kDomainToOriginMigrationStatus,
+                                NOT_MIGRATED);
 
   // Register the prefs for the content settings providers.
   content_settings::DefaultProvider::RegisterProfilePrefs(registry);
@@ -214,12 +234,14 @@ ContentSetting HostContentSettingsMap::GetDefaultContentSettingFromProvider(
   std::unique_ptr<content_settings::RuleIterator> rule_iterator(
       provider->GetRuleIterator(content_type, std::string(), false));
 
-  ContentSettingsPattern wildcard = ContentSettingsPattern::Wildcard();
-  while (rule_iterator->HasNext()) {
-    content_settings::Rule rule = rule_iterator->Next();
-    if (rule.primary_pattern == wildcard &&
-        rule.secondary_pattern == wildcard) {
-      return content_settings::ValueToContentSetting(rule.value.get());
+  if (rule_iterator) {
+    ContentSettingsPattern wildcard = ContentSettingsPattern::Wildcard();
+    while (rule_iterator->HasNext()) {
+      content_settings::Rule rule = rule_iterator->Next();
+      if (rule.primary_pattern == wildcard &&
+          rule.secondary_pattern == wildcard) {
+        return content_settings::ValueToContentSetting(rule.value.get());
+      }
     }
   }
   return CONTENT_SETTING_DEFAULT;
@@ -497,6 +519,93 @@ void HostContentSettingsMap::MigrateKeygenSettings() {
   }
 }
 
+void HostContentSettingsMap::MigrateDomainScopedSettings(bool after_sync) {
+  DomainToOriginMigrationStatus status =
+      static_cast<DomainToOriginMigrationStatus>(
+          prefs_->GetInteger(prefs::kDomainToOriginMigrationStatus));
+  if (status == MIGRATED_AFTER_SYNC)
+    return;
+  if (status == MIGRATED_BEFORE_SYNC && !after_sync)
+    return;
+  DCHECK(status != NOT_MIGRATED || !after_sync);
+
+  const ContentSettingsType kDomainScopedTypes[] = {
+      CONTENT_SETTINGS_TYPE_IMAGES,
+      CONTENT_SETTINGS_TYPE_PLUGINS,
+      CONTENT_SETTINGS_TYPE_JAVASCRIPT,
+      CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS,
+      CONTENT_SETTINGS_TYPE_POPUPS};
+  for (const ContentSettingsType& type : kDomainScopedTypes) {
+    if (!content_settings::ContentSettingsRegistry::GetInstance()->Get(type))
+      continue;
+    ContentSettingsForOneType settings;
+    GetSettingsForOneType(type, std::string(), &settings);
+
+    for (const ContentSettingPatternSource& setting_entry : settings) {
+      // Migrate user preference settings only.
+      if (setting_entry.source != "preference")
+        continue;
+      // Migrate ALLOW settings only.
+      if (setting_entry.setting != CONTENT_SETTING_ALLOW)
+        continue;
+      // Skip default settings.
+      if (setting_entry.primary_pattern == ContentSettingsPattern::Wildcard())
+        continue;
+
+      if (setting_entry.secondary_pattern !=
+          ContentSettingsPattern::Wildcard()) {
+        NOTREACHED();
+        continue;
+      }
+
+      ContentSettingsPattern origin_pattern;
+      if (!ContentSettingsPattern::MigrateFromDomainToOrigin(
+              setting_entry.primary_pattern, &origin_pattern)) {
+        continue;
+      }
+
+      if (!origin_pattern.IsValid())
+        continue;
+
+      GURL origin(origin_pattern.ToString());
+      DCHECK(origin.is_valid());
+
+      // Ensure that the current resolved content setting for this origin is
+      // allowed. Otherwise we may be overriding some narrower setting which is
+      // set to block.
+      ContentSetting origin_setting =
+          GetContentSetting(origin, origin, type, std::string());
+
+      // Remove the domain scoped pattern. If |origin_setting| is not
+      // CONTENT_SETTING_ALLOW it implies there is some narrower pattern in
+      // effect, so it's still safe to remove the domain-scoped pattern.
+      SetContentSettingCustomScope(setting_entry.primary_pattern,
+                                   setting_entry.secondary_pattern, type,
+                                   std::string(), CONTENT_SETTING_DEFAULT);
+
+      // If the current resolved content setting is allowed it's safe to set the
+      // origin-scoped pattern.
+      if (origin_setting == CONTENT_SETTING_ALLOW)
+        SetContentSettingCustomScope(
+            ContentSettingsPattern::FromURLNoWildcard(origin),
+            ContentSettingsPattern::Wildcard(), type, std::string(),
+            CONTENT_SETTING_ALLOW);
+    }
+  }
+
+  if (status == NOT_MIGRATED) {
+    prefs_->SetInteger(prefs::kDomainToOriginMigrationStatus,
+                       MIGRATED_BEFORE_SYNC);
+  } else if (status == MIGRATED_BEFORE_SYNC) {
+    prefs_->SetInteger(prefs::kDomainToOriginMigrationStatus,
+                       MIGRATED_AFTER_SYNC);
+  }
+}
+
+base::WeakPtr<HostContentSettingsMap> HostContentSettingsMap::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
+
 void HostContentSettingsMap::RecordExceptionMetrics() {
   for (const content_settings::WebsiteSettingsInfo* info :
        *content_settings::WebsiteSettingsRegistry::GetInstance()) {
@@ -514,9 +623,27 @@ void HostContentSettingsMap::RecordExceptionMetrics() {
         continue;
       }
 
-      UMA_HISTOGRAM_ENUMERATION("ContentSettings.ExceptionScheme",
-                                setting_entry.primary_pattern.GetScheme(),
+      ContentSettingsPattern::SchemeType scheme =
+          setting_entry.primary_pattern.GetScheme();
+      UMA_HISTOGRAM_ENUMERATION("ContentSettings.ExceptionScheme", scheme,
                                 ContentSettingsPattern::SCHEME_MAX);
+
+      if (scheme == ContentSettingsPattern::SCHEME_FILE) {
+        UMA_HISTOGRAM_BOOLEAN("ContentSettings.ExceptionSchemeFile.HasPath",
+                              setting_entry.primary_pattern.HasPath());
+        size_t num_values;
+        int histogram_value =
+            ContentSettingTypeToHistogramValue(content_type, &num_values);
+        if (setting_entry.primary_pattern.HasPath()) {
+          UMA_HISTOGRAM_ENUMERATION(
+              "ContentSettings.ExceptionSchemeFile.Type.WithPath",
+              histogram_value, num_values);
+        } else {
+          UMA_HISTOGRAM_ENUMERATION(
+              "ContentSettings.ExceptionSchemeFile.Type.WithoutPath",
+              histogram_value, num_values);
+        }
+      }
 
       if (setting_entry.source == "preference")
         ++num_exceptions;
@@ -620,6 +747,28 @@ void HostContentSettingsMap::ClearSettingsForOneType(
   FlushLossyWebsiteSettings();
 }
 
+void HostContentSettingsMap::ClearSettingsForOneTypeWithPredicate(
+    ContentSettingsType content_type,
+    const base::Callback<bool(const ContentSettingsPattern& primary_pattern,
+                              const ContentSettingsPattern& secondary_pattern)>&
+        pattern_predicate) {
+  if (pattern_predicate.is_null()) {
+    ClearSettingsForOneType(content_type);
+    return;
+  }
+
+  ContentSettingsForOneType settings;
+  GetSettingsForOneType(content_type, std::string(), &settings);
+  for (const ContentSettingPatternSource& setting : settings) {
+    if (pattern_predicate.Run(setting.primary_pattern,
+                              setting.secondary_pattern)) {
+      SetWebsiteSettingCustomScope(setting.primary_pattern,
+                                   setting.secondary_pattern, content_type,
+                                   std::string(), nullptr);
+    }
+  }
+}
+
 // TODO(raymes): Remove this function. Consider making it a property of
 // ContentSettingsInfo or removing it altogether (it's unclear whether we should
 // be restricting allowed default values at this layer).
@@ -664,7 +813,7 @@ void HostContentSettingsMap::OnContentSettingChanged(
 
 HostContentSettingsMap::~HostContentSettingsMap() {
   DCHECK(!prefs_);
-  STLDeleteValues(&content_settings_providers_);
+  base::STLDeleteValues(&content_settings_providers_);
 }
 
 void HostContentSettingsMap::ShutdownOnUIThread() {
@@ -687,6 +836,9 @@ void HostContentSettingsMap::AddSettingsForOneType(
     bool incognito) const {
   std::unique_ptr<content_settings::RuleIterator> rule_iterator(
       provider->GetRuleIterator(content_type, resource_identifier, incognito));
+  if (!rule_iterator)
+    return;
+
   while (rule_iterator->HasNext()) {
     const content_settings::Rule& rule = rule_iterator->Next();
     ContentSetting setting_value = CONTENT_SETTING_DEFAULT;
@@ -851,15 +1003,17 @@ HostContentSettingsMap::GetContentSettingValueAndPatterns(
     const GURL& secondary_url,
     ContentSettingsPattern* primary_pattern,
     ContentSettingsPattern* secondary_pattern) {
-  while (rule_iterator->HasNext()) {
-    const content_settings::Rule& rule = rule_iterator->Next();
-    if (rule.primary_pattern.Matches(primary_url) &&
-        rule.secondary_pattern.Matches(secondary_url)) {
-      if (primary_pattern)
-        *primary_pattern = rule.primary_pattern;
-      if (secondary_pattern)
-        *secondary_pattern = rule.secondary_pattern;
-      return base::WrapUnique(rule.value.get()->DeepCopy());
+  if (rule_iterator) {
+    while (rule_iterator->HasNext()) {
+      const content_settings::Rule& rule = rule_iterator->Next();
+      if (rule.primary_pattern.Matches(primary_url) &&
+          rule.secondary_pattern.Matches(secondary_url)) {
+        if (primary_pattern)
+          *primary_pattern = rule.primary_pattern;
+        if (secondary_pattern)
+          *secondary_pattern = rule.secondary_pattern;
+        return base::WrapUnique(rule.value.get()->DeepCopy());
+      }
     }
   }
   return std::unique_ptr<base::Value>();

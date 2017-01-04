@@ -12,6 +12,7 @@
 
 #include <vector>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/common_types.h"
 #include "webrtc/config.h"
@@ -39,7 +40,8 @@ std::unique_ptr<RtpRtcp> CreateRtpRtcpModule(
     RtcpPacketTypeCounterObserver* rtcp_packet_type_counter_observer,
     RemoteBitrateEstimator* remote_bitrate_estimator,
     RtpPacketSender* paced_sender,
-    TransportSequenceNumberAllocator* transport_sequence_number_allocator) {
+    TransportSequenceNumberAllocator* transport_sequence_number_allocator,
+    RateLimiter* retransmission_rate_limiter) {
   RtpRtcp::Configuration configuration;
   configuration.audio = false;
   configuration.receiver_only = true;
@@ -58,6 +60,7 @@ std::unique_ptr<RtpRtcp> CreateRtpRtcpModule(
   configuration.send_packet_observer = nullptr;
   configuration.bandwidth_callback = nullptr;
   configuration.transport_feedback_callback = nullptr;
+  configuration.retransmission_rate_limiter = retransmission_rate_limiter;
 
   std::unique_ptr<RtpRtcp> rtp_rtcp(RtpRtcp::CreateRtpRtcp(configuration));
   rtp_rtcp->SetSendingStatus(false);
@@ -79,7 +82,8 @@ RtpStreamReceiver::RtpStreamReceiver(
     VieRemb* remb,
     const VideoReceiveStream::Config* config,
     ReceiveStatisticsProxy* receive_stats_proxy,
-    ProcessThread* process_thread)
+    ProcessThread* process_thread,
+    RateLimiter* retransmission_rate_limiter)
     : clock_(Clock::GetRealTimeClock()),
       config_(*config),
       video_receiver_(video_receiver),
@@ -105,7 +109,8 @@ RtpStreamReceiver::RtpStreamReceiver(
                                     receive_stats_proxy,
                                     remote_bitrate_estimator_,
                                     paced_sender,
-                                    packet_router)) {
+                                    packet_router,
+                                    retransmission_rate_limiter)) {
   packet_router_->AddRtpModule(rtp_rtcp_.get());
   rtp_receive_statistics_->RegisterRtpStatisticsCallback(receive_stats_proxy);
   rtp_receive_statistics_->RegisterRtcpStatisticsCallback(receive_stats_proxy);
@@ -185,12 +190,10 @@ RtpStreamReceiver::RtpStreamReceiver(
   // Stats callback for CNAME changes.
   rtp_rtcp_->RegisterRtcpStatisticsCallback(receive_stats_proxy);
 
-  process_thread_->RegisterModule(rtp_receive_statistics_.get());
   process_thread_->RegisterModule(rtp_rtcp_.get());
 }
 
 RtpStreamReceiver::~RtpStreamReceiver() {
-  process_thread_->DeRegisterModule(rtp_receive_statistics_.get());
   process_thread_->DeRegisterModule(rtp_rtcp_.get());
 
   packet_router_->RemoveRtpModule(rtp_rtcp_.get());
@@ -440,8 +443,7 @@ void RtpStreamReceiver::NotifyReceiverOfFecPacket(const RTPHeader& header) {
   rtp_header.type.Video.codec = payload_specific.Video.videoCodecType;
   rtp_header.type.Video.rotation = kVideoRotation_0;
   if (header.extension.hasVideoRotation) {
-    rtp_header.type.Video.rotation =
-        ConvertCVOByteToVideoRotation(header.extension.videoRotation);
+    rtp_header.type.Video.rotation = header.extension.videoRotation;
   }
   rtp_header.type.Video.playout_delay = header.extension.playout_delay;
 
@@ -520,15 +522,14 @@ bool RtpStreamReceiver::IsPacketRetransmitted(const RTPHeader& header,
 void RtpStreamReceiver::UpdateHistograms() {
   FecPacketCounter counter = fec_receiver_->GetPacketCounter();
   if (counter.num_packets > 0) {
-    RTC_LOGGED_HISTOGRAM_PERCENTAGE(
+    RTC_HISTOGRAM_PERCENTAGE(
         "WebRTC.Video.ReceivedFecPacketsInPercent",
         static_cast<int>(counter.num_fec_packets * 100 / counter.num_packets));
   }
   if (counter.num_fec_packets > 0) {
-    RTC_LOGGED_HISTOGRAM_PERCENTAGE(
-        "WebRTC.Video.RecoveredMediaPacketsInPercentOfFec",
-        static_cast<int>(counter.num_recovered_packets * 100 /
-                         counter.num_fec_packets));
+    RTC_HISTOGRAM_PERCENTAGE("WebRTC.Video.RecoveredMediaPacketsInPercentOfFec",
+                             static_cast<int>(counter.num_recovered_packets *
+                                              100 / counter.num_fec_packets));
   }
 }
 

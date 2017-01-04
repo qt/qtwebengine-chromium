@@ -340,11 +340,8 @@ void KeyedLoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   __ Move(vector, dummy_vector);
   __ Move(slot, Smi::FromInt(slot_index));
 
-  Code::Flags flags =
-      Code::RemoveHolderFromFlags(Code::ComputeHandlerFlags(Code::LOAD_IC));
-  masm->isolate()->stub_cache()->GenerateProbe(masm, Code::KEYED_LOAD_IC, flags,
-                                               receiver, key,
-                                               megamorphic_scratch, no_reg);
+  masm->isolate()->load_stub_cache()->GenerateProbe(
+      masm, receiver, key, megamorphic_scratch, no_reg);
   // Cache miss.
   GenerateMiss(masm);
 
@@ -556,8 +553,8 @@ void KeyedStoreIC::GenerateMegamorphic(MacroAssembler* masm,
   __ movzxbp(r9, FieldOperand(r9, Map::kInstanceTypeOffset));
   __ JumpIfNotUniqueNameInstanceType(r9, &slow_with_tagged_index);
 
-  Register vector = VectorStoreICDescriptor::VectorRegister();
-  Register slot = VectorStoreICDescriptor::SlotRegister();
+  Register vector = StoreWithVectorDescriptor::VectorRegister();
+  Register slot = StoreWithVectorDescriptor::SlotRegister();
   // The handlers in the stub cache expect a vector and slot. Since we won't
   // change the IC from any downstream misses, a dummy vector can be used.
   Handle<TypeFeedbackVector> dummy_vector =
@@ -567,10 +564,8 @@ void KeyedStoreIC::GenerateMegamorphic(MacroAssembler* masm,
   __ Move(vector, dummy_vector);
   __ Move(slot, Smi::FromInt(slot_index));
 
-  Code::Flags flags =
-      Code::RemoveHolderFromFlags(Code::ComputeHandlerFlags(Code::STORE_IC));
-  masm->isolate()->stub_cache()->GenerateProbe(
-      masm, Code::KEYED_STORE_IC, flags, receiver, key, r9, no_reg);
+  masm->isolate()->store_stub_cache()->GenerateProbe(masm, receiver, key, r9,
+                                                     no_reg);
   // Cache miss.
   __ jmp(&miss);
 
@@ -711,21 +706,20 @@ void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
 }
 
 static void StoreIC_PushArgs(MacroAssembler* masm) {
-  Register receiver = StoreDescriptor::ReceiverRegister();
-  Register name = StoreDescriptor::NameRegister();
-  Register value = StoreDescriptor::ValueRegister();
+  Register receiver = StoreWithVectorDescriptor::ReceiverRegister();
+  Register name = StoreWithVectorDescriptor::NameRegister();
+  Register value = StoreWithVectorDescriptor::ValueRegister();
+  Register slot = StoreWithVectorDescriptor::SlotRegister();
+  Register vector = StoreWithVectorDescriptor::VectorRegister();
   Register temp = r11;
-  DCHECK(!temp.is(receiver) && !temp.is(name) && !temp.is(value));
+  DCHECK(!AreAliased(receiver, name, value, slot, vector, temp));
 
   __ PopReturnAddressTo(temp);
-  __ Push(receiver);
-  __ Push(name);
   __ Push(value);
-  Register slot = VectorStoreICDescriptor::SlotRegister();
-  Register vector = VectorStoreICDescriptor::VectorRegister();
-  DCHECK(!temp.is(slot) && !temp.is(vector));
   __ Push(slot);
   __ Push(vector);
+  __ Push(receiver);
+  __ Push(name);
   __ PushReturnAddressFrom(temp);
 }
 
@@ -744,8 +738,8 @@ void StoreIC::GenerateNormal(MacroAssembler* masm) {
   Register name = StoreDescriptor::NameRegister();
   Register value = StoreDescriptor::ValueRegister();
   Register dictionary = r11;
-  DCHECK(!AreAliased(dictionary, VectorStoreICDescriptor::VectorRegister(),
-                     VectorStoreICDescriptor::SlotRegister()));
+  DCHECK(!AreAliased(dictionary, StoreWithVectorDescriptor::VectorRegister(),
+                     StoreWithVectorDescriptor::SlotRegister()));
 
   Label miss;
 
@@ -769,6 +763,13 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
   __ TailCallRuntime(Runtime::kKeyedStoreIC_Miss);
 }
 
+void KeyedStoreIC::GenerateSlow(MacroAssembler* masm) {
+  // Return address is on the stack.
+  StoreIC_PushArgs(masm);
+
+  // Do tail-call to runtime routine.
+  __ TailCallRuntime(Runtime::kKeyedStoreIC_Slow);
+}
 
 #undef __
 

@@ -15,8 +15,10 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/accessibility/blink_ax_tree_source.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
+#include "ui/accessibility/ax_relative_bounds.h"
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/ax_tree_serializer.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 struct AccessibilityHostMsg_EventParams;
 
@@ -64,7 +66,8 @@ class CONTENT_EXPORT RenderAccessibilityImpl
 
   // RenderAccessibility implementation.
   int GenerateAXID() override;
-  void SetPdfTreeSource(PdfAXTreeSource* source) override;
+  void SetPluginTreeSource(PluginAXTreeSource* source) override;
+  void OnPluginRootNodeUpdated() override;
 
   // RenderFrameObserver implementation.
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -113,7 +116,7 @@ class CONTENT_EXPORT RenderAccessibilityImpl
 
   // Handlers for messages from the browser to the renderer.
   void OnDoDefaultAction(int acc_obj_id);
-  void OnEventsAck();
+  void OnEventsAck(int ack_token);
   void OnFatalError();
   void OnHitTest(gfx::Point point);
   void OnSetAccessibilityFocus(int acc_obj_id);
@@ -129,7 +132,8 @@ class CONTENT_EXPORT RenderAccessibilityImpl
   void OnSetValue(int acc_obj_id, base::string16 value);
   void OnShowContextMenu(int acc_obj_id);
 
-  void AddPdfTreeToUpdate(AXContentTreeUpdate* update);
+  void AddPluginTreeToUpdate(AXContentTreeUpdate* update);
+  void ScrollPlugin(int id_to_make_visible);
 
   // Events from Blink are collected until they are ready to be
   // sent to the browser.
@@ -145,14 +149,14 @@ class CONTENT_EXPORT RenderAccessibilityImpl
                            AXContentTreeData>;
   BlinkAXTreeSerializer serializer_;
 
-  using PdfAXTreeSerializer = ui::AXTreeSerializer<const ui::AXNode*,
-                                                   ui::AXNodeData,
-                                                   ui::AXTreeData>;
-  std::unique_ptr<PdfAXTreeSerializer> pdf_serializer_;
-  PdfAXTreeSource* pdf_tree_source_;
+  using PluginAXTreeSerializer = ui::AXTreeSerializer<const ui::AXNode*,
+                                                      ui::AXNodeData,
+                                                      ui::AXTreeData>;
+  std::unique_ptr<PluginAXTreeSerializer> plugin_serializer_;
+  PluginAXTreeSource* plugin_tree_source_;
 
   // Current location of every object, so we can detect when it moves.
-  base::hash_map<int, gfx::Rect> locations_;
+  base::hash_map<int, ui::AXRelativeBounds> locations_;
 
   // The most recently observed scroll offset of the root document element.
   // TODO(dmazzoni): remove once https://bugs.webkit.org/show_bug.cgi?id=73460
@@ -165,6 +169,12 @@ class CONTENT_EXPORT RenderAccessibilityImpl
   // Nonzero if the browser requested we reset the accessibility state.
   // We need to return this token in the next IPC.
   int reset_token_;
+
+  // Whether we are processing a client-initiated action.
+  bool during_action_;
+
+  // Token to send with event messages so we know when they're acknowledged.
+  int ack_token_;
 
   // So we can queue up tasks to be executed later.
   base::WeakPtrFactory<RenderAccessibilityImpl> weak_factory_;

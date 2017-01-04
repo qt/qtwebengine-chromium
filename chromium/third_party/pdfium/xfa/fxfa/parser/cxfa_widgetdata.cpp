@@ -6,11 +6,12 @@
 
 #include "xfa/fxfa/parser/cxfa_widgetdata.h"
 
-#include "core/fxcrt/include/fx_ext.h"
-#include "xfa/fxbarcode/include/BC_Library.h"
+#include "core/fxcrt/fx_ext.h"
+#include "xfa/fxbarcode/BC_Library.h"
 #include "xfa/fxfa/app/xfa_ffnotify.h"
+#include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_event.h"
-#include "xfa/fxfa/parser/xfa_document.h"
+#include "xfa/fxfa/parser/cxfa_measurement.h"
 #include "xfa/fxfa/parser/xfa_localevalue.h"
 #include "xfa/fxfa/parser/xfa_object.h"
 
@@ -70,6 +71,175 @@ FX_BOOL SplitDateTime(const CFX_WideString& wsDateTime,
   return TRUE;
 }
 
+CXFA_Node* CreateUIChild(CXFA_Node* pNode, XFA_Element& eWidgetType) {
+  XFA_Element eType = pNode->GetElementType();
+  eWidgetType = eType;
+  if (eType != XFA_Element::Field && eType != XFA_Element::Draw)
+    return nullptr;
+
+  eWidgetType = XFA_Element::Unknown;
+  XFA_Element eUIType = XFA_Element::Unknown;
+  CXFA_Value defValue(pNode->GetProperty(0, XFA_Element::Value, TRUE));
+  XFA_Element eValueType = defValue.GetChildValueClassID();
+  switch (eValueType) {
+    case XFA_Element::Boolean:
+      eUIType = XFA_Element::CheckButton;
+      break;
+    case XFA_Element::Integer:
+    case XFA_Element::Decimal:
+    case XFA_Element::Float:
+      eUIType = XFA_Element::NumericEdit;
+      break;
+    case XFA_Element::ExData:
+    case XFA_Element::Text:
+      eUIType = XFA_Element::TextEdit;
+      eWidgetType = XFA_Element::Text;
+      break;
+    case XFA_Element::Date:
+    case XFA_Element::Time:
+    case XFA_Element::DateTime:
+      eUIType = XFA_Element::DateTimeEdit;
+      break;
+    case XFA_Element::Image:
+      eUIType = XFA_Element::ImageEdit;
+      eWidgetType = XFA_Element::Image;
+      break;
+    case XFA_Element::Arc:
+    case XFA_Element::Line:
+    case XFA_Element::Rectangle:
+      eUIType = XFA_Element::DefaultUi;
+      eWidgetType = eValueType;
+      break;
+    default:
+      break;
+  }
+
+  CXFA_Node* pUIChild = nullptr;
+  CXFA_Node* pUI = pNode->GetProperty(0, XFA_Element::Ui, TRUE);
+  CXFA_Node* pChild = pUI->GetNodeItem(XFA_NODEITEM_FirstChild);
+  for (; pChild; pChild = pChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+    XFA_Element eChildType = pChild->GetElementType();
+    if (eChildType == XFA_Element::Extras ||
+        eChildType == XFA_Element::Picture) {
+      continue;
+    }
+    const XFA_PROPERTY* pProperty = XFA_GetPropertyOfElement(
+        XFA_Element::Ui, eChildType, XFA_XDPPACKET_Form);
+    if (pProperty && (pProperty->uFlags & XFA_PROPERTYFLAG_OneOf)) {
+      pUIChild = pChild;
+      break;
+    }
+  }
+
+  if (eType == XFA_Element::Draw) {
+    XFA_Element eDraw =
+        pUIChild ? pUIChild->GetElementType() : XFA_Element::Unknown;
+    switch (eDraw) {
+      case XFA_Element::TextEdit:
+        eWidgetType = XFA_Element::Text;
+        break;
+      case XFA_Element::ImageEdit:
+        eWidgetType = XFA_Element::Image;
+        break;
+      default:
+        eWidgetType = eWidgetType == XFA_Element::Unknown ? XFA_Element::Text
+                                                          : eWidgetType;
+        break;
+    }
+  } else {
+    if (pUIChild && pUIChild->GetElementType() == XFA_Element::DefaultUi) {
+      eWidgetType = XFA_Element::TextEdit;
+    } else {
+      eWidgetType =
+          pUIChild ? pUIChild->GetElementType()
+                   : (eUIType == XFA_Element::Unknown ? XFA_Element::TextEdit
+                                                      : eUIType);
+    }
+  }
+
+  if (!pUIChild) {
+    if (eUIType == XFA_Element::Unknown) {
+      eUIType = XFA_Element::TextEdit;
+      defValue.GetNode()->GetProperty(0, XFA_Element::Text, TRUE);
+    }
+    return pUI->GetProperty(0, eUIType, TRUE);
+  }
+
+  if (eUIType != XFA_Element::Unknown)
+    return pUIChild;
+
+  switch (pUIChild->GetElementType()) {
+    case XFA_Element::CheckButton: {
+      eValueType = XFA_Element::Text;
+      if (CXFA_Node* pItems = pNode->GetChild(0, XFA_Element::Items)) {
+        if (CXFA_Node* pItem = pItems->GetChild(0, XFA_Element::Unknown))
+          eValueType = pItem->GetElementType();
+      }
+      break;
+    }
+    case XFA_Element::DateTimeEdit:
+      eValueType = XFA_Element::DateTime;
+      break;
+    case XFA_Element::ImageEdit:
+      eValueType = XFA_Element::Image;
+      break;
+    case XFA_Element::NumericEdit:
+      eValueType = XFA_Element::Float;
+      break;
+    case XFA_Element::ChoiceList: {
+      eValueType = (pUIChild->GetEnum(XFA_ATTRIBUTE_Open) ==
+                    XFA_ATTRIBUTEENUM_MultiSelect)
+                       ? XFA_Element::ExData
+                       : XFA_Element::Text;
+      break;
+    }
+    case XFA_Element::Barcode:
+    case XFA_Element::Button:
+    case XFA_Element::PasswordEdit:
+    case XFA_Element::Signature:
+    case XFA_Element::TextEdit:
+    default:
+      eValueType = XFA_Element::Text;
+      break;
+  }
+  defValue.GetNode()->GetProperty(0, eValueType, TRUE);
+
+  return pUIChild;
+}
+
+XFA_ATTRIBUTEENUM GetAttributeDefaultValue_Enum(XFA_Element eElement,
+                                                XFA_ATTRIBUTE eAttribute,
+                                                uint32_t dwPacket) {
+  void* pValue;
+  if (XFA_GetAttributeDefaultValue(pValue, eElement, eAttribute,
+                                   XFA_ATTRIBUTETYPE_Enum, dwPacket)) {
+    return (XFA_ATTRIBUTEENUM)(uintptr_t)pValue;
+  }
+  return XFA_ATTRIBUTEENUM_Unknown;
+}
+
+CFX_WideStringC GetAttributeDefaultValue_Cdata(XFA_Element eElement,
+                                               XFA_ATTRIBUTE eAttribute,
+                                               uint32_t dwPacket) {
+  void* pValue;
+  if (XFA_GetAttributeDefaultValue(pValue, eElement, eAttribute,
+                                   XFA_ATTRIBUTETYPE_Cdata, dwPacket)) {
+    return (const FX_WCHAR*)pValue;
+  }
+  return nullptr;
+}
+
+FX_BOOL GetAttributeDefaultValue_Boolean(XFA_Element eElement,
+                                         XFA_ATTRIBUTE eAttribute,
+                                         uint32_t dwPacket) {
+  void* pValue;
+  if (XFA_GetAttributeDefaultValue(pValue, eElement, eAttribute,
+                                   XFA_ATTRIBUTETYPE_Boolean, dwPacket)) {
+    return (FX_BOOL)(uintptr_t)pValue;
+  }
+  return FALSE;
+}
+
 }  // namespace
 
 CXFA_WidgetData::CXFA_WidgetData(CXFA_Node* pNode)
@@ -81,7 +251,7 @@ CXFA_WidgetData::CXFA_WidgetData(CXFA_Node* pNode)
 
 CXFA_Node* CXFA_WidgetData::GetUIChild() {
   if (m_eUIType == XFA_Element::Unknown)
-    m_pUiChildNode = XFA_CreateUIChild(m_pNode, m_eUIType);
+    m_pUiChildNode = CreateUIChild(m_pNode, m_eUIType);
 
   return m_pUiChildNode;
 }
@@ -281,7 +451,7 @@ int32_t CXFA_WidgetData::GetButtonHighlight() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetEnum(XFA_ATTRIBUTE_Highlight);
-  return XFA_GetAttributeDefaultValue_Enum(
+  return GetAttributeDefaultValue_Enum(
       XFA_Element::Button, XFA_ATTRIBUTE_Highlight, XFA_XDPPACKET_Form);
 }
 
@@ -325,16 +495,16 @@ int32_t CXFA_WidgetData::GetCheckButtonShape() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetEnum(XFA_ATTRIBUTE_Shape);
-  return XFA_GetAttributeDefaultValue_Enum(
-      XFA_Element::CheckButton, XFA_ATTRIBUTE_Shape, XFA_XDPPACKET_Form);
+  return GetAttributeDefaultValue_Enum(XFA_Element::CheckButton,
+                                       XFA_ATTRIBUTE_Shape, XFA_XDPPACKET_Form);
 }
 
 int32_t CXFA_WidgetData::GetCheckButtonMark() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetEnum(XFA_ATTRIBUTE_Mark);
-  return XFA_GetAttributeDefaultValue_Enum(
-      XFA_Element::CheckButton, XFA_ATTRIBUTE_Mark, XFA_XDPPACKET_Form);
+  return GetAttributeDefaultValue_Enum(XFA_Element::CheckButton,
+                                       XFA_ATTRIBUTE_Mark, XFA_XDPPACKET_Form);
 }
 
 FX_BOOL CXFA_WidgetData::IsRadioButton() {
@@ -356,7 +526,7 @@ FX_BOOL CXFA_WidgetData::IsAllowNeutral() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetBoolean(XFA_ATTRIBUTE_AllowNeutral);
-  return XFA_GetAttributeDefaultValue_Boolean(
+  return GetAttributeDefaultValue_Boolean(
       XFA_Element::CheckButton, XFA_ATTRIBUTE_AllowNeutral, XFA_XDPPACKET_Form);
 }
 
@@ -545,7 +715,7 @@ int32_t CXFA_WidgetData::GetChoiceListCommitOn() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetEnum(XFA_ATTRIBUTE_CommitOn);
-  return XFA_GetAttributeDefaultValue_Enum(
+  return GetAttributeDefaultValue_Enum(
       XFA_Element::ChoiceList, XFA_ATTRIBUTE_CommitOn, XFA_XDPPACKET_Form);
 }
 
@@ -553,7 +723,7 @@ FX_BOOL CXFA_WidgetData::IsChoiceListAllowTextEntry() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetBoolean(XFA_ATTRIBUTE_TextEntry);
-  return XFA_GetAttributeDefaultValue_Boolean(
+  return GetAttributeDefaultValue_Boolean(
       XFA_Element::ChoiceList, XFA_ATTRIBUTE_TextEntry, XFA_XDPPACKET_Form);
 }
 
@@ -561,8 +731,8 @@ int32_t CXFA_WidgetData::GetChoiceListOpen() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetEnum(XFA_ATTRIBUTE_Open);
-  return XFA_GetAttributeDefaultValue_Enum(
-      XFA_Element::ChoiceList, XFA_ATTRIBUTE_Open, XFA_XDPPACKET_Form);
+  return GetAttributeDefaultValue_Enum(XFA_Element::ChoiceList,
+                                       XFA_ATTRIBUTE_Open, XFA_XDPPACKET_Form);
 }
 
 FX_BOOL CXFA_WidgetData::IsListBox() {
@@ -1251,9 +1421,9 @@ void CXFA_WidgetData::GetPasswordChar(CFX_WideString& wsPassWord) {
   if (pUIChild) {
     pUIChild->TryCData(XFA_ATTRIBUTE_PasswordChar, wsPassWord);
   } else {
-    wsPassWord = XFA_GetAttributeDefaultValue_Cdata(XFA_Element::PasswordEdit,
-                                                    XFA_ATTRIBUTE_PasswordChar,
-                                                    XFA_XDPPACKET_Form);
+    wsPassWord = GetAttributeDefaultValue_Cdata(XFA_Element::PasswordEdit,
+                                                XFA_ATTRIBUTE_PasswordChar,
+                                                XFA_XDPPACKET_Form);
   }
 }
 
@@ -1261,7 +1431,7 @@ FX_BOOL CXFA_WidgetData::IsMultiLine() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetBoolean(XFA_ATTRIBUTE_MultiLine);
-  return XFA_GetAttributeDefaultValue_Boolean(
+  return GetAttributeDefaultValue_Boolean(
       XFA_Element::TextEdit, XFA_ATTRIBUTE_MultiLine, XFA_XDPPACKET_Form);
 }
 
@@ -1269,7 +1439,7 @@ int32_t CXFA_WidgetData::GetVerticalScrollPolicy() {
   CXFA_Node* pUIChild = GetUIChild();
   if (pUIChild)
     return pUIChild->GetEnum(XFA_ATTRIBUTE_VScrollPolicy);
-  return XFA_GetAttributeDefaultValue_Enum(
+  return GetAttributeDefaultValue_Enum(
       XFA_Element::TextEdit, XFA_ATTRIBUTE_VScrollPolicy, XFA_XDPPACKET_Form);
 }
 
@@ -1569,8 +1739,8 @@ FX_BOOL CXFA_WidgetData::GetNormalizeDataValue(
 }
 
 FX_BOOL CXFA_WidgetData::GetFormatDataValue(const CFX_WideString& wsValue,
-                                            CFX_WideString& wsFormatedValue) {
-  wsFormatedValue = wsValue;
+                                            CFX_WideString& wsFormattedValue) {
+  wsFormattedValue = wsValue;
   if (wsValue.IsEmpty())
     return TRUE;
 
@@ -1626,7 +1796,7 @@ FX_BOOL CXFA_WidgetData::GetFormatDataValue(const CFX_WideString& wsValue,
         CFX_WideString wsDate, wsTime;
         if (SplitDateTime(wsValue, wsDate, wsTime)) {
           CXFA_LocaleValue date(XFA_VT_DATE, wsDate, pLocalMgr);
-          if (date.FormatPatterns(wsFormatedValue, wsPicture, pLocale,
+          if (date.FormatPatterns(wsFormattedValue, wsPicture, pLocale,
                                   XFA_VALUEPICTURE_DataBind)) {
             return TRUE;
           }
@@ -1637,7 +1807,7 @@ FX_BOOL CXFA_WidgetData::GetFormatDataValue(const CFX_WideString& wsValue,
         CFX_WideString wsDate, wsTime;
         if (SplitDateTime(wsValue, wsDate, wsTime)) {
           CXFA_LocaleValue time(XFA_VT_TIME, wsTime, pLocalMgr);
-          if (time.FormatPatterns(wsFormatedValue, wsPicture, pLocale,
+          if (time.FormatPatterns(wsFormattedValue, wsPicture, pLocale,
                                   XFA_VALUEPICTURE_DataBind)) {
             return TRUE;
           }
@@ -1647,7 +1817,7 @@ FX_BOOL CXFA_WidgetData::GetFormatDataValue(const CFX_WideString& wsValue,
       default:
         break;
     }
-    widgetValue.FormatPatterns(wsFormatedValue, wsPicture, pLocale,
+    widgetValue.FormatPatterns(wsFormattedValue, wsPicture, pLocale,
                                XFA_VALUEPICTURE_DataBind);
   }
   return FALSE;

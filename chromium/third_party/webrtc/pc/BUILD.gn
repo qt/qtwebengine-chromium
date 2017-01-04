@@ -7,10 +7,9 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("../build/webrtc.gni")
-import("//testing/test.gni")
 
 group("pc") {
-  deps = [
+  public_deps = [
     ":rtc_pc",
   ]
 }
@@ -23,7 +22,7 @@ config("rtc_pc_config") {
   ]
 }
 
-source_set("rtc_pc") {
+rtc_static_library("rtc_pc") {
   defines = []
   sources = [
     "audiomonitor.cc",
@@ -40,7 +39,6 @@ source_set("rtc_pc") {
     "mediamonitor.h",
     "mediasession.cc",
     "mediasession.h",
-    "mediasink.h",
     "rtcpmuxfilter.cc",
     "rtcpmuxfilter.h",
     "srtpfilter.cc",
@@ -49,6 +47,7 @@ source_set("rtc_pc") {
   ]
 
   deps = [
+    "../api:call_api",
     "../base:rtc_base",
     "../media",
   ]
@@ -63,15 +62,11 @@ source_set("rtc_pc") {
     deps += [ "//third_party/libsrtp" ]
   }
 
-  configs += [ "..:common_config" ]
-  public_configs = [
-    "..:common_inherited_config",
-    ":rtc_pc_config",
-  ]
+  public_configs = [ ":rtc_pc_config" ]
 
   if (is_clang) {
     # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 }
 
@@ -85,7 +80,7 @@ if (rtc_include_tests) {
     }
   }
 
-  test("rtc_pc_unittests") {
+  rtc_test("rtc_pc_unittests") {
     testonly = true
 
     sources = [
@@ -100,15 +95,11 @@ if (rtc_include_tests) {
 
     include_dirs = [ "//third_party/libsrtp/srtp" ]
 
-    configs += [
-      "..:common_config",
-      ":rtc_pc_unittests_config",
-    ]
-    public_configs = [ "..:common_inherited_config" ]
+    configs += [ ":rtc_pc_unittests_config" ]
 
     if (is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
     if (is_win) {

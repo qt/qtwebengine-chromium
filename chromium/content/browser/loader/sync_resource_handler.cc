@@ -73,8 +73,8 @@ bool SyncResourceHandler::OnResponseStarted(
     return false;
 
   if (rdh_->delegate()) {
-    rdh_->delegate()->OnResponseStarted(
-        request(), info->GetContext(), response, info->filter());
+    rdh_->delegate()->OnResponseStarted(request(), info->GetContext(),
+                                        response);
   }
 
   NetLogObserver::PopulateResponseInfo(request(), response);
@@ -92,10 +92,6 @@ bool SyncResourceHandler::OnResponseStarted(
 }
 
 bool SyncResourceHandler::OnWillStart(const GURL& url, bool* defer) {
-  return true;
-}
-
-bool SyncResourceHandler::OnBeforeNetworkStart(const GURL& url, bool* defer) {
   return true;
 }
 
@@ -117,7 +113,6 @@ bool SyncResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
 
 void SyncResourceHandler::OnResponseCompleted(
     const net::URLRequestStatus& status,
-    const std::string& security_info,
     bool* defer) {
   ResourceMessageFilter* filter = GetFilter();
   if (!filter)
@@ -127,6 +122,7 @@ void SyncResourceHandler::OnResponseCompleted(
 
   int total_transfer_size = request()->GetTotalReceivedBytes();
   result_.encoded_data_length = total_transfer_size_ + total_transfer_size;
+  result_.encoded_body_length = request()->GetRawBodyBytes();
 
   ResourceHostMsg_SyncLoad::WriteReplyParams(result_message_, result_);
   filter->Send(result_message_);

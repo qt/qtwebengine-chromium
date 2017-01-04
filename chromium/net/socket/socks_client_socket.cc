@@ -12,6 +12,7 @@
 #include "base/sys_byteorder.h"
 #include "net/base/io_buffer.h"
 #include "net/log/net_log.h"
+#include "net/log/net_log_event_type.h"
 #include "net/socket/client_socket_handle.h"
 
 namespace net {
@@ -88,20 +89,20 @@ int SOCKSClientSocket::Connect(const CompletionCallback& callback) {
 
   next_state_ = STATE_RESOLVE_HOST;
 
-  net_log_.BeginEvent(NetLog::TYPE_SOCKS_CONNECT);
+  net_log_.BeginEvent(NetLogEventType::SOCKS_CONNECT);
 
   int rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING) {
     user_callback_ = callback;
   } else {
-    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SOCKS_CONNECT, rv);
+    net_log_.EndEventWithNetErrorCode(NetLogEventType::SOCKS_CONNECT, rv);
   }
   return rv;
 }
 
 void SOCKSClientSocket::Disconnect() {
   completed_handshake_ = false;
-  host_resolver_.Cancel();
+  request_.reset();
   transport_->socket()->Disconnect();
 
   // Reset other states to make sure they aren't mistakenly used later.
@@ -118,7 +119,7 @@ bool SOCKSClientSocket::IsConnectedAndIdle() const {
   return completed_handshake_ && transport_->socket()->IsConnectedAndIdle();
 }
 
-const BoundNetLog& SOCKSClientSocket::NetLog() const {
+const NetLogWithSource& SOCKSClientSocket::NetLog() const {
   return net_log_;
 }
 
@@ -232,7 +233,7 @@ void SOCKSClientSocket::OnIOComplete(int result) {
   DCHECK_NE(STATE_NONE, next_state_);
   int rv = DoLoop(result);
   if (rv != ERR_IO_PENDING) {
-    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SOCKS_CONNECT, rv);
+    net_log_.EndEventWithNetErrorCode(NetLogEventType::SOCKS_CONNECT, rv);
     DoCallback(rv);
   }
 }
@@ -289,12 +290,10 @@ int SOCKSClientSocket::DoResolveHost() {
   // SOCKS4 only supports IPv4 addresses, so only try getting the IPv4
   // addresses for the target host.
   host_request_info_.set_address_family(ADDRESS_FAMILY_IPV4);
-  return host_resolver_.Resolve(
-      host_request_info_,
-      priority_,
-      &addresses_,
+  return host_resolver_->Resolve(
+      host_request_info_, priority_, &addresses_,
       base::Bind(&SOCKSClientSocket::OnIOComplete, base::Unretained(this)),
-      net_log_);
+      &request_, net_log_);
 }
 
 int SOCKSClientSocket::DoResolveHostComplete(int result) {

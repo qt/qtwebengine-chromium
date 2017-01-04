@@ -24,7 +24,7 @@ class LayerTreeHostPictureTest : public LayerTreeTest {
     root_picture_layer_->SetBounds(size);
     root->AddChild(root_picture_layer_);
 
-    layer_tree_host()->SetRootLayer(root);
+    layer_tree()->SetRootLayer(root);
     client_.set_bounds(size);
   }
 
@@ -46,7 +46,7 @@ class LayerTreeHostPictureTestTwinLayer
   }
 
   void DidCommit() override {
-    switch (layer_tree_host()->source_frame_number()) {
+    switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
         // Activate while there are pending and active twins in place.
         layer_tree_host()->SetNeedsCommit();
@@ -62,7 +62,7 @@ class LayerTreeHostPictureTestTwinLayer
         scoped_refptr<FakePictureLayer> picture =
             FakePictureLayer::Create(&client_);
         picture_id2_ = picture->id();
-        layer_tree_host()->root_layer()->AddChild(picture);
+        layer_tree()->root_layer()->AddChild(picture);
         break;
       }
       case 4:
@@ -158,7 +158,7 @@ class LayerTreeHostPictureTestResizeViewportWithGpuRaster
     picture_->SetBounds(gfx::Size(768, 960));
     root->AddChild(picture_);
 
-    layer_tree_host()->SetRootLayer(root);
+    layer_tree()->SetRootLayer(root);
     LayerTreeHostPictureTest::SetupTree();
   }
 
@@ -185,12 +185,12 @@ class LayerTreeHostPictureTestResizeViewportWithGpuRaster
   }
 
   void DidCommit() override {
-    switch (layer_tree_host()->source_frame_number()) {
+    switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
         // Change the picture layer's size along with the viewport, so it will
         // consider picking a new tile size.
         picture_->SetBounds(gfx::Size(768, 1056));
-        layer_tree_host()->SetViewportSize(gfx::Size(768, 1056));
+        layer_tree()->SetViewportSize(gfx::Size(768, 1056));
         break;
       case 2:
         EndTest();
@@ -226,7 +226,7 @@ class LayerTreeHostPictureTestChangeLiveTilesRectWithRecycleTree
     // force it to have a transform node by making it scrollable.
     picture_->SetScrollClipLayerId(root->id());
 
-    layer_tree_host()->SetRootLayer(root);
+    layer_tree()->SetRootLayer(root);
     LayerTreeHostPictureTest::SetupTree();
     client_.set_bounds(picture_->bounds());
   }
@@ -250,7 +250,11 @@ class LayerTreeHostPictureTestChangeLiveTilesRectWithRecycleTree
         // Make the bottom of the layer visible.
         gfx::Transform transform;
         transform.Translate(0.f, -100000.f + 100.f);
-        picture_impl->OnTransformAnimated(transform);
+        impl->active_tree()
+            ->property_trees()
+            ->transform_tree.OnTransformAnimated(
+                transform, picture_impl->transform_tree_index(),
+                impl->active_tree());
         impl->SetNeedsRedraw();
         break;
       }
@@ -261,7 +265,11 @@ class LayerTreeHostPictureTestChangeLiveTilesRectWithRecycleTree
         EXPECT_FALSE(tiling->TileAt(0, 0));
 
         // Make the top of the layer visible again.
-        picture_impl->OnTransformAnimated(gfx::Transform());
+        impl->active_tree()
+            ->property_trees()
+            ->transform_tree.OnTransformAnimated(
+                gfx::Transform(), picture_impl->transform_tree_index(),
+                impl->active_tree());
         impl->SetNeedsRedraw();
         break;
       }
@@ -330,7 +338,7 @@ class LayerTreeHostPictureTestRSLLMembership : public LayerTreeHostPictureTest {
     picture_->SetBounds(gfx::Size(100, 100));
     child_->AddChild(picture_);
 
-    layer_tree_host()->SetRootLayer(root);
+    layer_tree()->SetRootLayer(root);
     LayerTreeHostPictureTest::SetupTree();
   }
 
@@ -378,7 +386,7 @@ class LayerTreeHostPictureTestRSLLMembership : public LayerTreeHostPictureTest {
   }
 
   void DidCommit() override {
-    switch (layer_tree_host()->source_frame_number()) {
+    switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
         // For the 2nd commit, change opacity to 0 so that the layer will not be
         // part of the visible frame.
@@ -421,10 +429,10 @@ class LayerTreeHostPictureTestRSLLMembershipWithScale
     picture_->SetBounds(gfx::Size(100, 100));
     pinch_->AddChild(picture_);
 
-    layer_tree_host()->RegisterViewportLayers(NULL, page_scale_layer, pinch_,
-                                              nullptr);
-    layer_tree_host()->SetPageScaleFactorAndLimits(1.f, 1.f, 4.f);
-    layer_tree_host()->SetRootLayer(root_clip);
+    layer_tree()->RegisterViewportLayers(NULL, page_scale_layer, pinch_,
+                                         nullptr);
+    layer_tree()->SetPageScaleFactorAndLimits(1.f, 1.f, 4.f);
+    layer_tree()->SetRootLayer(root_clip);
     LayerTreeHostPictureTest::SetupTree();
     client_.set_bounds(picture_->bounds());
   }
@@ -567,6 +575,106 @@ class LayerTreeHostPictureTestRSLLMembershipWithScale
 // Multi-thread only because in single thread you can't pinch zoom on the
 // compositor thread.
 MULTI_THREAD_TEST_F(LayerTreeHostPictureTestRSLLMembershipWithScale);
+
+class LayerTreeHostPictureTestForceRecalculateScales
+    : public LayerTreeHostPictureTest {
+  void SetupTree() override {
+    gfx::Size size(100, 100);
+    scoped_refptr<Layer> root = Layer::Create();
+    root->SetBounds(size);
+
+    will_change_layer_ = FakePictureLayer::Create(&client_);
+    will_change_layer_->SetHasWillChangeTransformHint(true);
+    will_change_layer_->SetBounds(size);
+    root->AddChild(will_change_layer_);
+
+    normal_layer_ = FakePictureLayer::Create(&client_);
+    normal_layer_->SetBounds(size);
+    root->AddChild(normal_layer_);
+
+    layer_tree()->SetRootLayer(root);
+    layer_tree()->SetViewportSize(size);
+
+    client_.set_fill_with_nonsolid_color(true);
+    client_.set_bounds(size);
+  }
+
+  void InitializeSettings(LayerTreeSettings* settings) override {
+    settings->layer_transforms_should_scale_layer_contents = true;
+  }
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
+    FakePictureLayerImpl* will_change_layer =
+        static_cast<FakePictureLayerImpl*>(
+            impl->active_tree()->LayerById(will_change_layer_->id()));
+    FakePictureLayerImpl* normal_layer = static_cast<FakePictureLayerImpl*>(
+        impl->active_tree()->LayerById(normal_layer_->id()));
+
+    switch (impl->sync_tree()->source_frame_number()) {
+      case 0:
+        // On first commit, both layers are at the default scale.
+        ASSERT_EQ(1u, will_change_layer->tilings()->num_tilings());
+        EXPECT_EQ(1.f,
+                  will_change_layer->tilings()->tiling_at(0)->contents_scale());
+        ASSERT_EQ(1u, normal_layer->tilings()->num_tilings());
+        EXPECT_EQ(1.f, normal_layer->tilings()->tiling_at(0)->contents_scale());
+
+        MainThreadTaskRunner()->PostTask(
+            FROM_HERE,
+            base::Bind(
+                &LayerTreeHostPictureTestForceRecalculateScales::ScaleRootUp,
+                base::Unretained(this)));
+        break;
+      case 1:
+        // On 2nd commit after scaling up to 2, the normal layer will adjust its
+        // scale and the will change layer should not (as it is will change.
+        ASSERT_EQ(1u, will_change_layer->tilings()->num_tilings());
+        EXPECT_EQ(1.f,
+                  will_change_layer->tilings()->tiling_at(0)->contents_scale());
+        ASSERT_EQ(1u, normal_layer->tilings()->num_tilings());
+        EXPECT_EQ(2.f, normal_layer->tilings()->tiling_at(0)->contents_scale());
+
+        MainThreadTaskRunner()->PostTask(
+            FROM_HERE,
+            base::Bind(&LayerTreeHostPictureTestForceRecalculateScales::
+                           ScaleRootUpAndRecalculateScales,
+                       base::Unretained(this)));
+        break;
+      case 2:
+        // On 3rd commit, both layers should adjust scales due to forced
+        // recalculating.
+        ASSERT_EQ(1u, will_change_layer->tilings()->num_tilings());
+        EXPECT_EQ(4.f,
+                  will_change_layer->tilings()->tiling_at(0)->contents_scale());
+        ASSERT_EQ(1u, normal_layer->tilings()->num_tilings());
+        EXPECT_EQ(4.f, normal_layer->tilings()->tiling_at(0)->contents_scale());
+        EndTest();
+        break;
+    }
+  }
+
+  void ScaleRootUp() {
+    gfx::Transform transform;
+    transform.Scale(2, 2);
+    layer_tree_host()->GetLayerTree()->root_layer()->SetTransform(transform);
+  }
+
+  void ScaleRootUpAndRecalculateScales() {
+    gfx::Transform transform;
+    transform.Scale(4, 4);
+    layer_tree_host()->GetLayerTree()->root_layer()->SetTransform(transform);
+    layer_tree_host()->SetNeedsRecalculateRasterScales();
+  }
+
+  void AfterTest() override {}
+
+  scoped_refptr<FakePictureLayer> will_change_layer_;
+  scoped_refptr<FakePictureLayer> normal_layer_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostPictureTestForceRecalculateScales);
 
 }  // namespace
 }  // namespace cc

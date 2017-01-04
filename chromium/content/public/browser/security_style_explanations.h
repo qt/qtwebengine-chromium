@@ -23,20 +23,34 @@ namespace content {
 // SecurityStyleExplanation is a single security property of a page (for
 // example, an expired certificate, a valid certificate, or the presence
 // of a deprecated crypto algorithm). A single site may have multiple
-// different explanations of "secure", "warning", and "broken" severity
+// different explanations of "secure", "warning", "broken", and "info" severity
 // levels.
 struct SecurityStyleExplanations {
   CONTENT_EXPORT SecurityStyleExplanations();
   CONTENT_EXPORT ~SecurityStyleExplanations();
 
-  // True if the page ran insecure content such as scripts.
-  bool ran_insecure_content;
-  // True if the page displayed insecure content such as images.
-  bool displayed_insecure_content;
+  // True if the page was loaded over HTTPS and ran mixed (HTTP) content
+  // such as scripts.
+  bool ran_mixed_content;
+  // True if the page was loaded over HTTPS and displayed mixed (HTTP)
+  // content such as images.
+  bool displayed_mixed_content;
+  // True if the page was loaded over HTTPS without certificate errors,
+  // but ran subresources, such as scripts, that were loaded over HTTPS
+  // with certificate errors.
+  bool ran_content_with_cert_errors;
+  // True if the page was loaded over HTTPS without certificate errors,
+  // but displayed subresources, such as images, that were loaded over HTTPS
+  // with certificate errors.
+  bool displayed_content_with_cert_errors;
 
   // The SecurityStyle assigned to a page that runs or displays insecure
-  // content, respectively. These values are used to convey the effect
-  // that mixed content has on the overall SecurityStyle of the page;
+  // content, respectively. Insecure content can be either HTTP
+  // subresources loaded on an HTTPS page (mixed content), or HTTPS
+  // subresources loaded with certificate errors on an HTTPS page.
+  //
+  // These values are used to convey the effect
+  // that insecure content has on the overall SecurityStyle of the page;
   // for example, a |displayed_insecure_content_style| value of
   // SECURITY_STYLE_UNAUTHENTICATED indicates that the page's overall
   // SecurityStyle will be downgraded to UNAUTHENTICATED as a result of
@@ -49,9 +63,12 @@ struct SecurityStyleExplanations {
   // True if PKP was bypassed due to a local trust anchor.
   bool pkp_bypassed;
 
+  // Explanations corresponding to each security level. The embedder should
+  // display explanations in the order: broken, unauthenticated, secure, info.
   std::vector<SecurityStyleExplanation> secure_explanations;
   std::vector<SecurityStyleExplanation> unauthenticated_explanations;
   std::vector<SecurityStyleExplanation> broken_explanations;
+  std::vector<SecurityStyleExplanation> info_explanations;
 };
 
 }  // namespace content

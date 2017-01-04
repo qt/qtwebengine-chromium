@@ -21,8 +21,7 @@ enum {
   SSL_CONNECTION_COMPRESSION_SHIFT = 16,
   SSL_CONNECTION_COMPRESSION_MASK = 3,
 
-  // We fell back to an older protocol version for this connection.
-  SSL_CONNECTION_VERSION_FALLBACK = 1 << 18,
+  // 1 << 18 was previously used for SSL_CONNECTION_VERSION_FALLBACK.
 
   // The server doesn't support the renegotiation_info extension. If this bit
   // is not set then either the extension isn't supported, or we don't have any
@@ -48,7 +47,7 @@ enum {
   SSL_CONNECTION_VERSION_TLS1 = 3,
   SSL_CONNECTION_VERSION_TLS1_1 = 4,
   SSL_CONNECTION_VERSION_TLS1_2 = 5,
-  // Reserve 6 for TLS 1.3.
+  SSL_CONNECTION_VERSION_TLS1_3 = 6,
   SSL_CONNECTION_VERSION_QUIC = 7,
   SSL_CONNECTION_VERSION_MAX,
 };

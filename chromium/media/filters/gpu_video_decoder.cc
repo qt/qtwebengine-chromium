@@ -13,7 +13,7 @@
 #include "base/cpu.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
@@ -187,10 +187,9 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
   DVLOG(1) << (previously_initialized ? "Reinitializing" : "Initializing")
            << " GVD with config: " << config.AsHumanReadableString();
 
-  // TODO(posciak): destroy and create a new VDA on codec/profile change
-  // (http://crbug.com/260224).
-  if (previously_initialized && (config_.profile() != config.profile())) {
-    DVLOG(1) << "Codec or profile changed, cannot reinitialize.";
+  // Disallow codec changes between configuration changes.
+  if (previously_initialized && config_.codec() != config.codec()) {
+    DVLOG(1) << "Codec changed, cannot reinitialize.";
     bound_init_cb.Run(false);
     return;
   }
@@ -229,14 +228,14 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
   output_cb_ = output_cb;
 
   if (config.is_encrypted() && !supports_deferred_initialization_) {
-    DVLOG(1) << __FUNCTION__
+    DVLOG(1) << __func__
              << " Encrypted stream requires deferred initialialization.";
     bound_init_cb.Run(false);
     return;
   }
 
   if (previously_initialized) {
-    DVLOG(3) << __FUNCTION__
+    DVLOG(3) << __func__
              << " Expecting initialized VDA to detect in-stream config change.";
     // Reinitialization with a different config (but same codec and profile).
     // VDA should handle it by detecting this in-stream by itself,
@@ -314,7 +313,7 @@ void GpuVideoDecoder::CompleteInitialization(int cdm_id, int surface_id) {
 }
 
 void GpuVideoDecoder::NotifyInitializationComplete(bool success) {
-  DVLOG_IF(1, !success) << __FUNCTION__ << " Deferred initialization failed.";
+  DVLOG_IF(1, !success) << __func__ << " Deferred initialization failed.";
   DCHECK(!init_cb_.is_null());
 
   base::ResetAndReturn(&init_cb_).Run(success);
@@ -352,7 +351,7 @@ void GpuVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DCHECK(pending_reset_cb_.is_null());
 
-  DVLOG(3) << __FUNCTION__ << " " << buffer->AsHumanReadableString();
+  DVLOG(3) << __func__ << " " << buffer->AsHumanReadableString();
 
   DecodeCB bound_decode_cb = BindToCurrentLoop(decode_cb);
 
@@ -376,7 +375,7 @@ void GpuVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
   DCHECK_EQ(state_, kNormal);
 
   if (buffer->end_of_stream()) {
-    DVLOG(3) << __FUNCTION__ << " Initiating Flush for EOS.";
+    DVLOG(3) << __func__ << " Initiating Flush for EOS.";
     state_ = kDrainingDecoder;
     eos_decode_cb_ = bound_decode_cb;
     vda_->Flush();
@@ -402,7 +401,8 @@ void GpuVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
 
   // Mask against 30 bits, to avoid (undefined) wraparound on signed integer.
   next_bitstream_buffer_id_ = (next_bitstream_buffer_id_ + 1) & 0x3FFFFFFF;
-  DCHECK(!ContainsKey(bitstream_buffers_in_decoder_, bitstream_buffer.id()));
+  DCHECK(
+      !base::ContainsKey(bitstream_buffers_in_decoder_, bitstream_buffer.id()));
   bitstream_buffers_in_decoder_.insert(std::make_pair(
       bitstream_buffer.id(),
       PendingDecoderBuffer(shm_buffer.release(), buffer, decode_cb)));
@@ -495,6 +495,7 @@ void GpuVideoDecoder::ProvidePictureBuffers(uint32_t count,
     NotifyError(VideoDecodeAccelerator::PLATFORM_FAILURE);
     return;
   }
+  sync_token_ = factories_->CreateSyncToken();
   DCHECK_EQ(count * textures_per_buffer, texture_ids.size());
   DCHECK_EQ(count * textures_per_buffer, texture_mailboxes.size());
 
@@ -566,7 +567,7 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
     // requesting new PictureBuffers. Sending a Picture of unmatched size is
     // the signal that we should update the size of our PictureBuffer.
     DCHECK(pb.size() != picture.visible_rect().size());
-    DVLOG(3) << __FUNCTION__ << " Updating size of PictureBuffer[" << pb.id()
+    DVLOG(3) << __func__ << " Updating size of PictureBuffer[" << pb.id()
              << "] from:" << pb.size().ToString()
              << " to:" << picture.visible_rect().size().ToString();
     pb.set_size(picture.visible_rect().size());
@@ -595,8 +596,8 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
 
   gpu::MailboxHolder mailbox_holders[VideoFrame::kMaxPlanes];
   for (size_t i = 0; i < pb.texture_ids().size(); ++i) {
-    mailbox_holders[i] = gpu::MailboxHolder(
-        pb.texture_mailbox(i), gpu::SyncToken(), decoder_texture_target_);
+    mailbox_holders[i] = gpu::MailboxHolder(pb.texture_mailbox(i), sync_token_,
+                                            decoder_texture_target_);
   }
 
   scoped_refptr<VideoFrame> frame(VideoFrame::WrapNativeTextures(
@@ -700,7 +701,7 @@ std::unique_ptr<GpuVideoDecoder::SHMBuffer> GpuVideoDecoder::GetSHM(
     // CreateSharedMemory() can return NULL during Shutdown.
     if (!shm)
       return NULL;
-    return base::WrapUnique(new SHMBuffer(std::move(shm), size_to_allocate));
+    return base::MakeUnique<SHMBuffer>(std::move(shm), size_to_allocate);
   }
   std::unique_ptr<SHMBuffer> ret(available_shm_segments_.back());
   available_shm_segments_.pop_back();
@@ -731,7 +732,7 @@ void GpuVideoDecoder::NotifyEndOfBitstreamBuffer(int32_t id) {
 }
 
 GpuVideoDecoder::~GpuVideoDecoder() {
-  DVLOG(3) << __FUNCTION__;
+  DVLOG(3) << __func__;
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
 
   if (vda_)
@@ -786,8 +787,6 @@ void GpuVideoDecoder::NotifyError(media::VideoDecodeAccelerator::Error error) {
   if (!vda_)
     return;
 
-  state_ = kError;
-
   // If we have any bitstream buffers, then notify one that an error has
   // occurred.  This guarantees that somebody finds out about the error.  If
   // we don't do this, and if the max decodes are already in flight, then there
@@ -797,6 +796,11 @@ void GpuVideoDecoder::NotifyError(media::VideoDecodeAccelerator::Error error) {
     it->second.done_cb.Run(DecodeStatus::DECODE_ERROR);
     bitstream_buffers_in_decoder_.erase(it);
   }
+
+  if (state_ == kDrainingDecoder)
+    base::ResetAndReturn(&eos_decode_cb_).Run(DecodeStatus::DECODE_ERROR);
+
+  state_ = kError;
 
   DLOG(ERROR) << "VDA Error: " << error;
   UMA_HISTOGRAM_ENUMERATION("Media.GpuVideoDecoderError", error,

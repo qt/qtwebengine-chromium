@@ -74,6 +74,11 @@ name=https://github.com/DynamoRIO/drmemory/issues/68 (UNADDR 2)
 ...
 ntdll.dll!RtlValidateUnicodeString
 
+INVALID HEAP ARGUMENT
+name=https://crbug.com/647420
+...
+ucrtbase.dll!register_onexit_function
+
 ############################
 # TODO(timurrrr): investigate these
 UNADDRESSABLE ACCESS
@@ -811,8 +816,7 @@ name=bug_608064
 
 UNADDRESSABLE ACCESS
 name=https://bugs.chromium.org/p/webrtc/issues/detail?id=5151
-*!sctp_iterator_inp_being_freed
-*!sctp_inpcb_free
+...
 *!sctp_close
 *!sofree
 *!usrsctp_close

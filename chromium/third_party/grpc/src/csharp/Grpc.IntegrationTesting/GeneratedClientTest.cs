@@ -40,7 +40,6 @@ using System.Threading.Tasks;
 using Grpc.Core;
 using Grpc.Core.Utils;
 using Grpc.Testing;
-using Moq;
 using NUnit.Framework;
 
 namespace Grpc.IntegrationTesting
@@ -54,9 +53,9 @@ namespace Grpc.IntegrationTesting
         {
             var expected = new SimpleResponse();
 
-            var mockClient = new Mock<TestService.TestServiceClient>();
+            var mockClient = new Moq.Mock<TestService.TestServiceClient>();
             // mocking is relatively clumsy because one needs to specify value for all the optional params.
-            mockClient.Setup(m => m.UnaryCall(It.IsAny<SimpleRequest>(), null, null, CancellationToken.None)).Returns(expected);
+            mockClient.Setup(m => m.UnaryCall(Moq.It.IsAny<SimpleRequest>(), null, null, CancellationToken.None)).Returns(expected);
 
             Assert.AreSame(expected, mockClient.Object.UnaryCall(new SimpleRequest()));
         }
@@ -66,8 +65,8 @@ namespace Grpc.IntegrationTesting
         {
             var expected = new SimpleResponse();
 
-            var mockClient = new Mock<TestService.TestServiceClient>();
-            mockClient.Setup(m => m.UnaryCall(It.IsAny<SimpleRequest>(), It.IsAny<CallOptions>())).Returns(expected);
+            var mockClient = new Moq.Mock<TestService.TestServiceClient>();
+            mockClient.Setup(m => m.UnaryCall(Moq.It.IsAny<SimpleRequest>(), Moq.It.IsAny<CallOptions>())).Returns(expected);
 
             Assert.AreSame(expected, mockClient.Object.UnaryCall(new SimpleRequest(), new CallOptions()));
         }

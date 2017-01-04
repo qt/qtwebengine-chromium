@@ -17,54 +17,47 @@ namespace WTF {
 // The underlying storage that keeps the map of unique AtomicStrings. This is
 // not thread safe and each WTFThreadData has one.
 class WTF_EXPORT AtomicStringTable final {
-    USING_FAST_MALLOC(AtomicStringTable);
-    WTF_MAKE_NONCOPYABLE(AtomicStringTable);
-public:
-    AtomicStringTable();
-    ~AtomicStringTable();
+  USING_FAST_MALLOC(AtomicStringTable);
+  WTF_MAKE_NONCOPYABLE(AtomicStringTable);
 
-    // Gets the shared table for the current thread.
-    static AtomicStringTable& instance()
-    {
-        return wtfThreadData().getAtomicStringTable();
-    }
+ public:
+  AtomicStringTable();
+  ~AtomicStringTable();
 
-    // Used by system initialization to preallocate enough storage for all of
-    // the static strings.
-    void reserveCapacity(unsigned);
+  // Gets the shared table for the current thread.
+  static AtomicStringTable& instance() {
+    return wtfThreadData().getAtomicStringTable();
+  }
 
-    // Adding a StringImpl.
-    StringImpl* add(StringImpl*);
-    PassRefPtr<StringImpl> add(StringImpl*, unsigned offset, unsigned length);
+  // Used by system initialization to preallocate enough storage for all of
+  // the static strings.
+  void reserveCapacity(unsigned size);
 
-    // Adding an LChar.
-    PassRefPtr<StringImpl> add(const LChar*, unsigned length);
+  // Inserting strings into the table. Note that the return value from adding
+  // a UChar string may be an LChar string as the table will attempt to
+  // convert the string to save memory if possible.
+  StringImpl* add(StringImpl*);
+  PassRefPtr<StringImpl> add(const LChar* chars, unsigned length);
+  PassRefPtr<StringImpl> add(const UChar* chars, unsigned length);
 
-    // Adding a UChar.
-    PassRefPtr<StringImpl> add(const UChar*, unsigned length);
-    PassRefPtr<StringImpl> add(const UChar*, unsigned length, unsigned existingHash);
-    PassRefPtr<StringImpl> add(const UChar*);
+  // Adding UTF8.
+  // Returns null if the characters contain invalid utf8 sequences.
+  // Pass null for the charactersEnd to automatically detect the length.
+  PassRefPtr<StringImpl> addUTF8(const char* charactersStart,
+                                 const char* charactersEnd);
 
-    // Adding UTF8.
-    // Returns null if the characters contain invalid utf8 sequences.
-    // Pass null for the charactersEnd to automatically detect the length.
-    PassRefPtr<StringImpl> addUTF8(const char* charactersStart, const char* charactersEnd);
+  // This is for ~StringImpl to unregister a string before destruction since
+  // the table is holding weak pointers. It should not be used directly.
+  void remove(StringImpl*);
 
-    // This is for ~StringImpl to unregister a string before destruction since
-    // the table is holding weak pointers. It should not be used directly.
-    void remove(StringImpl*);
+ private:
+  template <typename T, typename HashTranslator>
+  inline PassRefPtr<StringImpl> addToStringTable(const T& value);
 
-private:
-    template<typename T, typename HashTranslator>
-    inline PassRefPtr<StringImpl> addToStringTable(const T& value);
-
-    template<typename CharacterType>
-    inline HashSet<StringImpl*>::iterator find(const StringImpl*);
-
-    HashSet<StringImpl*> m_table;
+  HashSet<StringImpl*> m_table;
 };
 
-} // namespace WTF
+}  // namespace WTF
 
 using WTF::AtomicStringTable;
 

@@ -92,6 +92,14 @@ var GetChildIDAtIndex = requireNative('automationInternal').GetChildIDAtIndex;
 /**
  * @param {number} axTreeID The id of the accessibility tree.
  * @param {number} nodeID The id of a node.
+ * @return {?number} The ids of the children of the node, or undefined
+ *     if the tree or node wasn't found.
+ */
+var GetChildIds = requireNative('automationInternal').GetChildIDs;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @param {number} nodeID The id of a node.
  * @return {?Object} An object mapping html attributes to values.
  */
 var GetHtmlAttributes = requireNative('automationInternal').GetHtmlAttributes;
@@ -138,6 +146,16 @@ var GetLocation = requireNative('automationInternal').GetLocation;
  *     the tree or node wasn't found.
  */
 var GetBoundsForRange = requireNative('automationInternal').GetBoundsForRange;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @param {number} nodeID The id of a node.
+ * @return {!Array.<number>} The text offset where each line starts, or an empty
+ *     array if this node has no text content, or undefined if the tree or node
+ *     was not found.
+ */
+var GetLineStartOffsets = requireNative(
+    'automationInternal').GetLineStartOffsets;
 
 /**
  * @param {number} axTreeID The id of the accessibility tree.
@@ -259,6 +277,10 @@ AutomationNodeImpl.prototype = {
     return GetIndexInParent(this.treeID, this.id);
   },
 
+  get lineStartOffsets() {
+    return GetLineStartOffsets(this.treeID, this.id);
+  },
+
   get childTree() {
     var childTreeID = GetIntAttribute(this.treeID, this.id, 'childTreeId');
     if (childTreeID)
@@ -296,9 +318,9 @@ AutomationNodeImpl.prototype = {
       return [this.childTree];
 
     var children = [];
-    var count = GetChildCount(this.treeID, this.id);
-    for (var i = 0; i < count; ++i) {
-      var childID = GetChildIDAtIndex(this.treeID, this.id, i);
+    var childIds = GetChildIds(this.treeID, this.id);
+    for (var i = 0; i < childIds.length; ++i) {
+      var childID = childIds[i];
       var child = this.rootImpl.get(childID);
       $Array.push(children, child);
     }
@@ -307,18 +329,22 @@ AutomationNodeImpl.prototype = {
 
   get previousSibling() {
     var parent = this.parent;
+    if (!parent)
+      return undefined;
+    parent = privates(parent).impl;
     var indexInParent = GetIndexInParent(this.treeID, this.id);
-    if (parent && indexInParent > 0)
-      return parent.children[indexInParent - 1];
-    return undefined;
+    return this.rootImpl.get(
+        GetChildIDAtIndex(parent.treeID, parent.id, indexInParent - 1));
   },
 
   get nextSibling() {
     var parent = this.parent;
+    if (!parent)
+      return undefined;
+    parent = privates(parent).impl;
     var indexInParent = GetIndexInParent(this.treeID, this.id);
-    if (parent && indexInParent < parent.children.length)
-      return parent.children[indexInParent + 1];
-    return undefined;
+    return this.rootImpl.get(
+        GetChildIDAtIndex(parent.treeID, parent.id, indexInParent + 1));
   },
 
   doDefault: function() {
@@ -397,14 +423,14 @@ AutomationNodeImpl.prototype = {
              attributes: this.attributes };
   },
 
-  dispatchEvent: function(eventType) {
+  dispatchEvent: function(eventType, eventFrom) {
     var path = [];
     var parent = this.parent;
     while (parent) {
       $Array.push(path, parent);
       parent = parent.parent;
     }
-    var event = new AutomationEvent(eventType, this.wrapper);
+    var event = new AutomationEvent(eventType, this.wrapper, eventFrom);
 
     // Dispatch the event through the propagation path in three phases:
     // - capturing: starting from the root and going down to the target's parent
@@ -675,7 +701,9 @@ var nodeRefAttributes = [
 
 var intListAttributes = [
     'characterOffsets',
-    'lineBreaks',
+    'markerEnds',
+    'markerStarts',
+    'markerTypes',
     'wordEnds',
     'wordStarts'];
 
@@ -948,7 +976,7 @@ AutomationRootNodeImpl.prototype = {
   },
 
   destroy: function() {
-    this.dispatchEvent(schema.EventType.destroyed);
+    this.dispatchEvent(schema.EventType.destroyed, 'none');
     for (var id in this.axNodeDataCache_)
       this.remove(id);
     this.detach();
@@ -962,7 +990,8 @@ AutomationRootNodeImpl.prototype = {
     var targetNode = this.get(eventParams.targetID);
     if (targetNode) {
       var targetNodeImpl = privates(targetNode).impl;
-      targetNodeImpl.dispatchEvent(eventParams.eventType);
+      targetNodeImpl.dispatchEvent(
+          eventParams.eventType, eventParams.eventFrom);
     } else {
       logging.WARNING('Got ' + eventParams.eventType +
                       ' event on unknown node: ' + eventParams.targetID +
@@ -1021,6 +1050,7 @@ utils.expose(AutomationNode, AutomationNodeImpl, {
       'state',
       'location',
       'indexInParent',
+      'lineStartOffsets',
       'root',
       'htmlAttributes',
   ]),

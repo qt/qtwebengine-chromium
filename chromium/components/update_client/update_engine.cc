@@ -31,6 +31,7 @@ UpdateContext::UpdateContext(
     PingManager* ping_manager)
     : config(config),
       is_foreground(is_foreground),
+      enabled_component_updates(config->EnabledComponentUpdates()),
       ids(ids),
       crx_data_callback(crx_data_callback),
       notify_observers_callback(notify_observers_callback),
@@ -43,7 +44,7 @@ UpdateContext::UpdateContext(
       retry_after_sec_(0) {}
 
 UpdateContext::~UpdateContext() {
-  STLDeleteElements(&update_items);
+  base::STLDeleteElements(&update_items);
 }
 
 UpdateEngine::UpdateEngine(
@@ -66,7 +67,7 @@ UpdateEngine::~UpdateEngine() {
 bool UpdateEngine::GetUpdateState(const std::string& id,
                                   CrxUpdateItem* update_item) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  for (const auto& context : update_contexts_) {
+  for (const auto* context : update_contexts_) {
     const auto& update_items = context->update_items;
     const auto it = std::find_if(update_items.begin(), update_items.end(),
                                  [id](const CrxUpdateItem* update_item) {
@@ -127,8 +128,9 @@ void UpdateEngine::UpdateComplete(UpdateContext* update_context, int error) {
   if (throttle_sec >= 0)
     throttle_updates_until_ =
         throttle_sec
-            ? base::Time::Now() + base::TimeDelta::FromSeconds(throttle_sec)
-            : base::Time();
+            ? base::TimeTicks::Now() +
+                  base::TimeDelta::FromSeconds(throttle_sec)
+            : base::TimeTicks();
 
   auto callback = update_context->callback;
 
@@ -142,7 +144,7 @@ bool UpdateEngine::IsThrottled(bool is_foreground) const {
   if (is_foreground || throttle_updates_until_.is_null())
     return false;
 
-  const auto now(base::Time::Now());
+  const auto now(base::TimeTicks::Now());
 
   // Throttle the calls in the interval (t - 1 day, t) to limit the effect of
   // unset clocks or clock drift.

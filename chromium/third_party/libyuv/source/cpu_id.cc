@@ -15,7 +15,7 @@
 #endif
 #if !defined(__pnacl__) && !defined(__CLR_VER) && \
     !defined(__native_client__) && (defined(_M_IX86) || defined(_M_X64)) && \
-    defined(_MSC_VER) && (_MSC_FULL_VER >= 160040219)
+    defined(_MSC_FULL_VER) && (_MSC_FULL_VER >= 160040219)
 #include <immintrin.h>  // For _xgetbv()
 #endif
 
@@ -36,7 +36,8 @@ extern "C" {
 
 // For functions that use the stack and have runtime checks for overflow,
 // use SAFEBUFFERS to avoid additional check.
-#if (defined(_MSC_VER) && !defined(__clang__)) && (_MSC_FULL_VER >= 160040219)
+#if defined(_MSC_FULL_VER) && (_MSC_FULL_VER >= 160040219) && \
+    !defined(__clang__)
 #define SAFEBUFFERS __declspec(safebuffers)
 #else
 #define SAFEBUFFERS
@@ -50,7 +51,7 @@ LIBYUV_API
 void CpuId(uint32 info_eax, uint32 info_ecx, uint32* cpu_info) {
 #if defined(_MSC_VER)
 // Visual C version uses intrinsic or inline x86 assembly.
-#if (_MSC_FULL_VER >= 160040219)
+#if defined(_MSC_FULL_VER) && (_MSC_FULL_VER >= 160040219)
   __cpuidex((int*)(cpu_info), info_eax, info_ecx);
 #elif defined(_M_IX86)
   __asm {
@@ -117,7 +118,7 @@ void CpuId(uint32 eax, uint32 ecx, uint32* cpu_info) {
 // X86 CPUs have xgetbv to detect OS saves high parts of ymm registers.
 int GetXCR0() {
   uint32 xcr0 = 0u;
-#if (_MSC_FULL_VER >= 160040219)
+#if defined(_MSC_FULL_VER) && (_MSC_FULL_VER >= 160040219)
   xcr0 = (uint32)(_xgetbv(0));  // VS2010 SP1 required.
 #elif defined(__i386__) || defined(__x86_64__)
   asm(".byte 0x0f, 0x01, 0xd0" : "=a" (xcr0) : "c" (0) : "%edx");
@@ -153,6 +154,38 @@ int ArmCpuCaps(const char* cpuinfo_name) {
       if (p && (p[6] == ' ' || p[6] == '\n')) {
         fclose(f);
         return kCpuHasNEON;
+      }
+    }
+  }
+  fclose(f);
+  return 0;
+}
+
+LIBYUV_API SAFEBUFFERS
+int MipsCpuCaps(const char* cpuinfo_name, const char ase[]) {
+  char cpuinfo_line[512];
+  int len = (int)strlen(ase);
+  FILE* f = fopen(cpuinfo_name, "r");
+  if (!f) {
+    // ase enabled if /proc/cpuinfo is unavailable.
+    if (strcmp(ase, " msa") == 0) {
+      return kCpuHasMSA;
+    }
+    if (strcmp(ase, " dspr2") == 0) {
+      return kCpuHasDSPR2;
+    }
+  }
+  while (fgets(cpuinfo_line, sizeof(cpuinfo_line) - 1, f)) {
+    if (memcmp(cpuinfo_line, "ASEs implemented", 16) == 0) {
+      char* p = strstr(cpuinfo_line, ase);
+      if (p && (p[len] == ' ' || p[len] == '\n')) {
+        fclose(f);
+        if (strcmp(ase, " msa") == 0) {
+          return kCpuHasMSA;
+        }
+        if (strcmp(ase, " dspr2") == 0) {
+          return kCpuHasDSPR2;
+        }
       }
     }
   }
@@ -253,9 +286,15 @@ int InitCpuFlags(void) {
 #if defined(__mips_dspr2)
   cpu_info |= kCpuHasDSPR2;
 #endif
+#if defined(__mips_msa)
+  cpu_info = MipsCpuCaps("/proc/cpuinfo", " msa");
+#endif
   cpu_info |= kCpuHasMIPS;
   if (getenv("LIBYUV_DISABLE_DSPR2")) {
     cpu_info &= ~kCpuHasDSPR2;
+  }
+  if (getenv("LIBYUV_DISABLE_MSA")) {
+    cpu_info &= ~kCpuHasMSA;
   }
 #endif
 #if defined(__arm__) || defined(__aarch64__)

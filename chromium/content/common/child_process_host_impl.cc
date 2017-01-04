@@ -12,7 +12,7 @@
 #include "base/hash.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_math.h"
 #include "base/path_service.h"
 #include "base/process/process_metrics.h"
@@ -20,6 +20,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "content/common/child_process_messages.h"
 #include "content/public/common/child_process_host_delegate.h"
@@ -28,11 +29,13 @@
 #include "gpu/ipc/client/gpu_memory_buffer_impl_shared_memory.h"
 #include "ipc/attachment_broker.h"
 #include "ipc/attachment_broker_privileged.h"
+#include "ipc/ipc.mojom.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_mojo.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/message_filter.h"
 #include "mojo/edk/embedder/embedder.h"
+#include "services/shell/public/cpp/interface_provider.h"
 
 #if defined(OS_LINUX)
 #include "base/linux_util.h"
@@ -128,6 +131,10 @@ void ChildProcessHostImpl::AddFilter(IPC::MessageFilter* filter) {
     filter->OnFilterAdded(channel_.get());
 }
 
+shell::InterfaceProvider* ChildProcessHostImpl::GetRemoteInterfaces() {
+  return delegate_->GetRemoteInterfaces();
+}
+
 void ChildProcessHostImpl::ForceShutdown() {
   Send(new ChildProcessMsg_Shutdown());
 }
@@ -146,20 +153,31 @@ std::string ChildProcessHostImpl::CreateChannelMojo(
   return channel_id_;
 }
 
-std::string ChildProcessHostImpl::CreateChannel() {
+void ChildProcessHostImpl::CreateChannelMojo() {
+  // TODO(rockot): Remove |channel_id_| once this is the only code path by which
+  // the Channel is created. For now it serves to at least mutually exclude
+  // different CreateChannel* calls.
   DCHECK(channel_id_.empty());
-  channel_id_ = IPC::Channel::GenerateVerifiedChannelID(std::string());
-  channel_ = IPC::Channel::CreateServer(channel_id_, this);
-  if (!channel_ || !InitChannel())
-    return std::string();
+  channel_id_ = "ChannelMojo";
 
-  return channel_id_;
+  shell::InterfaceProvider* remote_interfaces = GetRemoteInterfaces();
+  DCHECK(remote_interfaces);
+
+  IPC::mojom::ChannelBootstrapPtr bootstrap;
+  remote_interfaces->GetInterface(&bootstrap);
+  channel_ = IPC::ChannelMojo::Create(bootstrap.PassInterface().PassHandle(),
+                                      IPC::Channel::MODE_SERVER, this);
+  DCHECK(channel_);
+
+  bool initialized = InitChannel();
+  DCHECK(initialized);
 }
 
 bool ChildProcessHostImpl::InitChannel() {
 #if USE_ATTACHMENT_BROKER
+  DCHECK(base::MessageLoopForIO::IsCurrent());
   IPC::AttachmentBroker::GetGlobal()->RegisterCommunicationChannel(
-      channel_.get(), base::MessageLoopForIO::current()->task_runner());
+      channel_.get(), base::ThreadTaskRunnerHandle::Get());
 #endif
   if (!channel_->Connect()) {
 #if USE_ATTACHMENT_BROKER

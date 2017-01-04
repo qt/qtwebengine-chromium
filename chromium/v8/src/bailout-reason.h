@@ -14,12 +14,12 @@ namespace internal {
                                                                                \
   V(k32BitValueInRegisterIsNotZeroExtended,                                    \
     "32 bit value in register is not zero-extended")                           \
+  V(kAllocatingNonEmptyPackedArray, "Allocating non-empty packed array")       \
   V(kAllocationIsNotDoubleAligned, "Allocation is not double aligned")         \
   V(kAPICallReturnedInvalidObject, "API call returned invalid object")         \
   V(kArgumentsObjectValueInATestContext,                                       \
     "Arguments object value in a test context")                                \
   V(kArrayIndexConstantValueTooBig, "Array index constant value too big")      \
-  V(kAssignmentToArguments, "Assignment to arguments")                         \
   V(kAssignmentToLetVariableBeforeInitialization,                              \
     "Assignment to let variable before initialization")                        \
   V(kAssignmentToLOOKUPVariable, "Assignment to LOOKUP variable")              \
@@ -63,8 +63,11 @@ namespace internal {
   V(kEval, "eval")                                                             \
   V(kExpectedAllocationSite, "Expected allocation site")                       \
   V(kExpectedBooleanValue, "Expected boolean value")                           \
+  V(kExpectedFixedDoubleArrayMap,                                              \
+    "Expected a fixed double array map in fast shallow clone array literal")   \
   V(kExpectedFunctionObject, "Expected function object in register")           \
   V(kExpectedHeapNumber, "Expected HeapNumber")                                \
+  V(kExpectedJSReceiver, "Expected object to have receiver type")              \
   V(kExpectedNativeContext, "Expected native context")                         \
   V(kExpectedNonIdenticalObjects, "Expected non-identical objects")            \
   V(kExpectedNonNullContext, "Expected non-null context")                      \
@@ -72,7 +75,6 @@ namespace internal {
   V(kExpectedNewSpaceObject, "Expected new space object")                      \
   V(kExpectedUndefinedOrCell, "Expected undefined or cell in register")        \
   V(kExpectingAlignmentForCopyBytes, "Expecting alignment for CopyBytes")      \
-  V(kExportDeclaration, "Export declaration")                                  \
   V(kExternalStringExpectedButNotFound,                                        \
     "External string expected, but not found")                                 \
   V(kForInStatementWithNonLocalEachVariable,                                   \
@@ -89,7 +91,6 @@ namespace internal {
   V(kGraphBuildingFailed, "Optimized graph construction failed")               \
   V(kHeapNumberMapRegisterClobbered, "HeapNumberMap register clobbered")       \
   V(kHydrogenFilter, "Optimization disabled by filter")                        \
-  V(kImportDeclaration, "Import declaration")                                  \
   V(kIndexIsNegative, "Index is negative")                                     \
   V(kIndexIsTooLarge, "Index is too large")                                    \
   V(kInliningBailedOut, "Inlining bailed out")                                 \
@@ -242,10 +243,6 @@ namespace internal {
   V(kUnexpectedTypeForRegExpDataFixedArrayExpected,                            \
     "Unexpected type for RegExp data, FixedArray expected")                    \
   V(kUnexpectedValue, "Unexpected value")                                      \
-  V(kUnsupportedConstCompoundAssignment,                                       \
-    "Unsupported const compound assignment")                                   \
-  V(kUnsupportedCountOperationWithConst,                                       \
-    "Unsupported count operation with const")                                  \
   V(kUnsupportedDoubleImmediate, "Unsupported double immediate")               \
   V(kUnsupportedLetCompoundAssignment, "Unsupported let compound assignment")  \
   V(kUnsupportedLookupSlotInDeclaration,                                       \
@@ -257,6 +254,7 @@ namespace internal {
   V(kUnexpectedReturnFromThrow, "Unexpectedly returned from a throw")          \
   V(kUnsupportedSwitchStatement, "Unsupported switch statement")               \
   V(kUnsupportedTaggedImmediate, "Unsupported tagged immediate")               \
+  V(kUnstableConstantTypeHeapObject, "Unstable constant-type heap object")     \
   V(kVariableResolvedToWithContext, "Variable resolved to with context")       \
   V(kWeShouldNotHaveAnEmptyLexicalContext,                                     \
     "We should not have an empty lexical context")                             \

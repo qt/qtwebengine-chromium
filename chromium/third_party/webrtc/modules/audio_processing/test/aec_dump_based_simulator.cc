@@ -236,6 +236,7 @@ void AecDumpBasedSimulator::HandleMessage(
       std::cout << "Setting used in config:" << std::endl;
     }
     Config config;
+    AudioProcessing::Config apm_config;
 
     if (msg.has_aec_enabled() || settings_.use_aec) {
       bool enable = settings_.use_aec ? *settings_.use_aec : msg.aec_enabled();
@@ -441,6 +442,11 @@ void AecDumpBasedSimulator::HandleMessage(
       config.Set<EchoCanceller3>(new EchoCanceller3(*settings_.use_aec3));
     }
 
+    if (settings_.use_lc) {
+      apm_config.level_controller.enabled = *settings_.use_lc;
+    }
+
+    ap_->ApplyConfig(apm_config);
     ap_->SetExtraOptions(config);
   }
 }

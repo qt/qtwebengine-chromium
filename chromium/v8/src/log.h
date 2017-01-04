@@ -17,9 +17,7 @@
 
 namespace v8 {
 
-namespace base {
-class Semaphore;
-}
+struct TickSample;
 
 namespace sampler {
 class Sampler;
@@ -65,12 +63,15 @@ namespace internal {
 class CodeEventListener;
 class CpuProfiler;
 class Isolate;
+class JitLogger;
 class Log;
-class PositionsRecorder;
+class LowLevelLogger;
+class PerfBasicLogger;
+class PerfJitLogger;
 class Profiler;
-class Ticker;
-struct TickSample;
+class ProfilerListener;
 class RuntimeCallTimer;
+class Ticker;
 
 #undef LOG
 #define LOG(isolate, Call)                              \
@@ -84,12 +85,6 @@ class RuntimeCallTimer;
     v8::internal::Logger* logger = (isolate)->logger(); \
     if (logger->is_logging_code_events()) logger->Call; \
   } while (false)
-
-class JitLogger;
-class PerfBasicLogger;
-class LowLevelLogger;
-class PerfJitLogger;
-class ProfilerListener;
 
 class Logger : public CodeEventListener {
  public:
@@ -184,20 +179,9 @@ class Logger : public CodeEventListener {
   void RegExpCodeCreateEvent(AbstractCode* code, String* source);
   // Emits a code move event.
   void CodeMoveEvent(AbstractCode* from, Address to);
-  // Emits a code line info add event with Postion type.
-  void CodeLinePosInfoAddPositionEvent(void* jit_handler_data,
-                                       int pc_offset,
-                                       int position);
-  // Emits a code line info add event with StatementPostion type.
-  void CodeLinePosInfoAddStatementPositionEvent(void* jit_handler_data,
-                                                int pc_offset,
-                                                int position);
-  // Emits a code line info start to record event
-  void CodeStartLinePosInfoRecordEvent(PositionsRecorder* pos_recorder);
-  // Emits a code line info finish record event.
-  // It's the callee's responsibility to dispose the parameter jit_handler_data.
-  void CodeEndLinePosInfoRecordEvent(AbstractCode* code,
-                                     void* jit_handler_data);
+  // Emits a code line info record event.
+  void CodeLinePosInfoRecordEvent(AbstractCode* code,
+                                  ByteArray* source_position_table);
 
   void SharedFunctionInfoMoveEvent(Address from, Address to);
 
@@ -384,31 +368,9 @@ class TimerEventScope {
 
   ~TimerEventScope() { LogTimerEvent(Logger::END); }
 
+ private:
   void LogTimerEvent(Logger::StartEnd se);
-
- private:
   Isolate* isolate_;
-};
-
-class PositionsRecorder BASE_EMBEDDED {
- public:
-  PositionsRecorder() { jit_handler_data_ = NULL; }
-
-  void AttachJITHandlerData(void* user_data) { jit_handler_data_ = user_data; }
-
-  void* DetachJITHandlerData() {
-    void* old_data = jit_handler_data_;
-    jit_handler_data_ = NULL;
-    return old_data;
-  }
-
- protected:
-  // Currently jit_handler_data_ is used to store JITHandler-specific data
-  // over the lifetime of a PositionsRecorder
-  void* jit_handler_data_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(PositionsRecorder);
 };
 
 class CodeEventLogger : public CodeEventListener {

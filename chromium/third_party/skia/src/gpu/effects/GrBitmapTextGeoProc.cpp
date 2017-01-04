@@ -60,8 +60,7 @@ public:
                              gpArgs->fPositionVar,
                              cte.inPosition()->fName,
                              cte.localMatrix(),
-                             args.fTransformsIn,
-                             args.fTransformsOut);
+                             args.fFPCoordTransformHandler);
 
         if (cte.maskFormat() == kARGB_GrMaskFormat) {
             fragBuilder->codeAppendf("%s = ", args.fOutputColor);
@@ -84,7 +83,8 @@ public:
         }
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& gp,
+                 FPCoordTransformIter&& transformIter) override {
         const GrBitmapTextGeoProc& btgp = gp.cast<GrBitmapTextGeoProc>();
         if (btgp.color() != fColor && !btgp.hasVertexColor()) {
             float c[4];
@@ -92,13 +92,7 @@ public:
             pdman.set4fv(fColorUniform, 1, c);
             fColor = btgp.color();
         }
-    }
-
-    void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLSLProgramDataManager& pdman,
-                          int index,
-                          const SkTArray<const GrCoordTransform*, true>& transforms) override {
-        this->setTransformDataHelper<GrBitmapTextGeoProc>(primProc, pdman, index, transforms);
+        this->setTransformDataHelper(btgp.localMatrix(), pdman, &transformIter);
     }
 
     static inline void GenKey(const GrGeometryProcessor& proc,
@@ -138,16 +132,15 @@ GrBitmapTextGeoProc::GrBitmapTextGeoProc(GrColor color, GrTexture* texture,
     , fInColor(nullptr)
     , fMaskFormat(format) {
     this->initClassID<GrBitmapTextGeoProc>();
-    fInPosition = &this->addVertexAttrib(Attribute("inPosition", kVec2f_GrVertexAttribType));
+    fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType);
 
     bool hasVertexColor = kA8_GrMaskFormat == fMaskFormat ||
                           kA565_GrMaskFormat == fMaskFormat;
     if (hasVertexColor) {
-        fInColor = &this->addVertexAttrib(Attribute("inColor", kVec4ub_GrVertexAttribType));
+        fInColor = &this->addVertexAttrib("inColor", kVec4ub_GrVertexAttribType);
     }
-    fInTextureCoords = &this->addVertexAttrib(Attribute("inTextureCoords",
-                                                        kVec2us_GrVertexAttribType,
-                                                        kHigh_GrSLPrecision));
+    fInTextureCoords = &this->addVertexAttrib("inTextureCoords",  kVec2us_GrVertexAttribType,
+                                              kHigh_GrSLPrecision);
     this->addTextureAccess(&fTextureAccess);
 }
 

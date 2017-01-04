@@ -35,6 +35,7 @@
 #include "ui/views/drag_utils.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/drop_helper.h"
+#include "ui/views/widget/focus_manager_event_handler.h"
 #include "ui/views/widget/native_widget_delegate.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/tooltip_manager_aura.h"
@@ -95,6 +96,23 @@ void NativeWidgetAura::RegisterNativeWidgetForWindow(
       internal::NativeWidgetPrivate* native_widget,
       aura::Window* window) {
   window->set_user_data(native_widget);
+}
+
+// static
+void NativeWidgetAura::AssignIconToAuraWindow(aura::Window* window,
+                                              const gfx::ImageSkia& window_icon,
+                                              const gfx::ImageSkia& app_icon) {
+  if (!window)
+    return;
+
+  if (window_icon.isNull() && app_icon.isNull()) {
+    window->ClearProperty(aura::client::kWindowIconKey);
+    return;
+  }
+
+  window->SetProperty(
+      aura::client::kWindowIconKey,
+      new gfx::ImageSkia(!window_icon.isNull() ? window_icon : app_icon));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -182,6 +200,11 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   if (params.type != Widget::InitParams::TYPE_TOOLTIP &&
       params.type != Widget::InitParams::TYPE_POPUP) {
     aura::client::SetDragDropDelegate(window_, this);
+  }
+
+  if (params.type == Widget::InitParams::TYPE_WINDOW) {
+    focus_manager_event_handler_ =
+        base::MakeUnique<FocusManagerEventHandler>(GetWidget(), window_);
   }
 
   aura::client::SetActivationDelegate(window_, this);
@@ -355,7 +378,7 @@ bool NativeWidgetAura::SetWindowTitle(const base::string16& title) {
 
 void NativeWidgetAura::SetWindowIcons(const gfx::ImageSkia& window_icon,
                                       const gfx::ImageSkia& app_icon) {
-  // Aura doesn't have window icons.
+  AssignIconToAuraWindow(window_, window_icon, app_icon);
 }
 
 void NativeWidgetAura::InitModalType(ui::ModalType modal_type) {
@@ -442,17 +465,9 @@ void NativeWidgetAura::StackAtTop() {
     window_->parent()->StackChildAtTop(window_);
 }
 
-void NativeWidgetAura::StackBelow(gfx::NativeView native_view) {
-  if (window_ && window_->parent() &&
-      window_->parent() == native_view->parent())
-    window_->parent()->StackChildBelow(window_, native_view);
-}
-
-void NativeWidgetAura::SetShape(SkRegion* region) {
+void NativeWidgetAura::SetShape(std::unique_ptr<SkRegion> region) {
   if (window_)
-    window_->layer()->SetAlphaShape(base::WrapUnique(region));
-  else
-    delete region;
+    window_->layer()->SetAlphaShape(std::move(region));
 }
 
 void NativeWidgetAura::Close() {
@@ -560,6 +575,10 @@ bool NativeWidgetAura::IsAlwaysOnTop() const {
 
 void NativeWidgetAura::SetVisibleOnAllWorkspaces(bool always_visible) {
   // Not implemented on chromeos or for child widgets.
+}
+
+bool NativeWidgetAura::IsVisibleOnAllWorkspaces() const {
+  return false;
 }
 
 void NativeWidgetAura::Maximize() {
@@ -849,6 +868,8 @@ void NativeWidgetAura::OnWindowDestroying(aura::Window* window) {
 
   // If the aura::Window is destroyed, we can no longer show tooltips.
   tooltip_manager_.reset();
+
+  focus_manager_event_handler_.reset();
 }
 
 void NativeWidgetAura::OnWindowDestroyed(aura::Window* window) {

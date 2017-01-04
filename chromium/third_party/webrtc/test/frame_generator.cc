@@ -18,6 +18,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/test/frame_utils.h"
 
 namespace webrtc {
 namespace test {
@@ -25,36 +26,50 @@ namespace {
 
 class ChromaGenerator : public FrameGenerator {
  public:
-  ChromaGenerator(size_t width, size_t height)
-      : angle_(0.0), width_(width), height_(height) {
-    assert(width > 0);
-    assert(height > 0);
+  ChromaGenerator(size_t width, size_t height) : angle_(0.0) {
+    ChangeResolution(width, height);
+  }
+
+  void ChangeResolution(size_t width, size_t height) override {
+    rtc::CritScope lock(&crit_);
+    width_ = width;
+    height_ = height;
+    RTC_CHECK(width_ > 0);
+    RTC_CHECK(height_ > 0);
+    half_width_ = (width_ + 1) / 2;
+    y_size_ = width_ * height_;
+    uv_size_ = half_width_ * ((height_ + 1) / 2);
   }
 
   VideoFrame* NextFrame() override {
-    frame_.CreateEmptyFrame(static_cast<int>(width_),
-                            static_cast<int>(height_),
-                            static_cast<int>(width_),
-                            static_cast<int>((width_ + 1) / 2),
-                            static_cast<int>((width_ + 1) / 2));
+    rtc::CritScope lock(&crit_);
     angle_ += 30.0;
     uint8_t u = fabs(sin(angle_)) * 0xFF;
     uint8_t v = fabs(cos(angle_)) * 0xFF;
 
-    memset(frame_.video_frame_buffer()->MutableDataY(), 0x80,
-           frame_.allocated_size(kYPlane));
-    memset(frame_.video_frame_buffer()->MutableDataU(), u,
-           frame_.allocated_size(kUPlane));
-    memset(frame_.video_frame_buffer()->MutableDataV(), v,
-           frame_.allocated_size(kVPlane));
-    return &frame_;
+    // Ensure stride == width.
+    rtc::scoped_refptr<I420Buffer> buffer(I420Buffer::Create(
+        static_cast<int>(width_), static_cast<int>(height_),
+        static_cast<int>(width_), static_cast<int>(half_width_),
+        static_cast<int>(half_width_)));
+
+    memset(buffer->MutableDataY(), 0x80, y_size_);
+    memset(buffer->MutableDataU(), u, uv_size_);
+    memset(buffer->MutableDataV(), v, uv_size_);
+
+    frame_.reset(new VideoFrame(buffer, 0, 0, webrtc::kVideoRotation_0));
+    return frame_.get();
   }
 
  private:
-  double angle_;
-  size_t width_;
-  size_t height_;
-  VideoFrame frame_;
+  rtc::CriticalSection crit_;
+  double angle_ GUARDED_BY(&crit_);
+  size_t width_ GUARDED_BY(&crit_);
+  size_t height_ GUARDED_BY(&crit_);
+  size_t half_width_ GUARDED_BY(&crit_);
+  size_t y_size_ GUARDED_BY(&crit_);
+  size_t uv_size_ GUARDED_BY(&crit_);
+  std::unique_ptr<VideoFrame> frame_ GUARDED_BY(&crit_);
 };
 
 class YuvFileGenerator : public FrameGenerator {
@@ -89,35 +104,26 @@ class YuvFileGenerator : public FrameGenerator {
     if (++current_display_count_ >= frame_display_count_)
       current_display_count_ = 0;
 
-    // If this is the last repeatition of this frame, it's OK to use the
-    // original instance, otherwise use a copy.
-    if (current_display_count_ == frame_display_count_)
-      return &last_read_frame_;
-
-    temp_frame_copy_.CopyFrame(last_read_frame_);
-    return &temp_frame_copy_;
+    temp_frame_.reset(
+        new VideoFrame(last_read_buffer_, 0, 0, webrtc::kVideoRotation_0));
+    return temp_frame_.get();
   }
 
   void ReadNextFrame() {
-    size_t bytes_read =
-        fread(frame_buffer_.get(), 1, frame_size_, files_[file_index_]);
-    if (bytes_read < frame_size_) {
+    last_read_buffer_ =
+        test::ReadI420Buffer(static_cast<int>(width_),
+                             static_cast<int>(height_),
+                             files_[file_index_]);
+    if (!last_read_buffer_) {
       // No more frames to read in this file, rewind and move to next file.
       rewind(files_[file_index_]);
       file_index_ = (file_index_ + 1) % files_.size();
-      bytes_read = fread(frame_buffer_.get(), 1, frame_size_,
-          files_[file_index_]);
-      assert(bytes_read >= frame_size_);
+      last_read_buffer_ =
+          test::ReadI420Buffer(static_cast<int>(width_),
+                               static_cast<int>(height_),
+                               files_[file_index_]);
+      RTC_CHECK(last_read_buffer_);
     }
-
-    last_read_frame_.CreateEmptyFrame(
-        static_cast<int>(width_), static_cast<int>(height_),
-        static_cast<int>(width_), static_cast<int>((width_ + 1) / 2),
-        static_cast<int>((width_ + 1) / 2));
-
-    ConvertToI420(kI420, frame_buffer_.get(), 0, 0, static_cast<int>(width_),
-                  static_cast<int>(height_), 0, kVideoRotation_0,
-                  &last_read_frame_);
   }
 
  private:
@@ -129,8 +135,8 @@ class YuvFileGenerator : public FrameGenerator {
   const std::unique_ptr<uint8_t[]> frame_buffer_;
   const int frame_display_count_;
   int current_display_count_;
-  VideoFrame last_read_frame_;
-  VideoFrame temp_frame_copy_;
+  rtc::scoped_refptr<I420Buffer> last_read_buffer_;
+  std::unique_ptr<VideoFrame> temp_frame_;
 };
 
 class ScrollingImageFrameGenerator : public FrameGenerator {
@@ -238,6 +244,27 @@ class ScrollingImageFrameGenerator : public FrameGenerator {
 };
 
 }  // namespace
+
+FrameForwarder::FrameForwarder() : sink_(nullptr) {}
+
+void FrameForwarder::IncomingCapturedFrame(const VideoFrame& video_frame) {
+  rtc::CritScope lock(&crit_);
+  if (sink_)
+    sink_->OnFrame(video_frame);
+}
+
+void FrameForwarder::AddOrUpdateSink(rtc::VideoSinkInterface<VideoFrame>* sink,
+                                     const rtc::VideoSinkWants& wants) {
+  rtc::CritScope lock(&crit_);
+  RTC_DCHECK(!sink_ || sink_ == sink);
+  sink_ = sink;
+}
+
+void FrameForwarder::RemoveSink(rtc::VideoSinkInterface<VideoFrame>* sink) {
+  rtc::CritScope lock(&crit_);
+  RTC_DCHECK_EQ(sink, sink_);
+  sink_ = nullptr;
+}
 
 FrameGenerator* FrameGenerator::CreateChromaGenerator(size_t width,
                                                       size_t height) {

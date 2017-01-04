@@ -513,6 +513,7 @@ class AutofillMetrics {
 
   static void LogCardUploadDecisionMetric(CardUploadDecisionMetric metric);
   static void LogCreditCardInfoBarMetric(InfoBarMetric metric);
+  static void LogCreditCardFillingInfoBarMetric(InfoBarMetric metric);
   static void LogSaveCardPromptMetric(SaveCardPromptMetric metric,
                                       bool is_uploading,
                                       bool is_reshow);
@@ -600,6 +601,10 @@ class AutofillMetrics {
   // This should be called each time a new profile is launched.
   static void LogStoredLocalCreditCardCount(size_t num_local_cards);
 
+  // This should be called each time a new profile is launched.
+  static void LogStoredServerCreditCardCounts(size_t num_masked_cards,
+                                              size_t num_unmasked_cards);
+
   // Log the number of profiles available when an autofillable form is
   // submitted.
   static void LogNumberOfProfilesAtAutofillableFormSubmission(
@@ -645,6 +650,10 @@ class AutofillMetrics {
 
   // Log how many profiles were removed as part of the deduplication process.
   static void LogNumberOfProfilesRemovedDuringDedupe(size_t num_removed);
+
+  // Log whether the Autofill query on a credit card form is made in a secure
+  // context.
+  static void LogIsQueriedCreditCardFormSecure(bool is_secure);
 
   // Utility to autofill form events in the relevant histograms depending on
   // the presence of server and/or local data.

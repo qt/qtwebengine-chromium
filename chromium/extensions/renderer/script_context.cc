@@ -26,6 +26,7 @@
 #include "extensions/renderer/v8_helpers.h"
 #include "gin/per_context_data.h"
 #include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -199,6 +200,23 @@ v8::Local<v8::Value> ScriptContext::CallFunction(
   return handle_scope.Escape(
       v8::Local<v8::Value>(web_frame_->callFunctionEvenIfScriptDisabled(
           function, global, argc, argv)));
+}
+
+void ScriptContext::SafeCallFunction(const v8::Local<v8::Function>& function,
+                                     int argc,
+                                     v8::Local<v8::Value> argv[]) {
+  v8::HandleScope handle_scope(isolate());
+  v8::Context::Scope scope(v8_context());
+  v8::MicrotasksScope microtasks(isolate(),
+                                 v8::MicrotasksScope::kDoNotRunMicrotasks);
+  v8::Local<v8::Object> global = v8_context()->Global();
+  if (web_frame_) {
+    web_frame_->requestExecuteV8Function(v8_context(), function, global, argc,
+                                         argv, nullptr);
+  } else {
+    // TODO(devlin): This probably isn't safe.
+    function->Call(global, argc, argv);
+  }
 }
 
 v8::Local<v8::Value> ScriptContext::CallFunction(

@@ -4,7 +4,6 @@
 
 #include "ui/native_theme/native_theme_dark_aura.h"
 
-#include "ui/base/material_design/material_design_controller.h"
 #include "ui/gfx/color_palette.h"
 
 namespace ui {
@@ -15,11 +14,9 @@ NativeThemeDarkAura* NativeThemeDarkAura::instance() {
 }
 
 SkColor NativeThemeDarkAura::GetSystemColor(ColorId color_id) const {
-  if (!ui::MaterialDesignController::IsModeMaterial())
-    return NativeThemeAura::GetSystemColor(color_id);
+  static const SkColor kPrimaryTextColor = SK_ColorWHITE;
 
   static const SkColor kButtonEnabledColor = SK_ColorWHITE;
-  static const SkColor kLinkEnabledColor = gfx::kGoogleBlue300;
 
   static const SkColor kTextfieldDefaultColor = SK_ColorWHITE;
   static const SkColor kTextfieldDefaultBackground =
@@ -34,16 +31,26 @@ SkColor NativeThemeDarkAura::GetSystemColor(ColorId color_id) const {
       SkColorSetA(kResultsTableText, 0x80);
 
   switch (color_id) {
+    // Window
+    case kColorId_WindowBackground:
+    case kColorId_DialogBackground:
+    case kColorId_BubbleBackground:
+      return SK_ColorBLACK;
+
     // Button
     case kColorId_ButtonEnabledColor:
       return kButtonEnabledColor;
-    case kColorId_CallToActionColor:
-      return kLinkEnabledColor;
+    case kColorId_ProminentButtonColor:
+      return gfx::kGoogleBlue300;
+
+    // Label
+    case kColorId_LabelEnabledColor:
+      return kPrimaryTextColor;
 
     // Link
     case kColorId_LinkEnabled:
     case kColorId_LinkPressed:
-      return kLinkEnabledColor;
+      return gfx::kGoogleBlue300;
 
     // Textfield
     case kColorId_TextfieldDefaultColor:
@@ -70,8 +77,18 @@ SkColor NativeThemeDarkAura::GetSystemColor(ColorId color_id) const {
     case kColorId_FocusedBorderColor:
       return gfx::kGoogleBlue300;
 
+    // Alert icons
+    case kColorId_AlertSeverityLow:
+      return gfx::kGoogleGreen300;
+    case kColorId_AlertSeverityMedium:
+      return gfx::kGoogleYellow300;
+    case kColorId_AlertSeverityHigh:
+      return gfx::kGoogleRed300;
+
     // Intentional pass-throughs to NativeThemeAura.
-    case kColorId_TextOnCallToActionColor:
+    case kColorId_LabelDisabledColor:
+    case kColorId_TextOnProminentButtonColor:
+    case kColorId_ButtonPressedShade:
     case kColorId_ResultsTableHoveredBackground:
     case kColorId_ResultsTableSelectedBackground:
     case kColorId_ResultsTableNormalUrl:
@@ -80,15 +97,9 @@ SkColor NativeThemeDarkAura::GetSystemColor(ColorId color_id) const {
       return NativeThemeAura::GetSystemColor(color_id);
 
     // Any other color is not defined and shouldn't be used in a dark theme.
-    case kColorId_WindowBackground:
-    case kColorId_DialogBackground:
-    case kColorId_BubbleBackground:
     case kColorId_UnfocusedBorderColor:
-    case kColorId_ButtonBackgroundColor:
     case kColorId_ButtonDisabledColor:
-    case kColorId_ButtonHighlightColor:
     case kColorId_ButtonHoverColor:
-    case kColorId_ButtonHoverBackgroundColor:
     case kColorId_BlueButtonEnabledColor:
     case kColorId_BlueButtonDisabledColor:
     case kColorId_BlueButtonPressedColor:
@@ -96,19 +107,14 @@ SkColor NativeThemeDarkAura::GetSystemColor(ColorId color_id) const {
     case kColorId_BlueButtonShadowColor:
     case kColorId_EnabledMenuItemForegroundColor:
     case kColorId_DisabledMenuItemForegroundColor:
-    case kColorId_DisabledEmphasizedMenuItemForegroundColor:
     case kColorId_SelectedMenuItemForegroundColor:
     case kColorId_FocusedMenuItemBackgroundColor:
-    case kColorId_HoverMenuItemBackgroundColor:
     case kColorId_MenuSeparatorColor:
     case kColorId_MenuBackgroundColor:
     case kColorId_MenuBorderColor:
     case kColorId_EnabledMenuButtonBorderColor:
     case kColorId_FocusedMenuButtonBorderColor:
     case kColorId_HoverMenuButtonBorderColor:
-    case kColorId_LabelEnabledColor:
-    case kColorId_LabelDisabledColor:
-    case kColorId_LabelBackgroundColor:
     case kColorId_LinkDisabled:
     case kColorId_TextfieldReadOnlyColor:
     case kColorId_TextfieldReadOnlyBackground:

@@ -6,7 +6,6 @@
 
 #include "base/android/context_utils.h"
 #include "base/android/jni_android.h"
-#include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/strings/stringprintf.h"
@@ -15,7 +14,8 @@
 #include "jni/ChromeBluetoothDevice_jni.h"
 
 using base::android::AttachCurrentThread;
-using base::android::AppendJavaStringArrayToStringVector;
+using base::android::JavaParamRef;
+using base::android::JavaRef;
 
 namespace device {
 namespace {
@@ -35,7 +35,8 @@ void RecordConnectionTerminatedResult(int32_t status) {
 
 BluetoothDeviceAndroid* BluetoothDeviceAndroid::Create(
     BluetoothAdapterAndroid* adapter,
-    jobject bluetooth_device_wrapper) {  // Java Type: bluetoothDeviceWrapper
+    const JavaRef<jobject>&
+        bluetooth_device_wrapper) {  // Java Type: bluetoothDeviceWrapper
   BluetoothDeviceAndroid* device = new BluetoothDeviceAndroid(adapter);
 
   device->j_device_.Reset(Java_ChromeBluetoothDevice_create(
@@ -47,12 +48,7 @@ BluetoothDeviceAndroid* BluetoothDeviceAndroid::Create(
 
 BluetoothDeviceAndroid::~BluetoothDeviceAndroid() {
   Java_ChromeBluetoothDevice_onBluetoothDeviceAndroidDestruction(
-      AttachCurrentThread(), j_device_.obj());
-}
-
-bool BluetoothDeviceAndroid::UpdateAdvertisedUUIDs(jobject advertised_uuids) {
-  return Java_ChromeBluetoothDevice_updateAdvertisedUUIDs(
-      AttachCurrentThread(), j_device_.obj(), advertised_uuids);
+      AttachCurrentThread(), j_device_);
 }
 
 // static
@@ -67,12 +63,12 @@ BluetoothDeviceAndroid::GetJavaObject() {
 
 uint32_t BluetoothDeviceAndroid::GetBluetoothClass() const {
   return Java_ChromeBluetoothDevice_getBluetoothClass(AttachCurrentThread(),
-                                                      j_device_.obj());
+                                                      j_device_);
 }
 
 std::string BluetoothDeviceAndroid::GetAddress() const {
-  return ConvertJavaStringToUTF8(Java_ChromeBluetoothDevice_getAddress(
-      AttachCurrentThread(), j_device_.obj()));
+  return ConvertJavaStringToUTF8(
+      Java_ChromeBluetoothDevice_getAddress(AttachCurrentThread(), j_device_));
 }
 
 BluetoothDevice::VendorIDSource BluetoothDeviceAndroid::GetVendorIDSource()
@@ -103,9 +99,16 @@ uint16_t BluetoothDeviceAndroid::GetAppearance() const {
   return 0;
 }
 
+base::Optional<std::string> BluetoothDeviceAndroid::GetName() const {
+  auto name =
+      Java_ChromeBluetoothDevice_getName(AttachCurrentThread(), j_device_);
+  if (name.is_null())
+    return base::nullopt;
+  return ConvertJavaStringToUTF8(name);
+}
+
 bool BluetoothDeviceAndroid::IsPaired() const {
-  return Java_ChromeBluetoothDevice_isPaired(AttachCurrentThread(),
-                                             j_device_.obj());
+  return Java_ChromeBluetoothDevice_isPaired(AttachCurrentThread(), j_device_);
 }
 
 bool BluetoothDeviceAndroid::IsConnected() const {
@@ -124,30 +127,6 @@ bool BluetoothDeviceAndroid::IsConnectable() const {
 bool BluetoothDeviceAndroid::IsConnecting() const {
   NOTIMPLEMENTED();
   return false;
-}
-
-BluetoothDevice::UUIDList BluetoothDeviceAndroid::GetUUIDs() const {
-  JNIEnv* env = AttachCurrentThread();
-  std::vector<std::string> uuid_strings;
-  AppendJavaStringArrayToStringVector(
-      env, Java_ChromeBluetoothDevice_getUuids(env, j_device_.obj()).obj(),
-      &uuid_strings);
-  BluetoothDevice::UUIDList uuids;
-  uuids.reserve(uuid_strings.size());
-  for (auto uuid_string : uuid_strings) {
-    uuids.push_back(BluetoothUUID(uuid_string));
-  }
-  return uuids;
-}
-
-int16_t BluetoothDeviceAndroid::GetInquiryRSSI() const {
-  NOTIMPLEMENTED();
-  return kUnknownPower;
-}
-
-int16_t BluetoothDeviceAndroid::GetInquiryTxPower() const {
-  NOTIMPLEMENTED();
-  return kUnknownPower;
 }
 
 bool BluetoothDeviceAndroid::ExpectingPinCode() const {
@@ -243,6 +222,7 @@ void BluetoothDeviceAndroid::OnConnectionStateChange(
     // Otherwise an existing connection was terminated.
     RecordConnectionTerminatedResult(status);
     gatt_services_.clear();
+    device_uuids_.ClearServiceUUIDs();
     SetGattServicesDiscoveryComplete(false);
     DidDisconnectGatt();
   }
@@ -251,8 +231,10 @@ void BluetoothDeviceAndroid::OnConnectionStateChange(
 void BluetoothDeviceAndroid::OnGattServicesDiscovered(
     JNIEnv* env,
     const JavaParamRef<jobject>& jcaller) {
+  device_uuids_.ReplaceServiceUUIDs(gatt_services_);
   SetGattServicesDiscoveryComplete(true);
   adapter_->NotifyGattServicesDiscovered(this);
+  adapter_->NotifyDeviceChanged(this);
 }
 
 void BluetoothDeviceAndroid::CreateGattRemoteService(
@@ -272,7 +254,7 @@ void BluetoothDeviceAndroid::CreateGattRemoteService(
           instance_id_string,
           BluetoothRemoteGattServiceAndroid::Create(
               GetAndroidAdapter(), this, bluetooth_gatt_service_wrapper,
-              instance_id_string, j_device_.obj()));
+              instance_id_string, j_device_));
 
   adapter_->NotifyGattServiceAdded(service_iterator->second);
 }
@@ -280,25 +262,13 @@ void BluetoothDeviceAndroid::CreateGattRemoteService(
 BluetoothDeviceAndroid::BluetoothDeviceAndroid(BluetoothAdapterAndroid* adapter)
     : BluetoothDevice(adapter) {}
 
-std::string BluetoothDeviceAndroid::GetDeviceName() const {
-  auto device_name = Java_ChromeBluetoothDevice_getDeviceName(
-      AttachCurrentThread(), j_device_.obj());
-
-  if (device_name.is_null()) {
-    return "";
-  }
-  return ConvertJavaStringToUTF8(device_name);
-}
-
 void BluetoothDeviceAndroid::CreateGattConnectionImpl() {
   Java_ChromeBluetoothDevice_createGattConnectionImpl(
-      AttachCurrentThread(), j_device_.obj(),
-      base::android::GetApplicationContext());
+      AttachCurrentThread(), j_device_, base::android::GetApplicationContext());
 }
 
 void BluetoothDeviceAndroid::DisconnectGatt() {
-  Java_ChromeBluetoothDevice_disconnectGatt(AttachCurrentThread(),
-                                            j_device_.obj());
+  Java_ChromeBluetoothDevice_disconnectGatt(AttachCurrentThread(), j_device_);
 }
 
 }  // namespace device

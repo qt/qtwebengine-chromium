@@ -6,7 +6,6 @@
 #define BluetoothError_h
 
 #include "platform/heap/Handle.h"
-#include "public/platform/modules/bluetooth/WebBluetoothError.h"
 #include "wtf/Allocator.h"
 
 namespace blink {
@@ -17,13 +16,18 @@ class ScriptPromiseResolver;
 // BluetoothError is used with CallbackPromiseAdapter to receive
 // WebBluetoothError responses. See CallbackPromiseAdapter class comments.
 class BluetoothError {
-    STATIC_ONLY(BluetoothError);
-public:
-    // Interface required by CallbackPromiseAdapter:
-    using WebType = const WebBluetoothError&;
-    static DOMException* take(ScriptPromiseResolver*, const WebBluetoothError&);
+  STATIC_ONLY(BluetoothError);
+
+ public:
+  // Interface required by CallbackPromiseAdapter:
+  using WebType =
+      int32_t /* Corresponds to WebBluetoothError in web_bluetooth.mojom */;
+  static DOMException* take(
+      ScriptPromiseResolver*,
+      int32_t
+          error /* Corresponds to WebBluetoothError in web_bluetooth.mojom */);
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // BluetoothError_h
+#endif  // BluetoothError_h

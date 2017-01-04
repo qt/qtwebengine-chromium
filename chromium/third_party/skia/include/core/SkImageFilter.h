@@ -11,6 +11,7 @@
 #include "../private/SkTArray.h"
 #include "../private/SkTemplates.h"
 #include "../private/SkMutex.h"
+#include "SkColorSpace.h"
 #include "SkFilterQuality.h"
 #include "SkFlattenable.h"
 #include "SkMatrix.h"
@@ -33,22 +34,42 @@ struct SkImageFilterCacheKey;
  */
 class SK_API SkImageFilter : public SkFlattenable {
 public:
+    // Extra information about the output of a filter DAG. For now, this is just the color space
+    // (of the original requesting device). This is used when constructing intermediate rendering
+    // surfaces, so that we ensure we land in a surface that's similar/compatible to the final
+    // consumer of the DAG's output.
+    class OutputProperties {
+    public:
+        explicit OutputProperties(SkColorSpace* colorSpace) : fColorSpace(colorSpace) {}
+
+        SkColorSpace* colorSpace() const { return fColorSpace; }
+
+    private:
+        // This will be a pointer to the device's color space, and our lifetime is bounded by
+        // the device, so we can store a bare pointer.
+        SkColorSpace* fColorSpace;
+    };
+
     class Context {
     public:
-        Context(const SkMatrix& ctm, const SkIRect& clipBounds, SkImageFilterCache* cache)
+        Context(const SkMatrix& ctm, const SkIRect& clipBounds, SkImageFilterCache* cache,
+                const OutputProperties& outputProperties)
             : fCTM(ctm)
             , fClipBounds(clipBounds)
             , fCache(cache)
+            , fOutputProperties(outputProperties)
         {}
 
         const SkMatrix& ctm() const { return fCTM; }
         const SkIRect& clipBounds() const { return fClipBounds; }
         SkImageFilterCache* cache() const { return fCache; }
+        const OutputProperties& outputProperties() const { return fOutputProperties; }
 
     private:
         SkMatrix               fCTM;
         SkIRect                fClipBounds;
         SkImageFilterCache*    fCache;
+        OutputProperties       fOutputProperties;
     };
 
     class CropRect {
@@ -129,9 +150,10 @@ public:
                          MapDirection = kReverse_MapDirection) const;
 
 #if SK_SUPPORT_GPU
-    static sk_sp<SkSpecialImage> DrawWithFP(GrContext* context, 
+    static sk_sp<SkSpecialImage> DrawWithFP(GrContext* context,
                                             sk_sp<GrFragmentProcessor> fp,
-                                            const SkIRect& bounds);
+                                            const SkIRect& bounds,
+                                            const OutputProperties& outputProperties);
 #endif
 
     /**
@@ -149,6 +171,10 @@ public:
     bool asColorFilter(SkColorFilter** filterPtr) const {
         return this->isColorFilterNode(filterPtr);
     }
+
+    static sk_sp<SkImageFilter> MakeBlur(SkScalar sigmaX, SkScalar sigmaY,
+                                         sk_sp<SkImageFilter> input,
+                                         const CropRect* cropRect = nullptr);
 
     /**
      *  Returns true (and optionally returns a ref'd filter) if this imagefilter can be completely
@@ -227,6 +253,7 @@ public:
 
     SK_TO_STRING_PUREVIRT()
     SK_DEFINE_FLATTENABLE_TYPE(SkImageFilter)
+    SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()
 
 protected:
     class Common {

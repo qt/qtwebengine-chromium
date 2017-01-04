@@ -12,16 +12,17 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/input/input_handler.h"
-#include "components/scheduler/renderer/renderer_scheduler.h"
-#include "content/common/input/web_input_event_traits.h"
 #include "content/renderer/input/input_event_filter.h"
 #include "content/renderer/input/input_handler_manager_client.h"
 #include "content/renderer/input/input_handler_wrapper.h"
+#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "ui/events/blink/did_overscroll_params.h"
 #include "ui/events/blink/input_handler_proxy.h"
+#include "ui/events/blink/web_input_event_traits.h"
 
 using blink::WebInputEvent;
 using ui::InputHandlerProxy;
-using scheduler::RendererScheduler;
+using blink::scheduler::RendererScheduler;
 
 namespace content {
 
@@ -49,18 +50,18 @@ InputHandlerManager::InputHandlerManager(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     InputHandlerManagerClient* client,
     SynchronousInputHandlerProxyClient* sync_handler_client,
-    scheduler::RendererScheduler* renderer_scheduler)
+    blink::scheduler::RendererScheduler* renderer_scheduler)
     : task_runner_(task_runner),
       client_(client),
       synchronous_handler_proxy_client_(sync_handler_client),
-      renderer_scheduler_(renderer_scheduler) {
+      renderer_scheduler_(renderer_scheduler),
+      weak_ptr_factory_(this) {
   DCHECK(client_);
-  client_->SetBoundHandler(base::Bind(&InputHandlerManager::HandleInputEvent,
-                                      base::Unretained(this)));
+  client_->SetInputHandlerManager(this);
 }
 
 InputHandlerManager::~InputHandlerManager() {
-  client_->SetBoundHandler(InputHandlerManagerClient::Handler());
+  client_->SetInputHandlerManager(nullptr);
 }
 
 void InputHandlerManager::AddInputHandler(
@@ -189,46 +190,49 @@ void InputHandlerManager::NotifyInputEventHandledOnMainThread(
     int routing_id,
     blink::WebInputEvent::Type type,
     InputEventAckState ack_result) {
-  task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(
-          &InputHandlerManager::NotifyInputEventHandledOnCompositorThread,
-          base::Unretained(this), routing_id, type, ack_result));
+  client_->NotifyInputEventHandled(routing_id, type, ack_result);
 }
 
-void InputHandlerManager::NotifyInputEventHandledOnCompositorThread(
-    int routing_id,
-    blink::WebInputEvent::Type handled_type,
-    InputEventAckState ack_result) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  auto it = input_handlers_.find(routing_id);
-  if (it == input_handlers_.end())
-    return;
-
-  client_->NotifyInputEventHandled(routing_id, handled_type, ack_result);
+void InputHandlerManager::ProcessRafAlignedInputOnMainThread(int routing_id) {
+  client_->ProcessRafAlignedInput(routing_id);
 }
 
-InputEventAckState InputHandlerManager::HandleInputEvent(
+void InputHandlerManager::HandleInputEvent(
     int routing_id,
-    const WebInputEvent* input_event,
-    ui::LatencyInfo* latency_info) {
+    ui::ScopedWebInputEvent input_event,
+    const ui::LatencyInfo& latency_info,
+    const InputEventAckStateCallback& callback) {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  TRACE_EVENT1("input,benchmark", "InputHandlerManager::HandleInputEvent",
-                 "type", WebInputEventTraits::GetName(input_event->type));
+  TRACE_EVENT1("input,benchmark,rail", "InputHandlerManager::HandleInputEvent",
+               "type", WebInputEvent::GetName(input_event->type));
 
   auto it = input_handlers_.find(routing_id);
   if (it == input_handlers_.end()) {
-    TRACE_EVENT1("input", "InputHandlerManager::HandleInputEvent",
+    TRACE_EVENT1("input,rail", "InputHandlerManager::HandleInputEvent",
                  "result", "NoInputHandlerFound");
     // Oops, we no longer have an interested input handler..
-    return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+    callback.Run(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, std::move(input_event),
+                 latency_info, nullptr);
+    return;
   }
 
-  TRACE_EVENT1("input", "InputHandlerManager::HandleInputEvent",
+  TRACE_EVENT1("input,rail", "InputHandlerManager::HandleInputEvent",
                "result", "EventSentToInputHandlerProxy");
   InputHandlerProxy* proxy = it->second->input_handler_proxy();
-  InputEventAckState input_event_ack_state = InputEventDispositionToAck(
-      proxy->HandleInputEventWithLatencyInfo(*input_event, latency_info));
+  proxy->HandleInputEventWithLatencyInfo(
+      std::move(input_event), latency_info,
+      base::Bind(&InputHandlerManager::DidHandleInputEventAndOverscroll,
+                 weak_ptr_factory_.GetWeakPtr(), callback));
+}
+
+void InputHandlerManager::DidHandleInputEventAndOverscroll(
+    const InputEventAckStateCallback& callback,
+    InputHandlerProxy::EventDisposition event_disposition,
+    ui::ScopedWebInputEvent input_event,
+    const ui::LatencyInfo& latency_info,
+    std::unique_ptr<ui::DidOverscrollParams> overscroll_params) {
+  InputEventAckState input_event_ack_state =
+      InputEventDispositionToAck(event_disposition);
   switch (input_event_ack_state) {
     case INPUT_EVENT_ACK_STATE_CONSUMED:
       renderer_scheduler_->DidHandleInputEventOnCompositorThread(
@@ -243,11 +247,12 @@ InputEventAckState InputHandlerManager::HandleInputEvent(
     default:
       break;
   }
-  return input_event_ack_state;
+  callback.Run(input_event_ack_state, std::move(input_event), latency_info,
+               std::move(overscroll_params));
 }
 
 void InputHandlerManager::DidOverscroll(int routing_id,
-                                        const DidOverscrollParams& params) {
+                                        const ui::DidOverscrollParams& params) {
   client_->DidOverscroll(routing_id, params);
 }
 
@@ -261,6 +266,23 @@ void InputHandlerManager::DidStopFlinging(int routing_id) {
 
 void InputHandlerManager::DidAnimateForInput() {
   renderer_scheduler_->DidAnimateForInputOnCompositorThread();
+}
+
+void InputHandlerManager::NeedsMainFrame(int routing_id) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  auto it = input_handlers_.find(routing_id);
+  if (it == input_handlers_.end())
+    return;
+  it->second->NeedsMainFrame();
+}
+
+void InputHandlerManager::DispatchNonBlockingEventToMainThread(
+    int routing_id,
+    ui::ScopedWebInputEvent event,
+    const ui::LatencyInfo& latency_info) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  client_->DispatchNonBlockingEventToMainThread(routing_id, std::move(event),
+                                                latency_info);
 }
 
 }  // namespace content

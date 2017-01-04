@@ -4,7 +4,6 @@
 
 import("//testing/test.gni")
 
-# GYP version: ui/accelerated_widget_mac/accelerated_widget_mac.gyp:accelerated_widget_mac
 component("accelerated_widget_mac") {
   sources = [
     "accelerated_widget_mac.h",
@@ -39,7 +38,6 @@ component("accelerated_widget_mac") {
   ]
 
   libs = [
-    "ApplicationServices.framework",  # Temporary hack around https://crbug.com/620127. Remove after https://crbug.com/622481 is fixed.
     "AVFoundation.framework",
     "CoreGraphics.framework",
     "Foundation.framework",
@@ -51,7 +49,6 @@ component("accelerated_widget_mac") {
   ]
 }
 
-# GYP version: ui/accelerated_widget_mac/accelerated_widget_mac.gyp:accelerated_widget_mac_unittests
 test("accelerated_widget_mac_unittests") {
   configs += [ "//build/config:precompiled_headers" ]
   sources = [
@@ -66,7 +63,7 @@ test("accelerated_widget_mac_unittests") {
     "//testing/gmock",
     "//testing/gtest",
     "//ui/gfx:test_support",
-    "//ui/gl:test_support",
+    "//ui/gl",
   ]
   libs = [
     "AVFoundation.framework",

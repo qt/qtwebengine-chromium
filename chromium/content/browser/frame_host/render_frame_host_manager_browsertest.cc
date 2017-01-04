@@ -41,6 +41,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
@@ -342,6 +343,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
       &success));
   EXPECT_TRUE(success);
 
+  // Wait for the cross-site transition in the new tab to finish.
+  WaitForLoadStop(new_shell->web_contents());
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(new_shell->web_contents());
+  EXPECT_FALSE(
+      web_contents->GetRenderManagerForTesting()->pending_render_view_host());
+
   // Check that the referrer is set correctly.
   std::string expected_referrer =
       embedded_test_server()->GetURL("/click-noreferrer-links.html").spec();
@@ -351,13 +359,6 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                      expected_referrer + "');",
       &success));
   EXPECT_TRUE(success);
-
-  // Wait for the cross-site transition in the new tab to finish.
-  WaitForLoadStop(new_shell->web_contents());
-  WebContentsImpl* web_contents =
-      static_cast<WebContentsImpl*>(new_shell->web_contents());
-  EXPECT_FALSE(
-      web_contents->GetRenderManagerForTesting()->pending_render_view_host());
 
   // Should have a new SiteInstance.
   scoped_refptr<SiteInstance> noopener_blank_site_instance(
@@ -2056,6 +2057,77 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   // Ensure that the file access still exists in the new process ID.
   EXPECT_TRUE(ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
       shell()->web_contents()->GetRenderProcessHost()->GetID(), file));
+
+  // Do another in-page navigation in the child to make sure we hear a PageState
+  // with the chosen file.
+  // TODO(creis): Remove this in-page navigation once we keep track of
+  // FrameTreeNodes that are pending deletion.  See https://crbug.com/609963.
+  {
+    TestNavigationObserver nav_observer(shell()->web_contents());
+    std::string script = "location.href='#foo';";
+    EXPECT_TRUE(ExecuteScript(root->child_at(0), script));
+    nav_observer.Wait();
+  }
+
+  // Also try cloning the tab by creating a new NavigationEntry with the same
+  // PageState.  This exercises a different path, by combining the frame
+  // specific PageStates into a full-tree PageState and converting back.  There
+  // was a bug where this caused us to lose the list of referenced files.  See
+  // https://crbug.com/620261.
+  std::unique_ptr<NavigationEntryImpl> cloned_entry =
+      NavigationEntryImpl::FromNavigationEntry(
+          NavigationControllerImpl::CreateNavigationEntry(
+              url1, Referrer(), ui::PAGE_TRANSITION_RELOAD, false,
+              std::string(), shell()->web_contents()->GetBrowserContext()));
+  cloned_entry->SetPageID(0);
+  prev_entry = shell()->web_contents()->GetController().GetEntryAtIndex(0);
+  cloned_entry->SetPageState(prev_entry->GetPageState());
+  const std::vector<base::FilePath>& cloned_files =
+      cloned_entry->GetPageState().GetReferencedFiles();
+  ASSERT_EQ(1U, cloned_files.size());
+  EXPECT_EQ(file, cloned_files.at(0));
+
+  std::vector<std::unique_ptr<NavigationEntry>> entries;
+  entries.push_back(std::move(cloned_entry));
+  Shell* new_shell =
+      Shell::CreateNewWindow(shell()->web_contents()->GetBrowserContext(),
+                             GURL::EmptyGURL(), nullptr, gfx::Size());
+  FrameTreeNode* new_root =
+      static_cast<WebContentsImpl*>(new_shell->web_contents())
+          ->GetFrameTree()
+          ->root();
+  NavigationControllerImpl& new_controller =
+      static_cast<NavigationControllerImpl&>(
+          new_shell->web_contents()->GetController());
+  new_controller.Restore(entries.size() - 1,
+                         RestoreType::LAST_SESSION_EXITED_CLEANLY, &entries);
+  ASSERT_EQ(0u, entries.size());
+  {
+    TestNavigationObserver restore_observer(new_shell->web_contents());
+    new_controller.LoadIfNecessary();
+    restore_observer.Wait();
+  }
+  ASSERT_EQ(1U, new_root->child_count());
+  EXPECT_EQ(url1, new_root->current_url());
+
+  // Ensure that the file access exists in the new process ID.
+  EXPECT_TRUE(ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
+      new_root->current_frame_host()->GetProcess()->GetID(), file));
+
+  // Also, extract the file from the renderer process to ensure that the
+  // response made it over successfully and the proper filename is set.
+  std::string file_name;
+  EXPECT_TRUE(ExecuteScriptAndExtractString(
+      new_root->child_at(0),
+      "window.domAutomationController.send("
+      "document.getElementById('fileinput').files[0].name);",
+      &file_name));
+  EXPECT_EQ("bar", file_name);
+
+  // Navigate to a same site page to trigger a PageState update and ensure the
+  // renderer is not killed.
+  EXPECT_TRUE(
+      NavigateToURL(new_shell, embedded_test_server()->GetURL("/title2.html")));
 }
 
 // Ensures that no RenderFrameHost/RenderViewHost objects are leaked when
@@ -2767,7 +2839,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, CtrlClickSubframeLink) {
 
 // Ensure that we don't update the wrong NavigationEntry's title after an
 // ignored commit during a cross-process navigation.
-// See https://crbug.con/577449.
+// See https://crbug.com/577449.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        UnloadPushStateOnCrossProcessNavigation) {
   StartEmbeddedServer();
@@ -2800,6 +2872,80 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 
   // Ensure the entry's title hasn't changed after the ignored commit.
   EXPECT_EQ(title, entry->GetTitle());
+}
+
+// Ensure that document hosted on file: URL can successfully execute pushState
+// with arbitrary origin, when universal access setting is enabled.
+// TODO(nasko): The test is disabled on Mac, since universal access from file
+// scheme behaves differently.
+#if defined(OS_MACOSX)
+#define MAYBE_EnsureUniversalAccessFromFileSchemeSucceeds \
+  DISABLED_EnsureUniversalAccessFromFileSchemeSucceeds
+#else
+#define MAYBE_EnsureUniversalAccessFromFileSchemeSucceeds \
+  EnsureUniversalAccessFromFileSchemeSucceeds
+#endif
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
+                       MAYBE_EnsureUniversalAccessFromFileSchemeSucceeds) {
+  StartEmbeddedServer();
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  FrameTreeNode* root = web_contents->GetFrameTree()->root();
+
+  WebPreferences prefs =
+      web_contents->GetRenderViewHost()->GetWebkitPreferences();
+  prefs.allow_universal_access_from_file_urls = true;
+  web_contents->GetRenderViewHost()->UpdateWebkitPreferences(prefs);
+
+  GURL file_url = GetTestUrl("", "title1.html");
+  ASSERT_TRUE(NavigateToURL(shell(), file_url));
+  EXPECT_EQ(1, web_contents->GetController().GetEntryCount());
+  EXPECT_TRUE(ExecuteScript(
+      root, "window.history.pushState({}, '', 'https://chromium.org');"));
+  EXPECT_EQ(2, web_contents->GetController().GetEntryCount());
+  EXPECT_TRUE(web_contents->GetMainFrame()->IsRenderFrameLive());
+}
+
+// Ensure that navigating back from a sad tab to an existing process works
+// correctly. See https://crbug.com/591984.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
+                       NavigateBackToExistingProcessFromSadTab) {
+  StartEmbeddedServer();
+  EXPECT_TRUE(NavigateToURL(
+      shell(), embedded_test_server()->GetURL("a.com", "/title1.html")));
+
+  // Open a popup and navigate it to b.com.
+  Shell* popup = OpenPopup(
+      shell(), embedded_test_server()->GetURL("a.com", "/title2.html"), "foo");
+  EXPECT_TRUE(NavigateToURL(
+      popup, embedded_test_server()->GetURL("b.com", "/title3.html")));
+
+  // Kill the b.com process.
+  RenderProcessHost* b_process =
+      popup->web_contents()->GetMainFrame()->GetProcess();
+  RenderProcessHostWatcher crash_observer(
+      b_process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  b_process->Shutdown(0, false);
+  crash_observer.Wait();
+
+  // The popup should now be showing the sad tab.  Main tab should not be.
+  EXPECT_NE(base::TERMINATION_STATUS_STILL_RUNNING,
+            popup->web_contents()->GetCrashedStatus());
+  EXPECT_EQ(base::TERMINATION_STATUS_STILL_RUNNING,
+            shell()->web_contents()->GetCrashedStatus());
+
+  // Go back in the popup from b.com to a.com/title2.html.
+  TestNavigationObserver back_observer(popup->web_contents());
+  popup->web_contents()->GetController().GoBack();
+  back_observer.Wait();
+
+  // In the bug, after the back navigation the popup was still showing
+  // the sad tab.  Ensure this is not the case.
+  EXPECT_EQ(base::TERMINATION_STATUS_STILL_RUNNING,
+            popup->web_contents()->GetCrashedStatus());
+  EXPECT_TRUE(popup->web_contents()->GetMainFrame()->IsRenderFrameLive());
+  EXPECT_EQ(popup->web_contents()->GetMainFrame()->GetSiteInstance(),
+            shell()->web_contents()->GetMainFrame()->GetSiteInstance());
 }
 
 }  // namespace content

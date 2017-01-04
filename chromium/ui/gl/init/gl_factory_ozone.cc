@@ -10,24 +10,84 @@
 #include "ui/gl/gl_context_egl.h"
 #include "ui/gl/gl_context_osmesa.h"
 #include "ui/gl/gl_context_stub.h"
+#include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_share_group.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/gl_surface_osmesa.h"
 #include "ui/gl/gl_surface_stub.h"
-#include "ui/gl/init/gl_surface_ozone.h"
+#include "ui/gl/init/ozone_util.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
-#include "ui/ozone/public/surface_ozone_egl.h"
 
 namespace gl {
 namespace init {
+
+namespace {
+
+bool HasDefaultImplementation(GLImplementation impl) {
+  return impl == kGLImplementationOSMesaGL || impl == kGLImplementationMockGL;
+}
+
+scoped_refptr<GLSurface> CreateDefaultViewGLSurface(
+    gfx::AcceleratedWidget window) {
+  switch (GetGLImplementation()) {
+    case kGLImplementationOSMesaGL:
+      return InitializeGLSurface(new GLSurfaceOSMesaHeadless());
+    case kGLImplementationMockGL:
+      return InitializeGLSurface(new GLSurfaceStub());
+    default:
+      NOTREACHED();
+  }
+  return nullptr;
+}
+
+scoped_refptr<GLSurface> CreateDefaultOffscreenGLSurface(
+    const gfx::Size& size) {
+  switch (GetGLImplementation()) {
+    case kGLImplementationOSMesaGL:
+      return InitializeGLSurface(
+          new GLSurfaceOSMesa(GLSurface::SURFACE_OSMESA_BGRA, size));
+    case kGLImplementationMockGL:
+      return InitializeGLSurface(new GLSurfaceStub);
+    default:
+      NOTREACHED();
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+std::vector<GLImplementation> GetAllowedGLImplementations() {
+  ui::OzonePlatform::InitializeForGPU();
+  return GetSurfaceFactoryOzone()->GetAllowedGLImplementations();
+}
+
+bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
+  if (HasGLOzone())
+    return GetGLOzone()->GetGLWindowSystemBindingInfo(info);
+
+  // TODO(kylechar): This is deprecated and can be removed once all Ozone
+  // platforms use GLOzone instead.
+  switch (GetGLImplementation()) {
+    case kGLImplementationEGLGLES2:
+      return GetGLWindowSystemBindingInfoEGL(info);
+    default:
+      return false;
+  }
+}
 
 scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
                                          GLSurface* compatible_surface,
                                          GpuPreference gpu_preference) {
   TRACE_EVENT0("gpu", "gl::init::CreateGLContext");
+
+  if (HasGLOzone()) {
+    return GetGLOzone()->CreateGLContext(share_group, compatible_surface,
+                                         gpu_preference);
+  }
+
   switch (GetGLImplementation()) {
     case kGLImplementationMockGL:
       return scoped_refptr<GLContext>(new GLContextStub(share_group));
@@ -37,65 +97,53 @@ scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
     case kGLImplementationEGLGLES2:
       return InitializeGLContext(new GLContextEGL(share_group),
                                  compatible_surface, gpu_preference);
-
     default:
       NOTREACHED();
-      return nullptr;
   }
+  return nullptr;
 }
 
 scoped_refptr<GLSurface> CreateViewGLSurface(gfx::AcceleratedWidget window) {
   TRACE_EVENT0("gpu", "gl::init::CreateViewGLSurface");
-  switch (GetGLImplementation()) {
-    case kGLImplementationOSMesaGL:
-      return InitializeGLSurface(new GLSurfaceOSMesaHeadless());
-    case kGLImplementationEGLGLES2: {
-      DCHECK_NE(window, gfx::kNullAcceleratedWidget);
-      scoped_refptr<GLSurface> surface;
-      if (GLSurfaceEGL::IsEGLSurfacelessContextSupported())
-        surface = CreateViewGLSurfaceOzoneSurfacelessSurfaceImpl(window);
-      if (!surface)
-        surface = CreateViewGLSurfaceOzone(window);
-      return surface;
-    }
-    case kGLImplementationMockGL:
-      return InitializeGLSurface(new GLSurfaceStub());
-    default:
-      NOTREACHED();
-      return nullptr;
-  }
+
+  if (HasGLOzone())
+    return GetGLOzone()->CreateViewGLSurface(window);
+
+  if (HasDefaultImplementation(GetGLImplementation()))
+    return CreateDefaultViewGLSurface(window);
+
+  // TODO(kylechar): This is deprecated and can be removed once all Ozone
+  // platforms use GLOzone instead.
+  return GetSurfaceFactoryOzone()->CreateViewGLSurface(GetGLImplementation(),
+                                                       window);
 }
 
 scoped_refptr<GLSurface> CreateSurfacelessViewGLSurface(
     gfx::AcceleratedWidget window) {
   TRACE_EVENT0("gpu", "gl::init::CreateSurfacelessViewGLSurface");
-  if (GetGLImplementation() == kGLImplementationEGLGLES2 &&
-      window != gfx::kNullAcceleratedWidget &&
-      GLSurfaceEGL::IsEGLSurfacelessContextSupported()) {
-    return CreateViewGLSurfaceOzoneSurfaceless(window);
-  }
-  return nullptr;
+
+  if (HasGLOzone())
+    return GetGLOzone()->CreateSurfacelessViewGLSurface(window);
+
+  // TODO(kylechar): This is deprecated and can be removed once all Ozone
+  // platforms use GLOzone instead.
+  return GetSurfaceFactoryOzone()->CreateSurfacelessViewGLSurface(
+      GetGLImplementation(), window);
 }
 
 scoped_refptr<GLSurface> CreateOffscreenGLSurface(const gfx::Size& size) {
   TRACE_EVENT0("gpu", "gl::init::CreateOffscreenGLSurface");
-  switch (GetGLImplementation()) {
-    case kGLImplementationOSMesaGL:
-      return InitializeGLSurface(
-          new GLSurfaceOSMesa(GLSurface::SURFACE_OSMESA_BGRA, size));
-    case kGLImplementationEGLGLES2:
-      if (GLSurfaceEGL::IsEGLSurfacelessContextSupported() &&
-          (size.width() == 0 && size.height() == 0)) {
-        return InitializeGLSurface(new SurfacelessEGL(size));
-      } else {
-        return InitializeGLSurface(new PbufferGLSurfaceEGL(size));
-      }
-    case kGLImplementationMockGL:
-      return new GLSurfaceStub;
-    default:
-      NOTREACHED();
-      return nullptr;
-  }
+
+  if (HasGLOzone())
+    return GetGLOzone()->CreateOffscreenGLSurface(size);
+
+  if (HasDefaultImplementation(GetGLImplementation()))
+    return CreateDefaultOffscreenGLSurface(size);
+
+  // TODO(kylechar): This is deprecated and can be removed once all Ozone
+  // platforms use GLOzone instead.
+  return GetSurfaceFactoryOzone()->CreateOffscreenGLSurface(
+      GetGLImplementation(), size);
 }
 
 }  // namespace init

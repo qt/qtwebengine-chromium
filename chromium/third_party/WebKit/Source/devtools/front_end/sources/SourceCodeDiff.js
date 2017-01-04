@@ -4,16 +4,15 @@
 
 /**
  * @constructor
- * @param {!WebInspector.UISourceCode} uiSourceCode
+ * @param {!Promise<?string>} diffBaseline
  * @param {!WebInspector.CodeMirrorTextEditor} textEditor
  */
-WebInspector.SourceCodeDiff = function(uiSourceCode, textEditor)
+WebInspector.SourceCodeDiff = function(diffBaseline, textEditor)
 {
-    this._uiSourceCode = uiSourceCode;
     this._textEditor = textEditor;
     this._decorations = [];
     this._textEditor.installGutter(WebInspector.SourceCodeDiff.DiffGutterType, true);
-    this._diffBaseline = this._uiSourceCode.requestOriginalContent();
+    this._diffBaseline = diffBaseline;
     /** @type {!Array<!WebInspector.TextEditorPositionHandle>}*/
     this._animatedLines = [];
 }
@@ -193,8 +192,8 @@ WebInspector.SourceCodeDiff.prototype = {
      */
     _innerUpdate: function(baseline)
     {
-        var current = this._uiSourceCode.workingCopy();
-        if (typeof current !== "string" || typeof baseline !== "string") {
+        var current = this._textEditor.text();
+        if (typeof baseline !== "string") {
             this._updateDecorations(this._decorations, [] /* added */);
             this._decorations = [];
             return;
@@ -225,14 +224,20 @@ WebInspector.SourceCodeDiff.prototype = {
 
         this._decorations = decorationDiff.equal.concat(addedDecorations);
         this._updateDecorations(decorationDiff.removed, addedDecorations);
+        this._decorationsSetForTest(newDecorations);
     },
+
+    /**
+     * @param {!Map<number, !{lineNumber: number, type: !WebInspector.SourceCodeDiff.GutterDecorationType}>} decorations
+     */
+    _decorationsSetForTest: function(decorations) { }
 }
 
-/** @enum {string} */
+/** @enum {symbol} */
 WebInspector.SourceCodeDiff.GutterDecorationType = {
-    Insert: "Insert",
-    Delete: "Delete",
-    Modify: "Modify",
+    Insert: Symbol("Insert"),
+    Delete: Symbol("Delete"),
+    Modify: Symbol("Modify"),
 }
 
 /**

@@ -9,10 +9,11 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "components/offline_pages/background/request_queue.h"
+#include "components/offline_pages/background/save_page_request.h"
+#include "components/offline_pages/offline_store_types.h"
 
 namespace offline_pages {
-
-class SavePageRequest;
 
 // Interface for classes storing save page requests.
 class RequestQueueStore {
@@ -23,14 +24,13 @@ class RequestQueueStore {
     FAILED,   // Add or update attempt failed.
   };
 
+  using UpdateCallback = RequestQueue::UpdateCallback;
+
   typedef base::Callback<void(
       bool /* success */,
-      const std::vector<SavePageRequest>& /* requests */)>
+      std::vector<std::unique_ptr<SavePageRequest>> /* requests */)>
       GetRequestsCallback;
-  typedef base::Callback<void(UpdateStatus)> UpdateCallback;
-  typedef base::Callback<void(bool /* success */,
-                              int /* number of deleted requests */)>
-      RemoveCallback;
+  typedef base::Callback<void(ItemActionStatus)> AddCallback;
   typedef base::Callback<void(bool /* success */)> ResetCallback;
 
   virtual ~RequestQueueStore(){};
@@ -38,10 +38,14 @@ class RequestQueueStore {
   // Gets all of the requests from the store.
   virtual void GetRequests(const GetRequestsCallback& callback) = 0;
 
-  // Asynchronously adds or updates request in store.
-  // Result of the update is passed in the callback.
-  virtual void AddOrUpdateRequest(const SavePageRequest& request,
-                                  const UpdateCallback& callback) = 0;
+  // Asynchronously adds request in store. Fails if request with the same
+  // offline ID already exists.
+  virtual void AddRequest(const SavePageRequest& offline_page,
+                          const AddCallback& callback) = 0;
+
+  // Asynchronously updates requests in store.
+  virtual void UpdateRequests(const std::vector<SavePageRequest>& requests,
+                              const UpdateCallback& callback) = 0;
 
   // Asynchronously removes requests from the store using their IDs.
   // Result of the update, and a number of removed pages is passed in the
@@ -49,10 +53,13 @@ class RequestQueueStore {
   // Result of remove should be false, when one of the provided items couldn't
   // be deleted, e.g. because it was missing.
   virtual void RemoveRequests(const std::vector<int64_t>& request_ids,
-                              const RemoveCallback& callback) = 0;
+                              const UpdateCallback& callback) = 0;
 
   // Resets the store.
   virtual void Reset(const ResetCallback& callback) = 0;
+
+  // Gets the store state.
+  virtual StoreState state() const = 0;
 };
 
 }  // namespace offline_pages

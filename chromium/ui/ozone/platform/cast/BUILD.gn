@@ -10,14 +10,13 @@ visibility = [
   "//chromecast/*",
 ]
 
-# GYP version: cast.gypi:ozone_platform_cast
 # TODO(slan): gn check needs deps on ozone and media to pass. Correct this.
 source_set("cast") {
   sources = [
     "client_native_pixmap_factory_cast.cc",
     "client_native_pixmap_factory_cast.h",
-    "gpu_platform_support_cast.cc",
-    "gpu_platform_support_cast.h",
+    "gl_surface_cast.cc",
+    "gl_surface_cast.h",
     "overlay_manager_cast.cc",
     "overlay_manager_cast.h",
     "ozone_platform_cast.cc",
@@ -26,8 +25,6 @@ source_set("cast") {
     "platform_window_cast.h",
     "surface_factory_cast.cc",
     "surface_factory_cast.h",
-    "surface_ozone_egl_cast.cc",
-    "surface_ozone_egl_cast.h",
   ]
 
   defines = [ "OZONE_IMPLEMENTATION" ]
@@ -42,6 +39,7 @@ source_set("cast") {
   deps = [
     "//base",
     "//chromecast:chromecast_features",
+    "//chromecast/base:base",
     "//chromecast/graphics:libcast_graphics_1.0",
     "//ui/gfx",
     "//ui/gfx/geometry",

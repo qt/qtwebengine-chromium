@@ -30,7 +30,6 @@
 
 import logging
 import optparse
-import os
 import sys
 import traceback
 
@@ -99,6 +98,7 @@ def parse_args(args):
                 "--adb-device",
                 action="append",
                 default=[],
+                dest='adb_devices',
                 help="Run Android layout tests on these devices."),
             # FIXME: Flip this to be off by default once we can log the
             # device setup more cleanly.
@@ -332,12 +332,12 @@ def parse_args(args):
                 "--order",
                 action="store",
                 default="natural",
-                help=("determine the order in which the test cases will be run. "
+                help=("Determine the order in which the test cases will be run. "
                       "'none' == use the order in which the tests were listed "
                       "either in arguments or test list, "
                       "'natural' == use the natural order (default), "
-                      "'random-seeded' == randomize the test order using a fixed seed, "
-                      "'random' == randomize the test order.")),
+                      "'random' == pseudo-random order. Seed can be specified "
+                      "via --seed, otherwise a default seed will be used.")),
             optparse.make_option(
                 "--profile",
                 action="store_true",
@@ -380,6 +380,12 @@ def parse_args(args):
                 action="store_true",
                 default=False,
                 help="DEPRECATED, same as --batch-size=1 --verbose"),
+            optparse.make_option(
+                "--seed",
+                type="int",
+                default=4,  # http://xkcd.com/221/
+                help=("Seed to use for random test order (default: %default). "
+                      "Only applicable in combination with --order=random.")),
             optparse.make_option(
                 "--skipped",
                 action="store",
@@ -473,11 +479,11 @@ def _set_up_derived_options(port, options, args):
         options.batch_size = port.default_batch_size()
 
     if not options.child_processes:
-        options.child_processes = os.environ.get("WEBKIT_TEST_CHILD_PROCESSES",
-                                                 str(port.default_child_processes()))
+        options.child_processes = port.host.environ.get("WEBKIT_TEST_CHILD_PROCESSES",
+                                                        str(port.default_child_processes()))
     if not options.max_locked_shards:
-        options.max_locked_shards = int(os.environ.get("WEBKIT_TEST_MAX_LOCKED_SHARDS",
-                                                       str(port.default_max_locked_shards())))
+        options.max_locked_shards = int(port.host.environ.get("WEBKIT_TEST_MAX_LOCKED_SHARDS",
+                                                              str(port.default_max_locked_shards())))
 
     if not options.configuration:
         options.configuration = port.default_configuration()
@@ -510,7 +516,7 @@ def _set_up_derived_options(port, options, args):
             # to Port.
             filesystem = port.host.filesystem
             if not filesystem.isdir(filesystem.join(port.layout_tests_dir(), directory)):
-                _log.warning("'%s' was passed to --pixel-test-directories, which doesn't seem to be a directory" % str(directory))
+                _log.warning("'%s' was passed to --pixel-test-directories, which doesn't seem to be a directory", str(directory))
             else:
                 verified_dirs.add(directory)
 
@@ -535,6 +541,11 @@ def _set_up_derived_options(port, options, args):
 
     if not options.skipped:
         options.skipped = 'default'
+
+    if 'GTEST_SHARD_INDEX' in port.host.environ and 'GTEST_TOTAL_SHARDS' in port.host.environ:
+        shard_index = int(port.host.environ['GTEST_SHARD_INDEX']) + 1
+        total_shards = int(port.host.environ['GTEST_TOTAL_SHARDS']) + 1
+        options.run_part = '{0}:{1}'.format(shard_index, total_shards)
 
 
 def _run_tests(port, options, args, printer):
@@ -567,13 +578,13 @@ def run(port, options, args, logging_stream, stdout):
             _log.debug("Dashboard generated.")
 
         _log.debug("")
-        _log.debug("Testing completed, Exit status: %d" % run_details.exit_code)
+        _log.debug("Testing completed, Exit status: %d", run_details.exit_code)
 
         # Temporary process dump for debugging windows timeout issues, see crbug.com/522396.
         _log.debug("")
         _log.debug("Process dump:")
         for process in port.host.executive.process_dump():
-            _log.debug("\t%s" % process)
+            _log.debug("\t%s", process)
 
         return run_details
 

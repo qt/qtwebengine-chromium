@@ -57,7 +57,6 @@ def change_directory(filesystem, checkout_root, paths):
              This argument can be None or the empty list if a git commit
              or all changes under the checkout root should be checked.
       checkout_root: The path to the root of the WebKit checkout.
-
     """
     if paths is not None:
         paths = list(paths)
@@ -75,7 +74,7 @@ def change_directory(filesystem, checkout_root, paths):
                 # checkout root.  Interpret all of them relative to the
                 # current working directory, and do not change the current
                 # working directory.
-                _log.warn(
+                _log.warning(
                     """Path-dependent style checks may not work correctly:
 
   One of the given paths is outside the WebKit checkout of the current
@@ -86,8 +85,8 @@ def change_directory(filesystem, checkout_root, paths):
 
   Pass only files below the checkout root to ensure correct results.
   See the help documentation for more info.
-"""
-                    % (path, checkout_root))
+""",
+                    path, checkout_root)
 
                 return paths
             rel_paths.append(rel_path)
@@ -158,6 +157,6 @@ class CheckWebKitStyle(object):
         file_count = file_reader.file_count
         delete_only_file_count = file_reader.delete_only_file_count
 
-        _log.info("Total errors found: %d in %d files" % (error_count, file_count))
+        _log.info("Total errors found: %d in %d files", error_count, file_count)
         # We fail when style errors are found or there are no checked files.
         return error_count > 0 or (file_count == 0 and delete_only_file_count == 0)

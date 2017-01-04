@@ -6,12 +6,16 @@
 
 #include "public/fpdf_progressive.h"
 
-#include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
-#include "core/fpdfapi/fpdf_render/include/cpdf_progressiverenderer.h"
-#include "core/fxge/include/fx_ge.h"
-#include "fpdfsdk/include/fsdk_define.h"
-#include "fpdfsdk/include/fsdk_rendercontext.h"
+#include "core/fpdfapi/cpdf_pagerendercontext.h"
+#include "core/fpdfapi/page/cpdf_page.h"
+#include "core/fpdfapi/render/cpdf_progressiverenderer.h"
+#include "core/fxcrt/fx_memory.h"
+#include "core/fxge/cfx_fxgedevice.h"
+#include "core/fxge/cfx_renderdevice.h"
+#include "fpdfsdk/fsdk_define.h"
+#include "fpdfsdk/fsdk_pauseadapter.h"
 #include "public/fpdfview.h"
+#include "third_party/base/ptr_util.h"
 
 // These checks are here because core/ and public/ cannot depend on each other.
 static_assert(CPDF_ProgressiveRenderer::Ready == FPDF_RENDER_READER,
@@ -40,10 +44,10 @@ DLLEXPORT int STDCALL FPDF_RenderPageBitmap_Start(FPDF_BITMAP bitmap,
   if (!pPage)
     return FPDF_RENDER_FAILED;
 
-  CRenderContext* pContext = new CRenderContext;
-  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>(pContext));
+  CPDF_PageRenderContext* pContext = new CPDF_PageRenderContext;
+  pPage->SetRenderContext(pdfium::WrapUnique(pContext));
   CFX_FxgeDevice* pDevice = new CFX_FxgeDevice;
-  pContext->m_pDevice = pDevice;
+  pContext->m_pDevice.reset(pDevice);
   CFX_DIBitmap* pBitmap = CFXBitmapFromFPDFBitmap(bitmap);
   pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
 
@@ -67,8 +71,7 @@ DLLEXPORT int STDCALL FPDF_RenderPage_Continue(FPDF_PAGE page,
   if (!pPage)
     return FPDF_RENDER_FAILED;
 
-  CRenderContext* pContext =
-      static_cast<CRenderContext*>(pPage->GetRenderContext());
+  CPDF_PageRenderContext* pContext = pPage->GetRenderContext();
   if (pContext && pContext->m_pRenderer) {
     IFSDK_PAUSE_Adapter IPauseAdapter(pause);
     pContext->m_pRenderer->Continue(&IPauseAdapter);
@@ -83,11 +86,10 @@ DLLEXPORT void STDCALL FPDF_RenderPage_Close(FPDF_PAGE page) {
   if (!pPage)
     return;
 
-  CRenderContext* pContext =
-      static_cast<CRenderContext*>(pPage->GetRenderContext());
+  CPDF_PageRenderContext* pContext = pPage->GetRenderContext();
   if (!pContext)
     return;
 
   pContext->m_pDevice->RestoreState(false);
-  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>());
+  pPage->SetRenderContext(std::unique_ptr<CPDF_PageRenderContext>());
 }

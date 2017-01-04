@@ -8,26 +8,26 @@
 
 #include <vector>
 
-#include "core/fpdfapi/fpdf_edit/include/cpdf_creator.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_reference.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_string.h"
-#include "core/fxcrt/include/fx_ext.h"
-#include "fpdfsdk/include/fsdk_define.h"
+#include "core/fpdfapi/edit/cpdf_creator.h"
+#include "core/fpdfapi/parser/cpdf_array.h"
+#include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_reference.h"
+#include "core/fpdfapi/parser/cpdf_stream_acc.h"
+#include "core/fpdfapi/parser/cpdf_string.h"
+#include "core/fxcrt/fx_ext.h"
+#include "fpdfsdk/fsdk_define.h"
 #include "public/fpdf_edit.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/fpdfxfa/include/fpdfxfa_app.h"
-#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
-#include "fpdfsdk/fpdfxfa/include/fpdfxfa_util.h"
+#include "fpdfsdk/fpdfxfa/cpdfxfa_app.h"
+#include "fpdfsdk/fpdfxfa/cpdfxfa_document.h"
+#include "fpdfsdk/fpdfxfa/cxfa_fwladaptertimermgr.h"
 #include "public/fpdf_formfill.h"
-#include "xfa/fxfa/include/cxfa_eventparam.h"
-#include "xfa/fxfa/include/xfa_checksum.h"
-#include "xfa/fxfa/include/xfa_ffapp.h"
-#include "xfa/fxfa/include/xfa_ffdocview.h"
-#include "xfa/fxfa/include/xfa_ffwidgethandler.h"
+#include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/xfa_checksum.h"
+#include "xfa/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/xfa_ffdocview.h"
+#include "xfa/fxfa/xfa_ffwidgethandler.h"
 #endif
 
 #if _FX_OS_ == _FX_ANDROID_
@@ -100,11 +100,11 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
   if (!pRoot)
     return false;
 
-  CPDF_Dictionary* pAcroForm = pRoot->GetDictBy("AcroForm");
+  CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
   if (!pAcroForm)
     return false;
 
-  CPDF_Object* pXFA = pAcroForm->GetObjectBy("XFA");
+  CPDF_Object* pXFA = pAcroForm->GetObjectFor("XFA");
   if (!pXFA)
     return true;
 
@@ -178,17 +178,20 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
       // Datasets
       pContext->UpdateChecksum(pDsfileWrite.get());
       pContext->FinishChecksum();
-      CPDF_Dictionary* pDataDict = new CPDF_Dictionary;
+      CPDF_Dictionary* pDataDict =
+          new CPDF_Dictionary(pPDFDocument->GetByteStringPool());
       if (iDataSetsIndex != -1) {
         if (pDataSetsStream)
           pDataSetsStream->InitStreamFromFile(pDsfileWrite.get(), pDataDict);
       } else {
-        CPDF_Stream* pData = new CPDF_Stream(nullptr, 0, nullptr);
+        CPDF_Stream* pData = new CPDF_Stream;
         pData->InitStreamFromFile(pDsfileWrite.get(), pDataDict);
-        pPDFDocument->AddIndirectObject(pData);
         iLast = pArray->GetCount() - 2;
         pArray->InsertAt(iLast, new CPDF_String("datasets", FALSE));
-        pArray->InsertAt(iLast + 1, pData, pPDFDocument);
+        pArray->InsertAt(
+            iLast + 1,
+            new CPDF_Reference(pPDFDocument,
+                               pPDFDocument->AddIndirectObject(pData)));
       }
       fileList->push_back(std::move(pDsfileWrite));
     }
@@ -199,17 +202,20 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
     if (pXFADocView->GetDoc()->SavePackage(XFA_HASHCODE_Form, pfileWrite.get(),
                                            pContext.get()) &&
         pfileWrite->GetSize() > 0) {
-      CPDF_Dictionary* pDataDict = new CPDF_Dictionary;
+      CPDF_Dictionary* pDataDict =
+          new CPDF_Dictionary(pPDFDocument->GetByteStringPool());
       if (iFormIndex != -1) {
         if (pFormStream)
           pFormStream->InitStreamFromFile(pfileWrite.get(), pDataDict);
       } else {
-        CPDF_Stream* pData = new CPDF_Stream(nullptr, 0, nullptr);
+        CPDF_Stream* pData = new CPDF_Stream;
         pData->InitStreamFromFile(pfileWrite.get(), pDataDict);
-        pPDFDocument->AddIndirectObject(pData);
         iLast = pArray->GetCount() - 2;
         pArray->InsertAt(iLast, new CPDF_String("form", FALSE));
-        pArray->InsertAt(iLast + 1, pData, pPDFDocument);
+        pArray->InsertAt(
+            iLast + 1,
+            new CPDF_Reference(pPDFDocument,
+                               pPDFDocument->AddIndirectObject(pData)));
       }
       fileList->push_back(std::move(pfileWrite));
     }
@@ -238,7 +244,7 @@ bool SendPostSaveToXFADoc(CPDFXFA_Document* pDocument) {
     pWidgetHander->ProcessEvent(pWidgetAcc, &preParam);
   }
   pXFADocView->UpdateDocView();
-  pDocument->_ClearChangeMark();
+  pDocument->ClearChangeMark();
   return true;
 }
 

@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef INCLUDE_LIBYUV_ROTATE_ROW_H_  // NOLINT
+#ifndef INCLUDE_LIBYUV_ROTATE_ROW_H_
 #define INCLUDE_LIBYUV_ROTATE_ROW_H_
 
 #include "libyuv/basic_types.h"
@@ -22,7 +22,12 @@ extern "C" {
     (defined(__i386__) && !defined(__SSE2__))
 #define LIBYUV_DISABLE_X86
 #endif
-
+// MemorySanitizer does not support assembly code yet. http://crbug.com/344505
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+#define LIBYUV_DISABLE_X86
+#endif
+#endif
 // The following are available for Visual C and clangcl 32 bit:
 #if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
 #define HAS_TRANSPOSEWX8_SSSE3
@@ -113,4 +118,4 @@ void TransposeUVWx8_Any_DSPR2(const uint8* src, int src_stride,
 }  // namespace libyuv
 #endif
 
-#endif  // INCLUDE_LIBYUV_ROTATE_ROW_H_  NOLINT
+#endif  // INCLUDE_LIBYUV_ROTATE_ROW_H_

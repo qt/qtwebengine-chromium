@@ -5,8 +5,8 @@
 #include "net/quic/test_tools/quic_framer_peer.h"
 
 #include "base/stl_util.h"
-#include "net/quic/quic_framer.h"
-#include "net/quic/quic_protocol.h"
+#include "net/quic/core/quic_framer.h"
+#include "net/quic/core/quic_protocol.h"
 
 namespace net {
 namespace test {
@@ -32,6 +32,12 @@ void QuicFramerPeer::SetLastSerializedConnectionId(
 void QuicFramerPeer::SetLastPacketNumber(QuicFramer* framer,
                                          QuicPacketNumber packet_number) {
   framer->last_packet_number_ = packet_number;
+}
+
+// static
+void QuicFramerPeer::SetLargestPacketNumber(QuicFramer* framer,
+                                            QuicPacketNumber packet_number) {
+  framer->largest_packet_number_ = packet_number;
 }
 
 // static
@@ -78,7 +84,7 @@ QuicPathId QuicFramerPeer::GetLastPathId(QuicFramer* framer) {
 
 // static
 bool QuicFramerPeer::IsPathClosed(QuicFramer* framer, QuicPathId path_id) {
-  return ContainsKey(framer->closed_paths_, path_id);
+  return base::ContainsKey(framer->closed_paths_, path_id);
 }
 
 }  // namespace test

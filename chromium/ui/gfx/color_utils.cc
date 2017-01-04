@@ -48,7 +48,10 @@ int calcHue(double temp1, double temp2, double hue) {
 // Assumes sRGB.
 double Linearize(double eight_bit_component) {
   const double component = eight_bit_component / 255.0;
-  return (component <= 0.03928) ?
+  // The W3C link in the header uses 0.03928 here.  See
+  // https://en.wikipedia.org/wiki/SRGB#Theory_of_the_transformation for
+  // discussion of why we use this value rather than that one.
+  return (component <= 0.04045) ?
       (component / 12.92) : pow((component + 0.055) / 1.055, 2.4);
 }
 
@@ -279,6 +282,11 @@ SkColor AlphaBlend(SkColor foreground, SkColor background, SkAlpha alpha) {
                         static_cast<int>(std::round(r)),
                         static_cast<int>(std::round(g)),
                         static_cast<int>(std::round(b)));
+}
+
+SkColor GetResultingPaintColor(SkColor foreground, SkColor background) {
+  return AlphaBlend(SkColorSetA(foreground, SK_AlphaOPAQUE), background,
+                    SkColorGetA(foreground));
 }
 
 bool IsDark(SkColor color) {

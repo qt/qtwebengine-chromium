@@ -55,6 +55,8 @@ const char* ValidationErrorToString(ValidationError error) {
       return "VALIDATION_ERROR_UNKNOWN_ENUM_VALUE";
     case VALIDATION_ERROR_DESERIALIZATION_FAILED:
       return "VALIDATION_ERROR_DESERIALIZATION_FAILED";
+    case VALIDATION_ERROR_MAX_RECURSION_DEPTH:
+      return "VALIDATION_ERROR_MAX_RECURSION_DEPTH";
   }
 
   return "Unknown error";
@@ -86,6 +88,17 @@ void ReportValidationError(ValidationContext* context,
                              ValidationErrorToString(error)));
     }
   }
+}
+
+void ReportValidationErrorForMessage(
+    mojo::Message* message,
+    ValidationError error,
+    const char* description) {
+  ValidationContext validation_context(
+      message->data(), message->data_num_bytes(),
+      message->handles()->size(), message,
+      description);
+  ReportValidationError(&validation_context, error);
 }
 
 ValidationErrorObserverForTesting::ValidationErrorObserverForTesting(

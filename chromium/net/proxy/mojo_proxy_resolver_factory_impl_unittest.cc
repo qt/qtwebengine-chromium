@@ -9,11 +9,17 @@
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/base/test_completion_callback.h"
 #include "net/proxy/mock_proxy_resolver.h"
 #include "net/proxy/proxy_resolver_v8_tracing.h"
 #include "net/test/event_waiter.h"
+#include "net/test/gtest_util.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using net::test::IsError;
+using net::test::IsOk;
 
 namespace net {
 namespace {
@@ -99,8 +105,9 @@ class MojoProxyResolverFactoryImplTest
  public:
   void SetUp() override {
     mock_factory_ = new TestProxyResolverFactory(&waiter_);
-    new MojoProxyResolverFactoryImpl(base::WrapUnique(mock_factory_),
-                                     mojo::GetProxy(&factory_));
+    mojo::MakeStrongBinding(base::MakeUnique<MojoProxyResolverFactoryImpl>(
+                                base::WrapUnique(mock_factory_)),
+                            mojo::GetProxy(&factory_));
   }
 
   void OnConnectionError() { waiter_.NotifyEvent(CONNECTION_ERROR); }
@@ -152,7 +159,7 @@ TEST_F(MojoProxyResolverFactoryImplTest, DisconnectProxyResolverClient) {
           &MojoProxyResolverFactoryImplTest::OnFakeProxyInstanceDestroyed,
           base::Unretained(this))));
   mock_factory_->pending_request()->callback.Run(OK);
-  EXPECT_EQ(OK, create_callback.WaitForResult());
+  EXPECT_THAT(create_callback.WaitForResult(), IsOk());
   proxy_resolver.reset();
   waiter_.WaitForEvent(RESOLVER_DESTROYED);
   EXPECT_EQ(1, instances_destroyed_);
@@ -176,7 +183,7 @@ TEST_F(MojoProxyResolverFactoryImplTest, Error) {
   create_callback_ = create_callback.callback();
   ASSERT_TRUE(mock_factory_->pending_request());
   mock_factory_->pending_request()->callback.Run(ERR_PAC_SCRIPT_FAILED);
-  EXPECT_EQ(ERR_PAC_SCRIPT_FAILED, create_callback.WaitForResult());
+  EXPECT_THAT(create_callback.WaitForResult(), IsError(ERR_PAC_SCRIPT_FAILED));
 }
 
 TEST_F(MojoProxyResolverFactoryImplTest,

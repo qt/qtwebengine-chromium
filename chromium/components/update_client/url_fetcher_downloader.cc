@@ -46,7 +46,7 @@ void UrlFetcherDownloader::DoStartDownload(const GURL& url) {
   VLOG(1) << "Starting background download: " << url.spec();
   url_fetcher_->Start();
 
-  download_start_time_ = base::Time::Now();
+  download_start_time_ = base::TimeTicks::Now();
 
   downloaded_bytes_ = -1;
   total_bytes_ = -1;
@@ -55,7 +55,7 @@ void UrlFetcherDownloader::DoStartDownload(const GURL& url) {
 void UrlFetcherDownloader::OnURLFetchComplete(const net::URLFetcher* source) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  const base::Time download_end_time(base::Time::Now());
+  const base::TimeTicks download_end_time(base::TimeTicks::Now());
   const base::TimeDelta download_time =
       download_end_time >= download_start_time_
           ? download_end_time - download_start_time_
@@ -98,7 +98,8 @@ void UrlFetcherDownloader::OnURLFetchComplete(const net::URLFetcher* source) {
 void UrlFetcherDownloader::OnURLFetchDownloadProgress(
     const net::URLFetcher* source,
     int64_t current,
-    int64_t total) {
+    int64_t total,
+    int64_t current_network_bytes) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   downloaded_bytes_ = current;

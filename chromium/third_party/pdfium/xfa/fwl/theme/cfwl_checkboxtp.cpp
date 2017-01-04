@@ -6,6 +6,7 @@
 
 #include "xfa/fwl/theme/cfwl_checkboxtp.h"
 
+#include "core/fxge/cfx_pathdata.h"
 #include "xfa/fde/tto/fde_textout.h"
 #include "xfa/fwl/basewidget/ifwl_checkbox.h"
 #include "xfa/fwl/core/cfwl_themebackground.h"
@@ -27,17 +28,13 @@ const int kSignPath = 100;
 #define CHECKBOX_COLOR_BOXRB1 (ArgbEncode(255, 241, 239, 226))
 #define CHECKBOX_COLOR_BOXRB2 (ArgbEncode(255, 255, 255, 255))
 
-CFWL_CheckBoxTP::CFWL_CheckBoxTP()
-    : m_pThemeData(new CKBThemeData), m_pCheckPath(nullptr) {
+CFWL_CheckBoxTP::CFWL_CheckBoxTP() : m_pThemeData(new CKBThemeData) {
   SetThemeData(0);
 }
 
 CFWL_CheckBoxTP::~CFWL_CheckBoxTP() {
-  delete m_pThemeData;
-  if (m_pCheckPath) {
+  if (m_pCheckPath)
     m_pCheckPath->Clear();
-    delete m_pCheckPath;
-  }
 }
 
 bool CFWL_CheckBoxTP::IsValidWidget(IFWL_Widget* pWidget) {
@@ -47,11 +44,11 @@ bool CFWL_CheckBoxTP::IsValidWidget(IFWL_Widget* pWidget) {
 uint32_t CFWL_CheckBoxTP::SetThemeID(IFWL_Widget* pWidget,
                                      uint32_t dwThemeID,
                                      FX_BOOL bChildren) {
-  if (m_pThemeData) {
+  if (m_pThemeData)
     SetThemeData(FWL_GetThemeColor(dwThemeID));
-  }
   return CFWL_WidgetTP::SetThemeID(pWidget, dwThemeID, bChildren);
 }
+
 FX_BOOL CFWL_CheckBoxTP::DrawText(CFWL_ThemeText* pParams) {
   if (!m_pTextOut)
     return FALSE;
@@ -60,6 +57,7 @@ FX_BOOL CFWL_CheckBoxTP::DrawText(CFWL_ThemeText* pParams) {
                                : FWLTHEME_CAPACITY_TextColor);
   return CFWL_WidgetTP::DrawText(pParams);
 }
+
 FX_BOOL CFWL_CheckBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
     return FALSE;
@@ -99,14 +97,17 @@ FX_BOOL CFWL_CheckBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   }
   return TRUE;
 }
+
 FWL_Error CFWL_CheckBoxTP::Initialize() {
   InitTTO();
   return CFWL_WidgetTP::Initialize();
 }
+
 FWL_Error CFWL_CheckBoxTP::Finalize() {
   FinalizeTTO();
   return CFWL_WidgetTP::Finalize();
 }
+
 void CFWL_CheckBoxTP::DrawBoxBk(IFWL_Widget* pWidget,
                                 CFX_Graphics* pGraphics,
                                 const CFX_RectF* pRect,
@@ -158,6 +159,7 @@ void CFWL_CheckBoxTP::DrawBoxBk(IFWL_Widget* pWidget,
                    m_pThemeData->clrBoxBk[iTheme][0],
                    m_pThemeData->clrBoxBk[iTheme][1], &path, fillMode, pMatrix);
 }
+
 void CFWL_CheckBoxTP::DrawSign(IFWL_Widget* pWidget,
                                CFX_Graphics* pGraphics,
                                const CFX_RectF* pRtBox,
@@ -215,19 +217,21 @@ void CFWL_CheckBoxTP::DrawSign(IFWL_Widget* pWidget,
     FillSoildRect(pGraphics, ArgbEncode(255, 33, 161, 33), &rtSign, pMatrix);
   }
 }
+
 void CFWL_CheckBoxTP::DrawSignNeutral(CFX_Graphics* pGraphics,
                                       const CFX_RectF* pRtSign,
                                       CFX_Matrix* pMatrix) {
   ((CFX_RectF*)pRtSign)->Inflate(-3, -3);
   FillSoildRect(pGraphics, m_pThemeData->clrSignNeutral, pRtSign, pMatrix);
 }
+
 void CFWL_CheckBoxTP::DrawSignCheck(CFX_Graphics* pGraphics,
                                     const CFX_RectF* pRtSign,
                                     FX_ARGB argbFill,
                                     CFX_Matrix* pMatrix) {
-  if (!m_pCheckPath) {
-    initCheckPath(pRtSign->width);
-  }
+  if (!m_pCheckPath)
+    InitCheckPath(pRtSign->width);
+
   CFX_Matrix mt;
   mt.SetIdentity();
   mt.Translate(pRtSign->left, pRtSign->top);
@@ -235,9 +239,10 @@ void CFWL_CheckBoxTP::DrawSignCheck(CFX_Graphics* pGraphics,
   CFX_Color crFill(argbFill);
   pGraphics->SaveGraphState();
   pGraphics->SetFillColor(&crFill);
-  pGraphics->FillPath(m_pCheckPath, FXFILL_WINDING, &mt);
+  pGraphics->FillPath(m_pCheckPath.get(), FXFILL_WINDING, &mt);
   pGraphics->RestoreGraphState();
 }
+
 void CFWL_CheckBoxTP::DrawSignCircle(CFX_Graphics* pGraphics,
                                      const CFX_RectF* pRtSign,
                                      FX_ARGB argbFill,
@@ -251,6 +256,7 @@ void CFWL_CheckBoxTP::DrawSignCircle(CFX_Graphics* pGraphics,
   pGraphics->FillPath(&path, FXFILL_WINDING, pMatrix);
   pGraphics->RestoreGraphState();
 }
+
 void CFWL_CheckBoxTP::DrawSignCross(CFX_Graphics* pGraphics,
                                     const CFX_RectF* pRtSign,
                                     FX_ARGB argbFill,
@@ -268,6 +274,7 @@ void CFWL_CheckBoxTP::DrawSignCross(CFX_Graphics* pGraphics,
   pGraphics->StrokePath(&path, pMatrix);
   pGraphics->RestoreGraphState();
 }
+
 void CFWL_CheckBoxTP::DrawSignDiamond(CFX_Graphics* pGraphics,
                                       const CFX_RectF* pRtSign,
                                       FX_ARGB argbFill,
@@ -288,6 +295,7 @@ void CFWL_CheckBoxTP::DrawSignDiamond(CFX_Graphics* pGraphics,
   pGraphics->FillPath(&path, FXFILL_WINDING, pMatrix);
   pGraphics->RestoreGraphState();
 }
+
 void CFWL_CheckBoxTP::DrawSignSquare(CFX_Graphics* pGraphics,
                                      const CFX_RectF* pRtSign,
                                      FX_ARGB argbFill,
@@ -302,6 +310,7 @@ void CFWL_CheckBoxTP::DrawSignSquare(CFX_Graphics* pGraphics,
   pGraphics->FillPath(&path, FXFILL_WINDING, pMatrix);
   pGraphics->RestoreGraphState();
 }
+
 void CFWL_CheckBoxTP::DrawSignStar(CFX_Graphics* pGraphics,
                                    const CFX_RectF* pRtSign,
                                    FX_ARGB argbFill,
@@ -335,6 +344,7 @@ void CFWL_CheckBoxTP::DrawSignStar(CFX_Graphics* pGraphics,
   pGraphics->FillPath(&path, FXFILL_WINDING, pMatrix);
   pGraphics->RestoreGraphState();
 }
+
 void CFWL_CheckBoxTP::DrawSignBorder(IFWL_Widget* pWidget,
                                      CFX_Graphics* pGraphics,
                                      const CFX_RectF* pRtBox,
@@ -367,6 +377,7 @@ void CFWL_CheckBoxTP::DrawSignBorder(IFWL_Widget* pWidget,
     }
   }
 }
+
 void CFWL_CheckBoxTP::SetThemeData(uint32_t dwID) {
   uint32_t* pData = (uint32_t*)&m_pThemeData->clrBoxBk;
   if (dwID) {
@@ -435,9 +446,10 @@ void CFWL_CheckBoxTP::SetThemeData(uint32_t dwID) {
     m_pThemeData->clrSignNeutralPressed = ArgbEncode(255, 28, 134, 26);
   }
 }
-void CFWL_CheckBoxTP::initCheckPath(FX_FLOAT fCheckLen) {
+
+void CFWL_CheckBoxTP::InitCheckPath(FX_FLOAT fCheckLen) {
   if (!m_pCheckPath) {
-    m_pCheckPath = new CFX_Path;
+    m_pCheckPath.reset(new CFX_Path);
     m_pCheckPath->Create();
     FX_FLOAT fWidth = kSignPath;
     FX_FLOAT fHeight = -kSignPath;

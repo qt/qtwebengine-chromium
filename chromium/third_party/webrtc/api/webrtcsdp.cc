@@ -1391,7 +1391,7 @@ void BuildSctpContentAttributes(std::string* message, int sctp_port) {
   InitAttrLine(kAttributeSctpmap, &os);
   os << kSdpDelimiterColon << sctp_port << kSdpDelimiterSpace
      << kDefaultSctpmapProtocol << kSdpDelimiterSpace
-     << (cricket::kMaxSctpSid + 1);
+     << cricket::kMaxSctpStreams;
   AddLine(os.str(), message);
 }
 
@@ -2651,6 +2651,11 @@ bool ParseContent(const std::string& message,
         return false;
       }
     } else if (IsDtlsSctp(protocol) && HasAttribute(line, kAttributeSctpPort)) {
+      if (media_type != cricket::MEDIA_TYPE_DATA) {
+        return ParseFailed(
+            line, "sctp-port attribute found in non-data media description.",
+            error);
+      }
       int sctp_port;
       if (!ParseSctpPort(line, &sctp_port, error)) {
         return false;

@@ -38,6 +38,18 @@ const char* WasmOpcodes::ShortOpcodeName(WasmOpcode opcode) {
   return "Unknown";
 }
 
+bool WasmOpcodes::IsPrefixOpcode(WasmOpcode opcode) {
+  switch (opcode) {
+#define CHECK_PREFIX(name, opcode) \
+  case k##name##Prefix:            \
+    return true;
+    FOREACH_PREFIX(CHECK_PREFIX)
+#undef CHECK_PREFIX
+    default:
+      return false;
+  }
+}
+
 std::ostream& operator<<(std::ostream& os, const FunctionSig& sig) {
   if (sig.return_count() == 0) os << "v";
   for (size_t i = 0; i < sig.return_count(); ++i) {
@@ -68,14 +80,30 @@ FOREACH_SIGNATURE(DECLARE_SIG)
 static const FunctionSig* kSimpleExprSigs[] = {
     nullptr, FOREACH_SIGNATURE(DECLARE_SIG_ENTRY)};
 
+#define DECLARE_SIMD_SIG_ENTRY(name, ...) &kSig_##name,
+
+static const FunctionSig* kSimdExprSigs[] = {
+    nullptr, FOREACH_SIMD_SIGNATURE(DECLARE_SIMD_SIG_ENTRY)};
+
 static byte kSimpleExprSigTable[256];
+static byte kSimpleAsmjsExprSigTable[256];
+static byte kSimdExprSigTable[256];
 
 // Initialize the signature table.
-static void InitSigTable() {
+static void InitSigTables() {
 #define SET_SIG_TABLE(name, opcode, sig) \
   kSimpleExprSigTable[opcode] = static_cast<int>(kSigEnum_##sig) + 1;
   FOREACH_SIMPLE_OPCODE(SET_SIG_TABLE);
-  FOREACH_ASMJS_COMPAT_OPCODE(SET_SIG_TABLE);
+#undef SET_SIG_TABLE
+#define SET_ASMJS_SIG_TABLE(name, opcode, sig) \
+  kSimpleAsmjsExprSigTable[opcode] = static_cast<int>(kSigEnum_##sig) + 1;
+  FOREACH_ASMJS_COMPAT_OPCODE(SET_ASMJS_SIG_TABLE);
+#undef SET_ASMJS_SIG_TABLE
+  byte simd_index;
+#define SET_SIG_TABLE(name, opcode, sig) \
+  simd_index = opcode & 0xff;            \
+  kSimdExprSigTable[simd_index] = static_cast<int>(kSigEnum_##sig) + 1;
+  FOREACH_SIMD_0_OPERAND_OPCODE(SET_SIG_TABLE)
 #undef SET_SIG_TABLE
 }
 
@@ -83,18 +111,34 @@ class SigTable {
  public:
   SigTable() {
     // TODO(ahaas): Move {InitSigTable} into the class.
-    InitSigTable();
+    InitSigTables();
   }
   FunctionSig* Signature(WasmOpcode opcode) const {
     return const_cast<FunctionSig*>(
         kSimpleExprSigs[kSimpleExprSigTable[static_cast<byte>(opcode)]]);
+  }
+  FunctionSig* AsmjsSignature(WasmOpcode opcode) const {
+    return const_cast<FunctionSig*>(
+        kSimpleExprSigs[kSimpleAsmjsExprSigTable[static_cast<byte>(opcode)]]);
+  }
+  FunctionSig* SimdSignature(WasmOpcode opcode) const {
+    return const_cast<FunctionSig*>(
+        kSimdExprSigs[kSimdExprSigTable[static_cast<byte>(opcode & 0xff)]]);
   }
 };
 
 static base::LazyInstance<SigTable>::type sig_table = LAZY_INSTANCE_INITIALIZER;
 
 FunctionSig* WasmOpcodes::Signature(WasmOpcode opcode) {
-  return sig_table.Get().Signature(opcode);
+  if (opcode >> 8 == kSimdPrefix) {
+    return sig_table.Get().SimdSignature(opcode);
+  } else {
+    return sig_table.Get().Signature(opcode);
+  }
+}
+
+FunctionSig* WasmOpcodes::AsmjsSignature(WasmOpcode opcode) {
+  return sig_table.Get().AsmjsSignature(opcode);
 }
 
 // TODO(titzer): pull WASM_64 up to a common header.

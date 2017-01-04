@@ -35,7 +35,7 @@ function getSVGElement(id) {
 function announceAccessibleMessage(msg) {
   var element = document.createElement('div');
   element.setAttribute('aria-live', 'polite');
-  element.style.position = 'relative';
+  element.style.position = 'fixed';
   element.style.left = '-9999px';
   element.style.height = '0px';
   element.innerText = msg;
@@ -212,22 +212,44 @@ function queryRequiredElement(selectors, opt_context) {
 
 // Handle click on a link. If the link points to a chrome: or file: url, then
 // call into the browser to do the navigation.
-document.addEventListener('click', function(e) {
-  if (e.defaultPrevented)
-    return;
+['click', 'auxclick'].forEach(function(eventName) {
+  document.addEventListener(eventName, function(e) {
+    if (e.button > 1)
+      return; // Ignore buttons other than left and middle.
+    if (e.defaultPrevented)
+      return;
 
-  var el = e.target;
-  if (el.nodeType == Node.ELEMENT_NODE &&
-      el.webkitMatchesSelector('A, A *')) {
-    while (el.tagName != 'A') {
-      el = el.parentElement;
+    var eventPath = e.path;
+    var anchor = null;
+    if (eventPath) {
+      for (var i = 0; i < eventPath.length; i++) {
+        var element = eventPath[i];
+        if (element.tagName === 'A' && element.href) {
+          anchor = element;
+          break;
+        }
+      }
     }
 
-    if ((el.protocol == 'file:' || el.protocol == 'about:') &&
+    // Fallback if Event.path is not available.
+    var el = e.target;
+    if (!anchor && el.nodeType == Node.ELEMENT_NODE &&
+        el.webkitMatchesSelector('A, A *')) {
+      while (el.tagName != 'A') {
+        el = el.parentElement;
+      }
+      anchor = el;
+    }
+
+    if (!anchor)
+      return;
+
+    anchor = /** @type {!HTMLAnchorElement} */(anchor);
+    if ((anchor.protocol == 'file:' || anchor.protocol == 'about:') &&
         (e.button == 0 || e.button == 1)) {
       chrome.send('navigateToUrl', [
-        el.href,
-        el.target,
+        anchor.href,
+        anchor.target,
         e.button,
         e.altKey,
         e.ctrlKey,
@@ -236,7 +258,7 @@ document.addEventListener('click', function(e) {
       ]);
       e.preventDefault();
     }
-  }
+  });
 });
 
 /**
@@ -372,3 +394,95 @@ function elide(original, maxLength) {
 function quoteString(str) {
   return str.replace(/([\\\.\+\*\?\[\^\]\$\(\)\{\}\=\!\<\>\|\:])/g, '\\$1');
 }
+
+/**
+ * Calls |callback| and stops listening the first time any event in |eventNames|
+ * is triggered on |target|.
+ * @param {!EventTarget} target
+ * @param {!Array<string>|string} eventNames Array or space-delimited string of
+ *     event names to listen to (e.g. 'click mousedown').
+ * @param {function(!Event)} callback Called at most once. The
+ *     optional return value is passed on by the listener.
+ */
+function listenOnce(target, eventNames, callback) {
+  if (!Array.isArray(eventNames))
+    eventNames = eventNames.split(/ +/);
+
+  var removeAllAndCallCallback = function(event) {
+    eventNames.forEach(function(eventName) {
+      target.removeEventListener(eventName, removeAllAndCallCallback, false);
+    });
+    return callback(event);
+  };
+
+  eventNames.forEach(function(eventName) {
+    target.addEventListener(eventName, removeAllAndCallCallback, false);
+  });
+}
+
+// <if expr="is_ios">
+// Polyfill 'key' in KeyboardEvent for iOS.
+// This function is not intended to be complete but should
+// be sufficient enough to have iOS work correctly while
+// it does not support key yet.
+if (!('key' in KeyboardEvent.prototype)) {
+  Object.defineProperty(KeyboardEvent.prototype, 'key', {
+    /** @this {KeyboardEvent} */
+    get: function () {
+      // 0-9
+      if (this.keyCode >= 0x30 && this.keyCode <= 0x39)
+        return String.fromCharCode(this.keyCode);
+
+      // A-Z
+      if (this.keyCode >= 0x41 && this.keyCode <= 0x5a) {
+        var result = String.fromCharCode(this.keyCode).toLowerCase();
+        if (this.shiftKey)
+          result = result.toUpperCase();
+        return result;
+      }
+
+      // Special characters
+      switch(this.keyCode) {
+        case 0x08: return 'Backspace';
+        case 0x09: return 'Tab';
+        case 0x0d: return 'Enter';
+        case 0x10: return 'Shift';
+        case 0x11: return 'Control';
+        case 0x12: return 'Alt';
+        case 0x1b: return 'Escape';
+        case 0x20: return ' ';
+        case 0x21: return 'PageUp';
+        case 0x22: return 'PageDown';
+        case 0x23: return 'End';
+        case 0x24: return 'Home';
+        case 0x25: return 'ArrowLeft';
+        case 0x26: return 'ArrowUp';
+        case 0x27: return 'ArrowRight';
+        case 0x28: return 'ArrowDown';
+        case 0x2d: return 'Insert';
+        case 0x2e: return 'Delete';
+        case 0x5b: return 'Meta';
+        case 0x70: return 'F1';
+        case 0x71: return 'F2';
+        case 0x72: return 'F3';
+        case 0x73: return 'F4';
+        case 0x74: return 'F5';
+        case 0x75: return 'F6';
+        case 0x76: return 'F7';
+        case 0x77: return 'F8';
+        case 0x78: return 'F9';
+        case 0x79: return 'F10';
+        case 0x7a: return 'F11';
+        case 0x7b: return 'F12';
+        case 0xbb: return '=';
+        case 0xbd: return '-';
+        case 0xdb: return '[';
+        case 0xdd: return ']';
+      }
+      return 'Unidentified';
+    }
+  });
+} else {
+  window.console.log("KeyboardEvent.Key polyfill not required");
+}
+// </if>  /* is_ios */

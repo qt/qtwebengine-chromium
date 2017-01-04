@@ -41,13 +41,11 @@ GOLD_TRYBOT_URL = 'https://gold.skia.org/search?issue='
 # Path to CQ bots feature is described in https://bug.skia.org/4364
 PATH_PREFIX_TO_EXTRA_TRYBOTS = {
     # pylint: disable=line-too-long
-    'cmake/': 'client.skia.compile:Build-Mac-Clang-x86_64-Release-CMake-Trybot,Build-Ubuntu-GCC-x86_64-Release-CMake-Trybot',
-    # pylint: disable=line-too-long
-    'src/opts/': 'client.skia:Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-SKNX_NO_SIMD-Trybot',
+    'src/opts/': 'master.client.skia:Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-SKNX_NO_SIMD-Trybot',
 
-    'include/private/SkAtomics.h': ('client.skia:'
-      'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-TSAN-Trybot,'
-      'Test-Ubuntu-GCC-Golo-GPU-GT610-x86_64-Release-TSAN-Trybot'
+    'include/private/SkAtomics.h': ('master.client.skia:'
+      'Test-Ubuntu-Clang-GCE-CPU-AVX2-x86_64-Release-TSAN-Trybot,'
+      'Test-Ubuntu-Clang-Golo-GPU-GT610-x86_64-Release-TSAN-Trybot'
     ),
 
     # Below are examples to show what is possible with this feature.
@@ -169,6 +167,57 @@ def _ToolFlags(input_api, output_api):
   return results
 
 
+def _RecipeSimulationTest(input_api, output_api):
+  """Run the recipe simulation test."""
+  results = []
+  if not any(f.LocalPath().startswith('infra')
+             for f in input_api.AffectedFiles()):
+    return results
+
+  recipes_py = os.path.join('infra', 'bots', 'recipes.py')
+  cmd = ['python', recipes_py, 'simulation_test']
+  try:
+    subprocess.check_output(cmd)
+  except subprocess.CalledProcessError as e:
+    results.append(output_api.PresubmitError(
+        '`%s` failed:\n%s' % (' '.join(cmd), e.output)))
+  return results
+
+
+def _GenTasksTest(input_api, output_api):
+  """Run gen_tasks.go test."""
+  results = []
+  if not any(f.LocalPath().startswith('infra')
+             for f in input_api.AffectedFiles()):
+    return results
+
+  gen_tasks = os.path.join('infra', 'bots', 'gen_tasks.go')
+  cmd = ['go', 'run', gen_tasks, '--test']
+  try:
+    subprocess.check_output(cmd)
+  except subprocess.CalledProcessError as e:
+    results.append(output_api.PresubmitError(
+        '`%s` failed:\n%s' % (' '.join(cmd), e.output)))
+  return results
+
+
+def _CheckGNFormatted(input_api, output_api):
+  """Make sure any .gn files we're changing have been formatted."""
+  results = []
+  for f in input_api.AffectedFiles():
+    if not f.LocalPath().endswith('.gn'):
+      continue
+
+    cmd = ['gn', 'format', '--dry-run', f.LocalPath()]
+    try:
+      subprocess.check_output(cmd)
+    except subprocess.CalledProcessError:
+      fix = 'gn format ' + f.LocalPath()
+      results.append(output_api.PresubmitError(
+          '`%s` failed, try\n\t%s' % (' '.join(cmd), fix)))
+  return results
+
+
 def _CommonChecks(input_api, output_api):
   """Presubmit checks common to upload and commit."""
   results = []
@@ -202,6 +251,12 @@ def CheckChangeOnUpload(input_api, output_api):
   """
   results = []
   results.extend(_CommonChecks(input_api, output_api))
+  # Run on upload, not commit, since the presubmit bot apparently doesn't have
+  # coverage or Go installed.
+  results.extend(_RecipeSimulationTest(input_api, output_api))
+  results.extend(_GenTasksTest(input_api, output_api))
+
+  results.extend(_CheckGNFormatted(input_api, output_api))
   return results
 
 
@@ -243,14 +298,71 @@ def _CheckTreeStatus(input_api, output_api, json_url):
   return tree_status_results
 
 
+class CodeReview(object):
+  """Abstracts which codereview tool is used for the specified issue."""
+
+  def __init__(self, input_api):
+    self._issue = input_api.change.issue
+    self._gerrit = input_api.gerrit
+    self._rietveld_properties = None
+    if not self._gerrit:
+      self._rietveld_properties = input_api.rietveld.get_issue_properties(
+          issue=int(self._issue), messages=True)
+
+  def GetOwnerEmail(self):
+    if self._gerrit:
+      return self._gerrit.GetChangeOwner(self._issue)
+    else:
+      return self._rietveld_properties['owner_email']
+
+  def GetSubject(self):
+    if self._gerrit:
+      return self._gerrit.GetChangeInfo(self._issue)['subject']
+    else:
+      return self._rietveld_properties['subject']
+
+  def GetDescription(self):
+    if self._gerrit:
+      return self._gerrit.GetChangeDescription(self._issue)
+    else:
+      return self._rietveld_properties['description']
+
+  def IsDryRun(self):
+    if self._gerrit:
+      return self._gerrit.GetChangeInfo(
+          self._issue)['labels']['Commit-Queue'].get('value', 0) == 1
+    else:
+      return self._rietveld_properties['cq_dry_run']
+
+  def GetReviewers(self):
+    if self._gerrit:
+      code_review_label = (
+          self._gerrit.GetChangeInfo(self._issue)['labels']['Code-Review'])
+      return [r['email'] for r in code_review_label.get('all', [])]
+    else:
+      return self._rietveld_properties['reviewers']
+
+  def GetApprovers(self):
+    approvers = []
+    if self._gerrit:
+      code_review_label = (
+          self._gerrit.GetChangeInfo(self._issue)['labels']['Code-Review'])
+      for m in code_review_label.get('all', []):
+        if m.get("value") == 1:
+          approvers.append(m["email"])
+    else:
+      for m in self._rietveld_properties.get('messages', []):
+        if 'lgtm' in m['text'].lower():
+          approvers.append(m['sender'])
+    return approvers
+
+
 def _CheckOwnerIsInAuthorsFile(input_api, output_api):
   results = []
-  issue = input_api.change.issue
-  if issue and input_api.rietveld:
-    issue_properties = input_api.rietveld.get_issue_properties(
-        issue=int(issue), messages=False)
-    owner_email = issue_properties['owner_email']
+  if input_api.change.issue:
+    cr = CodeReview(input_api)
 
+    owner_email = cr.GetOwnerEmail()
     try:
       authors_content = ''
       for line in open(AUTHORS_FILE_NAME):
@@ -298,50 +410,55 @@ def _CheckLGTMsForPublicAPI(input_api, output_api):
     return results
 
   lgtm_from_owner = False
-  issue = input_api.change.issue
-  if issue and input_api.rietveld:
-    issue_properties = input_api.rietveld.get_issue_properties(
-        issue=int(issue), messages=True)
-    if re.match(REVERT_CL_SUBJECT_PREFIX, issue_properties['subject'], re.I):
+  if input_api.change.issue:
+    cr = CodeReview(input_api)
+
+    if re.match(REVERT_CL_SUBJECT_PREFIX, cr.GetSubject(), re.I):
       # It is a revert CL, ignore the public api owners check.
       return results
 
-    if issue_properties['cq_dry_run']:
+    if cr.IsDryRun():
       # Ignore public api owners check for dry run CLs since they are not
       # going to be committed.
       return results
 
-    match = re.search(r'^TBR=(.*)$', issue_properties['description'], re.M)
-    if match:
-      tbr_entries = match.group(1).strip().split(',')
-      for owner in PUBLIC_API_OWNERS:
-        if owner in tbr_entries or owner.split('@')[0] in tbr_entries:
-          # If an owner is specified in the TBR= line then ignore the public
-          # api owners check.
+    if input_api.gerrit:
+      for reviewer in cr.GetReviewers():
+        if reviewer in PUBLIC_API_OWNERS:
+          # If an owner is specified as an reviewer in Gerrit then ignore the
+          # public api owners check.
           return results
+    else:
+      match = re.search(r'^TBR=(.*)$', cr.GetDescription(), re.M)
+      if match:
+        tbr_section = match.group(1).strip().split(' ')[0]
+        tbr_entries = tbr_section.split(',')
+        for owner in PUBLIC_API_OWNERS:
+          if owner in tbr_entries or owner.split('@')[0] in tbr_entries:
+            # If an owner is specified in the TBR= line then ignore the public
+            # api owners check.
+            return results
 
-    if issue_properties['owner_email'] in PUBLIC_API_OWNERS:
+    if cr.GetOwnerEmail() in PUBLIC_API_OWNERS:
       # An owner created the CL that is an automatic LGTM.
       lgtm_from_owner = True
 
-    messages = issue_properties.get('messages')
-    if messages:
-      for message in messages:
-        if (message['sender'] in PUBLIC_API_OWNERS and
-            'lgtm' in message['text'].lower()):
-          # Found an lgtm in a message from an owner.
-          lgtm_from_owner = True
-          break
+    for approver in cr.GetApprovers():
+      if approver in PUBLIC_API_OWNERS:
+        # Found an lgtm in a message from an owner.
+        lgtm_from_owner = True
+        break
 
   if not lgtm_from_owner:
     results.append(
         output_api.PresubmitError(
             "If this CL adds to or changes Skia's public API, you need an LGTM "
             "from any of %s.  If this CL only removes from or doesn't change "
-            "Skia's public API, please add a short note to the CL saying so "
-            "and add one of those reviewers on a TBR= line.  If you don't know "
-            "if this CL affects Skia's public API, treat it like it does."
-            % str(PUBLIC_API_OWNERS)))
+            "Skia's public API, please add a short note to the CL saying so. "
+            "Add one of the owners as a reviewer to your CL. For Rietveld CLs "
+            "you also need to add one of those owners on a TBR= line.  If you "
+            "don't know if this CL affects Skia's public API, treat it like it "
+            "does." % str(PUBLIC_API_OWNERS)))
   return results
 
 
@@ -375,9 +492,16 @@ def PostUploadHook(cl, change, output_api):
       break
 
   issue = cl.issue
-  rietveld_obj = cl.RpcServer()
-  if issue and rietveld_obj:
-    original_description = rietveld_obj.get_description(issue)
+  if issue:
+    original_description = cl.GetDescription()
+    changeIdLine = None
+    if cl.IsGerrit():
+      # Remove Change-Id from description and add it back at the end.
+      regex = re.compile(r'^(Change-Id: (\w+))(\n*)\Z', re.M | re.I)
+      changeIdLine = re.search(regex, original_description).group(0)
+      original_description = re.sub(regex, '', original_description)
+      original_description = re.sub('\n+\Z', '\n', original_description)
+
     new_description = original_description
 
     # Add GOLD_TRYBOT_URL if it does not exist yet.
@@ -412,9 +536,8 @@ def PostUploadHook(cl, change, output_api):
 
     # If the target ref is not master then add NOTREECHECKS=true and NOTRY=true
     # to the CL's description if it does not already exist there.
-    target_ref = rietveld_obj.get_issue_properties(issue, False).get(
-        'target_ref', '')
-    if target_ref != 'refs/heads/master':
+    target_ref = cl.GetRemoteBranch()[1]
+    if target_ref != 'refs/remotes/origin/master':
       if not re.search(
           r'^NOTREECHECKS=true$', new_description, re.M | re.I):
         new_description += "\nNOTREECHECKS=true"
@@ -437,8 +560,8 @@ def PostUploadHook(cl, change, output_api):
             output_api.PresubmitNotifyResult(
                 'Branch changes do not run the presubmit checks.'))
 
-    # Automatically set CQ_EXTRA_TRYBOTS if any of the changed files here begin
-    # with the paths of interest.
+    # Automatically set CQ_INCLUDE_TRYBOTS if any of the changed files here
+    # begin with the paths of interest.
     cq_master_to_trybots = collections.defaultdict(set)
     for affected_file in change.AffectedFiles():
       affected_file_path = affected_file.LocalPath()
@@ -456,20 +579,23 @@ def PostUploadHook(cl, change, output_api):
 
     # If the description has changed update it.
     if new_description != original_description:
-      rietveld_obj.update_description(issue, new_description)
+      if changeIdLine:
+        # The Change-Id line must have two newlines before it.
+        new_description += '\n\n' + changeIdLine
+      cl.UpdateDescription(new_description)
 
     return results
 
 
 def _AddCQExtraTrybotsToDesc(cq_master_to_trybots, description):
-  """Adds the specified master and trybots to the CQ_EXTRA_TRYBOTS keyword.
+  """Adds the specified master and trybots to the CQ_INCLUDE_TRYBOTS keyword.
 
   If the keyword already exists in the description then it appends to it only
   if the specified values do not already exist.
   If the keyword does not exist then it creates a new section in the
   description.
   """
-  match = re.search(r'^CQ_EXTRA_TRYBOTS=(.*)$', description, re.M | re.I)
+  match = re.search(r'^CQ_INCLUDE_TRYBOTS=(.*)$', description, re.M | re.I)
   if match:
     original_trybots_map = _GetCQExtraTrybotsMap(match.group(1))
     _MergeCQExtraTrybotsMaps(cq_master_to_trybots, original_trybots_map)
@@ -489,7 +615,7 @@ def _MergeCQExtraTrybotsMaps(dest_map, map_to_be_consumed):
 
 
 def _GetCQExtraTrybotsMap(cq_extra_trybots_str):
-  """Parses the CQ_EXTRA_TRYBOTS str and returns a map of masters to trybots."""
+  """Parses CQ_INCLUDE_TRYBOTS str and returns a map of masters to trybots."""
   cq_master_to_trybots = collections.defaultdict(set)
   for section in cq_extra_trybots_str.split(';'):
     if section:
@@ -499,11 +625,11 @@ def _GetCQExtraTrybotsMap(cq_extra_trybots_str):
 
 
 def _GetCQExtraTrybotsStr(cq_master_to_trybots):
-  """Constructs the CQ_EXTRA_TRYBOTS str from a map of masters to trybots."""
+  """Constructs the CQ_INCLUDE_TRYBOTS str from a map of masters to trybots."""
   sections = []
   for master, trybots in cq_master_to_trybots.iteritems():
     sections.append('%s:%s' % (master, ','.join(trybots)))
-  return 'CQ_EXTRA_TRYBOTS=%s' % ';'.join(sections)
+  return 'CQ_INCLUDE_TRYBOTS=%s' % ';'.join(sections)
 
 
 def CheckChangeOnCommit(input_api, output_api):

@@ -13,25 +13,31 @@
 
 #include <memory>
 
-#include "webrtc/audio_send_stream.h"
-#include "webrtc/audio_state.h"
+#include "webrtc/api/call/audio_send_stream.h"
+#include "webrtc/api/call/audio_state.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/thread_checker.h"
+#include "webrtc/call/bitrate_allocator.h"
 
 namespace webrtc {
 class CongestionController;
 class VoiceEngine;
+class RtcEventLog;
 
 namespace voe {
 class ChannelProxy;
 }  // namespace voe
 
 namespace internal {
-class AudioSendStream final : public webrtc::AudioSendStream {
+class AudioSendStream final : public webrtc::AudioSendStream,
+                              public webrtc::BitrateAllocatorObserver {
  public:
   AudioSendStream(const webrtc::AudioSendStream::Config& config,
                   const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
-                  CongestionController* congestion_controller);
+                  rtc::TaskQueue* worker_queue,
+                  CongestionController* congestion_controller,
+                  BitrateAllocator* bitrate_allocator,
+                  RtcEventLog* event_log);
   ~AudioSendStream() override;
 
   // webrtc::AudioSendStream implementation.
@@ -44,15 +50,24 @@ class AudioSendStream final : public webrtc::AudioSendStream {
 
   void SignalNetworkState(NetworkState state);
   bool DeliverRtcp(const uint8_t* packet, size_t length);
+
+  // Implements BitrateAllocatorObserver.
+  uint32_t OnBitrateUpdated(uint32_t bitrate_bps,
+                            uint8_t fraction_loss,
+                            int64_t rtt) override;
+
   const webrtc::AudioSendStream::Config& config() const;
 
  private:
   VoiceEngine* voice_engine() const;
 
   rtc::ThreadChecker thread_checker_;
+  rtc::TaskQueue* worker_queue_;
   const webrtc::AudioSendStream::Config config_;
   rtc::scoped_refptr<webrtc::AudioState> audio_state_;
   std::unique_ptr<voe::ChannelProxy> channel_proxy_;
+
+  BitrateAllocator* const bitrate_allocator_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(AudioSendStream);
 };

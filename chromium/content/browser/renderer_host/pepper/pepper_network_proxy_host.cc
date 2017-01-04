@@ -12,8 +12,8 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/socket_permission_request.h"
-#include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/log/net_log_with_source.h"
 #include "net/proxy/proxy_info.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -145,14 +145,9 @@ void PepperNetworkProxyHost::TryToSendUnsentRequests() {
                      weak_factory_.GetWeakPtr(),
                      request.reply_context,
                      base::Owned(proxy_info));
-      int result = proxy_service_->ResolveProxy(request.url,
-                                                std::string(),
-                                                net::LOAD_NORMAL,
-                                                proxy_info,
-                                                callback,
-                                                &pending_request,
-                                                NULL,
-                                                net::BoundNetLog());
+      int result = proxy_service_->ResolveProxy(
+          request.url, std::string(), proxy_info, callback, &pending_request,
+          NULL, net::NetLogWithSource());
       pending_requests_.push(pending_request);
       // If it was handled synchronously, we must run the callback now;
       // proxy_service_ won't run it for us in this case.

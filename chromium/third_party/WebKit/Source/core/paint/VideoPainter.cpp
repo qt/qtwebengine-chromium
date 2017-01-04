@@ -12,46 +12,66 @@
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
 #include "platform/geometry/LayoutPoint.h"
-#include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/ForeignLayerDisplayItem.h"
 
 namespace blink {
 
-void VideoPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
-{
-    WebMediaPlayer* mediaPlayer = m_layoutVideo.mediaElement()->webMediaPlayer();
-    bool displayingPoster = m_layoutVideo.videoElement()->shouldDisplayPosterImage();
-    if (!displayingPoster && !mediaPlayer)
-        return;
+void VideoPainter::paintReplaced(const PaintInfo& paintInfo,
+                                 const LayoutPoint& paintOffset) {
+  WebMediaPlayer* mediaPlayer = m_layoutVideo.mediaElement()->webMediaPlayer();
+  bool displayingPoster =
+      m_layoutVideo.videoElement()->shouldDisplayPosterImage();
+  if (!displayingPoster && !mediaPlayer)
+    return;
 
-    LayoutRect rect(m_layoutVideo.videoBox());
-    if (rect.isEmpty())
-        return;
-    rect.moveBy(paintOffset);
+  LayoutRect replacedRect(m_layoutVideo.replacedContentRect());
+  replacedRect.moveBy(paintOffset);
+  IntRect snappedReplacedRect = pixelSnappedIntRect(replacedRect);
 
-    GraphicsContext& context = paintInfo.context;
-    LayoutRect contentRect = m_layoutVideo.contentBoxRect();
-    contentRect.moveBy(paintOffset);
+  if (snappedReplacedRect.isEmpty())
+    return;
 
-    Optional<ClipRecorder> clipRecorder;
-    if (!contentRect.contains(rect))
-        clipRecorder.emplace(context, m_layoutVideo, paintInfo.displayItemTypeForClipping(), pixelSnappedIntRect(contentRect));
+  if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(
+          paintInfo.context, m_layoutVideo, paintInfo.phase))
+    return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(context, m_layoutVideo, paintInfo.phase))
-        return;
+  GraphicsContext& context = paintInfo.context;
+  LayoutRect contentRect = m_layoutVideo.contentBoxRect();
+  contentRect.moveBy(paintOffset);
 
-    LayoutObjectDrawingRecorder drawingRecorder(context, m_layoutVideo, paintInfo.phase, contentRect);
+  // Video frames are only painted in software for printing or capturing node
+  // images via web APIs.
+  bool forceSoftwareVideoPaint =
+      paintInfo.getGlobalPaintFlags() & GlobalPaintFlattenCompositingLayers;
 
-    // Video frames are only painted in software for printing or capturing node images via web APIs.
-    bool forceSoftwareVideoPaint = paintInfo.getGlobalPaintFlags() & GlobalPaintFlattenCompositingLayers;
-
-    if (displayingPoster || !forceSoftwareVideoPaint) {
-        // This will display the poster image, if one is present, and otherwise paint nothing.
-        ImagePainter(m_layoutVideo).paintIntoRect(context, rect);
-    } else {
-        SkPaint videoPaint = context.fillPaint();
-        videoPaint.setColor(SK_ColorBLACK);
-        m_layoutVideo.videoElement()->paintCurrentFrame(context.canvas(), pixelSnappedIntRect(rect), &videoPaint);
+  bool paintWithForeignLayer = !displayingPoster && !forceSoftwareVideoPaint &&
+                               RuntimeEnabledFeatures::slimmingPaintV2Enabled();
+  if (paintWithForeignLayer) {
+    if (WebLayer* layer = m_layoutVideo.mediaElement()->platformLayer()) {
+      IntRect pixelSnappedRect = pixelSnappedIntRect(contentRect);
+      recordForeignLayer(context, m_layoutVideo,
+                         DisplayItem::kForeignLayerVideo, layer,
+                         pixelSnappedRect.location(), pixelSnappedRect.size());
+      return;
     }
+  }
+
+  // TODO(trchen): Video rect could overflow the content rect due to object-fit.
+  // Should apply a clip here like EmbeddedObjectPainter does.
+  LayoutObjectDrawingRecorder drawingRecorder(context, m_layoutVideo,
+                                              paintInfo.phase, contentRect);
+
+  if (displayingPoster || !forceSoftwareVideoPaint) {
+    // This will display the poster image, if one is present, and otherwise
+    // paint nothing.
+    ImagePainter(m_layoutVideo)
+        .paintIntoRect(context, replacedRect, contentRect);
+  } else {
+    SkPaint videoPaint = context.fillPaint();
+    videoPaint.setColor(SK_ColorBLACK);
+    m_layoutVideo.videoElement()->paintCurrentFrame(
+        context.canvas(), snappedReplacedRect, &videoPaint);
+  }
 }
 
-} // namespace blink
+}  // namespace blink

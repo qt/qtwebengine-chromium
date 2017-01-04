@@ -11,17 +11,17 @@
 #include <memory>
 #include <vector>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/modules/video_coding/include/mock/mock_video_codec_interface.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
 #include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "webrtc/modules/video_coding/include/mock/mock_vcm_callbacks.h"
+#include "webrtc/modules/video_coding/include/mock/mock_video_codec_interface.h"
 #include "webrtc/modules/video_coding/include/video_coding.h"
-#include "webrtc/modules/video_coding/video_coding_impl.h"
 #include "webrtc/modules/video_coding/test/test_util.h"
+#include "webrtc/modules/video_coding/video_coding_impl.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/frame_generator.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 using ::testing::_;
@@ -93,13 +93,13 @@ class EncodedImageCallbackImpl : public EncodedImageCallback {
 
   virtual ~EncodedImageCallbackImpl() {}
 
-  int32_t Encoded(const EncodedImage& encoded_image,
-                  const CodecSpecificInfo* codec_specific_info,
-                  const RTPFragmentationHeader* fragmentation) override {
+  Result OnEncodedImage(const EncodedImage& encoded_image,
+                        const CodecSpecificInfo* codec_specific_info,
+                        const RTPFragmentationHeader* fragmentation) override {
     assert(codec_specific_info);
     frame_data_.push_back(
         FrameData(encoded_image._length, *codec_specific_info));
-    return 0;
+    return Result(Result::OK, encoded_image._timeStamp);
   }
 
   void Reset() {
@@ -180,8 +180,7 @@ class TestVideoSender : public ::testing::Test {
   TestVideoSender() : clock_(1000), encoded_frame_callback_(&clock_) {}
 
   void SetUp() override {
-    sender_.reset(
-        new VideoSender(&clock_, &encoded_frame_callback_, nullptr, nullptr));
+    sender_.reset(new VideoSender(&clock_, &encoded_frame_callback_, nullptr));
   }
 
   void AddFrame() {

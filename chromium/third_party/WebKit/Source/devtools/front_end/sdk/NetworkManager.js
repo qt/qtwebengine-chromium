@@ -51,9 +51,6 @@ WebInspector.NetworkManager = function(target)
     else
         this._networkAgent.enable();
 
-    /** @type {!Map<!SecurityAgent.CertificateId, !Promise<!NetworkAgent.CertificateDetails>>} */
-    this._certificateDetailsCache = new Map();
-
     this._bypassServiceWorkerSetting = WebInspector.settings.createSetting("bypassServiceWorker", false);
     if (this._bypassServiceWorkerSetting.get())
         this._bypassServiceWorkerChanged();
@@ -62,12 +59,13 @@ WebInspector.NetworkManager = function(target)
     WebInspector.moduleSetting("cacheDisabled").addChangeListener(this._cacheDisabledSettingChanged, this);
 }
 
-WebInspector.NetworkManager.EventTypes = {
-    RequestStarted: "RequestStarted",
-    RequestUpdated: "RequestUpdated",
-    RequestFinished: "RequestFinished",
-    RequestUpdateDropped: "RequestUpdateDropped",
-    ResponseReceived: "ResponseReceived"
+/** @enum {symbol} */
+WebInspector.NetworkManager.Events = {
+    RequestStarted: Symbol("RequestStarted"),
+    RequestUpdated: Symbol("RequestUpdated"),
+    RequestFinished: Symbol("RequestFinished"),
+    RequestUpdateDropped: Symbol("RequestUpdateDropped"),
+    ResponseReceived: Symbol("ResponseReceived")
 }
 
 WebInspector.NetworkManager._MIMETypes = {
@@ -79,6 +77,15 @@ WebInspector.NetworkManager._MIMETypes = {
     "text/css":                    {"stylesheet": true},
     "text/xsl":                    {"stylesheet": true},
     "text/vtt":                    {"texttrack": true},
+}
+
+/**
+ * @param {!WebInspector.Target} target
+ * @return {?WebInspector.NetworkManager}
+ */
+WebInspector.NetworkManager.fromTarget = function(target)
+{
+    return /** @type {?WebInspector.NetworkManager} */ (target.model(WebInspector.NetworkManager));
 }
 
 /** @typedef {{download: number, upload: number, latency: number, title: string}} */
@@ -137,44 +144,6 @@ WebInspector.NetworkManager.prototype = {
     dispose: function()
     {
         WebInspector.moduleSetting("cacheDisabled").removeChangeListener(this._cacheDisabledSettingChanged, this);
-    },
-
-    /**
-     * @param {!SecurityAgent.CertificateId} certificateId
-     * @return {!Promise<!NetworkAgent.CertificateDetails>}
-     */
-    certificateDetailsPromise: function(certificateId)
-    {
-        var cachedPromise = this._certificateDetailsCache.get(certificateId);
-        if (cachedPromise)
-            return cachedPromise;
-
-        /**
-         * @this {WebInspector.NetworkManager}
-         * @param {function(?NetworkAgent.CertificateDetails)} resolve
-         * @param {function()} reject
-         */
-        function executor(resolve, reject) {
-            /**
-             * @param {?Protocol.Error} error
-             * @param {?NetworkAgent.CertificateDetails} certificateDetails
-             */
-            function innerCallback(error, certificateDetails)
-            {
-                if (error) {
-                    console.error("Unable to get certificate details from the browser (for certificate ID ", certificateId, "): ", error);
-                    reject();
-                } else {
-                    resolve(certificateDetails);
-                }
-            }
-            this._networkAgent.getCertificateDetails(certificateId, innerCallback);
-        }
-
-        var promise = new Promise(executor.bind(this));
-
-        this._certificateDetailsCache.set(certificateId, promise);
-        return promise;
     },
 
     /**
@@ -395,7 +364,7 @@ WebInspector.NetworkDispatcher.prototype = {
             eventData.loaderId = loaderId;
             eventData.resourceType = resourceType;
             eventData.mimeType = response.mimeType;
-            this._manager.dispatchEventToListeners(WebInspector.NetworkManager.EventTypes.RequestUpdateDropped, eventData);
+            this._manager.dispatchEventToListeners(WebInspector.NetworkManager.Events.RequestUpdateDropped, eventData);
             return;
         }
 
@@ -405,7 +374,7 @@ WebInspector.NetworkDispatcher.prototype = {
         this._updateNetworkRequestWithResponse(networkRequest, response);
 
         this._updateNetworkRequest(networkRequest);
-        this._manager.dispatchEventToListeners(WebInspector.NetworkManager.EventTypes.ResponseReceived, networkRequest);
+        this._manager.dispatchEventToListeners(WebInspector.NetworkManager.Events.ResponseReceived, networkRequest);
     },
 
     /**
@@ -483,11 +452,11 @@ WebInspector.NetworkDispatcher.prototype = {
      * @override
      * @param {!NetworkAgent.RequestId} requestId
      * @param {string} requestURL
+     * @param {!NetworkAgent.Initiator=} initiator
      */
-    webSocketCreated: function(requestId, requestURL)
+    webSocketCreated: function(requestId, requestURL, initiator)
     {
-        // FIXME: WebSocket MUST have initiator info.
-        var networkRequest = new WebInspector.NetworkRequest(this._manager._target, requestId, requestURL, "", "", "", null);
+        var networkRequest = new WebInspector.NetworkRequest(this._manager._target, requestId, requestURL, "", "", "", initiator || null);
         networkRequest.setResourceType(WebInspector.resourceTypes.WebSocket);
         this._startNetworkRequest(networkRequest);
     },
@@ -649,7 +618,7 @@ WebInspector.NetworkDispatcher.prototype = {
     {
         this._inflightRequestsById[networkRequest.requestId] = networkRequest;
         this._inflightRequestsByURL[networkRequest.url] = networkRequest;
-        this._dispatchEventToListeners(WebInspector.NetworkManager.EventTypes.RequestStarted, networkRequest);
+        this._dispatchEventToListeners(WebInspector.NetworkManager.Events.RequestStarted, networkRequest);
     },
 
     /**
@@ -657,7 +626,7 @@ WebInspector.NetworkDispatcher.prototype = {
      */
     _updateNetworkRequest: function(networkRequest)
     {
-        this._dispatchEventToListeners(WebInspector.NetworkManager.EventTypes.RequestUpdated, networkRequest);
+        this._dispatchEventToListeners(WebInspector.NetworkManager.Events.RequestUpdated, networkRequest);
     },
 
     /**
@@ -671,7 +640,7 @@ WebInspector.NetworkDispatcher.prototype = {
         networkRequest.finished = true;
         if (encodedDataLength >= 0)
             networkRequest.setTransferSize(encodedDataLength);
-        this._dispatchEventToListeners(WebInspector.NetworkManager.EventTypes.RequestFinished, networkRequest);
+        this._dispatchEventToListeners(WebInspector.NetworkManager.Events.RequestFinished, networkRequest);
         delete this._inflightRequestsById[networkRequest.requestId];
         delete this._inflightRequestsByURL[networkRequest.url];
     },
@@ -724,9 +693,24 @@ WebInspector.MultitargetNetworkManager = function()
     this._networkConditions = WebInspector.NetworkManager.NoThrottlingConditions;
 }
 
+/** @enum {symbol} */
 WebInspector.MultitargetNetworkManager.Events = {
-    ConditionsChanged: "ConditionsChanged",
-    UserAgentChanged: "UserAgentChanged"
+    ConditionsChanged: Symbol("ConditionsChanged"),
+    UserAgentChanged: Symbol("UserAgentChanged")
+}
+
+/**
+ * @param {string} uaString
+ * @return {string}
+ */
+WebInspector.MultitargetNetworkManager.patchUserAgentWithChromeVersion = function(uaString)
+{
+    // Patches Chrome/CriOS version from user agent ("1.2.3.4" when user agent is: "Chrome/1.2.3.4").
+    var chromeRegex = new RegExp("(?:^|\\W)Chrome/(\\S+)");
+    var chromeMatch = navigator.userAgent.match(chromeRegex);
+    if (chromeMatch && chromeMatch.length > 1)
+        return String.sprintf(uaString, chromeMatch[1]);
+    return uaString;
 }
 
 WebInspector.MultitargetNetworkManager.prototype = {
@@ -907,13 +891,22 @@ WebInspector.MultitargetNetworkManager.prototype = {
     },
 
     /**
-     * @param {!SecurityAgent.CertificateId} certificateId
+     * @param {string} origin
+     * @param {function(!Array<string>)} callback
      */
-    showCertificateViewer: function(certificateId)
+    getCertificate: function(origin, callback)
     {
         var target = WebInspector.targetManager.mainTarget();
-        if (target)
-            target.networkAgent().showCertificateViewer(certificateId);
+        target.networkAgent().getCertificate(origin, mycallback);
+
+        /**
+         * @param {?Protocol.Error} error
+         * @param {!Array<string>} certificate
+         */
+        function mycallback(error, certificate)
+        {
+            callback(error ? [] : certificate);
+        }
     },
 
     /**

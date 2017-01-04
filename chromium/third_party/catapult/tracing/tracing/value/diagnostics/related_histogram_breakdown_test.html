@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<!--
+Copyright 2016 The Chromium Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+
+<link rel="import" href="/tracing/extras/chrome/chrome_user_friendly_category_driver.html">
+<link rel="import" href="/tracing/model/event_set.html">
+<link rel="import" href="/tracing/value/diagnostics/related_histogram_breakdown.html">
+<link rel="import" href="/tracing/value/histogram.html">
+<link rel="import" href="/tracing/value/value_set.html">
+
+<script>
+'use strict';
+
+tr.b.unittest.testSuite(function() {
+  var TEST_BOUNDARIES = tr.v.HistogramBinBoundaries.createLinear(0, 10, 10);
+
+  test('build', function() {
+    var values = new tr.v.ValueSet();
+    var events = new tr.model.EventSet([
+      {
+        guid: 9,
+        title: 'V8.Execute',
+        cpuSelfTime: 1,
+        stableId: '11.11'
+      },
+      {
+        guid: 10,
+        title: 'V8.Execute',
+        cpuSelfTime: 2,
+        stableId: '22.22'
+      },
+      {
+        guid: 11,
+        title: 'UpdateLayoutTree',
+        cpuSelfTime: 3,
+        stableId: '33.33'
+      },
+      {
+        guid: 12,
+        title: 'UpdateLayoutTree',
+        cpuSelfTime: undefined,
+        stableId: '44.44'
+      }
+    ]);
+
+    var sampleForEvent = undefined;
+    var diagnostic = tr.v.d.RelatedHistogramBreakdown.buildFromEvents(
+        values, 'foo-', events,
+        tr.e.chrome.ChromeUserFriendlyCategoryDriver.fromEvent,
+        tr.b.Unit.byName.timeDurationInMs, sampleForEvent, TEST_BOUNDARIES);
+
+    assert.lengthOf(diagnostic, 2);
+    var scriptValue = values.getValuesNamed('foo-script_execute')[0];
+    assert.instanceOf(scriptValue, tr.v.Histogram);
+    assert.lengthOf(scriptValue.centralBins[1].diagnosticMaps, 1);
+    assert.strictEqual(scriptValue, diagnostic.get('script_execute'));
+    events = [...events];
+    var relatedEvents = scriptValue.centralBins[1].diagnosticMaps[0]
+        .get('relatedEvents');
+    assert.lengthOf(relatedEvents, 1);
+    assert.strictEqual(events[0], [...relatedEvents][0]);
+    assert.lengthOf(scriptValue.centralBins[2].diagnosticMaps, 1);
+    assert.lengthOf(
+        scriptValue.centralBins[2].diagnosticMaps[0]
+        .get('relatedEvents'), 1);
+    assert.strictEqual(events[1],
+        [...scriptValue.centralBins[2].diagnosticMaps[0]
+        .get('relatedEvents')][0]);
+
+    var styleValue = values.getValuesNamed('foo-style')[0];
+    assert.instanceOf(styleValue, tr.v.Histogram);
+    assert.lengthOf(styleValue.centralBins[3].diagnosticMaps, 1);
+    relatedEvents = styleValue.centralBins[3].diagnosticMaps[0]
+        .get('relatedEvents');
+    assert.strictEqual(styleValue, diagnostic.get('style'));
+    assert.lengthOf(relatedEvents, 1);
+    assert.strictEqual(events[2], [...relatedEvents][0]);
+  });
+});
+</script>

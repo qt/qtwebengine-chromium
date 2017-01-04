@@ -13,7 +13,6 @@
 #include "base/values.h"
 #include "components/upload_list/upload_list.h"
 #include "grit/components_chromium_strings.h"
-#include "grit/components_google_chrome_strings.h"
 #include "grit/components_strings.h"
 
 namespace crash {
@@ -25,12 +24,15 @@ const CrashesUILocalizedString kCrashesUILocalizedStrings[] = {
     {"crashHeaderFormatLocalOnly", IDS_CRASH_CRASH_HEADER_FORMAT_LOCAL_ONLY},
     {"crashTimeFormat", IDS_CRASH_CRASH_TIME_FORMAT},
     {"crashNotUploaded", IDS_CRASH_CRASH_NOT_UPLOADED},
+    {"crashUserRequested", IDS_CRASH_CRASH_USER_REQUESTED},
     {"crashPending", IDS_CRASH_CRASH_PENDING},
     {"crashesTitle", IDS_CRASH_TITLE},
     {"disabledHeader", IDS_CRASH_DISABLED_HEADER},
     {"disabledMessage", IDS_CRASH_DISABLED_MESSAGE},
     {"noCrashesMessage", IDS_CRASH_NO_CRASHES_MESSAGE},
     {"uploadCrashesLinkText", IDS_CRASH_UPLOAD_MESSAGE},
+    {"uploadNowLinkText", IDS_CRASH_UPLOAD_NOW_LINK_TEXT},
+    {"crashSizeMessage", IDS_CRASH_SIZE_MESSAGE},
 };
 
 const size_t kCrashesUILocalizedStringsCount =
@@ -41,6 +43,7 @@ const char kCrashesUIRequestCrashList[] = "requestCrashList";
 const char kCrashesUIRequestCrashUpload[] = "requestCrashUpload";
 const char kCrashesUIShortProductName[] = "shortProductName";
 const char kCrashesUIUpdateCrashList[] = "updateCrashList";
+const char kCrashesUIRequestSingleCrashUpload[] = "requestSingleCrashUpload";
 
 std::string UploadInfoStateAsString(UploadList::UploadInfo::State state) {
   switch (state) {
@@ -48,6 +51,8 @@ std::string UploadInfoStateAsString(UploadList::UploadInfo::State state) {
       return "not_uploaded";
     case UploadList::UploadInfo::State::Pending:
       return "pending";
+    case UploadList::UploadInfo::State::Pending_UserRequested:
+      return "pending_user_requested";
     case UploadList::UploadInfo::State::Uploaded:
       return "uploaded";
   }
@@ -72,6 +77,7 @@ void UploadListToValue(UploadList* upload_list, base::ListValue* out_value) {
     }
     crash->SetString("local_id", info.local_id);
     crash->SetString("state", UploadInfoStateAsString(info.state));
+    crash->SetString("file_size", info.file_size);
     out_value->Append(std::move(crash));
   }
 }

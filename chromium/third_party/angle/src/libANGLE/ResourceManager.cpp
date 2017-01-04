@@ -97,13 +97,10 @@ GLuint ResourceManager::createShader(rx::GLImplFactory *factory,
                                      const gl::Limitations &rendererLimitations,
                                      GLenum type)
 {
+    ASSERT(type == GL_VERTEX_SHADER || type == GL_FRAGMENT_SHADER || type == GL_COMPUTE_SHADER);
     GLuint handle = mProgramShaderHandleAllocator.allocate();
 
-    if (type == GL_VERTEX_SHADER || type == GL_FRAGMENT_SHADER)
-    {
-        mShaderMap[handle] = new Shader(this, factory, rendererLimitations, type, handle);
-    }
-    else UNREACHABLE();
+    mShaderMap[handle] = new Shader(this, factory, rendererLimitations, type, handle);
 
     return handle;
 }
@@ -545,6 +542,21 @@ Sampler *ResourceManager::checkSamplerAllocation(rx::GLImplFactory *factory, GLu
 bool ResourceManager::isSampler(GLuint sampler)
 {
     return mSamplerMap.find(sampler) != mSamplerMap.end();
+}
+
+bool ResourceManager::isTextureGenerated(GLuint texture) const
+{
+    return texture == 0 || mTextureMap.find(texture) != mTextureMap.end();
+}
+
+bool ResourceManager::isBufferGenerated(GLuint buffer) const
+{
+    return buffer == 0 || mBufferMap.find(buffer) != mBufferMap.end();
+}
+
+bool ResourceManager::isRenderbufferGenerated(GLuint renderbuffer) const
+{
+    return renderbuffer == 0 || mRenderbufferMap.find(renderbuffer) != mRenderbufferMap.end();
 }
 
 }  // namespace gl

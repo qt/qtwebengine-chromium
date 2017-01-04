@@ -35,6 +35,8 @@ WebInspector.Panel = function(name)
     WebInspector.VBox.call(this);
 
     this.element.classList.add("panel");
+    this.element.setAttribute("role", "tabpanel");
+    this.element.setAttribute("aria-label", name);
     this.element.classList.add(name);
     this._panelName = name;
 
@@ -138,7 +140,7 @@ WebInspector.PanelWithSidebar = function(name, defaultWidth)
     this._sidebarWidget.setMinimumSize(100, 25);
     this._panelSplitWidget.setSidebarWidget(this._sidebarWidget);
 
-    this._sidebarWidget.element.classList.add("sidebar");
+    this._sidebarWidget.element.classList.add("panel-sidebar");
 }
 
 WebInspector.PanelWithSidebar.prototype = {
@@ -194,32 +196,18 @@ WebInspector.PanelDescriptor.prototype = {
 }
 
 /**
- * @interface
- */
-WebInspector.PanelFactory = function()
-{
-}
-
-WebInspector.PanelFactory.prototype = {
-    /**
-     * @return {!WebInspector.Panel}
-     */
-    createPanel: function() { }
-}
-
-/**
  * @constructor
  * @param {!Runtime.Extension} extension
  * @implements {WebInspector.PanelDescriptor}
  */
-WebInspector.RuntimeExtensionPanelDescriptor = function(extension)
+WebInspector.ExtensionPanelDescriptor = function(extension)
 {
     this._name = extension.descriptor()["name"];
     this._title = WebInspector.UIString(extension.descriptor()["title"]);
     this._extension = extension;
 }
 
-WebInspector.RuntimeExtensionPanelDescriptor.prototype = {
+WebInspector.ExtensionPanelDescriptor.prototype = {
     /**
      * @override
      * @return {string}
@@ -244,15 +232,6 @@ WebInspector.RuntimeExtensionPanelDescriptor.prototype = {
      */
     panel: function()
     {
-        return this._extension.instancePromise().then(createPanel);
-
-        /**
-         * @param {!Object} panelFactory
-         * @return {!WebInspector.Panel}
-         */
-        function createPanel(panelFactory)
-        {
-            return /** @type {!WebInspector.PanelFactory} */ (panelFactory).createPanel();
-        }
+        return  /** @type {!Promise<!WebInspector.Panel>} */(this._extension.instance());
     }
 }

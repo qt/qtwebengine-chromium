@@ -31,9 +31,8 @@ protected:
         : INHERITED(typeface, effects, desc)
     {}
 
-    void generateGlyphImage(FT_Face face, const SkGlyph& glyph);
+    void generateGlyphImage(FT_Face face, const SkGlyph& glyph, const SkMatrix& bitmapTransform);
     void generateGlyphPath(FT_Face face, SkPath* path);
-
 private:
     typedef SkScalerContext INHERITED;
 };
@@ -54,8 +53,8 @@ public:
             SkFixed fMaximum;
         };
         using AxisDefinitions = SkSTArray<4, AxisDefinition, true>;
-        bool recognizedFont(SkStream* stream, int* numFonts) const;
-        bool scanFont(SkStream* stream, int ttcIndex,
+        bool recognizedFont(SkStreamAsset* stream, int* numFonts) const;
+        bool scanFont(SkStreamAsset* stream, int ttcIndex,
                       SkString* name, SkFontStyle* style, bool* isFixedPitch,
                       AxisDefinitions* axes) const;
         static void computeAxisValues(
@@ -65,14 +64,14 @@ public:
             const SkString& name);
 
     private:
-        FT_Face openFace(SkStream* stream, int ttcIndex, FT_Stream ftStream) const;
+        FT_Face openFace(SkStreamAsset* stream, int ttcIndex, FT_Stream ftStream) const;
         FT_Library fLibrary;
         mutable SkMutex fLibraryMutex;
     };
 
 protected:
-    SkTypeface_FreeType(const SkFontStyle& style, SkFontID uniqueID, bool isFixedPitch)
-        : INHERITED(style, uniqueID, isFixedPitch)
+    SkTypeface_FreeType(const SkFontStyle& style, bool isFixedPitch)
+        : INHERITED(style, isFixedPitch)
     {}
 
     virtual SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,

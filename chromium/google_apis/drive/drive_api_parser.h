@@ -338,13 +338,7 @@ class ParentReference {
   // Returns the file id of the reference.
   const std::string& file_id() const { return file_id_; }
 
-  // Returns the URL for the parent in Drive.
-  const GURL& parent_link() const { return parent_link_; }
-
   void set_file_id(const std::string& file_id) { file_id_ = file_id; }
-  void set_parent_link(const GURL& parent_link) {
-    parent_link_ = parent_link;
-  }
 
  private:
   // Parses and initializes data members from content of |value|.
@@ -352,7 +346,6 @@ class ParentReference {
   bool Parse(const base::Value& value);
 
   std::string file_id_;
-  GURL parent_link_;
 };
 
 // FileLabels represents labels for file or folder.
@@ -372,8 +365,11 @@ class FileLabels {
 
   // Whether this file has been trashed.
   bool is_trashed() const { return trashed_; }
+  // Whether this file is starred by the user.
+  bool is_starred() const { return starred_; }
 
   void set_trashed(bool trashed) { trashed_ = trashed; }
+  void set_starred(bool starred) { starred_ = starred; }
 
  private:
   friend class FileResource;
@@ -383,6 +379,7 @@ class FileLabels {
   bool Parse(const base::Value& value);
 
   bool trashed_;
+  bool starred_;
 };
 
 // ImageMediaMetadata represents image metadata for a file.

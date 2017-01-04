@@ -55,11 +55,11 @@ struct Segment {
     const SkPoint& endPt() const {
         GR_STATIC_ASSERT(0 == kLine && 1 == kQuad);
         return fPts[fType];
-    };
+    }
     const SkPoint& endNorm() const {
         GR_STATIC_ASSERT(0 == kLine && 1 == kQuad);
         return fNorms[fType];
-    };
+    }
 };
 
 typedef SkTArray<Segment, true> SegmentArray;
@@ -577,8 +577,7 @@ public:
                                  gpArgs->fPositionVar,
                                  qe.inPosition()->fName,
                                  qe.localMatrix(),
-                                 args.fTransformsIn,
-                                 args.fTransformsOut);
+                                 args.fFPCoordTransformHandler);
 
             SkAssertResult(fragBuilder->enableFeature(
                     GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
@@ -614,7 +613,8 @@ public:
         }
 
         void setData(const GrGLSLProgramDataManager& pdman,
-                     const GrPrimitiveProcessor& gp) override {
+                     const GrPrimitiveProcessor& gp,
+                     FPCoordTransformIter&& transformIter) override {
             const QuadEdgeEffect& qe = gp.cast<QuadEdgeEffect>();
             if (qe.color() != fColor) {
                 float c[4];
@@ -622,13 +622,7 @@ public:
                 pdman.set4fv(fColorUniform, 1, c);
                 fColor = qe.color();
             }
-        }
-
-        void setTransformData(const GrPrimitiveProcessor& primProc,
-                              const GrGLSLProgramDataManager& pdman,
-                              int index,
-                              const SkTArray<const GrCoordTransform*, true>& transforms) override {
-            this->setTransformDataHelper<QuadEdgeEffect>(primProc, pdman, index, transforms);
+            this->setTransformDataHelper(qe.fLocalMatrix, pdman, &transformIter);
         }
 
     private:
@@ -652,8 +646,8 @@ private:
         , fLocalMatrix(localMatrix)
         , fUsesLocalCoords(usesLocalCoords) {
         this->initClassID<QuadEdgeEffect>();
-        fInPosition = &this->addVertexAttrib(Attribute("inPosition", kVec2f_GrVertexAttribType));
-        fInQuadEdge = &this->addVertexAttrib(Attribute("inQuadEdge", kVec4f_GrVertexAttribType));
+        fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType);
+        fInQuadEdge = &this->addVertexAttrib("inQuadEdge", kVec4f_GrVertexAttribType);
     }
 
     const Attribute* fInPosition;
@@ -746,9 +740,8 @@ public:
     AAConvexPathBatch(GrColor color, const SkMatrix& viewMatrix, const SkPath& path)
         : INHERITED(ClassID()) {
         fGeoData.emplace_back(Geometry{color, viewMatrix, path});
-        // compute bounds
-        fBounds = path.getBounds();
-        viewMatrix.mapRect(&fBounds);
+        this->setTransformedBounds(path.getBounds(), viewMatrix, HasAABloat::kYes,
+                                   IsZeroArea::kNo);
     }
 
     const char* name() const override { return "AAConvexBatch"; }
@@ -958,7 +951,7 @@ private:
         }
 
         fGeoData.push_back_n(that->fGeoData.count(), that->fGeoData.begin());
-        this->joinBounds(that->bounds());
+        this->joinBounds(*that);
         return true;
     }
 
@@ -999,7 +992,8 @@ bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkPath path;
     args.fShape->asPath(&path);
 
-    SkAutoTUnref<GrDrawBatch> batch(new AAConvexPathBatch(args.fColor, *args.fViewMatrix, path));
+    SkAutoTUnref<GrDrawBatch> batch(new AAConvexPathBatch(args.fPaint->getColor(),
+                                                          *args.fViewMatrix, path));
 
     GrPipelineBuilder pipelineBuilder(*args.fPaint);
     pipelineBuilder.setUserStencil(args.fUserStencilSettings);

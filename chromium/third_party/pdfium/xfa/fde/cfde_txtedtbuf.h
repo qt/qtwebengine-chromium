@@ -7,8 +7,10 @@
 #ifndef XFA_FDE_CFDE_TXTEDTBUF_H_
 #define XFA_FDE_CFDE_TXTEDTBUF_H_
 
-#include "core/fxcrt/include/fx_basic.h"
-#include "core/fxcrt/include/fx_system.h"
+#include <memory>
+
+#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/fx_system.h"
 
 class IFX_MemoryAllocator;
 class IFX_Pause;
@@ -55,7 +57,7 @@ class CFDE_TxtEdtBuf {
   int32_t m_nTotal;
   FX_BOOL m_bChanged;
   CFX_ArrayTemplate<FDE_CHUNKHEADER*> m_Chunks;
-  IFX_MemoryAllocator* m_pAllocator;
+  std::unique_ptr<IFX_MemoryAllocator> m_pAllocator;
 };
 
 #endif  // XFA_FDE_CFDE_TXTEDTBUF_H_

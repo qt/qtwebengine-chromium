@@ -15,6 +15,7 @@
 #include "third_party/skia/include/core/SkDrawLooper.h"
 #include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
+#include "ui/base/material_design/material_design_controller.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/shadow_value.h"
@@ -91,6 +92,17 @@ SkColor NSSystemColorToSkColor(NSColor* color) {
                         SkScalarRoundToInt(255.0 * components[0]));
 }
 
+// Converts an SkColor to grayscale by using luminance for all three components.
+// Experimentally, this seems to produce a better result than a flat average or
+// a min/max average for UI controls.
+SkColor ColorToGrayscale(SkColor color) {
+  SkScalar luminance = SkColorGetR(color) * 0.21 +
+                       SkColorGetG(color) * 0.72 +
+                       SkColorGetB(color) * 0.07;
+  uint8_t component = SkScalarRoundToInt(luminance);
+  return SkColorSetARGB(SkColorGetA(color), component, component, component);
+}
+
 }  // namespace
 
 namespace ui {
@@ -106,7 +118,51 @@ NativeThemeMac* NativeThemeMac::instance() {
   return &s_native_theme;
 }
 
+// static
+SkColor NativeThemeMac::ApplySystemControlTint(SkColor color) {
+  if ([NSColor currentControlTint] == NSGraphiteControlTint)
+    return ColorToGrayscale(color);
+  return color;
+}
+
 SkColor NativeThemeMac::GetSystemColor(ColorId color_id) const {
+  // Even with --secondary-ui-md, menus use the platform colors and styling, and
+  // Mac has a couple of specific color overrides, documented below.
+  switch (color_id) {
+    case kColorId_EnabledMenuItemForegroundColor:
+      return NSSystemColorToSkColor([NSColor controlTextColor]);
+    case kColorId_DisabledMenuItemForegroundColor:
+      return NSSystemColorToSkColor([NSColor disabledControlTextColor]);
+    case kColorId_SelectedMenuItemForegroundColor:
+      return NSSystemColorToSkColor([NSColor selectedMenuItemTextColor]);
+    case kColorId_FocusedMenuItemBackgroundColor:
+      return NSSystemColorToSkColor([NSColor selectedMenuItemColor]);
+    case kColorId_MenuBackgroundColor:
+      return kMenuPopupBackgroundColor;
+    case kColorId_MenuSeparatorColor:
+      return base::mac::IsOS10_9() ? kMenuSeparatorColorMavericks
+                                   : kMenuSeparatorColor;
+    case kColorId_MenuBorderColor:
+      return kMenuBorderColor;
+
+    // Mac has a different "pressed button" styling because it doesn't use
+    // ripples.
+    case kColorId_ButtonPressedShade:
+      return SkColorSetA(SK_ColorBLACK, 0x10);
+
+    // There's a system setting General > Highlight color which sets the
+    // background color for text selections. We honor that setting.
+    // TODO(ellyjones): Listen for NSSystemColorsDidChangeNotification somewhere
+    // and propagate it to the View hierarchy.
+    case kColorId_TextfieldSelectionBackgroundFocused:
+      return NSSystemColorToSkColor([NSColor selectedTextBackgroundColor]);
+    default:
+      break;
+  }
+
+  if (ui::MaterialDesignController::IsSecondaryUiMaterial())
+    return ApplySystemControlTint(GetAuraColor(color_id, this));
+
   // TODO(tapted): Add caching for these, and listen for
   // NSSystemColorsDidChangeNotification.
   switch (color_id) {
@@ -118,50 +174,25 @@ SkColor NativeThemeMac::GetSystemColor(ColorId color_id) const {
       return SK_ColorWHITE;
 
     case kColorId_FocusedBorderColor:
+      return NSSystemColorToSkColor([NSColor keyboardFocusIndicatorColor]);
     case kColorId_FocusedMenuButtonBorderColor:
       return NSSystemColorToSkColor([NSColor keyboardFocusIndicatorColor]);
     case kColorId_UnfocusedBorderColor:
       return NSSystemColorToSkColor([NSColor controlColor]);
 
     // Buttons and labels.
-    case kColorId_ButtonBackgroundColor:
-    case kColorId_ButtonHoverBackgroundColor:
     case kColorId_HoverMenuButtonBorderColor:
-    case kColorId_LabelBackgroundColor:
       return NSSystemColorToSkColor([NSColor controlBackgroundColor]);
     case kColorId_ButtonEnabledColor:
     case kColorId_EnabledMenuButtonBorderColor:
     case kColorId_LabelEnabledColor:
+    case kColorId_ProminentButtonColor:
       return NSSystemColorToSkColor([NSColor controlTextColor]);
     case kColorId_ButtonDisabledColor:
     case kColorId_LabelDisabledColor:
       return NSSystemColorToSkColor([NSColor disabledControlTextColor]);
-    case kColorId_ButtonHighlightColor:
-      // Although the NSColor documentation names "selectedControlTextColor" as
-      // the color for a "text in a .. control being clicked or dragged", it
-      // remains black, and text on Yosemite-style pressed buttons is white.
-      return SK_ColorWHITE;
     case kColorId_ButtonHoverColor:
       return NSSystemColorToSkColor([NSColor selectedControlTextColor]);
-
-    // Menus.
-    case kColorId_EnabledMenuItemForegroundColor:
-      return NSSystemColorToSkColor([NSColor controlTextColor]);
-    case kColorId_DisabledMenuItemForegroundColor:
-    case kColorId_DisabledEmphasizedMenuItemForegroundColor:
-      return NSSystemColorToSkColor([NSColor disabledControlTextColor]);
-    case kColorId_SelectedMenuItemForegroundColor:
-      return NSSystemColorToSkColor([NSColor selectedMenuItemTextColor]);
-    case kColorId_FocusedMenuItemBackgroundColor:
-    case kColorId_HoverMenuItemBackgroundColor:
-      return NSSystemColorToSkColor([NSColor selectedMenuItemColor]);
-    case kColorId_MenuBackgroundColor:
-      return kMenuPopupBackgroundColor;
-    case kColorId_MenuSeparatorColor:
-      return base::mac::IsOSMavericks() ? kMenuSeparatorColorMavericks
-                                        : kMenuSeparatorColor;
-    case kColorId_MenuBorderColor:
-      return kMenuBorderColor;
 
     // Link.
     case kColorId_LinkDisabled:
@@ -180,8 +211,6 @@ SkColor NativeThemeMac::GetSystemColor(ColorId color_id) const {
       return NSSystemColorToSkColor([NSColor textBackgroundColor]);
     case kColorId_TextfieldSelectionColor:
       return NSSystemColorToSkColor([NSColor selectedTextColor]);
-    case kColorId_TextfieldSelectionBackgroundFocused:
-      return NSSystemColorToSkColor([NSColor selectedTextBackgroundColor]);
 
     // Trees/Tables. For focused text, use the alternate* versions, which
     // NSColor documents as "the table and list view equivalent to the
@@ -220,7 +249,7 @@ void NativeThemeMac::PaintMenuPopupBackground(
     const MenuBackgroundExtraParams& menu_background) const {
   SkPaint paint;
   paint.setAntiAlias(true);
-  if (base::mac::IsOSMavericks())
+  if (base::mac::IsOS10_9())
     paint.setColor(kMenuPopupBackgroundColorMavericks);
   else
     paint.setColor(kMenuPopupBackgroundColor);
@@ -245,7 +274,7 @@ void NativeThemeMac::PaintMenuItemBackground(
       // pick colors. The System color "selectedMenuItemColor" is actually still
       // blue for Graphite. And while "keyboardFocusIndicatorColor" does change,
       // and is a good shade of gray, it's not blue enough for the Blue theme.
-      paint.setColor(GetSystemColor(kColorId_HoverMenuItemBackgroundColor));
+      paint.setColor(GetSystemColor(kColorId_FocusedMenuItemBackgroundColor));
       canvas->drawRect(gfx::RectToSkRect(rect), paint);
       break;
     default:
@@ -287,6 +316,9 @@ sk_sp<SkShader> NativeThemeMac::GetButtonBackgroundShader(
 
   SkColor gradient_colors[] = {start_colors[type], end_colors[type]};
 
+  for (size_t i = 0; i < arraysize(gradient_colors); ++i)
+    gradient_colors[i] = ApplySystemControlTint(gradient_colors[i]);
+
   return SkGradientShader::MakeLinear(
       gradient_points, gradient_colors, gradient_positions,
       arraysize(gradient_positions),
@@ -320,6 +352,9 @@ sk_sp<SkShader> NativeThemeMac::GetButtonBorderShader(ButtonBackgroundType type,
 
   SkColor gradient_colors[] = {top_edge[type], bottom_edge[type]};
 
+  for (size_t i = 0; i < arraysize(gradient_colors); ++i)
+    gradient_colors[i] = ApplySystemControlTint(gradient_colors[i]);
+
   return SkGradientShader::MakeLinear(
       gradient_points, gradient_colors, gradient_positions,
       arraysize(gradient_positions), SkShader::kClamp_TileMode);
@@ -334,7 +369,8 @@ void NativeThemeMac::PaintStyledGradientButton(SkCanvas* canvas,
                                                bool focus) {
   const SkScalar kBorderThickness = 1;
   const SkScalar kFocusRingThickness = 4;
-  const SkColor kFocusRingColor = SkColorSetARGB(0x94, 0x79, 0xa7, 0xe9);
+  const SkColor kFocusRingColor = ApplySystemControlTint(
+      SkColorSetARGB(0x94, 0x79, 0xa7, 0xe9));
 
   const SkVector kNoCurve = {0, 0};
   const SkVector kCurve = {kButtonCornerRadius, kButtonCornerRadius};

@@ -23,6 +23,16 @@
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/formatutils.h"
 
+namespace
+{
+
+GLenum ActiveQueryType(const GLenum type)
+{
+    return (type == GL_ANY_SAMPLES_PASSED_CONSERVATIVE) ? GL_ANY_SAMPLES_PASSED : type;
+}
+
+}  // anonymous namepace
+
 namespace gl
 {
 
@@ -40,6 +50,7 @@ State::State()
       mLineWidth(0),
       mGenerateMipmapHint(GL_NONE),
       mFragmentShaderDerivativeHint(GL_NONE),
+      mBindGeneratesResource(true),
       mNearZ(0),
       mFarZ(0),
       mReadFramebuffer(nullptr),
@@ -61,7 +72,8 @@ State::~State()
 void State::initialize(const Caps &caps,
                        const Extensions &extensions,
                        GLuint clientVersion,
-                       bool debug)
+                       bool debug,
+                       bool bindGeneratesResource)
 {
     mMaxDrawBuffers = caps.maxDrawBuffers;
     mMaxCombinedTextureImageUnits = caps.maxCombinedTextureImageUnits;
@@ -126,6 +138,8 @@ void State::initialize(const Caps &caps,
     mSampleCoverageInvert = false;
     mGenerateMipmapHint = GL_DONT_CARE;
     mFragmentShaderDerivativeHint = GL_DONT_CARE;
+
+    mBindGeneratesResource = bindGeneratesResource;
 
     mLineWidth = 1.0f;
 
@@ -648,6 +662,8 @@ bool State::getEnableFeature(GLenum feature) const
           return mDebug.isOutputSynchronous();
       case GL_DEBUG_OUTPUT:
           return mDebug.isOutputEnabled();
+      case GL_BIND_GENERATES_RESOURCE_CHROMIUM:
+          return isBindGeneratesResourceEnabled();
       default:                               UNREACHABLE(); return false;
     }
 }
@@ -676,6 +692,11 @@ void State::setFragmentShaderDerivativeHint(GLenum hint)
     // TODO: Propagate the hint to shader translator so we can write
     // ddx, ddx_coarse, or ddx_fine depending on the hint.
     // Ignore for now. It is valid for implementations to ignore hint.
+}
+
+bool State::isBindGeneratesResourceEnabled() const
+{
+    return mBindGeneratesResource;
 }
 
 void State::setViewportParams(GLint x, GLint y, GLsizei width, GLsizei height)
@@ -1026,12 +1047,12 @@ bool State::removeTransformFeedbackBinding(GLuint transformFeedback)
     return false;
 }
 
-bool State::isQueryActive(GLenum type) const
+bool State::isQueryActive(const GLenum type) const
 {
     for (auto &iter : mActiveQueries)
     {
-        Query *query = iter.second.get();
-        if (query != nullptr && query->getType() == type)
+        const Query *query = iter.second.get();
+        if (query != nullptr && ActiveQueryType(query->getType()) == ActiveQueryType(type))
         {
             return true;
         }
@@ -1476,6 +1497,9 @@ void State::getBooleanv(GLenum pname, GLboolean *params)
       case GL_SAMPLE_ALPHA_TO_ONE_EXT:
           *params = mSampleAlphaToOne;
           break;
+      case GL_BIND_GENERATES_RESOURCE_CHROMIUM:
+          *params = isBindGeneratesResourceEnabled() ? GL_TRUE : GL_FALSE;
+          break;
       default:
         UNREACHABLE();
         break;
@@ -1720,6 +1744,11 @@ void State::getIntegerv(const ContextState &data, GLenum pname, GLint *params)
         *params =
             getSamplerTextureId(static_cast<unsigned int>(mActiveSampler), GL_TEXTURE_2D_ARRAY);
         break;
+      case GL_TEXTURE_BINDING_EXTERNAL_OES:
+          ASSERT(mActiveSampler < mMaxCombinedTextureImageUnits);
+          *params = getSamplerTextureId(static_cast<unsigned int>(mActiveSampler),
+                                        GL_TEXTURE_EXTERNAL_OES);
+          break;
       case GL_UNIFORM_BUFFER_BINDING:
         *params = mGenericUniformBuffer.id();
         break;
@@ -1787,7 +1816,7 @@ void State::getPointerv(GLenum pname, void **params) const
     }
 }
 
-bool State::getIndexedIntegerv(GLenum target, GLuint index, GLint *data)
+void State::getIntegeri_v(GLenum target, GLuint index, GLint *data)
 {
     switch (target)
     {
@@ -1804,13 +1833,12 @@ bool State::getIndexedIntegerv(GLenum target, GLuint index, GLint *data)
         }
         break;
       default:
-        return false;
+          UNREACHABLE();
+          break;
     }
-
-    return true;
 }
 
-bool State::getIndexedInteger64v(GLenum target, GLuint index, GLint64 *data)
+void State::getInteger64i_v(GLenum target, GLuint index, GLint64 *data)
 {
     switch (target)
     {
@@ -1839,10 +1867,14 @@ bool State::getIndexedInteger64v(GLenum target, GLuint index, GLint64 *data)
         }
         break;
       default:
-        return false;
+          UNREACHABLE();
+          break;
     }
+}
 
-    return true;
+void State::getBooleani_v(GLenum target, GLuint index, GLboolean *data)
+{
+    UNREACHABLE();
 }
 
 bool State::hasMappedBuffer(GLenum target) const

@@ -8,44 +8,31 @@
 
 #include <memory>
 
-#include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
-#include "core/fpdfapi/include/cpdf_modulemgr.h"
-#include "core/fxcrt/include/fx_basic.h"
-#include "core/fxcrt/include/fx_xml.h"
-#include "fpdfsdk/include/fsdk_define.h"
+#include "core/fpdfapi/cpdf_modulemgr.h"
+#include "core/fpdfapi/parser/cpdf_array.h"
+#include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfdoc/cpdf_annot.h"
+#include "core/fpdfdoc/cpdf_interform.h"
+#include "core/fpdfdoc/cpdf_metadata.h"
+#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/fx_memory.h"
+#include "core/fxcrt/fx_xml.h"
+#include "fpdfsdk/fsdk_define.h"
+#include "third_party/base/ptr_util.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/cpdfxfa_document.h"
 #endif  // PDF_ENABLE_XFA
-
-#define FPDFSDK_UNSUPPORT_CALL 100
-
-class CFSDK_UnsupportInfo_Adapter : public CFX_Deletable {
- public:
-  explicit CFSDK_UnsupportInfo_Adapter(UNSUPPORT_INFO* unsp_info)
-      : m_unsp_info(unsp_info) {}
-
-  void ReportError(int nErrorType);
-
- private:
-  UNSUPPORT_INFO* const m_unsp_info;
-};
-
-void CFSDK_UnsupportInfo_Adapter::ReportError(int nErrorType) {
-  if (m_unsp_info && m_unsp_info->FSDK_UnSupport_Handler) {
-    m_unsp_info->FSDK_UnSupport_Handler(m_unsp_info, nErrorType);
-  }
-}
 
 FX_BOOL FPDF_UnSupportError(int nError) {
   CFSDK_UnsupportInfo_Adapter* pAdapter =
-      static_cast<CFSDK_UnsupportInfo_Adapter*>(
-          CPDF_ModuleMgr::Get()->GetUnsupportInfoAdapter());
+      CPDF_ModuleMgr::Get()->GetUnsupportInfoAdapter();
   if (!pAdapter)
     return FALSE;
 
-  pAdapter->ReportError(nError);
+  UNSUPPORT_INFO* info = static_cast<UNSUPPORT_INFO*>(pAdapter->GetUnspInfo());
+  if (info && info->FSDK_UnSupport_Handler)
+    info->FSDK_UnSupport_Handler(info, nError);
   return TRUE;
 }
 
@@ -54,39 +41,37 @@ FSDK_SetUnSpObjProcessHandler(UNSUPPORT_INFO* unsp_info) {
   if (!unsp_info || unsp_info->version != 1)
     return FALSE;
 
-  CPDF_ModuleMgr::Get()->SetUnsupportInfoAdapter(std::unique_ptr<CFX_Deletable>(
-      new CFSDK_UnsupportInfo_Adapter(unsp_info)));
+  CPDF_ModuleMgr::Get()->SetUnsupportInfoAdapter(
+      pdfium::MakeUnique<CFSDK_UnsupportInfo_Adapter>(unsp_info));
   return TRUE;
 }
 
 void CheckUnSupportAnnot(CPDF_Document* pDoc, const CPDF_Annot* pPDFAnnot) {
-  CFX_ByteString cbSubType = pPDFAnnot->GetSubType();
-  if (cbSubType.Compare("3D") == 0) {
+  CPDF_Annot::Subtype nAnnotSubtype = pPDFAnnot->GetSubtype();
+  if (nAnnotSubtype == CPDF_Annot::Subtype::THREED) {
     FPDF_UnSupportError(FPDF_UNSP_ANNOT_3DANNOT);
-  } else if (cbSubType.Compare("Screen") == 0) {
+  } else if (nAnnotSubtype == CPDF_Annot::Subtype::SCREEN) {
     const CPDF_Dictionary* pAnnotDict = pPDFAnnot->GetAnnotDict();
     CFX_ByteString cbString;
     if (pAnnotDict->KeyExist("IT"))
-      cbString = pAnnotDict->GetStringBy("IT");
+      cbString = pAnnotDict->GetStringFor("IT");
     if (cbString.Compare("Img") != 0)
       FPDF_UnSupportError(FPDF_UNSP_ANNOT_SCREEN_MEDIA);
-  } else if (cbSubType.Compare("Movie") == 0) {
+  } else if (nAnnotSubtype == CPDF_Annot::Subtype::MOVIE) {
     FPDF_UnSupportError(FPDF_UNSP_ANNOT_MOVIE);
-  } else if (cbSubType.Compare("Sound") == 0) {
+  } else if (nAnnotSubtype == CPDF_Annot::Subtype::SOUND) {
     FPDF_UnSupportError(FPDF_UNSP_ANNOT_SOUND);
-  } else if (cbSubType.Compare("RichMedia") == 0) {
+  } else if (nAnnotSubtype == CPDF_Annot::Subtype::RICHMEDIA) {
     FPDF_UnSupportError(FPDF_UNSP_ANNOT_SCREEN_RICHMEDIA);
-  } else if (cbSubType.Compare("FileAttachment") == 0) {
+  } else if (nAnnotSubtype == CPDF_Annot::Subtype::FILEATTACHMENT) {
     FPDF_UnSupportError(FPDF_UNSP_ANNOT_ATTACHMENT);
-  } else if (cbSubType.Compare("Widget") == 0) {
+  } else if (nAnnotSubtype == CPDF_Annot::Subtype::WIDGET) {
     const CPDF_Dictionary* pAnnotDict = pPDFAnnot->GetAnnotDict();
     CFX_ByteString cbString;
-    if (pAnnotDict->KeyExist("FT")) {
-      cbString = pAnnotDict->GetStringBy("FT");
-    }
-    if (cbString.Compare("Sig") == 0) {
+    if (pAnnotDict->KeyExist("FT"))
+      cbString = pAnnotDict->GetStringFor("FT");
+    if (cbString.Compare("Sig") == 0)
       FPDF_UnSupportError(FPDF_UNSP_ANNOT_SIG);
-    }
   }
 }
 
@@ -149,14 +134,14 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
       return;
     }
     if (pRootDict->KeyExist("Names")) {
-      CPDF_Dictionary* pNameDict = pRootDict->GetDictBy("Names");
+      CPDF_Dictionary* pNameDict = pRootDict->GetDictFor("Names");
       if (pNameDict && pNameDict->KeyExist("EmbeddedFiles")) {
         FPDF_UnSupportError(FPDF_UNSP_DOC_ATTACHMENT);
         return;
       }
       if (pNameDict && pNameDict->KeyExist("JavaScript")) {
-        CPDF_Dictionary* pJSDict = pNameDict->GetDictBy("JavaScript");
-        CPDF_Array* pArray = pJSDict ? pJSDict->GetArrayBy("Names") : nullptr;
+        CPDF_Dictionary* pJSDict = pNameDict->GetDictFor("JavaScript");
+        CPDF_Array* pArray = pJSDict ? pJSDict->GetArrayFor("Names") : nullptr;
         if (pArray) {
           for (size_t i = 0; i < pArray->GetCount(); i++) {
             CFX_ByteString cbStr = pArray->GetStringAt(i);
@@ -193,7 +178,7 @@ DLLEXPORT int STDCALL FPDFDoc_GetPageMode(FPDF_DOCUMENT document) {
   if (!pRoot)
     return PAGEMODE_UNKNOWN;
 
-  CPDF_Object* pName = pRoot->GetObjectBy("PageMode");
+  CPDF_Object* pName = pRoot->GetObjectFor("PageMode");
   if (!pName)
     return PAGEMODE_USENONE;
 

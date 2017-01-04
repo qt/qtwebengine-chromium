@@ -6,9 +6,11 @@
 
 namespace extensions {
 
-ComplexFeature::ComplexFeature(std::unique_ptr<FeatureList> features) {
+ComplexFeature::ComplexFeature(std::vector<Feature*>* features) {
   DCHECK_GT(features->size(), 0UL);
-  features_.swap(*features);
+  for (Feature* f : *features)
+    features_.push_back(std::unique_ptr<Feature>(f));
+  features->clear();
   no_parent_ = features_[0]->no_parent();
 
 #if !defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)
@@ -100,18 +102,6 @@ bool ComplexFeature::IsInternal() const {
   // Constructor verifies that composed features are consistent, thus we can
   // return just the first feature's value.
   return features_[0]->IsInternal();
-}
-
-std::string ComplexFeature::GetAvailabilityMessage(AvailabilityResult result,
-                                                   Manifest::Type type,
-                                                   const GURL& url,
-                                                   Context context) const {
-  if (result == IS_AVAILABLE)
-    return std::string();
-
-  // TODO(justinlin): Form some kind of combined availabilities/messages from
-  // SimpleFeatures.
-  return features_[0]->GetAvailabilityMessage(result, type, url, context);
 }
 
 }  // namespace extensions

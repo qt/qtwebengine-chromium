@@ -13,7 +13,20 @@ overview over how to use GN can be found in the GN
 ## Building
 
 There are two different build configurations depending on what you want to
-build:
+build, either the client or the engine.
+
+Regardless of which you build, it is helpful to setup the following
+environment variable in your shell to get a better view of how the build is
+progressing:
+
+```bash
+export NINJA_STATUS="[%r %f/%s/%u/%t] "
+```
+
+It will give you a count for the following values:
+`[RUNNING FINISHED/STARTED/NOT_STARTED/TOTAL]`. See the
+[ninja manual](https://ninja-build.org/manual.html#_environment_variables)
+for a full list of template values.
 
 ### Android client
 
@@ -28,22 +41,22 @@ gn gen out-android/Debug
 To build:
 
 ```bash
-ninja -C out-android/Debug blimp
+ninja -C out-android/Debug blimp chrome_public_apk_incremental
 ```
 
 This will also generate an incremental APK, which you can install with this
 command:
 
 ```bash
-out-android/Debug/bin/install_blimp_apk_incremental
+out-android/Debug/bin/install_chrome_public_apk_incremental
 ```
 
 During development, it might be beneficial to put these two commands together
 like this:
 
 ```bash
-ninja -C out-android/Debug blimp && \
-    out-android/Debug/bin/install_blimp_apk_incremental
+ninja -C out-android/Debug blimp chrome_public_apk_incremental && \
+    out-android/Debug/bin/install_chrome_public_apk_incremental
 ```
 
 To add your own build preferences:

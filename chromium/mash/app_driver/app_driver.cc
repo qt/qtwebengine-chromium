@@ -8,10 +8,10 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
-#include "components/mus/common/event_matcher_util.h"
 #include "mash/public/interfaces/launchable.mojom.h"
 #include "services/shell/public/cpp/connection.h"
 #include "services/shell/public/cpp/connector.h"
+#include "services/ui/common/event_matcher_util.h"
 
 using mash::mojom::LaunchablePtr;
 using mash::mojom::LaunchMode;
@@ -54,20 +54,19 @@ void DoNothing() {}
 
 }  // namespace
 
-AppDriver::AppDriver()
-    : connector_(nullptr), binding_(this), weak_factory_(this) {}
+AppDriver::AppDriver() : binding_(this), weak_factory_(this) {}
 
 AppDriver::~AppDriver() {}
 
 void AppDriver::OnAvailableCatalogEntries(
-    mojo::Array<catalog::mojom::EntryPtr> entries) {
+    std::vector<catalog::mojom::EntryPtr> entries) {
   if (entries.empty()) {
     LOG(ERROR) << "Unable to install accelerators for launching chrome.";
     return;
   }
 
-  mus::mojom::AcceleratorRegistrarPtr registrar;
-  connector_->ConnectToInterface(entries[0]->name, &registrar);
+  ui::mojom::AcceleratorRegistrarPtr registrar;
+  connector()->ConnectToInterface(entries[0]->name, &registrar);
 
   if (binding_.is_bound())
     binding_.Unbind();
@@ -80,25 +79,24 @@ void AppDriver::OnAvailableCatalogEntries(
   for (const AcceleratorSpec& spec : g_spec) {
     registrar->AddAccelerator(
         static_cast<uint32_t>(spec.id),
-        mus::CreateKeyMatcher(spec.keyboard_code, spec.event_flags),
+        ui::CreateKeyMatcher(spec.keyboard_code, spec.event_flags),
         base::Bind(&AssertTrue));
   }
 }
 
-void AppDriver::Initialize(shell::Connector* connector,
-                           const shell::Identity& identity,
-                           uint32_t id) {
-  connector_ = connector;
+void AppDriver::OnStart(const shell::Identity& identity) {
   AddAccelerators();
 }
 
-bool AppDriver::AcceptConnection(shell::Connection* connection) {
+bool AppDriver::OnConnect(const shell::Identity& remote_identity,
+                          shell::InterfaceRegistry* registry) {
   return true;
 }
 
-bool AppDriver::ShellConnectionLost() {
+bool AppDriver::OnStop() {
   // Prevent the code in AddAccelerators() from keeping this app alive.
-  binding_.set_connection_error_handler(base::Bind(&DoNothing));
+  if (binding_.is_bound())
+    binding_.set_connection_error_handler(base::Bind(&DoNothing));
   return true;
 }
 
@@ -117,19 +115,19 @@ void AppDriver::OnAccelerator(uint32_t id, std::unique_ptr<ui::Event> event) {
       {Accelerator::NewChromeIncognitoWindow,
        {mojom::kIncognitoWindow, "exe:chrome", LaunchMode::MAKE_NEW}},
       {Accelerator::ShowTaskManager,
-       {mojom::kWindow, "mojo:task_viewer", LaunchMode::DEFAULT}},
+       {mojom::kWindow, "service:task_viewer", LaunchMode::DEFAULT}},
   };
 
   const auto iter = options.find(static_cast<Accelerator>(id));
   DCHECK(iter != options.end());
   const LaunchOptions& entry = iter->second;
   LaunchablePtr launchable;
-  connector_->ConnectToInterface(entry.app, &launchable);
+  connector()->ConnectToInterface(entry.app, &launchable);
   launchable->Launch(entry.option, entry.mode);
 }
 
 void AppDriver::AddAccelerators() {
-  connector_->ConnectToInterface("mojo:catalog", &catalog_);
+  connector()->ConnectToInterface("service:catalog", &catalog_);
   catalog_->GetEntriesProvidingClass(
       "mus:window_manager", base::Bind(&AppDriver::OnAvailableCatalogEntries,
                                        weak_factory_.GetWeakPtr()));

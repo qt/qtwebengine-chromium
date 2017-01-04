@@ -26,6 +26,8 @@ struct ClientId {
   ClientId(std::string name_space, std::string id);
 
   bool operator==(const ClientId& client_id) const;
+
+  bool operator<(const ClientId& client_id) const;
 };
 
 // Metadata of the offline page.
@@ -52,8 +54,7 @@ struct OfflinePageItem {
   OfflinePageItem(const OfflinePageItem& other);
   ~OfflinePageItem();
 
-  // Gets a URL of the file under |file_path|.
-  GURL GetOfflineURL() const;
+  bool operator==(const OfflinePageItem& other) const;
 
   // Returns whether the offline page is expired.
   bool IsExpired() const;
@@ -68,8 +69,6 @@ struct OfflinePageItem {
   // their ids to our saved pages.
   ClientId client_id;
 
-  // Version of the offline page item.
-  int version;
   // The file path to the archive with a local copy of the page.
   base::FilePath file_path;
   // The size of the offline copy.
@@ -82,6 +81,8 @@ struct OfflinePageItem {
   base::Time expiration_time;
   // Number of times that the offline archive has been accessed.
   int access_count;
+  // The title of the page at the time it was saved.
+  base::string16 title;
   // Flags about the state and behavior of the offline page.
   Flags flags;
 };

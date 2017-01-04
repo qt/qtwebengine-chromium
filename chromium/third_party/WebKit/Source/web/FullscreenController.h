@@ -42,44 +42,48 @@ class Element;
 class LocalFrame;
 class WebViewImpl;
 
-class FullscreenController final : public GarbageCollected<FullscreenController> {
-public:
-    static FullscreenController* create(WebViewImpl*);
+class FullscreenController final
+    : public GarbageCollected<FullscreenController> {
+ public:
+  static FullscreenController* create(WebViewImpl*);
 
-    void didEnterFullScreen();
-    void didExitFullScreen();
+  void didEnterFullscreen();
+  void didExitFullscreen();
 
-    void enterFullScreenForElement(Element*);
-    void exitFullScreenForElement(Element*);
+  void enterFullscreenForElement(Element*);
+  void exitFullscreenForElement(Element*);
 
-    bool isFullscreen() { return m_fullScreenFrame; }
+  bool isFullscreen() { return m_fullscreenFrame; }
 
-    void updateSize();
+  void updateSize();
 
-    DECLARE_TRACE();
+  void didUpdateLayout();
 
-protected:
-    explicit FullscreenController(WebViewImpl*);
+  DECLARE_TRACE();
 
-private:
-    void updatePageScaleConstraints(bool removeConstraints);
+ protected:
+  explicit FullscreenController(WebViewImpl*);
 
-    WebViewImpl* m_webViewImpl;
+ private:
+  void updatePageScaleConstraints(bool removeConstraints);
 
-    bool m_haveEnteredFullscreen;
-    float m_exitFullscreenPageScaleFactor;
-    IntSize m_exitFullscreenScrollOffset;
-    FloatPoint m_exitFullscreenVisualViewportOffset;
+  WebViewImpl* m_webViewImpl;
 
-    // If set, the WebView is transitioning to fullscreen for this element.
-    Member<Element> m_provisionalFullScreenElement;
+  bool m_haveEnteredFullscreen;
+  float m_exitFullscreenPageScaleFactor;
+  IntSize m_exitFullscreenScrollOffset;
+  FloatPoint m_exitFullscreenVisualViewportOffset;
+  bool m_needsScrollAndScaleRestore;
 
-    // If set, the WebView is in fullscreen mode for an element in this frame.
-    Member<LocalFrame> m_fullScreenFrame;
+  // If set, the WebView is transitioning to fullscreen for this element.
+  Member<Element> m_provisionalFullscreenElement;
 
-    bool m_isCancelingFullScreen;
+  // If set, the WebView is in fullscreen mode for an element in this frame.
+  Member<LocalFrame> m_fullscreenFrame;
+
+  bool m_isCancelingFullscreen;
 };
 
-} // namespace blink
+}  // namespace blink
 
 #endif

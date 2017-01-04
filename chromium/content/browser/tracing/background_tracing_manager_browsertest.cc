@@ -65,10 +65,8 @@ class BackgroundTracingManagerUploadConfigWrapper {
     EXPECT_EQ(Z_STREAM_END, result);
 
     last_file_contents_.assign(output_str.data(), bytes_written);
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            base::Bind(done_callback));
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            base::Bind(callback_));
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, done_callback);
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback_);
   }
 
   bool TraceHasMatchingString(const char* str) {
@@ -131,6 +129,7 @@ std::unique_ptr<BackgroundTracingConfig> CreateReactiveConfig() {
         new base::DictionaryValue());
     rules_dict->SetString("rule", "TRACE_ON_NAVIGATION_UNTIL_TRIGGER_OR_FULL");
     rules_dict->SetString("trigger_name", "reactive_test");
+    rules_dict->SetBoolean("stop_tracing_on_repeated_reactive", true);
     rules_dict->SetString("category", "BENCHMARK");
     rules_list->Append(std::move(rules_dict));
   }
@@ -154,9 +153,18 @@ void DisableScenarioWhenIdle() {
       BackgroundTracingManager::NO_DATA_FILTERING);
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReceiveTraceFinalContentsOnTrigger \
+        DISABLED_ReceiveTraceFinalContentsOnTrigger
+#else
+#define MAYBE_ReceiveTraceFinalContentsOnTrigger \
+        ReceiveTraceFinalContentsOnTrigger
+#endif
+
 // This tests that the endpoint receives the final trace data.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReceiveTraceFinalContentsOnTrigger) {
+                       MAYBE_ReceiveTraceFinalContentsOnTrigger) {
   {
     SetupBackgroundTracingManager();
 
@@ -170,9 +178,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingManager::
             GetInstance()->RegisterTriggerType("preemptive_test");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -186,9 +194,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_CallTriggersMoreThanOnceOnlyGatherOnce \
+        DISABLED_CallTriggersMoreThanOnceOnlyGatherOnce
+#else
+#define MAYBE_CallTriggersMoreThanOnceOnlyGatherOnce \
+        CallTriggersMoreThanOnceOnlyGatherOnce
+#endif
+
 // This tests triggering more than once still only gathers once.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       CallTriggersMoreThanOnceOnlyGatherOnce) {
+                       MAYBE_CallTriggersMoreThanOnceOnlyGatherOnce) {
   {
     SetupBackgroundTracingManager();
 
@@ -202,9 +219,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         content::BackgroundTracingManager::GetInstance()->RegisterTriggerType(
             "preemptive_test");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -236,9 +253,16 @@ bool IsTraceEventArgsWhitelisted(
 
 }  // namespace
 
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+// Flaky on android, chromeos: https://crbug.com/639706
+#define MAYBE_NoWhitelistedArgsStripped DISABLED_NoWhitelistedArgsStripped
+#else
+#define MAYBE_NoWhitelistedArgsStripped NoWhitelistedArgsStripped
+#endif
+
 // This tests that non-whitelisted args get stripped if required.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       NoWhitelistedArgsStripped) {
+                       MAYBE_NoWhitelistedArgsStripped) {
   SetupBackgroundTracingManager();
 
   base::trace_event::TraceLog::GetInstance()->SetArgumentFilterPredicate(
@@ -280,9 +304,16 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   EXPECT_FALSE(upload_config_wrapper.TraceHasMatchingString("this_not_found"));
 }
 
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+// Flaky on android, chromeos: https://crbug.com/639706
+#define MAYBE_TraceMetadataInTrace DISABLED_TraceMetadataInTrace
+#else
+#define MAYBE_TraceMetadataInTrace TraceMetadataInTrace
+#endif
+
 // This tests that browser metadata gets included in the trace.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       TraceMetadataInTrace) {
+                       MAYBE_TraceMetadataInTrace) {
   SetupBackgroundTracingManager();
 
   base::trace_event::TraceLog::GetInstance()->SetArgumentFilterPredicate(
@@ -321,12 +352,14 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   EXPECT_TRUE(upload_config_wrapper.TraceHasMatchingString("user-agent"));
 }
 
+// Flaky on android, linux, and windows: https://crbug.com/639706 and
+// https://crbug.com/643415.
 // This tests subprocesses (like a navigating renderer) which gets told to
 // provide a argument-filtered trace and has no predicate in place to do the
 // filtering (in this case, only the browser process gets it set), will crash
 // rather than return potential PII.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       CrashWhenSubprocessWithoutArgumentFilter) {
+                       DISABLED_CrashWhenSubprocessWithoutArgumentFilter) {
   SetupBackgroundTracingManager();
 
   base::trace_event::TraceLog::GetInstance()->SetArgumentFilterPredicate(
@@ -367,9 +400,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   EXPECT_TRUE(!upload_config_wrapper.TraceHasMatchingString("CrRendererMain"));
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_CallMultipleTriggersOnlyGatherOnce \
+        DISABLED_CallMultipleTriggersOnlyGatherOnce
+#else
+#define MAYBE_CallMultipleTriggersOnlyGatherOnce \
+        CallMultipleTriggersOnlyGatherOnce
+#endif
+
 // This tests multiple triggers still only gathers once.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       CallMultipleTriggersOnlyGatherOnce) {
+                       MAYBE_CallMultipleTriggersOnlyGatherOnce) {
   {
     SetupBackgroundTracingManager();
 
@@ -408,9 +450,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
     BackgroundTracingManager::TriggerHandle handle2 =
         BackgroundTracingManager::GetInstance()->RegisterTriggerType("test2");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -427,10 +469,17 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ToggleBlinkScenarios DISABLED_ToggleBlinkScenarios
+#else
+#define MAYBE_ToggleBlinkScenarios ToggleBlinkScenarios
+#endif
+
 // This tests that toggling Blink scenarios in the config alters the
 // command-line.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ToggleBlinkScenarios) {
+                       MAYBE_ToggleBlinkScenarios) {
   {
     SetupBackgroundTracingManager();
 
@@ -476,10 +525,19 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ToggleBlinkScenariosNotOverridingSwitches \
+        DISABLED_ToggleBlinkScenariosNotOverridingSwitches
+#else
+#define MAYBE_ToggleBlinkScenariosNotOverridingSwitches \
+        ToggleBlinkScenariosNotOverridingSwitches
+#endif
+
 // This tests that toggling Blink scenarios in a scenario won't activate
 // if there's already Blink features toggled by something else (about://flags)
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ToggleBlinkScenariosNotOverridingSwitches) {
+                       MAYBE_ToggleBlinkScenariosNotOverridingSwitches) {
   SetupBackgroundTracingManager();
 
   base::RunLoop run_loop;
@@ -517,10 +575,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   EXPECT_FALSE(scenario_activated);
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_CallPreemptiveTriggerWithDelay \
+        DISABLED_CallPreemptiveTriggerWithDelay
+#else
+#define MAYBE_CallPreemptiveTriggerWithDelay CallPreemptiveTriggerWithDelay
+#endif
+
 // This tests that delayed histogram triggers triggers work as expected
 // with preemptive scenarios.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       CallPreemptiveTriggerWithDelay) {
+                       MAYBE_CallPreemptiveTriggerWithDelay) {
   {
     SetupBackgroundTracingManager();
 
@@ -550,9 +616,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingConfigImpl::FromDict(&dict));
     EXPECT_TRUE(config);
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -583,9 +649,17 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_CannotTriggerWithoutScenarioSet \
+        DISABLED_CannotTriggerWithoutScenarioSet
+#else
+#define MAYBE_CannotTriggerWithoutScenarioSet CannotTriggerWithoutScenarioSet
+#endif
+
 // This tests that you can't trigger without a scenario set.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       CannotTriggerWithoutScenarioSet) {
+                       MAYBE_CannotTriggerWithoutScenarioSet) {
   {
     SetupBackgroundTracingManager();
 
@@ -609,10 +683,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_DoesNotTriggerWithWrongHandle \
+        DISABLED_DoesNotTriggerWithWrongHandle
+#else
+#define MAYBE_DoesNotTriggerWithWrongHandle DoesNotTriggerWithWrongHandle
+#endif
+
 // This tests that no trace is triggered with a handle that isn't specified
 // in the config.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       DoesNotTriggerWithWrongHandle) {
+                       MAYBE_DoesNotTriggerWithWrongHandle) {
   {
     SetupBackgroundTracingManager();
 
@@ -626,9 +708,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         content::BackgroundTracingManager::GetInstance()->RegisterTriggerType(
             "does_not_exist");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -643,9 +725,17 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_DoesNotTriggerWithInvalidHandle \
+        DISABLED_DoesNotTriggerWithInvalidHandle
+#else
+#define MAYBE_DoesNotTriggerWithInvalidHandle DoesNotTriggerWithInvalidHandle
+#endif
+
 // This tests that no trace is triggered with an invalid handle.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       DoesNotTriggerWithInvalidHandle) {
+                       MAYBE_DoesNotTriggerWithInvalidHandle) {
   {
     SetupBackgroundTracingManager();
 
@@ -662,9 +752,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
     content::BackgroundTracingManager::GetInstance()
         ->InvalidateTriggerHandlesForTesting();
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -679,9 +769,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_PreemptiveNotTriggerWithZeroChance \
+        DISABLED_PreemptiveNotTriggerWithZeroChance
+#else
+#define MAYBE_PreemptiveNotTriggerWithZeroChance \
+        PreemptiveNotTriggerWithZeroChance
+#endif
+
 // This tests that no preemptive trace is triggered with 0 chance set.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       PreemptiveNotTriggerWithZeroChance) {
+                       MAYBE_PreemptiveNotTriggerWithZeroChance) {
   {
     SetupBackgroundTracingManager();
 
@@ -714,9 +813,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         content::BackgroundTracingManager::GetInstance()->RegisterTriggerType(
             "preemptive_test");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -731,9 +830,17 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReactiveNotTriggerWithZeroChance \
+        DISABLED_ReactiveNotTriggerWithZeroChance
+#else
+#define MAYBE_ReactiveNotTriggerWithZeroChance ReactiveNotTriggerWithZeroChance
+#endif
+
 // This tests that no reactive trace is triggered with 0 chance set.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReactiveNotTriggerWithZeroChance) {
+                       MAYBE_ReactiveNotTriggerWithZeroChance) {
   {
     SetupBackgroundTracingManager();
 
@@ -768,9 +875,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         content::BackgroundTracingManager::GetInstance()->RegisterTriggerType(
             "preemptive_test");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -785,9 +892,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReceiveTraceSucceedsOnHigherHistogramSample \
+        DISABLED_ReceiveTraceSucceedsOnHigherHistogramSample
+#else
+#define MAYBE_ReceiveTraceSucceedsOnHigherHistogramSample \
+        ReceiveTraceSucceedsOnHigherHistogramSample
+#endif
+
 // This tests that histogram triggers for preemptive mode configs.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReceiveTraceSucceedsOnHigherHistogramSample) {
+                       MAYBE_ReceiveTraceSucceedsOnHigherHistogramSample) {
   {
     SetupBackgroundTracingManager();
 
@@ -817,9 +933,12 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingConfigImpl::FromDict(&dict));
     EXPECT_TRUE(config);
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
+
+    BackgroundTracingManager::GetInstance()->WhenIdle(
+        base::Bind(&DisableScenarioWhenIdle));
 
     // Our reference value is "1", so a value of "2" should trigger a trace.
     LOCAL_HISTOGRAM_COUNTS("fake", 2);
@@ -830,9 +949,19 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReceiveReactiveTraceSucceedsOnHigherHistogramSample \
+        DISABLED_ReceiveReactiveTraceSucceedsOnHigherHistogramSample
+#else
+#define MAYBE_ReceiveReactiveTraceSucceedsOnHigherHistogramSample \
+        ReceiveReactiveTraceSucceedsOnHigherHistogramSample
+#endif
+
 // This tests that histogram triggers for reactive mode configs.
-IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReceiveReactiveTraceSucceedsOnHigherHistogramSample) {
+IN_PROC_BROWSER_TEST_F(
+    BackgroundTracingManagerBrowserTest,
+    MAYBE_ReceiveReactiveTraceSucceedsOnHigherHistogramSample) {
   {
     SetupBackgroundTracingManager();
 
@@ -862,9 +991,12 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingConfigImpl::FromDict(&dict));
     EXPECT_TRUE(config);
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
+
+    BackgroundTracingManager::GetInstance()->WhenIdle(
+        base::Bind(&DisableScenarioWhenIdle));
 
     // Our reference value is "1", so a value of "2" should trigger a trace.
     LOCAL_HISTOGRAM_COUNTS("fake", 2);
@@ -875,9 +1007,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReceiveTraceFailsOnLowerHistogramSample \
+        DISABLED_ReceiveTraceFailsOnLowerHistogramSample
+#else
+#define MAYBE_ReceiveTraceFailsOnLowerHistogramSample \
+        ReceiveTraceFailsOnLowerHistogramSample
+#endif
+
 // This tests that histogram values < reference value don't trigger.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReceiveTraceFailsOnLowerHistogramSample) {
+                       MAYBE_ReceiveTraceFailsOnLowerHistogramSample) {
   {
     SetupBackgroundTracingManager();
 
@@ -907,9 +1048,12 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingConfigImpl::FromDict(&dict));
     EXPECT_TRUE(config);
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
+
+    BackgroundTracingManager::GetInstance()->WhenIdle(
+        base::Bind(&DisableScenarioWhenIdle));
 
     // This should fail to trigger a trace since the sample value < the
     // the reference value above.
@@ -921,9 +1065,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReceiveTraceFailsOnHigherHistogramSample \
+        DISABLED_ReceiveTraceFailsOnHigherHistogramSample
+#else
+#define MAYBE_ReceiveTraceFailsOnHigherHistogramSample \
+        ReceiveTraceFailsOnHigherHistogramSample
+#endif
+
 // This tests that histogram values > upper reference value don't trigger.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReceiveTraceFailsOnHigherHistogramSample) {
+                       MAYBE_ReceiveTraceFailsOnHigherHistogramSample) {
   {
     SetupBackgroundTracingManager();
 
@@ -954,9 +1107,12 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingConfigImpl::FromDict(&dict));
     EXPECT_TRUE(config);
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
+
+    BackgroundTracingManager::GetInstance()->WhenIdle(
+        base::Bind(&DisableScenarioWhenIdle));
 
     // This should fail to trigger a trace since the sample value > the
     // the upper reference value above.
@@ -968,9 +1124,19 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_SetActiveScenarioFailsWithInvalidPreemptiveConfig \
+        DISABLED_SetActiveScenarioFailsWithInvalidPreemptiveConfig
+#else
+#define MAYBE_SetActiveScenarioFailsWithInvalidPreemptiveConfig \
+        SetActiveScenarioFailsWithInvalidPreemptiveConfig
+#endif
+
 // This tests that invalid preemptive mode configs will fail.
-IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       SetActiveScenarioFailsWithInvalidPreemptiveConfig) {
+IN_PROC_BROWSER_TEST_F(
+    BackgroundTracingManagerBrowserTest,
+    MAYBE_SetActiveScenarioFailsWithInvalidPreemptiveConfig) {
   {
     SetupBackgroundTracingManager();
 
@@ -998,9 +1164,16 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReactiveTimeoutTermination DISABLED_ReactiveTimeoutTermination
+#else
+#define MAYBE_ReactiveTimeoutTermination ReactiveTimeoutTermination
+#endif
+
 // This tests that reactive mode records and terminates with timeout.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReactiveTimeoutTermination) {
+                       MAYBE_ReactiveTimeoutTermination) {
   {
     SetupBackgroundTracingManager();
 
@@ -1014,9 +1187,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingManager::
             GetInstance()->RegisterTriggerType("reactive_test");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -1032,9 +1205,17 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReactiveSecondTriggerTermination \
+        DISABLED_ReactiveSecondTriggerTermination
+#else
+#define MAYBE_ReactiveSecondTriggerTermination ReactiveSecondTriggerTermination
+#endif
+
 // This tests that reactive mode records and terminates with a second trigger.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReactiveSecondTriggerTermination) {
+                       MAYBE_ReactiveSecondTriggerTermination) {
   {
     SetupBackgroundTracingManager();
 
@@ -1048,9 +1229,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingManager::
             GetInstance()->RegisterTriggerType("reactive_test");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -1067,9 +1248,18 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReactiveSecondTriggerMustMatchForTermination \
+        DISABLED_ReactiveSecondTriggerMustMatchForTermination
+#else
+#define MAYBE_ReactiveSecondTriggerMustMatchForTermination \
+        ReactiveSecondTriggerMustMatchForTermination
+#endif
+
 // This tests that reactive mode only terminates with the same trigger.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReactiveSecondTriggerMustMatchForTermination) {
+                       MAYBE_ReactiveSecondTriggerMustMatchForTermination) {
   {
     SetupBackgroundTracingManager();
 
@@ -1087,6 +1277,8 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
       rules_dict->SetString("rule",
                             "TRACE_ON_NAVIGATION_UNTIL_TRIGGER_OR_FULL");
       rules_dict->SetString("trigger_name", "reactive_test1");
+      rules_dict->SetBoolean("stop_tracing_on_repeated_reactive", true);
+      rules_dict->SetInteger("trigger_delay", 10);
       rules_dict->SetString("category", "BENCHMARK");
       rules_list->Append(std::move(rules_dict));
     }
@@ -1096,6 +1288,8 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
       rules_dict->SetString("rule",
                             "TRACE_ON_NAVIGATION_UNTIL_TRIGGER_OR_FULL");
       rules_dict->SetString("trigger_name", "reactive_test2");
+      rules_dict->SetBoolean("stop_tracing_on_repeated_reactive", true);
+      rules_dict->SetInteger("trigger_delay", 10);
       rules_dict->SetString("category", "BENCHMARK");
       rules_list->Append(std::move(rules_dict));
     }
@@ -1111,9 +1305,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingManager::GetInstance()->RegisterTriggerType(
             "reactive_test2");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -1136,9 +1330,16 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
   }
 }
 
+#if defined(OS_ANDROID)
+// Flaky on android: https://crbug.com/639706
+#define MAYBE_ReactiveThirdTriggerTimeout DISABLED_ReactiveThirdTriggerTimeout
+#else
+#define MAYBE_ReactiveThirdTriggerTimeout ReactiveThirdTriggerTimeout
+#endif
+
 // This tests a third trigger in reactive more does not start another trace.
 IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
-                       ReactiveThirdTriggerTimeout) {
+                       MAYBE_ReactiveThirdTriggerTimeout) {
   {
     SetupBackgroundTracingManager();
 
@@ -1152,9 +1353,9 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
         BackgroundTracingManager::
             GetInstance()->RegisterTriggerType("reactive_test");
 
-    BackgroundTracingManager::GetInstance()->SetActiveScenario(
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
         std::move(config), upload_config_wrapper.get_receive_callback(),
-        BackgroundTracingManager::NO_DATA_FILTERING);
+        BackgroundTracingManager::NO_DATA_FILTERING));
 
     BackgroundTracingManager::GetInstance()->WhenIdle(
         base::Bind(&DisableScenarioWhenIdle));
@@ -1167,6 +1368,81 @@ IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
     // third trigger to trigger again, fails as it is still gathering.
     BackgroundTracingManager::GetInstance()->TriggerNamedEvent(
         handle, base::Bind(&StartedFinalizingCallback, base::Closure(), false));
+
+    run_loop.Run();
+
+    EXPECT_TRUE(upload_config_wrapper.get_receive_count() == 1);
+  }
+}
+
+// This tests that reactive mode only terminates with a repeated trigger
+// if the config specifies that it should.
+IN_PROC_BROWSER_TEST_F(BackgroundTracingManagerBrowserTest,
+                       ReactiveSecondTriggerIgnored) {
+  {
+    SetupBackgroundTracingManager();
+
+    base::RunLoop run_loop;
+    BackgroundTracingManagerUploadConfigWrapper upload_config_wrapper(
+        run_loop.QuitClosure());
+
+    base::DictionaryValue dict;
+    dict.SetString("mode", "REACTIVE_TRACING_MODE");
+
+    std::unique_ptr<base::ListValue> rules_list(new base::ListValue());
+    {
+      std::unique_ptr<base::DictionaryValue> rules_dict(
+          new base::DictionaryValue());
+      rules_dict->SetString("rule",
+                            "TRACE_ON_NAVIGATION_UNTIL_TRIGGER_OR_FULL");
+      rules_dict->SetString("trigger_name", "reactive_test");
+      rules_dict->SetBoolean("stop_tracing_on_repeated_reactive", false);
+      rules_dict->SetInteger("trigger_delay", 10);
+      rules_dict->SetString("category", "BENCHMARK");
+      rules_list->Append(std::move(rules_dict));
+    }
+    dict.Set("configs", std::move(rules_list));
+
+    std::unique_ptr<BackgroundTracingConfig> config(
+        BackgroundTracingConfigImpl::FromDict(&dict));
+
+    BackgroundTracingManager::TriggerHandle trigger_handle =
+        BackgroundTracingManager::GetInstance()->RegisterTriggerType(
+            "reactive_test");
+
+    EXPECT_TRUE(BackgroundTracingManager::GetInstance()->SetActiveScenario(
+        std::move(config), upload_config_wrapper.get_receive_callback(),
+        BackgroundTracingManager::NO_DATA_FILTERING));
+
+    BackgroundTracingManager::GetInstance()->WhenIdle(
+        base::Bind(&DisableScenarioWhenIdle));
+
+    base::RunLoop wait_for_tracing_enabled;
+    static_cast<BackgroundTracingManagerImpl*>(
+        BackgroundTracingManager::GetInstance())
+        ->SetTracingEnabledCallbackForTesting(
+            wait_for_tracing_enabled.QuitClosure());
+
+    BackgroundTracingManager::GetInstance()->TriggerNamedEvent(
+        trigger_handle,
+        base::Bind(&StartedFinalizingCallback, base::Closure(), true));
+
+    wait_for_tracing_enabled.Run();
+
+    // This is expected to fail since we already triggered.
+    BackgroundTracingManager::GetInstance()->TriggerNamedEvent(
+        trigger_handle,
+        base::Bind(&StartedFinalizingCallback, base::Closure(), false));
+
+    // Since we specified a delay in the scenario, we should still be tracing
+    // at this point.
+    EXPECT_TRUE(
+        BackgroundTracingManagerImpl::GetInstance()->IsTracingForTesting());
+
+    BackgroundTracingManager::GetInstance()->FireTimerForTesting();
+
+    EXPECT_FALSE(
+        BackgroundTracingManagerImpl::GetInstance()->IsTracingForTesting());
 
     run_loop.Run();
 

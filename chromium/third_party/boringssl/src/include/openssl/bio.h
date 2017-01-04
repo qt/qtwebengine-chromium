@@ -96,8 +96,8 @@ OPENSSL_EXPORT int BIO_free(BIO *bio);
  * TODO(fork): remove. */
 OPENSSL_EXPORT void BIO_vfree(BIO *bio);
 
-/* BIO_up_ref increments the reference count of |bio| and returns it. */
-OPENSSL_EXPORT BIO *BIO_up_ref(BIO *bio);
+/* BIO_up_ref increments the reference count of |bio| and returns one. */
+OPENSSL_EXPORT int BIO_up_ref(BIO *bio);
 
 
 /* Basic I/O. */
@@ -151,6 +151,11 @@ OPENSSL_EXPORT long BIO_int_ctrl(BIO *bp, int cmd, long larg, int iarg);
  * depends on the concrete type of |bio|. It returns one on success and zero
  * otherwise. */
 OPENSSL_EXPORT int BIO_reset(BIO *bio);
+
+/* BIO_eof returns non-zero when |bio| has reached end-of-file. The precise
+ * meaning of which depends on the concrete type of |bio|. Note that in the
+ * case of BIO_pair this always returns non-zero. */
+OPENSSL_EXPORT int BIO_eof(BIO *bio);
 
 /* BIO_set_flags ORs |flags| with |bio->flags|. */
 OPENSSL_EXPORT void BIO_set_flags(BIO *bio, int flags);
@@ -734,14 +739,6 @@ OPENSSL_EXPORT int BIO_zero_copy_get_write_buf_done(BIO* bio,
 #define BIO_CTRL_DUP	12
 
 
-/* Android compatibility section.
- *
- * A previous version of BoringSSL used in Android renamed ERR_print_errors_fp
- * to BIO_print_errors_fp. It has subsequently been renamed back to
- * ERR_print_errors_fp. */
-#define BIO_print_errors_fp ERR_print_errors_fp
-
-
 /* Deprecated functions. */
 
 /* BIO_f_base64 returns a filter |BIO| that base64-encodes data written into
@@ -895,6 +892,17 @@ struct bio_st {
 
 #if defined(__cplusplus)
 }  /* extern C */
+
+extern "C++" {
+
+namespace bssl {
+
+BORINGSSL_MAKE_DELETER(BIO, BIO_free)
+
+}  // namespace bssl
+
+}  /* extern C++ */
+
 #endif
 
 #define BIO_R_BAD_FOPEN_MODE 100

@@ -13,7 +13,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/content_browser_test.h"
-#include "content/public/test/test_mojo_service.mojom.h"
+#include "content/public/test/test_service.mojom.h"
 
 namespace content {
 
@@ -21,7 +21,7 @@ namespace content {
 class UtilityProcessMojoClientBrowserTest : public ContentBrowserTest {
  public:
   void StartMojoService(bool disable_sandbox) {
-    mojo_client_.reset(new UtilityProcessMojoClient<mojom::TestMojoService>(
+    mojo_client_.reset(new UtilityProcessMojoClient<mojom::TestService>(
         base::ASCIIToUTF16("TestMojoProcess")));
 
     mojo_client_->set_error_callback(
@@ -56,7 +56,7 @@ class UtilityProcessMojoClientBrowserTest : public ContentBrowserTest {
   }
 
  protected:
-  std::unique_ptr<UtilityProcessMojoClient<mojom::TestMojoService>>
+  std::unique_ptr<UtilityProcessMojoClient<mojom::TestService>>
       mojo_client_;
   base::Closure done_closure_;
 
@@ -84,9 +84,7 @@ IN_PROC_BROWSER_TEST_F(UtilityProcessMojoClientBrowserTest, CallService) {
 
 // Call the Mojo service but the utility process terminates before getting
 // the result back.
-// TODO(pmonette): Re-enable when crbug.com/618206 is fixed.
-IN_PROC_BROWSER_TEST_F(UtilityProcessMojoClientBrowserTest,
-                       DISABLED_ConnectionError) {
+IN_PROC_BROWSER_TEST_F(UtilityProcessMojoClientBrowserTest, ConnectionError) {
   base::RunLoop run_loop;
   done_closure_ = run_loop.QuitClosure();
 

@@ -8,11 +8,16 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_utils.h"
+#include "net/log/net_log.h"
+#include "net/log/net_log_capture_mode.h"
+
+#include "net/log/net_log_event_type.h"
 
 namespace content {
 
@@ -55,8 +60,8 @@ std::unique_ptr<base::Value> NetLogFetchEventCallback(
   return std::move(dict);
 }
 
-void EndNetLogEventWithServiceWorkerStatus(const net::BoundNetLog& net_log,
-                                           net::NetLog::EventType type,
+void EndNetLogEventWithServiceWorkerStatus(const net::NetLogWithSource& net_log,
+                                           net::NetLogEventType type,
                                            ServiceWorkerStatusCode status) {
   net_log.EndEvent(type,
                    base::Bind(&NetLogServiceWorkerStatusCallback, status));
@@ -81,10 +86,11 @@ class ServiceWorkerFetchDispatcher::ResponseCallback {
 
   void Run(int request_id,
            ServiceWorkerFetchEventResult fetch_result,
-           const ServiceWorkerResponse& response) {
+           const ServiceWorkerResponse& response,
+           base::Time dispatch_event_time) {
     const bool handled =
         (fetch_result == SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE);
-    if (!version_->FinishRequest(request_id, handled))
+    if (!version_->FinishRequest(request_id, handled, dispatch_event_time))
       NOTREACHED() << "Should only receive one reply per event";
 
     // |fetch_dispatcher| is null if the URLRequest was killed.
@@ -104,7 +110,7 @@ ServiceWorkerFetchDispatcher::ServiceWorkerFetchDispatcher(
     std::unique_ptr<ServiceWorkerFetchRequest> request,
     ServiceWorkerVersion* version,
     ResourceType resource_type,
-    const net::BoundNetLog& net_log,
+    const net::NetLogWithSource& net_log,
     const base::Closure& prepare_callback,
     const FetchCallback& fetch_callback)
     : version_(version),
@@ -115,7 +121,7 @@ ServiceWorkerFetchDispatcher::ServiceWorkerFetchDispatcher(
       resource_type_(resource_type),
       did_complete_(false),
       weak_factory_(this) {
-  net_log_.BeginEvent(net::NetLog::TYPE_SERVICE_WORKER_DISPATCH_FETCH_EVENT,
+  net_log_.BeginEvent(net::NetLogEventType::SERVICE_WORKER_DISPATCH_FETCH_EVENT,
                       net::NetLog::StringCallback(
                           "event_type", ServiceWorkerMetrics::EventTypeToString(
                                             GetEventType())));
@@ -123,7 +129,8 @@ ServiceWorkerFetchDispatcher::ServiceWorkerFetchDispatcher(
 
 ServiceWorkerFetchDispatcher::~ServiceWorkerFetchDispatcher() {
   if (!did_complete_)
-    net_log_.EndEvent(net::NetLog::TYPE_SERVICE_WORKER_DISPATCH_FETCH_EVENT);
+    net_log_.EndEvent(
+        net::NetLogEventType::SERVICE_WORKER_DISPATCH_FETCH_EVENT);
 }
 
 void ServiceWorkerFetchDispatcher::Run() {
@@ -132,7 +139,8 @@ void ServiceWorkerFetchDispatcher::Run() {
       << version_->status();
 
   if (version_->status() == ServiceWorkerVersion::ACTIVATING) {
-    net_log_.BeginEvent(net::NetLog::TYPE_SERVICE_WORKER_WAIT_FOR_ACTIVATION);
+    net_log_.BeginEvent(
+        net::NetLogEventType::SERVICE_WORKER_WAIT_FOR_ACTIVATION);
     version_->RegisterStatusChangeCallback(
         base::Bind(&ServiceWorkerFetchDispatcher::DidWaitForActivation,
                    weak_factory_.GetWeakPtr()));
@@ -142,7 +150,7 @@ void ServiceWorkerFetchDispatcher::Run() {
 }
 
 void ServiceWorkerFetchDispatcher::DidWaitForActivation() {
-  net_log_.EndEvent(net::NetLog::TYPE_SERVICE_WORKER_WAIT_FOR_ACTIVATION);
+  net_log_.EndEvent(net::NetLogEventType::SERVICE_WORKER_WAIT_FOR_ACTIVATION);
   StartWorker();
 }
 
@@ -160,7 +168,7 @@ void ServiceWorkerFetchDispatcher::StartWorker() {
     return;
   }
 
-  net_log_.BeginEvent(net::NetLog::TYPE_SERVICE_WORKER_START_WORKER);
+  net_log_.BeginEvent(net::NetLogEventType::SERVICE_WORKER_START_WORKER);
   version_->RunAfterStartWorker(
       GetEventType(), base::Bind(&ServiceWorkerFetchDispatcher::DidStartWorker,
                                  weak_factory_.GetWeakPtr()),
@@ -169,14 +177,14 @@ void ServiceWorkerFetchDispatcher::StartWorker() {
 }
 
 void ServiceWorkerFetchDispatcher::DidStartWorker() {
-  net_log_.EndEvent(net::NetLog::TYPE_SERVICE_WORKER_START_WORKER);
+  net_log_.EndEvent(net::NetLogEventType::SERVICE_WORKER_START_WORKER);
   DispatchFetchEvent();
 }
 
 void ServiceWorkerFetchDispatcher::DidFailToStartWorker(
     ServiceWorkerStatusCode status) {
   EndNetLogEventWithServiceWorkerStatus(
-      net_log_, net::NetLog::TYPE_SERVICE_WORKER_START_WORKER, status);
+      net_log_, net::NetLogEventType::SERVICE_WORKER_START_WORKER, status);
   DidFail(status);
 }
 
@@ -188,7 +196,7 @@ void ServiceWorkerFetchDispatcher::DispatchFetchEvent() {
   base::Closure prepare_callback = prepare_callback_;
   prepare_callback.Run();
 
-  net_log_.BeginEvent(net::NetLog::TYPE_SERVICE_WORKER_FETCH_EVENT);
+  net_log_.BeginEvent(net::NetLogEventType::SERVICE_WORKER_FETCH_EVENT);
   int response_id = version_->StartRequest(
       GetEventType(),
       base::Bind(&ServiceWorkerFetchDispatcher::DidFailToDispatch,
@@ -213,7 +221,7 @@ void ServiceWorkerFetchDispatcher::DispatchFetchEvent() {
 void ServiceWorkerFetchDispatcher::DidFailToDispatch(
     ServiceWorkerStatusCode status) {
   EndNetLogEventWithServiceWorkerStatus(
-      net_log_, net::NetLog::TYPE_SERVICE_WORKER_FETCH_EVENT, status);
+      net_log_, net::NetLogEventType::SERVICE_WORKER_FETCH_EVENT, status);
   DidFail(status);
 }
 
@@ -227,7 +235,7 @@ void ServiceWorkerFetchDispatcher::DidFinish(
     int request_id,
     ServiceWorkerFetchEventResult fetch_result,
     const ServiceWorkerResponse& response) {
-  net_log_.EndEvent(net::NetLog::TYPE_SERVICE_WORKER_FETCH_EVENT);
+  net_log_.EndEvent(net::NetLogEventType::SERVICE_WORKER_FETCH_EVENT);
   Complete(SERVICE_WORKER_OK, fetch_result, response);
 }
 
@@ -239,7 +247,7 @@ void ServiceWorkerFetchDispatcher::Complete(
 
   did_complete_ = true;
   net_log_.EndEvent(
-      net::NetLog::TYPE_SERVICE_WORKER_DISPATCH_FETCH_EVENT,
+      net::NetLogEventType::SERVICE_WORKER_DISPATCH_FETCH_EVENT,
       base::Bind(&NetLogFetchEventCallback, status, fetch_result));
 
   FetchCallback fetch_callback = fetch_callback_;

@@ -10,12 +10,12 @@
 
 #include <memory>
 
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/timeutils.h"
 #include "webrtc/common_video/include/video_image.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/test/testsupport/metrics/video_metrics.h"
 #include "webrtc/tools/simple_command_line_parser.h"
@@ -26,9 +26,9 @@ class Vp8SequenceCoderEncodeCallback : public webrtc::EncodedImageCallback {
   explicit Vp8SequenceCoderEncodeCallback(FILE* encoded_file)
       : encoded_file_(encoded_file), encoded_bytes_(0) {}
   ~Vp8SequenceCoderEncodeCallback();
-  int Encoded(const webrtc::EncodedImage& encoded_image,
-              const webrtc::CodecSpecificInfo* codecSpecificInfo,
-              const webrtc::RTPFragmentationHeader*);
+  Result OnEncodedImage(const webrtc::EncodedImage& encoded_image,
+                        const webrtc::CodecSpecificInfo* codec_specific_info,
+                        const webrtc::RTPFragmentationHeader*);
   // Returns the encoded image.
   webrtc::EncodedImage encoded_image() { return encoded_image_; }
   size_t encoded_bytes() { return encoded_bytes_; }
@@ -43,7 +43,9 @@ Vp8SequenceCoderEncodeCallback::~Vp8SequenceCoderEncodeCallback() {
   delete[] encoded_image_._buffer;
   encoded_image_._buffer = NULL;
 }
-int Vp8SequenceCoderEncodeCallback::Encoded(
+
+webrtc::EncodedImageCallback::Result
+Vp8SequenceCoderEncodeCallback::OnEncodedImage(
     const webrtc::EncodedImage& encoded_image,
     const webrtc::CodecSpecificInfo* codecSpecificInfo,
     const webrtc::RTPFragmentationHeader* fragmentation) {
@@ -58,11 +60,11 @@ int Vp8SequenceCoderEncodeCallback::Encoded(
   if (encoded_file_ != NULL) {
     if (fwrite(encoded_image._buffer, 1, encoded_image._length,
                encoded_file_) != encoded_image._length) {
-      return -1;
+      return Result(Result::ERROR_SEND_FAILED, 0);
     }
   }
   encoded_bytes_ += encoded_image_._length;
-  return 0;
+  return Result(Result::OK, 0);
 }
 
 // TODO(mikhal): Add support for varying the frame size.
@@ -146,7 +148,7 @@ int SequenceCoder(webrtc::test::CommandLineParser* parser) {
     return -1;
   }
   EXPECT_EQ(0, decoder->InitDecode(&inst, 1));
-  webrtc::VideoFrame input_frame;
+
   size_t length = webrtc::CalcBufferSize(webrtc::kI420, width, height);
   std::unique_ptr<uint8_t[]> frame_buffer(new uint8_t[length]);
 
@@ -161,15 +163,16 @@ int SequenceCoder(webrtc::test::CommandLineParser* parser) {
   int64_t starttime = rtc::TimeMillis();
   int frame_cnt = 1;
   int frames_processed = 0;
-  input_frame.CreateEmptyFrame(width, height, width, half_width, half_width);
-  while (!feof(input_file) &&
-         (num_frames == -1 || frames_processed < num_frames)) {
-    if (fread(frame_buffer.get(), 1, length, input_file) != length)
-      continue;
+  while (num_frames == -1 || frames_processed < num_frames) {
+    rtc::scoped_refptr<VideoFrameBuffer> buffer(
+        test::ReadI420Buffer(width, height, input_file));
+    if (!buffer) {
+      // EOF or read error.
+      break;
+    }
     if (frame_cnt >= start_frame) {
-      webrtc::ConvertToI420(webrtc::kI420, frame_buffer.get(), 0, 0, width,
-                            height, 0, webrtc::kVideoRotation_0, &input_frame);
-      encoder->Encode(input_frame, NULL, NULL);
+      encoder->Encode(VideoFrame(buffer, webrtc::kVideoRotation_0, 0),
+                      NULL, NULL);
       decoder->Decode(encoder_callback.encoded_image(), false, NULL);
       ++frames_processed;
     }

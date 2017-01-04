@@ -1,7 +1,6 @@
 /* Copyright 2014 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 #about-container {
   align-items: center;
@@ -14,14 +13,6 @@
 
 #product-description {
   -webkit-margin-start: 10px;
-}
-
-@-webkit-keyframes spin {
-  to { transform: rotate(-10turn); }
-}
-
-#product-logo.spin {
-  -webkit-animation: spin 500ms cubic-bezier(1, 0, 0, 1) forwards;
 }
 
 #version-container {

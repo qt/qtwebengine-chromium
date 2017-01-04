@@ -27,6 +27,7 @@
 #include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/dlrr.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/report_block.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/tmmb_item.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
@@ -60,7 +61,6 @@ class RTCPSender {
     FeedbackState();
 
     uint8_t send_payload_type;
-    uint32_t frequency_hz;
     uint32_t packets_sent;
     size_t media_bytes_sent;
     uint32_t send_bitrate;
@@ -70,7 +70,7 @@ class RTCPSender {
     uint32_t remote_sr;
 
     bool has_last_xr_rr;
-    RtcpReceiveTimeInfo last_xr_rr;
+    rtcp::ReceiveTimeInfo last_xr_rr;
 
     // Used when generating TMMBR.
     ModuleRtpRtcpImpl* module;
@@ -93,7 +93,7 @@ class RTCPSender {
 
   int32_t SetNackStatus(bool enable);
 
-  void SetStartTimestamp(uint32_t start_timestamp);
+  void SetTimestampOffset(uint32_t timestamp_offset);
 
   void SetLastRtpTime(uint32_t rtp_timestamp, int64_t capture_time_ms);
 
@@ -135,7 +135,7 @@ class RTCPSender {
 
   void SetMaxPayloadLength(size_t max_payload_length);
 
-  void SetTMMBN(const std::vector<rtcp::TmmbItem>* boundingSet);
+  void SetTmmbn(std::vector<rtcp::TmmbItem> bounding_set);
 
   int32_t SetApplicationSpecificData(uint8_t subType,
                                      uint32_t name,
@@ -156,8 +156,7 @@ class RTCPSender {
   class RtcpContext;
 
   // Determine which RTCP messages should be sent and setup flags.
-  void PrepareReport(const std::set<RTCPPacketType>& packetTypes,
-                     const FeedbackState& feedback_state)
+  void PrepareReport(const FeedbackState& feedback_state)
       EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
 
   bool AddReportBlock(const FeedbackState& feedback_state,
@@ -215,7 +214,7 @@ class RTCPSender {
 
   int64_t next_time_to_send_rtcp_ GUARDED_BY(critical_section_rtcp_sender_);
 
-  uint32_t start_timestamp_ GUARDED_BY(critical_section_rtcp_sender_);
+  uint32_t timestamp_offset_ GUARDED_BY(critical_section_rtcp_sender_);
   uint32_t last_rtp_timestamp_ GUARDED_BY(critical_section_rtcp_sender_);
   int64_t last_frame_capture_time_ms_ GUARDED_BY(critical_section_rtcp_sender_);
   uint32_t ssrc_ GUARDED_BY(critical_section_rtcp_sender_);
@@ -242,7 +241,7 @@ class RTCPSender {
 
   std::vector<rtcp::TmmbItem> tmmbn_to_send_
       GUARDED_BY(critical_section_rtcp_sender_);
-  uint32_t tmmbr_send_ GUARDED_BY(critical_section_rtcp_sender_);
+  uint32_t tmmbr_send_bps_ GUARDED_BY(critical_section_rtcp_sender_);
   uint32_t packet_oh_send_ GUARDED_BY(critical_section_rtcp_sender_);
   size_t max_payload_length_;
 

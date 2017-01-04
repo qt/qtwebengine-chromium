@@ -73,6 +73,8 @@ using cricket::SEC_ENABLED;
 using cricket::SEC_REQUIRED;
 using rtc::CS_AES_CM_128_HMAC_SHA1_32;
 using rtc::CS_AES_CM_128_HMAC_SHA1_80;
+using rtc::CS_AEAD_AES_128_GCM;
+using rtc::CS_AEAD_AES_256_GCM;
 using webrtc::RtpExtension;
 
 static const AudioCodec kAudioCodecs1[] = {
@@ -265,6 +267,16 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
     return true;
   }
 
+  // Returns true if the transport info contains "renomination" as an
+  // ICE option.
+  bool GetIceRenomination(const TransportInfo* transport_info) {
+    const std::vector<std::string>& ice_options =
+        transport_info->description.transport_options;
+    auto iter = std::find(ice_options.begin(), ice_options.end(),
+                          cricket::ICE_RENOMINATION_STR);
+    return iter != ice_options.end();
+  }
+
   void TestTransportInfo(bool offer, const MediaSessionOptions& options,
                          bool has_current_desc) {
     const std::string current_audio_ufrag = "current_audio_ufrag";
@@ -310,6 +322,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
         EXPECT_EQ(static_cast<size_t>(cricket::ICE_PWD_LENGTH),
                   ti_audio->description.ice_pwd.size());
       }
+      EXPECT_EQ(options.enable_ice_renomination, GetIceRenomination(ti_audio));
 
     } else {
       EXPECT_TRUE(ti_audio == NULL);
@@ -333,6 +346,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
                     ti_video->description.ice_pwd.size());
         }
       }
+      EXPECT_EQ(options.enable_ice_renomination, GetIceRenomination(ti_video));
     } else {
       EXPECT_TRUE(ti_video == NULL);
     }
@@ -355,6 +369,8 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
                     ti_data->description.ice_pwd.size());
         }
       }
+      EXPECT_EQ(options.enable_ice_renomination, GetIceRenomination(ti_data));
+
     } else {
       EXPECT_TRUE(ti_video == NULL);
     }
@@ -451,6 +467,52 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
         return false;
     }
     return true;
+  }
+
+  void TestVideoGcmCipher(bool gcm_offer, bool gcm_answer) {
+    MediaSessionOptions offer_opts;
+    offer_opts.recv_video = true;
+    offer_opts.crypto_options.enable_gcm_crypto_suites = gcm_offer;
+    MediaSessionOptions answer_opts;
+    answer_opts.recv_video = true;
+    answer_opts.crypto_options.enable_gcm_crypto_suites = gcm_answer;
+    f1_.set_secure(SEC_ENABLED);
+    f2_.set_secure(SEC_ENABLED);
+    std::unique_ptr<SessionDescription> offer(
+        f1_.CreateOffer(offer_opts, NULL));
+    ASSERT_TRUE(offer.get() != NULL);
+    std::unique_ptr<SessionDescription> answer(
+        f2_.CreateAnswer(offer.get(), answer_opts, NULL));
+    const ContentInfo* ac = answer->GetContentByName("audio");
+    const ContentInfo* vc = answer->GetContentByName("video");
+    ASSERT_TRUE(ac != NULL);
+    ASSERT_TRUE(vc != NULL);
+    EXPECT_EQ(std::string(NS_JINGLE_RTP), ac->type);
+    EXPECT_EQ(std::string(NS_JINGLE_RTP), vc->type);
+    const AudioContentDescription* acd =
+        static_cast<const AudioContentDescription*>(ac->description);
+    const VideoContentDescription* vcd =
+        static_cast<const VideoContentDescription*>(vc->description);
+    EXPECT_EQ(MEDIA_TYPE_AUDIO, acd->type());
+    EXPECT_EQ(MAKE_VECTOR(kAudioCodecsAnswer), acd->codecs());
+    EXPECT_EQ(kAutoBandwidth, acd->bandwidth());  // negotiated auto bw
+    EXPECT_NE(0U, acd->first_ssrc());             // a random nonzero ssrc
+    EXPECT_TRUE(acd->rtcp_mux());                 // negotiated rtcp-mux
+    if (gcm_offer && gcm_answer) {
+      ASSERT_CRYPTO(acd, 1U, CS_AEAD_AES_256_GCM);
+    } else {
+      ASSERT_CRYPTO(acd, 1U, CS_AES_CM_128_HMAC_SHA1_32);
+    }
+    EXPECT_EQ(MEDIA_TYPE_VIDEO, vcd->type());
+    EXPECT_EQ(MAKE_VECTOR(kVideoCodecsAnswer), vcd->codecs());
+    EXPECT_NE(0U, vcd->first_ssrc());             // a random nonzero ssrc
+    EXPECT_TRUE(vcd->rtcp_mux());                 // negotiated rtcp-mux
+    if (gcm_offer && gcm_answer) {
+      ASSERT_CRYPTO(vcd, 1U, CS_AEAD_AES_256_GCM);
+    } else {
+      ASSERT_CRYPTO(vcd, 1U, CS_AES_CM_128_HMAC_SHA1_80);
+    }
+    EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), vcd->protocol());
   }
 
  protected:
@@ -766,6 +828,34 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateAudioAnswer) {
   EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), acd->protocol());
 }
 
+// Create a typical audio answer with GCM ciphers enabled, and ensure it
+// matches what we expect.
+TEST_F(MediaSessionDescriptionFactoryTest, TestCreateAudioAnswerGcm) {
+  f1_.set_secure(SEC_ENABLED);
+  f2_.set_secure(SEC_ENABLED);
+  MediaSessionOptions options;
+  options.crypto_options.enable_gcm_crypto_suites = true;
+  std::unique_ptr<SessionDescription> offer(
+      f1_.CreateOffer(options, NULL));
+  ASSERT_TRUE(offer.get() != NULL);
+  std::unique_ptr<SessionDescription> answer(
+      f2_.CreateAnswer(offer.get(), options, NULL));
+  const ContentInfo* ac = answer->GetContentByName("audio");
+  const ContentInfo* vc = answer->GetContentByName("video");
+  ASSERT_TRUE(ac != NULL);
+  ASSERT_TRUE(vc == NULL);
+  EXPECT_EQ(std::string(NS_JINGLE_RTP), ac->type);
+  const AudioContentDescription* acd =
+      static_cast<const AudioContentDescription*>(ac->description);
+  EXPECT_EQ(MEDIA_TYPE_AUDIO, acd->type());
+  EXPECT_EQ(MAKE_VECTOR(kAudioCodecsAnswer), acd->codecs());
+  EXPECT_NE(0U, acd->first_ssrc());             // a random nonzero ssrc
+  EXPECT_EQ(kAutoBandwidth, acd->bandwidth());  // negotiated auto bw
+  EXPECT_TRUE(acd->rtcp_mux());                 // negotiated rtcp-mux
+  ASSERT_CRYPTO(acd, 1U, CS_AEAD_AES_256_GCM);
+  EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), acd->protocol());
+}
+
 // Create a typical video answer, and ensure it matches what we expect.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswer) {
   MediaSessionOptions opts;
@@ -800,6 +890,24 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswer) {
   EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), vcd->protocol());
 }
 
+// Create a typical video answer with GCM ciphers enabled, and ensure it
+// matches what we expect.
+TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswerGcm) {
+  TestVideoGcmCipher(true, true);
+}
+
+// Create a typical video answer with GCM ciphers enabled for the offer only,
+// and ensure it matches what we expect.
+TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswerGcmOffer) {
+  TestVideoGcmCipher(true, false);
+}
+
+// Create a typical video answer with GCM ciphers enabled for the answer only,
+// and ensure it matches what we expect.
+TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswerGcmAnswer) {
+  TestVideoGcmCipher(false, true);
+}
+
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswer) {
   MediaSessionOptions opts;
   opts.data_channel_type = cricket::DCT_RTP;
@@ -830,6 +938,40 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswer) {
   EXPECT_NE(0U, vcd->first_ssrc());             // a random nonzero ssrc
   EXPECT_TRUE(vcd->rtcp_mux());                 // negotiated rtcp-mux
   ASSERT_CRYPTO(vcd, 1U, CS_AES_CM_128_HMAC_SHA1_80);
+  EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), vcd->protocol());
+}
+
+TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswerGcm) {
+  MediaSessionOptions opts;
+  opts.data_channel_type = cricket::DCT_RTP;
+  opts.crypto_options.enable_gcm_crypto_suites = true;
+  f1_.set_secure(SEC_ENABLED);
+  f2_.set_secure(SEC_ENABLED);
+  std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
+  ASSERT_TRUE(offer.get() != NULL);
+  std::unique_ptr<SessionDescription> answer(
+      f2_.CreateAnswer(offer.get(), opts, NULL));
+  const ContentInfo* ac = answer->GetContentByName("audio");
+  const ContentInfo* vc = answer->GetContentByName("data");
+  ASSERT_TRUE(ac != NULL);
+  ASSERT_TRUE(vc != NULL);
+  EXPECT_EQ(std::string(NS_JINGLE_RTP), ac->type);
+  EXPECT_EQ(std::string(NS_JINGLE_RTP), vc->type);
+  const AudioContentDescription* acd =
+      static_cast<const AudioContentDescription*>(ac->description);
+  const DataContentDescription* vcd =
+      static_cast<const DataContentDescription*>(vc->description);
+  EXPECT_EQ(MEDIA_TYPE_AUDIO, acd->type());
+  EXPECT_EQ(MAKE_VECTOR(kAudioCodecsAnswer), acd->codecs());
+  EXPECT_EQ(kAutoBandwidth, acd->bandwidth());  // negotiated auto bw
+  EXPECT_NE(0U, acd->first_ssrc());             // a random nonzero ssrc
+  EXPECT_TRUE(acd->rtcp_mux());                 // negotiated rtcp-mux
+  ASSERT_CRYPTO(acd, 1U, CS_AEAD_AES_256_GCM);
+  EXPECT_EQ(MEDIA_TYPE_DATA, vcd->type());
+  EXPECT_EQ(MAKE_VECTOR(kDataCodecsAnswer), vcd->codecs());
+  EXPECT_NE(0U, vcd->first_ssrc());             // a random nonzero ssrc
+  EXPECT_TRUE(vcd->rtcp_mux());                 // negotiated rtcp-mux
+  ASSERT_CRYPTO(vcd, 1U, CS_AEAD_AES_256_GCM);
   EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), vcd->protocol());
 }
 
@@ -2012,6 +2154,13 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoOfferAudio) {
   TestTransportInfo(true, options, false);
 }
 
+TEST_F(MediaSessionDescriptionFactoryTest,
+       TestTransportInfoOfferIceRenomination) {
+  MediaSessionOptions options;
+  options.enable_ice_renomination = true;
+  TestTransportInfo(true, options, false);
+}
+
 TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoOfferAudioCurrent) {
   MediaSessionOptions options;
   options.recv_audio = true;
@@ -2061,7 +2210,14 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoAnswerAudio) {
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest,
-    TestTransportInfoAnswerAudioCurrent) {
+       TestTransportInfoAnswerIceRenomination) {
+  MediaSessionOptions options;
+  options.enable_ice_renomination = true;
+  TestTransportInfo(false, options, false);
+}
+
+TEST_F(MediaSessionDescriptionFactoryTest,
+       TestTransportInfoAnswerAudioCurrent) {
   MediaSessionOptions options;
   options.recv_audio = true;
   TestTransportInfo(false, options, true);

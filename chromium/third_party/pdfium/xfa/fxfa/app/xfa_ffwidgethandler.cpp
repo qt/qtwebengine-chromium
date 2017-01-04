@@ -4,19 +4,18 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/fxfa/include/xfa_ffwidgethandler.h"
+#include "xfa/fxfa/xfa_ffwidgethandler.h"
 
 #include <vector>
 
 #include "xfa/fxfa/app/xfa_ffchoicelist.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffdocview.h"
-#include "xfa/fxfa/include/xfa_ffwidget.h"
-#include "xfa/fxfa/parser/xfa_document_layout_imp.h"
-#include "xfa/fxfa/parser/xfa_parser.h"
-#include "xfa/fxfa/parser/xfa_parser_imp.h"
+#include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
+#include "xfa/fxfa/parser/cxfa_measurement.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffdocview.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 
 CXFA_FFWidgetHandler::CXFA_FFWidgetHandler(CXFA_FFDocView* pDocView)
     : m_pDocView(pDocView) {}
@@ -47,8 +46,8 @@ FX_BOOL CXFA_FFWidgetHandler::OnLButtonDown(CXFA_FFWidget* hWidget,
   hWidget->Rotate2Normal(fx, fy);
   FX_BOOL bRet = hWidget->OnLButtonDown(dwFlags, fx, fy);
   if (bRet && m_pDocView->SetFocus(hWidget)) {
-    m_pDocView->GetDoc()->GetDocProvider()->SetFocusWidget(m_pDocView->GetDoc(),
-                                                           hWidget);
+    m_pDocView->GetDoc()->GetDocEnvironment()->SetFocusWidget(
+        m_pDocView->GetDoc(), hWidget);
   }
   m_pDocView->UnlockUpdate();
   m_pDocView->UpdateDocView();
@@ -106,8 +105,8 @@ FX_BOOL CXFA_FFWidgetHandler::OnRButtonDown(CXFA_FFWidget* hWidget,
   hWidget->Rotate2Normal(fx, fy);
   FX_BOOL bRet = hWidget->OnRButtonDown(dwFlags, fx, fy);
   if (bRet && m_pDocView->SetFocus(hWidget)) {
-    m_pDocView->GetDoc()->GetDocProvider()->SetFocusWidget(m_pDocView->GetDoc(),
-                                                           hWidget);
+    m_pDocView->GetDoc()->GetDocEnvironment()->SetFocusWidget(
+        m_pDocView->GetDoc(), hWidget);
   }
   m_pDocView->RunInvalidate();
   return bRet;
@@ -226,7 +225,7 @@ int32_t CXFA_FFWidgetHandler::ProcessEvent(CXFA_WidgetAcc* pWidgetAcc,
     case XFA_EVENT_Calculate:
       return pWidgetAcc->ProcessCalculate();
     case XFA_EVENT_Validate:
-      if (m_pDocView->GetDoc()->GetDocProvider()->IsValidationsEnabled(
+      if (m_pDocView->GetDoc()->GetDocEnvironment()->IsValidationsEnabled(
               m_pDocView->GetDoc())) {
         return pWidgetAcc->ProcessValidate();
       }
@@ -505,8 +504,8 @@ CXFA_Node* CXFA_FFWidgetHandler::CreateTemplateNode(XFA_Element eElement,
                                                     CXFA_Node* pParent,
                                                     CXFA_Node* pBefore) const {
   CXFA_Document* pXFADoc = GetXFADoc();
-  CXFA_Node* pNewTemplateNode = pXFADoc->GetParser()->GetFactory()->CreateNode(
-      XFA_XDPPACKET_Template, eElement);
+  CXFA_Node* pNewTemplateNode =
+      pXFADoc->CreateNode(XFA_XDPPACKET_Template, eElement);
   if (pParent)
     pParent->InsertChild(pNewTemplateNode, pBefore);
   return pNewTemplateNode;
@@ -545,7 +544,7 @@ CXFA_Node* CXFA_FFWidgetHandler::CreateValueNode(XFA_Element eValue,
 }
 
 CXFA_Document* CXFA_FFWidgetHandler::GetObjFactory() const {
-  return GetXFADoc()->GetParser()->GetFactory();
+  return GetXFADoc();
 }
 
 CXFA_Document* CXFA_FFWidgetHandler::GetXFADoc() const {

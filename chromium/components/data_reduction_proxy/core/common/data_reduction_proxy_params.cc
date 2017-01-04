@@ -4,13 +4,13 @@
 
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
@@ -25,7 +25,7 @@ namespace {
 const char kEnabled[] = "Enabled";
 const char kControl[] = "Control";
 const char kDisabled[] = "Disabled";
-const char kPreview[] = "Enabled_Preview";
+const char kLitePage[] = "Enabled_Preview";
 const char kDefaultSpdyOrigin[] = "https://proxy.googlezip.net:443";
 // A one-off change, until the Data Reduction Proxy configuration service is
 // available.
@@ -56,24 +56,39 @@ const char kPingbackURL[] =
 const char kServerExperimentsFieldTrial[] =
     "DataReductionProxyServerExperiments";
 
+bool IsIncludedInFieldTrial(const std::string& name) {
+  return base::StartsWith(FieldTrialList::FindFullName(name), kEnabled,
+                          base::CompareCase::SENSITIVE);
+}
+
+// Returns the variation value for |parameter_name|. If the value is
+// unavailable, |default_value| is returned.
+std::string GetStringValueForVariationParamWithDefaultValue(
+    const std::map<std::string, std::string>& variation_params,
+    const std::string& parameter_name,
+    const std::string& default_value) {
+  const auto it = variation_params.find(parameter_name);
+  if (it == variation_params.end())
+    return default_value;
+  return it->second;
+}
+
 }  // namespace
 
 namespace data_reduction_proxy {
 namespace params {
 
 bool IsIncludedInPromoFieldTrial() {
-  return FieldTrialList::FindFullName("DataCompressionProxyPromoVisibility")
-             .find(kEnabled) == 0;
+  return IsIncludedInFieldTrial("DataCompressionProxyPromoVisibility");
 }
 
 bool IsIncludedInHoldbackFieldTrial() {
-  return FieldTrialList::FindFullName("DataCompressionProxyHoldback")
-             .find(kEnabled) == 0;
+  return IsIncludedInFieldTrial("DataCompressionProxyHoldback");
 }
 
-bool IsIncludedInAndroidOnePromoFieldTrial(const char* build_fingerprint) {
-  base::StringPiece fingerprint(build_fingerprint);
-  return (fingerprint.find(kAndroidOneIdentifier) != std::string::npos);
+bool IsIncludedInAndroidOnePromoFieldTrial(
+    base::StringPiece build_fingerprint) {
+  return build_fingerprint.find(kAndroidOneIdentifier) != std::string::npos;
 }
 
 const char* GetTrustedSpdyProxyFieldTrialName() {
@@ -81,8 +96,7 @@ const char* GetTrustedSpdyProxyFieldTrialName() {
 }
 
 bool IsIncludedInTrustedSpdyProxyFieldTrial() {
-  return base::FieldTrialList::FindFullName(GetTrustedSpdyProxyFieldTrialName())
-             .find(kEnabled) == 0;
+  return IsIncludedInFieldTrial(GetTrustedSpdyProxyFieldTrialName());
 }
 
 const char* GetLoFiFieldTrialName() {
@@ -95,20 +109,19 @@ const char* GetLoFiFlagFieldTrialName() {
 
 bool IsIncludedInLoFiEnabledFieldTrial() {
   return !IsLoFiOnViaFlags() && !IsLoFiDisabledViaFlags() &&
-         FieldTrialList::FindFullName(GetLoFiFieldTrialName()).find(kEnabled) ==
-             0;
+         IsIncludedInFieldTrial(GetLoFiFieldTrialName());
 }
 
 bool IsIncludedInLoFiControlFieldTrial() {
   return !IsLoFiOnViaFlags() && !IsLoFiDisabledViaFlags() &&
-         FieldTrialList::FindFullName(GetLoFiFieldTrialName()).find(kControl) ==
-             0;
+         base::StartsWith(FieldTrialList::FindFullName(GetLoFiFieldTrialName()),
+                          kControl, base::CompareCase::SENSITIVE);
 }
 
-bool IsIncludedInLoFiPreviewFieldTrial() {
+bool IsIncludedInLitePageFieldTrial() {
   return !IsLoFiOnViaFlags() && !IsLoFiDisabledViaFlags() &&
-         FieldTrialList::FindFullName(GetLoFiFieldTrialName()).find(kPreview) ==
-             0;
+         base::StartsWith(FieldTrialList::FindFullName(GetLoFiFieldTrialName()),
+                          kLitePage, base::CompareCase::SENSITIVE);
 }
 
 bool IsIncludedInServerExperimentsFieldTrial() {
@@ -120,8 +133,9 @@ bool IsIncludedInServerExperimentsFieldTrial() {
 }
 bool IsIncludedInTamperDetectionExperiment() {
   return IsIncludedInServerExperimentsFieldTrial() &&
-         FieldTrialList::FindFullName(kServerExperimentsFieldTrial)
-                 .find("TamperDetection_Enabled") == 0;
+         base::StartsWith(
+             FieldTrialList::FindFullName(kServerExperimentsFieldTrial),
+             "TamperDetection_Enabled", base::CompareCase::SENSITIVE);
 }
 
 bool IsLoFiOnViaFlags() {
@@ -161,9 +175,9 @@ bool IsLoFiDisabledViaFlags() {
          data_reduction_proxy::switches::kDataReductionProxyLoFiValueDisabled;
 }
 
-bool AreLoFiPreviewsEnabledViaFlags() {
+bool AreLitePagesEnabledViaFlags() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      data_reduction_proxy::switches::kEnableDataReductionProxyLoFiPreview);
+      data_reduction_proxy::switches::kEnableDataReductionProxyLitePage);
 }
 
 bool IsForcePingbackEnabledViaFlags() {
@@ -172,20 +186,25 @@ bool IsForcePingbackEnabledViaFlags() {
 }
 
 bool WarnIfNoDataReductionProxy() {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          data_reduction_proxy::switches::
-          kEnableDataReductionProxyBypassWarning)) {
-    return true;
-  }
-  return false;
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      data_reduction_proxy::switches::kEnableDataReductionProxyBypassWarning);
 }
 
 bool IsIncludedInQuicFieldTrial() {
-  return FieldTrialList::FindFullName(kQuicFieldTrial).find(kEnabled) == 0;
+  return IsIncludedInFieldTrial(kQuicFieldTrial);
 }
 
 const char* GetQuicFieldTrialName() {
   return kQuicFieldTrial;
+}
+
+bool IsZeroRttQuicEnabled() {
+  if (!IsIncludedInQuicFieldTrial())
+    return false;
+  std::map<std::string, std::string> params;
+  variations::GetVariationParams(GetQuicFieldTrialName(), &params);
+  return GetStringValueForVariationParamWithDefaultValue(
+             params, "enable_zero_rtt", "false") == "true";
 }
 
 bool IsConfigClientEnabled() {
@@ -332,14 +351,12 @@ DataReductionProxyTypeInfo::DataReductionProxyTypeInfo() : proxy_index(0) {}
 DataReductionProxyTypeInfo::DataReductionProxyTypeInfo(
     const DataReductionProxyTypeInfo& other) = default;
 
-DataReductionProxyTypeInfo::~DataReductionProxyTypeInfo(){
-}
+DataReductionProxyTypeInfo::~DataReductionProxyTypeInfo() {}
 
 DataReductionProxyParams::DataReductionProxyParams(int flags)
     : DataReductionProxyParams(flags, true) {}
 
-DataReductionProxyParams::~DataReductionProxyParams() {
-}
+DataReductionProxyParams::~DataReductionProxyParams() {}
 
 DataReductionProxyParams::DataReductionProxyParams(int flags,
                                                    bool should_call_init)

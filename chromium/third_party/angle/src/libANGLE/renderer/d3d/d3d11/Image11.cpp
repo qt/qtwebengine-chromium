@@ -67,8 +67,8 @@ gl::Error Image11::generateMipmap(Image11 *dest,
     const uint8_t *sourceData = reinterpret_cast<const uint8_t*>(srcMapped.pData);
     uint8_t *destData = reinterpret_cast<uint8_t*>(destMapped.pData);
 
-    auto mipGenerationFunction = d3d11::GetTextureFormatInfo(src->getInternalFormat(), rendererCaps)
-                                     .formatSet->mipGenerationFunction;
+    auto mipGenerationFunction =
+        d3d11::Format::Get(src->getInternalFormat(), rendererCaps).format.mipGenerationFunction;
     mipGenerationFunction(src->getWidth(), src->getHeight(), src->getDepth(), sourceData,
                           srcMapped.RowPitch, srcMapped.DepthPitch, destData, destMapped.RowPitch,
                           destMapped.DepthPitch);
@@ -90,7 +90,7 @@ bool Image11::isDirty() const
     if (mDirty && !mStagingTexture && !mRecoverFromStorage)
     {
         const Renderer11DeviceCaps &deviceCaps = mRenderer->getRenderer11DeviceCaps();
-        const auto &formatInfo = d3d11::GetTextureFormatInfo(mInternalFormat, deviceCaps);
+        const auto &formatInfo                 = d3d11::Format::Get(mInternalFormat, deviceCaps);
         if (formatInfo.dataInitializerFunction == nullptr)
         {
             return false;
@@ -220,10 +220,10 @@ bool Image11::redefine(GLenum target, GLenum internalformat, const gl::Extents &
         mTarget = target;
 
         // compute the d3d format that will be used
-        const d3d11::TextureFormat &formatInfo =
-            d3d11::GetTextureFormatInfo(internalformat, mRenderer->getRenderer11DeviceCaps());
-        mDXGIFormat = formatInfo.formatSet->texFormat;
-        mRenderable = (formatInfo.formatSet->rtvFormat != DXGI_FORMAT_UNKNOWN);
+        const d3d11::Format &formatInfo =
+            d3d11::Format::Get(internalformat, mRenderer->getRenderer11DeviceCaps());
+        mDXGIFormat = formatInfo.texFormat;
+        mRenderable = (formatInfo.rtvFormat != DXGI_FORMAT_UNKNOWN);
 
         releaseStagingTexture();
         mDirty = (formatInfo.dataInitializerFunction != NULL);
@@ -257,20 +257,19 @@ gl::Error Image11::loadData(const gl::Box &area,
         formatInfo.computeRowPitch(type, area.width, unpack.alignment, unpack.rowLength),
         inputRowPitch);
     GLuint inputDepthPitch = 0;
-    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(type, area.width, area.height, unpack.alignment,
-                                                  unpack.rowLength, unpack.imageHeight),
+    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(area.height, unpack.imageHeight, inputRowPitch),
                      inputDepthPitch);
     GLuint inputSkipBytes = 0;
     ANGLE_TRY_RESULT(
-        formatInfo.computeSkipBytes(inputRowPitch, inputDepthPitch, unpack.skipImages,
-                                    unpack.skipRows, unpack.skipPixels, applySkipImages),
+        formatInfo.computeSkipBytes(inputRowPitch, inputDepthPitch, unpack, applySkipImages),
         inputSkipBytes);
 
     const d3d11::DXGIFormatSize &dxgiFormatInfo = d3d11::GetDXGIFormatSizeInfo(mDXGIFormat);
     GLuint outputPixelSize = dxgiFormatInfo.pixelBytes;
 
-    const d3d11::TextureFormat &d3dFormatInfo = d3d11::GetTextureFormatInfo(mInternalFormat, mRenderer->getRenderer11DeviceCaps());
-    LoadImageFunction loadFunction = d3dFormatInfo.loadFunctions.at(type).loadFunction;
+    const d3d11::Format &d3dFormatInfo =
+        d3d11::Format::Get(mInternalFormat, mRenderer->getRenderer11DeviceCaps());
+    LoadImageFunction loadFunction = d3dFormatInfo.loadFunctions(type).loadFunction;
 
     D3D11_MAPPED_SUBRESOURCE mappedImage;
     gl::Error error = map(D3D11_MAP_WRITE, &mappedImage);
@@ -295,9 +294,7 @@ gl::Error Image11::loadCompressedData(const gl::Box &area, const void *input)
     GLsizei inputRowPitch                = 0;
     ANGLE_TRY_RESULT(formatInfo.computeRowPitch(GL_UNSIGNED_BYTE, area.width, 1, 0), inputRowPitch);
     GLsizei inputDepthPitch = 0;
-    ANGLE_TRY_RESULT(
-        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height, 1, 0, 0),
-        inputDepthPitch);
+    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(area.height, 0, inputRowPitch), inputDepthPitch);
 
     const d3d11::DXGIFormatSize &dxgiFormatInfo = d3d11::GetDXGIFormatSizeInfo(mDXGIFormat);
     GLuint outputPixelSize = dxgiFormatInfo.pixelBytes;
@@ -307,8 +304,9 @@ gl::Error Image11::loadCompressedData(const gl::Box &area, const void *input)
     ASSERT(area.x % outputBlockWidth == 0);
     ASSERT(area.y % outputBlockHeight == 0);
 
-    const d3d11::TextureFormat &d3dFormatInfo = d3d11::GetTextureFormatInfo(mInternalFormat, mRenderer->getRenderer11DeviceCaps());
-    LoadImageFunction loadFunction = d3dFormatInfo.loadFunctions.at(GL_UNSIGNED_BYTE).loadFunction;
+    const d3d11::Format &d3dFormatInfo =
+        d3d11::Format::Get(mInternalFormat, mRenderer->getRenderer11DeviceCaps());
+    LoadImageFunction loadFunction = d3dFormatInfo.loadFunctions(GL_UNSIGNED_BYTE).loadFunction;
 
     D3D11_MAPPED_SUBRESOURCE mappedImage;
     gl::Error error = map(D3D11_MAP_WRITE, &mappedImage);
@@ -343,7 +341,7 @@ gl::Error Image11::copyFromTexStorage(const gl::ImageIndex &imageIndex, TextureS
 
     UINT subresourceIndex         = storage11->getSubresourceIndex(imageIndex);
     TextureHelper11 textureHelper =
-        TextureHelper11::MakeAndReference(resource, storage11->getANGLEFormat());
+        TextureHelper11::MakeAndReference(resource, storage11->getFormatSet());
 
     gl::Box sourceBox(0, 0, 0, mWidth, mHeight, mDepth);
     return copyWithoutConversion(gl::Offset(), sourceBox, textureHelper, subresourceIndex);
@@ -356,11 +354,11 @@ gl::Error Image11::copyFromFramebuffer(const gl::Offset &destOffset,
     const gl::FramebufferAttachment *srcAttachment = sourceFBO->getReadColorbuffer();
     ASSERT(srcAttachment);
 
-    GLenum sourceInternalFormat = srcAttachment->getInternalFormat();
+    GLenum sourceInternalFormat = srcAttachment->getFormat().asSized();
     const auto &d3d11Format =
-        d3d11::GetTextureFormatInfo(sourceInternalFormat, mRenderer->getRenderer11DeviceCaps());
+        d3d11::Format::Get(sourceInternalFormat, mRenderer->getRenderer11DeviceCaps());
 
-    if (d3d11Format.formatSet->texFormat == mDXGIFormat && sourceInternalFormat == mInternalFormat)
+    if (d3d11Format.texFormat == mDXGIFormat && sourceInternalFormat == mInternalFormat)
     {
         RenderTargetD3D *renderTarget = nullptr;
         gl::Error error = srcAttachment->getRenderTarget(&renderTarget);
@@ -373,7 +371,7 @@ gl::Error Image11::copyFromFramebuffer(const gl::Offset &destOffset,
         ASSERT(rt11->getTexture());
 
         TextureHelper11 textureHelper =
-            TextureHelper11::MakeAndReference(rt11->getTexture(), rt11->getANGLEFormat());
+            TextureHelper11::MakeAndReference(rt11->getTexture(), rt11->getFormatSet());
         unsigned int sourceSubResource = rt11->getSubresourceIndex();
 
         gl::Box sourceBox(sourceArea.x, sourceArea.y, 0, sourceArea.width, sourceArea.height, 1);
@@ -399,9 +397,9 @@ gl::Error Image11::copyFromFramebuffer(const gl::Offset &destOffset,
 
     const gl::InternalFormat &destFormatInfo = gl::GetInternalFormatInfo(mInternalFormat);
     const auto &destD3D11Format =
-        d3d11::GetTextureFormatInfo(mInternalFormat, mRenderer->getRenderer11DeviceCaps());
+        d3d11::Format::Get(mInternalFormat, mRenderer->getRenderer11DeviceCaps());
 
-    auto loadFunction = destD3D11Format.loadFunctions.at(destFormatInfo.type);
+    auto loadFunction = destD3D11Format.loadFunctions(destFormatInfo.type);
     if (loadFunction.requiresConversion)
     {
         size_t bufferSize = destFormatInfo.pixelBytes * sourceArea.width * sourceArea.height;
@@ -564,7 +562,8 @@ gl::Error Image11::createStagingTexture()
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
         desc.MiscFlags = 0;
 
-        if (d3d11::GetTextureFormatInfo(mInternalFormat, mRenderer->getRenderer11DeviceCaps()).dataInitializerFunction != NULL)
+        if (d3d11::Format::Get(mInternalFormat, mRenderer->getRenderer11DeviceCaps())
+                .dataInitializerFunction != NULL)
         {
             std::vector<D3D11_SUBRESOURCE_DATA> initialData;
             std::vector<std::vector<BYTE>> textureData;
@@ -604,7 +603,8 @@ gl::Error Image11::createStagingTexture()
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
         desc.MiscFlags = 0;
 
-        if (d3d11::GetTextureFormatInfo(mInternalFormat, mRenderer->getRenderer11DeviceCaps()).dataInitializerFunction != NULL)
+        if (d3d11::Format::Get(mInternalFormat, mRenderer->getRenderer11DeviceCaps())
+                .dataInitializerFunction != NULL)
         {
             std::vector<D3D11_SUBRESOURCE_DATA> initialData;
             std::vector<std::vector<BYTE>> textureData;

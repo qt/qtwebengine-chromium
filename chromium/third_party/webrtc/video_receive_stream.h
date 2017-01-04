@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "webrtc/base/platform_file.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/config.h"
@@ -43,9 +44,13 @@ class VideoReceiveStream {
     // Name of the decoded payload (such as VP8). Maps back to the depacketizer
     // used to unpack incoming packets.
     std::string payload_name;
+
+    DecoderSpecificSettings decoder_specific;
   };
 
   struct Stats {
+    std::string ToString(int64_t time_ms) const;
+
     int network_frame_rate = 0;
     int decode_frame_rate = 0;
     int render_frame_rate = 0;
@@ -65,6 +70,9 @@ class VideoReceiveStream {
 
     int total_bitrate_bps = 0;
     int discarded_packets = 0;
+
+    int width = 0;
+    int height = 0;
 
     int sync_offset_ms = std::numeric_limits<int>::max();
 
@@ -155,8 +163,7 @@ class VideoReceiveStream {
     // Transport for outgoing packets (RTCP).
     Transport* rtcp_send_transport = nullptr;
 
-    // VideoRenderer will be called for each decoded frame. 'nullptr' disables
-    // rendering of this stream.
+    // Must not be 'nullptr' when the stream is started.
     rtc::VideoSinkInterface<VideoFrame>* renderer = nullptr;
 
     // Expected delay needed by the renderer, i.e. the frame will be delivered
@@ -200,6 +207,17 @@ class VideoReceiveStream {
 
   // TODO(pbos): Add info on currently-received codec to Stats.
   virtual Stats GetStats() const = 0;
+
+  // Takes ownership of the file, is responsible for closing it later.
+  // Calling this method will close and finalize any current log.
+  // Giving rtc::kInvalidPlatformFileValue disables logging.
+  // If a frame to be written would make the log too large the write fails and
+  // the log is closed and finalized. A |byte_limit| of 0 means no limit.
+  virtual void EnableEncodedFrameRecording(rtc::PlatformFile file,
+                                           size_t byte_limit) = 0;
+  inline void DisableEncodedFrameRecording() {
+    EnableEncodedFrameRecording(rtc::kInvalidPlatformFileValue, 0);
+  }
 
  protected:
   virtual ~VideoReceiveStream() {}

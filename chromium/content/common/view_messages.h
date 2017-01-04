@@ -15,7 +15,6 @@
 #include "cc/ipc/cc_param_traits.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
-#include "cc/output/compositor_frame_ack.h"
 #include "cc/resources/shared_bitmap.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
@@ -32,6 +31,7 @@
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/public/common/screen_info.h"
 #include "content/public/common/three_d_api_types.h"
 #include "content/public/common/window_container_type.h"
 #include "ipc/ipc_channel_handle.h"
@@ -44,7 +44,6 @@
 #include "third_party/WebKit/public/platform/WebDisplayMode.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
-#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
 #include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
@@ -61,6 +60,8 @@
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/geometry/vector2d_f.h"
+#include "ui/gfx/icc_profile.h"
+#include "ui/gfx/ipc/color/gfx_param_traits.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
 #include "ui/gfx/ipc/skia/gfx_skia_param_traits.h"
 #include "ui/gfx/range/range.h"
@@ -93,7 +94,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::WebTextDirection,
                           blink::WebTextDirection::WebTextDirectionLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebDisplayMode,
                           blink::WebDisplayMode::WebDisplayModeLast)
-IPC_ENUM_TRAITS_MAX_VALUE(WindowContainerType, WINDOW_CONTAINER_TYPE_MAX_VALUE)
 IPC_ENUM_TRAITS(content::FaviconURL::IconType)
 IPC_ENUM_TRAITS(content::MenuItem::Type)
 IPC_ENUM_TRAITS_MAX_VALUE(content::NavigationGesture,
@@ -105,6 +105,8 @@ IPC_ENUM_TRAITS_MAX_VALUE(gfx::FontRenderParams::Hinting,
                           gfx::FontRenderParams::HINTING_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(gfx::FontRenderParams::SubpixelRendering,
                           gfx::FontRenderParams::SUBPIXEL_RENDERING_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(content::ScreenOrientationValues,
+                          content::SCREEN_ORIENTATION_VALUES_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(content::TapMultipleTargetsStrategy,
                           content::TAP_MULTIPLE_TARGETS_STRATEGY_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(content::ThreeDAPIType,
@@ -162,15 +164,16 @@ IPC_STRUCT_TRAITS_BEGIN(blink::WebDeviceEmulationParams)
   IPC_STRUCT_TRAITS_MEMBER(screenOrientationType)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(blink::WebScreenInfo)
-  IPC_STRUCT_TRAITS_MEMBER(deviceScaleFactor)
+IPC_STRUCT_TRAITS_BEGIN(content::ScreenInfo)
+  IPC_STRUCT_TRAITS_MEMBER(device_scale_factor)
+  IPC_STRUCT_TRAITS_MEMBER(icc_profile)
   IPC_STRUCT_TRAITS_MEMBER(depth)
-  IPC_STRUCT_TRAITS_MEMBER(depthPerComponent)
-  IPC_STRUCT_TRAITS_MEMBER(isMonochrome)
+  IPC_STRUCT_TRAITS_MEMBER(depth_per_component)
+  IPC_STRUCT_TRAITS_MEMBER(is_monochrome)
   IPC_STRUCT_TRAITS_MEMBER(rect)
-  IPC_STRUCT_TRAITS_MEMBER(availableRect)
-  IPC_STRUCT_TRAITS_MEMBER(orientationType)
-  IPC_STRUCT_TRAITS_MEMBER(orientationAngle)
+  IPC_STRUCT_TRAITS_MEMBER(available_rect)
+  IPC_STRUCT_TRAITS_MEMBER(orientation_type)
+  IPC_STRUCT_TRAITS_MEMBER(orientation_angle)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ResizeParams)
@@ -179,6 +182,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResizeParams)
   IPC_STRUCT_TRAITS_MEMBER(physical_backing_size)
   IPC_STRUCT_TRAITS_MEMBER(top_controls_shrink_blink_size)
   IPC_STRUCT_TRAITS_MEMBER(top_controls_height)
+  IPC_STRUCT_TRAITS_MEMBER(bottom_controls_height)
   IPC_STRUCT_TRAITS_MEMBER(visible_viewport_size)
   IPC_STRUCT_TRAITS_MEMBER(resizer_rect)
   IPC_STRUCT_TRAITS_MEMBER(is_fullscreen_granted)
@@ -232,6 +236,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(enable_referrers)
   IPC_STRUCT_TRAITS_MEMBER(enable_do_not_track)
   IPC_STRUCT_TRAITS_MEMBER(webrtc_ip_handling_policy)
+  IPC_STRUCT_TRAITS_MEMBER(webrtc_udp_min_port)
+  IPC_STRUCT_TRAITS_MEMBER(webrtc_udp_max_port)
   IPC_STRUCT_TRAITS_MEMBER(user_agent_override)
   IPC_STRUCT_TRAITS_MEMBER(accept_languages)
   IPC_STRUCT_TRAITS_MEMBER(report_frame_name_changes)
@@ -239,7 +245,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(disable_client_blocked_error_page)
   IPC_STRUCT_TRAITS_MEMBER(plugin_fullscreen_allowed)
   IPC_STRUCT_TRAITS_MEMBER(use_video_overlay_for_embedded_encrypted_video)
-  IPC_STRUCT_TRAITS_MEMBER(use_view_overlay_for_all_video)
   IPC_STRUCT_TRAITS_MEMBER(network_contry_iso)
 #if defined(OS_WIN)
   IPC_STRUCT_TRAITS_MEMBER(caption_font_family_name)
@@ -280,74 +285,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::TextInputState)
   IPC_STRUCT_TRAITS_MEMBER(show_ime_if_needed)
   IPC_STRUCT_TRAITS_MEMBER(is_non_ime_change)
 IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
-  // Routing ID of the view initiating the open.
-  IPC_STRUCT_MEMBER(int, opener_id)
-
-  // True if this open request came in the context of a user gesture.
-  IPC_STRUCT_MEMBER(bool, user_gesture)
-
-  // Type of window requested.
-  IPC_STRUCT_MEMBER(WindowContainerType, window_container_type)
-
-  // The session storage namespace ID this view should use.
-  IPC_STRUCT_MEMBER(int64_t, session_storage_namespace_id)
-
-  // The name of the resulting frame that should be created (empty if none
-  // has been specified). UTF8 encoded string.
-  IPC_STRUCT_MEMBER(std::string, frame_name)
-
-  // The routing id of the frame initiating the open.
-  IPC_STRUCT_MEMBER(int, opener_render_frame_id)
-
-  // The URL of the frame initiating the open.
-  IPC_STRUCT_MEMBER(GURL, opener_url)
-
-  // The URL of the top frame containing the opener.
-  IPC_STRUCT_MEMBER(GURL, opener_top_level_frame_url)
-
-  // The security origin of the frame initiating the open.
-  IPC_STRUCT_MEMBER(GURL, opener_security_origin)
-
-  // Whether the opener will be suppressed in the new window, in which case
-  // scripting the new window is not allowed.
-  IPC_STRUCT_MEMBER(bool, opener_suppressed)
-
-  // Whether the window should be opened in the foreground, background, etc.
-  IPC_STRUCT_MEMBER(WindowOpenDisposition, disposition)
-
-  // The URL that will be loaded in the new window (empty if none has been
-  // sepcified).
-  IPC_STRUCT_MEMBER(GURL, target_url)
-
-  // The referrer that will be used to load |target_url| (empty if none has
-  // been specified).
-  IPC_STRUCT_MEMBER(content::Referrer, referrer)
-
-  // The window features to use for the new view.
-  IPC_STRUCT_MEMBER(blink::WebWindowFeatures, features)
-
-  // The additional window features to use for the new view. We pass these
-  // separately from |features| above because we cannot serialize WebStrings
-  // over IPC.
-  IPC_STRUCT_MEMBER(std::vector<base::string16>, additional_features)
-IPC_STRUCT_END()
-
-IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Reply)
-  // The ID of the view to be created. If the ID is MSG_ROUTING_NONE, then the
-  // view couldn't be created.
-  IPC_STRUCT_MEMBER(int32_t, route_id, MSG_ROUTING_NONE)
-
-  // The ID of the main frame hosted in the view.
-  IPC_STRUCT_MEMBER(int32_t, main_frame_route_id, MSG_ROUTING_NONE)
-
-  // The ID of the widget for the main frame.
-  IPC_STRUCT_MEMBER(int32_t, main_frame_widget_route_id, MSG_ROUTING_NONE)
-
-  // TODO(dcheng): No clue. This is kind of duplicated from ViewMsg_New_Params.
-  IPC_STRUCT_MEMBER(int64_t, cloned_session_storage_namespace_id)
-IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)
   // URL for the worker script.
@@ -425,75 +362,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   IPC_STRUCT_MEMBER(int, flags)
 IPC_STRUCT_END()
 
-IPC_STRUCT_BEGIN(ViewMsg_New_Params)
-  // Renderer-wide preferences.
-  IPC_STRUCT_MEMBER(content::RendererPreferences, renderer_preferences)
-
-  // Preferences for this view.
-  IPC_STRUCT_MEMBER(content::WebPreferences, web_preferences)
-
-  // The ID of the view to be created.
-  IPC_STRUCT_MEMBER(int32_t, view_id, MSG_ROUTING_NONE)
-
-  // The ID of the main frame hosted in the view.
-  IPC_STRUCT_MEMBER(int32_t, main_frame_routing_id, MSG_ROUTING_NONE)
-
-  // The ID of the widget for the main frame.
-  IPC_STRUCT_MEMBER(int32_t, main_frame_widget_routing_id, MSG_ROUTING_NONE)
-
-  // The session storage namespace ID this view should use.
-  IPC_STRUCT_MEMBER(int64_t, session_storage_namespace_id)
-
-  // The route ID of the opener RenderFrame or RenderFrameProxy, if we need to
-  // set one (MSG_ROUTING_NONE otherwise).
-  IPC_STRUCT_MEMBER(int, opener_frame_route_id, MSG_ROUTING_NONE)
-
-  // Whether the RenderView should initially be swapped out.
-  IPC_STRUCT_MEMBER(bool, swapped_out)
-
-  // Carries replicated information, such as frame name and sandbox flags, for
-  // this view's main frame, which will be a proxy in |swapped_out|
-  // views when in --site-per-process mode, or a RenderFrame in all other
-  // cases.
-  IPC_STRUCT_MEMBER(content::FrameReplicationState, replicated_frame_state)
-
-  // The ID of the proxy object for the main frame in this view. It is only
-  // used if |swapped_out| is true.
-  IPC_STRUCT_MEMBER(int32_t, proxy_routing_id, MSG_ROUTING_NONE)
-
-  // Whether the RenderView should initially be hidden.
-  IPC_STRUCT_MEMBER(bool, hidden)
-
-  // Whether the RenderView will never be visible.
-  IPC_STRUCT_MEMBER(bool, never_visible)
-
-  // Whether the window associated with this view was created with an opener.
-  IPC_STRUCT_MEMBER(bool, window_was_created_with_opener)
-
-  // The initial page ID to use for this view, which must be larger than any
-  // existing navigation that might be loaded in the view.  Page IDs are unique
-  // to a view and are only updated by the renderer after this initial value.
-  IPC_STRUCT_MEMBER(int32_t, next_page_id)
-
-  // The initial renderer size.
-  IPC_STRUCT_MEMBER(content::ResizeParams, initial_size)
-
-  // Whether to enable auto-resize.
-  IPC_STRUCT_MEMBER(bool, enable_auto_resize)
-
-  // The minimum size to layout the page if auto-resize is enabled.
-  IPC_STRUCT_MEMBER(gfx::Size, min_size)
-
-  // The maximum size to layout the page if auto-resize is enabled.
-  IPC_STRUCT_MEMBER(gfx::Size, max_size)
-
-  // The page zoom level.
-  IPC_STRUCT_MEMBER(double, page_zoom_level)
-
-  // The color profile to use for image decode.
-  IPC_STRUCT_MEMBER(std::vector<char>, image_decode_color_profile)
-IPC_STRUCT_END()
-
 #if defined(OS_MACOSX)
 IPC_STRUCT_BEGIN(ViewMsg_UpdateScrollbarTheme_Params)
   IPC_STRUCT_MEMBER(float, initial_button_delay)
@@ -525,25 +393,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_LockMouse_ACK,
 // Tells the render side that the mouse has been unlocked.
 IPC_MESSAGE_ROUTED0(ViewMsg_MouseLockLost)
 
-// Sent by the browser when the parameters for vsync alignment have changed.
-IPC_MESSAGE_ROUTED2(ViewMsg_UpdateVSyncParameters,
-                    base::TimeTicks /* timebase */,
-                    base::TimeDelta /* interval */)
-
-// Sent when the history is altered outside of navigation. The history list was
-// reset to |history_length| length, and the offset was reset to be
-// |history_offset|.
-IPC_MESSAGE_ROUTED2(ViewMsg_SetHistoryOffsetAndLength,
-                    int /* history_offset */,
-                    int /* history_length */)
-
-// Tells the renderer to create a new view.
-// This message is slightly different, the view it takes (via
-// ViewMsg_New_Params) is the view to create, the message itself is sent as a
-// non-view control message.
-IPC_MESSAGE_CONTROL1(ViewMsg_New,
-                     ViewMsg_New_Params)
-
 // Sends updated preferences to the renderer.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetRendererPrefs,
                     content::RendererPreferences)
@@ -551,10 +400,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetRendererPrefs,
 // This passes a set of webkit preferences down to the renderer.
 IPC_MESSAGE_ROUTED1(ViewMsg_UpdateWebPreferences,
                     content::WebPreferences)
-
-// Informs the renderer that the timezone has changed along with a new
-// timezone ID.
-IPC_MESSAGE_CONTROL1(ViewMsg_TimezoneChange, std::string)
 
 // Tells the render view to close.
 // Expects a Close_ACK message when finished.
@@ -629,13 +474,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SetZoomLevelForLoadingURL,
                     GURL /* url */,
                     double /* zoom_level */)
 
-// Change encoding of page in the renderer.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetPageEncoding,
-                    std::string /*new encoding name*/)
-
-// Reset encoding of page in the renderer back to default.
-IPC_MESSAGE_ROUTED0(ViewMsg_ResetPageEncodingToDefault)
-
 // Used to tell a render view whether it should expose various bindings
 // that allow JS content extended privileges.  See BindingsPolicy for valid
 // flag values.
@@ -662,9 +500,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_EnumerateDirectoryResponse,
 //
 // Expects a ClosePage_ACK message when finished.
 IPC_MESSAGE_ROUTED0(ViewMsg_ClosePage)
-
-// Notifies the renderer about ui theme changes
-IPC_MESSAGE_ROUTED0(ViewMsg_ThemeChanged)
 
 // Notifies the renderer that a paint is to be generated for the rectangle
 // passed in.
@@ -803,29 +638,25 @@ IPC_MESSAGE_ROUTED1(ViewMsg_ExtractSmartClipData,
                     gfx::Rect /* rect */)
 #endif
 
-// Sent by the browser as a reply to ViewHostMsg_SwapCompositorFrame.
-IPC_MESSAGE_ROUTED2(ViewMsg_SwapCompositorFrameAck,
-                    uint32_t /* output_surface_id */,
-                    cc::CompositorFrameAck /* ack */)
-
 // Sent by browser to tell renderer compositor that some resources that were
 // given to the browser in a swap are not being used anymore.
-IPC_MESSAGE_ROUTED2(ViewMsg_ReclaimCompositorResources,
-                    uint32_t /* output_surface_id */,
-                    cc::CompositorFrameAck /* ack */)
+// If this message is in response to a swap then is_swap_ack is set.
+IPC_MESSAGE_ROUTED3(ViewMsg_ReclaimCompositorResources,
+                    uint32_t /* compositor_frame_sink_id */,
+                    bool /* is_swap_ack */,
+                    cc::ReturnedResourceArray /* resources */)
 
 // Sent by browser to give renderer compositor a new namespace ID for any
 // SurfaceSequences it has to create.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetSurfaceIdNamespace,
-                    uint32_t /* surface_id_namespace */)
+IPC_MESSAGE_ROUTED1(ViewMsg_SetFrameSinkId, cc::FrameSinkId /* frame_sink_id */)
 
 IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 
-// Sent by the browser to ask the renderer to redraw.
-// If |request_id| is not zero, it is added to the forced frame's latency info
-// as ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT.
+// Sent by the browser to ask the renderer to redraw. Robust to events that can
+// happen in renderer (abortion of the commit or draw, loss of output surface
+// etc.).
 IPC_MESSAGE_ROUTED1(ViewMsg_ForceRedraw,
-                    int /* request_id */)
+                    ui::LatencyInfo /* latency_info */)
 
 // Let renderer know begin frame messages won't be sent even if requested.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetBeginFramePaused, bool /* paused */)
@@ -847,13 +678,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_HandleCompositorProto,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrames,
                     bool /* enabled */)
 
-// Sent by the renderer when it is creating a new window.  The browser creates a
-// tab for it.  If |reply.route_id| is MSG_ROUTING_NONE, the view couldn't be
-// created.
-IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_CreateWindow,
-                            ViewHostMsg_CreateWindow_Params,
-                            ViewHostMsg_CreateWindow_Reply)
-
 // Similar to ViewHostMsg_CreateWindow, except used for sub-widgets, like
 // <select> dropdowns.  This message is sent to the WebContentsImpl that
 // contains the widget being created.
@@ -867,15 +691,6 @@ IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_CreateWidget,
 IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_CreateFullscreenWidget,
                             int /* opener_id */,
                             int /* route_id */)
-
-// Asks the browser for a unique routing ID.
-IPC_SYNC_MESSAGE_CONTROL0_1(ViewHostMsg_GenerateRoutingID,
-                            int /* routing_id */)
-
-// Asks the browser for the default audio hardware configuration.
-IPC_SYNC_MESSAGE_CONTROL0_2(ViewHostMsg_GetAudioHardwareConfig,
-                            media::AudioParameters /* input parameters */,
-                            media::AudioParameters /* output parameters */)
 
 // These three messages are sent to the parent RenderViewHost to display the
 // page/widget that was created by
@@ -1086,7 +901,7 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateZoomLimits,
 
 IPC_MESSAGE_ROUTED3(
     ViewHostMsg_SwapCompositorFrame,
-    uint32_t /* output_surface_id */,
+    uint32_t /* compositor_frame_sink_id */,
     cc::CompositorFrame /* frame */,
     std::vector<IPC::Message> /* messages_to_deliver_with_frame */)
 

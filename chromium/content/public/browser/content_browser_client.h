@@ -21,8 +21,8 @@
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/media_stream_request.h"
-#include "content/public/common/mojo_application_info.h"
 #include "content/public/common/resource_type.h"
+#include "content/public/common/service_info.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.h"
 #include "media/audio/audio_manager.h"
@@ -56,13 +56,17 @@ namespace gfx {
 class ImageSkia;
 }
 
+namespace gpu {
+class GpuChannelEstablishFactory;
+}
+
 namespace media {
 class CdmFactory;
 }
 
 namespace shell {
 class InterfaceRegistry;
-class ShellClient;
+class Service;
 }
 
 namespace net {
@@ -107,10 +111,11 @@ class BrowserURLHandler;
 class ClientCertificateDelegate;
 class DevToolsManagerDelegate;
 class ExternalVideoSurfaceContainer;
-class GeolocationDelegate;
+class GpuProcessHost;
 class LocationProvider;
 class MediaObserver;
 class NavigationHandle;
+class NavigationUIData;
 class PlatformNotificationService;
 class PresentationServiceDelegate;
 class QuotaPermissionContext;
@@ -187,17 +192,17 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldUseProcessPerSite(BrowserContext* browser_context,
                                        const GURL& effective_url);
 
-  // Returns true if site isolation should be enabled for |effective_url|. This
-  // call allows the embedder to supplement the site isolation policy enforced
-  // by the content layer.
+  // Returns true if site isolation should be enabled for |effective_site_url|.
+  // This call allows the embedder to supplement the site isolation policy
+  // enforced by the content layer.
   //
   // Will only be called if both of the following happen:
   //   1. The embedder asked to be consulted, by returning true from
   //      ContentClient::IsSupplementarySiteIsolationModeEnabled().
-  //   2. The content layer didn't decide to isolate |effective_url| according
-  //      to its internal policy (e.g. because of --site-per-process).
+  //   2. The content layer didn't decide to isolate |effective_site_url|
+  //      according to its internal policy (e.g. because of --site-per-process).
   virtual bool DoesSiteRequireDedicatedProcess(BrowserContext* browser_context,
-                                               const GURL& effective_url);
+                                               const GURL& effective_site_url);
 
   // Returns true unless the effective URL is part of a site that cannot live in
   // a process restricted to just that site.  This is only called if site
@@ -231,14 +236,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // authority.
   // This is called on the UI thread.
   virtual bool CanCommitURL(RenderProcessHost* process_host, const GURL& url);
-
-  // Returns true if no URL within |origin| is allowed to commit in the given
-  // process.  Must return false if there exists at least one URL in |origin|
-  // that is allowed to commit.
-  // This is called on the IO thread.
-  virtual bool IsIllegalOrigin(ResourceContext* resource_context,
-                               int child_process_id,
-                               const GURL& origin);
 
   // Returns whether a URL should be allowed to open from a specific context.
   // This also applies in cases where the new URL will open in another process.
@@ -461,19 +458,17 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Informs the embedder that a certificate error has occured.  If
   // |overridable| is true and if |strict_enforcement| is false, the user
   // can ignore the error and continue. The embedder can call the callback
-  // asynchronously. If |result| is not set to
-  // CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE, the request will be cancelled
-  // or denied immediately, and the callback won't be run.
-  virtual void AllowCertificateError(WebContents* web_contents,
-                                     int cert_error,
-                                     const net::SSLInfo& ssl_info,
-                                     const GURL& request_url,
-                                     ResourceType resource_type,
-                                     bool overridable,
-                                     bool strict_enforcement,
-                                     bool expired_previous_decision,
-                                     const base::Callback<void(bool)>& callback,
-                                     CertificateRequestResultType* result) {}
+  // asynchronously.
+  virtual void AllowCertificateError(
+      WebContents* web_contents,
+      int cert_error,
+      const net::SSLInfo& ssl_info,
+      const GURL& request_url,
+      ResourceType resource_type,
+      bool overridable,
+      bool strict_enforcement,
+      bool expired_previous_decision,
+      const base::Callback<void(CertificateRequestResultType)>& callback) {}
 
   // Selects a SSL client certificate and returns it to the |delegate|. Note:
   // |delegate| may be called synchronously or asynchronously.
@@ -513,6 +508,7 @@ class CONTENT_EXPORT ContentBrowserClient {
                                WindowContainerType container_type,
                                const GURL& target_url,
                                const Referrer& referrer,
+                               const std::string& frame_name,
                                WindowOpenDisposition disposition,
                                const blink::WebWindowFeatures& features,
                                bool user_gesture,
@@ -535,13 +531,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Getters for common objects.
   virtual net::NetLog* GetNetLog();
 
-  // Allows the embedder to provide a Delegate for Geolocation to override some
-  // functionality of the API (e.g. AccessTokenStore, LocationProvider).
-  virtual GeolocationDelegate* CreateGeolocationDelegate();
-
-  // Returns true if fast shutdown is possible.
-  virtual bool IsFastShutdownPossible();
-
   // Called by WebContents to override the WebKit preferences that are used by
   // the renderer. The content layer will add its own settings, and then it's up
   // to the embedder to update it if it wants.
@@ -557,6 +546,17 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Clears browser cookies.
   virtual void ClearCookies(RenderFrameHost* rfh) {}
+
+  // Clears |browser_context|'s data stored for the given |origin|.
+  // The datatypes to be removed are specified by |remove_cookies|,
+  // |remove_storage|, and |remove_cache|. Note that cookies should be removed
+  // for the entire eTLD+1 of |origin|. Must call |callback| when finished.
+  virtual void ClearSiteData(content::BrowserContext* browser_context,
+                             const url::Origin& origin,
+                             bool remove_cookies,
+                             bool remove_storage,
+                             bool remove_cache,
+                             const base::Closure& callback) {}
 
   // Returns the default download directory.
   // This can be called on any thread.
@@ -577,6 +577,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Gets the host for an external out-of-process plugin.
   virtual BrowserPpapiHost* GetExternalBrowserPpapiHost(
       int plugin_child_id);
+
+  // Gets the factory to use to establish a connection to the GPU process.
+  virtual gpu::GpuChannelEstablishFactory* GetGpuChannelEstablishFactory();
 
   // Returns true if the socket operation specified by |params| is allowed from
   // the given |browser_context| and |url|. If |params| is nullptr, this method
@@ -646,20 +649,22 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       const GURL& url);
 
-  // Generate a Shell user-id for the supplied browser context. Defaults to
+  // Generate a Service user-id for the supplied browser context. Defaults to
   // returning a random GUID.
-  virtual std::string GetShellUserIdForBrowserContext(
+  virtual std::string GetServiceUserIdForBrowserContext(
       BrowserContext* browser_context);
 
-  // Allows to register browser Mojo interfaces exposed through the
-  // RenderProcessHost.
+  // Allows to register browser interfaces exposed through the
+  // RenderProcessHost. Note that interface factory callbacks added to
+  // |registry| will by default be run immediately on the IO thread, unless a
+  // task runner is provided.
   virtual void ExposeInterfacesToRenderer(
       shell::InterfaceRegistry* registry,
       RenderProcessHost* render_process_host) {}
 
-  // Allows to register browser Mojo interfaces exposed through the
-  // FrameMojoShell.
-  virtual void RegisterFrameMojoShellInterfaces(
+  // Called when RenderFrameHostImpl connects to the Media service. Expose
+  // interfaces to the service using |registry|.
+  virtual void ExposeInterfacesToMediaService(
       shell::InterfaceRegistry* registry,
       RenderFrameHost* render_frame_host) {}
 
@@ -669,41 +674,43 @@ class CONTENT_EXPORT ContentBrowserClient {
       shell::InterfaceRegistry* registry,
       RenderFrameHost* render_frame_host) {}
 
-  using StaticMojoApplicationMap = std::map<std::string, MojoApplicationInfo>;
+  // Allows to register browser Mojo interfaces exposed through the
+  // GpuProcessHost. Called on the IO thread. Note that interface factory
+  // callbacks added to |registry| will by default be run immediately on the IO
+  // thread, unless a task runner is provided.
+  virtual void ExposeInterfacesToGpuProcess(
+      shell::InterfaceRegistry* registry,
+      GpuProcessHost* render_process_host) {}
 
-  // Registers Mojo applications to be loaded in the browser process by the
-  // browser's global Mojo shell.
-  virtual void RegisterInProcessMojoApplications(
-      StaticMojoApplicationMap* apps) {}
+  using StaticServiceMap = std::map<std::string, ServiceInfo>;
 
-  using OutOfProcessMojoApplicationMap = std::map<std::string, base::string16>;
+  // Registers services to be loaded in the browser process by the Service
+  // Manager.
+  virtual void RegisterInProcessServices(StaticServiceMap* services) {}
 
-  // Registers Mojo applications to be loaded out of the browser process, in a
-  // sandboxed utility process. The value of each map entry should be the
-  // process name to use for the application's host process when launched.
-  virtual void RegisterOutOfProcessMojoApplications(
-      OutOfProcessMojoApplicationMap* apps) {}
+  using OutOfProcessServiceMap = std::map<std::string, base::string16>;
 
-  // Registers Mojo applications to be loaded out of the browser process (in
-  // a utility process) without the sandbox.
+  // Registers services to be loaded out of the browser process, in a sandboxed
+  // utility process. The value of each map entry should be the process name to
+  // use for the service's host process when launched.
+  virtual void RegisterOutOfProcessServices(OutOfProcessServiceMap* services) {}
+
+  // Registers services to be loaded out of the browser process (in a utility
+  // process) without the sandbox.
   //
-  // WARNING: This path is NOT recommended! If a Mojo application needs a
-  // service that is only available out of the sandbox, it could ask the browser
-  // process to provide it (e.g. through OverrideFrameMojoShellServices()). Only
-  // use this method when that approach does not work.
-  virtual void RegisterUnsandboxedOutOfProcessMojoApplications(
-      OutOfProcessMojoApplicationMap* apps) {}
+  // WARNING: This path is NOT recommended! If a service needs another service
+  // that is only available out of the sandbox, it could ask the browser
+  // process to provide it. Only use this method when that approach does not
+  // work.
+  virtual void RegisterUnsandboxedOutOfProcessServices(
+      OutOfProcessServiceMap* services) {}
 
-  // A map of Mojo application names to corresponding manifest contents.
-  using MojoApplicationManifestMap = std::map<std::string, std::string>;
-
-  // Registers manifest contents for Mojo applications.
-  // See "services/shell/manifest.json" for an example Mojo app manifest.
-  //
-  // TODO(rockot): http://crbug.com/610426. Add more documentations about
-  //  Mojo app manifest.
-  virtual void RegisterMojoApplicationManifests(
-      MojoApplicationManifestMap* manifests) {}
+  // Allow the embedder to provide a dictionary loaded from a JSON file
+  // resembling a service manifest whose capabilities section will be merged
+  // with content's own for |name|. Additional entries will be appended to their
+  // respective sections.
+  virtual std::unique_ptr<base::Value> GetServiceManifestOverlay(
+      const std::string& name);
 
   // Allows to override the visibility state of a RenderFrameHost.
   // |visibility_state| should not be null. It will only be set if needed.
@@ -732,6 +739,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // guaranteed that the throttles will be executed in the order they were
   // provided.
   virtual ScopedVector<NavigationThrottle> CreateThrottlesForNavigation(
+      NavigationHandle* navigation_handle);
+
+  // PlzNavigate
+  // Called at the start of the navigation to get opaque data the embedder
+  // wants to see passed to the corresponding URLRequest on the IO thread.
+  virtual std::unique_ptr<NavigationUIData> GetNavigationUIData(
       NavigationHandle* navigation_handle);
 
   // Allows the embedder to provide its own AudioManager implementation.
@@ -777,13 +790,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // a process hosting a plugin with the specified |mime_type|.
   virtual bool IsWin32kLockdownEnabledForMimeType(
       const std::string& mime_type) const;
-#endif
-
-#if defined(VIDEO_HOLE)
-  // Allows an embedder to provide its own ExternalVideoSurfaceContainer
-  // implementation.  Return nullptr to disable external surface video.
-  virtual ExternalVideoSurfaceContainer*
-  OverrideCreateExternalVideoSurfaceContainer(WebContents* web_contents);
 #endif
 };
 

@@ -84,7 +84,8 @@ std::string MultipleHeaderValuesMessage(const std::string& header_name) {
 
 std::string GenerateHandshakeChallenge() {
   std::string raw_challenge(websockets::kRawChallengeLength, '\0');
-  crypto::RandBytes(string_as_array(&raw_challenge), raw_challenge.length());
+  crypto::RandBytes(base::string_as_array(&raw_challenge),
+                    raw_challenge.length());
   std::string encoded_challenge;
   base::Base64Encode(raw_challenge, &encoded_challenge);
   return encoded_challenge;
@@ -293,15 +294,17 @@ WebSocketBasicHandshakeStream::WebSocketBasicHandshakeStream(
     bool using_proxy,
     std::vector<std::string> requested_sub_protocols,
     std::vector<std::string> requested_extensions,
-    std::string* failure_message)
-    : state_(connection.release(), using_proxy),
+    WebSocketStreamRequest* request)
+    : state_(std::move(connection),
+             using_proxy,
+             false /* http_09_on_non_default_ports_enabled */),
       connect_delegate_(connect_delegate),
       http_response_info_(nullptr),
       requested_sub_protocols_(requested_sub_protocols),
       requested_extensions_(requested_extensions),
-      failure_message_(failure_message) {
+      stream_request_(request) {
   DCHECK(connect_delegate);
-  DCHECK(failure_message);
+  DCHECK(request);
 }
 
 WebSocketBasicHandshakeStream::~WebSocketBasicHandshakeStream() {}
@@ -309,7 +312,7 @@ WebSocketBasicHandshakeStream::~WebSocketBasicHandshakeStream() {}
 int WebSocketBasicHandshakeStream::InitializeStream(
     const HttpRequestInfo* request_info,
     RequestPriority priority,
-    const BoundNetLog& net_log,
+    const NetLogWithSource& net_log,
     const CompletionCallback& callback) {
   url_ = request_info->url;
   state_.Initialize(request_info, priority, net_log, callback);
@@ -444,8 +447,9 @@ void WebSocketBasicHandshakeStream::PopulateNetErrorDetails(
   return;
 }
 
-Error WebSocketBasicHandshakeStream::GetSignedEKMForTokenBinding(
+Error WebSocketBasicHandshakeStream::GetTokenBindingSignature(
     crypto::ECPrivateKey* key,
+    TokenBindingType tb_type,
     std::vector<uint8_t>* out) {
   NOTREACHED();
   return ERR_NOT_IMPLEMENTED;
@@ -460,10 +464,6 @@ void WebSocketBasicHandshakeStream::Drain(HttpNetworkSession* session) {
 void WebSocketBasicHandshakeStream::SetPriority(RequestPriority priority) {
   // TODO(ricea): See TODO comment in HttpBasicStream::SetPriority(). If it is
   // gone, then copy whatever has happened there over here.
-}
-
-UploadProgress WebSocketBasicHandshakeStream::GetUploadProgress() const {
-  return UploadProgress();
 }
 
 HttpStream* WebSocketBasicHandshakeStream::RenewStreamForAuth() {
@@ -541,10 +541,9 @@ int WebSocketBasicHandshakeStream::ValidateResponse(int rv) {
         // Reporting "Unexpected response code: 200" in this case is not
         // helpful, so use a different error message.
         if (headers->GetHttpVersion() == HttpVersion(0, 9)) {
-          set_failure_message(
-              "Error during WebSocket handshake: Invalid status line");
+          OnFailure("Error during WebSocket handshake: Invalid status line");
         } else {
-          set_failure_message(base::StringPrintf(
+          OnFailure(base::StringPrintf(
               "Error during WebSocket handshake: Unexpected response code: %d",
               headers->response_code()));
         }
@@ -553,12 +552,11 @@ int WebSocketBasicHandshakeStream::ValidateResponse(int rv) {
     }
   } else {
     if (rv == ERR_EMPTY_RESPONSE) {
-      set_failure_message(
-          "Connection closed before receiving a handshake response");
+      OnFailure("Connection closed before receiving a handshake response");
       return rv;
     }
-    set_failure_message(std::string("Error during WebSocket handshake: ") +
-                        ErrorToString(rv));
+    OnFailure(std::string("Error during WebSocket handshake: ") +
+              ErrorToString(rv));
     OnFinishOpeningHandshake();
     // Some error codes (for example ERR_CONNECTION_CLOSED) get changed to OK at
     // higher levels. To prevent an unvalidated connection getting erroneously
@@ -592,13 +590,12 @@ int WebSocketBasicHandshakeStream::ValidateUpgradeResponse(
                          extension_params_.get())) {
     return OK;
   }
-  set_failure_message("Error during WebSocket handshake: " + failure_message);
+  OnFailure("Error during WebSocket handshake: " + failure_message);
   return ERR_INVALID_RESPONSE;
 }
 
-void WebSocketBasicHandshakeStream::set_failure_message(
-    const std::string& failure_message) {
-  *failure_message_ = failure_message;
+void WebSocketBasicHandshakeStream::OnFailure(const std::string& message) {
+  stream_request_->OnFailure(message);
 }
 
 }  // namespace net

@@ -98,6 +98,9 @@ void OzonePlatform::InitializeGPU(const InitParams& args) {
   InitializeGPU();
 }
 
-void OzonePlatform::AddInterfaces(shell::Connection* connection) {}
+IPC::MessageFilter* OzonePlatform::GetGpuMessageFilter() {
+  return nullptr;
+}
+void OzonePlatform::AddInterfaces(shell::InterfaceRegistry* registry) {}
 
 }  // namespace ui

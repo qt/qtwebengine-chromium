@@ -70,9 +70,6 @@ BLINK_EXPORT bool fontAntialiasingEnabledForTest();
 BLINK_EXPORT void setAlwaysUseComplexTextForTest(bool);
 BLINK_EXPORT bool alwaysUseComplexTextForTest();
 
-// Enables the named log channel. See WebCore/platform/Logging.h for details.
-BLINK_EXPORT void enableLogChannel(const char*);
-
 // Purge the plugin list cache. If |reloadPages| is true, any pages
 // containing plugins will be reloaded after refreshing the plugin list.
 BLINK_EXPORT void resetPluginCache(bool reloadPages = false);
@@ -88,6 +85,6 @@ BLINK_EXPORT void MemoryPressureNotificationToWorkerThreadIsolates(
 // Set the RAIL performance mode on all worker thread isolates.
 BLINK_EXPORT void setRAILModeOnWorkerThreadIsolates(v8::RAILMode);
 
-} // namespace blink
+}  // namespace blink
 
 #endif

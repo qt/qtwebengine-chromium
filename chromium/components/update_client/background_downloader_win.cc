@@ -12,6 +12,7 @@
 #include <functional>
 #include <iomanip>
 #include <limits>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -459,7 +460,7 @@ void BackgroundDownloader::DoStartDownload(const GURL& url) {
 void BackgroundDownloader::BeginDownload(const GURL& url) {
   DCHECK(task_runner()->RunsTasksOnCurrentThread());
 
-  download_start_time_ = base::Time::Now();
+  download_start_time_ = base::TimeTicks::Now();
   job_stuck_begin_time_ = download_start_time_;
 
   HRESULT hr = BeginDownloadHelper(url);
@@ -572,7 +573,7 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
 
   DCHECK(!TimerIsRunning());
 
-  const base::Time download_end_time(base::Time::Now());
+  const base::TimeTicks download_end_time(base::TimeTicks::Now());
   const base::TimeDelta download_time =
       download_end_time >= download_start_time_
           ? download_end_time - download_start_time_
@@ -690,7 +691,7 @@ bool BackgroundDownloader::OnStateQueued() {
 bool BackgroundDownloader::OnStateTransferring() {
   // Resets the baseline for detecting a stuck job since the job is transferring
   // data and it is making progress.
-  job_stuck_begin_time_ = base::Time::Now();
+  job_stuck_begin_time_ = base::TimeTicks::Now();
 
   int64_t downloaded_bytes = -1;
   int64_t total_bytes = -1;
@@ -799,7 +800,7 @@ HRESULT BackgroundDownloader::InitializeNewJob(
 bool BackgroundDownloader::IsStuck() {
   const base::TimeDelta job_stuck_timeout(
       base::TimeDelta::FromMinutes(kJobStuckTimeoutMin));
-  return job_stuck_begin_time_ + job_stuck_timeout < base::Time::Now();
+  return job_stuck_begin_time_ + job_stuck_timeout < base::TimeTicks::Now();
 }
 
 HRESULT BackgroundDownloader::CompleteJob() {
@@ -873,8 +874,8 @@ HRESULT BackgroundDownloader::ClearGit() {
   };
 
   for (auto cookie : cookies) {
-    hr = git->RevokeInterfaceFromGlobal(cookie);
-    DCHECK(SUCCEEDED(hr));
+    // TODO(sorin): check the result of the call, see crbug.com/644857.
+    git->RevokeInterfaceFromGlobal(cookie);
   }
 
   return S_OK;

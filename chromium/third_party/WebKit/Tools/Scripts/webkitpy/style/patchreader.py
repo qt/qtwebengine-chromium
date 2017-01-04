@@ -48,7 +48,6 @@ class PatchReader(object):
 
         Args:
           text_file_reader: A TextFileReader instance.
-
         """
         self._text_file_reader = text_file_reader
 
@@ -62,10 +61,10 @@ class PatchReader(object):
 
         for path, diff_file in patch_files.iteritems():
             line_numbers = diff_file.added_or_modified_line_numbers()
-            _log.debug('Found %s new or modified lines in: %s' % (len(line_numbers), path))
+            _log.debug('Found %s new or modified lines in: %s', len(line_numbers), path)
 
             if not line_numbers:
-                match = re.search("\s*png$", path)
+                match = re.search(r"\s*png$", path)
                 if match and fs.exists(path):
                     if call_only_once:
                         self._text_file_reader.process_file(file_path=path, line_numbers=None)

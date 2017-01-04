@@ -245,8 +245,7 @@ class DataReductionProxyProtocolTest : public testing::Test {
     base::RunLoop().Run();
 
     if (!expected_error) {
-      EXPECT_EQ(net::URLRequestStatus::SUCCESS, r->status().status());
-      EXPECT_EQ(net::OK, r->status().error());
+      EXPECT_EQ(net::OK, d.request_status());
       if (expected_retry)
         EXPECT_EQ(initial_headers_received_count + 2,
                   network_delegate_->headers_received_count());
@@ -256,8 +255,7 @@ class DataReductionProxyProtocolTest : public testing::Test {
       EXPECT_EQ(content, d.data_received());
       return;
     }
-    EXPECT_EQ(net::URLRequestStatus::FAILED, r->status().status());
-    EXPECT_EQ(net::ERR_INVALID_RESPONSE, r->status().error());
+    EXPECT_EQ(net::ERR_INVALID_RESPONSE, d.request_status());
     EXPECT_EQ(initial_headers_received_count,
               network_delegate_->headers_received_count());
   }
@@ -886,9 +884,9 @@ TEST_F(DataReductionProxyBypassProtocolEndToEndTest,
     EXPECT_EQ(test.expected_bypass_type,
               drp_test_context()->io_data()->bypass_stats()->GetBypassType());
     // Check the bad proxy list.
-    EXPECT_EQ(
-        test.expected_bad_proxy,
-        ContainsKey(context()->proxy_service()->proxy_retry_info(), kPrimary));
+    EXPECT_EQ(test.expected_bad_proxy,
+              base::ContainsKey(context()->proxy_service()->proxy_retry_info(),
+                                kPrimary));
   }
 }
 
@@ -980,8 +978,7 @@ TEST_F(DataReductionProxyProtocolTest,
   r->Start();
   base::RunLoop().Run();
 
-  EXPECT_EQ(net::URLRequestStatus::SUCCESS, r->status().status());
-  EXPECT_EQ(net::OK, r->status().error());
+  EXPECT_EQ(net::OK, d.request_status());
 
   EXPECT_EQ("Bypass message", d.data_received());
 

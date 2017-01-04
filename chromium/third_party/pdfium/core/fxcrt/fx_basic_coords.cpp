@@ -6,8 +6,8 @@
 
 #include <limits.h>
 
-#include "core/fxcrt/include/fx_coordinates.h"
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_ext.h"
 
 void FX_RECT::Normalize() {
   if (left > right) {
@@ -150,7 +150,7 @@ int CFX_FloatRect::Substract4(CFX_FloatRect& s, CFX_FloatRect* pRects) {
   }
   return nRects;
 }
-FX_RECT CFX_FloatRect::GetOutterRect() const {
+FX_RECT CFX_FloatRect::GetOuterRect() const {
   CFX_FloatRect rect1 = *this;
   FX_RECT rect;
   rect.left = (int)FXSYS_floor(rect1.left);

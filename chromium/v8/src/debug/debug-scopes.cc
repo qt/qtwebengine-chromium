@@ -4,13 +4,16 @@
 
 #include "src/debug/debug-scopes.h"
 
+#include <memory>
+
 #include "src/ast/scopes.h"
-#include "src/compiler.h"
 #include "src/debug/debug.h"
 #include "src/frames-inl.h"
 #include "src/globals.h"
 #include "src/isolate-inl.h"
+#include "src/parsing/parse-info.h"
 #include "src/parsing/parser.h"
+#include "src/parsing/rewriter.h"
 
 namespace v8 {
 namespace internal {
@@ -22,13 +25,15 @@ ScopeIterator::ScopeIterator(Isolate* isolate, FrameInspector* frame_inspector,
       nested_scope_chain_(4),
       seen_script_scope_(false),
       failed_(false) {
-  if (!frame_inspector->GetContext()->IsContext() ||
-      !frame_inspector->GetFunction()->IsJSFunction()) {
+  if (!frame_inspector->GetContext()->IsContext()) {
     // Optimized frame, context or function cannot be materialized. Give up.
     return;
   }
 
   context_ = Handle<Context>::cast(frame_inspector->GetContext());
+
+  // We should not instantiate a ScopeIterator for wasm frames.
+  DCHECK(frame_inspector->GetScript()->type() != Script::TYPE_WASM);
 
   // Catch the case when the debugger stops in an internal function.
   Handle<JSFunction> function = GetFunction();
@@ -83,27 +88,47 @@ ScopeIterator::ScopeIterator(Isolate* isolate, FrameInspector* frame_inspector,
   // Reparse the code and analyze the scopes.
   // Check whether we are in global, eval or function code.
   Zone zone(isolate->allocator());
-  base::SmartPointer<ParseInfo> info;
+  std::unique_ptr<ParseInfo> info;
   if (scope_info->scope_type() != FUNCTION_SCOPE) {
     // Global or eval code.
     Handle<Script> script(Script::cast(shared_info->script()));
-    info.Reset(new ParseInfo(&zone, script));
+    info.reset(new ParseInfo(&zone, script));
     info->set_toplevel();
     if (scope_info->scope_type() == SCRIPT_SCOPE) {
       info->set_global();
     } else {
       DCHECK(scope_info->scope_type() == EVAL_SCOPE);
       info->set_eval();
-      info->set_context(Handle<Context>(function->context()));
+      if (!function->context()->IsNativeContext()) {
+        info->set_outer_scope_info(handle(function->context()->scope_info()));
+      }
+      // Language mode may be inherited from the eval caller.
+      // Retrieve it from shared function info.
+      info->set_language_mode(shared_info->language_mode());
     }
   } else {
     // Inner function.
-    info.Reset(new ParseInfo(&zone, function));
+    info.reset(new ParseInfo(&zone, function));
   }
-  Scope* scope = NULL;
-  if (Compiler::ParseAndAnalyze(info.get())) scope = info->literal()->scope();
-  if (!ignore_nested_scopes) RetrieveScopeChain(scope);
-  if (collect_non_locals) CollectNonLocals(scope);
+  if (Parser::ParseStatic(info.get()) && Rewriter::Rewrite(info.get())) {
+    DeclarationScope* scope = info->literal()->scope();
+    if (!ignore_nested_scopes || collect_non_locals) {
+      CollectNonLocals(info.get(), scope);
+    }
+    if (!ignore_nested_scopes) {
+      DeclarationScope::Analyze(info.get(), AnalyzeMode::kDebugger);
+      RetrieveScopeChain(scope);
+    }
+  } else if (!ignore_nested_scopes) {
+    // A failed reparse indicates that the preparser has diverged from the
+    // parser or that the preparse data given to the initial parse has been
+    // faulty. We fail in debug mode but in release mode we only provide the
+    // information we get from the context chain but nothing about
+    // completely stack allocated scopes or stack allocated locals.
+    // Or it could be due to stack overflow.
+    DCHECK(isolate_->has_pending_exception());
+    failed_ = true;
+  }
   UnwrapEvaluationContext();
 }
 
@@ -115,6 +140,19 @@ ScopeIterator::ScopeIterator(Isolate* isolate, Handle<JSFunction> function)
       seen_script_scope_(false),
       failed_(false) {
   if (!function->shared()->IsSubjectToDebugging()) context_ = Handle<Context>();
+  UnwrapEvaluationContext();
+}
+
+ScopeIterator::ScopeIterator(Isolate* isolate,
+                             Handle<JSGeneratorObject> generator)
+    : isolate_(isolate),
+      frame_inspector_(NULL),
+      context_(generator->context()),
+      seen_script_scope_(false),
+      failed_(false) {
+  if (!generator->function()->shared()->IsSubjectToDebugging()) {
+    context_ = Handle<Context>();
+  }
   UnwrapEvaluationContext();
 }
 
@@ -326,7 +364,7 @@ bool ScopeIterator::SetVariableValue(Handle<String> variable_name,
     case ScopeIterator::ScopeTypeEval:
       return SetInnerScopeVariableValue(variable_name, new_value);
     case ScopeIterator::ScopeTypeModule:
-      // TODO(2399): should we implement it?
+      // TODO(neis): Implement.
       break;
   }
   return false;
@@ -424,29 +462,16 @@ void ScopeIterator::DebugPrint() {
 }
 #endif
 
-
-void ScopeIterator::RetrieveScopeChain(Scope* scope) {
-  if (scope != NULL) {
-    int source_position = frame_inspector_->GetSourcePosition();
-    GetNestedScopeChain(isolate_, scope, source_position);
-  } else {
-    // A failed reparse indicates that the preparser has diverged from the
-    // parser or that the preparse data given to the initial parse has been
-    // faulty. We fail in debug mode but in release mode we only provide the
-    // information we get from the context chain but nothing about
-    // completely stack allocated scopes or stack allocated locals.
-    // Or it could be due to stack overflow.
-    DCHECK(isolate_->has_pending_exception());
-    failed_ = true;
-  }
+void ScopeIterator::RetrieveScopeChain(DeclarationScope* scope) {
+  DCHECK_NOT_NULL(scope);
+  int source_position = frame_inspector_->GetSourcePosition();
+  GetNestedScopeChain(isolate_, scope, source_position);
 }
 
-
-void ScopeIterator::CollectNonLocals(Scope* scope) {
-  if (scope != NULL) {
-    DCHECK(non_locals_.is_null());
-    non_locals_ = scope->CollectNonLocals(StringSet::New(isolate_));
-  }
+void ScopeIterator::CollectNonLocals(ParseInfo* info, DeclarationScope* scope) {
+  DCHECK_NOT_NULL(scope);
+  DCHECK(non_locals_.is_null());
+  non_locals_ = scope->CollectNonLocals(info, StringSet::New(isolate_));
 }
 
 
@@ -594,6 +619,8 @@ MaybeHandle<JSObject> ScopeIterator::MaterializeModuleScope() {
   // Fill all context locals.
   CopyContextLocalsToScopeObject(scope_info, context, module_scope);
 
+  // TODO(neis): Also collect stack locals as well as imports and exports.
+
   return module_scope;
 }
 
@@ -614,9 +641,10 @@ bool ScopeIterator::SetParameterValue(Handle<ScopeInfo> scope_info,
 }
 
 bool ScopeIterator::SetStackVariableValue(Handle<ScopeInfo> scope_info,
-                                          JavaScriptFrame* frame,
                                           Handle<String> variable_name,
                                           Handle<Object> new_value) {
+  if (frame_inspector_ == nullptr) return false;
+  JavaScriptFrame* frame = GetFrame();
   // Setting stack locals of optimized frames is not supported.
   if (frame->is_optimized()) return false;
   HandleScope scope(isolate_);
@@ -672,7 +700,7 @@ bool ScopeIterator::SetLocalVariableValue(Handle<String> variable_name,
   bool result = SetParameterValue(scope_info, frame, variable_name, new_value);
 
   // Stack locals.
-  if (SetStackVariableValue(scope_info, frame, variable_name, new_value)) {
+  if (SetStackVariableValue(scope_info, variable_name, new_value)) {
     return true;
   }
 
@@ -690,10 +718,9 @@ bool ScopeIterator::SetInnerScopeVariableValue(Handle<String> variable_name,
   Handle<ScopeInfo> scope_info = CurrentScopeInfo();
   DCHECK(scope_info->scope_type() == BLOCK_SCOPE ||
          scope_info->scope_type() == EVAL_SCOPE);
-  JavaScriptFrame* frame = GetFrame();
 
   // Setting stack locals of optimized frames is not supported.
-  if (SetStackVariableValue(scope_info, frame, variable_name, new_value)) {
+  if (SetStackVariableValue(scope_info, variable_name, new_value)) {
     return true;
   }
 
@@ -788,21 +815,19 @@ void ScopeIterator::GetNestedScopeChain(Isolate* isolate, Scope* scope,
                                         int position) {
   if (scope->is_function_scope()) {
     // Do not collect scopes of nested inner functions inside the current one.
-    Handle<JSFunction> function =
-        Handle<JSFunction>::cast(frame_inspector_->GetFunction());
+    Handle<JSFunction> function = frame_inspector_->GetFunction();
     if (scope->end_position() < function->shared()->end_position()) return;
   }
   if (scope->is_hidden()) {
     // We need to add this chain element in case the scope has a context
     // associated. We need to keep the scope chain and context chain in sync.
-    nested_scope_chain_.Add(ExtendedScopeInfo(scope->GetScopeInfo(isolate)));
+    nested_scope_chain_.Add(ExtendedScopeInfo(scope->scope_info()));
   } else {
-    nested_scope_chain_.Add(ExtendedScopeInfo(scope->GetScopeInfo(isolate),
-                                              scope->start_position(),
-                                              scope->end_position()));
+    nested_scope_chain_.Add(ExtendedScopeInfo(
+        scope->scope_info(), scope->start_position(), scope->end_position()));
   }
-  for (int i = 0; i < scope->inner_scopes()->length(); i++) {
-    Scope* inner_scope = scope->inner_scopes()->at(i);
+  for (Scope* inner_scope = scope->inner_scope(); inner_scope != nullptr;
+       inner_scope = inner_scope->sibling()) {
     int beg_pos = inner_scope->start_position();
     int end_pos = inner_scope->end_position();
     DCHECK((beg_pos >= 0 && end_pos >= 0) || inner_scope->is_hidden());

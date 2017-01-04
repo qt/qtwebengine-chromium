@@ -10,10 +10,13 @@
 
 #include "webrtc/p2p/base/turnserver.h"
 
+#include <tuple>  // for std::tie
+
 #include "webrtc/p2p/base/asyncstuntcpsocket.h"
 #include "webrtc/p2p/base/common.h"
 #include "webrtc/p2p/base/packetsocketfactory.h"
 #include "webrtc/p2p/base/stun.h"
+#include "webrtc/base/bind.h"
 #include "webrtc/base/bytebuffer.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
@@ -124,11 +127,6 @@ TurnServer::TurnServer(rtc::Thread* thread)
 }
 
 TurnServer::~TurnServer() {
-  for (AllocationMap::iterator it = allocations_.begin();
-       it != allocations_.end(); ++it) {
-    delete it->second;
-  }
-
   for (InternalSocketMap::iterator it = server_sockets_.begin();
        it != server_sockets_.end(); ++it) {
     rtc::AsyncPacketSocket* socket = it->first;
@@ -429,7 +427,7 @@ bool TurnServer::ValidateNonce(const std::string& nonce) const {
 
 TurnServerAllocation* TurnServer::FindAllocation(TurnServerConnection* conn) {
   AllocationMap::const_iterator it = allocations_.find(*conn);
-  return (it != allocations_.end()) ? it->second : NULL;
+  return (it != allocations_.end()) ? it->second.get() : nullptr;
 }
 
 TurnServerAllocation* TurnServer::CreateAllocation(TurnServerConnection* conn,
@@ -445,7 +443,7 @@ TurnServerAllocation* TurnServer::CreateAllocation(TurnServerConnection* conn,
   TurnServerAllocation* allocation = new TurnServerAllocation(this,
       thread_, *conn, external_socket, key);
   allocation->SignalDestroyed.connect(this, &TurnServer::OnAllocationDestroyed);
-  allocations_[*conn] = allocation;
+  allocations_[*conn].reset(allocation);
   return allocation;
 }
 
@@ -518,19 +516,29 @@ void TurnServer::OnAllocationDestroyed(TurnServerAllocation* allocation) {
   }
 
   AllocationMap::iterator it = allocations_.find(*(allocation->conn()));
-  if (it != allocations_.end())
+  if (it != allocations_.end()) {
+    it->second.release();
     allocations_.erase(it);
+  }
 }
 
 void TurnServer::DestroyInternalSocket(rtc::AsyncPacketSocket* socket) {
   InternalSocketMap::iterator iter = server_sockets_.find(socket);
   if (iter != server_sockets_.end()) {
     rtc::AsyncPacketSocket* socket = iter->first;
-    // We must destroy the socket async to avoid invalidating the sigslot
-    // callback list iterator inside a sigslot callback.
-    rtc::Thread::Current()->Dispose(socket);
     server_sockets_.erase(iter);
+    // We must destroy the socket async to avoid invalidating the sigslot
+    // callback list iterator inside a sigslot callback. (In other words,
+    // deleting an object from within a callback from that object).
+    sockets_to_delete_.push_back(
+        std::unique_ptr<rtc::AsyncPacketSocket>(socket));
+    invoker_.AsyncInvoke<void>(RTC_FROM_HERE, rtc::Thread::Current(),
+                               rtc::Bind(&TurnServer::FreeSockets, this));
   }
+}
+
+void TurnServer::FreeSockets() {
+  sockets_to_delete_.clear();
 }
 
 TurnServerConnection::TurnServerConnection(const rtc::SocketAddress& src,
@@ -547,7 +555,7 @@ bool TurnServerConnection::operator==(const TurnServerConnection& c) const {
 }
 
 bool TurnServerConnection::operator<(const TurnServerConnection& c) const {
-  return src_ < c.src_ || dst_ < c.dst_ || proto_ < c.proto_;
+  return std::tie(src_, dst_, proto_) < std::tie(c.src_, c.dst_, c.proto_);
 }
 
 std::string TurnServerConnection::ToString() const {

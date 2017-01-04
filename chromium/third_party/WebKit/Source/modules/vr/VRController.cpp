@@ -4,87 +4,219 @@
 
 #include "modules/vr/VRController.h"
 
+#include "core/dom/DOMException.h"
+#include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
+#include "modules/vr/NavigatorVR.h"
 #include "modules/vr/VRGetDevicesCallback.h"
-#include "platform/RuntimeEnabledFeatures.h"
-#include "platform/mojo/MojoHelper.h"
-#include "public/platform/ServiceRegistry.h"
+#include "public/platform/InterfaceProvider.h"
+
+#include "wtf/Assertions.h"
 
 namespace blink {
 
-VRController::~VRController()
-{
+VRController::VRController(NavigatorVR* navigatorVR)
+    : ContextLifecycleObserver(navigatorVR->document()),
+      m_navigatorVR(navigatorVR),
+      m_binding(this) {
+  navigatorVR->document()->frame()->interfaceProvider()->getInterface(
+      mojo::GetProxy(&m_service));
+  m_service->SetClient(m_binding.CreateInterfacePtrAndBind());
 }
 
-void VRController::provideTo(LocalFrame& frame, ServiceRegistry* registry)
-{
-    ASSERT(RuntimeEnabledFeatures::webVREnabled());
-    Supplement<LocalFrame>::provideTo(frame, supplementName(), registry ? new VRController(frame, registry) : nullptr);
+VRController::~VRController() {}
+
+void VRController::getDisplays(ScriptPromiseResolver* resolver) {
+  if (!m_service) {
+    DOMException* exception = DOMException::create(
+        InvalidStateError, "The service is no longer active.");
+    resolver->reject(exception);
+    return;
+  }
+
+  m_pendingGetDevicesCallbacks.append(
+      WTF::wrapUnique(new VRGetDevicesCallback(resolver)));
+  m_service->GetDisplays(convertToBaseCallback(
+      WTF::bind(&VRController::onGetDisplays, wrapPersistent(this))));
 }
 
-VRController* VRController::from(LocalFrame& frame)
-{
-    return static_cast<VRController*>(Supplement<LocalFrame>::from(frame, supplementName()));
+device::blink::VRPosePtr VRController::getPose(unsigned index) {
+  if (!m_service)
+    return nullptr;
+
+  device::blink::VRPosePtr pose;
+  m_service->GetPose(index, &pose);
+  return pose;
 }
 
-VRController::VRController(LocalFrame& frame, ServiceRegistry* registry)
-    : LocalFrameLifecycleObserver(&frame)
-{
-    ASSERT(!m_service.is_bound());
-    registry->connectToRemoteService(mojo::GetProxy(&m_service));
+void VRController::resetPose(unsigned index) {
+  if (!m_service)
+    return;
+
+  m_service->ResetPose(index);
 }
 
-const char* VRController::supplementName()
-{
-    return "VRController";
+void VRController::requestPresent(ScriptPromiseResolver* resolver,
+                                  unsigned index,
+                                  bool secureOrigin) {
+  if (!m_service) {
+    DOMException* exception = DOMException::create(
+        InvalidStateError, "The service is no longer active.");
+    resolver->reject(exception);
+    return;
+  }
+
+  m_service->RequestPresent(
+      index, secureOrigin,
+      convertToBaseCallback(WTF::bind(&VRController::onPresentComplete,
+                                      wrapPersistent(this),
+                                      wrapPersistent(resolver), index)));
 }
 
-void VRController::getDisplays(std::unique_ptr<VRGetDevicesCallback> callback)
-{
-    if (!m_service) {
-        callback->onError();
-        return;
+void VRController::exitPresent(unsigned index) {
+  if (!m_service)
+    return;
+
+  m_service->ExitPresent(index);
+}
+
+void VRController::submitFrame(unsigned index, device::blink::VRPosePtr pose) {
+  if (!m_service)
+    return;
+
+  m_service->SubmitFrame(index, std::move(pose));
+}
+
+void VRController::updateLayerBounds(
+    unsigned index,
+    device::blink::VRLayerBoundsPtr leftBounds,
+    device::blink::VRLayerBoundsPtr rightBounds) {
+  if (!m_service)
+    return;
+
+  m_service->UpdateLayerBounds(index, std::move(leftBounds),
+                               std::move(rightBounds));
+}
+
+VRDisplay* VRController::createOrUpdateDisplay(
+    const device::blink::VRDisplayPtr& display) {
+  VRDisplay* vrDisplay = getDisplayForIndex(display->index);
+  if (!vrDisplay) {
+    vrDisplay = new VRDisplay(m_navigatorVR);
+    m_displays.append(vrDisplay);
+  }
+
+  vrDisplay->update(display);
+  return vrDisplay;
+}
+
+VRDisplayVector VRController::updateDisplays(
+    mojo::WTFArray<device::blink::VRDisplayPtr> displays) {
+  VRDisplayVector vrDisplays;
+
+  for (const auto& display : displays.PassStorage()) {
+    VRDisplay* vrDisplay = createOrUpdateDisplay(display);
+    vrDisplays.append(vrDisplay);
+  }
+
+  return vrDisplays;
+}
+
+VRDisplay* VRController::getDisplayForIndex(unsigned index) {
+  VRDisplay* display;
+  for (size_t i = 0; i < m_displays.size(); ++i) {
+    display = m_displays[i];
+    if (display->displayId() == index) {
+      return display;
     }
+  }
 
-    m_pendingGetDevicesCallbacks.append(std::move(callback));
-    m_service->GetDisplays(createBaseCallback(WTF::bind(&VRController::onGetDisplays, wrapPersistent(this))));
+  return 0;
 }
 
-device::blink::VRPosePtr VRController::getPose(unsigned index)
-{
-    if (!m_service)
-        return nullptr;
+void VRController::onGetDisplays(
+    mojo::WTFArray<device::blink::VRDisplayPtr> displays) {
+  VRDisplayVector outDisplays = updateDisplays(std::move(displays));
 
-    device::blink::VRPosePtr pose;
-    m_service->GetPose(index, &pose);
-    return pose;
+  std::unique_ptr<VRGetDevicesCallback> callback =
+      m_pendingGetDevicesCallbacks.takeFirst();
+  if (!callback)
+    return;
+
+  callback->onSuccess(outDisplays);
 }
 
-void VRController::resetPose(unsigned index)
-{
-    if (!m_service)
-        return;
-    m_service->ResetPose(index);
+void VRController::onPresentComplete(ScriptPromiseResolver* resolver,
+                                     unsigned index,
+                                     bool success) {
+  VRDisplay* vrDisplay = getDisplayForIndex(index);
+  if (!vrDisplay) {
+    DOMException* exception =
+        DOMException::create(InvalidStateError, "VRDisplay not found.");
+    resolver->reject(exception);
+    return;
+  }
+
+  if (success) {
+    vrDisplay->beginPresent(resolver);
+  } else {
+    vrDisplay->forceExitPresent();
+    DOMException* exception = DOMException::create(
+        NotAllowedError, "Presentation request was denied.");
+    resolver->reject(exception);
+  }
 }
 
-void VRController::willDetachFrameHost()
-{
-    // TODO(kphanee): Detach from the mojo service connection.
+void VRController::OnDisplayChanged(device::blink::VRDisplayPtr display) {
+  VRDisplay* vrDisplay = getDisplayForIndex(display->index);
+  if (!vrDisplay)
+    return;
+
+  vrDisplay->update(display);
 }
 
-void VRController::onGetDisplays(mojo::WTFArray<device::blink::VRDisplayPtr> displays)
-{
-    std::unique_ptr<VRGetDevicesCallback> callback = m_pendingGetDevicesCallbacks.takeFirst();
-    if (!callback)
-        return;
-
-    callback->onSuccess(std::move(displays));
+void VRController::OnExitPresent(unsigned index) {
+  VRDisplay* vrDisplay = getDisplayForIndex(index);
+  if (vrDisplay)
+    vrDisplay->forceExitPresent();
 }
 
-DEFINE_TRACE(VRController)
-{
-    Supplement<LocalFrame>::trace(visitor);
-    LocalFrameLifecycleObserver::trace(visitor);
+void VRController::OnDisplayConnected(device::blink::VRDisplayPtr display) {
+  VRDisplay* vrDisplay = createOrUpdateDisplay(display);
+  if (!vrDisplay)
+    return;
+
+  m_navigatorVR->fireVREvent(VRDisplayEvent::create(
+      EventTypeNames::vrdisplayconnect, true, false, vrDisplay, "connect"));
 }
 
-} // namespace blink
+void VRController::OnDisplayDisconnected(unsigned index) {
+  VRDisplay* vrDisplay = getDisplayForIndex(index);
+  if (!vrDisplay)
+    return;
+
+  vrDisplay->disconnected();
+
+  m_navigatorVR->fireVREvent(
+      VRDisplayEvent::create(EventTypeNames::vrdisplaydisconnect, true, false,
+                             vrDisplay, "disconnect"));
+}
+
+void VRController::contextDestroyed() {
+  // If the document context was destroyed, shut down the client connection
+  // and never call the mojo service again.
+  m_binding.Close();
+  m_service.reset();
+
+  // The context is not automatically cleared, so do it manually.
+  ContextLifecycleObserver::clearContext();
+}
+
+DEFINE_TRACE(VRController) {
+  visitor->trace(m_navigatorVR);
+  visitor->trace(m_displays);
+
+  ContextLifecycleObserver::trace(visitor);
+}
+
+}  // namespace blink

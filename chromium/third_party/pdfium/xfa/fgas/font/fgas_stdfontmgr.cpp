@@ -6,21 +6,25 @@
 
 #include "xfa/fgas/font/fgas_stdfontmgr.h"
 
-#include "core/fxcrt/include/fx_stream.h"
-#include "core/fxge/include/fx_ge.h"
+#include "core/fxcrt/fx_stream.h"
+#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/cfx_fontmgr.h"
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/ifx_systemfontinfo.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fgas/font/fgas_fontutils.h"
 #include "xfa/fgas/font/fgas_gefont.h"
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
 
-IFGAS_FontMgr* IFGAS_FontMgr::Create(FX_LPEnumAllFonts pEnumerator) {
-  return new CFGAS_StdFontMgrImp(pEnumerator);
+std::unique_ptr<IFGAS_FontMgr> IFGAS_FontMgr::Create(
+    FX_LPEnumAllFonts pEnumerator) {
+  return std::unique_ptr<IFGAS_FontMgr>(new CFGAS_StdFontMgrImp(pEnumerator));
 }
 
 CFGAS_StdFontMgrImp::CFGAS_StdFontMgrImp(FX_LPEnumAllFonts pEnumerator)
     : m_pEnumerator(pEnumerator),
-      m_FontFaces(),
+      m_FontFaces(100),
       m_CPFonts(8),
       m_FamilyFonts(16),
       m_UnicodeFonts(16),
@@ -33,7 +37,7 @@ CFGAS_StdFontMgrImp::CFGAS_StdFontMgrImp(FX_LPEnumAllFonts pEnumerator)
 }
 
 CFGAS_StdFontMgrImp::~CFGAS_StdFontMgrImp() {
-  m_FontFaces.RemoveAll();
+  m_FontFaces.RemoveAll(FALSE);
   m_CPFonts.RemoveAll();
   m_FamilyFonts.RemoveAll();
   m_UnicodeFonts.RemoveAll();
@@ -42,10 +46,6 @@ CFGAS_StdFontMgrImp::~CFGAS_StdFontMgrImp() {
   m_DeriveFonts.RemoveAll();
   for (int32_t i = m_Fonts.GetUpperBound(); i >= 0; i--)
     m_Fonts[i]->Release();
-}
-
-void CFGAS_StdFontMgrImp::Release() {
-  delete this;
 }
 
 CFGAS_GEFont* CFGAS_StdFontMgrImp::GetDefFontByCodePage(
@@ -298,7 +298,7 @@ FX_FONTDESCRIPTOR const* CFGAS_StdFontMgrImp::FindFont(
     return pDesc;
   }
   if (pszFontFamily && m_pEnumerator) {
-    CFX_FontDescriptors namedFonts;
+    CFX_FontDescriptors namedFonts(100);
     m_pEnumerator(namedFonts, pszFontFamily, wUnicode);
     params.pwsFamily = nullptr;
     pDesc = FX_DefFontMatcher(&params, namedFonts);
@@ -561,20 +561,49 @@ IFX_FileAccess* CFX_FontSourceEnum_File::GetNext(FX_POSITION& pos) {
   return pAccess;
 }
 
-IFGAS_FontMgr* IFGAS_FontMgr::Create(CFX_FontSourceEnum_File* pFontEnum) {
+std::unique_ptr<IFGAS_FontMgr> IFGAS_FontMgr::Create(
+    CFX_FontSourceEnum_File* pFontEnum) {
   if (!pFontEnum)
     return nullptr;
 
   std::unique_ptr<CFGAS_FontMgrImp> pFontMgr(new CFGAS_FontMgrImp(pFontEnum));
   if (!pFontMgr->EnumFonts())
     return nullptr;
-  return pFontMgr.release();
+  return std::move(pFontMgr);
 }
 
 CFGAS_FontMgrImp::CFGAS_FontMgrImp(CFX_FontSourceEnum_File* pFontEnum)
     : m_pFontSource(pFontEnum) {}
 
-CFGAS_FontMgrImp::~CFGAS_FontMgrImp() {}
+CFGAS_FontMgrImp::~CFGAS_FontMgrImp() {
+  for (int32_t i = 0; i < m_InstalledFonts.GetSize(); i++) {
+    delete m_InstalledFonts[i];
+  }
+  FX_POSITION pos = m_Hash2CandidateList.GetStartPosition();
+  while (pos) {
+    uint32_t dwHash;
+    CFX_FontDescriptorInfos* pDescs;
+    m_Hash2CandidateList.GetNextAssoc(pos, dwHash, pDescs);
+    delete pDescs;
+  }
+  pos = m_Hash2Fonts.GetStartPosition();
+  while (pos) {
+    uint32_t dwHash;
+    CFX_ArrayTemplate<CFGAS_GEFont*>* pFonts;
+    m_Hash2Fonts.GetNextAssoc(pos, dwHash, pFonts);
+    for (int32_t i = 0; i < pFonts->GetSize(); i++)
+      delete pFonts->GetAt(i);
+    delete pFonts;
+  }
+  m_Hash2Fonts.RemoveAll();
+  pos = m_IFXFont2FileRead.GetStartPosition();
+  while (pos) {
+    CFGAS_GEFont* pFont;
+    IFX_FileRead* pFileRead;
+    m_IFXFont2FileRead.GetNextAssoc(pos, pFont, pFileRead);
+    pFileRead->Release();
+  }
+}
 
 FX_BOOL CFGAS_FontMgrImp::EnumFontsFromFontMapper() {
   CFX_FontMapper* pFontMapper =
@@ -629,35 +658,6 @@ FX_BOOL CFGAS_FontMgrImp::EnumFonts() {
   if (EnumFontsFromFontMapper())
     return TRUE;
   return EnumFontsFromFiles();
-}
-
-void CFGAS_FontMgrImp::Release() {
-  for (int32_t i = 0; i < m_InstalledFonts.GetSize(); i++) {
-    delete m_InstalledFonts[i];
-  }
-  FX_POSITION pos = m_Hash2CandidateList.GetStartPosition();
-  while (pos) {
-    uint32_t dwHash;
-    CFX_FontDescriptorInfos* pDescs;
-    m_Hash2CandidateList.GetNextAssoc(pos, dwHash, pDescs);
-    delete pDescs;
-  }
-  pos = m_Hash2Fonts.GetStartPosition();
-  while (pos) {
-    uint32_t dwHash;
-    CFX_ArrayTemplate<CFGAS_GEFont*>* pFonts;
-    m_Hash2Fonts.GetNextAssoc(pos, dwHash, pFonts);
-    delete pFonts;
-  }
-  m_Hash2Fonts.RemoveAll();
-  pos = m_IFXFont2FileRead.GetStartPosition();
-  while (pos) {
-    CFGAS_GEFont* pFont;
-    IFX_FileRead* pFileRead;
-    m_IFXFont2FileRead.GetNextAssoc(pos, pFont, pFileRead);
-    pFileRead->Release();
-  }
-  delete this;
 }
 
 CFGAS_GEFont* CFGAS_FontMgrImp::GetDefFontByCodePage(
@@ -847,18 +847,13 @@ CFGAS_GEFont* CFGAS_FontMgrImp::LoadFont(const CFX_WideString& wsFaceName,
   if (!pFontStream)
     return nullptr;
 
-  if (!LoadFace(pFontStream, 0)) {
-    pFontStream->Release();
-    return nullptr;
-  }
-
-  CFX_Font* pInternalFont = new CFX_Font();
+  std::unique_ptr<CFX_Font> pInternalFont(new CFX_Font());
   if (!pInternalFont->LoadFile(pFontStream, iFaceIndex)) {
     pFontStream->Release();
     return nullptr;
   }
 
-  CFGAS_GEFont* pFont = CFGAS_GEFont::LoadFont(pInternalFont, this);
+  CFGAS_GEFont* pFont = CFGAS_GEFont::LoadFont(std::move(pInternalFont), this);
   if (!pFont) {
     pFontStream->Release();
     return nullptr;
@@ -1158,7 +1153,6 @@ void CFGAS_FontMgrImp::RemoveFont(CFGAS_GEFont* pEFont) {
 }
 
 void CFGAS_FontMgrImp::RegisterFace(FXFT_Face pFace,
-                                    CFX_FontDescriptors& Fonts,
                                     const CFX_WideString* pFaceName) {
   if ((pFace->face_flags & FT_FACE_FLAG_SCALABLE) == 0)
     return;
@@ -1190,7 +1184,7 @@ void CFGAS_FontMgrImp::RegisterFace(FXFT_Face pFace,
                 : CFX_WideString::FromLocal(FXFT_Get_Postscript_Name(pFace));
   pFont->m_nFaceIndex = pFace->face_index;
 
-  Fonts.Add(pFont.release());
+  m_InstalledFonts.Add(pFont.release());
 }
 
 void CFGAS_FontMgrImp::RegisterFaces(IFX_FileRead* pFontStream,
@@ -1204,7 +1198,7 @@ void CFGAS_FontMgrImp::RegisterFaces(IFX_FileRead* pFontStream,
     // All faces keep number of faces. It can be retrieved from any one face.
     if (num_faces == 0)
       num_faces = pFace->num_faces;
-    RegisterFace(pFace, m_InstalledFonts, pFaceName);
+    RegisterFace(pFace, pFaceName);
     if (FXFT_Get_Face_External_Stream(pFace))
       FXFT_Clear_Face_External_Stream(pFace);
     FXFT_Done_Face(pFace);

@@ -9,9 +9,7 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "platform/heap/Handle.h"
-#include "public/platform/modules/permissions/WebPermissionObserver.h"
-#include "public/platform/modules/permissions/WebPermissionStatus.h"
-#include "public/platform/modules/permissions/WebPermissionType.h"
+#include "public/platform/modules/permissions/permission.mojom-blink.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
 
@@ -22,51 +20,57 @@ class ScriptPromiseResolver;
 
 // Expose the status of a given WebPermissionType for the current
 // ExecutionContext.
-class PermissionStatus final
-    : public EventTargetWithInlineData
-    , public ActiveScriptWrappable
-    , public ActiveDOMObject
-    , public WebPermissionObserver {
-    USING_GARBAGE_COLLECTED_MIXIN(PermissionStatus);
-    DEFINE_WRAPPERTYPEINFO();
-public:
-    static PermissionStatus* take(ScriptPromiseResolver*, WebPermissionStatus, WebPermissionType);
+class PermissionStatus final : public EventTargetWithInlineData,
+                               public ActiveScriptWrappable,
+                               public ActiveDOMObject {
+  USING_GARBAGE_COLLECTED_MIXIN(PermissionStatus);
+  DEFINE_WRAPPERTYPEINFO();
 
-    static PermissionStatus* createAndListen(ExecutionContext*, WebPermissionStatus, WebPermissionType);
-    ~PermissionStatus() override;
+  using MojoPermissionDescriptor = mojom::blink::PermissionDescriptorPtr;
+  using MojoPermissionStatus = mojom::blink::PermissionStatus;
 
-    // EventTarget implementation.
-    const AtomicString& interfaceName() const override;
-    ExecutionContext* getExecutionContext() const override;
+ public:
+  static PermissionStatus* take(ScriptPromiseResolver*,
+                                MojoPermissionStatus,
+                                MojoPermissionDescriptor);
 
-    // WebPermissionObserver implementation.
-    void permissionChanged(WebPermissionType, WebPermissionStatus) override;
+  static PermissionStatus* createAndListen(ExecutionContext*,
+                                           MojoPermissionStatus,
+                                           MojoPermissionDescriptor);
+  ~PermissionStatus() override;
 
-    // ActiveScriptWrappable implementation.
-    bool hasPendingActivity() const final;
+  // EventTarget implementation.
+  const AtomicString& interfaceName() const override;
+  ExecutionContext* getExecutionContext() const override;
 
-    // ActiveDOMObject implementation.
-    void suspend() override;
-    void resume() override;
-    void stop() override;
+  // ScriptWrappable implementation.
+  bool hasPendingActivity() const final;
 
-    String state() const;
+  // ActiveDOMObject implementation.
+  void suspend() override;
+  void resume() override;
+  void contextDestroyed() override;
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(change);
+  String state() const;
+  void permissionChanged(MojoPermissionStatus);
 
-    DECLARE_VIRTUAL_TRACE();
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(change);
 
-private:
-    PermissionStatus(ExecutionContext*, WebPermissionStatus, WebPermissionType);
+  DECLARE_VIRTUAL_TRACE();
 
-    void startListening();
-    void stopListening();
+ private:
+  PermissionStatus(ExecutionContext*,
+                   MojoPermissionStatus,
+                   MojoPermissionDescriptor);
 
-    WebPermissionStatus m_status;
-    WebPermissionType m_type;
-    bool m_listening;
+  void startListening();
+  void stopListening();
+
+  MojoPermissionStatus m_status;
+  MojoPermissionDescriptor m_descriptor;
+  mojom::blink::PermissionServicePtr m_service;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // PermissionStatus_h
+#endif  // PermissionStatus_h

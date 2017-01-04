@@ -47,8 +47,9 @@ if CPU_ARM
 CELT_SOURCES += $(CELT_SOURCES_ARM)
 SILK_SOURCES += $(SILK_SOURCES_ARM)
 
-if OPUS_ARM_NEON_INTR
+if HAVE_ARM_NEON_INTR
 CELT_SOURCES += $(CELT_SOURCES_ARM_NEON_INTR)
+SILK_SOURCES += $(SILK_SOURCES_ARM_NEON_INTR)
 endif
 
 if HAVE_ARM_NE10
@@ -165,25 +166,25 @@ EXTRA_DIST = version.mk \
              tests/run_vectors.sh \
              celt/arm/arm2gnu.pl \
              celt/arm/celt_pitch_xcorr_arm.s \
-             win32/VS2010/silk_float.vcxproj \
-             win32/VS2010/celt.vcxproj.filters \
-             win32/VS2010/opus.vcxproj \
-             win32/VS2010/silk_common.vcxproj.filters \
-             win32/VS2010/silk_float.vcxproj.filters \
-             win32/VS2010/test_opus_encode.vcxproj.filters \
-             win32/VS2010/silk_common.vcxproj \
-             win32/VS2010/test_opus_encode.vcxproj \
-             win32/VS2010/opus_demo.vcxproj \
-             win32/VS2010/test_opus_api.vcxproj.filters \
-             win32/VS2010/test_opus_api.vcxproj \
-             win32/VS2010/test_opus_decode.vcxproj.filters \
-             win32/VS2010/silk_fixed.vcxproj.filters \
-             win32/VS2010/opus_demo.vcxproj.filters \
-             win32/VS2010/silk_fixed.vcxproj \
-             win32/VS2010/opus.vcxproj.filters \
-             win32/VS2010/test_opus_decode.vcxproj \
-             win32/VS2010/celt.vcxproj \
-             win32/VS2010/opus.sln \
+             win32/VS2015/silk_float.vcxproj \
+             win32/VS2015/celt.vcxproj.filters \
+             win32/VS2015/opus.vcxproj \
+             win32/VS2015/silk_common.vcxproj.filters \
+             win32/VS2015/silk_float.vcxproj.filters \
+             win32/VS2015/test_opus_encode.vcxproj.filters \
+             win32/VS2015/silk_common.vcxproj \
+             win32/VS2015/test_opus_encode.vcxproj \
+             win32/VS2015/opus_demo.vcxproj \
+             win32/VS2015/test_opus_api.vcxproj.filters \
+             win32/VS2015/test_opus_api.vcxproj \
+             win32/VS2015/test_opus_decode.vcxproj.filters \
+             win32/VS2015/silk_fixed.vcxproj.filters \
+             win32/VS2015/opus_demo.vcxproj.filters \
+             win32/VS2015/silk_fixed.vcxproj \
+             win32/VS2015/opus.vcxproj.filters \
+             win32/VS2015/test_opus_decode.vcxproj \
+             win32/VS2015/celt.vcxproj \
+             win32/VS2015/opus.sln \
              win32/genversion.bat \
              win32/config.h
 
@@ -294,8 +295,8 @@ SSE4_1_OBJ = $(CELT_SOURCES_SSE4_1:.c=.lo) \
 $(SSE4_1_OBJ) $(OPT_UNIT_TEST_OBJ): CFLAGS += $(OPUS_X86_SSE4_1_CFLAGS)
 endif
 
-if OPUS_ARM_NEON_INTR
-CELT_ARM_NEON_INTR_OBJ = $(CELT_SOURCES_ARM_NEON_INTR:.c=.lo)
-$(CELT_ARM_NEON_INTR_OBJ) $(OPT_UNIT_TEST_OBJ): CFLAGS += \
+if HAVE_ARM_NEON_INTR
+ARM_NEON_INTR_OBJ = $(CELT_SOURCES_ARM_NEON_INTR:.c=.lo) $(SILK_SOURCES_ARM_NEON_INTR:.c=.lo)
+$(ARM_NEON_INTR_OBJ) $(OPT_UNIT_TEST_OBJ): CFLAGS += \
  $(OPUS_ARM_NEON_INTR_CFLAGS)  $(NE10_CFLAGS)
 endif

@@ -53,7 +53,7 @@ void AXWindowObjWrapper::Serialize(ui::AXNodeData* out_node_data) {
   out_node_data->AddStringAttribute(ui::AX_ATTR_NAME,
                                     base::UTF16ToUTF8(window_->title()));
   out_node_data->state = 0;
-  out_node_data->location = window_->bounds();
+  out_node_data->location = gfx::RectF(window_->bounds());
 }
 
 int32_t AXWindowObjWrapper::GetID() {
@@ -61,7 +61,19 @@ int32_t AXWindowObjWrapper::GetID() {
 }
 
 void AXWindowObjWrapper::OnWindowDestroyed(aura::Window* window) {
-  AXAuraObjCache::GetInstance()->Remove(window);
+  AXAuraObjCache::GetInstance()->Remove(window, nullptr);
+}
+
+void AXWindowObjWrapper::OnWindowDestroying(aura::Window* window) {
+  Widget* widget = Widget::GetWidgetForNativeView(window);
+  if (widget)
+    AXAuraObjCache::GetInstance()->Remove(widget);
+}
+
+void AXWindowObjWrapper::OnWindowHierarchyChanged(
+    const HierarchyChangeParams& params) {
+  if (params.phase == WindowObserver::HierarchyChangeParams::HIERARCHY_CHANGED)
+    AXAuraObjCache::GetInstance()->Remove(params.target, params.old_parent);
 }
 
 }  // namespace views

@@ -82,10 +82,10 @@ tr.exportTo('tr.e.importer.etw', function() {
       var threadFlags;
       var waitMode;
 
-      if (header.version == 1) {
+      if (header.version === 1) {
         // On version 1, only start events have extended information.
-        if (header.opcode == kThreadStartOpcode ||
-            header.opcode == kThreadDCStartOpcode) {
+        if (header.opcode === kThreadStartOpcode ||
+            header.opcode === kThreadDCStartOpcode) {
           stackBase = decoder.decodeUInteger(header.is64);
           stackLimit = decoder.decodeUInteger(header.is64);
           userStackBase = decoder.decodeUInteger(header.is64);
@@ -102,7 +102,7 @@ tr.exportTo('tr.e.importer.etw', function() {
         userStackLimit = decoder.decodeUInteger(header.is64);
 
         // Version 2 produces a field named 'startAddr'.
-        if (header.version == 2)
+        if (header.version === 2)
           startAddr = decoder.decodeUInteger(header.is64);
         else
           affinity = decoder.decodeUInteger(header.is64);
@@ -111,7 +111,7 @@ tr.exportTo('tr.e.importer.etw', function() {
         tebBase = decoder.decodeUInteger(header.is64);
         subProcessTag = decoder.decodeUInt32();
 
-        if (header.version == 3) {
+        if (header.version === 3) {
           basePriority = decoder.decodeUInt8();
           pagePriority = decoder.decodeUInt8();
           ioPriority = decoder.decodeUInt8();
@@ -140,7 +140,7 @@ tr.exportTo('tr.e.importer.etw', function() {
     },
 
     decodeCSwitchFields: function(header, decoder) {
-      if (header.version != 2)
+      if (header.version !== 2)
         throw new Error('Incompatible Thread event version.');
 
       // Decode CSwitch payload.
@@ -200,33 +200,33 @@ tr.exportTo('tr.e.importer.etw', function() {
     decodeCSwitch: function(header, decoder) {
       var fields = this.decodeCSwitchFields(header, decoder);
       var cpu = this.importer.getOrCreateCpu(header.cpu);
-      var new_thread =
+      var newThread =
           this.importer.getThreadFromWindowsTid(fields.newThreadId);
 
       // Generate the new thread name. If some events were lost, it's possible
       // that information about the new thread or process is not available.
-      var new_thread_name;
-      if (new_thread && new_thread.userFriendlyName) {
-        new_thread_name = new_thread.userFriendlyName;
+      var newThreadName;
+      if (newThread && newThread.userFriendlyName) {
+        newThreadName = newThread.userFriendlyName;
       } else {
-        var new_process_id = this.importer.getPidFromWindowsTid(
+        var newProcessId = this.importer.getPidFromWindowsTid(
             fields.newThreadId);
-        var new_process = this.model.getProcess(new_process_id);
-        var new_process_name;
-        if (new_process)
-          new_process_name = new_process.name;
+        var newProcess = this.model.getProcess(newProcessId);
+        var newProcessName;
+        if (newProcess)
+          newProcessName = newProcess.name;
         else
-          new_process_name = 'Unknown process';
+          newProcessName = 'Unknown process';
 
-        new_thread_name =
-            new_process_name + ' (tid ' + fields.newThreadId + ')';
+        newThreadName =
+            newProcessName + ' (tid ' + fields.newThreadId + ')';
       }
 
       cpu.switchActiveThread(
           header.timestamp,
           {},
           fields.newThreadId,
-          new_thread_name,
+          newThreadName,
           fields);
       return true;
     }
@@ -240,4 +240,3 @@ tr.exportTo('tr.e.importer.etw', function() {
   };
 });
 </script>
-

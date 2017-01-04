@@ -24,7 +24,7 @@ struct ContextMenuParams;
 // RenderWidget. This includes resizing, placing view on the screen at desired
 // position, changing device scale factor, and scaling down the whole
 // widget if required to fit into the browser window.
-class RenderWidgetScreenMetricsEmulator {
+class CONTENT_EXPORT RenderWidgetScreenMetricsEmulator {
  public:
   RenderWidgetScreenMetricsEmulator(
       RenderWidgetScreenMetricsEmulatorDelegate* delegate,
@@ -43,7 +43,7 @@ class RenderWidgetScreenMetricsEmulator {
   float scale() const { return scale_; }
   const gfx::PointF& offset() const { return offset_; }
   const gfx::Rect& applied_widget_rect() const { return applied_widget_rect_; }
-  const blink::WebScreenInfo& original_screen_info() const {
+  const ScreenInfo& original_screen_info() const {
     return original_resize_params_.screen_info;
   }
   const gfx::Rect& original_screen_rect() const {

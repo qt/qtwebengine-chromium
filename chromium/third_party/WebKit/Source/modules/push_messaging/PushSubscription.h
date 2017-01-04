@@ -17,39 +17,49 @@
 
 namespace blink {
 
+class PushSubscriptionOptions;
 class ServiceWorkerRegistration;
 class ScriptPromiseResolver;
 class ScriptState;
 struct WebPushSubscription;
 
-class PushSubscription final : public GarbageCollectedFinalized<PushSubscription>, public ScriptWrappable {
-    DEFINE_WRAPPERTYPEINFO();
-public:
-    static PushSubscription* take(ScriptPromiseResolver*, std::unique_ptr<WebPushSubscription>, ServiceWorkerRegistration*);
-    static void dispose(WebPushSubscription* subscriptionRaw);
+class PushSubscription final
+    : public GarbageCollectedFinalized<PushSubscription>,
+      public ScriptWrappable {
+  DEFINE_WRAPPERTYPEINFO();
 
-    virtual ~PushSubscription();
+ public:
+  static PushSubscription* take(ScriptPromiseResolver*,
+                                std::unique_ptr<WebPushSubscription>,
+                                ServiceWorkerRegistration*);
+  static void dispose(WebPushSubscription* subscriptionRaw);
 
-    KURL endpoint() const;
+  virtual ~PushSubscription();
 
-    DOMArrayBuffer* getKey(const AtomicString& name) const;
-    ScriptPromise unsubscribe(ScriptState*);
+  KURL endpoint() const { return m_endpoint; }
 
-    ScriptValue toJSONForBinding(ScriptState*);
+  PushSubscriptionOptions* options() const { return m_options.get(); }
 
-    DECLARE_TRACE();
+  DOMArrayBuffer* getKey(const AtomicString& name) const;
+  ScriptPromise unsubscribe(ScriptState*);
 
-private:
-    PushSubscription(const WebPushSubscription&, ServiceWorkerRegistration*);
+  ScriptValue toJSONForBinding(ScriptState*);
 
-    KURL m_endpoint;
+  DECLARE_TRACE();
 
-    Member<DOMArrayBuffer> m_p256dh;
-    Member<DOMArrayBuffer> m_auth;
+ private:
+  PushSubscription(const WebPushSubscription&, ServiceWorkerRegistration*);
 
-    Member<ServiceWorkerRegistration> m_serviceWorkerRegistration;
+  KURL m_endpoint;
+
+  Member<PushSubscriptionOptions> m_options;
+
+  Member<DOMArrayBuffer> m_p256dh;
+  Member<DOMArrayBuffer> m_auth;
+
+  Member<ServiceWorkerRegistration> m_serviceWorkerRegistration;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // PushSubscription_h
+#endif  // PushSubscription_h

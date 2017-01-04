@@ -10,8 +10,11 @@
 
 #include "libyuv/row.h"
 
-#if !defined(LIBYUV_DISABLE_X86) && defined(_M_X64) && \
-    defined(_MSC_VER) && !defined(__clang__)
+// This module is for Visual C 32/64 bit and clangcl 32 bit
+#if !defined(LIBYUV_DISABLE_X86) && defined(_MSC_VER) && \
+    (defined(_M_IX86) || (defined(_M_X64) && !defined(__clang__)))
+
+#if defined(_M_X64)
 #include <emmintrin.h>
 #include <tmmintrin.h>  // For _mm_maddubs_epi16
 #endif
@@ -20,10 +23,6 @@
 namespace libyuv {
 extern "C" {
 #endif
-
-// This module is for Visual C 32/64 bit and clangcl 32 bit
-#if !defined(LIBYUV_DISABLE_X86) && \
-    (defined(_M_IX86) || (defined(_M_X64) && !defined(__clang__)))
 
 // 64 bit
 #if defined(_M_X64)
@@ -3532,6 +3531,33 @@ void ARGBCopyAlphaRow_AVX2(const uint8* src, uint8* dst, int width) {
 }
 #endif  // HAS_ARGBCOPYALPHAROW_AVX2
 
+#ifdef HAS_ARGBEXTRACTALPHAROW_SSE2
+// width in pixels
+__declspec(naked)
+void ARGBExtractAlphaRow_SSE2(const uint8* src_argb, uint8* dst_a, int width) {
+  __asm {
+    mov        eax, [esp + 4]   // src_argb
+    mov        edx, [esp + 8]   // dst_a
+    mov        ecx, [esp + 12]  // width
+
+  extractloop:
+    movdqu     xmm0, [eax]
+    movdqu     xmm1, [eax + 16]
+    lea        eax, [eax + 32]
+    psrld      xmm0, 24
+    psrld      xmm1, 24
+    packssdw   xmm0, xmm1
+    packuswb   xmm0, xmm0
+    movq       qword ptr [edx], xmm0
+    lea        edx, [edx + 8]
+    sub        ecx, 8
+    jg         extractloop
+
+    ret
+  }
+}
+#endif  // HAS_ARGBEXTRACTALPHAROW_SSE2
+
 #ifdef HAS_ARGBCOPYYTOALPHAROW_SSE2
 // width in pixels
 __declspec(naked)
@@ -5248,6 +5274,7 @@ void SobelXYRow_SSE2(const uint8* src_sobelx, const uint8* src_sobely,
 // dst points to pixel to store result to.
 // count is number of averaged pixels to produce.
 // Does 4 pixels at a time.
+// This function requires alignment on accumulation buffer pointers.
 void CumulativeSumToAverageRow_SSE2(const int32* topleft, const int32* botleft,
                                     int width, int area, uint8* dst,
                                     int count) {
@@ -6068,6 +6095,73 @@ void ARGBPolynomialRow_AVX2(const uint8* src_argb,
 }
 #endif  // HAS_ARGBPOLYNOMIALROW_AVX2
 
+#ifdef HAS_HALFFLOATROW_SSE2
+static float kExpBias = 1.9259299444e-34f;
+__declspec(naked)
+void HalfFloatRow_SSE2(const uint16* src, uint16* dst, float scale, int width) {
+  __asm {
+    mov        eax, [esp + 4]      /* src */
+    mov        edx, [esp + 8]      /* dst */
+    movd       xmm4, dword ptr [esp + 12]    /* scale */
+    mov        ecx, [esp + 16]     /* width */
+    mulss      xmm4, kExpBias
+    pshufd     xmm4, xmm4, 0
+    pxor       xmm5, xmm5
+
+    // 8 pixel loop.
+ convertloop:
+    movdqu      xmm2, xmmword ptr [eax]  // 8 shorts
+    lea         eax, [eax + 16]
+    movdqa      xmm3, xmm2
+    punpcklwd   xmm2, xmm5
+    cvtdq2ps    xmm2, xmm2        // convert 8 ints to floats
+    punpckhwd   xmm3, xmm5
+    cvtdq2ps    xmm3, xmm3
+    mulps       xmm2, xmm4
+    mulps       xmm3, xmm4
+    psrld       xmm2, 13
+    psrld       xmm3, 13
+    packssdw    xmm2, xmm3
+    movdqu      [edx], xmm2
+    lea         edx, [edx + 16]
+    sub         ecx, 8
+    jg          convertloop
+    ret
+  }
+}
+#endif  // HAS_HALFFLOATROW_SSE2
+
+#ifdef HAS_HALFFLOATROW_AVX2
+__declspec(naked)
+void HalfFloatRow_AVX2(const uint16* src, uint16* dst, float scale, int width) {
+  __asm {
+    mov        eax, [esp + 4]      /* src */
+    mov        edx, [esp + 8]      /* dst */
+    vbroadcastss ymm4, [esp + 12]  /* scale */
+    mov        ecx, [esp + 16]     /* width */
+
+    // 8 pixel loop.
+ convertloop:
+    vpmovzxwd   ymm2, xmmword ptr [eax]  // 8 shorts -> 8 ints
+    vpmovzxwd   ymm3, xmmword ptr [eax + 16]  // 8 more shorts
+    lea         eax, [eax + 32]
+    vcvtdq2ps   ymm2, ymm2        // convert 8 ints to floats
+    vcvtdq2ps   ymm3, ymm3
+    vmulps      ymm2, ymm2, ymm4  // scale to normalized range 0 to 1
+    vmulps      ymm3, ymm3, ymm4
+    vcvtps2ph   xmm2, ymm2, 3     // float convert to 8 half floats truncate
+    vcvtps2ph   xmm3, ymm3, 3
+    vmovdqu     [edx], xmm2
+    vmovdqu     [edx + 16], xmm3
+    lea         edx, [edx + 32]
+    sub         ecx, 16
+    jg          convertloop
+    vzeroupper
+    ret
+  }
+}
+#endif  // HAS_HALFFLOATROW_AVX2
+
 #ifdef HAS_ARGBCOLORTABLEROW_X86
 // Tranform ARGB pixels with color table.
 __declspec(naked)
@@ -6233,9 +6327,10 @@ void ARGBLumaColorTableRow_SSSE3(const uint8* src_argb, uint8* dst_argb,
 #endif  // HAS_ARGBLUMACOLORTABLEROW_SSSE3
 
 #endif  // defined(_M_X64)
-#endif  // !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) || defined(_M_X64))
 
 #ifdef __cplusplus
 }  // extern "C"
 }  // namespace libyuv
 #endif
+
+#endif  // !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) || defined(_M_X64))

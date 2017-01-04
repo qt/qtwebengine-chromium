@@ -15,9 +15,12 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/i18n/case_conversion.h"
+#include "base/logging.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/shortcut.h"
@@ -200,9 +203,10 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
           file_type_index(file_type_index),
           default_extension(default_extension),
           run_state(run_state),
-          ui_task_runner(base::MessageLoopForUI::current()->task_runner()),
+          ui_task_runner(base::ThreadTaskRunnerHandle::Get()),
           owner(owner),
           params(params) {
+      DCHECK(base::MessageLoopForUI::IsCurrent());
       if (file_types)
         this->file_types = *file_types;
     }
@@ -333,10 +337,9 @@ void SelectFileDialogImpl::SelectFileImpl(
                                      default_path, file_types, file_type_index,
                                      default_extension, BeginRun(owner),
                                      owner, params);
-  execute_params.run_state.dialog_thread->message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&SelectFileDialogImpl::ExecuteSelectFile, this,
-                 execute_params));
+  execute_params.run_state.dialog_thread->task_runner()->PostTask(
+      FROM_HERE, base::Bind(&SelectFileDialogImpl::ExecuteSelectFile, this,
+                            execute_params));
 }
 
 bool SelectFileDialogImpl::HasMultipleFileTypeChoicesImpl() {
@@ -445,7 +448,6 @@ bool SelectFileDialogImpl::SaveFileAsWithFilter(
       filter.empty() ? NULL : filter.c_str();
   save_as.GetOPENFILENAME()->nFilterIndex = *index;
   save_as.GetOPENFILENAME()->lpstrDefExt = &def_ext[0];
-  save_as.MaybeInstallWindowPositionHookForSaveAsOnXP();
 
   if (!get_save_file_name_impl_.Run(save_as.GetOPENFILENAME()))
     return false;

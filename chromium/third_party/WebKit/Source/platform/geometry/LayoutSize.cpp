@@ -8,11 +8,9 @@
 
 namespace blink {
 
-#ifndef NDEBUG
-String LayoutSize::toString() const
-{
-    return String::format("%fx%f", width().toDouble(), height().toDouble());
+String LayoutSize::toString() const {
+  return String::format("%sx%s", width().toString().ascii().data(),
+                        height().toString().ascii().data());
 }
-#endif
 
-} // namespace blink
+}  // namespace blink

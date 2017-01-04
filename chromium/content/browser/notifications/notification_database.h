@@ -78,13 +78,18 @@ class CONTENT_EXPORT NotificationDatabase {
   // |create_if_missing| determines whether to create the database if necessary.
   Status Open(bool create_if_missing);
 
+  // Gets the next assignable persistent notification ID. Subsequent calls to
+  // this method will yield unique identifiers for the same database. The last
+  // used ID will be written to the database when a notification is created.
+  int64_t GetNextPersistentNotificationId();
+
   // Reads the notification data for the notification identified by
   // |notification_id| and belonging to |origin| from the database, and stores
-  // it in |notification_database_data|. Returns the status code.
+  // it in |*notification_data|. Returns the status code.
   Status ReadNotificationData(
-      int64_t notification_id,
+      const std::string& notification_id,
       const GURL& origin,
-      NotificationDatabaseData* notification_database_data) const;
+      NotificationDatabaseData* notification_data) const;
 
   // Reads all notification data for all origins from the database, and appends
   // the data to |notification_data_vector|. Returns the status code.
@@ -105,26 +110,28 @@ class CONTENT_EXPORT NotificationDatabase {
       int64_t service_worker_registration_id,
       std::vector<NotificationDatabaseData>* notification_data_vector) const;
 
-  // Writes the |notification_database_data| for a new notification belonging to
-  // |origin| to the database, and returns the status code of the writing
-  // operation. The id of the new notification will be set in |notification_id|.
+  // Writes the |notification_data| for a new notification belonging to |origin|
+  // to the database, and returns the status code of the writing operation. The
+  // notification's ID must have been set in the |notification_data|.
   Status WriteNotificationData(
       const GURL& origin,
-      const NotificationDatabaseData& notification_database_data,
-      int64_t* notification_id);
+      const NotificationDatabaseData& notification_data);
 
   // Deletes all data associated with the notification identified by
   // |notification_id| belonging to |origin| from the database. Returns the
   // status code of the deletion operation. Note that it is not considered a
   // failure if the to-be-deleted notification does not exist.
-  Status DeleteNotificationData(int64_t notification_id, const GURL& origin);
+  Status DeleteNotificationData(const std::string& notification_id,
+                                const GURL& origin);
 
-  // Deletes all data associated with |origin| from the database, and appends
-  // the deleted notification ids to |deleted_notification_set|. Returns the
-  // status code of the deletion operation.
+  // Deletes all data associated with |origin| from the database, optionally
+  // filtered by the |tag|, and appends the deleted notification ids to
+  // |deleted_notification_ids|. Returns the status code of the deletion
+  // operation.
   Status DeleteAllNotificationDataForOrigin(
       const GURL& origin,
-      std::set<int64_t>* deleted_notification_set);
+      const std::string& tag,
+      std::set<std::string>* deleted_notification_ids);
 
   // Deletes all data associated with the |service_worker_registration_id|
   // belonging to |origin| from the database, and appends the deleted
@@ -133,7 +140,7 @@ class CONTENT_EXPORT NotificationDatabase {
   Status DeleteAllNotificationDataForServiceWorkerRegistration(
       const GURL& origin,
       int64_t service_worker_registration_id,
-      std::set<int64_t>* deleted_notification_set);
+      std::set<std::string>* deleted_notification_ids);
 
   // Completely destroys the contents of this database.
   Status Destroy();
@@ -149,10 +156,10 @@ class CONTENT_EXPORT NotificationDatabase {
     STATE_DISABLED,
   };
 
-  // Reads the next available notification id from the database and returns
-  // the status code of the reading operation. The value will be stored in
-  // the |next_notification_id_| member.
-  Status ReadNextNotificationId();
+  // Reads the next available persistent notification id from the database and
+  // returns the status code of the reading operation. The value will be stored
+  // in the |next_persistent_notification_id_| member.
+  Status ReadNextPersistentNotificationId();
 
   // Reads all notification data with the given constraints. |origin| may be
   // empty to read all notification data from all origins. If |origin| is
@@ -167,12 +174,13 @@ class CONTENT_EXPORT NotificationDatabase {
   // Deletes all notification data with the given constraints. |origin| must
   // always be set - use Destroy() when the goal is to empty the database. If
   // |service_worker_registration_id| is invalid, all notification data for the
-  // |origin| will be deleted.
-  // All deleted notification ids will be written to |deleted_notification_set|.
+  // |origin| will be deleted, optionally filtered by the |tag| when non-empty.
+  // All deleted notification ids will be written to |deleted_notification_ids|.
   Status DeleteAllNotificationDataInternal(
       const GURL& origin,
+      const std::string& tag,
       int64_t service_worker_registration_id,
-      std::set<int64_t>* deleted_notification_set);
+      std::set<std::string>* deleted_notification_ids);
 
   // Returns whether the database has been opened.
   bool IsOpen() const { return db_ != nullptr; }
@@ -186,7 +194,8 @@ class CONTENT_EXPORT NotificationDatabase {
 
   base::FilePath path_;
 
-  int64_t next_notification_id_ = 0;
+  int64_t next_persistent_notification_id_ = 0;
+  int64_t written_persistent_notification_id_ = 0;
 
   std::unique_ptr<const leveldb::FilterPolicy> filter_policy_;
 

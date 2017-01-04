@@ -55,23 +55,23 @@ enum DisplayLinkInstallationStatus {
 
 // Returns the display link driver version or an invalid version if it is
 // not installed.
-Version DisplayLinkVersion() {
+base::Version DisplayLinkVersion() {
   base::win::RegKey key;
 
   if (key.Open(HKEY_LOCAL_MACHINE, L"SOFTWARE", KEY_READ | KEY_WOW64_64KEY))
-    return Version();
+    return base::Version();
 
   if (key.OpenKey(L"DisplayLink", KEY_READ | KEY_WOW64_64KEY))
-    return Version();
+    return base::Version();
 
   if (key.OpenKey(L"Core", KEY_READ | KEY_WOW64_64KEY))
-    return Version();
+    return base::Version();
 
   base::string16 version;
   if (key.ReadValue(L"Version", &version))
-    return Version();
+    return base::Version();
 
-  return Version(base::UTF16ToASCII(version));
+  return base::Version(base::UTF16ToASCII(version));
 }
 
 // Returns whether Lenovo dCute is installed.
@@ -238,7 +238,7 @@ CollectInfoResult CollectDriverInfoD3D(const std::wstring& device_id,
   SetupDiDestroyDeviceInfoList(device_info);
   bool found = false;
   if (found_amd && found_intel) {
-    // AMD Switchable system found.
+    // Potential AMD Switchable system found.
     for (const auto& driver : drivers) {
       if (driver.device.vendor_id == 0x8086) {
         gpu_info->gpu = driver.device;
@@ -253,16 +253,22 @@ CollectInfoResult CollectDriverInfoD3D(const std::wstring& device_id,
     GetAMDVideocardInfo(gpu_info);
 
     if (!gpu_info->amd_switchable) {
-      // Some machines aren't properly detected as AMD switchable, but count
-      // them anyway.
-      gpu_info->amd_switchable = true;
-      for (const auto& driver : drivers) {
+      bool amd_is_primary = false;
+      for (size_t i = 0; i < drivers.size(); ++i) {
+        const GPUDriver& driver = drivers[i];
         if (driver.device.vendor_id == 0x1002) {
+          if (static_cast<int>(i) == primary_device)
+            amd_is_primary = true;
           gpu_info->gpu = driver.device;
         } else {
           gpu_info->secondary_gpus.push_back(driver.device);
         }
       }
+      // Some machines aren't properly detected as AMD switchable, but count
+      // them anyway. This may erroneously count machines where there are
+      // independent AMD and Intel cards and the AMD isn't hooked up to
+      // anything, but that should be rare.
+      gpu_info->amd_switchable = !amd_is_primary;
     }
     found = true;
   } else {
@@ -326,7 +332,6 @@ CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
                         " ps_(\\d+)_(\\d+)",
                         &pixel_shader_major_version,
                         &pixel_shader_minor_version)) {
-    gpu_info->can_lose_context = direct3d_version == "9";
     gpu_info->vertex_shader_version =
         base::StringPrintf("%d.%d",
                            vertex_shader_major_version,

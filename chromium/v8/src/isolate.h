@@ -7,16 +7,11 @@
 
 #include <memory>
 #include <queue>
-#include <set>
 
 #include "include/v8-debug.h"
 #include "src/allocation.h"
-#include "src/assert-scope.h"
-#include "src/base/accounting-allocator.h"
 #include "src/base/atomicops.h"
-#include "src/base/hashmap.h"
-#include "src/builtins.h"
-#include "src/cancelable-task.h"
+#include "src/builtins/builtins.h"
 #include "src/contexts.h"
 #include "src/date.h"
 #include "src/execution.h"
@@ -26,11 +21,9 @@
 #include "src/handles.h"
 #include "src/heap/heap.h"
 #include "src/messages.h"
-#include "src/optimizing-compile-dispatcher.h"
 #include "src/regexp/regexp-stack.h"
-#include "src/runtime-profiler.h"
 #include "src/runtime/runtime.h"
-#include "src/zone.h"
+#include "src/zone/zone.h"
 
 namespace v8 {
 
@@ -42,6 +35,7 @@ namespace internal {
 
 class BasicBlockProfiler;
 class Bootstrapper;
+class CancelableTaskManager;
 class CallInterfaceDescriptorData;
 class CodeAgingHelper;
 class CodeEventDispatcher;
@@ -56,6 +50,7 @@ class Counters;
 class CpuFeatures;
 class CpuProfiler;
 class DeoptimizerData;
+class DescriptorLookupCache;
 class Deserializer;
 class EmptyStatement;
 class ExternalCallbackScope;
@@ -67,10 +62,12 @@ class HStatistics;
 class HTracer;
 class InlineRuntimeFunctionsTable;
 class InnerPointerToCodeCache;
+class KeyedLookupCache;
 class Logger;
 class MaterializedObjectStore;
-class PositionsRecorder;
+class OptimizingCompileDispatcher;
 class RegExpStack;
+class RuntimeProfiler;
 class SaveContext;
 class StatsTable;
 class StringTracker;
@@ -97,14 +94,6 @@ namespace interpreter {
 class Interpreter;
 }
 
-// Static indirection table for handles to constants.  If a frame
-// element represents a constant, the data contains an index into
-// this table of handles to the actual constants.
-// Static indirection table for handles to constants.  If a Result
-// represents a constant, the data contains an index into this table
-// of handles to the actual constants.
-typedef ZoneList<Handle<Object> > ZoneObjectList;
-
 #define RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate)    \
   do {                                                    \
     Isolate* __isolate__ = (isolate);                     \
@@ -126,6 +115,16 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 
 #define RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, T) \
   RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, MaybeHandle<T>())
+
+#define RETURN_RESULT(isolate, call, T)           \
+  do {                                            \
+    Handle<T> __result__;                         \
+    if (!(call).ToHandle(&__result__)) {          \
+      DCHECK((isolate)->has_pending_exception()); \
+      return MaybeHandle<T>();                    \
+    }                                             \
+    return __result__;                            \
+  } while (false)
 
 #define RETURN_RESULT_OR_FAILURE(isolate, call)     \
   do {                                              \
@@ -362,9 +361,9 @@ class ThreadLocalTop BASE_EMBEDDED {
 
 #if USE_SIMULATOR
 
-#define ISOLATE_INIT_SIMULATOR_LIST(V)       \
-  V(bool, simulator_initialized, false)      \
-  V(base::HashMap*, simulator_i_cache, NULL) \
+#define ISOLATE_INIT_SIMULATOR_LIST(V)                    \
+  V(bool, simulator_initialized, false)                   \
+  V(base::CustomMatcherHashMap*, simulator_i_cache, NULL) \
   V(Redirection*, simulator_redirection, NULL)
 #else
 
@@ -399,6 +398,7 @@ typedef List<HeapObject*> DebugObjectCache;
 #define ISOLATE_INIT_LIST(V)                                                  \
   /* Assembler state. */                                                      \
   V(FatalErrorCallback, exception_behavior, nullptr)                          \
+  V(OOMErrorCallback, oom_behavior, nullptr)                                  \
   V(LogEventCallback, event_logger, nullptr)                                  \
   V(AllowCodeGenerationFromStringsCallback, allow_code_gen_callback, nullptr) \
   V(ExternalReferenceRedirectorPointer*, external_reference_redirector,       \
@@ -424,6 +424,8 @@ typedef List<HeapObject*> DebugObjectCache;
   V(int, bytecode_and_metadata_size, 0)                                       \
   /* true if being profiled. Causes collection of extra compile info. */      \
   V(bool, is_profiling, false)                                                \
+  /* true if a trace is being formatted through Error.prepareStackTrace. */   \
+  V(bool, formatting_stack_trace, false)                                      \
   ISOLATE_INIT_SIMULATOR_LIST(V)
 
 #define THREAD_LOCAL_TOP_ACCESSOR(type, name)                        \
@@ -619,6 +621,7 @@ class Isolate {
   bool IsExternalHandlerOnTop(Object* exception);
 
   inline bool is_catchable_by_javascript(Object* exception);
+  inline bool is_catchable_by_wasm(Object* exception);
 
   // JS execution stack (see frames.h).
   static Address c_entry_fp(ThreadLocalTop* thread) {
@@ -660,9 +663,15 @@ class Isolate {
   bool OptionalRescheduleException(bool is_bottom_call);
 
   // Push and pop a promise and the current try-catch handler.
-  void PushPromise(Handle<JSObject> promise, Handle<JSFunction> function);
+  void PushPromise(Handle<JSObject> promise);
   void PopPromise();
+
+  // Return the relevant Promise that a throw/rejection pertains to, based
+  // on the contents of the Promise stack
   Handle<Object> GetPromiseOnStackOnThrow();
+
+  // Heuristically guess whether a Promise is handled by user catch handler
+  bool PromiseHasUserDefinedRejectHandler(Handle<Object> promise);
 
   class ExceptionScope {
    public:
@@ -696,14 +705,14 @@ class Isolate {
       int frame_limit,
       StackTrace::StackTraceOptions options);
   Handle<Object> CaptureSimpleStackTrace(Handle<JSReceiver> error_object,
+                                         FrameSkipMode mode,
                                          Handle<Object> caller);
   MaybeHandle<JSReceiver> CaptureAndSetDetailedStackTrace(
       Handle<JSReceiver> error_object);
   MaybeHandle<JSReceiver> CaptureAndSetSimpleStackTrace(
-      Handle<JSReceiver> error_object, Handle<Object> caller);
+      Handle<JSReceiver> error_object, FrameSkipMode mode,
+      Handle<Object> caller);
   Handle<JSArray> GetDetailedStackTrace(Handle<JSObject> error_object);
-  Handle<JSArray> GetDetailedFromSimpleStackTrace(
-      Handle<JSObject> error_object);
 
   // Returns if the given context may access the given global object. If
   // the result is false, the pending exception is guaranteed to be
@@ -735,9 +744,15 @@ class Isolate {
 
   // Tries to predict whether an exception will be caught. Note that this can
   // only produce an estimate, because it is undecidable whether a finally
-  // clause will consume or re-throw an exception. We conservatively assume any
-  // finally clause will behave as if the exception were consumed.
-  enum CatchType { NOT_CAUGHT, CAUGHT_BY_JAVASCRIPT, CAUGHT_BY_EXTERNAL };
+  // clause will consume or re-throw an exception.
+  enum CatchType {
+    NOT_CAUGHT,
+    CAUGHT_BY_JAVASCRIPT,
+    CAUGHT_BY_EXTERNAL,
+    CAUGHT_BY_DESUGARING,
+    CAUGHT_BY_PROMISE,
+    CAUGHT_BY_ASYNC_AWAIT
+  };
   CatchType PredictExceptionCatcher();
 
   void ScheduleThrow(Object* exception);
@@ -779,7 +794,8 @@ class Isolate {
   void IterateThread(ThreadVisitor* v, char* t);
 
   // Returns the current native context.
-  Handle<Context> native_context();
+  inline Handle<Context> native_context();
+  inline Context* raw_native_context();
 
   // Returns the native context of the calling JavaScript code.  That
   // is, the native context of the top-most JavaScript frame.
@@ -839,7 +855,8 @@ class Isolate {
   StackGuard* stack_guard() { return &stack_guard_; }
   Heap* heap() { return &heap_; }
   StatsTable* stats_table();
-  StubCache* stub_cache() { return stub_cache_; }
+  StubCache* load_stub_cache() { return load_stub_cache_; }
+  StubCache* store_stub_cache() { return store_stub_cache_; }
   CodeAgingHelper* code_aging_helper() { return code_aging_helper_; }
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
   bool deoptimizer_lazy_throw() const { return deoptimizer_lazy_throw_; }
@@ -869,8 +886,7 @@ class Isolate {
     DCHECK(handle_scope_implementer_);
     return handle_scope_implementer_;
   }
-  Zone* runtime_zone() { return &runtime_zone_; }
-  Zone* interface_descriptor_zone() { return &interface_descriptor_zone_; }
+  Zone* runtime_zone() { return runtime_zone_; }
 
   UnicodeCache* unicode_cache() {
     return unicode_cache_;
@@ -922,7 +938,6 @@ class Isolate {
   CodeEventDispatcher* code_event_dispatcher() const {
     return code_event_dispatcher_.get();
   }
-  CpuProfiler* cpu_profiler() const { return cpu_profiler_; }
   HeapProfiler* heap_profiler() const { return heap_profiler_; }
 
 #ifdef DEBUG
@@ -986,6 +1001,8 @@ class Isolate {
   inline bool IsArraySpeciesLookupChainIntact();
   inline bool IsHasInstanceLookupChainIntact();
   bool IsIsConcatSpreadableLookupChainIntact();
+  bool IsIsConcatSpreadableLookupChainIntact(JSReceiver* receiver);
+  inline bool IsStringLengthOverflowIntact();
 
   // On intent to set an element in object, make sure that appropriate
   // notifications occur if the set is on the elements of the array or
@@ -1004,6 +1021,7 @@ class Isolate {
   void InvalidateArraySpeciesProtector();
   void InvalidateHasInstanceProtector();
   void InvalidateIsConcatSpreadableProtector();
+  void InvalidateStringLengthOverflowProtector();
 
   // Returns true if array is the initial array prototype in any native context.
   bool IsAnyInitialArrayPrototype(Handle<JSArray> array);
@@ -1045,12 +1063,6 @@ class Isolate {
 
   void* stress_deopt_count_address() { return &stress_deopt_count_; }
 
-  void* virtual_handler_register_address() {
-    return &virtual_handler_register_;
-  }
-
-  void* virtual_slot_register_address() { return &virtual_slot_register_; }
-
   base::RandomNumberGenerator* random_number_generator();
 
   // Given an address occupied by a live code object, return that object.
@@ -1079,7 +1091,7 @@ class Isolate {
 
   void AddBeforeCallEnteredCallback(BeforeCallEnteredCallback callback);
   void RemoveBeforeCallEnteredCallback(BeforeCallEnteredCallback callback);
-  void FireBeforeCallEnteredCallback();
+  inline void FireBeforeCallEnteredCallback();
 
   void AddMicrotasksCompletedCallback(MicrotasksCompletedCallback callback);
   void RemoveMicrotasksCompletedCallback(MicrotasksCompletedCallback callback);
@@ -1089,6 +1101,9 @@ class Isolate {
   void ReportPromiseReject(Handle<JSObject> promise, Handle<Object> value,
                            v8::PromiseRejectEvent event);
 
+  void PromiseResolveThenableJob(Handle<PromiseContainer> container,
+                                 MaybeHandle<Object>* result,
+                                 MaybeHandle<Object>* maybe_exception);
   void EnqueueMicrotask(Handle<Object> microtask);
   void RunMicrotasks();
   bool IsRunningMicrotasks() const { return is_running_microtasks_; }
@@ -1134,11 +1149,23 @@ class Isolate {
 
   interpreter::Interpreter* interpreter() const { return interpreter_; }
 
-  base::AccountingAllocator* allocator() { return &allocator_; }
+  AccountingAllocator* allocator() { return allocator_; }
 
   bool IsInAnyContext(Object* object, uint32_t index);
 
   void SetRAILMode(RAILMode rail_mode);
+
+  void IsolateInForegroundNotification();
+
+  void IsolateInBackgroundNotification();
+
+  bool IsIsolateInBackground() { return is_isolate_in_background_; }
+
+  PRINTF_FORMAT(2, 3) void PrintWithTimestamp(const char* format, ...);
+
+#ifdef USE_SIMULATOR
+  base::Mutex* simulator_i_cache_mutex() { return &simulator_i_cache_mutex_; }
+#endif
 
  protected:
   explicit Isolate(bool enable_serializer);
@@ -1176,7 +1203,7 @@ class Isolate {
   // the Isolate. The top of the stack points to a thread which is currently
   // running the Isolate. When the stack is empty, the Isolate is considered
   // not entered by any thread and can be Disposed.
-  // If the same thread enters the Isolate more then once, the entry_count_
+  // If the same thread enters the Isolate more than once, the entry_count_
   // is incremented rather then a new item pushed to the stack.
   class EntryStackItem {
    public:
@@ -1253,8 +1280,6 @@ class Isolate {
 
   const char* RAILModeName(RAILMode rail_mode) const {
     switch (rail_mode) {
-      case PERFORMANCE_DEFAULT:
-        return "DEFAULT";
       case PERFORMANCE_RESPONSE:
         return "RESPONSE";
       case PERFORMANCE_ANIMATION:
@@ -1263,11 +1288,13 @@ class Isolate {
         return "IDLE";
       case PERFORMANCE_LOAD:
         return "LOAD";
-      default:
-        UNREACHABLE();
     }
     return "";
   }
+
+  // TODO(alph): Remove along with the deprecated GetCpuProfiler().
+  friend v8::CpuProfiler* v8::Isolate::GetCpuProfiler();
+  CpuProfiler* cpu_profiler() const { return cpu_profiler_; }
 
   base::Atomic32 id_;
   EntryStackItem* entry_stack_;
@@ -1282,7 +1309,8 @@ class Isolate {
   Logger* logger_;
   StackGuard stack_guard_;
   StatsTable* stats_table_;
-  StubCache* stub_cache_;
+  StubCache* load_stub_cache_;
+  StubCache* store_stub_cache_;
   CodeAgingHelper* code_aging_helper_;
   DeoptimizerData* deoptimizer_data_;
   bool deoptimizer_lazy_throw_;
@@ -1297,9 +1325,8 @@ class Isolate {
   HandleScopeData handle_scope_data_;
   HandleScopeImplementer* handle_scope_implementer_;
   UnicodeCache* unicode_cache_;
-  base::AccountingAllocator allocator_;
-  Zone runtime_zone_;
-  Zone interface_descriptor_zone_;
+  AccountingAllocator* allocator_;
+  Zone* runtime_zone_;
   InnerPointerToCodeCache* inner_pointer_to_code_cache_;
   GlobalHandles* global_handles_;
   EternalHandles* eternal_handles_;
@@ -1315,7 +1342,7 @@ class Isolate {
   DateCache* date_cache_;
   CallInterfaceDescriptorData* call_descriptor_data_;
   base::RandomNumberGenerator* random_number_generator_;
-  RAILMode rail_mode_;
+  base::AtomicValue<RAILMode> rail_mode_;
 
   // Whether the isolate has been created for snapshotting.
   bool serializer_enabled_;
@@ -1328,6 +1355,10 @@ class Isolate {
 
   // True if ES2015 tail call elimination feature is enabled.
   bool is_tail_call_elimination_enabled_;
+
+  // True if the isolate is in background. This flag is used
+  // to prioritize between memory usage and latency.
+  bool is_isolate_in_background_;
 
   // Time stamp at initialization.
   double time_millis_at_init_;
@@ -1376,9 +1407,6 @@ class Isolate {
   // Counts deopt points if deopt_every_n_times is enabled.
   unsigned int stress_deopt_count_;
 
-  Address virtual_handler_register_;
-  Address virtual_slot_register_;
-
   int next_optimization_id_;
 
   // Counts javascript calls from the API. Wraps around on overflow.
@@ -1412,6 +1440,10 @@ class Isolate {
   v8::Isolate::AbortOnUncaughtExceptionCallback
       abort_on_uncaught_exception_callback_;
 
+#ifdef USE_SIMULATOR
+  base::Mutex simulator_i_cache_mutex_;
+#endif
+
   friend class ExecutionAccess;
   friend class HandleScopeImplementer;
   friend class OptimizingCompileDispatcher;
@@ -1438,15 +1470,12 @@ class Isolate {
 
 class PromiseOnStack {
  public:
-  PromiseOnStack(Handle<JSFunction> function, Handle<JSObject> promise,
-                 PromiseOnStack* prev)
-      : function_(function), promise_(promise), prev_(prev) {}
-  Handle<JSFunction> function() { return function_; }
+  PromiseOnStack(Handle<JSObject> promise, PromiseOnStack* prev)
+      : promise_(promise), prev_(prev) {}
   Handle<JSObject> promise() { return promise_; }
   PromiseOnStack* prev() { return prev_; }
 
  private:
-  Handle<JSFunction> function_;
   Handle<JSObject> promise_;
   PromiseOnStack* prev_;
 };
@@ -1464,14 +1493,14 @@ class SaveContext BASE_EMBEDDED {
   SaveContext* prev() { return prev_; }
 
   // Returns true if this save context is below a given JavaScript frame.
-  bool IsBelowFrame(JavaScriptFrame* frame) {
+  bool IsBelowFrame(StandardFrame* frame) {
     return (c_entry_fp_ == 0) || (c_entry_fp_ > frame->sp());
   }
 
  private:
-  Isolate* isolate_;
+  Isolate* const isolate_;
   Handle<Context> context_;
-  SaveContext* prev_;
+  SaveContext* const prev_;
   Address c_entry_fp_;
 };
 

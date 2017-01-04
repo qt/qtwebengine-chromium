@@ -7,13 +7,15 @@
 #ifndef XFA_FDE_FDE_VISUALSET_H_
 #define XFA_FDE_FDE_VISUALSET_H_
 
-#include "core/fxcrt/include/fx_coordinates.h"
-#include "core/fxcrt/include/fx_system.h"
-#include "core/fxge/include/fx_dib.h"
+#include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_system.h"
+#include "core/fxge/fx_dib.h"
 #include "xfa/fde/cfde_path.h"
 #include "xfa/fde/fde_object.h"
 #include "xfa/fgas/crt/fgas_memory.h"
 #include "xfa/fgas/font/fgas_font.h"
+
+struct FXTEXT_CHARPOS;
 
 enum FDE_VISUALOBJTYPE {
   FDE_VISUALOBJ_Canvas = 0x00,

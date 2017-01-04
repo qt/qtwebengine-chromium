@@ -4,9 +4,12 @@
 
 #include "components/update_client/test_configurator.h"
 
+#include "base/sequenced_task_runner.h"
+#include "base/single_thread_task_runner.h"
 #include "base/version.h"
 #include "components/prefs/pref_service.h"
 #include "components/update_client/component_patcher_operation.h"
+#include "net/url_request/url_request_test_util.h"
 #include "url/gurl.h"
 
 namespace update_client {
@@ -29,7 +32,8 @@ TestConfigurator::TestConfigurator(
       brand_("TEST"),
       initial_time_(0),
       ondemand_time_(0),
-      use_cup_signing_(false),
+      enabled_cup_signing_(false),
+      enabled_component_updates_(true),
       context_(new net::TestURLRequestContextGetter(network_task_runner)) {}
 
 TestConfigurator::~TestConfigurator() {
@@ -67,6 +71,10 @@ std::vector<GURL> TestConfigurator::PingUrl() const {
     return std::vector<GURL>(1, ping_url_);
 
   return UpdateUrl();
+}
+
+std::string TestConfigurator::GetProdId() const {
+  return "fake_prodid";
 }
 
 base::Version TestConfigurator::GetBrowserVersion() const {
@@ -107,16 +115,20 @@ scoped_refptr<OutOfProcessPatcher> TestConfigurator::CreateOutOfProcessPatcher()
   return NULL;
 }
 
-bool TestConfigurator::DeltasEnabled() const {
+bool TestConfigurator::EnabledDeltas() const {
   return true;
 }
 
-bool TestConfigurator::UseBackgroundDownloader() const {
+bool TestConfigurator::EnabledComponentUpdates() const {
+  return enabled_component_updates_;
+}
+
+bool TestConfigurator::EnabledBackgroundDownloader() const {
   return false;
 }
 
-bool TestConfigurator::UseCupSigning() const {
-  return use_cup_signing_;
+bool TestConfigurator::EnabledCupSigning() const {
+  return enabled_cup_signing_;
 }
 
 void TestConfigurator::SetBrand(const std::string& brand) {
@@ -131,8 +143,13 @@ void TestConfigurator::SetInitialDelay(int seconds) {
   initial_time_ = seconds;
 }
 
-void TestConfigurator::SetUseCupSigning(bool use_cup_signing) {
-  use_cup_signing_ = use_cup_signing;
+void TestConfigurator::SetEnabledCupSigning(bool enabled_cup_signing) {
+  enabled_cup_signing_ = enabled_cup_signing;
+}
+
+void TestConfigurator::SetEnabledComponentUpdates(
+    bool enabled_component_updates) {
+  enabled_component_updates_ = enabled_component_updates;
 }
 
 void TestConfigurator::SetDownloadPreference(
@@ -156,6 +173,10 @@ TestConfigurator::GetSequencedTaskRunner() const {
 
 PrefService* TestConfigurator::GetPrefService() const {
   return nullptr;
+}
+
+bool TestConfigurator::IsPerUserInstall() const {
+  return true;
 }
 
 }  // namespace update_client

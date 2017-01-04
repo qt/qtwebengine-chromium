@@ -97,11 +97,11 @@ class MockSCM(object):
 
     def commit_locally_with_message(self, message):
         self._local_commits.append([message])
-        pass
 
     def local_commits(self):
         """For testing purposes, returns the internal recording of commits made via commit_locally_with_message.
-        Format as [ message, commit_all_working_directory_changes, author ]."""
+        Format as [ message, commit_all_working_directory_changes, author ].
+        """
         return self._local_commits
 
     def delete(self, path):

@@ -7,14 +7,16 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/metrics/user_metrics.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/password_manager/content/browser/content_password_manager_driver.h"
 #include "components/password_manager/content/browser/content_password_manager_driver_factory.h"
-#include "components/password_manager/content/public/cpp/type_converters.h"
 #include "components/password_manager/core/browser/affiliated_match_helper.h"
+#include "components/password_manager/core/browser/credential_manager_logger.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
+#include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/common/credential_manager_types.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
@@ -26,8 +28,7 @@ namespace {
 
 void RunMojoGetCallback(const mojom::CredentialManager::GetCallback& callback,
                         const CredentialInfo& info) {
-  mojom::CredentialInfoPtr credential = mojom::CredentialInfo::From(info);
-  callback.Run(mojom::CredentialManagerError::SUCCESS, std::move(credential));
+  callback.Run(mojom::CredentialManagerError::SUCCESS, info);
 }
 
 }  // namespace
@@ -49,10 +50,15 @@ void CredentialManagerImpl::BindRequest(
   bindings_.AddBinding(this, std::move(request));
 }
 
-void CredentialManagerImpl::Store(mojom::CredentialInfoPtr credential,
+void CredentialManagerImpl::Store(const CredentialInfo& credential,
                                   const StoreCallback& callback) {
-  CredentialInfo info = credential.To<CredentialInfo>();
-  DCHECK_NE(CredentialType::CREDENTIAL_TYPE_EMPTY, info.type);
+  DCHECK_NE(CredentialType::CREDENTIAL_TYPE_EMPTY, credential.type);
+
+  if (password_manager_util::IsLoggingActive(client_)) {
+    CredentialManagerLogger(client_->GetLogManager())
+        .LogStoreCredential(web_contents()->GetLastCommittedURL(),
+                            credential.type);
+  }
 
   // Send acknowledge response back.
   callback.Run();
@@ -64,8 +70,7 @@ void CredentialManagerImpl::Store(mojom::CredentialInfoPtr credential,
 
   GURL origin = web_contents()->GetLastCommittedURL().GetOrigin();
   std::unique_ptr<autofill::PasswordForm> form(
-      CreatePasswordFormFromCredentialInfo(info, origin));
-  form->skip_zero_click = !IsZeroClickAllowed();
+      CreatePasswordFormFromCredentialInfo(credential, origin));
 
   form_manager_.reset(new CredentialManagerPasswordFormManager(
       client_, GetDriver(), *CreateObservedPasswordFormFromOrigin(origin),
@@ -81,7 +86,8 @@ void CredentialManagerImpl::OnProvisionalSaveComplete() {
     // If this is a federated credential, check it against the federated matches
     // produced by the PasswordFormManager. If a match is found, update it and
     // return.
-    for (const auto& match : form_manager_->federated_matches()) {
+    for (const auto& match :
+         form_manager_->form_fetcher()->GetFederatedMatches()) {
       if (match->username_value == form.username_value &&
           match->federation_origin.IsSameOriginWith(form.federation_origin)) {
         form_manager_->Update(*match);
@@ -106,6 +112,10 @@ void CredentialManagerImpl::OnProvisionalSaveComplete() {
 
 void CredentialManagerImpl::RequireUserMediation(
     const RequireUserMediationCallback& callback) {
+  if (password_manager_util::IsLoggingActive(client_)) {
+    CredentialManagerLogger(client_->GetLogManager())
+        .LogRequireUserMediation(web_contents()->GetLastCommittedURL());
+  }
   PasswordStore* store = GetPasswordStore();
   if (!store || !IsUpdatingCredentialAllowed()) {
     callback.Run();
@@ -149,15 +159,20 @@ void CredentialManagerImpl::ScheduleRequireMediationTask(
 
 void CredentialManagerImpl::Get(bool zero_click_only,
                                 bool include_passwords,
-                                mojo::Array<GURL> federations,
+                                const std::vector<GURL>& federations,
                                 const GetCallback& callback) {
   PasswordStore* store = GetPasswordStore();
+  if (password_manager_util::IsLoggingActive(client_)) {
+    CredentialManagerLogger(client_->GetLogManager())
+        .LogRequestCredential(web_contents()->GetLastCommittedURL(),
+                              zero_click_only, federations);
+  }
   if (pending_request_ || !store) {
     // Callback error.
     callback.Run(pending_request_
                      ? mojom::CredentialManagerError::PENDINGREQUEST
                      : mojom::CredentialManagerError::PASSWORDSTOREUNAVAILABLE,
-                 nullptr);
+                 base::nullopt);
     return;
   }
 
@@ -166,8 +181,7 @@ void CredentialManagerImpl::Get(bool zero_click_only,
   if ((zero_click_only && !IsZeroClickAllowed()) ||
       client_->DidLastPageLoadEncounterSSLErrors()) {
     // Callback with empty credential info.
-    callback.Run(mojom::CredentialManagerError::SUCCESS,
-                 mojom::CredentialInfo::New());
+    callback.Run(mojom::CredentialManagerError::SUCCESS, CredentialInfo());
     return;
   }
 
@@ -176,11 +190,11 @@ void CredentialManagerImpl::Get(bool zero_click_only,
         GetSynthesizedFormForOrigin(),
         base::Bind(&CredentialManagerImpl::ScheduleRequestTask,
                    weak_factory_.GetWeakPtr(), callback, zero_click_only,
-                   include_passwords, federations.PassStorage()));
+                   include_passwords, federations));
   } else {
     std::vector<std::string> no_affiliated_realms;
     ScheduleRequestTask(callback, zero_click_only, include_passwords,
-                        federations.PassStorage(), no_affiliated_realms);
+                        federations, no_affiliated_realms);
   }
 }
 
@@ -228,6 +242,10 @@ void CredentialManagerImpl::SendCredential(
   DCHECK(pending_request_);
   DCHECK(send_callback.Equals(pending_request_->send_callback()));
 
+  if (password_manager_util::IsLoggingActive(client_)) {
+    CredentialManagerLogger(client_->GetLogManager())
+        .LogSendCredential(web_contents()->GetLastCommittedURL(), info.type);
+  }
   send_callback.Run(info);
   pending_request_.reset();
 }
@@ -250,6 +268,11 @@ void CredentialManagerImpl::SendPasswordForm(
         store->UpdateLogin(update_form);
       }
     }
+    base::RecordAction(
+        base::UserMetricsAction("CredentialManager_AccountChooser_Accepted"));
+  } else {
+    base::RecordAction(
+        base::UserMetricsAction("CredentialManager_AccountChooser_Dismissed"));
   }
   SendCredential(send_callback, info);
 }
@@ -258,15 +281,13 @@ PasswordManagerClient* CredentialManagerImpl::client() const {
   return client_;
 }
 
-autofill::PasswordForm CredentialManagerImpl::GetSynthesizedFormForOrigin()
+PasswordStore::FormDigest CredentialManagerImpl::GetSynthesizedFormForOrigin()
     const {
-  autofill::PasswordForm synthetic_form;
-  synthetic_form.origin = web_contents()->GetLastCommittedURL().GetOrigin();
-  synthetic_form.signon_realm = synthetic_form.origin.spec();
-  synthetic_form.scheme = autofill::PasswordForm::SCHEME_HTML;
-  synthetic_form.ssl_valid = synthetic_form.origin.SchemeIsCryptographic() &&
-                             !client_->DidLastPageLoadEncounterSSLErrors();
-  return synthetic_form;
+  PasswordStore::FormDigest digest = {
+      autofill::PasswordForm::SCHEME_HTML, std::string(),
+      web_contents()->GetLastCommittedURL().GetOrigin()};
+  digest.signon_realm = digest.origin.spec();
+  return digest;
 }
 
 void CredentialManagerImpl::DoneRequiringUserMediation() {

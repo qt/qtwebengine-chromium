@@ -249,10 +249,16 @@ grpcsharp_batch_context_recv_initial_metadata(
 
 GPR_EXPORT intptr_t GPR_CALLTYPE grpcsharp_batch_context_recv_message_length(
     const grpcsharp_batch_context *ctx) {
+  grpc_byte_buffer_reader reader;
   if (!ctx->recv_message) {
     return -1;
   }
-  return (intptr_t)grpc_byte_buffer_length(ctx->recv_message);
+
+  GPR_ASSERT(grpc_byte_buffer_reader_init(&reader, ctx->recv_message));
+  intptr_t result = (intptr_t)grpc_byte_buffer_length(reader.buffer_out);
+  grpc_byte_buffer_reader_destroy(&reader);
+
+  return result;
 }
 
 /*
@@ -265,7 +271,7 @@ GPR_EXPORT void GPR_CALLTYPE grpcsharp_batch_context_recv_message_to_buffer(
   gpr_slice slice;
   size_t offset = 0;
 
-  grpc_byte_buffer_reader_init(&reader, ctx->recv_message);
+  GPR_ASSERT(grpc_byte_buffer_reader_init(&reader, ctx->recv_message));
 
   while (grpc_byte_buffer_reader_next(&reader, &slice)) {
     size_t len = GPR_SLICE_LENGTH(slice);
@@ -275,6 +281,8 @@ GPR_EXPORT void GPR_CALLTYPE grpcsharp_batch_context_recv_message_to_buffer(
     offset += len;
     gpr_slice_unref(slice);
   }
+
+  grpc_byte_buffer_reader_destroy(&reader);
 }
 
 GPR_EXPORT grpc_status_code GPR_CALLTYPE

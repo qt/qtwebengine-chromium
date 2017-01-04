@@ -127,6 +127,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // ServiceWorkerVersion::Listener overrides.
   void OnRunningStateChanged(ServiceWorkerVersion* version) override;
   void OnVersionStateChanged(ServiceWorkerVersion* version) override;
+  void OnDevToolsRoutingIdChanged(ServiceWorkerVersion* version) override;
   void OnMainScriptHttpResponseInfoSet(ServiceWorkerVersion* version) override;
   void OnErrorReported(ServiceWorkerVersion* version,
                        const base::string16& error_message,
@@ -333,10 +334,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
       const GURL& other_url,
       const ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
       ServiceWorkerStatusCode status,
-      const scoped_refptr<ServiceWorkerRegistration>& registration);
+      scoped_refptr<ServiceWorkerRegistration> registration);
   void OnRegistrationFinishedForCheckHasServiceWorker(
       const ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
-      const scoped_refptr<ServiceWorkerRegistration>& registration);
+      scoped_refptr<ServiceWorkerRegistration> registration);
 
   // It's safe to store a raw pointer instead of a scoped_refptr to |wrapper_|
   // because the Wrapper::Shutdown call that hops threads to destroy |this| uses

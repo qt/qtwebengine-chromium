@@ -37,29 +37,14 @@
 namespace blink {
 
 ActiveDOMCallback::ActiveDOMCallback(ExecutionContext* context)
-    : ContextLifecycleObserver(context)
-{
+    : ContextLifecycleObserver(context) {}
+
+ActiveDOMCallback::~ActiveDOMCallback() {}
+
+bool ActiveDOMCallback::canInvokeCallback() const {
+  ExecutionContext* context = getExecutionContext();
+  return context && !context->activeDOMObjectsAreSuspended() &&
+         !context->activeDOMObjectsAreStopped();
 }
 
-ActiveDOMCallback::~ActiveDOMCallback()
-{
-}
-
-bool ActiveDOMCallback::canInvokeCallback() const
-{
-    ExecutionContext* context = getExecutionContext();
-    return context && !context->activeDOMObjectsAreSuspended() && !context->activeDOMObjectsAreStopped();
-}
-
-bool ActiveDOMCallback::isScriptControllerTerminating() const
-{
-    ExecutionContext* context = getExecutionContext();
-    if (context && context->isWorkerGlobalScope()) {
-        WorkerOrWorkletScriptController* scriptController = toWorkerGlobalScope(context)->scriptController();
-        if (!scriptController || scriptController->isExecutionForbidden() || scriptController->isExecutionTerminating())
-            return true;
-    }
-    return false;
-}
-
-} // namespace blink
+}  // namespace blink

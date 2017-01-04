@@ -4,7 +4,6 @@
 
 #include "src/contexts.h"
 
-#include "src/ast/scopeinfo.h"
 #include "src/bootstrapper.h"
 #include "src/debug/debug.h"
 #include "src/isolate-inl.h"
@@ -58,15 +57,16 @@ bool ScriptContextTable::Lookup(Handle<ScriptContextTable> table,
 
 
 bool Context::is_declaration_context() {
-  if (IsFunctionContext() || IsNativeContext() || IsScriptContext()) {
+  if (IsFunctionContext() || IsNativeContext() || IsScriptContext() ||
+      IsModuleContext()) {
     return true;
   }
   if (!IsBlockContext()) return false;
   Object* ext = extension();
   // If we have the special extension, we immediately know it must be a
   // declaration scope. That's just a small performance shortcut.
-  return ext->IsSloppyBlockWithEvalContextExtension()
-      || ScopeInfo::cast(ext)->is_declaration_scope();
+  return ext->IsContextExtension() ||
+         ScopeInfo::cast(ext)->is_declaration_scope();
 }
 
 
@@ -94,36 +94,47 @@ JSObject* Context::extension_object() {
   HeapObject* object = extension();
   if (object->IsTheHole(GetIsolate())) return nullptr;
   if (IsBlockContext()) {
-    if (!object->IsSloppyBlockWithEvalContextExtension()) return nullptr;
-    object = SloppyBlockWithEvalContextExtension::cast(object)->extension();
+    if (!object->IsContextExtension()) return nullptr;
+    object = JSObject::cast(ContextExtension::cast(object)->extension());
   }
   DCHECK(object->IsJSContextExtensionObject() ||
          (IsNativeContext() && object->IsJSGlobalObject()));
   return JSObject::cast(object);
 }
 
-
 JSReceiver* Context::extension_receiver() {
   DCHECK(IsNativeContext() || IsWithContext() ||
          IsFunctionContext() || IsBlockContext());
-  return IsWithContext() ? JSReceiver::cast(extension()) : extension_object();
+  return IsWithContext() ? JSReceiver::cast(
+                               ContextExtension::cast(extension())->extension())
+                         : extension_object();
 }
 
-
 ScopeInfo* Context::scope_info() {
-  DCHECK(IsModuleContext() || IsScriptContext() || IsBlockContext());
+  DCHECK(!IsNativeContext());
+  if (IsFunctionContext() || IsModuleContext()) {
+    return closure()->shared()->scope_info();
+  }
   HeapObject* object = extension();
-  if (object->IsSloppyBlockWithEvalContextExtension()) {
-    DCHECK(IsBlockContext());
-    object = SloppyBlockWithEvalContextExtension::cast(object)->scope_info();
+  if (object->IsContextExtension()) {
+    DCHECK(IsBlockContext() || IsCatchContext() || IsWithContext() ||
+           IsDebugEvaluateContext());
+    object = ContextExtension::cast(object)->scope_info();
   }
   return ScopeInfo::cast(object);
 }
 
+Module* Context::module() {
+  Context* current = this;
+  while (!current->IsModuleContext()) {
+    current = current->previous();
+  }
+  return Module::cast(current->extension());
+}
 
 String* Context::catch_name() {
   DCHECK(IsCatchContext());
-  return String::cast(extension());
+  return String::cast(ContextExtension::cast(extension())->extension());
 }
 
 
@@ -177,53 +188,16 @@ static Maybe<bool> UnscopableLookup(LookupIterator* it) {
   return Just(!blacklist->BooleanValue());
 }
 
-static void GetAttributesAndBindingFlags(VariableMode mode,
-                                         InitializationFlag init_flag,
-                                         PropertyAttributes* attributes,
-                                         BindingFlags* binding_flags) {
-  switch (mode) {
-    case VAR:
-      *attributes = NONE;
-      *binding_flags = BINDING_IS_INITIALIZED;
-      break;
-    case LET:
-      *attributes = NONE;
-      *binding_flags = (init_flag == kNeedsInitialization)
-                           ? BINDING_CHECK_INITIALIZED
-                           : BINDING_IS_INITIALIZED;
-      break;
-    case CONST_LEGACY:
-      DCHECK_EQ(kCreatedInitialized, init_flag);
-      *attributes = READ_ONLY;
-      *binding_flags = BINDING_IS_INITIALIZED;
-      break;
-    case CONST:
-      *attributes = READ_ONLY;
-      *binding_flags = (init_flag == kNeedsInitialization)
-                           ? BINDING_CHECK_INITIALIZED
-                           : BINDING_IS_INITIALIZED;
-      break;
-    case DYNAMIC:
-    case DYNAMIC_GLOBAL:
-    case DYNAMIC_LOCAL:
-    case TEMPORARY:
-      // Note: Fixed context slots are statically allocated by the compiler.
-      // Statically allocated variables always have a statically known mode,
-      // which is the mode with which they were declared when added to the
-      // scope. Thus, the DYNAMIC mode (which corresponds to dynamically
-      // declared variables that were introduced through declaration nodes)
-      // must not appear here.
-      UNREACHABLE();
-      break;
-  }
+static PropertyAttributes GetAttributesForMode(VariableMode mode) {
+  DCHECK(IsDeclaredVariableMode(mode));
+  return mode == CONST ? READ_ONLY : NONE;
 }
 
-
-Handle<Object> Context::Lookup(Handle<String> name,
-                               ContextLookupFlags flags,
-                               int* index,
-                               PropertyAttributes* attributes,
-                               BindingFlags* binding_flags) {
+Handle<Object> Context::Lookup(Handle<String> name, ContextLookupFlags flags,
+                               int* index, PropertyAttributes* attributes,
+                               InitializationFlag* init_flag,
+                               VariableMode* variable_mode) {
+  DCHECK(!IsModuleContext());
   Isolate* isolate = GetIsolate();
   Handle<Context> context(this, isolate);
 
@@ -231,7 +205,8 @@ Handle<Object> Context::Lookup(Handle<String> name,
   bool failed_whitelist = false;
   *index = kNotFound;
   *attributes = ABSENT;
-  *binding_flags = MISSING_BINDING;
+  *init_flag = kCreatedInitialized;
+  *variable_mode = VAR;
 
   if (FLAG_trace_contexts) {
     PrintF("Context::Lookup(");
@@ -270,8 +245,9 @@ Handle<Object> Context::Lookup(Handle<String> name,
                    r.context_index, reinterpret_cast<void*>(*c));
           }
           *index = r.slot_index;
-          GetAttributesAndBindingFlags(r.mode, r.init_flag, attributes,
-                                       binding_flags);
+          *variable_mode = r.mode;
+          *init_flag = r.init_flag;
+          *attributes = GetAttributesForMode(r.mode);
           return ScriptContextTable::GetContext(script_contexts,
                                                 r.context_index);
         }
@@ -285,8 +261,14 @@ Handle<Object> Context::Lookup(Handle<String> name,
           object->IsJSContextExtensionObject()) {
         maybe = JSReceiver::GetOwnPropertyAttributes(object, name);
       } else if (context->IsWithContext()) {
-        // A with context will never bind "this".
-        if (name->Equals(*isolate->factory()->this_string())) {
+        // A with context will never bind "this", but debug-eval may look into
+        // a with context when resolving "this". Other synthetic variables such
+        // as new.target may be resolved as DYNAMIC_LOCAL due to bug v8:5405 ,
+        // skipping them here serves as a workaround until a more thorough
+        // fix can be applied.
+        // TODO(v8:5405): Replace this check with a DCHECK when resolution of
+        // of synthetic variables does not go through this code path.
+        if (ScopeInfo::VariableIsSynthetic(*name)) {
           maybe = Just(ABSENT);
         } else {
           LookupIterator it(object, name, object);
@@ -326,12 +308,10 @@ Handle<Object> Context::Lookup(Handle<String> name,
           ? context->closure()->shared()->scope_info()
           : context->scope_info());
       VariableMode mode;
-      InitializationFlag init_flag;
-      // TODO(sigurds) Figure out whether maybe_assigned_flag should
-      // be used to compute binding_flags.
+      InitializationFlag flag;
       MaybeAssignedFlag maybe_assigned_flag;
-      int slot_index = ScopeInfo::ContextSlotIndex(
-          scope_info, name, &mode, &init_flag, &maybe_assigned_flag);
+      int slot_index = ScopeInfo::ContextSlotIndex(scope_info, name, &mode,
+                                                   &flag, &maybe_assigned_flag);
       DCHECK(slot_index < 0 || slot_index >= MIN_CONTEXT_SLOTS);
       if (slot_index >= 0) {
         if (FLAG_trace_contexts) {
@@ -339,16 +319,18 @@ Handle<Object> Context::Lookup(Handle<String> name,
                  slot_index, mode);
         }
         *index = slot_index;
-        GetAttributesAndBindingFlags(mode, init_flag, attributes,
-                                     binding_flags);
+        *variable_mode = mode;
+        *init_flag = flag;
+        *attributes = GetAttributesForMode(mode);
         return context;
       }
 
       // Check the slot corresponding to the intermediate context holding
-      // only the function name variable.
-      if (follow_context_chain && context->IsFunctionContext()) {
-        VariableMode mode;
-        int function_index = scope_info->FunctionContextSlotIndex(*name, &mode);
+      // only the function name variable. It's conceptually (and spec-wise)
+      // in an outer scope of the function's declaration scope.
+      if (follow_context_chain && (flags & STOP_AT_DECLARATION_SCOPE) == 0 &&
+          context->IsFunctionContext()) {
+        int function_index = scope_info->FunctionContextSlotIndex(*name);
         if (function_index >= 0) {
           if (FLAG_trace_contexts) {
             PrintF("=> found intermediate function in context slot %d\n",
@@ -356,8 +338,8 @@ Handle<Object> Context::Lookup(Handle<String> name,
           }
           *index = function_index;
           *attributes = READ_ONLY;
-          DCHECK(mode == CONST_LEGACY || mode == CONST);
-          *binding_flags = BINDING_IS_INITIALIZED;
+          *init_flag = kCreatedInitialized;
+          *variable_mode = CONST;
           return context;
         }
       }
@@ -370,26 +352,31 @@ Handle<Object> Context::Lookup(Handle<String> name,
         }
         *index = Context::THROWN_OBJECT_INDEX;
         *attributes = NONE;
-        *binding_flags = BINDING_IS_INITIALIZED;
+        *init_flag = kCreatedInitialized;
+        *variable_mode = VAR;
         return context;
       }
     } else if (context->IsDebugEvaluateContext()) {
       // Check materialized locals.
-      Object* obj = context->get(EXTENSION_INDEX);
-      if (obj->IsJSReceiver()) {
-        Handle<JSReceiver> extension(JSReceiver::cast(obj));
-        LookupIterator it(extension, name, extension);
-        Maybe<bool> found = JSReceiver::HasProperty(&it);
-        if (found.FromMaybe(false)) {
-          *attributes = NONE;
-          return extension;
+      Object* ext = context->get(EXTENSION_INDEX);
+      if (ext->IsContextExtension()) {
+        Object* obj = ContextExtension::cast(ext)->extension();
+        if (obj->IsJSReceiver()) {
+          Handle<JSReceiver> extension(JSReceiver::cast(obj));
+          LookupIterator it(extension, name, extension);
+          Maybe<bool> found = JSReceiver::HasProperty(&it);
+          if (found.FromMaybe(false)) {
+            *attributes = NONE;
+            return extension;
+          }
         }
       }
       // Check the original context, but do not follow its context chain.
-      obj = context->get(WRAPPED_CONTEXT_INDEX);
+      Object* obj = context->get(WRAPPED_CONTEXT_INDEX);
       if (obj->IsContext()) {
-        Handle<Object> result = Context::cast(obj)->Lookup(
-            name, DONT_FOLLOW_CHAINS, index, attributes, binding_flags);
+        Handle<Object> result =
+            Context::cast(obj)->Lookup(name, DONT_FOLLOW_CHAINS, index,
+                                       attributes, init_flag, variable_mode);
         if (!result.is_null()) return result;
       }
       // Check whitelist. Names that do not pass whitelist shall only resolve
@@ -419,25 +406,6 @@ Handle<Object> Context::Lookup(Handle<String> name,
     PrintF("=> no property/slot found\n");
   }
   return Handle<Object>::null();
-}
-
-
-void Context::InitializeGlobalSlots() {
-  DCHECK(IsScriptContext());
-  DisallowHeapAllocation no_gc;
-
-  ScopeInfo* scope_info = this->scope_info();
-
-  int context_globals = scope_info->ContextGlobalCount();
-  if (context_globals > 0) {
-    PropertyCell* empty_cell = GetHeap()->empty_property_cell();
-
-    int context_locals = scope_info->ContextLocalCount();
-    int index = Context::MIN_CONTEXT_SLOTS + context_locals;
-    for (int i = 0; i < context_globals; i++) {
-      set(index++, empty_cell);
-    }
-  }
 }
 
 
@@ -579,6 +547,17 @@ int Context::IntrinsicIndexForName(Handle<String> string) {
 
 #undef COMPARE_NAME
 
+#define COMPARE_NAME(index, type, name) \
+  if (strncmp(string, #name, length) == 0) return index;
+
+int Context::IntrinsicIndexForName(const unsigned char* unsigned_string,
+                                   int length) {
+  const char* string = reinterpret_cast<const char*>(unsigned_string);
+  NATIVE_CONTEXT_INTRINSIC_FUNCTIONS(COMPARE_NAME);
+  return kNotFound;
+}
+
+#undef COMPARE_NAME
 
 #ifdef DEBUG
 

@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/optional.h"
 #include "media/base/encryption_scheme.h"
 #include "media/base/media_util.h"
 #include "media/base/stream_parser_buffer.h"
@@ -21,37 +22,6 @@
 
 namespace media {
 namespace mp2t {
-
-namespace {
-
-VideoCodecProfile ProfileIDCToVideoCodecProfile(int profile_idc) {
-  switch (profile_idc) {
-    case H264SPS::kProfileIDCBaseline:
-      return H264PROFILE_BASELINE;
-    case H264SPS::kProfileIDCMain:
-      return H264PROFILE_MAIN;
-    case H264SPS::kProfileIDCHigh:
-      return H264PROFILE_HIGH;
-    case H264SPS::kProfileIDHigh10:
-      return H264PROFILE_HIGH10PROFILE;
-    case H264SPS::kProfileIDHigh422:
-      return H264PROFILE_HIGH422PROFILE;
-    case H264SPS::kProfileIDHigh444Predictive:
-      return H264PROFILE_HIGH444PREDICTIVEPROFILE;
-    case H264SPS::kProfileIDScalableBaseline:
-      return H264PROFILE_SCALABLEBASELINE;
-    case H264SPS::kProfileIDScalableHigh:
-      return H264PROFILE_SCALABLEHIGH;
-    case H264SPS::kProfileIDStereoHigh:
-      return H264PROFILE_STEREOHIGH;
-    case H264SPS::kProfileIDSMultiviewHigh:
-      return H264PROFILE_MULTIVIEWHIGH;
-  }
-  NOTREACHED() << "unknown video profile: " << profile_idc;
-  return VIDEO_CODEC_PROFILE_UNKNOWN;
-}
-
-}  // namespace
 
 // An AUD NALU is at least 4 bytes:
 // 3 bytes for the start code + 1 byte for the NALU type.
@@ -235,7 +205,7 @@ bool EsParserH264::EmitFrame(int64_t access_unit_pos,
                              bool is_key_frame,
                              int pps_id) {
   // Get the access unit timing info.
-  // Note: |current_timing_desc.pts| might be |kNoTimestamp()| at this point
+  // Note: |current_timing_desc.pts| might be |kNoTimestamp| at this point
   // if:
   // - the stream is not fully MPEG-2 compliant.
   // - or if the stream relies on H264 VUI parameters to compute the timestamps.
@@ -243,8 +213,7 @@ bool EsParserH264::EmitFrame(int64_t access_unit_pos,
   //   This part is not yet implemented in EsParserH264.
   // |es_adapter_| will take care of the missing timestamps.
   TimingDesc current_timing_desc = GetTimingDescriptor(access_unit_pos);
-  DVLOG_IF(1, current_timing_desc.pts == kNoTimestamp())
-      << "Missing timestamp";
+  DVLOG_IF(1, current_timing_desc.pts == kNoTimestamp) << "Missing timestamp";
 
   // If only the PTS is provided, copy the PTS into the DTS.
   if (current_timing_desc.dts == kNoDecodeTimestamp()) {
@@ -280,12 +249,8 @@ bool EsParserH264::EmitFrame(int64_t access_unit_pos,
   // TODO(wolenetz/acolwell): Validate and use a common cross-parser TrackId
   // type and allow multiple video tracks. See https://crbug.com/341581.
   scoped_refptr<StreamParserBuffer> stream_parser_buffer =
-      StreamParserBuffer::CopyFrom(
-          es,
-          access_unit_size,
-          is_key_frame,
-          DemuxerStream::VIDEO,
-          0);
+      StreamParserBuffer::CopyFrom(es, access_unit_size, is_key_frame,
+                                   DemuxerStream::VIDEO, kMp2tVideoTrackId);
   stream_parser_buffer->SetDecodeTimestamp(current_timing_desc.dts);
   stream_parser_buffer->set_timestamp(current_timing_desc.pts);
   return es_adapter_.OnNewBuffer(stream_parser_buffer);
@@ -297,48 +262,34 @@ bool EsParserH264::UpdateVideoDecoderConfig(const H264SPS* sps,
   int sar_width = (sps->sar_width == 0) ? 1 : sps->sar_width;
   int sar_height = (sps->sar_height == 0) ? 1 : sps->sar_height;
 
-  // TODO(damienv): a MAP unit can be either 16 or 32 pixels.
-  // although it's 16 pixels for progressive non MBAFF frames.
-  int width_mb = sps->pic_width_in_mbs_minus1 + 1;
-  int height_mb = sps->pic_height_in_map_units_minus1 + 1;
-  if (width_mb > std::numeric_limits<int>::max() / 16 ||
-      height_mb > std::numeric_limits<int>::max() / 16) {
-    DVLOG(1) << "Picture size is too big: width_mb=" << width_mb
-             << " height_mb=" << height_mb;
+  base::Optional<gfx::Size> coded_size = sps->GetCodedSize();
+  if (!coded_size)
     return false;
-  }
 
-  gfx::Size coded_size(16 * width_mb, 16 * height_mb);
-  gfx::Rect visible_rect(
-      sps->frame_crop_left_offset,
-      sps->frame_crop_top_offset,
-      (coded_size.width() - sps->frame_crop_right_offset) -
-      sps->frame_crop_left_offset,
-      (coded_size.height() - sps->frame_crop_bottom_offset) -
-      sps->frame_crop_top_offset);
-  if (visible_rect.width() <= 0 || visible_rect.height() <= 0)
+  base::Optional<gfx::Rect> visible_rect = sps->GetVisibleRect();
+  if (!visible_rect)
     return false;
-  if (visible_rect.width() > std::numeric_limits<int>::max() / sar_width) {
+
+  if (visible_rect->width() > std::numeric_limits<int>::max() / sar_width) {
     DVLOG(1) << "Integer overflow detected: visible_rect.width()="
-             << visible_rect.width() << " sar_width=" << sar_width;
+             << visible_rect->width() << " sar_width=" << sar_width;
     return false;
   }
-  gfx::Size natural_size(
-      (visible_rect.width() * sar_width) / sar_height,
-      visible_rect.height());
+  gfx::Size natural_size((visible_rect->width() * sar_width) / sar_height,
+                         visible_rect->height());
   if (natural_size.width() == 0)
     return false;
 
   VideoDecoderConfig video_decoder_config(
-      kCodecH264, ProfileIDCToVideoCodecProfile(sps->profile_idc),
-      PIXEL_FORMAT_YV12, COLOR_SPACE_HD_REC709, coded_size, visible_rect,
-      natural_size, EmptyExtraData(), scheme);
+      kCodecH264, H264Parser::ProfileIDCToVideoCodecProfile(sps->profile_idc),
+      PIXEL_FORMAT_YV12, COLOR_SPACE_HD_REC709, coded_size.value(),
+      visible_rect.value(), natural_size, EmptyExtraData(), scheme);
 
   if (!video_decoder_config.Matches(last_video_decoder_config_)) {
     DVLOG(1) << "Profile IDC: " << sps->profile_idc;
     DVLOG(1) << "Level IDC: " << sps->level_idc;
-    DVLOG(1) << "Pic width: " << coded_size.width();
-    DVLOG(1) << "Pic height: " << coded_size.height();
+    DVLOG(1) << "Pic width: " << coded_size->width();
+    DVLOG(1) << "Pic height: " << coded_size->height();
     DVLOG(1) << "log2_max_frame_num_minus4: "
              << sps->log2_max_frame_num_minus4;
     DVLOG(1) << "SAR: width=" << sps->sar_width

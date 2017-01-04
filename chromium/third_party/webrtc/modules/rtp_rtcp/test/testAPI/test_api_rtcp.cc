@@ -12,14 +12,15 @@
 #include <memory>
 #include <vector>
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/base/rate_limiter.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_receiver_audio.h"
 #include "webrtc/modules/rtp_rtcp/test/testAPI/test_api.h"
+#include "webrtc/test/gmock.h"
+#include "webrtc/test/gtest.h"
 
 namespace webrtc {
 namespace {
@@ -66,7 +67,8 @@ class TestRtpFeedback : public NullRtpFeedback {
 
 class RtpRtcpRtcpTest : public ::testing::Test {
  protected:
-  RtpRtcpRtcpTest() : fake_clock(123456) {
+  RtpRtcpRtcpTest()
+      : fake_clock(123456), retransmission_rate_limiter_(&fake_clock, 1000) {
     test_csrcs.push_back(1234);
     test_csrcs.push_back(2345);
     test_ssrc = 3456;
@@ -91,6 +93,7 @@ class RtpRtcpRtcpTest : public ::testing::Test {
     configuration.receive_statistics = receive_statistics1_.get();
     configuration.outgoing_transport = transport1;
     configuration.intra_frame_callback = myRTCPFeedback1;
+    configuration.retransmission_rate_limiter = &retransmission_rate_limiter_;
 
     rtp_payload_registry1_.reset(new RTPPayloadRegistry(
             RTPPayloadStrategy::CreateStrategy(true)));
@@ -162,8 +165,9 @@ class RtpRtcpRtcpTest : public ::testing::Test {
     // the receiving module.
     // send RTP packet with the data "testtest"
     const uint8_t test[9] = "testtest";
-    EXPECT_EQ(0, module1->SendOutgoingData(webrtc::kAudioFrameSpeech, 96,
-                                           0, -1, test, 8));
+    EXPECT_EQ(true,
+              module1->SendOutgoingData(webrtc::kAudioFrameSpeech, 96, 0, -1,
+                                        test, 8, nullptr, nullptr, nullptr));
   }
 
   virtual void TearDown() {
@@ -197,6 +201,7 @@ class RtpRtcpRtcpTest : public ::testing::Test {
   uint16_t test_sequence_number;
   std::vector<uint32_t> test_csrcs;
   SimulatedClock fake_clock;
+  RateLimiter retransmission_rate_limiter_;
 };
 
 TEST_F(RtpRtcpRtcpTest, RTCP_PLI_RPSI) {

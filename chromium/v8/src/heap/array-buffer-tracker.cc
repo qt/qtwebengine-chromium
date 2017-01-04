@@ -16,16 +16,18 @@ LocalArrayBufferTracker::~LocalArrayBufferTracker() {
 template <LocalArrayBufferTracker::FreeMode free_mode>
 void LocalArrayBufferTracker::Free() {
   size_t freed_memory = 0;
-  for (TrackingMap::iterator it = array_buffers_.begin();
+  for (TrackingData::iterator it = array_buffers_.begin();
        it != array_buffers_.end();) {
+    JSArrayBuffer* buffer = reinterpret_cast<JSArrayBuffer*>(it->first);
     if ((free_mode == kFreeAll) ||
-        Marking::IsWhite(Marking::MarkBitFrom(it->first))) {
-      heap_->isolate()->array_buffer_allocator()->Free(it->second.first,
-                                                       it->second.second);
-      freed_memory += it->second.second;
+        Marking::IsWhite(ObjectMarking::MarkBitFrom(buffer))) {
+      const size_t len = it->second;
+      heap_->isolate()->array_buffer_allocator()->Free(buffer->backing_store(),
+                                                       len);
+      freed_memory += len;
       it = array_buffers_.erase(it);
     } else {
-      it++;
+      ++it;
     }
   }
   if (freed_memory > 0) {
@@ -38,11 +40,11 @@ template <typename Callback>
 void LocalArrayBufferTracker::Process(Callback callback) {
   JSArrayBuffer* new_buffer = nullptr;
   size_t freed_memory = 0;
-  for (TrackingMap::iterator it = array_buffers_.begin();
+  for (TrackingData::iterator it = array_buffers_.begin();
        it != array_buffers_.end();) {
     const CallbackResult result = callback(it->first, &new_buffer);
     if (result == kKeepEntry) {
-      it++;
+      ++it;
     } else if (result == kUpdateEntry) {
       DCHECK_NOT_NULL(new_buffer);
       Page* target_page = Page::FromAddress(new_buffer->address());
@@ -59,9 +61,10 @@ void LocalArrayBufferTracker::Process(Callback callback) {
       if (target_page->InNewSpace()) target_page->mutex()->Unlock();
       it = array_buffers_.erase(it);
     } else if (result == kRemoveEntry) {
-      heap_->isolate()->array_buffer_allocator()->Free(it->second.first,
-                                                       it->second.second);
-      freed_memory += it->second.second;
+      const size_t len = it->second;
+      heap_->isolate()->array_buffer_allocator()->Free(
+          it->first->backing_store(), len);
+      freed_memory += len;
       it = array_buffers_.erase(it);
     } else {
       UNREACHABLE();

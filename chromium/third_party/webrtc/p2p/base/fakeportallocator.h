@@ -111,7 +111,6 @@ class FakePortAllocatorSession : public PortAllocatorSession {
                       rtc::IPAddress(in6addr_loopback),
                       64),
         port_(),
-        running_(false),
         port_config_count_(0),
         stun_servers_(allocator->stun_servers()),
         turn_servers_(allocator->turn_servers()) {
@@ -143,12 +142,14 @@ class FakePortAllocatorSession : public PortAllocatorSession {
   void StopGettingPorts() override { running_ = false; }
   bool IsGettingPorts() override { return running_; }
   void ClearGettingPorts() override {}
+
   std::vector<PortInterface*> ReadyPorts() const override {
     return ready_ports_;
   }
   std::vector<Candidate> ReadyCandidates() const override {
     return candidates_;
   }
+  void PruneAllPorts() override { port_->Prune(); }
   bool CandidatesAllocationDone() const override { return allocation_done_; }
 
   int port_config_count() { return port_config_count_; }
@@ -181,6 +182,7 @@ class FakePortAllocatorSession : public PortAllocatorSession {
     port->PrepareAddress();
     ready_ports_.push_back(port);
     SignalPortReady(this, port);
+    port->KeepAliveUntilPruned();
   }
   void OnPortComplete(cricket::Port* port) {
     const std::vector<Candidate>& candidates = port->Candidates();
@@ -200,7 +202,6 @@ class FakePortAllocatorSession : public PortAllocatorSession {
   rtc::Network ipv4_network_;
   rtc::Network ipv6_network_;
   std::unique_ptr<cricket::Port> port_;
-  bool running_;
   int port_config_count_;
   std::vector<Candidate> candidates_;
   std::vector<PortInterface*> ready_ports_;
@@ -209,6 +210,7 @@ class FakePortAllocatorSession : public PortAllocatorSession {
   std::vector<RelayServerConfig> turn_servers_;
   uint32_t candidate_filter_ = CF_ALL;
   int transport_info_update_count_ = 0;
+  bool running_ = false;
 };
 
 class FakePortAllocator : public cricket::PortAllocator {

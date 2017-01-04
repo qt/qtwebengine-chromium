@@ -17,6 +17,8 @@
 #include <queue>
 
 #include "webrtc/base/arraysize.h"
+#include "webrtc/base/checks.h"
+#include "webrtc/base/ignore_wundef.h"
 #include "webrtc/common_audio/include/audio_util.h"
 #include "webrtc/common_audio/resampler/include/push_resampler.h"
 #include "webrtc/common_audio/resampler/push_sinc_resampler.h"
@@ -29,14 +31,16 @@
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/system_wrappers/include/event_wrapper.h"
 #include "webrtc/system_wrappers/include/trace.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
+
+RTC_PUSH_IGNORING_WUNDEF()
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
-#include "gtest/gtest.h"
 #include "external/webrtc/webrtc/modules/audio_processing/test/unittest.pb.h"
 #else
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/audio_processing/unittest.pb.h"
 #endif
+RTC_POP_IGNORING_WUNDEF()
 
 namespace webrtc {
 namespace {
@@ -92,7 +96,7 @@ size_t TotalChannelsFromLayout(AudioProcessing::ChannelLayout layout) {
     case AudioProcessing::kStereoAndKeyboard:
       return 3;
   }
-  assert(false);
+  RTC_NOTREACHED();
   return 0;
 }
 
@@ -265,7 +269,7 @@ std::string OutputFilePath(std::string name,
   } else if (num_output_channels == 2) {
     ss << "stereo";
   } else {
-    assert(false);
+    RTC_NOTREACHED();
   }
   ss << output_rate / 1000;
   if (num_reverse_output_channels == 1) {
@@ -273,7 +277,7 @@ std::string OutputFilePath(std::string name,
   } else if (num_reverse_output_channels == 2) {
     ss << "_rstereo";
   } else {
-    assert(false);
+    RTC_NOTREACHED();
   }
   ss << reverse_output_rate / 1000;
   ss << "_d" << file_direction << "_pcm";
@@ -289,7 +293,7 @@ void ClearTempFiles() {
     remove(kv.second.c_str());
 }
 
-void OpenFileAndReadMessage(const std::string filename,
+void OpenFileAndReadMessage(std::string filename,
                             ::google::protobuf::MessageLite* msg) {
   FILE* file = fopen(filename.c_str(), "rb");
   ASSERT_TRUE(file != NULL);
@@ -311,7 +315,7 @@ bool ReadChunk(FILE* file, int16_t* int_data, float* float_data,
   size_t read_count = fread(int_data, sizeof(int16_t), frame_size, file);
   if (read_count != frame_size) {
     // Check that the file really ended.
-    assert(feof(file));
+    RTC_DCHECK(feof(file));
     return false;  // This is expected.
   }
 
@@ -400,7 +404,12 @@ class ApmTest : public ::testing::Test {
 
 ApmTest::ApmTest()
     : output_path_(test::OutputPath()),
+#ifndef WEBRTC_IOS
       ref_path_(test::ProjectRootPath() + "data/audio_processing/"),
+#else
+      // On iOS test data is flat in the project root dir
+      ref_path_(test::ProjectRootPath()),
+#endif
 #if defined(WEBRTC_AUDIOPROC_FIXED_PROFILE)
       ref_filename_(ref_path_ + "output_data_fixed.pb"),
 #elif defined(WEBRTC_AUDIOPROC_FLOAT_PROFILE)
@@ -1284,7 +1293,7 @@ TEST_F(ApmTest, AgcOnlyAdaptsWhenTargetSignalIsPresent) {
   geometry.push_back(webrtc::Point(0.05f, 0.f, 0.f));
   config.Set<Beamforming>(new Beamforming(true, geometry));
   testing::NiceMock<MockNonlinearBeamformer>* beamformer =
-      new testing::NiceMock<MockNonlinearBeamformer>(geometry);
+      new testing::NiceMock<MockNonlinearBeamformer>(geometry, 1u);
   std::unique_ptr<AudioProcessing> apm(
       AudioProcessing::Create(config, beamformer));
   EXPECT_EQ(kNoErr, apm->gain_control()->Enable(true));

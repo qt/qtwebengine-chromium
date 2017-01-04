@@ -26,6 +26,10 @@
 #include "ui/gl/gl_version_info.h"
 #include "ui/gl/init/gl_factory.h"
 
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+#include "ui/gl/gl_visual_picker_glx.h"
+#endif
+
 namespace {
 
 scoped_refptr<gl::GLSurface> InitializeGLSurface() {
@@ -95,7 +99,7 @@ int StringContainsName(
   return -1;
 }
 
-}  // namespace anonymous
+}  // namespace
 
 namespace gpu {
 
@@ -157,7 +161,7 @@ CollectInfoResult CollectGraphicsInfoGL(GPUInfo* gpu_info) {
   UMA_HISTOGRAM_SPARSE_SLOWLY("GPU.MaxMSAASampleCount", max_samples);
 
   gl::GLWindowSystemBindingInfo window_system_binding_info;
-  if (GetGLWindowSystemBindingInfo(&window_system_binding_info)) {
+  if (gl::init::GetGLWindowSystemBindingInfo(&window_system_binding_info)) {
     gpu_info->gl_ws_vendor = window_system_binding_info.vendor;
     gpu_info->gl_ws_version = window_system_binding_info.version;
     gpu_info->gl_ws_extensions = window_system_binding_info.extensions;
@@ -172,6 +176,14 @@ CollectInfoResult CollectGraphicsInfoGL(GPUInfo* gpu_info) {
     glGetIntegerv(GL_RESET_NOTIFICATION_STRATEGY_ARB,
         reinterpret_cast<GLint*>(&gpu_info->gl_reset_notification_strategy));
   }
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  if (gl::GetGLImplementation() == gl::kGLImplementationDesktopGL) {
+    gl::GLVisualPickerGLX* visual_picker = gl::GLVisualPickerGLX::GetInstance();
+    gpu_info->system_visual = visual_picker->system_visual().visualid;
+    gpu_info->rgba_visual = visual_picker->rgba_visual().visualid;
+  }
+#endif
 
   // TODO(kbr): remove once the destruction of a current context automatically
   // clears the current context.
@@ -213,7 +225,6 @@ void MergeGPUInfoGL(GPUInfo* basic_gpu_info,
   if (!context_gpu_info.driver_version.empty())
     basic_gpu_info->driver_version = context_gpu_info.driver_version;
 
-  basic_gpu_info->can_lose_context = context_gpu_info.can_lose_context;
   basic_gpu_info->sandboxed = context_gpu_info.sandboxed;
   basic_gpu_info->direct_rendering = context_gpu_info.direct_rendering;
   basic_gpu_info->in_process_gpu = context_gpu_info.in_process_gpu;
@@ -225,6 +236,11 @@ void MergeGPUInfoGL(GPUInfo* basic_gpu_info,
       context_gpu_info.video_encode_accelerator_supported_profiles;
   basic_gpu_info->jpeg_decode_accelerator_supported =
       context_gpu_info.jpeg_decode_accelerator_supported;
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  basic_gpu_info->system_visual = context_gpu_info.system_visual;
+  basic_gpu_info->rgba_visual = context_gpu_info.rgba_visual;
+#endif
 }
 
 void IdentifyActiveGPU(GPUInfo* gpu_info) {
@@ -287,4 +303,3 @@ void IdentifyActiveGPU(GPUInfo* gpu_info) {
 }
 
 }  // namespace gpu
-

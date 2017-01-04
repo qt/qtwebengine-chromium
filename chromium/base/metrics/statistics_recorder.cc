@@ -93,6 +93,17 @@ StatisticsRecorder::~StatisticsRecorder() {
 
 // static
 void StatisticsRecorder::Initialize() {
+  // Tests sometimes create local StatisticsRecorders in order to provide a
+  // contained environment of histograms that can be later discarded. If a
+  // true global instance gets created in this environment then it will
+  // eventually get disconnected when the local instance destructs and
+  // restores the previous state, resulting in no StatisticsRecorder at all.
+  // The global lazy instance, however, will remain valid thus ensuring that
+  // another never gets installed via this method. If a |histograms_| map
+  // exists then assume the StatisticsRecorder is already "initialized".
+  if (histograms_)
+    return;
+
   // Ensure that an instance of the StatisticsRecorder object is created.
   g_statistics_recorder_.Get();
 }
@@ -338,6 +349,14 @@ StatisticsRecorder::HistogramIterator StatisticsRecorder::end() {
 }
 
 // static
+void StatisticsRecorder::InitLogOnShutdown() {
+  if (lock_ == nullptr)
+    return;
+  base::AutoLock auto_lock(*lock_);
+  g_statistics_recorder_.Get().InitLogOnShutdownWithoutLock();
+}
+
+// static
 void StatisticsRecorder::GetSnapshot(const std::string& query,
                                      Histograms* snapshot) {
   if (lock_ == NULL)
@@ -482,8 +501,14 @@ StatisticsRecorder::StatisticsRecorder() {
   callbacks_ = new CallbackMap;
   ranges_ = new RangesMap;
 
-  if (VLOG_IS_ON(1))
+  InitLogOnShutdownWithoutLock();
+}
+
+void StatisticsRecorder::InitLogOnShutdownWithoutLock() {
+  if (!vlog_initialized_ && VLOG_IS_ON(1)) {
+    vlog_initialized_ = true;
     AtExitManager::RegisterCallback(&DumpHistogramsToVlog, this);
+  }
 }
 
 // static

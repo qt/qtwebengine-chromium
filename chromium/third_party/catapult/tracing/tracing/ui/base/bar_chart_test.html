@@ -6,6 +6,7 @@ found in the LICENSE file.
 -->
 
 <link rel="import" href="/tracing/ui/base/bar_chart.html">
+<link rel="import" href="/tracing/ui/base/deep_utils.html">
 
 <script>
 'use strict';
@@ -21,6 +22,18 @@ tr.b.unittest.testSuite(function() {
       {x: 20, value: 110},
       {x: 30, value: 100},
       {x: 40, value: 50}
+    ];
+    chart.data = data;
+    this.addHTMLOutput(chart);
+  });
+
+  test('instantiation_singleDatum', function() {
+    var chart = new tr.ui.b.BarChart();
+    chart.width = 400;
+    chart.height = 200;
+    chart.chartTitle = 'Chart title';
+    var data = [
+      {x: 0, value: 100},
     ];
     chart.data = data;
     this.addHTMLOutput(chart);
@@ -215,7 +228,7 @@ tr.b.unittest.testSuite(function() {
       updateBrushedRange();
     });
     chart.addEventListener('item-mousemove', function(e) {
-      if (e.button == undefined)
+      if (e.button === undefined)
         return;
       curMouseX = e.x;
       updateBrushedRange();

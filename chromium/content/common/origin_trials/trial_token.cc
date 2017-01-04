@@ -61,17 +61,13 @@ std::unique_ptr<TrialToken> TrialToken::From(
   return token;
 }
 
-blink::WebOriginTrialTokenStatus TrialToken::IsValidForFeature(
+blink::WebOriginTrialTokenStatus TrialToken::IsValid(
     const url::Origin& origin,
-    base::StringPiece feature_name,
     const base::Time& now) const {
   // The order of these checks is intentional. For example, will only report a
-  // token as expired if it is valid for the origin + feature combination.
+  // token as expired if it is valid for the origin.
   if (!ValidateOrigin(origin)) {
     return blink::WebOriginTrialTokenStatus::WrongOrigin;
-  }
-  if (!ValidateFeatureName(feature_name)) {
-    return blink::WebOriginTrialTokenStatus::WrongFeature;
   }
   if (!ValidateDate(now)) {
     return blink::WebOriginTrialTokenStatus::Expired;
@@ -161,6 +157,14 @@ std::unique_ptr<TrialToken> TrialToken::Parse(
     return nullptr;
   }
 
+  // The |isSubdomain| flag is optional. If found, ensure it is a valid boolean.
+  bool is_subdomain = false;
+  if (datadict->HasKey("isSubdomain")) {
+    if (!datadict->GetBoolean("isSubdomain", &is_subdomain)) {
+      return nullptr;
+    }
+  }
+
   // Ensure that the feature name is a valid string.
   if (feature_name.empty()) {
     return nullptr;
@@ -172,10 +176,15 @@ std::unique_ptr<TrialToken> TrialToken::Parse(
   }
 
   return base::WrapUnique(
-      new TrialToken(origin, feature_name, expiry_timestamp));
+      new TrialToken(origin, is_subdomain, feature_name, expiry_timestamp));
 }
 
 bool TrialToken::ValidateOrigin(const url::Origin& origin) const {
+  if (match_subdomains_) {
+    return origin.scheme() == origin_.scheme() &&
+           origin.DomainIs(origin_.host()) &&
+           origin.port() == origin_.port();
+  }
   return origin == origin_;
 }
 
@@ -207,9 +216,11 @@ bool TrialToken::ValidateSignature(base::StringPiece signature,
 }
 
 TrialToken::TrialToken(const url::Origin& origin,
+                       bool match_subdomains,
                        const std::string& feature_name,
                        uint64_t expiry_timestamp)
     : origin_(origin),
+      match_subdomains_(match_subdomains),
       feature_name_(feature_name),
       expiry_time_(base::Time::FromDoubleT(expiry_timestamp)) {}
 

@@ -10,6 +10,7 @@
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/context_provider.h"
+#include "cc/resources/returned_resource.h"
 #include "gpu/command_buffer/common/texture_in_use_response.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -20,30 +21,29 @@ class Transform;
 namespace cc {
 
 class BeginFrameSource;
-class CompositorFrameAck;
 struct ManagedMemoryPolicy;
 
 class CC_EXPORT OutputSurfaceClient {
  public:
-  // TODO(enne): Remove this in favor of using SetBeginFrameSource.
-  virtual void CommitVSyncParameters(base::TimeTicks timebase,
-                                     base::TimeDelta interval) = 0;
+  // ============== DISPLAY COMPOSITOR ONLY =======================
+
+  // From surfaceless/ozone browser compositor output surface.
+  virtual void SetNeedsRedrawRect(const gfx::Rect& damage_rect) = 0;
+  // For overlays.
+  virtual void DidReceiveTextureInUseResponses(
+      const gpu::TextureInUseResponses& responses) = 0;
+
+  // ============== LAYER TREE COMPOSITOR ONLY ====================
+
   // Pass the begin frame source for the client to observe.  Client does not own
   // the BeginFrameSource.  OutputSurface should call this once after binding to
   // the client and then call again with a null while detaching.
   virtual void SetBeginFrameSource(BeginFrameSource* source) = 0;
-
-  virtual void SetNeedsRedrawRect(const gfx::Rect& damage_rect) = 0;
-  virtual void DidSwapBuffers() = 0;
-  virtual void DidSwapBuffersComplete() = 0;
-  virtual void DidReceiveTextureInUseResponses(
-      const gpu::TextureInUseResponses& responses) = 0;
-  virtual void ReclaimResources(const CompositorFrameAck* ack) = 0;
-  virtual void DidLoseOutputSurface() = 0;
+  virtual void ReclaimResources(const ReturnedResourceArray& resources) = 0;
+  // For WebView.
   virtual void SetExternalTilePriorityConstraints(
       const gfx::Rect& viewport_rect,
       const gfx::Transform& transform) = 0;
-  virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) = 0;
   // If set, |callback| will be called subsequent to each new tree activation,
   // regardless of the compositor visibility or damage. |callback| must remain
   // valid for the lifetime of the OutputSurfaceClient or until unregisted --
@@ -52,8 +52,23 @@ class CC_EXPORT OutputSurfaceClient {
   // This allows the output surface to ask its client for a draw.
   virtual void OnDraw(const gfx::Transform& transform,
                       const gfx::Rect& viewport,
-                      const gfx::Rect& clip,
                       bool resourceless_software_draw) = 0;
+  // For SynchronousCompositor (WebView) to set how much memory the compositor
+  // can use without changing visibility.
+  virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) = 0;
+
+  // ============== BOTH TYPES OF COMPOSITOR ======================
+
+  // For LayerTreeHostImpl, this is more of a OnSwapBuffersAck from the display
+  // compositor that it received and will use the frame, unblocking it from
+  // producing more frames.
+  // For the display compositor this is literally a notification that the swap
+  // to the hardware is complete.
+  virtual void DidSwapBuffersComplete() = 0;
+
+  // Needs thought, if LTHI has only context providers, it needs to register a
+  // lost callback, so we need to support multiple callbacks.
+  virtual void DidLoseOutputSurface() = 0;
 
  protected:
   virtual ~OutputSurfaceClient() {}

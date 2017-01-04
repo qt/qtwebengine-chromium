@@ -41,27 +41,25 @@ namespace blink {
 class Range;
 
 class CORE_EXPORT SurroundingText {
-    USING_FAST_MALLOC(SurroundingText);
-    WTF_MAKE_NONCOPYABLE(SurroundingText);
-public:
-    SurroundingText(const Range&, unsigned maxLength);
-    SurroundingText(const Position&, unsigned maxLength);
+  USING_FAST_MALLOC(SurroundingText);
+  WTF_MAKE_NONCOPYABLE(SurroundingText);
 
-    String content() const;
-    unsigned startOffsetInContent() const;
-    unsigned endOffsetInContent() const;
+ public:
+  SurroundingText(const Range&, unsigned maxLength);
+  SurroundingText(const Position&, unsigned maxLength);
 
-    Range* rangeFromContentOffsets(unsigned startOffsetInContent, unsigned endOffsetInContent);
+  String content() const;
+  unsigned startOffsetInContent() const;
+  unsigned endOffsetInContent() const;
 
-private:
-    void initialize(const Position&, const Position&, unsigned maxLength);
+ private:
+  void initialize(const Position&, const Position&, unsigned maxLength);
 
-    Persistent<Range> m_contentRange;
-    size_t m_startOffsetInContent;
-    size_t m_endOffsetInContent;
+  Persistent<Range> m_contentRange;
+  size_t m_startOffsetInContent;
+  size_t m_endOffsetInContent;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // SurroundingText_h
-
+#endif  // SurroundingText_h

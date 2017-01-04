@@ -1,62 +1,45 @@
-/*
- * Copyright (C) 2012 Google Inc. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- * 2.  Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// Copyright 2016 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef RTCStatsReport_h
 #define RTCStatsReport_h
 
+#include "bindings/core/v8/Maplike.h"
 #include "bindings/core/v8/ScriptWrappable.h"
-#include "wtf/HashMap.h"
-#include "wtf/Vector.h"
-#include "wtf/text/StringHash.h"
+#include "platform/heap/GarbageCollected.h"
+#include "public/platform/WebCString.h"
+#include "public/platform/WebRTCStats.h"
 #include "wtf/text/WTFString.h"
+
+#include <map>
 
 namespace blink {
 
-class RTCStatsReport final : public GarbageCollectedFinalized<RTCStatsReport>, public ScriptWrappable {
-    DEFINE_WRAPPERTYPEINFO();
-public:
-    static RTCStatsReport* create(const String& id, const String& type, double timestamp);
+// https://w3c.github.io/webrtc-pc/#rtcstatsreport-object
+class RTCStatsReport final : public GarbageCollectedFinalized<RTCStatsReport>,
+                             public ScriptWrappable,
+                             public Maplike<String, v8::Local<v8::Value>> {
+  DEFINE_WRAPPERTYPEINFO();
 
-    double timestamp() const { return m_timestamp; }
-    String id() { return m_id; }
-    String type() { return m_type; }
-    String stat(const String& name) { return m_stats.get(name); }
-    Vector<String> names() const;
+ public:
+  RTCStatsReport(std::unique_ptr<WebRTCStatsReport>);
 
-    void addStatistic(const String& name, const String& value);
+  // Maplike<String, v8::Local<v8::Value>>
+  PairIterable<String, v8::Local<v8::Value>>::IterationSource* startIteration(
+      ScriptState*,
+      ExceptionState&) override;
+  bool getMapEntry(ScriptState*,
+                   const String& key,
+                   v8::Local<v8::Value>&,
+                   ExceptionState&) override;
 
-    DEFINE_INLINE_TRACE() { }
+  DEFINE_INLINE_VIRTUAL_TRACE() {}
 
-private:
-    RTCStatsReport(const String& id, const String& type, double timestamp);
-
-    String m_id;
-    String m_type;
-    double m_timestamp;
-    HashMap<String, String> m_stats;
+ private:
+  std::unique_ptr<WebRTCStatsReport> m_report;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // RTCStatsReport_h
+#endif  // RTCStatsReport_h

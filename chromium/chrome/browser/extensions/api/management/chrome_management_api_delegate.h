@@ -20,7 +20,7 @@ class ChromeManagementAPIDelegate : public extensions::ManagementAPIDelegate {
   ~ChromeManagementAPIDelegate() override;
 
   // ManagementAPIDelegate.
-  bool LaunchAppFunctionDelegate(
+  void LaunchAppFunctionDelegate(
       const extensions::Extension* extension,
       content::BrowserContext* context) const override;
   GURL GetFullLaunchURL(const extensions::Extension* extension) const override;
@@ -44,7 +44,8 @@ class ChromeManagementAPIDelegate : public extensions::ManagementAPIDelegate {
       bool show_programmatic_uninstall_ui) const override;
   bool CreateAppShortcutFunctionDelegate(
       extensions::ManagementCreateAppShortcutFunction* function,
-      const extensions::Extension* extension) const override;
+      const extensions::Extension* extension,
+      std::string* error) const override;
   std::unique_ptr<extensions::AppForLinkDelegate>
   GenerateAppForLinkFunctionDelegate(
       extensions::ManagementGenerateAppForLinkFunction* function,

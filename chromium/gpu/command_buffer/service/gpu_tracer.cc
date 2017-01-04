@@ -74,7 +74,7 @@ void TraceOutputter::TraceDevice(GpuTracerSource source,
       name.c_str(),
       local_trace_device_id_,
       named_thread_.GetThreadId(),
-      start_time,
+      base::TimeTicks::FromInternalValue(start_time),
       "gl_category",
       category.c_str(),
       "channel",
@@ -87,7 +87,7 @@ void TraceOutputter::TraceDevice(GpuTracerSource source,
       name.c_str(),
       local_trace_device_id_,
       named_thread_.GetThreadId(),
-      end_time - 1,
+      base::TimeTicks::FromInternalValue(end_time - 1),
       "gl_category",
       category.c_str(),
       "channel",
@@ -211,12 +211,12 @@ bool GPUTracer::BeginDecoding() {
   if (gpu_executing_)
     return false;
 
-  if (!outputter_) {
-    outputter_ = CreateOutputter(gpu_timing_client_->GetTimerTypeName());
-  }
-
   gpu_executing_ = true;
   if (IsTracing()) {
+    if (!outputter_) {
+      outputter_ = CreateOutputter(gpu_timing_client_->GetTimerTypeName());
+    }
+
     CheckDisjointStatus();
     // Begin a Trace for all active markers
     for (int n = 0; n < NUM_TRACER_SOURCES; n++) {
@@ -270,6 +270,10 @@ bool GPUTracer::Begin(const std::string& category, const std::string& name,
 
   // Push new marker from given 'source'
   markers_[source].push_back(TraceMarker(category, name));
+
+  if (!outputter_) {
+    outputter_ = CreateOutputter(gpu_timing_client_->GetTimerTypeName());
+  }
 
   // Create trace
   if (IsTracing()) {

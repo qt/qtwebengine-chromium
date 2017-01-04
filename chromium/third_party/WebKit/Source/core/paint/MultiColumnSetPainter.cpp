@@ -14,81 +14,61 @@
 
 namespace blink {
 
-void MultiColumnSetPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
-{
-    if (m_layoutMultiColumnSet.style()->visibility() != VISIBLE)
-        return;
+void MultiColumnSetPainter::paintObject(const PaintInfo& paintInfo,
+                                        const LayoutPoint& paintOffset) {
+  if (m_layoutMultiColumnSet.style()->visibility() != EVisibility::Visible)
+    return;
 
-    BlockPainter(m_layoutMultiColumnSet).paintObject(paintInfo, paintOffset);
+  BlockPainter(m_layoutMultiColumnSet).paintObject(paintInfo, paintOffset);
 
-    // FIXME: Right now we're only painting in the foreground phase.
-    // Columns should technically respect phases and allow for background/float/foreground overlap etc., just like
-    // LayoutBlocks do. Note this is a pretty minor issue, since the old column implementation clipped columns
-    // anyway, thus making it impossible for them to overlap one another. It's also really unlikely that the columns
-    // would overlap another block.
-    if (!m_layoutMultiColumnSet.flowThread() || (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection))
-        return;
+  // FIXME: Right now we're only painting in the foreground phase.
+  // Columns should technically respect phases and allow for
+  // background/float/foreground overlap etc., just like LayoutBlocks do. Note
+  // this is a pretty minor issue, since the old column implementation clipped
+  // columns anyway, thus making it impossible for them to overlap one another.
+  // It's also really unlikely that the columns would overlap another block.
+  if (!m_layoutMultiColumnSet.flowThread() ||
+      (paintInfo.phase != PaintPhaseForeground &&
+       paintInfo.phase != PaintPhaseSelection))
+    return;
 
-    paintColumnRules(paintInfo, paintOffset);
+  paintColumnRules(paintInfo, paintOffset);
 }
 
-void MultiColumnSetPainter::paintColumnRules(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
-{
-    if (m_layoutMultiColumnSet.flowThread()->isLayoutPagedFlowThread())
-        return;
+void MultiColumnSetPainter::paintColumnRules(const PaintInfo& paintInfo,
+                                             const LayoutPoint& paintOffset) {
+  Vector<LayoutRect> columnRuleBounds;
+  if (!m_layoutMultiColumnSet.computeColumnRuleBounds(paintOffset,
+                                                      columnRuleBounds))
+    return;
 
-    const ComputedStyle& blockStyle = m_layoutMultiColumnSet.multiColumnBlockFlow()->styleRef();
-    const Color& ruleColor = m_layoutMultiColumnSet.resolveColor(blockStyle, CSSPropertyColumnRuleColor);
-    bool ruleTransparent = blockStyle.columnRuleIsTransparent();
-    EBorderStyle ruleStyle = blockStyle.columnRuleStyle();
-    LayoutUnit ruleThickness(blockStyle.columnRuleWidth());
-    LayoutUnit colGap = m_layoutMultiColumnSet.columnGap();
-    bool renderRule = ruleStyle > BorderStyleHidden && !ruleTransparent;
-    if (!renderRule)
-        return;
+  if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(
+          paintInfo.context, m_layoutMultiColumnSet, DisplayItem::kColumnRules))
+    return;
 
-    unsigned colCount = m_layoutMultiColumnSet.actualColumnCount();
-    if (colCount <= 1)
-        return;
+  LayoutRect paintRect = m_layoutMultiColumnSet.visualOverflowRect();
+  paintRect.moveBy(paintOffset);
+  LayoutObjectDrawingRecorder drawingRecorder(
+      paintInfo.context, m_layoutMultiColumnSet, DisplayItem::kColumnRules,
+      paintRect);
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutMultiColumnSet, DisplayItem::ColumnRules))
-        return;
+  const ComputedStyle& blockStyle =
+      m_layoutMultiColumnSet.multiColumnBlockFlow()->styleRef();
+  EBorderStyle ruleStyle = blockStyle.columnRuleStyle();
+  bool leftToRight = m_layoutMultiColumnSet.style()->isLeftToRightDirection();
+  BoxSide boxSide = m_layoutMultiColumnSet.isHorizontalWritingMode()
+                        ? leftToRight ? BSLeft : BSRight
+                        : leftToRight ? BSTop : BSBottom;
+  const Color& ruleColor = m_layoutMultiColumnSet.resolveColor(
+      blockStyle, CSSPropertyColumnRuleColor);
 
-    LayoutRect paintRect = m_layoutMultiColumnSet.visualOverflowRect();
-    paintRect.moveBy(paintOffset);
-    LayoutObjectDrawingRecorder drawingRecorder(paintInfo.context, m_layoutMultiColumnSet, DisplayItem::ColumnRules, paintRect);
-
-    bool leftToRight = m_layoutMultiColumnSet.style()->isLeftToRightDirection();
-    LayoutUnit currLogicalLeftOffset = leftToRight ? LayoutUnit() : m_layoutMultiColumnSet.contentLogicalWidth();
-    LayoutUnit ruleAdd = m_layoutMultiColumnSet.borderAndPaddingLogicalLeft();
-    LayoutUnit ruleLogicalLeft = leftToRight ? LayoutUnit() : m_layoutMultiColumnSet.contentLogicalWidth();
-    LayoutUnit inlineDirectionSize = m_layoutMultiColumnSet.pageLogicalWidth();
-    BoxSide boxSide = m_layoutMultiColumnSet.isHorizontalWritingMode()
-        ? leftToRight ? BSLeft : BSRight
-        : leftToRight ? BSTop : BSBottom;
-
-    for (unsigned i = 0; i < colCount; i++) {
-        // Move to the next position.
-        if (leftToRight) {
-            ruleLogicalLeft += inlineDirectionSize + colGap / 2;
-            currLogicalLeftOffset += inlineDirectionSize + colGap;
-        } else {
-            ruleLogicalLeft -= (inlineDirectionSize + colGap / 2);
-            currLogicalLeftOffset -= (inlineDirectionSize + colGap);
-        }
-
-        // Now paint the column rule.
-        if (i < colCount - 1) {
-            LayoutUnit ruleLeft = m_layoutMultiColumnSet.isHorizontalWritingMode() ? paintOffset.x() + ruleLogicalLeft - ruleThickness / 2 + ruleAdd : paintOffset.x() + m_layoutMultiColumnSet.borderLeft() + m_layoutMultiColumnSet.paddingLeft();
-            LayoutUnit ruleRight = m_layoutMultiColumnSet.isHorizontalWritingMode() ? ruleLeft + ruleThickness : ruleLeft + m_layoutMultiColumnSet.contentWidth();
-            LayoutUnit ruleTop = m_layoutMultiColumnSet.isHorizontalWritingMode() ? paintOffset.y() + m_layoutMultiColumnSet.borderTop() + m_layoutMultiColumnSet.paddingTop() : paintOffset.y() + ruleLogicalLeft - ruleThickness / 2 + ruleAdd;
-            LayoutUnit ruleBottom = m_layoutMultiColumnSet.isHorizontalWritingMode() ? ruleTop + m_layoutMultiColumnSet.contentHeight() : ruleTop + ruleThickness;
-            IntRect pixelSnappedRuleRect = pixelSnappedIntRectFromEdges(ruleLeft, ruleTop, ruleRight, ruleBottom);
-            ObjectPainter::drawLineForBoxSide(paintInfo.context, pixelSnappedRuleRect.x(), pixelSnappedRuleRect.y(), pixelSnappedRuleRect.maxX(), pixelSnappedRuleRect.maxY(), boxSide, ruleColor, ruleStyle, 0, 0, true);
-        }
-
-        ruleLogicalLeft = currLogicalLeftOffset;
-    }
+  for (auto& bound : columnRuleBounds) {
+    IntRect pixelSnappedRuleRect = pixelSnappedIntRect(bound);
+    ObjectPainter::drawLineForBoxSide(
+        paintInfo.context, pixelSnappedRuleRect.x(), pixelSnappedRuleRect.y(),
+        pixelSnappedRuleRect.maxX(), pixelSnappedRuleRect.maxY(), boxSide,
+        ruleColor, ruleStyle, 0, 0, true);
+  }
 }
 
-} // namespace blink
+}  // namespace blink

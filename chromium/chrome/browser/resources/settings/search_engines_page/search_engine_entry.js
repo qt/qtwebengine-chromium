@@ -55,7 +55,7 @@ Polymer({
       // Register listener to detect when the dialog is closed. Flip the boolean
       // once closed to force a restamp next time it is shown such that the
       // previous dialog's contents are cleared.
-      dialog.addEventListener('iron-overlay-closed', function() {
+      dialog.addEventListener('close', function() {
         this.showEditSearchEngineDialog_ = false;
       }.bind(this));
     }.bind(this));
@@ -79,6 +79,6 @@ Polymer({
    */
   getIconSet_: function(url) {
     // Force default icon, if no |engine.iconURL| is available.
-    return cr.icon.getFaviconImageSet(url || '');
+    return cr.icon.getFavicon(url || '');
   },
 });

@@ -8,6 +8,7 @@
 
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/events/ozone/device/device_event.h"
@@ -186,8 +187,8 @@ std::unique_ptr<DeviceEvent> DeviceManagerUdev::ProcessMessage(
   else
     return nullptr;
 
-  return base::WrapUnique(
-      new DeviceEvent(device_type, action_type, base::FilePath(path)));
+  return base::MakeUnique<DeviceEvent>(device_type, action_type,
+                                       base::FilePath(path));
 }
 
 }  // namespace ui

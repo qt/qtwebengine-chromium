@@ -10,8 +10,7 @@
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/macros.h"
-#include "base/memory/scoped_vector.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -21,6 +20,7 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_install_ui_util.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/gpu/gpu_feature_checker.h"
 #include "chrome/browser/profiles/profile.h"
@@ -52,6 +52,8 @@ namespace GetEphemeralAppsEnabled =
 namespace GetIsLauncherEnabled = api::webstore_private::GetIsLauncherEnabled;
 namespace GetStoreLogin = api::webstore_private::GetStoreLogin;
 namespace GetWebGLStatus = api::webstore_private::GetWebGLStatus;
+namespace IsPendingCustodianApproval =
+    api::webstore_private::IsPendingCustodianApproval;
 namespace IsInIncognitoMode = api::webstore_private::IsInIncognitoMode;
 namespace LaunchEphemeralApp = api::webstore_private::LaunchEphemeralApp;
 namespace SetStoreLogin = api::webstore_private::SetStoreLogin;
@@ -70,7 +72,8 @@ class PendingApprovals {
       const std::string& id);
 
  private:
-  typedef ScopedVector<WebstoreInstaller::Approval> ApprovalList;
+  using ApprovalList =
+      std::vector<std::unique_ptr<WebstoreInstaller::Approval>>;
 
   ApprovalList approvals_;
 
@@ -82,18 +85,19 @@ PendingApprovals::~PendingApprovals() {}
 
 void PendingApprovals::PushApproval(
     std::unique_ptr<WebstoreInstaller::Approval> approval) {
-  approvals_.push_back(approval.release());
+  approvals_.push_back(std::move(approval));
 }
 
 std::unique_ptr<WebstoreInstaller::Approval> PendingApprovals::PopApproval(
     Profile* profile,
     const std::string& id) {
-  for (size_t i = 0; i < approvals_.size(); ++i) {
-    WebstoreInstaller::Approval* approval = approvals_[i];
-    if (approval->extension_id == id &&
-        profile->IsSameProfile(approval->profile)) {
-      approvals_.weak_erase(approvals_.begin() + i);
-      return std::unique_ptr<WebstoreInstaller::Approval>(approval);
+  for (ApprovalList::iterator iter = approvals_.begin();
+       iter != approvals_.end(); ++iter) {
+    if (iter->get()->extension_id == id &&
+        profile->IsSameProfile(iter->get()->profile)) {
+      std::unique_ptr<WebstoreInstaller::Approval> approval = std::move(*iter);
+      approvals_.erase(iter);
+      return approval;
     }
   }
   return std::unique_ptr<WebstoreInstaller::Approval>();
@@ -584,6 +588,51 @@ ExtensionFunction::ResponseAction
 WebstorePrivateGetEphemeralAppsEnabledFunction::Run() {
   return RespondNow(ArgumentList(GetEphemeralAppsEnabled::Results::Create(
       false)));
+}
+
+WebstorePrivateIsPendingCustodianApprovalFunction::
+    WebstorePrivateIsPendingCustodianApprovalFunction()
+    : chrome_details_(this) {}
+
+WebstorePrivateIsPendingCustodianApprovalFunction::
+    ~WebstorePrivateIsPendingCustodianApprovalFunction() {}
+
+ExtensionFunction::ResponseAction
+WebstorePrivateIsPendingCustodianApprovalFunction::Run() {
+  std::unique_ptr<IsPendingCustodianApproval::Params> params(
+      IsPendingCustodianApproval::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  Profile* profile = chrome_details_.GetProfile();
+
+  if (!profile->IsSupervised()) {
+    return RespondNow(BuildResponse(false));
+  }
+
+  ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context());
+
+  const Extension* extension =
+      registry->GetExtensionById(params->id, ExtensionRegistry::EVERYTHING);
+  if (!extension) {
+    return RespondNow(BuildResponse(false));
+  }
+
+  ExtensionPrefs* extensions_prefs = ExtensionPrefs::Get(browser_context());
+
+  if (extensions_prefs->HasDisableReason(
+          params->id, Extension::DISABLE_PERMISSIONS_INCREASE)) {
+    return RespondNow(BuildResponse(true));
+  }
+
+  bool is_pending_approval = extensions_prefs->HasDisableReason(
+      params->id, Extension::DISABLE_CUSTODIAN_APPROVAL_REQUIRED);
+
+  return RespondNow(BuildResponse(is_pending_approval));
+}
+
+ExtensionFunction::ResponseValue
+WebstorePrivateIsPendingCustodianApprovalFunction::BuildResponse(bool result) {
+  return OneArgument(base::MakeUnique<base::FundamentalValue>(result));
 }
 
 }  // namespace extensions

@@ -8,6 +8,10 @@
 
 #include <algorithm>
 
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_graphstatedata.h"
+#include "core/fxge/cfx_renderdevice.h"
+#include "core/fxge/cfx_substfont.h"
 #include "xfa/fde/cfde_path.h"
 #include "xfa/fde/fde_object.h"
 #include "xfa/fgas/font/fgas_font.h"
@@ -17,7 +21,6 @@ CFDE_RenderDevice::CFDE_RenderDevice(CFX_RenderDevice* pDevice,
                                      FX_BOOL bOwnerDevice)
     : m_pDevice(pDevice),
       m_bOwnerDevice(bOwnerDevice),
-      m_pCharPos(nullptr),
       m_iCharCount(0) {
   ASSERT(pDevice);
 
@@ -27,7 +30,6 @@ CFDE_RenderDevice::CFDE_RenderDevice(CFX_RenderDevice* pDevice,
 }
 
 CFDE_RenderDevice::~CFDE_RenderDevice() {
-  FX_Free(m_pCharPos);
   if (m_bOwnerDevice)
     delete m_pDevice;
 }
@@ -110,7 +112,6 @@ FX_BOOL CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
                                       FX_FLOAT fFontSize,
                                       const CFX_Matrix* pMatrix) {
   ASSERT(pBrush && pFont && pCharPos && iCount > 0);
-  CFX_FontCache* pCache = CFX_GEModule::Get()->GetFontCache();
   CFX_Font* pFxFont = pFont->GetDevFont();
   FX_ARGB argb = pBrush->GetColor();
   if ((pFont->GetFontStyles() & FX_FONTSTYLE_Italic) != 0 &&
@@ -134,12 +135,12 @@ FX_BOOL CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
   uint32_t dwFontStyle = pFont->GetFontStyles();
   CFX_Font FxFont;
-  CFX_SubstFont SubstFxFont;
-  FxFont.SetSubstFont(&SubstFxFont);
-  SubstFxFont.m_Weight = dwFontStyle & FX_FONTSTYLE_Bold ? 700 : 400;
-  SubstFxFont.m_ItalicAngle = dwFontStyle & FX_FONTSTYLE_Italic ? -12 : 0;
-  SubstFxFont.m_WeightCJK = SubstFxFont.m_Weight;
-  SubstFxFont.m_bItalicCJK = !!(dwFontStyle & FX_FONTSTYLE_Italic);
+  CFX_SubstFont* SubstFxFont = new CFX_SubstFont();
+  FxFont.SetSubstFont(std::unique_ptr<CFX_SubstFont>(SubstFxFont));
+  SubstFxFont->m_Weight = dwFontStyle & FX_FONTSTYLE_Bold ? 700 : 400;
+  SubstFxFont->m_ItalicAngle = dwFontStyle & FX_FONTSTYLE_Italic ? -12 : 0;
+  SubstFxFont->m_WeightCJK = SubstFxFont->m_Weight;
+  SubstFxFont->m_bItalicCJK = !!(dwFontStyle & FX_FONTSTYLE_Italic);
 #endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
 
   for (int32_t i = 0; i < iCount; ++i) {
@@ -151,12 +152,12 @@ FX_BOOL CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
         pFxFont = pCurFont->GetDevFont();
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
         FxFont.SetFace(pFxFont->GetFace());
-        m_pDevice->DrawNormalText(iCurCount, pCurCP, &FxFont, pCache,
-                                  -fFontSize, (const CFX_Matrix*)pMatrix, argb,
+        m_pDevice->DrawNormalText(iCurCount, pCurCP, &FxFont, -fFontSize,
+                                  (const CFX_Matrix*)pMatrix, argb,
                                   FXTEXT_CLEARTYPE);
 #else
-        m_pDevice->DrawNormalText(iCurCount, pCurCP, pFxFont, pCache,
-                                  -fFontSize, (const CFX_Matrix*)pMatrix, argb,
+        m_pDevice->DrawNormalText(iCurCount, pCurCP, pFxFont, -fFontSize,
+                                  (const CFX_Matrix*)pMatrix, argb,
                                   FXTEXT_CLEARTYPE);
 #endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
       }
@@ -173,20 +174,18 @@ FX_BOOL CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
     FxFont.SetFace(pFxFont->GetFace());
     FX_BOOL bRet = m_pDevice->DrawNormalText(
-        iCurCount, pCurCP, &FxFont, pCache, -fFontSize,
-        (const CFX_Matrix*)pMatrix, argb, FXTEXT_CLEARTYPE);
-    FxFont.SetSubstFont(nullptr);
+        iCurCount, pCurCP, &FxFont, -fFontSize, (const CFX_Matrix*)pMatrix,
+        argb, FXTEXT_CLEARTYPE);
     FxFont.SetFace(nullptr);
     return bRet;
 #else
-    return m_pDevice->DrawNormalText(iCurCount, pCurCP, pFxFont, pCache,
-                                     -fFontSize, (const CFX_Matrix*)pMatrix,
-                                     argb, FXTEXT_CLEARTYPE);
+    return m_pDevice->DrawNormalText(iCurCount, pCurCP, pFxFont, -fFontSize,
+                                     (const CFX_Matrix*)pMatrix, argb,
+                                     FXTEXT_CLEARTYPE);
 #endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
   }
 
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
-  FxFont.SetSubstFont(nullptr);
   FxFont.SetFace(nullptr);
 #endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
 

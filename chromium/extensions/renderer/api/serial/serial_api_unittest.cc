@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "device/serial/serial_device_enumerator.h"
 #include "device/serial/serial_service_impl.h"
@@ -16,6 +17,7 @@
 #include "extensions/common/mojo/keep_alive.mojom.h"
 #include "extensions/renderer/api_test_base.h"
 #include "grit/extensions_renderer_resources.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 
 // A test launcher for tests for the serial API defined in
 // extensions/test/data/serial_unittest.js. Each C++ test function sets up a
@@ -412,12 +414,13 @@ class SerialApiTest : public ApiTestBase {
   void PrepareEnvironment(ApiTestEnvironment* environment,
                           StashBackend* stash_backend) {
     environment->env()->RegisterModule("serial", IDR_SERIAL_CUSTOM_BINDINGS_JS);
-    environment->service_provider()->AddService<device::serial::SerialService>(
-        base::Bind(&SerialApiTest::CreateSerialService,
-                   base::Unretained(this)));
-    environment->service_provider()->AddService(base::Bind(
+    environment->interface_provider()->
+        AddInterface<device::serial::SerialService>(
+            base::Bind(&SerialApiTest::CreateSerialService,
+                       base::Unretained(this)));
+    environment->interface_provider()->AddInterface(base::Bind(
         &StashBackend::BindToRequest, base::Unretained(stash_backend)));
-    environment->service_provider()->IgnoreServiceRequests<KeepAlive>();
+    environment->interface_provider()->IgnoreInterfaceRequests<KeepAlive>();
   }
 
   scoped_refptr<TestIoHandlerBase> io_handler_;
@@ -433,13 +436,13 @@ class SerialApiTest : public ApiTestBase {
 
   void CreateSerialService(
       mojo::InterfaceRequest<device::serial::SerialService> request) {
-    new device::SerialServiceImpl(
-        new device::SerialConnectionFactory(
-            base::Bind(&SerialApiTest::GetIoHandler, base::Unretained(this)),
-            base::ThreadTaskRunnerHandle::Get()),
-        std::unique_ptr<device::SerialDeviceEnumerator>(
-            new FakeSerialDeviceEnumerator),
-        std::move(request));
+    mojo::MakeStrongBinding(base::MakeUnique<device::SerialServiceImpl>(
+                                new device::SerialConnectionFactory(
+                                    base::Bind(&SerialApiTest::GetIoHandler,
+                                               base::Unretained(this)),
+                                    base::ThreadTaskRunnerHandle::Get()),
+                                base::MakeUnique<FakeSerialDeviceEnumerator>()),
+                            std::move(request));
   }
 
   DISALLOW_COPY_AND_ASSIGN(SerialApiTest);

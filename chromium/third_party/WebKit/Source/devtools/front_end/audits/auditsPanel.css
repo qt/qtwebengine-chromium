@@ -29,14 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-.audits-sidebar-tree-item .icon {
-    content: url(Images/resourcesTimeGraphIcon.png);
-}
-
-.audit-result-sidebar-tree-item .icon {
-    content: url(Images/resourceDocumentIcon.png);
-}
-
 .audit-launcher-view .audit-launcher-view-content {
     padding: 0 0 0 16px;
     white-space: nowrap;
@@ -85,6 +77,10 @@
     margin: 0 5px 0 0;
 }
 
+.audit-result-view {
+    overflow: auto;
+}
+
 .panel-enabler-view.audit-launcher-view label {
     padding: 0 0 5px 0;
     margin: 0;
@@ -100,12 +96,6 @@
     margin-left: 0;
     height: 14px;
     width: 14px;
-}
-
-.audit-result-view {
-    overflow: auto;
-    display: block;
-    flex: auto;
 }
 
 .audit-result-tree {

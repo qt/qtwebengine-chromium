@@ -8,25 +8,29 @@
 
 namespace blink {
 
-CompositorTransformKeyframe::CompositorTransformKeyframe(double time, std::unique_ptr<CompositorTransformOperations> value)
-    : m_time(time)
-    , m_value(std::move(value))
-{
+CompositorTransformKeyframe::CompositorTransformKeyframe(
+    double time,
+    CompositorTransformOperations value,
+    const TimingFunction& timingFunction)
+    : m_transformKeyframe(
+          cc::TransformKeyframe::Create(base::TimeDelta::FromSecondsD(time),
+                                        value.releaseCcTransformOperations(),
+                                        timingFunction.cloneToCC())) {}
+
+CompositorTransformKeyframe::~CompositorTransformKeyframe() {}
+
+double CompositorTransformKeyframe::time() const {
+  return m_transformKeyframe->Time().InSecondsF();
 }
 
-CompositorTransformKeyframe::~CompositorTransformKeyframe()
-{
-    m_value.reset();
+const cc::TimingFunction* CompositorTransformKeyframe::ccTimingFunction()
+    const {
+  return m_transformKeyframe->timing_function();
 }
 
-double CompositorTransformKeyframe::time() const
-{
-    return m_time;
+std::unique_ptr<cc::TransformKeyframe> CompositorTransformKeyframe::cloneToCC()
+    const {
+  return m_transformKeyframe->Clone();
 }
 
-const CompositorTransformOperations& CompositorTransformKeyframe::value() const
-{
-    return *m_value.get();
-}
-
-} // namespace blink
+}  // namespace blink

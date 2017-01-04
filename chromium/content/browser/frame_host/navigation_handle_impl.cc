@@ -7,15 +7,20 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "content/browser/browsing_data/clear_site_data_throttle.h"
+#include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/navigator_delegate.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
+#include "content/browser/service_worker/service_worker_navigation_handle.h"
 #include "content/common/frame_messages.h"
 #include "content/common/resource_request_body_impl.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/navigation_ui_data.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/url_constants.h"
 #include "net/url_request/redirect_info.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
@@ -40,11 +45,11 @@ std::unique_ptr<NavigationHandleImpl> NavigationHandleImpl::Create(
     bool is_synchronous,
     bool is_srcdoc,
     const base::TimeTicks& navigation_start,
-    int pending_nav_entry_id) {
-  return std::unique_ptr<NavigationHandleImpl>(
-      new NavigationHandleImpl(url, frame_tree_node, is_renderer_initiated,
-                               is_synchronous, is_srcdoc, navigation_start,
-                               pending_nav_entry_id));
+    int pending_nav_entry_id,
+    bool started_from_context_menu) {
+  return std::unique_ptr<NavigationHandleImpl>(new NavigationHandleImpl(
+      url, frame_tree_node, is_renderer_initiated, is_synchronous, is_srcdoc,
+      navigation_start, pending_nav_entry_id, started_from_context_menu));
 }
 
 NavigationHandleImpl::NavigationHandleImpl(
@@ -54,7 +59,8 @@ NavigationHandleImpl::NavigationHandleImpl(
     bool is_synchronous,
     bool is_srcdoc,
     const base::TimeTicks& navigation_start,
-    int pending_nav_entry_id)
+    int pending_nav_entry_id,
+    bool started_from_context_menu)
     : url_(url),
       has_user_gesture_(false),
       transition_(ui::PAGE_TRANSITION_LINK),
@@ -71,14 +77,16 @@ NavigationHandleImpl::NavigationHandleImpl(
       frame_tree_node_(frame_tree_node),
       next_index_(0),
       navigation_start_(navigation_start),
-      pending_nav_entry_id_(pending_nav_entry_id) {
+      pending_nav_entry_id_(pending_nav_entry_id),
+      request_context_type_(REQUEST_CONTEXT_TYPE_UNSPECIFIED),
+      started_from_context_menu_(started_from_context_menu) {
   DCHECK(!navigation_start.is_null());
   GetDelegate()->DidStartNavigation(this);
 
   if (IsInMainFrame()) {
     TRACE_EVENT_ASYNC_BEGIN_WITH_TIMESTAMP1(
         "navigation", "Navigation StartToCommit", this,
-        navigation_start.ToInternalValue(), "Initial URL", url_.spec());
+        navigation_start, "Initial URL", url_.spec());
   }
 }
 
@@ -99,6 +107,11 @@ NavigationHandleImpl::~NavigationHandleImpl() {
 
 NavigatorDelegate* NavigationHandleImpl::GetDelegate() const {
   return frame_tree_node_->navigator()->GetDelegate();
+}
+
+RequestContextType NavigationHandleImpl::GetRequestContextType() const {
+  DCHECK_GE(state_, WILL_SEND_REQUEST);
+  return request_context_type_;
 }
 
 const GURL& NavigationHandleImpl::GetURL() {
@@ -199,7 +212,7 @@ bool NavigationHandleImpl::IsSamePage() {
 }
 
 const net::HttpResponseHeaders* NavigationHandleImpl::GetResponseHeaders() {
-   return response_headers_.get();
+  return response_headers_.get();
 }
 
 bool NavigationHandleImpl::HasCommitted() {
@@ -269,6 +282,7 @@ NavigationHandleImpl::CallWillStartRequestForTesting(
 
   WillStartRequest(method, resource_request_body, sanitized_referrer,
                    has_user_gesture, transition, is_external_protocol,
+                   REQUEST_CONTEXT_TYPE_LOCATION,
                    base::Bind(&UpdateThrottleCheckResult, &result));
 
   // Reset the callback to ensure it will not be called later.
@@ -293,8 +307,53 @@ NavigationHandleImpl::CallWillRedirectRequestForTesting(
   return result;
 }
 
+NavigationThrottle::ThrottleCheckResult
+NavigationHandleImpl::CallWillProcessResponseForTesting(
+    content::RenderFrameHost* render_frame_host,
+    const std::string& raw_response_headers) {
+  scoped_refptr<net::HttpResponseHeaders> headers =
+      new net::HttpResponseHeaders(raw_response_headers);
+  NavigationThrottle::ThrottleCheckResult result = NavigationThrottle::DEFER;
+  WillProcessResponse(static_cast<RenderFrameHostImpl*>(render_frame_host),
+                      headers, SSLStatus(),
+                      base::Bind(&UpdateThrottleCheckResult, &result));
+
+  // Reset the callback to ensure it will not be called later.
+  complete_callback_.Reset();
+  return result;
+}
+
+void NavigationHandleImpl::CallDidCommitNavigationForTesting(const GURL& url) {
+  FrameHostMsg_DidCommitProvisionalLoad_Params params;
+
+  params.page_id = 1;
+  params.nav_entry_id = 1;
+  params.url = url;
+  params.referrer = content::Referrer();
+  params.transition = ui::PAGE_TRANSITION_TYPED;
+  params.redirects = std::vector<GURL>();
+  params.should_update_history = false;
+  params.searchable_form_url = GURL();
+  params.searchable_form_encoding = std::string();
+  params.did_create_new_entry = false;
+  params.gesture = NavigationGestureUser;
+  params.was_within_same_page = false;
+  params.method = "GET";
+  params.page_state = PageState::CreateFromURL(url);
+  params.contents_mime_type = std::string("text/html");
+
+  DidCommitNavigation(params, false, render_frame_host_);
+}
+
 NavigationData* NavigationHandleImpl::GetNavigationData() {
   return navigation_data_.get();
+}
+
+void NavigationHandleImpl::InitServiceWorkerHandle(
+    ServiceWorkerContextWrapper* service_worker_context) {
+  DCHECK(IsBrowserSideNavigationEnabled());
+  service_worker_handle_.reset(
+      new ServiceWorkerNavigationHandle(service_worker_context));
 }
 
 void NavigationHandleImpl::WillStartRequest(
@@ -304,6 +363,7 @@ void NavigationHandleImpl::WillStartRequest(
     bool has_user_gesture,
     ui::PageTransition transition,
     bool is_external_protocol,
+    RequestContextType request_context_type,
     const ThrottleChecksFinishedCallback& callback) {
   // |method != "POST"| should imply absence of |resource_request_body|.
   if (method != "POST" && resource_request_body) {
@@ -319,21 +379,14 @@ void NavigationHandleImpl::WillStartRequest(
   has_user_gesture_ = has_user_gesture;
   transition_ = transition;
   is_external_protocol_ = is_external_protocol;
-
+  request_context_type_ = request_context_type;
   state_ = WILL_SEND_REQUEST;
   complete_callback_ = callback;
 
-  // Register the navigation throttles. The ScopedVector returned by
-  // GetNavigationThrottles is not assigned to throttles_ directly because it
-  // would overwrite any throttle previously added with
-  // RegisterThrottleForTesting.
-  ScopedVector<NavigationThrottle> throttles_to_register =
-      GetContentClient()->browser()->CreateThrottlesForNavigation(this);
-  if (throttles_to_register.size() > 0) {
-    throttles_.insert(throttles_.end(), throttles_to_register.begin(),
-                      throttles_to_register.end());
-    throttles_to_register.weak_clear();
-  }
+  RegisterNavigationThrottles();
+
+  if (IsBrowserSideNavigationEnabled())
+    navigation_ui_data_ = GetDelegate()->GetNavigationUIData(this);
 
   // Notify each throttle of the request.
   NavigationThrottle::ThrottleCheckResult result = CheckWillStartRequest();
@@ -375,11 +428,13 @@ void NavigationHandleImpl::WillRedirectRequest(
 void NavigationHandleImpl::WillProcessResponse(
     RenderFrameHostImpl* render_frame_host,
     scoped_refptr<net::HttpResponseHeaders> response_headers,
+    const SSLStatus& ssl_status,
     const ThrottleChecksFinishedCallback& callback) {
   DCHECK(!render_frame_host_ || render_frame_host_ == render_frame_host);
   render_frame_host_ = render_frame_host;
   response_headers_ = response_headers;
   state_ = WILL_PROCESS_RESPONSE;
+  ssl_status_ = ssl_status;
   complete_callback_ = callback;
 
   // Notify each throttle of the response.
@@ -420,7 +475,14 @@ void NavigationHandleImpl::DidCommitNavigation(
   render_frame_host_ = render_frame_host;
   is_same_page_ = same_page;
 
-  state_ = net_error_code_ == net::OK ? DID_COMMIT : DID_COMMIT_ERROR_PAGE;
+  // If an error page reloads, net_error_code might be 200 but we still want to
+  // count it as an error page.
+  if (params.base_url.spec() == kUnreachableWebDataURL ||
+      net_error_code_ != net::OK) {
+    state_ = DID_COMMIT_ERROR_PAGE;
+  } else {
+    state_ = DID_COMMIT;
+  }
 }
 
 NavigationThrottle::ThrottleCheckResult
@@ -531,6 +593,34 @@ void NavigationHandleImpl::RunCompleteCallback(
 
   // No code after running the callback, as it might have resulted in our
   // destruction.
+}
+
+void NavigationHandleImpl::RegisterNavigationThrottles() {
+  // Register the navigation throttles. The ScopedVector returned by
+  // GetNavigationThrottles is not assigned to throttles_ directly because it
+  // would overwrite any throttle previously added with
+  // RegisterThrottleForTesting.
+  ScopedVector<NavigationThrottle> throttles_to_register =
+      GetDelegate()->CreateThrottlesForNavigation(this);
+  std::unique_ptr<NavigationThrottle> devtools_throttle =
+      RenderFrameDevToolsAgentHost::CreateThrottleForNavigation(this);
+  if (devtools_throttle)
+    throttles_to_register.push_back(std::move(devtools_throttle));
+
+  std::unique_ptr<NavigationThrottle> clear_site_data_throttle =
+      ClearSiteDataThrottle::CreateThrottleForNavigation(this);
+  if (clear_site_data_throttle)
+    throttles_to_register.push_back(std::move(clear_site_data_throttle));
+
+  if (throttles_to_register.size() > 0) {
+    throttles_.insert(throttles_.begin(), throttles_to_register.begin(),
+                      throttles_to_register.end());
+    throttles_to_register.weak_clear();
+  }
+}
+
+bool NavigationHandleImpl::WasStartedFromContextMenu() const {
+  return started_from_context_menu_;
 }
 
 }  // namespace content

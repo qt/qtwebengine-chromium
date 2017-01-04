@@ -7,7 +7,7 @@
 #ifndef XFA_FDE_CSS_FDE_CSS_H_
 #define XFA_FDE_CSS_FDE_CSS_H_
 
-#include "core/fxge/include/fx_dib.h"
+#include "core/fxge/fx_dib.h"
 #include "xfa/fgas/crt/fgas_stream.h"
 #include "xfa/fgas/crt/fgas_utils.h"
 #include "xfa/fgas/font/fgas_font.h"
@@ -717,8 +717,6 @@ class IFDE_CSSRule {
   virtual ~IFDE_CSSRule() {}
   virtual FDE_CSSRULETYPE GetType() const = 0;
 };
-
-typedef CFX_MassArrayTemplate<IFDE_CSSRule*> CFDE_CSSRuleArray;
 
 class IFDE_CSSStyleRule : public IFDE_CSSRule {
  public:

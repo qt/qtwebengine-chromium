@@ -6,7 +6,6 @@ import("//build/buildflag_header.gni")
 import("//build/config/chrome_build.gni")
 import("//third_party/kasko/kasko.gni")
 
-# GYP version: target 'kasko_features' in third_party/kasko/kasko.gyp
 buildflag_header("kasko_features") {
   header = "kasko_features.h"
   flags = [ "ENABLE_KASKO=$enable_kasko" ]
@@ -15,8 +14,11 @@ buildflag_header("kasko_features") {
 if (enable_kasko) {
   assert(is_win, "Kasko only support Windows.")
   assert(target_cpu == "x86", "Kasko only support 32 bits.")
-  assert(is_chrome_branded,
-         "The Kasko client is only initialized in Chrome-branded builds.")
+
+  # TODO(sebmarchand): Fix this once the Kasko dependency in SyzyAsan has been
+  #     removed for the non-official builds.
+  #assert(is_chrome_branded,
+  #       "The Kasko client is only initialized in Chrome-branded builds.")
 
   config("kasko_config") {
     visibility = [ ":*" ]
@@ -25,7 +27,6 @@ if (enable_kasko) {
     libs = [ "kasko.dll.lib" ]
   }
 
-  # GYP version: target 'copy_kasko_dll' in third_party/kasko/kasko.gyp
   copy("copy_kasko_dll") {
     visibility = [ ":*" ]
     sources = [
@@ -37,7 +38,6 @@ if (enable_kasko) {
     ]
   }
 
-  # GYP version: target 'kasko' in third_party/kasko/kasko.gyp
   group("kasko") {
     public_deps = [
       ":copy_kasko_dll",

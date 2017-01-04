@@ -4,8 +4,6 @@
 
 #include "ui/views/examples/vector_example.h"
 
-#include <stddef.h>
-
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
@@ -15,8 +13,8 @@
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/gfx/vector_icons_public.h"
 #include "ui/views/border.h"
-#include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/button.h"
+#include "ui/views/controls/button/md_text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
@@ -39,7 +37,8 @@ class VectorIconGallery : public View,
         size_input_(new Textfield()),
         color_input_(new Textfield()),
         file_chooser_(new Textfield()),
-        file_go_button_(new BlueButton(this, base::ASCIIToUTF16("Render"))),
+        file_go_button_(
+            MdTextButton::Create(this, base::ASCIIToUTF16("Render"))),
         vector_id_(0),
         // 36dp is one of the natural sizes for MD icons, and corresponds
         // roughly to a 32dp usable area.
@@ -99,7 +98,7 @@ class VectorIconGallery : public View,
   void ContentsChanged(Textfield* sender,
                        const base::string16& new_contents) override {
     if (sender == size_input_) {
-      if (base::StringToSizeT(new_contents, &size_))
+      if (base::StringToInt(new_contents, &size_) && (size_ > 0))
         UpdateImage();
       else
         size_input_->SetText(base::string16());
@@ -128,6 +127,12 @@ class VectorIconGallery : public View,
     base::FilePath path(file_chooser_->text());
 #endif
     base::ReadFileToString(path, &contents);
+    // Skip over comments.
+    for (size_t slashes = contents.find("//"); slashes != std::string::npos;
+         slashes = contents.find("//")) {
+      size_t eol = contents.find("\n", slashes);
+      contents.erase(slashes, eol - slashes);
+    }
     image_view_->SetImage(
         gfx::CreateVectorIconFromSource(contents, size_, color_));
   }
@@ -147,7 +152,7 @@ class VectorIconGallery : public View,
   Button* file_go_button_;
 
   int vector_id_;
-  size_t size_;
+  int size_;
   SkColor color_;
 
   DISALLOW_COPY_AND_ASSIGN(VectorIconGallery);

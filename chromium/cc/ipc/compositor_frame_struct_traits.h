@@ -5,13 +5,13 @@
 #ifndef CC_IPC_COMPOSITOR_FRAME_STRUCT_TRAITS_H_
 #define CC_IPC_COMPOSITOR_FRAME_STRUCT_TRAITS_H_
 
-#include "cc/ipc/compositor_frame.mojom.h"
+#include "cc/ipc/compositor_frame.mojom-shared.h"
 #include "cc/output/compositor_frame.h"
 
 namespace mojo {
 
 template <>
-struct StructTraits<cc::mojom::CompositorFrame, cc::CompositorFrame> {
+struct StructTraits<cc::mojom::CompositorFrameDataView, cc::CompositorFrame> {
   static const cc::CompositorFrameMetadata& metadata(
       const cc::CompositorFrame& input) {
     return input.metadata;

@@ -10,9 +10,9 @@
 
 #include "webrtc/modules/audio_processing/echo_cancellation_impl.h"
 
-#include <assert.h>
 #include <string.h>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/modules/audio_processing/aec/aec_core.h"
 #include "webrtc/modules/audio_processing/aec/echo_cancellation.h"
 #include "webrtc/modules/audio_processing/audio_buffer.h"
@@ -29,7 +29,7 @@ int16_t MapSetting(EchoCancellation::SuppressionLevel level) {
     case EchoCancellation::kHighSuppression:
       return kAecNlpAggressive;
   }
-  assert(false);
+  RTC_NOTREACHED();
   return -1;
 }
 
@@ -273,12 +273,6 @@ int EchoCancellationImpl::Enable(bool enable) {
     enabled_ = enable;
   }
   return AudioProcessing::kNoError;
-}
-
-bool EchoCancellationImpl::is_enabled_render_side_query() const {
-  // TODO(peah): Add threadchecker.
-  rtc::CritScope cs_render(crit_render_);
-  return enabled_;
 }
 
 bool EchoCancellationImpl::is_enabled() const {
@@ -538,7 +532,7 @@ void EchoCancellationImpl::AllocateRenderQueue() {
   }
 }
 
-void EchoCancellationImpl::SetExtraOptions(const Config& config) {
+void EchoCancellationImpl::SetExtraOptions(const webrtc::Config& config) {
   {
     rtc::CritScope cs(crit_capture_);
     extended_filter_enabled_ = config.Get<ExtendedFilter>().enabled;

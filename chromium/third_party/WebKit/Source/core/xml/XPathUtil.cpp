@@ -33,60 +33,56 @@
 namespace blink {
 namespace XPath {
 
-bool isRootDomNode(Node* node)
-{
-    return node && !node->parentNode();
+bool isRootDomNode(Node* node) {
+  return node && !node->parentNode();
 }
 
-String stringValue(Node* node)
-{
-    switch (node->getNodeType()) {
-    case Node::ATTRIBUTE_NODE:
-    case Node::PROCESSING_INSTRUCTION_NODE:
-    case Node::COMMENT_NODE:
-    case Node::TEXT_NODE:
-    case Node::CDATA_SECTION_NODE:
-        return node->nodeValue();
+String stringValue(Node* node) {
+  switch (node->getNodeType()) {
+    case Node::kAttributeNode:
+    case Node::kProcessingInstructionNode:
+    case Node::kCommentNode:
+    case Node::kTextNode:
+    case Node::kCdataSectionNode:
+      return node->nodeValue();
     default:
-        if (isRootDomNode(node) || node->isElementNode()) {
-            StringBuilder result;
-            result.reserveCapacity(1024);
+      if (isRootDomNode(node) || node->isElementNode()) {
+        StringBuilder result;
+        result.reserveCapacity(1024);
 
-            for (Node& n : NodeTraversal::descendantsOf(*node)) {
-                if (n.isTextNode()) {
-                    const String& nodeValue = n.nodeValue();
-                    result.append(nodeValue);
-                }
-            }
-
-            return result.toString();
+        for (Node& n : NodeTraversal::descendantsOf(*node)) {
+          if (n.isTextNode()) {
+            const String& nodeValue = n.nodeValue();
+            result.append(nodeValue);
+          }
         }
-    }
 
-    return String();
+        return result.toString();
+      }
+  }
+
+  return String();
 }
 
-bool isValidContextNode(Node* node)
-{
-    if (!node)
-        return false;
-    switch (node->getNodeType()) {
-    case Node::ATTRIBUTE_NODE:
-    case Node::CDATA_SECTION_NODE:
-    case Node::COMMENT_NODE:
-    case Node::DOCUMENT_NODE:
-    case Node::ELEMENT_NODE:
-    case Node::PROCESSING_INSTRUCTION_NODE:
-        return true;
-    case Node::DOCUMENT_FRAGMENT_NODE:
-    case Node::DOCUMENT_TYPE_NODE:
-        return false;
-    case Node::TEXT_NODE:
-        return !(node->parentNode() && node->parentNode()->isAttributeNode());
-    }
-    ASSERT_NOT_REACHED();
+bool isValidContextNode(Node* node) {
+  if (!node)
     return false;
+  switch (node->getNodeType()) {
+    case Node::kAttributeNode:
+    case Node::kTextNode:
+    case Node::kCdataSectionNode:
+    case Node::kCommentNode:
+    case Node::kDocumentNode:
+    case Node::kElementNode:
+    case Node::kProcessingInstructionNode:
+      return true;
+    case Node::kDocumentFragmentNode:
+    case Node::kDocumentTypeNode:
+      return false;
+  }
+  NOTREACHED();
+  return false;
 }
 
-} // namespace XPath
-} // namespace blink
+}  // namespace XPath
+}  // namespace blink

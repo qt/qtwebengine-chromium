@@ -16,8 +16,6 @@
 #include <string>
 #include <vector>
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/arraysize.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/format_macros.h"
@@ -31,6 +29,8 @@
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/event_wrapper.h"
 #include "webrtc/system_wrappers/include/sleep.h"
+#include "webrtc/test/gmock.h"
+#include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 using std::cout;
@@ -42,7 +42,6 @@ using ::testing::Invoke;
 using ::testing::NiceMock;
 using ::testing::NotNull;
 using ::testing::Return;
-using ::testing::TestWithParam;
 
 // #define ENABLE_DEBUG_PRINTF
 #ifdef ENABLE_DEBUG_PRINTF
@@ -390,6 +389,7 @@ class MockAudioTransport : public AudioTransport {
                         const uint32_t currentMicLevel,
                         const bool keyPressed,
                         uint32_t& newMicLevel));
+
   MOCK_METHOD8(NeedMorePlayData,
                int32_t(const size_t nSamples,
                        const size_t nBytesPerSample,
@@ -399,6 +399,23 @@ class MockAudioTransport : public AudioTransport {
                        size_t& nSamplesOut,
                        int64_t* elapsed_time_ms,
                        int64_t* ntp_time_ms));
+
+  MOCK_METHOD6(PushCaptureData,
+               void(int voe_channel,
+                    const void* audio_data,
+                    int bits_per_sample,
+                    int sample_rate,
+                    size_t number_of_channels,
+                    size_t number_of_frames));
+
+  MOCK_METHOD7(PullRenderData,
+               void(int bits_per_sample,
+                    int sample_rate,
+                    size_t number_of_channels,
+                    size_t number_of_frames,
+                    void* audio_data,
+                    int64_t* elapsed_time_ms,
+                    int64_t* ntp_time_ms));
 
   // Set default actions of the mock object. We are delegating to fake
   // implementations (of AudioStreamInterface) here.
@@ -701,15 +718,22 @@ TEST_F(AudioDeviceTest, ConstructDestruct) {
 
 // We always ask for a default audio layer when the ADM is constructed. But the
 // ADM will then internally set the best suitable combination of audio layers,
-// for input and output based on if low-latency output audio in combination
-// with OpenSL ES is supported or not. This test ensures that the correct
-// selection is done.
+// for input and output based on if low-latency output and/or input audio in
+// combination with OpenSL ES is supported or not. This test ensures that the
+// correct selection is done.
 TEST_F(AudioDeviceTest, VerifyDefaultAudioLayer) {
   const AudioDeviceModule::AudioLayer audio_layer = GetActiveAudioLayer();
   bool low_latency_output = audio_manager()->IsLowLatencyPlayoutSupported();
-  AudioDeviceModule::AudioLayer expected_audio_layer = low_latency_output ?
-      AudioDeviceModule::kAndroidJavaInputAndOpenSLESOutputAudio :
-      AudioDeviceModule::kAndroidJavaAudio;
+  bool low_latency_input = audio_manager()->IsLowLatencyRecordSupported();
+  AudioDeviceModule::AudioLayer expected_audio_layer;
+  if (low_latency_output && low_latency_input) {
+    expected_audio_layer = AudioDeviceModule::kAndroidOpenSLESAudio;
+  } else if (low_latency_output && !low_latency_input) {
+    expected_audio_layer =
+        AudioDeviceModule::kAndroidJavaInputAndOpenSLESOutputAudio;
+  } else {
+    expected_audio_layer = AudioDeviceModule::kAndroidJavaAudio;
+  }
   EXPECT_EQ(expected_audio_layer, audio_layer);
 }
 
@@ -729,6 +753,14 @@ TEST_F(AudioDeviceTest, CorrectAudioLayerIsUsedForJavaInBothDirections) {
       AudioDeviceModule::kAndroidJavaAudio;
   AudioDeviceModule::AudioLayer active_layer = TestActiveAudioLayer(
       expected_layer);
+  EXPECT_EQ(expected_layer, active_layer);
+}
+
+TEST_F(AudioDeviceTest, CorrectAudioLayerIsUsedForOpenSLInBothDirections) {
+  AudioDeviceModule::AudioLayer expected_layer =
+      AudioDeviceModule::kAndroidOpenSLESAudio;
+  AudioDeviceModule::AudioLayer active_layer =
+      TestActiveAudioLayer(expected_layer);
   EXPECT_EQ(expected_layer, active_layer);
 }
 
@@ -845,12 +877,23 @@ TEST_F(AudioDeviceTest, StartStopRecording) {
 // Verify that calling StopPlayout() will leave us in an uninitialized state
 // which will require a new call to InitPlayout(). This test does not call
 // StartPlayout() while being uninitialized since doing so will hit a
-// RTC_DCHECK.
+// RTC_DCHECK and death tests are not supported on Android.
 TEST_F(AudioDeviceTest, StopPlayoutRequiresInitToRestart) {
   EXPECT_EQ(0, audio_device()->InitPlayout());
   EXPECT_EQ(0, audio_device()->StartPlayout());
   EXPECT_EQ(0, audio_device()->StopPlayout());
   EXPECT_FALSE(audio_device()->PlayoutIsInitialized());
+}
+
+// Verify that calling StopRecording() will leave us in an uninitialized state
+// which will require a new call to InitRecording(). This test does not call
+// StartRecording() while being uninitialized since doing so will hit a
+// RTC_DCHECK and death tests are not supported on Android.
+TEST_F(AudioDeviceTest, StopRecordingRequiresInitToRestart) {
+  EXPECT_EQ(0, audio_device()->InitRecording());
+  EXPECT_EQ(0, audio_device()->StartRecording());
+  EXPECT_EQ(0, audio_device()->StopRecording());
+  EXPECT_FALSE(audio_device()->RecordingIsInitialized());
 }
 
 // Start playout and verify that the native audio layer starts asking for real
@@ -977,8 +1020,12 @@ TEST_F(AudioDeviceTest, RunPlayoutAndRecordingInFullDuplex) {
                                1000 * kFullDuplexTimeInSec));
   StopPlayout();
   StopRecording();
-  EXPECT_LE(fifo_audio_stream->average_size(), 10u);
-  EXPECT_LE(fifo_audio_stream->largest_size(), 20u);
+
+  // These thresholds are set rather high to accomodate differences in hardware
+  // in several devices, so this test can be used in swarming.
+  // See http://bugs.webrtc.org/6464
+  EXPECT_LE(fifo_audio_stream->average_size(), 30u);
+  EXPECT_LE(fifo_audio_stream->largest_size(), 40u);
 }
 
 // Measures loopback latency and reports the min, max and average values for

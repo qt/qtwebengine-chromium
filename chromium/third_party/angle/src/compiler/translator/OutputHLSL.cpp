@@ -80,11 +80,14 @@ const TConstantUnion *WriteConstantUnionArray(TInfoSinkBase &out,
 namespace sh
 {
 
-OutputHLSL::OutputHLSL(sh::GLenum shaderType, int shaderVersion,
-    const TExtensionBehavior &extensionBehavior,
-    const char *sourcePath, ShShaderOutput outputType,
-    int numRenderTargets, const std::vector<Uniform> &uniforms,
-    int compileOptions)
+OutputHLSL::OutputHLSL(sh::GLenum shaderType,
+                       int shaderVersion,
+                       const TExtensionBehavior &extensionBehavior,
+                       const char *sourcePath,
+                       ShShaderOutput outputType,
+                       int numRenderTargets,
+                       const std::vector<Uniform> &uniforms,
+                       ShCompileOptions compileOptions)
     : TIntermTraverser(true, true, true),
       mShaderType(shaderType),
       mShaderVersion(shaderVersion),
@@ -158,6 +161,12 @@ void OutputHLSL::output(TIntermNode *treeRoot, TInfoSinkBase &objSink)
 
     BuiltInFunctionEmulator builtInFunctionEmulator;
     InitBuiltInFunctionEmulatorForHLSL(&builtInFunctionEmulator);
+    if ((mCompileOptions & SH_EMULATE_ISNAN_FLOAT_FUNCTION) != 0)
+    {
+        InitBuiltInIsnanFunctionEmulatorForHLSLWorkarounds(&builtInFunctionEmulator,
+                                                           mShaderVersion);
+    }
+
     builtInFunctionEmulator.MarkBuiltInFunctionsForEmulation(treeRoot);
 
     // Now that we are done changing the AST, do the analyses need for HLSL generation
@@ -224,7 +233,7 @@ const std::map<std::string, unsigned int> &OutputHLSL::getUniformRegisterMap() c
 int OutputHLSL::vectorSize(const TType &type) const
 {
     int elementSize = type.isMatrix() ? type.getCols() : 1;
-    int arraySize = type.isArray() ? type.getArraySize() : 1;
+    unsigned int arraySize = type.isArray() ? type.getArraySize() : 1u;
 
     return elementSize * arraySize;
 }
@@ -605,7 +614,9 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
         }
     }
 
-    mTextureFunctionHLSL->textureFunctionHeader(out, mOutputType);
+    bool getDimensionsIgnoresBaseLevel =
+        (mCompileOptions & SH_HLSL_GET_DIMENSIONS_IGNORES_BASE_LEVEL) != 0;
+    mTextureFunctionHLSL->textureFunctionHeader(out, mOutputType, getDimensionsIgnoresBaseLevel);
 
     if (mUsesFragCoord)
     {
@@ -837,6 +848,17 @@ bool OutputHLSL::ancestorEvaluatesToSamplerInStruct(Visit visit)
     return false;
 }
 
+bool OutputHLSL::visitSwizzle(Visit visit, TIntermSwizzle *node)
+{
+    TInfoSinkBase &out = getInfoSink();
+    if (visit == PostVisit)
+    {
+        out << ".";
+        node->writeOffsetsAsXYZW(&out);
+    }
+    return true;
+}
+
 bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
 {
     TInfoSinkBase &out = getInfoSink();
@@ -1055,42 +1077,6 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
             return false;
         }
         break;
-      case EOpVectorSwizzle:
-        if (visit == InVisit)
-        {
-            out << ".";
-
-            TIntermAggregate *swizzle = node->getRight()->getAsAggregate();
-
-            if (swizzle)
-            {
-                TIntermSequence *sequence = swizzle->getSequence();
-
-                for (TIntermSequence::iterator sit = sequence->begin(); sit != sequence->end(); sit++)
-                {
-                    TIntermConstantUnion *element = (*sit)->getAsConstantUnion();
-
-                    if (element)
-                    {
-                        int i = element->getIConst(0);
-
-                        switch (i)
-                        {
-                        case 0: out << "x"; break;
-                        case 1: out << "y"; break;
-                        case 2: out << "z"; break;
-                        case 3: out << "w"; break;
-                        default: UNREACHABLE();
-                        }
-                    }
-                    else UNREACHABLE();
-                }
-            }
-            else UNREACHABLE();
-
-            return false;   // Fully processed
-        }
-        break;
       case EOpAdd:
           outputTriplet(out, visit, "(", " + ", ")");
           break;
@@ -1294,9 +1280,12 @@ bool OutputHLSL::visitUnary(Visit visit, TIntermUnary *node)
           outputTriplet(out, visit, "frac(", "", ")");
           break;
       case EOpIsNan:
-          outputTriplet(out, visit, "isnan(", "", ")");
-        mRequiresIEEEStrictCompiling = true;
-        break;
+          if (node->getUseEmulatedFunction())
+              writeEmulatedFunctionTriplet(out, visit, "isnan(");
+          else
+              outputTriplet(out, visit, "isnan(", "", ")");
+          mRequiresIEEEStrictCompiling = true;
+          break;
       case EOpIsInf:
           outputTriplet(out, visit, "isinf(", "", ")");
           break;
@@ -1452,11 +1441,10 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
                 // Don't output ; after case labels, they're terminated by :
                 // This is needed especially since outputting a ; after a case statement would turn empty
                 // case statements into non-empty case statements, disallowing fall-through from them.
-                // Also no need to output ; after selection (if) statements or sequences. This is done just
-                // for code clarity.
-                TIntermSelection *asSelection = (*sit)->getAsSelectionNode();
-                ASSERT(asSelection == nullptr || !asSelection->usesTernaryOperator());
-                if ((*sit)->getAsCaseNode() == nullptr && asSelection == nullptr && !IsSequence(*sit))
+                // Also no need to output ; after if statements or sequences. This is done just for
+                // code clarity.
+                if ((*sit)->getAsCaseNode() == nullptr && (*sit)->getAsIfElseNode() == nullptr &&
+                    !IsSequence(*sit))
                     out << ";\n";
             }
 
@@ -1630,19 +1618,13 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
 
             out << ")\n";
 
-            if (sequence->size() > 1)
-            {
-                mInsideFunction = true;
-                TIntermNode *body = (*sequence)[1];
-                // The function body node will output braces.
-                ASSERT(IsSequence(body));
-                body->traverse(this);
-                mInsideFunction = false;
-            }
-            else
-            {
-                out << "{}\n";
-            }
+            mInsideFunction = true;
+            ASSERT(sequence->size() == 2);
+            TIntermNode *body = (*sequence)[1];
+            // The function body node will output braces.
+            ASSERT(IsSequence(body));
+            body->traverse(this);
+            mInsideFunction = false;
 
             mCurrentFunctionMetadata = nullptr;
 
@@ -1677,6 +1659,12 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
                 out << DisambiguateFunctionName(node->getSequence());
                 out << (lod0 ? "Lod0(" : "(");
             }
+            else if (node->getNameObj().isInternal())
+            {
+                // This path is used for internal functions that don't have their definitions in the
+                // AST, such as precision emulation functions.
+                out << DecorateFunctionIfNeeded(node->getNameObj()) << "(";
+            }
             else
             {
                 TString name           = TFunction::unmangleName(node->getNameObj().getString());
@@ -1705,7 +1693,7 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
                     TVector<TIntermSymbol *> samplerSymbols;
                     TString structName = samplerNamePrefixFromStruct(typedArg);
                     argType.createSamplerSymbols("angle_" + structName, "",
-                                                 argType.isArray() ? argType.getArraySize() : 0,
+                                                 argType.isArray() ? argType.getArraySize() : 0u,
                                                  &samplerSymbols, nullptr);
                     for (const TIntermSymbol *sampler : samplerSymbols)
                     {
@@ -1919,7 +1907,7 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
     return true;
 }
 
-void OutputHLSL::writeSelection(TInfoSinkBase &out, TIntermSelection *node)
+void OutputHLSL::writeIfElse(TInfoSinkBase &out, TIntermIfElse *node)
 {
     out << "if (";
 
@@ -1956,8 +1944,8 @@ void OutputHLSL::writeSelection(TInfoSinkBase &out, TIntermSelection *node)
 
         outputLineDirective(out, node->getFalseBlock()->getLine().first_line);
 
-        // Either this is "else if" or the falseBlock child node will output braces.
-        ASSERT(IsSequence(node->getFalseBlock()) || node->getFalseBlock()->getAsSelectionNode() != nullptr);
+        // The falseBlock child node will output braces.
+        ASSERT(IsSequence(node->getFalseBlock()));
 
         node->getFalseBlock()->traverse(this);
 
@@ -1974,11 +1962,18 @@ void OutputHLSL::writeSelection(TInfoSinkBase &out, TIntermSelection *node)
     }
 }
 
-bool OutputHLSL::visitSelection(Visit visit, TIntermSelection *node)
+bool OutputHLSL::visitTernary(Visit, TIntermTernary *)
+{
+    // Ternary ops should have been already converted to something else in the AST. HLSL ternary
+    // operator doesn't short-circuit, so it's not the same as the GLSL ternary operator.
+    UNREACHABLE();
+    return false;
+}
+
+bool OutputHLSL::visitIfElse(Visit visit, TIntermIfElse *node)
 {
     TInfoSinkBase &out = getInfoSink();
 
-    ASSERT(!node->usesTernaryOperator());
     ASSERT(mInsideFunction);
 
     // D3D errors when there is a gradient operation in a loop in an unflattened if.
@@ -1987,7 +1982,7 @@ bool OutputHLSL::visitSelection(Visit visit, TIntermSelection *node)
         out << "FLATTEN ";
     }
 
-    writeSelection(out, node);
+    writeIfElse(out, node);
 
     return false;
 }
@@ -2496,7 +2491,7 @@ TString OutputHLSL::argumentString(const TIntermSymbol *symbol)
     {
         ASSERT(qualifier != EvqOut && qualifier != EvqInOut);
         TVector<TIntermSymbol *> samplerSymbols;
-        type.createSamplerSymbols("angle" + nameStr, "", 0, &samplerSymbols, nullptr);
+        type.createSamplerSymbols("angle" + nameStr, "", 0u, &samplerSymbols, nullptr);
         for (const TIntermSymbol *sampler : samplerSymbols)
         {
             if (mOutputType == SH_HLSL_4_1_OUTPUT)
@@ -2864,14 +2859,14 @@ TString OutputHLSL::addArrayConstructIntoFunction(const TType& type)
 
     fnOut << "void " << function.functionName << "(out "
           << typeName << " a[" << type.getArraySize() << "]";
-    for (int i = 0; i < type.getArraySize(); ++i)
+    for (unsigned int i = 0u; i < type.getArraySize(); ++i)
     {
         fnOut << ", " << typeName << " b" << i;
     }
     fnOut << ")\n"
              "{\n";
 
-    for (int i = 0; i < type.getArraySize(); ++i)
+    for (unsigned int i = 0u; i < type.getArraySize(); ++i)
     {
         fnOut << "    a[" << i << "] = b" << i << ";\n";
     }

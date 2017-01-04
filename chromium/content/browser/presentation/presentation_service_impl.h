@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
@@ -18,6 +19,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/presentation_screen_availability_listener.h"
@@ -26,6 +28,7 @@
 #include "content/public/common/frame_navigate_params.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "third_party/WebKit/public/platform/modules/presentation/presentation.mojom.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -71,11 +74,11 @@ class CONTENT_EXPORT PresentationServiceImpl
       OtherRenderFrameDeleted);
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest, DelegateFails);
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
-      SetDefaultPresentationUrl);
+                           SetDefaultPresentationUrls);
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
-      SetSameDefaultPresentationUrl);
+                           SetSameDefaultPresentationUrls);
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
-      ClearDefaultPresentationUrl);
+                           ClearDefaultPresentationUrls);
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
       ListenForDefaultSessionStart);
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
@@ -149,24 +152,23 @@ class CONTENT_EXPORT PresentationServiceImpl
       PresentationServiceDelegate* delegate);
 
   // PresentationService implementation.
-  void SetDefaultPresentationURL(const mojo::String& url) override;
+  void SetDefaultPresentationUrls(
+      const std::vector<GURL>& presentation_urls) override;
   void SetClient(blink::mojom::PresentationServiceClientPtr client) override;
-  void ListenForScreenAvailability(const mojo::String& url) override;
-  void StopListeningForScreenAvailability(const mojo::String& url) override;
-  void StartSession(
-      const mojo::String& presentation_url,
-      const NewSessionCallback& callback) override;
-  void JoinSession(
-      const mojo::String& presentation_url,
-      const mojo::String& presentation_id,
-      const NewSessionCallback& callback) override;
+  void ListenForScreenAvailability(const GURL& url) override;
+  void StopListeningForScreenAvailability(const GURL& url) override;
+  void StartSession(const std::vector<GURL>& presentation_urls,
+                    const NewSessionCallback& callback) override;
+  void JoinSession(const std::vector<GURL>& presentation_urls,
+                   const base::Optional<std::string>& presentation_id,
+                   const NewSessionCallback& callback) override;
   void SendSessionMessage(blink::mojom::PresentationSessionInfoPtr session_info,
                           blink::mojom::SessionMessagePtr session_message,
                           const SendSessionMessageCallback& callback) override;
-  void CloseConnection(const mojo::String& presentation_url,
-                       const mojo::String& presentation_id) override;
-  void Terminate(const mojo::String& presentation_url,
-                 const mojo::String& presentation_id) override;
+  void CloseConnection(const GURL& presentation_url,
+                       const std::string& presentation_id) override;
+  void Terminate(const GURL& presentation_url,
+                 const std::string& presentation_id) override;
   void ListenForSessionMessages(
       blink::mojom::PresentationSessionInfoPtr session) override;
 
@@ -254,7 +256,7 @@ class CONTENT_EXPORT PresentationServiceImpl
   // availability) to.
   blink::mojom::PresentationServiceClientPtr client_;
 
-  std::string default_presentation_url_;
+  std::vector<std::string> default_presentation_urls_;
 
   using ScreenAvailabilityListenerMap =
       std::map<std::string, std::unique_ptr<ScreenAvailabilityListenerImpl>>;

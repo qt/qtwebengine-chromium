@@ -6,7 +6,7 @@ import("//build/config/features.gni")
 
 assert(enable_nacl)
 
-source_set("browser") {
+static_library("browser") {
   sources = [
     "bad_message.cc",
     "bad_message.h",
@@ -39,6 +39,7 @@ source_set("browser") {
     "//content/public/browser",
     "//content/public/common",
     "//ipc",
+    "//mojo/edk/system",
     "//native_client/src/trusted/service_runtime:sel_main_chrome",
     "//net",
     "//ppapi/host",
@@ -60,7 +61,9 @@ source_set("browser") {
       "//sandbox/linux:suid_sandbox_client",
     ]
 
-    data_deps += [ "//components/nacl/loader:helper_nonsfi" ]
+    if (enable_nacl_nonsfi) {
+      data_deps += [ "//components/nacl/loader:helper_nonsfi" ]
+    }
   }
 
   if (is_win && current_cpu == "x86") {

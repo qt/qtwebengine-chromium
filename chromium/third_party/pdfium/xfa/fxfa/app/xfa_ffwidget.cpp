@@ -4,27 +4,30 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/fxfa/include/xfa_ffwidget.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 
 #include <algorithm>
 #include <memory>
 
-#include "core/fpdfapi/fpdf_page/include/cpdf_pageobjectholder.h"
-#include "core/fxcodec/codec/include/ccodec_progressivedecoder.h"
-#include "core/fxcodec/include/fx_codec.h"
+#include "core/fpdfapi/page/cpdf_pageobjectholder.h"
+#include "core/fxcodec/codec/ccodec_progressivedecoder.h"
+#include "core/fxcodec/fx_codec.h"
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/cfx_renderdevice.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
-#include "xfa/fxfa/include/fxfa_widget.h"
-#include "xfa/fxfa/include/cxfa_eventparam.h"
-#include "xfa/fxfa/include/xfa_ffapp.h"
-#include "xfa/fxfa/include/xfa_ffdoc.h"
-#include "xfa/fxfa/include/xfa_ffdocview.h"
-#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/fxfa_widget.h"
 #include "xfa/fxfa/parser/cxfa_corner.h"
+#include "xfa/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/xfa_ffdocview.h"
+#include "xfa/fxfa/xfa_ffpageview.h"
 #include "xfa/fxgraphics/cfx_color.h"
+#include "xfa/fxgraphics/cfx_graphics.h"
 #include "xfa/fxgraphics/cfx_path.h"
 #include "xfa/fxgraphics/cfx_pattern.h"
 #include "xfa/fxgraphics/cfx_shading.h"
-#include "xfa/fxgraphics/include/cfx_graphics.h"
 
 CXFA_FFWidget::CXFA_FFWidget(CXFA_FFPageView* pPageView,
                              CXFA_WidgetAcc* pDataAcc)
@@ -150,11 +153,11 @@ void CXFA_FFWidget::InvalidateWidget(const CFX_RectF* pRect) {
     CFX_RectF rtWidget;
     GetBBox(rtWidget, XFA_WidgetStatus_Focused);
     rtWidget.Inflate(2, 2);
-    GetDoc()->GetDocProvider()->InvalidateRect(m_pPageView, rtWidget,
-                                               XFA_INVALIDATE_CurrentPage);
+    GetDoc()->GetDocEnvironment()->InvalidateRect(m_pPageView, rtWidget,
+                                                  XFA_INVALIDATE_CurrentPage);
   } else {
-    GetDoc()->GetDocProvider()->InvalidateRect(m_pPageView, *pRect,
-                                               XFA_INVALIDATE_CurrentPage);
+    GetDoc()->GetDocEnvironment()->InvalidateRect(m_pPageView, *pRect,
+                                                  XFA_INVALIDATE_CurrentPage);
   }
 }
 void CXFA_FFWidget::AddInvalidateRect(const CFX_RectF* pRect) {
@@ -561,19 +564,6 @@ class CXFA_ImageRenderer {
   FX_BOOL Continue(IFX_Pause* pPause);
 
  protected:
-  CFX_RenderDevice* m_pDevice;
-  int m_Status;
-  CFX_Matrix m_ImageMatrix;
-  CFX_DIBSource* m_pDIBSource;
-  CFX_DIBitmap* m_pCloneConvert;
-  int m_BitmapAlpha;
-  FX_ARGB m_FillArgb;
-  uint32_t m_Flags;
-  std::unique_ptr<CFX_ImageTransformer> m_pTransformer;
-  void* m_DeviceHandle;
-  int32_t m_BlendType;
-  FX_BOOL m_Result;
-  FX_BOOL m_bPrint;
   FX_BOOL StartDIBSource();
   void CompositeDIBitmap(CFX_DIBitmap* pDIBitmap,
                          int left,
@@ -582,23 +572,35 @@ class CXFA_ImageRenderer {
                          int bitmap_alpha,
                          int blend_mode,
                          int Transparency);
+
+  CFX_RenderDevice* m_pDevice;
+  int m_Status;
+  CFX_Matrix m_ImageMatrix;
+  CFX_DIBSource* m_pDIBSource;
+  std::unique_ptr<CFX_DIBitmap> m_pCloneConvert;
+  int m_BitmapAlpha;
+  FX_ARGB m_FillArgb;
+  uint32_t m_Flags;
+  std::unique_ptr<CFX_ImageTransformer> m_pTransformer;
+  void* m_DeviceHandle;
+  int32_t m_BlendType;
+  FX_BOOL m_Result;
+  FX_BOOL m_bPrint;
 };
-CXFA_ImageRenderer::CXFA_ImageRenderer() {
-  m_pDevice = nullptr;
-  m_Status = 0;
-  m_pDIBSource = nullptr;
-  m_pCloneConvert = nullptr;
-  m_BitmapAlpha = 255;
-  m_FillArgb = 0;
-  m_Flags = 0;
-  m_DeviceHandle = nullptr;
-  m_BlendType = FXDIB_BLEND_NORMAL;
-  m_Result = TRUE;
-  m_bPrint = FALSE;
-}
+
+CXFA_ImageRenderer::CXFA_ImageRenderer()
+    : m_pDevice(nullptr),
+      m_Status(0),
+      m_pDIBSource(nullptr),
+      m_BitmapAlpha(255),
+      m_FillArgb(0),
+      m_Flags(0),
+      m_DeviceHandle(nullptr),
+      m_BlendType(FXDIB_BLEND_NORMAL),
+      m_Result(TRUE),
+      m_bPrint(FALSE) {}
 
 CXFA_ImageRenderer::~CXFA_ImageRenderer() {
-  delete m_pCloneConvert;
   if (m_DeviceHandle)
     m_pDevice->CancelDIBits(m_DeviceHandle);
 }
@@ -631,7 +633,7 @@ FX_BOOL CXFA_ImageRenderer::StartDIBSource() {
     return FALSE;
   }
   CFX_FloatRect image_rect_f = m_ImageMatrix.GetUnitRect();
-  FX_RECT image_rect = image_rect_f.GetOutterRect();
+  FX_RECT image_rect = image_rect_f.GetOuterRect();
   int dest_width = image_rect.Width();
   int dest_height = image_rect.Height();
   if ((FXSYS_fabs(m_ImageMatrix.b) >= 0.5f || m_ImageMatrix.a == 0) ||
@@ -644,12 +646,12 @@ FX_BOOL CXFA_ImageRenderer::StartDIBSource() {
     if (m_pDIBSource->HasAlpha() &&
         !(m_pDevice->GetRenderCaps() & FXRC_ALPHA_IMAGE) &&
         !(m_pDevice->GetRenderCaps() & FXRC_GET_BITS)) {
-      m_pCloneConvert = m_pDIBSource->CloneConvert(FXDIB_Rgb);
+      m_pCloneConvert.reset(m_pDIBSource->CloneConvert(FXDIB_Rgb));
       if (!m_pCloneConvert) {
         m_Result = FALSE;
         return FALSE;
       }
-      pDib = m_pCloneConvert;
+      pDib = m_pCloneConvert.get();
     }
     FX_RECT clip_box = m_pDevice->GetClipBox();
     clip_box.Intersect(image_rect);
@@ -1081,7 +1083,7 @@ CFX_DIBitmap* XFA_LoadImageData(CXFA_FFDoc* pDoc,
         return pBitmap;
       }
     }
-    pImageFileRead = pDoc->GetDocProvider()->OpenLinkedFile(pDoc, wsURL);
+    pImageFileRead = pDoc->GetDocEnvironment()->OpenLinkedFile(pDoc, wsURL);
   }
   if (!pImageFileRead) {
     FX_Free(pImageBuffer);
@@ -1588,7 +1590,7 @@ static void XFA_BOX_Fill_Pattern(CXFA_Box box,
   }
 
   CFX_Pattern pattern(iHatch, crEnd, crStart);
-  CFX_Color cr(&pattern);
+  CFX_Color cr(&pattern, 0x0);
   pGS->SetFillColor(&cr);
   pGS->FillPath(&fillPath, FXFILL_WINDING, pMatrix);
 }

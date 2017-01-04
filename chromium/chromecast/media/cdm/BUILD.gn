@@ -4,7 +4,6 @@
 
 import("//chromecast/chromecast.gni")
 
-# GYP target: chromecast/media.gyp:media_cdm
 source_set("cdm") {
   sources = [
     "cast_cdm.cc",
@@ -23,6 +22,7 @@ source_set("cdm") {
     "//base",
     "//chromecast/media/base",
     "//media",
+    "//url:url",
   ]
 
   if (is_android && use_playready) {

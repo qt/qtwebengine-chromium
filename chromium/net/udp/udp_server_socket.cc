@@ -10,14 +10,10 @@
 namespace net {
 
 UDPServerSocket::UDPServerSocket(net::NetLog* net_log,
-                                 const net::NetLog::Source& source)
-    : socket_(DatagramSocket::DEFAULT_BIND,
-              RandIntCallback(),
-              net_log,
-              source),
+                                 const net::NetLogSource& source)
+    : socket_(DatagramSocket::DEFAULT_BIND, RandIntCallback(), net_log, source),
       allow_address_reuse_(false),
-      allow_broadcast_(false) {
-}
+      allow_broadcast_(false) {}
 
 UDPServerSocket::~UDPServerSocket() {
 }
@@ -68,6 +64,10 @@ int UDPServerSocket::SetSendBufferSize(int32_t size) {
   return socket_.SetSendBufferSize(size);
 }
 
+int UDPServerSocket::SetDoNotFragment() {
+  return socket_.SetDoNotFragment();
+}
+
 void UDPServerSocket::Close() {
   socket_.Close();
 }
@@ -80,7 +80,7 @@ int UDPServerSocket::GetLocalAddress(IPEndPoint* address) const {
   return socket_.GetLocalAddress(address);
 }
 
-const BoundNetLog& UDPServerSocket::NetLog() const {
+const NetLogWithSource& UDPServerSocket::NetLog() const {
   return socket_.NetLog();
 }
 
@@ -120,10 +120,10 @@ void UDPServerSocket::DetachFromThread() {
   socket_.DetachFromThread();
 }
 
-#if defined(OS_WIN)
 void UDPServerSocket::UseNonBlockingIO() {
+#if defined(OS_WIN)
   socket_.UseNonBlockingIO();
-}
 #endif
+}
 
 }  // namespace net

@@ -5,7 +5,10 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
+<link rel="import" href="/tracing/base/time_display_modes.html">
+<link rel="import" href="/tracing/base/unit.html">
 <link rel="import" href="/tracing/core/test_utils.html">
+<link rel="import" href="/tracing/extras/importer/battor_importer.html">
 <link rel="import" href="/tracing/extras/importer/trace_event_importer.html">
 <link rel="import" href="/tracing/extras/measure/measure.html">
 <link rel="import" href="/tracing/importer/import.html">
@@ -14,8 +17,6 @@ found in the LICENSE file.
 <link rel="import" href="/tracing/model/scoped_id.html">
 <link rel="import" href="/tracing/model/vm_region.html">
 <link rel="import" href="/tracing/value/numeric.html">
-<link rel="import" href="/tracing/value/time_display_mode.html">
-<link rel="import" href="/tracing/value/unit.html">
 
 <script>
 'use strict';
@@ -29,7 +30,7 @@ tr.b.unittest.testSuite(function() {
   var VMRegion = tr.model.VMRegion;
   var ScalarNumeric = tr.v.ScalarNumeric;
   var unitlessNumber_smallerIsBetter =
-      tr.v.Unit.byName.unitlessNumber_smallerIsBetter;
+      tr.b.Unit.byName.unitlessNumber_smallerIsBetter;
   var checkDumpNumericsAndDiagnostics =
       tr.model.MemoryDumpTestUtils.checkDumpNumericsAndDiagnostics;
   var checkVMRegions = tr.model.MemoryDumpTestUtils.checkVMRegions;
@@ -441,7 +442,7 @@ tr.b.unittest.testSuite(function() {
   });
 
   test('taskColoring', function() {
-    // The test below depends on hashing of 'a' != 'b'. Fail early if that
+    // The test below depends on hashing of 'a' !== 'b'. Fail early if that
     // assumption is incorrect.
     assert.notEqual(ColorScheme.getStringHash('a'),
                     ColorScheme.getStringHash('b'));
@@ -884,9 +885,9 @@ tr.b.unittest.testSuite(function() {
         ph: 'C', id: 1},
       {name: 'ctr', args: {'value': 20}, pid: 1, ts: 15, cat: 'foo', tid: 1,
         ph: 'C', id: 1},
-      {name: 'ctr', args: {'value': 30}, pid: 1, ts: 18, cat: 'foo', tid: 1,
+      {name: 'ctr', args: {'value': 30}, pid: 1, ts: 20, cat: 'foo', tid: 1,
         ph: 'C', id: 1},
-      {name: 'ctr', args: {'value': 40}, pid: 1, ts: 20, cat: 'bar', tid: 1,
+      {name: 'ctr', args: {'value': 40}, pid: 1, ts: 25, cat: 'bar', tid: 1,
         ph: 'C', id: 2}
     ];
     var m = makeModel(events);
@@ -909,7 +910,7 @@ tr.b.unittest.testSuite(function() {
     assert.equal(ctr.category, 'foo');
     assert.equal(ctr.numSamples, 3);
     assert.equal(ctr.numSeries, 1);
-    assert.deepEqual(ctr.timestamps, [0.01, 0.015, 0.018]);
+    assert.deepEqual(ctr.timestamps, [0.01, 0.015, 0.02]);
 
     samples = [];
     ctr.series[0].samples.forEach(function(sample) {
@@ -922,7 +923,7 @@ tr.b.unittest.testSuite(function() {
     assert.equal(ctr.category, 'bar');
     assert.equal(ctr.numSamples, 1);
     assert.equal(ctr.numSeries, 1);
-    assert.deepEqual(ctr.timestamps, [0.02]);
+    assert.deepEqual(ctr.timestamps, [0.025]);
     var samples = [];
     ctr.series[0].samples.forEach(function(sample) {
       samples.push(sample.value);
@@ -2219,10 +2220,10 @@ tr.b.unittest.testSuite(function() {
     // arguments of the snapshots to be mutated.
     var m;
     try {
-      tr.model.ObjectSnapshot.register(ASnapshot, {typeName: 'a'});
+      tr.model.ObjectSnapshot.subTypes.register(ASnapshot, {typeName: 'a'});
       m = makeModel(events);
     } finally {
-      tr.model.ObjectSnapshot.unregister(ASnapshot);
+      tr.model.ObjectSnapshot.subTypes.unregister(ASnapshot);
     }
     assert.isFalse(m.hasImportWarnings);
 
@@ -5253,7 +5254,7 @@ tr.b.unittest.testSuite(function() {
       displayTimeUnit: 'ns'
     };
     var m = makeModel(JSON.stringify(eventData));
-    assert.equal(m.intrinsicTimeUnit, tr.v.TimeDisplayModes.ns);
+    assert.equal(m.intrinsicTimeUnit, tr.b.TimeDisplayModes.ns);
   });
 
   test('extractBattorSubTraces', function() {
@@ -5274,8 +5275,7 @@ tr.b.unittest.testSuite(function() {
       ],
       powerTraceAsString: battorLog
     };
-
-    var m = makeModel(eventData);
+    var m = new tr.Model();
     var importer = new tr.e.importer.TraceEventImporter(m, eventData);
     var subTraces = importer.extractSubtraces();
     assert.isTrue(subTraces instanceof Array);

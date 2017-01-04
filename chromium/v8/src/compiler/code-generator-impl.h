@@ -39,6 +39,10 @@ class InstructionOperandConverter {
     return ToDoubleRegister(instr_->InputAt(index));
   }
 
+  Simd128Register InputSimd128Register(size_t index) {
+    return ToSimd128Register(instr_->InputAt(index));
+  }
+
   double InputDouble(size_t index) { return ToDouble(instr_->InputAt(index)); }
 
   float InputFloat32(size_t index) { return ToFloat32(instr_->InputAt(index)); }
@@ -101,6 +105,10 @@ class InstructionOperandConverter {
     return ToDoubleRegister(instr_->Output());
   }
 
+  Simd128Register OutputSimd128Register() {
+    return ToSimd128Register(instr_->Output());
+  }
+
   // -- Conversions for operands -----------------------------------------------
 
   Label* ToLabel(InstructionOperand* op) {
@@ -115,12 +123,16 @@ class InstructionOperandConverter {
     return LocationOperand::cast(op)->GetRegister();
   }
 
+  FloatRegister ToFloatRegister(InstructionOperand* op) {
+    return LocationOperand::cast(op)->GetFloatRegister();
+  }
+
   DoubleRegister ToDoubleRegister(InstructionOperand* op) {
     return LocationOperand::cast(op)->GetDoubleRegister();
   }
 
-  FloatRegister ToFloatRegister(InstructionOperand* op) {
-    return LocationOperand::cast(op)->GetFloatRegister();
+  Simd128Register ToSimd128Register(InstructionOperand* op) {
+    return LocationOperand::cast(op)->GetSimd128Register();
   }
 
   Constant ToConstant(InstructionOperand* op) {
@@ -158,15 +170,17 @@ class InstructionOperandConverter {
 // Eager deoptimization exit.
 class DeoptimizationExit : public ZoneObject {
  public:
-  explicit DeoptimizationExit(int deoptimization_id)
-      : deoptimization_id_(deoptimization_id) {}
+  explicit DeoptimizationExit(int deoptimization_id, SourcePosition pos)
+      : deoptimization_id_(deoptimization_id), pos_(pos) {}
 
   int deoptimization_id() const { return deoptimization_id_; }
   Label* label() { return &label_; }
+  SourcePosition pos() const { return pos_; }
 
  private:
   int const deoptimization_id_;
   Label label_;
+  SourcePosition const pos_;
 };
 
 // Generator for out-of-line code that is emitted after the main code is done.
@@ -198,8 +212,6 @@ class OutOfLineCode : public ZoneObject {
 static inline void FinishCode(MacroAssembler* masm) {
 #if V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_ARM
   masm->CheckConstPool(true, false);
-#elif V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64
-  masm->ud2();
 #endif
 }
 

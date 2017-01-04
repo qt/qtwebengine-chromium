@@ -134,7 +134,7 @@ class LayoutTestRunner(object):
             self._printer.writeln('Interrupted, exiting ...')
             run_results.keyboard_interrupted = True
         except Exception as e:
-            _log.debug('%s("%s") raised, exiting' % (e.__class__.__name__, str(e)))
+            _log.debug('%s("%s") raised, exiting', e.__class__.__name__, str(e))
             raise
         finally:
             run_results.run_time = time.time() - start_time
@@ -209,7 +209,7 @@ class LayoutTestRunner(object):
         self._update_summary_with_result(self._current_run_results, result)
 
     def _handle_device_failed(self, worker_name, list_name, remaining_tests):
-        _log.warning("%s has failed" % worker_name)
+        _log.warning("%s has failed", worker_name)
         if remaining_tests:
             self._shards_to_redo.append(TestShard(list_name, remaining_tests))
 
@@ -239,7 +239,8 @@ class Worker(object):
     def start(self):
         """This method is called when the object is starting to be used and it is safe
         for the object to create state that does not need to be pickled (usually this means
-        it is called in a child process)."""
+        it is called in a child process).
+        """
         self._host = self._caller.host
         self._filesystem = self._host.filesystem
         self._port = self._host.port_factory.get(self._options.platform, self._options)
@@ -284,9 +285,8 @@ class Worker(object):
 
         self._update_test_input(test_input)
         start = time.time()
-        device_failed = False
 
-        _log.debug("%s %s started" % (self._name, test_input.test_name))
+        _log.debug("%s %s started", self._name, test_input.test_name)
         self._caller.post('started_test', test_input)
         result = single_test_runner.run_single_test(
             self._port, self._options, self._results_directory, self._name,
@@ -303,7 +303,7 @@ class Worker(object):
         return result.device_failed
 
     def stop(self):
-        _log.debug("%s cleaning up" % self._name)
+        _log.debug("%s cleaning up", self._name)
         self._kill_driver(self._primary_driver, "primary")
         self._kill_driver(self._secondary_driver, "secondary")
 
@@ -311,7 +311,7 @@ class Worker(object):
         # Be careful about how and when we kill the driver; if driver.stop()
         # raises an exception, this routine may get re-entered via __del__.
         if driver:
-            _log.debug("%s killing %s driver" % (self._name, label))
+            _log.debug("%s killing %s driver", self._name, label)
             driver.stop()
 
     def _clean_up_after_test(self, test_input, result):
@@ -330,13 +330,13 @@ class Worker(object):
                 self._batch_count = 0
 
             # Print the error message(s).
-            _log.debug("%s %s failed:" % (self._name, test_name))
+            _log.debug("%s %s failed:", self._name, test_name)
             for f in result.failures:
-                _log.debug("%s  %s" % (self._name, f.message()))
+                _log.debug("%s  %s", self._name, f.message())
         elif result.type == test_expectations.SKIP:
-            _log.debug("%s %s skipped" % (self._name, test_name))
+            _log.debug("%s %s skipped", self._name, test_name)
         else:
-            _log.debug("%s %s passed" % (self._name, test_name))
+            _log.debug("%s %s passed", self._name, test_name)
 
 
 class TestShard(object):
@@ -382,7 +382,8 @@ class Sharder(object):
     def _shard_in_two(self, test_inputs):
         """Returns two lists of shards, one with all the tests requiring a lock and one with the rest.
 
-        This is used when there's only one worker, to minimize the per-shard overhead."""
+        This is used when there's only one worker, to minimize the per-shard overhead.
+        """
         locked_inputs = []
         unlocked_inputs = []
         for test_input in test_inputs:
@@ -403,7 +404,8 @@ class Sharder(object):
     def _shard_every_file(self, test_inputs, run_singly):
         """Returns two lists of shards, each shard containing a single test file.
 
-        This mode gets maximal parallelism at the cost of much higher flakiness."""
+        This mode gets maximal parallelism at the cost of much higher flakiness.
+        """
         locked_shards = []
         unlocked_shards = []
         virtual_inputs = []
@@ -433,7 +435,8 @@ class Sharder(object):
         """Returns two lists of shards, each shard containing all the files in a directory.
 
         This is the default mode, and gets as much parallelism as we can while
-        minimizing flakiness caused by inter-test dependencies."""
+        minimizing flakiness caused by inter-test dependencies.
+        """
         locked_shards = []
         unlocked_shards = []
         unlocked_slow_shards = []
@@ -474,7 +477,8 @@ class Sharder(object):
 
     def _resize_shards(self, old_shards, max_new_shards, shard_name_prefix):
         """Takes a list of shards and redistributes the tests into no more
-        than |max_new_shards| new shards."""
+        than |max_new_shards| new shards.
+        """
 
         # This implementation assumes that each input shard only contains tests from a
         # single directory, and that tests in each shard must remain together; as a

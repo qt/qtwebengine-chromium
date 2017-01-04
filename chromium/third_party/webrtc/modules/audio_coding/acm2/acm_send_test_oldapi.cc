@@ -14,12 +14,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "webrtc/modules/audio_coding/neteq/tools/packet.h"
+#include "webrtc/test/gtest.h"
 
 namespace webrtc {
 namespace test {
@@ -46,6 +46,8 @@ AcmSendTestOldApi::AcmSendTestOldApi(InputAudioFile* audio_source,
          AudioFrame::kMaxDataSizeSamples);
   acm_->RegisterTransportCallback(this);
 }
+
+AcmSendTestOldApi::~AcmSendTestOldApi() = default;
 
 bool AcmSendTestOldApi::RegisterCodec(const char* payload_name,
                                       int sampling_freq_hz,

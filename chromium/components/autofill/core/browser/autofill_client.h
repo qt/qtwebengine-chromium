@@ -6,6 +6,7 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_AUTOFILL_CLIENT_H_
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "base/callback_forward.h"
@@ -16,7 +17,9 @@
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
+class GURL;
 class IdentityProvider;
+class PrefService;
 
 namespace content {
 class RenderFrameHost;
@@ -31,12 +34,9 @@ namespace rappor {
 class RapporService;
 }
 
-namespace sync_driver {
+namespace syncer {
 class SyncService;
 }
-
-class GURL;
-class PrefService;
 
 namespace autofill {
 
@@ -86,9 +86,7 @@ class AutofillClient {
     UNMASK_FOR_AUTOFILL,
   };
 
-  typedef base::Callback<void(const base::string16& /* card number */,
-                              int /* exp month */,
-                              int /* exp year */)> CreditCardScanCallback;
+  typedef base::Callback<void(const CreditCard&)> CreditCardScanCallback;
 
   virtual ~AutofillClient() {}
 
@@ -102,7 +100,7 @@ class AutofillClient {
   virtual PrefService* GetPrefs() = 0;
 
   // Gets the sync service associated with the client.
-  virtual sync_driver::SyncService* GetSyncService() = 0;
+  virtual syncer::SyncService* GetSyncService() = 0;
 
   // Gets the IdentityProvider associated with the client (for OAuth2).
   virtual IdentityProvider* GetIdentityProvider() = 0;
@@ -131,6 +129,11 @@ class AutofillClient {
       const CreditCard& card,
       std::unique_ptr<base::DictionaryValue> legal_message,
       const base::Closure& callback) = 0;
+
+  // Will show an infobar to get user consent for Credit Card assistive filling.
+  // Will run |callback| on success.
+  virtual void ConfirmCreditCardFillAssist(const CreditCard& card,
+                                           const base::Closure& callback) = 0;
 
   // Gathers risk data and provides it to |callback|.
   virtual void LoadRiskData(
@@ -181,6 +184,13 @@ class AutofillClient {
 
   // If the context is secure.
   virtual bool IsContextSecure(const GURL& form_origin) = 0;
+
+  // Whether it is appropriate to show a signin promo for this user.
+  virtual bool ShouldShowSigninPromo() = 0;
+
+  // Starts the signin flow. Should not be called if ShouldShowSigninPromo()
+  // returns false.
+  virtual void StartSigninFlow() = 0;
 };
 
 }  // namespace autofill

@@ -195,26 +195,6 @@ int ec_GFp_mont_field_decode(const EC_GROUP *group, BIGNUM *r, const BIGNUM *a,
   return BN_from_montgomery(r, a, group->mont, ctx);
 }
 
-static int ec_GFp_mont_check_pub_key_order(const EC_GROUP *group,
-                                           const EC_POINT* pub_key,
-                                           BN_CTX *ctx) {
-  EC_POINT *point = EC_POINT_new(group);
-  int ret = 0;
-
-  if (point == NULL ||
-      !ec_wNAF_mul(group, point, NULL, pub_key, EC_GROUP_get0_order(group),
-                   ctx) ||
-      !EC_POINT_is_at_infinity(group, point)) {
-    goto err;
-  }
-
-  ret = 1;
-
-err:
-  EC_POINT_free(point);
-  return ret;
-}
-
 static int ec_GFp_mont_point_get_affine_coordinates(const EC_GROUP *group,
                                                     const EC_POINT *point,
                                                     BIGNUM *x, BIGNUM *y,
@@ -250,23 +230,33 @@ static int ec_GFp_mont_point_get_affine_coordinates(const EC_GROUP *group,
     BIGNUM *Z_1 = BN_CTX_get(ctx);
     BIGNUM *Z_2 = BN_CTX_get(ctx);
     BIGNUM *Z_3 = BN_CTX_get(ctx);
+    BIGNUM *field_minus_2 = BN_CTX_get(ctx);
     if (Z_1 == NULL ||
         Z_2 == NULL ||
-        Z_3 == NULL) {
+        Z_3 == NULL ||
+        field_minus_2 == NULL) {
       goto err;
     }
 
     /* The straightforward way to calculate the inverse of a Montgomery-encoded
      * value where the result is Montgomery-encoded is:
      *
-     *    |BN_from_montgomery| + |BN_mod_inverse| + |BN_to_montgomery|.
+     *    |BN_from_montgomery| + invert + |BN_to_montgomery|.
      *
      * This is equivalent, but more efficient, because |BN_from_montgomery|
      * is more efficient (at least in theory) than |BN_to_montgomery|, since it
-     * doesn't have to do the multiplication before the reduction. */
+     * doesn't have to do the multiplication before the reduction.
+     *
+     * Use Fermat's Little Theorem with |BN_mod_exp_mont_consttime| instead of
+     * |BN_mod_inverse_odd| since this inversion may be done as the final step
+     * of private key operations. Unfortunately, this is suboptimal for ECDSA
+     * verification. */
     if (!BN_from_montgomery(Z_1, &point->Z, group->mont, ctx) ||
         !BN_from_montgomery(Z_1, Z_1, group->mont, ctx) ||
-        !BN_mod_inverse(Z_1, Z_1, &group->field, ctx)) {
+        !BN_copy(field_minus_2, &group->field) ||
+        !BN_sub_word(field_minus_2, 2) ||
+        !BN_mod_exp_mont_consttime(Z_1, Z_1, field_minus_2, &group->field,
+                                   ctx, group->mont)) {
       goto err;
     }
 
@@ -304,20 +294,15 @@ err:
   return ret;
 }
 
-const EC_METHOD *EC_GFp_mont_method(void) {
-  static const EC_METHOD ret = {
+const EC_METHOD EC_GFp_mont_method = {
     ec_GFp_mont_group_init,
     ec_GFp_mont_group_finish,
     ec_GFp_mont_group_copy,
     ec_GFp_mont_group_set_curve,
     ec_GFp_mont_point_get_affine_coordinates,
     ec_wNAF_mul /* XXX: Not constant time. */,
-    ec_GFp_mont_check_pub_key_order,
     ec_GFp_mont_field_mul,
     ec_GFp_mont_field_sqr,
     ec_GFp_mont_field_encode,
     ec_GFp_mont_field_decode,
-  };
-
-  return &ret;
-}
+};

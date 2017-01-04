@@ -12,7 +12,7 @@
 
 #include <utility>
 
-#include "webrtc/audio_sink.h"
+#include "webrtc/api/call/audio_sink.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/voice_engine/channel.h"
 
@@ -158,6 +158,11 @@ bool ChannelProxy::SendTelephoneEventOutband(int event, int duration_ms) {
   return channel()->SendTelephoneEventOutband(event, duration_ms) == 0;
 }
 
+void ChannelProxy::SetBitrate(int bitrate_bps) {
+  // May be called on different threads and needs to be handled by the channel.
+  channel()->SetBitRate(bitrate_bps);
+}
+
 void ChannelProxy::SetSink(std::unique_ptr<AudioSinkInterface> sink) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   channel()->SetSink(std::move(sink));
@@ -202,6 +207,11 @@ void ChannelProxy::SetChannelOutputVolumeScaling(float scaling) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   int error = channel()->SetChannelOutputVolumeScaling(scaling);
   RTC_DCHECK_EQ(0, error);
+}
+
+void ChannelProxy::SetRtcEventLog(RtcEventLog* event_log) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel()->SetRtcEventLog(event_log);
 }
 
 Channel* ChannelProxy::channel() const {

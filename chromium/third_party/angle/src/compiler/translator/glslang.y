@@ -80,6 +80,7 @@ WHICH GENERATES THE GLSL ES PARSER (glslang_tab.cpp AND glslang_tab.h).
             TIntermCase* intermCase;
         };
         union {
+            TTypeSpecifierNonArray typeSpecifierNonArray;
             TPublicType type;
             TPrecision precision;
             TLayoutQualifier layoutQualifier;
@@ -88,6 +89,8 @@ WHICH GENERATES THE GLSL ES PARSER (glslang_tab.cpp AND glslang_tab.h).
             TParameter param;
             TField* field;
             TFieldList* fieldList;
+            TQualifierWrapperBase* qualifierWrapper;
+            TTypeQualifierBuilder* typeQualifierBuilder;
         };
     } interm;
 }
@@ -115,28 +118,42 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, void *scanner, cons
 #define VERTEX_ONLY(S, L) {  \
     if (context->getShaderType() != GL_VERTEX_SHADER) {  \
         context->error(L, " supported in vertex shaders only ", S);  \
-        context->recover();  \
     }  \
 }
 
 #define FRAG_ONLY(S, L) {  \
     if (context->getShaderType() != GL_FRAGMENT_SHADER) {  \
         context->error(L, " supported in fragment shaders only ", S);  \
-        context->recover();  \
+    }  \
+}
+
+#define COMPUTE_ONLY(S, L) {  \
+    if (context->getShaderType() != GL_COMPUTE_SHADER) {  \
+        context->error(L, " supported in compute shaders only ", S);  \
+    }  \
+}
+
+#define NON_COMPUTE_ONLY(S, L) {  \
+    if (context->getShaderType() != GL_VERTEX_SHADER && context->getShaderType() != GL_FRAGMENT_SHADER) {  \
+        context->error(L, " supported in vertex and fragment shaders only ", S);  \
     }  \
 }
 
 #define ES2_ONLY(S, L) {  \
     if (context->getShaderVersion() != 100) {  \
         context->error(L, " supported in GLSL ES 1.00 only ", S);  \
-        context->recover();  \
     }  \
 }
 
-#define ES3_ONLY(TOKEN, LINE, REASON) {  \
-    if (context->getShaderVersion() != 300) {  \
-        context->error(LINE, REASON " supported in GLSL ES 3.00 only ", TOKEN);  \
-        context->recover();  \
+#define ES3_OR_NEWER(TOKEN, LINE, REASON) {  \
+    if (context->getShaderVersion() < 300) {  \
+        context->error(LINE, REASON " supported in GLSL ES 3.00 and above only ", TOKEN);  \
+    }  \
+}
+
+#define ES3_1_ONLY(TOKEN, LINE, REASON) {  \
+    if (context->getShaderVersion() != 310) {  \
+        context->error(LINE, REASON " supported in GLSL ES 3.10 only ", TOKEN);  \
     }  \
 }
 %}
@@ -191,13 +208,18 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, void *scanner, cons
 %type <interm> single_declaration init_declarator_list
 
 %type <interm> parameter_declaration parameter_declarator parameter_type_specifier
-%type <interm.qualifier> parameter_qualifier parameter_type_qualifier 
-%type <interm.layoutQualifier> layout_qualifier layout_qualifier_id_list layout_qualifier_id
+%type <interm.layoutQualifier> layout_qualifier_id_list layout_qualifier_id
+
+%type <interm.type> fully_specified_type type_specifier
 
 %type <interm.precision> precision_qualifier
-%type <interm.type> type_qualifier fully_specified_type type_specifier storage_qualifier interpolation_qualifier
-%type <interm.type> type_specifier_no_prec type_specifier_nonarray
-%type <interm.type> struct_specifier
+%type <interm.layoutQualifier> layout_qualifier
+%type <interm.qualifier> storage_qualifier interpolation_qualifier
+%type <interm.qualifierWrapper> single_type_qualifier invariant_qualifier
+%type <interm.typeQualifierBuilder> type_qualifier
+
+%type <interm.typeSpecifierNonArray> type_specifier_nonarray struct_specifier
+%type <interm.type> type_specifier_no_prec
 %type <interm.field> struct_declarator
 %type <interm.fieldList> struct_declarator_list struct_declaration struct_declaration_list
 %type <interm.function> function_header function_declarator function_identifier
@@ -276,8 +298,7 @@ postfix_expression
 
 integer_expression
     : expression {
-        if (context->integerErrorCheck($1, "[]"))
-            context->recover();
+        context->checkIsScalarInteger($1, "[]");
         $$ = $1;
     }
     ;
@@ -299,7 +320,7 @@ function_call_or_method
         $$.nodePair.node2 = nullptr;
     }
     | postfix_expression DOT function_call_generic {
-        ES3_ONLY("", @3, "methods");
+        ES3_OR_NEWER("", @3, "methods");
         $$ = $3;
         $$.nodePair.node2 = $1;
     }
@@ -330,7 +351,7 @@ function_call_header_with_parameters
         const TType *type = new TType($2->getType());
         $1->addParameter(TConstParameter(type));
         $$.function = $1;
-        $$.nodePair.node1 = context->intermediate.makeAggregate($2, @2);
+        $$.nodePair.node1 = TIntermediate::MakeAggregate($2, @2);
     }
     | function_call_header_with_parameters COMMA assignment_expression {
         const TType *type = new TType($3->getType());
@@ -351,20 +372,18 @@ function_call_header
 function_identifier
     : type_specifier_no_prec {
         if ($1.array) {
-            ES3_ONLY("[]", @1, "array constructor");
+            ES3_OR_NEWER("[]", @1, "array constructor");
         }
         $$ = context->addConstructorFunc($1);
     }
     | IDENTIFIER {
-        if (context->reservedErrorCheck(@1, *$1.string))
-            context->recover();
+        context->checkIsNotReserved(@1, *$1.string);
         const TType *type = TCache::getType(EbtVoid, EbpUndefined);
         TFunction *function = new TFunction($1.string, type);
         $$ = function;
     }
     | FIELD_SELECTION {
-        if (context->reservedErrorCheck(@1, *$1.string))
-            context->recover();
+        context->checkIsNotReserved(@1, *$1.string);
         const TType *type = TCache::getType(EbtVoid, EbpUndefined);
         TFunction *function = new TFunction($1.string, type);
         $$ = function;
@@ -395,7 +414,7 @@ unary_operator
     | DASH  { $$.op = EOpNegative; }
     | BANG  { $$.op = EOpLogicalNot; }
     | TILDE {
-        ES3_ONLY("~", @$, "bit-wise operator");
+        ES3_OR_NEWER("~", @$, "bit-wise operator");
         $$.op = EOpBitwiseNot;
     }
     ;
@@ -410,7 +429,7 @@ multiplicative_expression
         $$ = context->addBinaryMath(EOpDiv, $1, $3, @2);
     }
     | multiplicative_expression PERCENT unary_expression {
-        ES3_ONLY("%", @2, "integer modulus operator");
+        ES3_OR_NEWER("%", @2, "integer modulus operator");
         $$ = context->addBinaryMath(EOpIMod, $1, $3, @2);
     }
     ;
@@ -428,11 +447,11 @@ additive_expression
 shift_expression
     : additive_expression { $$ = $1; }
     | shift_expression LEFT_OP additive_expression {
-        ES3_ONLY("<<", @2, "bit-wise operator");
+        ES3_OR_NEWER("<<", @2, "bit-wise operator");
         $$ = context->addBinaryMath(EOpBitShiftLeft, $1, $3, @2);
     }
     | shift_expression RIGHT_OP additive_expression {
-        ES3_ONLY(">>", @2, "bit-wise operator");
+        ES3_OR_NEWER(">>", @2, "bit-wise operator");
         $$ = context->addBinaryMath(EOpBitShiftRight, $1, $3, @2);
     }
     ;
@@ -466,7 +485,7 @@ equality_expression
 and_expression
     : equality_expression { $$ = $1; }
     | and_expression AMPERSAND equality_expression {
-        ES3_ONLY("&", @2, "bit-wise operator");
+        ES3_OR_NEWER("&", @2, "bit-wise operator");
         $$ = context->addBinaryMath(EOpBitwiseAnd, $1, $3, @2);
     }
     ;
@@ -474,7 +493,7 @@ and_expression
 exclusive_or_expression
     : and_expression { $$ = $1; }
     | exclusive_or_expression CARET and_expression {
-        ES3_ONLY("^", @2, "bit-wise operator");
+        ES3_OR_NEWER("^", @2, "bit-wise operator");
         $$ = context->addBinaryMath(EOpBitwiseXor, $1, $3, @2);
     }
     ;
@@ -482,7 +501,7 @@ exclusive_or_expression
 inclusive_or_expression
     : exclusive_or_expression { $$ = $1; }
     | inclusive_or_expression VERTICAL_BAR exclusive_or_expression {
-        ES3_ONLY("|", @2, "bit-wise operator");
+        ES3_OR_NEWER("|", @2, "bit-wise operator");
         $$ = context->addBinaryMath(EOpBitwiseOr, $1, $3, @2);
     }
     ;
@@ -518,8 +537,7 @@ conditional_expression
 assignment_expression
     : conditional_expression { $$ = $1; }
     | unary_expression assignment_operator assignment_expression {
-        if (context->lValueErrorCheck(@2, "assign", $1))
-            context->recover();
+        context->checkCanBeLValue(@2, "assign", $1);
         $$ = context->addAssign($2.op, $1, $3, @2);
     }
     ;
@@ -529,29 +547,29 @@ assignment_operator
     | MUL_ASSIGN   { $$.op = EOpMulAssign; }
     | DIV_ASSIGN   { $$.op = EOpDivAssign; }
     | MOD_ASSIGN   {
-        ES3_ONLY("%=", @$, "integer modulus operator");
+        ES3_OR_NEWER("%=", @$, "integer modulus operator");
         $$.op = EOpIModAssign;
     }
     | ADD_ASSIGN   { $$.op = EOpAddAssign; }
     | SUB_ASSIGN   { $$.op = EOpSubAssign; }
     | LEFT_ASSIGN {
-        ES3_ONLY("<<=", @$, "bit-wise operator");
+        ES3_OR_NEWER("<<=", @$, "bit-wise operator");
         $$.op = EOpBitShiftLeftAssign;
     }
     | RIGHT_ASSIGN {
-        ES3_ONLY(">>=", @$, "bit-wise operator");
+        ES3_OR_NEWER(">>=", @$, "bit-wise operator");
         $$.op = EOpBitShiftRightAssign;
     }
     | AND_ASSIGN {
-        ES3_ONLY("&=", @$, "bit-wise operator");
+        ES3_OR_NEWER("&=", @$, "bit-wise operator");
         $$.op = EOpBitwiseAndAssign;
     }
     | XOR_ASSIGN {
-        ES3_ONLY("^=", @$, "bit-wise operator");
+        ES3_OR_NEWER("^=", @$, "bit-wise operator");
         $$.op = EOpBitwiseXorAssign;
     }
     | OR_ASSIGN {
-        ES3_ONLY("|=", @$, "bit-wise operator");
+        ES3_OR_NEWER("|=", @$, "bit-wise operator");
         $$.op = EOpBitwiseOrAssign;
     }
     ;
@@ -567,16 +585,14 @@ expression
 
 constant_expression
     : conditional_expression {
-        if (context->constErrorCheck($1))
-            context->recover();
+        context->checkIsConst($1);
         $$ = $1;
     }
     ;
 
 enter_struct
     : IDENTIFIER LEFT_BRACE {
-        if (context->enterStructDeclaration(@1, *$1.string))
-            context->recover();
+        context->enterStructDeclaration(@1, *$1.string);
         $$ = $1;
     }
     ;
@@ -594,35 +610,38 @@ declaration
     | PRECISION precision_qualifier type_specifier_no_prec SEMICOLON {
         if (($2 == EbpHigh) && (context->getShaderType() == GL_FRAGMENT_SHADER) && !context->getFragmentPrecisionHigh()) {
             context->error(@1, "precision is not supported in fragment shader", "highp");
-            context->recover();
         }
         if (!context->symbolTable.setDefaultPrecision( $3, $2 )) {
-            context->error(@1, "illegal type argument for default precision qualifier", getBasicString($3.type));
-            context->recover();
+            context->error(@1, "illegal type argument for default precision qualifier", getBasicString($3.getBasicType()));
         }
         $$ = 0;
     }
     | type_qualifier enter_struct struct_declaration_list RIGHT_BRACE SEMICOLON {
-        ES3_ONLY(getQualifierString($1.qualifier), @1, "interface blocks");
-        $$ = context->addInterfaceBlock($1, @2, *$2.string, $3, NULL, @$, NULL, @$);
+        ES3_OR_NEWER($2.string->c_str(), @1, "interface blocks");
+        $$ = context->addInterfaceBlock(*$1, @2, *$2.string, $3, NULL, @$, NULL, @$);
     }
     | type_qualifier enter_struct struct_declaration_list RIGHT_BRACE IDENTIFIER SEMICOLON {
-        ES3_ONLY(getQualifierString($1.qualifier), @1, "interface blocks");
-        $$ = context->addInterfaceBlock($1, @2, *$2.string, $3, $5.string, @5, NULL, @$);
+        ES3_OR_NEWER($2.string->c_str(), @1, "interface blocks");
+        $$ = context->addInterfaceBlock(*$1, @2, *$2.string, $3, $5.string, @5, NULL, @$);
     }
     | type_qualifier enter_struct struct_declaration_list RIGHT_BRACE IDENTIFIER LEFT_BRACKET constant_expression RIGHT_BRACKET SEMICOLON {
-        ES3_ONLY(getQualifierString($1.qualifier), @1, "interface blocks");
-        $$ = context->addInterfaceBlock($1, @2, *$2.string, $3, $5.string, @5, $7, @6);
+        ES3_OR_NEWER($2.string->c_str(), @1, "interface blocks");
+        $$ = context->addInterfaceBlock(*$1, @2, *$2.string, $3, $5.string, @5, $7, @6);
     }
     | type_qualifier SEMICOLON {
-        context->parseGlobalLayoutQualifier($1);
+        context->parseGlobalLayoutQualifier(*$1);
         $$ = 0;
+    }
+    | type_qualifier IDENTIFIER SEMICOLON // e.g. to qualify an existing variable as invariant
+    {
+        $$ = context->parseInvariantDeclaration(*$1, @2, $2.string, $2.symbol);
     }
     ;
 
 function_prototype
     : function_declarator RIGHT_PAREN  {
         $$.function = context->parseFunctionDeclarator(@2, $1);
+        context->exitFunctionDeclaration();
     }
     ;
 
@@ -655,7 +674,6 @@ function_header_with_parameters
             // This parameter > first is void
             //
             context->error(@2, "cannot be an argument type except for '(void)'", "void");
-            context->recover();
             delete $3.param.type;
         } else {
             // Add the parameter
@@ -670,32 +688,28 @@ function_header
         $$ = context->parseFunctionHeader($1, $2.string, @2);
 
         context->symbolTable.push();
+        context->enterFunctionDeclaration();
     }
     ;
 
 parameter_declarator
     // Type + name
     : type_specifier identifier {
-        if ($1.type == EbtVoid) {
+        if ($1.getBasicType() == EbtVoid) {
             context->error(@2, "illegal use of type 'void'", $2.string->c_str());
-            context->recover();
         }
-        if (context->reservedErrorCheck(@2, *$2.string))
-            context->recover();
+        context->checkIsNotReserved(@2, *$2.string);
         TParameter param = {$2.string, new TType($1)};
         $$.param = param;
     }
     | type_specifier identifier LEFT_BRACKET constant_expression RIGHT_BRACKET {
         // Check that we can make an array out of this type
-        if (context->arrayTypeErrorCheck(@3, $1))
-            context->recover();
+        context->checkIsValidTypeForArray(@3, $1);
 
-        if (context->reservedErrorCheck(@2, *$2.string))
-            context->recover();
+        context->checkIsNotReserved(@2, *$2.string);
 
-        int size;
-        if (context->arraySizeErrorCheck(@3, $4, size))
-            context->recover();
+        unsigned int size = context->checkIsValidArraySize(@3, $4);
+
         $1.setArraySize(size);
 
         TType* type = new TType($1);
@@ -713,47 +727,21 @@ parameter_declaration
     //
     // Type + name
     //
-    : parameter_type_qualifier parameter_qualifier parameter_declarator {
-        $$ = $3;
-        if (context->paramErrorCheck(@3, $1, $2, $$.param.type))
-            context->recover();
-    }
-    | parameter_qualifier parameter_declarator {
+    : type_qualifier parameter_declarator {
         $$ = $2;
-        if (context->parameterSamplerErrorCheck(@2, $1, *$2.param.type))
-            context->recover();
-        if (context->paramErrorCheck(@2, EvqTemporary, $1, $$.param.type))
-            context->recover();
+        context->checkIsParameterQualifierValid(@2, *$1, $2.param.type);
     }
-    //
-    // Only type
-    //
-    | parameter_type_qualifier parameter_qualifier parameter_type_specifier {
-        $$ = $3;
-        if (context->paramErrorCheck(@3, $1, $2, $$.param.type))
-            context->recover();
+    | parameter_declarator {
+        $$ = $1;
+        $$.param.type->setQualifier(EvqIn);
     }
-    | parameter_qualifier parameter_type_specifier {
+    | type_qualifier parameter_type_specifier {
         $$ = $2;
-        if (context->parameterSamplerErrorCheck(@2, $1, *$2.param.type))
-            context->recover();
-        if (context->paramErrorCheck(@2, EvqTemporary, $1, $$.param.type))
-            context->recover();
+        context->checkIsParameterQualifierValid(@2, *$1, $2.param.type);
     }
-    ;
-
-parameter_qualifier
-    : /* empty */ {
-        $$ = EvqIn;
-    }
-    | IN_QUAL {
-        $$ = EvqIn;
-    }
-    | OUT_QUAL {
-        $$ = EvqOut;
-    }
-    | INOUT_QUAL {
-        $$ = EvqInOut;
+    | parameter_type_specifier {
+        $$ = $1;
+        $$.param.type->setQualifier(EvqIn);
     }
     ;
 
@@ -777,12 +765,12 @@ init_declarator_list
         $$.intermAggregate = context->parseArrayDeclarator($$.type, $1.intermAggregate, @3, *$3.string, @4, $5);
     }
     | init_declarator_list COMMA identifier LEFT_BRACKET RIGHT_BRACKET EQUAL initializer {
-        ES3_ONLY("[]", @3, "implicitly sized array");
+        ES3_OR_NEWER("[]", @3, "implicitly sized array");
         $$ = $1;
         $$.intermAggregate = context->parseArrayInitDeclarator($$.type, $1.intermAggregate, @3, *$3.string, @4, nullptr, @6, $7);
     }
     | init_declarator_list COMMA identifier LEFT_BRACKET constant_expression RIGHT_BRACKET EQUAL initializer {
-        ES3_ONLY("=", @7, "first-class arrays (array initializer)");
+        ES3_OR_NEWER("=", @7, "first-class arrays (array initializer)");
         $$ = $1;
         $$.intermAggregate = context->parseArrayInitDeclarator($$.type, $1.intermAggregate, @3, *$3.string, @4, $5, @7, $8);
     }
@@ -806,22 +794,18 @@ single_declaration
         $$.intermAggregate = context->parseSingleArrayDeclaration($$.type, @2, *$2.string, @3, $4);
     }
     | fully_specified_type identifier LEFT_BRACKET RIGHT_BRACKET EQUAL initializer {
-        ES3_ONLY("[]", @3, "implicitly sized array");
+        ES3_OR_NEWER("[]", @3, "implicitly sized array");
         $$.type = $1;
         $$.intermAggregate = context->parseSingleArrayInitDeclaration($$.type, @2, *$2.string, @3, nullptr, @5, $6);
     }
     | fully_specified_type identifier LEFT_BRACKET constant_expression RIGHT_BRACKET EQUAL initializer {
-        ES3_ONLY("=", @6, "first-class arrays (array initializer)");
+        ES3_OR_NEWER("=", @6, "first-class arrays (array initializer)");
         $$.type = $1;
         $$.intermAggregate = context->parseSingleArrayInitDeclaration($$.type, @2, *$2.string, @3, $4, @6, $7);
     }
     | fully_specified_type identifier EQUAL initializer {
         $$.type = $1;
         $$.intermAggregate = context->parseSingleInitDeclaration($$.type, @2, *$2.string, @3, $4);
-    }
-    | INVARIANT IDENTIFIER {
-        // $$.type is not used in invariant declarations.
-        $$.intermAggregate = context->parseInvariantDeclaration(@1, @2, $2.string, $2.symbol);
     }
     ;
 
@@ -830,131 +814,140 @@ fully_specified_type
         $$ = $1;
 
         if ($1.array) {
-            ES3_ONLY("[]", @1, "first-class-array");
+            ES3_OR_NEWER("[]", @1, "first-class-array");
             if (context->getShaderVersion() != 300) {
                 $1.clearArrayness();
             }
         }
     }
-    | type_qualifier type_specifier  {
-        $$ = context->addFullySpecifiedType($1.qualifier, $1.invariant, $1.layoutQualifier, $2);
+    | type_qualifier type_specifier {
+        $$ = context->addFullySpecifiedType(*$1, $2);
     }
     ;
 
 interpolation_qualifier
     : SMOOTH {
-        $$.qualifier = EvqSmooth;
+        $$ = EvqSmooth;
     }
     | FLAT {
-        $$.qualifier = EvqFlat;
-    }
-    ;
-
-parameter_type_qualifier
-    : CONST_QUAL {
-        $$ = EvqConst;
+        $$ = EvqFlat;
     }
     ;
 
 type_qualifier
-    : ATTRIBUTE {
-        VERTEX_ONLY("attribute", @1);
-        ES2_ONLY("attribute", @1);
-        if (context->globalErrorCheck(@1, context->symbolTable.atGlobalLevel(), "attribute"))
-            context->recover();
-        $$.setBasic(EbtVoid, EvqAttribute, @1);
+    : single_type_qualifier {
+        $$ = context->createTypeQualifierBuilder(@1);
+        $$->appendQualifier($1);
     }
-    | VARYING {
-        ES2_ONLY("varying", @1);
-        if (context->globalErrorCheck(@1, context->symbolTable.atGlobalLevel(), "varying"))
-            context->recover();
-        if (context->getShaderType() == GL_VERTEX_SHADER)
-            $$.setBasic(EbtVoid, EvqVaryingOut, @1);
-        else
-            $$.setBasic(EbtVoid, EvqVaryingIn, @1);
-    }
-    | INVARIANT VARYING {
-        ES2_ONLY("varying", @1);
-        if (context->globalErrorCheck(@1, context->symbolTable.atGlobalLevel(), "invariant varying"))
-            context->recover();
-        if (context->getShaderType() == GL_VERTEX_SHADER)
-            $$.setBasic(EbtVoid, EvqVaryingOut, @1);
-        else
-            $$.setBasic(EbtVoid, EvqVaryingIn, @1);
-        $$.invariant = true;
-    }
-    | storage_qualifier {
-        if ($1.qualifier != EvqConst && !context->symbolTable.atGlobalLevel())
-        {
-            context->error(@1, "Local variables can only use the const storage qualifier.", getQualifierString($1.qualifier));
-            context->recover();
-        }
-        $$.setBasic(EbtVoid, $1.qualifier, @1);
-    }
-    | interpolation_qualifier storage_qualifier {
-        $$ = context->joinInterpolationQualifiers(@1, $1.qualifier, @2, $2.qualifier);
-    }
-    | interpolation_qualifier {
-        context->error(@1, "interpolation qualifier requires a fragment 'in' or vertex 'out' storage qualifier", getInterpolationString($1.qualifier));
-        context->recover();
-        
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtVoid, qual, @1);
-    }
-    | layout_qualifier {
-        $$.qualifier = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.layoutQualifier = $1;
-    }
-    | layout_qualifier storage_qualifier {
-        $$.setBasic(EbtVoid, $2.qualifier, @2);
-        $$.layoutQualifier = $1;
-    }
-    | INVARIANT storage_qualifier {
-        context->es3InvariantErrorCheck($2.qualifier, @1);
-        $$.setBasic(EbtVoid, $2.qualifier, @2);
-        $$.invariant = true;
-    }
-    | INVARIANT interpolation_qualifier storage_qualifier {
-        context->es3InvariantErrorCheck($3.qualifier, @1);
-        $$ = context->joinInterpolationQualifiers(@2, $2.qualifier, @3, $3.qualifier);
-        $$.invariant = true;
+    | type_qualifier single_type_qualifier {
+        $$ = $1;
+        $$->appendQualifier($2);
     }
     ;
 
+invariant_qualifier
+    : INVARIANT {
+        // empty
+    }
+    ;
+
+single_type_qualifier
+    : storage_qualifier {
+        if (!context->declaringFunction() && $1 != EvqConst && !context->symbolTable.atGlobalLevel())
+        {
+            context->error(@1, "Local variables can only use the const storage qualifier.", getQualifierString($1));
+        }
+        $$ = new TStorageQualifierWrapper($1, @1);
+    }
+    | layout_qualifier {
+        context->checkIsAtGlobalLevel(@1, "layout");
+        $$ = new TLayoutQualifierWrapper($1, @1);
+    }
+    | precision_qualifier {
+        $$ = new TPrecisionQualifierWrapper($1, @1);
+    }
+    | interpolation_qualifier {
+        $$ = new TInterpolationQualifierWrapper($1, @1);
+    }
+    | invariant_qualifier {
+        context->checkIsAtGlobalLevel(@1, "invariant");
+        $$ = new TInvariantQualifierWrapper(@1);
+    }
+    ;
+
+
 storage_qualifier
-    : CONST_QUAL {
-        $$.qualifier = EvqConst;
+    :
+    ATTRIBUTE {
+        VERTEX_ONLY("attribute", @1);
+        ES2_ONLY("attribute", @1);
+        context->checkIsAtGlobalLevel(@1, "attribute");
+        $$ = EvqAttribute;
+    }
+    | VARYING {
+        ES2_ONLY("varying", @1);
+        context->checkIsAtGlobalLevel(@1, "varying");
+        if (context->getShaderType() == GL_VERTEX_SHADER)
+            $$ = EvqVaryingOut;
+        else
+            $$ = EvqVaryingIn;
+    }
+    | CONST_QUAL {
+        $$ = EvqConst;
     }
     | IN_QUAL {
-        ES3_ONLY("in", @1, "storage qualifier");
-        $$.qualifier = (context->getShaderType() == GL_FRAGMENT_SHADER) ? EvqFragmentIn : EvqVertexIn;
+        if (context->declaringFunction())
+        {
+            $$ = EvqIn;
+        }
+        else if (context->getShaderType() == GL_FRAGMENT_SHADER)
+        {
+            ES3_OR_NEWER("in", @1, "storage qualifier");
+            $$ = EvqFragmentIn;
+        }
+        else if (context->getShaderType() == GL_VERTEX_SHADER)
+        {
+            ES3_OR_NEWER("in", @1, "storage qualifier");
+            $$ = EvqVertexIn;
+        }
+        else
+        {
+            $$ = EvqComputeIn;
+        }
     }
     | OUT_QUAL {
-        ES3_ONLY("out", @1, "storage qualifier");
-        $$.qualifier = (context->getShaderType() == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqVertexOut;
-    }
-    | CENTROID IN_QUAL {
-        ES3_ONLY("centroid in", @1, "storage qualifier");
-        if (context->getShaderType() == GL_VERTEX_SHADER)
+        if (context->declaringFunction())
         {
-            context->error(@1, "invalid storage qualifier", "it is an error to use 'centroid in' in the vertex shader");
-            context->recover();
+            $$ = EvqOut;
         }
-        $$.qualifier = (context->getShaderType() == GL_FRAGMENT_SHADER) ? EvqCentroidIn : EvqVertexIn;
-    }
-    | CENTROID OUT_QUAL {
-        ES3_ONLY("centroid out", @1, "storage qualifier");
-        if (context->getShaderType() == GL_FRAGMENT_SHADER)
+        else
         {
-            context->error(@1, "invalid storage qualifier", "it is an error to use 'centroid out' in the fragment shader");
-            context->recover();
+            ES3_OR_NEWER("out", @1, "storage qualifier");
+            NON_COMPUTE_ONLY("out", @1);
+            if (context->getShaderType() == GL_FRAGMENT_SHADER)
+            {
+                $$ = EvqFragmentOut;
+            }
+            else
+            {
+                $$ = EvqVertexOut;
+            }
         }
-        $$.qualifier = (context->getShaderType() == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqCentroidOut;
+    }
+    | INOUT_QUAL {
+        if (!context->declaringFunction())
+        {
+            context->error(@1, "invalid inout qualifier", "'inout' can be only used with function parameters");
+        }
+        $$ = EvqInOut;
+    }
+    | CENTROID {
+        ES3_OR_NEWER("centroid", @1, "storage qualifier");
+        $$ = EvqCentroid;
     }
     | UNIFORM {
-        if (context->globalErrorCheck(@1, context->symbolTable.atGlobalLevel(), "uniform"))
-            context->recover();
-        $$.qualifier = EvqUniform;
+        context->checkIsAtGlobalLevel(@1, "uniform");
+        $$ = EvqUniform;
     }
     ;
 
@@ -963,19 +956,7 @@ type_specifier
         $$ = $1;
 
         if ($$.precision == EbpUndefined) {
-            $$.precision = context->symbolTable.getDefaultPrecision($1.type);
-            if (context->precisionErrorCheck(@1, $$.precision, $1.type)) {
-                context->recover();
-            }
-        }
-    }
-    | precision_qualifier type_specifier_no_prec {
-        $$ = $2;
-        $$.precision = $1;
-
-        if (!SupportsPrecision($2.type)) {
-            context->error(@1, "illegal type for precision qualifier", getBasicString($2.type));
-            context->recover();
+            $$.precision = context->symbolTable.getDefaultPrecision($1.getBasicType());
         }
     }
     ;
@@ -994,7 +975,7 @@ precision_qualifier
 
 layout_qualifier
     : LAYOUT LEFT_PAREN layout_qualifier_id_list RIGHT_PAREN {
-        ES3_ONLY("layout", @1, "qualifier");
+        ES3_OR_NEWER("layout", @1, "qualifier");
         $$ = $3;
     }
     ;
@@ -1004,7 +985,7 @@ layout_qualifier_id_list
         $$ = $1;
     }
     | layout_qualifier_id_list COMMA layout_qualifier_id {
-        $$ = context->joinLayoutQualifiers($1, $3);
+        $$ = context->joinLayoutQualifiers($1, $3, @3);
     }
     ;
 
@@ -1013,31 +994,27 @@ layout_qualifier_id
         $$ = context->parseLayoutQualifier(*$1.string, @1);
     }
     | IDENTIFIER EQUAL INTCONSTANT {
-        $$ = context->parseLayoutQualifier(*$1.string, @1, *$3.string, $3.i, @3);
+        $$ = context->parseLayoutQualifier(*$1.string, @1, $3.i, @3);
     }
     | IDENTIFIER EQUAL UINTCONSTANT {
-        $$ = context->parseLayoutQualifier(*$1.string, @1, *$3.string, $3.i, @3);
+        $$ = context->parseLayoutQualifier(*$1.string, @1, $3.i, @3);
     }
     ;
 
 type_specifier_no_prec
     : type_specifier_nonarray {
-        $$ = $1;
+        $$.initialize($1, (context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary));
     }
     | type_specifier_nonarray LEFT_BRACKET RIGHT_BRACKET {
-        ES3_ONLY("[]", @2, "implicitly sized array");
-        $$ = $1;
+        ES3_OR_NEWER("[]", @2, "implicitly sized array");
+        $$.initialize($1, (context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary));
         $$.setArraySize(0);
     }
     | type_specifier_nonarray LEFT_BRACKET constant_expression RIGHT_BRACKET {
-        $$ = $1;
-
-        if (context->arrayTypeErrorCheck(@2, $1))
-            context->recover();
-        else {
-            int size;
-            if (context->arraySizeErrorCheck(@2, $3, size))
-                context->recover();
+        $$.initialize($1, (context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary));
+        if (context->checkIsValidTypeForArray(@2, $$))
+        {
+            unsigned int size = context->checkIsValidArraySize(@2, $3);
             $$.setArraySize(size);
         }
     }
@@ -1045,210 +1022,164 @@ type_specifier_no_prec
 
 type_specifier_nonarray
     : VOID_TYPE {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtVoid, qual, @1);
+        $$.initialize(EbtVoid, @1);
     }
     | FLOAT_TYPE {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
     }
     | INT_TYPE {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtInt, qual, @1);
+        $$.initialize(EbtInt, @1);
     }
     | UINT_TYPE {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtUInt, qual, @1);
+        $$.initialize(EbtUInt, @1);
     }
     | BOOL_TYPE {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtBool, qual, @1);
+        $$.initialize(EbtBool, @1);
     }
     | VEC2 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setAggregate(2);
     }
     | VEC3 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setAggregate(3);
     }
     | VEC4 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setAggregate(4);
     }
     | BVEC2 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtBool, qual, @1);
+        $$.initialize(EbtBool, @1);
         $$.setAggregate(2);
     }
     | BVEC3 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtBool, qual, @1);
+        $$.initialize(EbtBool, @1);
         $$.setAggregate(3);
     }
     | BVEC4 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtBool, qual, @1);
+        $$.initialize(EbtBool, @1);
         $$.setAggregate(4);
     }
     | IVEC2 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtInt, qual, @1);
+        $$.initialize(EbtInt, @1);
         $$.setAggregate(2);
     }
     | IVEC3 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtInt, qual, @1);
+        $$.initialize(EbtInt, @1);
         $$.setAggregate(3);
     }
     | IVEC4 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtInt, qual, @1);
+        $$.initialize(EbtInt, @1);
         $$.setAggregate(4);
     }
     | UVEC2 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtUInt, qual, @1);
+        $$.initialize(EbtUInt, @1);
         $$.setAggregate(2);
     }
     | UVEC3 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtUInt, qual, @1);
+        $$.initialize(EbtUInt, @1);
         $$.setAggregate(3);
     }
     | UVEC4 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtUInt, qual, @1);
+        $$.initialize(EbtUInt, @1);
         $$.setAggregate(4);
     }
     | MATRIX2 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(2, 2);
     }
     | MATRIX3 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(3, 3);
     }
     | MATRIX4 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(4, 4);
     }
     | MATRIX2x3 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(2, 3);
     }
     | MATRIX3x2 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(3, 2);
     }
     | MATRIX2x4 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(2, 4);
     }
     | MATRIX4x2 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(4, 2);
     }
     | MATRIX3x4 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(3, 4);
     }
     | MATRIX4x3 {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtFloat, qual, @1);
+        $$.initialize(EbtFloat, @1);
         $$.setMatrix(4, 3);
     }
     | SAMPLER2D {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSampler2D, qual, @1);
+        $$.initialize(EbtSampler2D, @1);
     }
     | SAMPLER3D {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSampler3D, qual, @1);
+        $$.initialize(EbtSampler3D, @1);
     }
     | SAMPLERCUBE {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSamplerCube, qual, @1);
+        $$.initialize(EbtSamplerCube, @1);
     }
     | SAMPLER2DARRAY {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSampler2DArray, qual, @1);
+        $$.initialize(EbtSampler2DArray, @1);
     }
     | ISAMPLER2D {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtISampler2D, qual, @1);
+        $$.initialize(EbtISampler2D, @1);
     }
     | ISAMPLER3D {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtISampler3D, qual, @1);
+        $$.initialize(EbtISampler3D, @1);
     }
     | ISAMPLERCUBE {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtISamplerCube, qual, @1);
+        $$.initialize(EbtISamplerCube, @1);
     }
     | ISAMPLER2DARRAY {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtISampler2DArray, qual, @1);
+        $$.initialize(EbtISampler2DArray, @1);
     }
     | USAMPLER2D {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtUSampler2D, qual, @1);
+        $$.initialize(EbtUSampler2D, @1);
     }
     | USAMPLER3D {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtUSampler3D, qual, @1);
+        $$.initialize(EbtUSampler3D, @1);
     }
     | USAMPLERCUBE {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtUSamplerCube, qual, @1);
+        $$.initialize(EbtUSamplerCube, @1);
     }
     | USAMPLER2DARRAY {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtUSampler2DArray, qual, @1);
+        $$.initialize(EbtUSampler2DArray, @1);
     }
     | SAMPLER2DSHADOW {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSampler2DShadow, qual, @1);
+        $$.initialize(EbtSampler2DShadow, @1);
     }
     | SAMPLERCUBESHADOW {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSamplerCubeShadow, qual, @1);
+        $$.initialize(EbtSamplerCubeShadow, @1);
     }
     | SAMPLER2DARRAYSHADOW {
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSampler2DArrayShadow, qual, @1);
+        $$.initialize(EbtSampler2DArrayShadow, @1);
     }
     | SAMPLER_EXTERNAL_OES {
         if (!context->supportsExtension("GL_OES_EGL_image_external") &&
             !context->supportsExtension("GL_NV_EGL_stream_consumer_external")) {
             context->error(@1, "unsupported type", "samplerExternalOES");
-            context->recover();
         }
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSamplerExternalOES, qual, @1);
+        $$.initialize(EbtSamplerExternalOES, @1);
     }
     | SAMPLER2DRECT {
         if (!context->supportsExtension("GL_ARB_texture_rectangle")) {
             context->error(@1, "unsupported type", "sampler2DRect");
-            context->recover();
         }
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtSampler2DRect, qual, @1);
+        $$.initialize(EbtSampler2DRect, @1);
     }
     | struct_specifier {
         $$ = $1;
-        $$.qualifier = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
     }
     | TYPE_NAME {
         //
@@ -1256,17 +1187,16 @@ type_specifier_nonarray
         // type.
         //
         TType& structure = static_cast<TVariable*>($1.symbol)->getType();
-        TQualifier qual = context->symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
-        $$.setBasic(EbtStruct, qual, @1);
+        $$.initialize(EbtStruct, @1);
         $$.userDef = &structure;
     }
     ;
 
 struct_specifier
-    : STRUCT identifier LEFT_BRACE { if (context->enterStructDeclaration(@2, *$2.string)) context->recover(); } struct_declaration_list RIGHT_BRACE {
+    : STRUCT identifier LEFT_BRACE { context->enterStructDeclaration(@2, *$2.string); } struct_declaration_list RIGHT_BRACE {
         $$ = context->addStructure(@1, @2, $2.string, $5);
     }
-    | STRUCT LEFT_BRACE { if (context->enterStructDeclaration(@2, *$2.string)) context->recover(); } struct_declaration_list RIGHT_BRACE {
+    | STRUCT LEFT_BRACE { context->enterStructDeclaration(@2, *$2.string); } struct_declaration_list RIGHT_BRACE {
         $$ = context->addStructure(@1, @$, NewPoolTString(""), $4);
     }
     ;
@@ -1282,7 +1212,6 @@ struct_declaration_list
             for (size_t j = 0; j < $$->size(); ++j) {
                 if ((*$$)[j]->name() == field->name()) {
                     context->error(@2, "duplicate field name in structure:", "struct", field->name().c_str());
-                    context->recover();
                 }
             }
             $$->push_back(field);
@@ -1296,9 +1225,7 @@ struct_declaration
     }
     | type_qualifier type_specifier struct_declarator_list SEMICOLON {
         // ES3 Only, but errors should be handled elsewhere
-        $2.qualifier = $1.qualifier;
-        $2.layoutQualifier = $1.layoutQualifier;
-        $$ = context->addStructDeclaratorList($2, $3);
+        $$ = context->addStructDeclaratorListWithQualifiers(*$1, &$2, $3);
     }
     ;
 
@@ -1314,20 +1241,16 @@ struct_declarator_list
 
 struct_declarator
     : identifier {
-        if (context->reservedErrorCheck(@1, *$1.string))
-            context->recover();
+        context->checkIsNotReserved(@1, *$1.string);
 
         TType* type = new TType(EbtVoid, EbpUndefined);
         $$ = new TField(type, $1.string, @1);
     }
     | identifier LEFT_BRACKET constant_expression RIGHT_BRACKET {
-        if (context->reservedErrorCheck(@1, *$1.string))
-            context->recover();
+        context->checkIsNotReserved(@1, *$1.string);
 
         TType* type = new TType(EbtVoid, EbpUndefined);
-        int size;
-        if (context->arraySizeErrorCheck(@3, $3, size))
-            context->recover();
+        unsigned int size = context->checkIsValidArraySize(@3, $3);
         type->setArraySize(size);
 
         $$ = new TField(type, $1.string, @1);
@@ -1396,7 +1319,7 @@ compound_statement_no_new_scope
 
 statement_list
     : statement {
-        $$ = context->intermediate.makeAggregate($1, @$);
+        $$ = TIntermediate::MakeAggregate($1, @$);
     }
     | statement_list statement {
         $$ = context->intermediate.growAggregate($1, $2, @$);
@@ -1410,9 +1333,8 @@ expression_statement
 
 selection_statement
     : IF LEFT_PAREN expression RIGHT_PAREN selection_rest_statement {
-        if (context->boolErrorCheck(@1, $3))
-            context->recover();
-        $$ = context->intermediate.addSelection($3, $5, @1);
+        context->checkIsScalarBool(@1, $3);
+        $$ = context->intermediate.addIfElse($3, $5, @1);
     }
     ;
 
@@ -1447,18 +1369,15 @@ condition
     // In 1996 c++ draft, conditions can include single declarations
     : expression {
         $$ = $1;
-        if (context->boolErrorCheck($1->getLine(), $1))
-            context->recover();
+        context->checkIsScalarBool($1->getLine(), $1);
     }
     | fully_specified_type identifier EQUAL initializer {
         TIntermNode *intermNode;
-        if (context->boolErrorCheck(@2, $1))
-            context->recover();
+        context->checkIsScalarBool(@2, $1);
 
         if (!context->executeInitializer(@2, *$2.string, $1, $4, &intermNode))
             $$ = $4;
         else {
-            context->recover();
             $$ = 0;
         }
     }
@@ -1471,8 +1390,7 @@ iteration_statement
         context->decrLoopNestingLevel();
     }
     | DO { context->incrLoopNestingLevel(); } statement_with_scope WHILE LEFT_PAREN expression RIGHT_PAREN SEMICOLON {
-        if (context->boolErrorCheck(@8, $6))
-            context->recover();
+        context->checkIsScalarBool(@8, $6);
 
         $$ = context->intermediate.addLoop(ELoopDoWhile, 0, $6, 0, $3, @4);
         context->decrLoopNestingLevel();

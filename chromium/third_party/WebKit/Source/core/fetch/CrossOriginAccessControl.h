@@ -33,6 +33,7 @@
 #include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
+#include "wtf/PassRefPtr.h"
 
 namespace blink {
 
@@ -45,26 +46,45 @@ class ResourceResponse;
 class SecurityOrigin;
 
 class CrossOriginAccessControl {
-    STATIC_ONLY(CrossOriginAccessControl);
-public:
-    // Given the new request URL, returns true if
-    // - the URL has a CORS supported scheme and
-    // - the URL does not contain the userinfo production.
-    static bool isLegalRedirectLocation(const KURL&, String& errorDescription);
-    static bool handleRedirect(SecurityOrigin*, ResourceRequest&, const ResourceResponse&, StoredCredentials, ResourceLoaderOptions&, String&);
+  STATIC_ONLY(CrossOriginAccessControl);
+
+ public:
+  // Given the new request URL, returns true if
+  // - the URL has a CORS supported scheme and
+  // - the URL does not contain the userinfo production.
+  static bool isLegalRedirectLocation(const KURL&, String& errorDescription);
+  static bool handleRedirect(PassRefPtr<SecurityOrigin>,
+                             ResourceRequest&,
+                             const ResourceResponse&,
+                             StoredCredentials,
+                             ResourceLoaderOptions&,
+                             String&);
 };
 
 CORE_EXPORT bool isOnAccessControlResponseHeaderWhitelist(const String&);
 
-void updateRequestForAccessControl(ResourceRequest&, SecurityOrigin*, StoredCredentials);
-CORE_EXPORT ResourceRequest createAccessControlPreflightRequest(const ResourceRequest&, SecurityOrigin*);
+void updateRequestForAccessControl(ResourceRequest&,
+                                   const SecurityOrigin*,
+                                   StoredCredentials);
+CORE_EXPORT ResourceRequest
+createAccessControlPreflightRequest(const ResourceRequest&,
+                                    const SecurityOrigin*);
 
-bool passesAccessControlCheck(const ResourceResponse&, StoredCredentials, SecurityOrigin*, String& errorDescription, WebURLRequest::RequestContext requestType);
-bool passesPreflightStatusCheck(const ResourceResponse&, String& errorDescription);
-bool passesExternalPreflightCheck(const ResourceResponse&, String& errorDescription);
-CORE_EXPORT void parseAccessControlExposeHeadersAllowList(const String& headerValue, HTTPHeaderSet&);
-CORE_EXPORT void extractCorsExposedHeaderNamesList(const ResourceResponse&, HTTPHeaderSet&);
+bool passesAccessControlCheck(const ResourceResponse&,
+                              StoredCredentials,
+                              const SecurityOrigin*,
+                              String& errorDescription,
+                              WebURLRequest::RequestContext requestType);
+bool passesPreflightStatusCheck(const ResourceResponse&,
+                                String& errorDescription);
+bool passesExternalPreflightCheck(const ResourceResponse&,
+                                  String& errorDescription);
+CORE_EXPORT void parseAccessControlExposeHeadersAllowList(
+    const String& headerValue,
+    HTTPHeaderSet&);
+CORE_EXPORT void extractCorsExposedHeaderNamesList(const ResourceResponse&,
+                                                   HTTPHeaderSet&);
 
-} // namespace blink
+}  // namespace blink
 
-#endif // CrossOriginAccessControl_h
+#endif  // CrossOriginAccessControl_h

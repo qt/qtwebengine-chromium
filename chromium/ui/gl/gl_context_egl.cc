@@ -40,9 +40,21 @@ bool GLContextEGL::Initialize(
   DCHECK(compatible_surface);
   DCHECK(!context_);
 
+  display_ = compatible_surface->GetDisplay();
+  config_ = compatible_surface->GetConfig();
+
+  EGLint config_renderable_type = 0;
+  if (!eglGetConfigAttrib(display_, config_, EGL_RENDERABLE_TYPE,
+                          &config_renderable_type)) {
+    LOG(ERROR) << "eglGetConfigAttrib failed with error "
+               << GetLastEGLErrorString();
+    return false;
+  }
+
   EGLint context_client_version = 2;
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableUnsafeES3APIs)) {
+  if ((config_renderable_type & EGL_OPENGL_ES3_BIT) != 0 &&
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableES3GLContext)) {
     context_client_version = 3;
   }
 
@@ -56,9 +68,6 @@ bool GLContextEGL::Initialize(
     EGL_LOSE_CONTEXT_ON_RESET_EXT,
     EGL_NONE
   };
-
-  display_ = compatible_surface->GetDisplay();
-  config_ = compatible_surface->GetConfig();
 
   const EGLint* context_attributes = nullptr;
   if (GLSurfaceEGL::IsCreateContextRobustnessSupported()) {
@@ -76,7 +85,6 @@ bool GLContextEGL::Initialize(
                << GetLastEGLErrorString();
     return false;
   }
-
 
   context_ = eglCreateContext(
       display_,
@@ -114,8 +122,7 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
                "context", context_,
                "surface", surface);
 
-  if (unbind_fbo_on_makecurrent_ &&
-      eglGetCurrentContext() != EGL_NO_CONTEXT) {
+  if (unbind_fbo_on_makecurrent_ && GetCurrent()) {
     glBindFramebufferEXT(GL_FRAMEBUFFER, 0);
   }
 
@@ -132,9 +139,7 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
   SetRealGLApi();
 
   SetCurrent(surface);
-  if (!InitializeDynamicBindings()) {
-    return false;
-  }
+  InitializeDynamicBindings();
 
   if (!surface->OnMakeCurrent(this)) {
     LOG(ERROR) << "Could not make current.";

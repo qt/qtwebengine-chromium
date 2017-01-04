@@ -9,12 +9,15 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "content/browser/loader/resource_request_info_impl.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log_capture_mode.h"
+#include "net/log/net_log_entry.h"
+#include "net/log/net_log_event_type.h"
+#include "net/log/net_log_source_type.h"
+#include "net/log/net_log_with_source.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_netlog_params.h"
@@ -22,7 +25,12 @@
 namespace content {
 const size_t kMaxNumEntries = 1000;
 
+// static
 NetLogObserver* NetLogObserver::instance_ = NULL;
+
+// static
+base::LazyInstance<std::unique_ptr<base::ThreadChecker>>::Leaky
+    NetLogObserver::io_thread_checker_;
 
 NetLogObserver::NetLogObserver() {}
 
@@ -35,22 +43,22 @@ NetLogObserver::ResourceInfo* NetLogObserver::GetResourceInfo(uint32_t id) {
   return NULL;
 }
 
-void NetLogObserver::OnAddEntry(const net::NetLog::Entry& entry) {
+void NetLogObserver::OnAddEntry(const net::NetLogEntry& entry) {
+  DCHECK(io_thread_checker_.Get().get());
+
   // The events that the Observer is interested in only occur on the IO thread.
-  if (!BrowserThread::CurrentlyOn(BrowserThread::IO))
+  if (!io_thread_checker_.Get()->CalledOnValidThread())
     return;
 
-  if (entry.source().type == net::NetLog::SOURCE_URL_REQUEST)
+  if (entry.source().type == net::NetLogSourceType::URL_REQUEST)
     OnAddURLRequestEntry(entry);
 }
 
-void NetLogObserver::OnAddURLRequestEntry(const net::NetLog::Entry& entry) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+void NetLogObserver::OnAddURLRequestEntry(const net::NetLogEntry& entry) {
+  bool is_begin = entry.phase() == net::NetLogEventPhase::BEGIN;
+  bool is_end = entry.phase() == net::NetLogEventPhase::END;
 
-  bool is_begin = entry.phase() == net::NetLog::PHASE_BEGIN;
-  bool is_end = entry.phase() == net::NetLog::PHASE_END;
-
-  if (entry.type() == net::NetLog::TYPE_URL_REQUEST_START_JOB) {
+  if (entry.type() == net::NetLogEventType::URL_REQUEST_START_JOB) {
     if (is_begin) {
       if (request_to_info_.size() > kMaxNumEntries) {
         LOG(WARNING) << "The raw headers observer url request count has grown "
@@ -61,7 +69,7 @@ void NetLogObserver::OnAddURLRequestEntry(const net::NetLog::Entry& entry) {
       request_to_info_[entry.source().id] = new ResourceInfo();
     }
     return;
-  } else if (entry.type() == net::NetLog::TYPE_REQUEST_ALIVE) {
+  } else if (entry.type() == net::NetLogEventType::REQUEST_ALIVE) {
     // Cleanup records based on the TYPE_REQUEST_ALIVE entry.
     if (is_end)
       request_to_info_.erase(entry.source().id);
@@ -73,7 +81,7 @@ void NetLogObserver::OnAddURLRequestEntry(const net::NetLog::Entry& entry) {
     return;
 
   switch (entry.type()) {
-    case net::NetLog::TYPE_HTTP_TRANSACTION_SEND_REQUEST_HEADERS: {
+    case net::NetLogEventType::HTTP_TRANSACTION_SEND_REQUEST_HEADERS: {
       std::unique_ptr<base::Value> event_params(entry.ParametersToValue());
       std::string request_line;
       net::HttpRequestHeaders request_headers;
@@ -94,7 +102,7 @@ void NetLogObserver::OnAddURLRequestEntry(const net::NetLog::Entry& entry) {
       info->request_headers_text = request_line + request_headers.ToString();
       break;
     }
-    case net::NetLog::TYPE_HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS: {
+    case net::NetLogEventType::HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS: {
       std::unique_ptr<base::Value> event_params(entry.ParametersToValue());
       net::SpdyHeaderBlock request_headers;
 
@@ -115,7 +123,7 @@ void NetLogObserver::OnAddURLRequestEntry(const net::NetLog::Entry& entry) {
       info->request_headers_text = "";
       break;
     }
-    case net::NetLog::TYPE_HTTP_TRANSACTION_READ_RESPONSE_HEADERS: {
+    case net::NetLogEventType::HTTP_TRANSACTION_READ_RESPONSE_HEADERS: {
       std::unique_ptr<base::Value> event_params(entry.ParametersToValue());
 
       scoped_refptr<net::HttpResponseHeaders> response_headers;
@@ -153,9 +161,9 @@ void NetLogObserver::OnAddURLRequestEntry(const net::NetLog::Entry& entry) {
   }
 }
 
-void NetLogObserver::Attach() {
+void NetLogObserver::Attach(net::NetLog* net_log) {
   DCHECK(!instance_);
-  net::NetLog* net_log = GetContentClient()->browser()->GetNetLog();
+  io_thread_checker_.Get().reset(new base::ThreadChecker());
   if (net_log) {
     instance_ = new NetLogObserver();
     net_log->DeprecatedAddObserver(
@@ -164,8 +172,9 @@ void NetLogObserver::Attach() {
 }
 
 void NetLogObserver::Detach() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
+  DCHECK(io_thread_checker_.Get().get() &&
+         io_thread_checker_.Get()->CalledOnValidThread());
+  io_thread_checker_.Get().reset();
   if (instance_) {
     // Safest not to do this in the destructor to maintain thread safety across
     // refactorings.
@@ -176,7 +185,10 @@ void NetLogObserver::Detach() {
 }
 
 NetLogObserver* NetLogObserver::GetInstance() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!io_thread_checker_.Get().get())
+    return nullptr;
+
+  DCHECK(io_thread_checker_.Get()->CalledOnValidThread());
 
   return instance_;
 }

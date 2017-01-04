@@ -12,9 +12,7 @@ found in the LICENSE file.
   <link rel="shortcut icon" href="data:image/x-icon;base64,"
         type="image/x-icon">
 
-  <script src="/components/webcomponentsjs/webcomponents.js"></script>
-
-  <link rel="import" href="/components/polymer/polymer.html">
+  <link rel="import" href="/tracing/ui/base/base.html" data-suppress-import-order>
   <link rel="import" href="/tracing/base/unittest/interactive_test_runner.html">
   <style>
     html, body {
@@ -30,14 +28,13 @@ found in the LICENSE file.
   <script>
     'use strict';
 
-
     window.addEventListener('load', function() {
       tr.b.unittest.loadAndRunTests({
         title: 'All Trace-Viewer Tests',
         getAllSuiteRelPathsAsync: function() {
           return tr.b.getAsync('/tracing/tests').then(function(json) {
             return JSON.parse(json).test_relpaths;
-          }).catch (function(e) {
+          }).catch(function(e) {
            throw e;
           });
         },
@@ -49,7 +46,6 @@ found in the LICENSE file.
         ]
       });
     });
-
   </script>
 </body>
 </html>

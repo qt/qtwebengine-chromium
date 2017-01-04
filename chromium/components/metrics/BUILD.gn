@@ -13,8 +13,7 @@ if (metrics_use_blimp) {
   defines = [ "OVERRIDE_OS_NAME_TO_BLIMP" ]
 }
 
-# GYP version: components/metrics.gypi:metrics
-source_set("metrics") {
+static_library("metrics") {
   sources = [
     "call_stack_profile_metrics_provider.cc",
     "call_stack_profile_metrics_provider.h",
@@ -83,6 +82,7 @@ source_set("metrics") {
     "//components/metrics/proto",
   ]
   deps = [
+    ":call_stack_profile_params",
     "//base",
     "//base:base_static",
     "//components/prefs",
@@ -110,8 +110,7 @@ source_set("metrics") {
 }
 
 if (!is_ios) {
-  # GYP version: components/metrics.gypi:metrics_gpu
-  source_set("gpu") {
+  static_library("gpu") {
     sources = [
       "gpu/gpu_metrics_provider.cc",
       "gpu/gpu_metrics_provider.h",
@@ -128,36 +127,6 @@ if (!is_ios) {
   }
 }
 
-if (is_chromeos) {
-  # GYP version: components/metrics.gypi:metrics_leak_detector
-  source_set("leak_detector") {
-    sources = [
-      "leak_detector/call_stack_manager.cc",
-      "leak_detector/call_stack_manager.h",
-      "leak_detector/call_stack_table.cc",
-      "leak_detector/call_stack_table.h",
-      "leak_detector/custom_allocator.cc",
-      "leak_detector/custom_allocator.h",
-      "leak_detector/leak_analyzer.cc",
-      "leak_detector/leak_analyzer.h",
-      "leak_detector/leak_detector.cc",
-      "leak_detector/leak_detector.h",
-      "leak_detector/leak_detector_impl.cc",
-      "leak_detector/leak_detector_impl.h",
-      "leak_detector/leak_detector_value_type.cc",
-      "leak_detector/leak_detector_value_type.h",
-      "leak_detector/ranked_set.cc",
-      "leak_detector/ranked_set.h",
-    ]
-
-    deps = [
-      "//base",
-      "//components/metrics/proto:proto",
-    ]
-  }
-}
-
-# GYP version: components/metrics.gypi:metrics_net
 static_library("net") {
   sources = [
     "net/cellular_logic_helper.cc",
@@ -195,8 +164,7 @@ static_library("net") {
   }
 }
 
-# GYP version: components/metrics.gypi:metrics_profiler
-source_set("profiler") {
+static_library("profiler") {
   sources = [
     "profiler/profiler_metrics_provider.cc",
     "profiler/profiler_metrics_provider.h",
@@ -216,8 +184,7 @@ source_set("profiler") {
   ]
 }
 
-# GYP version: components/metrics.gypi:metrics_ui
-source_set("ui") {
+static_library("ui") {
   sources = [
     "ui/screen_info_metrics_provider.cc",
     "ui/screen_info_metrics_provider.h",
@@ -235,8 +202,7 @@ source_set("ui") {
 }
 
 if (!is_ios) {
-  # GYP version: components/metrics.gypi:metrics_profiler_content
-  source_set("profiler_content") {
+  static_library("profiler_content") {
     sources = [
       "profiler/content/content_tracking_synchronizer_delegate.cc",
       "profiler/content/content_tracking_synchronizer_delegate.h",
@@ -253,8 +219,7 @@ if (!is_ios) {
     ]
   }
 } else {
-  # GYP version: components/metrics.gypi:metrics_profiler_ios
-  source_set("profiler_ios") {
+  static_library("profiler_ios") {
     sources = [
       "profiler/ios/ios_tracking_synchronizer_delegate.cc",
       "profiler/ios/ios_tracking_synchronizer_delegate.h",
@@ -269,8 +234,36 @@ if (!is_ios) {
   }
 }
 
-# GYP version: components/metrics.gypi:metrics_test_support
-source_set("test_support") {
+source_set("call_stack_profile_params") {
+  sources = [
+    "call_stack_profile_params.cc",
+    "call_stack_profile_params.h",
+  ]
+}
+
+source_set("call_stacks") {
+  sources = [
+    "call_stack_profile_collector.cc",
+    "call_stack_profile_collector.h",
+  ]
+  deps = [
+    ":metrics",
+    "//components/metrics/public/interfaces:call_stack_mojo_bindings",
+  ]
+}
+
+source_set("child_call_stacks") {
+  sources = [
+    "child_call_stack_profile_collector.cc",
+    "child_call_stack_profile_collector.h",
+  ]
+  deps = [
+    "//components/metrics/public/interfaces:call_stack_mojo_bindings",
+    "//services/shell/public/cpp",
+  ]
+}
+
+static_library("test_support") {
   testonly = true
   sources = [
     "test_enabled_state_provider.cc",
@@ -290,8 +283,7 @@ source_set("test_support") {
 }
 
 if (is_linux) {
-  # GYP version: components/metrics.gypi:metrics_serialization
-  source_set("serialization") {
+  static_library("serialization") {
     sources = [
       "serialization/metric_sample.cc",
       "serialization/metric_sample.h",
@@ -304,32 +296,11 @@ if (is_linux) {
   }
 }
 
-if (is_chromeos) {
-  source_set("leak_detector_unit_tests") {
-    testonly = true
-    sources = [
-      "leak_detector/call_stack_manager_unittest.cc",
-      "leak_detector/call_stack_table_unittest.cc",
-      "leak_detector/leak_analyzer_unittest.cc",
-      "leak_detector/leak_detector_impl_unittest.cc",
-      "leak_detector/leak_detector_unittest.cc",
-      "leak_detector/ranked_set_unittest.cc",
-    ]
-
-    deps = [
-      ":leak_detector",
-      "//base",
-      "//components/metrics/proto:proto",
-      "//content/test:test_support",
-      "//testing/gtest",
-    ]
-  }
-}
-
 source_set("unit_tests") {
   testonly = true
   sources = [
     "call_stack_profile_metrics_provider_unittest.cc",
+    "child_call_stack_profile_collector_unittest.cc",
     "cloned_install_detector_unittest.cc",
     "daily_event_unittest.cc",
     "data_use_tracker_unittest.cc",
@@ -351,15 +322,20 @@ source_set("unit_tests") {
   ]
 
   deps = [
+    ":call_stack_profile_params",
+    ":child_call_stacks",
     ":metrics",
     ":net",
     ":profiler",
     ":test_support",
     ":ui",
     "//base/test:test_support",
+    "//components/metrics/public/cpp:call_stack_unit_tests",
     "//components/prefs:test_support",
     "//components/variations",
+    "//mojo/public/cpp/bindings",
     "//net:test_support",
+    "//services/shell/public/cpp:sources",
     "//testing/gtest",
     "//third_party/zlib:compression_utils",
     "//ui/gfx/geometry",
@@ -371,6 +347,13 @@ source_set("unit_tests") {
   }
 
   if (is_chromeos) {
-    deps += [ ":leak_detector_unit_tests" ]
+    deps += [ "leak_detector:unit_tests" ]
+  }
+
+  # iOS is not supported by the profiler and the ios-simulator bot chokes on
+  # these tests.
+  if (is_ios) {
+    sources -= [ "child_call_stack_profile_collector_unittest.cc" ]
+    deps -= [ "//components/metrics/public/cpp:call_stack_unit_tests" ]
   }
 }

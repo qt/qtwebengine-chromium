@@ -13,15 +13,17 @@
 
 using base::android::AttachCurrentThread;
 using base::android::HasException;
+using base::android::JavaArrayOfByteArrayToStringVector;
 using base::android::JavaByteArrayToByteVector;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 using base::android::ToJavaByteArray;
-using base::android::JavaArrayOfByteArrayToStringVector;
 
 namespace net {
 namespace android {
 
-bool GetRSAKeyModulus(jobject private_key_ref, std::vector<uint8_t>* result) {
+bool GetRSAKeyModulus(const JavaRef<jobject>& private_key_ref,
+                      std::vector<uint8_t>* result) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jbyteArray> modulus_ref =
@@ -33,7 +35,8 @@ bool GetRSAKeyModulus(jobject private_key_ref, std::vector<uint8_t>* result) {
   return true;
 }
 
-bool GetECKeyOrder(jobject private_key_ref, std::vector<uint8_t>* result) {
+bool GetECKeyOrder(const JavaRef<jobject>& private_key_ref,
+                   std::vector<uint8_t>* result) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jbyteArray> order_ref =
@@ -46,7 +49,7 @@ bool GetECKeyOrder(jobject private_key_ref, std::vector<uint8_t>* result) {
   return true;
 }
 
-bool RawSignDigestWithPrivateKey(jobject private_key_ref,
+bool RawSignDigestWithPrivateKey(const JavaRef<jobject>& private_key_ref,
                                  const base::StringPiece& digest,
                                  std::vector<uint8_t>* signature) {
   JNIEnv* env = AttachCurrentThread();
@@ -59,7 +62,7 @@ bool RawSignDigestWithPrivateKey(jobject private_key_ref,
   // Invoke platform API
   ScopedJavaLocalRef<jbyteArray> signature_ref =
       Java_AndroidKeyStore_rawSignDigestWithPrivateKey(env, private_key_ref,
-                                                       digest_ref.obj());
+                                                       digest_ref);
   if (HasException(env) || signature_ref.is_null())
     return false;
 
@@ -68,13 +71,14 @@ bool RawSignDigestWithPrivateKey(jobject private_key_ref,
   return true;
 }
 
-PrivateKeyType GetPrivateKeyType(jobject private_key_ref) {
+PrivateKeyType GetPrivateKeyType(const JavaRef<jobject>& private_key_ref) {
   JNIEnv* env = AttachCurrentThread();
   int type = Java_AndroidKeyStore_getPrivateKeyType(env, private_key_ref);
   return static_cast<PrivateKeyType>(type);
 }
 
-AndroidEVP_PKEY* GetOpenSSLSystemHandleForPrivateKey(jobject private_key_ref) {
+AndroidEVP_PKEY* GetOpenSSLSystemHandleForPrivateKey(
+    const JavaRef<jobject>& private_key_ref) {
   JNIEnv* env = AttachCurrentThread();
   // Note: the pointer is passed as a jint here because that's how it
   // is stored in the Java object. Java doesn't have a primitive type
@@ -90,15 +94,11 @@ AndroidEVP_PKEY* GetOpenSSLSystemHandleForPrivateKey(jobject private_key_ref) {
 }
 
 ScopedJavaLocalRef<jobject> GetOpenSSLEngineForPrivateKey(
-    jobject private_key_ref) {
+    const JavaRef<jobject>& private_key_ref) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> engine =
       Java_AndroidKeyStore_getOpenSSLEngineForPrivateKey(env, private_key_ref);
   return engine;
-}
-
-bool RegisterKeyStore(JNIEnv* env) {
-  return RegisterNativesImpl(env);
 }
 
 }  // namespace android

@@ -39,8 +39,6 @@ source_set("ipc_client_sources") {
     sources += [
       "android/in_process_surface_texture_manager.cc",
       "android/in_process_surface_texture_manager.h",
-      "gpu_memory_buffer_impl_surface_texture.cc",
-      "gpu_memory_buffer_impl_surface_texture.h",
     ]
     libs = [ "android" ]
   }
@@ -61,6 +59,7 @@ source_set("ipc_client_sources") {
     "//gpu/config:config_sources",
     "//gpu/ipc/common:ipc_common_sources",
     "//ipc",
+    "//ui/base/",
     "//ui/events/ipc",
     "//ui/gfx/ipc",
     "//ui/gfx/ipc/geometry",

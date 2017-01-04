@@ -13,7 +13,7 @@
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
 #include "net/base/url_util.h"
@@ -393,7 +393,8 @@ int64_t SandboxFileSystemBackendDelegate::GetOriginUsageOnFileTaskRunner(
 
   // Don't use usage cache and return recalculated usage for sticky invalidated
   // origins.
-  if (ContainsKey(sticky_dirty_origins_, std::make_pair(origin_url, type)))
+  if (base::ContainsKey(sticky_dirty_origins_,
+                        std::make_pair(origin_url, type)))
     return RecalculateUsage(file_system_context, origin_url, type);
 
   base::FilePath base_path =

@@ -19,6 +19,7 @@
 #include "base/memory/weak_ptr.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/render_pass_id.h"
+#include "cc/surfaces/frame_sink_id.h"
 #include "cc/surfaces/surface_factory.h"
 #include "cc/surfaces/surface_id.h"
 #include "cc/surfaces/surface_sequence.h"
@@ -40,11 +41,11 @@ class CC_SURFACES_EXPORT Surface {
  public:
   using DrawCallback = SurfaceFactory::DrawCallback;
 
-  Surface(SurfaceId id, SurfaceFactory* factory);
+  Surface(const SurfaceId& id, SurfaceFactory* factory);
   ~Surface();
 
-  SurfaceId surface_id() const { return surface_id_; }
-  SurfaceId previous_frame_surface_id() const {
+  const SurfaceId& surface_id() const { return surface_id_; }
+  const SurfaceId& previous_frame_surface_id() const {
     return previous_frame_surface_id_;
   }
 
@@ -67,7 +68,7 @@ class CC_SURFACES_EXPORT Surface {
   int frame_index() const { return frame_index_; }
 
   void TakeLatencyInfo(std::vector<ui::LatencyInfo>* latency_info);
-  void RunDrawCallbacks(SurfaceDrawStatus drawn);
+  void RunDrawCallbacks();
 
   base::WeakPtr<SurfaceFactory> factory() { return factory_; }
 
@@ -79,7 +80,7 @@ class CC_SURFACES_EXPORT Surface {
   // remove them from sequences.
   void SatisfyDestructionDependencies(
       std::unordered_set<SurfaceSequence, SurfaceSequenceHash>* sequences,
-      std::unordered_set<uint32_t>* valid_id_namespaces);
+      std::unordered_set<FrameSinkId, FrameSinkIdHash>* valid_id_namespaces);
   size_t GetDestructionDependencyCount() const {
     return destruction_dependencies_.size();
   }

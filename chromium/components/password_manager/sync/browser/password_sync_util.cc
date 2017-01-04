@@ -17,7 +17,7 @@ namespace password_manager {
 namespace sync_util {
 
 std::string GetSyncUsernameIfSyncingPasswords(
-    const sync_driver::SyncService* sync_service,
+    const syncer::SyncService* sync_service,
     const SigninManagerBase* signin_manager) {
   if (!signin_manager)
     return std::string();
@@ -32,12 +32,18 @@ std::string GetSyncUsernameIfSyncingPasswords(
 }
 
 bool IsSyncAccountCredential(const autofill::PasswordForm& form,
-                             const sync_driver::SyncService* sync_service,
+                             const syncer::SyncService* sync_service,
                              const SigninManagerBase* signin_manager) {
   const Origin gaia_origin(GaiaUrls::GetInstance()->gaia_url().GetOrigin());
   if (!Origin(GURL(form.signon_realm)).IsSameOriginWith(gaia_origin)) {
     return false;
   }
+
+  // The empty username can mean that Chrome did not detect it correctly. For
+  // reasons described in http://crbug.com/636292#c1, the username is suspected
+  // to be the sync username unless proven otherwise.
+  if (form.username_value.empty())
+    return true;
 
   return gaia::AreEmailsSame(
       base::UTF16ToUTF8(form.username_value),

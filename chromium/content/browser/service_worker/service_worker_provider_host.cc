@@ -51,14 +51,17 @@ ServiceWorkerProviderHost::OneShotGetReadyCallback::~OneShotGetReadyCallback() {
 // static
 std::unique_ptr<ServiceWorkerProviderHost>
 ServiceWorkerProviderHost::PreCreateNavigationHost(
-    base::WeakPtr<ServiceWorkerContextCore> context) {
+    base::WeakPtr<ServiceWorkerContextCore> context,
+    bool are_ancestors_secure) {
   CHECK(IsBrowserSideNavigationEnabled());
   // Generate a new browser-assigned id for the host.
   int provider_id = g_next_navigation_provider_id--;
   return std::unique_ptr<ServiceWorkerProviderHost>(
       new ServiceWorkerProviderHost(
           ChildProcessHost::kInvalidUniqueID, MSG_ROUTING_NONE, provider_id,
-          SERVICE_WORKER_PROVIDER_FOR_WINDOW, FrameSecurityLevel::UNINITIALIZED,
+          SERVICE_WORKER_PROVIDER_FOR_WINDOW,
+          are_ancestors_secure ? FrameSecurityLevel::SECURE
+                               : FrameSecurityLevel::INSECURE,
           context, nullptr));
 }
 
@@ -281,12 +284,12 @@ void ServiceWorkerProviderHost::DisassociateRegistration() {
 
 void ServiceWorkerProviderHost::AddMatchingRegistration(
     ServiceWorkerRegistration* registration) {
-  DCHECK(ServiceWorkerUtils::ScopeMatches(
-        registration->pattern(), document_url_));
+  DCHECK(
+      ServiceWorkerUtils::ScopeMatches(registration->pattern(), document_url_));
   if (!IsContextSecureForServiceWorker())
     return;
   size_t key = registration->pattern().spec().size();
-  if (ContainsKey(matching_registrations_, key))
+  if (base::ContainsKey(matching_registrations_, key))
     return;
   IncreaseProcessReference(registration->pattern());
   registration->AddListener(this);
@@ -297,7 +300,7 @@ void ServiceWorkerProviderHost::AddMatchingRegistration(
 void ServiceWorkerProviderHost::RemoveMatchingRegistration(
     ServiceWorkerRegistration* registration) {
   size_t key = registration->pattern().spec().size();
-  DCHECK(ContainsKey(matching_registrations_, key));
+  DCHECK(base::ContainsKey(matching_registrations_, key));
   DecreaseProcessReference(registration->pattern());
   registration->RemoveListener(this);
   matching_registrations_.erase(key);

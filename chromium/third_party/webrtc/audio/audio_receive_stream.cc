@@ -13,7 +13,7 @@
 #include <string>
 #include <utility>
 
-#include "webrtc/audio_sink.h"
+#include "webrtc/api/call/audio_sink.h"
 #include "webrtc/audio/audio_state.h"
 #include "webrtc/audio/conversion.h"
 #include "webrtc/base/checks.h"
@@ -81,7 +81,8 @@ namespace internal {
 AudioReceiveStream::AudioReceiveStream(
     CongestionController* congestion_controller,
     const webrtc::AudioReceiveStream::Config& config,
-    const rtc::scoped_refptr<webrtc::AudioState>& audio_state)
+    const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
+    webrtc::RtcEventLog* event_log)
     : config_(config),
       audio_state_(audio_state),
       rtp_header_parser_(RtpHeaderParser::Create()) {
@@ -93,6 +94,7 @@ AudioReceiveStream::AudioReceiveStream(
 
   VoiceEngineImpl* voe_impl = static_cast<VoiceEngineImpl*>(voice_engine());
   channel_proxy_ = voe_impl->GetChannelProxy(config_.voe_channel_id);
+  channel_proxy_->SetRtcEventLog(event_log);
   channel_proxy_->SetLocalSSRC(config.rtp.local_ssrc);
   // TODO(solenberg): Config NACK history window (which is a packet count),
   // using the actual packet size for the configured codec.
@@ -142,8 +144,10 @@ AudioReceiveStream::AudioReceiveStream(
 AudioReceiveStream::~AudioReceiveStream() {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   LOG(LS_INFO) << "~AudioReceiveStream: " << config_.ToString();
+  Stop();
   channel_proxy_->DeRegisterExternalTransport();
   channel_proxy_->ResetCongestionControlObjects();
+  channel_proxy_->SetRtcEventLog(nullptr);
   if (remote_bitrate_estimator_) {
     remote_bitrate_estimator_->RemoveStream(config_.rtp.remote_ssrc);
   }
@@ -151,10 +155,17 @@ AudioReceiveStream::~AudioReceiveStream() {
 
 void AudioReceiveStream::Start() {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  ScopedVoEInterface<VoEBase> base(voice_engine());
+  int error = base->StartPlayout(config_.voe_channel_id);
+  if (error != 0) {
+    LOG(LS_ERROR) << "AudioReceiveStream::Start failed with error: " << error;
+  }
 }
 
 void AudioReceiveStream::Stop() {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  ScopedVoEInterface<VoEBase> base(voice_engine());
+  base->StopPlayout(config_.voe_channel_id);
 }
 
 webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
@@ -201,6 +212,7 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   stats.decoding_plc = ds.decoded_plc;
   stats.decoding_cng = ds.decoded_cng;
   stats.decoding_plc_cng = ds.decoded_plc_cng;
+  stats.decoding_muted_output = ds.decoded_muted_output;
 
   return stats;
 }

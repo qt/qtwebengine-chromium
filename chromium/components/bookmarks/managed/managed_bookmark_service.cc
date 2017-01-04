@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+
 #include <utility>
 #include <vector>
 
@@ -68,8 +69,8 @@ BookmarkPermanentNodeList LoadExtraNodes(
     ScopedVector<BookmarkPermanentNodeLoader> loaders,
     int64_t* next_node_id) {
   BookmarkPermanentNodeList extra_nodes;
-  for (const auto& loader : loaders)
-    extra_nodes.push_back(loader->Load(next_node_id).release());
+  for (auto* loader : loaders)
+    extra_nodes.push_back(loader->Load(next_node_id));
   return extra_nodes;
 }
 

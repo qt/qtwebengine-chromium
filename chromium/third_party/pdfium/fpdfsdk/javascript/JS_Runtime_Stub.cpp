@@ -6,9 +6,9 @@
 
 #include <memory>
 
-#include "fpdfsdk/include/fsdk_mgr.h"
 #include "fpdfsdk/javascript/ijs_context.h"
 #include "fpdfsdk/javascript/ijs_runtime.h"
+#include "third_party/base/ptr_util.h"
 
 class CJS_ContextStub final : public IJS_Context {
  public:
@@ -116,7 +116,6 @@ class CJS_ContextStub final : public IJS_Context {
   void OnBatchExec(CPDFSDK_Document* pTarget) override {}
   void OnConsole_Exec() override {}
   void OnExternal_Exec() override {}
-  void EnableMessageBox(FX_BOOL bEnable) override {}
 };
 
 class CJS_RuntimeStub final : public IJS_Runtime {
@@ -126,7 +125,7 @@ class CJS_RuntimeStub final : public IJS_Runtime {
 
   IJS_Context* NewContext() override {
     if (!m_pContext)
-      m_pContext.reset(new CJS_ContextStub());
+      m_pContext = pdfium::MakeUnique<CJS_ContextStub>();
     return GetCurrentContext();
   }
 
@@ -148,7 +147,8 @@ class CJS_RuntimeStub final : public IJS_Runtime {
   }
 #endif  // PDF_ENABLE_XFA
 
-  int Execute(const CFX_WideString& script, CFX_WideString* info) override {
+  int ExecuteScript(const CFX_WideString& script,
+                    CFX_WideString* info) override {
     return 0;
   }
 
@@ -164,6 +164,6 @@ void IJS_Runtime::Initialize(unsigned int slot, void* isolate) {}
 void IJS_Runtime::Destroy() {}
 
 // static
-IJS_Runtime* IJS_Runtime::Create(CPDFDoc_Environment* pEnv) {
+IJS_Runtime* IJS_Runtime::Create(CPDFSDK_FormFillEnvironment* pEnv) {
   return new CJS_RuntimeStub;
 }

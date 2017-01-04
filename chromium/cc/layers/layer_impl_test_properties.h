@@ -11,8 +11,11 @@
 #include "base/memory/ptr_util.h"
 #include "cc/layers/layer_collections.h"
 #include "cc/layers/layer_position_constraint.h"
+#include "cc/layers/layer_sticky_position_constraint.h"
 #include "cc/output/filter_operations.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/transform.h"
 
 namespace cc {
 
@@ -26,7 +29,6 @@ struct CC_EXPORT LayerImplTestProperties {
   void AddChild(std::unique_ptr<LayerImpl> child);
   std::unique_ptr<LayerImpl> RemoveChild(LayerImpl* child);
   void SetMaskLayer(std::unique_ptr<LayerImpl> mask);
-  void SetReplicaLayer(std::unique_ptr<LayerImpl> replica);
 
   LayerImpl* owning_layer;
   bool double_sided;
@@ -38,9 +40,14 @@ struct CC_EXPORT LayerImplTestProperties {
   int num_descendants_that_draw_content;
   size_t num_unclipped_descendants;
   float opacity;
+  FilterOperations filters;
   FilterOperations background_filters;
+  gfx::PointF filters_origin;
+  SkXfermode::Mode blend_mode;
   LayerPositionConstraint position_constraint;
+  LayerStickyPositionConstraint sticky_position_constraint;
   gfx::Point3F transform_origin;
+  gfx::Transform transform;
   LayerImpl* scroll_parent;
   std::unique_ptr<std::set<LayerImpl*>> scroll_children;
   LayerImpl* clip_parent;
@@ -48,7 +55,6 @@ struct CC_EXPORT LayerImplTestProperties {
   std::vector<std::unique_ptr<CopyOutputRequest>> copy_requests;
   LayerImplList children;
   LayerImpl* mask_layer;
-  LayerImpl* replica_layer;
   LayerImpl* parent;
 };
 

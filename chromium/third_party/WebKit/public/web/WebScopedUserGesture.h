@@ -31,7 +31,8 @@
 #ifndef WebScopedUserGesture_h
 #define WebScopedUserGesture_h
 
-#include "../platform/WebPrivateOwnPtr.h"
+#include "public/platform/WebCommon.h"
+#include <memory>
 
 namespace blink {
 
@@ -52,19 +53,15 @@ class WebUserGestureToken;
 // WebScopedUserGesture will not indicate that we are in the context of a user
 // gesture.
 class WebScopedUserGesture {
-public:
-    explicit WebScopedUserGesture(const WebUserGestureToken& token) { initializeWithToken(token); }
-    WebScopedUserGesture() { initialize(); }
-    ~WebScopedUserGesture() { reset(); }
+ public:
+  BLINK_EXPORT explicit WebScopedUserGesture(const WebUserGestureToken& token);
+  BLINK_EXPORT WebScopedUserGesture();
+  BLINK_EXPORT ~WebScopedUserGesture();
 
-private:
-    BLINK_EXPORT void initialize();
-    BLINK_EXPORT void initializeWithToken(const WebUserGestureToken&);
-    BLINK_EXPORT void reset();
-
-    WebPrivateOwnPtr<UserGestureIndicator> m_indicator;
+ private:
+  std::unique_ptr<UserGestureIndicator> m_indicator;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // WebScopedUserGesture_h
+#endif  // WebScopedUserGesture_h

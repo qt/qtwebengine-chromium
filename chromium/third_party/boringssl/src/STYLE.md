@@ -27,7 +27,9 @@ Google style guide do not apply. Support for C99 features depends on
 our target platforms. Typically, Chromium's target MSVC is the most
 restrictive.
 
-Variable declarations in the middle of a function are allowed.
+Variable declarations in the middle of a function or inside a `for` loop are
+allowed and preferred where possible. Note that the common `goto err` cleanup
+pattern requires lifting some variable declarations.
 
 Comments should be `/* C-style */` for consistency.
 
@@ -157,7 +159,7 @@ For example,
     /* CBB_add_asn sets |*out_contents| to a |CBB| into which the contents of an
      * ASN.1 object can be written. The |tag| argument will be used as the tag for
      * the object. It returns one on success or zero on error. */
-    OPENSSL_EXPORT int CBB_add_asn1(CBB *cbb, CBB *out_contents, uint8_t tag);
+    OPENSSL_EXPORT int CBB_add_asn1(CBB *cbb, CBB *out_contents, unsigned tag);
 
 
 ## Documentation

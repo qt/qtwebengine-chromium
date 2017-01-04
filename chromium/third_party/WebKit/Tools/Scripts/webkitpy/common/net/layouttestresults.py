@@ -27,12 +27,9 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import json
-import logging
 
 from webkitpy.common.memoized import memoized
 from webkitpy.layout_tests.layout_package import json_results_generator
-
-_log = logging.getLogger(__name__)
 
 
 class LayoutTestResult(object):
@@ -54,16 +51,16 @@ class LayoutTestResult(object):
         return 'PASS' in self.actual_results()
 
     def did_run_as_expected(self):
-        return 'is_unexpected' not in self._result_dict
+        return not self._result_dict.get('is_unexpected', False)
 
     def is_missing_image(self):
-        return 'is_missing_image' in self._result_dict
+        return self._result_dict.get('is_missing_image', False)
 
     def is_missing_text(self):
-        return 'is_missing_text' in self._result_dict
+        return self._result_dict.get('is_missing_text', False)
 
     def is_missing_audio(self):
-        return 'is_missing_audio' in self._result_dict
+        return self._result_dict.get('is_missing_audio', False)
 
     def actual_results(self):
         return self._result_dict['actual']
@@ -159,3 +156,6 @@ class LayoutTestResults(object):
 
     def unexpected_mismatch_results(self):
         return self._filter_tests(lambda r: r.has_mismatch_result() and not r.did_run_as_expected())
+
+    def didnt_run_as_expected_results(self):
+        return self._filter_tests(lambda r: not r.did_run_as_expected())

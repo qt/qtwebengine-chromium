@@ -13,15 +13,15 @@
 #include "components/password_manager/sync/browser/password_manager_setting_migrator_service.h"
 #include "components/pref_registry/testing_pref_service_syncable.h"
 #include "components/prefs/pref_service.h"
-#include "components/sync_driver/fake_sync_service.h"
+#include "components/sync/api/fake_sync_change_processor.h"
+#include "components/sync/api/sync_error_factory.h"
+#include "components/sync/api/sync_error_factory_mock.h"
+#include "components/sync/core/attachments/attachment_service_proxy_for_test.h"
+#include "components/sync/driver/fake_sync_service.h"
+#include "components/sync/protocol/sync.pb.h"
 #include "components/syncable_prefs/pref_model_associator_client.h"
 #include "components/syncable_prefs/pref_service_mock_factory.h"
 #include "components/syncable_prefs/pref_service_syncable.h"
-#include "sync/api/fake_sync_change_processor.h"
-#include "sync/api/sync_error_factory.h"
-#include "sync/api/sync_error_factory_mock.h"
-#include "sync/internal_api/public/attachments/attachment_service_proxy_for_test.h"
-#include "sync/protocol/sync.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -123,7 +123,7 @@ void StartSyncingPref(syncable_prefs::PrefServiceSyncable* prefs,
                                      new syncer::SyncErrorFactoryMock));
 }
 
-class SyncServiceMock : public sync_driver::FakeSyncService {
+class SyncServiceMock : public syncer::FakeSyncService {
  public:
   bool IsFirstSetupComplete() const override { return true; }
 

@@ -29,12 +29,12 @@
 #include "webrtc/media/base/streamparams.h"
 
 namespace cricket {
-// The biggest SCTP packet.  Starting from a 'safe' wire MTU value of 1280,
+// The biggest SCTP packet. Starting from a 'safe' wire MTU value of 1280,
 // take off 80 bytes for DTLS/TURN/TCP/IP overhead.
-static const size_t kSctpMtu = 1200;
+static constexpr size_t kSctpMtu = 1200;
 
 // The size of the SCTP association send buffer.  256kB, the usrsctp default.
-static const int kSendBufferSize = 262144;
+static constexpr int kSendBufferSize = 262144;
 
 struct SctpInboundPacket {
   rtc::CopyOnWriteBuffer buffer;
@@ -284,12 +284,9 @@ void InitializeUsrSctp() {
   // See: http://svnweb.freebsd.org/base?view=revision&revision=229805
   // usrsctp_sysctl_set_sctp_blackhole(2);
 
-  // Set the number of default outgoing streams.  This is the number we'll
-  // send in the SCTP INIT message.  The 'appropriate default' in the
-  // second paragraph of
-  // http://tools.ietf.org/html/draft-ietf-rtcweb-data-channel-05#section-6.2
-  // is kMaxSctpSid.
-  usrsctp_sysctl_set_sctp_nr_outgoing_streams_default(kMaxSctpSid);
+  // Set the number of default outgoing streams. This is the number we'll
+  // send in the SCTP INIT message.
+  usrsctp_sysctl_set_sctp_nr_outgoing_streams_default(kMaxSctpStreams);
 }
 
 void UninitializeUsrSctp() {
@@ -473,18 +470,6 @@ bool SctpDataMediaChannel::OpenSctpSocket() {
     return false;
   }
 
-  // Disable MTU discovery
-  sctp_paddrparams params = {{0}};
-  params.spp_assoc_id = 0;
-  params.spp_flags = SPP_PMTUD_DISABLE;
-  params.spp_pathmtu = kSctpMtu;
-  if (usrsctp_setsockopt(sock_, IPPROTO_SCTP, SCTP_PEER_ADDR_PARAMS, &params,
-      sizeof(params))) {
-    LOG_ERRNO(LS_ERROR) << debug_name_
-                        << "Failed to set SCTP_PEER_ADDR_PARAMS.";
-    return false;
-  }
-
   // Subscribe to SCTP event notifications.
   int event_types[] = {SCTP_ASSOC_CHANGE,
                        SCTP_PEER_ADDR_CHANGE,
@@ -561,6 +546,17 @@ bool SctpDataMediaChannel::Connect() {
                         << errno << ", but wanted " << SCTP_EINPROGRESS;
     CloseSctpSocket();
     return false;
+  }
+  // Set the MTU and disable MTU discovery.
+  // We can only do this after usrsctp_connect or it has no effect.
+  sctp_paddrparams params = {{0}};
+  memcpy(&params.spp_address, &remote_sconn, sizeof(remote_sconn));
+  params.spp_flags = SPP_PMTUD_DISABLE;
+  params.spp_pathmtu = kSctpMtu;
+  if (usrsctp_setsockopt(sock_, IPPROTO_SCTP, SCTP_PEER_ADDR_PARAMS, &params,
+                         sizeof(params))) {
+    LOG_ERRNO(LS_ERROR) << debug_name_
+                        << "Failed to set SCTP_PEER_ADDR_PARAMS.";
   }
   return true;
 }
@@ -751,23 +747,22 @@ bool SctpDataMediaChannel::AddStream(const StreamParams& stream) {
   }
 
   const uint32_t ssrc = stream.first_ssrc();
-  if (ssrc >= kMaxSctpSid) {
+  if (ssrc > kMaxSctpSid) {
     LOG(LS_WARNING) << debug_name_ << "->Add(Send|Recv)Stream(...): "
                     << "Not adding data stream '" << stream.id
-                    << "' with ssrc=" << ssrc
-                    << " because stream ssrc is too high.";
+                    << "' with sid=" << ssrc << " because sid is too high.";
     return false;
   } else if (open_streams_.find(ssrc) != open_streams_.end()) {
     LOG(LS_WARNING) << debug_name_ << "->Add(Send|Recv)Stream(...): "
                     << "Not adding data stream '" << stream.id
-                    << "' with ssrc=" << ssrc
+                    << "' with sid=" << ssrc
                     << " because stream is already open.";
     return false;
   } else if (queued_reset_streams_.find(ssrc) != queued_reset_streams_.end()
              || sent_reset_streams_.find(ssrc) != sent_reset_streams_.end()) {
     LOG(LS_WARNING) << debug_name_ << "->Add(Send|Recv)Stream(...): "
                     << "Not adding data stream '" << stream.id
-                    << "' with ssrc=" << ssrc
+                    << "' with sid=" << ssrc
                     << " because stream is still closing.";
     return false;
   }
@@ -1002,17 +997,11 @@ bool SctpDataMediaChannel::SetRecvCodecs(const std::vector<DataCodec>& codecs) {
 
 void SctpDataMediaChannel::OnPacketFromSctpToNetwork(
     rtc::CopyOnWriteBuffer* buffer) {
-  // usrsctp seems to interpret the MTU we give it strangely -- it seems to
-  // give us back packets bigger than that MTU, if only by a fixed amount.
-  // This is that amount that we've observed.
-  const int kSctpOverhead = 76;
-  if (buffer->size() > (kSctpOverhead + kSctpMtu)) {
+  if (buffer->size() > (kSctpMtu)) {
     LOG(LS_ERROR) << debug_name_ << "->OnPacketFromSctpToNetwork(...): "
                   << "SCTP seems to have made a packet that is bigger "
                   << "than its official MTU: " << buffer->size()
-                  << " vs max of " << kSctpMtu
-                  << " even after adding " << kSctpOverhead
-                  << " extra SCTP overhead";
+                  << " vs max of " << kSctpMtu;
   }
   MediaChannel::SendPacket(buffer, rtc::PacketOptions());
 }

@@ -42,6 +42,7 @@ class CC_EXPORT RasterBufferProvider {
       const gfx::Rect& canvas_bitmap_rect,
       const gfx::Rect& canvas_playback_rect,
       float scale,
+      sk_sp<SkColorSpace> color_space,
       const RasterSource::PlaybackSettings& playback_settings);
 
   // Acquire raster buffer.
@@ -60,7 +61,11 @@ class CC_EXPORT RasterBufferProvider {
   virtual ResourceFormat GetResourceFormat(bool must_support_alpha) const = 0;
 
   // Determine if the resource requires swizzling.
-  virtual bool GetResourceRequiresSwizzle(bool must_support_alpha) const = 0;
+  virtual bool IsResourceSwizzleRequired(bool must_support_alpha) const = 0;
+
+  // Determine if the RasterBufferProvider can handle partial raster into
+  // the Resource provided in AcquireBufferForRaster.
+  virtual bool CanPartialRasterIntoProvidedResource() const = 0;
 
   // Shutdown for doing cleanup.
   virtual void Shutdown() = 0;

@@ -59,7 +59,8 @@ class WebURLLoaderMockFactoryImpl : public WebURLLoaderMockFactory {
   void LoadSynchronously(const WebURLRequest& request,
                          WebURLResponse* response,
                          WebURLError* error,
-                         WebData* data);
+                         WebData* data,
+                         int64_t* encoded_data_length);
   void LoadAsynchronouly(const WebURLRequest& request,
                          WebURLLoaderMock* loader);
 
@@ -102,6 +103,6 @@ class WebURLLoaderMockFactoryImpl : public WebURLLoaderMockFactory {
   DISALLOW_COPY_AND_ASSIGN(WebURLLoaderMockFactoryImpl);
 };
 
-} // namespace blink
+}  // namespace blink
 
 #endif  // WebURLLoaderMockFactoryImpl_h

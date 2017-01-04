@@ -43,8 +43,16 @@ std::unique_ptr<NetEqInput::PacketData> NetEqPacketSourceInput::PopPacket() {
   }
   std::unique_ptr<PacketData> packet_data(new PacketData);
   packet_->ConvertHeader(&packet_data->header);
-  packet_data->payload.SetData(packet_->payload(),
-                               packet_->payload_length_bytes());
+  if (packet_->payload_length_bytes() == 0 &&
+      packet_->virtual_payload_length_bytes() > 0) {
+    // This is a header-only "dummy" packet. Set the payload to all zeros, with
+    // length according to the virtual length.
+    packet_data->payload.SetSize(packet_->virtual_payload_length_bytes());
+    std::fill_n(packet_data->payload.data(), packet_data->payload.size(), 0);
+  } else {
+    packet_data->payload.SetData(packet_->payload(),
+                                 packet_->payload_length_bytes());
+  }
   packet_data->time_ms = packet_->time_ms();
 
   LoadNextPacket();
@@ -52,8 +60,12 @@ std::unique_ptr<NetEqInput::PacketData> NetEqPacketSourceInput::PopPacket() {
   return packet_data;
 }
 
-NetEqRtpDumpInput::NetEqRtpDumpInput(const std::string& file_name)
+NetEqRtpDumpInput::NetEqRtpDumpInput(const std::string& file_name,
+                                     const RtpHeaderExtensionMap& hdr_ext_map)
     : source_(RtpFileSource::Create(file_name)) {
+  for (const auto& ext_pair : hdr_ext_map) {
+    source_->RegisterRtpHeaderExtension(ext_pair.second, ext_pair.first);
+  }
   LoadNextPacket();
 }
 
@@ -74,8 +86,12 @@ PacketSource* NetEqRtpDumpInput::source() {
   return source_.get();
 }
 
-NetEqEventLogInput::NetEqEventLogInput(const std::string& file_name)
+NetEqEventLogInput::NetEqEventLogInput(const std::string& file_name,
+                                       const RtpHeaderExtensionMap& hdr_ext_map)
     : source_(RtcEventLogSource::Create(file_name)) {
+  for (const auto& ext_pair : hdr_ext_map) {
+    source_->RegisterRtpHeaderExtension(ext_pair.second, ext_pair.first);
+  }
   LoadNextPacket();
   AdvanceOutputEvent();
 }

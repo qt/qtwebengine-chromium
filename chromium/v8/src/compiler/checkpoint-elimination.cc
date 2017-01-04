@@ -30,10 +30,20 @@ bool IsRedundantCheckpoint(Node* node) {
 
 }  // namespace
 
-Reduction CheckpointElimination::Reduce(Node* node) {
-  if (node->opcode() != IrOpcode::kCheckpoint) return NoChange();
+Reduction CheckpointElimination::ReduceCheckpoint(Node* node) {
+  DCHECK_EQ(IrOpcode::kCheckpoint, node->opcode());
   if (IsRedundantCheckpoint(node)) {
     return Replace(NodeProperties::GetEffectInput(node));
+  }
+  return NoChange();
+}
+
+Reduction CheckpointElimination::Reduce(Node* node) {
+  switch (node->opcode()) {
+    case IrOpcode::kCheckpoint:
+      return ReduceCheckpoint(node);
+    default:
+      break;
   }
   return NoChange();
 }

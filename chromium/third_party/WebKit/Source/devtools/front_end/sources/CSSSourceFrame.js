@@ -36,9 +36,19 @@
 WebInspector.CSSSourceFrame = function(uiSourceCode)
 {
     WebInspector.UISourceCodeFrame.call(this, uiSourceCode);
-    this.textEditor.setAutocompleteDelegate(new WebInspector.CSSSourceFrame.AutocompleteDelegate());
     this._registerShortcuts();
+    this._swatchPopoverHelper = new WebInspector.SwatchPopoverHelper();
+    this._muteSwatchProcessing = false;
+    this.configureAutocomplete({
+        suggestionsCallback: this._cssSuggestions.bind(this),
+        isWordChar: this._isWordChar.bind(this)
+    });
 }
+
+/** @type {number} */
+WebInspector.CSSSourceFrame.maxSwatchProcessingLength = 300;
+/** @type {symbol} */
+WebInspector.CSSSourceFrame.SwatchBookmark = Symbol("swatch");
 
 WebInspector.CSSSourceFrame.prototype = {
     _registerShortcuts: function()
@@ -86,7 +96,7 @@ WebInspector.CSSSourceFrame.prototype = {
             return false;
 
         var cssUnitRange = new WebInspector.TextRange(selection.startLine, token.startColumn, selection.startLine, token.endColumn);
-        var cssUnitText = this.textEditor.copyRange(cssUnitRange);
+        var cssUnitText = this.textEditor.text(cssUnitRange);
         var newUnitText = this._modifyUnit(cssUnitText, change);
         if (!newUnitText)
             return false;
@@ -97,74 +107,281 @@ WebInspector.CSSSourceFrame.prototype = {
         return true;
     },
 
-    __proto__: WebInspector.UISourceCodeFrame.prototype
-}
-
-/**
- * @constructor
- * @implements {WebInspector.TextEditorAutocompleteDelegate}
- */
-WebInspector.CSSSourceFrame.AutocompleteDelegate = function()
-{
-    this._simpleDelegate = new WebInspector.SimpleAutocompleteDelegate(".-$");
-}
-
-WebInspector.CSSSourceFrame._backtrackDepth = 10;
-
-WebInspector.CSSSourceFrame.AutocompleteDelegate.prototype = {
     /**
-     * @override
-     * @param {!WebInspector.CodeMirrorTextEditor} editor
+     * @param {number} startLine
+     * @param {number} endLine
      */
-    initialize: function(editor)
+    _updateSwatches: function(startLine, endLine)
     {
-        this._simpleDelegate.initialize(editor);
+        var swatches = [];
+        var swatchPositions = [];
+
+        var regexes = [WebInspector.CSSMetadata.VariableRegex, WebInspector.CSSMetadata.URLRegex, WebInspector.Geometry.CubicBezier.Regex, WebInspector.Color.Regex];
+        var handlers = new Map();
+        handlers.set(WebInspector.Color.Regex, this._createColorSwatch.bind(this));
+        handlers.set(WebInspector.Geometry.CubicBezier.Regex, this._createBezierSwatch.bind(this));
+
+        for (var lineNumber = startLine; lineNumber <= endLine; lineNumber++) {
+            var line = this.textEditor.line(lineNumber).substring(0, WebInspector.CSSSourceFrame.maxSwatchProcessingLength);
+            var results = WebInspector.TextUtils.splitStringByRegexes(line, regexes);
+            for (var i = 0; i < results.length; i++) {
+                var result = results[i];
+                if (result.regexIndex === -1 || !handlers.has(regexes[result.regexIndex]))
+                    continue;
+                var delimiters = /[\s:;,(){}]/;
+                var positionBefore = result.position - 1;
+                var positionAfter = result.position + result.value.length;
+                if (positionBefore >= 0 && !delimiters.test(line.charAt(positionBefore))
+                    || positionAfter < line.length && !delimiters.test(line.charAt(positionAfter)))
+                    continue;
+                var swatch = handlers.get(regexes[result.regexIndex])(result.value);
+                if (!swatch)
+                    continue;
+                swatches.push(swatch);
+                swatchPositions.push(WebInspector.TextRange.createFromLocation(lineNumber, result.position));
+            }
+        }
+        this.textEditor.operation(putSwatchesInline.bind(this));
+
+        /**
+         * @this {WebInspector.CSSSourceFrame}
+         */
+        function putSwatchesInline()
+        {
+            var clearRange = new WebInspector.TextRange(startLine, 0, endLine, this.textEditor.line(endLine).length);
+            this.textEditor.bookmarks(clearRange, WebInspector.CSSSourceFrame.SwatchBookmark).forEach(marker => marker.clear());
+
+            for (var i = 0; i < swatches.length; i++) {
+                var swatch = swatches[i];
+                var swatchPosition = swatchPositions[i];
+                var bookmark = this.textEditor.addBookmark(swatchPosition.startLine, swatchPosition.startColumn, swatch, WebInspector.CSSSourceFrame.SwatchBookmark);
+                swatch[WebInspector.CSSSourceFrame.SwatchBookmark] = bookmark;
+            }
+        }
+    },
+
+    /**
+     * @param {string} text
+     * @return {?WebInspector.ColorSwatch}
+     */
+    _createColorSwatch: function(text)
+    {
+        var color = WebInspector.Color.parse(text);
+        if (!color)
+            return null;
+        var swatch = WebInspector.ColorSwatch.create();
+        swatch.setColor(color);
+        swatch.iconElement().title = WebInspector.UIString("Open color picker.");
+        swatch.iconElement().addEventListener("click", this._swatchIconClicked.bind(this, swatch), false);
+        swatch.hideText(true);
+        return swatch;
+    },
+
+    /**
+     * @param {string} text
+     * @return {?WebInspector.BezierSwatch}
+     */
+    _createBezierSwatch: function(text)
+    {
+        if (!WebInspector.Geometry.CubicBezier.parse(text))
+            return null;
+        var swatch = WebInspector.BezierSwatch.create();
+        swatch.setBezierText(text);
+        swatch.iconElement().title = WebInspector.UIString("Open cubic bezier editor.");
+        swatch.iconElement().addEventListener("click", this._swatchIconClicked.bind(this, swatch), false);
+        swatch.hideText(true);
+        return swatch;
+    },
+
+    /**
+     * @param {!Element} swatch
+     * @param {!Event} event
+     */
+    _swatchIconClicked: function(swatch, event)
+    {
+        event.consume(true);
+        this._hadSwatchChange = false;
+        this._muteSwatchProcessing = true;
+        var swatchPosition = swatch[WebInspector.CSSSourceFrame.SwatchBookmark].position();
+        this.textEditor.setSelection(swatchPosition);
+        this._editedSwatchTextRange = swatchPosition.clone();
+        this._editedSwatchTextRange.endColumn += swatch.textContent.length;
+        this._currentSwatch = swatch;
+
+        if (swatch instanceof WebInspector.ColorSwatch)
+            this._showSpectrum(swatch);
+        else if (swatch instanceof WebInspector.BezierSwatch)
+            this._showBezierEditor(swatch);
+    },
+
+    /**
+     * @param {!WebInspector.ColorSwatch} swatch
+     */
+    _showSpectrum: function(swatch)
+    {
+        if (!this._spectrum) {
+            this._spectrum = new WebInspector.Spectrum();
+            this._spectrum.addEventListener(WebInspector.Spectrum.Events.SizeChanged, this._spectrumResized, this);
+            this._spectrum.addEventListener(WebInspector.Spectrum.Events.ColorChanged, this._spectrumChanged, this);
+        }
+        this._spectrum.setColor(swatch.color(), swatch.format());
+        this._swatchPopoverHelper.show(this._spectrum, swatch.iconElement(), this._swatchPopoverHidden.bind(this));
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _spectrumResized: function(event)
+    {
+        this._swatchPopoverHelper.reposition();
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _spectrumChanged: function(event)
+    {
+        var colorString = /** @type {string} */ (event.data);
+        var color = WebInspector.Color.parse(colorString);
+        if (!color)
+            return;
+        this._currentSwatch.setColor(color);
+        this._changeSwatchText(colorString);
+    },
+
+    /**
+     * @param {!WebInspector.BezierSwatch} swatch
+     */
+    _showBezierEditor: function(swatch)
+    {
+        if (!this._bezierEditor) {
+            this._bezierEditor = new WebInspector.BezierEditor();
+            this._bezierEditor.addEventListener(WebInspector.BezierEditor.Events.BezierChanged, this._bezierChanged, this);
+        }
+        var cubicBezier = WebInspector.Geometry.CubicBezier.parse(swatch.bezierText());
+        if (!cubicBezier)
+            cubicBezier = /** @type {!WebInspector.Geometry.CubicBezier} */ (WebInspector.Geometry.CubicBezier.parse("linear"));
+        this._bezierEditor.setBezier(cubicBezier);
+        this._swatchPopoverHelper.show(this._bezierEditor, swatch.iconElement(), this._swatchPopoverHidden.bind(this));
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _bezierChanged: function(event)
+    {
+        var bezierString = /** @type {string} */ (event.data);
+        this._currentSwatch.setBezierText(bezierString);
+        this._changeSwatchText(bezierString);
+    },
+
+    /**
+     * @param {string} text
+     */
+    _changeSwatchText: function(text)
+    {
+        this._hadSwatchChange = true;
+        this._textEditor.editRange(this._editedSwatchTextRange, text, "*swatch-text-changed");
+        this._editedSwatchTextRange.endColumn = this._editedSwatchTextRange.startColumn + text.length;
+    },
+
+    /**
+     * @param {boolean} commitEdit
+     */
+    _swatchPopoverHidden: function(commitEdit)
+    {
+        this._muteSwatchProcessing = false;
+        if (!commitEdit && this._hadSwatchChange)
+            this.textEditor.undo();
     },
 
     /**
      * @override
      */
-    dispose: function()
+    onTextEditorContentSet: function()
     {
-        this._simpleDelegate.dispose();
+        WebInspector.UISourceCodeFrame.prototype.onTextEditorContentSet.call(this);
+        if (!this._muteSwatchProcessing)
+            this._updateSwatches(0, this.textEditor.linesCount - 1);
     },
 
     /**
      * @override
-     * @param {!WebInspector.CodeMirrorTextEditor} editor
+     * @param {!WebInspector.TextRange} oldRange
+     * @param {!WebInspector.TextRange} newRange
+     */
+    onTextChanged: function(oldRange, newRange)
+    {
+        WebInspector.UISourceCodeFrame.prototype.onTextChanged.call(this, oldRange, newRange);
+        if (!this._muteSwatchProcessing)
+            this._updateSwatches(newRange.startLine, newRange.endLine);
+    },
+
+    /**
+     * @override
      * @param {number} lineNumber
-     * @param {number} columnNumber
-     * @return {?WebInspector.TextRange}
      */
-    substituteRange: function(editor, lineNumber, columnNumber)
+    scrollChanged: function(lineNumber)
     {
-        return this._simpleDelegate.substituteRange(editor, lineNumber, columnNumber);
+        WebInspector.UISourceCodeFrame.prototype.scrollChanged.call(this, lineNumber);
+        if (this._swatchPopoverHelper.isShowing())
+            this._swatchPopoverHelper.hide(true);
     },
 
     /**
-     * @param {!WebInspector.CodeMirrorTextEditor} editor
+     * @param {string} char
+     * @return {boolean}
+     */
+    _isWordChar: function(char)
+    {
+        return WebInspector.TextUtils.isWordChar(char) || char === "." || char === "-" || char === "$";
+    },
+
+    /**
+     * @param {!WebInspector.TextRange} prefixRange
+     * @param {!WebInspector.TextRange} substituteRange
+     * @return {?Promise.<!WebInspector.SuggestBox.Suggestions>}
+     */
+    _cssSuggestions: function(prefixRange, substituteRange)
+    {
+        var prefix = this._textEditor.text(prefixRange);
+        if (prefix.startsWith("$"))
+            return null;
+
+        var propertyToken = this._backtrackPropertyToken(prefixRange.startLine, prefixRange.startColumn - 1);
+        if (!propertyToken)
+            return null;
+
+        var line = this._textEditor.line(prefixRange.startLine);
+        var tokenContent = line.substring(propertyToken.startColumn, propertyToken.endColumn);
+        var propertyValues = WebInspector.cssMetadata().propertyValues(tokenContent);
+        return Promise.resolve(propertyValues.filter(value => value.startsWith(prefix)).map(value => ({title: value})));
+    },
+
+    /**
      * @param {number} lineNumber
      * @param {number} columnNumber
      * @return {?{startColumn: number, endColumn: number, type: string}}
      */
-    _backtrackPropertyToken: function(editor, lineNumber, columnNumber)
+    _backtrackPropertyToken: function(lineNumber, columnNumber)
     {
+        var backtrackDepth = 10;
         var tokenPosition = columnNumber;
-        var line = editor.line(lineNumber);
-        var seenColumn = false;
+        var line = this._textEditor.line(lineNumber);
+        var seenColon = false;
 
-        for (var i = 0; i < WebInspector.CSSSourceFrame._backtrackDepth && tokenPosition >= 0; ++i) {
-            var token = editor.tokenAtTextPosition(lineNumber, tokenPosition);
+        for (var i = 0; i < backtrackDepth && tokenPosition >= 0; ++i) {
+            var token = this._textEditor.tokenAtTextPosition(lineNumber, tokenPosition);
             if (!token)
                 return null;
             if (token.type === "css-property")
-                return seenColumn ? token : null;
+                return seenColon ? token : null;
             if (token.type && !(token.type.indexOf("whitespace") !== -1 || token.type.startsWith("css-comment")))
                 return null;
 
             if (!token.type && line.substring(token.startColumn, token.endColumn) === ":") {
-                if (!seenColumn)
-                    seenColumn = true;
+                if (!seenColon)
+                    seenColon = true;
                 else
                     return null;
             }
@@ -173,25 +390,5 @@ WebInspector.CSSSourceFrame.AutocompleteDelegate.prototype = {
         return null;
     },
 
-    /**
-     * @override
-     * @param {!WebInspector.CodeMirrorTextEditor} editor
-     * @param {!WebInspector.TextRange} prefixRange
-     * @param {!WebInspector.TextRange} substituteRange
-     * @return {!Array.<string>}
-     */
-    wordsWithPrefix: function(editor, prefixRange, substituteRange)
-    {
-        var prefix = editor.copyRange(prefixRange);
-        if (prefix.startsWith("$"))
-            return this._simpleDelegate.wordsWithPrefix(editor, prefixRange, substituteRange);
-        var propertyToken = this._backtrackPropertyToken(editor, prefixRange.startLine, prefixRange.startColumn - 1);
-        if (!propertyToken)
-            return this._simpleDelegate.wordsWithPrefix(editor, prefixRange, substituteRange);
-
-        var line = editor.line(prefixRange.startLine);
-        var tokenContent = line.substring(propertyToken.startColumn, propertyToken.endColumn);
-        var keywords = WebInspector.CSSMetadata.keywordsForProperty(tokenContent);
-        return keywords.startsWith(prefix);
-    },
+    __proto__: WebInspector.UISourceCodeFrame.prototype
 }

@@ -343,7 +343,7 @@ void MessageCenterImpl::NotificationCache::Rebuild(
 
 void MessageCenterImpl::NotificationCache::RecountUnread() {
   unread_count = 0;
-  for (const auto& notification : visible_notifications) {
+  for (auto* notification : visible_notifications) {
     if (!notification->IsRead())
       ++unread_count;
   }
@@ -385,7 +385,7 @@ void MessageCenterImpl::RemoveObserver(MessageCenterObserver* observer) {
 }
 
 void MessageCenterImpl::AddNotificationBlocker(NotificationBlocker* blocker) {
-  if (ContainsValue(blockers_, blocker))
+  if (base::ContainsValue(blockers_, blocker))
     return;
 
   blocker->AddObserver(this);
@@ -616,7 +616,11 @@ void MessageCenterImpl::RemoveNotification(const std::string& id,
 
 void MessageCenterImpl::RemoveNotificationImmediately(
     const std::string& id, bool by_user) {
-  if (FindVisibleNotificationById(id) == NULL)
+  Notification* notification = FindVisibleNotificationById(id);
+  if (notification == NULL)
+    return;
+
+  if (by_user && notification->pinned())
     return;
 
   // In many cases |id| is a reference to an existing notification instance
@@ -641,7 +645,7 @@ void MessageCenterImpl::RemoveNotificationsForNotifierId(
     const NotifierId& notifier_id) {
   NotificationList::Notifications notifications =
       notification_list_->GetNotificationsByNotifierId(notifier_id);
-  for (const auto& notification : notifications)
+  for (auto* notification : notifications)
     RemoveNotification(notification->id(), false);
   if (!notifications.empty()) {
     notification_cache_.Rebuild(
@@ -650,7 +654,7 @@ void MessageCenterImpl::RemoveNotificationsForNotifierId(
 }
 
 void MessageCenterImpl::RemoveAllNotifications(bool by_user, RemoveType type) {
-  bool remove_pinned = (type == RemoveType::NON_PINNED);
+  bool remove_pinned = (type == RemoveType::ALL);
 
   const NotificationBlockers& blockers =
       (type == RemoveType::ALL ? NotificationBlockers() /* empty blockers */
@@ -659,7 +663,7 @@ void MessageCenterImpl::RemoveAllNotifications(bool by_user, RemoveType type) {
   const NotificationList::Notifications notifications =
       notification_list_->GetVisibleNotifications(blockers);
   std::set<std::string> ids;
-  for (const auto& notification : notifications) {
+  for (auto* notification : notifications) {
     if (!remove_pinned && notification->pinned())
       continue;
 

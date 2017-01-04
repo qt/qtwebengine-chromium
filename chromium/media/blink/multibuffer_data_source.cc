@@ -12,6 +12,7 @@
 #include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "media/base/media_log.h"
+#include "media/blink/buffered_data_source_host_impl.h"
 #include "media/blink/multibuffer_reader.h"
 #include "net/base/net_errors.h"
 
@@ -232,7 +233,7 @@ void MultibufferDataSource::OnRedirect(
 }
 
 void MultibufferDataSource::SetPreload(Preload preload) {
-  DVLOG(1) << __FUNCTION__ << "(" << preload << ")";
+  DVLOG(1) << __func__ << "(" << preload << ")";
   DCHECK(render_task_runner_->BelongsToCurrentThread());
   preload_ = preload;
   UpdateBufferSizes();
@@ -247,8 +248,8 @@ void MultibufferDataSource::SetBufferingStrategy(
 
 bool MultibufferDataSource::HasSingleOrigin() {
   DCHECK(render_task_runner_->BelongsToCurrentThread());
-  DCHECK(init_cb_.is_null() && reader_.get())
-      << "Initialize() must complete before calling HasSingleOrigin()";
+  // Before initialization completes there is no risk of leaking data. Callers
+  // are required to order checks such that this isn't a race.
   return single_origin_;
 }
 
@@ -261,16 +262,6 @@ bool MultibufferDataSource::DidPassCORSAccessCheck() const {
   if (failed_)
     return false;
   return true;
-}
-
-void MultibufferDataSource::Abort() {
-  DCHECK(render_task_runner_->BelongsToCurrentThread());
-  {
-    base::AutoLock auto_lock(lock_);
-    StopInternal_Locked();
-  }
-  StopLoader();
-  frame_ = NULL;
 }
 
 void MultibufferDataSource::MediaPlaybackRateChanged(double playback_rate) {
@@ -305,6 +296,17 @@ void MultibufferDataSource::Stop() {
   render_task_runner_->PostTask(FROM_HERE,
                                 base::Bind(&MultibufferDataSource::StopLoader,
                                            weak_factory_.GetWeakPtr()));
+}
+
+void MultibufferDataSource::Abort() {
+  base::AutoLock auto_lock(lock_);
+  DCHECK(init_cb_.is_null());
+  if (read_op_)
+    ReadOperation::Run(std::move(read_op_), kAborted);
+
+  // Abort does not call StopLoader() since it is typically called prior to a
+  // seek or suspend. Let the loader logic make the decision about whether a new
+  // loader is necessary upon the seek or resume.
 }
 
 void MultibufferDataSource::SetBitrate(int bitrate) {
@@ -380,9 +382,8 @@ void MultibufferDataSource::ReadTask() {
 
   base::AutoLock auto_lock(lock_);
   int bytes_read = 0;
-  if (stop_signal_received_)
+  if (stop_signal_received_ || !read_op_)
     return;
-  DCHECK(read_op_);
   DCHECK(read_op_->size());
 
   if (!reader_) {
@@ -415,8 +416,8 @@ void MultibufferDataSource::ReadTask() {
   } else {
     reader_->Wait(1, base::Bind(&MultibufferDataSource::ReadTask,
                                 weak_factory_.GetWeakPtr()));
-    UpdateLoadingState(false);
   }
+  UpdateLoadingState_Locked(false);
 }
 
 void MultibufferDataSource::StopInternal_Locked() {
@@ -506,41 +507,51 @@ void MultibufferDataSource::StartCallback() {
 
   // Even if data is cached, say that we're loading at this point for
   // compatibility.
-  UpdateLoadingState(true);
+  UpdateLoadingState_Locked(true);
 }
 
 void MultibufferDataSource::ProgressCallback(int64_t begin, int64_t end) {
-  DVLOG(1) << __FUNCTION__ << "(" << begin << ", " << end << ")";
+  DVLOG(1) << __func__ << "(" << begin << ", " << end << ")";
   DCHECK(render_task_runner_->BelongsToCurrentThread());
 
   if (assume_fully_buffered())
     return;
 
+  base::AutoLock auto_lock(lock_);
+
   if (end > begin) {
     // TODO(scherkus): we shouldn't have to lock to signal host(), see
     // http://crbug.com/113712 for details.
-    base::AutoLock auto_lock(lock_);
     if (stop_signal_received_)
       return;
 
     host_->AddBufferedByteRange(begin, end);
   }
 
-  UpdateLoadingState(false);
+  UpdateLoadingState_Locked(false);
 }
 
-void MultibufferDataSource::UpdateLoadingState(bool force_loading) {
-  DVLOG(1) << __FUNCTION__;
+void MultibufferDataSource::UpdateLoadingState_Locked(bool force_loading) {
+  DVLOG(1) << __func__;
+  lock_.AssertAcquired();
   if (assume_fully_buffered())
     return;
   // Update loading state.
   bool is_loading = !!reader_ && reader_->IsLoading();
   if (force_loading || is_loading != loading_) {
-    loading_ = is_loading || force_loading;
+    bool loading = is_loading || force_loading;
 
-    if (!loading_ && cancel_on_defer_) {
+    if (!loading && cancel_on_defer_) {
+      if (read_op_) {
+        // We can't destroy the reader if a read operation is pending.
+        // UpdateLoadingState_Locked will be called again when the read
+        // operation is done.
+        return;
+      }
       reader_.reset(nullptr);
     }
+
+    loading_ = loading;
 
     // Callback could kill us, be sure to call it last.
     downloading_cb_.Run(loading_);
@@ -548,7 +559,7 @@ void MultibufferDataSource::UpdateLoadingState(bool force_loading) {
 }
 
 void MultibufferDataSource::UpdateBufferSizes() {
-  DVLOG(1) << __FUNCTION__;
+  DVLOG(1) << __func__;
   if (!reader_)
     return;
 

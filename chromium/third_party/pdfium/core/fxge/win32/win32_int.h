@@ -7,10 +7,13 @@
 #ifndef CORE_FXGE_WIN32_WIN32_INT_H_
 #define CORE_FXGE_WIN32_WIN32_INT_H_
 
-#include "core/fxge/include/ifx_renderdevicedriver.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/ifx_renderdevicedriver.h"
 #include "core/fxge/win32/dwrite_int.h"
 
+struct FXTEXT_CHARPOS;
 struct WINDIB_Open_Args_;
+
 class CGdiplusExt {
  public:
   CGdiplusExt();
@@ -239,6 +242,12 @@ class CGdiPrinterDriver : public CGdiDeviceDriver {
                       uint32_t render_flags,
                       void*& handle,
                       int blend_type) override;
+  FX_BOOL DrawDeviceText(int nChars,
+                         const FXTEXT_CHARPOS* pCharPos,
+                         CFX_Font* pFont,
+                         const CFX_Matrix* pObject2Device,
+                         FX_FLOAT font_size,
+                         uint32_t color) override;
 
   const int m_HorzSize;
   const int m_VertSize;

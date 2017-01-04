@@ -7,8 +7,7 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-# GYP version: components/security_state.gyp
-source_set("security_state") {
+static_library("security_state") {
   sources = [
     "security_state_model.cc",
     "security_state_model.h",
@@ -24,7 +23,6 @@ source_set("security_state") {
 }
 
 if (is_android) {
-  # GYP: //components/security_state.gypi:security_state_enums_java
   java_cpp_enum("security_state_enums_java") {
     sources = [
       "security_state_model.h",

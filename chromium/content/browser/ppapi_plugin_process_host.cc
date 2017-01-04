@@ -31,7 +31,7 @@
 #include "content/public/common/process_type.h"
 #include "content/public/common/sandbox_type.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
-#include "ipc/ipc_switches.h"
+#include "content/public/common/service_names.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "net/base/network_change_notifier.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -47,6 +47,7 @@
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox_policy.h"
 #include "ui/display/win/dpi.h"
+#include "ui/gfx/font_render_params.h"
 #endif
 
 namespace content {
@@ -318,8 +319,7 @@ PpapiPluginProcessHost::PpapiPluginProcessHost(
     const PepperPluginInfo& info,
     const base::FilePath& profile_data_directory)
     : profile_data_directory_(profile_data_directory),
-      is_broker_(false),
-      mojo_child_token_(mojo::edk::GenerateRandomToken()) {
+      is_broker_(false) {
   uint32_t base_permissions = info.permissions;
 
   // We don't have to do any whitelisting for APIs in this process host, so
@@ -330,7 +330,7 @@ PpapiPluginProcessHost::PpapiPluginProcessHost(
   permissions_ = ppapi::PpapiPermissions::GetForCommandLine(base_permissions);
 
   process_.reset(new BrowserChildProcessHostImpl(
-      PROCESS_TYPE_PPAPI_PLUGIN, this, mojo_child_token_));
+      PROCESS_TYPE_PPAPI_PLUGIN, this, kPluginServiceName));
 
   host_impl_.reset(new BrowserPpapiHostImpl(this, permissions_, info.name,
                                             info.path, profile_data_directory,
@@ -351,11 +351,9 @@ PpapiPluginProcessHost::PpapiPluginProcessHost(
     network_observer_.reset(new PluginNetworkObserver(this));
 }
 
-PpapiPluginProcessHost::PpapiPluginProcessHost()
-    : is_broker_(true),
-      mojo_child_token_(mojo::edk::GenerateRandomToken()) {
+PpapiPluginProcessHost::PpapiPluginProcessHost() : is_broker_(true) {
   process_.reset(new BrowserChildProcessHostImpl(
-      PROCESS_TYPE_PPAPI_BROKER, this, mojo_child_token_));
+      PROCESS_TYPE_PPAPI_BROKER, this, kPluginServiceName));
 
   ppapi::PpapiPermissions permissions;  // No permissions.
   // The plugin name, path and profile data directory shouldn't be needed for
@@ -375,12 +373,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
     process_->SetName(base::UTF8ToUTF16(info.name));
   }
 
-  std::string mojo_channel_token =
-      process_->GetHost()->CreateChannelMojo(mojo_child_token_);
-  if (mojo_channel_token.empty()) {
-    VLOG(1) << "Could not create pepper host channel.";
-    return false;
-  }
+  process_->GetHost()->CreateChannelMojo();
 
   const base::CommandLine& browser_command_line =
       *base::CommandLine::ForCurrentProcess();
@@ -403,7 +396,6 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
   cmd_line->AppendSwitchASCII(switches::kProcessType,
                               is_broker_ ? switches::kPpapiBrokerProcess
                                          : switches::kPpapiPluginProcess);
-  cmd_line->AppendSwitchASCII(switches::kMojoChannelToken, mojo_channel_token);
 
 #if defined(OS_WIN)
   cmd_line->AppendArg(is_broker_ ? switches::kPrefetchArgumentPpapiBroker
@@ -447,6 +439,13 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
   cmd_line->AppendSwitchASCII(
       switches::kDeviceScaleFactor,
       base::DoubleToString(display::win::GetDPIScale()));
+  const gfx::FontRenderParams font_params =
+      gfx::GetFontRenderParams(gfx::FontRenderParamsQuery(), nullptr);
+  cmd_line->AppendSwitchASCII(switches::kPpapiAntialiasedTextEnabled,
+                              base::IntToString(font_params.antialiasing));
+  cmd_line->AppendSwitchASCII(
+      switches::kPpapiSubpixelRenderingSetting,
+      base::IntToString(font_params.subpixel_rendering));
 #endif
 
   if (!plugin_launcher.empty())
@@ -479,7 +478,7 @@ void PpapiPluginProcessHost::RequestPluginChannel(Client* client) {
   // We can't send any sync messages from the browser because it might lead to
   // a hang. See the similar code in PluginProcessHost for more description.
   PpapiMsg_CreateChannel* msg = new PpapiMsg_CreateChannel(
-      process_id, renderer_child_id, client->OffTheRecord());
+      process_id, renderer_child_id, client->Incognito());
   msg->set_unblock(true);
   if (Send(msg)) {
     sent_requests_.push(client);

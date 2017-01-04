@@ -11,6 +11,11 @@ interface TestFilePath {
       => (mojo.common.mojom.FilePath out);
 };
 
+interface TestUnguessableToken {
+  BounceNonce(mojo.common.mojom.UnguessableToken in)
+      => (mojo.common.mojom.UnguessableToken out);
+};
+
 interface TestTime {
   BounceTime(mojo.common.mojom.Time time) => (mojo.common.mojom.Time time);
   BounceTimeDelta(mojo.common.mojom.TimeDelta time_delta)
@@ -24,4 +29,10 @@ interface TestValue {
       => (mojo.common.mojom.DictionaryValue out);
   BounceListValue(mojo.common.mojom.ListValue in)
       => (mojo.common.mojom.ListValue out);
+};
+
+interface TestString16 {
+  [Sync]
+  BounceString16(mojo.common.mojom.String16 in)
+      => (mojo.common.mojom.String16 out);
 };

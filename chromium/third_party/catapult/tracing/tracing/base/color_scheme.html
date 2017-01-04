@@ -55,6 +55,7 @@ tr.exportTo('tr.b', function() {
     thread_state_sleeping: new tr.b.Color(240, 240, 240),
     thread_state_unknown: new tr.b.Color(199, 155, 125),
 
+    background_memory_dump: new tr.b.Color(0, 180, 180),
     light_memory_dump: new tr.b.Color(0, 0, 180),
     detailed_memory_dump: new tr.b.Color(180, 0, 180),
 
@@ -78,6 +79,7 @@ tr.exportTo('tr.b', function() {
 
     heap_dump_stack_frame: new tr.b.Color(128, 128, 128),
     heap_dump_object_type: new tr.b.Color(0, 0, 255),
+    heap_dump_child_node_arrow: new tr.b.Color(204, 102, 0),
 
     cq_build_running: new tr.b.Color(255, 255, 119),
     cq_build_passed: new tr.b.Color(153, 238, 102),
@@ -180,10 +182,10 @@ tr.exportTo('tr.b', function() {
 
   // Build reservedColorNameToIdMap.
   var reservedColorNameToIdMap = (function() {
-    var m = {};
+    var m = new Map();
     var i = generalPurposeColors.length;
     tr.b.iterItems(reservedColorsByName, function(key, value) {
-      m[key] = i++;
+      m.set(key, i++);
     });
     return m;
   })();
@@ -193,7 +195,7 @@ tr.exportTo('tr.b', function() {
    * @return {Number} The color ID for the given color name.
    */
   ColorScheme.getColorIdForReservedName = function(name) {
-    var id = reservedColorNameToIdMap[name];
+    var id = reservedColorNameToIdMap.get(name);
     if (id === undefined)
       throw new Error('Unrecognized color ') + name;
     return id;
@@ -218,7 +220,7 @@ tr.exportTo('tr.b', function() {
 
   // Previously computed string color IDs. They are based on a stable hash, so
   // it is safe to save them throughout the program time.
-  var stringColorIdCache = {};
+  var stringColorIdCache = new Map();
 
   /**
    * @return {Number} A color ID that is stably associated to the provided via
@@ -226,11 +228,11 @@ tr.exportTo('tr.b', function() {
    * purpose ID space only, e.g. no reserved ID will be used.
    */
   ColorScheme.getColorIdForGeneralPurposeString = function(string) {
-    if (stringColorIdCache[string] === undefined) {
+    if (stringColorIdCache.get(string) === undefined) {
       var hash = ColorScheme.getStringHash(string);
-      stringColorIdCache[string] = hash % numGeneralPurposeColorIds;
+      stringColorIdCache.set(string, hash % numGeneralPurposeColorIds);
     }
-    return stringColorIdCache[string];
+    return stringColorIdCache.get(string);
   };
 
   return {

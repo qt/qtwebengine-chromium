@@ -19,6 +19,7 @@
 #include <string>
 #include "base/atomic_sequence_num.h"
 #include "base/compiler_specific.h"
+#include "base/numerics/safe_math.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
@@ -1449,6 +1450,27 @@ void GLES2Implementation::SwapBuffers() {
   }
 }
 
+void GLES2Implementation::SwapBuffersWithDamageCHROMIUM(GLint x,
+                                                        GLint y,
+                                                        GLint width,
+                                                        GLint height) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glSwapBuffersWithDamageCHROMIUM("
+                     << x << ", " << y << ", " << width << ", " << height
+                     << ")");
+  TRACE_EVENT2("gpu", "GLES2::SwapBuffersWithDamageCHROMIUM", "width", width,
+               "height", height);
+
+  // Same flow control as GLES2Implementation::SwapBuffers (see comments there).
+  swap_buffers_tokens_.push(helper_->InsertToken());
+  helper_->SwapBuffersWithDamageCHROMIUM(x, y, width, height);
+  helper_->CommandBufferHelper::Flush();
+  if (swap_buffers_tokens_.size() > kMaxSwapBuffers + 1) {
+    helper_->WaitForToken(swap_buffers_tokens_.front());
+    swap_buffers_tokens_.pop();
+  }
+}
+
 void GLES2Implementation::SwapInterval(int interval) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glSwapInterval("
@@ -2423,6 +2445,7 @@ void GLES2Implementation::TexImage2D(
     GLenum target, GLint level, GLint internalformat, GLsizei width,
     GLsizei height, GLint border, GLenum format, GLenum type,
     const void* pixels) {
+  const char* func_name = "glTexImage2D";
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glTexImage2D("
       << GLES2Util::GetStringTextureTarget(target) << ", "
@@ -2433,13 +2456,22 @@ void GLES2Implementation::TexImage2D(
       << GLES2Util::GetStringPixelType(type) << ", "
       << static_cast<const void*>(pixels) << ")");
   if (level < 0 || height < 0 || width < 0) {
-    SetGLError(GL_INVALID_VALUE, "glTexImage2D", "dimension < 0");
+    SetGLError(GL_INVALID_VALUE, func_name, "dimension < 0");
     return;
   }
   if (border != 0) {
-    SetGLError(GL_INVALID_VALUE, "glTexImage2D", "border != 0");
+    SetGLError(GL_INVALID_VALUE, func_name, "border != 0");
     return;
   }
+  if ((bound_pixel_unpack_buffer_ || pixels) &&
+      (unpack_skip_pixels_ + width >
+       (unpack_row_length_ ? unpack_row_length_ : width))) {
+    // This is WebGL 2 specific constraints, but we do it for all ES3 contexts.
+    SetGLError(GL_INVALID_OPERATION, func_name,
+               "invalid unpack params combination");
+    return;
+  }
+
   uint32_t size;
   uint32_t unpadded_row_size;
   uint32_t padded_row_size;
@@ -2453,7 +2485,7 @@ void GLES2Implementation::TexImage2D(
                                            &padded_row_size,
                                            &skip_size,
                                            nullptr)) {
-    SetGLError(GL_INVALID_VALUE, "glTexImage2D", "image size too large");
+    SetGLError(GL_INVALID_VALUE, func_name, "image size too large");
     return;
   }
 
@@ -2461,7 +2493,7 @@ void GLES2Implementation::TexImage2D(
     base::CheckedNumeric<uint32_t> offset = ToGLuint(pixels);
     offset += skip_size;
     if (!offset.IsValid()) {
-      SetGLError(GL_INVALID_VALUE, "glTexImage2D", "skip size too large");
+      SetGLError(GL_INVALID_VALUE, func_name, "skip size too large");
       return;
     }
     helper_->TexImage2D(
@@ -2476,14 +2508,14 @@ void GLES2Implementation::TexImage2D(
     if (unpack_row_length_ > 0 || unpack_image_height_ > 0 ||
         unpack_skip_pixels_ > 0 || unpack_skip_rows_ > 0 ||
         unpack_skip_images_ > 0) {
-      SetGLError(GL_INVALID_OPERATION, "glTexImage2D",
+      SetGLError(GL_INVALID_OPERATION, func_name,
                  "No ES3 pack parameters with pixel unpack transfer buffer.");
       return;
     }
     DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
     BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
-        bound_pixel_unpack_transfer_buffer_id_, "glTexImage2D", offset, size);
+        bound_pixel_unpack_transfer_buffer_id_, func_name, offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexImage2D(
           target, level, internalformat, width, height, format, type,
@@ -2518,7 +2550,7 @@ void GLES2Implementation::TexImage2D(
                                              &service_padded_row_size,
                                              nullptr,
                                              nullptr)) {
-      SetGLError(GL_INVALID_VALUE, "glTexImage2D", "image size too large");
+      SetGLError(GL_INVALID_VALUE, func_name, "image size too large");
       return;
     }
   } else {
@@ -2578,6 +2610,7 @@ void GLES2Implementation::TexImage3D(
     GLenum target, GLint level, GLint internalformat, GLsizei width,
     GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type,
     const void* pixels) {
+  const char* func_name = "glTexImage3D";
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glTexImage3D("
       << GLES2Util::GetStringTextureTarget(target) << ", "
@@ -2588,11 +2621,21 @@ void GLES2Implementation::TexImage3D(
       << GLES2Util::GetStringPixelType(type) << ", "
       << static_cast<const void*>(pixels) << ")");
   if (level < 0 || height < 0 || width < 0 || depth < 0) {
-    SetGLError(GL_INVALID_VALUE, "glTexImage3D", "dimension < 0");
+    SetGLError(GL_INVALID_VALUE, func_name, "dimension < 0");
     return;
   }
   if (border != 0) {
-    SetGLError(GL_INVALID_VALUE, "glTexImage3D", "border != 0");
+    SetGLError(GL_INVALID_VALUE, func_name, "border != 0");
+    return;
+  }
+  if ((bound_pixel_unpack_buffer_ || pixels) &&
+      ((unpack_skip_pixels_ + width >
+        (unpack_row_length_ ? unpack_row_length_ : width)) ||
+       (unpack_skip_rows_ + height >
+        (unpack_image_height_ ? unpack_image_height_ : height)))) {
+    // This is WebGL 2 specific constraints, but we do it for all ES3 contexts.
+    SetGLError(GL_INVALID_OPERATION, func_name,
+               "invalid unpack params combination");
     return;
   }
 
@@ -2609,7 +2652,7 @@ void GLES2Implementation::TexImage3D(
                                            &padded_row_size,
                                            &skip_size,
                                            nullptr)) {
-    SetGLError(GL_INVALID_VALUE, "glTexImage3D", "image size too large");
+    SetGLError(GL_INVALID_VALUE, func_name, "image size too large");
     return;
   }
 
@@ -2617,7 +2660,7 @@ void GLES2Implementation::TexImage3D(
     base::CheckedNumeric<uint32_t> offset = ToGLuint(pixels);
     offset += skip_size;
     if (!offset.IsValid()) {
-      SetGLError(GL_INVALID_VALUE, "glTexImage3D", "skip size too large");
+      SetGLError(GL_INVALID_VALUE, func_name, "skip size too large");
       return;
     }
     helper_->TexImage3D(
@@ -2632,14 +2675,14 @@ void GLES2Implementation::TexImage3D(
     if (unpack_row_length_ > 0 || unpack_image_height_ > 0 ||
         unpack_skip_pixels_ > 0 || unpack_skip_rows_ > 0 ||
         unpack_skip_images_ > 0) {
-      SetGLError(GL_INVALID_OPERATION, "glTexImage3D",
+      SetGLError(GL_INVALID_OPERATION, func_name,
                  "No ES3 pack parameters with pixel unpack transfer buffer.");
       return;
     }
     DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
     BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
-        bound_pixel_unpack_transfer_buffer_id_, "glTexImage3D", offset, size);
+        bound_pixel_unpack_transfer_buffer_id_, func_name, offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexImage3D(
           target, level, internalformat, width, height, depth, format, type,
@@ -2676,7 +2719,7 @@ void GLES2Implementation::TexImage3D(
                                              &service_padded_row_size,
                                              nullptr,
                                              nullptr)) {
-      SetGLError(GL_INVALID_VALUE, "glTexImage3D", "image size too large");
+      SetGLError(GL_INVALID_VALUE, func_name, "image size too large");
       return;
     }
   } else {
@@ -2743,6 +2786,7 @@ void GLES2Implementation::TexImage3D(
 void GLES2Implementation::TexSubImage2D(
     GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
     GLsizei height, GLenum format, GLenum type, const void* pixels) {
+  const char* func_name = "glTexSubImage2D";
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glTexSubImage2D("
       << GLES2Util::GetStringTextureTarget(target) << ", "
@@ -2754,7 +2798,14 @@ void GLES2Implementation::TexSubImage2D(
       << static_cast<const void*>(pixels) << ")");
 
   if (level < 0 || height < 0 || width < 0 || xoffset < 0 || yoffset < 0) {
-    SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "dimension < 0");
+    SetGLError(GL_INVALID_VALUE, func_name, "dimension < 0");
+    return;
+  }
+  if (unpack_skip_pixels_ + width >
+      (unpack_row_length_ ? unpack_row_length_ : width)) {
+    // This is WebGL 2 specific constraints, but we do it for all ES3 contexts.
+    SetGLError(GL_INVALID_OPERATION, func_name,
+               "invalid unpack params combination");
     return;
   }
 
@@ -2771,7 +2822,7 @@ void GLES2Implementation::TexSubImage2D(
                                            &padded_row_size,
                                            &skip_size,
                                            nullptr)) {
-    SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "image size to large");
+    SetGLError(GL_INVALID_VALUE, func_name, "image size to large");
     return;
   }
 
@@ -2779,7 +2830,7 @@ void GLES2Implementation::TexSubImage2D(
     base::CheckedNumeric<uint32_t> offset = ToGLuint(pixels);
     offset += skip_size;
     if (!offset.IsValid()) {
-      SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "skip size too large");
+      SetGLError(GL_INVALID_VALUE, func_name, "skip size too large");
       return;
     }
     helper_->TexSubImage2D(target, level, xoffset, yoffset, width, height,
@@ -2793,15 +2844,14 @@ void GLES2Implementation::TexSubImage2D(
     if (unpack_row_length_ > 0 || unpack_image_height_ > 0 ||
         unpack_skip_pixels_ > 0 || unpack_skip_rows_ > 0 ||
         unpack_skip_images_ > 0) {
-      SetGLError(GL_INVALID_OPERATION, "glTexSubImage2D",
+      SetGLError(GL_INVALID_OPERATION, func_name,
                  "No ES3 pack parameters with pixel unpack transfer buffer.");
       return;
     }
     DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
     BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
-        bound_pixel_unpack_transfer_buffer_id_,
-        "glTexSubImage2D", offset, size);
+        bound_pixel_unpack_transfer_buffer_id_, func_name, offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexSubImage2D(
           target, level, xoffset, yoffset, width, height, format, type,
@@ -2836,7 +2886,7 @@ void GLES2Implementation::TexSubImage2D(
                                              &service_padded_row_size,
                                              nullptr,
                                              nullptr)) {
-      SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "image size too large");
+      SetGLError(GL_INVALID_VALUE, func_name, "image size too large");
       return;
     }
   } else {
@@ -2847,6 +2897,18 @@ void GLES2Implementation::TexSubImage2D(
   pixels = reinterpret_cast<const int8_t*>(pixels) + skip_size;
 
   ScopedTransferBufferPtr buffer(size, helper_, transfer_buffer_);
+  base::CheckedNumeric<GLint> checked_xoffset = xoffset;
+  checked_xoffset += width;
+  if (!checked_xoffset.IsValid()) {
+    SetGLError(GL_INVALID_VALUE, "TexSubImage2D", "xoffset + width overflows");
+    return;
+  }
+  base::CheckedNumeric<GLint> checked_yoffset = yoffset;
+  checked_yoffset += height;
+  if (!checked_yoffset.IsValid()) {
+    SetGLError(GL_INVALID_VALUE, "TexSubImage2D", "yoffset + height overflows");
+    return;
+  }
   TexSubImage2DImpl(
       target, level, xoffset, yoffset, width, height, format, type,
       unpadded_row_size, pixels, padded_row_size, GL_FALSE, &buffer,
@@ -2858,6 +2920,7 @@ void GLES2Implementation::TexSubImage3D(
     GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
     GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
     const void* pixels) {
+  const char* func_name = "glTexSubImage3D";
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glTexSubImage3D("
       << GLES2Util::GetStringTextureTarget(target) << ", "
@@ -2870,7 +2933,16 @@ void GLES2Implementation::TexSubImage3D(
 
   if (level < 0 || height < 0 || width < 0 || depth < 0 ||
       xoffset < 0 || yoffset < 0 || zoffset < 0) {
-    SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "dimension < 0");
+    SetGLError(GL_INVALID_VALUE, func_name, "dimension < 0");
+    return;
+  }
+  if ((unpack_skip_pixels_ + width >
+       (unpack_row_length_ ? unpack_row_length_ : width)) ||
+      (unpack_skip_rows_ + height >
+       (unpack_image_height_ ? unpack_image_height_ : height))) {
+    // This is WebGL 2 specific constraints, but we do it for all ES3 contexts.
+    SetGLError(GL_INVALID_OPERATION, func_name,
+               "invalid unpack params combination");
     return;
   }
 
@@ -2887,7 +2959,7 @@ void GLES2Implementation::TexSubImage3D(
                                            &padded_row_size,
                                            &skip_size,
                                            nullptr)) {
-    SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "image size to large");
+    SetGLError(GL_INVALID_VALUE, func_name, "image size to large");
     return;
   }
 
@@ -2895,7 +2967,7 @@ void GLES2Implementation::TexSubImage3D(
     base::CheckedNumeric<uint32_t> offset = ToGLuint(pixels);
     offset += skip_size;
     if (!offset.IsValid()) {
-      SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "skip size too large");
+      SetGLError(GL_INVALID_VALUE, func_name, "skip size too large");
       return;
     }
     helper_->TexSubImage3D(
@@ -2910,15 +2982,14 @@ void GLES2Implementation::TexSubImage3D(
     if (unpack_row_length_ > 0 || unpack_image_height_ > 0 ||
         unpack_skip_pixels_ > 0 || unpack_skip_rows_ > 0 ||
         unpack_skip_images_ > 0) {
-      SetGLError(GL_INVALID_OPERATION, "glTexSubImage2D",
+      SetGLError(GL_INVALID_OPERATION, func_name,
                  "No ES3 pack parameters with pixel unpack transfer buffer.");
       return;
     }
     DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
     BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
-        bound_pixel_unpack_transfer_buffer_id_,
-        "glTexSubImage3D", offset, size);
+        bound_pixel_unpack_transfer_buffer_id_, func_name, offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexSubImage3D(
           target, level, xoffset, yoffset, zoffset, width, height, depth,
@@ -2952,7 +3023,7 @@ void GLES2Implementation::TexSubImage3D(
                                              &service_padded_row_size,
                                              nullptr,
                                              nullptr)) {
-      SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "image size too large");
+      SetGLError(GL_INVALID_VALUE, func_name, "image size too large");
       return;
     }
   } else {
@@ -2963,6 +3034,24 @@ void GLES2Implementation::TexSubImage3D(
   pixels = reinterpret_cast<const int8_t*>(pixels) + skip_size;
 
   ScopedTransferBufferPtr buffer(size, helper_, transfer_buffer_);
+  base::CheckedNumeric<GLint> checked_xoffset = xoffset;
+  checked_xoffset += width;
+  if (!checked_xoffset.IsValid()) {
+    SetGLError(GL_INVALID_VALUE, "TexSubImage3D", "xoffset + width overflows");
+    return;
+  }
+  base::CheckedNumeric<GLint> checked_yoffset = yoffset;
+  checked_yoffset += height;
+  if (!checked_yoffset.IsValid()) {
+    SetGLError(GL_INVALID_VALUE, "TexSubImage3D", "yoffset + height overflows");
+    return;
+  }
+  base::CheckedNumeric<GLint> checked_zoffset = zoffset;
+  checked_zoffset += depth;
+  if (!checked_zoffset.IsValid()) {
+    SetGLError(GL_INVALID_VALUE, "TexSubImage3D", "zoffset + depth overflows");
+    return;
+  }
   TexSubImage3DImpl(
       target, level, xoffset, yoffset, zoffset, width, height, depth,
       format, type, unpadded_row_size, pixels, padded_row_size, GL_FALSE,
@@ -3560,9 +3649,9 @@ const GLubyte* GLES2Implementation::GetStringHelper(GLenum name) {
     if (name == GL_EXTENSIONS) {
       str += std::string(str.empty() ? "" : " ") +
              "GL_EXT_unpack_subimage "
-             "GL_CHROMIUM_map_sub";
-      if (capabilities_.image)
-        str += " GL_CHROMIUM_image GL_CHROMIUM_gpu_memory_buffer_image";
+             "GL_CHROMIUM_map_sub "
+             "GL_CHROMIUM_image "
+             "GL_CHROMIUM_gpu_memory_buffer_image";
       if (capabilities_.future_sync_points)
         str += " GL_CHROMIUM_future_sync_point";
     }
@@ -3778,6 +3867,7 @@ void GLES2Implementation::GetUniformuiv(
 void GLES2Implementation::ReadPixels(
     GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format,
     GLenum type, void* pixels) {
+  const char* func_name = "glReadPixels";
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glReadPixels("
       << xoffset << ", " << yoffset << ", "
@@ -3786,7 +3876,15 @@ void GLES2Implementation::ReadPixels(
       << GLES2Util::GetStringPixelType(type) << ", "
       << static_cast<const void*>(pixels) << ")");
   if (width < 0 || height < 0) {
-    SetGLError(GL_INVALID_VALUE, "glReadPixels", "dimensions < 0");
+    SetGLError(GL_INVALID_VALUE, func_name, "dimensions < 0");
+    return;
+  }
+
+  if (pack_skip_pixels_ + width >
+      (pack_row_length_ ? pack_row_length_ : width)) {
+    // This is WebGL 2 specific constraints, but we do it for all ES3 contexts.
+    SetGLError(GL_INVALID_OPERATION, func_name,
+               "invalid pack params combination");
     return;
   }
 
@@ -3816,7 +3914,7 @@ void GLES2Implementation::ReadPixels(
                                            &padded_row_size,
                                            &skip_size,
                                            nullptr)) {
-    SetGLError(GL_INVALID_VALUE, "glReadPixels", "size too large.");
+    SetGLError(GL_INVALID_VALUE, func_name, "size too large.");
     return;
   }
 
@@ -3824,7 +3922,7 @@ void GLES2Implementation::ReadPixels(
     base::CheckedNumeric<GLuint> offset = ToGLuint(pixels);
     offset += skip_size;
     if (!offset.IsValid()) {
-      SetGLError(GL_INVALID_VALUE, "glReadPixels", "skip size too large.");
+      SetGLError(GL_INVALID_VALUE, func_name, "skip size too large.");
       return;
     }
     helper_->ReadPixels(xoffset, yoffset, width, height, format, type, 0,
@@ -3839,7 +3937,7 @@ void GLES2Implementation::ReadPixels(
                                               format, type,
                                               pack_alignment_,
                                               &service_padded_row_size)) {
-      SetGLError(GL_INVALID_VALUE, "glReadPixels", "size too large.");
+      SetGLError(GL_INVALID_VALUE, func_name, "size too large.");
       return;
     }
   } else {
@@ -3848,14 +3946,14 @@ void GLES2Implementation::ReadPixels(
 
   if (bound_pixel_pack_transfer_buffer_id_) {
     if (pack_row_length_ > 0 || pack_skip_pixels_ > 0 || pack_skip_rows_ > 0) {
-      SetGLError(GL_INVALID_OPERATION, "glReadPixels",
+      SetGLError(GL_INVALID_OPERATION, func_name,
                  "No ES3 pack parameters with pixel pack transfer buffer.");
       return;
     }
     DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
     BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
-        bound_pixel_pack_transfer_buffer_id_, "glReadPixels", offset, size);
+        bound_pixel_pack_transfer_buffer_id_, func_name, offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->ReadPixels(xoffset, yoffset, width, height, format, type,
                           buffer->shm_id(), buffer->shm_offset() + offset,
@@ -3866,7 +3964,7 @@ void GLES2Implementation::ReadPixels(
   }
 
   if (!pixels) {
-    SetGLError(GL_INVALID_OPERATION, "glReadPixels", "pixels = NULL");
+    SetGLError(GL_INVALID_OPERATION, func_name, "pixels = NULL");
     return;
   }
 
@@ -4517,9 +4615,13 @@ void GLES2Implementation::DrawArrays(GLenum mode, GLint first, GLsizei count) {
     return;
   }
   bool simulated = false;
-  if (!vertex_array_object_manager_->SetupSimulatedClientSideBuffers(
-      "glDrawArrays", this, helper_, first + count, 0, &simulated)) {
-    return;
+  if (vertex_array_object_manager_->SupportsClientSideBuffers()) {
+    GLsizei num_elements;
+    SafeAddInt32(first, count, &num_elements);
+    if (!vertex_array_object_manager_->SetupSimulatedClientSideBuffers(
+            "glDrawArrays", this, helper_, num_elements, 0, &simulated)) {
+      return;
+    }
   }
   helper_->DrawArrays(mode, first, count);
   RestoreArrayBuffer(simulated);
@@ -4664,6 +4766,11 @@ void GLES2Implementation::Swap() {
   SwapBuffers();
 }
 
+void GLES2Implementation::SwapWithDamage(const gfx::Rect& damage) {
+  SwapBuffersWithDamageCHROMIUM(damage.x(), damage.y(), damage.width(),
+                                damage.height());
+}
+
 void GLES2Implementation::PartialSwapBuffers(const gfx::Rect& sub_buffer) {
   PostSubBufferCHROMIUM(
       sub_buffer.x(), sub_buffer.y(), sub_buffer.width(), sub_buffer.height());
@@ -4713,18 +4820,34 @@ void GLES2Implementation::ScheduleOverlayPlane(
                                uv_rect.height());
 }
 
+void GLES2Implementation::ScheduleCALayerSharedStateCHROMIUM(
+    GLfloat opacity,
+    GLboolean is_clipped,
+    const GLfloat* clip_rect,
+    GLint sorting_context_id,
+    const GLfloat* transform) {
+  size_t shm_size = 20 * sizeof(GLfloat);
+  ScopedTransferBufferPtr buffer(shm_size, helper_, transfer_buffer_);
+  if (!buffer.valid() || buffer.size() < shm_size) {
+    SetGLError(GL_OUT_OF_MEMORY, "GLES2::ScheduleCALayerSharedStateCHROMIUM",
+               "out of memory");
+    return;
+  }
+  GLfloat* mem = static_cast<GLfloat*>(buffer.address());
+  memcpy(mem + 0, clip_rect, 4 * sizeof(GLfloat));
+  memcpy(mem + 4, transform, 16 * sizeof(GLfloat));
+  helper_->ScheduleCALayerSharedStateCHROMIUM(opacity, is_clipped,
+                                              sorting_context_id,
+                                              buffer.shm_id(), buffer.offset());
+}
+
 void GLES2Implementation::ScheduleCALayerCHROMIUM(GLuint contents_texture_id,
                                                   const GLfloat* contents_rect,
-                                                  GLfloat opacity,
                                                   GLuint background_color,
                                                   GLuint edge_aa_mask,
                                                   const GLfloat* bounds_rect,
-                                                  GLboolean is_clipped,
-                                                  const GLfloat* clip_rect,
-                                                  GLint sorting_context_id,
-                                                  const GLfloat* transform,
                                                   GLuint filter) {
-  size_t shm_size = 28 * sizeof(GLfloat);
+  size_t shm_size = 8 * sizeof(GLfloat);
   ScopedTransferBufferPtr buffer(shm_size, helper_, transfer_buffer_);
   if (!buffer.valid() || buffer.size() < shm_size) {
     SetGLError(GL_OUT_OF_MEMORY, "GLES2::ScheduleCALayerCHROMIUM",
@@ -4734,11 +4857,8 @@ void GLES2Implementation::ScheduleCALayerCHROMIUM(GLuint contents_texture_id,
   GLfloat* mem = static_cast<GLfloat*>(buffer.address());
   memcpy(mem + 0, contents_rect, 4 * sizeof(GLfloat));
   memcpy(mem + 4, bounds_rect, 4 * sizeof(GLfloat));
-  memcpy(mem + 8, clip_rect, 4 * sizeof(GLfloat));
-  memcpy(mem + 12, transform, 16 * sizeof(GLfloat));
-  helper_->ScheduleCALayerCHROMIUM(contents_texture_id, opacity,
-                                   background_color, edge_aa_mask, is_clipped,
-                                   sorting_context_id, filter, buffer.shm_id(),
+  helper_->ScheduleCALayerCHROMIUM(contents_texture_id, background_color,
+                                   edge_aa_mask, filter, buffer.shm_id(),
                                    buffer.offset());
 }
 
@@ -5530,10 +5650,14 @@ void GLES2Implementation::DrawArraysInstancedANGLE(
     return;
   }
   bool simulated = false;
-  if (!vertex_array_object_manager_->SetupSimulatedClientSideBuffers(
-      "glDrawArraysInstancedANGLE", this, helper_, first + count, primcount,
-      &simulated)) {
-    return;
+  if (vertex_array_object_manager_->SupportsClientSideBuffers()) {
+    GLsizei num_elements;
+    SafeAddInt32(first, count, &num_elements);
+    if (!vertex_array_object_manager_->SetupSimulatedClientSideBuffers(
+            "glDrawArraysInstancedANGLE", this, helper_, num_elements,
+            primcount, &simulated)) {
+      return;
+    }
   }
   helper_->DrawArraysInstancedANGLE(mode, first, count, primcount);
   RestoreArrayBuffer(simulated);
@@ -5644,7 +5768,7 @@ GLuint GLES2Implementation::CreateAndConsumeTextureCHROMIUM(
                               "GenMailboxCHROMIUM.";
   GLuint client_id;
   GetIdHandler(id_namespaces::kTextures)->MakeIds(this, 0, 1, &client_id);
-  helper_->CreateAndConsumeTextureCHROMIUMImmediate(target,
+  helper_->CreateAndConsumeTextureINTERNALImmediate(target,
       client_id, data);
   if (share_group_->bind_generates_resource())
     helper_->CommandBufferHelper::Flush();
@@ -5930,6 +6054,7 @@ bool CreateImageValidInternalFormat(GLenum internalformat,
     case GL_ETC1_RGB8_OES:
       return capabilities.texture_format_etc1;
     case GL_RED:
+    case GL_RG_EXT:
     case GL_RGB:
     case GL_RGBA:
     case GL_RGB_YCBCR_422_CHROMIUM:
@@ -6081,21 +6206,6 @@ GLuint GLES2Implementation::CreateGpuMemoryBufferImageCHROMIUM(
       width, height, internalformat, usage);
   CheckGLError();
   return image_id;
-}
-
-void GLES2Implementation::GetImageivCHROMIUM(GLuint image_id,
-                                             GLenum param,
-                                             GLint* data) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] GetImageivCHROMIUM(" << image_id
-                     << ", " << GLES2Util::GetStringImageInternalFormat(param)
-                     << ")");
-  if (param != GL_GPU_MEMORY_BUFFER_ID) {
-    SetGLError(GL_INVALID_VALUE, "GetImageivCHROMIUM", "param");
-    *data = -1;
-    return;
-  }
-  *data = gpu_control_->GetImageGpuMemoryBufferId(image_id);
 }
 
 bool GLES2Implementation::ValidateSize(const char* func, GLsizeiptr size) {

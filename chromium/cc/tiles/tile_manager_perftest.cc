@@ -12,10 +12,10 @@
 #include "cc/debug/lap_timer.h"
 #include "cc/raster/raster_buffer.h"
 #include "cc/test/begin_frame_args_test.h"
+#include "cc/test/fake_compositor_frame_sink.h"
+#include "cc/test/fake_compositor_frame_sink_client.h"
 #include "cc/test/fake_impl_task_runner_provider.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
-#include "cc/test/fake_output_surface.h"
-#include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_layer_impl.h"
 #include "cc/test/fake_raster_source.h"
 #include "cc/test/fake_tile_manager.h"
@@ -51,7 +51,7 @@ class TileManagerPerfTest : public TestLayerTreeHostBase {
 
   void InitializeRenderer() override {
     host_impl()->SetVisible(true);
-    host_impl()->InitializeRenderer(output_surface());
+    host_impl()->InitializeRenderer(compositor_frame_sink());
     tile_manager()->SetTileTaskManagerForTesting(
         g_fake_tile_task_manager.Pointer());
   }
@@ -76,7 +76,7 @@ class TileManagerPerfTest : public TestLayerTreeHostBase {
     int priority_count = 0;
 
     std::vector<FakePictureLayerImpl*> layers = CreateLayers(layer_count, 10);
-    for (const auto& layer : layers)
+    for (auto* layer : layers)
       layer->UpdateTiles();
 
     timer_.Reset();
@@ -104,7 +104,7 @@ class TileManagerPerfTest : public TestLayerTreeHostBase {
                                  NEW_CONTENT_TAKES_PRIORITY};
 
     std::vector<FakePictureLayerImpl*> layers = CreateLayers(layer_count, 100);
-    for (const auto& layer : layers)
+    for (auto* layer : layers)
       layer->UpdateTiles();
 
     int priority_count = 0;
@@ -140,7 +140,7 @@ class TileManagerPerfTest : public TestLayerTreeHostBase {
     int priority_count = 0;
 
     std::vector<FakePictureLayerImpl*> layers = CreateLayers(layer_count, 10);
-    for (const auto& layer : layers) {
+    for (auto* layer : layers) {
       layer->UpdateTiles();
       for (size_t i = 0; i < layer->num_tilings(); ++i) {
         tile_manager()->InitializeTilesWithResourcesForTesting(
@@ -174,7 +174,7 @@ class TileManagerPerfTest : public TestLayerTreeHostBase {
 
     std::vector<FakePictureLayerImpl*> layers =
         CreateLayers(layer_count, tile_count);
-    for (const auto& layer : layers) {
+    for (auto* layer : layers) {
       layer->UpdateTiles();
       for (size_t i = 0; i < layer->num_tilings(); ++i) {
         tile_manager()->InitializeTilesWithResourcesForTesting(
@@ -281,7 +281,7 @@ class TileManagerPerfTest : public TestLayerTreeHostBase {
     timer_.Reset();
     do {
       host_impl()->AdvanceToNextFrame(base::TimeDelta::FromMilliseconds(1));
-      for (const auto& layer : layers)
+      for (auto* layer : layers)
         layer->UpdateTiles();
 
       GlobalStateThatImpactsTilePriority global_state(GlobalStateForTest());

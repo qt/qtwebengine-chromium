@@ -7,7 +7,7 @@
 #ifndef XFA_FDE_XML_FDE_XML_IMP_H_
 #define XFA_FDE_XML_FDE_XML_IMP_H_
 
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_system.h"
 #include "xfa/fde/xml/fde_xml.h"
 #include "xfa/fgas/crt/fgas_memory.h"
 #include "xfa/fgas/crt/fgas_stream.h"
@@ -193,7 +193,6 @@ class CFDE_XMLDoc : public CFX_Target {
   CFDE_XMLDoc();
   ~CFDE_XMLDoc() override;
 
-  void Release() { delete this; }
   FX_BOOL LoadXML(CFDE_XMLParser* pXMLParser);
   int32_t DoLoad(IFX_Pause* pPause = nullptr);
   void CloseXML();
@@ -345,7 +344,7 @@ class CFDE_XMLSyntaxParser : public CFX_Target {
   FDE_XmlSyntaxState m_syntaxParserState;
   FX_WCHAR m_wQuotationMark;
   int32_t m_iEntityStart;
-  CFX_DWordStack m_SkipStack;
+  CFX_StackTemplate<uint32_t> m_SkipStack;
   FX_WCHAR m_SkipChar;
 };
 

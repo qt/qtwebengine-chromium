@@ -7,6 +7,8 @@ found in the LICENSE file.
 
 <link rel="import" href="/tracing/base/color_scheme.html">
 <link rel="import" href="/tracing/base/iteration_helpers.html">
+<link rel="import" href="/tracing/base/unit.html">
+<link rel="import" href="/tracing/base/unit_scale.html">
 <link rel="import" href="/tracing/model/memory_allocator_dump.html">
 <link rel="import"
     href="/tracing/ui/analysis/memory_dump_allocator_details_pane.html">
@@ -19,11 +21,8 @@ found in the LICENSE file.
 <link rel="import" href="/tracing/ui/base/table.html">
 <link rel="import" href="/tracing/ui/view_specific_brushing_state.html">
 <link rel="import" href="/tracing/value/numeric.html">
-<link rel="import" href="/tracing/value/unit.html">
-<link rel="import" href="/tracing/value/unit_scale.html">
 
-<polymer-element name="tr-ui-a-memory-dump-overview-pane"
-    extends="tr-ui-a-stacked-pane">
+<dom-module id='tr-ui-a-memory-dump-overview-pane'>
   <template>
     <style>
       :host {
@@ -47,6 +46,7 @@ found in the LICENSE file.
         flex: 1 0 auto;
         align-self: stretch;
         font-size: 12px;
+        overflow: auto;
       }
 
       #info_text {
@@ -60,6 +60,7 @@ found in the LICENSE file.
         display: none;  /* Hide until memory dumps are set. */
         flex: 1 0 auto;
         align-self: stretch;
+        font-size: 12px;
       }
     </style>
     <tr-ui-b-view-specific-brushing-state id="state"
@@ -71,7 +72,7 @@ found in the LICENSE file.
       <tr-ui-b-table id="table"></tr-ui-b-table>
     </div>
   </template>
-</polymer-element>
+</dom-module>
 <script>
 'use strict';
 
@@ -80,7 +81,7 @@ tr.exportTo('tr.ui.analysis', function() {
   var ColorScheme = tr.b.ColorScheme;
   var ScalarNumeric = tr.v.ScalarNumeric;
   var sizeInBytes_smallerIsBetter =
-      tr.v.Unit.byName.sizeInBytes_smallerIsBetter;
+      tr.b.Unit.byName.sizeInBytes_smallerIsBetter;
 
   var PLATFORM_SPECIFIC_TOTAL_NAME_SUFFIX = '_bytes';
 
@@ -150,7 +151,7 @@ tr.exportTo('tr.ui.analysis', function() {
     },
 
     getFormattingContext: function(unit) {
-      return { unitPrefix: tr.v.UnitScale.Binary.MEBI };
+      return { unitPrefix: tr.b.UnitScale.Binary.MEBI };
     },
 
     color: function(numerics, processMemoryDumps) {
@@ -341,7 +342,7 @@ tr.exportTo('tr.ui.analysis', function() {
     },
 
     getFormattingContext: function(unit) {
-      return { unitPrefix: tr.v.UnitScale.Binary.MEBI };
+      return { unitPrefix: tr.b.UnitScale.Binary.MEBI };
     },
 
     addInfos: function(numerics, processMemoryDumps, infos) {
@@ -455,7 +456,10 @@ tr.exportTo('tr.ui.analysis', function() {
     }
   ];
 
-  Polymer('tr-ui-a-memory-dump-overview-pane', {
+  Polymer({
+    is: 'tr-ui-a-memory-dump-overview-pane',
+    behaviors: [tr.ui.analysis.StackedPane],
+
     created: function() {
       this.processMemoryDumps_ = undefined;
       this.aggregationMode_ = undefined;
@@ -490,7 +494,7 @@ tr.exportTo('tr.ui.analysis', function() {
      */
     set processMemoryDumps(processMemoryDumps) {
       this.processMemoryDumps_ = processMemoryDumps;
-      this.scheduleRebuildPane_();
+      this.scheduleRebuild_();
     },
 
     get processMemoryDumps() {
@@ -499,7 +503,7 @@ tr.exportTo('tr.ui.analysis', function() {
 
     set aggregationMode(aggregationMode) {
       this.aggregationMode_ = aggregationMode;
-      this.scheduleRebuildPane_();
+      this.scheduleRebuild_();
     },
 
     get aggregationMode() {
@@ -548,7 +552,7 @@ tr.exportTo('tr.ui.analysis', function() {
       return selectedColumn.getChildPaneBuilder(selectedTableRow.contexts);
     },
 
-    rebuildPane_: function() {
+    onRebuild_: function() {
       if (this.processMemoryDumps_ === undefined ||
           this.processMemoryDumps_.length === 0) {
         // Show the info text (hide the table).
@@ -685,13 +689,17 @@ tr.exportTo('tr.ui.analysis', function() {
       var titleColumn = new ProcessNameColumn();
       titleColumn.width = '200px';
 
-      var usedMemorySizeColumns = tr.ui.analysis.MemoryColumn.fromRows(
-          rows, 'usedMemoryCells', this.aggregationMode_,
-          UsedMemoryColumn.RULES);
+      var usedMemorySizeColumns = tr.ui.analysis.MemoryColumn.fromRows(rows, {
+        cellKey: 'usedMemoryCells',
+        aggregationMode: this.aggregationMode_,
+        rules: UsedMemoryColumn.RULES
+      });
 
-      var allocatorSizeColumns = tr.ui.analysis.MemoryColumn.fromRows(
-          rows, 'allocatorCells', this.aggregationMode_,
-          AllocatorColumn.RULES);
+      var allocatorSizeColumns = tr.ui.analysis.MemoryColumn.fromRows(rows, {
+        cellKey: 'allocatorCells',
+        aggregationMode: this.aggregationMode_,
+        rules: AllocatorColumn.RULES
+      });
 
       var sizeColumns = usedMemorySizeColumns.concat(allocatorSizeColumns);
       tr.ui.analysis.MemoryColumn.spaceEqually(sizeColumns);

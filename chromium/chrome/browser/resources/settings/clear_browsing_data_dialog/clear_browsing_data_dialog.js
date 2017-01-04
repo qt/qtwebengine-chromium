@@ -50,7 +50,10 @@ Polymer({
     },
 
     /** @private */
-    clearingInProgress_: Boolean,
+    clearingInProgress_: {
+      type: Boolean,
+      value: false,
+    },
 
     /** @private */
     showHistoryDeletionDialog_: {
@@ -74,10 +77,15 @@ Polymer({
     this.addWebUIListener(
         'update-counter-text',
         this.updateCounterText_.bind(this));
+  },
+
+  /** @override */
+  attached: function() {
     this.browserProxy_ =
         settings.ClearBrowsingDataBrowserProxyImpl.getInstance();
-    this.browserProxy_.initialize();
-    this.$.dialog.open();
+    this.browserProxy_.initialize().then(function() {
+      this.$.dialog.showModal();
+    }.bind(this));
   },
 
   /**
@@ -104,7 +112,6 @@ Polymer({
   updateFooter_: function(syncing, otherFormsOfBrowsingHistory) {
     this.$.googleFooter.hidden = !otherFormsOfBrowsingHistory;
     this.$.syncedDataSentence.hidden = !syncing;
-    this.$.dialog.notifyResize();
     this.$.dialog.classList.add('fully-rendered');
   },
 
@@ -122,16 +129,13 @@ Polymer({
     this.set('counters_.' + assert(matches[1]), text);
   },
 
-  open: function() {
-    this.$.dialog.open();
-  },
-
   /**
    * Handles the tap on the Clear Data button.
    * @private
    */
   onClearBrowsingDataTap_: function() {
     this.clearingInProgress_ = true;
+
     this.browserProxy_.clearBrowsingData().then(
       /**
        * @param {boolean} shouldShowNotice Whether we should show the notice
@@ -144,6 +148,11 @@ Polymer({
         if (!shouldShowNotice)
           this.$.dialog.close();
       }.bind(this));
+  },
+
+  /** @private */
+  onCancelTap_: function() {
+    this.$.dialog.cancel();
   },
 
   /**

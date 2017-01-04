@@ -40,64 +40,83 @@ namespace blink {
 class DOMWindow;
 class EventTarget;
 class ExceptionState;
-class ExecutionContext;
 class Frame;
 class LocalDOMWindow;
 class Location;
-class MainThreadWorkletGlobalScope;
 class Node;
 
-enum SecurityReportingOption {
-    DoNotReportSecurityError,
-    ReportSecurityError,
-};
-
-// TODO(yukishiino): Remove the first argument of v8::Isolate*.  These functions
-// just check if it's accessible or not, and never create anything.  So there is
-// no need to pass the isolate.
 class CORE_EXPORT BindingSecurity {
-    STATIC_ONLY(BindingSecurity);
-public:
-    // Check if the caller (|accessingWindow|) is allowed to access the JS
-    // receiver object (|target|), where the receiver object is the JS object
-    // for which the DOM attribute or DOM operation is being invoked (in the
-    // form of receiver.domAttr or receiver.domOp()).
-    // Note that only Window and Location objects are cross-origin accessible
-    // and that EventTarget interface is the parent interface of Window
-    // interface.  So the receiver object must be of type DOMWindow,
-    // EventTarget, or Location.
-    //
-    // DOMWindow
-    static bool shouldAllowAccessTo(v8::Isolate*, const LocalDOMWindow* accessingWindow, const DOMWindow* target, ExceptionState&);
-    static bool shouldAllowAccessTo(v8::Isolate*, const LocalDOMWindow* accessingWindow, const DOMWindow* target, SecurityReportingOption);
-    // EventTarget (as the parent of DOMWindow)
-    static bool shouldAllowAccessTo(v8::Isolate*, const LocalDOMWindow* accessingWindow, const EventTarget* target, ExceptionState&);  // NOLINT(readability/parameter_name)
-    // Location
-    static bool shouldAllowAccessTo(v8::Isolate*, const LocalDOMWindow* accessingWindow, const Location* target, ExceptionState&);
-    static bool shouldAllowAccessTo(v8::Isolate*, const LocalDOMWindow* accessingWindow, const Location* target, SecurityReportingOption);
-    // MainThreadWorkletGlobalScope
-    static bool shouldAllowAccessTo(v8::Isolate*, v8::Local<v8::Context>, const ExecutionContext*, const MainThreadWorkletGlobalScope*, SecurityReportingOption);
+  STATIC_ONLY(BindingSecurity);
 
-    static bool shouldAllowAccessTo(v8::Isolate*, v8::Local<v8::Context> calling, v8::Local<v8::Context> target, SecurityReportingOption);
-    // Prefer to use the previous overloads instead of falling back to using
-    // Frame*.
-    static bool shouldAllowAccessToFrame(v8::Isolate*, const LocalDOMWindow* accessingWindow, const Frame* target, SecurityReportingOption); // OBSOLETE
+ public:
+  enum class ErrorReportOption {
+    DoNotReport,
+    Report,
+  };
 
-    // Check if the caller (|accessingWindow|) is allowed to access the JS
-    // returned object (|target|), where the returned object is the JS object
-    // which is returned as a result of invoking a DOM attribute or DOM
-    // operation (in the form of
-    //   var x = receiver.domAttr // or receiver.domOp()
-    // where |x| is the returned object).
-    // See window.frameElement for example, which may return a frame object.
-    // The object returned from window.frameElement must be the same origin if
-    // it's not null.
-    //
-    // Node
-    static bool shouldAllowAccessTo(v8::Isolate*, const LocalDOMWindow* accessingWindow, const Node* target, ExceptionState&);
-    static bool shouldAllowAccessTo(v8::Isolate*, const LocalDOMWindow* accessingWindow, const Node* target, SecurityReportingOption);
+  // Check if the caller (|accessingWindow|) is allowed to access the JS
+  // receiver object (|target|), where the receiver object is the JS object
+  // for which the DOM attribute or DOM operation is being invoked (in the
+  // form of receiver.domAttr or receiver.domOp()).
+  // Note that only Window and Location objects are cross-origin accessible
+  // and that EventTarget interface is the parent interface of Window
+  // interface.  So the receiver object must be of type DOMWindow,
+  // EventTarget, or Location.
+  //
+  // DOMWindow
+  static bool shouldAllowAccessTo(const LocalDOMWindow* accessingWindow,
+                                  const DOMWindow* target,
+                                  ExceptionState&);
+  static bool shouldAllowAccessTo(const LocalDOMWindow* accessingWindow,
+                                  const DOMWindow* target,
+                                  ErrorReportOption);
+  // EventTarget (as the parent of DOMWindow)
+  static bool shouldAllowAccessTo(
+      const LocalDOMWindow* accessingWindow,
+      const EventTarget* target,
+      ExceptionState&);  // NOLINT(readability/parameter_name)
+  // Location
+  static bool shouldAllowAccessTo(const LocalDOMWindow* accessingWindow,
+                                  const Location* target,
+                                  ExceptionState&);
+  static bool shouldAllowAccessTo(const LocalDOMWindow* accessingWindow,
+                                  const Location* target,
+                                  ErrorReportOption);
+
+  // Check if the caller (|accessingWindow|) is allowed to access the JS
+  // returned object (|target|), where the returned object is the JS object
+  // which is returned as a result of invoking a DOM attribute or DOM
+  // operation (in the form of
+  //   var x = receiver.domAttr // or receiver.domOp()
+  // where |x| is the returned object).
+  // See window.frameElement for example, which may return a frame object.
+  // The object returned from window.frameElement must be the same origin if
+  // it's not null.
+  //
+  // Node
+  static bool shouldAllowAccessTo(const LocalDOMWindow* accessingWindow,
+                                  const Node* target,
+                                  ExceptionState&);
+  static bool shouldAllowAccessTo(const LocalDOMWindow* accessingWindow,
+                                  const Node* target,
+                                  ErrorReportOption);
+
+  // These overloads should be used only when checking a general access from
+  // one context to another context.  For access to a receiver object or
+  // returned object, you should use the above overloads.
+  static bool shouldAllowAccessToFrame(const LocalDOMWindow* accessingWindow,
+                                       const Frame* target,
+                                       ExceptionState&);
+  static bool shouldAllowAccessToFrame(const LocalDOMWindow* accessingWindow,
+                                       const Frame* target,
+                                       ErrorReportOption);
+  // This overload must be used only for detached windows.
+  static bool shouldAllowAccessToDetachedWindow(
+      const LocalDOMWindow* accessingWindow,
+      const DOMWindow* target,
+      ExceptionState&);
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif
+#endif  // BindingSecurity_h

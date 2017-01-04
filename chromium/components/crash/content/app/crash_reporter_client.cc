@@ -110,6 +110,14 @@ bool CrashReporterClient::GetCrashDumpLocation(base::FilePath* crash_dir) {
   return false;
 }
 
+#if defined(OS_WIN)
+bool CrashReporterClient::GetCrashMetricsLocation(base::string16* crash_dir) {
+#else
+bool CrashReporterClient::GetCrashMetricsLocation(base::FilePath* crash_dir) {
+#endif
+  return false;
+}
+
 size_t CrashReporterClient::RegisterCrashKeys() {
   return 0;
 }
@@ -122,6 +130,11 @@ bool CrashReporterClient::GetCollectStatsConsent() {
   return false;
 }
 
+bool CrashReporterClient::GetCollectStatsInSample() {
+  // By default, clients don't do sampling, so everything will be "in-sample".
+  return true;
+}
+
 #if defined(OS_WIN) || defined(OS_MACOSX)
 bool CrashReporterClient::ReportingIsEnforcedByPolicy(bool* breakpad_enabled) {
   return false;
@@ -131,6 +144,10 @@ bool CrashReporterClient::ReportingIsEnforcedByPolicy(bool* breakpad_enabled) {
 #if defined(OS_ANDROID)
 int CrashReporterClient::GetAndroidMinidumpDescriptor() {
   return 0;
+}
+
+int CrashReporterClient::GetAndroidCrashSignalFD() {
+  return -1;
 }
 
 bool CrashReporterClient::ShouldEnableBreakpadMicrodumps() {

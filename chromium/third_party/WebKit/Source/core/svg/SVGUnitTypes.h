@@ -26,23 +26,27 @@
 
 namespace blink {
 
-class SVGUnitTypes final : public GarbageCollected<SVGUnitTypes>, public ScriptWrappable {
-    DEFINE_WRAPPERTYPEINFO();
-public:
-    enum SVGUnitType {
-        SVG_UNIT_TYPE_UNKNOWN               = 0,
-        SVG_UNIT_TYPE_USERSPACEONUSE        = 1,
-        SVG_UNIT_TYPE_OBJECTBOUNDINGBOX     = 2
-    };
+class SVGUnitTypes final : public GarbageCollected<SVGUnitTypes>,
+                           public ScriptWrappable {
+  DEFINE_WRAPPERTYPEINFO();
 
-    DEFINE_INLINE_TRACE() { }
+ public:
+  enum SVGUnitType {
+    kSvgUnitTypeUnknown = 0,
+    kSvgUnitTypeUserspaceonuse = 1,
+    kSvgUnitTypeObjectboundingbox = 2
+  };
 
-private:
-    SVGUnitTypes(); // No instantiation.
+  DEFINE_INLINE_TRACE() {}
+
+ private:
+  SVGUnitTypes();  // No instantiation.
 };
 
-template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGUnitTypes::SVGUnitType>();
+template <>
+const SVGEnumerationStringEntries&
+getStaticStringEntries<SVGUnitTypes::SVGUnitType>();
 
-} // namespace blink
+}  // namespace blink
 
-#endif // SVGUnitTypes_h
+#endif  // SVGUnitTypes_h

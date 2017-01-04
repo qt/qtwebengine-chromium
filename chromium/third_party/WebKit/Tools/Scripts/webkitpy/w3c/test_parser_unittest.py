@@ -28,11 +28,9 @@
 import os
 import unittest
 
+from webkitpy.common.host_mock import MockHost
 from webkitpy.common.system.outputcapture import OutputCapture
 from webkitpy.w3c.test_parser import TestParser
-
-
-options = {'all': False, 'no_overwrite': False}
 
 
 class TestParserTest(unittest.TestCase):
@@ -43,7 +41,7 @@ class TestParserTest(unittest.TestCase):
 </head>
 """
         test_path = '/some/madeup/path/'
-        parser = TestParser(options, test_path + 'somefile.html')
+        parser = TestParser(test_path + 'somefile.html', MockHost())
         test_info = parser.analyze_test(test_contents=test_html)
 
         self.assertNotEqual(test_info, None, 'did not find a test')
@@ -64,7 +62,7 @@ class TestParserTest(unittest.TestCase):
         oc.capture_output()
         try:
             test_path = '/some/madeup/path/'
-            parser = TestParser(options, test_path + 'somefile.html')
+            parser = TestParser(test_path + 'somefile.html', MockHost())
             test_info = parser.analyze_test(test_contents=test_html)
         finally:
             _, _, logs = oc.restore_output()
@@ -90,7 +88,7 @@ class TestParserTest(unittest.TestCase):
 
         try:
             test_path = '/some/madeup/path/'
-            parser = TestParser(options, test_path + 'somefile.html')
+            parser = TestParser(test_path + 'somefile.html', MockHost())
             test_info = parser.analyze_test(test_contents=test_html)
         finally:
             _, _, logs = oc.restore_output()
@@ -105,7 +103,10 @@ class TestParserTest(unittest.TestCase):
         self.assertEqual(logs, 'Multiple references are not supported. Importing the first ref defined in somefile.html\n')
 
     def test_analyze_test_reftest_with_ref_support_Files(self):
-        """ Tests analyze_test() using a reftest that has refers to a reference file outside of the tests directory and the reference file has paths to other support files """
+        """Tests analyze_test() using a reftest that has refers to a
+        reference file outside of the tests directory and the reference
+        file has paths to other support files.
+        """
 
         test_html = """<html>
 <head>
@@ -124,7 +125,7 @@ class TestParserTest(unittest.TestCase):
 </html>
 """
         test_path = '/some/madeup/path/'
-        parser = TestParser(options, test_path + 'somefile.html')
+        parser = TestParser(test_path + 'somefile.html', MockHost())
         test_info = parser.analyze_test(test_contents=test_html, ref_contents=ref_html)
 
         self.assertNotEqual(test_info, None, 'did not find a test')
@@ -136,7 +137,7 @@ class TestParserTest(unittest.TestCase):
         self.assertFalse('jstest' in test_info.keys(), 'test should not have been analyzed as a jstest')
 
     def test_analyze_jstest(self):
-        """ Tests analyze_test() using a jstest """
+        """Tests analyze_test() using a jstest"""
 
         test_html = """<head>
 <link href="/resources/testharness.css" rel="stylesheet" type="text/css">
@@ -144,7 +145,7 @@ class TestParserTest(unittest.TestCase):
 </head>
 """
         test_path = '/some/madeup/path/'
-        parser = TestParser(options, test_path + 'somefile.html')
+        parser = TestParser(test_path + 'somefile.html', MockHost())
         test_info = parser.analyze_test(test_contents=test_html)
 
         self.assertNotEqual(test_info, None, 'test_info is None')
@@ -154,7 +155,7 @@ class TestParserTest(unittest.TestCase):
         self.assertTrue('jstest' in test_info.keys(), 'test should be a jstest')
 
     def test_analyze_pixel_test_all_true(self):
-        """ Tests analyze_test() using a test that is neither a reftest or jstest with all=False """
+        """Tests analyze_test() using a test that is neither a reftest or jstest with all=False"""
 
         test_html = """<html>
 <head>
@@ -169,11 +170,11 @@ CONTENT OF TEST
 </body>
 </html>
 """
-        # Set options to 'all' so this gets found
-        options['all'] = True
+        # Set 'all' to True so this gets found.
+        options = {'all': True}
 
         test_path = '/some/madeup/path/'
-        parser = TestParser(options, test_path + 'somefile.html')
+        parser = TestParser(test_path + 'somefile.html', MockHost(), options)
         test_info = parser.analyze_test(test_contents=test_html)
 
         self.assertNotEqual(test_info, None, 'test_info is None')
@@ -183,7 +184,7 @@ CONTENT OF TEST
         self.assertFalse('jstest' in test_info.keys(), 'test should not be a jstest')
 
     def test_analyze_pixel_test_all_false(self):
-        """ Tests analyze_test() using a test that is neither a reftest or jstest, with -all=False """
+        """Tests analyze_test() using a test that is neither a reftest or jstest, with -all=False"""
 
         test_html = """<html>
 <head>
@@ -198,18 +199,23 @@ CONTENT OF TEST
 </body>
 </html>
 """
-        # Set all to false so this gets skipped
-        options['all'] = False
+        # Set 'all' to False so this gets skipped.
+        options = {'all': False}
 
         test_path = '/some/madeup/path/'
-        parser = TestParser(options, test_path + 'somefile.html')
+        parser = TestParser(test_path + 'somefile.html', MockHost(), options)
         test_info = parser.analyze_test(test_contents=test_html)
-
         self.assertEqual(test_info, None, 'test should have been skipped')
 
     def test_analyze_non_html_file(self):
-        """ Tests analyze_test() with a file that has no html"""
+        """Tests analyze_test() with a file that has no html"""
         # FIXME: use a mock filesystem
-        parser = TestParser(options, os.path.join(os.path.dirname(__file__), 'test_parser.py'))
+        parser = TestParser(os.path.join(os.path.dirname(__file__), 'test_parser.py'), MockHost())
         test_info = parser.analyze_test()
         self.assertEqual(test_info, None, 'no tests should have been found in this file')
+
+    def test_parser_initialization_non_existent_file(self):
+        parser = TestParser('some/bogus/path.html', MockHost())
+        self.assertEqual(parser.filename, 'some/bogus/path.html')
+        self.assertIsNone(parser.test_doc)
+        self.assertIsNone(parser.ref_doc)

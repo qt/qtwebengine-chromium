@@ -6,9 +6,12 @@
 #define UI_ANDROID_RESOURCES_RESOURCE_MANAGER_H_
 
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "base/android/jni_android.h"
 #include "cc/resources/scoped_ui_resource.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/android/resources/crushed_sprite_resource.h"
 #include "ui/android/ui_android_export.h"
 #include "ui/gfx/geometry/insets_f.h"
@@ -59,6 +62,16 @@ class UI_ANDROID_EXPORT ResourceManager {
   // If load fails, a null handle will be returned and it is up to the caller
   // to react appropriately.
   virtual Resource* GetResource(AndroidResourceType res_type, int res_id) = 0;
+
+  // Return a handle to a static resource specified by |res_id| that has a tint
+  // of |tint_color| applied to it.
+  virtual Resource* GetStaticResourceWithTint(int res_id,
+                                              SkColor tint_color) = 0;
+
+  // Remove tints that were unused in the current frame being built. This
+  // function takes a set |used_tints| and removes all the tints not in the set
+  // from the cache.
+  virtual void RemoveUnusedTints(const std::unordered_set<int>& used_tints) = 0;
 
   // Trigger asynchronous loading of the resource specified by |res_type| and
   // |res_id|, if it has not yet been loaded.

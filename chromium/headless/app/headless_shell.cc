@@ -18,12 +18,15 @@
 #include "base/strings/string_number_conversions.h"
 #include "content/public/common/content_switches.h"
 #include "headless/app/headless_shell_switches.h"
+#include "headless/public/domains/emulation.h"
 #include "headless/public/domains/page.h"
 #include "headless/public/domains/runtime.h"
 #include "headless/public/headless_browser.h"
 #include "headless/public/headless_devtools_client.h"
 #include "headless/public/headless_devtools_target.h"
 #include "headless/public/headless_web_contents.h"
+#include "headless/public/util/deterministic_dispatcher.h"
+#include "headless/public/util/deterministic_http_protocol_handler.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_address.h"
@@ -31,8 +34,10 @@
 #include "ui/gfx/geometry/size.h"
 
 using headless::HeadlessBrowser;
+using headless::HeadlessBrowserContext;
 using headless::HeadlessDevToolsClient;
 using headless::HeadlessWebContents;
+namespace emulation = headless::emulation;
 namespace page = headless::page;
 namespace runtime = headless::runtime;
 
@@ -41,25 +46,68 @@ namespace {
 const char kDevToolsHttpServerAddress[] = "127.0.0.1";
 // Default file name for screenshot. Can be overriden by "--screenshot" switch.
 const char kDefaultScreenshotFileName[] = "screenshot.png";
+
+bool ParseWindowSize(std::string window_size, gfx::Size* parsed_window_size) {
+  int width, height = 0;
+  if (sscanf(window_size.c_str(), "%dx%d", &width, &height) >= 2 &&
+      width >= 0 && height >= 0) {
+    parsed_window_size->set_width(width);
+    parsed_window_size->set_height(height);
+    return true;
+  }
+  return false;
 }
+}  // namespace
 
 // A sample application which demonstrates the use of the headless API.
-class HeadlessShell : public HeadlessWebContents::Observer, page::Observer {
+class HeadlessShell : public HeadlessWebContents::Observer,
+                      emulation::ExperimentalObserver,
+                      page::Observer {
  public:
   HeadlessShell()
       : browser_(nullptr),
         devtools_client_(HeadlessDevToolsClient::Create()),
         web_contents_(nullptr),
-        processed_page_ready_(false) {}
+        processed_page_ready_(false),
+        browser_context_(nullptr) {}
   ~HeadlessShell() override {}
 
   void OnStart(HeadlessBrowser* browser) {
     browser_ = browser;
 
-    HeadlessWebContents::Builder builder(browser_->CreateWebContentsBuilder());
+    HeadlessBrowserContext::Builder context_builder =
+        browser_->CreateBrowserContextBuilder();
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            headless::switches::kDeterministicFetch)) {
+      deterministic_dispatcher_.reset(
+          new headless::DeterministicDispatcher(browser_->BrowserIOThread()));
+
+      headless::ProtocolHandlerMap protocol_handlers;
+      protocol_handlers[url::kHttpScheme] =
+          base::MakeUnique<headless::DeterministicHttpProtocolHandler>(
+              deterministic_dispatcher_.get(), browser->BrowserIOThread());
+      protocol_handlers[url::kHttpsScheme] =
+          base::MakeUnique<headless::DeterministicHttpProtocolHandler>(
+              deterministic_dispatcher_.get(), browser->BrowserIOThread());
+
+      context_builder.SetProtocolHandlers(std::move(protocol_handlers));
+    }
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            headless::switches::kHideScrollbars)) {
+      context_builder.SetOverrideWebPreferencesCallback(
+          base::Bind([](headless::WebPreferences* preferences) {
+            preferences->hide_scrollbars = true;
+          }));
+    }
+    browser_context_ = context_builder.Build();
+
+    HeadlessWebContents::Builder builder(
+        browser_context_->CreateWebContentsBuilder());
     base::CommandLine::StringVector args =
         base::CommandLine::ForCurrentProcess()->GetArgs();
 
+    // TODO(alexclarke): Should we navigate to about:blank first if using
+    // virtual time?
     if (!args.empty() && !args[0].empty())
       builder.SetInitialURL(GURL(args[0]));
 
@@ -76,11 +124,13 @@ class HeadlessShell : public HeadlessWebContents::Observer, page::Observer {
     if (!web_contents_)
       return;
     if (!RemoteDebuggingEnabled()) {
+      devtools_client_->GetEmulation()->GetExperimental()->RemoveObserver(this);
       devtools_client_->GetPage()->RemoveObserver(this);
       web_contents_->GetDevToolsTarget()->DetachClient(devtools_client_.get());
     }
     web_contents_->RemoveObserver(this);
     web_contents_ = nullptr;
+    browser_context_->Close();
     browser_->Shutdown();
   }
 
@@ -93,7 +143,26 @@ class HeadlessShell : public HeadlessWebContents::Observer, page::Observer {
     devtools_client_->GetPage()->Enable();
     // Check if the document had already finished loading by the time we
     // attached.
-    PollReadyState();
+
+    devtools_client_->GetEmulation()->GetExperimental()->AddObserver(this);
+
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            headless::switches::kVirtualTimeBudget)) {
+      std::string budget_ms_ascii =
+          base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+              headless::switches::kVirtualTimeBudget);
+      int budget_ms;
+      CHECK(base::StringToInt(budget_ms_ascii, &budget_ms))
+          << "Expected an integer value for --virtual-time-budget=";
+      devtools_client_->GetEmulation()->GetExperimental()->SetVirtualTimePolicy(
+          emulation::SetVirtualTimePolicyParams::Builder()
+              .SetPolicy(emulation::VirtualTimePolicy::
+                             PAUSE_IF_NETWORK_FETCHES_PENDING)
+              .SetBudget(budget_ms)
+              .Build());
+    } else {
+      PollReadyState();
+    }
     // TODO(skyostil): Implement more features to demonstrate the devtools API.
   }
 
@@ -122,8 +191,18 @@ class HeadlessShell : public HeadlessWebContents::Observer, page::Observer {
     }
   }
 
+  // emulation::Observer implementation:
+  void OnVirtualTimeBudgetExpired(
+      const emulation::VirtualTimeBudgetExpiredParams& params) override {
+    OnPageReady();
+  }
+
   // page::Observer implementation:
   void OnLoadEventFired(const page::LoadEventFiredParams& params) override {
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            headless::switches::kVirtualTimeBudget)) {
+      return;
+    }
     OnPageReady();
   }
 
@@ -156,8 +235,9 @@ class HeadlessShell : public HeadlessWebContents::Observer, page::Observer {
   }
 
   void OnDomFetched(std::unique_ptr<runtime::EvaluateResult> result) {
-    if (result->GetWasThrown()) {
-      LOG(ERROR) << "Failed to evaluate document.body.innerHTML";
+    if (result->HasExceptionDetails()) {
+      LOG(ERROR) << "Failed to evaluate document.body.innerHTML: "
+                 << result->GetExceptionDetails()->GetText();
     } else {
       std::string dom;
       if (result->GetResult()->GetValue()->GetAsString(&dom)) {
@@ -280,6 +360,8 @@ class HeadlessShell : public HeadlessWebContents::Observer, page::Observer {
   HeadlessWebContents* web_contents_;
   bool processed_page_ready_;
   std::unique_ptr<net::FileStream> screenshot_file_stream_;
+  HeadlessBrowserContext* browser_context_;
+  std::unique_ptr<headless::DeterministicDispatcher> deterministic_dispatcher_;
 
   DISALLOW_COPY_AND_ASSIGN(HeadlessShell);
 };
@@ -332,6 +414,28 @@ int main(int argc, const char** argv) {
   if (command_line.HasSwitch(switches::kHostResolverRules)) {
     builder.SetHostResolverRules(
         command_line.GetSwitchValueASCII(switches::kHostResolverRules));
+  }
+
+  if (command_line.HasSwitch(headless::switches::kUseGL)) {
+    builder.SetGLImplementation(
+        command_line.GetSwitchValueASCII(headless::switches::kUseGL));
+  }
+
+  if (command_line.HasSwitch(headless::switches::kUserDataDir)) {
+    builder.SetUserDataDir(
+        command_line.GetSwitchValuePath(headless::switches::kUserDataDir));
+    builder.SetIncognitoMode(false);
+  }
+
+  if (command_line.HasSwitch(headless::switches::kWindowSize)) {
+    std::string window_size =
+        command_line.GetSwitchValueASCII(headless::switches::kWindowSize);
+    gfx::Size parsed_window_size;
+    if (!ParseWindowSize(window_size, &parsed_window_size)) {
+      LOG(ERROR) << "Malformed window size";
+      return EXIT_FAILURE;
+    }
+    builder.SetWindowSize(parsed_window_size);
   }
 
   return HeadlessBrowserMain(

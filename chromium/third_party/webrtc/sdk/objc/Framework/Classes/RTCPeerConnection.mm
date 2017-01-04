@@ -14,13 +14,13 @@
 #import "RTCConfiguration+Private.h"
 #import "RTCDataChannel+Private.h"
 #import "RTCIceCandidate+Private.h"
+#import "RTCLegacyStatsReport+Private.h"
 #import "RTCMediaConstraints+Private.h"
 #import "RTCMediaStream+Private.h"
 #import "RTCPeerConnectionFactory+Private.h"
 #import "RTCRtpReceiver+Private.h"
 #import "RTCRtpSender+Private.h"
 #import "RTCSessionDescription+Private.h"
-#import "RTCStatsReport+Private.h"
 #import "WebRTC/RTCLogging.h"
 
 #include <memory>
@@ -204,9 +204,10 @@ void PeerConnectionDelegateAdapter::OnIceCandidatesRemoved(
 
 
 @implementation RTCPeerConnection {
-  NSMutableArray *_localStreams;
+  NSMutableArray<RTCMediaStream *> *_localStreams;
   std::unique_ptr<webrtc::PeerConnectionDelegateAdapter> _observer;
   rtc::scoped_refptr<webrtc::PeerConnectionInterface> _peerConnection;
+  BOOL _hasStartedRtcEventLog;
 }
 
 @synthesize delegate = _delegate;
@@ -231,13 +232,16 @@ void PeerConnectionDelegateAdapter::OnIceCandidatesRemoved(
                                                     nullptr,
                                                     nullptr,
                                                     _observer.get());
+    if (!_peerConnection) {
+      return nil;
+    }
     _localStreams = [[NSMutableArray alloc] init];
     _delegate = delegate;
   }
   return self;
 }
 
-- (NSArray *)localStreams {
+- (NSArray<RTCMediaStream *> *)localStreams {
   return [_localStreams copy];
 }
 
@@ -354,6 +358,31 @@ void PeerConnectionDelegateAdapter::OnIceCandidatesRemoved(
       new rtc::RefCountedObject<webrtc::SetSessionDescriptionObserverAdapter>(
           completionHandler));
   _peerConnection->SetRemoteDescription(observer, sdp.nativeDescription);
+}
+
+- (BOOL)startRtcEventLogWithFilePath:(NSString *)filePath
+                      maxSizeInBytes:(int64_t)maxSizeInBytes {
+  RTC_DCHECK(filePath.length);
+  RTC_DCHECK_GT(maxSizeInBytes, 0);
+  RTC_DCHECK(!_hasStartedRtcEventLog);
+  if (_hasStartedRtcEventLog) {
+    RTCLogError(@"Event logging already started.");
+    return NO;
+  }
+  int fd = open(filePath.UTF8String, O_WRONLY | O_CREAT | O_TRUNC,
+                S_IRUSR | S_IWUSR);
+  if (fd < 0) {
+    RTCLogError(@"Error opening file: %@. Error: %d", filePath, errno);
+    return NO;
+  }
+  _hasStartedRtcEventLog =
+      _peerConnection->StartRtcEventLog(fd, maxSizeInBytes);
+  return _hasStartedRtcEventLog;
+}
+
+- (void)stopRtcEventLog {
+  _peerConnection->StopRtcEventLog();
+  _hasStartedRtcEventLog = NO;
 }
 
 - (RTCRtpSender *)senderWithKind:(NSString *)kind

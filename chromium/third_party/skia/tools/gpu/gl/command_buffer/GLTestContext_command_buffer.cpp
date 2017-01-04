@@ -11,12 +11,8 @@
 #include "gl/GrGLInterface.h"
 #include "gl/GrGLAssembleInterface.h"
 #include "gl/command_buffer/GLTestContext_command_buffer.h"
-#include "../ports/SkOSEnvironment.h"
 #include "../ports/SkOSLibrary.h"
 
-#if defined SK_BUILD_FOR_MAC
-
-// EGL doesn't exist on the mac, so expose what we need to get the command buffer's EGL running.
 typedef void *EGLDisplay;
 typedef unsigned int EGLBoolean;
 typedef void *EGLConfig;
@@ -47,12 +43,6 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_NONE 0x3038
 #define EGL_WIDTH 0x3057
 #define EGL_HEIGHT 0x3056
-
-#else
-
-#include <EGL/egl.h>
-
-#endif
 
 typedef EGLDisplay (*GetDisplayProc)(EGLNativeDisplayType display_id);
 typedef EGLBoolean (*InitializeProc)(EGLDisplay dpy, EGLint *major, EGLint *minor);
@@ -88,13 +78,15 @@ static bool gfFunctionsLoadedSuccessfully = false;
 namespace {
 static void load_command_buffer_functions() {
     if (!gLibrary) {
+        static constexpr const char* libName =
 #if defined _WIN32
-        gLibrary = DynamicLoadLibrary("command_buffer_gles2.dll");
+        "command_buffer_gles2.dll";
 #elif defined SK_BUILD_FOR_MAC
-        gLibrary = DynamicLoadLibrary("libcommand_buffer_gles2.dylib");
+        "libcommand_buffer_gles2.dylib";
 #else
-        gLibrary = DynamicLoadLibrary("libcommand_buffer_gles2.so");
+        "libcommand_buffer_gles2.so";
 #endif // defined _WIN32
+        gLibrary = DynamicLoadLibrary(libName);
         if (gLibrary) {
             gfGetDisplay = (GetDisplayProc)GetProcedureAddress(gLibrary, "eglGetDisplay");
             gfInitialize = (InitializeProc)GetProcedureAddress(gLibrary, "eglInitialize");
@@ -116,6 +108,8 @@ static void load_command_buffer_functions() {
                                             gfCreateContext && gfDestroyContext && gfMakeCurrent &&
                                             gfSwapBuffers && gfGetProcAddress;
 
+        } else {
+            SkDebugf("Could not load %s.\n", libName);
         }
     }
 }
@@ -191,7 +185,8 @@ void CommandBufferGLTestContext::initializeGLContext(void *nativeWindow, const i
                                                  const int *surfaceAttribs) {
     load_command_buffer_once();
     if (!gfFunctionsLoadedSuccessfully) {
-        SkDebugf("Command Buffer: Could not load EGL functions.\n");
+        static SkOnce once;
+        once([] { SkDebugf("Command Buffer: Could not load EGL functions.\n"); });
         return;
     }
 

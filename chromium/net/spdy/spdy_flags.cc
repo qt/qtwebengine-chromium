@@ -4,12 +4,20 @@
 
 #include "net/spdy/spdy_flags.h"
 
-// When true, remove hardcoded HPACK size limit on buffered encoded data.
-bool FLAGS_chromium_http2_flag_remove_hpack_decode_buffer_size_limit = true;
+namespace net {
+
+// Log compressed size of HTTP/2 requests.
+bool FLAGS_chromium_http2_flag_log_compressed_size = true;
+
+// If true, SpdyFramer uses the new visitor methods OnHeaderFrameStart and
+// OnHeaderFrameEnd.  Fourth attempt.
+bool FLAGS_chromium_http2_flag_spdy_framer_use_new_methods4 = true;
+
+// If true, increase HPACK table size up to optimal size kOptTableSize if
+// clients allow it.
+bool FLAGS_chromium_reloadable_flag_increase_hpack_table_size = false;
 
 // Use NestedSpdyFramerDecoder.
 bool FLAGS_use_nested_spdy_framer_decoder = false;
 
-// Enforce the limit we advertise on frame payload size with
-// GOAWAY_FRAME_SIZE_ERROR.
-bool FLAGS_chromium_http2_flag_enforce_max_frame_size = false;
+}  // namespace net

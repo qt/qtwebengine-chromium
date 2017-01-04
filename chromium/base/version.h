@@ -25,12 +25,16 @@ class BASE_EXPORT Version {
 
   Version(const Version& other);
 
-  ~Version();
-
   // Initializes from a decimal dotted version number, like "0.1.1".
   // Each component is limited to a uint16_t. Call IsValid() to learn
   // the outcome.
   explicit Version(const std::string& version_str);
+
+  // Initializes from a vector of components, like {1, 2, 3, 4}. Call IsValid()
+  // to learn the outcome.
+  explicit Version(std::vector<uint32_t> components);
+
+  ~Version();
 
   // Returns true if the object contains a valid version number.
   bool IsValid() const;
@@ -68,9 +72,5 @@ BASE_EXPORT bool operator>=(const Version& v1, const Version& v2);
 BASE_EXPORT std::ostream& operator<<(std::ostream& stream, const Version& v);
 
 }  // namespace base
-
-// TODO(xhwang) remove this when all users are updated to explicitly use the
-// namespace
-using base::Version;
 
 #endif  // BASE_VERSION_H_

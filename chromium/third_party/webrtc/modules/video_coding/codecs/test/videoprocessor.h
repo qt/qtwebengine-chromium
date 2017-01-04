@@ -199,8 +199,6 @@ class VideoProcessorImpl : public VideoProcessor {
 
   EncodedImageCallback* encode_callback_;
   DecodedImageCallback* decode_callback_;
-  // Buffer used for reading the source video file:
-  uint8_t* source_buffer_;
   // Keep track of the last successful frame, since we need to write that
   // when decoding fails:
   uint8_t* last_successful_frame_buffer_;
@@ -230,7 +228,7 @@ class VideoProcessorImpl : public VideoProcessor {
    public:
     explicit VideoProcessorEncodeCompleteCallback(VideoProcessorImpl* vp)
         : video_processor_(vp) {}
-    int32_t Encoded(
+    Result OnEncodedImage(
         const webrtc::EncodedImage& encoded_image,
         const webrtc::CodecSpecificInfo* codec_specific_info,
         const webrtc::RTPFragmentationHeader* fragmentation) override;

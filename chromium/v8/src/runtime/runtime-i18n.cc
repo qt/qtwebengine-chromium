@@ -6,6 +6,8 @@
 #ifdef V8_I18N_SUPPORT
 #include "src/runtime/runtime-utils.h"
 
+#include <memory>
+
 #include "src/api.h"
 #include "src/api-natives.h"
 #include "src/arguments.h"
@@ -23,6 +25,8 @@
 #include "unicode/decimfmt.h"
 #include "unicode/dtfmtsym.h"
 #include "unicode/dtptngen.h"
+#include "unicode/fieldpos.h"
+#include "unicode/fpositer.h"
 #include "unicode/locid.h"
 #include "unicode/normalizer2.h"
 #include "unicode/numfmt.h"
@@ -45,12 +49,12 @@ namespace internal {
 namespace {
 
 const UChar* GetUCharBufferFromFlat(const String::FlatContent& flat,
-                                    base::SmartArrayPointer<uc16>* dest,
+                                    std::unique_ptr<uc16[]>* dest,
                                     int32_t length) {
   DCHECK(flat.IsFlat());
   if (flat.IsOneByte()) {
-    if (dest->is_empty()) {
-      dest->Reset(NewArray<uc16>(length));
+    if (!*dest) {
+      dest->reset(NewArray<uc16>(length));
       CopyChars(dest->get(), flat.ToOneByteVector().start(), length);
     }
     return reinterpret_cast<const UChar*>(dest->get());
@@ -61,6 +65,7 @@ const UChar* GetUCharBufferFromFlat(const String::FlatContent& flat,
 
 }  // namespace
 
+// ECMA 402 6.2.3
 RUNTIME_FUNCTION(Runtime_CanonicalizeLanguageTag) {
   HandleScope scope(isolate);
   Factory* factory = isolate->factory();
@@ -71,6 +76,8 @@ RUNTIME_FUNCTION(Runtime_CanonicalizeLanguageTag) {
   v8::String::Utf8Value locale_id(v8::Utils::ToLocal(locale_id_str));
 
   // Return value which denotes invalid language tag.
+  // TODO(jshin): Can uloc_{for,to}TanguageTag fail even for structually valid
+  // language tags? If not, just add CHECK instead of returning 'invalid-tag'.
   const char* const kInvalidTag = "invalid-tag";
 
   UErrorCode error = U_ZERO_ERROR;
@@ -173,7 +180,7 @@ RUNTIME_FUNCTION(Runtime_GetLanguageTagVariants) {
   uint32_t length = static_cast<uint32_t>(input->length()->Number());
   // Set some limit to prevent fuzz tests from going OOM.
   // Can be bumped when callers' requirements change.
-  RUNTIME_ASSERT(length < 100);
+  if (length >= 100) return isolate->ThrowIllegalOperation();
   Handle<FixedArray> output = factory->NewFixedArray(length);
   Handle<Name> maximized = factory->NewStringFromStaticChars("maximized");
   Handle<Name> base = factory->NewStringFromStaticChars("base");
@@ -317,7 +324,7 @@ RUNTIME_FUNCTION(Runtime_GetImplFromInitializedIntlObject) {
   Handle<Symbol> marker = isolate->factory()->intl_impl_object_symbol();
 
   Handle<Object> impl = JSReceiver::GetDataProperty(obj, marker);
-  if (impl->IsTheHole(isolate)) {
+  if (!impl->IsJSObject()) {
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kNotIntlObject, obj));
   }
@@ -388,6 +395,138 @@ RUNTIME_FUNCTION(Runtime_InternalDateFormat) {
                    result.length())));
 }
 
+namespace {
+// The list comes from third_party/icu/source/i18n/unicode/udat.h.
+// They're mapped to DateTimeFormat components listed at
+// https://tc39.github.io/ecma402/#sec-datetimeformat-abstracts .
+
+Handle<String> IcuDateFieldIdToDateType(int32_t field_id, Isolate* isolate) {
+  switch (field_id) {
+    case -1:
+      return isolate->factory()->literal_string();
+    case UDAT_YEAR_FIELD:
+    case UDAT_EXTENDED_YEAR_FIELD:
+    case UDAT_YEAR_NAME_FIELD:
+      return isolate->factory()->year_string();
+    case UDAT_MONTH_FIELD:
+    case UDAT_STANDALONE_MONTH_FIELD:
+      return isolate->factory()->month_string();
+    case UDAT_DATE_FIELD:
+      return isolate->factory()->day_string();
+    case UDAT_HOUR_OF_DAY1_FIELD:
+    case UDAT_HOUR_OF_DAY0_FIELD:
+    case UDAT_HOUR1_FIELD:
+    case UDAT_HOUR0_FIELD:
+      return isolate->factory()->hour_string();
+    case UDAT_MINUTE_FIELD:
+      return isolate->factory()->minute_string();
+    case UDAT_SECOND_FIELD:
+      return isolate->factory()->second_string();
+    case UDAT_DAY_OF_WEEK_FIELD:
+    case UDAT_DOW_LOCAL_FIELD:
+    case UDAT_STANDALONE_DAY_FIELD:
+      return isolate->factory()->weekday_string();
+    case UDAT_AM_PM_FIELD:
+      return isolate->factory()->dayperiod_string();
+    case UDAT_TIMEZONE_FIELD:
+    case UDAT_TIMEZONE_RFC_FIELD:
+    case UDAT_TIMEZONE_GENERIC_FIELD:
+    case UDAT_TIMEZONE_SPECIAL_FIELD:
+    case UDAT_TIMEZONE_LOCALIZED_GMT_OFFSET_FIELD:
+    case UDAT_TIMEZONE_ISO_FIELD:
+    case UDAT_TIMEZONE_ISO_LOCAL_FIELD:
+      return isolate->factory()->timeZoneName_string();
+    case UDAT_ERA_FIELD:
+      return isolate->factory()->era_string();
+    default:
+      // Other UDAT_*_FIELD's cannot show up because there is no way to specify
+      // them via options of Intl.DateTimeFormat.
+      UNREACHABLE();
+      // To prevent MSVC from issuing C4715 warning.
+      return Handle<String>();
+  }
+}
+
+bool AddElement(Handle<JSArray> array, int index, int32_t field_id,
+                const icu::UnicodeString& formatted, int32_t begin, int32_t end,
+                Isolate* isolate) {
+  HandleScope scope(isolate);
+  Factory* factory = isolate->factory();
+  Handle<JSObject> element = factory->NewJSObject(isolate->object_function());
+  Handle<String> value = IcuDateFieldIdToDateType(field_id, isolate);
+  JSObject::AddProperty(element, factory->type_string(), value, NONE);
+
+  icu::UnicodeString field(formatted.tempSubStringBetween(begin, end));
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, value, factory->NewStringFromTwoByte(Vector<const uint16_t>(
+                          reinterpret_cast<const uint16_t*>(field.getBuffer()),
+                          field.length())),
+      false);
+
+  JSObject::AddProperty(element, factory->value_string(), value, NONE);
+  RETURN_ON_EXCEPTION_VALUE(
+      isolate, JSObject::AddDataElement(array, index, element, NONE), false);
+  return true;
+}
+
+}  // namespace
+
+RUNTIME_FUNCTION(Runtime_InternalDateFormatToParts) {
+  HandleScope scope(isolate);
+  Factory* factory = isolate->factory();
+
+  DCHECK(args.length() == 2);
+
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, date_format_holder, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSDate, date, 1);
+
+  Handle<Object> value;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, value, Object::ToNumber(date));
+
+  icu::SimpleDateFormat* date_format =
+      DateFormat::UnpackDateFormat(isolate, date_format_holder);
+  if (!date_format) return isolate->ThrowIllegalOperation();
+
+  icu::UnicodeString formatted;
+  icu::FieldPositionIterator fp_iter;
+  icu::FieldPosition fp;
+  UErrorCode status = U_ZERO_ERROR;
+  date_format->format(value->Number(), formatted, &fp_iter, status);
+  if (U_FAILURE(status)) return isolate->heap()->undefined_value();
+
+  Handle<JSArray> result = factory->NewJSArray(0);
+  int32_t length = formatted.length();
+  if (length == 0) return *result;
+
+  int index = 0;
+  int32_t previous_end_pos = 0;
+  while (fp_iter.next(fp)) {
+    int32_t begin_pos = fp.getBeginIndex();
+    int32_t end_pos = fp.getEndIndex();
+
+    if (previous_end_pos < begin_pos) {
+      if (!AddElement(result, index, -1, formatted, previous_end_pos, begin_pos,
+                      isolate)) {
+        return isolate->heap()->undefined_value();
+      }
+      ++index;
+    }
+    if (!AddElement(result, index, fp.getField(), formatted, begin_pos, end_pos,
+                    isolate)) {
+      return isolate->heap()->undefined_value();
+    }
+    previous_end_pos = end_pos;
+    ++index;
+  }
+  if (previous_end_pos < length) {
+    if (!AddElement(result, index, -1, formatted, previous_end_pos, length,
+                    isolate)) {
+      return isolate->heap()->undefined_value();
+    }
+  }
+  JSObject::ValidateElements(result);
+  return *result;
+}
 
 RUNTIME_FUNCTION(Runtime_InternalDateParse) {
   HandleScope scope(isolate);
@@ -569,18 +708,22 @@ RUNTIME_FUNCTION(Runtime_InternalCompare) {
 
   string1 = String::Flatten(string1);
   string2 = String::Flatten(string2);
-  DisallowHeapAllocation no_gc;
-  int32_t length1 = string1->length();
-  int32_t length2 = string2->length();
-  String::FlatContent flat1 = string1->GetFlatContent();
-  String::FlatContent flat2 = string2->GetFlatContent();
-  base::SmartArrayPointer<uc16> sap1;
-  base::SmartArrayPointer<uc16> sap2;
-  const UChar* string_val1 = GetUCharBufferFromFlat(flat1, &sap1, length1);
-  const UChar* string_val2 = GetUCharBufferFromFlat(flat2, &sap2, length2);
+
+  UCollationResult result;
   UErrorCode status = U_ZERO_ERROR;
-  UCollationResult result =
-      collator->compare(string_val1, length1, string_val2, length2, status);
+  {
+    DisallowHeapAllocation no_gc;
+    int32_t length1 = string1->length();
+    int32_t length2 = string2->length();
+    String::FlatContent flat1 = string1->GetFlatContent();
+    String::FlatContent flat2 = string2->GetFlatContent();
+    std::unique_ptr<uc16[]> sap1;
+    std::unique_ptr<uc16[]> sap2;
+    const UChar* string_val1 = GetUCharBufferFromFlat(flat1, &sap1, length1);
+    const UChar* string_val2 = GetUCharBufferFromFlat(flat2, &sap2, length2);
+    result =
+        collator->compare(string_val1, length1, string_val2, length2, status);
+  }
   if (U_FAILURE(status)) return isolate->ThrowIllegalOperation();
 
   return *isolate->factory()->NewNumberFromInt(result);
@@ -603,13 +746,13 @@ RUNTIME_FUNCTION(Runtime_StringNormalize) {
 
   CONVERT_ARG_HANDLE_CHECKED(String, s, 0);
   CONVERT_NUMBER_CHECKED(int, form_id, Int32, args[1]);
-  RUNTIME_ASSERT(form_id >= 0 &&
-                 static_cast<size_t>(form_id) < arraysize(normalizationForms));
+  CHECK(form_id >= 0 &&
+        static_cast<size_t>(form_id) < arraysize(normalizationForms));
 
   int length = s->length();
   s = String::Flatten(s);
   icu::UnicodeString result;
-  base::SmartArrayPointer<uc16> sap;
+  std::unique_ptr<uc16[]> sap;
   UErrorCode status = U_ZERO_ERROR;
   {
     DisallowHeapAllocation no_gc;
@@ -621,7 +764,7 @@ RUNTIME_FUNCTION(Runtime_StringNormalize) {
         icu::Normalizer2::getInstance(nullptr, normalizationForms[form_id].name,
                                       normalizationForms[form_id].mode, status);
     DCHECK(U_SUCCESS(status));
-    RUNTIME_ASSERT(normalizer != nullptr);
+    CHECK(normalizer != nullptr);
     int32_t normalized_prefix_length =
         normalizer->spanQuickCheckYes(input, status);
     // Quick return if the input is already normalized.
@@ -708,7 +851,7 @@ RUNTIME_FUNCTION(Runtime_BreakIteratorAdoptText) {
   text = String::Flatten(text);
   DisallowHeapAllocation no_gc;
   String::FlatContent flat = text->GetFlatContent();
-  base::SmartArrayPointer<uc16> sap;
+  std::unique_ptr<uc16[]> sap;
   const UChar* text_value = GetUCharBufferFromFlat(flat, &sap, length);
   u_text = new icu::UnicodeString(text_value, length);
   break_iterator_holder->SetInternalField(1, reinterpret_cast<Smi*>(u_text));
@@ -799,7 +942,7 @@ namespace {
 void ConvertCaseWithTransliterator(icu::UnicodeString* input,
                                    const char* transliterator_id) {
   UErrorCode status = U_ZERO_ERROR;
-  base::SmartPointer<icu::Transliterator> translit(
+  std::unique_ptr<icu::Transliterator> translit(
       icu::Transliterator::createInstance(
           icu::UnicodeString(transliterator_id, -1, US_INV), UTRANS_FORWARD,
           status));
@@ -820,7 +963,7 @@ MUST_USE_RESULT Object* LocaleConvertCase(Handle<String> s, Isolate* isolate,
   // ICU's C API for transliteration is nasty and we just use C++ API.
   if (V8_UNLIKELY(is_to_upper && lang[0] == 'e' && lang[1] == 'l')) {
     icu::UnicodeString converted;
-    base::SmartArrayPointer<uc16> sap;
+    std::unique_ptr<uc16[]> sap;
     {
       DisallowHeapAllocation no_gc;
       String::FlatContent flat = s->GetFlatContent();
@@ -848,13 +991,15 @@ MUST_USE_RESULT Object* LocaleConvertCase(Handle<String> s, Isolate* isolate,
   int32_t dest_length = src_length;
   UErrorCode status;
   Handle<SeqTwoByteString> result;
-  base::SmartArrayPointer<uc16> sap;
+  std::unique_ptr<uc16[]> sap;
 
   // This is not a real loop. It'll be executed only once (no overflow) or
   // twice (overflow).
   for (int i = 0; i < 2; ++i) {
-    result =
-        isolate->factory()->NewRawTwoByteString(dest_length).ToHandleChecked();
+    // Case conversion can increase the string length (e.g. sharp-S => SS) so
+    // that we have to handle RangeError exceptions here.
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, result, isolate->factory()->NewRawTwoByteString(dest_length));
     DisallowHeapAllocation no_gc;
     String::FlatContent flat = s->GetFlatContent();
     const UChar* src = GetUCharBufferFromFlat(flat, &sap, src_length);

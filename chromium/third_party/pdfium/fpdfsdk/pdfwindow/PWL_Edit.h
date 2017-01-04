@@ -7,10 +7,14 @@
 #ifndef FPDFSDK_PDFWINDOW_PWL_EDIT_H_
 #define FPDFSDK_PDFWINDOW_PWL_EDIT_H_
 
-#include "core/fxcrt/include/fx_basic.h"
-#include "fpdfsdk/fxedit/include/fx_edit.h"
+#include "core/fxcrt/fx_basic.h"
+#include "fpdfsdk/fxedit/fx_edit.h"
 #include "fpdfsdk/pdfwindow/PWL_EditCtrl.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
+
+class CPDF_PageObjectHolder;
+class CPDF_TextObject;
+class IFX_Edit_UndoItem;
 
 class IPWL_Filler_Notify {
  public:
@@ -40,7 +44,7 @@ class IPWL_Filler_Notify {
 #endif  // PDF_ENABLE_XFA
 };
 
-class CPWL_Edit : public CPWL_EditCtrl, public IFX_Edit_OprNotify {
+class CPWL_Edit : public CPWL_EditCtrl {
  public:
   CPWL_Edit();
   ~CPWL_Edit() override;
@@ -66,18 +70,13 @@ class CPWL_Edit : public CPWL_EditCtrl, public IFX_Edit_OprNotify {
   void OnSetFocus() override;
   void OnKillFocus() override;
 
-  void SetAlignFormatH(PWL_EDIT_ALIGNFORMAT_H nFormat = PEAH_LEFT,
-                       FX_BOOL bPaint = TRUE);  // 0:left 1:right 2:middle
   void SetAlignFormatV(PWL_EDIT_ALIGNFORMAT_V nFormat = PEAV_TOP,
                        FX_BOOL bPaint = TRUE);  // 0:top 1:bottom 2:center
 
   void SetCharArray(int32_t nCharArray);
   void SetLimitChar(int32_t nLimitChar);
 
-  void SetHorzScale(int32_t nHorzScale, FX_BOOL bPaint = TRUE);
-  void SetCharSpace(FX_FLOAT fCharSpace, FX_BOOL bPaint = TRUE);
-
-  void SetLineLeading(FX_FLOAT fLineLeading, FX_BOOL bPaint = TRUE);
+  void SetCharSpace(FX_FLOAT fCharSpace);
 
   FX_BOOL CanSelectAll() const;
   FX_BOOL CanClear() const;
@@ -86,8 +85,8 @@ class CPWL_Edit : public CPWL_EditCtrl, public IFX_Edit_OprNotify {
 
   void CutText();
 
-  void SetText(const FX_WCHAR* csText);
-  void ReplaceSel(const FX_WCHAR* csText);
+  void SetText(const CFX_WideString& csText);
+  void ReplaceSel(const CFX_WideString& csText);
 
   CFX_ByteString GetTextAppearanceStream(const CFX_FloatPoint& ptOffset) const;
   CFX_ByteString GetCaretAppearanceStream(const CFX_FloatPoint& ptOffset) const;
@@ -111,25 +110,17 @@ class CPWL_Edit : public CPWL_EditCtrl, public IFX_Edit_OprNotify {
                            const CFX_FloatPoint& ptOffset);
 
   FX_BOOL IsProceedtoOnChar(uint16_t nKeyCode, uint32_t nFlag);
-  void AttachFFLData(void* pData) { m_pFormFiller = pData; }
+  void AttachFFLData(CFFL_FormFiller* pData) { m_pFormFiller = pData; }
 
- protected:
-  // IFX_Edit_OprNotify
   void OnInsertWord(const CPVT_WordPlace& place,
-                    const CPVT_WordPlace& oldplace) override;
+                    const CPVT_WordPlace& oldplace);
   void OnInsertReturn(const CPVT_WordPlace& place,
-                      const CPVT_WordPlace& oldplace) override;
-  void OnBackSpace(const CPVT_WordPlace& place,
-                   const CPVT_WordPlace& oldplace) override;
-  void OnDelete(const CPVT_WordPlace& place,
-                const CPVT_WordPlace& oldplace) override;
-  void OnClear(const CPVT_WordPlace& place,
-               const CPVT_WordPlace& oldplace) override;
-  void OnSetText(const CPVT_WordPlace& place,
-                 const CPVT_WordPlace& oldplace) override;
+                      const CPVT_WordPlace& oldplace);
+  void OnBackSpace(const CPVT_WordPlace& place, const CPVT_WordPlace& oldplace);
+  void OnDelete(const CPVT_WordPlace& place, const CPVT_WordPlace& oldplace);
+  void OnClear(const CPVT_WordPlace& place, const CPVT_WordPlace& oldplace);
   void OnInsertText(const CPVT_WordPlace& place,
-                    const CPVT_WordPlace& oldplace) override;
-  void OnAddUndo(IFX_Edit_UndoItem* pUndoItem) override;
+                    const CPVT_WordPlace& oldplace);
 
  private:
   CPVT_WordRange GetSelectWordRange() const;
@@ -151,7 +142,7 @@ class CPWL_Edit : public CPWL_EditCtrl, public IFX_Edit_OprNotify {
   IPWL_Filler_Notify* m_pFillerNotify;
   FX_BOOL m_bFocus;
   CFX_FloatRect m_rcOldWindow;
-  void* m_pFormFiller;
+  CFFL_FormFiller* m_pFormFiller;  // Not owned.
 };
 
 #endif  // FPDFSDK_PDFWINDOW_PWL_EDIT_H_

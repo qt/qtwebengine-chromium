@@ -248,7 +248,8 @@ void UsbServiceLinux::DeviceReady(scoped_refptr<UsbDeviceLinux> device,
   bool enumeration_became_ready = false;
   if (!enumeration_ready()) {
     DCHECK_GT(first_enumeration_countdown_, 0u);
-    if (--first_enumeration_countdown_ == 0)
+    first_enumeration_countdown_--;
+    if (enumeration_ready())
       enumeration_became_ready = true;
   }
 
@@ -258,7 +259,7 @@ void UsbServiceLinux::DeviceReady(scoped_refptr<UsbDeviceLinux> device,
   if (it == devices_by_path_.end()) {
     success = false;
   } else if (success) {
-    DCHECK(!ContainsKey(devices(), device->guid()));
+    DCHECK(!base::ContainsKey(devices(), device->guid()));
     devices()[device->guid()] = device;
 
     USB_LOG(USER) << "USB device added: path=" << device->device_path()

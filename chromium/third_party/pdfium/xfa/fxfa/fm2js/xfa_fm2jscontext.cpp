@@ -8,18 +8,16 @@
 
 #include <time.h>
 
-#include "core/fxcrt/include/fx_ext.h"
-#include "fxjse/include/cfxjse_arguments.h"
-#include "fxjse/include/cfxjse_class.h"
-#include "fxjse/include/cfxjse_value.h"
+#include "core/fxcrt/fx_ext.h"
+#include "fxjs/cfxjse_arguments.h"
+#include "fxjs/cfxjse_class.h"
+#include "fxjs/cfxjse_value.h"
 #include "xfa/fgas/localization/fgas_locale.h"
 #include "xfa/fxfa/app/xfa_ffnotify.h"
 #include "xfa/fxfa/fm2js/xfa_program.h"
-#include "xfa/fxfa/parser/xfa_document.h"
+#include "xfa/fxfa/parser/cxfa_document.h"
+#include "xfa/fxfa/parser/cxfa_scriptcontext.h"
 #include "xfa/fxfa/parser/xfa_localevalue.h"
-#include "xfa/fxfa/parser/xfa_parser.h"
-#include "xfa/fxfa/parser/xfa_parser_imp.h"
-#include "xfa/fxfa/parser/xfa_script_imp.h"
 
 namespace {
 
@@ -4915,8 +4913,7 @@ void CXFA_FM2JSContext::Get(CFXJSE_Value* pThis,
   if (!pDoc)
     return;
 
-  IXFA_AppProvider* pAppProvider =
-      pDoc->GetParser()->GetNotify()->GetAppProvider();
+  IXFA_AppProvider* pAppProvider = pDoc->GetNotify()->GetAppProvider();
   if (!pAppProvider)
     return;
 
@@ -4950,8 +4947,7 @@ void CXFA_FM2JSContext::Post(CFXJSE_Value* pThis,
   if (!pDoc)
     return;
 
-  IXFA_AppProvider* pAppProvider =
-      pDoc->GetParser()->GetNotify()->GetAppProvider();
+  IXFA_AppProvider* pAppProvider = pDoc->GetNotify()->GetAppProvider();
   if (!pAppProvider)
     return;
 
@@ -5012,8 +5008,7 @@ void CXFA_FM2JSContext::Put(CFXJSE_Value* pThis,
   if (!pDoc)
     return;
 
-  IXFA_AppProvider* pAppProvider =
-      pDoc->GetParser()->GetNotify()->GetAppProvider();
+  IXFA_AppProvider* pAppProvider = pDoc->GetNotify()->GetAppProvider();
   if (!pAppProvider)
     return;
 
@@ -5577,8 +5572,8 @@ void CXFA_FM2JSContext::dot_accessor(CFXJSE_Value* pThis,
     iRet = ResolveObjects(pThis, argAccessor.get(), szSomExp.AsStringC(),
                           resoveNodeRS, TRUE, szName.IsEmpty());
   } else if (!argAccessor->IsObject() && !bsAccessorName.IsEmpty() &&
-             GetObjectByName(pThis, argAccessor.get(),
-                             bsAccessorName.AsStringC())) {
+             GetObjectForName(pThis, argAccessor.get(),
+                              bsAccessorName.AsStringC())) {
     iRet = ResolveObjects(pThis, argAccessor.get(), szSomExp.AsStringC(),
                           resoveNodeRS, TRUE, szName.IsEmpty());
   }
@@ -5715,8 +5710,8 @@ void CXFA_FM2JSContext::dotdot_accessor(CFXJSE_Value* pThis,
     iRet = ResolveObjects(pThis, argAccessor.get(), szSomExp.AsStringC(),
                           resoveNodeRS, FALSE);
   } else if (!argAccessor->IsObject() && !bsAccessorName.IsEmpty() &&
-             GetObjectByName(pThis, argAccessor.get(),
-                             bsAccessorName.AsStringC())) {
+             GetObjectForName(pThis, argAccessor.get(),
+                              bsAccessorName.AsStringC())) {
     iRet = ResolveObjects(pThis, argAccessor.get(), szSomExp.AsStringC(),
                           resoveNodeRS, FALSE);
   }
@@ -6208,7 +6203,7 @@ void CXFA_FM2JSContext::GenerateSomExpression(const CFX_ByteStringC& szName,
 }
 
 // static
-FX_BOOL CXFA_FM2JSContext::GetObjectByName(
+FX_BOOL CXFA_FM2JSContext::GetObjectForName(
     CFXJSE_Value* pThis,
     CFXJSE_Value* accessorValue,
     const CFX_ByteStringC& szAccessorName) {

@@ -55,15 +55,14 @@ std::unique_ptr<SharedMemory> Display::CreateSharedMemory(
   if (!base::SharedMemory::IsHandleValid(handle))
     return nullptr;
 
-  return base::WrapUnique(new SharedMemory(handle));
+  return base::MakeUnique<SharedMemory>(handle);
 }
 
 #if defined(USE_OZONE)
 std::unique_ptr<Buffer> Display::CreateLinuxDMABufBuffer(
     const gfx::Size& size,
     gfx::BufferFormat format,
-    const std::vector<int>& strides,
-    const std::vector<int>& offsets,
+    const std::vector<gfx::NativePixmapPlane>& planes,
     std::vector<base::ScopedFD>&& fds) {
   TRACE_EVENT1("exo", "Display::CreateLinuxDMABufBuffer", "size",
                size.ToString());
@@ -73,11 +72,8 @@ std::unique_ptr<Buffer> Display::CreateLinuxDMABufBuffer(
   for (auto& fd : fds)
     handle.native_pixmap_handle.fds.emplace_back(std::move(fd));
 
-  DCHECK_EQ(strides.size(), offsets.size());
-  for (size_t plane = 0; plane < strides.size(); ++plane) {
-    handle.native_pixmap_handle.strides_and_offsets.emplace_back(
-        strides[plane], offsets[plane]);
-  }
+  for (auto& plane : planes)
+    handle.native_pixmap_handle.planes.push_back(plane);
 
   std::unique_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer =
       aura::Env::GetInstance()
@@ -94,15 +90,16 @@ std::unique_ptr<Buffer> Display::CreateLinuxDMABufBuffer(
 
   // List of overlay formats that are known to be supported.
   // TODO(reveman): Determine this at runtime.
-  const gfx::BufferFormat kOverlayFormats[] = {gfx::BufferFormat::BGRX_8888};
+  const gfx::BufferFormat kOverlayFormats[] = {gfx::BufferFormat::RGBA_8888,
+                                               gfx::BufferFormat::RGBX_8888};
   bool is_overlay_candidate =
       std::find(std::begin(kOverlayFormats), std::end(kOverlayFormats),
                 format) != std::end(kOverlayFormats);
 
-  return base::WrapUnique(new Buffer(
+  return base::MakeUnique<Buffer>(
       std::move(gpu_memory_buffer), GL_TEXTURE_EXTERNAL_OES,
       // COMMANDS_COMPLETED queries are required by native pixmaps.
-      GL_COMMANDS_COMPLETED_CHROMIUM, use_zero_copy, is_overlay_candidate));
+      GL_COMMANDS_COMPLETED_CHROMIUM, use_zero_copy, is_overlay_candidate);
 }
 #endif
 
@@ -115,9 +112,9 @@ std::unique_ptr<ShellSurface> Display::CreateShellSurface(Surface* surface) {
     return nullptr;
   }
 
-  return base::WrapUnique(
-      new ShellSurface(surface, nullptr, gfx::Rect(), true /* activatable */,
-                       ash::kShellWindowId_DefaultContainer));
+  return base::MakeUnique<ShellSurface>(surface, nullptr, gfx::Rect(),
+                                        true /* activatable */,
+                                        ash::kShellWindowId_DefaultContainer);
 }
 
 std::unique_ptr<ShellSurface> Display::CreatePopupShellSurface(
@@ -146,9 +143,9 @@ std::unique_ptr<ShellSurface> Display::CreatePopupShellSurface(
           ->window(),
       parent->GetWidget()->GetNativeWindow()->parent(), &initial_bounds);
 
-  return base::WrapUnique(
-      new ShellSurface(surface, parent, initial_bounds, false /* activatable */,
-                       ash::kShellWindowId_DefaultContainer));
+  return base::MakeUnique<ShellSurface>(surface, parent, initial_bounds,
+                                        false /* activatable */,
+                                        ash::kShellWindowId_DefaultContainer);
 }
 
 std::unique_ptr<ShellSurface> Display::CreateRemoteShellSurface(
@@ -162,8 +159,8 @@ std::unique_ptr<ShellSurface> Display::CreateRemoteShellSurface(
     return nullptr;
   }
 
-  return base::WrapUnique(new ShellSurface(surface, nullptr, gfx::Rect(1, 1),
-                                           true /* activatable */, container));
+  return base::MakeUnique<ShellSurface>(surface, nullptr, gfx::Rect(1, 1),
+                                        true /* activatable */, container);
 }
 
 std::unique_ptr<SubSurface> Display::CreateSubSurface(Surface* surface,
@@ -181,7 +178,7 @@ std::unique_ptr<SubSurface> Display::CreateSubSurface(Surface* surface,
     return nullptr;
   }
 
-  return base::WrapUnique(new SubSurface(surface, parent));
+  return base::MakeUnique<SubSurface>(surface, parent);
 }
 
 std::unique_ptr<NotificationSurface> Display::CreateNotificationSurface(

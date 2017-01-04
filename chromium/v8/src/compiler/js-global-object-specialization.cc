@@ -11,9 +11,9 @@
 #include "src/compiler/js-operator.h"
 #include "src/compiler/node-properties.h"
 #include "src/compiler/simplified-operator.h"
+#include "src/compiler/type-cache.h"
 #include "src/lookup.h"
 #include "src/objects-inl.h"
-#include "src/type-cache.h"
 
 namespace v8 {
 namespace internal {
@@ -47,6 +47,23 @@ Reduction JSGlobalObjectSpecialization::Reduce(Node* node) {
   }
   return NoChange();
 }
+
+namespace {
+
+FieldAccess ForPropertyCellValue(MachineRepresentation representation,
+                                 Type* type, Handle<Name> name) {
+  WriteBarrierKind kind = kFullWriteBarrier;
+  if (representation == MachineRepresentation::kTaggedSigned) {
+    kind = kNoWriteBarrier;
+  } else if (representation == MachineRepresentation::kTaggedPointer) {
+    kind = kPointerWriteBarrier;
+  }
+  MachineType r = MachineType::TypeForRepresentation(representation);
+  FieldAccess access = {kTaggedBase, PropertyCell::kValueOffset, name, type, r,
+                        kind};
+  return access;
+}
+}  // namespace
 
 Reduction JSGlobalObjectSpecialization::ReduceJSLoadGlobal(Node* node) {
   DCHECK_EQ(IrOpcode::kJSLoadGlobal, node->opcode());
@@ -104,24 +121,31 @@ Reduction JSGlobalObjectSpecialization::ReduceJSLoadGlobal(Node* node) {
   }
 
   // Load from constant type cell can benefit from type feedback.
-  Type* property_cell_value_type = Type::Tagged();
+  Type* property_cell_value_type = Type::NonInternal();
+  MachineRepresentation representation = MachineRepresentation::kTagged;
   if (property_details.cell_type() == PropertyCellType::kConstantType) {
     // Compute proper type based on the current value in the cell.
     if (property_cell_value->IsSmi()) {
       property_cell_value_type = type_cache_.kSmi;
+      representation = MachineRepresentation::kTaggedSigned;
     } else if (property_cell_value->IsNumber()) {
+      // TODO(mvstanton): Remove kHeapNumber from type cache, it's just
+      // Type::Number().
       property_cell_value_type = type_cache_.kHeapNumber;
+      representation = MachineRepresentation::kTaggedPointer;
     } else {
+      // TODO(turbofan): Track the property_cell_value_map on the FieldAccess
+      // below and use it in LoadElimination to eliminate map checks.
       Handle<Map> property_cell_value_map(
           Handle<HeapObject>::cast(property_cell_value)->map(), isolate());
-      property_cell_value_type =
-          Type::Class(property_cell_value_map, graph()->zone());
+      property_cell_value_type = Type::For(property_cell_value_map);
+      representation = MachineRepresentation::kTaggedPointer;
     }
   }
-  Node* value = effect = graph()->NewNode(
-      simplified()->LoadField(
-          AccessBuilder::ForPropertyCellValue(property_cell_value_type)),
-      jsgraph()->HeapConstant(property_cell), effect, control);
+  Node* value = effect =
+      graph()->NewNode(simplified()->LoadField(ForPropertyCellValue(
+                           representation, property_cell_value_type, name)),
+                       jsgraph()->HeapConstant(property_cell), effect, control);
   ReplaceWithValue(node, value, effect, control);
   return Replace(value);
 }
@@ -133,7 +157,6 @@ Reduction JSGlobalObjectSpecialization::ReduceJSStoreGlobal(Node* node) {
   Node* value = NodeProperties::GetValueInput(node, 0);
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
-  Node* frame_state = NodeProperties::FindFrameStateBefore(node);
 
   // Retrieve the global object from the given {node}.
   Handle<JSGlobalObject> global_object;
@@ -170,40 +193,46 @@ Reduction JSGlobalObjectSpecialization::ReduceJSStoreGlobal(Node* node) {
       // Record a code dependency on the cell, and just deoptimize if the new
       // value doesn't match the previous value stored inside the cell.
       dependencies()->AssumePropertyCell(property_cell);
-      Node* check =
-          graph()->NewNode(simplified()->ReferenceEqual(Type::Tagged()), value,
-                           jsgraph()->Constant(property_cell_value));
-      control = effect = graph()->NewNode(common()->DeoptimizeUnless(), check,
-                                          frame_state, effect, control);
+      Node* check = graph()->NewNode(simplified()->ReferenceEqual(), value,
+                                     jsgraph()->Constant(property_cell_value));
+      effect =
+          graph()->NewNode(simplified()->CheckIf(), check, effect, control);
       break;
     }
     case PropertyCellType::kConstantType: {
       // Record a code dependency on the cell, and just deoptimize if the new
       // values' type doesn't match the type of the previous value in the cell.
       dependencies()->AssumePropertyCell(property_cell);
-      Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
-      Type* property_cell_value_type = Type::TaggedSigned();
+      Type* property_cell_value_type;
+      MachineRepresentation representation = MachineRepresentation::kTagged;
       if (property_cell_value->IsHeapObject()) {
-        // Deoptimize if the {value} is a Smi.
-        control = effect = graph()->NewNode(common()->DeoptimizeIf(), check,
-                                            frame_state, effect, control);
-
-        // Load the {value} map check against the {property_cell} map.
-        Node* value_map = effect =
-            graph()->NewNode(simplified()->LoadField(AccessBuilder::ForMap()),
-                             value, effect, control);
+        // We cannot do anything if the {property_cell_value}s map is no
+        // longer stable.
         Handle<Map> property_cell_value_map(
             Handle<HeapObject>::cast(property_cell_value)->map(), isolate());
-        check = graph()->NewNode(
-            simplified()->ReferenceEqual(Type::Any()), value_map,
-            jsgraph()->HeapConstant(property_cell_value_map));
-        property_cell_value_type = Type::TaggedPointer();
+        if (!property_cell_value_map->is_stable()) return NoChange();
+        dependencies()->AssumeMapStable(property_cell_value_map);
+
+        // Check that the {value} is a HeapObject.
+        value = effect = graph()->NewNode(simplified()->CheckHeapObject(),
+                                          value, effect, control);
+
+        // Check {value} map agains the {property_cell} map.
+        effect = graph()->NewNode(
+            simplified()->CheckMaps(1), value,
+            jsgraph()->HeapConstant(property_cell_value_map), effect, control);
+        property_cell_value_type = Type::OtherInternal();
+        representation = MachineRepresentation::kTaggedPointer;
+      } else {
+        // Check that the {value} is a Smi.
+        value = effect =
+            graph()->NewNode(simplified()->CheckSmi(), value, effect, control);
+        property_cell_value_type = Type::SignedSmall();
+        representation = MachineRepresentation::kTaggedSigned;
       }
-      control = effect = graph()->NewNode(common()->DeoptimizeUnless(), check,
-                                          frame_state, effect, control);
       effect = graph()->NewNode(
-          simplified()->StoreField(
-              AccessBuilder::ForPropertyCellValue(property_cell_value_type)),
+          simplified()->StoreField(ForPropertyCellValue(
+              representation, property_cell_value_type, name)),
           jsgraph()->HeapConstant(property_cell), value, effect, control);
       break;
     }
@@ -217,7 +246,8 @@ Reduction JSGlobalObjectSpecialization::ReduceJSStoreGlobal(Node* node) {
         dependencies()->AssumePropertyCell(property_cell);
       }
       effect = graph()->NewNode(
-          simplified()->StoreField(AccessBuilder::ForPropertyCellValue()),
+          simplified()->StoreField(ForPropertyCellValue(
+              MachineRepresentation::kTagged, Type::NonInternal(), name)),
           jsgraph()->HeapConstant(property_cell), value, effect, control);
       break;
     }
@@ -249,7 +279,7 @@ bool JSGlobalObjectSpecialization::LookupInScriptContextTable(
   Handle<Context> script_context = ScriptContextTable::GetContext(
       script_context_table, lookup_result.context_index);
   result->context = script_context;
-  result->immutable = IsImmutableVariableMode(lookup_result.mode);
+  result->immutable = lookup_result.mode == CONST;
   result->index = lookup_result.slot_index;
   return true;
 }

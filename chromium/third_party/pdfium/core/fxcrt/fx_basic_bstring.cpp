@@ -9,11 +9,14 @@
 #include <algorithm>
 #include <cctype>
 
-#include "core/fxcrt/include/fx_basic.h"
+#include "core/fxcrt/cfx_string_pool_template.h"
+#include "core/fxcrt/fx_basic.h"
 #include "third_party/base/numerics/safe_math.h"
 
 template class CFX_StringDataTemplate<FX_CHAR>;
 template class CFX_StringCTemplate<FX_CHAR>;
+template class CFX_StringPoolTemplate<CFX_ByteString>;
+template struct std::hash<CFX_ByteString>;
 
 namespace {
 
@@ -202,6 +205,9 @@ bool CFX_ByteString::operator==(const CFX_ByteStringC& str) const {
 }
 
 bool CFX_ByteString::operator==(const CFX_ByteString& other) const {
+  if (m_pData == other.m_pData)
+    return true;
+
   if (IsEmpty())
     return other.IsEmpty();
 
@@ -211,6 +217,15 @@ bool CFX_ByteString::operator==(const CFX_ByteString& other) const {
   return other.m_pData->m_nDataLength == m_pData->m_nDataLength &&
          FXSYS_memcmp(other.m_pData->m_String, m_pData->m_String,
                       m_pData->m_nDataLength) == 0;
+}
+
+bool CFX_ByteString::operator<(const CFX_ByteString& str) const {
+  if (m_pData == str.m_pData)
+    return false;
+
+  int result = FXSYS_memcmp(c_str(), str.c_str(),
+                            std::min(GetLength(), str.GetLength()));
+  return result < 0 || (result == 0 && GetLength() < str.GetLength());
 }
 
 bool CFX_ByteString::EqualNoCase(const CFX_ByteStringC& str) const {

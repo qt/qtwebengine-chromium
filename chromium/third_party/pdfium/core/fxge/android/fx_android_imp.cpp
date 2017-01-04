@@ -4,7 +4,7 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_system.h"
 
 #if _FX_OS_ == _FX_ANDROID_
 
@@ -13,7 +13,7 @@
 
 #include "core/fxge/android/fpf_skiamodule.h"
 #include "core/fxge/android/fx_android_font.h"
-#include "core/fxge/include/fx_ge.h"
+#include "core/fxge/cfx_gemodule.h"
 
 void CFX_GEModule::InitPlatform() {
   CFPF_SkiaDeviceModule* pDeviceModule = CFPF_GetSkiaDeviceModule();

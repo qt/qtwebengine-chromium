@@ -11,10 +11,9 @@
 
 #include <memory>
 
-#include "testing/gtest/include/gtest/gtest.h"
-
 #include "webrtc/base/arraysize.h"
 #include "webrtc/modules/video_coding/codecs/h264/h264_video_toolbox_nalu.h"
+#include "webrtc/test/gtest.h"
 
 #if defined(WEBRTC_VIDEO_TOOLBOX_SUPPORTED)
 
@@ -27,9 +26,17 @@ TEST(H264VideoToolboxNaluTest, TestHasVideoFormatDescription) {
   const uint8_t sps_buffer[] = {0x00, 0x00, 0x00, 0x01, 0x27};
   EXPECT_TRUE(H264AnnexBBufferHasVideoFormatDescription(sps_buffer,
                                                         arraysize(sps_buffer)));
+  const uint8_t aud_sps_buffer[] = {0x00, 0x00, 0x00, 0x01, 0x29, 0x10,
+                                    0x00, 0x00, 0x00, 0x01, 0x27, 0xFF};
+  EXPECT_TRUE(H264AnnexBBufferHasVideoFormatDescription(
+      aud_sps_buffer, arraysize(aud_sps_buffer)));
   const uint8_t other_buffer[] = {0x00, 0x00, 0x00, 0x01, 0x28};
   EXPECT_FALSE(H264AnnexBBufferHasVideoFormatDescription(
       other_buffer, arraysize(other_buffer)));
+  const uint8_t aud_other_buffer[] = {0x00, 0x00, 0x00, 0x01, 0x29,
+                                      0x00, 0x00, 0x00, 0x01, 0x28};
+  EXPECT_FALSE(H264AnnexBBufferHasVideoFormatDescription(
+      aud_other_buffer, arraysize(aud_other_buffer)));
 }
 
 TEST(H264VideoToolboxNaluTest, TestCreateVideoFormatDescription) {

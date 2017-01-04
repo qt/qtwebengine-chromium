@@ -5,11 +5,13 @@
 #include "src/debug/debug-evaluate.h"
 
 #include "src/accessors.h"
+#include "src/compiler.h"
 #include "src/contexts.h"
-#include "src/debug/debug.h"
 #include "src/debug/debug-frames.h"
 #include "src/debug/debug-scopes.h"
+#include "src/debug/debug.h"
 #include "src/frames-inl.h"
+#include "src/globals.h"
 #include "src/isolate-inl.h"
 
 namespace v8 {
@@ -54,8 +56,9 @@ MaybeHandle<Object> DebugEvaluate::Local(Isolate* isolate,
   DisableBreak disable_break_scope(isolate->debug(), disable_break);
 
   // Get the frame where the debugging is performed.
-  JavaScriptFrameIterator it(isolate, frame_id);
-  JavaScriptFrame* frame = it.frame();
+  StackTraceFrameIterator it(isolate, frame_id);
+  if (!it.is_javascript()) return isolate->factory()->undefined_value();
+  JavaScriptFrame* frame = it.javascript_frame();
 
   // Traverse the saved contexts chain to find the active context for the
   // selected frame.
@@ -91,15 +94,21 @@ MaybeHandle<Object> DebugEvaluate::Evaluate(
   if (context_extension->IsJSObject()) {
     Handle<JSObject> extension = Handle<JSObject>::cast(context_extension);
     Handle<JSFunction> closure(context->closure(), isolate);
-    context = isolate->factory()->NewWithContext(closure, context, extension);
+    context = isolate->factory()->NewWithContext(
+        closure, context,
+        ScopeInfo::CreateForWithScope(
+            isolate, context->IsNativeContext()
+                         ? Handle<ScopeInfo>::null()
+                         : Handle<ScopeInfo>(context->scope_info())),
+        extension);
   }
 
   Handle<JSFunction> eval_fun;
   ASSIGN_RETURN_ON_EXCEPTION(
       isolate, eval_fun,
-      Compiler::GetFunctionFromEval(
-          source, outer_info, context, SLOPPY, NO_PARSE_RESTRICTION,
-          RelocInfo::kNoPosition, RelocInfo::kNoPosition),
+      Compiler::GetFunctionFromEval(source, outer_info, context, SLOPPY,
+                                    NO_PARSE_RESTRICTION, kNoSourcePosition,
+                                    kNoSourcePosition),
       Object);
 
   Handle<Object> result;
@@ -126,8 +135,7 @@ DebugEvaluate::ContextBuilder::ContextBuilder(Isolate* isolate,
       frame_(frame),
       inlined_jsframe_index_(inlined_jsframe_index) {
   FrameInspector frame_inspector(frame, inlined_jsframe_index, isolate);
-  Handle<JSFunction> local_function =
-      Handle<JSFunction>::cast(frame_inspector.GetFunction());
+  Handle<JSFunction> local_function = frame_inspector.GetFunction();
   Handle<Context> outer_context(local_function->context());
   evaluation_context_ = outer_context;
   outer_info_ = handle(local_function->shared());
@@ -201,8 +209,13 @@ DebugEvaluate::ContextBuilder::ContextBuilder(Isolate* isolate,
   }
 
   for (int i = context_chain_.length() - 1; i >= 0; i--) {
+    Handle<ScopeInfo> scope_info(ScopeInfo::CreateForWithScope(
+        isolate, evaluation_context_->IsNativeContext()
+                     ? Handle<ScopeInfo>::null()
+                     : Handle<ScopeInfo>(evaluation_context_->scope_info())));
+    scope_info->SetIsDebugEvaluateScope();
     evaluation_context_ = factory->NewDebugEvaluateContext(
-        evaluation_context_, context_chain_[i].materialized_object,
+        evaluation_context_, scope_info, context_chain_[i].materialized_object,
         context_chain_[i].wrapped_context, context_chain_[i].whitelist);
   }
 }

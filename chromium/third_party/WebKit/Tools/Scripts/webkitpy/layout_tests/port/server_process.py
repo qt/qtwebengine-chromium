@@ -78,7 +78,8 @@ class ServerProcess(object):
     implements a simple request/response usage model. The primary benefit
     is that reading responses takes a deadline, so that we don't ever block
     indefinitely. The class also handles transparently restarting processes
-    as necessary to keep issuing commands."""
+    as necessary to keep issuing commands.
+    """
 
     def __init__(self, port_obj, name, cmd, env=None, universal_newlines=False, treat_no_data_as_crash=False,
                  more_logging=False):
@@ -155,7 +156,8 @@ class ServerProcess(object):
     def _handle_possible_interrupt(self):
         """This routine checks to see if the process crashed or exited
         because of a keyboard interrupt and raises KeyboardInterrupt
-        accordingly."""
+        accordingly.
+        """
         # FIXME: Linux and Mac set the returncode to -signal.SIGINT if a
         # subprocess is killed with a ctrl^C.  Previous comments in this
         # routine said that supposedly Windows returns 0xc000001d, but that's not what
@@ -166,20 +168,22 @@ class ServerProcess(object):
 
     def poll(self):
         """Check to see if the underlying process is running; returns None
-        if it still is (wrapper around subprocess.poll)."""
+        if it still is (wrapper around subprocess.poll).
+        """
         if self._proc:
             return self._proc.poll()
         return None
 
     def write(self, bytes):
         """Write a request to the subprocess. The subprocess is (re-)start()'ed
-        if is not already running."""
+        if is not already running.
+        """
         if not self._proc:
             self._start()
         try:
             self._log_data(' IN', bytes)
             self._proc.stdin.write(bytes)
-        except IOError as e:
+        except IOError:
             self.stop(0.0)
             # stop() calls _reset(), so we have to set crashed to True after calling stop().
             self._crashed = True
@@ -381,12 +385,12 @@ class ServerProcess(object):
             while self._proc.poll() is None and time.time() < deadline:
                 time.sleep(0.01)
             if self._proc.poll() is None:
-                _log.warning('stopping %s(pid %d) timed out, killing it' % (self._name, self._proc.pid))
+                _log.warning('stopping %s(pid %d) timed out, killing it', self._name, self._proc.pid)
 
         if self._proc.poll() is None:
             self._kill()
             killed = True
-            _log.debug('killed pid %d' % self._proc.pid)
+            _log.debug('killed pid %d', self._proc.pid)
 
         # read any remaining data on the pipes and return it.
         if not killed:

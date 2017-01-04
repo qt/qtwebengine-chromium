@@ -11,6 +11,7 @@
 
 #include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
+#include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "storage/browser/fileapi/file_system_usage_cache.h"
 #include "storage/browser/fileapi/obfuscated_file_util.h"
@@ -101,7 +102,7 @@ class QuotaBackendImplTest : public testing::Test {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
     file_util_.reset(ObfuscatedFileUtil::CreateForTesting(
-        NULL, data_dir_.path(), in_memory_env_.get(), file_task_runner()));
+        NULL, data_dir_.GetPath(), in_memory_env_.get(), file_task_runner()));
     backend_.reset(new QuotaBackendImpl(file_task_runner(),
                                         file_util_.get(),
                                         &file_system_usage_cache_,
@@ -112,7 +113,7 @@ class QuotaBackendImplTest : public testing::Test {
     backend_.reset();
     quota_manager_proxy_ = NULL;
     file_util_.reset();
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
  protected:

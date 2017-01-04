@@ -2,12 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/v8_target_cpu.gni")
 import("//build/config/sanitizers/sanitizers.gni")
+import("//build/config/v8_target_cpu.gni")
 
 declare_args() {
+  # Indicate if valgrind was fetched as a custom deps to make it available on
+  # swarming.
+  v8_has_valgrind = false
+
+  # Indicate if gcmole was fetched as a hook to make it available on swarming.
+  v8_gcmole = false
+
   # Turns on compiler optimizations in V8 in Debug build.
   v8_optimized_debug = true
+
+  # Support for backtrace_symbols on linux.
+  v8_enable_backtrace = ""
 
   # Enable the snapshot feature, for fast context creation.
   # http://v8project.blogspot.com/2015/09/custom-startup-snapshots.html
@@ -15,7 +25,17 @@ declare_args() {
 
   # Use external files for startup data blobs:
   # the JS builtins sources and the start snapshot.
-  v8_use_external_startup_data = !is_ios
+  v8_use_external_startup_data = ""
+}
+
+if (v8_use_external_startup_data == "") {
+  # If not specified as a gn arg, use external startup data by default if
+  # a snapshot is used and if we're not on ios.
+  v8_use_external_startup_data = v8_use_snapshot && !is_ios
+}
+
+if (v8_enable_backtrace == "") {
+  v8_enable_backtrace = is_debug && !v8_optimized_debug
 }
 
 ###############################################################################
@@ -25,29 +45,34 @@ declare_args() {
 # Points to // in v8 stand-alone or to //v8/ in chromium. We need absolute
 # paths for all configs in templates as they are shared in different
 # subdirectories.
-path_prefix = get_path_info("../", "abspath")
+v8_path_prefix = get_path_info("../", "abspath")
 
 # Common configs to remove or add in all v8 targets.
-remove_configs = [ "//build/config/compiler:chromium_code" ]
-add_configs = [
+v8_remove_configs = [ "//build/config/compiler:chromium_code" ]
+v8_add_configs = [
   "//build/config/compiler:no_chromium_code",
-  path_prefix + ":features",
-  path_prefix + ":toolchain",
+  v8_path_prefix + ":features",
+  v8_path_prefix + ":toolchain",
 ]
 
 if (is_debug && !v8_optimized_debug) {
-  remove_configs += [ "//build/config/compiler:default_optimization" ]
-  add_configs += [ "//build/config/compiler:no_optimize" ]
+  v8_remove_configs += [ "//build/config/compiler:default_optimization" ]
+  v8_add_configs += [ "//build/config/compiler:no_optimize" ]
 } else {
-  remove_configs += [ "//build/config/compiler:default_optimization" ]
+  v8_remove_configs += [ "//build/config/compiler:default_optimization" ]
 
   # TODO(crbug.com/621335) Rework this so that we don't have the confusion
   # between "optimize_speed" and "optimize_max".
-  if (is_posix && !is_android && !is_nacl && !using_sanitizer) {
-    add_configs += [ "//build/config/compiler:optimize_speed" ]
+  if (is_posix && !is_android && !using_sanitizer) {
+    v8_add_configs += [ "//build/config/compiler:optimize_speed" ]
   } else {
-    add_configs += [ "//build/config/compiler:optimize_max" ]
+    v8_add_configs += [ "//build/config/compiler:optimize_max" ]
   }
+}
+
+if (is_posix && v8_enable_backtrace) {
+  v8_remove_configs += [ "//build/config/gcc:symbol_visibility_hidden" ]
+  v8_add_configs += [ "//build/config/gcc:symbol_visibility_default" ]
 }
 
 # All templates should be kept in sync.
@@ -55,8 +80,8 @@ template("v8_source_set") {
   source_set(target_name) {
     forward_variables_from(invoker, "*", [ "configs" ])
     configs += invoker.configs
-    configs -= remove_configs
-    configs += add_configs
+    configs -= v8_remove_configs
+    configs += v8_add_configs
   }
 }
 
@@ -64,8 +89,12 @@ template("v8_executable") {
   executable(target_name) {
     forward_variables_from(invoker, "*", [ "configs" ])
     configs += invoker.configs
-    configs -= remove_configs
-    configs += add_configs
+    configs -= v8_remove_configs
+    configs += v8_add_configs
+    if (is_linux) {
+      # For enabling ASLR.
+      ldflags = [ "-pie" ]
+    }
   }
 }
 
@@ -73,7 +102,7 @@ template("v8_component") {
   component(target_name) {
     forward_variables_from(invoker, "*", [ "configs" ])
     configs += invoker.configs
-    configs -= remove_configs
-    configs += add_configs
+    configs -= v8_remove_configs
+    configs += v8_add_configs
   }
 }

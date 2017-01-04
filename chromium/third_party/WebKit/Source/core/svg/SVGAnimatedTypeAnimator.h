@@ -23,8 +23,6 @@
 
 #include "core/svg/properties/SVGPropertyInfo.h"
 #include "platform/heap/Handle.h"
-#include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -34,48 +32,38 @@ class SVGPropertyBase;
 class SVGElement;
 class SVGAnimationElement;
 
-// The size of SVGElementInstances is 1 unless there is a <use> instance of the element.
-using SVGElementInstances = HeapVector<Member<SVGElement>, 1u>;
-
 class SVGAnimatedTypeAnimator final {
-    DISALLOW_NEW();
-public:
-    SVGAnimatedTypeAnimator(SVGAnimationElement*);
+  DISALLOW_NEW();
 
-    void clear();
-    void reset(SVGElement* contextElement);
+ public:
+  SVGAnimatedTypeAnimator(SVGAnimationElement*);
 
-    SVGPropertyBase* constructFromString(const String&);
+  void clear();
+  void reset(SVGElement* contextElement);
 
-    SVGPropertyBase* startAnimValAnimation(const SVGElementInstances&);
-    void stopAnimValAnimation(const SVGElementInstances&);
-    SVGPropertyBase* resetAnimValToBaseVal(const SVGElementInstances&);
+  SVGPropertyBase* createAnimatedValue() const;
+  SVGPropertyBase* createPropertyForAnimation(const String&) const;
 
-    void calculateAnimatedValue(float percentage, unsigned repeatCount, SVGPropertyBase*, SVGPropertyBase*, SVGPropertyBase*, SVGPropertyBase*);
-    float calculateDistance(const String& fromString, const String& toString);
+  void setContextElement(SVGElement* contextElement) {
+    m_contextElement = contextElement;
+  }
+  AnimatedPropertyType type() const { return m_type; }
 
-    void calculateFromAndToValues(Member<SVGPropertyBase>& from, Member<SVGPropertyBase>& to, const String& fromString, const String& toString);
-    void calculateFromAndByValues(Member<SVGPropertyBase>& from, Member<SVGPropertyBase>& to, const String& fromString, const String& byString);
+  bool isAnimatingSVGDom() const { return m_animatedProperty; }
+  bool isAnimatingCSSProperty() const { return !m_animatedProperty; }
 
-    void setContextElement(SVGElement* contextElement) { m_contextElement = contextElement; }
-    AnimatedPropertyType type() const { return m_type; }
+  DECLARE_TRACE();
 
-    bool isAnimatingSVGDom() const { return m_animatedProperty; }
-    bool isAnimatingCSSProperty() const { return !m_animatedProperty; }
+ private:
+  SVGPropertyBase* createPropertyForAttributeAnimation(const String&) const;
+  SVGPropertyBase* createPropertyForCSSAnimation(const String&) const;
 
-    DECLARE_TRACE();
-
-private:
-    friend class ParsePropertyFromString;
-    SVGPropertyBase* createPropertyForAnimation(const String&);
-    SVGPropertyBase* resetAnimation(const SVGElementInstances&);
-
-    Member<SVGAnimationElement> m_animationElement;
-    Member<SVGElement> m_contextElement;
-    Member<SVGAnimatedPropertyBase> m_animatedProperty;
-    AnimatedPropertyType m_type;
+  Member<SVGAnimationElement> m_animationElement;
+  Member<SVGElement> m_contextElement;
+  Member<SVGAnimatedPropertyBase> m_animatedProperty;
+  AnimatedPropertyType m_type;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // SVGAnimatedTypeAnimator_h
+#endif  // SVGAnimatedTypeAnimator_h

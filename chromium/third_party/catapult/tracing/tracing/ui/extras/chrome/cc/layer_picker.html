@@ -7,14 +7,15 @@ found in the LICENSE file.
 
 <link rel="stylesheet" href="/tracing/ui/extras/chrome/cc/layer_picker.css">
 
+<link rel="import" href="/tracing/base/unit.html">
 <link rel="import" href="/tracing/extras/chrome/cc/constants.html">
 <link rel="import" href="/tracing/extras/chrome/cc/layer_tree_host_impl.html">
 <link rel="import" href="/tracing/extras/chrome/cc/util.html">
-<link rel="import" href="/tracing/ui/analysis/generic_object_view.html">
 <link rel="import" href="/tracing/model/event.html">
+<link rel="import" href="/tracing/ui/analysis/generic_object_view.html">
+<link rel="import" href="/tracing/ui/base/dom_helpers.html">
 <link rel="import" href="/tracing/ui/base/drag_handle.html">
 <link rel="import" href="/tracing/ui/base/list_view.html">
-<link rel="import" href="/tracing/ui/base/dom_helpers.html">
 <link rel="import" href="/tracing/ui/extras/chrome/cc/selection.html">
 
 <script>
@@ -22,7 +23,6 @@ found in the LICENSE file.
 
 tr.exportTo('tr.ui.e.chrome.cc', function() {
   var constants = tr.e.cc.constants;
-  var bytesToRoundedMegabytes = tr.e.cc.bytesToRoundedMegabytes;
   var RENDER_PASS_QUADS =
       Math.max(constants.ACTIVE_TREE, constants.PENDING_TREE) + 1;
 
@@ -41,14 +41,14 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
 
 
       this.itemList_ = new tr.ui.b.ListView();
-      this.appendChild(this.controls_);
+      Polymer.dom(this).appendChild(this.controls_);
 
-      this.appendChild(this.itemList_);
+      Polymer.dom(this).appendChild(this.itemList_);
 
       this.itemList_.addEventListener(
           'selection-changed', this.onItemSelectionChanged_.bind(this));
 
-      this.controls_.appendChild(tr.ui.b.createSelector(
+      Polymer.dom(this.controls_).appendChild(tr.ui.b.createSelector(
           this, 'whichTree',
           'layerPicker.whichTree', constants.ACTIVE_TREE,
           [{label: 'Active tree', value: constants.ACTIVE_TREE},
@@ -60,10 +60,11 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
           this, 'showPureTransformLayers',
           'layerPicker.showPureTransformLayers', false,
           'Transform layers');
-      showPureTransformLayers.classList.add('show-transform-layers');
+      Polymer.dom(showPureTransformLayers).classList.add(
+          'show-transform-layers');
       showPureTransformLayers.title =
           'When checked, pure transform layers are shown';
-      this.controls_.appendChild(showPureTransformLayers);
+      Polymer.dom(this.controls_).appendChild(showPureTransformLayers);
     },
 
     get lthiSnapshot() {
@@ -81,7 +82,7 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
 
     set whichTree(whichTree) {
       this.whichTree_ = whichTree;
-      this.renderPassQuads_ = (whichTree == RENDER_PASS_QUADS);
+      this.renderPassQuads_ = (whichTree === RENDER_PASS_QUADS);
       this.updateContents_();
       tr.b.dispatchSimpleEvent(this, 'selection-change', false);
     },
@@ -141,8 +142,8 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
 
       function isPureTransformLayer(layer) {
         if (layer.args.compositingReasons &&
-            layer.args.compositingReasons.length != 1 &&
-            layer.args.compositingReasons[0] != 'No reasons given')
+            layer.args.compositingReasons.length !== 1 &&
+            layer.args.compositingReasons[0] !== 'No reasons given')
           return false;
 
         if (layer.args.drawsContent)
@@ -172,7 +173,7 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
         if (showPureTransformLayers || !isPureTransformLayer(layer))
           layerInfos.push(info);
 
-      };
+      }
       tree.iterLayers(visitLayer);
       return layerInfos;
     },
@@ -197,14 +198,14 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
         var id = renderPassInfo.id;
 
         var item = this.createElementWithDepth_(renderPassInfo.depth);
-        var labelEl = item.appendChild(tr.ui.b.createSpan());
+        var labelEl = Polymer.dom(item).appendChild(tr.ui.b.createSpan());
 
-        labelEl.textContent = renderPassInfo.name + ' ' + id;
+        Polymer.dom(labelEl).textContent = renderPassInfo.name + ' ' + id;
         item.renderPass = renderPass;
         item.renderPassId = id;
-        this.itemList_.appendChild(item);
+        Polymer.dom(this.itemList_).appendChild(item);
 
-        if (id == selectedRenderPassId) {
+        if (id === selectedRenderPassId) {
           renderPass.selectionState =
               tr.model.SelectionState.SELECTED;
         }
@@ -226,26 +227,27 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
           var id = layer.layerId;
 
           var item = this.createElementWithDepth_(layerInfo.depth);
-          var labelEl = item.appendChild(tr.ui.b.createSpan());
+          var labelEl = Polymer.dom(item).appendChild(tr.ui.b.createSpan());
 
-          labelEl.textContent = layerInfo.name + ' ' + id;
+          Polymer.dom(labelEl).textContent = layerInfo.name + ' ' + id;
 
-          var notesEl = item.appendChild(tr.ui.b.createSpan());
+          var notesEl = Polymer.dom(item).appendChild(tr.ui.b.createSpan());
           if (layerInfo.isMaskLayer)
-            notesEl.textContent += '(mask)';
+            Polymer.dom(notesEl).textContent += '(mask)';
           if (layerInfo.isReplicaLayer)
-            notesEl.textContent += '(replica)';
+            Polymer.dom(notesEl).textContent += '(replica)';
 
-          if (layer.gpuMemoryUsageInBytes !== undefined) {
-            var rounded = bytesToRoundedMegabytes(layer.gpuMemoryUsageInBytes);
-            if (rounded !== 0)
-              notesEl.textContent += ' (' + rounded + ' MB)';
-          }
+          if ((layer.gpuMemoryUsageInBytes !== undefined) &&
+              (layer.gpuMemoryUsageInBytes > 0)) {
+            var gpuUsageStr = tr.b.Unit.byName.sizeInBytes.format(
+                layer.gpuMemoryUsageInBytes);
+            Polymer.dom(notesEl).textContent += ' (' + gpuUsageStr + ' MiB)';
+            }
 
           item.layer = layer;
-          this.itemList_.appendChild(item);
+          Polymer.dom(this.itemList_).appendChild(item);
 
-          if (layer.layerId == selectedLayerId) {
+          if (layer.layerId === selectedLayerId) {
             layer.selectionState = tr.model.SelectionState.SELECTED;
             item.selected = true;
           }
@@ -258,10 +260,12 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
     createElementWithDepth_: function(depth) {
       var item = document.createElement('div');
 
-      var indentEl = item.appendChild(tr.ui.b.createSpan());
+      var indentEl = Polymer.dom(item).appendChild(tr.ui.b.createSpan());
       indentEl.style.whiteSpace = 'pre';
-      for (var i = 0; i < depth; i++)
-        indentEl.textContent = indentEl.textContent + ' ';
+      for (var i = 0; i < depth; i++) {
+        Polymer.dom(indentEl).textContent =
+            Polymer.dom(indentEl).textContent + ' ';
+      }
       return item;
     },
 
@@ -308,7 +312,7 @@ tr.exportTo('tr.ui.e.chrome.cc', function() {
     },
 
     set selection(selection) {
-      if (this.selection_ == selection)
+      if (this.selection_ === selection)
         return;
       this.selection_ = selection;
       this.updateContents_();

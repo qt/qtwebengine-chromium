@@ -29,17 +29,22 @@ WebInspector.ServiceWorkersView.prototype = {
      */
     targetAdded: function(target)
     {
-        if (this._target || !target.serviceWorkerManager)
+        var securityOriginManager = WebInspector.SecurityOriginManager.fromTarget(target);
+        if (this._manager || !target.serviceWorkerManager || !securityOriginManager)
             return;
-        this._target = target;
-        this._manager = this._target.serviceWorkerManager;
+        this._manager = target.serviceWorkerManager;
+        this._subTargetsManager = target.subTargetsManager;
+        this._securityOriginManager = securityOriginManager;
 
         this._toolbar.appendToolbarItem(WebInspector.NetworkConditionsSelector.createOfflineToolbarCheckbox());
         var forceUpdate = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Update on reload"), WebInspector.UIString("Force update Service Worker on page reload"), this._manager.forceUpdateOnReloadSetting());
         this._toolbar.appendToolbarItem(forceUpdate);
-        var fallbackToNetwork = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Bypass for network"), WebInspector.UIString("Bypass Service Worker and load resources from the network"), target.networkManager.bypassServiceWorkerSetting());
-        this._toolbar.appendToolbarItem(fallbackToNetwork);
-        this._toolbar.appendSpacer();
+        var networkManager = target && WebInspector.NetworkManager.fromTarget(target);
+        if (networkManager) {
+            var fallbackToNetwork = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Bypass for network"), WebInspector.UIString("Bypass Service Worker and load resources from the network"), networkManager.bypassServiceWorkerSetting());
+            this._toolbar.appendToolbarItem(fallbackToNetwork);
+            this._toolbar.appendSpacer();
+        }
         this._showAllCheckbox = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Show all"), WebInspector.UIString("Show all Service Workers regardless of the origin"));
         this._showAllCheckbox.inputElement.addEventListener("change", this._updateSectionVisibility.bind(this), false);
         this._toolbar.appendToolbarItem(this._showAllCheckbox);
@@ -50,8 +55,8 @@ WebInspector.ServiceWorkersView.prototype = {
         this._manager.addEventListener(WebInspector.ServiceWorkerManager.Events.RegistrationUpdated, this._registrationUpdated, this);
         this._manager.addEventListener(WebInspector.ServiceWorkerManager.Events.RegistrationDeleted, this._registrationDeleted, this);
         this._manager.addEventListener(WebInspector.ServiceWorkerManager.Events.RegistrationErrorAdded, this._registrationErrorAdded, this);
-        this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.SecurityOriginAdded, this._updateSectionVisibility, this);
-        this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.SecurityOriginRemoved, this._updateSectionVisibility, this);
+        securityOriginManager.addEventListener(WebInspector.SecurityOriginManager.Events.SecurityOriginAdded, this._updateSectionVisibility, this);
+        securityOriginManager.addEventListener(WebInspector.SecurityOriginManager.Events.SecurityOriginRemoved, this._updateSectionVisibility, this);
     },
 
     /**
@@ -60,14 +65,15 @@ WebInspector.ServiceWorkersView.prototype = {
      */
     targetRemoved: function(target)
     {
-        if (target !== this._target)
+        if (this._manager !== target.serviceWorkerManager)
             return;
-        delete this._target;
+        this._manager = null;
+        this._securityOriginManager = null;
     },
 
     _updateSectionVisibility: function()
     {
-        var securityOrigins = new Set(this._target.resourceTreeModel.securityOrigins());
+        var securityOrigins = new Set(this._securityOriginManager.securityOrigins());
         for (var section of this._sections.values()) {
             var visible = this._showAllCheckbox.checked() || securityOrigins.has(section._registration.securityOrigin);
             section._section.element.classList.toggle("hidden", !visible);
@@ -103,7 +109,7 @@ WebInspector.ServiceWorkersView.prototype = {
     {
         var section = this._sections.get(registration);
         if (!section) {
-            section = new WebInspector.ServiceWorkersView.Section(this._manager, this._reportView.appendSection(""), registration);
+            section = new WebInspector.ServiceWorkersView.Section(this._manager, this._subTargetsManager, this._reportView.appendSection(""), registration);
             this._sections.set(registration, section);
         }
         this._updateSectionVisibility();
@@ -128,12 +134,14 @@ WebInspector.ServiceWorkersView.prototype = {
 /**
  * @constructor
  * @param {!WebInspector.ServiceWorkerManager} manager
+ * @param {!WebInspector.SubTargetsManager} subTargetsManager
  * @param {!WebInspector.ReportView.Section} section
  * @param {!WebInspector.ServiceWorkerRegistration} registration
  */
-WebInspector.ServiceWorkersView.Section = function(manager, section, registration)
+WebInspector.ServiceWorkersView.Section = function(manager, subTargetsManager, section, registration)
 {
     this._manager = manager;
+    this._subTargetsManager = subTargetsManager;
     this._section = section;
     this._registration = registration;
 
@@ -179,6 +187,18 @@ WebInspector.ServiceWorkersView.Section.prototype = {
     },
 
     /**
+     * @param {string} versionId
+     * @return {?WebInspector.Target}
+     */
+    _targetForVersionId: function(versionId)
+    {
+        var version = this._manager.findVersion(versionId);
+        if (!version || !version.targetId)
+            return null;
+        return this._subTargetsManager.targetForId(version.targetId);
+    },
+
+    /**
      * @return {!Promise}
      */
     _update: function()
@@ -216,7 +236,7 @@ WebInspector.ServiceWorkersView.Section.prototype = {
 
             if (active.isRunning() || active.isStarting()) {
                 createLink(activeEntry, WebInspector.UIString("stop"), this._stopButtonClicked.bind(this, active.id));
-                if (!this._manager.targetForVersionId(active.id))
+                if (!this._targetForVersionId(active.id))
                     createLink(activeEntry, WebInspector.UIString("inspect"), this._inspectButtonClicked.bind(this, active.id));
             } else if (active.isStartable()) {
                 createLink(activeEntry, WebInspector.UIString("start"), this._startButtonClicked.bind(this));
@@ -229,7 +249,7 @@ WebInspector.ServiceWorkersView.Section.prototype = {
                 var clientLabelText = clientsList.createChild("div", "service-worker-client");
                 if (this._clientInfoCache.has(client))
                     this._updateClientInfo(clientLabelText, /** @type {!WebInspector.TargetInfo} */(this._clientInfoCache.get(client)));
-                this._manager.getTargetInfo(client, this._onClientInfo.bind(this, clientLabelText));
+                this._subTargetsManager.getTargetInfo(client, this._onClientInfo.bind(this, clientLabelText));
             }
         }
 
@@ -239,7 +259,7 @@ WebInspector.ServiceWorkersView.Section.prototype = {
             waitingEntry.createChild("span").textContent = WebInspector.UIString("#%s waiting to activate", waiting.id);
             createLink(waitingEntry, WebInspector.UIString("skipWaiting"), this._skipButtonClicked.bind(this));
             waitingEntry.createChild("div", "service-worker-subtitle").textContent = new Date(waiting.scriptResponseTime * 1000).toLocaleString();
-            if (!this._manager.targetForVersionId(waiting.id) && (waiting.isRunning() || waiting.isStarting()))
+            if (!this._targetForVersionId(waiting.id) && (waiting.isRunning() || waiting.isStarting()))
                 createLink(waitingEntry, WebInspector.UIString("inspect"), this._inspectButtonClicked.bind(this, waiting.id));
         }
         if (installing) {
@@ -247,7 +267,7 @@ WebInspector.ServiceWorkersView.Section.prototype = {
             installingEntry.createChild("div", "service-worker-installing-circle");
             installingEntry.createChild("span").textContent = WebInspector.UIString("#%s installing", installing.id);
             installingEntry.createChild("div", "service-worker-subtitle").textContent = new Date(installing.scriptResponseTime * 1000).toLocaleString();
-            if (!this._manager.targetForVersionId(installing.id) && (installing.isRunning() || installing.isStarting()))
+            if (!this._targetForVersionId(installing.id) && (installing.isRunning() || installing.isStarting()))
                 createLink(installingEntry, WebInspector.UIString("inspect"), this._inspectButtonClicked.bind(this, installing.id));
         }
 
@@ -280,7 +300,7 @@ WebInspector.ServiceWorkersView.Section.prototype = {
      */
     _addError: function(error)
     {
-        var target = this._manager.targetForVersionId(error.versionId);
+        var target = this._targetForVersionId(error.versionId);
         var message = this._errorsList.createChild("div");
         if (this._errorsList.childElementCount > 100)
             this._errorsList.firstElementChild.remove();
@@ -329,8 +349,8 @@ WebInspector.ServiceWorkersView.Section.prototype = {
      */
     _updateClientInfo: function(element, targetInfo)
     {
-        if (!(targetInfo.isWebContents() || targetInfo.isFrame())) {
-            element.createTextChild(WebInspector.UIString("Worker: %s", targetInfo.url));
+        if (!targetInfo.canActivate) {
+            element.createTextChild(targetInfo.title);
             return;
         }
         element.removeChildren();
@@ -345,7 +365,7 @@ WebInspector.ServiceWorkersView.Section.prototype = {
      */
     _activateTarget: function(targetId)
     {
-        this._manager.activateTarget(targetId);
+        this._subTargetsManager.activateTarget(targetId);
     },
 
     _startButtonClicked: function()

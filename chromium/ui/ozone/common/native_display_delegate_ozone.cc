@@ -21,7 +21,7 @@ void NativeDisplayDelegateOzone::Initialize() {
   DisplaySnapshot_Params params;
   if (CreateSnapshotFromCommandLine(&params)) {
     DCHECK_NE(DISPLAY_CONNECTION_TYPE_NONE, params.type);
-    displays_.push_back(base::WrapUnique(new DisplaySnapshotProxy(params)));
+    displays_.push_back(base::MakeUnique<DisplaySnapshotProxy>(params));
   }
 }
 
@@ -127,6 +127,11 @@ void NativeDisplayDelegateOzone::AddObserver(NativeDisplayObserver* observer) {
 void NativeDisplayDelegateOzone::RemoveObserver(
     NativeDisplayObserver* observer) {
   NOTIMPLEMENTED();
+}
+
+display::FakeDisplayController*
+NativeDisplayDelegateOzone::GetFakeDisplayController() {
+  return nullptr;
 }
 
 }  // namespace ui

@@ -1,0 +1,184 @@
+diff --git a/source/common/putil.cpp b/source/common/putil.cpp
+index c87b60e..9b8e184 100644
+--- a/source/common/putil.cpp
++++ b/source/common/putil.cpp
+@@ -832,7 +832,6 @@ static const char* remapShortTimeZone(const char *stdID, const char *dstID, int3
+ #endif
+ 
+ #ifdef SEARCH_TZFILE
+-#define MAX_PATH_SIZE PATH_MAX /* Set the limit for the size of the path. */
+ #define MAX_READ_SIZE 512
+ 
+ typedef struct DefaultTZInfo {
+@@ -908,15 +907,19 @@ static UBool compareBinaryFiles(const char* defaultTZFileName, const char* TZFil
+ 
+     return result;
+ }
+-/*
+- * This method recursively traverses the directory given for a matching TZ file and returns the first match.
+- */
++
++
+ /* dirent also lists two entries: "." and ".." that we can safely ignore. */
+ #define SKIP1 "."
+ #define SKIP2 ".."
+-static char SEARCH_TZFILE_RESULT[MAX_PATH_SIZE] = "";
++static UBool U_CALLCONV putil_cleanup(void);
++static CharString *gSearchTZFileResult = NULL;
++
++/*
++ * This method recursively traverses the directory given for a matching TZ file and returns the first match.
++ * This function is not thread safe - it uses a global, gSearchTZFileResult, to hold its results.
++ */
+ static char* searchForTZFile(const char* path, DefaultTZInfo* tzInfo) {
+-    char curpath[MAX_PATH_SIZE];
+     DIR* dirp = opendir(path);
+     DIR* subDirp = NULL;
+     struct dirent* dirEntry = NULL;
+@@ -926,24 +929,40 @@ static char* searchForTZFile(const char* path, DefaultTZInfo* tzInfo) {
+         return result;
+     }
+ 
++    if (gSearchTZFileResult == NULL) {
++        gSearchTZFileResult = new CharString;
++        if (gSearchTZFileResult == NULL) {
++            return NULL;
++        }
++        ucln_common_registerCleanup(UCLN_COMMON_PUTIL, putil_cleanup);
++    }
++
+     /* Save the current path */
+-    uprv_memset(curpath, 0, MAX_PATH_SIZE);
+-    uprv_strcpy(curpath, path);
++    UErrorCode status = U_ZERO_ERROR;
++    CharString curpath(path, -1, status);
++    if (U_FAILURE(status)) {
++        return NULL;
++    }
+ 
+     /* Check each entry in the directory. */
+     while((dirEntry = readdir(dirp)) != NULL) {
+         const char* dirName = dirEntry->d_name;
+         if (uprv_strcmp(dirName, SKIP1) != 0 && uprv_strcmp(dirName, SKIP2) != 0) {
+             /* Create a newpath with the new entry to test each entry in the directory. */
+-            char newpath[MAX_PATH_SIZE];
+-            uprv_strcpy(newpath, curpath);
+-            uprv_strcat(newpath, dirName);
++            CharString newpath(curpath, status);
++            newpath.append(dirName, -1, status);
++            if (U_FAILURE(status)) {
++                return NULL;
++            }
+ 
+-            if ((subDirp = opendir(newpath)) != NULL) {
++            if ((subDirp = opendir(newpath.data())) != NULL) {
+                 /* If this new path is a directory, make a recursive call with the newpath. */
+                 closedir(subDirp);
+-                uprv_strcat(newpath, "/");
+-                result = searchForTZFile(newpath, tzInfo);
++                newpath.append('/', status);
++                if (U_FAILURE(status)) {
++                    return NULL;
++                }
++                result = searchForTZFile(newpath.data(), tzInfo);
+                 /*
+                  Have to get out here. Otherwise, we'd keep looking
+                  and return the first match in the top-level directory
+@@ -955,11 +974,19 @@ static char* searchForTZFile(const char* path, DefaultTZInfo* tzInfo) {
+                 if (result != NULL)
+                     break;
+             } else if (uprv_strcmp(TZFILE_SKIP, dirName) != 0 && uprv_strcmp(TZFILE_SKIP2, dirName) != 0) {
+-                if(compareBinaryFiles(TZDEFAULT, newpath, tzInfo)) {
+-                    const char* zoneid = newpath + (sizeof(TZZONEINFO)) - 1;
++                if(compareBinaryFiles(TZDEFAULT, newpath.data(), tzInfo)) {
++                    int32_t amountToSkip = sizeof(TZZONEINFO) - 1;
++                    if (amountToSkip > newpath.length()) {
++                        amountToSkip = newpath.length();
++                    }
++                    const char* zoneid = newpath.data() + amountToSkip;
+                     skipZoneIDPrefix(&zoneid);
+-                    uprv_strcpy(SEARCH_TZFILE_RESULT, zoneid);
+-                    result = SEARCH_TZFILE_RESULT;
++                    gSearchTZFileResult->clear();
++                    gSearchTZFileResult->append(zoneid, -1, status);
++                    if (U_FAILURE(status)) {
++                        return NULL;
++                    }
++                    result = gSearchTZFileResult->data();
+                     /* Get out after the first one found. */
+                     break;
+                 }
+@@ -1144,6 +1171,11 @@ static UBool U_CALLCONV putil_cleanup(void)
+     gTimeZoneFilesDirectory = NULL;
+     gTimeZoneFilesInitOnce.reset();
+ 
++#ifdef SEARCH_TZFILE
++    delete gSearchTZFileResult;
++    gSearchTZFileResult = NULL;
++#endif
++
+ #if U_POSIX_LOCALE || U_PLATFORM_USES_ONLY_WIN32_API
+     if (gCorrectedPOSIXLocale) {
+         uprv_free(gCorrectedPOSIXLocale);
+diff --git a/source/tools/toolutil/filetools.cpp b/source/tools/toolutil/filetools.cpp
+index 238ef7b..9b61c87 100644
+--- a/source/tools/toolutil/filetools.cpp
++++ b/source/tools/toolutil/filetools.cpp
+@@ -4,6 +4,7 @@
+  *******************************************************************************
+  */
+ 
++#include "unicode/platform.h"
+ #if U_PLATFORM == U_PF_MINGW
+ // *cough* - for struct stat
+ #ifdef __STRICT_ANSI__
+@@ -13,6 +14,7 @@
+ 
+ #include "filetools.h"
+ #include "filestrm.h"
++#include "charstr.h"
+ #include "cstring.h"
+ #include "unicode/putil.h"
+ #include "putilimp.h"
+@@ -27,8 +29,6 @@
+ #include <dirent.h>
+ typedef struct dirent DIRENT;
+ 
+-#define MAX_PATH_SIZE 4096 /* Set the limit for the size of the path. */
+-
+ #define SKIP1 "."
+ #define SKIP2 ".."
+ #endif
+@@ -56,20 +56,24 @@ isFileModTimeLater(const char *filePath, const char *checkAgainst, UBool isDir)
+ 
+             while ((dirEntry = readdir(pDir)) != NULL) {
+                 if (uprv_strcmp(dirEntry->d_name, SKIP1) != 0 && uprv_strcmp(dirEntry->d_name, SKIP2) != 0) {
+-                    char newpath[MAX_PATH_SIZE] = "";
+-                    uprv_strcpy(newpath, checkAgainst);
+-                    uprv_strcat(newpath, U_FILE_SEP_STRING);
+-                    uprv_strcat(newpath, dirEntry->d_name);
+-
+-                    if ((subDirp = opendir(newpath)) != NULL) {
++                    UErrorCode status = U_ZERO_ERROR;
++                    icu::CharString newpath(checkAgainst, -1, status);
++                    newpath.append(U_FILE_SEP_STRING, -1, status);
++                    newpath.append(dirEntry->d_name, -1, status);
++                    if (U_FAILURE(status)) {
++                        fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, u_errorName(status));
++                        return FALSE;
++                    };
++
++                    if ((subDirp = opendir(newpath.data())) != NULL) {
+                         /* If this new path is a directory, make a recursive call with the newpath. */
+                         closedir(subDirp);
+-                        isLatest = isFileModTimeLater(filePath, newpath, isDir);
++                        isLatest = isFileModTimeLater(filePath, newpath.data(), isDir);
+                         if (!isLatest) {
+                             break;
+                         }
+                     } else {
+-                        int32_t latest = whichFileModTimeIsLater(filePath, newpath);
++                        int32_t latest = whichFileModTimeIsLater(filePath, newpath.data());
+                         if (latest < 0 || latest == 2) {
+                             isLatest = FALSE;
+                             break;

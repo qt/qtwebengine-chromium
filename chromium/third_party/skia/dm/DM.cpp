@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "CrashHandler.h"
 #include "DMJsonWriter.h"
 #include "DMSrcSink.h"
 #include "DMSrcSinkAndroid.h"
@@ -116,11 +115,19 @@ static void fail(const SkString& err) {
     gFailures.push_back(err);
 }
 
+struct Running {
+    SkString   id;
+    SkThreadID thread;
+
+    void dump() const {
+        info("\t%s\n", id.c_str());
+    }
+};
 
 // We use a spinlock to make locking this in a signal handler _somewhat_ safe.
 static SkSpinlock gMutex;
-static int32_t            gPending;
-static SkTArray<SkString> gRunning;
+static int32_t           gPending;
+static SkTArray<Running> gRunning;
 
 static void done(const char* config, const char* src, const char* srcOptions, const char* name) {
     SkString id = SkStringPrintf("%s %s %s %s", config, src, srcOptions, name);
@@ -129,7 +136,7 @@ static void done(const char* config, const char* src, const char* srcOptions, co
     {
         SkAutoMutexAcquire lock(gMutex);
         for (int i = 0; i < gRunning.count(); i++) {
-            if (gRunning[i] == id) {
+            if (gRunning[i].id == id) {
                 gRunning.removeShuffle(i);
                 break;
             }
@@ -147,7 +154,7 @@ static void start(const char* config, const char* src, const char* srcOptions, c
     SkString id = SkStringPrintf("%s %s %s %s", config, src, srcOptions, name);
     vlog("start %s\n", id.c_str());
     SkAutoMutexAcquire lock(gMutex);
-    gRunning.push_back(id);
+    gRunning.push_back({id,SkGetThreadID()});
 }
 
 static void print_status() {
@@ -159,9 +166,22 @@ static void print_status() {
     info("\n%s elapsed, %d active, %d queued, %dMB RAM, %dMB peak\n",
          elapsed.c_str(), gRunning.count(), gPending - gRunning.count(), curr, peak);
     for (auto& task : gRunning) {
-        info("\t%s\n", task.c_str());
+        task.dump();
     }
 }
+
+#if !defined(SK_BUILD_FOR_ANDROID)
+    static void find_culprit() {
+        // Assumes gMutex is locked.
+        SkThreadID thisThread = SkGetThreadID();
+        for (auto& task : gRunning) {
+            if (task.thread == thisThread) {
+                info("Likely culprit:\n");
+                task.dump();
+            }
+        }
+    }
+#endif
 
 #if defined(SK_BUILD_FOR_WIN32)
     static LONG WINAPI crash_handler(EXCEPTION_POINTERS* e) {
@@ -189,8 +209,9 @@ static void print_status() {
         }
         info(", was running:\n");
         for (auto& task : gRunning) {
-            info("\t%s\n", task.c_str());
+            task.dump();
         }
+        find_culprit();
         fflush(stdout);
 
         // Execute default exception handler... hopefully, exit.
@@ -208,8 +229,9 @@ static void print_status() {
 
         info("\nCaught signal %d [%s], was running:\n", sig, strsignal(sig));
         for (auto& task : gRunning) {
-            info("\t%s\n", task.c_str());
+            task.dump();
         }
+        find_culprit();
 
         void* stack[64];
         int count = backtrace(stack, SK_ARRAY_COUNT(stack));
@@ -282,7 +304,7 @@ static SkTHashSet<SkString> gUninterestingHashes;
 
 static void gather_uninteresting_hashes() {
     if (!FLAGS_uninterestingHashesFile.isEmpty()) {
-        SkAutoTUnref<SkData> data(SkData::NewFromFileName(FLAGS_uninterestingHashesFile[0]));
+        sk_sp<SkData> data(SkData::MakeFromFileName(FLAGS_uninterestingHashesFile[0]));
         if (!data) {
             info("WARNING: unable to read uninteresting hashes from %s\n",
                  FLAGS_uninterestingHashesFile[0]);
@@ -467,7 +489,7 @@ static void push_image_gen_src(Path path, ImageGenSrc::Mode mode, SkAlphaType al
 }
 
 static void push_codec_srcs(Path path) {
-    SkAutoTUnref<SkData> encoded(SkData::NewFromFileName(path.c_str()));
+    sk_sp<SkData> encoded(SkData::MakeFromFileName(path.c_str()));
     if (!encoded) {
         info("Couldn't read %s.", path.c_str());
         return;
@@ -688,34 +710,31 @@ static bool brd_supported(const char* ext) {
     return false;
 }
 
+template <typename T>
+void gather_file_srcs(const SkCommandLineFlags::StringArray& flags, const char* ext) {
+    for (int i = 0; i < flags.count(); i++) {
+        const char* path = flags[i];
+        if (sk_isdir(path)) {
+            SkOSFile::Iter it(path, ext);
+            for (SkString file; it.next(&file); ) {
+                push_src(ext, "", new T(SkOSPath::Join(path, file.c_str())));
+            }
+        } else {
+            push_src(ext, "", new T(path));
+        }
+    }
+}
+
 static bool gather_srcs() {
     for (const skiagm::GMRegistry* r = skiagm::GMRegistry::Head(); r; r = r->next()) {
         push_src("gm", "", new GMSrc(r->factory()));
     }
-    for (int i = 0; i < FLAGS_skps.count(); i++) {
-        const char* path = FLAGS_skps[i];
-        if (sk_isdir(path)) {
-            SkOSFile::Iter it(path, "skp");
-            for (SkString file; it.next(&file); ) {
-                push_src("skp", "", new SKPSrc(SkOSPath::Join(path, file.c_str())));
-            }
-        } else {
-            push_src("skp", "", new SKPSrc(path));
-        }
-    }
 
-    for (int i = 0; i < FLAGS_mskps.count(); i++) {
-        const char* path = FLAGS_mskps[i];
-        if (sk_isdir(path)) {
-            SkOSFile::Iter it(path, "mskp");
-            for (SkString file; it.next(&file);) {
-                push_src("mskp", "",
-                         new MSKPSrc(SkOSPath::Join(path, file.c_str())));
-            }
-        } else {
-            push_src("mskp", "", new MSKPSrc(path));
-        }
-    }
+    gather_file_srcs<SKPSrc>(FLAGS_skps, "skp");
+    gather_file_srcs<MSKPSrc>(FLAGS_mskps, "mskp");
+#if defined(SK_XML)
+    gather_file_srcs<SVGSrc>(FLAGS_svgs, "svg");
+#endif
 
     SkTArray<SkString> images;
     if (!CollectImages(FLAGS_images, &images)) {
@@ -740,18 +759,24 @@ static bool gather_srcs() {
     }
 
     for (auto colorImage : colorImages) {
-        ColorCodecSrc* src = new ColorCodecSrc(colorImage, ColorCodecSrc::kBaseline_Mode);
-        push_src("image", "color_codec_baseline", src);
+        ColorCodecSrc* src = new ColorCodecSrc(colorImage, ColorCodecSrc::kBaseline_Mode,
+                                               kN32_SkColorType);
+        push_src("colorImage", "color_codec_baseline", src);
 
-        src = new ColorCodecSrc(colorImage, ColorCodecSrc::kDst_HPZR30w_Mode);
-        push_src("image", "color_codec_HPZR30w", src);
+        src = new ColorCodecSrc(colorImage, ColorCodecSrc::kDst_HPZR30w_Mode, kN32_SkColorType);
+        push_src("colorImage", "color_codec_HPZR30w", src);
+        // TODO (msarett):
+        // Should we test this Dst in F16 mode (even though the Dst gamma is 2.2 instead of sRGB)?
 
-        src = new ColorCodecSrc(colorImage, ColorCodecSrc::kDst_sRGB_Mode);
-        push_src("image", "color_codec_sRGB", src);
+        src = new ColorCodecSrc(colorImage, ColorCodecSrc::kDst_sRGB_Mode, kN32_SkColorType);
+        push_src("colorImage", "color_codec_sRGB_kN32", src);
+        src = new ColorCodecSrc(colorImage, ColorCodecSrc::kDst_sRGB_Mode, kRGBA_F16_SkColorType);
+        push_src("colorImage", "color_codec_sRGB_kF16", src);
 
 #if defined(SK_TEST_QCMS)
-        src = new ColorCodecSrc(colorImage, ColorCodecSrc::kQCMS_HPZR30w_Mode);
-        push_src("image", "color_codec_QCMS_HPZR30w", src);
+        src = new ColorCodecSrc(colorImage, ColorCodecSrc::kQCMS_HPZR30w_Mode,
+                                kRGBA_8888_SkColorType);
+        push_src("colorImage", "color_codec_QCMS_HPZR30w", src);
 #endif
     }
 
@@ -798,17 +823,7 @@ static Sink* create_sink(const SkCommandLineConfig* config) {
     if (gpu_supported()) {
         if (const SkCommandLineConfigGpu* gpuConfig = config->asConfigGpu()) {
             GrContextFactory::ContextType contextType = gpuConfig->getContextType();
-            GrContextFactory::ContextOptions contextOptions =
-                    GrContextFactory::kNone_ContextOptions;
-            if (gpuConfig->getUseNVPR()) {
-                contextOptions = static_cast<GrContextFactory::ContextOptions>(
-                    contextOptions | GrContextFactory::kEnableNVPR_ContextOptions);
-            }
-            if (SkColorAndColorSpaceAreGammaCorrect(gpuConfig->getColorType(),
-                                                    gpuConfig->getColorSpace())) {
-                contextOptions = static_cast<GrContextFactory::ContextOptions>(
-                    contextOptions | GrContextFactory::kRequireSRGBSupport_ContextOptions);
-            }
+            GrContextFactory::ContextOptions contextOptions = gpuConfig->getContextOptions();
             GrContextFactory testFactory;
             if (!testFactory.get(contextType, contextOptions)) {
                 info("WARNING: can not create GPU context for config '%s'. "
@@ -834,9 +849,10 @@ static Sink* create_sink(const SkCommandLineConfig* config) {
         SINK("565",  RasterSink, kRGB_565_SkColorType);
         SINK("8888", RasterSink, kN32_SkColorType);
         SINK("srgb", RasterSink, kN32_SkColorType, srgbColorSpace);
-        SINK("f16",  RasterSink, kRGBA_F16_SkColorType);
+        SINK("f16",  RasterSink, kRGBA_F16_SkColorType, srgbColorSpace->makeLinearGamma());
         SINK("pdf",  PDFSink);
         SINK("skp",  SKPSink);
+        SINK("pipe", PipeSink);
         SINK("svg",  SVGSink);
         SINK("null", NullSink);
         SINK("xps",  XPSSink);
@@ -848,11 +864,14 @@ static Sink* create_sink(const SkCommandLineConfig* config) {
 
 static Sink* create_via(const SkString& tag, Sink* wrapped) {
 #define VIA(t, via, ...) if (tag.equals(t)) { return new via(__VA_ARGS__); }
+    VIA("lite",      ViaLite,              wrapped);
+    VIA("pipe",      ViaPipe,              wrapped);
     VIA("twice",     ViaTwice,             wrapped);
     VIA("serialize", ViaSerialization,     wrapped);
     VIA("pic",       ViaPicture,           wrapped);
     VIA("2ndpic",    ViaSecondPicture,     wrapped);
     VIA("sp",        ViaSingletonPictures, wrapped);
+    VIA("defer",     ViaDefer,             wrapped);
     VIA("tiles",     ViaTiles, 256, 256, nullptr,            wrapped);
     VIA("tiles_rt",  ViaTiles, 256, 256, new SkRTreeFactory, wrapped);
 
@@ -1259,7 +1278,7 @@ int dm_main() {
         gVLog = stderr;
     } else if (!FLAGS_writePath.isEmpty()) {
         sk_mkdir(FLAGS_writePath[0]);
-        gVLog = freopen(SkOSPath::Join(FLAGS_writePath[0], "verbose.log").c_str(), "w", stderr);
+        gVLog = fopen(SkOSPath::Join(FLAGS_writePath[0], "verbose.log").c_str(), "w");
     }
 
     JsonWriter::DumpJson();  // It's handy for the bots to assume this is ~never missing.
@@ -1394,7 +1413,7 @@ void RunWithGPUTestContexts(GrContextTestFn* test, GrContextTypeFilterFn* contex
             (*test)(reporter, ctxInfo);
         }
         ctxInfo = factory->getContextInfo(contextType,
-                                          GrContextFactory::kEnableNVPR_ContextOptions);
+                                          GrContextFactory::ContextOptions::kEnableNVPR);
         if (ctxInfo.grContext()) {
             (*test)(reporter, ctxInfo);
         }

@@ -40,14 +40,12 @@ void MojoCdm::Create(
     mojom::ContentDecryptionModulePtr remote_cdm,
     const media::SessionMessageCB& session_message_cb,
     const media::SessionClosedCB& session_closed_cb,
-    const media::LegacySessionErrorCB& legacy_session_error_cb,
     const media::SessionKeysChangeCB& session_keys_change_cb,
     const media::SessionExpirationUpdateCB& session_expiration_update_cb,
     const media::CdmCreatedCB& cdm_created_cb) {
   scoped_refptr<MojoCdm> mojo_cdm(
       new MojoCdm(std::move(remote_cdm), session_message_cb, session_closed_cb,
-                  legacy_session_error_cb, session_keys_change_cb,
-                  session_expiration_update_cb));
+                  session_keys_change_cb, session_expiration_update_cb));
 
   // |mojo_cdm| ownership is passed to the promise.
   std::unique_ptr<CdmInitializedPromise> promise(
@@ -60,7 +58,6 @@ void MojoCdm::Create(
 MojoCdm::MojoCdm(mojom::ContentDecryptionModulePtr remote_cdm,
                  const SessionMessageCB& session_message_cb,
                  const SessionClosedCB& session_closed_cb,
-                 const LegacySessionErrorCB& legacy_session_error_cb,
                  const SessionKeysChangeCB& session_keys_change_cb,
                  const SessionExpirationUpdateCB& session_expiration_update_cb)
     : remote_cdm_(std::move(remote_cdm)),
@@ -68,14 +65,12 @@ MojoCdm::MojoCdm(mojom::ContentDecryptionModulePtr remote_cdm,
       cdm_id_(CdmContext::kInvalidCdmId),
       session_message_cb_(session_message_cb),
       session_closed_cb_(session_closed_cb),
-      legacy_session_error_cb_(legacy_session_error_cb),
       session_keys_change_cb_(session_keys_change_cb),
       session_expiration_update_cb_(session_expiration_update_cb),
       weak_factory_(this) {
   DVLOG(1) << __FUNCTION__;
   DCHECK(!session_message_cb_.is_null());
   DCHECK(!session_closed_cb_.is_null());
-  DCHECK(!legacy_session_error_cb_.is_null());
   DCHECK(!session_keys_change_cb_.is_null());
   DCHECK(!session_expiration_update_cb_.is_null());
 
@@ -89,8 +84,8 @@ MojoCdm::~MojoCdm() {
   base::AutoLock auto_lock(lock_);
 
   // Release |decryptor_| on the correct thread. If GetDecryptor() is never
-  // called but |decryptor_ptr_| is not null, it is not bound to any thread and
-  // is safe to be released on the current thread.
+  // called but |decryptor_ptr_info_| is not null, it is not bound to any thread
+  // and is safe to be released on the current thread.
   if (decryptor_task_runner_ &&
       !decryptor_task_runner_->BelongsToCurrentThread() && decryptor_) {
     decryptor_task_runner_->DeleteSoon(FROM_HERE, decryptor_.release());
@@ -224,9 +219,11 @@ media::Decryptor* MojoCdm::GetDecryptor() {
   DCHECK(decryptor_task_runner_->BelongsToCurrentThread());
 
   // Can be called on a different thread.
-  if (decryptor_ptr_) {
+  if (decryptor_ptr_info_.is_valid()) {
     DCHECK(!decryptor_);
-    decryptor_.reset(new MojoDecryptor(std::move(decryptor_ptr_)));
+    mojom::DecryptorPtr decryptor_ptr;
+    decryptor_ptr.Bind(std::move(decryptor_ptr_info_));
+    decryptor_.reset(new MojoDecryptor(std::move(decryptor_ptr)));
   }
 
   return decryptor_.get();
@@ -241,14 +238,13 @@ int MojoCdm::GetCdmId() const {
 
 void MojoCdm::OnSessionMessage(const mojo::String& session_id,
                                mojom::CdmMessageType message_type,
-                               mojo::Array<uint8_t> message,
-                               const GURL& legacy_destination_url) {
+                               mojo::Array<uint8_t> message) {
   DVLOG(2) << __FUNCTION__;
   DCHECK(thread_checker_.CalledOnValidThread());
 
   session_message_cb_.Run(session_id,
                           static_cast<MediaKeys::MessageType>(message_type),
-                          message.storage(), legacy_destination_url);
+                          message.storage());
 }
 
 void MojoCdm::OnSessionClosed(const mojo::String& session_id) {
@@ -256,18 +252,6 @@ void MojoCdm::OnSessionClosed(const mojo::String& session_id) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   session_closed_cb_.Run(session_id);
-}
-
-void MojoCdm::OnLegacySessionError(const mojo::String& session_id,
-                                   mojom::CdmException exception,
-                                   uint32_t system_code,
-                                   const mojo::String& error_message) {
-  DVLOG(2) << __FUNCTION__;
-  DCHECK(thread_checker_.CalledOnValidThread());
-
-  legacy_session_error_cb_.Run(session_id,
-                               static_cast<MediaKeys::Exception>(exception),
-                               system_code, error_message);
 }
 
 void MojoCdm::OnSessionKeysChange(
@@ -324,7 +308,7 @@ void MojoCdm::OnCdmInitialized(mojom::CdmPromiseResultPtr result,
     base::AutoLock auto_lock(lock_);
     DCHECK_NE(CdmContext::kInvalidCdmId, cdm_id);
     cdm_id_ = cdm_id;
-    decryptor_ptr_ = std::move(decryptor);
+    decryptor_ptr_info_ = decryptor.PassInterface();
   }
 
   pending_init_promise_->resolve();

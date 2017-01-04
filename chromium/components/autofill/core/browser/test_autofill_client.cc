@@ -30,7 +30,7 @@ PrefService* TestAutofillClient::GetPrefs() {
   return prefs_.get();
 }
 
-sync_driver::SyncService* TestAutofillClient::GetSyncService() {
+syncer::SyncService* TestAutofillClient::GetSyncService() {
   return nullptr;
 }
 
@@ -62,6 +62,12 @@ void TestAutofillClient::ConfirmSaveCreditCardLocally(
 void TestAutofillClient::ConfirmSaveCreditCardToCloud(
     const CreditCard& card,
     std::unique_ptr<base::DictionaryValue> legal_message,
+    const base::Closure& callback) {
+  callback.Run();
+}
+
+void TestAutofillClient::ConfirmCreditCardFillAssist(
+    const CreditCard& card,
     const base::Closure& callback) {
   callback.Run();
 }
@@ -114,5 +120,11 @@ void TestAutofillClient::OnFirstUserGestureObserved() {
 bool TestAutofillClient::IsContextSecure(const GURL& form_origin) {
   return is_context_secure_;
 }
+
+bool TestAutofillClient::ShouldShowSigninPromo() {
+  return false;
+}
+
+void TestAutofillClient::StartSigninFlow() {}
 
 }  // namespace autofill

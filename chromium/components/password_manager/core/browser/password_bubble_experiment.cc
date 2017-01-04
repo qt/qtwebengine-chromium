@@ -13,7 +13,7 @@
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
-#include "components/sync_driver/sync_service.h"
+#include "components/sync/driver/sync_service.h"
 #include "components/variations/variations_associated_data.h"
 
 namespace password_bubble_experiment {
@@ -46,16 +46,17 @@ int GetSmartBubbleDismissalThreshold() {
   std::string param = variations::GetVariationParamValue(
       kSmartBubbleExperimentName, kSmartBubbleThresholdParam);
   int threshold = 0;
-  return base::StringToInt(param, &threshold) ? threshold : 0;
+  // 3 is the default magic number that proved to show the best result.
+  return base::StringToInt(param, &threshold) ? threshold : 3;
 }
 
-bool IsSmartLockUser(const sync_driver::SyncService* sync_service) {
+bool IsSmartLockUser(const syncer::SyncService* sync_service) {
   return password_manager_util::GetPasswordSyncState(sync_service) ==
          password_manager::SYNCING_NORMAL_ENCRYPTION;
 }
 
 SmartLockBranding GetSmartLockBrandingState(
-    const sync_driver::SyncService* sync_service) {
+    const syncer::SyncService* sync_service) {
   // Query the group first for correct UMA reporting.
   std::string group_name =
       base::FieldTrialList::FindFullName(kBrandingExperimentName);
@@ -68,17 +69,17 @@ SmartLockBranding GetSmartLockBrandingState(
   return SmartLockBranding::NONE;
 }
 
-bool IsSmartLockBrandingEnabled(const sync_driver::SyncService* sync_service) {
+bool IsSmartLockBrandingEnabled(const syncer::SyncService* sync_service) {
   return GetSmartLockBrandingState(sync_service) == SmartLockBranding::FULL;
 }
 
 bool IsSmartLockBrandingSavePromptEnabled(
-    const sync_driver::SyncService* sync_service) {
+    const syncer::SyncService* sync_service) {
   return GetSmartLockBrandingState(sync_service) != SmartLockBranding::NONE;
 }
 
 bool ShouldShowSavePromptFirstRunExperience(
-    const sync_driver::SyncService* sync_service,
+    const syncer::SyncService* sync_service,
     PrefService* prefs) {
   return false;
 }
@@ -105,7 +106,7 @@ void TurnOffAutoSignin(PrefService* prefs) {
 
 bool ShouldShowChromeSignInPasswordPromo(
     PrefService* prefs,
-    const sync_driver::SyncService* sync_service) {
+    const syncer::SyncService* sync_service) {
   // Query the group first for correct UMA reporting.
   std::string param = variations::GetVariationParamValue(
       kChromeSignInPasswordPromoExperimentName,

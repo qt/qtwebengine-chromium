@@ -30,7 +30,7 @@ DrmDisplayHost::~DrmDisplayHost() {
 
 void DrmDisplayHost::UpdateDisplaySnapshot(
     const DisplaySnapshot_Params& params) {
-  snapshot_ = base::WrapUnique(new DisplaySnapshotProxy(params));
+  snapshot_ = base::MakeUnique<DisplaySnapshotProxy>(params);
 }
 
 void DrmDisplayHost::Configure(const DisplayMode* mode,
@@ -110,6 +110,8 @@ void DrmDisplayHost::SetColorCorrection(
   sender_->GpuSetColorCorrection(snapshot_->display_id(), degamma_lut,
                                  gamma_lut, correction_matrix);
 }
+
+void DrmDisplayHost::OnGpuProcessLaunched() {}
 
 void DrmDisplayHost::OnGpuThreadReady() {
   is_dummy_ = false;

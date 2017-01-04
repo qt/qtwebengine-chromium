@@ -44,12 +44,14 @@ class OffscreenBrowserCompositorOutputSurface
                const gfx::ColorSpace& color_space,
                bool alpha) override;
   void BindFramebuffer() override;
+  void SwapBuffers(cc::OutputSurfaceFrame frame) override;
+  bool IsDisplayedAsOverlayPlane() const override;
+  unsigned GetOverlayTextureId() const override;
+  bool SurfaceIsSuspendForRecycle() const override;
   uint32_t GetFramebufferCopyTextureFormat() override;
-  void SwapBuffers(cc::CompositorFrame frame) override;
 
   // BrowserCompositorOutputSurface
   void OnReflectorChanged() override;
-  base::Closure CreateCompositionStartedCallback() override;
   void OnGpuSwapBuffersCompleted(
       const std::vector<ui::LatencyInfo>& latency_info,
       gfx::SwapResult result,
@@ -58,14 +60,16 @@ class OffscreenBrowserCompositorOutputSurface
   void SetSurfaceSuspendedForRecycle(bool suspended) override {};
 #endif
 
-  uint32_t fbo_;
-  bool is_backbuffer_discarded_;
+  uint32_t fbo_ = 0;
+  bool reflector_changed_ = false;
   std::unique_ptr<ReflectorTexture> reflector_texture_;
 
   base::WeakPtrFactory<OffscreenBrowserCompositorOutputSurface>
       weak_ptr_factory_;
 
  private:
+  void OnSwapBuffersComplete();
+
   DISALLOW_COPY_AND_ASSIGN(OffscreenBrowserCompositorOutputSurface);
 };
 

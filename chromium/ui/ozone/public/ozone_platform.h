@@ -14,16 +14,19 @@ namespace gfx {
 class Rect;
 }
 
+namespace IPC {
+class MessageFilter;
+}
+
 namespace shell {
 class Connector;
-class Connection;
+class InterfaceRegistry;
 }
 
 namespace ui {
 
 class CursorFactoryOzone;
 class InputController;
-class GpuPlatformSupport;
 class GpuPlatformSupportHost;
 class NativeDisplayDelegate;
 class OverlayManagerOzone;
@@ -51,8 +54,8 @@ class OZONE_EXPORT OzonePlatform {
   OzonePlatform();
   virtual ~OzonePlatform();
 
-  // Additional initalization params for the platform. Platforms must not retain
-  // a reference to this structure.
+  // Additional initialization params for the platform. Platforms must not
+  // retain a reference to this structure.
   struct InitParams {
     // Ozone may retain this pointer for later use. An Ozone platform embedder
     // must set this parameter in order for the Ozone platform implementation to
@@ -93,7 +96,7 @@ class OZONE_EXPORT OzonePlatform {
   virtual ui::OverlayManagerOzone* GetOverlayManager() = 0;
   virtual ui::CursorFactoryOzone* GetCursorFactoryOzone() = 0;
   virtual ui::InputController* GetInputController() = 0;
-  virtual ui::GpuPlatformSupport* GetGpuPlatformSupport() = 0;
+  virtual IPC::MessageFilter* GetGpuMessageFilter();
   virtual ui::GpuPlatformSupportHost* GetGpuPlatformSupportHost() = 0;
   virtual std::unique_ptr<SystemInputInjector> CreateSystemInputInjector() = 0;
   virtual std::unique_ptr<PlatformWindow> CreatePlatformWindow(
@@ -104,12 +107,13 @@ class OZONE_EXPORT OzonePlatform {
 
   // Ozone platform implementations may also choose to expose mojo interfaces to
   // internal functionality. Embedders wishing to take advantage of ozone mojo
-  // implementations must invoke AddInterfaces with a valid shell::Connection*
-  // pointer to export all Mojo interfaces defined within Ozone.
+  // implementations must invoke AddInterfaces with a valid
+  // shell::InterfaceRegistry* pointer to export all Mojo interfaces defined
+  // within Ozone.
   //
   // A default do-nothing implementation is provided to permit platform
   // implementations to opt out of implementing any Mojo interfaces.
-  virtual void AddInterfaces(shell::Connection* connection);
+  virtual void AddInterfaces(shell::InterfaceRegistry* registry);
 
  private:
   virtual void InitializeUI() = 0;

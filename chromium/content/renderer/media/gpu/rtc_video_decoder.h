@@ -11,6 +11,7 @@
 #include <deque>
 #include <list>
 #include <map>
+#include <memory>
 #include <set>
 #include <utility>
 
@@ -43,11 +44,11 @@ struct SyncToken;
 namespace content {
 
 // This class uses hardware accelerated video decoder to decode video for
-// WebRTC. |vda_message_loop_| is the message loop proxy of the media thread,
-// which VDA::Client methods run on. webrtc::VideoDecoder methods run on WebRTC
-// DecodingThread or Chrome_libJingle_WorkerThread, which are trampolined to
-// |vda_message_loop_|. Decode() is non-blocking and queues the buffers. Decoded
-// frames are delivered to WebRTC on |vda_message_loop_|.
+// WebRTC. Lives on the media thread, where VDA::Client methods run on.
+// webrtc::VideoDecoder methods run on WebRTC DecodingThread or
+// Chrome_libJingle_WorkerThread, which are trampolined to the media thread.
+// Decode() is non-blocking and queues the buffers. Decoded frames are
+// delivered to WebRTC on the media task runner.
 class CONTENT_EXPORT RTCVideoDecoder
     : NON_EXPORTED_BASE(public webrtc::VideoDecoder),
       public media::VideoDecodeAccelerator::Client {
@@ -163,7 +164,7 @@ class CONTENT_EXPORT RTCVideoDecoder
   // Tells VDA that a picture buffer can be recycled.
   void ReusePictureBuffer(int64_t picture_buffer_id);
 
-  // Creates |vda_| on |vda_loop_proxy_|.
+  // Creates |vda_| on the media thread.
   void CreateVDA(media::VideoCodecProfile profile, base::WaitableEvent* waiter);
 
   void DestroyTextures();
@@ -238,8 +239,9 @@ class CONTENT_EXPORT RTCVideoDecoder
   std::list<BufferData> input_buffer_data_;
 
   // A map from bitstream buffer IDs to bitstream buffers that are being
-  // processed by VDA. The map owns SHM buffers.
-  std::map<int32_t, base::SharedMemory*> bitstream_buffers_in_decoder_;
+  // processed by VDA.
+  std::map<int32_t, std::unique_ptr<base::SharedMemory>>
+      bitstream_buffers_in_decoder_;
 
   // A map from picture buffer IDs to texture-backed picture buffers.
   std::map<int32_t, media::PictureBuffer> assigned_picture_buffers_;
@@ -271,17 +273,17 @@ class CONTENT_EXPORT RTCVideoDecoder
 
   // Shared-memory buffer pool.  Since allocating SHM segments requires a
   // round-trip to the browser process, we keep allocation out of the
-  // steady-state of the decoder. The vector owns SHM buffers. Guarded by
-  // |lock_|.
-  std::vector<base::SharedMemory*> available_shm_segments_;
+  // steady-state of the decoder. Guarded by |lock_|.
+  std::vector<std::unique_ptr<base::SharedMemory>> available_shm_segments_;
 
   // A queue storing WebRTC encoding images (and their metadata) that are
   // waiting for the shared memory. Guarded by |lock_|.
   std::deque<std::pair<webrtc::EncodedImage, BufferData>> pending_buffers_;
 
   // A queue storing buffers (and their metadata) that will be sent to VDA for
-  // decode. The queue owns SHM buffers. Guarded by |lock_|.
-  std::deque<std::pair<base::SharedMemory*, BufferData>> decode_buffers_;
+  // decode. Guarded by |lock_|.
+  std::deque<std::pair<std::unique_ptr<base::SharedMemory>, BufferData>>
+      decode_buffers_;
 
   // The id that will be given to the next bitstream buffer. Guarded by |lock_|.
   int32_t next_bitstream_buffer_id_;
@@ -294,7 +296,7 @@ class CONTENT_EXPORT RTCVideoDecoder
   gfx::Size min_resolution_;
   gfx::Size max_resolution_;
 
-  // Must be destroyed, or invalidated, on |vda_loop_proxy_|
+  // Must be destroyed, or invalidated, on the media thread.
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<RTCVideoDecoder> weak_factory_;
 

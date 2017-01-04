@@ -14,6 +14,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/shared_memory.h"
 #include "base/memory/shared_memory_handle.h"
+#include "base/run_loop.h"
 #include "base/win/scoped_handle.h"
 #include "ipc/attachment_broker_privileged_win.h"
 #include "ipc/attachment_broker_unprivileged_win.h"
@@ -254,7 +255,8 @@ class IPCAttachmentBrokerPrivilegedWinTest : public IPCTestBase {
   void SetUp() override {
     IPCTestBase::SetUp();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &temp_path_));
+    ASSERT_TRUE(
+        base::CreateTemporaryFileInDir(temp_dir_.GetPath(), &temp_path_));
   }
 
   void TearDown() override { IPCTestBase::TearDown(); }
@@ -355,7 +357,7 @@ TEST_F(IPCAttachmentBrokerPrivilegedWinTest, SendHandle) {
 
   HANDLE h = CreateTempFile();
   SendMessageWithAttachment(h);
-  base::MessageLoop::current()->Run();
+  base::RunLoop().Run();
 
   // Check the result.
   ASSERT_EQ(ProxyListener::MESSAGE_RECEIVED,
@@ -383,7 +385,7 @@ TEST_F(IPCAttachmentBrokerPrivilegedWinTest,
   IPC::HandleWin handle_win(h2, IPC::HandleWin::DUPLICATE);
   IPC::Message* message = new TestHandleWinMsg(100, handle_win, 200);
   sender()->Send(message);
-  base::MessageLoop::current()->Run();
+  base::RunLoop().Run();
 
   // Check the result.
   ASSERT_EQ(ProxyListener::MESSAGE_RECEIVED,
@@ -410,7 +412,7 @@ TEST_F(IPCAttachmentBrokerPrivilegedWinTest, SendHandleToSelf) {
 
   HANDLE h = CreateTempFile();
   SendMessageWithAttachment(h);
-  base::MessageLoop::current()->Run();
+  base::RunLoop().Run();
 
   // Get the received attachment.
   IPC::BrokerableAttachment::AttachmentId* id = get_observer()->get_id();
@@ -447,7 +449,7 @@ TEST_F(IPCAttachmentBrokerPrivilegedWinTest, SendTwoHandles) {
   IPC::HandleWin handle_win2(h2, IPC::HandleWin::FILE_READ_WRITE);
   IPC::Message* message = new TestTwoHandleWinMsg(handle_win1, handle_win2);
   sender()->Send(message);
-  base::MessageLoop::current()->Run();
+  base::RunLoop().Run();
 
   // Check the result.
   ASSERT_EQ(ProxyListener::MESSAGE_RECEIVED,
@@ -472,7 +474,7 @@ TEST_F(IPCAttachmentBrokerPrivilegedWinTest, SendHandleTwice) {
   ASSERT_TRUE(result);
   SendMessageWithAttachment(h);
   SendMessageWithAttachment(h2);
-  base::MessageLoop::current()->Run();
+  base::RunLoop().Run();
 
   // Check the result.
   ASSERT_EQ(ProxyListener::MESSAGE_RECEIVED,
@@ -495,7 +497,7 @@ TEST_F(IPCAttachmentBrokerPrivilegedWinTest, SendSharedMemoryHandle) {
   shared_memory->CreateAndMapAnonymous(kSharedMemorySize);
   memcpy(shared_memory->memory(), kDataBuffer, strlen(kDataBuffer));
   sender()->Send(new TestSharedMemoryHandleMsg1(shared_memory->handle()));
-  base::MessageLoop::current()->Run();
+  base::RunLoop().Run();
 
   // Check the result.
   ASSERT_EQ(ProxyListener::MESSAGE_RECEIVED,
@@ -523,7 +525,7 @@ int CommonPrivilegedProcessMain(OnMessageReceivedCallback callback,
 
   while (true) {
     LOG(INFO) << "Privileged process spinning run loop.";
-    base::MessageLoop::current()->Run();
+    base::RunLoop().Run();
     ProxyListener::Reason reason = listener.get_reason();
     if (reason == ProxyListener::CHANNEL_ERROR)
       break;

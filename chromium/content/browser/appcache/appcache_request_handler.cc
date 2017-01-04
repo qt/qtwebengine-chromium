@@ -32,9 +32,12 @@ AppCacheRequestHandler::AppCacheRequestHandler(AppCacheHost* host,
       maybe_load_resource_executed_(false),
       old_process_id_(0),
       old_host_id_(kAppCacheNoHostId),
-      cache_id_(kAppCacheNoCacheId) {
+      cache_id_(kAppCacheNoCacheId),
+      service_(host_->service()) {
   DCHECK(host_);
+  DCHECK(service_);
   host_->AddObserver(this);
+  service_->AddObserver(this);
 }
 
 AppCacheRequestHandler::~AppCacheRequestHandler() {
@@ -42,6 +45,8 @@ AppCacheRequestHandler::~AppCacheRequestHandler() {
     storage()->CancelDelegateCallbacks(this);
     host_->RemoveObserver(this);
   }
+  if (service_)
+    service_->RemoveObserver(this);
 }
 
 AppCacheStorage* AppCacheRequestHandler::storage() const {
@@ -227,6 +232,19 @@ void AppCacheRequestHandler::OnDestructionImminent(AppCacheHost* host) {
   }
 }
 
+void AppCacheRequestHandler::OnServiceDestructionImminent(
+    AppCacheServiceImpl* service) {
+  service_ = nullptr;
+  if (!host_) {
+    DCHECK(!host_for_cross_site_transfer_);
+    DCHECK(!job_);
+    return;
+  }
+  host_->RemoveObserver(this);
+  OnDestructionImminent(host_);
+  host_for_cross_site_transfer_.reset();
+}
+
 void AppCacheRequestHandler::DeliverAppCachedResponse(
     const AppCacheEntry& entry,
     int64_t cache_id,
@@ -362,7 +380,7 @@ void AppCacheRequestHandler::OnMainResponseFound(
     return;
   }
 
-  if (IsResourceTypeFrame(resource_type_) && cache_id != kAppCacheNoCacheId) {
+  if (IsMainResourceType(resource_type_) && cache_id != kAppCacheNoCacheId) {
     // AppCacheHost loads and holds a reference to the main resource cache
     // for two reasons, firstly to preload the cache into the working set
     // in advance of subresource loads happening, secondly to prevent the

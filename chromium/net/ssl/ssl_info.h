@@ -5,15 +5,18 @@
 #ifndef NET_SSL_SSL_INFO_H_
 #define NET_SSL_SSL_INFO_H_
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/memory/ref_counted.h"
 #include "net/base/net_export.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/ct_verify_result.h"
+#include "net/cert/ocsp_verify_result.h"
 #include "net/cert/sct_status_flags.h"
+#include "net/cert/signed_certificate_timestamp_and_status.h"
 #include "net/cert/x509_cert_types.h"
-#include "net/ssl/signed_certificate_timestamp_and_status.h"
 #include "net/ssl/ssl_config.h"
 
 namespace net {
@@ -79,11 +82,9 @@ class NET_EXPORT SSLInfo {
   // -1 means the security strength is unknown.
   int security_bits;
 
-  // Security information of the SSL connection handshake.
-  // The meaning depends on the cipher used, see BoringSSL's |SSL_SESSION|'s
-  // key_exchange_info for more information.
-  // A zero indicates that the value is unknown.
-  int key_exchange_info;
+  // The ID of the (EC)DH group used by the key exchange or zero if unknown
+  // (older cache entries may not store the value) or not applicable.
+  uint16_t key_exchange_group;
 
   // Information about the SSL connection itself. See
   // ssl_connection_status_flags.h for values. The protocol version,
@@ -144,6 +145,9 @@ class NET_EXPORT SSLInfo {
   // not, why not. Only meaningful it |ct_compliance_details_available|
   // is true.
   ct::CertPolicyCompliance ct_cert_policy_compliance;
+
+  // OCSP stapling details.
+  OCSPVerifyResult ocsp_result;
 };
 
 }  // namespace net

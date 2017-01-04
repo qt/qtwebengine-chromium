@@ -21,9 +21,11 @@
 
 #if !defined(OPENSSL_NO_ASM) && !defined(OPENSSL_STATIC_ARMCAP) && \
     (defined(OPENSSL_X86) || defined(OPENSSL_X86_64) || \
-     defined(OPENSSL_ARM) || defined(OPENSSL_AARCH64))
-/* x86, x86_64 and the ARMs need to record the result of a cpuid call for the
- * asm to work correctly, unless compiled without asm code. */
+     defined(OPENSSL_ARM) || defined(OPENSSL_AARCH64) || \
+     defined(OPENSSL_PPC64LE))
+/* x86, x86_64, the ARMs and ppc64le need to record the result of a
+ * cpuid/getauxval call for the asm to work correctly, unless compiled without
+ * asm code. */
 #define NEED_CPUID
 
 #else
@@ -152,6 +154,10 @@ int CRYPTO_malloc_init(void) {
 }
 
 void ENGINE_load_builtin_engines(void) {}
+
+int ENGINE_register_all_complete(void) {
+  return 1;
+}
 
 void OPENSSL_load_builtin_modules(void) {}
 

@@ -13,7 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_number_conversions.h"
 #include "net/base/request_priority.h"
-#include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
 #include "net/spdy/spdy_buffer_producer.h"
 #include "net/spdy/spdy_stream.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -95,9 +95,8 @@ int ProducerToInt(std::unique_ptr<SpdyBufferProducer> producer) {
 // -- be careful to not call any functions that expect the session to
 // be there.
 SpdyStream* MakeTestStream(RequestPriority priority) {
-  return new SpdyStream(
-      SPDY_BIDIRECTIONAL_STREAM, base::WeakPtr<SpdySession>(),
-      GURL(), priority, 0, 0, BoundNetLog());
+  return new SpdyStream(SPDY_BIDIRECTIONAL_STREAM, base::WeakPtr<SpdySession>(),
+                        GURL(), priority, 0, 0, NetLogWithSource());
 }
 
 // Add some frame producers of different priority. The producers
@@ -115,9 +114,9 @@ TEST_F(SpdyWriteQueueTest, DequeuesByPriority) {
   std::unique_ptr<SpdyStream> stream_highest(MakeTestStream(HIGHEST));
 
   // A NULL stream should still work.
-  write_queue.Enqueue(LOW, SYN_STREAM, std::move(producer_low),
+  write_queue.Enqueue(LOW, HEADERS, std::move(producer_low),
                       base::WeakPtr<SpdyStream>());
-  write_queue.Enqueue(MEDIUM, SYN_REPLY, std::move(producer_medium),
+  write_queue.Enqueue(MEDIUM, HEADERS, std::move(producer_medium),
                       stream_medium->GetWeakPtr());
   write_queue.Enqueue(HIGHEST, RST_STREAM, std::move(producer_highest),
                       stream_highest->GetWeakPtr());
@@ -131,12 +130,12 @@ TEST_F(SpdyWriteQueueTest, DequeuesByPriority) {
   EXPECT_EQ(stream_highest.get(), stream.get());
 
   ASSERT_TRUE(write_queue.Dequeue(&frame_type, &frame_producer, &stream));
-  EXPECT_EQ(SYN_REPLY, frame_type);
+  EXPECT_EQ(HEADERS, frame_type);
   EXPECT_EQ("MEDIUM", ProducerToString(std::move(frame_producer)));
   EXPECT_EQ(stream_medium.get(), stream.get());
 
   ASSERT_TRUE(write_queue.Dequeue(&frame_type, &frame_producer, &stream));
-  EXPECT_EQ(SYN_STREAM, frame_type);
+  EXPECT_EQ(HEADERS, frame_type);
   EXPECT_EQ("LOW", ProducerToString(std::move(frame_producer)));
   EXPECT_EQ(nullptr, stream.get());
 
@@ -156,9 +155,9 @@ TEST_F(SpdyWriteQueueTest, DequeuesFIFO) {
   std::unique_ptr<SpdyStream> stream2(MakeTestStream(DEFAULT_PRIORITY));
   std::unique_ptr<SpdyStream> stream3(MakeTestStream(DEFAULT_PRIORITY));
 
-  write_queue.Enqueue(DEFAULT_PRIORITY, SYN_STREAM, std::move(producer1),
+  write_queue.Enqueue(DEFAULT_PRIORITY, HEADERS, std::move(producer1),
                       stream1->GetWeakPtr());
-  write_queue.Enqueue(DEFAULT_PRIORITY, SYN_REPLY, std::move(producer2),
+  write_queue.Enqueue(DEFAULT_PRIORITY, HEADERS, std::move(producer2),
                       stream2->GetWeakPtr());
   write_queue.Enqueue(DEFAULT_PRIORITY, RST_STREAM, std::move(producer3),
                       stream3->GetWeakPtr());
@@ -167,12 +166,12 @@ TEST_F(SpdyWriteQueueTest, DequeuesFIFO) {
   std::unique_ptr<SpdyBufferProducer> frame_producer;
   base::WeakPtr<SpdyStream> stream;
   ASSERT_TRUE(write_queue.Dequeue(&frame_type, &frame_producer, &stream));
-  EXPECT_EQ(SYN_STREAM, frame_type);
+  EXPECT_EQ(HEADERS, frame_type);
   EXPECT_EQ(1, ProducerToInt(std::move(frame_producer)));
   EXPECT_EQ(stream1.get(), stream.get());
 
   ASSERT_TRUE(write_queue.Dequeue(&frame_type, &frame_producer, &stream));
-  EXPECT_EQ(SYN_REPLY, frame_type);
+  EXPECT_EQ(HEADERS, frame_type);
   EXPECT_EQ(2, ProducerToInt(std::move(frame_producer)));
   EXPECT_EQ(stream2.get(), stream.get());
 
@@ -196,7 +195,7 @@ TEST_F(SpdyWriteQueueTest, RemovePendingWritesForStream) {
   for (int i = 0; i < 100; ++i) {
     base::WeakPtr<SpdyStream> stream =
         (((i % 3) == 0) ? stream1 : stream2)->GetWeakPtr();
-    write_queue.Enqueue(DEFAULT_PRIORITY, SYN_STREAM, IntToProducer(i), stream);
+    write_queue.Enqueue(DEFAULT_PRIORITY, HEADERS, IntToProducer(i), stream);
   }
 
   write_queue.RemovePendingWritesForStream(stream2->GetWeakPtr());
@@ -206,7 +205,7 @@ TEST_F(SpdyWriteQueueTest, RemovePendingWritesForStream) {
     std::unique_ptr<SpdyBufferProducer> frame_producer;
     base::WeakPtr<SpdyStream> stream;
     ASSERT_TRUE(write_queue.Dequeue(&frame_type, &frame_producer, &stream));
-    EXPECT_EQ(SYN_STREAM, frame_type);
+    EXPECT_EQ(HEADERS, frame_type);
     EXPECT_EQ(i, ProducerToInt(std::move(frame_producer)));
     EXPECT_EQ(stream1.get(), stream.get());
   }
@@ -238,7 +237,7 @@ TEST_F(SpdyWriteQueueTest, RemovePendingWritesForStreamsAfter) {
   };
 
   for (int i = 0; i < 100; ++i) {
-    write_queue.Enqueue(DEFAULT_PRIORITY, SYN_STREAM, IntToProducer(i),
+    write_queue.Enqueue(DEFAULT_PRIORITY, HEADERS, IntToProducer(i),
                         streams[i % arraysize(streams)]);
   }
 
@@ -250,7 +249,7 @@ TEST_F(SpdyWriteQueueTest, RemovePendingWritesForStreamsAfter) {
     base::WeakPtr<SpdyStream> stream;
     ASSERT_TRUE(write_queue.Dequeue(&frame_type, &frame_producer, &stream))
         << "Unable to Dequeue i: " << i;
-    EXPECT_EQ(SYN_STREAM, frame_type);
+    EXPECT_EQ(HEADERS, frame_type);
     EXPECT_EQ(i, ProducerToInt(std::move(frame_producer)));
     EXPECT_EQ(stream1.get(), stream.get());
   }
@@ -268,7 +267,7 @@ TEST_F(SpdyWriteQueueTest, Clear) {
   SpdyWriteQueue write_queue;
 
   for (int i = 0; i < 100; ++i) {
-    write_queue.Enqueue(DEFAULT_PRIORITY, SYN_STREAM, IntToProducer(i),
+    write_queue.Enqueue(DEFAULT_PRIORITY, HEADERS, IntToProducer(i),
                         base::WeakPtr<SpdyStream>());
   }
 
@@ -283,7 +282,7 @@ TEST_F(SpdyWriteQueueTest, Clear) {
 TEST_F(SpdyWriteQueueTest, RequeingProducerWithoutReentrance) {
   SpdyWriteQueue queue;
   queue.Enqueue(
-      DEFAULT_PRIORITY, SYN_STREAM,
+      DEFAULT_PRIORITY, HEADERS,
       std::unique_ptr<SpdyBufferProducer>(new RequeingBufferProducer(&queue)),
       base::WeakPtr<SpdyStream>());
   {
@@ -309,7 +308,7 @@ TEST_F(SpdyWriteQueueTest, RequeingProducerWithoutReentrance) {
 TEST_F(SpdyWriteQueueTest, ReentranceOnClear) {
   SpdyWriteQueue queue;
   queue.Enqueue(
-      DEFAULT_PRIORITY, SYN_STREAM,
+      DEFAULT_PRIORITY, HEADERS,
       std::unique_ptr<SpdyBufferProducer>(new RequeingBufferProducer(&queue)),
       base::WeakPtr<SpdyStream>());
 
@@ -330,7 +329,7 @@ TEST_F(SpdyWriteQueueTest, ReentranceOnRemovePendingWritesAfter) {
 
   SpdyWriteQueue queue;
   queue.Enqueue(
-      DEFAULT_PRIORITY, SYN_STREAM,
+      DEFAULT_PRIORITY, HEADERS,
       std::unique_ptr<SpdyBufferProducer>(new RequeingBufferProducer(&queue)),
       stream->GetWeakPtr());
 
@@ -351,7 +350,7 @@ TEST_F(SpdyWriteQueueTest, ReentranceOnRemovePendingWritesForStream) {
 
   SpdyWriteQueue queue;
   queue.Enqueue(
-      DEFAULT_PRIORITY, SYN_STREAM,
+      DEFAULT_PRIORITY, HEADERS,
       std::unique_ptr<SpdyBufferProducer>(new RequeingBufferProducer(&queue)),
       stream->GetWeakPtr());
 

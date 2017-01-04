@@ -16,7 +16,6 @@ group("system_webview_shell") {
   ]
 }
 
-# GYP: //android_webview/android_webview_shell.gypi:system_webview_shell_apk
 android_apk("system_webview_shell_apk") {
   apk_name = "SystemWebViewShell"
   java_files = [
@@ -25,6 +24,7 @@ android_apk("system_webview_shell_apk") {
     "apk/src/org/chromium/webview_shell/StartupTimeActivity.java",
     "apk/src/org/chromium/webview_shell/TelemetryActivity.java",
     "apk/src/org/chromium/webview_shell/TelemetryMemoryPressureActivity.java",
+    "apk/src/org/chromium/webview_shell/WebViewCreateDestroyActivity.java",
     "apk/src/org/chromium/webview_shell/WebViewBrowserActivity.java",
     "apk/src/org/chromium/webview_shell/WebViewLayoutTestActivity.java",
     "apk/src/org/chromium/webview_shell/WebViewThreadTestActivity.java",
@@ -41,7 +41,6 @@ android_resources("system_webview_shell_apk_resources") {
   custom_package = "org.chromium.webview_shell"
 }
 
-# GYP: //android_webview/android_webview_shell.gypi:system_webview_shell_page_cycler_apk
 instrumentation_test_apk("system_webview_shell_page_cycler_apk") {
   apk_name = "SystemWebViewShellPageCycler"
   apk_under_test = ":system_webview_shell_apk"
@@ -59,7 +58,6 @@ instrumentation_test_apk("system_webview_shell_page_cycler_apk") {
   ]
 }
 
-# GYP: //android_webview/android_webview_shell.gypi:system_webview_shell_layout_test_apk
 instrumentation_test_apk("system_webview_shell_layout_test_apk") {
   apk_name = "SystemWebViewShellLayoutTest"
   apk_under_test = ":system_webview_shell_apk"
@@ -69,10 +67,16 @@ instrumentation_test_apk("system_webview_shell_layout_test_apk") {
     "layout_tests/src/org/chromium/webview_shell/test/WebViewLayoutTestRunner.java",
     "layout_tests/src/org/chromium/webview_shell/test/WebViewThreadTest.java",
   ]
-  isolate_file = "../../system_webview_shell_test_apk.isolate"
   deps = [
     "//base:base_java",
     "//base:base_java_test_support",
     "//testing/android/reporter:reporter_java",
+  ]
+  data = [
+    "test/data/",
+    "//third_party/WebKit/LayoutTests/virtual/stable/webexposed/global-interface-listing-expected.txt",
+    "//third_party/WebKit/LayoutTests/webexposed/global-interface-listing.html",
+    "//third_party/WebKit/LayoutTests/webexposed/global-interface-listing-expected.txt",
+    "//third_party/WebKit/LayoutTests/webexposed/resources/global-interface-listing.js",
   ]
 }

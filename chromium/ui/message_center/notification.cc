@@ -26,6 +26,12 @@ ButtonInfo::ButtonInfo(const base::string16& title)
     : title(title) {
 }
 
+ButtonInfo::ButtonInfo(const ButtonInfo& other) = default;
+
+ButtonInfo::~ButtonInfo() = default;
+
+ButtonInfo& ButtonInfo::operator=(const ButtonInfo& other) = default;
+
 RichNotificationData::RichNotificationData()
     : priority(DEFAULT_PRIORITY),
       never_timeout(false),
@@ -58,7 +64,8 @@ RichNotificationData::RichNotificationData(const RichNotificationData& other)
 #endif  // defined(OS_CHROMEOS)
       vibration_pattern(other.vibration_pattern),
       renotify(other.renotify),
-      silent(other.silent) {}
+      silent(other.silent),
+      accessible_name(other.accessible_name) {}
 
 RichNotificationData::~RichNotificationData() {}
 
@@ -77,7 +84,6 @@ Notification::Notification(NotificationType type,
       title_(title),
       message_(message),
       icon_(icon),
-      draw_icon_background_(true),
       display_source_(display_source),
       origin_url_(origin_url),
       notifier_id_(notifier_id),
@@ -93,7 +99,6 @@ Notification::Notification(const std::string& id, const Notification& other)
       title_(other.title_),
       message_(other.message_),
       icon_(other.icon_),
-      draw_icon_background_(other.draw_icon_background_),
       display_source_(other.display_source_),
       origin_url_(other.origin_url_),
       notifier_id_(other.notifier_id_),
@@ -109,7 +114,6 @@ Notification::Notification(const Notification& other)
       title_(other.title_),
       message_(other.message_),
       icon_(other.icon_),
-      draw_icon_background_(other.draw_icon_background_),
       display_source_(other.display_source_),
       origin_url_(other.origin_url_),
       notifier_id_(other.notifier_id_),
@@ -125,7 +129,6 @@ Notification& Notification::operator=(const Notification& other) {
   title_ = other.title_;
   message_ = other.message_;
   icon_ = other.icon_;
-  draw_icon_background_ = other.draw_icon_background_;
   display_source_ = other.display_source_;
   origin_url_ = other.origin_url_;
   notifier_id_ = other.notifier_id_;

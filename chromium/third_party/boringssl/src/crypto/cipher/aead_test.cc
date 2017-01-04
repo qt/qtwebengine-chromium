@@ -22,8 +22,8 @@
 #include <openssl/err.h>
 
 #include "../test/file_test.h"
-#include "../test/scoped_types.h"
 
+namespace bssl {
 
 // This program tests an AEAD against a series of test vectors from a file,
 // using the FileTest format. As an example, here's a valid test case:
@@ -304,8 +304,6 @@ static const struct KnownAEAD kAEADs[] = {
   { "aes-256-gcm", EVP_aead_aes_256_gcm, false },
   { "chacha20-poly1305", EVP_aead_chacha20_poly1305, false },
   { "chacha20-poly1305-old", EVP_aead_chacha20_poly1305_old, false },
-  { "rc4-md5-tls", EVP_aead_rc4_md5_tls, true },
-  { "rc4-sha1-tls", EVP_aead_rc4_sha1_tls, true },
   { "aes-128-cbc-sha1-tls", EVP_aead_aes_128_cbc_sha1_tls, true },
   { "aes-128-cbc-sha1-tls-implicit-iv", EVP_aead_aes_128_cbc_sha1_tls_implicit_iv, true },
   { "aes-128-cbc-sha256-tls", EVP_aead_aes_128_cbc_sha256_tls, true },
@@ -315,8 +313,6 @@ static const struct KnownAEAD kAEADs[] = {
   { "aes-256-cbc-sha384-tls", EVP_aead_aes_256_cbc_sha384_tls, true },
   { "des-ede3-cbc-sha1-tls", EVP_aead_des_ede3_cbc_sha1_tls, true },
   { "des-ede3-cbc-sha1-tls-implicit-iv", EVP_aead_des_ede3_cbc_sha1_tls_implicit_iv, true },
-  { "rc4-md5-ssl3", EVP_aead_rc4_md5_ssl3, true },
-  { "rc4-sha1-ssl3", EVP_aead_rc4_sha1_ssl3, true },
   { "aes-128-cbc-sha1-ssl3", EVP_aead_aes_128_cbc_sha1_ssl3, true },
   { "aes-256-cbc-sha1-ssl3", EVP_aead_aes_256_cbc_sha1_ssl3, true },
   { "des-ede3-cbc-sha1-ssl3", EVP_aead_des_ede3_cbc_sha1_ssl3, true },
@@ -327,7 +323,7 @@ static const struct KnownAEAD kAEADs[] = {
   { "", NULL, false },
 };
 
-int main(int argc, char **argv) {
+static int Main(int argc, char **argv) {
   CRYPTO_library_init();
 
   if (argc != 3) {
@@ -359,4 +355,10 @@ int main(int argc, char **argv) {
   }
 
   return FileTestMain(TestAEAD, const_cast<EVP_AEAD*>(aead), argv[2]);
+}
+
+}  // namespace bssl
+
+int main(int argc, char **argv) {
+  return bssl::Main(argc, argv);
 }

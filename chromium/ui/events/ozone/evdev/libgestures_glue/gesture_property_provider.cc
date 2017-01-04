@@ -1036,16 +1036,17 @@ void GesturePropertyProvider::ParseXorgConfFile(const std::string& content) {
   // Sections are delimited by the "EndSection" keyword.
   // Lines are delimited by "\n".
   // Pieces are delimited by all white-spaces.
-  std::vector<std::string> sections;
-  base::SplitStringUsingSubstr(content, "EndSection", &sections);
-  for (size_t i = 0; i < sections.size(); ++i) {
+  for (const std::string& section :
+       base::SplitStringUsingSubstr(content, "EndSection",
+                                    base::TRIM_WHITESPACE,
+                                    base::SPLIT_WANT_ALL)) {
     // Create a new configuration section.
     configurations_.push_back(
-        base::WrapUnique(new internal::ConfigurationSection()));
+        base::MakeUnique<internal::ConfigurationSection>());
     internal::ConfigurationSection* config = configurations_.back().get();
 
     // Break the section into lines.
-    base::StringTokenizer lines(sections[i], "\n");
+    base::StringTokenizer lines(section, "\n");
     bool is_input_class_section = true;
     bool has_checked_section_type = false;
     while (is_input_class_section && lines.GetNext()) {
@@ -1078,8 +1079,7 @@ void GesturePropertyProvider::ParseXorgConfFile(const std::string& content) {
         // one.
         if (is_parsing) {
           // Stop parsing the current line if the format is wrong.
-          if (piece.size() <= 2 || piece[0] != '\"' ||
-              piece[piece.size() - 1] != '\"') {
+          if (piece.size() <= 2 || piece[0] != '\"' || piece.back() != '\"') {
             LOG(ERROR) << "Error parsing line: " << lines.token();
             has_error = true;
             if (next_is_section_type)
@@ -1198,17 +1198,17 @@ GesturePropertyProvider::CreateMatchCriteria(const std::string& match_type,
                                              const std::string& arg) {
   DVLOG(2) << "Creating match criteria: (" << match_type << ", " << arg << ")";
   if (match_type == "MatchProduct")
-    return base::WrapUnique(new internal::MatchProduct(arg));
+    return base::MakeUnique<internal::MatchProduct>(arg);
   if (match_type == "MatchDevicePath")
-    return base::WrapUnique(new internal::MatchDevicePath(arg));
+    return base::MakeUnique<internal::MatchDevicePath>(arg);
   if (match_type == "MatchUSBID")
-    return base::WrapUnique(new internal::MatchUSBID(arg));
+    return base::MakeUnique<internal::MatchUSBID>(arg);
   if (match_type == "MatchIsPointer")
-    return base::WrapUnique(new internal::MatchIsPointer(arg));
+    return base::MakeUnique<internal::MatchIsPointer>(arg);
   if (match_type == "MatchIsTouchpad")
-    return base::WrapUnique(new internal::MatchIsTouchpad(arg));
+    return base::MakeUnique<internal::MatchIsTouchpad>(arg);
   if (match_type == "MatchIsTouchscreen")
-    return base::WrapUnique(new internal::MatchIsTouchscreen(arg));
+    return base::MakeUnique<internal::MatchIsTouchscreen>(arg);
   NOTREACHED();
   return NULL;
 }

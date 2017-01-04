@@ -9,6 +9,7 @@
 #include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 
 #include <EGL/eglext.h>
+#include <iomanip>
 #include <sstream>
 #include <versionhelpers.h>
 
@@ -23,6 +24,7 @@
 #include "libANGLE/Program.h"
 #include "libANGLE/renderer/renderer_utils.h"
 #include "libANGLE/renderer/d3d/CompilerD3D.h"
+#include "libANGLE/renderer/d3d/DisplayD3D.h"
 #include "libANGLE/renderer/d3d/d3d11/Blit11.h"
 #include "libANGLE/renderer/d3d/d3d11/Buffer11.h"
 #include "libANGLE/renderer/d3d/d3d11/Clear11.h"
@@ -42,6 +44,7 @@
 #include "libANGLE/renderer/d3d/d3d11/SwapChain11.h"
 #include "libANGLE/renderer/d3d/d3d11/texture_format_table.h"
 #include "libANGLE/renderer/d3d/d3d11/TextureStorage11.h"
+#include "libANGLE/renderer/d3d/d3d11/TransformFeedback11.h"
 #include "libANGLE/renderer/d3d/d3d11/Trim11.h"
 #include "libANGLE/renderer/d3d/d3d11/VertexArray11.h"
 #include "libANGLE/renderer/d3d/d3d11/VertexBuffer11.h"
@@ -54,7 +57,6 @@
 #include "libANGLE/renderer/d3d/ShaderD3D.h"
 #include "libANGLE/renderer/d3d/SurfaceD3D.h"
 #include "libANGLE/renderer/d3d/TextureD3D.h"
-#include "libANGLE/renderer/d3d/TransformFeedbackD3D.h"
 #include "libANGLE/renderer/d3d/VertexDataManager.h"
 #include "libANGLE/State.h"
 #include "libANGLE/Surface.h"
@@ -444,7 +446,7 @@ Renderer11::Renderer11(egl::Display *display)
     mAppliedGeometryShader = NULL;
     mAppliedPixelShader = NULL;
 
-    mAppliedNumXFBBindings = static_cast<size_t>(-1);
+    mAppliedTFObject = angle::DirtyPointer;
 
     ZeroMemory(&mAdapterDescription, sizeof(mAdapterDescription));
 
@@ -883,6 +885,18 @@ void Renderer11::populateRenderer11DeviceCaps()
 {
     HRESULT hr = S_OK;
 
+    LARGE_INTEGER version;
+    hr = mDxgiAdapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &version);
+    if (FAILED(hr))
+    {
+        mRenderer11DeviceCaps.driverVersion.reset();
+        ERR("Error querying driver version from DXGI Adapter.");
+    }
+    else
+    {
+        mRenderer11DeviceCaps.driverVersion = version;
+    }
+
     if (mDeviceContext1)
     {
         D3D11_FEATURE_DATA_D3D11_OPTIONS d3d11Options;
@@ -894,10 +908,18 @@ void Renderer11::populateRenderer11DeviceCaps()
         }
     }
 
-    hr = mDevice->CheckFormatSupport(DXGI_FORMAT_B5G6R5_UNORM, &(mRenderer11DeviceCaps.B5G6R5support));
-    if (FAILED(hr))
+    if (getWorkarounds().disableB5G6R5Support)
     {
         mRenderer11DeviceCaps.B5G6R5support = 0;
+    }
+    else
+    {
+        hr = mDevice->CheckFormatSupport(DXGI_FORMAT_B5G6R5_UNORM,
+                                         &(mRenderer11DeviceCaps.B5G6R5support));
+        if (FAILED(hr))
+        {
+            mRenderer11DeviceCaps.B5G6R5support = 0;
+        }
     }
 
     hr = mDevice->CheckFormatSupport(DXGI_FORMAT_B4G4R4A4_UNORM, &(mRenderer11DeviceCaps.B4G4R4A4support));
@@ -974,6 +996,7 @@ egl::ConfigSet Renderer11::generateConfigs()
                 gl::GetInternalFormatInfo(colorBufferInternalFormat);
             const gl::InternalFormat &depthStencilBufferFormatInfo =
                 gl::GetInternalFormatInfo(depthStencilBufferInternalFormat);
+            const gl::Version &maxVersion = getMaxSupportedESVersion();
 
             egl::Config config;
             config.renderTargetFormat = colorBufferInternalFormat;
@@ -991,15 +1014,22 @@ egl::ConfigSet Renderer11::generateConfigs()
             config.colorBufferType = EGL_RGB_BUFFER;
             config.configCaveat    = EGL_NONE;
             config.configID        = static_cast<EGLint>(configs.size() + 1);
-            // Can only support a conformant ES2 with feature level greater than 10.0.
-            config.conformant = (mRenderer11DeviceCaps.featureLevel >= D3D_FEATURE_LEVEL_10_0)
-                                    ? (EGL_OPENGL_ES2_BIT | EGL_OPENGL_ES3_BIT_KHR)
-                                    : 0;
 
             // PresentPathFast may not be conformant
-            if (mPresentPathFastEnabled)
+            config.conformant = 0;
+            if (!mPresentPathFastEnabled)
             {
-                config.conformant = 0;
+                // Can only support a conformant ES2 with feature level greater than 10.0.
+                if (mRenderer11DeviceCaps.featureLevel >= D3D_FEATURE_LEVEL_10_0)
+                {
+                    config.conformant |= EGL_OPENGL_ES2_BIT;
+                }
+
+                // We can only support conformant ES3 on FL 10.1+
+                if (maxVersion.major >= 3)
+                {
+                    config.conformant |= EGL_OPENGL_ES3_BIT_KHR;
+                }
             }
 
             config.depthSize         = depthStencilBufferFormatInfo.depthBits;
@@ -1013,11 +1043,14 @@ egl::ConfigSet Renderer11::generateConfigs()
             config.nativeRenderable  = EGL_FALSE;
             config.nativeVisualID    = 0;
             config.nativeVisualType  = EGL_NONE;
-            // Can't support ES3 at all without feature level 10.0
-            config.renderableType =
-                EGL_OPENGL_ES2_BIT | ((mRenderer11DeviceCaps.featureLevel >= D3D_FEATURE_LEVEL_10_0)
-                                          ? EGL_OPENGL_ES3_BIT_KHR
-                                          : 0);
+
+            // Can't support ES3 at all without feature level 10.1
+            config.renderableType = EGL_OPENGL_ES2_BIT;
+            if (maxVersion.major >= 3)
+            {
+                config.renderableType |= EGL_OPENGL_ES3_BIT_KHR;
+            }
+
             config.sampleBuffers         = 0;  // FIXME: enumerate multi-sampling
             config.samples               = 0;
             config.stencilSize           = depthStencilBufferFormatInfo.stencilBits;
@@ -1102,11 +1135,15 @@ gl::Error Renderer11::finish()
     }
 
     mDeviceContext->End(mSyncQuery);
-    mDeviceContext->Flush();
 
+    unsigned int attempt = 0;
     do
     {
-        result = mDeviceContext->GetData(mSyncQuery, NULL, 0, D3D11_ASYNC_GETDATA_DONOTFLUSH);
+        unsigned int flushFrequency = 100;
+        UINT flags = (attempt % flushFrequency == 0) ? 0 : D3D11_ASYNC_GETDATA_DONOTFLUSH;
+        attempt++;
+
+        result = mDeviceContext->GetData(mSyncQuery, NULL, 0, flags);
         if (FAILED(result))
         {
             return gl::Error(GL_OUT_OF_MEMORY, "Failed to get event query data, result: 0x%X.", result);
@@ -1359,61 +1396,48 @@ gl::Error Renderer11::setUniformBuffers(const gl::ContextState &data,
         GLintptr uniformBufferOffset = uniformBuffer.getOffset();
         GLsizeiptr uniformBufferSize = uniformBuffer.getSize();
 
-        if (uniformBuffer.get() != nullptr)
+        if (uniformBuffer.get() == nullptr)
         {
-            Buffer11 *bufferStorage = GetImplAs<Buffer11>(uniformBuffer.get());
-            ID3D11Buffer *constantBuffer;
+            continue;
+        }
 
-            if (mRenderer11DeviceCaps.supportsConstantBufferOffsets)
+        Buffer11 *bufferStorage      = GetImplAs<Buffer11>(uniformBuffer.get());
+        ID3D11Buffer *constantBuffer = nullptr;
+
+        ANGLE_TRY_RESULT(
+            bufferStorage->getConstantBufferRange(uniformBufferOffset, uniformBufferSize),
+            constantBuffer);
+
+        if (!constantBuffer)
+        {
+            return gl::Error(GL_OUT_OF_MEMORY, "Error retrieving constant buffer");
+        }
+
+        if (mCurrentConstantBufferVS[uniformBufferIndex] != bufferStorage->getSerial() ||
+            mCurrentConstantBufferVSOffset[uniformBufferIndex] != uniformBufferOffset ||
+            mCurrentConstantBufferVSSize[uniformBufferIndex] != uniformBufferSize)
+        {
+            if (mRenderer11DeviceCaps.supportsConstantBufferOffsets && uniformBufferSize != 0)
             {
-                auto bufferOrError = bufferStorage->getBuffer(BUFFER_USAGE_UNIFORM);
-                if (bufferOrError.isError())
-                {
-                    return bufferOrError.getError();
-                }
-                constantBuffer = bufferOrError.getResult();
+                UINT firstConstant = 0, numConstants = 0;
+                CalculateConstantBufferParams(uniformBufferOffset, uniformBufferSize,
+                                              &firstConstant, &numConstants);
+                mDeviceContext1->VSSetConstantBuffers1(
+                    getReservedVertexUniformBuffers() +
+                        static_cast<unsigned int>(uniformBufferIndex),
+                    1, &constantBuffer, &firstConstant, &numConstants);
             }
             else
             {
-                auto bufferOrError =
-                    bufferStorage->getConstantBufferRange(uniformBufferOffset, uniformBufferSize);
-                if (bufferOrError.isError())
-                {
-                    return bufferOrError.getError();
-                }
-                constantBuffer = bufferOrError.getResult();
+                mDeviceContext->VSSetConstantBuffers(
+                    getReservedVertexUniformBuffers() +
+                        static_cast<unsigned int>(uniformBufferIndex),
+                    1, &constantBuffer);
             }
 
-            if (!constantBuffer)
-            {
-                return gl::Error(GL_OUT_OF_MEMORY);
-            }
-
-            if (mCurrentConstantBufferVS[uniformBufferIndex] != bufferStorage->getSerial() ||
-                mCurrentConstantBufferVSOffset[uniformBufferIndex] != uniformBufferOffset ||
-                mCurrentConstantBufferVSSize[uniformBufferIndex] != uniformBufferSize)
-            {
-                if (mRenderer11DeviceCaps.supportsConstantBufferOffsets && uniformBufferSize != 0)
-                {
-                    UINT firstConstant = 0, numConstants = 0;
-                    CalculateConstantBufferParams(uniformBufferOffset, uniformBufferSize, &firstConstant, &numConstants);
-                    mDeviceContext1->VSSetConstantBuffers1(
-                        getReservedVertexUniformBuffers() +
-                            static_cast<unsigned int>(uniformBufferIndex),
-                        1, &constantBuffer, &firstConstant, &numConstants);
-                }
-                else
-                {
-                    mDeviceContext->VSSetConstantBuffers(
-                        getReservedVertexUniformBuffers() +
-                            static_cast<unsigned int>(uniformBufferIndex),
-                        1, &constantBuffer);
-                }
-
-                mCurrentConstantBufferVS[uniformBufferIndex] = bufferStorage->getSerial();
-                mCurrentConstantBufferVSOffset[uniformBufferIndex] = uniformBufferOffset;
-                mCurrentConstantBufferVSSize[uniformBufferIndex] = uniformBufferSize;
-            }
+            mCurrentConstantBufferVS[uniformBufferIndex]       = bufferStorage->getSerial();
+            mCurrentConstantBufferVSOffset[uniformBufferIndex] = uniformBufferOffset;
+            mCurrentConstantBufferVSSize[uniformBufferIndex]   = uniformBufferSize;
         }
     }
 
@@ -1431,65 +1455,52 @@ gl::Error Renderer11::setUniformBuffers(const gl::ContextState &data,
         GLintptr uniformBufferOffset = uniformBuffer.getOffset();
         GLsizeiptr uniformBufferSize = uniformBuffer.getSize();
 
-        if (uniformBuffer.get() != nullptr)
+        if (uniformBuffer.get() == nullptr)
         {
-            Buffer11 *bufferStorage = GetImplAs<Buffer11>(uniformBuffer.get());
-            ID3D11Buffer *constantBuffer;
+            continue;
+        }
 
-            if (mRenderer11DeviceCaps.supportsConstantBufferOffsets)
+        Buffer11 *bufferStorage      = GetImplAs<Buffer11>(uniformBuffer.get());
+        ID3D11Buffer *constantBuffer = nullptr;
+
+        ANGLE_TRY_RESULT(
+            bufferStorage->getConstantBufferRange(uniformBufferOffset, uniformBufferSize),
+            constantBuffer);
+
+        if (!constantBuffer)
+        {
+            return gl::Error(GL_OUT_OF_MEMORY, "Error retrieving constant buffer");
+        }
+
+        if (mCurrentConstantBufferPS[uniformBufferIndex] != bufferStorage->getSerial() ||
+            mCurrentConstantBufferPSOffset[uniformBufferIndex] != uniformBufferOffset ||
+            mCurrentConstantBufferPSSize[uniformBufferIndex] != uniformBufferSize)
+        {
+            if (mRenderer11DeviceCaps.supportsConstantBufferOffsets && uniformBufferSize != 0)
             {
-                auto bufferOrError = bufferStorage->getBuffer(BUFFER_USAGE_UNIFORM);
-                if (bufferOrError.isError())
-                {
-                    return bufferOrError.getError();
-                }
-                constantBuffer = bufferOrError.getResult();
+                UINT firstConstant = 0, numConstants = 0;
+                CalculateConstantBufferParams(uniformBufferOffset, uniformBufferSize,
+                                              &firstConstant, &numConstants);
+                mDeviceContext1->PSSetConstantBuffers1(
+                    getReservedFragmentUniformBuffers() +
+                        static_cast<unsigned int>(uniformBufferIndex),
+                    1, &constantBuffer, &firstConstant, &numConstants);
             }
             else
             {
-                auto bufferOrError =
-                    bufferStorage->getConstantBufferRange(uniformBufferOffset, uniformBufferSize);
-                if (bufferOrError.isError())
-                {
-                    return bufferOrError.getError();
-                }
-                constantBuffer = bufferOrError.getResult();
+                mDeviceContext->PSSetConstantBuffers(
+                    getReservedFragmentUniformBuffers() +
+                        static_cast<unsigned int>(uniformBufferIndex),
+                    1, &constantBuffer);
             }
 
-            if (!constantBuffer)
-            {
-                return gl::Error(GL_OUT_OF_MEMORY);
-            }
-
-            if (mCurrentConstantBufferPS[uniformBufferIndex] != bufferStorage->getSerial() ||
-                mCurrentConstantBufferPSOffset[uniformBufferIndex] != uniformBufferOffset ||
-                mCurrentConstantBufferPSSize[uniformBufferIndex] != uniformBufferSize)
-            {
-                if (mRenderer11DeviceCaps.supportsConstantBufferOffsets && uniformBufferSize != 0)
-                {
-                    UINT firstConstant = 0, numConstants = 0;
-                    CalculateConstantBufferParams(uniformBufferOffset, uniformBufferSize, &firstConstant, &numConstants);
-                    mDeviceContext1->PSSetConstantBuffers1(
-                        getReservedFragmentUniformBuffers() +
-                            static_cast<unsigned int>(uniformBufferIndex),
-                        1, &constantBuffer, &firstConstant, &numConstants);
-                }
-                else
-                {
-                    mDeviceContext->PSSetConstantBuffers(
-                        getReservedFragmentUniformBuffers() +
-                            static_cast<unsigned int>(uniformBufferIndex),
-                        1, &constantBuffer);
-                }
-
-                mCurrentConstantBufferPS[uniformBufferIndex] = bufferStorage->getSerial();
-                mCurrentConstantBufferPSOffset[uniformBufferIndex] = uniformBufferOffset;
-                mCurrentConstantBufferPSSize[uniformBufferIndex] = uniformBufferSize;
-            }
+            mCurrentConstantBufferPS[uniformBufferIndex]       = bufferStorage->getSerial();
+            mCurrentConstantBufferPSOffset[uniformBufferIndex] = uniformBufferOffset;
+            mCurrentConstantBufferPSSize[uniformBufferIndex]   = uniformBufferSize;
         }
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::updateState(const gl::ContextState &data, GLenum drawMode)
@@ -1668,76 +1679,40 @@ gl::Error Renderer11::applyIndexBuffer(const gl::ContextState &data,
     return gl::NoError();
 }
 
-gl::Error Renderer11::applyTransformFeedbackBuffers(const gl::State &state)
+gl::Error Renderer11::applyTransformFeedbackBuffers(const gl::ContextState &data)
 {
-    size_t numXFBBindings = 0;
-    bool requiresUpdate = false;
+    const auto &state = data.getState();
 
-    if (state.isTransformFeedbackActiveUnpaused())
+    // If transform feedback is not active, unbind all buffers
+    if (!state.isTransformFeedbackActiveUnpaused())
     {
-        const gl::TransformFeedback *transformFeedback = state.getCurrentTransformFeedback();
-        numXFBBindings = transformFeedback->getIndexedBufferCount();
-        ASSERT(numXFBBindings <= gl::IMPLEMENTATION_MAX_TRANSFORM_FEEDBACK_BUFFERS);
-
-        for (size_t i = 0; i < numXFBBindings; i++)
+        if (mAppliedTFObject != 0)
         {
-            const OffsetBindingPointer<gl::Buffer> &binding = transformFeedback->getIndexedBuffer(i);
-
-            ID3D11Buffer *d3dBuffer = nullptr;
-            if (binding.get() != nullptr)
-            {
-                Buffer11 *storage = GetImplAs<Buffer11>(binding.get());
-                auto bufferOrError = storage->getBuffer(BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK);
-                if (bufferOrError.isError())
-                {
-                    return bufferOrError.getError();
-                }
-                d3dBuffer = bufferOrError.getResult();
-            }
-
-            // TODO: mAppliedTFBuffers and friends should also be kept in a vector.
-            if (d3dBuffer != mAppliedTFBuffers[i] || binding.getOffset() != mAppliedTFOffsets[i])
-            {
-                requiresUpdate = true;
-            }
+            mDeviceContext->SOSetTargets(0, nullptr, nullptr);
+            mAppliedTFObject = 0;
         }
+        return gl::NoError();
     }
 
-    if (requiresUpdate || numXFBBindings != mAppliedNumXFBBindings)
+    gl::TransformFeedback *transformFeedback = state.getCurrentTransformFeedback();
+    TransformFeedback11 *transformFeedback11 = GetImplAs<TransformFeedback11>(transformFeedback);
+    uintptr_t transformFeedbackId            = reinterpret_cast<uintptr_t>(transformFeedback11);
+    if (mAppliedTFObject == transformFeedbackId && !transformFeedback11->isDirty())
     {
-        const gl::TransformFeedback *transformFeedback = state.getCurrentTransformFeedback();
-        for (size_t i = 0; i < numXFBBindings; ++i)
-        {
-            const OffsetBindingPointer<gl::Buffer> &binding = transformFeedback->getIndexedBuffer(i);
-            if (binding.get() != nullptr)
-            {
-                Buffer11 *storage = GetImplAs<Buffer11>(binding.get());
-                auto bufferOrError = storage->getBuffer(BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK);
-                if (bufferOrError.isError())
-                {
-                    return bufferOrError.getError();
-                }
-                ID3D11Buffer *d3dBuffer = bufferOrError.getResult();
-
-                mCurrentD3DOffsets[i] = (mAppliedTFBuffers[i] != d3dBuffer || mAppliedTFOffsets[i] != binding.getOffset()) ?
-                                        static_cast<UINT>(binding.getOffset()) : -1;
-                mAppliedTFBuffers[i] = d3dBuffer;
-            }
-            else
-            {
-                mAppliedTFBuffers[i]  = nullptr;
-                mCurrentD3DOffsets[i] = 0;
-            }
-            mAppliedTFOffsets[i] = binding.getOffset();
-        }
-
-        mAppliedNumXFBBindings = numXFBBindings;
-
-        mDeviceContext->SOSetTargets(static_cast<unsigned int>(numXFBBindings), mAppliedTFBuffers,
-                                     mCurrentD3DOffsets);
+        return gl::NoError();
     }
 
-    return gl::Error(GL_NO_ERROR);
+    const std::vector<ID3D11Buffer *> *soBuffers = nullptr;
+    ANGLE_TRY_RESULT(transformFeedback11->getSOBuffers(), soBuffers);
+    const std::vector<UINT> &soOffsets = transformFeedback11->getSOBufferOffsets();
+
+    mDeviceContext->SOSetTargets(transformFeedback11->getNumSOBuffers(), soBuffers->data(),
+                                 soOffsets.data());
+
+    mAppliedTFObject = transformFeedbackId;
+    transformFeedback11->onApply();
+
+    return gl::NoError();
 }
 
 gl::Error Renderer11::drawArraysImpl(const gl::ContextState &data,
@@ -2397,7 +2372,7 @@ void Renderer11::SamplerMetadataD3D11::initData(unsigned int samplerCount)
 void Renderer11::SamplerMetadataD3D11::update(unsigned int samplerIndex, const gl::Texture &texture)
 {
     unsigned int baseLevel = texture.getTextureState().getEffectiveBaseLevel();
-    GLenum internalFormat = texture.getInternalFormat(texture.getTarget(), baseLevel);
+    GLenum sizedFormat     = texture.getFormat(texture.getTarget(), baseLevel).asSized();
     if (mSamplerMetadata[samplerIndex].baseLevel != static_cast<int>(baseLevel))
     {
         mSamplerMetadata[samplerIndex].baseLevel = static_cast<int>(baseLevel);
@@ -2410,7 +2385,7 @@ void Renderer11::SamplerMetadataD3D11::update(unsigned int samplerIndex, const g
     bool needIntegerTextureMetadata = false;
     // internalFormatBits == 0 means a 32-bit texture in the case of integer textures.
     int internalFormatBits = 0;
-    switch (internalFormat)
+    switch (sizedFormat)
     {
         case GL_RGBA32I:
         case GL_RGBA32UI:
@@ -2549,13 +2524,7 @@ void Renderer11::markAllStateDirty()
     mAppliedGeometryShader = angle::DirtyPointer;
     mAppliedPixelShader    = angle::DirtyPointer;
 
-    mAppliedNumXFBBindings = static_cast<size_t>(-1);
-
-    for (size_t i = 0; i < gl::IMPLEMENTATION_MAX_TRANSFORM_FEEDBACK_BUFFERS; i++)
-    {
-        mAppliedTFBuffers[i] = NULL;
-        mAppliedTFOffsets[i] = 0;
-    }
+    mAppliedTFObject = angle::DirtyPointer;
 
     memset(&mAppliedVertexConstants, 0, sizeof(dx_VertexConstants11));
     memset(&mAppliedPixelConstants, 0, sizeof(dx_PixelConstants11));
@@ -2604,24 +2573,18 @@ bool Renderer11::testDeviceLost()
 {
     bool isLost = false;
 
+    if (!mDevice)
+    {
+        return true;
+    }
+
     // GetRemovedReason is used to test if the device is removed
     HRESULT result = mDevice->GetDeviceRemovedReason();
     isLost = d3d11::isDeviceLostError(result);
 
     if (isLost)
     {
-        // Log error if this is a new device lost event
-        if (mDeviceLost == false)
-        {
-            ERR("The D3D11 device was removed: 0x%08X", result);
-        }
-
-        // ensure we note the device loss --
-        // we'll probably get this done again by notifyDeviceLost
-        // but best to remember it!
-        // Note that we don't want to clear the device loss status here
-        // -- this needs to be done by resetDevice
-        mDeviceLost = true;
+        ERR("The D3D11 device was removed: 0x%08X", result);
     }
 
     return isLost;
@@ -2733,8 +2696,6 @@ bool Renderer11::resetDevice()
         ERR("Could not reinitialize D3D11 device: %08X", result.getCode());
         return false;
     }
-
-    mDeviceLost = false;
 
     return true;
 }
@@ -2975,7 +2936,7 @@ gl::Error Renderer11::copyImageInternal(const gl::Framebuffer *framebuffer,
     // Convert to the unsized format before calling copyTexture.
     const gl::InternalFormat &internalFormat = gl::GetInternalFormatInfo(destFormat);
     ANGLE_TRY(mBlit->copyTexture(source, sourceArea, sourceSize, dest, destArea, destSize, nullptr,
-                                 internalFormat.format, GL_NEAREST, false));
+                                 internalFormat.format, GL_NEAREST, false, false, false));
 
     return gl::NoError();
 }
@@ -2997,7 +2958,7 @@ gl::Error Renderer11::copyImage2D(const gl::Framebuffer *framebuffer,
 
     ANGLE_TRY(copyImageInternal(framebuffer, sourceRect, destFormat, destOffset, destRenderTarget));
 
-    storage11->invalidateSwizzleCacheLevel(level);
+    storage11->markLevelDirty(level);
 
     return gl::NoError();
 }
@@ -3015,7 +2976,7 @@ gl::Error Renderer11::copyImageCube(const gl::Framebuffer *framebuffer, const gl
 
     ANGLE_TRY(copyImageInternal(framebuffer, sourceRect, destFormat, destOffset, destRenderTarget));
 
-    storage11->invalidateSwizzleCacheLevel(level);
+    storage11->markLevelDirty(level);
 
     return gl::NoError();
 }
@@ -3033,7 +2994,7 @@ gl::Error Renderer11::copyImage3D(const gl::Framebuffer *framebuffer, const gl::
 
     ANGLE_TRY(copyImageInternal(framebuffer, sourceRect, destFormat, destOffset, destRenderTarget));
 
-    storage11->invalidateSwizzleCacheLevel(level);
+    storage11->markLevelDirty(level);
 
     return gl::NoError();
 }
@@ -3050,15 +3011,104 @@ gl::Error Renderer11::copyImage2DArray(const gl::Framebuffer *framebuffer, const
     ASSERT(destRenderTarget);
 
     ANGLE_TRY(copyImageInternal(framebuffer, sourceRect, destFormat, destOffset, destRenderTarget));
+    storage11->markLevelDirty(level);
 
-    storage11->invalidateSwizzleCacheLevel(level);
+    return gl::NoError();
+}
+
+gl::Error Renderer11::copyTexture(const gl::Texture *source,
+                                  GLint sourceLevel,
+                                  const gl::Rectangle &sourceRect,
+                                  GLenum destFormat,
+                                  const gl::Offset &destOffset,
+                                  TextureStorage *storage,
+                                  GLint destLevel,
+                                  bool unpackFlipY,
+                                  bool unpackPremultiplyAlpha,
+                                  bool unpackUnmultiplyAlpha)
+{
+    const TextureD3D *sourceD3D = GetImplAs<TextureD3D>(source);
+
+    TextureStorage *sourceStorage = nullptr;
+    ANGLE_TRY(const_cast<TextureD3D *>(sourceD3D)->getNativeTexture(&sourceStorage));
+
+    TextureStorage11_2D *sourceStorage11 = GetAs<TextureStorage11_2D>(sourceStorage);
+    ASSERT(sourceStorage11);
+
+    TextureStorage11_2D *destStorage11 = GetAs<TextureStorage11_2D>(storage);
+    ASSERT(destStorage11);
+
+    // Check for fast path where a CopySubresourceRegion can be used.
+    if (unpackPremultiplyAlpha == unpackUnmultiplyAlpha && !unpackFlipY &&
+        sourceStorage11->getFormatSet().texFormat == destStorage11->getFormatSet().texFormat)
+    {
+        ID3D11Resource *sourceResource = nullptr;
+        ANGLE_TRY(sourceStorage11->getResource(&sourceResource));
+
+        gl::ImageIndex sourceIndex = gl::ImageIndex::Make2D(sourceLevel);
+        UINT sourceSubresource     = sourceStorage11->getSubresourceIndex(sourceIndex);
+
+        ID3D11Resource *destResource = nullptr;
+        ANGLE_TRY(destStorage11->getResource(&destResource));
+
+        gl::ImageIndex destIndex = gl::ImageIndex::Make2D(destLevel);
+        UINT destSubresource     = destStorage11->getSubresourceIndex(destIndex);
+
+        D3D11_BOX sourceBox{
+            static_cast<UINT>(sourceRect.x),
+            static_cast<UINT>(sourceRect.y),
+            0u,
+            static_cast<UINT>(sourceRect.x + sourceRect.width),
+            static_cast<UINT>(sourceRect.y + sourceRect.height),
+            1u,
+        };
+
+        mDeviceContext->CopySubresourceRegion(destResource, destSubresource, destOffset.x,
+                                              destOffset.y, destOffset.z, sourceResource,
+                                              sourceSubresource, &sourceBox);
+    }
+    else
+    {
+        ID3D11ShaderResourceView *sourceSRV = nullptr;
+        ANGLE_TRY(sourceStorage11->getSRVLevels(sourceLevel, sourceLevel, &sourceSRV));
+
+        gl::ImageIndex destIndex             = gl::ImageIndex::Make2D(destLevel);
+        RenderTargetD3D *destRenderTargetD3D = nullptr;
+        ANGLE_TRY(destStorage11->getRenderTarget(destIndex, &destRenderTargetD3D));
+
+        RenderTarget11 *destRenderTarget11 = GetAs<RenderTarget11>(destRenderTargetD3D);
+
+        ID3D11RenderTargetView *destRTV = destRenderTarget11->getRenderTargetView();
+        ASSERT(destRTV);
+
+        gl::Box sourceArea(sourceRect.x, sourceRect.y, 0, sourceRect.width, sourceRect.height, 1);
+        gl::Extents sourceSize(
+            static_cast<int>(source->getWidth(source->getTarget(), sourceLevel)),
+            static_cast<int>(source->getHeight(source->getTarget(), sourceLevel)), 1);
+        if (unpackFlipY)
+        {
+            sourceArea.y      = sourceSize.height - sourceRect.y;
+            sourceArea.height = -sourceArea.height;
+        }
+
+        gl::Box destArea(destOffset.x, destOffset.y, 0, sourceRect.width, sourceRect.height, 1);
+        gl::Extents destSize(destRenderTarget11->getWidth(), destRenderTarget11->getHeight(), 1);
+
+        // Use nearest filtering because source and destination are the same size for the direct
+        // copy
+        ANGLE_TRY(mBlit->copyTexture(sourceSRV, sourceArea, sourceSize, destRTV, destArea, destSize,
+                                     nullptr, destFormat, GL_NEAREST, false, unpackPremultiplyAlpha,
+                                     unpackUnmultiplyAlpha));
+    }
+
+    destStorage11->markLevelDirty(destLevel);
 
     return gl::NoError();
 }
 
 gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, GLsizei samples, RenderTargetD3D **outRT)
 {
-    const d3d11::TextureFormat &formatInfo = d3d11::GetTextureFormatInfo(format, mRenderer11DeviceCaps);
+    const d3d11::Format &formatInfo = d3d11::Format::Get(format, mRenderer11DeviceCaps);
 
     const gl::TextureCaps &textureCaps = getNativeTextureCaps().get(format);
     GLuint supportedSamples = textureCaps.getNearestSamples(samples);
@@ -3071,7 +3121,7 @@ gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, G
         desc.Height = height;
         desc.MipLevels = 1;
         desc.ArraySize = 1;
-        desc.Format             = formatInfo.formatSet->texFormat;
+        desc.Format             = formatInfo.texFormat;
         desc.SampleDesc.Count = (supportedSamples == 0) ? 1 : supportedSamples;
         desc.SampleDesc.Quality = 0;
         desc.Usage = D3D11_USAGE_DEFAULT;
@@ -3082,19 +3132,22 @@ gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, G
         // we'll flag it to allow binding that way. Shader resource views are a little
         // more complicated.
         bool bindRTV = false, bindDSV = false, bindSRV = false;
-        bindRTV = (formatInfo.formatSet->rtvFormat != DXGI_FORMAT_UNKNOWN);
-        bindDSV = (formatInfo.formatSet->dsvFormat != DXGI_FORMAT_UNKNOWN);
-        if (formatInfo.formatSet->srvFormat != DXGI_FORMAT_UNKNOWN)
+        bindRTV = (formatInfo.rtvFormat != DXGI_FORMAT_UNKNOWN);
+        bindDSV = (formatInfo.dsvFormat != DXGI_FORMAT_UNKNOWN);
+        bindSRV = (formatInfo.srvFormat != DXGI_FORMAT_UNKNOWN);
+
+        // D3D feature level 10.0 no longer allows creation of textures with both the bind SRV and
+        // DSV flags when multisampled.  crbug.com/656989
+        bool supportsMultisampledDepthStencilSRVs =
+            mRenderer11DeviceCaps.featureLevel > D3D_FEATURE_LEVEL_10_0;
+        bool isMultisampledDepthStencil = bindDSV && desc.SampleDesc.Count > 1;
+        if (isMultisampledDepthStencil && !supportsMultisampledDepthStencilSRVs)
         {
-            // Multisample targets flagged for binding as depth stencil cannot also be
-            // flagged for binding as SRV, so make certain not to add the SRV flag for
-            // these targets.
-            bindSRV = !(formatInfo.formatSet->dsvFormat != DXGI_FORMAT_UNKNOWN &&
-                        desc.SampleDesc.Count > 1);
+            bindSRV = false;
         }
 
-        desc.BindFlags = (bindRTV ? D3D11_BIND_RENDER_TARGET   : 0) |
-                         (bindDSV ? D3D11_BIND_DEPTH_STENCIL   : 0) |
+        desc.BindFlags = (bindRTV ? D3D11_BIND_RENDER_TARGET : 0) |
+                         (bindDSV ? D3D11_BIND_DEPTH_STENCIL : 0) |
                          (bindSRV ? D3D11_BIND_SHADER_RESOURCE : 0);
 
         // The format must be either an RTV or a DSV
@@ -3113,7 +3166,7 @@ gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, G
         if (bindSRV)
         {
             D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-            srvDesc.Format                    = formatInfo.formatSet->srvFormat;
+            srvDesc.Format = formatInfo.srvFormat;
             srvDesc.ViewDimension = (supportedSamples == 0) ? D3D11_SRV_DIMENSION_TEXTURE2D : D3D11_SRV_DIMENSION_TEXTURE2DMS;
             srvDesc.Texture2D.MostDetailedMip = 0;
             srvDesc.Texture2D.MipLevels = 1;
@@ -3126,10 +3179,10 @@ gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, G
                 return gl::Error(GL_OUT_OF_MEMORY, "Failed to create render target shader resource view, result: 0x%X.", result);
             }
 
-            if (formatInfo.formatSet->blitSRVFormat != formatInfo.formatSet->srvFormat)
+            if (formatInfo.blitSRVFormat != formatInfo.srvFormat)
             {
                 D3D11_SHADER_RESOURCE_VIEW_DESC blitSRVDesc;
-                blitSRVDesc.Format        = formatInfo.formatSet->blitSRVFormat;
+                blitSRVDesc.Format        = formatInfo.blitSRVFormat;
                 blitSRVDesc.ViewDimension = (supportedSamples == 0)
                                                 ? D3D11_SRV_DIMENSION_TEXTURE2D
                                                 : D3D11_SRV_DIMENSION_TEXTURE2DMS;
@@ -3158,7 +3211,7 @@ gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, G
         if (bindDSV)
         {
             D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc;
-            dsvDesc.Format             = formatInfo.formatSet->dsvFormat;
+            dsvDesc.Format = formatInfo.dsvFormat;
             dsvDesc.ViewDimension = (supportedSamples == 0) ? D3D11_DSV_DIMENSION_TEXTURE2D : D3D11_DSV_DIMENSION_TEXTURE2DMS;
             dsvDesc.Texture2D.MipSlice = 0;
             dsvDesc.Flags = 0;
@@ -3174,16 +3227,15 @@ gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, G
                 return gl::Error(GL_OUT_OF_MEMORY, "Failed to create render target depth stencil view, result: 0x%X.", result);
             }
 
-            *outRT =
-                new TextureRenderTarget11(dsv, texture, srv, format, formatInfo.formatSet->format,
-                                          width, height, 1, supportedSamples);
+            *outRT = new TextureRenderTarget11(dsv, texture, srv, format, formatInfo, width, height,
+                                               1, supportedSamples);
 
             SafeRelease(dsv);
         }
         else if (bindRTV)
         {
             D3D11_RENDER_TARGET_VIEW_DESC rtvDesc;
-            rtvDesc.Format             = formatInfo.formatSet->rtvFormat;
+            rtvDesc.Format = formatInfo.rtvFormat;
             rtvDesc.ViewDimension = (supportedSamples == 0) ? D3D11_RTV_DIMENSION_TEXTURE2D : D3D11_RTV_DIMENSION_TEXTURE2DMS;
             rtvDesc.Texture2D.MipSlice = 0;
 
@@ -3204,9 +3256,8 @@ gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, G
                 mDeviceContext->ClearRenderTargetView(rtv, clearValues);
             }
 
-            *outRT = new TextureRenderTarget11(rtv, texture, srv, blitSRV, format,
-                                               formatInfo.formatSet->format, width, height, 1,
-                                               supportedSamples);
+            *outRT = new TextureRenderTarget11(rtv, texture, srv, blitSRV, format, formatInfo,
+                                               width, height, 1, supportedSamples);
 
             SafeRelease(rtv);
         }
@@ -3221,9 +3272,9 @@ gl::Error Renderer11::createRenderTarget(int width, int height, GLenum format, G
     }
     else
     {
-        *outRT = new TextureRenderTarget11(static_cast<ID3D11RenderTargetView *>(nullptr), nullptr,
-                                           nullptr, nullptr, format, d3d11::ANGLE_FORMAT_NONE,
-                                           width, height, 1, supportedSamples);
+        *outRT = new TextureRenderTarget11(
+            static_cast<ID3D11RenderTargetView *>(nullptr), nullptr, nullptr, nullptr, format,
+            d3d11::Format::Get(GL_NONE, mRenderer11DeviceCaps), width, height, 1, supportedSamples);
     }
 
     return gl::Error(GL_NO_ERROR);
@@ -3459,7 +3510,8 @@ bool Renderer11::supportsFastCopyBufferToTexture(GLenum internalFormat) const
     ASSERT(getNativeExtensions().pixelBufferObject);
 
     const gl::InternalFormat &internalFormatInfo = gl::GetInternalFormatInfo(internalFormat);
-    const d3d11::TextureFormat &d3d11FormatInfo = d3d11::GetTextureFormatInfo(internalFormat, mRenderer11DeviceCaps);
+    const d3d11::Format &d3d11FormatInfo =
+        d3d11::Format::Get(internalFormat, mRenderer11DeviceCaps);
 
     // sRGB formats do not work with D3D11 buffer SRVs
     if (internalFormatInfo.colorEncoding == GL_SRGB)
@@ -3468,7 +3520,7 @@ bool Renderer11::supportsFastCopyBufferToTexture(GLenum internalFormat) const
     }
 
     // We cannot support direct copies to non-color-renderable formats
-    if (d3d11FormatInfo.formatSet->rtvFormat == DXGI_FORMAT_UNKNOWN)
+    if (d3d11FormatInfo.rtvFormat == DXGI_FORMAT_UNKNOWN)
     {
         return false;
     }
@@ -3480,14 +3532,19 @@ bool Renderer11::supportsFastCopyBufferToTexture(GLenum internalFormat) const
     }
 
     // We don't support formats which we can't represent without conversion
-    if (d3d11FormatInfo.formatSet->glInternalFormat != internalFormat)
+    if (d3d11FormatInfo.format.glInternalFormat != internalFormat)
     {
         return false;
     }
 
-    // Buffer SRV creation in this format was not working on Windows 10, repro at least on Intel
-    // and NVIDIA.
-    if (internalFormat == GL_RGB5_A1)
+    // Buffer SRV creation for this format was not working on Windows 10.
+    if (d3d11FormatInfo.texFormat == DXGI_FORMAT_B5G5R5A1_UNORM)
+    {
+        return false;
+    }
+
+    // This format is not supported as a buffer SRV.
+    if (d3d11FormatInfo.texFormat == DXGI_FORMAT_A8_UNORM)
     {
         return false;
     }
@@ -3523,16 +3580,12 @@ gl::Error Renderer11::generateMipmapUsingD3D(TextureStorage *storage,
     ASSERT(storage11->supportsNativeMipmapFunction());
 
     ID3D11ShaderResourceView *srv;
-    gl::Error error = storage11->getSRVLevels(textureState.getEffectiveBaseLevel(),
-                                              textureState.getEffectiveMaxLevel(), &srv);
-    if (error.isError())
-    {
-        return error;
-    }
+    ANGLE_TRY(storage11->getSRVLevels(textureState.getEffectiveBaseLevel(),
+                                      textureState.getEffectiveMaxLevel(), &srv));
 
     mDeviceContext->GenerateMips(srv);
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 TextureStorage *Renderer11::createTextureStorage2D(SwapChainD3D *swapChain)
@@ -3541,9 +3594,10 @@ TextureStorage *Renderer11::createTextureStorage2D(SwapChainD3D *swapChain)
     return new TextureStorage11_2D(this, swapChain11);
 }
 
-TextureStorage *Renderer11::createTextureStorageEGLImage(EGLImageD3D *eglImage)
+TextureStorage *Renderer11::createTextureStorageEGLImage(EGLImageD3D *eglImage,
+                                                         RenderTargetD3D *renderTargetD3D)
 {
-    return new TextureStorage11_EGLImage(this, eglImage);
+    return new TextureStorage11_EGLImage(this, eglImage, GetAs<RenderTarget11>(renderTargetD3D));
 }
 
 TextureStorage *Renderer11::createTextureStorageExternal(
@@ -3593,7 +3647,7 @@ gl::Error Renderer11::readFromAttachment(const gl::FramebufferAttachment &srcAtt
     ASSERT(rt11->getTexture());
 
     TextureHelper11 textureHelper =
-        TextureHelper11::MakeAndReference(rt11->getTexture(), rt11->getANGLEFormat());
+        TextureHelper11::MakeAndReference(rt11->getTexture(), rt11->getFormatSet());
     unsigned int sourceSubResource = rt11->getSubresourceIndex();
 
     const gl::Extents &texSize = textureHelper.getExtents();
@@ -3627,8 +3681,8 @@ gl::Error Renderer11::readFromAttachment(const gl::FramebufferAttachment &srcAtt
     gl::Extents safeSize(safeArea.width, safeArea.height, 1);
     TextureHelper11 stagingHelper;
     ANGLE_TRY_RESULT(
-        CreateStagingTexture(textureHelper.getTextureType(), textureHelper.getANGLEFormat(),
-                             safeSize, StagingAccess::READ, mDevice),
+        CreateStagingTexture(textureHelper.getTextureType(), textureHelper.getFormatSet(), safeSize,
+                             StagingAccess::READ, mDevice),
         stagingHelper);
 
     TextureHelper11 resolvedTextureHelper;
@@ -3665,7 +3719,7 @@ gl::Error Renderer11::readFromAttachment(const gl::FramebufferAttachment &srcAtt
         mDeviceContext->ResolveSubresource(resolveTex2D, 0, textureHelper.getTexture2D(),
                                            sourceSubResource, textureHelper.getFormat());
         resolvedTextureHelper =
-            TextureHelper11::MakeAndReference(resolveTex2D, textureHelper.getANGLEFormat());
+            TextureHelper11::MakeAndReference(resolveTex2D, textureHelper.getFormatSet());
 
         sourceSubResource = 0;
         srcTexture        = &resolvedTextureHelper;
@@ -3728,14 +3782,10 @@ gl::Error Renderer11::packPixels(const TextureHelper11 &textureHelper,
     uint8_t *source = static_cast<uint8_t *>(mapping.pData);
     int inputPitch  = static_cast<int>(mapping.RowPitch);
 
-    const auto &angleFormatInfo = d3d11::GetANGLEFormatSet(textureHelper.getANGLEFormat());
-    const gl::InternalFormat &sourceFormatInfo =
-        gl::GetInternalFormatInfo(angleFormatInfo.glInternalFormat);
-    const auto &dxgiFormatInfo          = d3d11::GetDXGIFormatInfo(textureHelper.getFormat());
-    ColorReadFunction colorReadFunction = angleFormatInfo.colorReadFunction;
+    const auto &formatInfo = textureHelper.getFormatSet();
+    ASSERT(formatInfo.format.glInternalFormat != GL_NONE);
 
-    PackPixels(params, sourceFormatInfo, dxgiFormatInfo.fastCopyFunctions, colorReadFunction,
-               inputPitch, source, pixelsOut);
+    PackPixels(params, formatInfo.format, inputPitch, source, pixelsOut);
 
     mDeviceContext->Unmap(readResource, 0);
 
@@ -3764,7 +3814,7 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
     }
 
     TextureHelper11 drawTexture = TextureHelper11::MakeAndReference(
-        drawRenderTarget11->getTexture(), drawRenderTarget11->getANGLEFormat());
+        drawRenderTarget11->getTexture(), drawRenderTarget11->getFormatSet());
     unsigned int drawSubresource = drawRenderTarget11->getSubresourceIndex();
     ID3D11RenderTargetView *drawRTV = drawRenderTarget11->getRenderTargetView();
     ID3D11DepthStencilView *drawDSV = drawRenderTarget11->getDepthStencilView();
@@ -3784,27 +3834,31 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
         auto readRT11 = GetAs<RenderTarget11>(readRenderTarget);
         ANGLE_TRY_RESULT(resolveMultisampledTexture(readRT11, depthBlit, stencilBlit), readTexture);
 
-        const auto &formatSet = d3d11::GetANGLEFormatSet(readTexture.getANGLEFormat());
-
-        D3D11_SHADER_RESOURCE_VIEW_DESC srViewDesc;
-        srViewDesc.Format                    = formatSet.srvFormat;
-        srViewDesc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
-        srViewDesc.Texture2D.MipLevels       = 1;
-        srViewDesc.Texture2D.MostDetailedMip = 0;
-
-        HRESULT hresult =
-            mDevice->CreateShaderResourceView(readTexture.getResource(), &srViewDesc, &readSRV);
-        if (FAILED(hresult))
+        if (!stencilBlit)
         {
-            return gl::Error(GL_OUT_OF_MEMORY,
-                             "Renderer11::blitRenderbufferRect: Failed to create temporary SRV.");
+            const auto &readFormatSet = readTexture.getFormatSet();
+
+            D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc;
+            viewDesc.Format                    = readFormatSet.srvFormat;
+            viewDesc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
+            viewDesc.Texture2D.MipLevels       = 1;
+            viewDesc.Texture2D.MostDetailedMip = 0;
+
+            HRESULT hresult =
+                mDevice->CreateShaderResourceView(readTexture.getResource(), &viewDesc, &readSRV);
+            if (FAILED(hresult))
+            {
+                return gl::Error(
+                    GL_OUT_OF_MEMORY,
+                    "Renderer11::blitRenderbufferRect: Failed to create temporary SRV.");
+            }
         }
     }
     else
     {
         ASSERT(readRenderTarget11);
         readTexture = TextureHelper11::MakeAndReference(readRenderTarget11->getTexture(),
-                                                        readRenderTarget11->getANGLEFormat());
+                                                        readRenderTarget11->getFormatSet());
         readSubresource = readRenderTarget11->getSubresourceIndex();
         readSRV = readRenderTarget11->getBlitShaderResourceView();
         if (readSRV == nullptr)
@@ -3816,10 +3870,8 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
         readSRV->AddRef();
     }
 
-    if (!readSRV)
-    {
-        return gl::Error(GL_OUT_OF_MEMORY, "Failed to retrieve the internal read render target view from the read render target.");
-    }
+    // Stencil blits don't use shaders.
+    ASSERT(readSRV || stencilBlit);
 
     const gl::Extents readSize(readRenderTarget->getWidth(), readRenderTarget->getHeight(), 1);
     const gl::Extents drawSize(drawRenderTarget->getWidth(), drawRenderTarget->getHeight(), 1);
@@ -3888,22 +3940,21 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
 
     const auto &destFormatInfo = gl::GetInternalFormatInfo(drawRenderTarget->getInternalFormat());
     const auto &srcFormatInfo  = gl::GetInternalFormatInfo(readRenderTarget->getInternalFormat());
-    const auto &formatSet            = d3d11::GetANGLEFormatSet(drawRenderTarget11->getANGLEFormat());
-    const DXGI_FORMAT drawDXGIFormat = colorBlit ? formatSet.rtvFormat : formatSet.dsvFormat;
-    const auto &dxgiFormatInfo       = d3d11::GetDXGIFormatInfo(drawDXGIFormat);
+    const auto &formatSet      = drawRenderTarget11->getFormatSet();
+    const auto &nativeFormat   = formatSet.format;
 
     // Some blits require masking off emulated texture channels. eg: from RGBA8 to RGB8, we
     // emulate RGB8 with RGBA8, so we need to mask off the alpha channel when we copy.
 
     gl::Color<bool> colorMask;
-    colorMask.red = (srcFormatInfo.redBits > 0) && (destFormatInfo.redBits == 0) &&
-                    (dxgiFormatInfo.redBits > 0);
+    colorMask.red =
+        (srcFormatInfo.redBits > 0) && (destFormatInfo.redBits == 0) && (nativeFormat.redBits > 0);
     colorMask.green = (srcFormatInfo.greenBits > 0) && (destFormatInfo.greenBits == 0) &&
-                      (dxgiFormatInfo.greenBits > 0);
+                      (nativeFormat.greenBits > 0);
     colorMask.blue = (srcFormatInfo.blueBits > 0) && (destFormatInfo.blueBits == 0) &&
-                     (dxgiFormatInfo.blueBits > 0);
+                     (nativeFormat.blueBits > 0);
     colorMask.alpha = (srcFormatInfo.alphaBits > 0) && (destFormatInfo.alphaBits == 0) &&
-                      (dxgiFormatInfo.alphaBits > 0);
+                      (nativeFormat.alphaBits > 0);
 
     // We only currently support masking off the alpha channel.
     bool colorMaskingNeeded = colorMask.alpha;
@@ -3924,9 +3975,11 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
                        drawRect.x < 0 || drawRect.x + drawRect.width > drawSize.width ||
                        drawRect.y < 0 || drawRect.y + drawRect.height > drawSize.height;
 
-    bool partialDSBlit = (dxgiFormatInfo.depthBits > 0 && depthBlit) != (dxgiFormatInfo.stencilBits > 0 && stencilBlit);
+    bool partialDSBlit =
+        (nativeFormat.depthBits > 0 && depthBlit) != (nativeFormat.stencilBits > 0 && stencilBlit);
 
-    if (readRenderTarget11->getANGLEFormat() == drawRenderTarget11->getANGLEFormat() &&
+    if (readRenderTarget11->getFormatSet().format.id ==
+            drawRenderTarget11->getFormatSet().format.id &&
         !stretchRequired && !outOfBounds && !flipRequired && !partialDSBlit &&
         !colorMaskingNeeded && (!(depthBlit || stencilBlit) || wholeBufferCopy))
     {
@@ -3987,6 +4040,7 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
         }
         else if (depthBlit)
         {
+            ASSERT(readSRV);
             ANGLE_TRY(mBlit->copyDepth(readSRV, readArea, readSize, drawDSV, drawArea, drawSize,
                                        scissor));
         }
@@ -4000,8 +4054,10 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
         {
             // We don't currently support masking off any other channel than alpha
             bool maskOffAlpha = colorMaskingNeeded && colorMask.alpha;
+            ASSERT(readSRV);
             ANGLE_TRY(mBlit->copyTexture(readSRV, readArea, readSize, drawRTV, drawArea, drawSize,
-                                         scissor, destFormatInfo.format, filter, maskOffAlpha));
+                                         scissor, destFormatInfo.format, filter, maskOffAlpha,
+                                         false, false));
         }
     }
 
@@ -4058,12 +4114,17 @@ void Renderer11::onBufferDelete(const Buffer11 *deleted)
 gl::ErrorOrResult<TextureHelper11>
 Renderer11::resolveMultisampledTexture(RenderTarget11 *renderTarget, bool depth, bool stencil)
 {
-    if (depth || stencil)
+    if (depth && !stencil)
     {
-        return mBlit->resolveDepthStencil(renderTarget, depth, stencil);
+        return mBlit->resolveDepth(renderTarget);
     }
 
-    const auto &formatSet = d3d11::GetANGLEFormatSet(renderTarget->getANGLEFormat());
+    if (stencil)
+    {
+        return mBlit->resolveStencil(renderTarget, depth);
+    }
+
+    const auto &formatSet = renderTarget->getFormatSet();
 
     ASSERT(renderTarget->getSamples() > 1);
 
@@ -4090,7 +4151,7 @@ Renderer11::resolveMultisampledTexture(RenderTarget11 *renderTarget, bool depth,
 
     mDeviceContext->ResolveSubresource(resolveTexture, 0, renderTarget->getTexture(),
                                        renderTarget->getSubresourceIndex(), formatSet.texFormat);
-    return TextureHelper11::MakeAndPossess2D(resolveTexture, renderTarget->getANGLEFormat());
+    return TextureHelper11::MakeAndPossess2D(resolveTexture, renderTarget->getFormatSet());
 }
 
 bool Renderer11::getLUID(LUID *adapterLuid) const
@@ -4168,7 +4229,7 @@ void Renderer11::generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureC
 
 WorkaroundsD3D Renderer11::generateWorkarounds() const
 {
-    return d3d11::GenerateWorkarounds(mRenderer11DeviceCaps.featureLevel);
+    return d3d11::GenerateWorkarounds(mRenderer11DeviceCaps, mAdapterDescription);
 }
 
 gl::Error Renderer11::clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd)
@@ -4232,7 +4293,7 @@ gl::Error Renderer11::genericDrawElements(Context11 *context,
 
     ANGLE_TRY(applyIndexBuffer(data, indices, count, mode, type, &indexInfo));
 
-    applyTransformFeedbackBuffers(glState);
+    applyTransformFeedbackBuffers(data);
     // Transform feedback is not allowed for DrawElements, this error should have been caught at the
     // API validation layer.
     ASSERT(!glState.isTransformFeedbackActiveUnpaused());
@@ -4274,7 +4335,7 @@ gl::Error Renderer11::genericDrawArrays(Context11 *context,
     }
 
     ANGLE_TRY(updateState(data, mode));
-    ANGLE_TRY(applyTransformFeedbackBuffers(glState));
+    ANGLE_TRY(applyTransformFeedbackBuffers(data));
     ANGLE_TRY(applyVertexBuffer(glState, mode, first, count, instances, nullptr));
     ANGLE_TRY(applyTextures(context, data));
     ANGLE_TRY(applyShaders(data, mode));
@@ -4326,6 +4387,11 @@ gl::Error Renderer11::getScratchMemoryBuffer(size_t requestedSize, MemoryBuffer 
 
     *bufferOut = &mScratchMemoryBuffer;
     return gl::NoError();
+}
+
+gl::Version Renderer11::getMaxSupportedESVersion() const
+{
+    return gl::Version(d3d11_gl::GetMaximumClientVersion(mRenderer11DeviceCaps.featureLevel), 0);
 }
 
 gl::DebugAnnotator *Renderer11::getAnnotator()

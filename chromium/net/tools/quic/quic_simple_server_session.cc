@@ -8,11 +8,11 @@
 
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "net/quic/proto/cached_network_parameters.pb.h"
-#include "net/quic/quic_connection.h"
-#include "net/quic/quic_flags.h"
-#include "net/quic/quic_spdy_session.h"
-#include "net/quic/reliable_quic_stream.h"
+#include "net/quic/core/proto/cached_network_parameters.pb.h"
+#include "net/quic/core/quic_connection.h"
+#include "net/quic/core/quic_flags.h"
+#include "net/quic/core/quic_spdy_session.h"
+#include "net/quic/core/reliable_quic_stream.h"
 #include "net/tools/quic/quic_simple_server_stream.h"
 #include "url/gurl.h"
 
@@ -24,7 +24,7 @@ QuicSimpleServerSession::QuicSimpleServerSession(
     const QuicConfig& config,
     QuicConnection* connection,
     QuicServerSessionBase::Visitor* visitor,
-    QuicServerSessionBase::Helper* helper,
+    QuicCryptoServerStream::Helper* helper,
     const QuicCryptoServerConfig* crypto_config,
     QuicCompressedCertsCache* compressed_certs_cache)
     : QuicServerSessionBase(config,
@@ -35,7 +35,9 @@ QuicSimpleServerSession::QuicSimpleServerSession(
                             compressed_certs_cache),
       highest_promised_stream_id_(0) {}
 
-QuicSimpleServerSession::~QuicSimpleServerSession() {}
+QuicSimpleServerSession::~QuicSimpleServerSession() {
+  delete connection();
+}
 
 QuicCryptoServerStreamBase*
 QuicSimpleServerSession::CreateQuicCryptoServerStream(
@@ -43,7 +45,7 @@ QuicSimpleServerSession::CreateQuicCryptoServerStream(
     QuicCompressedCertsCache* compressed_certs_cache) {
   return new QuicCryptoServerStream(crypto_config, compressed_certs_cache,
                                     FLAGS_enable_quic_stateless_reject_support,
-                                    this);
+                                    this, stream_helper());
 }
 
 void QuicSimpleServerSession::StreamDraining(QuicStreamId id) {
@@ -175,7 +177,7 @@ void QuicSimpleServerSession::SendPushPromise(QuicStreamId original_stream_id,
   DVLOG(1) << "stream " << original_stream_id
            << " send PUSH_PROMISE for promised stream " << promised_stream_id;
   headers_stream()->WritePushPromise(original_stream_id, promised_stream_id,
-                                     std::move(headers), nullptr);
+                                     std::move(headers));
 }
 
 void QuicSimpleServerSession::HandlePromisedPushRequests() {

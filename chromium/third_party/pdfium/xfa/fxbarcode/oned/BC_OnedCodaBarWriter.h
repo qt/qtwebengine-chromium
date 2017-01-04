@@ -7,9 +7,9 @@
 #ifndef XFA_FXBARCODE_ONED_BC_ONEDCODABARWRITER_H_
 #define XFA_FXBARCODE_ONED_BC_ONEDCODABARWRITER_H_
 
-#include "core/fxcrt/include/fx_string.h"
-#include "core/fxcrt/include/fx_system.h"
-#include "xfa/fxbarcode/include/BC_Library.h"
+#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/fx_system.h"
+#include "xfa/fxbarcode/BC_Library.h"
 #include "xfa/fxbarcode/oned/BC_OneDimWriter.h"
 
 class CBC_OnedCodaBarWriter : public CBC_OneDimWriter {

@@ -19,7 +19,7 @@ tr.b.unittest.testSuite(function() {
   var newCounterNamed = tr.c.TestUtils.newCounterNamed;
   var newCounterSeries = tr.c.TestUtils.newCounterSeries;
 
-  function createSurfaceFlingerWithVsyncs(model) {
+  function createSurfaceFlinger(model, vsyncCallback) {
       if (model.getProcess(2))
         throw new Error('process already exists');
 
@@ -34,12 +34,18 @@ tr.b.unittest.testSuite(function() {
         duration: 2
       }));
 
-      var counter = sfProcess.getOrCreateCounter('android', 'VSYNC');
-      var series = newCounterSeries();
-      for (var i = 0; i <= 10; i++) {
-        series.addCounterSample(i * 10, i % 2);
-      }
-      counter.addSeries(series);
+      vsyncCallback(sfProcess);
+  }
+
+  function createSurfaceFlingerWithVsync(model) {
+      createSurfaceFlinger(model, function(sfProcess) {
+        var counter = sfProcess.getOrCreateCounter('android', 'VSYNC');
+        var series = newCounterSeries();
+        for (var i = 0; i <= 10; i++) {
+          series.addCounterSample(i * 10, i % 2);
+        }
+        counter.addSeries(series);
+      });
   }
 
   /*
@@ -69,23 +75,25 @@ tr.b.unittest.testSuite(function() {
     function(model) {
       var uiThread = model.getOrCreateProcess(120).getOrCreateThread(120);
 
-      // UI thread time - 19 (from 10 to 29)
+      // UI thread time - 19 (from 10 to 29, ignored after)
       uiThread.asyncSliceGroup.push(
         newAsyncSliceNamed('deliverInputEvent', 10, 9, uiThread, uiThread));
       uiThread.sliceGroup.pushSlice(newSliceEx(
-          {title: 'performTraversals', start: 20, duration: 10}));
+          {title: 'performTraversals', start: 20, duration: 110}));
       uiThread.sliceGroup.pushSlice(newSliceEx(
-          {title: 'draw', start: 20, duration: 8}));
+          {title: 'draw', start: 20, duration: 108}));
       uiThread.sliceGroup.pushSlice(newSliceEx(
           {title: 'Record View#draw()', start: 20, duration: 8}));
 
-      // RenderThread time - 61 (from 29 to 90)
+      // RenderThread time - 61 (from 29 to 90, ignored after)
       var renderThread = model.getOrCreateProcess(120).getOrCreateThread(200);
       renderThread.name = 'RenderThread';
       renderThread.sliceGroup.pushSlice(newSliceEx(
-          {title: 'DrawFrame', start: 29, duration: 61}));
+          {title: 'DrawFrame', start: 29, duration: 70}));
       renderThread.sliceGroup.pushSlice(newSliceEx(
           {title: 'syncFrameState', start: 29, duration: 1}));
+      renderThread.sliceGroup.pushSlice(newSliceEx(
+          {title: 'queueBuffer', start: 89, duration: 1}));
 
       model.uiThread = uiThread;
       model.renderThread = renderThread;
@@ -131,7 +139,7 @@ tr.b.unittest.testSuite(function() {
   });
 
   test('surfaceFlingerVsyncs', function() {
-    var model = tr.c.TestUtils.newModel(createSurfaceFlingerWithVsyncs);
+    var model = tr.c.TestUtils.newModel(createSurfaceFlingerWithVsync);
     var helper = model.getOrCreateHelper(AndroidModelHelper);
     assert.isTrue(helper.surfaceFlinger.hasVsyncs);
 
@@ -145,6 +153,37 @@ tr.b.unittest.testSuite(function() {
     // test undefined behavior outside of vsyncs.
     assert.isUndefined(helper.surfaceFlinger.getFrameKickoff(-5));
     assert.isUndefined(helper.surfaceFlinger.getFrameDeadline(105));
+  });
+
+  test('surfaceFlingerShiftedVsyncs', function() {
+    var model = tr.c.TestUtils.newModel(function(model) {
+      createSurfaceFlinger(model, function(sfProcess) {
+        var appSeries = newCounterSeries();
+        var sfSeries = newCounterSeries();
+        for (var i = 0; i <= 10; i++) {
+          // SF vsync is 4ms after app
+          appSeries.addCounterSample(i * 16, i % 2);
+          sfSeries.addCounterSample(i * 16 + 4, i % 2);
+        }
+        sfProcess.getOrCreateCounter('android', 'VSYNC-sf')
+            .addSeries(sfSeries);
+        sfProcess.getOrCreateCounter('android', 'VSYNC-app')
+            .addSeries(appSeries);
+      });
+    });
+    var helper = model.getOrCreateHelper(AndroidModelHelper);
+    assert.isTrue(helper.surfaceFlinger.hasVsyncs);
+
+    // test querying the vsyncs - Frames should have 20ms window
+    assert.closeTo(helper.surfaceFlinger.getFrameKickoff(0), 0, 1e-5);
+    assert.closeTo(helper.surfaceFlinger.getFrameDeadline(0), 20, 1e-5);
+
+    assert.closeTo(helper.surfaceFlinger.getFrameKickoff(16), 16, 1e-5);
+    assert.closeTo(helper.surfaceFlinger.getFrameDeadline(16), 36, 1e-5);
+
+    // test undefined behavior outside of vsyncs.
+    assert.isUndefined(helper.surfaceFlinger.getFrameKickoff(-5));
+    assert.isUndefined(helper.surfaceFlinger.getFrameDeadline(165));
   });
 
   test('frameVsyncInterop', function() {
@@ -165,7 +204,7 @@ tr.b.unittest.testSuite(function() {
           {title: 'performTraversals', start: 60, duration: 20}));
 
       // surface flinger - vsync every 10ms
-      createSurfaceFlingerWithVsyncs(model);
+      createSurfaceFlingerWithVsync(model);
     });
     var helper = model.getOrCreateHelper(AndroidModelHelper);
 

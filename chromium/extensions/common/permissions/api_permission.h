@@ -57,7 +57,7 @@ class APIPermission {
     kAppView,
     kAudio,
     kAudioCapture,
-    kAudioModem,
+    kDeleted_AudioModem,
     kAutofillPrivate,
     kAutomation,
     kAutoTestPrivate,
@@ -79,8 +79,8 @@ class APIPermission {
     kContentSettings,
     kContextMenus,
     kCookie,
-    kCopresence,
-    kCopresencePrivate,
+    kDeleted_Copresence,
+    kDeleted_CopresencePrivate,
     kCryptotokenPrivate,
     kDataReductionProxy,
     kDiagnostics,
@@ -244,6 +244,7 @@ class APIPermission {
     kCertificateProvider,
     kResourcesPrivate,
     kDisplaySource,
+    kClipboard,
     // Last entry: Add new entries above and ensure to update the
     // "ExtensionPermission3" enum in tools/metrics/histograms/histograms.xml
     // (by running update_extension_permission.py).

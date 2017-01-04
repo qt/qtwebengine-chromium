@@ -37,6 +37,7 @@ RoleMap BuildRoleMap() {
       {ui::AX_ROLE_ANNOTATION, NSAccessibilityUnknownRole},
       {ui::AX_ROLE_APPLICATION, NSAccessibilityGroupRole},
       {ui::AX_ROLE_ARTICLE, NSAccessibilityGroupRole},
+      {ui::AX_ROLE_AUDIO, NSAccessibilityGroupRole},
       {ui::AX_ROLE_BANNER, NSAccessibilityGroupRole},
       {ui::AX_ROLE_BLOCKQUOTE, NSAccessibilityGroupRole},
       {ui::AX_ROLE_BUSY_INDICATOR, NSAccessibilityBusyIndicatorRole},
@@ -141,6 +142,7 @@ RoleMap BuildRoleMap() {
       {ui::AX_ROLE_TREE, NSAccessibilityOutlineRole},
       {ui::AX_ROLE_TREE_GRID, NSAccessibilityTableRole},
       {ui::AX_ROLE_TREE_ITEM, NSAccessibilityRowRole},
+      {ui::AX_ROLE_VIDEO, NSAccessibilityGroupRole},
       {ui::AX_ROLE_WEB_AREA, @"AXWebArea"},
       {ui::AX_ROLE_WINDOW, NSAccessibilityWindowRole},
 
@@ -197,6 +199,7 @@ RoleMap BuildSubroleMap() {
 
 EventMap BuildEventMap() {
   const EventMapEntry events[] = {
+      {ui::AX_EVENT_FOCUS, NSAccessibilityFocusedUIElementChangedNotification},
       {ui::AX_EVENT_TEXT_CHANGED, NSAccessibilityTitleChangedNotification},
       {ui::AX_EVENT_VALUE_CHANGED, NSAccessibilityValueChangedNotification},
       {ui::AX_EVENT_TEXT_SELECTION_CHANGED,
@@ -210,7 +213,7 @@ EventMap BuildEventMap() {
   return event_map;
 }
 
-void NotifyMacEvent(NSView* target, ui::AXEvent event_type) {
+void NotifyMacEvent(AXPlatformNodeCocoa* target, ui::AXEvent event_type) {
   NSAccessibilityPostNotification(
       target, [AXPlatformNodeCocoa nativeNotificationFromAXEvent:event_type]);
 }
@@ -253,6 +256,10 @@ void NotifyMacEvent(NSView* target, ui::AXEvent event_type) {
 }
 
 - (void)detach {
+  if (!node_)
+    return;
+  NSAccessibilityPostNotification(
+      self, NSAccessibilityUIElementDestroyedNotification);
   node_ = nil;
 }
 
@@ -283,6 +290,14 @@ void NotifyMacEvent(NSView* target, ui::AXEvent event_type) {
   return NSAccessibilityUnignoredAncestor(self);
 }
 
+- (BOOL)accessibilityNotifiesWhenDestroyed {
+  return YES;
+}
+
+- (id)accessibilityFocusedUIElement {
+  return node_->GetDelegate()->GetFocus();
+}
+
 - (NSArray*)accessibilityActionNames {
   return nil;
 }
@@ -305,6 +320,9 @@ void NotifyMacEvent(NSView* target, ui::AXEvent event_type) {
     NSAccessibilityRoleDescriptionAttribute,
     NSAccessibilityEnabledAttribute,
     NSAccessibilityFocusedAttribute,
+    NSAccessibilityHelpAttribute,
+    NSAccessibilityTopLevelUIElementAttribute,
+    NSAccessibilityWindowAttribute,
   ];
 
   // Attributes required for user-editable controls.
@@ -346,8 +364,44 @@ void NotifyMacEvent(NSView* target, ui::AXEvent event_type) {
   return axAttributes.autorelease();
 }
 
-- (BOOL)accessibilityIsAttributeSettable:(NSString*)attribute {
+- (BOOL)accessibilityIsAttributeSettable:(NSString*)attributeName {
+  // Allow certain attributes to be written via an accessibility client. A
+  // writable attribute will only appear as such if the accessibility element
+  // has a value set for that attribute.
+  if ([attributeName isEqualToString:NSAccessibilitySelectedAttribute] ||
+      [attributeName
+          isEqualToString:NSAccessibilitySelectedChildrenAttribute] ||
+      [attributeName
+          isEqualToString:NSAccessibilitySelectedTextRangeAttribute] ||
+      [attributeName
+          isEqualToString:NSAccessibilityVisibleCharacterRangeAttribute]) {
+    return NO;
+  }
+
+  if ([attributeName isEqualToString:NSAccessibilityValueAttribute])
+    return node_->GetDelegate()->CanSetStringValue();
+  // TODO(patricialor): Implement and merge with conditional for value above.
+  if ([attributeName isEqualToString:NSAccessibilitySelectedTextAttribute])
+    return NO;
+
+  if ([attributeName isEqualToString:NSAccessibilityFocusedAttribute]) {
+    if (ui::AXViewState::IsFlagSet(node_->GetData().state,
+                                   ui::AX_STATE_FOCUSABLE))
+      return NO;
+  }
+
+  // TODO(patricialor): Add callbacks for updating the above attributes except
+  // NSAccessibilityValueAttribute and return YES.
   return NO;
+}
+
+- (void)accessibilitySetValue:(id)value forAttribute:(NSString*)attribute {
+  if ([attribute isEqualToString:NSAccessibilityValueAttribute] &&
+      [value isKindOfClass:[NSString class]])
+    node_->GetDelegate()->SetStringValue(base::SysNSStringToUTF16(value));
+
+  // TODO(patricialor): Plumb through all the other writable attributes as
+  // specified in accessibilityIsAttributeSettable.
 }
 
 - (id)accessibilityAttributeValue:(NSString*)attribute {
@@ -400,10 +454,7 @@ void NotifyMacEvent(NSView* target, ui::AXEvent event_type) {
 }
 
 - (NSString*)AXRoleDescription {
-  NSString* description = [self getStringAttribute:ui::AX_ATTR_DESCRIPTION];
-  if (!description)
-    return NSAccessibilityRoleDescription([self AXRole], [self AXSubrole]);
-  return description;
+  return NSAccessibilityRoleDescription([self AXRole], [self AXSubrole]);
 }
 
 - (NSValue*)AXSize {
@@ -430,6 +481,18 @@ void NotifyMacEvent(NSView* target, ui::AXEvent event_type) {
     return [NSNumber numberWithBool:(node_->GetDelegate()->GetFocus() ==
                                      node_->GetNativeViewAccessible())];
   return [NSNumber numberWithBool:NO];
+}
+
+- (NSString*)AXHelp {
+  return [self getStringAttribute:ui::AX_ATTR_DESCRIPTION];
+}
+
+- (NSWindow*)AXTopLevelUIElement {
+  return [self AXWindow];
+}
+
+- (NSWindow*)AXWindow {
+  return node_->GetDelegate()->GetTopLevelWidget();
 }
 
 // Textfield-specific NSAccessibility attributes.
@@ -503,22 +566,21 @@ gfx::NativeViewAccessible AXPlatformNodeMac::GetNativeViewAccessible() {
 }
 
 void AXPlatformNodeMac::NotifyAccessibilityEvent(ui::AXEvent event_type) {
-  NSView* target = GetDelegate()->GetTargetForNativeAccessibilityEvent();
-
+  GetNativeViewAccessible();
   // Add mappings between ui::AXEvent and NSAccessibility notifications using
   // the EventMap above. This switch contains exceptions to those mappings.
   switch (event_type) {
     case ui::AX_EVENT_TEXT_CHANGED:
       // If the view is a user-editable textfield, this should change the value.
       if (GetData().role == ui::AX_ROLE_TEXT_FIELD) {
-        NotifyMacEvent(target, ui::AX_EVENT_VALUE_CHANGED);
+        NotifyMacEvent(native_node_, ui::AX_EVENT_VALUE_CHANGED);
         return;
       }
       break;
     default:
       break;
   }
-  NotifyMacEvent(target, event_type);
+  NotifyMacEvent(native_node_, event_type);
 }
 
 int AXPlatformNodeMac::GetIndexInParent() {

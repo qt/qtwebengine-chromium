@@ -535,19 +535,11 @@ typedef std::unordered_map<const char *, Encoding,
            CStringAlnumCaseHash,
            CStringAlnumCaseEqual> EncodingMap;
 
-static EncodingMap encoding_map;
-
-// Mutex for locking the code that initializes encoding_map.
-// static Mutex encodings_init_mutex(base::LINKER_INITIALIZED);
-
-void InitEncodings() {
-  // For thread safety, keep a mutex while initializing this map.
-  // Also allow this function to be called more than once and
-  // gracefully exiting if that occurs.
-  // MutexLock lock(&encodings_init_mutex);
+static const EncodingMap& GetEncodingMap() {
+  static EncodingMap encoding_map;
   if (!encoding_map.empty()) {
     // Already initialized
-    return;
+    return encoding_map;
   }
 
   // Initialize the map with all the "standard" encoding names,
@@ -836,6 +828,8 @@ void InitEncodings() {
 
   // Remove they entry for the empty string, if any.
   encoding_map.erase("");
+
+  return encoding_map;
 }
 
 // ----------------------------------------------------------------------
@@ -863,13 +857,9 @@ Encoding EncodingNameAliasToEncoding(const char *encoding_name) {
     return UNKNOWN_ENCODING;
   }
 
-  // The map is initialized during InitGoogle() in a thread-safe manner.
-  // CHECK(!encoding_map.empty()) << ": Must call InitGoogle()";
-  if (encoding_map.empty()) {
-    InitEncodings();
-  }
+  const EncodingMap& encoding_map = GetEncodingMap();
 
-  EncodingMap::iterator emi = encoding_map.find(encoding_name);
+  EncodingMap::const_iterator emi = encoding_map.find(encoding_name);
   if (emi != encoding_map.end()) {
     return emi->second;
   } else {

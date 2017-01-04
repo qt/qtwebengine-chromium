@@ -98,7 +98,7 @@ bool HistoryController::GoToEntry(
     if (!render_frame)
       continue;
     render_frame->SetPendingNavigationParams(
-        base::WrapUnique(new NavigationParams(*navigation_params_.get())));
+        base::MakeUnique<NavigationParams>(*navigation_params_.get()));
     WebURLRequest request = frame->toWebLocalFrame()->requestFromHistoryItem(
         item.second, cache_policy);
     frame->toWebLocalFrame()->load(
@@ -113,7 +113,7 @@ bool HistoryController::GoToEntry(
     if (!render_frame)
       continue;
     render_frame->SetPendingNavigationParams(
-        base::WrapUnique(new NavigationParams(*navigation_params_.get())));
+        base::MakeUnique<NavigationParams>(*navigation_params_.get()));
     WebURLRequest request = frame->toWebLocalFrame()->requestFromHistoryItem(
         item.second, cache_policy);
     frame->toWebLocalFrame()->load(
@@ -177,6 +177,13 @@ void HistoryController::UpdateForInitialLoadInChildFrame(
     return;
   if (HistoryEntry::HistoryNode* existing_node =
           current_entry_->GetHistoryNodeForFrame(frame)) {
+    // Clear the children and any NavigationParams if this commit isn't for
+    // the same item.  Otherwise we might have stale data after a redirect.
+    if (existing_node->item().itemSequenceNumber() !=
+        item.itemSequenceNumber()) {
+      existing_node->RemoveChildren();
+      navigation_params_.reset();
+    }
     existing_node->set_item(item);
     return;
   }
@@ -297,7 +304,7 @@ WebHistoryItem HistoryController::GetItemForNewChildFrame(
     RenderFrameImpl* frame) const {
   if (navigation_params_.get()) {
     frame->SetPendingNavigationParams(
-        base::WrapUnique(new NavigationParams(*navigation_params_.get())));
+        base::MakeUnique<NavigationParams>(*navigation_params_.get()));
   }
 
   if (!current_entry_)

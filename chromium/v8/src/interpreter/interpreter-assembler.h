@@ -6,10 +6,10 @@
 #define V8_INTERPRETER_INTERPRETER_ASSEMBLER_H_
 
 #include "src/allocation.h"
-#include "src/base/smart-pointers.h"
-#include "src/builtins.h"
+#include "src/builtins/builtins.h"
 #include "src/code-stub-assembler.h"
 #include "src/frames.h"
+#include "src/interpreter/bytecode-register.h"
 #include "src/interpreter/bytecodes.h"
 #include "src/runtime/runtime.h"
 
@@ -32,6 +32,9 @@ class InterpreterAssembler : public CodeStubAssembler {
   // Returns the index immediate for bytecode operand |operand_index| in the
   // current bytecode.
   compiler::Node* BytecodeOperandIdx(int operand_index);
+  // Returns the UImm8 immediate for bytecode operand |operand_index| in the
+  // current bytecode.
+  compiler::Node* BytecodeOperandUImm(int operand_index);
   // Returns the Imm8 immediate for bytecode operand |operand_index| in the
   // current bytecode.
   compiler::Node* BytecodeOperandImm(int operand_index);
@@ -52,6 +55,15 @@ class InterpreterAssembler : public CodeStubAssembler {
   // Context.
   compiler::Node* GetContext();
   void SetContext(compiler::Node* value);
+
+  // Context at |depth| in the context chain starting at |context|.
+  compiler::Node* GetContextAtDepth(compiler::Node* context,
+                                    compiler::Node* depth);
+
+  // Goto the given |target| if the context chain starting at |context| has any
+  // extensions up to the given |depth|.
+  void GotoIfHasContextExtensionUpToDepth(compiler::Node* context,
+                                          compiler::Node* depth, Label* target);
 
   // Number of registers.
   compiler::Node* RegisterCount();
@@ -77,6 +89,9 @@ class InterpreterAssembler : public CodeStubAssembler {
   // Load constant at |index| in the constant pool.
   compiler::Node* LoadConstantPoolEntry(compiler::Node* index);
 
+  // Load and untag constant at |index| in the constant pool.
+  compiler::Node* LoadAndUntagConstantPoolEntry(compiler::Node* index);
+
   // Load |slot_index| from |context|.
   compiler::Node* LoadContextSlot(compiler::Node* context, int slot_index);
   compiler::Node* LoadContextSlot(compiler::Node* context,
@@ -88,6 +103,23 @@ class InterpreterAssembler : public CodeStubAssembler {
 
   // Load the TypeFeedbackVector for the current function.
   compiler::Node* LoadTypeFeedbackVector();
+
+  // Increment the call count for a CALL_IC or construct call.
+  // The call count is located at feedback_vector[slot_id + 1].
+  compiler::Node* IncrementCallCount(compiler::Node* type_feedback_vector,
+                                     compiler::Node* slot_id);
+
+  // Call JSFunction or Callable |function| with |arg_count|
+  // arguments (not including receiver) and the first argument
+  // located at |first_arg|. Type feedback is collected in the
+  // slot at index |slot_id|.
+  compiler::Node* CallJSWithFeedback(compiler::Node* function,
+                                     compiler::Node* context,
+                                     compiler::Node* first_arg,
+                                     compiler::Node* arg_count,
+                                     compiler::Node* slot_id,
+                                     compiler::Node* type_feedback_vector,
+                                     TailCallMode tail_call_mode);
 
   // Call JSFunction or Callable |function| with |arg_count|
   // arguments (not including receiver) and the first argument
@@ -105,7 +137,9 @@ class InterpreterAssembler : public CodeStubAssembler {
                                 compiler::Node* context,
                                 compiler::Node* new_target,
                                 compiler::Node* first_arg,
-                                compiler::Node* arg_count);
+                                compiler::Node* arg_count,
+                                compiler::Node* slot_id,
+                                compiler::Node* type_feedback_vector);
 
   // Call runtime function with |arg_count| arguments and the first argument
   // located at |first_arg|.
@@ -133,6 +167,9 @@ class InterpreterAssembler : public CodeStubAssembler {
   // Updates the profiler interrupt budget for a return.
   void UpdateInterruptBudgetOnReturn();
 
+  // Returns the OSR nesting level from the bytecode header.
+  compiler::Node* LoadOSRNestingLevel();
+
   // Dispatch to the bytecode.
   compiler::Node* Dispatch();
 
@@ -143,6 +180,12 @@ class InterpreterAssembler : public CodeStubAssembler {
 
   // Dispatch bytecode as wide operand variant.
   void DispatchWide(OperandScale operand_scale);
+
+  // Truncate tagged |value| to word32 and store the type feedback in
+  // |var_type_feedback|.
+  compiler::Node* TruncateTaggedToWord32WithFeedback(
+      compiler::Node* context, compiler::Node* value,
+      Variable* var_type_feedback);
 
   // Abort with the given bailout reason.
   void Abort(BailoutReason bailout_reason);
@@ -218,13 +261,30 @@ class InterpreterAssembler : public CodeStubAssembler {
   // JumpIfWordNotEqual.
   void JumpConditional(compiler::Node* condition, compiler::Node* jump_offset);
 
-  // Returns BytecodeOffset() advanced by delta bytecodes. Note: this does not
-  // update BytecodeOffset() itself.
+  // Updates and returns BytecodeOffset() advanced by the current bytecode's
+  // size. Traces the exit of the current bytecode.
+  compiler::Node* Advance();
+
+  // Updates and returns BytecodeOffset() advanced by delta bytecodes.
+  // Traces the exit of the current bytecode.
   compiler::Node* Advance(int delta);
   compiler::Node* Advance(compiler::Node* delta);
 
-  // Starts next instruction dispatch at |new_bytecode_offset|.
-  compiler::Node* DispatchTo(compiler::Node* new_bytecode_offset);
+  // Load the bytecode at |bytecode_offset|.
+  compiler::Node* LoadBytecode(compiler::Node* bytecode_offset);
+
+  // Look ahead for Star and inline it in a branch. Returns a new target
+  // bytecode node for dispatch.
+  compiler::Node* StarDispatchLookahead(compiler::Node* target_bytecode);
+
+  // Build code for Star at the current BytecodeOffset() and Advance() to the
+  // next dispatch offset.
+  void InlineStar();
+
+  // Dispatch to |target_bytecode| at |new_bytecode_offset|.
+  // |target_bytecode| should be equivalent to loading from the offset.
+  compiler::Node* DispatchToBytecode(compiler::Node* target_bytecode,
+                                     compiler::Node* new_bytecode_offset);
 
   // Dispatch to the bytecode handler with code offset |handler|.
   compiler::Node* DispatchToBytecodeHandler(compiler::Node* handler,
@@ -238,6 +298,7 @@ class InterpreterAssembler : public CodeStubAssembler {
 
   Bytecode bytecode_;
   OperandScale operand_scale_;
+  CodeStubAssembler::Variable bytecode_offset_;
   CodeStubAssembler::Variable interpreted_frame_pointer_;
   CodeStubAssembler::Variable accumulator_;
   AccumulatorUse accumulator_use_;

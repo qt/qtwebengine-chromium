@@ -2,10 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "cc/output/begin_frame_args.h"
+#include "cc/surfaces/surface_factory.h"
+#include "cc/surfaces/surface_factory_client.h"
+#include "cc/surfaces/surface_id_allocator.h"
+#include "cc/surfaces/surface_manager.h"
 #include "cc/test/begin_frame_args_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,6 +25,36 @@ using testing::_;
 
 namespace ui {
 namespace {
+
+class FakeCompositorFrameSink : public cc::SurfaceFactoryClient {
+ public:
+  FakeCompositorFrameSink(const cc::FrameSinkId& frame_sink_id,
+                          cc::SurfaceManager* manager)
+      : frame_sink_id_(frame_sink_id),
+        manager_(manager),
+        source_(nullptr),
+        factory_(frame_sink_id, manager, this) {
+    manager_->RegisterFrameSinkId(frame_sink_id_);
+    manager_->RegisterSurfaceFactoryClient(frame_sink_id_, this);
+  }
+
+  ~FakeCompositorFrameSink() override {
+    manager_->UnregisterSurfaceFactoryClient(frame_sink_id_);
+    manager_->InvalidateFrameSinkId(frame_sink_id_);
+  }
+
+  void ReturnResources(const cc::ReturnedResourceArray& resources) override {}
+  void SetBeginFrameSource(cc::BeginFrameSource* begin_frame_source) override {
+    DCHECK(!source_ || !begin_frame_source);
+    source_ = begin_frame_source;
+  };
+
+ private:
+  const cc::FrameSinkId frame_sink_id_;
+  cc::SurfaceManager* const manager_;
+  cc::BeginFrameSource* source_;
+  cc::SurfaceFactory factory_;
+};
 
 ACTION_P2(RemoveObserver, compositor, observer) {
   compositor->RemoveBeginFrameObserver(observer);

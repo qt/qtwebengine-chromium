@@ -31,6 +31,7 @@
 /**
  * @constructor
  * @extends {WebInspector.VBox}
+ * @implements {WebInspector.ViewLocationResolver}
  */
 WebInspector.SettingsScreen = function()
 {
@@ -40,43 +41,57 @@ WebInspector.SettingsScreen = function()
     this.contentElement.tabIndex = 0;
     this.contentElement.classList.add("help-window-main");
     this.contentElement.classList.add("vbox");
-    var settingsLabelElement = createElementWithClass("div", "help-window-label");
-    settingsLabelElement.createTextChild(WebInspector.UIString("Settings"));
 
-    this._tabbedPane = new WebInspector.TabbedPane();
-    this._tabbedPane.insertBeforeTabStrip(settingsLabelElement);
-    this._tabbedPane.setShrinkableTabs(false);
-    this._tabbedPane.setVerticalTabLayout(true);
-    this._tabbedPane.appendTab("preferences", WebInspector.UIString("Preferences"), new WebInspector.GenericSettingsTab());
-    this._tabbedPane.appendTab("workspace", WebInspector.UIString("Workspace"), new WebInspector.WorkspaceSettingsTab());
-    this._tabbedPane.appendTab("blackbox", WebInspector.manageBlackboxingSettingsTabLabel(), new WebInspector.FrameworkBlackboxSettingsTab());
-    if (Runtime.experiments.supportEnabled())
-        this._tabbedPane.appendTab("experiments", WebInspector.UIString("Experiments"), new WebInspector.ExperimentsSettingsTab());
-    this._tabbedPaneController = new WebInspector.ExtensibleTabbedPaneController(this._tabbedPane, "settings-view");
-    this._tabbedPane.appendTab("shortcuts", WebInspector.UIString("Shortcuts"), WebInspector.shortcutsScreen.createShortcutsTabView());
+    var settingsLabelElement = createElement("div");
+    WebInspector.createShadowRootWithCoreStyles(settingsLabelElement, "settings/settingsScreen.css").createChild("div", "settings-window-title").textContent = WebInspector.UIString("Settings");
+
+    this._tabbedLocation = WebInspector.viewManager.createTabbedLocation(() => WebInspector.SettingsScreen._showSettingsScreen(), "settings-view");
+    var tabbedPane = this._tabbedLocation.tabbedPane();
+    tabbedPane.leftToolbar().appendToolbarItem(new WebInspector.ToolbarItem(settingsLabelElement));
+    tabbedPane.setShrinkableTabs(false);
+    tabbedPane.setVerticalTabLayout(true);
+    var shortcutsView = new WebInspector.SimpleView(WebInspector.UIString("Shortcuts"));
+    WebInspector.shortcutsScreen.createShortcutsTabView().show(shortcutsView.element);
+    this._tabbedLocation.appendView(shortcutsView);
+    tabbedPane.show(this.contentElement);
 
     this.element.addEventListener("keydown", this._keyDown.bind(this), false);
     this._developerModeCounter = 0;
     this.setDefaultFocusedElement(this.contentElement);
 }
 
+/**
+ * @param {string=} name
+ */
+WebInspector.SettingsScreen._showSettingsScreen = function(name)
+{
+    var settingsScreen = /** @type {!WebInspector.SettingsScreen} */ (self.runtime.sharedInstance(WebInspector.SettingsScreen));
+    if (settingsScreen.isShowing())
+        return;
+    var dialog = new WebInspector.Dialog();
+    dialog.addCloseButton();
+    settingsScreen.show(dialog.element);
+    dialog.show();
+    settingsScreen._selectTab(name || "preferences");
+}
+
 WebInspector.SettingsScreen.prototype = {
     /**
      * @override
+     * @param {string} locationName
+     * @return {?WebInspector.ViewLocation}
      */
-    wasShown: function()
+    resolveLocation: function(locationName)
     {
-        this._tabbedPane.selectTab("preferences");
-        this._tabbedPane.show(this.contentElement);
-        WebInspector.VBox.prototype.wasShown.call(this);
+        return this._tabbedLocation;
     },
 
     /**
      * @param {string} name
      */
-    selectTab: function(name)
+    _selectTab: function(name)
     {
-        this._tabbedPane.selectTab(name);
+        WebInspector.viewManager.showView(name);
     },
 
     /**
@@ -204,7 +219,7 @@ WebInspector.GenericSettingsTab.prototype = {
         var sectionName = descriptor["category"];
         var settingName = descriptor["settingName"];
         var setting = WebInspector.moduleSetting(settingName);
-        var uiTitle = WebInspector.UIString(extension.title(WebInspector.platform()));
+        var uiTitle = WebInspector.UIString(extension.title());
 
         var sectionElement = this._sectionElement(sectionName);
         var settingControl;
@@ -238,7 +253,7 @@ WebInspector.GenericSettingsTab.prototype = {
     {
         var descriptor = extension.descriptor();
         var sectionName = descriptor["category"] || "";
-        extension.instancePromise().then(appendCustomSetting.bind(this));
+        extension.instance().then(appendCustomSetting.bind(this));
 
         /**
          * @param {!Object} object
@@ -295,9 +310,9 @@ WebInspector.WorkspaceSettingsTab = function()
     /** @type {!Map<string, !WebInspector.EditFileSystemView>} */
     this._mappingViewByPath = new Map();
 
-    var fileSystemPaths = WebInspector.isolatedFileSystemManager.fileSystemPaths();
-    for (var i = 0; i < fileSystemPaths.length; ++i)
-        this._addItem(/** @type {!WebInspector.IsolatedFileSystem} */ (WebInspector.isolatedFileSystemManager.fileSystem(fileSystemPaths[i])));
+    var fileSystems = WebInspector.isolatedFileSystemManager.fileSystems();
+    for (var i = 0; i < fileSystems.length; ++i)
+        this._addItem(fileSystems[i]);
 }
 
 WebInspector.WorkspaceSettingsTab.prototype = {
@@ -470,39 +485,11 @@ WebInspector.ExperimentsSettingsTab.prototype = {
 
 /**
  * @constructor
- */
-WebInspector.SettingsController = function()
-{
-    /** @type {?WebInspector.SettingsScreen} */
-    this._settingsScreen;
-}
-
-WebInspector.SettingsController.prototype = {
-    /**
-     * @param {string=} name
-     */
-    showSettingsScreen: function(name)
-    {
-        if (!this._settingsScreen)
-            this._settingsScreen = new WebInspector.SettingsScreen();
-
-        var dialog = new WebInspector.Dialog();
-        dialog.addCloseButton();
-        this._settingsScreen.show(dialog.element);
-        dialog.show();
-
-        if (name)
-            this._settingsScreen.selectTab(name);
-    }
-}
-
-/**
- * @constructor
  * @implements {WebInspector.ActionDelegate}
  */
-WebInspector.SettingsController.ActionDelegate = function() { }
+WebInspector.SettingsScreen.ActionDelegate = function() { }
 
-WebInspector.SettingsController.ActionDelegate.prototype = {
+WebInspector.SettingsScreen.ActionDelegate.prototype = {
     /**
      * @override
      * @param {!WebInspector.Context} context
@@ -513,13 +500,13 @@ WebInspector.SettingsController.ActionDelegate.prototype = {
     {
         switch (actionId) {
         case "settings.show":
-            WebInspector._settingsController.showSettingsScreen();
+            WebInspector.SettingsScreen._showSettingsScreen();
             return true;
         case "settings.help":
             InspectorFrontendHost.openInNewTab("https://developers.google.com/web/tools/chrome-devtools/");
             return true;
         case "settings.shortcuts":
-            WebInspector._settingsController.showSettingsScreen("shortcuts");
+            WebInspector.SettingsScreen._showSettingsScreen(WebInspector.UIString("Shortcuts"));
             return true;
         }
         return false;
@@ -530,9 +517,9 @@ WebInspector.SettingsController.ActionDelegate.prototype = {
  * @constructor
  * @implements {WebInspector.Revealer}
  */
-WebInspector.SettingsController.Revealer = function() { }
+WebInspector.SettingsScreen.Revealer = function() { }
 
-WebInspector.SettingsController.Revealer.prototype = {
+WebInspector.SettingsScreen.Revealer.prototype = {
     /**
      * @override
      * @param {!Object} object
@@ -546,7 +533,7 @@ WebInspector.SettingsController.Revealer.prototype = {
 
         self.runtime.extensions("setting").forEach(revealModuleSetting);
         self.runtime.extensions(WebInspector.SettingUI).forEach(revealSettingUI);
-        self.runtime.extensions("settings-view").forEach(revealSettingsView);
+        self.runtime.extensions("view").forEach(revealSettingsView);
 
         return success ? Promise.resolve() : Promise.reject();
 
@@ -559,7 +546,7 @@ WebInspector.SettingsController.Revealer.prototype = {
                 return;
             if (extension.descriptor()["settingName"] === setting.name) {
                 InspectorFrontendHost.bringToFront();
-                WebInspector._settingsController.showSettingsScreen("preferences");
+                WebInspector.SettingsScreen._showSettingsScreen();
                 success = true;
             }
         }
@@ -572,7 +559,7 @@ WebInspector.SettingsController.Revealer.prototype = {
             var settings = extension.descriptor()["settings"];
             if (settings && settings.indexOf(setting.name) !== -1) {
                 InspectorFrontendHost.bringToFront();
-                WebInspector._settingsController.showSettingsScreen("preferences");
+                WebInspector.SettingsScreen._showSettingsScreen();
                 success = true;
             }
         }
@@ -582,14 +569,15 @@ WebInspector.SettingsController.Revealer.prototype = {
          */
         function revealSettingsView(extension)
         {
+            var location = extension.descriptor()["location"];
+            if (location !== "settings-view")
+                return;
             var settings = extension.descriptor()["settings"];
             if (settings && settings.indexOf(setting.name) !== -1) {
                 InspectorFrontendHost.bringToFront();
-                WebInspector._settingsController.showSettingsScreen(extension.descriptor()["name"]);
+                WebInspector.SettingsScreen._showSettingsScreen(extension.descriptor()["id"]);
                 success = true;
             }
         }
     }
 }
-
-WebInspector._settingsController = new WebInspector.SettingsController();

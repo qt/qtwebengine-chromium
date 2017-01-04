@@ -9,11 +9,13 @@
 
 #include <map>
 
+#include "core/fxcrt/fx_memory.h"
 #include "xfa/fgas/crt/fgas_utils.h"
 #include "xfa/fgas/font/fgas_font.h"
 
 #define FXFONT_SUBST_ITALIC 0x02
 
+class CFX_UnicodeEncoding;
 class CXFA_PDFFontMgr;
 
 class CFGAS_GEFont {
@@ -22,7 +24,10 @@ class CFGAS_GEFont {
                                 uint32_t dwFontStyles,
                                 uint16_t wCodePage,
                                 IFGAS_FontMgr* pFontMgr);
-  static CFGAS_GEFont* LoadFont(CFX_Font* pExtFont, IFGAS_FontMgr* pFontMgr);
+  static CFGAS_GEFont* LoadFont(CFX_Font* pExternalFont,
+                                IFGAS_FontMgr* pFontMgr);
+  static CFGAS_GEFont* LoadFont(std::unique_ptr<CFX_Font> pInternalFont,
+                                IFGAS_FontMgr* pFontMgr);
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
   static CFGAS_GEFont* LoadFont(const uint8_t* pBuffer,
                                 int32_t iLength,
@@ -39,9 +44,7 @@ class CFGAS_GEFont {
   CFGAS_GEFont* Derive(uint32_t dwFontStyles, uint16_t wCodePage = 0);
   void GetFamilyName(CFX_WideString& wsFamily) const;
   uint32_t GetFontStyles() const;
-  FX_BOOL GetCharWidth(FX_WCHAR wUnicode,
-                       int32_t& iWidth,
-                       FX_BOOL bCharCode = FALSE);
+  FX_BOOL GetCharWidth(FX_WCHAR wUnicode, int32_t& iWidth, bool bCharCode);
   int32_t GetGlyphIndex(FX_WCHAR wUnicode, FX_BOOL bCharCode = FALSE);
   int32_t GetAscent() const;
   int32_t GetDescent() const;
@@ -63,7 +66,7 @@ class CFGAS_GEFont {
 
  protected:
   explicit CFGAS_GEFont(IFGAS_FontMgr* pFontMgr);
-  CFGAS_GEFont(const CFGAS_GEFont& src, uint32_t dwFontStyles);
+  CFGAS_GEFont(CFGAS_GEFont* src, uint32_t dwFontStyles);
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
   FX_BOOL LoadFontInternal(const FX_WCHAR* pszFontFamily,
@@ -72,7 +75,8 @@ class CFGAS_GEFont {
   FX_BOOL LoadFontInternal(const uint8_t* pBuffer, int32_t length);
   FX_BOOL LoadFontInternal(IFX_Stream* pFontStream, FX_BOOL bSaveStream);
 #endif
-  FX_BOOL LoadFontInternal(CFX_Font* pExtFont);
+  FX_BOOL LoadFontInternal(CFX_Font* pExternalFont);
+  FX_BOOL LoadFontInternal(std::unique_ptr<CFX_Font> pInternalFont);
   FX_BOOL InitFont();
   FX_BOOL GetCharBBoxInternal(FX_WCHAR wUnicode,
                               CFX_Rect& bbox,
@@ -80,8 +84,8 @@ class CFGAS_GEFont {
                               FX_BOOL bCharCode = FALSE);
   FX_BOOL GetCharWidthInternal(FX_WCHAR wUnicode,
                                int32_t& iWidth,
-                               FX_BOOL bRecursive,
-                               FX_BOOL bCharCode = FALSE);
+                               bool bRecursive,
+                               bool bCharCode);
   int32_t GetGlyphIndex(FX_WCHAR wUnicode,
                         FX_BOOL bRecursive,
                         CFGAS_GEFont** ppFont,
@@ -92,16 +96,17 @@ class CFGAS_GEFont {
   uint32_t m_dwLogFontStyle;
 #endif
   CFX_Font* m_pFont;
-  IFGAS_FontMgr* m_pFontMgr;
+  CFGAS_GEFont* const m_pSrcFont;
+  IFGAS_FontMgr* const m_pFontMgr;
   int32_t m_iRefCount;
-  FX_BOOL m_bExtFont;
-  IFX_Stream* m_pStream;
-  IFX_FileRead* m_pFileRead;
-  CFX_UnicodeEncoding* m_pFontEncoding;
-  CFX_WordDiscreteArray* m_pCharWidthMap;
-  CFX_MassArrayTemplate<CFX_Rect>* m_pRectArray;
-  CFX_MapPtrToPtr* m_pBBoxMap;
-  CXFA_PDFFontMgr* m_pProvider;
+  bool m_bExternalFont;
+  std::unique_ptr<IFX_Stream, ReleaseDeleter<IFX_Stream>> m_pStream;
+  std::unique_ptr<IFX_FileRead, ReleaseDeleter<IFX_FileRead>> m_pFileRead;
+  std::unique_ptr<CFX_UnicodeEncoding> m_pFontEncoding;
+  std::unique_ptr<CFX_DiscreteArrayTemplate<uint16_t>> m_pCharWidthMap;
+  std::unique_ptr<CFX_MassArrayTemplate<CFX_Rect>> m_pRectArray;
+  std::unique_ptr<CFX_MapPtrToPtr> m_pBBoxMap;
+  CXFA_PDFFontMgr* m_pProvider;  // not owned.
   CFX_ArrayTemplate<CFGAS_GEFont*> m_SubstFonts;
   std::map<FX_WCHAR, CFGAS_GEFont*> m_FontMapper;
 };

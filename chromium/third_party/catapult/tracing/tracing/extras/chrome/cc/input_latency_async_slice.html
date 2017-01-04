@@ -4,9 +4,10 @@ Copyright (c) 2013 The Chromium Authors. All rights reserved.
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
-<link rel="import" href="/tracing/model/helpers/chrome_model_helper.html">
+
 <link rel="import" href="/tracing/model/async_slice.html">
 <link rel="import" href="/tracing/model/event_set.html">
+<link rel="import" href="/tracing/model/helpers/chrome_model_helper.html">
 
 <script>
 'use strict';
@@ -93,8 +94,8 @@ tr.exportTo('tr.e.cc', function() {
       if (!this.typeName_)
         throw 'Unable to determine typeName';
       var found = false;
-      for (var type_name in INPUT_EVENT_TYPE_NAMES) {
-        if (this.typeName === INPUT_EVENT_TYPE_NAMES[type_name]) {
+      for (var typeName in INPUT_EVENT_TYPE_NAMES) {
+        if (this.typeName === INPUT_EVENT_TYPE_NAMES[typeName]) {
           found = true;
           break;
         }
@@ -122,17 +123,17 @@ tr.exportTo('tr.e.cc', function() {
 
     determineLegacyTypeName_: function() {
       // Iterate over all descendent subSlices.
-      this.iterateAllDescendents(function(subSlice) {
+      for (var subSlice of this.enumerateAllDescendents()) {
 
         // If |subSlice| is not an InputLatencyAsyncSlice, then ignore it.
         var subSliceIsAInputLatencyAsyncSlice = (
             subSlice instanceof InputLatencyAsyncSlice);
         if (!subSliceIsAInputLatencyAsyncSlice)
-          return;
+          continue;
 
         // If |subSlice| does not have a typeName, then ignore it.
         if (!subSlice.typeName)
-          return;
+          continue;
 
         // If |this| already has a typeName and |subSlice| has a different
         // typeName, then explode!
@@ -148,7 +149,7 @@ tr.exportTo('tr.e.cc', function() {
         // The typeName of |this| top-level event is whatever the typeName of
         // |subSlice| is. Set |this.typeName_| to the subSlice's typeName.
         this.typeName_ = subSlice.typeName_;
-      }, this);
+      }
 
       // If typeName could not be determined, then explode!
       if (!this.typeName_)
@@ -423,14 +424,14 @@ tr.exportTo('tr.e.cc', function() {
         return;
 
       var rasterWorkerThreads = rendererHelper.rasterWorkerThreads;
-      var prepare_tile_id = prepareTiles.args.prepare_tiles_id;
+      var prepareTileId = prepareTiles.args.prepare_tiles_id;
       var pendingEventQueue = [];
 
       // Collect all the rasterizer tasks. Return the cached copy if possible.
       if (sortedRasterizerSlices.length === 0)
         this.sortRasterizerSlices(rasterWorkerThreads, sortedRasterizerSlices);
 
-      // TODO(yuhao): Once TaskSetFinishedTaskImpl also get the prepare_tile_id
+      // TODO(yuhao): Once TaskSetFinishedTaskImpl also get the prepareTileId
       // we can simply track by checking id rather than counting.
       var numFinishedTasks = 0;
       var RASTER_TASK_TITLE = 'RasterizerTaskImpl::RunOnWorkerThread';
@@ -442,7 +443,7 @@ tr.exportTo('tr.e.cc', function() {
 
         if (task.title === RASTER_TASK_TITLE ||
             task.title === IMAGEDECODE_TASK_TITLE) {
-          if (task.args.source_prepare_tiles_id === prepare_tile_id)
+          if (task.args.source_prepare_tiles_id === prepareTileId)
             this.addEntireSliceHierarchy(task.mostTopLevelSlice);
         } else if (task.title === FINISHED_TASK_TITLE) {
           if (task.start > prepareTiles.start) {
@@ -454,7 +455,7 @@ tr.exportTo('tr.e.cc', function() {
       }
 
       // Trace PostTask from rasterizer tasks.
-      while (pendingEventQueue.length != 0) {
+      while (pendingEventQueue.length !== 0) {
         var event = pendingEventQueue.pop();
 
         this.addEntireSliceHierarchy(event);
@@ -479,7 +480,7 @@ tr.exportTo('tr.e.cc', function() {
         }
       }, this);
 
-      while (pendingEventQueue.length != 0) {
+      while (pendingEventQueue.length !== 0) {
         var event = pendingEventQueue.pop();
 
         // Push the current event chunk into associatedEvents.
@@ -613,7 +614,7 @@ tr.exportTo('tr.e.cc', function() {
     allTypeNames.push('InputLatency::' + eventTypeName);
   });
 
-  AsyncSlice.register(
+  AsyncSlice.subTypes.register(
     InputLatencyAsyncSlice,
     {
       typeNames: allTypeNames,

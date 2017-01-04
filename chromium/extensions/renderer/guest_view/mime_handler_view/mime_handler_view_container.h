@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/macros.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "components/guest_view/renderer/guest_view_container.h"
 #include "third_party/WebKit/public/platform/WebURLLoader.h"
@@ -62,7 +61,8 @@ class MimeHandlerViewContainer : public guest_view::GuestViewContainer,
   void didReceiveData(blink::WebURLLoader* loader,
                       const char* data,
                       int data_length,
-                      int encoded_data_length) override;
+                      int encoded_data_length,
+                      int encoded_body_length) override;
   void didFinishLoading(blink::WebURLLoader* loader,
                         double finish_time,
                         int64_t total_encoded_data_length) override;
@@ -113,7 +113,7 @@ class MimeHandlerViewContainer : public guest_view::GuestViewContainer,
   // Pending postMessage messages that need to be sent to the guest. These are
   // queued while the guest is loading and once it is fully loaded they are
   // delivered so that messages aren't lost.
-  std::vector<linked_ptr<v8::Global<v8::Value>>> pending_messages_;
+  std::vector<v8::Global<v8::Value>> pending_messages_;
 
   // True if the guest page has fully loaded and its JavaScript onload function
   // has been called.

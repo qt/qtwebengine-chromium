@@ -11,6 +11,7 @@
 #include "GrDrawContext.h"
 #include "GrStyle.h"
 #include "SkDrawFilter.h"
+#include "SkOpts.h"
 #include "SkTextBlob.h"
 #include "SkTHash.h"
 #include "SkTInternalLList.h"
@@ -28,7 +29,7 @@ class SkSurfaceProps;
  */
 class GrStencilAndCoverTextContext {
 public:
-    static GrStencilAndCoverTextContext* Create();
+    static GrStencilAndCoverTextContext* Create(GrAtlasTextContext* fallbackTextContext);
 
     void drawText(GrContext*, GrDrawContext* dc,
                   const GrClip&,  const GrPaint&, const SkPaint&,
@@ -49,7 +50,7 @@ public:
     virtual ~GrStencilAndCoverTextContext();
 
 private:
-    GrStencilAndCoverTextContext();
+    GrStencilAndCoverTextContext(GrAtlasTextContext* fallbackTextContext);
 
     bool canDraw(const SkPaint& skPaint, const SkMatrix&) {
         return this->internalCanDraw(skPaint);
@@ -78,7 +79,7 @@ private:
         void setPosText(const char text[], size_t byteLength, const SkScalar pos[],
                         int scalarsPerPosition, const SkPoint& offset);
 
-        void draw(GrContext*, GrDrawContext*, GrPipelineBuilder*, const GrClip&, GrColor,
+        void draw(GrContext*, GrDrawContext*, const GrPaint&, const GrClip&,
                   const SkMatrix&, const SkSurfaceProps&,
                   SkScalar x, SkScalar y, const SkIRect& clipBounds,
                   GrAtlasTextContext* fallbackTextContext, const SkPaint& originalSkPaint) const;
@@ -87,6 +88,8 @@ private:
 
         size_t computeSizeInCache() const;
 
+        bool isAntiAlias() const { return fFont.isAntiAlias(); }
+
     private:
         typedef GrDrawPathRangeBatch::InstanceData InstanceData;
 
@@ -94,18 +97,18 @@ private:
         GrPathRange* createGlyphs(GrContext*) const;
         void appendGlyph(const SkGlyph&, const SkPoint&, FallbackBlobBuilder*);
 
-        GrStyle                          fStyle;
-        SkPaint                          fFont;
-        SkScalar                         fTextRatio;
-        float                            fTextInverseRatio;
-        bool                             fUsingRawGlyphPaths;
-        GrUniqueKey                      fGlyphPathsKey;
-        int                              fTotalGlyphCount;
-        SkAutoTUnref<InstanceData>       fInstanceData;
-        int                              fFallbackGlyphCount;
-        SkAutoTUnref<const SkTextBlob>   fFallbackTextBlob;
-        mutable SkGlyphCache*            fDetachedGlyphCache;
-        mutable uint32_t                 fLastDrawnGlyphsID;
+        GrStyle                    fStyle;
+        SkPaint                    fFont;
+        SkScalar                   fTextRatio;
+        float                      fTextInverseRatio;
+        bool                       fUsingRawGlyphPaths;
+        GrUniqueKey                fGlyphPathsKey;
+        int                        fTotalGlyphCount;
+        SkAutoTUnref<InstanceData> fInstanceData;
+        int                        fFallbackGlyphCount;
+        sk_sp<SkTextBlob>          fFallbackTextBlob;
+        mutable SkGlyphCache*      fDetachedGlyphCache;
+        mutable uint32_t           fLastDrawnGlyphsID;
     };
 
     // Text blobs/caches.
@@ -118,7 +121,7 @@ private:
 
         static uint32_t Hash(const Key& key) {
             SkASSERT(key.count() > 1); // 1-length keys should be using the blob-id hash map.
-            return SkChecksum::Murmur3(key.begin(), sizeof(uint32_t) * key.count());
+            return SkOpts::hash(key.begin(), sizeof(uint32_t) * key.count());
         }
 
         TextBlob(uint32_t blobId, const SkTextBlob* skBlob, const SkPaint& skPaint)

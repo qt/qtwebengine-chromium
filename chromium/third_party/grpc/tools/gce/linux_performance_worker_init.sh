@@ -69,6 +69,10 @@ sudo apt-get install -y \
   python-pip \
   python-setuptools \
   python-yaml \
+  python3-dev \
+  python3-pip \
+  python3-setuptools \
+  python3-yaml \
   telnet \
   unzip \
   wget \
@@ -86,13 +90,11 @@ sudo apt-get install -y libgflags-dev libgtest-dev libc++-dev clang
 # Python dependencies
 sudo pip install tabulate
 sudo pip install google-api-python-client
-sudo pip install tox
 
 curl -O https://bootstrap.pypa.io/get-pip.py
 sudo pypy get-pip.py
 sudo pypy -m pip install tabulate
 sudo pip install google-api-python-client
-sudo pip install tox
 
 # Node dependencies (nvm has to be installed under user jenkins)
 touch .profile
@@ -109,6 +111,11 @@ sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328
 echo "deb http://download.mono-project.com/repo/debian wheezy main" | sudo tee /etc/apt/sources.list.d/mono-xamarin.list
 sudo apt-get update
 sudo apt-get install -y mono-devel nuget
+
+# The version of nuget that is installed using apt-get is too old to download
+# the System.Interactive.Async.3.0.0 C# dependency. Update to the latest version
+# in order to be able download it.
+sudo nuget update -self
 
 # Ruby dependencies
 gpg --keyserver hkp://keys.gnupg.net --recv-keys 409B6B1796C275462A1703113804BB82D39DC0E3

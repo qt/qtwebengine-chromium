@@ -20,7 +20,6 @@
 #include "effects/GrDistanceFieldGeoProc.h"
 
 #include "SkDistanceFieldGen.h"
-#include "SkRTConf.h"
 
 #define ATLAS_TEXTURE_WIDTH 2048
 #define ATLAS_TEXTURE_HEIGHT 2048
@@ -146,8 +145,12 @@ public:
         fGammaCorrect = gammaCorrect;
 
         // Compute bounds
-        fBounds = shape.bounds();
-        viewMatrix.mapRect(&fBounds);
+        this->setTransformedBounds(shape.bounds(), viewMatrix, HasAABloat::kYes, IsZeroArea::kNo);
+        // There is currently an issue where we may produce 2 pixels worth of AA around the path.
+        // A workaround is to outset the bounds by 1 in device space. (skbug.com/5989)
+        SkRect bounds = this->bounds();
+        bounds.outset(1.f, 1.f);
+        this->setBounds(bounds, HasAABloat::kYes, IsZeroArea::kNo);
     }
 
     const char* name() const override { return "AADistanceFieldPathBatch"; }
@@ -481,7 +484,7 @@ private:
         }
 
         fGeoData.push_back_n(that->fGeoData.count(), that->fGeoData.begin());
-        this->joinBounds(that->bounds());
+        this->joinBounds(*that);
         return true;
     }
 
@@ -528,7 +531,8 @@ bool GrAADistanceFieldPathRenderer::onDrawPath(const DrawPathArgs& args) {
         }
     }
 
-    SkAutoTUnref<GrDrawBatch> batch(new AADistanceFieldPathBatch(args.fColor, *args.fShape,
+    SkAutoTUnref<GrDrawBatch> batch(new AADistanceFieldPathBatch(args.fPaint->getColor(),
+                                                                 *args.fShape,
                                                                  args.fAntiAlias, *args.fViewMatrix,
                                                                  fAtlas, &fShapeCache, &fShapeList,
                                                                  args.fGammaCorrect));

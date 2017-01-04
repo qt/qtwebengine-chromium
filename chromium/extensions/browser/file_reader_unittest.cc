@@ -35,22 +35,22 @@ class Receiver {
   Receiver() : succeeded_(false) {
   }
 
-  FileReader::Callback NewCallback() {
+  FileReader::DoneCallback NewCallback() {
     return base::Bind(&Receiver::DidReadFile, base::Unretained(this));
   }
 
   bool succeeded() const { return succeeded_; }
-  const std::string& data() const { return data_; }
+  const std::string& data() const { return *data_; }
 
  private:
-  void DidReadFile(bool success, const std::string& data) {
+  void DidReadFile(bool success, std::unique_ptr<std::string> data) {
     succeeded_ = success;
-    data_ = data;
+    data_ = std::move(data);
     base::MessageLoop::current()->QuitWhenIdle();
   }
 
   bool succeeded_;
-  std::string data_;
+  std::unique_ptr<std::string> data_;
 };
 
 void RunBasicTest(const char* filename) {
@@ -67,7 +67,8 @@ void RunBasicTest(const char* filename) {
   Receiver receiver;
 
   scoped_refptr<FileReader> file_reader(
-      new FileReader(resource, receiver.NewCallback()));
+      new FileReader(resource, FileReader::OptionalFileThreadTaskCallback(),
+                     receiver.NewCallback()));
   file_reader->Start();
 
   base::RunLoop().Run();
@@ -95,7 +96,8 @@ TEST_F(FileReaderTest, NonExistantFile) {
   Receiver receiver;
 
   scoped_refptr<FileReader> file_reader(
-      new FileReader(resource, receiver.NewCallback()));
+      new FileReader(resource, FileReader::OptionalFileThreadTaskCallback(),
+                     receiver.NewCallback()));
   file_reader->Start();
 
   base::RunLoop().Run();

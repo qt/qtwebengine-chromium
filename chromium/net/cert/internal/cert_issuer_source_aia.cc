@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "net/cert/cert_net_fetcher.h"
-#include "net/cert/internal/parsed_certificate.h"
+#include "net/cert/internal/cert_errors.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -37,7 +37,7 @@ class AiaRequest : public CertIssuerSource::Request {
   CertIssuerSource::IssuerCallback issuers_callback_;
   std::vector<std::unique_ptr<CertNetFetcher::Request>> cert_fetcher_requests_;
   size_t pending_requests_ = 0;
-  std::vector<scoped_refptr<ParsedCertificate>> results_;
+  ParsedCertificateList results_;
   size_t current_result_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(AiaRequest);
@@ -87,11 +87,13 @@ void AiaRequest::OnFetchCompleted(Error error,
     // TODO(mattm): Avoid copying bytes. Change the CertNetFetcher and
     // ParsedCertificate interface to allow passing through ownership of the
     // bytes.
-    if (!ParsedCertificate::CreateAndAddToVector(
-            fetched_bytes.data(), fetched_bytes.size(),
-            ParsedCertificate::DataSource::INTERNAL_COPY, {}, &results_)) {
-      // TODO(mattm): propagate error info.
-      LOG(ERROR) << "Error parsing AIA data";
+    CertErrors errors;
+    if (!ParsedCertificate::CreateAndAddToVector(fetched_bytes.data(),
+                                                 fetched_bytes.size(), {},
+                                                 &results_, &errors)) {
+      // TODO(crbug.com/634443): propagate error info.
+      LOG(ERROR) << "Error parsing cert retrieved from AIA:\n"
+                 << errors.ToDebugString();
     }
   }
   // If the client is waiting for results, need to run callback if:
@@ -109,9 +111,8 @@ CertIssuerSourceAia::CertIssuerSourceAia(CertNetFetcher* cert_fetcher)
 
 CertIssuerSourceAia::~CertIssuerSourceAia() = default;
 
-void CertIssuerSourceAia::SyncGetIssuersOf(
-    const ParsedCertificate* cert,
-    std::vector<scoped_refptr<ParsedCertificate>>* issuers) {
+void CertIssuerSourceAia::SyncGetIssuersOf(const ParsedCertificate* cert,
+                                           ParsedCertificateList* issuers) {
   // CertIssuerSourceAia never returns synchronous results.
 }
 

@@ -41,6 +41,7 @@
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentWriter.h"
 #include "core/loader/FrameLoaderTypes.h"
+#include "core/loader/LinkLoader.h"
 #include "core/loader/NavigationPolicy.h"
 #include "platform/SharedBuffer.h"
 #include "platform/network/ResourceError.h"
@@ -58,187 +59,231 @@ class ResourceFetcher;
 class DocumentInit;
 class LocalFrame;
 class FrameLoader;
-class ResourceLoader;
 class WebDocumentSubresourceFilter;
+struct ViewportDescriptionWrapper;
 
-class CORE_EXPORT DocumentLoader : public GarbageCollectedFinalized<DocumentLoader>, private RawResourceClient {
-public:
-    static DocumentLoader* create(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
-    {
-        return new DocumentLoader(frame, request, data);
-    }
-    ~DocumentLoader() override;
+class CORE_EXPORT DocumentLoader
+    : public GarbageCollectedFinalized<DocumentLoader>,
+      private RawResourceClient {
+  USING_GARBAGE_COLLECTED_MIXIN(DocumentLoader);
 
-    LocalFrame* frame() const { return m_frame; }
+ public:
+  static DocumentLoader* create(LocalFrame* frame,
+                                const ResourceRequest& request,
+                                const SubstituteData& data) {
+    return new DocumentLoader(frame, request, data);
+  }
+  ~DocumentLoader() override;
 
-    virtual void detachFromFrame();
+  LocalFrame* frame() const { return m_frame; }
 
-    unsigned long mainResourceIdentifier() const;
+  virtual void detachFromFrame();
 
-    void replaceDocumentWhileExecutingJavaScriptURL(const DocumentInit&, const String& source);
+  unsigned long mainResourceIdentifier() const;
 
-    const AtomicString& mimeType() const;
+  void replaceDocumentWhileExecutingJavaScriptURL(const DocumentInit&,
+                                                  const String& source);
 
-    const ResourceRequest& originalRequest() const;
+  const AtomicString& mimeType() const;
 
-    const ResourceRequest& request() const;
+  const ResourceRequest& originalRequest() const;
 
-    ResourceFetcher* fetcher() const { return m_fetcher.get(); }
+  const ResourceRequest& request() const;
 
-    void setSubresourceFilter(std::unique_ptr<WebDocumentSubresourceFilter>);
-    WebDocumentSubresourceFilter* subresourceFilter() const { return m_subresourceFilter.get(); }
+  ResourceFetcher* fetcher() const { return m_fetcher.get(); }
 
-    const SubstituteData& substituteData() const { return m_substituteData; }
+  void setSubresourceFilter(std::unique_ptr<WebDocumentSubresourceFilter>);
+  WebDocumentSubresourceFilter* subresourceFilter() const {
+    return m_subresourceFilter.get();
+  }
 
-    const KURL& url() const;
-    const KURL& unreachableURL() const;
-    const KURL& urlForHistory() const;
+  const SubstituteData& substituteData() const { return m_substituteData; }
 
-    const AtomicString& responseMIMEType() const;
+  const KURL& url() const;
+  const KURL& unreachableURL() const;
+  const KURL& urlForHistory() const;
 
-    void didChangePerformanceTiming();
-    void didObserveLoadingBehavior(WebLoadingBehaviorFlag);
-    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource);
-    const ResourceResponse& response() const { return m_response; }
-    bool isClientRedirect() const { return m_isClientRedirect; }
-    void setIsClientRedirect(bool isClientRedirect) { m_isClientRedirect = isClientRedirect; }
-    bool replacesCurrentHistoryItem() const { return m_replacesCurrentHistoryItem; }
-    void setReplacesCurrentHistoryItem(bool replacesCurrentHistoryItem) { m_replacesCurrentHistoryItem = replacesCurrentHistoryItem; }
+  const AtomicString& responseMIMEType() const;
 
-    bool isCommittedButEmpty() const { return m_state == Committed; }
+  void didChangePerformanceTiming();
+  void didObserveLoadingBehavior(WebLoadingBehaviorFlag);
+  void updateForSameDocumentNavigation(const KURL&,
+                                       SameDocumentNavigationSource);
+  const ResourceResponse& response() const { return m_response; }
+  bool isClientRedirect() const { return m_isClientRedirect; }
+  void setIsClientRedirect(bool isClientRedirect) {
+    m_isClientRedirect = isClientRedirect;
+  }
+  bool replacesCurrentHistoryItem() const {
+    return m_replacesCurrentHistoryItem;
+  }
+  void setReplacesCurrentHistoryItem(bool replacesCurrentHistoryItem) {
+    m_replacesCurrentHistoryItem = replacesCurrentHistoryItem;
+  }
 
-    void setSentDidFinishLoad() { m_state = SentDidFinishLoad; }
-    bool sentDidFinishLoad() const { return m_state == SentDidFinishLoad; }
+  bool isCommittedButEmpty() const {
+    return m_state >= Committed && !m_dataReceived;
+  }
 
-    NavigationType getNavigationType() const { return m_navigationType; }
-    void setNavigationType(NavigationType navigationType) { m_navigationType = navigationType; }
+  void setSentDidFinishLoad() { m_state = SentDidFinishLoad; }
+  bool sentDidFinishLoad() const { return m_state == SentDidFinishLoad; }
 
-    void startLoadingMainResource();
+  NavigationType getNavigationType() const { return m_navigationType; }
+  void setNavigationType(NavigationType navigationType) {
+    m_navigationType = navigationType;
+  }
 
-    void acceptDataFromThreadedReceiver(const char* data, int dataLength, int encodedDataLength);
-    DocumentLoadTiming& timing() { return m_documentLoadTiming; }
-    const DocumentLoadTiming& timing() const { return m_documentLoadTiming; }
+  void upgradeInsecureRequest();
 
-    ApplicationCacheHost* applicationCacheHost() const { return m_applicationCacheHost.get(); }
+  void startLoadingMainResource();
 
-    void clearRedirectChain();
-    void appendRedirect(const KURL&);
+  void acceptDataFromThreadedReceiver(const char* data,
+                                      int dataLength,
+                                      int encodedDataLength);
+  DocumentLoadTiming& timing() { return m_documentLoadTiming; }
+  const DocumentLoadTiming& timing() const { return m_documentLoadTiming; }
 
-    ContentSecurityPolicy* releaseContentSecurityPolicy() { return m_contentSecurityPolicy.release(); }
+  ApplicationCacheHost* applicationCacheHost() const {
+    return m_applicationCacheHost.get();
+  }
 
-    ClientHintsPreferences& clientHintsPreferences() { return m_clientHintsPreferences; }
+  void clearRedirectChain();
+  void appendRedirect(const KURL&);
 
-    struct InitialScrollState {
-        DISALLOW_NEW();
-        InitialScrollState()
-            : wasScrolledByUser(false)
-            , didRestoreFromHistory(false)
-        {
-        }
+  ContentSecurityPolicy* releaseContentSecurityPolicy() {
+    return m_contentSecurityPolicy.release();
+  }
 
-        bool wasScrolledByUser;
-        bool didRestoreFromHistory;
-    };
-    InitialScrollState& initialScrollState() { return m_initialScrollState; }
+  ClientHintsPreferences& clientHintsPreferences() {
+    return m_clientHintsPreferences;
+  }
 
-    void setWasBlockedAfterXFrameOptionsOrCSP() { m_wasBlockedAfterXFrameOptionsOrCSP = true; }
-    bool wasBlockedAfterXFrameOptionsOrCSP() { return m_wasBlockedAfterXFrameOptionsOrCSP; }
+  struct InitialScrollState {
+    DISALLOW_NEW();
+    InitialScrollState()
+        : wasScrolledByUser(false), didRestoreFromHistory(false) {}
 
-    Resource* startPreload(Resource::Type, FetchRequest&);
+    bool wasScrolledByUser;
+    bool didRestoreFromHistory;
+  };
+  InitialScrollState& initialScrollState() { return m_initialScrollState; }
 
-    DECLARE_VIRTUAL_TRACE();
+  void setWasBlockedAfterXFrameOptionsOrCSP() {
+    m_wasBlockedAfterXFrameOptionsOrCSP = true;
+  }
+  bool wasBlockedAfterXFrameOptionsOrCSP() {
+    return m_wasBlockedAfterXFrameOptionsOrCSP;
+  }
 
-protected:
-    DocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&);
+  void dispatchLinkHeaderPreloads(ViewportDescriptionWrapper*,
+                                  LinkLoader::MediaPreloadPolicy);
 
-    Vector<KURL> m_redirectChain;
+  Resource* startPreload(Resource::Type, FetchRequest&);
 
-private:
-    static DocumentWriter* createWriterFor(const DocumentInit&, const AtomicString& mimeType, const AtomicString& encoding, bool dispatchWindowObjectAvailable, ParserSynchronizationPolicy, const KURL& overridingURL = KURL());
+  DECLARE_VIRTUAL_TRACE();
 
-    void ensureWriter(const AtomicString& mimeType, const KURL& overridingURL = KURL());
-    void endWriting(DocumentWriter*);
+ protected:
+  DocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&);
 
-    FrameLoader* frameLoader() const;
+  void didRedirect(const KURL& oldURL, const KURL& newURL);
 
-    void commitIfReady();
-    void commitData(const char* bytes, size_t length);
-    ResourceLoader* mainResourceLoader() const;
-    void clearMainResourceHandle();
+  Vector<KURL> m_redirectChain;
 
-    bool maybeCreateArchive();
+ private:
+  static DocumentWriter* createWriterFor(const DocumentInit&,
+                                         const AtomicString& mimeType,
+                                         const AtomicString& encoding,
+                                         bool dispatchWindowObjectAvailable,
+                                         ParserSynchronizationPolicy,
+                                         const KURL& overridingURL = KURL());
 
-    void finishedLoading(double finishTime);
-    void cancelLoadAfterXFrameOptionsOrCSPDenied(const ResourceResponse&);
-    void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) final;
-    void responseReceived(Resource*, const ResourceResponse&, std::unique_ptr<WebDataConsumerHandle>) final;
-    void dataReceived(Resource*, const char* data, size_t length) final;
-    void processData(const char* data, size_t length);
-    void notifyFinished(Resource*) final;
-    String debugName() const override { return "DocumentLoader"; }
+  void ensureWriter(const AtomicString& mimeType,
+                    const KURL& overridingURL = KURL());
+  void endWriting(DocumentWriter*);
 
-    bool maybeLoadEmpty();
+  FrameLoader* frameLoader() const;
 
-    bool isRedirectAfterPost(const ResourceRequest&, const ResourceResponse&);
+  void commitIfReady();
+  void commitData(const char* bytes, size_t length);
+  void clearMainResourceHandle();
 
-    bool shouldContinueForResponse() const;
+  bool maybeCreateArchive();
 
-    Member<LocalFrame> m_frame;
-    Member<ResourceFetcher> m_fetcher;
-    std::unique_ptr<WebDocumentSubresourceFilter> m_subresourceFilter;
+  void finishedLoading(double finishTime);
+  void cancelLoadAfterXFrameOptionsOrCSPDenied(const ResourceResponse&);
+  bool redirectReceived(Resource*,
+                        const ResourceRequest&,
+                        const ResourceResponse&) final;
+  void responseReceived(Resource*,
+                        const ResourceResponse&,
+                        std::unique_ptr<WebDataConsumerHandle>) final;
+  void dataReceived(Resource*, const char* data, size_t length) final;
+  void processData(const char* data, size_t length);
+  void notifyFinished(Resource*) final;
+  String debugName() const override { return "DocumentLoader"; }
 
-    Member<RawResource> m_mainResource;
+  bool maybeLoadEmpty();
 
-    Member<DocumentWriter> m_writer;
+  bool isRedirectAfterPost(const ResourceRequest&, const ResourceResponse&);
 
-    // A reference to actual request used to create the data source.
-    // The only part of this request that should change is the url, and
-    // that only in the case of a same-document navigation.
-    ResourceRequest m_originalRequest;
+  bool shouldContinueForResponse() const;
 
-    SubstituteData m_substituteData;
+  Member<LocalFrame> m_frame;
+  Member<ResourceFetcher> m_fetcher;
+  std::unique_ptr<WebDocumentSubresourceFilter> m_subresourceFilter;
 
-    // The 'working' request. It may be mutated
-    // several times from the original request to include additional
-    // headers, cookie information, canonicalization and redirects.
-    ResourceRequest m_request;
+  Member<RawResource> m_mainResource;
 
-    ResourceResponse m_response;
+  Member<DocumentWriter> m_writer;
 
-    bool m_isClientRedirect;
-    bool m_replacesCurrentHistoryItem;
+  // A reference to actual request used to create the data source.
+  // The only part of this request that should change is the url, and
+  // that only in the case of a same-document navigation.
+  ResourceRequest m_originalRequest;
 
-    NavigationType m_navigationType;
+  SubstituteData m_substituteData;
 
-    DocumentLoadTiming m_documentLoadTiming;
+  // The 'working' request. It may be mutated
+  // several times from the original request to include additional
+  // headers, cookie information, canonicalization and redirects.
+  ResourceRequest m_request;
 
-    double m_timeOfLastDataReceived;
+  ResourceResponse m_response;
 
-    Member<ApplicationCacheHost> m_applicationCacheHost;
+  bool m_isClientRedirect;
+  bool m_replacesCurrentHistoryItem;
+  bool m_dataReceived;
 
-    Member<ContentSecurityPolicy> m_contentSecurityPolicy;
-    ClientHintsPreferences m_clientHintsPreferences;
-    InitialScrollState m_initialScrollState;
+  NavigationType m_navigationType;
 
-    bool m_wasBlockedAfterXFrameOptionsOrCSP;
+  DocumentLoadTiming m_documentLoadTiming;
 
-    enum State {
-        NotStarted,
-        Provisional,
-        Committed,
-        DataReceived,
-        MainResourceDone,
-        SentDidFinishLoad
-    };
-    State m_state;
+  double m_timeOfLastDataReceived;
 
-    // Used to protect against reentrancy into dataReceived().
-    bool m_inDataReceived;
-    RefPtr<SharedBuffer> m_dataBuffer;
+  Member<ApplicationCacheHost> m_applicationCacheHost;
+
+  Member<ContentSecurityPolicy> m_contentSecurityPolicy;
+  ClientHintsPreferences m_clientHintsPreferences;
+  InitialScrollState m_initialScrollState;
+
+  bool m_wasBlockedAfterXFrameOptionsOrCSP;
+
+  enum State {
+    NotStarted,
+    Provisional,
+    Committed,
+    MainResourceDone,
+    SentDidFinishLoad
+  };
+  State m_state;
+
+  // Used to protect against reentrancy into dataReceived().
+  bool m_inDataReceived;
+  RefPtr<SharedBuffer> m_dataBuffer;
 };
 
 DECLARE_WEAK_IDENTIFIER_MAP(DocumentLoader);
 
-} // namespace blink
+}  // namespace blink
 
-#endif // DocumentLoader_h
+#endif  // DocumentLoader_h

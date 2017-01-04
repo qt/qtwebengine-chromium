@@ -6,7 +6,7 @@
 
 #include "xfa/fxfa/fm2js/xfa_simpleexpression.h"
 
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/fx_ext.h"
 
 namespace {
 
@@ -175,15 +175,15 @@ void CXFA_FMStringExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   }
 }
 
-CXFA_FMIdentifierExpressionn::CXFA_FMIdentifierExpressionn(
+CXFA_FMIdentifierExpression::CXFA_FMIdentifierExpression(
     uint32_t line,
     CFX_WideStringC wsIdentifier)
     : CXFA_FMSimpleExpression(line, TOKidentifier),
       m_wsIdentifier(wsIdentifier) {}
 
-CXFA_FMIdentifierExpressionn::~CXFA_FMIdentifierExpressionn() {}
+CXFA_FMIdentifierExpression::~CXFA_FMIdentifierExpression() {}
 
-void CXFA_FMIdentifierExpressionn::ToJavaScript(CFX_WideTextBuf& javascript) {
+void CXFA_FMIdentifierExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   CFX_WideString tempStr(m_wsIdentifier);
   if (tempStr == FX_WSTRC(L"$")) {
     tempStr = FX_WSTRC(L"this");
@@ -541,7 +541,10 @@ void CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
       uint32_t methodPara = IsMethodWithObjParam(funcName.AsStringC());
       if (methodPara > 0) {
         for (int i = 0; i < m_pArguments->GetSize(); ++i) {
-          if ((methodPara & (0x01 << i)) > 0) {
+          // Currently none of our expressions use objects for a parameter over
+          // the 6th. Make sure we don't overflow the shift when doing this
+          // check. If we ever need more the 32 object params we can revisit.
+          if (i < 32 && (methodPara & (0x01 << i)) > 0) {
             javascript << gs_lpStrExpFuncName[GETFMJSOBJ];
           } else {
             javascript << gs_lpStrExpFuncName[GETFMVALUE];

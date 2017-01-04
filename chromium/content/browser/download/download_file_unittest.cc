@@ -29,6 +29,7 @@
 #include "net/base/file_stream.h"
 #include "net/base/mock_file_stream.h"
 #include "net/base/net_errors.h"
+#include "net/log/net_log_with_source.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -101,12 +102,12 @@ class TestDownloadFileImpl : public DownloadFileImpl {
   TestDownloadFileImpl(std::unique_ptr<DownloadSaveInfo> save_info,
                        const base::FilePath& default_downloads_directory,
                        std::unique_ptr<ByteStreamReader> stream,
-                       const net::BoundNetLog& bound_net_log,
+                       const net::NetLogWithSource& net_log,
                        base::WeakPtr<DownloadDestinationObserver> observer)
       : DownloadFileImpl(std::move(save_info),
                          default_downloads_directory,
                          std::move(stream),
-                         bound_net_log,
+                         net_log,
                          observer) {}
 
  protected:
@@ -191,8 +192,8 @@ class DownloadFileTest : public testing::Test {
     std::unique_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
     download_file_.reset(new TestDownloadFileImpl(
         std::move(save_info), base::FilePath(),
-        std::unique_ptr<ByteStreamReader>(input_stream_), net::BoundNetLog(),
-        observer_factory_.GetWeakPtr()));
+        std::unique_ptr<ByteStreamReader>(input_stream_),
+        net::NetLogWithSource(), observer_factory_.GetWeakPtr()));
 
     EXPECT_CALL(*input_stream_, Read(_, _))
         .WillOnce(Return(ByteStreamReader::STREAM_EMPTY))
@@ -286,7 +287,7 @@ class DownloadFileTest : public testing::Test {
     if (check_observer) {
       EXPECT_CALL(*(observer_.get()),
                   MockDestinationCompleted(_, expected_hash));
-      loop_.RunUntilIdle();
+      base::RunLoop().RunUntilIdle();
       ::testing::Mock::VerifyAndClearExpectations(observer_.get());
       EXPECT_CALL(*(observer_.get()), DestinationUpdate(_, _))
           .Times(AnyNumber())
@@ -488,7 +489,7 @@ TEST_P(DownloadFileTestWithRename, RenameFileFinal) {
   EXPECT_TRUE(base::PathExists(path_3));
 
   FinishStream(DOWNLOAD_INTERRUPT_REASON_NONE, true, kDataHash);
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   // Rename the file after downloading all the data and closing the file.
   EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
@@ -529,7 +530,7 @@ TEST_F(DownloadFileTest, RenameOverwrites) {
   EXPECT_NE(std::string(file_data), file_contents);
 
   FinishStream(DOWNLOAD_INTERRUPT_REASON_NONE, true, kEmptyHash);
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   DestroyDownloadFile(0);
 }
 
@@ -554,7 +555,7 @@ TEST_F(DownloadFileTest, RenameUniquifies) {
   EXPECT_TRUE(base::PathExists(path_1_suffixed));
 
   FinishStream(DOWNLOAD_INTERRUPT_REASON_NONE, true, kEmptyHash);
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   DestroyDownloadFile(0);
 }
 
@@ -571,7 +572,7 @@ TEST_F(DownloadFileTest, RenameRecognizesSelfConflict) {
   EXPECT_TRUE(base::PathExists(initial_path));
 
   FinishStream(DOWNLOAD_INTERRUPT_REASON_NONE, true, kEmptyHash);
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   DestroyDownloadFile(0);
   EXPECT_EQ(initial_path.value(), new_path.value());
 }
@@ -606,7 +607,7 @@ TEST_P(DownloadFileTestWithRename, RenameError) {
   }
 
   FinishStream(DOWNLOAD_INTERRUPT_REASON_NONE, true, kEmptyHash);
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   DestroyDownloadFile(0);
 }
 
@@ -699,7 +700,7 @@ TEST_P(DownloadFileTestWithRename, RenameWithErrorRetry) {
   EXPECT_TRUE(did_run_callback);
 
   FinishStream(DOWNLOAD_INTERRUPT_REASON_NONE, true, kEmptyHash);
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   DestroyDownloadFile(0);
 }
 
@@ -715,7 +716,7 @@ TEST_F(DownloadFileTest, StreamEmptySuccess) {
 
   // Finish the download this way and make sure we see it on the observer.
   FinishStream(DOWNLOAD_INTERRUPT_REASON_NONE, true, kEmptyHash);
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   DestroyDownloadFile(0);
 }
@@ -744,7 +745,7 @@ TEST_F(DownloadFileTest, StreamEmptyError) {
   FinishStream(
       DOWNLOAD_INTERRUPT_REASON_NETWORK_DISCONNECTED, false, kEmptyHash);
 
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   DestroyDownloadFile(0);
 }
@@ -761,7 +762,7 @@ TEST_F(DownloadFileTest, StreamNonEmptySuccess) {
   EXPECT_CALL(*(observer_.get()), MockDestinationCompleted(_, _));
   sink_callback_.Run();
   VerifyStreamAndSize();
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   DestroyDownloadFile(0);
 }
 
@@ -790,7 +791,7 @@ TEST_F(DownloadFileTest, StreamNonEmptyError) {
               CurrentUpdateStatus(strlen(kTestData1) + strlen(kTestData2), _));
 
   sink_callback_.Run();
-  loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   VerifyStreamAndSize();
   DestroyDownloadFile(0);
 }

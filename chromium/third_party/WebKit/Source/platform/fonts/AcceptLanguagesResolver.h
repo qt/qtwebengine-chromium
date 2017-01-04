@@ -12,23 +12,16 @@
 
 namespace blink {
 
+class LayoutLocale;
+
 class PLATFORM_EXPORT AcceptLanguagesResolver {
-public:
-    static UScriptCode preferredHanScript() { return m_preferredHanScript; }
-    static const char* preferredHanSkFontMgrLocale()
-    {
-        return m_preferredHanSkFontMgrLocale;
-    }
+ public:
+  static void acceptLanguagesChanged(const String&);
 
-    static void acceptLanguagesChanged(const String&);
-
-    static void updateFromAcceptLanguages(const String&);
-
-private:
-    static UScriptCode m_preferredHanScript;
-    static const char* m_preferredHanSkFontMgrLocale;
+  static const LayoutLocale* localeForHan();
+  static const LayoutLocale* localeForHanFromAcceptLanguages(const String&);
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // AcceptLanguagesResolver_h
+#endif  // AcceptLanguagesResolver_h

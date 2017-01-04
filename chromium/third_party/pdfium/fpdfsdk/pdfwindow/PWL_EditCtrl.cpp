@@ -6,8 +6,10 @@
 
 #include "fpdfsdk/pdfwindow/PWL_EditCtrl.h"
 
-#include "core/fpdfdoc/include/cpvt_section.h"
-#include "core/fpdfdoc/include/cpvt_word.h"
+#include "core/fpdfdoc/cpvt_section.h"
+#include "core/fpdfdoc/cpvt_word.h"
+#include "core/fxge/fx_font.h"
+#include "fpdfsdk/fxedit/fxet_edit.h"
 #include "fpdfsdk/pdfwindow/PWL_Caret.h"
 #include "fpdfsdk/pdfwindow/PWL_FontMap.h"
 #include "fpdfsdk/pdfwindow/PWL_ScrollBar.h"
@@ -15,22 +17,14 @@
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
 #include "public/fpdf_fwlevent.h"
 
-#define IsFloatZero(f) ((f) < 0.0001 && (f) > -0.0001)
-#define IsFloatBigger(fa, fb) ((fa) > (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatSmaller(fa, fb) ((fa) < (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatEqual(fa, fb) IsFloatZero((fa) - (fb))
-
 CPWL_EditCtrl::CPWL_EditCtrl()
-    : m_pEdit(IFX_Edit::NewEdit()),
+    : m_pEdit(new CFX_Edit),
       m_pEditCaret(nullptr),
       m_bMouseDown(FALSE),
-      m_pEditNotify(nullptr),
-      m_nCharSet(DEFAULT_CHARSET),
+      m_nCharSet(FXFONT_DEFAULT_CHARSET),
       m_nCodePage(0) {}
 
-CPWL_EditCtrl::~CPWL_EditCtrl() {
-  IFX_Edit::DelEdit(m_pEdit);
-}
+CPWL_EditCtrl::~CPWL_EditCtrl() {}
 
 void CPWL_EditCtrl::OnCreate(PWL_CREATEPARAM& cp) {
   cp.eCursorType = FXCT_VBEAM;
@@ -335,11 +329,10 @@ CFX_FloatRect CPWL_EditCtrl::GetContentRect() const {
 }
 
 void CPWL_EditCtrl::SetEditCaret(FX_BOOL bVisible) {
-  CFX_FloatPoint ptHead(0, 0), ptFoot(0, 0);
-
-  if (bVisible) {
+  CFX_FloatPoint ptHead;
+  CFX_FloatPoint ptFoot;
+  if (bVisible)
     GetCaretInfo(ptHead, ptFoot);
-  }
 
   CPVT_WordPlace wpTemp = m_pEdit->GetCaretWordPlace();
   IOnSetCaret(bVisible, ptHead, ptFoot, wpTemp);
@@ -347,7 +340,7 @@ void CPWL_EditCtrl::SetEditCaret(FX_BOOL bVisible) {
 
 void CPWL_EditCtrl::GetCaretInfo(CFX_FloatPoint& ptHead,
                                  CFX_FloatPoint& ptFoot) const {
-  IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
+  CFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
   pIterator->SetAt(m_pEdit->GetCaret());
   CPVT_Word word;
   CPVT_Line line;
@@ -365,10 +358,9 @@ void CPWL_EditCtrl::GetCaretInfo(CFX_FloatPoint& ptHead,
 }
 
 void CPWL_EditCtrl::GetCaretPos(int32_t& x, int32_t& y) const {
-  CFX_FloatPoint ptHead(0, 0), ptFoot(0, 0);
-
+  CFX_FloatPoint ptHead;
+  CFX_FloatPoint ptFoot;
   GetCaretInfo(ptHead, ptFoot);
-
   PWLtoWnd(ptHead, x, y);
 }
 
@@ -435,7 +427,7 @@ CFX_FloatPoint CPWL_EditCtrl::GetScrollPos() const {
 CPDF_Font* CPWL_EditCtrl::GetCaretFont() const {
   int32_t nFontIndex = 0;
 
-  IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
+  CFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
   pIterator->SetAt(m_pEdit->GetCaret());
   CPVT_Word word;
   CPVT_Section section;
@@ -456,7 +448,7 @@ CPDF_Font* CPWL_EditCtrl::GetCaretFont() const {
 FX_FLOAT CPWL_EditCtrl::GetCaretFontSize() const {
   FX_FLOAT fFontSize = GetFontSize();
 
-  IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
+  CFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
   pIterator->SetAt(m_pEdit->GetCaret());
   CPVT_Word word;
   CPVT_Section section;
@@ -471,8 +463,8 @@ FX_FLOAT CPWL_EditCtrl::GetCaretFontSize() const {
   return fFontSize;
 }
 
-void CPWL_EditCtrl::SetText(const FX_WCHAR* csText) {
-  m_pEdit->SetText(csText);
+void CPWL_EditCtrl::SetText(const CFX_WideString& wsText) {
+  m_pEdit->SetText(wsText);
 }
 
 void CPWL_EditCtrl::CopyText() {}
@@ -483,9 +475,9 @@ void CPWL_EditCtrl::CutText() {}
 
 void CPWL_EditCtrl::ShowVScrollBar(FX_BOOL bShow) {}
 
-void CPWL_EditCtrl::InsertText(const FX_WCHAR* csText) {
+void CPWL_EditCtrl::InsertText(const CFX_WideString& wsText) {
   if (!IsReadOnly())
-    m_pEdit->InsertText(csText);
+    m_pEdit->InsertText(wsText, FXFONT_DEFAULT_CHARSET);
 }
 
 void CPWL_EditCtrl::InsertWord(uint16_t word, int32_t nCharset) {
@@ -569,20 +561,14 @@ void CPWL_EditCtrl::IOnSetCaret(FX_BOOL bVisible,
 void CPWL_EditCtrl::IOnCaretChange(const CPVT_SecProps& secProps,
                                    const CPVT_WordProps& wordProps) {}
 
-void CPWL_EditCtrl::IOnContentChange(const CFX_FloatRect& rcContent) {
-  if (IsValid()) {
-    if (m_pEditNotify) {
-      m_pEditNotify->OnContentChange(rcContent);
-    }
-  }
-}
+void CPWL_EditCtrl::IOnContentChange(const CFX_FloatRect& rcContent) {}
 
 void CPWL_EditCtrl::IOnInvalidateRect(CFX_FloatRect* pRect) {
   InvalidateRect(pRect);
 }
 
 int32_t CPWL_EditCtrl::GetCharSet() const {
-  return m_nCharSet < 0 ? DEFAULT_CHARSET : m_nCharSet;
+  return m_nCharSet < 0 ? FXFONT_DEFAULT_CHARSET : m_nCharSet;
 }
 
 void CPWL_EditCtrl::GetTextRange(const CFX_FloatRect& rect,

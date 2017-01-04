@@ -6,10 +6,14 @@
 
 #include "public/fpdf_dataavail.h"
 
-#include "core/fpdfapi/fpdf_parser/include/cpdf_data_avail.h"
-#include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
-#include "fpdfsdk/include/fsdk_define.h"
+#include <memory>
+#include <utility>
+
+#include "core/fpdfapi/parser/cpdf_data_avail.h"
+#include "core/fpdfapi/parser/cpdf_document.h"
+#include "fpdfsdk/fsdk_define.h"
 #include "public/fpdf_formfill.h"
+#include "third_party/base/ptr_util.h"
 
 // These checks are here because core/ and public/ cannot depend on each other.
 static_assert(CPDF_DataAvail::DataError == PDF_DATA_ERROR,
@@ -112,8 +116,8 @@ DLLEXPORT FPDF_AVAIL STDCALL FPDFAvail_Create(FX_FILEAVAIL* file_avail,
   CFPDF_DataAvail* pAvail = new CFPDF_DataAvail;
   pAvail->m_FileAvail.Set(file_avail);
   pAvail->m_FileRead.Set(file);
-  pAvail->m_pDataAvail.reset(
-      new CPDF_DataAvail(&pAvail->m_FileAvail, &pAvail->m_FileRead, TRUE));
+  pAvail->m_pDataAvail = pdfium::MakeUnique<CPDF_DataAvail>(
+      &pAvail->m_FileAvail, &pAvail->m_FileRead, TRUE);
   return pAvail;
 }
 
@@ -136,18 +140,20 @@ FPDFAvail_GetDocument(FPDF_AVAIL avail, FPDF_BYTESTRING password) {
   if (!pDataAvail)
     return nullptr;
 
-  CPDF_Parser* pParser = new CPDF_Parser;
+  std::unique_ptr<CPDF_Parser> pParser(new CPDF_Parser);
   pParser->SetPassword(password);
-  CPDF_Parser::Error error =
-      pParser->StartAsyncParse(pDataAvail->m_pDataAvail->GetFileRead());
+
+  std::unique_ptr<CPDF_Document> pDocument(
+      new CPDF_Document(std::move(pParser)));
+  CPDF_Parser::Error error = pDocument->GetParser()->StartLinearizedParse(
+      pDataAvail->m_pDataAvail->GetFileRead(), pDocument.get());
   if (error != CPDF_Parser::SUCCESS) {
-    delete pParser;
     ProcessParseError(error);
     return nullptr;
   }
-  pDataAvail->m_pDataAvail->SetDocument(pParser->GetDocument());
-  CheckUnSupportError(pParser->GetDocument(), FPDF_ERR_SUCCESS);
-  return FPDFDocumentFromCPDFDocument(pParser->GetDocument());
+  pDataAvail->m_pDataAvail->SetDocument(pDocument.get());
+  CheckUnSupportError(pDocument.get(), FPDF_ERR_SUCCESS);
+  return FPDFDocumentFromCPDFDocument(pDocument.release());
 }
 
 DLLEXPORT int STDCALL FPDFAvail_GetFirstPageNum(FPDF_DOCUMENT doc) {
@@ -160,6 +166,8 @@ DLLEXPORT int STDCALL FPDFAvail_IsPageAvail(FPDF_AVAIL avail,
                                             FX_DOWNLOADHINTS* hints) {
   if (!avail || !hints)
     return PDF_DATA_ERROR;
+  if (page_index < 0)
+    return PDF_DATA_NOTAVAIL;
   CFPDF_DownloadHintsWrap hints_wrap(hints);
   return CFPDFDataAvailFromFPDFAvail(avail)->m_pDataAvail->IsPageAvail(
       page_index, &hints_wrap);

@@ -31,47 +31,57 @@ class WebDisplayItemList;
 // Reminder: moved-from objects may not be in a known state. They can only
 // safely be assigned to or destroyed.
 class PLATFORM_EXPORT PaintArtifact final {
-    DISALLOW_NEW();
-    WTF_MAKE_NONCOPYABLE(PaintArtifact);
-public:
-    PaintArtifact();
-    PaintArtifact(DisplayItemList, Vector<PaintChunk>, bool isSuitableForGpuRasterization);
-    PaintArtifact(PaintArtifact&&);
-    ~PaintArtifact();
+  DISALLOW_NEW();
+  WTF_MAKE_NONCOPYABLE(PaintArtifact);
 
-    PaintArtifact& operator=(PaintArtifact&&);
+ public:
+  PaintArtifact();
+  PaintArtifact(DisplayItemList,
+                Vector<PaintChunk>,
+                bool isSuitableForGpuRasterization);
+  PaintArtifact(PaintArtifact&&);
+  ~PaintArtifact();
 
-    bool isEmpty() const { return m_displayItemList.isEmpty(); }
+  PaintArtifact& operator=(PaintArtifact&&);
 
-    DisplayItemList& getDisplayItemList() { return m_displayItemList; }
-    const DisplayItemList& getDisplayItemList() const { return m_displayItemList; }
+  bool isEmpty() const { return m_displayItemList.isEmpty(); }
 
-    Vector<PaintChunk>& paintChunks() { return m_paintChunks; }
-    const Vector<PaintChunk>& paintChunks() const { return m_paintChunks; }
+  DisplayItemList& getDisplayItemList() { return m_displayItemList; }
+  const DisplayItemList& getDisplayItemList() const {
+    return m_displayItemList;
+  }
 
-    bool isSuitableForGpuRasterization() const { return m_isSuitableForGpuRasterization; }
+  Vector<PaintChunk>& paintChunks() { return m_paintChunks; }
+  const Vector<PaintChunk>& paintChunks() const { return m_paintChunks; }
 
-    // Resets to an empty paint artifact.
-    void reset();
+  Vector<PaintChunk>::const_iterator findChunkByDisplayItemIndex(
+      size_t index) const {
+    return findChunkInVectorByDisplayItemIndex(m_paintChunks, index);
+  }
 
-    // Returns the approximate memory usage, excluding memory likely to be
-    // shared with the embedder after copying to WebDisplayItemList.
-    size_t approximateUnsharedMemoryUsage() const;
+  bool isSuitableForGpuRasterization() const {
+    return m_isSuitableForGpuRasterization;
+  }
 
-    // Draws the paint artifact to a GraphicsContext.
-    void replay(GraphicsContext&) const;
+  // Resets to an empty paint artifact.
+  void reset();
 
-    // Writes the paint artifact into a WebDisplayItemList.
-    void appendToWebDisplayItemList(WebDisplayItemList*) const;
+  // Returns the approximate memory usage, excluding memory likely to be
+  // shared with the embedder after copying to WebDisplayItemList.
+  size_t approximateUnsharedMemoryUsage() const;
 
-private:
-    DisplayItemList m_displayItemList;
-    Vector<PaintChunk> m_paintChunks;
-    bool m_isSuitableForGpuRasterization;
+  // Draws the paint artifact to a GraphicsContext.
+  void replay(GraphicsContext&) const;
 
-    friend class PaintControllerTest;
+  // Writes the paint artifact into a WebDisplayItemList.
+  void appendToWebDisplayItemList(WebDisplayItemList*) const;
+
+ private:
+  DisplayItemList m_displayItemList;
+  Vector<PaintChunk> m_paintChunks;
+  bool m_isSuitableForGpuRasterization;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // PaintArtifact_h
+#endif  // PaintArtifact_h

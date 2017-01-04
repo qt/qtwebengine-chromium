@@ -21,8 +21,7 @@ namespace {
 // An implementation of StashService that forwards calls to a StashBackend.
 class StashServiceImpl : public StashService {
  public:
-  StashServiceImpl(mojo::InterfaceRequest<StashService> request,
-                   base::WeakPtr<StashBackend> backend);
+  explicit StashServiceImpl(base::WeakPtr<StashBackend> backend);
   ~StashServiceImpl() override;
 
   // StashService overrides.
@@ -30,18 +29,15 @@ class StashServiceImpl : public StashService {
   void RetrieveStash(const RetrieveStashCallback& callback) override;
 
  private:
-  mojo::StrongBinding<StashService> binding_;
   base::WeakPtr<StashBackend> backend_;
 
   DISALLOW_COPY_AND_ASSIGN(StashServiceImpl);
 };
 
-StashServiceImpl::StashServiceImpl(mojo::InterfaceRequest<StashService> request,
-                                   base::WeakPtr<StashBackend> backend)
-    : binding_(this, std::move(request)), backend_(backend) {}
+StashServiceImpl::StashServiceImpl(base::WeakPtr<StashBackend> backend)
+    : backend_(backend) {}
 
-StashServiceImpl::~StashServiceImpl() {
-}
+StashServiceImpl::~StashServiceImpl() {}
 
 void StashServiceImpl::AddToStash(
     mojo::Array<StashedObjectPtr> stashed_objects) {
@@ -102,11 +98,11 @@ StashBackend::~StashBackend() {
 
 void StashBackend::AddToStash(mojo::Array<StashedObjectPtr> stashed_objects) {
   for (size_t i = 0; i < stashed_objects.size(); i++) {
-    stashed_objects_.push_back(base::WrapUnique(new StashEntry(
+    stashed_objects_.push_back(base::MakeUnique<StashEntry>(
         std::move(stashed_objects[i]),
         has_notified_ ? base::Closure()
                       : base::Bind(&StashBackend::OnHandleReady,
-                                   weak_factory_.GetWeakPtr()))));
+                                   weak_factory_.GetWeakPtr())));
   }
 }
 
@@ -121,7 +117,9 @@ mojo::Array<StashedObjectPtr> StashBackend::RetrieveStash() {
 }
 
 void StashBackend::BindToRequest(mojo::InterfaceRequest<StashService> request) {
-  new StashServiceImpl(std::move(request), weak_factory_.GetWeakPtr());
+  mojo::MakeStrongBinding(
+      base::MakeUnique<StashServiceImpl>(weak_factory_.GetWeakPtr()),
+      std::move(request));
 }
 
 void StashBackend::OnHandleReady() {

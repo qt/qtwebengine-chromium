@@ -4,7 +4,7 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_system.h"
 
 #if _FX_OS_ == _FX_ANDROID_
 
@@ -13,10 +13,10 @@
 #define FPF_SKIAMATCHWEIGHT_1 16
 #define FPF_SKIAMATCHWEIGHT_2 8
 
-#include "core/fxcrt/include/fx_ext.h"
+#include "core/fxcrt/fx_ext.h"
 #include "core/fxge/android/fpf_skiafont.h"
 #include "core/fxge/android/fpf_skiafontmgr.h"
-#include "core/fxge/include/fx_freetype.h"
+#include "core/fxge/fx_freetype.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -147,7 +147,7 @@ static uint32_t FPF_SkiaGetCharset(uint8_t uCharset) {
       return FPF_SKIACHARSET_Symbol;
     case FXFONT_SHIFTJIS_CHARSET:
       return FPF_SKIACHARSET_ShiftJIS;
-    case FXFONT_HANGEUL_CHARSET:
+    case FXFONT_HANGUL_CHARSET:
       return FPF_SKIACHARSET_Korean;
     case FXFONT_GB2312_CHARSET:
       return FPF_SKIACHARSET_GB2312;
@@ -204,7 +204,7 @@ static uint32_t FPF_SKIAGetFamilyHash(const CFX_ByteStringC& bsFamily,
 static FX_BOOL FPF_SkiaIsCJK(uint8_t uCharset) {
   return (uCharset == FXFONT_GB2312_CHARSET) ||
          (uCharset == FXFONT_CHINESEBIG5_CHARSET) ||
-         (uCharset == FXFONT_HANGEUL_CHARSET) ||
+         (uCharset == FXFONT_HANGUL_CHARSET) ||
          (uCharset == FXFONT_SHIFTJIS_CHARSET);
 }
 static FX_BOOL FPF_SkiaMaybeSymbol(const CFX_ByteStringC& bsFacename) {

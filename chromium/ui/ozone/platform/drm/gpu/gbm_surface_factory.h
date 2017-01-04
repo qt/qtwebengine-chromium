@@ -8,10 +8,14 @@
 #include <stdint.h>
 
 #include <map>
+#include <memory>
 #include <vector>
 
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
+#include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_surface.h"
+#include "ui/ozone/common/gl_ozone_egl.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace ui {
@@ -30,17 +34,12 @@ class GbmSurfaceFactory : public SurfaceFactoryOzone {
   GbmSurfaceless* GetSurface(gfx::AcceleratedWidget widget) const;
 
   // SurfaceFactoryOzone:
-  intptr_t GetNativeDisplay() override;
+  std::vector<gl::GLImplementation> GetAllowedGLImplementations() override;
+  GLOzone* GetGLOzone(gl::GLImplementation implementation) override;
+
   std::vector<gfx::BufferFormat> GetScanoutFormats(
       gfx::AcceleratedWidget widget) override;
-  bool LoadEGLGLES2Bindings(
-      AddGLLibraryCallback add_gl_library,
-      SetGLGetProcAddressProcCallback set_gl_get_proc_address) override;
   std::unique_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
-      gfx::AcceleratedWidget widget) override;
-  std::unique_ptr<ui::SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
-      gfx::AcceleratedWidget w) override;
-  std::unique_ptr<SurfaceOzoneEGL> CreateSurfacelessEGLSurfaceForWidget(
       gfx::AcceleratedWidget widget) override;
   scoped_refptr<ui::NativePixmap> CreateNativePixmap(
       gfx::AcceleratedWidget widget,
@@ -54,6 +53,8 @@ class GbmSurfaceFactory : public SurfaceFactoryOzone {
       const gfx::NativePixmapHandle& handle) override;
 
  private:
+  std::unique_ptr<GLOzone> egl_implementation_;
+
   base::ThreadChecker thread_checker_;
 
   DrmThreadProxy* drm_thread_;

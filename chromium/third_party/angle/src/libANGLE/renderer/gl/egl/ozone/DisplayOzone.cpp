@@ -308,9 +308,9 @@ uint32_t DisplayOzone::Buffer::getDRMFB()
 
 FramebufferGL *DisplayOzone::Buffer::framebufferGL(const gl::FramebufferState &state)
 {
-    return new FramebufferGL(mGLFB, state, mDisplay->mFunctionsGL,
-                             mDisplay->getRenderer()->getWorkarounds(),
-                             mDisplay->getRenderer()->getStateManager());
+    return new FramebufferGL(
+        mGLFB, state, mDisplay->mFunctionsGL, mDisplay->getRenderer()->getWorkarounds(),
+        mDisplay->getRenderer()->getBlitter(), mDisplay->getRenderer()->getStateManager());
 }
 
 void DisplayOzone::Buffer::present()
@@ -898,11 +898,6 @@ egl::ConfigSet DisplayOzone::generateConfigs()
 
     configs.add(config);
     return configs;
-}
-
-bool DisplayOzone::isDeviceLost() const
-{
-    return false;
 }
 
 bool DisplayOzone::testDeviceLost()

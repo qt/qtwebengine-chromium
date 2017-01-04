@@ -9,14 +9,16 @@
 #include "SkEndian.h"
 #include "SkFontDescriptor.h"
 #include "SkFontMgr.h"
+#include "SkMakeUnique.h"
 #include "SkMutex.h"
 #include "SkOTTable_OS_2.h"
 #include "SkOnce.h"
 #include "SkStream.h"
 #include "SkTypeface.h"
+#include "SkTypefaceCache.h"
 
-SkTypeface::SkTypeface(const SkFontStyle& style, SkFontID fontID, bool isFixedPitch)
-    : fUniqueID(fontID), fStyle(style), fIsFixedPitch(isFixedPitch) { }
+SkTypeface::SkTypeface(const SkFontStyle& style, bool isFixedPitch)
+    : fUniqueID(SkTypefaceCache::NewFontID()), fStyle(style), fIsFixedPitch(isFixedPitch) { }
 
 SkTypeface::~SkTypeface() { }
 
@@ -40,7 +42,7 @@ class SkEmptyTypeface : public SkTypeface {
 public:
     static SkEmptyTypeface* Create() { return new SkEmptyTypeface; }
 protected:
-    SkEmptyTypeface() : SkTypeface(SkFontStyle(), 0, true) { }
+    SkEmptyTypeface() : SkTypeface(SkFontStyle(), true) { }
 
     SkStreamAsset* onOpenStream(int* ttcIndex) const override { return nullptr; }
     SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
@@ -59,8 +61,8 @@ protected:
         }
         return 0;
     }
-    int onCountGlyphs() const override { return 0; };
-    int onGetUPEM() const override { return 0; };
+    int onCountGlyphs() const override { return 0; }
+    int onGetUPEM() const override { return 0; }
     class EmptyLocalizedStrings : public SkTypeface::LocalizedStrings {
     public:
         bool next(SkTypeface::LocalizedString*) override { return false; }
@@ -70,7 +72,7 @@ protected:
     }
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override {
         return new EmptyLocalizedStrings;
-    };
+    }
     int onGetTableTags(SkFontTableTag tags[]) const override { return 0; }
     size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const override {
         return 0;
@@ -149,9 +151,9 @@ sk_sp<SkTypeface> SkTypeface::MakeFromStream(SkStreamAsset* stream, int index) {
     return sk_sp<SkTypeface>(fm->createFromStream(stream, index));
 }
 
-sk_sp<SkTypeface> SkTypeface::MakeFromFontData(SkFontData* data) {
+sk_sp<SkTypeface> SkTypeface::MakeFromFontData(std::unique_ptr<SkFontData> data) {
     SkAutoTUnref<SkFontMgr> fm(SkFontMgr::RefDefault());
-    return sk_sp<SkTypeface>(fm->createFromFontData(data));
+    return sk_sp<SkTypeface>(fm->createFromFontData(std::move(data)));
 }
 
 sk_sp<SkTypeface> SkTypeface::MakeFromFile(const char path[], int index) {
@@ -167,12 +169,12 @@ void SkTypeface::serialize(SkWStream* wstream) const {
         return;
     }
     bool isLocal = false;
-    SkFontDescriptor desc(this->style());
+    SkFontDescriptor desc;
     this->onGetFontDescriptor(&desc, &isLocal);
 
     // Embed font data if it's a local font.
     if (isLocal && !desc.hasFontData()) {
-        desc.setFontData(this->onCreateFontData());
+        desc.setFontData(this->onMakeFontData());
     }
     desc.serialize(wstream);
 }
@@ -187,16 +189,15 @@ sk_sp<SkTypeface> SkTypeface::MakeDeserialize(SkStream* stream) {
         return nullptr;
     }
 
-    SkFontData* data = desc.detachFontData();
+    std::unique_ptr<SkFontData> data = desc.detachFontData();
     if (data) {
-        sk_sp<SkTypeface> typeface(SkTypeface::MakeFromFontData(data));
+        sk_sp<SkTypeface> typeface(SkTypeface::MakeFromFontData(std::move(data)));
         if (typeface) {
             return typeface;
         }
     }
 
-    return SkTypeface::MakeFromName(desc.getFamilyName(),
-                                    SkFontStyle::FromOldStyle(desc.getStyle()));
+    return SkTypeface::MakeFromName(desc.getFamilyName(), desc.getStyle());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -227,15 +228,15 @@ SkStreamAsset* SkTypeface::openStream(int* ttcIndex) const {
     return this->onOpenStream(ttcIndex);
 }
 
-SkFontData* SkTypeface::createFontData() const {
-    return this->onCreateFontData();
+std::unique_ptr<SkFontData> SkTypeface::makeFontData() const {
+    return this->onMakeFontData();
 }
 
 // This implementation is temporary until this method can be made pure virtual.
-SkFontData* SkTypeface::onCreateFontData() const {
+std::unique_ptr<SkFontData> SkTypeface::onMakeFontData() const {
     int index;
-    SkAutoTDelete<SkStreamAsset> stream(this->onOpenStream(&index));
-    return new SkFontData(stream.release(), index, nullptr, 0);
+    std::unique_ptr<SkStreamAsset> stream(this->onOpenStream(&index));
+    return skstd::make_unique<SkFontData>(std::move(stream), index, nullptr, 0);
 };
 
 int SkTypeface::charsToGlyphs(const void* chars, Encoding encoding,
@@ -291,21 +292,15 @@ SkAdvancedTypefaceMetrics* SkTypeface::getAdvancedTypefaceMetrics(
     SkAdvancedTypefaceMetrics* result =
             this->onGetAdvancedTypefaceMetrics(info, glyphIDs, glyphIDsCount);
     if (result && result->fType == SkAdvancedTypefaceMetrics::kTrueType_Font) {
-        struct SkOTTableOS2 os2table;
-        if (this->getTableData(SkTEndian_SwapBE32(SkOTTableOS2::TAG), 0,
-                               sizeof(os2table), &os2table) > 0) {
-            if (os2table.version.v2.fsType.field.Bitmap ||
-                (os2table.version.v2.fsType.field.Restricted &&
-                 !(os2table.version.v2.fsType.field.PreviewPrint ||
-                   os2table.version.v2.fsType.field.Editable))) {
-                result->fFlags = SkTBitOr<SkAdvancedTypefaceMetrics::FontFlags>(
-                        result->fFlags,
-                        SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag);
+        SkOTTableOS2::Version::V2::Type::Field fsType;
+        constexpr SkFontTableTag os2Tag = SkTEndian_SwapBE32(SkOTTableOS2::TAG);
+        constexpr size_t fsTypeOffset = offsetof(SkOTTableOS2::Version::V2, fsType);
+        if (this->getTableData(os2Tag, fsTypeOffset, sizeof(fsType), &fsType) == sizeof(fsType)) {
+            if (fsType.Bitmap || (fsType.Restricted && !(fsType.PreviewPrint || fsType.Editable))) {
+                result->fFlags |= SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag;
             }
-            if (os2table.version.v2.fsType.field.NoSubsetting) {
-                result->fFlags = SkTBitOr<SkAdvancedTypefaceMetrics::FontFlags>(
-                        result->fFlags,
-                        SkAdvancedTypefaceMetrics::kNotSubsettable_FontFlag);
+            if (fsType.NoSubsetting) {
+                result->fFlags |= SkAdvancedTypefaceMetrics::kNotSubsettable_FontFlag;
             }
         }
     }

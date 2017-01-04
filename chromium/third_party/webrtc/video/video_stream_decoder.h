@@ -23,18 +23,15 @@
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
 #include "webrtc/typedefs.h"
-#include "webrtc/video/vie_sync_module.h"
 
 namespace webrtc {
 
 class CallStatsObserver;
 class ChannelStatsObserver;
-class Config;
 class EncodedImageCallback;
 class I420FrameCallback;
 class ReceiveStatisticsProxy;
 class VideoRenderCallback;
-class VoEVideoSync;
 
 namespace vcm {
 class VideoReceiver;

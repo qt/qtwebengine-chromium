@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "net/base/proxy_delegate.h"
 #include "net/proxy/proxy_retry_info.h"
+#include "net/proxy/proxy_server.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -19,7 +20,6 @@ class HttpResponseHeaders;
 class NetLog;
 class ProxyConfig;
 class ProxyInfo;
-class ProxyServer;
 class ProxyService;
 class URLRequest;
 }
@@ -48,7 +48,6 @@ class DataReductionProxyDelegate : public net::ProxyDelegate {
   // net::ProxyDelegate implementation:
   void OnResolveProxy(const GURL& url,
                       const std::string& method,
-                      int load_flags,
                       const net::ProxyService& proxy_service,
                       net::ProxyInfo* result) override;
   void OnFallback(const net::ProxyServer& bad_proxy, int net_error) override;
@@ -63,11 +62,56 @@ class DataReductionProxyDelegate : public net::ProxyDelegate {
       const net::HostPortPair& proxy_server,
       const net::HttpResponseHeaders& response_headers) override;
 
+ protected:
+  // Protected so that these methods are accessible for testing.
+  // net::ProxyDelegate implementation:
+  void GetAlternativeProxy(
+      const GURL& url,
+      const net::ProxyServer& resolved_proxy_server,
+      net::ProxyServer* alternative_proxy_server) const override;
+  void OnAlternativeProxyBroken(
+      const net::ProxyServer& alternative_proxy_server) override;
+  net::ProxyServer GetDefaultAlternativeProxy() const override;
+
+  // Protected so that it can be overridden during testing.
+  // Returns true if |proxy_server| supports QUIC.
+  virtual bool SupportsQUIC(const net::ProxyServer& proxy_server) const;
+
+  // Availability status of data reduction QUIC proxy.
+  // Protected so that the enum values are accessible for testing.
+  enum QuicProxyStatus {
+    QUIC_PROXY_STATUS_AVAILABLE,
+    QUIC_PROXY_NOT_SUPPORTED,
+    QUIC_PROXY_STATUS_MARKED_AS_BROKEN,
+    QUIC_PROXY_STATUS_BOUNDARY
+  };
+
+  // Availability status of data reduction proxy that supports 0-RTT QUIC.
+  // Protected so that the enum values are accessible for testing.
+  enum DefaultAlternativeProxyStatus {
+    DEFAULT_ALTERNATIVE_PROXY_STATUS_AVAILABLE,
+    DEFAULT_ALTERNATIVE_PROXY_STATUS_BROKEN,
+    DEFAULT_ALTERNATIVE_PROXY_STATUS_UNAVAILABLE,
+    DEFAULT_ALTERNATIVE_PROXY_STATUS_BOUNDARY,
+  };
+
  private:
+  // Records the availability status of data reduction proxy.
+  void RecordQuicProxyStatus(QuicProxyStatus status) const;
+
+  // Records the availability status of data reduction proxy that supports 0-RTT
+  // QUIC.
+  void RecordGetDefaultAlternativeProxy(
+      DefaultAlternativeProxyStatus status) const;
+
   const DataReductionProxyConfig* config_;
   const DataReductionProxyConfigurator* configurator_;
   DataReductionProxyEventCreator* event_creator_;
   DataReductionProxyBypassStats* bypass_stats_;
+
+  // True if the use of alternate proxies is disabled.
+  bool alternative_proxies_broken_;
+
   net::NetLog* net_log_;
 
   DISALLOW_COPY_AND_ASSIGN(DataReductionProxyDelegate);
@@ -80,7 +124,6 @@ class DataReductionProxyDelegate : public net::ProxyDelegate {
 // This is visible for test purposes.
 void OnResolveProxyHandler(const GURL& url,
                            const std::string& method,
-                           int load_flags,
                            const net::ProxyConfig& data_reduction_proxy_config,
                            const net::ProxyRetryInfoMap& proxy_retry_info,
                            const DataReductionProxyConfig* config,

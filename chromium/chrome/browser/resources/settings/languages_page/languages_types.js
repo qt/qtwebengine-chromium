@@ -48,10 +48,7 @@ var InputMethodsModel;
 var LanguagesModel;
 
 /**
- * Helper methods implemented by settings-languages-singleton. The nature of
- * the interaction between the singleton Polymer element and the |languages|
- * properties kept in sync is hidden from the consumer, which can just treat
- * these methods as a handy interface.
+ * Helper methods for reading and writing language settings.
  * @interface
  */
 var LanguageHelper = function() {};
@@ -110,6 +107,12 @@ LanguageHelper.prototype = {
    *     of the list. A Positive one moves the language toward the back.
    */
   moveLanguage: assertNotReached,
+
+  /**
+   * Moves the language directly to the front of the list of enabled languages.
+   * @param {string} languageCode
+   */
+  moveLanguageToFront: assertNotReached,
 
   /**
    * Enables translate for the given language by removing the translate
@@ -171,7 +174,7 @@ LanguageHelper.prototype = {
   setCurrentInputMethod: assertNotReached,
 
   /**
-   * param {string} languageCode
+   * @param {string} languageCode
    * @return {!Array<!chrome.languageSettingsPrivate.InputMethod>}
    */
   getInputMethodsForLanguage: assertNotReached,

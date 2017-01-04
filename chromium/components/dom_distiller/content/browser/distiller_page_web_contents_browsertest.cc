@@ -102,7 +102,7 @@ class DistillerPageWebContentsTest : public ContentBrowserTest {
         embedded_test_server()->GetURL(url),
         dom_distiller::proto::DomDistillerOptions(),
         base::Bind(&DistillerPageWebContentsTest::OnPageDistillationFinished,
-                   this, quit_closure));
+                   base::Unretained(this), quit_closure));
   }
 
   void OnPageDistillationFinished(
@@ -315,7 +315,7 @@ IN_PROC_BROWSER_TEST_F(DistillerPageWebContentsTest,
 }
 
 IN_PROC_BROWSER_TEST_F(DistillerPageWebContentsTest,
-                       UsingCurrentWebContentsNotFinishedLoadingYet) {
+                       DISABLED_UsingCurrentWebContentsNotFinishedLoadingYet) {
   std::string url(kSimpleArticlePath);
   bool expect_new_web_contents = false;
   bool setup_main_frame_observer = true;
@@ -327,7 +327,7 @@ IN_PROC_BROWSER_TEST_F(DistillerPageWebContentsTest,
 }
 
 IN_PROC_BROWSER_TEST_F(DistillerPageWebContentsTest,
-                       UsingCurrentWebContentsReadyForDistillation) {
+                       DISABLED_UsingCurrentWebContentsReadyForDistillation) {
   std::string url(kSimpleArticlePath);
   bool expect_new_web_contents = false;
   bool setup_main_frame_observer = true;

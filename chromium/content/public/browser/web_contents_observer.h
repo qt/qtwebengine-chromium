@@ -8,12 +8,14 @@
 #include <stdint.h>
 
 #include "base/macros.h"
+#include "base/optional.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/reload_type.h"
 #include "content/public/common/frame_navigate_params.h"
-#include "content/public/common/media_metadata.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/security_style.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
@@ -32,10 +34,11 @@ class RenderWidgetHost;
 class WebContents;
 class WebContentsImpl;
 struct AXEventNotificationDetails;
+struct AXLocationChangeNotificationDetails;
 struct FaviconURL;
 struct FrameNavigateParams;
 struct LoadCommittedDetails;
-struct LoadFromMemoryCacheDetails;
+struct MediaMetadata;
 struct Referrer;
 struct ResourceRedirectDetails;
 struct ResourceRequestDetails;
@@ -192,9 +195,8 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // default mode, it is still necessary to override this function to be
   // notified about a navigation earlier than DidStartProvisionalLoad. This
   // function will be removed when PlzNavigate is enabled.
-  virtual void DidStartNavigationToPendingEntry(
-      const GURL& url,
-      NavigationController::ReloadType reload_type) {}
+  virtual void DidStartNavigationToPendingEntry(const GURL& url,
+                                                ReloadType reload_type) {}
 
   // |render_frame_host| is the RenderFrameHost for which the provisional load
   // is happening.
@@ -300,7 +302,9 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // This method is invoked when content was loaded from an in-memory cache.
   virtual void DidLoadResourceFromMemoryCache(
-      const LoadFromMemoryCacheDetails& details) {}
+      const GURL& url,
+      const std::string& mime_type,
+      ResourceType resource_type) {}
 
   // This method is invoked when a response has been received for a resource
   // request.
@@ -310,7 +314,6 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // This method is invoked when a redirect has been received for a resource
   // request.
   virtual void DidGetRedirectForResourceRequest(
-      RenderFrameHost* render_frame_host,
       const ResourceRedirectDetails& details) {}
 
   // This method is invoked when a new non-pending navigation entry is created.
@@ -448,6 +451,11 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   virtual void AccessibilityEventReceived(
       const std::vector<AXEventNotificationDetails>& details) {}
 
+  // Invoked when an accessibility location change is received from the
+  // renderer process.
+  virtual void AccessibilityLocationChangesReceived(
+      const std::vector<AXLocationChangeNotificationDetails>& details) {}
+
   // Invoked when theme color is changed to |theme_color|.
   virtual void DidChangeThemeColor(SkColor theme_color) {}
 
@@ -461,9 +469,10 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   virtual void MediaStoppedPlaying(const MediaPlayerId& id) {}
 
   // Invoked when media session has changed its state.
-  virtual void MediaSessionStateChanged(bool is_controllable,
-                                        bool is_suspended,
-                                        const MediaMetadata& metadata) {}
+  virtual void MediaSessionStateChanged(
+      bool is_controllable,
+      bool is_suspended,
+      const base::Optional<MediaMetadata>& metadata) {}
 
   // Invoked when the renderer process changes the page scale factor.
   virtual void OnPageScaleFactorChanged(float page_scale_factor) {}

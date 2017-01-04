@@ -850,6 +850,9 @@ void* GLES2InterfaceStub::MapBufferRange(GLenum /* target */,
 GLboolean GLES2InterfaceStub::UnmapBuffer(GLenum /* target */) {
   return 0;
 }
+void GLES2InterfaceStub::FlushMappedBufferRange(GLenum /* target */,
+                                                GLintptr /* offset */,
+                                                GLsizeiptr /* size */) {}
 void* GLES2InterfaceStub::MapTexSubImage2DCHROMIUM(GLenum /* target */,
                                                    GLint /* level */,
                                                    GLint /* xoffset */,
@@ -902,9 +905,6 @@ GLuint GLES2InterfaceStub::CreateGpuMemoryBufferImageCHROMIUM(
     GLenum /* usage */) {
   return 0;
 }
-void GLES2InterfaceStub::GetImageivCHROMIUM(GLuint /* image_id */,
-                                            GLenum /* param */,
-                                            GLint* /* data */) {}
 void GLES2InterfaceStub::DescheduleUntilFinishedCHROMIUM() {}
 void GLES2InterfaceStub::GetTranslatedShaderSourceANGLE(GLuint /* shader */,
                                                         GLsizei /* bufsize */,
@@ -1004,17 +1004,18 @@ void GLES2InterfaceStub::ScheduleOverlayPlaneCHROMIUM(
     GLfloat /* uv_y */,
     GLfloat /* uv_width */,
     GLfloat /* uv_height */) {}
-void GLES2InterfaceStub::ScheduleCALayerCHROMIUM(
-    GLuint /* contents_texture_id */,
-    const GLfloat* /* contents_rect */,
+void GLES2InterfaceStub::ScheduleCALayerSharedStateCHROMIUM(
     GLfloat /* opacity */,
-    GLuint /* background_color */,
-    GLuint /* edge_aa_mask */,
-    const GLfloat* /* bounds_rect */,
     GLboolean /* is_clipped */,
     const GLfloat* /* clip_rect */,
     GLint /* sorting_context_id */,
-    const GLfloat* /* transform */,
+    const GLfloat* /* transform */) {}
+void GLES2InterfaceStub::ScheduleCALayerCHROMIUM(
+    GLuint /* contents_texture_id */,
+    const GLfloat* /* contents_rect */,
+    GLuint /* background_color */,
+    GLuint /* edge_aa_mask */,
+    const GLfloat* /* bounds_rect */,
     GLuint /* filter */) {}
 void GLES2InterfaceStub::ScheduleCALayerInUseQueryCHROMIUM(
     GLsizei /* count */,
@@ -1156,5 +1157,9 @@ GLint GLES2InterfaceStub::GetFragDataIndexEXT(GLuint /* program */,
 void GLES2InterfaceStub::UniformMatrix4fvStreamTextureMatrixCHROMIUM(
     GLint /* location */,
     GLboolean /* transpose */,
-    const GLfloat* /* default_value */) {}
+    const GLfloat* /* transform */) {}
+void GLES2InterfaceStub::SwapBuffersWithDamageCHROMIUM(GLint /* x */,
+                                                       GLint /* y */,
+                                                       GLint /* width */,
+                                                       GLint /* height */) {}
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_STUB_IMPL_AUTOGEN_H_

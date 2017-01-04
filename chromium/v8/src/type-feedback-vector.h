@@ -10,7 +10,8 @@
 #include "src/base/logging.h"
 #include "src/elements-kind.h"
 #include "src/objects.h"
-#include "src/zone-containers.h"
+#include "src/type-hints.h"
+#include "src/zone/zone-containers.h"
 
 namespace v8 {
 namespace internal {
@@ -27,6 +28,8 @@ enum class FeedbackVectorSlotKind {
   KEYED_LOAD_IC,
   STORE_IC,
   KEYED_STORE_IC,
+  INTERPRETER_BINARYOP_IC,
+  INTERPRETER_COMPARE_IC,
 
   // This is a general purpose slot that occupies one feedback vector element.
   GENERAL,
@@ -65,6 +68,14 @@ class FeedbackVectorSpecBase {
 
   FeedbackVectorSlot AddKeyedStoreICSlot() {
     return AddSlot(FeedbackVectorSlotKind::KEYED_STORE_IC);
+  }
+
+  FeedbackVectorSlot AddInterpreterBinaryOpICSlot() {
+    return AddSlot(FeedbackVectorSlotKind::INTERPRETER_BINARYOP_IC);
+  }
+
+  FeedbackVectorSlot AddInterpreterCompareICSlot() {
+    return AddSlot(FeedbackVectorSlotKind::INTERPRETER_COMPARE_IC);
   }
 
   FeedbackVectorSlot AddGeneralSlot() {
@@ -207,7 +218,7 @@ class TypeFeedbackMetadata : public FixedArray {
   static const char* Kind2String(FeedbackVectorSlotKind kind);
 
  private:
-  static const int kFeedbackVectorSlotKindBits = 4;
+  static const int kFeedbackVectorSlotKindBits = 5;
   STATIC_ASSERT(static_cast<int>(FeedbackVectorSlotKind::KINDS_NUMBER) <
                 (1 << kFeedbackVectorSlotKindBits));
 
@@ -222,11 +233,10 @@ class TypeFeedbackMetadata : public FixedArray {
 
 // The shape of the TypeFeedbackVector is an array with:
 // 0: feedback metadata
-// 1: ics_with_types
-// 2: ics_with_generic_info
-// 3: feedback slot #0
+// 1: invocation count
+// 2: feedback slot #0
 // ...
-// 3 + slot_count - 1: feedback slot #(slot_count-1)
+// 2 + slot_count - 1: feedback slot #(slot_count-1)
 //
 class TypeFeedbackVector : public FixedArray {
  public:
@@ -234,9 +244,11 @@ class TypeFeedbackVector : public FixedArray {
   static inline TypeFeedbackVector* cast(Object* obj);
 
   static const int kMetadataIndex = 0;
-  static const int kReservedIndexCount = 1;
+  static const int kInvocationCountIndex = 1;
+  static const int kReservedIndexCount = 2;
 
-  inline void ComputeCounts(int* with_type_info, int* generic);
+  inline void ComputeCounts(int* with_type_info, int* generic,
+                            int* vector_ic_count, bool code_is_interpreted);
 
   inline bool is_empty() const;
 
@@ -244,6 +256,7 @@ class TypeFeedbackVector : public FixedArray {
   inline int slot_count() const;
 
   inline TypeFeedbackMetadata* metadata() const;
+  inline int invocation_count() const;
 
   // Conversion from a slot to an integer index to the underlying array.
   static int GetIndex(FeedbackVectorSlot slot) {
@@ -412,8 +425,9 @@ class FeedbackNexus {
 
   virtual InlineCacheState StateFromFeedback() const = 0;
   virtual int ExtractMaps(MapHandleList* maps) const;
-  virtual MaybeHandle<Code> FindHandlerForMap(Handle<Map> map) const;
-  virtual bool FindHandlers(CodeHandleList* code_list, int length = -1) const;
+  virtual MaybeHandle<Object> FindHandlerForMap(Handle<Map> map) const;
+  virtual bool FindHandlers(List<Handle<Object>>* code_list,
+                            int length = -1) const;
   virtual Name* FindFirstName() const { return NULL; }
 
   virtual void ConfigureUninitialized();
@@ -434,7 +448,7 @@ class FeedbackNexus {
   Handle<FixedArray> EnsureArrayOfSize(int length);
   Handle<FixedArray> EnsureExtraArrayOfSize(int length);
   void InstallHandlers(Handle<FixedArray> array, MapHandleList* maps,
-                       CodeHandleList* handlers);
+                       List<Handle<Object>>* handlers);
 
  private:
   // The reason for having a vector handle and a raw pointer is that we can and
@@ -460,6 +474,7 @@ class CallICNexus final : public FeedbackNexus {
 
   void Clear(Code* host);
 
+  void ConfigureUninitialized() override;
   void ConfigureMonomorphicArray();
   void ConfigureMonomorphic(Handle<JSFunction> function);
   void ConfigureMegamorphic() final;
@@ -471,14 +486,19 @@ class CallICNexus final : public FeedbackNexus {
     // CallICs don't record map feedback.
     return 0;
   }
-  MaybeHandle<Code> FindHandlerForMap(Handle<Map> map) const final {
+  MaybeHandle<Object> FindHandlerForMap(Handle<Map> map) const final {
     return MaybeHandle<Code>();
   }
-  bool FindHandlers(CodeHandleList* code_list, int length = -1) const final {
+  bool FindHandlers(List<Handle<Object>>* code_list,
+                    int length = -1) const final {
     return length == 0;
   }
 
   int ExtractCallCount();
+
+  // Compute the call frequency based on the call count and the invocation
+  // count (taken from the type feedback vector).
+  float ComputeCallFrequency();
 };
 
 
@@ -499,9 +519,10 @@ class LoadICNexus : public FeedbackNexus {
 
   void Clear(Code* host);
 
-  void ConfigureMonomorphic(Handle<Map> receiver_map, Handle<Code> handler);
+  void ConfigureMonomorphic(Handle<Map> receiver_map, Handle<Object> handler);
 
-  void ConfigurePolymorphic(MapHandleList* maps, CodeHandleList* handlers);
+  void ConfigurePolymorphic(MapHandleList* maps,
+                            List<Handle<Object>>* handlers);
 
   InlineCacheState StateFromFeedback() const override;
 };
@@ -521,10 +542,11 @@ class LoadGlobalICNexus : public FeedbackNexus {
     // LoadGlobalICs don't record map feedback.
     return 0;
   }
-  MaybeHandle<Code> FindHandlerForMap(Handle<Map> map) const final {
+  MaybeHandle<Object> FindHandlerForMap(Handle<Map> map) const final {
     return MaybeHandle<Code>();
   }
-  bool FindHandlers(CodeHandleList* code_list, int length = -1) const final {
+  bool FindHandlers(List<Handle<Object>>* code_list,
+                    int length = -1) const final {
     return length == 0;
   }
 
@@ -544,6 +566,10 @@ class KeyedLoadICNexus : public FeedbackNexus {
       : FeedbackNexus(vector, slot) {
     DCHECK_EQ(FeedbackVectorSlotKind::KEYED_LOAD_IC, vector->GetKind(slot));
   }
+  explicit KeyedLoadICNexus(Isolate* isolate)
+      : FeedbackNexus(
+            TypeFeedbackVector::DummyVector(isolate),
+            FeedbackVectorSlot(TypeFeedbackVector::kDummyKeyedLoadICSlot)) {}
   KeyedLoadICNexus(TypeFeedbackVector* vector, FeedbackVectorSlot slot)
       : FeedbackNexus(vector, slot) {
     DCHECK_EQ(FeedbackVectorSlotKind::KEYED_LOAD_IC, vector->GetKind(slot));
@@ -553,10 +579,10 @@ class KeyedLoadICNexus : public FeedbackNexus {
 
   // name can be a null handle for element loads.
   void ConfigureMonomorphic(Handle<Name> name, Handle<Map> receiver_map,
-                            Handle<Code> handler);
+                            Handle<Object> handler);
   // name can be null.
   void ConfigurePolymorphic(Handle<Name> name, MapHandleList* maps,
-                            CodeHandleList* handlers);
+                            List<Handle<Object>>* handlers);
 
   void ConfigureMegamorphicKeyed(IcCheckType property_type);
 
@@ -585,7 +611,8 @@ class StoreICNexus : public FeedbackNexus {
 
   void ConfigureMonomorphic(Handle<Map> receiver_map, Handle<Code> handler);
 
-  void ConfigurePolymorphic(MapHandleList* maps, CodeHandleList* handlers);
+  void ConfigurePolymorphic(MapHandleList* maps,
+                            List<Handle<Object>>* handlers);
 
   InlineCacheState StateFromFeedback() const override;
 };
@@ -613,7 +640,7 @@ class KeyedStoreICNexus : public FeedbackNexus {
                             Handle<Code> handler);
   // name can be null.
   void ConfigurePolymorphic(Handle<Name> name, MapHandleList* maps,
-                            CodeHandleList* handlers);
+                            List<Handle<Object>>* handlers);
   void ConfigurePolymorphic(MapHandleList* maps,
                             MapHandleList* transitioned_maps,
                             CodeHandleList* handlers);
@@ -625,6 +652,72 @@ class KeyedStoreICNexus : public FeedbackNexus {
   InlineCacheState StateFromFeedback() const override;
   Name* FindFirstName() const override;
 };
+
+class BinaryOpICNexus final : public FeedbackNexus {
+ public:
+  BinaryOpICNexus(Handle<TypeFeedbackVector> vector, FeedbackVectorSlot slot)
+      : FeedbackNexus(vector, slot) {
+    DCHECK_EQ(FeedbackVectorSlotKind::INTERPRETER_BINARYOP_IC,
+              vector->GetKind(slot));
+  }
+  BinaryOpICNexus(TypeFeedbackVector* vector, FeedbackVectorSlot slot)
+      : FeedbackNexus(vector, slot) {
+    DCHECK_EQ(FeedbackVectorSlotKind::INTERPRETER_BINARYOP_IC,
+              vector->GetKind(slot));
+  }
+
+  void Clear(Code* host);
+
+  InlineCacheState StateFromFeedback() const final;
+  BinaryOperationHint GetBinaryOperationFeedback() const;
+
+  int ExtractMaps(MapHandleList* maps) const final {
+    // BinaryOpICs don't record map feedback.
+    return 0;
+  }
+  MaybeHandle<Object> FindHandlerForMap(Handle<Map> map) const final {
+    return MaybeHandle<Code>();
+  }
+  bool FindHandlers(List<Handle<Object>>* code_list,
+                    int length = -1) const final {
+    return length == 0;
+  }
+};
+
+class CompareICNexus final : public FeedbackNexus {
+ public:
+  CompareICNexus(Handle<TypeFeedbackVector> vector, FeedbackVectorSlot slot)
+      : FeedbackNexus(vector, slot) {
+    DCHECK_EQ(FeedbackVectorSlotKind::INTERPRETER_COMPARE_IC,
+              vector->GetKind(slot));
+  }
+  CompareICNexus(TypeFeedbackVector* vector, FeedbackVectorSlot slot)
+      : FeedbackNexus(vector, slot) {
+    DCHECK_EQ(FeedbackVectorSlotKind::INTERPRETER_COMPARE_IC,
+              vector->GetKind(slot));
+  }
+
+  void Clear(Code* host);
+
+  InlineCacheState StateFromFeedback() const final;
+  CompareOperationHint GetCompareOperationFeedback() const;
+
+  int ExtractMaps(MapHandleList* maps) const final {
+    // BinaryOpICs don't record map feedback.
+    return 0;
+  }
+  MaybeHandle<Object> FindHandlerForMap(Handle<Map> map) const final {
+    return MaybeHandle<Code>();
+  }
+  bool FindHandlers(List<Handle<Object>>* code_list,
+                    int length = -1) const final {
+    return length == 0;
+  }
+};
+
+inline BinaryOperationHint BinaryOperationHintFromFeedback(int type_feedback);
+inline CompareOperationHint CompareOperationHintFromFeedback(int type_feedback);
+
 }  // namespace internal
 }  // namespace v8
 

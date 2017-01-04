@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/test/test_simple_task_runner.h"
+#include "base/time/time.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
@@ -58,10 +59,10 @@ void SaveFoundRegistrationCallback(
     bool* called,
     scoped_refptr<ServiceWorkerRegistration>* registration,
     ServiceWorkerStatusCode status,
-    const scoped_refptr<ServiceWorkerRegistration>& result) {
+    scoped_refptr<ServiceWorkerRegistration> result) {
   EXPECT_EQ(expected_status, status);
   *called = true;
-  *registration = result;
+  *registration = std::move(result);
 }
 
 // Creates a callback which both keeps track of if it's been called,
@@ -657,6 +658,8 @@ TEST_F(ServiceWorkerJobTest, UnregisterWaitingSetsRedundant) {
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(SERVICE_WORKER_OK, status);
 
+  version->set_fetch_handler_existence(
+      ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   version->SetStatus(ServiceWorkerVersion::INSTALLED);
   registration->SetWaitingVersion(version);
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version->running_status());
@@ -856,15 +859,13 @@ class UpdateJobTestHelper
       // Spoof caching the script for the initial version.
       WriteStringResponse(storage(), resource_id, kMockScriptBody);
       version->script_cache_map()->NotifyFinishedCaching(
-          script, kMockScriptSize, net::URLRequestStatus(), std::string());
+          script, kMockScriptSize, net::OK, std::string());
     } else {
       if (script.GetOrigin() == kNoChangeOrigin) {
         // Simulate fetching the updated script and finding it's identical to
         // the incumbent.
-        net::URLRequestStatus status =
-            net::URLRequestStatus::FromError(net::ERR_FILE_EXISTS);
         version->script_cache_map()->NotifyFinishedCaching(
-            script, kMockScriptSize, status, std::string());
+            script, kMockScriptSize, net::ERR_FILE_EXISTS, std::string());
         SimulateWorkerScriptLoaded(embedded_worker_id);
         return;
       }
@@ -872,7 +873,7 @@ class UpdateJobTestHelper
       // Spoof caching the script for the new version.
       WriteStringResponse(storage(), resource_id, "mock_different_script");
       version->script_cache_map()->NotifyFinishedCaching(
-          script, kMockScriptSize, net::URLRequestStatus(), std::string());
+          script, kMockScriptSize, net::OK, std::string());
     }
 
     EmbeddedWorkerTestHelper::OnStartWorker(
@@ -1442,12 +1443,12 @@ class EventCallbackHelper : public EmbeddedWorkerTestHelper {
       install_callback_.Run();
     SimulateSend(new ServiceWorkerHostMsg_InstallEventFinished(
         embedded_worker_id, request_id, install_event_result_,
-        has_fetch_handler_));
+        has_fetch_handler_, base::Time::Now()));
   }
   void OnActivateEvent(int embedded_worker_id, int request_id) override {
-    SimulateSend(
-        new ServiceWorkerHostMsg_ActivateEventFinished(
-            embedded_worker_id, request_id, activate_event_result_));
+    SimulateSend(new ServiceWorkerHostMsg_ActivateEventFinished(
+        embedded_worker_id, request_id, activate_event_result_,
+        base::Time::Now()));
   }
 
   void set_install_callback(const base::Closure& callback) {
@@ -1593,13 +1594,15 @@ TEST_F(ServiceWorkerJobTest, HasFetchHandler) {
   helper->set_has_fetch_handler(true);
   RunRegisterJob(pattern, script);
   registration = FindRegistrationForPattern(pattern);
-  EXPECT_TRUE(registration->active_version()->has_fetch_handler());
+  EXPECT_EQ(ServiceWorkerVersion::FetchHandlerExistence::EXISTS,
+            registration->active_version()->fetch_handler_existence());
   RunUnregisterJob(pattern);
 
   helper->set_has_fetch_handler(false);
   RunRegisterJob(pattern, script);
   registration = FindRegistrationForPattern(pattern);
-  EXPECT_FALSE(registration->active_version()->has_fetch_handler());
+  EXPECT_EQ(ServiceWorkerVersion::FetchHandlerExistence::DOES_NOT_EXIST,
+            registration->active_version()->fetch_handler_existence());
   RunUnregisterJob(pattern);
 }
 
@@ -1617,7 +1620,7 @@ TEST_F(ServiceWorkerJobTest, Update_PauseAfterDownload) {
     ASSERT_TRUE(start_msg);
     EmbeddedWorkerMsg_StartWorker::Param param;
     EmbeddedWorkerMsg_StartWorker::Read(start_msg, &param);
-    EmbeddedWorkerMsg_StartWorker_Params start_params = std::get<0>(param);
+    const EmbeddedWorkerStartParams& start_params = std::get<0>(param);
     EXPECT_FALSE(start_params.pause_after_download);
     sink->ClearMessages();
   }
@@ -1632,7 +1635,7 @@ TEST_F(ServiceWorkerJobTest, Update_PauseAfterDownload) {
     ASSERT_TRUE(start_msg);
     EmbeddedWorkerMsg_StartWorker::Param param;
     EmbeddedWorkerMsg_StartWorker::Read(start_msg, &param);
-    EmbeddedWorkerMsg_StartWorker_Params start_params = std::get<0>(param);
+    const EmbeddedWorkerStartParams& start_params = std::get<0>(param);
     EXPECT_TRUE(start_params.pause_after_download);
     sink->ClearMessages();
   }

@@ -5,6 +5,7 @@
 #include "components/arc/metrics/arc_metrics_service.h"
 
 #include <string>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -27,10 +28,10 @@ ArcMetricsService::ArcMetricsService(ArcBridgeService* bridge_service)
     : ArcService(bridge_service),
       binding_(this),
       process_observer_(this),
+      oom_kills_monitor_handle_(OomKillsMonitor::StartMonitoring()),
       weak_ptr_factory_(this) {
   arc_bridge_service()->metrics()->AddObserver(this);
   arc_bridge_service()->process()->AddObserver(&process_observer_);
-  oom_kills_monitor_.Start();
 }
 
 ArcMetricsService::~ArcMetricsService() {
@@ -75,12 +76,10 @@ void ArcMetricsService::OnProcessInstanceClosed() {
 
 void ArcMetricsService::RequestProcessList() {
   mojom::ProcessInstance* process_instance =
-      arc_bridge_service()->process()->instance();
-  if (!process_instance) {
-    LOG(ERROR) << "No process instance found before RequestProcessList";
+      arc_bridge_service()->process()->GetInstanceForMethod(
+          "RequestProcessList");
+  if (!process_instance)
     return;
-  }
-
   VLOG(2) << "RequestProcessList";
   process_instance->RequestProcessList(base::Bind(
       &ArcMetricsService::ParseProcessList, weak_ptr_factory_.GetWeakPtr()));
@@ -120,10 +119,10 @@ void ArcMetricsService::OnArcStartTimeRetrieved(
     LOG(ERROR) << "Failed to retrieve ARC start timeticks.";
     return;
   }
-  if (!arc_bridge_service()->metrics()->instance()) {
-    LOG(ERROR) << "ARC metrics instance went away while retrieving start time.";
+  auto* instance =
+      arc_bridge_service()->metrics()->GetInstanceForMethod("Init");
+  if (!instance)
     return;
-  }
 
   // The binding of host interface is deferred until the ARC start time is
   // retrieved here because it prevents race condition of the ARC start
@@ -131,7 +130,7 @@ void ArcMetricsService::OnArcStartTimeRetrieved(
   if (!binding_.is_bound()) {
     mojom::MetricsHostPtr host_ptr;
     binding_.Bind(mojo::GetProxy(&host_ptr));
-    arc_bridge_service()->metrics()->instance()->Init(std::move(host_ptr));
+    instance->Init(std::move(host_ptr));
   }
   arc_start_time_ = arc_start_time;
   VLOG(2) << "ARC start @" << arc_start_time_;

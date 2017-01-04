@@ -18,7 +18,6 @@
 #include "content/common/content_export.h"
 #include "ipc/message_filter.h"
 #include "media/audio/audio_output_ipc.h"
-#include "media/base/audio_hardware_config.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -67,7 +66,7 @@ class CONTENT_EXPORT AudioMessageFilter : public IPC::MessageFilter {
 
   // IPC::MessageFilter override. Called on |io_task_runner_|.
   bool OnMessageReceived(const IPC::Message& message) override;
-  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterAdded(IPC::Channel* channel) override;
   void OnFilterRemoved() override;
   void OnChannelClosing() override;
 

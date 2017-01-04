@@ -96,11 +96,14 @@ MockGpuVideoAcceleratorFactories::AllocateGpuMemoryBuffer(
     gfx::BufferUsage /* usage */) {
   if (fail_to_allocate_gpu_memory_buffer_)
     return nullptr;
-  return base::WrapUnique(new GpuMemoryBufferImpl(size, format));
+  return base::MakeUnique<GpuMemoryBufferImpl>(size, format);
 }
 
 std::unique_ptr<base::SharedMemory>
 MockGpuVideoAcceleratorFactories::CreateSharedMemory(size_t size) {
+  std::unique_ptr<base::SharedMemory> shared_memory(new base::SharedMemory);
+  if (shared_memory->CreateAndMapAnonymous(size))
+    return shared_memory;
   return nullptr;
 }
 
@@ -142,7 +145,7 @@ class ScopedGLContextLockImpl
 std::unique_ptr<GpuVideoAcceleratorFactories::ScopedGLContextLock>
 MockGpuVideoAcceleratorFactories::GetGLContextLock() {
   DCHECK(gles2_);
-  return base::WrapUnique(new ScopedGLContextLockImpl(this));
+  return base::MakeUnique<ScopedGLContextLockImpl>(this);
 }
 
 }  // namespace media

@@ -15,17 +15,17 @@
 #include "base/memory/ptr_util.h"
 #include "base/time/time.h"
 #include "base/tracked_objects.h"
+#include "components/sync/api/attachments/attachment_id.h"
+#include "components/sync/api/fake_sync_change_processor.h"
+#include "components/sync/api/sync_change.h"
+#include "components/sync/api/sync_data.h"
+#include "components/sync/api/sync_error.h"
+#include "components/sync/api/sync_error_factory_mock.h"
+#include "components/sync/core/attachments/attachment_service_proxy_for_test.h"
+#include "components/sync/protocol/sync.pb.h"
 #include "components/wifi_sync/wifi_config_delegate.h"
 #include "components/wifi_sync/wifi_credential.h"
 #include "components/wifi_sync/wifi_security_class.h"
-#include "sync/api/attachments/attachment_id.h"
-#include "sync/api/fake_sync_change_processor.h"
-#include "sync/api/sync_change.h"
-#include "sync/api/sync_data.h"
-#include "sync/api/sync_error.h"
-#include "sync/api/sync_error_factory_mock.h"
-#include "sync/internal_api/public/attachments/attachment_service_proxy_for_test.h"
-#include "sync/protocol/sync.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace wifi_sync {
@@ -146,8 +146,7 @@ class WifiCredentialSyncableServiceTest : public testing::Test {
     change_processor_ = change_processor.get();
     syncable_service_->MergeDataAndStartSyncing(
         syncer::WIFI_CREDENTIALS, syncer::SyncDataList(),
-        std::move(change_processor),
-        base::WrapUnique(new SyncErrorFactoryMock()));
+        std::move(change_processor), base::MakeUnique<SyncErrorFactoryMock>());
   }
 
  private:

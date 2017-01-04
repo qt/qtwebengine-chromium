@@ -19,6 +19,7 @@ class BlimpMessage;
 class BlobChannelMessage;
 class CompositorMessage;
 class EngineSettingsMessage;
+class GeolocationMessage;
 class ImeMessage;
 class InputMessage;
 class NavigationMessage;
@@ -70,8 +71,11 @@ BLIMP_COMMON_EXPORT std::unique_ptr<BlimpMessage> CreateBlimpMessage(
 BLIMP_COMMON_EXPORT std::unique_ptr<BlimpMessage> CreateBlimpMessage(
     BlobChannelMessage** blob_channel_message);
 
+BLIMP_COMMON_EXPORT std::unique_ptr<BlimpMessage> CreateBlimpMessage(
+    GeolocationMessage** geolocation_message);
+
 BLIMP_COMMON_EXPORT std::unique_ptr<BlimpMessage> CreateStartConnectionMessage(
-    const std::string& client_token,
+    const std::string& client_auth_token,
     int protocol_version);
 
 BLIMP_COMMON_EXPORT std::unique_ptr<BlimpMessage> CreateCheckpointAckMessage(

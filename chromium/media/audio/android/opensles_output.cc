@@ -6,8 +6,10 @@
 
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "media/audio/android/audio_manager_android.h"
+#include "media/base/audio_timestamp_helper.h"
 
 #define LOG_ON_FAILURE_AND_RETURN(op, ...)      \
   do {                                          \
@@ -87,13 +89,11 @@ void OpenSLESOutputStream::Start(AudioSourceCallback* callback) {
   base::AutoLock lock(lock_);
   DCHECK(!callback_);
   callback_ = callback;
-  delay_calculator_.SetBaseTimestamp(base::TimeDelta());
 
   // Fill audio data with silence to avoid start-up glitches. Don't use
   // FillBufferQueueNoLock() since it can trigger recursive entry if an error
   // occurs while writing into the stream. See http://crbug.com/624877.
   memset(audio_data_[active_buffer_index_], 0, buffer_size_bytes_);
-  delay_calculator_.AddFrames(audio_bus_->frames());
   LOG_ON_FAILURE_AND_RETURN((*simple_buffer_queue_)
                                 ->Enqueue(simple_buffer_queue_,
                                           audio_data_[active_buffer_index_],
@@ -105,6 +105,15 @@ void OpenSLESOutputStream::Start(AudioSourceCallback* callback) {
   // state, adding buffers will implicitly start playback.
   LOG_ON_FAILURE_AND_RETURN(
       (*player_)->SetPlayState(player_, SL_PLAYSTATE_PLAYING));
+
+  // On older version of Android, the position may not be reset even though we
+  // call Clear() during Stop(), in this case the best we can do is assume that
+  // we're continuing on from this previous position.
+  uint32_t position_in_ms = 0;
+  LOG_ON_FAILURE_AND_RETURN((*player_)->GetPosition(player_, &position_in_ms));
+  delay_calculator_.SetBaseTimestamp(
+      base::TimeDelta::FromMilliseconds(position_in_ms));
+  delay_calculator_.AddFrames(audio_bus_->frames());
 
   started_ = true;
 }
@@ -333,16 +342,25 @@ void OpenSLESOutputStream::FillBufferQueueNoLock() {
   // Calculate the position relative to the number of frames written.
   uint32_t position_in_ms = 0;
   SLresult err = (*player_)->GetPosition(player_, &position_in_ms);
-  const int delay =
+  // Given the position of the playback head, compute the approximate number of
+  // frames that have been queued to the buffer but not yet played out.
+  // Note that the value returned by GetFramesToTarget() is negative because
+  // more frames have been added to |delay_calculator_| than have been played
+  // out and thus the target timestamp is earlier than the current timestamp of
+  // |delay_calculator_|.
+  const int delay_frames =
       err == SL_RESULT_SUCCESS
           ? -delay_calculator_.GetFramesToTarget(
-                base::TimeDelta::FromMilliseconds(position_in_ms)) *
-                bytes_per_frame_
+                base::TimeDelta::FromMilliseconds(position_in_ms))
           : 0;
-  DCHECK_GE(delay, 0);
+  DCHECK_GE(delay_frames, 0);
+
+  const base::TimeDelta delay =
+      AudioTimestampHelper::FramesToTime(delay_frames, format_.samplesPerSec);
 
   // Read data from the registered client source.
-  const int frames_filled = callback_->OnMoreData(audio_bus_.get(), delay, 0);
+  const int frames_filled =
+      callback_->OnMoreData(delay, base::TimeTicks::Now(), 0, audio_bus_.get());
   if (frames_filled <= 0) {
     // Audio source is shutting down, or halted on error.
     return;

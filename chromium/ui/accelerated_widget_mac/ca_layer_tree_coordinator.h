@@ -21,7 +21,8 @@ namespace ui {
 // to the browser process in https://crbug.com/604052.
 class ACCELERATED_WIDGET_MAC_EXPORT CALayerTreeCoordinator {
  public:
-  explicit CALayerTreeCoordinator(bool allow_remote_layers);
+  explicit CALayerTreeCoordinator(bool allow_remote_layers,
+                                  bool allow_av_sample_buffer_display_layer);
   ~CALayerTreeCoordinator();
 
   // Set the composited frame's size.
@@ -56,7 +57,8 @@ class ACCELERATED_WIDGET_MAC_EXPORT CALayerTreeCoordinator {
   IOSurfaceRef GetIOSurfaceForDisplay();
 
  private:
-  bool allow_remote_layers_ = true;
+  const bool allow_remote_layers_ = true;
+  const bool allow_av_sample_buffer_display_layer_ = true;
   gfx::Size pixel_size_;
   float scale_factor_ = 1;
 
@@ -71,7 +73,10 @@ class ACCELERATED_WIDGET_MAC_EXPORT CALayerTreeCoordinator {
   // Frame that is currently being displayed on the screen.
   std::unique_ptr<GLRendererLayerTree> current_gl_renderer_layer_tree_;
   std::unique_ptr<CARendererLayerTree> current_ca_renderer_layer_tree_;
-  bool current_fullscreen_low_power_layer_valid_ = false;
+
+  // The number of frames since we used the low power layer. Used to avoid
+  // flashes during transitions between windows.
+  uint64_t frames_since_low_power_layer_was_valid_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(CALayerTreeCoordinator);
 };

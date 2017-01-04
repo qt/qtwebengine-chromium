@@ -222,11 +222,11 @@ std::string Message::ToStringInternal(const std::string& indent,
       case UNIX_FD: {
         CHECK(IsDBusTypeUnixFdSupported());
 
-        FileDescriptor file_descriptor;
+        base::ScopedFD file_descriptor;
         if (!reader->PopFileDescriptor(&file_descriptor))
           return kBrokenMessage;
         output += indent + "fd#" +
-                  base::IntToString(file_descriptor.value()) + "\n";
+                  base::IntToString(file_descriptor.get()) + "\n";
         break;
       }
       default:
@@ -714,15 +714,9 @@ void MessageWriter::AppendVariantOfBasic(int dbus_type, const void* value) {
   CloseContainer(&variant_writer);
 }
 
-void MessageWriter::AppendFileDescriptor(const FileDescriptor& value) {
+void MessageWriter::AppendFileDescriptor(int value) {
   CHECK(IsDBusTypeUnixFdSupported());
-
-  if (!value.is_valid()) {
-    // NB: sending a directory potentially enables sandbox escape
-    LOG(FATAL) << "Attempt to pass invalid file descriptor";
-  }
-  int fd = value.value();
-  AppendBasic(DBUS_TYPE_UNIX_FD, &fd);
+  AppendBasic(DBUS_TYPE_UNIX_FD, &value);  // This duplicates the FD.
 }
 
 //
@@ -1016,7 +1010,7 @@ bool MessageReader::PopVariantOfBasic(int dbus_type, void* value) {
   return variant_reader.PopBasic(dbus_type, value);
 }
 
-bool MessageReader::PopFileDescriptor(FileDescriptor* value) {
+bool MessageReader::PopFileDescriptor(base::ScopedFD* value) {
   CHECK(IsDBusTypeUnixFdSupported());
 
   int fd = -1;
@@ -1024,8 +1018,7 @@ bool MessageReader::PopFileDescriptor(FileDescriptor* value) {
   if (!success)
     return false;
 
-  value->PutValue(fd);
-  // NB: the caller must check validity before using the value
+  *value = base::ScopedFD(fd);
   return true;
 }
 

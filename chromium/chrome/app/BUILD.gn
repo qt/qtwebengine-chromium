@@ -3,8 +3,28 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
-import("//mojo/public/mojo_application_manifest.gni")
+import("//services/shell/public/service_manifest.gni")
 import("//tools/grit/grit_rule.gni")
+
+# This target is for dependency tracking for the command ID header.
+source_set("command_ids") {
+  sources = [
+    "chrome_command_ids.h",
+  ]
+}
+
+# On Windows, links chrome_dll.rc. On other platforms, does nothing so you can
+# unconditionally depend on it.
+source_set("chrome_dll_resources") {
+  # This source is added unconditionally for include checking on non-Windows
+  # platforms.
+  sources = [
+    "chrome_dll_resource.h",
+  ]
+  if (is_win) {
+    sources += [ "chrome_dll.rc" ]
+  }
+}
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -56,12 +76,10 @@ if (is_android) {
   ]
 }
 
-# GYP version: chrome/chrome_resources.gyp:chrome_strings
-#              (generate_generated_resources action)
 grit("generated_resources") {
   source = "generated_resources.grd"
-  output_dir = "$root_gen_dir/chrome"
   use_qualified_include = true
+  output_dir = "$root_gen_dir/chrome"
   outputs = [
     "grit/generated_resources.h",
     "generated_resources_am.pak",
@@ -136,12 +154,10 @@ if (is_android) {
   }
 }
 
-# GYP version: chrome/chrome_resources.gyp:chrome_strings
-#              (generate_google_chrome_strings action)
 grit("google_chrome_strings") {
   source = "google_chrome_strings.grd"
-  output_dir = "$root_gen_dir/chrome"
   use_qualified_include = true
+  output_dir = "$root_gen_dir/chrome"
   outputs = [
     "grit/google_chrome_strings.h",
     "google_chrome_strings_am.pak",
@@ -201,12 +217,10 @@ grit("google_chrome_strings") {
   ]
 }
 
-# GYP version: chrome/chrome_resources.gyp:chrome_strings
-#              (generate_chromium_strings action)
 grit("chromium_strings") {
   source = "chromium_strings.grd"
-  output_dir = "$root_gen_dir/chrome"
   use_qualified_include = true
+  output_dir = "$root_gen_dir/chrome"
   outputs = [
     "grit/chromium_strings.h",
     "chromium_strings_am.pak",
@@ -266,53 +280,7 @@ grit("chromium_strings") {
   ]
 }
 
-# GYP version: chrome/settings_strings.gyp:settings_strings
-#              (generate_settings_strings action)
-grit("settings_strings") {
-  source = "settings_strings.grd"
-  output_dir = "$root_gen_dir/chrome"
-  use_qualified_include = true
-  outputs = [
-    "grit/settings_strings.h",
-
-    # The settings strings are not being treated as strings because they are
-    # not translated (English only), this should change in late 2015.
-    "settings_strings.pak",
-  ]
-}
-
-# GYP version: chrome/settings_chromium_strings.gyp:settings_chromium_strings
-#              (generate_settings_chromium_strings action)
-grit("settings_chromium_strings") {
-  source = "settings_chromium_strings.grd"
-  output_dir = "$root_gen_dir/chrome"
-  use_qualified_include = true
-  outputs = [
-    "grit/settings_chromium_strings.h",
-
-    # These strings are not being treated as strings because they are
-    # not translated (English only), this should change in late 2015.
-    "settings_chromium_strings.pak",
-  ]
-}
-
-# GYP version:
-#     chrome/settings_google_chrome_strings.gyp:settings_google_chrome_strings
-#              (generate_settings_google_chrome_strings action)
-grit("settings_google_chrome_strings") {
-  source = "settings_google_chrome_strings.grd"
-  output_dir = "$root_gen_dir/chrome"
-  use_qualified_include = true
-  outputs = [
-    "grit/settings_google_chrome_strings.h",
-
-    # These strings are not being treated as strings because they are
-    # not translated (English only), this should change in late 2015.
-    "settings_google_chrome_strings.pak",
-  ]
-}
-
-source_set("test_support") {
+static_library("test_support") {
   testonly = true
   visibility = [ "//chrome/test:test_support" ]
 
@@ -354,7 +322,7 @@ source_set("test_support") {
   if (is_chromeos) {
     deps += [
       "//chrome/browser/chromeos",
-      "//components/metrics:leak_detector",
+      "//components/metrics/leak_detector:leak_detector",
     ]
   }
 
@@ -371,19 +339,19 @@ source_set("test_support") {
 }
 
 if (use_aura) {
-  mojo_application_manifest("chrome_manifest") {
+  service_manifest("chrome_manifest") {
     type = "exe"
-    application_name = "chrome"
+    name = "chrome"
     source = "mojo/chrome_manifest.json"
-    base_manifest = "${root_out_dir}/content_browser_manifest.json"
+    base_manifest = "${root_out_dir}/Packages/content_browser/manifest.json"
     base_deps = [ "//content/public/app:browser_manifest" ]
   }
 
-  mojo_application_manifest("chrome_renderer_manifest") {
+  service_manifest("chrome_renderer_manifest") {
     type = "exe"
-    application_name = "chrome_renderer"
+    name = "chrome_renderer"
     source = "mojo/chrome_renderer_manifest.json"
-    base_manifest = "${root_out_dir}/content_renderer_manifest.json"
+    base_manifest = "${root_out_dir}/Packages/content_renderer/manifest.json"
     base_deps = [ "//content/public/app:renderer_manifest" ]
   }
 

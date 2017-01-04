@@ -7,12 +7,16 @@
 #ifndef CORE_FXGE_AGG_FX_AGG_DRIVER_H_
 #define CORE_FXGE_AGG_FX_AGG_DRIVER_H_
 
-#include "core/fxge/include/ifx_renderdevicedriver.h"
+#include <memory>
+#include <vector>
+
+#include "core/fxge/ifx_renderdevicedriver.h"
 #include "third_party/agg23/agg_clip_liang_barsky.h"
 #include "third_party/agg23/agg_path_storage.h"
 #include "third_party/agg23/agg_rasterizer_scanline_aa.h"
 
 class CFX_ClipRgn;
+class CFX_GraphStateData;
 class CFX_Matrix;
 class CFX_PathData;
 
@@ -88,7 +92,6 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
   FX_BOOL DrawDeviceText(int nChars,
                          const FXTEXT_CHARPOS* pCharPos,
                          CFX_Font* pFont,
-                         CFX_FontCache* pCache,
                          const CFX_Matrix* pObject2Device,
                          FX_FLOAT font_size,
                          uint32_t color) override;
@@ -104,15 +107,14 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
   void SetClipMask(agg::rasterizer_scanline_aa& rasterizer);
 
   virtual uint8_t* GetBuffer() const;
-  const CFX_DIBitmap* GetBitmap() const;
 
  private:
   CFX_DIBitmap* m_pBitmap;
-  CFX_ClipRgn* m_pClipRgn;
-  CFX_ArrayTemplate<CFX_ClipRgn*> m_StateStack;
+  std::unique_ptr<CFX_ClipRgn> m_pClipRgn;
+  std::vector<std::unique_ptr<CFX_ClipRgn>> m_StateStack;
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
   void* m_pPlatformGraphics;
-  void* m_pPlatformBitmap;
-  void* m_pDwRenderTartget;
+#endif
   int m_FillFlags;
   FX_BOOL m_bRgbByteOrder;
   CFX_DIBitmap* m_pOriDevice;

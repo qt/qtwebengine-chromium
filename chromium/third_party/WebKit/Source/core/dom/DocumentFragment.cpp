@@ -28,56 +28,54 @@
 
 namespace blink {
 
-DocumentFragment::DocumentFragment(Document* document, ConstructionType constructionType)
-    : ContainerNode(document, constructionType)
-{
+DocumentFragment::DocumentFragment(Document* document,
+                                   ConstructionType constructionType)
+    : ContainerNode(document, constructionType) {}
+
+DocumentFragment* DocumentFragment::create(Document& document) {
+  return new DocumentFragment(&document, Node::CreateDocumentFragment);
 }
 
-DocumentFragment* DocumentFragment::create(Document& document)
-{
-    return new DocumentFragment(&document, Node::CreateDocumentFragment);
+String DocumentFragment::nodeName() const {
+  return "#document-fragment";
 }
 
-String DocumentFragment::nodeName() const
-{
-    return "#document-fragment";
+Node::NodeType DocumentFragment::getNodeType() const {
+  return kDocumentFragmentNode;
 }
 
-Node::NodeType DocumentFragment::getNodeType() const
-{
-    return DOCUMENT_FRAGMENT_NODE;
-}
-
-bool DocumentFragment::childTypeAllowed(NodeType type) const
-{
-    switch (type) {
-    case ELEMENT_NODE:
-    case PROCESSING_INSTRUCTION_NODE:
-    case COMMENT_NODE:
-    case TEXT_NODE:
-    case CDATA_SECTION_NODE:
-        return true;
+bool DocumentFragment::childTypeAllowed(NodeType type) const {
+  switch (type) {
+    case kElementNode:
+    case kProcessingInstructionNode:
+    case kCommentNode:
+    case kTextNode:
+    case kCdataSectionNode:
+      return true;
     default:
-        return false;
-    }
+      return false;
+  }
 }
 
-Node* DocumentFragment::cloneNode(bool deep)
-{
-    DocumentFragment* clone = create(document());
-    if (deep)
-        cloneChildNodes(clone);
-    return clone;
+Node* DocumentFragment::cloneNode(bool deep) {
+  DocumentFragment* clone = create(document());
+  if (deep)
+    cloneChildNodes(clone);
+  return clone;
 }
 
-void DocumentFragment::parseHTML(const String& source, Element* contextElement, ParserContentPolicy parserContentPolicy)
-{
-    HTMLDocumentParser::parseDocumentFragment(source, this, contextElement, parserContentPolicy);
+void DocumentFragment::parseHTML(const String& source,
+                                 Element* contextElement,
+                                 ParserContentPolicy parserContentPolicy) {
+  HTMLDocumentParser::parseDocumentFragment(source, this, contextElement,
+                                            parserContentPolicy);
 }
 
-bool DocumentFragment::parseXML(const String& source, Element* contextElement, ParserContentPolicy parserContentPolicy)
-{
-    return XMLDocumentParser::parseDocumentFragment(source, this, contextElement, parserContentPolicy);
+bool DocumentFragment::parseXML(const String& source,
+                                Element* contextElement,
+                                ParserContentPolicy parserContentPolicy) {
+  return XMLDocumentParser::parseDocumentFragment(source, this, contextElement,
+                                                  parserContentPolicy);
 }
 
-} // namespace blink
+}  // namespace blink

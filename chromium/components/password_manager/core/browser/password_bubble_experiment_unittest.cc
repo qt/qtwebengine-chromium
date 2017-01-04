@@ -12,7 +12,7 @@
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/testing_pref_service.h"
-#include "components/sync_driver/fake_sync_service.h"
+#include "components/sync/driver/fake_sync_service.h"
 #include "components/variations/variations_associated_data.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -65,7 +65,7 @@ struct ShouldShowSavePromptFirstRunExperienceTestcase {
   SavePromptFirstRunExperience first_run_experience;
 };
 
-class TestSyncService : public sync_driver::FakeSyncService {
+class TestSyncService : public syncer::FakeSyncService {
  public:
   // FakeSyncService overrides.
   bool IsSyncAllowed() const override { return is_sync_allowed_; }

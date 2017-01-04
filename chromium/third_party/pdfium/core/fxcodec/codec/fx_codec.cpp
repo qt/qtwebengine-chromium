@@ -4,15 +4,15 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcodec/include/fx_codec.h"
+#include "core/fxcodec/fx_codec.h"
 
 #include <cmath>
 #include <memory>
 #include <utility>
 
 #include "core/fxcodec/codec/codec_int.h"
-#include "core/fxcrt/include/fx_ext.h"
-#include "core/fxcrt/include/fx_safe_types.h"
+#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/logging.h"
 
 CCodec_ModuleMgr::CCodec_ModuleMgr()
@@ -34,7 +34,24 @@ CCodec_ModuleMgr::CCodec_ModuleMgr()
 CCodec_ModuleMgr::~CCodec_ModuleMgr() {}
 
 CCodec_ScanlineDecoder::CCodec_ScanlineDecoder()
-    : m_NextLine(-1), m_pLastScanline(nullptr) {}
+    : CCodec_ScanlineDecoder(0, 0, 0, 0, 0, 0, 0) {}
+
+CCodec_ScanlineDecoder::CCodec_ScanlineDecoder(int nOrigWidth,
+                                               int nOrigHeight,
+                                               int nOutputWidth,
+                                               int nOutputHeight,
+                                               int nComps,
+                                               int nBpc,
+                                               uint32_t nPitch)
+    : m_OrigWidth(nOrigWidth),
+      m_OrigHeight(nOrigHeight),
+      m_OutputWidth(nOutputWidth),
+      m_OutputHeight(nOutputHeight),
+      m_nComps(nComps),
+      m_bpc(nBpc),
+      m_Pitch(nPitch),
+      m_NextLine(-1),
+      m_pLastScanline(nullptr) {}
 
 CCodec_ScanlineDecoder::~CCodec_ScanlineDecoder() {}
 

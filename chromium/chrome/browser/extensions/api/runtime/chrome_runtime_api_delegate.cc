@@ -11,7 +11,7 @@
 
 #include "base/lazy_instance.h"
 #include "base/location.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -262,7 +262,7 @@ void ChromeRuntimeAPIDelegate::OpenURL(const GURL& uninstall_url) {
 
   chrome::NavigateParams params(
       browser, uninstall_url, ui::PAGE_TRANSITION_CLIENT_REDIRECT);
-  params.disposition = NEW_FOREGROUND_TAB;
+  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
   params.user_gesture = false;
   chrome::Navigate(&params);
 }
@@ -337,9 +337,10 @@ void ChromeRuntimeAPIDelegate::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK_EQ(extensions::NOTIFICATION_EXTENSION_UPDATE_FOUND, type);
-  using UpdateDetails = const std::pair<std::string, Version>;
+  using UpdateDetails = const std::pair<std::string, base::Version>;
   const std::string& id = content::Details<UpdateDetails>(details)->first;
-  const Version& version = content::Details<UpdateDetails>(details)->second;
+  const base::Version& version =
+      content::Details<UpdateDetails>(details)->second;
   if (version.IsValid()) {
     CallUpdateCallbacks(
         id, UpdateCheckResult(true, kUpdateFound, version.GetString()));

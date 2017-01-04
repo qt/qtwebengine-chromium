@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_factory.h"
@@ -28,6 +29,11 @@
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_ANDROID)
+#include "content/browser/renderer_host/context_provider_factory_impl_android.h"
+#include "content/test/mock_gpu_channel_establish_factory.h"
+#endif
 
 namespace content {
 namespace {
@@ -53,6 +59,10 @@ class RenderWidgetHostViewGuestTest : public testing::Test {
     ImageTransportFactory::InitializeForUnitTests(
         std::unique_ptr<ImageTransportFactory>(
             new NoTransportImageTransportFactory));
+#else
+    ContextProviderFactoryImpl::Initialize(&gpu_channel_factory_);
+    ui::ContextProviderFactory::SetInstance(
+        ContextProviderFactoryImpl::GetInstance());
 #endif
     browser_context_.reset(new TestBrowserContext);
     MockRenderProcessHost* process_host =
@@ -60,7 +70,7 @@ class RenderWidgetHostViewGuestTest : public testing::Test {
     int32_t routing_id = process_host->GetNextRoutingID();
     widget_host_ =
         new RenderWidgetHostImpl(&delegate_, process_host, routing_id, false);
-    view_ = new RenderWidgetHostViewGuest(
+    view_ = RenderWidgetHostViewGuest::Create(
         widget_host_, NULL,
         (new TestRenderWidgetHostView(widget_host_))->GetWeakPtr());
   }
@@ -72,10 +82,14 @@ class RenderWidgetHostViewGuestTest : public testing::Test {
 
     browser_context_.reset();
 
-    message_loop_.DeleteSoon(FROM_HERE, browser_context_.release());
-    message_loop_.RunUntilIdle();
+    message_loop_.task_runner()->DeleteSoon(FROM_HERE,
+                                            browser_context_.release());
+    base::RunLoop().RunUntilIdle();
 #if !defined(OS_ANDROID)
     ImageTransportFactory::Terminate();
+#else
+    ui::ContextProviderFactory::SetInstance(nullptr);
+    ContextProviderFactoryImpl::Terminate();
 #endif
   }
 
@@ -88,6 +102,10 @@ class RenderWidgetHostViewGuestTest : public testing::Test {
   // destruction.
   RenderWidgetHostImpl* widget_host_;
   RenderWidgetHostViewGuest* view_;
+
+#if defined(OS_ANDROID)
+  MockGpuChannelEstablishFactory gpu_channel_factory_;
+#endif
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewGuestTest);
@@ -155,6 +173,10 @@ class RenderWidgetHostViewGuestSurfaceTest
     ImageTransportFactory::InitializeForUnitTests(
         std::unique_ptr<ImageTransportFactory>(
             new NoTransportImageTransportFactory));
+#else
+    ContextProviderFactoryImpl::Initialize(&gpu_channel_factory_);
+    ui::ContextProviderFactory::SetInstance(
+        ContextProviderFactoryImpl::GetInstance());
 #endif
     browser_context_.reset(new TestBrowserContext);
     MockRenderProcessHost* process_host =
@@ -168,7 +190,7 @@ class RenderWidgetHostViewGuestSurfaceTest
     int32_t routing_id = process_host->GetNextRoutingID();
     widget_host_ =
         new RenderWidgetHostImpl(&delegate_, process_host, routing_id, false);
-    view_ = new RenderWidgetHostViewGuest(
+    view_ = RenderWidgetHostViewGuest::Create(
         widget_host_, browser_plugin_guest_,
         (new TestRenderWidgetHostView(widget_host_))->GetWeakPtr());
   }
@@ -184,12 +206,19 @@ class RenderWidgetHostViewGuestSurfaceTest
     base::RunLoop().RunUntilIdle();
 #if !defined(OS_ANDROID)
     ImageTransportFactory::Terminate();
+#else
+    ui::ContextProviderFactory::SetInstance(nullptr);
+    ContextProviderFactoryImpl::Terminate();
 #endif
   }
 
-  cc::SurfaceId surface_id() {
+  cc::SurfaceId GetSurfaceId() const {
     DCHECK(view_);
-    return static_cast<RenderWidgetHostViewChildFrame*>(view_)->surface_id_;
+    RenderWidgetHostViewChildFrame* rwhvcf =
+        static_cast<RenderWidgetHostViewChildFrame*>(view_);
+    if (rwhvcf->local_frame_id_.is_null())
+      return cc::SurfaceId();
+    return cc::SurfaceId(rwhvcf->frame_sink_id_, rwhvcf->local_frame_id_);
   }
 
  protected:
@@ -199,6 +228,10 @@ class RenderWidgetHostViewGuestSurfaceTest
   BrowserPluginGuestDelegate browser_plugin_guest_delegate_;
   std::unique_ptr<TestWebContents> web_contents_;
   TestBrowserPluginGuest* browser_plugin_guest_;
+
+#if defined(OS_ANDROID)
+  MockGpuChannelEstablishFactory gpu_channel_factory_;
+#endif
 
   // Tests should set these to NULL if they've already triggered their
   // destruction.
@@ -239,7 +272,7 @@ TEST_F(RenderWidgetHostViewGuestSurfaceTest, TestGuestSurface) {
   view_->OnSwapCompositorFrame(
       0, CreateDelegatedFrame(scale_factor, view_size, view_rect));
 
-  cc::SurfaceId id = surface_id();
+  cc::SurfaceId id = GetSurfaceId();
   if (!id.is_null()) {
 #if !defined(OS_ANDROID)
     ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
@@ -262,7 +295,7 @@ TEST_F(RenderWidgetHostViewGuestSurfaceTest, TestGuestSurface) {
   view_->OnSwapCompositorFrame(
       0, CreateDelegatedFrame(scale_factor, view_size, view_rect));
 
-  id = surface_id();
+  id = GetSurfaceId();
   if (!id.is_null()) {
 #if !defined(OS_ANDROID)
     ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
@@ -285,7 +318,7 @@ TEST_F(RenderWidgetHostViewGuestSurfaceTest, TestGuestSurface) {
 
   view_->OnSwapCompositorFrame(
       0, CreateDelegatedFrame(scale_factor, view_size, view_rect));
-  EXPECT_TRUE(surface_id().is_null());
+  EXPECT_TRUE(GetSurfaceId().is_null());
 }
 
 }  // namespace content

@@ -13,6 +13,7 @@
 namespace bluetooth = extensions::api::bluetooth;
 
 using device::BluetoothDevice;
+using device::BluetoothDeviceType;
 using bluetooth::VendorIdSource;
 
 namespace {
@@ -35,49 +36,49 @@ bool ConvertVendorIDSourceToApi(const BluetoothDevice::VendorIDSource& input,
   }
 }
 
-bool ConvertDeviceTypeToApi(const BluetoothDevice::DeviceType& input,
+bool ConvertDeviceTypeToApi(const BluetoothDeviceType& input,
                             bluetooth::DeviceType* output) {
   switch (input) {
-    case BluetoothDevice::DEVICE_UNKNOWN:
+    case BluetoothDeviceType::UNKNOWN:
       *output = bluetooth::DEVICE_TYPE_NONE;
       return true;
-    case BluetoothDevice::DEVICE_COMPUTER:
+    case BluetoothDeviceType::COMPUTER:
       *output = bluetooth::DEVICE_TYPE_COMPUTER;
       return true;
-    case BluetoothDevice::DEVICE_PHONE:
+    case BluetoothDeviceType::PHONE:
       *output = bluetooth::DEVICE_TYPE_PHONE;
       return true;
-    case BluetoothDevice::DEVICE_MODEM:
+    case BluetoothDeviceType::MODEM:
       *output = bluetooth::DEVICE_TYPE_MODEM;
       return true;
-    case BluetoothDevice::DEVICE_AUDIO:
+    case BluetoothDeviceType::AUDIO:
       *output = bluetooth::DEVICE_TYPE_AUDIO;
       return true;
-    case BluetoothDevice::DEVICE_CAR_AUDIO:
+    case BluetoothDeviceType::CAR_AUDIO:
       *output = bluetooth::DEVICE_TYPE_CARAUDIO;
       return true;
-    case BluetoothDevice::DEVICE_VIDEO:
+    case BluetoothDeviceType::VIDEO:
       *output = bluetooth::DEVICE_TYPE_VIDEO;
       return true;
-    case BluetoothDevice::DEVICE_PERIPHERAL:
+    case BluetoothDeviceType::PERIPHERAL:
       *output = bluetooth::DEVICE_TYPE_PERIPHERAL;
       return true;
-    case BluetoothDevice::DEVICE_JOYSTICK:
+    case BluetoothDeviceType::JOYSTICK:
       *output = bluetooth::DEVICE_TYPE_JOYSTICK;
       return true;
-    case BluetoothDevice::DEVICE_GAMEPAD:
+    case BluetoothDeviceType::GAMEPAD:
       *output = bluetooth::DEVICE_TYPE_GAMEPAD;
       return true;
-    case BluetoothDevice::DEVICE_KEYBOARD:
+    case BluetoothDeviceType::KEYBOARD:
       *output = bluetooth::DEVICE_TYPE_KEYBOARD;
       return true;
-    case BluetoothDevice::DEVICE_MOUSE:
+    case BluetoothDeviceType::MOUSE:
       *output = bluetooth::DEVICE_TYPE_MOUSE;
       return true;
-    case BluetoothDevice::DEVICE_TABLET:
+    case BluetoothDeviceType::TABLET:
       *output = bluetooth::DEVICE_TYPE_TABLET;
       return true;
-    case BluetoothDevice::DEVICE_KEYBOARD_MOUSE_COMBO:
+    case BluetoothDeviceType::KEYBOARD_MOUSE_COMBO:
       *output = bluetooth::DEVICE_TYPE_KEYBOARDMOUSECOMBO;
       return true;
     default:
@@ -116,19 +117,19 @@ void BluetoothDeviceToApiDevice(const device::BluetoothDevice& device,
   out->connectable.reset(new bool(device.IsConnectable()));
 
   std::vector<std::string>* string_uuids = new std::vector<std::string>();
-  const device::BluetoothDevice::UUIDList& uuids = device.GetUUIDs();
-  for (device::BluetoothDevice::UUIDList::const_iterator iter = uuids.begin();
-       iter != uuids.end(); ++iter)
-    string_uuids->push_back(iter->canonical_value());
+  const device::BluetoothDevice::UUIDSet& uuids = device.GetUUIDs();
+  for (const auto& uuid : uuids) {
+    string_uuids->push_back(uuid.canonical_value());
+  }
   out->uuids.reset(string_uuids);
 
-  if (device.GetInquiryRSSI() != device::BluetoothDevice::kUnknownPower)
-    out->inquiry_rssi.reset(new int(device.GetInquiryRSSI()));
+  if (device.GetInquiryRSSI())
+    out->inquiry_rssi.reset(new int(device.GetInquiryRSSI().value()));
   else
     out->inquiry_rssi.reset();
 
-  if (device.GetInquiryTxPower() != device::BluetoothDevice::kUnknownPower)
-    out->inquiry_tx_power.reset(new int(device.GetInquiryTxPower()));
+  if (device.GetInquiryTxPower())
+    out->inquiry_tx_power.reset(new int(device.GetInquiryTxPower().value()));
   else
     out->inquiry_tx_power.reset();
 }

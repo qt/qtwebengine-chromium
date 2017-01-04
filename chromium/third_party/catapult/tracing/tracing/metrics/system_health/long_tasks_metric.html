@@ -5,10 +5,10 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
+<link rel="import" href="/tracing/extras/chrome/chrome_user_friendly_category_driver.html">
 <link rel="import" href="/tracing/metrics/metric_registry.html">
 <link rel="import" href="/tracing/model/helpers/chrome_model_helper.html">
-<link rel="import" href="/tracing/value/numeric.html">
-<link rel="import" href="/tracing/value/value.html">
+<link rel="import" href="/tracing/value/histogram.html">
 
 <script>
 'use strict';
@@ -19,9 +19,6 @@ tr.exportTo('tr.metrics.sh', function() {
   // Anything longer than this should be so rare that its length beyond this is
   // uninteresting.
   var LONGEST_TASK_MS = 1000;
-
-  var timeDurationInMs_smallerIsBetter =
-    tr.v.Unit.byName.timeDurationInMs_smallerIsBetter;
 
   /**
    * This helper function calls |cb| for each of the top-level tasks on the
@@ -36,7 +33,7 @@ tr.exportTo('tr.metrics.sh', function() {
       thread, opt_range, cb, opt_this) {
     thread.sliceGroup.topLevelSlices.forEach(function(slice) {
       if (opt_range &&
-          !opt_range.intersectsExplicitRangeExclusive(slice.start, slice.end))
+          !opt_range.intersectsExplicitRangeInclusive(slice.start, slice.end))
         return;
 
       if (slice.duration < LONG_TASK_MS)
@@ -65,10 +62,6 @@ tr.exportTo('tr.metrics.sh', function() {
         });
   }
 
-  var LONG_TASK_NUMERIC_BUILDER = tr.v.NumericBuilder.createLinear(
-      tr.v.Unit.byName.timeDurationInMs_smallerIsBetter,
-      tr.b.Range.fromExplicitRange(LONG_TASK_MS, LONGEST_TASK_MS), 50);
-
   /**
    * This metric directly measures long tasks on renderer main threads.
    * This metric requires only the 'toplevel' tracing category.
@@ -79,16 +72,32 @@ tr.exportTo('tr.metrics.sh', function() {
    */
   function longTasksMetric(values, model, opt_options) {
     var rangeOfInterest = opt_options ? opt_options.rangeOfInterest : undefined;
-    var longTaskNumeric = LONG_TASK_NUMERIC_BUILDER.build();
+    var longTaskHist = new tr.v.Histogram('long tasks',
+        tr.b.Unit.byName.timeDurationInMs_smallerIsBetter,
+        tr.v.HistogramBinBoundaries.createLinear(
+            LONG_TASK_MS, LONGEST_TASK_MS, 40));
+    longTaskHist.description = 'durations of long tasks';
+    var slices = new tr.model.EventSet();
     iterateRendererMainThreads(model, function(thread) {
       iterateLongTopLevelTasksOnThreadInRange(
           thread, rangeOfInterest, function(task) {
-            longTaskNumeric.add(task.duration, task.stableId);
+            longTaskHist.addSample(task.duration,
+                {relatedEvents: new tr.v.d.RelatedEventSet([task])});
+            slices.push(task);
+            slices.addEventSet(task.descendentSlices);
           });
     });
-    var options = {description: 'durations of long tasks'};
-    values.addValue(new tr.v.NumericValue(
-        'long tasks', longTaskNumeric, options));
+    values.addHistogram(longTaskHist);
+
+    var sampleForEvent = undefined;
+    var breakdown = tr.v.d.RelatedHistogramBreakdown.buildFromEvents(
+        values, 'long tasks ', slices,
+        e => (model.getUserFriendlyCategoryFromEvent(e) || 'unknown'),
+        tr.b.Unit.byName.timeDurationInMs_smallerIsBetter, sampleForEvent,
+        tr.v.HistogramBinBoundaries.createExponential(1, LONGEST_TASK_MS, 40));
+    breakdown.colorScheme =
+      tr.v.d.COLOR_SCHEME_CHROME_USER_FRIENDLY_CATEGORY_DRIVER;
+    longTaskHist.diagnostics.set('category', breakdown);
   }
 
   tr.metrics.MetricRegistry.register(longTasksMetric, {

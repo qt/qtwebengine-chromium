@@ -173,14 +173,13 @@ class NavigationWatcher : public WebContentsObserver {
     if (navigated_)
       return;
     should_quit_loop_ = true;
-    base::MessageLoop::current()->Run();
+    base::RunLoop().Run();
   }
 
  private:
   // Overridden from WebContentsObserver:
-  void DidStartNavigationToPendingEntry(
-      const GURL& validated_url,
-      NavigationController::ReloadType reload_type) override {
+  void DidStartNavigationToPendingEntry(const GURL& validated_url,
+                                        ReloadType reload_type) override {
     navigated_ = true;
     if (should_quit_loop_)
       base::MessageLoop::current()->QuitWhenIdle();

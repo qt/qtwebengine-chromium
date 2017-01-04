@@ -64,18 +64,6 @@ void AstExpressionRewriter::VisitFunctionDeclaration(
 }
 
 
-void AstExpressionRewriter::VisitImportDeclaration(ImportDeclaration* node) {
-  // Not visiting `proxy_`.
-  NOTHING();
-}
-
-
-void AstExpressionRewriter::VisitExportDeclaration(ExportDeclaration* node) {
-  // Not visiting `proxy_`.
-  NOTHING();
-}
-
-
 void AstExpressionRewriter::VisitBlock(Block* node) {
   VisitStatements(node->statements());
 }
@@ -213,10 +201,9 @@ void AstExpressionRewriter::VisitClassLiteral(ClassLiteral* node) {
   AST_REWRITE_PROPERTY(FunctionLiteral, node, constructor);
   ZoneList<typename ClassLiteral::Property*>* properties = node->properties();
   for (int i = 0; i < properties->length(); i++) {
-    VisitObjectLiteralProperty(properties->at(i));
+    VisitLiteralProperty(properties->at(i));
   }
 }
-
 
 void AstExpressionRewriter::VisitNativeFunctionLiteral(
     NativeFunctionLiteral* node) {
@@ -255,13 +242,11 @@ void AstExpressionRewriter::VisitObjectLiteral(ObjectLiteral* node) {
   REWRITE_THIS(node);
   ZoneList<typename ObjectLiteral::Property*>* properties = node->properties();
   for (int i = 0; i < properties->length(); i++) {
-    VisitObjectLiteralProperty(properties->at(i));
+    VisitLiteralProperty(properties->at(i));
   }
 }
 
-
-void AstExpressionRewriter::VisitObjectLiteralProperty(
-    ObjectLiteralProperty* property) {
+void AstExpressionRewriter::VisitLiteralProperty(LiteralProperty* property) {
   if (property == nullptr) return;
   AST_REWRITE_PROPERTY(Expression, property, key);
   AST_REWRITE_PROPERTY(Expression, property, value);

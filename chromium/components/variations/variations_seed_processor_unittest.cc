@@ -17,10 +17,12 @@
 #include "base/feature_list.h"
 #include "base/format_macros.h"
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/mock_entropy_provider.h"
+#include "base/test/scoped_feature_list.h"
 #include "components/variations/processed_study.h"
 #include "components/variations/study_filtering.h"
 #include "components/variations/variations_associated_data.h"
@@ -117,8 +119,6 @@ class VariationsSeedProcessorTest : public ::testing::Test {
     // process singletons.
     testing::ClearAllVariationIDs();
     testing::ClearAllVariationParams();
-
-    base::FeatureList::ClearInstanceForTesting();
   }
 
   bool CreateTrialFromStudy(const Study& study) {
@@ -621,7 +621,6 @@ TEST_F(VariationsSeedProcessorTest, FeatureEnabledOrDisableByTrial) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]", i));
 
     base::FieldTrialList field_trial_list(nullptr);
-    base::FeatureList::ClearInstanceForTesting();
     std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
 
     Study study;
@@ -638,7 +637,8 @@ TEST_F(VariationsSeedProcessorTest, FeatureEnabledOrDisableByTrial) {
       association->add_disable_feature(test_case.disable_feature);
 
     EXPECT_TRUE(CreateTrialFromStudyWithFeatureList(study, feature_list.get()));
-    base::FeatureList::SetInstance(std::move(feature_list));
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitWithFeatureList(std::move(feature_list));
 
     // |kUnrelatedFeature| should not be affected.
     EXPECT_FALSE(base::FeatureList::IsEnabled(kUnrelatedFeature));
@@ -744,7 +744,6 @@ TEST_F(VariationsSeedProcessorTest, FeatureAssociationAndForcing) {
         test_case.disable_features_command_line, static_cast<int>(group)));
 
     base::FieldTrialList field_trial_list(nullptr);
-    base::FeatureList::ClearInstanceForTesting();
     std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
     feature_list->InitializeFromCommandLine(
         test_case.enable_features_command_line,
@@ -773,7 +772,8 @@ TEST_F(VariationsSeedProcessorTest, FeatureAssociationAndForcing) {
         ->set_forcing_feature_off(test_case.feature.name);
 
     EXPECT_TRUE(CreateTrialFromStudyWithFeatureList(study, feature_list.get()));
-    base::FeatureList::SetInstance(std::move(feature_list));
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitWithFeatureList(std::move(feature_list));
 
     // Trial should not be activated initially, but later might get activated
     // depending on the expected values.
@@ -814,7 +814,6 @@ TEST_F(VariationsSeedProcessorTest, FeaturesInExpiredStudies) {
         base::StringPrintf("Test[%" PRIuS "]: %s", i, test_case.feature.name));
 
     base::FieldTrialList field_trial_list(nullptr);
-    base::FeatureList::ClearInstanceForTesting();
     std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
     feature_list->InitializeFromCommandLine(std::string(), std::string());
 
@@ -837,7 +836,8 @@ TEST_F(VariationsSeedProcessorTest, FeaturesInExpiredStudies) {
     }
 
     EXPECT_TRUE(CreateTrialFromStudyWithFeatureList(study, feature_list.get()));
-    base::FeatureList::SetInstance(std::move(feature_list));
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitWithFeatureList(std::move(feature_list));
 
     // Tthe feature should not be enabled, because the study is expired.
     EXPECT_EQ(test_case.expected_feature_enabled,
@@ -868,11 +868,8 @@ TEST_F(VariationsSeedProcessorTest, LowEntropyStudyTest) {
 
   // An entorpy value of 0.1 will cause the AA group to be chosen, since AA is
   // the only non-default group, and has a probability percent above 0.1.
-  base::MockEntropyProvider* mock_high_entropy_provider =
-      new base::MockEntropyProvider(0.1);
-
-  // The field trial list takes ownership of the provider.
-  base::FieldTrialList field_trial_list(mock_high_entropy_provider);
+  base::FieldTrialList field_trial_list(
+      base::MakeUnique<base::MockEntropyProvider>(0.1));
 
   // Use a stack instance, since nothing takes ownership of this provider.
   // This entropy value will cause the default group to be chosen since it's a

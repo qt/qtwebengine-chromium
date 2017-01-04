@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include <set>
+
 #include "base/memory/ref_counted.h"
 #include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBCursor.h"
 #include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBDatabase.h"
@@ -16,6 +18,7 @@ namespace blink {
 class WebBlobInfo;
 class WebIDBCallbacks;
 class WebIDBDatabaseCallbacks;
+class WebIDBObserver;
 class WebString;
 }
 
@@ -37,13 +40,20 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
                          bool auto_increment) override;
   void deleteObjectStore(long long transaction_id,
                          long long object_store_id) override;
+  void renameObjectStore(long long transaction_id,
+                         long long object_store_id,
+                         const blink::WebString& new_name) override;
   void createTransaction(long long transaction_id,
-                         blink::WebIDBDatabaseCallbacks* callbacks,
                          const blink::WebVector<long long>& scope,
                          blink::WebIDBTransactionMode mode) override;
 
   void close() override;
   void versionChangeIgnored() override;
+
+  int32_t addObserver(std::unique_ptr<blink::WebIDBObserver>,
+                      long long transactionId) override;
+  void removeObservers(
+      const blink::WebVector<int32_t>& observer_ids_to_remove) override;
 
   void get(long long transactionId,
            long long objectStoreId,
@@ -105,6 +115,10 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
   void deleteIndex(long long transactionId,
                    long long objectStoreId,
                    long long indexId) override;
+  void renameIndex(long long transactionId,
+                   long long objectStoreId,
+                   long long indexId,
+                   const blink::WebString& new_name) override;
   void abort(long long transaction_id) override;
   void commit(long long transaction_id) override;
   void ackReceivedBlobs(
@@ -113,6 +127,7 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
  private:
   int32_t ipc_database_id_;
   int32_t ipc_database_callbacks_id_;
+  std::set<int32_t> observer_ids_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 };
 

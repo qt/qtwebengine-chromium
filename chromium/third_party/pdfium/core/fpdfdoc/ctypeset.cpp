@@ -8,8 +8,9 @@
 
 #include <algorithm>
 
-#include "core/fpdfdoc/csection.h"
+#include "core/fpdfdoc/cline.h"
 #include "core/fpdfdoc/cpvt_wordinfo.h"
+#include "core/fpdfdoc/csection.h"
 
 namespace {
 
@@ -300,10 +301,8 @@ void CTypeset::SplitLines(FX_BOOL bTypeset, FX_FLOAT fFontSize) {
       }
       if (pWord) {
         if (bTypeset) {
-          fLineAscent =
-              std::max(fLineAscent, m_pVT->GetWordAscent(*pWord, TRUE));
-          fLineDescent =
-              std::min(fLineDescent, m_pVT->GetWordDescent(*pWord, TRUE));
+          fLineAscent = std::max(fLineAscent, m_pVT->GetWordAscent(*pWord));
+          fLineDescent = std::min(fLineDescent, m_pVT->GetWordDescent(*pWord));
           fWordWidth = m_pVT->GetWordWidth(*pWord);
         } else {
           fLineAscent =
@@ -313,7 +312,7 @@ void CTypeset::SplitLines(FX_BOOL bTypeset, FX_FLOAT fFontSize) {
           fWordWidth = m_pVT->GetWordWidth(
               pWord->nFontIndex, pWord->Word, m_pVT->m_wSubWord,
               m_pVT->m_fCharSpace, m_pVT->m_nHorzScale, fFontSize,
-              pWord->fWordTail, 0);
+              pWord->fWordTail);
         }
         if (!bOpened) {
           if (IsOpenStylePunctuation(pWord->Word)) {

@@ -5,9 +5,9 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
-<link rel="import" href="/perf_insights/mre/function_handle.html">
 <link rel="import" href="/tracing/metrics/all_metrics.html">
 <link rel="import" href="/tracing/metrics/metric_registry.html">
+<link rel="import" href="/tracing/mre/function_handle.html">
 <link rel="import" href="/tracing/value/value_set.html">
 
 <script>
@@ -15,44 +15,82 @@ found in the LICENSE file.
 
 tr.exportTo('tr.metrics', function() {
   /**
-   * @param {!pi.mre.MreResult} result
    * @param {!tr.model.Model} model
    * @param {!Object} options
+   * @param {!Array.<string>} options.metrics
+   * @return {!tr.v.ValueSet}
    */
-  function metricMapFunction(result, model, options) {
+  function runMetrics(model, options) {
     if (options === undefined)
-      throw new Error('Expected an options dict.');
+      throw new Error('Options are required.');
 
-    var metricName = options.metric;
-    if (metricName === undefined)
-      throw new Error('A metric name should be specified.');
+    var metricNames = options.metrics;
+    if (!metricNames)
+      throw new Error('Metric names should be specified.');
 
     var values = new tr.v.ValueSet();
 
-    var metric = tr.metrics.MetricRegistry.findTypeInfoWithName(metricName);
-    if (metric === undefined)
-      throw new Error('"' + metricName + '" is not a registered metric.');
-    metric.constructor(values, model);
-
-    for (var metadata of model.metadata) {
-      if (!metadata.value || !metadata.value['iteration-info'])
-        continue;
-      var iteration = new tr.v.d.IterationInfo(
-          metadata.value['iteration-info']);
-      // Values can be separated from their ValueSet and mixed into ValueSets
-      // with Values from other iterations, so add IterationInfo to each Value.
-      values.map(function(value) {
-        value.diagnostics.add(tr.v.ITERATION_INFO_DIAGNOSTIC_NAME, iteration);
-      });
+    for (var metricName of metricNames) {
+      var metric = tr.metrics.MetricRegistry.findTypeInfoWithName(metricName);
+      if (metric === undefined)
+        throw new Error('"' + metricName + '" is not a registered metric.');
+      metric.constructor(values, model, options);
     }
 
-    result.addPair('values', values.valueDicts);
+    return values;
   }
 
-  pi.FunctionRegistry.register(metricMapFunction);
+  /**
+   * @param {!tr.v.ValueSet} values
+   * @param {!tr.model.Model} model
+   */
+  function addIterationInfo(values, model) {
+    var iterationInfo = new tr.v.d.IterationInfo();
+    for (var metadata of model.metadata) {
+      if (!metadata.value)
+        continue;
+
+      if (metadata.value['iteration-info'])
+        iterationInfo.addInfo(metadata.value['iteration-info']);
+
+      if (metadata.value['os-version'])
+        iterationInfo.addInfo(metadata.value);
+    }
+    // Values can be separated from their ValueSet and mixed into ValueSets
+    // with Values from other iterations, so add IterationInfo to each Value.
+    values.map(v => iterationInfo.addToValue(v));
+  }
+
+  /**
+   * @param {!tr.mre.MreResult} result
+   * @param {!tr.model.Model} model
+   * @param {!Object} options
+   * @param {!Array.<string>} options.metrics
+   */
+  function metricMapFunction(result, model, options) {
+    var values = runMetrics(model, options);
+    addIterationInfo(values, model);
+
+    result.addPair('histograms', values.valueDicts);
+
+    var scalarDicts = [];
+    for (var value of values) {
+      for (var [statName, scalar] of value.statisticsScalars) {
+        scalarDicts.push({
+          name: value.name + '_' + statName,
+          numeric: scalar.asDict(),
+          description: value.description,
+        });
+      }
+    }
+    result.addPair('scalars', scalarDicts);
+  }
+
+  tr.mre.FunctionRegistry.register(metricMapFunction);
 
   return {
-    metricMapFunction: metricMapFunction
+    metricMapFunction: metricMapFunction,
+    runMetrics: runMetrics
   };
 });
 </script>

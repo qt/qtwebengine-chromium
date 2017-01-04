@@ -36,10 +36,6 @@
     background: rgb(203, 203, 203);
 }
 
-.network-close-button {
-    margin: auto -1px auto 4px;
-}
-
 .network-details-view-tall-header {
     margin-top: 4px;
 }
@@ -95,6 +91,12 @@
     font-weight: bold;
     color: rgb(255, 128, 0);
     padding: 2px 0;
+}
+
+.network-timing-table hr.break {
+    border: 0;
+    height: 1px;
+    background-image: linear-gradient(to right, #eee, #bbb, #eee);
 }
 
 .network-timing-footer td {
@@ -166,6 +168,17 @@
 
 .network-timing-bar.push, -theme-preserve {
     background-color: #8CDBff;
+}
+
+.network-timing-bar.server-timing, -theme-preserve {
+    background-color: #ddd;
+}
+
+.network-timing-table td.network-timing-metric {
+    white-space: nowrap;
+    max-width: 150px;
+    overflow-x: hidden;
+    text-overflow: ellipsis;
 }
 
 .network-timing-bar.proxy,

@@ -14,11 +14,14 @@
 #include "base/test/perf_time_logger.h"
 #include "net/base/net_errors.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/log/net_log_with_source.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver.h"
 #include "net/proxy/proxy_resolver_factory.h"
 #include "net/proxy/proxy_resolver_v8.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/gtest_util.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_WIN)
@@ -26,6 +29,8 @@
 #elif defined(OS_MACOSX)
 #include "net/proxy/proxy_resolver_mac.h"
 #endif
+
+using net::test::IsOk;
 
 namespace net {
 
@@ -118,7 +123,7 @@ class PacPerfSuiteRunner {
       int rv = factory_->CreateProxyResolver(
           ProxyResolverScriptData::FromURL(pac_url), &resolver,
           CompletionCallback(), nullptr);
-      EXPECT_EQ(OK, rv);
+      EXPECT_THAT(rv, IsOk());
     } else {
       resolver = LoadPacScriptAndCreateResolver(script_name);
     }
@@ -129,10 +134,10 @@ class PacPerfSuiteRunner {
     // the PAC script.
     {
       ProxyInfo proxy_info;
-      int result =
-          resolver->GetProxyForURL(GURL("http://www.warmup.com"), &proxy_info,
-                                   CompletionCallback(), NULL, BoundNetLog());
-      ASSERT_EQ(OK, result);
+      int result = resolver->GetProxyForURL(GURL("http://www.warmup.com"),
+                                            &proxy_info, CompletionCallback(),
+                                            NULL, NetLogWithSource());
+      ASSERT_THAT(result, IsOk());
     }
 
     // Start the perf timer.
@@ -145,13 +150,13 @@ class PacPerfSuiteRunner {
 
       // Resolve.
       ProxyInfo proxy_info;
-      int result =
-          resolver->GetProxyForURL(GURL(query.query_url), &proxy_info,
-                                   CompletionCallback(), NULL, BoundNetLog());
+      int result = resolver->GetProxyForURL(GURL(query.query_url), &proxy_info,
+                                            CompletionCallback(), NULL,
+                                            NetLogWithSource());
 
       // Check that the result was correct. Note that ToPacString() and
       // ASSERT_EQ() are fast, so they won't skew the results.
-      ASSERT_EQ(OK, result);
+      ASSERT_THAT(result, IsOk());
       ASSERT_EQ(query.expected_result, proxy_info.ToPacString());
     }
 
@@ -183,7 +188,7 @@ class PacPerfSuiteRunner {
     int rv = factory_->CreateProxyResolver(
         ProxyResolverScriptData::FromUTF8(file_contents), &resolver,
         CompletionCallback(), nullptr);
-    EXPECT_EQ(OK, rv);
+    EXPECT_THAT(rv, IsOk());
     return resolver;
   }
 
@@ -235,7 +240,7 @@ class ProxyResolverV8Wrapper : public ProxyResolver {
                      ProxyInfo* results,
                      const CompletionCallback& /*callback*/,
                      RequestHandle* /*request*/,
-                     const BoundNetLog& net_log) override {
+                     const NetLogWithSource& net_log) override {
     return resolver_->GetProxyForURL(url, results, bindings_.get());
   }
 

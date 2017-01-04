@@ -4,7 +4,7 @@
 
 #include "net/quic/test_tools/quic_packet_creator_peer.h"
 
-#include "net/quic/quic_packet_creator.h"
+#include "net/quic/core/quic_packet_creator.h"
 
 namespace net {
 namespace test {
@@ -37,19 +37,6 @@ void QuicPacketCreatorPeer::SetPacketNumberLength(
     QuicPacketCreator* creator,
     QuicPacketNumberLength packet_number_length) {
   creator->packet_.packet_number_length = packet_number_length;
-}
-
-// static
-void QuicPacketCreatorPeer::SetNextPacketNumberLength(
-    QuicPacketCreator* creator,
-    QuicPacketNumberLength next_packet_number_length) {
-  creator->next_packet_number_length_ = next_packet_number_length;
-}
-
-// static
-QuicPacketNumberLength QuicPacketCreatorPeer::NextPacketNumberLength(
-    QuicPacketCreator* creator) {
-  return creator->next_packet_number_length_;
 }
 
 // static

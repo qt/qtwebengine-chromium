@@ -14,6 +14,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gesture_event_details.h"
@@ -29,6 +30,7 @@ class Transform;
 }
 
 namespace ui {
+class CancelModeEvent;
 class EventTarget;
 class KeyEvent;
 class LocatedEvent;
@@ -106,6 +108,10 @@ class EVENTS_EXPORT Event {
   bool IsAltGrDown() const { return (flags_ & EF_ALTGR_DOWN) != 0; }
   bool IsCapsLockOn() const { return (flags_ & EF_CAPS_LOCK_ON) != 0; }
 
+  bool IsCancelModeEvent() const {
+    return type_ == ET_CANCEL_MODE;
+  }
+
   bool IsKeyEvent() const {
     return type_ == ET_KEY_PRESSED || type_ == ET_KEY_RELEASED;
   }
@@ -131,7 +137,9 @@ class EVENTS_EXPORT Event {
   bool IsPointerEvent() const {
     return type_ == ET_POINTER_DOWN || type_ == ET_POINTER_MOVED ||
            type_ == ET_POINTER_UP || type_ == ET_POINTER_CANCELLED ||
-           type_ == ET_POINTER_ENTERED || type_ == ET_POINTER_EXITED;
+           type_ == ET_POINTER_ENTERED || type_ == ET_POINTER_EXITED ||
+           type_ == ET_POINTER_WHEEL_CHANGED ||
+           type_ == ET_POINTER_CAPTURE_CHANGED;
   }
 
   // Convenience methods to check pointer type of |this|. Returns false if
@@ -157,7 +165,6 @@ class EVENTS_EXPORT Event {
       case ET_GESTURE_LONG_TAP:
       case ET_GESTURE_SWIPE:
       case ET_GESTURE_SHOW_PRESS:
-      case ET_GESTURE_WIN8_EDGE_SWIPE:
         // When adding a gesture event which is paired with an event which
         // occurs earlier, add the event to |IsEndingEvent|.
         return true;
@@ -217,6 +224,12 @@ class EVENTS_EXPORT Event {
     return IsMouseEvent() || IsScrollEvent() || IsTouchEvent() ||
            IsGestureEvent() || IsPointerEvent();
   }
+
+  // Convenience methods to cast |this| to a CancelModeEvent.
+  // IsCancelModeEvent() must be true as a precondition to calling these
+  // methods.
+  CancelModeEvent* AsCancelModeEvent();
+  const CancelModeEvent* AsCancelModeEvent() const;
 
   // Convenience methods to cast |this| to a GestureEvent. IsGestureEvent()
   // must be true as a precondition to calling these methods.
@@ -413,15 +426,18 @@ struct EVENTS_EXPORT PointerDetails {
         force(force),
         tilt_x(tilt_x),
         tilt_y(tilt_y) {}
+  PointerDetails(EventPointerType pointer_type, const gfx::Vector2d& offset)
+      : pointer_type(pointer_type),
+        force(std::numeric_limits<float>::quiet_NaN()),
+        offset(offset) {}
 
   bool operator==(const PointerDetails& other) const {
-    return pointer_type == other.pointer_type &&
-           radius_x == other.radius_x &&
+    return pointer_type == other.pointer_type && radius_x == other.radius_x &&
            radius_y == other.radius_y &&
            (force == other.force ||
             (std::isnan(force) && std::isnan(other.force))) &&
-           tilt_x == other.tilt_x &&
-           tilt_y == other.tilt_y;
+           tilt_x == other.tilt_x && tilt_y == other.tilt_y &&
+           offset == other.offset;
   }
 
   // The type of pointer device.
@@ -442,6 +458,11 @@ struct EVENTS_EXPORT PointerDetails {
   // is towards the user. 0.0 if unknown.
   float tilt_x = 0.0;
   float tilt_y = 0.0;
+
+  // Only used by mouse wheel events. The amount to scroll. This is in multiples
+  // of kWheelDelta.
+  // Note: offset_.x() > 0/offset_.y() > 0 means scroll left/up.
+  gfx::Vector2d offset;
 };
 
 class EVENTS_EXPORT MouseEvent : public LocatedEvent {
@@ -449,6 +470,9 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
   explicit MouseEvent(const base::NativeEvent& native_event);
 
   // |pointer_event.IsMousePointerEvent()| must be true.
+  // Note: If |pointer_event| is a mouse wheel pointer event, use the
+  // MouseWheelEvent version of this function to convert to a MouseWheelEvent
+  // instead.
   explicit MouseEvent(const PointerEvent& pointer_event);
 
   // Create a new MouseEvent based on the provided model.
@@ -475,6 +499,7 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
   }
 
   // Used for synthetic events in testing, gesture recognizer and Ozone
+  // Note: Use the ctor for MouseWheelEvent if type is ET_MOUSEWHEEL.
   MouseEvent(EventType type,
              const gfx::Point& location,
              const gfx::Point& root_location,
@@ -580,6 +605,7 @@ class EVENTS_EXPORT MouseWheelEvent : public MouseEvent {
 
   explicit MouseWheelEvent(const base::NativeEvent& native_event);
   explicit MouseWheelEvent(const ScrollEvent& scroll_event);
+  explicit MouseWheelEvent(const PointerEvent& pointer_event);
   MouseWheelEvent(const MouseEvent& mouse_event, int x_offset, int y_offset);
   MouseWheelEvent(const MouseWheelEvent& mouse_wheel_event);
 
@@ -714,9 +740,8 @@ class EVENTS_EXPORT PointerEvent : public LocatedEvent {
  public:
   static const int32_t kMousePointerId;
 
-  // Returns true if a PointerEvent can be constructed from the given mouse or
-  // touch event. For example, PointerEvent does not support ET_MOUSEWHEEL or
-  // ET_MOUSE_CAPTURE_CHANGED.
+  // Returns true if a PointerEvent can be constructed from |event|. Currently,
+  // only mouse and touch events can be converted to pointer events.
   static bool CanConvertFrom(const Event& event);
 
   PointerEvent(const PointerEvent& pointer_event);
@@ -728,26 +753,19 @@ class EVENTS_EXPORT PointerEvent : public LocatedEvent {
                const gfx::Point& root_location,
                int flags,
                int pointer_id,
+               int changed_button_flags,
                const PointerDetails& pointer_details,
                base::TimeTicks time_stamp);
 
   int32_t pointer_id() const { return pointer_id_; }
+  int changed_button_flags() const { return changed_button_flags_; }
+  void set_changed_button_flags(int flags) { changed_button_flags_ = flags; }
   const PointerDetails& pointer_details() const { return details_; }
 
  private:
   int32_t pointer_id_;
+  int changed_button_flags_;
   PointerDetails details_;
-};
-
-// An interface that individual platforms can use to store additional data on
-// KeyEvent.
-//
-// Currently only used in mojo.
-class EVENTS_EXPORT ExtendedKeyEventData {
- public:
-  virtual ~ExtendedKeyEventData() {}
-
-  virtual ExtendedKeyEventData* Clone() const = 0;
 };
 
 // A KeyEvent is really two distinct classes, melded together due to the
@@ -826,17 +844,6 @@ class EVENTS_EXPORT KeyEvent : public Event {
   KeyEvent& operator=(const KeyEvent& rhs);
 
   ~KeyEvent() override;
-
-  // TODO(erg): While we transition to mojo, we have to hack around a mismatch
-  // in our event types. Our ui::Events don't really have all the data we need
-  // to process key events, and we instead do per-platform conversions with
-  // native HWNDs or XEvents. And we can't reliably send those native data
-  // types across mojo types in a cross-platform way. So instead, we set the
-  // resulting data when read across IPC boundaries.
-  void SetExtendedKeyEventData(std::unique_ptr<ExtendedKeyEventData> data);
-  const ExtendedKeyEventData* extended_key_event_data() const {
-    return extended_key_event_data_.get();
-  }
 
   // This bypasses the normal mapping from keystroke events to characters,
   // which allows an I18N virtual keyboard to fabricate a keyboard event that
@@ -937,12 +944,6 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // it may be set only if and when GetCharacter() or GetDomKey() is called.
   mutable DomKey key_ = DomKey::NONE;
 
-  // Parts of our event handling require raw native events (see both the
-  // windows and linux implementations of web_input_event in content/). Because
-  // mojo instead serializes and deserializes events in potentially different
-  // processes, we need to have a mechanism to keep track of this data.
-  std::unique_ptr<ExtendedKeyEventData> extended_key_event_data_;
-
   static bool IsRepeated(const KeyEvent& event);
 
   static KeyEvent* last_key_event_;
@@ -984,6 +985,7 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
   float x_offset_ordinal() const { return x_offset_ordinal_; }
   float y_offset_ordinal() const { return y_offset_ordinal_; }
   int finger_count() const { return finger_count_; }
+  EventMomentumPhase momentum_phase() const { return momentum_phase_; }
 
  private:
   // Potential accelerated offsets.
@@ -994,6 +996,10 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
   float y_offset_ordinal_;
   // Number of fingers on the pad.
   int finger_count_;
+
+  // For non-fling events, provides momentum information (e.g. for the case
+  // where the device provides continuous event updates during a fling).
+  EventMomentumPhase momentum_phase_;
 };
 
 class EVENTS_EXPORT GestureEvent : public LocatedEvent {

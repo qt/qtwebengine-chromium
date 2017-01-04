@@ -6,8 +6,10 @@
 
 #include <memory>
 
+#include "base/guid.h"
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -150,7 +152,7 @@ TEST_F(DevToolsManagerTest, NoUnresponsiveDialogInInspectedContents) {
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
       TimeDelta::FromMilliseconds(10));
-  base::MessageLoop::current()->Run();
+  base::RunLoop().Run();
   EXPECT_FALSE(delegate.renderer_unresponsive_received());
 
   // Now close devtools and check that the notification is delivered.
@@ -163,7 +165,7 @@ TEST_F(DevToolsManagerTest, NoUnresponsiveDialogInInspectedContents) {
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
       TimeDelta::FromMilliseconds(10));
-  base::MessageLoop::current()->Run();
+  base::RunLoop().Run();
   EXPECT_TRUE(delegate.renderer_unresponsive_received());
 
   contents()->SetDelegate(NULL);
@@ -208,6 +210,18 @@ TEST_F(DevToolsManagerTest, ReattachOnCancelPendingNavigation) {
 }
 
 class TestExternalAgentDelegate: public DevToolsExternalAgentProxyDelegate {
+ public:
+  TestExternalAgentDelegate() {
+  }
+  ~TestExternalAgentDelegate() override {
+    expectEvent(1, "Attach");
+    expectEvent(1, "Detach");
+    expectEvent(0, "SendMessageToBackend.message0");
+    expectEvent(1, "SendMessageToBackend.message1");
+    expectEvent(2, "SendMessageToBackend.message2");
+  }
+
+ private:
   std::map<std::string,int> event_counter_;
 
   void recordEvent(const std::string& name) {
@@ -226,25 +240,28 @@ class TestExternalAgentDelegate: public DevToolsExternalAgentProxyDelegate {
 
   void Detach() override { recordEvent("Detach"); };
 
+  std::string GetType() override { return std::string(); }
+  std::string GetTitle() override { return std::string(); }
+  std::string GetDescription() override { return std::string(); }
+  GURL GetURL() override { return GURL(); }
+  GURL GetFaviconURL() override { return GURL(); }
+  std::string GetFrontendURL() override { return std::string(); }
+  bool Activate() override { return false; };
+  void Reload() override { };
+  bool Close() override { return false; };
+
   void SendMessageToBackend(const std::string& message) override {
     recordEvent(std::string("SendMessageToBackend.") + message);
   };
 
- public :
-  ~TestExternalAgentDelegate() override {
-    expectEvent(1, "Attach");
-    expectEvent(1, "Detach");
-    expectEvent(0, "SendMessageToBackend.message0");
-    expectEvent(1, "SendMessageToBackend.message1");
-    expectEvent(2, "SendMessageToBackend.message2");
-  }
 };
 
 TEST_F(DevToolsManagerTest, TestExternalProxy) {
-  TestExternalAgentDelegate* delegate = new TestExternalAgentDelegate();
+  std::unique_ptr<TestExternalAgentDelegate> delegate(
+      new TestExternalAgentDelegate());
 
   scoped_refptr<DevToolsAgentHost> agent_host =
-      DevToolsAgentHost::Create(delegate);
+      DevToolsAgentHost::Forward(base::GenerateGUID(), std::move(delegate));
   EXPECT_EQ(agent_host, DevToolsAgentHost::GetForId(agent_host->GetId()));
 
   TestDevToolsClientHost client_host;

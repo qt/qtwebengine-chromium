@@ -30,6 +30,8 @@ class InterfaceProvider;
 }
 
 namespace content {
+class AssociatedInterfaceProvider;
+class AssociatedInterfaceRegistry;
 class RenderProcessHost;
 class RenderViewHost;
 class RenderWidgetHostView;
@@ -191,6 +193,10 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // interfaces exposed to it by the application running in this frame.
   virtual shell::InterfaceProvider* GetRemoteInterfaces() = 0;
 
+  // Returns the AssociatedInterfaceProvider that this process can use to access
+  // remote frame-specific Channel-associated interfaces for this frame.
+  virtual AssociatedInterfaceProvider* GetRemoteAssociatedInterfaces() = 0;
+
   // Returns the visibility state of the frame. The different visibility states
   // of a frame are defined in Blink.
   virtual blink::WebPageVisibilityState GetVisibilityState() = 0;
@@ -209,6 +215,14 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   virtual void FilesSelectedInChooser(
       const std::vector<content::FileChooserFileInfo>& files,
       FileChooserParams::Mode permissions) = 0;
+
+  // Text surrounding selection.
+  typedef base::Callback<
+      void(const base::string16& content, int start_offset, int end_offset)>
+      TextSurroundingSelectionCallback;
+  virtual void RequestTextSurroundingSelection(
+      const TextSurroundingSelectionCallback& callback,
+      int max_length) = 0;
 
  private:
   // This interface should only be implemented inside content.

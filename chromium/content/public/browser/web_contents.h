@@ -46,6 +46,10 @@ namespace net {
 struct LoadStateWithParam;
 }
 
+namespace shell {
+class InterfaceProvider;
+}
+
 namespace content {
 
 class BrowserContext;
@@ -182,6 +186,10 @@ class WebContents : public PageNavigator,
 
   CONTENT_EXPORT static WebContents* FromRenderFrameHost(RenderFrameHost* rfh);
 
+  // Returns the WebContents associated with the |frame_tree_node_id|.
+  CONTENT_EXPORT static WebContents* FromFrameTreeNodeId(
+      int frame_tree_node_id);
+
   ~WebContents() override {}
 
   // Intrinsic tab state -------------------------------------------------------
@@ -317,6 +325,12 @@ class WebContents : public PageNavigator,
   // download, in which case the URL would revert to what it was previously).
   virtual const base::string16& GetTitle() const = 0;
 
+  // Saves the given title to the navigation entry and does associated work. It
+  // will update history and the view with the new title, and also synthesize
+  // titles for file URLs that have none. Thus |entry| must have a URL set.
+  virtual void UpdateTitleForEntry(NavigationEntry* entry,
+                                   const base::string16& title) = 0;
+
   // The max page ID for any page that the current SiteInstance has loaded in
   // this WebContents.  Page IDs are specific to a given SiteInstance and
   // WebContents, corresponding to a specific RenderView in the renderer.
@@ -357,9 +371,6 @@ class WebContents : public PageNavigator,
 
   // Returns the character encoding of the page.
   virtual const std::string& GetEncoding() const = 0;
-
-  // True if this is a secure page which displayed insecure content.
-  virtual bool DisplayedInsecureContent() const = 0;
 
   // Internal state ------------------------------------------------------------
 
@@ -569,17 +580,6 @@ class WebContents : public PageNavigator,
   // Returns true if this WebContents will notify about disconnection.
   virtual bool WillNotifyDisconnection() const = 0;
 
-  // Override the encoding and reload the page by sending down
-  // ViewMsg_SetPageEncoding to the renderer. |UpdateEncoding| is kinda
-  // the opposite of this, by which 'browser' is notified of
-  // the encoding of the current tab from 'renderer' (determined by
-  // auto-detect, http header, meta, bom detection, etc).
-  virtual void SetOverrideEncoding(const std::string& encoding) = 0;
-
-  // Remove any user-defined override encoding and reload by sending down
-  // ViewMsg_ResetPageEncodingToDefault to the renderer.
-  virtual void ResetOverrideEncoding() = 0;
-
   // Returns the settings which get passed to the renderer.
   virtual content::RendererPreferences* GetMutableRendererPrefs() = 0;
 
@@ -685,23 +685,17 @@ class WebContents : public PageNavigator,
   // (and what action to take regarding the selection).
   virtual void StopFinding(StopFindAction action) = 0;
 
-  // Requests the renderer to insert CSS into the main frame's document.
-  virtual void InsertCSS(const std::string& css) = 0;
-
   // Returns true if audio has recently been audible from the WebContents.
   virtual bool WasRecentlyAudible() = 0;
 
-  typedef base::Callback<void(const Manifest&)> GetManifestCallback;
+  // The callback invoked when the renderer responds to a request for the main
+  // frame document's manifest. The url will be empty if the document specifies
+  // no manifest, and the manifest will be empty if any other failures occurred.
+  typedef base::Callback<void(const GURL&, const Manifest&)>
+      GetManifestCallback;
 
-  // Requests the Manifest of the main frame's document.
+  // Requests the manifest URL and the Manifest of the main frame's document.
   virtual void GetManifest(const GetManifestCallback& callback) = 0;
-
-  typedef base::Callback<void(bool)> HasManifestCallback;
-
-  // Returns true if the main frame has a <link> to a web manifest, otherwise
-  // false. This method does not guarantee that the manifest exists at the
-  // specified location or is valid.
-  virtual void HasManifest(const HasManifestCallback& callback) = 0;
 
   // Requests the renderer to exit fullscreen.
   // |will_cause_resize| indicates whether the fullscreen change causes a
@@ -725,7 +719,7 @@ class WebContents : public PageNavigator,
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(
-      jobject jweb_contents_android);
+      const base::android::JavaRef<jobject>& jweb_contents_android);
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() = 0;
 
   // Selects and zooms to the find result nearest to the point (x,y) defined in
@@ -741,6 +735,11 @@ class WebContents : public PageNavigator,
   // TODO(paulmeyer): This process will change slightly once multi-process
   // find-in-page is implemented. This comment should be updated at that time.
   virtual void RequestFindMatchRects(int current_version) = 0;
+
+  // Returns an InterfaceProvider for Java-implemented interfaces that are
+  // scoped to this WebContents. This provides access to interfaces implemented
+  // in Java in the browser process to C++ code in the browser process.
+  virtual shell::InterfaceProvider* GetJavaInterfaces() = 0;
 #elif defined(OS_MACOSX)
   // Allowing other views disables optimizations which assume that only a single
   // WebContents is present.

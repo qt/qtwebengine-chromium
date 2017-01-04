@@ -4,14 +4,11 @@
 
 import("//build/config/android/rules.gni")
 
-# GYP: //components/bookmarks.gyp:bookmarks_browser (android part)
 source_set("android") {
   sources = [
     "bookmark_id.cc",
     "bookmark_id.h",
     "bookmark_type.h",
-    "component_jni_registrar.cc",
-    "component_jni_registrar.h",
   ]
   deps = [
     ":bookmarks_jni_headers",
@@ -19,16 +16,15 @@ source_set("android") {
   ]
 }
 
-# GYP: //components/bookmarks.gyp:bookmarks_java
 android_library("bookmarks_java") {
   deps = [
     "//base:base_java",
+    "//third_party/android_tools:android_support_annotations_java",
   ]
   srcjar_deps = [ ":bookmark_type_javagen" ]
   java_files = [ "java/src/org/chromium/components/bookmarks/BookmarkId.java" ]
 }
 
-# GYP: //components/bookmarks.gyp:bookmarks_jni_headers
 generate_jni("bookmarks_jni_headers") {
   jni_package = "components/bookmarks"
   sources = [
@@ -36,7 +32,6 @@ generate_jni("bookmarks_jni_headers") {
   ]
 }
 
-# GYP: //components/bookmarks.gyp:bookmarks_type_java
 java_cpp_enum("bookmark_type_javagen") {
   sources = [
     "bookmark_type.h",

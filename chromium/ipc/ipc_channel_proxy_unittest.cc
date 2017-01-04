@@ -145,8 +145,8 @@ class MessageCountFilter : public IPC::MessageFilter {
         last_filter_event_(NONE),
         message_filtering_enabled_(false) {}
 
-  void OnFilterAdded(IPC::Sender* sender) override {
-    EXPECT_TRUE(sender);
+  void OnFilterAdded(IPC::Channel* channel) override {
+    EXPECT_TRUE(channel);
     EXPECT_EQ(NONE, last_filter_event_);
     last_filter_event_ = FILTER_ADDED;
   }
@@ -428,7 +428,8 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(ChannelProxyClient) {
   base::MessageLoopForIO main_message_loop;
   ChannelReflectorListener listener;
   std::unique_ptr<IPC::Channel> channel(IPC::Channel::CreateClient(
-      IPCTestBase::GetChannelName("ChannelProxyClient"), &listener));
+      IPCTestBase::GetChannelName("ChannelProxyClient"), &listener,
+      main_message_loop.task_runner()));
   CHECK(channel->Connect());
   listener.Init(channel.get());
 

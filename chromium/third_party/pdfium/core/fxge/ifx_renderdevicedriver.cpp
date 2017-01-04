@@ -4,9 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxge/include/ifx_renderdevicedriver.h"
+#include "core/fxge/ifx_renderdevicedriver.h"
 
-#include "core/fxcrt/include/fx_coordinates.h"
+#include "core/fxcrt/fx_coordinates.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/cfx_renderdevice.h"
 
 IFX_RenderDeviceDriver::~IFX_RenderDeviceDriver() {}
 
@@ -66,7 +68,6 @@ void IFX_RenderDeviceDriver::CancelDIBits(void* handle) {}
 FX_BOOL IFX_RenderDeviceDriver::DrawDeviceText(int nChars,
                                                const FXTEXT_CHARPOS* pCharPos,
                                                CFX_Font* pFont,
-                                               CFX_FontCache* pCache,
                                                const CFX_Matrix* pObject2Device,
                                                FX_FLOAT font_size,
                                                uint32_t color) {
@@ -88,5 +89,14 @@ FX_BOOL IFX_RenderDeviceDriver::DrawShading(const CPDF_ShadingPattern* pPattern,
                                             const FX_RECT& clip_rect,
                                             int alpha,
                                             FX_BOOL bAlphaMode) {
+  return false;
+}
+
+bool IFX_RenderDeviceDriver::SetBitsWithMask(const CFX_DIBSource* pBitmap,
+                                             const CFX_DIBSource* pMask,
+                                             int left,
+                                             int top,
+                                             int bitmap_alpha,
+                                             int blend_type) {
   return false;
 }

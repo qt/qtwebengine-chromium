@@ -8,10 +8,10 @@
 #include <limits>
 #include <vector>
 
-#include "core/fpdfapi/fpdf_page/include/cpdf_colorspace.h"
+#include "core/fpdfapi/page/cpdf_colorspace.h"
 #include "core/fxcodec/codec/codec_int.h"
-#include "core/fxcodec/include/fx_codec.h"
-#include "core/fxcrt/include/fx_safe_types.h"
+#include "core/fxcodec/fx_codec.h"
+#include "core/fxcrt/fx_safe_types.h"
 #include "third_party/lcms2-2.6/include/lcms2.h"
 #include "third_party/libopenjpeg20/openjpeg.h"
 
@@ -231,6 +231,9 @@ static void sycc422_to_rgb(opj_image_t* img) {
     return;
 
   int prec = img->comps[0].prec;
+  if (prec <= 0 || prec >= 32)
+    return;
+
   int offset = 1 << (prec - 1);
   int upb = (1 << prec) - 1;
 
@@ -244,6 +247,9 @@ static void sycc422_to_rgb(opj_image_t* img) {
   const int* y = img->comps[0].data;
   const int* cb = img->comps[1].data;
   const int* cr = img->comps[2].data;
+  if (!y || !cb || !cr)
+    return;
+
   int *d0, *d1, *d2, *r, *g, *b;
   d0 = r = FX_Alloc(int, max_size.ValueOrDie());
   d1 = g = FX_Alloc(int, max_size.ValueOrDie());
@@ -321,6 +327,9 @@ void sycc420_to_rgb(opj_image_t* img) {
   const int* y = img->comps[0].data;
   const int* cb = img->comps[1].data;
   const int* cr = img->comps[2].data;
+  if (!y || !cb || !cr)
+    return;
+
   const int* ny = nullptr;
   int* nr = nullptr;
   int* ng = nullptr;
@@ -835,6 +844,9 @@ bool CJPX_Decoder::Decode(uint8_t* dest_buf,
         uint8_t* pScanline = pChannel + row * pitch;
         for (int col = 0; col < width; ++col) {
           uint8_t* pPixel = pScanline + col * image->numcomps;
+          if (!image->comps[channel].data)
+            continue;
+
           int src = image->comps[channel].data[row * width + col];
           src += image->comps[channel].sgnd
                      ? 1 << (image->comps[channel].prec - 1)
@@ -851,9 +863,9 @@ bool CJPX_Decoder::Decode(uint8_t* dest_buf,
         uint8_t* pScanline = pChannel + row * pitch;
         for (int col = 0; col < width; ++col) {
           uint8_t* pPixel = pScanline + col * image->numcomps;
-          if (!image->comps[channel].data) {
+          if (!image->comps[channel].data)
             continue;
-          }
+
           int src = image->comps[channel].data[row * width + col];
           src += image->comps[channel].sgnd
                      ? 1 << (image->comps[channel].prec - 1)

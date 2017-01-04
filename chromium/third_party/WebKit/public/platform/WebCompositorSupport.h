@@ -34,6 +34,7 @@
 
 namespace cc {
 class Layer;
+class TextureLayerClient;
 }
 
 namespace blink {
@@ -41,36 +42,49 @@ namespace blink {
 class WebContentLayer;
 class WebContentLayerClient;
 class WebExternalTextureLayer;
-class WebExternalTextureLayerClient;
 class WebImageLayer;
 class WebLayer;
 class WebScrollbarLayer;
 class WebScrollbarThemeGeometry;
 
 class WebCompositorSupport {
-public:
+ public:
+  // Layers -------------------------------------------------------
 
-    // Layers -------------------------------------------------------
+  virtual WebLayer* createLayer() { return nullptr; }
 
-    virtual WebLayer* createLayer() { return nullptr; }
+  virtual WebLayer* createLayerFromCCLayer(cc::Layer*) { return nullptr; }
 
-    virtual WebLayer* createLayerFromCCLayer(cc::Layer*) { return nullptr; }
+  virtual WebContentLayer* createContentLayer(WebContentLayerClient*) {
+    return nullptr;
+  }
 
-    virtual WebContentLayer* createContentLayer(WebContentLayerClient*) { return nullptr; }
+  virtual WebExternalTextureLayer* createExternalTextureLayer(
+      cc::TextureLayerClient*) {
+    return nullptr;
+  }
 
-    virtual WebExternalTextureLayer* createExternalTextureLayer(WebExternalTextureLayerClient*) { return nullptr; }
+  virtual WebImageLayer* createImageLayer() { return nullptr; }
 
-    virtual WebImageLayer* createImageLayer() { return nullptr; }
+  // The ownership of the WebScrollbarThemeGeometry pointer is passed to
+  // Chromium.
+  virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*,
+                                                  WebScrollbarThemePainter,
+                                                  WebScrollbarThemeGeometry*) {
+    return nullptr;
+  }
 
-    // The ownership of the WebScrollbarThemeGeometry pointer is passed to Chromium.
-    virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return nullptr; }
+  virtual WebScrollbarLayer* createSolidColorScrollbarLayer(
+      WebScrollbar::Orientation,
+      int thumbThickness,
+      int trackStart,
+      bool isLeftSideVerticalScrollbar) {
+    return nullptr;
+  }
 
-    virtual WebScrollbarLayer* createSolidColorScrollbarLayer(WebScrollbar::Orientation, int thumbThickness, int trackStart, bool isLeftSideVerticalScrollbar) { return nullptr; }
-
-protected:
-    virtual ~WebCompositorSupport() { }
+ protected:
+  virtual ~WebCompositorSupport() {}
 };
-
 }
 
-#endif // WebCompositorSupport_h
+#endif  // WebCompositorSupport_h

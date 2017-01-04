@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2006, 2007, 2009, 2010, 2011, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2009, 2010, 2011, 2012 Apple Inc. All rights
+ * reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -41,7 +42,9 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace blink { class WebLayer; }
+namespace blink {
+class WebLayer;
+}
 
 namespace blink {
 
@@ -55,173 +58,209 @@ class FontMetrics;
 class HitRegion;
 class HitRegionOptions;
 class HitRegionManager;
+class HitTestCanvasResult;
 class Path2D;
 class SVGMatrixTearOff;
 class TextMetrics;
 
-typedef HTMLImageElementOrHTMLVideoElementOrHTMLCanvasElementOrImageBitmap CanvasImageSourceUnion;
+typedef CSSImageValueOrHTMLImageElementOrHTMLVideoElementOrHTMLCanvasElementOrImageBitmapOrOffscreenCanvas
+    CanvasImageSourceUnion;
 
-class MODULES_EXPORT CanvasRenderingContext2D final : public CanvasRenderingContext, public BaseRenderingContext2D, public WebThread::TaskObserver, public SVGResourceClient {
-    DEFINE_WRAPPERTYPEINFO();
-    USING_GARBAGE_COLLECTED_MIXIN(CanvasRenderingContext2D);
-    USING_PRE_FINALIZER(CanvasRenderingContext2D, dispose);
-public:
-    class Factory : public CanvasRenderingContextFactory {
-        WTF_MAKE_NONCOPYABLE(Factory);
-    public:
-        Factory() {}
-        ~Factory() override {}
+class MODULES_EXPORT CanvasRenderingContext2D final
+    : public CanvasRenderingContext,
+      public BaseRenderingContext2D,
+      public WebThread::TaskObserver,
+      public SVGResourceClient {
+  DEFINE_WRAPPERTYPEINFO();
+  USING_GARBAGE_COLLECTED_MIXIN(CanvasRenderingContext2D);
+  USING_PRE_FINALIZER(CanvasRenderingContext2D, dispose);
 
-        CanvasRenderingContext* create(HTMLCanvasElement* canvas, const CanvasContextCreationAttributes& attrs, Document& document) override
-        {
-            return new CanvasRenderingContext2D(canvas, attrs, document);
-        }
-        CanvasRenderingContext::ContextType getContextType() const override { return CanvasRenderingContext::Context2d; }
-    };
+ public:
+  class Factory : public CanvasRenderingContextFactory {
+    WTF_MAKE_NONCOPYABLE(Factory);
 
-    ~CanvasRenderingContext2D() override;
+   public:
+    Factory() {}
+    ~Factory() override {}
 
-    void setCanvasGetContextResult(RenderingContext&) final;
+    CanvasRenderingContext* create(HTMLCanvasElement* canvas,
+                                   const CanvasContextCreationAttributes& attrs,
+                                   Document& document) override {
+      return new CanvasRenderingContext2D(canvas, attrs, document);
+    }
+    CanvasRenderingContext::ContextType getContextType() const override {
+      return CanvasRenderingContext::Context2d;
+    }
+  };
 
-    bool isContextLost() const override;
+  ~CanvasRenderingContext2D() override;
 
-    bool shouldAntialias() const override;
-    void setShouldAntialias(bool) override;
+  void setCanvasGetContextResult(RenderingContext&) final;
 
-    void scrollPathIntoView();
-    void scrollPathIntoView(Path2D*);
+  bool isContextLost() const override;
 
-    void clearRect(double x, double y, double width, double height) override;
+  bool shouldAntialias() const override;
+  void setShouldAntialias(bool) override;
 
-    void reset() override;
+  void scrollPathIntoView();
+  void scrollPathIntoView(Path2D*);
 
-    String font() const;
-    void setFont(const String&) override;
+  void clearRect(double x, double y, double width, double height) override;
 
-    String textAlign() const;
-    void setTextAlign(const String&);
+  void reset() override;
 
-    String textBaseline() const;
-    void setTextBaseline(const String&);
+  String font() const;
+  void setFont(const String&) override;
 
-    String direction() const;
-    void setDirection(const String&);
+  String textAlign() const;
+  void setTextAlign(const String&);
 
-    void fillText(const String& text, double x, double y);
-    void fillText(const String& text, double x, double y, double maxWidth);
-    void strokeText(const String& text, double x, double y);
-    void strokeText(const String& text, double x, double y, double maxWidth);
-    TextMetrics* measureText(const String& text);
+  String textBaseline() const;
+  void setTextBaseline(const String&);
 
-    void getContextAttributes(Canvas2DContextAttributes&) const;
+  String direction() const;
+  void setDirection(const String&);
 
-    void drawFocusIfNeeded(Element*);
-    void drawFocusIfNeeded(Path2D*, Element*);
+  void fillText(const String& text, double x, double y);
+  void fillText(const String& text, double x, double y, double maxWidth);
+  void strokeText(const String& text, double x, double y);
+  void strokeText(const String& text, double x, double y, double maxWidth);
+  TextMetrics* measureText(const String& text);
 
-    void addHitRegion(const HitRegionOptions&, ExceptionState&);
-    void removeHitRegion(const String& id);
-    void clearHitRegions();
-    HitRegion* hitRegionAtPoint(const FloatPoint&);
-    unsigned hitRegionsCount() const override;
+  void getContextAttributes(Canvas2DContextAttributes&) const;
 
-    void loseContext(LostContextMode) override;
-    void didSetSurfaceSize() override;
+  void drawFocusIfNeeded(Element*);
+  void drawFocusIfNeeded(Path2D*, Element*);
 
-    void restoreCanvasMatrixClipStack(SkCanvas*) const override;
+  void addHitRegion(const HitRegionOptions&, ExceptionState&);
+  void removeHitRegion(const String& id);
+  void clearHitRegions();
+  HitRegion* hitRegionAtPoint(const FloatPoint&);
+  unsigned hitRegionsCount() const override;
 
-    // TaskObserver implementation
-    void didProcessTask() override;
-    void willProcessTask() override { }
+  void loseContext(LostContextMode) override;
+  void didSetSurfaceSize() override;
 
-    void styleDidChange(const ComputedStyle* oldStyle, const ComputedStyle& newStyle) override;
-    std::pair<Element*, String> getControlAndIdIfHitRegionExists(const LayoutPoint& location) override;
-    String getIdFromControl(const Element*) override;
+  void restoreCanvasMatrixClipStack(SkCanvas*) const override;
 
-    // SVGResourceClient implementation
-    void filterNeedsInvalidation() override;
+  // TaskObserver implementation
+  void didProcessTask() override;
+  void willProcessTask() override {}
 
-    // BaseRenderingContext2D implementation
-    bool originClean() const final;
-    void setOriginTainted() final;
-    bool wouldTaintOrigin(CanvasImageSource* source, ExecutionContext*) final { return CanvasRenderingContext::wouldTaintOrigin(source); }
+  void styleDidChange(const ComputedStyle* oldStyle,
+                      const ComputedStyle& newStyle) override;
+  HitTestCanvasResult* getControlAndIdIfHitRegionExists(
+      const LayoutPoint& location) override;
+  String getIdFromControl(const Element*) override;
 
-    int width() const final;
-    int height() const final;
+  // SVGResourceClient implementation
+  void filterNeedsInvalidation() override;
 
-    bool hasImageBuffer() const final;
-    ImageBuffer* imageBuffer() const final;
+  // BaseRenderingContext2D implementation
+  bool originClean() const final;
+  void setOriginTainted() final;
+  bool wouldTaintOrigin(CanvasImageSource* source, ExecutionContext*) final {
+    return CanvasRenderingContext::wouldTaintOrigin(source);
+  }
 
-    bool parseColorOrCurrentColor(Color&, const String& colorString) const final;
+  int width() const final;
+  int height() const final;
 
-    SkCanvas* drawingCanvas() const final;
-    SkCanvas* existingDrawingCanvas() const final;
-    void disableDeferral(DisableDeferralReason) final;
+  bool hasImageBuffer() const final;
+  ImageBuffer* imageBuffer() const final;
 
-    AffineTransform baseTransform() const final;
-    void didDraw(const SkIRect& dirtyRect) final;
+  bool parseColorOrCurrentColor(Color&, const String& colorString) const final;
 
-    bool stateHasFilter() final;
-    SkImageFilter* stateGetFilter() final;
-    void snapshotStateForFilter() final;
+  SkCanvas* drawingCanvas() const final;
+  SkCanvas* existingDrawingCanvas() const final;
+  void disableDeferral(DisableDeferralReason) final;
 
-    void validateStateStack() final;
+  AffineTransform baseTransform() const final;
+  void didDraw(const SkIRect& dirtyRect) final;
 
-private:
-    friend class CanvasRenderingContext2DAutoRestoreSkCanvas;
+  bool stateHasFilter() final;
+  SkImageFilter* stateGetFilter() final;
+  void snapshotStateForFilter() final;
 
-    CanvasRenderingContext2D(HTMLCanvasElement*, const CanvasContextCreationAttributes& attrs, Document&);
+  void validateStateStack() const final;
 
-    void dispose();
+  PassRefPtr<Image> getImage(AccelerationHint, SnapshotReason) const final;
 
-    void dispatchContextLostEvent(Timer<CanvasRenderingContext2D>*);
-    void dispatchContextRestoredEvent(Timer<CanvasRenderingContext2D>*);
-    void tryRestoreContextEvent(Timer<CanvasRenderingContext2D>*);
+  bool isAccelerationOptimalForCanvasContent() const;
 
-    void unwindStateStack();
+  void resetUsageTracking();
 
-    void pruneLocalFontCache(size_t targetSize);
-    void schedulePruneLocalFontCacheIfNeeded();
+  void incrementFrameCount() { m_usageCounters.numFramesSinceReset++; }
 
-    void scrollPathIntoViewInternal(const Path&);
+  bool isPaintable() const final { return hasImageBuffer(); }
 
-    void drawTextInternal(const String&, double x, double y, CanvasRenderingContext2DState::PaintType, double* maxWidth = nullptr);
+ private:
+  friend class CanvasRenderingContext2DAutoRestoreSkCanvas;
 
-    const Font& accessFont();
-    int getFontBaseline(const FontMetrics&) const;
+  CanvasRenderingContext2D(HTMLCanvasElement*,
+                           const CanvasContextCreationAttributes& attrs,
+                           Document&);
 
-    void drawFocusIfNeededInternal(const Path&, Element*);
-    bool focusRingCallIsValid(const Path&, Element*);
-    void drawFocusRing(const Path&);
-    void updateElementAccessibility(const Path&, Element*);
+  void dispose();
 
-    CanvasRenderingContext::ContextType getContextType() const override { return CanvasRenderingContext::Context2d; }
-    bool is2d() const override { return true; }
-    bool isAccelerated() const override;
-    bool hasAlpha() const override { return m_hasAlpha; }
-    void setIsHidden(bool) override;
-    void stop() final;
-    DECLARE_VIRTUAL_TRACE();
+  void dispatchContextLostEvent(TimerBase*);
+  void dispatchContextRestoredEvent(TimerBase*);
+  void tryRestoreContextEvent(TimerBase*);
 
-    virtual bool isTransformInvertible() const;
+  void unwindStateStack();
 
-    WebLayer* platformLayer() const override;
+  void pruneLocalFontCache(size_t targetSize);
+  void schedulePruneLocalFontCacheIfNeeded();
 
-    Member<HitRegionManager> m_hitRegionManager;
-    bool m_hasAlpha;
-    LostContextMode m_contextLostMode;
-    bool m_contextRestorable;
-    unsigned m_tryRestoreContextAttemptCount;
-    Timer<CanvasRenderingContext2D> m_dispatchContextLostEventTimer;
-    Timer<CanvasRenderingContext2D> m_dispatchContextRestoredEventTimer;
-    Timer<CanvasRenderingContext2D> m_tryRestoreContextEventTimer;
+  void scrollPathIntoViewInternal(const Path&);
 
-    HashMap<String, Font> m_fontsResolvedUsingCurrentStyle;
-    bool m_pruneLocalFontCacheScheduled;
-    ListHashSet<String> m_fontLRUList;
+  void drawTextInternal(const String&,
+                        double x,
+                        double y,
+                        CanvasRenderingContext2DState::PaintType,
+                        double* maxWidth = nullptr);
+
+  const Font& accessFont();
+  int getFontBaseline(const FontMetrics&) const;
+
+  void drawFocusIfNeededInternal(const Path&, Element*);
+  bool focusRingCallIsValid(const Path&, Element*);
+  void drawFocusRing(const Path&);
+  void updateElementAccessibility(const Path&, Element*);
+
+  CanvasRenderingContext::ContextType getContextType() const override {
+    return CanvasRenderingContext::Context2d;
+  }
+  bool is2d() const override { return true; }
+  bool isAccelerated() const override;
+  bool hasAlpha() const override { return creationAttributes().alpha(); }
+  void setIsHidden(bool) override;
+  void stop() final;
+  DECLARE_VIRTUAL_TRACE();
+
+  virtual bool isTransformInvertible() const;
+
+  WebLayer* platformLayer() const override;
+
+  Member<HitRegionManager> m_hitRegionManager;
+  LostContextMode m_contextLostMode;
+  bool m_contextRestorable;
+  unsigned m_tryRestoreContextAttemptCount;
+  Timer<CanvasRenderingContext2D> m_dispatchContextLostEventTimer;
+  Timer<CanvasRenderingContext2D> m_dispatchContextRestoredEventTimer;
+  Timer<CanvasRenderingContext2D> m_tryRestoreContextEventTimer;
+
+  HashMap<String, Font> m_fontsResolvedUsingCurrentStyle;
+  bool m_pruneLocalFontCacheScheduled;
+  ListHashSet<String> m_fontLRUList;
 };
 
-DEFINE_TYPE_CASTS(CanvasRenderingContext2D, CanvasRenderingContext, context, context->is2d(), context.is2d());
+DEFINE_TYPE_CASTS(CanvasRenderingContext2D,
+                  CanvasRenderingContext,
+                  context,
+                  context->is2d() && context->canvas(),
+                  context.is2d() && context.canvas());
 
-} // namespace blink
+}  // namespace blink
 
-#endif // CanvasRenderingContext2D_h
+#endif  // CanvasRenderingContext2D_h

@@ -10,6 +10,7 @@
 #include "platform/animation/CompositorFloatKeyframe.h"
 #include "platform/animation/TimingFunction.h"
 #include "wtf/Noncopyable.h"
+#include "wtf/PassRefPtr.h"
 #include "wtf/PtrUtil.h"
 #include "wtf/Vector.h"
 #include <memory>
@@ -19,55 +20,47 @@ class KeyframedFloatAnimationCurve;
 }
 
 namespace blink {
-struct CompositorFloatKeyframe;
+class CompositorFloatKeyframe;
 }
 
 namespace blink {
 
 // A keyframed float animation curve.
-class PLATFORM_EXPORT CompositorFloatAnimationCurve : public CompositorAnimationCurve {
-    WTF_MAKE_NONCOPYABLE(CompositorFloatAnimationCurve);
-public:
-    static std::unique_ptr<CompositorFloatAnimationCurve> create()
-    {
-        return wrapUnique(new CompositorFloatAnimationCurve());
-    }
+class PLATFORM_EXPORT CompositorFloatAnimationCurve
+    : public CompositorAnimationCurve {
+  WTF_MAKE_NONCOPYABLE(CompositorFloatAnimationCurve);
 
-    ~CompositorFloatAnimationCurve() override;
+ public:
+  static std::unique_ptr<CompositorFloatAnimationCurve> create() {
+    return wrapUnique(new CompositorFloatAnimationCurve());
+  }
 
-    static std::unique_ptr<CompositorFloatAnimationCurve> CreateForTesting(std::unique_ptr<cc::KeyframedFloatAnimationCurve>);
-    Vector<CompositorFloatKeyframe> keyframesForTesting() const;
+  ~CompositorFloatAnimationCurve() override;
 
-    // TODO(loyso): Erase these methods once blink/cc timing functions unified.
-    CubicBezierTimingFunction::EaseType getCurveEaseTypeForTesting() const;
-    bool curveHasLinearTimingFunctionForTesting() const;
-    CubicBezierTimingFunction::EaseType getKeyframeEaseTypeForTesting(unsigned long index) const;
-    bool keyframeHasLinearTimingFunctionForTesting(unsigned long index) const;
+  void addKeyframe(const CompositorFloatKeyframe&);
+  void setTimingFunction(const TimingFunction&);
+  void setScaledDuration(double);
+  float getValue(double time) const;
 
-    void addLinearKeyframe(const CompositorFloatKeyframe&);
-    void addCubicBezierKeyframe(const CompositorFloatKeyframe&, CubicBezierTimingFunction::EaseType);
-    // Adds the keyframe with a custom, bezier timing function. Note, it is
-    // assumed that x0 = y0 , and x3 = y3 = 1.
-    void addCubicBezierKeyframe(const CompositorFloatKeyframe&, double x1, double y1, double x2, double y2);
-    void addStepsKeyframe(const CompositorFloatKeyframe&, int steps, StepsTimingFunction::StepPosition);
+  // CompositorAnimationCurve implementation.
+  std::unique_ptr<cc::AnimationCurve> cloneToAnimationCurve() const override;
 
-    void setLinearTimingFunction();
-    void setCubicBezierTimingFunction(CubicBezierTimingFunction::EaseType);
-    void setCubicBezierTimingFunction(double x1, double y1, double x2, double y2);
-    void setStepsTimingFunction(int numberOfSteps, StepsTimingFunction::StepPosition);
+  static std::unique_ptr<CompositorFloatAnimationCurve> createForTesting(
+      std::unique_ptr<cc::KeyframedFloatAnimationCurve>);
 
-    float getValue(double time) const;
+  using Keyframes = Vector<std::unique_ptr<CompositorFloatKeyframe>>;
+  Keyframes keyframesForTesting() const;
 
-    // CompositorAnimationCurve implementation.
-    std::unique_ptr<cc::AnimationCurve> cloneToAnimationCurve() const override;
+  PassRefPtr<TimingFunction> getTimingFunctionForTesting() const;
 
-private:
-    CompositorFloatAnimationCurve();
-    CompositorFloatAnimationCurve(std::unique_ptr<cc::KeyframedFloatAnimationCurve>);
+ private:
+  CompositorFloatAnimationCurve();
+  CompositorFloatAnimationCurve(
+      std::unique_ptr<cc::KeyframedFloatAnimationCurve>);
 
-    std::unique_ptr<cc::KeyframedFloatAnimationCurve> m_curve;
+  std::unique_ptr<cc::KeyframedFloatAnimationCurve> m_curve;
 };
 
-} // namespace blink
+}  // namespace blink
 
-#endif // CompositorFloatAnimationCurve_h
+#endif  // CompositorFloatAnimationCurve_h

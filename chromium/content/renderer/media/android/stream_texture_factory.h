@@ -12,7 +12,9 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
+#include "base/unguessable_token.h"
 #include "cc/layers/video_frame_provider.h"
+#include "content/common/content_export.h"
 #include "content/renderer/gpu/stream_texture_host_android.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "ui/gfx/geometry/size.h"
@@ -35,12 +37,13 @@ class StreamTextureProxy : public StreamTextureHost::Listener {
  public:
   ~StreamTextureProxy() override;
 
-  // Initialize and bind to the loop, which becomes the thread that
-  // a connected client will receive callbacks on. This can be called
-  // on any thread, but must be called with the same loop every time.
-  void BindToLoop(int32_t stream_id,
-                  cc::VideoFrameProvider::Client* client,
-                  scoped_refptr<base::SingleThreadTaskRunner> loop);
+  // Initialize and bind to |task_runner|, which becomes the thread that the
+  // provided callback will be run on. This can be called on any thread, but
+  // must be called with the same |task_runner| every time.
+  void BindToTaskRunner(
+      int32_t stream_id,
+      const base::Closure& received_frame_cb,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   // StreamTextureHost::Listener implementation:
   void OnFrameAvailable() override;
@@ -57,10 +60,10 @@ class StreamTextureProxy : public StreamTextureHost::Listener {
 
   const std::unique_ptr<StreamTextureHost> host_;
 
-  // Protects access to |client_| and |loop_|.
+  // Protects access to |received_frame_cb_| and |task_runner_|.
   base::Lock lock_;
-  cc::VideoFrameProvider::Client* client_;
-  scoped_refptr<base::SingleThreadTaskRunner> loop_;
+  base::Closure received_frame_cb_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(StreamTextureProxy);
 };
@@ -69,7 +72,8 @@ typedef std::unique_ptr<StreamTextureProxy, StreamTextureProxy::Deleter>
     ScopedStreamTextureProxy;
 
 // Factory class for managing stream textures.
-class StreamTextureFactory : public base::RefCounted<StreamTextureFactory> {
+class CONTENT_EXPORT StreamTextureFactory
+    : public base::RefCounted<StreamTextureFactory> {
  public:
   static scoped_refptr<StreamTextureFactory> Create(
       scoped_refptr<ContextProviderCommandBuffer> context_provider);
@@ -82,6 +86,13 @@ class StreamTextureFactory : public base::RefCounted<StreamTextureFactory> {
   // it will be passed back to the WebMediaPlayerAndroid object identified by
   // the player_id.
   void EstablishPeer(int32_t stream_id, int player_id, int frame_id);
+
+  // Sends an IPC to the GPU process.
+  // Asks the StreamTexture to forward its SurfaceTexture to the
+  // ScopedSurfaceRequestManager, using the gpu::ScopedSurfaceRequestConduit.
+  void ForwardStreamTextureForSurfaceRequest(
+      int32_t stream_id,
+      const base::UnguessableToken& request_token);
 
   // Creates a gpu::StreamTexture and returns its id.  Sets |*texture_id| to the
   // client-side id of the gpu::StreamTexture. The texture is produced into

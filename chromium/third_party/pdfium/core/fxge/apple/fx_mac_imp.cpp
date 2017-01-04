@@ -5,13 +5,18 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "core/fxge/apple/apple_int.h"
-#include "core/fxge/include/fx_ge.h"
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/ge/cfx_folderfontinfo.h"
+#include "core/fxge/ifx_systemfontinfo.h"
 
 #if _FX_OS_ == _FX_MACOSX_
-static const struct {
+
+namespace {
+
+const struct {
   const FX_CHAR* m_pName;
   const FX_CHAR* m_pSubstName;
-} Base14Substs[] = {
+} g_Base14Substs[] = {
     {"Courier", "Courier New"},
     {"Courier-Bold", "Courier New Bold"},
     {"Courier-BoldOblique", "Courier New Bold Italic"},
@@ -40,21 +45,18 @@ class CFX_MacFontInfo : public CFX_FolderFontInfo {
                 int& iExact) override;
 };
 
-#define JAPAN_GOTHIC "Hiragino Kaku Gothic Pro W6"
-#define JAPAN_MINCHO "Hiragino Mincho Pro W6"
-static void GetJapanesePreference(CFX_ByteString& face,
-                                  int weight,
-                                  int pitch_family) {
-  if (face.Find("Gothic") >= 0) {
-    face = JAPAN_GOTHIC;
+const char JAPAN_GOTHIC[] = "Hiragino Kaku Gothic Pro W6";
+const char JAPAN_MINCHO[] = "Hiragino Mincho Pro W6";
+
+void GetJapanesePreference(CFX_ByteString* face, int weight, int pitch_family) {
+  if (face->Find("Gothic") >= 0) {
+    *face = JAPAN_GOTHIC;
     return;
   }
-  if (!(pitch_family & FXFONT_FF_ROMAN) && weight > 400) {
-    face = JAPAN_GOTHIC;
-  } else {
-    face = JAPAN_MINCHO;
-  }
+  *face = ((pitch_family & FXFONT_FF_ROMAN) || weight <= 400) ? JAPAN_MINCHO
+                                                              : JAPAN_GOTHIC;
 }
+
 void* CFX_MacFontInfo::MapFont(int weight,
                                FX_BOOL bItalic,
                                int charset,
@@ -62,34 +64,50 @@ void* CFX_MacFontInfo::MapFont(int weight,
                                const FX_CHAR* cstr_face,
                                int& iExact) {
   CFX_ByteString face = cstr_face;
-  int iBaseFont;
-  for (iBaseFont = 0; iBaseFont < 12; iBaseFont++)
-    if (face == CFX_ByteStringC(Base14Substs[iBaseFont].m_pName)) {
-      face = Base14Substs[iBaseFont].m_pSubstName;
+  for (size_t i = 0; i < FX_ArraySize(g_Base14Substs); ++i) {
+    if (face == CFX_ByteStringC(g_Base14Substs[i].m_pName)) {
+      face = g_Base14Substs[i].m_pSubstName;
       iExact = TRUE;
-      break;
+      return GetFont(face.c_str());
     }
-  if (iBaseFont < 12) {
-    return GetFont(face.c_str());
   }
+
+  // The request may not ask for the bold and/or italic version of a font by
+  // name. So try to construct the appropriate name. This is not 100% foolproof
+  // as there are fonts that have "Oblique" or "BoldOblique" or "Heavy" in their
+  // names instead. But this at least works for common fonts like Arial and
+  // Times New Roman. A more sophisticated approach would be to find all the
+  // fonts in |m_FontList| with |face| in the name, and examine the fonts to
+  // see which best matches the requested characteristics.
+  if (face.Find("Bold") == -1 && face.Find("Italic") == -1) {
+    CFX_ByteString new_face = face;
+    if (weight > 400)
+      new_face += " Bold";
+    if (bItalic)
+      new_face += " Italic";
+    auto it = m_FontList.find(new_face);
+    if (it != m_FontList.end())
+      return it->second;
+  }
+
   auto it = m_FontList.find(face);
   if (it != m_FontList.end())
     return it->second;
 
-  if (charset == FXFONT_ANSI_CHARSET && (pitch_family & FXFONT_FF_FIXEDPITCH)) {
+  if (charset == FXFONT_ANSI_CHARSET && (pitch_family & FXFONT_FF_FIXEDPITCH))
     return GetFont("Courier New");
-  }
-  if (charset == FXFONT_ANSI_CHARSET || charset == FXFONT_SYMBOL_CHARSET) {
+
+  if (charset == FXFONT_ANSI_CHARSET || charset == FXFONT_SYMBOL_CHARSET)
     return nullptr;
-  }
+
   switch (charset) {
     case FXFONT_SHIFTJIS_CHARSET:
-      GetJapanesePreference(face, weight, pitch_family);
+      GetJapanesePreference(&face, weight, pitch_family);
       break;
     case FXFONT_GB2312_CHARSET:
       face = "STSong";
       break;
-    case FXFONT_HANGEUL_CHARSET:
+    case FXFONT_HANGUL_CHARSET:
       face = "AppleMyungjo";
       break;
     case FXFONT_CHINESEBIG5_CHARSET:
@@ -98,6 +116,8 @@ void* CFX_MacFontInfo::MapFont(int weight,
   it = m_FontList.find(face);
   return it != m_FontList.end() ? it->second : nullptr;
 }
+
+}  // namespace
 
 std::unique_ptr<IFX_SystemFontInfo> IFX_SystemFontInfo::CreateDefault(
     const char** pUnused) {
@@ -112,8 +132,10 @@ void CFX_GEModule::InitPlatform() {
   m_pPlatformData = new CApplePlatform;
   m_pFontMgr->SetSystemFontInfo(IFX_SystemFontInfo::CreateDefault(nullptr));
 }
+
 void CFX_GEModule::DestroyPlatform() {
-  delete (CApplePlatform*)m_pPlatformData;
+  delete reinterpret_cast<CApplePlatform*>(m_pPlatformData);
   m_pPlatformData = nullptr;
 }
-#endif
+
+#endif  // _FX_OS_ == _FX_MACOSX_

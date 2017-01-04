@@ -51,7 +51,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void Init(ServiceWorkerContextWrapper* context_wrapper);
 
   // BrowserMessageFilter implementation
-  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterAdded(IPC::Channel* channel) override;
   void OnFilterRemoved() override;
   void OnDestruct() const override;
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -213,7 +213,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
       int provider_id,
       int request_id,
       ServiceWorkerStatusCode status,
-      const scoped_refptr<ServiceWorkerRegistration>& registration);
+      scoped_refptr<ServiceWorkerRegistration> registration);
   void GetRegistrationsComplete(
       int thread_id,
       int provider_id,

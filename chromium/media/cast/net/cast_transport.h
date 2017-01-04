@@ -110,13 +110,11 @@ class CastTransport : public base::NonThreadSafe {
   // Audio/Video initialization.
   // Encoded frames cannot be transmitted until the relevant initialize method
   // is called.
-  virtual void InitializeAudio(const CastTransportRtpConfig& config,
-                               std::unique_ptr<RtcpObserver> rtcp_observer) {}
-  virtual void InitializeVideo(const CastTransportRtpConfig& config,
-                               std::unique_ptr<RtcpObserver> rtcp_observer) {}
+  virtual void InitializeStream(const CastTransportRtpConfig& config,
+                                std::unique_ptr<RtcpObserver> rtcp_observer) {}
 
   // Encrypt, packetize and transmit |frame|. |ssrc| must refer to a
-  // a channel already established with InitializeAudio / InitializeVideo.
+  // a channel already established with InitializeStream.
   virtual void InsertFrame(uint32_t ssrc, const EncodedFrame& frame) = 0;
 
   // Sends a RTCP sender report to the receiver.

@@ -14,7 +14,7 @@ namespace internal {
 ExternalReferenceEncoder::ExternalReferenceEncoder(Isolate* isolate) {
   map_ = isolate->external_reference_map();
   if (map_ != NULL) return;
-  map_ = new base::HashMap(base::HashMap::PointersMatch);
+  map_ = new base::HashMap();
   ExternalReferenceTable* table = ExternalReferenceTable::instance(isolate);
   for (int i = 0; i < table->size(); ++i) {
     Address addr = table->address(i);
@@ -59,6 +59,7 @@ void SerializedData::AllocateData(int size) {
 //  - during deserialization to populate it.
 //  - during normal GC to keep its content alive.
 //  - not during serialization. The partial serializer adds to it explicitly.
+DISABLE_CFI_PERF
 void SerializerDeserializer::Iterate(Isolate* isolate, ObjectVisitor* visitor) {
   List<Object*>* cache = isolate->partial_snapshot_cache();
   for (int i = 0;; ++i) {

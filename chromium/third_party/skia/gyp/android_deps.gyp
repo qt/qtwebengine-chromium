@@ -31,11 +31,14 @@
         ],
         'targets': [
           {
-            'target_name': 'expat',
+            'target_name': 'expat_android',
             'type': 'none',
             'direct_dependent_settings': {
               'libraries' : [
                 '-lexpat',
+              ],
+              'include_dirs': [
+                'external/expat/lib',
               ],
             },
           },

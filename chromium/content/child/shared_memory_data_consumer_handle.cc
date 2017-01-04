@@ -37,7 +37,12 @@ class DelegateThreadSafeReceivedData final
 
   const char* payload() const override { return data_->payload(); }
   int length() const override { return data_->length(); }
-  int encoded_length() const override { return data_->encoded_length(); }
+  int encoded_data_length() const override {
+    return data_->encoded_data_length();
+  }
+  int encoded_body_length() const override {
+    return data_->encoded_body_length();
+  }
 
  private:
   std::unique_ptr<RequestPeer::ReceivedData> data_;
@@ -84,19 +89,16 @@ class SharedMemoryDataConsumerHandle::Context final
   }
   void ClearQueue() {
     lock_.AssertAcquired();
-    for (auto& data : queue_) {
-      delete data;
-    }
     queue_.clear();
     first_offset_ = 0;
   }
   RequestPeer::ThreadSafeReceivedData* Top() {
     lock_.AssertAcquired();
-    return queue_.front();
+    return queue_.front().get();
   }
   void Push(std::unique_ptr<RequestPeer::ThreadSafeReceivedData> data) {
     lock_.AssertAcquired();
-    queue_.push_back(data.release());
+    queue_.push_back(std::move(data));
   }
   size_t first_offset() const {
     lock_.AssertAcquired();
@@ -181,9 +183,8 @@ class SharedMemoryDataConsumerHandle::Context final
   void Consume(size_t s) {
     lock_.AssertAcquired();
     first_offset_ += s;
-    auto top = Top();
+    auto* top = Top();
     if (static_cast<size_t>(top->length()) <= first_offset_) {
-      delete top;
       queue_.pop_front();
       first_offset_ = 0;
     }
@@ -227,14 +228,8 @@ class SharedMemoryDataConsumerHandle::Context final
   }
   void Clear() {
     lock_.AssertAcquired();
-    for (auto& data : queue_) {
-      delete data;
-    }
-    queue_.clear();
-    first_offset_ = 0;
+    ClearQueue();
     client_ = nullptr;
-    // Note this doesn't work in the destructor if |on_reader_detached_| is not
-    // null. We have an assert in the destructor.
     ResetOnReaderDetached();
   }
   // Must be called with |lock_| not aquired.
@@ -244,21 +239,13 @@ class SharedMemoryDataConsumerHandle::Context final
   }
 
   friend class base::RefCountedThreadSafe<Context>;
-  ~Context() {
-    base::AutoLock lock(lock_);
-    DCHECK(on_reader_detached_.is_null());
-
-    // This is necessary because the queue stores raw pointers.
-    Clear();
-  }
+  ~Context() = default;
 
   base::Lock lock_;
   // |result_| stores the ultimate state of this handle if it has. Otherwise,
   // |Ok| is set.
   Result result_;
-  // TODO(yhirano): Use std::deque<std::unique_ptr<ThreadSafeReceivedData>>
-  // once it is allowed.
-  std::deque<RequestPeer::ThreadSafeReceivedData*> queue_;
+  std::deque<std::unique_ptr<RequestPeer::ThreadSafeReceivedData>> queue_;
   size_t first_offset_;
   Client* client_;
   scoped_refptr<base::SingleThreadTaskRunner> notification_task_runner_;
@@ -306,9 +293,9 @@ void SharedMemoryDataConsumerHandle::Writer::AddData(
     std::unique_ptr<RequestPeer::ThreadSafeReceivedData> data_to_pass;
     if (mode_ == kApplyBackpressure) {
       data_to_pass =
-          base::WrapUnique(new DelegateThreadSafeReceivedData(std::move(data)));
+          base::MakeUnique<DelegateThreadSafeReceivedData>(std::move(data));
     } else {
-      data_to_pass = base::WrapUnique(new FixedReceivedData(data.get()));
+      data_to_pass = base::MakeUnique<FixedReceivedData>(data.get());
     }
     context_->Push(std::move(data_to_pass));
   }
@@ -387,7 +374,7 @@ Result SharedMemoryDataConsumerHandle::ReaderImpl::read(
     return context_->result();
 
   while (!context_->IsEmpty() && total_read_size < size) {
-    const auto& top = context_->Top();
+    auto* top = context_->Top();
     size_t readable = top->length() - context_->first_offset();
     size_t writable = size - total_read_size;
     size_t read_size = std::min(readable, writable);
@@ -424,7 +411,7 @@ Result SharedMemoryDataConsumerHandle::ReaderImpl::beginRead(
     return context_->result() == Done ? Done : ShouldWait;
 
   context_->set_is_two_phase_read_in_progress(true);
-  const auto& top = context_->Top();
+  auto* top = context_->Top();
   *buffer = top->payload() + context_->first_offset();
   *available = top->length() - context_->first_offset();
 
@@ -468,13 +455,8 @@ SharedMemoryDataConsumerHandle::~SharedMemoryDataConsumerHandle() {
 }
 
 std::unique_ptr<blink::WebDataConsumerHandle::Reader>
-SharedMemoryDataConsumerHandle::ObtainReader(Client* client) {
-  return base::WrapUnique(obtainReaderInternal(client));
-}
-
-SharedMemoryDataConsumerHandle::ReaderImpl*
-SharedMemoryDataConsumerHandle::obtainReaderInternal(Client* client) {
-  return new ReaderImpl(context_, client);
+SharedMemoryDataConsumerHandle::obtainReader(Client* client) {
+  return base::WrapUnique(new ReaderImpl(context_, client));
 }
 
 const char* SharedMemoryDataConsumerHandle::debugName() const {

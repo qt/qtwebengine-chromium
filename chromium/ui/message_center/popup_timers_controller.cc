@@ -52,19 +52,6 @@ void PopupTimersController::StartAll() {
     iter.second->Start();
 }
 
-void PopupTimersController::ResetTimer(const std::string& id,
-                                       const base::TimeDelta& timeout) {
-  CancelTimer(id);
-  StartTimer(id, timeout);
-}
-
-void PopupTimersController::PauseTimer(const std::string& id) {
-  PopupTimerCollection::const_iterator iter = popup_timers_.find(id);
-  if (iter == popup_timers_.end())
-    return;
-  iter->second->Pause();
-}
-
 void PopupTimersController::PauseAll() {
   for (const auto& iter : popup_timers_)
     iter.second->Pause();
@@ -79,7 +66,7 @@ void PopupTimersController::CancelAll() {
 }
 
 void PopupTimersController::TimerFinished(const std::string& id) {
-  if (!ContainsKey(popup_timers_, id))
+  if (!base::ContainsKey(popup_timers_, id))
     return;
 
   CancelTimer(id);
@@ -96,7 +83,7 @@ void PopupTimersController::OnNotificationUpdated(const std::string& id) {
   NotificationList::PopupNotifications popup_notifications =
       message_center_->GetPopupNotifications();
 
-  if (!popup_notifications.size()) {
+  if (popup_notifications.empty()) {
     CancelAll();
     return;
   }
@@ -113,9 +100,8 @@ void PopupTimersController::OnNotificationUpdated(const std::string& id) {
     return;
   }
 
-  // Start the timer if not yet.
-  if (popup_timers_.find(id) == popup_timers_.end())
-    StartTimer(id, GetTimeoutForNotification(*iter));
+  CancelTimer(id);
+  StartTimer(id, GetTimeoutForNotification(*iter));
 }
 
 void PopupTimersController::OnNotificationRemoved(const std::string& id,

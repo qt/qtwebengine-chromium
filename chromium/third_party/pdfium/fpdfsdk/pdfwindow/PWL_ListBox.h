@@ -7,41 +7,35 @@
 #ifndef FPDFSDK_PDFWINDOW_PWL_LISTBOX_H_
 #define FPDFSDK_PDFWINDOW_PWL_LISTBOX_H_
 
-#include "fpdfsdk/fxedit/include/fx_edit.h"
+#include "fpdfsdk/fxedit/fx_edit.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
 
+class CFX_ListCtrl;
 class CPWL_List_Notify;
 class CPWL_ListBox;
 class IPWL_Filler_Notify;
+struct CPVT_SecProps;
+struct CPVT_WordPlace;
+struct CPVT_WordProps;
 
-class CPWL_List_Notify : public IFX_List_Notify {
+class CPWL_List_Notify {
  public:
   CPWL_List_Notify(CPWL_ListBox* pList);
-  ~CPWL_List_Notify() override;
+  ~CPWL_List_Notify();
 
-  // IFX_List_Notify
-  void IOnSetScrollInfoX(FX_FLOAT fPlateMin,
-                         FX_FLOAT fPlateMax,
-                         FX_FLOAT fContentMin,
-                         FX_FLOAT fContentMax,
-                         FX_FLOAT fSmallStep,
-                         FX_FLOAT fBigStep) override {}
   void IOnSetScrollInfoY(FX_FLOAT fPlateMin,
                          FX_FLOAT fPlateMax,
                          FX_FLOAT fContentMin,
                          FX_FLOAT fContentMax,
                          FX_FLOAT fSmallStep,
-                         FX_FLOAT fBigStep) override;
-  void IOnSetScrollPosX(FX_FLOAT fx) override {}
-  void IOnSetScrollPosY(FX_FLOAT fy) override;
-  void IOnInvalidateRect(CFX_FloatRect* pRect) override;
+                         FX_FLOAT fBigStep);
+  void IOnSetScrollPosY(FX_FLOAT fy);
+  void IOnInvalidateRect(CFX_FloatRect* pRect);
 
   void IOnSetCaret(FX_BOOL bVisible,
                    const CFX_FloatPoint& ptHead,
                    const CFX_FloatPoint& ptFoot,
                    const CPVT_WordPlace& place);
-  void IOnCaretChange(const CPVT_SecProps& secProps,
-                      const CPVT_WordProps& wordProps);
 
  private:
   CPWL_ListBox* m_pList;
@@ -81,7 +75,7 @@ class CPWL_ListBox : public CPWL_Wnd {
 
   void OnNotifySelChanged(FX_BOOL bKeyDown, FX_BOOL& bExit, uint32_t nFlag);
 
-  void AddString(const FX_WCHAR* str);
+  void AddString(const CFX_WideString& str);
   void SetTopVisibleIndex(int32_t nItemIndex);
   void ScrollToListItem(int32_t nItemIndex);
   void ResetContent();
@@ -105,18 +99,17 @@ class CPWL_ListBox : public CPWL_Wnd {
     m_pFillerNotify = pNotify;
   }
 
+  void AttachFFLData(CFFL_FormFiller* pData) { m_pFormFiller = pData; }
+
  protected:
-  IFX_List* m_pList;
-  CPWL_List_Notify* m_pListNotify;
+  std::unique_ptr<CFX_ListCtrl> m_pList;
+  std::unique_ptr<CPWL_List_Notify> m_pListNotify;
   FX_BOOL m_bMouseDown;
   FX_BOOL m_bHoverSel;
   IPWL_Filler_Notify* m_pFillerNotify;
 
- public:
-  void AttachFFLData(void* pData) { m_pFormFiller = pData; }
-
  private:
-  void* m_pFormFiller;
+  CFFL_FormFiller* m_pFormFiller;  // Not owned.
 };
 
 #endif  // FPDFSDK_PDFWINDOW_PWL_LISTBOX_H_

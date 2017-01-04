@@ -151,6 +151,7 @@
 #include <openssl/stack.h>
 
 #include "internal.h"
+#include "../crypto/internal.h"
 
 
 /* kCiphers is an array of all supported ciphers, sorted by id. */
@@ -163,28 +164,6 @@ static const SSL_CIPHER kCiphers[] = {
      SSL_kRSA,
      SSL_aRSA,
      SSL_eNULL,
-     SSL_SHA1,
-     SSL_HANDSHAKE_MAC_DEFAULT,
-    },
-
-    /* Cipher 04 */
-    {
-     SSL3_TXT_RSA_RC4_128_MD5,
-     SSL3_CK_RSA_RC4_128_MD5,
-     SSL_kRSA,
-     SSL_aRSA,
-     SSL_RC4,
-     SSL_MD5,
-     SSL_HANDSHAKE_MAC_DEFAULT,
-    },
-
-    /* Cipher 05 */
-    {
-     SSL3_TXT_RSA_RC4_128_SHA,
-     SSL3_CK_RSA_RC4_128_SHA,
-     SSL_kRSA,
-     SSL_aRSA,
-     SSL_RC4,
      SSL_SHA1,
      SSL_HANDSHAKE_MAC_DEFAULT,
     },
@@ -295,17 +274,6 @@ static const SSL_CIPHER kCiphers[] = {
     },
 
     /* PSK cipher suites. */
-
-    /* Cipher 8A */
-    {
-     TLS1_TXT_PSK_WITH_RC4_128_SHA,
-     TLS1_CK_PSK_WITH_RC4_128_SHA,
-     SSL_kPSK,
-     SSL_aPSK,
-     SSL_RC4,
-     SSL_SHA1,
-     SSL_HANDSHAKE_MAC_DEFAULT,
-    },
 
     /* Cipher 8C */
     {
@@ -421,17 +389,6 @@ static const SSL_CIPHER kCiphers[] = {
      SSL_HANDSHAKE_MAC_SHA384,
     },
 
-    /* Cipher C007 */
-    {
-     TLS1_TXT_ECDHE_ECDSA_WITH_RC4_128_SHA,
-     TLS1_CK_ECDHE_ECDSA_WITH_RC4_128_SHA,
-     SSL_kECDHE,
-     SSL_aECDSA,
-     SSL_RC4,
-     SSL_SHA1,
-     SSL_HANDSHAKE_MAC_DEFAULT,
-    },
-
     /* Cipher C009 */
     {
      TLS1_TXT_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
@@ -450,17 +407,6 @@ static const SSL_CIPHER kCiphers[] = {
      SSL_kECDHE,
      SSL_aECDSA,
      SSL_AES256,
-     SSL_SHA1,
-     SSL_HANDSHAKE_MAC_DEFAULT,
-    },
-
-    /* Cipher C011 */
-    {
-     TLS1_TXT_ECDHE_RSA_WITH_RC4_128_SHA,
-     TLS1_CK_ECDHE_RSA_WITH_RC4_128_SHA,
-     SSL_kECDHE,
-     SSL_aRSA,
-     SSL_RC4,
      SSL_SHA1,
      SSL_HANDSHAKE_MAC_DEFAULT,
     },
@@ -669,7 +615,7 @@ static const SSL_CIPHER kCiphers[] = {
      SSL_kECDHE,
      SSL_aPSK,
      SSL_AES128GCM,
-     SSL_SHA256,
+     SSL_AEAD,
      SSL_HANDSHAKE_MAC_SHA256,
     },
 
@@ -680,13 +626,13 @@ static const SSL_CIPHER kCiphers[] = {
      SSL_kECDHE,
      SSL_aPSK,
      SSL_AES256GCM,
-     SSL_SHA384,
+     SSL_AEAD,
      SSL_HANDSHAKE_MAC_SHA384,
     },
 
 };
 
-static const size_t kCiphersLen = sizeof(kCiphers) / sizeof(kCiphers[0]);
+static const size_t kCiphersLen = OPENSSL_ARRAY_SIZE(kCiphers);
 
 #define CIPHER_ADD 1
 #define CIPHER_KILL 2
@@ -759,7 +705,6 @@ static const CIPHER_ALIAS kCipherAliases[] = {
 
     /* symmetric encryption aliases */
     {"3DES", ~0u, ~0u, SSL_3DES, ~0u, 0},
-    {"RC4", ~0u, ~0u, SSL_RC4, ~0u, 0},
     {"AES128", ~0u, ~0u, SSL_AES128 | SSL_AES128GCM, ~0u, 0},
     {"AES256", ~SSL_kCECPQ1, ~0u, SSL_AES256 | SSL_AES256GCM, ~0u, 0},
     {"AES", ~SSL_kCECPQ1, ~0u, SSL_AES, ~0u, 0},
@@ -781,13 +726,11 @@ static const CIPHER_ALIAS kCipherAliases[] = {
     {"TLSv1.2", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, TLS1_2_VERSION},
 
     /* Legacy strength classes. */
-    {"MEDIUM", ~0u, ~0u, SSL_RC4, ~0u, 0},
-    {"HIGH", ~SSL_kCECPQ1, ~0u, ~(SSL_eNULL|SSL_RC4), ~0u, 0},
-    {"FIPS", ~SSL_kCECPQ1, ~0u, ~(SSL_eNULL|SSL_RC4), ~0u, 0},
+    {"HIGH", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, 0},
+    {"FIPS", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, 0},
 };
 
-static const size_t kCipherAliasesLen =
-    sizeof(kCipherAliases) / sizeof(kCipherAliases[0]);
+static const size_t kCipherAliasesLen = OPENSSL_ARRAY_SIZE(kCipherAliases);
 
 static int ssl_cipher_id_cmp(const void *in_a, const void *in_b) {
   const SSL_CIPHER *a = in_a;
@@ -843,29 +786,6 @@ int ssl_cipher_get_evp_aead(const EVP_AEAD **out_aead,
     case SSL_CHACHA20POLY1305:
       *out_aead = EVP_aead_chacha20_poly1305();
       *out_fixed_iv_len = 12;
-      break;
-
-    case SSL_RC4:
-      switch (cipher->algorithm_mac) {
-        case SSL_MD5:
-          if (version == SSL3_VERSION) {
-            *out_aead = EVP_aead_rc4_md5_ssl3();
-          } else {
-            *out_aead = EVP_aead_rc4_md5_tls();
-          }
-          *out_mac_secret_len = MD5_DIGEST_LENGTH;
-          break;
-        case SSL_SHA1:
-          if (version == SSL3_VERSION) {
-            *out_aead = EVP_aead_rc4_sha1_ssl3();
-          } else {
-            *out_aead = EVP_aead_rc4_sha1_tls();
-          }
-          *out_mac_secret_len = SHA_DIGEST_LENGTH;
-          break;
-        default:
-          return 0;
-      }
       break;
 
     case SSL_AES128:
@@ -1037,8 +957,7 @@ static void ssl_cipher_collect_ciphers(const SSL_PROTOCOL_METHOD *ssl_method,
   /* The set of ciphers is static, but some subset may be unsupported by
    * |ssl_method|, so the list may be smaller. */
   size_t co_list_num = 0;
-  size_t i;
-  for (i = 0; i < kCiphersLen; i++) {
+  for (size_t i = 0; i < kCiphersLen; i++) {
     const SSL_CIPHER *cipher = &kCiphers[i];
     if (ssl_method->supports_cipher(cipher)) {
       co_list[co_list_num].cipher = cipher;
@@ -1057,7 +976,7 @@ static void ssl_cipher_collect_ciphers(const SSL_PROTOCOL_METHOD *ssl_method,
     if (co_list_num > 1) {
       co_list[0].next = &co_list[1];
 
-      for (i = 1; i < co_list_num - 1; i++) {
+      for (size_t i = 1; i < co_list_num - 1; i++) {
         co_list[i].prev = &co_list[i - 1];
         co_list[i].next = &co_list[i + 1];
       }
@@ -1136,13 +1055,22 @@ static void ssl_cipher_apply_rule(
       if (strength_bits != SSL_CIPHER_get_bits(cp, NULL)) {
         continue;
       }
-    } else if (!(alg_mkey & cp->algorithm_mkey) ||
-               !(alg_auth & cp->algorithm_auth) ||
-               !(alg_enc & cp->algorithm_enc) ||
-               !(alg_mac & cp->algorithm_mac) ||
-               (min_version != 0 &&
-                SSL_CIPHER_get_min_version(cp) != min_version)) {
-      continue;
+    } else {
+      if (!(alg_mkey & cp->algorithm_mkey) ||
+          !(alg_auth & cp->algorithm_auth) ||
+          !(alg_enc & cp->algorithm_enc) ||
+          !(alg_mac & cp->algorithm_mac) ||
+          (min_version != 0 && SSL_CIPHER_get_min_version(cp) != min_version)) {
+        continue;
+      }
+
+      /* The following ciphers are internal implementation details of TLS 1.3
+       * resumption but are not yet finalized. Disable them by default until
+       * then. */
+      if (cp->id == TLS1_CK_ECDHE_PSK_WITH_AES_128_GCM_SHA256 ||
+          cp->id == TLS1_CK_ECDHE_PSK_WITH_AES_256_GCM_SHA384) {
+        continue;
+      }
     }
 
     /* add the cipher if it has not been added yet. */
@@ -1523,17 +1451,13 @@ ssl_create_cipher_list(const SSL_PROTOCOL_METHOD *ssl_method,
   }
 
   /* Then the legacy non-AEAD ciphers: AES_128_CBC, AES_256_CBC,
-   * 3DES_EDE_CBC_SHA, RC4_128_SHA, RC4_128_MD5. */
+   * 3DES_EDE_CBC_SHA. */
   ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES128, ~0u, 0, CIPHER_ADD, -1, 0,
                         &head, &tail);
   ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES256, ~0u, 0, CIPHER_ADD, -1, 0,
                         &head, &tail);
   ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_3DES, ~0u, 0, CIPHER_ADD, -1, 0, &head,
                         &tail);
-  ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_RC4, ~SSL_MD5, 0, CIPHER_ADD, -1, 0,
-                        &head, &tail);
-  ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_RC4, SSL_MD5, 0, CIPHER_ADD, -1, 0,
-                        &head, &tail);
 
   /* Temporarily enable everything else for sorting */
   ssl_cipher_apply_rule(0, ~0u, ~0u, ~0u, ~0u, 0, CIPHER_ADD, -1, 0, &head,
@@ -1651,6 +1575,30 @@ uint16_t ssl_cipher_get_value(const SSL_CIPHER *cipher) {
   return id & 0xffff;
 }
 
+int ssl_cipher_get_ecdhe_psk_cipher(const SSL_CIPHER *cipher,
+                                    uint16_t *out_cipher) {
+  switch (cipher->id) {
+    case TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:
+    case TLS1_CK_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:
+    case TLS1_CK_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256:
+      *out_cipher = TLS1_CK_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256 & 0xffff;
+      return 1;
+
+    case TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
+    case TLS1_CK_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
+    case TLS1_CK_ECDHE_PSK_WITH_AES_128_GCM_SHA256:
+      *out_cipher = TLS1_CK_ECDHE_PSK_WITH_AES_128_GCM_SHA256 & 0xffff;
+      return 1;
+
+    case TLS1_CK_ECDHE_RSA_WITH_AES_256_GCM_SHA384:
+    case TLS1_CK_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:
+    case TLS1_CK_ECDHE_PSK_WITH_AES_256_GCM_SHA384:
+      *out_cipher = TLS1_CK_ECDHE_PSK_WITH_AES_256_GCM_SHA384 & 0xffff;
+      return 1;
+  }
+  return 0;
+}
+
 int SSL_CIPHER_is_AES(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_enc & SSL_AES) != 0;
 }
@@ -1692,13 +1640,8 @@ int SSL_CIPHER_is_NULL(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_enc & SSL_eNULL) != 0;
 }
 
-int SSL_CIPHER_is_RC4(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_enc & SSL_RC4) != 0;
-}
-
 int SSL_CIPHER_is_block_cipher(const SSL_CIPHER *cipher) {
-  /* Neither stream cipher nor AEAD. */
-  return (cipher->algorithm_enc & (SSL_RC4 | SSL_eNULL)) == 0 &&
+  return (cipher->algorithm_enc & SSL_eNULL) == 0 &&
       cipher->algorithm_mac != SSL_AEAD;
 }
 
@@ -1725,6 +1668,17 @@ uint16_t SSL_CIPHER_get_min_version(const SSL_CIPHER *cipher) {
     return TLS1_2_VERSION;
   }
   return SSL3_VERSION;
+}
+
+uint16_t SSL_CIPHER_get_max_version(const SSL_CIPHER *cipher) {
+  if (cipher->algorithm_mac == SSL_AEAD &&
+      (cipher->algorithm_enc & SSL_CHACHA20POLY1305_OLD) == 0 &&
+      (cipher->algorithm_mkey & SSL_kECDHE) != 0 &&
+      /* TODO(davidben,svaldez): Support PSK-based ciphers in TLS 1.3. */
+      (cipher->algorithm_auth & SSL_aCERT) != 0) {
+    return TLS1_3_VERSION;
+  }
+  return TLS1_2_VERSION;
 }
 
 /* return the actual cipher being used */
@@ -1792,8 +1746,6 @@ static const char *ssl_cipher_get_enc_name(const SSL_CIPHER *cipher) {
   switch (cipher->algorithm_enc) {
     case SSL_3DES:
       return "3DES_EDE_CBC";
-    case SSL_RC4:
-      return "RC4";
     case SSL_AES128:
       return "AES_128_CBC";
     case SSL_AES256:
@@ -1872,7 +1824,6 @@ int SSL_CIPHER_get_bits(const SSL_CIPHER *cipher, int *out_alg_bits) {
   switch (cipher->algorithm_enc) {
     case SSL_AES128:
     case SSL_AES128GCM:
-    case SSL_RC4:
       alg_bits = 128;
       strength_bits = 128;
       break;
@@ -1965,10 +1916,6 @@ const char *SSL_CIPHER_description(const SSL_CIPHER *cipher, char *buf,
   switch (alg_enc) {
     case SSL_3DES:
       enc = "3DES(168)";
-      break;
-
-    case SSL_RC4:
-      enc = "RC4(128)";
       break;
 
     case SSL_AES128:

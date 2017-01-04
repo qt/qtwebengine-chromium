@@ -495,30 +495,85 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     //
     // Implementation dependent built-in constants.
     //
-    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxVertexAttribs", resources.MaxVertexAttribs);
-    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxVertexUniformVectors", resources.MaxVertexUniformVectors);
-    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxVertexTextureImageUnits", resources.MaxVertexTextureImageUnits);
-    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxCombinedTextureImageUnits", resources.MaxCombinedTextureImageUnits);
-    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxTextureImageUnits", resources.MaxTextureImageUnits);
-    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxFragmentUniformVectors", resources.MaxFragmentUniformVectors);
+    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxVertexAttribs", resources.MaxVertexAttribs,
+                               EbpMedium);
+    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxVertexUniformVectors",
+                               resources.MaxVertexUniformVectors, EbpMedium);
+    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxVertexTextureImageUnits",
+                               resources.MaxVertexTextureImageUnits, EbpMedium);
+    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxCombinedTextureImageUnits",
+                               resources.MaxCombinedTextureImageUnits, EbpMedium);
+    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxTextureImageUnits",
+                               resources.MaxTextureImageUnits, EbpMedium);
+    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxFragmentUniformVectors",
+                               resources.MaxFragmentUniformVectors, EbpMedium);
 
-    symbolTable.insertConstInt(ESSL1_BUILTINS, "gl_MaxVaryingVectors", resources.MaxVaryingVectors);
+    symbolTable.insertConstInt(ESSL1_BUILTINS, "gl_MaxVaryingVectors", resources.MaxVaryingVectors,
+                               EbpMedium);
 
-    if (spec != SH_CSS_SHADERS_SPEC)
+    symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxDrawBuffers", resources.MaxDrawBuffers,
+                               EbpMedium);
+    if (resources.EXT_blend_func_extended)
     {
-        symbolTable.insertConstInt(COMMON_BUILTINS, "gl_MaxDrawBuffers", resources.MaxDrawBuffers);
-        if (resources.EXT_blend_func_extended)
-        {
-            symbolTable.insertConstIntExt(COMMON_BUILTINS, "GL_EXT_blend_func_extended",
-                                          "gl_MaxDualSourceDrawBuffersEXT",
-                                          resources.MaxDualSourceDrawBuffers);
-        }
+        symbolTable.insertConstIntExt(COMMON_BUILTINS, "GL_EXT_blend_func_extended",
+                                      "gl_MaxDualSourceDrawBuffersEXT",
+                                      resources.MaxDualSourceDrawBuffers);
     }
 
-    symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MaxVertexOutputVectors", resources.MaxVertexOutputVectors);
-    symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MaxFragmentInputVectors", resources.MaxFragmentInputVectors);
-    symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MinProgramTexelOffset", resources.MinProgramTexelOffset);
-    symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MaxProgramTexelOffset", resources.MaxProgramTexelOffset);
+    symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MaxVertexOutputVectors",
+                               resources.MaxVertexOutputVectors, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MaxFragmentInputVectors",
+                               resources.MaxFragmentInputVectors, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MinProgramTexelOffset",
+                               resources.MinProgramTexelOffset, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MaxProgramTexelOffset",
+                               resources.MaxProgramTexelOffset, EbpMedium);
+
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxImageUnits", resources.MaxImageUnits,
+                               EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxVertexImageUniforms",
+                               resources.MaxVertexImageUniforms, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxFragmentImageUniforms",
+                               resources.MaxFragmentImageUniforms, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxComputeImageUniforms",
+                               resources.MaxComputeImageUniforms, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxCombinedImageUniforms",
+                               resources.MaxCombinedImageUniforms, EbpMedium);
+
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxCombinedShaderOutputResources",
+                               resources.MaxCombinedShaderOutputResources, EbpMedium);
+
+    symbolTable.insertConstIvec3(ESSL3_1_BUILTINS, "gl_MaxComputeWorkGroupCount",
+                                 resources.MaxComputeWorkGroupCount, EbpHigh);
+    symbolTable.insertConstIvec3(ESSL3_1_BUILTINS, "gl_MaxComputeWorkGroupSize",
+                                 resources.MaxComputeWorkGroupSize, EbpHigh);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxComputeUniformComponents",
+                               resources.MaxComputeUniformComponents, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxComputeTextureImageUnits",
+                               resources.MaxComputeTextureImageUnits, EbpMedium);
+
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxComputeAtomicCounters",
+                               resources.MaxComputeAtomicCounters, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxComputeAtomicCounterBuffers",
+                               resources.MaxComputeAtomicCounterBuffers, EbpMedium);
+
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxVertexAtomicCounters",
+                               resources.MaxVertexAtomicCounters, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxFragmentAtomicCounters",
+                               resources.MaxFragmentAtomicCounters, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxCombinedAtomicCounters",
+                               resources.MaxCombinedAtomicCounters, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxAtomicCounterBindings",
+                               resources.MaxAtomicCounterBindings, EbpMedium);
+
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxVertexAtomicCounterBuffers",
+                               resources.MaxVertexAtomicCounterBuffers, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxFragmentAtomicCounterBuffers",
+                               resources.MaxFragmentAtomicCounterBuffers, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxCombinedAtomicCounterBuffers",
+                               resources.MaxCombinedAtomicCounterBuffers, EbpMedium);
+    symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxAtomicCounterBufferSize",
+                               resources.MaxAtomicCounterBufferSize, EbpMedium);
 }
 
 void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
@@ -532,85 +587,73 @@ void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
     switch (type)
     {
       case GL_FRAGMENT_SHADER:
-        symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_FragCoord"),
-            TType(EbtFloat, EbpMedium, EvqFragCoord, 4)));
-        symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_FrontFacing"),
-            TType(EbtBool,  EbpUndefined, EvqFrontFacing, 1)));
-        symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_PointCoord"),
-            TType(EbtFloat, EbpMedium, EvqPointCoord, 2)));
+      {
+          symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_FragCoord"),
+              TType(EbtFloat, EbpMedium, EvqFragCoord, 4)));
+          symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_FrontFacing"),
+              TType(EbtBool,  EbpUndefined, EvqFrontFacing, 1)));
+          symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_PointCoord"),
+              TType(EbtFloat, EbpMedium, EvqPointCoord, 2)));
 
-        //
-        // In CSS Shaders, gl_FragColor, gl_FragData, and gl_MaxDrawBuffers are not available.
-        // Instead, css_MixColor and css_ColorMatrix are available.
-        //
-        if (spec != SH_CSS_SHADERS_SPEC)
-        {
-            symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("gl_FragColor"),
-                TType(EbtFloat, EbpMedium, EvqFragColor, 4)));
-            TType fragData(EbtFloat, EbpMedium, EvqFragData, 4, 1, true);
-            fragData.setArraySize(resources.MaxDrawBuffers);
-            symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("gl_FragData"), fragData));
+          symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("gl_FragColor"),
+              TType(EbtFloat, EbpMedium, EvqFragColor, 4)));
+          TType fragData(EbtFloat, EbpMedium, EvqFragData, 4, 1, true);
+          fragData.setArraySize(resources.MaxDrawBuffers);
+          symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("gl_FragData"), fragData));
 
-            if (resources.EXT_blend_func_extended)
-            {
-                symbolTable.insert(
-                    ESSL1_BUILTINS, "GL_EXT_blend_func_extended",
-                    new TVariable(NewPoolTString("gl_SecondaryFragColorEXT"),
-                                  TType(EbtFloat, EbpMedium, EvqSecondaryFragColorEXT, 4)));
-                TType secondaryFragData(EbtFloat, EbpMedium, EvqSecondaryFragDataEXT, 4, 1, true);
-                secondaryFragData.setArraySize(resources.MaxDualSourceDrawBuffers);
-                symbolTable.insert(
-                    ESSL1_BUILTINS, "GL_EXT_blend_func_extended",
-                    new TVariable(NewPoolTString("gl_SecondaryFragDataEXT"), secondaryFragData));
-            }
+          if (resources.EXT_blend_func_extended)
+          {
+              symbolTable.insert(
+                  ESSL1_BUILTINS, "GL_EXT_blend_func_extended",
+                  new TVariable(NewPoolTString("gl_SecondaryFragColorEXT"),
+                                TType(EbtFloat, EbpMedium, EvqSecondaryFragColorEXT, 4)));
+              TType secondaryFragData(EbtFloat, EbpMedium, EvqSecondaryFragDataEXT, 4, 1, true);
+              secondaryFragData.setArraySize(resources.MaxDualSourceDrawBuffers);
+              symbolTable.insert(
+                  ESSL1_BUILTINS, "GL_EXT_blend_func_extended",
+                  new TVariable(NewPoolTString("gl_SecondaryFragDataEXT"), secondaryFragData));
+          }
 
-            if (resources.EXT_frag_depth)
-            {
-                symbolTable.insert(
-                    ESSL1_BUILTINS, "GL_EXT_frag_depth",
-                    new TVariable(
-                        NewPoolTString("gl_FragDepthEXT"),
-                        TType(EbtFloat, resources.FragmentPrecisionHigh ? EbpHigh : EbpMedium,
-                              EvqFragDepthEXT, 1)));
-            }
+          if (resources.EXT_frag_depth)
+          {
+              symbolTable.insert(
+                  ESSL1_BUILTINS, "GL_EXT_frag_depth",
+                  new TVariable(
+                      NewPoolTString("gl_FragDepthEXT"),
+                      TType(EbtFloat, resources.FragmentPrecisionHigh ? EbpHigh : EbpMedium,
+                            EvqFragDepthEXT, 1)));
+          }
 
-            symbolTable.insert(ESSL3_BUILTINS,
-                               new TVariable(NewPoolTString("gl_FragDepth"),
-                                             TType(EbtFloat, EbpHigh, EvqFragDepth, 1)));
+          symbolTable.insert(ESSL3_BUILTINS,
+                             new TVariable(NewPoolTString("gl_FragDepth"),
+                                           TType(EbtFloat, EbpHigh, EvqFragDepth, 1)));
 
-            if (resources.EXT_shader_framebuffer_fetch || resources.NV_shader_framebuffer_fetch)
-            {
-                TType lastFragData(EbtFloat, EbpMedium, EvqLastFragData, 4, 1, true);
-                lastFragData.setArraySize(resources.MaxDrawBuffers);
+          if (resources.EXT_shader_framebuffer_fetch || resources.NV_shader_framebuffer_fetch)
+          {
+              TType lastFragData(EbtFloat, EbpMedium, EvqLastFragData, 4, 1, true);
+              lastFragData.setArraySize(resources.MaxDrawBuffers);
 
-                if (resources.EXT_shader_framebuffer_fetch)
-                {
-                    symbolTable.insert(ESSL1_BUILTINS, "GL_EXT_shader_framebuffer_fetch",
-                        new TVariable(NewPoolTString("gl_LastFragData"), lastFragData));
-                }
-                else if (resources.NV_shader_framebuffer_fetch)
-                {
-                    symbolTable.insert(ESSL1_BUILTINS, "GL_NV_shader_framebuffer_fetch",
-                        new TVariable(NewPoolTString("gl_LastFragColor"),
-                        TType(EbtFloat, EbpMedium, EvqLastFragColor, 4)));
-                    symbolTable.insert(ESSL1_BUILTINS, "GL_NV_shader_framebuffer_fetch",
-                        new TVariable(NewPoolTString("gl_LastFragData"), lastFragData));
-                }
-            }
-            else if (resources.ARM_shader_framebuffer_fetch)
-            {
-                symbolTable.insert(ESSL1_BUILTINS, "GL_ARM_shader_framebuffer_fetch",
-                    new TVariable(NewPoolTString("gl_LastFragColorARM"),
-                    TType(EbtFloat, EbpMedium, EvqLastFragColor, 4)));
-            }
-        }
-        else
-        {
-            symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("css_MixColor"),
-                TType(EbtFloat, EbpMedium, EvqGlobal, 4)));
-            symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("css_ColorMatrix"),
-                TType(EbtFloat, EbpMedium, EvqGlobal, 4, 4)));
-        }
+              if (resources.EXT_shader_framebuffer_fetch)
+              {
+                  symbolTable.insert(ESSL1_BUILTINS, "GL_EXT_shader_framebuffer_fetch",
+                      new TVariable(NewPoolTString("gl_LastFragData"), lastFragData));
+              }
+              else if (resources.NV_shader_framebuffer_fetch)
+              {
+                  symbolTable.insert(ESSL1_BUILTINS, "GL_NV_shader_framebuffer_fetch",
+                      new TVariable(NewPoolTString("gl_LastFragColor"),
+                      TType(EbtFloat, EbpMedium, EvqLastFragColor, 4)));
+                  symbolTable.insert(ESSL1_BUILTINS, "GL_NV_shader_framebuffer_fetch",
+                      new TVariable(NewPoolTString("gl_LastFragData"), lastFragData));
+              }
+          }
+          else if (resources.ARM_shader_framebuffer_fetch)
+          {
+              symbolTable.insert(ESSL1_BUILTINS, "GL_ARM_shader_framebuffer_fetch",
+                  new TVariable(NewPoolTString("gl_LastFragColorARM"),
+                  TType(EbtFloat, EbpMedium, EvqLastFragColor, 4)));
+          }
+      }
 
         break;
 
@@ -624,6 +667,29 @@ void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
         symbolTable.insert(ESSL3_BUILTINS, new TVariable(NewPoolTString("gl_VertexID"),
                                                          TType(EbtInt, EbpHigh, EvqVertexID, 1)));
         break;
+      case GL_COMPUTE_SHADER:
+      {
+          symbolTable.insert(ESSL3_1_BUILTINS,
+                             new TVariable(NewPoolTString("gl_NumWorkGroups"),
+                                           TType(EbtUInt, EbpUndefined, EvqNumWorkGroups, 3)));
+          symbolTable.insert(ESSL3_1_BUILTINS,
+                             new TVariable(NewPoolTString("gl_WorkGroupSize"),
+                                           TType(EbtUInt, EbpUndefined, EvqWorkGroupSize, 3)));
+          symbolTable.insert(ESSL3_1_BUILTINS,
+                             new TVariable(NewPoolTString("gl_WorkGroupID"),
+                                           TType(EbtUInt, EbpUndefined, EvqWorkGroupID, 3)));
+          symbolTable.insert(ESSL3_1_BUILTINS,
+                             new TVariable(NewPoolTString("gl_LocalInvocationID"),
+                                           TType(EbtUInt, EbpUndefined, EvqLocalInvocationID, 3)));
+          symbolTable.insert(ESSL3_1_BUILTINS,
+                             new TVariable(NewPoolTString("gl_GlobalInvocationID"),
+                                           TType(EbtUInt, EbpUndefined, EvqGlobalInvocationID, 3)));
+          symbolTable.insert(
+              ESSL3_1_BUILTINS,
+              new TVariable(NewPoolTString("gl_LocalInvocationIndex"),
+                            TType(EbtUInt, EbpUndefined, EvqLocalInvocationIndex, 1)));
+      }
+      break;
 
       default:
         assert(false && "Language not supported");

@@ -11,6 +11,8 @@
 namespace v8 {
 namespace internal {
 
+class ParseInfo;
+
 // Iterate over the actual scopes visible from a stack frame or from a closure.
 // The iteration proceeds from the innermost visible nested scope outwards.
 // All scopes are backed by an actual context except the local scope,
@@ -43,6 +45,7 @@ class ScopeIterator {
                 Option options = DEFAULT);
 
   ScopeIterator(Isolate* isolate, Handle<JSFunction> function);
+  ScopeIterator(Isolate* isolate, Handle<JSGeneratorObject> generator);
 
   MUST_USE_RESULT MaybeHandle<JSObject> MaterializeScopeDetails();
 
@@ -107,12 +110,12 @@ class ScopeIterator {
   }
 
   inline Handle<JSFunction> GetFunction() {
-    return Handle<JSFunction>::cast(frame_inspector_->GetFunction());
+    return frame_inspector_->GetFunction();
   }
 
-  void RetrieveScopeChain(Scope* scope);
+  void RetrieveScopeChain(DeclarationScope* scope);
 
-  void CollectNonLocals(Scope* scope);
+  void CollectNonLocals(ParseInfo* info, DeclarationScope* scope);
 
   void UnwrapEvaluationContext();
 
@@ -140,7 +143,6 @@ class ScopeIterator {
                          Handle<String> parameter_name,
                          Handle<Object> new_value);
   bool SetStackVariableValue(Handle<ScopeInfo> scope_info,
-                             JavaScriptFrame* frame,
                              Handle<String> variable_name,
                              Handle<Object> new_value);
   bool SetContextVariableValue(Handle<ScopeInfo> scope_info,

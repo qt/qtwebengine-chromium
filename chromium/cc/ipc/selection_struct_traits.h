@@ -6,12 +6,13 @@
 #define CC_IPC_SELECTION_STRUCT_TRAITS_H_
 
 #include "cc/input/selection.h"
-#include "cc/ipc/selection.mojom.h"
+#include "cc/ipc/selection.mojom-shared.h"
 
 namespace mojo {
 
 template <>
-struct StructTraits<cc::mojom::Selection, cc::Selection<gfx::SelectionBound>> {
+struct StructTraits<cc::mojom::SelectionDataView,
+                    cc::Selection<gfx::SelectionBound>> {
   static const gfx::SelectionBound& start(
       const cc::Selection<gfx::SelectionBound>& selection) {
     return selection.start;

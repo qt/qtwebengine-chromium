@@ -6,21 +6,22 @@
 
 #include "fpdfsdk/formfiller/cffl_listbox.h"
 
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cba_fontmap.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
-#include "fpdfsdk/formfiller/cffl_iformfiller.h"
-#include "fpdfsdk/include/fsdk_common.h"
-#include "fpdfsdk/include/fsdk_mgr.h"
+#include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
+#include "fpdfsdk/fsdk_common.h"
 #include "fpdfsdk/pdfwindow/PWL_ListBox.h"
+#include "third_party/base/ptr_util.h"
 
 #define FFL_DEFAULTLISTBOXFONTSIZE 12.0f
 
-CFFL_ListBox::CFFL_ListBox(CPDFDoc_Environment* pApp, CPDFSDK_Annot* pWidget)
-    : CFFL_FormFiller(pApp, pWidget), m_pFontMap(nullptr) {}
+CFFL_ListBox::CFFL_ListBox(CPDFSDK_FormFillEnvironment* pApp,
+                           CPDFSDK_Annot* pWidget)
+    : CFFL_FormFiller(pApp, pWidget) {}
 
-CFFL_ListBox::~CFFL_ListBox() {
-  delete m_pFontMap;
-}
+CFFL_ListBox::~CFFL_ListBox() {}
 
 PWL_CREATEPARAM CFFL_ListBox::GetCreateParam() {
   PWL_CREATEPARAM cp = CFFL_FormFiller::GetCreateParam();
@@ -36,9 +37,11 @@ PWL_CREATEPARAM CFFL_ListBox::GetCreateParam() {
   if (cp.dwFlags & PWS_AUTOFONTSIZE)
     cp.fFontSize = FFL_DEFAULTLISTBOXFONTSIZE;
 
-  if (!m_pFontMap)
-    m_pFontMap = new CBA_FontMap(m_pWidget, m_pApp->GetSysHandler());
-  cp.pFontMap = m_pFontMap;
+  if (!m_pFontMap) {
+    m_pFontMap =
+        pdfium::MakeUnique<CBA_FontMap>(m_pWidget, m_pEnv->GetSysHandler());
+  }
+  cp.pFontMap = m_pFontMap.get();
 
   return cp;
 }
@@ -48,12 +51,10 @@ CPWL_Wnd* CFFL_ListBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
   CPWL_ListBox* pWnd = new CPWL_ListBox();
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
-
-  CFFL_IFormFiller* pIFormFiller = m_pApp->GetIFormFiller();
-  pWnd->SetFillerNotify(pIFormFiller);
+  pWnd->SetFillerNotify(m_pEnv->GetInteractiveFormFiller());
 
   for (int32_t i = 0, sz = m_pWidget->CountOptions(); i < sz; i++)
-    pWnd->AddString(m_pWidget->GetOptionLabel(i).c_str());
+    pWnd->AddString(m_pWidget->GetOptionLabel(i));
 
   if (pWnd->HasFlag(PLBS_MULTIPLESEL)) {
     m_OriginSelections.clear();
@@ -84,8 +85,8 @@ CPWL_Wnd* CFFL_ListBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
 }
 
 FX_BOOL CFFL_ListBox::OnChar(CPDFSDK_Annot* pAnnot,
-                             FX_UINT nChar,
-                             FX_UINT nFlags) {
+                             uint32_t nChar,
+                             uint32_t nFlags) {
   return CFFL_FormFiller::OnChar(pAnnot, nChar, nFlags);
 }
 

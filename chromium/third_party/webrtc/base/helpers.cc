@@ -28,6 +28,7 @@
 
 #include "webrtc/base/base64.h"
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/timeutils.h"
 
@@ -53,19 +54,6 @@ class SecureRandomGenerator : public RandomGenerator {
   bool Init(const void* seed, size_t len) override { return true; }
   bool Generate(void* buf, size_t len) override {
     return (RAND_bytes(reinterpret_cast<unsigned char*>(buf), len) > 0);
-  }
-};
-
-#elif defined(SSL_USE_NSS_RNG)
-// The NSS RNG.
-class SecureRandomGenerator : public RandomGenerator {
- public:
-  SecureRandomGenerator() {}
-  ~SecureRandomGenerator() override {}
-  bool Init(const void* seed, size_t len) override { return true; }
-  bool Generate(void* buf, size_t len) override {
-    return (PK11_GenerateRandom(reinterpret_cast<unsigned char*>(buf),
-                                static_cast<int>(len)) == SECSuccess);
   }
 };
 
@@ -215,14 +203,19 @@ bool InitRandom(const char* seed, size_t len) {
 
 std::string CreateRandomString(size_t len) {
   std::string str;
-  CreateRandomString(len, &str);
+  RTC_CHECK(CreateRandomString(len, &str));
   return str;
 }
 
-bool CreateRandomString(size_t len,
+static bool CreateRandomString(size_t len,
                         const char* table, int table_size,
                         std::string* str) {
   str->clear();
+  // Avoid biased modulo division below.
+  if (256 % table_size) {
+    LOG(LS_ERROR) << "Table size must divide 256 evenly!";
+    return false;
+  }
   std::unique_ptr<uint8_t[]> bytes(new uint8_t[len]);
   if (!Rng().Generate(bytes.get(), len)) {
     LOG(LS_ERROR) << "Failed to generate random string!";
@@ -245,16 +238,20 @@ bool CreateRandomString(size_t len, const std::string& table,
                             static_cast<int>(table.size()), str);
 }
 
+bool CreateRandomData(size_t length, std::string* data) {
+  data->resize(length);
+  // std::string is guaranteed to use contiguous memory in c++11 so we can
+  // safely write directly to it.
+  return Rng().Generate(&data->at(0), length);
+}
+
 // Version 4 UUID is of the form:
 // xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
 // Where 'x' is a hex digit, and 'y' is 8, 9, a or b.
 std::string CreateRandomUuid() {
   std::string str;
   std::unique_ptr<uint8_t[]> bytes(new uint8_t[31]);
-  if (!Rng().Generate(bytes.get(), 31)) {
-    LOG(LS_ERROR) << "Failed to generate random string!";
-    return str;
-  }
+  RTC_CHECK(Rng().Generate(bytes.get(), 31));
   str.reserve(36);
   for (size_t i = 0; i < 8; ++i) {
     str.push_back(kHex[bytes[i] % 16]);
@@ -282,9 +279,7 @@ std::string CreateRandomUuid() {
 
 uint32_t CreateRandomId() {
   uint32_t id;
-  if (!Rng().Generate(&id, sizeof(id))) {
-    LOG(LS_ERROR) << "Failed to generate random id!";
-  }
+  RTC_CHECK(Rng().Generate(&id, sizeof(id)));
   return id;
 }
 

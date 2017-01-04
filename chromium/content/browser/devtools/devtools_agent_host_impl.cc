@@ -7,7 +7,6 @@
 #include <map>
 #include <vector>
 
-#include "base/guid.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "content/browser/devtools/devtools_manager.h"
@@ -26,11 +25,21 @@ namespace {
 typedef std::map<std::string, DevToolsAgentHostImpl*> Instances;
 base::LazyInstance<Instances>::Leaky g_instances = LAZY_INSTANCE_INITIALIZER;
 
-typedef std::vector<const DevToolsAgentHost::AgentStateCallback*>
-    AgentStateCallbacks;
+using AgentStateCallbacks =
+    std::vector<const DevToolsAgentHost::AgentStateCallback*>;
 base::LazyInstance<AgentStateCallbacks>::Leaky g_callbacks =
     LAZY_INSTANCE_INITIALIZER;
+using DiscoveryCallbacks =
+    std::vector<DevToolsAgentHost::DiscoveryCallback>;
 }  // namespace
+
+char DevToolsAgentHost::kTypePage[] = "page";
+char DevToolsAgentHost::kTypeFrame[] = "iframe";
+char DevToolsAgentHost::kTypeSharedWorker[] = "shared_worker";
+char DevToolsAgentHost::kTypeServiceWorker[] = "service_worker";
+char DevToolsAgentHost::kTypeExternal[] = "external";
+char DevToolsAgentHost::kTypeBrowser[] = "browser";
+char DevToolsAgentHost::kTypeOther[] = "other";
 
 // static
 std::string DevToolsAgentHost::GetProtocolVersion() {
@@ -59,6 +68,13 @@ DevToolsAgentHost::List DevToolsAgentHost::GetOrCreateAll() {
   return result;
 }
 
+// static
+void DevToolsAgentHost::DiscoverAllHosts(const DiscoveryCallback& callback) {
+  DevToolsManager* manager = DevToolsManager::GetInstance();
+  if (!manager->delegate() || !manager->delegate()->DiscoverTargets(callback))
+    callback.Run(DevToolsAgentHost::GetOrCreateAll());
+}
+
 // Called on the UI thread.
 // static
 scoped_refptr<DevToolsAgentHost> DevToolsAgentHost::GetForWorker(
@@ -74,9 +90,12 @@ scoped_refptr<DevToolsAgentHost> DevToolsAgentHost::GetForWorker(
       ->GetDevToolsAgentHostForWorker(worker_process_id, worker_route_id);
 }
 
-DevToolsAgentHostImpl::DevToolsAgentHostImpl()
-    : id_(base::GenerateGUID()), session_id_(0), client_(NULL) {
+DevToolsAgentHostImpl::DevToolsAgentHostImpl(const std::string& id)
+    : id_(id),
+      session_id_(0),
+      client_(NULL) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(g_instances.Get().find(id_) == g_instances.Get().end());
   g_instances.Get()[id_] = this;
 }
 
@@ -97,9 +116,13 @@ scoped_refptr<DevToolsAgentHost> DevToolsAgentHost::GetForId(
 }
 
 // static
-scoped_refptr<DevToolsAgentHost> DevToolsAgentHost::Create(
-    DevToolsExternalAgentProxyDelegate* delegate) {
-  return new ForwardingAgentHost(delegate);
+scoped_refptr<DevToolsAgentHost> DevToolsAgentHost::Forward(
+    const std::string& id,
+    std::unique_ptr<DevToolsExternalAgentProxyDelegate> delegate) {
+  scoped_refptr<DevToolsAgentHost> result = DevToolsAgentHost::GetForId(id);
+  if (result)
+    return result;
+  return new ForwardingAgentHost(id, std::move(delegate));
 }
 
 bool DevToolsAgentHostImpl::InnerAttach(DevToolsAgentHostClient* client,
@@ -153,11 +176,37 @@ bool DevToolsAgentHostImpl::IsAttached() {
   return !!client_;
 }
 
-void DevToolsAgentHostImpl::InspectElement(int x, int y) {
+void DevToolsAgentHostImpl::InspectElement(
+    DevToolsAgentHostClient* client,
+    int x,
+    int y) {
+ if (!client_ || client_ != client)
+   return;
+ InspectElement(x, y);
 }
 
 std::string DevToolsAgentHostImpl::GetId() {
   return id_;
+}
+
+std::string DevToolsAgentHostImpl::GetParentId() {
+  return "";
+}
+
+std::string DevToolsAgentHostImpl::GetDescription() {
+  return "";
+}
+
+GURL DevToolsAgentHostImpl::GetFaviconURL() {
+  return GURL();
+}
+
+std::string DevToolsAgentHostImpl::GetFrontendURL() {
+  return std::string();
+}
+
+base::TimeTicks DevToolsAgentHostImpl::GetLastActivityTime() {
+  return base::TimeTicks();
 }
 
 BrowserContext* DevToolsAgentHostImpl::GetBrowserContext() {
@@ -172,6 +221,15 @@ void DevToolsAgentHostImpl::DisconnectWebContents() {
 }
 
 void DevToolsAgentHostImpl::ConnectWebContents(WebContents* wc) {
+}
+
+bool DevToolsAgentHostImpl::Inspect() {
+  DevToolsManager* manager = DevToolsManager::GetInstance();
+  if (manager->delegate()) {
+    manager->delegate()->Inspect(this);
+    return true;
+  }
+  return false;
 }
 
 void DevToolsAgentHostImpl::SendProtocolResponse(int session_id,
@@ -193,6 +251,9 @@ void DevToolsAgentHostImpl::HostClosed() {
   DevToolsAgentHostClient* client = client_;
   client_ = NULL;
   client->AgentHostClosed(this, false);
+}
+
+void DevToolsAgentHostImpl::InspectElement(int x, int y) {
 }
 
 void DevToolsAgentHostImpl::SendMessageToClient(int session_id,
@@ -257,15 +318,6 @@ void DevToolsAgentHostImpl::NotifyCallbacks(
      (*it)->Run(agent_host, attached);
 }
 
-bool DevToolsAgentHostImpl::Inspect(BrowserContext* browser_context) {
-  DevToolsManager* manager = DevToolsManager::GetInstance();
-  if (manager->delegate()) {
-    manager->delegate()->Inspect(browser_context, this);
-    return true;
-  }
-  return false;
-}
-
 // DevToolsMessageChunkProcessor -----------------------------------------------
 
 DevToolsMessageChunkProcessor::DevToolsMessageChunkProcessor(
@@ -278,7 +330,7 @@ DevToolsMessageChunkProcessor::DevToolsMessageChunkProcessor(
 DevToolsMessageChunkProcessor::~DevToolsMessageChunkProcessor() {
 }
 
-void DevToolsMessageChunkProcessor::ProcessChunkedMessageFromAgent(
+bool DevToolsMessageChunkProcessor::ProcessChunkedMessageFromAgent(
     const DevToolsMessageChunk& chunk) {
   if (chunk.is_last && !chunk.post_state.empty())
     state_cookie_ = chunk.post_state;
@@ -286,9 +338,10 @@ void DevToolsMessageChunkProcessor::ProcessChunkedMessageFromAgent(
     last_call_id_ = chunk.call_id;
 
   if (chunk.is_first && chunk.is_last) {
-    CHECK(message_buffer_size_ == 0);
+    if (message_buffer_size_ != 0)
+      return false;
     callback_.Run(chunk.session_id, chunk.data);
-    return;
+    return true;
   }
 
   if (chunk.is_first) {
@@ -297,16 +350,18 @@ void DevToolsMessageChunkProcessor::ProcessChunkedMessageFromAgent(
     message_buffer_size_ = chunk.message_size;
   }
 
-  CHECK(message_buffer_.size() + chunk.data.size() <=
-      message_buffer_size_);
+  if (message_buffer_.size() + chunk.data.size() > message_buffer_size_)
+    return false;
   message_buffer_.append(chunk.data);
 
   if (chunk.is_last) {
-    CHECK(message_buffer_.size() == message_buffer_size_);
+    if (message_buffer_.size() != message_buffer_size_)
+      return false;
     callback_.Run(chunk.session_id, message_buffer_);
     message_buffer_ = std::string();
     message_buffer_size_ = 0;
   }
+  return true;
 }
 
 }  // namespace content

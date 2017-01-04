@@ -48,6 +48,10 @@ FlagsCondition CommuteFlagsCondition(FlagsCondition condition) {
       return kFloatGreaterThanOrEqualOrUnordered;
     case kFloatGreaterThan:
       return kFloatLessThan;
+    case kPositiveOrZero:
+    case kNegative:
+      UNREACHABLE();
+      break;
     case kEqual:
     case kNotEqual:
     case kOverflow:
@@ -61,14 +65,7 @@ FlagsCondition CommuteFlagsCondition(FlagsCondition condition) {
 }
 
 bool InstructionOperand::InterferesWith(const InstructionOperand& that) const {
-  if (!IsFPRegister() || !that.IsFPRegister() || kSimpleFPAliasing)
-    return EqualsCanonicalized(that);
-  // Both operands are fp registers and aliasing is non-simple.
-  const LocationOperand& loc1 = *LocationOperand::cast(this);
-  const LocationOperand& loc2 = LocationOperand::cast(that);
-  return GetRegConfig()->AreAliases(loc1.representation(), loc1.register_code(),
-                                    loc2.representation(),
-                                    loc2.register_code());
+  return EqualsCanonicalized(that);
 }
 
 void InstructionOperand::Print(const RegisterConfiguration* config) const {
@@ -142,10 +139,14 @@ std::ostream& operator<<(std::ostream& os,
         os << "["
            << GetRegConfig()->GetDoubleRegisterName(allocated.register_code())
            << "|R";
-      } else {
-        DCHECK(op.IsFloatRegister());
+      } else if (op.IsFloatRegister()) {
         os << "["
            << GetRegConfig()->GetFloatRegisterName(allocated.register_code())
+           << "|R";
+      } else {
+        DCHECK(op.IsSimd128Register());
+        os << "["
+           << GetRegConfig()->GetSimd128RegisterName(allocated.register_code())
            << "|R";
       }
       if (allocated.IsExplicit()) {
@@ -178,6 +179,12 @@ std::ostream& operator<<(std::ostream& os,
           break;
         case MachineRepresentation::kSimd128:
           os << "|s128";
+          break;
+        case MachineRepresentation::kTaggedSigned:
+          os << "|ts";
+          break;
+        case MachineRepresentation::kTaggedPointer:
+          os << "|tp";
           break;
         case MachineRepresentation::kTagged:
           os << "|t";
@@ -306,7 +313,6 @@ bool Instruction::AreMovesRedundant() const {
   }
   return true;
 }
-
 
 void Instruction::Print(const RegisterConfiguration* config) const {
   OFStream os(stdout);
@@ -448,6 +454,10 @@ std::ostream& operator<<(std::ostream& os, const FlagsCondition& fc) {
       return os << "overflow";
     case kNotOverflow:
       return os << "not overflow";
+    case kPositiveOrZero:
+      return os << "positive or zero";
+    case kNegative:
+      return os << "negative";
   }
   UNREACHABLE();
   return os;
@@ -519,9 +529,6 @@ Handle<HeapObject> Constant::ToHeapObject() const {
   DCHECK_EQ(kHeapObject, type());
   Handle<HeapObject> value(
       bit_cast<HeapObject**>(static_cast<intptr_t>(value_)));
-  if (value->IsConsString()) {
-    value = String::Flatten(Handle<String>::cast(value), TENURED);
-  }
   return value;
 }
 
@@ -561,6 +568,10 @@ void PhiInstruction::SetInput(size_t offset, int virtual_register) {
   operands_[offset] = virtual_register;
 }
 
+void PhiInstruction::RenameInput(size_t offset, int virtual_register) {
+  DCHECK_NE(InstructionOperand::kInvalidVirtualRegister, operands_[offset]);
+  operands_[offset] = virtual_register;
+}
 
 InstructionBlock::InstructionBlock(Zone* zone, RpoNumber rpo_number,
                                    RpoNumber loop_header, RpoNumber loop_end,
@@ -621,6 +632,58 @@ static InstructionBlock* InstructionBlockFor(Zone* zone,
     instr_block->predecessors().push_back(GetRpo(predecessor));
   }
   return instr_block;
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         PrintableInstructionBlock& printable_block) {
+  const InstructionBlock* block = printable_block.block_;
+  const RegisterConfiguration* config = printable_block.register_configuration_;
+  const InstructionSequence* code = printable_block.code_;
+
+  os << "B" << block->rpo_number();
+  os << ": AO#" << block->ao_number();
+  if (block->IsDeferred()) os << " (deferred)";
+  if (!block->needs_frame()) os << " (no frame)";
+  if (block->must_construct_frame()) os << " (construct frame)";
+  if (block->must_deconstruct_frame()) os << " (deconstruct frame)";
+  if (block->IsLoopHeader()) {
+    os << " loop blocks: [" << block->rpo_number() << ", " << block->loop_end()
+       << ")";
+  }
+  os << "  instructions: [" << block->code_start() << ", " << block->code_end()
+     << ")" << std::endl
+     << " predecessors:";
+
+  for (RpoNumber pred : block->predecessors()) {
+    os << " B" << pred.ToInt();
+  }
+  os << std::endl;
+
+  for (const PhiInstruction* phi : block->phis()) {
+    PrintableInstructionOperand printable_op = {config, phi->output()};
+    os << "     phi: " << printable_op << " =";
+    for (int input : phi->operands()) {
+      os << " v" << input;
+    }
+    os << std::endl;
+  }
+
+  ScopedVector<char> buf(32);
+  PrintableInstruction printable_instr;
+  printable_instr.register_configuration_ = config;
+  for (int j = block->first_instruction_index();
+       j <= block->last_instruction_index(); j++) {
+    // TODO(svenpanne) Add some basic formatting to our streams.
+    SNPrintF(buf, "%5d", j);
+    printable_instr.instr_ = code->InstructionAt(j);
+    os << "   " << buf.start() << ": " << printable_instr << std::endl;
+  }
+
+  for (RpoNumber succ : block->successors()) {
+    os << " B" << succ.ToInt();
+  }
+  os << std::endl;
+  return os;
 }
 
 InstructionBlocks* InstructionSequence::InstructionBlocksFor(
@@ -793,6 +856,8 @@ static MachineRepresentation FilterRepresentation(MachineRepresentation rep) {
     case MachineRepresentation::kFloat32:
     case MachineRepresentation::kFloat64:
     case MachineRepresentation::kSimd128:
+    case MachineRepresentation::kTaggedSigned:
+    case MachineRepresentation::kTaggedPointer:
     case MachineRepresentation::kTagged:
       return rep;
     case MachineRepresentation::kNone:
@@ -827,22 +892,16 @@ void InstructionSequence::MarkAsRepresentation(MachineRepresentation rep,
   representations_[virtual_register] = rep;
 }
 
-
-InstructionSequence::StateId InstructionSequence::AddFrameStateDescriptor(
-    FrameStateDescriptor* descriptor) {
+int InstructionSequence::AddDeoptimizationEntry(
+    FrameStateDescriptor* descriptor, DeoptimizeReason reason) {
   int deoptimization_id = static_cast<int>(deoptimization_entries_.size());
-  deoptimization_entries_.push_back(descriptor);
-  return StateId::FromInt(deoptimization_id);
+  deoptimization_entries_.push_back(DeoptimizationEntry(descriptor, reason));
+  return deoptimization_id;
 }
 
-FrameStateDescriptor* InstructionSequence::GetFrameStateDescriptor(
-    InstructionSequence::StateId state_id) {
-  return deoptimization_entries_[state_id.ToInt()];
-}
-
-
-int InstructionSequence::GetFrameStateDescriptorCount() {
-  return static_cast<int>(deoptimization_entries_.size());
+DeoptimizationEntry const& InstructionSequence::GetDeoptimizationEntry(
+    int state_id) {
+  return deoptimization_entries_[state_id];
 }
 
 
@@ -870,7 +929,6 @@ void InstructionSequence::SetSourcePosition(const Instruction* instr,
   source_positions_.insert(std::make_pair(instr, value));
 }
 
-
 void InstructionSequence::Print(const RegisterConfiguration* config) const {
   OFStream os(stdout);
   PrintableInstructionSequence wrapper;
@@ -887,49 +945,8 @@ void InstructionSequence::PrintBlock(const RegisterConfiguration* config,
   RpoNumber rpo = RpoNumber::FromInt(block_id);
   const InstructionBlock* block = InstructionBlockAt(rpo);
   CHECK(block->rpo_number() == rpo);
-
-  os << "B" << block->rpo_number();
-  os << ": AO#" << block->ao_number();
-  if (block->IsDeferred()) os << " (deferred)";
-  if (!block->needs_frame()) os << " (no frame)";
-  if (block->must_construct_frame()) os << " (construct frame)";
-  if (block->must_deconstruct_frame()) os << " (deconstruct frame)";
-  if (block->IsLoopHeader()) {
-    os << " loop blocks: [" << block->rpo_number() << ", " << block->loop_end()
-       << ")";
-  }
-  os << "  instructions: [" << block->code_start() << ", " << block->code_end()
-     << ")\n  predecessors:";
-
-  for (RpoNumber pred : block->predecessors()) {
-    os << " B" << pred.ToInt();
-  }
-  os << "\n";
-
-  for (const PhiInstruction* phi : block->phis()) {
-    PrintableInstructionOperand printable_op = {config, phi->output()};
-    os << "     phi: " << printable_op << " =";
-    for (int input : phi->operands()) {
-      os << " v" << input;
-    }
-    os << "\n";
-  }
-
-  ScopedVector<char> buf(32);
-  PrintableInstruction printable_instr;
-  printable_instr.register_configuration_ = config;
-  for (int j = block->first_instruction_index();
-       j <= block->last_instruction_index(); j++) {
-    // TODO(svenpanne) Add some basic formatting to our streams.
-    SNPrintF(buf, "%5d", j);
-    printable_instr.instr_ = InstructionAt(j);
-    os << "   " << buf.start() << ": " << printable_instr << "\n";
-  }
-
-  for (RpoNumber succ : block->successors()) {
-    os << " B" << succ.ToInt();
-  }
-  os << "\n";
+  PrintableInstructionBlock printable_block = {config, block, this};
+  os << printable_block << std::endl;
 }
 
 void InstructionSequence::PrintBlock(int block_id) const {
@@ -1016,8 +1033,11 @@ std::ostream& operator<<(std::ostream& os,
        it != code.constants_.end(); ++i, ++it) {
     os << "CST#" << i << ": v" << it->first << " = " << it->second << "\n";
   }
+  PrintableInstructionBlock printable_block = {
+      printable.register_configuration_, nullptr, printable.sequence_};
   for (int i = 0; i < code.InstructionBlockCount(); i++) {
-    printable.sequence_->PrintBlock(printable.register_configuration_, i);
+    printable_block.block_ = code.InstructionBlockAt(RpoNumber::FromInt(i));
+    os << printable_block;
   }
   return os;
 }

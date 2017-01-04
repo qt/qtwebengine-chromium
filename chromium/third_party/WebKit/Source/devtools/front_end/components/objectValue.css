@@ -23,10 +23,8 @@
     background-color: rgba(56, 121, 217, 0.1);
 }
 
-.object-value-function::before {
-    content: "function";
+.object-value-function-prefix {
     color: rgb(170, 13, 145);
-    padding-right: 5px;
 }
 
 .object-value-function {
@@ -39,11 +37,13 @@
 }
 
 .object-value-object,
+.object-value-promise,
 .object-value-map,
 .object-value-set,
 .object-value-iterator,
 .object-value-generator,
 .object-value-node,
+.object-value-typedarray,
 .object-value-array {
     position: relative;
     vertical-align: baseline;
@@ -51,9 +51,11 @@
     display: inline-block;
 }
 
-.object-value-number,
-.object-value-boolean {
+.object-value-number {
     color: rgb(28, 0, 207);
+}
+.object-value-boolean {
+    color: rgb(170, 13, 145);
 }
 
 .object-value-string,
@@ -84,20 +86,25 @@
 }
 
 .object-value-object .section,
+.object-value-promise .section,
 .object-formatted-map .section,
 .object-value-set .section,
 .object-value-iterator .section,
 .object-value-generator .section,
 .object-value-node .section,
+.object-value-typedarray .section,
 .object-value-array .section {
     position: static;
 }
-.object-value-object .section > .header::before {
+
+.object-value-object .section > .header::before,
+.object-value-promise .section > .header::before {
     margin-top: 0;
 }
 
 
 .object-value-object .properties-tree,
+.object-value-promise .properties-tree,
 .object-value-map .properties-tree,
 .object-value-set .properties-tree,
 .object-value-iterator .properties-tree,

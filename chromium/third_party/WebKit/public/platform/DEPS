@@ -1,4 +1,6 @@
 include_rules = [
+    "+base/callback_forward.h",
+    "+base/location.h",
     "+base/logging.h",
     "+base/metrics",
     "+base/trace_event",

@@ -170,7 +170,8 @@ def CheckUniquePtr(input_api, output_api,
       if re.search(r'(=|\breturn)\s*std::unique_ptr<.*?(?<!])>\([^)]+\)', line):
         errors.append(output_api.PresubmitError(
           ('%s:%d uses explicit std::unique_ptr constructor. ' +
-           'Use base::WrapUnique() instead.') % (f.LocalPath(), line_number)))
+           'Use base::MakeUnique<T>() instead.') %
+          (f.LocalPath(), line_number)))
       # Disallow:
       # std::unique_ptr<T>()
       if re.search(r'\bstd::unique_ptr<.*?>\(\)', line):
@@ -338,7 +339,7 @@ def PostUploadHook(cl, change, output_api):
     return []
 
   bots = [
-    'tryserver.blink:linux_blink_rel',
+    'master.tryserver.blink:linux_precise_blink_rel',
   ]
 
   results = []

@@ -21,50 +21,41 @@
 
 #include "core/svg/SVGZoomAndPan.h"
 
-#include "platform/text/ParserUtilities.h"
+#include "wtf/text/ParsingUtilities.h"
 
 namespace blink {
 
-SVGZoomAndPan::SVGZoomAndPan()
-    : m_zoomAndPan(SVGZoomAndPanMagnify)
-{
+SVGZoomAndPan::SVGZoomAndPan() : m_zoomAndPan(SVGZoomAndPanMagnify) {}
+
+void SVGZoomAndPan::resetZoomAndPan() {
+  m_zoomAndPan = SVGZoomAndPanMagnify;
 }
 
-void SVGZoomAndPan::resetZoomAndPan()
-{
-    m_zoomAndPan = SVGZoomAndPanMagnify;
+bool SVGZoomAndPan::isKnownAttribute(const QualifiedName& attrName) {
+  return attrName == SVGNames::zoomAndPanAttr;
 }
 
-bool SVGZoomAndPan::isKnownAttribute(const QualifiedName& attrName)
-{
-    return attrName == SVGNames::zoomAndPanAttr;
+template <typename CharType>
+static bool parseZoomAndPanInternal(const CharType*& start,
+                                    const CharType* end,
+                                    SVGZoomAndPanType& zoomAndPan) {
+  if (skipToken(start, end, "disable")) {
+    zoomAndPan = SVGZoomAndPanDisable;
+    return true;
+  }
+  if (skipToken(start, end, "magnify")) {
+    zoomAndPan = SVGZoomAndPanMagnify;
+    return true;
+  }
+  return false;
 }
 
-static const LChar disable[] =  {'d', 'i', 's', 'a', 'b', 'l', 'e'};
-static const LChar magnify[] =  {'m', 'a', 'g', 'n', 'i', 'f', 'y'};
-
-template<typename CharType>
-static bool parseZoomAndPanInternal(const CharType*& start, const CharType* end, SVGZoomAndPanType& zoomAndPan)
-{
-    if (skipString(start, end, disable, WTF_ARRAY_LENGTH(disable))) {
-        zoomAndPan = SVGZoomAndPanDisable;
-        return true;
-    }
-    if (skipString(start, end, magnify, WTF_ARRAY_LENGTH(magnify))) {
-        zoomAndPan = SVGZoomAndPanMagnify;
-        return true;
-    }
-    return false;
+bool SVGZoomAndPan::parseZoomAndPan(const LChar*& start, const LChar* end) {
+  return parseZoomAndPanInternal(start, end, m_zoomAndPan);
 }
 
-bool SVGZoomAndPan::parseZoomAndPan(const LChar*& start, const LChar* end)
-{
-    return parseZoomAndPanInternal(start, end, m_zoomAndPan);
+bool SVGZoomAndPan::parseZoomAndPan(const UChar*& start, const UChar* end) {
+  return parseZoomAndPanInternal(start, end, m_zoomAndPan);
 }
 
-bool SVGZoomAndPan::parseZoomAndPan(const UChar*& start, const UChar* end)
-{
-    return parseZoomAndPanInternal(start, end, m_zoomAndPan);
-}
-
-} // namespace blink
+}  // namespace blink

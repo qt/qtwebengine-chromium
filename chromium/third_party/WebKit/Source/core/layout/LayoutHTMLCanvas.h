@@ -33,28 +33,32 @@ namespace blink {
 class HTMLCanvasElement;
 
 class LayoutHTMLCanvas final : public LayoutReplaced {
-public:
-    explicit LayoutHTMLCanvas(HTMLCanvasElement*);
+ public:
+  explicit LayoutHTMLCanvas(HTMLCanvasElement*);
 
-    bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectCanvas || LayoutReplaced::isOfType(type); }
-    PaintLayerType layerTypeRequired() const override;
-    PaintInvalidationReason invalidatePaintIfNeeded(const PaintInvalidationState&) final;
+  bool isOfType(LayoutObjectType type) const override {
+    return type == LayoutObjectCanvas || LayoutReplaced::isOfType(type);
+  }
+  PaintLayerType layerTypeRequired() const override;
 
-    void canvasSizeChanged();
+  PaintInvalidationReason invalidatePaintIfNeeded(
+      const PaintInvalidatorContext&) const final;
 
-    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
+  void canvasSizeChanged();
 
-    const char* name() const override { return "LayoutHTMLCanvas"; }
+  void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
-private:
-    void paintReplaced(const PaintInfo&, const LayoutPoint&) const override;
-    void intrinsicSizeChanged() override { canvasSizeChanged(); }
+  const char* name() const override { return "LayoutHTMLCanvas"; }
 
-    CompositingReasons additionalCompositingReasons() const override;
+ private:
+  void paintReplaced(const PaintInfo&, const LayoutPoint&) const override;
+  void intrinsicSizeChanged() override { canvasSizeChanged(); }
+
+  CompositingReasons additionalCompositingReasons() const override;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutHTMLCanvas, isCanvas());
 
-} // namespace blink
+}  // namespace blink
 
-#endif // LayoutHTMLCanvas_h
+#endif  // LayoutHTMLCanvas_h

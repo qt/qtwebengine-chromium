@@ -21,6 +21,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/login/user_names.h"
+#include "components/policy/policy_constants.h"
 #include "components/signin/core/account_id/account_id.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
@@ -33,7 +34,6 @@
 #include "net/cert/test_root_certs.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
-#include "policy/policy_constants.h"
 
 namespace {
 
@@ -396,7 +396,7 @@ IN_PROC_BROWSER_TEST_P(ManagedWithoutPermissionPlatformKeysTest,
   // To verify that the user is not prompted for any certificate selection,
   // set up a delegate that fails on any invocation.
   GetPlatformKeysService()->SetSelectDelegate(
-      base::WrapUnique(new TestSelectDelegate(net::CertificateList())));
+      base::MakeUnique<TestSelectDelegate>(net::CertificateList()));
 
   ASSERT_TRUE(RunExtensionTest("managedProfile")) << message_;
 }
@@ -433,7 +433,7 @@ IN_PROC_BROWSER_TEST_P(ManagedWithPermissionPlatformKeysTest,
   certs.push_back(client_cert1_);
 
   GetPlatformKeysService()->SetSelectDelegate(
-      base::WrapUnique(new TestSelectDelegate(certs)));
+      base::MakeUnique<TestSelectDelegate>(certs));
 
   ASSERT_TRUE(RunExtensionTest("corporateKeyWithPermissionTests")) << message_;
 }
@@ -444,7 +444,7 @@ IN_PROC_BROWSER_TEST_P(ManagedWithPermissionPlatformKeysTest,
   // As the profile is managed, the user must not be able to grant any
   // certificate permission. Set up a delegate that fails on any invocation.
   GetPlatformKeysService()->SetSelectDelegate(
-      base::WrapUnique(new TestSelectDelegate(net::CertificateList())));
+      base::MakeUnique<TestSelectDelegate>(net::CertificateList()));
 
   ASSERT_TRUE(RunExtensionTest("policyDoesGrantAccessToNonCorporateKey"))
       << message_;

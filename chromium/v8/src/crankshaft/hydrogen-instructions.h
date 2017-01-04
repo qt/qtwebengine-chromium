@@ -9,6 +9,7 @@
 #include <iosfwd>
 
 #include "src/allocation.h"
+#include "src/ast/ast.h"
 #include "src/base/bits.h"
 #include "src/bit-vector.h"
 #include "src/code-stubs.h"
@@ -16,9 +17,10 @@
 #include "src/crankshaft/hydrogen-types.h"
 #include "src/crankshaft/unique.h"
 #include "src/deoptimizer.h"
+#include "src/globals.h"
 #include "src/small-pointer-list.h"
 #include "src/utils.h"
-#include "src/zone.h"
+#include "src/zone/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -35,6 +37,7 @@ class HStoreNamedField;
 class HValue;
 class LInstruction;
 class LChunkBuilder;
+class SmallMapList;
 
 #define HYDROGEN_ABSTRACT_INSTRUCTION_LIST(V) \
   V(ArithmeticBinaryOperation)                \
@@ -82,7 +85,6 @@ class LChunkBuilder;
   V(DeclareGlobals)                           \
   V(Deoptimize)                               \
   V(Div)                                      \
-  V(DoubleBits)                               \
   V(DummyUse)                                 \
   V(EnterInlined)                             \
   V(EnvironmentMarker)                        \
@@ -131,9 +133,7 @@ class LChunkBuilder;
   V(StoreCodeEntry)                           \
   V(StoreContextSlot)                         \
   V(StoreKeyed)                               \
-  V(StoreKeyedGeneric)                        \
   V(StoreNamedField)                          \
-  V(StoreNamedGeneric)                        \
   V(StringAdd)                                \
   V(StringCharCodeAt)                         \
   V(StringCharFromCode)                       \
@@ -237,6 +237,7 @@ class Range final : public ZoneObject {
     lower_ = Max(lower_, Smi::kMinValue);
     upper_ = Min(upper_, Smi::kMaxValue);
   }
+  void Clear();
   void KeepOrder();
 #ifdef DEBUG
   void Verify() const;
@@ -1113,7 +1114,7 @@ class HInstruction : public HValue {
       : HValue(type),
         next_(NULL),
         previous_(NULL),
-        position_(RelocInfo::kNoPosition) {
+        position_(kNoSourcePosition) {
     SetDependsOnFlag(kOsrEntries);
   }
 
@@ -1301,7 +1302,7 @@ class HGoto final : public HTemplateControlInstruction<1, 0> {
 class HDeoptimize final : public HTemplateControlInstruction<1, 0> {
  public:
   static HDeoptimize* New(Isolate* isolate, Zone* zone, HValue* context,
-                          Deoptimizer::DeoptReason reason,
+                          DeoptimizeReason reason,
                           Deoptimizer::BailoutType type,
                           HBasicBlock* unreachable_continuation) {
     return new(zone) HDeoptimize(reason, type, unreachable_continuation);
@@ -1316,20 +1317,19 @@ class HDeoptimize final : public HTemplateControlInstruction<1, 0> {
     return Representation::None();
   }
 
-  Deoptimizer::DeoptReason reason() const { return reason_; }
+  DeoptimizeReason reason() const { return reason_; }
   Deoptimizer::BailoutType type() { return type_; }
 
   DECLARE_CONCRETE_INSTRUCTION(Deoptimize)
 
  private:
-  explicit HDeoptimize(Deoptimizer::DeoptReason reason,
-                       Deoptimizer::BailoutType type,
+  explicit HDeoptimize(DeoptimizeReason reason, Deoptimizer::BailoutType type,
                        HBasicBlock* unreachable_continuation)
       : reason_(reason), type_(type) {
     SetSuccessorAt(0, unreachable_continuation);
   }
 
-  Deoptimizer::DeoptReason reason_;
+  DeoptimizeReason reason_;
   Deoptimizer::BailoutType type_;
 };
 
@@ -1656,37 +1656,6 @@ class HClampToUint8 final : public HUnaryOperation {
   }
 
   bool IsDeletable() const override { return true; }
-};
-
-
-class HDoubleBits final : public HUnaryOperation {
- public:
-  enum Bits { HIGH, LOW };
-  DECLARE_INSTRUCTION_FACTORY_P2(HDoubleBits, HValue*, Bits);
-
-  Representation RequiredInputRepresentation(int index) override {
-    return Representation::Double();
-  }
-
-  DECLARE_CONCRETE_INSTRUCTION(DoubleBits)
-
-  Bits bits() { return bits_; }
-
- protected:
-  bool DataEquals(HValue* other) override {
-    return other->IsDoubleBits() && HDoubleBits::cast(other)->bits() == bits();
-  }
-
- private:
-  HDoubleBits(HValue* value, Bits bits)
-      : HUnaryOperation(value), bits_(bits) {
-    set_representation(Representation::Integer32());
-    SetFlag(kUseGVN);
-  }
-
-  bool IsDeletable() const override { return true; }
-
-  Bits bits_;
 };
 
 
@@ -2093,13 +2062,16 @@ class HThisFunction final : public HTemplateInstruction<0> {
 
 class HDeclareGlobals final : public HUnaryOperation {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P2(HDeclareGlobals,
-                                              Handle<FixedArray>,
-                                              int);
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P3(HDeclareGlobals,
+                                              Handle<FixedArray>, int,
+                                              Handle<TypeFeedbackVector>);
 
   HValue* context() { return OperandAt(0); }
   Handle<FixedArray> pairs() const { return pairs_; }
   int flags() const { return flags_; }
+  Handle<TypeFeedbackVector> feedback_vector() const {
+    return feedback_vector_;
+  }
 
   DECLARE_CONCRETE_INSTRUCTION(DeclareGlobals)
 
@@ -2108,17 +2080,18 @@ class HDeclareGlobals final : public HUnaryOperation {
   }
 
  private:
-  HDeclareGlobals(HValue* context,
-                  Handle<FixedArray> pairs,
-                  int flags)
+  HDeclareGlobals(HValue* context, Handle<FixedArray> pairs, int flags,
+                  Handle<TypeFeedbackVector> feedback_vector)
       : HUnaryOperation(context),
         pairs_(pairs),
+        feedback_vector_(feedback_vector),
         flags_(flags) {
     set_representation(Representation::Tagged());
     SetAllSideEffects();
   }
 
   Handle<FixedArray> pairs_;
+  Handle<TypeFeedbackVector> feedback_vector_;
   int flags_;
 };
 
@@ -2203,7 +2176,8 @@ class HCallWithDescriptor final : public HInstruction {
     } else {
       int par_index = index - 2;
       DCHECK(par_index < GetParameterCount());
-      return RepresentationFromType(descriptor_.GetParameterType(par_index));
+      return RepresentationFromMachineType(
+          descriptor_.GetParameterType(par_index));
     }
   }
 
@@ -2242,7 +2216,7 @@ class HCallWithDescriptor final : public HInstruction {
                       TailCallMode syntactic_tail_call_mode,
                       TailCallMode tail_call_mode, Zone* zone)
       : descriptor_(descriptor),
-        values_(GetParameterCount() + 1, zone),
+        values_(GetParameterCount() + 1, zone),  // +1 here is for target.
         argument_count_(argument_count),
         bit_field_(
             TailCallModeField::encode(tail_call_mode) |
@@ -2264,7 +2238,7 @@ class HCallWithDescriptor final : public HInstruction {
   }
 
   int GetParameterCount() const {
-    return descriptor_.GetRegisterParameterCount() + 1;
+    return descriptor_.GetParameterCount() + 1;  // +1 here is for context.
   }
 
   void InternalSetOperandAt(int index, HValue* value) final {
@@ -4963,7 +4937,7 @@ class HAllocate final : public HTemplateInstruction<3> {
         static_cast<HAllocate::Flags>(flags_ | ALLOCATION_FOLDING_DOMINATOR);
   }
 
-  bool IsAllocationFoldingDominator() {
+  bool IsAllocationFoldingDominator() const {
     return (flags_ & ALLOCATION_FOLDING_DOMINATOR) != 0;
   }
 
@@ -4974,7 +4948,7 @@ class HAllocate final : public HTemplateInstruction<3> {
     SetOperandAt(2, dominator);
   }
 
-  bool IsAllocationFolded() { return (flags_ & ALLOCATION_FOLDED) != 0; }
+  bool IsAllocationFolded() const { return (flags_ & ALLOCATION_FOLDED) != 0; }
 
   bool HandleSideEffectDominator(GVNFlag side_effect,
                                  HValue* dominator) override;
@@ -6353,52 +6327,6 @@ class HStoreNamedField final : public HTemplateInstruction<3> {
   uint32_t bit_field_;
 };
 
-class HStoreNamedGeneric final : public HTemplateInstruction<3> {
- public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P6(HStoreNamedGeneric, HValue*,
-                                              Handle<Name>, HValue*,
-                                              LanguageMode,
-                                              Handle<TypeFeedbackVector>,
-                                              FeedbackVectorSlot);
-  HValue* object() const { return OperandAt(0); }
-  HValue* value() const { return OperandAt(1); }
-  HValue* context() const { return OperandAt(2); }
-  Handle<Name> name() const { return name_; }
-  LanguageMode language_mode() const { return language_mode_; }
-
-  std::ostream& PrintDataTo(std::ostream& os) const override;  // NOLINT
-
-  Representation RequiredInputRepresentation(int index) override {
-    return Representation::Tagged();
-  }
-
-  FeedbackVectorSlot slot() const { return slot_; }
-  Handle<TypeFeedbackVector> feedback_vector() const {
-    return feedback_vector_;
-  }
-
-  DECLARE_CONCRETE_INSTRUCTION(StoreNamedGeneric)
-
- private:
-  HStoreNamedGeneric(HValue* context, HValue* object, Handle<Name> name,
-                     HValue* value, LanguageMode language_mode,
-                     Handle<TypeFeedbackVector> vector, FeedbackVectorSlot slot)
-      : name_(name),
-        feedback_vector_(vector),
-        slot_(slot),
-        language_mode_(language_mode) {
-    SetOperandAt(0, object);
-    SetOperandAt(1, value);
-    SetOperandAt(2, context);
-    SetAllSideEffects();
-  }
-
-  Handle<Name> name_;
-  Handle<TypeFeedbackVector> feedback_vector_;
-  FeedbackVectorSlot slot_;
-  LanguageMode language_mode_;
-};
-
 class HStoreKeyed final : public HTemplateInstruction<4>,
                           public ArrayInstructionInterface {
  public:
@@ -6579,50 +6507,6 @@ class HStoreKeyed final : public HTemplateInstruction<4>,
   uint32_t base_offset_;
   uint32_t bit_field_;
   HValue* dominator_;
-};
-
-class HStoreKeyedGeneric final : public HTemplateInstruction<4> {
- public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P6(HStoreKeyedGeneric, HValue*,
-                                              HValue*, HValue*, LanguageMode,
-                                              Handle<TypeFeedbackVector>,
-                                              FeedbackVectorSlot);
-
-  HValue* object() const { return OperandAt(0); }
-  HValue* key() const { return OperandAt(1); }
-  HValue* value() const { return OperandAt(2); }
-  HValue* context() const { return OperandAt(3); }
-  LanguageMode language_mode() const { return language_mode_; }
-
-  Representation RequiredInputRepresentation(int index) override {
-    // tagged[tagged] = tagged
-    return Representation::Tagged();
-  }
-
-  FeedbackVectorSlot slot() const { return slot_; }
-  Handle<TypeFeedbackVector> feedback_vector() const {
-    return feedback_vector_;
-  }
-
-  std::ostream& PrintDataTo(std::ostream& os) const override;  // NOLINT
-
-  DECLARE_CONCRETE_INSTRUCTION(StoreKeyedGeneric)
-
- private:
-  HStoreKeyedGeneric(HValue* context, HValue* object, HValue* key,
-                     HValue* value, LanguageMode language_mode,
-                     Handle<TypeFeedbackVector> vector, FeedbackVectorSlot slot)
-      : feedback_vector_(vector), slot_(slot), language_mode_(language_mode) {
-    SetOperandAt(0, object);
-    SetOperandAt(1, key);
-    SetOperandAt(2, value);
-    SetOperandAt(3, context);
-    SetAllSideEffects();
-  }
-
-  Handle<TypeFeedbackVector> feedback_vector_;
-  FeedbackVectorSlot slot_;
-  LanguageMode language_mode_;
 };
 
 class HTransitionElementsKind final : public HTemplateInstruction<2> {

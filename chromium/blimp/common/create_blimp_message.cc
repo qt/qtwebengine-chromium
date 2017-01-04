@@ -10,6 +10,7 @@
 #include "blimp/common/proto/blimp_message.pb.h"
 #include "blimp/common/proto/blob_channel.pb.h"
 #include "blimp/common/proto/compositor.pb.h"
+#include "blimp/common/proto/geolocation.pb.h"
 #include "blimp/common/proto/input.pb.h"
 #include "blimp/common/proto/render_widget.pb.h"
 #include "blimp/common/proto/settings.pb.h"
@@ -87,8 +88,15 @@ std::unique_ptr<BlimpMessage> CreateBlimpMessage(
   return output;
 }
 
+std::unique_ptr<BlimpMessage> CreateBlimpMessage(
+    GeolocationMessage** geolocation_message) {
+  std::unique_ptr<BlimpMessage> output(new BlimpMessage);
+  *geolocation_message = output->mutable_geolocation();
+  return output;
+}
+
 std::unique_ptr<BlimpMessage> CreateStartConnectionMessage(
-    const std::string& client_token,
+    const std::string& client_auth_token,
     int protocol_version) {
   std::unique_ptr<BlimpMessage> output(new BlimpMessage);
 
@@ -97,7 +105,7 @@ std::unique_ptr<BlimpMessage> CreateStartConnectionMessage(
 
   StartConnectionMessage* start_connection_message =
       control_message->mutable_start_connection();
-  start_connection_message->set_client_token(client_token);
+  start_connection_message->set_client_auth_token(client_auth_token);
   start_connection_message->set_protocol_version(protocol_version);
 
   return output;

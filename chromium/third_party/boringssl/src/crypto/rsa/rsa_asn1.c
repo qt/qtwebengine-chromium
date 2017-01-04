@@ -323,22 +323,23 @@ int RSA_marshal_private_key(CBB *cbb, const RSA *rsa) {
     return 0;
   }
 
+  CBB other_prime_infos;
   if (is_multiprime) {
-    CBB other_prime_infos;
     if (!CBB_add_asn1(&child, &other_prime_infos, CBS_ASN1_SEQUENCE)) {
       OPENSSL_PUT_ERROR(RSA, RSA_R_ENCODE_ERROR);
       return 0;
     }
-    size_t i;
-    for (i = 0; i < sk_RSA_additional_prime_num(rsa->additional_primes); i++) {
+    for (size_t i = 0; i < sk_RSA_additional_prime_num(rsa->additional_primes);
+         i++) {
       RSA_additional_prime *ap =
-              sk_RSA_additional_prime_value(rsa->additional_primes, i);
+          sk_RSA_additional_prime_value(rsa->additional_primes, i);
       CBB other_prime_info;
       if (!CBB_add_asn1(&other_prime_infos, &other_prime_info,
                         CBS_ASN1_SEQUENCE) ||
           !marshal_integer(&other_prime_info, ap->prime) ||
           !marshal_integer(&other_prime_info, ap->exp) ||
-          !marshal_integer(&other_prime_info, ap->coeff)) {
+          !marshal_integer(&other_prime_info, ap->coeff) ||
+          !CBB_flush(&other_prime_infos)) {
         OPENSSL_PUT_ERROR(RSA, RSA_R_ENCODE_ERROR);
         return 0;
       }

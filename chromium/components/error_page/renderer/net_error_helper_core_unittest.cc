@@ -24,7 +24,6 @@
 #include "build/build_config.h"
 #include "components/error_page/common/error_page_params.h"
 #include "components/error_page/common/net_error_info.h"
-#include "components/test_runner/test_common.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -57,8 +56,8 @@ struct NavigationCorrection {
   bool is_porn;
   bool is_soft_porn;
 
-  base::Value* ToValue() const {
-    base::DictionaryValue* dict = new base::DictionaryValue();
+  std::unique_ptr<base::DictionaryValue> ToValue() const {
+    std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
     dict->SetString("correctionType", correction_type);
     dict->SetString("urlCorrection", url_correction);
     dict->SetString("clickType", click_type);
@@ -171,7 +170,6 @@ class NetErrorHelperCoreTest : public testing::Test,
         error_url_(GURL(content::kUnreachableWebDataURL)),
         tracking_request_count_(0) {
     SetUpCore(false, false, true);
-    test_runner::EnsureBlinkInitialized();
   }
 
   ~NetErrorHelperCoreTest() override {

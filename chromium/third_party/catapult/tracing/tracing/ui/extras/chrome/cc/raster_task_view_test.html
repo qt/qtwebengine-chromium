@@ -29,7 +29,7 @@ tr.b.unittest.testSuite(function() {
     var m = tr.c.TestUtils.newModelWithEvents([g_catLTHIEvents]);
     var p = m.processes[1];
     var rasterTasks = p.threads[1].sliceGroup.slices.filter(function(slice) {
-      return slice.title == 'RasterTask' || slice.title == 'AnalyzeTask';
+      return slice.title === 'RasterTask' || slice.title === 'AnalyzeTask';
     });
 
     var selection = new tr.model.EventSet();
@@ -58,7 +58,7 @@ tr.b.unittest.testSuite(function() {
     analysisEl.brushingStateController = brushingStateController;
     brushingStateController.changeSelectionFromTimeline(selection);
 
-    assert.isDefined(analysisEl.querySelector(
+    assert.isDefined(Polymer.dom(analysisEl).querySelector(
         'tr-ui-e-chrome-cc-raster-task-view'));
 
     var sv = tr.b.findDeepElementMatching(

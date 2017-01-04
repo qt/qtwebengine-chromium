@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "core/fxcrt/cfx_observable.h"
+#include "fpdfsdk/cpdfsdk_document.h"
 #include "fpdfsdk/javascript/JS_Define.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"  // For CPWL_Color.
 
@@ -374,13 +376,6 @@ class Field : public CJS_EmbedObj {
                       const CFX_WideString& swFieldName,
                       int nControlIndex,
                       const CFX_FloatRect& rect);
-  static void SetRichText(CPDFSDK_Document* pDocument,
-                          const CFX_WideString& swFieldName,
-                          int nControlIndex,
-                          bool b);
-  static void SetRichValue(CPDFSDK_Document* pDocument,
-                           const CFX_WideString& swFieldName,
-                           int nControlIndex);
   static void SetRotation(CPDFSDK_Document* pDocument,
                           const CFX_WideString& swFieldName,
                           int nControlIndex,
@@ -432,7 +427,8 @@ class Field : public CJS_EmbedObj {
                                 FX_BOOL bRefresh);
 
   static CPDFSDK_Widget* GetWidget(CPDFSDK_Document* pDocument,
-                                   CPDF_FormControl* pFormControl);
+                                   CPDF_FormControl* pFormControl,
+                                   bool createIfNeeded);
   static std::vector<CPDF_FormField*> GetFormFields(
       CPDFSDK_Document* pDocument,
       const CFX_WideString& csFieldName);
@@ -441,7 +437,6 @@ class Field : public CJS_EmbedObj {
 
   FX_BOOL AttachField(Document* pDocument, const CFX_WideString& csFieldName);
   void SetDelay(FX_BOOL bDelay);
-  void SetIsolate(v8::Isolate* isolate) { m_isolate = isolate; }
 
  protected:
   void ParseFieldName(const std::wstring& strFieldNameParsed,
@@ -466,13 +461,11 @@ class Field : public CJS_EmbedObj {
 
  public:
   Document* m_pJSDoc;
-  CPDFSDK_Document* m_pDocument;
+  CPDFSDK_Document::ObservedPtr m_pDocument;
   CFX_WideString m_FieldName;
   int m_nFormControlIndex;
   FX_BOOL m_bCanSet;
-
   FX_BOOL m_bDelay;
-  v8::Isolate* m_isolate;
 };
 
 class CJS_Field : public CJS_Object {

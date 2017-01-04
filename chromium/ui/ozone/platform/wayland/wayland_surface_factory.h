@@ -5,37 +5,39 @@
 #ifndef UI_OZONE_PLATFORM_WAYLAND_WAYLAND_SURFACE_FACTORY_H_
 #define UI_OZONE_PLATFORM_WAYLAND_WAYLAND_SURFACE_FACTORY_H_
 
+#include "base/macros.h"
+#include "base/memory/ref_counted.h"
+#include "ui/gl/gl_surface.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace ui {
 
-class WaylandDisplay;
+class WaylandConnection;
 
 class WaylandSurfaceFactory : public SurfaceFactoryOzone {
  public:
-  explicit WaylandSurfaceFactory(WaylandDisplay* display);
+  explicit WaylandSurfaceFactory(WaylandConnection* connection);
   ~WaylandSurfaceFactory() override;
 
-  intptr_t GetNativeDisplay() override;
-  bool LoadEGLGLES2Bindings(
-      AddGLLibraryCallback add_gl_library,
-      SetGLGetProcAddressProcCallback set_gl_get_proc_address) override;
+  // SurfaceFactoryOzone:
+  std::vector<gl::GLImplementation> GetAllowedGLImplementations() override;
+  GLOzone* GetGLOzone(gl::GLImplementation implementation) override;
   std::unique_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
       gfx::AcceleratedWidget widget) override;
-  std::unique_ptr<SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
-      gfx::AcceleratedWidget w) override;
   scoped_refptr<NativePixmap> CreateNativePixmap(
       gfx::AcceleratedWidget widget,
       gfx::Size size,
       gfx::BufferFormat format,
       gfx::BufferUsage usage) override;
   scoped_refptr<NativePixmap> CreateNativePixmapFromHandle(
+      gfx::AcceleratedWidget widget,
       gfx::Size size,
       gfx::BufferFormat format,
       const gfx::NativePixmapHandle& handle) override;
 
  private:
-  WaylandDisplay* display_;
+  WaylandConnection* connection_;
+  std::unique_ptr<GLOzone> egl_implementation_;
 
   DISALLOW_COPY_AND_ASSIGN(WaylandSurfaceFactory);
 };

@@ -160,7 +160,7 @@ class FileSystemApiTestForDrive : public PlatformAppBrowserTest {
 
     integration_service_ = new drive::DriveIntegrationService(
         profile, NULL, fake_drive_service_, std::string(),
-        test_cache_root_.path(), NULL);
+        test_cache_root_.GetPath(), NULL);
     return integration_service_;
   }
 
@@ -244,7 +244,7 @@ class FileSystemApiTestForRequestFileSystem : public PlatformAppBrowserTest {
   void CreateTestingFileSystem(const std::string& mount_point_name,
                                bool read_only) {
     const base::FilePath mount_point_path =
-        temp_dir_.path().Append(mount_point_name);
+        temp_dir_.GetPath().Append(mount_point_name);
     ASSERT_TRUE(base::CreateDirectory(mount_point_path));
     ASSERT_TRUE(
         base::CreateDirectory(mount_point_path.Append(kChildDirectory)));
@@ -493,7 +493,7 @@ IN_PROC_BROWSER_TEST_F(FileSystemApiTestForRequestFileSystem,
       profile(), extensions::api::file_system::OnVolumeListChanged::kEventName,
       kTestingExtensionId,
       base::Bind(&FileSystemApiTestForRequestFileSystem::MountFakeVolume,
-                 this));
+                 base::Unretained(this)));
 
   ASSERT_TRUE(RunPlatformAppTest("api_test/file_system/on_volume_list_changed"))
       << message_;

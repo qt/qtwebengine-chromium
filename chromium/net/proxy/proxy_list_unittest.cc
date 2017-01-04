@@ -7,10 +7,14 @@
 #include <vector>
 
 #include "net/base/net_errors.h"
-#include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
 #include "net/proxy/proxy_retry_info.h"
 #include "net/proxy/proxy_server.h"
+#include "net/test/gtest_util.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using net::test::IsOk;
 
 namespace net {
 
@@ -174,7 +178,7 @@ TEST(ProxyListTest, UpdateRetryInfoOnFallback) {
   {
     ProxyList list;
     ProxyRetryInfoMap retry_info_map;
-    BoundNetLog net_log;
+    NetLogWithSource net_log;
     ProxyServer proxy_server(
         ProxyServer::FromURI("foopy1:80", ProxyServer::SCHEME_HTTP));
     std::vector<ProxyServer> bad_proxies;
@@ -194,7 +198,7 @@ TEST(ProxyListTest, UpdateRetryInfoOnFallback) {
   {
     ProxyList list;
     ProxyRetryInfoMap retry_info_map;
-    BoundNetLog net_log;
+    NetLogWithSource net_log;
     ProxyServer proxy_server(
         ProxyServer::FromURI("foopy1:80", ProxyServer::SCHEME_HTTP));
     std::vector<ProxyServer> bad_proxies;
@@ -204,7 +208,7 @@ TEST(ProxyListTest, UpdateRetryInfoOnFallback) {
                                    base::TimeDelta::FromSeconds(60), true,
                                    bad_proxies, OK, net_log);
     EXPECT_TRUE(retry_info_map.end() != retry_info_map.find("foopy1:80"));
-    EXPECT_EQ(OK, retry_info_map[proxy_server.ToURI()].net_error);
+    EXPECT_THAT(retry_info_map[proxy_server.ToURI()].net_error, IsOk());
     EXPECT_TRUE(retry_info_map.end() == retry_info_map.find("foopy2:80"));
     EXPECT_TRUE(retry_info_map.end() == retry_info_map.find("foopy3:80"));
   }
@@ -213,7 +217,7 @@ TEST(ProxyListTest, UpdateRetryInfoOnFallback) {
   {
     ProxyList list;
     ProxyRetryInfoMap retry_info_map;
-    BoundNetLog net_log;
+    NetLogWithSource net_log;
     ProxyServer proxy_server = ProxyServer::FromURI("foopy3:80",
                                                     ProxyServer::SCHEME_HTTP);
     std::vector<ProxyServer> bad_proxies;
@@ -233,7 +237,7 @@ TEST(ProxyListTest, UpdateRetryInfoOnFallback) {
   {
     ProxyList list;
     ProxyRetryInfoMap retry_info_map;
-    BoundNetLog net_log;
+    NetLogWithSource net_log;
     ProxyServer proxy_server = ProxyServer::FromURI("foopy2:80",
                                                     ProxyServer::SCHEME_HTTP);
     std::vector<ProxyServer> bad_proxies;
@@ -251,7 +255,7 @@ TEST(ProxyListTest, UpdateRetryInfoOnFallback) {
   {
     ProxyList list;
     ProxyRetryInfoMap retry_info_map;
-    BoundNetLog net_log;
+    NetLogWithSource net_log;
     list.SetFromPacString("PROXY foopy1:80;PROXY foopy2:80;PROXY foopy3:80");
 
     // First, mark the proxy as bad for 60 seconds.
@@ -281,7 +285,7 @@ TEST(ProxyListTest, UpdateRetryInfoOnFallback) {
   {
     ProxyList list;
     ProxyRetryInfoMap retry_info_map;
-    BoundNetLog net_log;
+    NetLogWithSource net_log;
     list.SetFromPacString("PROXY foopy1:80;PROXY foopy2:80;PROXY foopy3:80");
 
     // First, mark the proxy as bad for 1 second.

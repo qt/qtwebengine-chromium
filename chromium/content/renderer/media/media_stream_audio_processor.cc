@@ -10,8 +10,10 @@
 
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "content/public/common/content_switches.h"
@@ -287,10 +289,11 @@ MediaStreamAudioProcessor::MediaStreamAudioProcessor(
     WebRtcPlayoutDataSource* playout_data_source)
     : render_delay_ms_(0),
       playout_data_source_(playout_data_source),
-      main_thread_message_loop_(base::MessageLoop::current()),
+      main_thread_runner_(base::ThreadTaskRunnerHandle::Get()),
       audio_mirroring_(false),
       typing_detected_(false),
       stopped_(false) {
+  DCHECK(main_thread_runner_);
   capture_thread_checker_.DetachFromThread();
   render_thread_checker_.DetachFromThread();
   InitializeAudioProcessingModule(constraints, input_params);
@@ -317,13 +320,14 @@ MediaStreamAudioProcessor::~MediaStreamAudioProcessor() {
   // TODO(miu): This class is ref-counted, shared among threads, and then
   // requires itself to be destroyed on the main thread only?!?!? Fix this, and
   // then remove the hack in WebRtcAudioSink::Adapter.
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   Stop();
 }
 
 void MediaStreamAudioProcessor::OnCaptureFormatChanged(
     const media::AudioParameters& input_format) {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
+
   // There is no need to hold a lock here since the caller guarantees that
   // there is no more PushCaptureData() and ProcessAndConsumeData() callbacks
   // on the capture thread.
@@ -389,7 +393,7 @@ bool MediaStreamAudioProcessor::ProcessAndConsumeData(
 }
 
 void MediaStreamAudioProcessor::Stop() {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
 
   if (stopped_)
     return;
@@ -426,7 +430,7 @@ const media::AudioParameters& MediaStreamAudioProcessor::OutputFormat() const {
 
 void MediaStreamAudioProcessor::OnAecDumpFile(
     const IPC::PlatformFileForTransit& file_handle) {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
 
   base::File file = IPC::PlatformFileForTransitToFile(file_handle);
   DCHECK(file.IsValid());
@@ -438,14 +442,50 @@ void MediaStreamAudioProcessor::OnAecDumpFile(
 }
 
 void MediaStreamAudioProcessor::OnDisableAecDump() {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   if (audio_processing_)
     StopEchoCancellationDump(audio_processing_.get());
 }
 
 void MediaStreamAudioProcessor::OnIpcClosing() {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   aec_dump_message_filter_ = NULL;
+}
+
+// static
+bool MediaStreamAudioProcessor::WouldModifyAudio(
+    const blink::WebMediaConstraints& constraints,
+    int effects_flags) {
+  // Note: This method should by kept in-sync with any changes to the logic in
+  // MediaStreamAudioProcessor::InitializeAudioProcessingModule().
+
+  const MediaAudioConstraints audio_constraints(constraints, effects_flags);
+
+  if (audio_constraints.GetGoogAudioMirroring())
+    return true;
+
+#if !defined(OS_IOS)
+  if (audio_constraints.GetEchoCancellationProperty() ||
+      audio_constraints.GetGoogAutoGainControl()) {
+    return true;
+  }
+#endif
+
+#if !defined(OS_IOS) && !defined(OS_ANDROID)
+  if (audio_constraints.GetGoogExperimentalEchoCancellation() ||
+      audio_constraints.GetGoogTypingNoiseDetection()) {
+    return true;
+  }
+#endif
+
+  if (audio_constraints.GetGoogNoiseSuppression() ||
+      audio_constraints.GetGoogExperimentalNoiseSuppression() ||
+      audio_constraints.GetGoogBeamforming() ||
+      audio_constraints.GetGoogHighpassFilter()) {
+    return true;
+  }
+
+  return false;
 }
 
 void MediaStreamAudioProcessor::OnPlayoutData(media::AudioBus* audio_bus,
@@ -483,7 +523,7 @@ void MediaStreamAudioProcessor::OnPlayoutData(media::AudioBus* audio_bus,
 }
 
 void MediaStreamAudioProcessor::OnPlayoutDataSourceChanged() {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   // There is no need to hold a lock here since the caller guarantees that
   // there is no more OnPlayoutData() callback on the render thread.
   render_thread_checker_.DetachFromThread();
@@ -505,13 +545,14 @@ void MediaStreamAudioProcessor::GetStats(AudioProcessorStats* stats) {
 void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
     const blink::WebMediaConstraints& constraints,
     const MediaStreamDevice::AudioDeviceParameters& input_params) {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   DCHECK(!audio_processing_);
 
   MediaAudioConstraints audio_constraints(constraints, input_params.effects);
 
-  // Audio mirroring can be enabled even though audio processing is otherwise
-  // disabled.
+  // Note: The audio mirroring constraint (i.e., swap left and right channels)
+  // is handled within this MediaStreamAudioProcessor and does not, by itself,
+  // require webrtc::AudioProcessing.
   audio_mirroring_ = audio_constraints.GetGoogAudioMirroring();
 
   const bool echo_cancellation =
@@ -533,13 +574,23 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
       audio_constraints.GetGoogExperimentalNoiseSuppression();
   const bool goog_beamforming = audio_constraints.GetGoogBeamforming();
   const bool goog_high_pass_filter = audio_constraints.GetGoogHighpassFilter();
-  // Return immediately if no goog constraint is enabled.
+
+  // Return immediately if none of the goog constraints requiring
+  // webrtc::AudioProcessing are enabled.
   if (!echo_cancellation && !goog_experimental_aec && !goog_ns &&
       !goog_high_pass_filter && !goog_typing_detection &&
       !goog_agc && !goog_experimental_ns && !goog_beamforming) {
+    // Sanity-check: WouldModifyAudio() should return true iff
+    // |audio_mirroring_| is true.
+    DCHECK_EQ(audio_mirroring_, WouldModifyAudio(constraints,
+                                                 input_params.effects));
     RecordProcessingState(AUDIO_PROCESSING_DISABLED);
     return;
   }
+
+  // Sanity-check: WouldModifyAudio() should return true because the above logic
+  // has determined webrtc::AudioProcessing will be used.
+  DCHECK(WouldModifyAudio(constraints, input_params.effects));
 
   // Experimental options provided at creation.
   webrtc::Config config;
@@ -613,7 +664,7 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
 
 void MediaStreamAudioProcessor::InitializeCaptureFifo(
     const media::AudioParameters& input_format) {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   DCHECK(input_format.IsValid());
   input_format_ = input_format;
 
@@ -761,7 +812,7 @@ int MediaStreamAudioProcessor::ProcessData(const float* const* process_ptrs,
     base::subtle::Release_Store(&typing_detected_, detected);
   }
 
-  main_thread_message_loop_->PostTask(
+  main_thread_runner_->PostTask(
       FROM_HERE, base::Bind(&MediaStreamAudioProcessor::UpdateAecStats, this));
 
   // Return 0 if the volume hasn't been changed, and otherwise the new volume.
@@ -770,7 +821,7 @@ int MediaStreamAudioProcessor::ProcessData(const float* const* process_ptrs,
 }
 
 void MediaStreamAudioProcessor::UpdateAecStats() {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_runner_->BelongsToCurrentThread());
   if (echo_information_)
     echo_information_->UpdateAecStats(audio_processing_->echo_cancellation());
 }

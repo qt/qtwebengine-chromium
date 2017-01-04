@@ -10,12 +10,12 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/version_info/version_info.h"
+#include "extensions/common/features/feature_channel.h"
 
 namespace {
 
@@ -69,7 +69,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, OverrideSettings) {
   EXPECT_TRUE(VerifyTemplateURLServiceLoad(url_service));
   TemplateURL* default_provider = url_service->GetDefaultSearchProvider();
   ASSERT_TRUE(default_provider);
-  EXPECT_EQ(TemplateURL::NORMAL, default_provider->GetType());
+  EXPECT_EQ(TemplateURL::NORMAL, default_provider->type());
 
 #if defined(OS_MACOSX)
   // On Mac, this API is limited to trunk.
@@ -92,7 +92,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, OverrideSettings) {
             startup_pref.urls);
   TemplateURL* extension_provider = url_service->GetDefaultSearchProvider();
   EXPECT_EQ(TemplateURL::NORMAL_CONTROLLED_BY_EXTENSION,
-            extension_provider->GetType());
+            extension_provider->type());
   EXPECT_EQ(base::ASCIIToUTF16("name.de"), extension_provider->short_name());
   EXPECT_EQ(base::ASCIIToUTF16("keyword.de"), extension_provider->keyword());
   EXPECT_EQ("http://www.foo.de/s?q={searchTerms}&id=10",

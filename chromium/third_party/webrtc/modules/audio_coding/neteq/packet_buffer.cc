@@ -22,7 +22,7 @@
 #include "webrtc/modules/audio_coding/neteq/tick_timer.h"
 
 namespace webrtc {
-
+namespace {
 // Predicate used when inserting packets in the buffer list.
 // Operator() returns true when |packet| goes before |new_packet|.
 class NewTimestampIsLarger {
@@ -37,6 +37,17 @@ class NewTimestampIsLarger {
  private:
   const Packet* new_packet_;
 };
+
+// Returns true if both payload types are known to the decoder database, and
+// have the same sample rate.
+bool EqualSampleRates(uint8_t pt1,
+                      uint8_t pt2,
+                      const DecoderDatabase& decoder_database) {
+  auto di1 = decoder_database.GetDecoderInfo(pt1);
+  auto di2 = decoder_database.GetDecoderInfo(pt2);
+  return di1 && di2 && di1->SampleRateHz() == di2->SampleRateHz();
+}
+}  // namespace
 
 PacketBuffer::PacketBuffer(size_t max_number_of_packets,
                            const TickTimer* tick_timer)
@@ -57,13 +68,16 @@ bool PacketBuffer::Empty() const {
 }
 
 int PacketBuffer::InsertPacket(Packet* packet) {
-  if (!packet || !packet->payload) {
+  if (!packet || packet->empty()) {
     if (packet) {
       delete packet;
     }
     LOG(LS_WARNING) << "InsertPacket invalid packet";
     return kInvalidPacket;
   }
+
+  RTC_DCHECK_GE(packet->priority.codec_level, 0);
+  RTC_DCHECK_GE(packet->priority.red_level, 0);
 
   int return_val = kOK;
 
@@ -88,7 +102,6 @@ int PacketBuffer::InsertPacket(Packet* packet) {
   // packet to list.
   if (rit != buffer_.rend() &&
       packet->header.timestamp == (*rit)->header.timestamp) {
-    delete [] packet->payload;
     delete packet;
     return return_val;
   }
@@ -99,7 +112,6 @@ int PacketBuffer::InsertPacket(Packet* packet) {
   PacketList::iterator it = rit.base();
   if (it != buffer_.end() &&
       packet->header.timestamp == (*it)->header.timestamp) {
-    delete [] (*it)->payload;
     delete *it;
     it = buffer_.erase(it);
   }
@@ -108,31 +120,38 @@ int PacketBuffer::InsertPacket(Packet* packet) {
   return return_val;
 }
 
-int PacketBuffer::InsertPacketList(PacketList* packet_list,
-                                   const DecoderDatabase& decoder_database,
-                                   uint8_t* current_rtp_payload_type,
-                                   uint8_t* current_cng_rtp_payload_type) {
+int PacketBuffer::InsertPacketList(
+    PacketList* packet_list,
+    const DecoderDatabase& decoder_database,
+    rtc::Optional<uint8_t>* current_rtp_payload_type,
+    rtc::Optional<uint8_t>* current_cng_rtp_payload_type) {
   bool flushed = false;
   while (!packet_list->empty()) {
     Packet* packet = packet_list->front();
     if (decoder_database.IsComfortNoise(packet->header.payloadType)) {
-      if (*current_cng_rtp_payload_type != 0xFF &&
-          *current_cng_rtp_payload_type != packet->header.payloadType) {
+      if (*current_cng_rtp_payload_type &&
+          **current_cng_rtp_payload_type != packet->header.payloadType) {
         // New CNG payload type implies new codec type.
-        *current_rtp_payload_type = 0xFF;
+        *current_rtp_payload_type = rtc::Optional<uint8_t>();
         Flush();
         flushed = true;
       }
-      *current_cng_rtp_payload_type = packet->header.payloadType;
+      *current_cng_rtp_payload_type =
+          rtc::Optional<uint8_t>(packet->header.payloadType);
     } else if (!decoder_database.IsDtmf(packet->header.payloadType)) {
       // This must be speech.
-      if (*current_rtp_payload_type != 0xFF &&
-          *current_rtp_payload_type != packet->header.payloadType) {
-        *current_cng_rtp_payload_type = 0xFF;
+      if ((*current_rtp_payload_type &&
+           **current_rtp_payload_type != packet->header.payloadType) ||
+          (*current_cng_rtp_payload_type &&
+           !EqualSampleRates(packet->header.payloadType,
+                             **current_cng_rtp_payload_type,
+                             decoder_database))) {
+        *current_cng_rtp_payload_type = rtc::Optional<uint8_t>();
         Flush();
         flushed = true;
       }
-      *current_rtp_payload_type = packet->header.payloadType;
+      *current_rtp_payload_type =
+          rtc::Optional<uint8_t>(packet->header.payloadType);
     }
     int return_val = InsertPacket(packet);
     packet_list->pop_front();
@@ -193,7 +212,7 @@ Packet* PacketBuffer::GetNextPacket(size_t* discard_count) {
 
   Packet* packet = buffer_.front();
   // Assert that the packet sanity checks in InsertPacket method works.
-  assert(packet && packet->payload);
+  RTC_DCHECK(packet && !packet->empty());
   buffer_.pop_front();
 
   // Discard other packets with the same timestamp. These are duplicates or
@@ -221,8 +240,8 @@ int PacketBuffer::DiscardNextPacket() {
     return kBufferEmpty;
   }
   // Assert that the packet sanity checks in InsertPacket method works.
-  assert(buffer_.front());
-  assert(buffer_.front()->payload);
+  RTC_DCHECK(buffer_.front());
+  RTC_DCHECK(!buffer_.front()->empty());
   DeleteFirstPacket(&buffer_);
   return kOK;
 }
@@ -244,26 +263,34 @@ int PacketBuffer::DiscardAllOldPackets(uint32_t timestamp_limit) {
   return DiscardOldPackets(timestamp_limit, 0);
 }
 
+void PacketBuffer::DiscardPacketsWithPayloadType(uint8_t payload_type) {
+  for (auto it = buffer_.begin(); it != buffer_.end(); /* */) {
+    Packet* packet = *it;
+    if (packet->header.payloadType == payload_type) {
+      delete packet;
+      it = buffer_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 size_t PacketBuffer::NumPacketsInBuffer() const {
   return buffer_.size();
 }
 
-size_t PacketBuffer::NumSamplesInBuffer(DecoderDatabase* decoder_database,
-                                        size_t last_decoded_length) const {
-  PacketList::const_iterator it;
+size_t PacketBuffer::NumSamplesInBuffer(size_t last_decoded_length) const {
   size_t num_samples = 0;
   size_t last_duration = last_decoded_length;
-  for (it = buffer_.begin(); it != buffer_.end(); ++it) {
-    Packet* packet = (*it);
-    AudioDecoder* decoder =
-        decoder_database->GetDecoder(packet->header.payloadType);
-    if (decoder && !packet->sync_packet) {
-      if (!packet->primary) {
+  for (Packet* packet : buffer_) {
+    if (packet->frame) {
+      // TODO(hlundin): Verify that it's fine to count all packets and remove
+      // this check.
+      if (packet->priority != Packet::Priority(0, 0)) {
         continue;
       }
-      int duration =
-          decoder->PacketDuration(packet->payload, packet->payload_length);
-      if (duration >= 0) {
+      size_t duration = packet->frame->Duration();
+      if (duration > 0) {
         last_duration = duration;  // Save the most up-to-date (valid) duration.
       }
     }
@@ -277,7 +304,6 @@ bool PacketBuffer::DeleteFirstPacket(PacketList* packet_list) {
     return false;
   }
   Packet* first_packet = packet_list->front();
-  delete [] first_packet->payload;
   delete first_packet;
   packet_list->pop_front();
   return true;

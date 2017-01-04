@@ -19,6 +19,7 @@
 #include "extensions/common/api/serial.h"
 #include "extensions/common/switches.h"
 #include "extensions/test/result_catcher.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using testing::_;
@@ -136,12 +137,13 @@ void CreateTestSerialServiceOnFileThread(
     mojo::InterfaceRequest<device::serial::SerialService> request) {
   auto io_handler_factory = base::Bind(&FakeEchoSerialIoHandler::Create);
   auto* connection_factory = new device::SerialConnectionFactory(
-      io_handler_factory, content::BrowserThread::GetMessageLoopProxyForThread(
+      io_handler_factory, content::BrowserThread::GetTaskRunnerForThread(
                               content::BrowserThread::IO));
   std::unique_ptr<device::SerialDeviceEnumerator> device_enumerator(
       new FakeSerialDeviceEnumerator);
-  new device::SerialServiceImpl(
-      connection_factory, std::move(device_enumerator), std::move(request));
+  mojo::MakeStrongBinding(base::MakeUnique<device::SerialServiceImpl>(
+                              connection_factory, std::move(device_enumerator)),
+                          std::move(request));
 }
 
 void CreateTestSerialService(

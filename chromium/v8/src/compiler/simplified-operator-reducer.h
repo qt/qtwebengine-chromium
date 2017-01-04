@@ -11,7 +11,8 @@ namespace v8 {
 namespace internal {
 
 // Forward declarations.
-class TypeCache;
+class Factory;
+class Isolate;
 
 namespace compiler {
 
@@ -29,7 +30,6 @@ class SimplifiedOperatorReducer final : public AdvancedReducer {
 
  private:
   Reduction ReduceReferenceEqual(Node* node);
-  Reduction ReduceTypeGuard(Node* node);
 
   Reduction Change(Node* node, const Operator* op, Node* a);
   Reduction ReplaceBoolean(bool value);
@@ -41,13 +41,14 @@ class SimplifiedOperatorReducer final : public AdvancedReducer {
   Reduction ReplaceNumber(double value);
   Reduction ReplaceNumber(int32_t value);
 
+  Factory* factory() const;
   Graph* graph() const;
+  Isolate* isolate() const;
   JSGraph* jsgraph() const { return jsgraph_; }
   MachineOperatorBuilder* machine() const;
   SimplifiedOperatorBuilder* simplified() const;
 
   JSGraph* const jsgraph_;
-  TypeCache const& type_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(SimplifiedOperatorReducer);
 };

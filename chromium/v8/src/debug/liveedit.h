@@ -26,7 +26,7 @@
 
 
 #include "src/allocation.h"
-#include "src/compiler.h"
+#include "src/ast/ast-traversal-visitor.h"
 
 namespace v8 {
 namespace internal {
@@ -38,7 +38,8 @@ namespace internal {
 // in order to analyze whether function code may be safely patched (with new
 // code successfully reading existing data from function scopes). The Tracker
 // also collects compiled function codes.
-class LiveEditFunctionTracker : public AstTraversalVisitor {
+class LiveEditFunctionTracker
+    : public AstTraversalVisitor<LiveEditFunctionTracker> {
  public:
   // Traverses the entire AST, and records information about all
   // FunctionLiterals for further use by LiveEdit code patching. The collected
@@ -46,8 +47,9 @@ class LiveEditFunctionTracker : public AstTraversalVisitor {
   static Handle<JSArray> Collect(FunctionLiteral* node, Handle<Script> script,
                                  Zone* zone, Isolate* isolate);
 
-  virtual ~LiveEditFunctionTracker() {}
-  void VisitFunctionLiteral(FunctionLiteral* node) override;
+ protected:
+  friend AstTraversalVisitor<LiveEditFunctionTracker>;
+  void VisitFunctionLiteral(FunctionLiteral* node);
 
  private:
   LiveEditFunctionTracker(Handle<Script> script, Zone* zone, Isolate* isolate);
@@ -70,20 +72,6 @@ class LiveEditFunctionTracker : public AstTraversalVisitor {
 
 class LiveEdit : AllStatic {
  public:
-  // Describes how exactly a frame has been dropped from stack.
-  enum FrameDropMode {
-    // No frame has been dropped.
-    FRAMES_UNTOUCHED,
-    // The top JS frame had been calling debug break slot stub. Patch the
-    // address this stub jumps to in the end.
-    FRAME_DROPPED_IN_DEBUG_SLOT_CALL,
-    // The top JS frame had been calling some C++ function. The return address
-    // gets patched automatically.
-    FRAME_DROPPED_IN_DIRECT_CALL,
-    FRAME_DROPPED_IN_RETURN_CALL,
-    CURRENTLY_SET_MODE
-  };
-
   static void InitializeThreadLocal(Debug* debug);
 
   static bool SetAfterBreakTarget(Debug* debug);
@@ -292,14 +280,13 @@ class FunctionInfoWrapper : public JSArrayBasedStruct<FunctionInfoWrapper> {
                             int end_position, int param_num, int literal_count,
                             int parent_index);
 
-  void SetFunctionCode(Handle<AbstractCode> function_code,
-                       Handle<HeapObject> code_scope_info);
-
   void SetFunctionScopeInfo(Handle<Object> scope_info_array) {
     this->SetField(kFunctionScopeInfoOffset_, scope_info_array);
   }
 
   void SetSharedFunctionInfo(Handle<SharedFunctionInfo> info);
+
+  Handle<SharedFunctionInfo> GetSharedFunctionInfo();
 
   int GetLiteralCount() {
     return this->GetSmiValueField(kLiteralNumOffset_);
@@ -308,12 +295,6 @@ class FunctionInfoWrapper : public JSArrayBasedStruct<FunctionInfoWrapper> {
   int GetParentIndex() {
     return this->GetSmiValueField(kParentIndexOffset_);
   }
-
-  Handle<AbstractCode> GetFunctionCode();
-
-  MaybeHandle<TypeFeedbackMetadata> GetFeedbackMetadata();
-
-  Handle<Object> GetCodeScopeInfo();
 
   int GetStartPosition() {
     return this->GetSmiValueField(kStartPositionOffset_);
@@ -326,13 +307,11 @@ class FunctionInfoWrapper : public JSArrayBasedStruct<FunctionInfoWrapper> {
   static const int kStartPositionOffset_ = 1;
   static const int kEndPositionOffset_ = 2;
   static const int kParamNumOffset_ = 3;
-  static const int kCodeOffset_ = 4;
-  static const int kCodeScopeInfoOffset_ = 5;
-  static const int kFunctionScopeInfoOffset_ = 6;
-  static const int kParentIndexOffset_ = 7;
-  static const int kSharedFunctionInfoOffset_ = 8;
-  static const int kLiteralNumOffset_ = 9;
-  static const int kSize_ = 10;
+  static const int kFunctionScopeInfoOffset_ = 4;
+  static const int kParentIndexOffset_ = 5;
+  static const int kSharedFunctionInfoOffset_ = 6;
+  static const int kLiteralNumOffset_ = 7;
+  static const int kSize_ = 8;
 
   friend class JSArrayBasedStruct<FunctionInfoWrapper>;
 };

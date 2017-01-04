@@ -13,12 +13,13 @@
     '../src/pdf',
     '../src/utils',
   ],
-  'sources': [ '<!@(python find.py ../bench "*.cpp")' ],
+  'sources': [ '<!@(python find.py "*.cpp" ../bench)' ],
 
   'dependencies': [
     'etc1.gyp:libetc1',
     'pdf.gyp:pdf',
     'skia_lib.gyp:skia_lib',
+    'svg.gyp:svgdom',
     'tools.gyp:resources',
     'tools.gyp:sk_tool_utils',
     'tools.gyp:url_data_manager',

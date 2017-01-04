@@ -22,11 +22,13 @@
     childrenChanged,
     clicked,
     documentSelectionChanged,
+    expandedChanged,
     focus,
     hide,
     hover,
     invalidStatusChanged,
     layoutComplete,
+    liveRegionCreated,
     liveRegionChanged,
     loadComplete,
     locationChanged,
@@ -60,6 +62,7 @@
     annotation,
     application,
     article,
+    audio,
     banner,
     blockquote,
     busyIndicator,
@@ -177,6 +180,7 @@
     tree,
     unknown,
     tooltip,
+    video,
     webArea,
     webView,
     window
@@ -188,9 +192,8 @@
     checked,
     collapsed,
     default,
-    disabled,  // ui/views only
+    disabled,
     editable,
-    enabled,   // content only
     expanded,
     focusable,
     focused,
@@ -263,8 +266,8 @@
 
     // A map of $(ref:automation.StateType) to boolean, indicating for each
     // state whether it should be set or not. For example:
-    // <code>{ StateType.enabled: false }</code> would only match if
-    // <code>StateType.enabled</code> was <em>not</em> present in the node's
+    // <code>{ StateType.disabled: false }</code> would only match if
+    // <code>StateType.disabled</code> was <em>not</em> present in the node's
     // <code>state</code> object.
     object? state;
 
@@ -307,6 +310,9 @@
     // The type of the event.
     EventType type;
 
+    // The source of this event.
+    DOMString eventFrom;
+
     // Stops this event from further processing except for any remaining
     // listeners on $(ref:AutomationEvent.target).
     static void stopPropagation();
@@ -329,6 +335,7 @@
   enum TreeChangeObserverFilter {
     noTreeChanges,
     liveRegionTreeChanges,
+    textMarkerChanges,
     allTreeChanges
   };
 

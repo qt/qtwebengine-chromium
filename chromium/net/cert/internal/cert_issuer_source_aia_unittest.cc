@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "net/cert/cert_net_fetcher.h"
+#include "net/cert/internal/cert_errors.h"
 #include "net/cert/internal/parsed_certificate.h"
 #include "net/cert/internal/test_helpers.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -38,9 +39,13 @@ using ::testing::StrictMock;
                   "CERTIFICATE", &der);
   if (!r)
     return r;
-  *result = ParsedCertificate::CreateFromCertificateCopy(der, {});
-  if (!*result)
-    return ::testing::AssertionFailure() << "CreateFromCertificateCopy failed";
+  CertErrors errors;
+  *result = ParsedCertificate::Create(der, {}, &errors);
+  if (!*result) {
+    return ::testing::AssertionFailure()
+           << "ParsedCertificate::Create() failed:\n"
+           << errors.ToDebugString();
+  }
   return ::testing::AssertionSuccess();
 }
 
@@ -166,7 +171,7 @@ TEST(CertIssuerSourceAiaTest, NoSyncResults) {
 
   StrictMock<MockCertNetFetcherImpl> mock_fetcher;
   CertIssuerSourceAia aia_source(&mock_fetcher);
-  std::vector<scoped_refptr<ParsedCertificate>> issuers;
+  ParsedCertificateList issuers;
   aia_source.SyncGetIssuersOf(cert.get(), &issuers);
   EXPECT_EQ(0U, issuers.size());
 }

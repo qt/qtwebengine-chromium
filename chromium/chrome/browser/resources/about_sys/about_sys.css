@@ -1,7 +1,6 @@
 /* Copyright 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 #anchor {
   display: none;
@@ -169,9 +168,4 @@ html[dir='rtl'] #details .name {
 
 .number-expanded .stat-value {
   display: auto;
-}
-
-#status {
-  color: rgb(255, 0, 0);
-  margin: .5em 0;
 }

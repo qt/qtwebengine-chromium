@@ -47,7 +47,6 @@
 #include <grpc/support/log.h>
 #include <grpc/support/string_util.h>
 #include <grpc/support/time.h>
-#include <linux/unistd.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -95,9 +94,9 @@ void gpr_default_log(gpr_log_func_args *args) {
     strcpy(time_buffer, "error:strftime");
   }
 
-  gpr_asprintf(&prefix, "%s%s.%09d %7tu %s:%d]",
+  gpr_asprintf(&prefix, "%s%s.%09" PRId32 " %7ld %s:%d]",
                gpr_log_severity_string(args->severity), time_buffer,
-               (int)(now.tv_nsec), gettid(), display_file, args->line);
+               now.tv_nsec, gettid(), display_file, args->line);
 
   fprintf(stderr, "%-60s %s\n", prefix, args->message);
   gpr_free(prefix);

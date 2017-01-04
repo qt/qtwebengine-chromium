@@ -36,13 +36,14 @@ ScrollOffsetAnimationsImpl::~ScrollOffsetAnimationsImpl() {
 void ScrollOffsetAnimationsImpl::ScrollAnimationCreate(
     ElementId element_id,
     const gfx::ScrollOffset& target_offset,
-    const gfx::ScrollOffset& current_offset) {
+    const gfx::ScrollOffset& current_offset,
+    base::TimeDelta delayed_by) {
   std::unique_ptr<ScrollOffsetAnimationCurve> curve =
       ScrollOffsetAnimationCurve::Create(
           target_offset, CubicBezierTimingFunction::CreatePreset(
                              CubicBezierTimingFunction::EaseType::EASE_IN_OUT),
           ScrollOffsetAnimationCurve::DurationBehavior::INVERSE_DELTA);
-  curve->SetInitialValue(current_offset);
+  curve->SetInitialValue(current_offset, delayed_by);
 
   std::unique_ptr<Animation> animation = Animation::Create(
       std::move(curve), AnimationIdProvider::NextAnimationId(),
@@ -61,16 +62,16 @@ bool ScrollOffsetAnimationsImpl::ScrollAnimationUpdateTarget(
     ElementId element_id,
     const gfx::Vector2dF& scroll_delta,
     const gfx::ScrollOffset& max_scroll_offset,
-    base::TimeTicks frame_monotonic_time) {
+    base::TimeTicks frame_monotonic_time,
+    base::TimeDelta delayed_by) {
   DCHECK(scroll_offset_animation_player_);
   if (!scroll_offset_animation_player_->element_animations())
     return false;
 
   DCHECK_EQ(element_id, scroll_offset_animation_player_->element_id());
 
-  Animation* animation =
-      scroll_offset_animation_player_->element_animations()->GetAnimation(
-          TargetProperty::SCROLL_OFFSET);
+  Animation* animation = scroll_offset_animation_player_->GetAnimation(
+      TargetProperty::SCROLL_OFFSET);
   if (!animation) {
     scroll_offset_animation_player_->DetachElement();
     return false;
@@ -86,9 +87,19 @@ bool ScrollOffsetAnimationsImpl::ScrollAnimationUpdateTarget(
   new_target.SetToMax(gfx::ScrollOffset());
   new_target.SetToMin(max_scroll_offset);
 
-  curve->UpdateTarget(
-      animation->TrimTimeToCurrentIteration(frame_monotonic_time).InSecondsF(),
-      new_target);
+  // TODO(ymalik): Animation::TrimTimeToCurrentIteration should probably check
+  // for run_state == Animation::WAITING_FOR_TARGET_AVAILABILITY.
+  base::TimeDelta trimmed =
+      animation->run_state() == Animation::WAITING_FOR_TARGET_AVAILABILITY
+          ? base::TimeDelta()
+          : animation->TrimTimeToCurrentIteration(frame_monotonic_time);
+
+  // Re-target taking the delay into account. Note that if the duration of the
+  // animation is 0, trimmed will be 0 and UpdateTarget will be called with
+  // t = -delayed_by.
+  trimmed -= delayed_by;
+
+  curve->UpdateTarget(trimmed.InSecondsF(), new_target);
 
   return true;
 }
@@ -103,9 +114,8 @@ void ScrollOffsetAnimationsImpl::ScrollAnimationApplyAdjustment(
   if (!scroll_offset_animation_player_->element_animations())
     return;
 
-  Animation* animation =
-      scroll_offset_animation_player_->element_animations()->GetAnimation(
-          TargetProperty::SCROLL_OFFSET);
+  Animation* animation = scroll_offset_animation_player_->GetAnimation(
+      TargetProperty::SCROLL_OFFSET);
   if (!animation)
     return;
 

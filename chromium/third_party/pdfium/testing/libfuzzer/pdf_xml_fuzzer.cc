@@ -7,10 +7,11 @@
 #include <limits>
 #include <memory>
 
-#include "core/fxcrt/include/fx_basic.h"
-#include "core/fxcrt/include/fx_system.h"
-#include "xfa/fxfa/parser/xfa_parser.h"
-#include "xfa/fxfa/parser/xfa_parser_imp.h"
+#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/fx_system.h"
+#include "xfa/fde/xml/fde_xml_imp.h"
+#include "xfa/fxfa/parser/cxfa_xml_parser.h"
+#include "xfa/fxfa/parser/cxfa_widetextread.h"
 
 namespace {
 
@@ -50,7 +51,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   CFX_WideString input = CFX_WideString::FromUTF8(
       CFX_ByteStringC(data, static_cast<FX_STRSIZE>(size)));
   std::unique_ptr<IFX_Stream, ReleaseDeleter<IFX_Stream>> stream(
-      XFA_CreateWideTextRead(input));
+      new CXFA_WideTextRead(input));
   if (!stream)
     return 0;
 

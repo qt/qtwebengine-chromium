@@ -9,7 +9,6 @@
 #include <stdint.h>
 
 #include "base/memory/shared_memory.h"
-#include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/generic_shared_memory_id.h"
@@ -17,7 +16,7 @@
 #include "ui/gfx/gfx_export.h"
 
 #if defined(USE_OZONE)
-#include "ui/gfx/native_pixmap_handle_ozone.h"
+#include "ui/gfx/native_pixmap_handle.h"
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
 #include "ui/gfx/mac/io_surface.h"
 #endif
@@ -26,11 +25,12 @@ extern "C" typedef struct _ClientBuffer* ClientBuffer;
 
 namespace gfx {
 
+class ColorSpace;
+
 enum GpuMemoryBufferType {
   EMPTY_BUFFER,
   SHARED_MEMORY_BUFFER,
   IO_SURFACE_BUFFER,
-  SURFACE_TEXTURE_BUFFER,
   OZONE_NATIVE_PIXMAP,
   GPU_MEMORY_BUFFER_TYPE_LAST = OZONE_NATIVE_PIXMAP
 };
@@ -53,10 +53,6 @@ struct GFX_EXPORT GpuMemoryBufferHandle {
   ScopedRefCountedIOSurfaceMachPort mach_port;
 #endif
 };
-
-base::trace_event::MemoryAllocatorDumpGuid GFX_EXPORT
-GetGpuMemoryBufferGUIDForTracing(uint64_t tracing_process_id,
-                                 GpuMemoryBufferId buffer_id);
 
 // This interface typically correspond to a type of shared memory that is also
 // shared with the GPU. A GPU memory buffer can be written to directly by
@@ -88,6 +84,10 @@ class GFX_EXPORT GpuMemoryBuffer {
   // Fills the stride in bytes for each plane of the buffer. The stride of
   // plane K is stored at index K-1 of the |stride| array.
   virtual int stride(size_t plane) const = 0;
+
+  // Set the color space in which this buffer should be interpreted when used
+  // for scanout. Note that this will not impact texturing from the buffer.
+  virtual void SetColorSpaceForScanout(const gfx::ColorSpace& color_space);
 
   // Returns a unique identifier associated with buffer.
   virtual GpuMemoryBufferId GetId() const = 0;

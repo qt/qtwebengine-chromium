@@ -30,6 +30,7 @@
 #include "ui/base/clipboard/custom_data_helper.h"
 #import "ui/base/cocoa/focus_tracker.h"
 #include "ui/base/dragdrop/cocoa_dnd_util.h"
+#include "ui/display/screen.h"
 #include "ui/gfx/image/image_skia_util_mac.h"
 
 using blink::WebDragOperation;
@@ -39,6 +40,7 @@ using content::PopupMenuHelper;
 using content::RenderViewHostFactory;
 using content::RenderWidgetHostView;
 using content::RenderWidgetHostViewMac;
+using content::ScreenInfo;
 using content::WebContents;
 using content::WebContentsImpl;
 using content::WebContentsViewMac;
@@ -74,7 +76,35 @@ STATIC_ASSERT_ENUM(NSDragOperationEvery, blink::WebDragOperationEvery);
 - (content::WebContentsImpl*)webContents;
 @end
 
+namespace {
+
+content::ScreenInfo GetNSViewScreenInfo(NSView* view) {
+  display::Display display =
+      display::Screen::GetScreen()->GetDisplayNearestWindow(view);
+
+  content::ScreenInfo results;
+  results.device_scale_factor = static_cast<int>(display.device_scale_factor());
+  results.icc_profile = display.icc_profile();
+  results.depth = display.color_depth();
+  results.depth_per_component = display.depth_per_component();
+  results.is_monochrome = display.is_monochrome();
+  results.rect = display.bounds();
+  results.available_rect = display.work_area();
+  results.orientation_angle = display.RotationAsDegree();
+  results.orientation_type =
+      content::RenderWidgetHostViewBase::GetOrientationTypeForDesktop(display);
+
+  return results;
+}
+
+}  // namespace
+
 namespace content {
+
+// static
+void WebContentsView::GetDefaultScreenInfo(ScreenInfo* results) {
+  *results = GetNSViewScreenInfo(nil);
+}
 
 WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
@@ -115,6 +145,10 @@ gfx::NativeView WebContentsViewMac::GetContentNativeView() const {
 gfx::NativeWindow WebContentsViewMac::GetTopLevelNativeWindow() const {
   NSWindow* window = [cocoa_view_.get() window];
   return window ? window : delegate_->GetNativeWindow();
+}
+
+void WebContentsViewMac::GetScreenInfo(ScreenInfo* results) const {
+  *results = GetNSViewScreenInfo(GetNativeView());
 }
 
 void WebContentsViewMac::GetContainerBounds(gfx::Rect* out) const {
@@ -660,7 +694,6 @@ void WebContentsViewMac::CloseTab() {
 }
 
 - (void)windowChangedOcclusionState:(NSNotification*)notification {
-  DCHECK(base::mac::IsOSMavericksOrLater());
   NSWindow* window = [notification object];
   WebContentsImpl* webContents = [self webContents];
   if (window && webContents && !webContents->IsBeingDestroyed()) {

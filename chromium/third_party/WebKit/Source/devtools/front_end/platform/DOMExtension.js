@@ -306,6 +306,16 @@ Node.prototype.isComponentSelectionCollapsed = function()
 }
 
 /**
+ * @return {boolean}
+ */
+Node.prototype.hasSelection = function()
+{
+    if (this.isComponentSelectionCollapsed())
+        return false;
+    return this.getComponentSelection().containsNode(this, true);
+}
+
+/**
  * @return {!Selection}
  */
 Node.prototype.getDeepSelection = function()
@@ -628,25 +638,6 @@ Element.prototype.setTextAndTitle = function(text)
     this.textContent = text;
     this.title = text;
 }
-
-KeyboardEvent.prototype.__defineGetter__("data", function()
-{
-    // Emulate "data" attribute from DOM 3 TextInput event.
-    // See http://www.w3.org/TR/DOM-Level-3-Events/#events-Events-TextEvent-data
-    switch (this.type) {
-    case "keypress":
-        if (!this.ctrlKey && !this.metaKey)
-            return String.fromCharCode(this.charCode);
-        else
-                return "";
-    case "keydown":
-    case "keyup":
-        if (!this.ctrlKey && !this.metaKey && !this.altKey)
-            return String.fromCharCode(this.which);
-        else
-                return "";
-    }
-});
 
 /**
  * @param {boolean=} preventDefault

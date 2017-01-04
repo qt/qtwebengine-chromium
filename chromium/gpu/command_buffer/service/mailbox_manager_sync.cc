@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <queue>
 
-#include "base/memory/linked_ptr.h"
+#include "base/memory/ptr_util.h"
 #include "base/synchronization/lock.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/texture_manager.h"
@@ -28,7 +28,7 @@ namespace {
 base::LazyInstance<base::Lock> g_lock = LAZY_INSTANCE_INITIALIZER;
 
 #if !defined(OS_MACOSX)
-typedef std::map<SyncToken, linked_ptr<gl::GLFence>> SyncTokenToFenceMap;
+typedef std::map<SyncToken, std::unique_ptr<gl::GLFence>> SyncTokenToFenceMap;
 base::LazyInstance<SyncTokenToFenceMap> g_sync_point_to_fence =
     LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<std::queue<SyncTokenToFenceMap::iterator>> g_sync_points =
@@ -50,13 +50,12 @@ void CreateFenceLocked(const SyncToken& sync_token) {
       sync_points.pop();
     }
     // Need to use EGL fences since we are likely not in a single share group.
-    linked_ptr<gl::GLFence> fence(make_linked_ptr(new gl::GLFenceEGL));
-    if (fence.get()) {
-      std::pair<SyncTokenToFenceMap::iterator, bool> result =
-          sync_point_to_fence.insert(std::make_pair(sync_token, fence));
-      DCHECK(result.second);
-      sync_points.push(result.first);
-    }
+    auto fence = base::MakeUnique<gl::GLFenceEGL>();
+    std::pair<SyncTokenToFenceMap::iterator, bool> result =
+        sync_point_to_fence.insert(
+            std::make_pair(sync_token, std::move(fence)));
+    DCHECK(result.second);
+    sync_points.push(result.first);
     DCHECK(sync_points.size() == sync_point_to_fence.size());
   }
 #endif
@@ -219,8 +218,11 @@ Texture* MailboxManagerSync::ConsumeTexture(const Mailbox& mailbox) {
 }
 
 void MailboxManagerSync::ProduceTexture(const Mailbox& mailbox,
-                                        Texture* texture) {
+                                        TextureBase* texture_base) {
   base::AutoLock lock(g_lock.Get());
+
+  Texture* texture = static_cast<Texture*>(texture_base);
+  DCHECK(texture != nullptr);
 
   TextureToGroupMap::iterator tex_it = texture_to_group_.find(texture);
   TextureGroup* group_for_mailbox = TextureGroup::FromName(mailbox);
@@ -239,6 +241,9 @@ void MailboxManagerSync::ProduceTexture(const Mailbox& mailbox,
     // Unlink the mailbox from its current group.
     group_for_mailbox->RemoveName(mailbox);
   }
+
+  if (!texture)
+    return;
 
   if (group_for_texture) {
     group_for_texture->AddName(mailbox);
@@ -260,8 +265,12 @@ void MailboxManagerSync::ProduceTexture(const Mailbox& mailbox,
   DCHECK(texture->mailbox_manager_ == this);
 }
 
-void MailboxManagerSync::TextureDeleted(Texture* texture) {
+void MailboxManagerSync::TextureDeleted(TextureBase* texture_base) {
   base::AutoLock lock(g_lock.Get());
+
+  Texture* texture = static_cast<Texture*>(texture_base);
+  DCHECK(texture != nullptr);
+
   TextureToGroupMap::iterator tex_it = texture_to_group_.find(texture);
   DCHECK(tex_it != texture_to_group_.end());
   TextureGroup* group_for_texture = tex_it->second.group.get();
@@ -270,10 +279,12 @@ void MailboxManagerSync::TextureDeleted(Texture* texture) {
   texture_to_group_.erase(tex_it);
 }
 
-void MailboxManagerSync::UpdateDefinitionLocked(
-    Texture* texture,
-    TextureGroupRef* group_ref) {
+void MailboxManagerSync::UpdateDefinitionLocked(TextureBase* texture_base,
+                                                TextureGroupRef* group_ref) {
   g_lock.Get().AssertAcquired();
+
+  Texture* texture = static_cast<Texture*>(texture_base);
+  DCHECK(texture != nullptr);
 
   if (SkipTextureWorkarounds(texture))
     return;

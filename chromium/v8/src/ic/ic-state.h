@@ -6,6 +6,7 @@
 #define V8_IC_STATE_H_
 
 #include "src/macro-assembler.h"
+#include "src/parsing/token.h"
 
 namespace v8 {
 namespace internal {
@@ -120,25 +121,41 @@ class BinaryOpICState final BASE_EMBEDDED {
   Token::Value op() const { return op_; }
   Maybe<int> fixed_right_arg() const { return fixed_right_arg_; }
 
-  Type* GetLeftType() const { return KindToType(left_kind_); }
-  Type* GetRightType() const { return KindToType(right_kind_); }
-  Type* GetResultType() const;
+  AstType* GetLeftType() const { return KindToType(left_kind_); }
+  AstType* GetRightType() const { return KindToType(right_kind_); }
+  AstType* GetResultType() const;
 
   void Update(Handle<Object> left, Handle<Object> right, Handle<Object> result);
 
   Isolate* isolate() const { return isolate_; }
 
+  enum Kind { NONE, SMI, INT32, NUMBER, STRING, GENERIC };
+  Kind kind() const {
+    return KindGeneralize(KindGeneralize(left_kind_, right_kind_),
+                          result_kind_);
+  }
+
  private:
   friend std::ostream& operator<<(std::ostream& os, const BinaryOpICState& s);
-
-  enum Kind { NONE, SMI, INT32, NUMBER, STRING, GENERIC };
 
   Kind UpdateKind(Handle<Object> object, Kind kind) const;
 
   static const char* KindToString(Kind kind);
-  static Type* KindToType(Kind kind);
+  static AstType* KindToType(Kind kind);
   static bool KindMaybeSmi(Kind kind) {
     return (kind >= SMI && kind <= NUMBER) || kind == GENERIC;
+  }
+  static bool KindLessGeneralThan(Kind kind1, Kind kind2) {
+    if (kind1 == NONE) return true;
+    if (kind1 == kind2) return true;
+    if (kind2 == GENERIC) return true;
+    if (kind2 == STRING) return false;
+    return kind1 <= kind2;
+  }
+  static Kind KindGeneralize(Kind kind1, Kind kind2) {
+    if (KindLessGeneralThan(kind1, kind2)) return kind2;
+    if (KindLessGeneralThan(kind2, kind1)) return kind1;
+    return GENERIC;
   }
 
   // We truncate the last bit of the token.
@@ -186,8 +203,8 @@ class CompareICState {
     GENERIC
   };
 
-  static Type* StateToType(Zone* zone, State state,
-                           Handle<Map> map = Handle<Map>());
+  static AstType* StateToType(Zone* zone, State state,
+                              Handle<Map> map = Handle<Map>());
 
   static State NewInputState(State old_state, Handle<Object> value);
 
@@ -241,8 +258,8 @@ class StoreICState final BASE_EMBEDDED {
     return StoreICState(state).language_mode();
   }
 
-  class LanguageModeState : public BitField<LanguageMode, 1, 2> {};
-  STATIC_ASSERT(i::LANGUAGE_END == 3);
+  class LanguageModeState : public BitField<LanguageMode, 1, 1> {};
+  STATIC_ASSERT(i::LANGUAGE_END == 2);
 
   // For convenience, a statically declared encoding of strict mode extra
   // IC state.

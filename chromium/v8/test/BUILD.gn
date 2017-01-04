@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("../gni/isolate.gni")
+import("//build_overrides/v8.gni")
 
 group("gn_all") {
   testonly = true
@@ -20,10 +21,14 @@ group("gn_all") {
     ]
   }
 
+  if (v8_enable_inspector_override) {
+    deps += [ "inspector:inspector-test" ]
+  }
+
   if (v8_test_isolation_mode != "noop") {
     deps += [
-      ":bot_default_run",
       ":benchmarks_run",
+      ":bot_default_run",
       ":default_run",
       ":mozilla_run",
       ":simdjs_run",
@@ -54,7 +59,7 @@ group("default_tests") {
 
 v8_isolate_run("bot_default") {
   deps = [
-    ":default_tests", 
+    ":default_tests",
     ":webkit_run",
   ]
 
@@ -67,15 +72,6 @@ v8_isolate_run("default") {
   ]
 
   isolate = "default.isolate"
-}
-
-v8_isolate_run("ignition") {
-  deps = [
-    ":cctest_run",
-    ":mjsunit_run",
-  ]
-
-  isolate = "ignition.isolate"
 }
 
 v8_isolate_run("optimize_for_size") {
@@ -131,8 +127,8 @@ v8_isolate_run("fuzzer") {
     "..:v8_simple_json_fuzzer",
     "..:v8_simple_parser_fuzzer",
     "..:v8_simple_regexp_fuzzer",
-    "..:v8_simple_wasm_fuzzer",
     "..:v8_simple_wasm_asmjs_fuzzer",
+    "..:v8_simple_wasm_fuzzer",
   ]
 
   isolate = "fuzzer/fuzzer.isolate"

@@ -26,6 +26,8 @@
         ],
       },
       'sources': [
+        'base/adaptedvideotracksource.cc',
+        'base/adaptedvideotracksource.h',
         'base/audiosource.h',
         'base/codec.cc',
         'base/codec.h',
@@ -33,7 +35,6 @@
         'base/cpuid.h',
         'base/cryptoparams.h',
         'base/device.h',
-        'base/fakescreencapturerfactory.h',
         'base/hybriddataengine.h',
         'base/mediachannel.h',
         'base/mediacommon.h',
@@ -63,12 +64,12 @@
         'base/videocommon.h',
         'base/videoframe.cc',
         'base/videoframe.h',
-        'base/videoframefactory.cc',
-        'base/videoframefactory.h',
         'base/videosourcebase.cc',
         'base/videosourcebase.h',
         'devices/videorendererfactory.h',
         'engine/nullwebrtcvideoengine.h',
+        'engine/payload_type_mapper.cc',
+        'engine/payload_type_mapper.h',
         'engine/simulcast.cc',
         'engine/simulcast.h',
         'engine/webrtccommon.h',
@@ -85,8 +86,6 @@
         'engine/webrtcvideoengine2.h',
         'engine/webrtcvideoframe.cc',
         'engine/webrtcvideoframe.h',
-        'engine/webrtcvideoframefactory.cc',
-        'engine/webrtcvideoframefactory.h',
         'engine/webrtcvoe.h',
         'engine/webrtcvoiceengine.cc',
         'engine/webrtcvoiceengine.h',
@@ -122,6 +121,11 @@
           'dependencies': [
             '<(DEPTH)/third_party/usrsctp/usrsctp.gyp:usrsctplib',
           ],
+        }],
+        ['enable_intelligibility_enhancer==1', {
+          'defines': ['WEBRTC_INTELLIGIBILITY_ENHANCER=1',],
+        }, {
+          'defines': ['WEBRTC_INTELLIGIBILITY_ENHANCER=0',],
         }],
         ['build_with_chromium==1', {
           'dependencies': [
@@ -166,196 +170,7 @@
             },
           },
         }],
-        ['OS=="mac" and target_arch=="ia32"', {
-          'sources': [
-            'devices/carbonvideorenderer.cc',
-            'devices/carbonvideorenderer.h',
-          ],
-          'link_settings': {
-            'xcode_settings': {
-              'OTHER_LDFLAGS': [
-                '-framework Carbon',
-              ],
-            },
-          },
-        }],
-        ['OS=="ios" or (OS=="mac" and target_arch!="ia32")', {
-          'defines': [
-            'CARBON_DEPRECATED=YES',
-          ],
-        }],
       ],
     },  # target rtc_media
   ],  # targets.
-  'conditions': [
-    ['include_tests==1', {
-      'targets' : [
-        {
-          'target_name': 'rtc_unittest_main',
-          'type': 'static_library',
-          'dependencies': [
-            '<(DEPTH)/testing/gmock.gyp:gmock',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
-            '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
-          ],
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '<(libyuv_dir)/include',
-              '<(DEPTH)/testing/gmock/include',
-            ],
-          },
-          'conditions': [
-            ['build_libyuv==1', {
-              'dependencies': ['<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',],
-            }],
-            ['OS=="ios"', {
-              # TODO(kjellander): Make the code compile without disabling these.
-              # See https://bugs.chromium.org/p/webrtc/issues/detail?id=3307
-              'cflags': [
-                '-Wno-unused-variable',
-              ],
-              'xcode_settings': {
-                'WARNING_CFLAGS': [
-                  '-Wno-unused-variable',
-                ],
-              },
-            }],
-          ],
-          'include_dirs': [
-             '<(DEPTH)/testing/gtest/include',
-             '<(DEPTH)/testing/gtest',
-           ],
-          'sources': [
-            'base/fakemediaengine.h',
-            'base/fakenetworkinterface.h',
-            'base/fakertp.h',
-            'base/fakevideocapturer.h',
-            'base/fakevideorenderer.h',
-            'base/testutils.cc',
-            'base/testutils.h',
-            'engine/fakewebrtccall.cc',
-            'engine/fakewebrtccall.h',
-            'engine/fakewebrtccommon.h',
-            'engine/fakewebrtcdeviceinfo.h',
-            'engine/fakewebrtcvcmfactory.h',
-            'engine/fakewebrtcvideocapturemodule.h',
-            'engine/fakewebrtcvideoengine.h',
-            'engine/fakewebrtcvoiceengine.h',
-          ],
-        },  # target rtc_unittest_main
-        {
-          'target_name': 'rtc_media_unittests',
-          'type': 'executable',
-          'dependencies': [
-            '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
-            '<(webrtc_root)/media/media.gyp:rtc_media',
-            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:metrics_default',
-            '<(webrtc_root)/test/test.gyp:test_support',
-            'rtc_unittest_main',
-          ],
-          'sources': [
-            'base/codec_unittest.cc',
-            'base/rtpdataengine_unittest.cc',
-            'base/rtpdump_unittest.cc',
-            'base/rtputils_unittest.cc',
-            'base/streamparams_unittest.cc',
-            'base/turnutils_unittest.cc',
-            'base/videoadapter_unittest.cc',
-            'base/videobroadcaster_unittest.cc',
-            'base/videocapturer_unittest.cc',
-            'base/videocommon_unittest.cc',
-            'base/videoengine_unittest.h',
-            'base/videoframe_unittest.h',
-            'engine/nullwebrtcvideoengine_unittest.cc',
-            'engine/simulcast_unittest.cc',
-            'engine/webrtcmediaengine_unittest.cc',
-            'engine/webrtcvideocapturer_unittest.cc',
-            'engine/webrtcvideoframe_unittest.cc',
-            'engine/webrtcvideoframefactory_unittest.cc',
-            'engine/webrtcvideoengine2_unittest.cc',
-            'engine/webrtcvoiceengine_unittest.cc',
-            'sctp/sctpdataengine_unittest.cc',
-          ],
-          # TODO(kjellander): Make the code compile without disabling these flags.
-          # See https://bugs.chromium.org/p/webrtc/issues/detail?id=3307
-          'cflags': [
-            '-Wno-sign-compare',
-          ],
-          'cflags_cc!': [
-            '-Woverloaded-virtual',
-          ],
-          'msvs_disabled_warnings': [
-            4245,  # conversion from 'int' to 'uint32_t', signed/unsigned mismatch.
-            4389,  # signed/unsigned mismatch.
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'msvs_settings': {
-                'VCLinkerTool': {
-                  'AdditionalDependencies': [
-                    # TODO(ronghuawu): Since we've included strmiids in
-                    # libjingle_media target, we shouldn't need this here.
-                    # Find out why it doesn't work without this.
-                    'strmiids.lib',
-                  ],
-                },
-              },
-            }],
-            ['OS=="win" and clang==1', {
-              'msvs_settings': {
-                'VCCLCompilerTool': {
-                  'AdditionalOptions': [
-                    # Disable warnings failing when compiling with Clang on Windows.
-                    # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
-                    '-Wno-sign-compare',
-                    '-Wno-unused-function',
-                  ],
-                },
-              },
-            },],
-            ['clang==1', {
-              # TODO(kjellander): Make the code compile without disabling these.
-              # See https://bugs.chromium.org/p/webrtc/issues/detail?id=3307
-              'cflags!': [
-                '-Wextra',
-              ],
-              'xcode_settings': {
-                'WARNING_CFLAGS!': ['-Wextra'],
-              },
-            }],
-            ['OS=="ios"', {
-              'mac_bundle_resources': [
-                '<(DEPTH)/resources/media/captured-320x240-2s-48.frames',
-                '<(DEPTH)/resources/media/faces.1280x720_P420.yuv',
-                '<(DEPTH)/resources/media/faces_I420.jpg',
-                '<(DEPTH)/resources/media/faces_I422.jpg',
-                '<(DEPTH)/resources/media/faces_I444.jpg',
-                '<(DEPTH)/resources/media/faces_I411.jpg',
-                '<(DEPTH)/resources/media/faces_I400.jpg',
-              ],
-            }],
-          ],
-        },  # target rtc_media_unittests
-      ],  # targets
-      'conditions': [
-        ['test_isolation_mode != "noop"', {
-          'targets': [
-            {
-              'target_name': 'rtc_media_unittests_run',
-              'type': 'none',
-              'dependencies': [
-                'rtc_media_unittests',
-              ],
-              'includes': [
-                '../build/isolate.gypi',
-              ],
-              'sources': [
-                'rtc_media_unittests.isolate',
-              ],
-            },
-          ],
-        }],
-      ],  # conditions
-    }],  # include_tests==1
-  ],  # conditions
 }

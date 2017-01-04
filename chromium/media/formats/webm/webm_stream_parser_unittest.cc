@@ -38,7 +38,7 @@ class WebMStreamParserTest : public testing::Test {
     EXPECT_CALL(*this, InitCB(_));
     EXPECT_CALL(*this, NewMediaSegmentCB()).Times(testing::AnyNumber());
     EXPECT_CALL(*this, EndMediaSegmentCB()).Times(testing::AnyNumber());
-    EXPECT_CALL(*this, NewBuffersCB(_, _, _))
+    EXPECT_CALL(*this, NewBuffersCB(_))
         .Times(testing::AnyNumber())
         .WillRepeatedly(testing::Return(true));
     parser_->Init(
@@ -79,10 +79,7 @@ class WebMStreamParserTest : public testing::Test {
     return true;
   }
 
-  MOCK_METHOD3(NewBuffersCB,
-               bool(const StreamParser::BufferQueue&,
-                    const StreamParser::BufferQueue&,
-                    const StreamParser::TextBufferQueueMap&));
+  MOCK_METHOD1(NewBuffersCB, bool(const StreamParser::BufferQueueMap&));
   MOCK_METHOD2(OnEncryptedMediaInitData,
                void(EmeInitDataType init_data_type,
                     const std::vector<uint8_t>& init_data));
@@ -97,7 +94,7 @@ class WebMStreamParserTest : public testing::Test {
 TEST_F(WebMStreamParserTest, VerifyMediaTrackMetadata) {
   EXPECT_MEDIA_LOG(testing::HasSubstr("Estimating WebM block duration"))
       .Times(testing::AnyNumber());
-  StreamParser::InitParameters params(kInfiniteDuration());
+  StreamParser::InitParameters params(kInfiniteDuration);
   params.detected_audio_track_count = 1;
   params.detected_video_track_count = 1;
   params.detected_text_track_count = 0;
@@ -124,7 +121,7 @@ TEST_F(WebMStreamParserTest, VerifyMediaTrackMetadata) {
 TEST_F(WebMStreamParserTest, VerifyDetectedTrack_AudioOnly) {
   EXPECT_MEDIA_LOG(testing::HasSubstr("Estimating WebM block duration"))
       .Times(testing::AnyNumber());
-  StreamParser::InitParameters params(kInfiniteDuration());
+  StreamParser::InitParameters params(kInfiniteDuration);
   params.detected_audio_track_count = 1;
   params.detected_video_track_count = 0;
   params.detected_text_track_count = 0;
@@ -134,7 +131,7 @@ TEST_F(WebMStreamParserTest, VerifyDetectedTrack_AudioOnly) {
 }
 
 TEST_F(WebMStreamParserTest, VerifyDetectedTrack_VideoOnly) {
-  StreamParser::InitParameters params(kInfiniteDuration());
+  StreamParser::InitParameters params(kInfiniteDuration);
   params.detected_audio_track_count = 0;
   params.detected_video_track_count = 1;
   params.detected_text_track_count = 0;
@@ -146,7 +143,7 @@ TEST_F(WebMStreamParserTest, VerifyDetectedTrack_VideoOnly) {
 TEST_F(WebMStreamParserTest, VerifyDetectedTracks_AVText) {
   EXPECT_MEDIA_LOG(testing::HasSubstr("Estimating WebM block duration"))
       .Times(testing::AnyNumber());
-  StreamParser::InitParameters params(kInfiniteDuration());
+  StreamParser::InitParameters params(kInfiniteDuration);
   params.detected_audio_track_count = 1;
   params.detected_video_track_count = 1;
   params.detected_text_track_count = 1;
@@ -154,6 +151,46 @@ TEST_F(WebMStreamParserTest, VerifyDetectedTracks_AVText) {
   EXPECT_EQ(media_tracks_->tracks().size(), 2u);
   EXPECT_EQ(media_tracks_->tracks()[0]->type(), MediaTrack::Video);
   EXPECT_EQ(media_tracks_->tracks()[1]->type(), MediaTrack::Audio);
+}
+
+TEST_F(WebMStreamParserTest, ColourElement) {
+  EXPECT_MEDIA_LOG(testing::HasSubstr("Estimating WebM block duration"))
+      .Times(testing::AnyNumber());
+  StreamParser::InitParameters params(kInfiniteDuration);
+  params.detected_audio_track_count = 0;
+  params.detected_video_track_count = 1;
+  params.detected_text_track_count = 0;
+  ParseWebMFile("colour.webm", params);
+  EXPECT_EQ(media_tracks_->tracks().size(), 1u);
+
+  const auto& video_track = media_tracks_->tracks()[0];
+  EXPECT_EQ(video_track->type(), MediaTrack::Video);
+
+  const VideoDecoderConfig& video_config =
+      media_tracks_->getVideoConfig(video_track->bytestream_track_id());
+
+  gfx::ColorSpace expected_color_space(gfx::ColorSpace::PrimaryID::SMPTEST428_1,
+                                       gfx::ColorSpace::TransferID::LOG,
+                                       gfx::ColorSpace::MatrixID::RGB,
+                                       gfx::ColorSpace::RangeID::FULL);
+  EXPECT_EQ(video_config.color_space_info(), expected_color_space);
+
+  base::Optional<HDRMetadata> hdr_metadata = video_config.hdr_metadata();
+  EXPECT_TRUE(hdr_metadata.has_value());
+  EXPECT_EQ(hdr_metadata->max_cll, 11u);
+  EXPECT_EQ(hdr_metadata->max_fall, 12u);
+
+  const MasteringMetadata& mmdata = hdr_metadata->mastering_metadata;
+  EXPECT_FLOAT_EQ(mmdata.primary_r_chromaticity_x, 0.1f);
+  EXPECT_FLOAT_EQ(mmdata.primary_r_chromaticity_y, 0.2f);
+  EXPECT_FLOAT_EQ(mmdata.primary_g_chromaticity_x, 0.1f);
+  EXPECT_FLOAT_EQ(mmdata.primary_g_chromaticity_y, 0.2f);
+  EXPECT_FLOAT_EQ(mmdata.primary_b_chromaticity_x, 0.1f);
+  EXPECT_FLOAT_EQ(mmdata.primary_b_chromaticity_y, 0.2f);
+  EXPECT_FLOAT_EQ(mmdata.white_point_chromaticity_x, 0.1f);
+  EXPECT_FLOAT_EQ(mmdata.white_point_chromaticity_y, 0.2f);
+  EXPECT_EQ(mmdata.luminance_max, 40);
+  EXPECT_EQ(mmdata.luminance_min, 30);
 }
 
 }  // namespace media

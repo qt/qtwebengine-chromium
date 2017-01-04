@@ -17,6 +17,7 @@
 #include "media/base/demuxer_stream_provider.h"
 #include "media/base/eme_constants.h"
 #include "media/base/media_export.h"
+#include "media/base/media_track.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/ranges.h"
 
@@ -36,7 +37,7 @@ class MEDIA_EXPORT DemuxerHost {
       const Ranges<base::TimeDelta>& ranges) = 0;
 
   // Sets the duration of the media in microseconds.
-  // Duration may be kInfiniteDuration() if the duration is not known.
+  // Duration may be kInfiniteDuration if the duration is not known.
   virtual void SetDuration(base::TimeDelta duration) = 0;
 
   // Stops execution of the pipeline due to a fatal error. Do not call this
@@ -67,7 +68,7 @@ class MEDIA_EXPORT Demuxer : public DemuxerStreamProvider {
                           const std::vector<uint8_t>& init_data)>;
 
   // Notifies demuxer clients that media track configuration has been updated
-  // (e.g. the inital stream metadata has been parsed successfully, or a new
+  // (e.g. the initial stream metadata has been parsed successfully, or a new
   // init segment has been parsed successfully in MSE case).
   using MediaTracksUpdatedCB =
       base::Callback<void(std::unique_ptr<MediaTracks>)>;
@@ -86,6 +87,10 @@ class MEDIA_EXPORT Demuxer : public DemuxerStreamProvider {
   virtual void Initialize(DemuxerHost* host,
                           const PipelineStatusCB& status_cb,
                           bool enable_text_tracks) = 0;
+
+  // Aborts any pending read operations that the demuxer is involved with; any
+  // read aborted will be aborted with a status of kAborted.
+  virtual void AbortPendingReads() = 0;
 
   // Indicates that a new Seek() call is on its way. Implementations may abort
   // pending reads and future Read() calls may return kAborted until Seek() is
@@ -134,6 +139,15 @@ class MEDIA_EXPORT Demuxer : public DemuxerStreamProvider {
 
   // Returns the memory usage in bytes for the demuxer.
   virtual int64_t GetMemoryUsage() const = 0;
+
+  virtual void OnEnabledAudioTracksChanged(
+      const std::vector<MediaTrack::Id>& track_ids,
+      base::TimeDelta currTime) = 0;
+
+  // |track_ids| is either empty or contains a single video track id.
+  virtual void OnSelectedVideoTrackChanged(
+      const std::vector<MediaTrack::Id>& track_ids,
+      base::TimeDelta currTime) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Demuxer);

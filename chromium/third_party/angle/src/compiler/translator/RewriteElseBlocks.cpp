@@ -8,6 +8,8 @@
 //
 
 #include "compiler/translator/RewriteElseBlocks.h"
+
+#include "compiler/translator/Intermediate.h"
 #include "compiler/translator/NodeSearch.h"
 #include "compiler/translator/SymbolTable.h"
 
@@ -28,15 +30,8 @@ class ElseBlockRewriter : public TIntermTraverser
   private:
     const TType *mFunctionType;
 
-    TIntermNode *rewriteSelection(TIntermSelection *selection);
+    TIntermNode *rewriteIfElse(TIntermIfElse *ifElse);
 };
-
-TIntermUnary *MakeNewUnary(TOperator op, TIntermTyped *operand)
-{
-    TIntermUnary *unary = new TIntermUnary(op, operand->getType());
-    unary->setOperand(operand);
-    return unary;
-}
 
 ElseBlockRewriter::ElseBlockRewriter()
     : TIntermTraverser(true, false, true),
@@ -53,19 +48,10 @@ bool ElseBlockRewriter::visitAggregate(Visit visit, TIntermAggregate *node)
             for (size_t statementIndex = 0; statementIndex != node->getSequence()->size(); statementIndex++)
             {
                 TIntermNode *statement = (*node->getSequence())[statementIndex];
-                TIntermSelection *selection = statement->getAsSelectionNode();
-                if (selection && selection->getFalseBlock() != nullptr)
+                TIntermIfElse *ifElse  = statement->getAsIfElseNode();
+                if (ifElse && ifElse->getFalseBlock() != nullptr)
                 {
-                    // Check for if / else if
-                    TIntermSelection *elseIfBranch = selection->getFalseBlock()->getAsSelectionNode();
-                    if (elseIfBranch)
-                    {
-                        selection->replaceChildNode(elseIfBranch, rewriteSelection(elseIfBranch));
-                        delete elseIfBranch;
-                    }
-
-                    (*node->getSequence())[statementIndex] = rewriteSelection(selection);
-                    delete selection;
+                    (*node->getSequence())[statementIndex] = rewriteIfElse(ifElse);
                 }
             }
         }
@@ -82,20 +68,20 @@ bool ElseBlockRewriter::visitAggregate(Visit visit, TIntermAggregate *node)
     return true;
 }
 
-TIntermNode *ElseBlockRewriter::rewriteSelection(TIntermSelection *selection)
+TIntermNode *ElseBlockRewriter::rewriteIfElse(TIntermIfElse *ifElse)
 {
-    ASSERT(selection != nullptr);
+    ASSERT(ifElse != nullptr);
 
     nextTemporaryIndex();
 
-    TIntermTyped *typedCondition = selection->getCondition()->getAsTyped();
+    TIntermTyped *typedCondition     = ifElse->getCondition()->getAsTyped();
     TIntermAggregate *storeCondition = createTempInitDeclaration(typedCondition);
 
-    TIntermSelection *falseBlock = nullptr;
+    TIntermAggregate *falseBlock = nullptr;
 
     TType boolType(EbtBool, EbpUndefined, EvqTemporary);
 
-    if (selection->getFalseBlock())
+    if (ifElse->getFalseBlock())
     {
         TIntermAggregate *negatedElse = nullptr;
         // crbug.com/346463
@@ -113,17 +99,19 @@ TIntermNode *ElseBlockRewriter::rewriteSelection(TIntermSelection *selection)
         }
 
         TIntermSymbol *conditionSymbolElse = createTempSymbol(boolType);
-        TIntermUnary *negatedCondition = MakeNewUnary(EOpLogicalNot, conditionSymbolElse);
-        falseBlock = new TIntermSelection(negatedCondition,
-                                          selection->getFalseBlock(), negatedElse);
+        TIntermUnary *negatedCondition     = new TIntermUnary(EOpLogicalNot, conditionSymbolElse);
+        TIntermIfElse *falseIfElse =
+            new TIntermIfElse(negatedCondition, ifElse->getFalseBlock(), negatedElse);
+        falseBlock = TIntermediate::EnsureSequence(falseIfElse);
     }
 
     TIntermSymbol *conditionSymbolSel = createTempSymbol(boolType);
-    TIntermSelection *newSelection = new TIntermSelection(conditionSymbolSel, selection->getTrueBlock(), falseBlock);
+    TIntermIfElse *newIfElse =
+        new TIntermIfElse(conditionSymbolSel, ifElse->getTrueBlock(), falseBlock);
 
     TIntermAggregate *block = new TIntermAggregate(EOpSequence);
     block->getSequence()->push_back(storeCondition);
-    block->getSequence()->push_back(newSelection);
+    block->getSequence()->push_back(newIfElse);
 
     return block;
 }

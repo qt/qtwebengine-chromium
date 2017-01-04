@@ -104,7 +104,7 @@ const char kJSCancelStreamUrlType[] = "cancelStreamUrl";
 // Navigate to the given URL (Plugin -> Page)
 const char kJSNavigateType[] = "navigate";
 const char kJSNavigateUrl[] = "url";
-const char kJSNavigateNewTab[] = "newTab";
+const char kJSNavigateWindowOpenDisposition[] = "disposition";
 // Open the email editor with the given parameters (Plugin -> Page)
 const char kJSEmailType[] = "email";
 const char kJSEmailTo[] = "to";
@@ -321,10 +321,9 @@ bool OutOfProcessInstance::Init(uint32_t argc,
   if (!document_url_var.is_string())
     return false;
   std::string document_url = document_url_var.AsString();
-  std::string extension_url = std::string(kChromeExtension);
-  std::string print_preview_url = std::string(kChromePrint);
-  if (!base::StringPiece(document_url).starts_with(kChromeExtension) &&
-      !base::StringPiece(document_url).starts_with(kChromePrint)) {
+  base::StringPiece document_url_piece(document_url);
+  if (!document_url_piece.starts_with(kChromeExtension) &&
+      !document_url_piece.starts_with(kChromePrint)) {
     return false;
   }
 
@@ -344,6 +343,7 @@ bool OutOfProcessInstance::Init(uint32_t argc,
 
   const char* stream_url = nullptr;
   const char* original_url = nullptr;
+  const char* top_level_url = nullptr;
   const char* headers = nullptr;
   for (uint32_t i = 0; i < argc; ++i) {
     bool success = true;
@@ -351,6 +351,8 @@ bool OutOfProcessInstance::Init(uint32_t argc,
       original_url = argv[i];
     else if (strcmp(argn[i], "stream-url") == 0)
       stream_url = argv[i];
+    else if (strcmp(argn[i], "top-level-url") == 0)
+      top_level_url = argv[i];
     else if (strcmp(argn[i], "headers") == 0)
       headers = argv[i];
     else if (strcmp(argn[i], "background-color") == 0)
@@ -377,6 +379,7 @@ bool OutOfProcessInstance::Init(uint32_t argc,
 
   LoadUrl(stream_url);
   url_ = original_url;
+  pp::PDF::SetCrashData(GetPluginInstance(), original_url, top_level_url);
   return engine_->New(original_url, headers);
 }
 
@@ -623,12 +626,7 @@ void OutOfProcessInstance::LoadAccessibility() {
     return;
   }
 
-  PP_PrivateAccessibilityViewportInfo viewport_info;
-  viewport_info.scroll.x = 0;
-  viewport_info.scroll.y = -top_toolbar_height_ * device_scale_;
-  viewport_info.offset = available_area_.point();
-  viewport_info.zoom = zoom_ * device_scale_;
-  pp::PDF::SetAccessibilityViewportInfo(GetPluginInstance(), &viewport_info);
+  SendAccessibilityViewportInfo();
 
   // Schedule loading the first page.
   pp::CompletionCallback callback = timer_factory_.NewCallback(
@@ -696,6 +694,15 @@ void OutOfProcessInstance::SendNextAccessibilityPage(int32_t page_index) {
       &OutOfProcessInstance::SendNextAccessibilityPage);
   pp::Module::Get()->core()->CallOnMainThread(kAccessibilityPageDelayMs,
                                               callback, page_index + 1);
+}
+
+void OutOfProcessInstance::SendAccessibilityViewportInfo() {
+  PP_PrivateAccessibilityViewportInfo viewport_info;
+  viewport_info.scroll.x = 0;
+  viewport_info.scroll.y = -top_toolbar_height_ * device_scale_;
+  viewport_info.offset = available_area_.point();
+  viewport_info.zoom = zoom_ * device_scale_;
+  pp::PDF::SetAccessibilityViewportInfo(GetPluginInstance(), &viewport_info);
 }
 
 pp::Var OutOfProcessInstance::GetLinkAtPosition(
@@ -977,11 +984,12 @@ void OutOfProcessInstance::ScrollToPage(int page) {
 }
 
 void OutOfProcessInstance::NavigateTo(const std::string& url,
-                                      bool open_in_new_tab) {
+                                      WindowOpenDisposition disposition) {
   pp::VarDictionary message;
   message.Set(kType, kJSNavigateType);
   message.Set(kJSNavigateUrl, url);
-  message.Set(kJSNavigateNewTab, open_in_new_tab);
+  message.Set(kJSNavigateWindowOpenDisposition,
+              pp::Var(static_cast<int32_t>(disposition)));
   PostMessage(message);
 }
 
@@ -1227,6 +1235,9 @@ void OutOfProcessInstance::DocumentLoadComplete(int page_count) {
   progress_message.Set(pp::Var(kJSProgressPercentage), pp::Var(100));
   PostMessage(progress_message);
 
+  if (accessibility_state_ == ACCESSIBILITY_STATE_PENDING)
+    LoadAccessibility();
+
   if (!full_)
     return;
 
@@ -1248,9 +1259,6 @@ void OutOfProcessInstance::DocumentLoadComplete(int page_count) {
   pp::PDF::SetContentRestriction(this, content_restrictions);
 
   uma_.HistogramCustomCounts("PDF.PageCount", page_count, 1, 1000000, 50);
-
-  if (accessibility_state_ == ACCESSIBILITY_STATE_PENDING)
-    LoadAccessibility();
 }
 
 void OutOfProcessInstance::RotateClockwise() {
@@ -1414,6 +1422,9 @@ void OutOfProcessInstance::OnGeometryChanged(double old_zoom,
   if (document_size_.IsEmpty())
     return;
   paint_manager_.InvalidateRect(pp::Rect(pp::Point(), plugin_size_));
+
+  if (accessibility_state_ == ACCESSIBILITY_STATE_LOADED)
+    SendAccessibilityViewportInfo();
 }
 
 void OutOfProcessInstance::LoadUrl(const std::string& url) {

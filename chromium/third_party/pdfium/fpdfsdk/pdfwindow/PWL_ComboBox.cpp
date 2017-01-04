@@ -6,7 +6,9 @@
 
 #include "fpdfsdk/pdfwindow/PWL_ComboBox.h"
 
-#include "core/fxge/include/fx_ge.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/cfx_renderdevice.h"
+#include "fpdfsdk/fxedit/fxet_list.h"
 #include "fpdfsdk/pdfwindow/PWL_Edit.h"
 #include "fpdfsdk/pdfwindow/PWL_EditCtrl.h"
 #include "fpdfsdk/pdfwindow/PWL_ListBox.h"
@@ -16,44 +18,31 @@
 
 #define PWLCB_DEFAULTFONTSIZE 12.0f
 
-#define IsFloatZero(f) ((f) < 0.0001 && (f) > -0.0001)
-#define IsFloatBigger(fa, fb) ((fa) > (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatSmaller(fa, fb) ((fa) < (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatEqual(fa, fb) IsFloatZero((fa) - (fb))
-
 FX_BOOL CPWL_CBListBox::OnLButtonUp(const CFX_FloatPoint& point,
                                     uint32_t nFlag) {
   CPWL_Wnd::OnLButtonUp(point, nFlag);
 
-  if (m_bMouseDown) {
-    ReleaseCapture();
-    m_bMouseDown = FALSE;
+  if (!m_bMouseDown)
+    return TRUE;
 
-    if (ClientHitTest(point)) {
-      if (CPWL_Wnd* pParent = GetParentWindow()) {
-        pParent->OnNotify(this, PNM_LBUTTONUP, 0,
-                          PWL_MAKEDWORD(point.x, point.y));
-      }
+  ReleaseCapture();
+  m_bMouseDown = FALSE;
 
-      FX_BOOL bExit = FALSE;
-      OnNotifySelChanged(FALSE, bExit, nFlag);
-      if (bExit)
-        return FALSE;
-    }
-  }
+  if (!ClientHitTest(point))
+    return TRUE;
+  if (CPWL_Wnd* pParent = GetParentWindow())
+    pParent->OnNotify(this, PNM_LBUTTONUP, 0, PWL_MAKEDWORD(point.x, point.y));
 
-  return TRUE;
+  FX_BOOL bExit = FALSE;
+  OnNotifySelChanged(FALSE, bExit, nFlag);
+
+  return !bExit;
 }
 
 FX_BOOL CPWL_CBListBox::OnKeyDownWithExit(uint16_t nChar,
                                           FX_BOOL& bExit,
                                           uint32_t nFlag) {
-  if (!m_pList)
-    return FALSE;
-
   switch (nChar) {
-    default:
-      return FALSE;
     case FWL_VKEY_Up:
     case FWL_VKEY_Down:
     case FWL_VKEY_Home:
@@ -61,6 +50,8 @@ FX_BOOL CPWL_CBListBox::OnKeyDownWithExit(uint16_t nChar,
     case FWL_VKEY_End:
     case FWL_VKEY_Right:
       break;
+    default:
+      return FALSE;
   }
 
   switch (nChar) {
@@ -94,15 +85,10 @@ FX_BOOL CPWL_CBListBox::OnKeyDownWithExit(uint16_t nChar,
 FX_BOOL CPWL_CBListBox::OnCharWithExit(uint16_t nChar,
                                        FX_BOOL& bExit,
                                        uint32_t nFlag) {
-  if (!m_pList)
-    return FALSE;
-
   if (!m_pList->OnChar(nChar, IsSHIFTpressed(nFlag), IsCTRLpressed(nFlag)))
     return FALSE;
-
-  if (CPWL_ComboBox* pComboBox = (CPWL_ComboBox*)GetParentWindow()) {
+  if (CPWL_ComboBox* pComboBox = (CPWL_ComboBox*)GetParentWindow())
     pComboBox->SetSelectText();
-  }
 
   OnNotifySelChanged(TRUE, bExit, nFlag);
 
@@ -235,12 +221,12 @@ CFX_WideString CPWL_ComboBox::GetText() const {
   return CFX_WideString();
 }
 
-void CPWL_ComboBox::SetText(const FX_WCHAR* text) {
+void CPWL_ComboBox::SetText(const CFX_WideString& text) {
   if (m_pEdit)
     m_pEdit->SetText(text);
 }
 
-void CPWL_ComboBox::AddString(const FX_WCHAR* str) {
+void CPWL_ComboBox::AddString(const CFX_WideString& str) {
   if (m_pList)
     m_pList->AddString(str);
 }
@@ -253,30 +239,26 @@ void CPWL_ComboBox::SetSelect(int32_t nItemIndex) {
   if (m_pList)
     m_pList->Select(nItemIndex);
 
-  m_pEdit->SetText(m_pList->GetText().c_str());
-
+  m_pEdit->SetText(m_pList->GetText());
   m_nSelectItem = nItemIndex;
 }
 
 void CPWL_ComboBox::SetEditSel(int32_t nStartChar, int32_t nEndChar) {
-  if (m_pEdit) {
+  if (m_pEdit)
     m_pEdit->SetSel(nStartChar, nEndChar);
-  }
 }
 
 void CPWL_ComboBox::GetEditSel(int32_t& nStartChar, int32_t& nEndChar) const {
   nStartChar = -1;
   nEndChar = -1;
 
-  if (m_pEdit) {
+  if (m_pEdit)
     m_pEdit->GetSel(nStartChar, nEndChar);
-  }
 }
 
 void CPWL_ComboBox::Clear() {
-  if (m_pEdit) {
+  if (m_pEdit)
     m_pEdit->Clear();
-  }
 }
 
 void CPWL_ComboBox::CreateChildWnd(const PWL_CREATEPARAM& cp) {
@@ -633,11 +615,9 @@ FX_BOOL CPWL_ComboBox::IsPopup() const {
 }
 
 void CPWL_ComboBox::SetSelectText() {
-  CFX_WideString swText = m_pList->GetText();
   m_pEdit->SelectAll();
-  m_pEdit->ReplaceSel(m_pList->GetText().c_str());
+  m_pEdit->ReplaceSel(m_pList->GetText());
   m_pEdit->SelectAll();
-
   m_nSelectItem = m_pList->GetCurSel();
 }
 

@@ -10,10 +10,10 @@
 
 #include <memory>
 
-#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/codecs/opus/audio_encoder_opus.h"
+#include "webrtc/test/gtest.h"
 
 namespace webrtc {
 

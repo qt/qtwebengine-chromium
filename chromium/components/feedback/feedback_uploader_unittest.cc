@@ -37,7 +37,7 @@ const base::TimeDelta kRetryDelayForTest =
 
 std::unique_ptr<KeyedService> CreateFeedbackUploaderService(
     content::BrowserContext* context) {
-  return base::WrapUnique(new feedback::FeedbackUploaderChrome(context));
+  return base::MakeUnique<feedback::FeedbackUploaderChrome>(context);
 }
 
 }  // namespace
@@ -77,7 +77,7 @@ class FeedbackUploaderTest : public testing::Test {
   }
 
   void MockDispatchReport(const std::string& report_data) {
-    if (ContainsKey(dispatched_reports_, report_data)) {
+    if (base::ContainsKey(dispatched_reports_, report_data)) {
       dispatched_reports_[report_data]++;
     } else {
       dispatched_reports_[report_data] = 1;

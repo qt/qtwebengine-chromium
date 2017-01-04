@@ -52,8 +52,9 @@ WebInspector.SuggestBoxDelegate.prototype = {
  * @constructor
  * @param {!WebInspector.SuggestBoxDelegate} suggestBoxDelegate
  * @param {number=} maxItemsHeight
+ * @param {boolean=} captureEnter
  */
-WebInspector.SuggestBox = function(suggestBoxDelegate, maxItemsHeight)
+WebInspector.SuggestBox = function(suggestBoxDelegate, maxItemsHeight, captureEnter)
 {
     this._suggestBoxDelegate = suggestBoxDelegate;
     this._length = 0;
@@ -69,10 +70,12 @@ WebInspector.SuggestBox = function(suggestBoxDelegate, maxItemsHeight)
     this._asyncDetailsCallback = null;
     /** @type {!Map<number, !Promise<{detail: string, description: string}>>} */
     this._asyncDetailsPromises = new Map();
+    this._userInteracted = false;
+    this._captureEnter = captureEnter;
 }
 
 /**
- * @typedef Array.<{title: string, className: (string|undefined)}>
+ * @typedef {!Array.<{title: string, className: (string|undefined)}>}
  */
 WebInspector.SuggestBox.Suggestions;
 
@@ -161,6 +164,7 @@ WebInspector.SuggestBox.prototype = {
         if (!this.visible())
             return;
 
+        this._userInteracted = false;
         this._bodyElement.removeEventListener("mousedown", this._maybeHideBound, true);
         delete this._bodyElement;
         this._container.remove();
@@ -181,6 +185,11 @@ WebInspector.SuggestBox.prototype = {
      */
     _applySuggestion: function(isIntermediateSuggestion)
     {
+        if (this._onlyCompletion) {
+            this._suggestBoxDelegate.applySuggestion(this._onlyCompletion, isIntermediateSuggestion);
+            return true;
+        }
+
         if (!this.visible() || !this._selectedElement)
             return false;
 
@@ -216,6 +225,8 @@ WebInspector.SuggestBox.prototype = {
     {
         if (!this._length)
             return false;
+
+        this._userInteracted = true;
 
         if (this._selectedIndex === -1 && shift < 0)
             shift += 1;
@@ -380,14 +391,18 @@ WebInspector.SuggestBox.prototype = {
      */
     updateSuggestions: function(anchorBox, completions, selectedIndex, canShowForSingleItem, userEnteredText, asyncDetails)
     {
+        delete this._onlyCompletion;
         if (this._canShowBox(completions, canShowForSingleItem, userEnteredText)) {
             this._updateItems(completions, userEnteredText, asyncDetails);
             this._show();
             this._updateBoxPosition(anchorBox);
             this._selectItem(selectedIndex, selectedIndex > 0);
             delete this._rowCountPerViewport;
-        } else
+        } else {
+            if (completions.length === 1)
+                this._onlyCompletion = completions[0].title;
             this.hide();
+        }
     },
 
     /**
@@ -450,7 +465,10 @@ WebInspector.SuggestBox.prototype = {
      */
     enterKeyPressed: function()
     {
-        var hasSelectedItem = !!this._selectedElement;
+        if (!this._userInteracted && this._captureEnter)
+            return false;
+
+        var hasSelectedItem = !!this._selectedElement || this._onlyCompletion;
         this.acceptSuggestion();
 
         // Report the event as non-handled if there is no selected item,

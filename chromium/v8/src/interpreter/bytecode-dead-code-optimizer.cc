@@ -14,9 +14,9 @@ BytecodeDeadCodeOptimizer::BytecodeDeadCodeOptimizer(
 
 // override
 Handle<BytecodeArray> BytecodeDeadCodeOptimizer::ToBytecodeArray(
-    int fixed_register_count, int parameter_count,
+    Isolate* isolate, int register_count, int parameter_count,
     Handle<FixedArray> handler_table) {
-  return next_stage_->ToBytecodeArray(fixed_register_count, parameter_count,
+  return next_stage_->ToBytecodeArray(isolate, register_count, parameter_count,
                                       handler_table);
 }
 

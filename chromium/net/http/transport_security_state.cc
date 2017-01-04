@@ -69,8 +69,8 @@ struct SHA256ToHashValueComparator {
 };
 
 void RecordUMAForHPKPReportFailure(const GURL& report_uri, int net_error) {
-  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.PublicKeyPinReportSendingFailure",
-                              net_error);
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.PublicKeyPinReportSendingFailure2",
+                              -net_error);
 }
 
 std::string TimeToISO8601(const base::Time& t) {
@@ -85,13 +85,13 @@ std::string TimeToISO8601(const base::Time& t) {
 std::unique_ptr<base::ListValue> GetPEMEncodedChainAsList(
     const net::X509Certificate* cert_chain) {
   if (!cert_chain)
-    return base::WrapUnique(new base::ListValue());
+    return base::MakeUnique<base::ListValue>();
 
   std::unique_ptr<base::ListValue> result(new base::ListValue());
   std::vector<std::string> pem_encoded_chain;
   cert_chain->GetPEMEncodedChain(&pem_encoded_chain);
   for (const std::string& cert : pem_encoded_chain)
-    result->Append(base::WrapUnique(new base::StringValue(cert)));
+    result->Append(base::MakeUnique<base::StringValue>(cert));
 
   return result;
 }
@@ -637,12 +637,87 @@ bool DecodeHSTSPreload(const std::string& hostname, PreloadResult* out) {
   return found;
 }
 
+// Serializes an OCSPVerifyResult::ResponseStatus to a string enum, suitable for
+// the |response-status| field in an Expect-Staple report.
+std::string SerializeExpectStapleResponseStatus(
+    OCSPVerifyResult::ResponseStatus status) {
+  switch (status) {
+    case OCSPVerifyResult::MISSING:
+      return "MISSING";
+    case OCSPVerifyResult::PROVIDED:
+      return "PROVIDED";
+    case OCSPVerifyResult::ERROR_RESPONSE:
+      return "ERROR_RESPONSE";
+    case OCSPVerifyResult::BAD_PRODUCED_AT:
+      return "BAD_PRODUCED_AT";
+    case OCSPVerifyResult::NO_MATCHING_RESPONSE:
+      return "NO_MATCHING_RESPONSE";
+    case OCSPVerifyResult::INVALID_DATE:
+      return "INVALID_DATE";
+    case OCSPVerifyResult::PARSE_RESPONSE_ERROR:
+      return "PARSE_RESPONSE_ERROR";
+    case OCSPVerifyResult::PARSE_RESPONSE_DATA_ERROR:
+      return "PARSE_RESPONSE_DATA_ERROR";
+  }
+  return std::string();
+}
+
+// Serializes an OCSPRevocationStatus to a string enum, suitable for the
+// |cert-status| field in an Expect-Staple report.
+std::string SerializeExpectStapleRevocationStatus(
+    const OCSPRevocationStatus& status) {
+  switch (status) {
+    case OCSPRevocationStatus::GOOD:
+      return "GOOD";
+    case OCSPRevocationStatus::REVOKED:
+      return "REVOKED";
+    case OCSPRevocationStatus::UNKNOWN:
+      return "UNKNOWN";
+  }
+  return std::string();
+}
+
+bool SerializeExpectStapleReport(const HostPortPair& host_port_pair,
+                                 const SSLInfo& ssl_info,
+                                 const std::string& ocsp_response,
+                                 std::string* out_serialized_report) {
+  base::DictionaryValue report;
+  report.SetString("date-time", TimeToISO8601(base::Time::Now()));
+  report.SetString("hostname", host_port_pair.host());
+  report.SetInteger("port", host_port_pair.port());
+  report.SetString("response-status",
+                   SerializeExpectStapleResponseStatus(
+                       ssl_info.ocsp_result.response_status));
+
+  if (!ocsp_response.empty()) {
+    std::string encoded_ocsp_response;
+    base::Base64Encode(ocsp_response, &encoded_ocsp_response);
+    report.SetString("ocsp-response", encoded_ocsp_response);
+  }
+  if (ssl_info.ocsp_result.response_status == OCSPVerifyResult::PROVIDED) {
+    report.SetString("cert-status",
+                     SerializeExpectStapleRevocationStatus(
+                         ssl_info.ocsp_result.revocation_status));
+  }
+  if (ssl_info.is_issued_by_known_root) {
+    report.Set("served-certificate-chain",
+               GetPEMEncodedChainAsList(ssl_info.unverified_cert.get()));
+    report.Set("validated-certificate-chain",
+               GetPEMEncodedChainAsList(ssl_info.cert.get()));
+  }
+
+  if (!base::JSONWriter::Write(report, out_serialized_report))
+    return false;
+  return true;
+}
+
 }  // namespace
 
 TransportSecurityState::TransportSecurityState()
     : enable_static_pins_(true),
       enable_static_expect_ct_(true),
-      enable_static_expect_staple_(false),
+      enable_static_expect_staple_(true),
+      enable_pkp_bypass_for_local_trust_anchors_(true),
       sent_reports_cache_(kMaxHPKPReportCacheEntries) {
 // Static pinning is only enabled for official builds to make sure that
 // others don't end up with pins that cannot be easily updated.
@@ -710,6 +785,36 @@ TransportSecurityState::PKPStatus TransportSecurityState::CheckPublicKeyPins(
   UMA_HISTOGRAM_BOOLEAN("Net.PublicKeyPinSuccess",
                         pin_validity == PKPStatus::OK);
   return pin_validity;
+}
+
+void TransportSecurityState::CheckExpectStaple(
+    const HostPortPair& host_port_pair,
+    const SSLInfo& ssl_info,
+    const std::string& ocsp_response) {
+  DCHECK(CalledOnValidThread());
+  if (!enable_static_expect_staple_ || !report_sender_)
+    return;
+
+  // Determine if the host is on the Expect-Staple preload list. If the build is
+  // not timely (i.e. the preload list is not fresh), this will fail and return
+  // false.
+  ExpectStapleState expect_staple_state;
+  if (!GetStaticExpectStapleState(host_port_pair.host(), &expect_staple_state))
+    return;
+
+  // No report needed if a stapled OCSP response was provided.
+  if (ssl_info.ocsp_result.response_status == OCSPVerifyResult::PROVIDED &&
+      ssl_info.ocsp_result.revocation_status == OCSPRevocationStatus::GOOD) {
+    return;
+  }
+
+  std::string serialized_report;
+  if (!SerializeExpectStapleReport(host_port_pair, ssl_info, ocsp_response,
+                                   &serialized_report)) {
+    return;
+  }
+  report_sender_->Send(expect_staple_state.report_uri,
+                       "application/json; charset=utf-8", serialized_report);
 }
 
 bool TransportSecurityState::HasPublicKeyPins(const std::string& host) {
@@ -863,6 +968,11 @@ void TransportSecurityState::AddHPKPInternal(const std::string& host,
   EnablePKPHost(host, pkp_state);
 }
 
+void TransportSecurityState::
+    SetEnablePublicKeyPinningBypassForLocalTrustAnchors(bool value) {
+  enable_pkp_bypass_for_local_trust_anchors_ = value;
+}
+
 void TransportSecurityState::EnableSTSHost(const std::string& host,
                                            const STSState& state) {
   DCHECK(CalledOnValidThread());
@@ -927,7 +1037,7 @@ TransportSecurityState::CheckPinsAndMaybeSendReport(
     return PKPStatus::OK;
 
   // Don't report violations for certificates that chain to local roots.
-  if (!is_issued_by_known_root)
+  if (!is_issued_by_known_root && enable_pkp_bypass_for_local_trust_anchors_)
     return PKPStatus::BYPASSED;
 
   if (!report_sender_ ||
@@ -962,7 +1072,8 @@ TransportSecurityState::CheckPinsAndMaybeSendReport(
       base::TimeTicks::Now() +
           base::TimeDelta::FromMinutes(kTimeToRememberHPKPReportsMins));
 
-  report_sender_->Send(pkp_state.report_uri, serialized_report);
+  report_sender_->Send(pkp_state.report_uri, "application/json; charset=utf-8",
+                       serialized_report);
   return PKPStatus::VIOLATED;
 }
 
@@ -1185,24 +1296,55 @@ void TransportSecurityState::ProcessExpectCTHeader(
     const SSLInfo& ssl_info) {
   DCHECK(CalledOnValidThread());
 
+  // Records the result of processing an Expect-CT header. This enum is
+  // histogrammed, so do not reorder or remove values.
+  enum ExpectCTHeaderResult {
+    // An Expect-CT header was received, but it had the wrong value.
+    EXPECT_CT_HEADER_BAD_VALUE = 0,
+    // The Expect-CT header was ignored because the build was old.
+    EXPECT_CT_HEADER_BUILD_NOT_TIMELY = 1,
+    // The Expect-CT header was ignored because the certificate did not chain to
+    // a public root.
+    EXPECT_CT_HEADER_PRIVATE_ROOT = 2,
+    // The Expect-CT header was ignored because CT compliance details were
+    // unavailable.
+    EXPECT_CT_HEADER_COMPLIANCE_DETAILS_UNAVAILABLE = 3,
+    // The request satisified the Expect-CT compliance policy, so no action was
+    // taken.
+    EXPECT_CT_HEADER_COMPLIED = 4,
+    // The Expect-CT header was ignored because there was no corresponding
+    // preload list entry.
+    EXPECT_CT_HEADER_NOT_PRELOADED = 5,
+    // The Expect-CT header was processed successfully and passed on to the
+    // delegate to send a report.
+    EXPECT_CT_HEADER_PROCESSED = 6,
+    EXPECT_CT_HEADER_LAST = EXPECT_CT_HEADER_PROCESSED
+  };
+
+  ExpectCTHeaderResult result = EXPECT_CT_HEADER_PROCESSED;
+
   if (!expect_ct_reporter_)
     return;
 
-  if (value != "preload")
-    return;
-
-  if (!IsBuildTimely())
-    return;
-
-  if (!ssl_info.is_issued_by_known_root ||
-      !ssl_info.ct_compliance_details_available ||
-      ssl_info.ct_cert_policy_compliance ==
-          ct::CertPolicyCompliance::CERT_POLICY_COMPLIES_VIA_SCTS) {
-    return;
+  ExpectCTState state;
+  if (value != "preload") {
+    result = EXPECT_CT_HEADER_BAD_VALUE;
+  } else if (!IsBuildTimely()) {
+    result = EXPECT_CT_HEADER_BUILD_NOT_TIMELY;
+  } else if (!ssl_info.is_issued_by_known_root) {
+    result = EXPECT_CT_HEADER_PRIVATE_ROOT;
+  } else if (!ssl_info.ct_compliance_details_available) {
+    result = EXPECT_CT_HEADER_COMPLIANCE_DETAILS_UNAVAILABLE;
+  } else if (ssl_info.ct_cert_policy_compliance ==
+             ct::CertPolicyCompliance::CERT_POLICY_COMPLIES_VIA_SCTS) {
+    result = EXPECT_CT_HEADER_COMPLIED;
+  } else if (!GetStaticExpectCTState(host_port_pair.host(), &state)) {
+    result = EXPECT_CT_HEADER_NOT_PRELOADED;
   }
 
-  ExpectCTState state;
-  if (!GetStaticExpectCTState(host_port_pair.host(), &state))
+  UMA_HISTOGRAM_ENUMERATION("Net.ExpectCTHeaderResult", result,
+                            EXPECT_CT_HEADER_LAST + 1);
+  if (result != EXPECT_CT_HEADER_PROCESSED)
     return;
 
   expect_ct_reporter_->OnExpectCTFailed(host_port_pair, state.report_uri,

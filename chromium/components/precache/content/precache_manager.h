@@ -41,7 +41,7 @@ namespace net {
 class HttpResponseInfo;
 }
 
-namespace sync_driver {
+namespace syncer {
 class SyncService;
 }
 
@@ -67,7 +67,7 @@ class PrecacheManager : public KeyedService,
   typedef base::Callback<void(bool)> PrecacheCompletionCallback;
 
   PrecacheManager(content::BrowserContext* browser_context,
-                  const sync_driver::SyncService* const sync_service,
+                  const syncer::SyncService* const sync_service,
                   const history::HistoryService* const history_service,
                   const base::FilePath& db_path,
                   std::unique_ptr<PrecacheDatabase> precache_database);
@@ -117,6 +117,7 @@ class PrecacheManager : public KeyedService,
                                      bool is_user_traffic);
 
  private:
+  friend class PrecacheManagerTest;
   FRIEND_TEST_ALL_PREFIXES(PrecacheManagerTest, DeleteExpiredPrecacheHistory);
   FRIEND_TEST_ALL_PREFIXES(PrecacheManagerTest,
                            RecordStatsForFetchDuringPrecaching);
@@ -169,6 +170,7 @@ class PrecacheManager : public KeyedService,
   // Update precache-related metrics in response to a URL being fetched. Called
   // by RecordStatsForFetch() by way of an asynchronous HistoryService callback.
   void RecordStatsForFetchInternal(const GURL& url,
+                                   const std::string& referrer_host,
                                    const base::TimeDelta& latency,
                                    const base::Time& fetch_time,
                                    const net::HttpResponseInfo& info,
@@ -180,7 +182,7 @@ class PrecacheManager : public KeyedService,
 
   // The sync service corresponding to the browser context. Used to determine
   // whether precache can run. May be null.
-  const sync_driver::SyncService* const sync_service_;
+  const syncer::SyncService* const sync_service_;
 
   // The history service corresponding to the browser context. Used to determine
   // the list of top hosts. May be null.

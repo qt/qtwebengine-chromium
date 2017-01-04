@@ -12,6 +12,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -32,9 +33,10 @@ AutofillExternalDelegate::AutofillExternalDelegate(AutofillManager* manager,
     : manager_(manager),
       driver_(driver),
       query_id_(0),
-      has_suggestion_(false),
+      has_autofill_suggestions_(false),
       has_shown_popup_for_current_edit_(false),
       should_show_scan_credit_card_(false),
+      should_show_cc_signin_promo_(false),
       has_shown_address_book_prompt(false),
       weak_ptr_factory_(this) {
   DCHECK(manager);
@@ -55,6 +57,8 @@ void AutofillExternalDelegate::OnQuery(int query_id,
   element_bounds_ = element_bounds;
   should_show_scan_credit_card_ =
       manager_->ShouldShowScanCreditCard(query_form_, query_field_);
+  should_show_cc_signin_promo_ =
+      manager_->ShouldShowCreditCardSigninPromo(query_form_, query_field_);
 }
 
 void AutofillExternalDelegate::OnSuggestionsReturned(
@@ -63,15 +67,19 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
   if (query_id != query_id_)
     return;
 
+  // The suggestions and warnings are "above the fold" and are separated from
+  // other menu items with a separator.
   std::vector<Suggestion> suggestions(input_suggestions);
-
   // Add or hide warnings as appropriate.
   ApplyAutofillWarnings(&suggestions);
 
 #if !defined(OS_ANDROID)
-  // Add a separator to go between the values and menu items.
-  suggestions.push_back(Suggestion());
-  suggestions.back().frontend_id = POPUP_ITEM_ID_SEPARATOR;
+  // If there are above the fold suggestions at this point, add a separator to
+  // go between the values and menu items.
+  if (!suggestions.empty()) {
+    suggestions.push_back(Suggestion());
+    suggestions.back().frontend_id = POPUP_ITEM_ID_SEPARATOR;
+  }
 #endif
 
   if (should_show_scan_credit_card_) {
@@ -89,22 +97,45 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
 
   // Only include "Autofill Options" special menu item if we have Autofill
   // suggestions.
-  has_suggestion_ = false;
+  has_autofill_suggestions_ = false;
   for (size_t i = 0; i < suggestions.size(); ++i) {
     if (suggestions[i].frontend_id > 0) {
-      has_suggestion_ = true;
+      has_autofill_suggestions_ = true;
       break;
     }
   }
 
-  if (has_suggestion_)
+  if (has_autofill_suggestions_)
     ApplyAutofillOptions(&suggestions);
 
+  // Append the credit card signin promo, if appropriate (there are no other
+  // suggestions).
+  if (suggestions.empty() && should_show_cc_signin_promo_) {
+// No separator on Android.
 #if !defined(OS_ANDROID)
-  // Remove the separator if it is the last element.
-  DCHECK_GT(suggestions.size(), 0U);
-  if (suggestions.back().frontend_id == POPUP_ITEM_ID_SEPARATOR)
+    // If there are autofill suggestions, the "Autofill options" row was added
+    // above. Add a separator between it and the signin promo.
+    if (has_autofill_suggestions_) {
+      suggestions.push_back(Suggestion());
+      suggestions.back().frontend_id = POPUP_ITEM_ID_SEPARATOR;
+    }
+#endif
+
+    Suggestion signin_promo_suggestion(
+        l10n_util::GetStringUTF16(IDS_AUTOFILL_CREDIT_CARD_SIGNIN_PROMO));
+    signin_promo_suggestion.frontend_id =
+        POPUP_ITEM_ID_CREDIT_CARD_SIGNIN_PROMO;
+    suggestions.push_back(signin_promo_suggestion);
+    base::RecordAction(
+        base::UserMetricsAction("Signin_Impression_FromAutofillDropdown"));
+  }
+
+#if !defined(OS_ANDROID)
+  // Remove the separator if there is one, and if it is the last element.
+  if (!suggestions.empty() &&
+      suggestions.back().frontend_id == POPUP_ITEM_ID_SEPARATOR) {
     suggestions.pop_back();
+  }
 #endif
 
   // If anything else is added to modify the values after inserting the data
@@ -139,10 +170,9 @@ void AutofillExternalDelegate::SetCurrentDataListValues(
 
 void AutofillExternalDelegate::OnPopupShown() {
   manager_->DidShowSuggestions(
-      has_suggestion_ && !has_shown_popup_for_current_edit_,
-      query_form_,
-      query_field_);
-  has_shown_popup_for_current_edit_ |= has_suggestion_;
+      has_autofill_suggestions_ && !has_shown_popup_for_current_edit_,
+      query_form_, query_field_);
+  has_shown_popup_for_current_edit_ |= has_autofill_suggestions_;
 }
 
 void AutofillExternalDelegate::OnPopupHidden() {
@@ -181,6 +211,8 @@ void AutofillExternalDelegate::DidAcceptSuggestion(const base::string16& value,
   } else if (identifier == POPUP_ITEM_ID_SCAN_CREDIT_CARD) {
     manager_->client()->ScanCreditCard(base::Bind(
         &AutofillExternalDelegate::OnCreditCardScanned, GetWeakPtr()));
+  } else if (identifier == POPUP_ITEM_ID_CREDIT_CARD_SIGNIN_PROMO) {
+    manager_->client()->StartSigninFlow();
   } else {
     if (identifier > 0)  // Denotes an Autofill suggestion.
       AutofillMetrics::LogAutofillSuggestionAcceptedIndex(position);
@@ -243,14 +275,9 @@ base::WeakPtr<AutofillExternalDelegate> AutofillExternalDelegate::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-void AutofillExternalDelegate::OnCreditCardScanned(
-    const base::string16& card_number,
-    int expiration_month,
-    int expiration_year) {
-  manager_->FillCreditCardForm(
-      query_id_, query_form_, query_field_,
-      CreditCard(card_number, expiration_month, expiration_year),
-      base::string16());
+void AutofillExternalDelegate::OnCreditCardScanned(const CreditCard& card) {
+  manager_->FillCreditCardForm(query_id_, query_form_, query_field_, card,
+                               base::string16());
 }
 
 void AutofillExternalDelegate::FillAutofillFormData(int unique_id,
@@ -319,12 +346,12 @@ void AutofillExternalDelegate::InsertDataListValues(
   std::set<base::string16> data_list_set(data_list_values_.begin(),
                                          data_list_values_.end());
   suggestions->erase(
-      std::remove_if(suggestions->begin(), suggestions->end(),
-                     [&data_list_set](const Suggestion& suggestion) {
-                       return suggestion.frontend_id ==
-                                  POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY &&
-                              ContainsKey(data_list_set, suggestion.value);
-                     }),
+      std::remove_if(
+          suggestions->begin(), suggestions->end(),
+          [&data_list_set](const Suggestion& suggestion) {
+            return suggestion.frontend_id == POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY &&
+                   base::ContainsKey(data_list_set, suggestion.value);
+          }),
       suggestions->end());
 
 #if !defined(OS_ANDROID)

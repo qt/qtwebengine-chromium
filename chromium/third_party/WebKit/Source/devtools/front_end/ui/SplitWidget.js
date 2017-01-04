@@ -78,9 +78,10 @@ WebInspector.SplitWidget.ShowMode = {
     OnlySidebar: "OnlySidebar"
 }
 
+/** @enum {symbol} */
 WebInspector.SplitWidget.Events = {
-    SidebarSizeChanged: "SidebarSizeChanged",
-    ShowModeChanged: "ShowModeChanged"
+    SidebarSizeChanged: Symbol("SidebarSizeChanged"),
+    ShowModeChanged: Symbol("ShowModeChanged")
 }
 
 WebInspector.SplitWidget.MinPadding = 20;
@@ -152,15 +153,19 @@ WebInspector.SplitWidget.prototype = {
     {
         if (this._mainWidget === widget)
             return;
+        this.suspendInvalidations();
         if (this._mainWidget)
             this._mainWidget.detach();
         this._mainWidget = widget;
         if (widget) {
             widget.element.classList.add("insertion-point-main");
             widget.element.classList.remove("insertion-point-sidebar");
+            widget.attach(this);
             if (this._showMode === WebInspector.SplitWidget.ShowMode.OnlyMain || this._showMode === WebInspector.SplitWidget.ShowMode.Both)
-                widget.show(this.element);
+                widget.showWidget(this.element);
+            this.setDefaultFocusedChild(widget);
         }
+        this.resumeInvalidations();
     },
 
     /**
@@ -170,15 +175,18 @@ WebInspector.SplitWidget.prototype = {
     {
         if (this._sidebarWidget === widget)
             return;
+        this.suspendInvalidations();
         if (this._sidebarWidget)
             this._sidebarWidget.detach();
         this._sidebarWidget = widget;
         if (widget) {
             widget.element.classList.add("insertion-point-sidebar");
             widget.element.classList.remove("insertion-point-main");
+            widget.attach(this);
             if (this._showMode === WebInspector.SplitWidget.ShowMode.OnlySidebar || this._showMode === WebInspector.SplitWidget.ShowMode.Both)
-                widget.show(this.element);
+                widget.showWidget(this.element);
         }
+        this.resumeInvalidations();
     },
 
     /**
@@ -203,8 +211,6 @@ WebInspector.SplitWidget.prototype = {
      */
     childWasDetached: function(widget)
     {
-        if (this._detaching)
-            return;
         if (this._mainWidget === widget)
             delete this._mainWidget;
         if (this._sidebarWidget === widget)
@@ -316,15 +322,12 @@ WebInspector.SplitWidget.prototype = {
             if (sideToShow) {
                 // Make sure main is first in the children list.
                 if (sideToShow === this._mainWidget)
-                    this._mainWidget.show(this.element, this._sidebarWidget ? this._sidebarWidget.element : null);
+                    this._mainWidget.showWidget(this.element);
                 else
-                    this._sidebarWidget.show(this.element);
+                    this._sidebarWidget.showWidget(this.element);
             }
-            if (sideToHide) {
-                this._detaching = true;
-                sideToHide.detach();
-                delete this._detaching;
-            }
+            if (sideToHide)
+                sideToHide.hideWidget();
 
             this._resizerElement.classList.add("hidden");
             shadowToShow.classList.remove("hidden");
@@ -379,10 +382,12 @@ WebInspector.SplitWidget.prototype = {
         this.setResizable(true);
 
         // Make sure main is the first in the children list.
+        this.suspendInvalidations();
         if (this._sidebarWidget)
-            this._sidebarWidget.show(this.element);
+            this._sidebarWidget.showWidget(this.element);
         if (this._mainWidget)
-            this._mainWidget.show(this.element, this._sidebarWidget ? this._sidebarWidget.element : null);
+            this._mainWidget.showWidget(this.element);
+        this.resumeInvalidations();
         // Order widgets in DOM properly.
         this.setSecondIsSidebar(this._secondIsSidebar);
 
@@ -474,8 +479,9 @@ WebInspector.SplitWidget.prototype = {
         this._removeAllLayoutProperties();
 
         // this._totalSizeDIP is available below since we successfully applied constraints.
-        var sidebarSizeValue = WebInspector.zoomManager.dipToCSS(sizeDIP) + "px";
-        var mainSizeValue = (this._totalSizeCSS - WebInspector.zoomManager.dipToCSS(sizeDIP)) + "px";
+        var roundSizeCSS = Math.round(WebInspector.zoomManager.dipToCSS(sizeDIP));
+        var sidebarSizeValue = roundSizeCSS + "px";
+        var mainSizeValue = (this._totalSizeCSS - roundSizeCSS) + "px";
         this._sidebarElement.style.flexBasis = sidebarSizeValue;
 
         // Make both sides relayout boundaries.
@@ -877,20 +883,17 @@ WebInspector.SplitWidget.prototype = {
 
     /**
      * @param {string} title
-     * @param {string=} className
-     * @return {!Element}
+     * @return {!WebInspector.ToolbarButton}
      */
-    displayShowHideSidebarButton: function(title, className)
+    createShowHideSidebarButton: function(title)
     {
-        console.assert(this.isVertical(), "Buttons for split widget with horizontal split are not supported yet.");
-
         this._showHideSidebarButtonTitle = WebInspector.UIString(title);
-        this._showHideSidebarButton = this._mainElement.createChild("button", "sidebar-show-hide-button " + (className || ""));
-        this._showHideSidebarButton.addEventListener("click", buttonClicked.bind(this), false);
+        this._showHideSidebarButton = new WebInspector.ToolbarButton("", "sidebar-toolbar-item");
+        this._showHideSidebarButton.addEventListener("click", buttonClicked.bind(this));
         this._updateShowHideSidebarButton();
 
         /**
-         * @param {!Event} event
+         * @param {!WebInspector.Event} event
          * @this {WebInspector.SplitWidget}
          */
         function buttonClicked(event)
@@ -909,13 +912,9 @@ WebInspector.SplitWidget.prototype = {
         if (!this._showHideSidebarButton)
             return;
         var sidebarHidden = this._showMode === WebInspector.SplitWidget.ShowMode.OnlyMain;
-        this._showHideSidebarButton.classList.toggle("toggled-show", sidebarHidden);
-        this._showHideSidebarButton.classList.toggle("toggled-hide", !sidebarHidden);
-        this._showHideSidebarButton.classList.toggle("top-sidebar-show-hide-button", !this.isVertical() && !this.isSidebarSecond());
-        this._showHideSidebarButton.classList.toggle("right-sidebar-show-hide-button", this.isVertical() && this.isSidebarSecond());
-        this._showHideSidebarButton.classList.toggle("bottom-sidebar-show-hide-button", !this.isVertical() && this.isSidebarSecond());
-        this._showHideSidebarButton.classList.toggle("left-sidebar-show-hide-button", this.isVertical() && !this.isSidebarSecond());
-        this._showHideSidebarButton.title = sidebarHidden ? WebInspector.UIString("Show %s", this._showHideSidebarButtonTitle) : WebInspector.UIString("Hide %s", this._showHideSidebarButtonTitle);
+        var side = this.isVertical() ? (this.isSidebarSecond() ? "right" : "left") : (this.isSidebarSecond() ? "bottom" : "top");
+        this._showHideSidebarButton.setState(side + "-" + (sidebarHidden ? "show" : "hide"));
+        this._showHideSidebarButton.setTitle(sidebarHidden ? WebInspector.UIString("Show %s", this._showHideSidebarButtonTitle) : WebInspector.UIString("Hide %s", this._showHideSidebarButtonTitle));
     },
 
     __proto__: WebInspector.Widget.prototype

@@ -22,6 +22,7 @@ message CastLogsProto {
     enum CastProductType {
       CAST_PRODUCT_TYPE_UNKNOWN = 0;
       CAST_PRODUCT_TYPE_CHROMECAST = 1;
+      CAST_PRODUCT_TYPE_TV = 2;
       CAST_PRODUCT_TYPE_AUDIO = 3;
       CAST_PRODUCT_TYPE_ANDROID_TV = 4;
     }
@@ -50,7 +51,7 @@ message CastLogsProto {
 
     // This message describes a detail sender device and sdk. Those are
     // parsed from the user agent string sent from sender sdk during connection.
-    // Next tag: 9
+    // Next tag: 10
     message SenderInfo {
       // The identifier for the sender device, that is not tied any kind of
       // device id outside of UMA, and this id is reset when user resets sender
@@ -107,6 +108,11 @@ message CastLogsProto {
 
       // Sender device model.
       optional string model = 8;
+
+      // Last 2 bytes of the sender’s local IP addresses (both IP4/IP6) when
+      // the sender connected. This field stores ip fragment to last 2 bytes and
+      // first 2 bytes won't be used.
+      optional int32 sender_local_ip_fragment = 9;
     }
     optional SenderInfo sender_info = 3;
   }
@@ -115,7 +121,7 @@ message CastLogsProto {
   repeated CastConnectionInfo cast_connection_info = 2;
 
   // Stores Cast-enabled device specific events with a various context data.
-  // Next tag: 10
+  // Next tag: 12
   message CastEventProto {
     // The name of the action, hashed by same logic used to hash user action
     // event and histogram.
@@ -147,6 +153,10 @@ message CastLogsProto {
 
     // An optional value for the multi-room group uuid.
     optional fixed64 group_uuid = 10;
+
+    // For application events associated with an assistant session, identifies
+    // the assistant conversation.
+    optional string conversation_key = 11;
   }
   repeated CastEventProto cast_event = 3;
 
@@ -173,6 +183,10 @@ message CastLogsProto {
 
     // System version which the cast_shell is running.
     optional fixed64 system_build_number = 2;
+
+    // An identifier that is specific to the combination of app and device, in
+    // this case the one used by backdrop.
+    optional string backdrop_app_device_id = 3;
   }
   optional CastDeviceMutableInfo cast_device_mutable_info = 5;
 

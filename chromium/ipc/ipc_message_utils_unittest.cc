@@ -10,6 +10,7 @@
 
 #include "base/files/file_path.h"
 #include "base/json/json_reader.h"
+#include "base/unguessable_token.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -156,6 +157,67 @@ TEST(IPCMessageUtilsTest, MojoChannelHandle) {
   EXPECT_EQ(nullptr, result_handle.pipe.handle);
 #endif
   EXPECT_EQ(channel_handle.mojo_handle, result_handle.mojo_handle);
+}
+
+TEST(IPCMessageUtilsTest, OptionalUnset) {
+  base::Optional<int> opt;
+  base::Pickle pickle;
+  IPC::WriteParam(&pickle, opt);
+
+  base::PickleSizer sizer;
+  IPC::GetParamSize(&sizer, opt);
+
+  EXPECT_EQ(sizer.payload_size(), pickle.payload_size());
+
+  std::string log;
+  IPC::LogParam(opt, &log);
+  EXPECT_EQ("(unset)", log);
+
+  base::Optional<int> unserialized_opt;
+  base::PickleIterator iter(pickle);
+  EXPECT_TRUE(IPC::ReadParam(&pickle, &iter, &unserialized_opt));
+  EXPECT_FALSE(unserialized_opt);
+}
+
+TEST(IPCMessageUtilsTest, OptionalSet) {
+  base::Optional<int> opt(10);
+  base::Pickle pickle;
+  IPC::WriteParam(&pickle, opt);
+
+  base::PickleSizer sizer;
+  IPC::GetParamSize(&sizer, opt);
+
+  EXPECT_EQ(sizer.payload_size(), pickle.payload_size());
+
+  std::string log;
+  IPC::LogParam(opt, &log);
+  EXPECT_EQ("10", log);
+
+  base::Optional<int> unserialized_opt;
+  base::PickleIterator iter(pickle);
+  EXPECT_TRUE(IPC::ReadParam(&pickle, &iter, &unserialized_opt));
+  EXPECT_TRUE(unserialized_opt);
+  EXPECT_EQ(opt.value(), unserialized_opt.value());
+}
+
+TEST(IPCMessageUtilsTest, UnguessableTokenTest) {
+  base::UnguessableToken token = base::UnguessableToken::Create();
+  base::Pickle pickle;
+  IPC::WriteParam(&pickle, token);
+
+  base::PickleSizer sizer;
+  IPC::GetParamSize(&sizer, token);
+
+  EXPECT_EQ(sizer.payload_size(), pickle.payload_size());
+
+  std::string log;
+  IPC::LogParam(token, &log);
+  EXPECT_EQ(token.ToString(), log);
+
+  base::UnguessableToken deserialized_token;
+  base::PickleIterator iter(pickle);
+  EXPECT_TRUE(IPC::ReadParam(&pickle, &iter, &deserialized_token));
+  EXPECT_EQ(token, deserialized_token);
 }
 
 }  // namespace

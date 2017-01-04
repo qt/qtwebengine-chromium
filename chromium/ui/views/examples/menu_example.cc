@@ -31,8 +31,6 @@ class ExampleMenuModel : public ui::SimpleMenuModel,
   // ui::SimpleMenuModel::Delegate:
   bool IsCommandIdChecked(int command_id) const override;
   bool IsCommandIdEnabled(int command_id) const override;
-  bool GetAcceleratorForCommandId(int command_id,
-                                  ui::Accelerator* accelerator) override;
   void ExecuteCommand(int command_id, int event_flags) override;
 
  private:
@@ -119,13 +117,6 @@ bool ExampleMenuModel::IsCommandIdEnabled(int command_id) const {
   return command_id != COMMAND_GO_HOME;
 }
 
-bool ExampleMenuModel::GetAcceleratorForCommandId(
-    int command_id,
-    ui::Accelerator* accelerator) {
-  // We don't use this in the example.
-  return false;
-}
-
 void ExampleMenuModel::ExecuteCommand(int command_id, int event_flags) {
   switch (command_id) {
     case COMMAND_DO_SOMETHING: {
@@ -188,16 +179,12 @@ ExampleMenuButton::~ExampleMenuButton() {
 void ExampleMenuButton::OnMenuButtonClicked(MenuButton* source,
                                             const gfx::Point& point,
                                             const ui::Event* event) {
-  menu_runner_.reset(new MenuRunner(GetMenuModel(), MenuRunner::HAS_MNEMONICS));
+  menu_runner_.reset(new MenuRunner(
+      GetMenuModel(), MenuRunner::HAS_MNEMONICS | MenuRunner::ASYNC));
 
-  if (menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(),
-                              this,
-                              gfx::Rect(point, gfx::Size()),
-                              MENU_ANCHOR_TOPRIGHT,
-                              ui::MENU_SOURCE_NONE) ==
-      MenuRunner::MENU_DELETED) {
-    return;
-  }
+  menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(), this,
+                          gfx::Rect(point, gfx::Size()), MENU_ANCHOR_TOPRIGHT,
+                          ui::MENU_SOURCE_NONE);
 }
 
 ui::SimpleMenuModel* ExampleMenuButton::GetMenuModel() {

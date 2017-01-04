@@ -52,7 +52,7 @@ protected:
     }
 
     SkISize onISize() override {
-        return SkISize::Make(1024, 740);
+        return SkISize::Make(1400, 740);
     }
 
     void onDraw(SkCanvas* canvas) override {
@@ -63,13 +63,13 @@ protected:
         paint.setStyle(SkPaint::kStroke_Style);
         paint.setStrokeWidth(STROKE_WIDTH);
 
-        static const SkPaint::Join gJoins[] = {
+        constexpr SkPaint::Join gJoins[] = {
             SkPaint::kMiter_Join, SkPaint::kRound_Join, SkPaint::kBevel_Join
         };
 
-        static const SkScalar W = 80;
-        static const SkScalar H = 80;
-        static const SkRect gRects[] = {
+        constexpr SkScalar W = 80;
+        constexpr SkScalar H = 80;
+        constexpr SkRect gRects[] = {
             { 0, 0, W, H },
             { W, 0, 0, H },
             { 0, H, W, 0 },

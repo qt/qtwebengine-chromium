@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<!--
+Copyright 2016 The Chromium Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+
+<link rel="import" href="/tracing/value/diagnostics/generic.html">
+<link rel="import" href="/tracing/value/histogram.html">
+
+<script>
+'use strict';
+
+tr.b.unittest.testSuite(function() {
+  var unitlessNumber = tr.b.Unit.byName.unitlessNumber;
+  var unitlessNumber_smallerIsBetter =
+      tr.b.Unit.byName.unitlessNumber_smallerIsBetter;
+
+  var TEST_BOUNDARIES = tr.v.HistogramBinBoundaries.createLinear(0, 1000, 10);
+
+  function checkBoundaries(boundaries, expectedMinBoundary, expectedMaxBoundary,
+      expectedUnit, expectedBinRanges) {
+    assert.strictEqual(boundaries.range.min, expectedMinBoundary);
+    assert.strictEqual(boundaries.range.max, expectedMaxBoundary);
+
+    // Check that the boundaries can be used multiple times.
+    for (var i = 0; i < 3; i++) {
+      var numeric = new tr.v.Histogram('', expectedUnit, boundaries);
+      assert.instanceOf(numeric, tr.v.Histogram);
+      assert.strictEqual(numeric.unit, expectedUnit);
+      assert.strictEqual(numeric.numValues, 0);
+
+      assert.lengthOf(numeric.allBins, expectedBinRanges.length);
+      for (var j = 0; j < expectedBinRanges.length; j++) {
+        var bin = numeric.allBins[j];
+        assert.strictEqual(bin.count, 0);
+        assert.isTrue(bin.range.equals(expectedBinRanges[j]));
+      }
+    }
+  }
+
+  test('serialization', function() {
+    // Ensure that serialized Histograms don't take up too much more space than
+    // necessary.
+    var hist = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+
+    // You can change these numbers, but when you do, please explain in your CL
+    // description why they changed.
+    var dict = hist.asDict();
+    assert.strictEqual(107, JSON.stringify(dict).length);
+    assert.isUndefined(dict.centralBins);
+    assert.deepEqual(dict, tr.v.Histogram.fromDict(dict).asDict());
+
+    hist.addSample(100);
+    dict = hist.asDict();
+    assert.strictEqual(202, JSON.stringify(dict).length);
+    assert.isUndefined(dict.centralBins.length);
+    assert.deepEqual(dict, tr.v.Histogram.fromDict(dict).asDict());
+
+    hist.addSample(100);
+    dict = hist.asDict();
+    // SAMPLE_VALUES grew by "100,"
+    assert.strictEqual(206, JSON.stringify(dict).length);
+    assert.isUndefined(dict.centralBins.length);
+    assert.deepEqual(dict, tr.v.Histogram.fromDict(dict).asDict());
+
+    hist.addSample(271, {foo: new tr.v.d.Generic('bar')});
+    dict = hist.asDict();
+    assert.strictEqual(266, JSON.stringify(dict).length);
+    assert.isUndefined(dict.centralBins.length);
+    assert.deepEqual(dict, tr.v.Histogram.fromDict(dict).asDict());
+
+    // Add samples to most bins so that centralBinsArray is more efficient than
+    // centralBinsDict.
+    for (var i = 10; i < 100; ++i) {
+      hist.addSample(10 * i);
+    }
+    dict = hist.asDict();
+    assert.strictEqual(687, JSON.stringify(hist.asDict()).length);
+    assert.lengthOf(dict.centralBins, 10);
+    assert.deepEqual(dict, tr.v.Histogram.fromDict(dict).asDict());
+
+    // Lowering maxNumSampleValues takes a random sub-sample of the existing
+    // sampleValues. We have deliberately set all samples to 3-digit numbers so
+    // that the serialized size is constant regardless of which samples are
+    // retained.
+    hist.maxNumSampleValues = 10;
+    dict = hist.asDict();
+    assert.strictEqual(379, JSON.stringify(dict).length);
+    assert.lengthOf(dict.centralBins, 10);
+    assert.deepEqual(dict, tr.v.Histogram.fromDict(dict).asDict());
+  });
+
+  test('significance', function() {
+    var boundaries = tr.v.HistogramBinBoundaries.createLinear(0, 100, 10);
+    var numericA = new tr.v.Histogram(
+        '', unitlessNumber_smallerIsBetter, boundaries);
+    var numericB = new tr.v.Histogram(
+        '', unitlessNumber_smallerIsBetter, boundaries);
+
+    var dontCare = new tr.v.Histogram('', unitlessNumber, boundaries);
+    assert.strictEqual(dontCare.getDifferenceSignificance(dontCare),
+        tr.b.Statistics.Significance.DONT_CARE);
+
+    for (var i = 0; i < 100; ++i) {
+      numericA.addSample(i);
+      numericB.addSample(i * 0.85);
+    }
+
+    assert.strictEqual(numericA.getDifferenceSignificance(numericB),
+        tr.b.Statistics.Significance.INSIGNIFICANT);
+    assert.strictEqual(numericB.getDifferenceSignificance(numericA),
+        tr.b.Statistics.Significance.INSIGNIFICANT);
+    assert.strictEqual(numericA.getDifferenceSignificance(numericB, 0.1),
+        tr.b.Statistics.Significance.SIGNIFICANT);
+    assert.strictEqual(numericB.getDifferenceSignificance(numericA, 0.1),
+        tr.b.Statistics.Significance.SIGNIFICANT);
+  });
+
+  test('numericBasic', function() {
+    var n = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+    assert.equal(n.getBinForValue(250).range.min, 200);
+    assert.equal(n.getBinForValue(250).range.max, 300);
+
+    n.addSample(-1, {foo: new tr.v.d.Generic('a')});
+    n.addSample(0, {foo: new tr.v.d.Generic('b')});
+    n.addSample(0, {foo: new tr.v.d.Generic('c')});
+    n.addSample(500, {foo: new tr.v.d.Generic('c')});
+    n.addSample(999, {foo: new tr.v.d.Generic('d')});
+    n.addSample(1000, {foo: new tr.v.d.Generic('d')});
+    assert.equal(n.underflowBin.count, 1);
+
+    assert.equal(n.getBinForValue(0).count, 2);
+    assert.deepEqual(
+        n.getBinForValue(0).diagnosticMaps.map(dm => dm.get('foo').value),
+        ['b', 'c']);
+
+    assert.equal(n.getBinForValue(500).count, 1);
+    assert.equal(n.getBinForValue(999).count, 1);
+
+    assert.equal(n.overflowBin.count, 1);
+    assert.equal(n.numValues, 6);
+    assert.closeTo(n.average, 416.3, 0.1);
+  });
+
+  test('numericNans', function() {
+    var n = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+
+    n.addSample(undefined, {foo: new tr.v.d.Generic('b')});
+    n.addSample(NaN, {'foo': new tr.v.d.Generic('c')});
+    n.addSample(undefined);
+    n.addSample(NaN);
+
+    assert.equal(n.numNans, 4);
+    assert.deepEqual(n.nanDiagnosticMaps.map(dm => dm.get('foo').value),
+                                             ['b', 'c']);
+
+    var n2 = n.clone();
+    assert.instanceOf(n2.nanDiagnosticMaps[0], tr.v.d.DiagnosticMap);
+    assert.instanceOf(n2.nanDiagnosticMaps[0].get('foo'), tr.v.d.Generic);
+  });
+
+  test('addHistogramsValid', function() {
+    var n0 = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+    var n1 = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+
+    n0.addSample(-1, {foo: new tr.v.d.Generic('a0')});
+    n0.addSample(0, {foo: new tr.v.d.Generic('b0')});
+    n0.addSample(0, {foo: new tr.v.d.Generic('c0')});
+    n0.addSample(500, {foo: new tr.v.d.Generic('c0')});
+    n0.addSample(1000, {foo: new tr.v.d.Generic('d0')});
+    n0.addSample(NaN, {foo: new tr.v.d.Generic('e0')});
+
+    n1.addSample(-1, {foo: new tr.v.d.Generic('a1')});
+    n1.addSample(0, {foo: new tr.v.d.Generic('b1')});
+    n1.addSample(0, {foo: new tr.v.d.Generic('c1')});
+    n1.addSample(999, {foo: new tr.v.d.Generic('d1')});
+    n1.addSample(1000, {foo: new tr.v.d.Generic('d1')});
+    n1.addSample(NaN, {foo: new tr.v.d.Generic('e1')});
+
+    n0.addHistogram(n1);
+
+    assert.equal(n0.numNans, 2);
+    assert.deepEqual(n0.nanDiagnosticMaps.map(dmd => dmd.get('foo').value),
+                     ['e0', 'e1']);
+
+    assert.equal(n0.underflowBin.count, 2);
+    assert.deepEqual(
+        n0.underflowBin.diagnosticMaps.map(dmd => dmd.get('foo').value),
+        ['a0', 'a1']);
+
+    assert.equal(n0.getBinForValue(0).count, 4);
+    assert.deepEqual(
+        n0.getBinForValue(0).diagnosticMaps.map(dmd => dmd.get('foo').value),
+        ['b0', 'c0', 'b1', 'c1']);
+
+    assert.equal(n0.getBinForValue(500).count, 1);
+    assert.deepEqual(
+        n0.getBinForValue(500).diagnosticMaps.map(dmd => dmd.get('foo').value),
+        ['c0']);
+
+    assert.equal(n0.getBinForValue(999).count, 1);
+    assert.deepEqual(
+        n0.getBinForValue(999).diagnosticMaps.map(dmd => dmd.get('foo').value),
+        ['d1']);
+
+    assert.equal(n0.overflowBin.count, 2);
+    assert.deepEqual(
+        n0.overflowBin.diagnosticMaps.map(dmd => dmd.get('foo').value),
+        ['d0', 'd1']);
+
+    assert.equal(n0.numValues, 10);
+    assert.closeTo(n0.average, 349.7, 0.1);
+
+    assert.equal(2, n0.maxCount);
+    assert.equal(2, n1.maxCount);
+
+    var n02 = n0.clone();
+    assert.instanceOf(n02.underflowBin.diagnosticMaps[0], tr.v.d.DiagnosticMap);
+    assert.instanceOf(n02.underflowBin.diagnosticMaps[0].get('foo'),
+                      tr.v.d.Generic);
+  });
+
+  test('addHistogramsInvalid', function() {
+    var n0 = new tr.v.Histogram('', tr.b.Unit.byName.timeDurationInMs,
+        tr.v.HistogramBinBoundaries.createLinear(0, 1000, 10));
+    var n1 = new tr.v.Histogram('', tr.b.Unit.byName.timeDurationInMs,
+        tr.v.HistogramBinBoundaries.createLinear(0, 1001, 10));
+    var n2 = new tr.v.Histogram('', tr.b.Unit.byName.timeDurationInMs,
+        tr.v.HistogramBinBoundaries.createLinear(0, 1000, 11));
+
+    assert.isFalse(n0.canAddHistogram(n1));
+    assert.isFalse(n0.canAddHistogram(n2));
+    assert.isFalse(n1.canAddHistogram(n0));
+    assert.isFalse(n1.canAddHistogram(n2));
+    assert.isFalse(n2.canAddHistogram(n0));
+    assert.isFalse(n2.canAddHistogram(n1));
+
+    assert.throws(n0.addHistogram.bind(n0, n1), Error);
+    assert.throws(n0.addHistogram.bind(n0, n2), Error);
+  });
+
+  test('addHistogramWithNonDiagnosticMapThrows', function() {
+    var n = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+    assert.throws(n.addSample.bind(42, 'foo'), Error);
+  });
+
+  test('numericPercentile', function() {
+    function check(array, min, max, bins, precision) {
+      var boundaries = tr.v.HistogramBinBoundaries.createLinear(min, max, bins);
+      var n = new tr.v.Histogram(
+          '', tr.b.Unit.byName.timeDurationInMs, boundaries);
+      array.forEach((x) => n.addSample(x, {foo: new tr.v.d.Generic('x')}));
+      [0.25, 0.5, 0.75, 0.8, 0.95, 0.99].forEach(function(percent) {
+        var expected = tr.b.Statistics.percentile(array, percent);
+        var actual = n.getApproximatePercentile(percent);
+        assert.closeTo(expected, actual, precision);
+      });
+    }
+    check([1, 2, 5, 7], 0.5, 10.5, 10, 1e-3);
+    check([3, 3, 4, 4], 0.5, 10.5, 10, 1e-3);
+    check([1, 10], 0.5, 10.5, 10, 1e-3);
+    check([1, 2, 3, 4, 5], 0.5, 10.5, 10, 1e-3);
+    check([3, 3, 3, 3, 3], 0.5, 10.5, 10, 1e-3);
+    check([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.5, 10.5, 10, 1e-3);
+    check([1, 2, 3, 4, 5, 5, 6, 7, 8, 9, 10], 0.5, 10.5, 10, 1e-3);
+    check([0, 11], 0.5, 10.5, 10, 1);
+    check([0, 6, 11], 0.5, 10.5, 10, 1);
+    var array = [];
+    for (var i = 0; i < 1000; i++)
+      array.push((i * i) % 10 + 1);
+    check(array, 0.5, 10.5, 10, 1e-3);
+    // If the real percentile is outside the bin range then the approximation
+    // error can be high.
+    check([-10000], 0, 10, 10, 10000);
+    check([10000], 0, 10, 10, 10000 - 10);
+    // The result is no more than the bin width away from the real percentile.
+    check([1, 1], 0, 10, 1, 10);
+  });
+
+  test('histogramBinBoundaries_addBinBoundary', function() {
+    var b = new tr.v.HistogramBinBoundaries(-100);
+    b.addBinBoundary(50);
+
+    checkBoundaries(b, -100, 50, tr.b.Unit.byName.timeDurationInMs, [
+      tr.b.Range.fromExplicitRange(-Number.MAX_VALUE, -100),
+      tr.b.Range.fromExplicitRange(-100, 50),
+      tr.b.Range.fromExplicitRange(50, Number.MAX_VALUE)
+    ]);
+
+    b.addBinBoundary(60);
+    b.addBinBoundary(75);
+
+    checkBoundaries(b, -100, 75, tr.b.Unit.byName.timeDurationInMs, [
+      tr.b.Range.fromExplicitRange(-Number.MAX_VALUE, -100),
+      tr.b.Range.fromExplicitRange(-100, 50),
+      tr.b.Range.fromExplicitRange(50, 60),
+      tr.b.Range.fromExplicitRange(60, 75),
+      tr.b.Range.fromExplicitRange(75, Number.MAX_VALUE)
+    ]);
+  });
+
+  test('histogramBinBoundaries_addLinearBins', function() {
+    var b = new tr.v.HistogramBinBoundaries(1000);
+    b.addLinearBins(1200, 5);
+
+    checkBoundaries(b, 1000, 1200, tr.b.Unit.byName.powerInWatts, [
+      tr.b.Range.fromExplicitRange(-Number.MAX_VALUE, 1000),
+      tr.b.Range.fromExplicitRange(1000, 1040),
+      tr.b.Range.fromExplicitRange(1040, 1080),
+      tr.b.Range.fromExplicitRange(1080, 1120),
+      tr.b.Range.fromExplicitRange(1120, 1160),
+      tr.b.Range.fromExplicitRange(1160, 1200),
+      tr.b.Range.fromExplicitRange(1200, Number.MAX_VALUE)
+    ]);
+  });
+
+  test('histogramBinBoundaries_addExponentialBins', function() {
+    var b = new tr.v.HistogramBinBoundaries(0.5);
+    b.addExponentialBins(8, 4);
+
+    checkBoundaries(b, 0.5, 8, tr.b.Unit.byName.energyInJoules, [
+      tr.b.Range.fromExplicitRange(-Number.MAX_VALUE, 0.5),
+      tr.b.Range.fromExplicitRange(0.5, 1),
+      tr.b.Range.fromExplicitRange(1, 2),
+      tr.b.Range.fromExplicitRange(2, 4),
+      tr.b.Range.fromExplicitRange(4, 8),
+      tr.b.Range.fromExplicitRange(8, Number.MAX_VALUE)
+    ]);
+  });
+
+  test('histogramBinBoundaries_combined', function() {
+    var b = new tr.v.HistogramBinBoundaries(-273.15);
+    b.addBinBoundary(-50);
+    b.addLinearBins(4, 3);
+    b.addExponentialBins(16, 2);
+    b.addLinearBins(17, 4);
+    b.addBinBoundary(100);
+
+    checkBoundaries(b, -273.15, 100, tr.b.Unit.byName.unitlessNumber, [
+      tr.b.Range.fromExplicitRange(-Number.MAX_VALUE, -273.15),
+      tr.b.Range.fromExplicitRange(-273.15, -50),
+      tr.b.Range.fromExplicitRange(-50, -32),
+      tr.b.Range.fromExplicitRange(-32, -14),
+      tr.b.Range.fromExplicitRange(-14, 4),
+      tr.b.Range.fromExplicitRange(4, 8),
+      tr.b.Range.fromExplicitRange(8, 16),
+      tr.b.Range.fromExplicitRange(16, 16.25),
+      tr.b.Range.fromExplicitRange(16.25, 16.5),
+      tr.b.Range.fromExplicitRange(16.5, 16.75),
+      tr.b.Range.fromExplicitRange(16.75, 17),
+      tr.b.Range.fromExplicitRange(17, 100),
+      tr.b.Range.fromExplicitRange(100, Number.MAX_VALUE)
+    ]);
+  });
+
+  test('histogramBinBoundaries_throws', function() {
+    var b0 = new tr.v.HistogramBinBoundaries(-7);
+    assert.throws(function() { b0.addBinBoundary(-10 /* must be > -7 */); });
+    assert.throws(function() { b0.addBinBoundary(-7 /* must be > -7 */); });
+    assert.throws(function() { b0.addLinearBins(-10 /* must be > -7 */, 10); });
+    assert.throws(function() { b0.addLinearBins(-7 /* must be > -7 */, 100); });
+    assert.throws(function() { b0.addLinearBins(10, 0 /* must be > 0 */); });
+    assert.throws(function() {
+      // Current max bin boundary (-7) must be positive.
+      b0.addExponentialBins(16, 4);
+    });
+
+    var b1 = new tr.v.HistogramBinBoundaries(8);
+    assert.throws(() => b1.addExponentialBins(20, 0 /* must be > 0 */));
+    assert.throws(() => b1.addExponentialBins(5 /* must be > 8 */, 3));
+    assert.throws(() => b1.addExponentialBins(8 /* must be > 8 */, 3));
+  });
+
+  test('statisticsScalars', function() {
+    var boundaries = tr.v.HistogramBinBoundaries.createLinear(0, 100, 100);
+    var n = new tr.v.Histogram('', unitlessNumber, boundaries);
+
+    n.addSample(50);
+    n.addSample(60);
+    n.addSample(70);
+    n.addSample('i am not a number');
+
+    n.customizeSummaryOptions({
+      count: true,
+      min: true,
+      max: true,
+      sum: true,
+      avg: true,
+      std: true,
+      nans: true,
+      geometricMean: true,
+      percentile: [0.5, 1]
+    });
+
+    // Test round-tripping summaryOptions.
+    n = n.clone();
+
+    var stats = n.statisticsScalars;
+    assert.strictEqual(stats.get('nans').unit,
+        tr.b.Unit.byName.count_smallerIsBetter);
+    assert.strictEqual(stats.get('nans').value, 1);
+    assert.strictEqual(stats.get('count').unit,
+        tr.b.Unit.byName.count_smallerIsBetter);
+    assert.strictEqual(stats.get('count').value, 3);
+    assert.strictEqual(stats.get('min').unit, n.unit);
+    assert.strictEqual(stats.get('min').value, 50);
+    assert.strictEqual(stats.get('max').unit, n.unit);
+    assert.strictEqual(stats.get('max').value, 70);
+    assert.strictEqual(stats.get('sum').unit, n.unit);
+    assert.strictEqual(stats.get('sum').value, 180);
+    assert.strictEqual(stats.get('avg').unit, n.unit);
+    assert.strictEqual(stats.get('avg').value, 60);
+    assert.strictEqual(stats.get('std').value, 10);
+    assert.strictEqual(stats.get('pct_050').unit, n.unit);
+    assert.closeTo(stats.get('pct_050').value, 60, 1);
+    assert.strictEqual(stats.get('pct_100').unit, n.unit);
+    assert.closeTo(stats.get('pct_100').value, 70, 1);
+    assert.strictEqual(stats.get('geometricMean').unit, n.unit);
+    assert.closeTo(stats.get('geometricMean').value, 59.439, 1e-3);
+  });
+
+  test('statisticsScalarsNoSummaryOptions', function() {
+    var boundaries = tr.v.HistogramBinBoundaries.createLinear(0, 100, 100);
+    var n = new tr.v.Histogram('', unitlessNumber, boundaries);
+
+    n.addSample(50);
+    n.addSample(60);
+    n.addSample(70);
+
+    n.customizeSummaryOptions({
+      count: false,
+      min: false,
+      max: false,
+      sum: false,
+      avg: false,
+      std: false,
+      percentile: []
+    });
+
+    assert.strictEqual(n.statisticsScalars.size, 0);
+  });
+
+  test('statisticsScalarsEmptyNumericValue', function() {
+    var boundaries = tr.v.HistogramBinBoundaries.createLinear(0, 100, 100);
+    var n = new tr.v.Histogram('', unitlessNumber, boundaries);
+    n.customizeSummaryOptions({
+      count: true,
+      min: true,
+      max: true,
+      sum: true,
+      avg: true,
+      std: true,
+      percentile: [0, 0.01, 0.1, 0.5, 0.995, 1]
+    });
+
+    var stats = n.statisticsScalars;
+    assert.strictEqual(stats.get('count').value, 0);
+    assert.strictEqual(stats.get('min').value, Infinity);
+    assert.strictEqual(stats.get('max').value, -Infinity);
+    assert.strictEqual(stats.get('sum').value, 0);
+    assert.strictEqual(stats.get('avg'), undefined);
+    assert.strictEqual(stats.get('std'), undefined);
+    assert.strictEqual(stats.get('pct_000').value, 0);
+    assert.strictEqual(stats.get('pct_001').value, 0);
+    assert.strictEqual(stats.get('pct_010').value, 0);
+    assert.strictEqual(stats.get('pct_050').value, 0);
+    assert.strictEqual(stats.get('pct_099_5').value, 0);
+    assert.strictEqual(stats.get('pct_100').value, 0);
+  });
+
+  test('sampleValues', function() {
+    var n0 = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+    var n1 = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+    // maxNumSampleValues defaults to numBins * 10, which, including the
+    // underflowBin and overflowBin plus this builder's 10 central bins,
+    // is 12 * 10.
+    assert.strictEqual(n0.maxNumSampleValues, 120);
+    assert.strictEqual(n1.maxNumSampleValues, 120);
+    var values0 = [];
+    var values1 = [];
+    for (var i = 0; i < 10; ++i) {
+      values0.push(i);
+      n0.addSample(i);
+    }
+    for (var i = 10; i < 20; ++i) {
+      values1.push(i);
+      n1.addSample(i);
+    }
+    assert.deepEqual(n0.sampleValues, values0);
+    assert.deepEqual(n1.sampleValues, values1);
+    n0.addHistogram(n1);
+    assert.deepEqual(n0.sampleValues, values0.concat(values1));
+    var n2 = n0.clone();
+    assert.deepEqual(n2.sampleValues, values0.concat(values1));
+
+    for (var i = 0; i < 200; ++i)
+      n0.addSample(i);
+    assert.strictEqual(n0.sampleValues.length, n0.maxNumSampleValues);
+
+    var n3 = new tr.v.Histogram('', unitlessNumber, TEST_BOUNDARIES);
+    n3.maxNumSampleValues = 10;
+    for (var i = 0; i < 100; ++i)
+      n3.addSample(i);
+    assert.strictEqual(n3.sampleValues.length, 10);
+  });
+});
+</script>

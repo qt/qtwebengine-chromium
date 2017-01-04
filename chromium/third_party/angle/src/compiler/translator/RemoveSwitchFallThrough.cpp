@@ -62,7 +62,14 @@ bool RemoveSwitchFallThrough::visitUnary(Visit, TIntermUnary *node)
     return false;
 }
 
-bool RemoveSwitchFallThrough::visitSelection(Visit, TIntermSelection *node)
+bool RemoveSwitchFallThrough::visitTernary(Visit, TIntermTernary *node)
+{
+    mPreviousCase->getSequence()->push_back(node);
+    mLastStatementWasBreak = false;
+    return false;
+}
+
+bool RemoveSwitchFallThrough::visitIfElse(Visit, TIntermIfElse *node)
 {
     mPreviousCase->getSequence()->push_back(node);
     mLastStatementWasBreak = false;

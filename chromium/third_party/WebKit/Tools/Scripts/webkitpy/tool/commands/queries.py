@@ -29,7 +29,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import fnmatch
-import logging
 import re
 
 from optparse import make_option
@@ -38,8 +37,6 @@ from webkitpy.common.system.crashlogs import CrashLogs
 from webkitpy.tool.commands.command import Command
 from webkitpy.layout_tests.models.test_expectations import TestExpectations
 from webkitpy.layout_tests.port.factory import platform_options
-
-_log = logging.getLogger(__name__)
 
 
 class CrashLog(Command):
@@ -68,11 +65,14 @@ class PrintExpectations(Command):
             make_option('--all', action='store_true', default=False,
                         help='display the expectations for *all* tests'),
             make_option('-x', '--exclude-keyword', action='append', default=[],
-                        help='limit to tests not matching the given keyword (for example, "skip", "slow", or "crash". May specify multiple times'),
+                        help='limit to tests not matching the given keyword (for example, '
+                             '"skip", "slow", or "crash". May specify multiple times'),
             make_option('-i', '--include-keyword', action='append', default=[],
-                        help='limit to tests with the given keyword (for example, "skip", "slow", or "crash". May specify multiple times'),
+                        help='limit to tests with the given keyword (for example, "skip", '
+                             '"slow", or "crash". May specify multiple times'),
             make_option('--csv', action='store_true', default=False,
-                        help='Print a CSV-style report that includes the port name, bugs, specifiers, tests, and expectations'),
+                        help='Print a CSV-style report that includes the port name, bugs, '
+                             'specifiers, tests, and expectations'),
             make_option('-f', '--full', action='store_true', default=False,
                         help='Print a full TestExpectations-style line for every match'),
             make_option('--paths', action='store_true', default=False,
@@ -113,7 +113,8 @@ class PrintExpectations(Command):
 
         tests = set(default_port.tests(args))
         for port_name in port_names:
-            model = self._model(options, port_name, tests)
+            port = tool.port_factory.get(port_name, options)
+            model = TestExpectations(port, tests).model()
             tests_to_print = self._filter_tests(options, model, tests)
             lines = [model.get_expectation_line(test) for test in sorted(tests_to_print)]
             if port_name != port_names[0]:
@@ -145,10 +146,6 @@ class PrintExpectations(Command):
                 output.append("%s" % line.to_string(None, include_modifiers, include_expectations, include_comment=False))
         return output
 
-    def _model(self, options, port_name, tests):
-        port = self._tool.port_factory.get(port_name, options)
-        return TestExpectations(port, tests).model()
-
 
 class PrintBaselines(Command):
     name = 'print-baselines'
@@ -160,12 +157,13 @@ class PrintBaselines(Command):
             make_option('--all', action='store_true', default=False,
                         help='display the baselines for *all* tests'),
             make_option('--csv', action='store_true', default=False,
-                        help='Print a CSV-style report that includes the port name, test_name, test platform, baseline type, baseline location, and baseline platform'),
+                        help='Print a CSV-style report that includes the port name, test_name, '
+                             'test platform, baseline type, baseline location, and baseline platform'),
             make_option('--include-virtual-tests', action='store_true',
                         help='Include virtual tests'),
         ] + platform_options(use_globs=True)
         super(PrintBaselines, self).__init__(options=options)
-        self._platform_regexp = re.compile('platform/([^\/]+)/(.+)')
+        self._platform_regexp = re.compile(r'platform/([^\/]+)/(.+)')
 
     def execute(self, options, args, tool):
         if not args and not options.all:

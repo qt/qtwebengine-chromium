@@ -95,7 +95,7 @@ class FailingService
   def initialize(_default_var = 'ignored')
     @details = 'app error'
     @code = 101
-    @md = { failed_method: 'an_rpc' }
+    @md = { 'failed_method' => 'an_rpc' }
   end
 
   def an_rpc(_req, _call)
@@ -135,8 +135,6 @@ describe GRPC::RpcServer do
     @pass = 0
     @fail = 1
     @noop = proc { |x| x }
-
-    @server_queue = GRPC::Core::CompletionQueue.new
   end
 
   describe '#new' do
@@ -146,28 +144,6 @@ describe GRPC::RpcServer do
         RpcServer.new(**opts)
       end
       expect(&blk).not_to raise_error
-    end
-
-    it 'can be created with a completion queue override' do
-      opts = {
-        server_args: { a_channel_arg: 'an_arg' },
-        completion_queue_override: @server_queue
-      }
-      blk = proc do
-        RpcServer.new(**opts)
-      end
-      expect(&blk).not_to raise_error
-    end
-
-    it 'cannot be created with a bad completion queue override' do
-      blk = proc do
-        opts = {
-          server_args: { a_channel_arg: 'an_arg' },
-          completion_queue_override: Object.new
-        }
-        RpcServer.new(**opts)
-      end
-      expect(&blk).to raise_error
     end
 
     it 'cannot be created with invalid ServerCredentials' do
@@ -294,7 +270,6 @@ describe GRPC::RpcServer do
     context 'with no connect_metadata' do
       before(:each) do
         server_opts = {
-          completion_queue_override: @server_queue,
           poll_period: 1
         }
         @srv = RpcServer.new(**server_opts)
@@ -309,8 +284,7 @@ describe GRPC::RpcServer do
         @srv.wait_till_running
         req = EchoMsg.new
         blk = proc do
-          cq = GRPC::Core::CompletionQueue.new
-          stub = GRPC::ClientStub.new(@host, cq, :this_channel_is_insecure,
+          stub = GRPC::ClientStub.new(@host, :this_channel_is_insecure,
                                       **client_opts)
           stub.request_response('/unknown', req, marshal, unmarshal)
         end
@@ -325,8 +299,7 @@ describe GRPC::RpcServer do
         @srv.wait_till_running
         req = EchoMsg.new
         blk = proc do
-          cq = GRPC::Core::CompletionQueue.new
-          stub = GRPC::ClientStub.new(@host, cq, :this_channel_is_insecure,
+          stub = GRPC::ClientStub.new(@host, :this_channel_is_insecure,
                                       **client_opts)
           stub.request_response('/an_rpc', req, marshal, unmarshal)
         end
@@ -422,10 +395,9 @@ describe GRPC::RpcServer do
       it 'should return RESOURCE_EXHAUSTED on too many jobs', server: true do
         opts = {
           server_args: { a_channel_arg: 'an_arg' },
-          completion_queue_override: @server_queue,
-          pool_size: 1,
+          pool_size: 2,
           poll_period: 1,
-          max_waiting_requests: 0
+          max_waiting_requests: 1
         }
         alt_srv = RpcServer.new(**opts)
         alt_srv.handle(SlowService)
@@ -434,24 +406,23 @@ describe GRPC::RpcServer do
         t = Thread.new { alt_srv.run }
         alt_srv.wait_till_running
         req = EchoMsg.new
-        n = 5  # arbitrary, use as many to ensure the server pool is exceeded
+        n = 20 # arbitrary, use as many to ensure the server pool is exceeded
         threads = []
-        one_failed_as_unavailable = false
+        bad_status_code = nil
         n.times do
           threads << Thread.new do
             stub = SlowStub.new(alt_host, :this_channel_is_insecure)
             begin
               stub.an_rpc(req)
             rescue GRPC::BadStatus => e
-              one_failed_as_unavailable =
-                e.code == StatusCodes::RESOURCE_EXHAUSTED
+              bad_status_code = e.code
             end
           end
         end
         threads.each(&:join)
         alt_srv.stop
         t.join
-        expect(one_failed_as_unavailable).to be(true)
+        expect(bad_status_code).to be(StatusCodes::RESOURCE_EXHAUSTED)
       end
     end
 
@@ -466,7 +437,6 @@ describe GRPC::RpcServer do
       end
       before(:each) do
         server_opts = {
-          completion_queue_override: @server_queue,
           poll_period: 1,
           connect_md_proc: test_md_proc
         }
@@ -502,7 +472,6 @@ describe GRPC::RpcServer do
     context 'with trailing metadata' do
       before(:each) do
         server_opts = {
-          completion_queue_override: @server_queue,
           poll_period: 1
         }
         @srv = RpcServer.new(**server_opts)
@@ -545,7 +514,7 @@ describe GRPC::RpcServer do
         op = stub.an_rpc(req, return_op: true, metadata: { k1: 'v1', k2: 'v2' })
         expect(op.metadata).to be nil
         expect(op.execute).to be_a(EchoMsg)
-        expect(op.metadata).to eq(wanted_trailers)
+        expect(op.trailing_metadata).to eq(wanted_trailers)
         @srv.stop
         t.join
       end

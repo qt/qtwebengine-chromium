@@ -27,17 +27,23 @@
 // settable_from_internals specifies whether a feature can be set from internals.runtimeFlags, with the default
 // being false.
 
-AppBanner status=stable
+Accelerated2dCanvas status=stable, settable_from_internals=True
 AlwaysUseComplexText status=stable
-ApplicationCache status=stable
 AudioOutputDevices status=stable
 AudioVideoTracks status=experimental
+AudioWorklet status=experimental
+Auxclick status=stable
 BackgroundSync status=stable
 BackspaceDefaultHandler status=test
-BroadcastChannel status=experimental
-CacheIgnoreSearchOption status=experimental
+BroadcastChannel status=stable
+Budget status=experimental
+Canvas2dFixedRenderingMode status=test
+EnableCanvas2dDynamicRenderingModeSwitching status=experimental
 Canvas2dImageChromium status=experimental
 ClientHints status=stable
+CompositeOpaqueFixedPosition settable_from_internals=True
+CompositeOpaqueScrollers status=experimental, settable_from_internals=True
+ColorCorrectRendering settable_from_internals=True
 CompositedSelectionUpdate
 CompositorWorker status=experimental
 ContextMenu status=test
@@ -45,91 +51,91 @@ CorsRFC1918 status=test
 CredentialManager status=stable
 CSS3Text status=experimental
 CSS3TextDecorations status=experimental
-CSSApplyAtRules status=experimental, depends_on=CSSVariables
+CSSApplyAtRules status=experimental
 CSSAdditiveAnimations status=experimental, depends_on=StackedCSSPropertyAnimations
 CSSBackdropFilter status=experimental
-CSSBoxReflectFilter status=stable
 CSSHexAlphaColor status=experimental
 CSSContainment status=stable
 CSSFontDisplay status=experimental
 CSSFontSizeAdjust status=experimental
-CSSGridLayout status=experimental
-CSSHyphens status=experimental
+CSSGridLayout status=experimental, settable_from_internals=True
+CSSHyphens status=stable
 CSSInBodyDoesNotBlockPaint status=experimental
 CSSIndependentTransformProperties status=experimental
 CSSMaskSourceType status=experimental
 CSSOMSmoothScroll status=experimental
+CSSOffsetPositionAnchor status=experimental
 CSSPaintAPI status=experimental, depends_on=CSSTypedOM, depends_on=Worklet
-CSSPropertyD status=stable
 CSSSnapSize status=experimental
 CSSStickyPosition status=experimental
-CSSTouchActionPanDirections status=experimental
+CSSTouchActionPanDirections status=stable
+CSSTouchActionPinchZoom status=experimental
 CSSTypedOM status=experimental
-CSSVariables status=stable
+CSSVariables2 status=experimental
 CSSViewport status=experimental
 CSSScrollSnapPoints status=test
-CustomElementsV1 status=test
+CustomElementsBuiltin status=test
+CustomElementsV1 status=stable
 CustomSchemeHandler depends_on=NavigatorContentUtils, status=experimental
 Database status=stable
 DecodeToYUV status=experimental
 DeviceLight status=experimental
-DisableBlockingMethodsDuringMicrotasks status=experimental
 DisplayList2dCanvas status=stable
 DocumentWriteEvaluator
-DOMConvenienceAPI status=experimental
-DurableStorage status=experimental, origin_trial_feature_name=DurableStorage
+DOMConvenienceAPI status=stable
+DurableStorage status=stable
 FontCacheScaling status=test
 ForceDisplayList2dCanvas
 // See crbug.com/585250.
 ForceDisable2dCanvasCopyOnWrite
+EmbedderCSPEnforcement status=experimental
 ExecCommandInJavaScript status=test
 ComputedAccessibilityInfo status=experimental
 ExperimentalCanvasFeatures status=test
 ExperimentalContentSecurityPolicyFeatures status=experimental
 ExperimentalV8Extras status=experimental
 FastMobileScrolling
+FeaturePolicy status=experimental
 FileAPIBlobClose status=experimental
 FileSystem status=stable
-ForeignFetch status=experimental
-FormDataNewMethods status=stable
+ForeignFetch status=experimental, origin_trial_feature_name=ForeignFetch
+FramebustingNeedsSameOriginOrUserGesture status=test, settable_from_internals=True
 FullscreenUnprefixed status=test
 FrameTimingSupport status=experimental
-GeometryInterfaces status=test
-GetUserMedia depends_on=MediaDevices, status=stable
+GamepadExtensions
+GeometryInterfaces status=experimental, implied_by=CompositorWorker
+GetUserMedia status=stable
 GlobalCacheStorage status=stable
-HiResEventTimeStamp status=stable
 IDBObserver status=experimental
 ImageCapture status=experimental
-ImageColorProfiles
 ImageOrientation status=test
-ImageRenderingPixelated status=stable
 IndexedDBExperimental status=experimental
 InertTopControls status=experimental
-InputDeviceCapabilities status=stable
 InputEvent status=experimental
 InputModeAttribute status=experimental
 InputMultipleFieldsUI status=stable
 InstalledApp status=experimental
 IntersectionObserver status=stable
 LangAttributeAwareFormControlUI
-LinkPreconnect status=stable
-LinkPreload status=stable
-LinkHeader status=stable
-LinkServiceWorker status=experimental
+LayoutNG
+LinkServiceWorker status=experimental, origin_trial_feature_name=ForeignFetch
+LongTaskObserver status=experimental, origin_trial_feature_name=LongTaskObserver
 FractionalScrollOffsets
+LoadingWithMojo
 MediaCapture
 MediaCaptureFromCanvas status=stable
 MediaCaptureFromVideo status=experimental
 MediaConstraints status=stable
-MediaDevices status=stable
 MediaDocumentDownloadButton
 MediaGetSettings status=test
-MediaRecorder status=stable
 MediaSession
 MediaSourceExperimental status=experimental
 MediaSourceNewAbortAndDuration status=experimental
 MediaStreamSpeech status=experimental
 MemoryInfoInWorkers status=experimental
+// This is enabled by default on Windows only. The only part that's
+// "experimental" is the support on other platforms.
+MiddleClickAutoscroll status=experimental
 MobileLayoutTheme
 ModuleScripts status=test
 NavigatorContentUtils
@@ -139,6 +145,7 @@ NetInfoDownlinkMax status=stable
 NewMediaPlaybackUi
 NotificationConstructor status=stable
 NotificationBadge status=stable
+NotificationImage status=experimental
 NotificationInlineReplies status=experimental
 Notifications status=stable
 OnDeviceChange status=experimental
@@ -153,16 +160,19 @@ OriginTrialsSampleAPI origin_trial_feature_name=Frobulate
 ForceOverlayFullscreenVideo
 OverlayScrollbars
 PagePopup status=stable
-PaintOptimizations status=stable
-PassiveEventListeners status=stable
+PaintUnderInvalidationChecking settable_from_internals=True
+PassiveDocumentEventListeners status=experimental
+PassiveEventListenersDueToFling status=experimental
 PassPaintVisualRectToCompositor
-PathOpsSVGClipping status=stable
 PaymentRequest status=experimental
+PaymentRequestPayerName status=experimental
 PerformanceObserver status=stable
 PermissionDelegation status=test
 Permissions status=stable
 PermissionsRequestRevoke status=experimental
-PointerEvent status=experimental
+PointerEvent status=stable
+// For temporary compat testing of Edge-like model - crbug.com/640700
+PointerEventV1SpecCapturing
 PreciseMemoryInfo
 // This feature is deprecated and we are evangelizing affected sites.
 // See https://crbug.com/346236 for current status.
@@ -173,16 +183,18 @@ PushMessaging status=stable
 QuotaPromise status=experimental
 ReducedReferrerGranularity
 ReferrerPolicyHeader status=experimental
+ReloadwithoutSubResourceCacheRevalidation
 RemotePlayback status=experimental
 RenderingPipelineThrottling status=stable
-RequestIdleCallback status=stable
-ResponseConstructedWithReadableStream status=stable
-ResponseBodyWithV8ExtraStream status=stable
-SandboxBlocksModals status=stable
-ScreenOrientation status=stable
+RenderUnicodeControlCharacters status=experimental
+ResizeObserver status=experimental
+// Handles frame scrolling via the root PaintLayer instead of the FrameView.
+// crbug.com/417782 tracks enabling this by default.
+RootLayerScrolling
+RTCPeerConnectionNewGetStats status=test
 ScriptedSpeech status=stable
 // Scrolls to compensate for layout movements (bit.ly/scroll-anchoring).
-ScrollAnchoring settable_from_internals=True
+ScrollAnchoring status=experimental, settable_from_internals=True
 // Implements documentElement.scrollTop/Left and bodyElement.scrollTop/Left
 // as per the spec, matching other Web engines.
 ScrollTopLeftInterop status=experimental
@@ -192,12 +204,12 @@ ServiceWorkerClientsGetID status=stable
 ServiceWorkerWindowClientNavigate status=stable
 SetRootScroller status=experimental
 ShadowDOMV1 status=stable
+ShapeDetection status=experimental
 SharedArrayBuffer
 SharedWorker status=stable
 SlimmingPaintInvalidation implied_by=SlimmingPaintV2
 SlimmingPaintV2
 SlimmingPaintStrictCullRectClipping
-SlimmingPaintUnderInvalidationChecking settable_from_internals=True
 // Used as argument in attribute of stable-release functions/interfaces where
 // a runtime-enabled feature name is required for correct IDL syntax.
 // This is a global flag; do not change its status.
@@ -209,8 +221,11 @@ StyleMatchedPropertiesCache status=stable
 // be shipped would be enabled. Instead, remove the flag from the shipping
 // interface.
 ExperimentalStream status=experimental
+SpeculativeLaunchServiceWorker
 StorageEstimate status=experimental
-Suborigins status=test
+Suborigins status=experimental
+TimerThrottlingForBackgroundTabs status=stable
+TimerThrottlingForHiddenFrames status=stable
 // Many websites disable mouse support when touch APIs are available.  We'd
 // like to enable this always but can't until more websites fix this bug.
 // Chromium sets this conditionally (eg. based on the presence of a
@@ -219,29 +234,30 @@ Touch status=stable
 TraceWrappables
 TrustedEventsDefaultAction status=stable
 UnsafeES3APIs
-UnsandboxedAuxiliary status=stable
 UserSelectAll status=stable
 WebAnimationsAPI status=experimental
 WebAnimationsSVG status=experimental
+WebAssemblySerialization status=test
 WebBluetooth origin_trial_feature_name=WebBluetooth
 WebGLDraftExtensions status=experimental
 WebGLImageChromium
-WebUSB status=experimental
+WebUSB status=experimental, origin_trial_feature_name=WebUSB
 WebVR
 WebVTTRegions status=experimental
+V8BasedStructuredClone
 V8IdleTasks
 VisibilityChangeOnUnload status=experimental
 XSLT status=stable
 smil status=stable
 ScrollCustomization
-ScrollRestoration status=stable
 AutoplayMutedVideos settable_from_internals=True
 VisualViewportAPI status=experimental
 WakeLock status=experimental
 WebFontsInterventionV2With2G
+WebFontsInterventionV2With3G
 WebFontsInterventionV2WithSlow2G
 WebFontsInterventionTrigger
+WebShare status=experimental, origin_trial_feature_name=WebShare, origin_trial_os=android
 Worklet status=experimental
-WeakMemoryCache
-DoNotUnlockSharedBuffer
 ParseHTMLOnMainThread status=test
+SendBeaconThrowForBlobWithNonSimpleType status=experimental

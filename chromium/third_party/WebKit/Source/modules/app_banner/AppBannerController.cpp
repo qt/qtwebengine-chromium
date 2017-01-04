@@ -9,7 +9,6 @@
 #include "core/frame/DOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "modules/app_banner/BeforeInstallPromptEvent.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebVector.h"
 #include "public/platform/modules/app_banner/WebAppBannerClient.h"
 #include "public/platform/modules/app_banner/WebAppBannerPromptReply.h"
@@ -17,19 +16,24 @@
 namespace blink {
 
 // static
-void AppBannerController::willShowInstallBannerPrompt(int requestId, WebAppBannerClient* client, LocalFrame* frame, const WebVector<WebString>& platforms, WebAppBannerPromptReply* reply)
-{
-    ASSERT(RuntimeEnabledFeatures::appBannerEnabled());
+void AppBannerController::willShowInstallBannerPrompt(
+    int requestId,
+    WebAppBannerClient* client,
+    LocalFrame* frame,
+    const WebVector<WebString>& platforms,
+    WebAppBannerPromptReply* reply) {
+  Vector<String> wtfPlatforms;
+  for (const WebString& platform : platforms)
+    wtfPlatforms.append(platform);
 
-    Vector<String> wtfPlatforms;
-    for (const WebString& platform : platforms)
-        wtfPlatforms.append(platform);
-
-    // dispatchEvent() returns whether the default behavior can happen. In other
-    // words, it returns false if preventDefault() was called.
-    *reply = frame->domWindow()->dispatchEvent(BeforeInstallPromptEvent::create(EventTypeNames::beforeinstallprompt, frame->document(), wtfPlatforms, requestId, client)) == DispatchEventResult::NotCanceled
-        ? WebAppBannerPromptReply::None
-        : WebAppBannerPromptReply::Cancel;
+  // dispatchEvent() returns whether the default behavior can happen. In other
+  // words, it returns false if preventDefault() was called.
+  *reply =
+      frame->domWindow()->dispatchEvent(BeforeInstallPromptEvent::create(
+          EventTypeNames::beforeinstallprompt, frame->document(), wtfPlatforms,
+          requestId, client)) == DispatchEventResult::NotCanceled
+          ? WebAppBannerPromptReply::None
+          : WebAppBannerPromptReply::Cancel;
 }
 
-} // namespace blink
+}  // namespace blink

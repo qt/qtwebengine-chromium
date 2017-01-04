@@ -11,13 +11,14 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
+#include "base/test/fuzzed_data_provider.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
-#include "net/base/fuzzed_data_provider.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/dns/fuzzed_host_resolver.h"
 #include "net/dns/host_resolver.h"
+#include "net/log/net_log_with_source.h"
 #include "net/log/test_net_log.h"
 
 namespace {
@@ -33,24 +34,20 @@ net::AddressFamily kAddressFamilies[] = {
 class DnsRequest {
  public:
   DnsRequest(net::HostResolver* host_resolver,
-             net::FuzzedDataProvider* data_provider,
+             base::FuzzedDataProvider* data_provider,
              std::vector<std::unique_ptr<DnsRequest>>* dns_requests)
       : host_resolver_(host_resolver),
         data_provider_(data_provider),
         dns_requests_(dns_requests),
-        handle_(nullptr),
         is_running_(false) {}
 
-  ~DnsRequest() {
-    if (is_running_)
-      Cancel();
-  }
+  ~DnsRequest() {}
 
   // Creates and starts a DNS request using fuzzed parameters. If the request
   // doesn't complete synchronously, adds it to |dns_requests|.
   static void CreateRequest(
       net::HostResolver* host_resolver,
-      net::FuzzedDataProvider* data_provider,
+      base::FuzzedDataProvider* data_provider,
       std::vector<std::unique_ptr<DnsRequest>>* dns_requests) {
     std::unique_ptr<DnsRequest> dns_request(
         new DnsRequest(host_resolver, data_provider, dns_requests));
@@ -62,7 +59,7 @@ class DnsRequest {
   // If |dns_requests| is non-empty, waits for a randomly chosen one of the
   // requests to complete and removes it from |dns_requests|.
   static void WaitForRequestComplete(
-      net::FuzzedDataProvider* data_provider,
+      base::FuzzedDataProvider* data_provider,
       std::vector<std::unique_ptr<DnsRequest>>* dns_requests) {
     if (dns_requests->empty())
       return;
@@ -81,7 +78,7 @@ class DnsRequest {
   // complete, just removes it from the list.
   static void CancelRequest(
       net::HostResolver* host_resolver,
-      net::FuzzedDataProvider* data_provider,
+      base::FuzzedDataProvider* data_provider,
       std::vector<std::unique_ptr<DnsRequest>>* dns_requests) {
     if (dns_requests->empty())
       return;
@@ -97,6 +94,7 @@ class DnsRequest {
     CHECK_NE(net::ERR_IO_PENDING, result);
 
     is_running_ = false;
+    request_.reset();
 
     // Remove |this| from |dns_requests| and take ownership of it, if it wasn't
     // already removed from the vector. It may have been removed if this is in a
@@ -149,14 +147,14 @@ class DnsRequest {
     // Decide if should be a cache-only resolution.
     if (data_provider_->ConsumeBool()) {
       return host_resolver_->ResolveFromCache(info, &address_list_,
-                                              net::BoundNetLog());
+                                              net::NetLogWithSource());
     }
 
     info.set_allow_cached_response(data_provider_->ConsumeBool());
     return host_resolver_->Resolve(
         info, priority, &address_list_,
-        base::Bind(&DnsRequest::OnCallback, base::Unretained(this)), &handle_,
-        net::BoundNetLog());
+        base::Bind(&DnsRequest::OnCallback, base::Unretained(this)), &request_,
+        net::NetLogWithSource());
   }
 
   // Waits until the request is done, if it isn't done already.
@@ -166,22 +164,21 @@ class DnsRequest {
       run_loop_.reset(new base::RunLoop());
       run_loop_->Run();
       run_loop_.reset();
-      CHECK(!is_running_);
+      DCHECK(request_);
     }
   }
 
   // Cancel the request, if not already completed. Otherwise, does nothing.
   void Cancel() {
-    if (is_running_)
-      host_resolver_->CancelRequest(handle_);
+    request_.reset();
     is_running_ = false;
   }
 
   net::HostResolver* host_resolver_;
-  net::FuzzedDataProvider* data_provider_;
+  base::FuzzedDataProvider* data_provider_;
   std::vector<std::unique_ptr<DnsRequest>>* dns_requests_;
 
-  net::HostResolver::RequestHandle handle_;
+  std::unique_ptr<net::HostResolver::Request> request_;
   net::AddressList address_list_;
 
   bool is_running_;
@@ -202,7 +199,7 @@ class DnsRequest {
 //     async resolver while lookups are active as a result of the change.
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   {
-    net::FuzzedDataProvider data_provider(data, size);
+    base::FuzzedDataProvider data_provider(data, size);
     net::TestNetLog net_log;
 
     net::HostResolver::Options options;

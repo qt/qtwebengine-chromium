@@ -79,7 +79,6 @@ class MEDIA_EXPORT SourceBufferStream {
   // of order or overlapping. Assumes all buffers within |buffers| are in
   // presentation order and are non-overlapping.
   // Returns true if Append() was successful, false if |buffers| are not added.
-  // TODO(vrk): Implement garbage collection. (crbug.com/125070)
   bool Append(const BufferQueue& buffers);
 
   // Removes buffers between |start| and |end| according to the steps
@@ -211,7 +210,7 @@ class MEDIA_EXPORT SourceBufferStream {
       DecodeTimestamp first_timestamp, DecodeTimestamp second_timestamp) const;
 
   // Helper method that returns the timestamp for the next buffer that
-  // |selected_range_| will return from GetNextBuffer() call, or kNoTimestamp()
+  // |selected_range_| will return from GetNextBuffer() call, or kNoTimestamp
   // if in between seeking (i.e. |selected_range_| is null).
   DecodeTimestamp GetNextBufferTimestamp();
 
@@ -239,6 +238,9 @@ class MEDIA_EXPORT SourceBufferStream {
 
   // Resets this stream back to an unseeked state.
   void ResetSeekState();
+
+  // Reset state tracking various metadata about the last appended buffer.
+  void ResetLastAppendedState();
 
   // Returns true if |seek_timestamp| refers to the beginning of the first range
   // in |ranges_|, false otherwise or if |ranges_| is empty.
@@ -272,14 +274,14 @@ class MEDIA_EXPORT SourceBufferStream {
 
   // Find a keyframe timestamp that is >= |start_timestamp| and can be used to
   // find a new selected range.
-  // Returns kNoTimestamp() if an appropriate keyframe timestamp could not be
+  // Returns kNoTimestamp if an appropriate keyframe timestamp could not be
   // found.
   DecodeTimestamp FindNewSelectedRangeSeekTimestamp(
       const DecodeTimestamp start_timestamp);
 
   // Searches |ranges_| for the first keyframe timestamp that is >= |timestamp|.
   // If |ranges_| doesn't contain a GOP that covers |timestamp| or doesn't
-  // have a keyframe after |timestamp| then kNoTimestamp() is returned.
+  // have a keyframe after |timestamp| then kNoTimestamp is returned.
   DecodeTimestamp FindKeyframeAfterTimestamp(const DecodeTimestamp timestamp);
 
   // Returns "VIDEO" for a video SourceBufferStream, "AUDIO" for an audio
@@ -320,6 +322,14 @@ class MEDIA_EXPORT SourceBufferStream {
                       DecodeTimestamp end,
                       bool exclude_start,
                       BufferQueue* deleted_buffers);
+
+  // Helper function used by RemoveInternal() to evaluate whether remove will
+  // disrupt the last appended GOP. If disruption is expected, reset state
+  // tracking the last append. This will trigger frame filtering in Append()
+  // until a new key frame is provided.
+  void UpdateLastAppendStateForRemove(DecodeTimestamp remove_start,
+                                      DecodeTimestamp remove_end,
+                                      bool exclude_start);
 
   Type GetType() const;
 
@@ -419,7 +429,7 @@ class MEDIA_EXPORT SourceBufferStream {
   // The timestamp of the last buffer appended to the coded frame group, set to
   // kNoDecodeTimestamp() if the beginning of the group.
   DecodeTimestamp last_appended_buffer_timestamp_ = kNoDecodeTimestamp();
-  base::TimeDelta last_appended_buffer_duration_ = kNoTimestamp();
+  base::TimeDelta last_appended_buffer_duration_ = kNoTimestamp;
   bool last_appended_buffer_is_keyframe_ = false;
 
   // The decode timestamp on the last buffer returned by the most recent

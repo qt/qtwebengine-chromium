@@ -17,12 +17,8 @@ namespace {
 const char kUndefinedNamespace[] = "undefined";
 
 bool isTemporary(const OfflinePageClientPolicy& policy) {
-  // Check if policy has a expire period > 0 or a limited number
-  // of pages allowed.
-  return (policy.lifetime_policy.page_limit > kUnlimitedPages ||
-          !policy.lifetime_policy.expiration_period.is_zero());
+  return policy.lifetime_policy.lifetime_type == LifetimeType::TEMPORARY;
 }
-
 }  // namespace
 
 class ClientPolicyControllerTest : public testing::Test {
@@ -49,18 +45,57 @@ TEST_F(ClientPolicyControllerTest, FallbackTest) {
   OfflinePageClientPolicy policy = controller()->GetPolicy(kUndefinedNamespace);
   EXPECT_EQ(policy.name_space, kDefaultNamespace);
   EXPECT_TRUE(isTemporary(policy));
+  EXPECT_TRUE(controller()->IsRemovedOnCacheReset(kUndefinedNamespace));
+  EXPECT_FALSE(controller()->IsSupportedByDownload(kUndefinedNamespace));
 }
 
 TEST_F(ClientPolicyControllerTest, CheckBookmarkDefined) {
   OfflinePageClientPolicy policy = controller()->GetPolicy(kBookmarkNamespace);
   EXPECT_EQ(policy.name_space, kBookmarkNamespace);
   EXPECT_TRUE(isTemporary(policy));
+  EXPECT_TRUE(controller()->IsRemovedOnCacheReset(kBookmarkNamespace));
+  EXPECT_FALSE(controller()->IsSupportedByDownload(kBookmarkNamespace));
 }
 
 TEST_F(ClientPolicyControllerTest, CheckLastNDefined) {
   OfflinePageClientPolicy policy = controller()->GetPolicy(kLastNNamespace);
   EXPECT_EQ(policy.name_space, kLastNNamespace);
   EXPECT_TRUE(isTemporary(policy));
+  EXPECT_TRUE(controller()->IsRemovedOnCacheReset(kLastNNamespace));
+  EXPECT_FALSE(controller()->IsSupportedByDownload(kLastNNamespace));
+}
+
+TEST_F(ClientPolicyControllerTest, CheckAsyncDefined) {
+  OfflinePageClientPolicy policy = controller()->GetPolicy(kAsyncNamespace);
+  EXPECT_EQ(policy.name_space, kAsyncNamespace);
+  EXPECT_FALSE(isTemporary(policy));
+  EXPECT_FALSE(controller()->IsRemovedOnCacheReset(kAsyncNamespace));
+  EXPECT_TRUE(controller()->IsSupportedByDownload(kAsyncNamespace));
+}
+
+TEST_F(ClientPolicyControllerTest, CheckCCTDefined) {
+  OfflinePageClientPolicy policy = controller()->GetPolicy(kCCTNamespace);
+  EXPECT_EQ(policy.name_space, kCCTNamespace);
+  EXPECT_TRUE(isTemporary(policy));
+  EXPECT_TRUE(controller()->IsRemovedOnCacheReset(kCCTNamespace));
+  EXPECT_FALSE(controller()->IsSupportedByDownload(kCCTNamespace));
+}
+
+TEST_F(ClientPolicyControllerTest, CheckDownloadDefined) {
+  OfflinePageClientPolicy policy = controller()->GetPolicy(kDownloadNamespace);
+  EXPECT_EQ(policy.name_space, kDownloadNamespace);
+  EXPECT_FALSE(isTemporary(policy));
+  EXPECT_FALSE(controller()->IsRemovedOnCacheReset(kDownloadNamespace));
+  EXPECT_TRUE(controller()->IsSupportedByDownload(kDownloadNamespace));
+}
+
+TEST_F(ClientPolicyControllerTest, CheckNTPSuggestionsDefined) {
+  OfflinePageClientPolicy policy =
+      controller()->GetPolicy(kNTPSuggestionsNamespace);
+  EXPECT_EQ(policy.name_space, kNTPSuggestionsNamespace);
+  EXPECT_FALSE(isTemporary(policy));
+  EXPECT_TRUE(controller()->IsRemovedOnCacheReset(kNTPSuggestionsNamespace));
+  EXPECT_TRUE(controller()->IsSupportedByDownload(kNTPSuggestionsNamespace));
 }
 
 }  // namespace offline_pages

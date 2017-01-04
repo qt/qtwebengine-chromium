@@ -78,7 +78,8 @@ class AccountConsistencyService : public KeyedService,
   // Does nothing if the cookie is not set on |domain|.
   void RemoveChromeConnectedCookieFromDomain(const std::string& domain);
 
-  // Notifies the AccountConsistencyService that browsing data has been removed.
+  // Notifies the AccountConsistencyService that browsing data has been removed
+  // for any time period.
   void OnBrowsingDataRemoved();
 
  private:
@@ -115,7 +116,7 @@ class AccountConsistencyService : public KeyedService,
   // Can return nil if the browser state is not active.
   WKWebView* GetWKWebView();
   // Actually creates a WKWebView. Virtual for testing.
-  virtual WKWebView* CreateWKWebView();
+  virtual WKWebView* CreateWKWebView() NS_RETURNS_RETAINED;
   // Stops any page loading in the WKWebView currently in use and releases it.
   void ResetWKWebView();
 

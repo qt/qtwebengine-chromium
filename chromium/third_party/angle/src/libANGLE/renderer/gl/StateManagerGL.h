@@ -124,6 +124,8 @@ class StateManagerGL final : angle::NonCopyable
 
     void setFramebufferSRGBEnabled(bool enabled);
 
+    void setDitherEnabled(bool enabled);
+
     void setMultisamplingStateEnabled(bool enabled);
     void setSampleAlphaToOneStateEnabled(bool enabled);
 
@@ -146,6 +148,7 @@ class StateManagerGL final : angle::NonCopyable
                                    GLsizei instanceCount,
                                    const GLvoid **outIndices);
 
+    gl::Error pauseTransformFeedback(const gl::ContextState &data);
     gl::Error onMakeCurrent(const gl::ContextState &data);
 
     void syncState(const gl::State &state, const gl::State::DirtyBits &glDirtyBits);
@@ -263,6 +266,7 @@ class StateManagerGL final : angle::NonCopyable
     GLint mClearStencil;
 
     bool mFramebufferSRGBEnabled;
+    bool mDitherEnabled;
     bool mTextureCubemapSeamlessEnabled;
 
     bool mMultisamplingEnabled;

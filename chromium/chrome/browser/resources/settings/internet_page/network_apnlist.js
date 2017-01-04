@@ -6,9 +6,6 @@
  * @fileoverview Polymer element for displaying and modifying a list of cellular
  * access points.
  */
-(function() {
-'use strict';
-
 Polymer({
   is: 'network-apnlist',
 
@@ -19,40 +16,43 @@ Polymer({
      */
     networkProperties: {
       type: Object,
-      observer: 'networkPropertiesChanged_'
+      observer: 'networkPropertiesChanged_',
     },
 
     /**
      * The CrOnc.APNProperties.AccessPointName value of the selected APN.
+     * @private
      */
-    selectedApn: {
+    selectedApn_: {
       type: String,
-      value: ''
+      value: '',
     },
 
     /**
      * Selectable list of APN dictionaries for the UI. Includes an entry
      * corresponding to |otherApn| (see below).
-     * @type {!Array<!CrOnc.APNProperties>}
+     * @private {!Array<!CrOnc.APNProperties>}
      */
-    apnSelectList: {
+    apnSelectList_: {
       type: Array,
-      value: function() { return []; }
+      value: function() {
+        return [];
+      }
     },
 
     /**
      * The user settable properties for a new ('other') APN. The values for
      * AccessPointName, Username, and Password will be set to the currently
      * active APN if it does not match an existing list entry.
-     * @type {CrOnc.APNProperties|undefined}
+     * @private {CrOnc.APNProperties|undefined}
      */
-    otherApn: {
+    otherApn_: {
       type: Object,
     },
 
     /**
      * Array of property names to pass to the Other APN property list.
-     * @type {!Array<string>}
+     * @private {!Array<string>}
      */
     otherApnFields_: {
       type: Array,
@@ -64,6 +64,7 @@ Polymer({
 
     /**
      * Array of edit types to pass to the Other APN property list.
+     * @private
      */
     otherApnEditTypes_: {
       type: Object,
@@ -78,7 +79,8 @@ Polymer({
     },
   },
 
-  /** @const */ DefaultAccessPointName: 'none',
+  /** @const */
+  DefaultAccessPointName: 'none',
 
   /**
    * Polymer networkProperties changed method.
@@ -92,7 +94,7 @@ Polymer({
     /** @type {!chrome.networkingPrivate.ManagedAPNProperties|undefined} */ var
         apn = cellular.APN;
     if (apn && apn.AccessPointName) {
-      activeApn = /** @type {!CrOnc.APNProperties|undefined} */(
+      activeApn = /** @type {!CrOnc.APNProperties|undefined} */ (
           CrOnc.getSimpleActiveProperties(apn));
     } else if (cellular.LastGoodAPN && cellular.LastGoodAPN.AccessPointName) {
       activeApn = cellular.LastGoodAPN;
@@ -102,7 +104,7 @@ Polymer({
 
   /**
    * Sets the list of selectable APNs for the UI. Appends an 'Other' entry
-   * (see comments for |otherApn| above).
+   * (see comments for |otherApn_| above).
    * @param {CrOnc.APNProperties|undefined} activeApn The currently active APN
    *     properties.
    * @private
@@ -112,13 +114,14 @@ Polymer({
     var result = this.getApnList_().slice();
 
     // Test whether |activeApn| is in the current APN list in networkProperties.
-    var activeApnInList = activeApn && result.some(
-        function(a) { return a.AccessPointName == activeApn.AccessPointName; });
+    var activeApnInList = activeApn && result.some(function(a) {
+      return a.AccessPointName == activeApn.AccessPointName;
+    });
 
     // If |activeApn| is specified and not in the list, use the active
     // properties for 'other'. Otherwise use any existing 'other' properties.
     var otherApnProperties =
-        (activeApn && !activeApnInList) ? activeApn : this.otherApn;
+        (activeApn && !activeApnInList) ? activeApn : this.otherApn_;
     var otherApn = this.createApnObject_(otherApnProperties);
 
     // Always use 'Other' for the name of custom APN entries (the name does
@@ -130,15 +133,17 @@ Polymer({
         otherApn.AccessPointName || this.DefaultAccessPointName;
 
     // Save the 'other' properties.
-    this.otherApn = otherApn;
+    this.otherApn_ = otherApn;
 
     // Append 'other' to the end of the list of APNs.
     result.push(otherApn);
 
-    this.set('apnSelectList', result);
-    this.set(
-        'selectedApn',
-        (activeApn && activeApn.AccessPointName) || otherApn.AccessPointName);
+    this.apnSelectList_ = result;
+    this.selectedApn_ =
+        (activeApn && activeApn.AccessPointName) || otherApn.AccessPointName;
+    // We need to flush the DOM here, otherwise the paper-dropdown-menu-light
+    // will not update to correctly display the selected AccessPointName.
+    Polymer.dom.flush();
   },
 
   /**
@@ -171,32 +176,20 @@ Polymer({
   },
 
   /**
-   * We need to update the select value after the dom-repeat template updates:
-   * 1. Rebuilding the template options resets the select value property.
-   * 2. The template update occurs after any property changed events.
-   * TODO(stevenjb): Remove once we use cr-dropdown-menu which (hopefully)
-   * won't require this.
-   * @private
-   */
-  onSelectApnUpdated_: function() {
-    this.$.selectApn.value = this.selectedApn;
-  },
-
-  /**
    * Event triggered when the selectApn selection changes.
-   * @param {Event} event The select node change event.
+   * @param {!{detail: !{selected: string}}} event
    * @private
    */
   onSelectApnChange_: function(event) {
-    var selectedApn = event.target.value;
+    /** @type {string} */ var accessPointName = event.detail.selected;
     // When selecting 'Other', don't set a change event unless a valid
     // non-default value has been set for Other.
-    if (this.isOtherSelected_(this.networkProperties, selectedApn) &&
-        (!this.otherApn || !this.otherApn.AccessPointName ||
-         this.otherApn.AccessPointName == this.DefaultAccessPointName)) {
+    if (this.isOtherSelected_(accessPointName) &&
+        (!this.otherApn_ || !this.otherApn_.AccessPointName ||
+         this.otherApn_.AccessPointName == this.DefaultAccessPointName)) {
       return;
     }
-    this.sendApnChange_(selectedApn);
+    this.sendApnChange_(accessPointName);
   },
 
   /**
@@ -215,39 +208,38 @@ Polymer({
    * @private
    */
   onSaveOtherTap_: function(event) {
-    this.sendApnChange_(this.selectedApn);
+    this.sendApnChange_(this.selectedApn_);
   },
 
   /**
    * Send the apn-change event.
-   * @param {string} selectedApn
+   * @param {string} accessPointName
    * @private
    */
-  sendApnChange_: function(selectedApn) {
+  sendApnChange_: function(accessPointName) {
     var apnList = this.getApnList_();
-    var apn = this.findApnInList(apnList, selectedApn);
+    var apn = this.findApnInList(apnList, accessPointName);
     if (apn == undefined) {
       apn = this.createApnObject_();
-      if (this.otherApn) {
-        apn.AccessPointName = this.otherApn.AccessPointName;
-        apn.Username = this.otherApn.Username;
-        apn.Password = this.otherApn.Password;
+      if (this.otherApn_) {
+        apn.AccessPointName = this.otherApn_.AccessPointName;
+        apn.Username = this.otherApn_.Username;
+        apn.Password = this.otherApn_.Password;
       }
     }
     this.fire('apn-change', {field: 'APN', value: apn});
   },
 
   /**
-   * @param {!CrOnc.NetworkProperties|undefined} networkProperties
-   * @param {string} selectedApn
+   * @param {string} accessPointName
    * @return {boolean} True if the 'other' APN is currently selected.
    * @private
    */
-  isOtherSelected_: function(networkProperties, selectedApn) {
-    if (!networkProperties || !networkProperties.Cellular)
+  isOtherSelected_: function(accessPointName) {
+    if (!this.networkProperties || !this.networkProperties.Cellular)
       return false;
     var apnList = this.getApnList_();
-    var apn = this.findApnInList(apnList, selectedApn);
+    var apn = this.findApnInList(apnList, accessPointName);
     return apn == undefined;
   },
 
@@ -275,4 +267,3 @@ Polymer({
     return undefined;
   }
 });
-})();

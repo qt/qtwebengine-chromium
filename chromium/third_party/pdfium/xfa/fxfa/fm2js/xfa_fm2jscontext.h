@@ -7,8 +7,9 @@
 #ifndef XFA_FXFA_FM2JS_XFA_FM2JSCONTEXT_H_
 #define XFA_FXFA_FM2JS_XFA_FM2JSCONTEXT_H_
 
-#include "fxjse/include/cfxjse_arguments.h"
-#include "xfa/fxfa/parser/xfa_script.h"
+#include "fxjs/cfxjse_arguments.h"
+#include "fxjs/cfxjse_context.h"
+#include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 
 class CXFA_FM2JSContext : public CFXJSE_HostObject {
  public:
@@ -411,9 +412,9 @@ class CXFA_FM2JSContext : public CFXJSE_HostObject {
                                     int32_t iIndexValue,
                                     bool bIsStar,
                                     CFX_ByteString& szSomExp);
-  static FX_BOOL GetObjectByName(CFXJSE_Value* pThis,
-                                 CFXJSE_Value* accessorValue,
-                                 const CFX_ByteStringC& szAccessorName);
+  static FX_BOOL GetObjectForName(CFXJSE_Value* pThis,
+                                  CFXJSE_Value* accessorValue,
+                                  const CFX_ByteStringC& szAccessorName);
   static int32_t ResolveObjects(CFXJSE_Value* pThis,
                                 CFXJSE_Value* pParentValue,
                                 const CFX_ByteStringC& bsSomExp,

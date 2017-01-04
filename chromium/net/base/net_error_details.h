@@ -5,8 +5,9 @@
 #ifndef NET_BASE_NET_ERROR_DETAILS_H_
 #define NET_BASE_NET_ERROR_DETAILS_H_
 
+#include "net/base/net_export.h"
 #include "net/http/http_response_info.h"
-#include "net/quic/quic_protocol.h"
+#include "net/quic/core/quic_protocol.h"
 
 namespace net {
 

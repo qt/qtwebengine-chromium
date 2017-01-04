@@ -62,15 +62,16 @@ interface InspectorInstrumentation {
 #include "core/animation/Animation.h"
 #include "core/dom/CharacterData.h"
 #include "core/dom/PseudoElement.h"
+#include "core/html/HTMLSlotElement.h"
 
+class ConsoleMessage;
 class ThreadableLoaderClient;
 class WebSocketHandshakeRequest;
 class WebSocketHandshakeResponse;
 class WorkerInspectorProxy;
 class XMLHttpRequest;
 
-    // We should call PageDebuggerAgent method first otherwise this method resets script cache and removes scripts executed by other agents.
-    [V8, Page, Animation]
+    [Page, Animation]
     void didClearDocumentOfWindowObject([Keep] LocalFrame*);
 
     [DOMDebugger]
@@ -100,11 +101,17 @@ class XMLHttpRequest;
     [DOM]
     void didPerformElementShadowDistribution([Keep] Element*);
 
+    [DOM]
+    void didPerformSlotDistribution([Keep] HTMLSlotElement*);
+
     [CSS]
     void documentDetached([Keep] Document*);
 
     [CSS]
     void activeStyleSheetsUpdated([Keep] Document*);
+
+    [CSS]
+    void fontsUpdated(Document*);
 
     [CSS]
     void mediaQueryResultChanged(Document*);
@@ -205,14 +212,11 @@ class XMLHttpRequest;
     [Network]
     void scriptImported(ExecutionContext*, unsigned long identifier, const String& sourceString);
 
-    [V8]
+    [DOMDebugger]
     void scriptExecutionBlockedByCSP(ExecutionContext*, const String& directiveText);
 
     [Network]
     void didReceiveScriptResponse(ExecutionContext*, unsigned long identifier);
-
-    [V8]
-    void didStartProvisionalLoad([Keep] LocalFrame*);
 
     [DOM, Page]
     void domContentLoadedEventFired([Keep] LocalFrame*);
@@ -232,10 +236,10 @@ class XMLHttpRequest;
     [DOM]
     void frameDocumentUpdated([Keep] LocalFrame*);
 
-    [Page]
+    [Page, Tracing]
     void frameStartedLoading([Keep] LocalFrame*);
 
-    [Page]
+    [Page, Tracing]
     void frameStoppedLoading([Keep] LocalFrame*);
 
     [Page, Network]
@@ -294,6 +298,27 @@ class XMLHttpRequest;
 
     [Page]
     void windowCreated(LocalFrame* opener, LocalFrame* created);
+
+    [Log]
+    void consoleMessageAdded(ExecutionContext*, ConsoleMessage*);
+
+    [Network]
+    void willRecalculateStyle([Keep] Document*);
+
+    [Page, Network]
+    void didRecalculateStyle(Document*);
+
+    [Page]
+    void willRunJavaScriptDialog(LocalFrame* frame, const String& message, ChromeClient::DialogType dialogType);
+
+    [Page]
+    void didRunJavaScriptDialog(LocalFrame* frame, bool result);
+
+    [WebPerf]
+    void willExecuteScript([Keep] ExecutionContext*);
+
+    [WebPerf]
+    void didExecuteScript(ExecutionContext*);
 }
 
 interface InspectorOverrides {

@@ -30,8 +30,8 @@ const char kChromeProxyHeader[] = "chrome-proxy";
 const char kActionValueDelimiter = '=';
 
 const char kChromeProxyLoFiDirective[] = "q=low";
-const char kChromeProxyLoFiPreviewDirective[] = "q=preview";
-const char kChromeProxyLoFiIngorePreviewBlacklistDirective[] =
+const char kChromeProxyLitePageDirective[] = "q=preview";
+const char kChromeProxyLitePageIngoreBlacklistDirective[] =
     "exp=ignore_preview_blacklist";
 
 const char kChromeProxyActionBlockOnce[] = "block-once";
@@ -59,7 +59,7 @@ bool StartsWithActionPrefix(base::StringPiece header_value,
                             base::StringPiece action_prefix) {
   DCHECK(!action_prefix.empty());
   // A valid action does not include a trailing '='.
-  DCHECK(action_prefix[action_prefix.size() - 1] != kActionValueDelimiter);
+  DCHECK(action_prefix.back() != kActionValueDelimiter);
 
   return header_value.size() > action_prefix.size() + 1 &&
          header_value[action_prefix.size()] == kActionValueDelimiter &&
@@ -79,12 +79,12 @@ const char* chrome_proxy_lo_fi_directive() {
   return kChromeProxyLoFiDirective;
 }
 
-const char* chrome_proxy_lo_fi_preview_directive() {
-  return kChromeProxyLoFiPreviewDirective;
+const char* chrome_proxy_lite_page_directive() {
+  return kChromeProxyLitePageDirective;
 }
 
-const char* chrome_proxy_lo_fi_ignore_preview_blacklist_directive() {
-  return kChromeProxyLoFiIngorePreviewBlacklistDirective;
+const char* chrome_proxy_lite_page_ignore_blacklist_directive() {
+  return kChromeProxyLitePageIngoreBlacklistDirective;
 }
 
 bool GetDataReductionProxyActionValue(const net::HttpResponseHeaders* headers,

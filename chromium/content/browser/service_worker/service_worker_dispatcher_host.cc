@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/debug/crash_logging.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
@@ -22,6 +23,7 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_handle.h"
+#include "content/browser/service_worker/service_worker_navigation_handle_core.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_registration_handle.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
@@ -63,7 +65,8 @@ bool CanUnregisterServiceWorker(const GURL& document_url,
                                 const GURL& pattern) {
   DCHECK(document_url.is_valid());
   DCHECK(pattern.is_valid());
-  return document_url.GetOrigin() == pattern.GetOrigin() &&
+  return ServiceWorkerUtils::PassOriginEqualitySecurityCheck<GURL>(document_url,
+                                                                   pattern) &&
          OriginCanAccessServiceWorkers(document_url) &&
          OriginCanAccessServiceWorkers(pattern);
 }
@@ -73,14 +76,16 @@ bool CanUpdateServiceWorker(const GURL& document_url, const GURL& pattern) {
   DCHECK(pattern.is_valid());
   DCHECK(OriginCanAccessServiceWorkers(document_url));
   DCHECK(OriginCanAccessServiceWorkers(pattern));
-  return document_url.GetOrigin() == pattern.GetOrigin();
+  return ServiceWorkerUtils::PassOriginEqualitySecurityCheck<GURL>(document_url,
+                                                                   pattern);
 }
 
 bool CanGetRegistration(const GURL& document_url,
                         const GURL& given_document_url) {
   DCHECK(document_url.is_valid());
   DCHECK(given_document_url.is_valid());
-  return document_url.GetOrigin() == given_document_url.GetOrigin() &&
+  return ServiceWorkerUtils::PassOriginEqualitySecurityCheck<GURL>(
+             document_url, given_document_url) &&
          OriginCanAccessServiceWorkers(document_url) &&
          OriginCanAccessServiceWorkers(given_document_url);
 }
@@ -123,7 +128,7 @@ void ServiceWorkerDispatcherHost::Init(
       render_process_id_, this, message_port_message_filter_);
 }
 
-void ServiceWorkerDispatcherHost::OnFilterAdded(IPC::Sender* sender) {
+void ServiceWorkerDispatcherHost::OnFilterAdded(IPC::Channel* channel) {
   TRACE_EVENT0("ServiceWorker",
                "ServiceWorkerDispatcherHost::OnFilterAdded");
   channel_ready_ = true;
@@ -228,13 +233,13 @@ bool ServiceWorkerDispatcherHost::Send(IPC::Message* message) {
 void ServiceWorkerDispatcherHost::RegisterServiceWorkerHandle(
     std::unique_ptr<ServiceWorkerHandle> handle) {
   int handle_id = handle->handle_id();
-  handles_.AddWithID(handle.release(), handle_id);
+  handles_.AddWithID(std::move(handle), handle_id);
 }
 
 void ServiceWorkerDispatcherHost::RegisterServiceWorkerRegistrationHandle(
     std::unique_ptr<ServiceWorkerRegistrationHandle> handle) {
   int handle_id = handle->handle_id();
-  registration_handles_.AddWithID(handle.release(), handle_id);
+  registration_handles_.AddWithID(std::move(handle), handle_id);
 }
 
 ServiceWorkerHandle* ServiceWorkerDispatcherHost::FindServiceWorkerHandle(
@@ -320,6 +325,13 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
 
   if (!ServiceWorkerUtils::CanRegisterServiceWorker(
           provider_host->document_url(), pattern, script_url)) {
+    // Temporary debugging for https://crbug.com/630495
+    base::debug::ScopedCrashKey host_url_key(
+        "swdh_register_cannot_host_url", provider_host->document_url().spec());
+    base::debug::ScopedCrashKey scope_url_key("swdh_register_cannot_scope_url",
+                                              pattern.spec());
+    base::debug::ScopedCrashKey script_url_key(
+        "swdh_register_cannot_script_url", script_url.spec());
     bad_message::ReceivedBadMessage(this, bad_message::SWDH_REGISTER_CANNOT);
     return;
   }
@@ -335,7 +347,7 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
           pattern, provider_host->topmost_frame_url(), resource_context_,
           render_process_id_, provider_host->frame_id())) {
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
-        thread_id, request_id, WebServiceWorkerError::ErrorTypeUnknown,
+        thread_id, request_id, WebServiceWorkerError::ErrorTypeDisabled,
         base::ASCIIToUTF16(kServiceWorkerRegisterErrorPrefix) +
             base::ASCIIToUTF16(kUserDeniedPermissionMessage)));
     return;
@@ -413,7 +425,7 @@ void ServiceWorkerDispatcherHost::OnUpdateServiceWorker(
           registration->pattern(), provider_host->topmost_frame_url(),
           resource_context_, render_process_id_, provider_host->frame_id())) {
     Send(new ServiceWorkerMsg_ServiceWorkerUpdateError(
-        thread_id, request_id, WebServiceWorkerError::ErrorTypeUnknown,
+        thread_id, request_id, WebServiceWorkerError::ErrorTypeDisabled,
         base::ASCIIToUTF16(kServiceWorkerUpdateErrorPrefix) +
             base::ASCIIToUTF16(kUserDeniedPermissionMessage)));
     return;
@@ -486,6 +498,12 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
 
   if (!CanUnregisterServiceWorker(provider_host->document_url(),
                                   registration->pattern())) {
+    // Temporary debugging for https://crbug.com/619294
+    base::debug::ScopedCrashKey host_url_key(
+        "swdh_unregister_cannot_host_url",
+        provider_host->document_url().spec());
+    base::debug::ScopedCrashKey scope_url_key(
+        "swdh_unregister_cannot_scope_url", registration->pattern().spec());
     bad_message::ReceivedBadMessage(this, bad_message::SWDH_UNREGISTER_CANNOT);
     return;
   }
@@ -494,7 +512,7 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
           registration->pattern(), provider_host->topmost_frame_url(),
           resource_context_, render_process_id_, provider_host->frame_id())) {
     Send(new ServiceWorkerMsg_ServiceWorkerUnregistrationError(
-        thread_id, request_id, WebServiceWorkerError::ErrorTypeUnknown,
+        thread_id, request_id, WebServiceWorkerError::ErrorTypeDisabled,
         base::ASCIIToUTF16(kUserDeniedPermissionMessage)));
     return;
   }
@@ -555,6 +573,12 @@ void ServiceWorkerDispatcherHost::OnGetRegistration(
   }
 
   if (!CanGetRegistration(provider_host->document_url(), document_url)) {
+    // Temporary debugging for https://crbug.com/630496
+    base::debug::ScopedCrashKey host_url_key(
+        "swdh_get_registration_cannot_host_url",
+        provider_host->document_url().spec());
+    base::debug::ScopedCrashKey document_url_key(
+        "swdh_get_registration_cannot_document_url", document_url.spec());
     bad_message::ReceivedBadMessage(this,
                                     bad_message::SWDH_GET_REGISTRATION_CANNOT);
     return;
@@ -564,7 +588,7 @@ void ServiceWorkerDispatcherHost::OnGetRegistration(
           provider_host->document_url(), provider_host->topmost_frame_url(),
           resource_context_, render_process_id_, provider_host->frame_id())) {
     Send(new ServiceWorkerMsg_ServiceWorkerGetRegistrationError(
-        thread_id, request_id, WebServiceWorkerError::ErrorTypeUnknown,
+        thread_id, request_id, WebServiceWorkerError::ErrorTypeDisabled,
         base::ASCIIToUTF16(kServiceWorkerGetRegistrationErrorPrefix) +
             base::ASCIIToUTF16(kUserDeniedPermissionMessage)));
     return;
@@ -631,7 +655,7 @@ void ServiceWorkerDispatcherHost::OnGetRegistrations(int thread_id,
           provider_host->document_url(), provider_host->topmost_frame_url(),
           resource_context_, render_process_id_, provider_host->frame_id())) {
     Send(new ServiceWorkerMsg_ServiceWorkerGetRegistrationsError(
-        thread_id, request_id, WebServiceWorkerError::ErrorTypeUnknown,
+        thread_id, request_id, WebServiceWorkerError::ErrorTypeDisabled,
         base::ASCIIToUTF16(kServiceWorkerGetRegistrationsErrorPrefix) +
             base::ASCIIToUTF16(kUserDeniedPermissionMessage)));
     return;
@@ -762,14 +786,38 @@ void ServiceWorkerDispatcherHost::OnProviderCreated(
     return;
   }
 
-  ServiceWorkerProviderHost::FrameSecurityLevel parent_frame_security_level =
-      is_parent_frame_secure
-          ? ServiceWorkerProviderHost::FrameSecurityLevel::SECURE
-          : ServiceWorkerProviderHost::FrameSecurityLevel::INSECURE;
-  std::unique_ptr<ServiceWorkerProviderHost> provider_host =
-      std::unique_ptr<ServiceWorkerProviderHost>(new ServiceWorkerProviderHost(
-          render_process_id_, route_id, provider_id, provider_type,
-          parent_frame_security_level, GetContext()->AsWeakPtr(), this));
+  std::unique_ptr<ServiceWorkerProviderHost> provider_host;
+  if (IsBrowserSideNavigationEnabled() &&
+      ServiceWorkerUtils::IsBrowserAssignedProviderId(provider_id)) {
+    // PlzNavigate
+    // Retrieve the provider host previously created for navigation requests.
+    ServiceWorkerNavigationHandleCore* navigation_handle_core =
+        GetContext()->GetNavigationHandleCore(provider_id);
+    if (navigation_handle_core != nullptr)
+      provider_host = navigation_handle_core->RetrievePreCreatedHost();
+
+    // If no host is found, the navigation has been cancelled in the meantime.
+    // Just return as the navigation will be stopped in the renderer as well.
+    if (provider_host == nullptr)
+      return;
+    DCHECK_EQ(SERVICE_WORKER_PROVIDER_FOR_WINDOW, provider_type);
+    provider_host->CompleteNavigationInitialized(render_process_id_, route_id,
+                                                 this);
+  } else {
+    if (ServiceWorkerUtils::IsBrowserAssignedProviderId(provider_id)) {
+      bad_message::ReceivedBadMessage(
+          this, bad_message::SWDH_PROVIDER_CREATED_NO_HOST);
+      return;
+    }
+    ServiceWorkerProviderHost::FrameSecurityLevel parent_frame_security_level =
+        is_parent_frame_secure
+            ? ServiceWorkerProviderHost::FrameSecurityLevel::SECURE
+            : ServiceWorkerProviderHost::FrameSecurityLevel::INSECURE;
+    provider_host = std::unique_ptr<ServiceWorkerProviderHost>(
+        new ServiceWorkerProviderHost(
+            render_process_id_, route_id, provider_id, provider_type,
+            parent_frame_security_level, GetContext()->AsWeakPtr(), this));
+  }
   GetContext()->AddProviderHost(std::move(provider_host));
 }
 
@@ -1285,7 +1333,7 @@ void ServiceWorkerDispatcherHost::GetRegistrationComplete(
     int provider_id,
     int request_id,
     ServiceWorkerStatusCode status,
-    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+    scoped_refptr<ServiceWorkerRegistration> registration) {
   TRACE_EVENT_ASYNC_END2(
       "ServiceWorker", "ServiceWorkerDispatcherHost::GetRegistration",
       request_id, "Status", status, "Registration ID",

@@ -17,14 +17,22 @@ RedundancyElimination::~RedundancyElimination() {}
 
 Reduction RedundancyElimination::Reduce(Node* node) {
   switch (node->opcode()) {
+    case IrOpcode::kCheckBounds:
     case IrOpcode::kCheckFloat64Hole:
+    case IrOpcode::kCheckHeapObject:
+    case IrOpcode::kCheckIf:
+    case IrOpcode::kCheckNumber:
+    case IrOpcode::kCheckSmi:
+    case IrOpcode::kCheckString:
     case IrOpcode::kCheckTaggedHole:
-    case IrOpcode::kCheckTaggedPointer:
-    case IrOpcode::kCheckTaggedSigned:
     case IrOpcode::kCheckedFloat64ToInt32:
     case IrOpcode::kCheckedInt32Add:
     case IrOpcode::kCheckedInt32Sub:
+    case IrOpcode::kCheckedInt32Div:
+    case IrOpcode::kCheckedInt32Mod:
+    case IrOpcode::kCheckedInt32Mul:
     case IrOpcode::kCheckedTaggedToFloat64:
+    case IrOpcode::kCheckedTaggedSignedToInt32:
     case IrOpcode::kCheckedTaggedToInt32:
     case IrOpcode::kCheckedUint32ToInt32:
       return ReduceCheckNode(node);
@@ -51,6 +59,19 @@ RedundancyElimination::EffectPathChecks::Copy(Zone* zone,
 RedundancyElimination::EffectPathChecks const*
 RedundancyElimination::EffectPathChecks::Empty(Zone* zone) {
   return new (zone->New(sizeof(EffectPathChecks))) EffectPathChecks(nullptr, 0);
+}
+
+bool RedundancyElimination::EffectPathChecks::Equals(
+    EffectPathChecks const* that) const {
+  if (this->size_ != that->size_) return false;
+  Check* this_head = this->head_;
+  Check* that_head = that->head_;
+  while (this_head != that_head) {
+    if (this_head->node != that_head->node) return false;
+    this_head = this_head->next;
+    that_head = that_head->next;
+  }
+  return true;
 }
 
 void RedundancyElimination::EffectPathChecks::Merge(
@@ -205,8 +226,10 @@ Reduction RedundancyElimination::UpdateChecks(Node* node,
   // Only signal that the {node} has Changed, if the information about {checks}
   // has changed wrt. the {original}.
   if (checks != original) {
-    node_checks_.Set(node, checks);
-    return Changed(node);
+    if (original == nullptr || !checks->Equals(original)) {
+      node_checks_.Set(node, checks);
+      return Changed(node);
+    }
   }
   return NoChange();
 }

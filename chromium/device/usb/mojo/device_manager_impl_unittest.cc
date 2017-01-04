@@ -23,6 +23,7 @@
 #include "device/usb/mock_usb_service.h"
 #include "device/usb/mojo/device_impl.h"
 #include "device/usb/mojo/mock_permission_provider.h"
+#include "mojo/public/cpp/bindings/binding.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::Invoke;
@@ -62,11 +63,11 @@ class USBDeviceManagerImplTest : public testing::Test {
 
 class MockDeviceManagerClient : public DeviceManagerClient {
  public:
-  MockDeviceManagerClient() : m_binding(this) {}
+  MockDeviceManagerClient() : binding_(this) {}
   ~MockDeviceManagerClient() {}
 
   DeviceManagerClientPtr CreateInterfacePtrAndBind() {
-    return m_binding.CreateInterfacePtrAndBind();
+    return binding_.CreateInterfacePtrAndBind();
   }
 
   MOCK_METHOD1(DoOnDeviceAdded, void(DeviceInfo*));
@@ -80,12 +81,12 @@ class MockDeviceManagerClient : public DeviceManagerClient {
   }
 
  private:
-  mojo::Binding<DeviceManagerClient> m_binding;
+  mojo::Binding<DeviceManagerClient> binding_;
 };
 
 void ExpectDevicesAndThen(const std::set<std::string>& expected_guids,
                           const base::Closure& continuation,
-                          mojo::Array<DeviceInfoPtr> results) {
+                          std::vector<DeviceInfoPtr> results) {
   EXPECT_EQ(expected_guids.size(), results.size());
   std::set<std::string> actual_guids;
   for (size_t i = 0; i < results.size(); ++i)
@@ -121,10 +122,11 @@ TEST_F(USBDeviceManagerImplTest, GetDevices) {
   DeviceManagerPtr device_manager = ConnectToDeviceManager();
 
   EnumerationOptionsPtr options = EnumerationOptions::New();
-  options->filters = mojo::Array<DeviceFilterPtr>::New(1);
-  options->filters[0] = DeviceFilter::New();
-  options->filters[0]->has_vendor_id = true;
-  options->filters[0]->vendor_id = 0x1234;
+  auto filter = DeviceFilter::New();
+  filter->has_vendor_id = true;
+  filter->vendor_id = 0x1234;
+  options->filters.emplace();
+  options->filters->push_back(std::move(filter));
 
   std::set<std::string> guids;
   guids.insert(device0->guid());

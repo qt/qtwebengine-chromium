@@ -14,7 +14,7 @@
 #include "ui/display/util/display_util.h"
 #include "ui/gfx/geometry/size.h"
 
-namespace ui {
+namespace display {
 
 namespace {
 
@@ -235,7 +235,7 @@ bool ParseOutputOverscanFlag(const std::vector<uint8_t>& edid,
       // - byte 3: the capability.
       unsigned char tag = edid[data_offset] >> 5;
       unsigned char payload_length = edid[data_offset] & 0x1f;
-      if (data_offset + payload_length > edid.size())
+      if (data_offset + payload_length + 1 > edid.size())
         break;
 
       if (tag != kExtendedTag || payload_length < 2 ||
@@ -260,4 +260,4 @@ bool ParseOutputOverscanFlag(const std::vector<uint8_t>& edid,
   return false;
 }
 
-}  // namespace ui
+}  // namespace display

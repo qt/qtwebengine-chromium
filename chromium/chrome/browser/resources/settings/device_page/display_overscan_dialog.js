@@ -30,25 +30,20 @@ Polymer({
    */
   keyHandler_: null,
 
-  /** @override */
-  attached: function() {
-    this.keyHandler_ = this.handleKeyEvent_.bind(this);
-    window.addEventListener('keydown', this.keyHandler_);
-  },
-
-  /** @override */
-  detached: function() {
-    window.removeEventListener('keydown', this.keyHandler_);
-  },
-
   open: function() {
+    this.keyHandler_ = this.handleKeyEvent_.bind(this);
+    this.addEventListener('keydown', this.keyHandler_);
     this.comitted_ = false;
-    this.$.dialog.open();
+    this.$.dialog.showModal();
   },
 
   close: function() {
+    this.removeEventListener('keydown', this.keyHandler_);
+
     this.displayId = '';  // Will trigger displayIdChanged_.
-    this.$.dialog.close();
+
+    if (this.$.dialog.open)
+      this.$.dialog.close();
   },
 
   /** @private */
@@ -81,6 +76,8 @@ Polymer({
    * @private
    */
   handleKeyEvent_: function(event) {
+    if (event.altKey || event.ctrlKey || event.metaKey)
+      return;
     switch (event.keyCode) {
       case 37:  // left arrow
         if (event.shiftKey)
@@ -107,6 +104,7 @@ Polymer({
           this.resize_(0, 1);
         break;
       default:
+        // Allow unhandled key events to propagate.
         return;
     }
     event.preventDefault();

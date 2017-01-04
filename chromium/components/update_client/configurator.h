@@ -58,6 +58,11 @@ class Configurator : public base::RefCountedThreadSafe<Configurator> {
   // disabled. Similarly, these URLs have a fall back behavior too.
   virtual std::vector<GURL> PingUrl() const = 0;
 
+  // The ProdId is used as a prefix in some of the version strings which appear
+  // in the protocol requests. Possible values include "chrome", "chromecrx",
+  // "chromiumcrx", and "unknown".
+  virtual std::string GetProdId() const = 0;
+
   // Version of the application. Used to compare the component manifests.
   virtual base::Version GetBrowserVersion() const = 0;
 
@@ -99,14 +104,20 @@ class Configurator : public base::RefCountedThreadSafe<Configurator> {
   CreateOutOfProcessPatcher() const = 0;
 
   // True means that this client can handle delta updates.
-  virtual bool DeltasEnabled() const = 0;
+  virtual bool EnabledDeltas() const = 0;
+
+  // True if component updates are enabled. Updates for all components are
+  // enabled by default. This method allows enabling or disabling
+  // updates for certain components such as the plugins. Updates for some
+  // components are always enabled and can't be disabled programatically.
+  virtual bool EnabledComponentUpdates() const = 0;
 
   // True means that the background downloader can be used for downloading
   // non on-demand components.
-  virtual bool UseBackgroundDownloader() const = 0;
+  virtual bool EnabledBackgroundDownloader() const = 0;
 
   // True if signing of update checks is enabled.
-  virtual bool UseCupSigning() const = 0;
+  virtual bool EnabledCupSigning() const = 0;
 
   // Gets a task runner to a blocking pool of threads suitable for worker jobs.
   virtual scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner()
@@ -119,6 +130,10 @@ class Configurator : public base::RefCountedThreadSafe<Configurator> {
   // Returning null is safe and will disable any functionality that requires
   // persistent storage.
   virtual PrefService* GetPrefService() const = 0;
+
+  // Returns true if the Chrome is installed for the current user only, or false
+  // if Chrome is installed for all users on the machine.
+  virtual bool IsPerUserInstall() const = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<Configurator>;

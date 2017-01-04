@@ -1,12 +1,10 @@
 include_rules = [
   "+chromeos",
-  "+components/devtools_discovery",
-  "+components/devtools_http_handler",
   "+components/keyed_service",
   "+components/nacl/browser",
   "+components/nacl/common",
-  "+components/network_session_configurator/switches.h",
   "+components/pref_registry",
+  "+components/sync/api",
   "+components/update_client",
   "+components/user_prefs",
   "+components/web_modal",
@@ -33,7 +31,6 @@ include_rules = [
 
   "+ppapi",
   "+storage/browser/quota",
-  "+sync/api",
   "+third_party/skia/include",
 
   # Additional UI dependencies for app_shell. Note that no particular UI toolkit

@@ -50,6 +50,8 @@ class Isolate;
 }
 
 namespace content {
+class AssociatedInterfaceProvider;
+class AssociatedInterfaceRegistry;
 class ContextMenuClient;
 class PluginInstanceThrottler;
 class RenderAccessibility;
@@ -82,6 +84,11 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
     CONTENT_STATUS_NUM_ITEMS
   };
 
+  enum RecordPeripheralDecision {
+    DONT_RECORD_DECISION = 0,
+    RECORD_DECISION = 1
+  };
+
   // Returns the RenderFrame given a WebFrame.
   static RenderFrame* FromWebFrame(blink::WebFrame* web_frame);
 
@@ -100,7 +107,7 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // Returns the associated WebFrame.
   virtual blink::WebLocalFrame* GetWebFrame() = 0;
 
-   // Gets WebKit related preferences associated with this frame.
+  // Gets WebKit related preferences associated with this frame.
   virtual WebPreferences& GetWebkitPreferences() = 0;
 
   // Shows a context menu with the given information. The given client will
@@ -150,6 +157,15 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // interfaces exposed to it by the application running in this frame.
   virtual shell::InterfaceProvider* GetRemoteInterfaces() = 0;
 
+  // Returns the AssociatedInterfaceRegistry this frame can use to expose
+  // frame-specific Channel-associated interfaces to the remote RenderFrameHost.
+  virtual AssociatedInterfaceRegistry* GetAssociatedInterfaceRegistry() = 0;
+
+  // Returns the AssociatedInterfaceProvider this frame can use to access
+  // frame-specific Channel-assocaited interfaces from the remote
+  // RenderFrameHost.
+  virtual AssociatedInterfaceProvider* GetRemoteAssociatedInterfaces() = 0;
+
 #if defined(ENABLE_PLUGINS)
   // Registers a plugin that has been marked peripheral. If the origin
   // whitelist is later updated and includes |content_origin|, then
@@ -177,11 +193,17 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   virtual PeripheralContentStatus GetPeripheralContentStatus(
       const url::Origin& main_frame_origin,
       const url::Origin& content_origin,
-      const gfx::Size& unobscured_size) const = 0;
+      const gfx::Size& unobscured_size,
+      RecordPeripheralDecision record_decision) const = 0;
 
   // Whitelists a |content_origin| so its content will never be throttled in
   // this RenderFrame. Whitelist is cleared by top level navigation.
   virtual void WhitelistContentOrigin(const url::Origin& content_origin) = 0;
+
+  // Used by plugins that load data in this RenderFrame to update the loading
+  // notifications.
+  virtual void DidStartLoading() = 0;
+  virtual void DidStopLoading() = 0;
 #endif
 
   // Returns true if this frame is a FTP directory listing.

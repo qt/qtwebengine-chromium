@@ -50,9 +50,6 @@ void vp8_blend_mb_outer_c(unsigned char *y, unsigned char *u, unsigned char *v, 
 int vp8_block_error_c(short *coeff, short *dqcoeff);
 #define vp8_block_error vp8_block_error_c
 
-void vp8_clear_system_state_c();
-#define vp8_clear_system_state vp8_clear_system_state_c
-
 void vp8_copy_mem16x16_c(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
 #define vp8_copy_mem16x16 vp8_copy_mem16x16_c
 
@@ -128,17 +125,8 @@ void vp8_loop_filter_simple_vertical_edge_c(unsigned char *y, int ystride, const
 int vp8_mbblock_error_c(struct macroblock *mb, int dc);
 #define vp8_mbblock_error vp8_mbblock_error_c
 
-void vp8_mbpost_proc_across_ip_c(unsigned char *dst, int pitch, int rows, int cols,int flimit);
-#define vp8_mbpost_proc_across_ip vp8_mbpost_proc_across_ip_c
-
-void vp8_mbpost_proc_down_c(unsigned char *dst, int pitch, int rows, int cols,int flimit);
-#define vp8_mbpost_proc_down vp8_mbpost_proc_down_c
-
 int vp8_mbuverror_c(struct macroblock *mb);
 #define vp8_mbuverror vp8_mbuverror_c
-
-void vp8_post_proc_down_and_across_mb_row_c(unsigned char *src, unsigned char *dst, int src_pitch, int dst_pitch, int cols, unsigned char *flimits, int size);
-#define vp8_post_proc_down_and_across_mb_row vp8_post_proc_down_and_across_mb_row_c
 
 int vp8_refining_search_sad_c(struct macroblock *x, struct block *b, struct blockd *d, union int_mv *ref_mv, int sad_per_bit, int distance, struct variance_vtable *fn_ptr, int *mvcost[2], union int_mv *center_mv);
 #define vp8_refining_search_sad vp8_refining_search_sad_c
@@ -175,9 +163,6 @@ void vp8_sixtap_predict8x4_c(unsigned char *src, int src_pitch, int xofst, int y
 
 void vp8_sixtap_predict8x8_c(unsigned char *src, int src_pitch, int xofst, int yofst, unsigned char *dst, int dst_pitch);
 #define vp8_sixtap_predict8x8 vp8_sixtap_predict8x8_c
-
-void vp8_temporal_filter_apply_c(unsigned char *frame1, unsigned int stride, unsigned char *frame2, unsigned int block_size, int strength, int filter_weight, unsigned int *accumulator, unsigned short *count);
-#define vp8_temporal_filter_apply vp8_temporal_filter_apply_c
 
 void vp8_rtcd(void);
 

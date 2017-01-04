@@ -47,7 +47,6 @@ namespace media {
 class AudioBufferConverter;
 class AudioBus;
 class AudioClock;
-class AudioHardwareConfig;
 class AudioSplicer;
 class DecryptingDemuxerStream;
 
@@ -287,13 +286,12 @@ class MEDIA_EXPORT AudioRendererImpl
   // Used to determine how long to delay playback.
   base::TimeDelta first_packet_timestamp_;
 
-  // Set by CurrentMediaTime(), used to prevent the current media time value as
-  // reported to JavaScript from going backwards in time.
-  base::TimeDelta last_media_timestamp_;
-
   // Set by OnSuspend() and OnResume() to indicate when the system is about to
   // suspend/is suspended and when it resumes.
   bool is_suspending_;
+
+  // Track the last reported media time.
+  base::TimeDelta last_reported_media_time_;
 
   // End variables which must be accessed under |lock_|. ----------------------
 

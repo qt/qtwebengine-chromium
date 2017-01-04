@@ -6,20 +6,31 @@
 
 #include <AVFoundation/AVFoundation.h>
 
+#include "base/mac/mac_util.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/base/cocoa/animation_utils.h"
 
 namespace ui {
 
-CALayerTreeCoordinator::CALayerTreeCoordinator(bool allow_remote_layers)
-    : allow_remote_layers_(allow_remote_layers) {
+namespace {
+const uint64_t kFramesBeforeFlushingLowPowerLayer = 15;
+}
+
+CALayerTreeCoordinator::CALayerTreeCoordinator(
+    bool allow_remote_layers,
+    bool allow_av_sample_buffer_display_layer)
+    : allow_remote_layers_(allow_remote_layers),
+      allow_av_sample_buffer_display_layer_(
+          allow_av_sample_buffer_display_layer) {
   if (allow_remote_layers_) {
     root_ca_layer_.reset([[CALayer alloc] init]);
     [root_ca_layer_ setGeometryFlipped:YES];
     [root_ca_layer_ setOpaque:YES];
 
-    fullscreen_low_power_layer_.reset(
-        [[AVSampleBufferDisplayLayer alloc] init]);
+    if (allow_av_sample_buffer_display_layer_) {
+      fullscreen_low_power_layer_.reset(
+          [[AVSampleBufferDisplayLayer alloc] init]);
+    }
   }
 }
 
@@ -55,7 +66,8 @@ CARendererLayerTree* CALayerTreeCoordinator::GetPendingCARendererLayerTree() {
                    "specified, but not both.";
   }
   if (!pending_ca_renderer_layer_tree_)
-    pending_ca_renderer_layer_tree_.reset(new CARendererLayerTree);
+    pending_ca_renderer_layer_tree_.reset(new CARendererLayerTree(
+        allow_av_sample_buffer_display_layer_, false));
   return pending_ca_renderer_layer_tree_.get();
 }
 
@@ -88,14 +100,15 @@ void CALayerTreeCoordinator::CommitPendingTreesToCA(
     current_ca_renderer_layer_tree_.reset();
   }
 
-  // TODO(ccameron): It may be necessary to leave the last image up for a few
-  // extra frames to allow a smooth switch between the normal and low-power
-  // NSWindows.
-  if (current_fullscreen_low_power_layer_valid_ &&
-      !*fullscreen_low_power_layer_valid) {
+  // It is necessary to leave the last image up for a few extra frames to allow
+  // a smooth switch between the normal and low-power NSWindows.
+  if (*fullscreen_low_power_layer_valid)
+    frames_since_low_power_layer_was_valid_ = 0;
+  else
+    frames_since_low_power_layer_was_valid_ += 1;
+  if (frames_since_low_power_layer_was_valid_ ==
+      kFramesBeforeFlushingLowPowerLayer)
     [fullscreen_low_power_layer_ flushAndRemoveImage];
-  }
-  current_fullscreen_low_power_layer_valid_ = *fullscreen_low_power_layer_valid;
 
   // Reset all state for the next frame.
   pending_ca_renderer_layer_tree_.reset();

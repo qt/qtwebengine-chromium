@@ -42,31 +42,6 @@ console.assert = function(value, message)
 var ArrayLike;
 
 /**
- * @param {!Object} obj
- * @return {boolean}
- */
-Object.isEmpty = function(obj)
-{
-    for (var i in obj)
-        return false;
-    return true;
-}
-
-/**
- * @param {!Object.<string,!T>} obj
- * @return {!Array.<!T>}
- * @template T
- */
-Object.values = function(obj)
-{
-    var result = Object.keys(obj);
-    var length = result.length;
-    for (var i = 0; i < length; ++i)
-        result[i] = obj[result[i]];
-    return result;
-}
-
-/**
  * @param {number} m
  * @param {number} n
  * @return {number}
@@ -511,29 +486,16 @@ Object.defineProperty(Array.prototype, "remove", {
     }
 });
 
-Object.defineProperty(Array.prototype, "keySet", {
-    /**
-     * @return {!Object.<string, boolean>}
-     * @this {Array.<*>}
-     */
-    value: function()
-    {
-        var keys = {};
-        for (var i = 0; i < this.length; ++i)
-            keys[this[i]] = true;
-        return keys;
-    }
-});
-
 Object.defineProperty(Array.prototype, "pushAll", {
     /**
-     * @param {!Array.<!T>} array
-     * @this {Array.<!T>}
+     * @param {!Array<!T>} array
+     * @this {Array<!T>}
      * @template T
      */
     value: function(array)
     {
-        Array.prototype.push.apply(this, array);
+        for (var i = 0; i < array.length; ++i)
+            this.push(array[i]);
     }
 });
 
@@ -1153,7 +1115,7 @@ function createSearchRegex(query, caseSensitive, isRegex)
  */
 function createPlainTextSearchRegex(query, flags)
 {
-    // This should be kept the same as the one in V8StringUtil.cpp.
+    // This should be kept the same as the one in StringUtil.cpp.
     var regexSpecialCharacters = String.regexSpecialCharacters();
     var regex = "";
     for (var i = 0; i < query.length; ++i) {

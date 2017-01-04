@@ -19,7 +19,7 @@ tr.b.unittest.testSuite(function() {
   var EventSet = tr.model.EventSet;
   var RectTrack = tr.ui.tracks.RectTrack;
   var Rect = tr.ui.tracks.Rect;
-  var Slice = tr.model.Slice;
+  var ThreadSlice = tr.model.ThreadSlice;
   var Viewport = tr.ui.TimelineViewport;
 
   test('instantiate_withRects', function() {
@@ -27,10 +27,10 @@ tr.b.unittest.testSuite(function() {
 
     var viewport = new Viewport(div);
     var drawingContainer = new tr.ui.tracks.DrawingContainer(viewport);
-    div.appendChild(drawingContainer);
+    Polymer.dom(div).appendChild(drawingContainer);
 
     var track = RectTrack(viewport);
-    drawingContainer.appendChild(track);
+    Polymer.dom(drawingContainer).appendChild(track);
 
     this.addHTMLOutput(div);
     drawingContainer.invalidate();
@@ -53,20 +53,20 @@ tr.b.unittest.testSuite(function() {
 
     var viewport = new Viewport(div);
     var drawingContainer = new tr.ui.tracks.DrawingContainer(viewport);
-    div.appendChild(drawingContainer);
+    Polymer.dom(div).appendChild(drawingContainer);
 
     var track = RectTrack(viewport);
-    drawingContainer.appendChild(track);
+    Polymer.dom(drawingContainer).appendChild(track);
 
     this.addHTMLOutput(div);
     drawingContainer.invalidate();
 
     track.heading = 'testBasicSlices';
     track.rects = [
-      new Slice('', 'a', 0, 1, {}, 1),
-      new Slice('', 'b', 1, 2.1, {}, 4.8),
-      new Slice('', 'b', 1, 7, {}, 0.5),
-      new Slice('', 'c', 2, 7.6, {}, 0.4)
+      new ThreadSlice('', 'a', 0, 1, {}, 1),
+      new ThreadSlice('', 'b', 1, 2.1, {}, 4.8),
+      new ThreadSlice('', 'b', 1, 7, {}, 0.5),
+      new ThreadSlice('', 'c', 2, 7.6, {}, 0.4)
     ];
 
     var dt = new tr.ui.TimelineDisplayTransform();
@@ -79,10 +79,10 @@ tr.b.unittest.testSuite(function() {
 
     var viewport = new Viewport(div);
     var drawingContainer = new tr.ui.tracks.DrawingContainer(viewport);
-    div.appendChild(drawingContainer);
+    Polymer.dom(div).appendChild(drawingContainer);
 
     var track = RectTrack(viewport);
-    drawingContainer.appendChild(track);
+    Polymer.dom(drawingContainer).appendChild(track);
 
     this.addHTMLOutput(div);
     drawingContainer.invalidate();
@@ -114,14 +114,14 @@ tr.b.unittest.testSuite(function() {
       var dict = optDicts[dictIndex];
 
       var div = document.createElement('div');
-      div.appendChild(document.createTextNode(dict.trackName));
+      Polymer.dom(div).appendChild(document.createTextNode(dict.trackName));
 
       var viewport = new Viewport(div);
       var drawingContainer = new tr.ui.tracks.DrawingContainer(viewport);
-      div.appendChild(drawingContainer);
+      Polymer.dom(div).appendChild(drawingContainer);
 
       var track = new RectTrack(viewport);
-      drawingContainer.appendChild(track);
+      Polymer.dom(drawingContainer).appendChild(track);
 
       this.addHTMLOutput(div);
       drawingContainer.invalidate();
@@ -144,10 +144,10 @@ tr.b.unittest.testSuite(function() {
   test('findAllObjectsMatchingInRectTrack', function() {
     var track = new RectTrack(new tr.ui.TimelineViewport());
     track.rects = [
-      new Slice('', 'a', 0, 1, {}, 1),
-      new Slice('', 'b', 1, 2.1, {}, 4.8),
-      new Slice('', 'b', 1, 7, {}, 0.5),
-      new Slice('', 'c', 2, 7.6, {}, 0.4)
+      new ThreadSlice('', 'a', 0, 1, {}, 1),
+      new ThreadSlice('', 'b', 1, 2.1, {}, 4.8),
+      new ThreadSlice('', 'b', 1, 7, {}, 0.5),
+      new ThreadSlice('', 'c', 2, 7.6, {}, 0.4)
     ];
     var selection = new EventSet();
     track.addAllEventsMatchingFilterToSelection(
@@ -160,23 +160,24 @@ tr.b.unittest.testSuite(function() {
 
   test('selectionHitTesting', function() {
     var testEl = document.createElement('div');
-    testEl.appendChild(tr.ui.b.createScopedStyle('heading { width: 100px; }'));
+    Polymer.dom(testEl).appendChild(
+        tr.ui.b.createScopedStyle('heading { width: 100px; }'));
     testEl.style.width = '600px';
 
     var viewport = new Viewport(testEl);
     var drawingContainer = new tr.ui.tracks.DrawingContainer(viewport);
-    testEl.appendChild(drawingContainer);
+    Polymer.dom(testEl).appendChild(drawingContainer);
 
     var track = new RectTrack(viewport);
-    drawingContainer.appendChild(track);
+    Polymer.dom(drawingContainer).appendChild(track);
     this.addHTMLOutput(testEl);
 
     drawingContainer.updateCanvasSizeIfNeeded_();
 
     track.heading = 'testSelectionHitTesting';
     track.rects = [
-      new Slice('', 'a', 0, 1, {}, 1),
-      new Slice('', 'b', 1, 5, {}, 4.8)
+      new ThreadSlice('', 'a', 0, 1, {}, 1),
+      new ThreadSlice('', 'b', 1, 5, {}, 4.8)
     ];
     var y = track.getBoundingClientRect().top + 5;
     var pixelRatio = window.devicePixelRatio || 1;
@@ -217,10 +218,10 @@ tr.b.unittest.testSuite(function() {
 
     var viewport = new Viewport(testEl);
     var drawingContainer = new tr.ui.tracks.DrawingContainer(viewport);
-    testEl.appendChild(drawingContainer);
+    Polymer.dom(testEl).appendChild(drawingContainer);
 
     var track = new RectTrack(viewport);
-    drawingContainer.appendChild(track);
+    Polymer.dom(drawingContainer).appendChild(track);
     this.addHTMLOutput(testEl);
 
     drawingContainer.updateCanvasSizeIfNeeded_();
@@ -231,8 +232,8 @@ tr.b.unittest.testSuite(function() {
     track.heading = 'testElide';
     track.rects = [
       // title, colorId, start, args, opt_duration
-      new Slice('', bigtitle, 0, 1, {}, 1),
-      new Slice('', smalltitle, 1, 2, {}, 1)
+      new ThreadSlice('', bigtitle, 0, 1, {}, 1),
+      new ThreadSlice('', smalltitle, 1, 2, {}, 1)
     ];
     var dt = new tr.ui.TimelineDisplayTransform();
     dt.xSetWorldBounds(0, 3.3, track.clientWidth);
@@ -296,10 +297,10 @@ tr.b.unittest.testSuite(function() {
   test('rectTrackAddItemNearToProvidedEvent', function() {
     var track = new RectTrack(new tr.ui.TimelineViewport());
     track.rects = [
-      new Slice('', 'a', 0, 1, {}, 1),
-      new Slice('', 'b', 1, 2.1, {}, 4.8),
-      new Slice('', 'b', 1, 7, {}, 0.5),
-      new Slice('', 'c', 2, 7.6, {}, 0.4)
+      new ThreadSlice('', 'a', 0, 1, {}, 1),
+      new ThreadSlice('', 'b', 1, 2.1, {}, 4.8),
+      new ThreadSlice('', 'b', 1, 7, {}, 0.5),
+      new ThreadSlice('', 'c', 2, 7.6, {}, 0.4)
     ];
     var sel = new EventSet();
     track.addAllEventsMatchingFilterToSelection(
@@ -308,27 +309,30 @@ tr.b.unittest.testSuite(function() {
 
     // Select to the right of B.
     var selRight = new EventSet();
-    ret = track.addEventNearToProvidedEventToSelection(sel[0], 1, selRight);
+    ret = track.addEventNearToProvidedEventToSelection(
+        tr.b.getFirstElement(sel), 1, selRight);
     assert.isTrue(ret);
-    assert.equal(track.rects[2].modelItem, selRight[0]);
+    assert.equal(track.rects[2].modelItem, tr.b.getFirstElement(selRight));
 
     // Select to the right of the 2nd b.
     var selRight2 = new EventSet();
-    ret = track.addEventNearToProvidedEventToSelection(sel[0], 2, selRight2);
+    ret = track.addEventNearToProvidedEventToSelection(
+        tr.b.getFirstElement(sel), 2, selRight2);
     assert.isTrue(ret);
-    assert.equal(track.rects[3].modelItem, selRight2[0]);
+    assert.equal(track.rects[3].modelItem, tr.b.getFirstElement(selRight2));
 
     // Select to 2 to the right of the 2nd b.
     var selRightOfRight = new EventSet();
     ret = track.addEventNearToProvidedEventToSelection(
-        selRight[0], 1, selRightOfRight);
+        tr.b.getFirstElement(selRight), 1, selRightOfRight);
     assert.isTrue(ret);
-    assert.equal(track.rects[3].modelItem, selRightOfRight[0]);
+    assert.equal(track.rects[3].modelItem,
+        tr.b.getFirstElement(selRightOfRight));
 
     // Select to the right of the rightmost slice.
     var selNone = new EventSet();
     ret = track.addEventNearToProvidedEventToSelection(
-        selRightOfRight[0], 1, selNone);
+        tr.b.getFirstElement(selRightOfRight), 1, selNone);
     assert.isFalse(ret);
     assert.equal(0, selNone.length);
 
@@ -339,7 +343,8 @@ tr.b.unittest.testSuite(function() {
     var ret;
 
     selNone = new EventSet();
-    ret = track.addEventNearToProvidedEventToSelection(sel[0], -1, selNone);
+    ret = track.addEventNearToProvidedEventToSelection(
+        tr.b.getFirstElement(sel), -1, selNone);
     assert.isFalse(ret);
     assert.equal(0, selNone.length);
   });
@@ -347,10 +352,10 @@ tr.b.unittest.testSuite(function() {
   test('rectTrackAddClosestEventToSelection', function() {
     var track = new RectTrack(new tr.ui.TimelineViewport());
     track.rects = [
-      new Slice('', 'a', 0, 1, {}, 1),
-      new Slice('', 'b', 1, 2.1, {}, 4.8),
-      new Slice('', 'b', 1, 7, {}, 0.5),
-      new Slice('', 'c', 2, 7.6, {}, 0.4)
+      new ThreadSlice('', 'a', 0, 1, {}, 1),
+      new ThreadSlice('', 'b', 1, 2.1, {}, 4.8),
+      new ThreadSlice('', 'b', 1, 7, {}, 0.5),
+      new ThreadSlice('', 'c', 2, 7.6, {}, 0.4)
     ];
 
     // Before with not range.

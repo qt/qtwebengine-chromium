@@ -74,7 +74,7 @@ public:
     const PrecisionInfo& getFloatShaderPrecisionInfo(GrShaderType shaderType,
                                                      GrSLPrecision precision) const {
         return fFloatPrecisions[shaderType][precision];
-    };
+    }
 
     /**
     * Is there any difference between the float shader variable precision types? If this is true
@@ -84,7 +84,7 @@ public:
     bool floatPrecisionVaries() const { return fShaderPrecisionVaries; }
 
     /**
-     * PLS storage size in bytes (0 when not supported). The PLS spec defines a minimum size of 16 
+     * PLS storage size in bytes (0 when not supported). The PLS spec defines a minimum size of 16
      * bytes whenever PLS is supported.
      */
     int pixelLocalStorageSize() const { return fPixelLocalStorageSize; }
@@ -93,7 +93,7 @@ public:
      * True if this context supports the necessary extensions and features to enable the PLS path
      * renderer.
      */
-    bool plsPathRenderingSupport() const { 
+    bool plsPathRenderingSupport() const {
 #if GR_ENABLE_PLS_PATH_RENDERING
         return fPLSPathRenderingSupport;
 #else
@@ -120,7 +120,7 @@ protected:
     bool fPLSPathRenderingSupport;
 
 private:
-    virtual void onApplyOptionsOverrides(const GrContextOptions&) {};
+    virtual void onApplyOptionsOverrides(const GrContextOptions&) {}
     typedef SkRefCnt INHERITED;
 };
 
@@ -160,6 +160,7 @@ public:
     bool sampleLocationsSupport() const { return fSampleLocationsSupport; }
     bool multisampleDisableSupport() const { return fMultisampleDisableSupport; }
     bool usesMixedSamples() const { return fUsesMixedSamples; }
+    bool preferClientSideDynamicBuffers() const { return fPreferClientSideDynamicBuffers; }
 
     bool useDrawInsteadOfClear() const { return fUseDrawInsteadOfClear; }
     bool useDrawInsteadOfPartialRenderTargetWrite() const {
@@ -171,6 +172,21 @@ public:
     }
 
     bool preferVRAMUseOverFlushes() const { return fPreferVRAMUseOverFlushes; }
+
+    /**
+     * Indicates the level of support for gr_instanced::* functionality. A higher level includes
+     * all functionality from the levels below it.
+     */
+    enum class InstancedSupport {
+        kNone,
+        kBasic,
+        kMultisampled,
+        kMixedSampled
+    };
+
+    InstancedSupport instancedSupport() const { return fInstancedSupport; }
+
+    bool avoidInstancedDrawsToFPTargets() const { return fAvoidInstancedDrawsToFPTargets; }
 
     /**
      * Indicates the capabilities of the fixed function blend unit.
@@ -248,6 +264,7 @@ public:
         }
     }
 
+    int maxWindowRectangles() const { return fMaxWindowRectangles; }
 
     virtual bool isConfigTexturable(GrPixelConfig config) const = 0;
     virtual bool isConfigRenderable(GrPixelConfig config, bool withMSAA) const = 0;
@@ -261,17 +278,15 @@ public:
         return fBufferMapThreshold;
     }
 
-    bool supportsInstancedDraws() const {
-        return fSupportsInstancedDraws;
-    }
-
     bool fullClearIsFree() const { return fFullClearIsFree; }
 
-    /** True in environments that will issue errors if memory uploaded to buffers 
+    /** True in environments that will issue errors if memory uploaded to buffers
         is not initialized (even if not read by draw calls). */
     bool mustClearUploadedBufferData() const { return fMustClearUploadedBufferData; }
 
     bool sampleShadingSupport() const { return fSampleShadingSupport; }
+
+    bool fenceSyncSupport() const { return fFenceSyncSupport; }
 
 protected:
     /** Subclasses must call this at the end of their constructors in order to apply caps
@@ -297,7 +312,7 @@ protected:
     bool fSampleLocationsSupport                     : 1;
     bool fMultisampleDisableSupport                  : 1;
     bool fUsesMixedSamples                           : 1;
-    bool fSupportsInstancedDraws                     : 1;
+    bool fPreferClientSideDynamicBuffers             : 1;
     bool fFullClearIsFree                            : 1;
     bool fMustClearUploadedBufferData                : 1;
 
@@ -305,11 +320,16 @@ protected:
     bool fUseDrawInsteadOfClear                      : 1;
     bool fUseDrawInsteadOfPartialRenderTargetWrite   : 1;
     bool fUseDrawInsteadOfAllRenderTargetWrites      : 1;
+    bool fAvoidInstancedDrawsToFPTargets             : 1;
 
     // ANGLE workaround
     bool fPreferVRAMUseOverFlushes                   : 1;
 
     bool fSampleShadingSupport                       : 1;
+    // TODO: this may need to be an enum to support different fence types
+    bool fFenceSyncSupport                           : 1;
+
+    InstancedSupport fInstancedSupport;
 
     BlendEquationSupport fBlendEquationSupport;
     uint32_t fAdvBlendEqBlacklist;
@@ -325,9 +345,10 @@ protected:
     int fMaxColorSampleCount;
     int fMaxStencilSampleCount;
     int fMaxRasterSamples;
+    int fMaxWindowRectangles;
 
 private:
-    virtual void onApplyOptionsOverrides(const GrContextOptions&) {};
+    virtual void onApplyOptionsOverrides(const GrContextOptions&) {}
 
     bool fSuppressPrints : 1;
     bool fImmediateFlush: 1;

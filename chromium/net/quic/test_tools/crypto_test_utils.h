@@ -15,9 +15,9 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/strings/string_piece.h"
-#include "net/quic/crypto/crypto_framer.h"
-#include "net/quic/quic_framer.h"
-#include "net/quic/quic_protocol.h"
+#include "net/quic/core/crypto/crypto_framer.h"
+#include "net/quic/core/quic_framer.h"
+#include "net/quic/core/quic_protocol.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 
 namespace net {
@@ -60,16 +60,17 @@ class CryptoTestUtils {
   // server in HandshakeWithFakeServer.
   struct FakeServerOptions {
     FakeServerOptions();
+    ~FakeServerOptions();
 
-    // If token_binding_enabled is true, then the server will attempt to
-    // negotiate Token Binding.
-    bool token_binding_enabled;
+    // The Token Binding params that the server supports and will negotiate.
+    QuicTagVector token_binding_params;
   };
 
   // FakeClientOptions bundles together a number of options for configuring
   // HandshakeWithFakeClient.
   struct FakeClientOptions {
     FakeClientOptions();
+    ~FakeClientOptions();
 
     // If channel_id_enabled is true then the client will attempt to send a
     // ChannelID.
@@ -79,9 +80,8 @@ class CryptoTestUtils {
     // ChannelIDSource for testing. Ignored if channel_id_enabled is false.
     bool channel_id_source_async;
 
-    // If token_binding_enabled is true, then the client will attempt to
-    // negotiate Token Binding.
-    bool token_binding_enabled;
+    // The Token Binding params that the client supports and will negotiate.
+    QuicTagVector token_binding_params;
   };
 
   // returns: the number of client hellos that the client sent.
@@ -142,14 +142,14 @@ class CryptoTestUtils {
   static std::string GetValueForTag(const CryptoHandshakeMessage& message,
                                     QuicTag tag);
 
-  // Returns a |ProofSource| that serves up test certificates.
-  static ProofSource* ProofSourceForTesting();
+  // Returns a new |ProofSource| that serves up test certificates.
+  static std::unique_ptr<ProofSource> ProofSourceForTesting();
 
   // Returns a |ProofVerifier| that uses the QUIC testing root CA.
-  static ProofVerifier* ProofVerifierForTesting();
+  static std::unique_ptr<ProofVerifier> ProofVerifierForTesting();
 
   // Returns a real ProofVerifier (not a fake proof verifier) for testing.
-  static ProofVerifier* RealProofVerifierForTesting();
+  static std::unique_ptr<ProofVerifier> RealProofVerifierForTesting();
 
   // Returns a hash of the leaf test certificate.
   static uint64_t LeafCertHashForTesting();
@@ -205,9 +205,35 @@ class CryptoTestUtils {
                           PacketSavingConnection* dest_conn,
                           Perspective dest_perspective);
 
+  // Return an inchoate CHLO with some basic tag value std:pairs.
+  static CryptoHandshakeMessage GenerateDefaultInchoateCHLO(
+      const QuicClock* clock,
+      QuicVersion version,
+      QuicCryptoServerConfig* crypto_config);
+
+  // Takes a inchoate CHLO, returns a full CHLO in |out| which can pass
+  // |crypto_config|'s validation.
+  static void GenerateFullCHLO(const CryptoHandshakeMessage& inchoate_chlo,
+                               QuicCryptoServerConfig* crypto_config,
+                               IPAddress server_ip,
+                               IPEndPoint client_addr,
+                               QuicVersion version,
+                               const QuicClock* clock,
+                               QuicCryptoProof* proof,
+                               QuicCompressedCertsCache* compressed_certs_cache,
+                               CryptoHandshakeMessage* out);
+
  private:
   static void CompareClientAndServerKeys(QuicCryptoClientStream* client,
                                          QuicCryptoServerStream* server);
+
+  // Return a CHLO nonce in hexadecimal.
+  static std::string GenerateClientNonceHex(
+      const QuicClock* clock,
+      QuicCryptoServerConfig* crypto_config);
+
+  // Return a CHLO PUBS in hexadecimal.
+  static std::string GenerateClientPublicValuesHex();
 
   DISALLOW_COPY_AND_ASSIGN(CryptoTestUtils);
 };

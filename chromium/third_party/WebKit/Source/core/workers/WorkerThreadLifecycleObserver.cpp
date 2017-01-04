@@ -10,11 +10,14 @@
 
 namespace blink {
 
-WorkerThreadLifecycleObserver::WorkerThreadLifecycleObserver(WorkerThreadLifecycleContext* workerThreadLifecycleContext)
-    : LifecycleObserver(workerThreadLifecycleContext)
-    , m_wasContextDestroyedBeforeObserverCreation(workerThreadLifecycleContext->m_wasContextDestroyed)
-{
-    DCHECK(isMainThread());
+WorkerThreadLifecycleObserver::WorkerThreadLifecycleObserver(
+    WorkerThreadLifecycleContext* workerThreadLifecycleContext)
+    : LifecycleObserver(workerThreadLifecycleContext),
+      m_wasContextDestroyedBeforeObserverCreation(
+          workerThreadLifecycleContext->m_wasContextDestroyed) {
+  DCHECK(isMainThread());
 }
 
-} // namespace blink
+WorkerThreadLifecycleObserver::~WorkerThreadLifecycleObserver() {}
+
+}  // namespace blink

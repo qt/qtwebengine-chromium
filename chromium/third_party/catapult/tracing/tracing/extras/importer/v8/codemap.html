@@ -44,7 +44,7 @@ tr.exportTo('tr.e.importer.v8', function() {
      * Map of memory pages occupied with static code.
      */
     this.pages_ = [];
-  };
+  }
 
   /**
    * The number of alignment bits in a page address.
@@ -128,16 +128,16 @@ tr.exportTo('tr.e.importer.v8', function() {
    * @private
    */
   CodeMap.prototype.deleteAllCoveredNodes_ = function(tree, start, end) {
-    var to_delete = [];
+    var toDelete = [];
     var addr = end - 1;
     while (addr >= start) {
       var node = tree.findGreatestLessThan(addr);
       if (!node) break;
       var start2 = node.key, end2 = start2 + node.value.size;
-      if (start2 < end && start < end2) to_delete.push(start2);
+      if (start2 < end && start < end2) toDelete.push(start2);
       addr = start2 - 1;
     }
-    for (var i = 0, l = to_delete.length; i < l; ++i) tree.remove(to_delete[i]);
+    for (var i = 0, l = toDelete.length; i < l; ++i) tree.remove(toDelete[i]);
   };
 
   /**
@@ -183,9 +183,9 @@ tr.exportTo('tr.e.importer.v8', function() {
     }
     var min = this.dynamics_.findMin();
     var max = this.dynamics_.findMax();
-    if (max != null && addr < (max.key + max.value.size) && addr >= min.key) {
+    if (max !== null && addr < (max.key + max.value.size) && addr >= min.key) {
       var dynaEntry = this.findInTree_(this.dynamics_, addr);
-      if (dynaEntry == null) return null;
+      if (dynaEntry === null) return null;
       // Dedupe entry name.
       if (!dynaEntry.nameUpdated_) {
         dynaEntry.name = this.dynamicsNameGen_.getName(dynaEntry.name);
@@ -348,9 +348,9 @@ tr.exportTo('tr.e.importer.v8', function() {
      */
     get name() {
       var name = this.name_;
-      if (name.length == 0) {
+      if (name.length === 0) {
         name = '<anonymous>';
-      } else if (name.charAt(0) == ' ') {
+      } else if (name.charAt(0) === ' ') {
         // An anonymous function with location: " aaa.js:10".
         name = '<anonymous>' + name;
       }
@@ -379,4 +379,3 @@ tr.exportTo('tr.e.importer.v8', function() {
   };
 });
 </script>
-

@@ -21,14 +21,14 @@ tr.b.unittest.testSuite(function() {
     paneEl.paneId = paneId;
 
     var divEl = document.createElement('div');
-    divEl.textContent = 'Pane ' + paneId;
+    Polymer.dom(divEl).textContent = 'Pane ' + paneId;
     divEl.style.width = '400px';
     divEl.style.background = '#ccc';
     divEl.style.textAlign = 'center';
-    paneEl.appendChild(divEl);
+    Polymer.dom(paneEl).appendChild(divEl);
 
     if (opt_rebuildPaneCallback)
-      paneEl.rebuildPane_ = opt_rebuildPaneCallback;
+      paneEl.onRebuild_ = opt_rebuildPaneCallback;
 
     if (opt_appendedCallback)
       paneEl.appended = opt_appendedCallback;
@@ -176,7 +176,7 @@ tr.b.unittest.testSuite(function() {
     // All panes are now marked as dirty, but rebuild isn't triggered (it was
     // only scheduled).
     viewEl.panesForTesting.forEach(function(pane) {
-      pane.scheduleRebuildPane_();
+      pane.scheduleRebuild_();
     });
     assert.deepEqual(rebuiltPaneIds, []);
 

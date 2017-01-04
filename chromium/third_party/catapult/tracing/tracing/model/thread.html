@@ -21,7 +21,6 @@ found in the LICENSE file.
 tr.exportTo('tr.model', function() {
   var AsyncSlice = tr.model.AsyncSlice;
   var AsyncSliceGroup = tr.model.AsyncSliceGroup;
-  var Slice = tr.model.Slice;
   var SliceGroup = tr.model.SliceGroup;
   var ThreadSlice = tr.model.ThreadSlice;
   var ThreadTimeSlice = tr.model.ThreadTimeSlice;
@@ -192,7 +191,7 @@ tr.exportTo('tr.model', function() {
     createSubSlices: function() {
       this.sliceGroup.createSubSlices();
       this.samples_ = this.parent.model.samples.filter(function(sample) {
-        return sample.thread == this;
+        return sample.thread === this;
       }, this);
     },
 
@@ -256,7 +255,7 @@ tr.exportTo('tr.model', function() {
             threadTimeSlice.end);
         var intersection = freqRange.findIntersection(range);
 
-        if (threadTimeSlice.schedulingState ==
+        if (threadTimeSlice.schedulingState ===
             tr.model.SCHEDULING_STATE.RUNNING) {
           var cpu = threadTimeSlice.cpuOnWhichThreadWasRunning;
           if (!(cpu.cpuNumber in stats))

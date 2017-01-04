@@ -114,7 +114,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   RenderWidgetHostViewAura(RenderWidgetHost* host, bool is_guest_view_hack);
 
   // RenderWidgetHostView implementation.
-  bool OnMessageReceived(const IPC::Message& msg) override;
   void InitAsChild(gfx::NativeView parent_view) override;
   RenderWidgetHost* GetRenderWidgetHost() const override;
   void SetSize(const gfx::Size& size) override;
@@ -134,6 +133,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void SetInsets(const gfx::Insets& insets) override;
   void FocusedNodeTouched(const gfx::Point& location_dips_screen,
                           bool editable) override;
+  void SetNeedsBeginFrames(bool needs_begin_frames) override;
 
   // Overridden from RenderWidgetHostViewBase:
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
@@ -142,19 +142,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void Focus() override;
   void UpdateCursor(const WebCursor& cursor) override;
   void SetIsLoading(bool is_loading) override;
-  void ImeCompositionRangeChanged(
-      const gfx::Range& range,
-      const std::vector<gfx::Rect>& character_bounds) override;
   void RenderProcessGone(base::TerminationStatus status,
                          int error_code) override;
   void Destroy() override;
   void SetTooltipText(const base::string16& tooltip_text) override;
-  void SelectionChanged(const base::string16& text,
-                        size_t offset,
-                        const gfx::Range& range) override;
   gfx::Size GetRequestedRendererSize() const override;
-  void SelectionBoundsChanged(
-      const ViewHostMsg_SelectionBounds_Params& params) override;
   void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
@@ -169,7 +161,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       std::unique_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
   void EndFrameSubscription() override;
   bool HasAcceleratedSurface(const gfx::Size& desired_size) override;
-  void GetScreenInfo(blink::WebScreenInfo* results) override;
   gfx::Rect GetBoundsInRootWindow() override;
   void WheelEventAck(const blink::WebMouseWheelEvent& event,
                      InputEventAckState ack_result) override;
@@ -187,15 +178,15 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() override;
   bool LockMouse() override;
   void UnlockMouse() override;
-  void OnSwapCompositorFrame(uint32_t output_surface_id,
+  void OnSwapCompositorFrame(uint32_t compositor_frame_sink_id,
                              cc::CompositorFrame frame) override;
   void ClearCompositorFrame() override;
   void DidStopFlinging() override;
   void OnDidNavigateMainFrameToNewPage() override;
   void LockCompositingSurface() override;
   void UnlockCompositingSurface() override;
-  uint32_t GetSurfaceIdNamespace() override;
-  uint32_t SurfaceIdNamespaceAtPoint(cc::SurfaceHittestDelegate* delegate,
+  cc::FrameSinkId GetFrameSinkId() override;
+  cc::FrameSinkId FrameSinkIdAtPoint(cc::SurfaceHittestDelegate* delegate,
                                      const gfx::Point& point,
                                      gfx::Point* transformed_point) override;
   void ProcessMouseEvent(const blink::WebMouseEvent& event,
@@ -206,10 +197,15 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                          const ui::LatencyInfo& latency) override;
   void ProcessGestureEvent(const blink::WebGestureEvent& event,
                            const ui::LatencyInfo& latency) override;
-  void TransformPointToLocalCoordSpace(const gfx::Point& point,
-                                       cc::SurfaceId original_surface,
-                                       gfx::Point* transformed_point) override;
-  void FocusedNodeChanged(bool is_editable_node) override;
+  gfx::Point TransformPointToLocalCoordSpace(
+      const gfx::Point& point,
+      const cc::SurfaceId& original_surface) override;
+  gfx::Point TransformPointToCoordSpaceForView(
+      const gfx::Point& point,
+      RenderWidgetHostViewBase* target_view) override;
+
+  void FocusedNodeChanged(bool is_editable_node,
+                          const gfx::Rect& node_bounds_in_screen) override;
 
   // Overridden from ui::TextInputClient:
   void SetCompositionText(const ui::CompositionText& composition) override;
@@ -349,7 +345,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   const ui::MotionEventAura& pointer_state() const { return pointer_state_; }
 
  private:
-  friend class InputMethodResultAuraTest;
+  friend class InputMethodAuraTestBase;
   friend class RenderWidgetHostViewAuraCopyRequestTest;
   friend class TestInputMethodObserver;
   FRIEND_TEST_ALL_PREFIXES(InputMethodResultAuraTest,
@@ -363,7 +359,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, Resize);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SwapNotifiesWindow);
-  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, RecreateLayers);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, MirrorLayers);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            SkippedDelegatedFrames);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, OutputSurfaceIdChange);
@@ -457,16 +453,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   std::unique_ptr<ResizeLock> DelegatedFrameHostCreateResizeLock(
       bool defer_compositor_lock) override;
   void DelegatedFrameHostResizeLockWasReleased() override;
-  void DelegatedFrameHostSendCompositorSwapAck(
-      int output_surface_id,
-      const cc::CompositorFrameAck& ack) override;
   void DelegatedFrameHostSendReclaimCompositorResources(
-      int output_surface_id,
-      const cc::CompositorFrameAck& ack) override;
+      int compositor_frame_sink_id,
+      bool is_swap_ack,
+      const cc::ReturnedResourceArray& resources) override;
   void DelegatedFrameHostOnLostCompositorResources() override;
-  void DelegatedFrameHostUpdateVSyncParameters(
-      const base::TimeTicks& timebase,
-      const base::TimeDelta& interval) override;
   void SetBeginFrameSource(cc::BeginFrameSource* source) override;
   bool IsAutoResizeEnabled() const override;
 
@@ -475,6 +466,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                                     RenderWidgetHostViewBase* updated_view,
                                     bool did_update_state) override;
   void OnImeCancelComposition(TextInputManager* text_input_manager,
+                              RenderWidgetHostViewBase* updated_view) override;
+  void OnSelectionBoundsChanged(
+      TextInputManager* text_input_manager,
+      RenderWidgetHostViewBase* updated_view) override;
+  void OnTextSelectionChanged(TextInputManager* text_input_mangager,
                               RenderWidgetHostViewBase* updated_view) override;
 
   // cc::BeginFrameObserver implementation.
@@ -502,9 +498,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Helper function to set keyboard focus to the main window.
   void SetKeyboardFocus();
-
-  // Called when RenderWidget wants to start BeginFrame scheduling or stop.
-  void OnSetNeedsBeginFrames(bool needs_begin_frames);
 
   RenderFrameHostImpl* GetFocusedFrame();
 
@@ -538,6 +531,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Forwards a mouse event to this view's parent window delegate.
   void ForwardMouseEventToParent(ui::MouseEvent* event);
+
+  void UpdateNeedsBeginFramesInternal();
 
   // Returns the RenderViewHostDelegateView instance for this view. Returns
   // NULL on failure.
@@ -586,12 +581,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // object.
   ui::MotionEventAura pointer_state_;
 
-  // Bounds for the selection.
-  gfx::SelectionBound selection_anchor_;
-  gfx::SelectionBound selection_focus_;
-
-  // The current composition character bounds.
-  std::vector<gfx::Rect> composition_character_bounds_;
 
   // Indicates if there is onging composition text.
   bool has_composition_text_;
@@ -605,7 +594,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // The begin frame source being observed.  Null if none.
   cc::BeginFrameSource* begin_frame_source_;
   cc::BeginFrameArgs last_begin_frame_args_;
+
+  // Whether a request for begin frames has been issued.
   bool needs_begin_frames_;
+
+  // Whether or not a frame observer has been added.
+  bool added_frame_observer_;
 
   // Used to record the last position of the mouse.
   // While the mouse is locked, they store the last known position just as mouse
@@ -693,6 +687,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // corresponding touch sequence, as would be required by
   // RenderWidgetHostInputEventRouter.
   bool disable_input_event_router_for_testing_;
+
+  // The routing and process IDs for the last RenderWidgetHost which had a
+  // TextInputState of non-NONE.
+  int32_t last_active_widget_process_id_;
+  int32_t last_active_widget_routing_id_;
 
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
 

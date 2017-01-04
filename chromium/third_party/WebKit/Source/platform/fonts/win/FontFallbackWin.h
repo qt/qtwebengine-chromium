@@ -48,14 +48,14 @@ namespace blink {
 // that characters belong to.
 // When scriptChecked is non-zero, the script used to determine
 // the family is returned.
-PLATFORM_EXPORT const UChar* getFallbackFamily(UChar32 character,
+PLATFORM_EXPORT const UChar* getFallbackFamily(
+    UChar32 character,
     FontDescription::GenericFamilyType,
-    UScriptCode contentScript,
-    const AtomicString& contentLocale,
+    const LayoutLocale* contentLocale,
     UScriptCode* scriptChecked,
     FontFallbackPriority,
     SkFontMgr* fontManager);
 
-} // namespace blink
+}  // namespace blink
 
-#endif // FontFallbackWin_h
+#endif  // FontFallbackWin_h

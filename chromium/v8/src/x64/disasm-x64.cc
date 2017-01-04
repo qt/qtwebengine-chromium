@@ -11,6 +11,7 @@
 #include "src/base/compiler-specific.h"
 #include "src/base/lazy-instance.h"
 #include "src/disasm.h"
+#include "src/x64/sse-instr.h"
 
 namespace disasm {
 
@@ -875,6 +876,7 @@ int DisassemblerX64::SetCC(byte* data) {
   return 3;  // includes 0x0F
 }
 
+const char* sf_str[4] = {"", "rl", "ra", "ll"};
 
 int DisassemblerX64::AVXInstruction(byte* data) {
   byte opcode = *data;
@@ -949,6 +951,18 @@ int DisassemblerX64::AVXInstruction(byte* data) {
         current += PrintRightOperand(current);
         AppendToBuffer(",%s", NameOfCPURegister(vvvv));
         break;
+#define DECLARE_SSE_AVX_DIS_CASE(instruction, notUsed1, notUsed2, notUsed3, \
+                                 opcode)                                    \
+  case 0x##opcode: {                                                        \
+    AppendToBuffer("v" #instruction " %s,%s,", NameOfXMMRegister(regop),    \
+                   NameOfXMMRegister(vvvv));                                \
+    current += PrintRightXMMOperand(current);                               \
+    break;                                                                  \
+  }
+
+        SSSE3_INSTRUCTION_LIST(DECLARE_SSE_AVX_DIS_CASE)
+        SSE4_INSTRUCTION_LIST(DECLARE_SSE_AVX_DIS_CASE)
+#undef DECLARE_SSE_AVX_DIS_CASE
       default:
         UnimplementedInstruction();
     }
@@ -966,6 +980,33 @@ int DisassemblerX64::AVXInstruction(byte* data) {
         AppendToBuffer("vroundsd %s,%s,", NameOfXMMRegister(regop),
                        NameOfXMMRegister(vvvv));
         current += PrintRightXMMOperand(current);
+        AppendToBuffer(",0x%x", *current++);
+        break;
+      case 0x14:
+        AppendToBuffer("vpextrb ");
+        current += PrintRightByteOperand(current);
+        AppendToBuffer(",%s,0x%x,", NameOfXMMRegister(regop), *current++);
+        break;
+      case 0x15:
+        AppendToBuffer("vpextrw ");
+        current += PrintRightOperand(current);
+        AppendToBuffer(",%s,0x%x,", NameOfXMMRegister(regop), *current++);
+        break;
+      case 0x16:
+        AppendToBuffer("vpextrd ");
+        current += PrintRightOperand(current);
+        AppendToBuffer(",%s,0x%x,", NameOfXMMRegister(regop), *current++);
+        break;
+      case 0x20:
+        AppendToBuffer("vpinsrb %s,%s,", NameOfXMMRegister(regop),
+                       NameOfXMMRegister(vvvv));
+        current += PrintRightByteOperand(current);
+        AppendToBuffer(",0x%x", *current++);
+        break;
+      case 0x22:
+        AppendToBuffer("vpinsrd %s,%s,", NameOfXMMRegister(regop),
+                       NameOfXMMRegister(vvvv));
+        current += PrintRightOperand(current);
         AppendToBuffer(",0x%x", *current++);
         break;
       default:
@@ -1112,6 +1153,10 @@ int DisassemblerX64::AVXInstruction(byte* data) {
                        NameOfXMMRegister(vvvv));
         current += PrintRightXMMOperand(current);
         break;
+      case 0xf0:
+        AppendToBuffer("vlddqu %s,", NameOfXMMRegister(regop));
+        current += PrintRightXMMOperand(current);
+        break;
       default:
         UnimplementedInstruction();
     }
@@ -1227,6 +1272,15 @@ int DisassemblerX64::AVXInstruction(byte* data) {
     int mod, regop, rm, vvvv = vex_vreg();
     get_modrm(*current, &mod, &regop, &rm);
     switch (opcode) {
+      case 0x10:
+        AppendToBuffer("vmovups %s,", NameOfXMMRegister(regop));
+        current += PrintRightXMMOperand(current);
+        break;
+      case 0x11:
+        AppendToBuffer("vmovups ");
+        current += PrintRightXMMOperand(current);
+        AppendToBuffer(",%s", NameOfXMMRegister(regop));
+        break;
       case 0x28:
         AppendToBuffer("vmovaps %s,", NameOfXMMRegister(regop));
         current += PrintRightXMMOperand(current);
@@ -1240,6 +1294,10 @@ int DisassemblerX64::AVXInstruction(byte* data) {
         AppendToBuffer("vucomiss %s,", NameOfXMMRegister(regop));
         current += PrintRightXMMOperand(current);
         break;
+      case 0x50:
+        AppendToBuffer("vmovmskps %s,", NameOfCPURegister(regop));
+        current += PrintRightXMMOperand(current);
+        break;
       case 0x54:
         AppendToBuffer("vandps %s,%s,", NameOfXMMRegister(regop),
                        NameOfXMMRegister(vvvv));
@@ -1250,6 +1308,16 @@ int DisassemblerX64::AVXInstruction(byte* data) {
                        NameOfXMMRegister(vvvv));
         current += PrintRightXMMOperand(current);
         break;
+      case 0xC2: {
+        AppendToBuffer("vcmpps %s,%s,", NameOfXMMRegister(regop),
+                       NameOfXMMRegister(vvvv));
+        current += PrintRightXMMOperand(current);
+        const char* const pseudo_op[] = {"eq",  "lt",  "le",  "unord",
+                                         "neq", "nlt", "nle", "ord"};
+        AppendToBuffer(", (%s)", pseudo_op[*current]);
+        current += 1;
+        break;
+      }
       default:
         UnimplementedInstruction();
     }
@@ -1257,6 +1325,15 @@ int DisassemblerX64::AVXInstruction(byte* data) {
     int mod, regop, rm, vvvv = vex_vreg();
     get_modrm(*current, &mod, &regop, &rm);
     switch (opcode) {
+      case 0x10:
+        AppendToBuffer("vmovupd %s,", NameOfXMMRegister(regop));
+        current += PrintRightXMMOperand(current);
+        break;
+      case 0x11:
+        AppendToBuffer("vmovupd ");
+        current += PrintRightXMMOperand(current);
+        AppendToBuffer(",%s", NameOfXMMRegister(regop));
+        break;
       case 0x28:
         AppendToBuffer("vmovapd %s,", NameOfXMMRegister(regop));
         current += PrintRightXMMOperand(current);
@@ -1294,22 +1371,65 @@ int DisassemblerX64::AVXInstruction(byte* data) {
                        NameOfXMMRegister(regop));
         current += PrintRightOperand(current);
         break;
-      case 0x73:
-        AppendToBuffer("%s %s,", regop == 6 ? "vpsllq" : "vpsrlq",
+      case 0x70:
+        AppendToBuffer("vpshufd %s,", NameOfXMMRegister(regop));
+        current += PrintRightXMMOperand(current);
+        AppendToBuffer(",0x%x", *current++);
+        break;
+      case 0x71:
+        AppendToBuffer("vps%sw %s,", sf_str[regop / 2],
                        NameOfXMMRegister(vvvv));
         current += PrintRightXMMOperand(current);
         AppendToBuffer(",%u", *current++);
         break;
-      case 0x76:
-        AppendToBuffer("vpcmpeqd %s,%s,", NameOfXMMRegister(regop),
+      case 0x72:
+        AppendToBuffer("vps%sd %s,", sf_str[regop / 2],
                        NameOfXMMRegister(vvvv));
         current += PrintRightXMMOperand(current);
+        AppendToBuffer(",%u", *current++);
+        break;
+      case 0x73:
+        AppendToBuffer("vps%sq %s,", sf_str[regop / 2],
+                       NameOfXMMRegister(vvvv));
+        current += PrintRightXMMOperand(current);
+        AppendToBuffer(",%u", *current++);
         break;
       case 0x7e:
         AppendToBuffer("vmov%c ", vex_w() ? 'q' : 'd');
         current += PrintRightOperand(current);
         AppendToBuffer(",%s", NameOfXMMRegister(regop));
         break;
+      case 0xC2: {
+        AppendToBuffer("vcmppd %s,%s,", NameOfXMMRegister(regop),
+                       NameOfXMMRegister(vvvv));
+        current += PrintRightXMMOperand(current);
+        const char* const pseudo_op[] = {"eq",  "lt",  "le",  "unord",
+                                         "neq", "nlt", "nle", "ord"};
+        AppendToBuffer(", (%s)", pseudo_op[*current]);
+        current += 1;
+        break;
+      }
+      case 0xc4:
+        AppendToBuffer("vpinsrw %s,%s,", NameOfXMMRegister(regop),
+                       NameOfXMMRegister(vvvv));
+        current += PrintRightOperand(current);
+        AppendToBuffer(",0x%x", *current++);
+        break;
+      case 0xc5:
+        AppendToBuffer("vpextrw %s,", NameOfCPURegister(regop));
+        current += PrintRightXMMOperand(current);
+        AppendToBuffer(",0x%x", *current++);
+        break;
+#define DECLARE_SSE_AVX_DIS_CASE(instruction, notUsed1, notUsed2, opcode) \
+  case 0x##opcode: {                                                      \
+    AppendToBuffer("v" #instruction " %s,%s,", NameOfXMMRegister(regop),  \
+                   NameOfXMMRegister(vvvv));                              \
+    current += PrintRightXMMOperand(current);                             \
+    break;                                                                \
+  }
+
+        SSE2_INSTRUCTION_LIST(DECLARE_SSE_AVX_DIS_CASE)
+#undef DECLARE_SSE_AVX_DIS_CASE
       default:
         UnimplementedInstruction();
     }
@@ -1320,7 +1440,6 @@ int DisassemblerX64::AVXInstruction(byte* data) {
 
   return static_cast<int>(current - data);
 }
-
 
 // Returns number of bytes used, including *data.
 int DisassemblerX64::FPUInstruction(byte* data) {
@@ -1516,11 +1635,20 @@ int DisassemblerX64::TwoByteOpcodeInstruction(byte* data) {
     if (opcode == 0x38) {
       byte third_byte = *current;
       current = data + 3;
-      if (third_byte == 0x40) {
-        // pmulld xmm, xmm/m128
-        get_modrm(*current, &mod, &regop, &rm);
-        AppendToBuffer("pmulld %s,", NameOfXMMRegister(regop));
-        current += PrintRightXMMOperand(current);
+      get_modrm(*current, &mod, &regop, &rm);
+      switch (third_byte) {
+#define SSE34_DIS_CASE(instruction, notUsed1, notUsed2, notUsed3, opcode) \
+  case 0x##opcode: {                                                      \
+    AppendToBuffer(#instruction " %s,", NameOfXMMRegister(regop));        \
+    current += PrintRightXMMOperand(current);                             \
+    break;                                                                \
+  }
+
+        SSSE3_INSTRUCTION_LIST(SSE34_DIS_CASE)
+        SSE4_INSTRUCTION_LIST(SSE34_DIS_CASE)
+#undef SSE34_DIS_CASE
+        default:
+          UnimplementedInstruction();
       }
     } else if (opcode == 0x3A) {
       byte third_byte = *current;
@@ -1544,11 +1672,30 @@ int DisassemblerX64::TwoByteOpcodeInstruction(byte* data) {
         current += PrintRightXMMOperand(current);
         AppendToBuffer(",0x%x", (*current) & 3);
         current += 1;
+      } else if (third_byte == 0x14) {
+        get_modrm(*current, &mod, &regop, &rm);
+        AppendToBuffer("pextrb ");  // reg/m32, xmm, imm8
+        current += PrintRightOperand(current);
+        AppendToBuffer(",%s,%d", NameOfXMMRegister(regop), (*current) & 3);
+        current += 1;
+      } else if (third_byte == 0x15) {
+        get_modrm(*current, &mod, &regop, &rm);
+        AppendToBuffer("pextrw ");  // reg/m32, xmm, imm8
+        current += PrintRightOperand(current);
+        AppendToBuffer(",%s,%d", NameOfXMMRegister(regop), (*current) & 3);
+        current += 1;
       } else if (third_byte == 0x16) {
         get_modrm(*current, &mod, &regop, &rm);
         AppendToBuffer("pextrd ");  // reg/m32, xmm, imm8
         current += PrintRightOperand(current);
         AppendToBuffer(",%s,%d", NameOfXMMRegister(regop), (*current) & 3);
+        current += 1;
+      } else if (third_byte == 0x20) {
+        get_modrm(*current, &mod, &regop, &rm);
+        AppendToBuffer("pinsrd ");  // xmm, reg/m32, imm8
+        AppendToBuffer(" %s,", NameOfXMMRegister(regop));
+        current += PrintRightOperand(current);
+        AppendToBuffer(",%d", (*current) & 3);
         current += 1;
       } else if (third_byte == 0x21) {
         get_modrm(*current, &mod, &regop, &rm);
@@ -1580,6 +1727,13 @@ int DisassemblerX64::TwoByteOpcodeInstruction(byte* data) {
           current += 4;
         }  // else no immediate displacement.
         AppendToBuffer("nop");
+      } else if (opcode == 0x10) {
+        AppendToBuffer("movupd %s,", NameOfXMMRegister(regop));
+        current += PrintRightXMMOperand(current);
+      } else if (opcode == 0x11) {
+        AppendToBuffer("movupd ");
+        current += PrintRightXMMOperand(current);
+        AppendToBuffer(",%s", NameOfXMMRegister(regop));
       } else if (opcode == 0x28) {
         AppendToBuffer("movapd %s,", NameOfXMMRegister(regop));
         current += PrintRightXMMOperand(current);
@@ -1617,15 +1771,20 @@ int DisassemblerX64::TwoByteOpcodeInstruction(byte* data) {
         current += PrintRightXMMOperand(current);
         AppendToBuffer(",0x%x", *current);
         current += 1;
+      } else if (opcode == 0x71) {
+        current += 1;
+        AppendToBuffer("ps%sw %s,%d", sf_str[regop / 2], NameOfXMMRegister(rm),
+                       *current & 0x7f);
+        current += 1;
       } else if (opcode == 0x72) {
         current += 1;
-        AppendToBuffer("%s %s,%d", (regop == 6) ? "pslld" : "psrld",
-                       NameOfXMMRegister(rm), *current & 0x7f);
+        AppendToBuffer("ps%sd %s,%d", sf_str[regop / 2], NameOfXMMRegister(rm),
+                       *current & 0x7f);
         current += 1;
       } else if (opcode == 0x73) {
         current += 1;
-        AppendToBuffer("%s %s,%d", (regop == 6) ? "psllq" : "psrlq",
-                       NameOfXMMRegister(rm), *current & 0x7f);
+        AppendToBuffer("ps%sq %s,%d", sf_str[regop / 2], NameOfXMMRegister(rm),
+                       *current & 0x7f);
         current += 1;
       } else if (opcode == 0xB1) {
         current += PrintOperands("cmpxchg", OPER_REG_OP_ORDER, current);
@@ -1643,23 +1802,101 @@ int DisassemblerX64::TwoByteOpcodeInstruction(byte* data) {
           mnemonic = "ucomisd";
         } else if (opcode == 0x2F) {
           mnemonic = "comisd";
+        } else if (opcode == 0x64) {
+          mnemonic = "pcmpgtb";
+        } else if (opcode == 0x65) {
+          mnemonic = "pcmpgtw";
+        } else if (opcode == 0x66) {
+          mnemonic = "pcmpgtd";
+        } else if (opcode == 0x74) {
+          mnemonic = "pcmpeqb";
+        } else if (opcode == 0x75) {
+          mnemonic = "pcmpeqw";
         } else if (opcode == 0x76) {
           mnemonic = "pcmpeqd";
         } else if (opcode == 0x62) {
           mnemonic = "punpckldq";
+        } else if (opcode == 0x63) {
+          mnemonic = "packsswb";
+        } else if (opcode == 0x67) {
+          mnemonic = "packuswb";
         } else if (opcode == 0x6A) {
           mnemonic = "punpckhdq";
+        } else if (opcode == 0x6B) {
+          mnemonic = "packssdw";
+        } else if (opcode == 0xC4) {
+          mnemonic = "pinsrw";
+        } else if (opcode == 0xC5) {
+          mnemonic = "pextrw";
+        } else if (opcode == 0xD1) {
+          mnemonic = "psrlw";
+        } else if (opcode == 0xD2) {
+          mnemonic = "psrld";
+        } else if (opcode == 0xD5) {
+          mnemonic = "pmullw";
+        } else if (opcode == 0xD7) {
+          mnemonic = "pmovmskb";
+        } else if (opcode == 0xD8) {
+          mnemonic = "psubusb";
+        } else if (opcode == 0xD9) {
+          mnemonic = "psubusw";
+        } else if (opcode == 0xDA) {
+          mnemonic = "pminub";
+        } else if (opcode == 0xDC) {
+          mnemonic = "paddusb";
+        } else if (opcode == 0xDD) {
+          mnemonic = "paddusw";
+        } else if (opcode == 0xDE) {
+          mnemonic = "pmaxub";
+        } else if (opcode == 0xE1) {
+          mnemonic = "psraw";
+        } else if (opcode == 0xE2) {
+          mnemonic = "psrad";
+        } else if (opcode == 0xE8) {
+          mnemonic = "psubsb";
+        } else if (opcode == 0xE9) {
+          mnemonic = "psubsw";
+        } else if (opcode == 0xEA) {
+          mnemonic = "pminsw";
+        } else if (opcode == 0xEC) {
+          mnemonic = "paddsb";
+        } else if (opcode == 0xED) {
+          mnemonic = "paddsw";
+        } else if (opcode == 0xEE) {
+          mnemonic = "pmaxsw";
+        } else if (opcode == 0xEF) {
+          mnemonic = "pxor";
+        } else if (opcode == 0xF1) {
+          mnemonic = "psllw";
+        } else if (opcode == 0xF2) {
+          mnemonic = "pslld";
         } else if (opcode == 0xF4) {
           mnemonic = "pmuludq";
+        } else if (opcode == 0xF8) {
+          mnemonic = "psubb";
+        } else if (opcode == 0xF9) {
+          mnemonic = "psubw";
         } else if (opcode == 0xFA) {
           mnemonic = "psubd";
+        } else if (opcode == 0xFC) {
+          mnemonic = "paddb";
+        } else if (opcode == 0xFD) {
+          mnemonic = "paddw";
         } else if (opcode == 0xFE) {
           mnemonic = "paddd";
+        } else if (opcode == 0xC2) {
+          mnemonic = "cmppd";
         } else {
           UnimplementedInstruction();
         }
         AppendToBuffer("%s %s,", mnemonic, NameOfXMMRegister(regop));
         current += PrintRightXMMOperand(current);
+        if (opcode == 0xC2) {
+          const char* const pseudo_op[] = {"eq",  "lt",  "le",  "unord",
+                                           "neq", "nlt", "nle", "ord"};
+          AppendToBuffer(", (%s)", pseudo_op[*current]);
+          current += 1;
+        }
       }
     }
   } else if (group_1_prefix_ == 0xF2) {
@@ -1723,6 +1960,11 @@ int DisassemblerX64::TwoByteOpcodeInstruction(byte* data) {
                      NameOfXMMRegister(regop),
                      NameOfXMMRegister(rm));
       current += 2;
+    } else if (opcode == 0xF0) {
+      int mod, regop, rm;
+      get_modrm(*current, &mod, &regop, &rm);
+      AppendToBuffer("lddqu %s,", NameOfXMMRegister(regop));
+      current += PrintRightOperand(current);
     } else {
       UnimplementedInstruction();
     }
@@ -1871,12 +2113,12 @@ int DisassemblerX64::TwoByteOpcodeInstruction(byte* data) {
     // cmpps xmm, xmm/m128, imm8
     int mod, regop, rm;
     get_modrm(*current, &mod, &regop, &rm);
-    const char* const pseudo_op[] = {"cmpeqps",    "cmpltps",  "cmpleps",
-                                     "cmpunordps", "cmpneqps", "cmpnltps",
-                                     "cmpnleps",   "cmpordps"};
-    AppendToBuffer("%s %s,%s", pseudo_op[current[1]], NameOfXMMRegister(regop),
-                   NameOfXMMRegister(rm));
-    current += 2;
+    const char* const pseudo_op[] = {"eq",  "lt",  "le",  "unord",
+                                     "neq", "nlt", "nle", "ord"};
+    AppendToBuffer("cmpps %s, ", NameOfXMMRegister(regop));
+    current += PrintRightXMMOperand(current);
+    AppendToBuffer(", %s", pseudo_op[*current]);
+    current += 1;
   } else if (opcode == 0xC6) {
     // shufps xmm, xmm/m128, imm8
     int mod, regop, rm;

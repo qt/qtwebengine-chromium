@@ -12,13 +12,15 @@
 
 #include <string.h>  // memcpy
 
+#include <utility>
+
 #include "webrtc/base/checks.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/call.h"
-#include "webrtc/call/rtc_event_log.h"
 #include "webrtc/common_types.h"
+#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/app.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
@@ -71,7 +73,6 @@ std::string NACKStringBuilder::GetResult() {
 
 RTCPSender::FeedbackState::FeedbackState()
     : send_payload_type(0),
-      frequency_hz(0),
       packets_sent(0),
       media_bytes_sent(0),
       send_bitrate(0),
@@ -159,7 +160,7 @@ RTCPSender::RTCPSender(
       sending_(false),
       remb_enabled_(false),
       next_time_to_send_rtcp_(0),
-      start_timestamp_(0),
+      timestamp_offset_(0),
       last_rtp_timestamp_(0),
       last_frame_capture_time_ms_(-1),
       ssrc_(0),
@@ -170,7 +171,7 @@ RTCPSender::RTCPSender(
 
       remb_bitrate_(0),
 
-      tmmbr_send_(0),
+      tmmbr_send_bps_(0),
       packet_oh_send_(0),
       max_payload_length_(IP_PACKET_SIZE - 28),  // IPv4 + UDP by default.
 
@@ -286,9 +287,9 @@ void RTCPSender::SetMaxPayloadLength(size_t max_payload_length) {
   max_payload_length_ = max_payload_length;
 }
 
-void RTCPSender::SetStartTimestamp(uint32_t start_timestamp) {
+void RTCPSender::SetTimestampOffset(uint32_t timestamp_offset) {
   rtc::CritScope lock(&critical_section_rtcp_sender_);
-  start_timestamp_ = start_timestamp;
+  timestamp_offset_ = timestamp_offset;
 }
 
 void RTCPSender::SetLastRtpTime(uint32_t rtp_timestamp,
@@ -435,24 +436,27 @@ bool RTCPSender::TimeToSendRTCPReport(bool sendKeyframeBeforeRTP) const {
 }
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildSR(const RtcpContext& ctx) {
+  // Timestamp shouldn't be estimated before first media frame.
+  RTC_DCHECK_GE(last_frame_capture_time_ms_, 0);
   // The timestamp of this RTCP packet should be estimated as the timestamp of
   // the frame being captured at this moment. We are calculating that
   // timestamp as the last frame's timestamp + the time since the last frame
   // was captured.
+  uint32_t rtp_rate =
+      (audio_ ? kBogusRtpRateForAudioRtcp : kVideoPayloadTypeFrequency) / 1000;
   uint32_t rtp_timestamp =
-      start_timestamp_ + last_rtp_timestamp_ +
-      (clock_->TimeInMilliseconds() - last_frame_capture_time_ms_) *
-          (ctx.feedback_state_.frequency_hz / 1000);
+      timestamp_offset_ + last_rtp_timestamp_ +
+      (clock_->TimeInMilliseconds() - last_frame_capture_time_ms_) * rtp_rate;
 
   rtcp::SenderReport* report = new rtcp::SenderReport();
-  report->From(ssrc_);
-  report->WithNtp(NtpTime(ctx.ntp_sec_, ctx.ntp_frac_));
-  report->WithRtpTimestamp(rtp_timestamp);
-  report->WithPacketCount(ctx.feedback_state_.packets_sent);
-  report->WithOctetCount(ctx.feedback_state_.media_bytes_sent);
+  report->SetSenderSsrc(ssrc_);
+  report->SetNtp(NtpTime(ctx.ntp_sec_, ctx.ntp_frac_));
+  report->SetRtpTimestamp(rtp_timestamp);
+  report->SetPacketCount(ctx.feedback_state_.packets_sent);
+  report->SetOctetCount(ctx.feedback_state_.media_bytes_sent);
 
   for (auto it : report_blocks_)
-    report->WithReportBlock(it.second);
+    report->AddReportBlock(it.second);
 
   report_blocks_.clear();
 
@@ -465,19 +469,19 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildSDES(
   RTC_CHECK_LT(length_cname, static_cast<size_t>(RTCP_CNAME_SIZE));
 
   rtcp::Sdes* sdes = new rtcp::Sdes();
-  sdes->WithCName(ssrc_, cname_);
+  sdes->AddCName(ssrc_, cname_);
 
   for (const auto it : csrc_cnames_)
-    sdes->WithCName(it.first, it.second);
+    sdes->AddCName(it.first, it.second);
 
   return std::unique_ptr<rtcp::RtcpPacket>(sdes);
 }
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildRR(const RtcpContext& ctx) {
   rtcp::ReceiverReport* report = new rtcp::ReceiverReport();
-  report->From(ssrc_);
+  report->SetSenderSsrc(ssrc_);
   for (auto it : report_blocks_)
-    report->WithReportBlock(it.second);
+    report->AddReportBlock(it.second);
 
   report_blocks_.clear();
   return std::unique_ptr<rtcp::RtcpPacket>(report);
@@ -485,8 +489,8 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildRR(const RtcpContext& ctx) {
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildPLI(const RtcpContext& ctx) {
   rtcp::Pli* pli = new rtcp::Pli();
-  pli->From(ssrc_);
-  pli->To(remote_ssrc_);
+  pli->SetSenderSsrc(ssrc_);
+  pli->SetMediaSsrc(remote_ssrc_);
 
   TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                        "RTCPSender::PLI");
@@ -502,8 +506,8 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildFIR(const RtcpContext& ctx) {
     ++sequence_number_fir_;  // Do not increase if repetition.
 
   rtcp::Fir* fir = new rtcp::Fir();
-  fir->From(ssrc_);
-  fir->WithRequestTo(remote_ssrc_, sequence_number_fir_);
+  fir->SetSenderSsrc(ssrc_);
+  fir->AddRequestTo(remote_ssrc_, sequence_number_fir_);
 
   TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                        "RTCPSender::FIR");
@@ -523,10 +527,10 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildFIR(const RtcpContext& ctx) {
 */
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildSLI(const RtcpContext& ctx) {
   rtcp::Sli* sli = new rtcp::Sli();
-  sli->From(ssrc_);
-  sli->To(remote_ssrc_);
+  sli->SetSenderSsrc(ssrc_);
+  sli->SetMediaSsrc(remote_ssrc_);
   // Crop picture id to 6 least significant bits.
-  sli->WithPictureId(ctx.picture_id_ & 0x3F);
+  sli->AddPictureId(ctx.picture_id_ & 0x3F);
 
   return std::unique_ptr<rtcp::RtcpPacket>(sli);
 }
@@ -549,10 +553,10 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildRPSI(
     return nullptr;
 
   rtcp::Rpsi* rpsi = new rtcp::Rpsi();
-  rpsi->From(ssrc_);
-  rpsi->To(remote_ssrc_);
-  rpsi->WithPayloadType(ctx.feedback_state_.send_payload_type);
-  rpsi->WithPictureId(ctx.picture_id_);
+  rpsi->SetSenderSsrc(ssrc_);
+  rpsi->SetMediaSsrc(remote_ssrc_);
+  rpsi->SetPayloadType(ctx.feedback_state_.send_payload_type);
+  rpsi->SetPictureId(ctx.picture_id_);
 
   return std::unique_ptr<rtcp::RtcpPacket>(rpsi);
 }
@@ -560,10 +564,9 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildRPSI(
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildREMB(
     const RtcpContext& ctx) {
   rtcp::Remb* remb = new rtcp::Remb();
-  remb->From(ssrc_);
-  for (uint32_t ssrc : remb_ssrcs_)
-    remb->AppliesTo(ssrc);
-  remb->WithBitrateBps(remb_bitrate_);
+  remb->SetSenderSsrc(ssrc_);
+  remb->SetBitrateBps(remb_bitrate_);
+  remb->SetSsrcs(remb_ssrcs_);
 
   TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                        "RTCPSender::REMB");
@@ -573,7 +576,7 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildREMB(
 
 void RTCPSender::SetTargetBitrate(unsigned int target_bitrate) {
   rtc::CritScope lock(&critical_section_rtcp_sender_);
-  tmmbr_send_ = target_bitrate / 1000;
+  tmmbr_send_bps_ = target_bitrate;
 }
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildTMMBR(
@@ -585,55 +588,49 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildTMMBR(
   // * If the sender is an owner of the TMMBN -> send TMMBR
   // * If not an owner but the TMMBR would enter the TMMBN -> send TMMBR
 
-  TMMBRHelp tmmbr_help;
   // get current bounding set from RTCP receiver
-  bool tmmbrOwner = false;
-  // store in candidateSet, allocates one extra slot
-  TMMBRSet* candidateSet = tmmbr_help.CandidateSet();
+  bool tmmbr_owner = false;
 
   // holding critical_section_rtcp_sender_ while calling RTCPreceiver which
   // will accuire criticalSectionRTCPReceiver_ is a potental deadlock but
   // since RTCPreceiver is not doing the reverse we should be fine
-  int32_t lengthOfBoundingSet =
-      ctx.feedback_state_.module->BoundingSet(&tmmbrOwner, candidateSet);
+  std::vector<rtcp::TmmbItem> candidates =
+      ctx.feedback_state_.module->BoundingSet(&tmmbr_owner);
 
-  if (lengthOfBoundingSet > 0) {
-    for (int32_t i = 0; i < lengthOfBoundingSet; i++) {
-      if (candidateSet->Tmmbr(i) == tmmbr_send_ &&
-          candidateSet->PacketOH(i) == packet_oh_send_) {
+  if (!candidates.empty()) {
+    for (const auto& candidate : candidates) {
+      if (candidate.bitrate_bps() == tmmbr_send_bps_ &&
+          candidate.packet_overhead() == packet_oh_send_) {
         // Do not send the same tuple.
         return nullptr;
       }
     }
-    if (!tmmbrOwner) {
-      // use received bounding set as candidate set
-      // add current tuple
-      candidateSet->SetEntry(lengthOfBoundingSet, tmmbr_send_, packet_oh_send_,
-                             ssrc_);
-      int numCandidates = lengthOfBoundingSet + 1;
+    if (!tmmbr_owner) {
+      // Use received bounding set as candidate set.
+      // Add current tuple.
+      candidates.emplace_back(ssrc_, tmmbr_send_bps_, packet_oh_send_);
 
-      // find bounding set
-      TMMBRSet* boundingSet = nullptr;
-      int numBoundingSet = tmmbr_help.FindTMMBRBoundingSet(boundingSet);
-      if (numBoundingSet > 0 || numBoundingSet <= numCandidates)
-        tmmbrOwner = tmmbr_help.IsOwner(ssrc_, numBoundingSet);
-      if (!tmmbrOwner) {
+      // Find bounding set.
+      std::vector<rtcp::TmmbItem> bounding =
+          TMMBRHelp::FindBoundingSet(std::move(candidates));
+      tmmbr_owner = TMMBRHelp::IsOwner(bounding, ssrc_);
+      if (!tmmbr_owner) {
         // Did not enter bounding set, no meaning to send this request.
         return nullptr;
       }
     }
   }
 
-  if (!tmmbr_send_)
+  if (!tmmbr_send_bps_)
     return nullptr;
 
   rtcp::Tmmbr* tmmbr = new rtcp::Tmmbr();
-  tmmbr->From(ssrc_);
+  tmmbr->SetSenderSsrc(ssrc_);
   rtcp::TmmbItem request;
   request.set_ssrc(remote_ssrc_);
-  request.set_bitrate_bps(tmmbr_send_ * 1000);
+  request.set_bitrate_bps(tmmbr_send_bps_);
   request.set_packet_overhead(packet_oh_send_);
-  tmmbr->WithTmmbr(request);
+  tmmbr->AddTmmbr(request);
 
   return std::unique_ptr<rtcp::RtcpPacket>(tmmbr);
 }
@@ -641,10 +638,10 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildTMMBR(
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildTMMBN(
     const RtcpContext& ctx) {
   rtcp::Tmmbn* tmmbn = new rtcp::Tmmbn();
-  tmmbn->From(ssrc_);
+  tmmbn->SetSenderSsrc(ssrc_);
   for (const rtcp::TmmbItem& tmmbr : tmmbn_to_send_) {
     if (tmmbr.bitrate_bps() > 0) {
-      tmmbn->WithTmmbr(tmmbr);
+      tmmbn->AddTmmbr(tmmbr);
     }
   }
 
@@ -653,10 +650,10 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildTMMBN(
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildAPP(const RtcpContext& ctx) {
   rtcp::App* app = new rtcp::App();
-  app->From(ssrc_);
-  app->WithSubType(app_sub_type_);
-  app->WithName(app_name_);
-  app->WithData(app_data_.get(), app_length_);
+  app->SetSsrc(ssrc_);
+  app->SetSubType(app_sub_type_);
+  app->SetName(app_name_);
+  app->SetData(app_data_.get(), app_length_);
 
   return std::unique_ptr<rtcp::RtcpPacket>(app);
 }
@@ -664,9 +661,9 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildAPP(const RtcpContext& ctx) {
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildNACK(
     const RtcpContext& ctx) {
   rtcp::Nack* nack = new rtcp::Nack();
-  nack->From(ssrc_);
-  nack->To(remote_ssrc_);
-  nack->WithList(ctx.nack_list_, ctx.nack_size_);
+  nack->SetSenderSsrc(ssrc_);
+  nack->SetMediaSsrc(remote_ssrc_);
+  nack->SetPacketIds(ctx.nack_list_, ctx.nack_size_);
 
   // Report stats.
   NACKStringBuilder stringBuilder;
@@ -689,9 +686,8 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildNACK(
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildBYE(const RtcpContext& ctx) {
   rtcp::Bye* bye = new rtcp::Bye();
-  bye->From(ssrc_);
-  for (uint32_t csrc : csrcs_)
-    bye->WithCsrc(csrc);
+  bye->SetSenderSsrc(ssrc_);
+  bye->SetCsrcs(csrcs_);
 
   return std::unique_ptr<rtcp::RtcpPacket>(bye);
 }
@@ -700,12 +696,12 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildReceiverReferenceTime(
     const RtcpContext& ctx) {
 
   rtcp::ExtendedReports* xr = new rtcp::ExtendedReports();
-  xr->From(ssrc_);
+  xr->SetSenderSsrc(ssrc_);
 
   rtcp::Rrtr rrtr;
-  rrtr.WithNtp(NtpTime(ctx.ntp_sec_, ctx.ntp_frac_));
+  rrtr.SetNtp(NtpTime(ctx.ntp_sec_, ctx.ntp_frac_));
 
-  xr->WithRrtr(rrtr);
+  xr->AddRrtr(rrtr);
 
   // TODO(sprang): Merge XR report sending to contain all of RRTR, DLRR, VOIP?
 
@@ -715,13 +711,13 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildReceiverReferenceTime(
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildDlrr(
     const RtcpContext& ctx) {
   rtcp::ExtendedReports* xr = new rtcp::ExtendedReports();
-  xr->From(ssrc_);
+  xr->SetSenderSsrc(ssrc_);
 
   rtcp::Dlrr dlrr;
-  const RtcpReceiveTimeInfo& info = ctx.feedback_state_.last_xr_rr;
-  dlrr.WithDlrrItem(info.sourceSSRC, info.lastRR, info.delaySinceLastRR);
+  RTC_DCHECK(ctx.feedback_state_.has_last_xr_rr);
+  dlrr.AddDlrrItem(ctx.feedback_state_.last_xr_rr);
 
-  xr->WithDlrr(dlrr);
+  xr->AddDlrr(dlrr);
 
   return std::unique_ptr<rtcp::RtcpPacket>(xr);
 }
@@ -730,13 +726,13 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildDlrr(
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildVoIPMetric(
     const RtcpContext& context) {
   rtcp::ExtendedReports* xr = new rtcp::ExtendedReports();
-  xr->From(ssrc_);
+  xr->SetSenderSsrc(ssrc_);
 
   rtcp::VoipMetric voip;
-  voip.To(remote_ssrc_);
-  voip.WithVoipMetric(xr_voip_metric_);
+  voip.SetMediaSsrc(remote_ssrc_);
+  voip.SetVoipMetric(xr_voip_metric_);
 
-  xr->WithVoipMetric(voip);
+  xr->AddVoipMetric(voip);
 
   return std::unique_ptr<rtcp::RtcpPacket>(xr);
 }
@@ -766,6 +762,28 @@ int32_t RTCPSender::SendCompoundRTCP(
       LOG(LS_WARNING) << "Can't send rtcp if it is disabled.";
       return -1;
     }
+    // Add all flags as volatile. Non volatile entries will not be overwritten.
+    // All new volatile flags added will be consumed by the end of this call.
+    SetFlags(packet_types, true);
+
+    // Prevent sending streams to send SR before any media has been sent.
+    const bool can_calculate_rtp_timestamp = (last_frame_capture_time_ms_ >= 0);
+    if (!can_calculate_rtp_timestamp) {
+      bool consumed_sr_flag = ConsumeFlag(kRtcpSr);
+      bool consumed_report_flag = sending_ && ConsumeFlag(kRtcpReport);
+      bool sender_report = consumed_report_flag || consumed_sr_flag;
+      if (sender_report && AllVolatileFlagsConsumed()) {
+        // This call was for Sender Report and nothing else.
+        return 0;
+      }
+      if (sending_ && method_ == RtcpMode::kCompound) {
+        // Not allowed to send any RTCP packet without sender report.
+        return -1;
+      }
+    }
+
+    if (packet_type_counter_.first_packet_time_ms == -1)
+      packet_type_counter_.first_packet_time_ms = clock_->TimeInMilliseconds();
 
     // We need to send our NTP even if we haven't received any reports.
     uint32_t ntp_sec;
@@ -774,7 +792,7 @@ int32_t RTCPSender::SendCompoundRTCP(
     RtcpContext context(feedback_state, nack_size, nack_list, repeat, pictureID,
                         ntp_sec, ntp_frac);
 
-    PrepareReport(packet_types, feedback_state);
+    PrepareReport(feedback_state);
 
     std::unique_ptr<rtcp::RtcpPacket> packet_bye;
 
@@ -818,15 +836,7 @@ int32_t RTCPSender::SendCompoundRTCP(
   return bytes_sent == 0 ? -1 : 0;
 }
 
-void RTCPSender::PrepareReport(const std::set<RTCPPacketType>& packetTypes,
-                               const FeedbackState& feedback_state) {
-  // Add all flags as volatile. Non volatile entries will not be overwritten
-  // and all new volatile flags added will be consumed by the end of this call.
-  SetFlags(packetTypes, true);
-
-  if (packet_type_counter_.first_packet_time_ms == -1)
-    packet_type_counter_.first_packet_time_ms = clock_->TimeInMilliseconds();
-
+void RTCPSender::PrepareReport(const FeedbackState& feedback_state) {
   bool generate_report;
   if (IsFlagPresent(kRtcpSr) || IsFlagPresent(kRtcpRr)) {
     // Report type already explicitly set, don't automatically populate.
@@ -893,16 +903,16 @@ bool RTCPSender::AddReportBlock(const FeedbackState& feedback_state,
   }
   RTC_DCHECK(report_blocks_.find(ssrc) == report_blocks_.end());
   rtcp::ReportBlock* block = &report_blocks_[ssrc];
-  block->To(ssrc);
-  block->WithFractionLost(stats.fraction_lost);
-  if (!block->WithCumulativeLost(stats.cumulative_lost)) {
+  block->SetMediaSsrc(ssrc);
+  block->SetFractionLost(stats.fraction_lost);
+  if (!block->SetCumulativeLost(stats.cumulative_lost)) {
     report_blocks_.erase(ssrc);
     LOG(LS_WARNING) << "Cumulative lost is oversized.";
     return false;
   }
-  block->WithExtHighestSeqNum(stats.extended_max_sequence_number);
-  block->WithJitter(stats.jitter);
-  block->WithLastSr(feedback_state.remote_sr);
+  block->SetExtHighestSeqNum(stats.extended_max_sequence_number);
+  block->SetJitter(stats.jitter);
+  block->SetLastSr(feedback_state.remote_sr);
 
   // TODO(sprang): Do we really need separate time stamps for each report?
   // Get our NTP as late as possible to avoid a race.
@@ -922,7 +932,7 @@ bool RTCPSender::AddReportBlock(const FeedbackState& feedback_state,
     receiveTime <<= 16;
     receiveTime += (feedback_state.last_rr_ntp_frac & 0xffff0000) >> 16;
 
-    block->WithDelayLastSr(now - receiveTime);
+    block->SetDelayLastSr(now - receiveTime);
   }
   return true;
 }
@@ -970,14 +980,9 @@ bool RTCPSender::RtcpXrReceiverReferenceTime() const {
   return xr_send_receiver_reference_time_enabled_;
 }
 
-// no callbacks allowed inside this function
-void RTCPSender::SetTMMBN(const std::vector<rtcp::TmmbItem>* bounding_set) {
+void RTCPSender::SetTmmbn(std::vector<rtcp::TmmbItem> bounding_set) {
   rtc::CritScope lock(&critical_section_rtcp_sender_);
-  if (bounding_set) {
-    tmmbn_to_send_ = *bounding_set;
-  } else {
-    tmmbn_to_send_.clear();
-  }
+  tmmbn_to_send_ = std::move(bounding_set);
   SetFlag(kRtcpTmmbn, true);
 }
 

@@ -7,8 +7,8 @@
 #ifndef XFA_FXFA_PARSER_CXFA_WIDGETDATA_H_
 #define XFA_FXFA_PARSER_CXFA_WIDGETDATA_H_
 
-#include "core/fxcrt/include/fx_string.h"
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/fx_system.h"
 #include "xfa/fxfa/parser/cxfa_assist.h"
 #include "xfa/fxfa/parser/cxfa_bind.h"
 #include "xfa/fxfa/parser/cxfa_border.h"
@@ -134,7 +134,7 @@ class CXFA_WidgetData : public CXFA_Data {
   FX_BOOL GetNormalizeDataValue(const CFX_WideString& wsValue,
                                 CFX_WideString& wsNormalizeValue);
   FX_BOOL GetFormatDataValue(const CFX_WideString& wsValue,
-                             CFX_WideString& wsFormatedValue);
+                             CFX_WideString& wsFormattedValue);
   void NormalizeNumStr(const CFX_WideString& wsValue, CFX_WideString& wsOutput);
   CFX_WideString GetBarcodeType();
   FX_BOOL GetBarcodeAttribute_CharEncoding(int32_t& val);

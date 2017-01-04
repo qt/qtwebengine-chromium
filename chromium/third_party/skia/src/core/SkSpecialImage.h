@@ -12,7 +12,8 @@
 #include "SkRefCnt.h"
 #include "SkSurfaceProps.h"
 
-#include "SkImageInfo.h" // for SkAlphaType
+#include "SkImageFilter.h" // for OutputProperties
+#include "SkImageInfo.h"   // for SkAlphaType
 
 class GrContext;
 class GrTexture;
@@ -50,9 +51,10 @@ public:
     int width() const { return fSubset.width(); }
     int height() const { return fSubset.height(); }
     const SkIRect& subset() const { return fSubset; }
+    SkColorSpace* getColorSpace() const;
 
     uint32_t uniqueID() const { return fUniqueID; }
-    virtual bool isOpaque() const { return false; }
+    virtual SkAlphaType alphaType() const = 0;
     virtual size_t getSize() const = 0;
 
     /**
@@ -77,25 +79,25 @@ public:
     static sk_sp<SkSpecialImage> MakeFromGpu(const SkIRect& subset,
                                              uint32_t uniqueID,
                                              sk_sp<GrTexture>,
+                                             sk_sp<SkColorSpace>,
                                              const SkSurfaceProps* = nullptr,
                                              SkAlphaType at = kPremul_SkAlphaType);
 #endif
-    static sk_sp<SkSpecialImage> MakeFromPixmap(const SkIRect& subset,
-                                                const SkPixmap&,
-                                                RasterReleaseProc,
-                                                ReleaseContext,
-                                                const SkSurfaceProps* = nullptr);
 
     /**
      *  Create a new special surface with a backend that is compatible with this special image.
      */
-    sk_sp<SkSpecialSurface> makeSurface(const SkImageInfo&) const;
+    sk_sp<SkSpecialSurface> makeSurface(const SkImageFilter::OutputProperties& outProps,
+                                        const SkISize& size,
+                                        SkAlphaType at = kPremul_SkAlphaType) const;
 
     /**
      * Create a new surface with a backend that is compatible with this special image.
      * TODO: switch this to makeSurface once we resolved the naming issue
      */
-    sk_sp<SkSurface> makeTightSurface(const SkImageInfo&) const;
+    sk_sp<SkSurface> makeTightSurface(const SkImageFilter::OutputProperties& outProps,
+                                      const SkISize& size,
+                                      SkAlphaType at = kPremul_SkAlphaType) const;
 
     /**
      * Extract a subset of this special image and return it as a special image.
@@ -109,10 +111,6 @@ public:
      * TODO: switch this to makeSurface once we resolved the naming issue
      */
     sk_sp<SkImage> makeTightSubset(const SkIRect& subset) const;
-
-    // These three internal methods will go away (see skbug.com/4965)
-    bool internal_getBM(SkBitmap* result);
-    static sk_sp<SkSpecialImage> internal_fromBM(const SkBitmap&, const SkSurfaceProps*);
 
     // TODO: hide this when GrLayerHoister uses SkSpecialImages more fully (see skbug.com/5063)
     /**

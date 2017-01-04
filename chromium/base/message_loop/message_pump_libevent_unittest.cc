@@ -18,8 +18,10 @@
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/synchronization/waitable_event_watcher.h"
+#include "base/test/gtest_util.h"
 #include "base/third_party/libevent/event.h"
 #include "base/threading/thread.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -77,8 +79,6 @@ class StupidWatcher : public MessagePumpLibevent::Watcher {
   void OnFileCanWriteWithoutBlocking(int fd) override {}
 };
 
-#if GTEST_HAS_DEATH_TEST && !defined(NDEBUG)
-
 // Test to make sure that we catch calling WatchFileDescriptor off of the
 // wrong thread.
 #if defined(OS_CHROMEOS) || defined(OS_LINUX)
@@ -91,19 +91,16 @@ TEST_F(MessagePumpLibeventTest, MAYBE_TestWatchingFromBadThread) {
   MessagePumpLibevent::FileDescriptorWatcher watcher;
   StupidWatcher delegate;
 
-  ASSERT_DEATH(io_loop()->WatchFileDescriptor(
-      STDOUT_FILENO, false, MessageLoopForIO::WATCH_READ, &watcher, &delegate),
-      "Check failed: "
-      "watch_file_descriptor_caller_checker_.CalledOnValidThread\\(\\)");
+  ASSERT_DCHECK_DEATH(
+      io_loop()->WatchFileDescriptor(STDOUT_FILENO, false,
+                                     MessageLoopForIO::WATCH_READ, &watcher,
+                                     &delegate));
 }
 
 TEST_F(MessagePumpLibeventTest, QuitOutsideOfRun) {
   std::unique_ptr<MessagePumpLibevent> pump(new MessagePumpLibevent);
-  ASSERT_DEATH(pump->Quit(), "Check failed: in_run_. "
-                             "Quit was called outside of Run!");
+  ASSERT_DCHECK_DEATH(pump->Quit());
 }
-
-#endif  // GTEST_HAS_DEATH_TEST && !defined(NDEBUG)
 
 class BaseWatcher : public MessagePumpLibevent::Watcher {
  public:
@@ -178,8 +175,7 @@ void QuitMessageLoopAndStart(const Closure& quit_closure) {
 
   MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
   RunLoop runloop;
-  MessageLoop::current()->task_runner()->PostTask(FROM_HERE,
-                                                  runloop.QuitClosure());
+  ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, runloop.QuitClosure());
   runloop.Run();
 }
 
@@ -190,7 +186,7 @@ class NestedPumpWatcher : public MessagePumpLibevent::Watcher {
 
   void OnFileCanReadWithoutBlocking(int /* fd */) override {
     RunLoop runloop;
-    MessageLoop::current()->task_runner()->PostTask(
+    ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, Bind(&QuitMessageLoopAndStart, runloop.QuitClosure()));
     runloop.Run();
   }
@@ -222,8 +218,7 @@ class QuitWatcher : public BaseWatcher {
 
   void OnFileCanReadWithoutBlocking(int /* fd */) override {
     // Post a fatal closure to the MessageLoop before we quit it.
-    MessageLoop::current()->task_runner()->PostTask(FROM_HERE,
-                                                    Bind(&FatalClosure));
+    ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, Bind(&FatalClosure));
 
     // Now quit the MessageLoop.
     run_loop_->Quit();

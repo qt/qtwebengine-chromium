@@ -12,7 +12,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 
@@ -147,10 +147,10 @@ RtcDataChannelHandler::RtcDataChannelHandler(
     IncrementCounter(CHANNEL_NEGOTIATED);
 
   UMA_HISTOGRAM_CUSTOM_COUNTS("WebRTC.DataChannelMaxRetransmits",
-                              channel->maxRetransmits(), 0,
+                              channel->maxRetransmits(), 1,
                               std::numeric_limits<unsigned short>::max(), 50);
   UMA_HISTOGRAM_CUSTOM_COUNTS("WebRTC.DataChannelMaxRetransmitTime",
-                              channel->maxRetransmitTime(), 0,
+                              channel->maxRetransmitTime(), 1,
                               std::numeric_limits<unsigned short>::max(), 50);
 }
 

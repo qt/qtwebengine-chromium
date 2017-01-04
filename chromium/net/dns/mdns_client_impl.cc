@@ -23,7 +23,6 @@
 #include "net/dns/dns_protocol.h"
 #include "net/dns/dns_util.h"
 #include "net/dns/record_rdata.h"
-#include "net/log/net_log.h"
 #include "net/udp/datagram_socket.h"
 
 // TODO(gene): Remove this temporary method of disabling NSEC support once it
@@ -209,7 +208,7 @@ MDnsClientImpl::Core::Core(base::Clock* clock, base::Timer* timer)
 }
 
 MDnsClientImpl::Core::~Core() {
-  STLDeleteValues(&listeners_);
+  base::STLDeleteValues(&listeners_);
 }
 
 bool MDnsClientImpl::Core::Init(MDnsSocketFactory* socket_factory) {

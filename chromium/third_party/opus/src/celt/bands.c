@@ -226,7 +226,7 @@ void denormalise_bands(const CELTMode *m, const celt_norm * OPUS_RESTRICT X,
       band_end = M*eBands[i+1];
       lg = ADD16(bandLogE[i], SHL16((opus_val16)eMeans[i],6));
 #ifndef FIXED_POINT
-      g = celt_exp2(lg);
+      g = celt_exp2(MIN32(32.f, lg));
 #else
       /* Handle the integer part of the log energy */
       shift = 16-(lg>>DB_SHIFT);
@@ -414,7 +414,7 @@ static void stereo_merge(celt_norm * OPUS_RESTRICT X, celt_norm * OPUS_RESTRICT 
    /* Compensating for the mid normalization */
    xp = MULT16_32_Q15(mid, xp);
    /* mid and side are in Q15, not Q14 like X and Y */
-   mid2 = SHR32(mid, 1);
+   mid2 = SHR16(mid, 1);
    El = MULT16_16(mid2, mid2) + side - 2*xp;
    Er = MULT16_16(mid2, mid2) + side + 2*xp;
    if (Er < QCONST32(6e-4f, 28) || El < QCONST32(6e-4f, 28))
@@ -714,7 +714,7 @@ static void compute_theta(struct band_ctx *ctx, struct split_ctx *sctx,
    if (qn!=1)
    {
       if (encode)
-         itheta = (itheta*qn+8192)>>14;
+         itheta = (itheta*(opus_int32)qn+8192)>>14;
 
       /* Entropy coding of the angle. We use a uniform pdf for the
          time split, a step for stereo, and a triangular one for the rest. */

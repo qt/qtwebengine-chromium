@@ -40,7 +40,8 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
   void ReleaseBufferForRaster(std::unique_ptr<RasterBuffer> buffer) override;
   void OrderingBarrier() override;
   ResourceFormat GetResourceFormat(bool must_support_alpha) const override;
-  bool GetResourceRequiresSwizzle(bool must_support_alpha) const override;
+  bool IsResourceSwizzleRequired(bool must_support_alpha) const override;
+  bool CanPartialRasterIntoProvidedResource() const override;
   void Shutdown() override;
 
   // Playback raster source and copy result into |resource|.
@@ -97,6 +98,7 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
       const gfx::Rect& raster_full_rect,
       const gfx::Rect& raster_dirty_rect,
       float scale,
+      sk_sp<SkColorSpace> dst_color_space,
       const RasterSource::PlaybackSettings& playback_settings,
       uint64_t previous_content_id,
       uint64_t new_content_id);
@@ -106,6 +108,7 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
                           const RasterSource* raster_source,
                           uint64_t previous_content_id,
                           uint64_t new_content_id);
+  gfx::BufferUsage StagingBufferUsage() const;
 
   ContextProvider* const compositor_context_provider_;
   ContextProvider* const worker_context_provider_;

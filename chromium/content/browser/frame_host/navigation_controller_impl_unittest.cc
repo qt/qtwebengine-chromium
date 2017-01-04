@@ -30,8 +30,8 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/common/frame_owner_properties.h"
 #include "content/common/site_isolation_policy.h"
-#include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/notification_registrar.h"
@@ -44,16 +44,15 @@
 #include "content/public/common/page_type.h"
 #include "content/public/common/resource_request_body.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/test/browser_side_navigation_test_utils.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_notification_tracker.h"
 #include "content/public/test/test_utils.h"
-#include "content/test/browser_side_navigation_test_utils.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "skia/ext/platform_canvas.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
 #include "third_party/WebKit/public/web/WebSandboxFlags.h"
 
 using base::Time;
@@ -133,6 +132,12 @@ class MockScreenshotManager : public content::NavigationEntryScreenshotManager {
   DISALLOW_COPY_AND_ASSIGN(MockScreenshotManager);
 };
 
+int64_t GenerateSequenceNumber() {
+  // Based on how Blink generates sequence numbers.
+  static int64_t next_number = base::Time::Now().ToDoubleT() * 1000000;
+  return ++next_number;
+}
+
 }  // namespace
 
 namespace content {
@@ -211,9 +216,8 @@ class NavigationControllerTest
   }
 
   // WebContentsObserver:
-  void DidStartNavigationToPendingEntry(
-      const GURL& url,
-      NavigationController::ReloadType reload_type) override {
+  void DidStartNavigationToPendingEntry(const GURL& url,
+                                        ReloadType reload_type) override {
     navigated_url_ = url;
   }
 
@@ -797,8 +801,9 @@ TEST_F(NavigationControllerTest, LoadURL_SamePage) {
   const base::Time timestamp = controller.GetVisibleEntry()->GetTimestamp();
   EXPECT_FALSE(timestamp.is_null());
 
+  const std::string new_extra_headers("Foo: Bar");
   controller.LoadURL(
-      url1, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
+      url1, Referrer(), ui::PAGE_TRANSITION_TYPED, new_extra_headers);
   entry_id = controller.GetPendingEntry()->GetUniqueID();
   EXPECT_EQ(0U, notifications.size());
   main_test_rfh()->PrepareForCommit();
@@ -816,6 +821,9 @@ TEST_F(NavigationControllerTest, LoadURL_SamePage) {
   ASSERT_TRUE(controller.GetVisibleEntry());
   EXPECT_FALSE(controller.CanGoBack());
   EXPECT_FALSE(controller.CanGoForward());
+
+  // The extra headers should have been updated.
+  EXPECT_EQ(new_extra_headers, controller.GetVisibleEntry()->extra_headers());
 
   // The timestamp should have been updated.
   //
@@ -2175,7 +2183,7 @@ TEST_F(NavigationControllerTest, NewSubframe) {
   main_test_rfh()->OnCreateChildFrame(
       process()->GetNextRoutingID(), blink::WebTreeScopeType::Document,
       std::string(), unique_name, blink::WebSandboxFlags::None,
-      blink::WebFrameOwnerProperties());
+      FrameOwnerProperties());
   TestRenderFrameHost* subframe = static_cast<TestRenderFrameHost*>(
       contents()->GetFrameTree()->root()->child_at(0)->current_frame_host());
   const GURL subframe_url("http://foo1/subframe");
@@ -2196,7 +2204,13 @@ TEST_F(NavigationControllerTest, NewSubframe) {
     subframe->SendRendererInitiatedNavigationRequest(subframe_url, false);
     subframe->PrepareForCommit();
     subframe->SendNavigateWithParams(&params);
-    EXPECT_EQ(0U, notifications.size());
+
+    // In UseSubframeNavigationEntries mode, we notify of a PageState update to
+    // the entry here rather than during UpdateState.
+    if (SiteIsolationPolicy::UseSubframeNavigationEntries())
+      EXPECT_TRUE(notifications.Check1AndReset(NOTIFICATION_NAV_ENTRY_CHANGED));
+    else
+      EXPECT_EQ(0U, notifications.size());
   }
 
   // Now do a new navigation in the frame.
@@ -2262,7 +2276,7 @@ TEST_F(NavigationControllerTest, AutoSubframe) {
   main_test_rfh()->OnCreateChildFrame(
       process()->GetNextRoutingID(), blink::WebTreeScopeType::Document,
       std::string(), unique_name0, blink::WebSandboxFlags::None,
-      blink::WebFrameOwnerProperties());
+      FrameOwnerProperties());
   TestRenderFrameHost* subframe = static_cast<TestRenderFrameHost*>(
       contents()->GetFrameTree()->root()->child_at(0)->current_frame_host());
   const GURL url2("http://foo/2");
@@ -2283,7 +2297,13 @@ TEST_F(NavigationControllerTest, AutoSubframe) {
     subframe->SendRendererInitiatedNavigationRequest(url2, false);
     subframe->PrepareForCommit();
     subframe->SendNavigateWithParams(&params);
-    EXPECT_EQ(0U, notifications.size());
+
+    // In UseSubframeNavigationEntries mode, we notify of a PageState update to
+    // the entry here rather than during UpdateState.
+    if (SiteIsolationPolicy::UseSubframeNavigationEntries())
+      EXPECT_TRUE(notifications.Check1AndReset(NOTIFICATION_NAV_ENTRY_CHANGED));
+    else
+      EXPECT_EQ(0U, notifications.size());
   }
 
   // There should still be only one entry.
@@ -2311,7 +2331,7 @@ TEST_F(NavigationControllerTest, AutoSubframe) {
   main_test_rfh()->OnCreateChildFrame(
       process()->GetNextRoutingID(), blink::WebTreeScopeType::Document,
       std::string(), unique_name1, blink::WebSandboxFlags::None,
-      blink::WebFrameOwnerProperties());
+      FrameOwnerProperties());
   TestRenderFrameHost* subframe2 = static_cast<TestRenderFrameHost*>(
       contents()->GetFrameTree()->root()->child_at(1)->current_frame_host());
   const GURL url3("http://foo/3");
@@ -2332,7 +2352,13 @@ TEST_F(NavigationControllerTest, AutoSubframe) {
     subframe2->SendRendererInitiatedNavigationRequest(url3, false);
     subframe2->PrepareForCommit();
     subframe2->SendNavigateWithParams(&params);
-    EXPECT_EQ(0U, notifications.size());
+
+    // In UseSubframeNavigationEntries mode, we notify of a PageState update to
+    // the entry here rather than during UpdateState.
+    if (SiteIsolationPolicy::UseSubframeNavigationEntries())
+      EXPECT_TRUE(notifications.Check1AndReset(NOTIFICATION_NAV_ENTRY_CHANGED));
+    else
+      EXPECT_EQ(0U, notifications.size());
   }
 
   // There should still be only one entry, mostly unchanged.
@@ -2360,7 +2386,7 @@ TEST_F(NavigationControllerTest, AutoSubframe) {
   subframe->OnCreateChildFrame(process()->GetNextRoutingID(),
                                blink::WebTreeScopeType::Document, std::string(),
                                unique_name2, blink::WebSandboxFlags::None,
-                               blink::WebFrameOwnerProperties());
+                               FrameOwnerProperties());
   TestRenderFrameHost* subframe3 =
       static_cast<TestRenderFrameHost*>(contents()
                                             ->GetFrameTree()
@@ -2386,7 +2412,13 @@ TEST_F(NavigationControllerTest, AutoSubframe) {
     subframe3->SendRendererInitiatedNavigationRequest(url4, false);
     subframe3->PrepareForCommit();
     subframe3->SendNavigateWithParams(&params);
-    EXPECT_EQ(0U, notifications.size());
+
+    // In UseSubframeNavigationEntries mode, we notify of a PageState update to
+    // the entry here rather than during UpdateState.
+    if (SiteIsolationPolicy::UseSubframeNavigationEntries())
+      EXPECT_TRUE(notifications.Check1AndReset(NOTIFICATION_NAV_ENTRY_CHANGED));
+    else
+      EXPECT_EQ(0U, notifications.size());
   }
 
   // There should still be only one entry, mostly unchanged.
@@ -2429,13 +2461,14 @@ TEST_F(NavigationControllerTest, BackSubframe) {
   main_test_rfh()->OnCreateChildFrame(
       process()->GetNextRoutingID(), blink::WebTreeScopeType::Document,
       std::string(), unique_name, blink::WebSandboxFlags::None,
-      blink::WebFrameOwnerProperties());
+      FrameOwnerProperties());
   TestRenderFrameHost* subframe = static_cast<TestRenderFrameHost*>(
       contents()->GetFrameTree()->root()->child_at(0)->current_frame_host());
   const GURL subframe_url("http://foo1/subframe");
 
   // Compute the sequence number assigned by Blink.
-  int64_t item_sequence_number1 = base::Time::Now().ToDoubleT() * 1000000;
+  int64_t item_sequence_number1 = GenerateSequenceNumber();
+  int64_t document_sequence_number1 = GenerateSequenceNumber();
 
   {
     FrameHostMsg_DidCommitProvisionalLoad_Params params;
@@ -2448,19 +2481,28 @@ TEST_F(NavigationControllerTest, BackSubframe) {
     params.should_update_history = false;
     params.gesture = NavigationGestureUser;
     params.method = "GET";
-    params.page_state = PageState::CreateFromURL(subframe_url);
+    params.page_state = PageState::CreateForTestingWithSequenceNumbers(
+        subframe_url, item_sequence_number1, document_sequence_number1);
     params.item_sequence_number = item_sequence_number1;
+    params.document_sequence_number = document_sequence_number1;
 
     // Navigating should do nothing.
     subframe->SendRendererInitiatedNavigationRequest(subframe_url, false);
     subframe->PrepareForCommit();
     subframe->SendNavigateWithParams(&params);
-    EXPECT_EQ(0U, notifications.size());
+
+    // In UseSubframeNavigationEntries mode, we notify of a PageState update to
+    // the entry here rather than during UpdateState.
+    if (SiteIsolationPolicy::UseSubframeNavigationEntries())
+      EXPECT_TRUE(notifications.Check1AndReset(NOTIFICATION_NAV_ENTRY_CHANGED));
+    else
+      EXPECT_EQ(0U, notifications.size());
   }
 
   // First manual subframe navigation.
   const GURL url2("http://foo2");
-  int64_t item_sequence_number2 = base::Time::Now().ToDoubleT() * 1000000;
+  int64_t item_sequence_number2 = GenerateSequenceNumber();
+  int64_t document_sequence_number2 = GenerateSequenceNumber();
   FrameHostMsg_DidCommitProvisionalLoad_Params params;
   params.page_id = 2;
   params.nav_entry_id = 0;
@@ -2471,8 +2513,10 @@ TEST_F(NavigationControllerTest, BackSubframe) {
   params.should_update_history = false;
   params.gesture = NavigationGestureUser;
   params.method = "GET";
-  params.page_state = PageState::CreateFromURL(url2);
+  params.page_state = PageState::CreateForTestingWithSequenceNumbers(
+      url2, item_sequence_number2, document_sequence_number2);
   params.item_sequence_number = item_sequence_number2;
+  params.document_sequence_number = document_sequence_number2;
 
   // This should generate a new entry.
   subframe->SendRendererInitiatedNavigationRequest(url2, false);
@@ -2496,14 +2540,18 @@ TEST_F(NavigationControllerTest, BackSubframe) {
 
   // Second manual subframe navigation should also make a new entry.
   const GURL url3("http://foo3");
+  int64_t item_sequence_number3 = GenerateSequenceNumber();
+  int64_t document_sequence_number3 = GenerateSequenceNumber();
   params.page_id = 3;
   params.nav_entry_id = 0;
   params.frame_unique_name = unique_name;
   params.did_create_new_entry = true;
   params.url = url3;
   params.transition = ui::PAGE_TRANSITION_MANUAL_SUBFRAME;
-  params.page_state = PageState::CreateFromURL(url3);
-  params.item_sequence_number = base::Time::Now().ToDoubleT() * 1000000;
+  params.item_sequence_number = item_sequence_number3;
+  params.document_sequence_number = document_sequence_number3;
+  params.page_state = PageState::CreateForTestingWithSequenceNumbers(
+    url3, item_sequence_number3, document_sequence_number3);
   subframe->SendRendererInitiatedNavigationRequest(url3, false);
   subframe->PrepareForCommit();
   subframe->SendNavigateWithParams(&params);
@@ -2531,8 +2579,10 @@ TEST_F(NavigationControllerTest, BackSubframe) {
   params.did_create_new_entry = false;
   params.url = url2;
   params.transition = ui::PAGE_TRANSITION_AUTO_SUBFRAME;
-  params.page_state = PageState::CreateFromURL(url2);
+  params.page_state = PageState::CreateForTestingWithSequenceNumbers(
+    url2, item_sequence_number2, document_sequence_number2);
   params.item_sequence_number = item_sequence_number2;
+  params.document_sequence_number = document_sequence_number2;
   subframe->PrepareForCommit();
   subframe->SendNavigateWithParams(&params);
   EXPECT_EQ(1U, navigation_entry_committed_counter_);
@@ -2551,8 +2601,10 @@ TEST_F(NavigationControllerTest, BackSubframe) {
   params.did_create_new_entry = false;
   params.url = subframe_url;
   params.transition = ui::PAGE_TRANSITION_AUTO_SUBFRAME;
-  params.page_state = PageState::CreateFromURL(subframe_url);
+  params.page_state = PageState::CreateForTestingWithSequenceNumbers(
+    subframe_url, item_sequence_number1, document_sequence_number1);
   params.item_sequence_number = item_sequence_number1;
+  params.document_sequence_number = document_sequence_number1;
   subframe->PrepareForCommit();
   subframe->SendNavigateWithParams(&params);
   EXPECT_EQ(1U, navigation_entry_committed_counter_);
@@ -2974,16 +3026,13 @@ TEST_F(NavigationControllerTest, RestoreNavigate) {
   std::unique_ptr<WebContentsImpl> our_contents(static_cast<WebContentsImpl*>(
       WebContents::Create(WebContents::CreateParams(browser_context()))));
   NavigationControllerImpl& our_controller = our_contents->GetController();
-  our_controller.Restore(
-      0,
-      NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY,
-      &entries);
+  our_controller.Restore(0, RestoreType::LAST_SESSION_EXITED_CLEANLY, &entries);
   ASSERT_EQ(0u, entries.size());
 
   // Before navigating to the restored entry, it should have a restore_type
   // and no SiteInstance.
   ASSERT_EQ(1, our_controller.GetEntryCount());
-  EXPECT_EQ(NavigationEntryImpl::RESTORE_LAST_SESSION_EXITED_CLEANLY,
+  EXPECT_EQ(RestoreType::LAST_SESSION_EXITED_CLEANLY,
             our_controller.GetEntryAtIndex(0)->restore_type());
   EXPECT_FALSE(our_controller.GetEntryAtIndex(0)->site_instance());
 
@@ -3022,7 +3071,7 @@ TEST_F(NavigationControllerTest, RestoreNavigate) {
   EXPECT_EQ(
       url,
       our_controller.GetLastCommittedEntry()->site_instance()->GetSiteURL());
-  EXPECT_EQ(NavigationEntryImpl::RESTORE_NONE,
+  EXPECT_EQ(RestoreType::NONE,
             our_controller.GetEntryAtIndex(0)->restore_type());
 
   // Timestamp should have been updated.
@@ -3046,8 +3095,7 @@ TEST_F(NavigationControllerTest, RestoreNavigateAfterFailure) {
   std::unique_ptr<WebContentsImpl> our_contents(static_cast<WebContentsImpl*>(
       WebContents::Create(WebContents::CreateParams(browser_context()))));
   NavigationControllerImpl& our_controller = our_contents->GetController();
-  our_controller.Restore(
-      0, NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY, &entries);
+  our_controller.Restore(0, RestoreType::LAST_SESSION_EXITED_CLEANLY, &entries);
   ASSERT_EQ(0u, entries.size());
 
   // Ensure the RenderFrame is initialized before simulating events coming from
@@ -3057,7 +3105,7 @@ TEST_F(NavigationControllerTest, RestoreNavigateAfterFailure) {
   // Before navigating to the restored entry, it should have a restore_type
   // and no SiteInstance.
   NavigationEntry* entry = our_controller.GetEntryAtIndex(0);
-  EXPECT_EQ(NavigationEntryImpl::RESTORE_LAST_SESSION_EXITED_CLEANLY,
+  EXPECT_EQ(RestoreType::LAST_SESSION_EXITED_CLEANLY,
             our_controller.GetEntryAtIndex(0)->restore_type());
   EXPECT_FALSE(our_controller.GetEntryAtIndex(0)->site_instance());
 
@@ -3103,7 +3151,7 @@ TEST_F(NavigationControllerTest, RestoreNavigateAfterFailure) {
   EXPECT_EQ(
       url,
       our_controller.GetLastCommittedEntry()->site_instance()->GetSiteURL());
-  EXPECT_EQ(NavigationEntryImpl::RESTORE_NONE,
+  EXPECT_EQ(RestoreType::NONE,
             our_controller.GetEntryAtIndex(0)->restore_type());
 }
 
@@ -3907,7 +3955,7 @@ TEST_F(NavigationControllerTest, SameSubframe) {
   main_test_rfh()->OnCreateChildFrame(
       process()->GetNextRoutingID(), blink::WebTreeScopeType::Document,
       std::string(), unique_name, blink::WebSandboxFlags::None,
-      blink::WebFrameOwnerProperties());
+      FrameOwnerProperties());
   TestRenderFrameHost* subframe = static_cast<TestRenderFrameHost*>(
       contents()->GetFrameTree()->root()->child_at(0)->current_frame_host());
   const GURL subframe_url("http://www.google.com/#");
@@ -4083,7 +4131,7 @@ TEST_F(NavigationControllerTest, SubframeWhilePending) {
   main_test_rfh()->OnCreateChildFrame(
       process()->GetNextRoutingID(), blink::WebTreeScopeType::Document,
       std::string(), unique_name, blink::WebSandboxFlags::None,
-      blink::WebFrameOwnerProperties());
+      FrameOwnerProperties());
   TestRenderFrameHost* subframe = static_cast<TestRenderFrameHost*>(
       contents()->GetFrameTree()->root()->child_at(0)->current_frame_host());
   const GURL url1_sub("http://foo/subframe");
@@ -4626,10 +4674,8 @@ TEST_F(NavigationControllerTest, CopyRestoredStateAndNavigate) {
       static_cast<TestWebContents*>(CreateTestWebContents()));
   NavigationControllerImpl& source_controller =
       source_contents->GetController();
-  source_controller.Restore(
-      entries.size() - 1,
-      NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY,
-      &entries);
+  source_controller.Restore(entries.size() - 1,
+                            RestoreType::LAST_SESSION_EXITED_CLEANLY, &entries);
   ASSERT_EQ(0u, entries.size());
   source_controller.LoadIfNecessary();
   source_contents->CommitPendingNavigation();
@@ -5039,7 +5085,8 @@ TEST_F(NavigationControllerTest, PushStateUpdatesTitleAndFavicon) {
   FaviconStatus favicon;
   favicon.valid = true;
   favicon.url = GURL("http://foo/favicon.ico");
-  controller().GetLastCommittedEntry()->SetTitle(title);
+  contents()->UpdateTitleForEntry(
+      controller().GetLastCommittedEntry(), title);
   controller().GetLastCommittedEntry()->GetFavicon() = favicon;
 
   // history.pushState() is called.
@@ -5291,53 +5338,6 @@ TEST_F(NavigationControllerTest, StaleNavigationsResurrected) {
   EXPECT_EQ(url_a, controller.GetEntryAtIndex(0)->GetURL());
   EXPECT_EQ(url_c, controller.GetEntryAtIndex(1)->GetURL());
   EXPECT_EQ(url_b, controller.GetEntryAtIndex(2)->GetURL());
-}
-
-// Test that if a renderer provides bogus security info (that fails to
-// deserialize properly) when reporting a navigation, the renderer gets
-// killed.
-TEST_F(NavigationControllerTest, RendererNavigateBogusSecurityInfo) {
-  GURL url("http://foo.test");
-  controller().LoadURL(url, Referrer(), ui::PAGE_TRANSITION_TYPED,
-                       std::string());
-  FrameHostMsg_DidCommitProvisionalLoad_Params params;
-  params.page_id = 0;
-  params.nav_entry_id = 0;
-  params.did_create_new_entry = true;
-  params.url = url;
-  params.transition = ui::PAGE_TRANSITION_LINK;
-  params.should_update_history = true;
-  params.gesture = NavigationGestureUser;
-  params.method = "GET";
-  params.page_state = PageState::CreateFromURL(url);
-  params.was_within_same_page = false;
-  params.security_info = "bogus security info!";
-
-  LoadCommittedDetailsObserver observer(contents());
-  EXPECT_EQ(0, main_test_rfh()->GetProcess()->bad_msg_count());
-  main_test_rfh()->PrepareForCommit();
-  main_test_rfh()->SendNavigateWithParams(&params);
-
-  SSLStatus default_ssl_status;
-  EXPECT_EQ(default_ssl_status.security_style,
-            observer.details().ssl_status.security_style);
-  EXPECT_EQ(default_ssl_status.cert_id, observer.details().ssl_status.cert_id);
-  EXPECT_EQ(default_ssl_status.cert_status,
-            observer.details().ssl_status.cert_status);
-  EXPECT_EQ(default_ssl_status.security_bits,
-            observer.details().ssl_status.security_bits);
-  EXPECT_EQ(default_ssl_status.connection_status,
-            observer.details().ssl_status.connection_status);
-  EXPECT_EQ(default_ssl_status.content_status,
-            observer.details().ssl_status.content_status);
-  EXPECT_EQ(default_ssl_status.num_unknown_scts,
-            observer.details().ssl_status.num_unknown_scts);
-  EXPECT_EQ(default_ssl_status.num_invalid_scts,
-            observer.details().ssl_status.num_invalid_scts);
-  EXPECT_EQ(default_ssl_status.num_valid_scts,
-            observer.details().ssl_status.num_valid_scts);
-
-  EXPECT_EQ(1, main_test_rfh()->GetProcess()->bad_msg_count());
 }
 
 }  // namespace content

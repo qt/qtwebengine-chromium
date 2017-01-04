@@ -30,6 +30,14 @@ namespace media {
 // accumulated frames to reach a target timestamp.
 class MEDIA_EXPORT AudioTimestampHelper {
  public:
+  // Returns the time duration of the given number of frames of audio with the
+  // given sample rate (in samples per second).
+  static base::TimeDelta FramesToTime(int64_t frames, int samples_per_second);
+
+  // Returns the number of frames in the given duration of audio with the given
+  // sample rate (in samples per second).
+  static int64_t TimeToFrames(base::TimeDelta time, int samples_per_second);
+
   explicit AudioTimestampHelper(int samples_per_second);
 
   // Sets the base timestamp to |base_timestamp| and the sets count to 0.
@@ -40,7 +48,7 @@ class MEDIA_EXPORT AudioTimestampHelper {
 
   // Adds |frame_count| to the frame counter.
   // Note: SetBaseTimestamp() must be called with a value other than
-  // kNoTimestamp() before this method can be called.
+  // kNoTimestamp before this method can be called.
   void AddFrames(int frame_count);
 
   // Get the current timestamp. This value is computed from the base_timestamp()

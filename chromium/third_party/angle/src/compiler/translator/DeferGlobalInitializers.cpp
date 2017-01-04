@@ -101,10 +101,8 @@ bool DeferGlobalInitializersTraverser::visitBinary(Visit visit, TIntermBinary *n
             // Deferral is done also in any cases where the variable has not been constant folded,
             // since otherwise there's a chance that HLSL output will generate extra statements
             // from the initializer expression.
-            TIntermBinary *deferredInit = new TIntermBinary(EOpAssign);
-            deferredInit->setLeft(symbolNode->deepCopy());
-            deferredInit->setRight(node->getRight());
-            deferredInit->setType(node->getType());
+            TIntermBinary *deferredInit =
+                new TIntermBinary(EOpAssign, symbolNode->deepCopy(), node->getRight());
             mDeferredInitializers.push_back(deferredInit);
 
             // Change const global to a regular global if its initialization is deferred.
@@ -130,7 +128,7 @@ bool DeferGlobalInitializersTraverser::visitBinary(Visit visit, TIntermBinary *n
                 ASSERT(symbolNode->getQualifier() == EvqGlobal);
             }
             // Remove the initializer from the global scope and just declare the global instead.
-            mReplacements.push_back(NodeUpdateEntry(getParentNode(), node, symbolNode, false));
+            queueReplacement(node, symbolNode, OriginalNode::IS_DROPPED);
         }
     }
     return false;

@@ -82,11 +82,11 @@ bool IsNodeIdIntListAttribute(AXIntListAttribute attr) {
     // add a new attribute without explicitly considering whether it's
     // a node id attribute or not.
     case AX_INT_LIST_ATTRIBUTE_NONE:
-    case AX_ATTR_LINE_BREAKS:
     case AX_ATTR_MARKER_TYPES:
     case AX_ATTR_MARKER_STARTS:
     case AX_ATTR_MARKER_ENDS:
     case AX_ATTR_CHARACTER_OFFSETS:
+    case AX_ATTR_CACHED_LINE_STARTS:
     case AX_ATTR_WORD_STARTS:
     case AX_ATTR_WORD_ENDS:
       return false;
@@ -185,6 +185,10 @@ void AXTreeCombiner::ProcessTree(const AXTreeUpdate* tree) {
     for (size_t j = 0; j < node.child_ids.size(); ++j)
       node.child_ids[j] = MapId(tree_id, node.child_ids[j]);
 
+    // Reset the offset container ID because we make all bounding boxes
+    // absolute.
+    node.offset_container_id = -1;
+
     // Map other int attributes that refer to node IDs, and remove the
     // AX_ATTR_CHILD_TREE_ID attribute.
     for (size_t j = 0; j < node.int_attributes.size(); ++j) {
@@ -208,10 +212,7 @@ void AXTreeCombiner::ProcessTree(const AXTreeUpdate* tree) {
 
     // Apply the transformation to the object's bounds to put it in
     // the coordinate space of the root frame.
-    gfx::RectF boundsf(node.location);
-    transform_.TransformRect(&boundsf);
-    node.location = gfx::Rect(boundsf.x(), boundsf.y(),
-                              boundsf.width(), boundsf.height());
+    transform_.TransformRect(&node.location);
 
     // See if this node has a child tree. As a sanity check make sure the
     // child tree lists this tree as its parent tree id.

@@ -15,7 +15,6 @@
 #include "webrtc/modules/audio_processing/aec/aec_core.h"
 
 #include <algorithm>
-#include <assert.h>
 #include <math.h>
 #include <stddef.h>  // size_t
 #include <stdlib.h>
@@ -66,7 +65,7 @@ void MaybeLogDelayAdjustment(int moved_ms, DelaySource source) {
 }  // namespace
 
 // Buffer size (samples)
-static const size_t kBufSizePartitions = 250;  // 1 second of audio in 16 kHz.
+static const size_t kBufferSizeBlocks = 250;  // 1 second of audio in 16 kHz.
 
 // Metrics
 static const size_t kSubCountLen = 4;
@@ -182,6 +181,56 @@ __inline static float MulIm(float aRe, float aIm, float bRe, float bIm) {
 PowerLevel::PowerLevel()
     : framelevel(kSubCountLen + 1),
       averagelevel(kCountLen + 1) {
+}
+
+BlockBuffer::BlockBuffer() {
+  buffer_ = WebRtc_CreateBuffer(kBufferSizeBlocks, sizeof(float) * PART_LEN);
+  RTC_CHECK(buffer_);
+  ReInit();
+}
+
+BlockBuffer::~BlockBuffer() {
+  WebRtc_FreeBuffer(buffer_);
+}
+
+void BlockBuffer::ReInit() {
+  WebRtc_InitBuffer(buffer_);
+}
+
+void BlockBuffer::Insert(const float block[PART_LEN]) {
+  WebRtc_WriteBuffer(buffer_, block, 1);
+}
+
+void BlockBuffer::ExtractExtendedBlock(float extended_block[PART_LEN2]) {
+  float* block_ptr = NULL;
+  RTC_DCHECK_LT(0u, AvaliableSpace());
+
+  // Extract the previous block.
+  WebRtc_MoveReadPtr(buffer_, -1);
+  WebRtc_ReadBuffer(buffer_, reinterpret_cast<void**>(&block_ptr),
+                    &extended_block[0], 1);
+  if (block_ptr != &extended_block[0]) {
+    memcpy(&extended_block[0], block_ptr, PART_LEN * sizeof(float));
+  }
+
+  // Extract the current block.
+  WebRtc_ReadBuffer(buffer_, reinterpret_cast<void**>(&block_ptr),
+                    &extended_block[PART_LEN], 1);
+  if (block_ptr != &extended_block[PART_LEN]) {
+    memcpy(&extended_block[PART_LEN], block_ptr, PART_LEN * sizeof(float));
+  }
+}
+
+int BlockBuffer::AdjustSize(int buffer_size_decrease) {
+  return WebRtc_MoveReadPtr(buffer_, buffer_size_decrease);
+}
+
+size_t BlockBuffer::Size() {
+  return static_cast<int>(WebRtc_available_read(buffer_));
+}
+
+size_t BlockBuffer::AvaliableSpace() {
+  return WebRtc_available_write(buffer_);
 }
 
 DivergentFilterFraction::DivergentFilterFraction()
@@ -820,7 +869,7 @@ static void Fft(float time_data[PART_LEN2], float freq_data[2][PART_LEN1]) {
 static int SignalBasedDelayCorrection(AecCore* self) {
   int delay_correction = 0;
   int last_delay = -2;
-  assert(self != NULL);
+  RTC_DCHECK(self);
 #if !defined(WEBRTC_ANDROID)
   // On desktops, turn on correction after |kDelayCorrectionStart| frames.  This
   // is to let the delay estimation get a chance to converge.  Also, if the
@@ -857,8 +906,7 @@ static int SignalBasedDelayCorrection(AecCore* self) {
     const int upper_bound = self->num_partitions * 3 / 4;
     const int do_correction = delay <= lower_bound || delay > upper_bound;
     if (do_correction == 1) {
-      int available_read =
-          static_cast<int>(WebRtc_available_read(self->far_time_buf));
+      int available_read = self->farend_block_buffer_.Size();
       // With |shift_offset| we gradually rely on the delay estimates.  For
       // positive delays we reduce the correction by |shift_offset| to lower the
       // risk of pushing the AEC into a non causal state.  For negative delays
@@ -1105,10 +1153,10 @@ static void FormSuppressionGain(AecCore* aec,
 }
 
 static void EchoSuppression(AecCore* aec,
-                            float farend[PART_LEN2],
+                            float* nearend_extended_block_lowest_band,
+                            float farend_extended_block[PART_LEN2],
                             float* echo_subtractor_output,
-                            float* output,
-                            float* const* outputH) {
+                            float output[NUM_HIGH_BANDS_MAX + 1][PART_LEN]) {
   float efw[2][PART_LEN1];
   float xfw[2][PART_LEN1];
   float dfw[2][PART_LEN1];
@@ -1133,7 +1181,7 @@ static void EchoSuppression(AecCore* aec,
 
   // Analysis filter banks for the echo suppressor.
   // Windowed near-end ffts.
-  WindowData(fft, aec->dBuf);
+  WindowData(fft, nearend_extended_block_lowest_band);
   aec_rdft_forward_128(fft);
   StoreAsComplex(fft, dfw);
 
@@ -1145,7 +1193,7 @@ static void EchoSuppression(AecCore* aec,
   // NLP
 
   // Convert far-end partition to the frequency domain with windowing.
-  WindowData(fft, farend);
+  WindowData(fft, farend_extended_block);
   Fft(fft, xfw);
   xfw_ptr = &xfw[0][0];
 
@@ -1192,12 +1240,12 @@ static void EchoSuppression(AecCore* aec,
 
   // Overlap and add to obtain output.
   for (i = 0; i < PART_LEN; i++) {
-    output[i] = (fft[i] * WebRtcAec_sqrtHanning[i] +
-                 aec->outBuf[i] * WebRtcAec_sqrtHanning[PART_LEN - i]);
+    output[0][i] = (fft[i] * WebRtcAec_sqrtHanning[i] +
+                    aec->outBuf[i] * WebRtcAec_sqrtHanning[PART_LEN - i]);
 
     // Saturate output to keep it in the allowed range.
-    output[i] =
-        WEBRTC_SPL_SAT(WEBRTC_SPL_WORD16_MAX, output[i], WEBRTC_SPL_WORD16_MIN);
+    output[0][i] = WEBRTC_SPL_SAT(WEBRTC_SPL_WORD16_MAX, output[0][i],
+                                  WEBRTC_SPL_WORD16_MIN);
   }
   memcpy(aec->outBuf, &fft[PART_LEN], PART_LEN * sizeof(aec->outBuf[0]));
 
@@ -1212,45 +1260,44 @@ static void EchoSuppression(AecCore* aec,
     ScaledInverseFft(comfortNoiseHband, fft, 2.0f, 0);
 
     // compute gain factor
-    for (j = 0; j < aec->num_bands - 1; ++j) {
+    for (j = 1; j < aec->num_bands; ++j) {
       for (i = 0; i < PART_LEN; i++) {
-        outputH[j][i] = aec->dBufH[j][i] * nlpGainHband;
+        output[j][i] = aec->previous_nearend_block[j][i] * nlpGainHband;
       }
     }
 
     // Add some comfort noise where Hband is attenuated.
     for (i = 0; i < PART_LEN; i++) {
-      outputH[0][i] += cnScaleHband * fft[i];
+      output[1][i] += cnScaleHband * fft[i];
     }
 
     // Saturate output to keep it in the allowed range.
-    for (j = 0; j < aec->num_bands - 1; ++j) {
+    for (j = 1; j < aec->num_bands; ++j) {
       for (i = 0; i < PART_LEN; i++) {
-        outputH[j][i] = WEBRTC_SPL_SAT(WEBRTC_SPL_WORD16_MAX, outputH[j][i],
-                                       WEBRTC_SPL_WORD16_MIN);
+        output[j][i] = WEBRTC_SPL_SAT(WEBRTC_SPL_WORD16_MAX, output[j][i],
+                                      WEBRTC_SPL_WORD16_MIN);
       }
     }
   }
 
   // Copy the current block to the old position.
-  memcpy(aec->dBuf, aec->dBuf + PART_LEN, sizeof(float) * PART_LEN);
   memcpy(aec->eBuf, aec->eBuf + PART_LEN, sizeof(float) * PART_LEN);
-
-  // Copy the current block to the old position for H band
-  for (j = 0; j < aec->num_bands - 1; ++j) {
-    memcpy(aec->dBufH[j], aec->dBufH[j] + PART_LEN, sizeof(float) * PART_LEN);
-  }
 
   memmove(aec->xfwBuf + PART_LEN1, aec->xfwBuf,
           sizeof(aec->xfwBuf) - sizeof(complex_t) * PART_LEN1);
 }
 
-static void ProcessBlock(AecCore* aec) {
+static void ProcessNearendBlock(
+    AecCore* aec,
+    float farend_extended_block_lowest_band[PART_LEN2],
+    float nearend_block[NUM_HIGH_BANDS_MAX + 1][PART_LEN],
+    float output_block[NUM_HIGH_BANDS_MAX + 1][PART_LEN]) {
   size_t i;
 
   float fft[PART_LEN2];
-  float x_fft[2][PART_LEN1];
-  float df[2][PART_LEN1];
+  float nearend_extended_block_lowest_band[PART_LEN2];
+  float farend_fft[2][PART_LEN1];
+  float nearend_fft[2][PART_LEN1];
   float far_spectrum = 0.0f;
   float near_spectrum = 0.0f;
   float abs_far_spectrum[PART_LEN1];
@@ -1264,62 +1311,42 @@ static void ProcessBlock(AecCore* aec) {
   const float ramp = 1.0002f;
   const float gInitNoise[2] = {0.999f, 0.001f};
 
-  float nearend[PART_LEN];
-  float* nearend_ptr = NULL;
-  float farend[PART_LEN2];
-  float* farend_ptr = NULL;
   float echo_subtractor_output[PART_LEN];
-  float output[PART_LEN];
-  float outputH[NUM_HIGH_BANDS_MAX][PART_LEN];
-  float* outputH_ptr[NUM_HIGH_BANDS_MAX];
-  float* x_fft_ptr = NULL;
 
-  for (i = 0; i < NUM_HIGH_BANDS_MAX; ++i) {
-    outputH_ptr[i] = outputH[i];
-  }
-
-  // Concatenate old and new nearend blocks.
-  for (i = 0; i < aec->num_bands - 1; ++i) {
-    WebRtc_ReadBuffer(aec->nearFrBufH[i],
-                      reinterpret_cast<void**>(&nearend_ptr),
-                      nearend, PART_LEN);
-    memcpy(aec->dBufH[i] + PART_LEN, nearend_ptr, sizeof(nearend));
-  }
-  WebRtc_ReadBuffer(aec->nearFrBuf, reinterpret_cast<void**>(&nearend_ptr),
-                    nearend, PART_LEN);
-  memcpy(aec->dBuf + PART_LEN, nearend_ptr, sizeof(nearend));
-
-  // We should always have at least one element stored in |far_buf|.
-  assert(WebRtc_available_read(aec->far_time_buf) > 0);
-  WebRtc_ReadBuffer(aec->far_time_buf, reinterpret_cast<void**>(&farend_ptr),
-                    farend, 1);
-
-  aec->data_dumper->DumpWav("aec_far", PART_LEN, &farend_ptr[PART_LEN],
+  aec->data_dumper->DumpWav("aec_far", PART_LEN,
+                            &farend_extended_block_lowest_band[PART_LEN],
                             std::min(aec->sampFreq, 16000), 1);
-  aec->data_dumper->DumpWav("aec_near", PART_LEN, nearend_ptr,
+  aec->data_dumper->DumpWav("aec_near", PART_LEN, &nearend_block[0][0],
                             std::min(aec->sampFreq, 16000), 1);
 
   if (aec->metricsMode == 1) {
     // Update power levels
-    UpdateLevel(&aec->farlevel,
-                CalculatePower(&farend_ptr[PART_LEN], PART_LEN));
-    UpdateLevel(&aec->nearlevel, CalculatePower(nearend_ptr, PART_LEN));
+    UpdateLevel(
+        &aec->farlevel,
+        CalculatePower(&farend_extended_block_lowest_band[PART_LEN], PART_LEN));
+    UpdateLevel(&aec->nearlevel,
+                CalculatePower(&nearend_block[0][0], PART_LEN));
   }
 
   // Convert far-end signal to the frequency domain.
-  memcpy(fft, farend_ptr, sizeof(float) * PART_LEN2);
-  Fft(fft, x_fft);
-  x_fft_ptr = &x_fft[0][0];
+  memcpy(fft, farend_extended_block_lowest_band, sizeof(float) * PART_LEN2);
+  Fft(fft, farend_fft);
 
-  // Near fft
-  memcpy(fft, aec->dBuf, sizeof(float) * PART_LEN2);
-  Fft(fft, df);
+  // Form extended nearend frame.
+  memcpy(&nearend_extended_block_lowest_band[0],
+         &aec->previous_nearend_block[0][0], sizeof(float) * PART_LEN);
+  memcpy(&nearend_extended_block_lowest_band[PART_LEN], &nearend_block[0][0],
+         sizeof(float) * PART_LEN);
+
+  // Convert near-end signal to the frequency domain.
+  memcpy(fft, nearend_extended_block_lowest_band, sizeof(float) * PART_LEN2);
+  Fft(fft, nearend_fft);
 
   // Power smoothing.
   if (aec->refined_adaptive_filter_enabled) {
     for (i = 0; i < PART_LEN1; ++i) {
-      far_spectrum = (x_fft_ptr[i] * x_fft_ptr[i]) +
-                     (x_fft_ptr[PART_LEN1 + i] * x_fft_ptr[PART_LEN1 + i]);
+      far_spectrum = farend_fft[0][i] * farend_fft[0][i] +
+                     farend_fft[1][i] * farend_fft[1][i];
       // Calculate the magnitude spectrum.
       abs_far_spectrum[i] = sqrtf(far_spectrum);
     }
@@ -1327,8 +1354,8 @@ static void ProcessBlock(AecCore* aec) {
                    aec->xPow);
   } else {
     for (i = 0; i < PART_LEN1; ++i) {
-      far_spectrum = (x_fft_ptr[i] * x_fft_ptr[i]) +
-                     (x_fft_ptr[PART_LEN1 + i] * x_fft_ptr[PART_LEN1 + i]);
+      far_spectrum = farend_fft[0][i] * farend_fft[0][i] +
+                     farend_fft[1][i] * farend_fft[1][i];
       aec->xPow[i] =
           gPow[0] * aec->xPow[i] + gPow[1] * aec->num_partitions * far_spectrum;
       // Calculate the magnitude spectrum.
@@ -1337,7 +1364,8 @@ static void ProcessBlock(AecCore* aec) {
   }
 
   for (i = 0; i < PART_LEN1; ++i) {
-    near_spectrum = df[0][i] * df[0][i] + df[1][i] * df[1][i];
+    near_spectrum = nearend_fft[0][i] * nearend_fft[0][i] +
+                    nearend_fft[1][i] * nearend_fft[1][i];
     aec->dPow[i] = gPow[0] * aec->dPow[i] + gPow[1] * near_spectrum;
     // Calculate the magnitude spectrum.
     abs_near_spectrum[i] = sqrtf(near_spectrum);
@@ -1393,8 +1421,8 @@ static void ProcessBlock(AecCore* aec) {
   // Perform echo subtraction.
   EchoSubtraction(aec->num_partitions, aec->extended_filter_enabled,
                   &aec->extreme_filter_divergence, aec->filter_step_size,
-                  aec->error_threshold, &x_fft[0][0], &aec->xfBufBlockPos,
-                  aec->xfBuf, nearend_ptr, aec->xPow, aec->wfBuf,
+                  aec->error_threshold, &farend_fft[0][0], &aec->xfBufBlockPos,
+                  aec->xfBuf, &nearend_block[0][0], aec->xPow, aec->wfBuf,
                   echo_subtractor_output);
   aec->data_dumper->DumpRaw("aec_h_fft", PART_LEN1 * aec->num_partitions,
                             &aec->wfBuf[0][0]);
@@ -1410,70 +1438,38 @@ static void ProcessBlock(AecCore* aec) {
   }
 
   // Perform echo suppression.
-  EchoSuppression(aec, farend_ptr, echo_subtractor_output, output, outputH_ptr);
+  EchoSuppression(aec, nearend_extended_block_lowest_band,
+                  farend_extended_block_lowest_band, echo_subtractor_output,
+                  output_block);
 
   if (aec->metricsMode == 1) {
-    UpdateLevel(&aec->nlpoutlevel, CalculatePower(output, PART_LEN));
+    UpdateLevel(&aec->nlpoutlevel,
+                CalculatePower(&output_block[0][0], PART_LEN));
     UpdateMetrics(aec);
   }
 
-  // Store the output block.
-  WebRtc_WriteBuffer(aec->outFrBuf, output, PART_LEN);
-  // For high bands
-  for (i = 0; i < aec->num_bands - 1; ++i) {
-    WebRtc_WriteBuffer(aec->outFrBufH[i], outputH[i], PART_LEN);
+  // Store the nearend signal until the next frame.
+  for (i = 0; i < aec->num_bands; ++i) {
+    memcpy(&aec->previous_nearend_block[i][0], &nearend_block[i][0],
+           sizeof(float) * PART_LEN);
   }
 
-  aec->data_dumper->DumpWav("aec_out", PART_LEN, output,
+  aec->data_dumper->DumpWav("aec_out", PART_LEN, &output_block[0][0],
                             std::min(aec->sampFreq, 16000), 1);
 }
 
 AecCore* WebRtcAec_CreateAec(int instance_count) {
-  int i;
   AecCore* aec = new AecCore(instance_count);
 
   if (!aec) {
     return NULL;
   }
-
-  aec->nearFrBuf = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
-  if (!aec->nearFrBuf) {
-    WebRtcAec_FreeAec(aec);
-    return NULL;
-  }
-
-  aec->outFrBuf = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
-  if (!aec->outFrBuf) {
-    WebRtcAec_FreeAec(aec);
-    return NULL;
-  }
-
-  for (i = 0; i < NUM_HIGH_BANDS_MAX; ++i) {
-    aec->nearFrBufH[i] =
-        WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
-    if (!aec->nearFrBufH[i]) {
-      WebRtcAec_FreeAec(aec);
-      return NULL;
-    }
-    aec->outFrBufH[i] =
-        WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
-    if (!aec->outFrBufH[i]) {
-      WebRtcAec_FreeAec(aec);
-      return NULL;
-    }
-  }
-
-  // Create far-end buffers.
-  // For bit exactness with legacy code, each element in |far_time_buf| is
-  // supposed to contain |PART_LEN2| samples with an overlap of |PART_LEN|
-  // samples from the last frame.
-  // TODO(minyue): reduce |far_time_buf| to non-overlapped |PART_LEN| samples.
-  aec->far_time_buf =
-      WebRtc_CreateBuffer(kBufSizePartitions, sizeof(float) * PART_LEN2);
-  if (!aec->far_time_buf) {
-    WebRtcAec_FreeAec(aec);
-    return NULL;
-  }
+  aec->nearend_buffer_size = 0;
+  memset(&aec->nearend_buffer[0], 0, sizeof(aec->nearend_buffer));
+  // Start the output buffer with zeros to be able to produce
+  // a full output frame in the first frame.
+  aec->output_buffer_size = PART_LEN - (FRAME_LEN - PART_LEN);
+  memset(&aec->output_buffer[0], 0, sizeof(aec->output_buffer));
 
   aec->delay_estimator_farend =
       WebRtc_CreateDelayEstimatorFarend(PART_LEN1, kHistorySizeBlocks);
@@ -1534,20 +1530,9 @@ AecCore* WebRtcAec_CreateAec(int instance_count) {
 }
 
 void WebRtcAec_FreeAec(AecCore* aec) {
-  int i;
   if (aec == NULL) {
     return;
   }
-
-  WebRtc_FreeBuffer(aec->nearFrBuf);
-  WebRtc_FreeBuffer(aec->outFrBuf);
-
-  for (i = 0; i < NUM_HIGH_BANDS_MAX; ++i) {
-    WebRtc_FreeBuffer(aec->nearFrBufH[i]);
-    WebRtc_FreeBuffer(aec->outFrBufH[i]);
-  }
-
-  WebRtc_FreeBuffer(aec->far_time_buf);
 
   WebRtc_FreeDelayEstimator(aec->delay_estimator);
   WebRtc_FreeDelayEstimatorFarend(aec->delay_estimator_farend);
@@ -1606,15 +1591,15 @@ int WebRtcAec_InitAec(AecCore* aec, int sampFreq) {
     aec->num_bands = (size_t)(sampFreq / 16000);
   }
 
-  WebRtc_InitBuffer(aec->nearFrBuf);
-  WebRtc_InitBuffer(aec->outFrBuf);
-  for (i = 0; i < NUM_HIGH_BANDS_MAX; ++i) {
-    WebRtc_InitBuffer(aec->nearFrBufH[i]);
-    WebRtc_InitBuffer(aec->outFrBufH[i]);
-  }
+  // Start the output buffer with zeros to be able to produce
+  // a full output frame in the first frame.
+  aec->output_buffer_size = PART_LEN - (FRAME_LEN - PART_LEN);
+  memset(&aec->output_buffer[0], 0, sizeof(aec->output_buffer));
+  aec->nearend_buffer_size = 0;
+  memset(&aec->nearend_buffer[0], 0, sizeof(aec->nearend_buffer));
 
-  // Initialize far-end buffers.
-  WebRtc_InitBuffer(aec->far_time_buf);
+  // Initialize far-end buffer.
+  aec->farend_block_buffer_.ReInit();
 
   aec->system_delay = 0;
 
@@ -1632,7 +1617,6 @@ int WebRtcAec_InitAec(AecCore* aec, int sampFreq) {
   aec->delay_std = -1;
   aec->fraction_poor_delays = -1.0f;
 
-  aec->signal_delay_correction = 0;
   aec->previous_delay = -2;  // (-2): Uninitialized.
   aec->delay_correction_count = 0;
   aec->shift_offset = kInitialShiftOffset;
@@ -1672,12 +1656,8 @@ int WebRtcAec_InitAec(AecCore* aec, int sampFreq) {
   aec->knownDelay = 0;
 
   // Initialize buffers
-  memset(aec->dBuf, 0, sizeof(aec->dBuf));
+  memset(aec->previous_nearend_block, 0, sizeof(aec->previous_nearend_block));
   memset(aec->eBuf, 0, sizeof(aec->eBuf));
-  // For H bands
-  for (i = 0; i < NUM_HIGH_BANDS_MAX; ++i) {
-    memset(aec->dBufH[i], 0, sizeof(aec->dBufH[i]));
-  }
 
   memset(aec->xPow, 0, sizeof(aec->xPow));
   memset(aec->dPow, 0, sizeof(aec->dPow));
@@ -1737,23 +1717,95 @@ int WebRtcAec_InitAec(AecCore* aec, int sampFreq) {
   return 0;
 }
 
-// For bit exactness with a legacy code, |farend| is supposed to contain
-// |PART_LEN2| samples with an overlap of |PART_LEN| samples from the last
-// frame.
-// TODO(minyue): reduce |farend| to non-overlapped |PART_LEN| samples.
-void WebRtcAec_BufferFarendPartition(AecCore* aec, const float* farend) {
+void WebRtcAec_BufferFarendBlock(AecCore* aec, const float* farend) {
   // Check if the buffer is full, and in that case flush the oldest data.
-  if (WebRtc_available_write(aec->far_time_buf) < 1) {
-    WebRtcAec_MoveFarReadPtr(aec, 1);
+  if (aec->farend_block_buffer_.AvaliableSpace() < 1) {
+    aec->farend_block_buffer_.AdjustSize(1);
   }
-
-  WebRtc_WriteBuffer(aec->far_time_buf, farend, 1);
+  aec->farend_block_buffer_.Insert(farend);
 }
 
-int WebRtcAec_MoveFarReadPtr(AecCore* aec, int elements) {
-  int elements_moved = WebRtc_MoveReadPtr(aec->far_time_buf, elements);
-  aec->system_delay -= elements_moved * PART_LEN;
-  return elements_moved;
+int WebRtcAec_AdjustFarendBufferSizeAndSystemDelay(AecCore* aec,
+                                                   int buffer_size_decrease) {
+  int achieved_buffer_size_decrease =
+      aec->farend_block_buffer_.AdjustSize(buffer_size_decrease);
+  aec->system_delay -= achieved_buffer_size_decrease * PART_LEN;
+  return achieved_buffer_size_decrease;
+}
+
+void FormNearendBlock(
+    size_t nearend_start_index,
+    size_t num_bands,
+    const float* const* nearend_frame,
+    size_t num_samples_from_nearend_frame,
+    const float nearend_buffer[NUM_HIGH_BANDS_MAX + 1]
+                              [PART_LEN - (FRAME_LEN - PART_LEN)],
+    float nearend_block[NUM_HIGH_BANDS_MAX + 1][PART_LEN]) {
+  RTC_DCHECK_LE(num_samples_from_nearend_frame, static_cast<size_t>(PART_LEN));
+  const int num_samples_from_buffer = PART_LEN - num_samples_from_nearend_frame;
+
+  if (num_samples_from_buffer > 0) {
+    for (size_t i = 0; i < num_bands; ++i) {
+      memcpy(&nearend_block[i][0], &nearend_buffer[i][0],
+             num_samples_from_buffer * sizeof(float));
+    }
+  }
+
+  for (size_t i = 0; i < num_bands; ++i) {
+    memcpy(&nearend_block[i][num_samples_from_buffer],
+           &nearend_frame[i][nearend_start_index],
+           num_samples_from_nearend_frame * sizeof(float));
+  }
+}
+
+void BufferNearendFrame(
+    size_t nearend_start_index,
+    size_t num_bands,
+    const float* const* nearend_frame,
+    size_t num_samples_to_buffer,
+    float nearend_buffer[NUM_HIGH_BANDS_MAX + 1]
+                        [PART_LEN - (FRAME_LEN - PART_LEN)]) {
+  for (size_t i = 0; i < num_bands; ++i) {
+    memcpy(
+        &nearend_buffer[i][0],
+        &nearend_frame[i]
+                      [nearend_start_index + FRAME_LEN - num_samples_to_buffer],
+        num_samples_to_buffer * sizeof(float));
+  }
+}
+
+void BufferOutputBlock(size_t num_bands,
+                       const float output_block[NUM_HIGH_BANDS_MAX + 1]
+                                               [PART_LEN],
+                       size_t* output_buffer_size,
+                       float output_buffer[NUM_HIGH_BANDS_MAX + 1]
+                                          [2 * PART_LEN]) {
+  for (size_t i = 0; i < num_bands; ++i) {
+    memcpy(&output_buffer[i][*output_buffer_size], &output_block[i][0],
+           PART_LEN * sizeof(float));
+  }
+  (*output_buffer_size) += PART_LEN;
+}
+
+void FormOutputFrame(size_t output_start_index,
+                     size_t num_bands,
+                     size_t* output_buffer_size,
+                     float output_buffer[NUM_HIGH_BANDS_MAX + 1][2 * PART_LEN],
+                     float* const* output_frame) {
+  RTC_DCHECK_LE(static_cast<size_t>(FRAME_LEN), *output_buffer_size);
+  for (size_t i = 0; i < num_bands; ++i) {
+    memcpy(&output_frame[i][output_start_index], &output_buffer[i][0],
+           FRAME_LEN * sizeof(float));
+  }
+  (*output_buffer_size) -= FRAME_LEN;
+  if (*output_buffer_size > 0) {
+    RTC_DCHECK_GE(static_cast<size_t>(2 * PART_LEN - FRAME_LEN),
+                  (*output_buffer_size));
+    for (size_t i = 0; i < num_bands; ++i) {
+      memcpy(&output_buffer[i][0], &output_buffer[i][FRAME_LEN],
+             (*output_buffer_size) * sizeof(float));
+    }
+  }
 }
 
 void WebRtcAec_ProcessFrames(AecCore* aec,
@@ -1762,8 +1814,7 @@ void WebRtcAec_ProcessFrames(AecCore* aec,
                              size_t num_samples,
                              int knownDelay,
                              float* const* out) {
-  size_t i, j;
-  int out_elements = 0;
+  RTC_DCHECK(num_samples == 80 || num_samples == 160);
 
   aec->frame_count++;
   // For each frame the process is as follows:
@@ -1793,24 +1844,15 @@ void WebRtcAec_ProcessFrames(AecCore* aec,
   // Note that the two algorithms operate independently.  Currently, we only
   // allow one algorithm to be turned on.
 
-  assert(aec->num_bands == num_bands);
+  RTC_DCHECK_EQ(aec->num_bands, num_bands);
 
-  for (j = 0; j < num_samples; j += FRAME_LEN) {
-    // TODO(bjornv): Change the near-end buffer handling to be the same as for
-    // far-end, that is, with a near_pre_buf.
-    // Buffer the near-end frame.
-    WebRtc_WriteBuffer(aec->nearFrBuf, &nearend[0][j], FRAME_LEN);
-    // For H band
-    for (i = 1; i < num_bands; ++i) {
-      WebRtc_WriteBuffer(aec->nearFrBufH[i - 1], &nearend[i][j], FRAME_LEN);
-    }
-
+  for (size_t j = 0; j < num_samples; j += FRAME_LEN) {
     // 1) At most we process |aec->mult|+1 partitions in 10 ms. Make sure we
     // have enough far-end data for that by stuffing the buffer if the
     // |system_delay| indicates others.
     if (aec->system_delay < FRAME_LEN) {
       // We don't have enough data so we rewind 10 ms.
-      WebRtcAec_MoveFarReadPtr(aec, -(aec->mult + 1));
+      WebRtcAec_AdjustFarendBufferSizeAndSystemDelay(aec, -(aec->mult + 1));
     }
 
     if (!aec->delay_agnostic_enabled) {
@@ -1824,57 +1866,79 @@ void WebRtcAec_ProcessFrames(AecCore* aec,
       // which should be investigated. Maybe, allow for a non-symmetric
       // rounding, like -16.
       int move_elements = (aec->knownDelay - knownDelay - 32) / PART_LEN;
-      int moved_elements = WebRtc_MoveReadPtr(aec->far_time_buf, move_elements);
+      int moved_elements = aec->farend_block_buffer_.AdjustSize(move_elements);
       MaybeLogDelayAdjustment(moved_elements * (aec->sampFreq == 8000 ? 8 : 4),
                               DelaySource::kSystemDelay);
       aec->knownDelay -= moved_elements * PART_LEN;
     } else {
       // 2 b) Apply signal based delay correction.
       int move_elements = SignalBasedDelayCorrection(aec);
-      int moved_elements = WebRtc_MoveReadPtr(aec->far_time_buf, move_elements);
+      int moved_elements = aec->farend_block_buffer_.AdjustSize(move_elements);
       MaybeLogDelayAdjustment(moved_elements * (aec->sampFreq == 8000 ? 8 : 4),
                               DelaySource::kDelayAgnostic);
       int far_near_buffer_diff =
-          WebRtc_available_read(aec->far_time_buf) -
-          WebRtc_available_read(aec->nearFrBuf) / PART_LEN;
+          aec->farend_block_buffer_.Size() -
+          (aec->nearend_buffer_size + FRAME_LEN) / PART_LEN;
       WebRtc_SoftResetDelayEstimator(aec->delay_estimator, moved_elements);
       WebRtc_SoftResetDelayEstimatorFarend(aec->delay_estimator_farend,
                                            moved_elements);
-      aec->signal_delay_correction += moved_elements;
       // If we rely on reported system delay values only, a buffer underrun here
       // can never occur since we've taken care of that in 1) above.  Here, we
       // apply signal based delay correction and can therefore end up with
       // buffer underruns since the delay estimation can be wrong.  We therefore
       // stuff the buffer with enough elements if needed.
       if (far_near_buffer_diff < 0) {
-        WebRtcAec_MoveFarReadPtr(aec, far_near_buffer_diff);
+        WebRtcAec_AdjustFarendBufferSizeAndSystemDelay(aec,
+                                                       far_near_buffer_diff);
       }
     }
 
-    // 4) Process as many blocks as possible.
-    while (WebRtc_available_read(aec->nearFrBuf) >= PART_LEN) {
-      ProcessBlock(aec);
+    static_assert(
+        16 == (FRAME_LEN - PART_LEN),
+        "These constants need to be properly related for this code to work");
+    float output_block[NUM_HIGH_BANDS_MAX + 1][PART_LEN];
+    float nearend_block[NUM_HIGH_BANDS_MAX + 1][PART_LEN];
+    float farend_extended_block_lowest_band[PART_LEN2];
+
+    // Form and process a block of nearend samples, buffer the output block of
+    // samples.
+    aec->farend_block_buffer_.ExtractExtendedBlock(
+        farend_extended_block_lowest_band);
+    FormNearendBlock(j, num_bands, nearend, PART_LEN - aec->nearend_buffer_size,
+                     aec->nearend_buffer, nearend_block);
+    ProcessNearendBlock(aec, farend_extended_block_lowest_band, nearend_block,
+                        output_block);
+    BufferOutputBlock(num_bands, output_block, &aec->output_buffer_size,
+                      aec->output_buffer);
+
+    if ((FRAME_LEN - PART_LEN + aec->nearend_buffer_size) == PART_LEN) {
+      // When possible (every fourth frame) form and process a second block of
+      // nearend samples, buffer the output block of samples.
+      aec->farend_block_buffer_.ExtractExtendedBlock(
+          farend_extended_block_lowest_band);
+      FormNearendBlock(j + FRAME_LEN - PART_LEN, num_bands, nearend, PART_LEN,
+                       aec->nearend_buffer, nearend_block);
+      ProcessNearendBlock(aec, farend_extended_block_lowest_band, nearend_block,
+                          output_block);
+      BufferOutputBlock(num_bands, output_block, &aec->output_buffer_size,
+                        aec->output_buffer);
+
+      // Reset the buffer size as there are no samples left in the nearend input
+      // to buffer.
+      aec->nearend_buffer_size = 0;
+    } else {
+      // Buffer the remaining samples in the nearend input.
+      aec->nearend_buffer_size += FRAME_LEN - PART_LEN;
+      BufferNearendFrame(j, num_bands, nearend, aec->nearend_buffer_size,
+                         aec->nearend_buffer);
     }
 
     // 5) Update system delay with respect to the entire frame.
     aec->system_delay -= FRAME_LEN;
 
-    // 6) Update output frame.
-    // Stuff the out buffer if we have less than a frame to output.
-    // This should only happen for the first frame.
-    out_elements = static_cast<int>(WebRtc_available_read(aec->outFrBuf));
-    if (out_elements < FRAME_LEN) {
-      WebRtc_MoveReadPtr(aec->outFrBuf, out_elements - FRAME_LEN);
-      for (i = 0; i < num_bands - 1; ++i) {
-        WebRtc_MoveReadPtr(aec->outFrBufH[i], out_elements - FRAME_LEN);
-      }
-    }
-    // Obtain an output frame.
-    WebRtc_ReadBuffer(aec->outFrBuf, NULL, &out[0][j], FRAME_LEN);
-    // For H bands.
-    for (i = 1; i < num_bands; ++i) {
-      WebRtc_ReadBuffer(aec->outFrBufH[i - 1], NULL, &out[i][j], FRAME_LEN);
-    }
+    // 6) Form the output frame.
+    FormOutputFrame(j, num_bands, &aec->output_buffer_size, aec->output_buffer,
+                    out);
   }
 }
 
@@ -1882,9 +1946,9 @@ int WebRtcAec_GetDelayMetricsCore(AecCore* self,
                                   int* median,
                                   int* std,
                                   float* fraction_poor_delays) {
-  assert(self != NULL);
-  assert(median != NULL);
-  assert(std != NULL);
+  RTC_DCHECK(self);
+  RTC_DCHECK(median);
+  RTC_DCHECK(std);
 
   if (self->delay_logging_enabled == 0) {
     // Logging disabled.
@@ -1911,9 +1975,9 @@ void WebRtcAec_GetEchoStats(AecCore* self,
                             Stats* erle,
                             Stats* a_nlp,
                             float* divergent_filter_fraction) {
-  assert(erl != NULL);
-  assert(erle != NULL);
-  assert(a_nlp != NULL);
+  RTC_DCHECK(erl);
+  RTC_DCHECK(erle);
+  RTC_DCHECK(a_nlp);
   *erl = self->erl;
   *erle = self->erle;
   *a_nlp = self->aNlp;
@@ -1925,7 +1989,8 @@ void WebRtcAec_SetConfigCore(AecCore* self,
                              int nlp_mode,
                              int metrics_mode,
                              int delay_logging) {
-  assert(nlp_mode >= 0 && nlp_mode < 3);
+  RTC_DCHECK_GE(nlp_mode, 0);
+  RTC_DCHECK_LT(nlp_mode, 3);
   self->nlp_mode = nlp_mode;
   self->metricsMode = metrics_mode;
   if (self->metricsMode) {
@@ -1952,7 +2017,7 @@ void WebRtcAec_enable_aec3(AecCore* self, int enable) {
 }
 
 int WebRtcAec_aec3_enabled(AecCore* self) {
-  assert(self->aec3_enabled == 0 || self->aec3_enabled == 1);
+  RTC_DCHECK(self->aec3_enabled == 0 || self->aec3_enabled == 1);
   return self->aec3_enabled;
 }
 
@@ -1984,7 +2049,7 @@ int WebRtcAec_system_delay(AecCore* self) {
 }
 
 void WebRtcAec_SetSystemDelay(AecCore* self, int delay) {
-  assert(delay >= 0);
+  RTC_DCHECK_GE(delay, 0);
   self->system_delay = delay;
 }
 }  // namespace webrtc

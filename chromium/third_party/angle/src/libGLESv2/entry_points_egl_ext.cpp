@@ -98,7 +98,7 @@ EGLBoolean EGLAPIENTRY PostSubBufferNV(EGLDisplay dpy, EGLSurface surface, EGLin
         return EGL_FALSE;
     }
 
-    if (display->isDeviceLost())
+    if (display->testDeviceLost())
     {
         SetGlobalError(Error(EGL_CONTEXT_LOST));
         return EGL_FALSE;
@@ -193,6 +193,17 @@ EGLDisplay EGLAPIENTRY GetPlatformDisplayEXT(EGLenum platform, void *native_disp
                             if (!clientExtensions.platformANGLEOpenGL)
                             {
                                 SetGlobalError(Error(EGL_BAD_ATTRIBUTE));
+                                return EGL_NO_DISPLAY;
+                            }
+                            break;
+
+                        case EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE:
+                            if (!clientExtensions.platformANGLENULL)
+                            {
+                                SetGlobalError(Error(EGL_BAD_ATTRIBUTE,
+                                                     "Display type "
+                                                     "EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE "
+                                                     "requires EGL_ANGLE_platform_angle_null."));
                                 return EGL_NO_DISPLAY;
                             }
                             break;
@@ -433,7 +444,13 @@ EGLBoolean EGLAPIENTRY QueryDisplayAttribEXT(EGLDisplay dpy, EGLint attribute, E
           dpy, attribute, value);
 
     Display *display = static_cast<Display*>(dpy);
-    Error error(EGL_SUCCESS);
+
+    Error error = ValidateDisplay(display);
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
 
     if (!display->getExtensions().deviceQuery)
     {

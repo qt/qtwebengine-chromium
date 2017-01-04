@@ -33,15 +33,14 @@ class CC_EXPORT RemoteChannelMain : public ChannelMain,
   void UpdateTopControlsStateOnImpl(TopControlsState constraints,
                                     TopControlsState current,
                                     bool animate) override;
-  void InitializeOutputSurfaceOnImpl(OutputSurface* output_surface) override;
+  void InitializeCompositorFrameSinkOnImpl(CompositorFrameSink*) override;
   void InitializeMutatorOnImpl(
       std::unique_ptr<LayerTreeMutator> mutator) override;
   void MainThreadHasStoppedFlingingOnImpl() override;
   void SetInputThrottledUntilCommitOnImpl(bool is_throttled) override;
   void SetDeferCommitsOnImpl(bool defer_commits) override;
-  void FinishAllRenderingOnImpl(CompletionEvent* completion) override;
   void SetVisibleOnImpl(bool visible) override;
-  void ReleaseOutputSurfaceOnImpl(CompletionEvent* completion) override;
+  void ReleaseCompositorFrameSinkOnImpl(CompletionEvent* completion) override;
   void MainFrameWillHappenOnImplForTesting(
       CompletionEvent* completion,
       bool* main_frame_will_happen) override;
@@ -49,14 +48,14 @@ class CC_EXPORT RemoteChannelMain : public ChannelMain,
   void SetNeedsCommitOnImpl() override;
   void BeginMainFrameAbortedOnImpl(
       CommitEarlyOutReason reason,
-      base::TimeTicks main_thread_start_time) override;
-  void StartCommitOnImpl(CompletionEvent* completion,
-                         LayerTreeHost* layer_tree_host,
-                         base::TimeTicks main_thread_start_time,
-                         bool hold_commit_for_activation) override;
+      base::TimeTicks main_thread_start_time,
+      std::vector<std::unique_ptr<SwapPromise>> swap_promises) override;
+  void NotifyReadyToCommitOnImpl(CompletionEvent* completion,
+                                 LayerTreeHostInProcess* layer_tree_host,
+                                 base::TimeTicks main_thread_start_time,
+                                 bool hold_commit_for_activation) override;
   void SynchronouslyInitializeImpl(
-      LayerTreeHost* layer_tree_host,
-      std::unique_ptr<BeginFrameSource> external_begin_frame_source) override;
+      LayerTreeHostInProcess* layer_tree_host) override;
   void SynchronouslyCloseImpl() override;
 
   // RemoteProtoChannel::ProtoReceiver implementation

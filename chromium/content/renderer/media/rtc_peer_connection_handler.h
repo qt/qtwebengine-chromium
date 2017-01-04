@@ -20,6 +20,7 @@
 #include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "content/renderer/media/webrtc/media_stream_track_metrics.h"
+#include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandler.h"
 #include "third_party/WebKit/public/platform/WebRTCStatsRequest.h"
@@ -29,6 +30,7 @@ namespace blink {
 class WebFrame;
 class WebRTCAnswerOptions;
 class WebRTCDataChannelHandler;
+class WebRTCLegacyStats;
 class WebRTCOfferOptions;
 class WebRTCPeerConnectionHandlerClient;
 }
@@ -50,10 +52,7 @@ class CONTENT_EXPORT LocalRTCStatsResponse
   }
 
   virtual blink::WebRTCStatsResponse webKitStatsResponse() const;
-  virtual size_t addReport(blink::WebString type, blink::WebString id,
-                           double timestamp);
-  virtual void addStatistic(size_t report,
-                            blink::WebString name, blink::WebString value);
+  virtual void addStats(const blink::WebRTCLegacyStats& stats);
 
  protected:
   ~LocalRTCStatsResponse() override {}
@@ -147,6 +146,8 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
                  const blink::WebMediaConstraints& options) override;
   void removeStream(const blink::WebMediaStream& stream) override;
   void getStats(const blink::WebRTCStatsRequest& request) override;
+  void getStats(
+      std::unique_ptr<blink::WebRTCStatsReportCallback> callback) override;
   blink::WebRTCDataChannelHandler* createDataChannel(
       const blink::WebString& label,
       const blink::WebRTCDataChannelInit& init) override;
@@ -166,7 +167,14 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
                 blink::WebMediaStreamSource::Type track_type);
 
   // Tells the |client_| to close RTCPeerConnection.
-  void CloseClientPeerConnection();
+  // Make it virtual for testing purpose.
+  virtual void CloseClientPeerConnection();
+
+  // Start recording an event log.
+  void StartEventLog(IPC::PlatformFileForTransit file,
+                     int64_t max_file_size_bytes);
+  // Stop recording an event log.
+  void StopEventLog();
 
  protected:
   webrtc::PeerConnectionInterface* native_peer_connection() {

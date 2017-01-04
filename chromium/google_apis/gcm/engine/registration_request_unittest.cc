@@ -24,6 +24,7 @@ namespace gcm {
 namespace {
 const uint64_t kAndroidId = 42UL;
 const char kAppId[] = "TestAppId";
+const char kProductCategoryForSubtypes[] = "com.chrome.macosx";
 const char kDeveloperId[] = "Project1";
 const char kLoginHeader[] = "AidLogin";
 const char kRegistrationURL[] = "http://foo.bar/register";
@@ -96,8 +97,9 @@ GCMRegistrationRequestTest::~GCMRegistrationRequestTest() {
 }
 
 void GCMRegistrationRequestTest::CreateRequest(const std::string& sender_ids) {
-  RegistrationRequest::RequestInfo request_info(
-      kAndroidId, kSecurityToken, kAppId);
+  RegistrationRequest::RequestInfo request_info(kAndroidId, kSecurityToken,
+                                                kAppId /* category */,
+                                                std::string() /* subtype */);
   std::unique_ptr<GCMRegistrationRequestHandler> request_handler(
       new GCMRegistrationRequestHandler(sender_ids));
   request_.reset(new RegistrationRequest(
@@ -149,20 +151,7 @@ TEST_F(GCMRegistrationRequestTest, RequestDataAndURL) {
   expected_pairs["sender"] = kDeveloperId;
   expected_pairs["device"] = base::Uint64ToString(kAndroidId);
 
-  // Verify data was formatted properly.
-  std::string upload_data = fetcher->upload_data();
-  base::StringTokenizer data_tokenizer(upload_data, "&=");
-  while (data_tokenizer.GetNext()) {
-    std::map<std::string, std::string>::iterator iter =
-        expected_pairs.find(data_tokenizer.token());
-    ASSERT_TRUE(iter != expected_pairs.end());
-    ASSERT_TRUE(data_tokenizer.GetNext());
-    EXPECT_EQ(iter->second, data_tokenizer.token());
-    // Ensure that none of the keys appears twice.
-    expected_pairs.erase(iter);
-  }
-
-  EXPECT_EQ(0UL, expected_pairs.size());
+  ASSERT_NO_FATAL_FAILURE(VerifyFetcherUploadData(&expected_pairs));
 }
 
 TEST_F(GCMRegistrationRequestTest, RequestRegistrationWithMultipleSenderIds) {
@@ -196,6 +185,24 @@ TEST_F(GCMRegistrationRequestTest, ResponseParsing) {
   CreateRequest("sender1,sender2");
   request_->Start();
 
+  SetResponse(net::HTTP_OK, "token=2501");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::SUCCESS, status_);
+  EXPECT_EQ("2501", registration_id_);
+}
+
+TEST_F(GCMRegistrationRequestTest, ResponseParsingFailed) {
+  CreateRequest("sender1,sender2");
+  request_->Start();
+
+  SetResponse(net::HTTP_OK, "tok");  // Simulate truncated message.
+  CompleteFetch();
+
+  EXPECT_FALSE(callback_called_);
+
+  // Ensuring a retry happened and succeeds.
   SetResponse(net::HTTP_OK, "token=2501");
   CompleteFetch();
 
@@ -281,6 +288,24 @@ TEST_F(GCMRegistrationRequestTest, ResponseAuthenticationError) {
   EXPECT_EQ("2501", registration_id_);
 }
 
+TEST_F(GCMRegistrationRequestTest, ResponseInternalServerError) {
+  CreateRequest("sender1,sender2");
+  request_->Start();
+
+  SetResponse(net::HTTP_INTERNAL_SERVER_ERROR, "Error=InternalServerError");
+  CompleteFetch();
+
+  EXPECT_FALSE(callback_called_);
+
+  // Ensuring a retry happened and succeeds.
+  SetResponse(net::HTTP_OK, "token=2501");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::SUCCESS, status_);
+  EXPECT_EQ("2501", registration_id_);
+}
+
 TEST_F(GCMRegistrationRequestTest, ResponseInvalidParameters) {
   CreateRequest("sender1,sender2");
   request_->Start();
@@ -314,6 +339,30 @@ TEST_F(GCMRegistrationRequestTest, ResponseInvalidSenderBadRequest) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(RegistrationRequest::INVALID_SENDER, status_);
+  EXPECT_EQ(std::string(), registration_id_);
+}
+
+TEST_F(GCMRegistrationRequestTest, ResponseQuotaExceeded) {
+  CreateRequest("sender1");
+  request_->Start();
+
+  SetResponse(net::HTTP_SERVICE_UNAVAILABLE, "Error=QUOTA_EXCEEDED");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::QUOTA_EXCEEDED, status_);
+  EXPECT_EQ(std::string(), registration_id_);
+}
+
+TEST_F(GCMRegistrationRequestTest, ResponseTooManyRegistrations) {
+  CreateRequest("sender1");
+  request_->Start();
+
+  SetResponse(net::HTTP_OK, "Error=TOO_MANY_REGISTRATIONS");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::TOO_MANY_REGISTRATIONS, status_);
   EXPECT_EQ(std::string(), registration_id_);
 }
 
@@ -398,7 +447,8 @@ class InstanceIDGetTokenRequestTest : public RegistrationRequestTest {
   InstanceIDGetTokenRequestTest();
   ~InstanceIDGetTokenRequestTest() override;
 
-  void CreateRequest(const std::string& instance_id,
+  void CreateRequest(bool use_subtype,
+                     const std::string& instance_id,
                      const std::string& authorized_entity,
                      const std::string& scope,
                      const std::map<std::string, std::string>& options);
@@ -411,12 +461,15 @@ InstanceIDGetTokenRequestTest::~InstanceIDGetTokenRequestTest() {
 }
 
 void InstanceIDGetTokenRequestTest::CreateRequest(
+    bool use_subtype,
     const std::string& instance_id,
     const std::string& authorized_entity,
     const std::string& scope,
     const std::map<std::string, std::string>& options) {
-  RegistrationRequest::RequestInfo request_info(
-      kAndroidId, kSecurityToken, kAppId);
+  std::string category = use_subtype ? kProductCategoryForSubtypes : kAppId;
+  std::string subtype = use_subtype ? kAppId : std::string();
+  RegistrationRequest::RequestInfo request_info(kAndroidId, kSecurityToken,
+                                                category, subtype);
   std::unique_ptr<InstanceIDGetTokenRequestHandler> request_handler(
       new InstanceIDGetTokenRequestHandler(instance_id, authorized_entity,
                                            scope, kGCMVersion, options));
@@ -434,7 +487,8 @@ TEST_F(InstanceIDGetTokenRequestTest, RequestSuccessful) {
   options["Foo"] = "Bar";
 
   set_max_retry_count(0);
-  CreateRequest(kInstanceId, kDeveloperId, kScope, options);
+  CreateRequest(false /* use_subtype */, kInstanceId, kDeveloperId, kScope,
+                options);
   request_->Start();
 
   SetResponse(net::HTTP_OK, "token=2501");
@@ -448,7 +502,8 @@ TEST_F(InstanceIDGetTokenRequestTest, RequestSuccessful) {
 TEST_F(InstanceIDGetTokenRequestTest, RequestDataAndURL) {
   std::map<std::string, std::string> options;
   options["Foo"] = "Bar";
-  CreateRequest(kInstanceId, kDeveloperId, kScope, options);
+  CreateRequest(false /* use_subtype */, kInstanceId, kDeveloperId, kScope,
+                options);
   request_->Start();
 
   // Get data sent by request.
@@ -479,7 +534,32 @@ TEST_F(InstanceIDGetTokenRequestTest, RequestDataAndURL) {
   expected_pairs["gmsv"] = base::IntToString(kGCMVersion);
   expected_pairs["app"] = kAppId;
   expected_pairs["sender"] = kDeveloperId;
-  expected_pairs["X-subtype"] = kDeveloperId;
+  expected_pairs["device"] = base::Uint64ToString(kAndroidId);
+  expected_pairs["appid"] = kInstanceId;
+  expected_pairs["scope"] = kScope;
+  expected_pairs["X-scope"] = kScope;
+  expected_pairs["X-Foo"] = "Bar";
+
+  ASSERT_NO_FATAL_FAILURE(VerifyFetcherUploadData(&expected_pairs));
+}
+
+TEST_F(InstanceIDGetTokenRequestTest, RequestDataWithSubtype) {
+  std::map<std::string, std::string> options;
+  options["Foo"] = "Bar";
+  CreateRequest(true /* use_subtype */, kInstanceId, kDeveloperId, kScope,
+                options);
+  request_->Start();
+
+  // Get data sent by request.
+  net::TestURLFetcher* fetcher = GetFetcher();
+  ASSERT_TRUE(fetcher);
+
+  // Same as RequestDataAndURL except "app" and "X-subtype".
+  std::map<std::string, std::string> expected_pairs;
+  expected_pairs["gmsv"] = base::IntToString(kGCMVersion);
+  expected_pairs["app"] = kProductCategoryForSubtypes;
+  expected_pairs["X-subtype"] = kAppId;
+  expected_pairs["sender"] = kDeveloperId;
   expected_pairs["device"] = base::Uint64ToString(kAndroidId);
   expected_pairs["appid"] = kInstanceId;
   expected_pairs["scope"] = kScope;
@@ -490,8 +570,7 @@ TEST_F(InstanceIDGetTokenRequestTest, RequestDataAndURL) {
   std::string upload_data = fetcher->upload_data();
   base::StringTokenizer data_tokenizer(upload_data, "&=");
   while (data_tokenizer.GetNext()) {
-    std::map<std::string, std::string>::iterator iter =
-        expected_pairs.find(data_tokenizer.token());
+    auto iter = expected_pairs.find(data_tokenizer.token());
     ASSERT_TRUE(iter != expected_pairs.end());
     ASSERT_TRUE(data_tokenizer.GetNext());
     EXPECT_EQ(iter->second, data_tokenizer.token());
@@ -504,7 +583,8 @@ TEST_F(InstanceIDGetTokenRequestTest, RequestDataAndURL) {
 
 TEST_F(InstanceIDGetTokenRequestTest, ResponseHttpStatusNotOK) {
   std::map<std::string, std::string> options;
-  CreateRequest(kInstanceId, kDeveloperId, kScope, options);
+  CreateRequest(false /* use_subtype */, kInstanceId, kDeveloperId, kScope,
+                options);
   request_->Start();
 
   SetResponse(net::HTTP_UNAUTHORIZED, "token=2501");

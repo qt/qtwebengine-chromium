@@ -13,7 +13,7 @@
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
-#include "net/log/net_log.h"
+#include "net/log/net_log_with_source.h"
 #include "net/ssl/ssl_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -50,7 +50,7 @@ void RunSingleRoundAuthTest(HandlerRunMode run_mode,
                             int handler_rv,
                             int expected_controller_rv,
                             SchemeState scheme_state) {
-  BoundNetLog dummy_log;
+  NetLogWithSource dummy_log;
   HttpAuthCache dummy_auth_cache;
 
   HttpRequestInfo request;
@@ -114,8 +114,15 @@ TEST(HttpAuthControllerTest, PermanentErrors) {
 
   // If a non-permanent error is returned by the handler, then the
   // controller should report it unchanged.
-  RunSingleRoundAuthTest(RUN_HANDLER_ASYNC, ERR_INVALID_AUTH_CREDENTIALS,
-                         ERR_INVALID_AUTH_CREDENTIALS, SCHEME_IS_ENABLED);
+  RunSingleRoundAuthTest(RUN_HANDLER_ASYNC, ERR_UNEXPECTED, ERR_UNEXPECTED,
+                         SCHEME_IS_ENABLED);
+
+  // ERR_INVALID_AUTH_CREDENTIALS is special. It's a non-permanet error, but
+  // the error isn't propagated, nor is the auth scheme disabled. This allows
+  // the scheme to re-attempt the authentication attempt using a different set
+  // of credentials.
+  RunSingleRoundAuthTest(RUN_HANDLER_ASYNC, ERR_INVALID_AUTH_CREDENTIALS, OK,
+                         SCHEME_IS_ENABLED);
 }
 
 // If an HttpAuthHandler indicates that it doesn't allow explicit
@@ -164,7 +171,7 @@ TEST(HttpAuthControllerTest, NoExplicitCredentialsAllowed) {
     HttpAuth::Scheme expected_scheme_;
   };
 
-  BoundNetLog dummy_log;
+  NetLogWithSource dummy_log;
   HttpAuthCache dummy_auth_cache;
   HttpRequestInfo request;
   request.method = "GET";

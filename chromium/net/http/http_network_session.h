@@ -13,6 +13,9 @@
 #include <unordered_set>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/memory/memory_coordinator_client.h"
+#include "base/memory/memory_pressure_monitor.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
@@ -21,7 +24,7 @@
 #include "net/dns/host_resolver.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_stream_factory.h"
-#include "net/quic/quic_stream_factory.h"
+#include "net/quic/chromium/quic_stream_factory.h"
 #include "net/socket/next_proto.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/ssl_client_auth_cache.h"
@@ -59,7 +62,8 @@ class TransportSecurityState;
 
 // This class holds session objects used by HttpNetworkTransaction objects.
 class NET_EXPORT HttpNetworkSession
-    : NON_EXPORTED_BASE(public base::NonThreadSafe) {
+    : NON_EXPORTED_BASE(public base::NonThreadSafe),
+      public base::MemoryCoordinatorClient {
  public:
   struct NET_EXPORT Params {
     Params();
@@ -87,8 +91,6 @@ class NET_EXPORT HttpNetworkSession
 
     // Use SPDY ping frames to test for connection health after idle.
     bool enable_spdy_ping_based_connection_checking;
-    NextProto spdy_default_protocol;
-    bool enable_spdy31;
     bool enable_http2;
     size_t spdy_session_max_recv_window_size;
     size_t spdy_stream_max_recv_window_size;
@@ -100,12 +102,6 @@ class NET_EXPORT HttpNetworkSession
     // Whether to enable QUIC Alt-Svc entries with hostname different than that
     // of the origin.
     bool enable_quic_alternative_service_with_different_host;
-
-    // Enables NPN support.  Note that ALPN is always enabled.
-    bool enable_npn;
-
-    // Enable setting of HTTP/2 dependencies based on priority.
-    bool enable_priority_dependencies;
 
     // Enables QUIC support.
     bool enable_quic;
@@ -131,12 +127,6 @@ class NET_EXPORT HttpNetworkSession
     bool quic_disable_disk_cache;
     // Prefer AES-GCM to ChaCha20 even if no hardware support is present.
     bool quic_prefer_aes;
-    // Specifies the maximum number of connections with high packet loss in
-    // a row after which QUIC will be disabled.
-    int quic_max_number_of_lossy_connections;
-    // Specifies packet loss rate in fraction after which a connection is
-    // closed and is considered as a lossy connection.
-    float quic_packet_loss_threshold;
     // Size in bytes of the QUIC DUP socket receive buffer.
     int quic_socket_receive_buffer_size;
     // Delay starting a TCP connection when QUIC believes it can speak
@@ -161,15 +151,18 @@ class NET_EXPORT HttpNetworkSession
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
     // Versions of QUIC which may be used.
     QuicVersionVector quic_supported_versions;
-    int quic_max_recent_disabled_reasons;
-    int quic_threshold_public_resets_post_handshake;
-    int quic_threshold_timeouts_streams_open;
     // Set of QUIC tags to send in the handshake's connection options.
     QuicTagVector quic_connection_options;
     // If true, all QUIC sessions are closed when any local IP address changes.
     bool quic_close_sessions_on_ip_change;
-    // Specifes QUIC idle connection state lifetime.
+    // Specifies QUIC idle connection state lifetime.
     int quic_idle_connection_timeout_seconds;
+    // Specifies the reduced ping timeout subsequent connections should use when
+    // a connection was timed out with open streams.
+    int quic_reduced_ping_timeout_seconds;
+    // Specifies the maximum time duration that QUIC packet reader can perform
+    // consecutive packets reading.
+    int quic_packet_reader_yield_after_duration_milliseconds;
     // If true, disable preconnections if QUIC can do 0RTT.
     bool quic_disable_preconnect_if_0rtt;
     // List of hosts for which QUIC is explicitly whitelisted.
@@ -180,12 +173,25 @@ class NET_EXPORT HttpNetworkSession
     // If true, active QUIC sessions experiencing poor connectivity may be
     // migrated onto a new network.
     bool quic_migrate_sessions_early;
+    // If true, allows migration of QUIC connections to a server-specified
+    // alternate server address.
+    bool quic_allow_server_migration;
     // If true, bidirectional streams over QUIC will be disabled.
     bool quic_disable_bidirectional_streams;
+    // If true, enable force HOL blocking.  For measurement purposes.
+    bool quic_force_hol_blocking;
+    // If true, race cert verification with host resolution.
+    bool quic_race_cert_verification;
+    // If true, configure QUIC sockets to not fragment packets.
+    bool quic_do_not_fragment;
 
     ProxyDelegate* proxy_delegate;
     // Enable support for Token Binding.
     bool enable_token_binding;
+
+    // Enable HTTP/0.9 for HTTP/HTTPS on ports other than the default one for
+    // each protocol.
+    bool http_09_on_non_default_ports_enabled;
   };
 
   enum SocketPoolType {
@@ -195,7 +201,7 @@ class NET_EXPORT HttpNetworkSession
   };
 
   explicit HttpNetworkSession(const Params& params);
-  ~HttpNetworkSession();
+  ~HttpNetworkSession() override;
 
   HttpAuthCache* http_auth_cache() { return &http_auth_cache_; }
   SSLClientAuthCache* ssl_client_auth_cache() {
@@ -260,9 +266,6 @@ class NET_EXPORT HttpNetworkSession
   // Populates |*alpn_protos| with protocols to be used with ALPN.
   void GetAlpnProtos(NextProtoVector* alpn_protos) const;
 
-  // Populates |*npn_protos| with protocols to be used with NPN.
-  void GetNpnProtos(NextProtoVector* npn_protos) const;
-
   // Populates |server_config| and |proxy_config| based on this session and
   // |request|.
   void GetSSLConfig(const HttpRequestInfo& request,
@@ -273,6 +276,13 @@ class NET_EXPORT HttpNetworkSession
   friend class HttpNetworkSessionPeer;
 
   ClientSocketPoolManager* GetSocketPoolManager(SocketPoolType pool_type);
+
+  // Flush sockets on low memory notifications callback.
+  void OnMemoryPressure(
+      base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
+
+  // base::MemoryCoordinatorClient implementation:
+  void OnMemoryStateChange(base::MemoryState state) override;
 
   NetLog* const net_log_;
   HttpServerProperties* const http_server_properties_;
@@ -294,9 +304,10 @@ class NET_EXPORT HttpNetworkSession
   std::set<HttpResponseBodyDrainer*> response_drainers_;
 
   NextProtoVector next_protos_;
-  bool enabled_protocols_[NUM_VALID_ALTERNATE_PROTOCOLS];
 
   Params params_;
+
+  std::unique_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 };
 
 }  // namespace net

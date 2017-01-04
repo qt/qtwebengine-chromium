@@ -21,6 +21,7 @@
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_type.h"
+#include "content/public/browser/reload_type.h"
 
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
@@ -148,7 +149,8 @@ class CONTENT_EXPORT NavigationControllerImpl
   bool RendererDidNavigate(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
-      LoadCommittedDetails* details);
+      LoadCommittedDetails* details,
+      bool is_navigation_within_page);
 
   // Notifies us that we just became active. This is used by the WebContentsImpl
   // so that we know to load URLs that were pending as "lazy" loads.
@@ -284,16 +286,19 @@ class CONTENT_EXPORT NavigationControllerImpl
   void RendererDidNavigateToNewPage(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool is_in_page,
       bool replace_entry);
   void RendererDidNavigateToExistingPage(
       RenderFrameHostImpl* rfh,
-      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool is_in_page);
   void RendererDidNavigateToSamePage(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateNewSubframe(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool is_in_page,
       bool replace_entry);
   bool RendererDidNavigateAutoSubframe(
       RenderFrameHostImpl* rfh,
@@ -344,10 +349,6 @@ class CONTENT_EXPORT NavigationControllerImpl
   // RenderView.  Callers must ensure that |CanPruneAllButLastCommitted| returns
   // true before calling this.
   void PruneAllButLastCommittedInternal();
-
-  // Returns true if the navigation is likley to be automatic rather than
-  // user-initiated.
-  bool IsLikelyAutoNavigation(base::TimeTicks now);
 
   // Inserts up to |max_index| entries from |source| into this. This does NOT
   // adjust any of the members that reference entries_
@@ -449,6 +450,13 @@ class CONTENT_EXPORT NavigationControllerImpl
   TimeSmoother time_smoother_;
 
   std::unique_ptr<NavigationEntryScreenshotManager> screenshot_manager_;
+
+  // Used for tracking consecutive reload requests.  If the last user-initiated
+  // navigation (either browser-initiated or renderer-initiated with a user
+  // gesture) was a reload, these hold the ReloadType and timestamp.  Otherwise
+  // these are ReloadType::NONE and a null timestamp, respectively.
+  ReloadType last_committed_reload_type_;
+  base::Time last_committed_reload_time_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationControllerImpl);
 };

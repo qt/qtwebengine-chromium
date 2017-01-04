@@ -18,10 +18,11 @@
 #include "content/child/thread_safe_sender.h"
 #include "content/common/establish_channel_params.h"
 #include "content/common/gpu_host_messages.h"
-#include "content/gpu/gpu_process_control_impl.h"
-#include "content/gpu/gpu_watchdog_thread.h"
+#include "content/gpu/gpu_service_factory.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/service_manager_connection.h"
+#include "content/public/common/service_names.h"
 #include "content/public/gpu/content_gpu_client.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
@@ -30,12 +31,14 @@
 #include "gpu/config/gpu_util.h"
 #include "gpu/ipc/common/memory_stats.h"
 #include "gpu/ipc/service/gpu_memory_buffer_factory.h"
+#include "gpu/ipc/service/gpu_watchdog_thread.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/gpu/ipc/service/gpu_jpeg_decode_accelerator.h"
 #include "media/gpu/ipc/service/gpu_video_decode_accelerator.h"
 #include "media/gpu/ipc/service/gpu_video_encode_accelerator.h"
 #include "media/gpu/ipc/service/media_service.h"
+#include "services/shell/public/cpp/interface_registry.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gpu_switching_manager.h"
@@ -43,7 +46,6 @@
 #include "url/gurl.h"
 
 #if defined(USE_OZONE)
-#include "ui/ozone/public/gpu_platform_support.h"
 #include "ui/ozone/public/ozone_platform.h"
 #endif
 
@@ -54,9 +56,6 @@
 
 namespace content {
 namespace {
-
-base::LazyInstance<base::ThreadLocalPointer<GpuChildThread>> g_lazy_tls =
-    LAZY_INSTANCE_INITIALIZER;
 
 static base::LazyInstance<scoped_refptr<ThreadSafeSender> >
     g_thread_safe_sender = LAZY_INSTANCE_INITIALIZER;
@@ -85,9 +84,9 @@ class GpuMemoryBufferMessageFilter : public IPC::MessageFilter {
         sender_(nullptr) {}
 
   // Overridden from IPC::MessageFilter:
-  void OnFilterAdded(IPC::Sender* sender) override {
+  void OnFilterAdded(IPC::Channel* channel) override {
     DCHECK(!sender_);
-    sender_ = sender;
+    sender_ = channel;
   }
   void OnFilterRemoved() override {
     DCHECK(sender_);
@@ -130,54 +129,50 @@ ChildThreadImpl::Options GetOptions(
       new GpuMemoryBufferMessageFilter(gpu_memory_buffer_factory));
 
 #if defined(USE_OZONE)
-  IPC::MessageFilter* message_filter = ui::OzonePlatform::GetInstance()
-                                           ->GetGpuPlatformSupport()
-                                           ->GetMessageFilter();
+  IPC::MessageFilter* message_filter =
+      ui::OzonePlatform::GetInstance()->GetGpuMessageFilter();
   if (message_filter)
     builder.AddStartupFilter(message_filter);
 #endif
+
+  builder.ConnectToBrowser(true);
 
   return builder.Build();
 }
 
 }  // namespace
 
-// static
-GpuChildThread* GpuChildThread::current() {
-  return g_lazy_tls.Pointer()->Get();
-}
-
 GpuChildThread::GpuChildThread(
-    GpuWatchdogThread* watchdog_thread,
+    std::unique_ptr<gpu::GpuWatchdogThread> watchdog_thread,
     bool dead_on_arrival,
     const gpu::GPUInfo& gpu_info,
     const DeferredMessages& deferred_messages,
     gpu::GpuMemoryBufferFactory* gpu_memory_buffer_factory)
     : ChildThreadImpl(GetOptions(gpu_memory_buffer_factory)),
       dead_on_arrival_(dead_on_arrival),
+      watchdog_thread_(std::move(watchdog_thread)),
       gpu_info_(gpu_info),
       deferred_messages_(deferred_messages),
       in_browser_process_(false),
       gpu_memory_buffer_factory_(gpu_memory_buffer_factory) {
-  watchdog_thread_ = watchdog_thread;
 #if defined(OS_WIN)
   target_services_ = NULL;
 #endif
   g_thread_safe_sender.Get() = thread_safe_sender();
-  g_lazy_tls.Pointer()->Set(this);
 }
 
 GpuChildThread::GpuChildThread(
-    const gpu::GpuPreferences& gpu_preferences,
     const InProcessChildThreadParams& params,
+    const gpu::GPUInfo& gpu_info,
     gpu::GpuMemoryBufferFactory* gpu_memory_buffer_factory)
     : ChildThreadImpl(ChildThreadImpl::Options::Builder()
                           .InBrowserProcess(params)
                           .AddStartupFilter(new GpuMemoryBufferMessageFilter(
                               gpu_memory_buffer_factory))
+                          .ConnectToBrowser(true)
                           .Build()),
-      gpu_preferences_(gpu_preferences),
       dead_on_arrival_(false),
+      gpu_info_(gpu_info),
       in_browser_process_(true),
       gpu_memory_buffer_factory_(gpu_memory_buffer_factory) {
 #if defined(OS_WIN)
@@ -188,11 +183,7 @@ GpuChildThread::GpuChildThread(
          base::CommandLine::ForCurrentProcess()->HasSwitch(
              switches::kInProcessGPU));
 
-  if (!gl::init::InitializeGLOneOff())
-    VLOG(1) << "gl::init::InitializeGLOneOff failed";
-
   g_thread_safe_sender.Get() = thread_safe_sender();
-  g_lazy_tls.Pointer()->Set(this);
 }
 
 GpuChildThread::~GpuChildThread() {
@@ -200,7 +191,6 @@ GpuChildThread::~GpuChildThread() {
     delete deferred_messages_.front();
     deferred_messages_.pop();
   }
-  g_lazy_tls.Pointer()->Set(nullptr);
 }
 
 void GpuChildThread::Shutdown() {
@@ -217,9 +207,9 @@ void GpuChildThread::Init(const base::Time& process_start_time) {
   if (!in_browser_process_)
     media::SetMediaClientAndroid(GetContentClient()->GetMediaClientAndroid());
 #endif
-
-  // Only set once per process instance.
-  process_control_.reset(new GpuProcessControlImpl());
+  // We don't want to process any incoming interface requests until
+  // OnInitialize() is invoked.
+  GetInterfaceRegistry()->PauseBinding();
 
   if (GetContentClient()->gpu())  // NULL in tests.
     GetContentClient()->gpu()->Initialize(this);
@@ -249,22 +239,11 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(GpuMsg_Clean, OnClean)
     IPC_MESSAGE_HANDLER(GpuMsg_Crash, OnCrash)
     IPC_MESSAGE_HANDLER(GpuMsg_Hang, OnHang)
-    IPC_MESSAGE_HANDLER(GpuMsg_DisableWatchdog, OnDisableWatchdog)
     IPC_MESSAGE_HANDLER(GpuMsg_GpuSwitched, OnGpuSwitched)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
-  if (handled)
-    return true;
-
-#if defined(USE_OZONE)
-  if (ui::OzonePlatform::GetInstance()
-          ->GetGpuPlatformSupport()
-          ->OnMessageReceived(msg))
-    return true;
-#endif
-
-  return false;
+  return handled;
 }
 
 bool GpuChildThread::OnMessageReceived(const IPC::Message& msg) {
@@ -290,37 +269,6 @@ bool GpuChildThread::OnMessageReceived(const IPC::Message& msg) {
   return false;
 }
 
-bool GpuChildThread::AcceptConnection(shell::Connection* connection) {
-  // Use of base::Unretained(this) is safe here because |service_registry()|
-  // will be destroyed before GpuChildThread is destructed.
-  connection->GetInterfaceRegistry()->AddInterface(base::Bind(
-      &GpuChildThread::BindProcessControlRequest, base::Unretained(this)));
-
-  if (GetContentClient()->gpu()) {  // NULL in tests.
-    GetContentClient()->gpu()->ExposeInterfacesToBrowser(
-        connection->GetInterfaceRegistry());
-  }
-
-  // We don't want to process any incoming interface requests until
-  // OnInitialize().
-  if (!gpu_channel_manager_) {
-    connection->GetInterfaceRegistry()->PauseBinding();
-    resume_interface_bindings_callback_ = base::Bind(
-        &shell::InterfaceRegistry::ResumeBinding,
-        connection->GetInterfaceRegistry()->GetWeakPtr());
-  }
-
-  return true;
-}
-
-shell::InterfaceRegistry* GpuChildThread::GetInterfaceRegistryForConnection() {
-  return nullptr;
-}
-
-shell::InterfaceProvider* GpuChildThread::GetInterfaceProviderForConnection() {
-  return nullptr;
-}
-
 void GpuChildThread::SetActiveURL(const GURL& url) {
   GetContentClient()->SetActiveURL(url);
 }
@@ -344,10 +292,6 @@ void GpuChildThread::DidLoseContext(bool offscreen,
   Send(new GpuHostMsg_DidLoseContext(offscreen, reason, active_url));
 }
 
-void GpuChildThread::GpuMemoryUmaStats(const gpu::GPUMemoryUmaStats& params) {
-  Send(new GpuHostMsg_GpuMemoryUmaStats(params));
-}
-
 #if defined(OS_WIN)
 void GpuChildThread::SendAcceleratedSurfaceCreatedChildWindow(
     gpu::SurfaceHandle parent_window,
@@ -364,16 +308,10 @@ void GpuChildThread::StoreShaderToDisk(int32_t client_id,
 }
 
 void GpuChildThread::OnInitialize(const gpu::GpuPreferences& gpu_preferences) {
-  if (!resume_interface_bindings_callback_.is_null())
-    base::ResetAndReturn(&resume_interface_bindings_callback_).Run();
-
-  gpu_preferences_ = gpu_preferences;
-
   gpu_info_.video_decode_accelerator_capabilities =
-      media::GpuVideoDecodeAccelerator::GetCapabilities(gpu_preferences_);
+      media::GpuVideoDecodeAccelerator::GetCapabilities(gpu_preferences);
   gpu_info_.video_encode_accelerator_supported_profiles =
-      media::GpuVideoEncodeAccelerator::GetSupportedProfiles(
-          gpu_preferences_);
+      media::GpuVideoEncodeAccelerator::GetSupportedProfiles(gpu_preferences);
   gpu_info_.jpeg_decode_accelerator_supported =
       media::GpuJpegDecodeAccelerator::IsSupported();
 
@@ -411,31 +349,34 @@ void GpuChildThread::OnInitialize(const gpu::GpuPreferences& gpu_preferences) {
   // Defer creation of the render thread. This is to prevent it from handling
   // IPC messages before the sandbox has been enabled and all other necessary
   // initialization has succeeded.
-  gpu_channel_manager_.reset(
-      new gpu::GpuChannelManager(gpu_preferences_, this, watchdog_thread_.get(),
-                            base::ThreadTaskRunnerHandle::Get().get(),
-                            ChildProcess::current()->io_task_runner(),
-                            ChildProcess::current()->GetShutDownEvent(),
-                            sync_point_manager, gpu_memory_buffer_factory_));
+  gpu_channel_manager_.reset(new gpu::GpuChannelManager(
+      gpu_preferences, this, watchdog_thread_.get(),
+      base::ThreadTaskRunnerHandle::Get().get(),
+      ChildProcess::current()->io_task_runner(),
+      ChildProcess::current()->GetShutDownEvent(), sync_point_manager,
+      gpu_memory_buffer_factory_));
 
   media_service_.reset(new media::MediaService(gpu_channel_manager_.get()));
 
-#if defined(USE_OZONE)
-  ui::OzonePlatform::GetInstance()
-      ->GetGpuPlatformSupport()
-      ->OnChannelEstablished(this);
-#endif
+  // Only set once per process instance.
+  service_factory_.reset(new GpuServiceFactory);
+
+  GetInterfaceRegistry()->AddInterface(base::Bind(
+      &GpuChildThread::BindServiceFactoryRequest, base::Unretained(this)));
+
+  if (GetContentClient()->gpu()) {  // NULL in tests.
+    GetContentClient()->gpu()->ExposeInterfacesToBrowser(GetInterfaceRegistry(),
+                                                         gpu_preferences);
+    GetContentClient()->gpu()->ConsumeInterfacesFromBrowser(
+        GetRemoteInterfaces());
+  }
+
+  GetInterfaceRegistry()->ResumeBinding();
 }
 
 void GpuChildThread::OnFinalize() {
   // Quit the GPU process
   base::MessageLoop::current()->QuitWhenIdle();
-}
-
-void GpuChildThread::StopWatchdog() {
-  if (watchdog_thread_.get()) {
-    watchdog_thread_->Stop();
-  }
 }
 
 void GpuChildThread::OnCollectGraphicsInfo() {
@@ -450,23 +391,32 @@ void GpuChildThread::OnCollectGraphicsInfo() {
          in_browser_process_);
 #endif  // OS_WIN
 
-  gpu::CollectInfoResult result =
-      gpu::CollectContextGraphicsInfo(&gpu_info_);
-  switch (result) {
-    case gpu::kCollectInfoFatalFailure:
-      LOG(ERROR) << "gpu::CollectGraphicsInfo failed (fatal).";
-      // TODO(piman): can we signal overall failure?
-      break;
-    case gpu::kCollectInfoNonFatalFailure:
-      DVLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
-      break;
-    case gpu::kCollectInfoNone:
-      NOTREACHED();
-      break;
-    case gpu::kCollectInfoSuccess:
-      break;
+  // gpu::CollectContextGraphicsInfo() is already called during gpu process
+  // initialization on non-mac platforms (see GpuMain()). So it is necessary to
+  // call it here only when running in the browser process on these platforms.
+  bool should_collect_info = in_browser_process_;
+#if defined(OS_MACOSX)
+  should_collect_info = true;
+#endif
+  if (should_collect_info) {
+    DCHECK_EQ(gpu::kCollectInfoNone, gpu_info_.context_info_state);
+    gpu::CollectInfoResult result = gpu::CollectContextGraphicsInfo(&gpu_info_);
+    switch (result) {
+      case gpu::kCollectInfoFatalFailure:
+        LOG(ERROR) << "gpu::CollectGraphicsInfo failed (fatal).";
+        // TODO(piman): can we signal overall failure?
+        break;
+      case gpu::kCollectInfoNonFatalFailure:
+        DVLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
+        break;
+      case gpu::kCollectInfoNone:
+        NOTREACHED();
+        break;
+      case gpu::kCollectInfoSuccess:
+        break;
+    }
+    GetContentClient()->SetGpuInfo(gpu_info_);
   }
-  GetContentClient()->SetGpuInfo(gpu_info_);
 
 #if defined(OS_WIN)
   // This is slow, but it's the only thing the unsandboxed GPU process does,
@@ -513,18 +463,6 @@ void GpuChildThread::OnHang() {
   for (;;) {
     // Do not sleep here. The GPU watchdog timer tracks the amount of user
     // time this thread is using and it doesn't use much while calling Sleep.
-  }
-}
-
-void GpuChildThread::OnDisableWatchdog() {
-  DVLOG(1) << "GPU: Disabling watchdog thread";
-  if (watchdog_thread_.get()) {
-    // Disarm the watchdog before shutting down the message loop. This prevents
-    // the future posting of tasks to the message loop.
-    if (watchdog_thread_->message_loop())
-      watchdog_thread_->PostAcknowledge();
-    // Prevent rearming.
-    watchdog_thread_->Stop();
   }
 }
 
@@ -583,11 +521,11 @@ void GpuChildThread::OnLoseAllContexts() {
   }
 }
 
-void GpuChildThread::BindProcessControlRequest(
-    mojo::InterfaceRequest<mojom::ProcessControl> request) {
-  DVLOG(1) << "GPU: Binding ProcessControl request";
-  DCHECK(process_control_);
-  process_control_bindings_.AddBinding(process_control_.get(),
+void GpuChildThread::BindServiceFactoryRequest(
+    shell::mojom::ServiceFactoryRequest request) {
+  DVLOG(1) << "GPU: Binding shell::mojom::ServiceFactoryRequest";
+  DCHECK(service_factory_);
+  service_factory_bindings_.AddBinding(service_factory_.get(),
                                        std::move(request));
 }
 

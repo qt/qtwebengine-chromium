@@ -4,6 +4,8 @@
 
 #include "content/browser/accessibility/accessibility_ui.h"
 
+#include <memory>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/json/json_writer.h"
@@ -46,7 +48,7 @@ namespace {
 
 bool g_show_internal_accessibility_tree = false;
 
-base::DictionaryValue* BuildTargetDescriptor(
+std::unique_ptr<base::DictionaryValue> BuildTargetDescriptor(
     const GURL& url,
     const std::string& name,
     const GURL& favicon_url,
@@ -54,7 +56,8 @@ base::DictionaryValue* BuildTargetDescriptor(
     int route_id,
     AccessibilityMode accessibility_mode,
     base::ProcessHandle handle = base::kNullProcessHandle) {
-  base::DictionaryValue* target_data = new base::DictionaryValue();
+  std::unique_ptr<base::DictionaryValue> target_data(
+      new base::DictionaryValue());
   target_data->SetInteger(kProcessIdField, process_id);
   target_data->SetInteger(kRouteIdField, route_id);
   target_data->SetString(kUrlField, url.spec());
@@ -66,7 +69,8 @@ base::DictionaryValue* BuildTargetDescriptor(
   return target_data;
 }
 
-base::DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh) {
+std::unique_ptr<base::DictionaryValue> BuildTargetDescriptor(
+    RenderViewHost* rvh) {
   WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
       WebContents::FromRenderViewHost(rvh));
   AccessibilityMode accessibility_mode = AccessibilityModeOff;
@@ -188,8 +192,8 @@ void AccessibilityUI::ToggleAccessibility(const base::ListValue* args) {
   RenderViewHost* rvh = RenderViewHost::FromID(process_id, route_id);
   if (!rvh)
     return;
-  auto web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderViewHost(rvh));
+  auto* web_contents =
+      static_cast<WebContentsImpl*>(WebContents::FromRenderViewHost(rvh));
   AccessibilityMode mode = web_contents->GetAccessibilityMode();
   if ((mode & AccessibilityModeComplete) != AccessibilityModeComplete) {
     web_contents->AddAccessibilityMode(AccessibilityModeComplete);
@@ -236,8 +240,8 @@ void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
   }
 
   std::unique_ptr<base::DictionaryValue> result(BuildTargetDescriptor(rvh));
-  auto web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderViewHost(rvh));
+  auto* web_contents =
+      static_cast<WebContentsImpl*>(WebContents::FromRenderViewHost(rvh));
   std::unique_ptr<AccessibilityTreeFormatter> formatter;
   if (g_show_internal_accessibility_tree)
     formatter.reset(new AccessibilityTreeFormatterBlink());

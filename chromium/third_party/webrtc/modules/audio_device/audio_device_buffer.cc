@@ -8,575 +8,492 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <algorithm>
+
 #include "webrtc/modules/audio_device/audio_device_buffer.h"
 
-#include <assert.h>
-#include <string.h>
-
+#include "webrtc/base/arraysize.h"
+#include "webrtc/base/bind.h"
+#include "webrtc/base/checks.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/base/format_macros.h"
+#include "webrtc/base/timeutils.h"
+#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/modules/audio_device/audio_device_config.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/include/logging.h"
-#include "webrtc/system_wrappers/include/trace.h"
+#include "webrtc/system_wrappers/include/metrics.h"
 
 namespace webrtc {
 
-static const int kHighDelayThresholdMs = 300;
-static const int kLogHighDelayIntervalFrames = 500;  // 5 seconds.
+static const char kTimerQueueName[] = "AudioDeviceBufferTimer";
 
-// ----------------------------------------------------------------------------
-//  ctor
-// ----------------------------------------------------------------------------
+// Time between two sucessive calls to LogStats().
+static const size_t kTimerIntervalInSeconds = 10;
+static const size_t kTimerIntervalInMilliseconds =
+    kTimerIntervalInSeconds * rtc::kNumMillisecsPerSec;
 
-AudioDeviceBuffer::AudioDeviceBuffer() :
-    _id(-1),
-    _critSect(*CriticalSectionWrapper::CreateCriticalSection()),
-    _critSectCb(*CriticalSectionWrapper::CreateCriticalSection()),
-    _ptrCbAudioTransport(NULL),
-    _recSampleRate(0),
-    _playSampleRate(0),
-    _recChannels(0),
-    _playChannels(0),
-    _recChannel(AudioDeviceModule::kChannelBoth),
-    _recBytesPerSample(0),
-    _playBytesPerSample(0),
-    _recSamples(0),
-    _recSize(0),
-    _playSamples(0),
-    _playSize(0),
-    _recFile(*FileWrapper::Create()),
-    _playFile(*FileWrapper::Create()),
-    _currentMicLevel(0),
-    _newMicLevel(0),
-    _typingStatus(false),
-    _playDelayMS(0),
-    _recDelayMS(0),
-    _clockDrift(0),
-    // Set to the interval in order to log on the first occurrence.
-    high_delay_counter_(kLogHighDelayIntervalFrames) {
-    // valid ID will be set later by SetId, use -1 for now
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, _id, "%s created", __FUNCTION__);
-    memset(_recBuffer, 0, kMaxBufferSizeBytes);
-    memset(_playBuffer, 0, kMaxBufferSizeBytes);
+AudioDeviceBuffer::AudioDeviceBuffer()
+    : audio_transport_cb_(nullptr),
+      task_queue_(kTimerQueueName),
+      timer_has_started_(false),
+      rec_sample_rate_(0),
+      play_sample_rate_(0),
+      rec_channels_(0),
+      play_channels_(0),
+      rec_channel_(AudioDeviceModule::kChannelBoth),
+      rec_bytes_per_sample_(0),
+      play_bytes_per_sample_(0),
+      rec_samples_per_10ms_(0),
+      rec_bytes_per_10ms_(0),
+      play_samples_per_10ms_(0),
+      play_bytes_per_10ms_(0),
+      current_mic_level_(0),
+      new_mic_level_(0),
+      typing_status_(false),
+      play_delay_ms_(0),
+      rec_delay_ms_(0),
+      clock_drift_(0),
+      num_stat_reports_(0),
+      rec_callbacks_(0),
+      last_rec_callbacks_(0),
+      play_callbacks_(0),
+      last_play_callbacks_(0),
+      rec_samples_(0),
+      last_rec_samples_(0),
+      play_samples_(0),
+      last_play_samples_(0),
+      last_log_stat_time_(0),
+      max_rec_level_(0),
+      max_play_level_(0),
+      num_rec_level_is_zero_(0) {
+  LOG(INFO) << "AudioDeviceBuffer::ctor";
+  // TODO(henrika): improve buffer handling and ensure that we don't allocate
+  // more than what is required.
+  play_buffer_.reset(new int8_t[kMaxBufferSizeBytes]);
+  rec_buffer_.reset(new int8_t[kMaxBufferSizeBytes]);
 }
 
-// ----------------------------------------------------------------------------
-//  dtor
-// ----------------------------------------------------------------------------
+AudioDeviceBuffer::~AudioDeviceBuffer() {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  LOG(INFO) << "AudioDeviceBuffer::~dtor";
 
-AudioDeviceBuffer::~AudioDeviceBuffer()
-{
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, _id, "%s destroyed", __FUNCTION__);
-    {
-        CriticalSectionScoped lock(&_critSect);
-
-        _recFile.Flush();
-        _recFile.CloseFile();
-        delete &_recFile;
-
-        _playFile.Flush();
-        _playFile.CloseFile();
-        delete &_playFile;
+  size_t total_diff_time = 0;
+  int num_measurements = 0;
+  LOG(INFO) << "[playout diff time => #measurements]";
+  for (size_t diff = 0; diff < arraysize(playout_diff_times_); ++diff) {
+    uint32_t num_elements = playout_diff_times_[diff];
+    if (num_elements > 0) {
+      total_diff_time += num_elements * diff;
+      num_measurements += num_elements;
+      LOG(INFO) << "[" << diff << " => " << num_elements << "]";
     }
+  }
+  if (num_measurements > 0) {
+    LOG(INFO) << "total_diff_time: " << total_diff_time;
+    LOG(INFO) << "num_measurements: " << num_measurements;
+    LOG(INFO) << "average: "
+             << static_cast<float>(total_diff_time) / num_measurements;
+  }
 
-    delete &_critSect;
-    delete &_critSectCb;
+  // Add UMA histogram to keep track of the case when only zeros have been
+  // recorded. Ensure that recording callbacks have started and that at least
+  // one timer event has been able to update |num_rec_level_is_zero_|.
+  // I am avoiding use of the task queue here since we are under destruction
+  // and reading these members on the creating thread feels safe.
+  if (rec_callbacks_ > 0 && num_stat_reports_ > 0) {
+    RTC_HISTOGRAM_BOOLEAN("WebRTC.Audio.RecordedOnlyZeros",
+    static_cast<int>(num_stat_reports_ == num_rec_level_is_zero_));
+  }
 }
 
-// ----------------------------------------------------------------------------
-//  SetId
-// ----------------------------------------------------------------------------
-
-void AudioDeviceBuffer::SetId(uint32_t id)
-{
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, id, "AudioDeviceBuffer::SetId(id=%d)", id);
-    _id = id;
+int32_t AudioDeviceBuffer::RegisterAudioCallback(
+    AudioTransport* audio_callback) {
+  LOG(INFO) << __FUNCTION__;
+  rtc::CritScope lock(&_critSectCb);
+  audio_transport_cb_ = audio_callback;
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  RegisterAudioCallback
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::RegisterAudioCallback(AudioTransport* audioCallback)
-{
-    CriticalSectionScoped lock(&_critSectCb);
-    _ptrCbAudioTransport = audioCallback;
-
-    return 0;
+int32_t AudioDeviceBuffer::InitPlayout() {
+  LOG(INFO) << __FUNCTION__;
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  ResetPlayStats();
+  if (!timer_has_started_) {
+    StartTimer();
+    timer_has_started_ = true;
+  }
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  InitPlayout
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::InitPlayout()
-{
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, _id, "%s", __FUNCTION__);
-    return 0;
+int32_t AudioDeviceBuffer::InitRecording() {
+  LOG(INFO) << __FUNCTION__;
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  ResetRecStats();
+  if (!timer_has_started_) {
+    StartTimer();
+    timer_has_started_ = true;
+  }
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  InitRecording
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::InitRecording()
-{
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, _id, "%s", __FUNCTION__);
-    return 0;
+int32_t AudioDeviceBuffer::SetRecordingSampleRate(uint32_t fsHz) {
+  LOG(INFO) << "SetRecordingSampleRate(" << fsHz << ")";
+  rtc::CritScope lock(&_critSect);
+  rec_sample_rate_ = fsHz;
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  SetRecordingSampleRate
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::SetRecordingSampleRate(uint32_t fsHz)
-{
-    CriticalSectionScoped lock(&_critSect);
-    _recSampleRate = fsHz;
-    return 0;
+int32_t AudioDeviceBuffer::SetPlayoutSampleRate(uint32_t fsHz) {
+  LOG(INFO) << "SetPlayoutSampleRate(" << fsHz << ")";
+  rtc::CritScope lock(&_critSect);
+  play_sample_rate_ = fsHz;
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  SetPlayoutSampleRate
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::SetPlayoutSampleRate(uint32_t fsHz)
-{
-    CriticalSectionScoped lock(&_critSect);
-    _playSampleRate = fsHz;
-    return 0;
+int32_t AudioDeviceBuffer::RecordingSampleRate() const {
+  return rec_sample_rate_;
 }
 
-// ----------------------------------------------------------------------------
-//  RecordingSampleRate
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::RecordingSampleRate() const
-{
-    return _recSampleRate;
+int32_t AudioDeviceBuffer::PlayoutSampleRate() const {
+  return play_sample_rate_;
 }
 
-// ----------------------------------------------------------------------------
-//  PlayoutSampleRate
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::PlayoutSampleRate() const
-{
-    return _playSampleRate;
+int32_t AudioDeviceBuffer::SetRecordingChannels(size_t channels) {
+  LOG(INFO) << "SetRecordingChannels(" << channels << ")";
+  rtc::CritScope lock(&_critSect);
+  rec_channels_ = channels;
+  rec_bytes_per_sample_ =
+      2 * channels;  // 16 bits per sample in mono, 32 bits in stereo
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  SetRecordingChannels
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::SetRecordingChannels(size_t channels)
-{
-    CriticalSectionScoped lock(&_critSect);
-    _recChannels = channels;
-    _recBytesPerSample = 2*channels;  // 16 bits per sample in mono, 32 bits in stereo
-    return 0;
+int32_t AudioDeviceBuffer::SetPlayoutChannels(size_t channels) {
+  LOG(INFO) << "SetPlayoutChannels(" << channels << ")";
+  rtc::CritScope lock(&_critSect);
+  play_channels_ = channels;
+  // 16 bits per sample in mono, 32 bits in stereo
+  play_bytes_per_sample_ = 2 * channels;
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  SetPlayoutChannels
-// ----------------------------------------------------------------------------
+int32_t AudioDeviceBuffer::SetRecordingChannel(
+    const AudioDeviceModule::ChannelType channel) {
+  rtc::CritScope lock(&_critSect);
 
-int32_t AudioDeviceBuffer::SetPlayoutChannels(size_t channels)
-{
-    CriticalSectionScoped lock(&_critSect);
-    _playChannels = channels;
-    // 16 bits per sample in mono, 32 bits in stereo
-    _playBytesPerSample = 2*channels;
-    return 0;
-}
+  if (rec_channels_ == 1) {
+    return -1;
+  }
 
-// ----------------------------------------------------------------------------
-//  SetRecordingChannel
-//
-//  Select which channel to use while recording.
-//  This API requires that stereo is enabled.
-//
-//  Note that, the nChannel parameter in RecordedDataIsAvailable will be
-//  set to 2 even for kChannelLeft and kChannelRight. However, nBytesPerSample
-//  will be 2 instead of 4 four these cases.
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::SetRecordingChannel(const AudioDeviceModule::ChannelType channel)
-{
-    CriticalSectionScoped lock(&_critSect);
-
-    if (_recChannels == 1)
-    {
-        return -1;
-    }
-
-    if (channel == AudioDeviceModule::kChannelBoth)
-    {
-        // two bytes per channel
-        _recBytesPerSample = 4;
-    }
-    else
-    {
-        // only utilize one out of two possible channels (left or right)
-        _recBytesPerSample = 2;
-    }
-    _recChannel = channel;
-
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
-//  RecordingChannel
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::RecordingChannel(AudioDeviceModule::ChannelType& channel) const
-{
-    channel = _recChannel;
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
-//  RecordingChannels
-// ----------------------------------------------------------------------------
-
-size_t AudioDeviceBuffer::RecordingChannels() const
-{
-    return _recChannels;
-}
-
-// ----------------------------------------------------------------------------
-//  PlayoutChannels
-// ----------------------------------------------------------------------------
-
-size_t AudioDeviceBuffer::PlayoutChannels() const
-{
-    return _playChannels;
-}
-
-// ----------------------------------------------------------------------------
-//  SetCurrentMicLevel
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::SetCurrentMicLevel(uint32_t level)
-{
-    _currentMicLevel = level;
-    return 0;
-}
-
-int32_t AudioDeviceBuffer::SetTypingStatus(bool typingStatus)
-{
-    _typingStatus = typingStatus;
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
-//  NewMicLevel
-// ----------------------------------------------------------------------------
-
-uint32_t AudioDeviceBuffer::NewMicLevel() const
-{
-    return _newMicLevel;
-}
-
-// ----------------------------------------------------------------------------
-//  SetVQEData
-// ----------------------------------------------------------------------------
-
-void AudioDeviceBuffer::SetVQEData(int playDelayMs, int recDelayMs,
-                                   int clockDrift) {
-  if (high_delay_counter_ < kLogHighDelayIntervalFrames) {
-    ++high_delay_counter_;
+  if (channel == AudioDeviceModule::kChannelBoth) {
+    // two bytes per channel
+    rec_bytes_per_sample_ = 4;
   } else {
-    if (playDelayMs + recDelayMs > kHighDelayThresholdMs) {
-      high_delay_counter_ = 0;
-      LOG(LS_WARNING) << "High audio device delay reported (render="
-                      << playDelayMs << " ms, capture=" << recDelayMs << " ms)";
+    // only utilize one out of two possible channels (left or right)
+    rec_bytes_per_sample_ = 2;
+  }
+  rec_channel_ = channel;
+
+  return 0;
+}
+
+int32_t AudioDeviceBuffer::RecordingChannel(
+    AudioDeviceModule::ChannelType& channel) const {
+  channel = rec_channel_;
+  return 0;
+}
+
+size_t AudioDeviceBuffer::RecordingChannels() const {
+  return rec_channels_;
+}
+
+size_t AudioDeviceBuffer::PlayoutChannels() const {
+  return play_channels_;
+}
+
+int32_t AudioDeviceBuffer::SetCurrentMicLevel(uint32_t level) {
+  current_mic_level_ = level;
+  return 0;
+}
+
+int32_t AudioDeviceBuffer::SetTypingStatus(bool typing_status) {
+  typing_status_ = typing_status;
+  return 0;
+}
+
+uint32_t AudioDeviceBuffer::NewMicLevel() const {
+  return new_mic_level_;
+}
+
+void AudioDeviceBuffer::SetVQEData(int play_delay_ms,
+                                   int rec_delay_ms,
+                                   int clock_drift) {
+  play_delay_ms_ = play_delay_ms;
+  rec_delay_ms_ = rec_delay_ms;
+  clock_drift_ = clock_drift;
+}
+
+int32_t AudioDeviceBuffer::StartInputFileRecording(
+    const char fileName[kAdmMaxFileNameSize]) {
+  LOG(LS_WARNING) << "Not implemented";
+  return 0;
+}
+
+int32_t AudioDeviceBuffer::StopInputFileRecording() {
+  LOG(LS_WARNING) << "Not implemented";
+  return 0;
+}
+
+int32_t AudioDeviceBuffer::StartOutputFileRecording(
+    const char fileName[kAdmMaxFileNameSize]) {
+  LOG(LS_WARNING) << "Not implemented";
+  return 0;
+}
+
+int32_t AudioDeviceBuffer::StopOutputFileRecording() {
+  LOG(LS_WARNING) << "Not implemented";
+  return 0;
+}
+
+int32_t AudioDeviceBuffer::SetRecordedBuffer(const void* audio_buffer,
+                                             size_t num_samples) {
+  UpdateRecordingParameters();
+  // WebRTC can only receive audio in 10ms chunks, hence we fail if the native
+  // audio layer tries to deliver something else.
+  RTC_CHECK_EQ(num_samples, rec_samples_per_10ms_);
+
+  rtc::CritScope lock(&_critSect);
+
+  if (rec_channel_ == AudioDeviceModule::kChannelBoth) {
+    // Copy the complete input buffer to the local buffer.
+    memcpy(&rec_buffer_[0], audio_buffer, rec_bytes_per_10ms_);
+  } else {
+    int16_t* ptr16In = (int16_t*)audio_buffer;
+    int16_t* ptr16Out = (int16_t*)&rec_buffer_[0];
+    if (AudioDeviceModule::kChannelRight == rec_channel_) {
+      ptr16In++;
+    }
+    // Exctract left or right channel from input buffer to the local buffer.
+    for (size_t i = 0; i < rec_samples_per_10ms_; i++) {
+      *ptr16Out = *ptr16In;
+      ptr16Out++;
+      ptr16In++;
+      ptr16In++;
     }
   }
 
-  _playDelayMS = playDelayMs;
-  _recDelayMS = recDelayMs;
-  _clockDrift = clockDrift;
+  // Update some stats but do it on the task queue to ensure that the members
+  // are modified and read on the same thread.
+  task_queue_.PostTask(rtc::Bind(&AudioDeviceBuffer::UpdateRecStats, this,
+                                 audio_buffer, num_samples));
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  StartInputFileRecording
-// ----------------------------------------------------------------------------
+int32_t AudioDeviceBuffer::DeliverRecordedData() {
+  rtc::CritScope lock(&_critSectCb);
 
-int32_t AudioDeviceBuffer::StartInputFileRecording(
-    const char fileName[kAdmMaxFileNameSize])
-{
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, _id, "%s", __FUNCTION__);
-
-    CriticalSectionScoped lock(&_critSect);
-
-    _recFile.Flush();
-    _recFile.CloseFile();
-
-    return _recFile.OpenFile(fileName, false) ? 0 : -1;
-}
-
-// ----------------------------------------------------------------------------
-//  StopInputFileRecording
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::StopInputFileRecording()
-{
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, _id, "%s", __FUNCTION__);
-
-    CriticalSectionScoped lock(&_critSect);
-
-    _recFile.Flush();
-    _recFile.CloseFile();
-
+  if (!audio_transport_cb_) {
+    LOG(LS_WARNING) << "Invalid audio transport";
     return 0;
+  }
+
+  int32_t res(0);
+  uint32_t newMicLevel(0);
+  uint32_t totalDelayMS = play_delay_ms_ + rec_delay_ms_;
+  res = audio_transport_cb_->RecordedDataIsAvailable(
+      &rec_buffer_[0], rec_samples_per_10ms_, rec_bytes_per_sample_,
+      rec_channels_, rec_sample_rate_, totalDelayMS, clock_drift_,
+      current_mic_level_, typing_status_, newMicLevel);
+  if (res != -1) {
+    new_mic_level_ = newMicLevel;
+  } else {
+    LOG(LS_ERROR) << "RecordedDataIsAvailable() failed";
+  }
+
+  return 0;
 }
 
-// ----------------------------------------------------------------------------
-//  StartOutputFileRecording
-// ----------------------------------------------------------------------------
+int32_t AudioDeviceBuffer::RequestPlayoutData(size_t num_samples) {
+  // Measure time since last function call and update an array where the
+  // position/index corresponds to time differences (in milliseconds) between
+  // two successive playout callbacks, and the stored value is the number of
+  // times a given time difference was found.
+  int64_t now_time = rtc::TimeMillis();
+  size_t diff_time = rtc::TimeDiff(now_time, last_playout_time_);
+  // Truncate at 500ms to limit the size of the array.
+  diff_time = std::min(kMaxDeltaTimeInMs, diff_time);
+  last_playout_time_ = now_time;
+  playout_diff_times_[diff_time]++;
 
-int32_t AudioDeviceBuffer::StartOutputFileRecording(
-    const char fileName[kAdmMaxFileNameSize])
-{
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, _id, "%s", __FUNCTION__);
+  UpdatePlayoutParameters();
+  // WebRTC can only provide audio in 10ms chunks, hence we fail if the native
+  // audio layer asks for something else.
+  RTC_CHECK_EQ(num_samples, play_samples_per_10ms_);
 
-    CriticalSectionScoped lock(&_critSect);
+  rtc::CritScope lock(&_critSectCb);
 
-    _playFile.Flush();
-    _playFile.CloseFile();
-
-    return _playFile.OpenFile(fileName, false) ? 0 : -1;
-}
-
-// ----------------------------------------------------------------------------
-//  StopOutputFileRecording
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::StopOutputFileRecording()
-{
-    WEBRTC_TRACE(kTraceMemory, kTraceAudioDevice, _id, "%s", __FUNCTION__);
-
-    CriticalSectionScoped lock(&_critSect);
-
-    _playFile.Flush();
-    _playFile.CloseFile();
-
+  // It is currently supported to start playout without a valid audio
+  // transport object. Leads to warning and silence.
+  if (!audio_transport_cb_) {
+    LOG(LS_WARNING) << "Invalid audio transport";
     return 0;
+  }
+
+  uint32_t res(0);
+  int64_t elapsed_time_ms = -1;
+  int64_t ntp_time_ms = -1;
+  size_t num_samples_out(0);
+  res = audio_transport_cb_->NeedMorePlayData(
+      play_samples_per_10ms_, play_bytes_per_sample_, play_channels_,
+      play_sample_rate_, &play_buffer_[0], num_samples_out, &elapsed_time_ms,
+      &ntp_time_ms);
+  if (res != 0) {
+    LOG(LS_ERROR) << "NeedMorePlayData() failed";
+  }
+
+  // Update some stats but do it on the task queue to ensure that access of
+  // members is serialized hence avoiding usage of locks.
+  task_queue_.PostTask(rtc::Bind(&AudioDeviceBuffer::UpdatePlayStats, this,
+                                 &play_buffer_[0], num_samples_out));
+  return static_cast<int32_t>(num_samples_out);
 }
 
-// ----------------------------------------------------------------------------
-//  SetRecordedBuffer
-//
-//  Store recorded audio buffer in local memory ready for the actual
-//  "delivery" using a callback.
-//
-//  This method can also parse out left or right channel from a stereo
-//  input signal, i.e., emulate mono.
-//
-//  Examples:
-//
-//  16-bit,48kHz mono,  10ms => nSamples=480 => _recSize=2*480=960 bytes
-//  16-bit,48kHz stereo,10ms => nSamples=480 => _recSize=4*480=1920 bytes
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::SetRecordedBuffer(const void* audioBuffer,
-                                             size_t nSamples)
-{
-    CriticalSectionScoped lock(&_critSect);
-
-    if (_recBytesPerSample == 0)
-    {
-        assert(false);
-        return -1;
-    }
-
-    _recSamples = nSamples;
-    _recSize = _recBytesPerSample*nSamples; // {2,4}*nSamples
-    if (_recSize > kMaxBufferSizeBytes)
-    {
-        assert(false);
-        return -1;
-    }
-
-    if (_recChannel == AudioDeviceModule::kChannelBoth)
-    {
-        // (default) copy the complete input buffer to the local buffer
-        memcpy(&_recBuffer[0], audioBuffer, _recSize);
-    }
-    else
-    {
-        int16_t* ptr16In = (int16_t*)audioBuffer;
-        int16_t* ptr16Out = (int16_t*)&_recBuffer[0];
-
-        if (AudioDeviceModule::kChannelRight == _recChannel)
-        {
-            ptr16In++;
-        }
-
-        // exctract left or right channel from input buffer to the local buffer
-        for (size_t i = 0; i < _recSamples; i++)
-        {
-            *ptr16Out = *ptr16In;
-            ptr16Out++;
-            ptr16In++;
-            ptr16In++;
-        }
-    }
-
-    if (_recFile.is_open()) {
-      // write to binary file in mono or stereo (interleaved)
-      _recFile.Write(&_recBuffer[0], _recSize);
-    }
-
-    return 0;
+int32_t AudioDeviceBuffer::GetPlayoutData(void* audio_buffer) {
+  rtc::CritScope lock(&_critSect);
+  memcpy(audio_buffer, &play_buffer_[0], play_bytes_per_10ms_);
+  return static_cast<int32_t>(play_samples_per_10ms_);
 }
 
-// ----------------------------------------------------------------------------
-//  DeliverRecordedData
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::DeliverRecordedData()
-{
-    CriticalSectionScoped lock(&_critSectCb);
-
-    // Ensure that user has initialized all essential members
-    if ((_recSampleRate == 0)     ||
-        (_recSamples == 0)        ||
-        (_recBytesPerSample == 0) ||
-        (_recChannels == 0))
-    {
-        assert(false);
-        return -1;
-    }
-
-    if (_ptrCbAudioTransport == NULL)
-    {
-        WEBRTC_TRACE(kTraceWarning, kTraceAudioDevice, _id, "failed to deliver recorded data (AudioTransport does not exist)");
-        return 0;
-    }
-
-    int32_t res(0);
-    uint32_t newMicLevel(0);
-    uint32_t totalDelayMS = _playDelayMS +_recDelayMS;
-
-    res = _ptrCbAudioTransport->RecordedDataIsAvailable(&_recBuffer[0],
-                                                        _recSamples,
-                                                        _recBytesPerSample,
-                                                        _recChannels,
-                                                        _recSampleRate,
-                                                        totalDelayMS,
-                                                        _clockDrift,
-                                                        _currentMicLevel,
-                                                        _typingStatus,
-                                                        newMicLevel);
-    if (res != -1)
-    {
-        _newMicLevel = newMicLevel;
-    }
-
-    return 0;
+void AudioDeviceBuffer::UpdatePlayoutParameters() {
+  RTC_CHECK(play_bytes_per_sample_);
+  rtc::CritScope lock(&_critSect);
+  // Update the required buffer size given sample rate and number of channels.
+  play_samples_per_10ms_ = static_cast<size_t>(play_sample_rate_ * 10 / 1000);
+  play_bytes_per_10ms_ = play_bytes_per_sample_ * play_samples_per_10ms_;
+  RTC_DCHECK_LE(play_bytes_per_10ms_, kMaxBufferSizeBytes);
 }
 
-// ----------------------------------------------------------------------------
-//  RequestPlayoutData
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceBuffer::RequestPlayoutData(size_t nSamples)
-{
-    uint32_t playSampleRate = 0;
-    size_t playBytesPerSample = 0;
-    size_t playChannels = 0;
-    {
-        CriticalSectionScoped lock(&_critSect);
-
-        // Store copies under lock and use copies hereafter to avoid race with
-        // setter methods.
-        playSampleRate = _playSampleRate;
-        playBytesPerSample = _playBytesPerSample;
-        playChannels = _playChannels;
-
-        // Ensure that user has initialized all essential members
-        if ((playBytesPerSample == 0) ||
-            (playChannels == 0)       ||
-            (playSampleRate == 0))
-        {
-            assert(false);
-            return -1;
-        }
-
-        _playSamples = nSamples;
-        _playSize = playBytesPerSample * nSamples;  // {2,4}*nSamples
-        if (_playSize > kMaxBufferSizeBytes)
-        {
-            assert(false);
-            return -1;
-        }
-
-        if (nSamples != _playSamples)
-        {
-            WEBRTC_TRACE(kTraceWarning, kTraceAudioDevice, _id, "invalid number of samples to be played out (%d)", nSamples);
-            return -1;
-        }
-    }
-
-    size_t nSamplesOut(0);
-
-    CriticalSectionScoped lock(&_critSectCb);
-
-    if (_ptrCbAudioTransport == NULL)
-    {
-        WEBRTC_TRACE(kTraceWarning, kTraceAudioDevice, _id, "failed to feed data to playout (AudioTransport does not exist)");
-        return 0;
-    }
-
-    if (_ptrCbAudioTransport)
-    {
-        uint32_t res(0);
-        int64_t elapsed_time_ms = -1;
-        int64_t ntp_time_ms = -1;
-        res = _ptrCbAudioTransport->NeedMorePlayData(_playSamples,
-                                                     playBytesPerSample,
-                                                     playChannels,
-                                                     playSampleRate,
-                                                     &_playBuffer[0],
-                                                     nSamplesOut,
-                                                     &elapsed_time_ms,
-                                                     &ntp_time_ms);
-        if (res != 0)
-        {
-            WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id, "NeedMorePlayData() failed");
-        }
-    }
-
-    return static_cast<int32_t>(nSamplesOut);
+void AudioDeviceBuffer::UpdateRecordingParameters() {
+  RTC_CHECK(rec_bytes_per_sample_);
+  rtc::CritScope lock(&_critSect);
+  // Update the required buffer size given sample rate and number of channels.
+  rec_samples_per_10ms_ = static_cast<size_t>(rec_sample_rate_ * 10 / 1000);
+  rec_bytes_per_10ms_ = rec_bytes_per_sample_ * rec_samples_per_10ms_;
+  RTC_DCHECK_LE(rec_bytes_per_10ms_, kMaxBufferSizeBytes);
 }
 
-// ----------------------------------------------------------------------------
-//  GetPlayoutData
-// ----------------------------------------------------------------------------
+void AudioDeviceBuffer::StartTimer() {
+  num_stat_reports_ = 0;
+  last_log_stat_time_ = rtc::TimeMillis();
+  task_queue_.PostDelayedTask(rtc::Bind(&AudioDeviceBuffer::LogStats, this),
+                              kTimerIntervalInMilliseconds);
+}
 
-int32_t AudioDeviceBuffer::GetPlayoutData(void* audioBuffer)
-{
-    CriticalSectionScoped lock(&_critSect);
+void AudioDeviceBuffer::LogStats() {
+  RTC_DCHECK(task_queue_.IsCurrent());
 
-    if (_playSize > kMaxBufferSizeBytes)
-    {
-       WEBRTC_TRACE(kTraceError, kTraceUtility, _id,
-                    "_playSize %" PRIuS " exceeds kMaxBufferSizeBytes in "
-                    "AudioDeviceBuffer::GetPlayoutData", _playSize);
-       assert(false);
-       return -1;
+  int64_t now_time = rtc::TimeMillis();
+  int64_t next_callback_time = now_time + kTimerIntervalInMilliseconds;
+  int64_t time_since_last = rtc::TimeDiff(now_time, last_log_stat_time_);
+  last_log_stat_time_ = now_time;
+
+  // Log the latest statistics but skip the first 10 seconds since we are not
+  // sure of the exact starting point. I.e., the first log printout will be
+  // after ~20 seconds.
+  if (++num_stat_reports_ > 1 && time_since_last > 0) {
+    uint32_t diff_samples = rec_samples_ - last_rec_samples_;
+    float rate = diff_samples / (static_cast<float>(time_since_last) / 1000.0);
+    LOG(INFO) << "[REC : " << time_since_last << "msec, "
+              << rec_sample_rate_ / 1000
+              << "kHz] callbacks: " << rec_callbacks_ - last_rec_callbacks_
+              << ", "
+              << "samples: " << diff_samples << ", "
+              << "rate: " << static_cast<int>(rate + 0.5) << ", "
+              << "level: " << max_rec_level_;
+
+    diff_samples = play_samples_ - last_play_samples_;
+    rate = diff_samples / (static_cast<float>(time_since_last) / 1000.0);
+    LOG(INFO) << "[PLAY: " << time_since_last << "msec, "
+              << play_sample_rate_ / 1000
+              << "kHz] callbacks: " << play_callbacks_ - last_play_callbacks_
+              << ", "
+              << "samples: " << diff_samples << ", "
+              << "rate: " << static_cast<int>(rate + 0.5) << ", "
+              << "level: " << max_play_level_;
+  }
+
+  // Count number of times we detect "no audio" corresponding to a case where
+  // all level measurements have been zero.
+  if (max_rec_level_ == 0) {
+    ++num_rec_level_is_zero_;
+  }
+
+  last_rec_callbacks_ = rec_callbacks_;
+  last_play_callbacks_ = play_callbacks_;
+  last_rec_samples_ = rec_samples_;
+  last_play_samples_ = play_samples_;
+  max_rec_level_ = 0;
+  max_play_level_ = 0;
+
+  int64_t time_to_wait_ms = next_callback_time - rtc::TimeMillis();
+  RTC_DCHECK_GT(time_to_wait_ms, 0) << "Invalid timer interval";
+
+  // Update some stats but do it on the task queue to ensure that access of
+  // members is serialized hence avoiding usage of locks.
+  task_queue_.PostDelayedTask(rtc::Bind(&AudioDeviceBuffer::LogStats, this),
+                              time_to_wait_ms);
+}
+
+void AudioDeviceBuffer::ResetRecStats() {
+  rec_callbacks_ = 0;
+  last_rec_callbacks_ = 0;
+  rec_samples_ = 0;
+  last_rec_samples_ = 0;
+  max_rec_level_ = 0;
+  num_rec_level_is_zero_ = 0;
+}
+
+void AudioDeviceBuffer::ResetPlayStats() {
+  last_playout_time_ = rtc::TimeMillis();
+  play_callbacks_ = 0;
+  last_play_callbacks_ = 0;
+  play_samples_ = 0;
+  last_play_samples_ = 0;
+  max_play_level_ = 0;
+}
+
+void AudioDeviceBuffer::UpdateRecStats(const void* audio_buffer,
+                                       size_t num_samples) {
+  RTC_DCHECK(task_queue_.IsCurrent());
+  ++rec_callbacks_;
+  rec_samples_ += num_samples;
+
+  // Find the max absolute value in an audio packet twice per second and update
+  // |max_rec_level_| to track the largest value.
+  if (rec_callbacks_ % 50 == 0) {
+    int16_t max_abs = WebRtcSpl_MaxAbsValueW16(
+        static_cast<int16_t*>(const_cast<void*>(audio_buffer)),
+        num_samples * rec_channels_);
+    if (max_abs > max_rec_level_) {
+      max_rec_level_ = max_abs;
     }
+  }
+}
 
-    memcpy(audioBuffer, &_playBuffer[0], _playSize);
+void AudioDeviceBuffer::UpdatePlayStats(const void* audio_buffer,
+                                        size_t num_samples) {
+  RTC_DCHECK(task_queue_.IsCurrent());
+  ++play_callbacks_;
+  play_samples_ += num_samples;
 
-    if (_playFile.is_open()) {
-      // write to binary file in mono or stereo (interleaved)
-      _playFile.Write(&_playBuffer[0], _playSize);
+  // Find the max absolute value in an audio packet twice per second and update
+  // |max_play_level_| to track the largest value.
+  if (play_callbacks_ % 50 == 0) {
+    int16_t max_abs = WebRtcSpl_MaxAbsValueW16(
+        static_cast<int16_t*>(const_cast<void*>(audio_buffer)),
+        num_samples * play_channels_);
+    if (max_abs > max_play_level_) {
+      max_play_level_ = max_abs;
     }
-
-    return static_cast<int32_t>(_playSamples);
+  }
 }
 
 }  // namespace webrtc

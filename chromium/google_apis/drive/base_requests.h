@@ -135,7 +135,7 @@ class ResponseWriter : public net::URLFetcherResponseWriter {
   int Write(net::IOBuffer* buffer,
             int num_bytes,
             const net::CompletionCallback& callback) override;
-  int Finish(const net::CompletionCallback& callback) override;
+  int Finish(int net_error, const net::CompletionCallback& callback) override;
 
  private:
   void DidWrite(scoped_refptr<net::IOBuffer> buffer,
@@ -630,7 +630,8 @@ class DownloadFileRequestBase : public UrlFetchRequestBase {
   // net::URLFetcherDelegate overrides.
   void OnURLFetchDownloadProgress(const net::URLFetcher* source,
                                   int64_t current,
-                                  int64_t total) override;
+                                  int64_t total,
+                                  int64_t current_network_bytes) override;
 
  private:
   const DownloadActionCallback download_action_callback_;

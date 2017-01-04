@@ -49,15 +49,15 @@ void UpdateBattery(const device::BatteryStatus& battery_status) {
 
 class FakeBatteryMonitor : public device::BatteryMonitor {
  public:
+  FakeBatteryMonitor() {}
+  ~FakeBatteryMonitor() override {}
+
   static void Create(mojo::InterfaceRequest<BatteryMonitor> request) {
-    new FakeBatteryMonitor(std::move(request));
+    mojo::MakeStrongBinding(base::MakeUnique<FakeBatteryMonitor>(),
+                            std::move(request));
   }
 
  private:
-  FakeBatteryMonitor(mojo::InterfaceRequest<BatteryMonitor> request)
-      : binding_(this, std::move(request)) {}
-  ~FakeBatteryMonitor() override {}
-
   void QueryNextStatus(const QueryNextStatusCallback& callback) override {
     // We don't expect overlapped calls to QueryNextStatus.
     DCHECK(callback_.is_null());
@@ -81,7 +81,6 @@ class FakeBatteryMonitor : public device::BatteryMonitor {
   }
 
   std::unique_ptr<BatteryUpdateSubscription> subscription_;
-  mojo::StrongBinding<BatteryMonitor> binding_;
   QueryNextStatusCallback callback_;
 };
 
@@ -92,7 +91,10 @@ class TestContentBrowserClient : public ContentBrowserClient {
   void ExposeInterfacesToRenderer(
       shell::InterfaceRegistry* registry,
       RenderProcessHost* render_process_host) override {
-    registry->AddInterface(base::Bind(&FakeBatteryMonitor::Create));
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner =
+        BrowserThread::GetTaskRunnerForThread(BrowserThread::UI);
+    registry->AddInterface(base::Bind(&FakeBatteryMonitor::Create),
+                           ui_task_runner);
   }
 
   void AppendExtraCommandLineSwitches(base::CommandLine* command_line,

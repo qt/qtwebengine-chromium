@@ -31,18 +31,7 @@ struct DXGIFormat
 {
     DXGIFormat();
 
-    GLuint redBits;
-    GLuint greenBits;
-    GLuint blueBits;
-    GLuint alphaBits;
-    GLuint sharedBits;
-
-    GLuint depthBits;
-    GLuint stencilBits;
-
     GLenum componentType;
-
-    FastCopyFunctionMap fastCopyFunctions;
 
     NativeMipmapGenerationSupportFunction nativeMipmapSupport;
 };

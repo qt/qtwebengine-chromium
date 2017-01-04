@@ -26,6 +26,7 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/frame_messages.h"
+#include "content/common/frame_owner_properties.h"
 #include "content/common/input_messages.h"
 #include "content/common/site_isolation_policy.h"
 #include "content/common/view_messages.h"
@@ -43,10 +44,10 @@
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "content/public/test/browser_side_navigation_test_utils.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_notification_tracker.h"
 #include "content/public/test/test_utils.h"
-#include "content/test/browser_side_navigation_test_utils.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
 #include "content/test/test_render_frame_host.h"
@@ -55,7 +56,6 @@
 #include "net/base/load_flags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
-#include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
 #include "third_party/WebKit/public/web/WebSandboxFlags.h"
 #include "ui/base/page_transition_types.h"
 
@@ -434,14 +434,15 @@ class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
                                                      ->navigator()
                                                      ->GetController());
       FrameMsg_Navigate_Type::Value navigate_type =
-          entry.restore_type() == NavigationEntryImpl::RESTORE_NONE
+          entry.restore_type() == RestoreType::NONE
               ? FrameMsg_Navigate_Type::NORMAL
               : FrameMsg_Navigate_Type::RESTORE;
       std::unique_ptr<NavigationRequest> navigation_request =
           NavigationRequest::CreateBrowserInitiated(
               manager->frame_tree_node_, frame_entry->url(),
               frame_entry->referrer(), *frame_entry, entry, navigate_type,
-              LOFI_UNSPECIFIED, false, base::TimeTicks::Now(), controller);
+              LOFI_UNSPECIFIED, false, false, base::TimeTicks::Now(),
+              controller);
 
       // Simulates request creation that triggers the 1st internal call to
       // GetFrameHostForNavigation.
@@ -1948,11 +1949,11 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation, DetachPendingChild) {
   contents()->GetMainFrame()->OnCreateChildFrame(
       contents()->GetMainFrame()->GetProcess()->GetNextRoutingID(),
       blink::WebTreeScopeType::Document, "frame_name", "uniqueName1",
-      blink::WebSandboxFlags::None, blink::WebFrameOwnerProperties());
+      blink::WebSandboxFlags::None, FrameOwnerProperties());
   contents()->GetMainFrame()->OnCreateChildFrame(
       contents()->GetMainFrame()->GetProcess()->GetNextRoutingID(),
       blink::WebTreeScopeType::Document, "frame_name", "uniqueName2",
-      blink::WebSandboxFlags::None, blink::WebFrameOwnerProperties());
+      blink::WebSandboxFlags::None, FrameOwnerProperties());
   RenderFrameHostManager* root_manager =
       contents()->GetFrameTree()->root()->render_manager();
   RenderFrameHostManager* iframe1 =
@@ -2087,7 +2088,7 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation,
   contents1->GetMainFrame()->OnCreateChildFrame(
       contents1->GetMainFrame()->GetProcess()->GetNextRoutingID(),
       blink::WebTreeScopeType::Document, "frame_name", "uniqueName1",
-      blink::WebSandboxFlags::None, blink::WebFrameOwnerProperties());
+      blink::WebSandboxFlags::None, FrameOwnerProperties());
   RenderFrameHostManager* iframe =
       contents()->GetFrameTree()->root()->child_at(0)->render_manager();
   NavigationEntryImpl entry(NULL /* instance */, -1 /* page_id */, kUrl2,
@@ -2136,7 +2137,7 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation,
   main_rfh->OnCreateChildFrame(main_rfh->GetProcess()->GetNextRoutingID(),
                                blink::WebTreeScopeType::Document, std::string(),
                                "uniqueName1", blink::WebSandboxFlags::None,
-                               blink::WebFrameOwnerProperties());
+                               FrameOwnerProperties());
   RenderFrameHostManager* subframe_rfhm =
       contents()->GetFrameTree()->root()->child_at(0)->render_manager();
 
@@ -2296,10 +2297,10 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
   int process_id = root1->current_frame_host()->GetProcess()->GetID();
   tree1->AddFrame(root1, process_id, 12, blink::WebTreeScopeType::Document,
                   std::string(), "uniqueName0", blink::WebSandboxFlags::None,
-                  blink::WebFrameOwnerProperties());
+                  FrameOwnerProperties());
   tree1->AddFrame(root1, process_id, 13, blink::WebTreeScopeType::Document,
                   std::string(), "uniqueName1", blink::WebSandboxFlags::None,
-                  blink::WebFrameOwnerProperties());
+                  FrameOwnerProperties());
 
   std::unique_ptr<TestWebContents> tab2(
       TestWebContents::Create(browser_context(), nullptr));
@@ -2309,10 +2310,10 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
   process_id = root2->current_frame_host()->GetProcess()->GetID();
   tree2->AddFrame(root2, process_id, 22, blink::WebTreeScopeType::Document,
                   std::string(), "uniqueName2", blink::WebSandboxFlags::None,
-                  blink::WebFrameOwnerProperties());
+                  FrameOwnerProperties());
   tree2->AddFrame(root2, process_id, 23, blink::WebTreeScopeType::Document,
                   std::string(), "uniqueName3", blink::WebSandboxFlags::None,
-                  blink::WebFrameOwnerProperties());
+                  FrameOwnerProperties());
 
   std::unique_ptr<TestWebContents> tab3(
       TestWebContents::Create(browser_context(), nullptr));
@@ -2327,7 +2328,7 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
   process_id = root4->current_frame_host()->GetProcess()->GetID();
   tree4->AddFrame(root4, process_id, 42, blink::WebTreeScopeType::Document,
                   std::string(), "uniqueName4", blink::WebSandboxFlags::None,
-                  blink::WebFrameOwnerProperties());
+                  FrameOwnerProperties());
 
   root1->child_at(1)->SetOpener(root1->child_at(1));
   root1->SetOpener(root2->child_at(1));
@@ -2376,15 +2377,15 @@ TEST_F(RenderFrameHostManagerTest, PageFocusPropagatesToSubframeProcesses) {
   main_test_rfh()->OnCreateChildFrame(
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       blink::WebTreeScopeType::Document, "frame1", "uniqueName1",
-      blink::WebSandboxFlags::None, blink::WebFrameOwnerProperties());
+      blink::WebSandboxFlags::None, FrameOwnerProperties());
   main_test_rfh()->OnCreateChildFrame(
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       blink::WebTreeScopeType::Document, "frame2", "uniqueName2",
-      blink::WebSandboxFlags::None, blink::WebFrameOwnerProperties());
+      blink::WebSandboxFlags::None, FrameOwnerProperties());
   main_test_rfh()->OnCreateChildFrame(
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       blink::WebTreeScopeType::Document, "frame3", "uniqueName3",
-      blink::WebSandboxFlags::None, blink::WebFrameOwnerProperties());
+      blink::WebSandboxFlags::None, FrameOwnerProperties());
 
   FrameTreeNode* root = contents()->GetFrameTree()->root();
   RenderFrameHostManager* child1 = root->child_at(0)->render_manager();
@@ -2474,7 +2475,7 @@ TEST_F(RenderFrameHostManagerTest,
   main_test_rfh()->OnCreateChildFrame(
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       blink::WebTreeScopeType::Document, "frame1", "uniqueName1",
-      blink::WebSandboxFlags::None, blink::WebFrameOwnerProperties());
+      blink::WebSandboxFlags::None, FrameOwnerProperties());
 
   FrameTreeNode* root = contents()->GetFrameTree()->root();
   RenderFrameHostManager* child = root->child_at(0)->render_manager();
@@ -2535,8 +2536,7 @@ TEST_F(RenderFrameHostManagerTest, RestoreNavigationToWebUI) {
           browser_context());
   new_entry->SetPageID(0);
   entries.push_back(std::move(new_entry));
-  controller.Restore(
-      0, NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY, &entries);
+  controller.Restore(0, RestoreType::LAST_SESSION_EXITED_CLEANLY, &entries);
   ASSERT_EQ(0u, entries.size());
   ASSERT_EQ(1, controller.GetEntryCount());
 
@@ -2550,8 +2550,7 @@ TEST_F(RenderFrameHostManagerTest, RestoreNavigationToWebUI) {
                             Referrer(), base::string16() /* title */,
                             ui::PAGE_TRANSITION_RELOAD,
                             false /* is_renderer_init */);
-  entry.set_restore_type(
-      NavigationEntryImpl::RESTORE_LAST_SESSION_EXITED_CLEANLY);
+  entry.set_restore_type(RestoreType::LAST_SESSION_EXITED_CLEANLY);
   NavigateToEntry(manager, entry);
 
   // As the initial renderer was not live, the new RenderFrameHost should be
@@ -2851,7 +2850,7 @@ TEST_F(RenderFrameHostManagerTestWithBrowserSideNavigation,
       NavigationRequest::CreateBrowserInitiated(
           contents()->GetFrameTree()->root(), frame_entry->url(),
           frame_entry->referrer(), *frame_entry, entry,
-          FrameMsg_Navigate_Type::NORMAL, LOFI_UNSPECIFIED, false,
+          FrameMsg_Navigate_Type::NORMAL, LOFI_UNSPECIFIED, false, false,
           base::TimeTicks::Now(),
           static_cast<NavigationControllerImpl*>(&controller()));
   manager->DidCreateNavigationRequest(navigation_request.get());
@@ -2912,7 +2911,7 @@ TEST_F(RenderFrameHostManagerTestWithBrowserSideNavigation,
       NavigationRequest::CreateBrowserInitiated(
           contents()->GetFrameTree()->root(), frame_entry->url(),
           frame_entry->referrer(), *frame_entry, entry,
-          FrameMsg_Navigate_Type::NORMAL, LOFI_UNSPECIFIED, false,
+          FrameMsg_Navigate_Type::NORMAL, LOFI_UNSPECIFIED, false, false,
           base::TimeTicks::Now(),
           static_cast<NavigationControllerImpl*>(&controller()));
   manager->DidCreateNavigationRequest(navigation_request.get());
@@ -2970,7 +2969,7 @@ TEST_F(RenderFrameHostManagerTestWithBrowserSideNavigation,
       NavigationRequest::CreateBrowserInitiated(
           contents()->GetFrameTree()->root(), frame_entry->url(),
           frame_entry->referrer(), *frame_entry, entry,
-          FrameMsg_Navigate_Type::NORMAL, LOFI_UNSPECIFIED, false,
+          FrameMsg_Navigate_Type::NORMAL, LOFI_UNSPECIFIED, false, false,
           base::TimeTicks::Now(),
           static_cast<NavigationControllerImpl*>(&controller()));
   manager->DidCreateNavigationRequest(navigation_request.get());
@@ -3022,7 +3021,7 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation,
   main_test_rfh()->OnCreateChildFrame(
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       blink::WebTreeScopeType::Document, "frame1", "uniqueName1",
-      blink::WebSandboxFlags::None, blink::WebFrameOwnerProperties());
+      blink::WebSandboxFlags::None, FrameOwnerProperties());
 
   FrameTreeNode* root = contents()->GetFrameTree()->root();
   RenderFrameHostManager* child = root->child_at(0)->render_manager();

@@ -29,7 +29,7 @@
         'skia_lib.gyp:skia_lib',
       ],
       'sources': [
-        '<!@(python find.py ../tools/gpu "*")'
+        '<!@(python find.py "*" ../tools/gpu)'
       ],
       'conditions': [
         [ 'skia_mesa', { 'dependencies': [ 'osmesa' ] } ],
@@ -99,9 +99,6 @@
           'sources/': [
             ['exclude', '_angle\.(h|cpp)$'],
           ],
-        }],
-        [ 'skia_command_buffer == 0', {
-          'sources/': [ ['exclude', '_command_buffer\.(h|cpp)$'], ],
         }],
       ],
     },

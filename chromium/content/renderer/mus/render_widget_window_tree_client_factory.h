@@ -7,7 +7,10 @@
 
 namespace content {
 
-void CreateRenderWidgetWindowTreeClientFactory();
+class ServiceManagerConnection;
+
+void CreateRenderWidgetWindowTreeClientFactory(
+    ServiceManagerConnection* connection);
 
 }  // namespace content
 

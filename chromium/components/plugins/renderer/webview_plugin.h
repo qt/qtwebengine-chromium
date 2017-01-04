@@ -42,7 +42,6 @@ class Size;
 
 class WebViewPlugin : public blink::WebPlugin,
                       public blink::WebViewClient,
-                      public blink::WebFrameClient,
                       public content::RenderViewObserver {
  public:
   class Delegate {
@@ -75,12 +74,8 @@ class WebViewPlugin : public blink::WebPlugin,
 
   blink::WebView* web_view() { return web_view_; }
 
-  // When loading a plugin document (i.e. a full page plugin not embedded in
-  // another page), we save all data that has been received, and replay it with
-  // this method on the actual plugin.
-  void ReplayReceivedData(blink::WebPlugin* plugin);
-
-  void RestoreTitleText();
+  bool focused() const { return focused_; }
+  const blink::WebString& old_title() const { return old_title_; }
 
   // WebPlugin methods:
   blink::WebPluginContainer* container() const override;
@@ -134,16 +129,6 @@ class WebViewPlugin : public blink::WebPlugin,
   void didChangeCursor(const blink::WebCursorInfo& cursor) override;
   void scheduleAnimation() override;
 
-  // WebFrameClient methods:
-  void didClearWindowObject(blink::WebLocalFrame* frame) override;
-
-  // This method is defined in WebPlugin as well as in WebFrameClient, but with
-  // different parameters. We only care about implementing the WebPlugin
-  // version, so we implement this method and call the default in WebFrameClient
-  // (which does nothing) to correctly overload it.
-  void didReceiveResponse(unsigned identifier,
-                          const blink::WebURLResponse& response) override;
-
  private:
   friend class base::DeleteHelper<WebViewPlugin>;
   WebViewPlugin(content::RenderView* render_view,
@@ -169,21 +154,24 @@ class WebViewPlugin : public blink::WebPlugin,
   // Owned by us, deleted via |close()|.
   blink::WebView* web_view_;
 
-  // Owned by us, deleted via |close()|.
-  blink::WebFrameWidget* web_frame_widget_;
-
-  // Owned by us, deleted via |close()|.
-  blink::WebFrame* web_frame_;
   gfx::Rect rect_;
 
-  blink::WebURLResponse response_;
-  std::list<std::string> data_;
-  std::unique_ptr<blink::WebURLError> error_;
   blink::WebString old_title_;
-  bool finished_loading_;
   bool focused_;
   bool is_painting_;
   bool is_resizing_;
+
+  // A helper needed to create a WebLocalFrame.
+  class PluginWebFrameClient : public blink::WebFrameClient {
+   public:
+    PluginWebFrameClient(WebViewPlugin* plugin) : plugin_(plugin) {}
+    ~PluginWebFrameClient() override {}
+    void didClearWindowObject(blink::WebLocalFrame* frame) override;
+
+   private:
+    WebViewPlugin* plugin_;
+  };
+  PluginWebFrameClient web_frame_client_;
 
   // Should be invalidated when destroy() is called.
   base::WeakPtrFactory<WebViewPlugin> weak_factory_;

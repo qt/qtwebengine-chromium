@@ -21,6 +21,7 @@
 #include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "base/trace_event/trace_event.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -29,6 +30,7 @@
 #include "media/renderers/gpu_video_accelerator_factories.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "ui/gfx/buffer_format_util.h"
+#include "ui/gfx/gpu_memory_buffer_tracing.h"
 #include "ui/gl/trace_util.h"
 
 namespace media {
@@ -378,6 +380,11 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::CreateHardwareFrame(
     case PIXEL_FORMAT_YUV420P10:
     case PIXEL_FORMAT_YUV422P10:
     case PIXEL_FORMAT_YUV444P10:
+    case PIXEL_FORMAT_YUV420P12:
+    case PIXEL_FORMAT_YUV422P12:
+    case PIXEL_FORMAT_YUV444P12:
+    case PIXEL_FORMAT_Y8:
+    case PIXEL_FORMAT_Y16:
     case PIXEL_FORMAT_UNKNOWN:
       frame_ready_cb.Run(video_frame);
       return;
@@ -438,8 +445,11 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::OnCopiesDone(
     FrameResources* frame_resources,
     const FrameReadyCB& frame_ready_cb) {
   for (const auto& plane_resource : frame_resources->plane_resources) {
-    if (plane_resource.gpu_memory_buffer)
+    if (plane_resource.gpu_memory_buffer) {
       plane_resource.gpu_memory_buffer->Unmap();
+      plane_resource.gpu_memory_buffer->SetColorSpaceForScanout(
+          video_frame->ColorSpace());
+    }
   }
 
   media_task_runner_->PostTask(
@@ -601,6 +611,8 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::
     frame_ready_cb.Run(video_frame);
     return;
   }
+
+  frame->set_color_space(video_frame->ColorSpace());
 
   bool allow_overlay = false;
   switch (output_format_) {

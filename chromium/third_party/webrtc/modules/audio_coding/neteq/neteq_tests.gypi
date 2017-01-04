@@ -80,6 +80,7 @@
       'target_name': 'RTPjitter',
       'type': 'executable',
       'dependencies': [
+        '<(webrtc_root)/common.gyp:webrtc_common',
         '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
@@ -131,21 +132,10 @@
       'dependencies': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(webrtc_root)/test/test.gyp:rtp_test_utils',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
       ],
       'sources': [
         'tools/rtpcat.cc',
-      ],
-    },
-
-    {
-      'target_name': 'rtp_to_text',
-      'type': 'executable',
-      'dependencies': [
-        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
-        'neteq_test_tools',
-      ],
-      'sources': [
-        'test/rtp_to_text.cc',
       ],
     },
 
@@ -155,6 +145,7 @@
       'dependencies': [
         'neteq',
         'webrtc_opus',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
       ],
       'sources': [
         'test/audio_classifier_test.cc',
@@ -176,6 +167,19 @@
         'tools/neteq_external_decoder_test.h',
         'tools/neteq_performance_test.cc',
         'tools/neteq_performance_test.h',
+      ],
+    }, # neteq_test_support
+
+    {
+      'target_name': 'neteq_quality_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+        'neteq',
+        'neteq_unittest_tools',
+      ],
+      'sources': [
         'tools/neteq_quality_test.cc',
         'tools/neteq_quality_test.h',
       ],
@@ -186,7 +190,8 @@
       'type': 'executable',
       'dependencies': [
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-        '<(webrtc_root)/test/test.gyp:test_support_main',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
+        '<(webrtc_root)/test/test.gyp:test_support',
         'neteq',
         'neteq_test_support',
       ],
@@ -203,7 +208,7 @@
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/test/test.gyp:test_support_main',
         'neteq',
-        'neteq_test_support',
+        'neteq_quality_test_support',
         'webrtc_opus',
       ],
       'sources': [
@@ -220,7 +225,7 @@
         '<(webrtc_root)/test/test.gyp:test_support_main',
         'isac_fix',
         'neteq',
-        'neteq_test_support',
+        'neteq_quality_test_support',
       ],
       'sources': [
         'test/neteq_isac_quality_test.cc',
@@ -236,7 +241,7 @@
         '<(webrtc_root)/test/test.gyp:test_support_main',
         'g711',
         'neteq',
-        'neteq_test_support',
+        'neteq_quality_test_support',
       ],
       'sources': [
         'test/neteq_pcmu_quality_test.cc',
@@ -249,9 +254,10 @@
       'dependencies': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
         '<(webrtc_root)/test/test.gyp:test_support_main',
         'neteq',
-        'neteq_test_support',
+        'neteq_quality_test_support',
         'ilbc',
       ],
       'sources': [

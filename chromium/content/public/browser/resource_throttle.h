@@ -5,6 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_RESOURCE_THROTTLE_H_
 #define CONTENT_PUBLIC_BROWSER_RESOURCE_THROTTLE_H_
 
+#include "content/common/content_export.h"
+
 namespace net {
 struct RedirectInfo;
 }
@@ -20,15 +22,12 @@ class ThrottlingResourceHandler;
 // resource load.  The ResourceController interface may be used to resume a
 // deferred resource load, or it may be used to cancel a resource load at any
 // time.
-class ResourceThrottle {
+class CONTENT_EXPORT ResourceThrottle {
  public:
   virtual ~ResourceThrottle() {}
 
   // Called before the resource request is started.
   virtual void WillStartRequest(bool* defer) {}
-
-  // Called before the resource request uses the network for the first time.
-  virtual void WillStartUsingNetwork(bool* defer) {}
 
   // Called when the request was redirected.  |redirect_info| contains the
   // redirect responses's HTTP status code and some information about the new
@@ -44,6 +43,13 @@ class ResourceThrottle {
   // purposes.  nullptr is not allowed.  Caller does *not* take ownership of the
   // returned string.
   virtual const char* GetNameForLogging() const = 0;
+
+  // Whether this ResourceThrottle needs to execute WillProcessResponse before
+  // any part of the response body is read. Normally this is false. This should
+  // be set to true if the ResourceThrottle wants to ensure that no part of the
+  // response body will be cached if the request is canceled in
+  // WillProcessResponse.
+  virtual bool MustProcessResponseBeforeReadingBody();
 
   void set_controller_for_testing(ResourceController* c) {
     controller_ = c;

@@ -88,8 +88,8 @@ InterceptNavigationDelegate* InterceptNavigationDelegate::Get(
 std::unique_ptr<content::NavigationThrottle>
 InterceptNavigationDelegate::CreateThrottleFor(
     content::NavigationHandle* handle) {
-  return base::WrapUnique(new InterceptNavigationThrottle(
-      handle, base::Bind(&CheckIfShouldIgnoreNavigationOnUIThread), false));
+  return base::MakeUnique<InterceptNavigationThrottle>(
+      handle, base::Bind(&CheckIfShouldIgnoreNavigationOnUIThread), false);
 }
 
 // static
@@ -138,19 +138,11 @@ bool InterceptNavigationDelegate::ShouldIgnoreNavigation(
       env, navigation_params, has_user_gesture_carryover);
 
   return Java_InterceptNavigationDelegate_shouldIgnoreNavigation(
-      env,
-      jdelegate.obj(),
-      jobject_params.obj());
+      env, jdelegate, jobject_params);
 }
 
 void InterceptNavigationDelegate::UpdateLastUserGestureCarryoverTimestamp() {
   last_user_gesture_carryover_timestamp_ = base::TimeTicks::Now();
-}
-
-// Register native methods.
-
-bool RegisterInterceptNavigationDelegate(JNIEnv* env) {
-  return RegisterNativesImpl(env);
 }
 
 }  // namespace navigation_interception

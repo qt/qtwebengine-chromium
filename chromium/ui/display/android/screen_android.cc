@@ -47,6 +47,9 @@ class ScreenAndroid : public Screen {
     if (!Display::HasForceDeviceScaleFactor())
       display.set_device_scale_factor(device_scale_factor);
     display.SetRotationAsDegree(device_info.GetRotationDegrees());
+    display.set_color_depth(device_info.GetBitsPerPixel());
+    display.set_depth_per_component(device_info.GetBitsPerComponent());
+    display.set_is_monochrome(device_info.GetBitsPerComponent() == 0);
     return display;
   }
 

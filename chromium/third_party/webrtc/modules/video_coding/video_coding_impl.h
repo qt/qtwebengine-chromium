@@ -19,7 +19,7 @@
 
 #include "webrtc/base/onetimeevent.h"
 #include "webrtc/base/thread_annotations.h"
-#include "webrtc/base/thread_checker.h"
+#include "webrtc/base/sequenced_task_checker.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/modules/video_coding/codec_database.h"
 #include "webrtc/modules/video_coding/frame_buffer.h"
@@ -58,7 +58,6 @@ class VideoSender : public Module {
 
   VideoSender(Clock* clock,
               EncodedImageCallback* post_encode_callback,
-              VideoEncoderRateObserver* encoder_rate_observer,
               VCMSendStatisticsCallback* send_stats_callback);
 
   ~VideoSender();
@@ -89,9 +88,6 @@ class VideoSender : public Module {
   int32_t IntraFrameRequest(size_t stream_index);
   int32_t EnableFrameDropper(bool enable);
 
-  void SuspendBelowMinBitrate();
-  bool VideoSuspended() const;
-
   int64_t TimeUntilNextProcess() override;
   void Process() override;
 
@@ -112,13 +108,11 @@ class VideoSender : public Module {
 
   // Must be accessed on the construction thread of VideoSender.
   VideoCodec current_codec_;
-  rtc::ThreadChecker main_thread_;
-
+  rtc::SequencedTaskChecker sequenced_checker_;
 
   rtc::CriticalSection params_crit_;
   EncoderParameters encoder_params_ GUARDED_BY(params_crit_);
   bool encoder_has_internal_source_ GUARDED_BY(params_crit_);
-  std::string encoder_name_ GUARDED_BY(params_crit_);
   std::vector<FrameType> next_frame_types_ GUARDED_BY(params_crit_);
 };
 

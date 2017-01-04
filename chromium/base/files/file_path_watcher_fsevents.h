@@ -12,6 +12,7 @@
 
 #include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
+#include "base/mac/scoped_dispatch_object.h"
 #include "base/macros.h"
 
 namespace base {
@@ -53,7 +54,7 @@ class FilePathWatcherFSEvents : public FilePathWatcher::PlatformDelegate {
                       const FilePath& resolved_target);
 
   // Cleans up and stops the event stream.
-  void CancelOnMessageLoopThread() override;
+  void CancelOnMessageLoopThread();
 
   // (Re-)Initialize the event stream to start reporting events from
   // |start_event|.
@@ -76,16 +77,19 @@ class FilePathWatcherFSEvents : public FilePathWatcher::PlatformDelegate {
   // (Only accessed from the message_loop() thread.)
   FilePathWatcher::Callback callback_;
 
+  // The dispatch queue on which the the event stream is scheduled.
+  ScopedDispatchObject<dispatch_queue_t> queue_;
+
   // Target path to watch (passed to callback).
-  // (Only accessed from the libdispatch thread.)
+  // (Only accessed from the libdispatch queue.)
   FilePath target_;
 
   // Target path with all symbolic links resolved.
-  // (Only accessed from the libdispatch thread.)
+  // (Only accessed from the libdispatch queue.)
   FilePath resolved_target_;
 
   // Backend stream we receive event callbacks from (strong reference).
-  // (Only accessed from the libdispatch thread.)
+  // (Only accessed from the libdispatch queue.)
   FSEventStreamRef fsevent_stream_;
 
   DISALLOW_COPY_AND_ASSIGN(FilePathWatcherFSEvents);

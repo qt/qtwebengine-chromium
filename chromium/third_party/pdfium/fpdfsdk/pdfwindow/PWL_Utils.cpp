@@ -8,16 +8,13 @@
 
 #include <algorithm>
 
-#include "core/fpdfdoc/include/cpvt_word.h"
-#include "core/fxge/include/fx_ge.h"
-#include "fpdfsdk/fxedit/include/fx_edit.h"
+#include "core/fpdfdoc/cpvt_word.h"
+#include "core/fxge/cfx_graphstatedata.h"
+#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/cfx_renderdevice.h"
+#include "fpdfsdk/fxedit/fxet_edit.h"
 #include "fpdfsdk/pdfwindow/PWL_Icon.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
-
-#define IsFloatZero(f) ((f) < 0.0001 && (f) > -0.0001)
-#define IsFloatBigger(fa, fb) ((fa) > (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatSmaller(fa, fb) ((fa) < (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatEqual(fa, fb) IsFloatZero((fa) - (fb))
 
 CFX_ByteString CPWL_Utils::GetAppStreamFromArray(const CPWL_PathData* pPathData,
                                                  int32_t nCount) {
@@ -412,19 +409,19 @@ CFX_FloatRect CPWL_Utils::GetCenterSquare(const CFX_FloatRect& rect) {
                        fCenterX + fRadius, fCenterY + fRadius);
 }
 
-CFX_ByteString CPWL_Utils::GetEditAppStream(IFX_Edit* pEdit,
+CFX_ByteString CPWL_Utils::GetEditAppStream(CFX_Edit* pEdit,
                                             const CFX_FloatPoint& ptOffset,
                                             const CPVT_WordRange* pRange,
                                             FX_BOOL bContinuous,
                                             uint16_t SubWord) {
-  return IFX_Edit::GetEditAppearanceStream(pEdit, ptOffset, pRange, bContinuous,
+  return CFX_Edit::GetEditAppearanceStream(pEdit, ptOffset, pRange, bContinuous,
                                            SubWord);
 }
 
-CFX_ByteString CPWL_Utils::GetEditSelAppStream(IFX_Edit* pEdit,
+CFX_ByteString CPWL_Utils::GetEditSelAppStream(CFX_Edit* pEdit,
                                                const CFX_FloatPoint& ptOffset,
                                                const CPVT_WordRange* pRange) {
-  return IFX_Edit::GetSelectAppearanceStream(pEdit, ptOffset, pRange);
+  return CFX_Edit::GetSelectAppearanceStream(pEdit, ptOffset, pRange);
 }
 
 CFX_ByteString CPWL_Utils::GetTextAppStream(const CFX_FloatRect& rcBBox,
@@ -438,26 +435,25 @@ CFX_ByteString CPWL_Utils::GetTextAppStream(const CFX_FloatRect& rcBBox,
                                             const CPWL_Color& crText) {
   CFX_ByteTextBuf sRet;
 
-  IFX_Edit* pEdit = IFX_Edit::NewEdit();
+  std::unique_ptr<CFX_Edit> pEdit(new CFX_Edit);
   pEdit->SetFontMap(pFontMap);
   pEdit->SetPlateRect(rcBBox);
-  pEdit->SetAlignmentH(nAlignmentH);
-  pEdit->SetAlignmentV(nAlignmentV);
-  pEdit->SetMultiLine(bMultiLine);
-  pEdit->SetAutoReturn(bAutoReturn);
+  pEdit->SetAlignmentH(nAlignmentH, TRUE);
+  pEdit->SetAlignmentV(nAlignmentV, TRUE);
+  pEdit->SetMultiLine(bMultiLine, TRUE);
+  pEdit->SetAutoReturn(bAutoReturn, TRUE);
   if (IsFloatZero(fFontSize))
-    pEdit->SetAutoFontSize(TRUE);
+    pEdit->SetAutoFontSize(TRUE, TRUE);
   else
     pEdit->SetFontSize(fFontSize);
 
   pEdit->Initialize();
-  pEdit->SetText(sText.c_str());
+  pEdit->SetText(sText);
 
   CFX_ByteString sEdit =
-      CPWL_Utils::GetEditAppStream(pEdit, CFX_FloatPoint(0.0f, 0.0f));
+      CPWL_Utils::GetEditAppStream(pEdit.get(), CFX_FloatPoint(0.0f, 0.0f));
   if (sEdit.GetLength() > 0)
     sRet << "BT\n" << CPWL_Utils::GetColorAppStream(crText) << sEdit << "ET\n";
-  IFX_Edit::DelEdit(pEdit);
 
   return sRet.MakeString();
 }
@@ -472,19 +468,19 @@ CFX_ByteString CPWL_Utils::GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
                                                   int32_t nLayOut) {
   const FX_FLOAT fAutoFontScale = 1.0f / 3.0f;
 
-  IFX_Edit* pEdit = IFX_Edit::NewEdit();
+  std::unique_ptr<CFX_Edit> pEdit(new CFX_Edit);
   pEdit->SetFontMap(pFontMap);
-  pEdit->SetAlignmentH(1);
-  pEdit->SetAlignmentV(1);
-  pEdit->SetMultiLine(FALSE);
-  pEdit->SetAutoReturn(FALSE);
+  pEdit->SetAlignmentH(1, TRUE);
+  pEdit->SetAlignmentV(1, TRUE);
+  pEdit->SetMultiLine(FALSE, TRUE);
+  pEdit->SetAutoReturn(FALSE, TRUE);
   if (IsFloatZero(fFontSize))
-    pEdit->SetAutoFontSize(TRUE);
+    pEdit->SetAutoFontSize(TRUE, TRUE);
   else
     pEdit->SetFontSize(fFontSize);
 
   pEdit->Initialize();
-  pEdit->SetText(sLabel.c_str());
+  pEdit->SetText(sLabel);
 
   CFX_FloatRect rcLabelContent = pEdit->GetContentRect();
   CPWL_Icon Icon;
@@ -667,14 +663,13 @@ CFX_ByteString CPWL_Utils::GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
   if (!rcLabel.IsEmpty()) {
     pEdit->SetPlateRect(rcLabel);
     CFX_ByteString sEdit =
-        CPWL_Utils::GetEditAppStream(pEdit, CFX_FloatPoint(0.0f, 0.0f));
+        CPWL_Utils::GetEditAppStream(pEdit.get(), CFX_FloatPoint(0.0f, 0.0f));
     if (sEdit.GetLength() > 0) {
       sTemp << "BT\n"
             << CPWL_Utils::GetColorAppStream(crText) << sEdit << "ET\n";
     }
   }
 
-  IFX_Edit::DelEdit(pEdit);
   if (sTemp.GetSize() > 0) {
     sAppStream << "q\n"
                << rcBBox.left << " " << rcBBox.bottom << " "
@@ -3313,12 +3308,15 @@ void CPWL_Utils::GetGraphics_Foxit(CFX_ByteString& sPathData,
     GetPathDataFromArray(path, PathArray, 23);
 }
 
-void CPWL_Color::ConvertColorType(int32_t other_nColorType) {
-  switch (other_nColorType) {
+void CPWL_Color::ConvertColorType(int32_t nConvertColorType) {
+  if (nColorType == nConvertColorType)
+    return;
+
+  switch (nColorType) {
     case COLORTYPE_TRANSPARENT:
       break;
     case COLORTYPE_GRAY:
-      switch (other_nColorType) {
+      switch (nConvertColorType) {
         case COLORTYPE_RGB:
           CPWL_Utils::ConvertGRAY2RGB(fColor1, fColor1, fColor2, fColor3);
           break;
@@ -3329,7 +3327,7 @@ void CPWL_Color::ConvertColorType(int32_t other_nColorType) {
       }
       break;
     case COLORTYPE_RGB:
-      switch (other_nColorType) {
+      switch (nConvertColorType) {
         case COLORTYPE_GRAY:
           CPWL_Utils::ConvertRGB2GRAY(fColor1, fColor2, fColor3, fColor1);
           break;
@@ -3340,7 +3338,7 @@ void CPWL_Color::ConvertColorType(int32_t other_nColorType) {
       }
       break;
     case COLORTYPE_CMYK:
-      switch (other_nColorType) {
+      switch (nConvertColorType) {
         case COLORTYPE_GRAY:
           CPWL_Utils::ConvertCMYK2GRAY(fColor1, fColor2, fColor3, fColor4,
                                        fColor1);
@@ -3352,5 +3350,5 @@ void CPWL_Color::ConvertColorType(int32_t other_nColorType) {
       }
       break;
   }
-  nColorType = other_nColorType;
+  nColorType = nConvertColorType;
 }

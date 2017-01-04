@@ -7,13 +7,13 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "sync/api/sync_change.h"
-#include "sync/api/sync_data.h"
-#include "sync/internal_api/public/base/model_type.h"
-#include "sync/protocol/session_specifics.pb.h"
-#include "sync/protocol/sync.pb.h"
+#include "components/sync/api/sync_change.h"
+#include "components/sync/api/sync_data.h"
+#include "components/sync/base/model_type.h"
+#include "components/sync/protocol/session_specifics.pb.h"
+#include "components/sync/protocol/sync.pb.h"
 
-namespace browser_sync {
+namespace sync_sessions {
 
 const size_t TabNodePool::kFreeNodesLowWatermark = 25;
 const size_t TabNodePool::kFreeNodesHighWatermark = 100;
@@ -179,4 +179,4 @@ void TabNodePool::SetMachineTag(const std::string& machine_tag) {
   machine_tag_ = machine_tag;
 }
 
-}  // namespace browser_sync
+}  // namespace sync_sessions

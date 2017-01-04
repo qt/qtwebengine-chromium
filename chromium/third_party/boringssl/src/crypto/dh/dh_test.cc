@@ -64,25 +64,26 @@
 #include <openssl/bn.h>
 #include <openssl/bytestring.h>
 #include <openssl/crypto.h>
+#include <openssl/dh.h>
 #include <openssl/err.h>
 #include <openssl/mem.h>
 
-#include "internal.h"
-#include "../test/scoped_types.h"
-
+namespace bssl {
 
 static bool RunBasicTests();
 static bool RunRFC5114Tests();
 static bool TestBadY();
 static bool TestASN1();
+static bool TestRFC3526();
 
-int main(int argc, char *argv[]) {
+static int Main() {
   CRYPTO_library_init();
 
   if (!RunBasicTests() ||
       !RunRFC5114Tests() ||
       !TestBadY() ||
-      !TestASN1()) {
+      !TestASN1() ||
+      !TestRFC3526()) {
     ERR_print_errors_fp(stderr);
     return 1;
   }
@@ -113,7 +114,7 @@ static int GenerateCallback(int p, int n, BN_GENCB *arg) {
 static bool RunBasicTests() {
   BN_GENCB cb;
   BN_GENCB_set(&cb, &GenerateCallback, stdout);
-  ScopedDH a(DH_new());
+  bssl::UniquePtr<DH> a(DH_new());
   if (!a || !DH_generate_parameters_ex(a.get(), 64, DH_GENERATOR_5, &cb)) {
     return false;
   }
@@ -141,7 +142,7 @@ static bool RunBasicTests() {
   BN_print_fp(stdout, a->g);
   printf("\n");
 
-  ScopedDH b(DH_new());
+  bssl::UniquePtr<DH> b(DH_new());
   if (!b) {
     return false;
   }
@@ -435,8 +436,8 @@ static bool RunRFC5114Tests() {
   for (unsigned i = 0; i < sizeof(kRFCTestData) / sizeof(RFC5114TestData); i++) {
     const RFC5114TestData *td = kRFCTestData + i;
     /* Set up DH structures setting key components */
-    ScopedDH dhA(td->get_param(nullptr));
-    ScopedDH dhB(td->get_param(nullptr));
+    bssl::UniquePtr<DH> dhA(td->get_param(nullptr));
+    bssl::UniquePtr<DH> dhB(td->get_param(nullptr));
     if (!dhA || !dhB) {
       fprintf(stderr, "Initialisation error RFC5114 set %u\n", i + 1);
       return false;
@@ -511,8 +512,8 @@ static const uint8_t kRFC5114_2048_224BadY[] = {
 };
 
 static bool TestBadY() {
-  ScopedDH dh(DH_get_2048_224(nullptr));
-  ScopedBIGNUM pub_key(
+  bssl::UniquePtr<DH> dh(DH_get_2048_224(nullptr));
+  bssl::UniquePtr<BIGNUM> pub_key(
       BN_bin2bn(kRFC5114_2048_224BadY, sizeof(kRFC5114_2048_224BadY), nullptr));
   if (!dh || !pub_key || !DH_generate_key(dh.get())) {
     return false;
@@ -542,7 +543,7 @@ static bool BIGNUMEqualsHex(const BIGNUM *bn, const char *hex) {
   if (!BN_hex2bn(&hex_bn, hex)) {
     return false;
   }
-  ScopedBIGNUM free_hex_bn(hex_bn);
+  bssl::UniquePtr<BIGNUM> free_hex_bn(hex_bn);
   return BN_cmp(bn, hex_bn) == 0;
 }
 
@@ -558,7 +559,7 @@ static bool TestASN1() {
 
   CBS cbs;
   CBS_init(&cbs, kParams, sizeof(kParams));
-  ScopedDH dh(DH_parse_parameters(&cbs));
+  bssl::UniquePtr<DH> dh(DH_parse_parameters(&cbs));
   if (!dh || CBS_len(&cbs) != 0 ||
       !BIGNUMEqualsHex(
           dh->p,
@@ -575,7 +576,7 @@ static bool TestASN1() {
       !CBB_finish(cbb.get(), &der, &der_len)) {
     return false;
   }
-  ScopedOpenSSLBytes free_der(der);
+  bssl::UniquePtr<uint8_t> free_der(der);
   if (der_len != sizeof(kParams) || memcmp(der, kParams, der_len) != 0) {
     return false;
   }
@@ -617,10 +618,52 @@ static bool TestASN1() {
       !CBB_finish(cbb.get(), &der, &der_len)) {
     return false;
   }
-  ScopedOpenSSLBytes free_der2(der);
+  bssl::UniquePtr<uint8_t> free_der2(der);
   if (der_len != sizeof(kParamsDSA) || memcmp(der, kParamsDSA, der_len) != 0) {
     return false;
   }
 
   return true;
+}
+
+static bool TestRFC3526() {
+  bssl::UniquePtr<BIGNUM> bn(BN_get_rfc3526_prime_1536(nullptr));
+  if (!bn) {
+    return false;
+  }
+
+  static const uint8_t kPrime1536[] = {
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc9, 0x0f, 0xda, 0xa2,
+      0x21, 0x68, 0xc2, 0x34, 0xc4, 0xc6, 0x62, 0x8b, 0x80, 0xdc, 0x1c, 0xd1,
+      0x29, 0x02, 0x4e, 0x08, 0x8a, 0x67, 0xcc, 0x74, 0x02, 0x0b, 0xbe, 0xa6,
+      0x3b, 0x13, 0x9b, 0x22, 0x51, 0x4a, 0x08, 0x79, 0x8e, 0x34, 0x04, 0xdd,
+      0xef, 0x95, 0x19, 0xb3, 0xcd, 0x3a, 0x43, 0x1b, 0x30, 0x2b, 0x0a, 0x6d,
+      0xf2, 0x5f, 0x14, 0x37, 0x4f, 0xe1, 0x35, 0x6d, 0x6d, 0x51, 0xc2, 0x45,
+      0xe4, 0x85, 0xb5, 0x76, 0x62, 0x5e, 0x7e, 0xc6, 0xf4, 0x4c, 0x42, 0xe9,
+      0xa6, 0x37, 0xed, 0x6b, 0x0b, 0xff, 0x5c, 0xb6, 0xf4, 0x06, 0xb7, 0xed,
+      0xee, 0x38, 0x6b, 0xfb, 0x5a, 0x89, 0x9f, 0xa5, 0xae, 0x9f, 0x24, 0x11,
+      0x7c, 0x4b, 0x1f, 0xe6, 0x49, 0x28, 0x66, 0x51, 0xec, 0xe4, 0x5b, 0x3d,
+      0xc2, 0x00, 0x7c, 0xb8, 0xa1, 0x63, 0xbf, 0x05, 0x98, 0xda, 0x48, 0x36,
+      0x1c, 0x55, 0xd3, 0x9a, 0x69, 0x16, 0x3f, 0xa8, 0xfd, 0x24, 0xcf, 0x5f,
+      0x83, 0x65, 0x5d, 0x23, 0xdc, 0xa3, 0xad, 0x96, 0x1c, 0x62, 0xf3, 0x56,
+      0x20, 0x85, 0x52, 0xbb, 0x9e, 0xd5, 0x29, 0x07, 0x70, 0x96, 0x96, 0x6d,
+      0x67, 0x0c, 0x35, 0x4e, 0x4a, 0xbc, 0x98, 0x04, 0xf1, 0x74, 0x6c, 0x08,
+      0xca, 0x23, 0x73, 0x27, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  };
+
+  uint8_t buffer[sizeof(kPrime1536)];
+  if (BN_num_bytes(bn.get()) != sizeof(kPrime1536) ||
+      BN_bn2bin(bn.get(), buffer) != sizeof(kPrime1536) ||
+      memcmp(buffer, kPrime1536, sizeof(kPrime1536)) != 0) {
+    fprintf(stderr, "1536-bit MODP prime did not match.\n");
+    return false;
+  }
+
+  return true;
+}
+
+}  // namespace bssl
+
+int main() {
+  return bssl::Main();
 }

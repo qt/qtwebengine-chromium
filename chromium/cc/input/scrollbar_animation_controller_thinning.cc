@@ -41,6 +41,7 @@ ScrollbarAnimationControllerThinning::ScrollbarAnimationControllerThinning(
                                    delay_before_starting,
                                    resize_delay_before_starting,
                                    duration),
+      captured_(false),
       mouse_is_over_scrollbar_(false),
       mouse_is_near_scrollbar_(false),
       thickness_change_(NONE),
@@ -65,15 +66,38 @@ void ScrollbarAnimationControllerThinning::RunAnimationFrame(float progress) {
   }
 }
 
+void ScrollbarAnimationControllerThinning::DidCaptureScrollbarBegin() {
+  captured_ = true;
+  ApplyOpacityAndThumbThicknessScale(1, 1.f);
+}
+
+void ScrollbarAnimationControllerThinning::DidCaptureScrollbarEnd() {
+  captured_ = false;
+
+  if (!mouse_is_over_scrollbar_)
+    opacity_change_ = DECREASE;
+  if (!mouse_is_near_scrollbar_)
+    thickness_change_ = DECREASE;
+  StartAnimation();
+}
+
 void ScrollbarAnimationControllerThinning::DidMouseMoveOffScrollbar() {
   mouse_is_over_scrollbar_ = false;
   mouse_is_near_scrollbar_ = false;
+
+  if (captured_)
+    return;
+
   opacity_change_ = DECREASE;
   thickness_change_ = DECREASE;
   StartAnimation();
 }
 
 void ScrollbarAnimationControllerThinning::DidScrollUpdate(bool on_resize) {
+  if (captured_) {
+    return;
+  }
+
   ScrollbarAnimationController::DidScrollUpdate(on_resize);
   ApplyOpacityAndThumbThicknessScale(
       1, mouse_is_near_scrollbar_ ? 1.f : kIdleThicknessScale);
@@ -87,21 +111,27 @@ void ScrollbarAnimationControllerThinning::DidMouseMoveNear(float distance) {
   bool mouse_is_near_scrollbar =
       distance < mouse_move_distance_to_trigger_animation_;
 
-  if (mouse_is_over_scrollbar == mouse_is_over_scrollbar_ &&
-      mouse_is_near_scrollbar == mouse_is_near_scrollbar_)
-    return;
-
-  if (mouse_is_over_scrollbar_ != mouse_is_over_scrollbar) {
-    mouse_is_over_scrollbar_ = mouse_is_over_scrollbar;
-    opacity_change_ = mouse_is_over_scrollbar_ ? INCREASE : DECREASE;
-  }
-
-  if (mouse_is_near_scrollbar_ != mouse_is_near_scrollbar) {
+  if (captured_) {
     mouse_is_near_scrollbar_ = mouse_is_near_scrollbar;
-    thickness_change_ = mouse_is_near_scrollbar_ ? INCREASE : DECREASE;
-  }
+    mouse_is_over_scrollbar_ = mouse_is_over_scrollbar;
+    return;
+  } else {
+    if (mouse_is_over_scrollbar == mouse_is_over_scrollbar_ &&
+        mouse_is_near_scrollbar == mouse_is_near_scrollbar_)
+      return;
 
-  StartAnimation();
+    if (mouse_is_over_scrollbar_ != mouse_is_over_scrollbar) {
+      mouse_is_over_scrollbar_ = mouse_is_over_scrollbar;
+      opacity_change_ = mouse_is_over_scrollbar_ ? INCREASE : DECREASE;
+    }
+
+    if (mouse_is_near_scrollbar_ != mouse_is_near_scrollbar) {
+      mouse_is_near_scrollbar_ = mouse_is_near_scrollbar;
+      thickness_change_ = mouse_is_near_scrollbar_ ? INCREASE : DECREASE;
+    }
+
+    StartAnimation();
+  }
 }
 
 float ScrollbarAnimationControllerThinning::OpacityAtAnimationProgress(
@@ -124,12 +154,21 @@ float ScrollbarAnimationControllerThinning::
 float ScrollbarAnimationControllerThinning::AdjustScale(
     float new_value,
     float current_value,
-    AnimationChange animation_change) {
+    AnimationChange animation_change,
+    float min_value,
+    float max_value) {
+  float result;
   if (animation_change == INCREASE && current_value > new_value)
-    return current_value;
-  if (animation_change == DECREASE && current_value < new_value)
-    return current_value;
-  return new_value;
+    result = current_value;
+  else if (animation_change == DECREASE && current_value < new_value)
+    result = current_value;
+  else
+    result = new_value;
+  if (result > max_value)
+    return max_value;
+  if (result < min_value)
+    return min_value;
+  return result;
 }
 
 void ScrollbarAnimationControllerThinning::ApplyOpacityAndThumbThicknessScale(
@@ -140,13 +179,26 @@ void ScrollbarAnimationControllerThinning::ApplyOpacityAndThumbThicknessScale(
       continue;
     float effective_opacity =
         scrollbar->CanScrollOrientation()
-            ? AdjustScale(opacity, scrollbar->Opacity(), opacity_change_)
+            ? AdjustScale(opacity, scrollbar->Opacity(), opacity_change_,
+                          kIdleOpacity, 1)
             : 0;
-
-    scrollbar->OnOpacityAnimated(effective_opacity);
+    PropertyTrees* property_trees =
+        scrollbar->layer_tree_impl()->property_trees();
+    // If this method is called during LayerImpl::PushPropertiesTo, we may not
+    // yet have valid effect_id_to_index_map entries as property trees are
+    // pushed after layers during activation. We can skip updating opacity in
+    // that case as we are only registering a scrollbar and because opacity will
+    // be overwritten anyway when property trees are pushed.
+    if (property_trees->IsInIdToIndexMap(PropertyTrees::TreeType::EFFECT,
+                                         scrollbar->id())) {
+      property_trees->effect_tree.OnOpacityAnimated(
+          effective_opacity,
+          property_trees->effect_id_to_index_map[scrollbar->id()],
+          scrollbar->layer_tree_impl());
+    }
     scrollbar->SetThumbThicknessScaleFactor(AdjustScale(
         thumb_thickness_scale, scrollbar->thumb_thickness_scale_factor(),
-        thickness_change_));
+        thickness_change_, kIdleThicknessScale, 1));
   }
 }
 

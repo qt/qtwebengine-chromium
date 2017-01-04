@@ -6,6 +6,8 @@
 #define MOJO_PUBLIC_CPP_BINDINGS_INTERFACE_PTR_H_
 
 #include <stdint.h>
+
+#include <string>
 #include <utility>
 
 #include "base/callback_forward.h"
@@ -14,6 +16,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "mojo/public/cpp/bindings/connection_error_callback.h"
 #include "mojo/public/cpp/bindings/interface_ptr_info.h"
 #include "mojo/public/cpp/bindings/lib/interface_ptr_state.h"
 
@@ -114,6 +117,12 @@ class InterfacePtr {
     internal_state_.RequireVersion(version);
   }
 
+  // Sends a no-op message on the underlying message pipe and runs the current
+  // message loop until its response is received. This can be used in tests to
+  // verify that no message was sent on a message pipe in response to some
+  // stimulus.
+  void FlushForTesting() { internal_state_.FlushForTesting(); }
+
   // Closes the bound message pipe (if any) and returns the pointer to the
   // unbound state.
   void reset() {
@@ -121,20 +130,16 @@ class InterfacePtr {
     internal_state_.Swap(&doomed);
   }
 
+  // Similar to the method above, but also specifies a disconnect reason.
+  void ResetWithReason(uint32_t custom_reason, const std::string& description) {
+    if (internal_state_.is_bound())
+      internal_state_.SendDisconnectReason(custom_reason, description);
+    reset();
+  }
+
   // Whether there are any associated interfaces running on the pipe currently.
   bool HasAssociatedInterfaces() const {
     return internal_state_.HasAssociatedInterfaces();
-  }
-
-  // Blocks the current thread until the next incoming response callback arrives
-  // or an error occurs. Returns |true| if a response arrived, or |false| in
-  // case of error.
-  //
-  // This method may only be called if the InterfacePtr has been bound to a
-  // message pipe and there are no associated interfaces running.
-  bool WaitForIncomingResponse() {
-    CHECK(!HasAssociatedInterfaces());
-    return internal_state_.WaitForIncomingResponse();
   }
 
   // Indicates whether the message pipe has encountered an error. If true,
@@ -149,6 +154,11 @@ class InterfacePtr {
   // message pipe.
   void set_connection_error_handler(const base::Closure& error_handler) {
     internal_state_.set_connection_error_handler(error_handler);
+  }
+
+  void set_connection_error_with_reason_handler(
+      const ConnectionErrorWithReasonCallback& error_handler) {
+    internal_state_.set_connection_error_with_reason_handler(error_handler);
   }
 
   // Unbinds the InterfacePtr and returns the information which could be used
@@ -191,8 +201,7 @@ class InterfacePtr {
   }
 
   // DO NOT USE. Exposed only for internal use and for testing.
-  internal::InterfacePtrState<Interface, Interface::PassesAssociatedKinds_>*
-  internal_state() {
+  internal::InterfacePtrState<Interface, true>* internal_state() {
     return &internal_state_;
   }
 
@@ -200,9 +209,7 @@ class InterfacePtr {
   // implicitly convertible to a real bool (which is dangerous).
  private:
   // TODO(dcheng): Use an explicit conversion operator.
-  typedef internal::InterfacePtrState<Interface,
-                                      Interface::PassesAssociatedKinds_>
-      InterfacePtr::*Testable;
+  typedef internal::InterfacePtrState<Interface, true> InterfacePtr::*Testable;
 
  public:
   operator Testable() const {
@@ -218,8 +225,7 @@ class InterfacePtr {
   template <typename T>
   bool operator!=(const InterfacePtr<T>& other) const = delete;
 
-  typedef internal::InterfacePtrState<Interface,
-                                      Interface::PassesAssociatedKinds_> State;
+  typedef internal::InterfacePtrState<Interface, true> State;
   mutable State internal_state_;
 
   DISALLOW_COPY_AND_ASSIGN(InterfacePtr);

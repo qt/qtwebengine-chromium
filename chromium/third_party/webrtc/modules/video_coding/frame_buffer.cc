@@ -153,7 +153,7 @@ VCMFrameBufferEnum VCMFrameBuffer::InsertPacket(
   // (HEVC)).
   if (packet.markerBit) {
     RTC_DCHECK(!_rotation_set);
-    _rotation = packet.video_header.rotation;
+    rotation_ = packet.video_header.rotation;
     _rotation_set = true;
   }
 
@@ -253,18 +253,8 @@ bool VCMFrameBuffer::IsRetransmitted() const {
 }
 
 void VCMFrameBuffer::PrepareForDecode(bool continuous) {
-#ifdef INDEPENDENT_PARTITIONS
-  if (_codec == kVideoCodecVP8) {
-    _length = _sessionInfo.BuildVP8FragmentationHeader(_buffer, _length,
-                                                       &_fragmentation);
-  } else {
-    size_t bytes_removed = _sessionInfo.MakeDecodable();
-    _length -= bytes_removed;
-  }
-#else
   size_t bytes_removed = _sessionInfo.MakeDecodable();
   _length -= bytes_removed;
-#endif
   // Transfer frame information to EncodedFrame and create any codec
   // specific information.
   _frameType = _sessionInfo.FrameType();

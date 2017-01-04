@@ -136,7 +136,7 @@ class URLFetcherCore : public base::RefCountedThreadSafe<URLFetcherCore>,
   void OnReceivedRedirect(URLRequest* request,
                           const RedirectInfo& redirect_info,
                           bool* defer_redirect) override;
-  void OnResponseStarted(URLRequest* request) override;
+  void OnResponseStarted(URLRequest* request, int net_error) override;
   void OnReadCompleted(URLRequest* request, int bytes_read) override;
   void OnCertificateRequested(URLRequest* request,
                               SSLCertRequestInfo* cert_request_info) override;
@@ -220,8 +220,10 @@ class URLFetcherCore : public base::RefCountedThreadSafe<URLFetcherCore>,
   void InformDelegateUploadProgressInDelegateThread(int64_t current,
                                                     int64_t total);
   void InformDelegateDownloadProgress();
-  void InformDelegateDownloadProgressInDelegateThread(int64_t current,
-                                                      int64_t total);
+  void InformDelegateDownloadProgressInDelegateThread(
+      int64_t current,
+      int64_t total,
+      int64_t current_network_bytes);
 
   // Check if any upload data is set or not.
   void AssertHasNoUploadData() const;

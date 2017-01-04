@@ -82,10 +82,8 @@ def WriteHTMLForTraceDataToFile(trace_data_list,
 
   modules = [
       'tracing.trace2html',
-      'tracing.extras.importer.gzip_importer',  # Must have for all configs.
-      project.GetModuleNameForConfigName(config_name)
+      project.GetModuleNameForConfigName(config_name),
   ]
-
   vulcanizer = project.CreateVulcanizer()
   load_sequence = vulcanizer.CalcLoadSequenceForModuleNames(modules)
 

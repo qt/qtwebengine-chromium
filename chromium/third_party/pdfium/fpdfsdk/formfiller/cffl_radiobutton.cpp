@@ -6,11 +6,13 @@
 
 #include "fpdfsdk/formfiller/cffl_radiobutton.h"
 
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
-#include "fpdfsdk/include/fsdk_mgr.h"
 #include "fpdfsdk/pdfwindow/PWL_SpecialButton.h"
+#include "public/fpdf_fwlevent.h"
 
-CFFL_RadioButton::CFFL_RadioButton(CPDFDoc_Environment* pApp,
+CFFL_RadioButton::CFFL_RadioButton(CPDFSDK_FormFillEnvironment* pApp,
                                    CPDFSDK_Annot* pWidget)
     : CFFL_Button(pApp, pWidget) {}
 
@@ -27,8 +29,8 @@ CPWL_Wnd* CFFL_RadioButton::NewPDFWindow(const PWL_CREATEPARAM& cp,
 }
 
 FX_BOOL CFFL_RadioButton::OnKeyDown(CPDFSDK_Annot* pAnnot,
-                                    FX_UINT nKeyCode,
-                                    FX_UINT nFlags) {
+                                    uint32_t nKeyCode,
+                                    uint32_t nFlags) {
   switch (nKeyCode) {
     case FWL_VKEY_Return:
     case FWL_VKEY_Space:
@@ -39,27 +41,23 @@ FX_BOOL CFFL_RadioButton::OnKeyDown(CPDFSDK_Annot* pAnnot,
 }
 
 FX_BOOL CFFL_RadioButton::OnChar(CPDFSDK_Annot* pAnnot,
-                                 FX_UINT nChar,
-                                 FX_UINT nFlags) {
+                                 uint32_t nChar,
+                                 uint32_t nFlags) {
   switch (nChar) {
     case FWL_VKEY_Return:
     case FWL_VKEY_Space: {
-      CFFL_IFormFiller* pIFormFiller = m_pApp->GetIFormFiller();
       CPDFSDK_PageView* pPageView = pAnnot->GetPageView();
       ASSERT(pPageView);
 
       FX_BOOL bReset = FALSE;
       FX_BOOL bExit = FALSE;
-
-      pIFormFiller->OnButtonUp(m_pWidget, pPageView, bReset, bExit, nFlags);
-
-      if (bReset)
-        return TRUE;
-      if (bExit)
+      CPDFSDK_Annot::ObservedPtr pObserved(m_pWidget);
+      m_pEnv->GetInteractiveFormFiller()->OnButtonUp(&pObserved, pPageView,
+                                                     bReset, bExit, nFlags);
+      if (!pObserved || bReset || bExit)
         return TRUE;
 
       CFFL_FormFiller::OnChar(pAnnot, nChar, nFlags);
-
       if (CPWL_RadioButton* pWnd =
               (CPWL_RadioButton*)GetPDFWindow(pPageView, TRUE))
         pWnd->SetCheck(TRUE);
@@ -73,7 +71,7 @@ FX_BOOL CFFL_RadioButton::OnChar(CPDFSDK_Annot* pAnnot,
 
 FX_BOOL CFFL_RadioButton::OnLButtonUp(CPDFSDK_PageView* pPageView,
                                       CPDFSDK_Annot* pAnnot,
-                                      FX_UINT nFlags,
+                                      uint32_t nFlags,
                                       const CFX_FloatPoint& point) {
   CFFL_Button::OnLButtonUp(pPageView, pAnnot, nFlags, point);
 

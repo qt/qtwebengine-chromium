@@ -15,6 +15,7 @@
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
 #include "base/win/scoped_select_object.h"
+#include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "skia/ext/bitmap_platform_device.h"
 #include "skia/ext/platform_canvas.h"
@@ -22,10 +23,12 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/core/SkShader.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "ui/base/material_design/material_design_controller.h"
-#include "ui/display/win/dpi.h"
+#include "ui/display/win/screen_win.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/gdi_util.h"
@@ -108,6 +111,40 @@ RECT InsetRect(const RECT* rect, int size) {
   result.Inset(size, size);
   return result.ToRECT();
 }
+
+// Custom scoped object for storing DC and a bitmap that was selected into it,
+// and making sure that they are deleted in the right order.
+class ScopedCreateDCWithBitmap {
+ public:
+  explicit ScopedCreateDCWithBitmap(base::win::ScopedCreateDC::Handle hdc)
+      : dc_(hdc) {}
+
+  ~ScopedCreateDCWithBitmap() {
+    // Delete DC before the bitmap, since objects should not be deleted while
+    // selected into a DC.
+    dc_.Close();
+  }
+
+  bool IsValid() const { return dc_.IsValid(); }
+
+  base::win::ScopedCreateDC::Handle Get() const { return dc_.Get(); }
+
+  // Selects |handle| to bitmap into DC. Returns false if handle is not valid.
+  bool SelectBitmap(base::win::ScopedBitmap::element_type handle) {
+    bitmap_.reset(handle);
+    if (!bitmap_.is_valid())
+      return false;
+
+    SelectObject(dc_.Get(), bitmap_.get());
+    return true;
+  }
+
+ private:
+  base::win::ScopedCreateDC dc_;
+  base::win::ScopedBitmap bitmap_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedCreateDCWithBitmap);
+};
 
 }  // namespace
 
@@ -204,7 +241,7 @@ gfx::Size NativeThemeWin::GetPartSize(Part part,
     case kScrollbarVerticalThumb:
     case kScrollbarHorizontalTrack:
     case kScrollbarVerticalTrack: {
-      int size = display::win::GetSystemMetricsInDIP(SM_CXVSCROLL);
+      int size = display::win::ScreenWin::GetSystemMetricsInDIP(SM_CXVSCROLL);
       if (size == 0)
         size = 17;
       return gfx::Size(size, size);
@@ -255,39 +292,18 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
       break;
   }
 
-  bool needs_paint_indirect = false;
-  if (!skia::SupportsPlatformPaint(canvas)) {
-    // This block will only get hit with --enable-accelerated-drawing flag.
-    needs_paint_indirect = true;
-  } else {
-    // Scrollbar components on Windows Classic theme (on all Windows versions)
-    // have particularly problematic alpha values, so always draw them
-    // indirectly. In addition, scrollbar thumbs and grippers for the Windows XP
-    // theme (available only on Windows XP) also need their alpha values
-    // fixed.
-    switch (part) {
-      case kScrollbarDownArrow:
-      case kScrollbarUpArrow:
-      case kScrollbarLeftArrow:
-      case kScrollbarRightArrow:
-        needs_paint_indirect = !GetThemeHandle(SCROLLBAR);
-        break;
-      case kScrollbarHorizontalThumb:
-      case kScrollbarVerticalThumb:
-      case kScrollbarHorizontalGripper:
-      case kScrollbarVerticalGripper:
-        needs_paint_indirect = !GetThemeHandle(SCROLLBAR) ||
-            base::win::GetVersion() == base::win::VERSION_XP;
-        break;
-      default:
-        break;
-    }
-  }
+  skia::ScopedPlatformPaint paint(canvas);
+  HDC surface = paint.GetPlatformSurface();
 
-  if (needs_paint_indirect)
-    PaintIndirect(canvas, part, state, rect, extra);
+  // When drawing the task manager or the bookmark editor, we draw into an
+  // offscreen buffer, where we can use OS-specific drawing routines for
+  // UI features like scrollbars. However, we need to set up that buffer,
+  // and then read it back when it's done and blit it onto the screen.
+
+  if (skia::SupportsPlatformPaint(canvas))
+    PaintDirect(canvas, surface, part, state, rect, extra);
   else
-    PaintDirect(canvas, part, state, rect, extra);
+    PaintIndirect(canvas, surface, part, state, rect, extra);
 }
 
 NativeThemeWin::NativeThemeWin()
@@ -376,14 +392,12 @@ void NativeThemeWin::PaintMenuBackground(SkCanvas* canvas,
   canvas->drawRect(gfx::RectToSkRect(rect), paint);
 }
 
-void NativeThemeWin::PaintDirect(SkCanvas* canvas,
+void NativeThemeWin::PaintDirect(SkCanvas* destination_canvas,
+                                 HDC hdc,
                                  Part part,
                                  State state,
                                  const gfx::Rect& rect,
                                  const ExtraParams& extra) const {
-  skia::ScopedPlatformPaint scoped_platform_paint(canvas);
-  HDC hdc = scoped_platform_paint.GetPlatformSurface();
-
   switch (part) {
     case kCheckbox:
       PaintCheckbox(hdc, part, state, rect, extra.button);
@@ -438,11 +452,11 @@ void NativeThemeWin::PaintDirect(SkCanvas* canvas,
       return;
     case kScrollbarHorizontalTrack:
     case kScrollbarVerticalTrack:
-      PaintScrollbarTrack(canvas, hdc, part, state, rect,
+      PaintScrollbarTrack(destination_canvas, hdc, part, state, rect,
                           extra.scrollbar_track);
       return;
     case kScrollbarCorner:
-      canvas->drawColor(SK_ColorWHITE, SkXfermode::kSrc_Mode);
+      destination_canvas->drawColor(SK_ColorWHITE, SkXfermode::kSrc_Mode);
       return;
     case kTabPanelBackground:
       PaintTabPanelBackground(hdc, rect);
@@ -452,7 +466,7 @@ void NativeThemeWin::PaintDirect(SkCanvas* canvas,
       return;
     case kTrackbarThumb:
     case kTrackbarTrack:
-      PaintTrackbar(canvas, hdc, part, state, rect, extra.trackbar);
+      PaintTrackbar(destination_canvas, hdc, part, state, rect, extra.trackbar);
       return;
     case kWindowResizeGripper:
       PaintWindowResizeGripper(hdc, rect);
@@ -491,10 +505,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
   const SkColor kFocusedBorderColor = SkColorSetRGB(0x4d, 0x90, 0xfe);
   const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xd9, 0xd9, 0xd9);
   // Button:
-  const SkColor kButtonBackgroundColor = SkColorSetRGB(0xde, 0xde, 0xde);
-  const SkColor kButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
   const SkColor kButtonHoverColor = SkColorSetRGB(6, 45, 117);
-  const SkColor kCallToActionColorInvert = gfx::kGoogleBlue300;
+  const SkColor kProminentButtonColorInvert = gfx::kGoogleBlue300;
   // MenuItem:
   const SkColor kMenuSchemeHighlightBackgroundColorInvert =
       SkColorSetRGB(0x30, 0x30, 0x30);
@@ -514,6 +526,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     // Dialogs
     case kColorId_DialogBackground:
     case kColorId_BubbleBackground:
+      if (ui::MaterialDesignController::IsSecondaryUiMaterial())
+        break;
       return color_utils::IsInvertedColorScheme() ?
           color_utils::InvertColor(kDialogBackgroundColor) :
           kDialogBackgroundColor;
@@ -525,12 +539,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
       return kUnfocusedBorderColor;
 
     // Button
-    case kColorId_ButtonBackgroundColor:
-      return kButtonBackgroundColor;
     case kColorId_ButtonEnabledColor:
       return system_colors_[COLOR_BTNTEXT];
-    case kColorId_ButtonHighlightColor:
-      return kButtonHighlightColor;
     case kColorId_ButtonHoverColor:
       return kButtonHoverColor;
 
@@ -539,8 +549,6 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
       return system_colors_[COLOR_BTNTEXT];
     case kColorId_LabelDisabledColor:
       return system_colors_[COLOR_GRAYTEXT];
-    case kColorId_LabelBackgroundColor:
-      return system_colors_[COLOR_WINDOW];
 
     // Textfield
     case kColorId_TextfieldDefaultColor:
@@ -662,8 +670,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     switch (color_id) {
       case NativeTheme::kColorId_FocusedMenuItemBackgroundColor:
         return kMenuSchemeHighlightBackgroundColorInvert;
-      case NativeTheme::kColorId_CallToActionColor:
-        return kCallToActionColorInvert;
+      case NativeTheme::kColorId_ProminentButtonColor:
+        return kProminentButtonColorInvert;
       default:
         return color_utils::InvertColor(GetAuraColor(color_id, this));
     }
@@ -672,7 +680,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
   return GetAuraColor(color_id, this);
 }
 
-void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
+void NativeThemeWin::PaintIndirect(SkCanvas* destination_canvas,
+                                   HDC destination_hdc,
                                    Part part,
                                    State state,
                                    const gfx::Rect& rect,
@@ -682,13 +691,37 @@ void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
   //                  be sped up by doing it only once per part/state and
   //                  keeping a cache of the resulting bitmaps.
 
-  // Create an offscreen canvas that is backed by an HDC.
-  sk_sp<skia::BitmapPlatformDevice> device(
-      skia::BitmapPlatformDevice::Create(
-          rect.width(), rect.height(), false, NULL));
-  DCHECK(device);
-  SkCanvas offscreen_canvas(device.get());
-  DCHECK(skia::SupportsPlatformPaint(&offscreen_canvas));
+  // If this process doesn't have access to GDI, we'd need to use shared memory
+  // segment instead but that is not supported right now.
+  if (!base::win::IsUser32AndGdi32Available())
+    return;
+
+  ScopedCreateDCWithBitmap offscreen_hdc(CreateCompatibleDC(nullptr));
+  if (!offscreen_hdc.IsValid())
+    return;
+
+  skia::InitializeDC(offscreen_hdc.Get());
+  HRGN clip = CreateRectRgn(0, 0, rect.width(), rect.height());
+  if ((SelectClipRgn(offscreen_hdc.Get(), clip) == ERROR) ||
+      !DeleteObject(clip)) {
+    return;
+  }
+
+  if (!offscreen_hdc.SelectBitmap(skia::CreateHBitmap(
+          rect.width(), rect.height(), false, nullptr, nullptr))) {
+    return;
+  }
+
+  // Will be NULL if lower-level Windows calls fail, or if the backing
+  // allocated is 0 pixels in size (which should never happen according to
+  // Windows documentation).
+  sk_sp<SkSurface> offscreen_surface =
+      skia::MapPlatformSurface(offscreen_hdc.Get());
+  if (!offscreen_surface)
+    return;
+
+  SkCanvas* offscreen_canvas = offscreen_surface->getCanvas();
+  DCHECK(offscreen_canvas);
 
   // Some of the Windows theme drawing operations do not write correct alpha
   // values for fully-opaque pixels; instead the pixels get alpha 0. This is
@@ -698,7 +731,7 @@ void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
   // which pixels get touched by the paint operation. After paint, set any
   // pixels that have alpha 0 to opaque and placeholders to fully-transparent.
   const SkColor placeholder = SkColorSetARGB(1, 0, 0, 0);
-  offscreen_canvas.clear(placeholder);
+  offscreen_canvas->clear(placeholder);
 
   // Offset destination rects to have origin (0,0).
   gfx::Rect adjusted_rect(rect.size());
@@ -717,14 +750,15 @@ void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
       break;
   }
   // Draw the theme controls using existing HDC-drawing code.
-  PaintDirect(&offscreen_canvas, part, state, adjusted_rect, adjusted_extra);
+  PaintDirect(offscreen_canvas, offscreen_hdc.Get(), part, state,
+              adjusted_rect, adjusted_extra);
 
-  SkBitmap bitmap = skia::ReadPixels(&offscreen_canvas);
+  SkBitmap offscreen_bitmap = skia::MapPlatformBitmap(offscreen_hdc.Get());
 
   // Post-process the pixels to fix up the alpha values (see big comment above).
   const SkPMColor placeholder_value = SkPreMultiplyColor(placeholder);
   const int pixel_count = rect.width() * rect.height();
-  SkPMColor* pixels = bitmap.getAddr32(0, 0);
+  SkPMColor* pixels = offscreen_bitmap.getAddr32(0, 0);
   for (int i = 0; i < pixel_count; i++) {
     if (pixels[i] == placeholder_value) {
       // Pixel wasn't touched - make it fully transparent.
@@ -738,8 +772,7 @@ void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
     }
   }
 
-  // Draw the offscreen bitmap to the destination canvas.
-  canvas->drawBitmap(bitmap, rect.x(), rect.y());
+  destination_canvas->drawBitmap(offscreen_bitmap, rect.x(), rect.y());
 }
 
 HRESULT NativeThemeWin::GetThemePartSize(ThemeName theme_name,

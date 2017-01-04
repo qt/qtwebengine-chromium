@@ -135,6 +135,25 @@ function testCalculateNow() {
    // TODO(tsepez): test success cases.
 }
 
+function testGetAnnot() {
+   // Method is present.
+   expect('typeof this.getAnnot', 'function');
+
+   // Method needs two arguments.
+   expectError('this.getAnnot()');
+   expectError('this.getAnnot(0)');
+   expectError('this.getAnnot(0, "test", 0)');
+
+   // TODO(tonikitoo): test success cases.
+}
+
+function testGetAnnots() {
+   // Method is present.
+   expect('typeof this.getAnnots', 'function');
+
+   // TODO(tonikitoo): test success cases.
+}
+
 function testGetField() {
    // Method is present.
    expect('typeof this.getField', 'function');
@@ -214,6 +233,17 @@ function testGetPrintParams() {
   // TODO(tsepez): test success cases.
 }
 
+function testGotoNamedDest() {
+   // Method is present.
+   expect('typeof this.gotoNamedDest', 'function');
+
+   // Method needs exactly one argument.
+   expectError('this.gotoNamedDest()');
+   expectError('this.gotoNamedDest(1, 2)');
+
+   // TODO(tonikitoo): test success cases.
+}
+
 function testMailDoc() {
    // Method is present.
    expect('typeof this.mailDoc', 'function');
@@ -278,9 +308,7 @@ try {
   testUnsupported('this.exportAsText');
   testUnsupported('this.exportAsXFDF');
   testUnsupported('this.extractPages');
-  testUnsupported('this.getAnnot');
   testUnsupported('this.getAnnot3D');
-  testUnsupported('this.getAnnots');
   testUnsupported('this.getLinks');
   testUnsupported('this.getOCGs');
   testUnsupported('this.getPageBox');
@@ -292,10 +320,13 @@ try {
   testUnsupported('this.removeIcon');
   testUnsupported('this.replacePages');
   testUnsupported('this.saveAs');
+  testUnsupported('this.syncAnnotScan');
 
   app.alert('*** Testing Supported Methods ***');
   testAddIcon();
   testCalculateNow();
+  testGetAnnot();
+  testGetAnnots();
   testGetField();
   testGetIcon();
   testGetNthFieldName();
@@ -303,6 +334,7 @@ try {
   testGetPageNthWordQuads();
   testGetPageNumWords();
   testGetPrintParams();
+  testGotoNamedDest();
   testMailDoc();
   testMailForm();
   testPrint();

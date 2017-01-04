@@ -26,14 +26,13 @@ namespace vcm {
 
 VideoSender::VideoSender(Clock* clock,
                          EncodedImageCallback* post_encode_callback,
-                         VideoEncoderRateObserver* encoder_rate_observer,
                          VCMSendStatisticsCallback* send_stats_callback)
     : clock_(clock),
       _encoder(nullptr),
       _mediaOpt(clock_),
       _encodedFrameCallback(post_encode_callback, &_mediaOpt),
       send_stats_callback_(send_stats_callback),
-      _codecDataBase(encoder_rate_observer, &_encodedFrameCallback),
+      _codecDataBase(&_encodedFrameCallback),
       frame_dropper_enabled_(true),
       _sendStatsTimer(1000, clock_),
       current_codec_(),
@@ -44,7 +43,7 @@ VideoSender::VideoSender(Clock* clock,
   // Allow VideoSender to be created on one thread but used on another, post
   // construction. This is currently how this class is being used by at least
   // one external project (diffractor).
-  main_thread_.DetachFromThread();
+  sequenced_checker_.Detach();
 }
 
 VideoSender::~VideoSender() {}
@@ -57,13 +56,7 @@ void VideoSender::Process() {
     if (send_stats_callback_) {
       uint32_t bitRate = _mediaOpt.SentBitRate();
       uint32_t frameRate = _mediaOpt.SentFrameRate();
-      std::string encoder_name;
-      {
-        rtc::CritScope cs(&params_crit_);
-        // Copy the string here so that we don't hold |params_crit_| in the CB.
-        encoder_name = encoder_name_;
-      }
-      send_stats_callback_->SendStatistics(bitRate, frameRate, encoder_name);
+      send_stats_callback_->SendStatistics(bitRate, frameRate);
     }
   }
 
@@ -83,7 +76,7 @@ int64_t VideoSender::TimeUntilNextProcess() {
 int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
                                        uint32_t numberOfCores,
                                        uint32_t maxPayloadSize) {
-  RTC_DCHECK(main_thread_.CalledOnValidThread());
+  RTC_DCHECK(sequenced_checker_.CalledSequentially());
   rtc::CritScope lock(&encoder_crit_);
   if (sendCodec == nullptr) {
     return VCM_PARAMETER_ERROR;
@@ -151,7 +144,7 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
 void VideoSender::RegisterExternalEncoder(VideoEncoder* externalEncoder,
                                           uint8_t payloadType,
                                           bool internalSource /*= false*/) {
-  RTC_DCHECK(main_thread_.CalledOnValidThread());
+  RTC_DCHECK(sequenced_checker_.CalledSequentially());
 
   rtc::CritScope lock(&encoder_crit_);
 
@@ -173,7 +166,7 @@ void VideoSender::RegisterExternalEncoder(VideoEncoder* externalEncoder,
 
 // Get encode bitrate
 int VideoSender::Bitrate(unsigned int* bitrate) const {
-  RTC_DCHECK(main_thread_.CalledOnValidThread());
+  RTC_DCHECK(sequenced_checker_.CalledSequentially());
   // Since we're running on the thread that's the only thread known to modify
   // the value of _encoder, we don't need to grab the lock here.
 
@@ -185,7 +178,7 @@ int VideoSender::Bitrate(unsigned int* bitrate) const {
 
 // Get encode frame rate
 int VideoSender::FrameRate(unsigned int* framerate) const {
-  RTC_DCHECK(main_thread_.CalledOnValidThread());
+  RTC_DCHECK(sequenced_checker_.CalledSequentially());
   // Since we're running on the thread that's the only thread known to modify
   // the value of _encoder, we don't need to grab the lock here.
 
@@ -315,8 +308,6 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
 
   {
     rtc::CritScope lock(&params_crit_);
-    encoder_name_ = _encoder->ImplementationName();
-
     // Change all keyframe requests to encode delta frames the next time.
     for (size_t i = 0; i < next_frame_types_.size(); ++i) {
       // Check for equality (same requested as before encoding) to not
@@ -363,24 +354,6 @@ int32_t VideoSender::EnableFrameDropper(bool enable) {
   frame_dropper_enabled_ = enable;
   _mediaOpt.EnableFrameDropper(enable);
   return VCM_OK;
-}
-
-void VideoSender::SuspendBelowMinBitrate() {
-  RTC_DCHECK(main_thread_.CalledOnValidThread());
-  int threshold_bps;
-  if (current_codec_.numberOfSimulcastStreams == 0) {
-    threshold_bps = current_codec_.minBitrate * 1000;
-  } else {
-    threshold_bps = current_codec_.simulcastStream[0].minBitrate * 1000;
-  }
-  // Set the hysteresis window to be at 10% of the threshold, but at least
-  // 10 kbps.
-  int window_bps = std::max(threshold_bps / 10, 10000);
-  _mediaOpt.SuspendBelowMinBitrate(threshold_bps, window_bps);
-}
-
-bool VideoSender::VideoSuspended() const {
-  return _mediaOpt.IsVideoSuspended();
 }
 }  // namespace vcm
 }  // namespace webrtc

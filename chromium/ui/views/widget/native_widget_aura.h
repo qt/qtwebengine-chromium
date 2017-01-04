@@ -30,6 +30,7 @@ class FontList;
 namespace views {
 
 class DropHelper;
+class FocusManagerEventHandler;
 class TooltipManagerAura;
 class WindowReorderer;
 
@@ -49,6 +50,11 @@ class VIEWS_EXPORT NativeWidgetAura
   static void RegisterNativeWidgetForWindow(
       internal::NativeWidgetPrivate* native_widget,
       aura::Window* window);
+
+  // Assign an icon to aura window.
+  static void AssignIconToAuraWindow(aura::Window* window,
+                                     const gfx::ImageSkia& window_icon,
+                                     const gfx::ImageSkia& app_icon);
 
   // Overridden from internal::NativeWidgetPrivate:
   void InitNativeWidget(const Widget::InitParams& params) override;
@@ -88,8 +94,7 @@ class VIEWS_EXPORT NativeWidgetAura
   void SetSize(const gfx::Size& size) override;
   void StackAbove(gfx::NativeView native_view) override;
   void StackAtTop() override;
-  void StackBelow(gfx::NativeView native_view) override;
-  void SetShape(SkRegion* shape) override;
+  void SetShape(std::unique_ptr<SkRegion> shape) override;
   void Close() override;
   void CloseNow() override;
   void Show() override;
@@ -103,6 +108,7 @@ class VIEWS_EXPORT NativeWidgetAura
   void SetAlwaysOnTop(bool always_on_top) override;
   bool IsAlwaysOnTop() const override;
   void SetVisibleOnAllWorkspaces(bool always_visible) override;
+  bool IsVisibleOnAllWorkspaces() const override;
   void Maximize() override;
   void Minimize() override;
   bool IsMaximized() const override;
@@ -194,8 +200,6 @@ class VIEWS_EXPORT NativeWidgetAura
   internal::NativeWidgetDelegate* delegate() { return delegate_; }
 
  private:
-  class ActiveWindowObserver;
-
   bool IsDocked() const;
   void SetInitialFocus(ui::WindowShowState show_state);
 
@@ -225,6 +229,9 @@ class VIEWS_EXPORT NativeWidgetAura
 
   std::unique_ptr<DropHelper> drop_helper_;
   int last_drop_operation_;
+
+  // Native widget's handler to receive events before the event target.
+  std::unique_ptr<FocusManagerEventHandler> focus_manager_event_handler_;
 
   // The following factory is used for calls to close the NativeWidgetAura
   // instance.

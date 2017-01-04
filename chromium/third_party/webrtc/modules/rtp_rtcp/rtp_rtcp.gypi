@@ -26,8 +26,6 @@
         'include/rtp_receiver.h',
         'include/rtp_rtcp.h',
         'include/rtp_rtcp_defines.h',
-        'source/bitrate.cc',
-        'source/bitrate.h',
         'source/byte_io.h',
         'source/fec_receiver_impl.cc',
         'source/fec_receiver_impl.h',
@@ -134,6 +132,8 @@
         # Video Files
         'source/fec_private_tables_random.h',
         'source/fec_private_tables_bursty.h',
+        'source/flexfec_header_reader_writer.cc',
+        'source/flexfec_header_reader_writer.h',
         'source/forward_error_correction.cc',
         'source/forward_error_correction.h',
         'source/forward_error_correction_internal.cc',
@@ -160,12 +160,21 @@
         'source/rtp_format_vp9.h',
         'source/rtp_format_video_generic.cc',
         'source/rtp_format_video_generic.h',
+        'source/ulpfec_header_reader_writer.cc',
+        'source/ulpfec_header_reader_writer.h',
         'source/vp8_partition_aggregator.cc',
         'source/vp8_partition_aggregator.h',
         # Mocks
         'mocks/mock_rtp_rtcp.h',
         'source/mock/mock_rtp_payload_strategy.h',
-      ], # source
+       ], # source
+        'conditions': [
+            ['enable_bwe_test_logging==1', {
+              'defines': [ 'BWE_TEST_LOGGING_COMPILE_TIME_ENABLE=1' ],
+            }, {
+              'defines': [ 'BWE_TEST_LOGGING_COMPILE_TIME_ENABLE=0' ],
+            }],
+        ],
       # TODO(jschuh): Bug 1348: fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
     },

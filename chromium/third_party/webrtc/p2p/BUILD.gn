@@ -9,7 +9,7 @@
 import("../build/webrtc.gni")
 
 group("p2p") {
-  deps = [
+  public_deps = [
     ":rtc_p2p",
   ]
 }
@@ -18,7 +18,7 @@ config("rtc_p2p_inherited_config") {
   defines = [ "FEATURE_ENABLE_VOICEMAIL" ]
 }
 
-source_set("rtc_p2p") {
+rtc_static_library("rtc_p2p") {
   sources = [
     "base/asyncstuntcpsocket.cc",
     "base/asyncstuntcpsocket.h",
@@ -49,7 +49,6 @@ source_set("rtc_p2p") {
     "base/session.h",
     "base/sessiondescription.cc",
     "base/sessiondescription.h",
-    "base/sessionid.h",
     "base/stun.cc",
     "base/stun.h",
     "base/stunport.cc",
@@ -95,11 +94,7 @@ source_set("rtc_p2p") {
     ]
   }
 
-  configs += [ "..:common_config" ]
-  public_configs = [
-    "..:common_inherited_config",
-    ":rtc_p2p_inherited_config",
-  ]
+  public_configs = [ ":rtc_p2p_inherited_config" ]
 
   if (build_with_chromium) {
     if (is_nacl) {
@@ -122,7 +117,7 @@ source_set("rtc_p2p") {
     if (is_clang) {
       # Suppress warnings from Chrome's Clang plugins.
       # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-      configs -= [ "//build/config/clang:find_bad_constructs" ]
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
 
@@ -146,7 +141,7 @@ source_set("rtc_p2p") {
   }
 }
 
-source_set("libstunprober") {
+rtc_static_library("libstunprober") {
   sources = [
     "stunprober/stunprober.cc",
   ]
@@ -154,11 +149,32 @@ source_set("libstunprober") {
   if (!build_with_chromium && is_clang) {
     # Suppress warnings from Chrome's Clang plugins.
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
   deps = [
     "..:webrtc_common",
     "../base:rtc_base",
   ]
+}
+
+if (!build_with_chromium) {
+  # Doesn't build within Chrome on Win.
+  rtc_executable("stun_prober") {
+    sources = [
+      "stunprober/main.cc",
+    ]
+
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from Chrome's Clang plugins.
+      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+    }
+
+    deps = [
+      ":libstunprober",
+      ":rtc_p2p",
+      "../system_wrappers:field_trial_default",
+    ]
+  }
 }

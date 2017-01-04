@@ -54,7 +54,7 @@ AutofillSaveCardInfoBarDelegateMobile::
 
 void AutofillSaveCardInfoBarDelegateMobile::OnLegalMessageLinkClicked(
     GURL url) {
-  infobar()->owner()->OpenURL(url, NEW_FOREGROUND_TAB);
+  infobar()->owner()->OpenURL(url, WindowOpenDisposition::NEW_FOREGROUND_TAB);
 }
 
 int AutofillSaveCardInfoBarDelegateMobile::GetIconId() const {
@@ -97,7 +97,7 @@ base::string16 AutofillSaveCardInfoBarDelegateMobile::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16(button == BUTTON_OK
                                        ? IDS_AUTOFILL_SAVE_CARD_PROMPT_ACCEPT
-                                       : IDS_AUTOFILL_SAVE_CARD_PROMPT_DENY);
+                                       : IDS_NO_THANKS);
 }
 
 bool AutofillSaveCardInfoBarDelegateMobile::Accept() {

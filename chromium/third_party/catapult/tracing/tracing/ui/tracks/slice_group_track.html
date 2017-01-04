@@ -5,9 +5,9 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
-<link rel="import" href="/tracing/ui/tracks/multi_row_track.html">
 <link rel="import" href="/tracing/base/sorted_array_utils.html">
 <link rel="import" href="/tracing/ui/base/ui.html">
+<link rel="import" href="/tracing/ui/tracks/multi_row_track.html">
 
 <script>
 'use strict';
@@ -27,7 +27,7 @@ tr.exportTo('tr.ui.tracks', function() {
 
     decorate: function(viewport) {
       tr.ui.tracks.MultiRowTrack.prototype.decorate.call(this, viewport);
-      this.classList.add('slice-group-track');
+      Polymer.dom(this).classList.add('slice-group-track');
       this.group_ = undefined;
       // Set the collapse threshold so we don't collapse by default, but the
       // user can explicitly collapse if they want it.
@@ -37,7 +37,7 @@ tr.exportTo('tr.ui.tracks', function() {
     addSubTrack_: function(slices) {
       var track = new tr.ui.tracks.SliceTrack(this.viewport);
       track.slices = slices;
-      this.appendChild(track);
+      Polymer.dom(this).appendChild(track);
       return track;
     },
 
@@ -111,7 +111,7 @@ tr.exportTo('tr.ui.tracks', function() {
       ops.sort(function(ix, iy) {
         var x = slices[ix];
         var y = slices[iy];
-        if (x.start != y.start)
+        if (x.start !== y.start)
           return x.start - y.start;
 
         // Elements get inserted into the slices array in order of when the
@@ -131,7 +131,7 @@ tr.exportTo('tr.ui.tracks', function() {
         // Try to fit the slice into the existing subrows.
         var inserted = false;
         for (var j = subRows.length - 1; j >= 0; j--) {
-          if (subRows[j].length == 0)
+          if (subRows[j].length === 0)
             continue;
 
           var insertedSlice = subRows[j][subRows[j].length - 1];

@@ -61,8 +61,7 @@ CommandBufferProxyImpl::CommandBufferProxyImpl(int channel_id,
       flushed_fence_sync_release_(0),
       verified_fence_sync_release_(0),
       next_signal_id_(0),
-      weak_this_(AsWeakPtr()),
-      callback_thread_(base::ThreadTaskRunnerHandle::Get()) {
+      weak_this_(AsWeakPtr()) {
   DCHECK(route_id);
   DCHECK_NE(stream_id, GPU_STREAM_INVALID);
 }
@@ -218,8 +217,7 @@ bool CommandBufferProxyImpl::Initialize(
 
   // Route must be added before sending the message, otherwise messages sent
   // from the GPU process could race against adding ourselves to the filter.
-  channel->AddRouteWithTaskRunner(route_id_, AsWeakPtr(),
-                                  std::move(task_runner));
+  channel->AddRouteWithTaskRunner(route_id_, AsWeakPtr(), task_runner);
 
   // We're blocking the UI thread, which is generally undesirable.
   // In this case we need to wait for this before we can show any UI /anyway/,
@@ -235,7 +233,7 @@ bool CommandBufferProxyImpl::Initialize(
   }
 
   channel_ = std::move(channel);
-  capabilities_.image = true;
+  callback_thread_ = std::move(task_runner);
 
   return true;
 }
@@ -266,7 +264,6 @@ void CommandBufferProxyImpl::Flush(int32_t put_offset) {
     const uint32_t flush_id = channel_->OrderingBarrier(
         route_id_, stream_id_, put_offset, ++flush_count_, latency_info_,
         put_offset_changed, true, &highest_verified_flush_id);
-    UpdateVerifiedReleases(highest_verified_flush_id);
     if (put_offset_changed) {
       DCHECK(flush_id);
       const uint64_t fence_sync_release = next_fence_sync_release_ - 1;
@@ -276,6 +273,7 @@ void CommandBufferProxyImpl::Flush(int32_t put_offset) {
             std::make_pair(fence_sync_release, flush_id));
       }
     }
+    CleanupFlushedReleases(highest_verified_flush_id);
   }
 
   if (put_offset_changed)
@@ -298,7 +296,6 @@ void CommandBufferProxyImpl::OrderingBarrier(int32_t put_offset) {
     const uint32_t flush_id = channel_->OrderingBarrier(
         route_id_, stream_id_, put_offset, ++flush_count_, latency_info_,
         put_offset_changed, false, &highest_verified_flush_id);
-    UpdateVerifiedReleases(highest_verified_flush_id);
 
     if (put_offset_changed) {
       DCHECK(flush_id);
@@ -309,6 +306,7 @@ void CommandBufferProxyImpl::OrderingBarrier(int32_t put_offset) {
             std::make_pair(fence_sync_release, flush_id));
       }
     }
+    CleanupFlushedReleases(highest_verified_flush_id);
   }
 
   if (put_offset_changed)
@@ -460,9 +458,6 @@ int32_t CommandBufferProxyImpl::CreateImage(ClientBuffer buffer,
       gpu_memory_buffer_manager->GpuMemoryBufferFromClientBuffer(buffer);
   DCHECK(gpu_memory_buffer);
 
-  DCHECK(image_gmb_map_.find(new_id) == image_gmb_map_.end());
-  image_gmb_map_[new_id].gpu_memory_buffer_id = gpu_memory_buffer->GetId().id;
-
   // This handle is owned by the GPU process and must be passed to it or it
   // will leak. In otherwords, do not early out on error between here and the
   // sending of the CreateImage IPC below.
@@ -516,9 +511,6 @@ void CommandBufferProxyImpl::DestroyImage(int32_t id) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  auto it = image_gmb_map_.find(id);
-  if (it != image_gmb_map_.end())
-    image_gmb_map_.erase(it);
   Send(new GpuCommandBufferMsg_DestroyImage(route_id_, id));
 }
 
@@ -538,17 +530,7 @@ int32_t CommandBufferProxyImpl::CreateGpuMemoryBufferImage(
 
   int32_t result =
       CreateImage(buffer->AsClientBuffer(), width, height, internal_format);
-  if (result != -1)
-    image_gmb_map_[result].owned_gpu_memory_buffer = std::move(buffer);
   return result;
-}
-
-int32_t CommandBufferProxyImpl::GetImageGpuMemoryBufferId(unsigned image_id) {
-  CheckLock();
-  auto it = image_gmb_map_.find(image_id);
-  if (it != image_gmb_map_.end())
-    return it->second.gpu_memory_buffer_id;
-  return -1;
 }
 
 uint32_t CommandBufferProxyImpl::CreateStreamTexture(uint32_t texture_id) {
@@ -762,6 +744,18 @@ void CommandBufferProxyImpl::UpdateVerifiedReleases(uint32_t verified_flush) {
   }
 }
 
+void CommandBufferProxyImpl::CleanupFlushedReleases(
+    uint32_t highest_verified_flush_id) {
+  DCHECK(channel_);
+  static const uint32_t kMaxUnverifiedFlushes = 1000;
+  if (flushed_release_flush_id_.size() > kMaxUnverifiedFlushes) {
+    // Prevent list of unverified flushes from growing indefinitely.
+    highest_verified_flush_id =
+        channel_->ValidateFlushIDReachedServer(stream_id_, false);
+  }
+  UpdateVerifiedReleases(highest_verified_flush_id);
+}
+
 gpu::CommandBufferSharedState* CommandBufferProxyImpl::shared_state() const {
   return reinterpret_cast<gpu::CommandBufferSharedState*>(
       shared_state_shm_->memory());
@@ -771,7 +765,6 @@ void CommandBufferProxyImpl::OnSwapBuffersCompleted(
     const GpuCommandBufferMsg_SwapBuffersCompleted_Params& params) {
 #if defined(OS_MACOSX)
   gpu::GpuProcessHostedCALayerTreeParamsMac params_mac;
-  params_mac.surface_handle = params.surface_handle;
   params_mac.ca_context_id = params.ca_context_id;
   params_mac.fullscreen_low_power_ca_context_valid =
       params.fullscreen_low_power_ca_context_valid;
@@ -877,11 +870,5 @@ void CommandBufferProxyImpl::DisconnectChannel() {
   if (gpu_control_client_)
     gpu_control_client_->OnGpuControlLostContext();
 }
-
-CommandBufferProxyImpl::ImageInfo::ImageInfo() {}
-CommandBufferProxyImpl::ImageInfo::~ImageInfo() {}
-CommandBufferProxyImpl::ImageInfo::ImageInfo(ImageInfo&& other) = default;
-CommandBufferProxyImpl::ImageInfo& CommandBufferProxyImpl::ImageInfo::operator=(
-    ImageInfo&& other) = default;
 
 }  // namespace gpu

@@ -53,6 +53,9 @@ class PropertyHandlerCompiler : public PropertyAccessCompiler {
 
   void DiscardVectorAndSlot();
 
+  void PushReturnAddress(Register tmp);
+  void PopReturnAddress(Register tmp);
+
   // TODO(verwaest): Make non-static.
   static void GenerateApiAccessorCall(MacroAssembler* masm,
                                       const CallOptimization& optimization,
@@ -123,11 +126,12 @@ class NamedLoadHandlerCompiler : public PropertyHandlerCompiler {
   Handle<Code> CompileLoadField(Handle<Name> name, FieldIndex index);
 
   Handle<Code> CompileLoadCallback(Handle<Name> name,
-                                   Handle<AccessorInfo> callback);
+                                   Handle<AccessorInfo> callback,
+                                   Handle<Code> slow_stub);
 
   Handle<Code> CompileLoadCallback(Handle<Name> name,
                                    const CallOptimization& call_optimization,
-                                   int accessor_index);
+                                   int accessor_index, Handle<Code> slow_stub);
 
   Handle<Code> CompileLoadConstant(Handle<Name> name, int constant_index);
 
@@ -211,12 +215,23 @@ class NamedLoadHandlerCompiler : public PropertyHandlerCompiler {
 
 class NamedStoreHandlerCompiler : public PropertyHandlerCompiler {
  public:
+  // All store handlers use StoreWithVectorDescriptor calling convention.
+  typedef StoreWithVectorDescriptor Descriptor;
+
   explicit NamedStoreHandlerCompiler(Isolate* isolate, Handle<Map> map,
                                      Handle<JSObject> holder)
       : PropertyHandlerCompiler(isolate, Code::STORE_IC, map, holder,
-                                kCacheOnReceiver) {}
+                                kCacheOnReceiver) {
+#ifdef DEBUG
+    if (Descriptor::kPassLastArgsOnStack) {
+      ZapStackArgumentsRegisterAliases();
+    }
+#endif
+  }
 
   virtual ~NamedStoreHandlerCompiler() {}
+
+  void ZapStackArgumentsRegisterAliases();
 
   Handle<Code> CompileStoreTransition(Handle<Map> transition,
                                       Handle<Name> name);
@@ -226,7 +241,7 @@ class NamedStoreHandlerCompiler : public PropertyHandlerCompiler {
                                     LanguageMode language_mode);
   Handle<Code> CompileStoreCallback(Handle<JSObject> object, Handle<Name> name,
                                     const CallOptimization& call_optimization,
-                                    int accessor_index);
+                                    int accessor_index, Handle<Code> slow_stub);
   Handle<Code> CompileStoreViaSetter(Handle<JSObject> object, Handle<Name> name,
                                      int accessor_index,
                                      int expected_arguments);
@@ -241,18 +256,12 @@ class NamedStoreHandlerCompiler : public PropertyHandlerCompiler {
                            no_reg);
   }
 
-  static void GenerateSlow(MacroAssembler* masm);
-
  protected:
   virtual Register FrontendHeader(Register object_reg, Handle<Name> name,
                                   Label* miss, ReturnHolder return_what);
 
   virtual void FrontendFooter(Handle<Name> name, Label* miss);
   void GenerateRestoreName(Label* label, Handle<Name> name);
-
-  // Pop the vector and slot into appropriate registers, moving the map in
-  // the process. (This is an accomodation for register pressure on ia32).
-  void RearrangeVectorAndSlot(Register current_map, Register destination_map);
 
  private:
   void GenerateRestoreName(Handle<Name> name);
@@ -267,18 +276,6 @@ class NamedStoreHandlerCompiler : public PropertyHandlerCompiler {
   void GenerateFieldTypeChecks(FieldType* field_type, Register value_reg,
                                Label* miss_label);
 
-  static Builtins::Name SlowBuiltin(Code::Kind kind) {
-    switch (kind) {
-      case Code::STORE_IC:
-        return Builtins::kStoreIC_Slow;
-      case Code::KEYED_STORE_IC:
-        return Builtins::kKeyedStoreIC_Slow;
-      default:
-        UNREACHABLE();
-    }
-    return Builtins::kStoreIC_Slow;
-  }
-
   static Register value();
 };
 
@@ -292,10 +289,10 @@ class ElementHandlerCompiler : public PropertyHandlerCompiler {
 
   virtual ~ElementHandlerCompiler() {}
 
+  static Handle<Object> GetKeyedLoadHandler(Handle<Map> receiver_map,
+                                            Isolate* isolate);
   void CompileElementHandlers(MapHandleList* receiver_maps,
-                              CodeHandleList* handlers);
-
-  static void GenerateStoreSlow(MacroAssembler* masm);
+                              List<Handle<Object>>* handlers);
 };
 }  // namespace internal
 }  // namespace v8

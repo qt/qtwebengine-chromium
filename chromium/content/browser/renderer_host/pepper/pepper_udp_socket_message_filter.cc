@@ -21,6 +21,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/rand_callback.h"
+#include "net/log/net_log_source.h"
 #include "net/udp/udp_socket.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_net_address_private.h"
@@ -108,12 +109,12 @@ PepperUDPSocketMessageFilter::OverrideTaskRunnerForMessage(
     case PpapiHostMsg_UDPSocket_SetOption::ID:
     case PpapiHostMsg_UDPSocket_Close::ID:
     case PpapiHostMsg_UDPSocket_RecvSlotAvailable::ID:
-      return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
+      return BrowserThread::GetTaskRunnerForThread(BrowserThread::IO);
     case PpapiHostMsg_UDPSocket_Bind::ID:
     case PpapiHostMsg_UDPSocket_SendTo::ID:
     case PpapiHostMsg_UDPSocket_JoinGroup::ID:
     case PpapiHostMsg_UDPSocket_LeaveGroup::ID:
-      return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
+      return BrowserThread::GetTaskRunnerForThread(BrowserThread::UI);
   }
   return NULL;
 }
@@ -405,7 +406,7 @@ void PepperUDPSocketMessageFilter::DoBind(
 
   std::unique_ptr<net::UDPSocket> socket(
       new net::UDPSocket(net::DatagramSocket::DEFAULT_BIND,
-                         net::RandIntCallback(), NULL, net::NetLog::Source()));
+                         net::RandIntCallback(), NULL, net::NetLogSource()));
 
   std::vector<uint8_t> address;
   uint16_t port;

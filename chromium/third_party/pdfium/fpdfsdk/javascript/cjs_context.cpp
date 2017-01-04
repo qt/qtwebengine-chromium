@@ -11,31 +11,29 @@
 #include "fpdfsdk/javascript/resource.h"
 
 CJS_Context::CJS_Context(CJS_Runtime* pRuntime)
-    : m_pRuntime(pRuntime), m_bBusy(FALSE), m_bMsgBoxEnable(TRUE) {
-  m_pEventHandler = new CJS_EventHandler(this);
-}
+    : m_pRuntime(pRuntime),
+      m_pEventHandler(new CJS_EventHandler(this)),
+      m_bBusy(FALSE) {}
 
-CJS_Context::~CJS_Context() {
-  delete m_pEventHandler;
-}
+CJS_Context::~CJS_Context() {}
 
 CPDFSDK_Document* CJS_Context::GetReaderDocument() {
   return m_pRuntime->GetReaderDocument();
 }
 
-CPDFDoc_Environment* CJS_Context::GetReaderApp() {
-  return m_pRuntime->GetReaderApp();
+CPDFSDK_FormFillEnvironment* CJS_Context::GetReaderEnv() {
+  return m_pRuntime->GetReaderEnv();
 }
 
 FX_BOOL CJS_Context::RunScript(const CFX_WideString& script,
                                CFX_WideString* info) {
   v8::Isolate::Scope isolate_scope(m_pRuntime->GetIsolate());
   v8::HandleScope handle_scope(m_pRuntime->GetIsolate());
-  v8::Local<v8::Context> context = m_pRuntime->NewJSContext();
+  v8::Local<v8::Context> context = m_pRuntime->NewLocalContext();
   v8::Context::Scope context_scope(context);
 
   if (m_bBusy) {
-    *info = JSGetStringFromID(this, IDS_STRING_JSBUSY);
+    *info = JSGetStringFromID(IDS_STRING_JSBUSY);
     return FALSE;
   }
   m_bBusy = TRUE;
@@ -44,20 +42,20 @@ FX_BOOL CJS_Context::RunScript(const CFX_WideString& script,
   CJS_Runtime::FieldEvent event(m_pEventHandler->TargetName(),
                                 m_pEventHandler->EventType());
   if (!m_pRuntime->AddEventToSet(event)) {
-    *info = JSGetStringFromID(this, IDS_STRING_JSEVENT);
+    *info = JSGetStringFromID(IDS_STRING_JSEVENT);
     return FALSE;
   }
 
   CFX_WideString sErrorMessage;
   int nRet = 0;
   if (script.GetLength() > 0) {
-    nRet = m_pRuntime->Execute(script.c_str(), &sErrorMessage);
+    nRet = m_pRuntime->ExecuteScript(script.c_str(), &sErrorMessage);
   }
 
   if (nRet < 0) {
     *info += sErrorMessage;
   } else {
-    *info = JSGetStringFromID(this, IDS_STRING_RUN);
+    *info = JSGetStringFromID(IDS_STRING_RUN);
   }
 
   m_pRuntime->RemoveEventFromSet(event);
@@ -266,10 +264,6 @@ void CJS_Context::OnConsole_Exec() {
 
 void CJS_Context::OnExternal_Exec() {
   m_pEventHandler->OnExternal_Exec();
-}
-
-void CJS_Context::EnableMessageBox(FX_BOOL bEnable) {
-  m_bMsgBoxEnable = bEnable;
 }
 
 void CJS_Context::OnBatchExec(CPDFSDK_Document* pTarget) {

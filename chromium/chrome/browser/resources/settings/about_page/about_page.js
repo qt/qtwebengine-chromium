@@ -9,17 +9,9 @@
 Polymer({
   is: 'settings-about-page',
 
-  behaviors: [WebUIListenerBehavior, RoutableBehavior, I18nBehavior],
+  behaviors: [WebUIListenerBehavior, MainPageBehavior, I18nBehavior],
 
   properties: {
-    /**
-     * The current active route.
-     */
-    currentRoute: {
-      type: Object,
-      notify: true,
-    },
-
     /** @private {?UpdateStatusChangedEvent} */
     currentUpdateStatusEvent_: Object,
 
@@ -54,13 +46,6 @@ Polymer({
 
   /** @private {?settings.LifetimeBrowserProxy} */
   lifetimeBrowserProxy_: null,
-
-  /**
-   * @type {string} Selector to get the sections.
-   * TODO(michaelpg): replace duplicate docs with @override once b/24294625
-   * is fixed.
-   */
-  sectionSelector: 'settings-section',
 
   /** @override */
   attached: function() {
@@ -175,15 +160,22 @@ Polymer({
       case UpdateStatus.UPDATED:
         return this.i18n('aboutUpgradeUpToDate');
       case UpdateStatus.UPDATING:
+        assert(typeof this.currentUpdateStatusEvent_.progress == 'number');
+        var progressPercent = this.currentUpdateStatusEvent_.progress + '%';
+
 <if expr="chromeos">
         if (this.currentChannel_ != this.targetChannel_) {
           return this.i18n('aboutUpgradeUpdatingChannelSwitch',
-              this.i18n(settings.browserChannelToI18nId(this.targetChannel_)));
+              this.i18n(settings.browserChannelToI18nId(this.targetChannel_)),
+              progressPercent);
         }
 </if>
-        return this.i18n('aboutUpgradeUpdating');
+        return this.i18n('aboutUpgradeUpdating', progressPercent);
       default:
-        return this.currentUpdateStatusEvent_.message || '';
+        var message = this.currentUpdateStatusEvent_.message;
+        return message ?
+            parseHtmlSubset('<b>' + message + '</b>').firstChild.innerHTML :
+            '';
     }
   },
 
@@ -250,9 +242,7 @@ Polymer({
 
   /** @private */
   onDetailedBuildInfoTap_: function() {
-    var animatedPages = /** @type {!SettingsAnimatedPagesElement} */ (
-        this.$.pages);
-    animatedPages.setSubpageChain(['detailed-build-info']);
+    settings.navigateTo(settings.Route.DETAILED_BUILD_INFO);
   },
 
   /** @private */
@@ -292,6 +282,16 @@ Polymer({
     return this.regulatoryInfo_ !== null;
   },
 </if>
+
+  /** @private */
+  onProductLogoTap_: function() {
+    this.$['product-logo'].animate({
+      transform: ['none', 'rotate(-10turn)'],
+    }, {
+      duration: 500,
+      easing: 'cubic-bezier(1, 0, 0, 1)',
+    });
+  },
 
 <if expr="_google_chrome">
   /** @private */

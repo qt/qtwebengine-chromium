@@ -7,13 +7,20 @@
 #ifndef CORE_FXCODEC_CODEC_CCODEC_SCANLINEDECODER_H_
 #define CORE_FXCODEC_CODEC_CCODEC_SCANLINEDECODER_H_
 
-#include "core/fxcrt/include/fx_system.h"
+#include "core/fxcrt/fx_system.h"
 
 class IFX_Pause;
 
 class CCodec_ScanlineDecoder {
  public:
   CCodec_ScanlineDecoder();
+  CCodec_ScanlineDecoder(int nOrigWidth,
+                         int nOrigHeight,
+                         int nOutputWidth,
+                         int nOutputHeight,
+                         int nComps,
+                         int nBpc,
+                         uint32_t nPitch);
   virtual ~CCodec_ScanlineDecoder();
 
   const uint8_t* GetScanline(int line);

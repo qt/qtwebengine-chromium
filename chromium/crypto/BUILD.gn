@@ -84,6 +84,10 @@ component("crypto") {
     "//base/third_party/dynamic_annotations",
   ]
 
+  public_deps = [
+    "//third_party/boringssl",
+  ]
+
   if (!is_mac && !is_ios) {
     sources -= [
       "apple_keychain.h",
@@ -175,36 +179,32 @@ test("crypto_unittests") {
   ]
 }
 
+# This has no sources in some cases so can't be a static library.
 source_set("test_support") {
-  sources = [
-    "scoped_test_nss_chromeos_user.cc",
-    "scoped_test_nss_chromeos_user.h",
-    "scoped_test_nss_db.cc",
-    "scoped_test_nss_db.h",
-    "scoped_test_system_nss_key_slot.cc",
-    "scoped_test_system_nss_key_slot.h",
-  ]
-  deps = [
-    ":crypto",
-    ":platform",
-    "//base",
-  ]
+  testonly = true
+  sources = []
 
-  if (!use_nss_certs) {
-    sources -= [
+  if (use_nss_certs) {
+    sources += [
       "scoped_test_nss_db.cc",
       "scoped_test_nss_db.h",
     ]
   }
 
-  if (!is_chromeos) {
-    sources -= [
+  if (is_chromeos) {
+    sources += [
       "scoped_test_nss_chromeos_user.cc",
       "scoped_test_nss_chromeos_user.h",
       "scoped_test_system_nss_key_slot.cc",
       "scoped_test_system_nss_key_slot.h",
     ]
   }
+
+  deps = [
+    ":crypto",
+    ":platform",
+    "//base",
+  ]
 }
 
 config("platform_config") {

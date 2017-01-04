@@ -5,7 +5,7 @@
 #include "content/renderer/media/webrtc/processed_local_audio_source.h"
 
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
@@ -339,6 +339,7 @@ void ProcessedLocalAudioSource::Capture(const media::AudioBus* audio_bus,
 
 void ProcessedLocalAudioSource::OnCaptureError(const std::string& message) {
   WebRtcLogMessage("ProcessedLocalAudioSource::OnCaptureError: " + message);
+  StopSourceOnError(message);
 }
 
 media::AudioParameters ProcessedLocalAudioSource::GetInputFormat() const {
@@ -350,6 +351,7 @@ int ProcessedLocalAudioSource::GetBufferSize(int sample_rate) const {
   DCHECK(thread_checker_.CalledOnValidThread());
 #if defined(OS_ANDROID)
   // TODO(henrika): Re-evaluate whether to use same logic as other platforms.
+  // http://crbug.com/638081
   return (2 * sample_rate / 100);
 #endif
 
@@ -367,7 +369,7 @@ int ProcessedLocalAudioSource::GetBufferSize(int sample_rate) const {
   // fall-back.
   //
   // TODO(miu): Identify where/why the buffer size might be missing, fix the
-  // code, and then require it here.
+  // code, and then require it here. http://crbug.com/638081
   return (sample_rate / 100);
 }
 

@@ -12,7 +12,6 @@
 
 #include "webrtc/base/format_macros.h"
 #include "webrtc/base/logging.h"
-#include "webrtc/common.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
@@ -105,43 +104,6 @@ int32_t VoEBaseImpl::NeedMorePlayData(const size_t nSamples,
                  audioSamples, elapsed_time_ms, ntp_time_ms);
   nSamplesOut = audioFrame_.samples_per_channel_;
   return 0;
-}
-
-int VoEBaseImpl::OnDataAvailable(const int voe_channels[],
-                                 size_t number_of_voe_channels,
-                                 const int16_t* audio_data, int sample_rate,
-                                 size_t number_of_channels,
-                                 size_t number_of_frames,
-                                 int audio_delay_milliseconds, int volume,
-                                 bool key_pressed, bool need_audio_processing) {
-  if (number_of_voe_channels == 0) return 0;
-
-  if (need_audio_processing) {
-    return ProcessRecordedDataWithAPM(
-        voe_channels, number_of_voe_channels, audio_data, sample_rate,
-        number_of_channels, number_of_frames, audio_delay_milliseconds, 0,
-        volume, key_pressed);
-  }
-
-  // No need to go through the APM, demultiplex the data to each VoE channel,
-  // encode and send to the network.
-  for (size_t i = 0; i < number_of_voe_channels; ++i) {
-    // TODO(ajm): In the case where multiple channels are using the same codec
-    // rate, this path needlessly does extra conversions. We should convert once
-    // and share between channels.
-    PushCaptureData(voe_channels[i], audio_data, 16, sample_rate,
-                    number_of_channels, number_of_frames);
-  }
-
-  // Return 0 to indicate no need to change the volume.
-  return 0;
-}
-
-void VoEBaseImpl::OnData(int voe_channel, const void* audio_data,
-                         int bits_per_sample, int sample_rate,
-                         size_t number_of_channels, size_t number_of_frames) {
-  PushCaptureData(voe_channel, audio_data, bits_per_sample, sample_rate,
-                  number_of_channels, number_of_frames);
 }
 
 void VoEBaseImpl::PushCaptureData(int voe_channel, const void* audio_data,
@@ -392,25 +354,20 @@ int VoEBaseImpl::Terminate() {
 }
 
 int VoEBaseImpl::CreateChannel() {
-  rtc::CritScope cs(shared_->crit_sec());
-  if (!shared_->statistics().Initialized()) {
-    shared_->SetLastError(VE_NOT_INITED, kTraceError);
-    return -1;
-  }
-
-  voe::ChannelOwner channel_owner =
-      shared_->channel_manager().CreateChannel(decoder_factory_);
-  return InitializeChannel(&channel_owner);
+  return CreateChannel(ChannelConfig());
 }
 
-int VoEBaseImpl::CreateChannel(const Config& config) {
+int VoEBaseImpl::CreateChannel(const ChannelConfig& config) {
   rtc::CritScope cs(shared_->crit_sec());
   if (!shared_->statistics().Initialized()) {
     shared_->SetLastError(VE_NOT_INITED, kTraceError);
     return -1;
   }
+
+  ChannelConfig config_copy(config);
+  config_copy.acm_config.decoder_factory = decoder_factory_;
   voe::ChannelOwner channel_owner =
-      shared_->channel_manager().CreateChannel(config, decoder_factory_);
+      shared_->channel_manager().CreateChannel(config_copy);
   return InitializeChannel(&channel_owner);
 }
 

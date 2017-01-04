@@ -17,17 +17,19 @@ class DataPoint(object):
   """Simple container class for RTP events."""
 
   def __init__(self, rtp_header_str, packet_size,
-               arrival_timestamp_us):
+               arrival_timestamp_us, incoming):
     """Builds a data point by parsing an RTP header, size and arrival time.
 
     RTP header structure is defined in RFC 3550 section 5.1.
     """
     self.size = packet_size
     self.arrival_timestamp_ms = arrival_timestamp_us / 1000
+    self.incoming = incoming
     header = struct.unpack_from("!HHII", rtp_header_str, 0)
     (first2header_bytes, self.sequence_number, self.timestamp,
      self.ssrc) = header
     self.payload_type = first2header_bytes & 0b01111111
+    self.marker_bit = (first2header_bytes & 0b10000000) >> 7
 
 
 def parse_protobuf(file_path):
@@ -45,6 +47,6 @@ def parse_protobuf(file_path):
 
   return [DataPoint(event.rtp_packet.header,
                     event.rtp_packet.packet_length,
-                    event.timestamp_us)
+                    event.timestamp_us, event.rtp_packet.incoming)
           for event in event_stream.stream
           if event.HasField("rtp_packet")]

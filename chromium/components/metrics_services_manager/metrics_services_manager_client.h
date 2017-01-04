@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/callback_forward.h"
+#include "base/metrics/field_trial.h"
 
 namespace metrics {
 class MetricsServiceClient;
@@ -39,6 +40,8 @@ class MetricsServicesManagerClient {
   CreateVariationsService() = 0;
   virtual std::unique_ptr<metrics::MetricsServiceClient>
   CreateMetricsServiceClient() = 0;
+  virtual std::unique_ptr<const base::FieldTrial::EntropyProvider>
+  CreateEntropyProvider() = 0;
 
   // Returns the URL request context in which the metrics services should
   // operate.
@@ -57,6 +60,10 @@ class MetricsServicesManagerClient {
 
   // Whether the metrics services should record but not report metrics.
   virtual bool OnlyDoMetricsRecording() = 0;
+
+  // Update the running state of metrics services managed by the embedder, for
+  // example, crash reporting.
+  virtual void UpdateRunningServices(bool may_record, bool may_upload) {}
 };
 
 }  // namespace metrics_services_manager

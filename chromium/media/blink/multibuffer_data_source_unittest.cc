@@ -9,17 +9,18 @@
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "media/base/media_log.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_helpers.h"
-#include "media/blink/buffered_data_source.h"
-#include "media/blink/mock_webframeclient.h"
+#include "media/blink/buffered_data_source_host_impl.h"
 #include "media/blink/mock_weburlloader.h"
 #include "media/blink/multibuffer_data_source.h"
 #include "media/blink/multibuffer_reader.h"
 #include "media/blink/resource_multibuffer_data_provider.h"
 #include "media/blink/test_response_generator.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
@@ -224,16 +225,15 @@ class MultibufferDataSourceTest : public testing::Test {
  public:
   MultibufferDataSourceTest()
       : view_(WebView::create(nullptr, blink::WebPageVisibilityStateVisible)),
-        frame_(
-            WebLocalFrame::create(blink::WebTreeScopeType::Document, &client_)),
-        preload_(MultibufferDataSource::AUTO),
-        url_index_(make_linked_ptr(new TestUrlIndex(frame_))) {
-    view_->setMainFrame(frame_);
+        preload_(MultibufferDataSource::AUTO) {
+    WebLocalFrame* frame =
+        WebLocalFrame::create(blink::WebTreeScopeType::Document, &client_);
+    view_->setMainFrame(frame);
+    url_index_ = make_linked_ptr(new TestUrlIndex(frame));
   }
 
   virtual ~MultibufferDataSourceTest() {
     view_->close();
-    frame_->close();
   }
 
   MOCK_METHOD1(OnInitialize, void(bool));
@@ -316,14 +316,18 @@ class MultibufferDataSourceTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  void ReceiveData(int size) {
+  void ReceiveDataLow(int size) {
     EXPECT_TRUE(url_loader());
     if (!url_loader())
       return;
     std::unique_ptr<char[]> data(new char[size]);
     memset(data.get(), 0xA5, size);  // Arbitrary non-zero value.
 
-    data_provider()->didReceiveData(url_loader(), data.get(), size, size);
+    data_provider()->didReceiveData(url_loader(), data.get(), size, size, size);
+  }
+
+  void ReceiveData(int size) {
+    ReceiveDataLow(size);
     base::RunLoop().RunUntilIdle();
   }
 
@@ -465,14 +469,14 @@ class MultibufferDataSourceTest : public testing::Test {
   int data_source_bitrate() { return data_source_->bitrate_; }
   double data_source_playback_rate() { return data_source_->playback_rate_; }
   bool is_local_source() { return data_source_->assume_fully_buffered(); }
+  scoped_refptr<UrlData> url_data() { return data_source_->url_data_; }
   void set_might_be_reused_from_cache_in_future(bool value) {
-    data_source_->url_data_->set_cacheable(value);
+    url_data()->set_cacheable(value);
   }
 
  protected:
-  MockWebFrameClient client_;
+  blink::WebFrameClient client_;
   WebView* view_;
-  WebLocalFrame* frame_;
   MultibufferDataSource::Preload preload_;
   base::MessageLoop message_loop_;
   linked_ptr<TestUrlIndex> url_index_;
@@ -611,11 +615,11 @@ TEST_F(MultibufferDataSourceTest, Http_AbortWhileReading) {
   ReadAt(kFileSize);
 
   // Abort!!!
-  EXPECT_CALL(*this, ReadCallback(media::DataSource::kReadError));
+  EXPECT_CALL(*this, ReadCallback(media::DataSource::kAborted));
   data_source_->Abort();
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_FALSE(loading());
+  EXPECT_TRUE(loading());
   Stop();
 }
 
@@ -626,11 +630,11 @@ TEST_F(MultibufferDataSourceTest, File_AbortWhileReading) {
   ReadAt(kFileSize);
 
   // Abort!!!
-  EXPECT_CALL(*this, ReadCallback(media::DataSource::kReadError));
+  EXPECT_CALL(*this, ReadCallback(media::DataSource::kAborted));
   data_source_->Abort();
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_FALSE(loading());
+  EXPECT_TRUE(loading());
   Stop();
 }
 
@@ -1097,7 +1101,7 @@ TEST_F(MultibufferDataSourceTest, LocalResource_DeferStrategy) {
   CheckCapacityDefer();
 
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_AGGRESSIVE);
+      MultibufferDataSource::BUFFERING_STRATEGY_AGGRESSIVE);
   CheckCapacityDefer();
 
   Stop();
@@ -1115,7 +1119,7 @@ TEST_F(MultibufferDataSourceTest, LocalResource_PreloadMetadata_DeferStrategy) {
   CheckCapacityDefer();
 
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_AGGRESSIVE);
+      MultibufferDataSource::BUFFERING_STRATEGY_AGGRESSIVE);
   CheckCapacityDefer();
 
   Stop();
@@ -1133,7 +1137,7 @@ TEST_F(MultibufferDataSourceTest, ExternalResource_Reponse200_DeferStrategy) {
   CheckCapacityDefer();
 
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_AGGRESSIVE);
+      MultibufferDataSource::BUFFERING_STRATEGY_AGGRESSIVE);
   CheckCapacityDefer();
 
   Stop();
@@ -1153,7 +1157,7 @@ TEST_F(MultibufferDataSourceTest,
   CheckCapacityDefer();
 
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_AGGRESSIVE);
+      MultibufferDataSource::BUFFERING_STRATEGY_AGGRESSIVE);
   CheckCapacityDefer();
 
   Stop();
@@ -1171,17 +1175,17 @@ TEST_F(MultibufferDataSourceTest, ExternalResource_Reponse206_DeferStrategy) {
   CheckCapacityDefer();
   set_might_be_reused_from_cache_in_future(true);
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_AGGRESSIVE);
+      MultibufferDataSource::BUFFERING_STRATEGY_AGGRESSIVE);
   CheckNeverDefer();
 
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_NORMAL);
+      MultibufferDataSource::BUFFERING_STRATEGY_NORMAL);
   data_source_->MediaIsPlaying();
   CheckCapacityDefer();
 
   set_might_be_reused_from_cache_in_future(false);
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_AGGRESSIVE);
+      MultibufferDataSource::BUFFERING_STRATEGY_AGGRESSIVE);
   CheckCapacityDefer();
 
   Stop();
@@ -1202,16 +1206,16 @@ TEST_F(MultibufferDataSourceTest,
 
   set_might_be_reused_from_cache_in_future(true);
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_AGGRESSIVE);
+      MultibufferDataSource::BUFFERING_STRATEGY_AGGRESSIVE);
   CheckNeverDefer();
 
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_NORMAL);
+      MultibufferDataSource::BUFFERING_STRATEGY_NORMAL);
   data_source_->MediaIsPlaying();
   CheckCapacityDefer();
   set_might_be_reused_from_cache_in_future(false);
   data_source_->SetBufferingStrategy(
-      BufferedDataSourceInterface::BUFFERING_STRATEGY_AGGRESSIVE);
+      MultibufferDataSource::BUFFERING_STRATEGY_AGGRESSIVE);
   CheckCapacityDefer();
 
   Stop();
@@ -1257,9 +1261,39 @@ TEST_F(MultibufferDataSourceTest,
   EXPECT_FALSE(active_loader_allownull());
 }
 
+// This test tries to trigger an edge case where the read callback
+// never happens because the reader is deleted before that happens.
+TEST_F(MultibufferDataSourceTest,
+       ExternalResource_Response206_CancelAfterDefer2) {
+  set_preload(MultibufferDataSource::METADATA);
+  InitializeWith206Response();
+
+  EXPECT_EQ(MultibufferDataSource::METADATA, preload());
+  EXPECT_FALSE(is_local_source());
+
+  EXPECT_TRUE(data_source_->range_supported());
+  CheckReadThenDefer();
+
+  ReadAt(kDataSize);
+
+  data_source_->OnBufferingHaveEnough(false);
+  ASSERT_TRUE(active_loader());
+
+  EXPECT_CALL(*this, ReadCallback(kDataSize));
+  EXPECT_CALL(host_, AddBufferedByteRange(kDataSize, kDataSize + 2000));
+
+  ReceiveDataLow(2000);
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize * 2 + 2000));
+  ReceiveDataLow(kDataSize);
+
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_FALSE(active_loader_allownull());
+}
+
 TEST_F(MultibufferDataSourceTest,
        ExternalResource_Response206_CancelAfterPlay) {
-  set_preload(BufferedDataSource::METADATA);
+  set_preload(MultibufferDataSource::METADATA);
   InitializeWith206Response();
 
   EXPECT_EQ(MultibufferDataSource::METADATA, preload());
@@ -1425,6 +1459,28 @@ TEST_F(MultibufferDataSourceTest, LengthKnownAtEOF) {
   Stop();
 }
 
+TEST_F(MultibufferDataSourceTest, FileSizeLessThanBlockSize) {
+  Initialize(kHttpUrl, true);
+  GURL gurl(kHttpUrl);
+  blink::WebURLResponse response(gurl);
+  response.setHTTPStatusCode(200);
+  response.setHTTPHeaderField(
+      WebString::fromUTF8("Content-Length"),
+      WebString::fromUTF8(base::Int64ToString(kDataSize / 2)));
+  response.setExpectedContentLength(kDataSize / 2);
+  Respond(response);
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize / 2));
+  EXPECT_CALL(host_, SetTotalBytes(kDataSize / 2));
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize * 2));
+  ReceiveData(kDataSize / 2);
+  FinishLoading();
+
+  int64_t len = 0;
+  EXPECT_TRUE(data_source_->GetSize(&len));
+  EXPECT_EQ(kDataSize / 2, len);
+  Stop();
+}
+
 TEST_F(MultibufferDataSourceTest, DidPassCORSAccessTest) {
   InitializeWithCORS(kHttpUrl, true, UrlData::CORS_ANONYMOUS);
   set_preload(MultibufferDataSource::NONE);
@@ -1453,6 +1509,61 @@ TEST_F(MultibufferDataSourceTest, DidPassCORSAccessTest) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(data_source_->DidPassCORSAccessCheck());
+}
+
+TEST_F(MultibufferDataSourceTest, EtagTest) {
+  Initialize(kHttpUrl, true);
+
+  EXPECT_CALL(host_, SetTotalBytes(response_generator_->content_length()));
+  WebURLResponse response = response_generator_->Generate206(0);
+  const std::string etag("\"arglebargle glop-glyf?\"");
+  response.setHTTPHeaderField(WebString::fromUTF8("Etag"),
+                              WebString::fromUTF8(etag));
+  Respond(response);
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize));
+  ReceiveData(kDataSize);
+
+  EXPECT_EQ(url_data()->etag(), etag);
+}
+
+// Provoke an edge case where the loading state may not end up transitioning
+// back to "idle" when we're done loading.
+TEST_F(MultibufferDataSourceTest, Http_CheckLoadingTransition) {
+  GURL gurl(kHttpUrl);
+  data_source_.reset(new MockMultibufferDataSource(
+      gurl, UrlData::CORS_UNSPECIFIED, message_loop_.task_runner(), url_index_,
+      view_->mainFrame()->toWebLocalFrame(), &host_));
+  data_source_->SetPreload(preload_);
+
+  response_generator_.reset(new TestResponseGenerator(gurl, kDataSize * 1));
+  EXPECT_CALL(*this, OnInitialize(true));
+  data_source_->Initialize(base::Bind(&MultibufferDataSourceTest::OnInitialize,
+                                      base::Unretained(this)));
+  base::RunLoop().RunUntilIdle();
+
+  // Not really loading until after OnInitialize is called.
+  EXPECT_EQ(data_source_->downloading(), false);
+
+  EXPECT_CALL(host_, SetTotalBytes(response_generator_->content_length()));
+  Respond(response_generator_->Generate206(0));
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize));
+  ReceiveData(kDataSize);
+
+  EXPECT_EQ(data_source_->downloading(), true);
+  EXPECT_CALL(host_, AddBufferedByteRange(kDataSize, kDataSize + 1));
+  ReceiveDataLow(1);
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize * 3));
+  data_provider()->didFinishLoading(url_loader(), 0, -1);
+
+  EXPECT_CALL(*this, ReadCallback(1));
+  data_source_->Read(kDataSize, 2, buffer_,
+                     base::Bind(&MultibufferDataSourceTest::ReadCallback,
+                                base::Unretained(this)));
+  base::RunLoop().RunUntilIdle();
+
+  // Make sure we're not downloading anymore.
+  EXPECT_EQ(data_source_->downloading(), false);
+  Stop();
 }
 
 }  // namespace media

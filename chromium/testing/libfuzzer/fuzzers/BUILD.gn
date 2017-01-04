@@ -132,6 +132,7 @@ fuzzer_test("url_parse_fuzzer") {
     "//base:i18n",
     "//url:url",
   ]
+  dict = "dicts/generated/url_parse_fuzzer.dict"
 }
 
 fuzzer_test("usrsctp_fuzzer") {
@@ -141,6 +142,16 @@ fuzzer_test("usrsctp_fuzzer") {
   deps = [
     "//third_party/usrsctp",
   ]
+}
+
+fuzzer_test("libsrtp_fuzzer") {
+  sources = [
+    "libsrtp_fuzzer.cc",
+  ]
+  deps = [
+    "//third_party/libsrtp",
+  ]
+  libfuzzer_options = [ "max_len=1000" ]
 }
 
 fuzzer_test("base_json_reader_fuzzer") {
@@ -161,6 +172,7 @@ fuzzer_test("gfx_png_image_fuzzer") {
     "//ui/gfx",
   ]
   dict = "dicts/png.dict"
+  seed_corpus = "//cc/test/data"
 }
 
 fuzzer_test("zlib_uncompress_fuzzer") {
@@ -179,7 +191,7 @@ fuzzer_test("sqlite3_prepare_v2_fuzzer") {
   deps = [
     "//third_party/sqlite",
   ]
-  dict = "dicts/sql.dict"
+  dict = "dicts/generated/sqlite3_prepare_v2_fuzzer.dict"
 }
 
 fuzzer_test("libxml_xml_read_memory_fuzzer") {
@@ -189,7 +201,7 @@ fuzzer_test("libxml_xml_read_memory_fuzzer") {
   deps = [
     "//third_party/libxml:libxml",
   ]
-  dict = "dicts/xml.dict"
+  dict = "dicts/generated/libxml_xml_read_memory_fuzzer.dict"
 }
 
 fuzzer_test("libpng_read_fuzzer") {
@@ -208,7 +220,7 @@ fuzzer_test("v8_script_parser_fuzzer") {
   deps = [
     "//v8:parser_fuzzer",
   ]
-  dict = "dicts/js.dict"
+  dict = "dicts/generated/v8_script_parser_fuzzer.dict"
   seed_corpus = "//v8/test/mjsunit/regress/"
 }
 
@@ -229,12 +241,21 @@ fuzzer_test("v8_regexp_parser_fuzzer") {
   libfuzzer_options = [ "max_len=1024" ]
 }
 
+fuzzer_test("v8_wasm_code_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:wasm_code_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=500" ]
+}
+
 fuzzer_test("v8_wasm_fuzzer") {
   sources = []
   deps = [
     "//v8:wasm_fuzzer",
   ]
   dict = "dicts/v8_wasm.dict"
+  seed_corpus = "//v8/test/fuzzer/wasm/"
   libfuzzer_options = [ "max_len=500" ]
 }
 
@@ -243,6 +264,65 @@ fuzzer_test("v8_wasm_asmjs_fuzzer") {
   deps = [
     "//v8:wasm_asmjs_fuzzer",
   ]
+  dict = "dicts/v8_wasm.dict"
+  seed_corpus = "//v8/test/fuzzer/wasm_asmjs/"
+  libfuzzer_options = [ "max_len=500" ]
+}
+
+fuzzer_test("v8_wasm_data_section_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:wasm_data_section_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=500" ]
+}
+
+fuzzer_test("v8_wasm_function_sigs_section_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:wasm_function_sigs_section_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=500" ]
+}
+
+fuzzer_test("v8_wasm_globals_section_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:wasm_globals_section_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=500" ]
+}
+
+fuzzer_test("v8_wasm_imports_section_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:wasm_imports_section_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=500" ]
+}
+
+fuzzer_test("v8_wasm_memory_section_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:wasm_memory_section_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=500" ]
+}
+
+fuzzer_test("v8_wasm_names_section_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:wasm_names_section_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=500" ]
+}
+
+fuzzer_test("v8_wasm_types_section_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:wasm_types_section_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=500" ]
 }
 
 fuzzer_test("third_party_re2_fuzzer") {
@@ -299,6 +379,10 @@ fuzzer_test("skia_path_fuzzer") {
     "//skia",
   ]
   libfuzzer_options = [ "max_len=256" ]
+  if (is_debug) {
+    # Disabled due to crashing on SkASSERT (crbug.com/642750, crbug.com/643275).
+    additional_configs = [ "//testing/libfuzzer:no_clusterfuzz" ]
+  }
 }
 
 fuzzer_test("skia_pathop_fuzzer") {
@@ -311,15 +395,38 @@ fuzzer_test("skia_pathop_fuzzer") {
     "//skia",
   ]
   libfuzzer_options = [ "max_len=512" ]
+  if (is_debug) {
+    # Disabled due to crashing on SkASSERT (crbug.com/642750, crbug.com/643275).
+    additional_configs = [ "//testing/libfuzzer:no_clusterfuzz" ]
+  }
 }
 
-fuzzer_test("icu_break_iterator_utf32_fuzzer") {
+fuzzer_test("prtime_fuzzer") {
   sources = [
-    "icu_break_iterator_utf32_fuzzer.cc",
+    "prtime_fuzzer.cc",
   ]
   deps = [
     "//base",
-    "//base:i18n",
-    "//third_party/icu",
   ]
+  dict = "dicts/prtime.dict"
+  libfuzzer_options = [ "max_len=1024" ]
+}
+
+fuzzer_test("angle_translator_fuzzer") {
+  sources = []
+  deps = [
+    "//third_party/angle:translator_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=1000" ]
+}
+
+fuzzer_test("openssl_bio_string_fuzzer") {
+  sources = [
+    "openssl_bio_string_fuzzer.cc",
+  ]
+  deps = [
+    "//crypto",
+    "//third_party/boringssl",
+  ]
+  libfuzzer_options = [ "max_len=512" ]
 }

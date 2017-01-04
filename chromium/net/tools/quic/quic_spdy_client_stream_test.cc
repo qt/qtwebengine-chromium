@@ -8,8 +8,8 @@
 
 #include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
-#include "net/quic/quic_utils.h"
-#include "net/quic/spdy_utils.h"
+#include "net/quic/core/quic_utils.h"
+#include "net/quic/core/spdy_utils.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/tools/quic/quic_client_session.h"
@@ -26,7 +26,6 @@ using net::test::kClientDataStreamId1;
 using net::test::kServerDataStreamId1;
 using net::test::kInitialSessionFlowControlWindowForTest;
 using net::test::kInitialStreamFlowControlWindowForTest;
-using net::test::ValueRestore;
 
 using std::string;
 using testing::StrictMock;

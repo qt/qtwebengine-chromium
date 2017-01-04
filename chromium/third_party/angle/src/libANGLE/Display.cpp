@@ -53,6 +53,10 @@
 #   endif
 #endif
 
+#if defined(ANGLE_ENABLE_NULL)
+#include "libANGLE/renderer/null/DisplayNULL.h"
+#endif
+
 namespace egl
 {
 
@@ -209,6 +213,12 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap)
         break;
 #endif
 
+#if defined(ANGLE_ENABLE_NULL)
+      case EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE:
+          impl = new rx::DisplayNULL();
+          break;
+#endif
+
       default:
         UNREACHABLE();
         break;
@@ -321,6 +331,7 @@ Display::Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDe
       mContextSet(),
       mStreamSet(),
       mInitialized(false),
+      mDeviceLost(false),
       mCaps(),
       mDisplayExtensions(),
       mDisplayExtensionString(),
@@ -773,21 +784,34 @@ void Display::destroyContext(gl::Context *context)
 bool Display::isDeviceLost() const
 {
     ASSERT(isInitialized());
-    return mImplementation->isDeviceLost();
+    return mDeviceLost;
 }
 
 bool Display::testDeviceLost()
 {
     ASSERT(isInitialized());
-    return mImplementation->testDeviceLost();
+
+    if (!mDeviceLost && mImplementation->testDeviceLost())
+    {
+        notifyDeviceLost();
+    }
+
+    return mDeviceLost;
 }
 
 void Display::notifyDeviceLost()
 {
+    if (mDeviceLost)
+    {
+        return;
+    }
+
     for (ContextSet::iterator context = mContextSet.begin(); context != mContextSet.end(); context++)
     {
         (*context)->markContextLost();
     }
+
+    mDeviceLost = true;
 }
 
 Error Display::waitClient() const
@@ -860,6 +884,10 @@ static ClientExtensions GenerateClientExtensions()
     extensions.platformANGLEOpenGL = true;
 #endif
 
+#if defined(ANGLE_ENABLE_NULL)
+    extensions.platformANGLENULL = true;
+#endif
+
 #if defined(ANGLE_ENABLE_D3D11)
     extensions.deviceCreation      = true;
     extensions.deviceCreationD3D11 = true;
@@ -904,6 +932,8 @@ void Display::initDisplayExtensions()
     // Some extensions are always available because they are implemented in the EGL layer.
     mDisplayExtensions.createContext        = true;
     mDisplayExtensions.createContextNoError = true;
+    mDisplayExtensions.createContextWebGLCompatibility = true;
+    mDisplayExtensions.createContextBindGeneratesResource = true;
 
     // Force EGL_KHR_get_all_proc_addresses on.
     mDisplayExtensions.getAllProcAddresses = true;
@@ -985,4 +1015,8 @@ Device *Display::getDevice() const
     return mDevice;
 }
 
+gl::Version Display::getMaxSupportedESVersion() const
+{
+    return mImplementation->getMaxSupportedESVersion();
+}
 }

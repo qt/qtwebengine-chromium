@@ -11,6 +11,7 @@
 #include "base/trace_event/heap_profiler.h"
 #include "base/trace_event/heap_profiler_allocation_context.h"
 #include "base/trace_event/heap_profiler_allocation_context_tracker.h"
+#include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -63,10 +64,12 @@ void AssertBacktraceContainsOnlyThreadName() {
 class AllocationContextTrackerTest : public testing::Test {
  public:
   void SetUp() override {
-    TraceConfig config("");
-    TraceLog::GetInstance()->SetEnabled(config, TraceLog::RECORDING_MODE);
     AllocationContextTracker::SetCaptureMode(
         AllocationContextTracker::CaptureMode::PSEUDO_STACK);
+    // Enabling memory-infra category sets default memory dump config which
+    // includes filters for capturing pseudo stack.
+    TraceConfig config(MemoryDumpManager::kTraceCategory, "");
+    TraceLog::GetInstance()->SetEnabled(config, TraceLog::RECORDING_MODE);
     AllocationContextTracker::SetCurrentThreadName(kThreadName);
   }
 
@@ -104,6 +107,12 @@ TEST_F(AllocationContextTrackerTest, PseudoStackScopedTrace) {
       TRACE_EVENT0("Testing", kEclair);
       StackFrame frame_ce[] = {t, c, e};
       AssertBacktraceEquals(frame_ce);
+    }
+
+    {
+      TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("Testing"), kCupcake);
+      StackFrame frame_cc[] = {t, c, c};
+      AssertBacktraceEquals(frame_cc);
     }
 
     AssertBacktraceEquals(frame_c);
@@ -242,7 +251,7 @@ TEST_F(AllocationContextTrackerTest, BacktraceTakesTop) {
   }
 }
 
-TEST_F(AllocationContextTrackerTest, TrackTaskContext) {
+TEST_F(AllocationContextTrackerTest, TrackCategoryName) {
   const char kContext1[] = "context1";
   const char kContext2[] = "context2";
   {
@@ -259,6 +268,22 @@ TEST_F(AllocationContextTrackerTest, TrackTaskContext) {
         AllocationContextTracker::GetInstanceForCurrentThread()
             ->GetContextSnapshot();
     ASSERT_EQ(kContext2, ctx2.type_name);
+  }
+
+  {
+    // Type should be category name of the last seen trace event.
+    TRACE_EVENT0("Testing", kCupcake);
+    AllocationContext ctx1 =
+        AllocationContextTracker::GetInstanceForCurrentThread()
+            ->GetContextSnapshot();
+    ASSERT_EQ("Testing", std::string(ctx1.type_name));
+
+    TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("Testing"), kCupcake);
+    AllocationContext ctx2 =
+        AllocationContextTracker::GetInstanceForCurrentThread()
+            ->GetContextSnapshot();
+    ASSERT_EQ(TRACE_DISABLED_BY_DEFAULT("Testing"),
+              std::string(ctx2.type_name));
   }
 
   // Type should be nullptr without task event.

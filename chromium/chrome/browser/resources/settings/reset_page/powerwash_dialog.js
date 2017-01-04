@@ -10,9 +10,10 @@
 Polymer({
   is: 'settings-powerwash-dialog',
 
-  open: function() {
+  /** @override */
+  attached: function() {
     settings.ResetBrowserProxyImpl.getInstance().onPowerwashDialogShow();
-    this.$.dialog.open();
+    this.$.dialog.showModal();
   },
 
   /** @private */
