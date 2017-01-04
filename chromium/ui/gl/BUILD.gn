@@ -296,6 +296,13 @@ component("gl") {
       "gl_surface_glx.h",
     ]
   }
+
+  if (use_qt && (is_win || use_x11)) {
+    data_deps -= [
+      "//third_party/angle:libEGL",
+      "//third_party/angle:libGLESv2",
+    ]
+  }
 }
 
 source_set("gl_unittest_utils") {

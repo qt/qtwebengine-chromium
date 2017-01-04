@@ -93,6 +93,12 @@ component("compositor") {
       "//third_party/angle:libGLESv2",
       "//ui/resources",
     ]
+    if (use_qt) {
+      deps -= [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
   }
 }
 

@@ -84,6 +84,12 @@ source_set("gpu_sources") {
       "//third_party/angle:libEGL",
       "//third_party/angle:libGLESv2",
     ]
+    if (use_qt) {
+      deps -= [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
   }
 
   if (is_chromeos && current_cpu != "arm") {
