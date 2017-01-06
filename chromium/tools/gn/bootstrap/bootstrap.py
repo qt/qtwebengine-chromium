@@ -351,7 +351,8 @@ def write_gn_ninja(path, root_gen_dir, options):
         '-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS',
         '-pthread',
         '-pipe',
-        '-fno-exceptions'
+        '-fno-exceptions',
+        '-D__STDC_FORMAT_MACROS'
     ])
     cflags_cc.extend(['-std=c++11', '-Wno-c++11-narrowing'])
     if is_aix:
@@ -376,8 +377,6 @@ def write_gn_ninja(path, root_gen_dir, options):
         '/GR-',
         '/D_HAS_EXCEPTIONS=0',
     ])
-    # TODO(tim): Support for 64bit builds?
-    ldflags.extend(['/MACHINE:x86', '/DEBUG'])
 
   static_libraries = {
       'base': {'sources': [], 'tool': 'cxx', 'include_dirs': []},
@@ -499,6 +498,7 @@ def write_gn_ninja(path, root_gen_dir, options):
       'base/sys_info.cc',
       'base/task_runner.cc',
       'base/task_scheduler/delayed_task_manager.cc',
+      'base/task_scheduler/environment_config.cc',
       'base/task_scheduler/post_task.cc',
       'base/task_scheduler/priority_queue.cc',
       'base/task_scheduler/scheduler_lock_impl.cc',
@@ -614,10 +614,14 @@ def write_gn_ninja(path, root_gen_dir, options):
         'base/threading/thread_local_storage_posix.cc',
         'base/threading/worker_pool_posix.cc',
         'base/time/time_conversion_posix.cc',
-        'base/time/time_exploded_posix.cc',
-        'base/time/time_now_posix.cc',
         'base/trace_event/heap_profiler_allocation_register_posix.cc',
     ])
+    if not is_mac:
+        static_libraries['base']['sources'].extend([
+            'base/time/time_now_posix.cc',
+            'base/time/time_exploded_posix.cc',
+        ])
+
     static_libraries['libevent'] = {
         'sources': [
             'base/third_party/libevent/buffer.c',
@@ -669,7 +673,7 @@ def write_gn_ninja(path, root_gen_dir, options):
         'base/allocator/allocator_shim.cc',
         'base/allocator/allocator_shim_default_dispatch_to_glibc.cc',
       ])
-      libs.extend(['-lrt', '-latomic'])
+      libs.extend(['-lrt'])
       static_libraries['libevent']['include_dirs'].extend([
           os.path.join(SRC_ROOT, 'base', 'third_party', 'libevent', 'linux')
       ])
