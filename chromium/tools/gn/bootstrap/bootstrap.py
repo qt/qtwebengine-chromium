@@ -115,7 +115,7 @@ def windows_prepare_toolchain(tempdir):
 
     _globals = {"__builtins__":None}
     _locals = {}
-    exec(response, _globals, _locals)
+    exec response in _globals, _locals
 
     return _locals
 
@@ -434,12 +434,16 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
       # logic inside //build/toolchain.
       cflags.extend(['-O2', '-g0'])
 
+    # Always set TOOLKIT_QT define, because use_qt GN argument is not used for the initial GN build.
+    cflags.extend(['-DTOOLKIT_QT'])
+
     cflags.extend([
         '-D_FILE_OFFSET_BITS=64',
         '-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS',
         '-pthread',
         '-pipe',
-        '-fno-exceptions'
+        '-fno-exceptions',
+        '-D__STDC_FORMAT_MACROS'
     ])
     cflags_cc.extend(['-std=c++14', '-Wno-c++11-narrowing'])
     if is_aix:
@@ -464,7 +468,6 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
         '/GR-',
         '/D_HAS_EXCEPTIONS=0',
     ])
-
     target_arch = windows_target_build_arch()
     if target_arch == 'x64':
         ldflags.extend(['/MACHINE:x64'])
@@ -707,6 +710,12 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
         'base/time/time_conversion_posix.cc',
         'base/trace_event/heap_profiler_allocation_register_posix.cc',
     ])
+    if not is_mac:
+        static_libraries['base']['sources'].extend([
+            'base/time/time_now_posix.cc',
+            'base/time/time_exploded_posix.cc',
+        ])
+
     static_libraries['libevent'] = {
         'sources': [
             'base/third_party/libevent/buffer.c',
@@ -749,95 +758,15 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
         'base/strings/sys_string_conversions_posix.cc',
         'base/synchronization/waitable_event_posix.cc',
         'base/sys_info_linux.cc',
-        'base/time/time_exploded_posix.cc',
-        'base/time/time_now_posix.cc',
         'base/threading/platform_thread_linux.cc',
     ])
     if is_linux:
-      libcxx_root = SRC_ROOT + '/buildtools/third_party/libc++/trunk'
-      libcxxabi_root = SRC_ROOT + '/buildtools/third_party/libc++abi/trunk'
-      cflags_cc.extend([
-          '-nostdinc++',
-          '-isystem' + libcxx_root + '/include',
-          '-isystem' + libcxxabi_root + '/include',
-      ])
-      ldflags.extend(['-nodefaultlibs'])
-      libs.extend([
-          '-lc',
-          '-lgcc_s',
-          '-lm',
-          '-lpthread',
-      ])
-      static_libraries['libc++'] = {
-          'sources': [
-              libcxx_root + '/src/algorithm.cpp',
-              libcxx_root + '/src/any.cpp',
-              libcxx_root + '/src/bind.cpp',
-              libcxx_root + '/src/chrono.cpp',
-              libcxx_root + '/src/condition_variable.cpp',
-              libcxx_root + '/src/debug.cpp',
-              libcxx_root + '/src/exception.cpp',
-              libcxx_root + '/src/functional.cpp',
-              libcxx_root + '/src/future.cpp',
-              libcxx_root + '/src/hash.cpp',
-              libcxx_root + '/src/ios.cpp',
-              libcxx_root + '/src/iostream.cpp',
-              libcxx_root + '/src/locale.cpp',
-              libcxx_root + '/src/memory.cpp',
-              libcxx_root + '/src/mutex.cpp',
-              libcxx_root + '/src/new.cpp',
-              libcxx_root + '/src/optional.cpp',
-              libcxx_root + '/src/random.cpp',
-              libcxx_root + '/src/regex.cpp',
-              libcxx_root + '/src/shared_mutex.cpp',
-              libcxx_root + '/src/stdexcept.cpp',
-              libcxx_root + '/src/string.cpp',
-              libcxx_root + '/src/strstream.cpp',
-              libcxx_root + '/src/system_error.cpp',
-              libcxx_root + '/src/thread.cpp',
-              libcxx_root + '/src/typeinfo.cpp',
-              libcxx_root + '/src/utility.cpp',
-              libcxx_root + '/src/valarray.cpp',
-              libcxx_root + '/src/variant.cpp',
-              libcxx_root + '/src/vector.cpp',
-          ],
-          'tool': 'cxx',
-          'cflags': cflags + [
-              '-D_LIBCPP_NO_EXCEPTIONS',
-              '-D_LIBCPP_BUILDING_LIBRARY',
-              '-DLIBCXX_BUILDING_LIBCXXABI',
-          ]
-      }
-      static_libraries['libc++abi'] = {
-          'sources': [
-              libcxxabi_root + '/src/abort_message.cpp',
-              libcxxabi_root + '/src/cxa_aux_runtime.cpp',
-              libcxxabi_root + '/src/cxa_default_handlers.cpp',
-              libcxxabi_root + '/src/cxa_demangle.cpp',
-              libcxxabi_root + '/src/cxa_exception_storage.cpp',
-              libcxxabi_root + '/src/cxa_guard.cpp',
-              libcxxabi_root + '/src/cxa_handlers.cpp',
-              libcxxabi_root + '/src/cxa_noexception.cpp',
-              libcxxabi_root + '/src/cxa_unexpected.cpp',
-              libcxxabi_root + '/src/cxa_vector.cpp',
-              libcxxabi_root + '/src/cxa_virtual.cpp',
-              libcxxabi_root + '/src/fallback_malloc.cpp',
-              libcxxabi_root + '/src/private_typeinfo.cpp',
-              libcxxabi_root + '/src/stdlib_exception.cpp',
-              libcxxabi_root + '/src/stdlib_stdexcept.cpp',
-              libcxxabi_root + '/src/stdlib_typeinfo.cpp',
-          ],
-          'tool': 'cxx',
-          'cflags': cflags + [
-              '-DLIBCXXABI_SILENT_TERMINATE',
-              '-D_LIBCXXABI_NO_EXCEPTIONS',
-          ]
-      }
       static_libraries['base']['sources'].extend([
         'base/allocator/allocator_shim.cc',
         'base/allocator/allocator_shim_default_dispatch_to_glibc.cc',
       ])
-      libs.extend(['-lrt', '-latomic'])
+      ldflags.extend(['-pthread'])
+      libs.extend(['-lrt'])
       static_libraries['libevent']['include_dirs'].extend([
           os.path.join(SRC_ROOT, 'base', 'third_party', 'libevent', 'linux')
       ])
@@ -864,11 +793,15 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
         'base/mac/bundle_locations.mm',
         'base/mac/call_with_eh_frame.cc',
         'base/mac/call_with_eh_frame_asm.S',
+        'base/mac/dispatch_source_mach.cc',
         'base/mac/foundation_util.mm',
         'base/mac/mach_logging.cc',
+        'base/mac/mac_logging.mm',
+        'base/mac/mac_util.mm',
         'base/mac/scoped_mach_port.cc',
         'base/mac/scoped_mach_vm.cc',
         'base/mac/scoped_nsautorelease_pool.mm',
+        'base/mac/scoped_nsobject.mm',
         'base/memory/shared_memory_handle_mac.cc',
         'base/memory/shared_memory_mac.cc',
         'base/message_loop/message_pump_mac.mm',
@@ -894,6 +827,7 @@ def write_gn_ninja(path, root_gen_dir, options, windows_x64_toolchain):
         '-framework', 'AppKit',
         '-framework', 'CoreFoundation',
         '-framework', 'Foundation',
+        '-framework', 'IOKit',
         '-framework', 'Security',
     ])
 
