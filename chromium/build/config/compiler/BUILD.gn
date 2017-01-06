@@ -103,6 +103,9 @@ declare_args() {
   # on by default when goma is enabled because setting this to true may make
   # it harder to debug binaries.
   strip_absolute_paths_from_debug_symbols = false
+
+  # Enable this to turn off the delete-null-pointer-checks optimization in GCC 6+
+  no_delete_null_pointer_checks = false
 }
 
 if (is_clang && !is_nacl) {
@@ -461,6 +464,10 @@ config("compiler") {
   if (is_mac) {
     cflags_cc += [ "-stdlib=libc++" ]
     ldflags += [ "-stdlib=libc++" ]
+  }
+
+  if (no_delete_null_pointer_checks) {
+    cflags_cc += [ "-fno-delete-null-pointer-checks" ]
   }
 
   # Add flags for link-time optimization. These flags enable
