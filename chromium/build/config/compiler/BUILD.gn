@@ -96,6 +96,9 @@ declare_args() {
   # it harder to debug binaries.
   strip_absolute_paths_from_debug_symbols = false
 
+  # Enable this to turn off the delete-null-pointer-checks optimization in GCC 6+
+  no_delete_null_pointer_checks = false
+
   # Allow projects that wish to stay on C++11 to override Chromium's default.
   use_cxx11 = false
 
@@ -547,6 +550,10 @@ config("compiler") {
   if (is_mac) {
     cflags_cc += [ "-stdlib=libc++" ]
     ldflags += [ "-stdlib=libc++" ]
+  }
+
+  if (no_delete_null_pointer_checks) {
+    cflags_cc += [ "-fno-delete-null-pointer-checks" ]
   }
 
   # Add flags for link-time optimization. These flags enable
