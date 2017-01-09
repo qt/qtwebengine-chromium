@@ -326,6 +326,10 @@ extern const char kTestonly[];
 extern const char kTestonly_HelpShort[];
 extern const char kTestonly_Help[];
 
+extern const char kRspTypes[];
+extern const char kRspTypes_HelpShort[];
+extern const char kRspTypes_Help[];
+
 extern const char kVisibility[];
 extern const char kVisibility_HelpShort[];
 extern const char kVisibility_Help[];
