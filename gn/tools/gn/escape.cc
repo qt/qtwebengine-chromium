@@ -195,6 +195,51 @@ size_t EscapeStringToString_PosixNinjaFork(const base::StringPiece& str,
   return i;
 }
 
+size_t EscapeStringToString_Command(const base::StringPiece& str,
+                                    const EscapeOptions& options,
+                                    char* dchp,
+                                    bool* needed_quoting) {
+  std::string dstr;
+  std::string* dest = &dstr;
+  if (str.find_first_of(" \"") == std::string::npos) {
+    // Simple case, don't quote.
+    dest->append(str.data(), str.size());
+  } else {
+      if (!options.inhibit_quoting)
+        dest->push_back('"');
+      for (size_t i = 0; i < str.size(); i++) {
+        // Count backslashes in case they're followed by a quote.
+        size_t backslash_count = 0;
+        while (i < str.size() && str[i] == '\\') {
+          i++;
+          backslash_count++;
+        }
+        if (i == str.size()) {
+          // Backslashes at end of string. Backslash-escape all of them since
+          // they'll be followed by a quote.
+          dest->append(backslash_count * 2, '\\');
+        } else if (str[i] == '"') {
+          // 0 or more backslashes followed by a quote. Backslash-escape the
+          // backslashes, then backslash-escape the quote.
+          dest->append(backslash_count * 2 + 1, '\\');
+          dest->push_back('"');
+        } else {
+          // Non-special Windows character. Add any
+          // backslashes we read previously, these are literals.
+          dest->append(backslash_count, '\\');
+          dest->push_back(str[i]);
+        }
+      }
+
+      if (!options.inhibit_quoting)
+        dest->push_back('"');
+      if (needed_quoting)
+        *needed_quoting = true;
+  }
+  memcpy(dchp, dstr.c_str(), dstr.size());
+  return dstr.size();
+}
+
 // Escapes |str| into |dest| and returns the number of characters written.
 size_t EscapeStringToString(const base::StringPiece& str,
                             const EscapeOptions& options,
@@ -229,6 +274,8 @@ size_t EscapeStringToString(const base::StringPiece& str,
       }
     case ESCAPE_NINJA_PREFORMATTED_COMMAND:
       return EscapeStringToString_NinjaPreformatted(str, dest);
+    case ESCAPE_COMMAND:
+      return EscapeStringToString_Command(str, options, dest, needed_quoting);
     default:
       NOTREACHED();
   }
