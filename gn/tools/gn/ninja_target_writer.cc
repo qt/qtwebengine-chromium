@@ -16,6 +16,7 @@
 #include "tools/gn/ninja_action_target_writer.h"
 #include "tools/gn/ninja_binary_target_writer.h"
 #include "tools/gn/ninja_bundle_data_target_writer.h"
+#include "tools/gn/ninja_c_binary_target_writer.h"
 #include "tools/gn/ninja_copy_target_writer.h"
 #include "tools/gn/ninja_create_bundle_target_writer.h"
 #include "tools/gn/ninja_generated_file_target_writer.h"
