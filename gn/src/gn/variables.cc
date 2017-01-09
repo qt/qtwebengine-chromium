@@ -2097,6 +2097,30 @@ Example
   }
 )";
 
+const char kRspTypes[] = "rsp_types";
+const char kRspTypes_HelpShort[] =
+    "rsp_types: [string list] A list of rsp files to create wih linker "
+    "information for given target.";
+const char kRspTypes_Help[] =
+    "rsp_types: Declares a target that instead of liking dumps the information "
+    "to set of rsp files.\n"
+    "\n"
+    "  Defaults to ["
+    "].\n"
+    "\n"
+    "  When a target is marked \"rsp_types = [ \"objects\" , \"archives\" ... "
+    "]\" and is linkable,"
+    "  the linking step  is skipped. Instead linking infomation is dumped as a "
+    "set of responses file containing"
+    "  selected types of information\n"
+    "\n"
+    "Example\n"
+    "\n"
+    "  static_library(\"test_support\") {\n"
+    "    rsp_types = \"libs\"\n"
+    "    ...\n"
+    "  }\n";
+
 const char kVisibility[] = "visibility";
 const char kVisibility_HelpShort[] =
     "visibility: [label list] A list of labels that can depend on a target.";

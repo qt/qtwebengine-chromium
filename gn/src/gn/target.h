@@ -189,6 +189,7 @@ class Target : public Item {
     SourceDir rebase_;
     std::vector<std::string> data_keys_;
     std::vector<std::string> walk_keys_;
+    std::vector<std::string> rsp_types_;
   };
   const GeneratedFile& generated_file() const;
   GeneratedFile& generated_file();
@@ -213,6 +214,9 @@ class Target : public Item {
     return generated_file().walk_keys_;
   }
   std::vector<std::string>& walk_keys() { return generated_file().walk_keys_; }
+
+  std::vector<std::string>& rsp_types() { return generated_file().rsp_types_; }
+  const std::vector<std::string>& rsp_types() const { return generated_file().rsp_types_; }
 
   OutputFile write_runtime_deps_output() const {
     return write_runtime_deps_output_;
