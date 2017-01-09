@@ -350,6 +350,14 @@ extern const char kValidations[];
 extern const char kValidations_HelpShort[];
 extern const char kValidations_Help[];
 
+extern const char kLFlagsRemovePattern[];
+extern const char kLFlagsRemovePattern_HelpShort[];
+extern const char kLFlagsRemovePattern_Help[];
+
+extern const char kRspTypes[];
+extern const char kRspTypes_HelpShort[];
+extern const char kRspTypes_Help[];
+
 extern const char kVisibility[];
 extern const char kVisibility_HelpShort[];
 extern const char kVisibility_Help[];

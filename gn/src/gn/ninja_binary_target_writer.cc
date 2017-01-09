@@ -5,6 +5,7 @@
 #include "gn/ninja_binary_target_writer.h"
 
 #include <algorithm>
+#include <list>
 #include <sstream>
 #include <unordered_set>
 
@@ -19,6 +20,7 @@
 #include "gn/ninja_target_command_util.h"
 #include "gn/ninja_utils.h"
 #include "gn/pool.h"
+#include "gn/rsp_target_writer.h"
 #include "gn/settings.h"
 #include "gn/string_output_buffer.h"
 #include "gn/string_utils.h"
@@ -112,6 +114,26 @@ void NinjaBinaryTargetWriter::Run() {
   writer.SetResolvedTargetData(GetResolvedTargetData());
   writer.SetNinjaOutputs(ninja_outputs_);
   writer.Run();
+
+  const std::vector<std::string> types = target_->rsp_types();
+  const std::string pattern = target_->lflags_remove_pattern();
+  if (!types.empty()) {
+    for (const std::string& str_type : types) {
+      base::FilePath p_file(
+          target_->settings()->build_settings()->GetFullPath(SourceFile(
+              target_->settings()->build_settings()->build_dir().value() +
+              target_->label().name() + "_" + str_type + ".rsp")));
+      StringOutputBuffer storage;
+      std::ostream p_stream(&storage);
+      const RspTargetWriter::Type& type = RspTargetWriter::strToType(str_type);
+      RspTargetWriter p_writer(&writer, target_, type, p_stream);
+      if (type == RspTargetWriter::LFLAGS)
+        p_writer.set_lflags_remove_pattern(pattern);
+      p_writer.Run();
+      if (p_stream.tellp() != std::streampos(0))
+        storage.WriteToFileIfChanged(p_file, nullptr);
+    }
+  }
 }
 
 void NinjaBinaryTargetWriter::WritePublicModuleMap(std::ostream& out,
