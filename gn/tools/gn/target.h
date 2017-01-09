@@ -147,6 +147,10 @@ class Target : public Item {
   bool testonly() const { return testonly_; }
   void set_testonly(bool value) { testonly_ = value; }
 
+  // Wether to only create linking information for the target instead of linking
+  bool create_pri_file() const { return create_pri_file_; }
+  void set_create_pri_file(bool value) { create_pri_file_ = value; }
+
   OutputFile write_runtime_deps_output() const {
     return write_runtime_deps_output_;
   }
@@ -340,6 +344,7 @@ class Target : public Item {
   bool check_includes_;
   bool complete_static_lib_;
   bool testonly_;
+  bool create_pri_file_;
   std::vector<std::string> data_;
   BundleData bundle_data_;
   OutputFile write_runtime_deps_output_;
