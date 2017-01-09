@@ -83,6 +83,8 @@ class NinjaBinaryTargetWriter : public NinjaTargetWriter {
   std::string rule_prefix_;
 
  private:
+  friend class CMakeLinkWriter;
+  friend class RspTargetWriter;
   NinjaBinaryTargetWriter(const NinjaBinaryTargetWriter&) = delete;
   NinjaBinaryTargetWriter& operator=(const NinjaBinaryTargetWriter&) = delete;
 };

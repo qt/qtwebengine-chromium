@@ -36,6 +36,9 @@ enum EscapingMode {
   // Parameters use shell quoting and shell escaping of quotes, with ‘"’ and ‘\’
   // being the only special characters.
   ESCAPE_COMPILATION_DATABASE,
+
+  // Like ESCAPE_NINJA_COMMAND but without ninja string escaping
+  ESCAPE_COMMAND,
 };
 
 enum EscapingPlatform {
