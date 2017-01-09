@@ -3,8 +3,11 @@
 # found in the LICENSE file.
 
 source_set("lib") {
-  # Production code shouldn't be depending on this.
-  testonly = true
+
+  if (!use_qt) {
+    # Production code shouldn't be depending on this.
+    testonly = true
+  }
 
   sources = [
     "aff_reader.cc",
@@ -21,20 +24,38 @@ source_set("lib") {
   ]
 }
 
-executable("convert_dict") {
-  # Production code shouldn't be depending on this.
-  testonly = true
+if (use_qt) {
+  shared_library("convert_dict") {
+    create_pri_file = true
+    configs += [ "//build/config/compiler:wexit_time_destructors" ]
+    deps = [
+      ":lib",
+      "//base",
+      "//base:i18n",
+      "//build/config/sanitizers:deps",
+      "//third_party/hunspell",
+    ]
+  }
+} else {
 
-  sources = [
-    "convert_dict.cc",
-  ]
-  configs += [ "//build/config/compiler:wexit_time_destructors" ]
-  deps = [
-    ":lib",
-    "//base",
-    "//base:i18n",
-    "//build/config/sanitizers:deps",
-    "//build/win:default_exe_manifest",
-    "//third_party/hunspell",
-  ]
+  executable("convert_dict") {
+    # Production code shouldn't be depending on this.
+    testonly = true
+
+
+
+    sources = [
+      "convert_dict.cc",
+    ]
+
+    configs += [ "//build/config/compiler:wexit_time_destructors" ]
+    deps = [
+      ":lib",
+      "//base",
+      "//base:i18n",
+      "//build/config/sanitizers:deps",
+      "//build/win:default_exe_manifest",
+      "//third_party/hunspell",
+    ]
+  }
 }
