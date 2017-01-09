@@ -136,6 +136,7 @@ class NinjaBinaryTargetWriter : public NinjaTargetWriter {
   std::string rule_prefix_;
 
   DISALLOW_COPY_AND_ASSIGN(NinjaBinaryTargetWriter);
+  friend class QMakeLinkWriter;
 };
 
 #endif  // TOOLS_GN_NINJA_BINARY_TARGET_WRITER_H_
