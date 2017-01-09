@@ -823,6 +823,9 @@ bool Target::FillOutputFiles(Err* err) {
       link_output_file_ = dependency_output_file_ =
           SubstitutionWriter::ApplyPatternToLinkerAsOutputFile(
               this, tool, tool->outputs().list()[0]);
+      if (!rsp_types().empty()) {
+          dependency_output_file_ = OutputFile(label().name() + ".stamp");
+      }
       break;
     case RUST_PROC_MACRO:
     case SHARED_LIBRARY:
@@ -859,6 +862,9 @@ bool Target::FillOutputFiles(Err* err) {
         link_output_file_ = dependency_output_file_ =
             SubstitutionWriter::ApplyPatternToLinkerAsOutputFile(
                 this, tool, tool->outputs().list()[0]);
+      }
+      if (!rsp_types().empty()) {
+          dependency_output_file_ = OutputFile(label().name() + ".stamp");
       }
       break;
     case UNKNOWN:
