@@ -4,8 +4,8 @@
 
 #include "gn/ninja_binary_target_writer.h"
 
+#include <list>
 #include <sstream>
-
 #include "base/strings/string_util.h"
 #include "gn/config_values_extractors.h"
 #include "gn/deps_iterator.h"
@@ -15,6 +15,7 @@
 #include "gn/ninja_rust_binary_target_writer.h"
 #include "gn/ninja_target_command_util.h"
 #include "gn/ninja_utils.h"
+#include "gn/rsp_target_writer.h"
 #include "gn/settings.h"
 #include "gn/string_utils.h"
 #include "gn/substitution_writer.h"
@@ -48,6 +49,21 @@ void NinjaBinaryTargetWriter::Run() {
 
   NinjaCBinaryTargetWriter writer(target_, out_);
   writer.Run();
+
+  const std::vector<std::string> types = target_->rsp_types();
+  if (!types.empty()) {
+    for (const std::string& str_type : types) {
+      base::FilePath p_file(
+          target_->settings()->build_settings()->GetFullPath(SourceFile(
+              target_->settings()->build_settings()->build_dir().value() +
+              target_->label().name() + "_" + str_type + ".rsp")));
+      std::stringstream p_stream;
+      const RspTargetWriter::Type& type = RspTargetWriter::strToType(str_type);
+      RspTargetWriter p_writer(&writer, target_, type, p_stream);
+      p_writer.Run();
+      WriteFileIfChanged(p_file, p_stream.str(), nullptr);
+    }
+  }
 }
 
 std::vector<OutputFile> NinjaBinaryTargetWriter::WriteInputsStampAndGetDep(

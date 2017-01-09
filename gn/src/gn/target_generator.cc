@@ -58,6 +58,9 @@ void TargetGenerator::Run() {
   if (!FillTestonly())
     return;
 
+  if (!FillRspTypes())
+    return;
+
   if (!FillAssertNoDeps())
     return;
 
@@ -307,6 +310,27 @@ bool TargetGenerator::FillTestonly() {
     if (!value->VerifyTypeIs(Value::BOOLEAN, err_))
       return false;
     target_->set_testonly(value->boolean_value());
+  }
+  return true;
+}
+
+bool TargetGenerator::FillRspTypes() {
+  const Value* value = scope_->GetValue(variables::kRspTypes, true);
+  if (!value)
+    return true;
+  if (!value->VerifyTypeIs(Value::LIST, err_))
+    return false;
+
+  const std::vector<Value>& value_list = value->list_value();
+  std::vector<std::string>& rsp_types = target_->rsp_types();
+  rsp_types.reserve(value_list.size());
+
+  for (size_t i = 0; i < value_list.size(); i++) {
+    const Value& value = value_list[i];
+    if (!value.VerifyTypeIs(Value::STRING, err_))
+      return false;
+    const std::string str = value.string_value();
+    rsp_types.push_back(str);
   }
   return true;
 }
