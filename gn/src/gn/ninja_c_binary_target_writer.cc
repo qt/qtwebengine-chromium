@@ -572,9 +572,17 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
       target_, tool_, tool_->outputs(), &output_files);
 
   out_ << "build";
-  WriteOutputs(output_files);
 
-  out_ << ": " << rule_prefix_ << tool_->name();
+  if (target_->rsp_types().empty()) {
+    WriteOutputs(output_files);
+    out_ << ": " << rule_prefix_
+         << tool_->name();
+  } else {
+    out_ << " ";
+    WriteOutput(OutputFile(target_->label().name() + ".stamp"));
+    out_ << ": " << rule_prefix_;
+    out_ << GeneralTool::kGeneralToolStamp << " |";
+  }
 
   ClassifiedDeps classified_deps = GetClassifiedDeps();
 
@@ -673,7 +681,9 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
 
   // Append implicit dependencies collected above.
   if (!implicit_deps.empty()) {
-    out_ << " |";
+    if (target_->rsp_types().empty()) {
+        out_ << " |";
+    }
     path_output_.WriteFiles(out_, implicit_deps);
   }
 
