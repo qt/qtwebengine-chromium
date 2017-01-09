@@ -287,6 +287,7 @@ Target::Target(const Settings* settings,
       check_includes_(true),
       complete_static_lib_(false),
       testonly_(false),
+      create_pri_file_(false),
       toolchain_(nullptr) {}
 
 Target::~Target() = default;
@@ -677,6 +678,9 @@ bool Target::FillOutputFiles(Err* err) {
       link_output_file_ = dependency_output_file_ =
           SubstitutionWriter::ApplyPatternToLinkerAsOutputFile(
               this, tool, tool->outputs().list()[0]);
+      if (create_pri_file()) {
+          dependency_output_file_ = OutputFile(label().name() + ".stamp");
+      }
       break;
     case SHARED_LIBRARY:
       CHECK(tool->outputs().list().size() >= 1);
@@ -705,6 +709,9 @@ bool Target::FillOutputFiles(Err* err) {
       } else {
         SubstitutionWriter::ApplyListToLinkerAsOutputFile(
             this, tool, tool->runtime_outputs(), &runtime_outputs_);
+      }
+      if (create_pri_file()) {
+          dependency_output_file_ = OutputFile(label().name() + ".stamp");
       }
       break;
     case UNKNOWN:
