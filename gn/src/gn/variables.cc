@@ -2074,6 +2074,24 @@ Example
   }
 )";
 
+const char kCreatePriFile[] = "create_pri_file";
+const char kCreatePriFile_HelpShort[] =
+    "create_pri_file: [boolean] Declares a target that creates linking information file.";
+const char kCreatePriFile_Help[] =
+    "create_pri_file: Declares a target that instead of liking dumps the infomation.\n"
+    "\n"
+    "  Boolean. Defaults to false.\n"
+    "\n"
+    "  When a target is marked \"create_pri_file = true\" and is linkable, the linking step"
+    "  is skipped. Instead linking infomation is dumped as a pri file\n"
+    "\n"
+    "Example\n"
+    "\n"
+    "  static_library(\"test_support\") {\n"
+    "    create_pri_file = true\n"
+    "    ...\n"
+    "  }\n";
+
 const char kVisibility[] = "visibility";
 const char kVisibility_HelpShort[] =
     "visibility: [label list] A list of labels that can depend on a target.";
