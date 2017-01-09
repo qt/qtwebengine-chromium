@@ -284,6 +284,7 @@ Target::Target(const Settings* settings,
       check_includes_(true),
       complete_static_lib_(false),
       testonly_(false),
+      create_pri_file_(false),
       toolchain_(nullptr) {}
 
 Target::~Target() = default;
@@ -686,6 +687,9 @@ void Target::FillOutputFiles() {
       } else {
         SubstitutionWriter::ApplyListToLinkerAsOutputFile(
             this, tool, tool->runtime_outputs(), &runtime_outputs_);
+      }
+      if (create_pri_file()) {
+          dependency_output_file_ = OutputFile(label().name() + ".stamp");
       }
       break;
     case UNKNOWN:

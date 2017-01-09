@@ -73,6 +73,38 @@ build obj/foo/bar.stamp: stamp foo.out
   EXPECT_EQ(expected, out.str());
 }
 
+TEST(NinjaActionTargetWriter, WriteRuleDefinition) {
+  Err err;
+  TestWithScope setup;
+
+  Target target(setup.settings(), Label(SourceDir("//foo++/"), "bar"));
+  target.set_output_type(Target::ACTION);
+  target.action_values().set_script(SourceFile("//foo/script.py"));
+  target.action_values().outputs() =
+      SubstitutionList::MakeForTest("//out/Debug/foo.out");
+
+  target.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target.OnResolved(&err));
+
+  setup.build_settings()->set_python_path(base::FilePath(FILE_PATH_LITERAL(
+      "python")));
+
+  std::ostringstream out;
+  NinjaActionTargetWriter writer(&target, out);
+  writer.Run();
+
+  const char expected[] =
+      "rule __foo___bar___rule\n"
+      "  command = python ../../foo/script.py\n"
+      "  description = ACTION //foo++:bar()\n"
+      "  restat = 1\n"
+      "\n"
+      "build foo.out: __foo___bar___rule | ../../foo/script.py\n"
+      "\n"
+      "build obj/foo++/bar.stamp: stamp foo.out\n";
+
+  EXPECT_EQ(expected, out.str());
+}
 
 // Tests an action with no sources and pool
 TEST(NinjaActionTargetWriter, ActionNoSourcesPool) {
