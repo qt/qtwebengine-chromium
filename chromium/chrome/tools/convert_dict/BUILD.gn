@@ -2,9 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
+
 source_set("lib") {
-  # Production code shouldn't be depending on this.
-  testonly = true
+
+  if (!use_qt) {
+    # Production code shouldn't be depending on this.
+    testonly = true
+  }
 
   sources = [
     "aff_reader.cc",
@@ -21,17 +26,30 @@ source_set("lib") {
   ]
 }
 
-executable("convert_dict") {
-  # Production code shouldn't be depending on this.
-  testonly = true
+if (use_qt) {
+  shared_library("convert_dict") {
+    create_pri_file = true
+    configs += [ "//build/config/compiler:wexit_time_destructors" ]
+    deps = [
+      ":lib",
+      "//base",
+      "//base:i18n",
+      "//third_party/hunspell",
+    ]
+  }
+} else {
+  executable("convert_dict") {
+    # Production code shouldn't be depending on this.
+    testonly = true
 
-  sources = [ "convert_dict.cc" ]
-  configs += [ "//build/config/compiler:wexit_time_destructors" ]
-  deps = [
-    ":lib",
-    "//base",
-    "//base:i18n",
-    "//build/win:default_exe_manifest",
-    "//third_party/hunspell",
-  ]
+    sources = [ "convert_dict.cc" ]
+    configs += [ "//build/config/compiler:wexit_time_destructors" ]
+    deps = [
+      ":lib",
+      "//base",
+      "//base:i18n",
+      "//build/win:default_exe_manifest",
+      "//third_party/hunspell",
+    ]
+  }
 }
