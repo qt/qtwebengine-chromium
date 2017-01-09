@@ -24,6 +24,7 @@
 #include "tools/gn/substitution_writer.h"
 #include "tools/gn/target.h"
 #include "tools/gn/trace.h"
+#include "tools/gn/qmake_link_writer.h"
 
 NinjaTargetWriter::NinjaTargetWriter(const Target* target,
                                      std::ostream& out)
@@ -78,6 +79,17 @@ void NinjaTargetWriter::RunAndWriteFile(const Target* target) {
   } else if (target->IsBinary()) {
     NinjaBinaryTargetWriter writer(target, file);
     writer.Run();
+    if(target->create_pri_file()){
+        base::FilePath pri_file(settings->build_settings()->GetFullPath(
+        SourceFile(settings->build_settings()->build_dir().value() +
+                    target->label().name() + ".pri")));
+        std::stringstream file;
+        QMakeLinkWriter pri_writer(&writer,target, file);
+        pri_writer.Run();
+        if (g_scheduler->verbose_logging())
+          g_scheduler->Log("Writing", FilePathToUTF8(pri_file));
+        WriteFileIfChanged(pri_file, file.str(), nullptr);
+    }
   } else {
     CHECK(0) << "Output type of target not handled.";
   }
