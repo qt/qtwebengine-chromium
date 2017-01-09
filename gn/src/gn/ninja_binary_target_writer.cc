@@ -15,6 +15,7 @@
 #include "gn/ninja_rust_binary_target_writer.h"
 #include "gn/ninja_target_command_util.h"
 #include "gn/ninja_utils.h"
+#include "gn/qmake_link_writer.h"
 #include "gn/settings.h"
 #include "gn/string_utils.h"
 #include "gn/substitution_writer.h"
@@ -48,6 +49,15 @@ void NinjaBinaryTargetWriter::Run() {
 
   NinjaCBinaryTargetWriter writer(target_, out_);
   writer.Run();
+  if (target_->create_pri_file()) {
+    base::FilePath pri_file(target_->settings()->build_settings()->GetFullPath(
+    SourceFile(target_->settings()->build_settings()->build_dir().value() +
+               target_->label().name() + ".pri")));
+    std::stringstream file;
+    QMakeLinkWriter pri_writer(&writer, target_, file);
+    pri_writer.Run();
+    WriteFileIfChanged(pri_file, file.str(), nullptr);
+  }
 }
 
 std::vector<OutputFile> NinjaBinaryTargetWriter::WriteInputsStampAndGetDep(
