@@ -58,6 +58,9 @@ void TargetGenerator::Run() {
   if (!FillTestonly())
     return;
 
+  if (!FillCreatePriFile())
+    return;
+
   if (!FillAssertNoDeps())
     return;
 
@@ -306,6 +309,17 @@ bool TargetGenerator::FillTestonly() {
   }
   return true;
 }
+
+bool TargetGenerator::FillCreatePriFile() {
+  const Value* value = scope_->GetValue(variables::kCreatePriFile, true);
+  if (value) {
+    if (!value->VerifyTypeIs(Value::BOOLEAN, err_))
+      return false;
+    target_->set_create_pri_file(value->boolean_value());
+  }
+  return true;
+}
+
 
 bool TargetGenerator::FillAssertNoDeps() {
   const Value* value = scope_->GetValue(variables::kAssertNoDeps, true);
