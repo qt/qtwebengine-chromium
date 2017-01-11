@@ -1198,7 +1198,20 @@ LONG_STRING_CONST(
         "gpu_rasterization",
         "accelerated_2d_canvas"
       ]
-    }
+    },
+    {
+      "id": 130,
+      "description": "[Backport CVE-2017-5017] Older NVIDIA GPUs on macOS render incorrectly",
+      "cr_bugs": [676975],
+      "os": {
+        "type": "macosx"
+      },
+      "vendor_id": "0x10de",
+      "device_id": ["0x0407"],
+      "features": [
+        "all"
+      ]
+     }
   ]
 }
 
