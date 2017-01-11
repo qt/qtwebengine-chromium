@@ -482,7 +482,7 @@ void RenderWidgetInputHandler::HandleInputEvent(
     delegate_->UpdateTextInputState(ShowIme::IF_NEEDED,
                                     ChangeSource::FROM_NON_IME);
   }
-#elif defined(USE_AURA)
+#elif defined(USE_AURA) || defined(TOOLKIT_QT)
   // Show the virtual keyboard if enabled and a user gesture triggers a focus
   // change.
   if (processed != WebInputEventResult::NotHandled &&
