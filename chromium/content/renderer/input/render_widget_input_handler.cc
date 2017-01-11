@@ -421,7 +421,7 @@ void RenderWidgetInputHandler::HandleInputEvent(
       processed != WebInputEventResult::NotHandled) {
     delegate_->ShowVirtualKeyboard();
   }
-#elif defined(USE_AURA)
+#elif defined(USE_AURA) || defined(TOOLKIT_QT)
   // Show the virtual keyboard if enabled and a user gesture triggers a focus
   // change.
   if (processed != WebInputEventResult::NotHandled &&
