@@ -610,12 +610,33 @@ component("base") {
     sources -= [ "device_form_factor_desktop.cc" ]
   }
 
-  if (use_qt && is_linux) {
-   sources -= [
-     "resource/resource_bundle_auralinux.cc",
-     "dragdrop/os_exchange_data_provider_aurax11.cc",
-     "dragdrop/os_exchange_data_provider_aurax11.h",
-   ]
+  if (use_qt) {
+    if (is_linux) {
+      sources -= [
+        "resource/resource_bundle_auralinux.cc",
+        "dragdrop/os_exchange_data_provider_aurax11.cc",
+        "dragdrop/os_exchange_data_provider_aurax11.h",
+      ]
+    } else if (is_mac) {
+      sources -= [
+        "clipboard/clipboard_mac.mm",
+        "clipboard/clipboard_mac.h",
+        "dragdrop/os_exchange_data_provider_mac.mm",
+        "dragdrop/os_exchange_data_provider_mac.h",
+        "resource/resource_bundle_mac.mm",
+      ]
+    } else if (is_win) {
+      sources -= [
+        "clipboard/clipboard_util_win.cc",
+        "clipboard/clipboard_util_win.h",
+        "clipboard/clipboard_win.cc",
+        "clipboard/clipboard_win.h",
+        "dragdrop/os_exchange_data_provider_win.cc",
+        "dragdrop/os_exchange_data_provider_win.h",
+        "resource/resource_bundle_win.cc",
+        "resource/resource_bundle_win.h",
+      ]
+    }
   }
 }
 

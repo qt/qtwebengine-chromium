@@ -76,6 +76,12 @@ source_set("child") {
     ]
   }
 
+  if (use_qt && is_mac) {
+    sources -= [
+      "webthemeengine_impl_mac.cc"
+    ]
+  }
+
   if (is_android) {
     deps += [ "//third_party/android_tools:cpu_features" ]
   }
