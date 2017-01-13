@@ -59,6 +59,9 @@
 #include "core/frame/UseCounter.h"
 #include "platform/FontFamilyNames.h"
 #include "platform/SharedBuffer.h"
+#include "public/platform/WebTaskRunner.h"
+#include "public/platform/WebFrameScheduler.h"
+#include "public/platform/Platform.h"
 
 namespace blink {
 
@@ -330,23 +333,46 @@ void FontFace::setLoadStatus(LoadStatus status)
 {
     m_status = status;
     ASSERT(m_status != Error || m_error);
-
+    // When promises are resolved with 'thenables', instead of the object being
+    // returned directly, the 'then' method is executed (the resolver tries to
+    // resolve the thenable). This can lead to synchronous script execution, so we
+    // post a task. This does not apply to promise rejection (i.e. a thenable
+    // would be returned as is).
     if (m_status == Loaded || m_status == Error) {
         if (m_loadedProperty) {
-            if (m_status == Loaded)
-                m_loadedProperty->resolve(this);
-            else
+            if (m_status == Loaded) {
+                getTaskRunner()->postTask(
+                  BLINK_FROM_HERE, WTF::bind(&LoadedProperty::resolve<FontFace*>,
+                  m_loadedProperty,
+                  this));
+            } else
                 m_loadedProperty->reject(m_error.get());
         }
 
-        WillBeHeapVector<RefPtrWillBeMember<LoadFontCallback>> callbacks;
-        m_callbacks.swap(callbacks);
-        for (size_t i = 0; i < callbacks.size(); ++i) {
-            if (m_status == Loaded)
-                callbacks[i]->notifyLoaded(this);
-            else
-                callbacks[i]->notifyError(this);
-        }
+        getTaskRunner()->postTask(
+            BLINK_FROM_HERE,
+            WTF::bind(&FontFace::runCallbacks, this));
+    }
+}
+
+WebTaskRunner* FontFace::getTaskRunner() {
+     ExecutionContext* context = executionContext();
+     if (context && context->isDocument()) {
+         LocalFrame* frame = static_cast<Document*>(context)->frame();
+         if (frame)
+             return frame->frameScheduler()->loadingTaskRunner();
+     }
+     return Platform::current()->currentThread()->taskRunner();
+}
+
+void FontFace::runCallbacks() {
+    WillBeHeapVector<RefPtrWillBeMember<LoadFontCallback>> callbacks;
+    m_callbacks.swap(callbacks);
+    for (size_t i = 0; i < callbacks.size(); ++i) {
+        if (m_status == Loaded)
+            callbacks[i]->notifyLoaded(this);
+        else
+            callbacks[i]->notifyError(this);
     }
 }
 
