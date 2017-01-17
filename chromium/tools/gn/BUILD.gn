@@ -4,7 +4,9 @@
 
 import("//testing/test.gni")
 
-defines = [ "GN_BUILD" ]
+if (!use_qt) {
+  defines = [ "GN_BUILD" ]
+}
 
 static_library("gn_lib") {
   configs += [ "//build/config:precompiled_headers" ]
@@ -261,11 +263,17 @@ executable("gn") {
 
   deps = [
     ":gn_lib",
-    ":last_commit_position",
+
     "//base",
     "//build/config/sanitizers:deps",
     "//build/win:default_exe_manifest",
   ]
+
+  if (!use_qt) {
+    deps += [
+      ":last_commit_position",
+    ]
+  }
 }
 
 test("gn_unittests") {
