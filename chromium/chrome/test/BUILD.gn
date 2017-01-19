@@ -2118,7 +2118,7 @@ test("unit_tests") {
   } else {
     sources -= [ "../browser/password_manager/password_store_x_unittest.cc" ]
   }
-  if (is_desktop_linux && current_cpu == "x64") {
+  if (is_desktop_linux && current_cpu == "x64" && !use_qt) {
     # Only add this test for 64 bit builds because otherwise we need the 32
     # bit library on 64 bit systems when running this test.
     sources +=
