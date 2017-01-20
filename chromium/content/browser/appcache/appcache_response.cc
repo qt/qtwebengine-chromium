@@ -331,7 +331,6 @@ void AppCacheResponseWriter::WriteInfo(
   DCHECK(info_buf->http_info.get());
   DCHECK(!buffer_.get());
   DCHECK(!info_buffer_.get());
-  DCHECK(info_buf->http_info->headers.get());
 
   info_buffer_ = info_buf;
   callback_ = callback;  // cleared on completion
