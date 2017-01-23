@@ -2548,7 +2548,7 @@ split_static_library("browser") {
       "password_manager/password_store_x.h",
     ]
   }
-  if (use_aura && !use_ozone && is_desktop_linux) {
+  if (use_aura && !use_ozone && is_desktop_linux && use_gtk) {
     deps += [ "//chrome/browser/ui/libgtkui" ]
   }
   if (is_posix) {
