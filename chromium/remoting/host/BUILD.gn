@@ -353,7 +353,7 @@ static_library("common") {
       "//build/config/linux:xrandr",
     ]
     deps += [ "//remoting/host/linux:x11" ]
-    if (is_desktop_linux) {
+    if (use_gtk) {
       deps += [ "//build/config/linux/gtk" ]
     }
   } else {
@@ -755,7 +755,7 @@ if (enable_me2me_host) {
       ]
     }
 
-    if (is_desktop_linux) {
+    if (use_gtk) {
       deps += [ "//build/config/linux/gtk" ]
     }
     if ((is_linux && !is_chromeos) || is_mac) {

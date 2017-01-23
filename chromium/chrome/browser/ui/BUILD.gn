@@ -2345,7 +2345,7 @@ jumbo_split_static_library("ui") {
         "views/frame/native_browser_frame_factory_ozone.cc",
       ]
     } else {
-      if (use_aura) {
+      if (use_aura && use_gtk) {
         # This is the only component that can interact with gtk.
         deps += [ "//chrome/browser/ui/libgtkui" ]
       }
@@ -3063,7 +3063,7 @@ jumbo_split_static_library("ui") {
       #
       # TODO(tonikitoo): It seems sensible to make it possible to opt-in
       # the use of these files in case Gtk is available with its Wayland.
-      if (!use_ozone && is_desktop_linux) {
+      if (use_gtk) {
         sources += [
           "views/chrome_browser_main_extra_parts_views_linux.cc",
           "views/chrome_browser_main_extra_parts_views_linux.h",
