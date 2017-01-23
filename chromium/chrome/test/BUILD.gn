@@ -3993,7 +3993,7 @@ test("unit_tests") {
       "../browser/ui/input_method/input_method_engine_unittest.cc",
     ]
   }
-  if (!is_chromeos && !is_chromecast && is_linux) {
+  if (!is_chromeos && !is_chromecast && is_linux && use_gtk) {
     sources +=
         [ "../browser/ui/libgtkui/select_file_dialog_impl_gtk_unittest.cc" ]
     deps += [ "//build/config/linux/gtk" ]
@@ -4014,7 +4014,7 @@ test("unit_tests") {
   if (use_gio) {
     configs += [ "//build/linux:gio_config" ]
   }
-  if (!is_chromeos && !use_ozone && is_linux) {
+  if (use_gtk) {
     deps += [ "//chrome/browser/ui/libgtkui" ]
   }
 
@@ -5024,7 +5024,7 @@ if (!is_android) {
           # suites, it seems like one or another starts timing out too.
           "../browser/ui/views/keyboard_access_browsertest.cc",
         ]
-        if (!use_ozone) {
+        if (use_gtk) {
           sources += [
             "../browser/ui/libgtkui/select_file_dialog_interactive_uitest.cc",
           ]
