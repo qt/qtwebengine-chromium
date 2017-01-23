@@ -3245,7 +3245,7 @@ jumbo_split_static_library("browser") {
     ]
   }
 
-  if (use_aura && !use_ozone && is_desktop_linux) {
+  if (use_aura && use_gtk) {
     deps += [ "//chrome/browser/ui/libgtkui" ]
   }
 
