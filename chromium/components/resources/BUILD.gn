@@ -47,7 +47,7 @@ group("resources") {
     "../metrics:server_urls_grd",
     "../net_log/resources",
     "../signin/core/browser/resources",
-    "../translate/translate_internals:resources",
+#    "../translate/translate_internals:resources",
     "../webui:resources",
   ]
 
