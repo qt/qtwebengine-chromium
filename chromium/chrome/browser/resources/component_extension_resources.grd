@@ -74,8 +74,8 @@
         <include name="IDR_ARC_SUPPORT_UI_JS" file="chromeos/arc_support/ui.js" type="chrome_html" />
       </if>
     </includes>
-
     <!-- Game Controls lottie json files -->
+    <!--
     <structures>
       <if expr="is_chromeos">
         <structure type="lottie" name="IDR_ARC_INPUT_OVERLAY_ONBOARDING_ILLUSTRATION_DARK_JSON" file="chromeos/arc_input_overlay/onboarding_illustration_dark.json" compress="gzip" />
@@ -87,5 +87,6 @@
       <structure type="lottie" name="SCREEN_SHARING_TOGGLE_ANIMATION_JSON" file="screen_sharing/toggle_animation.json" compress="gzip" />
       </if>
     </structures>
+    -->
   </release>
 </grit>

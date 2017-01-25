@@ -38,7 +38,7 @@ group("resources") {
     "../gcm_driver/resources",
     "../net_log/resources",
     "../signin/core/browser/resources",
-    "../translate/translate_internals:resources",
+#    "../translate/translate_internals:resources",
     "../webui:resources",
   ]
 
