@@ -92,11 +92,11 @@ void QMakeLinkWriter::Run() {
   // object files.
   out_ << "NINJA_OBJECTS =";
   for (const auto& file : object_files) {
-    out_ << " $$PWD/";
+    out_ << " \\\n    $$PWD/";
     path_output_.WriteFile(out_, file);
   }
   for (const auto& file : extra_object_files) {
-    out_ << " $$PWD/";
+    out_ << " \\\n    $$PWD/";
     path_output_.WriteFile(out_, file);
   }
   out_ << std::endl;
@@ -119,7 +119,7 @@ void QMakeLinkWriter::Run() {
         cur->link_output_file().value()) {
         solibs.push_back(cur->link_output_file());
     } else {
-      out_ << " $$PWD/";
+      out_ << " \\\n    $$PWD/";
       path_output_.WriteFile(out_, cur->link_output_file());
     }
   }
