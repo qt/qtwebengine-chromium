@@ -105,6 +105,8 @@ declare_args() {
 
   use_gio = is_linux && !is_chromeos && !is_chromecast
 
+  use_qt = false
+
   # Enable basic printing support and UI.
   enable_basic_printing = !is_chromecast && !is_ios
 

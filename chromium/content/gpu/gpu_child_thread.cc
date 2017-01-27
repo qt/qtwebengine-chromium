@@ -19,6 +19,7 @@
 #include "content/common/establish_channel_params.h"
 #include "content/common/gpu_host_messages.h"
 #include "content/gpu/gpu_service_factory.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"

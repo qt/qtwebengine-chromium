@@ -18,6 +18,7 @@
 # of //build/config/BUILDCONFIG.gn.
 
 import("//build/config/chromecast_build.gni")
+import("//build/config/features.gni")
 
 declare_args() {
   # Indicates if Ash is enabled. Ash is the Aura Shell which provides a
