@@ -80,8 +80,9 @@ def run_build(tempdir, options):
     out_gn += '.exe'
 
   if options.no_rebuild:
-    mkdir_p(build_root)
-    shutil.copy2(temp_gn, out_gn)
+    if temp_gn != out_gn:
+      mkdir_p(build_root)
+      shutil.copy2(temp_gn, out_gn)
   else:
     print 'Building gn using itself to %s...' % build_rel
     build_gn_with_gn(temp_gn, build_root, options)
