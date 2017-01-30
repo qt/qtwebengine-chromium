@@ -389,6 +389,18 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
     {% endfilter %}{# runtime_enabled() #}
     {% endfilter %}{# exposed() #}
     {% endif %}
+
+    {% if interface_name == 'Location' %}
+    // Symbol.toPrimitive
+    // Prevent author scripts to inject Symbol.toPrimitive property into location
+    // objects, also prevent the look-up of Symbol.toPrimitive through the
+    // prototype chain.
+    instanceTemplate->Set(v8::Symbol::GetToPrimitive(isolate),
+                        v8::Undefined(isolate),
+                        static_cast<v8::PropertyAttribute>(
+                            v8::ReadOnly | v8::DontEnum | v8::DontDelete));
+    {% endif %}
+
     {# End special operations #}
     {% if has_custom_legacy_call_as_function %}
     functionTemplate->InstanceTemplate()->SetCallAsFunctionHandler({{v8_class}}::legacyCallCustom);
