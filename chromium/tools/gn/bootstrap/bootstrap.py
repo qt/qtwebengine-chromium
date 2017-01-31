@@ -324,7 +324,8 @@ def write_gn_ninja(path, root_gen_dir, options):
         '-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS',
         '-pthread',
         '-pipe',
-        '-fno-exceptions'
+        '-fno-exceptions',
+        '-D__STDC_FORMAT_MACROS'
     ])
     cflags_cc.extend(['-std=c++11', '-Wno-c++11-narrowing'])
   elif is_win:
