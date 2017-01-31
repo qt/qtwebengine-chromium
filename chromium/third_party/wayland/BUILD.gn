@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+declare_args() {
+  use_system_libffi = true
+}
+
 config("wayland_config") {
   include_dirs = [
     "include/src",
@@ -33,9 +37,13 @@ source_set("wayland_private") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
     "//build/config/compiler:no_chromium_code",
-    "//build/config/linux/libffi",
     ":wayland_config",
   ]
+  if (use_system_libffi) {
+   configs += [
+    "//build/config/linux/libffi"
+   ]
+  }
 }
 
 source_set("wayland_protocol") {
@@ -70,8 +78,13 @@ source_set("wayland_server") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
     "//build/config/compiler:no_chromium_code",
-    "//build/config/linux/libffi",
   ]
+
+  if (use_system_libffi) {
+   configs += [
+     "//build/config/linux/libffi"
+   ]
+  }
 
   public_configs = [ ":wayland_config" ]
 }
@@ -91,8 +104,13 @@ source_set("wayland_client") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
     "//build/config/compiler:no_chromium_code",
-    "//build/config/linux/libffi",
   ]
+
+  if (use_system_libffi) {
+   configs += [
+    "//build/config/linux/libffi"
+   ]
+  }
 
   public_configs = [ ":wayland_config" ]
 }
