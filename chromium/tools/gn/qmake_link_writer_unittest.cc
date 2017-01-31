@@ -119,10 +119,14 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
    pri_writer.Run();
 
    const char expected2[] =
-       "NINJA_OBJECTS = $$PWD/obj/foo2/libfoo2.input1.o $$PWD/obj/foo2/libfoo2.input2.o "
-           "$$PWD/obj/foo1/foo1.input1.o $$PWD/obj/foo1/foo1.input2.o\n"
+       "NINJA_OBJECTS = \\\n"
+       "    $$PWD/obj/foo2/libfoo2.input1.o \\\n"
+       "    $$PWD/obj/foo2/libfoo2.input2.o \\\n"
+       "    $$PWD/obj/foo1/foo1.input1.o \\\n"
+       "    $$PWD/obj/foo1/foo1.input2.o\n"
        "NINJA_LFLAGS = -fooBAR\n"
-       "NINJA_ARCHIVES = $$PWD/obj/foo5/libbar.a\n"
+       "NINJA_ARCHIVES = \\\n"
+       "    $$PWD/obj/foo5/libbar.a\n"
        "NINJA_LIB_DIRS = -L../../foo/bar\n"
        "NINJA_LIBS = ../../foo/libfoo3.a -lfoo4\n"
        "NINJA_SOLIBS = $$PWD/./libshlib.so\n"
