@@ -771,7 +771,10 @@ void NodeChannel::ProcessPendingMessagesWithMachPorts() {
     pending_writes.swap(pending_write_messages_);
     pending_relays.swap(pending_relay_messages_);
   }
+#if !defined(TOOLKIT_QT)
+  // Can crash a test in debug mode if render or ppapi process is killed too fast after creation.
   DCHECK(pending_writes.empty() && pending_relays.empty());
+#endif
 
   while (!pending_writes.empty()) {
     Channel::MessagePtr message = std::move(pending_writes.front());
