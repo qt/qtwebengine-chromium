@@ -76,7 +76,8 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
    shared_lib_target.set_output_extension(std::string("so.1"));
    shared_lib_target.set_output_dir(SourceDir("//out/Debug/foo/"));
    shared_lib_target.sources().push_back(SourceFile("//foo2/input1.cc"));
-   shared_lib_target.sources().push_back(SourceFile("//foo2/input2.cc"));
+   shared_lib_target.sources().push_back(SourceFile("//foo2/input 2.cc"));
+   shared_lib_target.sources().push_back(SourceFile("//foo 2/input 3.cc"));
    shared_lib_target.config_values().libs().push_back(LibFile(SourceFile("//foo/libfoo3.a")));
    shared_lib_target.config_values().libs().push_back(LibFile("foo4"));
    shared_lib_target.config_values().lib_dirs().push_back(SourceDir("//foo/bar/"));
@@ -84,6 +85,7 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
    shared_lib_target.public_deps().push_back(LabelTargetPair(&static_lib_target));
    shared_lib_target.public_deps().push_back(LabelTargetPair(&deps_shared_lib_target));
    shared_lib_target.config_values().ldflags().push_back("-fooBAR");
+   shared_lib_target.config_values().ldflags().push_back("/INCREMENTAL:NO");
    shared_lib_target.SetToolchain(setup.toolchain());
    ASSERT_TRUE(shared_lib_target.OnResolved(&err));
 
@@ -101,12 +103,14 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
        "target_output_name = libfoo2\n"
        "\n"
        "build obj/foo2/libfoo2.input1.o: cxx ../../foo2/input1.cc\n"
-       "build obj/foo2/libfoo2.input2.o: cxx ../../foo2/input2.cc\n"
+       "build obj/foo2/libfoo2.input$ 2.o: cxx ../../foo2/input$ 2.cc\n"
+       "build obj/foo$ 2/libfoo2.input$ 3.o: cxx ../../foo$ 2/input$ 3.cc\n"
        "\n"
-       "build foo2.stamp: stamp | obj/foo2/libfoo2.input1.o obj/foo2/libfoo2.input2.o"
+       "build foo2.stamp: stamp | obj/foo2/libfoo2.input1.o obj/foo2/libfoo2.input$ 2.o"
+           " obj/foo$ 2/libfoo2.input$ 3.o"
            " obj/foo1/foo1.input1.o obj/foo1/foo1.input2.o obj/foo5/libbar.a "
            "shlib.stamp ../../foo/libfoo3.a || obj/foo1/foo1.stamp\n"
-       "  ldflags = -fooBAR -L../../foo/bar\n"
+       "  ldflags = -fooBAR /INCREMENTAL$:NO -L../../foo/bar\n"
        "  libs = ../../foo/libfoo3.a -lfoo4\n"
        "  output_extension = .so.1\n"
        "  output_dir = foo\n"
@@ -120,17 +124,18 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
 
    const char expected2[] =
        "NINJA_OBJECTS = \\\n"
-       "    $$PWD/obj/foo2/libfoo2.input1.o \\\n"
-       "    $$PWD/obj/foo2/libfoo2.input2.o \\\n"
-       "    $$PWD/obj/foo1/foo1.input1.o \\\n"
-       "    $$PWD/obj/foo1/foo1.input2.o\n"
-       "NINJA_LFLAGS = -fooBAR\n"
+       "    \"$$PWD/obj/foo2/libfoo2.input1.o\" \\\n"
+       "    \"$$PWD/obj/foo2/libfoo2.input 2.o\" \\\n"
+       "    \"$$PWD/obj/foo 2/libfoo2.input 3.o\" \\\n"
+       "    \"$$PWD/obj/foo1/foo1.input1.o\" \\\n"
+       "    \"$$PWD/obj/foo1/foo1.input2.o\"\n"
+       "NINJA_LFLAGS = -fooBAR /INCREMENTAL:NO\n"
        "NINJA_ARCHIVES = \\\n"
-       "    $$PWD/obj/foo5/libbar.a\n"
+       "    \"$$PWD/obj/foo5/libbar.a\"\n"
        "NINJA_LIB_DIRS = -L../../foo/bar\n"
        "NINJA_LIBS = ../../foo/libfoo3.a -lfoo4\n"
-       "NINJA_SOLIBS = $$PWD/./libshlib.so\n"
-       "NINJA_TARGETDEPS = $$PWD/foo2.stamp\n";
+       "NINJA_SOLIBS = \"$$PWD/./libshlib.so\"\n"
+       "NINJA_TARGETDEPS = \"$$PWD/foo2.stamp\"\n";
    std::string out_str2 = out2.str();
    EXPECT_EQ(expected2, out_str2);
 }

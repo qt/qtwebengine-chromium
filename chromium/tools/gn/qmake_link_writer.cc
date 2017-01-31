@@ -56,7 +56,7 @@ QMakeLinkWriter::QMakeLinkWriter(const NinjaBinaryTargetWriter* writer, const Ta
       out_(out),
       path_output_(target->settings()->build_settings()->build_dir(),
                    target->settings()->build_settings()->root_path_utf8(),
-                   ESCAPE_NINJA) {
+                   ESCAPE_NONE) {
 }
 
 QMakeLinkWriter::~QMakeLinkWriter() {
@@ -92,19 +92,21 @@ void QMakeLinkWriter::Run() {
   // object files.
   out_ << "NINJA_OBJECTS =";
   for (const auto& file : object_files) {
-    out_ << " \\\n    $$PWD/";
+    out_ << " \\\n    \"$$PWD/";
     path_output_.WriteFile(out_, file);
+    out_ << "\"";
   }
   for (const auto& file : extra_object_files) {
-    out_ << " \\\n    $$PWD/";
+    out_ << " \\\n    \"$$PWD/";
     path_output_.WriteFile(out_, file);
+    out_ << "\"";
   }
   out_ << std::endl;
 
   // linker flags
   out_ << "NINJA_LFLAGS =";
   EscapeOptions opts;
-  opts.mode = ESCAPE_NINJA_COMMAND;
+  opts.mode = ESCAPE_COMMAND;
   // First the ldflags from the target and its config.
   RecursiveTargetConfigStringsToStream(target_, &ConfigValues::ldflags,
                                        opts, out_);
@@ -119,8 +121,9 @@ void QMakeLinkWriter::Run() {
         cur->link_output_file().value()) {
         solibs.push_back(cur->link_output_file());
     } else {
-      out_ << " \\\n    $$PWD/";
+      out_ << " \\\n    \"$$PWD/";
       path_output_.WriteFile(out_, cur->link_output_file());
+      out_ << "\"";
     }
   }
   out_ << std::endl;
@@ -133,7 +136,7 @@ void QMakeLinkWriter::Run() {
     out_ << "NINJA_LIB_DIRS =";
     PathOutput lib_path_output(path_output_.current_dir(),
                                settings->build_settings()->root_path_utf8(),
-                               ESCAPE_NINJA_COMMAND);
+                               ESCAPE_COMMAND);
     for (size_t i = 0; i < all_lib_dirs.size(); i++) {
       out_ << " " << tool->lib_dir_switch();
       lib_path_output.WriteDir(out_, all_lib_dirs[i],
@@ -146,7 +149,7 @@ void QMakeLinkWriter::Run() {
   out_ << "NINJA_LIBS =";
 
   EscapeOptions lib_escape_opts;
-  lib_escape_opts.mode = ESCAPE_NINJA_COMMAND;
+  lib_escape_opts.mode = ESCAPE_COMMAND;
 
   const OrderedSet<LibFile> all_libs = target_->all_libs();
   const std::string framework_ending(".framework");
@@ -155,7 +158,10 @@ void QMakeLinkWriter::Run() {
     const std::string& lib_value = lib_file.value();
     if (lib_file.is_source_file()) {
       out_ << " ";
-      path_output_.WriteFile(out_, lib_file.source_file());
+      PathOutput lib_path_output(settings->build_settings()->build_dir(),
+                                 settings->build_settings()->root_path_utf8(),
+                                 ESCAPE_COMMAND);
+      lib_path_output.WriteFile(out_, lib_file.source_file());
     } else if (base::EndsWith(lib_value, framework_ending,
                               base::CompareCase::INSENSITIVE_ASCII)) {
       out_ << " -framework ";
@@ -173,14 +179,15 @@ void QMakeLinkWriter::Run() {
   if (!solibs.empty()) {
     out_ << "NINJA_SOLIBS =";
     for (const auto& file : solibs) {
-      out_ << " $$PWD/";
+      out_ << " \"$$PWD/";
       path_output_.WriteFile(out_, file);
+      out_ << "\"";
     }
     out_ << std::endl;
   }
 
   //targetdeps
   out_ << "NINJA_TARGETDEPS = ";
-  path_output_.WriteFile(out_, OutputFile("$PWD/" + target_->label().name() + ".stamp"));
+  path_output_.WriteFile(out_, OutputFile("\"$$PWD/" + target_->label().name() + ".stamp\""));
   out_ << std::endl;
 }
