@@ -168,7 +168,9 @@ bool MadvFreeDiscardableMemoryPosix::LockPage(size_t page_index) {
   // the same byte-level representation.
   static_assert(sizeof(intptr_t) == sizeof(std::atomic<intptr_t>),
                 "Incompatible layout of std::atomic.");
+#ifndef TOOLKIT_QT
   DCHECK(std::atomic<intptr_t>{}.is_lock_free());
+#endif
   std::atomic<intptr_t>* page_as_atomic =
       reinterpret_cast<std::atomic<intptr_t>*>(
           static_cast<uint8_t*>(data_) + page_index * base::GetPageSize());
@@ -190,7 +192,9 @@ bool MadvFreeDiscardableMemoryPosix::LockPage(size_t page_index) {
 }
 
 void MadvFreeDiscardableMemoryPosix::UnlockPage(size_t page_index) {
+#ifndef TOOLKIT_QT
   DCHECK(std::atomic<intptr_t>{}.is_lock_free());
+#endif
 
   std::atomic<intptr_t>* page_as_atomic =
       reinterpret_cast<std::atomic<intptr_t>*>(
