@@ -653,9 +653,11 @@ TraceEventDataSource::TraceEventDataSource()
   // all platforms.
   process_creation_time_ticks_ = TRACE_TIME_TICKS_NOW();
 
+#ifndef TOOLKIT_QT
   DCHECK(session_flags_.is_lock_free())
       << "SessionFlags are not atomic! We rely on efficient lock-free look-up "
          "of the session flags when emitting a trace event.";
+#endif
   g_trace_event_data_source_for_testing = this;
 
 #if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)

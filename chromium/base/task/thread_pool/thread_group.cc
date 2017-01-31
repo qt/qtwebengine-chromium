@@ -265,7 +265,9 @@ void ThreadGroup::InvalidateAndHandoffAllTaskSourcesToOtherThreadGroup(
 }
 
 bool ThreadGroup::ShouldYield(TaskSourceSortKey sort_key) {
+#ifndef TOOLKIT_QT
   DCHECK(TS_UNCHECKED_READ(max_allowed_sort_key_).is_lock_free());
+#endif
 
   if (!task_tracker_->CanRunPriority(sort_key.priority()))
     return true;
