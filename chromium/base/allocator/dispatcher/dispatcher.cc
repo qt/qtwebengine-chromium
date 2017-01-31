@@ -250,22 +250,22 @@ namespace base::allocator::dispatcher {
 // The private implementation of Dispatcher.
 struct Dispatcher::Impl {
   void Initialize(const internal::DispatchData& dispatch_data) {
-#if DCHECK_IS_ON()
-    DCHECK(!is_initialized_check_flag_.test_and_set());
-#endif
+// #if DCHECK_IS_ON()
+//     DCHECK(!is_initialized_check_flag_.test_and_set());
+// #endif
 
     dispatch_data_ = dispatch_data;
     ConnectToEmitters(dispatch_data_);
   }
 
   void Reset() {
-#if DCHECK_IS_ON()
-    DCHECK([&]() {
-      auto const was_set = is_initialized_check_flag_.test_and_set();
-      is_initialized_check_flag_.clear();
-      return was_set;
-    }());
-#endif
+// #if DCHECK_IS_ON()
+//     DCHECK([&]() {
+//       auto const was_set = is_initialized_check_flag_.test_and_set();
+//       is_initialized_check_flag_.clear();
+//       return was_set;
+//     }());
+// #endif
 
     DisconnectFromEmitters(dispatch_data_);
     dispatch_data_ = {};

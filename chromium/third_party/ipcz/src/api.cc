@@ -52,6 +52,7 @@ IpczResult CreateNode(const IpczDriver* driver,
     return IPCZ_RESULT_INVALID_ARGUMENT;
   }
 
+#if !defined(TOOLKIT_QT)
   // ipcz relies on lock-free implementations of both 32-bit and 64-bit atomics,
   // assuming any applicable alignment requirements are met. This is not
   // required by the standard, but it is a reasonable expectation for modern
@@ -63,6 +64,7 @@ IpczResult CreateNode(const IpczDriver* driver,
   if (!atomic32.is_lock_free() || !atomic64.is_lock_free()) {
     return IPCZ_RESULT_UNIMPLEMENTED;
   }
+#endif  // !defined(TOOLKIT_QT)
 
   auto node_ptr = ipcz::MakeRefCounted<ipcz::Node>(
       (flags & IPCZ_CREATE_NODE_AS_BROKER) != 0 ? ipcz::Node::Type::kBroker
