@@ -33,6 +33,7 @@ bool InitializeStaticEGLInternal() {
 
 }  // namespace
 
+#if !defined(TOOLKIT_QT)
 bool InitializeGLOneOffPlatform() {
   if (HasGLOzone())
     return GetGLOzone()->InitializeGLOneOffPlatform();
@@ -52,6 +53,7 @@ bool InitializeGLOneOffPlatform() {
       return false;
   }
 }
+#endif
 
 bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu

@@ -78,6 +78,7 @@ bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
   }
 }
 
+#if !defined(TOOLKIT_QT)
 scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
                                          GLSurface* compatible_surface,
                                          GpuPreference gpu_preference) {
@@ -145,6 +146,7 @@ scoped_refptr<GLSurface> CreateOffscreenGLSurface(const gfx::Size& size) {
   return GetSurfaceFactoryOzone()->CreateOffscreenGLSurface(
       GetGLImplementation(), size);
 }
+#endif
 
 }  // namespace init
 }  // namespace gl

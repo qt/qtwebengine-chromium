@@ -67,6 +67,7 @@ scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
   }
 }
 
+#if !defined(TOOLKIT_QT)
 scoped_refptr<GLSurface> CreateViewGLSurface(gfx::AcceleratedWidget window) {
   TRACE_EVENT0("gpu", "gl::init::CreateViewGLSurface");
   switch (GetGLImplementation()) {
@@ -110,6 +111,7 @@ scoped_refptr<GLSurface> CreateOffscreenGLSurface(const gfx::Size& size) {
       return nullptr;
   }
 }
+#endif
 
 }  // namespace init
 }  // namespace gl

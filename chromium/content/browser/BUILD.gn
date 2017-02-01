@@ -1944,6 +1944,16 @@ source_set("browser") {
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
     ]
+    if (is_win) {
+      sources -= [
+        "accessibility/browser_accessibility_event_win.cc",
+        "accessibility/browser_accessibility_event_win.h",
+        "accessibility/browser_accessibility_manager_win.cc",
+        "accessibility/browser_accessibility_manager_win.h",
+        "accessibility/browser_accessibility_win.cc",
+        "accessibility/browser_accessibility_win.h",
+      ]
+    }
     if (use_aura) {
       sources -= [
         "renderer_host/native_web_keyboard_event_aura.cc",
