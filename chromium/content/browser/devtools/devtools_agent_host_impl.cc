@@ -191,7 +191,7 @@ void DevToolsAgentHostImpl::InspectElement(
     DevToolsAgentHostClient* client,
     int x,
     int y) {
- if (!session_ || session_->client() != client)
+ if (!session_ || (client && session_->client() != client))
    return;
  InspectElement(session_.get(), x, y);
 }
