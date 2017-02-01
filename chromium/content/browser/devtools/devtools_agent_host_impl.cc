@@ -180,7 +180,7 @@ void DevToolsAgentHostImpl::InspectElement(
     DevToolsAgentHostClient* client,
     int x,
     int y) {
- if (!client_ || client_ != client)
+ if (!client_ || (client && client_ != client))
    return;
  InspectElement(x, y);
 }
