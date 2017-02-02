@@ -731,6 +731,7 @@ def write_gn_ninja(path, root_gen_dir, options):
         'userenv.lib',
         'version.lib',
         'dbghelp.lib',
+        'advapi32.lib',
     ])
 
   # we just build static libraries that GN needs
