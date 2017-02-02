@@ -820,7 +820,7 @@ if (v8_use_external_startup_data) {
   }
 }
 
-v8_source_set("v8_base") {
+v8_static_library("v8_base") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   sources = [
