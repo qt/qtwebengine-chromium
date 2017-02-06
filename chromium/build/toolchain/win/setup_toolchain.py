@@ -186,17 +186,25 @@ def _LowercaseDict(d):
 
 
 def main():
-  if len(sys.argv) != 7:
+  if len(sys.argv) != 7 and len(sys.argv) != 4:
     print('Usage setup_toolchain.py '
           '<visual studio path> <win sdk path> '
           '<runtime dirs> <target_os> <target_cpu> '
           '<environment block name|none>')
+    print('or setup_toolchain.py <target_os> <target_cpu>'
+          '<environment block name|none>')
     sys.exit(2)
-  win_sdk_path = sys.argv[2]
-  runtime_dirs = sys.argv[3]
-  target_os = sys.argv[4]
-  target_cpu = sys.argv[5]
-  environment_block_name = sys.argv[6]
+  if len(sys.argv) == 7:
+    win_sdk_path = sys.argv[2]
+    runtime_dirs = sys.argv[3]
+    target_os = sys.argv[4]
+    target_cpu = sys.argv[5]
+    environment_block_name = sys.argv[6]
+  else:
+    target_os = sys.argv[1]
+    target_cpu = sys.argv[2]
+    environment_block_name = sys.argv[3]
+
   if (environment_block_name == 'none'):
     environment_block_name = ''
 
@@ -214,71 +222,74 @@ def main():
   include = ''
   lib = ''
 
-  # TODO(scottmg|goma): Do we need an equivalent of
-  # ninja_use_custom_environment_files?
+  ninja_use_custom_environment_files = (len(sys.argv) == 7)
 
   for cpu in cpus:
-    if cpu == target_cpu:
+    if cpu != target_cpu:
+	continue
+    if not ninja_use_custom_environment_files:
+      env = os.environ
+    else:
       # Extract environment variables for subprocesses.
       env = _LoadToolchainEnv(cpu, win_sdk_path, target_store)
       env['PATH'] = runtime_dirs + os.pathsep + env['PATH']
 
-      for path in env['PATH'].split(os.pathsep):
-        if os.path.exists(os.path.join(path, 'cl.exe')):
-          vc_bin_dir = os.path.realpath(path)
-          break
-      assert vc_bin_dir, "cl.exe is not found, check if it is installed."
+    for path in env['PATH'].split(os.pathsep):
+      if os.path.exists(os.path.join(path, 'cl.exe')):
+        vc_bin_dir = os.path.realpath(path)
+        break
+    assert vc_bin_dir, "cl.exe is not found, check if it is installed."
 
-      for path in env['LIB'].split(';'):
-        if os.path.exists(os.path.join(path, 'msvcrt.lib')):
-          vc_lib_path = os.path.realpath(path)
-          break
-      assert vc_lib_path, "msvcrt.lib is not found, check if it is installed."
+    for path in env['LIB'].split(';'):
+      if os.path.exists(os.path.join(path, 'msvcrt.lib')):
+        vc_lib_path = os.path.realpath(path)
+        break
+    assert vc_lib_path, "msvcrt.lib is not found, check if it is installed."
 
-      for path in env['LIB'].split(';'):
-        if os.path.exists(os.path.join(path, 'atls.lib')):
-          vc_lib_atlmfc_path = os.path.realpath(path)
-          break
-      if (target_store != True):
-        # Path is assumed to exist for desktop applications.
-        assert vc_lib_atlmfc_path, (
-            "Microsoft.VisualStudio.Component.VC.ATLMFC " +
-            "is not found, check if it is installed.")
+    for path in env['LIB'].split(';'):
+      if os.path.exists(os.path.join(path, 'atls.lib')):
+        vc_lib_atlmfc_path = os.path.realpath(path)
+        break
+    if (target_store != True):
+      # Path is assumed to exist for desktop applications.
+      assert vc_lib_atlmfc_path, (
+          "Microsoft.VisualStudio.Component.VC.ATLMFC " +
+          "is not found, check if it is installed.")
 
-      for path in env['LIB'].split(';'):
-        if os.path.exists(os.path.join(path, 'User32.Lib')):
-          vc_lib_um_path = os.path.realpath(path)
-          break
-      assert vc_lib_um_path, (
-          "User32.lib is not found, check if it is installed.")
+    for path in env['LIB'].split(';'):
+      if os.path.exists(os.path.join(path, 'User32.Lib')):
+        vc_lib_um_path = os.path.realpath(path)
+        break
+    assert vc_lib_um_path, (
+        "User32.lib is not found, check if it is installed.")
 
-      # The separator for INCLUDE here must match the one used in
-      # _LoadToolchainEnv() above.
-      include = [p.replace('"', r'\"') for p in env['INCLUDE'].split(';') if p]
+    # The separator for INCLUDE here must match the one used in
+    # _LoadToolchainEnv() above.
+    include = [p.replace('"', r'\"') for p in env['INCLUDE'].split(';') if p]
 
-      # Make include path relative to builddir when cwd and sdk in same drive.
-      try:
-        include = list(map(os.path.relpath, include))
-      except ValueError:
+    # Make include path relative to builddir when cwd and sdk in same drive.
+    try:
+      include = list(map(os.path.relpath, include))
+    except ValueError:
         pass
 
-      lib = [p.replace('"', r'\"') for p in env['LIB'].split(';') if p]
-      # Make lib path relative to builddir when cwd and sdk in same drive.
-      try:
-        lib = map(os.path.relpath, lib)
-      except ValueError:
-        pass
+    lib = [p.replace('"', r'\"') for p in env['LIB'].split(';') if p]
+    # Make lib path relative to builddir when cwd and sdk in same drive.
+    try:
+      lib = map(os.path.relpath, lib)
+    except ValueError:
+      pass
 
-      def q(s):  # Quote s if it contains spaces or other weird characters.
-        return s if re.match(r'^[a-zA-Z0-9._/\\:-]*$', s) else '"' + s + '"'
-      include_I = ' '.join([q('/I' + i) for i in include])
-      include_imsvc = ' '.join([q('-imsvc' + i) for i in include])
-      libpath_flags = ' '.join([q('-libpath:' + i) for i in lib])
+    def q(s):  # Quote s if it contains spaces or other weird characters.
+      return s if re.match(r'^[a-zA-Z0-9._/\\:-]*$', s) else '"' + s + '"'
+    include_I = ' '.join([q('/I' + i) for i in include])
+    include_imsvc = ' '.join([q('-imsvc' + i) for i in include])
+    libpath_flags = ' '.join([q('-libpath:' + i) for i in lib])
 
-      if (environment_block_name != ''):
-        env_block = _FormatAsEnvironmentBlock(env)
-        with open(environment_block_name, 'w') as f:
-          f.write(env_block)
+    if (environment_block_name != ''):
+      env_block = _FormatAsEnvironmentBlock(env)
+      with open(environment_block_name, 'w') as f:
+        f.write(env_block)
 
   print('vc_bin_dir = ' + gn_helpers.ToGNString(vc_bin_dir))
   assert include_I
