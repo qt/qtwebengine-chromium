@@ -182,20 +182,28 @@ def _LowercaseDict(d):
 
 
 def main():
-  if len(sys.argv) != 8:
+  if len(sys.argv) != 8 and len(sys.argv) != 4:
     print('Usage setup_toolchain.py '
           '<visual studio path> <win sdk path> '
           '<runtime dirs> <target_os> <target_cpu> '
           '<environment block name|none> <goma_disabled>')
+    print('or setup_toolchain.py <target_os> <target_cpu>'
+          '<environment block name|none>')
     sys.exit(2)
-  win_sdk_path = sys.argv[2]
-  runtime_dirs = sys.argv[3]
-  target_os = sys.argv[4]
-  target_cpu = sys.argv[5]
-  environment_block_name = sys.argv[6]
+  if len(sys.argv) == 8:
+    win_sdk_path = sys.argv[2]
+    runtime_dirs = sys.argv[3]
+    target_os = sys.argv[4]
+    target_cpu = sys.argv[5]
+    environment_block_name = sys.argv[6]
+    goma_disabled = sys.argv[7]
+  else:
+    target_os = sys.argv[1]
+    target_cpu = sys.argv[2]
+    environment_block_name = sys.argv[3]
+
   if (environment_block_name == 'none'):
     environment_block_name = ''
-  goma_disabled = sys.argv[7]
 
   if (target_os == 'winuwp'):
     target_store = True
@@ -210,46 +218,49 @@ def main():
   vc_lib_um_path = ''
   include = ''
 
-  # TODO(scottmg|goma): Do we need an equivalent of
-  # ninja_use_custom_environment_files?
+  ninja_use_custom_environment_files = (len(sys.argv) == 8)
 
   for cpu in cpus:
-    if cpu == target_cpu:
+    if cpu != target_cpu:
+	continue
+    if not ninja_use_custom_environment_files:
+      env = os.environ
+    else:
       # Extract environment variables for subprocesses.
       env = _LoadToolchainEnv(cpu, win_sdk_path, target_store)
       env['PATH'] = runtime_dirs + os.pathsep + env['PATH']
       env['GOMA_DISABLED'] = goma_disabled
 
-      for path in env['PATH'].split(os.pathsep):
-        if os.path.exists(os.path.join(path, 'cl.exe')):
-          vc_bin_dir = os.path.realpath(path)
-          break
+    for path in env['PATH'].split(os.pathsep):
+      if os.path.exists(os.path.join(path, 'cl.exe')):
+        vc_bin_dir = os.path.realpath(path)
+        break
 
-      for path in env['LIB'].split(';'):
-        if os.path.exists(os.path.join(path, 'msvcrt.lib')):
-          vc_lib_path = os.path.realpath(path)
-          break
+    for path in env['LIB'].split(';'):
+      if os.path.exists(os.path.join(path, 'msvcrt.lib')):
+        vc_lib_path = os.path.realpath(path)
+        break
 
-      for path in env['LIB'].split(';'):
-        if os.path.exists(os.path.join(path, 'atls.lib')):
-          vc_lib_atlmfc_path = os.path.realpath(path)
-          break
+    for path in env['LIB'].split(';'):
+      if os.path.exists(os.path.join(path, 'atls.lib')):
+        vc_lib_atlmfc_path = os.path.realpath(path)
+        break
 
-      for path in env['LIB'].split(';'):
-        if os.path.exists(os.path.join(path, 'User32.Lib')):
-          vc_lib_um_path = os.path.realpath(path)
-          break
+    for path in env['LIB'].split(';'):
+      if os.path.exists(os.path.join(path, 'User32.Lib')):
+        vc_lib_um_path = os.path.realpath(path)
+        break
 
-      # The separator for INCLUDE here must match the one used in
-      # _LoadToolchainEnv() above.
-      include = [p.replace('"', r'\"') for p in env['INCLUDE'].split(';') if p]
-      include_I = ' '.join(['"/I' + i + '"' for i in include])
-      include_imsvc = ' '.join(['"-imsvc' + i + '"' for i in include])
+    # The separator for INCLUDE here must match the one used in
+    # _LoadToolchainEnv() above.
+    include = [p.replace('"', r'\"') for p in env['INCLUDE'].split(';') if p]
+    include_I = ' '.join(['"/I' + i + '"' for i in include])
+    include_imsvc = ' '.join(['"-imsvc' + i + '"' for i in include])
 
-      if (environment_block_name != ''):
-        env_block = _FormatAsEnvironmentBlock(env)
-        with open(environment_block_name, 'wb') as f:
-          f.write(env_block)
+    if (environment_block_name != ''):
+      env_block = _FormatAsEnvironmentBlock(env)
+      with open(environment_block_name, 'wb') as f:
+        f.write(env_block)
 
   assert vc_bin_dir
   print 'vc_bin_dir = ' + gn_helpers.ToGNString(vc_bin_dir)

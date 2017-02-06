@@ -119,21 +119,13 @@ def windows_prepare_toolchain(tempdir):
 
     return _locals
 
-  toolchain_paths = CallPythonScopeScript(
-      [sys.executable,
-       os.path.join(SRC_ROOT, "build", "vs_toolchain.py"),
-      "get_toolchain_dir"],
-      cwd=tempdir)
-
   windows_x64_toolchain =  CallPythonScopeScript(
       [sys.executable,
        os.path.join(SRC_ROOT, "build", "toolchain",
                     "win", "setup_toolchain.py"),
-       toolchain_paths["vs_path"],
-       toolchain_paths["sdk_path"],
-       toolchain_paths["runtime_dirs"],
+       "win",
        "x64",
-       "true"
+       "environment.x64"
       ],
       cwd=tempdir)
 
