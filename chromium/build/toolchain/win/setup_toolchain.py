@@ -213,17 +213,25 @@ def FindFileInEnvList(env, env_name, separator, file_name, optional=False):
 
 
 def main():
-  if len(sys.argv) != 7:
+  if len(sys.argv) != 7 and len(sys.argv) != 4:
     print('Usage setup_toolchain.py '
           '<visual studio path> <win sdk path> '
           '<runtime dirs> <target_os> <target_cpu> '
           '<environment block name|none>')
+    print('or setup_toolchain.py <target_os> <target_cpu>'
+          '<environment block name|none>')
     sys.exit(2)
-  win_sdk_path = sys.argv[2]
-  runtime_dirs = sys.argv[3]
-  target_os = sys.argv[4]
-  target_cpu = sys.argv[5]
-  environment_block_name = sys.argv[6]
+  if len(sys.argv) == 7:
+    win_sdk_path = sys.argv[2]
+    runtime_dirs = sys.argv[3]
+    target_os = sys.argv[4]
+    target_cpu = sys.argv[5]
+    environment_block_name = sys.argv[6]
+  else:
+    target_os = sys.argv[1]
+    target_cpu = sys.argv[2]
+    environment_block_name = sys.argv[3]
+
   if (environment_block_name == 'none'):
     environment_block_name = ''
 
@@ -241,14 +249,16 @@ def main():
   include = ''
   lib = ''
 
-  # TODO(scottmg|goma): Do we need an equivalent of
-  # ninja_use_custom_environment_files?
+  ninja_use_custom_environment_files = (len(sys.argv) == 7)
 
   for cpu in cpus:
     if cpu == target_cpu:
-      # Extract environment variables for subprocesses.
-      env = _LoadToolchainEnv(cpu, win_sdk_path, target_store)
-      env['PATH'] = runtime_dirs + os.pathsep + env['PATH']
+      if not ninja_use_custom_environment_files:
+        env = os.environ
+      else:
+        # Extract environment variables for subprocesses.
+        env = _LoadToolchainEnv(cpu, win_sdk_path, target_store)
+        env['PATH'] = runtime_dirs + os.pathsep + env['PATH']
 
       vc_bin_dir = FindFileInEnvList(env, 'PATH', os.pathsep, 'cl.exe')
       vc_lib_path = FindFileInEnvList(env, 'LIB', ';', 'msvcrt.lib')
