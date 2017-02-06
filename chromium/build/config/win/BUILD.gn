@@ -57,7 +57,7 @@ config("compiler") {
     ]
   }
 
-  if (visual_studio_version == "2015") {
+  if (visual_studio_version == "2015" || visual_studio_version == "2015e") {
     cflags += [
       # Work around crbug.com/526851, bug in VS 2015 RTM compiler.
       "/Zc:sizedDealloc-",
