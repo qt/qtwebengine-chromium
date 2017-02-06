@@ -106,7 +106,7 @@ group("chromium_builder_tests") {
 
 # TODO(GYP_GONE): Figure out if we really need this target or if there's
 # some better way to specify things.
-if (is_win) {
+if (is_win && !use_qt) {
   group("chrome_official_builder_no_unittests") {
     deps = [
       "//chrome/installer/gcapi",
@@ -1122,7 +1122,7 @@ assert_valid_out_dir("_unused") {
   actual_sources = [ "$root_build_dir/foo" ]
 }
 
-if (is_win) {
+if (is_win && !use_qt) {
   group("chromium_builder_lkgr_drmemory_win") {
     testonly = true
 
@@ -1191,11 +1191,6 @@ if (is_win) {
       "//ui/keyboard:keyboard_unittests",
       "//ui/touch_selection:ui_touch_selection_unittests",
       "//url:url_unittests",
-    ]
-  }
-  if (use_qt) {
-    deps -= [
-      "//chrome/test:unit_tests",
     ]
   }
 }
