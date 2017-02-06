@@ -19,6 +19,9 @@ Modifications:
 - Apply patch contributed here:
   https://crbug.com/619006
 
+- Apply patch contributed upstream, details here:
+  https://crbug.com/676623#c18
+
 To import a new version:
 
 On Linux, get the latest tar via libxml.org and extract and replace
