@@ -310,16 +310,26 @@ config("sdk_link") {
     ldflags = [ "/MACHINE:ARM64" ]
   }
 
-  vcvars_toolchain_data = exec_script("../../toolchain/win/setup_toolchain.py",
-                                      [
-                                        visual_studio_path,
-                                        windows_sdk_path,
-                                        visual_studio_runtime_dirs,
-                                        current_os,
-                                        current_cpu,
-                                        "none",
-                                      ],
-                                      "scope")
+  if (ninja_use_custom_environment_files) {
+    vcvars_toolchain_data = exec_script("../../toolchain/win/setup_toolchain.py",
+                                        [
+                                          visual_studio_path,
+                                          windows_sdk_path,
+                                          visual_studio_runtime_dirs,
+                                          current_os,
+                                          current_cpu,
+                                          "none"
+                                        ],
+                                        "scope")
+  } else {
+    vcvars_toolchain_data = exec_script("../../toolchain/win/setup_toolchain.py",
+                                        [
+                                          current_os,
+                                          current_cpu,
+                                          "none",
+                                        ],
+                                        "scope")
+  }
 
   vc_lib_path = vcvars_toolchain_data.vc_lib_path
   if (defined(vcvars_toolchain_data.vc_lib_atlmfc_path)) {
