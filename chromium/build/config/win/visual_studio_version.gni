@@ -20,9 +20,11 @@ declare_args() {
   # This value is the default location, override if you have a different
   # installation location.
   windows_sdk_path = "C:\Program Files (x86)\Windows Kits\10"
+
+  ninja_use_custom_environment_files = true
 }
 
-if (visual_studio_path == "") {
+if (visual_studio_path == "" && ninja_use_custom_environment_files) {
   toolchain_data =
       exec_script("../../vs_toolchain.py", [ "get_toolchain_dir" ], "scope")
   visual_studio_path = toolchain_data.vs_path
@@ -33,7 +35,9 @@ if (visual_studio_path == "") {
 } else {
   assert(visual_studio_version != "",
          "You must set the visual_studio_version if you set the path")
-  assert(wdk_path != "",
-         "You must set the wdk_path if you set the visual studio path")
-  visual_studio_runtime_dirs = []
+  if (ninja_use_custom_environment_files) {
+    assert(wdk_path != "",
+           "You must set the wdk_path if you set the visual studio path")
+  }
+  visual_studio_runtime_dirs = "\"\""
 }
