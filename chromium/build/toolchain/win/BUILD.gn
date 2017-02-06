@@ -45,7 +45,7 @@ if (use_rbe) {
 
 # Copy the VS runtime DLL for the default toolchain to the root build directory
 # so things will run.
-if (current_toolchain == default_toolchain) {
+if (current_toolchain == default_toolchain && ninja_use_custom_environment_files) {
   if (is_debug) {
     configuration_name = "Debug"
   } else {
@@ -415,16 +415,26 @@ template("win_toolchains") {
   assert(defined(invoker.toolchain_arch))
   toolchain_arch = invoker.toolchain_arch
 
-  win_toolchain_data = exec_script("setup_toolchain.py",
-                                   [
-                                     visual_studio_path,
-                                     windows_sdk_path,
-                                     visual_studio_runtime_dirs,
-                                     "win",
-                                     toolchain_arch,
-                                     "environment." + toolchain_arch,
-                                   ],
-                                   "scope")
+  if (ninja_use_custom_environment_files) {
+    win_toolchain_data = exec_script("setup_toolchain.py",
+                                     [
+                                       visual_studio_path,
+                                       windows_sdk_path,
+                                       visual_studio_runtime_dirs,
+                                       "win",
+                                       toolchain_arch,
+                                       "environment." + toolchain_arch,
+                                     ],
+                                     "scope")
+  } else {
+    win_toolchain_data = exec_script("setup_toolchain.py",
+                                     [
+                                       "win",
+                                       toolchain_arch,
+                                       "environment." + toolchain_arch,
+                                     ],
+                                     "scope")
+  }
 
   # The toolchain using MSVC only makes sense when not doing cross builds.
   # Chromium exclusively uses the win_clang_ toolchain below, but V8 and
