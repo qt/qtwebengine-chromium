@@ -34,7 +34,7 @@ if (use_goma) {
 
 # Copy the VS runtime DLL for the default toolchain to the root build directory
 # so things will run.
-if (current_toolchain == default_toolchain) {
+if (current_toolchain == default_toolchain && ninja_use_custom_environment_files) {
   if (is_debug) {
     configuration_name = "Debug"
   } else {
@@ -348,16 +348,26 @@ if (target_cpu == "x86" || target_cpu == "x64") {
 # do any cross compiles when targeting x64-bit (the build does generate
 # some 64-bit stuff from x86/arm/arm64 target builds).
 if (win_build_host_cpu != "x64") {
-  build_cpu_toolchain_data = exec_script("setup_toolchain.py",
-                                         [
-                                           visual_studio_path,
-                                           windows_sdk_path,
-                                           visual_studio_runtime_dirs,
-                                           host_os,
-                                           win_build_host_cpu,
-                                           "environment." + win_build_host_cpu,
-                                         ],
-                                         "scope")
+  if (ninja_use_custom_environment_files) {
+    target_cpu_toolchain_data = exec_script("setup_toolchain.py",
+                                            [
+                                              visual_studio_path,
+                                              windows_sdk_path,
+                                              visual_studio_runtime_dirs,
+                                              host_os,
+                                              win_build_host_cpu,
+                                              "environment." + win_build_host_cpu
+                                            ],
+                                            "scope")
+  } else {
+    target_cpu_toolchain_data = exec_script("setup_toolchain.py",
+                                            [
+                                              host_os,
+                                              win_build_host_cpu,
+                                              "environment." + win_build_host_cpu,
+                                            ],
+                                            "scope")
+  }
 
   msvc_toolchain(win_build_host_cpu) {
     environment = "environment." + win_build_host_cpu
@@ -392,16 +402,26 @@ if (win_build_host_cpu != "x64") {
 }
 
 # 64-bit toolchains.
-x64_toolchain_data = exec_script("setup_toolchain.py",
-                                 [
-                                   visual_studio_path,
-                                   windows_sdk_path,
-                                   visual_studio_runtime_dirs,
-                                   "win",
-                                   "x64",
-                                   "environment.x64",
-                                 ],
-                                 "scope")
+if (ninja_use_custom_environment_files) {
+  x64_toolchain_data = exec_script("setup_toolchain.py",
+                                   [
+                                     visual_studio_path,
+                                     windows_sdk_path,
+                                     visual_studio_runtime_dirs,
+                                     "win",
+                                     "x64",
+                                     "environment.x64"
+                                   ],
+                                   "scope")
+} else {
+  x64_toolchain_data = exec_script("setup_toolchain.py",
+                                   [
+                                     "win",
+                                     "x64",
+                                     "environment.x64",
+                                   ],
+                                   "scope")
+}
 
 template("win_x64_toolchains") {
   msvc_toolchain(target_name) {
