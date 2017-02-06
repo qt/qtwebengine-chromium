@@ -161,29 +161,35 @@ def _FormatAsEnvironmentBlock(envvar_dict):
 
 
 def main():
-  if len(sys.argv) != 6:
+  if len(sys.argv) != 6 and len(sys.argv) != 2:
     print('Usage setup_toolchain.py '
           '<visual studio path> <win sdk path> '
           '<runtime dirs> <target_cpu> <goma_disabled>')
+    print('or setup_toolchain.py <target_cpu>')
     sys.exit(2)
-  win_sdk_path = sys.argv[2]
-  runtime_dirs = sys.argv[3]
-  target_cpu = sys.argv[4]
-  goma_disabled = sys.argv[5]
+  if len(sys.argv) == 6:
+    win_sdk_path = sys.argv[2]
+    runtime_dirs = sys.argv[3]
+    target_cpu = sys.argv[4]
+    goma_disabled = sys.argv[5]
+  else:
+    target_cpu = sys.argv[1]
 
   cpus = ('x86', 'x64')
   assert target_cpu in cpus
   vc_bin_dir = ''
   include = ''
 
-  # TODO(scottmg|goma): Do we need an equivalent of
-  # ninja_use_custom_environment_files?
+  ninja_use_custom_environment_files = (len(sys.argv) == 6)
 
   for cpu in cpus:
     # Extract environment variables for subprocesses.
-    env = _LoadToolchainEnv(cpu, win_sdk_path)
-    env['PATH'] = runtime_dirs + os.pathsep + env['PATH']
-    env['GOMA_DISABLED'] = goma_disabled
+    if not ninja_use_custom_environment_files:
+      env = os.environ
+    else:
+      env = _LoadToolchainEnv(cpu, win_sdk_path)
+      env['PATH'] = runtime_dirs + os.pathsep + env['PATH']
+      env['GOMA_DISABLED'] = goma_disabled
 
     if cpu == target_cpu:
       for path in env['PATH'].split(os.pathsep):
@@ -201,11 +207,14 @@ def main():
       f.write(env_block)
 
     # Create a store app version of the environment.
-    if 'LIB' in env:
-      env['LIB']     = env['LIB']    .replace(r'\VC\LIB', r'\VC\LIB\STORE')
-    if 'LIBPATH' in env:
-      env['LIBPATH'] = env['LIBPATH'].replace(r'\VC\LIB', r'\VC\LIB\STORE')
-    env_block = _FormatAsEnvironmentBlock(env)
+    # If using environment it should already be correct, and changing it
+    # would break the normal build
+    if ninja_use_custom_environment_files:
+      if 'LIB' in env:
+        env['LIB']     = env['LIB']    .replace(r'\VC\LIB', r'\VC\LIB\STORE')
+      if 'LIBPATH' in env:
+        env['LIBPATH'] = env['LIBPATH'].replace(r'\VC\LIB', r'\VC\LIB\STORE')
+      env_block = _FormatAsEnvironmentBlock(env)
     with open('environment.winrt_' + cpu, 'wb') as f:
       f.write(env_block)
 
