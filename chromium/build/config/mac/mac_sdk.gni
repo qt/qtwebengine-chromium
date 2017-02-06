@@ -58,7 +58,7 @@ if (mac_sdk_version != mac_sdk_min_build_override &&
                   "test",
                   xcode_version,
                   "-ge",
-                  "0730",
+                  "0721",
                 ],
                 "value") != 1) {
   print(
