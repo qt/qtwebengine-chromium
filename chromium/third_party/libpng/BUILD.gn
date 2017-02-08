@@ -7,6 +7,10 @@ import("//build/config/chromecast_build.gni")
 import("//build/config/mips.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
+declare_args() {
+  use_system_libpng = false
+}
+
 config("libpng_config") {
   include_dirs = [ "." ]
 
@@ -108,13 +112,36 @@ source_set("libpng_sources") {
   configs += [ ":clang_warnings" ]
 }
 
-if (is_win) {
-  component("libpng") {
-    public_deps = [ ":libpng_sources" ]
+if (!use_system_libpng) {
+  if (is_win) {
+    component("libpng") {
+      public_deps = [
+        ":libpng_sources",
+      ]
+    }
+  } else {
+    group("libpng") {
+      public_deps = [
+        ":libpng_sources",
+      ]
+    }
   }
 } else {
-  group("libpng") {
-    public_deps = [ ":libpng_sources" ]
+  import("//build/config/linux/pkg_config.gni")
+  import("//build/shim_headers.gni")
+  pkg_config("system_libpng") {
+    packages = [ "libpng" ]
+  }
+  shim_headers("libpng_shim") {
+    root_path = "."
+    headers = [
+      "png.h",
+      "pngconf.h",
+    ]
+  }
+  source_set("libpng") {
+    deps = [ ":libpng_shim" ]
+    public_configs = [ ":system_libpng" ]
   }
 }
 
