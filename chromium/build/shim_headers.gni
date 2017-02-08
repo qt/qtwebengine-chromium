@@ -5,7 +5,7 @@
 template("shim_headers") {
   action_name = "gen_${target_name}"
   config_name = "${target_name}_config"
-  shim_headers_path = "${root_gen_dir}/shim_headers/${target_name}"
+  shim_headers_path = "${root_gen_dir}"
 
   config(config_name) {
     include_dirs = [ shim_headers_path ]
