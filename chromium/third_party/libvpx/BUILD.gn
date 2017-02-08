@@ -384,19 +384,18 @@ if (use_system_libvpx) {
 }
 
 shim_headers("libvpx_shim") {
-  root_path = "source/libvpx"
+  root_path = "source/libvpx/vpx"
+  prefix = "vpx/"
   headers = [
-    "vpx/vp8.h",
-    "vpx/vp8cx.h",
-    "vpx/vp8dx.h",
-    "vpx/vpx_codec.h",
-    "vpx/vpx_codec_impl_bottom.h",
-    "vpx/vpx_codec_impl_top.h",
-    "vpx/vpx_decoder.h",
-    "vpx/vpx_encoder.h",
-    "vpx/vpx_frame_buffer.h",
-    "vpx/vpx_image.h",
-    "vpx/vpx_integer.h",
+    "vp8.h",
+    "vp8cx.h",
+    "vp8dx.h",
+    "vpx_codec.h",
+    "vpx_decoder.h",
+    "vpx_encoder.h",
+    "vpx_frame_buffer.h",
+    "vpx_image.h",
+    "vpx_integer.h",
   ]
 }
 
