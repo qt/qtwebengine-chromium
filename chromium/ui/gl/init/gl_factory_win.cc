@@ -45,7 +45,7 @@ bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
       return false;
   }
 }
-
+#if !defined(TOOLKIT_QT)
 scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
                                          GLSurface* compatible_surface,
                                          const GLContextAttribs& attribs) {
@@ -75,7 +75,6 @@ scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
   }
 }
 
-#if !defined(TOOLKIT_QT)
 scoped_refptr<GLSurface> CreateViewGLSurface(gfx::AcceleratedWidget window) {
   TRACE_EVENT0("gpu", "gl::init::CreateViewGLSurface");
   switch (GetGLImplementation()) {
