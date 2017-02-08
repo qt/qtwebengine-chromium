@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+declare_args() {
+  use_system_snappy = false
+}
+
 config("snappy_config") {
   include_dirs = [ "src" ]
 
@@ -24,7 +28,7 @@ config("snappy_warnings") {
   }
 }
 
-static_library("snappy") {
+static_library("bundled_snappy") {
   sources = [
     "src/snappy-internal.h",
     "src/snappy-sinksource.cc",
@@ -52,5 +56,30 @@ static_library("snappy") {
     # snappy-stubs-internal.h unapologetically has: using namespace std
     # https://code.google.com/p/snappy/issues/detail?id=70
     configs -= [ "//build/config/clang:extra_warnings" ]
+  }
+}
+
+if (use_system_snappy) {
+  import("//build/shim_headers.gni")
+
+  shim_headers("snappy_shim") {
+    root_path = "src"
+    headers = [
+      "snappy-c.h",
+      "snappy-sinksource.h",
+      "snappy-stubs-public.h",
+      "snappy.h",
+    ]
+  }
+
+  source_set("snappy") {
+    deps = [
+      ":snappy_shim",
+    ]
+    libs = [ "snappy" ]
+  }
+} else {
+  group("snappy") {
+    public_deps = [ ":bundled_snappy" ]
   }
 }

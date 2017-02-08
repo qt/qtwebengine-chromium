@@ -4,6 +4,11 @@
 
 import("//build/config/arm.gni")
 import("//build/config/sanitizers/sanitizers.gni")
+import("//build/config/linux/pkg_config.gni")
+
+declare_args() {
+  use_system_libwebp = false
+}
 
 config("libwebp_config") {
   include_dirs = [ "." ]
@@ -281,16 +286,27 @@ static_library("libwebp_utils") {
   public_configs = [ ":libwebp_utils_warnings" ]
 }
 
-group("libwebp") {
-  deps = [
-    ":libwebp_dec",
-    ":libwebp_demux",
-    ":libwebp_dsp",
-    ":libwebp_enc",
-    ":libwebp_utils",
-  ]
-  public_configs = [ ":libwebp_config" ]
-  if (use_dsp_neon) {
-    deps += [ ":libwebp_dsp_neon" ]
+if (!use_system_libwebp) {
+  group("libwebp") {
+    deps = [
+      ":libwebp_dec",
+      ":libwebp_demux",
+      ":libwebp_dsp",
+      ":libwebp_enc",
+      ":libwebp_utils",
+    ]
+    public_configs = [ ":libwebp_config" ]
+    if (use_dsp_neon) {
+      deps += [ ":libwebp_dsp_neon" ]
+    }
+  }
+}
+
+if (use_system_libwebp) {
+  pkg_config("system_libwebp") {
+    packages = [ "libwebp", "libwebpdemux" ]
+  }
+  group("libwebp") {
+    public_configs = [ ":system_libwebp" ]
   }
 }
