@@ -57,7 +57,7 @@ declare_args() {
   use_coverage = false
 
   # Don't build against bundled zlib.
-  use_system_zlib = false
+  pdfium_use_system_zlib = false
 
   # Don't build against bundled lcms2.
   use_system_lcms2 = false
