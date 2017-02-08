@@ -748,7 +748,6 @@ config("compiler_cpu_abi") {
     if (current_cpu == "x64") {
       cflags += [
         "-m64",
-        "-march=$x64_arch",
       ]
       ldflags += [ "-m64" ]
     } else if (current_cpu == "x86") {
