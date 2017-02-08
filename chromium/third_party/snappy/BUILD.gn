@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//testing/test.gni")
+declare_args() {
+  use_system_snappy = false
+}
 
 config("snappy_config") {
   include_dirs = [ "src" ]
@@ -26,7 +28,7 @@ config("snappy_warnings") {
   }
 }
 
-static_library("snappy") {
+static_library("bundled_snappy") {
   sources = [
     "src/snappy-internal.h",
     "src/snappy-sinksource.cc",
@@ -57,4 +59,39 @@ static_library("snappy") {
   # Chromium doesn't use automake, but we generated config.h offline for all the
   # platforms that we build for.
   defines = [ "HAVE_CONFIG_H" ]
+}
+
+if (use_system_snappy) {
+  import("//build/shim_headers.gni")
+
+  shim_headers("snappy_shim") {
+    root_path = "src"
+    headers = [
+      "snappy-c.h",
+      "snappy-sinksource.h",
+      "snappy.h",
+    ]
+  }
+  shim_headers("snappy_shim_platform") {
+    if (is_win) {
+      root_path = "win32"
+    } else if (is_mac) {
+      root_path = "mac"
+    } else {
+      root_path = "linux"
+    }
+    headers = [ "snappy-stubs-public.h" ]
+  }
+
+  source_set("snappy") {
+    deps = [
+      ":snappy_shim",
+      ":snappy_shim_platform"
+    ]
+    libs = [ "snappy" ]
+  }
+} else {
+  group("snappy") {
+    public_deps = [ ":bundled_snappy" ]
+  }
 }
