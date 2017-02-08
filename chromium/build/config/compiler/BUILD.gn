@@ -249,8 +249,8 @@ assert(!(llvm_force_head_revision && use_remoteexec && host_os != "linux"),
 # this and specify their own include paths.
 config("default_include_dirs") {
   include_dirs = [
-    "//",
     root_gen_dir,
+    "//",
   ]
 }
 
