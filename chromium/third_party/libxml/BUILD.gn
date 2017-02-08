@@ -14,6 +14,10 @@ if (is_linux || is_chromeos || is_android || is_nacl || is_fuchsia) {
 
 import("//third_party/libxml/libxml_visibility.gni")
 
+declare_args() {
+  use_system_libxml = false
+}
+
 config("libxml_config") {
   # Define LIBXML_STATIC as nothing to match how libxml.h (an internal header)
   # defines LIBXML_STATIC, otherwise we get the macro redefined warning from
@@ -130,25 +134,12 @@ static_library("libxml_utils") {
   public_configs = [ ":libxml_config" ]
 }
 
-static_library("libxml") {
+static_library("bundled_libxml") {
   # Do not expand this visibility list without first consulting with the
   # Security Team.
   visibility = [
-    ":libxml_utils",
-    ":xml_reader",
-    ":xml_writer",
-    "//chromecast/internal",
-    "//testing/libfuzzer/*",
-    "//third_party/blink/renderer/*",
-    "//third_party/fontconfig",
-    "//third_party/libxslt",
-    "//third_party/maldoca/*",
+    ":libxml",
   ]
-  if (is_ios) {
-    foreach(tgt, ios_libxml_visibility_additions) {
-      visibility += [ "//ios_internal/$tgt" ]
-    }
-  }
 
   output_name = "libxml2"
 
@@ -322,4 +313,58 @@ static_library("libxml") {
   }
 
   include_dirs = [ "$os_include" ]
+}
+
+if (use_system_libxml) {
+  import("//build/config/linux/pkg_config.gni")
+  pkg_config("system_libxml") {
+    packages = [ "libxml-2.0" ]
+  }
+  source_set("libxml") {
+    sources = [
+      "chromium/libxml_utils.cc",
+      "chromium/libxml_utils.h",
+    ]
+
+    public_configs = [ ":system_libxml" ]
+    # Do not expand this visibility list without first consulting with the
+    # Security Team.
+    visibility = [
+      ":libxml_utils",
+      ":xml_reader",
+      ":xml_writer",
+      "//chromecast/internal",
+      "//testing/libfuzzer/*",
+      "//third_party/blink/renderer/*",
+      "//third_party/fontconfig",
+      "//third_party/libxslt/*",
+    ]
+    if (is_ios) {
+      foreach(tgt, ios_libxml_visibility_additions) {
+        visibility += [ "//ios_internal/$tgt" ]
+      }
+    }
+  }
+} else {
+  group("libxml") {
+    public_deps = [ ":bundled_libxml" ]
+    # Do not expand this visibility list without first consulting with the
+    # Security Team.
+    visibility = [
+      ":libxml_utils",
+      ":xml_reader",
+      ":xml_writer",
+      "//chromecast/internal",
+      "//testing/libfuzzer/*",
+      "//third_party/blink/renderer/*",
+      "//third_party/fontconfig",
+      "//third_party/libxslt/*",
+      "//third_party/maldoca/*",
+    ]
+    if (is_ios) {
+      foreach(tgt, ios_libxml_visibility_additions) {
+        visibility += [ "//ios_internal/$tgt" ]
+      }
+    }
+  }
 }
