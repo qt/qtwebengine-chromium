@@ -340,7 +340,7 @@ config("system_zlib_config") {
 }
 
 group("zlib") {
-  if (use_system_zlib) {
+  if (pdfium_use_system_zlib) {
     public_configs = [ ":system_zlib_config" ]
   } else {
     public_deps = [ "//third_party/zlib" ]
@@ -435,7 +435,7 @@ config("system_libpng_config") {
 }
 
 group("png") {
-  if (use_system_libpng) {
+  if (pdfium_use_system_libpng) {
     public_configs = [ ":system_libpng_config" ]
   } else {
     public_deps = [ ":fx_lpng" ]
