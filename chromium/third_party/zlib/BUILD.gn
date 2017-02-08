@@ -2,6 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/shim_headers.gni")
+
+declare_args() {
+  use_system_minizip = false
+}
+
 config("zlib_config") {
   include_dirs = [ "." ]
 }
@@ -97,7 +103,7 @@ config("minizip_warnings") {
   }
 }
 
-static_library("minizip") {
+static_library("bundled_minizip") {
   sources = [
     "contrib/minizip/ioapi.c",
     "contrib/minizip/ioapi.h",
@@ -133,4 +139,56 @@ static_library("minizip") {
     ":minizip_warnings",
   ]
   public_configs = [ ":zlib_config" ]
+}
+
+shim_headers("minizip_shim") {
+  root_path = "contrib"
+  headers = [
+    "minizip/crypt.h",
+    "minizip/ioapi.h",
+    "minizip/iowin32.h",
+    "minizip/mztools.h",
+    "minizip/unzip.h",
+    "minizip/zip.h",
+  ]
+}
+
+source_set("system_minizip") {
+  deps = [
+    ":minizip_shim",
+  ]
+  libs = [ "minizip" ]
+}
+
+group("minizip") {
+  if (use_system_minizip) {
+    public_deps = [ ":system_minizip" ]
+  } else {
+    public_deps = [ ":bundled_minizip" ]
+  }
+}
+
+static_library("zip") {
+  sources = [
+    "google/zip.cc",
+    "google/zip.h",
+    "google/zip_internal.cc",
+    "google/zip_internal.h",
+    "google/zip_reader.cc",
+    "google/zip_reader.h",
+  ]
+  deps = [
+    ":minizip",
+    "//base",
+  ]
+}
+
+static_library("compression_utils") {
+  sources = [
+    "google/compression_utils.cc",
+    "google/compression_utils.h",
+  ]
+  deps = [
+    ":zlib",
+  ]
 }
