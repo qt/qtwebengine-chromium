@@ -2324,6 +2324,8 @@ jumbo_source_set("browser") {
     sources -= [
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
+      "accessibility/accessibility_ui.cc",
+      "accessibility/accessibility_ui.h"
     ]
     if (is_win) {
       sources -= [
@@ -2333,6 +2335,9 @@ jumbo_source_set("browser") {
         "accessibility/browser_accessibility_manager_win.h",
         "accessibility/browser_accessibility_win.cc",
         "accessibility/browser_accessibility_win.h",
+        "accessibility/accessibility_tree_formatter_win.cc",
+        "renderer_host/legacy_render_widget_host_win.cc",
+        "renderer_host/legacy_render_widget_host_win.h"
       ]
     }
     if (use_aura) {

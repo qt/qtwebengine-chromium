@@ -31,7 +31,7 @@ static int CALLBACK EnumFontFamExProc(ENUMLOGFONTEXW* logical_font,
   }
   return 1;
 }
-
+#if !defined(TOOLKIT_QT)
 std::unique_ptr<base::ListValue> GetFontList_SlowBlocking() {
   std::set<base::string16> font_names;
 
@@ -54,5 +54,6 @@ std::unique_ptr<base::ListValue> GetFontList_SlowBlocking() {
   }
   return font_list;
 }
+#endif
 
 }  // namespace content
