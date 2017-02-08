@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+declare_args() {
+  use_system_libxslt = false
+}
+
 # This file depends on the legacy global sources assignment filter. It should
 # be converted to check target platform before assigning source files to the
 # sources variable. Remove this import and set_sources_assignment_filter call
@@ -27,7 +31,7 @@ config("libxslt_warnings") {
   }
 }
 
-static_library("libxslt") {
+static_library("bundled_libxslt") {
   sources = [
     "linux/config.h",
     "mac/config.h",
@@ -105,5 +109,21 @@ static_library("libxslt") {
 
   deps = [ "//third_party/libxml" ]
 
-  visibility = [ "//third_party/blink/renderer/*" ]
+  visibility = [ ":libxslt" ]
+}
+
+if (use_system_libxslt) {
+  import("//build/config/linux/pkg_config.gni")
+  pkg_config("system_libxslt") {
+    packages = [ "libxslt" ]
+  }
+  source_set("libxslt") {
+    public_configs = [ ":system_libxslt" ]
+    visibility = [ "//third_party/blink/renderer/*" ]
+  }
+} else {
+  group("libxslt") {
+    public_deps = [ ":bundled_libxslt" ]
+    visibility = [ "//third_party/blink/renderer/*" ]
+  }
 }
