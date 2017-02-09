@@ -509,6 +509,8 @@ source_set("browser") {
     sources -= [
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
+      "accessibility/accessibility_ui.cc",
+      "accessibility/accessibility_ui.h",
     ]
     deps -= [ "//content/browser/tracing:resources" ]
     if (use_aura) {
