@@ -221,6 +221,10 @@ declare_args() {
   # Similar to the ARM hard float ABI but on MIPS.
   v8_use_mips_abi_hardfloat = true
 
+  # If true, doesn't compile debug symbols into v8base reducing the
+  # size of the binary and increasing the speed of gdb.
+  remove_v8base_debug_symbols = false
+
   # Controls the threshold for on-heap/off-heap Typed Arrays.
   v8_typed_array_max_size_in_heap = 64
 
@@ -4523,6 +4527,11 @@ v8_source_set("v8_base_without_compiler") {
       v8_current_cpu == "s390" || v8_current_cpu == "s390x" ||
       v8_current_cpu == "riscv64") {
     libs += [ "atomic" ]
+  }
+
+  if (remove_v8base_debug_symbols) {
+    v8_remove_configs += [ "//build/config/compiler:default_symbols" ]
+    v8_add_configs += [ "//build/config/compiler:no_symbols" ]
   }
 
   if (v8_enable_vtunetracemark && (is_linux || is_chromeos || is_win)) {
