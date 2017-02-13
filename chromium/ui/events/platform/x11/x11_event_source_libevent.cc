@@ -178,6 +178,10 @@ void X11EventSourceLibevent::RemoveXEventDispatcher(
 }
 
 void X11EventSourceLibevent::ProcessXEvent(XEvent* xevent) {
+#if defined(USE_X11)
+  // DispatchEvent takes ui::PlatformEvent which is XEvent*
+  DispatchEvent(xevent);
+#else
   std::unique_ptr<ui::Event> translated_event = TranslateXEventToEvent(*xevent);
   if (translated_event) {
 #if defined(OS_CHROMEOS)
@@ -192,6 +196,7 @@ void X11EventSourceLibevent::ProcessXEvent(XEvent* xevent) {
     // directly to XEventDispatchers.
     DispatchXEventToXEventDispatchers(xevent);
   }
+#endif
 }
 
 void X11EventSourceLibevent::AddEventWatcher() {
@@ -249,5 +254,11 @@ void X11EventSourceLibevent::OnFileCanReadWithoutBlocking(int fd) {
 void X11EventSourceLibevent::OnFileCanWriteWithoutBlocking(int fd) {
   NOTREACHED();
 }
+
+#if defined(USE_X11)
+std::unique_ptr<PlatformEventSource> PlatformEventSource::CreateDefault() {
+  return base::MakeUnique<X11EventSourceLibevent>(gfx::GetXDisplay());
+}
+#endif
 
 }  // namespace ui
