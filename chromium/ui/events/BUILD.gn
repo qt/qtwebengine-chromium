@@ -145,16 +145,17 @@ component("events") {
 
   if (use_x11) {
     sources += [ "x/events_x.cc" ]
-    configs += [
-      "//build/config/linux:glib",
-      "//build/config/linux:x11",
-    ]
+    configs += [ "//build/config/linux:x11" ]
     deps += [
       "//ui/events/devices",
       "//ui/events/devices/x11",
       "//ui/events/x",
       "//ui/gfx/x",
     ]
+  }
+
+  if (use_glib) {
+    configs += [ "//build/config/linux:glib" ]
   }
 
   if (use_ozone || (is_android && use_aura)) {
