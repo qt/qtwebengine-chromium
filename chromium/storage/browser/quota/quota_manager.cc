@@ -903,7 +903,6 @@ void QuotaManager::GetUsageAndQuotaForWebApps(
     return;
   }
 
-  DCHECK(origin == origin.GetOrigin());
   LazyInitialize();
 
   bool unlimited = IsStorageUnlimited(origin, type);
