@@ -3792,10 +3792,14 @@ static_library("test_support") {
       "test/test_confirm_bubble_model.cc",
       "test/test_confirm_bubble_model.h",
     ]
+
     deps += [
-      "//chrome/test:test_support_ui",
       "//components/zoom",
     ]
+
+    if (toolkit_views) {
+      deps += [ "//chrome/test:test_support_ui" ]
+    }
   }
 
   if (is_chromeos) {
