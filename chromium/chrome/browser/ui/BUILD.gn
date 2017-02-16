@@ -3528,7 +3528,10 @@ static_library("test_support") {
       "test/test_confirm_bubble_model.cc",
       "test/test_confirm_bubble_model.h",
     ]
-    deps += [ "//chrome/test:test_support_ui" ]
+
+    if (toolkit_views) {
+      deps += [ "//chrome/test:test_support_ui" ]
+    }
   }
 
   if (enable_extensions) {
