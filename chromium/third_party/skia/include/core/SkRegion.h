@@ -428,6 +428,8 @@ private:
 
     int count_runtype_values(int* itop, int* ibot) const;
 
+    bool isValid() const;
+
     static void BuildRectRuns(const SkIRect& bounds,
                               RunType runs[kRectRegionRuns]);
 
