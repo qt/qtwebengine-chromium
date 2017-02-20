@@ -1601,7 +1601,7 @@ source_set("browser") {
       "//ppapi/proxy:ipc",
       "//ppapi/shared_impl",
     ]
-    if (!use_ozone || use_pango) {
+    if (!use_ozone || use_pango || use_qt) {
       sources -= [ "renderer_host/pepper/pepper_truetype_font_list_ozone.cc" ]
     }
     if (!use_pango) {
