@@ -898,12 +898,23 @@ def ExpandVariables(input, phase, variables, build_file):
         else:
           # Fix up command with platform specific workarounds.
           contents = FixupPlatformCommand(contents)
+
+          osenv = os.environ
+
+          if (osenv.has_key('PKG_CONFIG_SYSROOT_DIR')
+               and osenv['PKG_CONFIG_SYSROOT_DIR'] == ''):
+            osenv = dict(os.environ)
+            del osenv['PKG_CONFIG_SYSROOT_DIR']
+          else:
+            osenv = None
+
           try:
             p = subprocess.Popen(contents, shell=use_shell,
                                  stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
                                  stdin=subprocess.PIPE,
-                                 cwd=build_file_dir)
+                                 cwd=build_file_dir,
+                                 env=osenv)
           except Exception, e:
             raise GypError("%s while executing command '%s' in %s" %
                            (e, contents, build_file))
