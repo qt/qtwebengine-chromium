@@ -750,7 +750,6 @@ config("neteq_config") {
   include_dirs = [
     # Need Opus header files for the audio classifier.
     "//third_party/opus/src/celt",
-    "//third_party/opus/src/include",
     "//third_party/opus/src/src",
   ]
 }
