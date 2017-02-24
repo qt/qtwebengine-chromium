@@ -13,6 +13,8 @@ namespace ui {
 
 IdleQueryX11::IdleQueryX11() : connection_(x11::Connection::Get()) {
   // Let the server know the client version before making any requests.
+  if (!connection_->display())
+    return;
   connection_->screensaver().QueryVersion(
       {x11::ScreenSaver::major_version, x11::ScreenSaver::minor_version});
 }
@@ -20,6 +22,8 @@ IdleQueryX11::IdleQueryX11() : connection_(x11::Connection::Get()) {
 IdleQueryX11::~IdleQueryX11() = default;
 
 int IdleQueryX11::IdleTime() {
+  if (!connection_->display())
+    return 0;
   if (auto reply = connection_->screensaver()
                        .QueryInfo({connection_->default_root()})
                        .Sync()) {

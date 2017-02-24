@@ -44,6 +44,8 @@ declare_args() {
 
   # Whether we should use glib, a low level C utility library.
   use_glib = is_desktop_linux && !is_chromecast
+
+  use_xscrnsaver = !is_chromeos && use_x11
 }
 
 # Make sure glib is not used if building for ChromeOS/Chromecast

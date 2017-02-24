@@ -53,8 +53,8 @@ component("idle") {
   if (is_linux && !is_chromeos) {
     sources += [ "idle_linux.cc" ]
   }
-
-  if (use_x11 && !is_chromeos) {
+  if (use_xscrnsaver) {
+    defines += [ "USE_XSCRNSAVER" ]
     deps += [ "//ui/gfx/x" ]
     sources += [
       "idle_query_x11.cc",
