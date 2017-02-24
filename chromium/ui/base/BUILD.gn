@@ -510,10 +510,11 @@ component("base") {
 
     # X11 drag and drop wants to use common drag and drop types.
     allow_circular_includes_from = [ "//ui/base/x" ]
+  }
 
-    if (!is_chromeos_ash) {
-      deps += [ "//ui/gfx/x" ]
-    }
+  if (use_xscrnsaver) {
+    defines += [ "USE_XSCRNSAVER" ]
+    deps += [ "//ui/gfx/x" ]
   }
 
   if (use_x11 && use_aura && is_linux) {
