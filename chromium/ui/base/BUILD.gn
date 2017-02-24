@@ -484,7 +484,8 @@ jumbo_component("base") {
     # X11 drag and drop wants to use common drag and drop types.
     allow_circular_includes_from = [ "//ui/base/x" ]
 
-    if (!is_chromeos) {
+    if (use_xscrnsaver) {
+      defines += [ "USE_XSCRNSAVER" ]
       configs += [ "//build/config/linux:xscrnsaver" ]
       deps += [ "//ui/gfx/x" ]
     }

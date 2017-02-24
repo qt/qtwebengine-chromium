@@ -60,11 +60,12 @@ component("idle") {
     sources += [ "idle_linux.cc" ]
   }
 
-  if (use_x11 && !is_chromeos) {
+  if (use_xscrnsaver) {
     configs += [
       "//build/config/linux:x11",
       "//build/config/linux:xscrnsaver",
     ]
+    defines += [ "USE_XSCRNSAVER" ]
     deps += [ "//ui/gfx/x" ]
     sources += [
       "idle_query_x11.cc",

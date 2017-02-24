@@ -26,7 +26,9 @@
 #include "ui/gfx/switches.h"
 
 #if defined(USE_X11)
+#if defined(USE_XSCRNSAVER)
 #include <X11/extensions/scrnsaver.h>
+#endif
 
 #include "ui/gfx/x/x11_types.h"  // nogncheck
 #endif
@@ -135,6 +137,7 @@ void GetDbusStringsForApi(DBusAPI api,
 // Check whether the X11 Screen Saver Extension can be used to disable the
 // screen saver. Must be called on the UI thread.
 bool X11ScreenSaverAvailable() {
+#if defined(USE_XSCRNSAVER)
   // X Screen Saver isn't accessible in headless mode.
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless))
     return false;
@@ -153,6 +156,9 @@ bool X11ScreenSaverAvailable() {
     return false;
 
   return major > 1 || (major == 1 && minor >= 1);
+#else
+  return false;
+#endif
 }
 
 // Wrapper for XScreenSaverSuspend. Checks whether the X11 Screen Saver
@@ -162,8 +168,10 @@ void X11ScreenSaverSuspendSet(bool suspend) {
   if (!X11ScreenSaverAvailable())
     return;
 
+#if defined(USE_XSCRNSAVER)
   XDisplay* display = gfx::GetXDisplay();
   XScreenSaverSuspend(display, suspend);
+#endif
 }
 #endif
 
