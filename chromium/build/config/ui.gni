@@ -48,6 +48,8 @@ declare_args() {
   # True means the UI is built using the "views" framework.
   toolkit_views =
       (is_mac || is_win || is_chromeos || use_aura) && !is_chromecast
+
+  use_xscrnsaver = !is_chromeos
 }
 
 # Additional dependent variables -----------------------------------------------
@@ -67,6 +69,10 @@ use_gtk = use_x11 && !use_qt
 # Turn off glib if Ozone is enabled.
 if (use_ozone) {
   use_glib = false
+}
+
+if (!use_x11) {
+  use_xscrnsaver = false
 }
 
 if (use_gtk) {

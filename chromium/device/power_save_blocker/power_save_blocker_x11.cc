@@ -4,7 +4,9 @@
 
 #include <X11/Xlib.h>
 #include <X11/extensions/dpms.h>
+#if defined(USE_XSCRNSAVER)
 #include <X11/extensions/scrnsaver.h>
+#endif
 #include <stdint.h>
 
 #include <memory>
@@ -419,8 +421,10 @@ void PowerSaveBlocker::Delegate::XSSSuspendSet(bool suspend) {
   if (!XSSAvailable())
     return;
 
+#if defined(USE_XSCRNSAVER)
   XDisplay* display = gfx::GetXDisplay();
   XScreenSaverSuspend(display, suspend);
+#endif
 }
 
 bool PowerSaveBlocker::Delegate::DPMSEnabled() {
@@ -436,6 +440,7 @@ bool PowerSaveBlocker::Delegate::DPMSEnabled() {
 }
 
 bool PowerSaveBlocker::Delegate::XSSAvailable() {
+#if defined(USE_XSCRNSAVER)
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
   // X Screen Saver isn't accessible in headless mode.
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless))
@@ -452,6 +457,9 @@ bool PowerSaveBlocker::Delegate::XSSAvailable() {
     return false;
 
   return major > 1 || (major == 1 && minor >= 1);
+#else
+  return false;
+#endif
 }
 
 DBusAPI PowerSaveBlocker::Delegate::SelectAPI() {
