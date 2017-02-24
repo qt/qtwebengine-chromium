@@ -53,6 +53,9 @@ declare_args() {
   # We always build Google Chrome and Chromecast with proprietary codecs.
   proprietary_codecs = is_chrome_branded || is_chromecast
 
+  # Strips out non appstore compliant code
+  appstore_compliant_code = false
+
   enable_captive_portal_detection = !is_android && !is_ios && !is_chromecast
 
   # Enables use of the session service, which is enabled by default.

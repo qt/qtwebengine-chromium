@@ -232,6 +232,9 @@ config("feature_flags") {
   if (proprietary_codecs) {
     defines += [ "USE_PROPRIETARY_CODECS" ]
   }
+  if (appstore_compliant_code) {
+    defines += [ "USE_APPSTORE_COMPLIANT_CODE" ]
+  }
   if (enable_hangout_services_extension) {
     defines += [ "ENABLE_HANGOUT_SERVICES_EXTENSION=1" ]
   }

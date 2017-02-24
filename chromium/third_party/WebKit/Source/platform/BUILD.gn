@@ -1407,8 +1407,6 @@ component("platform") {
 
   if (is_mac) {
     sources -= [
-      # Uses KillRingMac.mm instead.
-      "KillRingNone.cpp",
       "fonts/skia/FontCacheSkia.cpp",
       "scroll/ScrollAnimator.cpp",
       "scroll/ScrollAnimator.h",
@@ -1417,6 +1415,17 @@ component("platform") {
       "text/LocaleICU.cpp",
       "text/LocaleICU.h",
     ]
+
+    if (appstore_compliant_code) {
+      sources -= [
+        "mac/KillRingMac.mm"
+      ]
+    } else {
+      sources -= [
+        # Uses KillRingMac.mm instead.
+        "KillRingNone.cpp",
+      ]
+    }
 
     configs += [ "//third_party/WebKit/Source:mac_precompiled_headers" ]
     libs = [
