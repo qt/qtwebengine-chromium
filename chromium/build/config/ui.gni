@@ -58,6 +58,8 @@ declare_args() {
 
   # Allow aura to access x11 clipboard.
   enable_clipboard_aurax11 = false
+
+  use_xscrnsaver = !is_chromeos
 }
 
 # Additional dependent variables -----------------------------------------------
@@ -79,6 +81,10 @@ use_gtk = use_x11 && !use_qt
 # Turn off glib if Ozone is enabled.
 if (use_ozone) {
   use_glib = false
+}
+
+if (!use_x11) {
+  use_xscrnsaver = false
 }
 
 if (use_gtk) {

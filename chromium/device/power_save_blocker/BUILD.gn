@@ -32,7 +32,8 @@ component("power_save_blocker") {
 
   if (use_x11) {
     configs += [ "//build/config/linux:x11" ]
-    if (!is_chromeos) {
+    if (use_xscrnsaver) {
+      defines += [ "USE_XSCRNSAVER" ]
       configs += [ "//build/config/linux:xscrnsaver" ]
     }
     deps += [ "//ui/gfx/x" ]
