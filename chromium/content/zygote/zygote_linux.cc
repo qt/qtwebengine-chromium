@@ -502,12 +502,20 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
 
   // Always receive a real PID from the zygote host, though it might
   // be invalid (see below).
-  base::ProcessId real_pid;
-  {
+  base::ProcessId real_pid = -1;
+  do {
     std::vector<base::ScopedFD> recv_fds;
     char buf[kZygoteMaxMessageLength];
-    const ssize_t len = base::UnixDomainSocket::RecvMsg(
+    ssize_t len = 0;
+    len = base::UnixDomainSocket::RecvMsg(
         kZygoteSocketPairFd, buf, sizeof(buf), &recv_fds);
+    if (len == 0) {
+      LOG(WARNING) << "Empty message received";
+      len = base::UnixDomainSocket::RecvMsg(
+          kZygoteSocketPairFd, buf, sizeof(buf), &recv_fds);
+    }
+    if (len == 0)
+      break;
     CHECK_GT(len, 0);
     CHECK(recv_fds.empty());
 
@@ -518,7 +526,7 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
     CHECK(iter.ReadInt(&kind));
     CHECK(kind == kZygoteCommandForkRealPID);
     CHECK(iter.ReadInt(&real_pid));
-  }
+  } while (false);
 
   // Fork failed.
   if (pid < 0) {
