@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 
 #include "ui/base/idle/idle.h"
-
 #include "ui/base/idle/idle_internal.h"
 
-#if defined(USE_X11)
+#if defined(USE_XSCRNSAVER)
 #include "ui/base/x/x11_idle_query.h"
 #include "ui/base/x/x11_screensaver_window_finder.h"
 #endif
@@ -28,7 +27,7 @@ int CalculateIdleTime() {
     return screen->CalculateIdleTime().InSeconds();
   }
 #endif
-#if defined(USE_X11)
+#if defined(USE_XSCRNSAVER)
   IdleQueryX11 idle_query;
   return idle_query.IdleTime();
 #else
@@ -50,7 +49,7 @@ bool CheckIdleStateIsLocked() {
     return screen->IsScreenSaverActive();
   }
 #endif
-#if defined(USE_X11)
+#if defined(USE_XSCRNSAVER)
   // Usually the screensaver is used to lock the screen.
   return ScreensaverWindowFinder::ScreensaverWindowExists();
 #else
