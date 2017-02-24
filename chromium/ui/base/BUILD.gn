@@ -434,13 +434,14 @@ jumbo_component("base") {
     public_deps += [ "//ui/base/x" ]
     configs += [ "//build/config/linux:x11" ]
 
-    if (!is_chromeos) {
+    if (use_xscrnsaver) {
       sources += [
         "idle/idle_query_x11.cc",
         "idle/idle_query_x11.h",
         "idle/screensaver_window_finder_x11.cc",
         "idle/screensaver_window_finder_x11.h",
       ]
+      defines += [ "USE_XSCRNSAVER" ]
       configs += [ "//build/config/linux:xscrnsaver" ]
       deps += [ "//ui/gfx/x" ]
     }
