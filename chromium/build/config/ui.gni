@@ -38,6 +38,8 @@ declare_args() {
 
   # Whether we should use glib, a low level C utility library.
   use_glib = is_linux && !use_ozone
+
+  use_xscrnsaver = !is_chromeos
 }
 
 # Additional dependent variables -----------------------------------------------
@@ -49,6 +51,10 @@ use_x11 = is_linux && !use_ozone
 
 # Make sure glib is not used if building for ChromeOS/Chromecast
 assert(!use_glib || (is_linux && !is_chromeos && !is_chromecast))
+
+if (!use_x11) {
+  use_xscrnsaver = false
+}
 
 # Whether to use atk, the Accessibility ToolKit library
 use_atk = is_desktop_linux && !use_qt
