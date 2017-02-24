@@ -25,6 +25,8 @@ bool ScreensaverWindowFinder::ScreensaverWindowExists() {
     return false;
 
   auto* connection = x11::Connection::Get();
+  if (!connection->GetXlibDisplay())
+    return false;
 
   // Let the server know the client version before making any requests.
   connection->screensaver().QueryVersion(

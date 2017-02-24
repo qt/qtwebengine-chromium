@@ -55,7 +55,8 @@ component("idle") {
     sources += [ "idle_linux.cc" ]
   }
 
-  if (use_x11 && !is_chromeos_ash) {
+  if (use_xscrnsaver) {
+    defines += [ "USE_XSCRNSAVER" ]
     deps += [ "//ui/base/x" ]
   }
 
