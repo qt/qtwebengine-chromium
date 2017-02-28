@@ -6,9 +6,15 @@ import("//build/config/android/config.gni")
 import("//build/config/arm.gni")
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/ios/config.gni")
+import("//build/config/linux/pkg_config.gni")
 import("//build/config/sanitizers/sanitizers.gni")
+import("//build/shim_headers.gni")
 import("//third_party/libvpx/libvpx_srcs.gni")
 import("//third_party/nasm/nasm_assemble.gni")
+
+declare_args() {
+  use_system_libvpx = false
+}
 
 # Sets the architecture name for building libvpx.
 if (current_cpu == "x86") {
@@ -306,7 +312,7 @@ if (current_cpu == "arm" && arm_assembly_sources != []) {
   }
 }
 
-static_library("libvpx") {
+static_library("bundled_libvpx") {
   if (!is_debug && (is_win || is_chromeos)) {
     configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
@@ -381,7 +387,7 @@ static_library("libvpx") {
   public_configs = [ ":libvpx_external_config" ]
 }
 
-static_library("libvp9rc") {
+static_library("bundled_libvp9rc") {
   if (!is_debug && is_win) {
     configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
@@ -398,4 +404,43 @@ static_library("libvp9rc") {
   public_deps = [ ":libvpx" ]
 
   public_configs = [ ":libvpx_external_config" ]
+}
+
+if (use_system_libvpx) {
+  pkg_config("system_libvpx") {
+    packages = [ "vpx" ]
+  }
+}
+
+shim_headers("libvpx_shim") {
+  root_path = "source/libvpx/vpx"
+  prefix = "vpx/"
+  headers = [
+    "vp8.h",
+    "vp8cx.h",
+    "vp8dx.h",
+    "vpx_codec.h",
+    "vpx_decoder.h",
+    "vpx_encoder.h",
+    "vpx_frame_buffer.h",
+    "vpx_image.h",
+    "vpx_integer.h",
+  ]
+}
+
+group("libvpx") {
+  if (use_system_libvpx) {
+    deps = [ ":libvpx_shim" ]
+    public_configs = [ ":system_libvpx" ]
+  } else {
+    public_deps = [ ":bundled_libvpx" ]
+  }
+}
+
+group("libvp9rc") {
+  if (use_system_libvpx) {
+    public_deps = [ ":libvpx" ]
+  } else {
+    public_deps = [ ":bundled_libvp9rc" ]
+  }
 }
