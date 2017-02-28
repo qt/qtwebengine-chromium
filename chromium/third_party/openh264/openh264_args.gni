@@ -9,4 +9,5 @@ declare_args() {
   # CHECK THE OPENH264 LICENSE/PATENT BEFORE BUILDING, see
   # http://www.openh264.org/.
   use_openh264 = false
+  use_system_openh264 = false
 }
