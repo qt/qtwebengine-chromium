@@ -3,7 +3,14 @@
 # found in the LICENSE file.
 
 import("//build/config/host_byteorder.gni")
+
+import("//build/config/linux/pkg_config.gni")
+import("//build/shim_headers.gni")
 import("//third_party/icu/config.gni")
+
+declare_args() {
+  use_system_icu = false
+}
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -23,7 +30,7 @@ group("icu") {
 }
 
 # Shared config used by ICU and all dependents.
-config("icu_config") {
+config("bundled_icu_config") {
   defines = [
     # Tell ICU to not insert |using namespace icu;| into its headers,
     # so that chrome's source explicitly has to use |icu::|.
@@ -108,7 +115,7 @@ config("icu_code") {
   }
 }
 
-component("icui18n") {
+component("bundled_icui18n") {
   # find  source/i18n -maxdepth 1  ! -type d  | egrep  '\.(c|cpp|h)$' |\
   # sort | sed 's/^\(.*\)$/    "\1",/'
   sources = [
@@ -550,7 +557,7 @@ component("icui18n") {
   public_configs = [ ":icu_config" ]
 }
 
-component("icuuc") {
+component("bundled_icuuc") {
   # find  source/common -maxdepth 1  ! -type d  | egrep  '\.(c|cpp|h)$' |\
   # sort | sed 's/^\(.*\)$/    "\1",/'
   sources = [
@@ -994,7 +1001,6 @@ if (current_cpu == "mips" || current_cpu == "mips64" ||
 }
 data_bundle = "${data_bundle_prefix}.dat"
 
-# TODO(GYP) support use_system_icu.
 if (icu_use_data_file) {
   if (is_ios) {
     bundle_data("icudata") {
@@ -1042,5 +1048,241 @@ if (icu_use_data_file) {
       defines = [ "U_HIDE_DATA_SYMBOL" ]
       deps = [ ":make_data_assembly", ]
     }
+  }
+}
+
+config("system_icu_config") {
+  defines = [
+    "USING_SYSTEM_ICU=1",
+    "ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC",
+  ]
+}
+
+if (use_system_icu) {
+  pkg_config("system_icui18n") {
+    packages = [ "icu-i18n" ]
+  }
+
+  pkg_config("system_icuuc") {
+    packages = [ "icu-uc" ]
+  }
+}
+
+shim_headers("icui18n_shim") {
+  root_path = "source/i18n"
+  headers = [
+    # This list can easily be updated using the command below:
+    # find third_party/icu/source/i18n/unicode \
+    # -iname '*.h' -printf '"%p",\n' | \
+    # sed -e 's|third_party/icu/i18n/common/||' | sort -u
+    "unicode/alphaindex.h",
+    "unicode/basictz.h",
+    "unicode/calendar.h",
+    "unicode/choicfmt.h",
+    "unicode/coleitr.h",
+    "unicode/coll.h",
+    "unicode/compactdecimalformat.h",
+    "unicode/curramt.h",
+    "unicode/currpinf.h",
+    "unicode/currunit.h",
+    "unicode/datefmt.h",
+    "unicode/dcfmtsym.h",
+    "unicode/decimfmt.h",
+    "unicode/dtfmtsym.h",
+    "unicode/dtitvfmt.h",
+    "unicode/dtitvinf.h",
+    "unicode/dtptngen.h",
+    "unicode/dtrule.h",
+    "unicode/fieldpos.h",
+    "unicode/fmtable.h",
+    "unicode/format.h",
+    "unicode/fpositer.h",
+    "unicode/gender.h",
+    "unicode/gregocal.h",
+    "unicode/locdspnm.h",
+    "unicode/measfmt.h",
+    "unicode/measunit.h",
+    "unicode/measure.h",
+    "unicode/msgfmt.h",
+    "unicode/numfmt.h",
+    "unicode/numsys.h",
+    "unicode/plurfmt.h",
+    "unicode/plurrule.h",
+    "unicode/rbnf.h",
+    "unicode/rbtz.h",
+    "unicode/regex.h",
+    "unicode/region.h",
+    "unicode/reldatefmt.h",
+    "unicode/scientificnumberformatter.h",
+    "unicode/search.h",
+    "unicode/selfmt.h",
+    "unicode/simpletz.h",
+    "unicode/smpdtfmt.h",
+    "unicode/sortkey.h",
+    "unicode/stsearch.h",
+    "unicode/tblcoll.h",
+    "unicode/timezone.h",
+    "unicode/tmunit.h",
+    "unicode/tmutamt.h",
+    "unicode/tmutfmt.h",
+    "unicode/translit.h",
+    "unicode/tzfmt.h",
+    "unicode/tznames.h",
+    "unicode/tzrule.h",
+    "unicode/tztrans.h",
+    "unicode/ucal.h",
+    "unicode/ucol.h",
+    "unicode/ucoleitr.h",
+    "unicode/ucsdet.h",
+    "unicode/ucurr.h",
+    "unicode/udat.h",
+    "unicode/udateintervalformat.h",
+    "unicode/udatpg.h",
+    "unicode/udisplaycontext.h",
+    "unicode/ufieldpositer.h",
+    "unicode/uformattable.h",
+    "unicode/ugender.h",
+    "unicode/uldnames.h",
+    "unicode/ulocdata.h",
+    "unicode/umsg.h",
+    "unicode/unirepl.h",
+    "unicode/unum.h",
+    "unicode/unumsys.h",
+    "unicode/upluralrules.h",
+    "unicode/uregex.h",
+    "unicode/uregion.h",
+    "unicode/usearch.h",
+    "unicode/uspoof.h",
+    "unicode/utmscale.h",
+    "unicode/utrans.h",
+    "unicode/vtzone.h",
+  ]
+}
+
+shim_headers("icuuc_shim") {
+  root_path = "source/common"
+  headers = [
+    # This list can easily be updated using the command below:
+    # find third_party/icu/source/common/unicode \
+    # -iname '*.h' -printf '"%p",\n' | \
+    # sed -e 's|third_party/icu/source/common/||' | sort -u
+    "unicode/appendable.h",
+    "unicode/brkiter.h",
+    "unicode/bytestream.h",
+    "unicode/bytestrie.h",
+    "unicode/bytestriebuilder.h",
+    "unicode/caniter.h",
+    "unicode/chariter.h",
+    "unicode/dbbi.h",
+    "unicode/docmain.h",
+    "unicode/dtintrv.h",
+    "unicode/enumset.h",
+    "unicode/errorcode.h",
+    "unicode/filteredbrk.h",
+    "unicode/icudataver.h",
+    "unicode/icuplug.h",
+    "unicode/idna.h",
+    "unicode/listformatter.h",
+    "unicode/localpointer.h",
+    "unicode/locid.h",
+    "unicode/messagepattern.h",
+    "unicode/normalizer2.h",
+    "unicode/normlzr.h",
+    "unicode/parseerr.h",
+    "unicode/parsepos.h",
+    "unicode/platform.h",
+    "unicode/ptypes.h",
+    "unicode/putil.h",
+    "unicode/rbbi.h",
+    "unicode/rep.h",
+    "unicode/resbund.h",
+    "unicode/schriter.h",
+    "unicode/std_string.h",
+    "unicode/strenum.h",
+    "unicode/stringpiece.h",
+    "unicode/stringtriebuilder.h",
+    "unicode/symtable.h",
+    "unicode/ubidi.h",
+    "unicode/ubrk.h",
+    "unicode/ucasemap.h",
+    "unicode/ucat.h",
+    "unicode/uchar.h",
+    "unicode/ucharstrie.h",
+    "unicode/ucharstriebuilder.h",
+    "unicode/uchriter.h",
+    "unicode/uclean.h",
+    "unicode/ucnv.h",
+    "unicode/ucnv_cb.h",
+    "unicode/ucnv_err.h",
+    "unicode/ucnvsel.h",
+    "unicode/uconfig.h",
+    "unicode/udata.h",
+    "unicode/uenum.h",
+    "unicode/uidna.h",
+    "unicode/uiter.h",
+    "unicode/ulistformatter.h",
+    "unicode/uloc.h",
+    "unicode/umachine.h",
+    "unicode/umisc.h",
+    "unicode/unifilt.h",
+    "unicode/unifunct.h",
+    "unicode/unimatch.h",
+    "unicode/uniset.h",
+    "unicode/unistr.h",
+    "unicode/unorm.h",
+    "unicode/unorm2.h",
+    "unicode/uobject.h",
+    "unicode/urename.h",
+    "unicode/urep.h",
+    "unicode/ures.h",
+    "unicode/uscript.h",
+    "unicode/uset.h",
+    "unicode/usetiter.h",
+    "unicode/ushape.h",
+    "unicode/usprep.h",
+    "unicode/ustring.h",
+    "unicode/ustringtrie.h",
+    "unicode/utext.h",
+    "unicode/utf.h",
+    "unicode/utf16.h",
+    "unicode/utf32.h",
+    "unicode/utf8.h",
+    "unicode/utf_old.h",
+    "unicode/utrace.h",
+    "unicode/utypes.h",
+    "unicode/uvernum.h",
+    "unicode/uversion.h",
+  ]
+}
+
+config("icu_config") {
+  if (use_system_icu) {
+    configs = [ ":system_icu_config"]
+  } else {
+    configs = [ ":bundled_icu_config"]
+  }
+}
+
+group("icuuc") {
+  if (use_system_icu) {
+    deps = [ ":icuuc_shim" ]
+    public_configs = [
+      ":system_icu_config",
+      ":system_icuuc",
+    ]
+  } else {
+    public_deps = [ ":bundled_icuuc" ]
+  }
+}
+
+group("icui18n") {
+  if (use_system_icu) {
+    deps = [ ":icui18n_shim" ]
+    public_configs = [
+      ":system_icu_config",
+      ":system_icui18n",
+    ]
+  } else {
+    public_deps = [ ":bundled_icui18n" ]
   }
 }
