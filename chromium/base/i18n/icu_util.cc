@@ -380,6 +380,7 @@ enum class ICUCreateInstance {
 // key objects to UMA. This help us to understand what built-in ICU data files
 // are rarely used in the user's machines and the distribution of ICU usage.
 static void U_CALLCONV TraceICUEntry(const void*, int32_t fn_number) {
+#if !defined(USING_SYSTEM_ICU) || U_ICU_VERSION_MAJOR_NUM >= 67
   switch (fn_number) {
     case UTRACE_UBRK_CREATE_CHARACTER:
       base::UmaHistogramEnumeration(kICUCreateInstance,
@@ -400,6 +401,7 @@ static void U_CALLCONV TraceICUEntry(const void*, int32_t fn_number) {
     default:
       return;
   }
+#endif
 }
 
 static void U_CALLCONV TraceICUData(const void* context,
@@ -427,6 +429,7 @@ static void U_CALLCONV TraceICUData(const void* context,
       base::UmaHistogramSparse(kICUDataFile, hash);
       return;
     }
+#if !defined(USING_SYSTEM_ICU) || U_ICU_VERSION_MAJOR_NUM >= 67
     case UTRACE_UBRK_CREATE_LINE: {
       const char* lb_type = va_arg(args, const char*);
       va_end(args);
@@ -484,6 +487,7 @@ static void U_CALLCONV TraceICUData(const void* context,
       base::UmaHistogramEnumeration(kICUCreateInstance, value);
       return;
     }
+#endif
   }
 }
 
