@@ -3,8 +3,15 @@
 # found in the LICENSE file.
 
 import("//build/config/host_byteorder.gni")
+
+import("//build/config/linux/pkg_config.gni")
+import("//build/shim_headers.gni")
 import("//third_party/icu/config.gni")
 import("//third_party/icu/sources.gni")
+
+declare_args() {
+  use_system_icu = false
+}
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -27,7 +34,7 @@ group("icu") {
 }
 
 # Shared config used by ICU and all dependents.
-config("icu_config") {
+config("bundled_icu_config") {
   defines = [
     # Tell ICU to not insert |using namespace icu;| into its headers,
     # so that chrome's source explicitly has to use |icu::|.
@@ -217,7 +224,7 @@ template("generate_icui18n") {
     check_thin_archive = true
   }
 
-  generate_icu_component(target_name) {
+  generate_icu_component("bundled_" + target_name) {
     assert(defined(invoker.icuuc_deps), "Need the 'icuuc_deps' parameter.")
     icuuc_deps = invoker.icuuc_deps
 
@@ -248,7 +255,7 @@ generate_icui18n("icui18n") {
 
 generate_icui18n("icui18n_hidden_visibility") {
   extra_configs = [ ":visibility_hidden" ]
-  icuuc_deps = [ ":icuuc_hidden_visibility" ]
+  icuuc_deps = [ ":bundled_icuuc_hidden_visibility" ]
   if (is_fuchsia && !icu_is_in_fuchsia) {
     fuchsia_output_name_postfix = "_hidden_visibility"
   }
@@ -259,7 +266,8 @@ template("generate_icuuc") {
     check_thin_archive = false
   }
 
-  generate_icu_component(target_name) {
+  generate_icu_component("bundled_" + target_name) {
+
     fuchsia_output_name_postfix = ""
     if (defined(invoker.fuchsia_output_name_postfix)) {
       fuchsia_output_name_postfix = invoker.fuchsia_output_name_postfix
@@ -394,5 +402,250 @@ if (icu_use_data_file) {
       sources = [ data_assembly ]
       deps = [ ":make_data_assembly" ]
     }
+  }
+}
+
+config("system_icu_config") {
+  defines = [
+    "USING_SYSTEM_ICU=1",
+    "ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC",
+  ]
+}
+
+if (use_system_icu) {
+  pkg_config("system_icui18n") {
+    packages = [ "icu-i18n" ]
+  }
+
+  pkg_config("system_icuuc") {
+    packages = [ "icu-uc" ]
+  }
+}
+
+shim_headers("icui18n_shim") {
+  root_path = "source/i18n/unicode"
+  prefix = "unicode/"
+  headers = [
+    # This list can easily be updated using the command below:
+    # find third_party/icu/source/i18n/unicode \
+    # -iname '*.h' -printf '"%p",\n' | \
+    # sed -e 's|third_party/icu/source/i18n/unicode/||' | sort -u
+    "alphaindex.h",
+    "basictz.h",
+    "calendar.h",
+    "choicfmt.h",
+    "coleitr.h",
+    "coll.h",
+    "compactdecimalformat.h",
+    "curramt.h",
+    "currpinf.h",
+    "currunit.h",
+    "datefmt.h",
+    "dcfmtsym.h",
+    "decimfmt.h",
+    "dtfmtsym.h",
+    "dtitvfmt.h",
+    "dtitvinf.h",
+    "dtptngen.h",
+    "dtrule.h",
+    "fieldpos.h",
+    "fmtable.h",
+    "format.h",
+    "fpositer.h",
+    "gender.h",
+    "gregocal.h",
+    "measfmt.h",
+    "measunit.h",
+    "measure.h",
+    "msgfmt.h",
+    "nounit.h",
+    "numberformatter.h",
+    "numfmt.h",
+    "numsys.h",
+    "plurfmt.h",
+    "plurrule.h",
+    "rbnf.h",
+    "rbtz.h",
+    "regex.h",
+    "region.h",
+    "reldatefmt.h",
+    "scientificnumberformatter.h",
+    "search.h",
+    "selfmt.h",
+    "simpletz.h",
+    "smpdtfmt.h",
+    "sortkey.h",
+    "stsearch.h",
+    "tblcoll.h",
+    "timezone.h",
+    "tmunit.h",
+    "tmutamt.h",
+    "tmutfmt.h",
+    "translit.h",
+    "tzfmt.h",
+    "tznames.h",
+    "tzrule.h",
+    "tztrans.h",
+    "ucal.h",
+    "ucol.h",
+    "ucoleitr.h",
+    "ucsdet.h",
+    "udat.h",
+    "udateintervalformat.h",
+    "udatpg.h",
+    "ufieldpositer.h",
+    "uformattable.h",
+    "ugender.h",
+    "ulocdata.h",
+    "umsg.h",
+    "unirepl.h",
+    "unum.h",
+    "unumsys.h",
+    "upluralrules.h",
+    "uregex.h",
+    "uregion.h",
+    "ureldatefmt.h",
+    "usearch.h",
+    "uspoof.h",
+    "utmscale.h",
+    "utrans.h",
+    "vtzone.h",
+  ]
+}
+
+shim_headers("icuuc_shim") {
+  root_path = "source/common/unicode"
+  prefix = "unicode/"
+  headers = [
+    # This list can easily be updated using the command below:
+    # find third_party/icu/source/common/unicode \
+    # -iname '*.h' -printf '"%p",\n' | \
+    # sed -e 's|third_party/icu/source/common/unicode/||' | sort -u
+    "appendable.h",
+    "brkiter.h",
+    "bytestream.h",
+    "bytestrie.h",
+    "bytestriebuilder.h",
+    "caniter.h",
+    "casemap.h",
+    "char16ptr.h",
+    "chariter.h",
+    "dbbi.h",
+    "docmain.h",
+    "dtintrv.h",
+    "edits.h",
+    "enumset.h",
+    "errorcode.h",
+    "filteredbrk.h",
+    "icudataver.h",
+    "icuplug.h",
+    "idna.h",
+    "localpointer.h",
+    "locdspnm.h",
+    "locid.h",
+    "messagepattern.h",
+    "normalizer2.h",
+    "normlzr.h",
+    "parseerr.h",
+    "parsepos.h",
+    "platform.h",
+    "ptypes.h",
+    "putil.h",
+    "rbbi.h",
+    "rep.h",
+    "resbund.h",
+    "schriter.h",
+    "simpleformatter.h",
+    "std_string.h",
+    "strenum.h",
+    "stringoptions.h",
+    "stringpiece.h",
+    "stringtriebuilder.h",
+    "symtable.h",
+    "ubidi.h",
+    "ubiditransform.h",
+    "ubrk.h",
+    "ucasemap.h",
+    "ucat.h",
+    "uchar.h",
+    "ucharstrie.h",
+    "ucharstriebuilder.h",
+    "uchriter.h",
+    "uclean.h",
+    "ucnv.h",
+    "ucnv_cb.h",
+    "ucnv_err.h",
+    "ucnvsel.h",
+    "uconfig.h",
+    "ucurr.h",
+    "udata.h",
+    "udisplaycontext.h",
+    "uenum.h",
+    "uidna.h",
+    "uiter.h",
+    "uldnames.h",
+    "uloc.h",
+    "umachine.h",
+    "umisc.h",
+    "unifilt.h",
+    "unifunct.h",
+    "unimatch.h",
+    "uniset.h",
+    "unistr.h",
+    "unorm.h",
+    "unorm2.h",
+    "uobject.h",
+    "urename.h",
+    "urep.h",
+    "ures.h",
+    "uscript.h",
+    "uset.h",
+    "usetiter.h",
+    "ushape.h",
+    "usprep.h",
+    "ustring.h",
+    "ustringtrie.h",
+    "utext.h",
+    "utf.h",
+    "utf16.h",
+    "utf32.h",
+    "utf8.h",
+    "utf_old.h",
+    "utrace.h",
+    "utypes.h",
+    "uvernum.h",
+    "uversion.h",
+  ]
+}
+
+config("icu_config") {
+  if (use_system_icu) {
+    configs = [ ":system_icu_config"]
+  } else {
+    configs = [ ":bundled_icu_config"]
+  }
+}
+
+group("icuuc") {
+  if (use_system_icu) {
+    deps = [ ":icuuc_shim" ]
+    public_configs = [
+      ":system_icu_config",
+      ":system_icuuc",
+    ]
+  } else {
+    public_deps = [ ":bundled_icuuc" ]
+  }
+}
+
+group("icui18n") {
+  if (use_system_icu) {
+    deps = [ ":icui18n_shim" ]
+    public_configs = [
+      ":system_icu_config",
+      ":system_icui18n",
+    ]
+  } else {
+    public_deps = [ ":bundled_icui18n" ]
   }
 }
