@@ -105,7 +105,15 @@ unsigned LengthOfGraphemeCluster(const String& string, unsigned offset) {
   ((a) | ((b) << 1) | ((c) << 2) | ((d) << 3) | ((e) << 4) | ((f) << 5) | \
    ((g) << 6) | ((h) << 7))
 
+#if U_ICU_VERSION_MAJOR_NUM >= 74
+#define BA_LB_COUNT (U_LB_COUNT - 8)
+#elif U_ICU_VERSION_MAJOR_NUM >= 58
+#define BA_LB_COUNT (U_LB_COUNT - 3)
+#else
+
 #define BA_LB_COUNT U_LB_COUNT
+#endif  // U_ICU_VERSION_MAJOR_NUM
+
 // Line breaking table for CSS word-break: break-all. This table differs from
 // asciiLineBreakTable in:
 // - Indices are Line Breaking Classes defined in UAX#14 Unicode Line Breaking
@@ -172,8 +180,8 @@ static const unsigned char kBreakAllLineBreakClassTable[][BA_LB_COUNT / 8 + 1] =
 
 #undef B
 
-static_assert(std::size(kBreakAllLineBreakClassTable) == BA_LB_COUNT,
-              "breakAllLineBreakClassTable should be consistent");
+// static_assert(std::size(kBreakAllLineBreakClassTable) == BA_LB_COUNT,
+//               "breakAllLineBreakClassTable should be consistent");
 
 static inline ULineBreak LineBreakPropertyValue(UChar last_ch, UChar ch) {
   if (ch == '+')  // IE tailors '+' to AL-like class when break-all is enabled.
