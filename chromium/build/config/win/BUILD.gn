@@ -17,6 +17,8 @@ declare_args() {
   # Turn this on to have the linker output extra timing information.
   win_linker_timing = false
 
+  use_incremental_linking = (is_debug || is_component_build)
+
   # possible values for target_winuwp_version:
   #   "10" - Windows UWP 10
   #   "8.1" - Windows RT 8.1
@@ -534,7 +536,7 @@ if (use_lld) {
 
 # Enable incremental linking for debug builds and all component builds - any
 # builds where performance is not job one.
-if (is_debug || is_component_build) {
+if (use_incremental_linking) {
   default_incremental_linking_switch = incremental_linking_on_switch
 } else {
   default_incremental_linking_switch = incremental_linking_off_switch
