@@ -19,6 +19,8 @@ declare_args() {
 
   # Turn this on to have the linker output extra timing information.
   win_linker_timing = false
+
+  use_incremental_linking = (is_debug || is_component_build) && !is_syzyasan
 }
 
 # This is included by reference in the //build/config/compiler config that
@@ -350,7 +352,7 @@ incremental_linking_off_switch = [ "/INCREMENTAL:NO" ]
 
 # Disable incremental linking for syzyasan, enable for debug builds and all
 # component builds - any builds where performance is not job one.
-if ((is_debug || is_component_build) && !is_syzyasan) {
+if (use_incremental_linking) {
   default_incremental_linking_switch = incremental_linking_on_switch
 } else {
   default_incremental_linking_switch = incremental_linking_off_switch
