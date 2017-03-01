@@ -171,6 +171,11 @@ static const unsigned char kAsciiLineBreakTable[][(kAsciiLineBreakTableLastChar 
 };
 // clang-format on
 
+#if U_ICU_VERSION_MAJOR_NUM >= 74
+#define BA_LB_COUNT (U_LB_COUNT - 8)
+#elif U_ICU_VERSION_MAJOR_NUM >= 58
+#define BA_LB_COUNT (U_LB_COUNT - 3)
+#else
 #if CHECK_ASCII_LINE_BRAEK_TABLE
 void CheckAsciiLineBreakTable() {
   for (UChar ch2 = kAsciiLineBreakTableFirstChar;
@@ -190,6 +195,8 @@ void CheckAsciiLineBreakTable() {
 #endif  // CHECK_ASCII_LINE_BRAEK_TABLE
 
 #define BA_LB_COUNT U_LB_COUNT
+#endif  // U_ICU_VERSION_MAJOR_NUM
+
 // Line breaking table for CSS word-break: break-all. This table differs from
 // asciiLineBreakTable in:
 // - Indices are Line Breaking Classes defined in UAX#14 Unicode Line Breaking
@@ -263,8 +270,8 @@ static_assert(std::size(kAsciiLineBreakTable) ==
                   kAsciiLineBreakTableLastChar - kAsciiLineBreakTableFirstChar +
                       1,
               "asciiLineBreakTable should be consistent");
-static_assert(std::size(kBreakAllLineBreakClassTable) == BA_LB_COUNT,
-              "breakAllLineBreakClassTable should be consistent");
+//static_assert(std::size(kBreakAllLineBreakClassTable) == BA_LB_COUNT,
+//              "breakAllLineBreakClassTable should be consistent");
 
 static inline ULineBreak LineBreakPropertyValue(UChar last_ch, UChar ch) {
   if (ch == '+')  // IE tailors '+' to AL-like class when break-all is enabled.
