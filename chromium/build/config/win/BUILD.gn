@@ -18,6 +18,8 @@ declare_args() {
   # Turn this on to have the linker output extra timing information.
   win_linker_timing = false
 
+  use_incremental_linking = (is_debug || is_component_build)
+
   # possible values for target_winuwp_version:
   #   "10" - Windows UWP 10
   #   "8.1" - Windows RT 8.1
@@ -356,7 +358,7 @@ config("cfi_linker") {
   # for now. https://crbug.com/846966
   # TODO(thakis): Re-enable in release component builds once they work again,
   # https://crbug.com/1147194
-  if (!is_debug && !is_asan && !is_component_build) {
+  if (!use_incremental_linking && !is_asan && !is_component_build) {
     # Turn on CFG bitmap generation and CFG load config.
     if (target_cpu == "arm64") {
       # longjmp protection is temporarily disabled on Windows on Arm64 due to
@@ -530,7 +532,7 @@ config("default_incremental_linking") {
   # Enable incremental linking for debug builds and all component builds - any
   # builds where performance is not job one.
   # TODO(thakis): Always turn this on with lld, no reason not to.
-  if (is_debug || is_component_build) {
+  if (use_incremental_linking) {
     ldflags = [ "/INCREMENTAL" ]
     if (use_lld) {
       # lld doesn't use ilk files and doesn't really have an incremental link
