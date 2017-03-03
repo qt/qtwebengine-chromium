@@ -34,10 +34,10 @@ bool IsDotDot(const base::FilePath& path) {
 bool CompareAlphaDirsFirst(const DirectoryLister::DirectoryListerData& a,
                            const DirectoryLister::DirectoryListerData& b) {
   // Parent directory before all else.
-  if (IsDotDot(a.info.GetName()))
-    return true;
-  if (IsDotDot(b.info.GetName()))
-    return false;
+  bool a_is_dotdot = IsDotDot(a.info.GetName());
+  bool b_is_dotdot = IsDotDot(b.info.GetName());
+  if (a_is_dotdot != b_is_dotdot)
+      return a_is_dotdot;
 
   // Directories before regular files.
   bool a_is_directory = a.info.IsDirectory();
