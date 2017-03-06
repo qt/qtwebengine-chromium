@@ -28,8 +28,11 @@ template("shim_headers") {
     }
     args += invoker.headers
 
-    outputs = process_file_template(invoker.headers,
-                                    "${shim_headers_path}/{{source_file_part}}")
+    output_pattern = "$target_gen_dir/" + invoker.root_path + "/{{source_file_part}}"
+    outputs = process_file_template(invoker.headers,output_pattern)
+
+    input_pattern = "{{source_dir}}/" + invoker.root_path + "/{{source_file_part}}"
+    inputs = process_file_template(invoker.headers, input_pattern)
   }
 
   group(target_name) {
