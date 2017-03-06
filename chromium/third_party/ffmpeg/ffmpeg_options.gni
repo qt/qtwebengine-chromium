@@ -49,6 +49,8 @@ declare_args() {
   # clang's -frewrite-includes flag which is broken with #include_next
   # directives as used in chromium's clang stdatomic.h.
   # Some background: https://bugs.llvm.org/show_bug.cgi?id=26828
+
+  use_system_ffmpeg = false
   ffmpeg_use_unsafe_atomics = false
 }
 
