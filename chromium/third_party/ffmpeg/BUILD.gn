@@ -173,7 +173,15 @@ config("ffmpeg_warnings") {
 
 buildflag_header("ffmpeg_features") {
   header = "ffmpeg_features.h"
-  flags = [ "USE_SYSTEM_FFMPEG=false" ]
+  if (use_system_ffmpeg) {
+    flags = [
+      "USE_SYSTEM_FFMPEG=true",
+    ]
+  } else {
+    flags = [
+      "USE_SYSTEM_FFMPEG=false",
+    ]
+  }
 }
 
 if (is_component_ffmpeg) {
@@ -414,6 +422,48 @@ target(link_target_type, "ffmpeg_internal") {
   }
 }
 
+if (use_system_ffmpeg) {
+  import("//build/config/linux/pkg_config.gni")
+  import("//build/shim_headers.gni")
+
+  pkg_config("system_ffmpeg") {
+    packages = [
+      "libavcodec",
+      "libavformat",
+      "libavutil",
+    ]
+  }
+
+  shim_headers("libavcodec_shim") {
+    root_path = "libavcodec"
+    prefix = "libavcodec/"
+    headers = [
+      "avcodec.h",
+    ]
+  }
+
+  shim_headers("libavformat_shim") {
+    root_path = "libavformat"
+    prefix = "libavformat/"
+    headers = [
+      "avformat.h",
+      "avio.h",
+     ]
+  }
+
+  shim_headers("libavutil_shim") {
+    root_path = "libavutil"
+    prefix = "libavutil/"
+    headers = [
+      "avutil.h",
+      "imgutils.h",
+      "log.h",
+      "mathematics.h",
+      "opt.h",
+    ]
+  }
+}
+
 if (is_component_ffmpeg) {
   shared_library("ffmpeg") {
     if (is_android) {
@@ -448,9 +498,12 @@ if (is_component_ffmpeg) {
   }
 } else {
   source_set("ffmpeg") {
-    public_configs = [ ":ffmpeg_dependent_config" ]
-    deps = [
-      ":ffmpeg_internal",
-    ]
+    if (use_system_ffmpeg) {
+      public_configs = [ ":system_ffmpeg" ]
+      deps = [ ":libavcodec_shim", ":libavformat_shim", ":libavutil_shim" ]
+    } else {
+      public_configs = [ ":ffmpeg_dependent_config" ]
+      deps = [ ":ffmpeg_internal" ]
+    }
   }
 }
