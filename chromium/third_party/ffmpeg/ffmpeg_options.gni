@@ -49,6 +49,8 @@ declare_args() {
   # directives as used in chromium's clang stdatomic.h.
   # Some background: https://bugs.llvm.org/show_bug.cgi?id=26828
   ffmpeg_use_atomics_fallback = !is_clang
+
+  use_system_ffmpeg = false
 }
 
 assert(ffmpeg_branding == "Chromium" ||
