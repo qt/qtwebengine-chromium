@@ -168,14 +168,15 @@ static_library("bundled_minizip") {
 }
 
 shim_headers("minizip_shim") {
-  root_path = "contrib"
+  root_path = "contrib/minizip"
+  prefix = "minizip/"
   headers = [
-    "minizip/crypt.h",
-    "minizip/ioapi.h",
-    "minizip/iowin32.h",
-    "minizip/mztools.h",
-    "minizip/unzip.h",
-    "minizip/zip.h",
+    "crypt.h",
+    "ioapi.h",
+    "iowin32.h",
+    "mztools.h",
+    "unzip.h",
+    "zip.h",
   ]
 }
 
