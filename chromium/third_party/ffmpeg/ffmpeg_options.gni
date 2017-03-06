@@ -39,6 +39,8 @@ declare_args() {
   # ffmpeg.so with their own. See discussion here
   # https://groups.google.com/a/chromium.org/forum/#!msg/chromium-packagers/R5rcZXWxBEQ/B6k0zzmJbvcJ
   is_component_ffmpeg = is_component_build
+
+  use_system_ffmpeg = false
 }
 
 assert(ffmpeg_branding == "Chromium" ||
