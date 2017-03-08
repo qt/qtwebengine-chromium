@@ -196,6 +196,13 @@ test("views_mus_unittests") {
     "//services/ui/test_wm",
   ]
 
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui/ime/test_ime_driver",
+      "//services/ui/test_wm",
+     ]
+  }
+
   if (is_win) {
     deps += [
       "//build/win:default_exe_manifest",
@@ -255,6 +262,12 @@ test("views_mus_interactive_ui_tests") {
     ":views_mus_tests_catalog_copy",
     "//services/ui/test_wm",
   ]
+
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui/test_wm",
+     ]
+  }
 
   if (is_win) {
     deps += [
