@@ -6,6 +6,9 @@
 
 #include "core/fpdfdoc/cpdf_annotlist.h"
 
+#include <memory>
+#include <utility>
+
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
@@ -15,6 +18,7 @@
 #include "core/fpdfdoc/cpdf_occontext.h"
 #include "core/fpdfdoc/cpvt_generateap.h"
 #include "core/fxge/cfx_renderdevice.h"
+#include "third_party/base/ptr_util.h"
 
 namespace {
 
@@ -22,16 +26,16 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Annot* pAnnot,
                                              CPDF_Document* pDocument) {
   CPDF_Dictionary* pParentDict = pAnnot->GetAnnotDict();
   if (!pParentDict)
-    return std::unique_ptr<CPDF_Annot>();
+    return nullptr;
 
   // TODO(jaepark): We shouldn't strip BOM for some strings and not for others.
   // See pdfium:593.
   CFX_WideString sContents = pParentDict->GetUnicodeTextFor("Contents");
   if (sContents.IsEmpty())
-    return std::unique_ptr<CPDF_Annot>();
+    return nullptr;
 
-  CPDF_Dictionary* pAnnotDict =
-      new CPDF_Dictionary(pDocument->GetByteStringPool());
+  auto pAnnotDict =
+      pdfium::MakeUnique<CPDF_Dictionary>(pDocument->GetByteStringPool());
   pAnnotDict->SetNameFor("Type", "Annot");
   pAnnotDict->SetNameFor("Subtype", "Popup");
   pAnnotDict->SetStringFor("T", pParentDict->GetStringFor("T"));
@@ -45,8 +49,8 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Annot* pAnnot,
   pAnnotDict->SetRectFor("Rect", popupRect);
   pAnnotDict->SetIntegerFor("F", 0);
 
-  std::unique_ptr<CPDF_Annot> pPopupAnnot(
-      new CPDF_Annot(pAnnotDict, pDocument, true));
+  auto pPopupAnnot =
+      pdfium::MakeUnique<CPDF_Annot>(std::move(pAnnotDict), pDocument);
   pAnnot->SetPopupAnnot(pPopupAnnot.get());
   return pPopupAnnot;
 }
@@ -64,19 +68,20 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
 
   CPDF_Dictionary* pRoot = m_pDocument->GetRoot();
   CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
-  FX_BOOL bRegenerateAP =
-      pAcroForm && pAcroForm->GetBooleanFor("NeedAppearances");
+  bool bRegenerateAP = pAcroForm && pAcroForm->GetBooleanFor("NeedAppearances");
   for (size_t i = 0; i < pAnnots->GetCount(); ++i) {
     CPDF_Dictionary* pDict = ToDictionary(pAnnots->GetDirectObjectAt(i));
-    if (!pDict || pDict->GetStringFor("Subtype") == "Popup") {
+    if (!pDict)
+      continue;
+    const CFX_ByteString subtype = pDict->GetStringFor("Subtype");
+    if (subtype == "Popup") {
       // Skip creating Popup annotations in the PDF document since PDFium
       // provides its own Popup annotations.
       continue;
     }
     pAnnots->ConvertToIndirectObjectAt(i, m_pDocument);
-    m_AnnotList.push_back(
-        std::unique_ptr<CPDF_Annot>(new CPDF_Annot(pDict, m_pDocument, false)));
-    if (bRegenerateAP && pDict->GetStringFor("Subtype") == "Widget" &&
+    m_AnnotList.push_back(pdfium::MakeUnique<CPDF_Annot>(pDict, m_pDocument));
+    if (bRegenerateAP && subtype == "Widget" &&
         CPDF_InterForm::IsUpdateAPEnabled()) {
       FPDF_GenerateAP(m_pDocument, pDict);
     }
@@ -96,9 +101,9 @@ CPDF_AnnotList::~CPDF_AnnotList() {}
 void CPDF_AnnotList::DisplayPass(CPDF_Page* pPage,
                                  CFX_RenderDevice* pDevice,
                                  CPDF_RenderContext* pContext,
-                                 FX_BOOL bPrinting,
+                                 bool bPrinting,
                                  CFX_Matrix* pMatrix,
-                                 FX_BOOL bWidgetPass,
+                                 bool bWidgetPass,
                                  CPDF_RenderOptions* pOptions,
                                  FX_RECT* clip_rect) {
   for (const auto& pAnnot : m_AnnotList) {
@@ -146,26 +151,26 @@ void CPDF_AnnotList::DisplayPass(CPDF_Page* pPage,
 void CPDF_AnnotList::DisplayAnnots(CPDF_Page* pPage,
                                    CFX_RenderDevice* pDevice,
                                    CPDF_RenderContext* pContext,
-                                   FX_BOOL bPrinting,
+                                   bool bPrinting,
                                    CFX_Matrix* pUser2Device,
                                    uint32_t dwAnnotFlags,
                                    CPDF_RenderOptions* pOptions,
                                    FX_RECT* pClipRect) {
   if (dwAnnotFlags & ANNOTFLAG_INVISIBLE) {
-    DisplayPass(pPage, pDevice, pContext, bPrinting, pUser2Device, FALSE,
+    DisplayPass(pPage, pDevice, pContext, bPrinting, pUser2Device, false,
                 pOptions, pClipRect);
   }
   if (dwAnnotFlags & ANNOTFLAG_HIDDEN) {
-    DisplayPass(pPage, pDevice, pContext, bPrinting, pUser2Device, TRUE,
+    DisplayPass(pPage, pDevice, pContext, bPrinting, pUser2Device, true,
                 pOptions, pClipRect);
   }
 }
 
 void CPDF_AnnotList::DisplayAnnots(CPDF_Page* pPage,
                                    CPDF_RenderContext* pContext,
-                                   FX_BOOL bPrinting,
+                                   bool bPrinting,
                                    CFX_Matrix* pMatrix,
-                                   FX_BOOL bShowWidget,
+                                   bool bShowWidget,
                                    CPDF_RenderOptions* pOptions) {
   uint32_t dwAnnotFlags = bShowWidget ? ANNOTFLAG_INVISIBLE | ANNOTFLAG_HIDDEN
                                       : ANNOTFLAG_INVISIBLE;

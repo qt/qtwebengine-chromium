@@ -73,8 +73,8 @@ SpecificDownsampleFunc  DyadicBilinearOneThirdDownsampler_c;
 SpecificDownsampleFunc  DyadicBilinearQuarterDownsampler_c;
 
 typedef struct {
-  // align_index: 0 = x32; 1 = x16; 2 = x8; 3 = common case left;
-  PHalveDownsampleFunc          pfHalfAverage[4];
+  PHalveDownsampleFunc          pfHalfAverageWidthx32;
+  PHalveDownsampleFunc          pfHalfAverageWidthx16;
   PSpecificDownsampleFunc       pfOneThirdDownsampler;
   PSpecificDownsampleFunc       pfQuarterDownsampler;
   PGeneralDownsampleFunc        pfGeneralRatioLuma;
@@ -94,13 +94,15 @@ HalveDownsampleFunc     DyadicBilinearDownsamplerWidthx32_sse;
 HalveDownsampleFunc     DyadicBilinearDownsamplerWidthx16_ssse3;
 // iSrcWidth= x32 pixels
 HalveDownsampleFunc     DyadicBilinearDownsamplerWidthx32_ssse3;
-// iSrcWidth= x16 pixels
-HalveDownsampleFunc     DyadicBilinearDownsamplerWidthx16_sse4;
-// iSrcWidth= x32 pixels
-HalveDownsampleFunc     DyadicBilinearDownsamplerWidthx32_sse4;
 
 GeneralDownsampleFunc GeneralBilinearFastDownsamplerWrap_sse2;
 GeneralDownsampleFunc GeneralBilinearAccurateDownsamplerWrap_sse2;
+GeneralDownsampleFunc GeneralBilinearFastDownsamplerWrap_ssse3;
+GeneralDownsampleFunc GeneralBilinearAccurateDownsamplerWrap_sse41;
+#ifdef HAVE_AVX2
+GeneralDownsampleFunc GeneralBilinearFastDownsamplerWrap_avx2;
+GeneralDownsampleFunc GeneralBilinearAccurateDownsamplerWrap_avx2;
+#endif
 
 SpecificDownsampleFunc  DyadicBilinearOneThirdDownsampler_ssse3;
 SpecificDownsampleFunc  DyadicBilinearOneThirdDownsampler_sse4;
@@ -114,6 +116,20 @@ void GeneralBilinearFastDownsampler_sse2 (uint8_t* pDst, const int32_t kiDstStri
 void GeneralBilinearAccurateDownsampler_sse2 (uint8_t* pDst, const int32_t kiDstStride, const int32_t kiDstWidth,
     const int32_t kiDstHeight, uint8_t* pSrc, const int32_t kiSrcStride, const uint32_t kuiScaleX,
     const uint32_t kuiScaleY);
+void GeneralBilinearFastDownsampler_ssse3 (uint8_t* pDst, int32_t iDstStride, int32_t iDstWidth,
+    int32_t iDstHeight, uint8_t* pSrc, int32_t iSrcStride, uint32_t uiScaleX,
+    uint32_t uiScaleY);
+void GeneralBilinearAccurateDownsampler_sse41 (uint8_t* pDst, int32_t iDstStride, int32_t iDstWidth,
+    int32_t iDstHeight, uint8_t* pSrc, int32_t iSrcStride, uint32_t uiScaleX,
+    uint32_t uiScaleY);
+#ifdef HAVE_AVX2
+void GeneralBilinearFastDownsampler_avx2 (uint8_t* pDst, int32_t iDstStride, int32_t iDstWidth,
+    int32_t iDstHeight, uint8_t* pSrc, int32_t iSrcStride, uint32_t uiScaleX,
+    uint32_t uiScaleY);
+void GeneralBilinearAccurateDownsampler_avx2 (uint8_t* pDst, int32_t iDstStride, int32_t iDstWidth,
+    int32_t iDstHeight, uint8_t* pSrc, int32_t iSrcStride, uint32_t uiScaleX,
+    uint32_t uiScaleY);
+#endif
 
 WELSVP_EXTERN_C_END
 #endif
@@ -169,11 +185,15 @@ class CDownsampling : public IStrategy {
  private:
   void InitDownsampleFuncs (SDownsampleFuncs& sDownsampleFunc, int32_t iCpuFlag);
 
-  int32_t GetAlignedIndex (const int32_t kiSrcWidth);
-
+  void DownsampleHalfAverage (uint8_t* pDst, int32_t iDstStride,
+      uint8_t* pSrc, int32_t iSrcStride, int32_t iSrcWidth, int32_t iSrcHeight);
+  bool AllocateSampleBuffer();
+  void FreeSampleBuffer();
  private:
   SDownsampleFuncs m_pfDownsample;
   int32_t  m_iCPUFlag;
+  uint8_t  *m_pSampleBuffer[2][3];
+  bool     m_bNoSampleBuffer;
 };
 
 WELSVP_NAMESPACE_END

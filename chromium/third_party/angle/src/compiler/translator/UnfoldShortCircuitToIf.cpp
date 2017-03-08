@@ -13,6 +13,9 @@
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/IntermNodePatternMatcher.h"
 
+namespace sh
+{
+
 namespace
 {
 
@@ -75,7 +78,7 @@ bool UnfoldShortCircuitTraverser::visitBinary(Visit visit, TIntermBinary *node)
           ASSERT(node->getLeft()->getType() == boolType);
           insertions.push_back(createTempInitDeclaration(node->getLeft()));
 
-          TIntermAggregate *assignRightBlock = new TIntermAggregate(EOpSequence);
+          TIntermBlock *assignRightBlock = new TIntermBlock();
           ASSERT(node->getRight()->getType() == boolType);
           assignRightBlock->getSequence()->push_back(createTempAssignment(node->getRight()));
 
@@ -99,7 +102,7 @@ bool UnfoldShortCircuitTraverser::visitBinary(Visit visit, TIntermBinary *node)
           ASSERT(node->getLeft()->getType() == boolType);
           insertions.push_back(createTempInitDeclaration(node->getLeft()));
 
-          TIntermAggregate *assignRightBlock = new TIntermAggregate(EOpSequence);
+          TIntermBlock *assignRightBlock = new TIntermBlock();
           ASSERT(node->getRight()->getType() == boolType);
           assignRightBlock->getSequence()->push_back(createTempAssignment(node->getRight()));
 
@@ -134,16 +137,14 @@ bool UnfoldShortCircuitTraverser::visitTernary(Visit visit, TIntermTernary *node
     // Unfold "b ? x : y" into "type s; if(b) s = x; else s = y;"
     TIntermSequence insertions;
 
-    TIntermSymbol *tempSymbol         = createTempSymbol(node->getType());
-    TIntermAggregate *tempDeclaration = new TIntermAggregate(EOpDeclaration);
-    tempDeclaration->getSequence()->push_back(tempSymbol);
+    TIntermDeclaration *tempDeclaration = createTempDeclaration(node->getType());
     insertions.push_back(tempDeclaration);
 
-    TIntermAggregate *trueBlock   = new TIntermAggregate(EOpSequence);
+    TIntermBlock *trueBlock       = new TIntermBlock();
     TIntermBinary *trueAssignment = createTempAssignment(node->getTrueExpression());
     trueBlock->getSequence()->push_back(trueAssignment);
 
-    TIntermAggregate *falseBlock   = new TIntermAggregate(EOpSequence);
+    TIntermBlock *falseBlock       = new TIntermBlock();
     TIntermBinary *falseAssignment = createTempAssignment(node->getFalseExpression());
     falseBlock->getSequence()->push_back(falseAssignment);
 
@@ -182,3 +183,5 @@ void UnfoldShortCircuitToIf(TIntermNode *root, unsigned int *temporaryIndex)
     }
     while (traverser.foundShortCircuit());
 }
+
+}  // namespace sh

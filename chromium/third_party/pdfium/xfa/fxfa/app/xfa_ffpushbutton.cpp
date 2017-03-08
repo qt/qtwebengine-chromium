@@ -6,9 +6,9 @@
 
 #include "xfa/fxfa/app/xfa_ffpushbutton.h"
 
+#include "xfa/fwl/core/cfwl_pushbutton.h"
 #include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
-#include "xfa/fwl/lightwidget/cfwl_pushbutton.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_ffwidgetacc.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
@@ -50,17 +50,18 @@ void CXFA_FFPushButton::RenderWidget(CFX_Graphics* pGS,
   GetApp()->GetWidgetMgrDelegate()->OnDrawWidget(m_pNormalWidget->GetWidget(),
                                                  pGS, &mt);
 }
-FX_BOOL CXFA_FFPushButton::LoadWidget() {
+bool CXFA_FFPushButton::LoadWidget() {
   ASSERT(!m_pNormalWidget);
-  CFWL_PushButton* pPushButton = CFWL_PushButton::Create();
-  if (pPushButton) {
-    pPushButton->Initialize();
-  }
-  m_pOldDelegate = pPushButton->SetDelegate(this);
+  CFWL_PushButton* pPushButton = new CFWL_PushButton(GetFWLApp());
+  pPushButton->Initialize();
+
+  m_pOldDelegate = pPushButton->GetDelegate();
+  pPushButton->SetDelegate(this);
+
   m_pNormalWidget = pPushButton;
   m_pNormalWidget->SetLayoutItem(this);
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pNormalWidget->LockUpdate();
   UpdateWidgetProperty();
@@ -98,7 +99,7 @@ void CXFA_FFPushButton::UnloadWidget() {
   CXFA_FFField::UnloadWidget();
 }
 
-FX_BOOL CXFA_FFPushButton::PerformLayout() {
+bool CXFA_FFPushButton::PerformLayout() {
   CXFA_FFWidget::PerformLayout();
   CFX_RectF rtWidget;
   GetRectWithoutRotate(rtWidget);
@@ -116,7 +117,7 @@ FX_BOOL CXFA_FFPushButton::PerformLayout() {
   if (m_pNormalWidget) {
     m_pNormalWidget->Update();
   }
-  return TRUE;
+  return true;
 }
 FX_FLOAT CXFA_FFPushButton::GetLineWidth() {
   CXFA_Border border = m_pDataAcc->GetBorder();
@@ -137,7 +138,7 @@ void CXFA_FFPushButton::LoadHighlightCaption() {
   if (caption && caption.GetPresence() != XFA_ATTRIBUTEENUM_Hidden) {
     {
       CFX_WideString wsRollover;
-      FX_BOOL bRichText;
+      bool bRichText;
       if (m_pDataAcc->GetButtonRollover(wsRollover, bRichText)) {
         if (!m_pRollProvider) {
           m_pRollProvider =

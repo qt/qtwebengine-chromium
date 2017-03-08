@@ -30,8 +30,8 @@ CPDF_Dictionary::~CPDF_Dictionary() {
   // in case of cyclic references.
   m_ObjNum = kInvalidObjNum;
   for (const auto& it : m_Map) {
-    if (it.second)
-      it.second->Release();
+    if (it.second && it.second->GetObjNum() != kInvalidObjNum)
+      delete it.second;
   }
 }
 
@@ -57,23 +57,23 @@ const CPDF_Dictionary* CPDF_Dictionary::AsDictionary() const {
   return this;
 }
 
-CPDF_Object* CPDF_Dictionary::Clone() const {
+std::unique_ptr<CPDF_Object> CPDF_Dictionary::Clone() const {
   return CloneObjectNonCyclic(false);
 }
 
-CPDF_Object* CPDF_Dictionary::CloneNonCyclic(
+std::unique_ptr<CPDF_Object> CPDF_Dictionary::CloneNonCyclic(
     bool bDirect,
     std::set<const CPDF_Object*>* pVisited) const {
   pVisited->insert(this);
-  CPDF_Dictionary* pCopy = new CPDF_Dictionary(m_pPool);
+  auto pCopy = pdfium::MakeUnique<CPDF_Dictionary>(m_pPool);
   for (const auto& it : *this) {
     CPDF_Object* value = it.second;
     if (!pdfium::ContainsKey(*pVisited, value)) {
-      pCopy->m_Map.insert(
-          std::make_pair(it.first, value->CloneNonCyclic(bDirect, pVisited)));
+      pCopy->m_Map.insert(std::make_pair(
+          it.first, value->CloneNonCyclic(bDirect, pVisited).release()));
     }
   }
-  return pCopy;
+  return std::move(pCopy);
 }
 
 CPDF_Object* CPDF_Dictionary::GetObjectFor(const CFX_ByteString& key) const {
@@ -174,7 +174,7 @@ bool CPDF_Dictionary::IsSignatureDict() const {
 }
 
 void CPDF_Dictionary::SetFor(const CFX_ByteString& key, CPDF_Object* pObj) {
-  CHECK(!pObj || pObj->GetObjNum() == 0);
+  CHECK(!pObj || pObj->IsInline());
   auto it = m_Map.find(key);
   if (it == m_Map.end()) {
     if (pObj)
@@ -184,7 +184,7 @@ void CPDF_Dictionary::SetFor(const CFX_ByteString& key, CPDF_Object* pObj) {
 
   if (it->second == pObj)
     return;
-  it->second->Release();
+  delete it->second;
 
   if (pObj)
     it->second = pObj;
@@ -192,12 +192,24 @@ void CPDF_Dictionary::SetFor(const CFX_ByteString& key, CPDF_Object* pObj) {
     m_Map.erase(it);
 }
 
+void CPDF_Dictionary::ConvertToIndirectObjectFor(
+    const CFX_ByteString& key,
+    CPDF_IndirectObjectHolder* pHolder) {
+  auto it = m_Map.find(key);
+  if (it == m_Map.end() || it->second->IsReference())
+    return;
+
+  CPDF_Object* pObj =
+      pHolder->AddIndirectObject(pdfium::WrapUnique(it->second));
+  it->second = new CPDF_Reference(pHolder, pObj->GetObjNum());
+}
+
 void CPDF_Dictionary::RemoveFor(const CFX_ByteString& key) {
   auto it = m_Map.find(key);
   if (it == m_Map.end())
     return;
 
-  it->second->Release();
+  delete it->second;
   m_Map.erase(it);
 }
 
@@ -212,7 +224,7 @@ void CPDF_Dictionary::ReplaceKey(const CFX_ByteString& oldkey,
     return;
 
   if (new_it != m_Map.end()) {
-    new_it->second->Release();
+    delete new_it->second;
     new_it->second = old_it->second;
   } else {
     m_Map.insert(std::make_pair(MaybeIntern(newkey), old_it->second));
@@ -226,18 +238,25 @@ void CPDF_Dictionary::SetIntegerFor(const CFX_ByteString& key, int i) {
 
 void CPDF_Dictionary::SetNameFor(const CFX_ByteString& key,
                                  const CFX_ByteString& name) {
-  SetFor(key, new CPDF_Name(MaybeIntern(name)));
+  SetFor(key, new CPDF_Name(GetByteStringPool(), name));
 }
 
 void CPDF_Dictionary::SetStringFor(const CFX_ByteString& key,
                                    const CFX_ByteString& str) {
-  SetFor(key, new CPDF_String(MaybeIntern(str), FALSE));
+  SetFor(key, new CPDF_String(GetByteStringPool(), str, false));
 }
 
 void CPDF_Dictionary::SetReferenceFor(const CFX_ByteString& key,
                                       CPDF_IndirectObjectHolder* pDoc,
                                       uint32_t objnum) {
   SetFor(key, new CPDF_Reference(pDoc, objnum));
+}
+
+void CPDF_Dictionary::SetReferenceFor(const CFX_ByteString& key,
+                                      CPDF_IndirectObjectHolder* pDoc,
+                                      CPDF_Object* pObj) {
+  ASSERT(!pObj->IsInline());
+  SetFor(key, new CPDF_Reference(pDoc, pObj->GetObjNum()));
 }
 
 void CPDF_Dictionary::SetNumberFor(const CFX_ByteString& key, FX_FLOAT f) {
@@ -251,22 +270,22 @@ void CPDF_Dictionary::SetBooleanFor(const CFX_ByteString& key, bool bValue) {
 void CPDF_Dictionary::SetRectFor(const CFX_ByteString& key,
                                  const CFX_FloatRect& rect) {
   CPDF_Array* pArray = new CPDF_Array;
-  pArray->AddNumber(rect.left);
-  pArray->AddNumber(rect.bottom);
-  pArray->AddNumber(rect.right);
-  pArray->AddNumber(rect.top);
+  pArray->AddNew<CPDF_Number>(rect.left);
+  pArray->AddNew<CPDF_Number>(rect.bottom);
+  pArray->AddNew<CPDF_Number>(rect.right);
+  pArray->AddNew<CPDF_Number>(rect.top);
   SetFor(key, pArray);
 }
 
 void CPDF_Dictionary::SetMatrixFor(const CFX_ByteString& key,
                                    const CFX_Matrix& matrix) {
   CPDF_Array* pArray = new CPDF_Array;
-  pArray->AddNumber(matrix.a);
-  pArray->AddNumber(matrix.b);
-  pArray->AddNumber(matrix.c);
-  pArray->AddNumber(matrix.d);
-  pArray->AddNumber(matrix.e);
-  pArray->AddNumber(matrix.f);
+  pArray->AddNew<CPDF_Number>(matrix.a);
+  pArray->AddNew<CPDF_Number>(matrix.b);
+  pArray->AddNew<CPDF_Number>(matrix.c);
+  pArray->AddNew<CPDF_Number>(matrix.d);
+  pArray->AddNew<CPDF_Number>(matrix.e);
+  pArray->AddNew<CPDF_Number>(matrix.f);
   SetFor(key, pArray);
 }
 

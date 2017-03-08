@@ -138,6 +138,8 @@
             'libANGLE/Surface.h',
             'libANGLE/Texture.cpp',
             'libANGLE/Texture.h',
+            'libANGLE/Thread.cpp',
+            'libANGLE/Thread.h',
             'libANGLE/TransformFeedback.cpp',
             'libANGLE/TransformFeedback.h',
             'libANGLE/Uniform.cpp',
@@ -152,6 +154,7 @@
             'libANGLE/angletypes.cpp',
             'libANGLE/angletypes.h',
             'libANGLE/angletypes.inl',
+            'libANGLE/es3_copy_conversion_table_autogen.cpp',
             'libANGLE/features.h',
             'libANGLE/format_map_autogen.cpp',
             'libANGLE/formatutils.cpp',
@@ -165,6 +168,8 @@
             'libANGLE/renderer/CompilerImpl.h',
             'libANGLE/renderer/ContextImpl.cpp',
             'libANGLE/renderer/ContextImpl.h',
+            'libANGLE/renderer/driver_utils.cpp',
+            'libANGLE/renderer/driver_utils.h',
             'libANGLE/renderer/DeviceImpl.cpp',
             'libANGLE/renderer/DeviceImpl.h',
             'libANGLE/renderer/DisplayImpl.cpp',
@@ -173,8 +178,7 @@
             'libANGLE/renderer/FenceNVImpl.h',
             'libANGLE/renderer/FenceSyncImpl.h',
             'libANGLE/renderer/Format_ID_autogen.inl',
-            'libANGLE/renderer/Format_autogen.cpp',
-            'libANGLE/renderer/Format.cpp',
+            'libANGLE/renderer/Format_table_autogen.cpp',
             'libANGLE/renderer/Format.h',
             'libANGLE/renderer/FramebufferAttachmentObjectImpl.h',
             'libANGLE/renderer/FramebufferImpl.h',
@@ -253,6 +257,7 @@
             'libANGLE/renderer/d3d/ShaderExecutableD3D.h',
             'libANGLE/renderer/d3d/SurfaceD3D.cpp',
             'libANGLE/renderer/d3d/SurfaceD3D.h',
+            'libANGLE/renderer/d3d/SwapChainD3D.cpp',
             'libANGLE/renderer/d3d/SwapChainD3D.h',
             'libANGLE/renderer/d3d/TextureD3D.cpp',
             'libANGLE/renderer/d3d/TextureD3D.h',
@@ -330,6 +335,7 @@
             'libANGLE/renderer/d3d/d3d11/copyvertex.inl',
             'libANGLE/renderer/d3d/d3d11/DebugAnnotator11.cpp',
             'libANGLE/renderer/d3d/d3d11/DebugAnnotator11.h',
+            'libANGLE/renderer/d3d/d3d11/dxgi_format_map_autogen.cpp',
             'libANGLE/renderer/d3d/d3d11/dxgi_support_table.cpp',
             'libANGLE/renderer/d3d/d3d11/dxgi_support_table.h',
             'libANGLE/renderer/d3d/d3d11/Fence11.cpp',
@@ -508,6 +514,8 @@
         ],
         'libangle_gl_wgl_sources':
         [
+            'libANGLE/renderer/gl/wgl/D3DTextureSurfaceWGL.cpp',
+            'libANGLE/renderer/gl/wgl/D3DTextureSurfaceWGL.h',
             'libANGLE/renderer/gl/wgl/DisplayWGL.cpp',
             'libANGLE/renderer/gl/wgl/DisplayWGL.h',
             'libANGLE/renderer/gl/wgl/DXGISwapChainWindowSurfaceWGL.cpp',
@@ -699,12 +707,12 @@
             'type': 'static_library',
             'dependencies':
             [
-                'translator_static',
+                'translator',
                 'commit_id',
                 'angle_common',
                 'angle_image_util',
             ],
-            'includes': [ '../build/common_defines.gypi', ],
+            'includes': [ '../gyp/common_defines.gypi', ],
             'include_dirs':
             [
                 '.',
@@ -733,6 +741,7 @@
                 ],
                 'defines':
                 [
+                    'LIBANGLE_IMPLEMENTATION',
                     'GL_GLEXT_PROTOTYPES',
                     'ANGLE_PRELOADED_D3DCOMPILER_MODULE_NAMES={ "d3dcompiler_47.dll", "d3dcompiler_46.dll", "d3dcompiler_43.dll" }',
                 ],
@@ -1031,7 +1040,7 @@
             'target_name': 'libGLESv2',
             'type': '<(angle_gl_library_type)',
             'dependencies': [ 'libANGLE', 'angle_common' ],
-            'includes': [ '../build/common_defines.gypi', ],
+            'includes': [ '../gyp/common_defines.gypi', ],
             'sources':
             [
                 '<@(libglesv2_sources)',

@@ -40,7 +40,7 @@ OPENSSL_MSVC_PRAGMA(warning(push, 3))
 OPENSSL_MSVC_PRAGMA(warning(pop))
 
 typedef int ssize_t;
-#pragma comment(lib, "Ws2_32.lib")
+OPENSSL_MSVC_PRAGMA(comment(lib, "Ws2_32.lib"))
 #endif
 
 #include <openssl/err.h>
@@ -154,7 +154,7 @@ bool Accept(int *out_sock, const std::string &port) {
   memset(&addr, 0, sizeof(addr));
 
   addr.sin6_family = AF_INET6;
-  addr.sin6_addr = in6addr_any;
+  addr.sin6_addr = IN6ADDR_ANY_INIT;
   addr.sin6_port = htons(atoi(port.c_str()));
 
   bool ok = false;
@@ -268,16 +268,15 @@ void PrintConnectionInfo(const SSL *ssl) {
   fprintf(stderr, "  ALPN protocol: %.*s\n", alpn_len, alpn);
 
   // Print the server cert subject and issuer names.
-  X509 *peer = SSL_get_peer_certificate(ssl);
-  if (peer != NULL) {
+  bssl::UniquePtr<X509> peer(SSL_get_peer_certificate(ssl));
+  if (peer != nullptr) {
     fprintf(stderr, "  Cert subject: ");
-    X509_NAME_print_ex_fp(stderr, X509_get_subject_name(peer), 0,
+    X509_NAME_print_ex_fp(stderr, X509_get_subject_name(peer.get()), 0,
                           XN_FLAG_ONELINE);
     fprintf(stderr, "\n  Cert issuer: ");
-    X509_NAME_print_ex_fp(stderr, X509_get_issuer_name(peer), 0,
+    X509_NAME_print_ex_fp(stderr, X509_get_issuer_name(peer.get()), 0,
                           XN_FLAG_ONELINE);
     fprintf(stderr, "\n");
-    X509_free(peer);
   }
 }
 

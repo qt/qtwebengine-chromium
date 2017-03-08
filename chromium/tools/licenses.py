@@ -22,10 +22,6 @@ import sys
 
 # Paths from the root of the tree to directories to skip.
 PRUNE_PATHS = set([
-    # Same module occurs in crypto/third_party/nss and net/third_party/nss, so
-    # skip this one.
-    os.path.join('third_party','nss'),
-
     # Placeholder directory only, not third-party code.
     os.path.join('third_party','adobe'),
 
@@ -63,12 +59,9 @@ PRUNE_PATHS = set([
     os.path.join('third_party','pyelftools'),
     os.path.join('third_party','pylib'),
     os.path.join('third_party','pywebsocket'),
-    os.path.join('third_party','qunit'),
-    os.path.join('third_party','sinonjs'),
     os.path.join('third_party','syzygy'),
 
-    # Chromium code in third_party.
-    os.path.join('third_party','fuzzymatch'),
+    # Chromium code.
     os.path.join('tools', 'swarming_client'),
 
     # Stuff pulled in from chrome-internal for official builds/tools.
@@ -107,7 +100,6 @@ ADDITIONAL_PATHS = (
     os.path.join('chrome', 'test', 'chromeos', 'autotest'),
     os.path.join('chrome', 'test', 'data'),
     os.path.join('native_client'),
-    os.path.join('net', 'tools', 'spdyshark'),
     os.path.join('sdch', 'open-vcdiff'),
     os.path.join('testing', 'gmock'),
     os.path.join('testing', 'gtest'),

@@ -37,8 +37,10 @@
 #include "webrtc/base/stringutils.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/call.h"
+#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/media/sctp/sctpdataengine.h"
 #include "webrtc/pc/channelmanager.h"
+#include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 
 namespace {
@@ -568,9 +570,9 @@ PeerConnection::PeerConnection(PeerConnectionFactory* factory)
       observer_(NULL),
       uma_observer_(NULL),
       signaling_state_(kStable),
-      ice_state_(kIceNew),
       ice_connection_state_(kIceConnectionNew),
       ice_gathering_state_(kIceGatheringNew),
+      event_log_(RtcEventLog::Create(webrtc::Clock::GetRealTimeClock())),
       rtcp_cname_(GenerateRtcpCname()),
       local_streams_(StreamCollection::Create()),
       remote_streams_(StreamCollection::Create()) {}
@@ -619,8 +621,8 @@ bool PeerConnection::Initialize(
     return false;
   }
 
-  media_controller_.reset(
-      factory_->CreateMediaController(configuration.media_config));
+  media_controller_.reset(factory_->CreateMediaController(
+      configuration.media_config, event_log_.get()));
 
   session_.reset(new WebRtcSession(
       media_controller_.get(), factory_->network_thread(),
@@ -884,6 +886,13 @@ bool PeerConnection::GetStats(StatsObserver* observer,
   }
 
   stats_->UpdateStats(level);
+  // The StatsCollector is used to tell if a track is valid because it may
+  // remember tracks that the PeerConnection previously removed.
+  if (track && !stats_->IsValidTrack(track->id())) {
+    LOG(LS_WARNING) << "GetStats is called with an invalid track: "
+                    << track->id();
+    return false;
+  }
   signaling_thread()->Post(RTC_FROM_HERE, this, MSG_GETSTATS,
                            new GetStatsMsg(observer, track));
   return true;
@@ -896,10 +905,6 @@ void PeerConnection::GetStats(RTCStatsCollectorCallback* callback) {
 
 PeerConnectionInterface::SignalingState PeerConnection::signaling_state() {
   return signaling_state_;
-}
-
-PeerConnectionInterface::IceState PeerConnection::ice_state() {
-  return ice_state_;
 }
 
 PeerConnectionInterface::IceConnectionState
@@ -1300,6 +1305,7 @@ void PeerConnection::RegisterUMAObserver(UMAObserver* observer) {
 
   // Send information about IPv4/IPv6 status.
   if (uma_observer_ && port_allocator_) {
+    port_allocator_->SetMetricsObserver(uma_observer_);
     if (port_allocator_->flags() & cricket::PORTALLOCATOR_ENABLE_IPV6) {
       uma_observer_->IncrementEnumCounter(
           kEnumCounterAddressFamily, kPeerConnection_IPv6,
@@ -1644,10 +1650,6 @@ bool PeerConnection::GetOptionsForOffer(
         session_options->HasSendMediaStream(cricket::MEDIA_TYPE_VIDEO) ||
         !remote_video_tracks_.empty();
   }
-  session_options->bundle_enabled =
-      session_options->bundle_enabled &&
-      (session_options->has_audio() || session_options->has_video() ||
-       session_options->has_data());
 
   // Intentionally unset the data channel type for RTP data channel with the
   // second condition. Otherwise the RTP data channels would be successfully
@@ -1657,6 +1659,11 @@ bool PeerConnection::GetOptionsForOffer(
   if (HasDataChannels() && session_->data_channel_type() != cricket::DCT_RTP) {
     session_options->data_channel_type = session_->data_channel_type();
   }
+
+  session_options->bundle_enabled =
+      session_options->bundle_enabled &&
+      (session_options->has_audio() || session_options->has_video() ||
+       session_options->has_data());
 
   session_options->rtcp_cname = rtcp_cname_;
   session_options->crypto_options = factory_->options().crypto_options;
@@ -1683,11 +1690,6 @@ void PeerConnection::FinishOptionsForAnswer(
     }
   }
   AddSendStreams(session_options, senders_, rtp_data_channels_);
-  session_options->bundle_enabled =
-      session_options->bundle_enabled &&
-      (session_options->has_audio() || session_options->has_video() ||
-       session_options->has_data());
-
   // RTP data channel is handled in MediaSessionOptions::AddStream. SCTP streams
   // are not signaled in the SDP so does not go through that path and must be
   // handled here.
@@ -1698,6 +1700,11 @@ void PeerConnection::FinishOptionsForAnswer(
   if (session_->data_channel_type() != cricket::DCT_RTP) {
     session_options->data_channel_type = session_->data_channel_type();
   }
+  session_options->bundle_enabled =
+      session_options->bundle_enabled &&
+      (session_options->has_audio() || session_options->has_video() ||
+       session_options->has_data());
+
   session_options->crypto_options = factory_->options().crypto_options;
 }
 
@@ -2095,6 +2102,7 @@ rtc::scoped_refptr<DataChannel> PeerConnection::InternalCreateDataChannel(
                                   &PeerConnection::OnSctpDataChannelClosed);
   }
 
+  SignalDataChannelCreated(channel.get());
   return channel;
 }
 
@@ -2342,10 +2350,10 @@ bool PeerConnection::ReconfigurePortAllocator_n(
 
 bool PeerConnection::StartRtcEventLog_w(rtc::PlatformFile file,
                                         int64_t max_size_bytes) {
-  return media_controller_->call_w()->StartEventLog(file, max_size_bytes);
+  return event_log_->StartLogging(file, max_size_bytes);
 }
 
 void PeerConnection::StopRtcEventLog_w() {
-  media_controller_->call_w()->StopEventLog();
+  event_log_->StopLogging();
 }
 }  // namespace webrtc

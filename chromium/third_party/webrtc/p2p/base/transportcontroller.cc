@@ -187,6 +187,7 @@ TransportChannel* TransportController::CreateTransportChannel_n(
   // Need to create a new channel.
   Transport* transport = GetOrCreateTransport_n(transport_name);
   TransportChannelImpl* channel = transport->CreateChannel(component);
+  channel->SetMetricsObserver(metrics_observer_);
   channel->SignalWritableState.connect(
       this, &TransportController::OnChannelWritableState_n);
   channel->SignalReceivingState.connect(
@@ -564,15 +565,16 @@ bool TransportController::GetStats_n(const std::string& transport_name,
   return transport->GetStats(stats);
 }
 
-void TransportController::OnChannelWritableState_n(TransportChannel* channel) {
+void TransportController::OnChannelWritableState_n(
+    rtc::PacketTransportInterface* transport) {
   RTC_DCHECK(network_thread_->IsCurrent());
-  LOG(LS_INFO) << channel->transport_name() << " TransportChannel "
-               << channel->component() << " writability changed to "
-               << channel->writable() << ".";
+  LOG(LS_INFO) << " TransportChannel " << transport->debug_name()
+               << " writability changed to " << transport->writable() << ".";
   UpdateAggregateStates_n();
 }
 
-void TransportController::OnChannelReceivingState_n(TransportChannel* channel) {
+void TransportController::OnChannelReceivingState_n(
+    rtc::PacketTransportInterface* transport) {
   RTC_DCHECK(network_thread_->IsCurrent());
   UpdateAggregateStates_n();
 }
@@ -702,6 +704,14 @@ void TransportController::UpdateAggregateStates_n() {
 
 void TransportController::OnDtlsHandshakeError(rtc::SSLHandshakeError error) {
   SignalDtlsHandshakeError(error);
+}
+
+void TransportController::SetMetricsObserver(
+    webrtc::MetricsObserverInterface* metrics_observer) {
+  metrics_observer_ = metrics_observer;
+  for (auto channel : channels_) {
+    channel->SetMetricsObserver(metrics_observer);
+  }
 }
 
 }  // namespace cricket

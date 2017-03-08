@@ -11,24 +11,24 @@
 
 class CXFA_Document;
 class CXFA_Node;
-class IFX_FileWrite;
+class IFX_SeekableWriteStream;
 class IFX_Stream;
 
 class CXFA_DataExporter {
  public:
   explicit CXFA_DataExporter(CXFA_Document* pDocument);
 
-  FX_BOOL Export(IFX_FileWrite* pWrite);
-  FX_BOOL Export(IFX_FileWrite* pWrite,
-                 CXFA_Node* pNode,
-                 uint32_t dwFlag,
-                 const FX_CHAR* pChecksum);
+  bool Export(IFX_SeekableWriteStream* pWrite);
+  bool Export(IFX_SeekableWriteStream* pWrite,
+              CXFA_Node* pNode,
+              uint32_t dwFlag,
+              const FX_CHAR* pChecksum);
 
  protected:
-  FX_BOOL Export(IFX_Stream* pStream,
-                 CXFA_Node* pNode,
-                 uint32_t dwFlag,
-                 const FX_CHAR* pChecksum);
+  bool Export(IFX_Stream* pStream,
+              CXFA_Node* pNode,
+              uint32_t dwFlag,
+              const FX_CHAR* pChecksum);
 
   CXFA_Document* const m_pDocument;
 };

@@ -20,7 +20,7 @@
 #include "SkWriteBuffer.h"
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
-#include "GrDrawContext.h"
+#include "GrRenderTargetContext.h"
 #include "GrFixedClip.h"
 #include "SkGrPriv.h"
 #endif
@@ -205,9 +205,9 @@ sk_sp<SkSpecialImage> SkImageFilter::filterImage(SkSpecialImage* src, const Cont
     const SkIRect srcSubset = fUsesSrcInput ? src->subset() : SkIRect::MakeWH(0, 0);
     SkImageFilterCacheKey key(fUniqueID, context.ctm(), context.clipBounds(), srcGenID, srcSubset);
     if (context.cache()) {
-        SkSpecialImage* result = context.cache()->get(key, offset);
+        sk_sp<SkSpecialImage> result = context.cache()->get(key, offset);
         if (result) {
-            return sk_sp<SkSpecialImage>(SkRef(result));
+            return result;
         }
     }
 
@@ -285,24 +285,22 @@ sk_sp<SkSpecialImage> SkImageFilter::DrawWithFP(GrContext* context,
 
     sk_sp<SkColorSpace> colorSpace = sk_ref_sp(outputProperties.colorSpace());
     GrPixelConfig config = GrRenderableConfigForColorSpace(colorSpace.get());
-    sk_sp<GrDrawContext> drawContext(context->makeDrawContext(SkBackingFit::kApprox,
-                                                              bounds.width(), bounds.height(),
-                                                              config,
-                                                              std::move(colorSpace)));
-    if (!drawContext) {
+    sk_sp<GrRenderTargetContext> renderTargetContext(context->makeRenderTargetContext(
+        SkBackingFit::kApprox, bounds.width(), bounds.height(), config, std::move(colorSpace)));
+    if (!renderTargetContext) {
         return nullptr;
     }
-    paint.setGammaCorrect(drawContext->isGammaCorrect());
+    paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
 
     SkIRect dstIRect = SkIRect::MakeWH(bounds.width(), bounds.height());
     SkRect srcRect = SkRect::Make(bounds);
     SkRect dstRect = SkRect::MakeWH(srcRect.width(), srcRect.height());
     GrFixedClip clip(dstIRect);
-    drawContext->fillRectToRect(clip, paint, SkMatrix::I(), dstRect, srcRect);
+    renderTargetContext->fillRectToRect(clip, paint, SkMatrix::I(), dstRect, srcRect);
 
     return SkSpecialImage::MakeFromGpu(dstIRect, kNeedNewImageUniqueID_SpecialImage,
-                                       drawContext->asTexture(),
-                                       sk_ref_sp(drawContext->getColorSpace()));
+                                       renderTargetContext->asTexture(),
+                                       sk_ref_sp(renderTargetContext->getColorSpace()));
 }
 #endif
 

@@ -9,7 +9,6 @@
  */
 
 #include "webrtc/modules/video_coding/frame_object.h"
-#include "webrtc/base/criticalsection.h"
 #include "webrtc/modules/video_coding/packet_buffer.h"
 
 namespace webrtc {
@@ -33,9 +32,12 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
       last_seq_num_(last_seq_num),
       received_time_(received_time),
       times_nacked_(times_nacked) {
-  size = frame_size;
   VCMPacket* packet = packet_buffer_->GetPacket(first_seq_num);
   if (packet) {
+    // RtpFrameObject members
+    frame_type_ = packet->frameType;
+    codec_type_ = packet->codec;
+
     // TODO(philipel): Remove when encoded image is replaced by FrameObject.
     // VCMEncodedFrame members
     CopyCodecSpecific(&packet->video_header);
@@ -43,15 +45,22 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
     _payloadType = packet->payloadType;
     _timeStamp = packet->timestamp;
     ntp_time_ms_ = packet->ntp_time_ms_;
-    _buffer = new uint8_t[frame_size]();
-    _size = frame_size;
+
+    // Since FFmpeg use an optimized bitstream reader that reads in chunks of
+    // 32/64 bits we have to add at least that much padding to the buffer
+    // to make sure the decoder doesn't read out of bounds.
+    // NOTE! EncodedImage::_size is the size of the buffer (think capacity of
+    //       an std::vector) and EncodedImage::_length is the actual size of
+    //       the bitstream (think size of an std::vector).
+    if (codec_type_ == kVideoCodecH264)
+      _size = frame_size + EncodedImage::kBufferPaddingBytesH264;
+    else
+      _size = frame_size;
+
+    _buffer = new uint8_t[_size];
     _length = frame_size;
     _frameType = packet->frameType;
     GetBitstream(_buffer);
-
-    // RtpFrameObject members
-    frame_type_ = packet->frameType;
-    codec_type_ = packet->codec;
 
     // FrameObject members
     timestamp = packet->timestamp;
@@ -98,11 +107,12 @@ int64_t RtpFrameObject::RenderTime() const {
   return _renderTimeMs;
 }
 
-RTPVideoTypeHeader* RtpFrameObject::GetCodecHeader() const {
+rtc::Optional<RTPVideoTypeHeader> RtpFrameObject::GetCodecHeader() const {
+  rtc::CritScope lock(&packet_buffer_->crit_);
   VCMPacket* packet = packet_buffer_->GetPacket(first_seq_num_);
   if (!packet)
-    return nullptr;
-  return &packet->video_header.codecHeader;
+    return rtc::Optional<RTPVideoTypeHeader>();
+  return rtc::Optional<RTPVideoTypeHeader>(packet->video_header.codecHeader);
 }
 
 }  // namespace video_coding

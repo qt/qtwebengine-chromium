@@ -29,20 +29,20 @@
 #include "xfa/fxgraphics/cfx_graphics.h"
 #endif  // PDF_ENABLE_XFA
 
-CPDFSDK_PageView::CPDFSDK_PageView(CPDFSDK_Document* pSDKDoc,
+CPDFSDK_PageView::CPDFSDK_PageView(CPDFSDK_FormFillEnvironment* pFormFillEnv,
                                    UnderlyingPageType* page)
     : m_page(page),
-      m_pSDKDoc(pSDKDoc),
+      m_pFormFillEnv(pFormFillEnv),
 #ifndef PDF_ENABLE_XFA
       m_bOwnsPage(false),
 #endif  // PDF_ENABLE_XFA
-      m_bEnterWidget(FALSE),
-      m_bExitWidget(FALSE),
-      m_bOnWidget(FALSE),
-      m_bValid(FALSE),
-      m_bLocked(FALSE),
+      m_bEnterWidget(false),
+      m_bExitWidget(false),
+      m_bOnWidget(false),
+      m_bValid(false),
+      m_bLocked(false),
       m_bBeingDestroyed(false) {
-  CPDFSDK_InterForm* pInterForm = pSDKDoc->GetInterForm();
+  CPDFSDK_InterForm* pInterForm = pFormFillEnv->GetInterForm();
   if (pInterForm) {
     CPDF_InterForm* pPDFInterForm = pInterForm->GetInterForm();
 #ifdef PDF_ENABLE_XFA
@@ -65,8 +65,8 @@ CPDFSDK_PageView::~CPDFSDK_PageView() {
   m_page->SetView(nullptr);
 #endif  // PDF_ENABLE_XFA
 
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+      m_pFormFillEnv->GetAnnotHandlerMgr();
   for (CPDFSDK_Annot* pAnnot : m_SDKAnnotArray)
     pAnnotHandlerMgr->ReleaseAnnot(pAnnot);
 
@@ -88,14 +88,13 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
                                        CPDF_RenderOptions* pOptions) {
 #endif  // PDF_ENABLE_XFA
   m_curMatrix = *pUser2Device;
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
 
 #ifdef PDF_ENABLE_XFA
   CPDFXFA_Page* pPage = GetPDFXFAPage();
   if (!pPage)
     return;
 
-  if (pPage->GetDocument()->GetDocType() == DOCTYPE_DYNAMIC_XFA) {
+  if (pPage->GetContext()->GetDocType() == DOCTYPE_DYNAMIC_XFA) {
     CFX_Graphics gs;
     gs.Create(pDevice);
     CFX_RectF rectClip;
@@ -106,7 +105,7 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
     gs.SetClipRect(rectClip);
     std::unique_ptr<CXFA_RenderContext> pRenderContext(new CXFA_RenderContext);
     CXFA_RenderOptions renderOptions;
-    renderOptions.m_bHighlight = TRUE;
+    renderOptions.m_bHighlight = true;
     CXFA_FFPageView* xfaView = pPage->GetXFAPageView();
     pRenderContext->StartRender(xfaView, &gs, *pUser2Device, renderOptions);
     pRenderContext->DoRender();
@@ -119,7 +118,7 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
       return;
     // Render the focus widget
     docView->GetWidgetHandler()->RenderWidget(annot->GetXFAWidget(), &gs,
-                                              pUser2Device, FALSE);
+                                              pUser2Device, false);
     return;
   }
 #endif  // PDF_ENABLE_XFA
@@ -127,7 +126,8 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
   // for pdf/static xfa.
   CPDFSDK_AnnotIterator annotIterator(this, true);
   while (CPDFSDK_Annot* pSDKAnnot = annotIterator.Next()) {
-    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
     pAnnotHandlerMgr->Annot_OnDraw(this, pSDKAnnot, pDevice, pUser2Device,
                                    pOptions->m_bDrawAnnots);
   }
@@ -135,8 +135,7 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
 
 CPDFSDK_Annot* CPDFSDK_PageView::GetFXAnnotAtPoint(FX_FLOAT pageX,
                                                    FX_FLOAT pageY) {
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotMgr = pEnv->GetAnnotHandlerMgr();
+  CPDFSDK_AnnotHandlerMgr* pAnnotMgr = m_pFormFillEnv->GetAnnotHandlerMgr();
   CPDFSDK_AnnotIterator annotIterator(this, false);
   while (CPDFSDK_Annot* pSDKAnnot = annotIterator.Next()) {
     CFX_FloatRect rc = pAnnotMgr->Annot_OnGetViewBBox(this, pSDKAnnot);
@@ -151,8 +150,7 @@ CPDFSDK_Annot* CPDFSDK_PageView::GetFXAnnotAtPoint(FX_FLOAT pageX,
 
 CPDFSDK_Annot* CPDFSDK_PageView::GetFXWidgetAtPoint(FX_FLOAT pageX,
                                                     FX_FLOAT pageY) {
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotMgr = pEnv->GetAnnotHandlerMgr();
+  CPDFSDK_AnnotHandlerMgr* pAnnotMgr = m_pFormFillEnv->GetAnnotHandlerMgr();
   CPDFSDK_AnnotIterator annotIterator(this, false);
   while (CPDFSDK_Annot* pSDKAnnot = annotIterator.Next()) {
     bool bHitTest = pSDKAnnot->GetAnnotSubtype() == CPDF_Annot::Subtype::WIDGET;
@@ -180,8 +178,7 @@ CPDFSDK_Annot* CPDFSDK_PageView::AddAnnot(CXFA_FFWidget* pPDFAnnot) {
   if (pSDKAnnot)
     return pSDKAnnot;
 
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandler = pEnv->GetAnnotHandlerMgr();
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandler = m_pFormFillEnv->GetAnnotHandlerMgr();
   pSDKAnnot = pAnnotHandler->NewAnnot(pPDFAnnot, this);
   if (!pSDKAnnot)
     return nullptr;
@@ -190,18 +187,17 @@ CPDFSDK_Annot* CPDFSDK_PageView::AddAnnot(CXFA_FFWidget* pPDFAnnot) {
   return pSDKAnnot;
 }
 
-FX_BOOL CPDFSDK_PageView::DeleteAnnot(CPDFSDK_Annot* pAnnot) {
+bool CPDFSDK_PageView::DeleteAnnot(CPDFSDK_Annot* pAnnot) {
   if (!pAnnot)
-    return FALSE;
+    return false;
   CPDFXFA_Page* pPage = pAnnot->GetPDFXFAPage();
-  if (!pPage || (pPage->GetDocument()->GetDocType() != DOCTYPE_STATIC_XFA &&
-                 pPage->GetDocument()->GetDocType() != DOCTYPE_DYNAMIC_XFA))
-    return FALSE;
+  if (!pPage || (pPage->GetContext()->GetDocType() != DOCTYPE_STATIC_XFA &&
+                 pPage->GetContext()->GetDocType() != DOCTYPE_DYNAMIC_XFA))
+    return false;
 
   if (GetFocusAnnot() == pAnnot)
-    m_pSDKDoc->KillFocusAnnot(0);
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandler = pEnv->GetAnnotHandlerMgr();
+    m_pFormFillEnv->KillFocusAnnot(0);
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandler = m_pFormFillEnv->GetAnnotHandlerMgr();
   if (pAnnotHandler)
     pAnnotHandler->ReleaseAnnot(pAnnot);
 
@@ -211,14 +207,14 @@ FX_BOOL CPDFSDK_PageView::DeleteAnnot(CPDFSDK_Annot* pAnnot) {
   if (m_pCaptureWidget.Get() == pAnnot)
     m_pCaptureWidget.Reset();
 
-  return TRUE;
+  return true;
 }
 #endif  // PDF_ENABLE_XFA
 
 CPDF_Document* CPDFSDK_PageView::GetPDFDocument() {
   if (m_page) {
 #ifdef PDF_ENABLE_XFA
-    return m_page->GetDocument()->GetPDFDoc();
+    return m_page->GetContext()->GetPDFDoc();
 #else   // PDF_ENABLE_XFA
     return m_page->m_pDocument;
 #endif  // PDF_ENABLE_XFA
@@ -255,161 +251,160 @@ CPDFSDK_Annot* CPDFSDK_PageView::GetAnnotByXFAWidget(CXFA_FFWidget* hWidget) {
 }
 #endif  // PDF_ENABLE_XFA
 
-FX_BOOL CPDFSDK_PageView::OnLButtonDown(const CFX_FloatPoint& point,
-                                        uint32_t nFlag) {
+bool CPDFSDK_PageView::OnLButtonDown(const CFX_FloatPoint& point,
+                                     uint32_t nFlag) {
   CPDFSDK_Annot::ObservedPtr pAnnot(GetFXWidgetAtPoint(point.x, point.y));
   if (!pAnnot) {
-    m_pSDKDoc->KillFocusAnnot(nFlag);
-    return FALSE;
+    m_pFormFillEnv->KillFocusAnnot(nFlag);
+    return false;
   }
 
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+      m_pFormFillEnv->GetAnnotHandlerMgr();
   if (!pAnnotHandlerMgr->Annot_OnLButtonDown(this, &pAnnot, nFlag, point))
-    return FALSE;
+    return false;
 
   if (!pAnnot)
-    return FALSE;
+    return false;
 
-  m_pSDKDoc->SetFocusAnnot(&pAnnot);
-  return TRUE;
+  m_pFormFillEnv->SetFocusAnnot(&pAnnot);
+  return true;
 }
 
 #ifdef PDF_ENABLE_XFA
-FX_BOOL CPDFSDK_PageView::OnRButtonDown(const CFX_FloatPoint& point,
-                                        uint32_t nFlag) {
+bool CPDFSDK_PageView::OnRButtonDown(const CFX_FloatPoint& point,
+                                     uint32_t nFlag) {
   CPDFSDK_Annot::ObservedPtr pAnnot(GetFXWidgetAtPoint(point.x, point.y));
   if (!pAnnot)
-    return FALSE;
+    return false;
 
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
-  FX_BOOL ok =
-      pAnnotHandlerMgr->Annot_OnRButtonDown(this, &pAnnot, nFlag, point);
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+      m_pFormFillEnv->GetAnnotHandlerMgr();
+  bool ok = pAnnotHandlerMgr->Annot_OnRButtonDown(this, &pAnnot, nFlag, point);
   if (!pAnnot)
-    return FALSE;
+    return false;
 
   if (ok)
-    m_pSDKDoc->SetFocusAnnot(&pAnnot);
+    m_pFormFillEnv->SetFocusAnnot(&pAnnot);
 
-  return TRUE;
+  return true;
 }
 
-FX_BOOL CPDFSDK_PageView::OnRButtonUp(const CFX_FloatPoint& point,
-                                      uint32_t nFlag) {
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+bool CPDFSDK_PageView::OnRButtonUp(const CFX_FloatPoint& point,
+                                   uint32_t nFlag) {
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+      m_pFormFillEnv->GetAnnotHandlerMgr();
   CPDFSDK_Annot::ObservedPtr pFXAnnot(GetFXWidgetAtPoint(point.x, point.y));
   if (!pFXAnnot)
-    return FALSE;
+    return false;
 
   if (pAnnotHandlerMgr->Annot_OnRButtonUp(this, &pFXAnnot, nFlag, point))
-    m_pSDKDoc->SetFocusAnnot(&pFXAnnot);
+    m_pFormFillEnv->SetFocusAnnot(&pFXAnnot);
 
-  return TRUE;
+  return true;
 }
 #endif  // PDF_ENABLE_XFA
 
-FX_BOOL CPDFSDK_PageView::OnLButtonUp(const CFX_FloatPoint& point,
-                                      uint32_t nFlag) {
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+bool CPDFSDK_PageView::OnLButtonUp(const CFX_FloatPoint& point,
+                                   uint32_t nFlag) {
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+      m_pFormFillEnv->GetAnnotHandlerMgr();
   CPDFSDK_Annot::ObservedPtr pFXAnnot(GetFXWidgetAtPoint(point.x, point.y));
   CPDFSDK_Annot::ObservedPtr pFocusAnnot(GetFocusAnnot());
   if (pFocusAnnot && pFocusAnnot != pFXAnnot) {
     // Last focus Annot gets a chance to handle the event.
     if (pAnnotHandlerMgr->Annot_OnLButtonUp(this, &pFocusAnnot, nFlag, point))
-      return TRUE;
+      return true;
   }
   return pFXAnnot &&
          pAnnotHandlerMgr->Annot_OnLButtonUp(this, &pFXAnnot, nFlag, point);
 }
 
-FX_BOOL CPDFSDK_PageView::OnMouseMove(const CFX_FloatPoint& point, int nFlag) {
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+bool CPDFSDK_PageView::OnMouseMove(const CFX_FloatPoint& point, int nFlag) {
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+      m_pFormFillEnv->GetAnnotHandlerMgr();
   CPDFSDK_Annot::ObservedPtr pFXAnnot(GetFXAnnotAtPoint(point.x, point.y));
   if (pFXAnnot) {
     if (m_pCaptureWidget && m_pCaptureWidget != pFXAnnot) {
-      m_bExitWidget = TRUE;
-      m_bEnterWidget = FALSE;
+      m_bExitWidget = true;
+      m_bEnterWidget = false;
       pAnnotHandlerMgr->Annot_OnMouseExit(this, &m_pCaptureWidget, nFlag);
     }
     m_pCaptureWidget.Reset(pFXAnnot.Get());
-    m_bOnWidget = TRUE;
+    m_bOnWidget = true;
     if (!m_bEnterWidget) {
-      m_bEnterWidget = TRUE;
-      m_bExitWidget = FALSE;
+      m_bEnterWidget = true;
+      m_bExitWidget = false;
       pAnnotHandlerMgr->Annot_OnMouseEnter(this, &pFXAnnot, nFlag);
     }
     pAnnotHandlerMgr->Annot_OnMouseMove(this, &pFXAnnot, nFlag, point);
-    return TRUE;
+    return true;
   }
   if (m_bOnWidget) {
-    m_bOnWidget = FALSE;
-    m_bExitWidget = TRUE;
-    m_bEnterWidget = FALSE;
+    m_bOnWidget = false;
+    m_bExitWidget = true;
+    m_bEnterWidget = false;
     if (m_pCaptureWidget) {
       pAnnotHandlerMgr->Annot_OnMouseExit(this, &m_pCaptureWidget, nFlag);
       m_pCaptureWidget.Reset();
     }
   }
-  return FALSE;
+  return false;
 }
 
-FX_BOOL CPDFSDK_PageView::OnMouseWheel(double deltaX,
-                                       double deltaY,
-                                       const CFX_FloatPoint& point,
-                                       int nFlag) {
+bool CPDFSDK_PageView::OnMouseWheel(double deltaX,
+                                    double deltaY,
+                                    const CFX_FloatPoint& point,
+                                    int nFlag) {
   CPDFSDK_Annot::ObservedPtr pAnnot(GetFXWidgetAtPoint(point.x, point.y));
   if (!pAnnot)
-    return FALSE;
+    return false;
 
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+      m_pFormFillEnv->GetAnnotHandlerMgr();
   return pAnnotHandlerMgr->Annot_OnMouseWheel(this, &pAnnot, nFlag, (int)deltaY,
                                               point);
 }
 
-FX_BOOL CPDFSDK_PageView::OnChar(int nChar, uint32_t nFlag) {
+bool CPDFSDK_PageView::OnChar(int nChar, uint32_t nFlag) {
   if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
-    CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
     return pAnnotHandlerMgr->Annot_OnChar(pAnnot, nChar, nFlag);
   }
 
-  return FALSE;
+  return false;
 }
 
-FX_BOOL CPDFSDK_PageView::OnKeyDown(int nKeyCode, int nFlag) {
+bool CPDFSDK_PageView::OnKeyDown(int nKeyCode, int nFlag) {
   if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
-    CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
     return pAnnotHandlerMgr->Annot_OnKeyDown(pAnnot, nKeyCode, nFlag);
   }
-  return FALSE;
+  return false;
 }
 
-FX_BOOL CPDFSDK_PageView::OnKeyUp(int nKeyCode, int nFlag) {
-  return FALSE;
+bool CPDFSDK_PageView::OnKeyUp(int nKeyCode, int nFlag) {
+  return false;
 }
 
 void CPDFSDK_PageView::LoadFXAnnots() {
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
+  CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+      m_pFormFillEnv->GetAnnotHandlerMgr();
 
-  SetLock(TRUE);
+  SetLock(true);
 
 #ifdef PDF_ENABLE_XFA
   CFX_RetainPtr<CPDFXFA_Page> protector(m_page);
-  if (m_pSDKDoc->GetXFADocument()->GetDocType() == DOCTYPE_DYNAMIC_XFA) {
+  if (m_pFormFillEnv->GetXFAContext()->GetDocType() == DOCTYPE_DYNAMIC_XFA) {
     CXFA_FFPageView* pageView = m_page->GetXFAPageView();
     std::unique_ptr<IXFA_WidgetIterator> pWidgetHander(
         pageView->CreateWidgetIterator(
             XFA_TRAVERSEWAY_Form,
             XFA_WidgetStatus_Visible | XFA_WidgetStatus_Viewable));
     if (!pWidgetHander) {
-      SetLock(FALSE);
+      SetLock(false);
       return;
     }
 
@@ -421,7 +416,7 @@ void CPDFSDK_PageView::LoadFXAnnots() {
       pAnnotHandlerMgr->Annot_OnLoad(pAnnot);
     }
 
-    SetLock(FALSE);
+    SetLock(false);
     return;
   }
 #endif  // PDF_ENABLE_XFA
@@ -445,20 +440,18 @@ void CPDFSDK_PageView::LoadFXAnnots() {
     pAnnotHandlerMgr->Annot_OnLoad(pAnnot);
   }
 
-  SetLock(FALSE);
+  SetLock(false);
 }
 
 void CPDFSDK_PageView::UpdateRects(const std::vector<CFX_FloatRect>& rects) {
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
   for (const auto& rc : rects)
-    pEnv->Invalidate(m_page, rc.left, rc.top, rc.right, rc.bottom);
+    m_pFormFillEnv->Invalidate(m_page, rc.left, rc.top, rc.right, rc.bottom);
 }
 
 void CPDFSDK_PageView::UpdateView(CPDFSDK_Annot* pAnnot) {
   CFX_FloatRect rcWindow = pAnnot->GetRect();
-  CPDFSDK_FormFillEnvironment* pEnv = m_pSDKDoc->GetEnv();
-  pEnv->Invalidate(m_page, rcWindow.left, rcWindow.top, rcWindow.right,
-                   rcWindow.bottom);
+  m_pFormFillEnv->Invalidate(m_page, rcWindow.left, rcWindow.top,
+                             rcWindow.right, rcWindow.bottom);
 }
 
 int CPDFSDK_PageView::GetPageIndex() const {
@@ -466,7 +459,7 @@ int CPDFSDK_PageView::GetPageIndex() const {
     return -1;
 
 #ifdef PDF_ENABLE_XFA
-  int nDocType = m_page->GetDocument()->GetDocType();
+  int nDocType = m_page->GetContext()->GetDocType();
   switch (nDocType) {
     case DOCTYPE_DYNAMIC_XFA: {
       CXFA_FFPageView* pPageView = m_page->GetXFAPageView();
@@ -502,12 +495,12 @@ bool CPDFSDK_PageView::IsValidSDKAnnot(const CPDFSDK_Annot* p) const {
 }
 
 CPDFSDK_Annot* CPDFSDK_PageView::GetFocusAnnot() {
-  CPDFSDK_Annot* pFocusAnnot = m_pSDKDoc->GetFocusAnnot();
+  CPDFSDK_Annot* pFocusAnnot = m_pFormFillEnv->GetFocusAnnot();
   return IsValidSDKAnnot(pFocusAnnot) ? pFocusAnnot : nullptr;
 }
 
 int CPDFSDK_PageView::GetPageIndexForStaticPDF() const {
   CPDF_Dictionary* pDict = GetPDFPage()->m_pFormDict;
-  CPDF_Document* pDoc = m_pSDKDoc->GetPDFDocument();
+  CPDF_Document* pDoc = m_pFormFillEnv->GetPDFDocument();
   return (pDoc && pDict) ? pDoc->GetPageIndex(pDict->GetObjNum()) : -1;
 }

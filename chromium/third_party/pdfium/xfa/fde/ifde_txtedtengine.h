@@ -8,11 +8,11 @@
 #define XFA_FDE_IFDE_TXTEDTENGINE_H_
 
 #include "core/fxge/fx_dib.h"
-#include "xfa/fgas/font/fgas_font.h"
+#include "xfa/fgas/font/cfgas_fontmgr.h"
 
 class CFDE_TxtEdtEngine;
-class CFWL_EditImp;
 class IFDE_TxtEdtPage;
+class IFWL_Edit;
 
 #define FDE_TEXTEDITMODE_MultiLines (1L << 0)
 #define FDE_TEXTEDITMODE_AutoLineWrap (1L << 1)
@@ -95,14 +95,14 @@ struct FDE_TXTEDTPARAMS {
   FX_ARGB dwFontColor;
   FX_FLOAT fLineSpace;
   FX_FLOAT fTabWidth;
-  FX_BOOL bTabEquidistant;
+  bool bTabEquidistant;
   FX_WCHAR wDefChar;
   FX_WCHAR wLineBreakChar;
   int32_t nCharRotation;
   int32_t nLineEnd;
   int32_t nHorzScale;
   FX_FLOAT fCharSpace;
-  CFWL_EditImp* pEventSink;
+  IFWL_Edit* pEventSink;
 };
 
 enum FDE_TXTEDT_TEXTCHANGE_TYPE {

@@ -240,7 +240,7 @@ static IDBKey* createIDBKeyFromValue(v8::Isolate* isolate,
         subkeys.append(subkey);
     }
 
-    stack.removeLast();
+    stack.pop_back();
     return IDBKey::createArray(subkeys);
   }
   return nullptr;
@@ -394,9 +394,8 @@ static v8::Local<v8::Value> deserializeIDBValueData(v8::Isolate* isolate,
   if (!value || value->isNull())
     return v8::Null(isolate);
 
-  const SharedBuffer* valueData = value->data();
   RefPtr<SerializedScriptValue> serializedValue =
-      SerializedScriptValue::create(valueData->data(), valueData->size());
+      value->createSerializedValue();
   return serializedValue->deserialize(isolate, nullptr, value->blobInfo());
 }
 

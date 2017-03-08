@@ -136,6 +136,7 @@ typedef struct TagPpsBsInfo {
 /*typedef for get intra predictor func pointer*/
 typedef void (*PGetIntraPredFunc) (uint8_t* pPred, const int32_t kiLumaStride);
 typedef void (*PIdctResAddPredFunc) (uint8_t* pPred, const int32_t kiStride, int16_t* pRs);
+typedef void (*PIdctFourResAddPredFunc) (uint8_t* pPred, int32_t iStride, int16_t* pRs, const int8_t* pNzc);
 typedef void (*PExpandPictureFunc) (uint8_t* pDst, const int32_t kiStride, const int32_t kiPicWidth,
                                     const int32_t kiPicHeight);
 
@@ -242,7 +243,6 @@ typedef struct TagWelsDecoderContext {
   SDecodingParam*               pParam;
   uint32_t                      uiCpuFlag;                      // CPU compatibility detected
 
-  EVideoFormatType eOutputColorFormat;          // color space format to be outputed
   VIDEO_BITSTREAM_TYPE eVideoType; //indicate the type of video to decide whether or not to do qp_delta error detection.
   bool                          bHaveGotMemory; // global memory for decoder context related ever requested?
 
@@ -376,7 +376,6 @@ typedef struct TagWelsDecoderContext {
   ERROR_CON_IDC eErrorConMethod; //
 
 //for Parse only
-  bool bParseOnly;
   bool bFramePending;
   bool bFrameFinish;
   int32_t iNalNum;
@@ -391,6 +390,7 @@ typedef struct TagWelsDecoderContext {
   PGetIntraPredFunc pGetI4x4LumaPredFunc[14];           // h264_predict_4x4_t
   PGetIntraPredFunc pGetIChromaPredFunc[7];             // h264_predict_8x8_t
   PIdctResAddPredFunc pIdctResAddPredFunc;
+  PIdctFourResAddPredFunc pIdctFourResAddPredFunc;
   SMcFunc sMcFunc;
   //Transform8x8
   PGetIntraPred8x8Func pGetI8x8LumaPredFunc[14];

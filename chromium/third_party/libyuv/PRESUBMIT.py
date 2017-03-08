@@ -26,15 +26,11 @@ def GetPreferredTryMasters(project, change):
     'win',
     'win_rel',
     'win_x64_rel',
-    'win_x64_gn',
-    'win_x64_gn_rel',
     'win_clang',
     'win_clang_rel',
     'win_x64_clang_rel',
     'mac',
     'mac_rel',
-    'mac_gn',
-    'mac_gn_rel',
     'mac_asan',
     'ios',
     'ios_rel',
@@ -42,8 +38,6 @@ def GetPreferredTryMasters(project, change):
     'ios_arm64_rel',
     'linux',
     'linux_rel',
-    'linux_gn',
-    'linux_gn_rel',
     'linux_memcheck',
     'linux_tsan2',
     'linux_asan',
@@ -57,8 +51,6 @@ def GetPreferredTryMasters(project, change):
     'android_mips',
     'android_x64',
     'android_x86',
-    'android_gn',
-    'android_gn_rel',
   ]
   if not files or all(re.search(r'[\\/]OWNERS$', f) for f in files):
     return {}

@@ -37,6 +37,7 @@ class TimeDelta;
 }  // namespace base
 
 namespace device {
+class BluetoothDevice;
 class BluetoothSocketThread;
 class BluetoothTestBlueZ;
 }  // namespace device
@@ -45,6 +46,7 @@ namespace bluez {
 
 class BluetoothBlueZTest;
 class BluetoothAdapterProfileBlueZ;
+class BluetoothAdvertisementBlueZ;
 class BluetoothDeviceBlueZ;
 class BluetoothLocalGattCharacteristicBlueZ;
 class BluetoothLocalGattServiceBlueZ;
@@ -105,6 +107,9 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterBlueZ
                        const ErrorCallback& error_callback) override;
   uint32_t GetDiscoverableTimeout() const;
   bool IsDiscovering() const override;
+  std::unordered_map<device::BluetoothDevice*, device::BluetoothDevice::UUIDSet>
+  RetrieveGattConnectedDevicesWithDiscoveryFilter(
+      const device::BluetoothDiscoveryFilter& discovery_filter) override;
   void CreateRfcommService(
       const device::BluetoothUUID& uuid,
       const ServiceOptions& options,
@@ -486,6 +491,14 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterBlueZ
   // that are registered with this adapter.
   std::unique_ptr<BluetoothGattApplicationServiceProvider>
       gatt_application_provider_;
+
+  // List of advertisements registered with this adapter. This list is used
+  // to ensure we unregister any advertisements that were registered with
+  // this adapter on adapter shutdown. This is a sub-optimal solution since
+  // we'll keep a list of all advertisements ever created by this adapter (the
+  // unregistered ones will just be inactive). This will be fixed with
+  // crbug.com/687396.
+  std::vector<scoped_refptr<BluetoothAdvertisementBlueZ>> advertisements_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

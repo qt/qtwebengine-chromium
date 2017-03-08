@@ -30,41 +30,40 @@ class CJS_Runtime : public IJS_Runtime,
   static CJS_Runtime* FromContext(const IJS_Context* cc);
   static CJS_Runtime* CurrentRuntimeFromIsolate(v8::Isolate* pIsolate);
 
-  explicit CJS_Runtime(CPDFSDK_FormFillEnvironment* pApp);
+  explicit CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv);
   ~CJS_Runtime() override;
 
   // IJS_Runtime
   IJS_Context* NewContext() override;
   void ReleaseContext(IJS_Context* pContext) override;
   IJS_Context* GetCurrentContext() override;
-  void SetReaderDocument(CPDFSDK_Document* pReaderDoc) override;
-  CPDFSDK_Document* GetReaderDocument() override;
+
+  CPDFSDK_FormFillEnvironment* GetFormFillEnv() const override;
+
   int ExecuteScript(const CFX_WideString& script,
                     CFX_WideString* info) override;
-
-  CPDFSDK_FormFillEnvironment* GetReaderEnv() const { return m_pEnv; }
 
   // Returns true if the event isn't already found in the set.
   bool AddEventToSet(const FieldEvent& event);
   void RemoveEventFromSet(const FieldEvent& event);
 
-  void BeginBlock() { m_bBlocking = TRUE; }
-  void EndBlock() { m_bBlocking = FALSE; }
-  FX_BOOL IsBlocking() const { return m_bBlocking; }
+  void BeginBlock() { m_bBlocking = true; }
+  void EndBlock() { m_bBlocking = false; }
+  bool IsBlocking() const { return m_bBlocking; }
 
 #ifdef PDF_ENABLE_XFA
-  FX_BOOL GetValueByName(const CFX_ByteStringC& utf8Name,
-                         CFXJSE_Value* pValue) override;
-  FX_BOOL SetValueByName(const CFX_ByteStringC& utf8Name,
-                         CFXJSE_Value* pValue) override;
+  bool GetValueByName(const CFX_ByteStringC& utf8Name,
+                      CFXJSE_Value* pValue) override;
+  bool SetValueByName(const CFX_ByteStringC& utf8Name,
+                      CFXJSE_Value* pValue) override;
 #endif  // PDF_ENABLE_XFA
 
  private:
   void DefineJSObjects();
+  void SetFormFillEnvToDocument();
 
   std::vector<std::unique_ptr<CJS_Context>> m_ContextArray;
-  CPDFSDK_FormFillEnvironment* const m_pEnv;
-  CPDFSDK_Document* m_pDocument;
+  CPDFSDK_FormFillEnvironment* const m_pFormFillEnv;
   bool m_bBlocking;
   bool m_isolateManaged;
   std::set<FieldEvent> m_FieldEventSet;

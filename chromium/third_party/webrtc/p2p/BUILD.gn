@@ -10,6 +10,7 @@ import("../build/webrtc.gni")
 
 group("p2p") {
   public_deps = [
+    ":libstunprober",
     ":rtc_p2p",
   ]
 }
@@ -36,6 +37,7 @@ rtc_static_library("rtc_p2p") {
     "base/p2ptransportchannel.cc",
     "base/p2ptransportchannel.h",
     "base/packetsocketfactory.h",
+    "base/packettransportinterface.h",
     "base/port.cc",
     "base/port.h",
     "base/portallocator.cc",
@@ -72,10 +74,10 @@ rtc_static_library("rtc_p2p") {
     "base/turnport.cc",
     "base/turnport.h",
     "base/udpport.h",
+    "base/udptransportchannel.cc",
+    "base/udptransportchannel.h",
     "client/basicportallocator.cc",
     "client/basicportallocator.h",
-    "client/httpportallocator.cc",
-    "client/httpportallocator.h",
     "client/socketmonitor.cc",
     "client/socketmonitor.h",
   ]
@@ -84,7 +86,6 @@ rtc_static_library("rtc_p2p") {
 
   deps = [
     "../base:rtc_base",
-    "../libjingle/xmllite",
   ]
 
   if (rtc_build_expat) {
@@ -114,9 +115,8 @@ rtc_static_library("rtc_p2p") {
       "FEATURE_ENABLE_PSTN",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from Chrome's Clang plugins.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
@@ -156,25 +156,4 @@ rtc_static_library("libstunprober") {
     "..:webrtc_common",
     "../base:rtc_base",
   ]
-}
-
-if (!build_with_chromium) {
-  # Doesn't build within Chrome on Win.
-  rtc_executable("stun_prober") {
-    sources = [
-      "stunprober/main.cc",
-    ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from Chrome's Clang plugins.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
-    deps = [
-      ":libstunprober",
-      ":rtc_p2p",
-      "../system_wrappers:field_trial_default",
-    ]
-  }
 }

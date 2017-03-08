@@ -14,6 +14,7 @@
 #include "webrtc/p2p/base/dtlstransportchannel.h"
 
 #include "webrtc/p2p/base/common.h"
+#include "webrtc/p2p/base/packettransportinterface.h"
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/dscp.h"
@@ -104,7 +105,7 @@ void StreamInterfaceChannel::Close() {
 DtlsTransportChannelWrapper::DtlsTransportChannelWrapper(
     TransportChannelImpl* channel)
     : TransportChannelImpl(channel->transport_name(), channel->component()),
-      worker_thread_(rtc::Thread::Current()),
+      network_thread_(rtc::Thread::Current()),
       channel_(channel),
       downward_(NULL),
       ssl_role_(rtc::SSL_CLIENT),
@@ -437,9 +438,10 @@ bool DtlsTransportChannelWrapper::IsDtlsConnected() {
 //       start the DTLS handshake
 //     - Once the DTLS handshake completes, the state is that of the
 //       impl again
-void DtlsTransportChannelWrapper::OnWritableState(TransportChannel* channel) {
-  ASSERT(rtc::Thread::Current() == worker_thread_);
-  ASSERT(channel == channel_);
+void DtlsTransportChannelWrapper::OnWritableState(
+    rtc::PacketTransportInterface* transport) {
+  ASSERT(rtc::Thread::Current() == network_thread_);
+  RTC_DCHECK(transport == channel_);
   LOG_J(LS_VERBOSE, this)
       << "DTLSTransportChannelWrapper: channel writable state changed to "
       << channel_->writable();
@@ -469,9 +471,10 @@ void DtlsTransportChannelWrapper::OnWritableState(TransportChannel* channel) {
   }
 }
 
-void DtlsTransportChannelWrapper::OnReceivingState(TransportChannel* channel) {
-  ASSERT(rtc::Thread::Current() == worker_thread_);
-  ASSERT(channel == channel_);
+void DtlsTransportChannelWrapper::OnReceivingState(
+    rtc::PacketTransportInterface* transport) {
+  ASSERT(rtc::Thread::Current() == network_thread_);
+  RTC_DCHECK(transport == channel_);
   LOG_J(LS_VERBOSE, this)
       << "DTLSTransportChannelWrapper: channel receiving state changed to "
       << channel_->receiving();
@@ -482,10 +485,13 @@ void DtlsTransportChannelWrapper::OnReceivingState(TransportChannel* channel) {
 }
 
 void DtlsTransportChannelWrapper::OnReadPacket(
-    TransportChannel* channel, const char* data, size_t size,
-    const rtc::PacketTime& packet_time, int flags) {
-  ASSERT(rtc::Thread::Current() == worker_thread_);
-  ASSERT(channel == channel_);
+    rtc::PacketTransportInterface* transport,
+    const char* data,
+    size_t size,
+    const rtc::PacketTime& packet_time,
+    int flags) {
+  ASSERT(rtc::Thread::Current() == network_thread_);
+  RTC_DCHECK(transport == channel_);
   ASSERT(flags == 0);
 
   if (!dtls_active_) {
@@ -558,14 +564,15 @@ void DtlsTransportChannelWrapper::OnReadPacket(
 }
 
 void DtlsTransportChannelWrapper::OnSentPacket(
-    TransportChannel* channel,
+    rtc::PacketTransportInterface* transport,
     const rtc::SentPacket& sent_packet) {
-  ASSERT(rtc::Thread::Current() == worker_thread_);
+  ASSERT(rtc::Thread::Current() == network_thread_);
 
   SignalSentPacket(this, sent_packet);
 }
 
-void DtlsTransportChannelWrapper::OnReadyToSend(TransportChannel* channel) {
+void DtlsTransportChannelWrapper::OnReadyToSend(
+    rtc::PacketTransportInterface* transport) {
   if (writable()) {
     SignalReadyToSend(this);
   }
@@ -573,7 +580,7 @@ void DtlsTransportChannelWrapper::OnReadyToSend(TransportChannel* channel) {
 
 void DtlsTransportChannelWrapper::OnDtlsEvent(rtc::StreamInterface* dtls,
                                               int sig, int err) {
-  ASSERT(rtc::Thread::Current() == worker_thread_);
+  ASSERT(rtc::Thread::Current() == network_thread_);
   ASSERT(dtls == dtls_.get());
   if (sig & rtc::SE_OPEN) {
     // This is the first time.

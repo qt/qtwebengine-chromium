@@ -16,7 +16,7 @@ CPDF_ContentMarkItem::CPDF_ContentMarkItem(const CPDF_ContentMarkItem& that)
       m_ParamType(that.m_ParamType),
       m_pPropertiesDict(that.m_pPropertiesDict) {
   if (that.m_pDirectDict)
-    m_pDirectDict.reset(that.m_pDirectDict->Clone()->AsDictionary());
+    m_pDirectDict = ToDictionary(that.m_pDirectDict->Clone());
 }
 
 CPDF_ContentMarkItem::~CPDF_ContentMarkItem() {}
@@ -33,13 +33,13 @@ CPDF_Dictionary* CPDF_ContentMarkItem::GetParam() const {
   }
 }
 
-FX_BOOL CPDF_ContentMarkItem::HasMCID() const {
+bool CPDF_ContentMarkItem::HasMCID() const {
   CPDF_Dictionary* pDict = GetParam();
   return pDict && pDict->KeyExist("MCID");
 }
 
 void CPDF_ContentMarkItem::SetDirectDict(
-    std::unique_ptr<CPDF_Dictionary, ReleaseDeleter<CPDF_Dictionary>> pDict) {
+    std::unique_ptr<CPDF_Dictionary> pDict) {
   m_ParamType = DirectDict;
   m_pDirectDict = std::move(pDict);
 }

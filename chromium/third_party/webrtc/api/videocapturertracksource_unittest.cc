@@ -18,7 +18,6 @@
 #include "webrtc/media/base/fakemediaengine.h"
 #include "webrtc/media/base/fakevideocapturer.h"
 #include "webrtc/media/base/fakevideorenderer.h"
-#include "webrtc/media/engine/webrtcvideoframe.h"
 
 using webrtc::FakeConstraints;
 using webrtc::VideoCapturerTrackSource;
@@ -442,35 +441,6 @@ TEST_F(VideoCapturerTrackSourceTest, ScreencastResolutionWithConstraint) {
   EXPECT_EQ(480, format->width);
   EXPECT_EQ(270, format->height);
   EXPECT_EQ(30, format->framerate());
-}
-
-TEST_F(VideoCapturerTrackSourceTest, DenoisingDefault) {
-  CreateVideoCapturerSource();
-  EXPECT_FALSE(source_->needs_denoising());
-}
-
-TEST_F(VideoCapturerTrackSourceTest, DenoisingConstraintOn) {
-  FakeConstraints constraints;
-  constraints.AddOptional(MediaConstraintsInterface::kNoiseReduction, true);
-  CreateVideoCapturerSource(&constraints);
-  ASSERT_TRUE(source_->needs_denoising());
-  EXPECT_TRUE(*source_->needs_denoising());
-}
-
-TEST_F(VideoCapturerTrackSourceTest, DenoisingCapturerOff) {
-  capturer_->SetNeedsDenoising(rtc::Optional<bool>(false));
-  CreateVideoCapturerSource();
-  ASSERT_TRUE(source_->needs_denoising());
-  EXPECT_FALSE(*source_->needs_denoising());
-}
-
-TEST_F(VideoCapturerTrackSourceTest, DenoisingConstraintOverridesCapturer) {
-  capturer_->SetNeedsDenoising(rtc::Optional<bool>(false));
-  FakeConstraints constraints;
-  constraints.AddOptional(MediaConstraintsInterface::kNoiseReduction, true);
-  CreateVideoCapturerSource(&constraints);
-  ASSERT_TRUE(source_->needs_denoising());
-  EXPECT_TRUE(*source_->needs_denoising());
 }
 
 TEST_F(VideoCapturerTrackSourceTest, MandatorySubOneFpsConstraints) {

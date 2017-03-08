@@ -28,11 +28,12 @@
 #include "content/renderer/drop_data_builder.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/sad_plugin.h"
+#include "third_party/WebKit/public/platform/WebGestureEvent.h"
+#include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -104,6 +105,7 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(BrowserPlugin, message)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_AdvanceFocus, OnAdvanceFocus)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestGone, OnGuestGone)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestReady, OnGuestReady)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetMouseLock, OnSetMouseLock)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetTooltipText, OnSetTooltipText)
@@ -211,6 +213,10 @@ void BrowserPlugin::OnGuestGone(int browser_plugin_instance_id) {
 
   EnableCompositing(true);
   compositing_helper_->ChildFrameGone();
+}
+
+void BrowserPlugin::OnGuestReady(int browser_plugin_instance_id) {
+  guest_crashed_ = false;
 }
 
 void BrowserPlugin::OnSetCursor(int browser_plugin_instance_id,
@@ -566,10 +572,12 @@ bool BrowserPlugin::commitText(const blink::WebString& text,
 }
 
 bool BrowserPlugin::finishComposingText(
-    blink::WebWidget::ConfirmCompositionBehavior selection_behavior) {
+    blink::WebInputMethodController::ConfirmCompositionBehavior
+        selection_behavior) {
   if (!attached())
     return false;
-  bool keep_selection = (selection_behavior == blink::WebWidget::KeepSelection);
+  bool keep_selection =
+      (selection_behavior == blink::WebInputMethodController::KeepSelection);
   BrowserPluginManager::Get()->Send(
       new BrowserPluginHostMsg_ImeFinishComposingText(keep_selection));
   // TODO(kochi): This assumes the IPC handling always succeeds.

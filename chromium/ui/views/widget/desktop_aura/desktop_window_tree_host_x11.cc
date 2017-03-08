@@ -1152,12 +1152,6 @@ void DesktopWindowTreeHostX11::OnRootViewLayout() {
   UpdateMinAndMaxSize();
 }
 
-void DesktopWindowTreeHostX11::OnNativeWidgetFocus() {
-}
-
-void DesktopWindowTreeHostX11::OnNativeWidgetBlur() {
-}
-
 bool DesktopWindowTreeHostX11::IsAnimatingClosed() const {
   return false;
 }
@@ -1382,8 +1376,10 @@ void DesktopWindowTreeHostX11::InitX11Window(
       enable_transparent_visuals, &visual, &depth, &colormap,
       &use_argb_visual_);
 
-  attribute_mask |= CWColormap;
-  swa.colormap = colormap;
+  if (colormap != CopyFromParent) {
+    attribute_mask |= CWColormap;
+    swa.colormap = colormap;
+  }
 
   // x.org will BadMatch if we don't set a border when the depth isn't the
   // same as the parent depth.
@@ -1801,6 +1797,7 @@ void DesktopWindowTreeHostX11::ConvertEventToDifferentHost(
   gfx::PointF location_in_pixel_in_host =
       located_event->location_f() + gfx::Vector2dF(offset);
   located_event->set_location_f(location_in_pixel_in_host);
+  located_event->set_root_location_f(location_in_pixel_in_host);
 }
 
 void DesktopWindowTreeHostX11::ResetWindowRegion() {
@@ -2148,9 +2145,8 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
     case MapNotify: {
       window_mapped_ = true;
 
-      FOR_EACH_OBSERVER(DesktopWindowTreeHostObserverX11,
-                        observer_list_,
-                        OnWindowMapped(xwindow_));
+      for (DesktopWindowTreeHostObserverX11& observer : observer_list_)
+        observer.OnWindowMapped(xwindow_);
 
       UpdateMinAndMaxSize();
 
@@ -2170,9 +2166,8 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       has_pointer_grab_ = false;
       has_pointer_focus_ = false;
       has_window_focus_ = false;
-      FOR_EACH_OBSERVER(DesktopWindowTreeHostObserverX11,
-                        observer_list_,
-                        OnWindowUnmapped(xwindow_));
+      for (DesktopWindowTreeHostObserverX11& observer : observer_list_)
+        observer.OnWindowUnmapped(xwindow_);
       break;
     }
     case ClientMessage: {

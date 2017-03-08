@@ -8,70 +8,80 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/page/cpdf_page.h"
-#include "core/fpdfapi/page/pageint.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_boolean.h"
+#include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_name.h"
+#include "core/fpdfapi/parser/cpdf_number.h"
+#include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfapi/render/render_int.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxge/fx_dib.h"
 
-CPDF_Image::CPDF_Image(CPDF_Document* pDoc)
-    : CPDF_Image(pDoc, nullptr, false) {}
+CPDF_Image::CPDF_Image(CPDF_Document* pDoc) : m_pDocument(pDoc) {}
 
-CPDF_Image::CPDF_Image(CPDF_Document* pDoc, CPDF_Stream* pStream, bool bInline)
-    : m_pDIBSource(nullptr),
-      m_pMask(nullptr),
-      m_MatteColor(0),
-      m_pStream(pStream),
-      m_bInline(bInline),
-      m_pInlineDict(nullptr),
-      m_Height(0),
-      m_Width(0),
-      m_bIsMask(false),
-      m_bInterpolate(false),
+CPDF_Image::CPDF_Image(CPDF_Document* pDoc,
+                       std::unique_ptr<CPDF_Stream> pStream)
+    : m_bIsInline(true),
       m_pDocument(pDoc),
-      m_pOC(nullptr) {
-  if (!pStream)
-    return;
-
-  CPDF_Dictionary* pDict = pStream->GetDict();
-  if (m_bInline)
-    m_pInlineDict = ToDictionary(pDict->Clone());
-
-  m_pOC = pDict->GetDictFor("OC");
-  m_bIsMask =
-      !pDict->KeyExist("ColorSpace") || pDict->GetIntegerFor("ImageMask");
-  m_bInterpolate = !!pDict->GetIntegerFor("Interpolate");
-  m_Height = pDict->GetIntegerFor("Height");
-  m_Width = pDict->GetIntegerFor("Width");
+      m_pStream(pStream.get()),
+      m_pOwnedStream(std::move(pStream)) {
+  m_pOwnedDict =
+      ToDictionary(std::unique_ptr<CPDF_Object>(m_pStream->GetDict()->Clone()));
+  m_pDict = m_pOwnedDict.get();
+  FinishInitialization();
 }
 
-CPDF_Image::~CPDF_Image() {
-  if (m_bInline) {
-    if (m_pStream)
-      m_pStream->Release();
-    if (m_pInlineDict)
-      m_pInlineDict->Release();
-  }
+CPDF_Image::CPDF_Image(CPDF_Document* pDoc, uint32_t dwStreamObjNum)
+    : m_pDocument(pDoc),
+      m_pStream(ToStream(pDoc->GetIndirectObject(dwStreamObjNum))) {
+  m_pDict = m_pStream->GetDict();
+  FinishInitialization();
+}
+
+CPDF_Image::~CPDF_Image() {}
+
+void CPDF_Image::FinishInitialization() {
+  m_pOC = m_pDict->GetDictFor("OC");
+  m_bIsMask =
+      !m_pDict->KeyExist("ColorSpace") || m_pDict->GetIntegerFor("ImageMask");
+  m_bInterpolate = !!m_pDict->GetIntegerFor("Interpolate");
+  m_Height = m_pDict->GetIntegerFor("Height");
+  m_Width = m_pDict->GetIntegerFor("Width");
 }
 
 CPDF_Image* CPDF_Image::Clone() {
-  if (m_pStream->GetObjNum())
-    return m_pDocument->GetPageData()->GetImage(m_pStream);
-
-  CPDF_Image* pImage =
-      new CPDF_Image(m_pDocument, ToStream(m_pStream->Clone()), m_bInline);
-  if (m_bInline)
-    pImage->SetInlineDict(ToDictionary(m_pInlineDict->CloneDirectObject()));
-
+  CPDF_Image* pImage = new CPDF_Image(m_pDocument);
+  pImage->m_bIsInline = m_bIsInline;
+  if (m_pOwnedStream) {
+    pImage->m_pOwnedStream = ToStream(m_pOwnedStream->Clone());
+    pImage->m_pStream = pImage->m_pOwnedStream.get();
+  } else {
+    pImage->m_pStream = m_pStream;
+  }
+  if (m_pOwnedDict) {
+    pImage->m_pOwnedDict = ToDictionary(m_pOwnedDict->Clone());
+    pImage->m_pDict = pImage->m_pOwnedDict.get();
+  } else {
+    pImage->m_pDict = m_pDict;
+  }
   return pImage;
+}
+
+void CPDF_Image::ConvertStreamToIndirectObject() {
+  if (!m_pStream->IsInline())
+    return;
+
+  ASSERT(m_pOwnedStream);
+  m_pDocument->AddIndirectObject(std::move(m_pOwnedStream));
 }
 
 CPDF_Dictionary* CPDF_Image::InitJPEG(uint8_t* pData, uint32_t size) {
@@ -100,8 +110,8 @@ CPDF_Dictionary* CPDF_Image::InitJPEG(uint8_t* pData, uint32_t size) {
     csname = "DeviceCMYK";
     CPDF_Array* pDecode = new CPDF_Array;
     for (int n = 0; n < 4; n++) {
-      pDecode->AddInteger(1);
-      pDecode->AddInteger(0);
+      pDecode->AddNew<CPDF_Number>(1);
+      pDecode->AddNew<CPDF_Number>(0);
     }
     pDict->SetFor("Decode", pDecode);
   }
@@ -114,15 +124,17 @@ CPDF_Dictionary* CPDF_Image::InitJPEG(uint8_t* pData, uint32_t size) {
     pDict->SetFor("DecodeParms", pParms);
     pParms->SetIntegerFor("ColorTransform", 0);
   }
-  m_bIsMask = FALSE;
+  m_bIsMask = false;
   m_Width = width;
   m_Height = height;
-  if (!m_pStream)
-    m_pStream = new CPDF_Stream;
+  if (!m_pStream) {
+    m_pOwnedStream = pdfium::MakeUnique<CPDF_Stream>();
+    m_pStream = m_pOwnedStream.get();
+  }
   return pDict;
 }
 
-void CPDF_Image::SetJpegImage(IFX_FileRead* pFile) {
+void CPDF_Image::SetJpegImage(IFX_SeekableReadStream* pFile) {
   uint32_t size = (uint32_t)pFile->GetSize();
   if (!size)
     return;
@@ -169,18 +181,18 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap, int32_t iCompress) {
       ArgbDecode(pBitmap->GetPaletteArgb(1), set_a, set_r, set_g, set_b);
     }
     if (set_a == 0 || reset_a == 0) {
-      pDict->SetFor("ImageMask", new CPDF_Boolean(TRUE));
+      pDict->SetFor("ImageMask", new CPDF_Boolean(true));
       if (reset_a == 0) {
         CPDF_Array* pArray = new CPDF_Array;
-        pArray->AddInteger(1);
-        pArray->AddInteger(0);
+        pArray->AddNew<CPDF_Number>(1);
+        pArray->AddNew<CPDF_Number>(0);
         pDict->SetFor("Decode", pArray);
       }
     } else {
       CPDF_Array* pCS = new CPDF_Array;
-      pCS->AddName("Indexed");
-      pCS->AddName("DeviceRGB");
-      pCS->AddInteger(1);
+      pCS->AddNew<CPDF_Name>("Indexed");
+      pCS->AddNew<CPDF_Name>("DeviceRGB");
+      pCS->AddNew<CPDF_Number>(1);
       CFX_ByteString ct;
       FX_CHAR* pBuf = ct.GetBuffer(6);
       pBuf[0] = (FX_CHAR)reset_r;
@@ -190,7 +202,7 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap, int32_t iCompress) {
       pBuf[4] = (FX_CHAR)set_g;
       pBuf[5] = (FX_CHAR)set_b;
       ct.ReleaseBuffer(6);
-      pCS->Add(new CPDF_String(ct, TRUE));
+      pCS->AddNew<CPDF_String>(ct, true);
       pDict->SetFor("ColorSpace", pCS);
     }
     pDict->SetIntegerFor("BitsPerComponent", 1);
@@ -203,10 +215,10 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap, int32_t iCompress) {
   } else if (bpp == 8) {
     int32_t iPalette = pBitmap->GetPaletteSize();
     if (iPalette > 0) {
-      CPDF_Array* pCS = new CPDF_Array;
-      pCS->AddName("Indexed");
-      pCS->AddName("DeviceRGB");
-      pCS->AddInteger(iPalette - 1);
+      CPDF_Array* pCS = m_pDocument->NewIndirect<CPDF_Array>();
+      pCS->AddNew<CPDF_Name>("Indexed");
+      pCS->AddNew<CPDF_Name>("DeviceRGB");
+      pCS->AddNew<CPDF_Number>(iPalette - 1);
       uint8_t* pColorTable = FX_Alloc2D(uint8_t, iPalette, 3);
       uint8_t* ptr = pColorTable;
       for (int32_t i = 0; i < iPalette; i++) {
@@ -216,12 +228,11 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap, int32_t iCompress) {
         ptr[2] = (uint8_t)argb;
         ptr += 3;
       }
-      CPDF_Stream* pCTS = new CPDF_Stream(
+      CPDF_Stream* pCTS = m_pDocument->NewIndirect<CPDF_Stream>(
           pColorTable, iPalette * 3,
           new CPDF_Dictionary(m_pDocument->GetByteStringPool()));
-      pCS->AddReference(m_pDocument, m_pDocument->AddIndirectObject(pCTS));
-      pDict->SetReferenceFor("ColorSpace", m_pDocument,
-                             m_pDocument->AddIndirectObject(pCS));
+      pCS->AddNew<CPDF_Reference>(m_pDocument, pCTS->GetObjNum());
+      pDict->SetReferenceFor("ColorSpace", m_pDocument, pCS);
     } else {
       pDict->SetNameFor("ColorSpace", "DeviceGray");
     }
@@ -243,10 +254,10 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap, int32_t iCompress) {
     }
   }
   const CFX_DIBitmap* pMaskBitmap = nullptr;
-  FX_BOOL bDeleteMask = FALSE;
+  bool bDeleteMask = false;
   if (pBitmap->HasAlpha()) {
     pMaskBitmap = pBitmap->GetAlphaMask();
-    bDeleteMask = TRUE;
+    bDeleteMask = true;
   }
   if (pMaskBitmap) {
     int32_t maskWidth = pMaskBitmap->GetWidth();
@@ -273,9 +284,9 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap, int32_t iCompress) {
       }
     }
     pMaskDict->SetIntegerFor("Length", mask_size);
-    pDict->SetReferenceFor("SMask", m_pDocument,
-                           m_pDocument->AddIndirectObject(new CPDF_Stream(
-                               mask_buf, mask_size, pMaskDict)));
+    pDict->SetReferenceFor(
+        "SMask", m_pDocument,
+        m_pDocument->NewIndirect<CPDF_Stream>(mask_buf, mask_size, pMaskDict));
     if (bDeleteMask)
       delete pMaskBitmap;
   }
@@ -288,10 +299,8 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap, int32_t iCompress) {
         pNewBitmap->Copy(pBitmap);
         pNewBitmap->ConvertFormat(FXDIB_Rgb);
         SetImage(pNewBitmap, iCompress);
-        if (pDict) {
-          pDict->Release();
-          pDict = nullptr;
-        }
+        delete pDict;
+        pDict = nullptr;
         FX_Free(dest_buf);
         dest_buf = nullptr;
         dest_size = 0;
@@ -331,9 +340,10 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap, int32_t iCompress) {
       dest_offset = 0;
     }
   }
-  if (!m_pStream)
-    m_pStream = new CPDF_Stream;
-
+  if (!m_pStream) {
+    m_pOwnedStream = pdfium::MakeUnique<CPDF_Stream>();
+    m_pStream = m_pOwnedStream.get();
+  }
   m_pStream->InitStream(dest_buf, dest_size, pDict);
   m_bIsMask = pBitmap->IsAlphaMask();
   m_Width = BitmapWidth;
@@ -347,9 +357,9 @@ void CPDF_Image::ResetCache(CPDF_Page* pPage, const CFX_DIBitmap* pBitmap) {
 
 CFX_DIBSource* CPDF_Image::LoadDIBSource(CFX_DIBSource** ppMask,
                                          uint32_t* pMatteColor,
-                                         FX_BOOL bStdCS,
+                                         bool bStdCS,
                                          uint32_t GroupFamily,
-                                         FX_BOOL bLoadMask) const {
+                                         bool bLoadMask) const {
   std::unique_ptr<CPDF_DIBSource> source(new CPDF_DIBSource);
   if (source->Load(m_pDocument, m_pStream,
                    reinterpret_cast<CPDF_DIBSource**>(ppMask), pMatteColor,
@@ -371,41 +381,41 @@ CFX_DIBSource* CPDF_Image::DetachMask() {
   return pBitmap;
 }
 
-FX_BOOL CPDF_Image::StartLoadDIBSource(CPDF_Dictionary* pFormResource,
-                                       CPDF_Dictionary* pPageResource,
-                                       FX_BOOL bStdCS,
-                                       uint32_t GroupFamily,
-                                       FX_BOOL bLoadMask) {
+bool CPDF_Image::StartLoadDIBSource(CPDF_Dictionary* pFormResource,
+                                    CPDF_Dictionary* pPageResource,
+                                    bool bStdCS,
+                                    uint32_t GroupFamily,
+                                    bool bLoadMask) {
   std::unique_ptr<CPDF_DIBSource> source(new CPDF_DIBSource);
   int ret =
-      source->StartLoadDIBSource(m_pDocument, m_pStream, TRUE, pFormResource,
+      source->StartLoadDIBSource(m_pDocument, m_pStream, true, pFormResource,
                                  pPageResource, bStdCS, GroupFamily, bLoadMask);
   if (ret == 2) {
     m_pDIBSource = source.release();
-    return TRUE;
+    return true;
   }
   if (!ret) {
     m_pDIBSource = nullptr;
-    return FALSE;
+    return false;
   }
   m_pMask = source->DetachMask();
   m_MatteColor = source->GetMatteColor();
   m_pDIBSource = source.release();
-  return FALSE;
+  return false;
 }
 
-FX_BOOL CPDF_Image::Continue(IFX_Pause* pPause) {
+bool CPDF_Image::Continue(IFX_Pause* pPause) {
   CPDF_DIBSource* pSource = static_cast<CPDF_DIBSource*>(m_pDIBSource);
   int ret = pSource->ContinueLoadDIBSource(pPause);
   if (ret == 2) {
-    return TRUE;
+    return true;
   }
   if (!ret) {
     delete m_pDIBSource;
     m_pDIBSource = nullptr;
-    return FALSE;
+    return false;
   }
   m_pMask = pSource->DetachMask();
   m_MatteColor = pSource->GetMatteColor();
-  return FALSE;
+  return false;
 }

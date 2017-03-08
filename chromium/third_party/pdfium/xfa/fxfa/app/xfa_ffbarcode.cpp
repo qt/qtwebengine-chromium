@@ -7,9 +7,9 @@
 #include "xfa/fxfa/app/xfa_ffbarcode.h"
 
 #include "core/fxcrt/fx_ext.h"
+#include "xfa/fwl/core/cfwl_barcode.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
 #include "xfa/fwl/core/ifwl_app.h"
-#include "xfa/fwl/lightwidget/cfwl_barcode.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fftextedit.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
@@ -119,19 +119,23 @@ XFA_LPCBARCODETYPEENUMINFO XFA_GetBarcodeTypeByName(
 CXFA_FFBarcode::CXFA_FFBarcode(CXFA_FFPageView* pPageView,
                                CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFTextEdit(pPageView, pDataAcc) {}
+
 CXFA_FFBarcode::~CXFA_FFBarcode() {}
-FX_BOOL CXFA_FFBarcode::LoadWidget() {
-  CFWL_Barcode* pFWLBarcode = CFWL_Barcode::Create();
-  if (pFWLBarcode) {
-    pFWLBarcode->Initialize();
-  }
+
+bool CXFA_FFBarcode::LoadWidget() {
+  CFWL_Barcode* pFWLBarcode = new CFWL_Barcode(GetFWLApp());
+  pFWLBarcode->Initialize();
+
   m_pNormalWidget = pFWLBarcode;
   m_pNormalWidget->SetLayoutItem(this);
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
-  m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
+
+  m_pOldDelegate = m_pNormalWidget->GetDelegate();
+  m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
+
   CFX_WideString wsText;
   m_pDataAcc->GetValue(wsText, XFA_VALUEPICTURE_Display);
   pFWLBarcode->SetText(wsText);
@@ -161,23 +165,27 @@ void CXFA_FFBarcode::RenderWidget(CFX_Graphics* pGS,
   mt.Concat(mtRotate);
   m_pNormalWidget->DrawWidget(pGS, &mt);
 }
+
 void CXFA_FFBarcode::UpdateWidgetProperty() {
   CXFA_FFTextEdit::UpdateWidgetProperty();
   CFWL_Barcode* pBarCodeWidget = (CFWL_Barcode*)m_pNormalWidget;
   CFX_WideString wsType = GetDataAcc()->GetBarcodeType();
   XFA_LPCBARCODETYPEENUMINFO pBarcodeTypeInfo =
       XFA_GetBarcodeTypeByName(wsType.AsStringC());
+  if (!pBarcodeTypeInfo)
+    return;
+
   pBarCodeWidget->SetType(pBarcodeTypeInfo->eBCType);
   CXFA_WidgetAcc* pAcc = GetDataAcc();
   int32_t intVal;
   FX_CHAR charVal;
-  FX_BOOL boolVal;
+  bool boolVal;
   FX_FLOAT floatVal;
   if (pAcc->GetBarcodeAttribute_CharEncoding(intVal)) {
     pBarCodeWidget->SetCharEncoding((BC_CHAR_ENCODING)intVal);
   }
-  if (pAcc->GetBarcodeAttribute_Checksum(intVal)) {
-    pBarCodeWidget->SetCalChecksum(intVal);
+  if (pAcc->GetBarcodeAttribute_Checksum(boolVal)) {
+    pBarCodeWidget->SetCalChecksum(boolVal);
   }
   if (pAcc->GetBarcodeAttribute_DataLength(intVal)) {
     pBarCodeWidget->SetDataLength(intVal);
@@ -213,27 +221,24 @@ void CXFA_FFBarcode::UpdateWidgetProperty() {
       pBarcodeTypeInfo->eName == XFA_BARCODETYPE_ean8 ||
       pBarcodeTypeInfo->eName == XFA_BARCODETYPE_ean13 ||
       pBarcodeTypeInfo->eName == XFA_BARCODETYPE_upcA) {
-    pBarCodeWidget->SetPrintChecksum(TRUE);
+    pBarCodeWidget->SetPrintChecksum(true);
   }
 }
-FX_BOOL CXFA_FFBarcode::OnLButtonDown(uint32_t dwFlags,
-                                      FX_FLOAT fx,
-                                      FX_FLOAT fy) {
+
+bool CXFA_FFBarcode::OnLButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) {
   CFWL_Barcode* pBarCodeWidget = (CFWL_Barcode*)m_pNormalWidget;
   if (!pBarCodeWidget || pBarCodeWidget->IsProtectedType()) {
-    return FALSE;
+    return false;
   }
   if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open) {
-    return FALSE;
+    return false;
   }
   return CXFA_FFTextEdit::OnLButtonDown(dwFlags, fx, fy);
 }
-FX_BOOL CXFA_FFBarcode::OnRButtonDown(uint32_t dwFlags,
-                                      FX_FLOAT fx,
-                                      FX_FLOAT fy) {
+bool CXFA_FFBarcode::OnRButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) {
   CFWL_Barcode* pBarCodeWidget = (CFWL_Barcode*)m_pNormalWidget;
   if (!pBarCodeWidget || pBarCodeWidget->IsProtectedType()) {
-    return FALSE;
+    return false;
   }
   return CXFA_FFTextEdit::OnRButtonDown(dwFlags, fx, fy);
 }

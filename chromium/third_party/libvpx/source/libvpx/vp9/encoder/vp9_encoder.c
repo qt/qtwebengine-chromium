@@ -2030,7 +2030,10 @@ void vp9_remove_compressor(VP9_COMP *cpi) {
   vpx_free(cpi->tile_thr_data);
   vpx_free(cpi->workers);
 
-  if (cpi->num_workers > 1) vp9_loop_filter_dealloc(&cpi->lf_row_sync);
+  if (cpi->num_workers > 1) {
+    vp9_loop_filter_dealloc(&cpi->lf_row_sync);
+    vp9_bitstream_encode_tiles_buffer_dealloc(cpi);
+  }
 
   vp9_alt_ref_aq_destroy(cpi->alt_ref_aq);
 
@@ -2438,6 +2441,8 @@ static int recode_loop_test(VP9_COMP *cpi, int high_limit, int low_limit, int q,
       cpi->resize_pending = 1;
       return 1;
     }
+    // Force recode if projected_frame_size > max_frame_bandwidth
+    if (rc->projected_frame_size >= rc->max_frame_bandwidth) return 1;
 
     // TODO(agrange) high_limit could be greater than the scale-down threshold.
     if ((rc->projected_frame_size > high_limit && q < maxq) ||
@@ -2796,7 +2801,7 @@ static void output_frame_level_debug_stats(VP9_COMP *cpi) {
     dc_quant_devisor = 4.0;
 #endif
 
-    fprintf(f, "%10u %dx%d %10d %10d %d %d %10d %10d %10d %10d"
+    fprintf(f, "%10u %dx%d %d %d %10d %10d %10d %10d"
        "%10"PRId64" %10"PRId64" %5d %5d %10"PRId64" "
        "%10"PRId64" %10"PRId64" %10d "
        "%7.2lf %7.2lf %7.2lf %7.2lf %7.2lf"
@@ -2805,8 +2810,6 @@ static void output_frame_level_debug_stats(VP9_COMP *cpi) {
         "%10lf %8u %10"PRId64" %10d %10d %10d %10d %10d\n",
         cpi->common.current_video_frame,
         cm->width, cm->height,
-        cpi->td.rd_counts.m_search_count,
-        cpi->td.rd_counts.ex_search_count,
         cpi->rc.source_alt_ref_pending,
         cpi->rc.source_alt_ref_active,
         cpi->rc.this_frame_target,
@@ -3124,7 +3127,8 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
   if (cpi->oxcf.pass == 0 && cpi->oxcf.mode == REALTIME &&
       cpi->oxcf.speed >= 5 && cpi->resize_state == 0 &&
       (cpi->oxcf.content == VP9E_CONTENT_SCREEN ||
-       cpi->oxcf.rc_mode == VPX_VBR))
+       cpi->oxcf.rc_mode == VPX_VBR) &&
+      cm->show_frame)
     vp9_avg_source_sad(cpi);
 
   // For 1 pass SVC, since only ZEROMV is allowed for upsampled reference
@@ -3212,6 +3216,13 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
   // seen in the last encoder iteration.
   // update_base_skip_probs(cpi);
   vpx_clear_system_state();
+}
+
+#define MAX_QSTEP_ADJ 4
+static int get_qstep_adj(int rate_excess, int rate_limit) {
+  int qstep =
+      rate_limit ? ((rate_excess + rate_limit / 2) / rate_limit) : INT_MAX;
+  return VPXMIN(qstep, MAX_QSTEP_ADJ);
 }
 
 static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
@@ -3387,6 +3398,7 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
         // to attempt to recode.
         int last_q = q;
         int retries = 0;
+        int qstep;
 
         if (cpi->resize_pending == 1) {
           // Change in frame size so go back around the recode loop.
@@ -3412,7 +3424,10 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
             q_high = rc->worst_quality;
 
           // Raise Qlow as to at least the current value
-          q_low = q < q_high ? q + 1 : q_high;
+          qstep =
+              get_qstep_adj(rc->projected_frame_size, rc->this_frame_target);
+          q_low = VPXMIN(q + qstep, q_high);
+          // q_low = q < q_high ? q + 1 : q_high;
 
           if (undershoot_seen || loop_at_this_size > 1) {
             // Update rate_correction_factor unless
@@ -3437,7 +3452,10 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
           overshoot_seen = 1;
         } else {
           // Frame is too small
-          q_high = q > q_low ? q - 1 : q_low;
+          qstep =
+              get_qstep_adj(rc->this_frame_target, rc->projected_frame_size);
+          q_high = VPXMAX(q - qstep, q_low);
+          // q_high = q > q_low ? q - 1 : q_low;
 
           if (overshoot_seen || loop_at_this_size > 1) {
             vp9_rc_update_rate_correction_factors(cpi);
@@ -4477,7 +4495,8 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
       cpi->svc.layer_context[cpi->svc.spatial_layer_id].has_alt_frame = 1;
 #endif
 
-      if ((oxcf->arnr_max_frames > 0) && (oxcf->arnr_strength > 0)) {
+      if ((oxcf->mode != REALTIME) && (oxcf->arnr_max_frames > 0) &&
+          (oxcf->arnr_strength > 0)) {
         int bitrate = cpi->rc.avg_frame_bandwidth / 40;
         int not_low_bitrate = bitrate > ALT_REF_AQ_LOW_BITRATE_BOUNDARY;
 

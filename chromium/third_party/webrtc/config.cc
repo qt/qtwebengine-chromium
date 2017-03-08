@@ -22,12 +22,31 @@ std::string NackConfig::ToString() const {
   return ss.str();
 }
 
-std::string FecConfig::ToString() const {
+std::string UlpfecConfig::ToString() const {
   std::stringstream ss;
   ss << "{ulpfec_payload_type: " << ulpfec_payload_type;
   ss << ", red_payload_type: " << red_payload_type;
   ss << ", red_rtx_payload_type: " << red_rtx_payload_type;
   ss << '}';
+  return ss.str();
+}
+
+FlexfecConfig::FlexfecConfig()
+    : flexfec_payload_type(-1), flexfec_ssrc(0), protected_media_ssrcs() {}
+
+FlexfecConfig::~FlexfecConfig() = default;
+
+std::string FlexfecConfig::ToString() const {
+  std::stringstream ss;
+  ss << "{flexfec_payload_type: " << flexfec_payload_type;
+  ss << ", flexfec_ssrc: " << flexfec_ssrc;
+  ss << ", protected_media_ssrcs: [";
+  size_t i = 0;
+  for (; i + 1 < protected_media_ssrcs.size(); ++i)
+    ss << protected_media_ssrcs[i] << ", ";
+  if (!protected_media_ssrcs.empty())
+    ss << protected_media_ssrcs[i];
+  ss << "]}";
   return ss.str();
 }
 
@@ -120,6 +139,8 @@ VideoEncoderConfig::VideoEncoderConfig()
       max_bitrate_bps(0),
       number_of_streams(0) {}
 
+VideoEncoderConfig::VideoEncoderConfig(VideoEncoderConfig&&) = default;
+
 VideoEncoderConfig::~VideoEncoderConfig() = default;
 
 std::string VideoEncoderConfig::ToString() const {
@@ -140,6 +161,8 @@ std::string VideoEncoderConfig::ToString() const {
   ss << '}';
   return ss.str();
 }
+
+VideoEncoderConfig::VideoEncoderConfig(const VideoEncoderConfig&) = default;
 
 void VideoEncoderConfig::EncoderSpecificSettings::FillEncoderSpecificSettings(
     VideoCodec* codec) const {
@@ -195,5 +218,9 @@ void VideoEncoderConfig::Vp9EncoderSpecificSettings::FillVideoCodecVp9(
     VideoCodecVP9* vp9_settings) const {
   *vp9_settings = specifics_;
 }
+
+DecoderSpecificSettings::DecoderSpecificSettings() = default;
+
+DecoderSpecificSettings::~DecoderSpecificSettings() = default;
 
 }  // namespace webrtc

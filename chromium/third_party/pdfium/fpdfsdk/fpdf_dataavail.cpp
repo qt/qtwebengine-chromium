@@ -49,27 +49,27 @@ class CFPDF_FileAvailWrap : public CPDF_DataAvail::FileAvail {
   void Set(FX_FILEAVAIL* pfileAvail) { m_pfileAvail = pfileAvail; }
 
   // CPDF_DataAvail::FileAvail:
-  FX_BOOL IsDataAvail(FX_FILESIZE offset, uint32_t size) override {
-    return m_pfileAvail->IsDataAvail(m_pfileAvail, offset, size);
+  bool IsDataAvail(FX_FILESIZE offset, uint32_t size) override {
+    return !!m_pfileAvail->IsDataAvail(m_pfileAvail, offset, size);
   }
 
  private:
   FX_FILEAVAIL* m_pfileAvail;
 };
 
-class CFPDF_FileAccessWrap : public IFX_FileRead {
+class CFPDF_FileAccessWrap : public IFX_SeekableReadStream {
  public:
   CFPDF_FileAccessWrap() { m_pFileAccess = nullptr; }
   ~CFPDF_FileAccessWrap() override {}
 
   void Set(FPDF_FILEACCESS* pFile) { m_pFileAccess = pFile; }
 
-  // IFX_FileRead
+  // IFX_SeekableReadStream
   FX_FILESIZE GetSize() override { return m_pFileAccess->m_FileLen; }
 
-  FX_BOOL ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override {
-    return m_pFileAccess->m_GetBlock(m_pFileAccess->m_Param, offset,
-                                     (uint8_t*)buffer, size);
+  bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override {
+    return !!m_pFileAccess->m_GetBlock(m_pFileAccess->m_Param, offset,
+                                       (uint8_t*)buffer, size);
   }
 
   void Release() override {}
@@ -117,7 +117,7 @@ DLLEXPORT FPDF_AVAIL STDCALL FPDFAvail_Create(FX_FILEAVAIL* file_avail,
   pAvail->m_FileAvail.Set(file_avail);
   pAvail->m_FileRead.Set(file);
   pAvail->m_pDataAvail = pdfium::MakeUnique<CPDF_DataAvail>(
-      &pAvail->m_FileAvail, &pAvail->m_FileRead, TRUE);
+      &pAvail->m_FileAvail, &pAvail->m_FileRead, true);
   return pAvail;
 }
 

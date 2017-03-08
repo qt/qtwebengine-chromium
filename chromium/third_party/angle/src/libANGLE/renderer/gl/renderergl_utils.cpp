@@ -871,52 +871,81 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
         functions->isAtLeastGLES(gl::Version(3, 1));
 
     extensions->pathRendering = canEnableGLPathRendering || canEnableESPathRendering;
+
+    extensions->textureSRGBDecode = functions->hasGLExtension("GL_EXT_texture_sRGB_decode") ||
+                                    functions->hasGLESExtension("GL_EXT_texture_sRGB_decode");
+
+#if defined(ANGLE_PLATFORM_APPLE)
+    VendorID vendor = GetVendorID(functions);
+    if ((IsAMD(vendor) || IsIntel(vendor)) && *maxSupportedESVersion >= gl::Version(3, 0))
+    {
+        // Apple Intel/AMD drivers do not correctly use the TEXTURE_SRGB_DECODE property of sampler
+        // states.  Disable this extension when we would advertise any ES version that has samplers.
+        extensions->textureSRGBDecode = false;
+    }
+#endif
+
+    extensions->sRGBWriteControl = functions->isAtLeastGL(gl::Version(3, 0)) ||
+                                   functions->hasGLExtension("GL_EXT_framebuffer_sRGB") ||
+                                   functions->hasGLExtension("GL_ARB_framebuffer_sRGB") ||
+                                   functions->hasGLESExtension("GL_EXT_sRGB_write_control");
+
+#if defined(ANGLE_PLATFORM_ANDROID)
+    // SRGB blending does not appear to work correctly on the Nexus 5. Writing to an SRGB
+    // framebuffer with GL_FRAMEBUFFER_SRGB enabled and then reading back returns the same value.
+    // Disabling GL_FRAMEBUFFER_SRGB will then convert in the wrong direction.
+    extensions->sRGBWriteControl = false;
+#endif
 }
 
 void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workarounds)
 {
     VendorID vendor = GetVendorID(functions);
 
+    workarounds->dontRemoveInvariantForFragmentInput =
+        functions->standard == STANDARD_GL_DESKTOP && IsAMD(vendor);
+
     // Don't use 1-bit alpha formats on desktop GL with AMD or Intel drivers.
     workarounds->avoid1BitAlphaTextureFormats =
-        functions->standard == STANDARD_GL_DESKTOP &&
-        (vendor == VENDOR_ID_AMD || vendor == VENDOR_ID_INTEL);
+        functions->standard == STANDARD_GL_DESKTOP && (IsAMD(vendor) || IsIntel(vendor));
 
     workarounds->rgba4IsNotSupportedForColorRendering =
-        functions->standard == STANDARD_GL_DESKTOP && vendor == VENDOR_ID_INTEL;
+        functions->standard == STANDARD_GL_DESKTOP && IsIntel(vendor);
 
-    workarounds->emulateAbsIntFunction = vendor == VENDOR_ID_INTEL;
+    workarounds->emulateAbsIntFunction = IsIntel(vendor);
 
-    workarounds->addAndTrueToLoopCondition = vendor == VENDOR_ID_INTEL;
+    workarounds->addAndTrueToLoopCondition = IsIntel(vendor);
 
-    workarounds->emulateIsnanFloat = vendor == VENDOR_ID_INTEL;
+    workarounds->emulateIsnanFloat = IsIntel(vendor);
 
     workarounds->doesSRGBClearsOnLinearFramebufferAttachments =
-        functions->standard == STANDARD_GL_DESKTOP &&
-        (vendor == VENDOR_ID_INTEL || vendor == VENDOR_ID_AMD);
+        functions->standard == STANDARD_GL_DESKTOP && (IsIntel(vendor) || IsAMD(vendor));
 
 #if defined(ANGLE_PLATFORM_APPLE)
     workarounds->doWhileGLSLCausesGPUHang = true;
+    workarounds->useUnusedBlocksWithStandardOrSharedLayout = true;
 #endif
 
     workarounds->finishDoesNotCauseQueriesToBeAvailable =
-        functions->standard == STANDARD_GL_DESKTOP && vendor == VENDOR_ID_NVIDIA;
+        functions->standard == STANDARD_GL_DESKTOP && IsNvidia(vendor);
 
     // TODO(cwallez): Disable this workaround for MacOSX versions 10.9 or later.
     workarounds->alwaysCallUseProgramAfterLink = true;
 
-    workarounds->unpackOverlappingRowsSeparatelyUnpackBuffer = vendor == VENDOR_ID_NVIDIA;
-    workarounds->packOverlappingRowsSeparatelyPackBuffer     = vendor == VENDOR_ID_NVIDIA;
+    workarounds->unpackOverlappingRowsSeparatelyUnpackBuffer = IsNvidia(vendor);
+    workarounds->packOverlappingRowsSeparatelyPackBuffer     = IsNvidia(vendor);
 
-    workarounds->initializeCurrentVertexAttributes = vendor == VENDOR_ID_NVIDIA;
+    workarounds->initializeCurrentVertexAttributes = IsNvidia(vendor);
 
 #if defined(ANGLE_PLATFORM_APPLE)
     workarounds->unpackLastRowSeparatelyForPaddingInclusion = true;
     workarounds->packLastRowSeparatelyForPaddingInclusion   = true;
 #else
-    workarounds->unpackLastRowSeparatelyForPaddingInclusion = vendor == VENDOR_ID_NVIDIA;
-    workarounds->packLastRowSeparatelyForPaddingInclusion   = vendor == VENDOR_ID_NVIDIA;
+    workarounds->unpackLastRowSeparatelyForPaddingInclusion = IsNvidia(vendor);
+    workarounds->packLastRowSeparatelyForPaddingInclusion   = IsNvidia(vendor);
 #endif
+
+    workarounds->removeInvariantAndCentroidForESSL3 = functions->isAtMostGL(gl::Version(4, 1));
 }
 
 }

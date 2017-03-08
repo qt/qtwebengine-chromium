@@ -8,16 +8,16 @@
 
 #include <memory>
 
+#include "core/fpdfapi/parser/cpdf_array.h"
+#include "core/fpdfdoc/cpdf_docjsactions.h"
 #include "fpdfsdk/cpdfsdk_annothandlermgr.h"
-#include "fpdfsdk/cpdfsdk_document.h"
+#include "fpdfsdk/cpdfsdk_interform.h"
+#include "fpdfsdk/cpdfsdk_pageview.h"
+#include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
 #include "fpdfsdk/fsdk_actionhandler.h"
 #include "fpdfsdk/javascript/ijs_runtime.h"
 #include "third_party/base/ptr_util.h"
-
-#ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/fpdfxfa/cpdfxfa_app.h"
-#endif  // PDF_ENABLE_XFA
 
 namespace {
 
@@ -34,14 +34,21 @@ CPDFSDK_FormFillEnvironment::CPDFSDK_FormFillEnvironment(
     UnderlyingDocumentType* pDoc,
     FPDF_FORMFILLINFO* pFFinfo)
     : m_pInfo(pFFinfo),
-      m_pSDKDoc(new CPDFSDK_Document(pDoc, this)),
       m_pUnderlyingDoc(pDoc),
-      m_pSysHandler(new CFX_SystemHandler(this)) {}
+      m_pSysHandler(new CFX_SystemHandler(this)),
+      m_bChangeMask(false),
+      m_bBeingDestroyed(false) {}
 
 CPDFSDK_FormFillEnvironment::~CPDFSDK_FormFillEnvironment() {
-  // |m_pAnnotHandlerMgr| will try to access |m_pFormFiller|
-  // when it cleans up. So, we must make sure it is cleaned up before
-  // |m_pFormFiller|.
+  m_bBeingDestroyed = true;
+  ClearAllFocusedAnnots();
+
+  // |m_PageMap| will try to access |m_pInterForm| when it cleans itself up.
+  // Make sure it is deleted before |m_pInterForm|.
+  m_PageMap.clear();
+
+  // |m_pAnnotHandlerMgr| will try to access |m_pFormFiller| when it cleans
+  // itself up. Make sure it is deleted before |m_pFormFiller|.
   m_pAnnotHandlerMgr.reset();
 
   // Must destroy the |m_pFormFiller| before the environment (|this|)
@@ -49,11 +56,6 @@ CPDFSDK_FormFillEnvironment::~CPDFSDK_FormFillEnvironment() {
   // Those widgets may call things like KillTimer() as they are shutdown.
   m_pFormFiller.reset();
 
-#ifdef PDF_ENABLE_XFA
-  CPDFXFA_App* pProvider = CPDFXFA_App::GetInstance();
-  if (pProvider->m_pEnvList.GetSize() == 0)
-    pProvider->SetJavaScriptInitialized(FALSE);
-#endif  // PDF_ENABLE_XFA
   if (m_pInfo && m_pInfo->Release)
     m_pInfo->Release(m_pInfo);
 }
@@ -287,15 +289,15 @@ void CPDFSDK_FormFillEnvironment::OnChange() {
     m_pInfo->FFI_OnChange(m_pInfo);
 }
 
-FX_BOOL CPDFSDK_FormFillEnvironment::IsSHIFTKeyDown(uint32_t nFlag) const {
+bool CPDFSDK_FormFillEnvironment::IsSHIFTKeyDown(uint32_t nFlag) const {
   return (nFlag & FWL_EVENTFLAG_ShiftKey) != 0;
 }
 
-FX_BOOL CPDFSDK_FormFillEnvironment::IsCTRLKeyDown(uint32_t nFlag) const {
+bool CPDFSDK_FormFillEnvironment::IsCTRLKeyDown(uint32_t nFlag) const {
   return (nFlag & FWL_EVENTFLAG_ControlKey) != 0;
 }
 
-FX_BOOL CPDFSDK_FormFillEnvironment::IsALTKeyDown(uint32_t nFlag) const {
+bool CPDFSDK_FormFillEnvironment::IsALTKeyDown(uint32_t nFlag) const {
   return (nFlag & FWL_EVENTFLAG_AltKey) != 0;
 }
 
@@ -321,7 +323,7 @@ void CPDFSDK_FormFillEnvironment::ExecuteNamedAction(
 void CPDFSDK_FormFillEnvironment::OnSetFieldInputFocus(
     FPDF_WIDESTRING focusText,
     FPDF_DWORD nTextLen,
-    FX_BOOL bFocus) {
+    bool bFocus) {
   if (m_pInfo && m_pInfo->FFI_SetTextFieldFocus)
     m_pInfo->FFI_SetTextFieldFocus(m_pInfo, focusText, nTextLen, bFocus);
 }
@@ -417,13 +419,12 @@ void CPDFSDK_FormFillEnvironment::GetPageViewRect(FPDF_PAGE page,
   dstRect.right = static_cast<float>(right);
 }
 
-FX_BOOL CPDFSDK_FormFillEnvironment::PopupMenu(FPDF_PAGE page,
-                                               FPDF_WIDGET hWidget,
-                                               int menuFlag,
-                                               CFX_PointF pt) {
-  if (!m_pInfo || !m_pInfo->FFI_PopupMenu)
-    return FALSE;
-  return m_pInfo->FFI_PopupMenu(m_pInfo, page, hWidget, menuFlag, pt.x, pt.y);
+bool CPDFSDK_FormFillEnvironment::PopupMenu(FPDF_PAGE page,
+                                            FPDF_WIDGET hWidget,
+                                            int menuFlag,
+                                            CFX_PointF pt) {
+  return m_pInfo && m_pInfo->FFI_PopupMenu &&
+         m_pInfo->FFI_PopupMenu(m_pInfo, page, hWidget, menuFlag, pt.x, pt.y);
 }
 
 void CPDFSDK_FormFillEnvironment::Alert(FPDF_WIDESTRING Msg,
@@ -461,7 +462,7 @@ FPDF_FILEHANDLER* CPDFSDK_FormFillEnvironment::OpenFile(int fileType,
   return nullptr;
 }
 
-IFX_FileRead* CPDFSDK_FormFillEnvironment::DownloadFromURL(
+IFX_SeekableReadStream* CPDFSDK_FormFillEnvironment::DownloadFromURL(
     const FX_WCHAR* url) {
   if (!m_pInfo || !m_pInfo->FFI_DownloadFromURL)
     return nullptr;
@@ -518,7 +519,7 @@ FPDF_BOOL CPDFSDK_FormFillEnvironment::PutRequestURL(const FX_WCHAR* wsURL,
                                                      const FX_WCHAR* wsData,
                                                      const FX_WCHAR* wsEncode) {
   if (!m_pInfo || !m_pInfo->FFI_PutRequestURL)
-    return FALSE;
+    return false;
 
   CFX_ByteString bsURL = CFX_WideString(wsURL).UTF16LE_Encode();
   FPDF_WIDESTRING URL = (FPDF_WIDESTRING)bsURL.GetBuffer(bsURL.GetLength());
@@ -562,3 +563,200 @@ void CPDFSDK_FormFillEnvironment::PageEvent(int iPageCount,
     m_pInfo->FFI_PageEvent(m_pInfo, iPageCount, dwEventType);
 }
 #endif  // PDF_ENABLE_XFA
+
+void CPDFSDK_FormFillEnvironment::ClearAllFocusedAnnots() {
+  for (auto& it : m_PageMap) {
+    if (it.second->IsValidSDKAnnot(GetFocusAnnot()))
+      KillFocusAnnot(0);
+  }
+}
+
+CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(
+    UnderlyingPageType* pUnderlyingPage,
+    bool renew) {
+  auto it = m_PageMap.find(pUnderlyingPage);
+  if (it != m_PageMap.end())
+    return it->second.get();
+
+  if (!renew)
+    return nullptr;
+
+  CPDFSDK_PageView* pPageView = new CPDFSDK_PageView(this, pUnderlyingPage);
+  m_PageMap[pUnderlyingPage].reset(pPageView);
+  // Delay to load all the annotations, to avoid endless loop.
+  pPageView->LoadFXAnnots();
+  return pPageView;
+}
+
+CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetCurrentView() {
+  UnderlyingPageType* pPage =
+      UnderlyingFromFPDFPage(GetCurrentPage(m_pUnderlyingDoc));
+  return pPage ? GetPageView(pPage, true) : nullptr;
+}
+
+CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(int nIndex) {
+  UnderlyingPageType* pTempPage =
+      UnderlyingFromFPDFPage(GetPage(m_pUnderlyingDoc, nIndex));
+  if (!pTempPage)
+    return nullptr;
+
+  auto it = m_PageMap.find(pTempPage);
+  return it != m_PageMap.end() ? it->second.get() : nullptr;
+}
+
+void CPDFSDK_FormFillEnvironment::ProcJavascriptFun() {
+  CPDF_Document* pPDFDoc = GetPDFDocument();
+  CPDF_DocJSActions docJS(pPDFDoc);
+  int iCount = docJS.CountJSActions();
+  if (iCount < 1)
+    return;
+  for (int i = 0; i < iCount; i++) {
+    CFX_ByteString csJSName;
+    CPDF_Action jsAction = docJS.GetJSAction(i, csJSName);
+    if (GetActionHander()) {
+      GetActionHander()->DoAction_JavaScript(
+          jsAction, CFX_WideString::FromLocal(csJSName.AsStringC()), this);
+    }
+  }
+}
+
+bool CPDFSDK_FormFillEnvironment::ProcOpenAction() {
+  if (!m_pUnderlyingDoc)
+    return false;
+
+  CPDF_Dictionary* pRoot = GetPDFDocument()->GetRoot();
+  if (!pRoot)
+    return false;
+
+  CPDF_Object* pOpenAction = pRoot->GetDictFor("OpenAction");
+  if (!pOpenAction)
+    pOpenAction = pRoot->GetArrayFor("OpenAction");
+
+  if (!pOpenAction)
+    return false;
+
+  if (pOpenAction->IsArray())
+    return true;
+
+  if (CPDF_Dictionary* pDict = pOpenAction->AsDictionary()) {
+    CPDF_Action action(pDict);
+    if (GetActionHander())
+      GetActionHander()->DoAction_DocOpen(action, this);
+    return true;
+  }
+  return false;
+}
+
+void CPDFSDK_FormFillEnvironment::RemovePageView(
+    UnderlyingPageType* pUnderlyingPage) {
+  auto it = m_PageMap.find(pUnderlyingPage);
+  if (it == m_PageMap.end())
+    return;
+
+  CPDFSDK_PageView* pPageView = it->second.get();
+  if (pPageView->IsLocked() || pPageView->IsBeingDestroyed())
+    return;
+
+  // Mark the page view so we do not come into |RemovePageView| a second
+  // time while we're in the process of removing.
+  pPageView->SetBeingDestroyed();
+
+  // This must happen before we remove |pPageView| from the map because
+  // |KillFocusAnnot| can call into the |GetPage| method which will
+  // look for this page view in the map, if it doesn't find it a new one will
+  // be created. We then have two page views pointing to the same page and
+  // bad things happen.
+  if (pPageView->IsValidSDKAnnot(GetFocusAnnot()))
+    KillFocusAnnot(0);
+
+  // Remove the page from the map to make sure we don't accidentally attempt
+  // to use the |pPageView| while we're cleaning it up.
+  m_PageMap.erase(it);
+}
+
+UnderlyingPageType* CPDFSDK_FormFillEnvironment::GetPage(int nIndex) {
+  return UnderlyingFromFPDFPage(GetPage(m_pUnderlyingDoc, nIndex));
+}
+
+CPDFSDK_InterForm* CPDFSDK_FormFillEnvironment::GetInterForm() {
+  if (!m_pInterForm)
+    m_pInterForm = pdfium::MakeUnique<CPDFSDK_InterForm>(this);
+  return m_pInterForm.get();
+}
+
+void CPDFSDK_FormFillEnvironment::UpdateAllViews(CPDFSDK_PageView* pSender,
+                                                 CPDFSDK_Annot* pAnnot) {
+  for (const auto& it : m_PageMap) {
+    CPDFSDK_PageView* pPageView = it.second.get();
+    if (pPageView != pSender)
+      pPageView->UpdateView(pAnnot);
+  }
+}
+
+bool CPDFSDK_FormFillEnvironment::SetFocusAnnot(
+    CPDFSDK_Annot::ObservedPtr* pAnnot) {
+  if (m_bBeingDestroyed)
+    return false;
+  if (m_pFocusAnnot == *pAnnot)
+    return true;
+  if (m_pFocusAnnot && !KillFocusAnnot(0))
+    return false;
+  if (!*pAnnot)
+    return false;
+
+#ifdef PDF_ENABLE_XFA
+  CPDFSDK_Annot::ObservedPtr pLastFocusAnnot(m_pFocusAnnot.Get());
+#endif  // PDF_ENABLE_XFA
+  CPDFSDK_PageView* pPageView = (*pAnnot)->GetPageView();
+  if (pPageView && pPageView->IsValid()) {
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandler = GetAnnotHandlerMgr();
+    if (!m_pFocusAnnot) {
+#ifdef PDF_ENABLE_XFA
+      if (!pAnnotHandler->Annot_OnChangeFocus(pAnnot, &pLastFocusAnnot))
+        return false;
+#endif  // PDF_ENABLE_XFA
+      if (!pAnnotHandler->Annot_OnSetFocus(pAnnot, 0))
+        return false;
+      if (!m_pFocusAnnot) {
+        m_pFocusAnnot.Reset(pAnnot->Get());
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool CPDFSDK_FormFillEnvironment::KillFocusAnnot(uint32_t nFlag) {
+  if (m_pFocusAnnot) {
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandler = GetAnnotHandlerMgr();
+    CPDFSDK_Annot::ObservedPtr pFocusAnnot(m_pFocusAnnot.Get());
+    m_pFocusAnnot.Reset();
+
+#ifdef PDF_ENABLE_XFA
+    CPDFSDK_Annot::ObservedPtr pNull;
+    if (!pAnnotHandler->Annot_OnChangeFocus(&pNull, &pFocusAnnot))
+      return false;
+#endif  // PDF_ENABLE_XFA
+
+    if (pAnnotHandler->Annot_OnKillFocus(&pFocusAnnot, nFlag)) {
+      if (pFocusAnnot->GetAnnotSubtype() == CPDF_Annot::Subtype::WIDGET) {
+        CPDFSDK_Widget* pWidget =
+            static_cast<CPDFSDK_Widget*>(pFocusAnnot.Get());
+        int nFieldType = pWidget->GetFieldType();
+        if (FIELDTYPE_TEXTFIELD == nFieldType ||
+            FIELDTYPE_COMBOBOX == nFieldType) {
+          OnSetFieldInputFocus(nullptr, 0, false);
+        }
+      }
+      if (!m_pFocusAnnot)
+        return true;
+    } else {
+      m_pFocusAnnot.Reset(pFocusAnnot.Get());
+    }
+  }
+  return false;
+}
+
+bool CPDFSDK_FormFillEnvironment::GetPermissions(int nFlag) {
+  return !!(GetPDFDocument()->GetUserPermissions() & nFlag);
+}

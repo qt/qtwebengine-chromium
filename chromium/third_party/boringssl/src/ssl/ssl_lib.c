@@ -151,7 +151,6 @@
 #include <openssl/lhash.h>
 #include <openssl/mem.h>
 #include <openssl/rand.h>
-#include <openssl/x509v3.h>
 
 #include "internal.h"
 #include "../crypto/internal.h"
@@ -277,7 +276,7 @@ SSL_CTX *SSL_CTX_new(const SSL_METHOD *method) {
   }
 
   ssl_create_cipher_list(ret->method, &ret->cipher_list,
-                         &ret->cipher_list_by_id, SSL_DEFAULT_CIPHER_LIST);
+                         SSL_DEFAULT_CIPHER_LIST);
   if (ret->cipher_list == NULL ||
       sk_SSL_CIPHER_num(ret->cipher_list->ciphers) <= 0) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_LIBRARY_HAS_NO_CIPHERS);
@@ -304,6 +303,10 @@ SSL_CTX *SSL_CTX_new(const SSL_METHOD *method) {
       !RAND_bytes(ret->tlsext_tick_aes_key, 16)) {
     ret->options |= SSL_OP_NO_TICKET;
   }
+
+  /* Disable the auto-chaining feature by default. Once this has stuck without
+   * problems, the feature will be removed entirely. */
+  ret->mode = SSL_MODE_NO_AUTO_CHAIN;
 
   /* Lock the SSL_CTX to the specified version, for compatibility with legacy
    * uses of SSL_METHOD. */
@@ -349,7 +352,6 @@ void SSL_CTX_free(SSL_CTX *ctx) {
   lh_SSL_SESSION_free(ctx->sessions);
   X509_STORE_free(ctx->cert_store);
   ssl_cipher_preference_list_free(ctx->cipher_list);
-  sk_SSL_CIPHER_free(ctx->cipher_list_by_id);
   ssl_cipher_preference_list_free(ctx->cipher_list_tls10);
   ssl_cipher_preference_list_free(ctx->cipher_list_tls11);
   ssl_cert_free(ctx->cert);
@@ -501,7 +503,6 @@ void SSL_free(SSL *ssl) {
 
   /* add extra stuff */
   ssl_cipher_preference_list_free(ssl->cipher_list);
-  sk_SSL_CIPHER_free(ssl->cipher_list_by_id);
 
   SSL_SESSION_free(ssl->session);
 
@@ -636,8 +637,10 @@ int SSL_accept(SSL *ssl) {
 }
 
 static int ssl_do_renegotiate(SSL *ssl) {
-  /* We do not accept renegotiations as a server. */
-  if (ssl->server) {
+  /* We do not accept renegotiations as a server or SSL 3.0. SSL 3.0 will be
+   * removed entirely in the future and requires retaining more data for
+   * renegotiation_info. */
+  if (ssl->server || ssl->version == SSL3_VERSION) {
     goto no_renegotiation;
   }
 
@@ -1045,11 +1048,11 @@ X509 *SSL_get_peer_certificate(const SSL *ssl) {
     return NULL;
   }
   SSL_SESSION *session = SSL_get_session(ssl);
-  if (session == NULL || session->peer == NULL) {
+  if (session == NULL || session->x509_peer == NULL) {
     return NULL;
   }
-  X509_up_ref(session->peer);
-  return session->peer;
+  X509_up_ref(session->x509_peer);
+  return session->x509_peer;
 }
 
 STACK_OF(X509) *SSL_get_peer_cert_chain(const SSL *ssl) {
@@ -1060,11 +1063,18 @@ STACK_OF(X509) *SSL_get_peer_cert_chain(const SSL *ssl) {
   if (session == NULL) {
     return NULL;
   }
-  return session->cert_chain;
+  return session->x509_chain;
 }
 
 int SSL_get_tls_unique(const SSL *ssl, uint8_t *out, size_t *out_len,
                        size_t max_out) {
+  /* tls-unique is not defined for SSL 3.0 or TLS 1.3. */
+  if (!ssl->s3->initial_handshake_complete ||
+      ssl3_protocol_version(ssl) < TLS1_VERSION ||
+      ssl3_protocol_version(ssl) >= TLS1_3_VERSION) {
+    goto err;
+  }
+
   /* The tls-unique value is the first Finished message in the handshake, which
    * is the client's in a full handshake and the server's for a resumption. See
    * https://tools.ietf.org/html/rfc5929#section-3.1. */
@@ -1077,11 +1087,6 @@ int SSL_get_tls_unique(const SSL *ssl, uint8_t *out, size_t *out_len,
     }
     finished = ssl->s3->previous_server_finished;
     finished_len = ssl->s3->previous_server_finished_len;
-  }
-
-  if (!ssl->s3->initial_handshake_complete ||
-      ssl->version < TLS1_VERSION) {
-    goto err;
   }
 
   *out_len = finished_len;
@@ -1232,32 +1237,45 @@ int SSL_set_rfd(SSL *ssl, int fd) {
   return 1;
 }
 
-size_t SSL_get_finished(const SSL *ssl, void *buf, size_t count) {
-  size_t ret = 0;
+static size_t copy_finished(void *out, size_t out_len, const uint8_t *in,
+                            size_t in_len) {
+  if (out_len > in_len) {
+    out_len = in_len;
+  }
+  memcpy(out, in, out_len);
+  return in_len;
+}
 
-  if (ssl->s3 != NULL) {
-    ret = ssl->s3->tmp.finish_md_len;
-    if (count > ret) {
-      count = ret;
-    }
-    memcpy(buf, ssl->s3->tmp.finish_md, count);
+size_t SSL_get_finished(const SSL *ssl, void *buf, size_t count) {
+  if (!ssl->s3->initial_handshake_complete ||
+      ssl3_protocol_version(ssl) < TLS1_VERSION ||
+      ssl3_protocol_version(ssl) >= TLS1_3_VERSION) {
+    return 0;
   }
 
-  return ret;
+  if (ssl->server) {
+    return copy_finished(buf, count, ssl->s3->previous_server_finished,
+                         ssl->s3->previous_server_finished_len);
+  }
+
+  return copy_finished(buf, count, ssl->s3->previous_client_finished,
+                       ssl->s3->previous_client_finished_len);
 }
 
 size_t SSL_get_peer_finished(const SSL *ssl, void *buf, size_t count) {
-  size_t ret = 0;
-
-  if (ssl->s3 != NULL) {
-    ret = ssl->s3->tmp.peer_finish_md_len;
-    if (count > ret) {
-      count = ret;
-    }
-    memcpy(buf, ssl->s3->tmp.peer_finish_md, count);
+  if (!ssl->s3->initial_handshake_complete ||
+      ssl3_protocol_version(ssl) < TLS1_VERSION ||
+      ssl3_protocol_version(ssl) >= TLS1_3_VERSION) {
+    return 0;
   }
 
-  return ret;
+  if (ssl->server) {
+    return copy_finished(buf, count, ssl->s3->previous_client_finished,
+                         ssl->s3->previous_client_finished_len);
+  }
+
+  return copy_finished(buf, count, ssl->s3->previous_server_finished,
+                       ssl->s3->previous_server_finished_len);
 }
 
 int SSL_get_verify_mode(const SSL *ssl) { return ssl->verify_mode; }
@@ -1318,32 +1336,34 @@ int SSL_pending(const SSL *ssl) {
 
 /* Fix this so it checks all the valid key/cert options */
 int SSL_CTX_check_private_key(const SSL_CTX *ctx) {
-  if (ctx->cert->x509 == NULL) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_NO_CERTIFICATE_ASSIGNED);
-    return 0;
-  }
-
   if (ctx->cert->privatekey == NULL) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_NO_PRIVATE_KEY_ASSIGNED);
     return 0;
   }
 
-  return X509_check_private_key(ctx->cert->x509, ctx->cert->privatekey);
-}
-
-/* Fix this function so that it takes an optional type parameter */
-int SSL_check_private_key(const SSL *ssl) {
-  if (ssl->cert->x509 == NULL) {
+  X509 *x509 = ctx->cert->x509_leaf;
+  if (x509 == NULL) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_NO_CERTIFICATE_ASSIGNED);
     return 0;
   }
 
+  return X509_check_private_key(x509, ctx->cert->privatekey);
+}
+
+/* Fix this function so that it takes an optional type parameter */
+int SSL_check_private_key(const SSL *ssl) {
   if (ssl->cert->privatekey == NULL) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_NO_PRIVATE_KEY_ASSIGNED);
     return 0;
   }
 
-  return X509_check_private_key(ssl->cert->x509, ssl->cert->privatekey);
+  X509 *x509 = ssl->cert->x509_leaf;
+  if (x509 == NULL) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_NO_CERTIFICATE_ASSIGNED);
+    return 0;
+  }
+
+  return X509_check_private_key(x509, ssl->cert->privatekey);
 }
 
 long SSL_get_default_timeout(const SSL *ssl) {
@@ -1499,13 +1519,24 @@ int SSL_set1_curves(SSL *ssl, const int *curves, size_t curves_len) {
                          curves_len);
 }
 
+int SSL_CTX_set1_curves_list(SSL_CTX *ctx, const char *curves) {
+  return tls1_set_curves_list(&ctx->supported_group_list,
+                              &ctx->supported_group_list_len, curves);
+}
+
+int SSL_set1_curves_list(SSL *ssl, const char *curves) {
+  return tls1_set_curves_list(&ssl->supported_group_list,
+                              &ssl->supported_group_list_len, curves);
+}
+
 uint16_t SSL_get_curve_id(const SSL *ssl) {
   /* TODO(davidben): This checks the wrong session if there is a renegotiation in
    * progress. */
   SSL_SESSION *session = SSL_get_session(ssl);
   if (session == NULL ||
       session->cipher == NULL ||
-      !SSL_CIPHER_is_ECDHE(session->cipher)) {
+      (ssl3_protocol_version(ssl) < TLS1_3_VERSION &&
+       !SSL_CIPHER_is_ECDHE(session->cipher))) {
     return 0;
   }
 
@@ -1537,41 +1568,13 @@ STACK_OF(SSL_CIPHER) *SSL_get_ciphers(const SSL *ssl) {
     return NULL;
   }
 
-  if (ssl->cipher_list != NULL) {
-    return ssl->cipher_list->ciphers;
-  }
-
-  if (ssl->version >= TLS1_1_VERSION && ssl->ctx->cipher_list_tls11 != NULL) {
-    return ssl->ctx->cipher_list_tls11->ciphers;
-  }
-
-  if (ssl->version >= TLS1_VERSION && ssl->ctx->cipher_list_tls10 != NULL) {
-    return ssl->ctx->cipher_list_tls10->ciphers;
-  }
-
-  if (ssl->ctx->cipher_list != NULL) {
-    return ssl->ctx->cipher_list->ciphers;
-  }
-
-  return NULL;
-}
-
-/* return a STACK of the ciphers available for the SSL and in order of
- * algorithm id */
-STACK_OF(SSL_CIPHER) *ssl_get_ciphers_by_id(SSL *ssl) {
-  if (ssl == NULL) {
+  const struct ssl_cipher_preference_list_st *prefs =
+      ssl_get_cipher_preferences(ssl);
+  if (prefs == NULL) {
     return NULL;
   }
 
-  if (ssl->cipher_list_by_id != NULL) {
-    return ssl->cipher_list_by_id;
-  }
-
-  if (ssl->ctx->cipher_list_by_id != NULL) {
-    return ssl->ctx->cipher_list_by_id;
-  }
-
-  return NULL;
+  return prefs->ciphers;
 }
 
 const char *SSL_get_cipher_list(const SSL *ssl, int n) {
@@ -1596,8 +1599,8 @@ const char *SSL_get_cipher_list(const SSL *ssl, int n) {
 }
 
 int SSL_CTX_set_cipher_list(SSL_CTX *ctx, const char *str) {
-  STACK_OF(SSL_CIPHER) *cipher_list = ssl_create_cipher_list(
-      ctx->method, &ctx->cipher_list, &ctx->cipher_list_by_id, str);
+  STACK_OF(SSL_CIPHER) *cipher_list =
+      ssl_create_cipher_list(ctx->method, &ctx->cipher_list, str);
   if (cipher_list == NULL) {
     return 0;
   }
@@ -1612,8 +1615,8 @@ int SSL_CTX_set_cipher_list(SSL_CTX *ctx, const char *str) {
 }
 
 int SSL_CTX_set_cipher_list_tls10(SSL_CTX *ctx, const char *str) {
-  STACK_OF(SSL_CIPHER) *cipher_list = ssl_create_cipher_list(
-      ctx->method, &ctx->cipher_list_tls10, NULL, str);
+  STACK_OF(SSL_CIPHER) *cipher_list =
+      ssl_create_cipher_list(ctx->method, &ctx->cipher_list_tls10, str);
   if (cipher_list == NULL) {
     return 0;
   }
@@ -1628,8 +1631,8 @@ int SSL_CTX_set_cipher_list_tls10(SSL_CTX *ctx, const char *str) {
 }
 
 int SSL_CTX_set_cipher_list_tls11(SSL_CTX *ctx, const char *str) {
-  STACK_OF(SSL_CIPHER) *cipher_list = ssl_create_cipher_list(
-      ctx->method, &ctx->cipher_list_tls11, NULL, str);
+  STACK_OF(SSL_CIPHER) *cipher_list =
+      ssl_create_cipher_list(ctx->method, &ctx->cipher_list_tls11, str);
   if (cipher_list == NULL) {
     return 0;
   }
@@ -1644,8 +1647,8 @@ int SSL_CTX_set_cipher_list_tls11(SSL_CTX *ctx, const char *str) {
 }
 
 int SSL_set_cipher_list(SSL *ssl, const char *str) {
-  STACK_OF(SSL_CIPHER) *cipher_list = ssl_create_cipher_list(
-      ssl->ctx->method, &ssl->cipher_list, &ssl->cipher_list_by_id, str);
+  STACK_OF(SSL_CIPHER) *cipher_list =
+      ssl_create_cipher_list(ssl->ctx->method, &ssl->cipher_list, str);
   if (cipher_list == NULL) {
     return 0;
   }
@@ -2010,36 +2013,32 @@ void SSL_set_cert_cb(SSL *ssl, int (*cb)(SSL *ssl, void *arg), void *arg) {
 }
 
 size_t SSL_get0_certificate_types(SSL *ssl, const uint8_t **out_types) {
-  if (ssl->server) {
+  if (ssl->server || ssl->s3->hs == NULL) {
     *out_types = NULL;
     return 0;
   }
-  *out_types = ssl->s3->tmp.certificate_types;
-  return ssl->s3->tmp.num_certificate_types;
+  *out_types = ssl->s3->hs->certificate_types;
+  return ssl->s3->hs->num_certificate_types;
 }
 
 void ssl_get_compatible_server_ciphers(SSL *ssl, uint32_t *out_mask_k,
                                        uint32_t *out_mask_a) {
+  if (ssl3_protocol_version(ssl) >= TLS1_3_VERSION) {
+    *out_mask_k = SSL_kGENERIC;
+    *out_mask_a = SSL_aGENERIC;
+    return;
+  }
+
   uint32_t mask_k = 0;
   uint32_t mask_a = 0;
 
-  if (ssl->cert->x509 != NULL && ssl_has_private_key(ssl)) {
+  if (ssl->cert->x509_leaf != NULL && ssl_has_private_key(ssl)) {
     int type = ssl_private_key_type(ssl);
     if (type == NID_rsaEncryption) {
       mask_k |= SSL_kRSA;
       mask_a |= SSL_aRSA;
     } else if (ssl_is_ecdsa_key_type(type)) {
-      /* An ECC certificate may be usable for ECDSA cipher suites depending on
-       * the key usage extension and on the client's group preferences. */
-      X509 *x = ssl->cert->x509;
-      /* This call populates extension flags (ex_flags). */
-      X509_check_purpose(x, -1, 0);
-      int ecdsa_ok = (x->ex_flags & EXFLAG_KUSAGE)
-                         ? (x->ex_kusage & X509v3_KU_DIGITAL_SIGNATURE)
-                         : 1;
-      if (ecdsa_ok && tls1_check_ec_cert(ssl, x)) {
-        mask_a |= SSL_aECDSA;
-      }
+      mask_a |= SSL_aECDSA;
     }
   }
 
@@ -2082,7 +2081,7 @@ void ssl_update_cache(SSL *ssl, int mode) {
    * decides to renew the ticket. Once the handshake is completed, it should be
    * inserted into the cache. */
   if (ssl->s3->established_session != ssl->session ||
-      (!ssl->server && ssl->tlsext_ticket_expected)) {
+      (!ssl->server && ssl->s3->hs->ticket_expected)) {
     if (use_internal_cache) {
       SSL_CTX_add_session(ctx, ssl->s3->established_session);
     }
@@ -2154,7 +2153,7 @@ const char *SSL_SESSION_get_version(const SSL_SESSION *session) {
 
 X509 *SSL_get_certificate(const SSL *ssl) {
   if (ssl->cert != NULL) {
-    return ssl->cert->x509;
+    return ssl->cert->x509_leaf;
   }
 
   return NULL;
@@ -2170,7 +2169,7 @@ EVP_PKEY *SSL_get_privatekey(const SSL *ssl) {
 
 X509 *SSL_CTX_get0_certificate(const SSL_CTX *ctx) {
   if (ctx->cert != NULL) {
-    return ctx->cert->x509;
+    return ctx->cert->x509_leaf;
   }
 
   return NULL;
@@ -2657,7 +2656,10 @@ int SSL_in_init(const SSL *ssl) {
 }
 
 int SSL_in_false_start(const SSL *ssl) {
-  return ssl->s3->tmp.in_false_start;
+  if (ssl->s3->hs == NULL) {
+    return 0;
+  }
+  return ssl->s3->hs->in_false_start;
 }
 
 int SSL_cutthrough_complete(const SSL *ssl) {
@@ -2677,7 +2679,8 @@ int ssl3_can_false_start(const SSL *ssl) {
   /* False Start only for TLS 1.2 with an ECDHE+AEAD cipher and ALPN or NPN. */
   return !SSL_is_dtls(ssl) &&
       SSL_version(ssl) == TLS1_2_VERSION &&
-      (ssl->s3->alpn_selected || ssl->s3->next_proto_neg_seen) &&
+      (ssl->s3->alpn_selected != NULL ||
+       ssl->s3->next_proto_negotiated != NULL) &&
       cipher != NULL &&
       (cipher->algorithm_mkey == SSL_kECDHE ||
        cipher->algorithm_mkey == SSL_kCECPQ1) &&
@@ -3033,7 +3036,7 @@ void ssl_get_current_time(const SSL *ssl, struct timeval *out_clock) {
     return;
   }
 
-#if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
+#if defined(BORINGSSL_UNSAFE_DETERMINISTIC_MODE)
   out_clock->tv_sec = 1234;
   out_clock->tv_usec = 1234;
 #elif defined(OPENSSL_WINDOWS)

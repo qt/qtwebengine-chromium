@@ -635,7 +635,7 @@ setup_gnu_toolchain() {
   AS=${AS:-${CROSS}as}
   STRIP=${STRIP:-${CROSS}strip}
   NM=${NM:-${CROSS}nm}
-  AS_SFX=.s
+  AS_SFX=.S
   EXE_SFX=
 }
 
@@ -926,7 +926,7 @@ EOF
           ;;
         vs*)
           asm_conversion_cmd="${source_path}/build/make/ads2armasm_ms.pl"
-          AS_SFX=.s
+          AS_SFX=.S
           msvs_arch_dir=arm-msvs
           disable_feature multithread
           disable_feature unit_tests
@@ -936,6 +936,7 @@ EOF
             # only "AppContainerApplication" which requires an AppxManifest.
             # Therefore disable the examples, just build the library.
             disable_feature examples
+            disable_feature tools
           fi
           ;;
         rvct)
@@ -1034,7 +1035,7 @@ EOF
           STRIP="$(${XCRUN_FIND} strip)"
           NM="$(${XCRUN_FIND} nm)"
           RANLIB="$(${XCRUN_FIND} ranlib)"
-          AS_SFX=.s
+          AS_SFX=.S
           LD="${CXX:-$(${XCRUN_FIND} ld)}"
 
           # ASFLAGS is written here instead of using check_add_asflags

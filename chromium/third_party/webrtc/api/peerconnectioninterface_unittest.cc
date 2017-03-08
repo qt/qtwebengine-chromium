@@ -435,6 +435,13 @@ class MockTrackObserver : public ObserverInterface {
 
 class MockPeerConnectionObserver : public PeerConnectionObserver {
  public:
+  // We need these using declarations because there are two versions of each of
+  // the below methods and we only override one of them.
+  // TODO(deadbeef): Remove once there's only one version of the methods.
+  using PeerConnectionObserver::OnAddStream;
+  using PeerConnectionObserver::OnRemoveStream;
+  using PeerConnectionObserver::OnDataChannel;
+
   MockPeerConnectionObserver() : remote_streams_(StreamCollection::Create()) {}
   virtual ~MockPeerConnectionObserver() {
   }
@@ -558,12 +565,13 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
 class PeerConnectionFactoryForTest : public webrtc::PeerConnectionFactory {
  public:
   webrtc::MediaControllerInterface* CreateMediaController(
-      const cricket::MediaConfig& config) const override {
+      const cricket::MediaConfig& config,
+      webrtc::RtcEventLog* event_log) const override {
     create_media_controller_called_ = true;
     create_media_controller_config_ = config;
 
     webrtc::MediaControllerInterface* mc =
-        PeerConnectionFactory::CreateMediaController(config);
+        PeerConnectionFactory::CreateMediaController(config, event_log);
     EXPECT_TRUE(mc != nullptr);
     return mc;
   }
@@ -1576,10 +1584,7 @@ TEST_F(PeerConnectionInterfaceTest, GetStatsForVideoTrack) {
 }
 
 // Test that we don't get statistics for an invalid track.
-// TODO(tommi): Fix this test.  DoGetStats will return true
-// for the unknown track (since GetStats is async), but no
-// data is returned for the track.
-TEST_F(PeerConnectionInterfaceTest, DISABLED_GetStatsForInvalidTrack) {
+TEST_F(PeerConnectionInterfaceTest, GetStatsForInvalidTrack) {
   InitiateCall();
   rtc::scoped_refptr<AudioTrackInterface> unknown_audio_track(
       pc_factory_->CreateAudioTrack("unknown track", NULL));

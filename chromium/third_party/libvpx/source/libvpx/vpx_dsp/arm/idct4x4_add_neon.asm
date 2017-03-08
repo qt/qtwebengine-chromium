@@ -15,6 +15,8 @@
 
     AREA ||.text||, CODE, READONLY, ALIGN=2
 
+    INCLUDE vpx_dsp/arm/idct_neon.asm.S
+
     AREA     Block, CODE, READONLY ; name this block of code
 ;void vpx_idct4x4_16_add_neon(int16_t *input, uint8_t *dest, int dest_stride)
 ;
@@ -33,18 +35,15 @@
     ; So, two passes of a transpose followed by a column transform.
 
     ; load the inputs into q8-q9, d16-d19
-    vld1.s16        {q8,q9}, [r0]!
+    LOAD_TRAN_LOW_TO_S16 d16, d17, d18, d19, r0
 
     ; generate scalar constants
-    ; cospi_8_64 = 15137 = 0x3b21
-    mov             r0, #0x3b00
-    add             r0, #0x21
-    ; cospi_16_64 = 11585 = 0x2d41
-    mov             r3, #0x2d00
-    add             r3, #0x41
-    ; cospi_24_64 = 6270 = 0x 187e
-    mov             r12, #0x1800
-    add             r12, #0x7e
+    ; cospi_8_64 = 15137
+    movw            r0, #0x3b21
+    ; cospi_16_64 = 11585
+    movw            r3, #0x2d41
+    ; cospi_24_64 = 6270
+    movw            r12, #0x187e
 
     ; transpose the input data
     ; 00 01 02 03   d16

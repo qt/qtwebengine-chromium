@@ -1260,8 +1260,8 @@ void BuildMediaDescription(const ContentInfo* content_info,
       for (std::vector<cricket::DataCodec>::const_iterator it =
            data_desc->codecs().begin();
            it != data_desc->codecs().end(); ++it) {
-        if (it->id == cricket::kGoogleSctpDataCodecId &&
-            it->GetParam(cricket::kCodecParamPort, &sctp_port)) {
+        if (cricket::CodecNamesEq(it->name, cricket::kGoogleSctpDataCodecName)
+            && it->GetParam(cricket::kCodecParamPort, &sctp_port)) {
           break;
         }
       }
@@ -1598,7 +1598,8 @@ bool IsFmtpParam(const std::string& name) {
       kCodecParamAssociatedPayloadType,
       cricket::kH264FmtpPacketizationMode,
       cricket::kH264FmtpLevelAsymmetryAllowed,
-      cricket::kH264FmtpProfileLevelId};
+      cricket::kH264FmtpProfileLevelId,
+      cricket::kFlexfecFmtpRepairWindow};
   for (size_t i = 0; i < arraysize(kFmtpParams); ++i) {
     if (name.compare(kFmtpParams[i]) == 0) {
       return true;
@@ -1651,13 +1652,15 @@ void AddRtcpFbLines(const T& codec, std::string* message) {
 
 bool AddSctpDataCodec(DataContentDescription* media_desc,
                       int sctp_port) {
-  if (media_desc->HasCodec(cricket::kGoogleSctpDataCodecId)) {
-    return ParseFailed("",
-                       "Can't have multiple sctp port attributes.",
-                       NULL);
+  for (const auto& codec : media_desc->codecs()) {
+    if (cricket::CodecNamesEq(codec.name, cricket::kGoogleSctpDataCodecName)) {
+      return ParseFailed("",
+                         "Can't have multiple sctp port attributes.",
+                         NULL);
+    }
   }
   // Add the SCTP Port number as a pseudo-codec "port" parameter
-  cricket::DataCodec codec_port(cricket::kGoogleSctpDataCodecId,
+  cricket::DataCodec codec_port(cricket::kGoogleSctpDataCodecPlType,
                                 cricket::kGoogleSctpDataCodecName);
   codec_port.SetParam(cricket::kCodecParamPort, sctp_port);
   LOG(INFO) << "AddSctpDataCodec: Got SCTP Port Number "
@@ -2185,9 +2188,7 @@ void MaybeCreateStaticPayloadAudioCodecs(
     return;
   }
   RTC_DCHECK(media_desc->codecs().empty());
-  std::vector<int>::const_iterator it = fmts.begin();
-  for (; it != fmts.end(); ++it) {
-    int payload_type = *it;
+  for (int payload_type : fmts) {
     if (!media_desc->HasCodec(payload_type) &&
         payload_type >= 0 &&
         static_cast<uint32_t>(payload_type) <
@@ -2437,10 +2438,12 @@ void AddFeedbackParameters(const cricket::FeedbackParams& feedback_params,
 // with that payload type.
 template <class T>
 T GetCodecWithPayloadType(const std::vector<T>& codecs, int payload_type) {
+  const T* codec = FindCodecById(codecs, payload_type);
+  if (codec)
+    return *codec;
+  // Return empty codec with |payload_type|.
   T ret_val;
-  if (!FindCodecById(codecs, payload_type, &ret_val)) {
-    ret_val.id = payload_type;
-  }
+  ret_val.id = payload_type;
   return ret_val;
 }
 
@@ -2965,18 +2968,12 @@ void UpdateCodec(int payload_type,
 // |name|, |width|, |height|, and |framerate|.
 void UpdateCodec(int payload_type,
                  const std::string& name,
-                 int width,
-                 int height,
-                 int framerate,
                  VideoContentDescription* video_desc) {
   // Codec may already be populated with (only) optional parameters
   // (from an fmtp).
   cricket::VideoCodec codec =
       GetCodecWithPayloadType(video_desc->codecs(), payload_type);
   codec.name = name;
-  codec.width = width;
-  codec.height = height;
-  codec.framerate = framerate;
   AddOrReplaceCodec<VideoContentDescription, cricket::VideoCodec>(video_desc,
                                                                   codec);
 }
@@ -3030,12 +3027,7 @@ bool ParseRtpmapAttribute(const std::string& line,
   if (media_type == cricket::MEDIA_TYPE_VIDEO) {
     VideoContentDescription* video_desc =
         static_cast<VideoContentDescription*>(media_desc);
-    // TODO: We will send resolution in SDP. For now use
-    // JsepSessionDescription::kMaxVideoCodecWidth and kMaxVideoCodecHeight.
     UpdateCodec(payload_type, encoding_name,
-                JsepSessionDescription::kMaxVideoCodecWidth,
-                JsepSessionDescription::kMaxVideoCodecHeight,
-                JsepSessionDescription::kDefaultVideoCodecFramerate,
                 video_desc);
   } else if (media_type == cricket::MEDIA_TYPE_AUDIO) {
     // RFC 4566

@@ -30,8 +30,6 @@
 #include "extensions/browser/view_type_utils.h"
 #include "net/base/net_errors.h"
 
-using content::ResourceType;
-
 namespace GetFrame = extensions::api::web_navigation::GetFrame;
 namespace GetAllFrames = extensions::api::web_navigation::GetAllFrames;
 
@@ -268,7 +266,7 @@ void WebNavigationTabObserver::RenderFrameHostChanged(
 
 void WebNavigationTabObserver::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (navigation_handle->IsSynchronousNavigation() ||
+  if (navigation_handle->IsSamePage() ||
       !FrameNavigationState::IsValidUrl(navigation_handle->GetURL())) {
     return;
   }
@@ -325,8 +323,8 @@ void WebNavigationTabObserver::DidFinishLoad(
   // srcdoc iframes will report a url of about:blank, still let it through.
   if (navigation_state_.GetUrl(render_frame_host) != validated_url &&
       (navigation_state_.GetUrl(render_frame_host) !=
-           GURL(content::kAboutSrcDocURL) ||
-       validated_url != GURL(url::kAboutBlankURL))) {
+           content::kAboutSrcDocURL ||
+       validated_url != url::kAboutBlankURL)) {
     return;
   }
 
@@ -446,24 +444,18 @@ bool WebNavigationTabObserver::IsReferenceFragmentNavigation(
       url.ReplaceComponents(replacements);
 }
 
-bool WebNavigationGetFrameFunction::RunSync() {
+ExtensionFunction::ResponseAction WebNavigationGetFrameFunction::Run() {
   std::unique_ptr<GetFrame::Params> params(GetFrame::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   int tab_id = params->details.tab_id;
   int frame_id = params->details.frame_id;
 
-  SetResult(base::Value::CreateNullValue());
-
   content::WebContents* web_contents;
-  if (!ExtensionTabUtil::GetTabById(tab_id,
-                                    GetProfile(),
-                                    include_incognito(),
-                                    NULL,
-                                    NULL,
-                                    &web_contents,
-                                    NULL) ||
+  if (!ExtensionTabUtil::GetTabById(tab_id, browser_context(),
+                                    include_incognito(), nullptr, nullptr,
+                                    &web_contents, nullptr) ||
       !web_contents) {
-    return true;
+    return RespondNow(OneArgument(base::Value::CreateNullValue()));
   }
 
   WebNavigationTabObserver* observer =
@@ -477,11 +469,11 @@ bool WebNavigationGetFrameFunction::RunSync() {
       ExtensionApiFrameIdMap::Get()->GetRenderFrameHostById(web_contents,
                                                             frame_id);
   if (!frame_navigation_state.IsValidFrame(render_frame_host))
-    return true;
+    return RespondNow(OneArgument(base::Value::CreateNullValue()));
 
   GURL frame_url = frame_navigation_state.GetUrl(render_frame_host);
   if (!frame_navigation_state.IsValidUrl(frame_url))
-    return true;
+    return RespondNow(OneArgument(base::Value::CreateNullValue()));
 
   GetFrame::Results::Details frame_details;
   frame_details.url = frame_url.spec();
@@ -489,28 +481,21 @@ bool WebNavigationGetFrameFunction::RunSync() {
       frame_navigation_state.GetErrorOccurredInFrame(render_frame_host);
   frame_details.parent_frame_id =
       ExtensionApiFrameIdMap::GetFrameId(render_frame_host->GetParent());
-  results_ = GetFrame::Results::Create(frame_details);
-  return true;
+  return RespondNow(ArgumentList(GetFrame::Results::Create(frame_details)));
 }
 
-bool WebNavigationGetAllFramesFunction::RunSync() {
+ExtensionFunction::ResponseAction WebNavigationGetAllFramesFunction::Run() {
   std::unique_ptr<GetAllFrames::Params> params(
       GetAllFrames::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   int tab_id = params->details.tab_id;
 
-  SetResult(base::Value::CreateNullValue());
-
   content::WebContents* web_contents;
-  if (!ExtensionTabUtil::GetTabById(tab_id,
-                                    GetProfile(),
-                                    include_incognito(),
-                                    NULL,
-                                    NULL,
-                                    &web_contents,
-                                    NULL) ||
+  if (!ExtensionTabUtil::GetTabById(tab_id, browser_context(),
+                                    include_incognito(), nullptr, nullptr,
+                                    &web_contents, nullptr) ||
       !web_contents) {
-    return true;
+    return RespondNow(OneArgument(base::Value::CreateNullValue()));
   }
 
   WebNavigationTabObserver* observer =
@@ -535,8 +520,7 @@ bool WebNavigationGetAllFramesFunction::RunSync() {
     frame.error_occurred = navigation_state.GetErrorOccurredInFrame(*it);
     result_list.push_back(std::move(frame));
   }
-  results_ = GetAllFrames::Results::Create(result_list);
-  return true;
+  return RespondNow(ArgumentList(GetAllFrames::Results::Create(result_list)));
 }
 
 WebNavigationAPI::WebNavigationAPI(content::BrowserContext* context)

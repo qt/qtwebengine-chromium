@@ -14,7 +14,6 @@ group("stats") {
   ]
 }
 
-# GYP version: webrtc/stats/stats.gyp:rtc_stats
 rtc_static_library("rtc_stats") {
   cflags = []
   sources = [
@@ -22,11 +21,6 @@ rtc_static_library("rtc_stats") {
     "rtcstats_objects.cc",
     "rtcstatsreport.cc",
   ]
-
-  if (is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   deps = [
     "../api:rtc_stats_api",
@@ -40,11 +34,6 @@ rtc_source_set("rtc_stats_test_utils") {
     "test/rtcteststats.cc",
     "test/rtcteststats.h",
   ]
-
-  if (is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   deps = [
     ":rtc_stats",
@@ -60,7 +49,7 @@ if (rtc_include_tests) {
       "rtcstatsreport_unittest.cc",
     ]
 
-    if (is_clang) {
+    if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }

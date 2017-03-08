@@ -43,14 +43,13 @@ class Timing;
 
 namespace webrtc {
 class AudioSinkInterface;
+class VideoFrame;
 }
 
 namespace cricket {
 
 class AudioSource;
-class ScreencastId;
 class VideoCapturer;
-class VideoFrame;
 struct RtpHeader;
 struct VideoFormat;
 
@@ -104,9 +103,7 @@ struct MediaConfig {
   // Video-specific config.
   struct Video {
     // Enable WebRTC CPU Overuse Detection. This flag comes from the
-    // PeerConnection constraint 'googCpuOveruseDetection' and is
-    // checked in WebRtcVideoChannel2::OnLoadUpdate, where it's passed
-    // to VideoCapturer::video_adapter()->OnCpuResolutionRequest.
+    // PeerConnection constraint 'googCpuOveruseDetection'.
     bool enable_cpu_overuse_detection = true;
 
     // Enable WebRTC suspension of video. No video frames will be sent
@@ -159,6 +156,7 @@ struct AudioOptions {
     SetFrom(&experimental_ns, change.experimental_ns);
     SetFrom(&intelligibility_enhancer, change.intelligibility_enhancer);
     SetFrom(&level_control, change.level_control);
+    SetFrom(&residual_echo_detector, change.residual_echo_detector);
     SetFrom(&tx_agc_target_dbov, change.tx_agc_target_dbov);
     SetFrom(&tx_agc_digital_compression_gain,
             change.tx_agc_digital_compression_gain);
@@ -166,6 +164,10 @@ struct AudioOptions {
     SetFrom(&recording_sample_rate, change.recording_sample_rate);
     SetFrom(&playout_sample_rate, change.playout_sample_rate);
     SetFrom(&combined_audio_video_bwe, change.combined_audio_video_bwe);
+    SetFrom(&audio_network_adaptor, change.audio_network_adaptor);
+    SetFrom(&audio_network_adaptor_config, change.audio_network_adaptor_config);
+    SetFrom(&level_control_initial_peak_level_dbfs,
+            change.level_control_initial_peak_level_dbfs);
   }
 
   bool operator==(const AudioOptions& o) const {
@@ -186,6 +188,7 @@ struct AudioOptions {
            experimental_ns == o.experimental_ns &&
            intelligibility_enhancer == o.intelligibility_enhancer &&
            level_control == o.level_control &&
+           residual_echo_detector == o.residual_echo_detector &&
            adjust_agc_delta == o.adjust_agc_delta &&
            tx_agc_target_dbov == o.tx_agc_target_dbov &&
            tx_agc_digital_compression_gain ==
@@ -193,7 +196,11 @@ struct AudioOptions {
            tx_agc_limiter == o.tx_agc_limiter &&
            recording_sample_rate == o.recording_sample_rate &&
            playout_sample_rate == o.playout_sample_rate &&
-           combined_audio_video_bwe == o.combined_audio_video_bwe;
+           combined_audio_video_bwe == o.combined_audio_video_bwe &&
+           audio_network_adaptor == o.audio_network_adaptor &&
+           audio_network_adaptor_config == o.audio_network_adaptor_config &&
+           level_control_initial_peak_level_dbfs ==
+               o.level_control_initial_peak_level_dbfs;
   }
   bool operator!=(const AudioOptions& o) const { return !(*this == o); }
 
@@ -218,6 +225,9 @@ struct AudioOptions {
     ost << ToStringIfSet("experimental_ns", experimental_ns);
     ost << ToStringIfSet("intelligibility_enhancer", intelligibility_enhancer);
     ost << ToStringIfSet("level_control", level_control);
+    ost << ToStringIfSet("level_control_initial_peak_level_dbfs",
+                         level_control_initial_peak_level_dbfs);
+    ost << ToStringIfSet("residual_echo_detector", residual_echo_detector);
     ost << ToStringIfSet("tx_agc_target_dbov", tx_agc_target_dbov);
     ost << ToStringIfSet("tx_agc_digital_compression_gain",
         tx_agc_digital_compression_gain);
@@ -225,6 +235,11 @@ struct AudioOptions {
     ost << ToStringIfSet("recording_sample_rate", recording_sample_rate);
     ost << ToStringIfSet("playout_sample_rate", playout_sample_rate);
     ost << ToStringIfSet("combined_audio_video_bwe", combined_audio_video_bwe);
+    ost << ToStringIfSet("audio_network_adaptor", audio_network_adaptor);
+    // The adaptor config is a serialized proto buffer and therefore not human
+    // readable. So we comment out the following line.
+    // ost << ToStringIfSet("audio_network_adaptor_config",
+    //     audio_network_adaptor_config);
     ost << "}";
     return ost.str();
   }
@@ -254,7 +269,10 @@ struct AudioOptions {
   rtc::Optional<bool> experimental_ns;
   rtc::Optional<bool> intelligibility_enhancer;
   rtc::Optional<bool> level_control;
+  // Specifies an optional initialization value for the level controller.
+  rtc::Optional<float> level_control_initial_peak_level_dbfs;
   // Note that tx_agc_* only applies to non-experimental AGC.
+  rtc::Optional<bool> residual_echo_detector;
   rtc::Optional<uint16_t> tx_agc_target_dbov;
   rtc::Optional<uint16_t> tx_agc_digital_compression_gain;
   rtc::Optional<bool> tx_agc_limiter;
@@ -265,6 +283,10 @@ struct AudioOptions {
   // "googCombinedAudioVideoBwe", but not used anywhere. So delete it,
   // and check if any other AudioOptions members are unused.
   rtc::Optional<bool> combined_audio_video_bwe;
+  // Enable audio network adaptor.
+  rtc::Optional<bool> audio_network_adaptor;
+  // Config string for audio network adaptor.
+  rtc::Optional<std::string> audio_network_adaptor_config;
 
  private:
   template <typename T>
@@ -385,6 +407,9 @@ class MediaChannel : public sigslot::has_slots<> {
   virtual void OnNetworkRouteChanged(
       const std::string& transport_name,
       const rtc::NetworkRoute& network_route) = 0;
+  // Called when the rtp transport overhead changed.
+  virtual void OnTransportOverheadChanged(
+      int transport_overhead_per_packet) = 0;
   // Creates a new outgoing media stream with SSRCs and CNAME as described
   // by sp.
   virtual bool AddSendStream(const StreamParams& sp) = 0;
@@ -587,6 +612,7 @@ struct VoiceSenderInfo : public MediaSenderInfo {
         echo_delay_std_ms(0),
         echo_return_loss(0),
         echo_return_loss_enhancement(0),
+        residual_echo_likelihood(0.0f),
         typing_noise_detected(false) {
   }
 
@@ -598,6 +624,7 @@ struct VoiceSenderInfo : public MediaSenderInfo {
   int echo_delay_std_ms;
   int echo_return_loss;
   int echo_return_loss_enhancement;
+  float residual_echo_likelihood;
   bool typing_noise_detected;
 };
 
@@ -665,11 +692,15 @@ struct VideoSenderInfo : public MediaSenderInfo {
         adapt_reason(0),
         adapt_changes(0),
         avg_encode_ms(0),
-        encode_usage_percent(0) {
-  }
+        encode_usage_percent(0),
+        frames_encoded(0) {}
 
   std::vector<SsrcGroup> ssrc_groups;
+  // TODO(hbos): Move this to |VideoMediaInfo::send_codecs|?
   std::string encoder_implementation_name;
+  // TODO(hbos): Move this to |MediaSenderInfo| when supported by
+  // |VoiceSenderInfo| as well (which also extends that class).
+  rtc::Optional<uint32_t> codec_payload_type;
   int packets_cached;
   int firs_rcvd;
   int plis_rcvd;
@@ -684,6 +715,8 @@ struct VideoSenderInfo : public MediaSenderInfo {
   int adapt_changes;
   int avg_encode_ms;
   int encode_usage_percent;
+  uint32_t frames_encoded;
+  rtc::Optional<uint64_t> qp_sum;
 };
 
 struct VideoReceiverInfo : public MediaReceiverInfo {
@@ -699,6 +732,7 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
         framerate_output(0),
         framerate_render_input(0),
         framerate_render_output(0),
+        frames_decoded(0),
         decode_ms(0),
         max_decode_ms(0),
         jitter_buffer_ms(0),
@@ -710,7 +744,11 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
   }
 
   std::vector<SsrcGroup> ssrc_groups;
+  // TODO(hbos): Move this to |VideoMediaInfo::receive_codecs|?
   std::string decoder_implementation_name;
+  // TODO(hbos): Move this to |MediaReceiverInfo| when supported by
+  // |VoiceReceiverInfo| as well (which also extends that class).
+  rtc::Optional<uint32_t> codec_payload_type;
   int packets_concealed;
   int firs_sent;
   int plis_sent;
@@ -724,6 +762,7 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
   int framerate_render_input;
   // Framerate that the renderer reports.
   int framerate_render_output;
+  uint32_t frames_decoded;
 
   // All stats below are gathered per-VideoReceiver, but some will be correlated
   // across MediaStreamTracks.  NOTE(hta): when sinking stats into per-SSRC
@@ -785,6 +824,9 @@ struct BandwidthEstimationInfo {
   int64_t bucket_delay;
 };
 
+// Maps from payload type to |RtpCodecParameters|.
+typedef std::map<int, webrtc::RtpCodecParameters> RtpCodecParametersMap;
+
 struct VoiceMediaInfo {
   void Clear() {
     senders.clear();
@@ -799,10 +841,14 @@ struct VideoMediaInfo {
     senders.clear();
     receivers.clear();
     bw_estimations.clear();
+    send_codecs.clear();
+    receive_codecs.clear();
   }
   std::vector<VideoSenderInfo> senders;
   std::vector<VideoReceiverInfo> receivers;
   std::vector<BandwidthEstimationInfo> bw_estimations;
+  RtpCodecParametersMap send_codecs;
+  RtpCodecParametersMap receive_codecs;
 };
 
 struct DataMediaInfo {
@@ -1005,11 +1051,11 @@ class VideoMediaChannel : public MediaChannel {
       uint32_t ssrc,
       bool enable,
       const VideoOptions* options,
-      rtc::VideoSourceInterface<cricket::VideoFrame>* source) = 0;
+      rtc::VideoSourceInterface<webrtc::VideoFrame>* source) = 0;
   // Sets the sink object to be used for the specified stream.
   // If SSRC is 0, the renderer is used for the 'default' stream.
   virtual bool SetSink(uint32_t ssrc,
-                       rtc::VideoSinkInterface<cricket::VideoFrame>* sink) = 0;
+                       rtc::VideoSinkInterface<webrtc::VideoFrame>* sink) = 0;
   // Gets quality stats for the channel.
   virtual bool GetStats(VideoMediaInfo* info) = 0;
 };

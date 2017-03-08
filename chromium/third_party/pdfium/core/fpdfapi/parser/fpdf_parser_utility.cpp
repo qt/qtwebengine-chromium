@@ -68,7 +68,7 @@ const char PDF_CharType[256] = {
     'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R',
     'R', 'R', 'R', 'R', 'R', 'R', 'R', 'W'};
 
-int32_t GetHeaderOffset(IFX_FileRead* pFile) {
+int32_t GetHeaderOffset(IFX_SeekableReadStream* pFile) {
   const size_t kBufSize = 4;
   uint8_t buf[kBufSize];
   for (int32_t offset = 0; offset <= 1024; ++offset) {
@@ -179,7 +179,7 @@ CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& buf, const CPDF_Object* pObj) {
       buf << "[";
       for (size_t i = 0; i < p->GetCount(); i++) {
         CPDF_Object* pElement = p->GetObjectAt(i);
-        if (pElement && pElement->GetObjNum()) {
+        if (pElement && !pElement->IsInline()) {
           buf << " " << pElement->GetObjNum() << " 0 R";
         } else {
           buf << pElement;
@@ -195,7 +195,7 @@ CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& buf, const CPDF_Object* pObj) {
         const CFX_ByteString& key = it.first;
         CPDF_Object* pValue = it.second;
         buf << "/" << PDF_NameEncode(key);
-        if (pValue && pValue->GetObjNum()) {
+        if (pValue && !pValue->IsInline()) {
           buf << " " << pValue->GetObjNum() << " 0 R ";
         } else {
           buf << pValue;
@@ -208,13 +208,13 @@ CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& buf, const CPDF_Object* pObj) {
       const CPDF_Stream* p = pObj->AsStream();
       buf << p->GetDict() << "stream\r\n";
       CPDF_StreamAcc acc;
-      acc.LoadAllData(p, TRUE);
+      acc.LoadAllData(p, true);
       buf.AppendBlock(acc.GetData(), acc.GetSize());
       buf << "\r\nendstream";
       break;
     }
     default:
-      ASSERT(FALSE);
+      ASSERT(false);
       break;
   }
   return buf;

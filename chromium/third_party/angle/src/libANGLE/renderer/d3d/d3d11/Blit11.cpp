@@ -1022,8 +1022,7 @@ gl::Error Blit11::swizzleTexture(ID3D11ShaderResourceView *source,
     D3D11_SHADER_RESOURCE_VIEW_DESC sourceSRVDesc;
     source->GetDesc(&sourceSRVDesc);
 
-    const d3d11::DXGIFormat &dxgiFormatInfo = d3d11::GetDXGIFormatInfo(sourceSRVDesc.Format);
-    GLenum componentType                    = dxgiFormatInfo.componentType;
+    GLenum componentType = d3d11::GetComponentType(sourceSRVDesc.Format);
     if (componentType == GL_NONE)
     {
         // We're swizzling the depth component of a depth-stencil texture.
@@ -1183,8 +1182,7 @@ gl::Error Blit11::copyTexture(ID3D11ShaderResourceView *source,
     D3D11_SHADER_RESOURCE_VIEW_DESC sourceSRVDesc;
     source->GetDesc(&sourceSRVDesc);
 
-    const d3d11::DXGIFormat &dxgiFormatInfo = d3d11::GetDXGIFormatInfo(sourceSRVDesc.Format);
-    GLenum componentType                    = dxgiFormatInfo.componentType;
+    GLenum componentType = d3d11::GetComponentType(sourceSRVDesc.Format);
 
     ASSERT(componentType != GL_NONE);
     ASSERT(componentType != GL_SIGNED_NORMALIZED);
@@ -1472,7 +1470,7 @@ gl::Error Blit11::copyDepthStencilImpl(const TextureHelper11 &source,
 
     if (stencilOnly)
     {
-        const auto &srcFormat = source.getFormatSet().format;
+        const auto &srcFormat = source.getFormatSet().format();
 
         // Stencil channel should be right after the depth channel. Some views to depth/stencil
         // resources have red channel for depth, in which case the depth channel bit width is in

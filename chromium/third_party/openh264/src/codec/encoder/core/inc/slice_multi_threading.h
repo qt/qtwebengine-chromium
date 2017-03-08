@@ -51,17 +51,16 @@
 #include "WelsThreadLib.h"
 
 namespace WelsEnc {
-void UpdateMbListNeighborParallel (SSliceCtx* pSliceCtx,
+void UpdateMbListNeighborParallel (SDqLayer* pCurDq,
                                    SMB* pMbList,
                                    const int32_t kiSliceIdc);
 
-void CalcSliceComplexRatio (void* pRatio, SSliceCtx* pSliceCtx, uint32_t* pSliceConsume);
+void CalcSliceComplexRatio (SDqLayer* pCurDq);
 
 int32_t NeedDynamicAdjust (void* pConsumeTime, const int32_t kiSliceNum);
 
 void DynamicAdjustSlicing (sWelsEncCtx* pCtx,
                            SDqLayer* pCurDqLayer,
-                           void* pComplexRatio,
                            int32_t iCurDid);
 
 int32_t RequestMtResource (sWelsEncCtx** ppCtx, SWelsSvcCodingParam* pParam, const int32_t kiCountBsLen,
@@ -99,6 +98,7 @@ void TrackSliceConsumeTime (sWelsEncCtx* pCtx, int32_t* pDidList, const int32_t 
 #endif//defined(MT_DEBUG)
 
 void SetOneSliceBsBufferUnderMultithread(sWelsEncCtx* pCtx, const int32_t kiThreadIdx, const int32_t iSliceIdx);
+int32_t WriteSliceBs (sWelsEncCtx* pCtx,SWelsSliceBs* pSliceBs,const int32_t iSliceIdx,int32_t& iSliceSize);
 }
 
 #endif//SVC_SLICE_MULTIPLE_THREADING_H__

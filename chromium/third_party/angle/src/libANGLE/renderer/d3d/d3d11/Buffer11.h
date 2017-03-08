@@ -28,15 +28,16 @@ class Renderer11;
 struct SourceIndexData;
 struct TranslatedAttribute;
 
+// The order of this enum governs priority of 'getLatestBufferStorage'.
 enum BufferUsage
 {
+    BUFFER_USAGE_SYSTEM_MEMORY,
     BUFFER_USAGE_STAGING,
     BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK,
     BUFFER_USAGE_INDEX,
     BUFFER_USAGE_PIXEL_UNPACK,
     BUFFER_USAGE_PIXEL_PACK,
     BUFFER_USAGE_UNIFORM,
-    BUFFER_USAGE_SYSTEM_MEMORY,
     BUFFER_USAGE_EMULATED_INDEXED_VERTEX,
 
     BUFFER_USAGE_COUNT,
@@ -47,14 +48,18 @@ typedef size_t DataRevision;
 class Buffer11 : public BufferD3D
 {
   public:
-    Buffer11(Renderer11 *renderer);
+    Buffer11(const gl::BufferState &state, Renderer11 *renderer);
     virtual ~Buffer11();
 
     gl::ErrorOrResult<ID3D11Buffer *> getBuffer(BufferUsage usage);
     gl::ErrorOrResult<ID3D11Buffer *> getEmulatedIndexedBuffer(SourceIndexData *indexInfo,
                                                                const TranslatedAttribute &attribute,
                                                                GLint startVertex);
-    gl::ErrorOrResult<ID3D11Buffer *> getConstantBufferRange(GLintptr offset, GLsizeiptr size);
+    gl::Error getConstantBufferRange(GLintptr offset,
+                                     GLsizeiptr size,
+                                     ID3D11Buffer **bufferOut,
+                                     UINT *firstConstantOut,
+                                     UINT *numConstantsOut);
     gl::ErrorOrResult<ID3D11ShaderResourceView *> getSRV(DXGI_FORMAT srvFormat);
     bool isMapped() const { return mMappedStorage != nullptr; }
     gl::Error packPixels(const gl::FramebufferAttachment &readAttachment,
@@ -101,7 +106,8 @@ class Buffer11 : public BufferD3D
         unsigned int lruCount;
     };
 
-    gl::Error markBufferUsage(BufferUsage usage);
+    void markBufferUsage(BufferUsage usage);
+    gl::Error garbageCollection(BufferUsage currentUsage);
     gl::ErrorOrResult<NativeStorage *> getStagingStorage();
     gl::ErrorOrResult<PackStorage *> getPackStorage();
     gl::ErrorOrResult<SystemMemoryStorage *> getSystemMemoryStorage();
@@ -118,6 +124,9 @@ class Buffer11 : public BufferD3D
 
     // Free the storage if we decide it isn't being used very often.
     gl::Error checkForDeallocation(BufferUsage usage);
+
+    // For some cases of uniform buffer storage, we can't deallocate system memory storage.
+    bool canDeallocateSystemMemory() const;
 
     Renderer11 *mRenderer;
     size_t mSize;

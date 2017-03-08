@@ -13,7 +13,7 @@
 #include "testing/utils/path_service.h"
 
 // Provide a way to read test data from a buffer instead of a file.
-class CFX_TestBufferRead : public IFX_FileRead {
+class CFX_TestBufferRead : public IFX_SeekableReadStream {
  public:
   CFX_TestBufferRead(const unsigned char* buffer_in, size_t buf_size)
       : buffer_(buffer_in), total_size_(buf_size) {}
@@ -21,15 +21,15 @@ class CFX_TestBufferRead : public IFX_FileRead {
   // IFX_Stream
   void Release() override { delete this; }
 
-  // IFX_FileRead
-  FX_BOOL ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override {
-    if (offset < 0 || offset + size > total_size_) {
-      return FALSE;
-    }
+  // IFX_SeekableReadStream
+  bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override {
+    if (offset < 0 || offset + size > total_size_)
+      return false;
 
     memcpy(buffer, buffer_ + offset, size);
-    return TRUE;
+    return true;
   }
+
   FX_FILESIZE GetSize() override { return (FX_FILESIZE)total_size_; };
 
  protected:
@@ -45,7 +45,7 @@ class CPDF_TestParser : public CPDF_Parser {
 
   // Setup reading from a file and initial states.
   bool InitTestFromFile(const FX_CHAR* path) {
-    IFX_FileRead* pFileAccess = FX_CreateFileRead(path);
+    IFX_SeekableReadStream* pFileAccess = FX_CreateFileRead(path);
     if (!pFileAccess)
       return false;
 
@@ -115,7 +115,7 @@ TEST(cpdf_parser, LoadCrossRefV4) {
     ASSERT_TRUE(
         parser.InitTestFromBuffer(xref_table, FX_ArraySize(xref_table)));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, FALSE));
+    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, false));
     const FX_FILESIZE offsets[] = {0, 17, 81, 0, 331, 409};
     const uint8_t types[] = {0, 1, 1, 0, 1, 1};
     for (size_t i = 0; i < FX_ArraySize(offsets); ++i) {
@@ -140,7 +140,7 @@ TEST(cpdf_parser, LoadCrossRefV4) {
     ASSERT_TRUE(
         parser.InitTestFromBuffer(xref_table, FX_ArraySize(xref_table)));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, FALSE));
+    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, false));
     const FX_FILESIZE offsets[] = {0, 0,     0,     25325, 0, 0,    0,
                                    0, 25518, 25635, 0,     0, 25777};
     const uint8_t types[] = {0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1};
@@ -166,7 +166,7 @@ TEST(cpdf_parser, LoadCrossRefV4) {
     ASSERT_TRUE(
         parser.InitTestFromBuffer(xref_table, FX_ArraySize(xref_table)));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, FALSE));
+    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, false));
     const FX_FILESIZE offsets[] = {0, 0, 0,     25325, 0, 0,    0,
                                    0, 0, 25635, 0,     0, 25777};
     const uint8_t types[] = {0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1};
@@ -191,7 +191,7 @@ TEST(cpdf_parser, LoadCrossRefV4) {
     ASSERT_TRUE(
         parser.InitTestFromBuffer(xref_table, FX_ArraySize(xref_table)));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, FALSE));
+    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, false));
     const FX_FILESIZE offsets[] = {0, 23, 0, 0, 0, 45, 179};
     const uint8_t types[] = {0, 1, 0, 0, 0, 1, 1};
     for (size_t i = 0; i < FX_ArraySize(offsets); ++i) {

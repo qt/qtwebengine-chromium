@@ -46,6 +46,7 @@ const char kRegisterFunction[] = "Register";
 const char kConfigureServiceFunction[] = "ConfigureService";
 const char kConfigureWifiServiceFunction[] = "ConfigureWifiService";
 const char kFindMatchingServiceFunction[] = "FindMatchingService";
+const char kSetNetworkThrottlingFunction[] = "SetNetworkThrottlingStatus";
 
 // Flimflam Service property names.
 const char kSecurityProperty[] = "Security";
@@ -584,7 +585,6 @@ const char kEapRemoteCertificationProperty[] = "EAP.RemoteCertification";
 const char kEapCaCertPemProperty[] = "EAP.CACertPEM";
 const char kEapSubjectMatchProperty[] = "EAP.SubjectMatch";
 const char kErrorDetailsProperty[] = "ErrorDetails";
-const char kHTTPProxyPortProperty[] = "HTTPProxyPort";
 const char kKeyManagementIEEE8021X[] = "IEEE8021X";
 const char kIPConfigProperty[] = "IPConfig";
 const char kL2tpIpsecCaCertPemProperty[] = "L2TPIPsec.CACertPEM";

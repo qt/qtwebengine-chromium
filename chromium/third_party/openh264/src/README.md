@@ -4,12 +4,13 @@ OpenH264 is a codec library which supports H.264 encoding and decoding. It is su
 
 Encoder Features
 ----------------
-- Constrained Baseline Profile up to Level 5.2 (4096x2304)
+- Constrained Baseline Profile up to Level 5.2 (Max frame size is 36864 macro-blocks)
 - Arbitrary resolution, not constrained to multiples of 16x16
 - Rate control with adaptive quantization, or constant quantization
 - Slice options: 1 slice per frame, N slices per frame, N macroblocks per slice, or N bytes per slice
 - Multiple threads automatically used for multiple slices
 - Temporal scalability up to 4 layers in a dyadic hierarchy
+- Simulcast AVC up to 4 resolutions from a single input
 - Spatial simulcast up to 4 resolutions from a single input
 - Long Term Reference (LTR) frames
 - Memory Management Control Operation (MMCO)
@@ -23,7 +24,7 @@ Encoder Features
 
 Decoder Features
 ----------------
-- Constrained Baseline Profile up to Level 5.2 (4096x2304)
+- Constrained Baseline Profile up to Level 5.2 (Max frame size is 36864 macro-blocks)
 - Arbitrary resolution, not constrained to multiples of 16x16
 - Single thread for all slices
 - Long Term Reference (LTR) frames
@@ -50,7 +51,7 @@ Processor Support
 
 Building the Library
 --------------------
-NASM needed to be installed for assembly code: workable version 2.07 or above, nasm can downloaded from http://www.nasm.us/
+NASM needed to be installed for assembly code: workable version 2.10.06 or above, nasm can downloaded from http://www.nasm.us/
 For Mac OSX 64-bit NASM needed to be below version 2.11.08 as nasm 2.11.08 will introduce error when using RIP-relative addresses in Mac OSX 64-bit
 
 To build the arm assembly for Windows Phone, gas-preprocessor is required. It can be downloaded from git://git.libav.org/gas-preprocessor.git
@@ -68,11 +69,12 @@ The codec and demo can be built by
 Valid `**ANDROID_TARGET**` can be found in `**ANDROID_SDK**/platforms`, such as `android-12`.
 You can also set `ARCH`, `NDKLEVEL` according to your device and NDK version.
 `ARCH` specifies the architecture of android device. Currently `arm`, `arm64`, `x86` and `x86_64` are supported, the default is `arm`. (`mips` and `mips64` can also be used, but there's no specific optimization for those architectures.)
-`NDKLEVEL` specifies android api level, the api level can be 12-19, the default is 12.
+`NDKLEVEL` specifies android api level, the default is 12. Available possibilities can be found in `**ANDROID_NDK**/platforms`, such as `android-21` (strip away the `android-` prefix).
 
 By default these commands build for the `armeabi-v7a` ABI. To build for the other android
 ABIs, add `ARCH=arm64`, `ARCH=x86`, `ARCH=x86_64`, `ARCH=mips` or `ARCH=mips64`.
 To build for the older `armeabi` ABI (which has armv5te as baseline), add `APP_ABI=armeabi` (`ARCH=arm` is implicit).
+To build for 64-bit ABI, such as `arm64`, explicitly set `NDKLEVEL` to 21 or higher.
 
 For iOS Builds
 --------------
@@ -129,6 +131,7 @@ From the main project directory:
 - `make ARCH=i386` for x86 32bit builds
 - `make ARCH=x86_64` for x86 64bit builds
 - `make V=No` for a silent build (not showing the actual compiler commands)
+- `make DEBUGSYMBOLS=True` for two libraries, one is normal libraries, another one is removed the debugging symbol table entries (those created by the -g option )
 
 The command line programs `h264enc` and `h264dec` will appear in the main project directory.
 

@@ -8,8 +8,6 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/screen_capturer.h"
-
 #include <string.h>
 
 #include <memory>
@@ -24,10 +22,10 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/timeutils.h"
+#include "webrtc/modules/desktop_capture/desktop_capturer.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/screen_capture_frame_queue.h"
-#include "webrtc/modules/desktop_capture/screen_capturer_differ_wrapper.h"
 #include "webrtc/modules/desktop_capture/screen_capturer_helper.h"
 #include "webrtc/modules/desktop_capture/shared_desktop_frame.h"
 #include "webrtc/modules/desktop_capture/x11/x_server_pixel_buffer.h"
@@ -43,22 +41,20 @@ namespace {
 // DesktopFrame::updated_region(), the field is always set to the entire frame
 // rectangle. ScreenCapturerDifferWrapper should be used if that functionality
 // is necessary.
-class ScreenCapturerLinux : public ScreenCapturer,
+class ScreenCapturerLinux : public DesktopCapturer,
                             public SharedXDisplay::XEventHandler {
  public:
   ScreenCapturerLinux();
-  virtual ~ScreenCapturerLinux();
+  ~ScreenCapturerLinux() override;
 
   // TODO(ajwong): Do we really want this to be synchronous?
   bool Init(const DesktopCaptureOptions& options);
 
   // DesktopCapturer interface.
   void Start(Callback* delegate) override;
-  void Capture(const DesktopRegion& region) override;
-
-  // ScreenCapturer interface.
-  bool GetScreenList(ScreenList* screens) override;
-  bool SelectScreen(ScreenId id) override;
+  void CaptureFrame() override;
+  bool GetSourceList(SourceList* sources) override;
+  bool SelectSource(SourceId id) override;
 
  private:
   Display* display() { return options_.x_display()->display(); }
@@ -228,7 +224,7 @@ void ScreenCapturerLinux::Start(Callback* callback) {
   callback_ = callback;
 }
 
-void ScreenCapturerLinux::Capture(const DesktopRegion& region) {
+void ScreenCapturerLinux::CaptureFrame() {
   int64_t capture_start_time_nanos = rtc::TimeNanos();
 
   queue_.MoveToNextFrame();
@@ -267,16 +263,14 @@ void ScreenCapturerLinux::Capture(const DesktopRegion& region) {
   callback_->OnCaptureResult(Result::SUCCESS, std::move(result));
 }
 
-bool ScreenCapturerLinux::GetScreenList(ScreenList* screens) {
-  RTC_DCHECK(screens->size() == 0);
+bool ScreenCapturerLinux::GetSourceList(SourceList* sources) {
+  RTC_DCHECK(sources->size() == 0);
   // TODO(jiayl): implement screen enumeration.
-  Screen default_screen;
-  default_screen.id = 0;
-  screens->push_back(default_screen);
+  sources->push_back({0});
   return true;
 }
 
-bool ScreenCapturerLinux::SelectScreen(ScreenId id) {
+bool ScreenCapturerLinux::SelectSource(SourceId id) {
   // TODO(jiayl): implement screen selection.
   return true;
 }
@@ -408,20 +402,17 @@ void ScreenCapturerLinux::DeinitXlib() {
 }  // namespace
 
 // static
-ScreenCapturer* ScreenCapturer::Create(const DesktopCaptureOptions& options) {
+std::unique_ptr<DesktopCapturer> DesktopCapturer::CreateRawScreenCapturer(
+    const DesktopCaptureOptions& options) {
   if (!options.x_display())
     return nullptr;
 
-  std::unique_ptr<ScreenCapturer> capturer(new ScreenCapturerLinux());
-  if (!static_cast<ScreenCapturerLinux*>(capturer.get())->Init(options)) {
+  std::unique_ptr<ScreenCapturerLinux> capturer(new ScreenCapturerLinux());
+  if (!capturer.get()->Init(options)) {
     return nullptr;
   }
 
-  if (options.detect_updated_region()) {
-    capturer.reset(new ScreenCapturerDifferWrapper(std::move(capturer)));
-  }
-
-  return capturer.release();
+  return capturer;
 }
 
 }  // namespace webrtc

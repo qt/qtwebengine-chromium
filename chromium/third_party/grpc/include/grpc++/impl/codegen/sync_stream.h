@@ -42,7 +42,6 @@
 #include <grpc++/impl/codegen/server_context.h>
 #include <grpc++/impl/codegen/service_type.h>
 #include <grpc++/impl/codegen/status.h>
-#include <grpc/impl/codegen/log.h>
 
 namespace grpc {
 
@@ -161,7 +160,7 @@ class ClientReader GRPC_FINAL : public ClientReaderInterface<R> {
   }
 
   bool NextMessageSize(uint32_t* sz) GRPC_OVERRIDE {
-    *sz = call_.max_message_size();
+    *sz = call_.max_receive_message_size();
     return true;
   }
 
@@ -311,7 +310,7 @@ class ClientReaderWriter GRPC_FINAL : public ClientReaderWriterInterface<W, R> {
   }
 
   bool NextMessageSize(uint32_t* sz) GRPC_OVERRIDE {
-    *sz = call_.max_message_size();
+    *sz = call_.max_receive_message_size();
     return true;
   }
 
@@ -383,7 +382,7 @@ class ServerReader GRPC_FINAL : public ServerReaderInterface<R> {
   }
 
   bool NextMessageSize(uint32_t* sz) GRPC_OVERRIDE {
-    *sz = call_->max_message_size();
+    *sz = call_->max_receive_message_size();
     return true;
   }
 
@@ -475,7 +474,7 @@ class ServerReaderWriterBody GRPC_FINAL {
   }
 
   bool NextMessageSize(uint32_t* sz) {
-    *sz = call_->max_message_size();
+    *sz = call_->max_receive_message_size();
     return true;
   }
 
@@ -539,7 +538,7 @@ class ServerReaderWriter GRPC_FINAL : public ServerReaderWriterInterface<W, R> {
 /// the \a NextMessageSize method to determine an upper-bound on the size of
 /// the message.
 /// A key difference relative to streaming: ServerUnaryStreamer
-///  must have exactly 1 Read and exactly 1 Write, in that order, to function
+/// must have exactly 1 Read and exactly 1 Write, in that order, to function
 /// correctly. Otherwise, the RPC is in error.
 template <class RequestType, class ResponseType>
 class ServerUnaryStreamer GRPC_FINAL
@@ -576,6 +575,43 @@ class ServerUnaryStreamer GRPC_FINAL
   internal::ServerReaderWriterBody<ResponseType, RequestType> body_;
   bool read_done_;
   bool write_done_;
+};
+
+/// A class to represent a flow-controlled server-side streaming call.
+/// This is something of a hybrid between server-side and bidi streaming.
+/// This is invoked through a server-side streaming call on the client side,
+/// but the server responds to it as though it were a bidi streaming call that
+/// must first have exactly 1 Read and then any number of Writes.
+template <class RequestType, class ResponseType>
+class ServerSplitStreamer GRPC_FINAL
+    : public ServerReaderWriterInterface<ResponseType, RequestType> {
+ public:
+  ServerSplitStreamer(Call* call, ServerContext* ctx)
+      : body_(call, ctx), read_done_(false) {}
+
+  void SendInitialMetadata() GRPC_OVERRIDE { body_.SendInitialMetadata(); }
+
+  bool NextMessageSize(uint32_t* sz) GRPC_OVERRIDE {
+    return body_.NextMessageSize(sz);
+  }
+
+  bool Read(RequestType* request) GRPC_OVERRIDE {
+    if (read_done_) {
+      return false;
+    }
+    read_done_ = true;
+    return body_.Read(request);
+  }
+
+  using WriterInterface<ResponseType>::Write;
+  bool Write(const ResponseType& response,
+             const WriteOptions& options) GRPC_OVERRIDE {
+    return read_done_ && body_.Write(response, options);
+  }
+
+ private:
+  internal::ServerReaderWriterBody<ResponseType, RequestType> body_;
+  bool read_done_;
 };
 
 }  // namespace grpc

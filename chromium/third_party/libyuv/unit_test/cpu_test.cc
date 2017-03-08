@@ -11,10 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../unit_test/unit_test.h"
 #include "libyuv/basic_types.h"
 #include "libyuv/cpu_id.h"
 #include "libyuv/version.h"
-#include "../unit_test/unit_test.h"
 
 namespace libyuv {
 
@@ -45,6 +45,8 @@ TEST_F(LibYUVBaseTest, TestCpuHas) {
   printf("Has FMA3 %x\n", has_fma3);
   int has_avx3 = TestCpuFlag(kCpuHasAVX3);
   printf("Has AVX3 %x\n", has_avx3);
+  int has_f16c = TestCpuFlag(kCpuHasF16C);
+  printf("Has F16C %x\n", has_f16c);
   int has_mips = TestCpuFlag(kCpuHasMIPS);
   printf("Has MIPS %x\n", has_mips);
   int has_dspr2 = TestCpuFlag(kCpuHasDSPR2);
@@ -62,19 +64,20 @@ TEST_F(LibYUVBaseTest, TestCpuCompilerEnabled) {
   printf("x64 build\n");
 #endif
 #ifdef _MSC_VER
-printf("_MSC_VER %d\n", _MSC_VER);
+  printf("_MSC_VER %d\n", _MSC_VER);
 #endif
-#if !defined(LIBYUV_DISABLE_X86) && (defined(GCC_HAS_AVX2) || \
-    defined(CLANG_HAS_AVX2) || defined(VISUALC_HAS_AVX2))
+#if !defined(LIBYUV_DISABLE_X86) &&                      \
+    (defined(GCC_HAS_AVX2) || defined(CLANG_HAS_AVX2) || \
+     defined(VISUALC_HAS_AVX2))
   printf("Has AVX2 1\n");
 #else
   printf("Has AVX2 0\n");
-  // If compiler does not support AVX2, the following function not expected:
+// If compiler does not support AVX2, the following function not expected:
 #endif
 }
 
-#if defined(__i386__) || defined(__x86_64__) || \
-    defined(_M_IX86) || defined(_M_X64)
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || \
+    defined(_M_X64)
 TEST_F(LibYUVBaseTest, TestCpuId) {
   int has_x86 = TestCpuFlag(kCpuHasX86);
   if (has_x86) {
@@ -96,7 +99,7 @@ TEST_F(LibYUVBaseTest, TestCpuId) {
     cpu_info[3] = 0;
     printf("Cpu Vendor: %s %x %x %x\n", reinterpret_cast<char*>(&cpu_info[0]),
            cpu_info[0], cpu_info[1], cpu_info[2]);
-    EXPECT_EQ(12, strlen(reinterpret_cast<char*>(&cpu_info[0])));
+    EXPECT_EQ(12u, strlen(reinterpret_cast<char*>(&cpu_info[0])));
 
     // CPU Family and Model
     // 3:0 - Stepping
@@ -108,8 +111,8 @@ TEST_F(LibYUVBaseTest, TestCpuId) {
     CpuId(1, 0, cpu_info);
     int family = ((cpu_info[0] >> 8) & 0x0f) | ((cpu_info[0] >> 16) & 0xff0);
     int model = ((cpu_info[0] >> 4) & 0x0f) | ((cpu_info[0] >> 12) & 0xf0);
-    printf("Cpu Family %d (0x%x), Model %d (0x%x)\n", family, family,
-           model, model);
+    printf("Cpu Family %d (0x%x), Model %d (0x%x)\n", family, family, model,
+           model);
   }
 }
 #endif

@@ -13,28 +13,29 @@
 
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/page/cpdf_textobject.h"
-#include "fpdfsdk/cpdfsdk_document.h"
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/javascript/JS_Define.h"
 
 class PrintParamsObj : public CJS_EmbedObj {
  public:
-  PrintParamsObj(CJS_Object* pJSObject);
+  explicit PrintParamsObj(CJS_Object* pJSObject);
   ~PrintParamsObj() override {}
 
  public:
-  FX_BOOL bUI;
+  bool bUI;
   int nStart;
   int nEnd;
-  FX_BOOL bSilent;
-  FX_BOOL bShrinkToFit;
-  FX_BOOL bPrintAsImage;
-  FX_BOOL bReverse;
-  FX_BOOL bAnnotations;
+  bool bSilent;
+  bool bShrinkToFit;
+  bool bPrintAsImage;
+  bool bReverse;
+  bool bAnnotations;
 };
 
 class CJS_PrintParamsObj : public CJS_Object {
  public:
-  CJS_PrintParamsObj(v8::Local<v8::Object> pObject) : CJS_Object(pObject) {}
+  explicit CJS_PrintParamsObj(v8::Local<v8::Object> pObject)
+      : CJS_Object(pObject) {}
   ~CJS_PrintParamsObj() override {}
 
   DECLARE_JS_CLASS();
@@ -47,8 +48,8 @@ struct IconElement {
   IconElement(const CFX_WideString& name, Icon* stream)
       : IconName(name), IconStream(stream) {}
 
-  CFX_WideString IconName;
-  Icon* IconStream;
+  const CFX_WideString IconName;
+  Icon* const IconStream;
 };
 
 struct CJS_DelayData;
@@ -57,221 +58,219 @@ struct CJS_AnnotObj;
 
 class Document : public CJS_EmbedObj {
  public:
-  Document(CJS_Object* pJSObject);
+  explicit Document(CJS_Object* pJSObject);
   ~Document() override;
 
-  FX_BOOL ADBE(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL author(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL baseURL(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL bookmarkRoot(IJS_Context* cc,
-                       CJS_PropValue& vp,
-                       CFX_WideString& sError);
-  FX_BOOL calculate(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL Collab(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL creationDate(IJS_Context* cc,
-                       CJS_PropValue& vp,
-                       CFX_WideString& sError);
-  FX_BOOL creator(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL delay(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL dirty(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL documentFileName(IJS_Context* cc,
-                           CJS_PropValue& vp,
-                           CFX_WideString& sError);
-  FX_BOOL external(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL filesize(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL icons(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL info(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL keywords(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL layout(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL media(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL modDate(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL mouseX(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL mouseY(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL numFields(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL numPages(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL pageNum(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL pageWindowRect(IJS_Context* cc,
-                         CJS_PropValue& vp,
-                         CFX_WideString& sError);
-  FX_BOOL path(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL producer(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL subject(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL title(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL zoom(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  FX_BOOL zoomType(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-
-  FX_BOOL addAnnot(IJS_Context* cc,
-                   const std::vector<CJS_Value>& params,
-                   CJS_Value& vRet,
-                   CFX_WideString& sError);
-  FX_BOOL addField(IJS_Context* cc,
-                   const std::vector<CJS_Value>& params,
-                   CJS_Value& vRet,
-                   CFX_WideString& sError);
-  FX_BOOL addLink(IJS_Context* cc,
-                  const std::vector<CJS_Value>& params,
-                  CJS_Value& vRet,
-                  CFX_WideString& sError);
-  FX_BOOL addIcon(IJS_Context* cc,
-                  const std::vector<CJS_Value>& params,
-                  CJS_Value& vRet,
-                  CFX_WideString& sError);
-  FX_BOOL calculateNow(IJS_Context* cc,
-                       const std::vector<CJS_Value>& params,
-                       CJS_Value& vRet,
-                       CFX_WideString& sError);
-  FX_BOOL closeDoc(IJS_Context* cc,
-                   const std::vector<CJS_Value>& params,
-                   CJS_Value& vRet,
-                   CFX_WideString& sError);
-  FX_BOOL createDataObject(IJS_Context* cc,
-                           const std::vector<CJS_Value>& params,
-                           CJS_Value& vRet,
-                           CFX_WideString& sError);
-  FX_BOOL deletePages(IJS_Context* cc,
-                      const std::vector<CJS_Value>& params,
-                      CJS_Value& vRet,
-                      CFX_WideString& sError);
-  FX_BOOL exportAsText(IJS_Context* cc,
-                       const std::vector<CJS_Value>& params,
-                       CJS_Value& vRet,
-                       CFX_WideString& sError);
-  FX_BOOL exportAsFDF(IJS_Context* cc,
-                      const std::vector<CJS_Value>& params,
-                      CJS_Value& vRet,
-                      CFX_WideString& sError);
-  FX_BOOL exportAsXFDF(IJS_Context* cc,
-                       const std::vector<CJS_Value>& params,
-                       CJS_Value& vRet,
-                       CFX_WideString& sError);
-  FX_BOOL extractPages(IJS_Context* cc,
-                       const std::vector<CJS_Value>& params,
-                       CJS_Value& vRet,
-                       CFX_WideString& sError);
-  FX_BOOL getAnnot(IJS_Context* cc,
-                   const std::vector<CJS_Value>& params,
-                   CJS_Value& vRet,
-                   CFX_WideString& sError);
-  FX_BOOL getAnnots(IJS_Context* cc,
-                    const std::vector<CJS_Value>& params,
-                    CJS_Value& vRet,
-                    CFX_WideString& sError);
-  FX_BOOL getAnnot3D(IJS_Context* cc,
-                     const std::vector<CJS_Value>& params,
-                     CJS_Value& vRet,
-                     CFX_WideString& sError);
-  FX_BOOL getAnnots3D(IJS_Context* cc,
-                      const std::vector<CJS_Value>& params,
-                      CJS_Value& vRet,
-                      CFX_WideString& sError);
-  FX_BOOL getField(IJS_Context* cc,
-                   const std::vector<CJS_Value>& params,
-                   CJS_Value& vRet,
-                   CFX_WideString& sError);
-  FX_BOOL getIcon(IJS_Context* cc,
-                  const std::vector<CJS_Value>& params,
-                  CJS_Value& vRet,
-                  CFX_WideString& sError);
-  FX_BOOL getLinks(IJS_Context* cc,
-                   const std::vector<CJS_Value>& params,
-                   CJS_Value& vRet,
-                   CFX_WideString& sError);
-  FX_BOOL getNthFieldName(IJS_Context* cc,
-                          const std::vector<CJS_Value>& params,
-                          CJS_Value& vRet,
-                          CFX_WideString& sError);
-  FX_BOOL getOCGs(IJS_Context* cc,
-                  const std::vector<CJS_Value>& params,
-                  CJS_Value& vRet,
-                  CFX_WideString& sError);
-  FX_BOOL getPageBox(IJS_Context* cc,
-                     const std::vector<CJS_Value>& params,
-                     CJS_Value& vRet,
-                     CFX_WideString& sError);
-  FX_BOOL getPageNthWord(IJS_Context* cc,
-                         const std::vector<CJS_Value>& params,
-                         CJS_Value& vRet,
-                         CFX_WideString& sError);
-  FX_BOOL getPageNthWordQuads(IJS_Context* cc,
-                              const std::vector<CJS_Value>& params,
-                              CJS_Value& vRet,
-                              CFX_WideString& sError);
-  FX_BOOL getPageNumWords(IJS_Context* cc,
-                          const std::vector<CJS_Value>& params,
-                          CJS_Value& vRet,
-                          CFX_WideString& sError);
-  FX_BOOL getPrintParams(IJS_Context* cc,
-                         const std::vector<CJS_Value>& params,
-                         CJS_Value& vRet,
-                         CFX_WideString& sError);
-  FX_BOOL getURL(IJS_Context* cc,
-                 const std::vector<CJS_Value>& params,
-                 CJS_Value& vRet,
-                 CFX_WideString& sError);
-  FX_BOOL gotoNamedDest(IJS_Context* cc,
-                        const std::vector<CJS_Value>& params,
-                        CJS_Value& vRet,
+  bool ADBE(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool author(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool baseURL(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool bookmarkRoot(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool calculate(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool Collab(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool creationDate(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool creator(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool delay(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool dirty(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool documentFileName(IJS_Context* cc,
+                        CJS_PropValue& vp,
                         CFX_WideString& sError);
-  FX_BOOL importAnFDF(IJS_Context* cc,
-                      const std::vector<CJS_Value>& params,
-                      CJS_Value& vRet,
+  bool external(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool filesize(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool icons(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool info(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool keywords(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool layout(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool media(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool modDate(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool mouseX(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool mouseY(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool numFields(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool numPages(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool pageNum(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool pageWindowRect(IJS_Context* cc,
+                      CJS_PropValue& vp,
                       CFX_WideString& sError);
-  FX_BOOL importAnXFDF(IJS_Context* cc,
-                       const std::vector<CJS_Value>& params,
-                       CJS_Value& vRet,
-                       CFX_WideString& sError);
-  FX_BOOL importTextData(IJS_Context* cc,
-                         const std::vector<CJS_Value>& params,
-                         CJS_Value& vRet,
-                         CFX_WideString& sError);
-  FX_BOOL insertPages(IJS_Context* cc,
-                      const std::vector<CJS_Value>& params,
-                      CJS_Value& vRet,
-                      CFX_WideString& sError);
-  FX_BOOL mailForm(IJS_Context* cc,
-                   const std::vector<CJS_Value>& params,
-                   CJS_Value& vRet,
-                   CFX_WideString& sError);
-  FX_BOOL print(IJS_Context* cc,
+  bool path(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool producer(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool subject(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool title(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool zoom(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool zoomType(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+
+  bool addAnnot(IJS_Context* cc,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  FX_BOOL removeField(IJS_Context* cc,
-                      const std::vector<CJS_Value>& params,
-                      CJS_Value& vRet,
-                      CFX_WideString& sError);
-  FX_BOOL replacePages(IJS_Context* cc,
-                       const std::vector<CJS_Value>& params,
-                       CJS_Value& vRet,
-                       CFX_WideString& sError);
-  FX_BOOL resetForm(IJS_Context* cc,
+  bool addField(IJS_Context* cc,
+                const std::vector<CJS_Value>& params,
+                CJS_Value& vRet,
+                CFX_WideString& sError);
+  bool addLink(IJS_Context* cc,
+               const std::vector<CJS_Value>& params,
+               CJS_Value& vRet,
+               CFX_WideString& sError);
+  bool addIcon(IJS_Context* cc,
+               const std::vector<CJS_Value>& params,
+               CJS_Value& vRet,
+               CFX_WideString& sError);
+  bool calculateNow(IJS_Context* cc,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  FX_BOOL saveAs(IJS_Context* cc,
-                 const std::vector<CJS_Value>& params,
-                 CJS_Value& vRet,
-                 CFX_WideString& sError);
-  FX_BOOL submitForm(IJS_Context* cc,
-                     const std::vector<CJS_Value>& params,
-                     CJS_Value& vRet,
-                     CFX_WideString& sError);
-  FX_BOOL syncAnnotScan(IJS_Context* cc,
+  bool closeDoc(IJS_Context* cc,
+                const std::vector<CJS_Value>& params,
+                CJS_Value& vRet,
+                CFX_WideString& sError);
+  bool createDataObject(IJS_Context* cc,
                         const std::vector<CJS_Value>& params,
                         CJS_Value& vRet,
                         CFX_WideString& sError);
-  FX_BOOL mailDoc(IJS_Context* cc,
+  bool deletePages(IJS_Context* cc,
+                   const std::vector<CJS_Value>& params,
+                   CJS_Value& vRet,
+                   CFX_WideString& sError);
+  bool exportAsText(IJS_Context* cc,
+                    const std::vector<CJS_Value>& params,
+                    CJS_Value& vRet,
+                    CFX_WideString& sError);
+  bool exportAsFDF(IJS_Context* cc,
+                   const std::vector<CJS_Value>& params,
+                   CJS_Value& vRet,
+                   CFX_WideString& sError);
+  bool exportAsXFDF(IJS_Context* cc,
+                    const std::vector<CJS_Value>& params,
+                    CJS_Value& vRet,
+                    CFX_WideString& sError);
+  bool extractPages(IJS_Context* cc,
+                    const std::vector<CJS_Value>& params,
+                    CJS_Value& vRet,
+                    CFX_WideString& sError);
+  bool getAnnot(IJS_Context* cc,
+                const std::vector<CJS_Value>& params,
+                CJS_Value& vRet,
+                CFX_WideString& sError);
+  bool getAnnots(IJS_Context* cc,
+                 const std::vector<CJS_Value>& params,
+                 CJS_Value& vRet,
+                 CFX_WideString& sError);
+  bool getAnnot3D(IJS_Context* cc,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError);
-  FX_BOOL removeIcon(IJS_Context* cc,
+  bool getAnnots3D(IJS_Context* cc,
+                   const std::vector<CJS_Value>& params,
+                   CJS_Value& vRet,
+                   CFX_WideString& sError);
+  bool getField(IJS_Context* cc,
+                const std::vector<CJS_Value>& params,
+                CJS_Value& vRet,
+                CFX_WideString& sError);
+  bool getIcon(IJS_Context* cc,
+               const std::vector<CJS_Value>& params,
+               CJS_Value& vRet,
+               CFX_WideString& sError);
+  bool getLinks(IJS_Context* cc,
+                const std::vector<CJS_Value>& params,
+                CJS_Value& vRet,
+                CFX_WideString& sError);
+  bool getNthFieldName(IJS_Context* cc,
+                       const std::vector<CJS_Value>& params,
+                       CJS_Value& vRet,
+                       CFX_WideString& sError);
+  bool getOCGs(IJS_Context* cc,
+               const std::vector<CJS_Value>& params,
+               CJS_Value& vRet,
+               CFX_WideString& sError);
+  bool getPageBox(IJS_Context* cc,
+                  const std::vector<CJS_Value>& params,
+                  CJS_Value& vRet,
+                  CFX_WideString& sError);
+  bool getPageNthWord(IJS_Context* cc,
+                      const std::vector<CJS_Value>& params,
+                      CJS_Value& vRet,
+                      CFX_WideString& sError);
+  bool getPageNthWordQuads(IJS_Context* cc,
+                           const std::vector<CJS_Value>& params,
+                           CJS_Value& vRet,
+                           CFX_WideString& sError);
+  bool getPageNumWords(IJS_Context* cc,
+                       const std::vector<CJS_Value>& params,
+                       CJS_Value& vRet,
+                       CFX_WideString& sError);
+  bool getPrintParams(IJS_Context* cc,
+                      const std::vector<CJS_Value>& params,
+                      CJS_Value& vRet,
+                      CFX_WideString& sError);
+  bool getURL(IJS_Context* cc,
+              const std::vector<CJS_Value>& params,
+              CJS_Value& vRet,
+              CFX_WideString& sError);
+  bool gotoNamedDest(IJS_Context* cc,
                      const std::vector<CJS_Value>& params,
                      CJS_Value& vRet,
                      CFX_WideString& sError);
-  FX_BOOL URL(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool importAnFDF(IJS_Context* cc,
+                   const std::vector<CJS_Value>& params,
+                   CJS_Value& vRet,
+                   CFX_WideString& sError);
+  bool importAnXFDF(IJS_Context* cc,
+                    const std::vector<CJS_Value>& params,
+                    CJS_Value& vRet,
+                    CFX_WideString& sError);
+  bool importTextData(IJS_Context* cc,
+                      const std::vector<CJS_Value>& params,
+                      CJS_Value& vRet,
+                      CFX_WideString& sError);
+  bool insertPages(IJS_Context* cc,
+                   const std::vector<CJS_Value>& params,
+                   CJS_Value& vRet,
+                   CFX_WideString& sError);
+  bool mailForm(IJS_Context* cc,
+                const std::vector<CJS_Value>& params,
+                CJS_Value& vRet,
+                CFX_WideString& sError);
+  bool print(IJS_Context* cc,
+             const std::vector<CJS_Value>& params,
+             CJS_Value& vRet,
+             CFX_WideString& sError);
+  bool removeField(IJS_Context* cc,
+                   const std::vector<CJS_Value>& params,
+                   CJS_Value& vRet,
+                   CFX_WideString& sError);
+  bool replacePages(IJS_Context* cc,
+                    const std::vector<CJS_Value>& params,
+                    CJS_Value& vRet,
+                    CFX_WideString& sError);
+  bool resetForm(IJS_Context* cc,
+                 const std::vector<CJS_Value>& params,
+                 CJS_Value& vRet,
+                 CFX_WideString& sError);
+  bool saveAs(IJS_Context* cc,
+              const std::vector<CJS_Value>& params,
+              CJS_Value& vRet,
+              CFX_WideString& sError);
+  bool submitForm(IJS_Context* cc,
+                  const std::vector<CJS_Value>& params,
+                  CJS_Value& vRet,
+                  CFX_WideString& sError);
+  bool syncAnnotScan(IJS_Context* cc,
+                     const std::vector<CJS_Value>& params,
+                     CJS_Value& vRet,
+                     CFX_WideString& sError);
+  bool mailDoc(IJS_Context* cc,
+               const std::vector<CJS_Value>& params,
+               CJS_Value& vRet,
+               CFX_WideString& sError);
+  bool removeIcon(IJS_Context* cc,
+                  const std::vector<CJS_Value>& params,
+                  CJS_Value& vRet,
+                  CFX_WideString& sError);
+  bool URL(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
 
-  void AttachDoc(CPDFSDK_Document* pDoc);
-  CPDFSDK_Document* GetReaderDoc() const { return m_pDocument.Get(); }
+  void SetFormFillEnv(CPDFSDK_FormFillEnvironment* pFormFillEnv);
+  CPDFSDK_FormFillEnvironment* GetFormFillEnv() const {
+    return m_pFormFillEnv.Get();
+  }
   void AddDelayData(CJS_DelayData* pData);
   void DoFieldDelay(const CFX_WideString& sFieldName, int nControlIndex);
   CJS_Document* GetCJSDoc() const;
@@ -281,15 +280,15 @@ class Document : public CJS_EmbedObj {
   int CountWords(CPDF_TextObject* pTextObj);
   CFX_WideString GetObjWordStr(CPDF_TextObject* pTextObj, int nWordIndex);
 
-  FX_BOOL getPropertyInternal(IJS_Context* cc,
-                              CJS_PropValue& vp,
-                              const CFX_ByteString& propName,
-                              CFX_WideString& sError);
+  bool getPropertyInternal(IJS_Context* cc,
+                           CJS_PropValue& vp,
+                           const CFX_ByteString& propName,
+                           CFX_WideString& sError);
 
-  CPDFSDK_Document::ObservedPtr m_pDocument;
+  CPDFSDK_FormFillEnvironment::ObservedPtr m_pFormFillEnv;
   CFX_WideString m_cwBaseURL;
   std::list<std::unique_ptr<CJS_DelayData>> m_DelayData;
-  std::list<std::unique_ptr<IconElement>> m_IconList;
+  std::vector<std::unique_ptr<IconElement>> m_Icons;
   bool m_bDelay;
 };
 

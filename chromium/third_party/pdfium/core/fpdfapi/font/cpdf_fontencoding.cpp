@@ -1689,13 +1689,13 @@ CPDF_Object* CPDF_FontEncoding::Realize(CFX_WeakPtr<CFX_ByteStringPool> pPool) {
   }
   if (predefined) {
     if (predefined == PDFFONT_ENCODING_WINANSI) {
-      return new CPDF_Name(pPool->Intern("WinAnsiEncoding"));
+      return new CPDF_Name(pPool, "WinAnsiEncoding");
     }
     if (predefined == PDFFONT_ENCODING_MACROMAN) {
-      return new CPDF_Name(pPool->Intern("MacRomanEncoding"));
+      return new CPDF_Name(pPool, "MacRomanEncoding");
     }
     if (predefined == PDFFONT_ENCODING_MACEXPERT) {
-      return new CPDF_Name(pPool->Intern("MacExpertEncoding"));
+      return new CPDF_Name(pPool, "MacExpertEncoding");
     }
     return nullptr;
   }
@@ -1703,11 +1703,11 @@ CPDF_Object* CPDF_FontEncoding::Realize(CFX_WeakPtr<CFX_ByteStringPool> pPool) {
       PDF_UnicodesForPredefinedCharSet(PDFFONT_ENCODING_WINANSI);
   CPDF_Array* pDiff = new CPDF_Array;
   for (int i = 0; i < 256; i++) {
-    if (pStandard[i] == m_Unicodes[i]) {
+    if (pStandard[i] == m_Unicodes[i])
       continue;
-    }
-    pDiff->Add(new CPDF_Number(i));
-    pDiff->Add(new CPDF_Name(PDF_AdobeNameFromUnicode(m_Unicodes[i])));
+
+    pDiff->AddNew<CPDF_Number>(i);
+    pDiff->AddNew<CPDF_Name>(PDF_AdobeNameFromUnicode(m_Unicodes[i]));
   }
 
   CPDF_Dictionary* pDict = new CPDF_Dictionary(pPool);

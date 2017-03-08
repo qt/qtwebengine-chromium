@@ -35,7 +35,7 @@ static const size_t kMaxSrtpHmacOverhead = 16;
 
 RtpDataEngine::RtpDataEngine() {
   data_codecs_.push_back(
-      DataCodec(kGoogleRtpDataCodecId, kGoogleRtpDataCodecName));
+      DataCodec(kGoogleRtpDataCodecPlType, kGoogleRtpDataCodecName));
 }
 
 DataMediaChannel* RtpDataEngine::CreateChannel(
@@ -84,7 +84,7 @@ void RtpClock::Tick(double now, int* seq_num, uint32_t* timestamp) {
 }
 
 const DataCodec* FindUnknownCodec(const std::vector<DataCodec>& codecs) {
-  DataCodec data_codec(kGoogleRtpDataCodecId, kGoogleRtpDataCodecName);
+  DataCodec data_codec(kGoogleRtpDataCodecPlType, kGoogleRtpDataCodecName);
   std::vector<DataCodec>::const_iterator iter;
   for (iter = codecs.begin(); iter != codecs.end(); ++iter) {
     if (!iter->Matches(data_codec)) {
@@ -95,7 +95,7 @@ const DataCodec* FindUnknownCodec(const std::vector<DataCodec>& codecs) {
 }
 
 const DataCodec* FindKnownCodec(const std::vector<DataCodec>& codecs) {
-  DataCodec data_codec(kGoogleRtpDataCodecId, kGoogleRtpDataCodecName);
+  DataCodec data_codec(kGoogleRtpDataCodecPlType, kGoogleRtpDataCodecName);
   std::vector<DataCodec>::const_iterator iter;
   for (iter = codecs.begin(); iter != codecs.end(); ++iter) {
     if (iter->Matches(data_codec)) {
@@ -225,8 +225,7 @@ void RtpDataMediaChannel::OnPacketReceived(
     return;
   }
 
-  DataCodec codec;
-  if (!FindCodecById(recv_codecs_, header.payload_type, &codec)) {
+  if (!FindCodecById(recv_codecs_, header.payload_type)) {
     // For bundling, this will be logged for every message.
     // So disable this logging.
     // LOG(LS_WARNING) << "Not receiving packet "

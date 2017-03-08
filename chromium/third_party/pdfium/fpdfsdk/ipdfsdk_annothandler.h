@@ -24,7 +24,7 @@ class IPDFSDK_AnnotHandler {
  public:
   virtual ~IPDFSDK_AnnotHandler() {}
 
-  virtual FX_BOOL CanAnswer(CPDFSDK_Annot* pAnnot) = 0;
+  virtual bool CanAnswer(CPDFSDK_Annot* pAnnot) = 0;
   virtual CPDFSDK_Annot* NewAnnot(CPDF_Annot* pAnnot,
                                   CPDFSDK_PageView* pPage) = 0;
 
@@ -34,21 +34,17 @@ class IPDFSDK_AnnotHandler {
 #endif  // PDF_ENABLE_XFA
 
   virtual void ReleaseAnnot(CPDFSDK_Annot* pAnnot) = 0;
-  virtual void DeleteAnnot(CPDFSDK_Annot* pAnnot) = 0;
   virtual CFX_FloatRect GetViewBBox(CPDFSDK_PageView* pPageView,
                                     CPDFSDK_Annot* pAnnot) = 0;
-  virtual FX_BOOL HitTest(CPDFSDK_PageView* pPageView,
-                          CPDFSDK_Annot* pAnnot,
-                          const CFX_FloatPoint& point) = 0;
+  virtual bool HitTest(CPDFSDK_PageView* pPageView,
+                       CPDFSDK_Annot* pAnnot,
+                       const CFX_FloatPoint& point) = 0;
   virtual void OnDraw(CPDFSDK_PageView* pPageView,
                       CPDFSDK_Annot* pAnnot,
                       CFX_RenderDevice* pDevice,
                       CFX_Matrix* pUser2Device,
                       bool bDrawAnnots) = 0;
-  virtual void OnCreate(CPDFSDK_Annot* pAnnot) = 0;
   virtual void OnLoad(CPDFSDK_Annot* pAnnot) = 0;
-  virtual void OnDelete(CPDFSDK_Annot* pAnnot) = 0;
-  virtual void OnRelease(CPDFSDK_Annot* pAnnot) = 0;
 
   virtual void OnMouseEnter(CPDFSDK_PageView* pPageView,
                             CPDFSDK_Annot::ObservedPtr* pAnnot,
@@ -56,53 +52,51 @@ class IPDFSDK_AnnotHandler {
   virtual void OnMouseExit(CPDFSDK_PageView* pPageView,
                            CPDFSDK_Annot::ObservedPtr* pAnnot,
                            uint32_t nFlag) = 0;
-  virtual FX_BOOL OnLButtonDown(CPDFSDK_PageView* pPageView,
-                                CPDFSDK_Annot::ObservedPtr* pAnnot,
-                                uint32_t nFlags,
-                                const CFX_FloatPoint& point) = 0;
-  virtual FX_BOOL OnLButtonUp(CPDFSDK_PageView* pPageView,
-                              CPDFSDK_Annot::ObservedPtr* pAnnot,
-                              uint32_t nFlags,
-                              const CFX_FloatPoint& point) = 0;
-  virtual FX_BOOL OnLButtonDblClk(CPDFSDK_PageView* pPageView,
-                                  CPDFSDK_Annot::ObservedPtr* pAnnot,
-                                  uint32_t nFlags,
-                                  const CFX_FloatPoint& point) = 0;
-  virtual FX_BOOL OnMouseMove(CPDFSDK_PageView* pPageView,
-                              CPDFSDK_Annot::ObservedPtr* pAnnot,
-                              uint32_t nFlags,
-                              const CFX_FloatPoint& point) = 0;
-  virtual FX_BOOL OnMouseWheel(CPDFSDK_PageView* pPageView,
+  virtual bool OnLButtonDown(CPDFSDK_PageView* pPageView,
+                             CPDFSDK_Annot::ObservedPtr* pAnnot,
+                             uint32_t nFlags,
+                             const CFX_FloatPoint& point) = 0;
+  virtual bool OnLButtonUp(CPDFSDK_PageView* pPageView,
+                           CPDFSDK_Annot::ObservedPtr* pAnnot,
+                           uint32_t nFlags,
+                           const CFX_FloatPoint& point) = 0;
+  virtual bool OnLButtonDblClk(CPDFSDK_PageView* pPageView,
                                CPDFSDK_Annot::ObservedPtr* pAnnot,
                                uint32_t nFlags,
-                               short zDelta,
                                const CFX_FloatPoint& point) = 0;
-  virtual FX_BOOL OnRButtonDown(CPDFSDK_PageView* pPageView,
-                                CPDFSDK_Annot::ObservedPtr* pAnnot,
-                                uint32_t nFlags,
-                                const CFX_FloatPoint& point) = 0;
-  virtual FX_BOOL OnRButtonUp(CPDFSDK_PageView* pPageView,
-                              CPDFSDK_Annot::ObservedPtr* pAnnot,
-                              uint32_t nFlags,
-                              const CFX_FloatPoint& point) = 0;
-  virtual FX_BOOL OnRButtonDblClk(CPDFSDK_PageView* pPageView,
-                                  CPDFSDK_Annot::ObservedPtr* pAnnot,
-                                  uint32_t nFlags,
-                                  const CFX_FloatPoint& point) = 0;
-  virtual FX_BOOL OnChar(CPDFSDK_Annot* pAnnot,
-                         uint32_t nChar,
-                         uint32_t nFlags) = 0;
-  virtual FX_BOOL OnKeyDown(CPDFSDK_Annot* pAnnot, int nKeyCode, int nFlag) = 0;
-  virtual FX_BOOL OnKeyUp(CPDFSDK_Annot* pAnnot, int nKeyCode, int nFlag) = 0;
-  virtual void OnDeSelected(CPDFSDK_Annot* pAnnot) = 0;
-  virtual void OnSelected(CPDFSDK_Annot* pAnnot) = 0;
-  virtual FX_BOOL OnSetFocus(CPDFSDK_Annot::ObservedPtr* pAnnot,
-                             uint32_t nFlag) = 0;
-  virtual FX_BOOL OnKillFocus(CPDFSDK_Annot::ObservedPtr* pAnnot,
-                              uint32_t nFlag) = 0;
+  virtual bool OnMouseMove(CPDFSDK_PageView* pPageView,
+                           CPDFSDK_Annot::ObservedPtr* pAnnot,
+                           uint32_t nFlags,
+                           const CFX_FloatPoint& point) = 0;
+  virtual bool OnMouseWheel(CPDFSDK_PageView* pPageView,
+                            CPDFSDK_Annot::ObservedPtr* pAnnot,
+                            uint32_t nFlags,
+                            short zDelta,
+                            const CFX_FloatPoint& point) = 0;
+  virtual bool OnRButtonDown(CPDFSDK_PageView* pPageView,
+                             CPDFSDK_Annot::ObservedPtr* pAnnot,
+                             uint32_t nFlags,
+                             const CFX_FloatPoint& point) = 0;
+  virtual bool OnRButtonUp(CPDFSDK_PageView* pPageView,
+                           CPDFSDK_Annot::ObservedPtr* pAnnot,
+                           uint32_t nFlags,
+                           const CFX_FloatPoint& point) = 0;
+  virtual bool OnRButtonDblClk(CPDFSDK_PageView* pPageView,
+                               CPDFSDK_Annot::ObservedPtr* pAnnot,
+                               uint32_t nFlags,
+                               const CFX_FloatPoint& point) = 0;
+  virtual bool OnChar(CPDFSDK_Annot* pAnnot,
+                      uint32_t nChar,
+                      uint32_t nFlags) = 0;
+  virtual bool OnKeyDown(CPDFSDK_Annot* pAnnot, int nKeyCode, int nFlag) = 0;
+  virtual bool OnKeyUp(CPDFSDK_Annot* pAnnot, int nKeyCode, int nFlag) = 0;
+  virtual bool OnSetFocus(CPDFSDK_Annot::ObservedPtr* pAnnot,
+                          uint32_t nFlag) = 0;
+  virtual bool OnKillFocus(CPDFSDK_Annot::ObservedPtr* pAnnot,
+                           uint32_t nFlag) = 0;
 #ifdef PDF_ENABLE_XFA
-  virtual FX_BOOL OnXFAChangedFocus(CPDFSDK_Annot::ObservedPtr* pOldAnnot,
-                                    CPDFSDK_Annot::ObservedPtr* pNewAnnot) = 0;
+  virtual bool OnXFAChangedFocus(CPDFSDK_Annot::ObservedPtr* pOldAnnot,
+                                 CPDFSDK_Annot::ObservedPtr* pNewAnnot) = 0;
 #endif  // PDF_ENABLE_XFA
 };
 

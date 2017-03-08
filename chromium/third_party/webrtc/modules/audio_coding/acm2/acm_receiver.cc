@@ -98,6 +98,8 @@ int AcmReceiver::InsertPacket(const WebRtcRTPHeader& rtp_header,
       }
     } else {
       last_audio_decoder_ = ci;
+      last_audio_format_ = neteq_->GetDecoderFormat(ci->pltype);
+      RTC_DCHECK(last_audio_format_);
       last_packet_sample_rate_hz_ = rtc::Optional<int>(ci->plfreq);
     }
 
@@ -230,6 +232,31 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
   return 0;
 }
 
+bool AcmReceiver::AddCodec(int rtp_payload_type,
+                           const SdpAudioFormat& audio_format) {
+  const auto old_format = neteq_->GetDecoderFormat(rtp_payload_type);
+  if (old_format && *old_format == audio_format) {
+    // Re-registering the same codec. Do nothing and return.
+    return true;
+  }
+
+  if (neteq_->RemovePayloadType(rtp_payload_type) != NetEq::kOK &&
+      neteq_->LastError() != NetEq::kDecoderNotFound) {
+    LOG(LERROR) << "AcmReceiver::AddCodec: Could not remove existing decoder"
+                   " for payload type "
+                << rtp_payload_type;
+    return false;
+  }
+
+  const bool success =
+      neteq_->RegisterPayloadType(rtp_payload_type, audio_format);
+  if (!success) {
+    LOG(LERROR) << "AcmReceiver::AddCodec failed for payload type "
+                << rtp_payload_type << ", decoder format " << audio_format;
+  }
+  return success;
+}
+
 void AcmReceiver::FlushBuffers() {
   neteq_->FlushBuffers();
 }
@@ -238,6 +265,7 @@ void AcmReceiver::RemoveAllCodecs() {
   rtc::CritScope lock(&crit_sect_);
   neteq_->RemoveAllPayloadTypes();
   last_audio_decoder_ = rtc::Optional<CodecInst>();
+  last_audio_format_ = rtc::Optional<SdpAudioFormat>();
   last_packet_sample_rate_hz_ = rtc::Optional<int>();
 }
 
@@ -250,6 +278,7 @@ int AcmReceiver::RemoveCodec(uint8_t payload_type) {
   }
   if (last_audio_decoder_ && payload_type == last_audio_decoder_->pltype) {
     last_audio_decoder_ = rtc::Optional<CodecInst>();
+    last_audio_format_ = rtc::Optional<SdpAudioFormat>();
     last_packet_sample_rate_hz_ = rtc::Optional<int>();
   }
   return 0;
@@ -270,6 +299,11 @@ int AcmReceiver::LastAudioCodec(CodecInst* codec) const {
   }
   *codec = *last_audio_decoder_;
   return 0;
+}
+
+rtc::Optional<SdpAudioFormat> AcmReceiver::LastAudioFormat() const {
+  rtc::CritScope lock(&crit_sect_);
+  return last_audio_format_;
 }
 
 void AcmReceiver::GetNetworkStatistics(NetworkStatistics* acm_stat) {

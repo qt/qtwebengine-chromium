@@ -30,14 +30,15 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Arith(
   int32_t DW;
   CJBig2_Image* BS;
   uint32_t I, J, REFAGGNINST;
-  FX_BOOL* EXFLAGS;
+  bool* EXFLAGS;
   uint32_t EXINDEX;
-  FX_BOOL CUREXFLAG;
+  bool CUREXFLAG;
   uint32_t EXRUNLENGTH;
   uint32_t nTmp;
   uint32_t SBNUMSYMS;
   uint8_t SBSYMCODELEN;
   int32_t RDXI, RDYI;
+  uint32_t num_ex_syms;
   CJBig2_Image** SBSYMS;
   std::unique_ptr<CJBig2_ArithIaidDecoder> IAID;
   std::unique_ptr<CJBig2_SymbolDict> pDict;
@@ -234,7 +235,8 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Arith(
   }
   EXINDEX = 0;
   CUREXFLAG = 0;
-  EXFLAGS = FX_Alloc(FX_BOOL, SDNUMINSYMS + SDNUMNEWSYMS);
+  EXFLAGS = FX_Alloc(bool, SDNUMINSYMS + SDNUMNEWSYMS);
+  num_ex_syms = 0;
   while (EXINDEX < SDNUMINSYMS + SDNUMNEWSYMS) {
     IAEX->decode(pArithDecoder, (int*)&EXRUNLENGTH);
     if (EXINDEX + EXRUNLENGTH > SDNUMINSYMS + SDNUMNEWSYMS) {
@@ -243,12 +245,19 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Arith(
     }
     if (EXRUNLENGTH != 0) {
       for (I = EXINDEX; I < EXINDEX + EXRUNLENGTH; I++) {
+        if (CUREXFLAG)
+          num_ex_syms++;
         EXFLAGS[I] = CUREXFLAG;
       }
     }
     EXINDEX = EXINDEX + EXRUNLENGTH;
     CUREXFLAG = !CUREXFLAG;
   }
+  if (num_ex_syms > SDNUMEXSYMS) {
+    FX_Free(EXFLAGS);
+    goto failed;
+  }
+
   pDict.reset(new CJBig2_SymbolDict);
   I = J = 0;
   for (I = 0; I < SDNUMINSYMS + SDNUMNEWSYMS; I++) {
@@ -290,9 +299,9 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Huffman(
   int32_t DW;
   CJBig2_Image *BS, *BHC;
   uint32_t I, J, REFAGGNINST;
-  FX_BOOL* EXFLAGS;
+  bool* EXFLAGS;
   uint32_t EXINDEX;
-  FX_BOOL CUREXFLAG;
+  bool CUREXFLAG;
   uint32_t EXRUNLENGTH;
   int32_t nVal, nBits;
   uint32_t nTmp;
@@ -303,6 +312,7 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Huffman(
   int32_t RDXI, RDYI;
   uint32_t BMSIZE;
   uint32_t stride;
+  uint32_t num_ex_syms;
   CJBig2_Image** SBSYMS;
   std::unique_ptr<CJBig2_HuffmanDecoder> pHuffmanDecoder(
       new CJBig2_HuffmanDecoder(pStream));
@@ -554,7 +564,8 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Huffman(
   CUREXFLAG = 0;
   pTable.reset(new CJBig2_HuffmanTable(HuffmanTable_B1, HuffmanTable_B1_Size,
                                        HuffmanTable_HTOOB_B1));
-  EXFLAGS = FX_Alloc(FX_BOOL, SDNUMINSYMS + SDNUMNEWSYMS);
+  EXFLAGS = FX_Alloc(bool, SDNUMINSYMS + SDNUMNEWSYMS);
+  num_ex_syms = 0;
   while (EXINDEX < SDNUMINSYMS + SDNUMNEWSYMS) {
     if (pHuffmanDecoder->decodeAValue(pTable.get(), (int*)&EXRUNLENGTH) != 0) {
       FX_Free(EXFLAGS);
@@ -566,12 +577,20 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Huffman(
     }
     if (EXRUNLENGTH != 0) {
       for (I = EXINDEX; I < EXINDEX + EXRUNLENGTH; I++) {
+        if (CUREXFLAG)
+          num_ex_syms++;
+
         EXFLAGS[I] = CUREXFLAG;
       }
     }
     EXINDEX = EXINDEX + EXRUNLENGTH;
     CUREXFLAG = !CUREXFLAG;
   }
+  if (num_ex_syms > SDNUMEXSYMS) {
+    FX_Free(EXFLAGS);
+    goto failed;
+  }
+
   I = J = 0;
   for (I = 0; I < SDNUMINSYMS + SDNUMNEWSYMS; I++) {
     if (EXFLAGS[I] && J < SDNUMEXSYMS) {

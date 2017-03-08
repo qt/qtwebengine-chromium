@@ -18,14 +18,12 @@ class CFWL_CheckBoxTP : public CFWL_WidgetTP {
   ~CFWL_CheckBoxTP() override;
 
   // CFWL_WidgeTP
+  void Initialize() override;
+  void Finalize() override;
   bool IsValidWidget(IFWL_Widget* pWidget) override;
-  uint32_t SetThemeID(IFWL_Widget* pWidget,
-                      uint32_t dwThemeID,
-                      FX_BOOL bChildren = TRUE) override;
-  FX_BOOL DrawText(CFWL_ThemeText* pParams) override;
-  FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams) override;
-  FWL_Error Initialize() override;
-  FWL_Error Finalize() override;
+  uint32_t SetThemeID(IFWL_Widget* pWidget, uint32_t dwThemeID) override;
+  void DrawText(CFWL_ThemeText* pParams) override;
+  void DrawBackground(CFWL_ThemeBackground* pParams) override;
 
  protected:
   struct CKBThemeData {
@@ -39,19 +37,11 @@ class CFWL_CheckBoxTP : public CFWL_WidgetTP {
     FX_ARGB clrSignNeutralPressed;
   };
 
-  void DrawBoxBk(IFWL_Widget* pWidget,
-                 CFX_Graphics* pGraphics,
-                 const CFX_RectF* pRect,
-                 uint32_t dwStates,
-                 CFX_Matrix* pMatrix);
-  void DrawSign(IFWL_Widget* pWidget,
-                CFX_Graphics* pGraphics,
-                const CFX_RectF* pRtBox,
-                uint32_t dwStates,
-                CFX_Matrix* pMatrix);
-  void DrawSignNeutral(CFX_Graphics* pGraphics,
-                       const CFX_RectF* pRtSign,
-                       CFX_Matrix* pMatrix);
+  void DrawCheckSign(IFWL_Widget* pWidget,
+                     CFX_Graphics* pGraphics,
+                     const CFX_RectF& pRtBox,
+                     int32_t iState,
+                     CFX_Matrix* pMatrix);
   void DrawSignCheck(CFX_Graphics* pGraphics,
                      const CFX_RectF* pRtSign,
                      FX_ARGB argbFill,
@@ -76,11 +66,7 @@ class CFWL_CheckBoxTP : public CFWL_WidgetTP {
                     const CFX_RectF* pRtSign,
                     FX_ARGB argbFill,
                     CFX_Matrix* pMatrix);
-  void DrawSignBorder(IFWL_Widget* pWidget,
-                      CFX_Graphics* pGraphics,
-                      const CFX_RectF* pRtBox,
-                      FX_BOOL bDisable,
-                      CFX_Matrix* pMatrix);
+
   void SetThemeData(uint32_t dwID);
   void InitCheckPath(FX_FLOAT fCheckLen);
 

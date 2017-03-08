@@ -1046,10 +1046,7 @@ class WebRtcSdpTest : public testing::Test {
         "inline:d0RmdmcmVCspeEc3QGZiNWpVLFJhQX1cfHAwJSoj|2^20|1:32", ""));
     video->set_protocol(cricket::kMediaProtocolSavpf);
     video->AddCodec(
-        VideoCodec(120, JsepSessionDescription::kDefaultVideoCodecName,
-                   JsepSessionDescription::kMaxVideoCodecWidth,
-                   JsepSessionDescription::kMaxVideoCodecHeight,
-                   JsepSessionDescription::kDefaultVideoCodecFramerate));
+        VideoCodec(120, JsepSessionDescription::kDefaultVideoCodecName));
     return video;
   }
 
@@ -1395,7 +1392,7 @@ class WebRtcSdpTest : public testing::Test {
     std::unique_ptr<DataContentDescription> data(new DataContentDescription());
     data_desc_ = data.get();
     data_desc_->set_protocol(cricket::kMediaProtocolDtlsSctp);
-    DataCodec codec(cricket::kGoogleSctpDataCodecId,
+    DataCodec codec(cricket::kGoogleSctpDataCodecPlType,
                     cricket::kGoogleSctpDataCodecName);
     codec.SetParam(cricket::kCodecParamPort, kDefaultSctpPort);
     data_desc_->AddCodec(codec);
@@ -1990,7 +1987,7 @@ TEST_F(WebRtcSdpTest, SerializeWithSctpDataChannelAndNewPort) {
       jsep_desc.description()->GetContentDescriptionByName(kDataContentName));
 
   const int kNewPort = 1234;
-  cricket::DataCodec codec(cricket::kGoogleSctpDataCodecId,
+  cricket::DataCodec codec(cricket::kGoogleSctpDataCodecPlType,
                            cricket::kGoogleSctpDataCodecName);
   codec.SetParam(cricket::kCodecParamPort, kNewPort);
   dcdesc->AddOrReplaceCodec(codec);
@@ -2605,7 +2602,7 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelAndNewPort) {
       mutant->GetContentDescriptionByName(kDataContentName));
   std::vector<cricket::DataCodec> codecs(dcdesc->codecs());
   EXPECT_EQ(1U, codecs.size());
-  EXPECT_EQ(cricket::kGoogleSctpDataCodecId, codecs[0].id);
+  EXPECT_EQ(cricket::kGoogleSctpDataCodecPlType, codecs[0].id);
   codecs[0].SetParam(cricket::kCodecParamPort, kUnusualSctpPort);
   dcdesc->set_codecs(codecs);
 

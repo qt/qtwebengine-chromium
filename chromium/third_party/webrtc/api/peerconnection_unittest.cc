@@ -188,6 +188,13 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
                                  public ObserverInterface,
                                  public rtc::MessageHandler {
  public:
+  // We need these using declarations because there are two versions of each of
+  // the below methods and we only override one of them.
+  // TODO(deadbeef): Remove once there's only one version of the methods.
+  using PeerConnectionObserver::OnAddStream;
+  using PeerConnectionObserver::OnRemoveStream;
+  using PeerConnectionObserver::OnDataChannel;
+
   // If |config| is not provided, uses a default constructed RTCConfiguration.
   static PeerConnectionTestClient* CreateClientWithDtlsIdentityStore(
       const std::string& id,
@@ -1762,6 +1769,17 @@ TEST_F(P2PTestConductor, LocalP2PTestOfferDtlsButNotSdes) {
   VerifyRenderedSize(640, 480);
 }
 
+// This test verifies that the negotiation will succeed with data channel only
+// in max-bundle mode.
+TEST_F(P2PTestConductor, LocalP2PTestOfferDataChannelOnly) {
+  webrtc::PeerConnectionInterface::RTCConfiguration rtc_config;
+  rtc_config.bundle_policy =
+      webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
+  ASSERT_TRUE(CreateTestClients(rtc_config, rtc_config));
+  initializing_client()->CreateDataChannel();
+  initializing_client()->Negotiate();
+}
+
 // This test sets up a Jsep call between two parties, and the callee only
 // accept to receive video.
 TEST_F(P2PTestConductor, LocalP2PTestAnswerVideo) {
@@ -1809,11 +1827,7 @@ TEST_F(P2PTestConductor, LocalP2PTestWithoutMsid) {
   LocalP2PTest();
 }
 
-// This test sets up a Jsep call between two parties and the initiating peer
-// sends two steams.
-// TODO(perkj): Disabled due to
-// https://code.google.com/p/webrtc/issues/detail?id=1454
-TEST_F(P2PTestConductor, DISABLED_LocalP2PTestTwoStreams) {
+TEST_F(P2PTestConductor, LocalP2PTestTwoStreams) {
   ASSERT_TRUE(CreateTestClients());
   // Set optional video constraint to max 320pixels to decrease CPU usage.
   FakeConstraints constraint;

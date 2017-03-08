@@ -29,6 +29,8 @@
 #include "webrtc/base/fakesslidentity.h"
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/network.h"
+#include "webrtc/base/stringencode.h"
+#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/media/base/fakemediaengine.h"
 #include "webrtc/media/base/test/mock_mediachannel.h"
 #include "webrtc/p2p/base/faketransportcontroller.h"
@@ -401,8 +403,13 @@ void VerifyVoiceSenderInfoReport(const StatsReport* report,
       &value_in_report));
   EXPECT_EQ(rtc::ToString<int>(sinfo.echo_return_loss_enhancement),
             value_in_report);
-  EXPECT_TRUE(GetValue(
-      report, StatsReport::kStatsValueNameAudioInputLevel, &value_in_report));
+  EXPECT_TRUE(GetValue(report,
+                       StatsReport::kStatsValueNameResidualEchoLikelihood,
+                       &value_in_report));
+  EXPECT_EQ(rtc::ToString<float>(sinfo.residual_echo_likelihood),
+            value_in_report);
+  EXPECT_TRUE(GetValue(report, StatsReport::kStatsValueNameAudioInputLevel,
+                       &value_in_report));
   EXPECT_EQ(rtc::ToString<int>(sinfo.audio_level), value_in_report);
   EXPECT_TRUE(GetValue(
       report, StatsReport::kStatsValueNameTypingNoiseState, &value_in_report));
@@ -493,7 +500,8 @@ class StatsCollectorTest : public testing::Test {
         media_controller_(
             webrtc::MediaControllerInterface::Create(cricket::MediaConfig(),
                                                      worker_thread_,
-                                                     channel_manager_.get())),
+                                                     channel_manager_.get(),
+                                                     &event_log_)),
         session_(media_controller_.get()) {
     // By default, we ignore session GetStats calls.
     EXPECT_CALL(session_, GetTransportStats(_)).WillRepeatedly(Return(false));
@@ -751,6 +759,7 @@ class StatsCollectorTest : public testing::Test {
               srtp_crypto_suite);
   }
 
+  webrtc::RtcEventLogNullImpl event_log_;
   rtc::Thread* const worker_thread_;
   rtc::Thread* const network_thread_;
   cricket::FakeMediaEngine* media_engine_;
@@ -1886,6 +1895,93 @@ TEST_F(StatsCollectorTest, TwoLocalTracksWithSameSsrc) {
   SetupAndVerifyAudioTrackStats(
       new_audio_track.get(), stream_.get(), &stats, &voice_channel, kVcName,
       media_channel, &new_voice_sender_info, NULL, &new_stats_read, &reports);
+}
+
+// This test verifies that stats are correctly set in video send ssrc stats.
+TEST_F(StatsCollectorTest, VerifyVideoSendSsrcStats) {
+  StatsCollectorForTest stats(&pc_);
+
+  EXPECT_CALL(session_, GetLocalCertificate(_, _))
+      .WillRepeatedly(Return(false));
+  EXPECT_CALL(session_, GetRemoteSSLCertificate_ReturnsRawPointer(_))
+      .WillRepeatedly(Return(nullptr));
+
+  const char kVideoChannelName[] = "video";
+
+  InitSessionStats(kVideoChannelName);
+  EXPECT_CALL(session_, GetTransportStats(_))
+      .WillRepeatedly(DoAll(SetArgPointee<0>(session_stats_), Return(true)));
+
+  MockVideoMediaChannel* media_channel = new MockVideoMediaChannel();
+  cricket::VideoChannel video_channel(worker_thread_, network_thread_,
+                                      media_channel, nullptr, kVideoChannelName,
+                                      false);
+  StatsReports reports;  // returned values.
+  cricket::VideoSenderInfo video_sender_info;
+  cricket::VideoMediaInfo stats_read;
+
+  AddOutgoingVideoTrackStats();
+  stats.AddStream(stream_);
+
+  // Construct a stats value to read.
+  video_sender_info.add_ssrc(1234);
+  video_sender_info.frames_encoded = 10;
+  video_sender_info.qp_sum = rtc::Optional<uint64_t>(11);
+  stats_read.senders.push_back(video_sender_info);
+
+  EXPECT_CALL(session_, video_channel()).WillRepeatedly(Return(&video_channel));
+  EXPECT_CALL(session_, voice_channel()).WillRepeatedly(ReturnNull());
+  EXPECT_CALL(*media_channel, GetStats(_))
+      .WillOnce(DoAll(SetArgPointee<0>(stats_read), Return(true)));
+  stats.UpdateStats(PeerConnectionInterface::kStatsOutputLevelStandard);
+  stats.GetStats(NULL, &reports);
+  EXPECT_EQ(rtc::ToString(video_sender_info.frames_encoded),
+            ExtractSsrcStatsValue(reports,
+                                  StatsReport::kStatsValueNameFramesEncoded));
+  EXPECT_EQ(rtc::ToString(*video_sender_info.qp_sum),
+            ExtractSsrcStatsValue(reports, StatsReport::kStatsValueNameQpSum));
+}
+
+// This test verifies that stats are correctly set in video receive ssrc stats.
+TEST_F(StatsCollectorTest, VerifyVideoReceiveSsrcStats) {
+  StatsCollectorForTest stats(&pc_);
+
+  EXPECT_CALL(session_, GetLocalCertificate(_, _))
+      .WillRepeatedly(Return(false));
+  EXPECT_CALL(session_, GetRemoteSSLCertificate_ReturnsRawPointer(_))
+      .WillRepeatedly(Return(nullptr));
+
+  const char kVideoChannelName[] = "video";
+
+  InitSessionStats(kVideoChannelName);
+  EXPECT_CALL(session_, GetTransportStats(_))
+      .WillRepeatedly(DoAll(SetArgPointee<0>(session_stats_), Return(true)));
+
+  MockVideoMediaChannel* media_channel = new MockVideoMediaChannel();
+  cricket::VideoChannel video_channel(worker_thread_, network_thread_,
+                                      media_channel, nullptr, kVideoChannelName,
+                                      false);
+  StatsReports reports;  // returned values.
+  cricket::VideoReceiverInfo video_receiver_info;
+  cricket::VideoMediaInfo stats_read;
+
+  AddIncomingVideoTrackStats();
+  stats.AddStream(stream_);
+
+  // Construct a stats value to read.
+  video_receiver_info.add_ssrc(1234);
+  video_receiver_info.frames_decoded = 10;
+  stats_read.receivers.push_back(video_receiver_info);
+
+  EXPECT_CALL(session_, video_channel()).WillRepeatedly(Return(&video_channel));
+  EXPECT_CALL(session_, voice_channel()).WillRepeatedly(ReturnNull());
+  EXPECT_CALL(*media_channel, GetStats(_))
+      .WillOnce(DoAll(SetArgPointee<0>(stats_read), Return(true)));
+  stats.UpdateStats(PeerConnectionInterface::kStatsOutputLevelStandard);
+  stats.GetStats(NULL, &reports);
+  EXPECT_EQ(rtc::ToString(video_receiver_info.frames_decoded),
+            ExtractSsrcStatsValue(reports,
+                                  StatsReport::kStatsValueNameFramesDecoded));
 }
 
 }  // namespace webrtc

@@ -30,34 +30,14 @@ class CXFA_FWLTheme final : public IFWL_ThemeProvider {
   ~CXFA_FWLTheme() override;
 
   // IFWL_ThemeProvider:
-  bool IsValidWidget(IFWL_Widget* pWidget) override;
-  uint32_t GetThemeID(IFWL_Widget* pWidget) override;
-  uint32_t SetThemeID(IFWL_Widget* pWidget,
-                      uint32_t dwThemeID,
-                      FX_BOOL bChildren = TRUE) override;
-  FWL_Error GetThemeMatrix(IFWL_Widget* pWidget, CFX_Matrix& matrix) override;
-  FWL_Error SetThemeMatrix(IFWL_Widget* pWidget,
-                           const CFX_Matrix& matrix) override;
-  FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams) override;
-  FX_BOOL DrawText(CFWL_ThemeText* pParams) override;
+  void DrawBackground(CFWL_ThemeBackground* pParams) override;
+  void DrawText(CFWL_ThemeText* pParams) override;
   void* GetCapacity(CFWL_ThemePart* pThemePart,
                     CFWL_WidgetCapacity dwCapacity) override;
-  FX_BOOL IsCustomizedLayout(IFWL_Widget* pWidget) override;
-  FWL_Error GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart) override;
-  FX_BOOL IsInPart(CFWL_ThemePart* pThemePart,
-                   FX_FLOAT fx,
-                   FX_FLOAT fy) override;
-  FX_BOOL CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) override;
+  bool IsCustomizedLayout(IFWL_Widget* pWidget) override;
+  void CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) override;
 
-  FWL_Error GetClassName(CFX_WideString& wsClass) const {
-    return FWL_Error::Succeeded;
-  }
-  uint32_t GetHashCode() const { return 0; }
-  FWL_Error Initialize();
-  FWL_Error Finalize();
-  FWL_Error GetPartRect(CFWL_ThemePart* pThemePart);
-
- protected:
+ private:
   CFWL_WidgetTP* GetTheme(IFWL_Widget* pWidget);
   std::unique_ptr<CFWL_CheckBoxTP> m_pCheckBoxTP;
   std::unique_ptr<CFWL_ListBoxTP> m_pListBoxTP;
@@ -80,28 +60,6 @@ class CXFA_FWLTheme final : public IFWL_ThemeProvider {
   CFX_SizeF m_SizeAboveBelow;
 };
 
-class CXFA_FWLCheckBoxTP : public CFWL_CheckBoxTP {
- public:
-  CXFA_FWLCheckBoxTP();
-
-  // CFWL_CheckBoxTP
-  FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams) override;
-
- protected:
-  void DrawCheckSign(IFWL_Widget* pWidget,
-                     CFX_Graphics* pGraphics,
-                     const CFX_RectF* pRtBox,
-                     int32_t iState,
-                     CFX_Matrix* pMatrix);
-};
-
-class CXFA_FWLEditTP : public CFWL_EditTP {
- public:
-  CXFA_FWLEditTP();
-  ~CXFA_FWLEditTP() override;
-
-  // CFWL_EditTP
-  FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams) override;
-};
+CXFA_FFWidget* XFA_ThemeGetOuterWidget(IFWL_Widget* pWidget);
 
 #endif  // XFA_FXFA_APP_XFA_FWLTHEME_H_

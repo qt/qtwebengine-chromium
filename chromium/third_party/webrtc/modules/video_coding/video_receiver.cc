@@ -270,8 +270,8 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
     if (qp_parser_.GetQp(*frame, &qp)) {
       encoded_image.qp_ = qp;
     }
-    pre_decode_image_callback_->Encoded(encoded_image, frame->CodecSpecific(),
-                                        nullptr);
+    pre_decode_image_callback_->OnEncodedImage(encoded_image,
+                                               frame->CodecSpecific(), nullptr);
   }
 
   rtc::CritScope cs(&receive_crit_);
@@ -288,6 +288,14 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
   const int32_t ret = Decode(*frame);
   _receiver.ReleaseFrame(frame);
   return ret;
+}
+
+// Used for the WebRTC-NewVideoJitterBuffer experiment.
+// TODO(philipel): Clean up among the Decode functions as we replace
+//                 VCMEncodedFrame with FrameObject.
+int32_t VideoReceiver::Decode(const webrtc::VCMEncodedFrame* frame) {
+  rtc::CritScope lock(&receive_crit_);
+  return Decode(*frame);
 }
 
 int32_t VideoReceiver::RequestSliceLossIndication(

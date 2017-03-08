@@ -89,7 +89,7 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
           break;
         }
       }
-      FX_BOOL RI = 0;
+      bool RI = 0;
       if (SBREFINE != 0 && pStream->read1Bit(&RI) != 0) {
         return nullptr;
       }
@@ -266,7 +266,8 @@ CJBig2_Image* CJBig2_TRDProc::decode_Arith(CJBig2_ArithDecoder* pArithDecoder,
   std::unique_ptr<CJBig2_Image> SBREG(new CJBig2_Image(SBW, SBH));
   SBREG->fill(SBDEFPIXEL);
   int32_t STRIPT;
-  pIADT->decode(pArithDecoder, &STRIPT);
+  if (!pIADT->decode(pArithDecoder, &STRIPT))
+    return nullptr;
   STRIPT *= SBSTRIPS;
   STRIPT = -STRIPT;
   int32_t FIRSTS = 0;
@@ -274,7 +275,8 @@ CJBig2_Image* CJBig2_TRDProc::decode_Arith(CJBig2_ArithDecoder* pArithDecoder,
   while (NINSTANCES < SBNUMINSTANCES) {
     int32_t CURS = 0;
     int32_t DT;
-    pIADT->decode(pArithDecoder, &DT);
+    if (!pIADT->decode(pArithDecoder, &DT))
+      return nullptr;
     DT *= SBSTRIPS;
     STRIPT += DT;
     bool bFirst = true;

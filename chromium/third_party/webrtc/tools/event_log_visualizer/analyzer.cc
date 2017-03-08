@@ -28,8 +28,9 @@
 #include "webrtc/modules/congestion_controller/include/congestion_controller.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
@@ -91,16 +92,6 @@ int64_t WrappingDifference(uint32_t later, uint32_t earlier, int64_t modulus) {
   return difference;
 }
 
-void RegisterHeaderExtensions(
-    const std::vector<webrtc::RtpExtension>& extensions,
-    webrtc::RtpHeaderExtensionMap* extension_map) {
-  extension_map->Erase();
-  for (const webrtc::RtpExtension& extension : extensions) {
-    extension_map->Register(webrtc::StringToRtpExtensionType(extension.uri),
-                            extension.id);
-  }
-}
-
 // Return default values for header extensions, to use on streams without stored
 // mapping data. Currently this only applies to audio streams, since the mapping
 // is not stored in the event log.
@@ -108,11 +99,8 @@ void RegisterHeaderExtensions(
 //             audio streams. Tracking bug: webrtc:6399
 webrtc::RtpHeaderExtensionMap GetDefaultHeaderExtensionMap() {
   webrtc::RtpHeaderExtensionMap default_map;
-  default_map.Register(
-      webrtc::StringToRtpExtensionType(webrtc::RtpExtension::kAudioLevelUri),
-      webrtc::RtpExtension::kAudioLevelDefaultId);
-  default_map.Register(
-      webrtc::StringToRtpExtensionType(webrtc::RtpExtension::kAbsSendTimeUri),
+  default_map.Register<AudioLevel>(webrtc::RtpExtension::kAudioLevelDefaultId);
+  default_map.Register<AbsoluteSendTime>(
       webrtc::RtpExtension::kAbsSendTimeDefaultId);
   return default_map;
 }
@@ -321,13 +309,12 @@ EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log)
         VideoReceiveStream::Config config(nullptr);
         parsed_log_.GetVideoReceiveConfig(i, &config);
         StreamId stream(config.rtp.remote_ssrc, kIncomingPacket);
-        RegisterHeaderExtensions(config.rtp.extensions,
-                                 &extension_maps[stream]);
+        extension_maps[stream] = RtpHeaderExtensionMap(config.rtp.extensions);
         video_ssrcs_.insert(stream);
         for (auto kv : config.rtp.rtx) {
           StreamId rtx_stream(kv.second.ssrc, kIncomingPacket);
-          RegisterHeaderExtensions(config.rtp.extensions,
-                                   &extension_maps[rtx_stream]);
+          extension_maps[rtx_stream] =
+              RtpHeaderExtensionMap(config.rtp.extensions);
           video_ssrcs_.insert(rtx_stream);
           rtx_ssrcs_.insert(rtx_stream);
         }
@@ -338,14 +325,13 @@ EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log)
         parsed_log_.GetVideoSendConfig(i, &config);
         for (auto ssrc : config.rtp.ssrcs) {
           StreamId stream(ssrc, kOutgoingPacket);
-          RegisterHeaderExtensions(config.rtp.extensions,
-                                   &extension_maps[stream]);
+          extension_maps[stream] = RtpHeaderExtensionMap(config.rtp.extensions);
           video_ssrcs_.insert(stream);
         }
         for (auto ssrc : config.rtp.rtx.ssrcs) {
           StreamId rtx_stream(ssrc, kOutgoingPacket);
-          RegisterHeaderExtensions(config.rtp.extensions,
-                                   &extension_maps[rtx_stream]);
+          extension_maps[rtx_stream] =
+              RtpHeaderExtensionMap(config.rtp.extensions);
           video_ssrcs_.insert(rtx_stream);
           rtx_ssrcs_.insert(rtx_stream);
         }
@@ -353,12 +339,18 @@ EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log)
       }
       case ParsedRtcEventLog::AUDIO_RECEIVER_CONFIG_EVENT: {
         AudioReceiveStream::Config config;
-        // TODO(terelius): Parse the audio configs once we have them.
+        parsed_log_.GetAudioReceiveConfig(i, &config);
+        StreamId stream(config.rtp.remote_ssrc, kIncomingPacket);
+        extension_maps[stream] = RtpHeaderExtensionMap(config.rtp.extensions);
+        audio_ssrcs_.insert(stream);
         break;
       }
       case ParsedRtcEventLog::AUDIO_SENDER_CONFIG_EVENT: {
         AudioSendStream::Config config(nullptr);
-        // TODO(terelius): Parse the audio configs once we have them.
+        parsed_log_.GetAudioSendConfig(i, &config);
+        StreamId stream(config.rtp.ssrc, kOutgoingPacket);
+        extension_maps[stream] = RtpHeaderExtensionMap(config.rtp.extensions);
+        audio_ssrcs_.insert(stream);
         break;
       }
       case ParsedRtcEventLog::RTP_EVENT: {
@@ -392,35 +384,27 @@ EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log)
         parsed_log_.GetRtcpPacket(i, &direction, &media_type, packet,
                                   &total_length);
 
-        RtpUtility::RtpHeaderParser rtp_parser(packet, total_length);
-        RTPHeader parsed_header;
-        RTC_CHECK(rtp_parser.ParseRtcp(&parsed_header));
-        uint32_t ssrc = parsed_header.ssrc;
-
-        RTCPUtility::RTCPParserV2 rtcp_parser(packet, total_length, true);
-        RTC_CHECK(rtcp_parser.IsValid());
-
-        RTCPUtility::RTCPPacketTypes packet_type = rtcp_parser.Begin();
-        while (packet_type != RTCPUtility::RTCPPacketTypes::kInvalid) {
-          switch (packet_type) {
-            case RTCPUtility::RTCPPacketTypes::kTransportFeedback: {
-              // Currently feedback is logged twice, both for audio and video.
-              // Only act on one of them.
-              if (media_type == MediaType::VIDEO) {
-                std::unique_ptr<rtcp::RtcpPacket> rtcp_packet(
-                    rtcp_parser.ReleaseRtcpPacket());
+        // Currently feedback is logged twice, both for audio and video.
+        // Only act on one of them.
+        if (media_type == MediaType::VIDEO) {
+          rtcp::CommonHeader header;
+          const uint8_t* packet_end = packet + total_length;
+          for (const uint8_t* block = packet; block < packet_end;
+               block = header.NextPacket()) {
+            RTC_CHECK(header.Parse(block, packet_end - block));
+            if (header.type() == rtcp::TransportFeedback::kPacketType &&
+                header.fmt() == rtcp::TransportFeedback::kFeedbackMessageType) {
+              std::unique_ptr<rtcp::TransportFeedback> rtcp_packet(
+                  new rtcp::TransportFeedback());
+              if (rtcp_packet->Parse(header)) {
+                uint32_t ssrc = rtcp_packet->sender_ssrc();
                 StreamId stream(ssrc, direction);
                 uint64_t timestamp = parsed_log_.GetTimestamp(i);
                 rtcp_packets_[stream].push_back(LoggedRtcpPacket(
                     timestamp, kRtcpTransportFeedback, std::move(rtcp_packet)));
               }
-              break;
             }
-            default:
-              break;
           }
-          rtcp_parser.Iterate();
-          packet_type = rtcp_parser.PacketType();
         }
         break;
       }
@@ -990,9 +974,10 @@ void EventLogAnalyzer::CreateBweSimulationGraph(Plot* plot) {
     return std::numeric_limits<int64_t>::max();
   };
 
-  RateStatistics acked_bitrate(1000, 8000);
+  RateStatistics acked_bitrate(250, 8000);
 
   int64_t time_us = std::min(NextRtpTime(), NextRtcpTime());
+  int64_t last_update_us = 0;
   while (time_us != std::numeric_limits<int64_t>::max()) {
     clock.AdvanceTimeMicroseconds(time_us - clock.TimeInMicroseconds());
     if (clock.TimeInMicroseconds() >= NextRtcpTime()) {
@@ -1037,11 +1022,13 @@ void EventLogAnalyzer::CreateBweSimulationGraph(Plot* plot) {
       RTC_DCHECK_EQ(clock.TimeInMicroseconds(), NextProcessTime());
       cc.Process();
     }
-    if (observer.GetAndResetBitrateUpdated()) {
+    if (observer.GetAndResetBitrateUpdated() ||
+        time_us - last_update_us >= 1e6) {
       uint32_t y = observer.last_bitrate_bps() / 1000;
       float x = static_cast<float>(clock.TimeInMicroseconds() - begin_time_) /
                 1000000;
       time_series.points.emplace_back(x, y);
+      last_update_us = time_us;
     }
     time_us = std::min({NextRtpTime(), NextRtcpTime(), NextProcessTime()});
   }
@@ -1104,6 +1091,7 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
   SimulatedClock clock(0);
   NullBitrateController null_controller;
   TransportFeedbackAdapter feedback_adapter(&clock, &null_controller);
+  feedback_adapter.InitBwe();
 
   TimeSeries time_series;
   time_series.label = "Network Delay Change";
@@ -1153,7 +1141,7 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
       if (rtp.header.extension.hasTransportSequenceNumber) {
         RTC_DCHECK(rtp.header.extension.hasTransportSequenceNumber);
         feedback_adapter.AddPacket(rtp.header.extension.transportSequenceNumber,
-                                   rtp.total_length, 0);
+                                   rtp.total_length, PacketInfo::kNotAProbe);
         feedback_adapter.OnSentPacket(
             rtp.header.extension.transportSequenceNumber, rtp.timestamp / 1000);
       }

@@ -10,7 +10,7 @@
 
 #include "xfa/fde/tto/fde_textout.h"
 #include "xfa/fgas/font/fgas_gefont.h"
-#include "xfa/fgas/font/fgas_stdfontmgr.h"
+#include "xfa/fgas/font/cfgas_fontmgr.h"
 #include "xfa/fwl/core/cfwl_themebackground.h"
 #include "xfa/fwl/core/cfwl_themepart.h"
 #include "xfa/fwl/core/cfwl_themetext.h"
@@ -36,64 +36,32 @@ const float kCYBorder = 1.0f;
 
 }  // namespace
 
-static void FWL_SetChildThemeID(IFWL_Widget* pParent, uint32_t dwThemeID) {
-  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
-  IFWL_Widget* pChild = pWidgetMgr->GetFirstChildWidget(pParent);
-  while (pChild) {
-    IFWL_ThemeProvider* pTheme = pChild->GetThemeProvider();
-    if (pTheme) {
-      pTheme->SetThemeID(pChild, dwThemeID, FALSE);
-    }
-    FWL_SetChildThemeID(pChild, dwThemeID);
-    pChild = pWidgetMgr->GetNextSiblingWidget(pChild);
-  }
-}
-
 bool CFWL_WidgetTP::IsValidWidget(IFWL_Widget* pWidget) {
-  return FALSE;
+  return false;
 }
 
 uint32_t CFWL_WidgetTP::GetThemeID(IFWL_Widget* pWidget) {
   return m_dwThemeID;
 }
 
-uint32_t CFWL_WidgetTP::SetThemeID(IFWL_Widget* pWidget,
-                                   uint32_t dwThemeID,
-                                   FX_BOOL bChildren) {
+uint32_t CFWL_WidgetTP::SetThemeID(IFWL_Widget* pWidget, uint32_t dwThemeID) {
   uint32_t dwOld = m_dwThemeID;
   m_dwThemeID = dwThemeID;
-  if (CFWL_ArrowData::HasInstance()) {
+  if (CFWL_ArrowData::HasInstance())
     CFWL_ArrowData::GetInstance()->SetColorData(FWL_GetThemeColor(dwThemeID));
-  }
-  if (bChildren) {
-    FWL_SetChildThemeID(pWidget, dwThemeID);
-  }
   return dwOld;
 }
 
-FWL_Error CFWL_WidgetTP::GetThemeMatrix(IFWL_Widget* pWidget,
-                                        CFX_Matrix& matrix) {
-  matrix.Set(_ctm.a, _ctm.b, _ctm.c, _ctm.d, _ctm.e, _ctm.f);
-  return FWL_Error::Succeeded;
-}
+void CFWL_WidgetTP::DrawBackground(CFWL_ThemeBackground* pParams) {}
 
-FWL_Error CFWL_WidgetTP::SetThemeMatrix(IFWL_Widget* pWidget,
-                                        const CFX_Matrix& matrix) {
-  _ctm.Set(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
-  return FWL_Error::Succeeded;
-}
-
-FX_BOOL CFWL_WidgetTP::DrawBackground(CFWL_ThemeBackground* pParams) {
-  return TRUE;
-}
-
-FX_BOOL CFWL_WidgetTP::DrawText(CFWL_ThemeText* pParams) {
+void CFWL_WidgetTP::DrawText(CFWL_ThemeText* pParams) {
   if (!m_pTextOut)
     InitTTO();
 
   int32_t iLen = pParams->m_wsText.GetLength();
   if (iLen <= 0)
-    return FALSE;
+    return;
+
   CFX_Graphics* pGraphics = pParams->m_pGraphics;
   m_pTextOut->SetRenderDevice(pGraphics->GetRenderDevice());
   m_pTextOut->SetStyles(pParams->m_dwTTOStyles);
@@ -102,7 +70,6 @@ FX_BOOL CFWL_WidgetTP::DrawText(CFWL_ThemeText* pParams) {
   pMatrix->Concat(*pGraphics->GetMatrix());
   m_pTextOut->SetMatrix(*pMatrix);
   m_pTextOut->DrawLogicText(pParams->m_wsText.c_str(), iLen, pParams->m_rtPart);
-  return TRUE;
 }
 
 void* CFWL_WidgetTP::GetCapacity(CFWL_ThemePart* pThemePart,
@@ -156,77 +123,60 @@ void* CFWL_WidgetTP::GetCapacity(CFWL_ThemePart* pThemePart,
       m_rtMargin.Set(0, 0, 0, 0);
       return &m_rtMargin;
     }
-    default: { return nullptr; }
+    default:
+      return nullptr;
   }
   return &m_fValue;
 }
 
-FX_BOOL CFWL_WidgetTP::IsCustomizedLayout(IFWL_Widget* pWidget) {
-  return FWL_GetThemeLayout(m_dwThemeID);
+bool CFWL_WidgetTP::IsCustomizedLayout(IFWL_Widget* pWidget) {
+  return !!FWL_GetThemeLayout(m_dwThemeID);
 }
 
-FWL_Error CFWL_WidgetTP::GetPartRect(CFWL_ThemePart* pThemePart,
-                                     CFX_RectF& rect) {
-  return FWL_Error::Succeeded;
-}
+void CFWL_WidgetTP::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
+  if (!pParams || !m_pTextOut)
+    return;
 
-FX_BOOL CFWL_WidgetTP::IsInPart(CFWL_ThemePart* pThemePart,
-                                FX_FLOAT fx,
-                                FX_FLOAT fy) {
-  return TRUE;
-}
-
-FX_BOOL CFWL_WidgetTP::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
-  if (!pParams)
-    return FALSE;
-  if (!m_pTextOut)
-    return FALSE;
   m_pTextOut->SetAlignment(pParams->m_iTTOAlign);
   m_pTextOut->SetStyles(pParams->m_dwTTOStyles | FDE_TTOSTYLE_ArabicContext);
   m_pTextOut->CalcLogicSize(pParams->m_wsText.c_str(),
                             pParams->m_wsText.GetLength(), rect);
-  return TRUE;
 }
 
-FWL_Error CFWL_WidgetTP::Initialize() {
+void CFWL_WidgetTP::Initialize() {
   m_dwThemeID = 0;
-  _ctm.SetIdentity();
-  return FWL_Error::Succeeded;
 }
 
-FWL_Error CFWL_WidgetTP::Finalize() {
+void CFWL_WidgetTP::Finalize() {
   if (!m_pTextOut)
     FinalizeTTO();
-  return FWL_Error::Succeeded;
 }
 
 CFWL_WidgetTP::~CFWL_WidgetTP() {}
 
-FWL_Error CFWL_WidgetTP::SetFont(IFWL_Widget* pWidget,
-                                 const FX_WCHAR* strFont,
-                                 FX_FLOAT fFontSize,
-                                 FX_ARGB rgbFont) {
+void CFWL_WidgetTP::SetFont(IFWL_Widget* pWidget,
+                            const FX_WCHAR* strFont,
+                            FX_FLOAT fFontSize,
+                            FX_ARGB rgbFont) {
   if (!m_pTextOut)
-    return FWL_Error::Succeeded;
+    return;
 
   m_pFDEFont = CFWL_FontManager::GetInstance()->FindFont(strFont, 0, 0);
   m_pTextOut->SetFont(m_pFDEFont);
   m_pTextOut->SetFontSize(fFontSize);
   m_pTextOut->SetTextColor(rgbFont);
-  return FWL_Error::Succeeded;
 }
 
-FWL_Error CFWL_WidgetTP::SetFont(IFWL_Widget* pWidget,
-                                 CFGAS_GEFont* pFont,
-                                 FX_FLOAT fFontSize,
-                                 FX_ARGB rgbFont) {
+void CFWL_WidgetTP::SetFont(IFWL_Widget* pWidget,
+                            CFGAS_GEFont* pFont,
+                            FX_FLOAT fFontSize,
+                            FX_ARGB rgbFont) {
   if (!m_pTextOut)
-    return FWL_Error::Succeeded;
+    return;
 
   m_pTextOut->SetFont(pFont);
   m_pTextOut->SetFontSize(fFontSize);
   m_pTextOut->SetTextColor(rgbFont);
-  return FWL_Error::Succeeded;
 }
 
 CFGAS_GEFont* CFWL_WidgetTP::GetFont(IFWL_Widget* pWidget) {
@@ -236,9 +186,9 @@ CFGAS_GEFont* CFWL_WidgetTP::GetFont(IFWL_Widget* pWidget) {
 CFWL_WidgetTP::CFWL_WidgetTP()
     : m_dwRefCount(1), m_pFDEFont(nullptr), m_dwThemeID(0) {}
 
-FWL_Error CFWL_WidgetTP::InitTTO() {
+void CFWL_WidgetTP::InitTTO() {
   if (m_pTextOut)
-    return FWL_Error::Succeeded;
+    return;
 
   m_pFDEFont =
       CFWL_FontManager::GetInstance()->FindFont(FX_WSTRC(L"Helvetica"), 0, 0);
@@ -247,12 +197,10 @@ FWL_Error CFWL_WidgetTP::InitTTO() {
   m_pTextOut->SetFontSize(FWLTHEME_CAPACITY_FontSize);
   m_pTextOut->SetTextColor(FWLTHEME_CAPACITY_TextColor);
   m_pTextOut->SetEllipsisString(L"...");
-  return FWL_Error::Succeeded;
 }
 
-FWL_Error CFWL_WidgetTP::FinalizeTTO() {
+void CFWL_WidgetTP::FinalizeTTO() {
   m_pTextOut.reset();
-  return FWL_Error::Succeeded;
 }
 
 void CFWL_WidgetTP::DrawEdge(CFX_Graphics* pGraphics,
@@ -470,7 +418,7 @@ void CFWL_WidgetTP::DrawAxialShading(CFX_Graphics* pGraphics,
 
   CFX_PointF begPoint(fx1, fy1);
   CFX_PointF endPoint(fx2, fy2);
-  CFX_Shading shading(begPoint, endPoint, FALSE, FALSE, beginColor, endColor);
+  CFX_Shading shading(begPoint, endPoint, false, false, beginColor, endColor);
   pGraphics->SaveGraphState();
   CFX_Color color1(&shading);
   pGraphics->SetFillColor(&color1);
@@ -548,7 +496,7 @@ void CFWL_WidgetTP::DrawArrow(CFX_Graphics* pGraphics,
                               const CFX_RectF* pRect,
                               FWLTHEME_DIRECTION eDict,
                               FX_ARGB argbFill,
-                              FX_BOOL bPressed,
+                              bool bPressed,
                               CFX_Matrix* pMatrix) {
   CFX_RectF rtArrow(*pRect);
   CFX_Path path;
@@ -604,7 +552,7 @@ void CFWL_WidgetTP::DrawArrow(CFX_Graphics* pGraphics,
                               FWLTHEME_DIRECTION eDict,
                               FX_ARGB argSign,
                               CFX_Matrix* pMatrix) {
-  FX_BOOL bVert =
+  bool bVert =
       (eDict == FWLTHEME_DIRECTION_Up || eDict == FWLTHEME_DIRECTION_Down);
   FX_FLOAT fLeft =
       (FX_FLOAT)(((pRect->width - (bVert ? 9 : 6)) / 2 + pRect->left) + 0.5);
@@ -701,25 +649,25 @@ CFWL_FontData::CFWL_FontData() : m_dwStyles(0), m_dwCodePage(0) {}
 
 CFWL_FontData::~CFWL_FontData() {}
 
-FX_BOOL CFWL_FontData::Equal(const CFX_WideStringC& wsFontFamily,
-                             uint32_t dwFontStyles,
-                             uint16_t wCodePage) {
+bool CFWL_FontData::Equal(const CFX_WideStringC& wsFontFamily,
+                          uint32_t dwFontStyles,
+                          uint16_t wCodePage) {
   return m_wsFamily == wsFontFamily && m_dwStyles == dwFontStyles &&
          m_dwCodePage == wCodePage;
 }
 
-FX_BOOL CFWL_FontData::LoadFont(const CFX_WideStringC& wsFontFamily,
-                                uint32_t dwFontStyles,
-                                uint16_t dwCodePage) {
+bool CFWL_FontData::LoadFont(const CFX_WideStringC& wsFontFamily,
+                             uint32_t dwFontStyles,
+                             uint16_t dwCodePage) {
   m_wsFamily = wsFontFamily;
   m_dwStyles = dwFontStyles;
   m_dwCodePage = dwCodePage;
   if (!m_pFontMgr) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-    m_pFontMgr = IFGAS_FontMgr::Create(FX_GetDefFontEnumerator());
+    m_pFontMgr = CFGAS_FontMgr::Create(FX_GetDefFontEnumerator());
 #else
     m_pFontSource.reset(new CFX_FontSourceEnum_File);
-    m_pFontMgr = IFGAS_FontMgr::Create(m_pFontSource.get());
+    m_pFontMgr = CFGAS_FontMgr::Create(m_pFontSource.get());
 #endif
   }
   m_pFont.reset(CFGAS_GEFont::LoadFont(wsFontFamily.c_str(), dwFontStyles,
@@ -755,10 +703,6 @@ CFGAS_GEFont* CFWL_FontManager::FindFont(const CFX_WideStringC& wsFontFamily,
     return nullptr;
   m_FontsArray.push_back(std::move(pFontData));
   return m_FontsArray.back()->GetFont();
-}
-
-FX_BOOL FWLTHEME_Init() {
-  return TRUE;
 }
 
 void FWLTHEME_Release() {

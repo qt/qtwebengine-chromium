@@ -7,6 +7,8 @@
 #ifndef CORE_FPDFAPI_PAGE_CPDF_IMAGE_H_
 #define CORE_FPDFAPI_PAGE_CPDF_IMAGE_H_
 
+#include <memory>
+
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fxcrt/fx_system.h"
 
@@ -14,26 +16,25 @@
 #define PDF_IMAGE_LOSSY_COMPRESS 0x0001
 #define PDF_IMAGE_LOSSLESS_COMPRESS 0x0002
 #define PDF_IMAGE_MASK_LOSSY_COMPRESS 0x0004
-#define PDF_IMAGE_MASK_LOSSLESS_COMPRESS 0x0008
 
-class CFX_DIBitmap;
 class CFX_DIBSource;
-class CPDF_Dictionay;
+class CFX_DIBitmap;
 class CPDF_Document;
 class CPDF_Page;
-class IFX_FileRead;
-class IFX_FileWrite;
 class IFX_Pause;
+class IFX_SeekableReadStream;
 
 class CPDF_Image {
  public:
   explicit CPDF_Image(CPDF_Document* pDoc);
-  CPDF_Image(CPDF_Document* pDoc, CPDF_Stream* pStream, bool bInline);
+  CPDF_Image(CPDF_Document* pDoc, std::unique_ptr<CPDF_Stream> pStream);
+  CPDF_Image(CPDF_Document* pDoc, uint32_t dwStreamObjNum);
   ~CPDF_Image();
 
   CPDF_Image* Clone();
+  void ConvertStreamToIndirectObject();
 
-  CPDF_Dictionary* GetInlineDict() const { return m_pInlineDict; }
+  CPDF_Dictionary* GetInlineDict() const { return m_pDict; }
   CPDF_Stream* GetStream() const { return m_pStream; }
   CPDF_Dictionary* GetDict() const {
     return m_pStream ? m_pStream->GetDict() : nullptr;
@@ -44,47 +45,49 @@ class CPDF_Image {
   int32_t GetPixelHeight() const { return m_Height; }
   int32_t GetPixelWidth() const { return m_Width; }
 
-  bool IsInline() const { return m_bInline; }
+  bool IsInline() const { return m_bIsInline; }
   bool IsMask() const { return m_bIsMask; }
   bool IsInterpol() const { return m_bInterpolate; }
 
   CFX_DIBSource* LoadDIBSource(CFX_DIBSource** ppMask = nullptr,
                                uint32_t* pMatteColor = nullptr,
-                               FX_BOOL bStdCS = FALSE,
+                               bool bStdCS = false,
                                uint32_t GroupFamily = 0,
-                               FX_BOOL bLoadMask = FALSE) const;
+                               bool bLoadMask = false) const;
 
-  void SetInlineDict(CPDF_Dictionary* pDict) { m_pInlineDict = pDict; }
   void SetImage(const CFX_DIBitmap* pDIBitmap, int32_t iCompress);
-  void SetJpegImage(IFX_FileRead* pFile);
+  void SetJpegImage(IFX_SeekableReadStream* pFile);
 
   void ResetCache(CPDF_Page* pPage, const CFX_DIBitmap* pDIBitmap);
 
-  FX_BOOL StartLoadDIBSource(CPDF_Dictionary* pFormResource,
-                             CPDF_Dictionary* pPageResource,
-                             FX_BOOL bStdCS = FALSE,
-                             uint32_t GroupFamily = 0,
-                             FX_BOOL bLoadMask = FALSE);
-  FX_BOOL Continue(IFX_Pause* pPause);
+  bool StartLoadDIBSource(CPDF_Dictionary* pFormResource,
+                          CPDF_Dictionary* pPageResource,
+                          bool bStdCS = false,
+                          uint32_t GroupFamily = 0,
+                          bool bLoadMask = false);
+  bool Continue(IFX_Pause* pPause);
   CFX_DIBSource* DetachBitmap();
   CFX_DIBSource* DetachMask();
 
-  CFX_DIBSource* m_pDIBSource;
-  CFX_DIBSource* m_pMask;
-  uint32_t m_MatteColor;
+  CFX_DIBSource* m_pDIBSource = nullptr;
+  CFX_DIBSource* m_pMask = nullptr;
+  uint32_t m_MatteColor = 0;
 
  private:
+  void FinishInitialization();
   CPDF_Dictionary* InitJPEG(uint8_t* pData, uint32_t size);
 
-  CPDF_Stream* m_pStream;
-  const bool m_bInline;
-  CPDF_Dictionary* m_pInlineDict;
-  int32_t m_Height;
-  int32_t m_Width;
-  bool m_bIsMask;
-  bool m_bInterpolate;
+  int32_t m_Height = 0;
+  int32_t m_Width = 0;
+  bool m_bIsInline = false;
+  bool m_bIsMask = false;
+  bool m_bInterpolate = false;
   CPDF_Document* const m_pDocument;
-  CPDF_Dictionary* m_pOC;
+  CPDF_Stream* m_pStream = nullptr;
+  CPDF_Dictionary* m_pDict = nullptr;
+  std::unique_ptr<CPDF_Stream> m_pOwnedStream;
+  std::unique_ptr<CPDF_Dictionary> m_pOwnedDict;
+  CPDF_Dictionary* m_pOC = nullptr;
 };
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_IMAGE_H_

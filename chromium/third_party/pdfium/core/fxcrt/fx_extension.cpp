@@ -4,9 +4,10 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#include "core/fxcrt/extension.h"
+
 #include <utility>
 
-#include "core/fxcrt/extension.h"
 #include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_ext.h"
 
@@ -36,14 +37,14 @@ void CFX_CRTFileAccess::GetPath(CFX_WideString& wsPath) {
   wsPath = m_path;
 }
 
-IFX_FileStream* CFX_CRTFileAccess::CreateFileStream(uint32_t dwModes) {
+IFX_SeekableStream* CFX_CRTFileAccess::CreateFileStream(uint32_t dwModes) {
   return FX_CreateFileStream(m_path.c_str(), dwModes);
 }
 
-FX_BOOL CFX_CRTFileAccess::Init(const CFX_WideStringC& wsPath) {
+bool CFX_CRTFileAccess::Init(const CFX_WideStringC& wsPath) {
   m_path = wsPath;
   m_RefCount = 1;
-  return TRUE;
+  return true;
 }
 
 #endif  // PDF_ENABLE_XFA
@@ -53,7 +54,7 @@ CFX_CRTFileStream::CFX_CRTFileStream(std::unique_ptr<IFXCRT_FileAccess> pFA)
 
 CFX_CRTFileStream::~CFX_CRTFileStream() {}
 
-CFX_MemoryStream::CFX_MemoryStream(FX_BOOL bConsecutive)
+CFX_MemoryStream::CFX_MemoryStream(bool bConsecutive)
     : m_dwCount(1),
       m_nTotalSize(0),
       m_nCurSize(0),
@@ -65,7 +66,7 @@ CFX_MemoryStream::CFX_MemoryStream(FX_BOOL bConsecutive)
 
 CFX_MemoryStream::CFX_MemoryStream(uint8_t* pBuffer,
                                    size_t nSize,
-                                   FX_BOOL bTakeOver)
+                                   bool bTakeOver)
     : m_dwCount(1),
       m_nTotalSize(nSize),
       m_nCurSize(nSize),
@@ -85,7 +86,7 @@ CFX_MemoryStream::~CFX_MemoryStream() {
   m_Blocks.RemoveAll();
 }
 
-IFX_FileStream* CFX_MemoryStream::Retain() {
+IFX_SeekableStream* CFX_MemoryStream::Retain() {
   m_dwCount++;
   return this;
 }
@@ -102,7 +103,7 @@ FX_FILESIZE CFX_MemoryStream::GetSize() {
   return (FX_FILESIZE)m_nCurSize;
 }
 
-FX_BOOL CFX_MemoryStream::IsEOF() {
+bool CFX_MemoryStream::IsEOF() {
   return m_nCurPos >= (size_t)GetSize();
 }
 
@@ -110,24 +111,23 @@ FX_FILESIZE CFX_MemoryStream::GetPosition() {
   return (FX_FILESIZE)m_nCurPos;
 }
 
-FX_BOOL CFX_MemoryStream::ReadBlock(void* buffer,
-                                    FX_FILESIZE offset,
-                                    size_t size) {
-  if (!buffer || !size) {
-    return FALSE;
-  }
+bool CFX_MemoryStream::ReadBlock(void* buffer,
+                                 FX_FILESIZE offset,
+                                 size_t size) {
+  if (!buffer || !size)
+    return false;
 
   FX_SAFE_SIZE_T newPos = size;
   newPos += offset;
   if (!newPos.IsValid() || newPos.ValueOrDefault(0) == 0 ||
       newPos.ValueOrDie() > m_nCurSize) {
-    return FALSE;
+    return false;
   }
 
   m_nCurPos = newPos.ValueOrDie();
   if (m_dwFlags & FX_MEMSTREAM_Consecutive) {
     FXSYS_memcpy(buffer, m_Blocks[0] + (size_t)offset, size);
-    return TRUE;
+    return true;
   }
   size_t nStartBlock = (size_t)offset / m_nGrowSize;
   offset -= (FX_FILESIZE)(nStartBlock * m_nGrowSize);
@@ -142,7 +142,7 @@ FX_BOOL CFX_MemoryStream::ReadBlock(void* buffer,
     nStartBlock++;
     offset = 0;
   }
-  return TRUE;
+  return true;
 }
 
 size_t CFX_MemoryStream::ReadBlock(void* buffer, size_t size) {
@@ -156,17 +156,17 @@ size_t CFX_MemoryStream::ReadBlock(void* buffer, size_t size) {
   return nRead;
 }
 
-FX_BOOL CFX_MemoryStream::WriteBlock(const void* buffer,
-                                     FX_FILESIZE offset,
-                                     size_t size) {
-  if (!buffer || !size) {
-    return FALSE;
-  }
+bool CFX_MemoryStream::WriteBlock(const void* buffer,
+                                  FX_FILESIZE offset,
+                                  size_t size) {
+  if (!buffer || !size)
+    return false;
+
   if (m_dwFlags & FX_MEMSTREAM_Consecutive) {
     FX_SAFE_SIZE_T newPos = size;
     newPos += offset;
     if (!newPos.IsValid())
-      return FALSE;
+      return false;
 
     m_nCurPos = newPos.ValueOrDie();
     if (m_nCurPos > m_nTotalSize) {
@@ -179,24 +179,24 @@ FX_BOOL CFX_MemoryStream::WriteBlock(const void* buffer,
       }
       if (!m_Blocks[0]) {
         m_Blocks.RemoveAll();
-        return FALSE;
+        return false;
       }
     }
     FXSYS_memcpy(m_Blocks[0] + (size_t)offset, buffer, size);
     if (m_nCurSize < m_nCurPos) {
       m_nCurSize = m_nCurPos;
     }
-    return TRUE;
+    return true;
   }
 
   FX_SAFE_SIZE_T newPos = size;
   newPos += offset;
   if (!newPos.IsValid()) {
-    return FALSE;
+    return false;
   }
 
   if (!ExpandBlocks(newPos.ValueOrDie())) {
-    return FALSE;
+    return false;
   }
   m_nCurPos = newPos.ValueOrDie();
   size_t nStartBlock = (size_t)offset / m_nGrowSize;
@@ -212,14 +212,14 @@ FX_BOOL CFX_MemoryStream::WriteBlock(const void* buffer,
     nStartBlock++;
     offset = 0;
   }
-  return TRUE;
+  return true;
 }
 
-FX_BOOL CFX_MemoryStream::Flush() {
-  return TRUE;
+bool CFX_MemoryStream::Flush() {
+  return true;
 }
 
-FX_BOOL CFX_MemoryStream::IsConsecutive() const {
+bool CFX_MemoryStream::IsConsecutive() const {
   return !!(m_dwFlags & FX_MEMSTREAM_Consecutive);
 }
 
@@ -242,10 +242,10 @@ uint8_t* CFX_MemoryStream::GetBuffer() const {
 
 void CFX_MemoryStream::AttachBuffer(uint8_t* pBuffer,
                                     size_t nSize,
-                                    FX_BOOL bTakeOver) {
-  if (!(m_dwFlags & FX_MEMSTREAM_Consecutive)) {
+                                    bool bTakeOver) {
+  if (!(m_dwFlags & FX_MEMSTREAM_Consecutive))
     return;
-  }
+
   m_Blocks.RemoveAll();
   m_Blocks.Add(pBuffer);
   m_nTotalSize = m_nCurSize = nSize;
@@ -263,12 +263,12 @@ void CFX_MemoryStream::DetachBuffer() {
   m_dwFlags = FX_MEMSTREAM_TakeOver;
 }
 
-FX_BOOL CFX_MemoryStream::ExpandBlocks(size_t size) {
+bool CFX_MemoryStream::ExpandBlocks(size_t size) {
   if (m_nCurSize < size) {
     m_nCurSize = size;
   }
   if (size <= m_nTotalSize) {
-    return TRUE;
+    return true;
   }
   int32_t iCount = m_Blocks.GetSize();
   size = (size - m_nTotalSize + m_nGrowSize - 1) / m_nGrowSize;
@@ -278,10 +278,10 @@ FX_BOOL CFX_MemoryStream::ExpandBlocks(size_t size) {
     m_Blocks.SetAt(iCount++, pBlock);
     m_nTotalSize += m_nGrowSize;
   }
-  return TRUE;
+  return true;
 }
 
-IFX_FileStream* CFX_CRTFileStream::Retain() {
+IFX_SeekableStream* CFX_CRTFileStream::Retain() {
   m_dwCount++;
   return this;
 }
@@ -297,7 +297,7 @@ FX_FILESIZE CFX_CRTFileStream::GetSize() {
   return m_pFile->GetSize();
 }
 
-FX_BOOL CFX_CRTFileStream::IsEOF() {
+bool CFX_CRTFileStream::IsEOF() {
   return GetPosition() >= GetSize();
 }
 
@@ -305,23 +305,23 @@ FX_FILESIZE CFX_CRTFileStream::GetPosition() {
   return m_pFile->GetPosition();
 }
 
-FX_BOOL CFX_CRTFileStream::ReadBlock(void* buffer,
-                                     FX_FILESIZE offset,
-                                     size_t size) {
-  return (FX_BOOL)m_pFile->ReadPos(buffer, size, offset);
+bool CFX_CRTFileStream::ReadBlock(void* buffer,
+                                  FX_FILESIZE offset,
+                                  size_t size) {
+  return m_pFile->ReadPos(buffer, size, offset) > 0;
 }
 
 size_t CFX_CRTFileStream::ReadBlock(void* buffer, size_t size) {
   return m_pFile->Read(buffer, size);
 }
 
-FX_BOOL CFX_CRTFileStream::WriteBlock(const void* buffer,
-                                      FX_FILESIZE offset,
-                                      size_t size) {
-  return (FX_BOOL)m_pFile->WritePos(buffer, size, offset);
+bool CFX_CRTFileStream::WriteBlock(const void* buffer,
+                                   FX_FILESIZE offset,
+                                   size_t size) {
+  return !!m_pFile->WritePos(buffer, size, offset);
 }
 
-FX_BOOL CFX_CRTFileStream::Flush() {
+bool CFX_CRTFileStream::Flush() {
   return m_pFile->Flush();
 }
 
@@ -336,32 +336,33 @@ IFX_FileAccess* FX_CreateDefaultFileAccess(const CFX_WideStringC& wsPath) {
 }
 #endif  // PDF_ENABLE_XFA
 
-IFX_FileStream* FX_CreateFileStream(const FX_CHAR* filename, uint32_t dwModes) {
+IFX_SeekableStream* FX_CreateFileStream(const FX_CHAR* filename,
+                                        uint32_t dwModes) {
   std::unique_ptr<IFXCRT_FileAccess> pFA(IFXCRT_FileAccess::Create());
   if (!pFA->Open(filename, dwModes))
     return nullptr;
   return new CFX_CRTFileStream(std::move(pFA));
 }
 
-IFX_FileStream* FX_CreateFileStream(const FX_WCHAR* filename,
-                                    uint32_t dwModes) {
+IFX_SeekableStream* FX_CreateFileStream(const FX_WCHAR* filename,
+                                        uint32_t dwModes) {
   std::unique_ptr<IFXCRT_FileAccess> pFA(IFXCRT_FileAccess::Create());
   if (!pFA->Open(filename, dwModes))
     return nullptr;
   return new CFX_CRTFileStream(std::move(pFA));
 }
-IFX_FileRead* FX_CreateFileRead(const FX_CHAR* filename) {
+IFX_SeekableReadStream* FX_CreateFileRead(const FX_CHAR* filename) {
   return FX_CreateFileStream(filename, FX_FILEMODE_ReadOnly);
 }
-IFX_FileRead* FX_CreateFileRead(const FX_WCHAR* filename) {
+IFX_SeekableReadStream* FX_CreateFileRead(const FX_WCHAR* filename) {
   return FX_CreateFileStream(filename, FX_FILEMODE_ReadOnly);
 }
 IFX_MemoryStream* FX_CreateMemoryStream(uint8_t* pBuffer,
                                         size_t dwSize,
-                                        FX_BOOL bTakeOver) {
+                                        bool bTakeOver) {
   return new CFX_MemoryStream(pBuffer, dwSize, bTakeOver);
 }
-IFX_MemoryStream* FX_CreateMemoryStream(FX_BOOL bConsecutive) {
+IFX_MemoryStream* FX_CreateMemoryStream(bool bConsecutive) {
   return new CFX_MemoryStream(bConsecutive);
 }
 
@@ -393,10 +394,10 @@ FX_FLOAT FXSYS_wcstof(const FX_WCHAR* pwsStr,
     return 0.0f;
   }
   int32_t iUsedLen = 0;
-  FX_BOOL bNegtive = FALSE;
+  bool bNegtive = false;
   switch (pwsStr[iUsedLen]) {
     case '-':
-      bNegtive = TRUE;
+      bNegtive = true;
     case '+':
       iUsedLen++;
       break;
@@ -495,7 +496,7 @@ void* FX_Random_MT_Start(uint32_t dwSeed) {
   for (i = 1; i < MT_N; i++) {
     pBuf[i] = (1812433253UL * (pBuf[i - 1] ^ (pBuf[i - 1] >> 30)) + i);
   }
-  pContext->bHaveSeed = TRUE;
+  pContext->bHaveSeed = true;
   return pContext;
 }
 uint32_t FX_Random_MT_Generate(void* pContext) {
@@ -574,15 +575,15 @@ void FX_Random_GenerateBase(uint32_t* pBuffer, int32_t iCount) {
   }
 }
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-FX_BOOL FX_GenerateCryptoRandom(uint32_t* pBuffer, int32_t iCount) {
+bool FX_GenerateCryptoRandom(uint32_t* pBuffer, int32_t iCount) {
   HCRYPTPROV hCP = 0;
   if (!::CryptAcquireContext(&hCP, nullptr, nullptr, PROV_RSA_FULL, 0) ||
       !hCP) {
-    return FALSE;
+    return false;
   }
   ::CryptGenRandom(hCP, iCount * sizeof(uint32_t), (uint8_t*)pBuffer);
   ::CryptReleaseContext(hCP, 0);
-  return TRUE;
+  return true;
 }
 #endif
 void FX_Random_GenerateCrypto(uint32_t* pBuffer, int32_t iCount) {
@@ -602,7 +603,7 @@ void FX_GUID_CreateV4(FX_LPGUID pGUID) {
 const FX_CHAR* gs_FX_pHexChars = "0123456789ABCDEF";
 void FX_GUID_ToString(FX_LPCGUID pGUID,
                       CFX_ByteString& bsStr,
-                      FX_BOOL bSeparator) {
+                      bool bSeparator) {
   FX_CHAR* pBuf = bsStr.GetBuffer(40);
   uint8_t b;
   for (int32_t i = 0; i < 16; i++) {

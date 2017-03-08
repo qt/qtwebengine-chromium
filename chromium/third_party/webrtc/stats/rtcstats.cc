@@ -10,6 +10,8 @@
 
 #include "webrtc/api/stats/rtcstats.h"
 
+#include <sstream>
+
 #include "webrtc/base/stringencode.h"
 
 namespace webrtc {
@@ -47,6 +49,29 @@ std::string VectorOfStringsToString(const std::vector<T>& strings) {
 }
 
 }  // namespace
+
+bool RTCStats::operator==(const RTCStats& other) const {
+  if (type() != other.type() || id() != other.id() ||
+      timestamp_us() != other.timestamp_us()) {
+    return false;
+  }
+  std::vector<const RTCStatsMemberInterface*> members = Members();
+  std::vector<const RTCStatsMemberInterface*> other_members = other.Members();
+  RTC_DCHECK_EQ(members.size(), other_members.size());
+  for (size_t i = 0; i < members.size(); ++i) {
+    const RTCStatsMemberInterface* member = members[i];
+    const RTCStatsMemberInterface* other_member = other_members[i];
+    RTC_DCHECK_EQ(member->type(), other_member->type());
+    RTC_DCHECK_EQ(member->name(), other_member->name());
+    if (*member != *other_member)
+      return false;
+  }
+  return true;
+}
+
+bool RTCStats::operator!=(const RTCStats& other) const {
+  return !(*this == other);
+}
 
 std::string RTCStats::ToString() const {
   std::ostringstream oss;
@@ -93,6 +118,8 @@ RTCStats::MembersOfThisObjectAndAncestors(
     return to_str;                                                             \
   }
 
+WEBRTC_DEFINE_RTCSTATSMEMBER(bool, kBool, false, false,
+                             rtc::ToString(value_));
 WEBRTC_DEFINE_RTCSTATSMEMBER(int32_t, kInt32, false, false,
                              rtc::ToString(value_));
 WEBRTC_DEFINE_RTCSTATSMEMBER(uint32_t, kUint32, false, false,
@@ -105,6 +132,9 @@ WEBRTC_DEFINE_RTCSTATSMEMBER(double, kDouble, false, false,
                              rtc::ToString(value_));
 WEBRTC_DEFINE_RTCSTATSMEMBER(std::string, kString, false, true,
                              value_);
+WEBRTC_DEFINE_RTCSTATSMEMBER(
+    std::vector<bool>, kSequenceBool, true, false,
+    VectorToString(value_));
 WEBRTC_DEFINE_RTCSTATSMEMBER(
     std::vector<int32_t>, kSequenceInt32, true, false,
     VectorToString(value_));

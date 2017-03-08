@@ -30,8 +30,6 @@ rtc_static_library("voice_engine") {
     "include/voe_volume_control.h",
     "monitor_module.cc",
     "monitor_module.h",
-    "network_predictor.cc",
-    "network_predictor.h",
     "output_mixer.cc",
     "output_mixer.h",
     "shared_data.cc",
@@ -78,9 +76,8 @@ rtc_static_library("voice_engine") {
     ]
   }
 
-  if (is_clang) {
-    # Suppress warnings from Chrome's Clang plugins.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
@@ -90,10 +87,15 @@ rtc_static_library("voice_engine") {
   deps = [
     ":level_indicator",
     "..:webrtc_common",
+    "../api:audio_mixer_api",
     "../api:call_api",
     "../base:rtc_base_approved",
     "../common_audio",
     "../logging:rtc_event_log_api",
+    "../modules/audio_coding:audio_decoder_factory_interface",
+    "../modules/audio_coding:audio_format_conversion",
+    "../modules/audio_coding:builtin_audio_decoder_factory",
+    "../modules/audio_coding:rent_a_codec",
     "../modules/audio_conference_mixer",
     "../modules/audio_device",
     "../modules/audio_processing",
@@ -168,9 +170,8 @@ if (rtc_include_tests) {
 
     configs += [ ":channel_transport_warnings_config" ]
 
-    if (is_clang && !is_nacl) {
-      # Suppress warnings from the Chromium Clang plugin.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
@@ -206,7 +207,6 @@ if (rtc_include_tests) {
 
     sources = [
       "channel_unittest.cc",
-      "network_predictor_unittest.cc",
       "test/channel_transport/udp_socket_manager_unittest.cc",
       "test/channel_transport/udp_socket_wrapper_unittest.cc",
       "test/channel_transport/udp_transport_unittest.cc",
@@ -229,9 +229,8 @@ if (rtc_include_tests) {
       ]
     }
 
-    if (is_clang) {
-      # Suppress warnings from Chrome's Clang plugins.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
@@ -254,9 +253,8 @@ if (rtc_include_tests) {
       "test/cmd_test/voe_cmd_test.cc",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from Chrome's Clang plugins.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
@@ -347,9 +345,8 @@ if (rtc_include_tests) {
         ]
       }
 
-      if (is_clang) {
-        # Suppress warnings from Chrome's Clang plugins.
-        # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+      if (!build_with_chromium && is_clang) {
+        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
         suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
       }
     }

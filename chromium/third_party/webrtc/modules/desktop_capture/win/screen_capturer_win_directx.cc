@@ -23,8 +23,15 @@ using Microsoft::WRL::ComPtr;
 
 // static
 bool ScreenCapturerWinDirectx::IsSupported() {
-  // Forward IsSupported function call to DxgiDuplicatorController.
+  // Forwards IsSupported() function call to DxgiDuplicatorController.
   return DxgiDuplicatorController::Instance()->IsSupported();
+}
+
+// static
+bool ScreenCapturerWinDirectx::RetrieveD3dInfo(D3dInfo* info) {
+  // Forwards SupportedFeatureLevels() function call to
+  // DxgiDuplicatorController.
+  return DxgiDuplicatorController::Instance()->RetrieveD3dInfo(info);
 }
 
 ScreenCapturerWinDirectx::ScreenCapturerWinDirectx(
@@ -46,15 +53,15 @@ void ScreenCapturerWinDirectx::SetSharedMemoryFactory(
 }
 
 DesktopSize ScreenCapturerWinDirectx::SelectedDesktopSize() const {
-  if (current_screen_id == kFullDesktopScreenId) {
+  if (current_screen_id_ == kFullDesktopScreenId) {
     return DxgiDuplicatorController::Instance()->desktop_size();
   }
   return DxgiDuplicatorController::Instance()
-      ->ScreenRect(current_screen_id)
+      ->ScreenRect(current_screen_id_)
       .size();
 }
 
-void ScreenCapturerWinDirectx::Capture(const DesktopRegion& region) {
+void ScreenCapturerWinDirectx::CaptureFrame() {
   RTC_DCHECK(callback_);
 
   int64_t capture_start_time_nanos = rtc::TimeNanos();
@@ -78,7 +85,7 @@ void ScreenCapturerWinDirectx::Capture(const DesktopRegion& region) {
     frames_.ReplaceCurrentFrame(SharedDesktopFrame::Wrap(std::move(new_frame)));
   }
 
-  if (current_screen_id == kFullDesktopScreenId) {
+  if (current_screen_id_ == kFullDesktopScreenId) {
     if (!DxgiDuplicatorController::Instance()->Duplicate(
             &context_, frames_.current_frame())) {
       // Screen size may be changed, so we need to reset the frames.
@@ -88,10 +95,10 @@ void ScreenCapturerWinDirectx::Capture(const DesktopRegion& region) {
     }
   } else {
     if (!DxgiDuplicatorController::Instance()->DuplicateMonitor(
-            &context_, current_screen_id, frames_.current_frame())) {
+            &context_, current_screen_id_, frames_.current_frame())) {
       // Screen size may be changed, so we need to reset the frames.
       frames_.Reset();
-      if (current_screen_id >=
+      if (current_screen_id_ >=
           DxgiDuplicatorController::Instance()->ScreenCount()) {
         // Current monitor has been removed from the system.
         callback_->OnCaptureResult(Result::ERROR_PERMANENT, nullptr);
@@ -109,29 +116,29 @@ void ScreenCapturerWinDirectx::Capture(const DesktopRegion& region) {
   callback_->OnCaptureResult(Result::SUCCESS, std::move(result));
 }
 
-bool ScreenCapturerWinDirectx::GetScreenList(ScreenList* screens) {
+bool ScreenCapturerWinDirectx::GetSourceList(SourceList* sources) {
   int screen_count = DxgiDuplicatorController::Instance()->ScreenCount();
   for (int i = 0; i < screen_count; i++) {
-    screens->push_back(Screen{i});
+    sources->push_back({i});
   }
   return true;
 }
 
-bool ScreenCapturerWinDirectx::SelectScreen(ScreenId id) {
-  if (id == current_screen_id) {
+bool ScreenCapturerWinDirectx::SelectSource(SourceId id) {
+  if (id == current_screen_id_) {
     return true;
   }
 
   // Changing target screen may or may not impact frame size. So resetting
   // frames only when a Duplicate() function call returns false.
   if (id == kFullDesktopScreenId) {
-    current_screen_id = id;
+    current_screen_id_ = id;
     return true;
   }
 
   int screen_count = DxgiDuplicatorController::Instance()->ScreenCount();
   if (id >= 0 && id < screen_count) {
-    current_screen_id = id;
+    current_screen_id_ = id;
     return true;
   }
   return false;

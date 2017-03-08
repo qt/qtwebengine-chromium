@@ -192,6 +192,8 @@ typedef  int32_t (*PCavlcParamCalFunc) (int16_t* pCoff, uint8_t* pRun, int16_t* 
 typedef int32_t (*PWelsSpatialWriteMbSyn) (sWelsEncCtx* pCtx, SSlice* pSlice, SMB* pCurMb);
 typedef void (*PStashMBStatus) (SDynamicSlicingStack* pDss, SSlice* pSlice, int32_t iMbSkipRun);
 typedef int32_t (*PStashPopMBStatus) (SDynamicSlicingStack* pDss, SSlice* pSlice);
+typedef int32_t (*PGetBsPosition)(SSlice *pSlice);
+class IWelsParametersetStrategy;
 
 struct TagWelsFuncPointerList {
   SExpandPicFunc sExpandPicFunc;
@@ -284,16 +286,13 @@ struct TagWelsFuncPointerList {
   PSetMemoryZero        pfSetMemZeroSize64Aligned16;      // for size is times of 64, and address is align to 16
   PSetMemoryZero        pfSetMemZeroSize64;      // for size is times of 64, and don't know address is align to 16 or not
 
-  PBuildRefListFunc     pBuildRefList;
-  PMarkPicFunc          pMarkPic;
-  PUpdateRefListFunc    pUpdateRefList;
-  PEndofUpdateRefListFunc    pEndofUpdateRefList;
-  PAfterBuildRefListFunc    pAfterBuildRefList;
-
   PCavlcParamCalFunc    pfCavlcParamCal;
   PWelsSpatialWriteMbSyn pfWelsSpatialWriteMbSyn;
+  PGetBsPosition pfGetBsPosition;
   PStashMBStatus pfStashMBStatus;
   PStashPopMBStatus pfStashPopMBStatus;
+
+  IWelsParametersetStrategy* pParametersetStrategy;
 };
 
 }  //end of namespace WelsEnc {

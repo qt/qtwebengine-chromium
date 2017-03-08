@@ -28,7 +28,6 @@ config("rtc_media_warnings_config") {
   # cannot be on the target directly.
   if (!is_win) {
     cflags = [ "-Wno-deprecated-declarations" ]
-    cflags_cc = [ "-Wno-overloaded-virtual" ]
   }
 }
 
@@ -52,13 +51,10 @@ rtc_static_library("rtc_media") {
     "base/audiosource.h",
     "base/codec.cc",
     "base/codec.h",
-    "base/cpuid.cc",
-    "base/cpuid.h",
     "base/cryptoparams.h",
     "base/device.h",
     "base/hybriddataengine.h",
     "base/mediachannel.h",
-    "base/mediacommon.h",
     "base/mediaconstants.cc",
     "base/mediaconstants.h",
     "base/mediaengine.cc",
@@ -69,7 +65,6 @@ rtc_static_library("rtc_media") {
     "base/rtpdump.h",
     "base/rtputils.cc",
     "base/rtputils.h",
-    "base/screencastid.h",
     "base/streamparams.cc",
     "base/streamparams.h",
     "base/turnutils.cc",
@@ -83,16 +78,16 @@ rtc_static_library("rtc_media") {
     "base/videocapturerfactory.h",
     "base/videocommon.cc",
     "base/videocommon.h",
-    "base/videoframe.cc",
     "base/videoframe.h",
     "base/videosourcebase.cc",
     "base/videosourcebase.h",
-    "devices/videorendererfactory.h",
     "engine/nullwebrtcvideoengine.h",
     "engine/payload_type_mapper.cc",
     "engine/payload_type_mapper.h",
     "engine/simulcast.cc",
     "engine/simulcast.h",
+    "engine/videoencodersoftwarefallbackwrapper.cc",
+    "engine/videoencodersoftwarefallbackwrapper.h",
     "engine/webrtccommon.h",
     "engine/webrtcmediaengine.cc",
     "engine/webrtcmediaengine.h",
@@ -101,10 +96,10 @@ rtc_static_library("rtc_media") {
     "engine/webrtcvideocapturerfactory.cc",
     "engine/webrtcvideocapturerfactory.h",
     "engine/webrtcvideodecoderfactory.h",
+    "engine/webrtcvideoencoderfactory.cc",
     "engine/webrtcvideoencoderfactory.h",
     "engine/webrtcvideoengine2.cc",
     "engine/webrtcvideoengine2.h",
-    "engine/webrtcvideoframe.cc",
     "engine/webrtcvideoframe.h",
     "engine/webrtcvoe.h",
     "engine/webrtcvoiceengine.cc",
@@ -115,7 +110,7 @@ rtc_static_library("rtc_media") {
 
   configs += [ ":rtc_media_warnings_config" ]
 
-  if (is_clang) {
+  if (!build_with_chromium && is_clang) {
     # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
@@ -168,24 +163,11 @@ rtc_static_library("rtc_media") {
     ]
     public_configs += [ ":gtk-lib" ]
   }
-  if (is_win) {
-    sources += [
-      "devices/gdivideorenderer.cc",
-      "devices/gdivideorenderer.h",
-    ]
-    libs += [
-      "d3d9.lib",
-      "gdi32.lib",
-      "strmiids.lib",
-    ]
-  }
   deps += [
     "..:webrtc_common",
     "../api:call_api",
     "../base:rtc_base_approved",
     "../call",
-    "../libjingle/xmllite",
-    "../libjingle/xmpp",
     "../modules/video_coding",
     "../p2p",
     "../system_wrappers",
@@ -238,9 +220,8 @@ if (rtc_include_tests) {
       include_dirs += [ "$rtc_libyuv_dir/include" ]
     }
 
-    if (is_clang) {
-      # Suppress warnings from the Chromium Clang plugin.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
@@ -267,7 +248,6 @@ if (rtc_include_tests) {
     }
     if (!is_win) {
       cflags = [ "-Wno-sign-compare" ]
-      cflags_cc = [ "-Wno-overloaded-virtual" ]
     }
   }
 
@@ -308,14 +288,13 @@ if (rtc_include_tests) {
       "base/videocapturer_unittest.cc",
       "base/videocommon_unittest.cc",
       "base/videoengine_unittest.h",
-      "base/videoframe_unittest.h",
       "engine/nullwebrtcvideoengine_unittest.cc",
       "engine/payload_type_mapper_unittest.cc",
       "engine/simulcast_unittest.cc",
+      "engine/videoencodersoftwarefallbackwrapper_unittest.cc",
       "engine/webrtcmediaengine_unittest.cc",
       "engine/webrtcvideocapturer_unittest.cc",
       "engine/webrtcvideoengine2_unittest.cc",
-      "engine/webrtcvideoframe_unittest.cc",
       "engine/webrtcvoiceengine_unittest.cc",
       "sctp/sctpdataengine_unittest.cc",
     ]
@@ -333,10 +312,11 @@ if (rtc_include_tests) {
       ]
     }
 
-    if (is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    if (!build_with_chromium && is_clang) {
       suppressed_configs += [
         "//build/config/clang:extra_warnings",
+
+        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
         "//build/config/clang:find_bad_constructs",
       ]
     }
@@ -358,6 +338,7 @@ if (rtc_include_tests) {
       ":rtc_unittest_main",
       "../audio",
       "../base:rtc_base_tests_utils",
+      "../modules/audio_device:mock_audio_device",
       "../system_wrappers:metrics_default",
     ]
   }

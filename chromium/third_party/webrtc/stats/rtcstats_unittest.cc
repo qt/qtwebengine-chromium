@@ -20,41 +20,42 @@ namespace webrtc {
 
 class RTCChildStats : public RTCStats {
  public:
+  WEBRTC_RTCSTATS_DECL();
+
   RTCChildStats(const std::string& id, int64_t timestamp_us)
       : RTCStats(id, timestamp_us),
         child_int("childInt") {}
 
-  WEBRTC_RTCSTATS_IMPL(RTCStats, RTCChildStats,
-      &child_int);
-
   RTCStatsMember<int32_t> child_int;
 };
 
-const char RTCChildStats::kType[] = "child-stats";
+WEBRTC_RTCSTATS_IMPL(RTCChildStats, RTCStats, "child-stats",
+    &child_int);
 
 class RTCGrandChildStats : public RTCChildStats {
  public:
+  WEBRTC_RTCSTATS_DECL();
+
   RTCGrandChildStats(const std::string& id, int64_t timestamp_us)
       : RTCChildStats(id, timestamp_us),
         grandchild_int("grandchildInt") {}
 
-  WEBRTC_RTCSTATS_IMPL(RTCChildStats, RTCGrandChildStats,
-      &grandchild_int);
-
   RTCStatsMember<int32_t> grandchild_int;
 };
 
-const char RTCGrandChildStats::kType[] = "grandchild-stats";
+WEBRTC_RTCSTATS_IMPL(RTCGrandChildStats, RTCChildStats, "grandchild-stats",
+      &grandchild_int);
 
 TEST(RTCStatsTest, RTCStatsAndMembers) {
   RTCTestStats stats("testId", 42);
   EXPECT_EQ(stats.id(), "testId");
   EXPECT_EQ(stats.timestamp_us(), static_cast<int64_t>(42));
   std::vector<const RTCStatsMemberInterface*> members = stats.Members();
-  EXPECT_EQ(members.size(), static_cast<size_t>(12));
+  EXPECT_EQ(members.size(), static_cast<size_t>(14));
   for (const RTCStatsMemberInterface* member : members) {
     EXPECT_FALSE(member->is_defined());
   }
+  stats.m_bool = true;
   stats.m_int32 = 123;
   stats.m_uint32 = 123;
   stats.m_int64 = 123;
@@ -62,6 +63,8 @@ TEST(RTCStatsTest, RTCStatsAndMembers) {
   stats.m_double = 123.0;
   stats.m_string = std::string("123");
 
+  std::vector<bool> sequence_bool;
+  sequence_bool.push_back(true);
   std::vector<int32_t> sequence_int32;
   sequence_int32.push_back(static_cast<int32_t>(1));
   std::vector<uint32_t> sequence_uint32;
@@ -75,6 +78,7 @@ TEST(RTCStatsTest, RTCStatsAndMembers) {
   std::vector<std::string> sequence_string;
   sequence_string.push_back(std::string("six"));
 
+  stats.m_sequence_bool = sequence_bool;
   stats.m_sequence_int32 = sequence_int32;
   stats.m_sequence_uint32 = sequence_uint32;
   EXPECT_FALSE(stats.m_sequence_int64.is_defined());
@@ -85,12 +89,14 @@ TEST(RTCStatsTest, RTCStatsAndMembers) {
   for (const RTCStatsMemberInterface* member : members) {
     EXPECT_TRUE(member->is_defined());
   }
+  EXPECT_EQ(*stats.m_bool, true);
   EXPECT_EQ(*stats.m_int32, static_cast<int32_t>(123));
   EXPECT_EQ(*stats.m_uint32, static_cast<uint32_t>(123));
   EXPECT_EQ(*stats.m_int64, static_cast<int64_t>(123));
   EXPECT_EQ(*stats.m_uint64, static_cast<uint64_t>(123));
   EXPECT_EQ(*stats.m_double, 123.0);
   EXPECT_EQ(*stats.m_string, std::string("123"));
+  EXPECT_EQ(*stats.m_sequence_bool, sequence_bool);
   EXPECT_EQ(*stats.m_sequence_int32, sequence_int32);
   EXPECT_EQ(*stats.m_sequence_uint32, sequence_uint32);
   EXPECT_EQ(*stats.m_sequence_int64, sequence_int64);
@@ -105,6 +111,67 @@ TEST(RTCStatsTest, RTCStatsAndMembers) {
                                  numbers_sequence.begin(),
                                  numbers_sequence.end());
   EXPECT_EQ(*stats.m_sequence_int32, numbers_sequence);
+}
+
+TEST(RTCStatsTest, EqualityOperator) {
+  RTCTestStats empty_stats("testId", 123);
+  EXPECT_EQ(empty_stats, empty_stats);
+
+  RTCTestStats stats_with_all_values = empty_stats;
+  stats_with_all_values.m_bool = true;
+  stats_with_all_values.m_int32 = 123;
+  stats_with_all_values.m_uint32 = 123;
+  stats_with_all_values.m_int64 = 123;
+  stats_with_all_values.m_uint64 = 123;
+  stats_with_all_values.m_double = 123.0;
+  stats_with_all_values.m_string = "123";
+  stats_with_all_values.m_sequence_bool = std::vector<bool>();
+  stats_with_all_values.m_sequence_int32 = std::vector<int32_t>();
+  stats_with_all_values.m_sequence_uint32 = std::vector<uint32_t>();
+  stats_with_all_values.m_sequence_int64 = std::vector<int64_t>();
+  stats_with_all_values.m_sequence_uint64 = std::vector<uint64_t>();
+  stats_with_all_values.m_sequence_double = std::vector<double>();
+  stats_with_all_values.m_sequence_string = std::vector<std::string>();
+  EXPECT_NE(stats_with_all_values, empty_stats);
+  EXPECT_EQ(stats_with_all_values, stats_with_all_values);
+  EXPECT_NE(stats_with_all_values.m_int32, stats_with_all_values.m_uint32);
+
+  RTCTestStats one_member_different[] = {
+    stats_with_all_values, stats_with_all_values, stats_with_all_values,
+    stats_with_all_values, stats_with_all_values, stats_with_all_values,
+    stats_with_all_values, stats_with_all_values, stats_with_all_values,
+    stats_with_all_values, stats_with_all_values, stats_with_all_values,
+    stats_with_all_values, stats_with_all_values,
+  };
+  for (size_t i = 0; i < 14; ++i) {
+    EXPECT_EQ(stats_with_all_values, one_member_different[i]);
+  }
+  one_member_different[0].m_bool = false;
+  one_member_different[1].m_int32 = 321;
+  one_member_different[2].m_uint32 = 321;
+  one_member_different[3].m_int64 = 321;
+  one_member_different[4].m_uint64 = 321;
+  one_member_different[5].m_double = 321.0;
+  one_member_different[6].m_string = "321";
+  one_member_different[7].m_sequence_bool->push_back(false);
+  one_member_different[8].m_sequence_int32->push_back(321);
+  one_member_different[9].m_sequence_uint32->push_back(321);
+  one_member_different[10].m_sequence_int64->push_back(321);
+  one_member_different[11].m_sequence_uint64->push_back(321);
+  one_member_different[12].m_sequence_double->push_back(321.0);
+  one_member_different[13].m_sequence_string->push_back("321");
+  for (size_t i = 0; i < 14; ++i) {
+    EXPECT_NE(stats_with_all_values, one_member_different[i]);
+  }
+
+  RTCTestStats empty_stats_different_id("testId2", 123);
+  EXPECT_NE(empty_stats, empty_stats_different_id);
+  RTCTestStats empty_stats_different_timestamp("testId", 321);
+  EXPECT_NE(empty_stats, empty_stats_different_timestamp);
+
+  RTCChildStats child("childId", 42);
+  RTCGrandChildStats grandchild("grandchildId", 42);
+  EXPECT_NE(child, grandchild);
 }
 
 TEST(RTCStatsTest, RTCStatsGrandChild) {

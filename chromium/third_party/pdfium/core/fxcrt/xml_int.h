@@ -21,10 +21,10 @@ class CXML_DataBufAcc : public IFX_BufferRead {
 
   // IFX_BufferRead
   void Release() override;
-  FX_BOOL IsEOF() override;
+  bool IsEOF() override;
   FX_FILESIZE GetPosition() override;
   size_t ReadBlock(void* buffer, size_t size) override;
-  FX_BOOL ReadNextBlock(FX_BOOL bRestart = FALSE) override;
+  bool ReadNextBlock(bool bRestart = false) override;
   const uint8_t* GetBlockBuffer() override;
   size_t GetBlockSize() override;
   FX_FILESIZE GetBlockOffset() override;
@@ -37,21 +37,21 @@ class CXML_DataBufAcc : public IFX_BufferRead {
 
 class CXML_DataStmAcc : public IFX_BufferRead {
  public:
-  explicit CXML_DataStmAcc(IFX_FileRead* pFileRead);
+  explicit CXML_DataStmAcc(IFX_SeekableReadStream* pFileRead);
   ~CXML_DataStmAcc() override;
 
   // IFX_BufferRead
   void Release() override;
-  FX_BOOL IsEOF() override;
+  bool IsEOF() override;
   FX_FILESIZE GetPosition() override;
   size_t ReadBlock(void* buffer, size_t size) override;
-  FX_BOOL ReadNextBlock(FX_BOOL bRestart = FALSE) override;
+  bool ReadNextBlock(bool bRestart = false) override;
   const uint8_t* GetBlockBuffer() override;
   size_t GetBlockSize() override;
   FX_FILESIZE GetBlockOffset() override;
 
  protected:
-  IFX_FileRead* m_pFileRead;
+  IFX_SeekableReadStream* m_pFileRead;
   uint8_t* m_pBuffer;
   FX_FILESIZE m_nStart;
   size_t m_dwSize;
@@ -62,32 +62,32 @@ class CXML_Parser {
   CXML_Parser();
   ~CXML_Parser();
 
-  FX_BOOL Init(uint8_t* pBuffer, size_t size);
-  FX_BOOL Init(IFX_FileRead* pFileRead);
-  FX_BOOL Init(IFX_BufferRead* pBuffer);
-  FX_BOOL Init(FX_BOOL bOwndedStream);
-  FX_BOOL ReadNextBlock();
-  FX_BOOL IsEOF();
-  FX_BOOL HaveAvailData();
+  bool Init(uint8_t* pBuffer, size_t size);
+  bool Init(IFX_SeekableReadStream* pFileRead);
+  bool Init(IFX_BufferRead* pBuffer);
+  bool Init(bool bOwndedStream);
+  bool ReadNextBlock();
+  bool IsEOF();
+  bool HaveAvailData();
   void SkipWhiteSpaces();
   void GetName(CFX_ByteString& space, CFX_ByteString& name);
   void GetAttrValue(CFX_WideString& value);
   uint32_t GetCharRef();
   void GetTagName(CFX_ByteString& space,
                   CFX_ByteString& name,
-                  FX_BOOL& bEndTag,
-                  FX_BOOL bStartTag = FALSE);
+                  bool& bEndTag,
+                  bool bStartTag = false);
   void SkipLiterals(const CFX_ByteStringC& str);
-  CXML_Element* ParseElement(CXML_Element* pParent, FX_BOOL bStartTag = FALSE);
-  void InsertContentSegment(FX_BOOL bCDATA,
+  CXML_Element* ParseElement(CXML_Element* pParent, bool bStartTag = false);
+  void InsertContentSegment(bool bCDATA,
                             const CFX_WideStringC& content,
                             CXML_Element* pElement);
   void InsertCDATASegment(CFX_UTF8Decoder& decoder, CXML_Element* pElement);
 
   IFX_BufferRead* m_pDataAcc;
-  FX_BOOL m_bOwnedStream;
+  bool m_bOwnedStream;
   FX_FILESIZE m_nOffset;
-  FX_BOOL m_bSaveSpaceChars;
+  bool m_bSaveSpaceChars;
   const uint8_t* m_pBuffer;
   size_t m_dwBufferSize;
   FX_FILESIZE m_nBufferOffset;

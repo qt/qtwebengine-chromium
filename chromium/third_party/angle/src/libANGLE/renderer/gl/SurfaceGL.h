@@ -25,6 +25,7 @@ class SurfaceGL : public SurfaceImpl
     FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &data) override;
 
     virtual egl::Error makeCurrent() = 0;
+    virtual egl::Error unMakeCurrent();
 
   private:
     RendererGL *mRenderer;

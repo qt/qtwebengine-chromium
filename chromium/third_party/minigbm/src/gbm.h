@@ -68,6 +68,8 @@ union gbm_bo_handle {
    uint64_t u64;
 };
 
+#define GBM_MAX_PLANES 4
+
 #define __gbm_fourcc_code(a,b,c,d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | \
 			      ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
 
@@ -262,6 +264,7 @@ gbm_bo_create(struct gbm_device *gbm,
 #define GBM_BO_IMPORT_WL_BUFFER         0x5501
 #define GBM_BO_IMPORT_EGL_IMAGE         0x5502
 #define GBM_BO_IMPORT_FD                0x5503
+#define GBM_BO_IMPORT_FD_PLANAR         0x5504
 
 struct gbm_import_fd_data {
    int fd;
@@ -271,9 +274,54 @@ struct gbm_import_fd_data {
    uint32_t format;
 };
 
+struct gbm_import_fd_planar_data {
+   int fds[GBM_MAX_PLANES];
+   uint32_t width;
+   uint32_t height;
+   uint32_t format;
+   uint32_t strides[GBM_MAX_PLANES];
+   uint32_t offsets[GBM_MAX_PLANES];
+   uint64_t format_modifiers[GBM_MAX_PLANES];
+};
+
 struct gbm_bo *
 gbm_bo_import(struct gbm_device *gbm, uint32_t type,
               void *buffer, uint32_t usage);
+
+/**
+ * Flags to indicate the type of mapping for the buffer - these are
+ * passed into gbm_bo_map(). The caller must set the union of all the
+ * flags that are appropriate.
+ *
+ * These flags are independent of the GBM_BO_USE_* creation flags. However,
+ * mapping the buffer may require copying to/from a staging buffer.
+ *
+ * See also: pipe_transfer_usage
+ */
+enum gbm_bo_transfer_flags {
+   /**
+    * Buffer contents read back (or accessed directly) at transfer
+    * create time.
+    */
+   GBM_BO_TRANSFER_READ       = (1 << 0),
+   /**
+    * Buffer contents will be written back at unmap time
+    * (or modified as a result of being accessed directly).
+    */
+   GBM_BO_TRANSFER_WRITE      = (1 << 1),
+   /**
+    * Read/modify/write
+    */
+   GBM_BO_TRANSFER_READ_WRITE = (GBM_BO_TRANSFER_READ | GBM_BO_TRANSFER_WRITE),
+};
+
+void *
+gbm_bo_map(struct gbm_bo *bo,
+           uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+           uint32_t flags, uint32_t *stride, void **map_data, size_t plane);
+
+void
+gbm_bo_unmap(struct gbm_bo *bo, void *map_data);
 
 uint32_t
 gbm_bo_get_width(struct gbm_bo *bo);

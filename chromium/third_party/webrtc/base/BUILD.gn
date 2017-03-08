@@ -14,6 +14,20 @@ if (is_android) {
   import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
 }
+if (is_win) {
+  import("//build/config/clang/clang.gni")
+}
+
+group("base") {
+  public_deps = [
+    ":rtc_base",
+    ":rtc_base_approved",
+    ":rtc_task_queue",
+  ]
+  if (is_android) {
+    public_deps += [ ":base_java" ]
+  }
+}
 
 config("rtc_base_approved_all_dependent_config") {
   if (is_mac && !build_with_chromium) {
@@ -22,10 +36,7 @@ config("rtc_base_approved_all_dependent_config") {
 }
 
 config("rtc_base_config") {
-  defines = [
-    "FEATURE_ENABLE_SSL",
-    "LOGGING=1",
-  ]
+  defines = [ "FEATURE_ENABLE_SSL" ]
 }
 
 config("rtc_base_chromium_config") {
@@ -90,6 +101,8 @@ rtc_static_library("rtc_base_approved") {
     "array_view.h",
     "arraysize.h",
     "atomicops.h",
+    "base64.cc",
+    "base64.h",
     "bind.h",
     "bitbuffer.cc",
     "bitbuffer.h",
@@ -144,6 +157,8 @@ rtc_static_library("rtc_base_approved") {
     "ratetracker.cc",
     "ratetracker.h",
     "refcount.h",
+    "refcountedobject.h",
+    "safe_compare.h",
     "safe_conversions.h",
     "safe_conversions_impl.h",
     "sanitizer.h",
@@ -194,6 +209,78 @@ rtc_static_library("rtc_base_approved") {
       "logging.h",
       "logging_mac.mm",
     ]
+  }
+  if (is_component_build && is_win) {
+    # Copy the VS runtime DLLs into the isolate so that they don't have to be
+    # preinstalled on the target machine. The debug runtimes have a "d" at
+    # the end.
+    # This is a copy of https://codereview.chromium.org/1783973002.
+    # TODO(ehmaldonado): We'd like Chromium to make this changes easier to use,
+    # so we don't have to copy their changes and risk breakages.
+    # See http://crbug.com/653569
+    if (is_debug) {
+      vcrt_suffix = "d"
+    } else {
+      vcrt_suffix = ""
+    }
+
+    # These runtime files are copied to the output directory by the
+    # vs_toolchain script that runs as part of toolchain configuration.
+    data = [
+      "$root_out_dir/msvcp140${vcrt_suffix}.dll",
+      "$root_out_dir/vccorlib140${vcrt_suffix}.dll",
+      "$root_out_dir/vcruntime140${vcrt_suffix}.dll",
+
+      # Universal Windows 10 CRT files
+      "$root_out_dir/api-ms-win-core-console-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-datetime-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-debug-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-errorhandling-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-file-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-file-l1-2-0.dll",
+      "$root_out_dir/api-ms-win-core-file-l2-1-0.dll",
+      "$root_out_dir/api-ms-win-core-handle-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-heap-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-interlocked-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-libraryloader-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-localization-l1-2-0.dll",
+      "$root_out_dir/api-ms-win-core-memory-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-namedpipe-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-processenvironment-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-processthreads-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-processthreads-l1-1-1.dll",
+      "$root_out_dir/api-ms-win-core-profile-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-rtlsupport-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-string-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-synch-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-synch-l1-2-0.dll",
+      "$root_out_dir/api-ms-win-core-sysinfo-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-timezone-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-core-util-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-conio-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-convert-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-environment-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-filesystem-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-heap-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-locale-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-math-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-multibyte-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-private-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-process-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-runtime-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-stdio-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-string-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-time-l1-1-0.dll",
+      "$root_out_dir/api-ms-win-crt-utility-l1-1-0.dll",
+      "$root_out_dir/ucrtbase${vcrt_suffix}.dll",
+    ]
+    if (is_asan) {
+      if (current_cpu == "x64") {
+        data += [ "$clang_base_path/lib/clang/$clang_version/lib/windows/clang_rt.asan_dynamic-x86_64.dll" ]
+      } else {
+        data += [ "$clang_base_path/lib/clang/$clang_version/lib/windows/clang_rt.asan_dynamic-i386.dll" ]
+      }
+    }
   }
 }
 
@@ -266,6 +353,7 @@ rtc_static_library("rtc_base") {
   cflags = []
   cflags_cc = []
   libs = []
+  defines = []
   deps = [
     "..:webrtc_common",
   ]
@@ -284,7 +372,6 @@ rtc_static_library("rtc_base") {
   ]
 
   all_dependent_configs = [ ":rtc_base_all_dependent_config" ]
-  defines = [ "LOGGING=1" ]
 
   sources = [
     "applefilesystem.mm",
@@ -305,8 +392,6 @@ rtc_static_library("rtc_base") {
     "asyncudpsocket.h",
     "autodetectproxy.cc",
     "autodetectproxy.h",
-    "base64.cc",
-    "base64.h",
     "common.cc",
     "common.h",
     "crc32.cc",
@@ -454,8 +539,6 @@ rtc_static_library("rtc_base") {
       "logsinks.cc",
       "logsinks.h",
       "mathutils.h",
-      "multipart.cc",
-      "multipart.h",
       "natserver.cc",
       "natserver.h",
       "natsocketfactory.cc",
@@ -464,11 +547,8 @@ rtc_static_library("rtc_base") {
       "nattypes.h",
       "optionsfile.cc",
       "optionsfile.h",
-      "profiler.cc",
-      "profiler.h",
       "proxyserver.cc",
       "proxyserver.h",
-      "referencecountedsingletonfactory.h",
       "rollingaccumulator.h",
       "scopedptrcollection.h",
       "sslconfig.h",
@@ -478,8 +558,6 @@ rtc_static_library("rtc_base") {
       "testclient.h",
       "transformadapter.cc",
       "transformadapter.h",
-      "versionparsing.cc",
-      "versionparsing.h",
       "virtualsocketserver.cc",
       "virtualsocketserver.h",
       "window.h",
@@ -502,19 +580,11 @@ rtc_static_library("rtc_base") {
       sources += [
         "latebindingsymboltable.cc",
         "latebindingsymboltable.h",
-        "posix.cc",
-        "posix.h",
       ]
     }
 
     if (is_mac) {
       sources += [
-        "macasyncsocket.cc",
-        "macasyncsocket.h",
-        "maccocoasocketserver.h",
-        "maccocoasocketserver.mm",
-        "macsocketserver.cc",
-        "macsocketserver.h",
         "macwindowpicker.cc",
         "macwindowpicker.h",
       ]
@@ -604,9 +674,6 @@ rtc_static_library("rtc_base") {
     libs += [
       # For ProcessInformationCopyDictionary in unixfilesystem.cc.
       "ApplicationServices.framework",
-
-      # For GetGestalt in macutils.cc.
-      "CoreServices.framework",
     ]
   }
 
@@ -621,8 +688,6 @@ rtc_static_library("rtc_base") {
       "win32window.h",
       "win32windowpicker.cc",
       "win32windowpicker.h",
-      "winfirewall.cc",
-      "winfirewall.h",
       "winping.cc",
       "winping.h",
     ]
@@ -724,7 +789,7 @@ if (rtc_include_tests) {
       "//testing/gtest",
     ]
 
-    if (is_clang) {
+    if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }

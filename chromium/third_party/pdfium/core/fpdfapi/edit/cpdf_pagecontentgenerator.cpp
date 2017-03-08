@@ -7,6 +7,7 @@
 #include "core/fpdfapi/edit/cpdf_pagecontentgenerator.h"
 
 #include "core/fpdfapi/edit/cpdf_creator.h"
+#include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/page/cpdf_image.h"
 #include "core/fpdfapi/page/cpdf_imageobject.h"
 #include "core/fpdfapi/page/cpdf_page.h"
@@ -33,41 +34,37 @@ CPDF_PageContentGenerator::CPDF_PageContentGenerator(CPDF_Page* pPage)
 
 CPDF_PageContentGenerator::~CPDF_PageContentGenerator() {}
 
-FX_BOOL CPDF_PageContentGenerator::InsertPageObject(
-    CPDF_PageObject* pPageObject) {
-  return pPageObject && m_pageObjects.Add(pPageObject);
+void CPDF_PageContentGenerator::InsertPageObject(CPDF_PageObject* pPageObject) {
+  if (pPageObject)
+    m_pageObjects.push_back(pPageObject);
 }
 
 void CPDF_PageContentGenerator::GenerateContent() {
   CFX_ByteTextBuf buf;
-  CPDF_Dictionary* pPageDict = m_pPage->m_pFormDict;
-  for (int i = 0; i < m_pageObjects.GetSize(); ++i) {
-    CPDF_PageObject* pPageObj = m_pageObjects[i];
-    if (!pPageObj || !pPageObj->IsImage()) {
-      continue;
-    }
-    ProcessImage(buf, pPageObj->AsImage());
+  for (CPDF_PageObject* pPageObj : m_pageObjects) {
+    CPDF_ImageObject* pImageObject = pPageObj->AsImage();
+    if (pImageObject)
+      ProcessImage(buf, pImageObject);
   }
+  CPDF_Dictionary* pPageDict = m_pPage->m_pFormDict;
   CPDF_Object* pContent =
       pPageDict ? pPageDict->GetDirectObjectFor("Contents") : nullptr;
   if (pContent)
     pPageDict->RemoveFor("Contents");
 
-  CPDF_Stream* pStream = new CPDF_Stream;
+  CPDF_Stream* pStream = m_pDocument->NewIndirect<CPDF_Stream>();
   pStream->SetData(buf.GetBuffer(), buf.GetLength());
-  pPageDict->SetReferenceFor("Contents", m_pDocument,
-                             m_pDocument->AddIndirectObject(pStream));
+  pPageDict->SetReferenceFor("Contents", m_pDocument, pStream);
 }
 
 CFX_ByteString CPDF_PageContentGenerator::RealizeResource(
-    CPDF_Object* pResourceObj,
+    uint32_t dwResourceObjNum,
     const CFX_ByteString& bsType) {
+  ASSERT(dwResourceObjNum);
   if (!m_pPage->m_pResources) {
-    m_pPage->m_pResources =
-        new CPDF_Dictionary(m_pDocument->GetByteStringPool());
-    m_pPage->m_pFormDict->SetReferenceFor(
-        "Resources", m_pDocument,
-        m_pDocument->AddIndirectObject(m_pPage->m_pResources));
+    m_pPage->m_pResources = m_pDocument->NewIndirect<CPDF_Dictionary>();
+    m_pPage->m_pFormDict->SetReferenceFor("Resources", m_pDocument,
+                                          m_pPage->m_pResources);
   }
   CPDF_Dictionary* pResList = m_pPage->m_pResources->GetDictFor(bsType);
   if (!pResList) {
@@ -83,8 +80,7 @@ CFX_ByteString CPDF_PageContentGenerator::RealizeResource(
     }
     idnum++;
   }
-  pResList->SetReferenceFor(name, m_pDocument,
-                            m_pDocument->AddIndirectObject(pResourceObj));
+  pResList->SetReferenceFor(name, m_pDocument, dwResourceObjNum);
   return name;
 }
 
@@ -95,16 +91,25 @@ void CPDF_PageContentGenerator::ProcessImage(CFX_ByteTextBuf& buf,
     return;
   }
   buf << "q " << pImageObj->m_Matrix << " cm ";
+
   CPDF_Image* pImage = pImageObj->GetImage();
-  if (!pImage->IsInline()) {
-    CPDF_Stream* pStream = pImage->GetStream();
-    uint32_t dwSavedObjNum = pStream->GetObjNum();
-    CFX_ByteString name = RealizeResource(pStream, "XObject");
-    if (dwSavedObjNum == 0) {
-      pImageObj->SetUnownedImage(m_pDocument->GetPageData()->GetImage(pStream));
-    }
-    buf << "/" << PDF_NameEncode(name) << " Do Q\n";
-  }
+  if (pImage->IsInline())
+    return;
+
+  CPDF_Stream* pStream = pImage->GetStream();
+  if (!pStream)
+    return;
+
+  bool bWasInline = pStream->IsInline();
+  if (bWasInline)
+    pImage->ConvertStreamToIndirectObject();
+
+  uint32_t dwObjNum = pStream->GetObjNum();
+  CFX_ByteString name = RealizeResource(dwObjNum, "XObject");
+  if (bWasInline)
+    pImageObj->SetUnownedImage(m_pDocument->GetPageData()->GetImage(dwObjNum));
+
+  buf << "/" << PDF_NameEncode(name) << " Do Q\n";
 }
 
 void CPDF_PageContentGenerator::ProcessForm(CFX_ByteTextBuf& buf,
@@ -114,20 +119,21 @@ void CPDF_PageContentGenerator::ProcessForm(CFX_ByteTextBuf& buf,
   if (!data || !size)
     return;
 
+  buf << "q " << matrix << " cm ";
+
+  CFX_FloatRect bbox = m_pPage->GetPageBBox();
+  matrix.TransformRect(bbox);
+
   CPDF_Dictionary* pFormDict =
       new CPDF_Dictionary(m_pDocument->GetByteStringPool());
   pFormDict->SetNameFor("Type", "XObject");
   pFormDict->SetNameFor("Subtype", "Form");
-
-  CFX_FloatRect bbox = m_pPage->GetPageBBox();
-  matrix.TransformRect(bbox);
   pFormDict->SetRectFor("BBox", bbox);
 
-  CPDF_Stream* pStream = new CPDF_Stream;
+  CPDF_Stream* pStream = m_pDocument->NewIndirect<CPDF_Stream>();
   pStream->InitStream(data, size, pFormDict);
-  buf << "q " << matrix << " cm ";
 
-  CFX_ByteString name = RealizeResource(pStream, "XObject");
+  CFX_ByteString name = RealizeResource(pStream->GetObjNum(), "XObject");
   buf << "/" << PDF_NameEncode(name) << " Do Q\n";
 }
 
@@ -171,8 +177,7 @@ void CPDF_PageContentGenerator::TransformContent(CFX_Matrix& matrix) {
     contentStream.LoadAllData(pStream);
     ProcessForm(buf, contentStream.GetData(), contentStream.GetSize(), matrix);
   }
-  CPDF_Stream* pStream = new CPDF_Stream;
+  CPDF_Stream* pStream = m_pDocument->NewIndirect<CPDF_Stream>();
   pStream->SetData(buf.GetBuffer(), buf.GetLength());
-  m_pPage->m_pFormDict->SetReferenceFor(
-      "Contents", m_pDocument, m_pDocument->AddIndirectObject(pStream));
+  m_pPage->m_pFormDict->SetReferenceFor("Contents", m_pDocument, pStream);
 }

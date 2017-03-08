@@ -8,8 +8,8 @@
 
 #include <memory>
 
+#include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/page/cpdf_image.h"
-#include "core/fpdfapi/page/pageint.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 
 CPDF_ImageObject::CPDF_ImageObject()
@@ -79,6 +79,6 @@ void CPDF_ImageObject::Release() {
     return;
 
   CPDF_DocPageData* pPageData = m_pImage->GetDocument()->GetPageData();
-  pPageData->ReleaseImage(m_pImage->GetStream());
+  pPageData->ReleaseImage(m_pImage->GetStream()->GetObjNum());
   m_pImage = nullptr;
 }

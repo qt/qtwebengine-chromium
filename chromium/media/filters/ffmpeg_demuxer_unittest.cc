@@ -437,6 +437,10 @@ TEST_F(FFmpegDemuxerTest, AbortPendingReads) {
   demuxer_->AbortPendingReads();
   base::RunLoop().Run();
 
+  // Additional reads should also be aborted (until a Seek()).
+  audio->Read(NewReadCB(FROM_HERE, 29, 0, true, DemuxerStream::kAborted));
+  base::RunLoop().Run();
+
   // Ensure blocking thread has completed outstanding work.
   demuxer_->Stop();
   EXPECT_EQ(format_context()->pb->eof_reached, 0);
@@ -1346,6 +1350,11 @@ TEST_F(FFmpegDemuxerTest, Read_Mp4_Multiple_Tracks) {
   EXPECT_EQ(audio_track2.language(), "und");
 }
 
+TEST_F(FFmpegDemuxerTest, Read_Mp4_Crbug657437) {
+  CreateDemuxer("crbug657437.mp4");
+  InitializeDemuxer();
+}
+
 #endif  // defined(USE_PROPRIETARY_CODECS)
 
 TEST_F(FFmpegDemuxerTest, Read_Webm_Multiple_Tracks) {
@@ -1394,6 +1403,76 @@ TEST_F(FFmpegDemuxerTest, Read_Webm_Media_Track_Info) {
   EXPECT_EQ(audio_track.kind(), "main");
   EXPECT_EQ(audio_track.label(), "");
   EXPECT_EQ(audio_track.language(), "");
+}
+
+// UTCDateToTime_* tests here assume FFmpegDemuxer's ExtractTimelineOffset
+// helper uses base::Time::FromUTCString() for conversion.
+TEST_F(FFmpegDemuxerTest, UTCDateToTime_Valid) {
+  base::Time result;
+  EXPECT_TRUE(
+      base::Time::FromUTCString("2012-11-10T12:34:56.987654Z", &result));
+
+  base::Time::Exploded exploded;
+  result.UTCExplode(&exploded);
+  EXPECT_TRUE(exploded.HasValidValues());
+  EXPECT_EQ(2012, exploded.year);
+  EXPECT_EQ(11, exploded.month);
+  EXPECT_EQ(6, exploded.day_of_week);
+  EXPECT_EQ(10, exploded.day_of_month);
+  EXPECT_EQ(12, exploded.hour);
+  EXPECT_EQ(34, exploded.minute);
+  EXPECT_EQ(56, exploded.second);
+  EXPECT_EQ(987, exploded.millisecond);
+
+  // base::Time exploding operations round fractional milliseconds down, so
+  // verify fractional milliseconds using a base::TimeDelta.
+  base::Time without_fractional_ms;
+  EXPECT_TRUE(base::Time::FromUTCExploded(exploded, &without_fractional_ms));
+  base::TimeDelta delta = result - without_fractional_ms;
+  EXPECT_EQ(654, delta.InMicroseconds());
+}
+
+TEST_F(FFmpegDemuxerTest, UTCDateToTime_Invalid) {
+  const char* invalid_date_strings[] = {
+      "",
+      "12:34:56",
+      "-- ::",
+      "2012-11- 12:34:56",
+      "2012--10 12:34:56",
+      "-11-10 12:34:56",
+      "2012-11 12:34:56",
+      "ABCD-11-10 12:34:56",
+      "2012-EF-10 12:34:56",
+      "2012-11-GH 12:34:56",
+      "2012-11-1012:34:56",
+  };
+
+  for (size_t i = 0; i < arraysize(invalid_date_strings); ++i) {
+    const char* date_string = invalid_date_strings[i];
+    base::Time result;
+    EXPECT_FALSE(base::Time::FromUTCString(date_string, &result))
+        << "date_string '" << date_string << "'";
+  }
+}
+
+TEST_F(FFmpegDemuxerTest, Read_Flac) {
+  CreateDemuxer("sfx.flac");
+  InitializeDemuxer();
+
+  // Video stream should not be present.
+  EXPECT_EQ(nullptr, demuxer_->GetStream(DemuxerStream::VIDEO));
+
+  // Audio stream should be present.
+  DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::AUDIO);
+  ASSERT_TRUE(stream);
+  EXPECT_EQ(DemuxerStream::AUDIO, stream->type());
+
+  const AudioDecoderConfig& audio_config = stream->audio_decoder_config();
+  EXPECT_EQ(kCodecFLAC, audio_config.codec());
+  EXPECT_EQ(32, audio_config.bits_per_channel());
+  EXPECT_EQ(CHANNEL_LAYOUT_MONO, audio_config.channel_layout());
+  EXPECT_EQ(44100, audio_config.samples_per_second());
+  EXPECT_EQ(kSampleFormatS32, audio_config.sample_format());
 }
 
 }  // namespace media

@@ -7,20 +7,21 @@
 #include "core/fpdfdoc/cpdf_viewerpreferences.h"
 
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_name.h"
 
 CPDF_ViewerPreferences::CPDF_ViewerPreferences(CPDF_Document* pDoc)
     : m_pDoc(pDoc) {}
 
 CPDF_ViewerPreferences::~CPDF_ViewerPreferences() {}
 
-FX_BOOL CPDF_ViewerPreferences::IsDirectionR2L() const {
+bool CPDF_ViewerPreferences::IsDirectionR2L() const {
   CPDF_Dictionary* pDict = GetViewerPreferences();
-  return pDict ? pDict->GetStringFor("Direction") == "R2L" : FALSE;
+  return pDict ? pDict->GetStringFor("Direction") == "R2L" : false;
 }
 
-FX_BOOL CPDF_ViewerPreferences::PrintScaling() const {
+bool CPDF_ViewerPreferences::PrintScaling() const {
   CPDF_Dictionary* pDict = GetViewerPreferences();
-  return pDict ? pDict->GetStringFor("PrintScaling") != "None" : TRUE;
+  return pDict ? pDict->GetStringFor("PrintScaling") != "None" : true;
 }
 
 int32_t CPDF_ViewerPreferences::NumCopies() const {
@@ -36,6 +37,21 @@ CPDF_Array* CPDF_ViewerPreferences::PrintPageRange() const {
 CFX_ByteString CPDF_ViewerPreferences::Duplex() const {
   CPDF_Dictionary* pDict = GetViewerPreferences();
   return pDict ? pDict->GetStringFor("Duplex") : CFX_ByteString("None");
+}
+
+bool CPDF_ViewerPreferences::GenericName(const CFX_ByteString& bsKey,
+                                         CFX_ByteString* bsVal) const {
+  ASSERT(bsVal);
+  CPDF_Dictionary* pDict = GetViewerPreferences();
+  if (!pDict)
+    return false;
+
+  const CPDF_Name* pName = ToName(pDict->GetObjectFor(bsKey));
+  if (!pName)
+    return false;
+
+  *bsVal = pName->GetString();
+  return true;
 }
 
 CPDF_Dictionary* CPDF_ViewerPreferences::GetViewerPreferences() const {

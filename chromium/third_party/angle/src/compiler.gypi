@@ -6,7 +6,7 @@
     'variables':
     {
         # These file lists are shared with the GN build.
-        'angle_translator_lib_sources':
+        'angle_translator_sources':
         [
             '../include/EGL/egl.h',
             '../include/EGL/eglext.h',
@@ -92,6 +92,8 @@
             'compiler/translator/RecordConstantPrecision.h',
             'compiler/translator/RegenerateStructNames.cpp',
             'compiler/translator/RegenerateStructNames.h',
+            'compiler/translator/RemoveInvariantDeclaration.cpp',
+            'compiler/translator/RemoveInvariantDeclaration.h',
             'compiler/translator/RemovePow.cpp',
             'compiler/translator/RemovePow.h',
             'compiler/translator/RewriteDoWhile.cpp',
@@ -104,12 +106,16 @@
             'compiler/translator/ScalarizeVecAndMatConstructorArgs.h',
             'compiler/translator/SearchSymbol.cpp',
             'compiler/translator/SearchSymbol.h',
+            'compiler/translator/ShaderLang.cpp',
+            'compiler/translator/ShaderVars.cpp',
             'compiler/translator/SymbolTable.cpp',
             'compiler/translator/SymbolTable.h',
             'compiler/translator/Types.cpp',
             'compiler/translator/Types.h',
             'compiler/translator/UnfoldShortCircuitAST.cpp',
             'compiler/translator/UnfoldShortCircuitAST.h',
+            'compiler/translator/UseInterfaceBlockFields.cpp',
+            'compiler/translator/UseInterfaceBlockFields.h',
             'compiler/translator/ValidateGlobalInitializer.cpp',
             'compiler/translator/ValidateGlobalInitializer.h',
             'compiler/translator/ValidateLimitations.cpp',
@@ -139,14 +145,14 @@
             'third_party/compiler/ArrayBoundsClamper.cpp',
             'third_party/compiler/ArrayBoundsClamper.h',
         ],
-        'angle_translator_lib_essl_sources':
+        'angle_translator_essl_sources':
         [
             'compiler/translator/OutputESSL.cpp',
             'compiler/translator/OutputESSL.h',
             'compiler/translator/TranslatorESSL.cpp',
             'compiler/translator/TranslatorESSL.h',
         ],
-        'angle_translator_lib_glsl_sources':
+        'angle_translator_glsl_sources':
         [
             'compiler/translator/BuiltInFunctionEmulatorGLSL.cpp',
             'compiler/translator/BuiltInFunctionEmulatorGLSL.h',
@@ -161,7 +167,7 @@
             'compiler/translator/VersionGLSL.cpp',
             'compiler/translator/VersionGLSL.h',
         ],
-        'angle_translator_lib_hlsl_sources':
+        'angle_translator_hlsl_sources':
         [
             'compiler/translator/AddDefaultReturnStatements.cpp',
             'compiler/translator/AddDefaultReturnStatements.h',
@@ -244,28 +250,22 @@
             'target_name': 'preprocessor',
             'type': 'static_library',
             'dependencies': [ 'angle_common' ],
-            'includes': [ '../build/common_defines.gypi', ],
+            'includes': [ '../gyp/common_defines.gypi', ],
             'sources': [ '<@(angle_preprocessor_sources)', ],
         },
         {
-            'target_name': 'translator_lib',
+            'target_name': 'translator',
             'type': 'static_library',
             'dependencies': [ 'preprocessor', 'angle_common' ],
-            'includes': [ '../build/common_defines.gypi', ],
+            'includes': [ '../gyp/common_defines.gypi', ],
             'include_dirs':
             [
                 '.',
                 '../include',
             ],
-            'defines':
-            [
-                # define the static translator to indicate exported
-                # classes are (in fact) locally defined
-                'ANGLE_TRANSLATOR_STATIC',
-            ],
             'sources':
             [
-                '<@(angle_translator_lib_sources)',
+                '<@(angle_translator_sources)',
             ],
             'msvs_settings':
             {
@@ -291,7 +291,7 @@
                     },
                     'sources':
                     [
-                        '<@(angle_translator_lib_essl_sources)',
+                        '<@(angle_translator_essl_sources)',
                     ],
                 }],
                 ['angle_enable_glsl==1',
@@ -309,7 +309,7 @@
                     },
                     'sources':
                     [
-                        '<@(angle_translator_lib_glsl_sources)',
+                        '<@(angle_translator_glsl_sources)',
                     ],
                 }],
                 ['angle_enable_hlsl==1',
@@ -327,58 +327,9 @@
                     },
                     'sources':
                     [
-                        '<@(angle_translator_lib_hlsl_sources)',
+                        '<@(angle_translator_hlsl_sources)',
                     ],
                 }],
-            ],
-        },
-
-        {
-            'target_name': 'translator',
-            'type': '<(component)',
-            'dependencies': [ 'translator_lib', 'angle_common' ],
-            'includes': [ '../build/common_defines.gypi', ],
-            'include_dirs':
-            [
-                '.',
-                '../include',
-            ],
-            'defines':
-            [
-                'ANGLE_TRANSLATOR_IMPLEMENTATION',
-            ],
-            'sources':
-            [
-                'compiler/translator/ShaderLang.cpp',
-                'compiler/translator/ShaderVars.cpp'
-            ],
-        },
-
-        {
-            'target_name': 'translator_static',
-            'type': 'static_library',
-            'dependencies': [ 'translator_lib' ],
-            'includes': [ '../build/common_defines.gypi', ],
-            'include_dirs':
-            [
-                '.',
-                '../include',
-            ],
-            'defines':
-            [
-                'ANGLE_TRANSLATOR_STATIC',
-            ],
-            'direct_dependent_settings':
-            {
-                'defines':
-                [
-                    'ANGLE_TRANSLATOR_STATIC',
-                ],
-            },
-            'sources':
-            [
-                'compiler/translator/ShaderLang.cpp',
-                'compiler/translator/ShaderVars.cpp'
             ],
         },
     ],

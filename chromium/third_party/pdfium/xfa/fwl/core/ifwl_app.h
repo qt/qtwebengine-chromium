@@ -7,61 +7,39 @@
 #ifndef XFA_FWL_CORE_IFWL_APP_H_
 #define XFA_FWL_CORE_IFWL_APP_H_
 
-// The FWL app code contains three parallel classes, which reference each
-// other via pointers as follows:
-//
-//                    m_pIface               m_pImpl
-//      CXFA_FFApp ------------> IFWL_App -----------> CFWL_AppImp
-//                                        <-----------
-//                                           m_pIface
-
 #include <memory>
 
 #include "core/fxcrt/fx_string.h"
-#include "xfa/fwl/core/fwl_appimp.h"
-#include "xfa/fwl/core/fwl_error.h"
 
 class CFWL_NoteDriver;
 class CFWL_WidgetMgr;
 class CXFA_FFApp;
 class CXFA_FWLAdapterWidgetMgr;
-class IFWL_ThemeProvider;
 class IFWL_Widget;
+
+enum FWL_KeyFlag {
+  FWL_KEYFLAG_Ctrl = 1 << 0,
+  FWL_KEYFLAG_Alt = 1 << 1,
+  FWL_KEYFLAG_Shift = 1 << 2,
+  FWL_KEYFLAG_Command = 1 << 3,
+  FWL_KEYFLAG_LButton = 1 << 4,
+  FWL_KEYFLAG_RButton = 1 << 5,
+  FWL_KEYFLAG_MButton = 1 << 6
+};
 
 class IFWL_App {
  public:
-  static IFWL_App* Create(CXFA_FFApp* pAdapter);
+  explicit IFWL_App(CXFA_FFApp* pAdapter);
+  ~IFWL_App();
 
-  virtual ~IFWL_App();
-
-  FWL_Error Initialize();
-  FWL_Error Finalize();
-  CXFA_FFApp* GetAdapterNative();
-  CFWL_WidgetMgr* GetWidgetMgr();
-  IFWL_ThemeProvider* GetThemeProvider();
-  void SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
-  void Exit(int32_t iExitCode);
-
-  // These call into polymorphic methods in the impl; no need to override.
-  void Release();
-
-  CFWL_AppImp* GetImpl() const { return m_pImpl.get(); }
-
-  // Takes ownership of |pImpl|.
-  void SetImpl(CFWL_AppImp* pImpl) { m_pImpl.reset(pImpl); }
-
-  CFWL_NoteDriver* GetNoteDriver() const;
+  CXFA_FFApp* GetAdapterNative() const { return m_pAdapterNative; }
+  CFWL_WidgetMgr* GetWidgetMgr() const { return m_pWidgetMgr.get(); }
+  CFWL_NoteDriver* GetNoteDriver() const { return m_pNoteDriver.get(); }
 
  private:
-  IFWL_App();
-
-  std::unique_ptr<CFWL_AppImp> m_pImpl;
+  CXFA_FFApp* const m_pAdapterNative;
+  std::unique_ptr<CFWL_WidgetMgr> m_pWidgetMgr;
+  std::unique_ptr<CFWL_NoteDriver> m_pNoteDriver;
 };
-
-IFWL_App* FWL_GetApp();
-void FWL_SetApp(IFWL_App* pApp);
-
-CXFA_FFApp* FWL_GetAdapterNative();
-CXFA_FWLAdapterWidgetMgr* FWL_GetAdapterWidgetMgr();
 
 #endif  // XFA_FWL_CORE_IFWL_APP_H_

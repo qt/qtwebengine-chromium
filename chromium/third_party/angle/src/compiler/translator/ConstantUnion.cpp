@@ -11,6 +11,9 @@
 #include "common/mathutil.h"
 #include "compiler/translator/Diagnostics.h"
 
+namespace sh
+{
+
 namespace
 {
 
@@ -381,9 +384,8 @@ TConstantUnion TConstantUnion::rshift(const TConstantUnion &lhs,
     TConstantUnion returnValue;
     ASSERT(lhs.type == EbtInt || lhs.type == EbtUInt);
     ASSERT(rhs.type == EbtInt || rhs.type == EbtUInt);
-    if ((lhs.type == EbtInt && lhs.iConst < 0) ||
-        (rhs.type == EbtInt && (rhs.iConst < 0 || rhs.iConst > 31)) ||
-        (rhs.type == EbtUInt && rhs.uConst > 31))
+    if ((rhs.type == EbtInt && (rhs.iConst < 0 || rhs.iConst > 31)) ||
+        (rhs.type == EbtUInt && rhs.uConst > 31u))
     {
         diag->error(line, "Undefined shift (operand out of range)", ">>", "");
         switch (lhs.type)
@@ -403,19 +405,63 @@ TConstantUnion TConstantUnion::rshift(const TConstantUnion &lhs,
     switch (lhs.type)
     {
         case EbtInt:
+        {
+            unsigned int shiftOffset = 0;
             switch (rhs.type)
             {
                 case EbtInt:
-                    returnValue.setIConst(lhs.iConst >> rhs.iConst);
+                    shiftOffset = static_cast<unsigned int>(rhs.iConst);
                     break;
                 case EbtUInt:
-                    returnValue.setIConst(lhs.iConst >> rhs.uConst);
+                    shiftOffset = rhs.uConst;
                     break;
                 default:
                     UNREACHABLE();
             }
-            break;
+            if (shiftOffset > 0)
+            {
+                // ESSL 3.00.6 section 5.9: "If E1 is a signed integer, the right-shift will extend
+                // the sign bit." In C++ shifting negative integers is undefined, so we implement
+                // extending the sign bit manually.
+                int lhsSafe        = lhs.iConst;
+                if (lhsSafe == std::numeric_limits<int>::min())
+                {
+                    // The min integer needs special treatment because only bit it has set is the
+                    // sign bit, which we clear later to implement safe right shift of negative
+                    // numbers.
+                    lhsSafe = -0x40000000;
+                    --shiftOffset;
+                }
+                if (shiftOffset > 0)
+                {
+                    bool extendSignBit = false;
+                    if (lhsSafe < 0)
+                    {
+                        extendSignBit = true;
+                        // Clear the sign bit so that bitshift right is defined in C++.
+                        lhsSafe &= 0x7fffffff;
+                        ASSERT(lhsSafe > 0);
+                    }
+                    returnValue.setIConst(lhsSafe >> shiftOffset);
 
+                    // Manually fill in the extended sign bit if necessary.
+                    if (extendSignBit)
+                    {
+                        int extendedSignBit = static_cast<int>(0xffffffffu << (31 - shiftOffset));
+                        returnValue.setIConst(returnValue.getIConst() | extendedSignBit);
+                    }
+                }
+                else
+                {
+                    returnValue.setIConst(lhsSafe);
+                }
+            }
+            else
+            {
+                returnValue.setIConst(lhs.iConst);
+            }
+            break;
+        }
         case EbtUInt:
             switch (rhs.type)
             {
@@ -445,9 +491,8 @@ TConstantUnion TConstantUnion::lshift(const TConstantUnion &lhs,
     TConstantUnion returnValue;
     ASSERT(lhs.type == EbtInt || lhs.type == EbtUInt);
     ASSERT(rhs.type == EbtInt || rhs.type == EbtUInt);
-    if ((lhs.type == EbtInt && lhs.iConst < 0) ||
-        (rhs.type == EbtInt && (rhs.iConst < 0 || rhs.iConst > 31)) ||
-        (rhs.type == EbtUInt && rhs.uConst > 31))
+    if ((rhs.type == EbtInt && (rhs.iConst < 0 || rhs.iConst > 31)) ||
+        (rhs.type == EbtUInt && rhs.uConst > 31u))
     {
         diag->error(line, "Undefined shift (operand out of range)", "<<", "");
         switch (lhs.type)
@@ -469,11 +514,16 @@ TConstantUnion TConstantUnion::lshift(const TConstantUnion &lhs,
         case EbtInt:
             switch (rhs.type)
             {
+                // Cast to unsigned integer before shifting, since ESSL 3.00.6 section 5.9 says that
+                // lhs is "interpreted as a bit pattern". This also avoids the possibility of signed
+                // integer overflow or undefined shift of a negative integer.
                 case EbtInt:
-                    returnValue.setIConst(lhs.iConst << rhs.iConst);
+                    returnValue.setIConst(
+                        static_cast<int>(static_cast<uint32_t>(lhs.iConst) << rhs.iConst));
                     break;
                 case EbtUInt:
-                    returnValue.setIConst(lhs.iConst << rhs.uConst);
+                    returnValue.setIConst(
+                        static_cast<int>(static_cast<uint32_t>(lhs.iConst) << rhs.uConst));
                     break;
                 default:
                     UNREACHABLE();
@@ -588,3 +638,5 @@ TConstantUnion TConstantUnion::operator||(const TConstantUnion &constant) const
 
     return returnValue;
 }
+
+}  // namespace sh

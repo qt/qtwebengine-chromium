@@ -65,36 +65,23 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif
+#endif  // __cplusplus
+
 typedef void* FX_POSITION;  // Keep until fxcrt containers gone
 typedef float FX_FLOAT;     // Keep, allow upgrade to doubles.
 typedef double FX_DOUBLE;   // Keep, allow downgrade to floats.
-typedef int FX_BOOL;        // Keep, sadly not always 0 or 1.
 typedef char FX_CHAR;       // Keep, questionable signedness.
 typedef wchar_t FX_WCHAR;   // Keep, maybe bad platform wchars.
 
 #define IsFloatZero(f) ((f) < 0.0001 && (f) > -0.0001)
 #define IsFloatBigger(fa, fb) ((fa) > (fb) && !IsFloatZero((fa) - (fb)))
 #define IsFloatSmaller(fa, fb) ((fa) < (fb) && !IsFloatZero((fa) - (fb)))
-#define IsFloatEqual(fa, fb) IsFloatZero(fa - fb)
+#define IsFloatEqual(fa, fb) IsFloatZero((fa) - (fb))
 
 // PDFium string sizes are limited to 2^31-1, and the value is signed to
 // allow -1 as a placeholder for "unknown".
 // TODO(palmer): it should be a |size_t|, or at least unsigned.
 typedef int FX_STRSIZE;
-
-#ifndef TRUE
-#define TRUE 1
-#endif
-
-#ifndef FALSE
-#define FALSE 0
-#endif
-
-#ifdef __cplusplus
-static_assert(TRUE == true, "true_needs_to_be_true");
-static_assert(FALSE == false, "false_needs_to_be_false");
-#endif
 
 #ifndef ASSERT
 #ifndef NDEBUG

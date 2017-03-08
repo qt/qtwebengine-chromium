@@ -15,8 +15,8 @@
 #include "core/fpdfapi/font/cpdf_type1font.h"
 #include "core/fpdfapi/font/cpdf_type3font.h"
 #include "core/fpdfapi/font/font_int.h"
+#include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/page/cpdf_pagemodule.h"
-#include "core/fpdfapi/page/pageint.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
@@ -343,7 +343,7 @@ std::unique_ptr<CPDF_Font> CPDF_Font::Create(CPDF_Document* pDoc,
   pFont->m_pFontDict = pFontDict;
   pFont->m_pDocument = pDoc;
   pFont->m_BaseFont = pFontDict->GetStringFor("BaseFont");
-  return pFont->Load() ? std::move(pFont) : std::unique_ptr<CPDF_Font>();
+  return pFont->Load() ? std::move(pFont) : nullptr;
 }
 
 uint32_t CPDF_Font::GetNextChar(const FX_CHAR* pString,

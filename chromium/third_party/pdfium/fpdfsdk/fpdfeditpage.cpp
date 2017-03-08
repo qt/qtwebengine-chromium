@@ -29,8 +29,7 @@
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/fpdfxfa/cpdfxfa_app.h"
-#include "fpdfsdk/fpdfxfa/cpdfxfa_document.h"
+#include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #endif  // PDF_ENABLE_XFA
 
@@ -84,8 +83,10 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_CreateNewDocument() {
   CPDF_Dictionary* pInfoDict = nullptr;
   pInfoDict = pDoc->GetInfo();
   if (pInfoDict) {
-    if (FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS))
-      pInfoDict->SetFor("CreationDate", new CPDF_String(DateStr, FALSE));
+    if (FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS)) {
+      pInfoDict->SetFor("CreationDate",
+                        new CPDF_String(nullptr, DateStr, false));
+    }
     pInfoDict->SetFor("Creator", new CPDF_String(L"PDFium"));
   }
 
@@ -111,10 +112,10 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
     return nullptr;
 
   CPDF_Array* pMediaBoxArray = new CPDF_Array;
-  pMediaBoxArray->Add(new CPDF_Number(0));
-  pMediaBoxArray->Add(new CPDF_Number(0));
-  pMediaBoxArray->Add(new CPDF_Number(FX_FLOAT(width)));
-  pMediaBoxArray->Add(new CPDF_Number(FX_FLOAT(height)));
+  pMediaBoxArray->AddNew<CPDF_Number>(0);
+  pMediaBoxArray->AddNew<CPDF_Number>(0);
+  pMediaBoxArray->AddNew<CPDF_Number>(static_cast<FX_FLOAT>(width));
+  pMediaBoxArray->AddNew<CPDF_Number>(static_cast<FX_FLOAT>(height));
   pPageDict->SetFor("MediaBox", pMediaBoxArray);
   pPageDict->SetFor("Rotate", new CPDF_Number(0));
   pPageDict->SetFor("Resources",
@@ -122,7 +123,7 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
 
 #ifdef PDF_ENABLE_XFA
   CPDFXFA_Page* pPage =
-      new CPDFXFA_Page((CPDFXFA_Document*)document, page_index);
+      new CPDFXFA_Page(static_cast<CPDFXFA_Context*>(document), page_index);
   pPage->LoadPDFPage(pPageDict);
 #else   // PDF_ENABLE_XFA
   CPDF_Page* pPage = new CPDF_Page(pDoc, pPageDict, true);
@@ -218,23 +219,23 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFPage_HasTransparency(FPDF_PAGE page) {
 DLLEXPORT FPDF_BOOL STDCALL
 FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
   if (!pageObject)
-    return FALSE;
+    return false;
 
   CPDF_PageObject* pPageObj = reinterpret_cast<CPDF_PageObject*>(pageObject);
   int blend_type = pPageObj->m_GeneralState.GetBlendType();
   if (blend_type != FXDIB_BLEND_NORMAL)
-    return TRUE;
+    return true;
 
   CPDF_Dictionary* pSMaskDict =
       ToDictionary(pPageObj->m_GeneralState.GetSoftMask());
   if (pSMaskDict)
-    return TRUE;
+    return true;
 
   if (pPageObj->m_GeneralState.GetFillAlpha() != 1.0f)
-    return TRUE;
+    return true;
 
   if (pPageObj->IsPath() && pPageObj->m_GeneralState.GetStrokeAlpha() != 1.0f) {
-    return TRUE;
+    return true;
   }
 
   if (pPageObj->IsForm()) {
@@ -242,21 +243,21 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
     if (pForm) {
       int trans = pForm->m_Transparency;
       if ((trans & PDFTRANS_ISOLATED) || (trans & PDFTRANS_GROUP))
-        return TRUE;
+        return true;
     }
   }
 
-  return FALSE;
+  return false;
 }
 
 DLLEXPORT FPDF_BOOL STDCALL FPDFPage_GenerateContent(FPDF_PAGE page) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!IsPageObject(pPage))
-    return FALSE;
+    return false;
 
   CPDF_PageContentGenerator CG(pPage);
   CG.GenerateContent();
-  return TRUE;
+  return true;
 }
 
 DLLEXPORT void STDCALL FPDFPageObj_Transform(FPDF_PAGEOBJECT page_object,
@@ -289,22 +290,22 @@ DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
   CPDF_AnnotList AnnotList(pPage);
   for (size_t i = 0; i < AnnotList.Count(); ++i) {
     CPDF_Annot* pAnnot = AnnotList.GetAt(i);
-    // transformAnnots Rectangle
-    CFX_FloatRect rect = pAnnot->GetRect();
+    CFX_FloatRect rect = pAnnot->GetRect();  // transformAnnots Rectangle
     CFX_Matrix matrix((FX_FLOAT)a, (FX_FLOAT)b, (FX_FLOAT)c, (FX_FLOAT)d,
                       (FX_FLOAT)e, (FX_FLOAT)f);
     rect.Transform(&matrix);
-    CPDF_Array* pRectArray = pAnnot->GetAnnotDict()->GetArrayFor("Rect");
-    if (!pRectArray)
-      pRectArray = new CPDF_Array;
-    pRectArray->SetAt(0, new CPDF_Number(rect.left));
-    pRectArray->SetAt(1, new CPDF_Number(rect.bottom));
-    pRectArray->SetAt(2, new CPDF_Number(rect.right));
-    pRectArray->SetAt(3, new CPDF_Number(rect.top));
-    pAnnot->GetAnnotDict()->SetFor("Rect", pRectArray);
 
-    // Transform AP's rectangle
-    // To Do
+    CPDF_Array* pRectArray = pAnnot->GetAnnotDict()->GetArrayFor("Rect");
+    if (!pRectArray) {
+      pRectArray = new CPDF_Array;
+      pAnnot->GetAnnotDict()->SetFor("Rect", pRectArray);
+    }
+    pRectArray->SetNewAt<CPDF_Number>(0, rect.left);
+    pRectArray->SetNewAt<CPDF_Number>(1, rect.bottom);
+    pRectArray->SetNewAt<CPDF_Number>(2, rect.right);
+    pRectArray->SetNewAt<CPDF_Number>(3, rect.top);
+
+    // TODO: Transform AP's rectangle
   }
 }
 

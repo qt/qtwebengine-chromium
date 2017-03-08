@@ -33,8 +33,8 @@ GMP_API_BRANCH=Firefox39
 CCASFLAGS=$(CFLAGS)
 STATIC_LDFLAGS=-lstdc++
 
-VERSION=1.4
-SHAREDLIBVERSION=0
+SHAREDLIB_MAJORVERSION=3
+FULL_VERSION := 1.6.0
 
 ifeq (,$(wildcard $(SRC_PATH)gmp-api))
 HAVE_GMP_API=No
@@ -51,7 +51,14 @@ endif
 # Configurations
 ifeq ($(BUILDTYPE), Release)
 CFLAGS += $(CFLAGS_OPT)
+CFLAGS += -DNDEBUG
 USE_ASM = Yes
+ifeq ($(DEBUGSYMBOLS), True)
+CFLAGS += -g
+CXXFLAGS += -g
+DEBUGSYMBOLS_TAG := _debug_symbols
+PROCESS_FILES := True
+endif
 else
 CFLAGS += $(CFLAGS_DEBUG)
 USE_ASM = No
@@ -62,11 +69,17 @@ CFLAGS += -fsanitize=address
 LDFLAGS += -fsanitize=address
 endif
 
+STRIP_FLAGS := -S
+ifeq (linux, $((OS)))
+STRIP_FLAGS := -g
+endif
+
 # Make sure the all target is the first one
 all: libraries binaries
 
 include $(SRC_PATH)build/platform-$(OS).mk
 
+MODULE := $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIX)
 
 CFLAGS += -DGENERATED_VERSION_HEADER
 LDFLAGS +=
@@ -108,11 +121,11 @@ PROCESSING_INCLUDES += \
     -I$(SRC_PATH)codec/processing/src/vaacalc
 
 GTEST_INCLUDES += \
-    -I$(SRC_PATH)gtest \
-    -I$(SRC_PATH)gtest/include
+    -I$(SRC_PATH)gtest/googletest \
+    -I$(SRC_PATH)gtest/googletest/include
 
 CODEC_UNITTEST_INCLUDES += \
-    -I$(SRC_PATH)gtest/include \
+    -I$(SRC_PATH)gtest/googletest/include \
     -I$(SRC_PATH)codec/common/inc \
     -I$(SRC_PATH)test
 
@@ -154,14 +167,14 @@ clean:
 ifeq (android,$(OS))
 clean: clean_Android
 endif
-	$(QUIET)rm -f $(OBJS) $(OBJS:.$(OBJ)=.d) $(OBJS:.$(OBJ)=.obj) $(LIBRARIES) $(BINARIES) *.lib *.a *.dylib *.dll *.so *.exe *.pdb *.exp *.pc *.res
+	$(QUIET)rm -f $(OBJS) $(OBJS:.$(OBJ)=.d) $(OBJS:.$(OBJ)=.obj) $(LIBRARIES) $(BINARIES) *.lib *.a *.dylib *.dll *.so *.so.* *.exe *.pdb *.exp *.pc *.res *.map
 
 gmp-bootstrap:
 	if [ ! -d gmp-api ] ; then git clone https://github.com/mozilla/gmp-api gmp-api ; fi
 	cd gmp-api && git fetch origin && git checkout $(GMP_API_BRANCH)
 
 gtest-bootstrap:
-	svn co https://googletest.googlecode.com/svn/trunk/ gtest
+	git clone https://github.com/google/googletest.git gtest
 
 ifeq ($(HAVE_GTEST),Yes)
 
@@ -210,44 +223,69 @@ ifneq (ios, $(OS))
 libraries: $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIX)
 endif
 
-LIBRARIES += $(LIBPREFIX)$(PROJECT_NAME).$(LIBSUFFIX) $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXVER)
+LIBRARIES += $(LIBPREFIX)$(PROJECT_NAME).$(LIBSUFFIX) $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXFULLVER)
 
 $(LIBPREFIX)$(PROJECT_NAME).$(LIBSUFFIX): $(ENCODER_OBJS) $(DECODER_OBJS) $(PROCESSING_OBJS) $(COMMON_OBJS)
 	$(QUIET)rm -f $@
 	$(QUIET_AR)$(AR) $(AR_OPTS) $+
+ifeq (True, $(PROCESS_FILES))
+	cp $@ $(LIBPREFIX)$(PROJECT_NAME)$(DEBUGSYMBOLS_TAG).$(LIBSUFFIX)
+	strip $(STRIP_FLAGS) $@ -o $@
+endif
 
-$(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXVER): $(ENCODER_OBJS) $(DECODER_OBJS) $(PROCESSING_OBJS) $(COMMON_OBJS)
+$(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXFULLVER): $(ENCODER_OBJS) $(DECODER_OBJS) $(PROCESSING_OBJS) $(COMMON_OBJS)
 	$(QUIET)rm -f $@
 	$(QUIET_CXX)$(CXX) $(SHARED) $(CXX_LINK_O) $+ $(LDFLAGS) $(SHLDFLAGS)
+ifeq (True, $(PROCESS_FILES))
+	cp $@ $(LIBPREFIX)$(PROJECT_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXFULLVER)
+	strip $(STRIP_FLAGS) $@ -o $@
+endif
 
-ifneq ($(SHAREDLIBSUFFIXVER),$(SHAREDLIBSUFFIX))
-$(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIX): $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXVER)
-	$(QUIET)ln -sfn $+ $@
+ifneq ($(SHAREDLIBSUFFIXFULLVER),$(SHAREDLIBSUFFIX))
+$(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIX): $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXFULLVER)
+	$(QUIET)ln -sfn $+ $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXMAJORVER)
+	$(QUIET)ln -sfn $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXMAJORVER) $@
+ifeq (True, $(PROCESS_FILES))
+	$(QUIET)ln -sfn $(LIBPREFIX)$(PROJECT_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXFULLVER) $(LIBPREFIX)$(PROJECT_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXMAJORVER)
+	$(QUIET)ln -sfn $(LIBPREFIX)$(PROJECT_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXMAJORVER) $(LIBPREFIX)$(PROJECT_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIX)
+endif
 endif
 
 ifeq ($(HAVE_GMP_API),Yes)
-plugin: $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIX)
-LIBRARIES += $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXVER)
+plugin: $(MODULE)
+LIBRARIES += $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXFULLVER)
 else
 plugin:
 	@echo "./gmp-api: No such file or directory."
 	@echo "You do not have gmp-api.  Run make gmp-bootstrap to get the gmp-api headers."
 endif
 
-$(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXVER): $(MODULE_OBJS) $(ENCODER_OBJS) $(DECODER_OBJS) $(PROCESSING_OBJS) $(COMMON_OBJS)
+echo-plugin-name:
+	@echo $(MODULE)
+
+$(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXFULLVER): $(MODULE_OBJS) $(ENCODER_OBJS) $(DECODER_OBJS) $(PROCESSING_OBJS) $(COMMON_OBJS)
 	$(QUIET)rm -f $@
 	$(QUIET_CXX)$(CXX) $(SHARED) $(CXX_LINK_O) $+ $(LDFLAGS) $(SHLDFLAGS) $(MODULE_LDFLAGS)
+ifeq (True, $(PROCESS_FILES))
+	cp $@ $(LIBPREFIX)$(MODULE_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXFULLVER)
+	strip $(STRIP_FLAGS) $@ -o $@
+endif
 
-ifneq ($(SHAREDLIBSUFFIXVER),$(SHAREDLIBSUFFIX))
-$(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIX): $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXVER)
-	$(QUIET)ln -sfn $+ $@
+ifneq ($(SHAREDLIBSUFFIXFULLVER),$(SHAREDLIBSUFFIX))
+$(MODULE): $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXFULLVER)
+	$(QUIET)ln -sfn $+ $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXMAJORVER)
+	$(QUIET)ln -sfn $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXMAJORVER) $@
+ifeq (True, $(PROCESS_FILES))
+	$(QUIET)ln -sfn $(LIBPREFIX)$(MODULE_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXFULLVER) $(LIBPREFIX)$(MODULE_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXMAJORVER)
+	$(QUIET)ln -sfn $(LIBPREFIX)$(MODULE_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXMAJORVER) $(LIBPREFIX)$(MODULE_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIX)
+endif
 endif
 
 $(PROJECT_NAME).pc: $(PROJECT_NAME).pc.in
-	@sed -e 's;@prefix@;$(PREFIX);' -e 's;@VERSION@;$(VERSION);' -e 's;@LIBS@;;' -e 's;@LIBS_PRIVATE@;$(STATIC_LDFLAGS);' < $< > $@
+	@sed -e 's;@prefix@;$(PREFIX);' -e 's;@VERSION@;$(CURRENT_VERSION);' -e 's;@LIBS@;;' -e 's;@LIBS_PRIVATE@;$(STATIC_LDFLAGS);' < $< > $@
 
 $(PROJECT_NAME)-static.pc: $(PROJECT_NAME).pc.in
-	@sed -e 's;@prefix@;$(PREFIX);' -e 's;@VERSION@;$(VERSION);' -e 's;@LIBS@;$(STATIC_LDFLAGS);' -e 's;@LIBS_PRIVATE@;;' < $< > $@
+	@sed -e 's;@prefix@;$(PREFIX);' -e 's;@VERSION@;$(CURRENT_VERSION);' -e 's;@LIBS@;$(STATIC_LDFLAGS);' -e 's;@LIBS_PRIVATE@;;' < $< > $@
 
 install-headers:
 	mkdir -p $(DESTDIR)$(PREFIX)/include/wels
@@ -263,9 +301,10 @@ install-static: install-static-lib $(PROJECT_NAME)-static.pc
 
 install-shared: $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIX) install-headers $(PROJECT_NAME).pc
 	mkdir -p $(DESTDIR)$(SHAREDLIB_DIR)
-	install -m 755 $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXVER) $(DESTDIR)$(SHAREDLIB_DIR)
-	if [ "$(SHAREDLIBSUFFIXVER)" != "$(SHAREDLIBSUFFIX)" ]; then \
-		cp -a $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIX) $(DESTDIR)$(SHAREDLIB_DIR); \
+	install -m 755 $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXFULLVER) $(DESTDIR)$(SHAREDLIB_DIR)
+	if [ "$(SHAREDLIBSUFFIXFULLVER)" != "$(SHAREDLIBSUFFIX)" ]; then \
+	  cp -a $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXMAJORVER) $(DESTDIR)$(SHAREDLIB_DIR) ; \
+	  cp -a $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIX) $(DESTDIR)$(SHAREDLIB_DIR) ; \
 	fi
 	mkdir -p $(DESTDIR)$(PREFIX)/$(LIBDIR_NAME)/pkgconfig
 	install -m 644 $(PROJECT_NAME).pc $(DESTDIR)$(PREFIX)/$(LIBDIR_NAME)/pkgconfig

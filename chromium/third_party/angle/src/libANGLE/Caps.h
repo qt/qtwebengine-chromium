@@ -293,6 +293,9 @@ struct Extensions
     // GL_CHROMIUM_copy_texture
     bool copyTexture;
 
+    // GL_CHROMIUM_copy_compressed_texture
+    bool copyCompressedTexture;
+
     // GL_ANGLE_webgl_compatibility
     bool webglCompatibility;
 
@@ -301,6 +304,12 @@ struct Extensions
 
     // GL_ANGLE_robust_client_memory
     bool robustClientMemory;
+
+    // GL_EXT_texture_sRGB_decode
+    bool textureSRGBDecode;
+
+    // GL_EXT_sRGB_write_control
+    bool sRGBWriteControl;
 
     // ES3 Extension support
 
@@ -527,6 +536,9 @@ struct DisplayExtensions
     // EGL_ANGLE_d3d_share_handle_client_buffer
     bool d3dShareHandleClientBuffer;
 
+    // EGL_ANGLE_d3d_texture_client_buffer
+    bool d3dTextureClientBuffer;
+
     // EGL_ANGLE_surface_d3d_texture_2d_share_handle
     bool surfaceD3DTexture2DShareHandle;
 
@@ -601,6 +613,9 @@ struct DisplayExtensions
 
     // EGL_CHROMIUM_create_context_bind_generates_resource
     bool createContextBindGeneratesResource;
+
+    // EGL_EXT_swap_buffers_with_damage
+    bool swapBuffersWithDamage;
 };
 
 struct DeviceExtensions

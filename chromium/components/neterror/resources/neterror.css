@@ -162,8 +162,8 @@ a {
 #search-image {
   content:
       -webkit-image-set(
-          url(../../resources/default_100_percent/omnibox/omnibox_search_button_loupe.png) 1x,
-          url(../../resources/default_200_percent/omnibox/omnibox_search_button_loupe.png) 2x);
+          url(../../resources/default_100_percent/neterror/search_glass.png) 1x,
+          url(../../resources/default_200_percent/neterror/search_glass.png) 2x);
   margin: auto;
 }
 
@@ -337,6 +337,30 @@ html[subframe] body {
 
 #details-button.singular {
   float: none;
+}
+
+/* download-button shows both icon and text. */
+#download-button {
+  box-shadow: none;
+  position: relative;
+}
+
+#download-button:before {
+  -webkit-margin-end: 4px;
+  background: -webkit-image-set(
+      url(../../resources/default_100_percent/neterror/download.png) 1x,
+      url(../../resources/default_200_percent/neterror/download.png) 2x)
+    no-repeat;
+  content: '';
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+}
+
+#download-button:disabled {
+  background: rgb(180, 206, 249);
+  color: rgb(255, 255, 255);
 }
 
 #buttons::after {

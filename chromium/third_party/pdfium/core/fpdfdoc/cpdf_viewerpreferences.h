@@ -19,11 +19,16 @@ class CPDF_ViewerPreferences {
   explicit CPDF_ViewerPreferences(CPDF_Document* pDoc);
   ~CPDF_ViewerPreferences();
 
-  FX_BOOL IsDirectionR2L() const;
-  FX_BOOL PrintScaling() const;
+  bool IsDirectionR2L() const;
+  bool PrintScaling() const;
   int32_t NumCopies() const;
   CPDF_Array* PrintPageRange() const;
   CFX_ByteString Duplex() const;
+
+  // Gets the entry for |bsKey|. If the entry exists and it is of type name,
+  // then this method writes the value into |bsVal| and returns true. Otherwise
+  // returns false and |bsVal| is untouched. |bsVal| must not be NULL.
+  bool GenericName(const CFX_ByteString& bsKey, CFX_ByteString* bsVal) const;
 
  private:
   CPDF_Dictionary* GetViewerPreferences() const;

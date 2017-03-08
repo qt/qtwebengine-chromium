@@ -245,8 +245,8 @@ int ssl3_write_bytes(SSL *ssl, int type, const void *buf_, int len) {
 static int ssl3_write_pending(SSL *ssl, int type, const uint8_t *buf,
                               unsigned int len) {
   if (ssl->s3->wpend_tot > (int)len ||
-      (ssl->s3->wpend_buf != buf &&
-       !(ssl->mode & SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER)) ||
+      (!(ssl->mode & SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER) &&
+       ssl->s3->wpend_buf != buf) ||
       ssl->s3->wpend_type != type) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_WRITE_RETRY);
     return -1;
@@ -284,7 +284,7 @@ static int do_ssl3_write(SSL *ssl, int type, const uint8_t *buf, unsigned len) {
     return 0;
   }
 
-  size_t max_out = len + ssl_max_seal_overhead(ssl);
+  size_t max_out = len + SSL_max_seal_overhead(ssl);
   if (max_out < len) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_OVERFLOW);
     return -1;

@@ -8,13 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/screen_capturer.h"
-
 #include <memory>
 #include <utility>
 
+#include "webrtc/modules/desktop_capture/desktop_capturer.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
-#include "webrtc/modules/desktop_capture/screen_capturer_differ_wrapper.h"
 #include "webrtc/modules/desktop_capture/win/screen_capturer_win_directx.h"
 #include "webrtc/modules/desktop_capture/win/screen_capturer_win_gdi.h"
 #include "webrtc/modules/desktop_capture/win/screen_capturer_win_magnifier.h"
@@ -22,8 +20,9 @@
 namespace webrtc {
 
 // static
-ScreenCapturer* ScreenCapturer::Create(const DesktopCaptureOptions& options) {
-  std::unique_ptr<ScreenCapturer> capturer;
+std::unique_ptr<DesktopCapturer> DesktopCapturer::CreateRawScreenCapturer(
+    const DesktopCaptureOptions& options) {
+  std::unique_ptr<DesktopCapturer> capturer;
   if (options.allow_directx_capturer() &&
       ScreenCapturerWinDirectx::IsSupported()) {
     capturer.reset(new ScreenCapturerWinDirectx(options));
@@ -35,11 +34,7 @@ ScreenCapturer* ScreenCapturer::Create(const DesktopCaptureOptions& options) {
     capturer.reset(new ScreenCapturerWinMagnifier(std::move(capturer)));
   }
 
-  if (options.detect_updated_region()) {
-    capturer.reset(new ScreenCapturerDifferWrapper(std::move(capturer)));
-  }
-
-  return capturer.release();
+  return capturer;
 }
 
 }  // namespace webrtc

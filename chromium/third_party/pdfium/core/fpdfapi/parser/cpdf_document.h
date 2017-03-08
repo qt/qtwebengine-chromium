@@ -13,8 +13,6 @@
 #include "core/fpdfapi/parser/cpdf_indirect_object_holder.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fpdfdoc/cpdf_linklist.h"
-#include "core/fxcrt/cfx_string_pool_template.h"
-#include "core/fxcrt/cfx_weak_ptr.h"
 #include "core/fxcrt/fx_basic.h"
 
 class CFX_Font;
@@ -26,6 +24,7 @@ class CPDF_Font;
 class CPDF_FontEncoding;
 class CPDF_IccProfile;
 class CPDF_Image;
+class CPDF_LinearizedHeader;
 class CPDF_Parser;
 class CPDF_Pattern;
 class CPDF_StreamAcc;
@@ -49,13 +48,9 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   CPDF_Parser* GetParser() const { return m_pParser.get(); }
   CPDF_Dictionary* GetRoot() const { return m_pRootDict; }
   CPDF_Dictionary* GetInfo() const { return m_pInfoDict; }
-  CFX_WeakPtr<CFX_ByteStringPool> GetByteStringPool() const {
-    return m_pByteStringPool;
-  }
 
   void DeletePage(int iPage);
   int GetPageCount() const;
-
   bool IsPageLoaded(int iPage) const;
   CPDF_Dictionary* GetPage(int iPage);
   int GetPageIndex(uint32_t objnum);
@@ -80,56 +75,66 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
                             bool bShading,
                             const CFX_Matrix& matrix);
 
-  CPDF_Image* LoadImageF(CPDF_Object* pObj);
+  CPDF_Image* LoadImageFromPageData(uint32_t dwStreamObjNum);
   CPDF_StreamAcc* LoadFontFile(CPDF_Stream* pStream);
   CPDF_IccProfile* LoadIccProfile(CPDF_Stream* pStream);
 
   void LoadDoc();
-  void LoadLinearizedDoc(CPDF_Dictionary* pLinearizationParams);
+  void LoadLinearizedDoc(const CPDF_LinearizedHeader* pLinearizationParams);
   void LoadPages();
 
   void CreateNewDoc();
   CPDF_Dictionary* CreateNewPage(int iPage);
 
   CPDF_Font* AddStandardFont(const FX_CHAR* font, CPDF_FontEncoding* pEncoding);
-  CPDF_Font* AddFont(CFX_Font* pFont, int charset, FX_BOOL bVert);
+  CPDF_Font* AddFont(CFX_Font* pFont, int charset, bool bVert);
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
   CPDF_Font* AddWindowsFont(LOGFONTA* pLogFont,
-                            FX_BOOL bVert,
-                            FX_BOOL bTranslateName = FALSE);
+                            bool bVert,
+                            bool bTranslateName = false);
   CPDF_Font* AddWindowsFont(LOGFONTW* pLogFont,
-                            FX_BOOL bVert,
-                            FX_BOOL bTranslateName = FALSE);
+                            bool bVert,
+                            bool bTranslateName = false);
 #endif
 
- private:
-  friend class CPDF_TestDocument;
-
+ protected:
   // Retrieve page count information by getting count value from the tree nodes
   int RetrievePageCount() const;
-  CPDF_Dictionary* FindPDFPage(CPDF_Dictionary* pPages,
-                               int iPage,
-                               int nPagesToGo,
-                               int level);
+  // When this method is called, m_pTreeTraversal[level] exists.
+  CPDF_Dictionary* TraversePDFPages(int iPage, int* nPagesToGo, size_t level);
   int FindPageIndex(CPDF_Dictionary* pNode,
                     uint32_t& skip_count,
                     uint32_t objnum,
                     int& index,
                     int level = 0);
-  CPDF_Object* ParseIndirectObject(uint32_t objnum) override;
+  std::unique_ptr<CPDF_Object> ParseIndirectObject(uint32_t objnum) override;
   void LoadDocInternal();
   size_t CalculateEncodingDict(int charset, CPDF_Dictionary* pBaseDict);
   CPDF_Dictionary* GetPagesDict() const;
   CPDF_Dictionary* ProcessbCJK(
       CPDF_Dictionary* pBaseDict,
       int charset,
-      FX_BOOL bVert,
+      bool bVert,
       CFX_ByteString basefont,
       std::function<void(FX_WCHAR, FX_WCHAR, CPDF_Array*)> Insert);
+  bool InsertDeletePDFPage(CPDF_Dictionary* pPages,
+                           int nPagesToGo,
+                           CPDF_Dictionary* pPageDict,
+                           bool bInsert,
+                           std::set<CPDF_Dictionary*>* pVisited);
+  bool InsertNewPage(int iPage, CPDF_Dictionary* pPageDict);
+  void ResetTraversal();
 
   std::unique_ptr<CPDF_Parser> m_pParser;
   CPDF_Dictionary* m_pRootDict;
   CPDF_Dictionary* m_pInfoDict;
+  // Vector of pairs to know current position in the page tree. The index in the
+  // vector corresponds to the level being described. The pair contains a
+  // pointer to the dictionary being processed at the level, and an index of the
+  // of the child being processed within the dictionary's /Kids array.
+  std::vector<std::pair<CPDF_Dictionary*, size_t>> m_pTreeTraversal;
+  // Index of the next page that will be traversed from the page tree.
+  int m_iNextPageToTraverse;
   bool m_bLinearized;
   int m_iFirstPageNo;
   uint32_t m_dwFirstPageObjNum;
@@ -139,7 +144,6 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   std::unique_ptr<JBig2_DocumentContext> m_pCodecContext;
   std::unique_ptr<CPDF_LinkList> m_pLinksContext;
   CFX_ArrayTemplate<uint32_t> m_PageList;
-  CFX_WeakPtr<CFX_ByteStringPool> m_pByteStringPool;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_DOCUMENT_H_

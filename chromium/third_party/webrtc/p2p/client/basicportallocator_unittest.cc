@@ -18,7 +18,6 @@
 #include "webrtc/p2p/base/teststunserver.h"
 #include "webrtc/p2p/base/testturnserver.h"
 #include "webrtc/p2p/client/basicportallocator.h"
-#include "webrtc/p2p/client/httpportallocator.h"
 #include "webrtc/base/fakenetwork.h"
 #include "webrtc/base/firewallsocketserver.h"
 #include "webrtc/base/gunit.h"
@@ -921,15 +920,19 @@ TEST_F(BasicPortAllocatorTest, TestGetAllPortsPortRange) {
   session_->StartGettingPorts();
   ASSERT_EQ_WAIT(7U, candidates_.size(), kDefaultAllocationTimeout);
   EXPECT_EQ(4U, ports_.size());
-  // Check the port number for the UDP port object.
-  EXPECT_PRED3(CheckPort, candidates_[0].address(), kMinPort, kMaxPort);
-  // Check the port number for the STUN port object.
-  EXPECT_PRED3(CheckPort, candidates_[1].address(), kMinPort, kMaxPort);
+
+  int num_nonrelay_candidates = 0;
+  for (const Candidate& candidate : candidates_) {
+    // Check the port number for the UDP/STUN/TCP port objects.
+    if (candidate.type() != RELAY_PORT_TYPE) {
+      EXPECT_PRED3(CheckPort, candidate.address(), kMinPort, kMaxPort);
+      ++num_nonrelay_candidates;
+    }
+  }
+  EXPECT_EQ(3, num_nonrelay_candidates);
   // Check the port number used to connect to the relay server.
   EXPECT_PRED3(CheckPort, relay_server_.GetConnection(0).source(), kMinPort,
                kMaxPort);
-  // Check the port number for the TCP port object.
-  EXPECT_PRED3(CheckPort, candidates_[5].address(), kMinPort, kMaxPort);
   EXPECT_TRUE(candidate_allocation_done_);
 }
 

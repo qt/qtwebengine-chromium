@@ -25,9 +25,8 @@ template("webrtc_fuzzer_test") {
   fuzzer_test(target_name) {
     forward_variables_from(invoker, "*")
     deps += [ ":webrtc_fuzzer_main" ]
-    if (is_clang) {
-      # Suppress warnings from Chrome's Clang plugins.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs = [ "//build/config/clang:find_bad_constructs" ]
     }
   }
@@ -69,6 +68,15 @@ webrtc_fuzzer_test("vp8_qp_parser_fuzzer") {
   ]
 }
 
+webrtc_fuzzer_test("h264_bitstream_parser_fuzzer") {
+  sources = [
+    "h264_bitstream_parser_fuzzer.cc",
+  ]
+  deps = [
+    "../../modules/video_coding/",
+  ]
+}
+
 webrtc_fuzzer_test("flexfec_header_reader_fuzzer") {
   sources = [
     "flexfec_header_reader_fuzzer.cc",
@@ -76,6 +84,16 @@ webrtc_fuzzer_test("flexfec_header_reader_fuzzer") {
   deps = [
     "../../modules/rtp_rtcp/",
   ]
+}
+
+webrtc_fuzzer_test("flexfec_sender_fuzzer") {
+  sources = [
+    "flexfec_sender_fuzzer.cc",
+  ]
+  deps = [
+    "../../modules/rtp_rtcp/",
+  ]
+  libfuzzer_options = [ "max_len=200" ]
 }
 
 webrtc_fuzzer_test("ulpfec_header_reader_fuzzer") {
@@ -87,13 +105,23 @@ webrtc_fuzzer_test("ulpfec_header_reader_fuzzer") {
   ]
 }
 
-webrtc_fuzzer_test("producer_fec_fuzzer") {
+webrtc_fuzzer_test("ulpfec_generator_fuzzer") {
   sources = [
-    "producer_fec_fuzzer.cc",
+    "ulpfec_generator_fuzzer.cc",
   ]
   deps = [
     "../../modules/rtp_rtcp/",
   ]
+}
+
+webrtc_fuzzer_test("flexfec_receiver_fuzzer") {
+  sources = [
+    "flexfec_receiver_fuzzer.cc",
+  ]
+  deps = [
+    "../../modules/rtp_rtcp/",
+  ]
+  libfuzzer_options = [ "max_len=2000" ]
 }
 
 webrtc_fuzzer_test("rtcp_receiver_fuzzer") {
@@ -208,6 +236,18 @@ webrtc_fuzzer_test("turn_unwrap_fuzzer") {
   ]
   deps = [
     "../../media:media",
+  ]
+}
+
+webrtc_fuzzer_test("neteq_rtp_fuzzer") {
+  sources = [
+    "neteq_rtp_fuzzer.cc",
+  ]
+  deps = [
+    "../../modules/audio_coding:neteq",
+    "../../modules/audio_coding:neteq_test_minimal",
+    "../../modules/audio_coding:pcm16b",
+    "../../modules/rtp_rtcp",
   ]
 }
 

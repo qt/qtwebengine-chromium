@@ -17,10 +17,13 @@
 #include <vector>
 
 #include "webrtc/base/criticalsection.h"
+#include "webrtc/base/gtest_prod_util.h"
 #include "webrtc/base/ignore_wundef.h"
+#include "webrtc/base/swap_queue.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/audio_processing/audio_buffer.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
+#include "webrtc/modules/audio_processing/render_queue_item_verifier.h"
 #include "webrtc/system_wrappers/include/file_wrapper.h"
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
@@ -64,7 +67,7 @@ class AudioProcessingImpl : public AudioProcessing {
   int StartDebugRecording(const char filename[kMaxFilenameSize],
                           int64_t max_log_size_bytes) override;
   int StartDebugRecording(FILE* handle, int64_t max_log_size_bytes) override;
-
+  int StartDebugRecording(FILE* handle) override;
   int StartDebugRecordingForPlatformFile(rtc::PlatformFile handle) override;
   int StopDebugRecording() override;
 
@@ -113,6 +116,8 @@ class AudioProcessingImpl : public AudioProcessing {
   bool was_stream_delay_set() const override
       EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
 
+  AudioProcessingStatistics GetStatistics() const override;
+
   // Methods returning pointers to APM submodules.
   // No locks are aquired in those, as those locks
   // would offer no protection (the submodules are
@@ -132,6 +137,11 @@ class AudioProcessingImpl : public AudioProcessing {
       EXCLUSIVE_LOCKS_REQUIRED(crit_render_, crit_capture_);
 
  private:
+  // TODO(peah): These friend classes should be removed as soon as the new
+  // parameter setting scheme allows.
+  FRIEND_TEST_ALL_PREFIXES(ApmConfiguration, DefaultBehavior);
+  FRIEND_TEST_ALL_PREFIXES(ApmConfiguration, ValidConfigBehavior);
+  FRIEND_TEST_ALL_PREFIXES(ApmConfiguration, InValidConfigBehavior);
   struct ApmPublicSubmodules;
   struct ApmPrivateSubmodules;
 
@@ -142,6 +152,7 @@ class AudioProcessingImpl : public AudioProcessing {
     bool Update(bool high_pass_filter_enabled,
                 bool echo_canceller_enabled,
                 bool mobile_echo_controller_enabled,
+                bool residual_echo_detector_enabled,
                 bool noise_suppressor_enabled,
                 bool intelligibility_enhancer_enabled,
                 bool beamformer_enabled,
@@ -159,6 +170,7 @@ class AudioProcessingImpl : public AudioProcessing {
     bool high_pass_filter_enabled_ = false;
     bool echo_canceller_enabled_ = false;
     bool mobile_echo_controller_enabled_ = false;
+    bool residual_echo_detector_enabled_ = false;
     bool noise_suppressor_enabled_ = false;
     bool intelligibility_enhancer_enabled_ = false;
     bool beamformer_enabled_ = false;
@@ -226,6 +238,14 @@ class AudioProcessingImpl : public AudioProcessing {
   int InitializeLocked(const ProcessingConfig& config)
       EXCLUSIVE_LOCKS_REQUIRED(crit_render_, crit_capture_);
   void InitializeLevelController() EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
+  void InitializeResidualEchoDetector()
+      EXCLUSIVE_LOCKS_REQUIRED(crit_render_, crit_capture_);
+
+  void EmptyQueuedRenderAudio();
+  void AllocateRenderQueue()
+      EXCLUSIVE_LOCKS_REQUIRED(crit_render_, crit_capture_);
+  void QueueRenderAudio(AudioBuffer* audio)
+      EXCLUSIVE_LOCKS_REQUIRED(crit_render_);
 
   // Capture-side exclusive methods possibly running APM in a multi-threaded
   // manner that are called with the render lock already acquired.
@@ -269,13 +289,15 @@ class AudioProcessingImpl : public AudioProcessing {
   rtc::CriticalSection crit_render_ ACQUIRED_BEFORE(crit_capture_);
   rtc::CriticalSection crit_capture_;
 
+  // Struct containing the Config specifying the behavior of APM.
+  AudioProcessing::Config config_;
+
   // Class containing information about what submodules are active.
   ApmSubmoduleStates submodule_states_;
 
   // Structs containing the pointers to the submodules.
   std::unique_ptr<ApmPublicSubmodules> public_submodules_;
-  std::unique_ptr<ApmPrivateSubmodules> private_submodules_
-      GUARDED_BY(crit_capture_);
+  std::unique_ptr<ApmPrivateSubmodules> private_submodules_;
 
   // State that is written to while holding both the render and capture locks
   // but can be read without any lock being held.
@@ -353,6 +375,38 @@ class AudioProcessingImpl : public AudioProcessing {
     std::unique_ptr<AudioConverter> render_converter;
     std::unique_ptr<AudioBuffer> render_audio;
   } render_ GUARDED_BY(crit_render_);
+
+  size_t aec_render_queue_element_max_size_ GUARDED_BY(crit_render_)
+      GUARDED_BY(crit_capture_) = 0;
+  std::vector<float> aec_render_queue_buffer_ GUARDED_BY(crit_render_);
+  std::vector<float> aec_capture_queue_buffer_ GUARDED_BY(crit_capture_);
+
+  size_t aecm_render_queue_element_max_size_ GUARDED_BY(crit_render_)
+      GUARDED_BY(crit_capture_) = 0;
+  std::vector<int16_t> aecm_render_queue_buffer_ GUARDED_BY(crit_render_);
+  std::vector<int16_t> aecm_capture_queue_buffer_ GUARDED_BY(crit_capture_);
+
+  size_t agc_render_queue_element_max_size_ GUARDED_BY(crit_render_)
+      GUARDED_BY(crit_capture_) = 0;
+  std::vector<int16_t> agc_render_queue_buffer_ GUARDED_BY(crit_render_);
+  std::vector<int16_t> agc_capture_queue_buffer_ GUARDED_BY(crit_capture_);
+
+  size_t red_render_queue_element_max_size_ GUARDED_BY(crit_render_)
+      GUARDED_BY(crit_capture_) = 0;
+  std::vector<float> red_render_queue_buffer_ GUARDED_BY(crit_render_);
+  std::vector<float> red_capture_queue_buffer_ GUARDED_BY(crit_capture_);
+
+  // Lock protection not needed.
+  std::unique_ptr<SwapQueue<std::vector<float>, RenderQueueItemVerifier<float>>>
+      aec_render_signal_queue_;
+  std::unique_ptr<
+      SwapQueue<std::vector<int16_t>, RenderQueueItemVerifier<int16_t>>>
+      aecm_render_signal_queue_;
+  std::unique_ptr<
+      SwapQueue<std::vector<int16_t>, RenderQueueItemVerifier<int16_t>>>
+      agc_render_signal_queue_;
+  std::unique_ptr<SwapQueue<std::vector<float>, RenderQueueItemVerifier<float>>>
+      red_render_signal_queue_;
 };
 
 }  // namespace webrtc

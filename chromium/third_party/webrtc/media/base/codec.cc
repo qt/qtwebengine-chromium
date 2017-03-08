@@ -17,10 +17,20 @@
 #include "webrtc/base/logging.h"
 #include "webrtc/base/stringencode.h"
 #include "webrtc/base/stringutils.h"
+#include "webrtc/common_video/h264/profile_level_id.h"
 
 namespace cricket {
 
-const int kMaxPayloadId = 127;
+static bool IsSameH264Profile(const CodecParameterMap& params1,
+                              const CodecParameterMap& params2) {
+  const rtc::Optional<webrtc::H264::ProfileLevelId> profile_level_id =
+      webrtc::H264::ParseSdpProfileLevelId(params1);
+  const rtc::Optional<webrtc::H264::ProfileLevelId> other_profile_level_id =
+      webrtc::H264::ParseSdpProfileLevelId(params2);
+  // Compare H264 profiles, but not levels.
+  return profile_level_id && other_profile_level_id &&
+         profile_level_id->profile == other_profile_level_id->profile;
+}
 
 bool FeedbackParam::operator==(const FeedbackParam& other) const {
   return _stricmp(other.id().c_str(), id().c_str()) == 0 &&
@@ -77,17 +87,10 @@ Codec::Codec(int id, const std::string& name, int clockrate)
 Codec::Codec() : id(0), clockrate(0) {}
 
 Codec::Codec(const Codec& c) = default;
-
+Codec::Codec(Codec&& c) = default;
 Codec::~Codec() = default;
-
-Codec& Codec::operator=(const Codec& c) {
-  this->id = c.id;  // id is reserved in objective-c
-  name = c.name;
-  clockrate = c.clockrate;
-  params = c.params;
-  feedback_params = c.feedback_params;
-  return *this;
-}
+Codec& Codec::operator=(const Codec& c) = default;
+Codec& Codec::operator=(Codec&& c) = default;
 
 bool Codec::operator==(const Codec& c) const {
   return this->id == c.id &&  // id is reserved in objective-c
@@ -99,8 +102,9 @@ bool Codec::Matches(const Codec& codec) const {
   // Match the codec id/name based on the typical static/dynamic name rules.
   // Matching is case-insensitive.
   const int kMaxStaticPayloadId = 95;
-  return (codec.id <= kMaxStaticPayloadId) ?
-      (id == codec.id) : (_stricmp(name.c_str(), codec.name.c_str()) == 0);
+  return (id <= kMaxStaticPayloadId || codec.id <= kMaxStaticPayloadId)
+             ? (id == codec.id)
+             : (_stricmp(name.c_str(), codec.name.c_str()) == 0);
 }
 
 bool Codec::GetParam(const std::string& name, std::string* out) const {
@@ -161,13 +165,9 @@ AudioCodec::AudioCodec() : Codec(), bitrate(0), channels(0) {
 }
 
 AudioCodec::AudioCodec(const AudioCodec& c) = default;
-
-AudioCodec& AudioCodec::operator=(const AudioCodec& c) {
-  Codec::operator=(c);
-  bitrate = c.bitrate;
-  channels = c.channels;
-  return *this;
-}
+AudioCodec::AudioCodec(AudioCodec&& c) = default;
+AudioCodec& AudioCodec::operator=(const AudioCodec& c) = default;
+AudioCodec& AudioCodec::operator=(AudioCodec&& c) = default;
 
 bool AudioCodec::operator==(const AudioCodec& c) const {
   return bitrate == c.bitrate && channels == c.channels && Codec::operator==(c);
@@ -205,49 +205,40 @@ std::string AudioCodec::ToString() const {
 
 std::string VideoCodec::ToString() const {
   std::ostringstream os;
-  os << "VideoCodec[" << id << ":" << name << ":" << width << ":" << height
-     << ":" << framerate << "]";
+  os << "VideoCodec[" << id << ":" << name << "]";
   return os.str();
 }
 
-VideoCodec::VideoCodec(int id,
-                       const std::string& name,
-                       int width,
-                       int height,
-                       int framerate)
-    : Codec(id, name, kVideoCodecClockrate),
-      width(width),
-      height(height),
-      framerate(framerate) {}
-
 VideoCodec::VideoCodec(int id, const std::string& name)
-    : Codec(id, name, kVideoCodecClockrate),
-      width(0),
-      height(0),
-      framerate(0) {}
+    : Codec(id, name, kVideoCodecClockrate) {}
 
-VideoCodec::VideoCodec() : Codec(), width(0), height(0), framerate(0) {
+VideoCodec::VideoCodec(const std::string& name)
+    : VideoCodec(0 /* id */, name) {}
+
+VideoCodec::VideoCodec() : Codec() {
   clockrate = kVideoCodecClockrate;
 }
 
 VideoCodec::VideoCodec(const VideoCodec& c) = default;
-
-VideoCodec& VideoCodec::operator=(const VideoCodec& c) {
-  Codec::operator=(c);
-  width = c.width;
-  height = c.height;
-  framerate = c.framerate;
-  return *this;
-}
+VideoCodec::VideoCodec(VideoCodec&& c) = default;
+VideoCodec& VideoCodec::operator=(const VideoCodec& c) = default;
+VideoCodec& VideoCodec::operator=(VideoCodec&& c) = default;
 
 bool VideoCodec::operator==(const VideoCodec& c) const {
-  return width == c.width && height == c.height && framerate == c.framerate &&
-         Codec::operator==(c);
+  return Codec::operator==(c);
+}
+
+bool VideoCodec::Matches(const VideoCodec& other) const {
+  if (!Codec::Matches(other))
+    return false;
+  if (CodecNamesEq(name.c_str(), kH264CodecName))
+    return IsSameH264Profile(params, other.params);
+  return true;
 }
 
 VideoCodec VideoCodec::CreateRtxCodec(int rtx_payload_type,
                                       int associated_payload_type) {
-  VideoCodec rtx_codec(rtx_payload_type, kRtxCodecName, 0, 0, 0);
+  VideoCodec rtx_codec(rtx_payload_type, kRtxCodecName);
   rtx_codec.SetParam(kCodecParamAssociatedPayloadType, associated_payload_type);
   return rtx_codec;
 }
@@ -259,6 +250,9 @@ VideoCodec::CodecType VideoCodec::GetCodecType() const {
   }
   if (_stricmp(payload_name, kUlpfecCodecName) == 0) {
     return CODEC_ULPFEC;
+  }
+  if (_stricmp(payload_name, kFlexfecCodecName) == 0) {
+    return CODEC_FLEXFEC;
   }
   if (_stricmp(payload_name, kRtxCodecName) == 0) {
     return CODEC_RTX;
@@ -277,11 +271,6 @@ bool VideoCodec::ValidateCodecFormat() const {
   }
 
   // Video validation from here on.
-
-  if (width <= 0 || height <= 0) {
-    LOG(LS_ERROR) << "Codec with invalid dimensions: " << ToString();
-    return false;
-  }
   int min_bitrate = -1;
   int max_bitrate = -1;
   if (GetParam(kCodecParamMinBitrate, &min_bitrate) &&
@@ -302,8 +291,9 @@ DataCodec::DataCodec() : Codec() {
 }
 
 DataCodec::DataCodec(const DataCodec& c) = default;
-
+DataCodec::DataCodec(DataCodec&& c) = default;
 DataCodec& DataCodec::operator=(const DataCodec& c) = default;
+DataCodec& DataCodec::operator=(DataCodec&& c) = default;
 
 std::string DataCodec::ToString() const {
   std::ostringstream os;
@@ -327,7 +317,37 @@ bool HasTransportCc(const Codec& codec) {
 }
 
 bool CodecNamesEq(const std::string& name1, const std::string& name2) {
-  return _stricmp(name1.c_str(), name2.c_str()) == 0;
+  return CodecNamesEq(name1.c_str(), name2.c_str());
+}
+
+bool CodecNamesEq(const char* name1, const char* name2) {
+  return _stricmp(name1, name2) == 0;
+}
+
+webrtc::VideoCodecType CodecTypeFromName(const std::string& name) {
+  if (CodecNamesEq(name.c_str(), kVp8CodecName)) {
+    return webrtc::kVideoCodecVP8;
+  } else if (CodecNamesEq(name.c_str(), kVp9CodecName)) {
+    return webrtc::kVideoCodecVP9;
+  } else if (CodecNamesEq(name.c_str(), kH264CodecName)) {
+    return webrtc::kVideoCodecH264;
+  }
+  return webrtc::kVideoCodecUnknown;
+}
+
+const VideoCodec* FindMatchingCodec(
+    const std::vector<VideoCodec>& supported_codecs,
+    const VideoCodec& codec) {
+  for (const VideoCodec& supported_codec : supported_codecs) {
+    if (!CodecNamesEq(codec.name, supported_codec.name))
+      continue;
+    if (CodecNamesEq(codec.name.c_str(), kH264CodecName) &&
+        !IsSameH264Profile(codec.params, supported_codec.params)) {
+      continue;
+    }
+    return &supported_codec;
+  }
+  return nullptr;
 }
 
 }  // namespace cricket

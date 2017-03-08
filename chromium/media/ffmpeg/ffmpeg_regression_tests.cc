@@ -118,13 +118,13 @@ FFMPEG_TEST_CASE(Cr152691,
 FFMPEG_TEST_CASE(Cr161639, "security/161639.m4a", PIPELINE_OK, PIPELINE_OK);
 FFMPEG_TEST_CASE(Cr222754,
                  "security/222754.mp4",
-                 PIPELINE_OK,
-                 PIPELINE_ERROR_DECODE);
+                 DEMUXER_ERROR_NO_SUPPORTED_STREAMS,
+                 DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
 FFMPEG_TEST_CASE(Cr234630a, "security/234630a.mov", PIPELINE_OK, PIPELINE_OK);
 FFMPEG_TEST_CASE(Cr234630b,
                  "security/234630b.mov",
-                 PIPELINE_OK,
-                 PIPELINE_ERROR_DECODE);
+                 DEMUXER_ERROR_NO_SUPPORTED_STREAMS,
+                 DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
 FFMPEG_TEST_CASE(Cr242786, "security/242786.webm", PIPELINE_OK, PIPELINE_OK);
 // Test for out-of-bounds access with slightly corrupt file (detection logic
 // thinks it's a MONO file, but actually contains STEREO audio).
@@ -163,6 +163,10 @@ FFMPEG_TEST_CASE(Cr599625,
                  "security/599625.mp4",
                  PIPELINE_OK,
                  PIPELINE_ERROR_DECODE);
+// TODO(liberato): before crbug.com/658440 was fixed, this would fail if run
+// twice under ASAN.  If run once, then it doesn't.  However, it still catches
+// issues in crbug.com/662118, so it's included anyway.
+FFMPEG_TEST_CASE(Cr658440, "security/658440.flac", PIPELINE_OK, PIPELINE_OK);
 
 // General MP4 test cases.
 FFMPEG_TEST_CASE(MP4_0,
@@ -354,7 +358,7 @@ TEST_P(FFmpegRegressionTest, BasicPlayback) {
       ASSERT_TRUE(ended_);
 
       // Tack a seek on the end to catch any seeking issues.
-      Seek(base::TimeDelta::FromMilliseconds(0));
+      Seek(GetStartTime());
     }
   } else {
     // Don't bother checking the exact status as we only care that the

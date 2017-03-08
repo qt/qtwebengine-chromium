@@ -61,7 +61,7 @@ void AppleAppName(rtc::Pathname* path);
 
 namespace rtc {
 
-#if !defined(WEBRTC_ANDROID) && !defined(WEBRTC_IOS)
+#if !defined(WEBRTC_ANDROID) && !defined(WEBRTC_MAC)
 char* UnixFilesystem::app_temp_path_ = NULL;
 #else
 char* UnixFilesystem::provided_app_data_folder_ = NULL;
@@ -79,7 +79,7 @@ void UnixFilesystem::SetAppTempFolder(const std::string& folder) {
 #endif
 
 UnixFilesystem::UnixFilesystem() {
-#if defined(WEBRTC_IOS)
+#if defined(WEBRTC_MAC)
   if (!provided_app_data_folder_)
     provided_app_data_folder_ = AppleDataDirectory();
   if (!provided_app_temp_folder_)
@@ -132,22 +132,6 @@ FileStream *UnixFilesystem::OpenFile(const Pathname &filename,
   return fs;
 }
 
-bool UnixFilesystem::CreatePrivateFile(const Pathname &filename) {
-  int fd = open(filename.pathname().c_str(),
-                O_RDWR | O_CREAT | O_EXCL,
-                S_IRUSR | S_IWUSR);
-  if (fd < 0) {
-    LOG_ERR(LS_ERROR) << "open() failed.";
-    return false;
-  }
-  // Don't need to keep the file descriptor.
-  if (close(fd) < 0) {
-    LOG_ERR(LS_ERROR) << "close() failed.";
-    // Continue.
-  }
-  return true;
-}
-
 bool UnixFilesystem::DeleteFile(const Pathname &filename) {
   LOG(LS_INFO) << "Deleting file:" << filename.pathname();
 
@@ -171,7 +155,7 @@ bool UnixFilesystem::DeleteEmptyFolder(const Pathname &folder) {
 
 bool UnixFilesystem::GetTemporaryFolder(Pathname &pathname, bool create,
                                         const std::string *append) {
-#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
+#if defined(WEBRTC_ANDROID) || defined(WEBRTC_MAC)
   ASSERT(provided_app_temp_folder_ != NULL);
   pathname.SetPathname(provided_app_temp_folder_, "");
 #else
@@ -229,25 +213,6 @@ bool UnixFilesystem::MoveFile(const Pathname &old_path,
   return true;
 }
 
-bool UnixFilesystem::MoveFolder(const Pathname &old_path,
-                                const Pathname &new_path) {
-  if (!IsFolder(old_path)) {
-    ASSERT(IsFolder(old_path));
-    return false;
-  }
-  LOG(LS_VERBOSE) << "Moving " << old_path.pathname()
-                  << " to " << new_path.pathname();
-  if (rename(old_path.pathname().c_str(), new_path.pathname().c_str()) != 0) {
-    if (errno != EXDEV)
-      return false;
-    if (!CopyFolder(old_path, new_path))
-      return false;
-    if (!DeleteFolderAndContents(old_path))
-      return false;
-  }
-  return true;
-}
-
 bool UnixFilesystem::IsFolder(const Pathname &path) {
   struct stat st;
   if (stat(path.pathname().c_str(), &st) < 0)
@@ -281,18 +246,18 @@ bool UnixFilesystem::CopyFile(const Pathname &old_path,
 }
 
 bool UnixFilesystem::IsTemporaryPath(const Pathname& pathname) {
-#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
+#if defined(WEBRTC_ANDROID) || defined(WEBRTC_MAC)
   ASSERT(provided_app_temp_folder_ != NULL);
 #endif
 
   const char* const kTempPrefixes[] = {
-#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
+#if defined(WEBRTC_ANDROID) || defined(WEBRTC_MAC)
     provided_app_temp_folder_,
-#else
-    "/tmp/", "/var/tmp/",
 #if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS)
     "/private/tmp/", "/private/var/tmp/", "/private/var/folders/",
 #endif  // WEBRTC_MAC && !defined(WEBRTC_IOS)
+#else
+    "/tmp/", "/var/tmp/",
 #endif  // WEBRTC_ANDROID || WEBRTC_IOS
   };
   for (size_t i = 0; i < arraysize(kTempPrefixes); ++i) {
@@ -347,47 +312,19 @@ bool UnixFilesystem::GetFileTime(const Pathname& path, FileTimeType which,
   return true;
 }
 
-bool UnixFilesystem::GetAppPathname(Pathname* path) {
-#if defined(__native_client__)
-  return false;
-#elif defined(WEBRTC_MAC)
-  AppleAppName(path);
-  return true;
-#else  // WEBRTC_MAC && !defined(WEBRTC_IOS)
-  char buffer[PATH_MAX + 2];
-  ssize_t len = readlink("/proc/self/exe", buffer, arraysize(buffer) - 1);
-  if ((len <= 0) || (len == PATH_MAX + 1))
-    return false;
-  buffer[len] = '\0';
-  path->SetPathname(buffer);
-  return true;
-#endif  // WEBRTC_MAC && !defined(WEBRTC_IOS)
-}
-
 bool UnixFilesystem::GetAppDataFolder(Pathname* path, bool per_user) {
+  // On macOS and iOS, there is no requirement that the path contains the
+  // organization.
+#if !defined(WEBRTC_MAC)
   ASSERT(!organization_name_.empty());
+#endif
   ASSERT(!application_name_.empty());
 
   // First get the base directory for app data.
-#if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS)
-  if (per_user) {
-    // Use ~/Library/Application Support/<orgname>/<appname>/
-    FSRef fr;
-    if (0 != FSFindFolder(kUserDomain, kApplicationSupportFolderType,
-                          kCreateFolder, &fr))
-      return false;
-    unsigned char buffer[NAME_MAX+1];
-    if (0 != FSRefMakePath(&fr, buffer, arraysize(buffer)))
-      return false;
-    path->SetPathname(reinterpret_cast<char*>(buffer), "");
-  } else {
-    // TODO
-    return false;
-  }
-#elif defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)  // && !WEBRTC_MAC || WEBRTC_IOS
+#if defined(WEBRTC_ANDROID) || defined(WEBRTC_MAC)
   ASSERT(provided_app_data_folder_ != NULL);
   path->SetPathname(provided_app_data_folder_, "");
-#elif defined(WEBRTC_LINUX) && !defined(WEBRTC_ANDROID)  // && !WEBRTC_MAC && !WEBRTC_IOS && !WEBRTC_ANDROID
+#elif defined(WEBRTC_LINUX) // && !WEBRTC_MAC && !WEBRTC_ANDROID
   if (per_user) {
     // We follow the recommendations in
     // http://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
@@ -451,7 +388,7 @@ bool UnixFilesystem::GetAppDataFolder(Pathname* path, bool per_user) {
 }
 
 bool UnixFilesystem::GetAppTempFolder(Pathname* path) {
-#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
+#if defined(WEBRTC_ANDROID) || defined(WEBRTC_MAC)
   ASSERT(provided_app_temp_folder_ != NULL);
   path->SetPathname(provided_app_temp_folder_);
   return true;
@@ -512,20 +449,6 @@ bool UnixFilesystem::GetDiskFreeSpace(const Pathname& path,
 
   return true;
 #endif  // !__native_client__
-}
-
-Pathname UnixFilesystem::GetCurrentDirectory() {
-  Pathname cwd;
-  char buffer[PATH_MAX];
-  char *path = getcwd(buffer, PATH_MAX);
-
-  if (!path) {
-    LOG_ERR(LS_ERROR) << "getcwd() failed";
-    return cwd;  // returns empty pathname
-  }
-  cwd.SetFolder(std::string(path));
-
-  return cwd;
 }
 
 char* UnixFilesystem::CopyString(const std::string& str) {

@@ -65,6 +65,7 @@
 #include <openssl/mem.h>
 #include <openssl/type_check.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 #include "internal.h"
 
@@ -133,13 +134,14 @@ static int ssl_set_pkey(CERT *c, EVP_PKEY *pkey) {
     return 0;
   }
 
-  if (c->x509 != NULL) {
+  X509 *x509_leaf = c->x509_leaf;
+  if (x509_leaf != NULL) {
     /* Sanity-check that the private key and the certificate match, unless the
      * key is opaque (in case of, say, a smartcard). */
     if (!EVP_PKEY_is_opaque(pkey) &&
-        !X509_check_private_key(c->x509, pkey)) {
-      X509_free(c->x509);
-      c->x509 = NULL;
+        !X509_check_private_key(x509_leaf, pkey)) {
+      X509_free(c->x509_leaf);
+      c->x509_leaf = NULL;
       return 0;
     }
   }
@@ -217,6 +219,19 @@ static int ssl_set_cert(CERT *c, X509 *x) {
     return 0;
   }
 
+  /* An ECC certificate may be usable for ECDH or ECDSA. We only support ECDSA
+   * certificates, so sanity-check the key usage extension. */
+  if (pkey->type == EVP_PKEY_EC) {
+    /* This call populates extension flags (ex_flags). */
+    X509_check_purpose(x, -1, 0);
+    if ((x->ex_flags & EXFLAG_KUSAGE) &&
+        !(x->ex_kusage & X509v3_KU_DIGITAL_SIGNATURE)) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_UNKNOWN_CERTIFICATE_TYPE);
+      EVP_PKEY_free(pkey);
+      return 0;
+    }
+  }
+
   if (c->privatekey != NULL) {
     /* Sanity-check that the private key and the certificate match, unless the
      * key is opaque (in case of, say, a smartcard). */
@@ -234,9 +249,9 @@ static int ssl_set_cert(CERT *c, X509 *x) {
 
   EVP_PKEY_free(pkey);
 
-  X509_free(c->x509);
+  X509_free(c->x509_leaf);
   X509_up_ref(x);
-  c->x509 = x;
+  c->x509_leaf = x;
 
   return 1;
 }
@@ -338,6 +353,8 @@ void SSL_CTX_set_private_key_method(SSL_CTX *ctx,
 
 static int set_signing_algorithm_prefs(CERT *cert, const uint16_t *prefs,
                                        size_t num_prefs) {
+  OPENSSL_free(cert->sigalgs);
+
   cert->num_sigalgs = 0;
   cert->sigalgs = BUF_memdup(prefs, num_prefs * sizeof(prefs[0]));
   if (cert->sigalgs == NULL) {

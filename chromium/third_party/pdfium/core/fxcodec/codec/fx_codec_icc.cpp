@@ -8,49 +8,75 @@
 #include "core/fxcodec/fx_codec.h"
 #include "third_party/lcms2-2.6/include/lcms2.h"
 
+const uint32_t N_COMPONENT_LAB = 3;
+const uint32_t N_COMPONENT_GRAY = 1;
+const uint32_t N_COMPONENT_RGB = 3;
+const uint32_t N_COMPONENT_CMYK = 4;
+const uint32_t N_COMPONENT_DEFAULT = 3;
+
 struct CLcmsCmm {
   cmsHTRANSFORM m_hTransform;
   int m_nSrcComponents;
   int m_nDstComponents;
-  FX_BOOL m_bLab;
+  bool m_bLab;
 };
-FX_BOOL CheckComponents(cmsColorSpaceSignature cs,
-                        int nComponents,
-                        FX_BOOL bDst) {
+bool CheckComponents(cmsColorSpaceSignature cs, int nComponents, bool bDst) {
   if (nComponents <= 0 || nComponents > 15) {
-    return FALSE;
+    return false;
   }
   switch (cs) {
     case cmsSigLabData:
       if (nComponents < 3) {
-        return FALSE;
+        return false;
       }
       break;
     case cmsSigGrayData:
       if (bDst && nComponents != 1) {
-        return FALSE;
+        return false;
       }
       if (!bDst && nComponents > 2) {
-        return FALSE;
+        return false;
       }
       break;
     case cmsSigRgbData:
       if (bDst && nComponents != 3) {
-        return FALSE;
+        return false;
       }
       break;
     case cmsSigCmykData:
       if (bDst && nComponents != 4) {
-        return FALSE;
+        return false;
       }
       break;
     default:
       if (nComponents != 3) {
-        return FALSE;
+        return false;
       }
       break;
   }
-  return TRUE;
+  return true;
+}
+
+uint32_t GetCSComponents(cmsColorSpaceSignature cs) {
+  uint32_t components;
+  switch (cs) {
+    case cmsSigLabData:
+      components = N_COMPONENT_LAB;
+      break;
+    case cmsSigGrayData:
+      components = N_COMPONENT_GRAY;
+      break;
+    case cmsSigRgbData:
+      components = N_COMPONENT_RGB;
+      break;
+    case cmsSigCmykData:
+      components = N_COMPONENT_CMYK;
+      break;
+    default:
+      components = N_COMPONENT_DEFAULT;
+      break;
+  }
+  return components;
 }
 
 void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
@@ -80,21 +106,13 @@ void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
     return nullptr;
   }
   int srcFormat;
-  FX_BOOL bLab = FALSE;
+  bool bLab = false;
   cmsColorSpaceSignature srcCS = cmsGetColorSpace(srcProfile);
-
-  nSrcComponents = cmsChannelsOf(srcCS);
-  // According to PDF spec, number of components must be 1, 3, or 4.
-  if (nSrcComponents != 1 && nSrcComponents != 3 && nSrcComponents != 4) {
-    cmsCloseProfile(srcProfile);
-    cmsCloseProfile(dstProfile);
-    return nullptr;
-  }
-
+  nSrcComponents = GetCSComponents(srcCS);
   if (srcCS == cmsSigLabData) {
     srcFormat =
         COLORSPACE_SH(PT_Lab) | CHANNELS_SH(nSrcComponents) | BYTES_SH(0);
-    bLab = TRUE;
+    bLab = true;
   } else {
     srcFormat =
         COLORSPACE_SH(PT_ANY) | CHANNELS_SH(nSrcComponents) | BYTES_SH(1);
@@ -103,7 +121,7 @@ void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
     }
   }
   cmsColorSpaceSignature dstCS = cmsGetColorSpace(dstProfile);
-  if (!CheckComponents(dstCS, nDstComponents, TRUE)) {
+  if (!CheckComponents(dstCS, nDstComponents, true)) {
     cmsCloseProfile(srcProfile);
     cmsCloseProfile(dstProfile);
     return nullptr;
@@ -1643,17 +1661,17 @@ void AdobeCMYK_to_sRGB(FX_FLOAT c,
   // Convert to uint8_t with round-to-nearest. Avoid using FXSYS_round because
   // it is incredibly expensive with VC++ (tested on VC++ 2015) because round()
   // is very expensive.
-  // Adding 0.5f and truncating can round the wrong direction in some edge
-  // cases but these do not matter in this context. For instance, the float that
-  // is one ULP (unit in the last place) before 0.5 should round to zero but
-  // this will round it to one. These edge cases are never hit in this function
-  // due to the very limited precision of the input integers.
-  // This method also doesn't handle negative or extremely large numbers, but
-  // those are not needed here.
-  uint8_t c1 = int(c * 255.f + 0.5f);
-  uint8_t m1 = int(m * 255.f + 0.5f);
-  uint8_t y1 = int(y * 255.f + 0.5f);
-  uint8_t k1 = int(k * 255.f + 0.5f);
+  // The 'magic' value of 0.49999997f, the float that precedes 0.5f, was chosen
+  // because it gives identical results to FXSYS_round(). Using the constant
+  // 0.5f gives different results (1 instead of 0) for one value, 0.0019607842.
+  // That value is close to the cusp but zero is the correct answer, and
+  // getting the same answer as before is desirable.
+  // All floats from 0.0 to 1.0 were tested and now give the same results.
+  const float rounding_offset = 0.49999997f;
+  uint8_t c1 = int(c * 255.f + rounding_offset);
+  uint8_t m1 = int(m * 255.f + rounding_offset);
+  uint8_t y1 = int(y * 255.f + rounding_offset);
+  uint8_t k1 = int(k * 255.f + rounding_offset);
 
   ASSERT(c1 == FXSYS_round(c * 255));
   ASSERT(m1 == FXSYS_round(m * 255));
