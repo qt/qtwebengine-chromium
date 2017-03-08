@@ -690,7 +690,6 @@ def write_gn_ninja(path, root_gen_dir, options):
         'base/sys_info_win.cc',
         'base/threading/platform_thread_win.cc',
         'base/threading/thread_local_storage_win.cc',
-        'base/threading/thread_local_win.cc',
         'base/threading/worker_pool_win.cc',
         'base/time/time_win.cc',
         'base/timer/hi_res_timer_manager_win.cc',

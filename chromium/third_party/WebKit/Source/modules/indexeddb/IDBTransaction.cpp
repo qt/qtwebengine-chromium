@@ -134,7 +134,8 @@ IDBTransaction::IDBTransaction(ExecutionContext* executionContext,
       m_openDBRequest(openDBRequest),
       m_mode(WebIDBTransactionModeVersionChange),
       m_state(Inactive),
-      m_oldDatabaseMetadata(oldMetadata) {
+      m_oldDatabaseMetadata(oldMetadata),
+      m_scope() {
   DCHECK(m_database);
   DCHECK(m_openDBRequest);
   DCHECK(m_scope.isEmpty());

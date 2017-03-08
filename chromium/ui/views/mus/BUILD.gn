@@ -210,6 +210,13 @@ test("views_mus_unittests") {
     "//services/ui/test_wm",
   ]
 
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui/ime/test_ime_driver",
+      "//services/ui/test_wm",
+     ]
+  }
+
   if (is_win) {
     deps += [
       "//build/win:default_exe_manifest",
@@ -320,6 +327,13 @@ test("views_aura_mus_unittests") {
     "//services/ui/test_wm",
   ]
 
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui/ime/test_ime_driver",
+      "//services/ui/test_wm",
+     ]
+  }
+
   if (is_win) {
     deps += [
       "//build/win:default_exe_manifest",
@@ -380,6 +394,12 @@ test("views_mus_interactive_ui_tests") {
     ":interactive_ui_tests_manifest",
     "//services/ui/test_wm",
   ]
+
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui/test_wm",
+     ]
+  }
 
   if (is_win) {
     deps += [

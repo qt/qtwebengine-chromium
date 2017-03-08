@@ -60,6 +60,12 @@ source_set("cpp") {
     "//services/ui",
   ]
 
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui",
+    ]
+  }
+
   defines = [ "GL_GLEXT_PROTOTYPES" ]
 
   allow_circular_includes_from = [
@@ -145,6 +151,12 @@ source_set("internal") {
   ]
 
   defines = [ "GL_GLEXT_PROTOTYPES" ]
+
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui",
+    ]
+  }
 
   if (use_ozone) {
     deps += [ "//ui/ozone" ]

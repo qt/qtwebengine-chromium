@@ -375,7 +375,7 @@ group("both_gn_and_gyp") {
     ]
   }
 
-  if (is_linux && !is_chromeos && !is_chromecast && !use_ozone) {
+  if (is_linux && !is_chromeos && !is_chromecast && !use_ozone && use_gtk) {
     # TODO(thomasanderson): Remove this once we build using
     # GTK3 by default. (crbug.com/132847, crbug.com/79722)
     deps += [ "//chrome/browser/ui/libgtkui:libgtk3ui" ]
@@ -767,7 +767,7 @@ group("gn_only") {
     deps += [ "//components/proximity_auth:proximity_auth_unittests" ]
   }
 
-  if (is_win || is_linux) {
+  if ((is_win || is_linux) && !use_qt) {
     deps += [
       "//mash:all",
       "//media/mojo/services:media_mojo_shell_unittests",
