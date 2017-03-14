@@ -102,6 +102,9 @@ declare_args() {
   # it harder to debug binaries.
   strip_absolute_paths_from_debug_symbols = false
 
+  # Use stdlib=libc++
+  use_libcxx = is_mac
+
   # Allow projects that wish to stay on C++11 to override Chromium's default.
   use_cxx11 = false
 
@@ -560,7 +563,7 @@ config("compiler") {
     }
   }
 
-  if (is_mac) {
+  if (use_libcxx) {
     cflags_cc += [ "-stdlib=libc++" ]
     ldflags += [ "-stdlib=libc++" ]
   }
