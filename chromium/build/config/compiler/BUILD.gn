@@ -79,6 +79,9 @@ declare_args() {
   # the needed gcov profiling data.
   auto_profile_path = ""
 
+  # Use stdlib=libc++
+  use_libcxx = is_mac
+
   # Allow projects that wish to stay on C++11 to override Chromium's default.
   use_cxx11 = false
 
@@ -571,9 +574,11 @@ config("compiler") {
     }
   }
 
-  if (is_mac) {
-    # The system libc++ on Mac doesn't have aligned allocation in C++17.
-    defines += [ "_LIBCPP_HAS_NO_ALIGNED_ALLOCATION" ]
+  if (use_libcxx) {
+    if (is_mac) {
+      # The system libc++ on Mac doesn't have aligned allocation in C++17.
+      defines += [ "_LIBCPP_HAS_NO_ALIGNED_ALLOCATION" ]
+    }
     cflags_cc += [ "-stdlib=libc++" ]
     ldflags += [ "-stdlib=libc++" ]
   }
@@ -1141,7 +1146,7 @@ config("compiler_deterministic") {
   # Tells the compiler not to use absolute paths when passing the default
   # paths to the tools it invokes. We don't want this because we don't
   # really need it and it can mess up the goma cache entries.
-  if (is_clang && !is_nacl) {
+  if (is_clang && !is_nacl && !(use_qt && use_libcxx)) {
     cflags += [ "-no-canonical-prefixes" ]
   }
 }
