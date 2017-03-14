@@ -96,6 +96,9 @@ declare_args() {
   # Enable this to turn off the delete-null-pointer-checks optimization in GCC 6+
   no_delete_null_pointer_checks = false
 
+  # Use stdlib=libc++
+  use_libcxx = is_mac
+
   # Optimize symbol files for maximizing goma cache hit rate.
   strip_absolute_paths_from_debug_symbols = false
 }
@@ -458,7 +461,7 @@ config("compiler") {
     cflags_cc += [ "-std=c++11" ]
   }
 
-  if (is_mac) {
+  if (use_libcxx) {
     cflags_cc += [ "-stdlib=libc++" ]
     ldflags += [ "-stdlib=libc++" ]
   }
