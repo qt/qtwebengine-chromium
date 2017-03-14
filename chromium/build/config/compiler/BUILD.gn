@@ -102,6 +102,9 @@ declare_args() {
   # Enable this to turn off the delete-null-pointer-checks optimization in GCC 6+
   no_delete_null_pointer_checks = false
 
+  # Use stdlib=libc++
+  use_libcxx = is_mac
+
   # Allow projects that wish to stay on C++11 to override Chromium's default.
   use_cxx11 = false
 
@@ -556,7 +559,7 @@ config("compiler") {
     }
   }
 
-  if (is_mac) {
+  if (use_libcxx) {
     cflags_cc += [ "-stdlib=libc++" ]
     ldflags += [ "-stdlib=libc++" ]
   }
