@@ -108,23 +108,19 @@ PassRefPtrWillBeRawPtr<Range> Range::create(Document& ownerDocument, const Posit
     return adoptRefWillBeNoop(new Range(ownerDocument, start.computeContainerNode(), start.computeOffsetInContainerNode(), end.computeContainerNode(), end.computeOffsetInContainerNode()));
 }
 
+// TODO(yosin): We should move |Range::createAdjustedToTreeScope()| to
+// "Document.cpp" since it is use only one place in "Document.cpp".
 PassRefPtrWillBeRawPtr<Range> Range::createAdjustedToTreeScope(const TreeScope& treeScope, const Position& position)
 {
-    RefPtrWillBeRawPtr<Range> range = create(treeScope.document(), position, position);
-
-    // Make sure the range is in this scope.
-    Node* firstNode = range->firstNode();
-    ASSERT(firstNode);
-    Node* shadowHostInThisScopeOrFirstNode = treeScope.ancestorInThisScope(firstNode);
-    ASSERT(shadowHostInThisScopeOrFirstNode);
-    if (shadowHostInThisScopeOrFirstNode == firstNode)
-        return range.release();
-
-    // If not, create a range for the shadow host in this scope.
-    ContainerNode* container = shadowHostInThisScopeOrFirstNode->parentNode();
-    ASSERT(container);
-    unsigned offset = shadowHostInThisScopeOrFirstNode->nodeIndex();
-    return Range::create(treeScope.document(), container, offset, container, offset);
+    ASSERT(position.isNotNull());
+    // Note: Since |Position::computeContanerNode()| returns |nullptr| if
+    // |position| is |BeforeAnchor| or |AfterAnchor|.
+    Node* const anchorNode = position.anchorNode();
+    if (anchorNode->treeScope() == treeScope)
+        return create(treeScope.document(), position, position);
+    Node* const shadowHost = treeScope.ancestorInThisScope(anchorNode);
+    return Range::create(treeScope.document(), Position::beforeNode(shadowHost),
+                         Position::beforeNode(shadowHost));
 }
 
 #if !ENABLE(OILPAN) || !defined(NDEBUG)
