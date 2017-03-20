@@ -32,6 +32,8 @@ BINARY, RAW_TEXT = range(2)
 # Unique constants representing data pack encodings.
 _, UTF8, UTF16 = range(3)
 
+def abs(filename):
+  return os.path.normpath(os.path.join(os.getcwd(), filename))
 
 def Encode(message, encoding):
   '''Returns a byte stream that represents |message| in the given |encoding|.'''
@@ -207,7 +209,7 @@ def ReadFile(filename, encoding):
               conversion but without decoding to Unicode.
   '''
   mode = 'rb' if encoding == BINARY else 'rU'
-  with open(filename, mode) as f:
+  with open(abs(filename), mode) as f:
     data = f.read()
   if encoding not in (BINARY, RAW_TEXT):
     data = data.decode(encoding)
