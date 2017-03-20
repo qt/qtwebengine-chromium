@@ -32,6 +32,8 @@ BINARY = 0
 # Unique constants representing data pack encodings.
 _, UTF8, UTF16 = range(3)
 
+def abs(filename):
+  return os.path.normpath(os.path.join(os.getcwd(), filename))
 
 def Encode(message, encoding):
   '''Returns a byte stream that represents |message| in the given |encoding|.'''
@@ -211,7 +213,7 @@ def ReadFile(filename, encoding):
   else:
     mode = 'rU'
 
-  with io.open(filename, mode, encoding=encoding) as f:
+  with io.open(abs(filename), mode, encoding=encoding) as f:
     return f.read()
 
 
