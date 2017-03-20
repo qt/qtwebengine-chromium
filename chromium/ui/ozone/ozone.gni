@@ -32,6 +32,7 @@ declare_args() {
 
   # Compile the 'wayland' platform.
   ozone_platform_wayland = false
+  ozone_platform_external = false
 
   # Compile the 'windows' platform.
   ozone_platform_windows = false
@@ -82,5 +83,5 @@ declare_args() {
 assert(use_ozone || !(ozone_platform_cast || ozone_platform_gbm ||
                           ozone_platform_headless || ozone_platform_x11 ||
                           ozone_platform_wayland || ozone_platform_windows ||
-                          ozone_platform_magma || ozone_platform_scenic),
+                          ozone_platform_magma || ozone_platform_scenic || ozone_platform_external),
        "Must set use_ozone to select ozone platforms")
