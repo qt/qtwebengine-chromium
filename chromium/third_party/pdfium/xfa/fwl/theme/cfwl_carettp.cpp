@@ -6,8 +6,8 @@
 
 #include "xfa/fwl/theme/cfwl_carettp.h"
 
-#include "xfa/fwl/basewidget/ifwl_caret.h"
 #include "xfa/fwl/core/cfwl_themebackground.h"
+#include "xfa/fwl/core/ifwl_caret.h"
 #include "xfa/fwl/core/ifwl_widget.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
@@ -19,14 +19,15 @@ bool CFWL_CaretTP::IsValidWidget(IFWL_Widget* pWidget) {
   return pWidget && pWidget->GetClassID() == FWL_Type::Caret;
 }
 
-FX_BOOL CFWL_CaretTP::DrawBackground(CFWL_ThemeBackground* pParams) {
+void CFWL_CaretTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
-    return FALSE;
+    return;
+
   switch (pParams->m_iPart) {
     case CFWL_Part::Background: {
-      if (!(pParams->m_dwStates & CFWL_PartState_HightLight)) {
-        return TRUE;
-      }
+      if (!(pParams->m_dwStates & CFWL_PartState_HightLight))
+        return;
+
       DrawCaretBK(pParams->m_pGraphics, pParams->m_dwStates,
                   &(pParams->m_rtPart), (CFX_Color*)pParams->m_pData,
                   &(pParams->m_matrix));
@@ -35,8 +36,8 @@ FX_BOOL CFWL_CaretTP::DrawBackground(CFWL_ThemeBackground* pParams) {
     default:
       break;
   }
-  return TRUE;
 }
+
 void CFWL_CaretTP::DrawCaretBK(CFX_Graphics* pGraphics,
                                uint32_t dwStates,
                                const CFX_RectF* pRect,

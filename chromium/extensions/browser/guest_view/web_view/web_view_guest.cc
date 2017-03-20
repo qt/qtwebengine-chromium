@@ -23,6 +23,7 @@
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -37,6 +38,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/result_codes.h"
@@ -525,11 +527,11 @@ void WebViewGuest::WillDestroy() {
     GetOpener()->pending_new_windows_.erase(this);
 }
 
-bool WebViewGuest::AddMessageToConsole(WebContents* source,
-                                       int32_t level,
-                                       const base::string16& message,
-                                       int32_t line_no,
-                                       const base::string16& source_id) {
+bool WebViewGuest::DidAddMessageToConsole(WebContents* source,
+                                          int32_t level,
+                                          const base::string16& message,
+                                          int32_t line_no,
+                                          const base::string16& source_id) {
   std::unique_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   // Log levels are from base/logging.h: LogSeverity.
   args->SetInteger(webview::kLevel, level);
@@ -600,13 +602,12 @@ void WebViewGuest::LoadProgressChanged(WebContents* source, double progress) {
 
 void WebViewGuest::LoadAbort(bool is_top_level,
                              const GURL& url,
-                             int error_code,
-                             const std::string& error_type) {
+                             int error_code) {
   std::unique_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetBoolean(guest_view::kIsTopLevel, is_top_level);
   args->SetString(guest_view::kUrl, url.possibly_invalid_spec());
   args->SetInteger(guest_view::kCode, error_code);
-  args->SetString(guest_view::kReason, error_type);
+  args->SetString(guest_view::kReason, net::ErrorToShortString(error_code));
   DispatchEventToView(base::MakeUnique<GuestViewEvent>(webview::kEventLoadAbort,
                                                        std::move(args)));
 }
@@ -663,7 +664,9 @@ void WebViewGuest::RendererResponsive(WebContents* source) {
       webview::kEventResponsive, std::move(args)));
 }
 
-void WebViewGuest::RendererUnresponsive(WebContents* source) {
+void WebViewGuest::RendererUnresponsive(
+    WebContents* source,
+    const content::WebContentsUnresponsiveState& unresponsive_state) {
   std::unique_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetInteger(webview::kProcessId,
                    web_contents()->GetRenderProcessHost()->GetID());
@@ -806,11 +809,27 @@ WebViewGuest::WebViewGuest(WebContents* owner_web_contents)
 WebViewGuest::~WebViewGuest() {
 }
 
-void WebViewGuest::DidCommitProvisionalLoadForFrame(
-    content::RenderFrameHost* render_frame_host,
-    const GURL& url,
-    ui::PageTransition transition_type) {
-  if (!render_frame_host->GetParent()) {
+void WebViewGuest::DidFinishNavigation(
+    content::NavigationHandle* navigation_handle) {
+  if (navigation_handle->IsErrorPage() || !navigation_handle->HasCommitted()) {
+    // Suppress loadabort for "mailto" URLs.
+    // Also during destruction, owner_web_contents() is null so there's no point
+    // trying to send the event.
+    if (!navigation_handle->GetURL().SchemeIs(url::kMailToScheme) &&
+        owner_web_contents()) {
+      // If a load is blocked, either by WebRequest or security checks, the
+      // navigation may or may not have committed. So if we don't see an error
+      // code, mark it as blocked.
+      int error_code = navigation_handle->GetNetErrorCode();
+      if (error_code == net::OK)
+        error_code = net::ERR_BLOCKED_BY_CLIENT;
+      LoadAbort(navigation_handle->IsInMainFrame(), navigation_handle->GetURL(),
+                error_code);
+    }
+    return;
+  }
+
+  if (navigation_handle->IsInMainFrame()) {
     // For LoadDataWithBaseURL loads, |url| contains the data URL, but the
     // virtual URL is needed in that case. So use WebContents::GetURL instead.
     src_ = web_contents()->GetURL();
@@ -822,7 +841,7 @@ void WebViewGuest::DidCommitProvisionalLoadForFrame(
   }
   std::unique_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetString(guest_view::kUrl, src_.spec());
-  args->SetBoolean(guest_view::kIsTopLevel, !render_frame_host->GetParent());
+  args->SetBoolean(guest_view::kIsTopLevel, navigation_handle->IsInMainFrame());
   args->SetString(webview::kInternalBaseURLForDataURL,
                   web_contents()
                       ->GetController()
@@ -841,28 +860,15 @@ void WebViewGuest::DidCommitProvisionalLoadForFrame(
   find_helper_.CancelAllFindSessions();
 }
 
-void WebViewGuest::DidFailProvisionalLoad(
-    content::RenderFrameHost* render_frame_host,
-    const GURL& validated_url,
-    int error_code,
-    const base::string16& error_description,
-    bool was_ignored_by_handler) {
-  // Suppress loadabort for "mailto" URLs.
-  if (validated_url.SchemeIs(url::kMailToScheme))
+void WebViewGuest::DidStartNavigation(
+    content::NavigationHandle* navigation_handle) {
+  // loadStart shouldn't be sent for same page navigations.
+  if (navigation_handle->IsSamePage())
     return;
 
-  LoadAbort(!render_frame_host->GetParent(), validated_url, error_code,
-            net::ErrorToShortString(error_code));
-}
-
-void WebViewGuest::DidStartProvisionalLoadForFrame(
-    content::RenderFrameHost* render_frame_host,
-    const GURL& validated_url,
-    bool is_error_page,
-    bool is_iframe_srcdoc) {
   std::unique_ptr<base::DictionaryValue> args(new base::DictionaryValue());
-  args->SetString(guest_view::kUrl, validated_url.spec());
-  args->SetBoolean(guest_view::kIsTopLevel, !render_frame_host->GetParent());
+  args->SetString(guest_view::kUrl, navigation_handle->GetURL().spec());
+  args->SetBoolean(guest_view::kIsTopLevel, navigation_handle->IsInMainFrame());
   DispatchEventToView(base::MakeUnique<GuestViewEvent>(webview::kEventLoadStart,
                                                        std::move(args)));
 }
@@ -1381,8 +1387,7 @@ void WebViewGuest::LoadURLWithParams(
     ui::PageTransition transition_type,
     bool force_navigation) {
   if (!url.is_valid()) {
-    LoadAbort(true /* is_top_level */, url, net::ERR_INVALID_URL,
-              net::ErrorToShortString(net::ERR_INVALID_URL));
+    LoadAbort(true /* is_top_level */, url, net::ERR_INVALID_URL);
     NavigateGuest(url::kAboutBlankURL, false /* force_navigation */);
     return;
   }
@@ -1397,8 +1402,7 @@ void WebViewGuest::LoadURLWithParams(
   // This will block the embedder trying to load unwanted schemes, e.g.
   // chrome://.
   if (scheme_is_blocked) {
-    LoadAbort(true /* is_top_level */, url, net::ERR_DISALLOWED_URL_SCHEME,
-              net::ErrorToShortString(net::ERR_DISALLOWED_URL_SCHEME));
+    LoadAbort(true /* is_top_level */, url, net::ERR_DISALLOWED_URL_SCHEME);
     NavigateGuest(url::kAboutBlankURL, false /* force_navigation */);
     return;
   }

@@ -118,7 +118,7 @@ enum {
 
 // Helper for logging SCTP messages.
 void DebugSctpPrintf(const char* format, ...) {
-#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
+#if RTC_DCHECK_IS_ON
   char s[255];
   va_list ap;
   va_start(ap, format);
@@ -320,7 +320,7 @@ void DecrementUsrSctpUsageCount() {
 }
 
 DataCodec GetSctpDataCodec() {
-  DataCodec codec(kGoogleSctpDataCodecId, kGoogleSctpDataCodecName);
+  DataCodec codec(kGoogleSctpDataCodecPlType, kGoogleSctpDataCodecName);
   codec.SetParam(kCodecParamPort, kSctpDefaultPort);
   return codec;
 }
@@ -985,14 +985,14 @@ static bool GetCodecIntParameter(const std::vector<DataCodec>& codecs,
 
 bool SctpDataMediaChannel::SetSendCodecs(const std::vector<DataCodec>& codecs) {
   return GetCodecIntParameter(
-      codecs, kGoogleSctpDataCodecId, kGoogleSctpDataCodecName, kCodecParamPort,
-      &remote_port_);
+      codecs, kGoogleSctpDataCodecPlType, kGoogleSctpDataCodecName,
+      kCodecParamPort, &remote_port_);
 }
 
 bool SctpDataMediaChannel::SetRecvCodecs(const std::vector<DataCodec>& codecs) {
   return GetCodecIntParameter(
-      codecs, kGoogleSctpDataCodecId, kGoogleSctpDataCodecName, kCodecParamPort,
-      &local_port_);
+      codecs, kGoogleSctpDataCodecPlType, kGoogleSctpDataCodecName,
+      kCodecParamPort, &local_port_);
 }
 
 void SctpDataMediaChannel::OnPacketFromSctpToNetwork(

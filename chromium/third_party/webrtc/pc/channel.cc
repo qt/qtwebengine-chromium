@@ -24,6 +24,7 @@
 #include "webrtc/base/trace_event.h"
 #include "webrtc/media/base/mediaconstants.h"
 #include "webrtc/media/base/rtputils.h"
+#include "webrtc/p2p/base/packettransportinterface.h"
 #include "webrtc/p2p/base/transportchannel.h"
 #include "webrtc/pc/channelmanager.h"
 
@@ -171,7 +172,8 @@ BaseChannel::BaseChannel(rtc::Thread* worker_thread,
 
       transport_controller_(transport_controller),
       rtcp_enabled_(rtcp),
-      media_channel_(media_channel) {
+      media_channel_(media_channel),
+      selected_candidate_pair_(nullptr) {
   RTC_DCHECK(worker_thread_ == rtc::Thread::Current());
   if (transport_controller) {
     RTC_DCHECK_EQ(network_thread, transport_controller->network_thread());
@@ -377,7 +379,7 @@ void BaseChannel::ConnectToTransportChannel(TransportChannel* tc) {
   RTC_DCHECK(network_thread_->IsCurrent());
 
   tc->SignalWritableState.connect(this, &BaseChannel::OnWritableState);
-  tc->SignalReadPacket.connect(this, &BaseChannel::OnChannelRead);
+  tc->SignalReadPacket.connect(this, &BaseChannel::OnPacketRead);
   tc->SignalReadyToSend.connect(this, &BaseChannel::OnReadyToSend);
   tc->SignalDtlsState.connect(this, &BaseChannel::OnDtlsState);
   tc->SignalSelectedCandidatePairChanged.connect(
@@ -387,6 +389,7 @@ void BaseChannel::ConnectToTransportChannel(TransportChannel* tc) {
 
 void BaseChannel::DisconnectFromTransportChannel(TransportChannel* tc) {
   RTC_DCHECK(network_thread_->IsCurrent());
+  OnSelectedCandidatePairChanged(tc, nullptr, -1, false);
 
   tc->SignalWritableState.disconnect(this);
   tc->SignalReadPacket.disconnect(this);
@@ -527,32 +530,33 @@ bool BaseChannel::SetCryptoOptions(const rtc::CryptoOptions& crypto_options) {
   return true;
 }
 
-void BaseChannel::OnWritableState(TransportChannel* channel) {
-  RTC_DCHECK(channel == transport_channel_ ||
-             channel == rtcp_transport_channel_);
+void BaseChannel::OnWritableState(rtc::PacketTransportInterface* transport) {
+  RTC_DCHECK(transport == transport_channel_ ||
+             transport == rtcp_transport_channel_);
   RTC_DCHECK(network_thread_->IsCurrent());
   UpdateWritableState_n();
 }
 
-void BaseChannel::OnChannelRead(TransportChannel* channel,
-                                const char* data, size_t len,
-                                const rtc::PacketTime& packet_time,
-                                int flags) {
-  TRACE_EVENT0("webrtc", "BaseChannel::OnChannelRead");
-  // OnChannelRead gets called from P2PSocket; now pass data to MediaEngine
+void BaseChannel::OnPacketRead(rtc::PacketTransportInterface* transport,
+                               const char* data,
+                               size_t len,
+                               const rtc::PacketTime& packet_time,
+                               int flags) {
+  TRACE_EVENT0("webrtc", "BaseChannel::OnPacketRead");
+  // OnPacketRead gets called from P2PSocket; now pass data to MediaEngine
   RTC_DCHECK(network_thread_->IsCurrent());
 
   // When using RTCP multiplexing we might get RTCP packets on the RTP
   // transport. We feed RTP traffic into the demuxer to determine if it is RTCP.
-  bool rtcp = PacketIsRtcp(channel, data, len);
+  bool rtcp = PacketIsRtcp(transport, data, len);
   rtc::CopyOnWriteBuffer packet(data, len);
   HandlePacket(rtcp, &packet, packet_time);
 }
 
-void BaseChannel::OnReadyToSend(TransportChannel* channel) {
-  RTC_DCHECK(channel == transport_channel_ ||
-             channel == rtcp_transport_channel_);
-  SetTransportChannelReadyToSend(channel == rtcp_transport_channel_, true);
+void BaseChannel::OnReadyToSend(rtc::PacketTransportInterface* transport) {
+  RTC_DCHECK(transport == transport_channel_ ||
+             transport == rtcp_transport_channel_);
+  SetTransportChannelReadyToSend(transport == rtcp_transport_channel_, true);
 }
 
 void BaseChannel::OnDtlsState(TransportChannel* channel,
@@ -579,6 +583,7 @@ void BaseChannel::OnSelectedCandidatePairChanged(
   RTC_DCHECK(channel == transport_channel_ ||
              channel == rtcp_transport_channel_);
   RTC_DCHECK(network_thread_->IsCurrent());
+  selected_candidate_pair_ = selected_candidate_pair;
   std::string transport_name = channel->transport_name();
   rtc::NetworkRoute network_route;
   if (selected_candidate_pair) {
@@ -586,6 +591,8 @@ void BaseChannel::OnSelectedCandidatePairChanged(
         ready_to_send, selected_candidate_pair->local_candidate().network_id(),
         selected_candidate_pair->remote_candidate().network_id(),
         last_sent_packet_id);
+
+    UpdateTransportOverhead();
   }
   invoker_.AsyncInvoke<void>(
       RTC_FROM_HERE, worker_thread_,
@@ -611,9 +618,10 @@ void BaseChannel::SetTransportChannelReadyToSend(bool rtcp, bool ready) {
       Bind(&MediaChannel::OnReadyToSend, media_channel_, ready_to_send));
 }
 
-bool BaseChannel::PacketIsRtcp(const TransportChannel* channel,
-                               const char* data, size_t len) {
-  return (channel == rtcp_transport_channel_ ||
+bool BaseChannel::PacketIsRtcp(const rtc::PacketTransportInterface* transport,
+                               const char* data,
+                               size_t len) {
+  return (transport == rtcp_transport_channel_ ||
           rtcp_mux_filter_.DemuxRtcp(data, static_cast<int>(len)));
 }
 
@@ -902,16 +910,12 @@ void BaseChannel::ChannelWritable_n() {
   LOG(LS_INFO) << "Channel writable (" << content_name_ << ")"
                << (was_ever_writable_ ? "" : " for the first time");
 
-  std::vector<ConnectionInfo> infos;
-  transport_channel_->GetStats(&infos);
-  for (std::vector<ConnectionInfo>::const_iterator it = infos.begin();
-       it != infos.end(); ++it) {
-    if (it->best_connection) {
-      LOG(LS_INFO) << "Using " << it->local_candidate.ToSensitiveString()
-                   << "->" << it->remote_candidate.ToSensitiveString();
-      break;
-    }
-  }
+  if (selected_candidate_pair_)
+    LOG(LS_INFO)
+        << "Using "
+        << selected_candidate_pair_->local_candidate().ToSensitiveString()
+        << "->"
+        << selected_candidate_pair_->remote_candidate().ToSensitiveString();
 
   was_ever_writable_ = true;
   MaybeSetupDtlsSrtp_n();
@@ -1030,11 +1034,12 @@ bool BaseChannel::SetupDtlsSrtp_n(bool rtcp_channel) {
                                     static_cast<int>(recv_key->size()));
   }
 
-  if (!ret)
+  if (!ret) {
     LOG(LS_WARNING) << "DTLS-SRTP key installation failed";
-  else
+  } else {
     dtls_keyed_ = true;
-
+    UpdateTransportOverhead();
+  }
   return ret;
 }
 
@@ -1445,8 +1450,9 @@ void BaseChannel::FlushRtcpMessages_n() {
   }
 }
 
-void BaseChannel::SignalSentPacket_n(TransportChannel* /* channel */,
-                                     const rtc::SentPacket& sent_packet) {
+void BaseChannel::SignalSentPacket_n(
+    rtc::PacketTransportInterface* /* transport */,
+    const rtc::SentPacket& sent_packet) {
   RTC_DCHECK(network_thread_->IsCurrent());
   invoker_.AsyncInvoke<void>(
       RTC_FROM_HERE, worker_thread_,
@@ -1641,15 +1647,15 @@ void VoiceChannel::GetActiveStreams_w(AudioInfo::StreamList* actives) {
   media_channel()->GetActiveStreams(actives);
 }
 
-void VoiceChannel::OnChannelRead(TransportChannel* channel,
-                                 const char* data, size_t len,
-                                 const rtc::PacketTime& packet_time,
+void VoiceChannel::OnPacketRead(rtc::PacketTransportInterface* transport,
+                                const char* data,
+                                size_t len,
+                                const rtc::PacketTime& packet_time,
                                 int flags) {
-  BaseChannel::OnChannelRead(channel, data, len, packet_time, flags);
-
+  BaseChannel::OnPacketRead(transport, data, len, packet_time, flags);
   // Set a flag when we've received an RTP packet. If we're waiting for early
   // media, this will disable the timeout.
-  if (!received_media_ && !PacketIsRtcp(channel, data, len)) {
+  if (!received_media_ && !PacketIsRtcp(transport, data, len)) {
     received_media_ = true;
   }
 }
@@ -1659,6 +1665,47 @@ void BaseChannel::UpdateMediaSendRecvState() {
   invoker_.AsyncInvoke<void>(
       RTC_FROM_HERE, worker_thread_,
       Bind(&BaseChannel::UpdateMediaSendRecvState_w, this));
+}
+
+int BaseChannel::GetTransportOverheadPerPacket() const {
+  RTC_DCHECK(network_thread_->IsCurrent());
+
+  if (!selected_candidate_pair_)
+    return 0;
+
+  int transport_overhead_per_packet = 0;
+
+  constexpr int kIpv4Overhaed = 20;
+  constexpr int kIpv6Overhaed = 40;
+  transport_overhead_per_packet +=
+      selected_candidate_pair_->local_candidate().address().family() == AF_INET
+          ? kIpv4Overhaed
+          : kIpv6Overhaed;
+
+  constexpr int kUdpOverhaed = 8;
+  constexpr int kTcpOverhaed = 20;
+  transport_overhead_per_packet +=
+      selected_candidate_pair_->local_candidate().protocol() ==
+              TCP_PROTOCOL_NAME
+          ? kTcpOverhaed
+          : kUdpOverhaed;
+
+  if (secure()) {
+    int srtp_overhead = 0;
+    if (srtp_filter_.GetSrtpOverhead(&srtp_overhead))
+      transport_overhead_per_packet += srtp_overhead;
+  }
+
+  return transport_overhead_per_packet;
+}
+
+void BaseChannel::UpdateTransportOverhead() {
+  int transport_overhead_per_packet = GetTransportOverheadPerPacket();
+  if (transport_overhead_per_packet)
+    invoker_.AsyncInvoke<void>(
+        RTC_FROM_HERE, worker_thread_,
+        Bind(&MediaChannel::OnTransportOverheadChanged, media_channel_,
+             transport_overhead_per_packet));
 }
 
 void VoiceChannel::UpdateMediaSendRecvState_w() {
@@ -1861,7 +1908,7 @@ VideoChannel::~VideoChannel() {
 }
 
 bool VideoChannel::SetSink(uint32_t ssrc,
-                           rtc::VideoSinkInterface<VideoFrame>* sink) {
+                           rtc::VideoSinkInterface<webrtc::VideoFrame>* sink) {
   worker_thread()->Invoke<void>(
       RTC_FROM_HERE,
       Bind(&VideoMediaChannel::SetSink, media_channel(), ssrc, sink));
@@ -1872,7 +1919,7 @@ bool VideoChannel::SetVideoSend(
     uint32_t ssrc,
     bool mute,
     const VideoOptions* options,
-    rtc::VideoSourceInterface<cricket::VideoFrame>* source) {
+    rtc::VideoSourceInterface<webrtc::VideoFrame>* source) {
   return InvokeOnWorker(RTC_FROM_HERE,
                         Bind(&VideoMediaChannel::SetVideoSend, media_channel(),
                              ssrc, mute, options, source));

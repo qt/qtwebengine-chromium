@@ -587,8 +587,11 @@ Error Display::createPbufferSurface(const Config *configuration, const Attribute
     return egl::Error(EGL_SUCCESS);
 }
 
-Error Display::createPbufferFromClientBuffer(const Config *configuration, EGLClientBuffer shareHandle,
-                                             const AttributeMap &attribs, Surface **outSurface)
+Error Display::createPbufferFromClientBuffer(const Config *configuration,
+                                             EGLenum buftype,
+                                             EGLClientBuffer clientBuffer,
+                                             const AttributeMap &attribs,
+                                             Surface **outSurface)
 {
     ASSERT(isInitialized());
 
@@ -598,7 +601,7 @@ Error Display::createPbufferFromClientBuffer(const Config *configuration, EGLCli
     }
 
     std::unique_ptr<Surface> surface(
-        new PbufferSurface(mImplementation, configuration, shareHandle, attribs));
+        new PbufferSurface(mImplementation, configuration, buftype, clientBuffer, attribs));
     ANGLE_TRY(surface->initialize());
 
     ASSERT(outSurface != nullptr);
@@ -755,7 +758,6 @@ void Display::destroySurface(Surface *surface)
         }
 
         ASSERT(surfaceRemoved);
-        UNUSED_ASSERTION_VARIABLE(surfaceRemoved);
     }
 
     mImplementation->destroySurface(surface);
@@ -839,14 +841,15 @@ bool Display::isValidConfig(const Config *config) const
     return mConfigSet.contains(config);
 }
 
-bool Display::isValidContext(gl::Context *context) const
+bool Display::isValidContext(const gl::Context *context) const
 {
-    return mContextSet.find(context) != mContextSet.end();
+    return mContextSet.find(const_cast<gl::Context *>(context)) != mContextSet.end();
 }
 
-bool Display::isValidSurface(Surface *surface) const
+bool Display::isValidSurface(const Surface *surface) const
 {
-    return mImplementation->getSurfaceSet().find(surface) != mImplementation->getSurfaceSet().end();
+    return mImplementation->getSurfaceSet().find(const_cast<Surface *>(surface)) !=
+           mImplementation->getSurfaceSet().end();
 }
 
 bool Display::isValidImage(const Image *image) const
@@ -944,6 +947,14 @@ void Display::initDisplayExtensions()
 bool Display::isValidNativeWindow(EGLNativeWindowType window) const
 {
     return mImplementation->isValidNativeWindow(window);
+}
+
+Error Display::validateClientBuffer(const Config *configuration,
+                                    EGLenum buftype,
+                                    EGLClientBuffer clientBuffer,
+                                    const AttributeMap &attribs)
+{
+    return mImplementation->validateClientBuffer(configuration, buftype, clientBuffer, attribs);
 }
 
 bool Display::isValidDisplay(const egl::Display *display)

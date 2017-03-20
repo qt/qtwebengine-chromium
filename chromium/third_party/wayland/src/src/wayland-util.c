@@ -33,21 +33,6 @@
 #include "wayland-util.h"
 #include "wayland-private.h"
 
-struct wl_object global_zombie_object;
-
-int
-wl_interface_equal(const struct wl_interface *a, const struct wl_interface *b)
-{
-	/* In most cases the pointer equality test is sufficient.
-	 * However, in some cases, depending on how things are split
-	 * across shared objects, we can end up with multiple
-	 * instances of the interface metadata constants.  So if the
-	 * pointers match, the interfaces are equal, if they don't
-	 * match we have to compare the interface names.
-	 */
-	return a == b || strcmp(a->name, b->name) == 0;
-}
-
 WL_EXPORT void
 wl_list_init(struct wl_list *list)
 {
@@ -117,6 +102,7 @@ WL_EXPORT void
 wl_array_release(struct wl_array *array)
 {
 	free(array->data);
+	array->data = WL_ARRAY_POISON_PTR;
 }
 
 WL_EXPORT void *
@@ -166,6 +152,21 @@ wl_array_copy(struct wl_array *array, struct wl_array *source)
 }
 
 /** \cond */
+
+struct wl_object global_zombie_object;
+
+int
+wl_interface_equal(const struct wl_interface *a, const struct wl_interface *b)
+{
+	/* In most cases the pointer equality test is sufficient.
+	 * However, in some cases, depending on how things are split
+	 * across shared objects, we can end up with multiple
+	 * instances of the interface metadata constants.  So if the
+	 * pointers match, the interfaces are equal, if they don't
+	 * match we have to compare the interface names.
+	 */
+	return a == b || strcmp(a->name, b->name) == 0;
+}
 
 union map_entry {
 	uintptr_t next;
@@ -359,27 +360,34 @@ wl_map_lookup_flags(struct wl_map *map, uint32_t i)
 	return 0;
 }
 
-static void
+static enum wl_iterator_result
 for_each_helper(struct wl_array *entries, wl_iterator_func_t func, void *data)
 {
 	union map_entry *start, *end, *p;
+	enum wl_iterator_result ret = WL_ITERATOR_CONTINUE;
 
 	start = entries->data;
 	end = (union map_entry *) ((char *) entries->data + entries->size);
 
 	for (p = start; p < end; p++)
-		if (p->data && !map_entry_is_free(*p))
-			func(map_entry_get_data(*p), data);
+		if (p->data && !map_entry_is_free(*p)) {
+			ret = func(map_entry_get_data(*p), data);
+			if (ret != WL_ITERATOR_CONTINUE)
+				break;
+		}
+
+	return ret;
 }
 
 WL_EXPORT void
 wl_map_for_each(struct wl_map *map, wl_iterator_func_t func, void *data)
 {
-	for_each_helper(&map->client_entries, func, data);
-	for_each_helper(&map->server_entries, func, data);
-}
+	enum wl_iterator_result ret;
 
-/** \endcond */
+	ret = for_each_helper(&map->client_entries, func, data);
+	if (ret == WL_ITERATOR_CONTINUE)
+		for_each_helper(&map->server_entries, func, data);
+}
 
 static void
 wl_log_stderr_handler(const char *fmt, va_list arg)
@@ -410,3 +418,5 @@ wl_abort(const char *fmt, ...)
 
 	abort();
 }
+
+/** \endcond */

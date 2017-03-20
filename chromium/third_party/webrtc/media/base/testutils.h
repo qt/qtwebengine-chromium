@@ -29,6 +29,10 @@ class ByteBufferWriter;
 class StreamInterface;
 }
 
+namespace webrtc {
+class VideoFrame;
+}
+
 namespace cricket {
 
 // Returns size of 420 image with rounding on chroma for odd sizes.
@@ -43,7 +47,6 @@ template <class T> inline std::vector<T> MakeVector(const T a[], size_t s) {
 
 struct RtpDumpPacket;
 class RtpDumpWriter;
-class VideoFrame;
 
 struct RawRtpPacket {
   void WriteToByteBuffer(uint32_t in_ssrc, rtc::ByteBufferWriter* buf) const;
@@ -116,7 +119,7 @@ class RtpTestUtility {
 // Test helper for testing VideoCapturer implementations.
 class VideoCapturerListener
     : public sigslot::has_slots<>,
-      public rtc::VideoSinkInterface<cricket::VideoFrame> {
+      public rtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
   explicit VideoCapturerListener(VideoCapturer* cap);
   ~VideoCapturerListener();
@@ -128,7 +131,7 @@ class VideoCapturerListener
   bool resolution_changed() const { return resolution_changed_; }
 
   void OnStateChange(VideoCapturer* capturer, CaptureState state);
-  void OnFrame(const VideoFrame& frame) override;
+  void OnFrame(const webrtc::VideoFrame& frame) override;
 
  private:
   VideoCapturer* capturer_;

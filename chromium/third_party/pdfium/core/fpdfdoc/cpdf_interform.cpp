@@ -12,6 +12,7 @@
 #include "core/fpdfapi/parser/cfdf_document.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfdoc/cpdf_filespec.h"
 #include "core/fpdfdoc/cpdf_formcontrol.h"
@@ -58,9 +59,9 @@ void InitDict(CPDF_Dictionary*& pFormDict, CPDF_Document* pDocument) {
     return;
 
   if (!pFormDict) {
-    pFormDict = new CPDF_Dictionary(pDocument->GetByteStringPool());
-    pDocument->GetRoot()->SetReferenceFor(
-        "AcroForm", pDocument, pDocument->AddIndirectObject(pFormDict));
+    pFormDict = pDocument->NewIndirect<CPDF_Dictionary>();
+    pDocument->GetRoot()->SetReferenceFor("AcroForm", pDocument,
+                                          pFormDict->GetObjNum());
   }
 
   CFX_ByteString csDA;
@@ -162,19 +163,19 @@ CPDF_Font* GetNativeFont(CPDF_Dictionary* pFormDict,
   return nullptr;
 }
 
-FX_BOOL FindFont(CPDF_Dictionary* pFormDict,
-                 const CPDF_Font* pFont,
-                 CFX_ByteString& csNameTag) {
+bool FindFont(CPDF_Dictionary* pFormDict,
+              const CPDF_Font* pFont,
+              CFX_ByteString& csNameTag) {
   if (!pFormDict || !pFont)
-    return FALSE;
+    return false;
 
   CPDF_Dictionary* pDR = pFormDict->GetDictFor("DR");
   if (!pDR)
-    return FALSE;
+    return false;
 
   CPDF_Dictionary* pFonts = pDR->GetDictFor("Font");
   if (!pFonts)
-    return FALSE;
+    return false;
 
   for (const auto& it : *pFonts) {
     const CFX_ByteString& csKey = it.first;
@@ -189,27 +190,27 @@ FX_BOOL FindFont(CPDF_Dictionary* pFormDict,
       continue;
     if (pFont->GetFontDict() == pElement) {
       csNameTag = csKey;
-      return TRUE;
+      return true;
     }
   }
-  return FALSE;
+  return false;
 }
 
-FX_BOOL FindFont(CPDF_Dictionary* pFormDict,
-                 CPDF_Document* pDocument,
-                 CFX_ByteString csFontName,
-                 CPDF_Font*& pFont,
-                 CFX_ByteString& csNameTag) {
+bool FindFont(CPDF_Dictionary* pFormDict,
+              CPDF_Document* pDocument,
+              CFX_ByteString csFontName,
+              CPDF_Font*& pFont,
+              CFX_ByteString& csNameTag) {
   if (!pFormDict)
-    return FALSE;
+    return false;
 
   CPDF_Dictionary* pDR = pFormDict->GetDictFor("DR");
   if (!pDR)
-    return FALSE;
+    return false;
 
   CPDF_Dictionary* pFonts = pDR->GetDictFor("Font");
   if (!pFonts)
-    return FALSE;
+    return false;
   if (csFontName.GetLength() > 0)
     csFontName.Remove(' ');
 
@@ -234,10 +235,10 @@ FX_BOOL FindFont(CPDF_Dictionary* pFormDict,
     csBaseFont.Remove(' ');
     if (csBaseFont == csFontName) {
       csNameTag = csKey;
-      return TRUE;
+      return true;
     }
   }
-  return FALSE;
+  return false;
 }
 
 void AddFont(CPDF_Dictionary*& pFormDict,
@@ -328,7 +329,7 @@ class CFieldNameExtractor {
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
 typedef struct {
-  FX_BOOL bFind;
+  bool bFind;
   LOGFONTA lf;
 } PDF_FONTDATA;
 
@@ -341,11 +342,11 @@ static int CALLBACK EnumFontFamExProc(ENUMLOGFONTEXA* lpelfe,
 
   PDF_FONTDATA* pData = (PDF_FONTDATA*)lParam;
   memcpy(&pData->lf, &lpelfe->elfLogFont, sizeof(LOGFONTA));
-  pData->bFind = TRUE;
+  pData->bFind = true;
   return 0;
 }
 
-FX_BOOL RetrieveSpecificFont(LOGFONTA& lf) {
+bool RetrieveSpecificFont(LOGFONTA& lf) {
   PDF_FONTDATA fd;
   memset(&fd, 0, sizeof(PDF_FONTDATA));
   HDC hDC = ::GetDC(nullptr);
@@ -358,10 +359,10 @@ FX_BOOL RetrieveSpecificFont(LOGFONTA& lf) {
   return fd.bFind;
 }
 
-FX_BOOL RetrieveSpecificFont(uint8_t charSet,
-                             uint8_t pitchAndFamily,
-                             LPCSTR pcsFontName,
-                             LOGFONTA& lf) {
+bool RetrieveSpecificFont(uint8_t charSet,
+                          uint8_t pitchAndFamily,
+                          LPCSTR pcsFontName,
+                          LOGFONTA& lf) {
   memset(&lf, 0, sizeof(LOGFONTA));
   lf.lfCharSet = charSet;
   lf.lfPitchAndFamily = pitchAndFamily;
@@ -729,7 +730,7 @@ CFX_ByteString CPDF_InterForm::GenerateNewResourceName(
 
   int num = 0;
   CFX_ByteString bsNum;
-  while (TRUE) {
+  while (true) {
     CFX_ByteString csKey = csTmp + bsNum;
     if (!pDict->KeyExist(csKey))
       return csKey;
@@ -763,7 +764,7 @@ CFX_ByteString CPDF_InterForm::GetNativeFont(uint8_t charSet, void* pLogFont) {
     csFontName = "Helvetica";
     return csFontName;
   }
-  FX_BOOL bRet = FALSE;
+  bool bRet = false;
   if (charSet == FXFONT_SHIFTJIS_CHARSET) {
     bRet = RetrieveSpecificFont(charSet, DEFAULT_PITCH | FF_DONTCARE,
                                 "MS Mincho", lf);
@@ -808,7 +809,7 @@ CPDF_Font* CPDF_InterForm::AddNativeFont(uint8_t charSet,
   if (!csFontName.IsEmpty()) {
     if (csFontName == "Helvetica")
       return AddStandardFont(pDocument, csFontName);
-    return pDocument->AddWindowsFont(&lf, FALSE, TRUE);
+    return pDocument->AddWindowsFont(&lf, false, true);
   }
 #endif
   return nullptr;
@@ -939,7 +940,7 @@ CPDF_FormControl* CPDF_InterForm::GetControlByDict(
   return it != m_ControlMap.end() ? it->second : nullptr;
 }
 
-FX_BOOL CPDF_InterForm::NeedConstructAP() const {
+bool CPDF_InterForm::NeedConstructAP() const {
   return m_pFormDict && m_pFormDict->GetBooleanFor("NeedAppearances");
 }
 
@@ -1060,7 +1061,7 @@ void CPDF_InterForm::LoadField(CPDF_Dictionary* pFieldDict, int nLevel) {
   }
 }
 
-FX_BOOL CPDF_InterForm::HasXFAForm() const {
+bool CPDF_InterForm::HasXFAForm() const {
   return m_pFormDict && m_pFormDict->GetArrayFor("XFA");
 }
 
@@ -1104,22 +1105,22 @@ CPDF_FormField* CPDF_InterForm::AddTerminalField(CPDF_Dictionary* pFieldDict) {
       if (pFieldDict->KeyExist("FT")) {
         CPDF_Object* pFTValue = pFieldDict->GetDirectObjectFor("FT");
         if (pFTValue)
-          pParent->SetFor("FT", pFTValue->Clone());
+          pParent->SetFor("FT", pFTValue->Clone().release());
       }
 
       if (pFieldDict->KeyExist("Ff")) {
         CPDF_Object* pFfValue = pFieldDict->GetDirectObjectFor("Ff");
         if (pFfValue)
-          pParent->SetFor("Ff", pFfValue->Clone());
+          pParent->SetFor("Ff", pFfValue->Clone().release());
       }
     }
 
     pField = new CPDF_FormField(this, pParent);
     CPDF_Object* pTObj = pDict->GetObjectFor("T");
     if (ToReference(pTObj)) {
-      CPDF_Object* pClone = pTObj->CloneDirectObject();
+      std::unique_ptr<CPDF_Object> pClone = pTObj->CloneDirectObject();
       if (pClone)
-        pDict->SetFor("T", pClone);
+        pDict->SetFor("T", pClone.release());
       else
         pDict->SetNameFor("T", "");
     }
@@ -1235,12 +1236,12 @@ CFDF_Document* CPDF_InterForm::ExportToFDF(
         continue;
 
       CFX_WideString fullname = FPDF_GetFullName(pField->GetFieldDict());
-      CPDF_Dictionary* pFieldDict =
-          new CPDF_Dictionary(pDoc->GetByteStringPool());
+      auto pFieldDict =
+          pdfium::MakeUnique<CPDF_Dictionary>(pDoc->GetByteStringPool());
       pFieldDict->SetFor("T", new CPDF_String(fullname));
       if (pField->GetType() == CPDF_FormField::CheckBox ||
           pField->GetType() == CPDF_FormField::RadioButton) {
-        CFX_WideString csExport = pField->GetCheckValue(FALSE);
+        CFX_WideString csExport = pField->GetCheckValue(false);
         CFX_ByteString csBExport = PDF_EncodeText(csExport);
         CPDF_Object* pOpt = FPDF_GetFieldAttr(pField->m_pDict, "Opt");
         if (pOpt)
@@ -1250,9 +1251,9 @@ CFDF_Document* CPDF_InterForm::ExportToFDF(
       } else {
         CPDF_Object* pV = FPDF_GetFieldAttr(pField->m_pDict, "V");
         if (pV)
-          pFieldDict->SetFor("V", pV->CloneDirectObject());
+          pFieldDict->SetFor("V", pV->CloneDirectObject().release());
       }
-      pFields->Add(pFieldDict);
+      pFields->Add(std::move(pFieldDict));
     }
   }
   return pDoc;
@@ -1260,7 +1261,7 @@ CFDF_Document* CPDF_InterForm::ExportToFDF(
 
 void CPDF_InterForm::FDF_ImportField(CPDF_Dictionary* pFieldDict,
                                      const CFX_WideString& parent_name,
-                                     FX_BOOL bNotify,
+                                     bool bNotify,
                                      int nLevel) {
   CFX_WideString name;
   if (!parent_name.IsEmpty())
@@ -1303,7 +1304,8 @@ void CPDF_InterForm::FDF_ImportField(CPDF_Dictionary* pFieldDict,
   if ((eType == CPDF_FormField::ListBox || eType == CPDF_FormField::ComboBox) &&
       pFieldDict->KeyExist("Opt")) {
     pField->m_pDict->SetFor(
-        "Opt", pFieldDict->GetDirectObjectFor("Opt")->CloneDirectObject());
+        "Opt",
+        pFieldDict->GetDirectObjectFor("Opt")->CloneDirectObject().release());
   }
 
   if (bNotify && m_pFormNotify) {

@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -36,8 +37,9 @@
 #include <sys/signalfd.h>
 #include <sys/timerfd.h>
 #include <unistd.h>
+#include "wayland-util.h"
 #include "wayland-private.h"
-#include "wayland-server.h"
+#include "wayland-server-core.h"
 #include "wayland-os.h"
 
 struct wl_event_loop {
@@ -227,7 +229,7 @@ struct wl_event_source_signal {
 
 static int
 wl_event_source_signal_dispatch(struct wl_event_source *source,
-			       struct epoll_event *ep)
+				struct epoll_event *ep)
 {
 	struct wl_event_source_signal *signal_source =
 		(struct wl_event_source_signal *) source;
@@ -249,9 +251,9 @@ struct wl_event_source_interface signal_source_interface = {
 
 WL_EXPORT struct wl_event_source *
 wl_event_loop_add_signal(struct wl_event_loop *loop,
-			int signal_number,
-			wl_event_loop_signal_func_t func,
-			void *data)
+			 int signal_number,
+			 wl_event_loop_signal_func_t func,
+			 void *data)
 {
 	struct wl_event_source_signal *source;
 	sigset_t mask;

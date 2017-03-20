@@ -24,6 +24,7 @@
             '<(angle_path)/src/tests/gl_tests/ClearTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ColorMaskTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ComputeShaderTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/CopyCompressedTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/CopyTexImageTest.cpp',
             '<(angle_path)/src/tests/gl_tests/CopyTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/CubeMapTextureTest.cpp',
@@ -64,6 +65,7 @@
             '<(angle_path)/src/tests/gl_tests/RobustClientMemoryTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SimpleOperationTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SixteenBppTextureTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/SRGBFramebufferTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SRGBTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/StateChangeTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SwizzleTest.cpp',
@@ -95,6 +97,7 @@
         'angle_end2end_tests_win_sources':
         [
             '<(angle_path)/src/tests/gl_tests/D3DImageFormatConversionTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/D3DTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/D3D11EmulatedIndexedBufferTest.cpp',
             '<(angle_path)/src/tests/gl_tests/D3D11FormatTablesTest.cpp',
             '<(angle_path)/src/tests/gl_tests/D3D11InputLayoutCacheTest.cpp',

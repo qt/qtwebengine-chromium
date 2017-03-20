@@ -144,7 +144,7 @@ libwayland_cursor_la_CFLAGS =			\
 	-DICONDIR=\"$(ICONDIR)\"
 
 
-TESTS =						\
+built_test_programs =				\
 	array-test				\
 	client-test				\
 	display-test				\
@@ -160,14 +160,18 @@ TESTS =						\
 	signal-test				\
 	resources-test				\
 	message-test				\
-	headers-test
+	headers-test				\
+	compositor-introspection-test		\
+	protocol-logger-test
 
 if ENABLE_CPP_TEST
-TESTS += cpp-compile-test
+built_test_programs += cpp-compile-test
 endif
 
+TESTS = $(built_test_programs)
+
 check_PROGRAMS =				\
-	$(TESTS)				\
+	$(built_test_programs)			\
 	exec-fd-leak-checker
 
 noinst_PROGRAMS =				\
@@ -217,6 +221,10 @@ resources_test_SOURCES = tests/resources-test.c
 resources_test_LDADD = libtest-runner.la
 message_test_SOURCES = tests/message-test.c
 message_test_LDADD = libtest-runner.la
+compositor_introspection_test_SOURCES = tests/compositor-introspection-test.c
+compositor_introspection_test_LDADD = libtest-runner.la
+protocol_logger_test_SOURCES = tests/protocol-logger-test.c
+protocol_logger_test_LDADD = libtest-runner.la
 headers_test_SOURCES = tests/headers-test.c \
 		       tests/headers-protocol-test.c \
 		       tests/headers-protocol-core-test.c

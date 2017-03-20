@@ -16,10 +16,10 @@
 #include "base/observer_list.h"
 #include "components/spellcheck/browser/spellcheck_dictionary.h"
 #ifndef TOOLKIT_QT
-#include "components/sync/api/sync_data.h"
-#include "components/sync/api/sync_error.h"
-#include "components/sync/api/sync_merge_result.h"
-#include "components/sync/api/syncable_service.h"
+#include "components/sync/model/sync_data.h"
+#include "components/sync/model/sync_error.h"
+#include "components/sync/model/sync_merge_result.h"
+#include "components/sync/model/syncable_service.h"
 #endif
 
 namespace syncer {

@@ -70,7 +70,7 @@ PayloadTypeMapper::PayloadTypeMapper()
           {{kRtxCodecName,    90000, 0,
               {{kCodecParamAssociatedPayloadType,
                       std::to_string(kDefaultH264PlType)}}},
-                kDefaultRtxH264PlType},
+                kDefaultRtxH264ConstrainedBaselinePlType},
           // Other codecs
           {{kVp8CodecName,    90000, 0}, kDefaultVp8PlType},
           {{kVp9CodecName,    90000, 0}, kDefaultVp9PlType},
@@ -84,6 +84,7 @@ PayloadTypeMapper::PayloadTypeMapper()
               {{"minptime", "10"}, {"useinbandfec", "1"}}}, 111},
           {{kRedCodecName,    90000, 0}, kDefaultRedPlType},
           {{kUlpfecCodecName, 90000, 0}, kDefaultUlpfecType},
+          {{kFlexfecCodecName, 90000, 0}, kDefaultFlexfecPlType},
           {{kDtmfCodecName,    8000, 1}, 126}}) {
   // TODO(ossu): Try to keep this as change-proof as possible until we're able
   // to remove the payload type constants from everywhere in the code.

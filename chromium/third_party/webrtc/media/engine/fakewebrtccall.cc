@@ -104,6 +104,7 @@ FakeVideoSendStream::FakeVideoSendStream(
     : sending_(false),
       config_(std::move(config)),
       codec_settings_set_(false),
+      resolution_scaling_enabled_(false),
       source_(nullptr),
       num_swapped_frames_(0) {
   RTC_DCHECK(config.encoder_settings.encoder != NULL);
@@ -178,7 +179,7 @@ void FakeVideoSendStream::OnFrame(const webrtc::VideoFrame& frame) {
     video_streams_ = encoder_config_.video_stream_factory->CreateEncoderStreams(
         frame.width(), frame.height(), encoder_config_);
   }
-  last_frame_.ShallowCopy(frame);
+  last_frame_ = frame;
 }
 
 void FakeVideoSendStream::SetStats(
@@ -233,13 +234,26 @@ void FakeVideoSendStream::Stop() {
 }
 
 void FakeVideoSendStream::SetSource(
-    rtc::VideoSourceInterface<webrtc::VideoFrame>* source) {
+    rtc::VideoSourceInterface<webrtc::VideoFrame>* source,
+    const webrtc::VideoSendStream::DegradationPreference&
+        degradation_preference) {
   RTC_DCHECK(source != source_);
   if (source_)
     source_->RemoveSink(this);
   source_ = source;
+  resolution_scaling_enabled_ =
+      degradation_preference !=
+      webrtc::VideoSendStream::DegradationPreference::kMaintainResolution;
   if (source)
-    source->AddOrUpdateSink(this, rtc::VideoSinkWants());
+    source->AddOrUpdateSink(this, resolution_scaling_enabled_
+                                      ? sink_wants_
+                                      : rtc::VideoSinkWants());
+}
+
+void FakeVideoSendStream::InjectVideoSinkWants(
+    const rtc::VideoSinkWants& wants) {
+  sink_wants_ = wants;
+  source_->AddOrUpdateSink(this, wants);
 }
 
 FakeVideoReceiveStream::FakeVideoReceiveStream(
@@ -433,6 +447,17 @@ void FakeCall::DestroyVideoReceiveStream(
   }
 }
 
+webrtc::FlexfecReceiveStream* FakeCall::CreateFlexfecReceiveStream(
+    webrtc::FlexfecReceiveStream::Config config) {
+  // TODO(brandtr): Implement when adding integration with WebRtcVideoEngine2.
+  return nullptr;
+}
+
+void FakeCall::DestroyFlexfecReceiveStream(
+    webrtc::FlexfecReceiveStream* receive_stream) {
+  // TODO(brandtr): Implement when adding integration with WebRtcVideoEngine2.
+}
+
 webrtc::PacketReceiver* FakeCall::Receiver() {
   return this;
 }
@@ -503,18 +528,27 @@ void FakeCall::SignalChannelNetworkState(webrtc::MediaType media,
   }
 }
 
+void FakeCall::OnTransportOverheadChanged(webrtc::MediaType media,
+                                          int transport_overhead_per_packet) {
+  switch (media) {
+    case webrtc::MediaType::AUDIO:
+      audio_transport_overhead_ = transport_overhead_per_packet;
+      break;
+    case webrtc::MediaType::VIDEO:
+      video_transport_overhead_ = transport_overhead_per_packet;
+      break;
+    case webrtc::MediaType::DATA:
+    case webrtc::MediaType::ANY:
+      ADD_FAILURE()
+          << "SignalChannelNetworkState called with unknown parameter.";
+  }
+}
+
 void FakeCall::OnSentPacket(const rtc::SentPacket& sent_packet) {
   last_sent_packet_ = sent_packet;
   if (sent_packet.packet_id >= 0) {
     last_sent_nonnegative_packet_id_ = sent_packet.packet_id;
   }
 }
-
-bool FakeCall::StartEventLog(rtc::PlatformFile log_file,
-                             int64_t max_size_bytes) {
-  return false;
-}
-
-void FakeCall::StopEventLog() {}
 
 }  // namespace cricket

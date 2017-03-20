@@ -32,8 +32,6 @@
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "url/gurl.h"
 
-struct GPUCreateCommandBufferConfig;
-
 namespace base {
 class Thread;
 }
@@ -47,7 +45,7 @@ struct GpuPreferences;
 struct SyncToken;
 }
 
-namespace shell {
+namespace service_manager {
 class InterfaceProvider;
 }
 
@@ -55,7 +53,6 @@ namespace content {
 class BrowserChildProcessHostImpl;
 class GpuMainThread;
 class InProcessChildThreadParams;
-class RenderWidgetHostViewFrameSubscriber;
 class ShaderDiskCache;
 
 typedef base::Thread* (*GpuMainThreadFactoryFunction)(
@@ -113,7 +110,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   CONTENT_EXPORT static void RegisterGpuMainThreadFactory(
       GpuMainThreadFactoryFunction create);
 
-  shell::InterfaceProvider* GetRemoteInterfaces();
+  service_manager::InterfaceProvider* GetRemoteInterfaces();
 
   // Get the GPU process host for the GPU process with the given ID. Returns
   // null if the process no longer exists.

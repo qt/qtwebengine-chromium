@@ -12,7 +12,6 @@
 #include "content/public/browser/security_style_explanations.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/common/security_style.h"
 #include "content/public/common/url_constants.h"
 #include "net/cert/x509_certificate.h"
 #include "ui/gfx/geometry/rect.h"
@@ -38,10 +37,6 @@ bool WebContentsDelegate::IsPopupOrPanel(const WebContents* source) const {
 
 bool WebContentsDelegate::CanOverscrollContent() const { return false; }
 
-gfx::Rect WebContentsDelegate::GetRootWindowResizerRect() const {
-  return gfx::Rect();
-}
-
 bool WebContentsDelegate::ShouldSuppressDialogs(WebContents* source) {
   return false;
 }
@@ -50,11 +45,12 @@ bool WebContentsDelegate::ShouldPreserveAbortedURLs(WebContents* source) {
   return false;
 }
 
-bool WebContentsDelegate::AddMessageToConsole(WebContents* source,
-                                              int32_t level,
-                                              const base::string16& message,
-                                              int32_t line_no,
-                                              const base::string16& source_id) {
+bool WebContentsDelegate::DidAddMessageToConsole(
+    WebContents* source,
+    int32_t level,
+    const base::string16& message,
+    int32_t line_no,
+    const base::string16& source_id) {
   return false;
 }
 
@@ -259,10 +255,10 @@ bool WebContentsDelegate::SaveFrame(const GURL& url, const Referrer& referrer) {
   return false;
 }
 
-SecurityStyle WebContentsDelegate::GetSecurityStyle(
+blink::WebSecurityStyle WebContentsDelegate::GetSecurityStyle(
     WebContents* web_contents,
     SecurityStyleExplanations* security_style_explanations) {
-  return content::SECURITY_STYLE_UNKNOWN;
+  return blink::WebSecurityStyleUnknown;
 }
 
 void WebContentsDelegate::ShowCertificateViewerInDevTools(

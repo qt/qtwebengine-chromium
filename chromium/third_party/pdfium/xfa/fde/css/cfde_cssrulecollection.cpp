@@ -39,7 +39,7 @@ CFDE_CSSRuleCollection::~CFDE_CSSRuleCollection() {
 
 void CFDE_CSSRuleCollection::AddRulesFrom(const CFDE_CSSStyleSheetArray& sheets,
                                           uint32_t dwMediaList,
-                                          IFGAS_FontMgr* pFontMgr) {
+                                          CFGAS_FontMgr* pFontMgr) {
   int32_t iSheets = sheets.GetSize();
   for (int32_t i = 0; i < iSheets; ++i) {
     IFDE_CSSStyleSheet* pSheet = sheets.GetAt(i);
@@ -55,7 +55,7 @@ void CFDE_CSSRuleCollection::AddRulesFrom(const CFDE_CSSStyleSheetArray& sheets,
 void CFDE_CSSRuleCollection::AddRulesFrom(IFDE_CSSStyleSheet* pStyleSheet,
                                           IFDE_CSSRule* pRule,
                                           uint32_t dwMediaList,
-                                          IFGAS_FontMgr* pFontMgr) {
+                                          CFGAS_FontMgr* pFontMgr) {
   switch (pRule->GetType()) {
     case FDE_CSSRULETYPE_Style: {
       IFDE_CSSStyleRule* pStyleRule = static_cast<IFDE_CSSStyleRule*>(pRule);
@@ -92,7 +92,7 @@ void CFDE_CSSRuleCollection::AddRulesFrom(IFDE_CSSStyleSheet* pStyleSheet,
             AddRuleTo(m_pUniversalRules, NewRuleData(pSelector, pDeclaration));
             break;
           default:
-            ASSERT(FALSE);
+            ASSERT(false);
             break;
         }
       }
@@ -126,16 +126,16 @@ void CFDE_CSSRuleCollection::AddRuleTo(CFX_MapPtrToPtr& map,
   }
 }
 
-FX_BOOL CFDE_CSSRuleCollection::AddRuleTo(FDE_CSSRuleData*& pList,
-                                          FDE_CSSRuleData* pData) {
+bool CFDE_CSSRuleCollection::AddRuleTo(FDE_CSSRuleData*& pList,
+                                       FDE_CSSRuleData* pData) {
   if (pList) {
     pData->pNext = pList->pNext;
     pList->pNext = pData;
-    return FALSE;
+    return false;
   }
 
   pList = pData;
-  return TRUE;
+  return true;
 }
 
 FDE_CSSRuleData* CFDE_CSSRuleCollection::NewRuleData(

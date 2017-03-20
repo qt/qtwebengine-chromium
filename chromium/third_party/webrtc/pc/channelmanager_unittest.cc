@@ -12,6 +12,7 @@
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/thread.h"
+#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/media/base/fakemediaengine.h"
 #include "webrtc/media/base/fakevideocapturer.h"
 #include "webrtc/media/base/testutils.h"
@@ -26,8 +27,7 @@ static const AudioCodec kAudioCodecs[] = {
 };
 
 static const VideoCodec kVideoCodecs[] = {
-    VideoCodec(99, "H264", 100, 200, 300),
-    VideoCodec(100, "VP8", 100, 200, 300), VideoCodec(96, "rtx", 100, 200, 300),
+    VideoCodec(99, "H264"), VideoCodec(100, "VP8"), VideoCodec(96, "rtx"),
 };
 
 class ChannelManagerTest : public testing::Test {
@@ -35,10 +35,8 @@ class ChannelManagerTest : public testing::Test {
   ChannelManagerTest()
       : fme_(new cricket::FakeMediaEngine()),
         fdme_(new cricket::FakeDataEngine()),
-        cm_(new cricket::ChannelManager(fme_,
-                                        fdme_,
-                                        rtc::Thread::Current())),
-        fake_call_(webrtc::Call::Config()),
+        cm_(new cricket::ChannelManager(fme_, fdme_, rtc::Thread::Current())),
+        fake_call_(webrtc::Call::Config(&event_log_)),
         fake_mc_(cm_, &fake_call_),
         transport_controller_(
             new cricket::FakeTransportController(ICEROLE_CONTROLLING)) {}
@@ -56,6 +54,7 @@ class ChannelManagerTest : public testing::Test {
     fme_ = NULL;
   }
 
+  webrtc::RtcEventLogNullImpl event_log_;
   rtc::Thread network_;
   rtc::Thread worker_;
   cricket::FakeMediaEngine* fme_;
@@ -171,7 +170,7 @@ TEST_F(ChannelManagerTest, NoTransportChannelTest) {
 
 TEST_F(ChannelManagerTest, SetVideoRtxEnabled) {
   std::vector<VideoCodec> codecs;
-  const VideoCodec rtx_codec(96, "rtx", 0, 0, 0);
+  const VideoCodec rtx_codec(96, "rtx");
 
   // By default RTX is disabled.
   cm_->GetSupportedVideoCodecs(&codecs);

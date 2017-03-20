@@ -302,10 +302,12 @@ bool ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu,
       data.frameHistoryItem = WebHistoryItem(historyItem);
   }
 
+  // HitTestResult::isSelected() ensures clean layout by performing a hit test.
   if (r.isSelected()) {
     if (!isHTMLInputElement(*r.innerNode()) ||
-        toHTMLInputElement(r.innerNode())->type() != InputTypeNames::password)
+        toHTMLInputElement(r.innerNode())->type() != InputTypeNames::password) {
       data.selectedText = selectedFrame->selectedText().stripWhiteSpace();
+    }
   }
 
   if (r.isContentEditable()) {

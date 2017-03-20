@@ -39,14 +39,40 @@ audio_coding_deps = audio_codec_deps + [
                       "../../system_wrappers",
                     ]
 
-rtc_static_library("audio_decoder_factory_interface") {
+rtc_static_library("audio_format") {
   sources = [
-    "codecs/audio_decoder_factory.h",
     "codecs/audio_format.cc",
     "codecs/audio_format.h",
   ]
   deps = [
     "../..:webrtc_common",
+  ]
+}
+
+rtc_static_library("audio_format_conversion") {
+  sources = [
+    "codecs/audio_format_conversion.cc",
+    "codecs/audio_format_conversion.h",
+  ]
+  deps = [
+    ":audio_format",
+    "../..:webrtc_common",
+    "../../base:rtc_base_approved",
+  ]
+}
+
+rtc_source_set("audio_decoder_factory_interface") {
+  sources = [
+    "codecs/audio_decoder_factory.h",
+  ]
+  deps = [
+    ":audio_decoder_interface",
+    ":audio_format",
+
+    # TODO(charujain): Clean this dependency when downstream projects are
+    # updated to properly depend on audio_format_conversion target.
+    ":audio_format_conversion",
+    "../../base:rtc_base_approved",
   ]
 }
 
@@ -114,7 +140,6 @@ rtc_static_library("audio_coding") {
   }
 
   deps = audio_coding_deps + [
-           ":audio_network_adaptor",
            ":neteq",
            ":rent_a_codec",
            "../../logging:rtc_event_log_api",
@@ -682,6 +707,7 @@ rtc_static_library("webrtc_opus") {
   deps = [
     ":audio_decoder_interface",
     ":audio_encoder_interface",
+    ":audio_network_adaptor",
     "../../base:rtc_base_approved",
   ]
 
@@ -709,7 +735,7 @@ if (rtc_enable_protobuf) {
   }
 }
 
-source_set("audio_network_adaptor") {
+rtc_static_library("audio_network_adaptor") {
   sources = [
     "audio_network_adaptor/audio_network_adaptor.cc",
     "audio_network_adaptor/audio_network_adaptor_impl.cc",
@@ -734,11 +760,14 @@ source_set("audio_network_adaptor") {
     "audio_network_adaptor/smoothing_filter.cc",
     "audio_network_adaptor/smoothing_filter.h",
   ]
-  configs += [ "../..:common_config" ]
-  public_configs = [ "../..:common_inherited_config" ]
+
+  deps = [
+    "../..:webrtc_common",
+    "../../system_wrappers",
+  ]
 
   if (rtc_enable_protobuf) {
-    deps = [
+    deps += [
       ":ana_config_proto",
       ":ana_debug_dump_proto",
     ]
@@ -869,12 +898,67 @@ rtc_static_library("neteq") {
   }
 }
 
+# Although providing only test support, this target must be outside of the
+# rtc_include_tests conditional. The reason is that it supports fuzzer tests
+# that ultimately are built and run as a part of the Chromium ecosystem, which
+# does not set the rtc_include_tests flag.
+rtc_source_set("neteq_test_minimal") {
+  testonly = true
+  sources = [
+    "neteq/tools/encode_neteq_input.cc",
+    "neteq/tools/encode_neteq_input.h",
+    "neteq/tools/neteq_test.cc",
+    "neteq/tools/neteq_test.h",
+  ]
+
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
+}
+
 if (rtc_include_tests) {
+  group("audio_coding_tests") {
+    testonly = true
+    public_deps = [
+      ":RTPchange",
+      ":RTPencode",
+      ":RTPjitter",
+      ":RTPtimeshift",
+      ":acm_receive_test",
+      ":acm_send_test",
+      ":audio_classifier_test",
+      ":audio_codec_speed_tests",
+      ":audio_decoder_unittests",
+      ":audio_decoder_unittests",
+      ":delay_test",
+      ":g711_test",
+      ":g722_test",
+      ":ilbc_test",
+      ":insert_packet_with_timing",
+      ":isac_api_test",
+      ":isac_fix_test",
+      ":isac_switch_samprate_test",
+      ":isac_test",
+      ":neteq_ilbc_quality_test",
+      ":neteq_isac_quality_test",
+      ":neteq_opus_quality_test",
+      ":neteq_pcmu_quality_test",
+      ":neteq_speed_test",
+      ":rtp_analyze",
+      ":rtpcat",
+      ":webrtc_opus_fec_test",
+    ]
+    if (rtc_enable_protobuf) {
+      public_deps += [ ":neteq_rtpplay" ]
+    }
+  }
+
   rtc_source_set("acm_receive_test") {
     testonly = true
     sources = [
-      "acm2/acm_receive_test_oldapi.cc",
-      "acm2/acm_receive_test_oldapi.h",
+      "acm2/acm_receive_test.cc",
+      "acm2/acm_receive_test.h",
     ]
 
     defines = audio_coding_defines
@@ -889,8 +973,8 @@ if (rtc_include_tests) {
   rtc_source_set("acm_send_test") {
     testonly = true
     sources = [
-      "acm2/acm_send_test_oldapi.cc",
-      "acm2/acm_send_test_oldapi.h",
+      "acm2/acm_send_test.cc",
+      "acm2/acm_send_test.h",
     ]
 
     defines = audio_coding_defines
@@ -913,6 +997,7 @@ if (rtc_include_tests) {
 
     deps = [
       ":audio_coding",
+      ":audio_format_conversion",
       "../../:webrtc_common",
       "../../system_wrappers",
       "../../system_wrappers:system_wrappers_default",
@@ -931,14 +1016,14 @@ if (rtc_include_tests) {
       "test/insert_packet_with_timing.cc",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from Chrome's Clang plugins.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
     deps = [
       ":audio_coding",
+      ":audio_format_conversion",
       "../../:webrtc_common",
       "../../system_wrappers",
       "../../system_wrappers:system_wrappers_default",
@@ -968,8 +1053,8 @@ if (rtc_include_tests) {
       "neteq/audio_decoder_unittest.cc",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from the Chromium Clang plugins (bugs.webrtc.org/163).
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
@@ -984,7 +1069,7 @@ if (rtc_include_tests) {
       ":isac_fix",
       ":neteq",
       ":neteq_unittest_tools",
-      "../../common_audio/",
+      "../../common_audio",
       "../../test:test_support_main",
       "//testing/gtest",
     ]
@@ -1015,9 +1100,8 @@ if (rtc_include_tests) {
         "neteq/tools/rtc_event_log_source.h",
       ]
 
-      if (is_clang) {
-        # Suppress warnings from the Chromium Clang plugins
-        # (bugs.webrtc.org/163).
+      if (!build_with_chromium && is_clang) {
+        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
         suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
       }
 
@@ -1037,9 +1121,8 @@ if (rtc_include_tests) {
         "neteq/tools/neteq_rtpplay.cc",
       ]
 
-      if (is_clang) {
-        # Suppress warnings from the Chromium Clang plugins
-        # (bugs.webrtc.org/163).
+      if (!build_with_chromium && is_clang) {
+        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
         suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
       }
 
@@ -1071,9 +1154,8 @@ if (rtc_include_tests) {
       "codecs/tools/audio_codec_speed_test.h",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from the Chromium Clang plugins
-      # (bugs.webrtc.org/163).
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
@@ -1087,7 +1169,7 @@ if (rtc_include_tests) {
       ":webrtc_opus",
       "../../system_wrappers:system_wrappers_default",
       "../../test:test_support_main",
-      "../audio_processing/",
+      "../audio_processing",
       "//testing/gtest",
     ]
   }
@@ -1101,8 +1183,8 @@ if (rtc_include_tests) {
       "neteq/tools/neteq_performance_test.h",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from the Chromium Clang plugins (bugs.webrtc.org/163).
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
@@ -1121,8 +1203,8 @@ if (rtc_include_tests) {
       "neteq/tools/neteq_quality_test.h",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from the Chromium Clang plugins (bugs.webrtc.org/163).
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
@@ -1157,8 +1239,6 @@ if (rtc_include_tests) {
       "neteq/tools/neteq_packet_source_input.h",
       "neteq/tools/neteq_replacement_input.cc",
       "neteq/tools/neteq_replacement_input.h",
-      "neteq/tools/neteq_test.cc",
-      "neteq/tools/neteq_test.h",
       "neteq/tools/output_audio_file.h",
       "neteq/tools/output_wav_file.h",
       "neteq/tools/packet.cc",
@@ -1175,12 +1255,13 @@ if (rtc_include_tests) {
 
     public_configs = [ ":neteq_unittest_tools_config" ]
 
-    if (is_clang) {
-      # Suppress warnings from the Chromium Clang plugins (bugs.webrtc.org/163).
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
     deps = [
+      ":neteq_test_minimal",
       "../../common_audio",
       "../../test:rtp_test_utils",
       "../rtp_rtcp",
@@ -1347,9 +1428,8 @@ if (rtc_include_tests) {
       "//third_party/gflags:gflags",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from Chrome's Clang plugins.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
@@ -1598,9 +1678,8 @@ if (rtc_include_tests) {
       "//testing/gtest",
     ]
 
-    if (is_clang) {
-      # Suppress warnings from Chrome's Clang plugins.
-      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }

@@ -19,6 +19,23 @@ config("libyuv_config") {
   }
 }
 
+# This target is built when no specific target is specified on the command line.
+group("default") {
+  testonly = true
+  deps = [
+    ":libyuv",
+  ]
+  if (libyuv_include_tests) {
+    deps += [
+      ":compare",
+      ":convert",
+      ":cpuid",
+      ":libyuv_unittest",
+      ":psnr",
+    ]
+  }
+}
+
 static_library("libyuv") {
   sources = [
     # Headers
@@ -105,6 +122,10 @@ static_library("libyuv") {
     # Enable optimize for speed (-O2) over size (-Os).
     configs += [ "//build/config/compiler:optimize_max" ]
   }
+
+  # To enable AVX2 or other cpu optimization, pass flag here
+  #  cflags = [ "-mavx2" ]
+
 }
 
 if (libyuv_use_neon) {
@@ -122,6 +143,14 @@ if (libyuv_use_neon) {
     ]
 
     public_configs = [ ":libyuv_config" ]
+
+    # Always enable optimization for Release and NaCl builds (to workaround
+    # crbug.com/538243).
+    if (!is_debug) {
+      configs -= [ "//build/config/compiler:default_optimization" ]
+      # Enable optimize for speed (-O2) over size (-Os).
+      configs += [ "//build/config/compiler:optimize_max" ]
+    }
 
     if (current_cpu != "arm64") {
       configs -= [ "//build/config/compiler:compiler_arm_fpu" ]

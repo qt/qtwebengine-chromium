@@ -27,7 +27,14 @@ class VideoQualityTest : public test::CallTest {
   // Unfortunately, C++11 (as opposed to C11) doesn't support unnamed structs,
   // which makes the implementation of VideoQualityTest a bit uglier.
   struct Params {
+    Params();
+    ~Params();
     struct {
+      bool send_side_bwe;
+      Call::Config::BitrateConfig call_bitrate_config;
+    } call;
+    struct {
+      bool enabled;
       size_t width;
       size_t height;
       int32_t fps;
@@ -39,21 +46,20 @@ class VideoQualityTest : public test::CallTest {
       int num_temporal_layers;
       int selected_tl;
       int min_transmit_bps;
-      bool send_side_bwe;
       bool fec;
       std::string encoded_frame_base_path;
-
-      Call::Config::BitrateConfig call_bitrate_config;
-    } common;
-    struct {  // Video-specific settings.
       std::string clip_name;
     } video;
-    struct {  // Screenshare-specific settings.
+    struct {
+      bool enabled;
+      bool sync_video;
+    } audio;
+    struct {
       bool enabled;
       int32_t slide_change_interval;
       int32_t scroll_duration;
     } screenshare;
-    struct {  // Analyzer settings.
+    struct {
       std::string test_label;
       double avg_psnr_threshold;  // (*)
       double avg_ssim_threshold;  // (*)
@@ -71,8 +77,6 @@ class VideoQualityTest : public test::CallTest {
       // If empty, bitrates are generated in VP9Impl automatically.
       std::vector<SpatialLayer> spatial_layers;
     } ss;
-    bool audio;
-    bool audio_video_sync;
   };
   // (*) Set to -1.1 if generating graph data for simulcast or SVC and the
   // selected stream/layer doesn't have the same resolution as the largest
@@ -105,17 +109,22 @@ class VideoQualityTest : public test::CallTest {
 
   // Helper methods for setting up the call.
   void CreateCapturer();
-  void SetupCommon(Transport* send_transport, Transport* recv_transport);
+  void SetupVideo(Transport* send_transport, Transport* recv_transport);
   void SetupScreenshare();
+  void SetupAudio(int send_channel_id,
+                  int receive_channel_id,
+                  Call* call,
+                  Transport* transport,
+                  AudioReceiveStream** audio_receive_stream);
 
   void StartEncodedFrameLogs(VideoSendStream* stream);
   void StartEncodedFrameLogs(VideoReceiveStream* stream);
 
   // We need a more general capturer than the FrameGeneratorCapturer.
-  std::unique_ptr<test::VideoCapturer> capturer_;
+  std::unique_ptr<test::VideoCapturer> video_capturer_;
   std::unique_ptr<test::TraceToStderr> trace_to_stderr_;
   std::unique_ptr<test::FrameGenerator> frame_generator_;
-  std::unique_ptr<VideoEncoder> encoder_;
+  std::unique_ptr<VideoEncoder> video_encoder_;
   Clock* const clock_;
 
   int receive_logs_;

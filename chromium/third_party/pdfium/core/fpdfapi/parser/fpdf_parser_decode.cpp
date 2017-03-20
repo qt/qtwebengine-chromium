@@ -297,7 +297,7 @@ CCodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
       BitsPerComponent, Columns);
 }
 
-uint32_t FPDFAPI_FlateOrLZWDecode(FX_BOOL bLZW,
+uint32_t FPDFAPI_FlateOrLZWDecode(bool bLZW,
                                   const uint8_t* src_buf,
                                   uint32_t src_size,
                                   CPDF_Dictionary* pParams,
@@ -305,35 +305,36 @@ uint32_t FPDFAPI_FlateOrLZWDecode(FX_BOOL bLZW,
                                   uint8_t*& dest_buf,
                                   uint32_t& dest_size) {
   int predictor = 0;
-  FX_BOOL bEarlyChange = TRUE;
-  int Colors = 0, BitsPerComponent = 0, Columns = 0;
+  int Colors = 0;
+  int BitsPerComponent = 0;
+  int Columns = 0;
+  bool bEarlyChange = true;
   if (pParams) {
     predictor = pParams->GetIntegerFor("Predictor");
-    bEarlyChange = pParams->GetIntegerFor("EarlyChange", 1);
+    bEarlyChange = !!pParams->GetIntegerFor("EarlyChange", 1);
     Colors = pParams->GetIntegerFor("Colors", 1);
     BitsPerComponent = pParams->GetIntegerFor("BitsPerComponent", 8);
     Columns = pParams->GetIntegerFor("Columns", 1);
-    if (!CheckFlateDecodeParams(Colors, BitsPerComponent, Columns)) {
+    if (!CheckFlateDecodeParams(Colors, BitsPerComponent, Columns))
       return (uint32_t)-1;
-    }
   }
   return CPDF_ModuleMgr::Get()->GetFlateModule()->FlateOrLZWDecode(
       bLZW, src_buf, src_size, bEarlyChange, predictor, Colors,
       BitsPerComponent, Columns, estimated_size, dest_buf, dest_size);
 }
 
-FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
-                       uint32_t src_size,
-                       const CPDF_Dictionary* pDict,
-                       uint8_t*& dest_buf,
-                       uint32_t& dest_size,
-                       CFX_ByteString& ImageEncoding,
-                       CPDF_Dictionary*& pImageParms,
-                       uint32_t last_estimated_size,
-                       FX_BOOL bImageAcc) {
+bool PDF_DataDecode(const uint8_t* src_buf,
+                    uint32_t src_size,
+                    const CPDF_Dictionary* pDict,
+                    uint8_t*& dest_buf,
+                    uint32_t& dest_size,
+                    CFX_ByteString& ImageEncoding,
+                    CPDF_Dictionary*& pImageParms,
+                    uint32_t last_estimated_size,
+                    bool bImageAcc) {
   CPDF_Object* pDecoder = pDict ? pDict->GetDirectObjectFor("Filter") : nullptr;
   if (!pDecoder || (!pDecoder->IsArray() && !pDecoder->IsName()))
-    return FALSE;
+    return false;
 
   CPDF_Object* pParams =
       pDict ? pDict->GetDirectObjectFor("DecodeParms") : nullptr;
@@ -366,12 +367,12 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
         dest_buf = (uint8_t*)last_buf;
         dest_size = last_size;
         pImageParms = pParam;
-        return TRUE;
+        return true;
       }
-      offset = FPDFAPI_FlateOrLZWDecode(FALSE, last_buf, last_size, pParam,
+      offset = FPDFAPI_FlateOrLZWDecode(false, last_buf, last_size, pParam,
                                         estimated_size, new_buf, new_size);
     } else if (decoder == "LZWDecode" || decoder == "LZW") {
-      offset = FPDFAPI_FlateOrLZWDecode(TRUE, last_buf, last_size, pParam,
+      offset = FPDFAPI_FlateOrLZWDecode(true, last_buf, last_size, pParam,
                                         estimated_size, new_buf, new_size);
     } else if (decoder == "ASCII85Decode" || decoder == "A85") {
       offset = A85Decode(last_buf, last_size, new_buf, new_size);
@@ -383,7 +384,7 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
         dest_buf = (uint8_t*)last_buf;
         dest_size = last_size;
         pImageParms = pParam;
-        return TRUE;
+        return true;
       }
       offset = RunLengthDecode(last_buf, last_size, new_buf, new_size);
     } else if (decoder == "Crypt") {
@@ -401,14 +402,14 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
       dest_size = last_size;
       if (CPDF_Array* pDecoders = pDecoder->AsArray())
         pDecoders->RemoveAt(i + 1, pDecoders->GetCount() - i - 1);
-      return TRUE;
+      return true;
     }
     if (last_buf != src_buf) {
       FX_Free(last_buf);
     }
     if (offset == -1) {
       FX_Free(new_buf);
-      return FALSE;
+      return false;
     }
     last_buf = new_buf;
     last_size = new_size;
@@ -417,7 +418,7 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
   pImageParms = nullptr;
   dest_buf = last_buf;
   dest_size = last_size;
-  return TRUE;
+  return true;
 }
 
 CFX_WideString PDF_DecodeText(const uint8_t* src_data, uint32_t src_len) {
@@ -511,7 +512,7 @@ CFX_ByteString PDF_EncodeText(const CFX_WideString& str) {
   return PDF_EncodeText(str.c_str(), str.GetLength());
 }
 
-CFX_ByteString PDF_EncodeString(const CFX_ByteString& src, FX_BOOL bHex) {
+CFX_ByteString PDF_EncodeString(const CFX_ByteString& src, bool bHex) {
   CFX_ByteTextBuf result;
   int srclen = src.GetLength();
   if (bHex) {
@@ -569,7 +570,7 @@ uint32_t FlateDecode(const uint8_t* src_buf,
   CCodec_ModuleMgr* pEncoders = CPDF_ModuleMgr::Get()->GetCodecModule();
   if (pEncoders) {
     return pEncoders->GetFlateModule()->FlateOrLZWDecode(
-        FALSE, src_buf, src_size, FALSE, 0, 0, 0, 0, 0, dest_buf, dest_size);
+        false, src_buf, src_size, false, 0, 0, 0, 0, 0, dest_buf, dest_size);
   }
   return 0;
 }

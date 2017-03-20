@@ -6,9 +6,11 @@
 
 #include "xfa/fwl/theme/cfwl_edittp.h"
 
-#include "xfa/fwl/basewidget/ifwl_edit.h"
 #include "xfa/fwl/core/cfwl_themebackground.h"
+#include "xfa/fwl/core/ifwl_edit.h"
 #include "xfa/fwl/core/ifwl_widget.h"
+#include "xfa/fxfa/app/xfa_fwltheme.h"
+#include "xfa/fxfa/xfa_ffwidget.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
@@ -19,7 +21,25 @@ bool CFWL_EditTP::IsValidWidget(IFWL_Widget* pWidget) {
   return pWidget && pWidget->GetClassID() == FWL_Type::Edit;
 }
 
-FX_BOOL CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
+void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
+  if (CFWL_Part::CombTextLine == pParams->m_iPart) {
+    CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
+    FX_ARGB cr = 0xFF000000;
+    FX_FLOAT fWidth = 1.0f;
+    if (CXFA_Border borderUI = pWidget->GetDataAcc()->GetUIBorder()) {
+      CXFA_Edge edge = borderUI.GetEdge(0);
+      if (edge) {
+        cr = edge.GetColor();
+        fWidth = edge.GetThickness();
+      }
+    }
+    CFX_Color crLine(cr);
+    pParams->m_pGraphics->SetStrokeColor(&crLine);
+    pParams->m_pGraphics->SetLineWidth(fWidth);
+    pParams->m_pGraphics->StrokePath(pParams->m_pPath, &pParams->m_matrix);
+    return;
+  }
+
   switch (pParams->m_iPart) {
     case CFWL_Part::Border: {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
@@ -72,15 +92,17 @@ FX_BOOL CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
       pParams->m_pGraphics->StrokePath(pParams->m_pPath, &pParams->m_matrix);
       break;
     }
-    default: { break; }
+    default:
+      break;
   }
-  return TRUE;
 }
-FWL_Error CFWL_EditTP::Initialize() {
+
+void CFWL_EditTP::Initialize() {
   InitTTO();
-  return CFWL_WidgetTP::Initialize();
+  CFWL_WidgetTP::Initialize();
 }
-FWL_Error CFWL_EditTP::Finalize() {
+
+void CFWL_EditTP::Finalize() {
   FinalizeTTO();
-  return CFWL_WidgetTP::Finalize();
+  CFWL_WidgetTP::Finalize();
 }

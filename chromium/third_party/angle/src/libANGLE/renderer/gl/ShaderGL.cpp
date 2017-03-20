@@ -70,6 +70,21 @@ ShCompileOptions ShaderGL::prepareSourceAndReturnOptions(std::stringstream *sour
         options |= SH_EMULATE_ISNAN_FLOAT_FUNCTION;
     }
 
+    if (mWorkarounds.useUnusedBlocksWithStandardOrSharedLayout)
+    {
+        options |= SH_USE_UNUSED_STANDARD_SHARED_BLOCKS;
+    }
+
+    if (mWorkarounds.dontRemoveInvariantForFragmentInput)
+    {
+        options |= SH_DONT_REMOVE_INVARIANT_FOR_FRAGMENT_INPUT;
+    }
+
+    if (mWorkarounds.removeInvariantAndCentroidForESSL3)
+    {
+        options |= SH_REMOVE_INVARIANT_AND_CENTROID_FOR_ESSL3;
+    }
+
     return options;
 }
 

@@ -15,10 +15,11 @@ class CPDF_Boolean : public CPDF_Object {
  public:
   CPDF_Boolean();
   explicit CPDF_Boolean(bool value);
+  ~CPDF_Boolean() override;
 
-  // CPDF_Object.
+  // CPDF_Object:
   Type GetType() const override;
-  CPDF_Object* Clone() const override;
+  std::unique_ptr<CPDF_Object> Clone() const override;
   CFX_ByteString GetString() const override;
   int GetInteger() const override;
   void SetString(const CFX_ByteString& str) override;
@@ -27,9 +28,15 @@ class CPDF_Boolean : public CPDF_Object {
   const CPDF_Boolean* AsBoolean() const override;
 
  protected:
-  ~CPDF_Boolean() override;
-
   bool m_bValue;
 };
+
+inline CPDF_Boolean* ToBoolean(CPDF_Object* obj) {
+  return obj ? obj->AsBoolean() : nullptr;
+}
+
+inline const CPDF_Boolean* ToBoolean(const CPDF_Object* obj) {
+  return obj ? obj->AsBoolean() : nullptr;
+}
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_BOOLEAN_H_

@@ -33,6 +33,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -40,6 +41,7 @@
 #include <signal.h>
 #include <pthread.h>
 
+#include "wayland-util.h"
 #include "wayland-private.h"
 #include "wayland-server.h"
 
@@ -245,7 +247,7 @@ shm_pool_resize(struct wl_client *client, struct wl_resource *resource,
 		shm_pool_finish_resize(pool);
 }
 
-struct wl_shm_pool_interface shm_pool_interface = {
+static const struct wl_shm_pool_interface shm_pool_interface = {
 	shm_pool_create_buffer,
 	shm_pool_destroy,
 	shm_pool_resize

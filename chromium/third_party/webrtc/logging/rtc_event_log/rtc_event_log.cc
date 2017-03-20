@@ -22,7 +22,16 @@
 #include "webrtc/logging/rtc_event_log/rtc_event_log_helper_thread.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/app.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/bye.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/extended_jitter_report.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/psfb.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/rtpfb.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sdes.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/file_wrapper.h"
 #include "webrtc/system_wrappers/include/logging.h"
@@ -53,6 +62,9 @@ class RtcEventLogImpl final : public RtcEventLog {
   void LogVideoReceiveStreamConfig(
       const VideoReceiveStream::Config& config) override;
   void LogVideoSendStreamConfig(const VideoSendStream::Config& config) override;
+  void LogAudioReceiveStreamConfig(
+      const AudioReceiveStream::Config& config) override;
+  void LogAudioSendStreamConfig(const AudioSendStream::Config& config) override;
   void LogRtpHeader(PacketDirection direction,
                     MediaType media_type,
                     const uint8_t* header,
@@ -283,6 +295,46 @@ void RtcEventLogImpl::LogVideoSendStreamConfig(
   StoreEvent(&event);
 }
 
+void RtcEventLogImpl::LogAudioReceiveStreamConfig(
+    const AudioReceiveStream::Config& config) {
+  std::unique_ptr<rtclog::Event> event(new rtclog::Event());
+  event->set_timestamp_us(clock_->TimeInMicroseconds());
+  event->set_type(rtclog::Event::AUDIO_RECEIVER_CONFIG_EVENT);
+
+  rtclog::AudioReceiveConfig* receiver_config =
+      event->mutable_audio_receiver_config();
+  receiver_config->set_remote_ssrc(config.rtp.remote_ssrc);
+  receiver_config->set_local_ssrc(config.rtp.local_ssrc);
+
+  for (const auto& e : config.rtp.extensions) {
+    rtclog::RtpHeaderExtension* extension =
+        receiver_config->add_header_extensions();
+    extension->set_name(e.uri);
+    extension->set_id(e.id);
+  }
+  StoreEvent(&event);
+}
+
+void RtcEventLogImpl::LogAudioSendStreamConfig(
+    const AudioSendStream::Config& config) {
+  std::unique_ptr<rtclog::Event> event(new rtclog::Event());
+  event->set_timestamp_us(clock_->TimeInMicroseconds());
+  event->set_type(rtclog::Event::AUDIO_SENDER_CONFIG_EVENT);
+
+  rtclog::AudioSendConfig* sender_config = event->mutable_audio_sender_config();
+
+  sender_config->set_ssrc(config.rtp.ssrc);
+
+  for (const auto& e : config.rtp.extensions) {
+    rtclog::RtpHeaderExtension* extension =
+        sender_config->add_header_extensions();
+    extension->set_name(e.uri);
+    extension->set_id(e.id);
+  }
+
+  StoreEvent(&event);
+}
+
 void RtcEventLogImpl::LogRtpHeader(PacketDirection direction,
                                    MediaType media_type,
                                    const uint8_t* header,
@@ -323,42 +375,34 @@ void RtcEventLogImpl::LogRtcpPacket(PacketDirection direction,
   rtcp_event->mutable_rtcp_packet()->set_incoming(direction == kIncomingPacket);
   rtcp_event->mutable_rtcp_packet()->set_type(ConvertMediaType(media_type));
 
-  RTCPUtility::RtcpCommonHeader header;
+  rtcp::CommonHeader header;
   const uint8_t* block_begin = packet;
   const uint8_t* packet_end = packet + length;
   RTC_DCHECK(length <= IP_PACKET_SIZE);
   uint8_t buffer[IP_PACKET_SIZE];
   uint32_t buffer_length = 0;
   while (block_begin < packet_end) {
-    if (!RtcpParseCommonHeader(block_begin, packet_end - block_begin,
-                               &header)) {
+    if (!header.Parse(block_begin, packet_end - block_begin)) {
       break;  // Incorrect message header.
     }
-    uint32_t block_size = header.BlockSize();
-    switch (header.packet_type) {
-      case RTCPUtility::PT_SR:
-        FALLTHROUGH();
-      case RTCPUtility::PT_RR:
-        FALLTHROUGH();
-      case RTCPUtility::PT_BYE:
-        FALLTHROUGH();
-      case RTCPUtility::PT_IJ:
-        FALLTHROUGH();
-      case RTCPUtility::PT_RTPFB:
-        FALLTHROUGH();
-      case RTCPUtility::PT_PSFB:
-        FALLTHROUGH();
-      case RTCPUtility::PT_XR:
+    const uint8_t* next_block = header.NextPacket();
+    uint32_t block_size = next_block - block_begin;
+    switch (header.type()) {
+      case rtcp::SenderReport::kPacketType:
+      case rtcp::ReceiverReport::kPacketType:
+      case rtcp::Bye::kPacketType:
+      case rtcp::ExtendedJitterReport::kPacketType:
+      case rtcp::Rtpfb::kPacketType:
+      case rtcp::Psfb::kPacketType:
+      case rtcp::ExtendedReports::kPacketType:
         // We log sender reports, receiver reports, bye messages
         // inter-arrival jitter, third-party loss reports, payload-specific
         // feedback and extended reports.
         memcpy(buffer + buffer_length, block_begin, block_size);
         buffer_length += block_size;
         break;
-      case RTCPUtility::PT_SDES:
-        FALLTHROUGH();
-      case RTCPUtility::PT_APP:
-        FALLTHROUGH();
+      case rtcp::Sdes::kPacketType:
+      case rtcp::App::kPacketType:
       default:
         // We don't log sender descriptions, application defined messages
         // or message blocks of unknown type.

@@ -25,13 +25,17 @@
 
 - (BOOL)application:(UIApplication *)application
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-  RTCInitFieldTrials(RTCFieldTrialOptionsSendSideBwe);
+  RTCInitFieldTrials(RTCFieldTrialOptionsImprovedBitrateEstimate);
   RTCInitializeSSL();
   RTCSetupInternalTracer();
   _window =  [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
   [_window makeKeyAndVisible];
   ARDMainViewController *viewController = [[ARDMainViewController alloc] init];
-  _window.rootViewController = viewController;
+
+  UINavigationController *root =
+      [[UINavigationController alloc] initWithRootViewController:viewController];
+  root.navigationBar.translucent = NO;
+  _window.rootViewController = root;
 
 #if defined(NDEBUG)
   // In debug builds the default level is LS_INFO and in non-debug builds it is

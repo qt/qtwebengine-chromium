@@ -23,6 +23,9 @@
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/util.h"
 
+namespace sh
+{
+
 namespace
 {
 
@@ -170,7 +173,7 @@ bool TIntermLoop::replaceChildNode(
     REPLACE_IF_IS(mInit, TIntermNode, original, replacement);
     REPLACE_IF_IS(mCond, TIntermTyped, original, replacement);
     REPLACE_IF_IS(mExpr, TIntermTyped, original, replacement);
-    REPLACE_IF_IS(mBody, TIntermAggregate, original, replacement);
+    REPLACE_IF_IS(mBody, TIntermBlock, original, replacement);
     return false;
 }
 
@@ -204,38 +207,62 @@ bool TIntermUnary::replaceChildNode(
     return false;
 }
 
+bool TIntermFunctionDefinition::replaceChildNode(TIntermNode *original, TIntermNode *replacement)
+{
+    REPLACE_IF_IS(mParameters, TIntermAggregate, original, replacement);
+    REPLACE_IF_IS(mBody, TIntermBlock, original, replacement);
+    return false;
+}
+
 bool TIntermAggregate::replaceChildNode(
     TIntermNode *original, TIntermNode *replacement)
 {
-    for (size_t ii = 0; ii < mSequence.size(); ++ii)
+    return replaceChildNodeInternal(original, replacement);
+}
+
+bool TIntermBlock::replaceChildNode(TIntermNode *original, TIntermNode *replacement)
+{
+    return replaceChildNodeInternal(original, replacement);
+}
+
+bool TIntermDeclaration::replaceChildNode(TIntermNode *original, TIntermNode *replacement)
+{
+    return replaceChildNodeInternal(original, replacement);
+}
+
+bool TIntermAggregateBase::replaceChildNodeInternal(TIntermNode *original, TIntermNode *replacement)
+{
+    for (size_t ii = 0; ii < getSequence()->size(); ++ii)
     {
-        REPLACE_IF_IS(mSequence[ii], TIntermNode, original, replacement);
+        REPLACE_IF_IS((*getSequence())[ii], TIntermNode, original, replacement);
     }
     return false;
 }
 
-bool TIntermAggregate::replaceChildNodeWithMultiple(TIntermNode *original, TIntermSequence replacements)
+bool TIntermAggregateBase::replaceChildNodeWithMultiple(TIntermNode *original,
+                                                        const TIntermSequence &replacements)
 {
-    for (auto it = mSequence.begin(); it < mSequence.end(); ++it)
+    for (auto it = getSequence()->begin(); it < getSequence()->end(); ++it)
     {
         if (*it == original)
         {
-            it = mSequence.erase(it);
-            mSequence.insert(it, replacements.begin(), replacements.end());
+            it = getSequence()->erase(it);
+            getSequence()->insert(it, replacements.begin(), replacements.end());
             return true;
         }
     }
     return false;
 }
 
-bool TIntermAggregate::insertChildNodes(TIntermSequence::size_type position, TIntermSequence insertions)
+bool TIntermAggregateBase::insertChildNodes(TIntermSequence::size_type position,
+                                            const TIntermSequence &insertions)
 {
-    if (position > mSequence.size())
+    if (position > getSequence()->size())
     {
         return false;
     }
-    auto it = mSequence.begin() + position;
-    mSequence.insert(it, insertions.begin(), insertions.end());
+    auto it = getSequence()->begin() + position;
+    getSequence()->insert(it, insertions.begin(), insertions.end());
     return true;
 }
 
@@ -293,10 +320,32 @@ void TIntermAggregate::setBuiltInFunctionPrecision()
     }
     // ESSL 3.0 spec section 8: textureSize always gets highp precision.
     // All other functions that take a sampler are assumed to be texture functions.
-    if (mName.getString().find("textureSize") == 0)
+    if (mFunctionInfo.getName().find("textureSize") == 0)
         mType.setPrecision(EbpHigh);
     else
         mType.setPrecision(precision);
+}
+
+void TIntermBlock::appendStatement(TIntermNode *statement)
+{
+    // Declaration nodes with no children can appear if all the declarators just added constants to
+    // the symbol table instead of generating code. They're no-ops so they aren't added to blocks.
+    if (statement != nullptr && (statement->getAsDeclarationNode() == nullptr ||
+                                 !statement->getAsDeclarationNode()->getSequence()->empty()))
+    {
+        mStatements.push_back(statement);
+    }
+}
+
+void TIntermDeclaration::appendDeclarator(TIntermTyped *declarator)
+{
+    ASSERT(declarator != nullptr);
+    ASSERT(declarator->getAsSymbolNode() != nullptr ||
+           (declarator->getAsBinaryNode() != nullptr &&
+            declarator->getAsBinaryNode()->getOp() == EOpInitialize));
+    ASSERT(mDeclarators.empty() ||
+           declarator->getType().sameElementType(mDeclarators.back()->getAsTyped()->getType()));
+    mDeclarators.push_back(declarator);
 }
 
 bool TIntermTernary::replaceChildNode(TIntermNode *original, TIntermNode *replacement)
@@ -310,8 +359,8 @@ bool TIntermTernary::replaceChildNode(TIntermNode *original, TIntermNode *replac
 bool TIntermIfElse::replaceChildNode(TIntermNode *original, TIntermNode *replacement)
 {
     REPLACE_IF_IS(mCondition, TIntermTyped, original, replacement);
-    REPLACE_IF_IS(mTrueBlock, TIntermAggregate, original, replacement);
-    REPLACE_IF_IS(mFalseBlock, TIntermAggregate, original, replacement);
+    REPLACE_IF_IS(mTrueBlock, TIntermBlock, original, replacement);
+    REPLACE_IF_IS(mFalseBlock, TIntermBlock, original, replacement);
     return false;
 }
 
@@ -319,7 +368,7 @@ bool TIntermSwitch::replaceChildNode(
     TIntermNode *original, TIntermNode *replacement)
 {
     REPLACE_IF_IS(mInit, TIntermTyped, original, replacement);
-    REPLACE_IF_IS(mStatementList, TIntermAggregate, original, replacement);
+    REPLACE_IF_IS(mStatementList, TIntermBlock, original, replacement);
     return false;
 }
 
@@ -435,13 +484,18 @@ TIntermConstantUnion::TIntermConstantUnion(const TIntermConstantUnion &node) : T
     mUnionArrayPointer = node.mUnionArrayPointer;
 }
 
+void TFunctionSymbolInfo::setFromFunction(const TFunction &function)
+{
+    setName(function.getMangledName());
+    setId(function.getUniqueId());
+}
+
 TIntermAggregate::TIntermAggregate(const TIntermAggregate &node)
     : TIntermOperator(node),
-      mName(node.mName),
       mUserDefined(node.mUserDefined),
-      mFunctionId(node.mFunctionId),
       mUseEmulatedFunction(node.mUseEmulatedFunction),
-      mGotPrecisionFromChildren(node.mGotPrecisionFromChildren)
+      mGotPrecisionFromChildren(node.mGotPrecisionFromChildren),
+      mFunctionInfo(node.mFunctionInfo)
 {
     for (TIntermNode *child : node.mSequence)
     {
@@ -791,12 +845,31 @@ void TIntermSwizzle::writeOffsetsAsXYZW(TInfoSinkBase *out) const
     }
 }
 
+TQualifier TIntermBinary::GetCommaQualifier(int shaderVersion,
+                                            const TIntermTyped *left,
+                                            const TIntermTyped *right)
+{
+    // ESSL3.00 section 12.43: The result of a sequence operator is not a constant-expression.
+    if (shaderVersion >= 300 || left->getQualifier() != EvqConst ||
+        right->getQualifier() != EvqConst)
+    {
+        return EvqTemporary;
+    }
+    return EvqConst;
+}
 
 // Establishes the type of the result of the binary operation.
 void TIntermBinary::promote()
 {
     ASSERT(!isMultiplication() ||
            mOp == GetMulOpBasedOnOperands(mLeft->getType(), mRight->getType()));
+
+    // Comma is handled as a special case.
+    if (mOp == EOpComma)
+    {
+        setType(mRight->getType());
+        return;
+    }
 
     // Base assumption:  just make the type the same as the left
     // operand.  Then only deviations from this need be coded.
@@ -2742,14 +2815,12 @@ void TIntermTraverser::updateTree()
             bool inserted = insertion.parent->insertChildNodes(insertion.position + 1,
                                                                insertion.insertionsAfter);
             ASSERT(inserted);
-            UNUSED_ASSERTION_VARIABLE(inserted);
         }
         if (!insertion.insertionsBefore.empty())
         {
             bool inserted =
                 insertion.parent->insertChildNodes(insertion.position, insertion.insertionsBefore);
             ASSERT(inserted);
-            UNUSED_ASSERTION_VARIABLE(inserted);
         }
     }
     for (size_t ii = 0; ii < mReplacements.size(); ++ii)
@@ -2759,7 +2830,6 @@ void TIntermTraverser::updateTree()
         bool replaced = replacement.parent->replaceChildNode(
             replacement.original, replacement.replacement);
         ASSERT(replaced);
-        UNUSED_ASSERTION_VARIABLE(replaced);
 
         if (!replacement.originalBecomesChildOfReplacement)
         {
@@ -2782,7 +2852,6 @@ void TIntermTraverser::updateTree()
         bool replaced = replacement.parent->replaceChildNodeWithMultiple(
             replacement.original, replacement.replacements);
         ASSERT(replaced);
-        UNUSED_ASSERTION_VARIABLE(replaced);
     }
 
     clearReplacementQueue();
@@ -2810,3 +2879,5 @@ void TIntermTraverser::queueReplacementWithParent(TIntermNode *parent,
     bool originalBecomesChild = (originalStatus == OriginalNode::BECOMES_CHILD);
     mReplacements.push_back(NodeUpdateEntry(parent, original, replacement, originalBecomesChild));
 }
+
+}  // namespace sh

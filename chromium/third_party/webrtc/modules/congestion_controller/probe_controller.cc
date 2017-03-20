@@ -14,6 +14,7 @@
 #include <initializer_list>
 
 #include "webrtc/base/logging.h"
+#include "webrtc/system_wrappers/include/metrics.h"
 
 namespace webrtc {
 
@@ -32,8 +33,13 @@ constexpr int64_t kMaxWaitingTimeForProbingResultMs = 1000;
 // further probing is disabled.
 constexpr int kExponentialProbingDisabled = 0;
 
-// A limit to prevent probing at excessive bitrates.
-constexpr int kMaxProbingBitrateBps = 10000000;
+// Default probing bitrate limit. Applied only when the application didn't
+// specify max bitrate.
+constexpr int kDefaultMaxProbingBitrateBps = 100000000;
+
+// This is a limit on how often probing can be done when there is a BW
+// drop detected in ALR region.
+constexpr int kAlrProbingIntervalLimitMs = 5000;
 
 }  // namespace
 
@@ -44,7 +50,8 @@ ProbeController::ProbeController(PacedSender* pacer, Clock* clock)
       min_bitrate_to_probe_further_bps_(kExponentialProbingDisabled),
       time_last_probing_initiated_ms_(0),
       estimated_bitrate_bps_(0),
-      max_bitrate_bps_(0) {}
+      max_bitrate_bps_(0),
+      last_alr_probing_time_(clock_->TimeInMilliseconds()) {}
 
 void ProbeController::SetBitrates(int min_bitrate_bps,
                                   int start_bitrate_bps,
@@ -57,18 +64,21 @@ void ProbeController::SetBitrates(int min_bitrate_bps,
                     4 * start_bitrate_bps);
   }
 
+  int old_max_bitrate_bps = max_bitrate_bps_;
+  max_bitrate_bps_ = max_bitrate_bps;
+
   // Only do probing if:
   //   we are mid-call, which we consider to be if
   //     exponential probing is not active and
   //     |estimated_bitrate_bps_| is valid (> 0) and
   //     the current bitrate is lower than the new |max_bitrate_bps|, and
-  //     we actually want to increase the |max_bitrate_bps_|.
+  //     |max_bitrate_bps_| was increased.
   if (state_ != State::kWaitingForProbingResult &&
-      estimated_bitrate_bps_ != 0 && estimated_bitrate_bps_ < max_bitrate_bps &&
-      max_bitrate_bps > max_bitrate_bps_) {
+      estimated_bitrate_bps_ != 0 &&
+      old_max_bitrate_bps < max_bitrate_bps_ &&
+      estimated_bitrate_bps_ < max_bitrate_bps_) {
     InitiateProbing({max_bitrate_bps}, kExponentialProbingDisabled);
   }
-  max_bitrate_bps_ = max_bitrate_bps;
 }
 
 void ProbeController::SetEstimatedBitrate(int bitrate_bps) {
@@ -92,6 +102,30 @@ void ProbeController::SetEstimatedBitrate(int bitrate_bps) {
         InitiateProbing({2 * bitrate_bps}, 1.25 * bitrate_bps);
       }
     }
+  } else {
+    // A drop in estimated BW when operating in ALR and not already probing.
+    // The current response is to initiate a single probe session at the
+    // previous bitrate and immediately use the reported bitrate as the new
+    // bitrate.
+    //
+    // If the probe session fails, the assumption is that this drop was a
+    // real one from a competing flow or something else on the network and
+    // it ramps up from bitrate_bps.
+    if (pacer_->InApplicationLimitedRegion() &&
+        bitrate_bps < 0.5 * estimated_bitrate_bps_) {
+      int64_t now_ms = clock_->TimeInMilliseconds();
+      if ((now_ms - last_alr_probing_time_) > kAlrProbingIntervalLimitMs) {
+        LOG(LS_INFO) << "Detected big BW drop in ALR, start probe.";
+        // Track how often we probe in response to BW drop in ALR.
+        RTC_HISTOGRAM_COUNTS_10000("WebRTC.BWE.AlrProbingIntervalInS",
+                                   (now_ms - last_alr_probing_time_) / 1000);
+        InitiateProbing({estimated_bitrate_bps_}, kExponentialProbingDisabled);
+        last_alr_probing_time_ = now_ms;
+      }
+    }
+    // TODO(isheriff): May want to track when we did ALR probing in order
+    // to reset |last_alr_probing_time_| if we validate that it was a
+    // drop due to exogenous event.
   }
   estimated_bitrate_bps_ = bitrate_bps;
 }
@@ -101,7 +135,9 @@ void ProbeController::InitiateProbing(
     int min_bitrate_to_probe_further_bps) {
   bool first_cluster = true;
   for (int bitrate : bitrates_to_probe) {
-    bitrate = std::min(bitrate, kMaxProbingBitrateBps);
+    int max_probe_bitrate_bps =
+        max_bitrate_bps_ > 0 ? max_bitrate_bps_ : kDefaultMaxProbingBitrateBps;
+    bitrate = std::min(bitrate, max_probe_bitrate_bps);
     if (first_cluster) {
       pacer_->CreateProbeCluster(bitrate, kProbeDeltasPerCluster + 1);
       first_cluster = false;

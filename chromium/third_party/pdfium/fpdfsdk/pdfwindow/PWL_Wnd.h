@@ -11,10 +11,12 @@
 #include <vector>
 
 #include "core/fpdfdoc/cpdf_formcontrol.h"
+#include "core/fxcrt/cfx_observable.h"
 #include "core/fxcrt/fx_basic.h"
 #include "fpdfsdk/cfx_systemhandler.h"
+#include "fpdfsdk/cpdfsdk_widget.h"
+#include "fpdfsdk/pdfwindow/cpwl_color.h"
 
-class CPDFSDK_Widget;
 class CPWL_MsgControl;
 class CPWL_ScrollBar;
 class CPWL_Timer;
@@ -91,40 +93,15 @@ struct CPWL_Dash {
   CPWL_Dash(int32_t dash, int32_t gap, int32_t phase)
       : nDash(dash), nGap(gap), nPhase(phase) {}
 
+  void Reset() {
+    nDash = 0;
+    nGap = 0;
+    nPhase = 0;
+  }
+
   int32_t nDash;
   int32_t nGap;
   int32_t nPhase;
-};
-
-struct CPWL_Color {
-  CPWL_Color(int32_t type = COLORTYPE_TRANSPARENT,
-             FX_FLOAT color1 = 0.0f,
-             FX_FLOAT color2 = 0.0f,
-             FX_FLOAT color3 = 0.0f,
-             FX_FLOAT color4 = 0.0f)
-      : nColorType(type),
-        fColor1(color1),
-        fColor2(color2),
-        fColor3(color3),
-        fColor4(color4) {}
-
-  CPWL_Color(int32_t r, int32_t g, int32_t b)
-      : nColorType(COLORTYPE_RGB),
-        fColor1(r / 255.0f),
-        fColor2(g / 255.0f),
-        fColor3(b / 255.0f),
-        fColor4(0) {}
-
-  void ConvertColorType(int32_t other_nColorType);
-
-  /*
-  COLORTYPE_TRANSPARENT
-  COLORTYPE_RGB
-  COLORTYPE_CMYK
-  COLORTYPE_GRAY
-  */
-  int32_t nColorType;
-  FX_FLOAT fColor1, fColor2, fColor3, fColor4;
 };
 
 inline bool operator==(const CPWL_Color& c1, const CPWL_Color& c2) {
@@ -161,7 +138,7 @@ inline bool operator!=(const CPWL_Color& c1, const CPWL_Color& c2) {
 #define PWL_CBBUTTON_TRIANGLE_HALFLEN 3.0f
 #define PWL_INVALIDATE_INFLATE 2
 
-class IPWL_Provider {
+class IPWL_Provider : public CFX_Observable<IPWL_Provider> {
  public:
   virtual ~IPWL_Provider() {}
 
@@ -191,14 +168,38 @@ struct PWL_CREATEPARAM {
   PWL_CREATEPARAM();
   PWL_CREATEPARAM(const PWL_CREATEPARAM& other);
 
+  void Reset() {
+    rcRectWnd.Reset();
+    pSystemHandler = nullptr;
+    pFontMap = nullptr;
+    pProvider.Reset();
+    pFocusHandler = nullptr;
+    dwFlags = 0;
+    sBackgroundColor.Reset();
+    pAttachedWidget.Reset();
+    nBorderStyle = BorderStyle::SOLID;
+    dwBorderWidth = 0;
+    sBorderColor.Reset();
+    sTextColor.Reset();
+    sTextStrokeColor.Reset();
+    nTransparency = 0;
+    fFontSize = 0.0f;
+    sDash.Reset();
+    pAttachedData = nullptr;
+    pParentWnd = nullptr;
+    pMsgControl = nullptr;
+    eCursorType = 0;
+    mtChild.SetIdentity();
+  }
+
   CFX_FloatRect rcRectWnd;            // required
   CFX_SystemHandler* pSystemHandler;  // required
-  IPVT_FontMap* pFontMap;             // required for text window
-  IPWL_Provider* pProvider;           // required for self coordinate
+  IPVT_FontMap* pFontMap;             // required
+  IPWL_Provider::ObservedPtr pProvider;  // required
   IPWL_FocusHandler* pFocusHandler;   // optional
   uint32_t dwFlags;                   // optional
   CPWL_Color sBackgroundColor;        // optional
-  CPDFSDK_Widget* pAttachedWidget;    // required for no-reader framework
+  CPDFSDK_Widget::ObservedPtr pAttachedWidget;  // required
   BorderStyle nBorderStyle;           // optional
   int32_t dwBorderWidth;              // optional
   CPWL_Color sBorderColor;            // optional
@@ -255,26 +256,26 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   void InvalidateFocusHandler(IPWL_FocusHandler* handler);
   void InvalidateProvider(IPWL_Provider* provider);
   void Destroy();
-  void Move(const CFX_FloatRect& rcNew, FX_BOOL bReset, FX_BOOL bRefresh);
+  void Move(const CFX_FloatRect& rcNew, bool bReset, bool bRefresh);
   virtual void InvalidateRect(CFX_FloatRect* pRect = nullptr);
 
   void DrawAppearance(CFX_RenderDevice* pDevice, CFX_Matrix* pUser2Device);
 
-  virtual FX_BOOL OnKeyDown(uint16_t nChar, uint32_t nFlag);
-  virtual FX_BOOL OnKeyUp(uint16_t nChar, uint32_t nFlag);
-  virtual FX_BOOL OnChar(uint16_t nChar, uint32_t nFlag);
-  virtual FX_BOOL OnLButtonDblClk(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnLButtonDown(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnLButtonUp(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnMButtonDblClk(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnMButtonDown(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnMButtonUp(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnRButtonDown(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnRButtonUp(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnMouseMove(const CFX_FloatPoint& point, uint32_t nFlag);
-  virtual FX_BOOL OnMouseWheel(short zDelta,
-                               const CFX_FloatPoint& point,
-                               uint32_t nFlag);
+  virtual bool OnKeyDown(uint16_t nChar, uint32_t nFlag);
+  virtual bool OnKeyUp(uint16_t nChar, uint32_t nFlag);
+  virtual bool OnChar(uint16_t nChar, uint32_t nFlag);
+  virtual bool OnLButtonDblClk(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnLButtonDown(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnLButtonUp(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnMButtonDblClk(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnMButtonDown(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnMButtonUp(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnRButtonDown(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnRButtonUp(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnMouseMove(const CFX_FloatPoint& point, uint32_t nFlag);
+  virtual bool OnMouseWheel(short zDelta,
+                            const CFX_FloatPoint& point,
+                            uint32_t nFlag);
 
   virtual void SetFocus();
   virtual void KillFocus();
@@ -287,7 +288,7 @@ class CPWL_Wnd : public CPWL_TimerHandler {
                         intptr_t lParam = 0);
   virtual void SetTextColor(const CPWL_Color& color);
   virtual void SetTextStrokeColor(const CPWL_Color& color);
-  virtual void SetVisible(FX_BOOL bVisible);
+  virtual void SetVisible(bool bVisible);
 
   virtual CFX_FloatRect GetFocusRect() const;
   virtual CPWL_Color GetBackgroundColor() const;
@@ -309,8 +310,8 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   virtual CFX_FloatRect GetClientRect() const;
   CFX_FloatPoint GetCenterPoint() const;
   int32_t GetBorderWidth() const;
-  FX_BOOL IsVisible() const { return m_bVisible; }
-  FX_BOOL HasFlag(uint32_t dwFlags) const;
+  bool IsVisible() const { return m_bVisible; }
+  bool HasFlag(uint32_t dwFlags) const;
   void AddFlag(uint32_t dwFlags);
   void RemoveFlag(uint32_t dwFlags);
   const CFX_FloatRect& GetClipRect() const;
@@ -319,13 +320,13 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   const CPWL_Dash& GetBorderDash() const;
   void* GetAttachedData() const;
 
-  FX_BOOL WndHitTest(const CFX_FloatPoint& point) const;
-  FX_BOOL ClientHitTest(const CFX_FloatPoint& point) const;
-  FX_BOOL IsCaptureMouse() const;
+  bool WndHitTest(const CFX_FloatPoint& point) const;
+  bool ClientHitTest(const CFX_FloatPoint& point) const;
+  bool IsCaptureMouse() const;
 
   const CPWL_Wnd* GetFocused() const;
-  FX_BOOL IsFocused() const;
-  FX_BOOL IsReadOnly() const;
+  bool IsFocused() const;
+  bool IsReadOnly() const;
   CPWL_ScrollBar* GetVScrollBar() const;
 
   IPVT_FontMap* GetFontMap() const;
@@ -350,8 +351,8 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   virtual FX_FLOAT GetItemLeftMargin();
   virtual FX_FLOAT GetItemRightMargin();
 
-  void EnableWindow(FX_BOOL bEnable);
-  FX_BOOL IsEnabled();
+  void EnableWindow(bool bEnable);
+  bool IsEnabled();
   virtual void SetCursor();
 
  protected:
@@ -379,11 +380,11 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   virtual void OnEnabled();
   virtual void OnDisabled();
 
-  void SetNotifyFlag(FX_BOOL bNotifying = TRUE) { m_bNotifying = bNotifying; }
+  void SetNotifyFlag(bool bNotifying = true) { m_bNotifying = bNotifying; }
 
-  FX_BOOL IsValid() const;
+  bool IsValid() const;
   const PWL_CREATEPARAM& GetCreationParam() const;
-  FX_BOOL IsNotifying() const { return m_bNotifying; }
+  bool IsNotifying() const { return m_bNotifying; }
 
   void InvalidateRectMove(const CFX_FloatRect& rcOld,
                           const CFX_FloatRect& rcNew);
@@ -391,13 +392,13 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   void PWLtoWnd(const CFX_FloatPoint& point, int32_t& x, int32_t& y) const;
   FX_RECT PWLtoWnd(const CFX_FloatRect& rect) const;
 
-  FX_BOOL IsWndCaptureMouse(const CPWL_Wnd* pWnd) const;
-  FX_BOOL IsWndCaptureKeyboard(const CPWL_Wnd* pWnd) const;
+  bool IsWndCaptureMouse(const CPWL_Wnd* pWnd) const;
+  bool IsWndCaptureKeyboard(const CPWL_Wnd* pWnd) const;
   const CPWL_Wnd* GetRootWnd() const;
 
-  FX_BOOL IsCTRLpressed(uint32_t nFlag) const;
-  FX_BOOL IsSHIFTpressed(uint32_t nFlag) const;
-  FX_BOOL IsALTpressed(uint32_t nFlag) const;
+  bool IsCTRLpressed(uint32_t nFlag) const;
+  bool IsSHIFTpressed(uint32_t nFlag) const;
+  bool IsALTpressed(uint32_t nFlag) const;
 
  private:
   void AddChild(CPWL_Wnd* pWnd);
@@ -423,10 +424,10 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   CFX_FloatRect m_rcWindow;
   CFX_FloatRect m_rcClip;
 
-  FX_BOOL m_bCreated;
-  FX_BOOL m_bVisible;
-  FX_BOOL m_bNotifying;
-  FX_BOOL m_bEnabled;
+  bool m_bCreated;
+  bool m_bVisible;
+  bool m_bNotifying;
+  bool m_bEnabled;
 };
 
 #endif  // FPDFSDK_PDFWINDOW_PWL_WND_H_

@@ -65,6 +65,7 @@ class VideoReceiveStream {
     int jitter_buffer_ms = 0;
     int min_playout_delay_ms = 0;
     int render_delay_ms = 10;
+    uint32_t frames_decoded = 0;
 
     int current_payload_type = -1;
 
@@ -134,8 +135,8 @@ class VideoReceiveStream {
       // See NackConfig for description.
       NackConfig nack;
 
-      // See FecConfig for description.
-      FecConfig fec;
+      // See UlpfecConfig for description.
+      UlpfecConfig ulpfec;
 
       // RTX settings for incoming video payloads that may be received. RTX is
       // disabled if there's no config present.
@@ -150,11 +151,6 @@ class VideoReceiveStream {
       // Map from video RTP payload type -> RTX config.
       typedef std::map<int, Rtx> RtxMap;
       RtxMap rtx;
-
-      // If set to true, the RTX payload type mapping supplied in |rtx| will be
-      // used when restoring RTX packets. Without it, RTX packets will always be
-      // restored to the last non-RTX packet payload type received.
-      bool use_rtx_payload_mapping_on_restore = false;
 
       // RTP header extensions used for the received stream.
       std::vector<RtpExtension> extensions;

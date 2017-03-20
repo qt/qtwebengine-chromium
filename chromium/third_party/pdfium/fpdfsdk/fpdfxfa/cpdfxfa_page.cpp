@@ -8,7 +8,7 @@
 
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
-#include "fpdfsdk/fpdfxfa/cpdfxfa_document.h"
+#include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cxfa_fwladaptertimermgr.h"
 #include "fpdfsdk/fsdk_define.h"
 #include "public/fpdf_formfill.h"
@@ -16,61 +16,61 @@
 #include "xfa/fxfa/xfa_ffdocview.h"
 #include "xfa/fxfa/xfa_ffpageview.h"
 
-CPDFXFA_Page::CPDFXFA_Page(CPDFXFA_Document* pDoc, int page_index)
+CPDFXFA_Page::CPDFXFA_Page(CPDFXFA_Context* pContext, int page_index)
     : m_pXFAPageView(nullptr),
-      m_pDocument(pDoc),
+      m_pContext(pContext),
       m_iPageIndex(page_index),
       m_iRef(1) {}
 
 CPDFXFA_Page::~CPDFXFA_Page() {
-  if (m_pDocument)
-    m_pDocument->RemovePage(this);
+  if (m_pContext)
+    m_pContext->RemovePage(this);
 }
 
-FX_BOOL CPDFXFA_Page::LoadPDFPage() {
-  if (!m_pDocument)
-    return FALSE;
+bool CPDFXFA_Page::LoadPDFPage() {
+  if (!m_pContext)
+    return false;
 
-  CPDF_Document* pPDFDoc = m_pDocument->GetPDFDoc();
+  CPDF_Document* pPDFDoc = m_pContext->GetPDFDoc();
   if (!pPDFDoc)
-    return FALSE;
+    return false;
 
   CPDF_Dictionary* pDict = pPDFDoc->GetPage(m_iPageIndex);
   if (!pDict)
-    return FALSE;
+    return false;
 
   if (!m_pPDFPage || m_pPDFPage->m_pFormDict != pDict) {
     m_pPDFPage = pdfium::MakeUnique<CPDF_Page>(pPDFDoc, pDict, true);
     m_pPDFPage->ParseContent();
   }
-  return TRUE;
+  return true;
 }
 
-FX_BOOL CPDFXFA_Page::LoadXFAPageView() {
-  if (!m_pDocument)
-    return FALSE;
+bool CPDFXFA_Page::LoadXFAPageView() {
+  if (!m_pContext)
+    return false;
 
-  CXFA_FFDoc* pXFADoc = m_pDocument->GetXFADoc();
+  CXFA_FFDoc* pXFADoc = m_pContext->GetXFADoc();
   if (!pXFADoc)
-    return FALSE;
+    return false;
 
-  CXFA_FFDocView* pXFADocView = m_pDocument->GetXFADocView();
+  CXFA_FFDocView* pXFADocView = m_pContext->GetXFADocView();
   if (!pXFADocView)
-    return FALSE;
+    return false;
 
   CXFA_FFPageView* pPageView = pXFADocView->GetPageView(m_iPageIndex);
   if (!pPageView)
-    return FALSE;
+    return false;
 
   m_pXFAPageView = pPageView;
-  return TRUE;
+  return true;
 }
 
-FX_BOOL CPDFXFA_Page::LoadPage() {
-  if (!m_pDocument || m_iPageIndex < 0)
-    return FALSE;
+bool CPDFXFA_Page::LoadPage() {
+  if (!m_pContext || m_iPageIndex < 0)
+    return false;
 
-  int iDocType = m_pDocument->GetDocType();
+  int iDocType = m_pContext->GetDocType();
   switch (iDocType) {
     case DOCTYPE_PDF:
     case DOCTYPE_STATIC_XFA: {
@@ -80,25 +80,25 @@ FX_BOOL CPDFXFA_Page::LoadPage() {
       return LoadXFAPageView();
     }
     default:
-      return FALSE;
+      return false;
   }
 }
 
-FX_BOOL CPDFXFA_Page::LoadPDFPage(CPDF_Dictionary* pageDict) {
-  if (!m_pDocument || m_iPageIndex < 0 || !pageDict)
-    return FALSE;
+bool CPDFXFA_Page::LoadPDFPage(CPDF_Dictionary* pageDict) {
+  if (!m_pContext || m_iPageIndex < 0 || !pageDict)
+    return false;
 
   m_pPDFPage =
-      pdfium::MakeUnique<CPDF_Page>(m_pDocument->GetPDFDoc(), pageDict, true);
+      pdfium::MakeUnique<CPDF_Page>(m_pContext->GetPDFDoc(), pageDict, true);
   m_pPDFPage->ParseContent();
-  return TRUE;
+  return true;
 }
 
 FX_FLOAT CPDFXFA_Page::GetPageWidth() const {
   if (!m_pPDFPage && !m_pXFAPageView)
     return 0.0f;
 
-  int nDocType = m_pDocument->GetDocType();
+  int nDocType = m_pContext->GetDocType();
   switch (nDocType) {
     case DOCTYPE_DYNAMIC_XFA: {
       if (m_pXFAPageView) {
@@ -123,7 +123,7 @@ FX_FLOAT CPDFXFA_Page::GetPageHeight() const {
   if (!m_pPDFPage && !m_pXFAPageView)
     return 0.0f;
 
-  int nDocType = m_pDocument->GetDocType();
+  int nDocType = m_pContext->GetDocType();
   switch (nDocType) {
     case DOCTYPE_PDF:
     case DOCTYPE_STATIC_XFA: {
@@ -203,7 +203,7 @@ void CPDFXFA_Page::GetDisplayMatrix(CFX_Matrix& matrix,
   if (!m_pPDFPage && !m_pXFAPageView)
     return;
 
-  int nDocType = m_pDocument->GetDocType();
+  int nDocType = m_pContext->GetDocType();
   switch (nDocType) {
     case DOCTYPE_DYNAMIC_XFA: {
       if (m_pXFAPageView) {

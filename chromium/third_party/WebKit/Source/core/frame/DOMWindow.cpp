@@ -107,9 +107,10 @@ DOMWindow* DOMWindow::top() const {
   return frame()->tree().top()->domWindow();
 }
 
-External* DOMWindow::external() const {
-  DEFINE_STATIC_LOCAL(Persistent<External>, external, (new External));
-  return external;
+External* DOMWindow::external() {
+  if (!m_external)
+    m_external = new External;
+  return m_external;
 }
 
 DOMWindow* DOMWindow::anonymousIndexedGetter(uint32_t index) const {
@@ -397,7 +398,7 @@ void DOMWindow::close(ExecutionContext* context) {
   InspectorInstrumentation::NativeBreakpoint nativeBreakpoint(context, "close",
                                                               true);
 
-  page->chromeClient().closeWindowSoon();
+  page->closeSoon();
 
   // So as to make window.closed return the expected result
   // after window.close(), separately record the to-be-closed
@@ -434,6 +435,7 @@ void DOMWindow::focus(ExecutionContext* context) {
 
 DEFINE_TRACE(DOMWindow) {
   visitor->trace(m_location);
+  visitor->trace(m_external);
   EventTargetWithInlineData::trace(visitor);
 }
 

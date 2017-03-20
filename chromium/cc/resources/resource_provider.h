@@ -40,9 +40,6 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
-class GrContext;
-class GrSurface;
-
 namespace gpu {
 class GpuMemoryBufferManager;
 namespace gles {
@@ -52,11 +49,6 @@ class GLES2Interface;
 // A correct fix would be not to use GL types in this interal API file.
 typedef unsigned int     GLenum;
 typedef int              GLint;
-
-namespace gfx {
-class Rect;
-class Vector2d;
-}
 
 namespace cc {
 class BlockingTaskRunner;

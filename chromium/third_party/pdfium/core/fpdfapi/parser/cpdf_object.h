@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <set>
+#include <type_traits>
 
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
@@ -38,19 +39,21 @@ class CPDF_Object {
     REFERENCE
   };
 
+  virtual ~CPDF_Object();
+
   virtual Type GetType() const = 0;
   uint32_t GetObjNum() const { return m_ObjNum; }
   uint32_t GetGenNum() const { return m_GenNum; }
+  bool IsInline() const { return m_ObjNum == 0; }
 
   // Create a deep copy of the object.
-  virtual CPDF_Object* Clone() const = 0;
+  virtual std::unique_ptr<CPDF_Object> Clone() const = 0;
+
   // Create a deep copy of the object except any reference object be
   // copied to the object it points to directly.
-  virtual CPDF_Object* CloneDirectObject() const;
+  virtual std::unique_ptr<CPDF_Object> CloneDirectObject() const;
+
   virtual CPDF_Object* GetDirect() const;
-
-  void Release();
-
   virtual CFX_ByteString GetString() const;
   virtual CFX_WideString GetUnicodeText() const;
   virtual FX_FLOAT GetNumber() const;
@@ -93,12 +96,10 @@ class CPDF_Object {
   friend class CPDF_Parser;
   friend class CPDF_Reference;
   friend class CPDF_Stream;
-  friend struct std::default_delete<CPDF_Object>;
 
   CPDF_Object() : m_ObjNum(0), m_GenNum(0) {}
-  virtual ~CPDF_Object();
 
-  CPDF_Object* CloneObjectNonCyclic(bool bDirect) const;
+  std::unique_ptr<CPDF_Object> CloneObjectNonCyclic(bool bDirect) const;
 
   // Create a deep copy of the object with the option to either
   // copy a reference object or directly copy the object it refers to
@@ -106,7 +107,7 @@ class CPDF_Object {
   // Also check cyclic reference against |pVisited|, no copy if it is found.
   // Complex objects should implement their own CloneNonCyclic()
   // function to properly check for possible loop.
-  virtual CPDF_Object* CloneNonCyclic(
+  virtual std::unique_ptr<CPDF_Object> CloneNonCyclic(
       bool bDirect,
       std::set<const CPDF_Object*>* pVisited) const;
 
@@ -117,67 +118,12 @@ class CPDF_Object {
   CPDF_Object(const CPDF_Object& src) {}
 };
 
-inline CPDF_Boolean* ToBoolean(CPDF_Object* obj) {
-  return obj ? obj->AsBoolean() : nullptr;
-}
-
-inline const CPDF_Boolean* ToBoolean(const CPDF_Object* obj) {
-  return obj ? obj->AsBoolean() : nullptr;
-}
-
-inline CPDF_Number* ToNumber(CPDF_Object* obj) {
-  return obj ? obj->AsNumber() : nullptr;
-}
-
-inline const CPDF_Number* ToNumber(const CPDF_Object* obj) {
-  return obj ? obj->AsNumber() : nullptr;
-}
-
-inline CPDF_String* ToString(CPDF_Object* obj) {
-  return obj ? obj->AsString() : nullptr;
-}
-
-inline const CPDF_String* ToString(const CPDF_Object* obj) {
-  return obj ? obj->AsString() : nullptr;
-}
-
-inline CPDF_Name* ToName(CPDF_Object* obj) {
-  return obj ? obj->AsName() : nullptr;
-}
-
-inline const CPDF_Name* ToName(const CPDF_Object* obj) {
-  return obj ? obj->AsName() : nullptr;
-}
-
-inline CPDF_Array* ToArray(CPDF_Object* obj) {
-  return obj ? obj->AsArray() : nullptr;
-}
-
-inline const CPDF_Array* ToArray(const CPDF_Object* obj) {
-  return obj ? obj->AsArray() : nullptr;
-}
-
-inline CPDF_Dictionary* ToDictionary(CPDF_Object* obj) {
-  return obj ? obj->AsDictionary() : nullptr;
-}
-
-inline const CPDF_Dictionary* ToDictionary(const CPDF_Object* obj) {
-  return obj ? obj->AsDictionary() : nullptr;
-}
-inline CPDF_Reference* ToReference(CPDF_Object* obj) {
-  return obj ? obj->AsReference() : nullptr;
-}
-
-inline const CPDF_Reference* ToReference(const CPDF_Object* obj) {
-  return obj ? obj->AsReference() : nullptr;
-}
-
-inline CPDF_Stream* ToStream(CPDF_Object* obj) {
-  return obj ? obj->AsStream() : nullptr;
-}
-
-inline const CPDF_Stream* ToStream(const CPDF_Object* obj) {
-  return obj ? obj->AsStream() : nullptr;
-}
+template <typename T>
+struct CanInternStrings {
+  static const bool value = std::is_same<T, CPDF_Array>::value ||
+                            std::is_same<T, CPDF_Dictionary>::value ||
+                            std::is_same<T, CPDF_Name>::value ||
+                            std::is_same<T, CPDF_String>::value;
+};
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_OBJECT_H_

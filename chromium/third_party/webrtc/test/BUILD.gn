@@ -38,9 +38,8 @@ rtc_source_set("video_test_common") {
     "frame_utils.h",
   ]
 
-  if (is_clang && !is_nacl) {
-    # Suppress warnings from the Chromium Clang plugin.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
@@ -60,9 +59,8 @@ rtc_source_set("rtp_test_utils") {
     "rtp_file_writer.h",
   ]
 
-  if (is_clang && !is_nacl) {
-    # Suppress warnings from the Chromium Clang plugin.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
@@ -137,9 +135,8 @@ rtc_source_set("test_support") {
     "//testing/gtest",
   ]
 
-  if (is_clang) {
-    # Suppress warnings from the Chromium Clang plugin.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
@@ -196,6 +193,18 @@ rtc_source_set("test_support_main_threaded_mac") {
   ]
 }
 
+rtc_source_set("run_test") {
+  testonly = true
+  sources = [
+    "run_test.h",
+  ]
+  if (is_mac) {
+    sources += [ "mac/run_test.mm" ]
+  } else {
+    sources += [ "run_test.cc" ]
+  }
+}
+
 test_support_unittests_resources = [
   "//resources/foreman_cif_short.yuv",
   "//resources/video_coding/frame-ethernet-ii.pcap",
@@ -240,9 +249,8 @@ rtc_test("test_support_unittests") {
     cflags = [ "/wd4373" ]  # virtual override w/different const/volatile signature.
   }
 
-  if (is_clang) {
-    # Suppress warnings from the Chromium Clang plugin.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
@@ -313,9 +321,8 @@ rtc_source_set("test_common") {
     ]
   }
 
-  if (is_clang && !is_nacl) {
-    # Suppress warnings from the Chromium Clang plugin.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
@@ -327,6 +334,7 @@ rtc_source_set("test_common") {
     "../base:rtc_base_approved",
     "../call",
     "../modules/media_file",
+    "../modules/video_capture:video_capture_module",
     "../video",
     "//testing/gmock",
     "//testing/gtest",
@@ -393,9 +401,8 @@ rtc_source_set("test_renderer") {
 
   public_configs = [ ":test_renderer_exported_config" ]
 
-  if (is_clang && !is_nacl) {
-    # Suppress warnings from the Chromium Clang plugin.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 

@@ -14,12 +14,13 @@
 #include "core/fxcrt/fx_stream.h"
 
 class CFX_BitStream;
-class CPDF_Dictionary;
+class CPDF_LinearizedHeader;
 class CPDF_Stream;
 
 class CPDF_HintTables {
  public:
-  CPDF_HintTables(CPDF_DataAvail* pDataAvail, CPDF_Dictionary* pLinearized);
+  CPDF_HintTables(CPDF_DataAvail* pDataAvail,
+                  CPDF_LinearizedHeader* pLinearized);
   virtual ~CPDF_HintTables();
 
   bool GetPagePos(uint32_t index,
@@ -46,9 +47,6 @@ class CPDF_HintTables {
   virtual int ReadPrimaryHintStreamOffset() const;
   virtual int ReadPrimaryHintStreamLength() const;
 
-  // Helper for the ReadPrimaryHintStream methods above.
-  int ReadPrimaryHintStream(int index) const;
-
   uint32_t GetItemLength(uint32_t index,
                          const std::vector<FX_FILESIZE>& szArray);
 
@@ -56,7 +54,7 @@ class CPDF_HintTables {
   CPDF_DataAvail* const m_pDataAvail;
 
   // Owned by |m_pDataAvail|.
-  CPDF_Dictionary* const m_pLinearizedDict;
+  CPDF_LinearizedHeader* const m_pLinearized;
 
   uint32_t m_nFirstPageSharedObjs;
   FX_FILESIZE m_szFirstPageObjOffset;

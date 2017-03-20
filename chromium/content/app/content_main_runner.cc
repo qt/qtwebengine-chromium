@@ -32,6 +32,7 @@
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/process/memory.h"
+#include "base/process/process.h"
 #include "base/process/process_handle.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
@@ -144,12 +145,8 @@ void InitializeFieldTrialAndFeatureList(
 
   // Ensure any field trials in browser are reflected into the child
   // process.
-  if (command_line.HasSwitch(switches::kForceFieldTrials)) {
-    bool result = base::FieldTrialList::CreateTrialsFromString(
-        command_line.GetSwitchValueASCII(switches::kForceFieldTrials),
-        std::set<std::string>());
-    DCHECK(result);
-  }
+  base::FieldTrialList::CreateTrialsFromCommandLine(
+      command_line, switches::kFieldTrialHandle);
 
   std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
   feature_list->InitializeFromCommandLine(
@@ -481,15 +478,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // in correct encoding.
     setlocale(LC_ALL, "");
 
-    if (params.setup_signal_handlers) {
-      SetupSignalHandlers();
-    } else {
-        // Ignore SIGPIPE even if we are not resetting the other signal handlers.
-        CHECK(signal(SIGPIPE, SIG_IGN) != SIG_ERR);
-    }
-
-    g_fds->Set(kPrimaryIPCChannel,
-               kPrimaryIPCChannel + base::GlobalDescriptors::kBaseDescriptor);
+    SetupSignalHandlers();
     g_fds->Set(kMojoIPCChannel,
                kMojoIPCChannel + base::GlobalDescriptors::kBaseDescriptor);
 #endif  // !OS_ANDROID

@@ -54,6 +54,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFAction_GetFilePath);
     CHK(FPDFAction_GetURIPath);
     CHK(FPDFDest_GetPageIndex);
+    CHK(FPDFDest_GetLocationInPage);
     CHK(FPDFLink_GetLinkAtPoint);
     CHK(FPDFLink_GetLinkZOrderAtPoint);
     CHK(FPDFLink_GetDest);
@@ -157,6 +158,7 @@ int CheckPDFiumCApi() {
     CHK(FPDF_AddInstalledFont);
     CHK(FPDF_SetSystemFontInfo);
     CHK(FPDF_GetDefaultSystemFontInfo);
+    CHK(FPDF_FreeDefaultSystemFontInfo);
 
     // fpdf_text.h
     CHK(FPDFText_LoadPage);
@@ -228,6 +230,7 @@ int CheckPDFiumCApi() {
     CHK(FPDF_VIEWERREF_GetNumCopies);
     CHK(FPDF_VIEWERREF_GetPrintPageRange);
     CHK(FPDF_VIEWERREF_GetDuplex);
+    CHK(FPDF_VIEWERREF_GetName);
     CHK(FPDF_CountNamedDests);
     CHK(FPDF_GetNamedDestByName);
     CHK(FPDF_GetNamedDest);

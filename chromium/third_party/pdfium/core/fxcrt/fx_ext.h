@@ -18,7 +18,7 @@
 // Come up or wait for something better. This appears in this file rather
 // than fx_stream.h due to include ordering restrictions.
 using ScopedFileStream =
-    std::unique_ptr<IFX_FileStream, ReleaseDeleter<IFX_FileStream>>;
+    std::unique_ptr<IFX_SeekableStream, ReleaseDeleter<IFX_SeekableStream>>;
 
 FX_FLOAT FXSYS_tan(FX_FLOAT a);
 FX_FLOAT FXSYS_logb(FX_FLOAT b, FX_FLOAT x);
@@ -101,7 +101,7 @@ typedef FX_GUID const* FX_LPCGUID;
 void FX_GUID_CreateV4(FX_LPGUID pGUID);
 void FX_GUID_ToString(FX_LPCGUID pGUID,
                       CFX_ByteString& bsStr,
-                      FX_BOOL bSeparator = TRUE);
+                      bool bSeparator = true);
 #endif  // PDF_ENABLE_XFA
 
 template <class baseType>

@@ -9,6 +9,8 @@
 
 #include "compiler/translator/IntermNode.h"
 
+namespace sh
+{
 class TParseContext;
 
 class ValidateSwitch : public TIntermTraverser
@@ -16,8 +18,10 @@ class ValidateSwitch : public TIntermTraverser
   public:
     // Check for errors and output messages any remaining errors on the context.
     // Returns true if there are no errors.
-    static bool validate(TBasicType switchType, TParseContext *context,
-        TIntermAggregate *statementList, const TSourceLoc &loc);
+    static bool validate(TBasicType switchType,
+                         TParseContext *context,
+                         TIntermBlock *statementList,
+                         const TSourceLoc &loc);
 
     void visitSymbol(TIntermSymbol *) override;
     void visitConstantUnion(TIntermConstantUnion *) override;
@@ -49,5 +53,7 @@ class ValidateSwitch : public TIntermTraverser
     std::set<unsigned int> mCasesUnsigned;
     bool mDuplicateCases;
 };
+
+}  // namespace sh
 
 #endif // COMPILER_TRANSLATOR_VALIDATESWITCH_H_

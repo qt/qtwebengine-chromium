@@ -43,9 +43,9 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 
+#include "wayland-util.h"
 #include "wayland-private.h"
 #include "wayland-server.h"
-#include "wayland-server-protocol.h"
 #include "wayland-os.h"
 
 /* This is the size of the char array in struct sock_addr_un.
@@ -81,6 +81,7 @@ struct wl_client {
 	struct wl_signal destroy_signal;
 	struct ucred ucred;
 	int error;
+	struct wl_signal resource_created_signal;
 };
 
 struct wl_display {
@@ -94,8 +95,10 @@ struct wl_display {
 	struct wl_list global_list;
 	struct wl_list socket_list;
 	struct wl_list client_list;
+	struct wl_list protocol_loggers;
 
 	struct wl_signal destroy_signal;
+	struct wl_signal create_client_signal;
 
 	struct wl_array additional_shm_formats;
 };
@@ -121,7 +124,41 @@ struct wl_resource {
 	wl_dispatcher_func_t dispatcher;
 };
 
+struct wl_protocol_logger {
+	struct wl_list link;
+	wl_protocol_logger_func_t func;
+	void *user_data;
+};
+
 static int debug_server = 0;
+
+static void
+log_closure(struct wl_resource *resource,
+	    struct wl_closure *closure, int send)
+{
+	struct wl_object *object = &resource->object;
+	struct wl_display *display = resource->client->display;
+	struct wl_protocol_logger *protocol_logger;
+	struct wl_protocol_logger_message message;
+
+	if (debug_server)
+		wl_closure_print(closure, object, send);
+
+	if (!wl_list_empty(&display->protocol_loggers)) {
+		message.resource = resource;
+		message.message_opcode = closure->opcode;
+		message.message = closure->message;
+		message.arguments_count = closure->count;
+		message.arguments = closure->args;
+		wl_list_for_each(protocol_logger,
+				 &display->protocol_loggers, link) {
+			protocol_logger->func(protocol_logger->user_data,
+					      send ? WL_PROTOCOL_LOGGER_EVENT :
+						     WL_PROTOCOL_LOGGER_REQUEST,
+					      &message);
+		}
+	}
+}
 
 WL_EXPORT void
 wl_resource_post_event_array(struct wl_resource *resource, uint32_t opcode,
@@ -141,8 +178,7 @@ wl_resource_post_event_array(struct wl_resource *resource, uint32_t opcode,
 	if (wl_closure_send(closure, resource->client->connection))
 		resource->client->error = 1;
 
-	if (debug_server)
-		wl_closure_print(closure, object, true);
+	log_closure(resource, closure, true);
 
 	wl_closure_destroy(closure);
 }
@@ -181,8 +217,7 @@ wl_resource_queue_event_array(struct wl_resource *resource, uint32_t opcode,
 	if (wl_closure_queue(closure, resource->client->connection))
 		resource->client->error = 1;
 
-	if (debug_server)
-		wl_closure_print(closure, object, true);
+	log_closure(resource, closure, true);
 
 	wl_closure_destroy(closure);
 }
@@ -329,8 +364,7 @@ wl_client_connection_data(int fd, uint32_t mask, void *data)
 			break;
 		}
 
-		if (debug_server)
-			wl_closure_print(closure, object, false);
+		log_closure(resource, closure, false);
 
 		if ((resource_flags & WL_MAP_ENTRY_LEGACY) ||
 		    resource->dispatcher == NULL) {
@@ -406,6 +440,9 @@ bind_display(struct wl_client *client, struct wl_display *display);
  * wl_display_connect_to_fd() on the client side or used with the
  * WAYLAND_SOCKET environment variable on the client side.
  *
+ * Listeners added with wl_display_add_client_created_listener() will
+ * be notified by this function after the client is fully constructed.
+ *
  * On failure this function sets errno accordingly and returns NULL.
  *
  * \memberof wl_display
@@ -420,6 +457,7 @@ wl_client_create(struct wl_display *display, int fd)
 	if (client == NULL)
 		return NULL;
 
+	wl_signal_init(&client->resource_created_signal);
 	client->display = display;
 	client->source = wl_event_loop_add_fd(display->loop, fd,
 					      WL_EVENT_READABLE,
@@ -447,6 +485,8 @@ wl_client_create(struct wl_display *display, int fd)
 		goto err_map;
 
 	wl_list_insert(display->client_list.prev, &client->link);
+
+	wl_signal_emit(&display->create_client_signal, client);
 
 	return client;
 
@@ -557,7 +597,7 @@ wl_resource_post_no_memory(struct wl_resource *resource)
 			       WL_DISPLAY_ERROR_NO_MEMORY, "no memory");
 }
 
-static void
+static enum wl_iterator_result
 destroy_resource(void *element, void *data)
 {
 	struct wl_resource *resource = element;
@@ -572,6 +612,8 @@ destroy_resource(void *element, void *data)
 
 	if (!(flags & WL_MAP_ENTRY_LEGACY))
 		free(resource);
+
+	return WL_ITERATOR_CONTINUE;
 }
 
 WL_EXPORT void
@@ -684,6 +726,18 @@ wl_resource_get_destroy_listener(struct wl_resource *resource,
 	return wl_signal_get(&resource->destroy_signal, notify);
 }
 
+/** Retrieve the interface name (class) of a resource object.
+ *
+ * \param resource The resource object
+ *
+ * \memberof wl_resource
+ */
+WL_EXPORT const char *
+wl_resource_get_class(struct wl_resource *resource)
+{
+	return resource->object.interface->name;
+}
+
 WL_EXPORT void
 wl_client_add_destroy_listener(struct wl_client *client,
 			       struct wl_listener *listener)
@@ -711,6 +765,7 @@ wl_client_destroy(struct wl_client *client)
 	wl_event_source_remove(client->source);
 	close(wl_connection_destroy(client->connection));
 	wl_list_remove(&client->link);
+	wl_list_remove(&client->resource_created_signal.listener_list);
 	free(client);
 }
 
@@ -862,8 +917,10 @@ wl_display_create(void)
 	wl_list_init(&display->socket_list);
 	wl_list_init(&display->client_list);
 	wl_list_init(&display->registry_resource_list);
+	wl_list_init(&display->protocol_loggers);
 
 	wl_signal_init(&display->destroy_signal);
+	wl_signal_init(&display->create_client_signal);
 
 	display->id = 1;
 	display->serial = 0;
@@ -936,6 +993,8 @@ wl_display_destroy(struct wl_display *display)
 		free(global);
 
 	wl_array_release(&display->additional_shm_formats);
+
+	wl_list_remove(&display->protocol_loggers);
 
 	free(display);
 }
@@ -1353,6 +1412,24 @@ wl_display_add_destroy_listener(struct wl_display *display,
 	wl_signal_add(&display->destroy_signal, listener);
 }
 
+/** Registers a listener for the client connection signal.
+ *  When a new client object is created, \a listener will be notified, carrying
+ *  a pointer to the new wl_client object.
+ *
+ *  \ref wl_client_create
+ *  \ref wl_display
+ *  \ref wl_listener
+ *
+ * \param display The display object
+ * \param listener Signal handler object
+ */
+WL_EXPORT void
+wl_display_add_client_created_listener(struct wl_display *display,
+					struct wl_listener *listener)
+{
+	wl_signal_add(&display->create_client_signal, listener);
+}
+
 WL_EXPORT struct wl_listener *
 wl_display_get_destroy_listener(struct wl_display *display,
 				wl_notify_func_t notify)
@@ -1383,6 +1460,18 @@ wl_resource_set_dispatcher(struct wl_resource *resource,
 	resource->destroy = destroy;
 }
 
+/** Create a new resource object
+ *
+ * \param client The client owner of the new resource.
+ * \param interface The interface of the new resource.
+ * \param version The version of the new resource.
+ * \param id The id of the new resource. If 0, an available id will be used.
+ *
+ * Listeners added with \a wl_client_add_resource_created_listener will be
+ * notified at the end of this function.
+ *
+ * \memberof wl_resource
+ */
 WL_EXPORT struct wl_resource *
 wl_resource_create(struct wl_client *client,
 		   const struct wl_interface *interface,
@@ -1417,6 +1506,7 @@ wl_resource_create(struct wl_client *client,
 		return NULL;
 	}
 
+	wl_signal_emit(&client->resource_created_signal, resource);
 	return resource;
 }
 
@@ -1424,6 +1514,62 @@ WL_EXPORT void
 wl_log_set_handler_server(wl_log_func_t handler)
 {
 	wl_log_handler = handler;
+}
+
+/** Adds a new protocol logger.
+ *
+ * When a new protocol message arrives or is sent from the server
+ * all the protocol logger functions will be called, carrying the
+ * \a user_data pointer, the type of the message (request or
+ * event) and the actual message.
+ * The lifetime of the messages passed to the logger function ends
+ * when they return so the messages cannot be stored and accessed
+ * later.
+ *
+ * \a errno is set on error.
+ *
+ * \param display The display object
+ * \param func The function to call to log a new protocol message
+ * \param user_data The user data pointer to pass to \a func
+ *
+ * \return The protol logger object on success, NULL on failure.
+ *
+ * \sa wl_protocol_logger_destroy
+ *
+ * \memberof wl_display
+ */
+WL_EXPORT struct wl_protocol_logger *
+wl_display_add_protocol_logger(struct wl_display *display,
+			       wl_protocol_logger_func_t func, void *user_data)
+{
+	struct wl_protocol_logger *logger;
+
+	logger = malloc(sizeof *logger);
+	if (!logger)
+		return NULL;
+
+	logger->func = func;
+	logger->user_data = user_data;
+	wl_list_insert(&display->protocol_loggers, &logger->link);
+
+	return logger;
+}
+
+/** Destroys a protocol logger.
+ *
+ * This function destroys a protocol logger and removes it from the display
+ * it was added to with \a wl_display_add_protocol_logger.
+ * The \a logger object becomes invalid after calling this function.
+ *
+ * \sa wl_display_add_protocol_logger
+ *
+ * \memberof wl_protocol_logger
+ */
+WL_EXPORT void
+wl_protocol_logger_destroy(struct wl_protocol_logger *logger)
+{
+	wl_list_remove(&logger->link);
+	free(logger);
 }
 
 /** Add support for a wl_shm pixel format
@@ -1470,12 +1616,131 @@ wl_display_add_shm_format(struct wl_display *display, uint32_t format)
  *
  * \sa wl_display_add_shm_format()
  *
+ * \private
+ *
  * \memberof wl_display
  */
 struct wl_array *
 wl_display_get_additional_shm_formats(struct wl_display *display)
 {
 	return &display->additional_shm_formats;
+}
+
+/** Get the list of currently connected clients
+ *
+ * \param display The display object
+ *
+ * This function returns a pointer to the list of clients currently
+ * connected to the display. You can iterate on the list by using
+ * the \a wl_client_for_each macro.
+ * The returned value is valid for the lifetime of the \a display.
+ * You must not modify the returned list, but only access it.
+ *
+ * \sa wl_client_for_each()
+ * \sa wl_client_get_link()
+ * \sa wl_client_from_link()
+ *
+ * \memberof wl_display
+ */
+WL_EXPORT struct wl_list *
+wl_display_get_client_list(struct wl_display *display)
+{
+	return &display->client_list;
+}
+
+/** Get the link by which a client is inserted in the client list
+ *
+ * \param client The client object
+ *
+ * \sa wl_client_for_each()
+ * \sa wl_display_get_client_list()
+ * \sa wl_client_from_link()
+ *
+ * \memberof wl_client
+ */
+WL_EXPORT struct wl_list *
+wl_client_get_link(struct wl_client *client)
+{
+	return &client->link;
+}
+
+/** Get a wl_client by its link
+ *
+ * \param link The link of a wl_client
+ *
+ * \sa wl_client_for_each()
+ * \sa wl_display_get_client_list()
+ * \sa wl_client_get_link()
+ *
+ * \memberof wl_client
+ */
+WL_EXPORT struct wl_client *
+wl_client_from_link(struct wl_list *link)
+{
+	return container_of(link, struct wl_client, link);
+}
+
+/** Add a listener for the client's resource creation signal
+ *
+ * \param client The client object
+ * \param listener The listener to be added
+ *
+ * When a new resource is created for this client the listener
+ * will be notified, carrying the new resource as the data argument.
+ *
+ * \memberof wl_client
+ */
+WL_EXPORT void
+wl_client_add_resource_created_listener(struct wl_client *client,
+					struct wl_listener *listener)
+{
+	wl_signal_add(&client->resource_created_signal, listener);
+}
+
+struct wl_resource_iterator_context {
+	void *user_data;
+	wl_client_for_each_resource_iterator_func_t it;
+};
+
+static enum wl_iterator_result
+resource_iterator_helper(void *res, void *user_data)
+{
+	struct wl_resource_iterator_context *context = user_data;
+	struct wl_resource *resource = res;
+
+	return context->it(resource, context->user_data);
+}
+
+/** Iterate over all the resources of a client
+ *
+ * \param client The client object
+ * \param iterator The iterator function
+ * \param user_data The user data pointer
+ *
+ * The function pointed by \a iterator will be called for each
+ * resource owned by the client. The \a user_data will be passed
+ * as the second argument of the iterator function.
+ * If the \a iterator function returns \a WL_ITERATOR_CONTINUE the iteration
+ * will continue, if it returns \a WL_ITERATOR_STOP it will stop.
+ *
+ * Creating and destroying resources while iterating is safe, but new
+ * resources may or may not be picked up by the iterator.
+ *
+ * \sa wl_iterator_result
+ *
+ * \memberof wl_client
+ */
+WL_EXPORT void
+wl_client_for_each_resource(struct wl_client *client,
+			    wl_client_for_each_resource_iterator_func_t iterator,
+			    void *user_data)
+{
+	struct wl_resource_iterator_context context = {
+		.user_data = user_data,
+		.it = iterator,
+	};
+
+	wl_map_for_each(&client->objects, resource_iterator_helper, &context);
 }
 
 /** \cond */ /* Deprecated functions below. */

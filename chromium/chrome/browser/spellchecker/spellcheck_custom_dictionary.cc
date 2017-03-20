@@ -21,8 +21,8 @@
 #include "components/spellcheck/browser/spellcheck_host_metrics.h"
 #include "components/spellcheck/common/spellcheck_common.h"
 #ifndef TOOLKIT_QT
-#include "components/sync/api/sync_change.h"
-#include "components/sync/api/sync_error_factory.h"
+#include "components/sync/model/sync_change.h"
+#include "components/sync/model/sync_error_factory.h"
 #include "components/sync/protocol/sync.pb.h"
 #else
 #include "base/stl_util.h"
@@ -444,7 +444,8 @@ void SpellcheckCustomDictionary::OnLoaded(
   Sync(dictionary_change);
 #endif
   is_loaded_ = true;
-  FOR_EACH_OBSERVER(Observer, observers_, OnCustomDictionaryLoaded());
+  for (Observer& observer : observers_)
+    observer.OnCustomDictionaryLoaded();
   if (!result->is_valid_file) {
     // Save cleaned up data only after startup.
     fix_invalid_file_.Reset(
@@ -543,7 +544,6 @@ void SpellcheckCustomDictionary::Notify(const Change& dictionary_change) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!IsLoaded() || dictionary_change.empty())
     return;
-  FOR_EACH_OBSERVER(Observer,
-                    observers_,
-                    OnCustomDictionaryChanged(dictionary_change));
+  for (Observer& observer : observers_)
+    observer.OnCustomDictionaryChanged(dictionary_change);
 }

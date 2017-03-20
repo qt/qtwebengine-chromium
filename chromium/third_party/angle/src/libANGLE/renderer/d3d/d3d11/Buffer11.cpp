@@ -38,6 +38,28 @@ enum class CopyResult
     NOT_RECREATED,
 };
 
+void CalculateConstantBufferParams(GLintptr offset,
+                                   GLsizeiptr size,
+                                   UINT *outFirstConstant,
+                                   UINT *outNumConstants)
+{
+    // The offset must be aligned to 256 bytes (should have been enforced by glBindBufferRange).
+    ASSERT(offset % 256 == 0);
+
+    // firstConstant and numConstants are expressed in constants of 16-bytes. Furthermore they must
+    // be a multiple of 16 constants.
+    *outFirstConstant = static_cast<UINT>(offset / 16);
+
+    // The GL size is not required to be aligned to a 256 bytes boundary.
+    // Round the size up to a 256 bytes boundary then express the results in constants of 16-bytes.
+    *outNumConstants = static_cast<UINT>(rx::roundUp(size, static_cast<GLsizeiptr>(256)) / 16);
+
+    // Since the size is rounded up, firstConstant + numConstants may be bigger than the actual size
+    // of the buffer. This behaviour is explictly allowed according to the documentation on
+    // ID3D11DeviceContext1::PSSetConstantBuffers1
+    // https://msdn.microsoft.com/en-us/library/windows/desktop/hh404649%28v=vs.85%29.aspx
+}
+
 }  // anonymous namespace
 
 namespace gl_d3d11
@@ -249,8 +271,8 @@ class Buffer11::SystemMemoryStorage : public Buffer11::BufferStorage
     MemoryBuffer mSystemCopy;
 };
 
-Buffer11::Buffer11(Renderer11 *renderer)
-    : BufferD3D(renderer),
+Buffer11::Buffer11(const gl::BufferState &state, Renderer11 *renderer)
+    : BufferD3D(state, renderer),
       mRenderer(renderer),
       mSize(0),
       mMappedStorage(nullptr),
@@ -311,9 +333,23 @@ gl::Error Buffer11::setSubData(GLenum target, const void *data, size_t size, siz
         // Use system memory storage for dynamic buffers.
         // Try using a constant storage for constant buffers
         BufferStorage *writeBuffer = nullptr;
-        if (target == GL_UNIFORM_BUFFER && offset == 0 && size >= mSize)
+        if (target == GL_UNIFORM_BUFFER)
         {
-            ANGLE_TRY_RESULT(getBufferStorage(BUFFER_USAGE_UNIFORM), writeBuffer);
+            // If we are a very large uniform buffer, keep system memory storage around so that we
+            // aren't forced to read back from a constant buffer. We also check the workaround for
+            // Intel - this requires us to use system memory so we don't end up having to copy from
+            // a constant buffer to a staging buffer.
+            // TODO(jmadill): Use Context caps.
+            if (offset == 0 && size >= mSize &&
+                size <= static_cast<UINT>(mRenderer->getNativeCaps().maxUniformBlockSize) &&
+                !mRenderer->getWorkarounds().useSystemMemoryForConstantBuffers)
+            {
+                ANGLE_TRY_RESULT(getBufferStorage(BUFFER_USAGE_UNIFORM), writeBuffer);
+            }
+            else
+            {
+                ANGLE_TRY_RESULT(getSystemMemoryStorage(), writeBuffer);
+            }
         }
         else if (supportsDirectBinding())
         {
@@ -522,16 +558,32 @@ gl::Error Buffer11::checkForDeallocation(BufferUsage usage)
     return gl::NoError();
 }
 
-gl::Error Buffer11::markBufferUsage(BufferUsage usage)
+// Keep system memory when we are using it for the canonical version of data.
+bool Buffer11::canDeallocateSystemMemory() const
+{
+    // Must keep system memory on Intel.
+    if (mRenderer->getWorkarounds().useSystemMemoryForConstantBuffers)
+    {
+        return false;
+    }
+
+    return (!mBufferStorages[BUFFER_USAGE_UNIFORM] ||
+            mSize <= mRenderer->getNativeCaps().maxUniformBlockSize);
+}
+
+void Buffer11::markBufferUsage(BufferUsage usage)
 {
     mIdleness[usage] = 0;
+}
 
-    if (usage != BUFFER_USAGE_SYSTEM_MEMORY)
+gl::Error Buffer11::garbageCollection(BufferUsage currentUsage)
+{
+    if (currentUsage != BUFFER_USAGE_SYSTEM_MEMORY && canDeallocateSystemMemory())
     {
         ANGLE_TRY(checkForDeallocation(BUFFER_USAGE_SYSTEM_MEMORY));
     }
 
-    if (usage != BUFFER_USAGE_STAGING)
+    if (currentUsage != BUFFER_USAGE_STAGING)
     {
         ANGLE_TRY(checkForDeallocation(BUFFER_USAGE_STAGING));
     }
@@ -565,20 +617,29 @@ gl::ErrorOrResult<ID3D11Buffer *> Buffer11::getEmulatedIndexedBuffer(
     return nativeStorage;
 }
 
-gl::ErrorOrResult<ID3D11Buffer *> Buffer11::getConstantBufferRange(GLintptr offset, GLsizeiptr size)
+gl::Error Buffer11::getConstantBufferRange(GLintptr offset,
+                                           GLsizeiptr size,
+                                           ID3D11Buffer **bufferOut,
+                                           UINT *firstConstantOut,
+                                           UINT *numConstantsOut)
 {
     BufferStorage *bufferStorage = nullptr;
 
     if (offset == 0 || mRenderer->getRenderer11DeviceCaps().supportsConstantBufferOffsets)
     {
         ANGLE_TRY_RESULT(getBufferStorage(BUFFER_USAGE_UNIFORM), bufferStorage);
+        CalculateConstantBufferParams(offset, size, firstConstantOut, numConstantsOut);
     }
     else
     {
         ANGLE_TRY_RESULT(getConstantBufferRangeStorage(offset, size), bufferStorage);
+        *firstConstantOut = 0;
+        *numConstantsOut  = 0;
     }
 
-    return GetAs<NativeStorage>(bufferStorage)->getNativeStorage();
+    *bufferOut = GetAs<NativeStorage>(bufferStorage)->getNativeStorage();
+
+    return gl::NoError();
 }
 
 gl::ErrorOrResult<ID3D11ShaderResourceView *> Buffer11::getSRV(DXGI_FORMAT srvFormat)
@@ -628,14 +689,18 @@ gl::ErrorOrResult<Buffer11::BufferStorage *> Buffer11::getBufferStorage(BufferUs
         newStorage = allocateStorage(usage);
     }
 
+    markBufferUsage(usage);
+
     // resize buffer
     if (newStorage->getSize() < mSize)
     {
         ANGLE_TRY(newStorage->resize(mSize, true));
     }
 
+    ASSERT(newStorage);
+
     ANGLE_TRY(updateBufferStorage(newStorage, 0, mSize));
-    ANGLE_TRY(markBufferUsage(usage));
+    ANGLE_TRY(garbageCollection(usage));
 
     return newStorage;
 }
@@ -679,6 +744,8 @@ gl::ErrorOrResult<Buffer11::BufferStorage *> Buffer11::getConstantBufferRangeSto
         newStorage           = cacheEntry->storage;
     }
 
+    markBufferUsage(BUFFER_USAGE_UNIFORM);
+
     if (newStorage->getSize() < static_cast<size_t>(size))
     {
         size_t maximumAllowedAdditionalSize = 2 * getSize();
@@ -713,7 +780,7 @@ gl::ErrorOrResult<Buffer11::BufferStorage *> Buffer11::getConstantBufferRangeSto
     }
 
     ANGLE_TRY(updateBufferStorage(newStorage, offset, size));
-    ANGLE_TRY(markBufferUsage(BUFFER_USAGE_UNIFORM));
+    ANGLE_TRY(garbageCollection(BUFFER_USAGE_UNIFORM));
     return newStorage;
 }
 
@@ -723,6 +790,8 @@ gl::Error Buffer11::updateBufferStorage(BufferStorage *storage,
 {
     BufferStorage *latestBuffer = nullptr;
     ANGLE_TRY_RESULT(getLatestBufferStorage(), latestBuffer);
+
+    ASSERT(storage);
 
     if (latestBuffer && latestBuffer->getDataRevision() > storage->getDataRevision())
     {
@@ -841,10 +910,14 @@ gl::Error Buffer11::BufferStorage::setData(const uint8_t *data, size_t offset, s
 {
     ASSERT(isMappable(GL_MAP_WRITE_BIT));
 
-    uint8_t *writePointer = nullptr;
-    ANGLE_TRY(map(offset, size, GL_MAP_WRITE_BIT, &writePointer));
+    // Uniform storage can have a different internal size than the buffer size. Ensure we don't
+    // overflow.
+    size_t mapSize = std::min(size, mBufferSize - offset);
 
-    memcpy(writePointer, data, size);
+    uint8_t *writePointer = nullptr;
+    ANGLE_TRY(map(offset, mapSize, GL_MAP_WRITE_BIT, &writePointer));
+
+    memcpy(writePointer, data, mapSize);
 
     unmap();
 
@@ -912,12 +985,8 @@ gl::ErrorOrResult<CopyResult> Buffer11::NativeStorage::copyFromStorage(BufferSto
         uint8_t *sourcePointer = nullptr;
         ANGLE_TRY(source->map(sourceOffset, clampedSize, GL_MAP_READ_BIT, &sourcePointer));
 
-        uint8_t *destPointer = nullptr;
-        ANGLE_TRY(map(destOffset, clampedSize, GL_MAP_WRITE_BIT, &destPointer));
+        setData(sourcePointer, destOffset, clampedSize);
 
-        memcpy(destPointer, sourcePointer, clampedSize);
-
-        unmap();
         source->unmap();
     }
     else
@@ -1321,9 +1390,8 @@ gl::ErrorOrResult<CopyResult> Buffer11::PackStorage::copyFromStorage(BufferStora
 {
     ANGLE_TRY(flushQueuedPackCommand());
 
-    // We copy through a staging buffer when drawing with a pack buffer, or for other cases where we
-    // access the pack buffer
-    ASSERT(source->isMappable(GL_MAP_READ_BIT) && source->getUsage() == BUFFER_USAGE_STAGING);
+    // For all use cases of pack buffers, we must copy through a readable buffer.
+    ASSERT(source->isMappable(GL_MAP_READ_BIT));
     uint8_t *sourceData = nullptr;
     ANGLE_TRY(source->map(sourceOffset, size, GL_MAP_READ_BIT, &sourceData));
     ASSERT(destOffset + size <= mMemoryBuffer.size());

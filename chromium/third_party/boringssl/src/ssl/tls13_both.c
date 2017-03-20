@@ -25,6 +25,7 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
+#include "../crypto/internal.h"
 #include "internal.h"
 
 
@@ -79,6 +80,11 @@ int tls13_handshake(SSL *ssl) {
         hs->wait = ssl_hs_ok;
         return -1;
 
+      case ssl_hs_channel_id_lookup:
+        ssl->rwstate = SSL_CHANNEL_ID_LOOKUP;
+        hs->wait = ssl_hs_ok;
+        return -1;
+
       case ssl_hs_private_key_operation:
         ssl->rwstate = SSL_PRIVATE_KEY_OPERATION;
         hs->wait = ssl_hs_ok;
@@ -105,8 +111,9 @@ int tls13_handshake(SSL *ssl) {
   }
 }
 
-static int tls13_get_cert_verify_signature_input(SSL *ssl, uint8_t **out,
-                                                 size_t *out_len, int server) {
+int tls13_get_cert_verify_signature_input(
+    SSL *ssl, uint8_t **out, size_t *out_len,
+    enum ssl_cert_verify_context_t cert_verify_context) {
   CBB cbb;
   if (!CBB_init(&cbb, 64 + 33 + 1 + 2 * EVP_MAX_MD_SIZE)) {
     goto err;
@@ -118,23 +125,33 @@ static int tls13_get_cert_verify_signature_input(SSL *ssl, uint8_t **out,
     }
   }
 
-  if (server) {
+  const uint8_t *context;
+  size_t context_len;
+  if (cert_verify_context == ssl_cert_verify_server) {
     /* Include the NUL byte. */
     static const char kContext[] = "TLS 1.3, server CertificateVerify";
-    if (!CBB_add_bytes(&cbb, (const uint8_t *)kContext, sizeof(kContext))) {
-      goto err;
-    }
-  } else {
+    context = (const uint8_t *)kContext;
+    context_len = sizeof(kContext);
+  } else if (cert_verify_context == ssl_cert_verify_client) {
     static const char kContext[] = "TLS 1.3, client CertificateVerify";
-    if (!CBB_add_bytes(&cbb, (const uint8_t *)kContext, sizeof(kContext))) {
-      goto err;
-    }
+    context = (const uint8_t *)kContext;
+    context_len = sizeof(kContext);
+  } else if (cert_verify_context == ssl_cert_verify_channel_id) {
+    static const char kContext[] = "TLS 1.3, Channel ID";
+    context = (const uint8_t *)kContext;
+    context_len = sizeof(kContext);
+  } else {
+    goto err;
   }
 
-  uint8_t context_hashes[2 * EVP_MAX_MD_SIZE];
-  size_t context_hashes_len;
-  if (!tls13_get_context_hashes(ssl, context_hashes, &context_hashes_len) ||
-      !CBB_add_bytes(&cbb, context_hashes, context_hashes_len) ||
+  if (!CBB_add_bytes(&cbb, context, context_len)) {
+    goto err;
+  }
+
+  uint8_t context_hash[EVP_MAX_MD_SIZE];
+  size_t context_hash_len;
+  if (!tls13_get_context_hash(ssl, context_hash, &context_hash_len) ||
+      !CBB_add_bytes(&cbb, context_hash, context_hash_len) ||
       !CBB_finish(&cbb, out, out_len)) {
     goto err;
   }
@@ -148,7 +165,7 @@ err:
 }
 
 int tls13_process_certificate(SSL *ssl, int allow_anonymous) {
-  CBS cbs, context;
+  CBS cbs, context, certificate_list;
   CBS_init(&cbs, ssl->init_msg, ssl->init_num);
   if (!CBS_get_u8_length_prefixed(&cbs, &context) ||
       CBS_len(&context) != 0) {
@@ -160,13 +177,112 @@ int tls13_process_certificate(SSL *ssl, int allow_anonymous) {
   const int retain_sha256 =
       ssl->server && ssl->ctx->retain_only_sha256_of_client_certs;
   int ret = 0;
-  uint8_t alert;
-  STACK_OF(X509) *chain = ssl_parse_cert_chain(
-      ssl, &alert, retain_sha256 ? ssl->s3->new_session->peer_sha256 : NULL,
-      &cbs);
+
+  STACK_OF(X509) *chain = sk_X509_new_null();
   if (chain == NULL) {
-    ssl3_send_alert(ssl, SSL3_AL_FATAL, alert);
+    ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     goto err;
+  }
+
+  if (!CBS_get_u24_length_prefixed(&cbs, &certificate_list)) {
+    ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+    goto err;
+  }
+
+  while (CBS_len(&certificate_list) > 0) {
+    CBS certificate, extensions;
+    if (!CBS_get_u24_length_prefixed(&certificate_list, &certificate) ||
+        !CBS_get_u16_length_prefixed(&certificate_list, &extensions)) {
+      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
+      OPENSSL_PUT_ERROR(SSL, SSL_R_CERT_LENGTH_MISMATCH);
+      goto err;
+    }
+
+    /* Retain the hash of the leaf certificate if requested. */
+    if (sk_X509_num(chain) == 0 && retain_sha256) {
+      SHA256(CBS_data(&certificate), CBS_len(&certificate),
+             ssl->s3->new_session->peer_sha256);
+    }
+
+    X509 *x = ssl_parse_x509(&certificate);
+    if (x == NULL || CBS_len(&certificate) != 0) {
+      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
+      X509_free(x);
+      goto err;
+    }
+    if (!sk_X509_push(chain, x)) {
+      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+      OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+      X509_free(x);
+      goto err;
+    }
+
+    /* Parse out the extensions. */
+    int have_status_request = 0, have_sct = 0;
+    CBS status_request, sct;
+    const SSL_EXTENSION_TYPE ext_types[] = {
+        {TLSEXT_TYPE_status_request, &have_status_request, &status_request},
+        {TLSEXT_TYPE_certificate_timestamp, &have_sct, &sct},
+    };
+
+    uint8_t alert;
+    if (!ssl_parse_extensions(&extensions, &alert, ext_types,
+                              OPENSSL_ARRAY_SIZE(ext_types))) {
+      ssl3_send_alert(ssl, SSL3_AL_FATAL, alert);
+      goto err;
+    }
+
+    /* All Certificate extensions are parsed, but only the leaf extensions are
+     * stored. */
+    if (have_status_request) {
+      if (ssl->server || !ssl->ocsp_stapling_enabled) {
+        OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNSUPPORTED_EXTENSION);
+        goto err;
+      }
+
+      uint8_t status_type;
+      CBS ocsp_response;
+      if (!CBS_get_u8(&status_request, &status_type) ||
+          status_type != TLSEXT_STATUSTYPE_ocsp ||
+          !CBS_get_u24_length_prefixed(&status_request, &ocsp_response) ||
+          CBS_len(&ocsp_response) == 0 ||
+          CBS_len(&status_request) != 0) {
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
+        goto err;
+      }
+
+      if (sk_X509_num(chain) == 1 &&
+          !CBS_stow(&ocsp_response, &ssl->s3->new_session->ocsp_response,
+                    &ssl->s3->new_session->ocsp_response_length)) {
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+        goto err;
+      }
+    }
+
+    if (have_sct) {
+      if (ssl->server || !ssl->signed_cert_timestamps_enabled) {
+        OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNSUPPORTED_EXTENSION);
+        goto err;
+      }
+
+      if (CBS_len(&sct) == 0) {
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
+        goto err;
+      }
+
+      if (sk_X509_num(chain) == 1 &&
+          !CBS_stow(&sct,
+                    &ssl->s3->new_session->tlsext_signed_cert_timestamp_list,
+                    &ssl->s3->new_session
+                         ->tlsext_signed_cert_timestamp_list_length)) {
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+        goto err;
+      }
+    }
   }
 
   if (CBS_len(&cbs) != 0) {
@@ -178,7 +294,7 @@ int tls13_process_certificate(SSL *ssl, int allow_anonymous) {
   if (sk_X509_num(chain) == 0) {
     if (!allow_anonymous) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_PEER_DID_NOT_RETURN_A_CERTIFICATE);
-      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
+      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_CERTIFICATE_REQUIRED);
       goto err;
     }
 
@@ -198,13 +314,13 @@ int tls13_process_certificate(SSL *ssl, int allow_anonymous) {
     goto err;
   }
 
-  X509_free(ssl->s3->new_session->peer);
+  X509_free(ssl->s3->new_session->x509_peer);
   X509 *leaf = sk_X509_value(chain, 0);
   X509_up_ref(leaf);
-  ssl->s3->new_session->peer = leaf;
+  ssl->s3->new_session->x509_peer = leaf;
 
-  sk_X509_pop_free(ssl->s3->new_session->cert_chain, X509_free);
-  ssl->s3->new_session->cert_chain = chain;
+  sk_X509_pop_free(ssl->s3->new_session->x509_chain, X509_free);
+  ssl->s3->new_session->x509_chain = chain;
   chain = NULL;
 
   ret = 1;
@@ -216,7 +332,7 @@ err:
 
 int tls13_process_certificate_verify(SSL *ssl) {
   int ret = 0;
-  X509 *peer = ssl->s3->new_session->peer;
+  X509 *peer = ssl->s3->new_session->x509_peer;
   EVP_PKEY *pkey = NULL;
   uint8_t *msg = NULL;
   size_t msg_len;
@@ -245,8 +361,9 @@ int tls13_process_certificate_verify(SSL *ssl) {
   }
   ssl->s3->tmp.peer_signature_algorithm = signature_algorithm;
 
-  if (!tls13_get_cert_verify_signature_input(ssl, &msg, &msg_len,
-                                             !ssl->server)) {
+  if (!tls13_get_cert_verify_signature_input(
+          ssl, &msg, &msg_len,
+          ssl->server ? ssl_cert_verify_client : ssl_cert_verify_server)) {
     ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
     goto err;
   }
@@ -307,17 +424,77 @@ int tls13_process_finished(SSL *ssl) {
 }
 
 int tls13_prepare_certificate(SSL *ssl) {
-  CBB cbb, body;
+  CBB cbb, body, certificate_list;
   if (!ssl->method->init_message(ssl, &cbb, &body, SSL3_MT_CERTIFICATE) ||
       /* The request context is always empty in the handshake. */
       !CBB_add_u8(&body, 0) ||
-      !ssl_add_cert_chain(ssl, &body) ||
-      !ssl->method->finish_message(ssl, &cbb)) {
-    CBB_cleanup(&cbb);
-    return 0;
+      !CBB_add_u24_length_prefixed(&body, &certificate_list)) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    goto err;
+  }
+
+  if (!ssl_has_certificate(ssl)) {
+    if (!ssl_complete_message(ssl, &cbb)) {
+      goto err;
+    }
+
+    return 1;
+  }
+
+  CERT *cert = ssl->cert;
+  CBB leaf, extensions;
+  if (!CBB_add_u24_length_prefixed(&certificate_list, &leaf) ||
+      !ssl_add_cert_to_cbb(&leaf, cert->x509_leaf) ||
+      !CBB_add_u16_length_prefixed(&certificate_list, &extensions)) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    goto err;
+  }
+
+  if (ssl->s3->hs->scts_requested &&
+      ssl->ctx->signed_cert_timestamp_list_length != 0) {
+    CBB contents;
+    if (!CBB_add_u16(&extensions, TLSEXT_TYPE_certificate_timestamp) ||
+        !CBB_add_u16_length_prefixed(&extensions, &contents) ||
+        !CBB_add_bytes(&contents, ssl->ctx->signed_cert_timestamp_list,
+                       ssl->ctx->signed_cert_timestamp_list_length)) {
+      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+      goto err;
+    }
+  }
+
+  if (ssl->s3->hs->ocsp_stapling_requested &&
+      ssl->ctx->ocsp_response_length != 0) {
+    CBB contents, ocsp_response;
+    if (!CBB_add_u16(&extensions, TLSEXT_TYPE_status_request) ||
+        !CBB_add_u16_length_prefixed(&extensions, &contents) ||
+        !CBB_add_u8(&contents, TLSEXT_STATUSTYPE_ocsp) ||
+        !CBB_add_u24_length_prefixed(&contents, &ocsp_response) ||
+        !CBB_add_bytes(&ocsp_response, ssl->ctx->ocsp_response,
+                       ssl->ctx->ocsp_response_length)) {
+      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+      goto err;
+    }
+  }
+
+  for (size_t i = 0; i < sk_X509_num(cert->x509_chain); i++) {
+    CBB child;
+    if (!CBB_add_u24_length_prefixed(&certificate_list, &child) ||
+        !ssl_add_cert_to_cbb(&child, sk_X509_value(cert->x509_chain, i)) ||
+        !CBB_add_u16(&certificate_list, 0 /* no extensions */)) {
+      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+      goto err;
+    }
+  }
+
+  if (!ssl_complete_message(ssl, &cbb)) {
+    goto err;
   }
 
   return 1;
+
+err:
+  CBB_cleanup(&cbb);
+  return 0;
 }
 
 enum ssl_private_key_result_t tls13_prepare_certificate_verify(
@@ -352,8 +529,9 @@ enum ssl_private_key_result_t tls13_prepare_certificate_verify(
 
   enum ssl_private_key_result_t sign_result;
   if (is_first_run) {
-    if (!tls13_get_cert_verify_signature_input(ssl, &msg, &msg_len,
-                                               ssl->server)) {
+    if (!tls13_get_cert_verify_signature_input(
+            ssl, &msg, &msg_len,
+            ssl->server ? ssl_cert_verify_server : ssl_cert_verify_client)) {
       ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
       goto err;
     }
@@ -369,7 +547,7 @@ enum ssl_private_key_result_t tls13_prepare_certificate_verify(
   }
 
   if (!CBB_did_write(&child, sig_len) ||
-      !ssl->method->finish_message(ssl, &cbb)) {
+      !ssl_complete_message(ssl, &cbb)) {
     goto err;
   }
 
@@ -394,7 +572,7 @@ int tls13_prepare_finished(SSL *ssl) {
   CBB cbb, body;
   if (!ssl->method->init_message(ssl, &cbb, &body, SSL3_MT_FINISHED) ||
       !CBB_add_bytes(&body, verify_data, verify_data_len) ||
-      !ssl->method->finish_message(ssl, &cbb)) {
+      !ssl_complete_message(ssl, &cbb)) {
     CBB_cleanup(&cbb);
     return 0;
   }
@@ -403,13 +581,20 @@ int tls13_prepare_finished(SSL *ssl) {
 }
 
 static int tls13_receive_key_update(SSL *ssl) {
-  if (ssl->init_num != 0) {
+  CBS cbs;
+  uint8_t key_update_request;
+  CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+  if (!CBS_get_u8(&cbs, &key_update_request) ||
+      CBS_len(&cbs) != 0 ||
+      (key_update_request != SSL_KEY_UPDATE_NOT_REQUESTED &&
+       key_update_request != SSL_KEY_UPDATE_REQUESTED)) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
     ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
     return 0;
   }
 
-  // TODO(svaldez): Send KeyUpdate.
+  /* TODO(svaldez): Send KeyUpdate if |key_update_request| is
+   * |SSL_KEY_UPDATE_REQUESTED|. */
   return tls13_rotate_traffic_key(ssl, evp_aead_open);
 }
 

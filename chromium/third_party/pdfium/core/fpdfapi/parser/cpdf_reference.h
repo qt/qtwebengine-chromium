@@ -16,10 +16,11 @@ class CPDF_IndirectObjectHolder;
 class CPDF_Reference : public CPDF_Object {
  public:
   CPDF_Reference(CPDF_IndirectObjectHolder* pDoc, int objnum);
+  ~CPDF_Reference() override;
 
-  // CPDF_Object.
+  // CPDF_Object:
   Type GetType() const override;
-  CPDF_Object* Clone() const override;
+  std::unique_ptr<CPDF_Object> Clone() const override;
   CPDF_Object* GetDirect() const override;
   CFX_ByteString GetString() const override;
   FX_FLOAT GetNumber() const override;
@@ -35,16 +36,21 @@ class CPDF_Reference : public CPDF_Object {
   void SetRef(CPDF_IndirectObjectHolder* pDoc, uint32_t objnum);
 
  protected:
-  ~CPDF_Reference() override;
-
-  CPDF_Object* CloneNonCyclic(
+  std::unique_ptr<CPDF_Object> CloneNonCyclic(
       bool bDirect,
       std::set<const CPDF_Object*>* pVisited) const override;
-
   CPDF_Object* SafeGetDirect() const;
 
   CPDF_IndirectObjectHolder* m_pObjList;
   uint32_t m_RefObjNum;
 };
+
+inline CPDF_Reference* ToReference(CPDF_Object* obj) {
+  return obj ? obj->AsReference() : nullptr;
+}
+
+inline const CPDF_Reference* ToReference(const CPDF_Object* obj) {
+  return obj ? obj->AsReference() : nullptr;
+}
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_REFERENCE_H_

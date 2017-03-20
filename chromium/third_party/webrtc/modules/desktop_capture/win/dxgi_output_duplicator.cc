@@ -16,6 +16,8 @@
 #include <DXGIFormat.h>
 #include <Windows.h>
 
+#include <algorithm>
+
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/modules/desktop_capture/win/dxgi_texture_mapping.h"
@@ -161,8 +163,8 @@ bool DxgiOutputDuplicator::Duplicate(Context* context,
     const DesktopFrame& source = texture_->AsDesktopFrame();
     for (DesktopRegion::Iterator it(updated_region); !it.IsAtEnd();
          it.Advance()) {
-      target->CopyPixelsFrom(source, SourceRect(it.rect()).top_left(),
-                             TargetRect(it.rect(), offset));
+      target->CopyPixelsFrom(
+          source, SourceRect(it.rect()).top_left(), it.rect());
     }
     last_frame_ = target->Share();
     last_frame_offset_ = offset;
@@ -175,8 +177,7 @@ bool DxgiOutputDuplicator::Duplicate(Context* context,
     // export last frame to the target.
     for (DesktopRegion::Iterator it(updated_region); !it.IsAtEnd();
          it.Advance()) {
-      target->CopyPixelsFrom(*last_frame_, SourceRect(it.rect()).top_left(),
-                             TargetRect(it.rect(), offset));
+      target->CopyPixelsFrom(*last_frame_, it.rect().top_left(), it.rect());
     }
     target->mutable_updated_region()->AddRegion(updated_region);
   }
@@ -274,29 +275,20 @@ void DxgiOutputDuplicator::Setup(Context* context) {
   RTC_DCHECK(context->updated_region.is_empty());
   // Always copy entire monitor during the first Duplicate() function call.
   context->updated_region.AddRect(desktop_rect_);
-  for (size_t i = 0; i < contexts_.size(); i++) {
-    if (contexts_[i] == nullptr) {
-      contexts_[i] = context;
-      return;
-    }
-  }
-
+  RTC_DCHECK(std::find(contexts_.begin(), contexts_.end(), context) ==
+             contexts_.end());
   contexts_.push_back(context);
 }
 
 void DxgiOutputDuplicator::Unregister(const Context* const context) {
-  for (size_t i = 0; i < contexts_.size(); i++) {
-    if (contexts_[i] == context) {
-      contexts_[i] = nullptr;
-      return;
-    }
-  }
-
-  RTC_NOTREACHED();
+  auto it = std::find(contexts_.begin(), contexts_.end(), context);
+  RTC_DCHECK(it != contexts_.end());
+  contexts_.erase(it);
 }
 
 void DxgiOutputDuplicator::SpreadContextChange(const Context* const source) {
   for (Context* dest : contexts_) {
+    RTC_DCHECK(dest);
     if (dest != source) {
       dest->updated_region.AddRegion(source->updated_region);
     }
@@ -306,13 +298,6 @@ void DxgiOutputDuplicator::SpreadContextChange(const Context* const source) {
 DesktopRect DxgiOutputDuplicator::SourceRect(DesktopRect rect) {
   // |texture_|->AsDesktopFrame() starts from (0, 0).
   rect.Translate(-desktop_rect_.left(), -desktop_rect_.top());
-  return rect;
-}
-
-DesktopRect DxgiOutputDuplicator::TargetRect(DesktopRect rect,
-                                             DesktopVector offset) {
-  rect = SourceRect(rect);
-  rect.Translate(offset);
   return rect;
 }
 

@@ -69,11 +69,11 @@ private:
             // 64x64 max, 128x128 max) and the GrShape's key.
             SkAutoSTArray<24, uint32_t> fKey;
         };
-        Key                   fKey;
-        SkScalar              fScale;
+        Key fKey;
         GrBatchAtlas::AtlasID fID;
-        SkRect                fBounds;
-        SkIPoint16            fAtlasLocation;
+        SkRect   fBounds;
+        SkScalar fScale;
+        SkVector fTranslate;
         SK_DECLARE_INTERNAL_LLIST_INTERFACE(ShapeData);
 
         static inline const Key& GetKey(const ShapeData& data) {
@@ -90,9 +90,9 @@ private:
     typedef SkTDynamicHash<ShapeData, ShapeData::Key> ShapeCache;
     typedef SkTInternalLList<ShapeData> ShapeDataList;
 
-    GrBatchAtlas*                      fAtlas;
-    ShapeCache                         fShapeCache;
-    ShapeDataList                      fShapeList;
+    std::unique_ptr<GrBatchAtlas> fAtlas;
+    ShapeCache fShapeCache;
+    ShapeDataList fShapeList;
 
     typedef GrPathRenderer INHERITED;
 

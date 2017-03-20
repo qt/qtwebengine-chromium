@@ -14,6 +14,8 @@
 
 #include <algorithm>
 
+#include "third_party/libsrtp/include/srtp.h"
+#include "third_party/libsrtp/include/srtp_priv.h"
 #include "webrtc/base/base64.h"
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/byteorder.h"
@@ -24,31 +26,6 @@
 #include "webrtc/base/timeutils.h"
 #include "webrtc/media/base/rtputils.h"
 #include "webrtc/pc/externalhmac.h"
-
-// Enable this line to turn on SRTP debugging
-// #define SRTP_DEBUG
-
-#ifdef HAVE_SRTP
-extern "C" {
-#ifdef SRTP_RELATIVE_PATH
-#include "srtp.h"  // NOLINT
-#include "srtp_priv.h"  // NOLINT
-#else
-#include "third_party/libsrtp/include/srtp.h"
-#include "third_party/libsrtp/include/srtp_priv.h"
-#endif  // SRTP_RELATIVE_PATH
-}
-
-#if !defined(NDEBUG)
-extern "C" srtp_debug_module_t mod_srtp;
-extern "C" srtp_debug_module_t mod_auth;
-extern "C" srtp_debug_module_t mod_cipher;
-extern "C" srtp_debug_module_t mod_stat;
-extern "C" srtp_debug_module_t mod_alloc;
-extern "C" srtp_debug_module_t mod_aes_icm;
-extern "C" srtp_debug_module_t mod_aes_hmac;
-#endif
-#endif  // HAVE_SRTP
 
 namespace cricket {
 
@@ -64,21 +41,6 @@ bool SrtpNotAvailable(const char *func) {
 }  // anonymous namespace
 
 #endif  // !HAVE_SRTP
-
-void EnableSrtpDebugging() {
-#ifdef HAVE_SRTP
-#if !defined(NDEBUG)
-  debug_on(mod_srtp);
-  debug_on(mod_auth);
-  debug_on(mod_cipher);
-  debug_on(mod_stat);
-  debug_on(mod_alloc);
-  debug_on(mod_aes_icm);
-  // debug_on(mod_aes_cbc);
-  // debug_on(mod_hmac);
-#endif
-#endif  // HAVE_SRTP
-}
 
 // NOTE: This is called from ChannelManager D'tor.
 void ShutdownSrtp() {
@@ -251,6 +213,17 @@ bool SrtpFilter::GetRtpAuthParams(uint8_t** key, int* key_len, int* tag_len) {
 
   RTC_CHECK(send_session_);
   return send_session_->GetRtpAuthParams(key, key_len, tag_len);
+}
+
+bool SrtpFilter::GetSrtpOverhead(int* srtp_overhead) const {
+  if (!IsActive()) {
+    LOG(LS_WARNING) << "Failed to GetSrtpOverhead: SRTP not active";
+    return false;
+  }
+
+  RTC_CHECK(send_session_);
+  *srtp_overhead = send_session_->GetSrtpOverhead();
+  return true;
 }
 
 void SrtpFilter::set_signal_silent_time(int signal_silent_time_in_ms) {
@@ -642,6 +615,10 @@ bool SrtpSession::GetRtpAuthParams(uint8_t** key, int* key_len, int* tag_len) {
 #else
   return false;
 #endif
+}
+
+int SrtpSession::GetSrtpOverhead() const {
+  return rtp_auth_tag_len_;
 }
 
 bool SrtpSession::GetSendStreamPacketIndex(void* p,

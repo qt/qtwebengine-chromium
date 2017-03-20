@@ -15,6 +15,7 @@
 #include "core/fxcrt/cfx_weak_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
+#include "third_party/base/ptr_util.h"
 
 class CPDF_IndirectObjectHolder;
 
@@ -25,10 +26,11 @@ class CPDF_Dictionary : public CPDF_Object {
 
   CPDF_Dictionary();
   explicit CPDF_Dictionary(const CFX_WeakPtr<CFX_ByteStringPool>& pPool);
+  ~CPDF_Dictionary() override;
 
-  // CPDF_Object.
+  // CPDF_Object:
   Type GetType() const override;
-  CPDF_Object* Clone() const override;
+  std::unique_ptr<CPDF_Object> Clone() const override;
   CPDF_Dictionary* GetDict() const override;
   bool IsDictionary() const override;
   CPDF_Dictionary* AsDictionary() override;
@@ -59,6 +61,7 @@ class CPDF_Dictionary : public CPDF_Object {
 
   // Set* functions invalidate iterators for the element with the key |key|.
   void SetFor(const CFX_ByteString& key, CPDF_Object* pObj);
+  void SetBooleanFor(const CFX_ByteString& key, bool bValue);
   void SetNameFor(const CFX_ByteString& key, const CFX_ByteString& name);
   void SetStringFor(const CFX_ByteString& key, const CFX_ByteString& str);
   void SetIntegerFor(const CFX_ByteString& key, int i);
@@ -66,9 +69,15 @@ class CPDF_Dictionary : public CPDF_Object {
   void SetReferenceFor(const CFX_ByteString& key,
                        CPDF_IndirectObjectHolder* pDoc,
                        uint32_t objnum);
+  void SetReferenceFor(const CFX_ByteString& key,
+                       CPDF_IndirectObjectHolder* pDoc,
+                       CPDF_Object* pObj);
+
   void SetRectFor(const CFX_ByteString& key, const CFX_FloatRect& rect);
   void SetMatrixFor(const CFX_ByteString& key, const CFX_Matrix& matrix);
-  void SetBooleanFor(const CFX_ByteString& key, bool bValue);
+
+  void ConvertToIndirectObjectFor(const CFX_ByteString& key,
+                                  CPDF_IndirectObjectHolder* pHolder);
 
   // Invalidates iterators for the element with the key |key|.
   void RemoveFor(const CFX_ByteString& key);
@@ -84,15 +93,30 @@ class CPDF_Dictionary : public CPDF_Object {
   CFX_WeakPtr<CFX_ByteStringPool> GetByteStringPool() const { return m_pPool; }
 
  protected:
-  ~CPDF_Dictionary() override;
-
   CFX_ByteString MaybeIntern(const CFX_ByteString& str);
-  CPDF_Object* CloneNonCyclic(
+  std::unique_ptr<CPDF_Object> CloneNonCyclic(
       bool bDirect,
       std::set<const CPDF_Object*>* visited) const override;
 
   CFX_WeakPtr<CFX_ByteStringPool> m_pPool;
   std::map<CFX_ByteString, CPDF_Object*> m_Map;
 };
+
+inline CPDF_Dictionary* ToDictionary(CPDF_Object* obj) {
+  return obj ? obj->AsDictionary() : nullptr;
+}
+
+inline const CPDF_Dictionary* ToDictionary(const CPDF_Object* obj) {
+  return obj ? obj->AsDictionary() : nullptr;
+}
+
+inline std::unique_ptr<CPDF_Dictionary> ToDictionary(
+    std::unique_ptr<CPDF_Object> obj) {
+  CPDF_Dictionary* pDict = ToDictionary(obj.get());
+  if (!pDict)
+    return nullptr;
+  obj.release();
+  return std::unique_ptr<CPDF_Dictionary>(pDict);
+}
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_DICTIONARY_H_

@@ -8,34 +8,54 @@
 
 import("../../build/webrtc.gni")
 
-config("audio_conference_mixer_config") {
-  include_dirs = [ "../../modules/include" ]
+group("audio_mixer") {
+  public_deps = [
+    ":audio_frame_manipulator",
+    ":audio_mixer_impl",
+  ]
 }
 
-rtc_static_library("audio_mixer") {
+rtc_static_library("audio_mixer_impl") {
+  visibility = [
+    "../../audio:audio",
+    "../../modules/*",
+  ]
   sources = [
-    "audio_frame_manipulator.cc",
-    "audio_frame_manipulator.h",
-    "audio_mixer.h",
-    "audio_mixer_defines.cc",
-    "audio_mixer_defines.h",
     "audio_mixer_impl.cc",
     "audio_mixer_impl.h",
   ]
 
   public = [
-    "audio_mixer_defines.h",
-    "audio_mixer.h",
+    "audio_mixer_impl.h",
   ]
 
-  public_configs = [ ":audio_conference_mixer_config" ]
+  public_deps = [
+    "../../api:audio_mixer_api",
+  ]
 
   deps = [
+    ":audio_frame_manipulator",
     "../..:webrtc_common",
     "../../base:rtc_base_approved",
     "../../modules/audio_processing",
     "../../modules/utility",
     "../../system_wrappers",
-    "../../voice_engine:level_indicator",
+  ]
+}
+
+rtc_static_library("audio_frame_manipulator") {
+  visibility = [
+    ":*",
+    "../../modules:*",
+  ]
+
+  sources = [
+    "audio_frame_manipulator.cc",
+    "audio_frame_manipulator.h",
+  ]
+
+  deps = [
+    "../../base:rtc_base_approved",
+    "../../modules/utility",
   ]
 }

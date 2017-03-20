@@ -7,24 +7,29 @@
 #ifndef CORE_FPDFAPI_PARSER_CPDF_ARRAY_H_
 #define CORE_FPDFAPI_PARSER_CPDF_ARRAY_H_
 
+#include <memory>
 #include <set>
+#include <type_traits>
 #include <vector>
 
 #include "core/fpdfapi/parser/cpdf_indirect_object_holder.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "third_party/base/ptr_util.h"
 
 class CPDF_Array : public CPDF_Object {
  public:
-  using iterator = std::vector<CPDF_Object*>::iterator;
-  using const_iterator = std::vector<CPDF_Object*>::const_iterator;
+  using const_iterator =
+      std::vector<std::unique_ptr<CPDF_Object>>::const_iterator;
 
   CPDF_Array();
+  explicit CPDF_Array(const CFX_WeakPtr<CFX_ByteStringPool>& pPool);
+  ~CPDF_Array() override;
 
-  // CPDF_Object.
+  // CPDF_Object:
   Type GetType() const override;
-  CPDF_Object* Clone() const override;
+  std::unique_ptr<CPDF_Object> Clone() const override;
   bool IsArray() const override;
   CPDF_Array* AsArray() override;
   const CPDF_Array* AsArray() const override;
@@ -43,31 +48,80 @@ class CPDF_Array : public CPDF_Object {
   CFX_Matrix GetMatrix();
   CFX_FloatRect GetRect();
 
-  void SetAt(size_t index, CPDF_Object* pObj);
-  void InsertAt(size_t index, CPDF_Object* pObj);
+  // Takes ownership of |pObj|, returns unowned pointer to it.
+  CPDF_Object* Add(std::unique_ptr<CPDF_Object> pObj);
+  CPDF_Object* SetAt(size_t index, std::unique_ptr<CPDF_Object> pObj);
+  CPDF_Object* InsertAt(size_t index, std::unique_ptr<CPDF_Object> pObj);
+
+  // Creates object owned by the array, returns unowned pointer to it.
+  // We have special cases for objects that can intern strings from
+  // a ByteStringPool.
+  template <typename T, typename... Args>
+  typename std::enable_if<!CanInternStrings<T>::value, T*>::type AddNew(
+      Args... args) {
+    return static_cast<T*>(Add(pdfium::MakeUnique<T>(args...)));
+  }
+  template <typename T, typename... Args>
+  typename std::enable_if<CanInternStrings<T>::value, T*>::type AddNew(
+      Args... args) {
+    return static_cast<T*>(Add(pdfium::MakeUnique<T>(m_pPool, args...)));
+  }
+  template <typename T, typename... Args>
+  typename std::enable_if<!CanInternStrings<T>::value, T*>::type SetNewAt(
+      size_t index,
+      Args... args) {
+    return static_cast<T*>(SetAt(index, pdfium::MakeUnique<T>(args...)));
+  }
+  template <typename T, typename... Args>
+  typename std::enable_if<CanInternStrings<T>::value, T*>::type SetNewAt(
+      size_t index,
+      Args... args) {
+    return static_cast<T*>(
+        SetAt(index, pdfium::MakeUnique<T>(m_pPool, args...)));
+  }
+  template <typename T, typename... Args>
+  typename std::enable_if<!CanInternStrings<T>::value, T*>::type InsertNewAt(
+      size_t index,
+      Args... args) {
+    return static_cast<T*>(InsertAt(index, pdfium::MakeUnique<T>(args...)));
+  }
+  template <typename T, typename... Args>
+  typename std::enable_if<CanInternStrings<T>::value, T*>::type InsertNewAt(
+      size_t index,
+      Args... args) {
+    return static_cast<T*>(
+        InsertAt(index, pdfium::MakeUnique<T>(m_pPool, args...)));
+  }
+
   void RemoveAt(size_t index, size_t nCount = 1);
   void ConvertToIndirectObjectAt(size_t index, CPDF_IndirectObjectHolder* pDoc);
 
-  void Add(CPDF_Object* pObj);
-  void AddNumber(FX_FLOAT f);
-  void AddInteger(int i);
-  void AddString(const CFX_ByteString& str);
-  void AddName(const CFX_ByteString& str);
-  void AddReference(CPDF_IndirectObjectHolder* pDoc, uint32_t objnum);
-
-  iterator begin() { return m_Objects.begin(); }
-  iterator end() { return m_Objects.end(); }
   const_iterator begin() const { return m_Objects.begin(); }
   const_iterator end() const { return m_Objects.end(); }
 
  protected:
-  ~CPDF_Array() override;
-
-  CPDF_Object* CloneNonCyclic(
+  std::unique_ptr<CPDF_Object> CloneNonCyclic(
       bool bDirect,
       std::set<const CPDF_Object*>* pVisited) const override;
 
-  std::vector<CPDF_Object*> m_Objects;
+  std::vector<std::unique_ptr<CPDF_Object>> m_Objects;
+  CFX_WeakPtr<CFX_ByteStringPool> m_pPool;
 };
+
+inline CPDF_Array* ToArray(CPDF_Object* obj) {
+  return obj ? obj->AsArray() : nullptr;
+}
+
+inline const CPDF_Array* ToArray(const CPDF_Object* obj) {
+  return obj ? obj->AsArray() : nullptr;
+}
+
+inline std::unique_ptr<CPDF_Array> ToArray(std::unique_ptr<CPDF_Object> obj) {
+  CPDF_Array* pArray = ToArray(obj.get());
+  if (!pArray)
+    return nullptr;
+  obj.release();
+  return std::unique_ptr<CPDF_Array>(pArray);
+}
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_ARRAY_H_

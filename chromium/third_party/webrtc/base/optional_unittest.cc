@@ -33,6 +33,10 @@ class Logger {
   explicit Logger(int origin) : id_(g_next_id++), origin_(origin) {
     Log("explicit constructor");
   }
+  Logger(int origin, const Logger& pass_by_ref, Logger pass_by_value)
+      : id_(g_next_id++), origin_(origin) {
+    Log("multi parameter constructor");
+  }
   Logger(const Logger& other) : id_(g_next_id++), origin_(other.origin_) {
     LogFrom("copy constructor", other);
   }
@@ -369,6 +373,210 @@ TEST(OptionalTest, TestMoveAssignToFullFromT) {
       *log);
 }
 
+TEST(OptionalTest, TestResetEmpty) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x;
+    x.reset();
+  }
+  EXPECT_EQ(V(), *log);
+}
+
+TEST(OptionalTest, TestResetFull) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x(Logger(17));
+    log->push_back("---");
+    x.reset();
+    log->push_back("---");
+  }
+  EXPECT_EQ(
+      V("0:17. explicit constructor", "1:17. move constructor (from 0:17)",
+        "0:17. destructor", "---", "1:17. destructor", "---"),
+      *log);
+}
+
+TEST(OptionalTest, TestEmplaceEmptyWithExplicit) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x;
+    log->push_back("---");
+    x.emplace(42);
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(V("---",
+              "0:42. explicit constructor",
+              "---",
+              "0:42. destructor"),
+            *log);
+  // clang-format on
+}
+
+TEST(OptionalTest, TestEmplaceEmptyWithMultipleParameters) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x;
+    Logger ref(21);
+    Logger value(35);
+    log->push_back("---");
+    x.emplace(42, ref, std::move(value));
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(V("0:21. explicit constructor",
+              "1:35. explicit constructor",
+              "---",
+              "2:35. move constructor (from 1:35)",
+              "3:42. multi parameter constructor",
+              "2:35. destructor",
+              "---",
+              "1:35. destructor",
+              "0:21. destructor",
+              "3:42. destructor"),
+            *log);
+  // clang-format on
+}
+
+TEST(OptionalTest, TestEmplaceEmptyWithCopy) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x;
+    Logger y(42);
+    log->push_back("---");
+    x.emplace(y);
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(V("0:42. explicit constructor",
+              "---",
+              "1:42. copy constructor (from 0:42)",
+              "---",
+              "0:42. destructor",
+              "1:42. destructor"),
+            *log);
+  // clang-format on
+}
+
+TEST(OptionalTest, TestEmplaceEmptyWithMove) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x;
+    Logger y(42);
+    log->push_back("---");
+    x.emplace(std::move(y));
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(V("0:42. explicit constructor",
+              "---",
+              "1:42. move constructor (from 0:42)",
+              "---",
+              "0:42. destructor",
+              "1:42. destructor"),
+            *log);
+  // clang-format on
+}
+
+TEST(OptionalTest, TestEmplaceFullWithExplicit) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x(Logger(17));
+    log->push_back("---");
+    x.emplace(42);
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(
+      V("0:17. explicit constructor",
+        "1:17. move constructor (from 0:17)",
+        "0:17. destructor",
+        "---",
+        "1:17. destructor",
+        "2:42. explicit constructor",
+        "---",
+        "2:42. destructor"),
+      *log);
+  // clang-format on
+}
+
+TEST(OptionalTest, TestEmplaceFullWithMultipleParameters) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x(Logger(17));
+    Logger ref(21);
+    Logger value(35);
+    log->push_back("---");
+    x.emplace(42, ref, std::move(value));
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(V("0:17. explicit constructor",
+              "1:17. move constructor (from 0:17)",
+              "0:17. destructor",
+              "2:21. explicit constructor",
+              "3:35. explicit constructor",
+              "---",
+              "1:17. destructor",
+              "4:35. move constructor (from 3:35)",
+              "5:42. multi parameter constructor",
+              "4:35. destructor",
+              "---",
+              "3:35. destructor",
+              "2:21. destructor",
+              "5:42. destructor"),
+            *log);
+  // clang-format on
+}
+
+TEST(OptionalTest, TestEmplaceFullWithCopy) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x(Logger(17));
+    Logger y(42);
+    log->push_back("---");
+    x.emplace(y);
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(V("0:17. explicit constructor",
+              "1:17. move constructor (from 0:17)",
+              "0:17. destructor",
+              "2:42. explicit constructor",
+              "---",
+              "1:17. destructor",
+              "3:42. copy constructor (from 2:42)",
+              "---",
+              "2:42. destructor",
+              "3:42. destructor"),
+           *log);
+  // clang-format on
+}
+
+TEST(OptionalTest, TestEmplaceFullWithMove) {
+  auto log = Logger::Setup();
+  {
+    Optional<Logger> x(Logger(17));
+    Logger y(42);
+    log->push_back("---");
+    x.emplace(std::move(y));
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(V("0:17. explicit constructor",
+              "1:17. move constructor (from 0:17)",
+              "0:17. destructor",
+              "2:42. explicit constructor",
+              "---",
+              "1:17. destructor",
+              "3:42. move constructor (from 2:42)",
+              "---",
+              "2:42. destructor",
+              "3:42. destructor"),
+            *log);
+  // clang-format on
+}
+
 TEST(OptionalTest, TestDereference) {
   auto log = Logger::Setup();
   {
@@ -446,6 +654,54 @@ TEST(OptionalTest, TestEquality) {
         "4:42. destructor", "3:17. destructor", "2:17. destructor",
         "1:42. destructor", "0:17. destructor"),
       *log);
+}
+
+TEST(OptionalTest, TestEqualityWithObject) {
+  auto log = Logger::Setup();
+  {
+    Logger a(17), b(42);
+    Optional<Logger> ma(a), me;
+    // Using operator== and operator!= explicetly instead of EXPECT_EQ/EXPECT_NE
+    // macros because those operators are under test.
+    log->push_back("---");
+
+    EXPECT_TRUE(ma == a);
+    EXPECT_TRUE(a == ma);
+    EXPECT_FALSE(ma == b);
+    EXPECT_FALSE(b == ma);
+    EXPECT_FALSE(me == a);
+    EXPECT_FALSE(a == me);
+
+    EXPECT_FALSE(ma != a);
+    EXPECT_FALSE(a != ma);
+    EXPECT_TRUE(ma != b);
+    EXPECT_TRUE(b != ma);
+    EXPECT_TRUE(me != a);
+    EXPECT_TRUE(a != me);
+
+    log->push_back("---");
+  }
+  // clang-format off
+  EXPECT_EQ(V("0:17. explicit constructor",
+              "1:42. explicit constructor",
+              "2:17. copy constructor (from 0:17)",
+              "---",
+              "operator== 2:17, 0:17",
+              "operator== 0:17, 2:17",
+              "operator== 2:17, 1:42",
+              "operator== 1:42, 2:17",
+              // No operator should be called when comparing to empty.
+              "operator!= 2:17, 0:17",
+              "operator!= 0:17, 2:17",
+              "operator!= 2:17, 1:42",
+              "operator!= 1:42, 2:17",
+              // No operator should be called when comparing to empty.
+              "---",
+              "2:17. destructor",
+              "1:42. destructor",
+              "0:17. destructor"),
+            *log);
+  // clang-format on
 }
 
 TEST(OptionalTest, TestSwap) {

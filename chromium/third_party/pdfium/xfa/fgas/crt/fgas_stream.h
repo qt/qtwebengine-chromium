@@ -10,11 +10,6 @@
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_system.h"
 
-class IFX_Stream;
-
-IFX_FileRead* FX_CreateFileRead(IFX_Stream* pBaseStream,
-                                FX_BOOL bReleaseStream);
-
 enum FX_STREAMACCESS {
   FX_STREAMACCESS_Binary = 0x00,
   FX_STREAMACCESS_Text = 0x01,
@@ -33,13 +28,15 @@ enum FX_STREAMSEEK {
 
 class IFX_Stream {
  public:
-  static IFX_Stream* CreateStream(IFX_FileRead* pFileRead, uint32_t dwAccess);
-  static IFX_Stream* CreateStream(IFX_FileWrite* pFileWrite, uint32_t dwAccess);
+  static IFX_Stream* CreateStream(IFX_SeekableReadStream* pFileRead,
+                                  uint32_t dwAccess);
+  static IFX_Stream* CreateStream(IFX_SeekableWriteStream* pFileWrite,
+                                  uint32_t dwAccess);
   static IFX_Stream* CreateStream(uint8_t* pData,
                                   int32_t length,
                                   uint32_t dwAccess);
   static IFX_Stream* CreateTextStream(IFX_Stream* pBaseStream,
-                                      FX_BOOL bDeleteOnRelease);
+                                      bool bDeleteOnRelease);
   virtual ~IFX_Stream() {}
   virtual void Release() = 0;
   virtual IFX_Stream* Retain() = 0;
@@ -52,18 +49,21 @@ class IFX_Stream {
   virtual int32_t GetLength() const = 0;
   virtual int32_t Seek(FX_STREAMSEEK eSeek, int32_t iOffset) = 0;
   virtual int32_t GetPosition() = 0;
-  virtual FX_BOOL IsEOF() const = 0;
+  virtual bool IsEOF() const = 0;
   virtual int32_t ReadData(uint8_t* pBuffer, int32_t iBufferSize) = 0;
   virtual int32_t ReadString(FX_WCHAR* pStr,
                              int32_t iMaxLength,
-                             FX_BOOL& bEOS) = 0;
+                             bool& bEOS) = 0;
   virtual int32_t WriteData(const uint8_t* pBuffer, int32_t iBufferSize) = 0;
   virtual int32_t WriteString(const FX_WCHAR* pStr, int32_t iLength) = 0;
   virtual void Flush() = 0;
-  virtual FX_BOOL SetLength(int32_t iLength) = 0;
+  virtual bool SetLength(int32_t iLength) = 0;
   virtual int32_t GetBOM(uint8_t bom[4]) const = 0;
   virtual uint16_t GetCodePage() const = 0;
   virtual uint16_t SetCodePage(uint16_t wCodePage) = 0;
 };
+
+IFX_SeekableReadStream* FX_CreateFileRead(IFX_Stream* pBaseStream,
+                                          bool bReleaseStream);
 
 #endif  // XFA_FGAS_CRT_FGAS_STREAM_H_

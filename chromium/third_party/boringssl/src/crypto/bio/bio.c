@@ -336,7 +336,13 @@ long BIO_callback_ctrl(BIO *bio, int cmd, bio_info_cb fp) {
 }
 
 size_t BIO_pending(const BIO *bio) {
-  return BIO_ctrl((BIO *) bio, BIO_CTRL_PENDING, 0, NULL);
+  const long r = BIO_ctrl((BIO *) bio, BIO_CTRL_PENDING, 0, NULL);
+  assert(r >= 0);
+
+  if (r < 0) {
+    return 0;
+  }
+  return r;
 }
 
 size_t BIO_ctrl_pending(const BIO *bio) {
@@ -344,7 +350,13 @@ size_t BIO_ctrl_pending(const BIO *bio) {
 }
 
 size_t BIO_wpending(const BIO *bio) {
-  return BIO_ctrl((BIO *) bio, BIO_CTRL_WPENDING, 0, NULL);
+  const long r = BIO_ctrl((BIO *) bio, BIO_CTRL_WPENDING, 0, NULL);
+  assert(r >= 0);
+
+  if (r < 0) {
+    return 0;
+  }
+  return r;
 }
 
 int BIO_set_close(BIO *bio, int close_flag) {
@@ -448,12 +460,8 @@ static int print_bio(const char *str, size_t len, void *bio) {
   return BIO_write((BIO *)bio, str, len);
 }
 
-void BIO_print_errors(BIO *bio) {
-  ERR_print_errors_cb(print_bio, bio);
-}
-
 void ERR_print_errors(BIO *bio) {
-  BIO_print_errors(bio);
+  ERR_print_errors_cb(print_bio, bio);
 }
 
 /* bio_read_all reads everything from |bio| and prepends |prefix| to it. On

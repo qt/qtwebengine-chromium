@@ -79,6 +79,8 @@ const NameMessageIdMap& GetAdminAreaMessageIds() {
 NameMessageIdMap InitPostalCodeMessageIds() {
   NameMessageIdMap message_ids;
   message_ids.insert(std::make_pair(
+      "eircode", IDS_LIBADDRESSINPUT_EIR_CODE_LABEL));
+  message_ids.insert(std::make_pair(
       "pin", IDS_LIBADDRESSINPUT_PIN_CODE_LABEL));
   message_ids.insert(std::make_pair(
       "postal", IDS_LIBADDRESSINPUT_POSTAL_CODE_LABEL));
@@ -98,9 +100,11 @@ NameMessageIdMap InitLocalityMessageIds() {
   message_ids.insert(std::make_pair(
       "city", IDS_LIBADDRESSINPUT_LOCALITY_LABEL));
   message_ids.insert(std::make_pair(
+      "district", IDS_LIBADDRESSINPUT_DISTRICT));
+  message_ids.insert(std::make_pair(
       "post_town", IDS_LIBADDRESSINPUT_POST_TOWN));
   message_ids.insert(std::make_pair(
-      "district", IDS_LIBADDRESSINPUT_DISTRICT));
+      "suburb", IDS_LIBADDRESSINPUT_SUBURB));
   return message_ids;
 }
 
@@ -118,6 +122,8 @@ NameMessageIdMap InitSublocalityMessageIds() {
       "district", IDS_LIBADDRESSINPUT_DISTRICT));
   message_ids.insert(std::make_pair(
       "neighborhood", IDS_LIBADDRESSINPUT_NEIGHBORHOOD));
+  message_ids.insert(std::make_pair(
+      "townland", IDS_LIBADDRESSINPUT_TOWNLAND));
   message_ids.insert(std::make_pair(
       "village_township", IDS_LIBADDRESSINPUT_VILLAGE_TOWNSHIP));
   return message_ids;

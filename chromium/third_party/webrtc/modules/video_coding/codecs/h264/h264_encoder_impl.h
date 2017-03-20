@@ -15,8 +15,8 @@
 #include <memory>
 #include <vector>
 
+#include "webrtc/common_video/h264/h264_bitstream_parser.h"
 #include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
-#include "webrtc/modules/video_coding/utility/h264_bitstream_parser.h"
 #include "webrtc/modules/video_coding/utility/quality_scaler.h"
 
 #include "third_party/openh264/src/codec/api/svc/codec_app_def.h"
@@ -70,7 +70,17 @@ class H264EncoderImpl : public H264Encoder {
   void ReportError();
 
   ISVCEncoder* openh264_encoder_;
-  VideoCodec codec_settings_;
+  // Settings that are used by this encoder.
+  int width_;
+  int height_;
+  float max_frame_rate_;
+  unsigned int target_bps_;
+  unsigned int max_bps_;
+  VideoCodecMode mode_;
+  // H.264 specifc parameters
+  bool frame_dropping_on_;
+  int key_frame_interval_;
+
   int32_t number_of_cores_;
 
   EncodedImage encoded_image_;

@@ -36,6 +36,7 @@
 #ifndef WAYLAND_SERVER_H
 #define WAYLAND_SERVER_H
 
+#include <stdint.h>
 #include "wayland-server-core.h"
 
 #ifdef  __cplusplus
@@ -65,7 +66,6 @@ struct wl_buffer {
 	uint32_t busy_count;
 } WL_DEPRECATED;
 
-
 uint32_t
 wl_client_add_resource(struct wl_client *client,
 		       struct wl_resource *resource) WL_DEPRECATED;
@@ -75,6 +75,7 @@ wl_client_add_object(struct wl_client *client,
 		     const struct wl_interface *interface,
 		     const void *implementation,
 		     uint32_t id, void *data) WL_DEPRECATED;
+
 struct wl_resource *
 wl_client_new_object(struct wl_client *client,
 		     const struct wl_interface *interface,

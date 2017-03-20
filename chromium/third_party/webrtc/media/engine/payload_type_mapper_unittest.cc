@@ -70,6 +70,7 @@ TEST_F(PayloadTypeMapperTest, WebRTCPayloadTypes) {
   EXPECT_EQ(kDefaultH264PlType, video_mapping(kH264CodecName));
   EXPECT_EQ(kDefaultRedPlType,  video_mapping(kRedCodecName));
   EXPECT_EQ(kDefaultUlpfecType, video_mapping(kUlpfecCodecName));
+  EXPECT_EQ(kDefaultFlexfecPlType, video_mapping(kFlexfecCodecName));
 
   auto rtx_mapping = [this] (int payload_type) {
     return FindMapping({kRtxCodecName, kVideoCodecClockrate, 0,
@@ -77,7 +78,8 @@ TEST_F(PayloadTypeMapperTest, WebRTCPayloadTypes) {
   };
   EXPECT_EQ(kDefaultRtxVp8PlType,  rtx_mapping(kDefaultVp8PlType));
   EXPECT_EQ(kDefaultRtxVp9PlType,  rtx_mapping(kDefaultVp9PlType));
-  EXPECT_EQ(kDefaultRtxH264PlType, rtx_mapping(kDefaultH264PlType));
+  EXPECT_EQ(kDefaultRtxH264ConstrainedBaselinePlType,
+            rtx_mapping(kDefaultH264PlType));
   EXPECT_EQ(kDefaultRtxRedPlType,  rtx_mapping(kDefaultRedPlType));
 
   EXPECT_EQ(102, FindMapping({kIlbcCodecName,  8000, 1}));

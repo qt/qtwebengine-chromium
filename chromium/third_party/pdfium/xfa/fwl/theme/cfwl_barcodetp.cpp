@@ -6,8 +6,8 @@
 
 #include "xfa/fwl/theme/cfwl_barcodetp.h"
 
-#include "xfa/fwl/basewidget/ifwl_barcode.h"
 #include "xfa/fwl/core/cfwl_themebackground.h"
+#include "xfa/fwl/core/ifwl_barcode.h"
 #include "xfa/fwl/core/ifwl_widget.h"
 
 CFWL_BarcodeTP::CFWL_BarcodeTP() {}
@@ -18,9 +18,10 @@ bool CFWL_BarcodeTP::IsValidWidget(IFWL_Widget* pWidget) {
   return pWidget && pWidget->GetClassID() == FWL_Type::Barcode;
 }
 
-FX_BOOL CFWL_BarcodeTP::DrawBackground(CFWL_ThemeBackground* pParams) {
+void CFWL_BarcodeTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
-    return FALSE;
+    return;
+
   switch (pParams->m_iPart) {
     case CFWL_Part::Border: {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
@@ -36,7 +37,7 @@ FX_BOOL CFWL_BarcodeTP::DrawBackground(CFWL_ThemeBackground* pParams) {
                      &pParams->m_matrix);
       break;
     }
-    default: {}
+    default:
+      break;
   }
-  return TRUE;
 }

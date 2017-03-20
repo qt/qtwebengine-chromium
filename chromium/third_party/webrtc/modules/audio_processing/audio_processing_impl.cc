@@ -35,6 +35,7 @@
 #include "webrtc/modules/audio_processing/level_controller/level_controller.h"
 #include "webrtc/modules/audio_processing/level_estimator_impl.h"
 #include "webrtc/modules/audio_processing/noise_suppression_impl.h"
+#include "webrtc/modules/audio_processing/residual_echo_detector.h"
 #include "webrtc/modules/audio_processing/transient/transient_suppressor.h"
 #include "webrtc/modules/audio_processing/voice_detection_impl.h"
 #include "webrtc/modules/include/module_common_types.h"
@@ -119,6 +120,13 @@ int FindNativeProcessRateToUse(int minimum_rate, bool band_splitting_required) {
   return uppermost_native_rate;
 }
 
+// Maximum length that a frame of samples can have.
+static const size_t kMaxAllowedValuesOfSamplesPerFrame = 160;
+// Maximum number of frames to buffer in the render queue.
+// TODO(peah): Decrease this once we properly handle hugely unbalanced
+// reverse and forward call numbers.
+static const size_t kMaxNumFramesToBuffer = 100;
+
 }  // namespace
 
 // Throughout webrtc, it's assumed that success is represented by zero.
@@ -130,6 +138,7 @@ bool AudioProcessingImpl::ApmSubmoduleStates::Update(
     bool high_pass_filter_enabled,
     bool echo_canceller_enabled,
     bool mobile_echo_controller_enabled,
+    bool residual_echo_detector_enabled,
     bool noise_suppressor_enabled,
     bool intelligibility_enhancer_enabled,
     bool beamformer_enabled,
@@ -143,6 +152,8 @@ bool AudioProcessingImpl::ApmSubmoduleStates::Update(
   changed |= (echo_canceller_enabled != echo_canceller_enabled_);
   changed |=
       (mobile_echo_controller_enabled != mobile_echo_controller_enabled_);
+  changed |=
+      (residual_echo_detector_enabled != residual_echo_detector_enabled_);
   changed |= (noise_suppressor_enabled != noise_suppressor_enabled_);
   changed |=
       (intelligibility_enhancer_enabled != intelligibility_enhancer_enabled_);
@@ -158,6 +169,7 @@ bool AudioProcessingImpl::ApmSubmoduleStates::Update(
     high_pass_filter_enabled_ = high_pass_filter_enabled;
     echo_canceller_enabled_ = echo_canceller_enabled;
     mobile_echo_controller_enabled_ = mobile_echo_controller_enabled;
+    residual_echo_detector_enabled_ = residual_echo_detector_enabled;
     noise_suppressor_enabled_ = noise_suppressor_enabled;
     intelligibility_enhancer_enabled_ = intelligibility_enhancer_enabled;
     beamformer_enabled_ = beamformer_enabled;
@@ -177,9 +189,11 @@ bool AudioProcessingImpl::ApmSubmoduleStates::CaptureMultiBandSubModulesActive()
     const {
 #if WEBRTC_INTELLIGIBILITY_ENHANCER
   return CaptureMultiBandProcessingActive() ||
-         intelligibility_enhancer_enabled_ || voice_activity_detector_enabled_;
+         intelligibility_enhancer_enabled_ ||
+         voice_activity_detector_enabled_ || residual_echo_detector_enabled_;
 #else
-  return CaptureMultiBandProcessingActive() || voice_activity_detector_enabled_;
+  return CaptureMultiBandProcessingActive() ||
+         voice_activity_detector_enabled_ || residual_echo_detector_enabled_;
 #endif
 }
 
@@ -193,7 +207,8 @@ bool AudioProcessingImpl::ApmSubmoduleStates::CaptureMultiBandProcessingActive()
 bool AudioProcessingImpl::ApmSubmoduleStates::RenderMultiBandSubModulesActive()
     const {
   return RenderMultiBandProcessingActive() || echo_canceller_enabled_ ||
-         mobile_echo_controller_enabled_ || adaptive_gain_controller_enabled_;
+         mobile_echo_controller_enabled_ || adaptive_gain_controller_enabled_ ||
+         residual_echo_detector_enabled_;
 }
 
 bool AudioProcessingImpl::ApmSubmoduleStates::RenderMultiBandProcessingActive()
@@ -232,6 +247,7 @@ struct AudioProcessingImpl::ApmPrivateSubmodules {
   std::unique_ptr<NonlinearBeamformer> beamformer;
   std::unique_ptr<AgcManagerDirect> agc_manager;
   std::unique_ptr<LevelController> level_controller;
+  std::unique_ptr<ResidualEchoDetector> residual_echo_detector;
 };
 
 AudioProcessing* AudioProcessing::Create() {
@@ -297,7 +313,11 @@ AudioProcessingImpl::AudioProcessingImpl(const webrtc::Config& config,
     public_submodules_->gain_control_for_experimental_agc.reset(
         new GainControlForExperimentalAgc(
             public_submodules_->gain_control.get(), &crit_capture_));
+    private_submodules_->residual_echo_detector.reset(
+        new ResidualEchoDetector());
 
+    // TODO(peah): Move this creation to happen only when the level controller
+    // is enabled.
     private_submodules_->level_controller.reset(new LevelController());
   }
 
@@ -426,14 +446,21 @@ int AudioProcessingImpl::InitializeLocked() {
                       capture_audiobuffer_num_channels,
                       formats_.api_format.output_stream().num_frames()));
 
-  public_submodules_->gain_control->Initialize(num_proc_channels(),
-                                               proc_sample_rate_hz());
   public_submodules_->echo_cancellation->Initialize(
       proc_sample_rate_hz(), num_reverse_channels(), num_output_channels(),
       num_proc_channels());
+  AllocateRenderQueue();
+
+  int success = public_submodules_->echo_cancellation->enable_metrics(true);
+  RTC_DCHECK_EQ(0, success);
+  success = public_submodules_->echo_cancellation->enable_delay_logging(true);
+  RTC_DCHECK_EQ(0, success);
   public_submodules_->echo_control_mobile->Initialize(
       proc_split_sample_rate_hz(), num_reverse_channels(),
       num_output_channels());
+
+  public_submodules_->gain_control->Initialize(num_proc_channels(),
+                                               proc_sample_rate_hz());
   if (constants_.use_experimental_agc) {
     if (!private_submodules_->agc_manager.get()) {
       private_submodules_->agc_manager.reset(new AgcManagerDirect(
@@ -444,6 +471,7 @@ int AudioProcessingImpl::InitializeLocked() {
     private_submodules_->agc_manager->Initialize();
     private_submodules_->agc_manager->SetCaptureMuted(
         capture_.output_will_be_muted);
+    public_submodules_->gain_control_for_experimental_agc->Initialize();
   }
   InitializeTransient();
   InitializeBeamformer();
@@ -457,6 +485,7 @@ int AudioProcessingImpl::InitializeLocked() {
   public_submodules_->voice_detection->Initialize(proc_split_sample_rate_hz());
   public_submodules_->level_estimator->Initialize();
   InitializeLevelController();
+  InitializeResidualEchoDetector();
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
   if (debug_dump_.debug_file->is_open()) {
@@ -543,30 +572,36 @@ int AudioProcessingImpl::InitializeLocked(const ProcessingConfig& config) {
 }
 
 void AudioProcessingImpl::ApplyConfig(const AudioProcessing::Config& config) {
-  AudioProcessing::Config config_to_use = config;
+  config_ = config;
 
-  bool config_ok = LevelController::Validate(config_to_use.level_controller);
+  bool config_ok = LevelController::Validate(config_.level_controller);
   if (!config_ok) {
     LOG(LS_ERROR) << "AudioProcessing module config error" << std::endl
                   << "level_controller: "
-                  << LevelController::ToString(config_to_use.level_controller)
+                  << LevelController::ToString(config_.level_controller)
                   << std::endl
                   << "Reverting to default parameter set";
-    config_to_use.level_controller = AudioProcessing::Config::LevelController();
+    config_.level_controller = AudioProcessing::Config::LevelController();
   }
 
   // Run in a single-threaded manner when applying the settings.
   rtc::CritScope cs_render(&crit_render_);
   rtc::CritScope cs_capture(&crit_capture_);
 
-  if (config.level_controller.enabled !=
-      capture_nonlocked_.level_controller_enabled) {
-    InitializeLevelController();
-    LOG(LS_INFO) << "Level controller activated: "
-                 << capture_nonlocked_.level_controller_enabled;
+  // TODO(peah): Replace the use of capture_nonlocked_.level_controller_enabled
+  // with the value in config_ everywhere in the code.
+  if (capture_nonlocked_.level_controller_enabled !=
+      config_.level_controller.enabled) {
     capture_nonlocked_.level_controller_enabled =
-        config.level_controller.enabled;
+        config_.level_controller.enabled;
+    // TODO(peah): Remove the conditional initialization to always initialize
+    // the level controller regardless of whether it is enabled or not.
+    InitializeLevelController();
   }
+  LOG(LS_INFO) << "Level controller activated: "
+               << capture_nonlocked_.level_controller_enabled;
+
+  private_submodules_->level_controller->ApplyConfig(config_.level_controller);
 }
 
 void AudioProcessingImpl::SetExtraOptions(const webrtc::Config& config) {
@@ -689,9 +724,7 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
     // that retrieves the render side data. This function accesses apm
     // getters that need the capture lock held when being called.
     rtc::CritScope cs_capture(&crit_capture_);
-    public_submodules_->echo_cancellation->ReadQueuedRenderData();
-    public_submodules_->echo_control_mobile->ReadQueuedRenderData();
-    public_submodules_->gain_control->ReadQueuedRenderData();
+    EmptyQueuedRenderAudio();
 
     if (!src || !dest) {
       return kNullPointerError;
@@ -749,6 +782,185 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
   return kNoError;
 }
 
+void AudioProcessingImpl::QueueRenderAudio(AudioBuffer* audio) {
+  EchoCancellationImpl::PackRenderAudioBuffer(audio, num_output_channels(),
+                                              num_reverse_channels(),
+                                              &aec_render_queue_buffer_);
+
+  RTC_DCHECK_GE(160u, audio->num_frames_per_band());
+
+  // Insert the samples into the queue.
+  if (!aec_render_signal_queue_->Insert(&aec_render_queue_buffer_)) {
+    // The data queue is full and needs to be emptied.
+    EmptyQueuedRenderAudio();
+
+    // Retry the insert (should always work).
+    bool result = aec_render_signal_queue_->Insert(&aec_render_queue_buffer_);
+    RTC_DCHECK(result);
+  }
+
+  EchoControlMobileImpl::PackRenderAudioBuffer(audio, num_output_channels(),
+                                               num_reverse_channels(),
+                                               &aecm_render_queue_buffer_);
+
+  // Insert the samples into the queue.
+  if (!aecm_render_signal_queue_->Insert(&aecm_render_queue_buffer_)) {
+    // The data queue is full and needs to be emptied.
+    EmptyQueuedRenderAudio();
+
+    // Retry the insert (should always work).
+    bool result = aecm_render_signal_queue_->Insert(&aecm_render_queue_buffer_);
+    RTC_DCHECK(result);
+  }
+
+  if (!constants_.use_experimental_agc) {
+    GainControlImpl::PackRenderAudioBuffer(audio, &agc_render_queue_buffer_);
+    // Insert the samples into the queue.
+    if (!agc_render_signal_queue_->Insert(&agc_render_queue_buffer_)) {
+      // The data queue is full and needs to be emptied.
+      EmptyQueuedRenderAudio();
+
+      // Retry the insert (should always work).
+      bool result = agc_render_signal_queue_->Insert(&agc_render_queue_buffer_);
+      RTC_DCHECK(result);
+    }
+  }
+
+  ResidualEchoDetector::PackRenderAudioBuffer(audio, &red_render_queue_buffer_);
+
+  // Insert the samples into the queue.
+  if (!red_render_signal_queue_->Insert(&red_render_queue_buffer_)) {
+    // The data queue is full and needs to be emptied.
+    EmptyQueuedRenderAudio();
+
+    // Retry the insert (should always work).
+    bool result = red_render_signal_queue_->Insert(&red_render_queue_buffer_);
+    RTC_DCHECK(result);
+  }
+}
+
+void AudioProcessingImpl::AllocateRenderQueue() {
+  const size_t new_aec_render_queue_element_max_size =
+      std::max(static_cast<size_t>(1),
+               kMaxAllowedValuesOfSamplesPerFrame *
+                   EchoCancellationImpl::NumCancellersRequired(
+                       num_output_channels(), num_reverse_channels()));
+
+  const size_t new_aecm_render_queue_element_max_size =
+      std::max(static_cast<size_t>(1),
+               kMaxAllowedValuesOfSamplesPerFrame *
+                   EchoControlMobileImpl::NumCancellersRequired(
+                       num_output_channels(), num_reverse_channels()));
+
+  const size_t new_agc_render_queue_element_max_size =
+      std::max(static_cast<size_t>(1), kMaxAllowedValuesOfSamplesPerFrame);
+
+  const size_t new_red_render_queue_element_max_size =
+      std::max(static_cast<size_t>(1), kMaxAllowedValuesOfSamplesPerFrame);
+
+  // Reallocate the queues if the queue item sizes are too small to fit the
+  // data to put in the queues.
+  if (aec_render_queue_element_max_size_ <
+      new_aec_render_queue_element_max_size) {
+    aec_render_queue_element_max_size_ = new_aec_render_queue_element_max_size;
+
+    std::vector<float> template_queue_element(
+        aec_render_queue_element_max_size_);
+
+    aec_render_signal_queue_.reset(
+        new SwapQueue<std::vector<float>, RenderQueueItemVerifier<float>>(
+            kMaxNumFramesToBuffer, template_queue_element,
+            RenderQueueItemVerifier<float>(
+                aec_render_queue_element_max_size_)));
+
+    aec_render_queue_buffer_.resize(aec_render_queue_element_max_size_);
+    aec_capture_queue_buffer_.resize(aec_render_queue_element_max_size_);
+  } else {
+    aec_render_signal_queue_->Clear();
+  }
+
+  if (aecm_render_queue_element_max_size_ <
+      new_aecm_render_queue_element_max_size) {
+    aecm_render_queue_element_max_size_ =
+        new_aecm_render_queue_element_max_size;
+
+    std::vector<int16_t> template_queue_element(
+        aecm_render_queue_element_max_size_);
+
+    aecm_render_signal_queue_.reset(
+        new SwapQueue<std::vector<int16_t>, RenderQueueItemVerifier<int16_t>>(
+            kMaxNumFramesToBuffer, template_queue_element,
+            RenderQueueItemVerifier<int16_t>(
+                aecm_render_queue_element_max_size_)));
+
+    aecm_render_queue_buffer_.resize(aecm_render_queue_element_max_size_);
+    aecm_capture_queue_buffer_.resize(aecm_render_queue_element_max_size_);
+  } else {
+    aecm_render_signal_queue_->Clear();
+  }
+
+  if (agc_render_queue_element_max_size_ <
+      new_agc_render_queue_element_max_size) {
+    agc_render_queue_element_max_size_ = new_agc_render_queue_element_max_size;
+
+    std::vector<int16_t> template_queue_element(
+        agc_render_queue_element_max_size_);
+
+    agc_render_signal_queue_.reset(
+        new SwapQueue<std::vector<int16_t>, RenderQueueItemVerifier<int16_t>>(
+            kMaxNumFramesToBuffer, template_queue_element,
+            RenderQueueItemVerifier<int16_t>(
+                agc_render_queue_element_max_size_)));
+
+    agc_render_queue_buffer_.resize(agc_render_queue_element_max_size_);
+    agc_capture_queue_buffer_.resize(agc_render_queue_element_max_size_);
+  } else {
+    agc_render_signal_queue_->Clear();
+  }
+
+  if (red_render_queue_element_max_size_ <
+      new_red_render_queue_element_max_size) {
+    red_render_queue_element_max_size_ = new_red_render_queue_element_max_size;
+
+    std::vector<float> template_queue_element(
+        red_render_queue_element_max_size_);
+
+    red_render_signal_queue_.reset(
+        new SwapQueue<std::vector<float>, RenderQueueItemVerifier<float>>(
+            kMaxNumFramesToBuffer, template_queue_element,
+            RenderQueueItemVerifier<float>(
+                red_render_queue_element_max_size_)));
+
+    red_render_queue_buffer_.resize(red_render_queue_element_max_size_);
+    red_capture_queue_buffer_.resize(red_render_queue_element_max_size_);
+  } else {
+    red_render_signal_queue_->Clear();
+  }
+}
+
+void AudioProcessingImpl::EmptyQueuedRenderAudio() {
+  rtc::CritScope cs_capture(&crit_capture_);
+  while (aec_render_signal_queue_->Remove(&aec_capture_queue_buffer_)) {
+    public_submodules_->echo_cancellation->ProcessRenderAudio(
+        aec_capture_queue_buffer_);
+  }
+
+  while (aecm_render_signal_queue_->Remove(&aecm_capture_queue_buffer_)) {
+    public_submodules_->echo_control_mobile->ProcessRenderAudio(
+        aecm_capture_queue_buffer_);
+  }
+
+  while (agc_render_signal_queue_->Remove(&agc_capture_queue_buffer_)) {
+    public_submodules_->gain_control->ProcessRenderAudio(
+        agc_capture_queue_buffer_);
+  }
+
+  while (red_render_signal_queue_->Remove(&red_capture_queue_buffer_)) {
+    private_submodules_->residual_echo_detector->AnalyzeRenderAudio(
+        red_capture_queue_buffer_);
+  }
+}
+
 int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessStream_AudioFrame");
   {
@@ -759,9 +971,7 @@ int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
     // public_submodules_->echo_control_mobile->is_enabled() aquires this lock
     // as well.
     rtc::CritScope cs_capture(&crit_capture_);
-    public_submodules_->echo_cancellation->ReadQueuedRenderData();
-    public_submodules_->echo_control_mobile->ReadQueuedRenderData();
-    public_submodules_->gain_control->ReadQueuedRenderData();
+    EmptyQueuedRenderAudio();
   }
 
   if (!frame) {
@@ -923,6 +1133,13 @@ int AudioProcessingImpl::ProcessCaptureStreamLocked() {
 
   RETURN_ON_ERR(public_submodules_->echo_control_mobile->ProcessCaptureAudio(
       capture_buffer, stream_delay_ms()));
+
+  if (config_.residual_echo_detector.enabled) {
+    private_submodules_->residual_echo_detector->AnalyzeCaptureAudio(
+        rtc::ArrayView<const float>(
+            capture_buffer->split_bands_const_f(0)[kBand0To8kHz],
+            capture_buffer->num_frames_per_band()));
+  }
 
   if (capture_nonlocked_.beamformer_enabled) {
     private_submodules_->beamformer->PostFilter(capture_buffer->split_data_f());
@@ -1122,14 +1339,7 @@ int AudioProcessingImpl::ProcessRenderStreamLocked() {
   }
 #endif
 
-  RETURN_ON_ERR(
-      public_submodules_->echo_cancellation->ProcessRenderAudio(render_buffer));
-  RETURN_ON_ERR(public_submodules_->echo_control_mobile->ProcessRenderAudio(
-      render_buffer));
-  if (!constants_.use_experimental_agc) {
-    RETURN_ON_ERR(
-        public_submodules_->gain_control->ProcessRenderAudio(render_buffer));
-  }
+  QueueRenderAudio(render_buffer);
 
   if (submodule_states_.RenderMultiBandProcessingActive() &&
       SampleRateSupportsMultiBand(
@@ -1243,6 +1453,10 @@ int AudioProcessingImpl::StartDebugRecording(FILE* handle,
 #endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
 }
 
+int AudioProcessingImpl::StartDebugRecording(FILE* handle) {
+  return StartDebugRecording(handle, -1);
+}
+
 int AudioProcessingImpl::StartDebugRecordingForPlatformFile(
     rtc::PlatformFile handle) {
   // Run in a single-threaded manner.
@@ -1264,6 +1478,33 @@ int AudioProcessingImpl::StopDebugRecording() {
 #else
   return kUnsupportedFunctionError;
 #endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
+}
+
+// TODO(ivoc): Remove this when GetStatistics() becomes pure virtual.
+AudioProcessing::AudioProcessingStatistics AudioProcessing::GetStatistics()
+    const {
+  return AudioProcessingStatistics();
+}
+
+AudioProcessing::AudioProcessingStatistics AudioProcessingImpl::GetStatistics()
+    const {
+  AudioProcessingStatistics stats;
+  EchoCancellation::Metrics metrics;
+  int success = public_submodules_->echo_cancellation->GetMetrics(&metrics);
+  if (success == Error::kNoError) {
+    stats.a_nlp.Set(metrics.a_nlp);
+    stats.divergent_filter_fraction = metrics.divergent_filter_fraction;
+    stats.echo_return_loss.Set(metrics.echo_return_loss);
+    stats.echo_return_loss_enhancement.Set(
+        metrics.echo_return_loss_enhancement);
+    stats.residual_echo_return_loss.Set(metrics.residual_echo_return_loss);
+  }
+  stats.residual_echo_likelihood =
+      private_submodules_->residual_echo_detector->echo_likelihood();
+  public_submodules_->echo_cancellation->GetDelayMetrics(
+      &stats.delay_median, &stats.delay_standard_deviation,
+      &stats.fraction_poor_delays);
+  return stats;
 }
 
 EchoCancellation* AudioProcessingImpl::echo_cancellation() const {
@@ -1302,6 +1543,7 @@ bool AudioProcessingImpl::UpdateActiveSubmoduleStates() {
       public_submodules_->high_pass_filter->is_enabled(),
       public_submodules_->echo_cancellation->is_enabled(),
       public_submodules_->echo_control_mobile->is_enabled(),
+      config_.residual_echo_detector.enabled,
       public_submodules_->noise_suppression->is_enabled(),
       capture_nonlocked_.intelligibility_enabled,
       capture_nonlocked_.beamformer_enabled,
@@ -1349,6 +1591,10 @@ void AudioProcessingImpl::InitializeIntelligibility() {
 
 void AudioProcessingImpl::InitializeLevelController() {
   private_submodules_->level_controller->Initialize(proc_sample_rate_hz());
+}
+
+void AudioProcessingImpl::InitializeResidualEchoDetector() {
+  private_submodules_->residual_echo_detector->Initialize();
 }
 
 void AudioProcessingImpl::MaybeUpdateHistograms() {

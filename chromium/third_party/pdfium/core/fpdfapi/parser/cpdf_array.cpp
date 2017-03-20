@@ -18,13 +18,15 @@
 
 CPDF_Array::CPDF_Array() {}
 
+CPDF_Array::CPDF_Array(const CFX_WeakPtr<CFX_ByteStringPool>& pPool)
+    : m_pPool(pPool) {}
+
 CPDF_Array::~CPDF_Array() {
-  // Mark the object as deleted so that it will not be deleted again
-  // in case of cyclic references.
+  // Break cycles for cyclic references.
   m_ObjNum = kInvalidObjNum;
   for (auto& it : m_Objects) {
-    if (it)
-      it->Release();
+    if (it && it->GetObjNum() == kInvalidObjNum)
+      it.release();
   }
 }
 
@@ -44,21 +46,20 @@ const CPDF_Array* CPDF_Array::AsArray() const {
   return this;
 }
 
-CPDF_Object* CPDF_Array::Clone() const {
+std::unique_ptr<CPDF_Object> CPDF_Array::Clone() const {
   return CloneObjectNonCyclic(false);
 }
 
-CPDF_Object* CPDF_Array::CloneNonCyclic(
+std::unique_ptr<CPDF_Object> CPDF_Array::CloneNonCyclic(
     bool bDirect,
     std::set<const CPDF_Object*>* pVisited) const {
   pVisited->insert(this);
-  CPDF_Array* pCopy = new CPDF_Array();
-  for (size_t i = 0; i < GetCount(); i++) {
-    CPDF_Object* value = m_Objects[i];
-    if (!pdfium::ContainsKey(*pVisited, value))
-      pCopy->m_Objects.push_back(value->CloneNonCyclic(bDirect, pVisited));
+  auto pCopy = pdfium::MakeUnique<CPDF_Array>();
+  for (const auto& pValue : m_Objects) {
+    if (!pdfium::ContainsKey(*pVisited, pValue.get()))
+      pCopy->m_Objects.push_back(pValue->CloneNonCyclic(bDirect, pVisited));
   }
-  return pCopy;
+  return std::move(pCopy);
 }
 
 CFX_FloatRect CPDF_Array::GetRect() {
@@ -86,7 +87,7 @@ CFX_Matrix CPDF_Array::GetMatrix() {
 CPDF_Object* CPDF_Array::GetObjectAt(size_t i) const {
   if (i >= m_Objects.size())
     return nullptr;
-  return m_Objects[i];
+  return m_Objects[i].get();
 }
 
 CPDF_Object* CPDF_Array::GetDirectObjectAt(size_t i) const {
@@ -139,10 +140,6 @@ void CPDF_Array::RemoveAt(size_t i, size_t nCount) {
   if (nCount <= 0 || nCount > m_Objects.size() - i)
     return;
 
-  for (size_t j = 0; j < nCount; ++j) {
-    if (CPDF_Object* p = m_Objects[i + j])
-      p->Release();
-  }
   m_Objects.erase(m_Objects.begin() + i, m_Objects.begin() + i + nCount);
 }
 
@@ -151,63 +148,45 @@ void CPDF_Array::ConvertToIndirectObjectAt(size_t i,
   if (i >= m_Objects.size())
     return;
 
-  CPDF_Object* pObj = m_Objects[i];
-  if (!pObj || pObj->IsReference())
+  if (!m_Objects[i] || m_Objects[i]->IsReference())
     return;
 
-  uint32_t dwObjNum = pHolder->AddIndirectObject(pObj);
-  m_Objects[i] = new CPDF_Reference(pHolder, dwObjNum);
+  CPDF_Object* pNew = pHolder->AddIndirectObject(std::move(m_Objects[i]));
+  m_Objects[i] = pdfium::MakeUnique<CPDF_Reference>(pHolder, pNew->GetObjNum());
 }
 
-void CPDF_Array::SetAt(size_t i, CPDF_Object* pObj) {
+CPDF_Object* CPDF_Array::SetAt(size_t i, std::unique_ptr<CPDF_Object> pObj) {
   ASSERT(IsArray());
-  CHECK(!pObj || pObj->GetObjNum() == 0);
+  ASSERT(!pObj || pObj->IsInline());
   if (i >= m_Objects.size()) {
     ASSERT(false);
-    return;
+    return nullptr;
   }
-  if (CPDF_Object* pOld = m_Objects[i])
-    pOld->Release();
-
-  m_Objects[i] = pObj;
+  CPDF_Object* pRet = pObj.get();
+  m_Objects[i] = std::move(pObj);
+  return pRet;
 }
 
-void CPDF_Array::InsertAt(size_t index, CPDF_Object* pObj) {
+CPDF_Object* CPDF_Array::InsertAt(size_t index,
+                                  std::unique_ptr<CPDF_Object> pObj) {
   ASSERT(IsArray());
-  CHECK(!pObj || pObj->GetObjNum() == 0);
+  CHECK(!pObj || pObj->IsInline());
+  CPDF_Object* pRet = pObj.get();
   if (index >= m_Objects.size()) {
     // Allocate space first.
-    m_Objects.resize(index + 1, nullptr);
-    m_Objects[index] = pObj;
+    m_Objects.resize(index + 1);
+    m_Objects[index] = std::move(pObj);
   } else {
     // Directly insert.
-    m_Objects.insert(m_Objects.begin() + index, pObj);
+    m_Objects.insert(m_Objects.begin() + index, std::move(pObj));
   }
+  return pRet;
 }
 
-void CPDF_Array::Add(CPDF_Object* pObj) {
+CPDF_Object* CPDF_Array::Add(std::unique_ptr<CPDF_Object> pObj) {
   ASSERT(IsArray());
-  CHECK(!pObj || pObj->GetObjNum() == 0);
-  m_Objects.push_back(pObj);
-}
-
-void CPDF_Array::AddName(const CFX_ByteString& str) {
-  Add(new CPDF_Name(str));
-}
-
-void CPDF_Array::AddString(const CFX_ByteString& str) {
-  Add(new CPDF_String(str, FALSE));
-}
-
-void CPDF_Array::AddInteger(int i) {
-  Add(new CPDF_Number(i));
-}
-
-void CPDF_Array::AddNumber(FX_FLOAT f) {
-  Add(new CPDF_Number(f));
-}
-
-void CPDF_Array::AddReference(CPDF_IndirectObjectHolder* pDoc,
-                              uint32_t objnum) {
-  Add(new CPDF_Reference(pDoc, objnum));
+  CHECK(!pObj || pObj->IsInline());
+  CPDF_Object* pRet = pObj.get();
+  m_Objects.push_back(std::move(pObj));
+  return pRet;
 }

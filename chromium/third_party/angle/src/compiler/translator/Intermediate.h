@@ -9,6 +9,9 @@
 
 #include "compiler/translator/IntermNode.h"
 
+namespace sh
+{
+
 struct TVectorFields
 {
     int offsets[4];
@@ -36,21 +39,22 @@ class TIntermediate
     TIntermAggregate *growAggregate(
         TIntermNode *left, TIntermNode *right, const TSourceLoc &);
     static TIntermAggregate *MakeAggregate(TIntermNode *node, const TSourceLoc &line);
-    static TIntermAggregate *EnsureSequence(TIntermNode *node);
+    static TIntermBlock *EnsureBlock(TIntermNode *node);
     TIntermAggregate *setAggregateOperator(TIntermNode *, TOperator, const TSourceLoc &);
     TIntermNode *addIfElse(TIntermTyped *cond, TIntermNodePair code, const TSourceLoc &line);
     static TIntermTyped *AddTernarySelection(TIntermTyped *cond,
                                              TIntermTyped *trueExpression,
                                              TIntermTyped *falseExpression,
                                              const TSourceLoc &line);
-    TIntermSwitch *addSwitch(
-        TIntermTyped *init, TIntermAggregate *statementList, const TSourceLoc &line);
+    TIntermSwitch *addSwitch(TIntermTyped *init,
+                             TIntermBlock *statementList,
+                             const TSourceLoc &line);
     TIntermCase *addCase(
         TIntermTyped *condition, const TSourceLoc &line);
-    TIntermTyped *addComma(TIntermTyped *left,
-                           TIntermTyped *right,
-                           const TSourceLoc &line,
-                           int shaderVersion);
+    static TIntermTyped *AddComma(TIntermTyped *left,
+                                  TIntermTyped *right,
+                                  const TSourceLoc &line,
+                                  int shaderVersion);
     TIntermConstantUnion *addConstantUnion(const TConstantUnion *constantUnion,
                                            const TType &type,
                                            const TSourceLoc &line);
@@ -61,7 +65,6 @@ class TIntermediate
     static TIntermTyped *AddSwizzle(TIntermTyped *baseExpression,
                                     const TVectorFields &fields,
                                     const TSourceLoc &dotLocation);
-    static TIntermAggregate *PostProcess(TIntermNode *root);
 
     static void outputTree(TIntermNode *, TInfoSinkBase &);
 
@@ -70,5 +73,7 @@ class TIntermediate
   private:
     void operator=(TIntermediate &); // prevent assignments
 };
+
+}  // namespace sh
 
 #endif  // COMPILER_TRANSLATOR_INTERMEDIATE_H_

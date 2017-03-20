@@ -19,6 +19,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/modules/pacing/alr_detector.h"
 #include "webrtc/modules/pacing/bitrate_prober.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/critical_section_wrapper.h"
@@ -248,6 +249,7 @@ const float PacedSender::kDefaultPaceMultiplier = 2.5f;
 PacedSender::PacedSender(Clock* clock, PacketSender* packet_sender)
     : clock_(clock),
       packet_sender_(packet_sender),
+      alr_detector_(new AlrDetector()),
       critsect_(CriticalSectionWrapper::CreateCriticalSection()),
       paused_(false),
       media_budget_(new paced_sender::IntervalBudget(0)),
@@ -260,7 +262,7 @@ PacedSender::PacedSender(Clock* clock, PacketSender* packet_sender)
       time_last_update_us_(clock->TimeInMicroseconds()),
       packets_(new paced_sender::PacketQueue(clock)),
       packet_counter_(0) {
-  UpdateBytesPerInterval(kMinPacketLimitMs);
+  UpdateBudgetWithElapsedTime(kMinPacketLimitMs);
 }
 
 PacedSender::~PacedSender() {}
@@ -298,6 +300,7 @@ void PacedSender::SetEstimatedBitrate(uint32_t bitrate_bps) {
   pacing_bitrate_kbps_ =
       std::max(min_send_bitrate_kbps_, estimated_bitrate_bps_ / 1000) *
       kDefaultPaceMultiplier;
+  alr_detector_->SetEstimatedBitrate(bitrate_bps);
 }
 
 void PacedSender::SetSendBitrateLimits(int min_send_bitrate_bps,
@@ -338,6 +341,11 @@ int64_t PacedSender::ExpectedQueueTimeMs() const {
   RTC_DCHECK_GT(pacing_bitrate_kbps_, 0u);
   return static_cast<int64_t>(packets_->SizeInBytes() * 8 /
                               pacing_bitrate_kbps_);
+}
+
+bool PacedSender::InApplicationLimitedRegion() const {
+  CriticalSectionScoped cs(critsect_.get());
+  return alr_detector_->InApplicationLimitedRegion();
 }
 
 size_t PacedSender::QueueSizePackets() const {
@@ -397,13 +405,18 @@ void PacedSender::Process() {
 
     media_budget_->set_target_rate_kbps(target_bitrate_kbps);
 
-    int64_t delta_time_ms = std::min(kMaxIntervalTimeMs, elapsed_time_ms);
-    UpdateBytesPerInterval(delta_time_ms);
+    elapsed_time_ms = std::min(kMaxIntervalTimeMs, elapsed_time_ms);
+    UpdateBudgetWithElapsedTime(elapsed_time_ms);
   }
 
   bool is_probing = prober_->IsProbing();
-  int probe_cluster_id = is_probing ? prober_->CurrentClusterId()
-                                    : PacketInfo::kNotAProbe;
+  int probe_cluster_id = PacketInfo::kNotAProbe;
+  size_t bytes_sent = 0;
+  size_t recommended_probe_size = 0;
+  if (is_probing) {
+    probe_cluster_id = prober_->CurrentClusterId();
+    recommended_probe_size = prober_->RecommendedMinProbeSize();
+  }
   while (!packets_->Empty()) {
     // Since we need to release the lock in order to send, we first pop the
     // element from the priority queue but keep it in storage, so that we can
@@ -412,30 +425,33 @@ void PacedSender::Process() {
 
     if (SendPacket(packet, probe_cluster_id)) {
       // Send succeeded, remove it from the queue.
+      bytes_sent += packet.bytes;
       packets_->FinalizePop(packet);
-      if (is_probing)
-        return;
+      if (is_probing && bytes_sent > recommended_probe_size)
+        break;
     } else {
       // Send failed, put it back into the queue.
       packets_->CancelPop(packet);
-      return;
+      break;
     }
   }
 
-  RTC_DCHECK(packets_->Empty());
   // TODO(holmer): Remove the paused_ check when issue 5307 has been fixed.
-  if (paused_)
-    return;
+  if (packets_->Empty() && !paused_) {
+    // We can not send padding unless a normal packet has first been sent. If we
+    // do, timestamps get messed up.
+    if (packet_counter_ > 0) {
+      int padding_needed =
+          static_cast<int>(is_probing ? (recommended_probe_size - bytes_sent)
+                                      : padding_budget_->bytes_remaining());
 
-  // We can not send padding unless a normal packet has first been sent. If we
-  // do, timestamps get messed up.
-  if (packet_counter_ > 0) {
-    size_t padding_needed = is_probing ? prober_->RecommendedPacketSize()
-                                       : padding_budget_->bytes_remaining();
-
-    if (padding_needed > 0)
-      SendPadding(padding_needed, probe_cluster_id);
+      if (padding_needed > 0)
+        bytes_sent += SendPadding(padding_needed, probe_cluster_id);
+    }
   }
+  if (is_probing && bytes_sent > 0)
+    prober_->ProbeSent(clock_->TimeInMilliseconds(), bytes_sent);
+  alr_detector_->OnBytesSent(bytes_sent, elapsed_time_ms);
 }
 
 bool PacedSender::SendPacket(const paced_sender::Packet& packet,
@@ -458,34 +474,36 @@ bool PacedSender::SendPacket(const paced_sender::Packet& packet,
   critsect_->Enter();
 
   if (success) {
-    prober_->PacketSent(clock_->TimeInMilliseconds(), packet.bytes);
     // TODO(holmer): High priority packets should only be accounted for if we
     // are allocating bandwidth for audio.
     if (packet.priority != kHighPriority) {
       // Update media bytes sent.
-      media_budget_->UseBudget(packet.bytes);
-      padding_budget_->UseBudget(packet.bytes);
+      UpdateBudgetWithBytesSent(packet.bytes);
     }
   }
 
   return success;
 }
 
-void PacedSender::SendPadding(size_t padding_needed, int probe_cluster_id) {
+size_t PacedSender::SendPadding(size_t padding_needed, int probe_cluster_id) {
   critsect_->Leave();
   size_t bytes_sent =
       packet_sender_->TimeToSendPadding(padding_needed, probe_cluster_id);
   critsect_->Enter();
 
   if (bytes_sent > 0) {
-    prober_->PacketSent(clock_->TimeInMilliseconds(), bytes_sent);
-    media_budget_->UseBudget(bytes_sent);
-    padding_budget_->UseBudget(bytes_sent);
+    UpdateBudgetWithBytesSent(bytes_sent);
   }
+  return bytes_sent;
 }
 
-void PacedSender::UpdateBytesPerInterval(int64_t delta_time_ms) {
+void PacedSender::UpdateBudgetWithElapsedTime(int64_t delta_time_ms) {
   media_budget_->IncreaseBudget(delta_time_ms);
   padding_budget_->IncreaseBudget(delta_time_ms);
+}
+
+void PacedSender::UpdateBudgetWithBytesSent(size_t bytes_sent) {
+  media_budget_->UseBudget(bytes_sent);
+  padding_budget_->UseBudget(bytes_sent);
 }
 }  // namespace webrtc

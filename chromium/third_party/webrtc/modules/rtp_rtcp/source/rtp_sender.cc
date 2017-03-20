@@ -41,6 +41,8 @@ constexpr uint16_t kMaxInitRtpSeqNumber = 32767;  // 2^15 -1.
 constexpr uint32_t kTimestampTicksPerMs = 90;
 constexpr int kBitrateStatisticsWindowMs = 1000;
 
+constexpr size_t kMinFlexfecPacketsToStoreForPacing = 50;
+
 const char* FrameTypeToString(FrameType frame_type) {
   switch (frame_type) {
     case kEmptyFrame:
@@ -67,6 +69,7 @@ RTPSender::RTPSender(
     Clock* clock,
     Transport* transport,
     RtpPacketSender* paced_sender,
+    FlexfecSender* flexfec_sender,
     TransportSequenceNumberAllocator* sequence_number_allocator,
     TransportFeedbackObserver* transport_feedback_observer,
     BitrateStatisticsObserver* bitrate_callback,
@@ -81,7 +84,7 @@ RTPSender::RTPSender(
       random_(clock_->TimeInMicroseconds()),
       audio_configured_(audio),
       audio_(audio ? new RTPSenderAudio(clock, this) : nullptr),
-      video_(audio ? nullptr : new RTPSenderVideo(clock, this)),
+      video_(audio ? nullptr : new RTPSenderVideo(clock, this, flexfec_sender)),
       paced_sender_(paced_sender),
       transport_sequence_number_allocator_(sequence_number_allocator),
       transport_feedback_observer_(transport_feedback_observer),
@@ -92,13 +95,8 @@ RTPSender::RTPSender(
       payload_type_(-1),
       payload_type_map_(),
       rtp_header_extension_map_(),
-      transmission_time_offset_(0),
-      absolute_send_time_(0),
-      rotation_(kVideoRotation_0),
-      video_rotation_active_(false),
-      transport_sequence_number_(0),
-      playout_delay_active_(false),
       packet_history_(clock),
+      flexfec_packet_history_(clock),
       // Statistics
       rtp_stats_callback_(nullptr),
       total_bitrate_sent_(kBitrateStatisticsWindowMs,
@@ -132,6 +130,13 @@ RTPSender::RTPSender(
   // Random start, 16 bits. Can't be 0.
   sequence_number_rtx_ = random_.Rand(1, kMaxInitRtpSeqNumber);
   sequence_number_ = random_.Rand(1, kMaxInitRtpSeqNumber);
+
+  // Store FlexFEC packets in the packet history data structure, so they can
+  // be found when paced.
+  if (flexfec_sender) {
+    flexfec_packet_history_.SetStorePacketsStatus(
+        true, kMinFlexfecPacketsToStoreForPacing);
+  }
 }
 
 RTPSender::~RTPSender() {
@@ -184,46 +189,12 @@ uint32_t RTPSender::NackOverheadRate() const {
   return nack_bitrate_sent_.Rate(clock_->TimeInMilliseconds()).value_or(0);
 }
 
-int32_t RTPSender::SetTransmissionTimeOffset(int32_t transmission_time_offset) {
-  if (transmission_time_offset > (0x800000 - 1) ||
-      transmission_time_offset < -(0x800000 - 1)) {  // Word24.
-    return -1;
-  }
-  rtc::CritScope lock(&send_critsect_);
-  transmission_time_offset_ = transmission_time_offset;
-  return 0;
-}
-
-int32_t RTPSender::SetAbsoluteSendTime(uint32_t absolute_send_time) {
-  if (absolute_send_time > 0xffffff) {  // UWord24.
-    return -1;
-  }
-  rtc::CritScope lock(&send_critsect_);
-  absolute_send_time_ = absolute_send_time;
-  return 0;
-}
-
-void RTPSender::SetVideoRotation(VideoRotation rotation) {
-  rtc::CritScope lock(&send_critsect_);
-  rotation_ = rotation;
-}
-
-int32_t RTPSender::SetTransportSequenceNumber(uint16_t sequence_number) {
-  rtc::CritScope lock(&send_critsect_);
-  transport_sequence_number_ = sequence_number;
-  return 0;
-}
-
 int32_t RTPSender::RegisterRtpHeaderExtension(RTPExtensionType type,
                                               uint8_t id) {
   rtc::CritScope lock(&send_critsect_);
   switch (type) {
     case kRtpExtensionVideoRotation:
-      video_rotation_active_ = false;
-      return rtp_header_extension_map_.RegisterInactive(type, id);
     case kRtpExtensionPlayoutDelay:
-      playout_delay_active_ = false;
-      return rtp_header_extension_map_.RegisterInactive(type, id);
     case kRtpExtensionTransmissionTimeOffset:
     case kRtpExtensionAbsoluteSendTime:
     case kRtpExtensionAudioLevel:
@@ -412,16 +383,6 @@ int32_t RTPSender::CheckPayloadType(int8_t payload_type,
   return 0;
 }
 
-bool RTPSender::ActivateCVORtpHeaderExtension() {
-  if (!video_rotation_active_) {
-    rtc::CritScope lock(&send_critsect_);
-    if (rtp_header_extension_map_.SetActive(kRtpExtensionVideoRotation, true)) {
-      video_rotation_active_ = true;
-    }
-  }
-  return video_rotation_active_;
-}
-
 bool RTPSender::SendOutgoingData(FrameType frame_type,
                                  int8_t payload_type,
                                  uint32_t capture_timestamp,
@@ -472,18 +433,6 @@ bool RTPSender::SendOutgoingData(FrameType frame_type,
     if (rtp_header) {
       playout_delay_oracle_.UpdateRequest(ssrc, rtp_header->playout_delay,
                                           sequence_number);
-    }
-
-    // Update the active/inactive status of playout delay extension based
-    // on what the oracle indicates.
-    {
-      rtc::CritScope lock(&send_critsect_);
-      bool send_playout_delay = playout_delay_oracle_.send_playout_delay();
-      if (playout_delay_active_ != send_playout_delay) {
-        playout_delay_active_ = send_playout_delay;
-        rtp_header_extension_map_.SetActive(kRtpExtensionPlayoutDelay,
-                                            playout_delay_active_);
-      }
     }
 
     result = video_->SendVideo(video_type, frame_type, payload_type,
@@ -746,15 +695,25 @@ void RTPSender::OnReceivedRtcpReportBlocks(
 }
 
 // Called from pacer when we can send the packet.
-bool RTPSender::TimeToSendPacket(uint16_t sequence_number,
+bool RTPSender::TimeToSendPacket(uint32_t ssrc,
+                                 uint16_t sequence_number,
                                  int64_t capture_time_ms,
                                  bool retransmission,
                                  int probe_cluster_id) {
-  std::unique_ptr<RtpPacketToSend> packet =
-      packet_history_.GetPacketAndSetSendTime(sequence_number, 0,
-                                              retransmission);
+  if (!SendingMedia())
+    return true;
+
+  std::unique_ptr<RtpPacketToSend> packet;
+  if (ssrc == SSRC()) {
+    packet = packet_history_.GetPacketAndSetSendTime(sequence_number, 0,
+                                                     retransmission);
+  } else if (ssrc == FlexfecSsrc()) {
+    packet = flexfec_packet_history_.GetPacketAndSetSendTime(sequence_number, 0,
+                                                             retransmission);
+  }
+
   if (!packet) {
-    // Packet cannot be found. Allow sending to continue.
+    // Packet cannot be found.
     return true;
   }
 
@@ -848,15 +807,19 @@ void RTPSender::UpdateRtpStats(const RtpPacketToSend& packet,
 }
 
 bool RTPSender::IsFecPacket(const RtpPacketToSend& packet) const {
-  if (!video_) {
+  if (!video_)
     return false;
-  }
-  bool fec_enabled;
-  uint8_t pt_red;
-  uint8_t pt_fec;
-  video_->GenericFECStatus(&fec_enabled, &pt_red, &pt_fec);
-  return fec_enabled && packet.PayloadType() == pt_red &&
-         packet.payload()[0] == pt_fec;
+
+  // FlexFEC.
+  if (packet.Ssrc() == FlexfecSsrc())
+    return true;
+
+  // RED+ULPFEC.
+  int pt_red;
+  int pt_fec;
+  video_->GetUlpfecConfig(&pt_red, &pt_fec);
+  return static_cast<int>(packet.PayloadType()) == pt_red &&
+         static_cast<int>(packet.payload()[0]) == pt_fec;
 }
 
 size_t RTPSender::TimeToSendPadding(size_t bytes, int probe_cluster_id) {
@@ -866,20 +829,6 @@ size_t RTPSender::TimeToSendPadding(size_t bytes, int probe_cluster_id) {
   if (bytes_sent < bytes)
     bytes_sent += SendPadData(bytes - bytes_sent, probe_cluster_id);
   return bytes_sent;
-}
-
-bool RTPSender::SendToNetwork(uint8_t* buffer,
-                              size_t payload_length,
-                              size_t rtp_header_length,
-                              int64_t capture_time_ms,
-                              StorageType storage,
-                              RtpPacketSender::Priority priority) {
-  size_t length = payload_length + rtp_header_length;
-  std::unique_ptr<RtpPacketToSend> packet(
-      new RtpPacketToSend(&rtp_header_extension_map_, length));
-  RTC_CHECK(packet->Parse(buffer, length));
-  packet->set_capture_time_ms(capture_time_ms);
-  return SendToNetwork(std::move(packet), storage, priority);
 }
 
 bool RTPSender::SendToNetwork(std::unique_ptr<RtpPacketToSend> packet,
@@ -911,14 +860,21 @@ bool RTPSender::SendToNetwork(std::unique_ptr<RtpPacketToSend> packet,
                                     NackOverheadRate() / 1000, packet->Ssrc());
   }
 
+  uint32_t ssrc = packet->Ssrc();
+  rtc::Optional<uint32_t> flexfec_ssrc = FlexfecSsrc();
   if (paced_sender_) {
     uint16_t seq_no = packet->SequenceNumber();
-    uint32_t ssrc = packet->Ssrc();
     // Correct offset between implementations of millisecond time stamps in
     // TickTime and Clock.
     int64_t corrected_time_ms = packet->capture_time_ms() + clock_delta_ms_;
     size_t payload_length = packet->payload_size();
-    packet_history_.PutRtpPacket(std::move(packet), storage, false);
+    if (ssrc == flexfec_ssrc) {
+      // Store FlexFEC packets in the history here, so they can be found
+      // when the pacer calls TimeToSendPacket.
+      flexfec_packet_history_.PutRtpPacket(std::move(packet), storage, false);
+    } else {
+      packet_history_.PutRtpPacket(std::move(packet), storage, false);
+    }
 
     paced_sender_->InsertPacket(priority, ssrc, seq_no, corrected_time_ms,
                                 payload_length, false);
@@ -954,10 +910,12 @@ bool RTPSender::SendToNetwork(std::unique_ptr<RtpPacketToSend> packet,
     UpdateRtpStats(*packet, false, false);
   }
 
-  // Mark the packet as sent in the history even if send failed. Dropping a
-  // packet here should be treated as any other packet drop so we should be
-  // ready for a retransmission.
-  packet_history_.PutRtpPacket(std::move(packet), storage, true);
+  // To support retransmissions, we store the media packet as sent in the
+  // packet history (even if send failed).
+  if (storage == kAllowRetransmission) {
+    RTC_DCHECK_EQ(ssrc, SSRC());
+    packet_history_.PutRtpPacket(std::move(packet), storage, true);
+  }
 
   return sent;
 }
@@ -1041,44 +999,6 @@ void RTPSender::GetDataCounters(StreamDataCounters* rtp_stats,
   *rtx_stats = rtx_rtp_stats_;
 }
 
-size_t RTPSender::CreateRtpHeader(uint8_t* header,
-                                  int8_t payload_type,
-                                  uint32_t ssrc,
-                                  bool marker_bit,
-                                  uint32_t timestamp,
-                                  uint16_t sequence_number,
-                                  const std::vector<uint32_t>& csrcs) const {
-  header[0] = 0x80;  // version 2.
-  header[1] = static_cast<uint8_t>(payload_type);
-  if (marker_bit) {
-    header[1] |= kRtpMarkerBitMask;  // Marker bit is set.
-  }
-  ByteWriter<uint16_t>::WriteBigEndian(header + 2, sequence_number);
-  ByteWriter<uint32_t>::WriteBigEndian(header + 4, timestamp);
-  ByteWriter<uint32_t>::WriteBigEndian(header + 8, ssrc);
-  int32_t rtp_header_length = kRtpHeaderLength;
-
-  if (csrcs.size() > 0) {
-    uint8_t* ptr = &header[rtp_header_length];
-    for (size_t i = 0; i < csrcs.size(); ++i) {
-      ByteWriter<uint32_t>::WriteBigEndian(ptr, csrcs[i]);
-      ptr += 4;
-    }
-    header[0] = (header[0] & 0xf0) | csrcs.size();
-
-    // Update length of header.
-    rtp_header_length += sizeof(uint32_t) * csrcs.size();
-  }
-
-  uint16_t len =
-      BuildRtpHeaderExtension(header + rtp_header_length, marker_bit);
-  if (len > 0) {
-    header[0] |= 0x10;  // Set extension bit.
-    rtp_header_length += len;
-  }
-  return rtp_header_length;
-}
-
 std::unique_ptr<RtpPacketToSend> RTPSender::AllocatePacket() const {
   rtc::CritScope lock(&send_critsect_);
   std::unique_ptr<RtpPacketToSend> packet(
@@ -1110,408 +1030,6 @@ bool RTPSender::AssignSequenceNumber(RtpPacketToSend* packet) {
   last_rtp_timestamp_ = packet->Timestamp();
   last_timestamp_time_ms_ = clock_->TimeInMilliseconds();
   capture_time_ms_ = packet->capture_time_ms();
-  return true;
-}
-
-int32_t RTPSender::BuildRTPheader(uint8_t* data_buffer,
-                                  int8_t payload_type,
-                                  bool marker_bit,
-                                  uint32_t capture_timestamp,
-                                  int64_t capture_time_ms,
-                                  bool timestamp_provided,
-                                  bool inc_sequence_number) {
-  return BuildRtpHeader(data_buffer, payload_type, marker_bit,
-                        capture_timestamp, capture_time_ms);
-}
-
-int32_t RTPSender::BuildRtpHeader(uint8_t* data_buffer,
-                                  int8_t payload_type,
-                                  bool marker_bit,
-                                  uint32_t rtp_timestamp,
-                                  int64_t capture_time_ms) {
-  assert(payload_type >= 0);
-  rtc::CritScope lock(&send_critsect_);
-  if (!sending_media_)
-    return -1;
-
-  last_rtp_timestamp_ = rtp_timestamp;
-  last_timestamp_time_ms_ = clock_->TimeInMilliseconds();
-  uint32_t sequence_number = sequence_number_++;
-  capture_time_ms_ = capture_time_ms;
-  last_packet_marker_bit_ = marker_bit;
-  return CreateRtpHeader(data_buffer, payload_type, ssrc_, marker_bit,
-                         rtp_timestamp, sequence_number, csrcs_);
-}
-
-uint16_t RTPSender::BuildRtpHeaderExtension(uint8_t* data_buffer,
-                                            bool marker_bit) const {
-  if (rtp_header_extension_map_.Size() <= 0) {
-    return 0;
-  }
-  // RTP header extension, RFC 3550.
-  //   0                   1                   2                   3
-  //   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |      defined by profile       |           length              |
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |                        header extension                       |
-  //  |                             ....                              |
-  //
-  const uint32_t kPosLength = 2;
-  const uint32_t kHeaderLength = kRtpOneByteHeaderLength;
-
-  // Add extension ID (0xBEDE).
-  ByteWriter<uint16_t>::WriteBigEndian(data_buffer,
-                                       kRtpOneByteHeaderExtensionId);
-
-  // Add extensions.
-  uint16_t total_block_length = 0;
-
-  RTPExtensionType type = rtp_header_extension_map_.First();
-  while (type != kRtpExtensionNone) {
-    uint8_t block_length = 0;
-    uint8_t* extension_data = &data_buffer[kHeaderLength + total_block_length];
-    switch (type) {
-      case kRtpExtensionTransmissionTimeOffset:
-        block_length = BuildTransmissionTimeOffsetExtension(extension_data);
-        break;
-      case kRtpExtensionAudioLevel:
-        block_length = BuildAudioLevelExtension(extension_data);
-        break;
-      case kRtpExtensionAbsoluteSendTime:
-        block_length = BuildAbsoluteSendTimeExtension(extension_data);
-        break;
-      case kRtpExtensionVideoRotation:
-        block_length = BuildVideoRotationExtension(extension_data);
-        break;
-      case kRtpExtensionTransportSequenceNumber:
-        block_length = BuildTransportSequenceNumberExtension(
-            extension_data, transport_sequence_number_);
-        break;
-      case kRtpExtensionPlayoutDelay: {
-        PlayoutDelay playout_delay = playout_delay_oracle_.playout_delay();
-        block_length = BuildPlayoutDelayExtension(
-            extension_data, playout_delay.min_ms, playout_delay.max_ms);
-        break;
-      }
-      default:
-        assert(false);
-    }
-    total_block_length += block_length;
-    type = rtp_header_extension_map_.Next(type);
-  }
-  if (total_block_length == 0) {
-    // No extension added.
-    return 0;
-  }
-  // Add padding elements until we've filled a 32 bit block.
-  size_t padding_bytes =
-      RtpUtility::Word32Align(total_block_length) - total_block_length;
-  if (padding_bytes > 0) {
-    memset(&data_buffer[kHeaderLength + total_block_length], 0, padding_bytes);
-    total_block_length += padding_bytes;
-  }
-  // Set header length (in number of Word32, header excluded).
-  ByteWriter<uint16_t>::WriteBigEndian(data_buffer + kPosLength,
-                                       total_block_length / 4);
-  // Total added length.
-  return kHeaderLength + total_block_length;
-}
-
-uint8_t RTPSender::BuildTransmissionTimeOffsetExtension(
-    uint8_t* data_buffer) const {
-  // From RFC 5450: Transmission Time Offsets in RTP Streams.
-  //
-  // The transmission time is signaled to the receiver in-band using the
-  // general mechanism for RTP header extensions [RFC5285]. The payload
-  // of this extension (the transmitted value) is a 24-bit signed integer.
-  // When added to the RTP timestamp of the packet, it represents the
-  // "effective" RTP transmission time of the packet, on the RTP
-  // timescale.
-  //
-  // The form of the transmission offset extension block:
-  //
-  //    0                   1                   2                   3
-  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //   |  ID   | len=2 |              transmission offset              |
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-  // Get id defined by user.
-  uint8_t id;
-  if (rtp_header_extension_map_.GetId(kRtpExtensionTransmissionTimeOffset,
-                                      &id) != 0) {
-    // Not registered.
-    return 0;
-  }
-  size_t pos = 0;
-  const uint8_t len = 2;
-  data_buffer[pos++] = (id << 4) + len;
-  ByteWriter<int32_t, 3>::WriteBigEndian(data_buffer + pos,
-                                         transmission_time_offset_);
-  pos += 3;
-  assert(pos == kTransmissionTimeOffsetLength);
-  return kTransmissionTimeOffsetLength;
-}
-
-uint8_t RTPSender::BuildAudioLevelExtension(uint8_t* data_buffer) const {
-  // An RTP Header Extension for Client-to-Mixer Audio Level Indication
-  //
-  // https://datatracker.ietf.org/doc/draft-lennox-avt-rtp-audio-level-exthdr/
-  //
-  // The form of the audio level extension block:
-  //
-  //    0                   1
-  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //   |  ID   | len=0 |V|   level     |
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //
-
-  // Get id defined by user.
-  uint8_t id;
-  if (rtp_header_extension_map_.GetId(kRtpExtensionAudioLevel, &id) != 0) {
-    // Not registered.
-    return 0;
-  }
-  size_t pos = 0;
-  const uint8_t len = 0;
-  data_buffer[pos++] = (id << 4) + len;
-  data_buffer[pos++] = (1 << 7) + 0;     // Voice, 0 dBov.
-  assert(pos == kAudioLevelLength);
-  return kAudioLevelLength;
-}
-
-uint8_t RTPSender::BuildAbsoluteSendTimeExtension(uint8_t* data_buffer) const {
-  // Absolute send time in RTP streams.
-  //
-  // The absolute send time is signaled to the receiver in-band using the
-  // general mechanism for RTP header extensions [RFC5285]. The payload
-  // of this extension (the transmitted value) is a 24-bit unsigned integer
-  // containing the sender's current time in seconds as a fixed point number
-  // with 18 bits fractional part.
-  //
-  // The form of the absolute send time extension block:
-  //
-  //    0                   1                   2                   3
-  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //   |  ID   | len=2 |              absolute send time               |
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-  // Get id defined by user.
-  uint8_t id;
-  if (rtp_header_extension_map_.GetId(kRtpExtensionAbsoluteSendTime,
-                                      &id) != 0) {
-    // Not registered.
-    return 0;
-  }
-  size_t pos = 0;
-  const uint8_t len = 2;
-  data_buffer[pos++] = (id << 4) + len;
-  ByteWriter<uint32_t, 3>::WriteBigEndian(data_buffer + pos,
-                                          absolute_send_time_);
-  pos += 3;
-  assert(pos == kAbsoluteSendTimeLength);
-  return kAbsoluteSendTimeLength;
-}
-
-uint8_t RTPSender::BuildVideoRotationExtension(uint8_t* data_buffer) const {
-  // Coordination of Video Orientation in RTP streams.
-  //
-  // Coordination of Video Orientation consists in signaling of the current
-  // orientation of the image captured on the sender side to the receiver for
-  // appropriate rendering and displaying.
-  //
-  //    0                   1
-  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //   |  ID   | len=0 |0 0 0 0 C F R R|
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //
-
-  // Get id defined by user.
-  uint8_t id;
-  if (rtp_header_extension_map_.GetId(kRtpExtensionVideoRotation, &id) != 0) {
-    // Not registered.
-    return 0;
-  }
-  size_t pos = 0;
-  const uint8_t len = 0;
-  data_buffer[pos++] = (id << 4) + len;
-  data_buffer[pos++] = ConvertVideoRotationToCVOByte(rotation_);
-  assert(pos == kVideoRotationLength);
-  return kVideoRotationLength;
-}
-
-uint8_t RTPSender::BuildTransportSequenceNumberExtension(
-    uint8_t* data_buffer,
-    uint16_t sequence_number) const {
-  //   0                   1                   2
-  //   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |  ID   | L=1   |transport wide sequence number |
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-  // Get id defined by user.
-  uint8_t id;
-  if (rtp_header_extension_map_.GetId(kRtpExtensionTransportSequenceNumber,
-                                      &id) != 0) {
-    // Not registered.
-    return 0;
-  }
-  size_t pos = 0;
-  const uint8_t len = 1;
-  data_buffer[pos++] = (id << 4) + len;
-  ByteWriter<uint16_t>::WriteBigEndian(data_buffer + pos, sequence_number);
-  pos += 2;
-  assert(pos == kTransportSequenceNumberLength);
-  return kTransportSequenceNumberLength;
-}
-
-uint8_t RTPSender::BuildPlayoutDelayExtension(
-    uint8_t* data_buffer,
-    uint16_t min_playout_delay_ms,
-    uint16_t max_playout_delay_ms) const {
-  RTC_DCHECK_LE(min_playout_delay_ms, kPlayoutDelayMaxMs);
-  RTC_DCHECK_LE(max_playout_delay_ms, kPlayoutDelayMaxMs);
-  RTC_DCHECK_LE(min_playout_delay_ms, max_playout_delay_ms);
-  //   0                   1                   2                   3
-  //   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |  ID   | len=2 |   MIN delay           |   MAX delay           |
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  uint8_t id;
-  if (rtp_header_extension_map_.GetId(kRtpExtensionPlayoutDelay, &id) != 0) {
-    // Not registered.
-    return 0;
-  }
-  size_t pos = 0;
-  const uint8_t len = 2;
-  // Convert MS to value to be sent on extension header.
-  uint16_t min_playout = min_playout_delay_ms / kPlayoutDelayGranularityMs;
-  uint16_t max_playout = max_playout_delay_ms / kPlayoutDelayGranularityMs;
-
-  data_buffer[pos++] = (id << 4) + len;
-  data_buffer[pos++] = min_playout >> 4;
-  data_buffer[pos++] = ((min_playout & 0xf) << 4) | (max_playout >> 8);
-  data_buffer[pos++] = max_playout & 0xff;
-  assert(pos == kPlayoutDelayLength);
-  return kPlayoutDelayLength;
-}
-
-bool RTPSender::FindHeaderExtensionPosition(RTPExtensionType type,
-                                            const uint8_t* rtp_packet,
-                                            size_t rtp_packet_length,
-                                            const RTPHeader& rtp_header,
-                                            size_t* position) const {
-  // Get length until start of header extension block.
-  int extension_block_pos =
-      rtp_header_extension_map_.GetLengthUntilBlockStartInBytes(type);
-  if (extension_block_pos < 0) {
-    LOG(LS_WARNING) << "Failed to find extension position for " << type
-                    << " as it is not registered.";
-    return false;
-  }
-
-  HeaderExtension header_extension(type);
-
-  size_t extension_pos =
-      kRtpHeaderLength + rtp_header.numCSRCs * sizeof(uint32_t);
-  size_t block_pos = extension_pos + extension_block_pos;
-  if (rtp_packet_length < block_pos + header_extension.length ||
-      rtp_header.headerLength < block_pos + header_extension.length) {
-    LOG(LS_WARNING) << "Failed to find extension position for " << type
-                    << " as the length is invalid.";
-    return false;
-  }
-
-  // Verify that header contains extension.
-  if (!(rtp_packet[extension_pos] == 0xBE &&
-        rtp_packet[extension_pos + 1] == 0xDE)) {
-    LOG(LS_WARNING) << "Failed to find extension position for " << type
-                    << "as hdr extension not found.";
-    return false;
-  }
-
-  *position = block_pos;
-  return true;
-}
-
-RTPSender::ExtensionStatus RTPSender::VerifyExtension(
-    RTPExtensionType extension_type,
-    uint8_t* rtp_packet,
-    size_t rtp_packet_length,
-    const RTPHeader& rtp_header,
-    size_t extension_length_bytes,
-    size_t* extension_offset) const {
-  // Get id.
-  uint8_t id = 0;
-  if (rtp_header_extension_map_.GetId(extension_type, &id) != 0)
-    return ExtensionStatus::kNotRegistered;
-
-  size_t block_pos = 0;
-  if (!FindHeaderExtensionPosition(extension_type, rtp_packet,
-                                   rtp_packet_length, rtp_header, &block_pos))
-    return ExtensionStatus::kError;
-
-  // Verify first byte in block.
-  const uint8_t first_block_byte = (id << 4) + (extension_length_bytes - 2);
-  if (rtp_packet[block_pos] != first_block_byte)
-    return ExtensionStatus::kError;
-
-  *extension_offset = block_pos;
-  return ExtensionStatus::kOk;
-}
-
-bool RTPSender::UpdateAudioLevel(uint8_t* rtp_packet,
-                                 size_t rtp_packet_length,
-                                 const RTPHeader& rtp_header,
-                                 bool is_voiced,
-                                 uint8_t dBov) const {
-  size_t offset;
-  rtc::CritScope lock(&send_critsect_);
-
-  switch (VerifyExtension(kRtpExtensionAudioLevel, rtp_packet,
-                          rtp_packet_length, rtp_header, kAudioLevelLength,
-                          &offset)) {
-    case ExtensionStatus::kNotRegistered:
-      return false;
-    case ExtensionStatus::kError:
-      LOG(LS_WARNING) << "Failed to update audio level.";
-      return false;
-    case ExtensionStatus::kOk:
-      break;
-    default:
-      RTC_NOTREACHED();
-  }
-
-  rtp_packet[offset + 1] = (is_voiced ? 0x80 : 0x00) + (dBov & 0x7f);
-  return true;
-}
-
-bool RTPSender::UpdateVideoRotation(uint8_t* rtp_packet,
-                                    size_t rtp_packet_length,
-                                    const RTPHeader& rtp_header,
-                                    VideoRotation rotation) const {
-  size_t offset;
-  rtc::CritScope lock(&send_critsect_);
-
-  switch (VerifyExtension(kRtpExtensionVideoRotation, rtp_packet,
-                          rtp_packet_length, rtp_header, kVideoRotationLength,
-                          &offset)) {
-    case ExtensionStatus::kNotRegistered:
-      return false;
-    case ExtensionStatus::kError:
-      LOG(LS_WARNING) << "Failed to update CVO.";
-      return false;
-    case ExtensionStatus::kOk:
-      break;
-    default:
-      RTC_NOTREACHED();
-  }
-
-  rtp_packet[offset + 1] = ConvertVideoRotationToCVOByte(rotation);
   return true;
 }
 
@@ -1604,6 +1122,13 @@ uint32_t RTPSender::SSRC() const {
   return ssrc_;
 }
 
+rtc::Optional<uint32_t> RTPSender::FlexfecSsrc() const {
+  if (video_) {
+    return video_->FlexfecSsrc();
+  }
+  return rtc::Optional<uint32_t>();
+}
+
 void RTPSender::SetCsrcs(const std::vector<uint32_t>& csrcs) {
   assert(csrcs.size() <= kRtpCsrcSize);
   rtc::CritScope lock(&send_critsect_);
@@ -1647,28 +1172,18 @@ RtpVideoCodecTypes RTPSender::VideoCodecType() const {
   return video_->VideoCodecType();
 }
 
-void RTPSender::SetGenericFECStatus(bool enable,
-                                    uint8_t payload_type_red,
-                                    uint8_t payload_type_fec) {
+void RTPSender::SetUlpfecConfig(int red_payload_type, int ulpfec_payload_type) {
   RTC_DCHECK(!audio_configured_);
-  video_->SetGenericFECStatus(enable, payload_type_red, payload_type_fec);
+  video_->SetUlpfecConfig(red_payload_type, ulpfec_payload_type);
 }
 
-void RTPSender::GenericFECStatus(bool* enable,
-                                 uint8_t* payload_type_red,
-                                 uint8_t* payload_type_fec) const {
-  RTC_DCHECK(!audio_configured_);
-  video_->GenericFECStatus(enable, payload_type_red, payload_type_fec);
-}
-
-int32_t RTPSender::SetFecParameters(
-    const FecProtectionParams *delta_params,
-    const FecProtectionParams *key_params) {
+bool RTPSender::SetFecParameters(const FecProtectionParams& delta_params,
+                                 const FecProtectionParams& key_params) {
   if (audio_configured_) {
-    return -1;
+    return false;
   }
   video_->SetFecParameters(delta_params, key_params);
-  return 0;
+  return true;
 }
 
 std::unique_ptr<RtpPacketToSend> RTPSender::BuildRtxPacket(
@@ -1683,16 +1198,12 @@ std::unique_ptr<RtpPacketToSend> RTPSender::BuildRtxPacket(
     rtc::CritScope lock(&send_critsect_);
     if (!sending_media_)
       return nullptr;
-    // Replace payload type, if a specific type is set for RTX.
-    auto kv = rtx_payload_type_map_.find(packet.PayloadType());
 
-    // Use rtx mapping associated with media codec if we can't find one,
-    // assume it's red.
-    // TODO(holmer): Remove once old Chrome versions don't rely on this.
+    // Replace payload type.
+    auto kv = rtx_payload_type_map_.find(packet.PayloadType());
     if (kv == rtx_payload_type_map_.end())
-      kv = rtx_payload_type_map_.find(payload_type_);
-    if (kv != rtx_payload_type_map_.end())
-      rtx_packet->SetPayloadType(kv->second);
+      return nullptr;
+    rtx_packet->SetPayloadType(kv->second);
 
     // Replace sequence number.
     rtx_packet->SetSequenceNumber(sequence_number_rtx_++);

@@ -71,7 +71,7 @@ void ScreenCapturerWinGdi::SetSharedMemoryFactory(
   shared_memory_factory_ = std::move(shared_memory_factory);
 }
 
-void ScreenCapturerWinGdi::Capture(const DesktopRegion& region) {
+void ScreenCapturerWinGdi::CaptureFrame() {
   int64_t capture_start_time_nanos = rtc::TimeNanos();
 
   queue_.MoveToNextFrame();
@@ -98,11 +98,11 @@ void ScreenCapturerWinGdi::Capture(const DesktopRegion& region) {
   callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));
 }
 
-bool ScreenCapturerWinGdi::GetScreenList(ScreenList* screens) {
-  return webrtc::GetScreenList(screens);
+bool ScreenCapturerWinGdi::GetSourceList(SourceList* sources) {
+  return webrtc::GetScreenList(sources);
 }
 
-bool ScreenCapturerWinGdi::SelectScreen(ScreenId id) {
+bool ScreenCapturerWinGdi::SelectSource(SourceId id) {
   bool valid = IsScreenValid(id, &current_device_key_);
   if (valid)
     current_screen_id_ = id;

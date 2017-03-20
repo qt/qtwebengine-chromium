@@ -23,7 +23,6 @@ class CSSStyleDeclaration;
 class CustomElementRegistry;
 class DOMSelection;
 class DOMVisualViewport;
-class DOMWindowCSS;
 class Document;
 class Element;
 class External;
@@ -41,7 +40,6 @@ class Screen;
 class ScriptState;
 class ScrollToOptions;
 class SerializedScriptValue;
-class Storage;
 class StyleMedia;
 
 class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
@@ -205,7 +203,7 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
   // Obsolete APIs
   void captureEvents() {}
   void releaseEvents() {}
-  External* external() const;
+  External* external();
 
   // FIXME: This handles both window[index] and window.frames[index]. However,
   // the spec exposes window.frames[index] across origins but not
@@ -270,6 +268,7 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
 
  private:
   mutable Member<Location> m_location;
+  Member<External> m_external;
 };
 
 }  // namespace blink

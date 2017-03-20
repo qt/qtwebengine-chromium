@@ -22,26 +22,20 @@ CPDF_Object* CPDF_Object::GetDirect() const {
   return const_cast<CPDF_Object*>(this);
 }
 
-CPDF_Object* CPDF_Object::CloneObjectNonCyclic(bool bDirect) const {
+std::unique_ptr<CPDF_Object> CPDF_Object::CloneObjectNonCyclic(
+    bool bDirect) const {
   std::set<const CPDF_Object*> visited_objs;
   return CloneNonCyclic(bDirect, &visited_objs);
 }
 
-CPDF_Object* CPDF_Object::CloneDirectObject() const {
+std::unique_ptr<CPDF_Object> CPDF_Object::CloneDirectObject() const {
   return CloneObjectNonCyclic(true);
 }
 
-CPDF_Object* CPDF_Object::CloneNonCyclic(
+std::unique_ptr<CPDF_Object> CPDF_Object::CloneNonCyclic(
     bool bDirect,
     std::set<const CPDF_Object*>* pVisited) const {
   return Clone();
-}
-
-void CPDF_Object::Release() {
-  if (m_ObjNum)
-    return;
-
-  delete this;
 }
 
 CFX_ByteString CPDF_Object::GetString() const {
@@ -65,7 +59,7 @@ CPDF_Dictionary* CPDF_Object::GetDict() const {
 }
 
 void CPDF_Object::SetString(const CFX_ByteString& str) {
-  ASSERT(FALSE);
+  ASSERT(false);
 }
 
 bool CPDF_Object::IsArray() const {

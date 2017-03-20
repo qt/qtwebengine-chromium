@@ -30,10 +30,14 @@
 
 #include <stdarg.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #define WL_HIDE_DEPRECATED 1
 
 #include "wayland-util.h"
+
+/* Invalid memory address */
+#define WL_ARRAY_POISON_PTR (void *) 4
 
 #define ARRAY_LENGTH(a) (sizeof (a) / sizeof (a)[0])
 
@@ -74,7 +78,8 @@ struct wl_map {
 	uint32_t free_list;
 };
 
-typedef void (*wl_iterator_func_t)(void *element, void *data);
+typedef enum wl_iterator_result (*wl_iterator_func_t)(void *element,
+						      void *data);
 
 void
 wl_map_init(struct wl_map *map, uint32_t side);
@@ -156,6 +161,9 @@ get_next_argument(const char *signature, struct argument_details *details);
 
 int
 arg_count_for_signature(const char *signature);
+
+int
+wl_message_count_arrays(const struct wl_message *message);
 
 int
 wl_message_get_since(const struct wl_message *message);

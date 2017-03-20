@@ -77,6 +77,7 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/obj.h>
+#include <openssl/pool.h>
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
 #include <openssl/stack.h>
@@ -261,6 +262,7 @@ struct x509_st
 	NAME_CONSTRAINTS *nc;
 	unsigned char sha1_hash[SHA_DIGEST_LENGTH];
 	X509_CERT_AUX *aux;
+	CRYPTO_BUFFER *buf;
 	} /* X509 */;
 
 DECLARE_STACK_OF(X509)
@@ -286,7 +288,7 @@ struct x509_cert_pair_st {
 
 /* standard trust ids */
 
-#define X509_TRUST_DEFAULT	-1	/* Only valid in purpose settings */
+#define X509_TRUST_DEFAULT	(-1)	/* Only valid in purpose settings */
 
 #define X509_TRUST_COMPAT	1
 #define X509_TRUST_SSL_CLIENT	2
@@ -635,6 +637,12 @@ OPENSSL_EXPORT int X509_REQ_digest(const X509_REQ *data,const EVP_MD *type,
 OPENSSL_EXPORT int X509_NAME_digest(const X509_NAME *data,const EVP_MD *type,
 		unsigned char *md, unsigned int *len);
 #endif
+
+/* X509_parse_from_buffer parses an X.509 structure from |buf| and returns a
+ * fresh X509 or NULL on error. There must not be any trailing data in |buf|.
+ * The returned structure (if any) holds a reference to |buf| rather than
+ * copying parts of it as a normal |d2i_X509| call would do. */
+OPENSSL_EXPORT X509 *X509_parse_from_buffer(CRYPTO_BUFFER *buf);
 
 #ifndef OPENSSL_NO_FP_API
 OPENSSL_EXPORT X509 *d2i_X509_fp(FILE *fp, X509 **x509);
@@ -1073,24 +1081,6 @@ OPENSSL_EXPORT void *X509_ATTRIBUTE_get0_data(X509_ATTRIBUTE *attr, int idx,
 OPENSSL_EXPORT int X509_ATTRIBUTE_count(X509_ATTRIBUTE *attr);
 OPENSSL_EXPORT ASN1_OBJECT *X509_ATTRIBUTE_get0_object(X509_ATTRIBUTE *attr);
 OPENSSL_EXPORT ASN1_TYPE *X509_ATTRIBUTE_get0_type(X509_ATTRIBUTE *attr, int idx);
-
-OPENSSL_EXPORT int EVP_PKEY_get_attr_count(const EVP_PKEY *key);
-OPENSSL_EXPORT int EVP_PKEY_get_attr_by_NID(const EVP_PKEY *key, int nid,
-			  int lastpos);
-OPENSSL_EXPORT int EVP_PKEY_get_attr_by_OBJ(const EVP_PKEY *key, ASN1_OBJECT *obj,
-			  int lastpos);
-OPENSSL_EXPORT X509_ATTRIBUTE *EVP_PKEY_get_attr(const EVP_PKEY *key, int loc);
-OPENSSL_EXPORT X509_ATTRIBUTE *EVP_PKEY_delete_attr(EVP_PKEY *key, int loc);
-OPENSSL_EXPORT int EVP_PKEY_add1_attr(EVP_PKEY *key, X509_ATTRIBUTE *attr);
-OPENSSL_EXPORT int EVP_PKEY_add1_attr_by_OBJ(EVP_PKEY *key,
-			const ASN1_OBJECT *obj, int type,
-			const unsigned char *bytes, int len);
-OPENSSL_EXPORT int EVP_PKEY_add1_attr_by_NID(EVP_PKEY *key,
-			int nid, int type,
-			const unsigned char *bytes, int len);
-OPENSSL_EXPORT int EVP_PKEY_add1_attr_by_txt(EVP_PKEY *key,
-			const char *attrname, int type,
-			const unsigned char *bytes, int len);
 
 OPENSSL_EXPORT int		X509_verify_cert(X509_STORE_CTX *ctx);
 

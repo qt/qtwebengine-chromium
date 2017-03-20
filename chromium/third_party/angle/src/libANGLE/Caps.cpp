@@ -166,9 +166,12 @@ Extensions::Extensions()
       bindUniformLocation(false),
       syncQuery(false),
       copyTexture(false),
+      copyCompressedTexture(false),
       webglCompatibility(false),
       bindGeneratesResource(false),
       robustClientMemory(false),
+      textureSRGBDecode(false),
+      sRGBWriteControl(false),
       colorBufferFloat(false),
       multisampleCompatibility(false),
       framebufferMixedSamples(false),
@@ -580,9 +583,12 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_CHROMIUM_bind_uniform_location"] = esOnlyExtension(&Extensions::bindUniformLocation);
         map["GL_CHROMIUM_sync_query"] = esOnlyExtension(&Extensions::syncQuery);
         map["GL_CHROMIUM_copy_texture"] = esOnlyExtension(&Extensions::copyTexture);
+        map["GL_CHROMIUM_copy_compressed_texture"] = esOnlyExtension(&Extensions::copyCompressedTexture);
         map["GL_ANGLE_webgl_compatibility"] = esOnlyExtension(&Extensions::webglCompatibility);
         map["GL_CHROMIUM_bind_generates_resource"] = esOnlyExtension(&Extensions::bindGeneratesResource);
         map["GL_ANGLE_robust_client_memory"] = esOnlyExtension(&Extensions::robustClientMemory);
+        map["GL_EXT_texture_sRGB_decode"] = esOnlyExtension(&Extensions::textureSRGBDecode);
+        map["GL_EXT_sRGB_write_control"] = esOnlyExtension(&Extensions::sRGBWriteControl);
         map["GL_EXT_multisample_compatibility"] = esOnlyExtension(&Extensions::multisampleCompatibility);
         map["GL_CHROMIUM_framebuffer_mixed_samples"] = esOnlyExtension(&Extensions::framebufferMixedSamples);
         map["GL_EXT_texture_norm16"] = esOnlyExtension(&Extensions::textureNorm16);
@@ -758,6 +764,7 @@ Caps::Caps()
 DisplayExtensions::DisplayExtensions()
     : createContextRobustness(false),
       d3dShareHandleClientBuffer(false),
+      d3dTextureClientBuffer(false),
       surfaceD3DTexture2DShareHandle(false),
       querySurfacePointer(false),
       windowFixedSize(false),
@@ -782,7 +789,8 @@ DisplayExtensions::DisplayExtensions()
       streamConsumerGLTextureYUV(false),
       streamProducerD3DTextureNV12(false),
       createContextWebGLCompatibility(false),
-      createContextBindGeneratesResource(false)
+      createContextBindGeneratesResource(false),
+      swapBuffersWithDamage(false)
 {
 }
 
@@ -794,6 +802,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     //                   | Extension name                                       | Supported flag                    | Output vector   |
     InsertExtensionString("EGL_EXT_create_context_robustness",                   createContextRobustness,            &extensionStrings);
     InsertExtensionString("EGL_ANGLE_d3d_share_handle_client_buffer",            d3dShareHandleClientBuffer,         &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_d3d_texture_client_buffer",                 d3dTextureClientBuffer,             &extensionStrings);
     InsertExtensionString("EGL_ANGLE_surface_d3d_texture_2d_share_handle",       surfaceD3DTexture2DShareHandle,     &extensionStrings);
     InsertExtensionString("EGL_ANGLE_query_surface_pointer",                     querySurfacePointer,                &extensionStrings);
     InsertExtensionString("EGL_ANGLE_window_fixed_size",                         windowFixedSize,                    &extensionStrings);
@@ -818,6 +827,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_stream_producer_d3d_texture_nv12",          streamProducerD3DTextureNV12,       &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_webgl_compatibility",        createContextWebGLCompatibility,    &extensionStrings);
     InsertExtensionString("EGL_CHROMIUM_create_context_bind_generates_resource", createContextBindGeneratesResource, &extensionStrings);
+    InsertExtensionString("EGL_EXT_swap_buffers_with_damage",                    swapBuffersWithDamage,              &extensionStrings);
     // TODO(jmadill): Enable this when complete.
     //InsertExtensionString("KHR_create_context_no_error",                       createContextNoError,               &extensionStrings);
     // clang-format on

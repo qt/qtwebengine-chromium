@@ -13,8 +13,6 @@ source_set("common") {
     "display_mode_proxy.h",
     "display_snapshot_proxy.cc",
     "display_snapshot_proxy.h",
-    "display_util.cc",
-    "display_util.h",
     "egl_util.cc",
     "egl_util.h",
     "gpu/ozone_gpu_message_generator.cc",
@@ -22,8 +20,6 @@ source_set("common") {
     "gpu/ozone_gpu_message_params.cc",
     "gpu/ozone_gpu_message_params.h",
     "gpu/ozone_gpu_messages.h",
-    "native_display_delegate_ozone.cc",
-    "native_display_delegate_ozone.h",
     "stub_overlay_manager.cc",
     "stub_overlay_manager.h",
   ]

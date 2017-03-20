@@ -96,7 +96,7 @@ class CFGAS_GEFont;
 class CFWL_ThemeBackground;
 class CFWL_ThemePart;
 class CFWL_ThemeText;
-class IFGAS_FontMgr;
+class CFGAS_FontMgr;
 class IFWL_Widget;
 
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
@@ -107,42 +107,36 @@ class CFWL_WidgetTP {
  public:
   virtual ~CFWL_WidgetTP();
 
-  virtual FWL_Error Initialize();
-  virtual FWL_Error Finalize();
+  virtual void Initialize();
+  virtual void Finalize();
 
   virtual bool IsValidWidget(IFWL_Widget* pWidget);
   virtual uint32_t GetThemeID(IFWL_Widget* pWidget);
-  virtual uint32_t SetThemeID(IFWL_Widget* pWidget,
-                              uint32_t dwThemeID,
-                              FX_BOOL bChildren = TRUE);
-  virtual FWL_Error GetThemeMatrix(IFWL_Widget* pWidget, CFX_Matrix& matrix);
-  virtual FWL_Error SetThemeMatrix(IFWL_Widget* pWidget,
-                                   const CFX_Matrix& matrix);
-  virtual FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams);
-  virtual FX_BOOL DrawText(CFWL_ThemeText* pParams);
+  virtual uint32_t SetThemeID(IFWL_Widget* pWidget, uint32_t dwThemeID);
+
+  virtual void DrawBackground(CFWL_ThemeBackground* pParams);
+  virtual void DrawText(CFWL_ThemeText* pParams);
   virtual void* GetCapacity(CFWL_ThemePart* pThemePart,
                             CFWL_WidgetCapacity dwCapacity);
-  virtual FX_BOOL IsCustomizedLayout(IFWL_Widget* pWidget);
-  virtual FWL_Error GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart);
-  virtual FX_BOOL IsInPart(CFWL_ThemePart* pThemePart,
-                           FX_FLOAT fx,
-                           FX_FLOAT fy);
-  virtual FX_BOOL CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect);
+  virtual bool IsCustomizedLayout(IFWL_Widget* pWidget);
+  virtual void CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect);
 
-  FWL_Error SetFont(IFWL_Widget* pWidget,
-                    const FX_WCHAR* strFont,
-                    FX_FLOAT fFontSize,
-                    FX_ARGB rgbFont);
-  FWL_Error SetFont(IFWL_Widget* pWidget,
-                    CFGAS_GEFont* pFont,
-                    FX_FLOAT fFontSize,
-                    FX_ARGB rgbFont);
+  void SetFont(IFWL_Widget* pWidget,
+               const FX_WCHAR* strFont,
+               FX_FLOAT fFontSize,
+               FX_ARGB rgbFont);
+  void SetFont(IFWL_Widget* pWidget,
+               CFGAS_GEFont* pFont,
+               FX_FLOAT fFontSize,
+               FX_ARGB rgbFont);
   CFGAS_GEFont* GetFont(IFWL_Widget* pWidget);
 
  protected:
   CFWL_WidgetTP();
-  FWL_Error InitTTO();
-  FWL_Error FinalizeTTO();
+
+  void InitTTO();
+  void FinalizeTTO();
+
   void DrawEdge(CFX_Graphics* pGraphics,
                 uint32_t dwStyles,
                 const CFX_RectF* pRect,
@@ -202,7 +196,7 @@ class CFWL_WidgetTP {
                  const CFX_RectF* pRect,
                  FWLTHEME_DIRECTION eDict,
                  FX_ARGB argbFill,
-                 FX_BOOL bPressed,
+                 bool bPressed,
                  CFX_Matrix* pMatrix = nullptr);
   void DrawArrow(CFX_Graphics* pGraphics,
                  const CFX_RectF* pRect,
@@ -225,9 +219,8 @@ class CFWL_WidgetTP {
   uint32_t m_dwValue;
   CFX_RectF m_rtMargin;
   uint32_t m_dwThemeID;
-  CFX_Matrix _ctm;
 };
-FX_BOOL FWLTHEME_Init();
+
 void FWLTHEME_Release();
 uint32_t FWL_GetThemeLayout(uint32_t dwThemeID);
 uint32_t FWL_GetThemeColor(uint32_t dwThemeID);
@@ -237,12 +230,12 @@ class CFWL_FontData {
   CFWL_FontData();
   virtual ~CFWL_FontData();
 
-  FX_BOOL Equal(const CFX_WideStringC& wsFontFamily,
+  bool Equal(const CFX_WideStringC& wsFontFamily,
+             uint32_t dwFontStyles,
+             uint16_t wCodePage);
+  bool LoadFont(const CFX_WideStringC& wsFontFamily,
                 uint32_t dwFontStyles,
                 uint16_t wCodePage);
-  FX_BOOL LoadFont(const CFX_WideStringC& wsFontFamily,
-                   uint32_t dwFontStyles,
-                   uint16_t wCodePage);
   CFGAS_GEFont* GetFont() const { return m_pFont.get(); }
 
  protected:
@@ -252,7 +245,7 @@ class CFWL_FontData {
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
   std::unique_ptr<CFX_FontSourceEnum_File> m_pFontSource;
 #endif
-  std::unique_ptr<IFGAS_FontMgr> m_pFontMgr;
+  std::unique_ptr<CFGAS_FontMgr> m_pFontMgr;
   std::unique_ptr<CFGAS_GEFont> m_pFont;
 };
 

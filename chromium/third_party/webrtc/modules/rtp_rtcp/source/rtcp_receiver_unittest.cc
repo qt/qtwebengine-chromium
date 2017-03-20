@@ -10,6 +10,7 @@
 
 #include <memory>
 
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/array_view.h"
 #include "webrtc/base/random.h"
 #include "webrtc/common_types.h"
@@ -52,6 +53,7 @@ using ::testing::SizeIs;
 using ::testing::StrEq;
 using ::testing::StrictMock;
 using ::testing::UnorderedElementsAre;
+using rtcp::ReceiveTimeInfo;
 
 class MockRtcpPacketTypeCounterObserver : public RtcpPacketTypeCounterObserver {
  public:
@@ -64,7 +66,6 @@ class MockRtcpIntraFrameObserver : public RtcpIntraFrameObserver {
   MOCK_METHOD1(OnReceivedIntraFrameRequest, void(uint32_t));
   MOCK_METHOD2(OnReceivedSLI, void(uint32_t, uint8_t));
   MOCK_METHOD2(OnReceivedRPSI, void(uint32_t, uint64_t));
-  MOCK_METHOD2(OnLocalSsrcChanged, void(uint32_t, uint32_t));
 };
 
 class MockRtcpCallbackImpl : public RtcpStatisticsCallback {
@@ -120,8 +121,6 @@ class RtcpReceiverTest : public ::testing::Test {
                        &rtp_rtcp_impl_) {}
   void SetUp() {
     std::set<uint32_t> ssrcs = {kReceiverMainSsrc, kReceiverExtraSsrc};
-    EXPECT_CALL(intra_frame_observer_,
-                OnLocalSsrcChanged(0, kReceiverMainSsrc));
     rtcp_receiver_.SetSsrcs(kReceiverMainSsrc, ssrcs);
 
     rtcp_receiver_.SetRemoteSSRC(kSenderSsrc);
@@ -514,12 +513,16 @@ TEST_F(RtcpReceiverTest, InjectRrPacketsFromTwoRemoteSsrcs) {
 }
 
 TEST_F(RtcpReceiverTest, GetRtt) {
+  const uint32_t kSentCompactNtp = 0x1234;
+  const uint32_t kDelayCompactNtp = 0x222;
   // No report block received.
   EXPECT_EQ(
       -1, rtcp_receiver_.RTT(kSenderSsrc, nullptr, nullptr, nullptr, nullptr));
 
   rtcp::ReportBlock rb;
   rb.SetMediaSsrc(kReceiverMainSsrc);
+  rb.SetLastSr(kSentCompactNtp);
+  rb.SetDelayLastSr(kDelayCompactNtp);
 
   rtcp::ReceiverReport rr;
   rr.SetSenderSsrc(kSenderSsrc);
@@ -696,7 +699,7 @@ TEST_F(RtcpReceiverTest, InjectExtendedReportsVoipPacket) {
   voip_metric.SetVoipMetric(metric);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddVoipMetric(voip_metric);
+  xr.SetVoipMetric(voip_metric);
 
   InjectRtcpPacket(xr);
 }
@@ -706,7 +709,7 @@ TEST_F(RtcpReceiverTest, ExtendedReportsVoipPacketNotToUsIgnored) {
   voip_metric.SetMediaSsrc(kNotToUsSsrc);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddVoipMetric(voip_metric);
+  xr.SetVoipMetric(voip_metric);
 
   InjectRtcpPacket(xr);
 }
@@ -717,9 +720,9 @@ TEST_F(RtcpReceiverTest, InjectExtendedReportsReceiverReferenceTimePacket) {
   rrtr.SetNtp(kNtp);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddRrtr(rrtr);
+  xr.SetRrtr(rrtr);
 
-  rtcp::ReceiveTimeInfo rrtime;
+  ReceiveTimeInfo rrtime;
   EXPECT_FALSE(rtcp_receiver_.LastReceivedXrReferenceTimeInfo(&rrtime));
 
   InjectRtcpPacket(xr);
@@ -738,11 +741,9 @@ TEST_F(RtcpReceiverTest, ExtendedReportsDlrrPacketNotToUsIgnored) {
   // Allow calculate rtt using dlrr/rrtr, simulating media receiver side.
   rtcp_receiver_.SetRtcpXrRrtrStatus(true);
 
-  rtcp::Dlrr dlrr;
-  dlrr.AddDlrrItem(kNotToUsSsrc, 0x12345, 0x67890);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddDlrr(dlrr);
+  xr.AddDlrrItem(ReceiveTimeInfo(kNotToUsSsrc, 0x12345, 0x67890));
 
   InjectRtcpPacket(xr);
 
@@ -757,11 +758,9 @@ TEST_F(RtcpReceiverTest, InjectExtendedReportsDlrrPacketWithSubBlock) {
   int64_t rtt_ms = 0;
   EXPECT_FALSE(rtcp_receiver_.GetAndResetXrRrRtt(&rtt_ms));
 
-  rtcp::Dlrr dlrr;
-  dlrr.AddDlrrItem(kReceiverMainSsrc, kLastRR, kDelay);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddDlrr(dlrr);
+  xr.AddDlrrItem(ReceiveTimeInfo(kReceiverMainSsrc, kLastRR, kDelay));
 
   InjectRtcpPacket(xr);
 
@@ -778,11 +777,9 @@ TEST_F(RtcpReceiverTest, InjectExtendedReportsDlrrPacketWithMultipleSubBlocks) {
 
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  rtcp::Dlrr dlrr;
-  dlrr.AddDlrrItem(kReceiverMainSsrc, kLastRR, kDelay);
-  dlrr.AddDlrrItem(kReceiverMainSsrc + 1, 0x12345, 0x67890);
-  dlrr.AddDlrrItem(kReceiverMainSsrc + 2, 0x12345, 0x67890);
-  xr.AddDlrr(dlrr);
+  xr.AddDlrrItem(ReceiveTimeInfo(kReceiverMainSsrc, kLastRR, kDelay));
+  xr.AddDlrrItem(ReceiveTimeInfo(kReceiverMainSsrc + 1, 0x12345, 0x67890));
+  xr.AddDlrrItem(ReceiveTimeInfo(kReceiverMainSsrc + 2, 0x12345, 0x67890));
 
   InjectRtcpPacket(xr);
 
@@ -797,19 +794,17 @@ TEST_F(RtcpReceiverTest, InjectExtendedReportsPacketWithMultipleReportBlocks) {
   rtcp_receiver_.SetRtcpXrRrtrStatus(true);
 
   rtcp::Rrtr rrtr;
-  rtcp::Dlrr dlrr;
-  dlrr.AddDlrrItem(kReceiverMainSsrc, 0x12345, 0x67890);
   rtcp::VoipMetric metric;
   metric.SetMediaSsrc(kReceiverMainSsrc);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddRrtr(rrtr);
-  xr.AddDlrr(dlrr);
-  xr.AddVoipMetric(metric);
+  xr.SetRrtr(rrtr);
+  xr.AddDlrrItem(ReceiveTimeInfo(kReceiverMainSsrc, 0x12345, 0x67890));
+  xr.SetVoipMetric(metric);
 
   InjectRtcpPacket(xr);
 
-  rtcp::ReceiveTimeInfo rrtime;
+  ReceiveTimeInfo rrtime;
   EXPECT_TRUE(rtcp_receiver_.LastReceivedXrReferenceTimeInfo(&rrtime));
   int64_t rtt_ms = 0;
   EXPECT_TRUE(rtcp_receiver_.GetAndResetXrRrRtt(&rtt_ms));
@@ -819,15 +814,13 @@ TEST_F(RtcpReceiverTest, InjectExtendedReportsPacketWithUnknownReportBlock) {
   rtcp_receiver_.SetRtcpXrRrtrStatus(true);
 
   rtcp::Rrtr rrtr;
-  rtcp::Dlrr dlrr;
-  dlrr.AddDlrrItem(kReceiverMainSsrc, 0x12345, 0x67890);
   rtcp::VoipMetric metric;
   metric.SetMediaSsrc(kReceiverMainSsrc);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddRrtr(rrtr);
-  xr.AddDlrr(dlrr);
-  xr.AddVoipMetric(metric);
+  xr.SetRrtr(rrtr);
+  xr.AddDlrrItem(ReceiveTimeInfo(kReceiverMainSsrc, 0x12345, 0x67890));
+  xr.SetVoipMetric(metric);
 
   rtc::Buffer packet = xr.Build();
   // Modify the DLRR block to have an unsupported block type, from 5 to 6.
@@ -836,7 +829,7 @@ TEST_F(RtcpReceiverTest, InjectExtendedReportsPacketWithUnknownReportBlock) {
   InjectRtcpPacket(packet);
 
   // Validate Rrtr was received and processed.
-  rtcp::ReceiveTimeInfo rrtime;
+  ReceiveTimeInfo rrtime;
   EXPECT_TRUE(rtcp_receiver_.LastReceivedXrReferenceTimeInfo(&rrtime));
   // Validate Dlrr report wasn't processed.
   int64_t rtt_ms = 0;
@@ -860,11 +853,9 @@ TEST_F(RtcpReceiverTest, RttCalculatedAfterExtendedReportsDlrr) {
   uint32_t sent_ntp = CompactNtp(now);
   system_clock_.AdvanceTimeMilliseconds(kRttMs + kDelayMs);
 
-  rtcp::Dlrr dlrr;
-  dlrr.AddDlrrItem(kReceiverMainSsrc, sent_ntp, kDelayNtp);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddDlrr(dlrr);
+  xr.AddDlrrItem(ReceiveTimeInfo(kReceiverMainSsrc, sent_ntp, kDelayNtp));
 
   InjectRtcpPacket(xr);
 
@@ -883,11 +874,9 @@ TEST_F(RtcpReceiverTest, XrDlrrCalculatesNegativeRttAsOne) {
   system_clock_.AdvanceTimeMilliseconds(kRttMs + kDelayMs);
   rtcp_receiver_.SetRtcpXrRrtrStatus(true);
 
-  rtcp::Dlrr dlrr;
-  dlrr.AddDlrrItem(kReceiverMainSsrc, sent_ntp, kDelayNtp);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddDlrr(dlrr);
+  xr.AddDlrrItem(ReceiveTimeInfo(kReceiverMainSsrc, sent_ntp, kDelayNtp));
 
   InjectRtcpPacket(xr);
 
@@ -897,7 +886,7 @@ TEST_F(RtcpReceiverTest, XrDlrrCalculatesNegativeRttAsOne) {
 }
 
 TEST_F(RtcpReceiverTest, LastReceivedXrReferenceTimeInfoInitiallyFalse) {
-  rtcp::ReceiveTimeInfo info;
+  ReceiveTimeInfo info;
   EXPECT_FALSE(rtcp_receiver_.LastReceivedXrReferenceTimeInfo(&info));
 }
 
@@ -909,11 +898,11 @@ TEST_F(RtcpReceiverTest, GetLastReceivedExtendedReportsReferenceTimeInfo) {
   rrtr.SetNtp(kNtp);
   rtcp::ExtendedReports xr;
   xr.SetSenderSsrc(kSenderSsrc);
-  xr.AddRrtr(rrtr);
+  xr.SetRrtr(rrtr);
 
   InjectRtcpPacket(xr);
 
-  rtcp::ReceiveTimeInfo info;
+  ReceiveTimeInfo info;
   EXPECT_TRUE(rtcp_receiver_.LastReceivedXrReferenceTimeInfo(&info));
   EXPECT_EQ(kSenderSsrc, info.ssrc);
   EXPECT_EQ(kNtpMid, info.last_rr);
@@ -1206,41 +1195,51 @@ TEST_F(RtcpReceiverTest, HandlesInvalidTransportFeedback) {
 
 TEST_F(RtcpReceiverTest, Nack) {
   const uint16_t kNackList1[] = {1, 2, 3, 5};
-  const size_t kNackListLength1 = std::end(kNackList1) - std::begin(kNackList1);
-  const uint16_t kNackList2[] = {5, 7, 30, 40};
-  const size_t kNackListLength2 = std::end(kNackList2) - std::begin(kNackList2);
+  const uint16_t kNackList23[] = {5, 7, 30, 40, 41, 58, 59, 61, 63};
+  const size_t kNackListLength2 = 4;
+  const size_t kNackListLength3 = arraysize(kNackList23) - kNackListLength2;
   std::set<uint16_t> nack_set;
   nack_set.insert(std::begin(kNackList1), std::end(kNackList1));
-  nack_set.insert(std::begin(kNackList2), std::end(kNackList2));
+  nack_set.insert(std::begin(kNackList23), std::end(kNackList23));
 
-  rtcp::Nack nack;
-  nack.SetSenderSsrc(kSenderSsrc);
-  nack.SetMediaSsrc(kReceiverMainSsrc);
-  nack.SetPacketIds(kNackList1, kNackListLength1);
+  rtcp::Nack nack1;
+  nack1.SetSenderSsrc(kSenderSsrc);
+  nack1.SetMediaSsrc(kReceiverMainSsrc);
+  nack1.SetPacketIds(kNackList1, arraysize(kNackList1));
 
   EXPECT_CALL(rtp_rtcp_impl_, OnReceivedNack(ElementsAreArray(kNackList1)));
-  EXPECT_CALL(
-      packet_type_counter_observer_,
-      RtcpPacketTypesCounterUpdated(
-          kReceiverMainSsrc,
-          AllOf(Field(&RtcpPacketTypeCounter::nack_requests, kNackListLength1),
-                Field(&RtcpPacketTypeCounter::unique_nack_requests,
-                      kNackListLength1))));
-  InjectRtcpPacket(nack);
-
-  rtcp::Nack nack2;
-  nack2.SetSenderSsrc(kSenderSsrc);
-  nack2.SetMediaSsrc(kReceiverMainSsrc);
-  nack2.SetPacketIds(kNackList2, kNackListLength2);
-  EXPECT_CALL(rtp_rtcp_impl_, OnReceivedNack(ElementsAreArray(kNackList2)));
   EXPECT_CALL(packet_type_counter_observer_,
               RtcpPacketTypesCounterUpdated(
                   kReceiverMainSsrc,
                   AllOf(Field(&RtcpPacketTypeCounter::nack_requests,
-                              kNackListLength1 + kNackListLength2),
+                              arraysize(kNackList1)),
+                        Field(&RtcpPacketTypeCounter::unique_nack_requests,
+                              arraysize(kNackList1)))));
+  InjectRtcpPacket(nack1);
+
+  rtcp::Nack nack2;
+  nack2.SetSenderSsrc(kSenderSsrc);
+  nack2.SetMediaSsrc(kReceiverMainSsrc);
+  nack2.SetPacketIds(kNackList23, kNackListLength2);
+
+  rtcp::Nack nack3;
+  nack3.SetSenderSsrc(kSenderSsrc);
+  nack3.SetMediaSsrc(kReceiverMainSsrc);
+  nack3.SetPacketIds(kNackList23 + kNackListLength2, kNackListLength3);
+
+  rtcp::CompoundPacket two_nacks;
+  two_nacks.Append(&nack2);
+  two_nacks.Append(&nack3);
+
+  EXPECT_CALL(rtp_rtcp_impl_, OnReceivedNack(ElementsAreArray(kNackList23)));
+  EXPECT_CALL(packet_type_counter_observer_,
+              RtcpPacketTypesCounterUpdated(
+                  kReceiverMainSsrc,
+                  AllOf(Field(&RtcpPacketTypeCounter::nack_requests,
+                              arraysize(kNackList1) + arraysize(kNackList23)),
                         Field(&RtcpPacketTypeCounter::unique_nack_requests,
                               nack_set.size()))));
-  InjectRtcpPacket(nack2);
+  InjectRtcpPacket(two_nacks);
 }
 
 TEST_F(RtcpReceiverTest, NackNotForUsIgnored) {

@@ -23,14 +23,13 @@ void TimestampScaler::ToInternal(Packet* packet) {
   if (!packet) {
     return;
   }
-  packet->header.timestamp = ToInternal(packet->header.timestamp,
-                                        packet->header.payloadType);
+  packet->timestamp = ToInternal(packet->timestamp, packet->payload_type);
 }
 
 void TimestampScaler::ToInternal(PacketList* packet_list) {
   PacketList::iterator it;
   for (it = packet_list->begin(); it != packet_list->end(); ++it) {
-    ToInternal(*it);
+    ToInternal(&(*it));
   }
 }
 

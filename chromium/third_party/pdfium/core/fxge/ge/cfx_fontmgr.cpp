@@ -45,7 +45,7 @@ const BuiltinFont g_MMFonts[2] = {
 
 CFX_ByteString KeyNameFromFace(const CFX_ByteString& face_name,
                                int weight,
-                               FX_BOOL bItalic) {
+                               bool bItalic) {
   CFX_ByteString key(face_name);
   key += ',';
   key += CFX_ByteString::FormatInteger(weight);
@@ -110,7 +110,7 @@ void CFX_FontMgr::SetSystemFontInfo(
 }
 
 FXFT_Face CFX_FontMgr::FindSubstFont(const CFX_ByteString& face_name,
-                                     FX_BOOL bTrueType,
+                                     bool bTrueType,
                                      uint32_t flags,
                                      int weight,
                                      int italic_angle,
@@ -123,7 +123,7 @@ FXFT_Face CFX_FontMgr::FindSubstFont(const CFX_ByteString& face_name,
 
 FXFT_Face CFX_FontMgr::GetCachedFace(const CFX_ByteString& face_name,
                                      int weight,
-                                     FX_BOOL bItalic,
+                                     bool bItalic,
                                      uint8_t*& pFontData) {
   auto it = m_FaceMap.find(KeyNameFromFace(face_name, weight, bItalic));
   if (it == m_FaceMap.end())
@@ -132,38 +132,36 @@ FXFT_Face CFX_FontMgr::GetCachedFace(const CFX_ByteString& face_name,
   CTTFontDesc* pFontDesc = it->second;
   pFontData = pFontDesc->m_pFontData;
   pFontDesc->m_RefCount++;
-  return pFontDesc->m_SingleFace.m_pFace;
+  return pFontDesc->m_SingleFace;
 }
 
 FXFT_Face CFX_FontMgr::AddCachedFace(const CFX_ByteString& face_name,
                                      int weight,
-                                     FX_BOOL bItalic,
+                                     bool bItalic,
                                      uint8_t* pData,
                                      uint32_t size,
                                      int face_index) {
   CTTFontDesc* pFontDesc = new CTTFontDesc;
   pFontDesc->m_Type = 1;
-  pFontDesc->m_SingleFace.m_pFace = nullptr;
-  pFontDesc->m_SingleFace.m_bBold = weight;
-  pFontDesc->m_SingleFace.m_bItalic = bItalic;
+  pFontDesc->m_SingleFace = nullptr;
   pFontDesc->m_pFontData = pData;
   pFontDesc->m_RefCount = 1;
 
   InitFTLibrary();
   FXFT_Library library = m_FTLibrary;
   int ret = FXFT_New_Memory_Face(library, pData, size, face_index,
-                                 &pFontDesc->m_SingleFace.m_pFace);
+                                 &pFontDesc->m_SingleFace);
   if (ret) {
     delete pFontDesc;
     return nullptr;
   }
-  ret = FXFT_Set_Pixel_Sizes(pFontDesc->m_SingleFace.m_pFace, 64, 64);
+  ret = FXFT_Set_Pixel_Sizes(pFontDesc->m_SingleFace, 64, 64);
   if (ret) {
     delete pFontDesc;
     return nullptr;
   }
   m_FaceMap[KeyNameFromFace(face_name, weight, bItalic)] = pFontDesc;
-  return pFontDesc->m_SingleFace.m_pFace;
+  return pFontDesc->m_SingleFace;
 }
 
 FXFT_Face CFX_FontMgr::GetCachedTTCFace(int ttc_size,
@@ -178,11 +176,11 @@ FXFT_Face CFX_FontMgr::GetCachedTTCFace(int ttc_size,
   pFontData = pFontDesc->m_pFontData;
   pFontDesc->m_RefCount++;
   int face_index = GetTTCIndex(pFontDesc->m_pFontData, ttc_size, font_offset);
-  if (!pFontDesc->m_TTCFace.m_pFaces[face_index]) {
-    pFontDesc->m_TTCFace.m_pFaces[face_index] =
+  if (!pFontDesc->m_TTCFaces[face_index]) {
+    pFontDesc->m_TTCFaces[face_index] =
         GetFixedFace(pFontDesc->m_pFontData, ttc_size, face_index);
   }
-  return pFontDesc->m_TTCFace.m_pFaces[face_index];
+  return pFontDesc->m_TTCFaces[face_index];
 }
 
 FXFT_Face CFX_FontMgr::AddCachedTTCFace(int ttc_size,
@@ -194,13 +192,13 @@ FXFT_Face CFX_FontMgr::AddCachedTTCFace(int ttc_size,
   pFontDesc->m_Type = 2;
   pFontDesc->m_pFontData = pData;
   for (int i = 0; i < 16; i++)
-    pFontDesc->m_TTCFace.m_pFaces[i] = nullptr;
+    pFontDesc->m_TTCFaces[i] = nullptr;
   pFontDesc->m_RefCount++;
   m_FaceMap[KeyNameFromSize(ttc_size, checksum)] = pFontDesc;
   int face_index = GetTTCIndex(pFontDesc->m_pFontData, ttc_size, font_offset);
-  pFontDesc->m_TTCFace.m_pFaces[face_index] =
+  pFontDesc->m_TTCFaces[face_index] =
       GetFixedFace(pFontDesc->m_pFontData, ttc_size, face_index);
-  return pFontDesc->m_TTCFace.m_pFaces[face_index];
+  return pFontDesc->m_TTCFaces[face_index];
 }
 
 FXFT_Face CFX_FontMgr::GetFixedFace(const uint8_t* pData,
@@ -226,14 +224,14 @@ FXFT_Face CFX_FontMgr::GetFileFace(const FX_CHAR* filename, int face_index) {
 void CFX_FontMgr::ReleaseFace(FXFT_Face face) {
   if (!face)
     return;
-  FX_BOOL bNeedFaceDone = TRUE;
+  bool bNeedFaceDone = true;
   auto it = m_FaceMap.begin();
   while (it != m_FaceMap.end()) {
     auto temp = it++;
     int nRet = temp->second->ReleaseFace(face);
     if (nRet == -1)
       continue;
-    bNeedFaceDone = FALSE;
+    bNeedFaceDone = false;
     if (nRet == 0)
       m_FaceMap.erase(temp);
     break;

@@ -10,12 +10,12 @@
 #include "xfa/fxfa/parser/cxfa_document.h"
 
 CXFA_DocumentParser::CXFA_DocumentParser(CXFA_FFNotify* pNotify)
-    : m_nodeParser(nullptr, TRUE), m_pNotify(pNotify) {}
+    : m_nodeParser(nullptr, true), m_pNotify(pNotify) {}
 
 CXFA_DocumentParser::~CXFA_DocumentParser() {
 }
 
-int32_t CXFA_DocumentParser::StartParse(IFX_FileRead* pStream,
+int32_t CXFA_DocumentParser::StartParse(IFX_SeekableReadStream* pStream,
                                         XFA_XDPPACKET ePacketID) {
   m_pDocument.reset();
   m_nodeParser.CloseParser();

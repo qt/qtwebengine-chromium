@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "webrtc/base/basictypes.h"
 #include "webrtc/base/optional.h"
 #include "webrtc/base/refcount.h"
 #include "webrtc/base/scoped_ref_ptr.h"
@@ -35,10 +36,10 @@ struct NackConfig {
   int rtp_history_ms;
 };
 
-// Settings for forward error correction, see RFC 5109 for details. Set the
-// payload types to '-1' to disable.
-struct FecConfig {
-  FecConfig()
+// Settings for ULPFEC forward error correction.
+// Set the payload types to '-1' to disable.
+struct UlpfecConfig {
+  UlpfecConfig()
       : ulpfec_payload_type(-1),
         red_payload_type(-1),
         red_rtx_payload_type(-1) {}
@@ -51,6 +52,26 @@ struct FecConfig {
 
   // RTX payload type for RED payload.
   int red_rtx_payload_type;
+};
+
+// Settings for FlexFEC forward error correction.
+// Set the payload type to '-1' to disable.
+struct FlexfecConfig {
+  FlexfecConfig();
+  ~FlexfecConfig();
+  std::string ToString() const;
+
+  // Payload type of FlexFEC.
+  int flexfec_payload_type;
+
+  // SSRC of FlexFEC stream.
+  uint32_t flexfec_ssrc;
+
+  // Vector containing a single element, corresponding to the SSRC of the media
+  // stream being protected by this FlexFEC stream. The vector MUST have size 1.
+  //
+  // TODO(brandtr): Update comment above when we support multistream protection.
+  std::vector<uint32_t> protected_media_ssrcs;
 };
 
 // RTP header extension, see RFC 5285.
@@ -142,7 +163,7 @@ class VideoEncoderConfig {
     virtual void FillVideoCodecVp9(VideoCodecVP9* vp9_settings) const;
     virtual void FillVideoCodecH264(VideoCodecH264* h264_settings) const;
    private:
-    virtual ~EncoderSpecificSettings() {}
+    ~EncoderSpecificSettings() override {}
     friend class VideoEncoderConfig;
   };
 
@@ -190,7 +211,7 @@ class VideoEncoderConfig {
         const VideoEncoderConfig& encoder_config) = 0;
 
    protected:
-    virtual ~VideoStreamFactoryInterface() {}
+    ~VideoStreamFactoryInterface() override {}
   };
 
   VideoEncoderConfig& operator=(VideoEncoderConfig&&) = default;
@@ -200,7 +221,7 @@ class VideoEncoderConfig {
   VideoEncoderConfig Copy() const { return VideoEncoderConfig(*this); }
 
   VideoEncoderConfig();
-  VideoEncoderConfig(VideoEncoderConfig&&) = default;
+  VideoEncoderConfig(VideoEncoderConfig&&);
   ~VideoEncoderConfig();
   std::string ToString() const;
 
@@ -222,7 +243,7 @@ class VideoEncoderConfig {
  private:
   // Access to the copy constructor is private to force use of the Copy()
   // method for those exceptional cases where we do use it.
-  VideoEncoderConfig(const VideoEncoderConfig&) = default;
+  VideoEncoderConfig(const VideoEncoderConfig&);
 };
 
 struct VideoDecoderH264Settings {
@@ -231,7 +252,8 @@ struct VideoDecoderH264Settings {
 
 class DecoderSpecificSettings {
  public:
-  virtual ~DecoderSpecificSettings() {}
+  DecoderSpecificSettings();
+  virtual ~DecoderSpecificSettings();
   rtc::Optional<VideoDecoderH264Settings> h264_extra_settings;
 };
 

@@ -16,6 +16,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/supports_user_data.h"
+#include "components/spellcheck/spellcheck_build_features.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/zoom_level_delegate.h"
 #include "content/public/common/push_event_payload.h"
@@ -30,7 +31,7 @@ class FilePath;
 class Time;
 }
 
-namespace shell {
+namespace service_manager {
 class Connector;
 }
 
@@ -53,7 +54,6 @@ class BlobHandle;
 class BrowserPluginGuestManager;
 class DownloadManager;
 class DownloadManagerDelegate;
-class IndexedDBContext;
 class PermissionManager;
 class PushMessagingService;
 class ResourceContext;
@@ -154,8 +154,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   // Returns a Service User ID associated with this BrowserContext. This ID is
   // not persistent across runs. See
-  // services/shell/public/interfaces/connector.mojom. By default, this user id
-  // is randomly generated when Initialize() is called.
+  // services/service_manager/public/interfaces/connector.mojom. By default,
+  // this user id is randomly generated when Initialize() is called.
   static const std::string& GetServiceUserIdFor(
       BrowserContext* browser_context);
 
@@ -166,7 +166,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   // Returns a Connector associated with this BrowserContext, which can be used
   // to connect to service instances bound as this user.
-  static shell::Connector* GetConnectorFor(BrowserContext* browser_context);
+  static service_manager::Connector* GetConnectorFor(
+      BrowserContext* browser_context);
   static ServiceManagerConnection* GetServiceManagerConnectionFor(
       BrowserContext* browser_context);
 
@@ -245,7 +246,7 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
           const base::FilePath& partition_path,
           bool in_memory) = 0;
 
-#if defined(TOOLKIT_QT) && defined(ENABLE_SPELLCHECK)
+#if defined(TOOLKIT_QT) && BUILDFLAG(ENABLE_SPELLCHECK)
   // Inform about not working dictionary for given language
   virtual void failedToLoadDictionary(const std::string& language) = 0;
 #endif

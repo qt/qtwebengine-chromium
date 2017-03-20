@@ -21,7 +21,64 @@ rtc_static_library("primitives") {
     "desktop_geometry.h",
     "desktop_region.cc",
     "desktop_region.h",
+    "shared_desktop_frame.cc",
+    "shared_desktop_frame.h",
   ]
+
+  deps = [
+    "../../base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
+  ]
+}
+
+if (rtc_include_tests) {
+  source_set("rgba_color") {
+    testonly = true
+
+    public_deps = [
+      ":desktop_capture",
+    ]
+
+    sources = [
+      "rgba_color.cc",
+      "rgba_color.h",
+    ]
+  }
+
+  source_set("screen_drawer") {
+    testonly = true
+
+    public_deps = [
+      ":rgba_color",
+    ]
+
+    sources = [
+      "screen_drawer.cc",
+      "screen_drawer.h",
+      "screen_drawer_linux.cc",
+      "screen_drawer_mac.cc",
+      "screen_drawer_win.cc",
+    ]
+  }
+
+  source_set("desktop_capture_mock") {
+    testonly = true
+
+    public_deps = [
+      ":desktop_capture",
+      ":rgba_color",
+      "//testing/gmock",
+    ]
+
+    sources = [
+      "desktop_frame_generator.cc",
+      "desktop_frame_generator.h",
+      "fake_desktop_capturer.cc",
+      "fake_desktop_capturer.h",
+      "mock_desktop_capturer_callback.cc",
+      "mock_desktop_capturer_callback.h",
+      "screen_capturer_mock_objects.h",
+    ]
+  }
 }
 
 rtc_static_library("desktop_capture") {
@@ -35,6 +92,7 @@ rtc_static_library("desktop_capture") {
     "desktop_and_cursor_composer.h",
     "desktop_capture_options.cc",
     "desktop_capture_options.h",
+    "desktop_capturer.cc",
     "desktop_capturer.h",
     "desktop_frame_win.cc",
     "desktop_frame_win.h",
@@ -54,13 +112,10 @@ rtc_static_library("desktop_capture") {
     "mouse_cursor_monitor_mac.mm",
     "mouse_cursor_monitor_win.cc",
     "screen_capture_frame_queue.h",
-    "screen_capturer.h",
     "screen_capturer_helper.cc",
     "screen_capturer_helper.h",
     "screen_capturer_mac.mm",
     "screen_capturer_win.cc",
-    "shared_desktop_frame.cc",
-    "shared_desktop_frame.h",
     "shared_memory.cc",
     "shared_memory.h",
     "win/cursor.cc",
@@ -94,7 +149,6 @@ rtc_static_library("desktop_capture") {
     "win/screen_capturer_win_magnifier.h",
     "win/window_capture_utils.cc",
     "win/window_capture_utils.h",
-    "window_capturer.h",
     "window_capturer_mac.mm",
     "window_capturer_win.cc",
   ]
@@ -124,10 +178,10 @@ rtc_static_library("desktop_capture") {
 
   if (!is_ios) {
     sources += [
+      "desktop_capturer_differ_wrapper.cc",
+      "desktop_capturer_differ_wrapper.h",
       "differ_block.cc",
       "differ_block.h",
-      "screen_capturer_differ_wrapper.cc",
-      "screen_capturer_differ_wrapper.h",
     ]
   }
 
@@ -144,12 +198,6 @@ rtc_static_library("desktop_capture") {
       "d3d11.lib",
       "dxgi.lib",
     ]
-  }
-
-  if (is_clang && !is_nacl) {
-    # Suppress warnings from Chrome's Clang plugins.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
   deps = [

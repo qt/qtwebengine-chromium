@@ -16,7 +16,7 @@
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/fpdfxfa/cpdfxfa_document.h"
+#include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #endif  // PDF_ENABLE_XFA
 
@@ -47,8 +47,8 @@ DLLEXPORT FPDF_TEXTPAGE STDCALL FPDFText_LoadPage(FPDF_PAGE page) {
 
 #ifdef PDF_ENABLE_XFA
   CPDFXFA_Page* pPage = (CPDFXFA_Page*)page;
-  CPDFXFA_Document* pDoc = pPage->GetDocument();
-  CPDF_ViewerPreferences viewRef(pDoc->GetPDFDoc());
+  CPDFXFA_Context* pContext = pPage->GetContext();
+  CPDF_ViewerPreferences viewRef(pContext->GetPDFDoc());
 #else  // PDF_ENABLE_XFA
   CPDF_ViewerPreferences viewRef(pPDFPage->m_pDocument);
 #endif  // PDF_ENABLE_XFA
@@ -232,7 +232,7 @@ DLLEXPORT FPDF_SCHHANDLE STDCALL FPDFText_FindStart(FPDF_TEXTPAGE text_page,
 
 DLLEXPORT FPDF_BOOL STDCALL FPDFText_FindNext(FPDF_SCHHANDLE handle) {
   if (!handle)
-    return FALSE;
+    return false;
 
   CPDF_TextPageFind* textpageFind = CPDFTextPageFindFromFPDFSchHandle(handle);
   return textpageFind->FindNext();
@@ -240,7 +240,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFText_FindNext(FPDF_SCHHANDLE handle) {
 
 DLLEXPORT FPDF_BOOL STDCALL FPDFText_FindPrev(FPDF_SCHHANDLE handle) {
   if (!handle)
-    return FALSE;
+    return false;
 
   CPDF_TextPageFind* textpageFind = CPDFTextPageFindFromFPDFSchHandle(handle);
   return textpageFind->FindPrev();

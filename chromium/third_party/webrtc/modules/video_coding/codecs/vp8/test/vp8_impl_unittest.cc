@@ -110,7 +110,7 @@ bool Vp8UnitTestDecodeCompleteCallback::DecodeComplete() {
 }
 
 int Vp8UnitTestDecodeCompleteCallback::Decoded(VideoFrame& image) {
-  decoded_frame_->CopyFrame(image);
+  *decoded_frame_ = image;
   decode_complete = true;
   return 0;
 }
@@ -149,7 +149,7 @@ class TestVp8Impl : public ::testing::Test {
         I420Buffer::Create(kWidth, kHeight, stride_y, stride_uv, stride_uv));
 
     // No scaling in our case, just a copy, to add stride to the image.
-    stride_buffer->ScaleFrom(compact_buffer);
+    stride_buffer->ScaleFrom(*compact_buffer);
 
     input_frame_.reset(
         new VideoFrame(stride_buffer, kVideoRotation_0, 0));
@@ -160,7 +160,7 @@ class TestVp8Impl : public ::testing::Test {
     codec_inst_.startBitrate = 300;
     codec_inst_.maxBitrate = 4000;
     codec_inst_.qpMax = 56;
-    codec_inst_.codecSpecific.VP8.denoisingOn = true;
+    codec_inst_.VP8()->denoisingOn = true;
 
     EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
               encoder_->InitEncode(&codec_inst_, 1, 1440));
@@ -213,8 +213,8 @@ TEST_F(TestVp8Impl, EncoderParameterTest) {
   codec_inst_.maxFramerate = 30;
   codec_inst_.startBitrate = 300;
   codec_inst_.qpMax = 56;
-  codec_inst_.codecSpecific.VP8.complexity = kComplexityNormal;
-  codec_inst_.codecSpecific.VP8.numberOfTemporalLayers = 1;
+  codec_inst_.VP8()->complexity = kComplexityNormal;
+  codec_inst_.VP8()->numberOfTemporalLayers = 1;
   // Calls before InitEncode().
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Release());
   int bit_rate = 300;

@@ -12,14 +12,14 @@
 #include "core/fxcrt/fx_system.h"
 
 class CFX_Matrix;
-class CPDFXFA_Document;
+class CPDFXFA_Context;
 class CPDF_Dictionary;
 class CPDF_Page;
 class CXFA_FFPageView;
 
 class CPDFXFA_Page {
  public:
-  CPDFXFA_Page(CPDFXFA_Document* pDoc, int page_index);
+  CPDFXFA_Page(CPDFXFA_Context* pContext, int page_index);
 
   void Retain() { m_iRef++; }
   void Release() {
@@ -27,9 +27,9 @@ class CPDFXFA_Page {
       delete this;
   }
 
-  FX_BOOL LoadPage();
-  FX_BOOL LoadPDFPage(CPDF_Dictionary* pageDict);
-  CPDFXFA_Document* GetDocument() const { return m_pDocument; }
+  bool LoadPage();
+  bool LoadPDFPage(CPDF_Dictionary* pageDict);
+  CPDFXFA_Context* GetContext() const { return m_pContext; }
   int GetPageIndex() const { return m_iPageIndex; }
   CPDF_Page* GetPDFPage() const { return m_pPDFPage.get(); }
   CXFA_FFPageView* GetXFAPageView() const { return m_pXFAPageView; }
@@ -71,13 +71,13 @@ class CPDFXFA_Page {
   // Refcounted class.
   ~CPDFXFA_Page();
 
-  FX_BOOL LoadPDFPage();
-  FX_BOOL LoadXFAPageView();
+  bool LoadPDFPage();
+  bool LoadXFAPageView();
 
  private:
   std::unique_ptr<CPDF_Page> m_pPDFPage;
   CXFA_FFPageView* m_pXFAPageView;
-  CPDFXFA_Document* const m_pDocument;
+  CPDFXFA_Context* const m_pContext;
   const int m_iPageIndex;
   int m_iRef;
 };

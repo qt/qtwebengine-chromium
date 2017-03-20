@@ -81,7 +81,7 @@ TEST(DecoderDatabase, GetDecoderInfo) {
   info = db.GetDecoderInfo(kPayloadType);
   ASSERT_TRUE(info != NULL);
   EXPECT_TRUE(info->IsType("pcmu"));
-  EXPECT_EQ(kCodecName, info->name);
+  EXPECT_EQ(kCodecName, info->get_name());
   EXPECT_EQ(decoder, db.GetDecoder(kPayloadType));
   info = db.GetDecoderInfo(kPayloadType + 1);  // Other payload type.
   EXPECT_TRUE(info == NULL);  // Should not be found.
@@ -150,8 +150,8 @@ TEST(DecoderDatabase, ExternalDecoder) {
   info = db.GetDecoderInfo(kPayloadType);
   ASSERT_TRUE(info != NULL);
   EXPECT_TRUE(info->IsType("pcmu"));
-  EXPECT_EQ(info->name, kCodecName);
-  EXPECT_EQ(kCodecName, info->name);
+  EXPECT_EQ(info->get_name(), kCodecName);
+  EXPECT_EQ(kCodecName, info->get_name());
   // Expect not to delete the decoder when removing it from the database, since
   // it was declared externally.
   EXPECT_CALL(decoder, Die()).Times(0);
@@ -175,16 +175,15 @@ TEST(DecoderDatabase, CheckPayloadTypes) {
   for (int i = 0; i < kNumPayloads + 1; ++i) {
     // Create packet with payload type |i|. The last packet will have a payload
     // type that is not registered in the decoder database.
-    Packet* packet = new Packet;
-    packet->header.payloadType = i;
-    packet_list.push_back(packet);
+    Packet packet;
+    packet.payload_type = i;
+    packet_list.push_back(std::move(packet));
   }
 
   // Expect to return false, since the last packet is of an unknown type.
   EXPECT_EQ(DecoderDatabase::kDecoderNotFound,
             db.CheckPayloadTypes(packet_list));
 
-  delete packet_list.back();
   packet_list.pop_back();  // Remove the unknown one.
 
   EXPECT_EQ(DecoderDatabase::kOK, db.CheckPayloadTypes(packet_list));
@@ -192,7 +191,6 @@ TEST(DecoderDatabase, CheckPayloadTypes) {
   // Delete all packets.
   PacketList::iterator it = packet_list.begin();
   while (it != packet_list.end()) {
-    delete packet_list.front();
     it = packet_list.erase(it);
   }
 }

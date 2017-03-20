@@ -13,7 +13,6 @@
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
-#include "fpdfsdk/cpdfsdk_document.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
@@ -58,7 +57,8 @@ void CFX_SystemHandler::InvalidateRect(CPDFSDK_Widget* widget, FX_RECT rect) {
   CFX_FloatRect rcPDF(left, bottom, right, top);
   rcPDF.Normalize();
 
-  m_pEnv->Invalidate(pPage, rcPDF.left, rcPDF.top, rcPDF.right, rcPDF.bottom);
+  m_pFormFillEnv->Invalidate(pPage, rcPDF.left, rcPDF.top, rcPDF.right,
+                             rcPDF.bottom);
 }
 
 void CFX_SystemHandler::OutputSelectedRect(CFFL_FormFiller* pFormFiller,
@@ -75,19 +75,19 @@ void CFX_SystemHandler::OutputSelectedRect(CFFL_FormFiller* pFormFiller,
   UnderlyingPageType* pPage = pAnnot->GetUnderlyingPage();
   ASSERT(pPage);
 
-  m_pEnv->OutputSelectedRect(pPage, ptA.x, ptB.y, ptB.x, ptA.y);
+  m_pFormFillEnv->OutputSelectedRect(pPage, ptA.x, ptB.y, ptB.x, ptA.y);
 }
 
 bool CFX_SystemHandler::IsSelectionImplemented() const {
-  if (!m_pEnv)
+  if (!m_pFormFillEnv)
     return false;
 
-  FPDF_FORMFILLINFO* pInfo = m_pEnv->GetFormFillInfo();
+  FPDF_FORMFILLINFO* pInfo = m_pFormFillEnv->GetFormFillInfo();
   return pInfo && pInfo->FFI_OutputSelectedRect;
 }
 
 void CFX_SystemHandler::SetCursor(int32_t nCursorType) {
-  m_pEnv->SetCursor(nCursorType);
+  m_pFormFillEnv->SetCursor(nCursorType);
 }
 
 bool CFX_SystemHandler::FindNativeTrueTypeFont(CFX_ByteString sFontFaceName) {
@@ -121,27 +121,27 @@ CPDF_Font* CFX_SystemHandler::AddNativeTrueTypeFontToPDF(
     return nullptr;
 
   std::unique_ptr<CFX_Font> pFXFont(new CFX_Font);
-  pFXFont->LoadSubst(sFontFaceName, TRUE, 0, 0, 0, CharSet2CP(nCharset), false);
-  return pDoc->AddFont(pFXFont.get(), nCharset, FALSE);
+  pFXFont->LoadSubst(sFontFaceName, true, 0, 0, 0, CharSet2CP(nCharset), false);
+  return pDoc->AddFont(pFXFont.get(), nCharset, false);
 }
 
 int32_t CFX_SystemHandler::SetTimer(int32_t uElapse,
                                     TimerCallback lpTimerFunc) {
-  return m_pEnv->SetTimer(uElapse, lpTimerFunc);
+  return m_pFormFillEnv->SetTimer(uElapse, lpTimerFunc);
 }
 
 void CFX_SystemHandler::KillTimer(int32_t nID) {
-  m_pEnv->KillTimer(nID);
+  m_pFormFillEnv->KillTimer(nID);
 }
 
 bool CFX_SystemHandler::IsSHIFTKeyDown(uint32_t nFlag) const {
-  return !!m_pEnv->IsSHIFTKeyDown(nFlag);
+  return !!m_pFormFillEnv->IsSHIFTKeyDown(nFlag);
 }
 
 bool CFX_SystemHandler::IsCTRLKeyDown(uint32_t nFlag) const {
-  return !!m_pEnv->IsCTRLKeyDown(nFlag);
+  return !!m_pFormFillEnv->IsCTRLKeyDown(nFlag);
 }
 
 bool CFX_SystemHandler::IsALTKeyDown(uint32_t nFlag) const {
-  return !!m_pEnv->IsALTKeyDown(nFlag);
+  return !!m_pFormFillEnv->IsALTKeyDown(nFlag);
 }

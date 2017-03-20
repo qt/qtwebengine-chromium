@@ -8,11 +8,15 @@
 
 #include <vector>
 
-#include "xfa/fwl/basewidget/ifwl_edit.h"
-#include "xfa/fwl/core/cfwl_message.h"
+#include "xfa/fwl/core/cfwl_datetimepicker.h"
+#include "xfa/fwl/core/cfwl_edit.h"
+#include "xfa/fwl/core/cfwl_evtcheckword.h"
+#include "xfa/fwl/core/cfwl_evttextchanged.h"
+#include "xfa/fwl/core/cfwl_evtvalidate.h"
+#include "xfa/fwl/core/cfwl_msgkillfocus.h"
+#include "xfa/fwl/core/cfwl_msgmouse.h"
+#include "xfa/fwl/core/cfwl_msgsetfocus.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
-#include "xfa/fwl/lightwidget/cfwl_datetimepicker.h"
-#include "xfa/fwl/lightwidget/cfwl_edit.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
@@ -27,23 +31,29 @@
 CXFA_FFTextEdit::CXFA_FFTextEdit(CXFA_FFPageView* pPageView,
                                  CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFField(pPageView, pDataAcc), m_pOldDelegate(nullptr) {}
+
 CXFA_FFTextEdit::~CXFA_FFTextEdit() {
   if (m_pNormalWidget) {
     IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-    CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+    CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
     pNoteDriver->UnregisterEventTarget(pWidget);
   }
 }
-FX_BOOL CXFA_FFTextEdit::LoadWidget() {
-  CFWL_Edit* pFWLEdit = CFWL_Edit::Create();
+
+bool CXFA_FFTextEdit::LoadWidget() {
+  CFWL_Edit* pFWLEdit = new CFWL_Edit(GetFWLApp());
   pFWLEdit->Initialize();
   m_pNormalWidget = pFWLEdit;
   m_pNormalWidget->SetLayoutItem(this);
+
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
-  m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
+
+  m_pOldDelegate = m_pNormalWidget->GetDelegate();
+  m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
+
   UpdateWidgetProperty();
   CFX_WideString wsText;
   m_pDataAcc->GetValue(wsText, XFA_VALUEPICTURE_Display);
@@ -94,18 +104,18 @@ void CXFA_FFTextEdit::UpdateWidgetProperty() {
   m_pNormalWidget->ModifyStyles(dwStyle, 0xFFFFFFFF);
   m_pNormalWidget->ModifyStylesEx(dwExtendedStyle, 0xFFFFFFFF);
 }
-FX_BOOL CXFA_FFTextEdit::OnLButtonDown(uint32_t dwFlags,
-                                       FX_FLOAT fx,
-                                       FX_FLOAT fy) {
+bool CXFA_FFTextEdit::OnLButtonDown(uint32_t dwFlags,
+                                    FX_FLOAT fx,
+                                    FX_FLOAT fy) {
   if (!PtInActiveRect(fx, fy)) {
-    return FALSE;
+    return false;
   }
   if (!IsFocused()) {
     m_dwStatus |= XFA_WidgetStatus_Focused;
     UpdateFWLData();
     AddInvalidateRect();
   }
-  SetButtonDown(TRUE);
+  SetButtonDown(true);
   CFWL_MsgMouse ms;
   ms.m_dwCmd = FWL_MouseCommand::LeftButtonDown;
   ms.m_dwFlags = dwFlags;
@@ -114,23 +124,23 @@ FX_BOOL CXFA_FFTextEdit::OnLButtonDown(uint32_t dwFlags,
   ms.m_pDstTarget = m_pNormalWidget->GetWidget();
   FWLToClient(ms.m_fx, ms.m_fy);
   TranslateFWLMessage(&ms);
-  return TRUE;
+  return true;
 }
-FX_BOOL CXFA_FFTextEdit::OnRButtonDown(uint32_t dwFlags,
-                                       FX_FLOAT fx,
-                                       FX_FLOAT fy) {
+bool CXFA_FFTextEdit::OnRButtonDown(uint32_t dwFlags,
+                                    FX_FLOAT fx,
+                                    FX_FLOAT fy) {
   if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open) {
-    return FALSE;
+    return false;
   }
   if (!PtInActiveRect(fx, fy)) {
-    return FALSE;
+    return false;
   }
   if (!IsFocused()) {
     m_dwStatus |= XFA_WidgetStatus_Focused;
     UpdateFWLData();
     AddInvalidateRect();
   }
-  SetButtonDown(TRUE);
+  SetButtonDown(true);
   CFWL_MsgMouse ms;
   ms.m_dwCmd = FWL_MouseCommand::RightButtonDown;
   ms.m_dwFlags = dwFlags;
@@ -138,18 +148,16 @@ FX_BOOL CXFA_FFTextEdit::OnRButtonDown(uint32_t dwFlags,
   ms.m_fy = fy;
   FWLToClient(ms.m_fx, ms.m_fy);
   TranslateFWLMessage(&ms);
-  return TRUE;
+  return true;
 }
-FX_BOOL CXFA_FFTextEdit::OnRButtonUp(uint32_t dwFlags,
-                                     FX_FLOAT fx,
-                                     FX_FLOAT fy) {
+bool CXFA_FFTextEdit::OnRButtonUp(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) {
   if (!CXFA_FFField::OnRButtonUp(dwFlags, fx, fy))
-    return FALSE;
+    return false;
 
   GetDoc()->GetDocEnvironment()->PopupMenu(this, CFX_PointF(fx, fy));
-  return TRUE;
+  return true;
 }
-FX_BOOL CXFA_FFTextEdit::OnSetFocus(CXFA_FFWidget* pOldWidget) {
+bool CXFA_FFTextEdit::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   m_dwStatus &= ~XFA_WidgetStatus_TextEditValueChanged;
   if (!IsFocused()) {
     m_dwStatus |= XFA_WidgetStatus_Focused;
@@ -161,9 +169,9 @@ FX_BOOL CXFA_FFTextEdit::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   ms.m_pDstTarget = m_pNormalWidget->GetWidget();
   ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
-  return TRUE;
+  return true;
 }
-FX_BOOL CXFA_FFTextEdit::OnKillFocus(CXFA_FFWidget* pNewWidget) {
+bool CXFA_FFTextEdit::OnKillFocus(CXFA_FFWidget* pNewWidget) {
   CFWL_MsgKillFocus ms;
   ms.m_pDstTarget = m_pNormalWidget->GetWidget();
   ms.m_pSrcTarget = nullptr;
@@ -175,17 +183,17 @@ FX_BOOL CXFA_FFTextEdit::OnKillFocus(CXFA_FFWidget* pNewWidget) {
   AddInvalidateRect();
   CXFA_FFWidget::OnKillFocus(pNewWidget);
   m_dwStatus &= ~XFA_WidgetStatus_TextEditValueChanged;
-  return TRUE;
+  return true;
 }
-FX_BOOL CXFA_FFTextEdit::CommitData() {
+bool CXFA_FFTextEdit::CommitData() {
   CFX_WideString wsText;
   ((CFWL_Edit*)m_pNormalWidget)->GetText(wsText);
   if (m_pDataAcc->SetValue(wsText, XFA_VALUEPICTURE_Edit)) {
     m_pDataAcc->UpdateUIDisplay(this);
-    return TRUE;
+    return true;
   }
   ValidateNumberField(wsText);
-  return FALSE;
+  return false;
 }
 void CXFA_FFTextEdit::ValidateNumberField(const CFX_WideString& wsText) {
   CXFA_WidgetAcc* pAcc = GetDataAcc();
@@ -204,7 +212,7 @@ void CXFA_FFTextEdit::ValidateNumberField(const CFX_WideString& wsText) {
     }
   }
 }
-FX_BOOL CXFA_FFTextEdit::IsDataChanged() {
+bool CXFA_FFTextEdit::IsDataChanged() {
   return (m_dwStatus & XFA_WidgetStatus_TextEditValueChanged) != 0;
 }
 uint32_t CXFA_FFTextEdit::GetAlignment() {
@@ -244,15 +252,15 @@ uint32_t CXFA_FFTextEdit::GetAlignment() {
   }
   return dwExtendedStyle;
 }
-FX_BOOL CXFA_FFTextEdit::UpdateFWLData() {
+bool CXFA_FFTextEdit::UpdateFWLData() {
   if (!m_pNormalWidget) {
-    return FALSE;
+    return false;
   }
   XFA_VALUEPICTURE eType = XFA_VALUEPICTURE_Display;
   if (IsFocused()) {
     eType = XFA_VALUEPICTURE_Edit;
   }
-  FX_BOOL bUpdate = FALSE;
+  bool bUpdate = false;
   if (m_pDataAcc->GetUIType() == XFA_Element::TextEdit &&
       m_pDataAcc->GetNumberOfCells() < 0) {
     XFA_Element elementType = XFA_Element::Unknown;
@@ -262,7 +270,7 @@ FX_BOOL CXFA_FFTextEdit::UpdateFWLData() {
     }
     if (((CFWL_Edit*)m_pNormalWidget)->GetLimit() != iMaxChars) {
       ((CFWL_Edit*)m_pNormalWidget)->SetLimit(iMaxChars);
-      bUpdate = TRUE;
+      bUpdate = true;
     }
   }
   if (m_pDataAcc->GetUIType() == XFA_Element::Barcode) {
@@ -270,7 +278,7 @@ FX_BOOL CXFA_FFTextEdit::UpdateFWLData() {
     if (eType == XFA_VALUEPICTURE_Edit)
       m_pDataAcc->GetBarcodeAttribute_DataLength(nDataLen);
     static_cast<CFWL_Edit*>(m_pNormalWidget)->SetLimit(nDataLen);
-    bUpdate = TRUE;
+    bUpdate = true;
   }
   CFX_WideString wsText;
   m_pDataAcc->GetValue(wsText, eType);
@@ -278,80 +286,12 @@ FX_BOOL CXFA_FFTextEdit::UpdateFWLData() {
   ((CFWL_Edit*)m_pNormalWidget)->GetText(wsOldText);
   if (wsText != wsOldText || (eType == XFA_VALUEPICTURE_Edit && bUpdate)) {
     ((CFWL_Edit*)m_pNormalWidget)->SetText(wsText);
-    bUpdate = TRUE;
+    bUpdate = true;
   }
   if (bUpdate) {
     m_pNormalWidget->Update();
   }
-  return TRUE;
-}
-FX_BOOL CXFA_FFTextEdit::CanUndo() {
-  return ((CFWL_Edit*)m_pNormalWidget)->CanUndo();
-}
-FX_BOOL CXFA_FFTextEdit::CanRedo() {
-  return ((CFWL_Edit*)m_pNormalWidget)->CanRedo();
-}
-FX_BOOL CXFA_FFTextEdit::Undo() {
-  return ((CFWL_Edit*)m_pNormalWidget)->Undo();
-}
-FX_BOOL CXFA_FFTextEdit::Redo() {
-  return ((CFWL_Edit*)m_pNormalWidget)->Redo();
-}
-FX_BOOL CXFA_FFTextEdit::CanCopy() {
-  int32_t nCount = ((CFWL_Edit*)m_pNormalWidget)->CountSelRanges();
-  return nCount > 0;
-}
-FX_BOOL CXFA_FFTextEdit::CanCut() {
-  if (m_pNormalWidget->GetStylesEx() & FWL_STYLEEXT_EDT_ReadOnly) {
-    return FALSE;
-  }
-  int32_t nCount = ((CFWL_Edit*)m_pNormalWidget)->CountSelRanges();
-  return nCount > 0;
-}
-FX_BOOL CXFA_FFTextEdit::CanPaste() {
-  return m_pDataAcc->GetAccess() == XFA_ATTRIBUTEENUM_Open;
-}
-FX_BOOL CXFA_FFTextEdit::CanSelectAll() {
-  return ((CFWL_Edit*)m_pNormalWidget)->GetTextLength() > 0;
-}
-FX_BOOL CXFA_FFTextEdit::Copy(CFX_WideString& wsCopy) {
-  return ((CFWL_Edit*)m_pNormalWidget)->Copy(wsCopy);
-}
-FX_BOOL CXFA_FFTextEdit::Cut(CFX_WideString& wsCut) {
-  return ((CFWL_Edit*)m_pNormalWidget)->Cut(wsCut);
-}
-FX_BOOL CXFA_FFTextEdit::Paste(const CFX_WideString& wsPaste) {
-  return ((CFWL_Edit*)m_pNormalWidget)->Paste(wsPaste);
-}
-FX_BOOL CXFA_FFTextEdit::SelectAll() {
-  int32_t nCount = ((CFWL_Edit*)m_pNormalWidget)->GetTextLength();
-  return ((CFWL_Edit*)m_pNormalWidget)->AddSelRange(0, nCount);
-}
-FX_BOOL CXFA_FFTextEdit::Delete() {
-  return ((CFWL_Edit*)m_pNormalWidget)->Delete();
-}
-FX_BOOL CXFA_FFTextEdit::DeSelect() {
-  return ((CFWL_Edit*)m_pNormalWidget)->ClearSelections() ==
-         FWL_Error::Succeeded;
-}
-FX_BOOL CXFA_FFTextEdit::GetSuggestWords(
-    CFX_PointF pointf,
-    std::vector<CFX_ByteString>& sSuggest) {
-  if (m_pDataAcc->GetUIType() != XFA_Element::TextEdit) {
-    return FALSE;
-  }
-  FWLToClient(pointf.x, pointf.y);
-  return ((CFWL_Edit*)m_pNormalWidget)->GetSuggestWords(pointf, sSuggest);
-}
-FX_BOOL CXFA_FFTextEdit::ReplaceSpellCheckWord(
-    CFX_PointF pointf,
-    const CFX_ByteStringC& bsReplace) {
-  if (m_pDataAcc->GetUIType() != XFA_Element::TextEdit) {
-    return FALSE;
-  }
-  FWLToClient(pointf.x, pointf.y);
-  return ((CFWL_Edit*)m_pNormalWidget)
-      ->ReplaceSpellCheckWord(pointf, bsReplace);
+  return true;
 }
 void CXFA_FFTextEdit::OnTextChanged(IFWL_Widget* pWidget,
                                     const CFX_WideString& wsChanged,
@@ -386,10 +326,10 @@ void CXFA_FFTextEdit::OnTextFull(IFWL_Widget* pWidget) {
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Full, &eParam);
 }
 
-FX_BOOL CXFA_FFTextEdit::CheckWord(const CFX_ByteStringC& sWord) {
+bool CXFA_FFTextEdit::CheckWord(const CFX_ByteStringC& sWord) {
   if (sWord.IsEmpty() || m_pDataAcc->GetUIType() != XFA_Element::TextEdit)
-    return TRUE;
-  return FALSE;
+    return true;
+  return false;
 }
 
 void CXFA_FFTextEdit::OnProcessMessage(CFWL_Message* pMessage) {
@@ -400,7 +340,7 @@ void CXFA_FFTextEdit::OnProcessEvent(CFWL_Event* pEvent) {
   CXFA_FFField::OnProcessEvent(pEvent);
   switch (pEvent->GetClassID()) {
     case CFWL_EventType::TextChanged: {
-      CFWL_EvtEdtTextChanged* event = (CFWL_EvtEdtTextChanged*)pEvent;
+      CFWL_EvtTextChanged* event = static_cast<CFWL_EvtTextChanged*>(pEvent);
       CFX_WideString wsChange;
       OnTextChanged(m_pNormalWidget->GetWidget(), wsChange, event->wsPrevText);
       break;
@@ -411,13 +351,8 @@ void CXFA_FFTextEdit::OnProcessEvent(CFWL_Event* pEvent) {
     }
     case CFWL_EventType::CheckWord: {
       CFX_WideString wstr(L"FWL_EVENT_DTP_SelectChanged");
-      CFWL_EvtEdtCheckWord* event = (CFWL_EvtEdtCheckWord*)pEvent;
+      CFWL_EvtCheckWord* event = static_cast<CFWL_EvtCheckWord*>(pEvent);
       event->bCheckWord = CheckWord(event->bsWord.AsStringC());
-      break;
-    }
-    case CFWL_EventType::GetSuggestedWords: {
-      CFWL_EvtEdtGetSuggestWords* event = (CFWL_EvtEdtGetSuggestWords*)pEvent;
-      event->bSuggestWords = FALSE;
       break;
     }
     default:
@@ -435,16 +370,20 @@ CXFA_FFNumericEdit::CXFA_FFNumericEdit(CXFA_FFPageView* pPageView,
                                        CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFTextEdit(pPageView, pDataAcc) {}
 CXFA_FFNumericEdit::~CXFA_FFNumericEdit() {}
-FX_BOOL CXFA_FFNumericEdit::LoadWidget() {
-  CFWL_Edit* pWidget = CFWL_Edit::Create();
+bool CXFA_FFNumericEdit::LoadWidget() {
+  CFWL_Edit* pWidget = new CFWL_Edit(GetFWLApp());
   pWidget->Initialize();
   m_pNormalWidget = pWidget;
+
   IFWL_Widget* pIWidget = m_pNormalWidget->GetWidget();
   m_pNormalWidget->SetLayoutItem(this);
-  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pIWidget->GetOwnerApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pIWidget, pIWidget);
-  m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
+
+  m_pOldDelegate = m_pNormalWidget->GetDelegate();
+  m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
+
   CFX_WideString wsText;
   m_pDataAcc->GetValue(wsText, XFA_VALUEPICTURE_Display);
   pWidget->SetText(wsText);
@@ -480,20 +419,20 @@ void CXFA_FFNumericEdit::UpdateWidgetProperty() {
 
 void CXFA_FFNumericEdit::OnProcessEvent(CFWL_Event* pEvent) {
   if (pEvent->GetClassID() == CFWL_EventType::Validate) {
-    CFWL_EvtEdtValidate* event = (CFWL_EvtEdtValidate*)pEvent;
-    CFX_WideString wsChange = event->wsInsert;
-    event->bValidate = OnValidate(m_pNormalWidget->GetWidget(), wsChange);
+    CFWL_EvtValidate* event = static_cast<CFWL_EvtValidate*>(pEvent);
+    event->bValidate =
+        OnValidate(m_pNormalWidget->GetWidget(), event->wsInsert);
     return;
   }
   CXFA_FFTextEdit::OnProcessEvent(pEvent);
 }
 
-FX_BOOL CXFA_FFNumericEdit::OnValidate(IFWL_Widget* pWidget,
-                                       CFX_WideString& wsText) {
+bool CXFA_FFNumericEdit::OnValidate(IFWL_Widget* pWidget,
+                                    CFX_WideString& wsText) {
   CFX_WideString wsPattern;
   m_pDataAcc->GetPictureContent(wsPattern, XFA_VALUEPICTURE_Edit);
   if (!wsPattern.IsEmpty()) {
-    return TRUE;
+    return true;
   }
   int32_t iLeads = 0;
   m_pDataAcc->GetLeadDigits(iLeads);
@@ -508,17 +447,23 @@ FX_BOOL CXFA_FFNumericEdit::OnValidate(IFWL_Widget* pWidget,
 CXFA_FFPasswordEdit::CXFA_FFPasswordEdit(CXFA_FFPageView* pPageView,
                                          CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFTextEdit(pPageView, pDataAcc) {}
+
 CXFA_FFPasswordEdit::~CXFA_FFPasswordEdit() {}
-FX_BOOL CXFA_FFPasswordEdit::LoadWidget() {
-  CFWL_Edit* pWidget = CFWL_Edit::Create();
+
+bool CXFA_FFPasswordEdit::LoadWidget() {
+  CFWL_Edit* pWidget = new CFWL_Edit(GetFWLApp());
   pWidget->Initialize();
   m_pNormalWidget = pWidget;
   m_pNormalWidget->SetLayoutItem(this);
+
   IFWL_Widget* pIWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pIWidget->GetOwnerApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pIWidget, pIWidget);
-  m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
+
+  m_pOldDelegate = m_pNormalWidget->GetDelegate();
+  m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
+
   CFX_WideString wsText;
   m_pDataAcc->GetValue(wsText, XFA_VALUEPICTURE_Display);
   pWidget->SetText(wsText);
@@ -556,35 +501,38 @@ CXFA_FFDateTimeEdit::CXFA_FFDateTimeEdit(CXFA_FFPageView* pPageView,
 
 CXFA_FFDateTimeEdit::~CXFA_FFDateTimeEdit() {}
 
-FX_BOOL CXFA_FFDateTimeEdit::GetBBox(CFX_RectF& rtBox,
-                                     uint32_t dwStatus,
-                                     FX_BOOL bDrawFocus) {
+bool CXFA_FFDateTimeEdit::GetBBox(CFX_RectF& rtBox,
+                                  uint32_t dwStatus,
+                                  bool bDrawFocus) {
   if (bDrawFocus)
-    return FALSE;
+    return false;
   return CXFA_FFWidget::GetBBox(rtBox, dwStatus);
 }
 
-FX_BOOL CXFA_FFDateTimeEdit::PtInActiveRect(FX_FLOAT fx, FX_FLOAT fy) {
+bool CXFA_FFDateTimeEdit::PtInActiveRect(FX_FLOAT fx, FX_FLOAT fy) {
   if (!m_pNormalWidget) {
-    return FALSE;
+    return false;
   }
   CFX_RectF rtWidget;
   ((CFWL_DateTimePicker*)m_pNormalWidget)->GetBBox(rtWidget);
   if (rtWidget.Contains(fx, fy)) {
-    return TRUE;
+    return true;
   }
-  return FALSE;
+  return false;
 }
-FX_BOOL CXFA_FFDateTimeEdit::LoadWidget() {
-  CFWL_DateTimePicker* pWidget = CFWL_DateTimePicker::Create();
+bool CXFA_FFDateTimeEdit::LoadWidget() {
+  CFWL_DateTimePicker* pWidget = new CFWL_DateTimePicker(GetFWLApp());
   pWidget->Initialize();
   m_pNormalWidget = pWidget;
   m_pNormalWidget->SetLayoutItem(this);
   IFWL_Widget* pIWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pIWidget->GetOwnerApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pIWidget, pIWidget);
-  m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
+
+  m_pOldDelegate = m_pNormalWidget->GetDelegate();
+  m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
+
   CFX_WideString wsText;
   m_pDataAcc->GetValue(wsText, XFA_VALUEPICTURE_Display);
   pWidget->SetEditText(wsText);
@@ -668,18 +616,18 @@ uint32_t CXFA_FFDateTimeEdit::GetAlignment() {
   }
   return dwExtendedStyle;
 }
-FX_BOOL CXFA_FFDateTimeEdit::CommitData() {
+bool CXFA_FFDateTimeEdit::CommitData() {
   CFX_WideString wsText;
   ((CFWL_DateTimePicker*)m_pNormalWidget)->GetEditText(wsText);
   if (m_pDataAcc->SetValue(wsText, XFA_VALUEPICTURE_Edit)) {
     m_pDataAcc->UpdateUIDisplay(this);
-    return TRUE;
+    return true;
   }
-  return FALSE;
+  return false;
 }
-FX_BOOL CXFA_FFDateTimeEdit::UpdateFWLData() {
+bool CXFA_FFDateTimeEdit::UpdateFWLData() {
   if (!m_pNormalWidget) {
-    return FALSE;
+    return false;
   }
   XFA_VALUEPICTURE eType = XFA_VALUEPICTURE_Display;
   if (IsFocused()) {
@@ -699,11 +647,11 @@ FX_BOOL CXFA_FFDateTimeEdit::UpdateFWLData() {
     }
   }
   m_pNormalWidget->Update();
-  return TRUE;
+  return true;
 }
-FX_BOOL CXFA_FFDateTimeEdit::IsDataChanged() {
+bool CXFA_FFDateTimeEdit::IsDataChanged() {
   if (m_dwStatus & XFA_WidgetStatus_TextEditValueChanged) {
-    return TRUE;
+    return true;
   }
   CFX_WideString wsText;
   ((CFWL_DateTimePicker*)m_pNormalWidget)->GetEditText(wsText);
@@ -711,51 +659,7 @@ FX_BOOL CXFA_FFDateTimeEdit::IsDataChanged() {
   m_pDataAcc->GetValue(wsOldValue, XFA_VALUEPICTURE_Edit);
   return wsOldValue != wsText;
 }
-FX_BOOL CXFA_FFDateTimeEdit::CanUndo() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->CanUndo();
-}
-FX_BOOL CXFA_FFDateTimeEdit::CanRedo() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->CanRedo();
-}
-FX_BOOL CXFA_FFDateTimeEdit::Undo() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->Undo();
-}
-FX_BOOL CXFA_FFDateTimeEdit::Redo() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->Redo();
-}
-FX_BOOL CXFA_FFDateTimeEdit::CanCopy() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->CanCopy();
-}
-FX_BOOL CXFA_FFDateTimeEdit::CanCut() {
-  if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open) {
-    return FALSE;
-  }
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->CanCut();
-}
-FX_BOOL CXFA_FFDateTimeEdit::CanPaste() {
-  return m_pDataAcc->GetAccess() == XFA_ATTRIBUTEENUM_Open;
-}
-FX_BOOL CXFA_FFDateTimeEdit::CanSelectAll() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->CanSelectAll();
-}
-FX_BOOL CXFA_FFDateTimeEdit::Copy(CFX_WideString& wsCopy) {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->Copy(wsCopy);
-}
-FX_BOOL CXFA_FFDateTimeEdit::Cut(CFX_WideString& wsCut) {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->Cut(wsCut);
-}
-FX_BOOL CXFA_FFDateTimeEdit::Paste(const CFX_WideString& wsPaste) {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->Paste(wsPaste);
-}
-FX_BOOL CXFA_FFDateTimeEdit::SelectAll() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->SelectAll();
-}
-FX_BOOL CXFA_FFDateTimeEdit::Delete() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->Delete();
-}
-FX_BOOL CXFA_FFDateTimeEdit::DeSelect() {
-  return ((CFWL_DateTimePicker*)m_pNormalWidget)->DeSelect();
-}
+
 void CXFA_FFDateTimeEdit::OnSelectChanged(IFWL_Widget* pWidget,
                                           int32_t iYear,
                                           int32_t iMonth,

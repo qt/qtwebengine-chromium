@@ -101,6 +101,8 @@ static int64_t const kARDAppClientRtcEventLogMaxSizeInBytes = 5e6;  // 5 MB.
 @implementation ARDAppClient {
   RTCFileLogger *_fileLogger;
   ARDTimerProxy *_statsTimer;
+  RTCMediaConstraints *_cameraConstraints;
+  NSNumber *_maxBitrate;
 }
 
 @synthesize shouldGetStats = _shouldGetStats;
@@ -317,8 +319,18 @@ static int64_t const kARDAppClientRtcEventLogMaxSizeInBytes = 5e6;  // 5 MB.
   _peerConnection = nil;
   self.state = kARDAppClientStateDisconnected;
 #if defined(WEBRTC_IOS)
-  RTCStopInternalCapture();
+  if (kARDAppClientEnableTracing) {
+    RTCStopInternalCapture();
+  }
 #endif
+}
+
+- (void)setCameraConstraints:(RTCMediaConstraints *)mediaConstraints {
+  _cameraConstraints = mediaConstraints;
+}
+
+- (void)setMaxBitrate:(NSNumber *)maxBitrate {
+  _maxBitrate = maxBitrate;
 }
 
 #pragma mark - ARDSignalingChannelDelegate
@@ -668,12 +680,21 @@ static int64_t const kARDAppClientRtcEventLogMaxSizeInBytes = 5e6;  // 5 MB.
   RTCRtpSender *sender =
       [_peerConnection senderWithKind:kRTCMediaStreamTrackKindVideo
                              streamId:kARDMediaStreamId];
+
+  [self setMaxBitrate:_maxBitrate forVideoSender:sender];
+
   RTCVideoTrack *track = [self createLocalVideoTrack];
   if (track) {
     sender.track = track;
     [_delegate appClient:self didReceiveLocalVideoTrack:track];
   }
   return sender;
+}
+
+- (void)setMaxBitrate:(NSNumber *)maxBitrate forVideoSender:(RTCRtpSender *)sender {
+  for (RTCRtpEncodingParameters *encoding in sender.parameters.encodings) {
+    encoding.maxBitrateBps = maxBitrate;
+  }
 }
 
 - (RTCRtpSender *)createAudioSender {
@@ -695,10 +716,10 @@ static int64_t const kARDAppClientRtcEventLogMaxSizeInBytes = 5e6;  // 5 MB.
   // trying to open a local stream.
 #if !TARGET_IPHONE_SIMULATOR
   if (!_isAudioOnly) {
-    RTCMediaConstraints *mediaConstraints =
-        [self defaultMediaStreamConstraints];
+    RTCMediaConstraints *cameraConstraints =
+        [self cameraConstraints];
     RTCAVFoundationVideoSource *source =
-        [_factory avFoundationVideoSourceWithConstraints:mediaConstraints];
+        [_factory avFoundationVideoSourceWithConstraints:cameraConstraints];
     localVideoTrack =
         [_factory videoTrackWithSource:source
                                trackId:kARDVideoTrackId];
@@ -737,18 +758,14 @@ static int64_t const kARDAppClientRtcEventLogMaxSizeInBytes = 5e6;  // 5 MB.
    NSString *valueLevelControl = _shouldUseLevelControl ?
        kRTCMediaConstraintsValueTrue : kRTCMediaConstraintsValueFalse;
    NSDictionary *mandatoryConstraints = @{ kRTCMediaConstraintsLevelControl : valueLevelControl };
-   RTCMediaConstraints* constraints =
-       [[RTCMediaConstraints alloc]  initWithMandatoryConstraints:mandatoryConstraints
-                                              optionalConstraints:nil];
+   RTCMediaConstraints *constraints =
+       [[RTCMediaConstraints alloc] initWithMandatoryConstraints:mandatoryConstraints
+                                             optionalConstraints:nil];
    return constraints;
 }
 
-- (RTCMediaConstraints *)defaultMediaStreamConstraints {
-  RTCMediaConstraints* constraints =
-      [[RTCMediaConstraints alloc]
-          initWithMandatoryConstraints:nil
-                   optionalConstraints:nil];
-  return constraints;
+- (RTCMediaConstraints *)cameraConstraints {
+  return _cameraConstraints;
 }
 
 - (RTCMediaConstraints *)defaultAnswerConstraints {

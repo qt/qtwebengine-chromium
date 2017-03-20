@@ -115,6 +115,7 @@
 #include <openssl/ssl.h>
 
 #include <assert.h>
+#include <limits.h>
 #include <string.h>
 
 #include <openssl/bn.h>
@@ -158,9 +159,9 @@ CERT *ssl_cert_dup(CERT *cert) {
   }
   memset(ret, 0, sizeof(CERT));
 
-  if (cert->x509 != NULL) {
-    X509_up_ref(cert->x509);
-    ret->x509 = cert->x509;
+  if (cert->x509_leaf != NULL) {
+    X509_up_ref(cert->x509_leaf);
+    ret->x509_leaf = cert->x509_leaf;
   }
 
   if (cert->privatekey != NULL) {
@@ -168,9 +169,9 @@ CERT *ssl_cert_dup(CERT *cert) {
     ret->privatekey = cert->privatekey;
   }
 
-  if (cert->chain) {
-    ret->chain = X509_chain_up_ref(cert->chain);
-    if (!ret->chain) {
+  if (cert->x509_chain) {
+    ret->x509_chain = X509_chain_up_ref(cert->x509_chain);
+    if (!ret->x509_chain) {
       OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
       goto err;
     }
@@ -220,12 +221,12 @@ void ssl_cert_clear_certs(CERT *cert) {
     return;
   }
 
-  X509_free(cert->x509);
-  cert->x509 = NULL;
+  X509_free(cert->x509_leaf);
+  cert->x509_leaf = NULL;
   EVP_PKEY_free(cert->privatekey);
   cert->privatekey = NULL;
-  sk_X509_pop_free(cert->chain, X509_free);
-  cert->chain = NULL;
+  sk_X509_pop_free(cert->x509_chain, X509_free);
+  cert->x509_chain = NULL;
   cert->key_method = NULL;
 }
 
@@ -244,8 +245,8 @@ void ssl_cert_free(CERT *c) {
 }
 
 int ssl_cert_set0_chain(CERT *cert, STACK_OF(X509) *chain) {
-  sk_X509_pop_free(cert->chain, X509_free);
-  cert->chain = chain;
+  sk_X509_pop_free(cert->x509_chain, X509_free);
+  cert->x509_chain = chain;
   return 1;
 }
 
@@ -269,10 +270,10 @@ int ssl_cert_set1_chain(CERT *cert, STACK_OF(X509) *chain) {
 }
 
 int ssl_cert_add0_chain_cert(CERT *cert, X509 *x509) {
-  if (cert->chain == NULL) {
-    cert->chain = sk_X509_new_null();
+  if (cert->x509_chain == NULL) {
+    cert->x509_chain = sk_X509_new_null();
   }
-  if (cert->chain == NULL || !sk_X509_push(cert->chain, x509)) {
+  if (cert->x509_chain == NULL || !sk_X509_push(cert->x509_chain, x509)) {
     return 0;
   }
 
@@ -395,7 +396,11 @@ STACK_OF(X509_NAME) *SSL_get_client_CA_list(const SSL *ssl) {
    * |SSL_set_connect_state|. If |handshake_func| is NULL, |ssl| is in an
    * indeterminate mode and |ssl->server| is unset. */
   if (ssl->handshake_func != NULL && !ssl->server) {
-    return ssl->s3->tmp.ca_names;
+    if (ssl->s3->hs != NULL) {
+      return ssl->s3->hs->ca_names;
+    }
+
+    return NULL;
   }
 
   if (ssl->client_CA != NULL) {
@@ -439,7 +444,21 @@ int SSL_CTX_add_client_CA(SSL_CTX *ctx, X509 *x509) {
 }
 
 int ssl_has_certificate(const SSL *ssl) {
-  return ssl->cert->x509 != NULL && ssl_has_private_key(ssl);
+  return ssl->cert->x509_leaf != NULL && ssl_has_private_key(ssl);
+}
+
+X509 *ssl_parse_x509(CBS *cbs) {
+  if (CBS_len(cbs) > LONG_MAX) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+    return NULL;
+  }
+  const uint8_t *ptr = CBS_data(cbs);
+  X509 *ret = d2i_X509(NULL, &ptr, (long)CBS_len(cbs));
+  if (ret == NULL) {
+    return NULL;
+  }
+  CBS_skip(cbs, ptr - CBS_data(cbs));
+  return ret;
 }
 
 STACK_OF(X509) *ssl_parse_cert_chain(SSL *ssl, uint8_t *out_alert,
@@ -472,10 +491,8 @@ STACK_OF(X509) *ssl_parse_cert_chain(SSL *ssl, uint8_t *out_alert,
       SHA256(CBS_data(&certificate), CBS_len(&certificate), out_leaf_sha256);
     }
 
-    /* A u24 length cannot overflow a long. */
-    const uint8_t *data = CBS_data(&certificate);
-    x = d2i_X509(NULL, &data, (long)CBS_len(&certificate));
-    if (x == NULL || data != CBS_data(&certificate) + CBS_len(&certificate)) {
+    x = ssl_parse_x509(&certificate);
+    if (x == NULL || CBS_len(&certificate) != 0) {
       *out_alert = SSL_AD_DECODE_ERROR;
       goto err;
     }
@@ -524,7 +541,7 @@ int ssl_add_cert_chain(SSL *ssl, CBB *cbb) {
   }
 
   CERT *cert = ssl->cert;
-  X509 *x = cert->x509;
+  X509 *x = cert->x509_leaf;
 
   CBB child;
   if (!CBB_add_u24_length_prefixed(cbb, &child)) {
@@ -533,7 +550,7 @@ int ssl_add_cert_chain(SSL *ssl, CBB *cbb) {
   }
 
   int no_chain = 0;
-  STACK_OF(X509) *chain = cert->chain;
+  STACK_OF(X509) *chain = cert->x509_chain;
   if ((ssl->mode & SSL_MODE_NO_AUTO_CHAIN) || chain != NULL) {
     no_chain = 1;
   }
@@ -759,7 +776,7 @@ int SSL_clear_chain_certs(SSL *ssl) {
 }
 
 int SSL_CTX_get0_chain_certs(const SSL_CTX *ctx, STACK_OF(X509) **out_chain) {
-  *out_chain = ctx->cert->chain;
+  *out_chain = ctx->cert->x509_chain;
   return 1;
 }
 
@@ -769,11 +786,13 @@ int SSL_CTX_get_extra_chain_certs(const SSL_CTX *ctx,
 }
 
 int SSL_get0_chain_certs(const SSL *ssl, STACK_OF(X509) **out_chain) {
-  *out_chain = ssl->cert->chain;
+  *out_chain = ssl->cert->x509_chain;
   return 1;
 }
 
 int ssl_check_leaf_certificate(SSL *ssl, X509 *leaf) {
+  assert(ssl3_protocol_version(ssl) < TLS1_3_VERSION);
+
   int ret = 0;
   EVP_PKEY *pkey = X509_get_pubkey(leaf);
   if (pkey == NULL) {
@@ -800,7 +819,18 @@ int ssl_check_leaf_certificate(SSL *ssl, X509 *leaf) {
       goto err;
     }
 
-    if (!tls1_check_ec_cert(ssl, leaf)) {
+    EC_KEY *ec_key = EVP_PKEY_get0_EC_KEY(pkey);
+    if (ec_key == NULL) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_ECC_CERT);
+      goto err;
+    }
+
+    /* Check the key's group and point format are acceptable. */
+    uint16_t group_id;
+    if (!ssl_nid_to_group_id(
+            &group_id, EC_GROUP_get_curve_name(EC_KEY_get0_group(ec_key))) ||
+        !tls1_check_group_id(ssl, group_id) ||
+        EC_KEY_get_conv_form(ec_key) != POINT_CONVERSION_UNCOMPRESSED) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_ECC_CERT);
       goto err;
     }

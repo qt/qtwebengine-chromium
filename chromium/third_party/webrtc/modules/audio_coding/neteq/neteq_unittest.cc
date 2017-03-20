@@ -45,6 +45,8 @@ RTC_POP_IGNORING_WUNDEF()
 
 DEFINE_bool(gen_ref, false, "Generate reference files.");
 
+namespace webrtc {
+
 namespace {
 
 const std::string& PlatformChecksum(const std::string& checksum_general,
@@ -110,51 +112,41 @@ void AddMessage(FILE* file, rtc::MessageDigest* digest,
 #endif  // WEBRTC_NETEQ_UNITTEST_BITEXACT
 
 void LoadDecoders(webrtc::NetEq* neteq) {
-  // Load PCMu.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderPCMu,
-                                          "pcmu", 0));
-  // Load PCMa.
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(0, SdpAudioFormat("pcmu", 8000, 1)));
+  // Use non-SdpAudioFormat argument when registering PCMa, so that we get test
+  // coverage for that as well.
   ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderPCMa,
                                           "pcma", 8));
 #ifdef WEBRTC_CODEC_ILBC
-  // Load iLBC.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderILBC,
-                                          "ilbc", 102));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(102, SdpAudioFormat("ilbc", 8000, 1)));
 #endif
 #if defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX)
-  // Load iSAC.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderISAC,
-                                          "isac", 103));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(103, SdpAudioFormat("isac", 16000, 1)));
 #endif
 #ifdef WEBRTC_CODEC_ISAC
-  // Load iSAC SWB.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderISACswb,
-                                          "isac-swb", 104));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(104, SdpAudioFormat("isac", 32000, 1)));
 #endif
 #ifdef WEBRTC_CODEC_OPUS
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderOpus,
-                                          "opus", 111));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(
+                111, SdpAudioFormat("opus", 48000, 2, {{"stereo", "0"}})));
 #endif
-  // Load PCM16B nb.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderPCM16B,
-                                          "pcm16-nb", 93));
-  // Load PCM16B wb.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(
-                   webrtc::NetEqDecoder::kDecoderPCM16Bwb, "pcm16-wb", 94));
-  // Load PCM16B swb32.
-  ASSERT_EQ(
-      0, neteq->RegisterPayloadType(
-             webrtc::NetEqDecoder::kDecoderPCM16Bswb32kHz, "pcm16-swb32", 95));
-  // Load CNG 8 kHz.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderCNGnb,
-                                          "cng-nb", 13));
-  // Load CNG 16 kHz.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderCNGwb,
-                                          "cng-wb", 98));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(93, SdpAudioFormat("L16", 8000, 1)));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(94, SdpAudioFormat("L16", 16000, 1)));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(95, SdpAudioFormat("L16", 32000, 1)));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(13, SdpAudioFormat("cn", 8000, 1)));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(98, SdpAudioFormat("cn", 16000, 1)));
 }
 }  // namespace
-
-namespace webrtc {
 
 class ResultSink {
  public:
@@ -456,10 +448,10 @@ TEST_F(NetEqDecodingTest, MAYBE_TestBitExactness) {
       "52797b781758a1d2303140b80b9c5030c9093d6b");
 
   const std::string network_stats_checksum = PlatformChecksum(
-      "9c5bb9e74a583be89313b158a19ea10d41bf9de6",
-      "e948ec65cf18852ba2a197189a3186635db34c3b",
-      "9c5bb9e74a583be89313b158a19ea10d41bf9de6",
-      "9c5bb9e74a583be89313b158a19ea10d41bf9de6");
+      "f59b3dfdb9b1b8bbb61abedd7c8cf3fc47c21f5f",
+      "c8b2a93842e48d014f7e6efe10ae96cb3892b129",
+      "f59b3dfdb9b1b8bbb61abedd7c8cf3fc47c21f5f",
+      "f59b3dfdb9b1b8bbb61abedd7c8cf3fc47c21f5f");
 
   const std::string rtcp_stats_checksum = PlatformChecksum(
       "b8880bf9fed2487efbddcb8d94b9937a29ae521d",
@@ -492,10 +484,10 @@ TEST_F(NetEqDecodingTest, MAYBE_TestOpusBitExactness) {
       "9d7d52bc94e941d106aa518f324f16a58d231586");
 
   const std::string network_stats_checksum = PlatformChecksum(
-      "191af29ed3b8b6dd4c4cc94dc3f33bdf48f055ef",
-      "191af29ed3b8b6dd4c4cc94dc3f33bdf48f055ef",
-      "191af29ed3b8b6dd4c4cc94dc3f33bdf48f055ef",
-      "191af29ed3b8b6dd4c4cc94dc3f33bdf48f055ef");
+      "d8379381d5a619f0616bb3c0a8a9eea1704a8ab8",
+      "d8379381d5a619f0616bb3c0a8a9eea1704a8ab8",
+      "d8379381d5a619f0616bb3c0a8a9eea1704a8ab8",
+      "d8379381d5a619f0616bb3c0a8a9eea1704a8ab8");
 
   const std::string rtcp_stats_checksum = PlatformChecksum(
       "e37c797e3de6a64dda88c9ade7a013d022a2e1e0",
@@ -585,7 +577,7 @@ TEST_F(NetEqDecodingTest, TestAverageInterArrivalTimeNegative) {
 
   NetEqNetworkStatistics network_stats;
   ASSERT_EQ(0, neteq_->NetworkStatistics(&network_stats));
-  EXPECT_EQ(-103196, network_stats.clockdrift_ppm);
+  EXPECT_EQ(-103192, network_stats.clockdrift_ppm);
 }
 
 TEST_F(NetEqDecodingTest, TestAverageInterArrivalTimePositive) {
@@ -613,7 +605,7 @@ TEST_F(NetEqDecodingTest, TestAverageInterArrivalTimePositive) {
 
   NetEqNetworkStatistics network_stats;
   ASSERT_EQ(0, neteq_->NetworkStatistics(&network_stats));
-  EXPECT_EQ(110946, network_stats.clockdrift_ppm);
+  EXPECT_EQ(110953, network_stats.clockdrift_ppm);
 }
 
 void NetEqDecodingTest::LongCngWithClockDrift(double drift_factor,

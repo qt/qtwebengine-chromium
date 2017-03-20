@@ -35,10 +35,12 @@
 #include "webrtc/base/stringutils.h"
 #include "webrtc/base/thread.h"
 #include "webrtc/base/virtualsocketserver.h"
+#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/media/base/fakemediaengine.h"
 #include "webrtc/media/base/fakevideorenderer.h"
 #include "webrtc/media/base/mediachannel.h"
 #include "webrtc/media/engine/fakewebrtccall.h"
+#include "webrtc/p2p/base/packettransportinterface.h"
 #include "webrtc/p2p/base/stunserver.h"
 #include "webrtc/p2p/base/teststunserver.h"
 #include "webrtc/p2p/base/testturnserver.h"
@@ -231,39 +233,41 @@ class WebRtcSessionForTest : public webrtc::WebRtcSession {
 
   // Note that these methods are only safe to use if the signaling thread
   // is the same as the worker thread
-  cricket::TransportChannel* voice_rtp_transport_channel() {
+  rtc::PacketTransportInterface* voice_rtp_transport_channel() {
     return rtp_transport_channel(voice_channel());
   }
 
-  cricket::TransportChannel* voice_rtcp_transport_channel() {
+  rtc::PacketTransportInterface* voice_rtcp_transport_channel() {
     return rtcp_transport_channel(voice_channel());
   }
 
-  cricket::TransportChannel* video_rtp_transport_channel() {
+  rtc::PacketTransportInterface* video_rtp_transport_channel() {
     return rtp_transport_channel(video_channel());
   }
 
-  cricket::TransportChannel* video_rtcp_transport_channel() {
+  rtc::PacketTransportInterface* video_rtcp_transport_channel() {
     return rtcp_transport_channel(video_channel());
   }
 
-  cricket::TransportChannel* data_rtp_transport_channel() {
+  rtc::PacketTransportInterface* data_rtp_transport_channel() {
     return rtp_transport_channel(data_channel());
   }
 
-  cricket::TransportChannel* data_rtcp_transport_channel() {
+  rtc::PacketTransportInterface* data_rtcp_transport_channel() {
     return rtcp_transport_channel(data_channel());
   }
 
  private:
-  cricket::TransportChannel* rtp_transport_channel(cricket::BaseChannel* ch) {
+  rtc::PacketTransportInterface* rtp_transport_channel(
+      cricket::BaseChannel* ch) {
     if (!ch) {
       return nullptr;
     }
     return ch->transport_channel();
   }
 
-  cricket::TransportChannel* rtcp_transport_channel(cricket::BaseChannel* ch) {
+  rtc::PacketTransportInterface* rtcp_transport_channel(
+      cricket::BaseChannel* ch) {
     if (!ch) {
       return nullptr;
     }
@@ -331,15 +335,15 @@ class WebRtcSessionTest
   WebRtcSessionTest()
       : media_engine_(new cricket::FakeMediaEngine()),
         data_engine_(new cricket::FakeDataEngine()),
-        channel_manager_(
-            new cricket::ChannelManager(media_engine_,
-                                        data_engine_,
-                                        rtc::Thread::Current())),
-        fake_call_(webrtc::Call::Config()),
+        channel_manager_(new cricket::ChannelManager(media_engine_,
+                                                     data_engine_,
+                                                     rtc::Thread::Current())),
+        fake_call_(webrtc::Call::Config(&event_log_)),
         media_controller_(
             webrtc::MediaControllerInterface::Create(cricket::MediaConfig(),
                                                      rtc::Thread::Current(),
-                                                     channel_manager_.get())),
+                                                     channel_manager_.get(),
+                                                     &event_log_)),
         tdesc_factory_(new cricket::TransportDescriptionFactory()),
         desc_factory_(
             new cricket::MediaSessionDescriptionFactory(channel_manager_.get(),
@@ -1480,6 +1484,7 @@ class WebRtcSessionTest
     allocator_->set_flags(cricket::PORTALLOCATOR_DISABLE_TCP);
   }
 
+  webrtc::RtcEventLogNullImpl event_log_;
   cricket::FakeMediaEngine* media_engine_;
   cricket::FakeDataEngine* data_engine_;
   std::unique_ptr<cricket::ChannelManager> channel_manager_;
@@ -2423,14 +2428,18 @@ TEST_F(WebRtcSessionTest, TestChannelCreationsWithContentNames) {
   SessionDescriptionInterface* answer = CreateAnswer();
   SetLocalDescriptionWithoutError(answer);
 
-  cricket::TransportChannel* voice_transport_channel =
+  rtc::PacketTransportInterface* voice_transport_channel =
       session_->voice_rtp_transport_channel();
   EXPECT_TRUE(voice_transport_channel != NULL);
-  EXPECT_EQ(voice_transport_channel->transport_name(), "audio_content_name");
-  cricket::TransportChannel* video_transport_channel =
+  EXPECT_EQ(voice_transport_channel->debug_name(),
+            "audio_content_name " +
+                std::to_string(cricket::ICE_CANDIDATE_COMPONENT_RTP));
+  rtc::PacketTransportInterface* video_transport_channel =
       session_->video_rtp_transport_channel();
   ASSERT_TRUE(video_transport_channel != NULL);
-  EXPECT_EQ(video_transport_channel->transport_name(), "video_content_name");
+  EXPECT_EQ(video_transport_channel->debug_name(),
+            "video_content_name " +
+                std::to_string(cricket::ICE_CANDIDATE_COMPONENT_RTP));
   EXPECT_TRUE((video_channel_ = media_engine_->GetVideoChannel(0)) != NULL);
   EXPECT_TRUE((voice_channel_ = media_engine_->GetVoiceChannel(0)) != NULL);
 }
@@ -3965,7 +3974,7 @@ TEST_P(WebRtcSessionTest, TestSctpDataChannelSendPortParsing) {
   int portnum = -1;
   ASSERT_TRUE(ch != NULL);
   ASSERT_EQ(1UL, ch->send_codecs().size());
-  EXPECT_EQ(cricket::kGoogleSctpDataCodecId, ch->send_codecs()[0].id);
+  EXPECT_EQ(cricket::kGoogleSctpDataCodecPlType, ch->send_codecs()[0].id);
   EXPECT_EQ(0, strcmp(cricket::kGoogleSctpDataCodecName,
                       ch->send_codecs()[0].name.c_str()));
   EXPECT_TRUE(ch->send_codecs()[0].GetParam(cricket::kCodecParamPort,
@@ -3973,7 +3982,7 @@ TEST_P(WebRtcSessionTest, TestSctpDataChannelSendPortParsing) {
   EXPECT_EQ(new_send_port, portnum);
 
   ASSERT_EQ(1UL, ch->recv_codecs().size());
-  EXPECT_EQ(cricket::kGoogleSctpDataCodecId, ch->recv_codecs()[0].id);
+  EXPECT_EQ(cricket::kGoogleSctpDataCodecPlType, ch->recv_codecs()[0].id);
   EXPECT_EQ(0, strcmp(cricket::kGoogleSctpDataCodecName,
                       ch->recv_codecs()[0].name.c_str()));
   EXPECT_TRUE(ch->recv_codecs()[0].GetParam(cricket::kCodecParamPort,

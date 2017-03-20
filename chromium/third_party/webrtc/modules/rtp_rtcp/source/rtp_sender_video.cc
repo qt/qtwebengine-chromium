@@ -22,7 +22,6 @@
 #include "webrtc/base/trace_event.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/producer_fec.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_video_generic.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_vp8.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_vp9.h"
@@ -45,9 +44,19 @@ void BuildRedPayload(const RtpPacketToSend& media_packet,
 }
 }  // namespace
 
-RTPSenderVideo::RTPSenderVideo(Clock* clock, RTPSender* rtp_sender)
+RTPSenderVideo::RTPSenderVideo(Clock* clock,
+                               RTPSender* rtp_sender,
+                               FlexfecSender* flexfec_sender)
     : rtp_sender_(rtp_sender),
       clock_(clock),
+      video_type_(kRtpVideoGeneric),
+      retransmission_settings_(kRetransmitBaseLayer),
+      last_rotation_(kVideoRotation_0),
+      red_payload_type_(-1),
+      ulpfec_payload_type_(-1),
+      flexfec_sender_(flexfec_sender),
+      delta_fec_params_{0, 1, kFecMaskRandom},
+      key_fec_params_{0, 1, kFecMaskRandom},
       fec_bitrate_(1000, RateStatistics::kBpsScale),
       video_bitrate_(1000, RateStatistics::kBpsScale) {}
 
@@ -103,10 +112,10 @@ void RTPSenderVideo::SendVideoPacket(std::unique_ptr<RtpPacketToSend> packet,
                        "seqnum", seq_num);
 }
 
-void RTPSenderVideo::SendVideoPacketAsRed(
+void RTPSenderVideo::SendVideoPacketAsRedMaybeWithUlpfec(
     std::unique_ptr<RtpPacketToSend> media_packet,
     StorageType media_packet_storage,
-    bool protect) {
+    bool protect_media_packet) {
   uint32_t rtp_timestamp = media_packet->Timestamp();
   uint16_t media_seq_num = media_packet->SequenceNumber();
 
@@ -120,21 +129,23 @@ void RTPSenderVideo::SendVideoPacketAsRed(
     // Only protect while creating RED and FEC packets, not when sending.
     rtc::CritScope cs(&crit_);
     red_packet->SetPayloadType(red_payload_type_);
-    if (protect) {
-      producer_fec_.AddRtpPacketAndGenerateFec(media_packet->data(),
-                                               media_packet->payload_size(),
-                                               media_packet->headers_size());
-    }
-    uint16_t num_fec_packets = producer_fec_.NumAvailableFecPackets();
-    if (num_fec_packets > 0) {
-      uint16_t first_fec_sequence_number =
-          rtp_sender_->AllocateSequenceNumber(num_fec_packets);
-      fec_packets = producer_fec_.GetUlpfecPacketsAsRed(
-          red_payload_type_, fec_payload_type_, first_fec_sequence_number,
-          media_packet->headers_size());
-      RTC_DCHECK_EQ(num_fec_packets, fec_packets.size());
-      if (retransmission_settings_ & kRetransmitFECPackets)
-        fec_storage = kAllowRetransmission;
+    if (ulpfec_enabled()) {
+      if (protect_media_packet) {
+        ulpfec_generator_.AddRtpPacketAndGenerateFec(
+            media_packet->data(), media_packet->payload_size(),
+            media_packet->headers_size());
+      }
+      uint16_t num_fec_packets = ulpfec_generator_.NumAvailableFecPackets();
+      if (num_fec_packets > 0) {
+        uint16_t first_fec_sequence_number =
+            rtp_sender_->AllocateSequenceNumber(num_fec_packets);
+        fec_packets = ulpfec_generator_.GetUlpfecPacketsAsRed(
+            red_payload_type_, ulpfec_payload_type_, first_fec_sequence_number,
+            media_packet->headers_size());
+        RTC_DCHECK_EQ(num_fec_packets, fec_packets.size());
+        if (retransmission_settings_ & kRetransmitFECPackets)
+          fec_storage = kAllowRetransmission;
+      }
     }
   }
   // Send |red_packet| instead of |packet| for allocated sequence number.
@@ -150,7 +161,7 @@ void RTPSenderVideo::SendVideoPacketAsRed(
     LOG(LS_WARNING) << "Failed to send RED packet " << media_seq_num;
   }
   for (const auto& fec_packet : fec_packets) {
-    // TODO(danilchap): Make producer_fec_ generate RtpPacketToSend to avoid
+    // TODO(danilchap): Make ulpfec_generator_ generate RtpPacketToSend to avoid
     // reparsing them.
     std::unique_ptr<RtpPacketToSend> rtp_packet(
         new RtpPacketToSend(*media_packet));
@@ -162,61 +173,110 @@ void RTPSenderVideo::SendVideoPacketAsRed(
       rtc::CritScope cs(&stats_crit_);
       fec_bitrate_.Update(fec_packet->length(), clock_->TimeInMilliseconds());
       TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
-                           "Video::PacketFec", "timestamp", rtp_timestamp,
+                           "Video::PacketUlpfec", "timestamp", rtp_timestamp,
                            "seqnum", fec_sequence_number);
     } else {
-      LOG(LS_WARNING) << "Failed to send FEC packet " << fec_sequence_number;
+      LOG(LS_WARNING) << "Failed to send ULPFEC packet " << fec_sequence_number;
     }
   }
 }
 
-void RTPSenderVideo::SetGenericFECStatus(bool enable,
-                                         uint8_t payload_type_red,
-                                         uint8_t payload_type_fec) {
-  RTC_DCHECK(!enable || payload_type_red > 0);
+void RTPSenderVideo::SendVideoPacketWithFlexfec(
+    std::unique_ptr<RtpPacketToSend> media_packet,
+    StorageType media_packet_storage,
+    bool protect_media_packet) {
+  RTC_DCHECK(flexfec_sender_);
+
+  if (protect_media_packet)
+    flexfec_sender_->AddRtpPacketAndGenerateFec(*media_packet);
+
+  SendVideoPacket(std::move(media_packet), media_packet_storage);
+
+  if (flexfec_sender_->FecAvailable()) {
+    std::vector<std::unique_ptr<RtpPacketToSend>> fec_packets =
+        flexfec_sender_->GetFecPackets();
+    for (auto& fec_packet : fec_packets) {
+      uint32_t timestamp = fec_packet->Timestamp();
+      uint16_t seq_num = fec_packet->SequenceNumber();
+      if (rtp_sender_->SendToNetwork(std::move(fec_packet), kDontRetransmit,
+                                     RtpPacketSender::kLowPriority)) {
+        // TODO(brandtr): Wire up stats here.
+        TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                             "Video::PacketFlexfec", "timestamp", timestamp,
+                             "seqnum", seq_num);
+      } else {
+        LOG(LS_WARNING) << "Failed to send FlexFEC packet " << seq_num;
+      }
+    }
+  }
+}
+
+void RTPSenderVideo::SetUlpfecConfig(int red_payload_type,
+                                     int ulpfec_payload_type) {
+  // Sanity check. Per the definition of UlpfecConfig (see config.h),
+  // a payload type of -1 means that the corresponding feature is
+  // turned off.
+  RTC_DCHECK_GE(red_payload_type, -1);
+  RTC_DCHECK_LE(red_payload_type, 127);
+  RTC_DCHECK_GE(ulpfec_payload_type, -1);
+  RTC_DCHECK_LE(ulpfec_payload_type, 127);
+
   rtc::CritScope cs(&crit_);
-  fec_enabled_ = enable;
-  red_payload_type_ = payload_type_red;
-  fec_payload_type_ = payload_type_fec;
+  red_payload_type_ = red_payload_type;
+  ulpfec_payload_type_ = ulpfec_payload_type;
+
+  // Must not enable ULPFEC without RED.
+  // TODO(brandtr): We currently support enabling RED without ULPFEC. Change
+  // this when we have removed the RED/RTX send-side workaround, so that we
+  // ensure that RED and ULPFEC are only enabled together.
+  RTC_DCHECK(red_enabled() || !ulpfec_enabled());
+
+  // Reset FEC parameters.
   delta_fec_params_ = FecProtectionParams{0, 1, kFecMaskRandom};
   key_fec_params_ = FecProtectionParams{0, 1, kFecMaskRandom};
 }
 
-void RTPSenderVideo::GenericFECStatus(bool* enable,
-                                      uint8_t* payload_type_red,
-                                      uint8_t* payload_type_fec) const {
+void RTPSenderVideo::GetUlpfecConfig(int* red_payload_type,
+                                     int* ulpfec_payload_type) const {
   rtc::CritScope cs(&crit_);
-  *enable = fec_enabled_;
-  *payload_type_red = red_payload_type_;
-  *payload_type_fec = fec_payload_type_;
+  *red_payload_type = red_payload_type_;
+  *ulpfec_payload_type = ulpfec_payload_type_;
 }
 
-size_t RTPSenderVideo::FecPacketOverhead() const {
-  rtc::CritScope cs(&crit_);
+size_t RTPSenderVideo::CalculateFecPacketOverhead() const {
+  if (flexfec_enabled())
+    return flexfec_sender_->MaxPacketOverhead();
+
   size_t overhead = 0;
-  if (red_payload_type_ != 0) {
-    // Overhead is FEC headers plus RED for FEC header plus anything in RTP
-    // header beyond the 12 bytes base header (CSRC list, extensions...)
+  if (red_enabled()) {
+    // The RED overhead is due to a small header.
+    overhead += kRedForFecHeaderLength;
+  }
+  if (ulpfec_enabled()) {
+    // For ULPFEC, the overhead is the FEC headers plus RED for FEC header
+    // (see above) plus anything in RTP header beyond the 12 bytes base header
+    // (CSRC list, extensions...)
     // This reason for the header extensions to be included here is that
     // from an FEC viewpoint, they are part of the payload to be protected.
     // (The base RTP header is already protected by the FEC header.)
-    return producer_fec_.MaxPacketOverhead() + kRedForFecHeaderLength +
-           (rtp_sender_->RtpHeaderLength() - kRtpHeaderSize);
+    overhead += ulpfec_generator_.MaxPacketOverhead() +
+                (rtp_sender_->RtpHeaderLength() - kRtpHeaderSize);
   }
-  if (fec_enabled_)
-    overhead += producer_fec_.MaxPacketOverhead();
   return overhead;
 }
 
-void RTPSenderVideo::SetFecParameters(const FecProtectionParams* delta_params,
-                                      const FecProtectionParams* key_params) {
+void RTPSenderVideo::SetFecParameters(const FecProtectionParams& delta_params,
+                                      const FecProtectionParams& key_params) {
   rtc::CritScope cs(&crit_);
-  RTC_DCHECK(delta_params);
-  RTC_DCHECK(key_params);
-  if (fec_enabled_) {
-    delta_fec_params_ = *delta_params;
-    key_fec_params_ = *key_params;
+  delta_fec_params_ = delta_params;
+  key_fec_params_ = key_params;
+}
+
+rtc::Optional<uint32_t> RTPSenderVideo::FlexfecSsrc() const {
+  if (flexfec_sender_) {
+    return rtc::Optional<uint32_t>(flexfec_sender_->ssrc());
   }
+  return rtc::Optional<uint32_t>();
 }
 
 bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
@@ -236,27 +296,47 @@ bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
   rtp_header->SetPayloadType(payload_type);
   rtp_header->SetTimestamp(rtp_timestamp);
   rtp_header->set_capture_time_ms(capture_time_ms);
-  // According to
-  // http://www.etsi.org/deliver/etsi_ts/126100_126199/126114/12.07.00_60/
-  // ts_126114v120700p.pdf Section 7.4.5:
-  // The MTSI client shall add the payload bytes as defined in this clause
-  // onto the last RTP packet in each group of packets which make up a key
-  // frame (I-frame or IDR frame in H.264 (AVC), or an IRAP picture in H.265
-  // (HEVC)). The MTSI client may also add the payload bytes onto the last RTP
-  // packet in each group of packets which make up another type of frame
-  // (e.g. a P-Frame) only if the current value is different from the previous
-  // value sent.
-  // Here we are adding it to every packet of every frame at this point.
-  if (video_header && video_header->rotation != kVideoRotation_0) {
-    // TODO(danilchap): Remove next call together with concept
-    // of inactive extension. Now it helps to calulate total maximum size
-    // or rtp header extensions that is used in FECPacketOverhead() function.
-    rtp_sender_->ActivateCVORtpHeaderExtension();
-    rtp_header->SetExtension<VideoOrientation>(video_header->rotation);
+
+  size_t fec_packet_overhead;
+  bool red_enabled;
+  int32_t retransmission_settings;
+  {
+    rtc::CritScope cs(&crit_);
+    // According to
+    // http://www.etsi.org/deliver/etsi_ts/126100_126199/126114/12.07.00_60/
+    // ts_126114v120700p.pdf Section 7.4.5:
+    // The MTSI client shall add the payload bytes as defined in this clause
+    // onto the last RTP packet in each group of packets which make up a key
+    // frame (I-frame or IDR frame in H.264 (AVC), or an IRAP picture in H.265
+    // (HEVC)). The MTSI client may also add the payload bytes onto the last RTP
+    // packet in each group of packets which make up another type of frame
+    // (e.g. a P-Frame) only if the current value is different from the previous
+    // value sent.
+    if (video_header) {
+      // Set rotation when key frame or when changed (to follow standard).
+      // Or when different from 0 (to follow current receiver implementation).
+      VideoRotation current_rotation = video_header->rotation;
+      if (frame_type == kVideoFrameKey || current_rotation != last_rotation_ ||
+          current_rotation != kVideoRotation_0)
+        rtp_header->SetExtension<VideoOrientation>(current_rotation);
+      last_rotation_ = current_rotation;
+    }
+
+    // FEC settings.
+    const FecProtectionParams& fec_params =
+        frame_type == kVideoFrameKey ? key_fec_params_ : delta_fec_params_;
+    if (flexfec_enabled())
+      flexfec_sender_->SetFecParameters(fec_params);
+    if (ulpfec_enabled())
+      ulpfec_generator_.SetFecParameters(fec_params);
+
+    fec_packet_overhead = CalculateFecPacketOverhead();
+    red_enabled = this->red_enabled();
+    retransmission_settings = retransmission_settings_;
   }
 
   size_t packet_capacity = rtp_sender_->MaxPayloadLength() -
-                           FecPacketOverhead() -
+                           fec_packet_overhead -
                            (rtp_sender_->RtxStatus() ? kRtxHeaderSize : 0);
   RTC_DCHECK_LE(packet_capacity, rtp_header->capacity());
   RTC_DCHECK_GT(packet_capacity, rtp_header->headers_size());
@@ -265,27 +345,17 @@ bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
   std::unique_ptr<RtpPacketizer> packetizer(RtpPacketizer::Create(
       video_type, max_data_payload_length,
       video_header ? &(video_header->codecHeader) : nullptr, frame_type));
-
-  StorageType storage;
-  int red_payload_type;
-  bool first_frame = first_frame_sent_();
-  {
-    rtc::CritScope cs(&crit_);
-    FecProtectionParams* fec_params =
-        frame_type == kVideoFrameKey ? &key_fec_params_ : &delta_fec_params_;
-    producer_fec_.SetFecParameters(fec_params);
-    storage = packetizer->GetStorageType(retransmission_settings_);
-    red_payload_type = red_payload_type_;
-  }
+  // Media packet storage.
+  StorageType storage = packetizer->GetStorageType(retransmission_settings);
 
   // TODO(changbin): we currently don't support to configure the codec to
   // output multiple partitions for VP8. Should remove below check after the
   // issue is fixed.
   const RTPFragmentationHeader* frag =
-      (video_type == kRtpVideoVp8) ? NULL : fragmentation;
-
+      (video_type == kRtpVideoVp8) ? nullptr : fragmentation;
   packetizer->SetPayloadData(payload_data, payload_size, frag);
 
+  bool first_frame = first_frame_sent_();
   bool first = true;
   bool last = false;
   while (!last) {
@@ -302,9 +372,15 @@ bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
     if (!rtp_sender_->AssignSequenceNumber(packet.get()))
       return false;
 
-    if (red_payload_type != 0) {
-      SendVideoPacketAsRed(std::move(packet), storage,
-                           packetizer->GetProtectionType() == kProtectedPacket);
+    const bool protect_packet =
+        (packetizer->GetProtectionType() == kProtectedPacket);
+    if (flexfec_enabled()) {
+      // TODO(brandtr): Remove the FlexFEC code path when FlexfecSender
+      // is wired up to PacedSender instead.
+      SendVideoPacketWithFlexfec(std::move(packet), storage, protect_packet);
+    } else if (red_enabled) {
+      SendVideoPacketAsRedMaybeWithUlpfec(std::move(packet), storage,
+                                          protect_packet);
     } else {
       SendVideoPacket(std::move(packet), storage);
     }

@@ -498,8 +498,6 @@ enum VideoCodecComplexity {
   kComplexityMax = 3
 };
 
-enum VideoCodecProfile { kProfileBase = 0x00, kProfileMain = 0x01 };
-
 enum VP8ResilienceMode {
   kResilienceOff,    // The stream produced by the encoder requires a
                      // recovery frame (typically a key frame) to be
@@ -543,7 +541,6 @@ struct VideoCodecVP9 {
 
 // H264 specific.
 struct VideoCodecH264 {
-  VideoCodecProfile profile;
   bool frameDroppingOn;
   int keyFrameInterval;
   // These are NULL/0 if not externally negotiated.
@@ -561,6 +558,7 @@ enum VideoCodecType {
   kVideoCodecI420,
   kVideoCodecRED,
   kVideoCodecULPFEC,
+  kVideoCodecFlexfec,
   kVideoCodecGeneric,
   kVideoCodecUnknown
 };
@@ -593,7 +591,11 @@ struct SpatialLayer {
 enum VideoCodecMode { kRealtimeVideo, kScreensharing };
 
 // Common video codec properties
-struct VideoCodec {
+class VideoCodec {
+ public:
+  VideoCodec();
+
+  // Public variables. TODO(hta): Make them private with accessors.
   VideoCodecType codecType;
   char plName[kPayloadNameSize];
   unsigned char plType;
@@ -608,8 +610,6 @@ struct VideoCodec {
 
   unsigned char maxFramerate;
 
-  VideoCodecUnion codecSpecific;
-
   unsigned int qpMax;
   unsigned char numberOfSimulcastStreams;
   SimulcastStream simulcastStream[kMaxSimulcastStreams];
@@ -620,6 +620,23 @@ struct VideoCodec {
 
   bool operator==(const VideoCodec& other) const = delete;
   bool operator!=(const VideoCodec& other) const = delete;
+
+  // Accessors for codec specific information.
+  // There is a const version of each that returns a reference,
+  // and a non-const version that returns a pointer, in order
+  // to allow modification of the parameters.
+  VideoCodecVP8* VP8();
+  const VideoCodecVP8& VP8() const;
+  VideoCodecVP9* VP9();
+  const VideoCodecVP9& VP9() const;
+  VideoCodecH264* H264();
+  const VideoCodecH264& H264() const;
+
+  // This variable will be declared private and renamed to codec_specific_
+  // once Chromium is not accessing it.
+  // TODO(hta): Consider replacing the union with a pointer type.
+  // This will allow removing the VideoCodec* types from this file.
+  VideoCodecUnion codecSpecific;
 };
 
 // Bandwidth over-use detector options.  These are used to drive
