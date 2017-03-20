@@ -51,6 +51,10 @@ if (ozone_platform_x11) {
   ozone_platform_deps += [ "platform/x11" ]
 }
 
+if (ozone_platform_external) {
+  ozone_platforms += [ ozone_platform ]
+}
+
 platform_list_cc_file = "$target_gen_dir/platform_list.cc"
 platform_list_h_file = "$target_gen_dir/platform_list.h"
 platform_list_txt_file = "$target_gen_dir/platform_list.txt"
