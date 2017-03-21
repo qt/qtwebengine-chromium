@@ -33,6 +33,8 @@ URL_EXPORT extern const char kMailToScheme[];
 URL_EXPORT extern const char kWsScheme[];
 URL_EXPORT extern const char kWssScheme[];
 
+URL_EXPORT extern const char kQrcScheme[];
+
 // Used to separate a standard scheme and the hostname: "://".
 URL_EXPORT extern const char kStandardSchemeSeparator[];
 
