@@ -123,6 +123,9 @@ std::string Origin::Serialize() const {
   if (scheme() == kFileScheme)
     return "file://";
 
+  if (scheme() == kQrcScheme)
+    return "qrc://";
+
   if (!suborigin_.empty()) {
     GURL url_with_suborigin = AddSuboriginToUrl(tuple_.GetURL(), suborigin_);
     return SchemeHostPort(url_with_suborigin).Serialize();
@@ -144,6 +147,9 @@ GURL Origin::GetURL() const {
 
   if (scheme() == kFileScheme)
     return GURL("file:///");
+
+  if (scheme() == kQrcScheme)
+    return GURL("qrc:///");
 
   GURL tuple_url(tuple_.GetURL());
 
