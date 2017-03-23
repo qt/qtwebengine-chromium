@@ -29,7 +29,7 @@ BINARY, RAW_TEXT = range(2)
 # Unique constants representing data pack encodings.
 _, UTF8, UTF16 = range(3)
 
-def abs(filename)
+def abs(filename):
   return os.path.normpath(os.path.join(os.getcwd(), filename))
 
 def Encode(message, encoding):
