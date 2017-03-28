@@ -834,7 +834,6 @@ void QuotaManager::GetUsageAndQuotaForWebApps(
     const GURL& origin,
     StorageType type,
     const UsageAndQuotaCallback& callback) {
-  DCHECK(origin == origin.GetOrigin());
   if (!IsSupportedType(type) ||
       (is_incognito_ && !IsSupportedIncognitoType(type))) {
     callback.Run(kQuotaErrorNotSupported, 0, 0);
