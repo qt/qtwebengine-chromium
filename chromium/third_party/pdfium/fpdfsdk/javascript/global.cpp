@@ -23,10 +23,10 @@ template <unsigned ACC, wchar_t... Ns>
 struct CHash;
 
 // Only needed to hash single-character strings.
-template <wchar_t N>
-struct CHash<N> {
-  static const unsigned value = N;
-};
+// template <wchar_t N>
+// struct CHash<N> {
+//   static const unsigned value = N;
+// };
 
 template <unsigned ACC, wchar_t N>
 struct CHash<ACC, N> {
