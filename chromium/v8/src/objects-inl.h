@@ -3122,6 +3122,25 @@ void HashTableBase::SetNumberOfDeletedElements(int nod) {
 
 
 template <typename Derived, typename Shape, typename Key>
+inline uint32_t HashTable<Derived, Shape, Key>::Hash(Key key) {
+  if (Shape::UsesSeed) {
+    return Shape::SeededHash(key, GetHeap()->HashSeed());
+  } else {
+    return Shape::Hash(key);
+  }
+}
+
+template <typename Derived, typename Shape, typename Key>
+inline uint32_t HashTable<Derived, Shape, Key>::HashForObject(Key key, Object* object) {
+  if (Shape::UsesSeed) {
+    return Shape::SeededHashForObject(key, GetHeap()->HashSeed(), object);
+  } else {
+    return Shape::HashForObject(key, object);
+  }
+}
+
+
+template <typename Derived, typename Shape, typename Key>
 int HashTable<Derived, Shape, Key>::FindEntry(Key key) {
   return FindEntry(GetIsolate(), key);
 }
