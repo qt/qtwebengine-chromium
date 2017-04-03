@@ -68,9 +68,9 @@ enum FlushBehavior {
   kDataEOF
 };
 
-static_assert(!kDoNotFlush, "DoNotFlush should be falsy");
-static_assert(kFetchEOF, "FetchEOF should be truthy");
-static_assert(kDataEOF, "DataEOF should be truthy");
+// static_assert(kDoNotFlush, "DoNotFlush should be falsy");
+// static_assert(kFetchEOF, "FetchEOF should be truthy");
+// static_assert(kDataEOF, "DataEOF should be truthy");
 
 class WTF_EXPORT TextCodec {
   USING_FAST_MALLOC(TextCodec);
