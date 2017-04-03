@@ -3532,21 +3532,9 @@ class HashTable : public HashTableBase {
   typedef Shape ShapeT;
 
   // Wrapper methods
-  inline uint32_t Hash(Key key) {
-    if (Shape::UsesSeed) {
-      return Shape::SeededHash(key, GetHeap()->HashSeed());
-    } else {
-      return Shape::Hash(key);
-    }
-  }
+  inline uint32_t Hash(Key key);
 
-  inline uint32_t HashForObject(Key key, Object* object) {
-    if (Shape::UsesSeed) {
-      return Shape::SeededHashForObject(key, GetHeap()->HashSeed(), object);
-    } else {
-      return Shape::HashForObject(key, object);
-    }
-  }
+  inline uint32_t HashForObject(Key key, Object* object);
 
   // Returns a new HashTable object.
   MUST_USE_RESULT static Handle<Derived> New(

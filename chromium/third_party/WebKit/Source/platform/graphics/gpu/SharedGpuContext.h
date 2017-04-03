@@ -5,6 +5,7 @@
 #include "platform/PlatformExport.h"
 #include "wtf/ThreadSpecific.h"
 
+#include <functional>
 #include <memory>
 
 namespace gpu {
