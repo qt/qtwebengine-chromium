@@ -9,6 +9,7 @@
 #include "platform/graphics/WebGraphicsContext3DProviderWrapper.h"
 #include "platform/wtf/ThreadSpecific.h"
 
+#include <functional>
 #include <memory>
 
 namespace blink {
