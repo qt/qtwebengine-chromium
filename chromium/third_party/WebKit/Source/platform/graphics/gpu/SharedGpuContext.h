@@ -8,6 +8,7 @@
 #include "platform/PlatformExport.h"
 #include "platform/wtf/ThreadSpecific.h"
 
+#include <functional>
 #include <memory>
 
 namespace gpu {
