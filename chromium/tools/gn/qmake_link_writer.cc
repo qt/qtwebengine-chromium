@@ -42,6 +42,7 @@
 // found in the LICENSE file.
 
 #include "tools/gn/qmake_link_writer.h"
+#include "tools/gn/deps_iterator.h"
 #include "tools/gn/ninja_binary_target_writer.h"
 #include "tools/gn/output_file.h"
 #include "tools/gn/settings.h"
@@ -60,6 +61,28 @@ QMakeLinkWriter::QMakeLinkWriter(const NinjaBinaryTargetWriter* writer, const Ta
 }
 
 QMakeLinkWriter::~QMakeLinkWriter() {
+}
+
+// Based on similar function in qt_creator_writer.cc
+void CollectDeps(std::set<const Target*> &deps, const Target* target) {
+  for (const auto& dep : target->GetDeps(Target::DEPS_ALL)) {
+    const Target* dep_target = dep.ptr;
+    if (deps.count(dep_target))
+      continue;
+    deps.insert(dep_target);
+    CollectDeps(deps, dep_target);
+  }
+}
+
+void PrintSourceFile(std::ostream& out, PathOutput& path_output, const SourceFile& file) {
+  out << " \\\n    \"";
+  if (file.is_source_absolute()) {
+    out << "$$PWD/";
+    path_output.WriteFile(out, file);
+  } else {
+    out << file.value();
+  }
+  out << "\"";
 }
 
 void QMakeLinkWriter::Run() {
@@ -88,6 +111,42 @@ void QMakeLinkWriter::Run() {
   UniqueVector<const Target*> linkable_deps;
   UniqueVector<const Target*> non_linkable_deps;
   nwriter_->GetDeps(&extra_object_files, &linkable_deps, &non_linkable_deps);
+
+  std::set<const Target*> deps;
+  deps.insert(target_);
+  CollectDeps(deps, target_);
+
+  // sources files.
+  out_ << "NINJA_SOURCES =";
+  for (const auto& target : deps) {
+    for (const auto& file : target->sources()) {
+      PrintSourceFile(out_, path_output_, file);
+    }
+  }
+  out_ << std::endl;
+
+  // headers files.
+  out_ << "NINJA_HEADERS =";
+  for (const auto& target : deps) {
+    for (const auto& file : target->public_headers()) {
+      PrintSourceFile(out_, path_output_, file);
+    }
+  }
+  out_ << std::endl;
+
+  std::set<std::string> defines;
+  for (const auto& target : deps) {
+    for (ConfigValuesIterator it(target); !it.done(); it.Next()) {
+      for (std::string define : it.cur().defines()) {
+        defines.insert(define);
+      }
+    }
+  }
+  out_ << "NINJA_DEFINES =";
+  for (const auto& define : defines) {
+    out_ << " \\\n    " << define;
+  }
+  out_ << std::endl;
 
   // object files.
   out_ << "NINJA_OBJECTS =";
