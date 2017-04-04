@@ -365,6 +365,16 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
                 const MotionEvent& secondary_pointer_down,
                 float raw_distance_x,
                 float raw_distance_y) override {
+    // Do not use gesture detection for scrolling on macOS, it is handled by real and synthesized
+    // wheel events received from Qt (the synthesized ones come from usage of a touchpad).
+    // The scroll gestures created by the gesture detector are incompatible with wheel events
+    // received by Qt, due to having an inverse Y coordinate and also because they overlap with
+    // each other, thus scrolling sometimes goes into one direction, and sometimes
+    // into the opposite direction.
+#if defined(TOOLKIT_QT) && defined(OS_MAC)
+  return true;
+#endif
+
     float distance_x = raw_distance_x;
     float distance_y = raw_distance_y;
     if (!scroll_event_sent_ && e2.GetPointerCount() < 3) {
@@ -429,6 +439,12 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
                const MotionEvent& e2,
                float velocity_x,
                float velocity_y) override {
+     // Do not use gesture detection for flings on macOS. See explanation at the beginning
+     // of OnScroll.
+#if defined(TOOLKIT_QT) && defined(OS_MAC)
+    return true;
+#endif
+
     if (snap_scroll_controller_.IsSnappingScrolls()) {
       if (snap_scroll_controller_.IsSnapHorizontal()) {
         velocity_y = 0;
