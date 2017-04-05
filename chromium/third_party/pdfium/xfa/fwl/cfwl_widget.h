@@ -60,7 +60,7 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
   virtual void SetStates(uint32_t dwStates);
   virtual void RemoveStates(uint32_t dwStates);
   virtual void Update() = 0;
-  virtual FWL_WidgetHit HitTest(FX_FLOAT fx, FX_FLOAT fy);
+  virtual FWL_WidgetHit HitTest(const CFX_PointF& point);
   virtual void DrawWidget(CFX_Graphics* pGraphics,
                           const CFX_Matrix* pMatrix) = 0;
   virtual void SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
@@ -90,7 +90,7 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
       m_iLock--;
   }
 
-  void TransformTo(CFWL_Widget* pWidget, FX_FLOAT& fx, FX_FLOAT& fy);
+  CFX_PointF TransformTo(CFWL_Widget* pWidget, const CFX_PointF& point);
   CFX_Matrix GetMatrix();
   IFWL_ThemeProvider* GetThemeProvider() const;
 
@@ -173,7 +173,6 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
                           FX_FLOAT fMaxHeight,
                           const CFX_RectF& rtAnchor,
                           CFX_RectF& rtPopup);
-  bool GetScreenSize(FX_FLOAT& fx, FX_FLOAT& fy);
   void DrawBackground(CFX_Graphics* pGraphics,
                       CFWL_Part iPartBk,
                       IFWL_ThemeProvider* pTheme,

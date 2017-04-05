@@ -37,7 +37,7 @@ static void InstallCode(
     BuiltinFunctionId id = static_cast<BuiltinFunctionId>(-1)) {
   Handle<String> key = isolate->factory()->InternalizeUtf8String(name);
   Handle<JSFunction> optimized =
-      isolate->factory()->NewFunctionWithoutPrototype(key, code);
+      isolate->factory()->NewFunctionWithoutPrototype(key, code, true);
   if (argc < 0) {
     optimized->shared()->DontAdaptArguments();
   } else {
@@ -46,6 +46,8 @@ static void InstallCode(
   if (id >= 0) {
     optimized->shared()->set_builtin_function_id(id);
   }
+  optimized->shared()->set_language_mode(STRICT);
+  optimized->shared()->set_native(true);
   JSObject::AddProperty(holder, key, optimized, NONE);
 }
 
@@ -78,10 +80,8 @@ RUNTIME_FUNCTION(Runtime_SpecialArrayFunctions) {
                  kArrayValues);
   InstallBuiltin(isolate, holder, "entries", Builtins::kArrayPrototypeEntries,
                  0, kArrayEntries);
-
   return *holder;
 }
-
 
 RUNTIME_FUNCTION(Runtime_FixedArrayGet) {
   SealHandleScope shs(isolate);
@@ -653,6 +653,34 @@ RUNTIME_FUNCTION(Runtime_SpreadIterablePrepare) {
   }
 
   return *spread;
+}
+
+RUNTIME_FUNCTION(Runtime_SpreadIterableFixed) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(Object, spread, 0);
+
+  // The caller should check if proper iteration is necessary.
+  Handle<JSFunction> spread_iterable_function = isolate->spread_iterable();
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, spread,
+      Execution::Call(isolate, spread_iterable_function,
+                      isolate->factory()->undefined_value(), 1, &spread));
+
+  // Create a new FixedArray and put the result of the spread into it.
+  Handle<JSArray> spread_array = Handle<JSArray>::cast(spread);
+  uint32_t spread_length;
+  CHECK(spread_array->length()->ToArrayIndex(&spread_length));
+
+  Handle<FixedArray> result = isolate->factory()->NewFixedArray(spread_length);
+  ElementsAccessor* accessor = spread_array->GetElementsAccessor();
+  for (uint32_t i = 0; i < spread_length; i++) {
+    DCHECK(accessor->HasElement(spread_array, i));
+    Handle<Object> element = accessor->Get(spread_array, i);
+    result->set(i, *element);
+  }
+
+  return *result;
 }
 
 }  // namespace internal

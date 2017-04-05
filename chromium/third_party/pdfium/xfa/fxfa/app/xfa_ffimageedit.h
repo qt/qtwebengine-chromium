@@ -11,7 +11,7 @@
 
 class CXFA_FFImageEdit : public CXFA_FFField {
  public:
-  CXFA_FFImageEdit(CXFA_FFPageView* pPageView, CXFA_WidgetAcc* pDataAcc);
+  explicit CXFA_FFImageEdit(CXFA_WidgetAcc* pDataAcc);
   ~CXFA_FFImageEdit() override;
 
   // CXFA_FFField
@@ -20,7 +20,7 @@ class CXFA_FFImageEdit : public CXFA_FFField {
                     uint32_t dwStatus) override;
   bool LoadWidget() override;
   void UnloadWidget() override;
-  bool OnLButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) override;
+  bool OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) override;
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnProcessEvent(CFWL_Event* pEvent) override;
   void OnDrawWidget(CFX_Graphics* pGraphics,

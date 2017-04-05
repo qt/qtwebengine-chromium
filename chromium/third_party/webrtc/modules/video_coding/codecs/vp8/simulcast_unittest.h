@@ -145,6 +145,11 @@ class Vp8TestDecodedImageCallback : public DecodedImageCallback {
     RTC_NOTREACHED();
     return -1;
   }
+  void Decoded(VideoFrame& decoded_image,
+               rtc::Optional<int32_t> decode_time_ms,
+               rtc::Optional<uint8_t> qp) override {
+    Decoded(decoded_image);
+  }
   int DecodedFrames() { return decoded_frames_; }
 
  private:

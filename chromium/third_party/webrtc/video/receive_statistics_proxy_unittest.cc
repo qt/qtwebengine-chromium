@@ -12,6 +12,8 @@
 
 #include <memory>
 
+#include "webrtc/api/video/video_frame.h"
+#include "webrtc/api/video/video_rotation.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 #include "webrtc/system_wrappers/include/metrics_default.h"
@@ -52,8 +54,51 @@ class ReceiveStatisticsProxyTest : public ::testing::Test {
 TEST_F(ReceiveStatisticsProxyTest, OnDecodedFrameIncreasesFramesDecoded) {
   EXPECT_EQ(0u, statistics_proxy_->GetStats().frames_decoded);
   for (uint32_t i = 1; i <= 3; ++i) {
-    statistics_proxy_->OnDecodedFrame();
+    statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>());
     EXPECT_EQ(i, statistics_proxy_->GetStats().frames_decoded);
+  }
+}
+
+TEST_F(ReceiveStatisticsProxyTest, OnDecodedFrameWithQpResetsFramesDecoded) {
+  EXPECT_EQ(0u, statistics_proxy_->GetStats().frames_decoded);
+  for (uint32_t i = 1; i <= 3; ++i) {
+    statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>());
+    EXPECT_EQ(i, statistics_proxy_->GetStats().frames_decoded);
+  }
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(1u));
+  EXPECT_EQ(1u, statistics_proxy_->GetStats().frames_decoded);
+}
+
+TEST_F(ReceiveStatisticsProxyTest, OnDecodedFrameIncreasesQpSum) {
+  EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(3u));
+  EXPECT_EQ(rtc::Optional<uint64_t>(3u), statistics_proxy_->GetStats().qp_sum);
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(127u));
+  EXPECT_EQ(rtc::Optional<uint64_t>(130u),
+            statistics_proxy_->GetStats().qp_sum);
+}
+
+TEST_F(ReceiveStatisticsProxyTest, OnDecodedFrameWithoutQpQpSumWontExist) {
+  EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>());
+  EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
+}
+
+TEST_F(ReceiveStatisticsProxyTest, OnDecodedFrameWithoutQpResetsQpSum) {
+  EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(3u));
+  EXPECT_EQ(rtc::Optional<uint64_t>(3u), statistics_proxy_->GetStats().qp_sum);
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>());
+  EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
+}
+
+TEST_F(ReceiveStatisticsProxyTest, OnRenderedFrameIncreasesFramesRendered) {
+  EXPECT_EQ(0u, statistics_proxy_->GetStats().frames_rendered);
+  webrtc::VideoFrame frame(
+      webrtc::I420Buffer::Create(1, 1), 0, 0, webrtc::kVideoRotation_0);
+  for (uint32_t i = 1; i <= 3; ++i) {
+    statistics_proxy_->OnRenderedFrame(frame);
+    EXPECT_EQ(i, statistics_proxy_->GetStats().frames_rendered);
   }
 }
 
@@ -74,12 +119,13 @@ TEST_F(ReceiveStatisticsProxyTest, GetStatsReportsDecoderImplementationName) {
       kName, statistics_proxy_->GetStats().decoder_implementation_name.c_str());
 }
 
-TEST_F(ReceiveStatisticsProxyTest, GetStatsReportsIncomingRate) {
-  const int kFramerate = 28;
-  const int kBitrateBps = 311000;
-  statistics_proxy_->OnIncomingRate(kFramerate, kBitrateBps);
-  EXPECT_EQ(kFramerate, statistics_proxy_->GetStats().network_frame_rate);
-  EXPECT_EQ(kBitrateBps, statistics_proxy_->GetStats().total_bitrate_bps);
+TEST_F(ReceiveStatisticsProxyTest, GetStatsReportsOnCompleteFrame) {
+  const int kFrameSizeBytes = 1000;
+  statistics_proxy_->OnCompleteFrame(true, kFrameSizeBytes);
+  VideoReceiveStream::Stats stats = statistics_proxy_->GetStats();
+  EXPECT_EQ(1, stats.network_frame_rate);
+  EXPECT_EQ(1, stats.frame_counts.key_frames);
+  EXPECT_EQ(0, stats.frame_counts.delta_frames);
 }
 
 TEST_F(ReceiveStatisticsProxyTest, GetStatsReportsDecodeTimingStats) {
@@ -91,9 +137,10 @@ TEST_F(ReceiveStatisticsProxyTest, GetStatsReportsDecodeTimingStats) {
   const int kMinPlayoutDelayMs = 6;
   const int kRenderDelayMs = 7;
   const int64_t kRttMs = 8;
-  statistics_proxy_->OnDecoderTiming(
+  statistics_proxy_->OnRttUpdate(kRttMs, 0);
+  statistics_proxy_->OnFrameBufferTimingsUpdated(
       kDecodeMs, kMaxDecodeMs, kCurrentDelayMs, kTargetDelayMs, kJitterBufferMs,
-      kMinPlayoutDelayMs, kRenderDelayMs, kRttMs);
+      kMinPlayoutDelayMs, kRenderDelayMs);
   VideoReceiveStream::Stats stats = statistics_proxy_->GetStats();
   EXPECT_EQ(kDecodeMs, stats.decode_ms);
   EXPECT_EQ(kMaxDecodeMs, stats.max_decode_ms);

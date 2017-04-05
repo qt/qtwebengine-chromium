@@ -32,9 +32,9 @@
 
 namespace {
 
-void HardClip(FX_FLOAT& x, FX_FLOAT& y) {
-  x = std::max(std::min(x, 50000.0f), -50000.0f);
-  y = std::max(std::min(y, 50000.0f), -50000.0f);
+CFX_PointF HardClip(const CFX_PointF& pos) {
+  return CFX_PointF(std::max(std::min(pos.x, 50000.0f), -50000.0f),
+                    std::max(std::min(pos.y, 50000.0f), -50000.0f));
 }
 
 void RgbByteOrderSetPixel(CFX_DIBitmap* pBitmap, int x, int y, uint32_t argb) {
@@ -273,46 +273,46 @@ bool DibSetPixel(CFX_DIBitmap* pDevice,
 
 void CAgg_PathData::BuildPath(const CFX_PathData* pPathData,
                               const CFX_Matrix* pObject2Device) {
-  int nPoints = pPathData->GetPointCount();
-  FX_PATHPOINT* pPoints = pPathData->GetPoints();
-  for (int i = 0; i < nPoints; i++) {
-    FX_FLOAT x = pPoints[i].m_PointX, y = pPoints[i].m_PointY;
-    if (pObject2Device) {
-      pObject2Device->Transform(x, y);
-    }
-    HardClip(x, y);
-    int point_type = pPoints[i].m_Flag & FXPT_TYPE;
-    if (point_type == FXPT_MOVETO) {
-      m_PathData.move_to(x, y);
-    } else if (point_type == FXPT_LINETO) {
-      if (pPoints[i - 1].m_Flag == FXPT_MOVETO &&
-          (i == nPoints - 1 || pPoints[i + 1].m_Flag == FXPT_MOVETO) &&
-          pPoints[i].m_PointX == pPoints[i - 1].m_PointX &&
-          pPoints[i].m_PointY == pPoints[i - 1].m_PointY) {
-        x += 1;
+  const std::vector<FX_PATHPOINT>& pPoints = pPathData->GetPoints();
+  for (size_t i = 0; i < pPoints.size(); i++) {
+    CFX_PointF pos = pPoints[i].m_Point;
+    if (pObject2Device)
+      pos = pObject2Device->Transform(pos);
+
+    pos = HardClip(pos);
+    FXPT_TYPE point_type = pPoints[i].m_Type;
+    if (point_type == FXPT_TYPE::MoveTo) {
+      m_PathData.move_to(pos.x, pos.y);
+    } else if (point_type == FXPT_TYPE::LineTo) {
+      if (pPoints[i - 1].IsTypeAndOpen(FXPT_TYPE::MoveTo) &&
+          (i == pPoints.size() - 1 ||
+           pPoints[i + 1].IsTypeAndOpen(FXPT_TYPE::MoveTo)) &&
+          pPoints[i].m_Point == pPoints[i - 1].m_Point) {
+        pos.x += 1;
       }
-      m_PathData.line_to(x, y);
-    } else if (point_type == FXPT_BEZIERTO) {
-      FX_FLOAT x0 = pPoints[i - 1].m_PointX, y0 = pPoints[i - 1].m_PointY;
-      FX_FLOAT x2 = pPoints[i + 1].m_PointX, y2 = pPoints[i + 1].m_PointY;
-      FX_FLOAT x3 = pPoints[i + 2].m_PointX, y3 = pPoints[i + 2].m_PointY;
+      m_PathData.line_to(pos.x, pos.y);
+    } else if (point_type == FXPT_TYPE::BezierTo) {
+      CFX_PointF pos0 = pPoints[i - 1].m_Point;
+      CFX_PointF pos2 = pPoints[i + 1].m_Point;
+      CFX_PointF pos3 = pPoints[i + 2].m_Point;
       if (pObject2Device) {
-        pObject2Device->Transform(x0, y0);
-        pObject2Device->Transform(x2, y2);
-        pObject2Device->Transform(x3, y3);
+        pos0 = pObject2Device->Transform(pos0);
+        pos2 = pObject2Device->Transform(pos2);
+        pos3 = pObject2Device->Transform(pos3);
       }
-      HardClip(x0, y0);
-      HardClip(x2, y2);
-      HardClip(x3, y3);
-      agg::curve4 curve(x0, y0, x, y, x2, y2, x3, y3);
+      pos0 = HardClip(pos0);
+      pos2 = HardClip(pos2);
+      pos3 = HardClip(pos3);
+      agg::curve4 curve(pos0.x, pos0.y, pos.x, pos.y, pos2.x, pos2.y, pos3.x,
+                        pos3.y);
       i += 2;
       m_PathData.add_path_curve(curve);
     }
-    if (pPoints[i].m_Flag & FXPT_CLOSEFIGURE) {
+    if (pPoints[i].m_CloseFigure)
       m_PathData.end_poly();
-    }
   }
 }
+
 namespace agg {
 
 template <class BaseRenderer>
@@ -552,7 +552,8 @@ bool CFX_AggDeviceDriver::SetClip_PathFill(const CFX_PathData* pPathData,
     m_pClipRgn = pdfium::MakeUnique<CFX_ClipRgn>(
         GetDeviceCaps(FXDC_PIXEL_WIDTH), GetDeviceCaps(FXDC_PIXEL_HEIGHT));
   }
-  if (pPathData->GetPointCount() == 5 || pPathData->GetPointCount() == 4) {
+  size_t size = pPathData->GetPoints().size();
+  if (size == 5 || size == 4) {
     CFX_FloatRect rectf;
     if (pPathData->IsRect(pObject2Device, &rectf)) {
       rectf.Intersect(
@@ -1500,14 +1501,16 @@ bool CFX_AggDeviceDriver::DrawPath(const CFX_PathData* pPathData,
     matrix1.a =
         std::max(FXSYS_fabs(pObject2Device->a), FXSYS_fabs(pObject2Device->b));
     matrix1.d = matrix1.a;
-    matrix2.Set(pObject2Device->a / matrix1.a, pObject2Device->b / matrix1.a,
-                pObject2Device->c / matrix1.d, pObject2Device->d / matrix1.d, 0,
-                0);
+    matrix2 = CFX_Matrix(
+        pObject2Device->a / matrix1.a, pObject2Device->b / matrix1.a,
+        pObject2Device->c / matrix1.d, pObject2Device->d / matrix1.d, 0, 0);
+
     CFX_Matrix mtRervese;
     mtRervese.SetReverse(matrix2);
     matrix1 = *pObject2Device;
     matrix1.Concat(mtRervese);
   }
+
   CAgg_PathData path_data;
   path_data.BuildPath(pPathData, &matrix1);
   agg::rasterizer_scanline_aa rasterizer;

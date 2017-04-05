@@ -18,11 +18,13 @@
 #include "libANGLE/Caps.h"
 #include "libANGLE/Config.h"
 #include "libANGLE/Error.h"
+#include "libANGLE/LoggingAnnotator.h"
 #include "libANGLE/Version.h"
 
 namespace gl
 {
 class Context;
+class TextureManager;
 }
 
 namespace rx
@@ -170,8 +172,12 @@ class Display final : angle::NonCopyable
 
     Device *mDevice;
     EGLenum mPlatform;
+    angle::LoggingAnnotator mAnnotator;
+
+    gl::TextureManager *mTextureManager;
+    size_t mGlobalTextureShareGroupUsers;
 };
 
-}
+}  // namespace egl
 
 #endif   // LIBANGLE_DISPLAY_H_

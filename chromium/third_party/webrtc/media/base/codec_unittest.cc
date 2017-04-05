@@ -68,18 +68,18 @@ TEST(CodecTest, TestAudioCodecOperators) {
   AudioCodec c3(96, "A", 48000, 20000, 2);
   AudioCodec c4(96, "A", 44100, 10000, 2);
   AudioCodec c5(96, "A", 44100, 20000, 1);
-  EXPECT_TRUE(c0 != c1);
-  EXPECT_TRUE(c0 != c2);
-  EXPECT_TRUE(c0 != c3);
-  EXPECT_TRUE(c0 != c4);
-  EXPECT_TRUE(c0 != c5);
+  EXPECT_NE(c0, c1);
+  EXPECT_NE(c0, c2);
+  EXPECT_NE(c0, c3);
+  EXPECT_NE(c0, c4);
+  EXPECT_NE(c0, c5);
 
   AudioCodec c7;
   AudioCodec c8(0, "", 0, 0, 0);
   AudioCodec c9 = c0;
-  EXPECT_TRUE(c8 == c7);
-  EXPECT_TRUE(c9 != c7);
-  EXPECT_TRUE(c9 == c0);
+  EXPECT_EQ(c8, c7);
+  EXPECT_NE(c9, c7);
+  EXPECT_EQ(c9, c0);
 
   AudioCodec c10(c0);
   AudioCodec c11(c0);
@@ -89,13 +89,13 @@ TEST(CodecTest, TestAudioCodecOperators) {
   c11.params["x"] = "def";
   c12.params["y"] = "abc";
   c13.params["x"] = "abc";
-  EXPECT_TRUE(c10 != c0);
-  EXPECT_TRUE(c11 != c0);
-  EXPECT_TRUE(c11 != c10);
-  EXPECT_TRUE(c12 != c0);
-  EXPECT_TRUE(c12 != c10);
-  EXPECT_TRUE(c12 != c11);
-  EXPECT_TRUE(c13 == c10);
+  EXPECT_NE(c10, c0);
+  EXPECT_NE(c11, c0);
+  EXPECT_NE(c11, c10);
+  EXPECT_NE(c12, c0);
+  EXPECT_NE(c12, c10);
+  EXPECT_NE(c12, c11);
+  EXPECT_EQ(c13, c10);
 }
 
 TEST(CodecTest, TestAudioCodecMatches) {
@@ -311,14 +311,17 @@ TEST(CodecTest, TestToCodecParameters) {
   const VideoCodec v(96, "V");
   webrtc::RtpCodecParameters codec_params_1 = v.ToCodecParameters();
   EXPECT_EQ(96, codec_params_1.payload_type);
-  EXPECT_EQ("V", codec_params_1.mime_type);
-  EXPECT_EQ(cricket::kVideoCodecClockrate, codec_params_1.clock_rate);
-  EXPECT_EQ(1, codec_params_1.channels);
+  EXPECT_EQ(cricket::MEDIA_TYPE_VIDEO, codec_params_1.kind);
+  EXPECT_EQ("V", codec_params_1.name);
+  EXPECT_EQ(rtc::Optional<int>(cricket::kVideoCodecClockrate),
+            codec_params_1.clock_rate);
+  EXPECT_EQ(rtc::Optional<int>(), codec_params_1.num_channels);
 
   const AudioCodec a(97, "A", 44100, 20000, 2);
   webrtc::RtpCodecParameters codec_params_2 = a.ToCodecParameters();
   EXPECT_EQ(97, codec_params_2.payload_type);
-  EXPECT_EQ("A", codec_params_2.mime_type);
-  EXPECT_EQ(44100, codec_params_2.clock_rate);
-  EXPECT_EQ(2, codec_params_2.channels);
+  EXPECT_EQ(cricket::MEDIA_TYPE_AUDIO, codec_params_2.kind);
+  EXPECT_EQ("A", codec_params_2.name);
+  EXPECT_EQ(rtc::Optional<int>(44100), codec_params_2.clock_rate);
+  EXPECT_EQ(rtc::Optional<int>(2), codec_params_2.num_channels);
 }

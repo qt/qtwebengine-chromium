@@ -45,10 +45,6 @@
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #endif  // _SKIA_SUPPORT_
 
-#ifdef SK_DEBUG
-#include "third_party/skia/include/core/SkClipStack.h"
-#endif  // SK_DEBUG
-
 namespace {
 
 #ifdef _SKIA_SUPPORT_PATHS_
@@ -195,8 +191,6 @@ void DebugShowCanvasClip(const SkCanvas* canvas) {
   canvas->getClipDeviceBounds(&device);
   printf("device bounds %d %d %d %d\n", device.fLeft, device.fTop,
          device.fRight, device.fBottom);
-  const SkClipStack* clipStack = canvas->getClipStack();
-  clipStack->dump();
 #endif  // SHOW_SKIA_PATH
 }
 
@@ -284,23 +278,21 @@ static void DebugValidate(const CFX_DIBitmap* bitmap,
 SkPath BuildPath(const CFX_PathData* pPathData) {
   SkPath skPath;
   const CFX_PathData* pFPath = pPathData;
-  int nPoints = pFPath->GetPointCount();
-  FX_PATHPOINT* pPoints = pFPath->GetPoints();
-  for (int i = 0; i < nPoints; i++) {
-    FX_FLOAT x = pPoints[i].m_PointX;
-    FX_FLOAT y = pPoints[i].m_PointY;
-    int point_type = pPoints[i].m_Flag & FXPT_TYPE;
-    if (point_type == FXPT_MOVETO) {
-      skPath.moveTo(x, y);
-    } else if (point_type == FXPT_LINETO) {
-      skPath.lineTo(x, y);
-    } else if (point_type == FXPT_BEZIERTO) {
-      FX_FLOAT x2 = pPoints[i + 1].m_PointX, y2 = pPoints[i + 1].m_PointY;
-      FX_FLOAT x3 = pPoints[i + 2].m_PointX, y3 = pPoints[i + 2].m_PointY;
-      skPath.cubicTo(x, y, x2, y2, x3, y3);
+  const std::vector<FX_PATHPOINT>& pPoints = pFPath->GetPoints();
+  for (size_t i = 0; i < pPoints.size(); i++) {
+    CFX_PointF point = pPoints[i].m_Point;
+    FXPT_TYPE point_type = pPoints[i].m_Type;
+    if (point_type == FXPT_TYPE::MoveTo) {
+      skPath.moveTo(point.x, point.y);
+    } else if (point_type == FXPT_TYPE::LineTo) {
+      skPath.lineTo(point.x, point.y);
+    } else if (point_type == FXPT_TYPE::BezierTo) {
+      CFX_PointF point2 = pPoints[i + 1].m_Point;
+      CFX_PointF point3 = pPoints[i + 2].m_Point;
+      skPath.cubicTo(point.x, point.y, point2.x, point2.y, point3.x, point3.y);
       i += 2;
     }
-    if (pPoints[i].m_Flag & FXPT_CLOSEFIGURE)
+    if (pPoints[i].m_CloseFigure)
       skPath.close();
   }
   return skPath;
@@ -312,7 +304,7 @@ SkMatrix ToSkMatrix(const CFX_Matrix& m) {
   return skMatrix;
 }
 
-// use when pdf's y-axis points up insead of down
+// use when pdf's y-axis points up instead of down
 SkMatrix ToFlippedSkMatrix(const CFX_Matrix& m, SkScalar flip) {
   SkMatrix skMatrix;
   skMatrix.setAll(m.a * flip, -m.c * flip, m.e, m.b * flip, -m.d * flip, m.f, 0,
@@ -809,8 +801,9 @@ class SkiaState {
       vFlip *= -1;
     for (int index = 0; index < nChars; ++index) {
       const FXTEXT_CHARPOS& cp = pCharPos[index];
-      m_positions[index + count] = {cp.m_OriginX * flip, cp.m_OriginY * vFlip};
-      m_glyphs[index + count] = (uint16_t)cp.m_GlyphIndex;
+      m_positions[index + count] = {cp.m_Origin.x * flip,
+                                    cp.m_Origin.y * vFlip};
+      m_glyphs[index + count] = static_cast<uint16_t>(cp.m_GlyphIndex);
     }
     SkPoint delta;
     if (MatrixOffset(pMatrix, &delta)) {
@@ -1086,7 +1079,6 @@ class SkiaState {
 #if SHOW_SKIA_PATH
     printf("\n%s\nSkia Save Count %d:\n", where,
            m_pDriver->m_pCanvas->getSaveCount());
-    m_pDriver->m_pCanvas->getClipStack()->dump();
     printf("Cache:\n");
     for (int index = 0; index < m_commands.count(); ++index) {
       DumpPrefix(index);
@@ -1297,8 +1289,8 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(int nChars,
   glyphs.setCount(nChars);
   for (int index = 0; index < nChars; ++index) {
     const FXTEXT_CHARPOS& cp = pCharPos[index];
-    positions[index] = {cp.m_OriginX * flip, cp.m_OriginY * vFlip};
-    glyphs[index] = (uint16_t)cp.m_GlyphIndex;
+    positions[index] = {cp.m_Origin.x * flip, cp.m_Origin.y * vFlip};
+    glyphs[index] = static_cast<uint16_t>(cp.m_GlyphIndex);
   }
 #ifdef _SKIA_SUPPORT_PATHS_
   m_pBitmap->PreMultiply();
@@ -1439,7 +1431,8 @@ bool CFX_SkiaDeviceDriver::SetClip_PathFill(
         GetDeviceCaps(FXDC_PIXEL_WIDTH), GetDeviceCaps(FXDC_PIXEL_HEIGHT));
   }
 #endif  // _SKIA_SUPPORT_PATHS_
-  if (pPathData->GetPointCount() == 5 || pPathData->GetPointCount() == 4) {
+  if (pPathData->GetPoints().size() == 5 ||
+      pPathData->GetPoints().size() == 4) {
     CFX_FloatRect rectf;
     if (pPathData->IsRect(deviceMatrix, &rectf)) {
       rectf.Intersect(
@@ -1749,7 +1742,7 @@ bool CFX_SkiaDeviceDriver::DrawShading(const CPDF_ShadingPattern* pPattern,
       m_pCanvas->clipPath(skClip, SkClipOp::kIntersect, true);
     m_pCanvas->concat(skMatrix);
     while (!stream.BitStream()->IsEOF()) {
-      uint32_t flag = stream.GetFlag();
+      uint32_t flag = stream.ReadFlag();
       int iStartPoint = flag ? 4 : 0;
       int iStartColor = flag ? 2 : 0;
       if (flag) {
@@ -1762,11 +1755,16 @@ bool CFX_SkiaDeviceDriver::DrawShading(const CPDF_ShadingPattern* pPattern,
         tempColors[1] = colors[(flag + 1) % 4];
         FXSYS_memcpy(colors, tempColors, sizeof(tempColors));
       }
-      for (int i = iStartPoint; i < (int)SK_ARRAY_COUNT(cubics); i++)
-        stream.GetCoords(cubics[i].fX, cubics[i].fY);
+      for (int i = iStartPoint; i < (int)SK_ARRAY_COUNT(cubics); i++) {
+        CFX_PointF point = stream.ReadCoords();
+        cubics[i].fX = point.x;
+        cubics[i].fY = point.y;
+      }
       for (int i = iStartColor; i < (int)SK_ARRAY_COUNT(colors); i++) {
-        FX_FLOAT r = 0.0f, g = 0.0f, b = 0.0f;
-        stream.GetColor(r, g, b);
+        FX_FLOAT r;
+        FX_FLOAT g;
+        FX_FLOAT b;
+        std::tie(r, g, b) = stream.ReadColor();
         colors[i] = SkColorSetARGBInline(0xFF, (U8CPU)(r * 255),
                                          (U8CPU)(g * 255), (U8CPU)(b * 255));
       }

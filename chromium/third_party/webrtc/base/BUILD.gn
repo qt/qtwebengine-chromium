@@ -8,7 +8,7 @@
 
 import("//build/config/crypto.gni")
 import("//build/config/ui.gni")
-import("../build/webrtc.gni")
+import("../webrtc.gni")
 
 if (is_android) {
   import("//build/config/android/config.gni")
@@ -35,19 +35,8 @@ config("rtc_base_approved_all_dependent_config") {
   }
 }
 
-config("rtc_base_config") {
-  defines = [ "FEATURE_ENABLE_SSL" ]
-}
-
 config("rtc_base_chromium_config") {
   defines = [ "NO_MAIN_THREAD_WRAPPING" ]
-}
-
-config("openssl_config") {
-  defines = [
-    "SSL_USE_OPENSSL",
-    "HAVE_OPENSSL_SSL_H",
-  ]
 }
 
 config("rtc_base_all_dependent_config") {
@@ -359,6 +348,19 @@ config("rtc_base_warnings_config") {
   }
 }
 
+# TODO(nisse): This target is temporarily split out, to aid moving the
+# code over to Chrome. It should be deleted from webrtc soon.
+rtc_static_library("rtc_task_runner") {
+  sources = [
+    "task.cc",
+    "task.h",
+    "taskparent.cc",
+    "taskparent.h",
+    "taskrunner.cc",
+    "taskrunner.h",
+  ]
+}
+
 rtc_static_library("rtc_base") {
   cflags = []
   cflags_cc = []
@@ -370,16 +372,7 @@ rtc_static_library("rtc_base") {
   public_deps = [
     ":rtc_base_approved",
   ]
-
-  configs += [
-    ":openssl_config",
-    ":rtc_base_config",
-  ]
-
-  public_configs = [
-    ":openssl_config",
-    ":rtc_base_config",
-  ]
+  public_configs = []
 
   all_dependent_configs = [ ":rtc_base_all_dependent_config" ]
 
@@ -398,16 +391,10 @@ rtc_static_library("rtc_base") {
     "asynctcpsocket.h",
     "asyncudpsocket.cc",
     "asyncudpsocket.h",
-    "autodetectproxy.cc",
-    "autodetectproxy.h",
-    "common.cc",
-    "common.h",
     "crc32.cc",
     "crc32.h",
     "cryptstring.cc",
     "cryptstring.h",
-    "diskcache.cc",
-    "diskcache.h",
     "filerotatingstream.cc",
     "filerotatingstream.h",
     "fileutils.cc",
@@ -417,14 +404,11 @@ rtc_static_library("rtc_base") {
     "helpers.h",
     "httpbase.cc",
     "httpbase.h",
-    "httpclient.cc",
-    "httpclient.h",
     "httpcommon-inl.h",
     "httpcommon.cc",
     "httpcommon.h",
     "ipaddress.cc",
     "ipaddress.h",
-    "linked_ptr.h",
     "messagedigest.cc",
     "messagedigest.h",
     "messagehandler.cc",
@@ -450,8 +434,6 @@ rtc_static_library("rtc_base") {
     "opensslstreamadapter.h",
     "physicalsocketserver.cc",
     "physicalsocketserver.h",
-    "proxydetect.cc",
-    "proxydetect.h",
     "proxyinfo.cc",
     "proxyinfo.h",
     "ratelimiter.cc",
@@ -479,8 +461,6 @@ rtc_static_library("rtc_base") {
     "socketaddresspair.cc",
     "socketaddresspair.h",
     "socketfactory.h",
-    "socketpool.cc",
-    "socketpool.h",
     "socketserver.h",
     "socketstream.cc",
     "socketstream.h",
@@ -490,18 +470,10 @@ rtc_static_library("rtc_base") {
     "sslfingerprint.h",
     "sslidentity.cc",
     "sslidentity.h",
-    "sslsocketfactory.cc",
-    "sslsocketfactory.h",
     "sslstreamadapter.cc",
     "sslstreamadapter.h",
     "stream.cc",
     "stream.h",
-    "task.cc",
-    "task.h",
-    "taskparent.cc",
-    "taskparent.h",
-    "taskrunner.cc",
-    "taskrunner.h",
     "thread.cc",
     "thread.h",
   ]
@@ -524,9 +496,6 @@ rtc_static_library("rtc_base") {
     configs += [ ":rtc_base_warnings_config" ]
     sources += [
       "callback.h",
-      "fileutils_mock.h",
-      "httpserver.cc",
-      "httpserver.h",
       "json.cc",
       "json.h",
       "logsinks.cc",
@@ -534,11 +503,8 @@ rtc_static_library("rtc_base") {
       "mathutils.h",
       "optionsfile.cc",
       "optionsfile.h",
-      "proxyserver.cc",
-      "proxyserver.h",
       "rollingaccumulator.h",
       "scopedptrcollection.h",
-      "sslconfig.h",
       "sslroots.h",
       "testbase64.h",
       "testclient.cc",
@@ -552,8 +518,6 @@ rtc_static_library("rtc_base") {
 
     if (is_win) {
       sources += [
-        "diskcache_win32.cc",
-        "diskcache_win32.h",
         "win32socketinit.cc",
         "win32socketinit.h",
         "win32socketserver.cc",
@@ -594,8 +558,6 @@ rtc_static_library("rtc_base") {
     sources += [
       "maccocoathreadhelper.h",
       "maccocoathreadhelper.mm",
-      "macconversion.cc",
-      "macconversion.h",
       "macifaddrs_converter.cc",
       "scoped_autorelease_pool.h",
       "scoped_autorelease_pool.mm",
@@ -666,12 +628,6 @@ rtc_static_library("rtc_base") {
       "unixfilesystem.cc",
       "unixfilesystem.h",
     ]
-    if (is_debug) {
-      # The Chromium build/common.gypi defines this for all posix
-      # _except_ for ios & mac.  We want it there as well, e.g.
-      # because ASSERT and friends trigger off of it.
-      defines += [ "_DEBUG" ]
-    }
   }
 
   if (is_nacl) {
@@ -731,6 +687,8 @@ if (rtc_include_tests) {
     sources = [
       # Also use this as a convenient dumping ground for misc files that are
       # included by multiple targets below.
+      "cpu_time.cc",
+      "cpu_time.h",
       "fakeclock.cc",
       "fakeclock.h",
       "fakenetwork.h",
@@ -738,12 +696,18 @@ if (rtc_include_tests) {
       "firewallsocketserver.cc",
       "firewallsocketserver.h",
       "gunit.h",
+      "httpserver.cc",
+      "httpserver.h",
+      "memory_usage.cc",
+      "memory_usage.h",
       "natserver.cc",
       "natserver.h",
       "natsocketfactory.cc",
       "natsocketfactory.h",
       "nattypes.cc",
       "nattypes.h",
+      "proxyserver.cc",
+      "proxyserver.h",
       "sigslottester.h",
       "sigslottester.h.pump",
       "testbase64.h",
@@ -772,6 +736,8 @@ if (rtc_include_tests) {
   rtc_source_set("rtc_base_nonparallel_tests") {
     testonly = true
     sources = [
+      "cpu_time_unittest.cc",
+      "filerotatingstream_unittest.cc",
       "nullsocketserver_unittest.cc",
       "physicalsocketserver_unittest.cc",
       "socket_unittest.cc",
@@ -881,23 +847,21 @@ if (rtc_include_tests) {
   rtc_source_set("rtc_base_unittests") {
     testonly = true
     sources = [
-      "autodetectproxy_unittest.cc",
       "callback_unittest.cc",
       "crc32_unittest.cc",
-      "filerotatingstream_unittest.cc",
       "fileutils_unittest.cc",
       "helpers_unittest.cc",
       "httpbase_unittest.cc",
       "httpcommon_unittest.cc",
       "httpserver_unittest.cc",
       "ipaddress_unittest.cc",
+      "memory_usage_unittest.cc",
       "messagedigest_unittest.cc",
       "messagequeue_unittest.cc",
       "nat_unittest.cc",
       "network_unittest.cc",
       "optionsfile_unittest.cc",
       "proxy_unittest.cc",
-      "proxydetect_unittest.cc",
       "ratelimiter_unittest.cc",
       "rollingaccumulator_unittest.cc",
       "rtccertificate_unittest.cc",
@@ -931,6 +895,7 @@ if (rtc_include_tests) {
     }
     deps = [
       ":rtc_base_tests_main",
+      ":rtc_task_runner",
     ]
     public_deps = [
       ":rtc_base",

@@ -29,6 +29,7 @@
 #include "libANGLE/Image.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/Stream.h"
+#include "libANGLE/ResourceManager.h"
 #include "libANGLE/renderer/DisplayImpl.h"
 #include "libANGLE/renderer/ImageImpl.h"
 #include "third_party/trace_event/trace_event.h"
@@ -61,60 +62,11 @@
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
 #endif  // defined(ANGLE_ENABLE_VULKAN)
 
-// The log messages prepend the class name, so make this part of the angle namespace.
-namespace angle
-{
-
-class DefaultPlatform : public angle::Platform
-{
-public:
-    DefaultPlatform() {}
-    ~DefaultPlatform() override {}
-
-    void logError(const char *errorMessage) override;
-    void logWarning(const char *warningMessage) override;
-    void logInfo(const char *infoMessage) override;
-};
-
-std::unique_ptr<DefaultPlatform> g_defaultPlatform = nullptr;
-
-void DefaultPlatform::logError(const char *errorMessage)
-{
-    ERR("%s", errorMessage);
-}
-
-void DefaultPlatform::logWarning(const char *warningMessage)
-{
-    // TODO(jmadill): Fix this
-    ERR("%s", warningMessage);
-}
-
-void DefaultPlatform::logInfo(const char *infoMessage)
-{
-    // Uncomment this if you want Vulkan spam.
-    // ERR("%s", infoMessage);
-}
-
-}  // namespace angle
-
 namespace egl
 {
 
 namespace
 {
-
-void InitDefaultPlatformImpl()
-{
-    if (ANGLEPlatformCurrent() == nullptr)
-    {
-        if (!angle::g_defaultPlatform)
-        {
-            angle::g_defaultPlatform.reset(new angle::DefaultPlatform());
-        }
-
-        ANGLEPlatformInitialize(angle::g_defaultPlatform.get());
-    }
-}
 
 typedef std::map<EGLNativeWindowType, Surface*> WindowSurfaceMap;
 // Get a map of all EGL window surfaces to validate that no window has more than one EGL surface
@@ -271,14 +223,42 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap, const D
     return impl;
 }
 
+void Display_logError(angle::PlatformMethods *platform, const char *errorMessage)
+{
+    gl::Trace(gl::LOG_ERR, errorMessage);
+}
+
+void Display_logWarning(angle::PlatformMethods *platform, const char *warningMessage)
+{
+    gl::Trace(gl::LOG_WARN, warningMessage);
+}
+
+void Display_logInfo(angle::PlatformMethods *platform, const char *infoMessage)
+{
+    // Uncomment to get info spam
+    // gl::Trace(gl::LOG_WARN, infoMessage);
+}
+
+void ANGLESetDefaultDisplayPlatform(angle::EGLDisplayType display)
+{
+    angle::PlatformMethods *platformMethods = ANGLEPlatformCurrent();
+    if (platformMethods->logError != angle::ANGLE_logError)
+    {
+        // Don't reset pre-set Platform to Default
+        return;
+    }
+
+    ANGLEResetDisplayPlatform(display);
+    platformMethods->logError   = Display_logError;
+    platformMethods->logWarning = Display_logWarning;
+    platformMethods->logInfo    = Display_logInfo;
+}
+
 }  // anonymous namespace
 
 Display *Display::GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay,
                                               const AttributeMap &attribMap)
 {
-    // Initialize the global platform if not already
-    InitDefaultPlatformImpl();
-
     Display *display = nullptr;
 
     ANGLEPlatformDisplayMap *displays            = GetANGLEPlatformDisplayMap();
@@ -318,9 +298,6 @@ Display *Display::GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay
 
 Display *Display::GetDisplayFromDevice(Device *device)
 {
-    // Initialize the global platform if not already
-    InitDefaultPlatformImpl();
-
     Display *display = nullptr;
 
     ASSERT(Device::IsValidDevice(device));
@@ -379,7 +356,9 @@ Display::Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDe
       mDisplayExtensionString(),
       mVendorString(),
       mDevice(eglDevice),
-      mPlatform(platform)
+      mPlatform(platform),
+      mTextureManager(nullptr),
+      mGlobalTextureShareGroupUsers(0)
 {
 }
 
@@ -427,8 +406,10 @@ void Display::setAttributes(rx::DisplayImpl *impl, const AttributeMap &attribMap
 
 Error Display::initialize()
 {
-    // Re-initialize default platform if it's needed
-    InitDefaultPlatformImpl();
+    // TODO(jmadill): Store Platform in Display and init here.
+    ANGLESetDefaultDisplayPlatform(this);
+
+    gl::InitializeDebugAnnotations(&mAnnotator);
 
     SCOPED_ANGLE_HISTOGRAM_TIMER("GPU.ANGLE.DisplayInitializeMS");
     TRACE_EVENT0("gpu.angle", "egl::Display::initialize");
@@ -444,10 +425,7 @@ Error Display::initialize()
     if (error.isError())
     {
         // Log extended error message here
-        std::stringstream errorStream;
-        errorStream << "ANGLE Display::initialize error " << error.getID() << ": "
-                    << error.getMessage();
-        ANGLEPlatformCurrent()->logError(errorStream.str().c_str());
+        ERR() << "ANGLE Display::initialize error " << error.getID() << ": " << error.getMessage();
         return error;
     }
 
@@ -498,6 +476,9 @@ void Display::terminate()
         destroyContext(*mContextSet.begin());
     }
 
+    // The global texture manager should be deleted with the last context that uses it.
+    ASSERT(mGlobalTextureShareGroupUsers == 0 && mTextureManager == nullptr);
+
     while (!mImageSet.empty())
     {
         destroyImage(*mImageSet.begin());
@@ -528,7 +509,10 @@ void Display::terminate()
 
     mInitialized = false;
 
-    // Never de-init default platform.. terminate is not that final.
+    gl::UninitializeDebugAnnotations();
+
+    // TODO(jmadill): Store Platform in Display and deinit here.
+    ANGLEResetDisplayPlatform(this);
 }
 
 std::vector<const Config*> Display::getConfigs(const egl::AttributeMap &attribs) const
@@ -693,7 +677,25 @@ Error Display::createContext(const Config *configuration, gl::Context *shareCont
         ANGLE_TRY(restoreLostDevice());
     }
 
-    gl::Context *context = new gl::Context(mImplementation, configuration, shareContext, attribs);
+    // This display texture sharing will allow the first context to create the texture share group.
+    bool usingDisplayTextureShareGroup =
+        attribs.get(EGL_DISPLAY_TEXTURE_SHARE_GROUP_ANGLE, EGL_FALSE) == EGL_TRUE;
+    gl::TextureManager *shareTextures = nullptr;
+
+    if (usingDisplayTextureShareGroup)
+    {
+        ASSERT((mTextureManager == nullptr) == (mGlobalTextureShareGroupUsers == 0));
+        if (mTextureManager == nullptr)
+        {
+            mTextureManager = new gl::TextureManager();
+        }
+
+        mGlobalTextureShareGroupUsers++;
+        shareTextures = mTextureManager;
+    }
+
+    gl::Context *context = new gl::Context(mImplementation, configuration, shareContext,
+                                           shareTextures, attribs, mDisplayExtensions);
 
     ASSERT(context != nullptr);
     mContextSet.insert(context);
@@ -707,10 +709,10 @@ Error Display::makeCurrent(egl::Surface *drawSurface, egl::Surface *readSurface,
 {
     ANGLE_TRY(mImplementation->makeCurrent(drawSurface, readSurface, context));
 
-    if (context != nullptr && drawSurface != nullptr)
+    if (context != nullptr)
     {
         ASSERT(readSurface == drawSurface);
-        context->makeCurrent(drawSurface);
+        context->makeCurrent(this, drawSurface);
     }
 
     return egl::Error(EGL_SUCCESS);
@@ -752,7 +754,7 @@ void Display::destroySurface(Surface *surface)
     }
 
     mState.surfaceSet.erase(surface);
-    surface->onDestroy();
+    surface->onDestroy(this);
 }
 
 void Display::destroyImage(egl::Image *image)
@@ -771,6 +773,20 @@ void Display::destroyStream(egl::Stream *stream)
 
 void Display::destroyContext(gl::Context *context)
 {
+    if (context->usingDisplayTextureShareGroup())
+    {
+        ASSERT(mGlobalTextureShareGroupUsers >= 1 && mTextureManager != nullptr);
+        if (mGlobalTextureShareGroupUsers == 1)
+        {
+            // If this is the last context using the global share group, destroy the global texture
+            // manager so that the textures can be destroyed while a context still exists
+            mTextureManager->release(context);
+            mTextureManager = nullptr;
+        }
+        mGlobalTextureShareGroupUsers--;
+    }
+
+    context->destroy(this);
     mContextSet.erase(context);
     SafeDelete(context);
 }
@@ -932,6 +948,8 @@ void Display::initDisplayExtensions()
     mDisplayExtensions.createContextNoError = true;
     mDisplayExtensions.createContextWebGLCompatibility = true;
     mDisplayExtensions.createContextBindGeneratesResource = true;
+    mDisplayExtensions.createContextClientArrays          = true;
+    mDisplayExtensions.pixelFormatFloat                   = true;
 
     // Force EGL_KHR_get_all_proc_addresses on.
     mDisplayExtensions.getAllProcAddresses = true;

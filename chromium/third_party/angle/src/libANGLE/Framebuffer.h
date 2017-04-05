@@ -32,6 +32,7 @@ class SurfaceImpl;
 
 namespace egl
 {
+class Display;
 class Surface;
 }
 
@@ -82,6 +83,11 @@ class FramebufferState final : angle::NonCopyable
     const FramebufferAttachment *getDrawBuffer(size_t drawBufferIdx) const;
     size_t getDrawBufferCount() const;
 
+    GLint getDefaultWidth() const { return mDefaultWidth; };
+    GLint getDefaultHeight() const { return mDefaultHeight; };
+    GLint getDefaultSamples() const { return mDefaultSamples; };
+    GLboolean getDefaultFixedSampleLocations() const { return mDefaultFixedSampleLocations; };
+
   private:
     friend class Framebuffer;
 
@@ -94,14 +100,33 @@ class FramebufferState final : angle::NonCopyable
     std::vector<GLenum> mDrawBufferStates;
     GLenum mReadBufferState;
     std::bitset<IMPLEMENTATION_MAX_DRAW_BUFFERS> mEnabledDrawBuffers;
+
+    GLint mDefaultWidth;
+    GLint mDefaultHeight;
+    GLint mDefaultSamples;
+    GLboolean mDefaultFixedSampleLocations;
+
+    // It's necessary to store all this extra state so we can restore attachments
+    // when DEPTH_STENCIL/DEPTH/STENCIL is unbound in WebGL 1.
+    FramebufferAttachment mWebGLDepthStencilAttachment;
+    FramebufferAttachment mWebGLDepthAttachment;
+    FramebufferAttachment mWebGLStencilAttachment;
+    bool mWebGLDepthStencilConsistent;
 };
 
 class Framebuffer final : public LabeledObject, public angle::SignalReceiver
 {
   public:
+    // Constructor to build application-defined framebuffers
     Framebuffer(const Caps &caps, rx::GLImplFactory *factory, GLuint id);
-    Framebuffer(rx::SurfaceImpl *surface);
+    // Constructor to build default framebuffers for a surface
+    Framebuffer(egl::Surface *surface);
+    // Constructor to build a fake default framebuffer when surfaceless
+    Framebuffer(rx::GLImplFactory *factory);
+
     virtual ~Framebuffer();
+    void destroy(const Context *context);
+    void destroyDefault(const egl::Display *display);
 
     void setLabel(const std::string &label) override;
     const std::string &getLabel() const override;
@@ -110,14 +135,15 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
 
     GLuint id() const { return mId; }
 
-    void setAttachment(GLenum type,
+    void setAttachment(const Context *context,
+                       GLenum type,
                        GLenum binding,
                        const ImageIndex &textureIndex,
                        FramebufferAttachmentObject *resource);
-    void resetAttachment(GLenum binding);
+    void resetAttachment(const Context *context, GLenum binding);
 
-    void detachTexture(GLuint texture);
-    void detachRenderbuffer(GLuint renderbuffer);
+    void detachTexture(const Context *context, GLuint texture);
+    void detachRenderbuffer(const Context *context, GLuint renderbuffer);
 
     const FramebufferAttachment *getColorbuffer(size_t colorAttachment) const;
     const FramebufferAttachment *getDepthbuffer() const;
@@ -151,6 +177,15 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
     int getSamples(const ContextState &state);
 
     Error getSamplePosition(size_t index, GLfloat *xy) const;
+
+    GLint getDefaultWidth() const;
+    GLint getDefaultHeight() const;
+    GLint getDefaultSamples() const;
+    GLboolean getDefaultFixedSampleLocations() const;
+    void setDefaultWidth(GLint defaultWidth);
+    void setDefaultHeight(GLint defaultHeight);
+    void setDefaultSamples(GLint defaultSamples);
+    void setDefaultFixedSampleLocations(GLboolean defaultFixedSampleLocations);
 
     GLenum checkStatus(const ContextState &state);
 
@@ -205,8 +240,12 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
         DIRTY_BIT_STENCIL_ATTACHMENT,
         DIRTY_BIT_DRAW_BUFFERS,
         DIRTY_BIT_READ_BUFFER,
+        DIRTY_BIT_DEFAULT_WIDTH,
+        DIRTY_BIT_DEFAULT_HEIGHT,
+        DIRTY_BIT_DEFAULT_SAMPLES,
+        DIRTY_BIT_DEFAULT_FIXED_SAMPLE_LOCATIONS,
         DIRTY_BIT_UNKNOWN,
-        DIRTY_BIT_MAX = DIRTY_BIT_UNKNOWN,
+        DIRTY_BIT_MAX = DIRTY_BIT_UNKNOWN
     };
 
     typedef std::bitset<DIRTY_BIT_MAX> DirtyBits;
@@ -218,15 +257,23 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
     void signal(angle::SignalToken token) override;
 
     bool formsRenderingFeedbackLoopWith(const State &state) const;
-    bool formsCopyingFeedbackLoopWith(GLuint copyTextureID, GLint copyTextureLevel) const;
+    bool formsCopyingFeedbackLoopWith(GLuint copyTextureID,
+                                      GLint copyTextureLevel,
+                                      GLint copyTextureLayer) const;
 
   private:
-    void detachResourceById(GLenum resourceType, GLuint resourceId);
+    void detachResourceById(const Context *context, GLenum resourceType, GLuint resourceId);
     void detachMatchingAttachment(FramebufferAttachment *attachment,
                                   GLenum matchType,
                                   GLuint matchId,
                                   size_t dirtyBit);
     GLenum checkStatusImpl(const ContextState &state);
+    void commitWebGL1DepthStencilIfConsistent();
+
+    void setAttachmentImpl(GLenum type,
+                           GLenum binding,
+                           const ImageIndex &textureIndex,
+                           FramebufferAttachmentObject *resource);
 
     FramebufferState mState;
     rx::FramebufferImpl *mImpl;

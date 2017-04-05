@@ -7,6 +7,8 @@
 #ifndef XFA_FXFA_APP_XFA_TEXTPIECE_H_
 #define XFA_FXFA_APP_XFA_TEXTPIECE_H_
 
+#include <vector>
+
 #include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
@@ -20,20 +22,20 @@ class XFA_TextPiece {
   XFA_TextPiece();
   ~XFA_TextPiece();
 
-  FX_WCHAR* pszText;
+  CFX_WideString szText;
+  std::vector<int32_t> Widths;
   int32_t iChars;
-  int32_t* pWidths;
   int32_t iHorScale;
   int32_t iVerScale;
   int32_t iBidiLevel;
   int32_t iUnderline;
   int32_t iPeriod;
   int32_t iLineThrough;
-  CFX_RetainPtr<CFGAS_GEFont> pFont;
   FX_ARGB dwColor;
   FX_FLOAT fFontSize;
   CFX_RectF rtPiece;
-  CXFA_LinkUserData* pLinkData;
+  CFX_RetainPtr<CFGAS_GEFont> pFont;
+  CFX_RetainPtr<CXFA_LinkUserData> pLinkData;
 };
 
 #endif  // XFA_FXFA_APP_XFA_TEXTPIECE_H_

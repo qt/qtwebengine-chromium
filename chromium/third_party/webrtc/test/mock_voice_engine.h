@@ -159,17 +159,6 @@ class MockVoiceEngine : public VoiceEngineImpl {
   MOCK_METHOD2(SetOpusMaxPlaybackRate, int(int channel, int frequency_hz));
   MOCK_METHOD2(SetOpusDtx, int(int channel, bool enable_dtx));
 
-  // VoEExternalMedia
-  MOCK_METHOD3(RegisterExternalMediaProcessing,
-               int(int channel,
-                   ProcessingTypes type,
-                   VoEMediaProcess& processObject));
-  MOCK_METHOD2(DeRegisterExternalMediaProcessing,
-               int(int channel, ProcessingTypes type));
-  MOCK_METHOD3(GetAudioFrame,
-               int(int channel, int desired_sample_rate_hz, AudioFrame* frame));
-  MOCK_METHOD2(SetExternalMixing, int(int channel, bool enable));
-
   // VoEFile
   MOCK_METHOD7(StartPlayingFileLocally,
                int(int channel,
@@ -299,22 +288,6 @@ class MockVoiceEngine : public VoiceEngineImpl {
   MOCK_METHOD3(GetREDStatus,
                int(int channel, bool& enable, int& redPayloadtype));
   MOCK_METHOD3(SetNACKStatus, int(int channel, bool enable, int maxNoPackets));
-
-  // VoEVideoSync
-  MOCK_METHOD1(GetPlayoutBufferSize, int(int& buffer_ms));
-  MOCK_METHOD2(SetMinimumPlayoutDelay, int(int channel, int delay_ms));
-  MOCK_METHOD3(GetDelayEstimate,
-               int(int channel,
-                   int* jitter_buffer_delay_ms,
-                   int* playout_buffer_delay_ms));
-  MOCK_CONST_METHOD1(GetLeastRequiredDelayMs, int(int channel));
-  MOCK_METHOD2(SetInitTimestamp, int(int channel, unsigned int timestamp));
-  MOCK_METHOD2(SetInitSequenceNumber, int(int channel, short sequenceNumber));
-  MOCK_METHOD2(GetPlayoutTimestamp, int(int channel, unsigned int& timestamp));
-  MOCK_METHOD3(GetRtpRtcp,
-               int(int channel,
-                   RtpRtcp** rtpRtcpModule,
-                   RtpReceiver** rtp_receiver));
 
   // VoEVolumeControl
   MOCK_METHOD1(SetSpeakerVolume, int(unsigned int volume));

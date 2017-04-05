@@ -34,7 +34,7 @@
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/heap/SelfKeepAlive.h"
 #include "platform/scroll/ScrollTypes.h"
-#include "public/platform/WebInputEvent.h"
+#include "public/platform/WebCoalescedInputEvent.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebSize.h"
 #include "public/web/WebInputMethodController.h"
@@ -87,7 +87,7 @@ class WebFrameWidgetImpl final
   void compositeAndReadbackAsync(
       WebCompositeAndReadbackAsyncCallback*) override;
   void themeChanged() override;
-  WebInputEventResult handleInputEvent(const WebInputEvent&) override;
+  WebInputEventResult handleInputEvent(const WebCoalescedInputEvent&) override;
   void setCursorVisibilityState(bool isVisible) override;
   bool hasTouchEventHandlersAt(const WebPoint&) override;
 
@@ -108,11 +108,7 @@ class WebFrameWidgetImpl final
   void setTextDirection(WebTextDirection) override;
   bool isAcceleratedCompositingActive() const override;
   void willCloseLayerTreeView() override;
-  void didAcquirePointerLock() override;
-  void didNotAcquirePointerLock() override;
-  void didLosePointerLock() override;
   bool getCompositionCharacterBounds(WebVector<WebRect>& bounds) override;
-  void applyReplacementRange(const WebRange&) override;
   void setRemoteViewportIntersection(const WebRect&) override;
 
   // WebFrameWidget implementation.
@@ -134,7 +130,9 @@ class WebFrameWidgetImpl final
   // WebFrameWidgetBase overrides:
   bool forSubframe() const override { return true; }
   void scheduleAnimation() override;
-  CompositorProxyClient* createCompositorProxyClient() override;
+  CompositorWorkerProxyClient* createCompositorWorkerProxyClient() override;
+  AnimationWorkletProxyClient* createAnimationWorkletProxyClient() override;
+
   WebWidgetClient* client() const override { return m_client; }
   void setRootGraphicsLayer(GraphicsLayer*) override;
   void setRootLayer(WebLayer*) override;
@@ -193,6 +191,8 @@ class WebFrameWidgetImpl final
   WebPlugin* focusedPluginIfInputMethodSupported(LocalFrame*) const;
 
   LocalFrame* focusedLocalFrameAvailableForIme() const;
+
+  CompositorMutatorImpl& mutator();
 
   WebWidgetClient* m_client;
 

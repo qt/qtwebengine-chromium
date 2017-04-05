@@ -52,6 +52,7 @@ struct FrameHostMsg_ShowPopup_Params;
 
 namespace cc {
 class SurfaceId;
+class SurfaceInfo;
 struct SurfaceSequence;
 }  // namespace cc
 
@@ -166,10 +167,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
   // WebContentsObserver implementation.
-  void DidCommitProvisionalLoadForFrame(
-      RenderFrameHost* render_frame_host,
-      const GURL& url,
-      ui::PageTransition transition_type) override;
+  void DidFinishNavigation(NavigationHandle* navigation_handle) override;
 
   void RenderViewReady() override;
   void RenderProcessGone(base::TerminationStatus status) override;
@@ -239,9 +237,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void PointerLockPermissionResponse(bool allow);
 
   // The next function is virtual for test purposes.
-  virtual void SetChildFrameSurface(const cc::SurfaceId& surface_id,
-                                    const gfx::Size& frame_size,
-                                    float scale_factor,
+  virtual void SetChildFrameSurface(const cc::SurfaceInfo& surface_info,
                                     const cc::SurfaceSequence& sequence);
 
   // Find the given |search_text| in the page. Returns true if the find request

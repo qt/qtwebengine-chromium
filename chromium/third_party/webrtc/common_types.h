@@ -142,14 +142,6 @@ enum FileFormats {
   kFileFormatPcm32kHzFile = 9
 };
 
-enum ProcessingTypes {
-  kPlaybackPerChannel = 0,
-  kPlaybackAllChannelsMixed,
-  kRecordingPerChannel,
-  kRecordingAllChannelsMixed,
-  kRecordingPreprocessing
-};
-
 enum FrameType {
   kEmptyFrame = 0,
   kAudioFrameSpeech = 1,
@@ -475,7 +467,6 @@ enum StereoChannel { kStereoLeft = 0, kStereoRight, kStereoBoth };
 // Audio device layers
 enum AudioLayers {
   kAudioPlatformDefault = 0,
-  kAudioWindowsWave = 1,
   kAudioWindowsCore = 2,
   kAudioLinuxAlsa = 3,
   kAudioLinuxPulse = 4

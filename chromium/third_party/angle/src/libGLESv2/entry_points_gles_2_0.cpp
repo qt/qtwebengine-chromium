@@ -687,6 +687,11 @@ void GL_APIENTRY DepthRangef(GLclampf zNear, GLclampf zFar)
     Context *context = GetValidGlobalContext();
     if (context)
     {
+        if (!context->skipValidation() && !ValidateDepthRangef(context, zNear, zFar))
+        {
+            return;
+        }
+
         context->depthRangef(zNear, zFar);
     }
 }
@@ -710,7 +715,7 @@ void GL_APIENTRY DetachShader(GLuint program, GLuint shader)
             return;
         }
 
-        if (!programObject->detachShader(shaderObject))
+        if (!programObject->detachShader(context, shaderObject))
         {
             context->handleError(Error(GL_INVALID_OPERATION));
             return;
@@ -1292,7 +1297,7 @@ void GL_APIENTRY GetRenderbufferParameteriv(GLenum target, GLenum pname, GLint* 
         }
 
         Renderbuffer *renderbuffer = context->getGLState().getCurrentRenderbuffer();
-        QueryRenderbufferiv(renderbuffer, pname, params);
+        QueryRenderbufferiv(context, renderbuffer, pname, params);
     }
 }
 
@@ -1571,11 +1576,7 @@ void GL_APIENTRY GetVertexAttribfv(GLuint index, GLenum pname, GLfloat* params)
             return;
         }
 
-        const VertexAttribCurrentValueData &currentValues =
-            context->getGLState().getVertexAttribCurrentValue(index);
-        const VertexAttribute &attrib =
-            context->getGLState().getVertexArray()->getVertexAttribute(index);
-        QueryVertexAttribfv(attrib, currentValues, pname, params);
+        context->getVertexAttribfv(index, pname, params);
     }
 }
 
@@ -1591,11 +1592,7 @@ void GL_APIENTRY GetVertexAttribiv(GLuint index, GLenum pname, GLint* params)
             return;
         }
 
-        const VertexAttribCurrentValueData &currentValues =
-            context->getGLState().getVertexAttribCurrentValue(index);
-        const VertexAttribute &attrib =
-            context->getGLState().getVertexArray()->getVertexAttribute(index);
-        QueryVertexAttribiv(attrib, currentValues, pname, params);
+        context->getVertexAttribiv(index, pname, params);
     }
 }
 
@@ -1612,9 +1609,7 @@ void GL_APIENTRY GetVertexAttribPointerv(GLuint index, GLenum pname, GLvoid** po
             return;
         }
 
-        const VertexAttribute &attrib =
-            context->getGLState().getVertexArray()->getVertexAttribute(index);
-        QueryVertexAttribPointerv(attrib, pname, pointer);
+        context->getVertexAttribPointerv(index, pname, pointer);
     }
 }
 
@@ -1812,7 +1807,7 @@ void GL_APIENTRY LinkProgram(GLuint program)
             return;
         }
 
-        Error error = programObject->link(context->getContextState());
+        Error error = programObject->link(context);
         if (error.isError())
         {
             context->handleError(error);
@@ -1961,19 +1956,13 @@ void GL_APIENTRY RenderbufferStorage(GLenum target, GLenum internalformat, GLsiz
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateRenderbufferStorageParametersANGLE(context, target, 0, internalformat,
-                                                        width, height))
+        if (!context->skipValidation() &&
+            !ValidateRenderbufferStorage(context, target, internalformat, width, height))
         {
             return;
         }
 
-        Renderbuffer *renderbuffer = context->getGLState().getCurrentRenderbuffer();
-        Error error = renderbuffer->setStorage(internalformat, width, height);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->renderbufferStorage(target, internalformat, width, height);
     }
 }
 
@@ -2352,7 +2341,7 @@ void GL_APIENTRY Uniform1iv(GLint location, GLsizei count, const GLint* v)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateUniform(context, GL_INT, location, count))
+        if (!ValidateUniform1iv(context, location, count, v))
         {
             return;
         }

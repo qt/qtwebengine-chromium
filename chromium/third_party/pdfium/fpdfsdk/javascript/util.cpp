@@ -18,7 +18,7 @@
 #include "fpdfsdk/javascript/JS_Object.h"
 #include "fpdfsdk/javascript/JS_Value.h"
 #include "fpdfsdk/javascript/PublicMethods.h"
-#include "fpdfsdk/javascript/cjs_context.h"
+#include "fpdfsdk/javascript/cjs_event_context.h"
 #include "fpdfsdk/javascript/cjs_runtime.h"
 #include "fpdfsdk/javascript/resource.h"
 
@@ -26,19 +26,14 @@
 #include <ctype.h>
 #endif
 
-BEGIN_JS_STATIC_CONST(CJS_Util)
-END_JS_STATIC_CONST()
+JSConstSpec CJS_Util::ConstSpecs[] = {{0, JSConstSpec::Number, 0, 0}};
 
-BEGIN_JS_STATIC_PROP(CJS_Util)
-END_JS_STATIC_PROP()
+JSPropertySpec CJS_Util::PropertySpecs[] = {{0, 0, 0}};
 
-BEGIN_JS_STATIC_METHOD(CJS_Util)
-JS_STATIC_METHOD_ENTRY(printd)
-JS_STATIC_METHOD_ENTRY(printf)
-JS_STATIC_METHOD_ENTRY(printx)
-JS_STATIC_METHOD_ENTRY(scand)
-JS_STATIC_METHOD_ENTRY(byteToChar)
-END_JS_STATIC_METHOD()
+JSMethodSpec CJS_Util::MethodSpecs[] = {
+    {"printd", printd_static},         {"printf", printf_static},
+    {"printx", printx_static},         {"scand", scand_static},
+    {"byteToChar", byteToChar_static}, {0, 0}};
 
 IMPLEMENT_JS_CLASS(CJS_Util, util)
 
@@ -114,11 +109,10 @@ util::util(CJS_Object* pJSObject) : CJS_EmbedObj(pJSObject) {}
 
 util::~util() {}
 
-bool util::printf(IJS_Context* cc,
+bool util::printf(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError) {
-  CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   int iSize = params.size();
   if (iSize < 1)
     return false;
@@ -177,7 +171,7 @@ bool util::printf(IJS_Context* cc,
   return true;
 }
 
-bool util::printd(IJS_Context* cc,
+bool util::printd(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError) {
@@ -185,7 +179,6 @@ bool util::printd(IJS_Context* cc,
   if (iSize < 2)
     return false;
 
-  CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   CJS_Value p1 = params[0];
   CJS_Value p2 = params[1];
   CJS_Date jsDate;
@@ -307,7 +300,7 @@ bool util::printd(IJS_Context* cc,
   return false;
 }
 
-bool util::printx(IJS_Context* cc,
+bool util::printx(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError) {
@@ -316,7 +309,6 @@ bool util::printx(IJS_Context* cc,
     return false;
   }
 
-  CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   vRet = CJS_Value(pRuntime, printx(params[0].ToCFXWideString(pRuntime),
                                     params[1].ToCFXWideString(pRuntime))
                                  .c_str());
@@ -425,11 +417,10 @@ CFX_WideString util::printx(const CFX_WideString& wsFormat,
   return wsResult;
 }
 
-bool util::scand(IJS_Context* cc,
+bool util::scand(CJS_Runtime* pRuntime,
                  const std::vector<CJS_Value>& params,
                  CJS_Value& vRet,
                  CFX_WideString& sError) {
-  CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   int iSize = params.size();
   if (iSize < 2)
     return false;
@@ -450,7 +441,7 @@ bool util::scand(IJS_Context* cc,
   return true;
 }
 
-bool util::byteToChar(IJS_Context* cc,
+bool util::byteToChar(CJS_Runtime* pRuntime,
                       const std::vector<CJS_Value>& params,
                       CJS_Value& vRet,
                       CFX_WideString& sError) {
@@ -459,7 +450,6 @@ bool util::byteToChar(IJS_Context* cc,
     return false;
   }
 
-  CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   int arg = params[0].ToInt(pRuntime);
   if (arg < 0 || arg > 255) {
     sError = JSGetStringFromID(IDS_STRING_JSVALUEERROR);

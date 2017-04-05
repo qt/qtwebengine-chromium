@@ -10,7 +10,7 @@
 
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/sanitizers/sanitizers.gni")
-import("build/webrtc.gni")
+import("webrtc.gni")
 import("//third_party/protobuf/proto_library.gni")
 if (is_android) {
   import("//build/config/android/config.gni")
@@ -30,7 +30,6 @@ config("common_inherited_config") {
     defines = [
       # TODO(kjellander): Cleanup unused ones and move defines closer to
       # the source when webrtc:4256 is completed.
-      "FEATURE_ENABLE_SSL",
       "FEATURE_ENABLE_VOICEMAIL",
       "EXPAT_RELATIVE_PATH",
       "GTEST_RELATIVE_PATH",
@@ -132,12 +131,10 @@ config("common_config") {
       # targets, there's no point including the defines in that config here.
       # TODO(kjellander): Cleanup unused ones and move defines closer to the
       # source when webrtc:4256 is completed.
-      "HAVE_OPENSSL_SSL_H",
       "HAVE_SRTP",
       "HAVE_WEBRTC_VIDEO",
       "HAVE_WEBRTC_VOICE",
       "LOGGING_INSIDE_WEBRTC",
-      "SSL_USE_OPENSSL",
       "USE_WEBRTC_DEV_BRANCH",
     ]
   } else {
@@ -230,15 +227,21 @@ if (!build_with_chromium) {
     visibility = [ "//:default" ]
 
     sources = [
-      # TODO(kjellander): Remove this whenever possible. GN's static_library
-      # target type requires at least one object to avoid errors linking.
-      "build/no_op_function.cc",
-
       # TODO(ossu): Keep this here until donwstream projects have updated.
       # http://bugs.webrtc.org/6716
       "call.h",
       "config.h",
     ]
+
+    # complete_static_lib doesn't work on Mac since libtool cannot support
+    # multiple objects with the same filenames (https://bugs.webrtc.org/6418).
+    if (is_win || is_linux || is_android) {
+      complete_static_lib = true
+    } else {
+      # TODO(kjellander): Remove this whenever possible. GN's static_library
+      # target type requires at least one object to avoid errors linking.
+      sources += [ "no_op_function.cc" ]
+    }
 
     defines = []
 
@@ -255,6 +258,7 @@ if (!build_with_chromium) {
       "media",
       "modules",
       "modules/video_capture:video_capture_internal_impl",
+      "ortc",
       "p2p",
       "pc",
       "sdk",
@@ -284,7 +288,8 @@ if (!build_with_chromium) {
         ":video_engine_tests",
         ":webrtc_nonparallel_tests",
         ":webrtc_perf_tests",
-        "api:peerconnection_unittests",
+        "api:rtc_api_unittests",
+        "base:rtc_base_tests_utils",
         "common_audio:common_audio_unittests",
         "common_video:common_video_unittests",
         "media:rtc_media_unittests",
@@ -294,6 +299,9 @@ if (!build_with_chromium) {
         "modules/audio_processing:audio_processing_tests",
         "modules/rtp_rtcp:test_packet_masks_metrics",
         "modules/video_capture:video_capture_internal_impl",
+        "modules/video_coding:plot_videoprocessor_integrationtest",
+        "ortc:ortc_unittests",
+        "pc:peerconnection_unittests",
         "pc:rtc_pc_unittests",
         "stats:rtc_stats_unittests",
         "system_wrappers:system_wrappers_unittests",
@@ -317,6 +325,9 @@ if (!build_with_chromium) {
           "modules/audio_device:audio_device_tests",
           "voice_engine:voe_auto_test",
         ]
+      }
+      if (rtc_enable_protobuf) {
+        deps += [ "logging:rtc_event_log2rtp_dump" ]
       }
     }
   }
@@ -364,12 +375,14 @@ if (rtc_include_tests) {
   rtc_test("rtc_unittests") {
     testonly = true
     deps = [
+      "api:rtc_api_unittests",
       "base:rtc_base_approved_unittests",
       "base:rtc_base_unittests",
       "base:rtc_numerics_unittests",
       "base:rtc_task_queue_unittests",
       "p2p:libstunprober_unittests",
       "p2p:rtc_p2p_unittests",
+      "system_wrappers:metrics_default",
     ]
 
     if (rtc_enable_protobuf) {
@@ -406,10 +419,12 @@ if (rtc_include_tests) {
     testonly = true
     deps = [
       "audio:audio_tests",
+      "base:rtc_base_tests_utils",
       "call:call_tests",
       "modules/video_capture",
       "test:test_common",
       "test:test_main",
+      "test:video_test_common",
       "video:video_tests",
     ]
     data = video_engine_tests_resources
@@ -490,10 +505,10 @@ if (rtc_include_tests) {
   if (is_android) {
     junit_binary("android_junit_tests") {
       java_files = [
-        "androidjunit/src/org/webrtc/CameraEnumerationTest.java",
+        "examples/androidjunit/src/org/appspot/apprtc/BluetoothManagerTest.java",
         "examples/androidjunit/src/org/appspot/apprtc/DirectRTCClientTest.java",
         "examples/androidjunit/src/org/appspot/apprtc/TCPChannelClientTest.java",
-        "examples/androidjunit/src/org/appspot/apprtc/BluetoothManagerTest.java",
+        "sdk/android/tests/src/org/webrtc/CameraEnumerationTest.java",
       ]
 
       deps = [

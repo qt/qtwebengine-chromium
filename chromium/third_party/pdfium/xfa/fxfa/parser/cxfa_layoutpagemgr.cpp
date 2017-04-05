@@ -63,9 +63,9 @@ uint32_t GetRelevant(CXFA_Node* pFormItem, uint32_t dwParentRelvant) {
   uint32_t dwRelevant = XFA_WidgetStatus_Viewable | XFA_WidgetStatus_Printable;
   CFX_WideStringC wsRelevant;
   if (pFormItem->TryCData(XFA_ATTRIBUTE_Relevant, wsRelevant)) {
-    if (wsRelevant == FX_WSTRC(L"+print") || wsRelevant == FX_WSTRC(L"print"))
+    if (wsRelevant == L"+print" || wsRelevant == L"print")
       dwRelevant &= ~XFA_WidgetStatus_Viewable;
-    else if (wsRelevant == FX_WSTRC(L"-print"))
+    else if (wsRelevant == L"-print")
       dwRelevant &= ~XFA_WidgetStatus_Printable;
   }
 
@@ -140,14 +140,14 @@ CXFA_Node* ResolveBreakTarget(CXFA_Node* pPageSetRoot,
   CFX_WideString wsTargetAll(wsTargetExpr);
   wsTargetAll.TrimLeft();
   wsTargetAll.TrimRight();
-  int32_t iSpliteIndex = 0;
+  int32_t iSplitIndex = 0;
   bool bTargetAllFind = true;
-  while (iSpliteIndex != -1) {
+  while (iSplitIndex != -1) {
     CFX_WideString wsExpr;
-    int32_t iSpliteNextIndex = 0;
+    int32_t iSplitNextIndex = 0;
     if (!bTargetAllFind) {
-      iSpliteNextIndex = wsTargetAll.Find(' ', iSpliteIndex);
-      wsExpr = wsTargetAll.Mid(iSpliteIndex, iSpliteNextIndex - iSpliteIndex);
+      iSplitNextIndex = wsTargetAll.Find(' ', iSplitIndex);
+      wsExpr = wsTargetAll.Mid(iSplitIndex, iSplitNextIndex - iSplitIndex);
     } else {
       wsExpr = wsTargetAll;
     }
@@ -163,8 +163,7 @@ CXFA_Node* ResolveBreakTarget(CXFA_Node* pPageSetRoot,
         return pNode;
     } else if (bNewExprStyle) {
       CFX_WideString wsProcessedTarget = wsExpr;
-      if (wsExpr.Left(4) == FX_WSTRC(L"som(") &&
-          wsExpr.Right(1) == FX_WSTRC(L")")) {
+      if (wsExpr.Left(4) == L"som(" && wsExpr.Right(1) == L")") {
         wsProcessedTarget = wsExpr.Mid(4, wsExpr.GetLength() - 5);
       }
       XFA_RESOLVENODE_RS rs;
@@ -176,7 +175,7 @@ CXFA_Node* ResolveBreakTarget(CXFA_Node* pPageSetRoot,
       if (iCount > 0 && rs.nodes[0]->IsNode())
         return rs.nodes[0]->AsNode();
     }
-    iSpliteIndex = iSpliteNextIndex;
+    iSplitIndex = iSplitNextIndex;
   }
   return nullptr;
 }
@@ -445,8 +444,8 @@ void CXFA_LayoutPageMgr::SubmitContentItem(
     m_bCreateOverFlowPage = false;
   }
 
-  if (eStatus != XFA_ItemLayoutProcessorResult_Done) {
-    if (eStatus == XFA_ItemLayoutProcessorResult_PageFullBreak &&
+  if (eStatus != XFA_ItemLayoutProcessorResult::Done) {
+    if (eStatus == XFA_ItemLayoutProcessorResult::PageFullBreak &&
         m_CurrentContainerRecordIter == GetTailPosition()) {
       AppendNewPage();
     }
@@ -467,7 +466,7 @@ FX_FLOAT CXFA_LayoutPageMgr::GetAvailHeight() {
     return fAvailHeight;
   if (m_CurrentContainerRecordIter == m_ProposedContainerRecords.begin())
     return 0.0f;
-  return XFA_LAYOUT_FLOAT_MAX;
+  return FLT_MAX;
 }
 
 bool XFA_LayoutPageMgr_RunBreakTestScript(CXFA_Node* pTestScript) {
@@ -665,7 +664,7 @@ void CXFA_LayoutPageMgr::FinishPaginatedPageSets() {
                      pContentChildLayoutItem->m_pNextSibling) {
               if (CXFA_ContentLayoutItem* pContent =
                       pContentChildLayoutItem->AsContentLayoutItem()) {
-                fUsedHeight += pContent->m_sSize.y;
+                fUsedHeight += pContent->m_sSize.height;
               }
             }
             rgUsedHeights.Add(fUsedHeight);
@@ -1586,11 +1585,6 @@ void CXFA_LayoutPageMgr::ClearData() {
   m_nCurPageCount = 0;
   m_bCreateOverFlowPage = false;
   m_pPageSetMap.clear();
-}
-
-CXFA_LayoutItem* CXFA_LayoutPageMgr::FindOrCreateLayoutItem(
-    CXFA_Node* pFormNode) {
-  return pFormNode->GetDocument()->GetNotify()->OnCreateLayoutItem(pFormNode);
 }
 
 void CXFA_LayoutPageMgr::SaveLayoutItem(CXFA_LayoutItem* pParentLayoutItem) {

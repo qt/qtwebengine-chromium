@@ -187,7 +187,8 @@ static uint8_t *block_start(uint8_t *framebuf, int stride, int mi_row,
 static VP9_DENOISER_DECISION perform_motion_compensation(
     VP9_DENOISER *denoiser, MACROBLOCK *mb, BLOCK_SIZE bs,
     int increase_denoising, int mi_row, int mi_col, PICK_MODE_CONTEXT *ctx,
-    int motion_magnitude, int is_skin, int *zeromv_filter, int consec_zeromv) {
+    int motion_magnitude, int is_skin, int *zeromv_filter, int consec_zeromv,
+    int num_spatial_layers, int width) {
   int sse_diff = ctx->zeromv_sse - ctx->newmv_sse;
   MV_REFERENCE_FRAME frame;
   MACROBLOCKD *filter_mbd = &mb->e_mbd;
@@ -202,16 +203,18 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
 
   if (is_skin && (motion_magnitude > 0 || consec_zeromv < 4)) return COPY_BLOCK;
 
-  // Avoid denoising for small block (unless motion is small).
-  // Small blocks are selected in variance partition (before encoding) and
-  // will typically lie on moving areas.
-  if (denoiser->denoising_level < kDenHigh && motion_magnitude > 16 &&
-      bs <= BLOCK_8X8)
+  // Avoid denoising small blocks. When noise > kDenLow or frame width > 480,
+  // denoise 16x16 blocks.
+  if (bs == BLOCK_8X8 || bs == BLOCK_8X16 || bs == BLOCK_16X8 ||
+      (bs == BLOCK_16X16 && width > 480 &&
+       denoiser->denoising_level <= kDenLow))
     return COPY_BLOCK;
 
   // If the best reference frame uses inter-prediction and there is enough of a
   // difference in sum-squared-error, use it.
-  if (frame != INTRA_FRAME && ctx->newmv_sse != UINT_MAX &&
+  if (frame != INTRA_FRAME &&
+      (frame != GOLDEN_FRAME || num_spatial_layers == 1) &&
+      ctx->newmv_sse != UINT_MAX &&
       sse_diff > sse_diff_thresh(bs, increase_denoising, motion_magnitude)) {
     mi->ref_frame[0] = ctx->best_reference_frame;
     mi->mode = ctx->best_sse_inter_mode;
@@ -221,9 +224,10 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
     frame = ctx->best_zeromv_reference_frame;
     ctx->newmv_sse = ctx->zeromv_sse;
     // Bias to last reference.
-    if (frame != LAST_FRAME &&
-        ((ctx->zeromv_lastref_sse<(5 * ctx->zeromv_sse)>> 2) ||
-         denoiser->denoising_level >= kDenHigh)) {
+    if (num_spatial_layers > 1 ||
+        (frame != LAST_FRAME &&
+         ((ctx->zeromv_lastref_sse<(5 * ctx->zeromv_sse)>> 2) ||
+          denoiser->denoising_level >= kDenHigh))) {
       frame = LAST_FRAME;
       ctx->newmv_sse = ctx->zeromv_lastref_sse;
     }
@@ -361,7 +365,8 @@ void vp9_denoiser_denoise(VP9_COMP *cpi, MACROBLOCK *mb, int mi_row, int mi_col,
   if (denoiser->denoising_level >= kDenLow)
     decision = perform_motion_compensation(
         denoiser, mb, bs, denoiser->increase_denoising, mi_row, mi_col, ctx,
-        motion_magnitude, is_skin, &zeromv_filter, consec_zeromv);
+        motion_magnitude, is_skin, &zeromv_filter, consec_zeromv,
+        cpi->svc.number_spatial_layers, cpi->Source->y_width);
 
   if (decision == FILTER_BLOCK) {
     decision = vp9_denoiser_filter(
@@ -557,6 +562,26 @@ void vp9_denoiser_set_noise_level(VP9_DENOISER *denoiser, int noise_level) {
   else
     denoiser->reset = 0;
   denoiser->prev_denoising_level = denoiser->denoising_level;
+}
+
+// Scale/increase the partition threshold for denoiser speed-up.
+int64_t vp9_scale_part_thresh(int64_t threshold, VP9_DENOISER_LEVEL noise_level,
+                              int content_state) {
+  if ((content_state == kLowSadLowSumdiff) ||
+      (content_state == kHighSadLowSumdiff) || noise_level == kDenHigh)
+    return (3 * threshold) >> 1;
+  else
+    return (5 * threshold) >> 2;
+}
+
+//  Scale/increase the ac skip threshold for denoiser speed-up.
+int64_t vp9_scale_acskip_thresh(int64_t threshold,
+                                VP9_DENOISER_LEVEL noise_level,
+                                int abs_sumdiff) {
+  if (noise_level >= kDenLow && abs_sumdiff < 5)
+    return threshold *= (noise_level == kDenLow) ? 2 : 6;
+  else
+    return threshold;
 }
 
 #ifdef OUTPUT_YUV_DENOISED

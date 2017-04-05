@@ -21,7 +21,11 @@ Buffer9::~Buffer9()
     mSize = 0;
 }
 
-gl::Error Buffer9::setData(GLenum /*target*/, const void *data, size_t size, GLenum usage)
+gl::Error Buffer9::setData(ContextImpl * /*context*/,
+                           GLenum /*target*/,
+                           const void *data,
+                           size_t size,
+                           GLenum usage)
 {
     if (size > mMemory.size())
     {
@@ -50,7 +54,11 @@ gl::Error Buffer9::getData(const uint8_t **outData)
     return gl::NoError();
 }
 
-gl::Error Buffer9::setSubData(GLenum /*target*/, const void *data, size_t size, size_t offset)
+gl::Error Buffer9::setSubData(ContextImpl * /*context*/,
+                              GLenum /*target*/,
+                              const void *data,
+                              size_t size,
+                              size_t offset)
 {
     if (offset + size > mMemory.size())
     {
@@ -71,7 +79,11 @@ gl::Error Buffer9::setSubData(GLenum /*target*/, const void *data, size_t size, 
     return gl::NoError();
 }
 
-gl::Error Buffer9::copySubData(BufferImpl* source, GLintptr sourceOffset, GLintptr destOffset, GLsizeiptr size)
+gl::Error Buffer9::copySubData(ContextImpl *context,
+                               BufferImpl *source,
+                               GLintptr sourceOffset,
+                               GLintptr destOffset,
+                               GLsizeiptr size)
 {
     // Note: this method is currently unreachable
     Buffer9* sourceBuffer = GetAs<Buffer9>(source);
@@ -85,19 +97,23 @@ gl::Error Buffer9::copySubData(BufferImpl* source, GLintptr sourceOffset, GLintp
 }
 
 // We do not support buffer mapping in D3D9
-gl::Error Buffer9::map(GLenum access, GLvoid **mapPtr)
+gl::Error Buffer9::map(ContextImpl *context, GLenum access, GLvoid **mapPtr)
 {
     UNREACHABLE();
     return gl::Error(GL_INVALID_OPERATION);
 }
 
-gl::Error Buffer9::mapRange(size_t offset, size_t length, GLbitfield access, GLvoid **mapPtr)
+gl::Error Buffer9::mapRange(ContextImpl *context,
+                            size_t offset,
+                            size_t length,
+                            GLbitfield access,
+                            GLvoid **mapPtr)
 {
     UNREACHABLE();
     return gl::Error(GL_INVALID_OPERATION);
 }
 
-gl::Error Buffer9::unmap(GLboolean *result)
+gl::Error Buffer9::unmap(ContextImpl *context, GLboolean *result)
 {
     UNREACHABLE();
     return gl::Error(GL_INVALID_OPERATION);

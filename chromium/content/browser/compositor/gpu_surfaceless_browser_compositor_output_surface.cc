@@ -31,8 +31,7 @@ GpuSurfacelessBrowserCompositorOutputSurface::
         gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager)
     : GpuBrowserCompositorOutputSurface(std::move(context),
                                         update_vsync_parameters_callback,
-                                        std::move(overlay_candidate_validator),
-                                        true  /* support_stencil */),
+                                        std::move(overlay_candidate_validator)),
       gpu_memory_buffer_manager_(gpu_memory_buffer_manager) {
   capabilities_.uses_default_gl_framebuffer = false;
   capabilities_.flipped_output_surface = true;
@@ -74,7 +73,8 @@ void GpuSurfacelessBrowserCompositorOutputSurface::SwapBuffers(
   // TODO(ccameron): What if a swap comes again before OnGpuSwapBuffersCompleted
   // happens, we'd see the wrong swap size there?
   swap_size_ = reshape_size_;
-  buffer_queue_->SwapBuffers(frame.sub_buffer_rect);
+  buffer_queue_->SwapBuffers(frame.sub_buffer_rect ? *frame.sub_buffer_rect
+                                                   : gfx::Rect(swap_size_));
   GpuBrowserCompositorOutputSurface::SwapBuffers(std::move(frame));
 }
 

@@ -12,7 +12,9 @@
  * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */
 
+#if !defined(_GNU_SOURCE)
 #define _GNU_SOURCE  /* needed for syscall() on Linux. */
+#endif
 
 #include <openssl/rand.h>
 
@@ -22,6 +24,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -88,12 +91,16 @@ struct rand_buffer {
 /* requested_lock is used to protect the |*_requested| variables. */
 static struct CRYPTO_STATIC_MUTEX requested_lock = CRYPTO_STATIC_MUTEX_INIT;
 
-/* urandom_fd_requested is set by |RAND_set_urandom_fd|.  It's protected by
+/* The following constants are magic values of |urandom_fd|. */
+static const int kUnset = -2;
+static const int kHaveGetrandom = -3;
+
+/* urandom_fd_requested is set by |RAND_set_urandom_fd|. It's protected by
  * |requested_lock|. */
-static int urandom_fd_requested = -2;
+static int urandom_fd_requested = -2 /* kUnset */;
 
 /* urandom_fd is a file descriptor to /dev/urandom. It's protected by |once|. */
-static int urandom_fd = -2;
+static int urandom_fd = -2 /* kUnset */;
 
 /* urandom_buffering_requested is set by |RAND_enable_fork_unsafe_buffering|.
  * It's protected by |requested_lock|. */
@@ -116,12 +123,31 @@ static void init_once(void) {
   CRYPTO_STATIC_MUTEX_unlock_read(&requested_lock);
 
 #if defined(USE_SYS_getrandom)
-  /* Initial test of getrandom to find any unexpected behavior. */
   uint8_t dummy;
-  syscall(SYS_getrandom, &dummy, sizeof(dummy), GRND_NONBLOCK);
-#endif
+  long getrandom_ret =
+      syscall(SYS_getrandom, &dummy, sizeof(dummy), GRND_NONBLOCK);
 
-  if (fd == -2) {
+  if (getrandom_ret == 1) {
+    urandom_fd = kHaveGetrandom;
+    return;
+  } else if (getrandom_ret == -1 && errno == EAGAIN) {
+    fprintf(stderr,
+            "getrandom indicates that the entropy pool has not been "
+            "initialized. Rather than continue with poor entropy, this process "
+            "will block until entropy is available.\n");
+    do {
+      getrandom_ret =
+          syscall(SYS_getrandom, &dummy, sizeof(dummy), 0 /* no flags */);
+    } while (getrandom_ret == -1 && errno == EINTR);
+
+    if (getrandom_ret == 1) {
+      urandom_fd = kHaveGetrandom;
+      return;
+    }
+  }
+#endif  /* USE_SYS_getrandom */
+
+  if (fd == kUnset) {
     do {
       fd = open("/dev/urandom", O_RDONLY);
     } while (fd == -1 && errno == EINTR);
@@ -157,7 +183,9 @@ void RAND_set_urandom_fd(int fd) {
   CRYPTO_STATIC_MUTEX_unlock_write(&requested_lock);
 
   CRYPTO_once(&once, init_once);
-  if (urandom_fd != fd) {
+  if (urandom_fd == kHaveGetrandom) {
+    close(fd);
+  } else if (urandom_fd != fd) {
     abort();  // Already initialized.
   }
 }
@@ -169,7 +197,7 @@ void RAND_enable_fork_unsafe_buffering(int fd) {
       abort();
     }
   } else {
-    fd = -2;
+    fd = kUnset;
   }
 
   CRYPTO_STATIC_MUTEX_lock_write(&requested_lock);
@@ -178,8 +206,16 @@ void RAND_enable_fork_unsafe_buffering(int fd) {
   CRYPTO_STATIC_MUTEX_unlock_write(&requested_lock);
 
   CRYPTO_once(&once, init_once);
-  if (urandom_buffering != 1 || (fd >= 0 && urandom_fd != fd)) {
-    abort();  // Already initialized.
+  if (urandom_buffering != 1) {
+    abort();  // Already initialized
+  }
+
+  if (fd >= 0) {
+    if (urandom_fd == kHaveGetrandom) {
+      close(fd);
+    } else if (urandom_fd != fd) {
+      abort();  // Already initialized.
+    }
   }
 }
 
@@ -204,15 +240,42 @@ static struct rand_buffer *get_thread_local_buffer(void) {
   return buf;
 }
 
+#if defined(USE_SYS_getrandom) && defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+void __msan_unpoison(void *, size_t);
+#endif
+#endif
+
 /* fill_with_entropy writes |len| bytes of entropy into |out|. It returns one
  * on success and zero on error. */
 static char fill_with_entropy(uint8_t *out, size_t len) {
-  ssize_t r;
-
   while (len > 0) {
-    do {
-      r = read(urandom_fd, out, len);
-    } while (r == -1 && errno == EINTR);
+    ssize_t r;
+
+    if (urandom_fd == kHaveGetrandom) {
+#if defined(USE_SYS_getrandom)
+      do {
+        r = syscall(SYS_getrandom, out, len, 0 /* no flags */);
+      } while (r == -1 && errno == EINTR);
+
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+      if (r > 0) {
+        /* MSAN doesn't recognise |syscall| and thus doesn't notice that we
+         * have initialised the output buffer. */
+        __msan_unpoison(out, r);
+      }
+#endif /* memory_sanitizer */
+#endif /*__has_feature */
+
+#else /* USE_SYS_getrandom */
+      abort();
+#endif
+    } else {
+      do {
+        r = read(urandom_fd, out, len);
+      } while (r == -1 && errno == EINTR);
+    }
 
     if (r <= 0) {
       return 0;

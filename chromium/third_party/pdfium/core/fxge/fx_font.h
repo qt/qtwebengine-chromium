@@ -58,13 +58,18 @@ using CFX_TypeFace = SkTypeface;
 #define FXFONT_FW_NORMAL 400
 #define FXFONT_FW_BOLD 700
 
-/* Font styles */
-#define FXFONT_FIXED_PITCH 0x01
-#define FXFONT_SERIF 0x02
-#define FXFONT_SYMBOLIC 0x04
-#define FXFONT_SCRIPT 0x08
-#define FXFONT_ITALIC 0x40
-#define FXFONT_BOLD 0x40000
+/* Font styles as defined in PDF 1.7 Table 5.20 */
+#define FXFONT_FIXED_PITCH (1 << 0)
+#define FXFONT_SERIF (1 << 1)
+#define FXFONT_SYMBOLIC (1 << 2)
+#define FXFONT_SCRIPT (1 << 3)
+#define FXFONT_NONSYMBOLIC (1 << 5)
+#define FXFONT_ITALIC (1 << 6)
+#define FXFONT_ALLCAP (1 << 16)
+#define FXFONT_SMALLCAP (1 << 17)
+#define FXFONT_BOLD (1 << 18)
+
+/* Other font flags */
 #define FXFONT_USEEXTERNATTR 0x80000
 #define FXFONT_CIDFONT 0x100000
 #ifdef PDF_ENABLE_XFA
@@ -222,12 +227,15 @@ class CFX_GlyphBitmap {
   CFX_DIBitmap m_Bitmap;
 };
 
-struct FXTEXT_GLYPHPOS {
+class FXTEXT_GLYPHPOS {
+ public:
+  FXTEXT_GLYPHPOS();
+  FXTEXT_GLYPHPOS(const FXTEXT_GLYPHPOS&);
+  ~FXTEXT_GLYPHPOS();
+
   const CFX_GlyphBitmap* m_pGlyph;
-  int m_OriginX;
-  int m_OriginY;
-  FX_FLOAT m_fOriginX;
-  FX_FLOAT m_fOriginY;
+  CFX_Point m_Origin;
+  CFX_PointF m_fOrigin;
 };
 
 FX_RECT FXGE_GetGlyphsBBox(const std::vector<FXTEXT_GLYPHPOS>& glyphs,

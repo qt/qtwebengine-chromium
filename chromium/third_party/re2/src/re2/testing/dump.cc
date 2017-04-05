@@ -17,8 +17,11 @@
 // library (see BUILD).
 
 #include <string>
-#include <vector>
+
 #include "util/test.h"
+#include "util/logging.h"
+#include "util/strutil.h"
+#include "util/utf.h"
 #include "re2/stringpiece.h"
 #include "re2/regexp.h"
 

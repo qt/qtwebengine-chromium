@@ -31,11 +31,6 @@ struct FDE_CSSPropertyValueTable {
   uint32_t dwHash;
 };
 
-struct FDE_CSSMEDIATYPETABLE {
-  uint16_t wHash;
-  uint16_t wValue;
-};
-
 struct FDE_CSSLengthUnitTable {
   uint16_t wHash;
   FDE_CSSNumberType wValue;
@@ -46,12 +41,6 @@ struct FDE_CSSCOLORTABLE {
   FX_ARGB dwValue;
 };
 
-struct FDE_CSSPseudoTable {
-  FDE_CSSPseudo eName;
-  const FX_WCHAR* pszName;
-  uint32_t dwHash;
-};
-
 const FDE_CSSPropertyTable* FDE_GetCSSPropertyByName(
     const CFX_WideStringC& wsName);
 const FDE_CSSPropertyTable* FDE_GetCSSPropertyByEnum(FDE_CSSProperty eName);
@@ -59,14 +48,9 @@ const FDE_CSSPropertyTable* FDE_GetCSSPropertyByEnum(FDE_CSSProperty eName);
 const FDE_CSSPropertyValueTable* FDE_GetCSSPropertyValueByName(
     const CFX_WideStringC& wsName);
 
-const FDE_CSSMEDIATYPETABLE* FDE_GetCSSMediaTypeByName(
-    const CFX_WideStringC& wsName);
-
 const FDE_CSSLengthUnitTable* FDE_GetCSSLengthUnitByName(
     const CFX_WideStringC& wsName);
 
 const FDE_CSSCOLORTABLE* FDE_GetCSSColorByName(const CFX_WideStringC& wsName);
-
-const FDE_CSSPseudoTable* FDE_GetCSSPseudoByEnum(FDE_CSSPseudo ePseudo);
 
 #endif  // XFA_FDE_CSS_FDE_CSSDATATABLE_H_

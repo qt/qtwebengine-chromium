@@ -90,10 +90,12 @@ void CPDF_ContentParser::Start(CPDF_Form* pForm,
     ClipPath.Transform(&form_matrix);
     if (pParentMatrix)
       ClipPath.Transform(pParentMatrix);
-    form_bbox.Transform(&form_matrix);
+
+    form_matrix.TransformRect(form_bbox);
     if (pParentMatrix)
-      form_bbox.Transform(pParentMatrix);
+      pParentMatrix->TransformRect(form_bbox);
   }
+
   CPDF_Dictionary* pResources = pForm->m_pFormDict->GetDictFor("Resources");
   m_pParser = pdfium::MakeUnique<CPDF_StreamContentParser>(
       pForm->m_pDocument, pForm->m_pPageResources, pForm->m_pResources,
@@ -201,8 +203,10 @@ void CPDF_ContentParser::Continue(IFX_Pause* pPause) {
         CPDF_Path ClipPath = pObj->m_ClipPath.GetPath(0);
         if (!ClipPath.IsRect() || pObj->IsShading())
           continue;
-        CFX_FloatRect old_rect(ClipPath.GetPointX(0), ClipPath.GetPointY(0),
-                               ClipPath.GetPointX(2), ClipPath.GetPointY(2));
+
+        CFX_PointF point0 = ClipPath.GetPoint(0);
+        CFX_PointF point2 = ClipPath.GetPoint(2);
+        CFX_FloatRect old_rect(point0.x, point0.y, point2.x, point2.y);
         CFX_FloatRect obj_rect(pObj->m_Left, pObj->m_Bottom, pObj->m_Right,
                                pObj->m_Top);
         if (old_rect.Contains(obj_rect))

@@ -15,6 +15,7 @@
     {
         'angle_end2end_tests_sources':
         [
+            '<(angle_path)/src/tests/gl_tests/AtomicCounterBufferTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BindGeneratesResourceTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BindUniformLocationTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BlendMinMaxTest.cpp',
@@ -22,6 +23,7 @@
             '<(angle_path)/src/tests/gl_tests/BufferDataTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BuiltinVariableTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ClearTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/ClientArraysTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ColorMaskTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ComputeShaderTest.cpp',
             '<(angle_path)/src/tests/gl_tests/CopyCompressedTextureTest.cpp',
@@ -38,6 +40,7 @@
             '<(angle_path)/src/tests/gl_tests/DXTSRGBCompressedTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ETCTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/FenceSyncTests.cpp',
+            '<(angle_path)/src/tests/gl_tests/FloatingPointSurfaceTest.cpp',
             '<(angle_path)/src/tests/gl_tests/FramebufferMixedSamplesTest.cpp',
             '<(angle_path)/src/tests/gl_tests/FramebufferRenderMipmapTest.cpp',
             '<(angle_path)/src/tests/gl_tests/FramebufferTest.cpp',
@@ -82,11 +85,13 @@
             '<(angle_path)/src/tests/gl_tests/VertexAttributeTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ViewportTest.cpp',
             '<(angle_path)/src/tests/gl_tests/WebGLCompatibilityTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/WebGLFramebufferTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLContextCompatibilityTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLContextSharingTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLQueryContextTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLRobustnessTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLSanityCheckTest.cpp',
+            '<(angle_path)/src/tests/egl_tests/EGLSurfacelessContextTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLSurfaceTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLVulkanEXTTest.cpp',
             '<(angle_path)/src/tests/test_utils/ANGLETest.cpp',

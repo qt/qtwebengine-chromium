@@ -32,7 +32,6 @@ PWL_CREATEPARAM::PWL_CREATEPARAM()
       dwBorderWidth(1),
       sBorderColor(),
       sTextColor(),
-      sTextStrokeColor(),
       nTransparency(255),
       fFontSize(PWL_DEFAULT_FONTSIZE),
       sDash(3, 0, 0),
@@ -421,13 +420,11 @@ void CPWL_Wnd::InvalidateRect(CFX_FloatRect* pRect) {
   }
 
 PWL_IMPLEMENT_KEY_METHOD(OnKeyDown)
-PWL_IMPLEMENT_KEY_METHOD(OnKeyUp)
 PWL_IMPLEMENT_KEY_METHOD(OnChar)
 #undef PWL_IMPLEMENT_KEY_METHOD
 
 #define PWL_IMPLEMENT_MOUSE_METHOD(mouse_method_name)                          \
-  bool CPWL_Wnd::mouse_method_name(const CFX_FloatPoint& point,                \
-                                   uint32_t nFlag) {                           \
+  bool CPWL_Wnd::mouse_method_name(const CFX_PointF& point, uint32_t nFlag) {  \
     if (!IsValid() || !IsVisible() || !IsEnabled())                            \
       return false;                                                            \
     if (IsWndCaptureMouse(this)) {                                             \
@@ -453,16 +450,13 @@ PWL_IMPLEMENT_KEY_METHOD(OnChar)
 PWL_IMPLEMENT_MOUSE_METHOD(OnLButtonDblClk)
 PWL_IMPLEMENT_MOUSE_METHOD(OnLButtonDown)
 PWL_IMPLEMENT_MOUSE_METHOD(OnLButtonUp)
-PWL_IMPLEMENT_MOUSE_METHOD(OnMButtonDblClk)
-PWL_IMPLEMENT_MOUSE_METHOD(OnMButtonDown)
-PWL_IMPLEMENT_MOUSE_METHOD(OnMButtonUp)
 PWL_IMPLEMENT_MOUSE_METHOD(OnRButtonDown)
 PWL_IMPLEMENT_MOUSE_METHOD(OnRButtonUp)
 PWL_IMPLEMENT_MOUSE_METHOD(OnMouseMove)
 #undef PWL_IMPLEMENT_MOUSE_METHOD
 
 bool CPWL_Wnd::OnMouseWheel(short zDelta,
-                            const CFX_FloatPoint& point,
+                            const CFX_PointF& point,
                             uint32_t nFlag) {
   if (!IsValid() || !IsVisible() || !IsEnabled())
     return false;
@@ -534,10 +528,10 @@ CFX_FloatRect CPWL_Wnd::GetClientRect() const {
   return rcWindow.Contains(rcClient) ? rcClient : CFX_FloatRect();
 }
 
-CFX_FloatPoint CPWL_Wnd::GetCenterPoint() const {
+CFX_PointF CPWL_Wnd::GetCenterPoint() const {
   CFX_FloatRect rcClient = GetClientRect();
-  return CFX_FloatPoint((rcClient.left + rcClient.right) * 0.5f,
-                        (rcClient.top + rcClient.bottom) * 0.5f);
+  return CFX_PointF((rcClient.left + rcClient.right) * 0.5f,
+                    (rcClient.top + rcClient.bottom) * 0.5f);
 }
 
 bool CPWL_Wnd::HasFlag(uint32_t dwFlags) const {
@@ -560,20 +554,8 @@ void CPWL_Wnd::SetBackgroundColor(const CPWL_Color& color) {
   m_sPrivateParam.sBackgroundColor = color;
 }
 
-void CPWL_Wnd::SetTextColor(const CPWL_Color& color) {
-  m_sPrivateParam.sTextColor = color;
-}
-
-void CPWL_Wnd::SetTextStrokeColor(const CPWL_Color& color) {
-  m_sPrivateParam.sTextStrokeColor = color;
-}
-
 CPWL_Color CPWL_Wnd::GetTextColor() const {
   return m_sPrivateParam.sTextColor;
-}
-
-CPWL_Color CPWL_Wnd::GetTextStrokeColor() const {
-  return m_sPrivateParam.sTextStrokeColor;
 }
 
 BorderStyle CPWL_Wnd::GetBorderStyle() const {
@@ -633,7 +615,7 @@ void CPWL_Wnd::CreateVScrollBar(const PWL_CREATEPARAM& cp) {
     scp.pParentWnd = this;
     scp.sBackgroundColor = PWL_DEFAULT_WHITECOLOR;
     scp.eCursorType = FXCT_ARROW;
-    scp.nTransparency = PWL_SCROLLBAR_TRANSPARANCY;
+    scp.nTransparency = PWL_SCROLLBAR_TRANSPARENCY;
 
     m_pVScrollBar = new CPWL_ScrollBar(SBT_VSCROLL);
     m_pVScrollBar->Create(scp);
@@ -673,12 +655,12 @@ void CPWL_Wnd::OnSetFocus() {}
 
 void CPWL_Wnd::OnKillFocus() {}
 
-bool CPWL_Wnd::WndHitTest(const CFX_FloatPoint& point) const {
-  return IsValid() && IsVisible() && GetWindowRect().Contains(point.x, point.y);
+bool CPWL_Wnd::WndHitTest(const CFX_PointF& point) const {
+  return IsValid() && IsVisible() && GetWindowRect().Contains(point);
 }
 
-bool CPWL_Wnd::ClientHitTest(const CFX_FloatPoint& point) const {
-  return IsValid() && IsVisible() && GetClientRect().Contains(point.x, point.y);
+bool CPWL_Wnd::ClientHitTest(const CFX_PointF& point) const {
+  return IsValid() && IsVisible() && GetClientRect().Contains(point);
 }
 
 const CPWL_Wnd* CPWL_Wnd::GetRootWnd() const {
@@ -823,7 +805,7 @@ CPWL_Color CPWL_Wnd::GetBorderLeftTopColor(BorderStyle nBorderStyle) const {
 CPWL_Color CPWL_Wnd::GetBorderRightBottomColor(BorderStyle nBorderStyle) const {
   switch (nBorderStyle) {
     case BorderStyle::BEVELED:
-      return CPWL_Utils::DevideColor(GetBackgroundColor(), 2);
+      return GetBackgroundColor() / 2.0f;
     case BorderStyle::INSET:
       return CPWL_Color(COLORTYPE_GRAY, 0.75f);
     default:
@@ -850,16 +832,6 @@ CFX_Matrix CPWL_Wnd::GetWindowMatrix() const {
   return mt;
 }
 
-void CPWL_Wnd::PWLtoWnd(const CFX_FloatPoint& point,
-                        int32_t& x,
-                        int32_t& y) const {
-  CFX_Matrix mt = GetWindowMatrix();
-  CFX_FloatPoint pt = point;
-  mt.Transform(pt.x, pt.y);
-  x = (int32_t)(pt.x + 0.5);
-  y = (int32_t)(pt.y + 0.5);
-}
-
 FX_RECT CPWL_Wnd::PWLtoWnd(const CFX_FloatRect& rect) const {
   CFX_FloatRect rcTemp = rect;
   CFX_Matrix mt = GetWindowMatrix();
@@ -868,35 +840,13 @@ FX_RECT CPWL_Wnd::PWLtoWnd(const CFX_FloatRect& rect) const {
                  (int32_t)(rcTemp.right + 0.5), (int32_t)(rcTemp.top + 0.5));
 }
 
-CFX_FloatPoint CPWL_Wnd::ChildToParent(const CFX_FloatPoint& point) const {
-  CFX_Matrix mt = GetChildMatrix();
-  if (mt.IsIdentity())
-    return point;
-
-  CFX_FloatPoint pt = point;
-  mt.Transform(pt.x, pt.y);
-  return pt;
-}
-
-CFX_FloatRect CPWL_Wnd::ChildToParent(const CFX_FloatRect& rect) const {
-  CFX_Matrix mt = GetChildMatrix();
-  if (mt.IsIdentity())
-    return rect;
-
-  CFX_FloatRect rc = rect;
-  mt.TransformRect(rc);
-  return rc;
-}
-
-CFX_FloatPoint CPWL_Wnd::ParentToChild(const CFX_FloatPoint& point) const {
+CFX_PointF CPWL_Wnd::ParentToChild(const CFX_PointF& point) const {
   CFX_Matrix mt = GetChildMatrix();
   if (mt.IsIdentity())
     return point;
 
   mt.SetReverse(mt);
-  CFX_FloatPoint pt = point;
-  mt.Transform(pt.x, pt.y);
-  return pt;
+  return mt.Transform(point);
 }
 
 CFX_FloatRect CPWL_Wnd::ParentToChild(const CFX_FloatRect& rect) const {
@@ -908,18 +858,6 @@ CFX_FloatRect CPWL_Wnd::ParentToChild(const CFX_FloatRect& rect) const {
   CFX_FloatRect rc = rect;
   mt.TransformRect(rc);
   return rc;
-}
-
-FX_FLOAT CPWL_Wnd::GetItemHeight(FX_FLOAT fLimitWidth) {
-  return 0;
-}
-
-FX_FLOAT CPWL_Wnd::GetItemLeftMargin() {
-  return 0;
-}
-
-FX_FLOAT CPWL_Wnd::GetItemRightMargin() {
-  return 0;
 }
 
 CFX_Matrix CPWL_Wnd::GetChildToRoot() const {
@@ -959,40 +897,19 @@ void CPWL_Wnd::EnableWindow(bool bEnable) {
       pChild->EnableWindow(bEnable);
   }
   m_bEnabled = bEnable;
-  if (bEnable)
-    OnEnabled();
-  else
-    OnDisabled();
 }
-
-bool CPWL_Wnd::IsEnabled() {
-  return m_bEnabled;
-}
-
-void CPWL_Wnd::OnEnabled() {}
-
-void CPWL_Wnd::OnDisabled() {}
 
 bool CPWL_Wnd::IsCTRLpressed(uint32_t nFlag) const {
-  if (CFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
-    return pSystemHandler->IsCTRLKeyDown(nFlag);
-  }
-
-  return false;
+  CFX_SystemHandler* pSystemHandler = GetSystemHandler();
+  return pSystemHandler && pSystemHandler->IsCTRLKeyDown(nFlag);
 }
 
 bool CPWL_Wnd::IsSHIFTpressed(uint32_t nFlag) const {
-  if (CFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
-    return pSystemHandler->IsSHIFTKeyDown(nFlag);
-  }
-
-  return false;
+  CFX_SystemHandler* pSystemHandler = GetSystemHandler();
+  return pSystemHandler && pSystemHandler->IsSHIFTKeyDown(nFlag);
 }
 
 bool CPWL_Wnd::IsALTpressed(uint32_t nFlag) const {
-  if (CFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
-    return pSystemHandler->IsALTKeyDown(nFlag);
-  }
-
-  return false;
+  CFX_SystemHandler* pSystemHandler = GetSystemHandler();
+  return pSystemHandler && pSystemHandler->IsALTKeyDown(nFlag);
 }

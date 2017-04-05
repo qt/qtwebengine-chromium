@@ -65,8 +65,8 @@ class Surface : public gl::FramebufferAttachmentObject
     EGLint isPostSubBufferSupported() const;
 
     void setSwapInterval(EGLint interval);
-    void setIsCurrent(bool isCurrent);
-    void onDestroy();
+    void setIsCurrent(Display *display, bool isCurrent);
+    void onDestroy(Display *display);
 
     const Config *getConfig() const;
 
@@ -141,6 +141,9 @@ class Surface : public gl::FramebufferAttachmentObject
 
     gl::Format mBackFormat;
     gl::Format mDSFormat;
+
+  private:
+    void destroy(const egl::Display *display);
 };
 
 class WindowSurface final : public Surface

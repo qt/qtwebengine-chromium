@@ -6,6 +6,7 @@
 
 #include "fpdfsdk/pdfwindow/PWL_Edit.h"
 
+#include <memory>
 #include <vector>
 
 #include "core/fpdfapi/font/cpdf_font.h"
@@ -41,35 +42,41 @@ void CPWL_Edit::OnDestroy() {}
 
 void CPWL_Edit::SetText(const CFX_WideString& csText) {
   CFX_WideString swText = csText;
-  if (HasFlag(PES_RICH)) {
-    CFX_ByteString sValue = CFX_ByteString::FromUnicode(swText);
-    if (CXML_Element* pXML =
-            CXML_Element::Parse(sValue.c_str(), sValue.GetLength())) {
-      int32_t nCount = pXML->CountChildren();
-      bool bFirst = true;
+  if (!HasFlag(PES_RICH)) {
+    m_pEdit->SetText(swText);
+    return;
+  }
 
-      swText.clear();
+  CFX_ByteString sValue = CFX_ByteString::FromUnicode(swText);
+  std::unique_ptr<CXML_Element> pXML(
+      CXML_Element::Parse(sValue.c_str(), sValue.GetLength()));
+  if (!pXML) {
+    m_pEdit->SetText(swText);
+    return;
+  }
 
-      for (int32_t i = 0; i < nCount; i++) {
-        if (CXML_Element* pSubElement = pXML->GetElement(i)) {
-          CFX_ByteString tag = pSubElement->GetTagName();
-          if (tag.EqualNoCase("p")) {
-            int nChild = pSubElement->CountChildren();
-            CFX_WideString swSection;
-            for (int32_t j = 0; j < nChild; j++) {
-              swSection += pSubElement->GetContent(j);
-            }
+  int32_t nCount = pXML->CountChildren();
+  bool bFirst = true;
 
-            if (bFirst)
-              bFirst = false;
-            else
-              swText += FWL_VKEY_Return;
-            swText += swSection;
-          }
-        }
-      }
+  swText.clear();
 
-      delete pXML;
+  for (int32_t i = 0; i < nCount; i++) {
+    CXML_Element* pSubElement = pXML->GetElement(i);
+    if (!pSubElement)
+      continue;
+
+    CFX_ByteString tag = pSubElement->GetTagName();
+    if (tag.EqualNoCase("p")) {
+      int nChild = pSubElement->CountChildren();
+      CFX_WideString swSection;
+      for (int32_t j = 0; j < nChild; j++)
+        swSection += pSubElement->GetContent(j);
+
+      if (bFirst)
+        bFirst = false;
+      else
+        swText += FWL_VKEY_Return;
+      swText += swSection;
     }
   }
 
@@ -243,7 +250,7 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
   sAppStream << sLine;
 
   CFX_ByteTextBuf sText;
-  CFX_FloatPoint ptOffset = CFX_FloatPoint();
+  CFX_PointF ptOffset;
   CPVT_WordRange wrWhole = m_pEdit->GetWholeWordRange();
   CPVT_WordRange wrSelect = GetSelectWordRange();
   CPVT_WordRange wrVisible =
@@ -266,7 +273,8 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
       m_pEdit->GetPasswordChar());
 
   if (sEditBefore.GetLength() > 0)
-    sText << "BT\n" << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
+    sText << "BT\n"
+          << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
           << sEditBefore.AsStringC() << "ET\n";
 
   wrTemp = CPWL_Utils::OverlapWordRange(wrVisible, wrSelect);
@@ -286,7 +294,8 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
       m_pEdit->GetPasswordChar());
 
   if (sEditAfter.GetLength() > 0)
-    sText << "BT\n" << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
+    sText << "BT\n"
+          << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
           << sEditAfter.AsStringC() << "ET\n";
 
   if (sText.GetLength() > 0) {
@@ -323,25 +332,24 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
         gsd.m_LineWidth = (FX_FLOAT)GetBorderWidth();
 
         CFX_PathData path;
-        path.SetPointCount(nCharArraySafe.ValueOrDie());
 
         for (int32_t i = 0; i < nCharArray - 1; i++) {
-          path.SetPoint(
-              i * 2,
-              rcClient.left +
-                  ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
-              rcClient.bottom, FXPT_MOVETO);
-          path.SetPoint(
-              i * 2 + 1,
-              rcClient.left +
-                  ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
-              rcClient.top, FXPT_LINETO);
+          path.AppendPoint(
+              CFX_PointF(
+                  rcClient.left +
+                      ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
+                  rcClient.bottom),
+              FXPT_TYPE::MoveTo, false);
+          path.AppendPoint(
+              CFX_PointF(
+                  rcClient.left +
+                      ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
+                  rcClient.top),
+              FXPT_TYPE::LineTo, false);
         }
-        if (path.GetPointCount() > 0) {
-          pDevice->DrawPath(
-              &path, pUser2Device, &gsd, 0,
-              CPWL_Utils::PWLColorToFXColor(GetBorderColor(), 255),
-              FXFILL_ALTERNATE);
+        if (!path.GetPoints().empty()) {
+          pDevice->DrawPath(&path, pUser2Device, &gsd, 0,
+                            GetBorderColor().ToFXColor(255), FXFILL_ALTERNATE);
         }
         break;
       }
@@ -355,25 +363,23 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
         gsd.m_DashPhase = (FX_FLOAT)GetBorderDash().nPhase;
 
         CFX_PathData path;
-        path.SetPointCount(nCharArraySafe.ValueOrDie());
-
         for (int32_t i = 0; i < nCharArray - 1; i++) {
-          path.SetPoint(
-              i * 2,
-              rcClient.left +
-                  ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
-              rcClient.bottom, FXPT_MOVETO);
-          path.SetPoint(
-              i * 2 + 1,
-              rcClient.left +
-                  ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
-              rcClient.top, FXPT_LINETO);
+          path.AppendPoint(
+              CFX_PointF(
+                  rcClient.left +
+                      ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
+                  rcClient.bottom),
+              FXPT_TYPE::MoveTo, false);
+          path.AppendPoint(
+              CFX_PointF(
+                  rcClient.left +
+                      ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
+                  rcClient.top),
+              FXPT_TYPE::LineTo, false);
         }
-        if (path.GetPointCount() > 0) {
-          pDevice->DrawPath(
-              &path, pUser2Device, &gsd, 0,
-              CPWL_Utils::PWLColorToFXColor(GetBorderColor(), 255),
-              FXFILL_ALTERNATE);
+        if (!path.GetPoints().empty()) {
+          pDevice->DrawPath(&path, pUser2Device, &gsd, 0,
+                            GetBorderColor().ToFXColor(255), FXFILL_ALTERNATE);
         }
         break;
       }
@@ -391,14 +397,12 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
   }
 
   CFX_SystemHandler* pSysHandler = GetSystemHandler();
-  CFX_Edit::DrawEdit(
-      pDevice, pUser2Device, m_pEdit.get(),
-      CPWL_Utils::PWLColorToFXColor(GetTextColor(), GetTransparency()),
-      CPWL_Utils::PWLColorToFXColor(GetTextStrokeColor(), GetTransparency()),
-      rcClip, CFX_FloatPoint(), pRange, pSysHandler, m_pFormFiller);
+  CFX_Edit::DrawEdit(pDevice, pUser2Device, m_pEdit.get(),
+                     GetTextColor().ToFXColor(GetTransparency()), rcClip,
+                     CFX_PointF(), pRange, pSysHandler, m_pFormFiller);
 }
 
-bool CPWL_Edit::OnLButtonDown(const CFX_FloatPoint& point, uint32_t nFlag) {
+bool CPWL_Edit::OnLButtonDown(const CFX_PointF& point, uint32_t nFlag) {
   CPWL_Wnd::OnLButtonDown(point, nFlag);
 
   if (HasFlag(PES_TEXTOVERFLOW) || ClientHitTest(point)) {
@@ -414,7 +418,7 @@ bool CPWL_Edit::OnLButtonDown(const CFX_FloatPoint& point, uint32_t nFlag) {
   return true;
 }
 
-bool CPWL_Edit::OnLButtonDblClk(const CFX_FloatPoint& point, uint32_t nFlag) {
+bool CPWL_Edit::OnLButtonDblClk(const CFX_PointF& point, uint32_t nFlag) {
   CPWL_Wnd::OnLButtonDblClk(point, nFlag);
 
   if (HasFlag(PES_TEXTOVERFLOW) || ClientHitTest(point)) {
@@ -424,7 +428,7 @@ bool CPWL_Edit::OnLButtonDblClk(const CFX_FloatPoint& point, uint32_t nFlag) {
   return true;
 }
 
-bool CPWL_Edit::OnRButtonUp(const CFX_FloatPoint& point, uint32_t nFlag) {
+bool CPWL_Edit::OnRButtonUp(const CFX_PointF& point, uint32_t nFlag) {
   if (m_bMouseDown)
     return false;
 
@@ -454,7 +458,7 @@ void CPWL_Edit::OnSetFocus() {
 void CPWL_Edit::OnKillFocus() {
   ShowVScrollBar(false);
   m_pEdit->SelectNone();
-  SetCaret(false, CFX_FloatPoint(), CFX_FloatPoint());
+  SetCaret(false, CFX_PointF(), CFX_PointF());
   SetCharSet(FXFONT_ANSI_CHARSET);
   m_bFocus = false;
 }
@@ -464,7 +468,7 @@ void CPWL_Edit::SetCharSpace(FX_FLOAT fCharSpace) {
 }
 
 CFX_ByteString CPWL_Edit::GetSelectAppearanceStream(
-    const CFX_FloatPoint& ptOffset) const {
+    const CFX_PointF& ptOffset) const {
   CPVT_WordRange wr = GetSelectWordRange();
   return CPWL_Utils::GetEditSelAppStream(m_pEdit.get(), ptOffset, &wr);
 }
@@ -486,35 +490,34 @@ CPVT_WordRange CPWL_Edit::GetSelectWordRange() const {
 }
 
 CFX_ByteString CPWL_Edit::GetTextAppearanceStream(
-    const CFX_FloatPoint& ptOffset) const {
+    const CFX_PointF& ptOffset) const {
   CFX_ByteTextBuf sRet;
   CFX_ByteString sEdit = CPWL_Utils::GetEditAppStream(m_pEdit.get(), ptOffset);
   if (sEdit.GetLength() > 0) {
-    sRet << "BT\n" << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
+    sRet << "BT\n"
+         << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
          << sEdit.AsStringC() << "ET\n";
   }
   return sRet.MakeString();
 }
 
 CFX_ByteString CPWL_Edit::GetCaretAppearanceStream(
-    const CFX_FloatPoint& ptOffset) const {
+    const CFX_PointF& ptOffset) const {
   if (m_pEditCaret)
     return m_pEditCaret->GetCaretAppearanceStream(ptOffset);
 
   return CFX_ByteString();
 }
 
-CFX_FloatPoint CPWL_Edit::GetWordRightBottomPoint(
-    const CPVT_WordPlace& wpWord) {
+CFX_PointF CPWL_Edit::GetWordRightBottomPoint(const CPVT_WordPlace& wpWord) {
   CFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
   CPVT_WordPlace wpOld = pIterator->GetAt();
   pIterator->SetAt(wpWord);
 
-  CFX_FloatPoint pt;
+  CFX_PointF pt;
   CPVT_Word word;
   if (pIterator->GetWord(word)) {
-    pt = CFX_FloatPoint(word.ptWord.x + word.fWidth,
-                        word.ptWord.y + word.fDescent);
+    pt = CFX_PointF(word.ptWord.x + word.fWidth, word.ptWord.y + word.fDescent);
   }
   pIterator->SetAt(wpOld);
   return pt;
@@ -720,10 +723,10 @@ bool CPWL_Edit::OnChar(uint16_t nChar, uint32_t nFlag) {
 }
 
 bool CPWL_Edit::OnMouseWheel(short zDelta,
-                             const CFX_FloatPoint& point,
+                             const CFX_PointF& point,
                              uint32_t nFlag) {
   if (HasFlag(PES_MULTILINE)) {
-    CFX_FloatPoint ptScroll = GetScrollPos();
+    CFX_PointF ptScroll = GetScrollPos();
 
     if (zDelta > 0) {
       ptScroll.y += GetFontSize();
@@ -805,8 +808,7 @@ CPVT_WordRange CPWL_Edit::CombineWordRange(const CPVT_WordRange& wr1,
   return wrRet;
 }
 
-CPVT_WordRange CPWL_Edit::GetLatinWordsRange(
-    const CFX_FloatPoint& point) const {
+CPVT_WordRange CPWL_Edit::GetLatinWordsRange(const CFX_PointF& point) const {
   return GetSameWordsRange(m_pEdit->SearchWordPlace(point), true, false);
 }
 
@@ -873,22 +875,4 @@ CPVT_WordRange CPWL_Edit::GetSameWordsRange(const CPVT_WordPlace& place,
 
   range.Set(wpStart, wpEnd);
   return range;
-}
-
-void CPWL_Edit::GeneratePageObjects(CPDF_PageObjectHolder* pObjectHolder,
-                                    const CFX_FloatPoint& ptOffset,
-                                    std::vector<CPDF_TextObject*>* ObjArray) {
-  CFX_Edit::GeneratePageObjects(
-      pObjectHolder, m_pEdit.get(), ptOffset, nullptr,
-      CPWL_Utils::PWLColorToFXColor(GetTextColor(), GetTransparency()),
-      ObjArray);
-}
-
-void CPWL_Edit::GeneratePageObjects(CPDF_PageObjectHolder* pObjectHolder,
-                                    const CFX_FloatPoint& ptOffset) {
-  std::vector<CPDF_TextObject*> ObjArray;
-  CFX_Edit::GeneratePageObjects(
-      pObjectHolder, m_pEdit.get(), ptOffset, nullptr,
-      CPWL_Utils::PWLColorToFXColor(GetTextColor(), GetTransparency()),
-      &ObjArray);
 }

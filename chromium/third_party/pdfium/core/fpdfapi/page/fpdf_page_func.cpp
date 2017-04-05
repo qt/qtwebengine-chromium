@@ -410,12 +410,15 @@ bool CPDF_PSEngine::DoOperator(PDF_PSOP op) {
       break;
     case PSOP_BITSHIFT: {
       int shift = (int)Pop();
-      int i = (int)Pop();
+      result = (int)Pop();
       if (shift > 0) {
-        Push(i << shift);
+        result <<= shift;
       } else {
-        Push(i >> -shift);
+        // Avoids unsafe negation of INT_MIN.
+        FX_SAFE_INT32 safe_shift = shift;
+        result >>= (-safe_shift).ValueOrDefault(0);
       }
+      Push(result.ValueOrDefault(0));
       break;
     }
     case PSOP_TRUE:
@@ -574,10 +577,9 @@ bool CPDF_SampledFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const {
   if (!pSampleData)
     return false;
 
-  for (uint32_t j = 0; j < m_nOutputs; j++) {
+  for (uint32_t j = 0; j < m_nOutputs; j++, bitpos += m_nBitsPerSample) {
     uint32_t sample =
-        GetBits32(pSampleData, bitpos.ValueOrDie() + j * m_nBitsPerSample,
-                  m_nBitsPerSample);
+        GetBits32(pSampleData, bitpos.ValueOrDie(), m_nBitsPerSample);
     FX_FLOAT encoded = (FX_FLOAT)sample;
     for (uint32_t i = 0; i < m_nInputs; i++) {
       if (index[i] == m_EncodeInfo[i].sizes - 1) {

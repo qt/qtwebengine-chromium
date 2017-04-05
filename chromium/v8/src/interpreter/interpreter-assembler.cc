@@ -14,6 +14,7 @@
 #include "src/interpreter/interpreter.h"
 #include "src/machine-type.h"
 #include "src/macro-assembler.h"
+#include "src/objects-inl.h"
 #include "src/zone/zone.h"
 
 namespace v8 {
@@ -31,14 +32,23 @@ InterpreterAssembler::InterpreterAssembler(CodeAssemblerState* state,
       operand_scale_(operand_scale),
       bytecode_offset_(this, MachineType::PointerRepresentation()),
       interpreted_frame_pointer_(this, MachineType::PointerRepresentation()),
+      bytecode_array_(this, MachineRepresentation::kTagged),
+      dispatch_table_(this, MachineType::PointerRepresentation()),
       accumulator_(this, MachineRepresentation::kTagged),
       accumulator_use_(AccumulatorUse::kNone),
       made_call_(false),
+      reloaded_frame_ptr_(false),
+      saved_bytecode_offset_(false),
       disable_stack_check_across_call_(false),
       stack_pointer_before_call_(nullptr) {
   accumulator_.Bind(Parameter(InterpreterDispatchDescriptor::kAccumulator));
   bytecode_offset_.Bind(
       Parameter(InterpreterDispatchDescriptor::kBytecodeOffset));
+  bytecode_array_.Bind(
+      Parameter(InterpreterDispatchDescriptor::kBytecodeArray));
+  dispatch_table_.Bind(
+      Parameter(InterpreterDispatchDescriptor::kDispatchTable));
+
   if (FLAG_trace_ignition) {
     TraceBytecode(Runtime::kInterpreterTraceBytecodeEntry);
   }
@@ -57,6 +67,10 @@ InterpreterAssembler::~InterpreterAssembler() {
 Node* InterpreterAssembler::GetInterpretedFramePointer() {
   if (!interpreted_frame_pointer_.IsBound()) {
     interpreted_frame_pointer_.Bind(LoadParentFramePointer());
+  } else if (Bytecodes::MakesCallAlongCriticalPath(bytecode_) && made_call_ &&
+             !reloaded_frame_ptr_) {
+    interpreted_frame_pointer_.Bind(LoadParentFramePointer());
+    reloaded_frame_ptr_ = true;
   }
   return interpreted_frame_pointer_.value();
 }
@@ -151,21 +165,33 @@ void InterpreterAssembler::GotoIfHasContextExtensionUpToDepth(Node* context,
 }
 
 Node* InterpreterAssembler::BytecodeOffset() {
+  if (Bytecodes::MakesCallAlongCriticalPath(bytecode_) && made_call_ &&
+      (bytecode_offset_.value() ==
+       Parameter(InterpreterDispatchDescriptor::kBytecodeOffset))) {
+    bytecode_offset_.Bind(LoadAndUntagRegister(Register::bytecode_offset()));
+  }
   return bytecode_offset_.value();
 }
 
 Node* InterpreterAssembler::BytecodeArrayTaggedPointer() {
-  if (made_call_) {
-    // If we have made a call, restore bytecode array from stack frame in case
-    // the debugger has swapped us to the patched debugger bytecode array.
-    return LoadRegister(Register::bytecode_array());
-  } else {
-    return Parameter(InterpreterDispatchDescriptor::kBytecodeArray);
+  // Force a re-load of the bytecode array after every call in case the debugger
+  // has been activated.
+  if (made_call_ &&
+      (bytecode_array_.value() ==
+       Parameter(InterpreterDispatchDescriptor::kBytecodeArray))) {
+    bytecode_array_.Bind(LoadRegister(Register::bytecode_array()));
   }
+  return bytecode_array_.value();
 }
 
 Node* InterpreterAssembler::DispatchTableRawPointer() {
-  return Parameter(InterpreterDispatchDescriptor::kDispatchTable);
+  if (Bytecodes::MakesCallAlongCriticalPath(bytecode_) && made_call_ &&
+      (dispatch_table_.value() ==
+       Parameter(InterpreterDispatchDescriptor::kDispatchTable))) {
+    dispatch_table_.Bind(ExternalConstant(
+        ExternalReference::interpreter_dispatch_table_address(isolate())));
+  }
+  return dispatch_table_.value();
 }
 
 Node* InterpreterAssembler::RegisterLocation(Node* reg_index) {
@@ -187,6 +213,11 @@ Node* InterpreterAssembler::LoadRegister(Node* reg_index) {
               RegisterFrameOffset(reg_index));
 }
 
+Node* InterpreterAssembler::LoadAndUntagRegister(Register reg) {
+  return LoadAndUntagSmi(GetInterpretedFramePointer(), reg.ToOperand()
+                                                           << kPointerSizeLog2);
+}
+
 Node* InterpreterAssembler::StoreRegister(Node* value, Register reg) {
   return StoreNoWriteBarrier(
       MachineRepresentation::kTagged, GetInterpretedFramePointer(),
@@ -197,6 +228,12 @@ Node* InterpreterAssembler::StoreRegister(Node* value, Node* reg_index) {
   return StoreNoWriteBarrier(MachineRepresentation::kTagged,
                              GetInterpretedFramePointer(),
                              RegisterFrameOffset(reg_index), value);
+}
+
+Node* InterpreterAssembler::StoreAndTagRegister(compiler::Node* value,
+                                                Register reg) {
+  int offset = reg.ToOperand() << kPointerSizeLog2;
+  return StoreAndTagSmi(GetInterpretedFramePointer(), offset, value);
 }
 
 Node* InterpreterAssembler::NextRegister(Node* reg_index) {
@@ -395,6 +432,10 @@ Node* InterpreterAssembler::BytecodeOperandUImm(int operand_index) {
   return BytecodeUnsignedOperand(operand_index, operand_size);
 }
 
+Node* InterpreterAssembler::BytecodeOperandUImmWord(int operand_index) {
+  return ChangeUint32ToWord(BytecodeOperandUImm(operand_index));
+}
+
 Node* InterpreterAssembler::BytecodeOperandImm(int operand_index) {
   DCHECK_EQ(OperandType::kImm,
             Bytecodes::GetOperandType(bytecode_, operand_index));
@@ -461,16 +502,27 @@ Node* InterpreterAssembler::LoadAndUntagConstantPoolEntry(Node* index) {
   return SmiUntag(LoadConstantPoolEntry(index));
 }
 
-Node* InterpreterAssembler::LoadTypeFeedbackVector() {
+Node* InterpreterAssembler::LoadFeedbackVector() {
   Node* function = LoadRegister(Register::function_closure());
-  Node* literals = LoadObjectField(function, JSFunction::kLiteralsOffset);
-  Node* vector =
-      LoadObjectField(literals, LiteralsArray::kFeedbackVectorOffset);
+  Node* cell = LoadObjectField(function, JSFunction::kFeedbackVectorOffset);
+  Node* vector = LoadObjectField(cell, Cell::kValueOffset);
   return vector;
 }
 
+void InterpreterAssembler::SaveBytecodeOffset() {
+  DCHECK(Bytecodes::MakesCallAlongCriticalPath(bytecode_));
+  StoreAndTagRegister(BytecodeOffset(), Register::bytecode_offset());
+  saved_bytecode_offset_ = true;
+}
+
 void InterpreterAssembler::CallPrologue() {
-  StoreRegister(SmiTag(BytecodeOffset()), Register::bytecode_offset());
+  if (!saved_bytecode_offset_) {
+    // If there are multiple calls in the bytecode handler, you need to spill
+    // before each of them, unless SaveBytecodeOffset has explicitly been called
+    // in a path that dominates _all_ of those calls. Therefore don't set
+    // saved_bytecode_offset_ to true or call SaveBytecodeOffset.
+    StoreAndTagRegister(BytecodeOffset(), Register::bytecode_offset());
+  }
 
   if (FLAG_debug_code && !disable_stack_check_across_call_) {
     DCHECK(stack_pointer_before_call_ == nullptr);
@@ -489,22 +541,21 @@ void InterpreterAssembler::CallEpilogue() {
   }
 }
 
-Node* InterpreterAssembler::IncrementCallCount(Node* type_feedback_vector,
+Node* InterpreterAssembler::IncrementCallCount(Node* feedback_vector,
                                                Node* slot_id) {
   Comment("increment call count");
   Node* call_count_slot = IntPtrAdd(slot_id, IntPtrConstant(1));
-  Node* call_count =
-      LoadFixedArrayElement(type_feedback_vector, call_count_slot);
+  Node* call_count = LoadFixedArrayElement(feedback_vector, call_count_slot);
   Node* new_count = SmiAdd(call_count, SmiConstant(1));
   // Count is Smi, so we don't need a write barrier.
-  return StoreFixedArrayElement(type_feedback_vector, call_count_slot,
-                                new_count, SKIP_WRITE_BARRIER);
+  return StoreFixedArrayElement(feedback_vector, call_count_slot, new_count,
+                                SKIP_WRITE_BARRIER);
 }
 
 Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
                                                Node* first_arg, Node* arg_count,
                                                Node* slot_id,
-                                               Node* type_feedback_vector,
+                                               Node* feedback_vector,
                                                TailCallMode tail_call_mode) {
   // Static checks to assert it is safe to examine the type feedback element.
   // We don't know that we have a weak cell. We might have a private symbol
@@ -516,6 +567,8 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
   // computed, meaning that it can't appear to be a pointer. If the low bit is
   // 0, then hash is computed, but the 0 bit prevents the field from appearing
   // to be a pointer.
+  DCHECK(Bytecodes::MakesCallAlongCriticalPath(bytecode_));
+  DCHECK(Bytecodes::IsCallOrConstruct(bytecode_));
   STATIC_ASSERT(WeakCell::kSize >= kPointerSize);
   STATIC_ASSERT(AllocationSite::kTransitionInfoOffset ==
                     WeakCell::kValueOffset &&
@@ -526,10 +579,10 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
       end(this);
 
   // The checks. First, does function match the recorded monomorphic target?
-  Node* feedback_element = LoadFixedArrayElement(type_feedback_vector, slot_id);
+  Node* feedback_element = LoadFixedArrayElement(feedback_vector, slot_id);
   Node* feedback_value = LoadWeakCellValueUnchecked(feedback_element);
   Node* is_monomorphic = WordEqual(function, feedback_value);
-  GotoUnless(is_monomorphic, &extra_checks);
+  GotoIfNot(is_monomorphic, &extra_checks);
 
   // The compare above could have been a SMI/SMI comparison. Guard against
   // this convincing us that we have a monomorphic JSFunction.
@@ -539,11 +592,11 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
   Bind(&call_function);
   {
     // Increment the call count.
-    IncrementCallCount(type_feedback_vector, slot_id);
+    IncrementCallCount(feedback_vector, slot_id);
 
     // Call using call function builtin.
     Callable callable = CodeFactory::InterpreterPushArgsAndCall(
-        isolate(), tail_call_mode, CallableType::kJSFunction);
+        isolate(), tail_call_mode, InterpreterPushArgsMode::kJSFunction);
     Node* code_target = HeapConstant(callable.code());
     Node* ret_value = CallStub(callable.descriptor(), code_target, context,
                                arg_count, first_arg, function);
@@ -558,23 +611,23 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
 
     Comment("check if megamorphic");
     // Check if it is a megamorphic target.
-    Node* is_megamorphic = WordEqual(
-        feedback_element,
-        HeapConstant(TypeFeedbackVector::MegamorphicSentinel(isolate())));
+    Node* is_megamorphic =
+        WordEqual(feedback_element,
+                  HeapConstant(FeedbackVector::MegamorphicSentinel(isolate())));
     GotoIf(is_megamorphic, &call);
 
     Comment("check if it is an allocation site");
-    GotoUnless(IsAllocationSiteMap(LoadMap(feedback_element)),
-               &check_initialized);
+    GotoIfNot(IsAllocationSiteMap(LoadMap(feedback_element)),
+              &check_initialized);
 
     // If it is not the Array() function, mark megamorphic.
     Node* context_slot = LoadContextElement(LoadNativeContext(context),
                                             Context::ARRAY_FUNCTION_INDEX);
     Node* is_array_function = WordEqual(context_slot, function);
-    GotoUnless(is_array_function, &mark_megamorphic);
+    GotoIfNot(is_array_function, &mark_megamorphic);
 
     // It is a monomorphic Array function. Increment the call count.
-    IncrementCallCount(type_feedback_vector, slot_id);
+    IncrementCallCount(feedback_vector, slot_id);
 
     // Call ArrayConstructorStub.
     Callable callable_call =
@@ -592,8 +645,8 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
       // Check if it is uninitialized target first.
       Node* is_uninitialized = WordEqual(
           feedback_element,
-          HeapConstant(TypeFeedbackVector::UninitializedSentinel(isolate())));
-      GotoUnless(is_uninitialized, &mark_megamorphic);
+          HeapConstant(FeedbackVector::UninitializedSentinel(isolate())));
+      GotoIfNot(is_uninitialized, &mark_megamorphic);
 
       Comment("handle_unitinitialized");
       // If it is not a JSFunction mark it as megamorphic.
@@ -604,7 +657,7 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
       Node* instance_type = LoadInstanceType(function);
       Node* is_js_function =
           Word32Equal(instance_type, Int32Constant(JS_FUNCTION_TYPE));
-      GotoUnless(is_js_function, &mark_megamorphic);
+      GotoIfNot(is_js_function, &mark_megamorphic);
 
       // Check if it is the Array() function.
       Node* context_slot = LoadContextElement(LoadNativeContext(context),
@@ -617,9 +670,9 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
           LoadObjectField(function, JSFunction::kContextOffset));
       Node* is_same_native_context =
           WordEqual(native_context, LoadNativeContext(context));
-      GotoUnless(is_same_native_context, &mark_megamorphic);
+      GotoIfNot(is_same_native_context, &mark_megamorphic);
 
-      CreateWeakCellInFeedbackVector(type_feedback_vector, SmiTag(slot_id),
+      CreateWeakCellInFeedbackVector(feedback_vector, SmiTag(slot_id),
                                      function);
 
       // Call using call function builtin.
@@ -628,8 +681,7 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
 
     Bind(&create_allocation_site);
     {
-      CreateAllocationSiteInFeedbackVector(type_feedback_vector,
-                                           SmiTag(slot_id));
+      CreateAllocationSiteInFeedbackVector(feedback_vector, SmiTag(slot_id));
 
       // Call using CallFunction builtin. CallICs have a PREMONOMORPHIC state.
       // They start collecting feedback only when a call is executed the second
@@ -644,8 +696,8 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
       // and will not move during a GC. So it is safe to skip write barrier.
       DCHECK(Heap::RootIsImmortalImmovable(Heap::kmegamorphic_symbolRootIndex));
       StoreFixedArrayElement(
-          type_feedback_vector, slot_id,
-          HeapConstant(TypeFeedbackVector::MegamorphicSentinel(isolate())),
+          feedback_vector, slot_id,
+          HeapConstant(FeedbackVector::MegamorphicSentinel(isolate())),
           SKIP_WRITE_BARRIER);
       Goto(&call);
     }
@@ -655,11 +707,11 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
   {
     Comment("Increment call count and call using Call builtin");
     // Increment the call count.
-    IncrementCallCount(type_feedback_vector, slot_id);
+    IncrementCallCount(feedback_vector, slot_id);
 
     // Call using call builtin.
     Callable callable_call = CodeFactory::InterpreterPushArgsAndCall(
-        isolate(), tail_call_mode, CallableType::kAny);
+        isolate(), tail_call_mode, InterpreterPushArgsMode::kOther);
     Node* code_target_call = HeapConstant(callable_call.code());
     Node* ret_value = CallStub(callable_call.descriptor(), code_target_call,
                                context, arg_count, first_arg, function);
@@ -674,25 +726,40 @@ Node* InterpreterAssembler::CallJSWithFeedback(Node* function, Node* context,
 Node* InterpreterAssembler::CallJS(Node* function, Node* context,
                                    Node* first_arg, Node* arg_count,
                                    TailCallMode tail_call_mode) {
+  DCHECK(Bytecodes::MakesCallAlongCriticalPath(bytecode_));
+  DCHECK(Bytecodes::IsCallOrConstruct(bytecode_));
   Callable callable = CodeFactory::InterpreterPushArgsAndCall(
-      isolate(), tail_call_mode, CallableType::kAny);
+      isolate(), tail_call_mode, InterpreterPushArgsMode::kOther);
   Node* code_target = HeapConstant(callable.code());
 
   return CallStub(callable.descriptor(), code_target, context, arg_count,
                   first_arg, function);
 }
 
-Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
-                                          Node* new_target, Node* first_arg,
-                                          Node* arg_count, Node* slot_id,
-                                          Node* type_feedback_vector) {
+Node* InterpreterAssembler::CallJSWithSpread(Node* function, Node* context,
+                                             Node* first_arg, Node* arg_count) {
+  DCHECK(Bytecodes::MakesCallAlongCriticalPath(bytecode_));
+  Callable callable = CodeFactory::InterpreterPushArgsAndCall(
+      isolate(), TailCallMode::kDisallow,
+      InterpreterPushArgsMode::kWithFinalSpread);
+  Node* code_target = HeapConstant(callable.code());
+
+  return CallStub(callable.descriptor(), code_target, context, arg_count,
+                  first_arg, function);
+}
+
+Node* InterpreterAssembler::Construct(Node* constructor, Node* context,
+                                      Node* new_target, Node* first_arg,
+                                      Node* arg_count, Node* slot_id,
+                                      Node* feedback_vector) {
+  DCHECK(Bytecodes::MakesCallAlongCriticalPath(bytecode_));
   Variable return_value(this, MachineRepresentation::kTagged);
   Variable allocation_feedback(this, MachineRepresentation::kTagged);
   Label call_construct_function(this, &allocation_feedback),
       extra_checks(this, Label::kDeferred), call_construct(this), end(this);
 
   // Slot id of 0 is used to indicate no type feedback is available.
-  STATIC_ASSERT(TypeFeedbackVector::kReservedIndexCount > 0);
+  STATIC_ASSERT(FeedbackVector::kReservedIndexCount > 0);
   Node* is_feedback_unavailable = WordEqual(slot_id, IntPtrConstant(0));
   GotoIf(is_feedback_unavailable, &call_construct);
 
@@ -704,10 +771,10 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
   Node* instance_type = LoadInstanceType(constructor);
   Node* is_js_function =
       Word32Equal(instance_type, Int32Constant(JS_FUNCTION_TYPE));
-  GotoUnless(is_js_function, &call_construct);
+  GotoIfNot(is_js_function, &call_construct);
 
   // Check if it is a monomorphic constructor.
-  Node* feedback_element = LoadFixedArrayElement(type_feedback_vector, slot_id);
+  Node* feedback_element = LoadFixedArrayElement(feedback_vector, slot_id);
   Node* feedback_value = LoadWeakCellValueUnchecked(feedback_element);
   Node* is_monomorphic = WordEqual(constructor, feedback_value);
   allocation_feedback.Bind(UndefinedConstant());
@@ -715,10 +782,10 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
 
   Bind(&call_construct_function);
   {
-    Comment("call using callConstructFunction");
-    IncrementCallCount(type_feedback_vector, slot_id);
+    Comment("call using ConstructFunction");
+    IncrementCallCount(feedback_vector, slot_id);
     Callable callable_function = CodeFactory::InterpreterPushArgsAndConstruct(
-        isolate(), CallableType::kJSFunction);
+        isolate(), InterpreterPushArgsMode::kJSFunction);
     return_value.Bind(CallStub(callable_function.descriptor(),
                                HeapConstant(callable_function.code()), context,
                                arg_count, new_target, constructor,
@@ -733,15 +800,15 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
 
     // Check if it is a megamorphic target.
     Comment("check if megamorphic");
-    Node* is_megamorphic = WordEqual(
-        feedback_element,
-        HeapConstant(TypeFeedbackVector::MegamorphicSentinel(isolate())));
+    Node* is_megamorphic =
+        WordEqual(feedback_element,
+                  HeapConstant(FeedbackVector::MegamorphicSentinel(isolate())));
     GotoIf(is_megamorphic, &call_construct_function);
 
     Comment("check if weak cell");
     Node* is_weak_cell = WordEqual(LoadMap(feedback_element),
                                    LoadRoot(Heap::kWeakCellMapRootIndex));
-    GotoUnless(is_weak_cell, &check_allocation_site);
+    GotoIfNot(is_weak_cell, &check_allocation_site);
 
     // If the weak cell is cleared, we have a new chance to become
     // monomorphic.
@@ -755,13 +822,13 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
       Node* is_allocation_site =
           WordEqual(LoadObjectField(feedback_element, 0),
                     LoadRoot(Heap::kAllocationSiteMapRootIndex));
-      GotoUnless(is_allocation_site, &check_initialized);
+      GotoIfNot(is_allocation_site, &check_initialized);
 
       // Make sure the function is the Array() function.
       Node* context_slot = LoadContextElement(LoadNativeContext(context),
                                               Context::ARRAY_FUNCTION_INDEX);
       Node* is_array_function = WordEqual(context_slot, constructor);
-      GotoUnless(is_array_function, &mark_megamorphic);
+      GotoIfNot(is_array_function, &mark_megamorphic);
 
       allocation_feedback.Bind(feedback_element);
       Goto(&call_construct_function);
@@ -789,7 +856,7 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
 
       Bind(&create_allocation_site);
       {
-        Node* site = CreateAllocationSiteInFeedbackVector(type_feedback_vector,
+        Node* site = CreateAllocationSiteInFeedbackVector(feedback_vector,
                                                           SmiTag(slot_id));
         allocation_feedback.Bind(site);
         Goto(&call_construct_function);
@@ -797,7 +864,7 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
 
       Bind(&create_weak_cell);
       {
-        CreateWeakCellInFeedbackVector(type_feedback_vector, SmiTag(slot_id),
+        CreateWeakCellInFeedbackVector(feedback_vector, SmiTag(slot_id),
                                        constructor);
         Goto(&call_construct_function);
       }
@@ -810,8 +877,8 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
       Comment("transition to megamorphic");
       DCHECK(Heap::RootIsImmortalImmovable(Heap::kmegamorphic_symbolRootIndex));
       StoreFixedArrayElement(
-          type_feedback_vector, slot_id,
-          HeapConstant(TypeFeedbackVector::MegamorphicSentinel(isolate())),
+          feedback_vector, slot_id,
+          HeapConstant(FeedbackVector::MegamorphicSentinel(isolate())),
           SKIP_WRITE_BARRIER);
       Goto(&call_construct_function);
     }
@@ -819,9 +886,9 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
 
   Bind(&call_construct);
   {
-    Comment("call using callConstruct builtin");
+    Comment("call using Construct builtin");
     Callable callable = CodeFactory::InterpreterPushArgsAndConstruct(
-        isolate(), CallableType::kAny);
+        isolate(), InterpreterPushArgsMode::kOther);
     Node* code_target = HeapConstant(callable.code());
     return_value.Bind(CallStub(callable.descriptor(), code_target, context,
                                arg_count, new_target, constructor,
@@ -833,9 +900,28 @@ Node* InterpreterAssembler::CallConstruct(Node* constructor, Node* context,
   return return_value.value();
 }
 
+Node* InterpreterAssembler::ConstructWithSpread(Node* constructor,
+                                                Node* context, Node* new_target,
+                                                Node* first_arg,
+                                                Node* arg_count) {
+  DCHECK(Bytecodes::MakesCallAlongCriticalPath(bytecode_));
+  Variable return_value(this, MachineRepresentation::kTagged);
+  Comment("call using ConstructWithSpread");
+  Callable callable = CodeFactory::InterpreterPushArgsAndConstruct(
+      isolate(), InterpreterPushArgsMode::kWithFinalSpread);
+  Node* code_target = HeapConstant(callable.code());
+  return_value.Bind(CallStub(callable.descriptor(), code_target, context,
+                             arg_count, new_target, constructor,
+                             UndefinedConstant(), first_arg));
+
+  return return_value.value();
+}
+
 Node* InterpreterAssembler::CallRuntimeN(Node* function_id, Node* context,
                                          Node* first_arg, Node* arg_count,
                                          int result_size) {
+  DCHECK(Bytecodes::MakesCallAlongCriticalPath(bytecode_));
+  DCHECK(Bytecodes::IsCallRuntime(bytecode_));
   Callable callable = CodeFactory::InterpreterCEntry(isolate(), result_size);
   Node* code_target = HeapConstant(callable.code());
 
@@ -854,10 +940,7 @@ Node* InterpreterAssembler::CallRuntimeN(Node* function_id, Node* context,
                    arg_count, first_arg, function_entry);
 }
 
-void InterpreterAssembler::UpdateInterruptBudget(Node* weight) {
-  // TODO(rmcilroy): It might be worthwhile to only update the budget for
-  // backwards branches. Those are distinguishable by the {JumpLoop} bytecode.
-
+void InterpreterAssembler::UpdateInterruptBudget(Node* weight, bool backward) {
   Label ok(this), interrupt_check(this, Label::kDeferred), end(this);
   Node* budget_offset =
       IntPtrConstant(BytecodeArray::kInterruptBudgetOffset - kHeapObjectTag);
@@ -866,7 +949,11 @@ void InterpreterAssembler::UpdateInterruptBudget(Node* weight) {
   Variable new_budget(this, MachineRepresentation::kWord32);
   Node* old_budget =
       Load(MachineType::Int32(), BytecodeArrayTaggedPointer(), budget_offset);
-  new_budget.Bind(Int32Add(old_budget, weight));
+  if (backward) {
+    new_budget.Bind(Int32Sub(old_budget, weight));
+  } else {
+    new_budget.Bind(Int32Add(old_budget, weight));
+  }
   Node* condition =
       Int32GreaterThanOrEqual(new_budget.value(), Int32Constant(0));
   Branch(condition, &ok, &interrupt_check);
@@ -894,22 +981,29 @@ Node* InterpreterAssembler::Advance(int delta) {
   return Advance(IntPtrConstant(delta));
 }
 
-Node* InterpreterAssembler::Advance(Node* delta) {
+Node* InterpreterAssembler::Advance(Node* delta, bool backward) {
   if (FLAG_trace_ignition) {
     TraceBytecode(Runtime::kInterpreterTraceBytecodeExit);
   }
-  Node* next_offset = IntPtrAdd(BytecodeOffset(), delta);
+  Node* next_offset = backward ? IntPtrSub(BytecodeOffset(), delta)
+                               : IntPtrAdd(BytecodeOffset(), delta);
   bytecode_offset_.Bind(next_offset);
   return next_offset;
 }
 
-Node* InterpreterAssembler::Jump(Node* delta) {
+Node* InterpreterAssembler::Jump(Node* delta, bool backward) {
   DCHECK(!Bytecodes::IsStarLookahead(bytecode_, operand_scale_));
 
-  UpdateInterruptBudget(TruncateWordToWord32(delta));
-  Node* new_bytecode_offset = Advance(delta);
+  UpdateInterruptBudget(TruncateWordToWord32(delta), backward);
+  Node* new_bytecode_offset = Advance(delta, backward);
   Node* target_bytecode = LoadBytecode(new_bytecode_offset);
   return DispatchToBytecode(target_bytecode, new_bytecode_offset);
+}
+
+Node* InterpreterAssembler::Jump(Node* delta) { return Jump(delta, false); }
+
+Node* InterpreterAssembler::JumpBackward(Node* delta) {
+  return Jump(delta, true);
 }
 
 void InterpreterAssembler::JumpConditional(Node* condition, Node* delta) {
@@ -978,6 +1072,7 @@ void InterpreterAssembler::InlineStar() {
 
 Node* InterpreterAssembler::Dispatch() {
   Comment("========= Dispatch");
+  DCHECK_IMPLIES(Bytecodes::MakesCallAlongCriticalPath(bytecode_), made_call_);
   Node* target_offset = Advance();
   Node* target_bytecode = LoadBytecode(target_offset);
 
@@ -1025,6 +1120,7 @@ void InterpreterAssembler::DispatchWide(OperandScale operand_scale) {
   //   Indices 0-255 correspond to bytecodes with operand_scale == 0
   //   Indices 256-511 correspond to bytecodes with operand_scale == 1
   //   Indices 512-767 correspond to bytecodes with operand_scale == 2
+  DCHECK_IMPLIES(Bytecodes::MakesCallAlongCriticalPath(bytecode_), made_call_);
   Node* next_bytecode_offset = Advance(1);
   Node* next_bytecode = LoadBytecode(next_bytecode_offset);
 
@@ -1147,7 +1243,7 @@ void InterpreterAssembler::UpdateInterruptBudgetOnReturn() {
   Node* profiling_weight =
       Int32Sub(Int32Constant(kHeapObjectTag + BytecodeArray::kHeaderSize),
                TruncateWordToWord32(BytecodeOffset()));
-  UpdateInterruptBudget(profiling_weight);
+  UpdateInterruptBudget(profiling_weight, false);
 }
 
 Node* InterpreterAssembler::StackCheckTriggeredInterrupt() {
@@ -1178,6 +1274,26 @@ void InterpreterAssembler::AbortIfWordNotEqual(Node* lhs, Node* rhs,
 
   Bind(&abort);
   Abort(bailout_reason);
+  Goto(&ok);
+
+  Bind(&ok);
+}
+
+void InterpreterAssembler::MaybeDropFrames(Node* context) {
+  Node* restart_fp_address =
+      ExternalConstant(ExternalReference::debug_restart_fp_address(isolate()));
+
+  Node* restart_fp = Load(MachineType::Pointer(), restart_fp_address);
+  Node* null = IntPtrConstant(0);
+
+  Label ok(this), drop_frames(this);
+  Branch(IntPtrEqual(restart_fp, null), &ok, &drop_frames);
+
+  Bind(&drop_frames);
+  // We don't expect this call to return since the frame dropper tears down
+  // the stack and jumps into the function on the target frame to restart it.
+  CallStub(CodeFactory::FrameDropperTrampoline(isolate()), context, restart_fp);
+  Abort(kUnexpectedReturnFromFrameDropper);
   Goto(&ok);
 
   Bind(&ok);
@@ -1257,7 +1373,7 @@ Node* InterpreterAssembler::ExportRegisterFile(Node* array) {
   Bind(&loop);
   {
     Node* index = var_index.value();
-    GotoUnless(UintPtrLessThan(index, register_count), &done_loop);
+    GotoIfNot(UintPtrLessThan(index, register_count), &done_loop);
 
     Node* reg_index = IntPtrSub(IntPtrConstant(Register(0).ToOperand()), index);
     Node* value = LoadRegister(reg_index);
@@ -1290,7 +1406,7 @@ Node* InterpreterAssembler::ImportRegisterFile(Node* array) {
   Bind(&loop);
   {
     Node* index = var_index.value();
-    GotoUnless(UintPtrLessThan(index, register_count), &done_loop);
+    GotoIfNot(UintPtrLessThan(index, register_count), &done_loop);
 
     Node* value = LoadFixedArrayElement(array, index);
 

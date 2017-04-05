@@ -38,7 +38,7 @@
 #include "WebSetSinkIdCallbacks.h"
 #include "WebString.h"
 
-class SkPaint;
+#include "cc/paint/paint_flags.h"
 
 namespace gpu {
 namespace gles2 {
@@ -179,7 +179,7 @@ class WebMediaPlayer {
   virtual size_t audioDecodedByteCount() const = 0;
   virtual size_t videoDecodedByteCount() const = 0;
 
-  virtual void paint(WebCanvas*, const WebRect&, SkPaint&) = 0;
+  virtual void paint(WebCanvas*, const WebRect&, cc::PaintFlags&) = 0;
 
   // TODO(kbr): remove non-|target| version. crbug.com/349871
   //
@@ -271,6 +271,14 @@ class WebMediaPlayer {
   // intersection with viewport is activated by calling
   // WebMediaPlayerClient::activateViewportIntersectionMonitoring().
   virtual void becameDominantVisibleContent(bool isDominant) {}
+
+  // Inform WebMediaPlayer when the element starts/stops being the effectively
+  // fullscreen video, i.e. being the fullscreen element or child of the
+  // fullscreen element, and being dominant in the viewport.
+  //
+  // TODO(zqzhang): merge with becameDominantVisibleContent(). See
+  // https://crbug.com/696211
+  virtual void setIsEffectivelyFullscreen(bool) {}
 
   virtual void enabledAudioTracksChanged(
       const WebVector<TrackId>& enabledTrackIds) {}

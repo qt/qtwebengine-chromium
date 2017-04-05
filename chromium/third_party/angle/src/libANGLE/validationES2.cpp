@@ -467,7 +467,8 @@ bool ValidateES2TexImageParameters(Context *context,
                           "internalformat is not a supported compressed internal format"));
                 return false;
         }
-        if (!ValidCompressedImageSize(context, actualInternalFormat, width, height))
+        if (!ValidCompressedImageSize(context, actualInternalFormat, xoffset, yoffset, width,
+                                      height))
         {
             context->handleError(Error(GL_INVALID_OPERATION));
             return false;
@@ -1910,9 +1911,9 @@ bool ValidateBlitFramebufferANGLE(Context *context,
                                   dstX0, dstY0, dstX1, dstY1))
                 {
                     // only whole-buffer copies are permitted
-                    ERR("Only whole-buffer depth and stencil blits are supported by this "
-                        "implementation.");
-                    context->handleError(Error(GL_INVALID_OPERATION));
+                    context->handleError(Error(GL_INVALID_OPERATION,
+                                               "Only whole-buffer depth and stencil blits are "
+                                               "supported by this extension."));
                     return false;
                 }
 
@@ -3839,9 +3840,9 @@ bool ValidateBlendFuncSeparate(ValidationContext *context,
 
         if (constantColorUsed && constantAlphaUsed)
         {
-            ERR("Simultaneous use of GL_CONSTANT_ALPHA/GL_ONE_MINUS_CONSTANT_ALPHA and "
-                "GL_CONSTANT_COLOR/GL_ONE_MINUS_CONSTANT_COLOR not supported by this "
-                "implementation.");
+            ERR() << "Simultaneous use of GL_CONSTANT_ALPHA/GL_ONE_MINUS_CONSTANT_ALPHA and "
+                     "GL_CONSTANT_COLOR/GL_ONE_MINUS_CONSTANT_COLOR not supported by this "
+                     "implementation.";
             context->handleError(Error(GL_INVALID_OPERATION,
                                        "Simultaneous use of "
                                        "GL_CONSTANT_ALPHA/GL_ONE_MINUS_CONSTANT_ALPHA and "
@@ -3956,8 +3957,9 @@ bool ValidateVertexAttribPointer(ValidationContext *context,
     // An INVALID_OPERATION error is generated when a non-zero vertex array object
     // is bound, zero is bound to the ARRAY_BUFFER buffer object binding point,
     // and the pointer argument is not NULL.
-    if (context->getGLState().getVertexArray()->id() != 0 &&
-        context->getGLState().getArrayBufferId() == 0 && ptr != NULL)
+    bool nullBufferAllowed = context->getGLState().areClientArraysEnabled() &&
+                             context->getGLState().getVertexArray()->id() == 0;
+    if (!nullBufferAllowed && context->getGLState().getArrayBufferId() == 0 && ptr != NULL)
     {
         context->handleError(
             Error(GL_INVALID_OPERATION,
@@ -4012,6 +4014,68 @@ bool ValidateVertexAttribPointer(ValidationContext *context,
     }
 
     return true;
+}
+
+bool ValidateDepthRangef(ValidationContext *context, GLclampf zNear, GLclampf zFar)
+{
+    if (context->getExtensions().webglCompatibility && zNear > zFar)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Depth near > far."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateRenderbufferStorage(ValidationContext *context,
+                                 GLenum target,
+                                 GLenum internalformat,
+                                 GLsizei width,
+                                 GLsizei height)
+{
+    return ValidateRenderbufferStorageParametersBase(context, target, 0, internalformat, width,
+                                                     height);
+}
+
+bool ValidateRenderbufferStorageMultisampleANGLE(ValidationContext *context,
+                                                 GLenum target,
+                                                 GLsizei samples,
+                                                 GLenum internalformat,
+                                                 GLsizei width,
+                                                 GLsizei height)
+{
+    if (!context->getExtensions().framebufferMultisample)
+    {
+        context->handleError(
+            Error(GL_INVALID_OPERATION, "GL_ANGLE_framebuffer_multisample not available"));
+        return false;
+    }
+
+    // ANGLE_framebuffer_multisample states that the value of samples must be less than or equal
+    // to MAX_SAMPLES_ANGLE (Context::getCaps().maxSamples) otherwise GL_INVALID_OPERATION is
+    // generated.
+    if (static_cast<GLuint>(samples) > context->getCaps().maxSamples)
+    {
+        context->handleError(Error(GL_INVALID_VALUE));
+        return false;
+    }
+
+    // ANGLE_framebuffer_multisample states GL_OUT_OF_MEMORY is generated on a failure to create
+    // the specified storage. This is different than ES 3.0 in which a sample number higher
+    // than the maximum sample number supported by this format generates a GL_INVALID_VALUE.
+    // The TextureCaps::getMaxSamples method is only guarenteed to be valid when the context is ES3.
+    if (context->getClientMajorVersion() >= 3)
+    {
+        const TextureCaps &formatCaps = context->getTextureCaps().get(internalformat);
+        if (static_cast<GLuint>(samples) > formatCaps.getMaxSamples())
+        {
+            context->handleError(Error(GL_OUT_OF_MEMORY));
+            return false;
+        }
+    }
+
+    return ValidateRenderbufferStorageParametersBase(context, target, samples, internalformat,
+                                                     width, height);
 }
 
 }  // namespace gl

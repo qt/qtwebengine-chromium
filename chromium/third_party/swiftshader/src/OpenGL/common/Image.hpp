@@ -18,7 +18,7 @@
 #include "libEGL/Texture.hpp"
 #include "Renderer/Surface.hpp"
 
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
 
 #if defined(__ANDROID__)
@@ -48,6 +48,8 @@ size_t ComputePackingOffset(GLenum format, GLenum type, GLsizei width, GLsizei h
 
 class Image : public sw::Surface, public gl::Object
 {
+	virtual void typeinfo();   // Dummy key method (https://gcc.gnu.org/onlinedocs/gcc/Vague-Linkage.html)
+
 public:
 	// 2D texture image
 	Image(Texture *parentTexture, GLsizei width, GLsizei height, GLenum format, GLenum type)
@@ -198,10 +200,13 @@ inline GLenum GLPixelFormatFromAndroid(int halFormat)
 {
 	switch(halFormat)
 	{
-	case HAL_PIXEL_FORMAT_RGBA_8888: return GL_RGBA;
-	case HAL_PIXEL_FORMAT_RGBX_8888: return GL_RGB;
+	case HAL_PIXEL_FORMAT_RGBA_8888: return GL_RGBA8;
+#if ANDROID_PLATFORM_SDK_VERSION > 16
+	case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED: return GL_RGB8;
+#endif
+	case HAL_PIXEL_FORMAT_RGBX_8888: return GL_RGB8;
 	case HAL_PIXEL_FORMAT_RGB_888:   return GL_NONE;   // Unsupported
-	case HAL_PIXEL_FORMAT_BGRA_8888: return GL_BGRA_EXT;
+	case HAL_PIXEL_FORMAT_BGRA_8888: return GL_BGRA8_EXT;
 	case HAL_PIXEL_FORMAT_RGB_565:   return GL_RGB565;
 	case HAL_PIXEL_FORMAT_YV12:      return SW_YV12_BT601;
 #ifdef GRALLOC_MODULE_API_VERSION_0_2
@@ -216,6 +221,9 @@ inline GLenum GLPixelTypeFromAndroid(int halFormat)
 	switch(halFormat)
 	{
 	case HAL_PIXEL_FORMAT_RGBA_8888: return GL_UNSIGNED_BYTE;
+#if ANDROID_PLATFORM_SDK_VERSION > 16
+	case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED: return GL_UNSIGNED_BYTE;
+#endif
 	case HAL_PIXEL_FORMAT_RGBX_8888: return GL_UNSIGNED_BYTE;
 	case HAL_PIXEL_FORMAT_RGB_888:   return GL_NONE;   // Unsupported
 	case HAL_PIXEL_FORMAT_BGRA_8888: return GL_UNSIGNED_BYTE;

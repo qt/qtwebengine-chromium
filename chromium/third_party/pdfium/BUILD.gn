@@ -2,12 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build_overrides/v8.gni")
 import("//testing/test.gni")
 import("pdfium.gni")
 
 config("pdfium_common_config") {
   cflags = []
+  ldflags = []
   include_dirs = [
     ".",
     "third_party/freetype/include",
@@ -33,16 +33,36 @@ config("pdfium_common_config") {
 
   if (pdf_enable_xfa) {
     defines += [ "PDF_ENABLE_XFA" ]
+    if (pdf_enable_xfa_bmp) {
+      defines += [ "PDF_ENABLE_XFA_BMP" ]
+    }
+    if (pdf_enable_xfa_gif) {
+      defines += [ "PDF_ENABLE_XFA_GIF" ]
+    }
+    if (pdf_enable_xfa_png) {
+      defines += [ "PDF_ENABLE_XFA_PNG" ]
+    }
+    if (pdf_enable_xfa_tiff) {
+      defines += [ "PDF_ENABLE_XFA_TIFF" ]
+    }
   }
 
   if (pdf_use_win32_gdi) {
     defines += [ "PDFIUM_PRINT_TEXT_WITH_GDI" ]
   }
+
+  if (use_coverage && is_clang) {
+    cflags += [
+      "--coverage",
+      "-g",
+      "-O0",
+    ]
+    ldflags += [ "--coverage" ]
+  }
 }
 
 config("pdfium_core_config") {
   cflags = []
-  ldflags = []
   configs = [ ":pdfium_common_config" ]
   defines = [ "V8_DEPRECATION_WARNINGS" ]
   if (is_linux) {
@@ -55,14 +75,6 @@ config("pdfium_core_config") {
   }
   if (is_win) {
     cflags += [ "/wd4267" ]
-  }
-  if (use_coverage && is_clang) {
-    cflags += [
-      "--coverage",
-      "-g",
-      "-O0",
-    ]
-    ldflags += [ "--coverage" ]
   }
 }
 
@@ -112,6 +124,8 @@ static_library("pdfium") {
     "fpdfsdk/fpdfdoc.cpp",
     "fpdfsdk/fpdfeditimg.cpp",
     "fpdfsdk/fpdfeditpage.cpp",
+    "fpdfsdk/fpdfeditpath.cpp",
+    "fpdfsdk/fpdfedittext.cpp",
     "fpdfsdk/fpdfformfill.cpp",
     "fpdfsdk/fpdfppo.cpp",
     "fpdfsdk/fpdfsave.cpp",
@@ -685,16 +699,20 @@ static_library("fxcodec") {
 
   if (pdf_enable_xfa) {
     sources += [
+      "core/fxcodec/codec/ccodec_bmpmodule.cpp",
       "core/fxcodec/codec/ccodec_bmpmodule.h",
+      "core/fxcodec/codec/ccodec_gifmodule.cpp",
       "core/fxcodec/codec/ccodec_gifmodule.h",
+      "core/fxcodec/codec/ccodec_pngmodule.cpp",
       "core/fxcodec/codec/ccodec_pngmodule.h",
       "core/fxcodec/codec/ccodec_progressivedecoder.h",
+      "core/fxcodec/codec/ccodec_tiffmodule.cpp",
       "core/fxcodec/codec/ccodec_tiffmodule.h",
-      "core/fxcodec/codec/fx_codec_bmp.cpp",
-      "core/fxcodec/codec/fx_codec_gif.cpp",
-      "core/fxcodec/codec/fx_codec_png.cpp",
       "core/fxcodec/codec/fx_codec_progress.cpp",
-      "core/fxcodec/codec/fx_codec_tiff.cpp",
+      "core/fxcodec/codec/icodec_bmpmodule.h",
+      "core/fxcodec/codec/icodec_gifmodule.h",
+      "core/fxcodec/codec/icodec_pngmodule.h",
+      "core/fxcodec/codec/icodec_tiffmodule.h",
       "core/fxcodec/lbmp/fx_bmp.cpp",
       "core/fxcodec/lbmp/fx_bmp.h",
       "core/fxcodec/lgif/fx_gif.cpp",
@@ -964,6 +982,7 @@ static_library("pdfwindow") {
     "fpdfsdk/pdfwindow/PWL_Utils.h",
     "fpdfsdk/pdfwindow/PWL_Wnd.cpp",
     "fpdfsdk/pdfwindow/PWL_Wnd.h",
+    "fpdfsdk/pdfwindow/cpwl_color.cpp",
     "fpdfsdk/pdfwindow/cpwl_color.h",
   ]
   configs += [ ":pdfium_core_config" ]
@@ -974,7 +993,7 @@ static_library("pdfwindow") {
 
 static_library("javascript") {
   sources = [
-    "fpdfsdk/javascript/ijs_context.h",
+    "fpdfsdk/javascript/ijs_event_context.h",
     "fpdfsdk/javascript/ijs_runtime.h",
   ]
   configs += [ ":pdfium_core_config" ]
@@ -1009,8 +1028,8 @@ static_library("javascript") {
       "fpdfsdk/javascript/PublicMethods.h",
       "fpdfsdk/javascript/app.cpp",
       "fpdfsdk/javascript/app.h",
-      "fpdfsdk/javascript/cjs_context.cpp",
-      "fpdfsdk/javascript/cjs_context.h",
+      "fpdfsdk/javascript/cjs_event_context.cpp",
+      "fpdfsdk/javascript/cjs_event_context.h",
       "fpdfsdk/javascript/cjs_runtime.cpp",
       "fpdfsdk/javascript/cjs_runtime.h",
       "fpdfsdk/javascript/color.cpp",
@@ -1144,27 +1163,20 @@ if (pdf_enable_xfa) {
       "xfa/fde/cfx_chariter.h",
       "xfa/fde/cfx_wordbreak.cpp",
       "xfa/fde/cfx_wordbreak.h",
-      "xfa/fde/css/cfde_cssaccelerator.cpp",
-      "xfa/fde/css/cfde_cssaccelerator.h",
       "xfa/fde/css/cfde_csscolorvalue.cpp",
       "xfa/fde/css/cfde_csscolorvalue.h",
       "xfa/fde/css/cfde_csscomputedstyle.cpp",
       "xfa/fde/css/cfde_csscomputedstyle.h",
+      "xfa/fde/css/cfde_csscustomproperty.cpp",
       "xfa/fde/css/cfde_csscustomproperty.h",
       "xfa/fde/css/cfde_cssdeclaration.cpp",
       "xfa/fde/css/cfde_cssdeclaration.h",
       "xfa/fde/css/cfde_cssenumvalue.cpp",
       "xfa/fde/css/cfde_cssenumvalue.h",
-      "xfa/fde/css/cfde_cssfontfacerule.cpp",
-      "xfa/fde/css/cfde_cssfontfacerule.h",
-      "xfa/fde/css/cfde_cssmediarule.cpp",
-      "xfa/fde/css/cfde_cssmediarule.h",
       "xfa/fde/css/cfde_cssnumbervalue.cpp",
       "xfa/fde/css/cfde_cssnumbervalue.h",
       "xfa/fde/css/cfde_csspropertyholder.cpp",
       "xfa/fde/css/cfde_csspropertyholder.h",
-      "xfa/fde/css/cfde_cssrule.cpp",
-      "xfa/fde/css/cfde_cssrule.h",
       "xfa/fde/css/cfde_cssrulecollection.cpp",
       "xfa/fde/css/cfde_cssrulecollection.h",
       "xfa/fde/css/cfde_cssselector.cpp",
@@ -1179,8 +1191,6 @@ if (pdf_enable_xfa) {
       "xfa/fde/css/cfde_cssstylesheet.h",
       "xfa/fde/css/cfde_csssyntaxparser.cpp",
       "xfa/fde/css/cfde_csssyntaxparser.h",
-      "xfa/fde/css/cfde_csstagcache.cpp",
-      "xfa/fde/css/cfde_csstagcache.h",
       "xfa/fde/css/cfde_csstextbuf.cpp",
       "xfa/fde/css/cfde_csstextbuf.h",
       "xfa/fde/css/cfde_cssvalue.cpp",
@@ -1228,8 +1238,6 @@ if (pdf_enable_xfa) {
       "xfa/fgas/layout/fgas_rtfbreak.h",
       "xfa/fgas/layout/fgas_textbreak.cpp",
       "xfa/fgas/layout/fgas_textbreak.h",
-      "xfa/fgas/layout/fgas_unicode.cpp",
-      "xfa/fgas/layout/fgas_unicode.h",
       "xfa/fgas/localization/fgas_datetime.cpp",
       "xfa/fgas/localization/fgas_datetime.h",
       "xfa/fgas/localization/fgas_locale.cpp",
@@ -1323,7 +1331,6 @@ if (pdf_enable_xfa) {
       "xfa/fwl/cfwl_widgetproperties.h",
       "xfa/fwl/cfx_barcode.cpp",
       "xfa/fwl/cfx_barcode.h",
-      "xfa/fwl/fwl_error.h",
       "xfa/fwl/fwl_widgetdef.h",
       "xfa/fwl/fwl_widgethit.h",
       "xfa/fwl/ifwl_adaptertimermgr.h",
@@ -1710,16 +1717,12 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/xfa_ffwidgethandler.h",
       "xfa/fxfa/xfa_fontmgr.h",
       "xfa/fxfa/xfa_rendercontext.h",
-      "xfa/fxgraphics/cagg_graphics.cpp",
-      "xfa/fxgraphics/cagg_graphics.h",
       "xfa/fxgraphics/cfx_color.cpp",
       "xfa/fxgraphics/cfx_color.h",
       "xfa/fxgraphics/cfx_graphics.cpp",
       "xfa/fxgraphics/cfx_graphics.h",
       "xfa/fxgraphics/cfx_path.cpp",
       "xfa/fxgraphics/cfx_path.h",
-      "xfa/fxgraphics/cfx_path_generator.cpp",
-      "xfa/fxgraphics/cfx_path_generator.h",
       "xfa/fxgraphics/cfx_pattern.cpp",
       "xfa/fxgraphics/cfx_pattern.h",
       "xfa/fxgraphics/cfx_shading.cpp",
@@ -1740,6 +1743,7 @@ if (pdf_enable_xfa) {
 test("pdfium_unittests") {
   sources = [
     "core/fdrm/crypto/fx_crypt_unittest.cpp",
+    "core/fpdfapi/edit/cpdf_pagecontentgenerator_unittest.cpp",
     "core/fpdfapi/font/fpdf_font_cid_unittest.cpp",
     "core/fpdfapi/font/fpdf_font_unittest.cpp",
     "core/fpdfapi/page/cpdf_streamcontentparser_unittest.cpp",
@@ -1790,6 +1794,7 @@ test("pdfium_unittests") {
       "xfa/fde/cfde_txtedtbuf_unittest.cpp",
       "xfa/fde/css/cfde_cssdeclaration_unittest.cpp",
       "xfa/fde/css/cfde_cssstylesheet_unittest.cpp",
+      "xfa/fde/css/cfde_cssvaluelistparser_unittest.cpp",
       "xfa/fde/xml/fde_xml_imp_unittest.cpp",
       "xfa/fxbarcode/pdf417/BC_PDF417HighLevelEncoder_unittest.cpp",
       "xfa/fxfa/app/cxfa_textparser_unittest.cpp",

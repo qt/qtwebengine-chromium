@@ -66,6 +66,7 @@ class MockRtpRtcp : public RtpRtcp {
                int32_t(RTPExtensionType type, uint8_t id));
   MOCK_METHOD1(DeregisterSendRtpHeaderExtension,
                int32_t(RTPExtensionType type));
+  MOCK_CONST_METHOD0(HasBweExtensions, bool());
   MOCK_CONST_METHOD0(StartTimestamp, uint32_t());
   MOCK_METHOD1(SetStartTimestamp, void(uint32_t timestamp));
   MOCK_CONST_METHOD0(SequenceNumber, uint16_t());
@@ -113,8 +114,9 @@ class MockRtpRtcp : public RtpRtcp {
                     uint16_t sequence_number,
                     int64_t capture_time_ms,
                     bool retransmission,
-                    int probe_cluster_id));
-  MOCK_METHOD2(TimeToSendPadding, size_t(size_t bytes, int probe_cluster_id));
+                    const PacedPacketInfo& pacing_info));
+  MOCK_METHOD2(TimeToSendPadding,
+               size_t(size_t bytes, const PacedPacketInfo& pacing_info));
   MOCK_METHOD2(RegisterRtcpObservers,
                void(RtcpIntraFrameObserver* intra_frame_callback,
                     RtcpBandwidthObserver* bandwidth_callback));

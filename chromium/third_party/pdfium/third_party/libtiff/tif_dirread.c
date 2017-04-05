@@ -3754,6 +3754,17 @@ TIFFReadDirectory(TIFF* tif)
                                        fip ? fip->field_name : "unknown tagname");
                         continue;
                     }
+					/* ColorMap or TransferFunction for high bit */
+					/* depths do not make much sense and could be */
+					/* used as a denial of service vector */
+					if (tif->tif_dir.td_bitspersample > 24)
+					{
+					    TIFFWarningExt(tif->tif_clientdata,module,
+						"Ignoring %s because BitsPerSample=%d>24",
+						fip ? fip->field_name : "unknown tagname",
+						tif->tif_dir.td_bitspersample);
+					    continue;
+					}
 					countpersample=(1L<<tif->tif_dir.td_bitspersample);
 					if ((dp->tdir_tag==TIFFTAG_TRANSFERFUNCTION)&&(dp->tdir_count==(uint64)countpersample))
 					{
@@ -4983,6 +4994,11 @@ TIFFFetchNormalTag(TIFF* tif, TIFFDirEntry* dp, int recover)
 					if (err==TIFFReadDirEntryErrOk)
 					{
 						int m;
+						if( dp->tdir_count > 0 && data[dp->tdir_count-1] != '\0' )
+                        {
+                            TIFFWarningExt(tif->tif_clientdata,module,"ASCII value for tag \"%s\" does not end in null byte. Forcing it to be null",fip->field_name);
+                            data[dp->tdir_count-1] = '\0';
+                        }
 						m=TIFFSetField(tif,dp->tdir_tag,(uint16)(dp->tdir_count),data);
 						if (data!=0)
 							_TIFFfree(data);
@@ -5155,6 +5171,11 @@ TIFFFetchNormalTag(TIFF* tif, TIFFDirEntry* dp, int recover)
 				if (err==TIFFReadDirEntryErrOk)
 				{
 					int m;
+					if( dp->tdir_count > 0 && data[dp->tdir_count-1] != '\0' )
+                    {
+                        TIFFWarningExt(tif->tif_clientdata,module,"ASCII value for tag \"%s\" does not end in null byte. Forcing it to be null",fip->field_name);
+                        data[dp->tdir_count-1] = '\0';
+                    }
 					m=TIFFSetField(tif,dp->tdir_tag,(uint32)(dp->tdir_count),data);
 					if (data!=0)
 						_TIFFfree(data);

@@ -97,7 +97,8 @@ uint8_t* CBC_OnedEAN13Writer::Encode(const CFX_ByteString& contents,
                                      int32_t& outHeight,
                                      int32_t& e) {
   uint8_t* ret = Encode(contents, format, outWidth, outHeight, 0, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
+  if (e != BCExceptionNO)
+    return nullptr;
   return ret;
 }
 uint8_t* CBC_OnedEAN13Writer::Encode(const CFX_ByteString& contents,
@@ -111,7 +112,8 @@ uint8_t* CBC_OnedEAN13Writer::Encode(const CFX_ByteString& contents,
   }
   uint8_t* ret =
       CBC_OneDimWriter::Encode(contents, format, outWidth, outHeight, hints, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
+  if (e != BCExceptionNO)
+    return nullptr;
   return ret;
 }
 uint8_t* CBC_OnedEAN13Writer::Encode(const CFX_ByteString& contents,
@@ -231,8 +233,9 @@ void CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
     ge.Create(strWidth, iTextHeight, FXDIB_Argb, nullptr);
     FX_RECT rect(0, 0, strWidth, iTextHeight);
     ge.FillRect(&rect, m_backgroundColor);
-    ge.DrawNormalText(iLen, pCharPos + 1, m_pFont, (FX_FLOAT)iFontSize,
-                      &affine_matrix, m_fontColor, FXTEXT_CLEARTYPE);
+    ge.DrawNormalText(iLen, pCharPos + 1, m_pFont,
+                      static_cast<FX_FLOAT>(iFontSize), &affine_matrix,
+                      m_fontColor, FXTEXT_CLEARTYPE);
     geBitmap.SetDIBits(ge.GetBitmap(), leftPosition, m_Height - iTextHeight);
   } else {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0,
@@ -241,8 +244,9 @@ void CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
     if (matrix) {
       affine_matrix1.Concat(*matrix);
     }
-    device->DrawNormalText(iLen, pCharPos + 1, m_pFont, (FX_FLOAT)iFontSize,
-                           &affine_matrix1, m_fontColor, FXTEXT_CLEARTYPE);
+    device->DrawNormalText(iLen, pCharPos + 1, m_pFont,
+                           static_cast<FX_FLOAT>(iFontSize), &affine_matrix1,
+                           m_fontColor, FXTEXT_CLEARTYPE);
   }
   tempStr = str.Mid(7, 6);
   iLen = tempStr.GetLength();
@@ -251,8 +255,9 @@ void CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
   if (pOutBitmap) {
     FX_RECT rect1(0, 0, strWidth, iTextHeight);
     ge.FillRect(&rect1, m_backgroundColor);
-    ge.DrawNormalText(iLen, pCharPos + 7, m_pFont, (FX_FLOAT)iFontSize,
-                      &affine_matrix, m_fontColor, FXTEXT_CLEARTYPE);
+    ge.DrawNormalText(iLen, pCharPos + 7, m_pFont,
+                      static_cast<FX_FLOAT>(iFontSize), &affine_matrix,
+                      m_fontColor, FXTEXT_CLEARTYPE);
     geBitmap.SetDIBits(ge.GetBitmap(), leftPosition + 47 * multiple,
                        m_Height - iTextHeight);
   } else {
@@ -263,8 +268,9 @@ void CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
     if (matrix) {
       affine_matrix1.Concat(*matrix);
     }
-    device->DrawNormalText(iLen, pCharPos + 7, m_pFont, (FX_FLOAT)iFontSize,
-                           &affine_matrix1, m_fontColor, FXTEXT_CLEARTYPE);
+    device->DrawNormalText(iLen, pCharPos + 7, m_pFont,
+                           static_cast<FX_FLOAT>(iFontSize), &affine_matrix1,
+                           m_fontColor, FXTEXT_CLEARTYPE);
   }
   tempStr = str.Mid(0, 1);
   iLen = tempStr.GetLength();
@@ -278,7 +284,7 @@ void CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
     delete ge.GetBitmap();
     ge.Create(strWidth, iTextHeight, FXDIB_Argb, nullptr);
     ge.GetBitmap()->Clear(m_backgroundColor);
-    ge.DrawNormalText(iLen, pCharPos, m_pFont, (FX_FLOAT)iFontSize,
+    ge.DrawNormalText(iLen, pCharPos, m_pFont, static_cast<FX_FLOAT>(iFontSize),
                       &affine_matrix, m_fontColor, FXTEXT_CLEARTYPE);
     geBitmap.SetDIBits(ge.GetBitmap(), 0, m_Height - iTextHeight);
   } else {
@@ -287,8 +293,9 @@ void CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
     if (matrix) {
       affine_matrix1.Concat(*matrix);
     }
-    device->DrawNormalText(iLen, pCharPos, m_pFont, (FX_FLOAT)iFontSize,
-                           &affine_matrix1, m_fontColor, FXTEXT_CLEARTYPE);
+    device->DrawNormalText(iLen, pCharPos, m_pFont,
+                           static_cast<FX_FLOAT>(iFontSize), &affine_matrix1,
+                           m_fontColor, FXTEXT_CLEARTYPE);
   }
   FX_Free(pCharPos);
 }

@@ -126,7 +126,7 @@ void CPDF_AnnotList::DisplayPass(CPDF_Page* pPage,
       continue;
 
     if (pOptions) {
-      CPDF_OCContext* pOCContext = pOptions->m_pOCContext;
+      CFX_RetainPtr<CPDF_OCContext> pOCContext = pOptions->m_pOCContext;
       CPDF_Dictionary* pAnnotDict = pAnnot->GetAnnotDict();
       if (pOCContext && pAnnotDict &&
           !pOCContext->CheckOCGVisible(pAnnotDict->GetDictFor("OC"))) {
@@ -136,12 +136,12 @@ void CPDF_AnnotList::DisplayPass(CPDF_Page* pPage,
     CFX_FloatRect annot_rect_f = pAnnot->GetRect();
     CFX_Matrix matrix = *pMatrix;
     if (clip_rect) {
-      annot_rect_f.Transform(&matrix);
+      matrix.TransformRect(annot_rect_f);
+
       FX_RECT annot_rect = annot_rect_f.GetOuterRect();
       annot_rect.Intersect(*clip_rect);
-      if (annot_rect.IsEmpty()) {
+      if (annot_rect.IsEmpty())
         continue;
-      }
     }
     if (pContext) {
       pAnnot->DrawInContext(pPage, pContext, &matrix, CPDF_Annot::Normal);

@@ -34,9 +34,8 @@ CFFL_InteractiveFormFiller::~CFFL_InteractiveFormFiller() {}
 
 bool CFFL_InteractiveFormFiller::Annot_HitTest(CPDFSDK_PageView* pPageView,
                                                CPDFSDK_Annot* pAnnot,
-                                               CFX_FloatPoint point) {
-  CFX_FloatRect rc = pAnnot->GetRect();
-  return rc.Contains(point.x, point.y);
+                                               const CFX_PointF& point) {
+  return pAnnot->GetRect().Contains(point);
 }
 
 FX_RECT CFFL_InteractiveFormFiller::GetViewBBox(CPDFSDK_PageView* pPageView,
@@ -70,12 +69,16 @@ void CFFL_InteractiveFormFiller::OnDraw(CPDFSDK_PageView* pPageView,
         CFX_FloatRect rcFocus = pFormFiller->GetFocusBox(pPageView);
         if (!rcFocus.IsEmpty()) {
           CFX_PathData path;
-          path.SetPointCount(5);
-          path.SetPoint(0, rcFocus.left, rcFocus.top, FXPT_MOVETO);
-          path.SetPoint(1, rcFocus.left, rcFocus.bottom, FXPT_LINETO);
-          path.SetPoint(2, rcFocus.right, rcFocus.bottom, FXPT_LINETO);
-          path.SetPoint(3, rcFocus.right, rcFocus.top, FXPT_LINETO);
-          path.SetPoint(4, rcFocus.left, rcFocus.top, FXPT_LINETO);
+          path.AppendPoint(CFX_PointF(rcFocus.left, rcFocus.top),
+                           FXPT_TYPE::MoveTo, false);
+          path.AppendPoint(CFX_PointF(rcFocus.left, rcFocus.bottom),
+                           FXPT_TYPE::LineTo, false);
+          path.AppendPoint(CFX_PointF(rcFocus.right, rcFocus.bottom),
+                           FXPT_TYPE::LineTo, false);
+          path.AppendPoint(CFX_PointF(rcFocus.right, rcFocus.top),
+                           FXPT_TYPE::LineTo, false);
+          path.AppendPoint(CFX_PointF(rcFocus.left, rcFocus.top),
+                           FXPT_TYPE::LineTo, false);
 
           CFX_GraphStateData gsd;
           gsd.SetDashCount(1);
@@ -176,7 +179,7 @@ bool CFFL_InteractiveFormFiller::OnLButtonDown(
     CPDFSDK_PageView* pPageView,
     CPDFSDK_Annot::ObservedPtr* pAnnot,
     uint32_t nFlags,
-    const CFX_FloatPoint& point) {
+    const CFX_PointF& point) {
   ASSERT((*pAnnot)->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
   if (!m_bNotifying) {
     CPDFSDK_Widget* pWidget = static_cast<CPDFSDK_Widget*>(pAnnot->Get());
@@ -217,7 +220,7 @@ bool CFFL_InteractiveFormFiller::OnLButtonDown(
 bool CFFL_InteractiveFormFiller::OnLButtonUp(CPDFSDK_PageView* pPageView,
                                              CPDFSDK_Annot::ObservedPtr* pAnnot,
                                              uint32_t nFlags,
-                                             const CFX_FloatPoint& point) {
+                                             const CFX_PointF& point) {
   ASSERT((*pAnnot)->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
   CPDFSDK_Widget* pWidget = static_cast<CPDFSDK_Widget*>(pAnnot->Get());
 
@@ -291,7 +294,7 @@ bool CFFL_InteractiveFormFiller::OnLButtonDblClk(
     CPDFSDK_PageView* pPageView,
     CPDFSDK_Annot::ObservedPtr* pAnnot,
     uint32_t nFlags,
-    const CFX_FloatPoint& point) {
+    const CFX_PointF& point) {
   ASSERT((*pAnnot)->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
   CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot->Get(), false);
   return pFormFiller &&
@@ -301,7 +304,7 @@ bool CFFL_InteractiveFormFiller::OnLButtonDblClk(
 bool CFFL_InteractiveFormFiller::OnMouseMove(CPDFSDK_PageView* pPageView,
                                              CPDFSDK_Annot::ObservedPtr* pAnnot,
                                              uint32_t nFlags,
-                                             const CFX_FloatPoint& point) {
+                                             const CFX_PointF& point) {
   ASSERT((*pAnnot)->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
   CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot->Get(), true);
   return pFormFiller &&
@@ -313,7 +316,7 @@ bool CFFL_InteractiveFormFiller::OnMouseWheel(
     CPDFSDK_Annot::ObservedPtr* pAnnot,
     uint32_t nFlags,
     short zDelta,
-    const CFX_FloatPoint& point) {
+    const CFX_PointF& point) {
   ASSERT((*pAnnot)->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
   CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot->Get(), false);
   return pFormFiller &&
@@ -325,7 +328,7 @@ bool CFFL_InteractiveFormFiller::OnRButtonDown(
     CPDFSDK_PageView* pPageView,
     CPDFSDK_Annot::ObservedPtr* pAnnot,
     uint32_t nFlags,
-    const CFX_FloatPoint& point) {
+    const CFX_PointF& point) {
   ASSERT((*pAnnot)->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
   CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot->Get(), false);
   return pFormFiller &&
@@ -335,7 +338,7 @@ bool CFFL_InteractiveFormFiller::OnRButtonDown(
 bool CFFL_InteractiveFormFiller::OnRButtonUp(CPDFSDK_PageView* pPageView,
                                              CPDFSDK_Annot::ObservedPtr* pAnnot,
                                              uint32_t nFlags,
-                                             const CFX_FloatPoint& point) {
+                                             const CFX_PointF& point) {
   ASSERT((*pAnnot)->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
   CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot->Get(), false);
   return pFormFiller &&

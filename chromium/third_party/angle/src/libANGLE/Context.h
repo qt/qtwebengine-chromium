@@ -49,7 +49,6 @@ class Renderbuffer;
 class FenceNV;
 class FenceSync;
 class Query;
-class ResourceManager;
 class Buffer;
 struct VertexAttribute;
 class VertexArray;
@@ -62,12 +61,15 @@ class Context final : public ValidationContext
     Context(rx::EGLImplFactory *implFactory,
             const egl::Config *config,
             const Context *shareContext,
-            const egl::AttributeMap &attribs);
+            TextureManager *shareTextures,
+            const egl::AttributeMap &attribs,
+            const egl::DisplayExtensions &displayExtensions);
 
-    virtual ~Context();
+    void destroy(egl::Display *display);
+    ~Context() override;
 
-    void makeCurrent(egl::Surface *surface);
-    void releaseSurface();
+    void makeCurrent(egl::Display *display, egl::Surface *surface);
+    void releaseSurface(egl::Display *display);
 
     // These create  and destroy methods are merely pass-throughs to
     // ResourceManager, which owns these object types
@@ -137,6 +139,11 @@ class Context final : public ValidationContext
                                             GLuint index,
                                             GLintptr offset,
                                             GLsizeiptr size);
+    void bindGenericAtomicCounterBuffer(GLuint bufferHandle);
+    void bindIndexedAtomicCounterBuffer(GLuint bufferHandle,
+                                        GLuint index,
+                                        GLintptr offset,
+                                        GLsizeiptr size);
     void bindCopyReadBuffer(GLuint bufferHandle);
     void bindCopyWriteBuffer(GLuint bufferHandle);
     void bindPixelPackBuffer(GLuint bufferHandle);
@@ -258,6 +265,11 @@ class Context final : public ValidationContext
     void vertexAttribI4ui(GLuint index, GLuint x, GLuint y, GLuint z, GLuint w);
     void vertexAttribI4iv(GLuint index, const GLint *v);
     void vertexAttribI4uiv(GLuint index, const GLuint *v);
+    void getVertexAttribiv(GLuint index, GLenum pname, GLint *params);
+    void getVertexAttribfv(GLuint index, GLenum pname, GLfloat *params);
+    void getVertexAttribIiv(GLuint index, GLenum pname, GLint *params);
+    void getVertexAttribIuiv(GLuint index, GLenum pname, GLuint *params);
+    void getVertexAttribPointerv(GLuint index, GLenum pname, GLvoid **pointer);
 
     void debugMessageControl(GLenum source,
                              GLenum type,
@@ -506,6 +518,12 @@ class Context final : public ValidationContext
     void popGroupMarker();
 
     void bindUniformLocation(GLuint program, GLint location, const GLchar *name);
+    void renderbufferStorage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+    void renderbufferStorageMultisample(GLenum target,
+                                        GLsizei samples,
+                                        GLenum internalformat,
+                                        GLsizei width,
+                                        GLsizei height);
 
     // CHROMIUM_framebuffer_mixed_samples
     void setCoverageModulation(GLenum components);
@@ -579,6 +597,12 @@ class Context final : public ValidationContext
     void attachShader(GLuint program, GLuint shader);
     void bindAttribLocation(GLuint program, GLuint index, const GLchar *name);
     void bindBuffer(GLenum target, GLuint buffer);
+    void bindBufferBase(GLenum target, GLuint index, GLuint buffer);
+    void bindBufferRange(GLenum target,
+                         GLuint index,
+                         GLuint buffer,
+                         GLintptr offset,
+                         GLsizeiptr size);
     void bindFramebuffer(GLenum target, GLuint framebuffer);
     void bindRenderbuffer(GLenum target, GLuint renderbuffer);
 
@@ -620,6 +644,9 @@ class Context final : public ValidationContext
     rx::ContextImpl *getImplementation() const { return mImplementation.get(); }
     const Workarounds &getWorkarounds() const;
 
+    void getFramebufferParameteriv(GLenum target, GLenum pname, GLint *params);
+    void setFramebufferParameteri(GLenum target, GLenum pname, GLint param);
+
   private:
     void syncRendererState();
     void syncRendererState(const State::DirtyBits &bitMask, const State::DirtyObjects &objectMask);
@@ -629,7 +656,6 @@ class Context final : public ValidationContext
     void syncStateForBlit();
     VertexArray *checkVertexArrayAllocation(GLuint vertexArrayHandle);
     TransformFeedback *checkTransformFeedbackAllocation(GLuint transformFeedback);
-    Framebuffer *checkFramebufferAllocation(GLuint framebufferHandle);
 
     void detachBuffer(GLuint buffer);
     void detachTexture(GLuint texture);
@@ -643,7 +669,7 @@ class Context final : public ValidationContext
     void initVersionStrings();
     void initExtensionStrings();
 
-    void initCaps(bool webGLContext);
+    void initCaps(const egl::DisplayExtensions &displayExtensions);
     void updateCaps();
     void initWorkarounds();
 
@@ -667,9 +693,6 @@ class Context final : public ValidationContext
     EGLenum mClientType;
 
     TextureMap mZeroTextures;
-
-    ResourceMap<Framebuffer> mFramebufferMap;
-    HandleAllocator mFramebufferHandleAllocator;
 
     ResourceMap<FenceNV> mFenceNVMap;
     HandleAllocator mFenceNVHandleAllocator;
@@ -703,8 +726,8 @@ class Context final : public ValidationContext
     GLenum mResetStrategy;
     bool mRobustAccess;
     egl::Surface *mCurrentSurface;
-
-    ResourceManager *mResourceManager;
+    Framebuffer *mSurfacelessFramebuffer;
+    bool mWebGLContext;
 
     State::DirtyBits mTexImageDirtyBits;
     State::DirtyObjects mTexImageDirtyObjects;

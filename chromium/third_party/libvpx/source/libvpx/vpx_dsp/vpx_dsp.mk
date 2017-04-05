@@ -13,6 +13,13 @@ DSP_SRCS-yes += vpx_dsp_common.h
 
 DSP_SRCS-$(HAVE_MSA)    += mips/macros_msa.h
 
+DSP_SRCS-$(HAVE_AVX2)   += x86/bitdepth_conversion_avx2.h
+DSP_SRCS-$(HAVE_SSE2)   += x86/bitdepth_conversion_sse2.h
+# This file is included in libs.mk. Including it here would cause it to be
+# compiled into an object. Even as an empty file, this would create an
+# executable section on the stack.
+#DSP_SRCS-$(HAVE_SSE2)   += x86/bitdepth_conversion_sse2$(ASM)
+
 # bit reader
 DSP_SRCS-yes += prob.h
 DSP_SRCS-yes += prob.c
@@ -195,9 +202,7 @@ DSP_SRCS-yes            += inv_txfm.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/inv_txfm_sse2.h
 DSP_SRCS-$(HAVE_SSE2)   += x86/inv_txfm_sse2.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/inv_wht_sse2.asm
-ifeq ($(ARCH_X86_64),yes)
-DSP_SRCS-$(HAVE_SSSE3)  += x86/inv_txfm_ssse3_x86_64.asm
-endif  # ARCH_X86_64
+DSP_SRCS-$(HAVE_SSSE3)  += x86/inv_txfm_ssse3.c
 
 DSP_SRCS-$(HAVE_NEON_ASM) += arm/save_reg_neon$(ASM)
 
@@ -217,26 +222,23 @@ DSP_SRCS-$(HAVE_DSPR2) += mips/itrans32_cols_dspr2.c
 else  # CONFIG_VP9_HIGHBITDEPTH
 DSP_SRCS-$(HAVE_NEON)  += arm/highbd_idct4x4_add_neon.c
 DSP_SRCS-$(HAVE_NEON)  += arm/highbd_idct8x8_add_neon.c
+DSP_SRCS-$(HAVE_NEON)  += arm/highbd_idct16x16_add_neon.c
+DSP_SRCS-$(HAVE_NEON)  += arm/highbd_idct32x32_add_neon.c
 endif  # !CONFIG_VP9_HIGHBITDEPTH
 
 ifeq ($(HAVE_NEON_ASM),yes)
 DSP_SRCS-yes += arm/idct_neon$(ASM)
 DSP_SRCS-yes += arm/idct4x4_1_add_neon$(ASM)
 DSP_SRCS-yes += arm/idct4x4_add_neon$(ASM)
-DSP_SRCS-yes += arm/idct8x8_1_add_neon$(ASM)
-DSP_SRCS-yes += arm/idct8x8_add_neon$(ASM)
-DSP_SRCS-yes += arm/idct16x16_1_add_neon$(ASM)
-DSP_SRCS-yes += arm/idct16x16_add_neon$(ASM)
-DSP_SRCS-yes += arm/idct16x16_neon.c
 else
 DSP_SRCS-$(HAVE_NEON) += arm/idct4x4_1_add_neon.c
 DSP_SRCS-$(HAVE_NEON) += arm/idct4x4_add_neon.c
+endif  # HAVE_NEON_ASM
+DSP_SRCS-$(HAVE_NEON) += arm/idct_neon.h
 DSP_SRCS-$(HAVE_NEON) += arm/idct8x8_1_add_neon.c
 DSP_SRCS-$(HAVE_NEON) += arm/idct8x8_add_neon.c
 DSP_SRCS-$(HAVE_NEON) += arm/idct16x16_1_add_neon.c
 DSP_SRCS-$(HAVE_NEON) += arm/idct16x16_add_neon.c
-endif  # HAVE_NEON_ASM
-DSP_SRCS-$(HAVE_NEON) += arm/idct_neon.h
 DSP_SRCS-$(HAVE_NEON) += arm/idct32x32_1_add_neon.c
 DSP_SRCS-$(HAVE_NEON) += arm/idct32x32_34_add_neon.c
 DSP_SRCS-$(HAVE_NEON) += arm/idct32x32_135_add_neon.c
@@ -249,7 +251,6 @@ ifeq ($(CONFIG_VP9_ENCODER),yes)
 DSP_SRCS-yes            += quantize.c
 DSP_SRCS-yes            += quantize.h
 
-DSP_SRCS-$(HAVE_SSE2)   += x86/fdct.h
 DSP_SRCS-$(HAVE_SSE2)   += x86/quantize_sse2.c
 ifeq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
 DSP_SRCS-$(HAVE_SSE2)   += x86/highbd_quantize_intrin_sse2.c
@@ -276,6 +277,7 @@ DSP_SRCS-yes            += sad.c
 DSP_SRCS-yes            += subtract.c
 DSP_SRCS-yes            += sum_squares.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/sum_squares_sse2.c
+DSP_SRCS-$(HAVE_MSA)    += mips/sum_squares_msa.c
 
 DSP_SRCS-$(HAVE_NEON)   += arm/sad4d_neon.c
 DSP_SRCS-$(HAVE_NEON)   += arm/sad_neon.c

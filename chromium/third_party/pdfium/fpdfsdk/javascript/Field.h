@@ -77,182 +77,240 @@ class Field : public CJS_EmbedObj {
   explicit Field(CJS_Object* pJSObject);
   ~Field() override;
 
-  bool alignment(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool borderStyle(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool buttonAlignX(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool buttonAlignY(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool buttonFitBounds(IJS_Context* cc,
+  bool alignment(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool borderStyle(CJS_Runtime* pRuntime,
+                   CJS_PropValue& vp,
+                   CFX_WideString& sError);
+  bool buttonAlignX(CJS_Runtime* pRuntime,
+                    CJS_PropValue& vp,
+                    CFX_WideString& sError);
+  bool buttonAlignY(CJS_Runtime* pRuntime,
+                    CJS_PropValue& vp,
+                    CFX_WideString& sError);
+  bool buttonFitBounds(CJS_Runtime* pRuntime,
                        CJS_PropValue& vp,
                        CFX_WideString& sError);
-  bool buttonPosition(IJS_Context* cc,
+  bool buttonPosition(CJS_Runtime* pRuntime,
                       CJS_PropValue& vp,
                       CFX_WideString& sError);
-  bool buttonScaleHow(IJS_Context* cc,
+  bool buttonScaleHow(CJS_Runtime* pRuntime,
                       CJS_PropValue& vp,
                       CFX_WideString& sError);
-  bool buttonScaleWhen(IJS_Context* cc,
+  bool buttonScaleWhen(CJS_Runtime* pRuntime,
                        CJS_PropValue& vp,
                        CFX_WideString& sError);
-  bool calcOrderIndex(IJS_Context* cc,
+  bool calcOrderIndex(CJS_Runtime* pRuntime,
                       CJS_PropValue& vp,
                       CFX_WideString& sError);
-  bool charLimit(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool comb(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool commitOnSelChange(IJS_Context* cc,
+  bool charLimit(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool comb(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool commitOnSelChange(CJS_Runtime* pRuntime,
                          CJS_PropValue& vp,
                          CFX_WideString& sError);
-  bool currentValueIndices(IJS_Context* cc,
+  bool currentValueIndices(CJS_Runtime* pRuntime,
                            CJS_PropValue& vp,
                            CFX_WideString& sError);
-  bool defaultStyle(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool defaultValue(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool doNotScroll(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool doNotSpellCheck(IJS_Context* cc,
+  bool defaultStyle(CJS_Runtime* pRuntime,
+                    CJS_PropValue& vp,
+                    CFX_WideString& sError);
+  bool defaultValue(CJS_Runtime* pRuntime,
+                    CJS_PropValue& vp,
+                    CFX_WideString& sError);
+  bool doNotScroll(CJS_Runtime* pRuntime,
+                   CJS_PropValue& vp,
+                   CFX_WideString& sError);
+  bool doNotSpellCheck(CJS_Runtime* pRuntime,
                        CJS_PropValue& vp,
                        CFX_WideString& sError);
-  bool delay(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool display(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool doc(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool editable(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool exportValues(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool fileSelect(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool fillColor(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool hidden(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool highlight(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool lineWidth(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool multiline(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool multipleSelection(IJS_Context* cc,
+  bool delay(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool display(CJS_Runtime* pRuntime,
+               CJS_PropValue& vp,
+               CFX_WideString& sError);
+  bool doc(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool editable(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool exportValues(CJS_Runtime* pRuntime,
+                    CJS_PropValue& vp,
+                    CFX_WideString& sError);
+  bool fileSelect(CJS_Runtime* pRuntime,
+                  CJS_PropValue& vp,
+                  CFX_WideString& sError);
+  bool fillColor(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool hidden(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool highlight(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool lineWidth(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool multiline(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool multipleSelection(CJS_Runtime* pRuntime,
                          CJS_PropValue& vp,
                          CFX_WideString& sError);
-  bool name(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool numItems(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool page(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool password(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool print(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool radiosInUnison(IJS_Context* cc,
+  bool name(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool numItems(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool page(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool password(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool print(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool radiosInUnison(CJS_Runtime* pRuntime,
                       CJS_PropValue& vp,
                       CFX_WideString& sError);
-  bool readonly(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool rect(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool required(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool richText(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool richValue(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool rotation(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool strokeColor(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool style(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool submitName(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool textColor(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool textFont(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool textSize(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool type(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool userName(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool value(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool valueAsString(IJS_Context* cc,
+  bool readonly(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool rect(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool required(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool richText(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool richValue(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool rotation(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool strokeColor(CJS_Runtime* pRuntime,
+                   CJS_PropValue& vp,
+                   CFX_WideString& sError);
+  bool style(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool submitName(CJS_Runtime* pRuntime,
+                  CJS_PropValue& vp,
+                  CFX_WideString& sError);
+  bool textColor(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool textFont(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool textSize(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool type(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool userName(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool value(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool valueAsString(CJS_Runtime* pRuntime,
                      CJS_PropValue& vp,
                      CFX_WideString& sError);
-  bool source(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool source(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
 
-  bool browseForFileToSubmit(IJS_Context* cc,
+  bool browseForFileToSubmit(CJS_Runtime* pRuntime,
                              const std::vector<CJS_Value>& params,
                              CJS_Value& vRet,
                              CFX_WideString& sError);
-  bool buttonGetCaption(IJS_Context* cc,
+  bool buttonGetCaption(CJS_Runtime* pRuntime,
                         const std::vector<CJS_Value>& params,
                         CJS_Value& vRet,
                         CFX_WideString& sError);
-  bool buttonGetIcon(IJS_Context* cc,
+  bool buttonGetIcon(CJS_Runtime* pRuntime,
                      const std::vector<CJS_Value>& params,
                      CJS_Value& vRet,
                      CFX_WideString& sError);
-  bool buttonImportIcon(IJS_Context* cc,
+  bool buttonImportIcon(CJS_Runtime* pRuntime,
                         const std::vector<CJS_Value>& params,
                         CJS_Value& vRet,
                         CFX_WideString& sError);
-  bool buttonSetCaption(IJS_Context* cc,
+  bool buttonSetCaption(CJS_Runtime* pRuntime,
                         const std::vector<CJS_Value>& params,
                         CJS_Value& vRet,
                         CFX_WideString& sError);
-  bool buttonSetIcon(IJS_Context* cc,
+  bool buttonSetIcon(CJS_Runtime* pRuntime,
                      const std::vector<CJS_Value>& params,
                      CJS_Value& vRet,
                      CFX_WideString& sError);
-  bool checkThisBox(IJS_Context* cc,
+  bool checkThisBox(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool clearItems(IJS_Context* cc,
+  bool clearItems(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError);
-  bool defaultIsChecked(IJS_Context* cc,
+  bool defaultIsChecked(CJS_Runtime* pRuntime,
                         const std::vector<CJS_Value>& params,
                         CJS_Value& vRet,
                         CFX_WideString& sError);
-  bool deleteItemAt(IJS_Context* cc,
+  bool deleteItemAt(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool getArray(IJS_Context* cc,
+  bool getArray(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool getItemAt(IJS_Context* cc,
+  bool getItemAt(CJS_Runtime* pRuntime,
                  const std::vector<CJS_Value>& params,
                  CJS_Value& vRet,
                  CFX_WideString& sError);
-  bool getLock(IJS_Context* cc,
+  bool getLock(CJS_Runtime* pRuntime,
                const std::vector<CJS_Value>& params,
                CJS_Value& vRet,
                CFX_WideString& sError);
-  bool insertItemAt(IJS_Context* cc,
+  bool insertItemAt(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool isBoxChecked(IJS_Context* cc,
+  bool isBoxChecked(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool isDefaultChecked(IJS_Context* cc,
+  bool isDefaultChecked(CJS_Runtime* pRuntime,
                         const std::vector<CJS_Value>& params,
                         CJS_Value& vRet,
                         CFX_WideString& sError);
-  bool setAction(IJS_Context* cc,
+  bool setAction(CJS_Runtime* pRuntime,
                  const std::vector<CJS_Value>& params,
                  CJS_Value& vRet,
                  CFX_WideString& sError);
-  bool setFocus(IJS_Context* cc,
+  bool setFocus(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool setItems(IJS_Context* cc,
+  bool setItems(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool setLock(IJS_Context* cc,
+  bool setLock(CJS_Runtime* pRuntime,
                const std::vector<CJS_Value>& params,
                CJS_Value& vRet,
                CFX_WideString& sError);
-  bool signatureGetModifications(IJS_Context* cc,
+  bool signatureGetModifications(CJS_Runtime* pRuntime,
                                  const std::vector<CJS_Value>& params,
                                  CJS_Value& vRet,
                                  CFX_WideString& sError);
-  bool signatureGetSeedValue(IJS_Context* cc,
+  bool signatureGetSeedValue(CJS_Runtime* pRuntime,
                              const std::vector<CJS_Value>& params,
                              CJS_Value& vRet,
                              CFX_WideString& sError);
-  bool signatureInfo(IJS_Context* cc,
+  bool signatureInfo(CJS_Runtime* pRuntime,
                      const std::vector<CJS_Value>& params,
                      CJS_Value& vRet,
                      CFX_WideString& sError);
-  bool signatureSetSeedValue(IJS_Context* cc,
+  bool signatureSetSeedValue(CJS_Runtime* pRuntime,
                              const std::vector<CJS_Value>& params,
                              CJS_Value& vRet,
                              CFX_WideString& sError);
-  bool signatureSign(IJS_Context* cc,
+  bool signatureSign(CJS_Runtime* pRuntime,
                      const std::vector<CJS_Value>& params,
                      CJS_Value& vRet,
                      CFX_WideString& sError);
-  bool signatureValidate(IJS_Context* cc,
+  bool signatureValidate(CJS_Runtime* pRuntime,
                          const std::vector<CJS_Value>& params,
                          CJS_Value& vRet,
                          CFX_WideString& sError);

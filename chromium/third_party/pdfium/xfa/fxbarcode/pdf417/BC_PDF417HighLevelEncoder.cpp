@@ -71,7 +71,7 @@ CFX_WideString CBC_PDF417HighLevelEncoder::encodeHighLevel(
     }
     msg += ch;
   }
-  CFX_ByteArray byteArr;
+  CFX_ArrayTemplate<uint8_t> byteArr;
   for (int32_t k = 0; k < bytes.GetLength(); k++) {
     byteArr.Add(bytes.GetAt(k));
   }
@@ -108,7 +108,8 @@ CFX_WideString CBC_PDF417HighLevelEncoder::encodeHighLevel(
           p += t;
         } else {
           int32_t b = determineConsecutiveBinaryCount(msg, &byteArr, p, e);
-          BC_EXCEPTION_CHECK_ReturnValue(e, (FX_WCHAR)' ');
+          if (e != BCExceptionNO)
+            return L" ";
           if (b == 0) {
             b = 1;
           }
@@ -260,7 +261,7 @@ int32_t CBC_PDF417HighLevelEncoder::encodeText(CFX_WideString msg,
   }
   return submode;
 }
-void CBC_PDF417HighLevelEncoder::encodeBinary(CFX_ByteArray* bytes,
+void CBC_PDF417HighLevelEncoder::encodeBinary(CFX_ArrayTemplate<uint8_t>* bytes,
                                               int32_t startpos,
                                               int32_t count,
                                               int32_t startmode,
@@ -387,7 +388,7 @@ int32_t CBC_PDF417HighLevelEncoder::determineConsecutiveTextCount(
 }
 int32_t CBC_PDF417HighLevelEncoder::determineConsecutiveBinaryCount(
     CFX_WideString msg,
-    CFX_ByteArray* bytes,
+    CFX_ArrayTemplate<uint8_t>* bytes,
     int32_t startpos,
     int32_t& e) {
   int32_t len = msg.GetLength();

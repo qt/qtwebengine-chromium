@@ -159,10 +159,11 @@ void DrawAxialShading(CFX_DIBitmap* pBitmap,
   for (int row = 0; row < height; row++) {
     uint32_t* dib_buf = (uint32_t*)(pBitmap->GetBuffer() + row * pitch);
     for (int column = 0; column < width; column++) {
-      FX_FLOAT x = (FX_FLOAT)column, y = (FX_FLOAT)row;
-      matrix.Transform(x, y);
-      FX_FLOAT scale = (((x - start_x) * x_span) + ((y - start_y) * y_span)) /
-                       axis_len_square;
+      CFX_PointF pos = matrix.Transform(CFX_PointF(
+          static_cast<FX_FLOAT>(column), static_cast<FX_FLOAT>(row)));
+      FX_FLOAT scale =
+          (((pos.x - start_x) * x_span) + ((pos.y - start_y) * y_span)) /
+          axis_len_square;
       int index = (int32_t)(scale * (SHADING_STEPS - 1));
       if (index < 0) {
         if (!bStartExtend)
@@ -252,13 +253,14 @@ void DrawRadialShading(CFX_DIBitmap* pBitmap,
   for (int row = 0; row < height; row++) {
     uint32_t* dib_buf = (uint32_t*)(pBitmap->GetBuffer() + row * pitch);
     for (int column = 0; column < width; column++) {
-      FX_FLOAT x = (FX_FLOAT)column, y = (FX_FLOAT)row;
-      matrix.Transform(x, y);
-      FX_FLOAT b = -2 * (((x - start_x) * (end_x - start_x)) +
-                         ((y - start_y) * (end_y - start_y)) +
+      CFX_PointF pos = matrix.Transform(CFX_PointF(
+          static_cast<FX_FLOAT>(column), static_cast<FX_FLOAT>(row)));
+      FX_FLOAT b = -2 * (((pos.x - start_x) * (end_x - start_x)) +
+                         ((pos.y - start_y) * (end_y - start_y)) +
                          (start_r * (end_r - start_r)));
-      FX_FLOAT c = ((x - start_x) * (x - start_x)) +
-                   ((y - start_y) * (y - start_y)) - (start_r * start_r);
+      FX_FLOAT c = ((pos.x - start_x) * (pos.x - start_x)) +
+                   ((pos.y - start_y) * (pos.y - start_y)) -
+                   (start_r * start_r);
       FX_FLOAT s;
       if (a == 0) {
         s = -c / b;
@@ -327,8 +329,10 @@ void DrawFuncShading(CFX_DIBitmap* pBitmap,
     ymax = pDomain->GetNumberAt(3);
   }
   CFX_Matrix mtDomain2Target = pDict->GetMatrixFor("Matrix");
-  CFX_Matrix matrix, reverse_matrix;
+  CFX_Matrix matrix;
   matrix.SetReverse(*pObject2Bitmap);
+
+  CFX_Matrix reverse_matrix;
   reverse_matrix.SetReverse(mtDomain2Target);
   matrix.Concat(reverse_matrix);
   int width = pBitmap->GetWidth();
@@ -342,15 +346,13 @@ void DrawFuncShading(CFX_DIBitmap* pBitmap,
   for (int row = 0; row < height; row++) {
     uint32_t* dib_buf = (uint32_t*)(pBitmap->GetBuffer() + row * pitch);
     for (int column = 0; column < width; column++) {
-      FX_FLOAT x = (FX_FLOAT)column, y = (FX_FLOAT)row;
-      matrix.Transform(x, y);
-      if (x < xmin || x > xmax || y < ymin || y > ymax) {
+      CFX_PointF pos = matrix.Transform(CFX_PointF(
+          static_cast<FX_FLOAT>(column), static_cast<FX_FLOAT>(row)));
+      if (pos.x < xmin || pos.x > xmax || pos.y < ymin || pos.y > ymax)
         continue;
-      }
-      FX_FLOAT input[2];
+
+      FX_FLOAT input[] = {pos.x, pos.y};
       int offset = 0;
-      input[0] = x;
-      input[1] = y;
       for (const auto& func : funcs) {
         if (func) {
           int nresults;
@@ -358,7 +360,10 @@ void DrawFuncShading(CFX_DIBitmap* pBitmap,
             offset += nresults;
         }
       }
-      FX_FLOAT R = 0.0f, G = 0.0f, B = 0.0f;
+
+      FX_FLOAT R = 0.0f;
+      FX_FLOAT G = 0.0f;
+      FX_FLOAT B = 0.0f;
       pCS->GetRGB(pResults, R, G, B);
       dib_buf[column] = FXARGB_TODIB(FXARGB_MAKE(
           alpha, (int32_t)(R * 255), (int32_t)(G * 255), (int32_t)(B * 255)));
@@ -367,67 +372,65 @@ void DrawFuncShading(CFX_DIBitmap* pBitmap,
 }
 
 bool GetScanlineIntersect(int y,
-                          FX_FLOAT x1,
-                          FX_FLOAT y1,
-                          FX_FLOAT x2,
-                          FX_FLOAT y2,
+                          const CFX_PointF& first,
+                          const CFX_PointF& second,
                           FX_FLOAT* x) {
-  if (y1 == y2)
+  if (first.y == second.y)
     return false;
 
-  if (y1 < y2) {
-    if (y < y1 || y > y2)
+  if (first.y < second.y) {
+    if (y < first.y || y > second.y)
       return false;
-  } else {
-    if (y < y2 || y > y1)
-      return false;
+  } else if (y < second.y || y > first.y) {
+    return false;
   }
-  *x = x1 + ((x2 - x1) * (y - y1) / (y2 - y1));
+  *x = first.x + ((second.x - first.x) * (y - first.y) / (second.y - first.y));
   return true;
 }
 
 void DrawGouraud(CFX_DIBitmap* pBitmap,
                  int alpha,
                  CPDF_MeshVertex triangle[3]) {
-  FX_FLOAT min_y = triangle[0].y, max_y = triangle[0].y;
+  FX_FLOAT min_y = triangle[0].position.y;
+  FX_FLOAT max_y = triangle[0].position.y;
   for (int i = 1; i < 3; i++) {
-    if (min_y > triangle[i].y) {
-      min_y = triangle[i].y;
-    }
-    if (max_y < triangle[i].y) {
-      max_y = triangle[i].y;
-    }
+    min_y = std::min(min_y, triangle[i].position.y);
+    max_y = std::max(max_y, triangle[i].position.y);
   }
-  if (min_y == max_y) {
+  if (min_y == max_y)
     return;
-  }
-  int min_yi = (int)FXSYS_floor(min_y), max_yi = (int)FXSYS_ceil(max_y);
-  if (min_yi < 0) {
-    min_yi = 0;
-  }
-  if (max_yi >= pBitmap->GetHeight()) {
+
+  int min_yi = std::max(static_cast<int>(FXSYS_floor(min_y)), 0);
+  int max_yi = static_cast<int>(FXSYS_ceil(max_y));
+
+  if (max_yi >= pBitmap->GetHeight())
     max_yi = pBitmap->GetHeight() - 1;
-  }
+
   for (int y = min_yi; y <= max_yi; y++) {
     int nIntersects = 0;
-    FX_FLOAT inter_x[3], r[3], g[3], b[3];
+    FX_FLOAT inter_x[3];
+    FX_FLOAT r[3];
+    FX_FLOAT g[3];
+    FX_FLOAT b[3];
     for (int i = 0; i < 3; i++) {
       CPDF_MeshVertex& vertex1 = triangle[i];
       CPDF_MeshVertex& vertex2 = triangle[(i + 1) % 3];
-      bool bIntersect = GetScanlineIntersect(y, vertex1.x, vertex1.y, vertex2.x,
-                                             vertex2.y, &inter_x[nIntersects]);
+      CFX_PointF& position1 = vertex1.position;
+      CFX_PointF& position2 = vertex2.position;
+      bool bIntersect =
+          GetScanlineIntersect(y, position1, position2, &inter_x[nIntersects]);
       if (!bIntersect)
         continue;
 
-      FX_FLOAT y_dist = (y - vertex1.y) / (vertex2.y - vertex1.y);
+      FX_FLOAT y_dist = (y - position1.y) / (position2.y - position1.y);
       r[nIntersects] = vertex1.r + ((vertex2.r - vertex1.r) * y_dist);
       g[nIntersects] = vertex1.g + ((vertex2.g - vertex1.g) * y_dist);
       b[nIntersects] = vertex1.b + ((vertex2.b - vertex1.b) * y_dist);
       nIntersects++;
     }
-    if (nIntersects != 2) {
+    if (nIntersects != 2)
       continue;
-    }
+
     int min_x, max_x, start_index, end_index;
     if (inter_x[0] < inter_x[1]) {
       min_x = (int)FXSYS_floor(inter_x[0]);
@@ -440,13 +443,12 @@ void DrawGouraud(CFX_DIBitmap* pBitmap,
       start_index = 1;
       end_index = 0;
     }
-    int start_x = min_x, end_x = max_x;
-    if (start_x < 0) {
-      start_x = 0;
-    }
-    if (end_x > pBitmap->GetWidth()) {
+
+    int start_x = std::max(min_x, 0);
+    int end_x = max_x;
+    if (end_x > pBitmap->GetWidth())
       end_x = pBitmap->GetWidth();
-    }
+
     uint8_t* dib_buf =
         pBitmap->GetBuffer() + y * pBitmap->GetPitch() + start_x * 4;
     FX_FLOAT r_unit = (r[end_index] - r[start_index]) / (max_x - min_x);
@@ -486,16 +488,21 @@ void DrawFreeGouraudShading(
 
   while (!stream.BitStream()->IsEOF()) {
     CPDF_MeshVertex vertex;
-    uint32_t flag = stream.GetVertex(vertex, pObject2Bitmap);
+    uint32_t flag;
+    if (!stream.ReadVertex(*pObject2Bitmap, &vertex, &flag))
+      return;
+
     if (flag == 0) {
       triangle[0] = vertex;
       for (int j = 1; j < 3; j++) {
-        stream.GetVertex(triangle[j], pObject2Bitmap);
+        uint32_t tflag;
+        if (!stream.ReadVertex(*pObject2Bitmap, &triangle[j], &tflag))
+          return;
       }
     } else {
-      if (flag == 1) {
+      if (flag == 1)
         triangle[0] = triangle[1];
-      }
+
       triangle[1] = triangle[2];
       triangle[2] = vertex;
     }
@@ -523,14 +530,14 @@ void DrawLatticeGouraudShading(
 
   std::unique_ptr<CPDF_MeshVertex, FxFreeDeleter> vertex(
       FX_Alloc2D(CPDF_MeshVertex, row_verts, 2));
-  if (!stream.GetVertexRow(vertex.get(), row_verts, pObject2Bitmap))
+  if (!stream.ReadVertexRow(*pObject2Bitmap, row_verts, vertex.get()))
     return;
 
   int last_index = 0;
   while (1) {
     CPDF_MeshVertex* last_row = vertex.get() + last_index * row_verts;
     CPDF_MeshVertex* this_row = vertex.get() + (1 - last_index) * row_verts;
-    if (!stream.GetVertexRow(this_row, row_verts, pObject2Bitmap))
+    if (!stream.ReadVertexRow(*pObject2Bitmap, row_verts, this_row))
       return;
 
     CPDF_MeshVertex triangle[3];
@@ -611,18 +618,21 @@ struct Coon_Bezier {
     x.FromPoints(x0, x1, x2, x3);
     y.FromPoints(y0, y1, y2, y3);
   }
+
   Coon_Bezier first_half() {
     Coon_Bezier result;
     result.x = x.first_half();
     result.y = y.first_half();
     return result;
   }
+
   Coon_Bezier second_half() {
     Coon_Bezier result;
     result.x = x.second_half();
     result.y = y.second_half();
     return result;
   }
+
   void BezierInterpol(Coon_Bezier& C1,
                       Coon_Bezier& C2,
                       Coon_Bezier& D1,
@@ -630,30 +640,31 @@ struct Coon_Bezier {
     x.BezierInterpol(C1.x, C2.x, D1.x, D2.x);
     y.BezierInterpol(C1.y, C2.y, D1.y, D2.y);
   }
-  void GetPoints(FX_PATHPOINT* pPoints) {
+
+  void GetPoints(std::vector<FX_PATHPOINT>& pPoints, size_t start_idx) {
     float p[4];
     int i;
     x.GetPoints(p);
-    for (i = 0; i < 4; i++) {
-      pPoints[i].m_PointX = p[i];
-    }
+    for (i = 0; i < 4; i++)
+      pPoints[start_idx + i].m_Point.x = p[i];
+
     y.GetPoints(p);
-    for (i = 0; i < 4; i++) {
-      pPoints[i].m_PointY = p[i];
-    }
+    for (i = 0; i < 4; i++)
+      pPoints[start_idx + i].m_Point.y = p[i];
   }
-  void GetPointsReverse(FX_PATHPOINT* pPoints) {
+
+  void GetPointsReverse(std::vector<FX_PATHPOINT>& pPoints, size_t start_idx) {
     float p[4];
     int i;
     x.GetPointsReverse(p);
-    for (i = 0; i < 4; i++) {
-      pPoints[i].m_PointX = p[i];
-    }
+    for (i = 0; i < 4; i++)
+      pPoints[i + start_idx].m_Point.x = p[i];
+
     y.GetPointsReverse(p);
-    for (i = 0; i < 4; i++) {
-      pPoints[i].m_PointY = p[i];
-    }
+    for (i = 0; i < 4; i++)
+      pPoints[i + start_idx].m_Point.y = p[i];
   }
+
   float Distance() { return x.Distance() + y.Distance(); }
 };
 
@@ -693,6 +704,7 @@ struct Coon_Color {
   }
 };
 
+#define COONCOLOR_THRESHOLD 4
 struct CPDF_PatchDrawer {
   Coon_Color patch_colors[4];
   int max_delta;
@@ -728,15 +740,15 @@ struct CPDF_PatchDrawer {
       d_top = div_colors[1].Distance(div_colors[2]);
       d_right = div_colors[2].Distance(div_colors[3]);
     }
-#define COONCOLOR_THRESHOLD 4
+
     if (bSmall ||
         (d_bottom < COONCOLOR_THRESHOLD && d_left < COONCOLOR_THRESHOLD &&
          d_top < COONCOLOR_THRESHOLD && d_right < COONCOLOR_THRESHOLD)) {
-      FX_PATHPOINT* pPoints = path.GetPoints();
-      C1.GetPoints(pPoints);
-      D2.GetPoints(pPoints + 3);
-      C2.GetPointsReverse(pPoints + 6);
-      D1.GetPointsReverse(pPoints + 9);
+      std::vector<FX_PATHPOINT>& pPoints = path.GetPoints();
+      C1.GetPoints(pPoints, 0);
+      D2.GetPoints(pPoints, 3);
+      C2.GetPointsReverse(pPoints, 6);
+      D1.GetPointsReverse(pPoints, 9);
       int fillFlags = FXFILL_WINDING | FXFILL_FULLCOVER;
       if (fill_mode & RENDER_NOPATHSMOOTH) {
         fillFlags |= FXFILL_NOPATHSMOOTH;
@@ -814,15 +826,18 @@ void DrawCoonPatchMeshes(
   patch.alpha = alpha;
   patch.pDevice = &device;
   patch.fill_mode = fill_mode;
-  patch.path.SetPointCount(13);
-  FX_PATHPOINT* pPoints = patch.path.GetPoints();
-  pPoints[0].m_Flag = FXPT_MOVETO;
-  for (int i = 1; i < 13; i++)
-    pPoints[i].m_Flag = FXPT_BEZIERTO;
+
+  for (int i = 0; i < 13; i++) {
+    patch.path.AppendPoint(
+        CFX_PointF(), i == 0 ? FXPT_TYPE::MoveTo : FXPT_TYPE::BezierTo, false);
+  }
+
   CFX_PointF coords[16];
   int point_count = type == kTensorProductPatchMeshShading ? 16 : 12;
   while (!stream.BitStream()->IsEOF()) {
-    uint32_t flag = stream.GetFlag();
+    if (!stream.CanReadFlag())
+      break;
+    uint32_t flag = stream.ReadFlag();
     int iStartPoint = 0, iStartColor = 0, i = 0;
     if (flag) {
       iStartPoint = 4;
@@ -838,12 +853,20 @@ void DrawCoonPatchMeshes(
       FXSYS_memcpy(patch.patch_colors, tempColors, sizeof(Coon_Color) * 2);
     }
     for (i = iStartPoint; i < point_count; i++) {
-      stream.GetCoords(coords[i].x, coords[i].y);
-      pObject2Bitmap->Transform(coords[i].x, coords[i].y);
+      if (!stream.CanReadCoords())
+        break;
+      coords[i] = pObject2Bitmap->Transform(stream.ReadCoords());
     }
+
     for (i = iStartColor; i < 4; i++) {
-      FX_FLOAT r = 0.0f, g = 0.0f, b = 0.0f;
-      stream.GetColor(r, g, b);
+      if (!stream.CanReadColor())
+        break;
+
+      FX_FLOAT r;
+      FX_FLOAT g;
+      FX_FLOAT b;
+      std::tie(r, g, b) = stream.ReadColor();
+
       patch.patch_colors[i].comp[0] = (int32_t)(r * 255);
       patch.patch_colors[i].comp[1] = (int32_t)(g * 255);
       patch.patch_colors[i].comp[2] = (int32_t)(b * 255);
@@ -888,6 +911,7 @@ std::unique_ptr<CFX_DIBitmap> DrawPatternBitmap(
   CFX_FloatRect bitmap_rect(0.0f, 0.0f, (FX_FLOAT)width, (FX_FLOAT)height);
   CFX_Matrix mtAdjust;
   mtAdjust.MatchRect(bitmap_rect, cell_bbox);
+
   CFX_Matrix mtPattern2Bitmap = *pObject2Device;
   mtPattern2Bitmap.Concat(mtAdjust);
   CPDF_RenderOptions options;
@@ -1360,7 +1384,7 @@ void CPDF_RenderStatus::ProcessClipPath(CPDF_ClipPath ClipPath,
     if (!pPathData)
       continue;
 
-    if (pPathData->GetPointCount() == 0) {
+    if (pPathData->GetPoints().empty()) {
       CFX_PathData EmptyPath;
       EmptyPath.AppendRect(-1, -1, 0, 0);
       int fill_mode = FXFILL_WINDING;
@@ -1525,7 +1549,7 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
   CFX_DIBitmap* bitmap = bitmap_device.GetBitmap();
   bitmap->Clear(0);
   CFX_Matrix new_matrix = *pObj2Device;
-  new_matrix.TranslateI(-rect.left, -rect.top);
+  new_matrix.Translate(-rect.left, -rect.top);
   new_matrix.Scale(scaleX, scaleY);
   std::unique_ptr<CFX_DIBitmap> pTextMask;
   if (bTextClip) {
@@ -1538,16 +1562,15 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
     text_device.Attach(pTextMask.get(), false, nullptr, false);
     for (uint32_t i = 0; i < pPageObj->m_ClipPath.GetTextCount(); i++) {
       CPDF_TextObject* textobj = pPageObj->m_ClipPath.GetText(i);
-      if (!textobj) {
+      if (!textobj)
         break;
-      }
-      CFX_Matrix text_matrix;
-      textobj->GetTextMatrix(&text_matrix);
+
+      CFX_Matrix text_matrix = textobj->GetTextMatrix();
       CPDF_TextRenderer::DrawTextPath(
-          &text_device, textobj->m_nChars, textobj->m_pCharCodes,
-          textobj->m_pCharPos, textobj->m_TextState.GetFont(),
-          textobj->m_TextState.GetFontSize(), &text_matrix, &new_matrix,
-          textobj->m_GraphState.GetObject(), (FX_ARGB)-1, 0, nullptr, 0);
+          &text_device, textobj->m_CharCodes, textobj->m_CharPos,
+          textobj->m_TextState.GetFont(), textobj->m_TextState.GetFontSize(),
+          &text_matrix, &new_matrix, textobj->m_GraphState.GetObject(),
+          (FX_ARGB)-1, 0, nullptr, 0);
     }
   }
   CPDF_RenderStatus bitmap_render;
@@ -1628,7 +1651,7 @@ std::unique_ptr<CFX_DIBitmap> CPDF_RenderStatus::GetBackdrop(
   }
 
   CFX_Matrix FinalMatrix = m_DeviceMatrix;
-  FinalMatrix.TranslateI(-left, -top);
+  FinalMatrix.Translate(-left, -top);
   FinalMatrix.Scale(scaleX, scaleY);
   pBackdrop->Clear(pBackdrop->HasAlpha() ? 0 : 0xffffffff);
   CFX_FxgeDevice device;
@@ -1666,7 +1689,7 @@ void CPDF_RenderStatus::DebugVerifyDeviceIsPreMultiplied() const {
 bool CPDF_RenderStatus::ProcessText(CPDF_TextObject* textobj,
                                     const CFX_Matrix* pObj2Device,
                                     CFX_PathData* pClippingPath) {
-  if (textobj->m_nChars == 0)
+  if (textobj->m_CharCodes.empty())
     return true;
 
   const TextRenderingMode text_render_mode = textobj->m_TextState.GetTextMode();
@@ -1726,8 +1749,7 @@ bool CPDF_RenderStatus::ProcessText(CPDF_TextObject* textobj,
       fill_argb = GetFillArgb(textobj);
     }
   }
-  CFX_Matrix text_matrix;
-  textobj->GetTextMatrix(&text_matrix);
+  CFX_Matrix text_matrix = textobj->GetTextMatrix();
   if (!IsAvailableMatrix(text_matrix))
     return true;
 
@@ -1760,15 +1782,14 @@ bool CPDF_RenderStatus::ProcessText(CPDF_TextObject* textobj,
     if (m_Options.m_Flags & RENDER_NOTEXTSMOOTH)
       flag |= FXFILL_NOPATHSMOOTH;
     return CPDF_TextRenderer::DrawTextPath(
-        m_pDevice, textobj->m_nChars, textobj->m_pCharCodes,
-        textobj->m_pCharPos, pFont, font_size, &text_matrix, pDeviceMatrix,
-        textobj->m_GraphState.GetObject(), fill_argb, stroke_argb,
-        pClippingPath, flag);
+        m_pDevice, textobj->m_CharCodes, textobj->m_CharPos, pFont, font_size,
+        &text_matrix, pDeviceMatrix, textobj->m_GraphState.GetObject(),
+        fill_argb, stroke_argb, pClippingPath, flag);
   }
   text_matrix.Concat(*pObj2Device);
-  return CPDF_TextRenderer::DrawNormalText(
-      m_pDevice, textobj->m_nChars, textobj->m_pCharCodes, textobj->m_pCharPos,
-      pFont, font_size, &text_matrix, fill_argb, &m_Options);
+  return CPDF_TextRenderer::DrawNormalText(m_pDevice, textobj->m_CharCodes,
+                                           textobj->m_CharPos, pFont, font_size,
+                                           &text_matrix, fill_argb, &m_Options);
 }
 
 CPDF_Type3Cache* CPDF_RenderStatus::GetCachedType3(CPDF_Type3Font* pFont) {
@@ -1789,8 +1810,7 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
   CFX_Matrix dCTM = m_pDevice->GetCTM();
   FX_FLOAT sa = FXSYS_fabs(dCTM.a);
   FX_FLOAT sd = FXSYS_fabs(dCTM.d);
-  CFX_Matrix text_matrix;
-  textobj->GetTextMatrix(&text_matrix);
+  CFX_Matrix text_matrix = textobj->GetTextMatrix();
   CFX_Matrix char_matrix = pType3Font->GetFontMatrix();
   FX_FLOAT font_size = textobj->m_TextState.GetFontSize();
   char_matrix.Scale(font_size, font_size);
@@ -1799,18 +1819,15 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
   int device_class = m_pDevice->GetDeviceClass();
   std::vector<FXTEXT_GLYPHPOS> glyphs;
   if (device_class == FXDC_DISPLAY)
-    glyphs.resize(textobj->m_nChars);
+    glyphs.resize(textobj->m_CharCodes.size());
   else if (fill_alpha < 255)
     return false;
 
   CPDF_RefType3Cache refTypeCache(pType3Font);
-  uint32_t* pChars = textobj->m_pCharCodes;
-  if (textobj->m_nChars == 1)
-    pChars = (uint32_t*)(&textobj->m_pCharCodes);
-
-  for (int iChar = 0; iChar < textobj->m_nChars; iChar++) {
-    uint32_t charcode = pChars[iChar];
-    if (charcode == (uint32_t)-1)
+  for (int iChar = 0; iChar < pdfium::CollectionSize<int>(textobj->m_CharCodes);
+       iChar++) {
+    uint32_t charcode = textobj->m_CharCodes[iChar];
+    if (charcode == static_cast<uint32_t>(-1))
       continue;
 
     CPDF_Type3Char* pType3Char = pType3Font->LoadChar(charcode);
@@ -1818,7 +1835,7 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
       continue;
 
     CFX_Matrix matrix = char_matrix;
-    matrix.e += iChar ? textobj->m_pCharPos[iChar - 1] : 0;
+    matrix.e += iChar ? textobj->m_CharPos[iChar - 1] : 0;
     matrix.Concat(text_matrix);
     matrix.Concat(*pObj2Device);
     if (!pType3Char->LoadBitmap(m_pContext)) {
@@ -1829,8 +1846,8 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
             continue;
 
           m_pDevice->SetBitMask(&glyph.m_pGlyph->m_Bitmap,
-                                glyph.m_OriginX + glyph.m_pGlyph->m_Left,
-                                glyph.m_OriginY - glyph.m_pGlyph->m_Top,
+                                glyph.m_Origin.x + glyph.m_pGlyph->m_Left,
+                                glyph.m_Origin.y - glyph.m_pGlyph->m_Top,
                                 fill_argb);
         }
         glyphs.clear();
@@ -1857,7 +1874,8 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
         m_pDevice->RestoreState(false);
       } else {
         CFX_FloatRect rect_f = pType3Char->m_pForm->CalcBoundingBox();
-        rect_f.Transform(&matrix);
+        matrix.TransformRect(rect_f);
+
         FX_RECT rect = rect_f.GetOuterRect();
         CFX_FxgeDevice bitmap_device;
         if (!bitmap_device.Create((int)(rect.Width() * sa),
@@ -1873,7 +1891,7 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
                           pFormResource, false, pType3Char, fill_argb);
         status.m_Type3FontCache = m_Type3FontCache;
         status.m_Type3FontCache.push_back(pType3Font);
-        matrix.TranslateI(-rect.left, -rect.top);
+        matrix.Translate(-rect.left, -rect.top);
         matrix.Scale(sa, sd);
         status.RenderObjectList(pType3Char->m_pForm.get(), &matrix);
         m_pDevice->SetDIBits(bitmap_device.GetBitmap(), rect.left, rect.top);
@@ -1887,15 +1905,13 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
         if (!pBitmap)
           continue;
 
-        int origin_x = FXSYS_round(matrix.e);
-        int origin_y = FXSYS_round(matrix.f);
+        CFX_Point origin(FXSYS_round(matrix.e), FXSYS_round(matrix.f));
         if (glyphs.empty()) {
-          m_pDevice->SetBitMask(&pBitmap->m_Bitmap, origin_x + pBitmap->m_Left,
-                                origin_y - pBitmap->m_Top, fill_argb);
+          m_pDevice->SetBitMask(&pBitmap->m_Bitmap, origin.x + pBitmap->m_Left,
+                                origin.y - pBitmap->m_Top, fill_argb);
         } else {
           glyphs[iChar].m_pGlyph = pBitmap;
-          glyphs[iChar].m_OriginX = origin_x;
-          glyphs[iChar].m_OriginY = origin_y;
+          glyphs[iChar].m_Origin = origin;
         }
       } else {
         CFX_Matrix image_matrix = pType3Char->m_ImageMatrix;
@@ -1925,14 +1941,14 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
     if (!glyph.m_pGlyph)
       continue;
 
-    pdfium::base::CheckedNumeric<int> left = glyph.m_OriginX;
+    pdfium::base::CheckedNumeric<int> left = glyph.m_Origin.x;
     left += glyph.m_pGlyph->m_Left;
     left -= rect.left;
     left *= sa;
     if (!left.IsValid())
       continue;
 
-    pdfium::base::CheckedNumeric<int> top = glyph.m_OriginY;
+    pdfium::base::CheckedNumeric<int> top = glyph.m_Origin.y;
     top -= glyph.m_pGlyph->m_Top;
     top -= rect.top;
     top *= sd;
@@ -1974,8 +1990,7 @@ void CPDF_RenderStatus::DrawTextPathWithPattern(const CPDF_TextObject* textobj,
     return;
   }
   CPDF_CharPosList CharPosList;
-  CharPosList.Load(textobj->m_nChars, textobj->m_pCharCodes,
-                   textobj->m_pCharPos, pFont, font_size);
+  CharPosList.Load(textobj->m_CharCodes, textobj->m_CharPos, pFont, font_size);
   for (uint32_t i = 0; i < CharPosList.m_nChars; i++) {
     FXTEXT_CHARPOS& charpos = CharPosList.m_pCharPos[i];
     auto font =
@@ -1984,18 +1999,21 @@ void CPDF_RenderStatus::DrawTextPathWithPattern(const CPDF_TextObject* textobj,
             : pFont->m_FontFallbacks[charpos.m_FallbackFontPosition].get();
     const CFX_PathData* pPath =
         font->LoadGlyphPath(charpos.m_GlyphIndex, charpos.m_FontCharWidth);
-    if (!pPath) {
+    if (!pPath)
       continue;
-    }
+
     CPDF_PathObject path;
     path.m_GraphState = textobj->m_GraphState;
     path.m_ColorState = textobj->m_ColorState;
+
     CFX_Matrix matrix;
-    if (charpos.m_bGlyphAdjust)
-      matrix.Set(charpos.m_AdjustMatrix[0], charpos.m_AdjustMatrix[1],
-                 charpos.m_AdjustMatrix[2], charpos.m_AdjustMatrix[3], 0, 0);
-    matrix.Concat(font_size, 0, 0, font_size, charpos.m_OriginX,
-                  charpos.m_OriginY);
+    if (charpos.m_bGlyphAdjust) {
+      matrix = CFX_Matrix(charpos.m_AdjustMatrix[0], charpos.m_AdjustMatrix[1],
+                          charpos.m_AdjustMatrix[2], charpos.m_AdjustMatrix[3],
+                          0, 0);
+    }
+    matrix.Concat(CFX_Matrix(font_size, 0, 0, font_size, charpos.m_Origin.x,
+                             charpos.m_Origin.y));
     path.m_Path.Append(pPath, &matrix);
     path.m_Matrix = *pTextMatrix;
     path.m_bStroke = bStroke;
@@ -2032,7 +2050,7 @@ void CPDF_RenderStatus::DrawShading(CPDF_ShadingPattern* pPattern,
   }
   if (pDict->KeyExist("BBox")) {
     CFX_FloatRect rect = pDict->GetRectFor("BBox");
-    rect.Transform(pMatrix);
+    pMatrix->TransformRect(rect);
     clip_rect.Intersect(rect.GetOuterRect());
   }
   if (m_pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_SHADING &&
@@ -2198,8 +2216,9 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
   int min_col, max_col, min_row, max_row;
   CFX_Matrix mtDevice2Pattern;
   mtDevice2Pattern.SetReverse(mtPattern2Device);
+
   CFX_FloatRect clip_box_p(clip_box);
-  clip_box_p.Transform(&mtDevice2Pattern);
+  mtDevice2Pattern.TransformRect(clip_box_p);
 
   min_col = (int)FXSYS_ceil((clip_box_p.left - pPattern->bbox().right) /
                             pPattern->x_step());
@@ -2222,13 +2241,11 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
 
     for (int col = min_col; col <= max_col; col++)
       for (int row = min_row; row <= max_row; row++) {
-        FX_FLOAT orig_x, orig_y;
-        orig_x = col * pPattern->x_step();
-        orig_y = row * pPattern->y_step();
-        mtPattern2Device.Transform(orig_x, orig_y);
+        CFX_PointF original = mtPattern2Device.Transform(
+            CFX_PointF(col * pPattern->x_step(), row * pPattern->y_step()));
         CFX_Matrix matrix = *pObj2Device;
-        matrix.Translate(orig_x - mtPattern2Device.e,
-                         orig_y - mtPattern2Device.f);
+        matrix.Translate(original.x - mtPattern2Device.e,
+                         original.y - mtPattern2Device.f);
         m_pDevice->SaveState();
         CPDF_RenderStatus status;
         status.Initialize(m_pContext, m_pDevice, nullptr, nullptr, this,
@@ -2298,14 +2315,13 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
         start_x = FXSYS_round(mtPattern2Device.e) + col * width - clip_box.left;
         start_y = FXSYS_round(mtPattern2Device.f) + row * height - clip_box.top;
       } else {
-        FX_FLOAT orig_x = col * pPattern->x_step();
-        FX_FLOAT orig_y = row * pPattern->y_step();
-        mtPattern2Device.Transform(orig_x, orig_y);
+        CFX_PointF original = mtPattern2Device.Transform(
+            CFX_PointF(col * pPattern->x_step(), row * pPattern->y_step()));
 
         pdfium::base::CheckedNumeric<int> safeStartX =
-            FXSYS_round(orig_x + left_offset);
+            FXSYS_round(original.x + left_offset);
         pdfium::base::CheckedNumeric<int> safeStartY =
-            FXSYS_round(orig_y + top_offset);
+            FXSYS_round(original.y + top_offset);
 
         safeStartX -= clip_box.left;
         safeStartY -= clip_box.top;
@@ -2516,7 +2532,7 @@ std::unique_ptr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
     pFunc = CPDF_Function::Load(pFuncObj);
 
   CFX_Matrix matrix = *pMatrix;
-  matrix.TranslateI(-pClipRect->left, -pClipRect->top);
+  matrix.Translate(-pClipRect->left, -pClipRect->top);
 
   CPDF_Form form(m_pContext->GetDocument(), m_pContext->GetPageResources(),
                  pGroup);

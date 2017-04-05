@@ -115,6 +115,37 @@ class FakeMessageCenterImpl : public FakeMessageCenter {
   bool locked_ = false;
 };
 
+// This is the class we are testing, but we need to override some functions
+// in it, hence MockMessageCenterView.
+class MockMessageCenterView : public MessageCenterView {
+ public:
+  MockMessageCenterView(MessageCenter* message_center,
+                        MessageCenterTray* tray,
+                        int max_height,
+                        bool initially_settings_visible);
+
+  bool SetRepositionTarget() override;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockMessageCenterView);
+};
+
+MockMessageCenterView::MockMessageCenterView(MessageCenter* message_center,
+                                             MessageCenterTray* tray,
+                                             int max_height,
+                                             bool initially_settings_visible)
+    : MessageCenterView(message_center,
+                        tray,
+                        max_height,
+                        initially_settings_visible) {}
+
+// Always say that the current reposition session is still active, by
+// returning true. Normally the reposition session is set based on where the
+// mouse is hovering.
+bool MockMessageCenterView::SetRepositionTarget() {
+  return true;
+}
+
 /* Test fixture ***************************************************************/
 
 class MessageCenterViewTest : public views::ViewsTestBase,
@@ -156,6 +187,7 @@ class MessageCenterViewTest : public views::ViewsTestBase,
   void ClickOnNotificationButton(const std::string& notification_id,
                                  int button_index) override;
   void ClickOnSettingsButton(const std::string& notification_id) override;
+  void UpdateNotificationSize(const std::string& notification_id) override;
 
   // Overridden from MockNotificationView::Test
   void RegisterCall(CallType type) override;
@@ -174,7 +206,7 @@ class MessageCenterViewTest : public views::ViewsTestBase,
   // The ownership map of notifications; the key is the id.
   std::map<std::string, std::unique_ptr<Notification>> notifications_;
   std::unique_ptr<views::Widget> widget_;
-  std::unique_ptr<MessageCenterView> message_center_view_;
+  std::unique_ptr<MockMessageCenterView> message_center_view_;
   std::unique_ptr<FakeMessageCenterImpl> message_center_;
   std::map<CallType,int> callCounts_;
 
@@ -213,9 +245,9 @@ void MessageCenterViewTest::SetUp() {
   NotificationList::Notifications notifications = Notifications();
   message_center_->SetVisibleNotifications(notifications);
 
-  // Then create a new MessageCenterView with that single notification.
-  message_center_view_.reset(new MessageCenterView(
-      message_center_.get(), NULL, 100, false));
+  // Then create a new MockMessageCenterView with that single notification.
+  message_center_view_.reset(
+      new MockMessageCenterView(message_center_.get(), NULL, 100, false));
   GetMessageListView()->quit_message_loop_after_animation_for_test_ = true;
   GetMessageCenterView()->SetBounds(0, 0, 380, 600);
   message_center_view_->SetNotifications(notifications);
@@ -353,6 +385,12 @@ void MessageCenterViewTest::ClickOnSettingsButton(
   NOTREACHED();
 }
 
+void MessageCenterViewTest::UpdateNotificationSize(
+    const std::string& notification_id) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
 void MessageCenterViewTest::RegisterCall(CallType type) {
   callCounts_[type] += 1;
 }
@@ -449,6 +487,70 @@ TEST_F(MessageCenterViewTest, SizeAfterUpdate) {
   // The size must be changed, since the new string is longer than the old one.
   EXPECT_NE(previous_height, GetMessageListView()->height());
 
+  EXPECT_EQ(
+      GetMessageListView()->height(),
+      GetNotificationView(kNotificationId1)->GetHeightForWidth(width) +
+          (kMarginBetweenItems - MessageView::GetShadowInsets().bottom()) +
+          GetNotificationView(kNotificationId2)->GetHeightForWidth(width) +
+          GetMessageListView()->GetInsets().height());
+}
+
+TEST_F(MessageCenterViewTest, SizeAfterUpdateBelowWithRepositionTarget) {
+  EXPECT_EQ(2, GetMessageListView()->child_count());
+  // Make sure that notification 2 is placed above notification 1.
+  EXPECT_LT(GetNotificationView(kNotificationId2)->bounds().y(),
+            GetNotificationView(kNotificationId1)->bounds().y());
+
+  GetMessageListView()->SetRepositionTargetForTest(
+      GetNotificationView(kNotificationId1)->bounds());
+
+  std::unique_ptr<Notification> notification = base::MakeUnique<Notification>(
+      NOTIFICATION_TYPE_SIMPLE, std::string(kNotificationId2),
+      base::UTF8ToUTF16("title2"),
+      base::UTF8ToUTF16("message\nwhich\nis\nvertically\nlong\n."),
+      gfx::Image(), base::UTF8ToUTF16("display source"), GURL(),
+      NotifierId(NotifierId::APPLICATION, "extension_id"),
+      message_center::RichNotificationData(), nullptr);
+  UpdateNotification(kNotificationId2, std::move(notification));
+
+  // Wait until the animation finishes if available.
+  if (GetAnimator()->IsAnimating())
+    base::RunLoop().Run();
+
+  int width =
+      GetMessageListView()->width() - GetMessageListView()->GetInsets().width();
+  EXPECT_EQ(
+      GetMessageListView()->height(),
+      GetNotificationView(kNotificationId1)->GetHeightForWidth(width) +
+          (kMarginBetweenItems - MessageView::GetShadowInsets().bottom()) +
+          GetNotificationView(kNotificationId2)->GetHeightForWidth(width) +
+          GetMessageListView()->GetInsets().height());
+}
+
+TEST_F(MessageCenterViewTest, SizeAfterUpdateOfRepositionTarget) {
+  EXPECT_EQ(2, GetMessageListView()->child_count());
+  // Make sure that notification 2 is placed above notification 1.
+  EXPECT_LT(GetNotificationView(kNotificationId2)->bounds().y(),
+            GetNotificationView(kNotificationId1)->bounds().y());
+
+  GetMessageListView()->SetRepositionTargetForTest(
+      GetNotificationView(kNotificationId1)->bounds());
+
+  std::unique_ptr<Notification> notification = base::MakeUnique<Notification>(
+      NOTIFICATION_TYPE_SIMPLE, std::string(kNotificationId1),
+      base::UTF8ToUTF16("title2"),
+      base::UTF8ToUTF16("message\nwhich\nis\nvertically\nlong\n."),
+      gfx::Image(), base::UTF8ToUTF16("display source"), GURL(),
+      NotifierId(NotifierId::APPLICATION, "extension_id"),
+      message_center::RichNotificationData(), nullptr);
+  UpdateNotification(kNotificationId1, std::move(notification));
+
+  // Wait until the animation finishes if available.
+  if (GetAnimator()->IsAnimating())
+    base::RunLoop().Run();
+
+  int width =
+      GetMessageListView()->width() - GetMessageListView()->GetInsets().width();
   EXPECT_EQ(
       GetMessageListView()->height(),
       GetNotificationView(kNotificationId1)->GetHeightForWidth(width) +
@@ -755,6 +857,18 @@ TEST_F(MessageCenterViewTest, LockScreen) {
   EXPECT_TRUE(GetNotificationView(kNotificationId1)->IsDrawn());
   EXPECT_TRUE(GetNotificationView(kNotificationId2)->IsDrawn());
 
+  views::Button* close_button = GetButtonBar()->GetCloseAllButtonForTest();
+  ASSERT_NE(nullptr, close_button);
+  views::Button* quiet_mode_button =
+      GetButtonBar()->GetQuietModeButtonForTest();
+  ASSERT_NE(nullptr, quiet_mode_button);
+  views::Button* settings_button = GetButtonBar()->GetSettingsButtonForTest();
+  ASSERT_NE(nullptr, settings_button);
+
+  EXPECT_TRUE(close_button->visible());
+  EXPECT_TRUE(quiet_mode_button->visible());
+  EXPECT_TRUE(settings_button->visible());
+
   // Lock!
   SetLockedState(true);
 
@@ -785,6 +899,10 @@ TEST_F(MessageCenterViewTest, LockScreen) {
   GetMessageCenterView()->SizeToPreferredSize();
   EXPECT_EQ(kLockedMessageCenterViewHeight, GetMessageCenterView()->height());
 
+  EXPECT_FALSE(close_button->visible());
+  EXPECT_FALSE(quiet_mode_button->visible());
+  EXPECT_FALSE(settings_button->visible());
+
   // Unlock!
   SetLockedState(false);
 
@@ -793,6 +911,10 @@ TEST_F(MessageCenterViewTest, LockScreen) {
   GetMessageCenterView()->SizeToPreferredSize();
   EXPECT_NE(kLockedMessageCenterViewHeight, GetMessageCenterView()->height());
 
+  EXPECT_TRUE(close_button->visible());
+  EXPECT_TRUE(quiet_mode_button->visible());
+  EXPECT_TRUE(settings_button->visible());
+
   // Lock!
   SetLockedState(true);
 
@@ -800,6 +922,10 @@ TEST_F(MessageCenterViewTest, LockScreen) {
 
   GetMessageCenterView()->SizeToPreferredSize();
   EXPECT_EQ(kLockedMessageCenterViewHeight, GetMessageCenterView()->height());
+
+  EXPECT_FALSE(close_button->visible());
+  EXPECT_FALSE(quiet_mode_button->visible());
+  EXPECT_FALSE(settings_button->visible());
 }
 
 TEST_F(MessageCenterViewTest, NoNotification) {

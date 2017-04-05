@@ -7,7 +7,7 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("//build/config/linux/pkg_config.gni")
-import("../build/webrtc.gni")
+import("../webrtc.gni")
 
 group("media") {
   public_deps = [
@@ -29,16 +29,6 @@ config("rtc_media_warnings_config") {
   # cannot be on the target directly.
   if (!is_win) {
     cflags = [ "-Wno-deprecated-declarations" ]
-  }
-}
-
-if (is_linux && rtc_use_gtk) {
-  pkg_config("gtk-lib") {
-    packages = [
-      "gobject-2.0",
-      "gthread-2.0",
-      "gtk+-2.0",
-    ]
   }
 }
 
@@ -111,6 +101,8 @@ rtc_static_library("rtc_media") {
   libs = []
   deps = []
   sources = [
+    "engine/apm_helpers.cc",
+    "engine/apm_helpers.h",
     "engine/internaldecoderfactory.cc",
     "engine/internaldecoderfactory.h",
     "engine/internalencoderfactory.cc",
@@ -171,6 +163,12 @@ rtc_static_library("rtc_media") {
     defines += [ "WEBRTC_INTELLIGIBILITY_ENHANCER=0" ]
   }
 
+  if (rtc_opus_support_120ms_ptime) {
+    defines += [ "WEBRTC_OPUS_SUPPORT_120MS_PTIME=1" ]
+  } else {
+    defines += [ "WEBRTC_OPUS_SUPPORT_120MS_PTIME=0" ]
+  }
+
   include_dirs = []
   if (rtc_build_libyuv) {
     deps += [ "$rtc_libyuv_dir" ]
@@ -197,13 +195,6 @@ rtc_static_library("rtc_media") {
   } else {
     public_configs += [ ":rtc_media_defines_config" ]
     deps += [ "../modules/video_capture:video_capture_internal_impl" ]
-  }
-  if (is_linux && rtc_use_gtk) {
-    sources += [
-      "devices/gtkvideorenderer.cc",
-      "devices/gtkvideorenderer.h",
-    ]
-    public_configs += [ ":gtk-lib" ]
   }
   deps += [
     ":rtc_media_base",
@@ -330,6 +321,7 @@ if (rtc_include_tests) {
       "base/videocapturer_unittest.cc",
       "base/videocommon_unittest.cc",
       "base/videoengine_unittest.h",
+      "engine/apm_helpers_unittest.cc",
       "engine/internaldecoderfactory_unittest.cc",
       "engine/nullwebrtcvideoengine_unittest.cc",
       "engine/payload_type_mapper_unittest.cc",
@@ -352,6 +344,13 @@ if (rtc_include_tests) {
     if (rtc_use_h264) {
       defines += [ "WEBRTC_USE_H264" ]
     }
+
+    if (rtc_opus_support_120ms_ptime) {
+      defines += [ "WEBRTC_OPUS_SUPPORT_120MS_PTIME=1" ]
+    } else {
+      defines += [ "WEBRTC_OPUS_SUPPORT_120MS_PTIME=0" ]
+    }
+
     if (is_win) {
       cflags = [
         "/wd4245",  # conversion from int to size_t, signed/unsigned mismatch.

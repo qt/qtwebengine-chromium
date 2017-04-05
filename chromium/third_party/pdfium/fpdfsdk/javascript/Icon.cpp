@@ -10,41 +10,24 @@
 #include "fpdfsdk/javascript/JS_Object.h"
 #include "fpdfsdk/javascript/JS_Value.h"
 
-BEGIN_JS_STATIC_CONST(CJS_Icon)
-END_JS_STATIC_CONST()
+JSConstSpec CJS_Icon::ConstSpecs[] = {{0, JSConstSpec::Number, 0, 0}};
 
-BEGIN_JS_STATIC_PROP(CJS_Icon)
-JS_STATIC_PROP_ENTRY(name)
-END_JS_STATIC_PROP()
+JSPropertySpec CJS_Icon::PropertySpecs[] = {
+    {"name", get_name_static, set_name_static},
+    {0, 0, 0}};
 
-BEGIN_JS_STATIC_METHOD(CJS_Icon)
-END_JS_STATIC_METHOD()
+JSMethodSpec CJS_Icon::MethodSpecs[] = {{0, 0}};
 
 IMPLEMENT_JS_CLASS(CJS_Icon, Icon)
 
 Icon::Icon(CJS_Object* pJSObject)
-    : CJS_EmbedObj(pJSObject), m_pIconStream(nullptr), m_swIconName(L"") {}
+    : CJS_EmbedObj(pJSObject), m_swIconName(L"") {}
 
 Icon::~Icon() {}
 
-void Icon::SetStream(CPDF_Stream* pIconStream) {
-  if (pIconStream)
-    m_pIconStream = pIconStream;
-}
-
-CPDF_Stream* Icon::GetStream() {
-  return m_pIconStream;
-}
-
-void Icon::SetIconName(CFX_WideString name) {
-  m_swIconName = name;
-}
-
-CFX_WideString Icon::GetIconName() {
-  return m_swIconName;
-}
-
-bool Icon::name(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError) {
+bool Icon::name(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError) {
   if (!vp.IsGetting())
     return false;
 

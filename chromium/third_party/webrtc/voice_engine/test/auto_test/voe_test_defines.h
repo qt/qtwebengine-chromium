@@ -24,9 +24,7 @@
 #define _TEST_AUDIO_PROCESSING_
 #define _TEST_FILE_
 #define _TEST_NETWORK_
-#define _TEST_VIDEO_SYNC_
 #define _TEST_NETEQ_STATS_
-#define _TEST_XMEDIA_
 
 #define TESTED_AUDIO_LAYER kAudioPlatformDefault
 //#define TESTED_AUDIO_LAYER kAudioLinuxPulse

@@ -28,8 +28,6 @@ using CFX_WideStringC = CFX_StringCTemplate<FX_WCHAR>;
   (((uint32_t)c1 << 24) | ((uint32_t)c2 << 16) | ((uint32_t)c3 << 8) | \
    ((uint32_t)c4))
 
-#define FX_WSTRC(wstr) CFX_WideStringC(wstr, FX_ArraySize(wstr) - 1)
-
 // A mutable string with shared buffers using copy-on-write semantics that
 // avoids the cost of std::string's iterator stability guarantees.
 class CFX_ByteString {
@@ -426,17 +424,10 @@ inline bool operator!=(const CFX_WideStringC& lhs, const CFX_WideString& rhs) {
   return rhs != lhs;
 }
 
-CFX_ByteString FX_UTF8Encode(const FX_WCHAR* pwsStr, FX_STRSIZE len);
-inline CFX_ByteString FX_UTF8Encode(const CFX_WideStringC& wsStr) {
-  return FX_UTF8Encode(wsStr.c_str(), wsStr.GetLength());
-}
-inline CFX_ByteString FX_UTF8Encode(const CFX_WideString& wsStr) {
-  return FX_UTF8Encode(wsStr.c_str(), wsStr.GetLength());
-}
-
+CFX_ByteString FX_UTF8Encode(const CFX_WideStringC& wsStr);
 FX_FLOAT FX_atof(const CFX_ByteStringC& str);
 inline FX_FLOAT FX_atof(const CFX_WideStringC& wsStr) {
-  return FX_atof(FX_UTF8Encode(wsStr.c_str(), wsStr.GetLength()).c_str());
+  return FX_atof(FX_UTF8Encode(wsStr).c_str());
 }
 bool FX_atonum(const CFX_ByteStringC& str, void* pData);
 FX_STRSIZE FX_ftoa(FX_FLOAT f, FX_CHAR* buf);

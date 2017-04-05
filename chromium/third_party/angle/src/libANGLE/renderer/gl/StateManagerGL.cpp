@@ -755,10 +755,14 @@ gl::Error StateManagerGL::onMakeCurrent(const gl::ContextState &data)
         }
     }
 
+    // Seamless cubemaps are required for ES3 and higher contexts. It should be the cheapest to set
+    // this state here since MakeCurrent is expected to be called less frequently than draw calls.
+    setTextureCubemapSeamlessEnabled(data.getClientMajorVersion() >= 3);
+
     return gl::NoError();
 }
 
-gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
+void StateManagerGL::setGenericShaderState(const gl::ContextState &data)
 {
     const gl::State &state = data.getState();
 
@@ -832,13 +836,17 @@ gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
             }
         }
     }
+}
+
+gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
+{
+    setGenericShaderState(data);
+
+    const gl::State &state = data.getState();
 
     const gl::Framebuffer *framebuffer = state.getDrawFramebuffer();
     const FramebufferGL *framebufferGL = GetImplAs<FramebufferGL>(framebuffer);
     bindFramebuffer(GL_DRAW_FRAMEBUFFER, framebufferGL->getFramebufferID());
-
-    // Seamless cubemaps are required for ES3 and higher contexts.
-    setTextureCubemapSeamlessEnabled(data.getClientMajorVersion() >= 3);
 
     // Set the current transform feedback state
     gl::TransformFeedback *transformFeedback = state.getCurrentTransformFeedback();
@@ -1368,8 +1376,11 @@ void StateManagerGL::setClearStencil(GLint clearStencil)
     }
 }
 
-void StateManagerGL::syncState(const gl::State &state, const gl::State::DirtyBits &glDirtyBits)
+void StateManagerGL::syncState(const gl::ContextState &data,
+                               const gl::State::DirtyBits &glDirtyBits)
 {
+    const gl::State &state = data.getState();
+
     // The the current framebuffer binding sometimes requires resetting the srgb blending
     if (glDirtyBits[gl::State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING] &&
         mFunctions->standard == STANDARD_GL_DESKTOP)
@@ -1622,7 +1633,7 @@ void StateManagerGL::syncState(const gl::State &state, const gl::State::DirtyBit
                 break;
             case gl::State::DIRTY_BIT_FRAMEBUFFER_SRGB:
                 setFramebufferSRGBEnabledForFramebuffer(
-                    state.getFramebufferSRGB(),
+                    data, state.getFramebufferSRGB(),
                     GetImplAs<FramebufferGL>(state.getDrawFramebuffer()));
                 break;
             default:
@@ -1641,8 +1652,13 @@ void StateManagerGL::syncState(const gl::State &state, const gl::State::DirtyBit
     }
 }
 
-void StateManagerGL::setFramebufferSRGBEnabled(bool enabled)
+void StateManagerGL::setFramebufferSRGBEnabled(const gl::ContextState &data, bool enabled)
 {
+    if (!data.getExtensions().sRGBWriteControl)
+    {
+        return;
+    }
+
     if (mFramebufferSRGBEnabled != enabled)
     {
         mFramebufferSRGBEnabled = enabled;
@@ -1658,7 +1674,8 @@ void StateManagerGL::setFramebufferSRGBEnabled(bool enabled)
     }
 }
 
-void StateManagerGL::setFramebufferSRGBEnabledForFramebuffer(bool enabled,
+void StateManagerGL::setFramebufferSRGBEnabledForFramebuffer(const gl::ContextState &data,
+                                                             bool enabled,
                                                              const FramebufferGL *framebuffer)
 {
     if (mFunctions->standard == STANDARD_GL_DESKTOP && framebuffer->isDefault())
@@ -1668,11 +1685,11 @@ void StateManagerGL::setFramebufferSRGBEnabledForFramebuffer(bool enabled,
         // When SRGB blending is enabled, only SRGB capable formats will use it but the default
         // framebuffer will always use it if it is enabled.
         // TODO(geofflang): Update this when the framebuffer binding dirty changes, when it exists.
-        setFramebufferSRGBEnabled(false);
+        setFramebufferSRGBEnabled(data, false);
     }
     else
     {
-        setFramebufferSRGBEnabled(enabled);
+        setFramebufferSRGBEnabled(data, enabled);
     }
 }
 

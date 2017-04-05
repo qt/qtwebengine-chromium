@@ -61,7 +61,7 @@ class DXGISupportHelper : angle::NonCopyable
             else
             {
                 // TODO(jmadill): find out why we fail this call sometimes in FL9_3
-                // ERR("Error checking format support for format 0x%x", dxgiFormat);
+                // ERR() << "Error checking format support for format 0x" << std::hex << dxgiFormat;
             }
         }
 
@@ -1224,6 +1224,8 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
         static_cast<GLuint>(GetMaximumVertexOutputVectors(featureLevel)) * 4;
     caps->maxVertexTextureImageUnits =
         static_cast<GLuint>(GetMaximumVertexTextureUnits(featureLevel));
+    // Vertex Attrib Bindings not supported.
+    caps->maxVertexAttribBindings = caps->maxVertexAttributes;
 
     // Fragment shader limits
     caps->maxFragmentUniformComponents =
@@ -1988,7 +1990,8 @@ angle::WorkaroundsD3D GenerateWorkarounds(const Renderer11DeviceCaps &deviceCaps
     }
 
     // Call platform hooks for testing overrides.
-    ANGLEPlatformCurrent()->overrideWorkaroundsD3D(&workarounds);
+    auto *platform = ANGLEPlatformCurrent();
+    platform->overrideWorkaroundsD3D(platform, &workarounds);
 
     return workarounds;
 }

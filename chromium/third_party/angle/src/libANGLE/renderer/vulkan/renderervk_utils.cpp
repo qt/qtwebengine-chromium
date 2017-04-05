@@ -9,7 +9,6 @@
 
 #include "renderervk_utils.h"
 
-#include "common/debug.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 
 namespace rx
@@ -178,7 +177,7 @@ gl::Error Error::toGL(GLenum glErrorCode) const
     }
 
     // TODO(jmadill): Set extended error code to 'vulkan internal error'.
-    const std::string &message = getExtendedMessage();
+    const std::string &message = toString();
     return gl::Error(glErrorCode, message.c_str());
 }
 
@@ -190,11 +189,11 @@ egl::Error Error::toEGL(EGLint eglErrorCode) const
     }
 
     // TODO(jmadill): Set extended error code to 'vulkan internal error'.
-    const std::string &message = getExtendedMessage();
+    const std::string &message = toString();
     return egl::Error(eglErrorCode, message.c_str());
 }
 
-std::string Error::getExtendedMessage() const
+std::string Error::toString() const
 {
     std::stringstream errorStream;
     errorStream << "Internal Vulkan error: " << VulkanResultString(mResult) << ", in " << mFile
@@ -217,25 +216,50 @@ bool Error::isError() const
     return (mResult != VK_SUCCESS);
 }
 
-// CommandBuffer implementation.
-CommandBuffer::CommandBuffer(VkDevice device, VkCommandPool commandPool)
-    : WrappedObject(device), mCommandPool(commandPool)
+// CommandPool implementation.
+CommandPool::CommandPool()
 {
 }
 
-Error CommandBuffer::begin()
+void CommandPool::destroy(VkDevice device)
+{
+    if (valid())
+    {
+        vkDestroyCommandPool(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
+    }
+}
+
+Error CommandPool::init(VkDevice device, const VkCommandPoolCreateInfo &createInfo)
+{
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkCreateCommandPool(device, &createInfo, nullptr, &mHandle));
+    return NoError();
+}
+
+// CommandBuffer implementation.
+CommandBuffer::CommandBuffer() : mCommandPool(nullptr)
+{
+}
+
+void CommandBuffer::setCommandPool(CommandPool *commandPool)
+{
+    ASSERT(!mCommandPool && commandPool->valid());
+    mCommandPool = commandPool;
+}
+
+Error CommandBuffer::begin(VkDevice device)
 {
     if (mHandle == VK_NULL_HANDLE)
     {
-        ASSERT(validDevice());
         VkCommandBufferAllocateInfo commandBufferInfo;
         commandBufferInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         commandBufferInfo.pNext              = nullptr;
-        commandBufferInfo.commandPool        = mCommandPool;
+        commandBufferInfo.commandPool        = mCommandPool->getHandle();
         commandBufferInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         commandBufferInfo.commandBufferCount = 1;
 
-        ANGLE_VK_TRY(vkAllocateCommandBuffers(mDevice, &commandBufferInfo, &mHandle));
+        ANGLE_VK_TRY(vkAllocateCommandBuffers(device, &commandBufferInfo, &mHandle));
     }
     else
     {
@@ -278,12 +302,13 @@ void CommandBuffer::singleImageBarrier(VkPipelineStageFlags srcStageMask,
                          nullptr, 1, &imageMemoryBarrier);
 }
 
-CommandBuffer::~CommandBuffer()
+void CommandBuffer::destroy(VkDevice device)
 {
-    if (mHandle)
+    if (valid())
     {
-        ASSERT(validDevice());
-        vkFreeCommandBuffers(mDevice, mCommandPool, 1, &mHandle);
+        ASSERT(mCommandPool && mCommandPool->valid());
+        vkFreeCommandBuffers(device, mCommandPool->getHandle(), 1, &mHandle);
+        mHandle = VK_NULL_HANDLE;
     }
 }
 
@@ -366,45 +391,64 @@ void CommandBuffer::endRenderPass()
     vkCmdEndRenderPass(mHandle);
 }
 
+void CommandBuffer::draw(uint32_t vertexCount,
+                         uint32_t instanceCount,
+                         uint32_t firstVertex,
+                         uint32_t firstInstance)
+{
+    ASSERT(valid());
+    vkCmdDraw(mHandle, vertexCount, instanceCount, firstVertex, firstInstance);
+}
+
+void CommandBuffer::bindPipeline(VkPipelineBindPoint pipelineBindPoint,
+                                 const vk::Pipeline &pipeline)
+{
+    ASSERT(valid() && pipeline.valid());
+    vkCmdBindPipeline(mHandle, pipelineBindPoint, pipeline.getHandle());
+}
+
+void CommandBuffer::bindVertexBuffers(uint32_t firstBinding,
+                                      const std::vector<VkBuffer> &buffers,
+                                      const std::vector<VkDeviceSize> &offsets)
+{
+    ASSERT(valid() && buffers.size() == offsets.size());
+    vkCmdBindVertexBuffers(mHandle, firstBinding, static_cast<uint32_t>(buffers.size()),
+                           buffers.data(), offsets.data());
+}
+
 // Image implementation.
 Image::Image() : mCurrentLayout(VK_IMAGE_LAYOUT_UNDEFINED)
 {
 }
 
-Image::Image(VkDevice device) : WrappedObject(device), mCurrentLayout(VK_IMAGE_LAYOUT_UNDEFINED)
+Image::Image(VkImage image) : WrappedObject(image), mCurrentLayout(VK_IMAGE_LAYOUT_UNDEFINED)
 {
 }
 
-Image::Image(VkImage image) : mCurrentLayout(VK_IMAGE_LAYOUT_UNDEFINED)
+void Image::retain(VkDevice device, Image &&other)
 {
-    mHandle = image;
-}
-
-Image::Image(Image &&other) : WrappedObject(std::move(other)), mCurrentLayout(other.mCurrentLayout)
-{
-    other.mCurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-}
-
-Image &Image::operator=(Image &&other)
-{
-    assignOpBase(std::move(other));
+    WrappedObject::retain(device, std::move(other));
     std::swap(mCurrentLayout, other.mCurrentLayout);
-    return *this;
 }
 
-Image::~Image()
+void Image::reset()
 {
-    // If the device handle is null, we aren't managing the handle.
+    mHandle = VK_NULL_HANDLE;
+}
+
+void Image::destroy(VkDevice device)
+{
     if (valid())
     {
-        vkDestroyImage(mDevice, mHandle, nullptr);
+        vkDestroyImage(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
     }
 }
 
-Error Image::init(const VkImageCreateInfo &createInfo)
+Error Image::init(VkDevice device, const VkImageCreateInfo &createInfo)
 {
-    ASSERT(mHandle == VK_NULL_HANDLE && validDevice());
-    ANGLE_VK_TRY(vkCreateImage(mDevice, &createInfo, nullptr, &mHandle));
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkCreateImage(device, &createInfo, nullptr, &mHandle));
     return NoError();
 }
 
@@ -412,6 +456,12 @@ void Image::changeLayoutTop(VkImageAspectFlags aspectMask,
                             VkImageLayout newLayout,
                             CommandBuffer *commandBuffer)
 {
+    if (newLayout == mCurrentLayout)
+    {
+        // No-op.
+        return;
+    }
+
     changeLayoutWithStages(aspectMask, newLayout, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, commandBuffer);
 }
@@ -422,12 +472,6 @@ void Image::changeLayoutWithStages(VkImageAspectFlags aspectMask,
                                    VkPipelineStageFlags dstStageMask,
                                    CommandBuffer *commandBuffer)
 {
-    if (newLayout == mCurrentLayout)
-    {
-        // No-op.
-        return;
-    }
-
     VkImageMemoryBarrier imageMemoryBarrier;
     imageMemoryBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     imageMemoryBarrier.pNext               = nullptr;
@@ -473,16 +517,16 @@ void Image::changeLayoutWithStages(VkImageAspectFlags aspectMask,
     mCurrentLayout = newLayout;
 }
 
-void Image::getMemoryRequirements(VkMemoryRequirements *requirementsOut) const
+void Image::getMemoryRequirements(VkDevice device, VkMemoryRequirements *requirementsOut) const
 {
     ASSERT(valid());
-    vkGetImageMemoryRequirements(mDevice, mHandle, requirementsOut);
+    vkGetImageMemoryRequirements(device, mHandle, requirementsOut);
 }
 
-Error Image::bindMemory(const vk::DeviceMemory &deviceMemory)
+Error Image::bindMemory(VkDevice device, const vk::DeviceMemory &deviceMemory)
 {
     ASSERT(valid() && deviceMemory.valid());
-    ANGLE_VK_TRY(vkBindImageMemory(mDevice, mHandle, deviceMemory.getHandle(), 0));
+    ANGLE_VK_TRY(vkBindImageMemory(device, mHandle, deviceMemory.getHandle(), 0));
     return NoError();
 }
 
@@ -491,33 +535,18 @@ ImageView::ImageView()
 {
 }
 
-ImageView::ImageView(VkDevice device) : WrappedObject(device)
+void ImageView::destroy(VkDevice device)
 {
-}
-
-ImageView::ImageView(ImageView &&other) : WrappedObject(std::move(other))
-{
-}
-
-ImageView &ImageView::operator=(ImageView &&other)
-{
-    assignOpBase(std::move(other));
-    return *this;
-}
-
-ImageView::~ImageView()
-{
-    if (mHandle != VK_NULL_HANDLE)
+    if (valid())
     {
-        ASSERT(validDevice());
-        vkDestroyImageView(mDevice, mHandle, nullptr);
+        vkDestroyImageView(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
     }
 }
 
-Error ImageView::init(const VkImageViewCreateInfo &createInfo)
+Error ImageView::init(VkDevice device, const VkImageViewCreateInfo &createInfo)
 {
-    ASSERT(validDevice());
-    ANGLE_VK_TRY(vkCreateImageView(mDevice, &createInfo, nullptr, &mHandle));
+    ANGLE_VK_TRY(vkCreateImageView(device, &createInfo, nullptr, &mHandle));
     return NoError();
 }
 
@@ -526,39 +555,25 @@ Semaphore::Semaphore()
 {
 }
 
-Semaphore::Semaphore(VkDevice device) : WrappedObject(device)
+void Semaphore::destroy(VkDevice device)
 {
-}
-
-Semaphore::Semaphore(Semaphore &&other) : WrappedObject(std::move(other))
-{
-}
-
-Semaphore::~Semaphore()
-{
-    if (mHandle != VK_NULL_HANDLE)
+    if (valid())
     {
-        ASSERT(validDevice());
-        vkDestroySemaphore(mDevice, mHandle, nullptr);
+        vkDestroySemaphore(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
     }
 }
 
-Semaphore &Semaphore::operator=(Semaphore &&other)
+Error Semaphore::init(VkDevice device)
 {
-    assignOpBase(std::move(other));
-    return *this;
-}
-
-Error Semaphore::init()
-{
-    ASSERT(validDevice() && !valid());
+    ASSERT(!valid());
 
     VkSemaphoreCreateInfo semaphoreInfo;
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     semaphoreInfo.pNext = nullptr;
     semaphoreInfo.flags = 0;
 
-    ANGLE_VK_TRY(vkCreateSemaphore(mDevice, &semaphoreInfo, nullptr, &mHandle));
+    ANGLE_VK_TRY(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &mHandle));
 
     return NoError();
 }
@@ -568,33 +583,19 @@ Framebuffer::Framebuffer()
 {
 }
 
-Framebuffer::Framebuffer(VkDevice device) : WrappedObject(device)
+void Framebuffer::destroy(VkDevice device)
 {
-}
-
-Framebuffer::Framebuffer(Framebuffer &&other) : WrappedObject(std::move(other))
-{
-}
-
-Framebuffer::~Framebuffer()
-{
-    if (mHandle != VK_NULL_HANDLE)
+    if (valid())
     {
-        ASSERT(validDevice());
-        vkDestroyFramebuffer(mDevice, mHandle, nullptr);
+        vkDestroyFramebuffer(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
     }
 }
 
-Framebuffer &Framebuffer::operator=(Framebuffer &&other)
+Error Framebuffer::init(VkDevice device, const VkFramebufferCreateInfo &createInfo)
 {
-    assignOpBase(std::move(other));
-    return *this;
-}
-
-Error Framebuffer::init(const VkFramebufferCreateInfo &createInfo)
-{
-    ASSERT(validDevice() && !valid());
-    ANGLE_VK_TRY(vkCreateFramebuffer(mDevice, &createInfo, nullptr, &mHandle));
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkCreateFramebuffer(device, &createInfo, nullptr, &mHandle));
     return NoError();
 }
 
@@ -603,51 +604,38 @@ DeviceMemory::DeviceMemory()
 {
 }
 
-DeviceMemory::DeviceMemory(VkDevice device) : WrappedObject(device)
+void DeviceMemory::destroy(VkDevice device)
 {
-}
-
-DeviceMemory::DeviceMemory(DeviceMemory &&other) : WrappedObject(std::move(other))
-{
-}
-
-DeviceMemory::~DeviceMemory()
-{
-    if (mHandle != VK_NULL_HANDLE)
+    if (valid())
     {
-        ASSERT(validDevice());
-        vkFreeMemory(mDevice, mHandle, nullptr);
+        vkFreeMemory(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
     }
 }
 
-DeviceMemory &DeviceMemory::operator=(DeviceMemory &&other)
+Error DeviceMemory::allocate(VkDevice device, const VkMemoryAllocateInfo &allocInfo)
 {
-    assignOpBase(std::move(other));
-    return *this;
-}
-
-Error DeviceMemory::allocate(const VkMemoryAllocateInfo &allocInfo)
-{
-    ASSERT(validDevice() && !valid());
-    ANGLE_VK_TRY(vkAllocateMemory(mDevice, &allocInfo, nullptr, &mHandle));
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkAllocateMemory(device, &allocInfo, nullptr, &mHandle));
     return NoError();
 }
 
-Error DeviceMemory::map(VkDeviceSize offset,
+Error DeviceMemory::map(VkDevice device,
+                        VkDeviceSize offset,
                         VkDeviceSize size,
                         VkMemoryMapFlags flags,
                         uint8_t **mapPointer)
 {
     ASSERT(valid());
     ANGLE_VK_TRY(
-        vkMapMemory(mDevice, mHandle, offset, size, flags, reinterpret_cast<void **>(mapPointer)));
+        vkMapMemory(device, mHandle, offset, size, flags, reinterpret_cast<void **>(mapPointer)));
     return NoError();
 }
 
-void DeviceMemory::unmap()
+void DeviceMemory::unmap(VkDevice device)
 {
     ASSERT(valid());
-    vkUnmapMemory(mDevice, mHandle);
+    vkUnmapMemory(device, mHandle);
 }
 
 // RenderPass implementation.
@@ -655,33 +643,19 @@ RenderPass::RenderPass()
 {
 }
 
-RenderPass::RenderPass(VkDevice device) : WrappedObject(device)
+void RenderPass::destroy(VkDevice device)
 {
-}
-
-RenderPass::RenderPass(RenderPass &&other) : WrappedObject(std::move(other))
-{
-}
-
-RenderPass::~RenderPass()
-{
-    if (mHandle != VK_NULL_HANDLE)
+    if (valid())
     {
-        ASSERT(validDevice());
-        vkDestroyRenderPass(mDevice, mHandle, nullptr);
+        vkDestroyRenderPass(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
     }
 }
 
-RenderPass &RenderPass::operator=(RenderPass &&other)
+Error RenderPass::init(VkDevice device, const VkRenderPassCreateInfo &createInfo)
 {
-    assignOpBase(std::move(other));
-    return *this;
-}
-
-Error RenderPass::init(const VkRenderPassCreateInfo &createInfo)
-{
-    ASSERT(validDevice() && !valid());
-    ANGLE_VK_TRY(vkCreateRenderPass(mDevice, &createInfo, nullptr, &mHandle));
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkCreateRenderPass(device, &createInfo, nullptr, &mHandle));
     return NoError();
 }
 
@@ -690,31 +664,21 @@ StagingImage::StagingImage() : mSize(0)
 {
 }
 
-StagingImage::StagingImage(VkDevice device) : mImage(device), mDeviceMemory(device), mSize(0)
+void StagingImage::destroy(VkDevice device)
 {
+    mImage.destroy(device);
+    mDeviceMemory.destroy(device);
 }
 
-StagingImage::StagingImage(StagingImage &&other)
-    : mImage(std::move(other.mImage)),
-      mDeviceMemory(std::move(other.mDeviceMemory)),
-      mSize(other.mSize)
+void StagingImage::retain(VkDevice device, StagingImage &&other)
 {
-    other.mSize = 0;
-}
-
-StagingImage::~StagingImage()
-{
-}
-
-StagingImage &StagingImage::operator=(StagingImage &&other)
-{
-    std::swap(mImage, other.mImage);
-    std::swap(mDeviceMemory, other.mDeviceMemory);
+    mImage.retain(device, std::move(other.mImage));
+    mDeviceMemory.retain(device, std::move(other.mDeviceMemory));
     std::swap(mSize, other.mSize);
-    return *this;
 }
 
-Error StagingImage::init(uint32_t queueFamilyIndex,
+Error StagingImage::init(VkDevice device,
+                         uint32_t queueFamilyIndex,
                          uint32_t hostVisibleMemoryIndex,
                          TextureDimension dimension,
                          VkFormat format,
@@ -740,10 +704,10 @@ Error StagingImage::init(uint32_t queueFamilyIndex,
     createInfo.pQueueFamilyIndices   = &queueFamilyIndex;
     createInfo.initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    ANGLE_TRY(mImage.init(createInfo));
+    ANGLE_TRY(mImage.init(device, createInfo));
 
     VkMemoryRequirements memoryRequirements;
-    mImage.getMemoryRequirements(&memoryRequirements);
+    mImage.getMemoryRequirements(device, &memoryRequirements);
 
     // Ensure we can read this memory.
     ANGLE_VK_CHECK((memoryRequirements.memoryTypeBits & (1 << hostVisibleMemoryIndex)) != 0,
@@ -755,14 +719,269 @@ Error StagingImage::init(uint32_t queueFamilyIndex,
     allocateInfo.allocationSize  = memoryRequirements.size;
     allocateInfo.memoryTypeIndex = hostVisibleMemoryIndex;
 
-    ANGLE_TRY(mDeviceMemory.allocate(allocateInfo));
-    ANGLE_TRY(mImage.bindMemory(mDeviceMemory));
+    ANGLE_TRY(mDeviceMemory.allocate(device, allocateInfo));
+    ANGLE_TRY(mImage.bindMemory(device, mDeviceMemory));
 
     mSize = memoryRequirements.size;
 
     return NoError();
 }
 
+// Buffer implementation.
+Buffer::Buffer()
+{
+}
+
+void Buffer::destroy(VkDevice device)
+{
+    if (valid())
+    {
+        mMemory.destroy(device);
+
+        vkDestroyBuffer(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
+    }
+}
+
+void Buffer::retain(VkDevice device, Buffer &&other)
+{
+    WrappedObject::retain(device, std::move(other));
+    mMemory.retain(device, std::move(other.mMemory));
+}
+
+Error Buffer::init(VkDevice device, const VkBufferCreateInfo &createInfo)
+{
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkCreateBuffer(device, &createInfo, nullptr, &mHandle));
+    return NoError();
+}
+
+Error Buffer::bindMemory(VkDevice device)
+{
+    ASSERT(valid() && mMemory.valid());
+    ANGLE_VK_TRY(vkBindBufferMemory(device, mHandle, mMemory.getHandle(), 0));
+    return NoError();
+}
+
+// ShaderModule implementation.
+ShaderModule::ShaderModule()
+{
+}
+
+void ShaderModule::destroy(VkDevice device)
+{
+    if (mHandle != VK_NULL_HANDLE)
+    {
+        vkDestroyShaderModule(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
+    }
+}
+
+Error ShaderModule::init(VkDevice device, const VkShaderModuleCreateInfo &createInfo)
+{
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkCreateShaderModule(device, &createInfo, nullptr, &mHandle));
+    return NoError();
+}
+
+// Pipeline implementation.
+Pipeline::Pipeline()
+{
+}
+
+void Pipeline::destroy(VkDevice device)
+{
+    if (valid())
+    {
+        vkDestroyPipeline(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
+    }
+}
+
+Error Pipeline::initGraphics(VkDevice device, const VkGraphicsPipelineCreateInfo &createInfo)
+{
+    ASSERT(!valid());
+    ANGLE_VK_TRY(
+        vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &createInfo, nullptr, &mHandle));
+    return NoError();
+}
+
+// PipelineLayout implementation.
+PipelineLayout::PipelineLayout()
+{
+}
+
+void PipelineLayout::destroy(VkDevice device)
+{
+    if (valid())
+    {
+        vkDestroyPipelineLayout(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
+    }
+}
+
+Error PipelineLayout::init(VkDevice device, const VkPipelineLayoutCreateInfo &createInfo)
+{
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkCreatePipelineLayout(device, &createInfo, nullptr, &mHandle));
+    return NoError();
+}
+
+// Fence implementation.
+Fence::Fence()
+{
+}
+
+void Fence::destroy(VkDevice device)
+{
+    if (valid())
+    {
+        vkDestroyFence(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
+    }
+}
+
+Error Fence::init(VkDevice device, const VkFenceCreateInfo &createInfo)
+{
+    ASSERT(!valid());
+    ANGLE_VK_TRY(vkCreateFence(device, &createInfo, nullptr, &mHandle));
+    return NoError();
+}
+
+VkResult Fence::getStatus(VkDevice device) const
+{
+    return vkGetFenceStatus(device, mHandle);
+}
+
+// FenceAndCommandBuffer implementation.
+FenceAndCommandBuffer::FenceAndCommandBuffer(Serial queueSerial,
+                                             Fence &&fence,
+                                             CommandBuffer &&commandBuffer)
+    : mQueueSerial(queueSerial), mFence(std::move(fence)), mCommandBuffer(std::move(commandBuffer))
+{
+}
+
+FenceAndCommandBuffer::FenceAndCommandBuffer(FenceAndCommandBuffer &&other)
+    : mQueueSerial(std::move(other.mQueueSerial)),
+      mFence(std::move(other.mFence)),
+      mCommandBuffer(std::move(other.mCommandBuffer))
+{
+}
+
+void FenceAndCommandBuffer::destroy(VkDevice device)
+{
+    mFence.destroy(device);
+    mCommandBuffer.destroy(device);
+}
+
+vk::ErrorOrResult<bool> FenceAndCommandBuffer::finished(VkDevice device) const
+{
+    VkResult result = mFence.getStatus(device);
+    // Should this be a part of ANGLE_VK_TRY?
+    if (result == VK_NOT_READY)
+    {
+        return false;
+    }
+    ANGLE_VK_TRY(result);
+    return true;
+}
+
+FenceAndCommandBuffer &FenceAndCommandBuffer::operator=(FenceAndCommandBuffer &&other)
+{
+    std::swap(mQueueSerial, other.mQueueSerial);
+    mFence         = std::move(other.mFence);
+    mCommandBuffer = std::move(other.mCommandBuffer);
+    return *this;
+}
+
 }  // namespace vk
 
+Optional<uint32_t> FindMemoryType(const VkPhysicalDeviceMemoryProperties &memoryProps,
+                                  const VkMemoryRequirements &requirements,
+                                  uint32_t propertyFlagMask)
+{
+    for (uint32_t typeIndex = 0; typeIndex < memoryProps.memoryTypeCount; ++typeIndex)
+    {
+        if ((requirements.memoryTypeBits & (1u << typeIndex)) != 0 &&
+            ((memoryProps.memoryTypes[typeIndex].propertyFlags & propertyFlagMask) ==
+             propertyFlagMask))
+        {
+            return typeIndex;
+        }
+    }
+
+    return Optional<uint32_t>::Invalid();
+}
+
+namespace gl_vk
+{
+VkPrimitiveTopology GetPrimitiveTopology(GLenum mode)
+{
+    switch (mode)
+    {
+        case GL_TRIANGLES:
+            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        case GL_POINTS:
+            return VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+        case GL_LINES:
+            return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+        case GL_LINE_STRIP:
+            return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+        case GL_TRIANGLE_FAN:
+            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+        case GL_TRIANGLE_STRIP:
+            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+        case GL_LINE_LOOP:
+            // TODO(jmadill): Implement line loop support.
+            UNIMPLEMENTED();
+            return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+        default:
+            UNREACHABLE();
+            return VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    }
+}
+
+VkCullModeFlags GetCullMode(const gl::RasterizerState &rasterState)
+{
+    if (!rasterState.cullFace)
+    {
+        return VK_CULL_MODE_NONE;
+    }
+
+    switch (rasterState.cullMode)
+    {
+        case GL_FRONT:
+            return VK_CULL_MODE_FRONT_BIT;
+        case GL_BACK:
+            return VK_CULL_MODE_BACK_BIT;
+        case GL_FRONT_AND_BACK:
+            return VK_CULL_MODE_FRONT_AND_BACK;
+        default:
+            UNREACHABLE();
+            return VK_CULL_MODE_NONE;
+    }
+}
+
+VkFrontFace GetFrontFace(GLenum frontFace)
+{
+    switch (frontFace)
+    {
+        case GL_CW:
+            return VK_FRONT_FACE_CLOCKWISE;
+        case GL_CCW:
+            return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        default:
+            UNREACHABLE();
+            return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    }
+}
+
+}  // namespace gl_vk
+
 }  // namespace rx
+
+std::ostream &operator<<(std::ostream &stream, const rx::vk::Error &error)
+{
+    stream << error.toString();
+    return stream;
+}

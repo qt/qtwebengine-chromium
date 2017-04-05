@@ -6,7 +6,7 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("../../build/webrtc.gni")
+import("../../webrtc.gni")
 
 rtc_static_library("utility") {
   sources = [
@@ -35,10 +35,21 @@ rtc_static_library("utility") {
     "../../base:rtc_task_queue",
     "../../common_audio",
     "../../system_wrappers",
-    "../audio_coding",
-    "../audio_coding:audio_format_conversion",
-    "../audio_coding:builtin_audio_decoder_factory",
-    "../audio_coding:rent_a_codec",
     "../media_file",
   ]
+}
+
+if (rtc_include_tests) {
+  rtc_source_set("utility_unittests") {
+    testonly = true
+    sources = [
+      "source/process_thread_impl_unittest.cc",
+    ]
+    deps = [
+      ":utility",
+      "../../base:rtc_task_queue",
+      "../../test:test_support",
+      "//testing/gmock",
+    ]
+  }
 }

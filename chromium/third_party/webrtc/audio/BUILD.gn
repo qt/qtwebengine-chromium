@@ -6,7 +6,7 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("../build/webrtc.gni")
+import("../webrtc.gni")
 
 rtc_static_library("audio") {
   sources = [
@@ -37,6 +37,7 @@ rtc_static_library("audio") {
     "../common_audio",
     "../modules/audio_device",
     "../modules/audio_processing",
+    "../modules/bitrate_controller:bitrate_controller",
     "../modules/congestion_controller:congestion_controller",
     "../modules/pacing:pacing",
     "../modules/remote_bitrate_estimator:remote_bitrate_estimator",

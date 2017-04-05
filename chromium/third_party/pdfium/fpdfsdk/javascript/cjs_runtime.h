@@ -15,11 +15,12 @@
 
 #include "core/fxcrt/cfx_observable.h"
 #include "core/fxcrt/fx_basic.h"
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/javascript/JS_EventHandler.h"
 #include "fpdfsdk/javascript/ijs_runtime.h"
 #include "fxjs/fxjs_v8.h"
 
-class CJS_Context;
+class CJS_EventContext;
 
 class CJS_Runtime : public IJS_Runtime,
                     public CFXJS_Engine,
@@ -27,21 +28,19 @@ class CJS_Runtime : public IJS_Runtime,
  public:
   using FieldEvent = std::pair<CFX_WideString, JS_EVENT_T>;
 
-  static CJS_Runtime* FromContext(const IJS_Context* cc);
   static CJS_Runtime* CurrentRuntimeFromIsolate(v8::Isolate* pIsolate);
 
   explicit CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv);
   ~CJS_Runtime() override;
 
   // IJS_Runtime
-  IJS_Context* NewContext() override;
-  void ReleaseContext(IJS_Context* pContext) override;
-  IJS_Context* GetCurrentContext() override;
-
+  IJS_EventContext* NewEventContext() override;
+  void ReleaseEventContext(IJS_EventContext* pContext) override;
   CPDFSDK_FormFillEnvironment* GetFormFillEnv() const override;
-
   int ExecuteScript(const CFX_WideString& script,
                     CFX_WideString* info) override;
+
+  CJS_EventContext* GetCurrentEventContext() const;
 
   // Returns true if the event isn't already found in the set.
   bool AddEventToSet(const FieldEvent& event);
@@ -62,8 +61,8 @@ class CJS_Runtime : public IJS_Runtime,
   void DefineJSObjects();
   void SetFormFillEnvToDocument();
 
-  std::vector<std::unique_ptr<CJS_Context>> m_ContextArray;
-  CPDFSDK_FormFillEnvironment* const m_pFormFillEnv;
+  std::vector<std::unique_ptr<CJS_EventContext>> m_EventContextArray;
+  CPDFSDK_FormFillEnvironment::ObservedPtr m_pFormFillEnv;
   bool m_bBlocking;
   bool m_isolateManaged;
   std::set<FieldEvent> m_FieldEventSet;

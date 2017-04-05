@@ -78,19 +78,21 @@ CBC_ReedSolomonGF256Poly* CBC_ReedSolomonGF256::BuildMonomial(
     int32_t& e) {
   if (degree < 0) {
     e = BCExceptionDegreeIsNegative;
-    BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
+    return nullptr;
   }
   if (coefficient == 0) {
     CBC_ReedSolomonGF256Poly* temp = m_zero->Clone(e);
-    BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
+    if (e != BCExceptionNO)
+      return nullptr;
     return temp;
   }
-  CFX_Int32Array coefficients;
+  CFX_ArrayTemplate<int32_t> coefficients;
   coefficients.SetSize(degree + 1);
   coefficients[0] = coefficient;
   CBC_ReedSolomonGF256Poly* temp = new CBC_ReedSolomonGF256Poly();
   temp->Init(this, &coefficients, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
+  if (e != BCExceptionNO)
+    return nullptr;
   return temp;
 }
 
@@ -105,7 +107,7 @@ int32_t CBC_ReedSolomonGF256::Exp(int32_t a) {
 int32_t CBC_ReedSolomonGF256::Log(int32_t a, int32_t& e) {
   if (a == 0) {
     e = BCExceptionAIsZero;
-    BC_EXCEPTION_CHECK_ReturnValue(e, 0);
+    return 0;
   }
   return m_logTable[a];
 }
@@ -113,7 +115,7 @@ int32_t CBC_ReedSolomonGF256::Log(int32_t a, int32_t& e) {
 int32_t CBC_ReedSolomonGF256::Inverse(int32_t a, int32_t& e) {
   if (a == 0) {
     e = BCExceptionAIsZero;
-    BC_EXCEPTION_CHECK_ReturnValue(e, 0);
+    return 0;
   }
   return m_expTable[255 - m_logTable[a]];
 }

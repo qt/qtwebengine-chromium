@@ -10,7 +10,7 @@ const char *GetOperatorString(TOperator op)
 {
     switch (op)
     {
-        // Note: EOpNull and EOpFunctionCall can't be handled here.
+        // Note: EOpNull and EOpCall* can't be handled here.
 
         case EOpNegative:
             return "-";
@@ -197,6 +197,11 @@ const char *GetOperatorString(TOperator op)
         case EOpUintBitsToFloat:
             return "uintBitsToFloat";
 
+        case EOpFrexp:
+            return "frexp";
+        case EOpLdexp:
+            return "ldexp";
+
         case EOpPackSnorm2x16:
             return "packSnorm2x16";
         case EOpPackUnorm2x16:
@@ -209,6 +214,15 @@ const char *GetOperatorString(TOperator op)
             return "unpackUnorm2x16";
         case EOpUnpackHalf2x16:
             return "unpackHalf2x16";
+
+        case EOpPackUnorm4x8:
+            return "packUnorm4x8";
+        case EOpPackSnorm4x8:
+            return "packSnorm4x8";
+        case EOpUnpackUnorm4x8:
+            return "unpackUnorm4x8";
+        case EOpUnpackSnorm4x8:
+            return "unpackSnorm4x8";
 
         case EOpLength:
             return "length";
@@ -251,6 +265,27 @@ const char *GetOperatorString(TOperator op)
             return "all";
         case EOpLogicalNotComponentWise:
             return "not";
+
+        case EOpBitfieldExtract:
+            return "bitfieldExtract";
+        case EOpBitfieldInsert:
+            return "bitfieldInsert";
+        case EOpBitfieldReverse:
+            return "bitfieldReverse";
+        case EOpBitCount:
+            return "bitCount";
+        case EOpFindLSB:
+            return "findLSB";
+        case EOpFindMSB:
+            return "findMSB";
+        case EOpUaddCarry:
+            return "uaddCarry";
+        case EOpUsubBorrow:
+            return "usubBorrow";
+        case EOpUmulExtended:
+            return "umulExtended";
+        case EOpImulExtended:
+            return "imulExtended";
 
         case EOpKill:
             return "kill";

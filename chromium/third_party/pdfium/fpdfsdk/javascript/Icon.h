@@ -16,14 +16,11 @@ class Icon : public CJS_EmbedObj {
   explicit Icon(CJS_Object* pJSObject);
   ~Icon() override;
 
-  bool name(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  void SetStream(CPDF_Stream* pIconStream);
-  CPDF_Stream* GetStream();
-  void SetIconName(CFX_WideString name);
-  CFX_WideString GetIconName();
+  bool name(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  CFX_WideString GetIconName() const { return m_swIconName; }
+  void SetIconName(CFX_WideString name) { m_swIconName = name; }
 
  private:
-  CPDF_Stream* m_pIconStream;
   CFX_WideString m_swIconName;
 };
 

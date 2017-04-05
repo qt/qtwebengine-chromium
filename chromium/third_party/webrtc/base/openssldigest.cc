@@ -8,12 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#if HAVE_OPENSSL_SSL_H
-
 #include "webrtc/base/openssldigest.h"
 
 #include "webrtc/base/checks.h"
-#include "webrtc/base/common.h"
 #include "webrtc/base/openssl.h"
 
 namespace rtc {
@@ -21,9 +18,9 @@ namespace rtc {
 OpenSSLDigest::OpenSSLDigest(const std::string& algorithm) {
   EVP_MD_CTX_init(&ctx_);
   if (GetDigestEVP(algorithm, &md_)) {
-    EVP_DigestInit_ex(&ctx_, md_, NULL);
+    EVP_DigestInit_ex(&ctx_, md_, nullptr);
   } else {
-    md_ = NULL;
+    md_ = nullptr;
   }
 }
 
@@ -51,7 +48,7 @@ size_t OpenSSLDigest::Finish(void* buf, size_t len) {
   }
   unsigned int md_len;
   EVP_DigestFinal_ex(&ctx_, static_cast<unsigned char*>(buf), &md_len);
-  EVP_DigestInit_ex(&ctx_, md_, NULL);  // prepare for future Update()s
+  EVP_DigestInit_ex(&ctx_, md_, nullptr);  // prepare for future Update()s
   RTC_DCHECK(md_len == Size());
   return md_len;
 }
@@ -83,8 +80,8 @@ bool OpenSSLDigest::GetDigestEVP(const std::string& algorithm,
 
 bool OpenSSLDigest::GetDigestName(const EVP_MD* md,
                                   std::string* algorithm) {
-  RTC_DCHECK(md != NULL);
-  RTC_DCHECK(algorithm != NULL);
+  RTC_DCHECK(md != nullptr);
+  RTC_DCHECK(algorithm != nullptr);
 
   int md_type = EVP_MD_type(md);
   if (md_type == NID_md5) {
@@ -118,5 +115,3 @@ bool OpenSSLDigest::GetDigestSize(const std::string& algorithm,
 }
 
 }  // namespace rtc
-
-#endif  // HAVE_OPENSSL_SSL_H

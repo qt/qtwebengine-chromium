@@ -13,13 +13,13 @@
 #include <memory>
 #include <vector>
 
+#include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/md5digest.h"
 #include "webrtc/base/platform_thread.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/audio_coding/acm2/acm_receive_test.h"
 #include "webrtc/modules/audio_coding/acm2/acm_send_test.h"
-#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
 #include "webrtc/modules/audio_coding/codecs/audio_format_conversion.h"
 #include "webrtc/modules/audio_coding/codecs/g711/audio_decoder_pcm.h"
@@ -1040,6 +1040,10 @@ TEST_F(AcmReceiverBitExactnessOldApi, 48kHzOutputExternalDecoder) {
     }
     std::vector<AudioCodecSpec> GetSupportedDecoders() override {
       return fact_->GetSupportedDecoders();
+    }
+    bool IsSupportedDecoder(const SdpAudioFormat& format) override {
+      return format.name == "MockPCMu" ? true
+                                       : fact_->IsSupportedDecoder(format);
     }
     std::unique_ptr<AudioDecoder> MakeAudioDecoder(
         const SdpAudioFormat& format) override {

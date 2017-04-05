@@ -8,171 +8,144 @@
 
 #include "core/fxge/cfx_pathdata.h"
 #include "third_party/base/ptr_util.h"
-#include "xfa/fxgraphics/cfx_path_generator.h"
 
 CFX_Path::CFX_Path() {}
 
-FWL_Error CFX_Path::Create() {
-  if (m_generator)
-    return FWL_Error::PropertyInvalid;
-
-  m_generator = pdfium::MakeUnique<CFX_PathGenerator>();
-  return FWL_Error::Succeeded;
-}
-
 CFX_Path::~CFX_Path() {}
 
-FWL_Error CFX_Path::MoveTo(FX_FLOAT x, FX_FLOAT y) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->MoveTo(x, y);
-  return FWL_Error::Succeeded;
+void CFX_Path::Clear() {
+  data_.Clear();
 }
 
-FWL_Error CFX_Path::LineTo(FX_FLOAT x, FX_FLOAT y) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->LineTo(x, y);
-  return FWL_Error::Succeeded;
+void CFX_Path::Close() {
+  data_.ClosePath();
 }
 
-FWL_Error CFX_Path::BezierTo(FX_FLOAT ctrlX1,
-                             FX_FLOAT ctrlY1,
-                             FX_FLOAT ctrlX2,
-                             FX_FLOAT ctrlY2,
-                             FX_FLOAT toX,
-                             FX_FLOAT toY) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->BezierTo(ctrlX1, ctrlY1, ctrlX2, ctrlY2, toX, toY);
-  return FWL_Error::Succeeded;
+void CFX_Path::MoveTo(const CFX_PointF& point) {
+  data_.AppendPoint(point, FXPT_TYPE::MoveTo, false);
 }
 
-FWL_Error CFX_Path::ArcTo(FX_FLOAT left,
-                          FX_FLOAT top,
-                          FX_FLOAT width,
-                          FX_FLOAT height,
-                          FX_FLOAT startAngle,
-                          FX_FLOAT sweepAngle) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->ArcTo(left + width / 2, top + height / 2, width / 2, height / 2,
-                     startAngle, sweepAngle);
-  return FWL_Error::Succeeded;
+void CFX_Path::LineTo(const CFX_PointF& point) {
+  data_.AppendPoint(point, FXPT_TYPE::LineTo, false);
 }
 
-FWL_Error CFX_Path::Close() {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->Close();
-  return FWL_Error::Succeeded;
+void CFX_Path::BezierTo(const CFX_PointF& c1,
+                        const CFX_PointF& c2,
+                        const CFX_PointF& to) {
+  data_.AppendPoint(c1, FXPT_TYPE::BezierTo, false);
+  data_.AppendPoint(c2, FXPT_TYPE::BezierTo, false);
+  data_.AppendPoint(to, FXPT_TYPE::BezierTo, false);
 }
 
-FWL_Error CFX_Path::AddLine(FX_FLOAT x1,
-                            FX_FLOAT y1,
-                            FX_FLOAT x2,
-                            FX_FLOAT y2) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->AddLine(x1, y1, x2, y2);
-  return FWL_Error::Succeeded;
+void CFX_Path::ArcTo(const CFX_PointF& pos,
+                     const CFX_SizeF& size,
+                     FX_FLOAT start_angle,
+                     FX_FLOAT sweep_angle) {
+  CFX_SizeF new_size = size / 2.0f;
+  ArcToInternal(CFX_PointF(pos.x + new_size.width, pos.y + new_size.height),
+                new_size, start_angle, sweep_angle);
 }
 
-FWL_Error CFX_Path::AddBezier(FX_FLOAT startX,
-                              FX_FLOAT startY,
-                              FX_FLOAT ctrlX1,
-                              FX_FLOAT ctrlY1,
-                              FX_FLOAT ctrlX2,
-                              FX_FLOAT ctrlY2,
-                              FX_FLOAT endX,
-                              FX_FLOAT endY) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->AddBezier(startX, startY, ctrlX1, ctrlY1, ctrlX2, ctrlY2, endX,
-                         endY);
-  return FWL_Error::Succeeded;
+void CFX_Path::ArcToInternal(const CFX_PointF& pos,
+                             const CFX_SizeF& size,
+                             FX_FLOAT start_angle,
+                             FX_FLOAT sweep_angle) {
+  FX_FLOAT x0 = FXSYS_cos(sweep_angle / 2);
+  FX_FLOAT y0 = FXSYS_sin(sweep_angle / 2);
+  FX_FLOAT tx = ((1.0f - x0) * 4) / (3 * 1.0f);
+  FX_FLOAT ty = y0 - ((tx * x0) / y0);
+
+  CFX_PointF points[] = {CFX_PointF(x0 + tx, -ty), CFX_PointF(x0 + tx, ty)};
+  FX_FLOAT sn = FXSYS_sin(start_angle + sweep_angle / 2);
+  FX_FLOAT cs = FXSYS_cos(start_angle + sweep_angle / 2);
+
+  CFX_PointF bezier;
+  bezier.x = pos.x + (size.width * ((points[0].x * cs) - (points[0].y * sn)));
+  bezier.y = pos.y + (size.height * ((points[0].x * sn) + (points[0].y * cs)));
+  data_.AppendPoint(bezier, FXPT_TYPE::BezierTo, false);
+
+  bezier.x = pos.x + (size.width * ((points[1].x * cs) - (points[1].y * sn)));
+  bezier.y = pos.y + (size.height * ((points[1].x * sn) + (points[1].y * cs)));
+  data_.AppendPoint(bezier, FXPT_TYPE::BezierTo, false);
+
+  bezier.x = pos.x + (size.width * FXSYS_cos(start_angle + sweep_angle));
+  bezier.y = pos.y + (size.height * FXSYS_sin(start_angle + sweep_angle));
+  data_.AppendPoint(bezier, FXPT_TYPE::BezierTo, false);
 }
 
-FWL_Error CFX_Path::AddRectangle(FX_FLOAT left,
-                                 FX_FLOAT top,
-                                 FX_FLOAT width,
-                                 FX_FLOAT height) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->AddRectangle(left, top, left + width, top + height);
-  return FWL_Error::Succeeded;
+void CFX_Path::AddLine(const CFX_PointF& p1, const CFX_PointF& p2) {
+  data_.AppendPoint(p1, FXPT_TYPE::MoveTo, false);
+  data_.AppendPoint(p2, FXPT_TYPE::LineTo, false);
 }
 
-FWL_Error CFX_Path::AddEllipse(FX_FLOAT left,
-                               FX_FLOAT top,
-                               FX_FLOAT width,
-                               FX_FLOAT height) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->AddEllipse(left + width / 2, top + height / 2, width / 2,
-                          height / 2);
-  return FWL_Error::Succeeded;
+void CFX_Path::AddRectangle(FX_FLOAT left,
+                            FX_FLOAT top,
+                            FX_FLOAT width,
+                            FX_FLOAT height) {
+  data_.AppendRect(left, top, left + width, top + height);
 }
 
-FWL_Error CFX_Path::AddEllipse(const CFX_RectF& rect) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->AddEllipse(rect.left + rect.Width() / 2,
-                          rect.top + rect.Height() / 2, rect.Width() / 2,
-                          rect.Height() / 2);
-  return FWL_Error::Succeeded;
+void CFX_Path::AddEllipse(const CFX_RectF& rect) {
+  AddArc(rect.TopLeft(), rect.Size(), 0, FX_PI * 2);
 }
 
-FWL_Error CFX_Path::AddArc(FX_FLOAT left,
-                           FX_FLOAT top,
-                           FX_FLOAT width,
-                           FX_FLOAT height,
-                           FX_FLOAT startAngle,
-                           FX_FLOAT sweepAngle) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->AddArc(left + width / 2, top + height / 2, width / 2, height / 2,
-                      startAngle, sweepAngle);
-  return FWL_Error::Succeeded;
+void CFX_Path::AddArc(const CFX_PointF& original_pos,
+                      const CFX_SizeF& original_size,
+                      FX_FLOAT start_angle,
+                      FX_FLOAT sweep_angle) {
+  if (sweep_angle == 0)
+    return;
+
+  const FX_FLOAT bezier_arc_angle_epsilon = 0.01f;
+  while (start_angle > FX_PI * 2)
+    start_angle -= FX_PI * 2;
+  while (start_angle < 0)
+    start_angle += FX_PI * 2;
+  if (sweep_angle >= FX_PI * 2)
+    sweep_angle = FX_PI * 2;
+  if (sweep_angle <= -FX_PI * 2)
+    sweep_angle = -FX_PI * 2;
+
+  CFX_SizeF size = original_size / 2;
+  CFX_PointF pos(original_pos.x + size.width, original_pos.y + size.height);
+  data_.AppendPoint(pos + CFX_PointF(size.width * FXSYS_cos(start_angle),
+                                     size.height * FXSYS_sin(start_angle)),
+                    FXPT_TYPE::MoveTo, false);
+
+  FX_FLOAT total_sweep = 0;
+  FX_FLOAT local_sweep = 0;
+  FX_FLOAT prev_sweep = 0;
+  bool done = false;
+  do {
+    if (sweep_angle < 0) {
+      prev_sweep = total_sweep;
+      local_sweep = -FX_PI / 2;
+      total_sweep -= FX_PI / 2;
+      if (total_sweep <= sweep_angle + bezier_arc_angle_epsilon) {
+        local_sweep = sweep_angle - prev_sweep;
+        done = true;
+      }
+    } else {
+      prev_sweep = total_sweep;
+      local_sweep = FX_PI / 2;
+      total_sweep += FX_PI / 2;
+      if (total_sweep >= sweep_angle - bezier_arc_angle_epsilon) {
+        local_sweep = sweep_angle - prev_sweep;
+        done = true;
+      }
+    }
+
+    ArcToInternal(pos, size, start_angle, local_sweep);
+    start_angle += local_sweep;
+  } while (!done);
 }
 
-FWL_Error CFX_Path::AddPie(FX_FLOAT left,
-                           FX_FLOAT top,
-                           FX_FLOAT width,
-                           FX_FLOAT height,
-                           FX_FLOAT startAngle,
-                           FX_FLOAT sweepAngle) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->AddPie(left + width / 2, top + height / 2, width / 2, height / 2,
-                      startAngle, sweepAngle);
-  return FWL_Error::Succeeded;
+void CFX_Path::AddSubpath(CFX_Path* path) {
+  if (!path)
+    return;
+  data_.Append(&path->data_, nullptr);
 }
 
-FWL_Error CFX_Path::AddSubpath(CFX_Path* path) {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->AddPathData(path->GetPathData());
-  return FWL_Error::Succeeded;
-}
-
-FWL_Error CFX_Path::Clear() {
-  if (!m_generator)
-    return FWL_Error::PropertyInvalid;
-  m_generator->GetPathData()->SetPointCount(0);
-  return FWL_Error::Succeeded;
-}
-
-bool CFX_Path::IsEmpty() const {
-  if (!m_generator)
-    return false;
-  if (m_generator->GetPathData()->GetPointCount() == 0)
-    return true;
-  return false;
-}
-
-CFX_PathData* CFX_Path::GetPathData() const {
-  if (!m_generator)
-    return nullptr;
-  return m_generator->GetPathData();
+void CFX_Path::TransformBy(const CFX_Matrix& mt) {
+  data_.Transform(&mt);
 }

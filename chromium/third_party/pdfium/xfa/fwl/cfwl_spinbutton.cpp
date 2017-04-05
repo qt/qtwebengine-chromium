@@ -52,26 +52,28 @@ void CFWL_SpinButton::Update() {
 
   m_rtClient = GetClientRect();
   if (m_pProperties->m_dwStyleExes & FWL_STYLEEXE_SPB_Vert) {
-    m_rtUpButton.Set(m_rtClient.top, m_rtClient.left, m_rtClient.width,
-                     m_rtClient.height / 2);
-    m_rtDnButton.Set(m_rtClient.left, m_rtClient.top + m_rtClient.height / 2,
-                     m_rtClient.width, m_rtClient.height / 2);
+    m_rtUpButton = CFX_RectF(m_rtClient.top, m_rtClient.left, m_rtClient.width,
+                             m_rtClient.height / 2);
+    m_rtDnButton =
+        CFX_RectF(m_rtClient.left, m_rtClient.top + m_rtClient.height / 2,
+                  m_rtClient.width, m_rtClient.height / 2);
   } else {
-    m_rtUpButton.Set(m_rtClient.left, m_rtClient.top, m_rtClient.width / 2,
-                     m_rtClient.height);
-    m_rtDnButton.Set(m_rtClient.left + m_rtClient.width / 2, m_rtClient.top,
-                     m_rtClient.width / 2, m_rtClient.height);
+    m_rtUpButton = CFX_RectF(m_rtClient.TopLeft(), m_rtClient.width / 2,
+                             m_rtClient.height);
+    m_rtDnButton =
+        CFX_RectF(m_rtClient.left + m_rtClient.width / 2, m_rtClient.top,
+                  m_rtClient.width / 2, m_rtClient.height);
   }
 }
 
-FWL_WidgetHit CFWL_SpinButton::HitTest(FX_FLOAT fx, FX_FLOAT fy) {
-  if (m_rtClient.Contains(fx, fy))
+FWL_WidgetHit CFWL_SpinButton::HitTest(const CFX_PointF& point) {
+  if (m_rtClient.Contains(point))
     return FWL_WidgetHit::Client;
-  if (HasBorder() && (m_rtClient.Contains(fx, fy)))
+  if (HasBorder() && (m_rtClient.Contains(point)))
     return FWL_WidgetHit::Border;
-  if (m_rtUpButton.Contains(fx, fy))
+  if (m_rtUpButton.Contains(point))
     return FWL_WidgetHit::UpButton;
-  if (m_rtDnButton.Contains(fx, fy))
+  if (m_rtDnButton.Contains(point))
     return FWL_WidgetHit::DownButton;
   return FWL_WidgetHit::Unknown;
 }
@@ -199,10 +201,8 @@ void CFWL_SpinButton::OnLButtonDown(CFWL_MessageMouse* pMsg) {
   SetGrab(true);
   SetFocus(true);
 
-  bool bUpPress =
-      (m_rtUpButton.Contains(pMsg->m_fx, pMsg->m_fy) && IsUpButtonEnabled());
-  bool bDnPress =
-      (m_rtDnButton.Contains(pMsg->m_fx, pMsg->m_fy) && IsDownButtonEnabled());
+  bool bUpPress = m_rtUpButton.Contains(pMsg->m_pos) && IsUpButtonEnabled();
+  bool bDnPress = m_rtDnButton.Contains(pMsg->m_pos) && IsDownButtonEnabled();
   if (!bUpPress && !bDnPress)
     return;
   if (bUpPress) {
@@ -253,8 +253,7 @@ void CFWL_SpinButton::OnMouseMove(CFWL_MessageMouse* pMsg) {
 
   bool bRepaint = false;
   CFX_RectF rtInvlidate;
-  rtInvlidate.Reset();
-  if (m_rtUpButton.Contains(pMsg->m_fx, pMsg->m_fy)) {
+  if (m_rtUpButton.Contains(pMsg->m_pos)) {
     if (IsUpButtonEnabled()) {
       if (m_dwUpState == CFWL_PartState_Hovered) {
         m_dwUpState = CFWL_PartState_Hovered;
@@ -274,7 +273,7 @@ void CFWL_SpinButton::OnMouseMove(CFWL_MessageMouse* pMsg) {
     if (!IsDownButtonEnabled())
       DisableButton();
 
-  } else if (m_rtDnButton.Contains(pMsg->m_fx, pMsg->m_fy)) {
+  } else if (m_rtDnButton.Contains(pMsg->m_pos)) {
     if (IsDownButtonEnabled()) {
       if (m_dwDnState != CFWL_PartState_Hovered) {
         m_dwDnState = CFWL_PartState_Hovered;

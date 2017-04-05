@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#ifndef UTIL_LOGGING_H_
+#define UTIL_LOGGING_H_
+
 // Simplified version of Google's logging.
 
-#ifndef RE2_UTIL_LOGGING_H__
-#define RE2_UTIL_LOGGING_H__
-
-#include <stdio.h>  /* for fwrite */
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ostream>
 #include <sstream>
 
 #include "util/util.h"
-#include "util/flags.h"
-
-DECLARE_int32(minloglevel);
 
 // Debug-only checking.
 #define DCHECK(condition) assert(condition)
@@ -33,9 +33,9 @@ DECLARE_int32(minloglevel);
 #define CHECK_EQ(x, y)	CHECK((x) == (y))
 #define CHECK_NE(x, y)	CHECK((x) != (y))
 
-#define LOG_INFO LogMessage(__FILE__, __LINE__, 0)
-#define LOG_WARNING LogMessage(__FILE__, __LINE__, 1)
-#define LOG_ERROR LogMessage(__FILE__, __LINE__, 2)
+#define LOG_INFO LogMessage(__FILE__, __LINE__)
+#define LOG_WARNING LogMessage(__FILE__, __LINE__)
+#define LOG_ERROR LogMessage(__FILE__, __LINE__)
 #define LOG_FATAL LogMessageFatal(__FILE__, __LINE__)
 #define LOG_QFATAL LOG_FATAL
 
@@ -45,10 +45,8 @@ DECLARE_int32(minloglevel);
 #endif
 
 #ifdef NDEBUG
-#define DEBUG_MODE 0
 #define LOG_DFATAL LOG_ERROR
 #else
-#define DEBUG_MODE 1
 #define LOG_DFATAL LOG_FATAL
 #endif
 
@@ -58,17 +56,15 @@ DECLARE_int32(minloglevel);
 
 class LogMessage {
  public:
-  LogMessage(const char* file, int line, int severity)
-      : severity_(severity), flushed_(false) {
+  LogMessage(const char* file, int line)
+      : flushed_(false) {
     stream() << file << ":" << line << ": ";
   }
   void Flush() {
     stream() << "\n";
-    if (severity_ >= re2::FLAGS_minloglevel) {
-      string s = str_.str();
-      size_t n = s.size();
-      if (fwrite(s.data(), 1, n, stderr) < n) {}  // shut up gcc
-    }
+    string s = str_.str();
+    size_t n = s.size();
+    if (fwrite(s.data(), 1, n, stderr) < n) {}  // shut up gcc
     flushed_ = true;
   }
   ~LogMessage() {
@@ -76,34 +72,38 @@ class LogMessage {
       Flush();
     }
   }
-  ostream& stream() { return str_; }
+  std::ostream& stream() { return str_; }
 
  private:
-  const int severity_;
   bool flushed_;
   std::ostringstream str_;
-  DISALLOW_COPY_AND_ASSIGN(LogMessage);
+
+  LogMessage(const LogMessage&) = delete;
+  LogMessage& operator=(const LogMessage&) = delete;
 };
 
-#ifdef _WIN32
+// Silence "destructor never returns" warning for ~LogMessageFatal().
+// Since this is a header file, push and then pop to limit the scope.
+#ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4722) // destructor never returns
+#pragma warning(disable: 4722)
 #endif
 
 class LogMessageFatal : public LogMessage {
  public:
   LogMessageFatal(const char* file, int line)
-      : LogMessage(file, line, 3) {}
+      : LogMessage(file, line) {}
   ~LogMessageFatal() {
     Flush();
     abort();
   }
  private:
-  DISALLOW_COPY_AND_ASSIGN(LogMessageFatal);
+  LogMessageFatal(const LogMessageFatal&) = delete;
+  LogMessageFatal& operator=(const LogMessageFatal&) = delete;
 };
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 #pragma warning(pop)
 #endif
 
-#endif  // RE2_UTIL_LOGGING_H__
+#endif  // UTIL_LOGGING_H_

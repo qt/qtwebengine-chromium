@@ -6,7 +6,7 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("../build/webrtc.gni")
+import("../webrtc.gni")
 
 config("common_video_config") {
   include_dirs = [
@@ -57,6 +57,7 @@ rtc_static_library("common_video") {
 
   deps = [
     "..:webrtc_common",
+    "../base:rtc_base",
     "../base:rtc_task_queue",
     "../system_wrappers",
   ]
@@ -119,6 +120,9 @@ if (rtc_include_tests) {
 
     deps = [
       ":common_video",
+      "../base:rtc_base",
+      "../base:rtc_base_approved",
+      "../modules/video_capture:video_capture",
       "../system_wrappers:system_wrappers",
       "../test:test_main",
       "../test:video_test_common",

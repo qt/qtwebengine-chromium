@@ -269,12 +269,12 @@ bool CGdiPrinterDriver::DrawDeviceText(int nChars,
   // Transforms
   SetGraphicsMode(m_hDC, GM_ADVANCED);
   XFORM xform;
-  xform.eM11 = pObject2Device->GetA() / kScaleFactor;
-  xform.eM12 = pObject2Device->GetB() / kScaleFactor;
-  xform.eM21 = -pObject2Device->GetC() / kScaleFactor;
-  xform.eM22 = -pObject2Device->GetD() / kScaleFactor;
-  xform.eDx = pObject2Device->GetE();
-  xform.eDy = pObject2Device->GetF();
+  xform.eM11 = pObject2Device->a / kScaleFactor;
+  xform.eM12 = pObject2Device->b / kScaleFactor;
+  xform.eM21 = -pObject2Device->c / kScaleFactor;
+  xform.eM22 = -pObject2Device->d / kScaleFactor;
+  xform.eDx = pObject2Device->e;
+  xform.eDy = pObject2Device->f;
   ModifyWorldTransform(m_hDC, &xform, MWT_LEFTMULTIPLY);
 
   // Color
@@ -296,11 +296,11 @@ bool CGdiPrinterDriver::DrawDeviceText(int nChars,
     ASSERT(charpos.m_AdjustMatrix[1] == 0);
     ASSERT(charpos.m_AdjustMatrix[2] == 0);
     ASSERT(charpos.m_AdjustMatrix[3] == 0);
-    ASSERT(charpos.m_OriginY == 0);
+    ASSERT(charpos.m_Origin.y == 0);
 
     // Round the spacing to the nearest integer, but keep track of the rounding
     // error for calculating the next spacing value.
-    FX_FLOAT fOriginX = charpos.m_OriginX * kScaleFactor;
+    FX_FLOAT fOriginX = charpos.m_Origin.x * kScaleFactor;
     FX_FLOAT fPixelSpacing = fOriginX - fPreviousOriginX;
     spacing[i] = FXSYS_round(fPixelSpacing);
     fPreviousOriginX = fOriginX - (fPixelSpacing - spacing[i]);
@@ -346,12 +346,13 @@ CPSPrinterDriver::CPSPrinterDriver(HDC hDC, int pslevel, bool bCmykOutput)
       ret = ::GetRegionData(hRgn, ret, pData);
       if (ret) {
         CFX_PathData path;
-        path.AllocPointCount(pData->rdh.nCount * 5);
         for (uint32_t i = 0; i < pData->rdh.nCount; i++) {
           RECT* pRect =
               reinterpret_cast<RECT*>(pData->Buffer + pData->rdh.nRgnSize * i);
-          path.AppendRect((FX_FLOAT)pRect->left, (FX_FLOAT)pRect->bottom,
-                          (FX_FLOAT)pRect->right, (FX_FLOAT)pRect->top);
+          path.AppendRect(static_cast<FX_FLOAT>(pRect->left),
+                          static_cast<FX_FLOAT>(pRect->bottom),
+                          static_cast<FX_FLOAT>(pRect->right),
+                          static_cast<FX_FLOAT>(pRect->top));
         }
         m_PSRenderer.SetClip_PathFill(&path, nullptr, FXFILL_WINDING);
       }

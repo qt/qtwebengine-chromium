@@ -51,6 +51,7 @@
 #include "core/style/ComputedStyle.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatRect.h"
+#include "platform/graphics/ColorSpace.h"
 #include "public/platform/PointerProperties.h"
 #include "public/platform/ShapeProperties.h"
 #include "public/platform/WebDisplayMode.h"
@@ -757,6 +758,48 @@ static bool scanMediaFeatureEval(const MediaQueryExpValue& value,
   return (value.id == CSSValueProgressive);
 }
 
+static bool colorGamutMediaFeatureEval(const MediaQueryExpValue& value,
+                                       MediaFeaturePrefix,
+                                       const MediaValues& mediaValues) {
+  // isValid() is false if there is no parameter. Without parameter we should
+  // return true to indicate that colorGamutMediaFeature is enabled in the
+  // browser.
+  if (!value.isValid())
+    return true;
+
+  if (!value.isID)
+    return false;
+
+  DCHECK(value.id == CSSValueSRGB || value.id == CSSValueP3 ||
+         value.id == CSSValueRec2020);
+
+  ColorSpaceGamut gamut = mediaValues.colorGamut();
+  switch (gamut) {
+    case ColorSpaceGamut::Unknown:
+    case ColorSpaceGamut::LessThanNTSC:
+    case ColorSpaceGamut::NTSC:
+    case ColorSpaceGamut::SRGB:
+      return value.id == CSSValueSRGB;
+    case ColorSpaceGamut::AlmostP3:
+    case ColorSpaceGamut::P3:
+    case ColorSpaceGamut::AdobeRGB:
+    case ColorSpaceGamut::Wide:
+      return value.id == CSSValueSRGB || value.id == CSSValueP3;
+    case ColorSpaceGamut::BT2020:
+    case ColorSpaceGamut::ProPhoto:
+    case ColorSpaceGamut::UltraWide:
+      return value.id == CSSValueSRGB || value.id == CSSValueP3 ||
+             value.id == CSSValueRec2020;
+    case ColorSpaceGamut::End:
+      NOTREACHED();
+      return false;
+  }
+
+  // This is for some compilers that do not understand that it can't be reached.
+  NOTREACHED();
+  return false;
+}
+
 void MediaQueryEvaluator::init() {
   // Create the table.
   gFunctionMap = new FunctionMap;
@@ -774,7 +817,7 @@ bool MediaQueryEvaluator::eval(const MediaQueryExp* expr) const {
 
   // Call the media feature evaluation function. Assume no prefix and let
   // trampoline functions override the prefix if prefix is used.
-  EvalFunc func = gFunctionMap->get(expr->mediaFeature().impl());
+  EvalFunc func = gFunctionMap->at(expr->mediaFeature().impl());
   if (func)
     return func(expr->expValue(), NoPrefix, *m_mediaValues);
 

@@ -147,9 +147,10 @@ static const SSL_PROTOCOL_METHOD kTLSProtocolMethod = {
     ssl3_supports_cipher,
     ssl3_init_message,
     ssl3_finish_message,
-    ssl3_queue_message,
-    ssl3_write_message,
-    ssl3_send_change_cipher_spec,
+    ssl3_add_message,
+    ssl3_add_change_cipher_spec,
+    ssl3_add_alert,
+    ssl3_flush_flight,
     ssl3_expect_flight,
     ssl3_received_flight,
     ssl3_set_read_state,
@@ -160,6 +161,7 @@ const SSL_METHOD *TLS_method(void) {
   static const SSL_METHOD kMethod = {
       0,
       &kTLSProtocolMethod,
+      &ssl_crypto_x509_method,
   };
   return &kMethod;
 }
@@ -174,6 +176,7 @@ const SSL_METHOD *TLSv1_2_method(void) {
   static const SSL_METHOD kMethod = {
       TLS1_2_VERSION,
       &kTLSProtocolMethod,
+      &ssl_crypto_x509_method,
   };
   return &kMethod;
 }
@@ -182,6 +185,7 @@ const SSL_METHOD *TLSv1_1_method(void) {
   static const SSL_METHOD kMethod = {
       TLS1_1_VERSION,
       &kTLSProtocolMethod,
+      &ssl_crypto_x509_method,
   };
   return &kMethod;
 }
@@ -190,6 +194,7 @@ const SSL_METHOD *TLSv1_method(void) {
   static const SSL_METHOD kMethod = {
       TLS1_VERSION,
       &kTLSProtocolMethod,
+      &ssl_crypto_x509_method,
   };
   return &kMethod;
 }
@@ -198,6 +203,7 @@ const SSL_METHOD *SSLv3_method(void) {
   static const SSL_METHOD kMethod = {
       SSL3_VERSION,
       &kTLSProtocolMethod,
+      &ssl_crypto_x509_method,
   };
   return &kMethod;
 }
@@ -251,3 +257,24 @@ const SSL_METHOD *TLS_server_method(void) {
 const SSL_METHOD *TLS_client_method(void) {
   return TLS_method();
 }
+
+static void ssl_noop_x509_clear(CERT *cert) {}
+static void ssl_noop_x509_flush_cached_leaf(CERT *cert) {}
+static void ssl_noop_x509_flush_cached_chain(CERT *cert) {}
+static int ssl_noop_x509_session_cache_objects(SSL_SESSION *sess) {
+  return 1;
+}
+static int ssl_noop_x509_session_dup(SSL_SESSION *new_session,
+                                       const SSL_SESSION *session) {
+  return 1;
+}
+static void ssl_noop_x509_session_clear(SSL_SESSION *session) {}
+
+const SSL_X509_METHOD ssl_noop_x509_method = {
+  ssl_noop_x509_clear,
+  ssl_noop_x509_flush_cached_chain,
+  ssl_noop_x509_flush_cached_leaf,
+  ssl_noop_x509_session_cache_objects,
+  ssl_noop_x509_session_dup,
+  ssl_noop_x509_session_clear,
+};

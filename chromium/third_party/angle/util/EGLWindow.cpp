@@ -107,11 +107,13 @@ EGLWindow::EGLWindow(EGLint glesMajorVersion,
       mAlphaBits(-1),
       mDepthBits(-1),
       mStencilBits(-1),
+      mComponentType(EGL_COLOR_COMPONENT_TYPE_FIXED_EXT),
       mMultisample(false),
       mDebug(false),
       mNoError(false),
       mWebGLCompatibility(false),
       mBindGeneratesResource(true),
+      mClientArraysEnabled(true),
       mSwapInterval(-1)
 {
 }
@@ -233,6 +235,15 @@ bool EGLWindow::initializeGL(OSWindow *osWindow)
         return false;
     }
 
+    bool hasClientArraysExtension =
+        strstr(displayExtensions, "EGL_ANGLE_create_context_client_arrays") != nullptr;
+    if (!mClientArraysEnabled && !hasClientArraysExtension)
+    {
+        // Non-default state requested without the extension present
+        destroyGL();
+        return false;
+    }
+
     eglBindAPI(EGL_OPENGL_ES_API);
     if (eglGetError() != EGL_SUCCESS)
     {
@@ -240,20 +251,33 @@ bool EGLWindow::initializeGL(OSWindow *osWindow)
         return false;
     }
 
-    const EGLint configAttributes[] =
-    {
-        EGL_RED_SIZE,       (mRedBits >= 0)     ? mRedBits     : EGL_DONT_CARE,
-        EGL_GREEN_SIZE,     (mGreenBits >= 0)   ? mGreenBits   : EGL_DONT_CARE,
-        EGL_BLUE_SIZE,      (mBlueBits >= 0)    ? mBlueBits    : EGL_DONT_CARE,
-        EGL_ALPHA_SIZE,     (mAlphaBits >= 0)   ? mAlphaBits   : EGL_DONT_CARE,
-        EGL_DEPTH_SIZE,     (mDepthBits >= 0)   ? mDepthBits   : EGL_DONT_CARE,
+    std::vector<EGLint> configAttributes = {
+        EGL_RED_SIZE,       (mRedBits >= 0) ? mRedBits : EGL_DONT_CARE,
+        EGL_GREEN_SIZE,     (mGreenBits >= 0) ? mGreenBits : EGL_DONT_CARE,
+        EGL_BLUE_SIZE,      (mBlueBits >= 0) ? mBlueBits : EGL_DONT_CARE,
+        EGL_ALPHA_SIZE,     (mAlphaBits >= 0) ? mAlphaBits : EGL_DONT_CARE,
+        EGL_DEPTH_SIZE,     (mDepthBits >= 0) ? mDepthBits : EGL_DONT_CARE,
         EGL_STENCIL_SIZE,   (mStencilBits >= 0) ? mStencilBits : EGL_DONT_CARE,
         EGL_SAMPLE_BUFFERS, mMultisample ? 1 : 0,
-        EGL_NONE
     };
 
-    EGLint configCount;
-    if (!eglChooseConfig(mDisplay, configAttributes, &mConfig, 1, &configCount) || (configCount != 1))
+    // Add dynamic attributes
+    bool hasPixelFormatFloat = strstr(displayExtensions, "EGL_EXT_pixel_format_float") != nullptr;
+    if (!hasPixelFormatFloat && mComponentType != EGL_COLOR_COMPONENT_TYPE_FIXED_EXT)
+    {
+        destroyGL();
+        return false;
+    }
+    if (hasPixelFormatFloat)
+    {
+        configAttributes.push_back(EGL_COLOR_COMPONENT_TYPE_EXT);
+        configAttributes.push_back(mComponentType);
+    }
+
+    // Finish the attribute list
+    configAttributes.push_back(EGL_NONE);
+
+    if (!FindEGLConfig(mDisplay, configAttributes.data(), &mConfig))
     {
         destroyGL();
         return false;
@@ -312,6 +336,12 @@ bool EGLWindow::initializeGL(OSWindow *osWindow)
         {
             contextAttributes.push_back(EGL_CONTEXT_BIND_GENERATES_RESOURCE_CHROMIUM);
             contextAttributes.push_back(mBindGeneratesResource ? EGL_TRUE : EGL_FALSE);
+        }
+
+        if (hasClientArraysExtension)
+        {
+            contextAttributes.push_back(EGL_CONTEXT_CLIENT_ARRAYS_ENABLED_ANGLE);
+            contextAttributes.push_back(mClientArraysEnabled ? EGL_TRUE : EGL_FALSE);
         }
     }
     contextAttributes.push_back(EGL_NONE);
@@ -383,6 +413,11 @@ EGLBoolean EGLWindow::FindEGLConfig(EGLDisplay dpy, const EGLint *attrib_list, E
         bool matchFound = true;
         for (const EGLint *curAttrib = attrib_list; curAttrib[0] != EGL_NONE; curAttrib += 2)
         {
+            if (curAttrib[1] == EGL_DONT_CARE)
+            {
+                continue;
+            }
+
             EGLint actualValue = EGL_DONT_CARE;
             eglGetConfigAttrib(dpy, allConfigs[i], curAttrib[0], &actualValue);
             if (curAttrib[1] != actualValue)

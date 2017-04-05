@@ -24,7 +24,9 @@ enum class FWL_WidgetHit;
 inline FX_FLOAT XFA_UnitPx2Pt(FX_FLOAT fPx, FX_FLOAT fDpi) {
   return fPx * 72.0f / fDpi;
 }
+
 #define XFA_FLOAT_PERCISION 0.001f
+
 enum XFA_WIDGETITEM {
   XFA_WIDGETITEM_Parent,
   XFA_WIDGETITEM_FirstChild,
@@ -37,18 +39,16 @@ class CXFA_CalcData {
   CXFA_CalcData();
   ~CXFA_CalcData();
 
-  CFX_ArrayTemplate<CXFA_WidgetAcc*> m_Globals;
+  std::vector<CXFA_WidgetAcc*> m_Globals;
   int32_t m_iRefCount;
 };
 
 class CXFA_FFWidget : public CXFA_ContentLayoutItem {
  public:
-  CXFA_FFWidget(CXFA_FFPageView* pPageView, CXFA_WidgetAcc* pDataAcc);
+  explicit CXFA_FFWidget(CXFA_WidgetAcc* pDataAcc);
   ~CXFA_FFWidget() override;
 
-  virtual bool GetBBox(CFX_RectF& rtBox,
-                       uint32_t dwStatus,
-                       bool bDrawFocus = false);
+  virtual CFX_RectF GetBBox(uint32_t dwStatus, bool bDrawFocus = false);
   virtual void RenderWidget(CFX_Graphics* pGS,
                             CFX_Matrix* pMatrix,
                             uint32_t dwStatus);
@@ -60,25 +60,24 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   virtual void UpdateWidgetProperty();
   virtual bool OnMouseEnter();
   virtual bool OnMouseExit();
-  virtual bool OnLButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy);
-  virtual bool OnLButtonUp(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy);
-  virtual bool OnLButtonDblClk(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy);
-  virtual bool OnMouseMove(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy);
+  virtual bool OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point);
+  virtual bool OnLButtonUp(uint32_t dwFlags, const CFX_PointF& point);
+  virtual bool OnLButtonDblClk(uint32_t dwFlags, const CFX_PointF& point);
+  virtual bool OnMouseMove(uint32_t dwFlags, const CFX_PointF& point);
   virtual bool OnMouseWheel(uint32_t dwFlags,
                             int16_t zDelta,
-                            FX_FLOAT fx,
-                            FX_FLOAT fy);
-  virtual bool OnRButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy);
-  virtual bool OnRButtonUp(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy);
-  virtual bool OnRButtonDblClk(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy);
+                            const CFX_PointF& point);
+  virtual bool OnRButtonDown(uint32_t dwFlags, const CFX_PointF& point);
+  virtual bool OnRButtonUp(uint32_t dwFlags, const CFX_PointF& point);
+  virtual bool OnRButtonDblClk(uint32_t dwFlags, const CFX_PointF& point);
 
   virtual bool OnSetFocus(CXFA_FFWidget* pOldWidget);
   virtual bool OnKillFocus(CXFA_FFWidget* pNewWidget);
   virtual bool OnKeyDown(uint32_t dwKeyCode, uint32_t dwFlags);
   virtual bool OnKeyUp(uint32_t dwKeyCode, uint32_t dwFlags);
   virtual bool OnChar(uint32_t dwChar, uint32_t dwFlags);
-  virtual FWL_WidgetHit OnHitTest(FX_FLOAT fx, FX_FLOAT fy);
-  virtual bool OnSetCursor(FX_FLOAT fx, FX_FLOAT fy);
+  virtual FWL_WidgetHit OnHitTest(const CFX_PointF& point);
+  virtual bool OnSetCursor(const CFX_PointF& point);
   virtual bool CanUndo();
   virtual bool CanRedo();
   virtual bool Undo();
@@ -100,10 +99,10 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   virtual bool ReplaceSpellCheckWord(CFX_PointF pointf,
                                      const CFX_ByteStringC& bsReplace);
 
-  CXFA_FFPageView* GetPageView();
-  void SetPageView(CXFA_FFPageView* pPageView);
-  void GetWidgetRect(CFX_RectF& rtWidget);
-  CFX_RectF ReCacheWidgetRect();
+  CXFA_FFPageView* GetPageView() const { return m_pPageView; }
+  void SetPageView(CXFA_FFPageView* pPageView) { m_pPageView = pPageView; }
+  CFX_RectF GetWidgetRect();
+  CFX_RectF RecacheWidgetRect();
   uint32_t GetStatus();
   void ModifyStatus(uint32_t dwAdded, uint32_t dwRemoved);
 
@@ -119,24 +118,23 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   void AddInvalidateRect(const CFX_RectF* pRect = nullptr);
   bool GetCaptionText(CFX_WideString& wsCap);
   bool IsFocused();
-  void Rotate2Normal(FX_FLOAT& fx, FX_FLOAT& fy);
-  void GetRotateMatrix(CFX_Matrix& mt);
+  CFX_PointF Rotate2Normal(const CFX_PointF& point);
+  CFX_Matrix GetRotateMatrix();
   bool IsLayoutRectEmpty();
   CXFA_FFWidget* GetParent();
   bool IsAncestorOf(CXFA_FFWidget* pWidget);
   const CFWL_App* GetFWLApp();
 
  protected:
-  virtual bool PtInActiveRect(FX_FLOAT fx, FX_FLOAT fy);
+  virtual bool PtInActiveRect(const CFX_PointF& point);
 
   void DrawBorder(CFX_Graphics* pGS,
                   CXFA_Box box,
                   const CFX_RectF& rtBorder,
                   CFX_Matrix* pMatrix,
                   uint32_t dwFlags = 0);
-  void GetMinMaxWidth(FX_FLOAT fMinWidth, FX_FLOAT fMaxWidth);
-  void GetMinMaxHeight(FX_FLOAT fMinHeight, FX_FLOAT fMaxHeight);
-  void GetRectWithoutRotate(CFX_RectF& rtWidget);
+
+  CFX_RectF GetRectWithoutRotate();
   bool IsMatchVisibleStatus(uint32_t dwStatus);
   void EventKillFocus();
   bool IsButtonDown();

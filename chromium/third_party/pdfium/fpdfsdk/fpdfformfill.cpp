@@ -98,9 +98,8 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
     return;
 #endif  // PDF_ENABLE_XFA
 
-  CFX_Matrix matrix;
-  pPage->GetDisplayMatrix(matrix, start_x, start_y, size_x, size_y, rotate);
-
+  CFX_Matrix matrix =
+      pPage->GetDisplayMatrix(start_x, start_y, size_x, size_y, rotate);
   FX_RECT clip(start_x, start_y, start_x + size_x, start_y + size_y);
 
   std::unique_ptr<CFX_FxgeDevice> pDevice(new CFX_FxgeDevice);
@@ -127,12 +126,13 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
   options.m_bDrawAnnots = flags & FPDF_ANNOT;
 
 #ifdef PDF_ENABLE_XFA
-  options.m_pOCContext = new CPDF_OCContext(pPDFDoc, CPDF_OCContext::View);
+  options.m_pOCContext =
+      pdfium::MakeRetain<CPDF_OCContext>(pPDFDoc, CPDF_OCContext::View);
   if (CPDFSDK_PageView* pPageView = pFormFillEnv->GetPageView(pPage, true))
     pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options, clip);
 #else   // PDF_ENABLE_XFA
-  options.m_pOCContext =
-      new CPDF_OCContext(pPage->m_pDocument, CPDF_OCContext::View);
+  options.m_pOCContext = pdfium::MakeRetain<CPDF_OCContext>(
+      pPage->m_pDocument, CPDF_OCContext::View);
   if (CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, pPage))
     pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options);
 #endif  // PDF_ENABLE_XFA
@@ -142,8 +142,6 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
   pDevice->Flush();
   CFXBitmapFromFPDFBitmap(bitmap)->UnPreMultiply();
 #endif
-  delete options.m_pOCContext;
-  options.m_pOCContext = nullptr;
 }
 
 }  // namespace
@@ -157,9 +155,10 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (pPage) {
     CPDF_InterForm interform(pPage->m_pDocument);
-    CPDF_FormControl* pFormCtrl =
-        interform.GetControlAtPoint(pPage, static_cast<FX_FLOAT>(page_x),
-                                    static_cast<FX_FLOAT>(page_y), nullptr);
+    CPDF_FormControl* pFormCtrl = interform.GetControlAtPoint(
+        pPage, CFX_PointF(static_cast<FX_FLOAT>(page_x),
+                          static_cast<FX_FLOAT>(page_y)),
+        nullptr);
     if (!pFormCtrl)
       return -1;
     CPDF_FormField* pFormField = pFormCtrl->GetField();
@@ -191,8 +190,7 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
 
   CXFA_FFWidget* pXFAAnnot = pWidgetIterator->MoveToNext();
   while (pXFAAnnot) {
-    CFX_RectF rcBBox;
-    pXFAAnnot->GetBBox(rcBBox, 0);
+    CFX_RectF rcBBox = pXFAAnnot->GetBBox(0);
     CFX_FloatRect rcWidget(rcBBox.left, rcBBox.top, rcBBox.left + rcBBox.width,
                            rcBBox.top + rcBBox.height);
     rcWidget.left -= 1.0f;
@@ -200,8 +198,8 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
     rcWidget.bottom -= 1.0f;
     rcWidget.top += 1.0f;
 
-    if (rcWidget.Contains(static_cast<FX_FLOAT>(page_x),
-                          static_cast<FX_FLOAT>(page_y))) {
+    if (rcWidget.Contains(CFX_PointF(static_cast<FX_FLOAT>(page_x),
+                                     static_cast<FX_FLOAT>(page_y)))) {
       return FPDF_FORMFIELD_XFA;
     }
     pXFAAnnot = pWidgetIterator->MoveToNext();
@@ -228,8 +226,10 @@ DLLEXPORT int STDCALL FPDFPage_FormFieldZOrderAtPoint(FPDF_FORMHANDLE hHandle,
     return -1;
   CPDF_InterForm interform(pPage->m_pDocument);
   int z_order = -1;
-  (void)interform.GetControlAtPoint(pPage, (FX_FLOAT)page_x, (FX_FLOAT)page_y,
-                                    &z_order);
+  (void)interform.GetControlAtPoint(
+      pPage,
+      CFX_PointF(static_cast<FX_FLOAT>(page_x), static_cast<FX_FLOAT>(page_y)),
+      &z_order);
   return z_order;
 }
 
@@ -295,9 +295,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnMouseMove(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-
-  CFX_FloatPoint pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
-  return pPageView->OnMouseMove(pt, modifier);
+  return pPageView->OnMouseMove(CFX_PointF(page_x, page_y), modifier);
 }
 
 DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonDown(FPDF_FORMHANDLE hHandle,
@@ -308,9 +306,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonDown(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-
-  CFX_FloatPoint pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
-  return pPageView->OnLButtonDown(pt, modifier);
+  return pPageView->OnLButtonDown(CFX_PointF(page_x, page_y), modifier);
 }
 
 DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
@@ -322,7 +318,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
   if (!pPageView)
     return false;
 
-  CFX_FloatPoint pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
+  CFX_PointF pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
   return pPageView->OnLButtonUp(pt, modifier);
 }
 
@@ -335,9 +331,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnRButtonDown(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-
-  CFX_FloatPoint pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
-  return pPageView->OnRButtonDown(pt, modifier);
+  return pPageView->OnRButtonDown(CFX_PointF(page_x, page_y), modifier);
 }
 
 DLLEXPORT FPDF_BOOL STDCALL FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
@@ -349,7 +343,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
   if (!pPageView)
     return false;
 
-  CFX_FloatPoint pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
+  CFX_PointF pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
   return pPageView->OnRButtonUp(pt, modifier);
 }
 #endif  // PDF_ENABLE_XFA

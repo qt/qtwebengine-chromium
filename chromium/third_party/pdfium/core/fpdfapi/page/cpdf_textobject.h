@@ -8,15 +8,19 @@
 #define CORE_FPDFAPI_PAGE_CPDF_TEXTOBJECT_H_
 
 #include <memory>
+#include <vector>
 
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
-struct CPDF_TextObjectItem {
+class CPDF_TextObjectItem {
+ public:
+  CPDF_TextObjectItem();
+  ~CPDF_TextObjectItem();
+
   uint32_t m_CharCode;
-  FX_FLOAT m_OriginX;
-  FX_FLOAT m_OriginY;
+  CFX_PointF m_Origin;
 };
 
 class CPDF_TextObject : public CPDF_PageObject {
@@ -35,12 +39,11 @@ class CPDF_TextObject : public CPDF_PageObject {
   int CountItems() const;
   void GetItemInfo(int index, CPDF_TextObjectItem* pInfo) const;
   int CountChars() const;
-  void GetCharInfo(int index, uint32_t& charcode, FX_FLOAT& kerning) const;
+  void GetCharInfo(int index, uint32_t* charcode, FX_FLOAT* kerning) const;
   void GetCharInfo(int index, CPDF_TextObjectItem* pInfo) const;
   FX_FLOAT GetCharWidth(uint32_t charcode) const;
-  FX_FLOAT GetPosX() const;
-  FX_FLOAT GetPosY() const;
-  void GetTextMatrix(CFX_Matrix* pMatrix) const;
+  CFX_PointF GetPos() const { return m_Pos; }
+  CFX_Matrix GetTextMatrix() const;
   CPDF_Font* GetFont() const;
   FX_FLOAT GetFontSize() const;
 
@@ -49,22 +52,21 @@ class CPDF_TextObject : public CPDF_PageObject {
 
   void RecalcPositionData();
 
- protected:
+ private:
   friend class CPDF_RenderStatus;
   friend class CPDF_StreamContentParser;
   friend class CPDF_TextRenderer;
+  friend class CPDF_PageContentGenerator;
 
-  void SetSegments(const CFX_ByteString* pStrs, FX_FLOAT* pKerning, int nSegs);
+  void SetSegments(const CFX_ByteString* pStrs,
+                   const FX_FLOAT* pKerning,
+                   int nSegs);
 
-  void CalcPositionData(FX_FLOAT* pTextAdvanceX,
-                        FX_FLOAT* pTextAdvanceY,
-                        FX_FLOAT horz_scale);
+  CFX_PointF CalcPositionData(FX_FLOAT horz_scale);
 
-  FX_FLOAT m_PosX;
-  FX_FLOAT m_PosY;
-  int m_nChars;
-  uint32_t* m_pCharCodes;
-  FX_FLOAT* m_pCharPos;
+  CFX_PointF m_Pos;
+  std::vector<uint32_t> m_CharCodes;
+  std::vector<FX_FLOAT> m_CharPos;
 };
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_TEXTOBJECT_H_

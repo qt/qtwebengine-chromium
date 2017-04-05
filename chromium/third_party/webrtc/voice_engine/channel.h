@@ -53,9 +53,9 @@ class RtcEventLog;
 class RTPPayloadRegistry;
 class RtpReceiver;
 class RTPReceiverAudio;
+class RtpPacketReceived;
 class RtpRtcp;
 class TelephoneEventHandler;
-class VoEMediaProcess;
 class VoERTPObserver;
 class VoiceEngineObserver;
 
@@ -70,7 +70,6 @@ class RtcEventLogProxy;
 class RtcpRttStatsProxy;
 class RtpPacketSenderProxy;
 class Statistics;
-class StatisticsProxy;
 class TransportFeedbackProxy;
 class TransmitMixer;
 class TransportSequenceNumberProxy;
@@ -84,7 +83,6 @@ class VoERtcpObserver;
 class ChannelState {
  public:
   struct State {
-    bool input_external_media = false;
     bool output_file_playing = false;
     bool input_file_playing = false;
     bool playing = false;
@@ -102,11 +100,6 @@ class ChannelState {
   State Get() const {
     rtc::CritScope lock(&lock_);
     return state_;
-  }
-
-  void SetInputExternalMedia(bool enable) {
-    rtc::CritScope lock(&lock_);
-    state_.input_external_media = enable;
   }
 
   void SetOutputFilePlaying(bool enable) {
@@ -184,7 +177,6 @@ class Channel
   int32_t StopPlayout();
   int32_t StartSend();
   int32_t StopSend();
-  void ResetDiscardedPacketCount();
   int32_t RegisterVoiceEngineObserver(VoiceEngineObserver& observer);
   int32_t DeRegisterVoiceEngineObserver();
 
@@ -196,6 +188,7 @@ class Channel
   int32_t SetVADStatus(bool enableVAD, ACMVADMode mode, bool disableDTX);
   int32_t GetVADStatus(bool& enabledVAD, ACMVADMode& mode, bool& disabledDTX);
   int32_t SetRecPayloadType(const CodecInst& codec);
+  int32_t SetRecPayloadType(int payload_type, const SdpAudioFormat& format);
   int32_t GetRecPayloadType(CodecInst& codec);
   int32_t SetSendCNPayloadType(int type, PayloadFrequencies frequency);
   int SetOpusMaxPlaybackRate(int frequency_hz);
@@ -212,7 +205,9 @@ class Channel
   int32_t ReceivedRTPPacket(const uint8_t* received_packet,
                             size_t length,
                             const PacketTime& packet_time);
+  // TODO(nisse, solenberg): Delete when VoENetwork is deleted.
   int32_t ReceivedRTCPPacket(const uint8_t* data, size_t length);
+  void OnRtpPacket(const RtpPacketReceived& packet);
 
   // VoEFile
   int StartPlayingFileLocally(const char* fileName,
@@ -252,12 +247,6 @@ class Channel
 
   void SetMixWithMicStatus(bool mix);
 
-  // VoEExternalMediaProcessing
-  int RegisterExternalMediaProcessing(ProcessingTypes type,
-                                      VoEMediaProcess& processObject);
-  int DeRegisterExternalMediaProcessing(ProcessingTypes type);
-  int SetExternalMixing(bool enabled);
-
   // VoEVolumeControl
   int GetSpeechOutputLevel(uint32_t& level) const;
   int GetSpeechOutputLevelFullRange(uint32_t& level) const;
@@ -272,17 +261,10 @@ class Channel
   int GetNetworkStatistics(NetworkStatistics& stats);
   void GetDecodingCallStatistics(AudioDecodingCallStats* stats) const;
 
-  // VoEVideoSync
-  bool GetDelayEstimate(int* jitter_buffer_delay_ms,
-                        int* playout_buffer_delay_ms) const;
+  // Audio+Video Sync
   uint32_t GetDelayEstimate() const;
-  int LeastRequiredDelayMs() const;
   int SetMinimumPlayoutDelay(int delayMs);
   int GetPlayoutTimestamp(unsigned int& timestamp);
-  int SetInitTimestamp(unsigned int timestamp);
-  int SetInitSequenceNumber(short sequenceNumber);
-
-  // VoEVideoSyncExtended
   int GetRtpRtcp(RtpRtcp** rtpRtcpModule, RtpReceiver** rtp_receiver) const;
 
   // DTMF
@@ -298,35 +280,25 @@ class Channel
   int GetRemoteSSRC(unsigned int& ssrc);
   int SetSendAudioLevelIndicationStatus(bool enable, unsigned char id);
   int SetReceiveAudioLevelIndicationStatus(bool enable, unsigned char id);
-  int SetSendAbsoluteSenderTimeStatus(bool enable, unsigned char id);
-  int SetReceiveAbsoluteSenderTimeStatus(bool enable, unsigned char id);
   void EnableSendTransportSequenceNumber(int id);
   void EnableReceiveTransportSequenceNumber(int id);
 
-    void RegisterSenderCongestionControlObjects(
-        RtpPacketSender* rtp_packet_sender,
-        TransportFeedbackObserver* transport_feedback_observer,
-        PacketRouter* packet_router);
-    void RegisterReceiverCongestionControlObjects(PacketRouter* packet_router);
-    void ResetCongestionControlObjects();
+  void RegisterSenderCongestionControlObjects(
+      RtpPacketSender* rtp_packet_sender,
+      TransportFeedbackObserver* transport_feedback_observer,
+      PacketRouter* packet_router,
+      RtcpBandwidthObserver* bandwidth_observer);
+  void RegisterReceiverCongestionControlObjects(PacketRouter* packet_router);
+  void ResetCongestionControlObjects();
 
   void SetRTCPStatus(bool enable);
   int GetRTCPStatus(bool& enabled);
   int SetRTCP_CNAME(const char cName[256]);
   int GetRemoteRTCP_CNAME(char cName[256]);
-  int GetRemoteRTCPData(unsigned int& NTPHigh,
-                        unsigned int& NTPLow,
-                        unsigned int& timestamp,
-                        unsigned int& playoutTimestamp,
-                        unsigned int* jitter,
-                        unsigned short* fractionLost);
   int SendApplicationDefinedRTCPPacket(unsigned char subType,
                                        unsigned int name,
                                        const char* data,
                                        unsigned short dataLengthInBytes);
-  int GetRTPStatistics(unsigned int& averageJitterMs,
-                       unsigned int& maxJitterMs,
-                       unsigned int& discardedPackets);
   int GetRemoteRTCPReportBlocks(std::vector<ReportBlock>* report_blocks);
   int GetRTPStatistics(CallStatistics& stats);
   int SetCodecFECStatus(bool enable);
@@ -390,7 +362,6 @@ class Channel
     rtc::CritScope cs(&_callbackCritSect);
     return _externalTransport;
   }
-  bool ExternalMixing() const { return _externalMixing; }
   RtpRtcp* RtpRtcpModulePtr() const { return _rtpRtcpModule.get(); }
   int8_t OutputEnergyLevel() const { return _outputAudioLevel.Level(); }
   uint32_t Demultiplex(const AudioFrame& audioFrame);
@@ -423,6 +394,9 @@ class Channel
   void OnIncomingFractionLoss(int fraction_lost);
 
  private:
+  bool OnRtpPacketWithHeader(const uint8_t* received_packet,
+                             size_t length,
+                             RTPHeader *header);
   bool ReceivePacket(const uint8_t* packet,
                      size_t packet_length,
                      const RTPHeader& header,
@@ -442,7 +416,8 @@ class Channel
                                 RTPExtensionType type,
                                 unsigned char id);
 
-  void UpdateOverheadForEncoder();
+  void UpdateOverheadForEncoder()
+      EXCLUSIVE_LOCKS_REQUIRED(overhead_per_packet_lock_);
 
   int GetRtpTimestampRateHz() const;
   int64_t GetRTT(bool allow_associate_channel) const;
@@ -461,7 +436,6 @@ class Channel
   std::unique_ptr<RtpHeaderParser> rtp_header_parser_;
   std::unique_ptr<RTPPayloadRegistry> rtp_payload_registry_;
   std::unique_ptr<ReceiveStatistics> rtp_receive_statistics_;
-  std::unique_ptr<StatisticsProxy> statistics_proxy_;
   std::unique_ptr<RtpReceiver> rtp_receiver_;
   TelephoneEventHandler* telephone_event_handler_;
   std::unique_ptr<RtpRtcp> _rtpRtcpModule;
@@ -481,9 +455,6 @@ class Channel
   int _outputFilePlayerId;
   int _outputFileRecorderId;
   bool _outputFileRecording;
-  bool _outputExternalMedia;
-  VoEMediaProcess* _inputExternalMediaCallbackPtr;
-  VoEMediaProcess* _outputExternalMediaCallbackPtr;
   uint32_t _timeStamp;
 
   RemoteNtpTimeEstimator ntp_estimator_ GUARDED_BY(ts_stats_lock_);
@@ -491,9 +462,7 @@ class Channel
   // Timestamp of the audio pulled from NetEq.
   rtc::Optional<uint32_t> jitter_buffer_playout_timestamp_;
   uint32_t playout_timestamp_rtp_ GUARDED_BY(video_sync_lock_);
-  uint32_t playout_timestamp_rtcp_;
   uint32_t playout_delay_ms_ GUARDED_BY(video_sync_lock_);
-  uint32_t _numberOfDiscardedPackets;
   uint16_t send_sequence_number_;
   uint8_t restored_packet_[kVoiceEngineMaxIpPacketSizeBytes];
 
@@ -518,7 +487,6 @@ class Channel
   RmsLevel rms_level_;
   int32_t _sendFrameType;  // Send data is voice, 1-voice, 0-otherwise
   // VoEBase
-  bool _externalMixing;
   bool _mixFileWithMicrophone;
   // VoEVolumeControl
   bool input_mute_ GUARDED_BY(volume_settings_critsect_);
@@ -530,8 +498,9 @@ class Channel
   uint32_t _lastLocalTimeStamp;
   int8_t _lastPayloadType;
   bool _includeAudioLevelIndication;
-  size_t transport_overhead_per_packet_;
-  size_t rtp_overhead_per_packet_;
+  size_t transport_overhead_per_packet_ GUARDED_BY(overhead_per_packet_lock_);
+  size_t rtp_overhead_per_packet_ GUARDED_BY(overhead_per_packet_lock_);
+  rtc::CriticalSection overhead_per_packet_lock_;
   // VoENetwork
   AudioFrame::SpeechType _outputSpeechType;
   // VoEVideoSync

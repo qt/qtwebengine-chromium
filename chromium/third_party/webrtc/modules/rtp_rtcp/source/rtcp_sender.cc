@@ -38,6 +38,7 @@
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/tmmbr.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
+#include "webrtc/modules/rtp_rtcp/source/time_util.h"
 #include "webrtc/modules/rtp_rtcp/source/tmmbr_help.h"
 
 namespace webrtc {
@@ -128,20 +129,17 @@ class RTCPSender::RtcpContext {
   RtcpContext(const FeedbackState& feedback_state,
               int32_t nack_size,
               const uint16_t* nack_list,
-              bool repeat,
               uint64_t picture_id,
               NtpTime now)
       : feedback_state_(feedback_state),
         nack_size_(nack_size),
         nack_list_(nack_list),
-        repeat_(repeat),
         picture_id_(picture_id),
         now_(now) {}
 
   const FeedbackState& feedback_state_;
   const int32_t nack_size_;
   const uint16_t* nack_list_;
-  const bool repeat_;
   const uint64_t picture_id_;
   const NtpTime now_;
 };
@@ -284,6 +282,7 @@ void RTCPSender::SetTMMBRStatus(bool enable) {
 }
 
 void RTCPSender::SetMaxRtpPacketSize(size_t max_packet_size) {
+  rtc::CritScope lock(&critical_section_rtcp_sender_);
   max_packet_size_ = max_packet_size;
 }
 
@@ -502,8 +501,7 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildPLI(const RtcpContext& ctx) {
 }
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildFIR(const RtcpContext& ctx) {
-  if (!ctx.repeat_)
-    ++sequence_number_fir_;  // Do not increase if repetition.
+  ++sequence_number_fir_;
 
   rtcp::Fir* fir = new rtcp::Fir();
   fir->SetSenderSsrc(ssrc_);
@@ -739,11 +737,10 @@ int32_t RTCPSender::SendRTCP(const FeedbackState& feedback_state,
                              RTCPPacketType packetType,
                              int32_t nack_size,
                              const uint16_t* nack_list,
-                             bool repeat,
                              uint64_t pictureID) {
   return SendCompoundRTCP(
       feedback_state, std::set<RTCPPacketType>(&packetType, &packetType + 1),
-      nack_size, nack_list, repeat, pictureID);
+      nack_size, nack_list, pictureID);
 }
 
 int32_t RTCPSender::SendCompoundRTCP(
@@ -751,9 +748,10 @@ int32_t RTCPSender::SendCompoundRTCP(
     const std::set<RTCPPacketType>& packet_types,
     int32_t nack_size,
     const uint16_t* nack_list,
-    bool repeat,
     uint64_t pictureID) {
   PacketContainer container(transport_, event_log_);
+  size_t max_packet_size;
+
   {
     rtc::CritScope lock(&critical_section_rtcp_sender_);
     if (method_ == RtcpMode::kOff) {
@@ -784,8 +782,8 @@ int32_t RTCPSender::SendCompoundRTCP(
       packet_type_counter_.first_packet_time_ms = clock_->TimeInMilliseconds();
 
     // We need to send our NTP even if we haven't received any reports.
-    RtcpContext context(feedback_state, nack_size, nack_list, repeat, pictureID,
-                        NtpTime(*clock_));
+    RtcpContext context(feedback_state, nack_size, nack_list, pictureID,
+                        clock_->CurrentNtpTime());
 
     PrepareReport(feedback_state);
 
@@ -826,9 +824,10 @@ int32_t RTCPSender::SendCompoundRTCP(
     }
 
     RTC_DCHECK(AllVolatileFlagsConsumed());
+    max_packet_size = max_packet_size_;
   }
 
-  size_t bytes_sent = container.SendPackets(max_packet_size_);
+  size_t bytes_sent = container.SendPackets(max_packet_size);
   return bytes_sent == 0 ? -1 : 0;
 }
 
@@ -912,17 +911,13 @@ bool RTCPSender::AddReportBlock(const FeedbackState& feedback_state,
 
   // TODO(sprang): Do we really need separate time stamps for each report?
   // Get our NTP as late as possible to avoid a race.
-  uint32_t ntp_secs;
-  uint32_t ntp_frac;
-  clock_->CurrentNtp(ntp_secs, ntp_frac);
+  NtpTime ntp = clock_->CurrentNtpTime();
 
   // Delay since last received report.
   if ((feedback_state.last_rr_ntp_secs != 0) ||
       (feedback_state.last_rr_ntp_frac != 0)) {
     // Get the 16 lowest bits of seconds and the 16 highest bits of fractions.
-    uint32_t now = ntp_secs & 0x0000FFFF;
-    now <<= 16;
-    now += (ntp_frac & 0xffff0000) >> 16;
+    uint32_t now = CompactNtp(ntp);
 
     uint32_t receiveTime = feedback_state.last_rr_ntp_secs & 0x0000FFFF;
     receiveTime <<= 16;
@@ -1049,9 +1044,17 @@ bool RTCPSender::SendFeedbackPacket(const rtcp::TransportFeedback& packet) {
     // but we can't because of an incorrect warning (C4822) in MVS 2013.
   } sender(transport_, event_log_);
 
-  RTC_DCHECK_LE(max_packet_size_, IP_PACKET_SIZE);
+  size_t max_packet_size;
+  {
+    rtc::CritScope lock(&critical_section_rtcp_sender_);
+    if (method_ == RtcpMode::kOff)
+      return false;
+    max_packet_size = max_packet_size_;
+  }
+
+  RTC_DCHECK_LE(max_packet_size, IP_PACKET_SIZE);
   uint8_t buffer[IP_PACKET_SIZE];
-  return packet.BuildExternalBuffer(buffer, max_packet_size_, &sender) &&
+  return packet.BuildExternalBuffer(buffer, max_packet_size, &sender) &&
          !sender.send_failure_;
 }
 

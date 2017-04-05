@@ -7,6 +7,7 @@
 #ifndef XFA_FDE_TTO_FDE_TEXTOUT_H_
 #define XFA_FDE_TTO_FDE_TEXTOUT_H_
 
+#include <deque>
 #include <memory>
 #include <vector>
 
@@ -47,12 +48,15 @@ class CFX_TxtBreak;
 struct FX_TXTRUN;
 
 struct FDE_TTOPIECE {
+  FDE_TTOPIECE();
+  FDE_TTOPIECE(const FDE_TTOPIECE& that);
+  ~FDE_TTOPIECE();
+
   int32_t iStartChar;
   int32_t iChars;
   uint32_t dwCharStyles;
   CFX_RectF rtPiece;
 };
-typedef CFX_MassArrayTemplate<FDE_TTOPIECE> CFDE_TTOPieceArray;
 
 class CFDE_TTOLine {
  public:
@@ -60,19 +64,18 @@ class CFDE_TTOLine {
   CFDE_TTOLine(const CFDE_TTOLine& ttoLine);
   ~CFDE_TTOLine();
 
+  bool GetNewReload() const { return m_bNewReload; }
+  void SetNewReload(bool reload) { m_bNewReload = reload; }
   int32_t AddPiece(int32_t index, const FDE_TTOPIECE& ttoPiece);
   int32_t GetSize() const;
   FDE_TTOPIECE* GetPtrAt(int32_t index);
   void RemoveLast(int32_t iCount);
-  void RemoveAll(bool bLeaveMemory);
+  void RemoveAll();
 
+ private:
   bool m_bNewReload;
-  CFDE_TTOPieceArray m_pieces;
-
- protected:
-  int32_t m_iPieceCount;
+  std::deque<FDE_TTOPIECE> m_pieces;
 };
-typedef CFX_ObjectMassArrayTemplate<CFDE_TTOLine> CFDE_TTOLineArray;
 
 class CFDE_TextOut {
  public:
@@ -94,10 +97,6 @@ class CFDE_TextOut {
   void SetClipRect(const CFX_RectF& rtClip);
   void SetMatrix(const CFX_Matrix& matrix);
   void SetLineBreakTolerance(FX_FLOAT fTolerance);
-  void CalcSize(const FX_WCHAR* pwsStr, int32_t iLength, CFX_Size& size);
-  void CalcSize(const FX_WCHAR* pwsStr, int32_t iLength, CFX_SizeF& size);
-  void CalcSize(const FX_WCHAR* pwsStr, int32_t iLength, CFX_Rect& rect);
-  void CalcSize(const FX_WCHAR* pwsStr, int32_t iLength, CFX_RectF& rect);
 
   void DrawText(const FX_WCHAR* pwsStr, int32_t iLength, int32_t x, int32_t y);
   void DrawText(const FX_WCHAR* pwsStr,
@@ -150,7 +149,7 @@ class CFDE_TextOut {
   int32_t GetCharRects(const FDE_TTOPIECE* pPiece);
 
   FX_TXTRUN ToTextRun(const FDE_TTOPIECE* pPiece);
-  void DrawLine(const FDE_TTOPIECE* pPiece, CFDE_Pen*& pPen);
+  void DrawLine(const FDE_TTOPIECE* pPiece, CFDE_Pen* pPen);
 
   std::unique_ptr<CFX_TxtBreak> m_pTxtBreak;
   CFX_RetainPtr<CFGAS_GEFont> m_pFont;
@@ -173,14 +172,14 @@ class CFDE_TextOut {
   CFX_RectF m_rtClip;
   CFX_RectF m_rtLogicClip;
   CFX_Matrix m_Matrix;
-  CFDE_TTOLineArray m_ttoLines;
+  std::deque<CFDE_TTOLine> m_ttoLines;
   int32_t m_iCurLine;
   int32_t m_iCurPiece;
   int32_t m_iTotalLines;
   std::vector<FXTEXT_CHARPOS> m_CharPos;
   std::unique_ptr<CFDE_RenderDevice> m_pRenderDevice;
-  CFX_Int32Array m_hotKeys;
-  CFX_RectFArray m_rectArray;
+  CFX_ArrayTemplate<int32_t> m_hotKeys;
+  std::vector<CFX_RectF> m_rectArray;
 };
 
 #endif  // XFA_FDE_TTO_FDE_TEXTOUT_H_

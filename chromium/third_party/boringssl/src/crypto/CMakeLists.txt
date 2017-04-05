@@ -129,7 +129,6 @@ add_library(
   thread_none.c
   thread_pthread.c
   thread_win.c
-  time_support.c
 
   $<TARGET_OBJECTS:stack>
   $<TARGET_OBJECTS:lhash>
@@ -207,3 +206,21 @@ add_executable(
 
 target_link_libraries(refcount_test crypto)
 add_dependencies(all_tests refcount_test)
+
+# TODO(davidben): Convert the remaining tests to GTest.
+add_executable(
+  crypto_test
+
+  chacha/chacha_test.cc
+  dh/dh_test.cc
+  dsa/dsa_test.cc
+  ec/ec_test.cc
+  err/err_test.cc
+  rsa/rsa_test.cc
+
+  $<TARGET_OBJECTS:gtest_main>
+  $<TARGET_OBJECTS:test_support>
+)
+
+target_link_libraries(crypto_test crypto gtest)
+add_dependencies(all_tests crypto_test)

@@ -129,10 +129,12 @@
  *     isServer                [22] BOOLEAN DEFAULT TRUE,
  *     peerSignatureAlgorithm  [23] INTEGER OPTIONAL,
  *     ticketMaxEarlyData      [24] INTEGER OPTIONAL,
+ *     authTimeout             [25] INTEGER OPTIONAL, -- defaults to timeout
+ *     earlyALPN               [26] OCTET STRING OPTIONAL,
  * }
  *
  * Note: historically this serialization has included other optional
- * fields. Their presense is currently treated as a parse error:
+ * fields. Their presence is currently treated as a parse error:
  *
  *     keyArg                  [0] IMPLICIT OCTET STRING OPTIONAL,
  *     pskIdentityHint         [7] OCTET STRING OPTIONAL,
@@ -183,6 +185,10 @@ static const int kPeerSignatureAlgorithmTag =
     CBS_ASN1_CONSTRUCTED | CBS_ASN1_CONTEXT_SPECIFIC | 23;
 static const int kTicketMaxEarlyDataTag =
     CBS_ASN1_CONSTRUCTED | CBS_ASN1_CONTEXT_SPECIFIC | 24;
+static const int kAuthTimeoutTag =
+    CBS_ASN1_CONSTRUCTED | CBS_ASN1_CONTEXT_SPECIFIC | 25;
+static const int kEarlyALPNTag =
+    CBS_ASN1_CONSTRUCTED | CBS_ASN1_CONTEXT_SPECIFIC | 26;
 
 static int SSL_SESSION_to_bytes_full(const SSL_SESSION *in, uint8_t **out_data,
                                      size_t *out_len, int for_ticket) {
@@ -402,6 +408,23 @@ static int SSL_SESSION_to_bytes_full(const SSL_SESSION *in, uint8_t **out_data,
     goto err;
   }
 
+  if (in->timeout != in->auth_timeout &&
+      (!CBB_add_asn1(&session, &child, kAuthTimeoutTag) ||
+       !CBB_add_asn1_uint64(&child, in->auth_timeout))) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+    goto err;
+  }
+
+  if (in->early_alpn) {
+    if (!CBB_add_asn1(&session, &child, kEarlyALPNTag) ||
+        !CBB_add_asn1(&child, &child2, CBS_ASN1_OCTETSTRING) ||
+        !CBB_add_bytes(&child2, (const uint8_t *)in->early_alpn,
+                       in->early_alpn_len)) {
+      OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+      goto err;
+    }
+  }
+
   if (!CBB_finish(&cbb, out_data, out_len)) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     goto err;
@@ -565,8 +588,9 @@ static int SSL_SESSION_parse_u16(CBS *cbs, uint16_t *out, unsigned tag,
   return 1;
 }
 
-static SSL_SESSION *SSL_SESSION_parse(CBS *cbs) {
-  SSL_SESSION *ret = SSL_SESSION_new();
+SSL_SESSION *SSL_SESSION_parse(CBS *cbs, const SSL_X509_METHOD *x509_method,
+                               CRYPTO_BUFFER_POOL *pool) {
+  SSL_SESSION *ret = ssl_session_new(x509_method);
   if (ret == NULL) {
     goto err;
   }
@@ -728,7 +752,7 @@ static SSL_SESSION *SSL_SESSION_parse(CBS *cbs) {
 
     if (has_peer) {
       /* TODO(agl): this should use the |SSL_CTX|'s pool. */
-      CRYPTO_BUFFER *buffer = CRYPTO_BUFFER_new_from_CBS(&peer, NULL);
+      CRYPTO_BUFFER *buffer = CRYPTO_BUFFER_new_from_CBS(&peer, pool);
       if (buffer == NULL ||
           !sk_CRYPTO_BUFFER_push(ret->certs, buffer)) {
         CRYPTO_BUFFER_free(buffer);
@@ -746,7 +770,7 @@ static SSL_SESSION *SSL_SESSION_parse(CBS *cbs) {
       }
 
       /* TODO(agl): this should use the |SSL_CTX|'s pool. */
-      CRYPTO_BUFFER *buffer = CRYPTO_BUFFER_new_from_CBS(&cert, NULL);
+      CRYPTO_BUFFER *buffer = CRYPTO_BUFFER_new_from_CBS(&cert, pool);
       if (buffer == NULL ||
           !sk_CRYPTO_BUFFER_push(ret->certs, buffer)) {
         CRYPTO_BUFFER_free(buffer);
@@ -756,7 +780,7 @@ static SSL_SESSION *SSL_SESSION_parse(CBS *cbs) {
     }
   }
 
-  if (!ssl_session_x509_cache_objects(ret)) {
+  if (!x509_method->session_cache_objects(ret)) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_INVALID_SSL_SESSION);
     goto err;
   }
@@ -787,6 +811,10 @@ static SSL_SESSION *SSL_SESSION_parse(CBS *cbs) {
                              kPeerSignatureAlgorithmTag, 0) ||
       !SSL_SESSION_parse_u32(&session, &ret->ticket_max_early_data,
                              kTicketMaxEarlyDataTag, 0) ||
+      !SSL_SESSION_parse_long(&session, &ret->auth_timeout, kAuthTimeoutTag,
+                              ret->timeout) ||
+      !SSL_SESSION_parse_octet_string(&session, &ret->early_alpn,
+                                      &ret->early_alpn_len, kEarlyALPNTag) ||
       CBS_len(&session) != 0) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_INVALID_SSL_SESSION);
     goto err;
@@ -799,10 +827,11 @@ err:
   return NULL;
 }
 
-SSL_SESSION *SSL_SESSION_from_bytes(const uint8_t *in, size_t in_len) {
+SSL_SESSION *SSL_SESSION_from_bytes(const uint8_t *in, size_t in_len,
+                                    const SSL_CTX *ctx) {
   CBS cbs;
   CBS_init(&cbs, in, in_len);
-  SSL_SESSION *ret = SSL_SESSION_parse(&cbs);
+  SSL_SESSION *ret = SSL_SESSION_parse(&cbs, ctx->x509_method, ctx->pool);
   if (ret == NULL) {
     return NULL;
   }
@@ -811,27 +840,5 @@ SSL_SESSION *SSL_SESSION_from_bytes(const uint8_t *in, size_t in_len) {
     SSL_SESSION_free(ret);
     return NULL;
   }
-  return ret;
-}
-
-SSL_SESSION *d2i_SSL_SESSION(SSL_SESSION **a, const uint8_t **pp, long length) {
-  if (length < 0) {
-    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
-    return NULL;
-  }
-
-  CBS cbs;
-  CBS_init(&cbs, *pp, length);
-
-  SSL_SESSION *ret = SSL_SESSION_parse(&cbs);
-  if (ret == NULL) {
-    return NULL;
-  }
-
-  if (a) {
-    SSL_SESSION_free(*a);
-    *a = ret;
-  }
-  *pp = CBS_data(&cbs);
   return ret;
 }

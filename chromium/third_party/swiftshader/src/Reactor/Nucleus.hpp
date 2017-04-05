@@ -96,7 +96,7 @@ namespace sw
 		// Memory instructions
 		static Value *createLoad(Value *ptr, Type *type, bool isVolatile = false, unsigned int align = 0);
 		static Value *createStore(Value *value, Value *ptr, Type *type, bool isVolatile = false, unsigned int align = 0);
-		static Value *createGEP(Value *ptr, Type *type, Value *index);
+		static Value *createGEP(Value *ptr, Type *type, Value *index, bool unsignedIndex);
 
 		// Atomic instructions
 		static Value *createAtomicAdd(Value *ptr, Value *value);
@@ -106,7 +106,6 @@ namespace sw
 		static Value *createZExt(Value *V, Type *destType);
 		static Value *createSExt(Value *V, Type *destType);
 		static Value *createFPToSI(Value *V, Type *destType);
-		static Value *createUIToFP(Value *V, Type *destType);
 		static Value *createSIToFP(Value *V, Type *destType);
 		static Value *createFPTrunc(Value *V, Type *destType);
 		static Value *createFPExt(Value *V, Type *destType);

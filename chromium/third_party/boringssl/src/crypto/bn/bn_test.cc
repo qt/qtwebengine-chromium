@@ -515,6 +515,54 @@ static bool TestModMul(FileTest *t, BN_CTX *ctx) {
   return true;
 }
 
+static bool TestModSquare(FileTest *t, BN_CTX *ctx) {
+  bssl::UniquePtr<BIGNUM> a = GetBIGNUM(t, "A");
+  bssl::UniquePtr<BIGNUM> m = GetBIGNUM(t, "M");
+  bssl::UniquePtr<BIGNUM> mod_square = GetBIGNUM(t, "ModSquare");
+  if (!a || !m || !mod_square) {
+    return false;
+  }
+
+  bssl::UniquePtr<BIGNUM> a_copy(BN_new());
+  bssl::UniquePtr<BIGNUM> ret(BN_new());
+  if (!ret || !a_copy ||
+      !BN_mod_mul(ret.get(), a.get(), a.get(), m.get(), ctx) ||
+      !ExpectBIGNUMsEqual(t, "A * A (mod M)", mod_square.get(), ret.get()) ||
+      // Repeat the operation with |a_copy|.
+      !BN_copy(a_copy.get(), a.get()) ||
+      !BN_mod_mul(ret.get(), a.get(), a_copy.get(), m.get(), ctx) ||
+      !ExpectBIGNUMsEqual(t, "A * A_copy (mod M)", mod_square.get(),
+                          ret.get())) {
+    return false;
+  }
+
+  if (BN_is_odd(m.get())) {
+    // Reduce |a| and test the Montgomery version.
+    bssl::UniquePtr<BN_MONT_CTX> mont(BN_MONT_CTX_new());
+    bssl::UniquePtr<BIGNUM> a_tmp(BN_new());
+    if (!mont || !a_tmp ||
+        !BN_MONT_CTX_set(mont.get(), m.get(), ctx) ||
+        !BN_nnmod(a_tmp.get(), a.get(), m.get(), ctx) ||
+        !BN_to_montgomery(a_tmp.get(), a_tmp.get(), mont.get(), ctx) ||
+        !BN_mod_mul_montgomery(ret.get(), a_tmp.get(), a_tmp.get(), mont.get(),
+                               ctx) ||
+        !BN_from_montgomery(ret.get(), ret.get(), mont.get(), ctx) ||
+        !ExpectBIGNUMsEqual(t, "A * A (mod M) (Montgomery)",
+                            mod_square.get(), ret.get()) ||
+        // Repeat the operation with |a_copy|.
+        !BN_copy(a_copy.get(), a_tmp.get()) ||
+        !BN_mod_mul_montgomery(ret.get(), a_tmp.get(), a_copy.get(), mont.get(),
+                               ctx) ||
+        !BN_from_montgomery(ret.get(), ret.get(), mont.get(), ctx) ||
+        !ExpectBIGNUMsEqual(t, "A * A_copy (mod M) (Montgomery)",
+                            mod_square.get(), ret.get())) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 static bool TestModExp(FileTest *t, BN_CTX *ctx) {
   bssl::UniquePtr<BIGNUM> a = GetBIGNUM(t, "A");
   bssl::UniquePtr<BIGNUM> e = GetBIGNUM(t, "E");
@@ -649,6 +697,7 @@ static const Test kTests[] = {
     {"Product", TestProduct},
     {"Quotient", TestQuotient},
     {"ModMul", TestModMul},
+    {"ModSquare", TestModSquare},
     {"ModExp", TestModExp},
     {"Exp", TestExp},
     {"ModSqrt", TestModSqrt},
@@ -1619,6 +1668,93 @@ static bool TestBNSetGetU64() {
   return true;
 }
 
+static bool TestBNPow2(BN_CTX *ctx) {
+  bssl::UniquePtr<BIGNUM>
+      power_of_two(BN_new()),
+      random(BN_new()),
+      expected(BN_new()),
+      actual(BN_new());
+
+  if (!power_of_two.get() ||
+      !random.get() ||
+      !expected.get() ||
+      !actual.get()) {
+    return false;
+  }
+
+  // Choose an exponent.
+  for (size_t e = 3; e < 512; e += 11) {
+    // Choose a bit length for our randoms.
+    for (int len = 3; len < 512; len += 23) {
+      // Set power_of_two = 2^e.
+      if (!BN_lshift(power_of_two.get(), BN_value_one(), (int) e)) {
+        fprintf(stderr, "Failed to shiftl.\n");
+        return false;
+      }
+
+      // Test BN_is_pow2 on power_of_two.
+      if (!BN_is_pow2(power_of_two.get())) {
+        fprintf(stderr, "BN_is_pow2 returned false for a power of two.\n");
+        hexdump(stderr, "Arg: ", power_of_two->d,
+                power_of_two->top * sizeof(BN_ULONG));
+        return false;
+      }
+
+      // Pick a large random value, ensuring it isn't a power of two.
+      if (!BN_rand(random.get(), len, BN_RAND_TOP_TWO, BN_RAND_BOTTOM_ANY)) {
+        fprintf(stderr, "Failed to generate random in TestBNPow2.\n");
+        return false;
+      }
+
+      // Test BN_is_pow2 on |r|.
+      if (BN_is_pow2(random.get())) {
+        fprintf(stderr, "BN_is_pow2 returned true for a non-power of two.\n");
+        hexdump(stderr, "Arg: ", random->d, random->top * sizeof(BN_ULONG));
+        return false;
+      }
+
+      // Test BN_mod_pow2 on |r|.
+      if (!BN_mod(expected.get(), random.get(), power_of_two.get(), ctx) ||
+          !BN_mod_pow2(actual.get(), random.get(), e) ||
+          BN_cmp(actual.get(), expected.get())) {
+        fprintf(stderr, "BN_mod_pow2 returned the wrong value:\n");
+        hexdump(stderr, "Expected: ", expected->d,
+                expected->top * sizeof(BN_ULONG));
+        hexdump(stderr, "Got:      ", actual->d,
+                actual->top * sizeof(BN_ULONG));
+        return false;
+      }
+
+      // Test BN_nnmod_pow2 on |r|.
+      if (!BN_nnmod(expected.get(), random.get(), power_of_two.get(), ctx) ||
+          !BN_nnmod_pow2(actual.get(), random.get(), e) ||
+          BN_cmp(actual.get(), expected.get())) {
+        fprintf(stderr, "BN_nnmod_pow2 failed on positive input:\n");
+        hexdump(stderr, "Expected: ", expected->d,
+                expected->top * sizeof(BN_ULONG));
+        hexdump(stderr, "Got:      ", actual->d,
+                actual->top * sizeof(BN_ULONG));
+        return false;
+      }
+
+      // Test BN_nnmod_pow2 on -|r|.
+      BN_set_negative(random.get(), 1);
+      if (!BN_nnmod(expected.get(), random.get(), power_of_two.get(), ctx) ||
+          !BN_nnmod_pow2(actual.get(), random.get(), e) ||
+          BN_cmp(actual.get(), expected.get())) {
+        fprintf(stderr, "BN_nnmod_pow2 failed on negative input:\n");
+        hexdump(stderr, "Expected: ", expected->d,
+                expected->top * sizeof(BN_ULONG));
+        hexdump(stderr, "Got:      ", actual->d,
+                actual->top * sizeof(BN_ULONG));
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 int main(int argc, char *argv[]) {
   CRYPTO_library_init();
 
@@ -1646,7 +1782,8 @@ int main(int argc, char *argv[]) {
       !TestSmallPrime(ctx.get()) ||
       !TestCmpWord() ||
       !TestBN2Dec() ||
-      !TestBNSetGetU64()) {
+      !TestBNSetGetU64() ||
+      !TestBNPow2(ctx.get())) {
     return 1;
   }
 

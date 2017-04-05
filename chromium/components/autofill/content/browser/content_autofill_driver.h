@@ -17,9 +17,8 @@
 #include "mojo/public/cpp/bindings/binding.h"
 
 namespace content {
+class NavigationHandle;
 class RenderFrameHost;
-struct FrameNavigateParams;
-struct LoadCommittedDetails;
 }
 
 namespace autofill {
@@ -68,6 +67,7 @@ class ContentAutofillDriver : public AutofillDriver,
   gfx::RectF TransformBoundingBoxToViewportCoordinates(
       const gfx::RectF& bounding_box) override;
   void DidInteractWithCreditCardForm() override;
+  void NotifyFirstUserGestureObservedInTab() override;
 
   // mojom::AutofillDriver:
   void FirstUserGestureObserved() override;
@@ -92,12 +92,7 @@ class ContentAutofillDriver : public AutofillDriver,
                    const std::vector<base::string16>& labels) override;
 
   // Called when the frame has navigated.
-  void DidNavigateFrame(const content::LoadCommittedDetails& details,
-                        const content::FrameNavigateParams& params);
-
-  // Tells the render frame that a user gesture was observed
-  // somewhere in the tab (including in a different frame).
-  void NotifyFirstUserGestureObservedInTab();
+  void DidNavigateFrame(content::NavigationHandle* navigation_handle);
 
   AutofillExternalDelegate* autofill_external_delegate() {
     return &autofill_external_delegate_;

@@ -11,13 +11,13 @@ Refer to chromium instructions for each platform for other prerequisites.
 
 Create a working directory, enter it, and run:
 
-    gclient config https://chromium.googlesource.com/libyuv/libyuv
+    gclient config --name src https://chromium.googlesource.com/libyuv/libyuv
     gclient sync
 
 Then you'll get a .gclient file like:
 
     solutions = [
-      { "name"        : "libyuv",
+      { "name"        : "src",
         "url"         : "https://chromium.googlesource.com/libyuv/libyuv",
         "deps_file"   : "DEPS",
         "managed"     : True,
@@ -35,7 +35,7 @@ Browse the Git reprository: https://chromium.googlesource.com/libyuv/libyuv/+/ma
 For Android add `;target_os=['android'];` to your Linux .gclient
 
     solutions = [
-      { "name"        : "libyuv",
+      { "name"        : "src",
         "url"         : "https://chromium.googlesource.com/libyuv/libyuv",
         "deps_file"   : "DEPS",
         "managed"     : True,
@@ -44,20 +44,12 @@ For Android add `;target_os=['android'];` to your Linux .gclient
         "safesync_url": "",
       },
     ];
-    target_os = ["android", "unix"];
+    target_os = ["android", "linux"];
 
 Then run:
 
     export GYP_DEFINES="OS=android"
     gclient sync
-
-Caveat: Theres an error with Google Play services updates.  If you get the error "Your version of the Google Play services library is not up to date", run the following:
-
-    cd chromium/src
-    ./build/android/play_services/update.py download
-    cd ../..
-
-For Windows the gclient sync must be done from an Administrator command prompt.
 
 The sync will generate native build files for your environment using gyp (Windows: Visual Studio, OSX: XCode, Linux: make). This generation can also be forced manually: `gclient runhooks`
 
@@ -174,15 +166,15 @@ arm disassembly:
 
 Running tests:
 
-    util/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=*
+    build/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=*
 
 Running test as benchmark:
 
-    util/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=* -a "--libyuv_width=1280 --libyuv_height=720 --libyuv_repeat=999 --libyuv_flags=-1  --libyuv_cpu_info=-1"
+    build/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=* -a "--libyuv_width=1280 --libyuv_height=720 --libyuv_repeat=999 --libyuv_flags=-1  --libyuv_cpu_info=-1"
 
 Running test with C code:
 
-    util/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=* -a "--libyuv_width=1280 --libyuv_height=720 --libyuv_repeat=999 --libyuv_flags=1 --libyuv_cpu_info=1"
+    build/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=* -a "--libyuv_width=1280 --libyuv_height=720 --libyuv_repeat=999 --libyuv_flags=1 --libyuv_cpu_info=1"
 
 ### Build targets
 
@@ -208,24 +200,50 @@ Running test with C code:
     make V=1 -f linux.mk clean
     make V=1 -f linux.mk CXX=clang++
 
-## Building the Library with cmake
+## Building the library with cmake
 
 Install cmake: http://www.cmake.org/
 
-Default debug build:
+### Default debug build:
 
     mkdir out
     cd out
     cmake ..
     cmake --build .
 
-Release build/install
+### Release build/install
 
     mkdir out
     cd out
     cmake -DCMAKE_INSTALL_PREFIX="/usr/lib" -DCMAKE_BUILD_TYPE="Release" ..
     cmake --build . --config Release
     sudo cmake --build . --target install --config Release
+
+### Build RPM/DEB packages
+
+    mkdir out
+    cd out
+    cmake -DCMAKE_BUILD_TYPE=Release ..
+    make -j4
+    make package
+
+## Setup for Arm Cross compile
+
+See also https://www.ccoderun.ca/programming/2015-12-20_CrossCompiling/index.html
+
+    sudo apt-get install ssh dkms build-essential linux-headers-generic
+    sudo apt-get install kdevelop cmake git subversion
+    sudo apt-get install graphviz doxygen doxygen-gui
+    sudo apt-get install manpages manpages-dev manpages-posix manpages-posix-dev
+    sudo apt-get install libboost-all-dev libboost-dev libssl-dev
+    sudo apt-get install rpm terminator fish
+    sudo apt-get install g++-arm-linux-gnueabihf gcc-arm-linux-gnueabihf
+
+### Build psnr tool
+
+    cd util
+    arm-linux-gnueabihf-g++ psnr_main.cc psnr.cc ssim.cc -o psnr
+    arm-linux-gnueabihf-objdump -d psnr
 
 ## Running Unittests
 

@@ -36,6 +36,8 @@ namespace sw
 
 	class FrameBuffer
 	{
+		virtual void typeinfo();   // Dummy key method (https://gcc.gnu.org/onlinedocs/gcc/Vague-Linkage.html)
+
 	public:
 		FrameBuffer(int width, int height, bool fullscreen, bool topLeftOrigin);
 

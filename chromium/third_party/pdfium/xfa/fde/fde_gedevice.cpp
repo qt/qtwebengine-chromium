@@ -24,29 +24,36 @@ CFDE_RenderDevice::CFDE_RenderDevice(CFX_RenderDevice* pDevice,
   ASSERT(pDevice);
 
   FX_RECT rt = m_pDevice->GetClipBox();
-  m_rtClip.Set((FX_FLOAT)rt.left, (FX_FLOAT)rt.top, (FX_FLOAT)rt.Width(),
-               (FX_FLOAT)rt.Height());
+  m_rtClip = CFX_RectF(
+      static_cast<FX_FLOAT>(rt.left), static_cast<FX_FLOAT>(rt.top),
+      static_cast<FX_FLOAT>(rt.Width()), static_cast<FX_FLOAT>(rt.Height()));
 }
 
 CFDE_RenderDevice::~CFDE_RenderDevice() {
   if (m_bOwnerDevice)
     delete m_pDevice;
 }
+
 int32_t CFDE_RenderDevice::GetWidth() const {
   return m_pDevice->GetWidth();
 }
+
 int32_t CFDE_RenderDevice::GetHeight() const {
   return m_pDevice->GetHeight();
 }
+
 void CFDE_RenderDevice::SaveState() {
   m_pDevice->SaveState();
 }
+
 void CFDE_RenderDevice::RestoreState() {
   m_pDevice->RestoreState(false);
   const FX_RECT& rt = m_pDevice->GetClipBox();
-  m_rtClip.Set((FX_FLOAT)rt.left, (FX_FLOAT)rt.top, (FX_FLOAT)rt.Width(),
-               (FX_FLOAT)rt.Height());
+  m_rtClip = CFX_RectF(
+      static_cast<FX_FLOAT>(rt.left), static_cast<FX_FLOAT>(rt.top),
+      static_cast<FX_FLOAT>(rt.Width()), static_cast<FX_FLOAT>(rt.Height()));
 }
+
 bool CFDE_RenderDevice::SetClipRect(const CFX_RectF& rtClip) {
   m_rtClip = rtClip;
   return m_pDevice->SetClip_Rect(FX_RECT((int32_t)FXSYS_floor(rtClip.left),
@@ -54,21 +61,27 @@ bool CFDE_RenderDevice::SetClipRect(const CFX_RectF& rtClip) {
                                          (int32_t)FXSYS_ceil(rtClip.right()),
                                          (int32_t)FXSYS_ceil(rtClip.bottom())));
 }
+
 const CFX_RectF& CFDE_RenderDevice::GetClipRect() {
   return m_rtClip;
 }
+
 bool CFDE_RenderDevice::SetClipPath(const CFDE_Path* pClip) {
   return false;
 }
+
 CFDE_Path* CFDE_RenderDevice::GetClipPath() const {
   return nullptr;
 }
+
 FX_FLOAT CFDE_RenderDevice::GetDpiX() const {
   return 96;
 }
+
 FX_FLOAT CFDE_RenderDevice::GetDpiY() const {
   return 96;
 }
+
 bool CFDE_RenderDevice::DrawImage(CFX_DIBSource* pDib,
                                   const CFX_RectF* pSrcRect,
                                   const CFX_RectF& dstRect,
@@ -78,11 +91,13 @@ bool CFDE_RenderDevice::DrawImage(CFX_DIBSource* pDib,
   if (pSrcRect) {
     srcRect = *pSrcRect;
   } else {
-    srcRect.Set(0, 0, (FX_FLOAT)pDib->GetWidth(), (FX_FLOAT)pDib->GetHeight());
+    srcRect = CFX_RectF(0, 0, static_cast<FX_FLOAT>(pDib->GetWidth()),
+                        static_cast<FX_FLOAT>(pDib->GetHeight()));
   }
-  if (srcRect.IsEmpty()) {
+
+  if (srcRect.IsEmpty())
     return false;
-  }
+
   CFX_Matrix dib2fxdev;
   if (pImgMatrix) {
     dib2fxdev = *pImgMatrix;
@@ -104,6 +119,7 @@ bool CFDE_RenderDevice::DrawImage(CFX_DIBSource* pDib,
   m_pDevice->CancelDIBits(handle);
   return !!handle;
 }
+
 bool CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
                                    const CFX_RetainPtr<CFGAS_GEFont>& pFont,
                                    const FXTEXT_CHARPOS* pCharPos,
@@ -152,12 +168,10 @@ bool CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
         FxFont.SetFace(pFxFont->GetFace());
         m_pDevice->DrawNormalText(iCurCount, pCurCP, &FxFont, -fFontSize,
-                                  (const CFX_Matrix*)pMatrix, argb,
-                                  FXTEXT_CLEARTYPE);
+                                  pMatrix, argb, FXTEXT_CLEARTYPE);
 #else
         m_pDevice->DrawNormalText(iCurCount, pCurCP, pFxFont, -fFontSize,
-                                  (const CFX_Matrix*)pMatrix, argb,
-                                  FXTEXT_CLEARTYPE);
+                                  pMatrix, argb, FXTEXT_CLEARTYPE);
 #endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
       }
       pCurFont = pSTFont;
@@ -172,15 +186,14 @@ bool CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
     pFxFont = pCurFont->GetDevFont();
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
     FxFont.SetFace(pFxFont->GetFace());
-    bool bRet = m_pDevice->DrawNormalText(
-        iCurCount, pCurCP, &FxFont, -fFontSize, (const CFX_Matrix*)pMatrix,
-        argb, FXTEXT_CLEARTYPE);
+    bool bRet =
+        m_pDevice->DrawNormalText(iCurCount, pCurCP, &FxFont, -fFontSize,
+                                  pMatrix, argb, FXTEXT_CLEARTYPE);
     FxFont.SetFace(nullptr);
     return bRet;
 #else
     return m_pDevice->DrawNormalText(iCurCount, pCurCP, pFxFont, -fFontSize,
-                                     (const CFX_Matrix*)pMatrix, argb,
-                                     FXTEXT_CLEARTYPE);
+                                     pMatrix, argb, FXTEXT_CLEARTYPE);
 #endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
   }
 
@@ -198,18 +211,19 @@ bool CFDE_RenderDevice::DrawBezier(CFDE_Pen* pPen,
                                    const CFX_PointF& pt3,
                                    const CFX_PointF& pt4,
                                    const CFX_Matrix* pMatrix) {
-  CFX_PointsF points;
-  points.Add(pt1);
-  points.Add(pt2);
-  points.Add(pt3);
-  points.Add(pt4);
+  std::vector<CFX_PointF> points;
+  points.push_back(pt1);
+  points.push_back(pt2);
+  points.push_back(pt3);
+  points.push_back(pt4);
   CFDE_Path path;
   path.AddBezier(points);
   return DrawPath(pPen, fPenWidth, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::DrawCurve(CFDE_Pen* pPen,
                                   FX_FLOAT fPenWidth,
-                                  const CFX_PointsF& points,
+                                  const std::vector<CFX_PointF>& points,
                                   bool bClosed,
                                   FX_FLOAT fTension,
                                   const CFX_Matrix* pMatrix) {
@@ -217,6 +231,7 @@ bool CFDE_RenderDevice::DrawCurve(CFDE_Pen* pPen,
   path.AddCurve(points, bClosed, fTension);
   return DrawPath(pPen, fPenWidth, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::DrawEllipse(CFDE_Pen* pPen,
                                     FX_FLOAT fPenWidth,
                                     const CFX_RectF& rect,
@@ -225,14 +240,16 @@ bool CFDE_RenderDevice::DrawEllipse(CFDE_Pen* pPen,
   path.AddEllipse(rect);
   return DrawPath(pPen, fPenWidth, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::DrawLines(CFDE_Pen* pPen,
                                   FX_FLOAT fPenWidth,
-                                  const CFX_PointsF& points,
+                                  const std::vector<CFX_PointF>& points,
                                   const CFX_Matrix* pMatrix) {
   CFDE_Path path;
   path.AddLines(points);
   return DrawPath(pPen, fPenWidth, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::DrawLine(CFDE_Pen* pPen,
                                  FX_FLOAT fPenWidth,
                                  const CFX_PointF& pt1,
@@ -242,6 +259,7 @@ bool CFDE_RenderDevice::DrawLine(CFDE_Pen* pPen,
   path.AddLine(pt1, pt2);
   return DrawPath(pPen, fPenWidth, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::DrawPath(CFDE_Pen* pPen,
                                  FX_FLOAT fPenWidth,
                                  const CFDE_Path* pPath,
@@ -257,14 +275,16 @@ bool CFDE_RenderDevice::DrawPath(CFDE_Pen* pPen,
   return m_pDevice->DrawPath(&pGePath->m_Path, (const CFX_Matrix*)pMatrix,
                              &graphState, 0, pPen->GetColor(), 0);
 }
+
 bool CFDE_RenderDevice::DrawPolygon(CFDE_Pen* pPen,
                                     FX_FLOAT fPenWidth,
-                                    const CFX_PointsF& points,
+                                    const std::vector<CFX_PointF>& points,
                                     const CFX_Matrix* pMatrix) {
   CFDE_Path path;
   path.AddPolygon(points);
   return DrawPath(pPen, fPenWidth, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::DrawRectangle(CFDE_Pen* pPen,
                                       FX_FLOAT fPenWidth,
                                       const CFX_RectF& rect,
@@ -273,14 +293,16 @@ bool CFDE_RenderDevice::DrawRectangle(CFDE_Pen* pPen,
   path.AddRectangle(rect);
   return DrawPath(pPen, fPenWidth, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::FillClosedCurve(CFDE_Brush* pBrush,
-                                        const CFX_PointsF& points,
+                                        const std::vector<CFX_PointF>& points,
                                         FX_FLOAT fTension,
                                         const CFX_Matrix* pMatrix) {
   CFDE_Path path;
   path.AddCurve(points, true, fTension);
   return FillPath(pBrush, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::FillEllipse(CFDE_Brush* pBrush,
                                     const CFX_RectF& rect,
                                     const CFX_Matrix* pMatrix) {
@@ -288,13 +310,15 @@ bool CFDE_RenderDevice::FillEllipse(CFDE_Brush* pBrush,
   path.AddEllipse(rect);
   return FillPath(pBrush, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::FillPolygon(CFDE_Brush* pBrush,
-                                    const CFX_PointsF& points,
+                                    const std::vector<CFX_PointF>& points,
                                     const CFX_Matrix* pMatrix) {
   CFDE_Path path;
   path.AddPolygon(points);
   return FillPath(pBrush, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::FillRectangle(CFDE_Brush* pBrush,
                                       const CFX_RectF& rect,
                                       const CFX_Matrix* pMatrix) {
@@ -302,6 +326,7 @@ bool CFDE_RenderDevice::FillRectangle(CFDE_Brush* pBrush,
   path.AddRectangle(rect);
   return FillPath(pBrush, &path, pMatrix);
 }
+
 bool CFDE_RenderDevice::CreatePen(CFDE_Pen* pPen,
                                   FX_FLOAT fPenWidth,
                                   CFX_GraphStateData& graphState) {

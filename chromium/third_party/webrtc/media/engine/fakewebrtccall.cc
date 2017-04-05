@@ -21,7 +21,8 @@
 
 namespace cricket {
 FakeAudioSendStream::FakeAudioSendStream(
-    const webrtc::AudioSendStream::Config& config) : config_(config) {
+    int id, const webrtc::AudioSendStream::Config& config)
+    : id_(id), config_(config) {
   RTC_DCHECK(config.voe_channel_id != -1);
 }
 
@@ -59,8 +60,8 @@ webrtc::AudioSendStream::Stats FakeAudioSendStream::GetStats() const {
 }
 
 FakeAudioReceiveStream::FakeAudioReceiveStream(
-    const webrtc::AudioReceiveStream::Config& config)
-    : config_(config) {
+    int id, const webrtc::AudioReceiveStream::Config& config)
+    : id_(id), config_(config) {
   RTC_DCHECK(config.voe_channel_id != -1);
 }
 
@@ -270,7 +271,8 @@ FakeVideoReceiveStream::FakeVideoReceiveStream(
     webrtc::VideoReceiveStream::Config config)
     : config_(std::move(config)), receiving_(false) {}
 
-const webrtc::VideoReceiveStream::Config& FakeVideoReceiveStream::GetConfig() {
+const webrtc::VideoReceiveStream::Config& FakeVideoReceiveStream::GetConfig()
+    const {
   return config_;
 }
 
@@ -378,7 +380,7 @@ const FakeAudioReceiveStream* FakeCall::GetAudioReceiveStream(uint32_t ssrc) {
   return nullptr;
 }
 
-const std::list<FakeFlexfecReceiveStream>&
+const std::vector<FakeFlexfecReceiveStream*>&
 FakeCall::GetFlexfecReceiveStreams() {
   return flexfec_receive_streams_;
 }
@@ -403,7 +405,8 @@ webrtc::NetworkState FakeCall::GetNetworkState(webrtc::MediaType media) const {
 
 webrtc::AudioSendStream* FakeCall::CreateAudioSendStream(
     const webrtc::AudioSendStream::Config& config) {
-  FakeAudioSendStream* fake_stream = new FakeAudioSendStream(config);
+  FakeAudioSendStream* fake_stream = new FakeAudioSendStream(next_stream_id_++,
+                                                             config);
   audio_send_streams_.push_back(fake_stream);
   ++num_created_send_streams_;
   return fake_stream;
@@ -423,7 +426,8 @@ void FakeCall::DestroyAudioSendStream(webrtc::AudioSendStream* send_stream) {
 
 webrtc::AudioReceiveStream* FakeCall::CreateAudioReceiveStream(
     const webrtc::AudioReceiveStream::Config& config) {
-  audio_receive_streams_.push_back(new FakeAudioReceiveStream(config));
+  audio_receive_streams_.push_back(new FakeAudioReceiveStream(next_stream_id_++,
+                                                              config));
   ++num_created_receive_streams_;
   return audio_receive_streams_.back();
 }
@@ -486,21 +490,24 @@ void FakeCall::DestroyVideoReceiveStream(
 
 webrtc::FlexfecReceiveStream* FakeCall::CreateFlexfecReceiveStream(
     const webrtc::FlexfecReceiveStream::Config& config) {
-  flexfec_receive_streams_.push_back(FakeFlexfecReceiveStream(config));
+  FakeFlexfecReceiveStream* fake_stream = new FakeFlexfecReceiveStream(config);
+  flexfec_receive_streams_.push_back(fake_stream);
   ++num_created_receive_streams_;
-  return &flexfec_receive_streams_.back();
+  return fake_stream;
 }
 
 void FakeCall::DestroyFlexfecReceiveStream(
     webrtc::FlexfecReceiveStream* receive_stream) {
-  for (auto it = flexfec_receive_streams_.begin();
-       it != flexfec_receive_streams_.end(); ++it) {
-    if (&(*it) == receive_stream) {
-      flexfec_receive_streams_.erase(it);
-      return;
-    }
+  auto it = std::find(flexfec_receive_streams_.begin(),
+                      flexfec_receive_streams_.end(),
+                      static_cast<FakeFlexfecReceiveStream*>(receive_stream));
+  if (it == flexfec_receive_streams_.end()) {
+    ADD_FAILURE()
+        << "DestroyFlexfecReceiveStream called with unknown parameter.";
+  } else {
+    delete *it;
+    flexfec_receive_streams_.erase(it);
   }
-  ADD_FAILURE() << "DestroyFlexfecReceiveStream called with unknown parameter.";
 }
 
 webrtc::PacketReceiver* FakeCall::Receiver() {

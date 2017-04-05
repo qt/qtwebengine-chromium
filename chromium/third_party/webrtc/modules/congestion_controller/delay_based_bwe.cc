@@ -18,6 +18,7 @@
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/thread_annotations.h"
+#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/modules/congestion_controller/include/congestion_controller.h"
 #include "webrtc/modules/pacing/paced_sender.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
@@ -49,13 +50,14 @@ constexpr double kDefaultTrendlineThresholdGain = 4.0;
 constexpr size_t kDefaultMedianSlopeWindowSize = 20;
 constexpr double kDefaultMedianSlopeThresholdGain = 4.0;
 
+constexpr int kMaxConsecutiveFailedLookups = 5;
+
 const char kBitrateEstimateExperiment[] = "WebRTC-ImprovedBitrateEstimate";
 const char kBweTrendlineFilterExperiment[] = "WebRTC-BweTrendlineFilter";
 const char kBweMedianSlopeFilterExperiment[] = "WebRTC-BweMedianSlopeFilter";
 
 bool BitrateEstimateExperimentIsEnabled() {
-  return webrtc::field_trial::FindFullName(kBitrateEstimateExperiment) ==
-         "Enabled";
+  return webrtc::field_trial::IsEnabled(kBitrateEstimateExperiment);
 }
 
 bool TrendlineFilterExperimentIsEnabled() {
@@ -206,9 +208,10 @@ rtc::Optional<uint32_t> DelayBasedBwe::BitrateEstimator::bitrate_bps() const {
   return rtc::Optional<uint32_t>(bitrate_estimate_ * 1000);
 }
 
-DelayBasedBwe::DelayBasedBwe(Clock* clock)
+DelayBasedBwe::DelayBasedBwe(RtcEventLog* event_log, Clock* clock)
     : in_trendline_experiment_(TrendlineFilterExperimentIsEnabled()),
       in_median_slope_experiment_(MedianSlopeFilterExperimentIsEnabled()),
+      event_log_(event_log),
       clock_(clock),
       inter_arrival_(),
       kalman_estimator_(),
@@ -223,15 +226,27 @@ DelayBasedBwe::DelayBasedBwe(Clock* clock)
       trendline_threshold_gain_(kDefaultTrendlineThresholdGain),
       probing_interval_estimator_(&rate_control_),
       median_slope_window_size_(kDefaultMedianSlopeWindowSize),
-      median_slope_threshold_gain_(kDefaultMedianSlopeThresholdGain) {
+      median_slope_threshold_gain_(kDefaultMedianSlopeThresholdGain),
+      consecutive_delayed_feedbacks_(0),
+      last_logged_bitrate_(0),
+      last_logged_state_(kBwNormal) {
   if (in_trendline_experiment_) {
     ReadTrendlineFilterExperimentParameters(&trendline_window_size_,
                                             &trendline_smoothing_coeff_,
                                             &trendline_threshold_gain_);
+    LOG(LS_INFO) << "Trendline filter experiment enabled with parameters "
+                 << trendline_window_size_ << ',' << trendline_smoothing_coeff_
+                 << ',' << trendline_threshold_gain_;
   }
   if (in_median_slope_experiment_) {
     ReadMedianSlopeFilterExperimentParameters(&median_slope_window_size_,
                                               &median_slope_threshold_gain_);
+    LOG(LS_INFO) << "Median-slope filter experiment enabled with parameters "
+                 << median_slope_window_size_ << ','
+                 << median_slope_threshold_gain_;
+  }
+  if (!in_trendline_experiment_ && !in_median_slope_experiment_) {
+    LOG(LS_INFO) << "No overuse experiment enabled. Using Kalman filter.";
   }
 
   network_thread_.DetachFromThread();
@@ -247,12 +262,43 @@ DelayBasedBwe::Result DelayBasedBwe::IncomingPacketFeedbackVector(
     uma_recorded_ = true;
   }
   Result aggregated_result;
+  bool delayed_feedback = true;
   for (const auto& packet_info : packet_feedback_vector) {
+    if (packet_info.send_time_ms < 0)
+      continue;
+    delayed_feedback = false;
     Result result = IncomingPacketInfo(packet_info);
     if (result.updated)
       aggregated_result = result;
   }
+  if (delayed_feedback) {
+    ++consecutive_delayed_feedbacks_;
+  } else {
+    consecutive_delayed_feedbacks_ = 0;
+  }
+  if (consecutive_delayed_feedbacks_ >= kMaxConsecutiveFailedLookups) {
+    aggregated_result =
+        OnLongFeedbackDelay(packet_feedback_vector.back().arrival_time_ms);
+    consecutive_delayed_feedbacks_ = 0;
+  }
   return aggregated_result;
+}
+
+DelayBasedBwe::Result DelayBasedBwe::OnLongFeedbackDelay(
+    int64_t arrival_time_ms) {
+  // Estimate should always be valid since a start bitrate always is set in the
+  // Call constructor. An alternative would be to return an empty Result here,
+  // or to estimate the throughput based on the feedback we received.
+  RTC_DCHECK(rate_control_.ValidEstimate());
+  rate_control_.SetEstimate(rate_control_.LatestEstimate() / 2,
+                            arrival_time_ms);
+  Result result;
+  result.updated = true;
+  result.probe = false;
+  result.target_bitrate_bps = rate_control_.LatestEstimate();
+  LOG(LS_WARNING) << "Long feedback delay detected, reducing BWE to "
+                  << result.target_bitrate_bps;
+  return result;
 }
 
 DelayBasedBwe::Result DelayBasedBwe::IncomingPacketInfo(
@@ -314,7 +360,7 @@ DelayBasedBwe::Result DelayBasedBwe::IncomingPacketInfo(
   }
 
   int probing_bps = 0;
-  if (info.probe_cluster_id != PacketInfo::kNotAProbe) {
+  if (info.pacing_info.probe_cluster_id != PacedPacketInfo::kNotAProbe) {
     probing_bps = probe_bitrate_estimator_.HandleProbeAndEstimateBitrate(info);
   }
   rtc::Optional<uint32_t> acked_bitrate_bps =
@@ -346,6 +392,13 @@ DelayBasedBwe::Result DelayBasedBwe::IncomingPacketInfo(
     last_update_ms_ = now_ms;
     BWE_TEST_LOGGING_PLOT(1, "target_bitrate_bps", now_ms,
                           result.target_bitrate_bps);
+    if (event_log_ && (result.target_bitrate_bps != last_logged_bitrate_ ||
+                       detector_.State() != last_logged_state_)) {
+      event_log_->LogDelayBasedBweUpdate(result.target_bitrate_bps,
+                                         detector_.State());
+      last_logged_bitrate_ = result.target_bitrate_bps;
+      last_logged_state_ = detector_.State();
+    }
   }
 
   return result;
@@ -381,6 +434,11 @@ bool DelayBasedBwe::LatestEstimate(std::vector<uint32_t>* ssrcs,
   *ssrcs = {kFixedSsrc};
   *bitrate_bps = rate_control_.LatestEstimate();
   return true;
+}
+
+void DelayBasedBwe::SetStartBitrate(int start_bitrate_bps) {
+  LOG(LS_WARNING) << "BWE Setting start bitrate to: " << start_bitrate_bps;
+  rate_control_.SetStartBitrate(start_bitrate_bps);
 }
 
 void DelayBasedBwe::SetMinBitrate(int min_bitrate_bps) {

@@ -171,13 +171,79 @@ static_library("angle_image_util") {
   sources = rebase_path(gles_gypi.libangle_image_util_sources, ".", "src")
 
   configs -= angle_undefine_configs
-  configs += [ ":internal_config" ]
+  configs += [
+    ":internal_config",
+    ":extra_warnings",
+  ]
 
   public_configs = [ ":angle_image_util_config" ]
 
   public_deps = [
     ":angle_common",
   ]
+}
+
+config("angle_gpu_info_util_config") {
+  include_dirs = [
+    "include",
+    "src",
+  ]
+}
+
+static_library("angle_gpu_info_util") {
+  configs -= angle_undefine_configs
+  configs += [
+    ":internal_config",
+    ":extra_warnings",
+  ]
+
+  public_configs = [ ":angle_gpu_info_util_config" ]
+
+  public_deps = [
+    ":angle_common",
+  ]
+
+  sources = rebase_path(gles_gypi.libangle_gpu_info_util_sources, ".", "src")
+  deps = []
+  libs = []
+  defines = []
+
+  if (is_linux) {
+    sources +=
+        rebase_path(gles_gypi.libangle_gpu_info_util_linux_sources, ".", "src")
+
+    if (use_x11) {
+      sources +=
+          rebase_path(gles_gypi.libangle_gpu_info_util_x11_sources, ".", "src")
+      deps += [ "src/third_party/libXNVCtrl:libXNVCtrl" ]
+      defines += [ "GPU_INFO_USE_X11" ]
+      libs += [
+        "X11",
+        "Xi",
+        "Xext",
+      ]
+    }
+  }
+
+  # Taken from gpu/config/BUILD.gn
+  # TODO(cwallez): this should be in a shared location
+  use_libpci = is_linux && (!is_chromecast || is_cast_desktop_build) &&
+               (use_x11 || use_ozone)
+  if (use_libpci) {
+    sources +=
+        rebase_path(gles_gypi.libangle_gpu_info_util_libpci_sources, ".", "src")
+    defines += [ "GPU_INFO_USE_LIBPCI" ]
+    libs += [ "pci" ]
+  }
+
+  if (is_mac) {
+    sources +=
+        rebase_path(gles_gypi.libangle_gpu_info_util_mac_sources, ".", "src")
+    libs += [
+      "IOKit.framework",
+      "CoreFoundation.framework",
+    ]
+  }
 }
 
 static_library("translator") {
@@ -201,6 +267,14 @@ static_library("translator") {
         rebase_path(compiler_gypi.angle_translator_hlsl_sources, ".", "src")
     defines += [ "ANGLE_ENABLE_HLSL" ]
   }
+
+  if (angle_enable_vulkan || use_libfuzzer) {
+    sources += rebase_path(compiler_gypi.angle_translator_lib_vulkan_sources,
+                           ".",
+                           "src")
+    defines += [ "ANGLE_ENABLE_VULKAN" ]
+  }
+
   configs -= angle_undefine_configs
   configs += [ ":internal_config" ]
   public_configs = [ ":external_config" ]
@@ -309,6 +383,7 @@ static_library("libANGLE") {
     ":angle_common",
   ]
   deps = [
+    ":angle_gpu_info_util",
     ":angle_image_util",
     ":commit_id",
     ":includes",
@@ -432,6 +507,10 @@ config("angle_static") {
 shared_library("libGLESv2") {
   sources = rebase_path(gles_gypi.libglesv2_sources, ".", "src")
 
+  if (is_android) {
+    configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
+  }
+
   if (is_win) {
     ldflags =
         [ "/DEF:" + rebase_path("src/libGLESv2/libGLESv2.def", root_build_dir) ]
@@ -486,6 +565,9 @@ static_library("libGLESv2_static") {
 shared_library("libEGL") {
   sources = rebase_path(gles_gypi.libegl_sources, ".", "src")
 
+  if (is_android) {
+    configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
+  }
   configs -= angle_undefine_configs
   configs += [
     ":commit_id_config",
@@ -593,6 +675,10 @@ foreach(is_shared_library,
     }
 
     if (is_android) {
+      if (is_shared_library) {
+        configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
+      }
+
       # To prevent linux sources filtering on android
       set_sources_assignment_filter([])
       sources += rebase_path(util_gypi.util_linux_sources, ".", "util")

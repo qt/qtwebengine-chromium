@@ -17,6 +17,7 @@
 namespace gl
 {
 class Buffer;
+class Context;
 class Framebuffer;
 class Program;
 class Renderbuffer;
@@ -26,6 +27,7 @@ class Texture;
 struct TextureCaps;
 struct UniformBlock;
 struct VertexAttribute;
+struct VertexBinding;
 struct VertexAttribCurrentValueData;
 
 void QueryFramebufferAttachmentParameteriv(const Framebuffer *framebuffer,
@@ -36,7 +38,10 @@ void QueryBufferParameteriv(const Buffer *buffer, GLenum pname, GLint *params);
 void QueryBufferParameteri64v(const Buffer *buffer, GLenum pname, GLint64 *params);
 void QueryBufferPointerv(const Buffer *buffer, GLenum pname, void **params);
 void QueryProgramiv(const Program *program, GLenum pname, GLint *params);
-void QueryRenderbufferiv(const Renderbuffer *renderbuffer, GLenum pname, GLint *params);
+void QueryRenderbufferiv(const Context *context,
+                         const Renderbuffer *renderbuffer,
+                         GLenum pname,
+                         GLint *params);
 void QueryShaderiv(const Shader *shader, GLenum pname, GLint *params);
 void QueryTexLevelParameterfv(const Texture *texture,
                               GLenum target,
@@ -52,20 +57,31 @@ void QueryTexParameterfv(const Texture *texture, GLenum pname, GLfloat *params);
 void QueryTexParameteriv(const Texture *texture, GLenum pname, GLint *params);
 void QuerySamplerParameterfv(const Sampler *sampler, GLenum pname, GLfloat *params);
 void QuerySamplerParameteriv(const Sampler *sampler, GLenum pname, GLint *params);
+
+// Warning: you should ensure binding really matches attrib.bindingIndex before using the following
+// functions.
 void QueryVertexAttribfv(const VertexAttribute &attrib,
+                         const VertexBinding &binding,
                          const VertexAttribCurrentValueData &currentValueData,
                          GLenum pname,
                          GLfloat *params);
+
 void QueryVertexAttribiv(const VertexAttribute &attrib,
+                         const VertexBinding &binding,
                          const VertexAttribCurrentValueData &currentValueData,
                          GLenum pname,
                          GLint *params);
+
 void QueryVertexAttribPointerv(const VertexAttribute &attrib, GLenum pname, GLvoid **pointer);
+
 void QueryVertexAttribIiv(const VertexAttribute &attrib,
+                          const VertexBinding &binding,
                           const VertexAttribCurrentValueData &currentValueData,
                           GLenum pname,
                           GLint *params);
+
 void QueryVertexAttribIuiv(const VertexAttribute &attrib,
+                           const VertexBinding &binding,
                            const VertexAttribCurrentValueData &currentValueData,
                            GLenum pname,
                            GLuint *params);
@@ -77,6 +93,8 @@ void QueryActiveUniformBlockiv(const Program *program,
 
 void QueryInternalFormativ(const TextureCaps &format, GLenum pname, GLsizei bufSize, GLint *params);
 
+void QueryFramebufferParameteriv(const Framebuffer *framebuffer, GLenum pname, GLint *params);
+
 void SetTexParameterf(Texture *texture, GLenum pname, GLfloat param);
 void SetTexParameterfv(Texture *texture, GLenum pname, const GLfloat *params);
 void SetTexParameteri(Texture *texture, GLenum pname, GLint param);
@@ -86,6 +104,8 @@ void SetSamplerParameterf(Sampler *sampler, GLenum pname, GLfloat param);
 void SetSamplerParameterfv(Sampler *sampler, GLenum pname, const GLfloat *params);
 void SetSamplerParameteri(Sampler *sampler, GLenum pname, GLint param);
 void SetSamplerParameteriv(Sampler *sampler, GLenum pname, const GLint *params);
+
+void SetFramebufferParameteri(Framebuffer *framebuffer, GLenum pname, GLint param);
 
 }  // namespace gl
 

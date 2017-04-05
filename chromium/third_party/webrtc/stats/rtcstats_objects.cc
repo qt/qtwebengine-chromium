@@ -72,10 +72,10 @@ RTCCertificateStats::~RTCCertificateStats() {
 
 WEBRTC_RTCSTATS_IMPL(RTCCodecStats, RTCStats, "codec",
     &payload_type,
-    &codec,
+    &mime_type,
     &clock_rate,
     &channels,
-    &parameters,
+    &sdp_fmtp_line,
     &implementation);
 
 RTCCodecStats::RTCCodecStats(
@@ -87,10 +87,10 @@ RTCCodecStats::RTCCodecStats(
     std::string&& id, int64_t timestamp_us)
     : RTCStats(std::move(id), timestamp_us),
       payload_type("payloadType"),
-      codec("codec"),
+      mime_type("mimeType"),
       clock_rate("clockRate"),
       channels("channels"),
-      parameters("parameters"),
+      sdp_fmtp_line("sdpFmtpLine"),
       implementation("implementation") {
 }
 
@@ -98,10 +98,10 @@ RTCCodecStats::RTCCodecStats(
     const RTCCodecStats& other)
     : RTCStats(other.id(), other.timestamp_us()),
       payload_type(other.payload_type),
-      codec(other.codec),
+      mime_type(other.mime_type),
       clock_rate(other.clock_rate),
       channels(other.channels),
-      parameters(other.parameters),
+      sdp_fmtp_line(other.sdp_fmtp_line),
       implementation(other.implementation) {
 }
 
@@ -455,7 +455,7 @@ WEBRTC_RTCSTATS_IMPL(RTCRTPStreamStats, RTCStats, "rtp",
     &associate_stats_id,
     &is_remote,
     &media_type,
-    &media_track_id,
+    &track_id,
     &transport_id,
     &codec_id,
     &fir_count,
@@ -476,7 +476,7 @@ RTCRTPStreamStats::RTCRTPStreamStats(
       associate_stats_id("associateStatsId"),
       is_remote("isRemote", false),
       media_type("mediaType"),
-      media_track_id("mediaTrackId"),
+      track_id("trackId"),
       transport_id("transportId"),
       codec_id("codecId"),
       fir_count("firCount"),
@@ -493,7 +493,7 @@ RTCRTPStreamStats::RTCRTPStreamStats(
       associate_stats_id(other.associate_stats_id),
       is_remote(other.is_remote),
       media_type(other.media_type),
-      media_track_id(other.media_track_id),
+      track_id(other.track_id),
       transport_id(other.transport_id),
       codec_id(other.codec_id),
       fir_count(other.fir_count),
@@ -513,6 +513,7 @@ WEBRTC_RTCSTATS_IMPL(
     &packets_lost,
     &jitter,
     &fraction_lost,
+    &round_trip_time,
     &packets_discarded,
     &packets_repaired,
     &burst_packets_lost,
@@ -538,6 +539,7 @@ RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(
       packets_lost("packetsLost"),
       jitter("jitter"),
       fraction_lost("fractionLost"),
+      round_trip_time("roundTripTime"),
       packets_discarded("packetsDiscarded"),
       packets_repaired("packetsRepaired"),
       burst_packets_lost("burstPacketsLost"),
@@ -559,6 +561,7 @@ RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(
       packets_lost(other.packets_lost),
       jitter(other.jitter),
       fraction_lost(other.fraction_lost),
+      round_trip_time(other.round_trip_time),
       packets_discarded(other.packets_discarded),
       packets_repaired(other.packets_repaired),
       burst_packets_lost(other.burst_packets_lost),
@@ -580,7 +583,6 @@ WEBRTC_RTCSTATS_IMPL(
     &packets_sent,
     &bytes_sent,
     &target_bitrate,
-    &round_trip_time,
     &frames_encoded);
 
 RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
@@ -594,7 +596,6 @@ RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
       packets_sent("packetsSent"),
       bytes_sent("bytesSent"),
       target_bitrate("targetBitrate"),
-      round_trip_time("roundTripTime"),
       frames_encoded("framesEncoded") {
 }
 
@@ -604,7 +605,6 @@ RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
       packets_sent(other.packets_sent),
       bytes_sent(other.bytes_sent),
       target_bitrate(other.target_bitrate),
-      round_trip_time(other.round_trip_time),
       frames_encoded(other.frames_encoded) {
 }
 

@@ -156,9 +156,6 @@ bool ValidateGetQueryObjectuiv(Context *context, GLuint id, GLenum pname, GLuint
 bool ValidateFramebufferTextureLayer(Context *context, GLenum target, GLenum attachment,
                                      GLuint texture, GLint level, GLint layer);
 
-bool ValidateES3RenderbufferStorageParameters(Context *context, GLenum target, GLsizei samples,
-                                              GLenum internalformat, GLsizei width, GLsizei height);
-
 bool ValidateInvalidateFramebuffer(Context *context, GLenum target, GLsizei numAttachments,
                                    const GLenum *attachments);
 
@@ -190,6 +187,14 @@ bool ValidateCompressedTexImage3D(Context *context,
 
 bool ValidateBindVertexArray(Context *context, GLuint array);
 bool ValidateIsVertexArray(Context *context);
+
+bool ValidateBindBufferBase(Context *context, GLenum target, GLuint index, GLuint buffer);
+bool ValidateBindBufferRange(Context *context,
+                             GLenum target,
+                             GLuint index,
+                             GLuint buffer,
+                             GLintptr offset,
+                             GLsizeiptr size);
 
 bool ValidateProgramBinary(Context *context,
                            GLuint program,
@@ -365,6 +370,12 @@ bool ValidateCopyBufferSubData(ValidationContext *context,
                                GLsizeiptr size);
 
 bool ValidateGetStringi(Context *context, GLenum name, GLuint index);
+bool ValidateRenderbufferStorageMultisample(ValidationContext *context,
+                                            GLenum target,
+                                            GLsizei samples,
+                                            GLenum internalformat,
+                                            GLsizei width,
+                                            GLsizei height);
 
 }  // namespace gl
 

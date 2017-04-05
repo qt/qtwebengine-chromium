@@ -20,11 +20,31 @@ static v8::Isolate* g_isolate = nullptr;
 static size_t g_isolate_ref_count = 0;
 static FXJS_ArrayBufferAllocator* g_arrayBufferAllocator = nullptr;
 static v8::Global<v8::ObjectTemplate>* g_DefaultGlobalObjectTemplate = nullptr;
+static wchar_t kPerObjectDataTag[] = L"CFXJS_PerObjectData";
 
 class CFXJS_PerObjectData {
  public:
   explicit CFXJS_PerObjectData(int nObjDefID)
       : m_ObjDefID(nObjDefID), m_pPrivate(nullptr) {}
+
+  static void SetInObject(CFXJS_PerObjectData* pData,
+                          v8::Local<v8::Object> pObj) {
+    if (pObj->InternalFieldCount() == 2) {
+      pObj->SetAlignedPointerInInternalField(0, pData);
+      pObj->SetAlignedPointerInInternalField(
+          1, static_cast<void*>(kPerObjectDataTag));
+    }
+  }
+
+  static CFXJS_PerObjectData* GetFromObject(v8::Local<v8::Object> pObj) {
+    if (pObj.IsEmpty() || pObj->InternalFieldCount() != 2 ||
+        pObj->GetAlignedPointerFromInternalField(1) !=
+            static_cast<void*>(kPerObjectDataTag)) {
+      return nullptr;
+    }
+    return static_cast<CFXJS_PerObjectData*>(
+        pObj->GetAlignedPointerFromInternalField(0));
+  }
 
   const int m_ObjDefID;
   void* m_pPrivate;
@@ -42,7 +62,7 @@ class CFXJS_ObjDefinition {
   }
 
   CFXJS_ObjDefinition(v8::Isolate* isolate,
-                      const wchar_t* sObjName,
+                      const char* sObjName,
                       FXJSOBJTYPE eObjType,
                       CFXJS_Engine::Constructor pConstructor,
                       CFXJS_Engine::Destructor pDestructor)
@@ -56,6 +76,12 @@ class CFXJS_ObjDefinition {
 
     v8::Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(isolate);
     fun->InstanceTemplate()->SetInternalFieldCount(2);
+    fun->SetCallHandler([](const v8::FunctionCallbackInfo<v8::Value>& info) {
+      v8::Local<v8::Object> holder = info.Holder();
+      ASSERT(holder->InternalFieldCount() == 2);
+      holder->SetAlignedPointerInInternalField(0, nullptr);
+      holder->SetAlignedPointerInInternalField(1, nullptr);
+    });
     if (eObjType == FXJSOBJTYPE_GLOBAL) {
       fun->InstanceTemplate()->Set(
           v8::Symbol::GetToStringTag(isolate),
@@ -86,7 +112,7 @@ class CFXJS_ObjDefinition {
     return scope.Escape(m_Signature.Get(m_pIsolate));
   }
 
-  const wchar_t* const m_ObjName;
+  const char* const m_ObjName;
   const FXJSOBJTYPE m_ObjType;
   const CFXJS_Engine::Constructor m_pConstructor;
   const CFXJS_Engine::Destructor m_pDestructor;
@@ -235,13 +261,8 @@ CFXJS_Engine* CFXJS_Engine::CurrentEngineFromIsolate(v8::Isolate* pIsolate) {
 
 // static
 int CFXJS_Engine::GetObjDefnID(v8::Local<v8::Object> pObj) {
-  if (pObj.IsEmpty() || !pObj->InternalFieldCount())
-    return -1;
-  CFXJS_PerObjectData* pPerObjectData = static_cast<CFXJS_PerObjectData*>(
-      pObj->GetAlignedPointerFromInternalField(0));
-  if (!pPerObjectData)
-    return -1;
-  return pPerObjectData->m_ObjDefID;
+  CFXJS_PerObjectData* pData = CFXJS_PerObjectData::GetFromObject(pObj);
+  return pData ? pData->m_ObjDefID : -1;
 }
 
 // static
@@ -251,13 +272,13 @@ void CFXJS_Engine::FreeObjectPrivate(void* pPerObjectData) {
 
 // static
 void CFXJS_Engine::FreeObjectPrivate(v8::Local<v8::Object> pObj) {
-  if (pObj.IsEmpty() || !pObj->InternalFieldCount())
-    return;
-  FreeObjectPrivate(pObj->GetAlignedPointerFromInternalField(0));
+  CFXJS_PerObjectData* pData = CFXJS_PerObjectData::GetFromObject(pObj);
   pObj->SetAlignedPointerInInternalField(0, nullptr);
+  pObj->SetAlignedPointerInInternalField(1, nullptr);
+  delete pData;
 }
 
-int CFXJS_Engine::DefineObj(const wchar_t* sObjName,
+int CFXJS_Engine::DefineObj(const char* sObjName,
                             FXJSOBJTYPE eObjType,
                             CFXJS_Engine::Constructor pConstructor,
                             CFXJS_Engine::Destructor pDestructor) {
@@ -270,35 +291,32 @@ int CFXJS_Engine::DefineObj(const wchar_t* sObjName,
 }
 
 void CFXJS_Engine::DefineObjMethod(int nObjDefnID,
-                                   const wchar_t* sMethodName,
+                                   const char* sMethodName,
                                    v8::FunctionCallback pMethodCall) {
   v8::Isolate::Scope isolate_scope(m_isolate);
   v8::HandleScope handle_scope(m_isolate);
-  CFX_ByteString bsMethodName = CFX_WideString(sMethodName).UTF8Encode();
   CFXJS_ObjDefinition* pObjDef =
       CFXJS_ObjDefinition::ForID(m_isolate, nObjDefnID);
   v8::Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(
       m_isolate, pMethodCall, v8::Local<v8::Value>(), pObjDef->GetSignature());
   fun->RemovePrototype();
   pObjDef->GetInstanceTemplate()->Set(
-      v8::String::NewFromUtf8(m_isolate, bsMethodName.c_str(),
+      v8::String::NewFromUtf8(m_isolate, sMethodName,
                               v8::NewStringType::kNormal)
           .ToLocalChecked(),
       fun, v8::ReadOnly);
 }
 
 void CFXJS_Engine::DefineObjProperty(int nObjDefnID,
-                                     const wchar_t* sPropName,
+                                     const char* sPropName,
                                      v8::AccessorGetterCallback pPropGet,
                                      v8::AccessorSetterCallback pPropPut) {
   v8::Isolate::Scope isolate_scope(m_isolate);
   v8::HandleScope handle_scope(m_isolate);
-  CFX_ByteString bsPropertyName = CFX_WideString(sPropName).UTF8Encode();
   CFXJS_ObjDefinition* pObjDef =
       CFXJS_ObjDefinition::ForID(m_isolate, nObjDefnID);
   pObjDef->GetInstanceTemplate()->SetAccessor(
-      v8::String::NewFromUtf8(m_isolate, bsPropertyName.c_str(),
-                              v8::NewStringType::kNormal)
+      v8::String::NewFromUtf8(m_isolate, sPropName, v8::NewStringType::kNormal)
           .ToLocalChecked(),
       pPropGet, pPropPut);
 }
@@ -318,26 +336,24 @@ void CFXJS_Engine::DefineObjAllProperties(
 }
 
 void CFXJS_Engine::DefineObjConst(int nObjDefnID,
-                                  const wchar_t* sConstName,
+                                  const char* sConstName,
                                   v8::Local<v8::Value> pDefault) {
   v8::Isolate::Scope isolate_scope(m_isolate);
   v8::HandleScope handle_scope(m_isolate);
-  CFX_ByteString bsConstName = CFX_WideString(sConstName).UTF8Encode();
   CFXJS_ObjDefinition* pObjDef =
       CFXJS_ObjDefinition::ForID(m_isolate, nObjDefnID);
-  pObjDef->GetInstanceTemplate()->Set(m_isolate, bsConstName.c_str(), pDefault);
+  pObjDef->GetInstanceTemplate()->Set(m_isolate, sConstName, pDefault);
 }
 
-void CFXJS_Engine::DefineGlobalMethod(const wchar_t* sMethodName,
+void CFXJS_Engine::DefineGlobalMethod(const char* sMethodName,
                                       v8::FunctionCallback pMethodCall) {
   v8::Isolate::Scope isolate_scope(m_isolate);
   v8::HandleScope handle_scope(m_isolate);
-  CFX_ByteString bsMethodName = CFX_WideString(sMethodName).UTF8Encode();
   v8::Local<v8::FunctionTemplate> fun =
       v8::FunctionTemplate::New(m_isolate, pMethodCall);
   fun->RemovePrototype();
   GetGlobalObjectTemplate(m_isolate)->Set(
-      v8::String::NewFromUtf8(m_isolate, bsMethodName.c_str(),
+      v8::String::NewFromUtf8(m_isolate, sMethodName,
                               v8::NewStringType::kNormal)
           .ToLocalChecked(),
       fun, v8::ReadOnly);
@@ -347,7 +363,7 @@ void CFXJS_Engine::DefineGlobalConst(const wchar_t* sConstName,
                                      v8::FunctionCallback pConstGetter) {
   v8::Isolate::Scope isolate_scope(m_isolate);
   v8::HandleScope handle_scope(m_isolate);
-  CFX_ByteString bsConst = CFX_WideString(sConstName).UTF8Encode();
+  CFX_ByteString bsConst = FX_UTF8Encode(CFX_WideStringC(sConstName));
   v8::Local<v8::FunctionTemplate> fun =
       v8::FunctionTemplate::New(m_isolate, pConstGetter);
   fun->RemovePrototype();
@@ -380,26 +396,26 @@ void CFXJS_Engine::InitializeEngine() {
   for (int i = 0; i < maxID; ++i) {
     CFXJS_ObjDefinition* pObjDef = CFXJS_ObjDefinition::ForID(m_isolate, i);
     if (pObjDef->m_ObjType == FXJSOBJTYPE_GLOBAL) {
-      v8Context->Global()
-          ->GetPrototype()
-          ->ToObject(v8Context)
-          .ToLocalChecked()
-          ->SetAlignedPointerInInternalField(0, new CFXJS_PerObjectData(i));
-
-      if (pObjDef->m_pConstructor)
+      CFXJS_PerObjectData::SetInObject(new CFXJS_PerObjectData(i),
+                                       v8Context->Global()
+                                           ->GetPrototype()
+                                           ->ToObject(v8Context)
+                                           .ToLocalChecked());
+      if (pObjDef->m_pConstructor) {
         pObjDef->m_pConstructor(this, v8Context->Global()
                                           ->GetPrototype()
                                           ->ToObject(v8Context)
                                           .ToLocalChecked());
+      }
     } else if (pObjDef->m_ObjType == FXJSOBJTYPE_STATIC) {
-      CFX_ByteString bs = CFX_WideString(pObjDef->m_ObjName).UTF8Encode();
-      v8::Local<v8::String> m_ObjName =
-          v8::String::NewFromUtf8(m_isolate, bs.c_str(),
-                                  v8::NewStringType::kNormal, bs.GetLength())
+      v8::Local<v8::String> pObjName =
+          v8::String::NewFromUtf8(m_isolate, pObjDef->m_ObjName,
+                                  v8::NewStringType::kNormal,
+                                  strlen(pObjDef->m_ObjName))
               .ToLocalChecked();
 
       v8::Local<v8::Object> obj = NewFxDynamicObj(i, true);
-      v8Context->Global()->Set(v8Context, m_ObjName, obj).FromJust();
+      v8Context->Global()->Set(v8Context, pObjName, obj).FromJust();
       m_StaticObjects[i] = new v8::Global<v8::Object>(m_isolate, obj);
     }
   }
@@ -499,15 +515,14 @@ v8::Local<v8::Object> CFXJS_Engine::NewFxDynamicObj(int nObjDefnID,
   if (!pObjDef->GetInstanceTemplate()->NewInstance(context).ToLocal(&obj))
     return v8::Local<v8::Object>();
 
-  CFXJS_PerObjectData* pPerObjData = new CFXJS_PerObjectData(nObjDefnID);
-  obj->SetAlignedPointerInInternalField(0, pPerObjData);
+  CFXJS_PerObjectData* pObjData = new CFXJS_PerObjectData(nObjDefnID);
+  CFXJS_PerObjectData::SetInObject(pObjData, obj);
   if (pObjDef->m_pConstructor)
     pObjDef->m_pConstructor(this, obj);
 
-  if (!bStatic && FXJS_PerIsolateData::Get(m_isolate)->m_pDynamicObjsMap) {
-    FXJS_PerIsolateData::Get(m_isolate)->m_pDynamicObjsMap->set(pPerObjData,
-                                                                obj);
-  }
+  if (!bStatic && FXJS_PerIsolateData::Get(m_isolate)->m_pDynamicObjsMap)
+    FXJS_PerIsolateData::Get(m_isolate)->m_pDynamicObjsMap->set(pObjData, obj);
+
   return obj;
 }
 
@@ -533,43 +548,25 @@ void CFXJS_Engine::Error(const CFX_WideString& message) {
 }
 
 void CFXJS_Engine::SetObjectPrivate(v8::Local<v8::Object> pObj, void* p) {
-  if (pObj.IsEmpty() || !pObj->InternalFieldCount())
-    return;
-  CFXJS_PerObjectData* pPerObjectData = static_cast<CFXJS_PerObjectData*>(
-      pObj->GetAlignedPointerFromInternalField(0));
+  CFXJS_PerObjectData* pPerObjectData =
+      CFXJS_PerObjectData::GetFromObject(pObj);
   if (!pPerObjectData)
     return;
   pPerObjectData->m_pPrivate = p;
 }
 
 void* CFXJS_Engine::GetObjectPrivate(v8::Local<v8::Object> pObj) {
-  if (pObj.IsEmpty())
-    return nullptr;
-  CFXJS_PerObjectData* pPerObjectData = nullptr;
-  if (pObj->InternalFieldCount()) {
-    pPerObjectData = static_cast<CFXJS_PerObjectData*>(
-        pObj->GetAlignedPointerFromInternalField(0));
-  } else {
+  CFXJS_PerObjectData* pData = CFXJS_PerObjectData::GetFromObject(pObj);
+  if (!pData && !pObj.IsEmpty()) {
     // It could be a global proxy object.
     v8::Local<v8::Value> v = pObj->GetPrototype();
     v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
     if (v->IsObject()) {
-      pPerObjectData = static_cast<CFXJS_PerObjectData*>(
-          v->ToObject(context)
-              .ToLocalChecked()
-              ->GetAlignedPointerFromInternalField(0));
+      pData = CFXJS_PerObjectData::GetFromObject(
+          v->ToObject(context).ToLocalChecked());
     }
   }
-  return pPerObjectData ? pPerObjectData->m_pPrivate : nullptr;
-}
-
-v8::Local<v8::String> CFXJS_Engine::WSToJSString(
-    const CFX_WideString& wsPropertyName) {
-  v8::Isolate* pIsolate = m_isolate ? m_isolate : v8::Isolate::GetCurrent();
-  CFX_ByteString bs = wsPropertyName.UTF8Encode();
-  return v8::String::NewFromUtf8(pIsolate, bs.c_str(),
-                                 v8::NewStringType::kNormal, bs.GetLength())
-      .ToLocalChecked();
+  return pData ? pData->m_pPrivate : nullptr;
 }
 
 v8::Local<v8::Value> CFXJS_Engine::GetObjectProperty(
@@ -578,7 +575,8 @@ v8::Local<v8::Value> CFXJS_Engine::GetObjectProperty(
   if (pObj.IsEmpty())
     return v8::Local<v8::Value>();
   v8::Local<v8::Value> val;
-  if (!pObj->Get(m_isolate->GetCurrentContext(), WSToJSString(wsPropertyName))
+  if (!pObj->Get(m_isolate->GetCurrentContext(),
+                 NewString(wsPropertyName.AsStringC()))
            .ToLocal(&val))
     return v8::Local<v8::Value>();
   return val;
@@ -607,7 +605,8 @@ void CFXJS_Engine::PutObjectProperty(v8::Local<v8::Object> pObj,
                                      v8::Local<v8::Value> pPut) {
   if (pObj.IsEmpty())
     return;
-  pObj->Set(m_isolate->GetCurrentContext(), WSToJSString(wsPropertyName), pPut)
+  pObj->Set(m_isolate->GetCurrentContext(),
+            NewString(wsPropertyName.AsStringC()), pPut)
       .FromJust();
 }
 
@@ -666,8 +665,15 @@ v8::Local<v8::Value> CFXJS_Engine::NewBoolean(bool b) {
   return v8::Boolean::New(m_isolate, b);
 }
 
-v8::Local<v8::Value> CFXJS_Engine::NewString(const CFX_WideString& str) {
-  return WSToJSString(str.c_str());
+v8::Local<v8::Value> CFXJS_Engine::NewString(const CFX_ByteStringC& str) {
+  v8::Isolate* pIsolate = m_isolate ? m_isolate : v8::Isolate::GetCurrent();
+  return v8::String::NewFromUtf8(pIsolate, str.c_str(),
+                                 v8::NewStringType::kNormal, str.GetLength())
+      .ToLocalChecked();
+}
+
+v8::Local<v8::Value> CFXJS_Engine::NewString(const CFX_WideStringC& str) {
+  return NewString(FX_UTF8Encode(str).AsStringC());
 }
 
 v8::Local<v8::Value> CFXJS_Engine::NewNull() {

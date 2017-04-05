@@ -77,26 +77,24 @@ class CPDF_StreamContentParser {
       std::unordered_map<uint32_t, void (CPDF_StreamContentParser::*)()>;
   static OpCodes InitializeOpCodes();
 
-  void AddNumberParam(const FX_CHAR* str, int len);
+  void AddNameParam(const CFX_ByteStringC& str);
+  void AddNumberParam(const CFX_ByteStringC& str);
   void AddObjectParam(std::unique_ptr<CPDF_Object> pObj);
-  void AddNameParam(const FX_CHAR* name, int size);
   int GetNextParamPos();
   void ClearAllParams();
   CPDF_Object* GetObject(uint32_t index);
   CFX_ByteString GetString(uint32_t index);
   FX_FLOAT GetNumber(uint32_t index);
   int GetInteger(uint32_t index) { return (int32_t)(GetNumber(index)); }
-  void OnOperator(const FX_CHAR* op);
+  void OnOperator(const CFX_ByteStringC& op);
   void AddTextObject(CFX_ByteString* pText,
                      FX_FLOAT fInitKerning,
                      FX_FLOAT* pKerning,
                      int count);
 
-  void ConvertUserSpace(FX_FLOAT& x, FX_FLOAT& y);
-  void ConvertTextSpace(FX_FLOAT& x, FX_FLOAT& y);
   void OnChangeTextMatrix();
   void ParsePathObject();
-  void AddPathPoint(FX_FLOAT x, FX_FLOAT y, int flag);
+  void AddPathPoint(FX_FLOAT x, FX_FLOAT y, FXPT_TYPE type, bool close);
   void AddPathRect(FX_FLOAT x, FX_FLOAT y, FX_FLOAT w, FX_FLOAT h);
   void AddPathObject(int FillType, bool bStroke);
   CPDF_ImageObject* AddImage(std::unique_ptr<CPDF_Stream> pStream);

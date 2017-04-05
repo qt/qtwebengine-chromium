@@ -17,7 +17,7 @@
 #include "helpers.h"
 #include "util.h"
 
-static struct supported_combination combos[11] = {
+static struct supported_combination combos[12] = {
 	{DRM_FORMAT_ABGR8888, DRM_FORMAT_MOD_NONE,
 		BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
 		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
@@ -42,6 +42,8 @@ static struct supported_combination combos[11] = {
 		BO_USE_RENDERING | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
 	{DRM_FORMAT_YVU420, DRM_FORMAT_MOD_NONE,
 		BO_USE_RENDERING | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_YVU420, DRM_FORMAT_MOD_NONE,
+		BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN},
 };
 
 static int afbc_bo_from_format(struct bo *bo, uint32_t width, uint32_t height,
@@ -128,7 +130,8 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo,
 		drv_bo_from_format(bo, aligned_width, height, format);
 		bo->total_size = bo->strides[0] * aligned_height
 				 + w_mbs * h_mbs * 128;
-	} else if (has_modifier(modifiers, count,
+	} else if (width <= 2560 &&
+		   has_modifier(modifiers, count,
 				DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC)) {
 		/* If the caller has decided they can use AFBC, always
 		 * pick that */
@@ -216,6 +219,7 @@ struct backend backend_rockchip =
 	.bo_create = rockchip_bo_create,
 	.bo_create_with_modifiers = rockchip_bo_create_with_modifiers,
 	.bo_destroy = drv_gem_bo_destroy,
+	.bo_import = drv_prime_bo_import,
 	.bo_map = rockchip_bo_map,
 	.resolve_format = rockchip_resolve_format,
 };

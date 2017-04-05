@@ -151,6 +151,14 @@
                     [
                         '<@(libangle_common_mac_sources)',
                     ],
+                    'link_settings':
+                    {
+                        'libraries':
+                        [
+                            '$(SDKROOT)/System/Library/Frameworks/IOKit.framework',
+                            '$(SDKROOT)/System/Library/Frameworks/CoreFoundation.framework',
+                        ],
+                    },
                 }],
                 ['OS=="linux"',
                 {
@@ -187,6 +195,98 @@
                     '<(angle_path)/src',
                 ],
             },
+        },
+
+        {
+            'target_name': 'angle_gpu_info_util',
+            'type': 'static_library',
+            'includes': [ '../gyp/common_defines.gypi', ],
+            'sources':
+            [
+                '<@(libangle_gpu_info_util_sources)',
+            ],
+            'include_dirs':
+            [
+                '.',
+                '../include',
+            ],
+            'dependencies':
+            [
+                'angle_common',
+            ],
+            'direct_dependent_settings':
+            {
+                'include_dirs':
+                [
+                    '<(angle_path)/include',
+                    '<(angle_path)/src',
+                ],
+            },
+            'conditions':
+            [
+                ['OS=="linux"',
+                {
+                    'sources':
+                    [
+                        '<@(libangle_gpu_info_util_linux_sources)',
+                    ],
+                }],
+                ['OS=="linux" and use_x11==1',
+                {
+                    'sources':
+                    [
+                        '<@(libangle_gpu_info_util_x11_sources)',
+                    ],
+                    'defines':
+                    [
+                        'GPU_INFO_USE_X11',
+                    ],
+                    'dependencies':
+                    [
+                        '<(angle_path)/src/third_party/libXNVCtrl/libXNVCtrl.gyp:libXNVCtrl',
+                    ],
+                    'link_settings':
+                    {
+                        'ldflags':
+                        [
+                            '<!@(<(pkg-config) --libs-only-L --libs-only-other x11 xi xext)',
+                        ],
+                        'libraries':
+                        [
+                            '<!@(<(pkg-config) --libs-only-l x11 xi xext) -ldl',
+                        ],
+                    },
+                }],
+                ['OS=="linux" and use_libpci==1',
+                {
+                    'sources':
+                    [
+                        '<@(libangle_gpu_info_util_libpci_sources)',
+                    ],
+                    'defines':
+                    [
+                        'GPU_INFO_USE_LIBPCI',
+                    ],
+                    'link_settings':
+                    {
+                        'ldflags':
+                        [
+                            '<!@(<(pkg-config) --libs-only-L --libs-only-other libpci)',
+                        ],
+                        'libraries':
+                        [
+                            '<!@(<(pkg-config) --libs-only-l libpci)',
+                        ],
+                    },
+                }],
+                ['OS=="mac"',
+                {
+                    'sources':
+                    [
+                        '<@(libangle_gpu_info_util_mac_sources)',
+                    ],
+                }],
+            ],
         },
 
         {

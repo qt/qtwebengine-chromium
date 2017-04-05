@@ -6,9 +6,12 @@
 
 licenses(["notice"])
 
+exports_files(["LICENSE"])
+
 cc_library(
     name = "re2",
     srcs = [
+        "re2/bitmap256.h",
         "re2/bitstate.cc",
         "re2/compile.cc",
         "re2/dfa.cc",
@@ -36,36 +39,31 @@ cc_library(
         "re2/unicode_groups.cc",
         "re2/unicode_groups.h",
         "re2/walker-inl.h",
-        "util/atomicops.h",
         "util/flags.h",
-        "util/hash.cc",
-        "util/logging.cc",
         "util/logging.h",
+        "util/mix.h",
         "util/mutex.h",
         "util/rune.cc",
         "util/sparse_array.h",
         "util/sparse_set.h",
-        "util/stringprintf.cc",
         "util/strutil.cc",
+        "util/strutil.h",
         "util/utf.h",
         "util/util.h",
-        "util/valgrind.cc",
-        "util/valgrind.h",
     ],
     hdrs = [
         "re2/filtered_re2.h",
         "re2/re2.h",
         "re2/set.h",
         "re2/stringpiece.h",
-        "re2/variadic_function.h",
     ],
-    includes = ["."],
+    copts = ["-pthread"],
     linkopts = ["-pthread"],
     visibility = ["//visibility:public"],
 )
 
 cc_library(
-    name = "test",
+    name = "testing",
     testonly = 1,
     srcs = [
         "re2/testing/backtrack.cc",
@@ -76,46 +74,100 @@ cc_library(
         "re2/testing/string_generator.cc",
         "re2/testing/tester.cc",
         "util/pcre.cc",
-        "util/random.cc",
-        "util/test.cc",
-        "util/thread.cc",
     ],
     hdrs = [
         "re2/testing/exhaustive_tester.h",
         "re2/testing/regexp_generator.h",
         "re2/testing/string_generator.h",
         "re2/testing/tester.h",
+        "util/benchmark.h",
         "util/pcre.h",
-        "util/random.h",
         "util/test.h",
-        "util/thread.h",
     ],
-    includes = ["."],
     deps = [":re2"],
+)
+
+cc_library(
+    name = "test",
+    testonly = 1,
+    srcs = ["util/test.cc"],
+    deps = [":testing"],
 )
 
 load("re2_test", "re2_test")
 
 re2_test("charclass_test")
+
 re2_test("compile_test")
+
 re2_test("filtered_re2_test")
+
 re2_test("mimics_pcre_test")
+
 re2_test("parse_test")
+
 re2_test("possible_match_test")
-re2_test("re2_test")
+
 re2_test("re2_arg_test")
+
+re2_test("re2_test")
+
 re2_test("regexp_test")
+
 re2_test("required_prefix_test")
+
 re2_test("search_test")
+
 re2_test("set_test")
+
 re2_test("simplify_test")
+
 re2_test("string_generator_test")
 
-re2_test("dfa_test")
-re2_test("exhaustive1_test")
-re2_test("exhaustive2_test")
-re2_test("exhaustive3_test")
-re2_test("exhaustive_test")
-re2_test("random_test")
+re2_test(
+    "dfa_test",
+    size = "large",
+)
 
-# TODO: Add support for regexp_benchmark.
+re2_test(
+    "exhaustive1_test",
+    size = "large",
+)
+
+re2_test(
+    "exhaustive2_test",
+    size = "large",
+)
+
+re2_test(
+    "exhaustive3_test",
+    size = "large",
+)
+
+re2_test(
+    "exhaustive_test",
+    size = "large",
+)
+
+re2_test(
+    "random_test",
+    size = "large",
+)
+
+cc_library(
+    name = "benchmark",
+    testonly = 1,
+    srcs = ["util/benchmark.cc"],
+    deps = [":testing"],
+)
+
+cc_binary(
+    name = "regexp_benchmark",
+    testonly = 1,
+    srcs = ["re2/testing/regexp_benchmark.cc"],
+    linkopts = [
+        "-lm",
+        "-lrt",
+    ],
+    deps = [":benchmark"],
+)

@@ -11,7 +11,6 @@
 #include "webrtc/base/signalthread.h"
 
 #include "webrtc/base/checks.h"
-#include "webrtc/base/common.h"
 
 namespace rtc {
 
@@ -114,7 +113,7 @@ void SignalThread::OnMessage(Message *msg) {
       // SignalThread this makes an assert in thread.cc fire.
       //
       // Calling Stop() on the worker ensures that the OS thread that underlies
-      // the worker will finish, and will be set to NULL, enabling us to call
+      // the worker will finish, and will be set to null, enabling us to call
       // Start() again.
       worker_.Stop();
       SignalWorkDone(this);
@@ -145,7 +144,11 @@ void SignalThread::Run() {
 
 void SignalThread::OnMainThreadDestroyed() {
   EnterExit ee(this);
-  main_ = NULL;
+  main_ = nullptr;
+}
+
+bool SignalThread::Worker::IsProcessingMessages() {
+  return false;
 }
 
 }  // namespace rtc

@@ -7,6 +7,7 @@
 #ifndef CORE_FXCRT_FX_UCD_H_
 #define CORE_FXCRT_FX_UCD_H_
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_basic.h"
 
 #define FX_BIDICLASSBITS 6
@@ -121,43 +122,43 @@ class CFX_Char {
   CFX_Char()
       : m_wCharCode(0),
         m_nBreakType(0),
-        m_nRotation(0),
         m_dwCharProps(0),
-        m_dwCharStyles(0),
         m_iCharWidth(0),
         m_iHorizontalScale(100),
-        m_iVertialScale(100) {}
+        m_iVerticalScale(100) {}
+
   CFX_Char(uint16_t wCharCode, uint32_t dwCharProps)
       : m_wCharCode(wCharCode),
         m_nBreakType(0),
-        m_nRotation(0),
         m_dwCharProps(dwCharProps),
-        m_dwCharStyles(0),
         m_iCharWidth(0),
         m_iHorizontalScale(100),
-        m_iVertialScale(100) {}
+        m_iVerticalScale(100) {}
 
   FX_CHARTYPE GetCharType() const { return GetCharTypeFromProp(m_dwCharProps); }
 
   uint16_t m_wCharCode;
   uint8_t m_nBreakType;
-  int8_t m_nRotation;
   uint32_t m_dwCharProps;
-  uint32_t m_dwCharStyles;
   int32_t m_iCharWidth;
   int32_t m_iHorizontalScale;
-  int32_t m_iVertialScale;
+  int32_t m_iVerticalScale;
 };
-typedef CFX_ArrayTemplate<CFX_Char> CFX_CharArray;
+
 class CFX_TxtChar : public CFX_Char {
  public:
   CFX_TxtChar()
-      : m_dwStatus(0),
+      : m_nRotation(0),
+        m_dwCharStyles(0),
+        m_dwStatus(0),
         m_iBidiClass(0),
         m_iBidiLevel(0),
         m_iBidiPos(0),
         m_iBidiOrder(0),
         m_pUserData(nullptr) {}
+
+  int8_t m_nRotation;
+  uint32_t m_dwCharStyles;
   uint32_t m_dwStatus;
   int16_t m_iBidiClass;
   int16_t m_iBidiLevel;
@@ -165,38 +166,39 @@ class CFX_TxtChar : public CFX_Char {
   int16_t m_iBidiOrder;
   void* m_pUserData;
 };
-typedef CFX_ArrayTemplate<CFX_TxtChar> CFX_TxtCharArray;
+
+enum class CFX_RTFBreakType { None = 0, Piece, Line, Paragraph, Page };
+
 class CFX_RTFChar : public CFX_Char {
  public:
   CFX_RTFChar();
   CFX_RTFChar(const CFX_RTFChar& other);
+  ~CFX_RTFChar();
 
-  uint32_t m_dwStatus;
+  CFX_RTFBreakType m_dwStatus;
   int32_t m_iFontSize;
   int32_t m_iFontHeight;
   int16_t m_iBidiClass;
   int16_t m_iBidiLevel;
   int16_t m_iBidiPos;
   int16_t m_iBidiOrder;
-  uint32_t m_dwLayoutStyles;
   uint32_t m_dwIdentity;
-  IFX_Retainable* m_pUserData;
+  CFX_RetainPtr<CFX_Retainable> m_pUserData;
 };
 
 inline CFX_RTFChar::CFX_RTFChar()
-    : m_dwStatus(0),
+    : m_dwStatus(CFX_RTFBreakType::None),
       m_iFontSize(0),
       m_iFontHeight(0),
       m_iBidiClass(0),
       m_iBidiLevel(0),
       m_iBidiPos(0),
-      m_dwLayoutStyles(0),
       m_dwIdentity(0),
       m_pUserData(nullptr) {}
 
 inline CFX_RTFChar::CFX_RTFChar(const CFX_RTFChar& other) = default;
+inline CFX_RTFChar::~CFX_RTFChar() = default;
 
-typedef CFX_ArrayTemplate<CFX_RTFChar> CFX_RTFCharArray;
 #endif  // PDF_ENABLE_XFA
 
 #endif  // CORE_FXCRT_FX_UCD_H_

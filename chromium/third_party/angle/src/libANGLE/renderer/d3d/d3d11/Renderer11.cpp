@@ -9,7 +9,6 @@
 #include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 
 #include <EGL/eglext.h>
-#include <iomanip>
 #include <sstream>
 #include <versionhelpers.h>
 
@@ -388,7 +387,8 @@ Renderer11::Renderer11(egl::Display *display)
     : RendererD3D(display),
       mStateCache(this),
       mStateManager(this),
-      mLastHistogramUpdateTime(ANGLEPlatformCurrent()->monotonicallyIncreasingTime()),
+      mLastHistogramUpdateTime(
+          ANGLEPlatformCurrent()->monotonicallyIncreasingTime(ANGLEPlatformCurrent())),
       mDebug(nullptr),
       mScratchMemoryBufferResetCounter(0),
       mAnnotator(nullptr)
@@ -733,7 +733,7 @@ egl::Error Renderer11::initializeD3DDevice()
 
         if (!mDevice || FAILED(result))
         {
-            ERR("Failed creating Debug D3D11 device - falling back to release runtime.\n");
+            WARN() << "Failed creating Debug D3D11 device - falling back to release runtime.";
         }
 
         if (!mDevice || FAILED(result))
@@ -869,7 +869,7 @@ void Renderer11::populateRenderer11DeviceCaps()
     if (FAILED(hr))
     {
         mRenderer11DeviceCaps.driverVersion.reset();
-        ERR("Error querying driver version from DXGI Adapter.");
+        ERR() << "Error querying driver version from DXGI Adapter.";
     }
     else
     {
@@ -932,6 +932,17 @@ egl::ConfigSet Renderer11::generateConfigs()
 
     // 24-bit supported formats
     colorBufferFormats.push_back(GL_RGB8_OES);
+
+    if (mRenderer11DeviceCaps.featureLevel >= D3D_FEATURE_LEVEL_10_0)
+    {
+        // Additional high bit depth formats added in D3D 10.0
+        // https://msdn.microsoft.com/en-us/library/windows/desktop/bb173064.aspx
+        colorBufferFormats.push_back(GL_RGBA16F);
+
+        // TODO(geofflang): Re-enable once client code has been updated to filter configs better and
+        // not use RGB10A2 accidentally when requesting RGBA8
+        // colorBufferFormats.push_back(GL_RGB10_A2);
+    }
 
     if (!mPresentPathFastEnabled)
     {
@@ -1041,6 +1052,8 @@ egl::ConfigSet Renderer11::generateConfigs()
             config.transparentGreenValue = 0;
             config.transparentBlueValue  = 0;
             config.optimalOrientation    = optimalSurfaceOrientation;
+            config.colorComponentType =
+                gl_egl::GLComponentTypeToEGLColorComponentType(colorBufferFormatInfo.componentType);
 
             configs.add(config);
         }
@@ -1090,6 +1103,9 @@ void Renderer11::generateDisplayExtensions(egl::DisplayExtensions *outExtensions
 
     outExtensions->flexibleSurfaceCompatibility = true;
     outExtensions->directComposition            = !!mDCompModule;
+
+    // Contexts are virtualized so textures can be shared globally
+    outExtensions->displayTextureShareGroup = true;
 }
 
 gl::Error Renderer11::flush()
@@ -1133,8 +1149,11 @@ gl::Error Renderer11::finish()
                              result);
         }
 
-        // Keep polling, but allow other threads to do something useful first
-        ScheduleYield();
+        if (result == S_FALSE)
+        {
+            // Keep polling, but allow other threads to do something useful first
+            ScheduleYield();
+        }
 
         if (testDeviceLost())
         {
@@ -1873,7 +1892,7 @@ gl::Error Renderer11::drawArraysImpl(const gl::ContextState &data,
 
     if (mode == GL_LINE_LOOP)
     {
-        return drawLineLoop(data, count, GL_NONE, nullptr, nullptr, instances);
+        return drawLineLoop(data, count, GL_NONE, nullptr, 0, instances);
     }
 
     if (mode == GL_TRIANGLE_FAN)
@@ -1932,16 +1951,17 @@ gl::Error Renderer11::drawElementsImpl(const gl::ContextState &data,
                                        const GLvoid *indices,
                                        GLsizei instances)
 {
-    int minIndex = static_cast<int>(indexInfo.indexRange.start);
+    int startVertex = static_cast<int>(indexInfo.indexRange.start);
+    int baseVertex  = -startVertex;
 
     if (mode == GL_LINE_LOOP)
     {
-        return drawLineLoop(data, count, type, indices, &indexInfo, instances);
+        return drawLineLoop(data, count, type, indices, baseVertex, instances);
     }
 
     if (mode == GL_TRIANGLE_FAN)
     {
-        return drawTriangleFan(data, count, type, indices, minIndex, instances);
+        return drawTriangleFan(data, count, type, indices, baseVertex, instances);
     }
 
     const ProgramD3D *programD3D = GetImplAs<ProgramD3D>(data.getState().getProgram());
@@ -1961,13 +1981,13 @@ gl::Error Renderer11::drawElementsImpl(const gl::ContextState &data,
             for (GLsizei i = 0; i < instances; i++)
             {
                 ANGLE_TRY(
-                    mInputLayoutCache.updateVertexOffsetsForPointSpritesEmulation(minIndex, i));
+                    mInputLayoutCache.updateVertexOffsetsForPointSpritesEmulation(startVertex, i));
                 mDeviceContext->DrawIndexedInstanced(6, elementsToRender, 0, 0, 0);
             }
         }
         else
         {
-            mDeviceContext->DrawIndexedInstanced(count, instances, 0, -minIndex, 0);
+            mDeviceContext->DrawIndexedInstanced(count, instances, 0, baseVertex, 0);
         }
         return gl::NoError();
     }
@@ -1989,7 +2009,7 @@ gl::Error Renderer11::drawElementsImpl(const gl::ContextState &data,
     }
     else
     {
-        mDeviceContext->DrawIndexed(count, 0, -minIndex);
+        mDeviceContext->DrawIndexed(count, 0, baseVertex);
     }
     return gl::NoError();
 }
@@ -1998,7 +2018,7 @@ gl::Error Renderer11::drawLineLoop(const gl::ContextState &data,
                                    GLsizei count,
                                    GLenum type,
                                    const GLvoid *indexPointer,
-                                   const TranslatedIndexData *indexInfo,
+                                   int baseVertex,
                                    int instances)
 {
     const auto &glState            = data.getState();
@@ -2072,16 +2092,15 @@ gl::Error Renderer11::drawLineLoop(const gl::ContextState &data,
         mAppliedIBOffset = offset;
     }
 
-    INT baseVertexLocation = (indexInfo ? -static_cast<int>(indexInfo->indexRange.start) : 0);
     UINT indexCount        = static_cast<UINT>(mScratchIndexDataBuffer.size());
 
     if (instances > 0)
     {
-        mDeviceContext->DrawIndexedInstanced(indexCount, instances, 0, baseVertexLocation, 0);
+        mDeviceContext->DrawIndexedInstanced(indexCount, instances, 0, baseVertex, 0);
     }
     else
     {
-        mDeviceContext->DrawIndexed(indexCount, 0, baseVertexLocation);
+        mDeviceContext->DrawIndexed(indexCount, 0, baseVertex);
     }
 
     return gl::NoError();
@@ -2091,7 +2110,7 @@ gl::Error Renderer11::drawTriangleFan(const gl::ContextState &data,
                                       GLsizei count,
                                       GLenum type,
                                       const GLvoid *indices,
-                                      int minIndex,
+                                      int baseVertex,
                                       int instances)
 {
     gl::VertexArray *vao           = data.getState().getVertexArray();
@@ -2167,11 +2186,11 @@ gl::Error Renderer11::drawTriangleFan(const gl::ContextState &data,
 
     if (instances > 0)
     {
-        mDeviceContext->DrawIndexedInstanced(indexCount, instances, 0, -minIndex, 0);
+        mDeviceContext->DrawIndexedInstanced(indexCount, instances, 0, baseVertex, 0);
     }
     else
     {
-        mDeviceContext->DrawIndexed(indexCount, 0, -minIndex);
+        mDeviceContext->DrawIndexed(indexCount, 0, baseVertex);
     }
 
     return gl::NoError();
@@ -2651,7 +2670,7 @@ bool Renderer11::testDeviceLost()
 
     if (isLost)
     {
-        ERR("The D3D11 device was removed: 0x%08X", result);
+        ERR() << "The D3D11 device was removed, " << gl::FmtHR(result);
     }
 
     return isLost;
@@ -2761,7 +2780,7 @@ bool Renderer11::resetDevice()
 
     if (result.isError())
     {
-        ERR("Could not reinitialize D3D11 device: %08X", result.getCode());
+        ERR() << "Could not reinitialize D3D11 device: " << result;
         return false;
     }
 
@@ -4011,9 +4030,8 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
     RenderTarget11 *drawRenderTarget11 = GetAs<RenderTarget11>(drawRenderTarget);
     if (!drawRenderTarget11)
     {
-        return gl::Error(
-            GL_OUT_OF_MEMORY,
-            "Failed to retrieve the internal draw render target from the draw framebuffer.");
+        return gl::OutOfMemory()
+               << "Failed to retrieve the internal draw render target from the draw framebuffer.";
     }
 
     TextureHelper11 drawTexture = TextureHelper11::MakeAndReference(
@@ -4025,9 +4043,8 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
     RenderTarget11 *readRenderTarget11 = GetAs<RenderTarget11>(readRenderTarget);
     if (!readRenderTarget11)
     {
-        return gl::Error(
-            GL_OUT_OF_MEMORY,
-            "Failed to retrieve the internal read render target from the read framebuffer.");
+        return gl::OutOfMemory()
+               << "Failed to retrieve the internal read render target from the read framebuffer.";
     }
 
     TextureHelper11 readTexture;
@@ -4036,8 +4053,8 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
 
     if (readRenderTarget->getSamples() > 1)
     {
-        auto readRT11 = GetAs<RenderTarget11>(readRenderTarget);
-        ANGLE_TRY_RESULT(resolveMultisampledTexture(readRT11, depthBlit, stencilBlit), readTexture);
+        ANGLE_TRY_RESULT(resolveMultisampledTexture(readRenderTarget11, depthBlit, stencilBlit),
+                         readTexture);
 
         if (!stencilBlit)
         {
@@ -4053,9 +4070,9 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
                 mDevice->CreateShaderResourceView(readTexture.getResource(), &viewDesc, &readSRV);
             if (FAILED(hresult))
             {
-                return gl::Error(
-                    GL_OUT_OF_MEMORY,
-                    "Renderer11::blitRenderbufferRect: Failed to create temporary SRV.");
+                return gl::OutOfMemory()
+                       << "Renderer11::blitRenderbufferRect: Failed to create temporary SRV, "
+                       << hresult;
             }
         }
     }
@@ -4281,7 +4298,8 @@ void Renderer11::onSwap()
     // Send histogram updates every half hour
     const double kHistogramUpdateInterval = 30 * 60;
 
-    const double currentTime         = ANGLEPlatformCurrent()->monotonicallyIncreasingTime();
+    auto *platform                   = ANGLEPlatformCurrent();
+    const double currentTime         = platform->monotonicallyIncreasingTime(platform);
     const double timeSinceLastUpdate = currentTime - mLastHistogramUpdateTime;
 
     if (timeSinceLastUpdate > kHistogramUpdateInterval)
@@ -4395,6 +4413,7 @@ GLenum Renderer11::getVertexComponentType(gl::VertexFormatType vertexFormatType)
 
 gl::ErrorOrResult<unsigned int> Renderer11::getVertexSpaceRequired(
     const gl::VertexAttribute &attrib,
+    const gl::VertexBinding &binding,
     GLsizei count,
     GLsizei instances) const
 {
@@ -4404,14 +4423,14 @@ gl::ErrorOrResult<unsigned int> Renderer11::getVertexSpaceRequired(
     }
 
     unsigned int elementCount = 0;
-    if (instances == 0 || attrib.divisor == 0)
+    if (instances == 0 || binding.divisor == 0)
     {
         elementCount = count;
     }
     else
     {
         // Round up to divisor, if possible
-        elementCount = UnsignedCeilDivide(static_cast<unsigned int>(instances), attrib.divisor);
+        elementCount = UnsignedCeilDivide(static_cast<unsigned int>(instances), binding.divisor);
     }
 
     gl::VertexFormatType formatType      = gl::GetVertexFormatType(attrib);

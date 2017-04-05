@@ -14,18 +14,16 @@
 #include "fpdfsdk/javascript/JS_GlobalData.h"
 #include "fpdfsdk/javascript/JS_Object.h"
 #include "fpdfsdk/javascript/JS_Value.h"
-#include "fpdfsdk/javascript/cjs_context.h"
+#include "fpdfsdk/javascript/cjs_event_context.h"
 #include "fpdfsdk/javascript/resource.h"
 
-BEGIN_JS_STATIC_CONST(CJS_Global)
-END_JS_STATIC_CONST()
+JSConstSpec CJS_Global::ConstSpecs[] = {{0, JSConstSpec::Number, 0, 0}};
 
-BEGIN_JS_STATIC_PROP(CJS_Global)
-END_JS_STATIC_PROP()
+JSPropertySpec CJS_Global::PropertySpecs[] = {{0, 0, 0}};
 
-BEGIN_JS_STATIC_METHOD(CJS_Global)
-JS_STATIC_METHOD_ENTRY(setPersistent)
-END_JS_STATIC_METHOD()
+JSMethodSpec CJS_Global::MethodSpecs[] = {
+    {"setPersistent", setPersistent_static},
+    {0, 0}};
 
 IMPLEMENT_SPECIAL_JS_CLASS(CJS_Global, JSGlobalAlternate, global);
 
@@ -57,7 +55,7 @@ JSGlobalAlternate::~JSGlobalAlternate() {
 }
 
 void JSGlobalAlternate::Initial(CPDFSDK_FormFillEnvironment* pFormFillEnv) {
-  m_pFormFillEnv = pFormFillEnv;
+  m_pFormFillEnv.Reset(pFormFillEnv);
   m_pGlobalData = CJS_GlobalData::GetRetainedInstance(pFormFillEnv);
   UpdateGlobalPersistentVariables();
 }
@@ -66,7 +64,7 @@ bool JSGlobalAlternate::QueryProperty(const FX_WCHAR* propname) {
   return CFX_WideString(propname) != L"setPersistent";
 }
 
-bool JSGlobalAlternate::DelProperty(IJS_Context* cc,
+bool JSGlobalAlternate::DelProperty(CJS_Runtime* pRuntime,
                                     const FX_WCHAR* propname,
                                     CFX_WideString& sError) {
   auto it = m_mapGlobal.find(CFX_ByteString::FromUnicode(propname));
@@ -77,11 +75,10 @@ bool JSGlobalAlternate::DelProperty(IJS_Context* cc,
   return true;
 }
 
-bool JSGlobalAlternate::DoProperty(IJS_Context* cc,
+bool JSGlobalAlternate::DoProperty(CJS_Runtime* pRuntime,
                                    const FX_WCHAR* propname,
                                    CJS_PropValue& vp,
                                    CFX_WideString& sError) {
-  CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   if (vp.IsSetting()) {
     CFX_ByteString sPropName = CFX_ByteString::FromUnicode(propname);
     switch (vp.GetJSValue()->GetType()) {
@@ -114,7 +111,7 @@ bool JSGlobalAlternate::DoProperty(IJS_Context* cc,
                                   false, "", v8::Local<v8::Object>(), false);
       }
       case CJS_Value::VT_undefined: {
-        DelProperty(cc, propname, sError);
+        DelProperty(pRuntime, propname, sError);
         return true;
       }
       default:
@@ -157,7 +154,7 @@ bool JSGlobalAlternate::DoProperty(IJS_Context* cc,
   return false;
 }
 
-bool JSGlobalAlternate::setPersistent(IJS_Context* cc,
+bool JSGlobalAlternate::setPersistent(CJS_Runtime* pRuntime,
                                       const std::vector<CJS_Value>& params,
                                       CJS_Value& vRet,
                                       CFX_WideString& sError) {
@@ -166,7 +163,6 @@ bool JSGlobalAlternate::setPersistent(IJS_Context* cc,
     return false;
   }
 
-  CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   auto it = m_mapGlobal.find(params[0].ToCFXByteString(pRuntime));
   if (it != m_mapGlobal.end()) {
     JSGlobalData* pData = it->second;
@@ -210,7 +206,7 @@ void JSGlobalAlternate::UpdateGlobalPersistentVariables() {
                            pData->bPersistent == 1);
         pRuntime->PutObjectProperty(
             m_pJSObject->ToV8Object(), pData->data.sKey.UTF8Decode(),
-            pRuntime->NewString(pData->data.sData.UTF8Decode()));
+            pRuntime->NewString(pData->data.sData.UTF8Decode().AsStringC()));
         break;
       case JS_GlobalDataType::OBJECT: {
         v8::Local<v8::Object> pObj = pRuntime->NewFxDynamicObj(-1);
@@ -232,7 +228,8 @@ void JSGlobalAlternate::UpdateGlobalPersistentVariables() {
   }
 }
 
-void JSGlobalAlternate::CommitGlobalPersisitentVariables(IJS_Context* cc) {
+void JSGlobalAlternate::CommitGlobalPersisitentVariables(
+    CJS_Runtime* pRuntime) {
   for (auto it = m_mapGlobal.begin(); it != m_mapGlobal.end(); ++it) {
     CFX_ByteString name = it->first;
     JSGlobalData* pData = it->second;
@@ -256,7 +253,7 @@ void JSGlobalAlternate::CommitGlobalPersisitentVariables(IJS_Context* cc) {
           CJS_GlobalVariableArray array;
           v8::Local<v8::Object> obj = v8::Local<v8::Object>::New(
               GetJSObject()->GetIsolate(), pData->pData);
-          ObjectToArray(cc, obj, array);
+          ObjectToArray(pRuntime, obj, array);
           m_pGlobalData->SetGlobalVariableObject(name, array);
           m_pGlobalData->SetGlobalVariablePersistent(name, pData->bPersistent);
         } break;
@@ -269,10 +266,9 @@ void JSGlobalAlternate::CommitGlobalPersisitentVariables(IJS_Context* cc) {
   }
 }
 
-void JSGlobalAlternate::ObjectToArray(IJS_Context* cc,
+void JSGlobalAlternate::ObjectToArray(CJS_Runtime* pRuntime,
                                       v8::Local<v8::Object> pObj,
                                       CJS_GlobalVariableArray& array) {
-  CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   std::vector<CFX_WideString> pKeyList = pRuntime->GetObjectPropertyNames(pObj);
   for (const auto& ws : pKeyList) {
     CFX_ByteString sKey = ws.UTF8Encode();
@@ -305,7 +301,7 @@ void JSGlobalAlternate::ObjectToArray(IJS_Context* cc,
         CJS_KeyValue* pObjElement = new CJS_KeyValue;
         pObjElement->nType = JS_GlobalDataType::OBJECT;
         pObjElement->sKey = sKey;
-        ObjectToArray(cc, pRuntime->ToObject(v), pObjElement->objData);
+        ObjectToArray(pRuntime, pRuntime->ToObject(v), pObjElement->objData);
         array.Add(pObjElement);
       } break;
       case CJS_Value::VT_null: {
@@ -339,7 +335,7 @@ void JSGlobalAlternate::PutObjectProperty(v8::Local<v8::Object> pObj,
       case JS_GlobalDataType::STRING:
         pRuntime->PutObjectProperty(
             pObj, pObjData->sKey.UTF8Decode(),
-            pRuntime->NewString(pObjData->sData.UTF8Decode()));
+            pRuntime->NewString(pObjData->sData.UTF8Decode().AsStringC()));
         break;
       case JS_GlobalDataType::OBJECT: {
         v8::Local<v8::Object> pNewObj = pRuntime->NewFxDynamicObj(-1);

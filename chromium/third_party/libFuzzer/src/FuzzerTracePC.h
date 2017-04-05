@@ -33,6 +33,7 @@ struct TableOfRecentCompares {
   struct Pair {
     T A, B;
   };
+  ATTRIBUTE_NO_SANITIZE_ALL
   void Insert(size_t Idx, T Arg1, T Arg2) {
     Idx = Idx % kSize;
     Table[Idx].A = Arg1;
@@ -46,25 +47,21 @@ struct TableOfRecentCompares {
 
 class TracePC {
  public:
-  static const size_t kFeatureSetSize = ValueBitMap::kNumberOfItems;
+  static const size_t kNumPCs = 1 << 21;
 
   void HandleTrace(uint32_t *guard, uintptr_t PC);
   void HandleInit(uint32_t *start, uint32_t *stop);
   void HandleCallerCallee(uintptr_t Caller, uintptr_t Callee);
-  void HandleValueProfile(size_t Value) { ValueProfileMap.AddValue(Value); }
   template <class T> void HandleCmp(uintptr_t PC, T Arg1, T Arg2);
   size_t GetTotalPCCoverage();
   void SetUseCounters(bool UC) { UseCounters = UC; }
   void SetUseValueProfile(bool VP) { UseValueProfile = VP; }
   void SetPrintNewPCs(bool P) { DoPrintNewPCs = P; }
   template <class Callback> size_t CollectFeatures(Callback CB);
-  bool UpdateValueProfileMap(ValueBitMap *MaxValueProfileMap) {
-    return UseValueProfile && MaxValueProfileMap->MergeFrom(ValueProfileMap);
-  }
 
   void ResetMaps() {
     ValueProfileMap.Reset();
-    memset(Counters, 0, sizeof(Counters));
+    memset(Counters(), 0, GetNumPCs());
   }
 
   void UpdateFeatureSet(size_t CurrentElementIdx, size_t CurrentElementSize);
@@ -89,7 +86,7 @@ class TracePC {
   size_t GetNumPCs() const { return Min(kNumPCs, NumGuards + 1); }
   uintptr_t GetPC(size_t Idx) {
     assert(Idx < GetNumPCs());
-    return PCs[Idx];
+    return PCs()[Idx];
   }
 
 private:
@@ -105,11 +102,8 @@ private:
   size_t NumModules;  // linker-initialized.
   size_t NumGuards;  // linker-initialized.
 
-  static const size_t kNumCounters = 1 << 14;
-  alignas(8) uint8_t Counters[kNumCounters];
-
-  static const size_t kNumPCs = 1 << 24;
-  uintptr_t PCs[kNumPCs];
+  uint8_t *Counters() const;
+  uintptr_t *PCs() const;
 
   std::set<uintptr_t> *PrintedPCs;
 
@@ -121,8 +115,9 @@ size_t TracePC::CollectFeatures(Callback CB) {
   if (!UsingTracePcGuard()) return 0;
   size_t Res = 0;
   const size_t Step = 8;
+  uint8_t *Counters = this->Counters();
   assert(reinterpret_cast<uintptr_t>(Counters) % Step == 0);
-  size_t N = Min(kNumCounters, NumGuards + 1);
+  size_t N = GetNumPCs();
   N = (N + Step - 1) & ~(Step - 1);  // Round up.
   for (size_t Idx = 0; Idx < N; Idx += Step) {
     uint64_t Bundle = *reinterpret_cast<uint64_t*>(&Counters[Idx]);
@@ -146,7 +141,7 @@ size_t TracePC::CollectFeatures(Callback CB) {
   }
   if (UseValueProfile)
     ValueProfileMap.ForEach([&](size_t Idx) {
-      if (CB(NumGuards * 8 + Idx))
+      if (CB(N * 8 + Idx))
         Res++;
     });
   return Res;

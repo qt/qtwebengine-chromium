@@ -29,13 +29,11 @@
 #include "webrtc/voice_engine/include/voe_base.h"
 #include "webrtc/voice_engine/include/voe_codec.h"
 #include "webrtc/voice_engine/include/voe_errors.h"
-#include "webrtc/voice_engine/include/voe_external_media.h"
 #include "webrtc/voice_engine/include/voe_file.h"
 #include "webrtc/voice_engine/include/voe_hardware.h"
 #include "webrtc/voice_engine/include/voe_neteq_stats.h"
 #include "webrtc/voice_engine/include/voe_network.h"
 #include "webrtc/voice_engine/include/voe_rtp_rtcp.h"
-#include "webrtc/voice_engine/include/voe_video_sync.h"
 #include "webrtc/voice_engine/include/voe_volume_control.h"
 #include "webrtc/voice_engine/test/channel_transport/channel_transport.h"
 
@@ -59,9 +57,7 @@ VoERTP_RTCP* rtp_rtcp = NULL;
 VoEAudioProcessing* apm = NULL;
 VoENetwork* netw = NULL;
 VoEFile* file = NULL;
-VoEVideoSync* vsync = NULL;
 VoEHardware* hardware = NULL;
-VoEExternalMedia* xmedia = NULL;
 VoENetEqStats* neteqst = NULL;
 
 void RunTest(std::string out_path);
@@ -85,8 +81,6 @@ void MyObserver::CallbackOnError(int channel, int err_code) {
     printf("  RUNTIME PLAY WARNING \n");
   } else if (err_code == VE_RUNTIME_REC_WARNING) {
     printf("  RUNTIME RECORD WARNING \n");
-  } else if (err_code == VE_SATURATION_WARNING) {
-    printf("  SATURATION WARNING \n");
   } else if (err_code == VE_RUNTIME_PLAY_ERROR) {
     printf("  RUNTIME PLAY ERROR \n");
   } else if (err_code == VE_RUNTIME_REC_ERROR) {
@@ -131,9 +125,7 @@ int main(int argc, char** argv) {
   rtp_rtcp = VoERTP_RTCP::GetInterface(m_voe);
   netw = VoENetwork::GetInterface(m_voe);
   file = VoEFile::GetInterface(m_voe);
-  vsync = VoEVideoSync::GetInterface(m_voe);
   hardware = VoEHardware::GetInterface(m_voe);
-  xmedia = VoEExternalMedia::GetInterface(m_voe);
   neteqst = VoENetEqStats::GetInterface(m_voe);
 
   MyObserver my_observer;
@@ -198,14 +190,8 @@ int main(int argc, char** argv) {
   if (file)
     file->Release();
 
-  if (vsync)
-    vsync->Release();
-
   if (hardware)
     hardware->Release();
-
-  if (xmedia)
-    xmedia->Release();
 
   if (neteqst)
     neteqst->Release();

@@ -11,14 +11,14 @@
 
 class CXFA_FFText : public CXFA_FFDraw {
  public:
-  CXFA_FFText(CXFA_FFPageView* pPageView, CXFA_WidgetAcc* pDataAcc);
+  explicit CXFA_FFText(CXFA_WidgetAcc* pDataAcc);
   ~CXFA_FFText() override;
 
   // CXFA_FFWidget
-  bool OnLButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) override;
-  bool OnLButtonUp(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) override;
-  bool OnMouseMove(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) override;
-  FWL_WidgetHit OnHitTest(FX_FLOAT fx, FX_FLOAT fy) override;
+  bool OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) override;
+  bool OnLButtonUp(uint32_t dwFlags, const CFX_PointF& point) override;
+  bool OnMouseMove(uint32_t dwFlags, const CFX_PointF& point) override;
+  FWL_WidgetHit OnHitTest(const CFX_PointF& point) override;
   void RenderWidget(CFX_Graphics* pGS,
                     CFX_Matrix* pMatrix,
                     uint32_t dwStatus) override;
@@ -26,8 +26,7 @@ class CXFA_FFText : public CXFA_FFDraw {
   bool PerformLayout() override;
 
  private:
-  const FX_WCHAR* GetLinkURLAtPoint(FX_FLOAT fx, FX_FLOAT fy);
-  void FWLToClient(FX_FLOAT& fx, FX_FLOAT& fy);
+  const FX_WCHAR* GetLinkURLAtPoint(const CFX_PointF& point);
 };
 
 #endif  // XFA_FXFA_APP_XFA_FFTEXT_H_

@@ -72,6 +72,10 @@ bool RenderWidgetHostDelegate::HasMouseLock(
   return false;
 }
 
+RenderWidgetHostImpl* RenderWidgetHostDelegate::GetMouseLockWidget() {
+  return nullptr;
+}
+
 TextInputManager* RenderWidgetHostDelegate::GetTextInputManager() {
   return nullptr;
 }
@@ -90,6 +94,10 @@ RenderWidgetHostImpl* RenderWidgetHostDelegate::GetFullscreenRenderWidgetHost()
 }
 
 bool RenderWidgetHostDelegate::OnUpdateDragCursor() {
+  return false;
+}
+
+bool RenderWidgetHostDelegate::IsWidgetForMainFrame(RenderWidgetHostImpl*) {
   return false;
 }
 

@@ -14,29 +14,93 @@
 namespace gl
 {
 
+namespace
+{
+
+template <typename T>
+using ContextStateMember = T *(ContextState::*);
+
+template <typename T>
+T *AllocateOrGetSharedResourceManager(const ContextState *shareContextState,
+                                      ContextStateMember<T> member)
+{
+    if (shareContextState)
+    {
+        T *resourceManager = (*shareContextState).*member;
+        resourceManager->addRef();
+        return resourceManager;
+    }
+    else
+    {
+        return new T();
+    }
+}
+
+TextureManager *AllocateOrGetSharedTextureManager(const ContextState *shareContextState,
+                                                  TextureManager *shareTextures,
+                                                  ContextStateMember<TextureManager> member)
+{
+    if (shareContextState)
+    {
+        TextureManager *textureManager = (*shareContextState).*member;
+        ASSERT(shareTextures == nullptr || textureManager == shareTextures);
+        textureManager->addRef();
+        return textureManager;
+    }
+    else if (shareTextures)
+    {
+        TextureManager *textureManager = shareTextures;
+        textureManager->addRef();
+        return textureManager;
+    }
+    else
+    {
+        return new TextureManager();
+    }
+}
+
+}  // anonymous namespace
+
 ContextState::ContextState(uintptr_t contextIn,
+                           const ContextState *shareContextState,
+                           TextureManager *shareTextures,
                            const Version &clientVersion,
                            State *stateIn,
                            const Caps &capsIn,
                            const TextureCapsMap &textureCapsIn,
                            const Extensions &extensionsIn,
-                           const ResourceManager *resourceManagerIn,
-                           const Limitations &limitationsIn,
-                           const ResourceMap<Framebuffer> &framebufferMap)
+                           const Limitations &limitationsIn)
     : mClientVersion(clientVersion),
       mContext(contextIn),
       mState(stateIn),
       mCaps(capsIn),
       mTextureCaps(textureCapsIn),
       mExtensions(extensionsIn),
-      mResourceManager(resourceManagerIn),
       mLimitations(limitationsIn),
-      mFramebufferMap(framebufferMap)
+      mBuffers(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mBuffers)),
+      mShaderPrograms(
+          AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mShaderPrograms)),
+      mTextures(AllocateOrGetSharedTextureManager(shareContextState,
+                                                  shareTextures,
+                                                  &ContextState::mTextures)),
+      mRenderbuffers(
+          AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mRenderbuffers)),
+      mSamplers(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mSamplers)),
+      mFenceSyncs(
+          AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mFenceSyncs)),
+      mPaths(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mPaths)),
+      mFramebuffers(new FramebufferManager())
 {
 }
 
 ContextState::~ContextState()
 {
+    // Handles are released by the Context.
+}
+
+bool ContextState::isWebGL1() const
+{
+    return (mExtensions.webglCompatibility && mClientVersion.major == 2);
 }
 
 const TextureCaps &ContextState::getTextureCap(GLenum internalFormat) const
@@ -44,25 +108,26 @@ const TextureCaps &ContextState::getTextureCap(GLenum internalFormat) const
     return mTextureCaps.get(internalFormat);
 }
 
-ValidationContext::ValidationContext(const Version &clientVersion,
+ValidationContext::ValidationContext(const ValidationContext *shareContext,
+                                     TextureManager *shareTextures,
+                                     const Version &clientVersion,
                                      State *state,
                                      const Caps &caps,
                                      const TextureCapsMap &textureCaps,
                                      const Extensions &extensions,
-                                     const ResourceManager *resourceManager,
                                      const Limitations &limitations,
-                                     const ResourceMap<Framebuffer> &framebufferMap,
                                      bool skipValidation)
     : mState(reinterpret_cast<uintptr_t>(this),
+             shareContext ? &shareContext->mState : nullptr,
+             shareTextures,
              clientVersion,
              state,
              caps,
              textureCaps,
              extensions,
-             resourceManager,
-             limitations,
-             framebufferMap),
-      mSkipValidation(skipValidation)
+             limitations),
+      mSkipValidation(skipValidation),
+      mDisplayTextureShareGroup(shareTextures != nullptr)
 {
 }
 
@@ -111,8 +176,6 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         case GL_MAX_TEXTURE_IMAGE_UNITS:
         case GL_MAX_FRAGMENT_UNIFORM_VECTORS:
         case GL_MAX_RENDERBUFFER_SIZE:
-        case GL_MAX_COLOR_ATTACHMENTS_EXT:
-        case GL_MAX_DRAW_BUFFERS_EXT:
         case GL_NUM_SHADER_BINARY_FORMATS:
         case GL_NUM_COMPRESSED_TEXTURE_FORMATS:
         case GL_ARRAY_BUFFER_BINDING:
@@ -174,9 +237,10 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
             *numParams = 1;
             return true;
         }
-        case GL_MAX_SAMPLES_ANGLE:
+        case GL_MAX_DRAW_BUFFERS_EXT:
+        case GL_MAX_COLOR_ATTACHMENTS_EXT:
         {
-            if (!getExtensions().framebufferMultisample)
+            if ((getClientMajorVersion() < 3) && !getExtensions().drawBuffers)
             {
                 return false;
             }
@@ -347,6 +411,17 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         }
     }
 
+    if (getExtensions().clientArrays)
+    {
+        switch (pname)
+        {
+            case GL_CLIENT_ARRAYS_ANGLE:
+                *type      = GL_BOOL;
+                *numParams = 1;
+                return true;
+        }
+    }
+
     if (getExtensions().sRGBWriteControl)
     {
         switch (pname)
@@ -398,6 +473,18 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
             *type      = GL_INT;
             *numParams = 1;
             return true;
+        case GL_MAX_SAMPLES:
+        {
+            static_assert(GL_MAX_SAMPLES_ANGLE == GL_MAX_SAMPLES,
+                          "GL_MAX_SAMPLES_ANGLE not equal to GL_MAX_SAMPLES");
+            if ((getClientMajorVersion() < 3) && !getExtensions().framebufferMultisample)
+            {
+                return false;
+            }
+            *type      = GL_INT;
+            *numParams = 1;
+            return true;
+        }
     }
 
     if (getClientVersion() < Version(3, 0))
@@ -494,6 +581,7 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
 
     switch (pname)
     {
+        case GL_ATOMIC_COUNTER_BUFFER_BINDING:
         case GL_DRAW_INDIRECT_BUFFER_BINDING:
         case GL_MAX_FRAMEBUFFER_WIDTH:
         case GL_MAX_FRAMEBUFFER_HEIGHT:
@@ -586,8 +674,16 @@ bool ValidationContext::getIndexedQueryParameterInfo(GLenum target,
     {
         case GL_MAX_COMPUTE_WORK_GROUP_COUNT:
         case GL_MAX_COMPUTE_WORK_GROUP_SIZE:
+        case GL_ATOMIC_COUNTER_BUFFER_BINDING:
         {
             *type      = GL_INT;
+            *numParams = 1;
+            return true;
+        }
+        case GL_ATOMIC_COUNTER_BUFFER_START:
+        case GL_ATOMIC_COUNTER_BUFFER_SIZE:
+        {
+            *type      = GL_INT_64_ANGLEX;
             *numParams = 1;
             return true;
         }
@@ -598,33 +694,45 @@ bool ValidationContext::getIndexedQueryParameterInfo(GLenum target,
 
 Program *ValidationContext::getProgram(GLuint handle) const
 {
-    return mState.mResourceManager->getProgram(handle);
+    return mState.mShaderPrograms->getProgram(handle);
 }
 
 Shader *ValidationContext::getShader(GLuint handle) const
 {
-    return mState.mResourceManager->getShader(handle);
+    return mState.mShaderPrograms->getShader(handle);
 }
 
 bool ValidationContext::isTextureGenerated(GLuint texture) const
 {
-    return mState.mResourceManager->isTextureGenerated(texture);
+    return mState.mTextures->isTextureGenerated(texture);
 }
 
 bool ValidationContext::isBufferGenerated(GLuint buffer) const
 {
-    return mState.mResourceManager->isBufferGenerated(buffer);
+    return mState.mBuffers->isBufferGenerated(buffer);
 }
 
 bool ValidationContext::isRenderbufferGenerated(GLuint renderbuffer) const
 {
-    return mState.mResourceManager->isRenderbufferGenerated(renderbuffer);
+    return mState.mRenderbuffers->isRenderbufferGenerated(renderbuffer);
 }
 
 bool ValidationContext::isFramebufferGenerated(GLuint framebuffer) const
 {
-    ASSERT(mState.mFramebufferMap.find(0) != mState.mFramebufferMap.end());
-    return mState.mFramebufferMap.find(framebuffer) != mState.mFramebufferMap.end();
+    return mState.mFramebuffers->isFramebufferGenerated(framebuffer);
+}
+
+bool ValidationContext::usingDisplayTextureShareGroup() const
+{
+    return mDisplayTextureShareGroup;
+}
+
+GLenum ValidationContext::getConvertedRenderbufferFormat(GLenum internalformat) const
+{
+    return mState.mExtensions.webglCompatibility && mState.mClientVersion.major == 2 &&
+                   internalformat == GL_DEPTH_STENCIL
+               ? GL_DEPTH24_STENCIL8
+               : internalformat;
 }
 
 }  // namespace gl

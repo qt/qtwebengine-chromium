@@ -14,6 +14,8 @@
 
 #define PWL_CARET_FLASHINTERVAL 500
 
+PWL_CARET_INFO::PWL_CARET_INFO() : bVisible(false) {}
+
 CPWL_Caret::CPWL_Caret() : m_bFlash(false), m_fWidth(0.4f), m_nDelay(0) {}
 
 CPWL_Caret::~CPWL_Caret() {}
@@ -23,7 +25,7 @@ CFX_ByteString CPWL_Caret::GetClassName() const {
 }
 
 void CPWL_Caret::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
-  GetCaretApp(sAppStream, CFX_FloatPoint(0.0f, 0.0f));
+  GetCaretApp(sAppStream, CFX_PointF());
 }
 
 void CPWL_Caret::DrawThisAppearance(CFX_RenderDevice* pDevice,
@@ -32,25 +34,22 @@ void CPWL_Caret::DrawThisAppearance(CFX_RenderDevice* pDevice,
     CFX_FloatRect rcRect = GetCaretRect();
     CFX_FloatRect rcClip = GetClipRect();
     CFX_PathData path;
-    path.SetPointCount(2);
 
     FX_FLOAT fCaretX = rcRect.left + m_fWidth * 0.5f;
     FX_FLOAT fCaretTop = rcRect.top;
     FX_FLOAT fCaretBottom = rcRect.bottom;
     if (!rcClip.IsEmpty()) {
       rcRect.Intersect(rcClip);
-      if (!rcRect.IsEmpty()) {
-        fCaretTop = rcRect.top;
-        fCaretBottom = rcRect.bottom;
-        path.SetPoint(0, fCaretX, fCaretBottom, FXPT_MOVETO);
-        path.SetPoint(1, fCaretX, fCaretTop, FXPT_LINETO);
-      } else {
+      if (rcRect.IsEmpty())
         return;
-      }
-    } else {
-      path.SetPoint(0, fCaretX, fCaretBottom, FXPT_MOVETO);
-      path.SetPoint(1, fCaretX, fCaretTop, FXPT_LINETO);
+
+      fCaretTop = rcRect.top;
+      fCaretBottom = rcRect.bottom;
     }
+
+    path.AppendPoint(CFX_PointF(fCaretX, fCaretBottom), FXPT_TYPE::MoveTo,
+                     false);
+    path.AppendPoint(CFX_PointF(fCaretX, fCaretTop), FXPT_TYPE::LineTo, false);
 
     CFX_GraphStateData gsd;
     gsd.m_LineWidth = m_fWidth;
@@ -60,7 +59,7 @@ void CPWL_Caret::DrawThisAppearance(CFX_RenderDevice* pDevice,
 }
 
 void CPWL_Caret::GetCaretApp(CFX_ByteTextBuf& sAppStream,
-                             const CFX_FloatPoint& ptOffset) {
+                             const CFX_PointF& ptOffset) {
   if (IsVisible() && m_bFlash) {
     CFX_ByteTextBuf sCaret;
 
@@ -85,7 +84,7 @@ void CPWL_Caret::GetCaretApp(CFX_ByteTextBuf& sAppStream,
 }
 
 CFX_ByteString CPWL_Caret::GetCaretAppearanceStream(
-    const CFX_FloatPoint& ptOffset) {
+    const CFX_PointF& ptOffset) {
   CFX_ByteTextBuf sCaret;
   GetCaretApp(sCaret, ptOffset);
   return sCaret.MakeString();
@@ -106,8 +105,8 @@ CFX_FloatRect CPWL_Caret::GetCaretRect() const {
 }
 
 void CPWL_Caret::SetCaret(bool bVisible,
-                          const CFX_FloatPoint& ptHead,
-                          const CFX_FloatPoint& ptFoot) {
+                          const CFX_PointF& ptHead,
+                          const CFX_PointF& ptFoot) {
   if (bVisible) {
     if (IsVisible()) {
       if (m_ptHead != ptHead || m_ptFoot != ptFoot) {
@@ -126,8 +125,8 @@ void CPWL_Caret::SetCaret(bool bVisible,
       Move(m_rcInvalid, false, true);
     }
   } else {
-    m_ptHead = CFX_FloatPoint();
-    m_ptFoot = CFX_FloatPoint();
+    m_ptHead = CFX_PointF();
+    m_ptFoot = CFX_PointF();
     m_bFlash = false;
     if (IsVisible()) {
       EndTimer();

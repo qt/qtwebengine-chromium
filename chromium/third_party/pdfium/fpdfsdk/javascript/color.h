@@ -17,24 +17,28 @@ class color : public CJS_EmbedObj {
   explicit color(CJS_Object* pJSObject);
   ~color() override;
 
-  bool black(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool blue(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool cyan(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool dkGray(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool gray(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool green(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool ltGray(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool magenta(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool red(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool transparent(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool white(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool yellow(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool black(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool blue(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool cyan(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool dkGray(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool gray(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool green(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool ltGray(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool magenta(CJS_Runtime* pRuntime,
+               CJS_PropValue& vp,
+               CFX_WideString& sError);
+  bool red(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool transparent(CJS_Runtime* pRuntime,
+                   CJS_PropValue& vp,
+                   CFX_WideString& sError);
+  bool white(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool yellow(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
 
-  bool convert(IJS_Context* cc,
+  bool convert(CJS_Runtime* pRuntime,
                const std::vector<CJS_Value>& params,
                CJS_Value& vRet,
                CFX_WideString& sError);
-  bool equal(IJS_Context* cc,
+  bool equal(CJS_Runtime* pRuntime,
              const std::vector<CJS_Value>& params,
              CJS_Value& vRet,
              CFX_WideString& sError);
@@ -47,6 +51,10 @@ class color : public CJS_EmbedObj {
                                      CPWL_Color* color);
 
  private:
+  bool PropertyHelper(CJS_Runtime* pRuntime,
+                      CJS_PropValue& vp,
+                      CPWL_Color* val);
+
   CPWL_Color m_crTransparent;
   CPWL_Color m_crBlack;
   CPWL_Color m_crWhite;

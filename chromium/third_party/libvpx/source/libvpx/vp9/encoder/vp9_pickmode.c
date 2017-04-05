@@ -184,9 +184,9 @@ static int combined_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
   else
     center_mv = tmp_mv->as_mv;
 
-  vp9_full_pixel_search(cpi, x, bsize, &mvp_full, step_param, sadpb,
-                        cond_cost_list(cpi, cost_list), &center_mv,
-                        &tmp_mv->as_mv, INT_MAX, 0);
+  vp9_full_pixel_search(
+      cpi, x, bsize, &mvp_full, step_param, cpi->sf.mv.search_method, sadpb,
+      cond_cost_list(cpi, cost_list), &center_mv, &tmp_mv->as_mv, INT_MAX, 0);
 
   x->mv_limits = tmp_mv_limits;
 
@@ -296,6 +296,18 @@ static void calculate_variance(int bw, int bh, TX_SIZE tx_size,
   }
 }
 
+// Adjust the ac_thr according to speed, width, height and normalized sum
+static int ac_thr_factor(const int speed, const int width, const int height,
+                         const int norm_sum) {
+  if (speed >= 8 && norm_sum < 5) {
+    if (width <= 640 && height <= 480)
+      return 4;
+    else
+      return 2;
+  }
+  return 1;
+}
+
 static void model_rd_for_sb_y_large(VP9_COMP *cpi, BLOCK_SIZE bsize,
                                     MACROBLOCK *x, MACROBLOCKD *xd,
                                     int *out_rate_sum, int64_t *out_dist_sum,
@@ -312,7 +324,7 @@ static void model_rd_for_sb_y_large(VP9_COMP *cpi, BLOCK_SIZE bsize,
   const uint32_t dc_quant = pd->dequant[0];
   const uint32_t ac_quant = pd->dequant[1];
   const int64_t dc_thr = dc_quant * dc_quant >> 6;
-  const int64_t ac_thr = ac_quant * ac_quant >> 6;
+  int64_t ac_thr = ac_quant * ac_quant >> 6;
   unsigned int var;
   int sum;
   int skip_dc = 0;
@@ -340,6 +352,18 @@ static void model_rd_for_sb_y_large(VP9_COMP *cpi, BLOCK_SIZE bsize,
 
   *var_y = var;
   *sse_y = sse;
+
+#if CONFIG_VP9_TEMPORAL_DENOISING
+  if (cpi->oxcf.noise_sensitivity > 0)
+    ac_thr = vp9_scale_acskip_thresh(ac_thr, cpi->denoiser.denoising_level,
+                                     (abs(sum) >> (bw + bh)));
+  else
+    ac_thr *= ac_thr_factor(cpi->oxcf.speed, cpi->common.width,
+                            cpi->common.height, abs(sum) >> (bw + bh));
+#else
+  ac_thr *= ac_thr_factor(cpi->oxcf.speed, cpi->common.width,
+                          cpi->common.height, abs(sum) >> (bw + bh));
+#endif
 
   if (cpi->common.tx_mode == TX_MODE_SELECT) {
     if (sse > (var << 2))
@@ -590,21 +614,6 @@ static void model_rd_for_sb_y(VP9_COMP *cpi, BLOCK_SIZE bsize, MACROBLOCK *x,
   *out_dist_sum += dist << 4;
 }
 
-#if CONFIG_VP9_HIGHBITDEPTH
-static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, RD_COST *this_rdc,
-                      int *skippable, int64_t *sse, BLOCK_SIZE bsize,
-                      TX_SIZE tx_size) {
-  MACROBLOCKD *xd = &x->e_mbd;
-  unsigned int var_y, sse_y;
-
-  (void)tx_size;
-  model_rd_for_sb_y(cpi, bsize, x, xd, &this_rdc->rate, &this_rdc->dist, &var_y,
-                    &sse_y);
-  *sse = INT_MAX;
-  *skippable = 0;
-  return;
-}
-#else
 static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, RD_COST *this_rdc,
                       int *skippable, int64_t *sse, BLOCK_SIZE bsize,
                       TX_SIZE tx_size) {
@@ -623,6 +632,35 @@ static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, RD_COST *this_rdc,
   int eob_cost = 0;
   const int bw = 4 * num_4x4_w;
   const int bh = 4 * num_4x4_h;
+
+#if CONFIG_VP9_HIGHBITDEPTH
+  // TODO(jingning): Implement the high bit-depth Hadamard transforms and
+  // remove this check condition.
+  // TODO(marpan): Use this path (model_rd) for 8bit under certain conditions
+  // for now, as the vp9_quantize_fp below for highbitdepth build is slow.
+  if (xd->bd != 8 ||
+      (cpi->oxcf.speed > 5 && cpi->common.frame_type != KEY_FRAME &&
+       bsize < BLOCK_32X32)) {
+    unsigned int var_y, sse_y;
+    (void)tx_size;
+    model_rd_for_sb_y(cpi, bsize, x, xd, &this_rdc->rate, &this_rdc->dist,
+                      &var_y, &sse_y);
+    *sse = INT_MAX;
+    *skippable = 0;
+    return;
+  }
+#endif
+
+  if (cpi->sf.use_simple_block_yrd && cpi->common.frame_type != KEY_FRAME &&
+      !cyclic_refresh_segment_id_boosted(xd->mi[0]->segment_id)) {
+    unsigned int var_y, sse_y;
+    (void)tx_size;
+    model_rd_for_sb_y(cpi, bsize, x, xd, &this_rdc->rate, &this_rdc->dist,
+                      &var_y, &sse_y);
+    *sse = INT_MAX;
+    *skippable = 0;
+    return;
+  }
 
   (void)cpi;
 
@@ -648,24 +686,21 @@ static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, RD_COST *this_rdc,
 
         switch (tx_size) {
           case TX_16X16:
-            vpx_hadamard_16x16(src_diff, diff_stride, (int16_t *)coeff);
-            vp9_quantize_fp(coeff, 256, x->skip_block, p->zbin, p->round_fp,
-                            p->quant_fp, p->quant_shift, qcoeff, dqcoeff,
-                            pd->dequant, eob, scan_order->scan,
+            vpx_hadamard_16x16(src_diff, diff_stride, coeff);
+            vp9_quantize_fp(coeff, 256, x->skip_block, p->round_fp, p->quant_fp,
+                            qcoeff, dqcoeff, pd->dequant, eob, scan_order->scan,
                             scan_order->iscan);
             break;
           case TX_8X8:
-            vpx_hadamard_8x8(src_diff, diff_stride, (int16_t *)coeff);
-            vp9_quantize_fp(coeff, 64, x->skip_block, p->zbin, p->round_fp,
-                            p->quant_fp, p->quant_shift, qcoeff, dqcoeff,
-                            pd->dequant, eob, scan_order->scan,
+            vpx_hadamard_8x8(src_diff, diff_stride, coeff);
+            vp9_quantize_fp(coeff, 64, x->skip_block, p->round_fp, p->quant_fp,
+                            qcoeff, dqcoeff, pd->dequant, eob, scan_order->scan,
                             scan_order->iscan);
             break;
           case TX_4X4:
             x->fwd_txm4x4(src_diff, coeff, diff_stride);
-            vp9_quantize_fp(coeff, 16, x->skip_block, p->zbin, p->round_fp,
-                            p->quant_fp, p->quant_shift, qcoeff, dqcoeff,
-                            pd->dequant, eob, scan_order->scan,
+            vp9_quantize_fp(coeff, 16, x->skip_block, p->round_fp, p->quant_fp,
+                            qcoeff, dqcoeff, pd->dequant, eob, scan_order->scan,
                             scan_order->iscan);
             break;
           default: assert(0); break;
@@ -699,7 +734,7 @@ static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, RD_COST *this_rdc,
         if (*eob == 1)
           this_rdc->rate += (int)abs(qcoeff[0]);
         else if (*eob > 1)
-          this_rdc->rate += vpx_satd((const int16_t *)qcoeff, step << 4);
+          this_rdc->rate += vpx_satd(qcoeff, step << 4);
 
         this_rdc->dist += vp9_block_error_fp(coeff, dqcoeff, step << 4) >> 2;
       }
@@ -711,7 +746,6 @@ static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, RD_COST *this_rdc,
   this_rdc->rate <<= (2 + VP9_PROB_COST_SHIFT);
   this_rdc->rate += (eob_cost << VP9_PROB_COST_SHIFT);
 }
-#endif
 
 static void model_rd_for_sb_uv(VP9_COMP *cpi, BLOCK_SIZE plane_bsize,
                                MACROBLOCK *x, MACROBLOCKD *xd,
@@ -958,10 +992,11 @@ static void estimate_block_intra(int plane, int block, int row, int col,
   args->rdc->dist += this_rdc.dist;
 }
 
-static const THR_MODES mode_idx[MAX_REF_FRAMES - 1][4] = {
+static const THR_MODES mode_idx[MAX_REF_FRAMES][4] = {
   { THR_DC, THR_V_PRED, THR_H_PRED, THR_TM },
   { THR_NEARESTMV, THR_NEARMV, THR_ZEROMV, THR_NEWMV },
   { THR_NEARESTG, THR_NEARG, THR_ZEROG, THR_NEWG },
+  { THR_NEARESTA, THR_NEARA, THR_ZEROA, THR_NEWA },
 };
 
 static const PREDICTION_MODE intra_mode_list[] = { DC_PRED, V_PRED, H_PRED,
@@ -1239,6 +1274,7 @@ static void recheck_zeromv_after_denoising(
       ctx_den->zero_last_cost_orig < (best_rdc->rdcost << 3) &&
       ((ctx_den->best_ref_frame == INTRA_FRAME && decision >= FILTER_BLOCK) ||
        (ctx_den->best_ref_frame == GOLDEN_FRAME &&
+        cpi->svc.number_spatial_layers == 1 &&
         decision == FILTER_ZEROMV_BLOCK))) {
     // Check if we should pick ZEROMV on denoised signal.
     int rate = 0;
@@ -1459,7 +1495,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   }
 
 #if CONFIG_VP9_TEMPORAL_DENOISING
-  if (cpi->oxcf.noise_sensitivity > 0 &&
+  if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi) &&
       cpi->denoiser.denoising_level > kDenLowLow) {
     vp9_denoiser_reset_frame_stats(ctx);
   }
@@ -1576,8 +1612,10 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       continue;
     }
 
-    if (cpi->sf.short_circuit_low_temp_var >= 2 && force_skip_low_temp_var &&
-        ref_frame == LAST_FRAME && this_mode == NEWMV) {
+    if ((cpi->sf.short_circuit_low_temp_var >= 2 ||
+         (cpi->sf.short_circuit_low_temp_var == 1 && bsize == BLOCK_64X64)) &&
+        force_skip_low_temp_var && ref_frame == LAST_FRAME &&
+        this_mode == NEWMV) {
       continue;
     }
 
@@ -1629,7 +1667,10 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       mode_rd_thresh = mode_rd_thresh << 3;
 
     if (rd_less_than_thresh(best_rdc.rdcost, mode_rd_thresh,
-                            rd_thresh_freq_fact[mode_index]))
+#if CONFIG_MULTITHREAD
+                            tile_data->enc_row_mt_mutex,
+#endif
+                            &rd_thresh_freq_fact[mode_index]))
       continue;
 
     if (this_mode == NEWMV) {
@@ -1789,15 +1830,9 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
         pd->dst.stride = this_mode_pred->stride;
       }
     } else {
-// TODO(jackychen): the low-bitdepth condition causes a segfault in
-// high-bitdepth builds.
-// https://bugs.chromium.org/p/webm/issues/detail?id=1250
-#if CONFIG_VP9_HIGHBITDEPTH
-      const int large_block = bsize > BLOCK_32X32;
-#else
-      const int large_block =
-          x->sb_is_skin ? bsize > BLOCK_32X32 : bsize >= BLOCK_32X32;
-#endif
+      const int large_block = (x->sb_is_skin || cpi->oxcf.speed < 7)
+                                  ? bsize > BLOCK_32X32
+                                  : bsize >= BLOCK_32X32;
       mi->interp_filter = (filter_ref == SWITCHABLE) ? EIGHTTAP : filter_ref;
       vp9_build_inter_predictors_sby(xd, mi_row, mi_col, bsize);
 
@@ -1885,7 +1920,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     }
 
 #if CONFIG_VP9_TEMPORAL_DENOISING
-    if (cpi->oxcf.noise_sensitivity > 0 &&
+    if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi) &&
         cpi->denoiser.denoising_level > kDenLowLow) {
       vp9_denoiser_update_frame_stats(mi, sse_y, this_mode, ctx);
       // Keep track of zero_last cost.
@@ -1950,7 +1985,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   if ((!force_skip_low_temp_var || bsize < BLOCK_32X32) && perform_intra_pred &&
       (best_rdc.rdcost == INT64_MAX ||
        (!x->skip && best_rdc.rdcost > inter_mode_thresh &&
-        bsize <= cpi->sf.max_intra_bsize))) {
+        bsize <= cpi->sf.max_intra_bsize)) &&
+      !x->skip_low_source_sad) {
     struct estimate_block_intra_args args = { cpi, x, DC_PRED, 1, 0 };
     int i;
     TX_SIZE best_intra_tx_size = TX_SIZES;
@@ -1995,7 +2031,10 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
         continue;
 
       if (rd_less_than_thresh(best_rdc.rdcost, mode_rd_thresh,
-                              rd_thresh_freq_fact[mode_index]))
+#if CONFIG_MULTITHREAD
+                              tile_data->enc_row_mt_mutex,
+#endif
+                              &rd_thresh_freq_fact[mode_index]))
         continue;
 
       mi->mode = this_mode;
@@ -2078,7 +2117,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
 
 #if CONFIG_VP9_TEMPORAL_DENOISING
   if (cpi->oxcf.noise_sensitivity > 0 && cpi->resize_pending == 0 &&
-      cpi->denoiser.denoising_level > kDenLowLow && cpi->denoiser.reset == 0) {
+      denoise_svc(cpi) && cpi->denoiser.denoising_level > kDenLowLow &&
+      cpi->denoiser.reset == 0) {
     VP9_DENOISER_DECISION decision = COPY_BLOCK;
     vp9_pickmode_ctx_den_update(&ctx_den, zero_last_cost_orig, ref_frame_cost,
                                 frame_mv, reuse_inter_pred, best_tx_size,
@@ -2260,10 +2300,10 @@ void vp9_pick_inter_mode_sub8x8(VP9_COMP *cpi, MACROBLOCK *x, int mi_row,
             vp9_set_mv_search_range(&x->mv_limits,
                                     &mbmi_ext->ref_mvs[0]->as_mv);
 
-            vp9_full_pixel_search(cpi, x, bsize, &mvp_full, step_param,
-                                  x->sadperbit4, cond_cost_list(cpi, cost_list),
-                                  &mbmi_ext->ref_mvs[ref_frame][0].as_mv,
-                                  &tmp_mv, INT_MAX, 0);
+            vp9_full_pixel_search(
+                cpi, x, bsize, &mvp_full, step_param, cpi->sf.mv.search_method,
+                x->sadperbit4, cond_cost_list(cpi, cost_list),
+                &mbmi_ext->ref_mvs[ref_frame][0].as_mv, &tmp_mv, INT_MAX, 0);
 
             x->mv_limits = tmp_mv_limits;
 

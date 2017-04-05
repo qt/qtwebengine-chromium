@@ -42,8 +42,9 @@ namespace gl
 struct Caps;
 class Context;
 class ContextState;
-class ResourceManager;
 class Shader;
+class ShaderProgramManager;
+class State;
 class InfoLog;
 class Buffer;
 class Framebuffer;
@@ -261,8 +262,9 @@ class ProgramState final : angle::NonCopyable
 class Program final : angle::NonCopyable, public LabeledObject
 {
   public:
-    Program(rx::GLImplFactory *factory, ResourceManager *manager, GLuint handle);
+    Program(rx::GLImplFactory *factory, ShaderProgramManager *manager, GLuint handle);
     ~Program();
+    void destroy(const Context *context);
 
     GLuint id() const { return mHandle; }
 
@@ -272,7 +274,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     rx::ProgramImpl *getImplementation() const { return mProgram; }
 
     void attachShader(Shader *shader);
-    bool detachShader(Shader *shader);
+    bool detachShader(const Context *context, Shader *shader);
     int getAttachedShadersCount() const;
 
     const Shader *getAttachedVertexShader() const { return mState.mAttachedVertexShader; }
@@ -290,7 +292,7 @@ class Program final : angle::NonCopyable, public LabeledObject
                               GLint components,
                               const GLfloat *coeffs);
 
-    Error link(const ContextState &data);
+    Error link(const gl::Context *context);
     bool isLinked() const;
 
     Error loadBinary(const Context *context,
@@ -384,7 +386,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     static bool linkValidateInterfaceBlockFields(InfoLog &infoLog, const std::string &uniformName, const sh::InterfaceBlockField &vertexUniform, const sh::InterfaceBlockField &fragmentUniform);
 
     void addRef();
-    void release();
+    void release(const Context *context);
     unsigned int getRefCount() const;
     void flagForDeletion();
     bool isFlaggedForDeletion() const;
@@ -403,6 +405,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     {
         return mState.mSamplerBindings;
     }
+    const ProgramState &getState() const { return mState; }
 
   private:
     class Bindings final : angle::NonCopyable
@@ -429,7 +432,7 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     using MergedVaryings = std::map<std::string, VaryingRef>;
 
-    void unlink(bool destroy = false);
+    void unlink();
     void resetUniformBlockBindings();
 
     bool linkAttributes(const ContextState &data, InfoLog &infoLog);
@@ -444,8 +447,8 @@ class Program final : angle::NonCopyable, public LabeledObject
     bool linkUniformBlocks(InfoLog &infoLog, const Caps &caps);
     bool linkVaryings(InfoLog &infoLog) const;
     bool validateVertexAndFragmentUniforms(InfoLog &infoLog) const;
-    bool linkUniforms(InfoLog &infoLog, const Caps &caps, const Bindings &uniformBindings);
-    bool indexUniforms(InfoLog &infoLog, const Caps &caps, const Bindings &uniformBindings);
+    bool linkUniforms(InfoLog &infoLog, const Caps &caps, const Bindings &uniformLocationBindings);
+    bool indexUniforms(InfoLog &infoLog, const Caps &caps, const Bindings &uniformLocationBindings);
     bool areMatchingInterfaceBlocks(InfoLog &infoLog,
                                     const sh::InterfaceBlock &vertexInterfaceBlock,
                                     const sh::InterfaceBlock &fragmentInterfaceBlock) const;
@@ -533,7 +536,10 @@ class Program final : angle::NonCopyable, public LabeledObject
     bool mValidated;
 
     Bindings mAttributeBindings;
-    Bindings mUniformBindings;
+
+    // Note that this has nothing to do with binding layout qualifiers that can be set for some
+    // uniforms in GLES3.1+. It is used to pre-set the location of uniforms.
+    Bindings mUniformLocationBindings;
 
     // CHROMIUM_path_rendering
     Bindings mFragmentInputBindings;
@@ -543,7 +549,7 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     unsigned int mRefCount;
 
-    ResourceManager *mResourceManager;
+    ShaderProgramManager *mResourceManager;
     const GLuint mHandle;
 
     InfoLog mInfoLog;

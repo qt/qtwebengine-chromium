@@ -17,13 +17,22 @@
 #include "webrtc/system_wrappers/include/field_trial_default.h"
 
 NSString * const kRTCFieldTrialAudioSendSideBweKey = @"WebRTC-Audio-SendSideBwe";
+NSString * const kRTCFieldTrialSendSideBweWithOverheadKey = @"WebRTC-SendSideBwe-WithOverhead";
+NSString * const kRTCFieldTrialFlexFec03AdvertisedKey = @"WebRTC-FlexFEC-03-Advertised";
 NSString * const kRTCFieldTrialFlexFec03Key = @"WebRTC-FlexFEC-03";
 NSString * const kRTCFieldTrialImprovedBitrateEstimateKey = @"WebRTC-ImprovedBitrateEstimate";
+NSString * const kRTCFieldTrialMedianSlopeFilterKey = @"WebRTC-BweMedianSlopeFilter";
 NSString * const kRTCFieldTrialTrendlineFilterKey = @"WebRTC-BweTrendlineFilter";
 NSString * const kRTCFieldTrialH264HighProfileKey = @"WebRTC-H264HighProfile";
 NSString * const kRTCFieldTrialEnabledValue = @"Enabled";
 
 static std::unique_ptr<char[]> gFieldTrialInitString;
+
+NSString *RTCFieldTrialMedianSlopeFilterValue(
+    size_t windowSize, double thresholdGain) {
+  NSString *format = @"Enabled-%zu,%lf";
+  return [NSString stringWithFormat:format, windowSize, thresholdGain];
+}
 
 NSString *RTCFieldTrialTrendlineFilterValue(
     size_t windowSize, double smoothingCoeff, double thresholdGain) {

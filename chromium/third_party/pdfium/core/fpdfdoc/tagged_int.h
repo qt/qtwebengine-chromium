@@ -15,39 +15,53 @@
 #include "core/fxcrt/cfx_retain_ptr.h"
 #include "third_party/base/stl_util.h"
 
-class CPDF_StructElementImpl;
+class CPDF_StructElement;
 
-class CPDF_StructTreeImpl final : public IPDF_StructTree {
+struct CPDF_StructKid {
+  CPDF_StructKid();
+  CPDF_StructKid(const CPDF_StructKid& that);
+  ~CPDF_StructKid();
+
+  enum { Invalid, Element, PageContent, StreamContent, Object } m_Type;
+
+  CFX_RetainPtr<CPDF_StructElement> m_pElement;  // For Element.
+  CPDF_Dictionary* m_pDict;                      // For Element.
+  uint32_t m_PageObjNum;  // For PageContent, StreamContent, Object.
+  uint32_t m_RefObjNum;   // For StreamContent, Object.
+  uint32_t m_ContentId;   // For PageContent, StreamContent.
+};
+
+class CPDF_StructTree final : public IPDF_StructTree {
  public:
-  explicit CPDF_StructTreeImpl(const CPDF_Document* pDoc);
-  ~CPDF_StructTreeImpl() override;
+  explicit CPDF_StructTree(const CPDF_Document* pDoc);
+  ~CPDF_StructTree() override;
 
   // IPDF_StructTree:
   int CountTopElements() const override;
   IPDF_StructElement* GetTopElement(int i) const override;
 
   void LoadPageTree(const CPDF_Dictionary* pPageDict);
-  CPDF_StructElementImpl* AddPageNode(
+  CFX_RetainPtr<CPDF_StructElement> AddPageNode(
       CPDF_Dictionary* pElement,
-      std::map<CPDF_Dictionary*, CPDF_StructElementImpl*>& map,
+      std::map<CPDF_Dictionary*, CFX_RetainPtr<CPDF_StructElement>>* map,
       int nLevel = 0);
   bool AddTopLevelNode(CPDF_Dictionary* pDict,
-                       CPDF_StructElementImpl* pElement);
+                       const CFX_RetainPtr<CPDF_StructElement>& pElement);
 
  protected:
   const CPDF_Dictionary* const m_pTreeRoot;
   const CPDF_Dictionary* const m_pRoleMap;
   const CPDF_Dictionary* m_pPage;
-  std::vector<CFX_RetainPtr<CPDF_StructElementImpl>> m_Kids;
+  std::vector<CFX_RetainPtr<CPDF_StructElement>> m_Kids;
 
-  friend class CPDF_StructElementImpl;
+  friend class CPDF_StructElement;
 };
 
-class CPDF_StructElementImpl final : public IPDF_StructElement {
+class CPDF_StructElement final : public CFX_Retainable,
+                                 public IPDF_StructElement {
  public:
-  CPDF_StructElementImpl(CPDF_StructTreeImpl* pTree,
-                         CPDF_StructElementImpl* pParent,
-                         CPDF_Dictionary* pDict);
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
   // IPDF_StructElement
   IPDF_StructTree* GetTree() const override;
@@ -55,7 +69,7 @@ class CPDF_StructElementImpl final : public IPDF_StructElement {
   IPDF_StructElement* GetParent() const override;
   CPDF_Dictionary* GetDict() const override;
   int CountKids() const override;
-  const CPDF_StructKid& GetKid(int index) const override;
+  IPDF_StructElement* GetKidIfElement(int index) const override;
   CPDF_Object* GetAttr(const CFX_ByteStringC& owner,
                        const CFX_ByteStringC& name,
                        bool bInheritable = false,
@@ -81,26 +95,25 @@ class CPDF_StructElementImpl final : public IPDF_StructElement {
                  bool bInheritable = false,
                  int subindex = -1) override;
 
+  std::vector<CPDF_StructKid>* GetKids() { return &m_Kids; }
   void LoadKids(CPDF_Dictionary* pDict);
   void LoadKid(uint32_t PageObjNum, CPDF_Object* pObj, CPDF_StructKid* pKid);
   CPDF_Object* GetAttr(const CFX_ByteStringC& owner,
                        const CFX_ByteStringC& name,
                        bool bInheritable,
                        int subindex);
-  CPDF_StructElementImpl* Retain();
-  void Release();
 
- protected:
-  ~CPDF_StructElementImpl() override;
+ private:
+  CPDF_StructElement(CPDF_StructTree* pTree,
+                     CPDF_StructElement* pParent,
+                     CPDF_Dictionary* pDict);
+  ~CPDF_StructElement() override;
 
-  int m_RefCount;
-  CPDF_StructTreeImpl* const m_pTree;
-  CPDF_StructElementImpl* const m_pParent;
+  CPDF_StructTree* const m_pTree;
+  CPDF_StructElement* const m_pParent;
   CPDF_Dictionary* const m_pDict;
   CFX_ByteString m_Type;
   std::vector<CPDF_StructKid> m_Kids;
-
-  friend class CPDF_StructTreeImpl;
 };
 
 #endif  // CORE_FPDFDOC_TAGGED_INT_H_

@@ -84,7 +84,7 @@ void WebViewFrameWidget::themeChanged() {
 }
 
 WebInputEventResult WebViewFrameWidget::handleInputEvent(
-    const WebInputEvent& event) {
+    const WebCoalescedInputEvent& event) {
   return m_webView->handleInputEvent(event);
 }
 
@@ -149,18 +149,6 @@ void WebViewFrameWidget::willCloseLayerTreeView() {
   return m_webView->willCloseLayerTreeView();
 }
 
-void WebViewFrameWidget::didAcquirePointerLock() {
-  return m_webView->didAcquirePointerLock();
-}
-
-void WebViewFrameWidget::didNotAcquirePointerLock() {
-  return m_webView->didNotAcquirePointerLock();
-}
-
-void WebViewFrameWidget::didLosePointerLock() {
-  return m_webView->didLosePointerLock();
-}
-
 WebColor WebViewFrameWidget::backgroundColor() const {
   return m_webView->backgroundColor();
 }
@@ -172,10 +160,6 @@ WebPagePopup* WebViewFrameWidget::pagePopup() const {
 bool WebViewFrameWidget::getCompositionCharacterBounds(
     WebVector<WebRect>& bounds) {
   return m_webView->getCompositionCharacterBounds(bounds);
-}
-
-void WebViewFrameWidget::applyReplacementRange(const WebRange& range) {
-  m_webView->applyReplacementRange(range);
 }
 
 void WebViewFrameWidget::updateBrowserControlsState(
@@ -215,8 +199,14 @@ void WebViewFrameWidget::scheduleAnimation() {
   m_webView->scheduleAnimationForWidget();
 }
 
-CompositorProxyClient* WebViewFrameWidget::createCompositorProxyClient() {
-  return m_webView->createCompositorProxyClient();
+CompositorWorkerProxyClient*
+WebViewFrameWidget::createCompositorWorkerProxyClient() {
+  return m_webView->createCompositorWorkerProxyClient();
+}
+
+AnimationWorkletProxyClient*
+WebViewFrameWidget::createAnimationWorkletProxyClient() {
+  return m_webView->createAnimationWorkletProxyClient();
 }
 
 void WebViewFrameWidget::setRootGraphicsLayer(GraphicsLayer* layer) {

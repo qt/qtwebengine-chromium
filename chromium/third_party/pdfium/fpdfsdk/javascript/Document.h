@@ -41,231 +41,250 @@ class CJS_PrintParamsObj : public CJS_Object {
   DECLARE_JS_CLASS();
 };
 
-class Icon;
-class Field;
-
-struct IconElement {
-  IconElement(const CFX_WideString& name, Icon* stream)
-      : IconName(name), IconStream(stream) {}
-
-  const CFX_WideString IconName;
-  Icon* const IconStream;
-};
-
-struct CJS_DelayData;
-struct CJS_DelayAnnot;
 struct CJS_AnnotObj;
+struct CJS_DelayAnnot;
+struct CJS_DelayData;
 
 class Document : public CJS_EmbedObj {
  public:
   explicit Document(CJS_Object* pJSObject);
   ~Document() override;
 
-  bool ADBE(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool author(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool baseURL(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool bookmarkRoot(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool calculate(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool Collab(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool creationDate(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool creator(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool delay(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool dirty(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool documentFileName(IJS_Context* cc,
+  bool ADBE(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool author(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool baseURL(CJS_Runtime* pRuntime,
+               CJS_PropValue& vp,
+               CFX_WideString& sError);
+  bool bookmarkRoot(CJS_Runtime* pRuntime,
+                    CJS_PropValue& vp,
+                    CFX_WideString& sError);
+  bool calculate(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool Collab(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool creationDate(CJS_Runtime* pRuntime,
+                    CJS_PropValue& vp,
+                    CFX_WideString& sError);
+  bool creator(CJS_Runtime* pRuntime,
+               CJS_PropValue& vp,
+               CFX_WideString& sError);
+  bool delay(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool dirty(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool documentFileName(CJS_Runtime* pRuntime,
                         CJS_PropValue& vp,
                         CFX_WideString& sError);
-  bool external(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool filesize(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool icons(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool info(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool keywords(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool layout(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool media(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool modDate(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool mouseX(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool mouseY(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool numFields(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool numPages(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool pageNum(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool pageWindowRect(IJS_Context* cc,
+  bool external(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool filesize(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool icons(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool info(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool keywords(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool layout(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool media(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool modDate(CJS_Runtime* pRuntime,
+               CJS_PropValue& vp,
+               CFX_WideString& sError);
+  bool mouseX(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool mouseY(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool numFields(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError);
+  bool numPages(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool pageNum(CJS_Runtime* pRuntime,
+               CJS_PropValue& vp,
+               CFX_WideString& sError);
+  bool pageWindowRect(CJS_Runtime* pRuntime,
                       CJS_PropValue& vp,
                       CFX_WideString& sError);
-  bool path(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool producer(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool subject(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool title(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool zoom(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
-  bool zoomType(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool path(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool producer(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
+  bool subject(CJS_Runtime* pRuntime,
+               CJS_PropValue& vp,
+               CFX_WideString& sError);
+  bool title(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool zoom(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
+  bool zoomType(CJS_Runtime* pRuntime,
+                CJS_PropValue& vp,
+                CFX_WideString& sError);
 
-  bool addAnnot(IJS_Context* cc,
+  bool addAnnot(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool addField(IJS_Context* cc,
+  bool addField(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool addLink(IJS_Context* cc,
+  bool addLink(CJS_Runtime* pRuntime,
                const std::vector<CJS_Value>& params,
                CJS_Value& vRet,
                CFX_WideString& sError);
-  bool addIcon(IJS_Context* cc,
+  bool addIcon(CJS_Runtime* pRuntime,
                const std::vector<CJS_Value>& params,
                CJS_Value& vRet,
                CFX_WideString& sError);
-  bool calculateNow(IJS_Context* cc,
+  bool calculateNow(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool closeDoc(IJS_Context* cc,
+  bool closeDoc(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool createDataObject(IJS_Context* cc,
+  bool createDataObject(CJS_Runtime* pRuntime,
                         const std::vector<CJS_Value>& params,
                         CJS_Value& vRet,
                         CFX_WideString& sError);
-  bool deletePages(IJS_Context* cc,
+  bool deletePages(CJS_Runtime* pRuntime,
                    const std::vector<CJS_Value>& params,
                    CJS_Value& vRet,
                    CFX_WideString& sError);
-  bool exportAsText(IJS_Context* cc,
+  bool exportAsText(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool exportAsFDF(IJS_Context* cc,
+  bool exportAsFDF(CJS_Runtime* pRuntime,
                    const std::vector<CJS_Value>& params,
                    CJS_Value& vRet,
                    CFX_WideString& sError);
-  bool exportAsXFDF(IJS_Context* cc,
+  bool exportAsXFDF(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool extractPages(IJS_Context* cc,
+  bool extractPages(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool getAnnot(IJS_Context* cc,
+  bool getAnnot(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool getAnnots(IJS_Context* cc,
+  bool getAnnots(CJS_Runtime* pRuntime,
                  const std::vector<CJS_Value>& params,
                  CJS_Value& vRet,
                  CFX_WideString& sError);
-  bool getAnnot3D(IJS_Context* cc,
+  bool getAnnot3D(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError);
-  bool getAnnots3D(IJS_Context* cc,
+  bool getAnnots3D(CJS_Runtime* pRuntime,
                    const std::vector<CJS_Value>& params,
                    CJS_Value& vRet,
                    CFX_WideString& sError);
-  bool getField(IJS_Context* cc,
+  bool getField(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool getIcon(IJS_Context* cc,
+  bool getIcon(CJS_Runtime* pRuntime,
                const std::vector<CJS_Value>& params,
                CJS_Value& vRet,
                CFX_WideString& sError);
-  bool getLinks(IJS_Context* cc,
+  bool getLinks(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool getNthFieldName(IJS_Context* cc,
+  bool getNthFieldName(CJS_Runtime* pRuntime,
                        const std::vector<CJS_Value>& params,
                        CJS_Value& vRet,
                        CFX_WideString& sError);
-  bool getOCGs(IJS_Context* cc,
+  bool getOCGs(CJS_Runtime* pRuntime,
                const std::vector<CJS_Value>& params,
                CJS_Value& vRet,
                CFX_WideString& sError);
-  bool getPageBox(IJS_Context* cc,
+  bool getPageBox(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError);
-  bool getPageNthWord(IJS_Context* cc,
+  bool getPageNthWord(CJS_Runtime* pRuntime,
                       const std::vector<CJS_Value>& params,
                       CJS_Value& vRet,
                       CFX_WideString& sError);
-  bool getPageNthWordQuads(IJS_Context* cc,
+  bool getPageNthWordQuads(CJS_Runtime* pRuntime,
                            const std::vector<CJS_Value>& params,
                            CJS_Value& vRet,
                            CFX_WideString& sError);
-  bool getPageNumWords(IJS_Context* cc,
+  bool getPageNumWords(CJS_Runtime* pRuntime,
                        const std::vector<CJS_Value>& params,
                        CJS_Value& vRet,
                        CFX_WideString& sError);
-  bool getPrintParams(IJS_Context* cc,
+  bool getPrintParams(CJS_Runtime* pRuntime,
                       const std::vector<CJS_Value>& params,
                       CJS_Value& vRet,
                       CFX_WideString& sError);
-  bool getURL(IJS_Context* cc,
+  bool getURL(CJS_Runtime* pRuntime,
               const std::vector<CJS_Value>& params,
               CJS_Value& vRet,
               CFX_WideString& sError);
-  bool gotoNamedDest(IJS_Context* cc,
+  bool gotoNamedDest(CJS_Runtime* pRuntime,
                      const std::vector<CJS_Value>& params,
                      CJS_Value& vRet,
                      CFX_WideString& sError);
-  bool importAnFDF(IJS_Context* cc,
+  bool importAnFDF(CJS_Runtime* pRuntime,
                    const std::vector<CJS_Value>& params,
                    CJS_Value& vRet,
                    CFX_WideString& sError);
-  bool importAnXFDF(IJS_Context* cc,
+  bool importAnXFDF(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool importTextData(IJS_Context* cc,
+  bool importTextData(CJS_Runtime* pRuntime,
                       const std::vector<CJS_Value>& params,
                       CJS_Value& vRet,
                       CFX_WideString& sError);
-  bool insertPages(IJS_Context* cc,
+  bool insertPages(CJS_Runtime* pRuntime,
                    const std::vector<CJS_Value>& params,
                    CJS_Value& vRet,
                    CFX_WideString& sError);
-  bool mailForm(IJS_Context* cc,
+  bool mailForm(CJS_Runtime* pRuntime,
                 const std::vector<CJS_Value>& params,
                 CJS_Value& vRet,
                 CFX_WideString& sError);
-  bool print(IJS_Context* cc,
+  bool print(CJS_Runtime* pRuntime,
              const std::vector<CJS_Value>& params,
              CJS_Value& vRet,
              CFX_WideString& sError);
-  bool removeField(IJS_Context* cc,
+  bool removeField(CJS_Runtime* pRuntime,
                    const std::vector<CJS_Value>& params,
                    CJS_Value& vRet,
                    CFX_WideString& sError);
-  bool replacePages(IJS_Context* cc,
+  bool replacePages(CJS_Runtime* pRuntime,
                     const std::vector<CJS_Value>& params,
                     CJS_Value& vRet,
                     CFX_WideString& sError);
-  bool resetForm(IJS_Context* cc,
+  bool resetForm(CJS_Runtime* pRuntime,
                  const std::vector<CJS_Value>& params,
                  CJS_Value& vRet,
                  CFX_WideString& sError);
-  bool saveAs(IJS_Context* cc,
+  bool saveAs(CJS_Runtime* pRuntime,
               const std::vector<CJS_Value>& params,
               CJS_Value& vRet,
               CFX_WideString& sError);
-  bool submitForm(IJS_Context* cc,
+  bool submitForm(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError);
-  bool syncAnnotScan(IJS_Context* cc,
+  bool syncAnnotScan(CJS_Runtime* pRuntime,
                      const std::vector<CJS_Value>& params,
                      CJS_Value& vRet,
                      CFX_WideString& sError);
-  bool mailDoc(IJS_Context* cc,
+  bool mailDoc(CJS_Runtime* pRuntime,
                const std::vector<CJS_Value>& params,
                CJS_Value& vRet,
                CFX_WideString& sError);
-  bool removeIcon(IJS_Context* cc,
+  bool removeIcon(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError);
-  bool URL(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError);
+  bool URL(CJS_Runtime* pRuntime, CJS_PropValue& vp, CFX_WideString& sError);
 
   void SetFormFillEnv(CPDFSDK_FormFillEnvironment* pFormFillEnv);
   CPDFSDK_FormFillEnvironment* GetFormFillEnv() const {
@@ -280,7 +299,7 @@ class Document : public CJS_EmbedObj {
   int CountWords(CPDF_TextObject* pTextObj);
   CFX_WideString GetObjWordStr(CPDF_TextObject* pTextObj, int nWordIndex);
 
-  bool getPropertyInternal(IJS_Context* cc,
+  bool getPropertyInternal(CJS_Runtime* pRuntime,
                            CJS_PropValue& vp,
                            const CFX_ByteString& propName,
                            CFX_WideString& sError);
@@ -288,7 +307,8 @@ class Document : public CJS_EmbedObj {
   CPDFSDK_FormFillEnvironment::ObservedPtr m_pFormFillEnv;
   CFX_WideString m_cwBaseURL;
   std::list<std::unique_ptr<CJS_DelayData>> m_DelayData;
-  std::list<std::unique_ptr<IconElement>> m_Icons;  // For iterator stability.
+  // Needs to be a std::list for iterator stability.
+  std::list<CFX_WideString> m_IconNames;
   bool m_bDelay;
 };
 

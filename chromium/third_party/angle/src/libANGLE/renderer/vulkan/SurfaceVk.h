@@ -50,7 +50,7 @@ class OffscreenSurfaceVk : public SurfaceImpl
     EGLint mHeight;
 };
 
-class WindowSurfaceVk : public SurfaceImpl
+class WindowSurfaceVk : public SurfaceImpl, public ResourceVk
 {
   public:
     WindowSurfaceVk(const egl::SurfaceState &surfaceState,
@@ -58,6 +58,8 @@ class WindowSurfaceVk : public SurfaceImpl
                     EGLint width,
                     EGLint height);
     ~WindowSurfaceVk() override;
+
+    void destroy(const DisplayImpl *contextImpl) override;
 
     egl::Error initialize(const DisplayImpl *displayImpl) override;
     FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
@@ -81,7 +83,6 @@ class WindowSurfaceVk : public SurfaceImpl
     gl::ErrorOrResult<vk::Framebuffer *> getCurrentFramebuffer(
         VkDevice device,
         const vk::RenderPass &compatibleRenderPass);
-    void onBeginRenderPass();
 
   private:
     vk::Error initializeImpl(RendererVk *renderer);
@@ -91,10 +92,6 @@ class WindowSurfaceVk : public SurfaceImpl
     EGLNativeWindowType mNativeWindowType;
     VkSurfaceKHR mSurface;
     VkSwapchainKHR mSwapchain;
-    // These are needed for resource deallocation.
-    // TODO(jmadill): Don't store these here.
-    VkDevice mDevice;
-    VkInstance mInstance;
 
     RenderTargetVk mRenderTarget;
     vk::Semaphore mPresentCompleteSemaphore;

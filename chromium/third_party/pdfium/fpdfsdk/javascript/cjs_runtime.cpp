@@ -21,7 +21,7 @@
 #include "fpdfsdk/javascript/JS_Value.h"
 #include "fpdfsdk/javascript/PublicMethods.h"
 #include "fpdfsdk/javascript/app.h"
-#include "fpdfsdk/javascript/cjs_context.h"
+#include "fpdfsdk/javascript/cjs_event_context.h"
 #include "fpdfsdk/javascript/color.h"
 #include "fpdfsdk/javascript/console.h"
 #include "fpdfsdk/javascript/event.h"
@@ -48,12 +48,6 @@ void IJS_Runtime::Destroy() {
 // static
 IJS_Runtime* IJS_Runtime::Create(CPDFSDK_FormFillEnvironment* pFormFillEnv) {
   return new CJS_Runtime(pFormFillEnv);
-}
-
-// static
-CJS_Runtime* CJS_Runtime::FromContext(const IJS_Context* cc) {
-  const CJS_Context* pContext = static_cast<const CJS_Context*>(cc);
-  return pContext->GetJSRuntime();
 }
 
 // static
@@ -89,10 +83,9 @@ CJS_Runtime::CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv)
   if (m_isolateManaged || FXJS_GlobalIsolateRefCount() == 0)
     DefineJSObjects();
 
-  CJS_Context* pContext = (CJS_Context*)NewContext();
+  IJS_EventContext* pContext = NewEventContext();
   InitializeEngine();
-  ReleaseContext(pContext);
-
+  ReleaseEventContext(pContext);
   SetFormFillEnvToDocument();
 }
 
@@ -153,22 +146,23 @@ void CJS_Runtime::DefineJSObjects() {
   CJS_Annot::DefineJSObjects(this, FXJSOBJTYPE_DYNAMIC);
 }
 
-IJS_Context* CJS_Runtime::NewContext() {
-  m_ContextArray.push_back(std::unique_ptr<CJS_Context>(new CJS_Context(this)));
-  return m_ContextArray.back().get();
+IJS_EventContext* CJS_Runtime::NewEventContext() {
+  m_EventContextArray.push_back(
+      std::unique_ptr<CJS_EventContext>(new CJS_EventContext(this)));
+  return m_EventContextArray.back().get();
 }
 
-void CJS_Runtime::ReleaseContext(IJS_Context* pContext) {
-  for (auto it = m_ContextArray.begin(); it != m_ContextArray.end(); ++it) {
-    if (it->get() == static_cast<CJS_Context*>(pContext)) {
-      m_ContextArray.erase(it);
-      return;
-    }
-  }
+void CJS_Runtime::ReleaseEventContext(IJS_EventContext* pContext) {
+  auto it = std::find(m_EventContextArray.begin(), m_EventContextArray.end(),
+                      pdfium::FakeUniquePtr<CJS_EventContext>(
+                          static_cast<CJS_EventContext*>(pContext)));
+  if (it != m_EventContextArray.end())
+    m_EventContextArray.erase(it);
 }
 
-IJS_Context* CJS_Runtime::GetCurrentContext() {
-  return m_ContextArray.empty() ? nullptr : m_ContextArray.back().get();
+CJS_EventContext* CJS_Runtime::GetCurrentEventContext() const {
+  return m_EventContextArray.empty() ? nullptr
+                                     : m_EventContextArray.back().get();
 }
 
 void CJS_Runtime::SetFormFillEnvToDocument() {
@@ -193,11 +187,11 @@ void CJS_Runtime::SetFormFillEnvToDocument() {
   if (!pDocument)
     return;
 
-  pDocument->SetFormFillEnv(m_pFormFillEnv);
+  pDocument->SetFormFillEnv(m_pFormFillEnv.Get());
 }
 
 CPDFSDK_FormFillEnvironment* CJS_Runtime::GetFormFillEnv() const {
-  return m_pFormFillEnv;
+  return m_pFormFillEnv.Get();
 }
 
 int CJS_Runtime::ExecuteScript(const CFX_WideString& script,

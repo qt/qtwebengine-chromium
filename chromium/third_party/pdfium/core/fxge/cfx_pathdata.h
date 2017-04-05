@@ -7,14 +7,26 @@
 #ifndef CORE_FXGE_CFX_PATHDATA_H_
 #define CORE_FXGE_CFX_PATHDATA_H_
 
+#include <vector>
+
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxge/cfx_renderdevice.h"
 
-struct FX_PATHPOINT {
-  FX_FLOAT m_PointX;
-  FX_FLOAT m_PointY;
-  int m_Flag;
+class FX_PATHPOINT {
+ public:
+  FX_PATHPOINT();
+  FX_PATHPOINT(const CFX_PointF& point, FXPT_TYPE type, bool close);
+  FX_PATHPOINT(const FX_PATHPOINT& other);
+  ~FX_PATHPOINT();
+
+  bool IsTypeAndOpen(FXPT_TYPE type) const {
+    return m_Type == type && !m_CloseFigure;
+  }
+
+  CFX_PointF m_Point;
+  FXPT_TYPE m_Type;
+  bool m_CloseFigure;
 };
 
 class CFX_PathData {
@@ -23,34 +35,36 @@ class CFX_PathData {
   CFX_PathData(const CFX_PathData& src);
   ~CFX_PathData();
 
-  int GetPointCount() const { return m_PointCount; }
-  int GetFlag(int index) const { return m_pPoints[index].m_Flag; }
-  FX_FLOAT GetPointX(int index) const { return m_pPoints[index].m_PointX; }
-  FX_FLOAT GetPointY(int index) const { return m_pPoints[index].m_PointY; }
-  FX_PATHPOINT* GetPoints() const { return m_pPoints; }
+  void Clear();
 
-  void SetPointCount(int nPoints);
-  void AllocPointCount(int nPoints);
-  void AddPointCount(int addPoints);
+  FXPT_TYPE GetType(int index) const { return m_Points[index].m_Type; }
+  bool IsClosingFigure(int index) const {
+    return m_Points[index].m_CloseFigure;
+  }
+
+  CFX_PointF GetPoint(int index) const { return m_Points[index].m_Point; }
+  const std::vector<FX_PATHPOINT>& GetPoints() const { return m_Points; }
+  std::vector<FX_PATHPOINT>& GetPoints() { return m_Points; }
+
   CFX_FloatRect GetBoundingBox() const;
   CFX_FloatRect GetBoundingBox(FX_FLOAT line_width, FX_FLOAT miter_limit) const;
+
   void Transform(const CFX_Matrix* pMatrix);
   bool IsRect() const;
-  bool GetZeroAreaPath(CFX_PathData& NewPath,
-                       CFX_Matrix* pMatrix,
-                       bool& bThin,
-                       bool bAdjust) const;
+  bool GetZeroAreaPath(const CFX_Matrix* pMatrix,
+                       bool bAdjust,
+                       CFX_PathData* NewPath,
+                       bool* bThin,
+                       bool* setIdentity) const;
   bool IsRect(const CFX_Matrix* pMatrix, CFX_FloatRect* rect) const;
+
   void Append(const CFX_PathData* pSrc, const CFX_Matrix* pMatrix);
   void AppendRect(FX_FLOAT left, FX_FLOAT bottom, FX_FLOAT right, FX_FLOAT top);
-  void SetPoint(int index, FX_FLOAT x, FX_FLOAT y, int flag);
-  void TrimPoints(int nPoints);
-  void Copy(const CFX_PathData& src);
+  void AppendPoint(const CFX_PointF& pos, FXPT_TYPE type, bool closeFigure);
+  void ClosePath();
 
  private:
-  int m_PointCount;
-  int m_AllocCount;
-  FX_PATHPOINT* m_pPoints;
+  std::vector<FX_PATHPOINT> m_Points;
 };
 
 #endif  // CORE_FXGE_CFX_PATHDATA_H_

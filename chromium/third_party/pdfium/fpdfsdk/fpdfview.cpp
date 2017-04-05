@@ -44,6 +44,22 @@
 #include "xfa/fxbarcode/BC_Library.h"
 #endif  // PDF_ENABLE_XFA
 
+#ifdef PDF_ENABLE_XFA_BMP
+#include "core/fxcodec/codec/ccodec_bmpmodule.h"
+#endif
+
+#ifdef PDF_ENABLE_XFA_GIF
+#include "core/fxcodec/codec/ccodec_gifmodule.h"
+#endif
+
+#ifdef PDF_ENABLE_XFA_PNG
+#include "core/fxcodec/codec/ccodec_pngmodule.h"
+#endif
+
+#ifdef PDF_ENABLE_XFA_TIFF
+#include "core/fxcodec/codec/ccodec_tiffmodule.h"
+#endif
+
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
 #include "core/fxge/cfx_windowsdevice.h"
 #endif
@@ -94,7 +110,7 @@ void RenderPageImpl(CPDF_PageRenderContext* pContext,
       (flags & FPDF_PRINTING) ? CPDF_OCContext::Print : CPDF_OCContext::View;
   pContext->m_pOptions->m_AddFlags = flags >> 8;
   pContext->m_pOptions->m_pOCContext =
-      new CPDF_OCContext(pPage->m_pDocument, usage);
+      pdfium::MakeRetain<CPDF_OCContext>(pPage->m_pDocument, usage);
 
   pContext->m_pDevice->SaveState();
   pContext->m_pDevice->SetClip_Rect(clipping_rect);
@@ -363,6 +379,26 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* cfg) {
   pModuleMgr->LoadEmbeddedJapan1CMaps();
   pModuleMgr->LoadEmbeddedCNS1CMaps();
   pModuleMgr->LoadEmbeddedKorea1CMaps();
+
+#ifdef PDF_ENABLE_XFA_BMP
+  pModuleMgr->GetCodecModule()->SetBmpModule(
+      pdfium::MakeUnique<CCodec_BmpModule>());
+#endif
+
+#ifdef PDF_ENABLE_XFA_GIF
+  pModuleMgr->GetCodecModule()->SetGifModule(
+      pdfium::MakeUnique<CCodec_GifModule>());
+#endif
+
+#ifdef PDF_ENABLE_XFA_PNG
+  pModuleMgr->GetCodecModule()->SetPngModule(
+      pdfium::MakeUnique<CCodec_PngModule>());
+#endif
+
+#ifdef PDF_ENABLE_XFA_TIFF
+  pModuleMgr->GetCodecModule()->SetTiffModule(
+      pdfium::MakeUnique<CCodec_TiffModule>());
+#endif
 
 #ifdef PDF_ENABLE_XFA
   FXJSE_Initialize();
@@ -756,14 +792,8 @@ DLLEXPORT void STDCALL FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
 
   CFX_Matrix transform_matrix = pPage->GetPageMatrix();
   if (matrix) {
-    CFX_Matrix cmatrix;
-    cmatrix.a = matrix->a;
-    cmatrix.b = matrix->b;
-    cmatrix.c = matrix->c;
-    cmatrix.d = matrix->d;
-    cmatrix.e = matrix->e;
-    cmatrix.f = matrix->f;
-    transform_matrix.Concat(cmatrix);
+    transform_matrix.Concat(CFX_Matrix(matrix->a, matrix->b, matrix->c,
+                                       matrix->d, matrix->e, matrix->f));
   }
 
   CFX_FloatRect clipping_rect;
@@ -856,16 +886,16 @@ DLLEXPORT void STDCALL FPDF_DeviceToPage(FPDF_PAGE page,
   pPage->DeviceToPage(start_x, start_y, size_x, size_y, rotate, device_x,
                       device_y, page_x, page_y);
 #else   // PDF_ENABLE_XFA
-  CFX_Matrix page2device;
-  pPage->GetDisplayMatrix(page2device, start_x, start_y, size_x, size_y,
-                          rotate);
+  CFX_Matrix page2device =
+      pPage->GetDisplayMatrix(start_x, start_y, size_x, size_y, rotate);
   CFX_Matrix device2page;
   device2page.SetReverse(page2device);
-  FX_FLOAT page_x_f, page_y_f;
-  device2page.Transform((FX_FLOAT)(device_x), (FX_FLOAT)(device_y), page_x_f,
-                        page_y_f);
-  *page_x = (page_x_f);
-  *page_y = (page_y_f);
+
+  CFX_PointF pos = device2page.Transform(CFX_PointF(
+      static_cast<FX_FLOAT>(device_x), static_cast<FX_FLOAT>(device_y)));
+
+  *page_x = pos.x;
+  *page_y = pos.y;
 #endif  // PDF_ENABLE_XFA
 }
 
@@ -888,14 +918,13 @@ DLLEXPORT void STDCALL FPDF_PageToDevice(FPDF_PAGE page,
   pPage->PageToDevice(start_x, start_y, size_x, size_y, rotate, page_x, page_y,
                       device_x, device_y);
 #else   // PDF_ENABLE_XFA
-  CFX_Matrix page2device;
-  pPage->GetDisplayMatrix(page2device, start_x, start_y, size_x, size_y,
-                          rotate);
-  FX_FLOAT device_x_f, device_y_f;
-  page2device.Transform(((FX_FLOAT)page_x), ((FX_FLOAT)page_y), device_x_f,
-                        device_y_f);
-  *device_x = FXSYS_round(device_x_f);
-  *device_y = FXSYS_round(device_y_f);
+  CFX_Matrix page2device =
+      pPage->GetDisplayMatrix(start_x, start_y, size_x, size_y, rotate);
+  CFX_PointF pos = page2device.Transform(
+      CFX_PointF(static_cast<FX_FLOAT>(page_x), static_cast<FX_FLOAT>(page_y)));
+
+  *device_x = FXSYS_round(pos.x);
+  *device_y = FXSYS_round(pos.y);
 #endif  // PDF_ENABLE_XFA
 }
 
@@ -988,10 +1017,10 @@ void FPDF_RenderPage_Retail(CPDF_PageRenderContext* pContext,
   if (!pPage)
     return;
 
-  CFX_Matrix matrix;
-  pPage->GetDisplayMatrix(matrix, start_x, start_y, size_x, size_y, rotate);
-  FX_RECT rect(start_x, start_y, start_x + size_x, start_y + size_y);
-  RenderPageImpl(pContext, pPage, matrix, rect, flags, bNeedToRestore, pause);
+  RenderPageImpl(pContext, pPage, pPage->GetDisplayMatrix(
+                                      start_x, start_y, size_x, size_y, rotate),
+                 FX_RECT(start_x, start_y, start_x + size_x, start_y + size_y),
+                 flags, bNeedToRestore, pause);
 }
 
 DLLEXPORT int STDCALL FPDF_GetPageSizeByIndex(FPDF_DOCUMENT document,

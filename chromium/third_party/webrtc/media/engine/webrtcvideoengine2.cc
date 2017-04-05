@@ -41,16 +41,11 @@
 namespace cricket {
 namespace {
 
-// Three things happen when the FlexFEC field trial is enabled:
-// 1) FlexFEC is exposed in the default codec list, eventually showing up
-//    in the default SDP. (See InternalEncoderFactory ctor.)
-// 2) FlexFEC send parameters are set in the VideoSendStream config.
-// 3) FlexFEC receive parameters are set in the FlexfecReceiveStream config,
-//    and the corresponding object is instantiated.
-const char kFlexfecFieldTrialName[] = "WebRTC-FlexFEC-03";
-
+// If this field trial is enabled, we will enable sending FlexFEC and disable
+// sending ULPFEC whenever the former has been negotiated. Receiving FlexFEC
+// is enabled whenever FlexFEC has been negotiated.
 bool IsFlexfecFieldTrialEnabled() {
-  return webrtc::field_trial::FindFullName(kFlexfecFieldTrialName) == "Enabled";
+  return webrtc::field_trial::FindFullName("WebRTC-FlexFEC-03") == "Enabled";
 }
 
 // Wrap cricket::WebRtcVideoEncoderFactory as a webrtc::VideoEncoderFactory.
@@ -428,9 +423,9 @@ DefaultUnsignalledSsrcHandler::DefaultUnsignalledSsrcHandler()
 UnsignalledSsrcHandler::Action DefaultUnsignalledSsrcHandler::OnUnsignalledSsrc(
     WebRtcVideoChannel2* channel,
     uint32_t ssrc) {
-  if (default_recv_ssrc_ != 0) {  // Already one default stream.
-    LOG(LS_WARNING) << "Unknown SSRC, but default receive stream already set.";
-    return kDropPacket;
+  if (default_recv_ssrc_ != 0) {  // Already one default stream, so replace it.
+    channel->RemoveRecvStream(default_recv_ssrc_);
+    default_recv_ssrc_ = 0;
   }
 
   StreamParams sp;
@@ -1224,27 +1219,20 @@ void WebRtcVideoChannel2::ConfigureReceiverRtp(
   config->rtp.transport_cc =
       send_codec_ ? HasTransportCc(send_codec_->codec) : false;
 
+  sp.GetFidSsrc(ssrc, &config->rtp.rtx_ssrc);
+
+  config->rtp.extensions = recv_rtp_extensions_;
+
   // TODO(brandtr): Generalize when we add support for multistream protection.
   if (sp.GetFecFrSsrc(ssrc, &flexfec_config->remote_ssrc)) {
     flexfec_config->protected_media_ssrcs = {ssrc};
     flexfec_config->local_ssrc = config->rtp.local_ssrc;
     flexfec_config->rtcp_mode = config->rtp.rtcp_mode;
+    // TODO(brandtr): We should be spec-compliant and set |transport_cc| here
+    // based on the rtcp-fb for the FlexFEC codec, not the media codec.
     flexfec_config->transport_cc = config->rtp.transport_cc;
     flexfec_config->rtp_header_extensions = config->rtp.extensions;
   }
-
-  for (size_t i = 0; i < recv_codecs_.size(); ++i) {
-    uint32_t rtx_ssrc;
-    if (recv_codecs_[i].rtx_payload_type != -1 &&
-        sp.GetFidSsrc(ssrc, &rtx_ssrc)) {
-      webrtc::VideoReceiveStream::Config::Rtp::Rtx& rtx =
-          config->rtp.rtx[recv_codecs_[i].codec.id];
-      rtx.ssrc = rtx_ssrc;
-      rtx.payload_type = recv_codecs_[i].rtx_payload_type;
-    }
-  }
-
-  config->rtp.extensions = recv_rtp_extensions_;
 }
 
 bool WebRtcVideoChannel2::RemoveRecvStream(uint32_t ssrc) {
@@ -1563,7 +1551,7 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::WebRtcVideoSendStream(
   sp.GetFidSsrcs(parameters_.config.rtp.ssrcs,
                  &parameters_.config.rtp.rtx.ssrcs);
 
-  // FlexFEC.
+  // FlexFEC SSRCs.
   // TODO(brandtr): This code needs to be generalized when we add support for
   // multistream protection.
   if (IsFlexfecFieldTrialEnabled()) {
@@ -1595,7 +1583,8 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::WebRtcVideoSendStream(
                                          ? webrtc::RtcpMode::kReducedSize
                                          : webrtc::RtcpMode::kCompound;
   if (codec_settings) {
-    SetCodec(*codec_settings);
+    bool force_encoder_allocation = false;
+    SetCodec(*codec_settings, force_encoder_allocation);
   }
 }
 
@@ -1619,6 +1608,18 @@ bool WebRtcVideoChannel2::WebRtcVideoSendStream::SetVideoSend(
   if (options_present) {
     VideoOptions old_options = parameters_.options;
     parameters_.options.SetAll(*options);
+    if (parameters_.options.is_screencast.value_or(false) !=
+            old_options.is_screencast.value_or(false) &&
+        parameters_.codec_settings) {
+      // If screen content settings change, we may need to recreate the codec
+      // instance so that the correct type is used.
+
+      bool force_encoder_allocation = true;
+      SetCodec(*parameters_.codec_settings, force_encoder_allocation);
+      // Mark screenshare parameter as being updated, then test for any other
+      // changes that may require codec reconfiguration.
+      old_options.is_screencast = options->is_screencast;
+    }
     if (parameters_.options != old_options) {
       ReconfigureEncoder();
     }
@@ -1652,10 +1653,11 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::GetSsrcs() const {
 
 WebRtcVideoChannel2::WebRtcVideoSendStream::AllocatedEncoder
 WebRtcVideoChannel2::WebRtcVideoSendStream::CreateVideoEncoder(
-    const VideoCodec& codec) {
+    const VideoCodec& codec,
+    bool force_encoder_allocation) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   // Do not re-create encoders of the same type.
-  if (codec == allocated_encoder_.codec &&
+  if (!force_encoder_allocation && codec == allocated_encoder_.codec &&
       allocated_encoder_.encoder != nullptr) {
     return allocated_encoder_;
   }
@@ -1702,12 +1704,14 @@ void WebRtcVideoChannel2::WebRtcVideoSendStream::DestroyVideoEncoder(
 }
 
 void WebRtcVideoChannel2::WebRtcVideoSendStream::SetCodec(
-    const VideoCodecSettings& codec_settings) {
+    const VideoCodecSettings& codec_settings,
+    bool force_encoder_allocation) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   parameters_.encoder_config = CreateVideoEncoderConfig(codec_settings.codec);
   RTC_DCHECK_GT(parameters_.encoder_config.number_of_streams, 0);
 
-  AllocatedEncoder new_encoder = CreateVideoEncoder(codec_settings.codec);
+  AllocatedEncoder new_encoder =
+      CreateVideoEncoder(codec_settings.codec, force_encoder_allocation);
   parameters_.config.encoder_settings.encoder = new_encoder.encoder;
   parameters_.config.encoder_settings.full_overuse_time = new_encoder.external;
   parameters_.config.encoder_settings.payload_name = codec_settings.codec.name;
@@ -1722,8 +1726,10 @@ void WebRtcVideoChannel2::WebRtcVideoSendStream::SetCodec(
     parameters_.config.encoder_settings.internal_source = false;
   }
   parameters_.config.rtp.ulpfec = codec_settings.ulpfec;
-  parameters_.config.rtp.flexfec.payload_type =
-      codec_settings.flexfec_payload_type;
+  if (IsFlexfecFieldTrialEnabled()) {
+    parameters_.config.rtp.flexfec.payload_type =
+        codec_settings.flexfec_payload_type;
+  }
 
   // Set RTX payload type if RTX is enabled.
   if (!parameters_.config.rtp.rtx.ssrcs.empty()) {
@@ -1774,10 +1780,12 @@ void WebRtcVideoChannel2::WebRtcVideoSendStream::SetSendParameters(
 
   // Set codecs and options.
   if (params.codec) {
-    SetCodec(*params.codec);
+    bool force_encoder_allocation = false;
+    SetCodec(*params.codec, force_encoder_allocation);
     recreate_stream = false;  // SetCodec has already recreated the stream.
   } else if (params.conference_mode && parameters_.codec_settings) {
-    SetCodec(*parameters_.codec_settings);
+    bool force_encoder_allocation = false;
+    SetCodec(*parameters_.codec_settings, force_encoder_allocation);
     recreate_stream = false;  // SetCodec has already recreated the stream.
   }
   if (recreate_stream) {
@@ -1864,13 +1872,17 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::CreateVideoEncoderConfig(
   // configure a single stream.
   encoder_config.number_of_streams = parameters_.config.rtp.ssrcs.size();
   if (IsCodecBlacklistedForSimulcast(codec.name) ||
-      (is_screencast && !UseSimulcastScreenshare())) {
+      (is_screencast &&
+       (!UseSimulcastScreenshare() || !parameters_.conference_mode))) {
     encoder_config.number_of_streams = 1;
   }
 
-  int stream_max_bitrate =
-      MinPositive(rtp_parameters_.encodings[0].max_bitrate_bps,
-                  parameters_.max_bitrate_bps);
+  int stream_max_bitrate = parameters_.max_bitrate_bps;
+  if (rtp_parameters_.encodings[0].max_bitrate_bps) {
+    stream_max_bitrate =
+        MinPositive(*(rtp_parameters_.encodings[0].max_bitrate_bps),
+                    parameters_.max_bitrate_bps);
+  }
 
   int codec_max_bitrate_kbps;
   if (codec.GetParam(kCodecParamMaxBitrate, &codec_max_bitrate_kbps)) {
@@ -1890,7 +1902,7 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::CreateVideoEncoderConfig(
 void WebRtcVideoChannel2::WebRtcVideoSendStream::ReconfigureEncoder() {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   if (!stream_) {
-    // The webrtc::VideoSendStream |stream_|has not yet been created but other
+    // The webrtc::VideoSendStream |stream_| has not yet been created but other
     // parameters has changed.
     return;
   }
@@ -2130,6 +2142,9 @@ WebRtcVideoChannel2::WebRtcVideoReceiveStream::AllocatedDecoder::
 }
 
 WebRtcVideoChannel2::WebRtcVideoReceiveStream::~WebRtcVideoReceiveStream() {
+  if (flexfec_stream_) {
+    call_->DestroyFlexfecReceiveStream(flexfec_stream_);
+  }
   call_->DestroyVideoReceiveStream(stream_);
   ClearDecoders(&allocated_decoders_);
 }
@@ -2202,7 +2217,12 @@ void WebRtcVideoChannel2::WebRtcVideoReceiveStream::ConfigureCodecs(
     config_.decoders.push_back(decoder);
   }
 
-  // TODO(pbos): Reconfigure RTX based on incoming recv_codecs.
+  config_.rtp.rtx_payload_types.clear();
+  for (const VideoCodecSettings& recv_codec : recv_codecs) {
+    config_.rtp.rtx_payload_types[recv_codec.codec.id] =
+        recv_codec.rtx_payload_type;
+  }
+
   config_.rtp.ulpfec = recv_codecs.front().ulpfec;
   flexfec_config_.payload_type = recv_codecs.front().flexfec_payload_type;
 
@@ -2251,7 +2271,10 @@ void WebRtcVideoChannel2::WebRtcVideoReceiveStream::SetFeedbackParameters(
   config_.rtp.nack.rtp_history_ms = nack_history_ms;
   config_.rtp.transport_cc = transport_cc_enabled;
   config_.rtp.rtcp_mode = rtcp_mode;
-  flexfec_config_.rtcp_mode = rtcp_mode;
+  // TODO(brandtr): We should be spec-compliant and set |transport_cc| here
+  // based on the rtcp-fb for the FlexFEC codec, not the media codec.
+  flexfec_config_.transport_cc = config_.rtp.transport_cc;
+  flexfec_config_.rtcp_mode = config_.rtp.rtcp_mode;
   LOG(LS_INFO)
       << "RecreateWebRtcStream (recv) because of SetFeedbackParameters; nack="
       << nack_enabled << ", remb=" << remb_enabled
@@ -2269,6 +2292,7 @@ void WebRtcVideoChannel2::WebRtcVideoReceiveStream::SetRecvParameters(
   }
   if (params.rtp_header_extensions) {
     config_.rtp.extensions = *params.rtp_header_extensions;
+    flexfec_config_.rtp_header_extensions = *params.rtp_header_extensions;
     needs_recreation = true;
   }
   if (needs_recreation) {
@@ -2279,19 +2303,20 @@ void WebRtcVideoChannel2::WebRtcVideoReceiveStream::SetRecvParameters(
 }
 
 void WebRtcVideoChannel2::WebRtcVideoReceiveStream::RecreateWebRtcStream() {
+  if (stream_) {
+    call_->DestroyVideoReceiveStream(stream_);
+    stream_ = nullptr;
+  }
   if (flexfec_stream_) {
     call_->DestroyFlexfecReceiveStream(flexfec_stream_);
     flexfec_stream_ = nullptr;
   }
-  if (stream_) {
-    call_->DestroyVideoReceiveStream(stream_);
-  }
-  stream_ = call_->CreateVideoReceiveStream(config_.Copy());
-  stream_->Start();
-  if (IsFlexfecFieldTrialEnabled() && flexfec_config_.IsCompleteAndEnabled()) {
+  if (flexfec_config_.IsCompleteAndEnabled()) {
     flexfec_stream_ = call_->CreateFlexfecReceiveStream(flexfec_config_);
     flexfec_stream_->Start();
   }
+  stream_ = call_->CreateVideoReceiveStream(config_.Copy());
+  stream_->Start();
 }
 
 void WebRtcVideoChannel2::WebRtcVideoReceiveStream::ClearDecoders(
@@ -2387,7 +2412,11 @@ WebRtcVideoChannel2::WebRtcVideoReceiveStream::GetVideoReceiverInfo(
   info.jitter_buffer_ms = stats.jitter_buffer_ms;
   info.min_playout_delay_ms = stats.min_playout_delay_ms;
   info.render_delay_ms = stats.render_delay_ms;
+  info.frames_received = stats.frame_counts.key_frames +
+                         stats.frame_counts.delta_frames;
   info.frames_decoded = stats.frames_decoded;
+  info.frames_rendered = stats.frames_rendered;
+  info.qp_sum = stats.qp_sum;
 
   info.codec_name = GetCodecNameFromPayloadType(stats.current_payload_type);
 

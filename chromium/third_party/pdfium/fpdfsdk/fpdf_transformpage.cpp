@@ -6,6 +6,8 @@
 
 #include "public/fpdf_transformpage.h"
 
+#include <vector>
+
 #include "core/fpdfapi/page/cpdf_clippath.h"
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
@@ -235,35 +237,34 @@ void OutputPath(CFX_ByteTextBuf& buf, CPDF_Path path) {
   if (!pPathData)
     return;
 
-  FX_PATHPOINT* pPoints = pPathData->GetPoints();
-
+  const std::vector<FX_PATHPOINT>& pPoints = pPathData->GetPoints();
   if (path.IsRect()) {
-    buf << (pPoints[0].m_PointX) << " " << (pPoints[0].m_PointY) << " "
-        << (pPoints[2].m_PointX - pPoints[0].m_PointX) << " "
-        << (pPoints[2].m_PointY - pPoints[0].m_PointY) << " re\n";
+    CFX_PointF diff = pPoints[2].m_Point - pPoints[0].m_Point;
+    buf << pPoints[0].m_Point.x << " " << pPoints[0].m_Point.y << " " << diff.x
+        << " " << diff.y << " re\n";
     return;
   }
 
   CFX_ByteString temp;
-  for (int i = 0; i < pPathData->GetPointCount(); i++) {
-    buf << (pPoints[i].m_PointX) << " " << (pPoints[i].m_PointY);
-    int point_type = pPoints[i].m_Flag & FXPT_TYPE;
-    if (point_type == FXPT_MOVETO) {
+  for (size_t i = 0; i < pPoints.size(); i++) {
+    buf << pPoints[i].m_Point.x << " " << pPoints[i].m_Point.y;
+    FXPT_TYPE point_type = pPoints[i].m_Type;
+    if (point_type == FXPT_TYPE::MoveTo) {
       buf << " m\n";
-    } else if (point_type == FXPT_BEZIERTO) {
-      buf << " " << (pPoints[i + 1].m_PointX) << " "
-          << (pPoints[i + 1].m_PointY) << " " << (pPoints[i + 2].m_PointX)
-          << " " << (pPoints[i + 2].m_PointY);
-      if (pPoints[i + 2].m_Flag & FXPT_CLOSEFIGURE)
-        buf << " c h\n";
-      else
-        buf << " c\n";
+    } else if (point_type == FXPT_TYPE::BezierTo) {
+      buf << " " << pPoints[i + 1].m_Point.x << " " << pPoints[i + 1].m_Point.y
+          << " " << pPoints[i + 2].m_Point.x << " " << pPoints[i + 2].m_Point.y;
+      buf << " c";
+      if (pPoints[i + 2].m_CloseFigure)
+        buf << " h";
+      buf << "\n";
+
       i += 2;
-    } else if (point_type == FXPT_LINETO) {
-      if (pPoints[i].m_Flag & FXPT_CLOSEFIGURE)
-        buf << " l h\n";
-      else
-        buf << " l\n";
+    } else if (point_type == FXPT_TYPE::LineTo) {
+      buf << " l";
+      if (pPoints[i].m_CloseFigure)
+        buf << " h";
+      buf << "\n";
     }
   }
 }
@@ -288,7 +289,7 @@ DLLEXPORT void STDCALL FPDFPage_InsertClipPath(FPDF_PAGE page,
   for (i = 0; i < pClipPath->GetPathCount(); i++) {
     CPDF_Path path = pClipPath->GetPath(i);
     int iClipType = pClipPath->GetClipType(i);
-    if (path.GetPointCount() == 0) {
+    if (path.GetPoints().empty()) {
       // Empty clipping (totally clipped out)
       strClip << "0 0 m W n ";
     } else {

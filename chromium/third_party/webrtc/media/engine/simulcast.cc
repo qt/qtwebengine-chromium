@@ -11,7 +11,6 @@
 #include <stdio.h>
 
 #include "webrtc/base/arraysize.h"
-#include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/media/base/streamparams.h"
 #include "webrtc/media/engine/constants.h"
@@ -300,8 +299,7 @@ bool ScreenshareLayerConfig::FromFieldTrialGroup(
 }
 
 bool UseSimulcastScreenshare() {
-  return webrtc::field_trial::FindFullName(
-             kSimulcastScreenshareFieldTrialName) == "Enabled";
+  return webrtc::field_trial::IsEnabled(kSimulcastScreenshareFieldTrialName);
 }
 
 }  // namespace cricket

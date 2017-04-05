@@ -112,6 +112,16 @@ void RtpFrameReferenceFinder::UpdateLastPictureIdWithPadding(uint16_t seq_num) {
     ++next_seq_num_with_padding;
     padding_seq_num_it = stashed_padding_.erase(padding_seq_num_it);
   }
+
+  // In the case where the stream has been continuous without any new keyframes
+  // for a while there is a risk that new frames will appear to be older than
+  // the keyframe they belong to due to wrapping sequence number. In order
+  // to prevent this we advance the picture id of the keyframe every so often.
+  if (ForwardDiff(gop_seq_num_it->first, seq_num) > 10000) {
+    RTC_DCHECK_EQ(1ul, last_seq_num_gop_.size());
+    last_seq_num_gop_[seq_num] = gop_seq_num_it->second;
+    last_seq_num_gop_.erase(gop_seq_num_it);
+  }
 }
 
 void RtpFrameReferenceFinder::RetryStashedFrames() {
@@ -164,8 +174,10 @@ void RtpFrameReferenceFinder::ManageFrameGeneric(
   // Clean up info for old keyframes but make sure to keep info
   // for the last keyframe.
   auto clean_to = last_seq_num_gop_.lower_bound(frame->last_seq_num() - 100);
-  if (clean_to != last_seq_num_gop_.end())
-    last_seq_num_gop_.erase(last_seq_num_gop_.begin(), clean_to);
+  for (auto it = last_seq_num_gop_.begin();
+       it != clean_to && last_seq_num_gop_.size() > 1;) {
+    it = last_seq_num_gop_.erase(it);
+  }
 
   // Find the last sequence number of the last frame for the keyframe
   // that this frame indirectly references.
@@ -173,7 +185,7 @@ void RtpFrameReferenceFinder::ManageFrameGeneric(
   if (seq_num_it == last_seq_num_gop_.begin()) {
     LOG(LS_WARNING) << "Generic frame with packet range ["
                     << frame->first_seq_num() << ", " << frame->last_seq_num()
-                    << "] has no Gop, dropping frame.";
+                    << "] has no GoP, dropping frame.";
     return;
   }
   seq_num_it--;
@@ -322,8 +334,15 @@ void RtpFrameReferenceFinder::ManageFrameVp8(
       return;
     }
 
-    RTC_DCHECK((AheadOf<uint16_t, kPicIdLength>(frame->picture_id,
-                                               layer_info_it->second[layer])));
+    if (!(AheadOf<uint16_t, kPicIdLength>(frame->picture_id,
+                                          layer_info_it->second[layer]))) {
+      LOG(LS_WARNING) << "Frame with picture id " << frame->picture_id
+                      << " and packet range [" << frame->first_seq_num() << ", "
+                      << frame->last_seq_num() << "] already received, "
+                      << " dropping frame.";
+      return;
+    }
+
     ++frame->num_references;
     frame->references[layer] = layer_info_it->second[layer];
   }
@@ -657,11 +676,14 @@ bool RtpFrameReferenceFinder::Vp9PidTl0Fix(const RtpFrameObject& frame,
     vp9_fix_jump_timestamp_ = frame.timestamp;
     gof_info_.clear();
 
-    vp9_fix_tl0_pic_idx_offset_ =
-        ForwardDiff<uint8_t>(*tl0_pic_idx, vp9_fix_last_tl0_pic_idx_);
-    vp9_fix_tl0_pic_idx_offset_ += kMaxGofSaved;
-    fixed_tl0 = Add<kTl0PicIdLength>(*tl0_pic_idx, vp9_fix_tl0_pic_idx_offset_);
-    vp9_fix_last_tl0_pic_idx_ = fixed_tl0;
+    if (fixed_tl0 != kNoTl0PicIdx) {
+      vp9_fix_tl0_pic_idx_offset_ =
+          ForwardDiff<uint8_t>(*tl0_pic_idx, vp9_fix_last_tl0_pic_idx_);
+      vp9_fix_tl0_pic_idx_offset_ += kMaxGofSaved;
+      fixed_tl0 =
+          Add<kTl0PicIdLength>(*tl0_pic_idx, vp9_fix_tl0_pic_idx_offset_);
+      vp9_fix_last_tl0_pic_idx_ = fixed_tl0;
+    }
   }
 
   // Update |vp9_fix_last_picture_id_| with the most recent picture id.

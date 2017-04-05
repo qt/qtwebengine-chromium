@@ -81,6 +81,7 @@ void ScriptWrappableVisitor::performCleanup() {
   if (!m_shouldCleanup)
     return;
 
+  CHECK(!m_tracingInProgress);
   for (auto header : m_headersToUnmark) {
     // Dead objects residing in the marking deque may become invalid due to
     // minor garbage collections and are therefore set to nullptr. We have
@@ -223,9 +224,6 @@ void ScriptWrappableVisitor::markWrappersInAllWorlds(
 void ScriptWrappableVisitor::writeBarrier(
     const void* srcObject,
     const TraceWrapperV8Reference<v8::Value>* dstObject) {
-  if (!RuntimeEnabledFeatures::traceWrappablesEnabled()) {
-    return;
-  }
   if (!srcObject || !dstObject || dstObject->isEmpty()) {
     return;
   }

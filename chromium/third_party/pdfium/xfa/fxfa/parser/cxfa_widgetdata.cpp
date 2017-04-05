@@ -18,7 +18,7 @@
 
 namespace {
 
-FX_FLOAT GetEdgeThickness(const CXFA_StrokeArray& strokes,
+FX_FLOAT GetEdgeThickness(const std::vector<CXFA_Stroke>& strokes,
                           bool b3DStyle,
                           int32_t nIndex) {
   FX_FLOAT fThickness = 0;
@@ -407,19 +407,17 @@ CXFA_Border CXFA_WidgetData::GetUIBorder() {
 }
 
 CFX_RectF CXFA_WidgetData::GetUIMargin() {
-  CFX_RectF rtUIMargin;
-  rtUIMargin.Reset();
-
   CXFA_Node* pUIChild = GetUIChild();
   CXFA_Margin mgUI = CXFA_Margin(
       pUIChild ? pUIChild->GetProperty(0, XFA_Element::Margin, false)
                : nullptr);
+
   if (!mgUI)
-    return rtUIMargin;
+    return CFX_RectF();
 
   CXFA_Border border = GetUIBorder();
   if (border && border.GetPresence() != XFA_ATTRIBUTEENUM_Visible)
-    return rtUIMargin;
+    return CFX_RectF();
 
   FX_FLOAT fLeftInset, fTopInset, fRightInset, fBottomInset;
   bool bLeft = mgUI.GetLeftInset(fLeftInset);
@@ -431,8 +429,8 @@ CFX_RectF CXFA_WidgetData::GetUIMargin() {
     FX_FLOAT fThickness = 0;
     border.Get3DStyle(bVisible, fThickness);
     if (!bLeft || !bTop || !bRight || !bBottom) {
-      CXFA_StrokeArray strokes;
-      border.GetStrokes(strokes);
+      std::vector<CXFA_Stroke> strokes;
+      border.GetStrokes(&strokes);
       if (!bTop)
         fTopInset = GetEdgeThickness(strokes, bVisible, 0);
       if (!bRight)
@@ -443,8 +441,7 @@ CFX_RectF CXFA_WidgetData::GetUIMargin() {
         fLeftInset = GetEdgeThickness(strokes, bVisible, 3);
     }
   }
-  rtUIMargin.Set(fLeftInset, fTopInset, fRightInset, fBottomInset);
-  return rtUIMargin;
+  return CFX_RectF(fLeftInset, fTopInset, fRightInset, fBottomInset);
 }
 
 int32_t CXFA_WidgetData::GetButtonHighlight() {
@@ -462,7 +459,7 @@ bool CXFA_WidgetData::GetButtonRollover(CFX_WideString& wsRollover,
     while (pText) {
       CFX_WideStringC wsName;
       pText->TryCData(XFA_ATTRIBUTE_Name, wsName);
-      if (wsName == FX_WSTRC(L"rollover")) {
+      if (wsName == L"rollover") {
         pText->TryContent(wsRollover);
         bRichText = pText->GetElementType() == XFA_Element::ExData;
         return !wsRollover.IsEmpty();
@@ -479,7 +476,7 @@ bool CXFA_WidgetData::GetButtonDown(CFX_WideString& wsDown, bool& bRichText) {
     while (pText) {
       CFX_WideStringC wsName;
       pText->TryCData(XFA_ATTRIBUTE_Name, wsName);
-      if (wsName == FX_WSTRC(L"down")) {
+      if (wsName == L"down") {
         pText->TryContent(wsDown);
         bRichText = pText->GetElementType() == XFA_Element::ExData;
         return !wsDown.IsEmpty();
@@ -874,7 +871,7 @@ int32_t CXFA_WidgetData::GetSelectedItem(int32_t nIndex) {
   return -1;
 }
 
-void CXFA_WidgetData::GetSelectedItems(CFX_Int32Array& iSelArray) {
+void CXFA_WidgetData::GetSelectedItems(CFX_ArrayTemplate<int32_t>& iSelArray) {
   std::vector<CFX_WideString> wsValueArray;
   GetSelectedItemsValue(wsValueArray);
   int32_t iValues = pdfium::CollectionSize<int32_t>(wsValueArray);
@@ -973,7 +970,7 @@ void CXFA_WidgetData::SetItemState(int32_t nIndex,
                             bSyncData);
       }
     } else if (iSel >= 0) {
-      CFX_Int32Array iSelArray;
+      CFX_ArrayTemplate<int32_t> iSelArray;
       GetSelectedItems(iSelArray);
       for (int32_t i = 0; i < iSelArray.GetSize(); i++) {
         if (iSelArray[i] == nIndex) {
@@ -999,7 +996,7 @@ void CXFA_WidgetData::SetItemState(int32_t nIndex,
   }
 }
 
-void CXFA_WidgetData::SetSelectedItems(CFX_Int32Array& iSelArray,
+void CXFA_WidgetData::SetSelectedItems(CFX_ArrayTemplate<int32_t>& iSelArray,
                                        bool bNotify,
                                        bool bScriptModify,
                                        bool bSyncData) {
@@ -1010,9 +1007,8 @@ void CXFA_WidgetData::SetSelectedItems(CFX_Int32Array& iSelArray,
     GetChoiceListItems(wsSaveTextArray, true);
     CFX_WideString wsItemValue;
     for (int32_t i = 0; i < iSize; i++) {
-      wsItemValue = (iSize == 1)
-                        ? wsSaveTextArray[iSelArray[i]]
-                        : wsSaveTextArray[iSelArray[i]] + FX_WSTRC(L"\n");
+      wsItemValue = (iSize == 1) ? wsSaveTextArray[iSelArray[i]]
+                                 : wsSaveTextArray[iSelArray[i]] + L"\n";
       wsValue += wsItemValue;
     }
   }
@@ -1522,7 +1518,7 @@ bool CXFA_WidgetData::SetValue(const CFX_WideString& wsValue,
     }
   } else {
     if (eType == XFA_Element::NumericEdit) {
-      if (wsNewText != FX_WSTRC(L"0")) {
+      if (wsNewText != L"0") {
         int32_t iLeadDigits = 0;
         int32_t iFracDigits = 0;
         GetLeadDigits(iLeadDigits);
@@ -1572,7 +1568,7 @@ bool CXFA_WidgetData::GetPictureContent(CFX_WideString& wsPicture,
                                   wsDataPicture);
           pLocale->GetTimePattern(FX_LOCALEDATETIMESUBCATEGORY_Medium,
                                   wsTimePicture);
-          wsPicture = wsDataPicture + FX_WSTRC(L"T") + wsTimePicture;
+          wsPicture = wsDataPicture + L"T" + wsTimePicture;
           break;
         case XFA_VT_DECIMAL:
         case XFA_VT_FLOAT:
@@ -1640,7 +1636,7 @@ IFX_Locale* CXFA_WidgetData::GetLocal() {
   CFX_WideString wsLocaleName;
   if (!m_pNode->GetLocaleName(wsLocaleName))
     return nullptr;
-  if (wsLocaleName == FX_WSTRC(L"ambient"))
+  if (wsLocaleName == L"ambient")
     return m_pNode->GetDocument()->GetLocalMgr()->GetDefLocale();
   return m_pNode->GetDocument()->GetLocalMgr()->GetLocaleByName(wsLocaleName);
 }

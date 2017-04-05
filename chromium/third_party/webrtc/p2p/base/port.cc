@@ -60,11 +60,11 @@ inline bool TooLongWithoutResponse(
 // We will restrict RTT estimates (when used for determining state) to be
 // within a reasonable range.
 const int MINIMUM_RTT = 100;   // 0.1 seconds
-const int MAXIMUM_RTT = 3000;  // 3 seconds
+const int MAXIMUM_RTT = 60000;  // 60 seconds
 
 // When we don't have any RTT data, we have to pick something reasonable.  We
 // use a large value just in case the connection is really slow.
-const int DEFAULT_RTT = MAXIMUM_RTT;
+const int DEFAULT_RTT = 3000;  // 3 seconds
 
 // Computes our estimate of the RTT given the current estimate.
 inline int ConservativeRTTEstimate(int rtt) {
@@ -74,8 +74,9 @@ inline int ConservativeRTTEstimate(int rtt) {
 // Weighting of the old rtt value to new data.
 const int RTT_RATIO = 3;  // 3 : 1
 
-// The delay before we begin checking if this port is useless.
-const int kPortTimeoutDelay = 30 * 1000;  // 30 seconds
+// The delay before we begin checking if this port is useless. We set
+// it to a little higher than a total STUN timeout.
+const int kPortTimeoutDelay = cricket::STUN_TOTAL_TIMEOUT + 5000;
 }  // namespace
 
 namespace cricket {
@@ -252,6 +253,21 @@ void Port::AddAddress(const rtc::SocketAddress& address,
                       uint32_t type_preference,
                       uint32_t relay_preference,
                       bool final) {
+  AddAddress(address, base_address, related_address, protocol, relay_protocol,
+             tcptype, type, type_preference, relay_preference, "", final);
+}
+
+void Port::AddAddress(const rtc::SocketAddress& address,
+                      const rtc::SocketAddress& base_address,
+                      const rtc::SocketAddress& related_address,
+                      const std::string& protocol,
+                      const std::string& relay_protocol,
+                      const std::string& tcptype,
+                      const std::string& type,
+                      uint32_t type_preference,
+                      uint32_t relay_preference,
+                      const std::string& url,
+                      bool final) {
   if (protocol == TCP_PROTOCOL_NAME && type == LOCAL_PORT_TYPE) {
     RTC_DCHECK(!tcptype.empty());
   }
@@ -267,6 +283,7 @@ void Port::AddAddress(const rtc::SocketAddress& address,
   c.set_network_name(network_->name());
   c.set_network_type(network_->type());
   c.set_related_address(related_address);
+  c.set_url(url);
   candidates_.push_back(c);
   SignalCandidateReady(this, c);
 
@@ -1234,6 +1251,7 @@ void Connection::ReceivedPing() {
 }
 
 void Connection::ReceivedPingResponse(int rtt, const std::string& request_id) {
+  RTC_DCHECK_GE(rtt, 0);
   // We've already validated that this is a STUN binding response with
   // the correct local and remote username for this connection.
   // So if we're not already, become writable. We may be bringing a pruned
@@ -1247,13 +1265,21 @@ void Connection::ReceivedPingResponse(int rtt, const std::string& request_id) {
     acked_nomination_ = iter->nomination;
   }
 
+  total_round_trip_time_ms_ += rtt;
+  current_round_trip_time_ms_ = rtc::Optional<uint32_t>(
+      static_cast<uint32_t>(rtt));
+
   pings_since_last_response_.clear();
   last_ping_response_received_ = rtc::TimeMillis();
   UpdateReceiving(last_ping_response_received_);
   set_write_state(STATE_WRITABLE);
   set_state(IceCandidatePairState::SUCCEEDED);
+  if (rtt_samples_ > 0) {
+    rtt_ = (RTT_RATIO * rtt_ + rtt) / (RTT_RATIO + 1);
+  } else {
+    rtt_ = rtt;
+  }
   rtt_samples_++;
-  rtt_ = (RTT_RATIO * rtt_ + rtt) / (RTT_RATIO + 1);
 }
 
 bool Connection::dead(int64_t now) const {
@@ -1482,6 +1508,9 @@ ConnectionInfo Connection::stats() {
   stats_.key = this;
   stats_.state = state_;
   stats_.priority = priority();
+  stats_.nominated = nominated();
+  stats_.total_round_trip_time_ms = total_round_trip_time_ms_;
+  stats_.current_round_trip_time_ms = current_round_trip_time_ms_;
   return stats_;
 }
 

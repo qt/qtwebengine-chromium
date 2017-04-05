@@ -32,6 +32,17 @@ bool IsTagged(const CPDF_Document* pDoc) {
 
 }  // namespace
 
+CPDF_StructKid::CPDF_StructKid()
+    : m_Type(Invalid),
+      m_pDict(nullptr),
+      m_PageObjNum(0),
+      m_RefObjNum(0),
+      m_ContentId(0) {}
+
+CPDF_StructKid::CPDF_StructKid(const CPDF_StructKid& that) = default;
+
+CPDF_StructKid::~CPDF_StructKid() {}
+
 // static
 std::unique_ptr<IPDF_StructTree> IPDF_StructTree::LoadPage(
     const CPDF_Document* pDoc,
@@ -39,27 +50,27 @@ std::unique_ptr<IPDF_StructTree> IPDF_StructTree::LoadPage(
   if (!IsTagged(pDoc))
     return nullptr;
 
-  auto pTree = pdfium::MakeUnique<CPDF_StructTreeImpl>(pDoc);
+  auto pTree = pdfium::MakeUnique<CPDF_StructTree>(pDoc);
   pTree->LoadPageTree(pPageDict);
   return std::move(pTree);
 }
 
-CPDF_StructTreeImpl::CPDF_StructTreeImpl(const CPDF_Document* pDoc)
+CPDF_StructTree::CPDF_StructTree(const CPDF_Document* pDoc)
     : m_pTreeRoot(pDoc->GetRoot()->GetDictFor("StructTreeRoot")),
       m_pRoleMap(m_pTreeRoot ? m_pTreeRoot->GetDictFor("RoleMap") : nullptr),
       m_pPage(nullptr) {}
 
-CPDF_StructTreeImpl::~CPDF_StructTreeImpl() {}
+CPDF_StructTree::~CPDF_StructTree() {}
 
-int CPDF_StructTreeImpl::CountTopElements() const {
+int CPDF_StructTree::CountTopElements() const {
   return pdfium::CollectionSize<int>(m_Kids);
 }
 
-IPDF_StructElement* CPDF_StructTreeImpl::GetTopElement(int i) const {
+IPDF_StructElement* CPDF_StructTree::GetTopElement(int i) const {
   return m_Kids[i].Get();
 }
 
-void CPDF_StructTreeImpl::LoadPageTree(const CPDF_Dictionary* pPageDict) {
+void CPDF_StructTree::LoadPageTree(const CPDF_Dictionary* pPageDict) {
   m_pPage = pPageDict;
   if (!m_pTreeRoot)
     return;
@@ -91,54 +102,50 @@ void CPDF_StructTreeImpl::LoadPageTree(const CPDF_Dictionary* pPageDict) {
   if (!pParentArray)
     return;
 
-  std::map<CPDF_Dictionary*, CPDF_StructElementImpl*> element_map;
+  std::map<CPDF_Dictionary*, CFX_RetainPtr<CPDF_StructElement>> element_map;
   for (size_t i = 0; i < pParentArray->GetCount(); i++) {
     if (CPDF_Dictionary* pParent = pParentArray->GetDictAt(i))
-      AddPageNode(pParent, element_map);
+      AddPageNode(pParent, &element_map);
   }
 }
 
-CPDF_StructElementImpl* CPDF_StructTreeImpl::AddPageNode(
+CFX_RetainPtr<CPDF_StructElement> CPDF_StructTree::AddPageNode(
     CPDF_Dictionary* pDict,
-    std::map<CPDF_Dictionary*, CPDF_StructElementImpl*>& map,
+    std::map<CPDF_Dictionary*, CFX_RetainPtr<CPDF_StructElement>>* map,
     int nLevel) {
   if (nLevel > nMaxRecursion)
     return nullptr;
 
-  auto it = map.find(pDict);
-  if (it != map.end())
+  auto it = map->find(pDict);
+  if (it != map->end())
     return it->second;
 
-  CPDF_StructElementImpl* pElement =
-      new CPDF_StructElementImpl(this, nullptr, pDict);
-  map[pDict] = pElement;
+  auto pElement = pdfium::MakeRetain<CPDF_StructElement>(this, nullptr, pDict);
+  (*map)[pDict] = pElement;
   CPDF_Dictionary* pParent = pDict->GetDictFor("P");
   if (!pParent || pParent->GetStringFor("Type") == "StructTreeRoot") {
-    if (!AddTopLevelNode(pDict, pElement)) {
-      pElement->Release();
-      map.erase(pDict);
-    }
-  } else {
-    CPDF_StructElementImpl* pParentElement =
-        AddPageNode(pParent, map, nLevel + 1);
-    bool bSave = false;
-    for (CPDF_StructKid& kid : pParentElement->m_Kids) {
-      if (kid.m_Type != CPDF_StructKid::Element)
-        continue;
-      if (kid.m_Element.m_pDict != pDict)
-        continue;
-      kid.m_Element.m_pElement = pElement->Retain();
+    if (!AddTopLevelNode(pDict, pElement))
+      map->erase(pDict);
+    return pElement;
+  }
+
+  CFX_RetainPtr<CPDF_StructElement> pParentElement =
+      AddPageNode(pParent, map, nLevel + 1);
+  bool bSave = false;
+  for (CPDF_StructKid& kid : *pParentElement->GetKids()) {
+    if (kid.m_Type == CPDF_StructKid::Element && kid.m_pDict == pDict) {
+      kid.m_pElement = pElement;
       bSave = true;
     }
-    if (!bSave) {
-      pElement->Release();
-      map.erase(pDict);
-    }
   }
+  if (!bSave)
+    map->erase(pDict);
   return pElement;
 }
-bool CPDF_StructTreeImpl::AddTopLevelNode(CPDF_Dictionary* pDict,
-                                          CPDF_StructElementImpl* pElement) {
+
+bool CPDF_StructTree::AddTopLevelNode(
+    CPDF_Dictionary* pDict,
+    const CFX_RetainPtr<CPDF_StructElement>& pElement) {
   CPDF_Object* pObj = m_pTreeRoot->GetDirectObjectFor("K");
   if (!pObj)
     return false;
@@ -146,14 +153,14 @@ bool CPDF_StructTreeImpl::AddTopLevelNode(CPDF_Dictionary* pDict,
   if (pObj->IsDictionary()) {
     if (pObj->GetObjNum() != pDict->GetObjNum())
       return false;
-    m_Kids[0].Reset(pElement);
+    m_Kids[0] = pElement;
   }
   if (CPDF_Array* pTopKids = pObj->AsArray()) {
     bool bSave = false;
     for (size_t i = 0; i < pTopKids->GetCount(); i++) {
       CPDF_Reference* pKidRef = ToReference(pTopKids->GetObjectAt(i));
       if (pKidRef && pKidRef->GetRefObjNum() == pDict->GetObjNum()) {
-        m_Kids[i].Reset(pElement);
+        m_Kids[i] = pElement;
         bSave = true;
       }
     }
@@ -163,11 +170,10 @@ bool CPDF_StructTreeImpl::AddTopLevelNode(CPDF_Dictionary* pDict,
   return true;
 }
 
-CPDF_StructElementImpl::CPDF_StructElementImpl(CPDF_StructTreeImpl* pTree,
-                                               CPDF_StructElementImpl* pParent,
-                                               CPDF_Dictionary* pDict)
-    : m_RefCount(0),
-      m_pTree(pTree),
+CPDF_StructElement::CPDF_StructElement(CPDF_StructTree* pTree,
+                                       CPDF_StructElement* pParent,
+                                       CPDF_Dictionary* pDict)
+    : m_pTree(pTree),
       m_pParent(pParent),
       m_pDict(pDict),
       m_Type(pDict->GetStringFor("S")) {
@@ -179,47 +185,36 @@ CPDF_StructElementImpl::CPDF_StructElementImpl(CPDF_StructTreeImpl* pTree,
   LoadKids(pDict);
 }
 
-IPDF_StructTree* CPDF_StructElementImpl::GetTree() const {
+IPDF_StructTree* CPDF_StructElement::GetTree() const {
   return m_pTree;
 }
 
-const CFX_ByteString& CPDF_StructElementImpl::GetType() const {
+const CFX_ByteString& CPDF_StructElement::GetType() const {
   return m_Type;
 }
 
-IPDF_StructElement* CPDF_StructElementImpl::GetParent() const {
+IPDF_StructElement* CPDF_StructElement::GetParent() const {
   return m_pParent;
 }
 
-CPDF_Dictionary* CPDF_StructElementImpl::GetDict() const {
+CPDF_Dictionary* CPDF_StructElement::GetDict() const {
   return m_pDict;
 }
 
-int CPDF_StructElementImpl::CountKids() const {
+int CPDF_StructElement::CountKids() const {
   return pdfium::CollectionSize<int>(m_Kids);
 }
 
-const CPDF_StructKid& CPDF_StructElementImpl::GetKid(int index) const {
-  return m_Kids[index];
+IPDF_StructElement* CPDF_StructElement::GetKidIfElement(int index) const {
+  if (m_Kids[index].m_Type != CPDF_StructKid::Element)
+    return nullptr;
+
+  return m_Kids[index].m_pElement.Get();
 }
 
-CPDF_StructElementImpl::~CPDF_StructElementImpl() {
-  for (CPDF_StructKid& kid : m_Kids) {
-    if (kid.m_Type == CPDF_StructKid::Element && kid.m_Element.m_pElement)
-      static_cast<CPDF_StructElementImpl*>(kid.m_Element.m_pElement)->Release();
-  }
-}
+CPDF_StructElement::~CPDF_StructElement() {}
 
-CPDF_StructElementImpl* CPDF_StructElementImpl::Retain() {
-  m_RefCount++;
-  return this;
-}
-void CPDF_StructElementImpl::Release() {
-  if (--m_RefCount < 1) {
-    delete this;
-  }
-}
-void CPDF_StructElementImpl::LoadKids(CPDF_Dictionary* pDict) {
+void CPDF_StructElement::LoadKids(CPDF_Dictionary* pDict) {
   CPDF_Object* pObj = pDict->GetObjectFor("Pg");
   uint32_t PageObjNum = 0;
   if (CPDF_Reference* pRef = ToReference(pObj))
@@ -241,9 +236,9 @@ void CPDF_StructElementImpl::LoadKids(CPDF_Dictionary* pDict) {
     LoadKid(PageObjNum, pKids, &m_Kids[0]);
   }
 }
-void CPDF_StructElementImpl::LoadKid(uint32_t PageObjNum,
-                                     CPDF_Object* pKidObj,
-                                     CPDF_StructKid* pKid) {
+void CPDF_StructElement::LoadKid(uint32_t PageObjNum,
+                                 CPDF_Object* pKidObj,
+                                 CPDF_StructKid* pKid) {
   pKid->m_Type = CPDF_StructKid::Invalid;
   if (!pKidObj)
     return;
@@ -253,8 +248,8 @@ void CPDF_StructElementImpl::LoadKid(uint32_t PageObjNum,
       return;
     }
     pKid->m_Type = CPDF_StructKid::PageContent;
-    pKid->m_PageContent.m_ContentId = pKidObj->GetInteger();
-    pKid->m_PageContent.m_PageObjNum = PageObjNum;
+    pKid->m_ContentId = pKidObj->GetInteger();
+    pKid->m_PageObjNum = PageObjNum;
     return;
   }
 
@@ -271,32 +266,26 @@ void CPDF_StructElementImpl::LoadKid(uint32_t PageObjNum,
       return;
     }
     pKid->m_Type = CPDF_StructKid::StreamContent;
-    if (CPDF_Reference* pRef = ToReference(pKidDict->GetObjectFor("Stm"))) {
-      pKid->m_StreamContent.m_RefObjNum = pRef->GetRefObjNum();
-    } else {
-      pKid->m_StreamContent.m_RefObjNum = 0;
-    }
-    pKid->m_StreamContent.m_PageObjNum = PageObjNum;
-    pKid->m_StreamContent.m_ContentId = pKidDict->GetIntegerFor("MCID");
+    CPDF_Reference* pRef = ToReference(pKidDict->GetObjectFor("Stm"));
+    pKid->m_RefObjNum = pRef ? pRef->GetRefObjNum() : 0;
+    pKid->m_PageObjNum = PageObjNum;
+    pKid->m_ContentId = pKidDict->GetIntegerFor("MCID");
   } else if (type == "OBJR") {
     if (m_pTree->m_pPage && m_pTree->m_pPage->GetObjNum() != PageObjNum) {
       return;
     }
     pKid->m_Type = CPDF_StructKid::Object;
-    if (CPDF_Reference* pObj = ToReference(pKidDict->GetObjectFor("Obj"))) {
-      pKid->m_Object.m_RefObjNum = pObj->GetRefObjNum();
-    } else {
-      pKid->m_Object.m_RefObjNum = 0;
-    }
-    pKid->m_Object.m_PageObjNum = PageObjNum;
+    CPDF_Reference* pObj = ToReference(pKidDict->GetObjectFor("Obj"));
+    pKid->m_RefObjNum = pObj ? pObj->GetRefObjNum() : 0;
+    pKid->m_PageObjNum = PageObjNum;
   } else {
     pKid->m_Type = CPDF_StructKid::Element;
-    pKid->m_Element.m_pDict = pKidDict;
+    pKid->m_pDict = pKidDict;
     if (!m_pTree->m_pPage) {
-      pKid->m_Element.m_pElement =
-          new CPDF_StructElementImpl(m_pTree, this, pKidDict);
+      pKid->m_pElement =
+          pdfium::MakeRetain<CPDF_StructElement>(m_pTree, this, pKidDict);
     } else {
-      pKid->m_Element.m_pElement = nullptr;
+      pKid->m_pElement = nullptr;
     }
   }
 }
@@ -325,10 +314,10 @@ static CPDF_Dictionary* FindAttrDict(CPDF_Object* pAttrs,
     return pDict;
   return nullptr;
 }
-CPDF_Object* CPDF_StructElementImpl::GetAttr(const CFX_ByteStringC& owner,
-                                             const CFX_ByteStringC& name,
-                                             bool bInheritable,
-                                             FX_FLOAT fLevel) {
+CPDF_Object* CPDF_StructElement::GetAttr(const CFX_ByteStringC& owner,
+                                         const CFX_ByteStringC& name,
+                                         bool bInheritable,
+                                         FX_FLOAT fLevel) {
   if (fLevel > nMaxRecursion) {
     return nullptr;
   }
@@ -375,10 +364,10 @@ CPDF_Object* CPDF_StructElementImpl::GetAttr(const CFX_ByteStringC& owner,
     return pClassDict->GetDirectObjectFor(CFX_ByteString(name));
   return nullptr;
 }
-CPDF_Object* CPDF_StructElementImpl::GetAttr(const CFX_ByteStringC& owner,
-                                             const CFX_ByteStringC& name,
-                                             bool bInheritable,
-                                             int subindex) {
+CPDF_Object* CPDF_StructElement::GetAttr(const CFX_ByteStringC& owner,
+                                         const CFX_ByteStringC& name,
+                                         bool bInheritable,
+                                         int subindex) {
   CPDF_Object* pAttr = GetAttr(owner, name, bInheritable);
   CPDF_Array* pArray = ToArray(pAttr);
   if (!pArray || subindex == -1)
@@ -388,23 +377,22 @@ CPDF_Object* CPDF_StructElementImpl::GetAttr(const CFX_ByteStringC& owner,
     return pAttr;
   return pArray->GetDirectObjectAt(subindex);
 }
-CFX_ByteString CPDF_StructElementImpl::GetName(
-    const CFX_ByteStringC& owner,
-    const CFX_ByteStringC& name,
-    const CFX_ByteStringC& default_value,
-    bool bInheritable,
-    int subindex) {
+CFX_ByteString CPDF_StructElement::GetName(const CFX_ByteStringC& owner,
+                                           const CFX_ByteStringC& name,
+                                           const CFX_ByteStringC& default_value,
+                                           bool bInheritable,
+                                           int subindex) {
   CPDF_Object* pAttr = GetAttr(owner, name, bInheritable, subindex);
   if (ToName(pAttr))
     return pAttr->GetString();
   return CFX_ByteString(default_value);
 }
 
-FX_ARGB CPDF_StructElementImpl::GetColor(const CFX_ByteStringC& owner,
-                                         const CFX_ByteStringC& name,
-                                         FX_ARGB default_value,
-                                         bool bInheritable,
-                                         int subindex) {
+FX_ARGB CPDF_StructElement::GetColor(const CFX_ByteStringC& owner,
+                                     const CFX_ByteStringC& name,
+                                     FX_ARGB default_value,
+                                     bool bInheritable,
+                                     int subindex) {
   CPDF_Array* pArray = ToArray(GetAttr(owner, name, bInheritable, subindex));
   if (!pArray)
     return default_value;
@@ -412,19 +400,19 @@ FX_ARGB CPDF_StructElementImpl::GetColor(const CFX_ByteStringC& owner,
          ((int)(pArray->GetNumberAt(1) * 255) << 8) |
          (int)(pArray->GetNumberAt(2) * 255);
 }
-FX_FLOAT CPDF_StructElementImpl::GetNumber(const CFX_ByteStringC& owner,
-                                           const CFX_ByteStringC& name,
-                                           FX_FLOAT default_value,
-                                           bool bInheritable,
-                                           int subindex) {
+FX_FLOAT CPDF_StructElement::GetNumber(const CFX_ByteStringC& owner,
+                                       const CFX_ByteStringC& name,
+                                       FX_FLOAT default_value,
+                                       bool bInheritable,
+                                       int subindex) {
   CPDF_Object* pAttr = GetAttr(owner, name, bInheritable, subindex);
   return ToNumber(pAttr) ? pAttr->GetNumber() : default_value;
 }
-int CPDF_StructElementImpl::GetInteger(const CFX_ByteStringC& owner,
-                                       const CFX_ByteStringC& name,
-                                       int default_value,
-                                       bool bInheritable,
-                                       int subindex) {
+int CPDF_StructElement::GetInteger(const CFX_ByteStringC& owner,
+                                   const CFX_ByteStringC& name,
+                                   int default_value,
+                                   bool bInheritable,
+                                   int subindex) {
   CPDF_Object* pAttr = GetAttr(owner, name, bInheritable, subindex);
   return ToNumber(pAttr) ? pAttr->GetInteger() : default_value;
 }

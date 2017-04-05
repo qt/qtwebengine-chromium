@@ -21,46 +21,23 @@ class IPDF_StructTree {
       const CPDF_Document* pDoc,
       const CPDF_Dictionary* pPageDict);
 
-  virtual ~IPDF_StructTree() {}
 
   virtual int CountTopElements() const = 0;
   virtual IPDF_StructElement* GetTopElement(int i) const = 0;
-};
 
-struct CPDF_StructKid {
-  enum { Invalid, Element, PageContent, StreamContent, Object } m_Type;
-
-  union {
-    struct {
-      IPDF_StructElement* m_pElement;
-      CPDF_Dictionary* m_pDict;
-    } m_Element;
-    struct {
-      uint32_t m_PageObjNum;
-      uint32_t m_ContentId;
-    } m_PageContent;
-    struct {
-      uint32_t m_PageObjNum;
-      uint32_t m_ContentId;
-      uint32_t m_RefObjNum;
-    } m_StreamContent;
-    struct {
-      uint32_t m_PageObjNum;
-      uint32_t m_RefObjNum;
-    } m_Object;
-  };
+ protected:
+  friend std::default_delete<IPDF_StructTree>;
+  virtual ~IPDF_StructTree() {}
 };
 
 class IPDF_StructElement {
  public:
-  virtual ~IPDF_StructElement() {}
-
   virtual IPDF_StructTree* GetTree() const = 0;
   virtual const CFX_ByteString& GetType() const = 0;
   virtual IPDF_StructElement* GetParent() const = 0;
   virtual CPDF_Dictionary* GetDict() const = 0;
   virtual int CountKids() const = 0;
-  virtual const CPDF_StructKid& GetKid(int index) const = 0;
+  virtual IPDF_StructElement* GetKidIfElement(int index) const = 0;
 
   virtual CPDF_Object* GetAttr(const CFX_ByteStringC& owner,
                                const CFX_ByteStringC& name,
@@ -90,6 +67,9 @@ class IPDF_StructElement {
                          int default_value,
                          bool bInheritable = false,
                          int subindex = -1) = 0;
+
+ protected:
+  virtual ~IPDF_StructElement() {}
 };
 
 #endif  // CORE_FPDFDOC_FPDF_TAGGED_H_

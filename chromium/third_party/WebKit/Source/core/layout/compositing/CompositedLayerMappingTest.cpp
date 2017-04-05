@@ -24,7 +24,7 @@ class CompositedLayerMappingTest
  public:
   CompositedLayerMappingTest()
       : ScopedRootLayerScrollingForTest(GetParam()),
-        RenderingTest(SingleChildFrameLoaderClient::create()) {}
+        RenderingTest(SingleChildLocalFrameClient::create()) {}
 
  protected:
   IntRect recomputeInterestRect(const GraphicsLayer* graphicsLayer) {
@@ -1685,6 +1685,54 @@ TEST_P(CompositedLayerMappingTest, StickyPositionTableCellContentOffset) {
           ->layer()
           ->stickyPositionConstraint();
   EXPECT_EQ(IntPoint(0, 50),
+            IntPoint(constraint.parentRelativeStickyBoxOffset));
+}
+
+TEST_P(CompositedLayerMappingTest, StickyPositionEnclosingLayersContentOffset) {
+  setBodyInnerHTML(
+      "<style>.composited { will-change: transform; }"
+      "#scroller { overflow: auto; height: 200px; width: 200px; }"
+      ".container { height: 500px; }"
+      ".innerPadding { height: 10px; }"
+      "#sticky { position: sticky; top: 25px; height: 50px; }</style>"
+      "<div id='scroller' class='composited'>"
+      "<div class='composited container'>"
+      "  <div class='composited container'>"
+      "    <div class='innerPadding'></div>"
+      "    <div id='sticky' class='composited'></div>"
+      "  </div></div></div>");
+
+  PaintLayer* stickyLayer =
+      toLayoutBox(getLayoutObjectByElementId("sticky"))->layer();
+  CompositedLayerMapping* stickyMapping = stickyLayer->compositedLayerMapping();
+  ASSERT_TRUE(stickyMapping);
+
+  WebLayerStickyPositionConstraint constraint =
+      stickyMapping->mainGraphicsLayer()
+          ->contentLayer()
+          ->layer()
+          ->stickyPositionConstraint();
+  EXPECT_EQ(IntPoint(0, 10),
+            IntPoint(constraint.parentRelativeStickyBoxOffset));
+
+  // Now scroll the page - this should not affect the parent-relative offset.
+  LayoutBoxModelObject* scroller =
+      toLayoutBoxModelObject(getLayoutObjectByElementId("scroller"));
+  PaintLayerScrollableArea* scrollableArea = scroller->getScrollableArea();
+  scrollableArea->scrollToAbsolutePosition(
+      FloatPoint(scrollableArea->scrollPosition().x(), 100));
+  ASSERT_EQ(100.0, scrollableArea->scrollPosition().y());
+
+  stickyLayer->setNeedsCompositingInputsUpdate();
+  EXPECT_TRUE(stickyLayer->needsCompositingInputsUpdate());
+  document().view()->updateLifecycleToCompositingCleanPlusScrolling();
+  EXPECT_FALSE(stickyLayer->needsCompositingInputsUpdate());
+
+  constraint = stickyMapping->mainGraphicsLayer()
+                   ->contentLayer()
+                   ->layer()
+                   ->stickyPositionConstraint();
+  EXPECT_EQ(IntPoint(0, 10),
             IntPoint(constraint.parentRelativeStickyBoxOffset));
 }
 

@@ -44,7 +44,6 @@ can be found in `depot_tools\win_toolchain\vs_files\<hash>\win_sdk\Debuggers`.
 If you want the IDE for debugging and editing, you will need to install
 it separately, but this is optional and not needed for building PDFium.
 
-
 ## Get the code
 
 The name of the top-level directory does not matter. In our examples, we use
@@ -104,7 +103,6 @@ When complete the arguments will be stored in `<directory>/args.gn`.
 If you used Ninja, you can build the sample program by:
 `ninja -C <directory>/pdfium_test` You can build the entire product (which
 includes a few unit tests) by: `ninja -C <directory>`.
-
 
 ## Running the sample program
 

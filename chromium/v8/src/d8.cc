@@ -30,7 +30,9 @@
 #include "src/base/platform/time.h"
 #include "src/base/sys-info.h"
 #include "src/basic-block-profiler.h"
+#include "src/debug/debug-interface.h"
 #include "src/interpreter/interpreter.h"
+#include "src/list-inl.h"
 #include "src/msan.h"
 #include "src/objects-inl.h"
 #include "src/snapshot/natives.h"
@@ -64,6 +66,7 @@ namespace {
 
 const int MB = 1024 * 1024;
 const int kMaxWorkers = 50;
+const int kMaxSerializerMemoryUsage = 1 * MB;  // Arbitrary maximum for testing.
 
 #define USE_VM 1
 #define VM_THRESHOLD 65536
@@ -221,16 +224,6 @@ static Local<Value> Throw(Isolate* isolate, const char* message) {
   return isolate->ThrowException(
       String::NewFromUtf8(isolate, message, NewStringType::kNormal)
           .ToLocalChecked());
-}
-
-
-bool FindInObjectList(Local<Object> object, const Shell::ObjectList& list) {
-  for (int i = 0; i < list.length(); ++i) {
-    if (list[i]->StrictEquals(object)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 
@@ -416,7 +409,7 @@ Global<Function> Shell::stringify_function_;
 base::LazyMutex Shell::workers_mutex_;
 bool Shell::allow_new_workers_ = true;
 i::List<Worker*> Shell::workers_;
-i::List<SharedArrayBuffer::Contents> Shell::externalized_shared_contents_;
+std::vector<ExternalizedContents> Shell::externalized_contents_;
 
 Global<Context> Shell::evaluation_context_;
 ArrayBuffer::Allocator* Shell::array_buffer_allocator;
@@ -700,7 +693,9 @@ MaybeLocal<Module> Shell::FetchModuleTree(Local<Context> context,
   }
   ScriptOrigin origin(
       String::NewFromUtf8(isolate, file_name.c_str(), NewStringType::kNormal)
-          .ToLocalChecked());
+          .ToLocalChecked(),
+      Local<Integer>(), Local<Integer>(), Local<Boolean>(), Local<Integer>(),
+      Local<Value>(), Local<Boolean>(), Local<Boolean>(), True(isolate));
   ScriptCompiler::Source source(source_text, origin);
   Local<Module> module;
   if (!ScriptCompiler::CompileModule(isolate, &source).ToLocal(&module)) {
@@ -1179,7 +1174,6 @@ void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args) {
 void Shell::WorkerPostMessage(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handle_scope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
 
   if (args.Length() < 1) {
     Throw(isolate, "Invalid argument");
@@ -1192,36 +1186,12 @@ void Shell::WorkerPostMessage(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   Local<Value> message = args[0];
-  ObjectList to_transfer;
-  if (args.Length() >= 2) {
-    if (!args[1]->IsArray()) {
-      Throw(isolate, "Transfer list must be an Array");
-      return;
-    }
-
-    Local<Array> transfer = Local<Array>::Cast(args[1]);
-    uint32_t length = transfer->Length();
-    for (uint32_t i = 0; i < length; ++i) {
-      Local<Value> element;
-      if (transfer->Get(context, i).ToLocal(&element)) {
-        if (!element->IsArrayBuffer() && !element->IsSharedArrayBuffer()) {
-          Throw(isolate,
-                "Transfer array elements must be an ArrayBuffer or "
-                "SharedArrayBuffer.");
-          break;
-        }
-
-        to_transfer.Add(Local<Object>::Cast(element));
-      }
-    }
-  }
-
-  ObjectList seen_objects;
-  SerializationData* data = new SerializationData;
-  if (SerializeValue(isolate, message, to_transfer, &seen_objects, data)) {
-    worker->PostMessage(data);
-  } else {
-    delete data;
+  Local<Value> transfer =
+      args.Length() >= 2 ? args[1] : Local<Value>::Cast(Undefined(isolate));
+  std::unique_ptr<SerializationData> data =
+      Shell::SerializeValue(isolate, message, transfer);
+  if (data) {
+    worker->PostMessage(std::move(data));
   }
 }
 
@@ -1234,14 +1204,12 @@ void Shell::WorkerGetMessage(const v8::FunctionCallbackInfo<v8::Value>& args) {
     return;
   }
 
-  SerializationData* data = worker->GetMessage();
+  std::unique_ptr<SerializationData> data = worker->GetMessage();
   if (data) {
-    int offset = 0;
-    Local<Value> data_value;
-    if (Shell::DeserializeValue(isolate, *data, &offset).ToLocal(&data_value)) {
-      args.GetReturnValue().Set(data_value);
+    Local<Value> value;
+    if (Shell::DeserializeValue(isolate, std::move(data)).ToLocal(&value)) {
+      args.GetReturnValue().Set(value);
     }
-    delete data;
   }
 }
 
@@ -1263,6 +1231,7 @@ void Shell::QuitOnce(v8::FunctionCallbackInfo<v8::Value>* args) {
                       ->Int32Value(args->GetIsolate()->GetCurrentContext())
                       .FromMaybe(0);
   CleanupWorkers();
+  args->GetIsolate()->Exit();
   OnExit(args->GetIsolate());
   Exit(exit_code);
 }
@@ -1723,8 +1692,68 @@ void Shell::WriteIgnitionDispatchCountersFile(v8::Isolate* isolate) {
       JSON::Stringify(context, dispatch_counters).ToLocalChecked());
 }
 
+// Write coverage data in LCOV format. See man page for geninfo(1).
+void Shell::WriteLcovData(v8::Isolate* isolate, const char* file) {
+  if (!file) return;
+  HandleScope handle_scope(isolate);
+  debug::Coverage coverage = debug::Coverage::Collect(isolate, false);
+  std::ofstream sink(file, std::ofstream::app);
+  for (size_t i = 0; i < coverage.ScriptCount(); i++) {
+    debug::Coverage::ScriptData script_data = coverage.GetScriptData(i);
+    Local<debug::Script> script = script_data.GetScript();
+    // Skip unnamed scripts.
+    Local<String> name;
+    if (!script->Name().ToLocal(&name)) continue;
+    std::string file_name = ToSTLString(name);
+    // Skip scripts not backed by a file.
+    if (!std::ifstream(file_name).good()) continue;
+    sink << "SF:";
+    sink << NormalizePath(file_name, GetWorkingDirectory()) << std::endl;
+    std::vector<uint32_t> lines;
+    for (size_t j = 0; j < script_data.FunctionCount(); j++) {
+      debug::Coverage::FunctionData function_data =
+          script_data.GetFunctionData(j);
+      int start_line = function_data.Start().GetLineNumber();
+      int end_line = function_data.End().GetLineNumber();
+      uint32_t count = function_data.Count();
+      // Ensure space in the array.
+      lines.resize(std::max(static_cast<size_t>(end_line + 1), lines.size()),
+                   0);
+      // Boundary lines could be shared between two functions with different
+      // invocation counts. Take the maximum.
+      lines[start_line] = std::max(lines[start_line], count);
+      lines[end_line] = std::max(lines[end_line], count);
+      // Invocation counts for non-boundary lines are overwritten.
+      for (int k = start_line + 1; k < end_line; k++) lines[k] = count;
+      // Write function stats.
+      Local<String> name;
+      std::stringstream name_stream;
+      if (function_data.Name().ToLocal(&name)) {
+        name_stream << ToSTLString(name);
+      } else {
+        name_stream << "<" << start_line + 1 << "-";
+        name_stream << function_data.Start().GetColumnNumber() << ">";
+      }
+      sink << "FN:" << start_line + 1 << "," << name_stream.str() << std::endl;
+      sink << "FNDA:" << count << "," << name_stream.str() << std::endl;
+    }
+    // Write per-line coverage. LCOV uses 1-based line numbers.
+    for (size_t i = 0; i < lines.size(); i++) {
+      sink << "DA:" << (i + 1) << "," << lines[i] << std::endl;
+    }
+    sink << "end_of_record" << std::endl;
+  }
+}
 
 void Shell::OnExit(v8::Isolate* isolate) {
+  // Dump basic block profiling data.
+  if (i::BasicBlockProfiler* profiler =
+          reinterpret_cast<i::Isolate*>(isolate)->basic_block_profiler()) {
+    i::OFStream os(stdout);
+    os << *profiler;
+  }
+  isolate->Dispose();
+
   if (i::FLAG_dump_counters || i::FLAG_dump_counters_nvp) {
     int number_of_counters = 0;
     for (CounterMap::Iterator i(counter_map_); i.More(); i.Next()) {
@@ -1781,7 +1810,6 @@ void Shell::OnExit(v8::Isolate* isolate) {
   delete counters_file_;
   delete counter_map_;
 }
-
 
 
 static FILE* FOpen(const char* path, const char* mode) {
@@ -2181,111 +2209,35 @@ void SourceGroup::JoinThread() {
   thread_->Join();
 }
 
-
-SerializationData::~SerializationData() {
-  // Any ArrayBuffer::Contents are owned by this SerializationData object if
-  // ownership hasn't been transferred out via ReadArrayBufferContents.
-  // SharedArrayBuffer::Contents may be used by multiple threads, so must be
-  // cleaned up by the main thread in Shell::CleanupWorkers().
-  for (int i = 0; i < array_buffer_contents_.length(); ++i) {
-    ArrayBuffer::Contents& contents = array_buffer_contents_[i];
-    if (contents.Data()) {
-      Shell::array_buffer_allocator->Free(contents.Data(),
-                                          contents.ByteLength());
-    }
-  }
+ExternalizedContents::~ExternalizedContents() {
+  Shell::array_buffer_allocator->Free(data_, size_);
 }
 
-
-void SerializationData::WriteTag(SerializationTag tag) { data_.Add(tag); }
-
-
-void SerializationData::WriteMemory(const void* p, int length) {
-  if (length > 0) {
-    i::Vector<uint8_t> block = data_.AddBlock(0, length);
-    memcpy(&block[0], p, length);
-  }
-}
-
-
-void SerializationData::WriteArrayBufferContents(
-    const ArrayBuffer::Contents& contents) {
-  array_buffer_contents_.Add(contents);
-  WriteTag(kSerializationTagTransferredArrayBuffer);
-  int index = array_buffer_contents_.length() - 1;
-  Write(index);
-}
-
-
-void SerializationData::WriteSharedArrayBufferContents(
-    const SharedArrayBuffer::Contents& contents) {
-  shared_array_buffer_contents_.Add(contents);
-  WriteTag(kSerializationTagTransferredSharedArrayBuffer);
-  int index = shared_array_buffer_contents_.length() - 1;
-  Write(index);
-}
-
-
-SerializationTag SerializationData::ReadTag(int* offset) const {
-  return static_cast<SerializationTag>(Read<uint8_t>(offset));
-}
-
-
-void SerializationData::ReadMemory(void* p, int length, int* offset) const {
-  if (length > 0) {
-    memcpy(p, &data_[*offset], length);
-    (*offset) += length;
-  }
-}
-
-
-void SerializationData::ReadArrayBufferContents(ArrayBuffer::Contents* contents,
-                                                int* offset) const {
-  int index = Read<int>(offset);
-  DCHECK(index < array_buffer_contents_.length());
-  *contents = array_buffer_contents_[index];
-  // Ownership of this ArrayBuffer::Contents is passed to the caller. Neuter
-  // our copy so it won't be double-free'd when this SerializationData is
-  // destroyed.
-  array_buffer_contents_[index] = ArrayBuffer::Contents();
-}
-
-
-void SerializationData::ReadSharedArrayBufferContents(
-    SharedArrayBuffer::Contents* contents, int* offset) const {
-  int index = Read<int>(offset);
-  DCHECK(index < shared_array_buffer_contents_.length());
-  *contents = shared_array_buffer_contents_[index];
-}
-
-
-void SerializationDataQueue::Enqueue(SerializationData* data) {
+void SerializationDataQueue::Enqueue(std::unique_ptr<SerializationData> data) {
   base::LockGuard<base::Mutex> lock_guard(&mutex_);
-  data_.Add(data);
+  data_.push_back(std::move(data));
 }
 
-
-bool SerializationDataQueue::Dequeue(SerializationData** data) {
+bool SerializationDataQueue::Dequeue(
+    std::unique_ptr<SerializationData>* out_data) {
+  out_data->reset();
   base::LockGuard<base::Mutex> lock_guard(&mutex_);
-  *data = NULL;
-  if (data_.is_empty()) return false;
-  *data = data_.Remove(0);
+  if (data_.empty()) return false;
+  *out_data = std::move(data_[0]);
+  data_.erase(data_.begin());
   return true;
 }
 
 
 bool SerializationDataQueue::IsEmpty() {
   base::LockGuard<base::Mutex> lock_guard(&mutex_);
-  return data_.is_empty();
+  return data_.empty();
 }
 
 
 void SerializationDataQueue::Clear() {
   base::LockGuard<base::Mutex> lock_guard(&mutex_);
-  for (int i = 0; i < data_.length(); ++i) {
-    delete data_[i];
-  }
-  data_.Clear();
+  data_.clear();
 }
 
 
@@ -2314,22 +2266,20 @@ void Worker::StartExecuteInThread(const char* script) {
   thread_->Start();
 }
 
-
-void Worker::PostMessage(SerializationData* data) {
-  in_queue_.Enqueue(data);
+void Worker::PostMessage(std::unique_ptr<SerializationData> data) {
+  in_queue_.Enqueue(std::move(data));
   in_semaphore_.Signal();
 }
 
-
-SerializationData* Worker::GetMessage() {
-  SerializationData* data = NULL;
-  while (!out_queue_.Dequeue(&data)) {
+std::unique_ptr<SerializationData> Worker::GetMessage() {
+  std::unique_ptr<SerializationData> result;
+  while (!out_queue_.Dequeue(&result)) {
     // If the worker is no longer running, and there are no messages in the
     // queue, don't expect any more messages from it.
     if (!base::NoBarrier_Load(&running_)) break;
     out_semaphore_.Wait();
   }
-  return data;
+  return result;
 }
 
 
@@ -2393,19 +2343,21 @@ void Worker::ExecuteInThread() {
             // Now wait for messages
             while (true) {
               in_semaphore_.Wait();
-              SerializationData* data;
+              std::unique_ptr<SerializationData> data;
               if (!in_queue_.Dequeue(&data)) continue;
-              if (data == NULL) {
+              if (!data) {
                 break;
               }
-              int offset = 0;
-              Local<Value> data_value;
-              if (Shell::DeserializeValue(isolate, *data, &offset)
-                      .ToLocal(&data_value)) {
-                Local<Value> argv[] = {data_value};
+              v8::TryCatch try_catch(isolate);
+              Local<Value> value;
+              if (Shell::DeserializeValue(isolate, std::move(data))
+                      .ToLocal(&value)) {
+                Local<Value> argv[] = {value};
                 (void)onmessage_fun->Call(context, global, 1, argv);
               }
-              delete data;
+              if (try_catch.HasCaught()) {
+                Shell::ReportException(isolate, &try_catch);
+              }
             }
           }
         }
@@ -2432,21 +2384,15 @@ void Worker::PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   Local<Value> message = args[0];
-
-  // TODO(binji): Allow transferring from worker to main thread?
-  Shell::ObjectList to_transfer;
-
-  Shell::ObjectList seen_objects;
-  SerializationData* data = new SerializationData;
-  if (Shell::SerializeValue(isolate, message, to_transfer, &seen_objects,
-                            data)) {
+  Local<Value> transfer = Undefined(isolate);
+  std::unique_ptr<SerializationData> data =
+      Shell::SerializeValue(isolate, message, transfer);
+  if (data) {
     DCHECK(args.Data()->IsExternal());
     Local<External> this_value = Local<External>::Cast(args.Data());
     Worker* worker = static_cast<Worker*>(this_value->Value());
-    worker->out_queue_.Enqueue(data);
+    worker->out_queue_.Enqueue(std::move(data));
     worker->out_semaphore_.Signal();
-  } else {
-    delete data;
   }
 }
 
@@ -2462,7 +2408,8 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     if (strcmp(argv[i], "--stress-opt") == 0) {
       options.stress_opt = true;
       argv[i] = NULL;
-    } else if (strcmp(argv[i], "--nostress-opt") == 0) {
+    } else if (strcmp(argv[i], "--nostress-opt") == 0 ||
+               strcmp(argv[i], "--no-stress-opt") == 0) {
       options.stress_opt = false;
       argv[i] = NULL;
     } else if (strcmp(argv[i], "--stress-deopt") == 0) {
@@ -2471,7 +2418,8 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (strcmp(argv[i], "--mock-arraybuffer-allocator") == 0) {
       options.mock_arraybuffer_allocator = true;
       argv[i] = NULL;
-    } else if (strcmp(argv[i], "--noalways-opt") == 0) {
+    } else if (strcmp(argv[i], "--noalways-opt") == 0 ||
+               strcmp(argv[i], "--no-always-opt") == 0) {
       // No support for stressing if we can't use --always-opt.
       options.stress_opt = false;
       options.stress_deopt = false;
@@ -2545,6 +2493,9 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (strcmp(argv[i], "--enable-inspector") == 0) {
       options.enable_inspector = true;
       argv[i] = NULL;
+    } else if (strncmp(argv[i], "--lcov=", 7) == 0) {
+      options.lcov_file = argv[i] + 7;
+      argv[i] = NULL;
     }
   }
 
@@ -2586,6 +2537,7 @@ int Shell::RunMain(Isolate* isolate, int argc, char* argv[], bool last_run) {
     options.isolate_sources[i].StartExecuteInThread();
   }
   {
+    if (options.lcov_file) debug::Coverage::TogglePrecise(isolate, true);
     HandleScope scope(isolate);
     Local<Context> context = CreateEvaluationContext(isolate);
     if (last_run && options.use_interactive_shell()) {
@@ -2599,6 +2551,7 @@ int Shell::RunMain(Isolate* isolate, int argc, char* argv[], bool last_run) {
       options.isolate_sources[0].Execute(isolate);
     }
     DisposeModuleEmbedderData(context);
+    WriteLcovData(isolate, options.lcov_file);
   }
   CollectGarbage(isolate);
   for (int i = 1; i < options.num_isolates; ++i) {
@@ -2637,234 +2590,209 @@ void Shell::EmptyMessageQueues(Isolate* isolate) {
   }
 }
 
+class Serializer : public ValueSerializer::Delegate {
+ public:
+  explicit Serializer(Isolate* isolate)
+      : isolate_(isolate),
+        serializer_(isolate, this),
+        current_memory_usage_(0) {}
 
-bool Shell::SerializeValue(Isolate* isolate, Local<Value> value,
-                           const ObjectList& to_transfer,
-                           ObjectList* seen_objects,
-                           SerializationData* out_data) {
-  DCHECK(out_data);
-  Local<Context> context = isolate->GetCurrentContext();
+  Maybe<bool> WriteValue(Local<Context> context, Local<Value> value,
+                         Local<Value> transfer) {
+    bool ok;
+    DCHECK(!data_);
+    data_.reset(new SerializationData);
+    if (!PrepareTransfer(context, transfer).To(&ok)) {
+      return Nothing<bool>();
+    }
+    serializer_.WriteHeader();
 
-  if (value->IsUndefined()) {
-    out_data->WriteTag(kSerializationTagUndefined);
-  } else if (value->IsNull()) {
-    out_data->WriteTag(kSerializationTagNull);
-  } else if (value->IsTrue()) {
-    out_data->WriteTag(kSerializationTagTrue);
-  } else if (value->IsFalse()) {
-    out_data->WriteTag(kSerializationTagFalse);
-  } else if (value->IsNumber()) {
-    Local<Number> num = Local<Number>::Cast(value);
-    double value = num->Value();
-    out_data->WriteTag(kSerializationTagNumber);
-    out_data->Write(value);
-  } else if (value->IsString()) {
-    v8::String::Utf8Value str(value);
-    out_data->WriteTag(kSerializationTagString);
-    out_data->Write(str.length());
-    out_data->WriteMemory(*str, str.length());
-  } else if (value->IsArray()) {
-    Local<Array> array = Local<Array>::Cast(value);
-    if (FindInObjectList(array, *seen_objects)) {
-      Throw(isolate, "Duplicated arrays not supported");
-      return false;
-    }
-    seen_objects->Add(array);
-    out_data->WriteTag(kSerializationTagArray);
-    uint32_t length = array->Length();
-    out_data->Write(length);
-    for (uint32_t i = 0; i < length; ++i) {
-      Local<Value> element_value;
-      if (array->Get(context, i).ToLocal(&element_value)) {
-        if (!SerializeValue(isolate, element_value, to_transfer, seen_objects,
-                            out_data))
-          return false;
-      } else {
-        Throw(isolate, "Failed to serialize array element.");
-        return false;
-      }
-    }
-  } else if (value->IsArrayBuffer()) {
-    Local<ArrayBuffer> array_buffer = Local<ArrayBuffer>::Cast(value);
-    if (FindInObjectList(array_buffer, *seen_objects)) {
-      Throw(isolate, "Duplicated array buffers not supported");
-      return false;
-    }
-    seen_objects->Add(array_buffer);
-    if (FindInObjectList(array_buffer, to_transfer)) {
-      // Transfer ArrayBuffer
-      if (!array_buffer->IsNeuterable()) {
-        Throw(isolate, "Attempting to transfer an un-neuterable ArrayBuffer");
-        return false;
-      }
-
-      ArrayBuffer::Contents contents = array_buffer->IsExternal()
-                                           ? array_buffer->GetContents()
-                                           : array_buffer->Externalize();
-      array_buffer->Neuter();
-      out_data->WriteArrayBufferContents(contents);
-    } else {
-      ArrayBuffer::Contents contents = array_buffer->GetContents();
-      // Clone ArrayBuffer
-      if (contents.ByteLength() > i::kMaxInt) {
-        Throw(isolate, "ArrayBuffer is too big to clone");
-        return false;
-      }
-
-      int32_t byte_length = static_cast<int32_t>(contents.ByteLength());
-      out_data->WriteTag(kSerializationTagArrayBuffer);
-      out_data->Write(byte_length);
-      out_data->WriteMemory(contents.Data(), byte_length);
-    }
-  } else if (value->IsSharedArrayBuffer()) {
-    Local<SharedArrayBuffer> sab = Local<SharedArrayBuffer>::Cast(value);
-    if (FindInObjectList(sab, *seen_objects)) {
-      Throw(isolate, "Duplicated shared array buffers not supported");
-      return false;
-    }
-    seen_objects->Add(sab);
-    if (!FindInObjectList(sab, to_transfer)) {
-      Throw(isolate, "SharedArrayBuffer must be transferred");
-      return false;
+    if (!serializer_.WriteValue(context, value).To(&ok)) {
+      data_.reset();
+      return Nothing<bool>();
     }
 
-    SharedArrayBuffer::Contents contents;
-    if (sab->IsExternal()) {
-      contents = sab->GetContents();
-    } else {
-      contents = sab->Externalize();
-      base::LockGuard<base::Mutex> lock_guard(workers_mutex_.Pointer());
-      externalized_shared_contents_.Add(contents);
-    }
-    out_data->WriteSharedArrayBufferContents(contents);
-  } else if (value->IsObject()) {
-    Local<Object> object = Local<Object>::Cast(value);
-    if (FindInObjectList(object, *seen_objects)) {
-      Throw(isolate, "Duplicated objects not supported");
-      return false;
-    }
-    seen_objects->Add(object);
-    Local<Array> property_names;
-    if (!object->GetOwnPropertyNames(context).ToLocal(&property_names)) {
-      Throw(isolate, "Unable to get property names");
-      return false;
+    if (!FinalizeTransfer().To(&ok)) {
+      return Nothing<bool>();
     }
 
-    uint32_t length = property_names->Length();
-    out_data->WriteTag(kSerializationTagObject);
-    out_data->Write(length);
-    for (uint32_t i = 0; i < length; ++i) {
-      Local<Value> name;
-      Local<Value> property_value;
-      if (property_names->Get(context, i).ToLocal(&name) &&
-          object->Get(context, name).ToLocal(&property_value)) {
-        if (!SerializeValue(isolate, name, to_transfer, seen_objects, out_data))
-          return false;
-        if (!SerializeValue(isolate, property_value, to_transfer, seen_objects,
-                            out_data))
-          return false;
-      } else {
-        Throw(isolate, "Failed to serialize property.");
-        return false;
-      }
-    }
-  } else {
-    Throw(isolate, "Don't know how to serialize object");
-    return false;
+    std::pair<uint8_t*, size_t> pair = serializer_.Release();
+    data_->data_.reset(pair.first);
+    data_->size_ = pair.second;
+    return Just(true);
   }
 
-  return true;
+  std::unique_ptr<SerializationData> Release() { return std::move(data_); }
+
+ protected:
+  // Implements ValueSerializer::Delegate.
+  void ThrowDataCloneError(Local<String> message) override {
+    isolate_->ThrowException(Exception::Error(message));
+  }
+
+  Maybe<uint32_t> GetSharedArrayBufferId(
+      Isolate* isolate, Local<SharedArrayBuffer> shared_array_buffer) override {
+    DCHECK(data_ != nullptr);
+    for (size_t index = 0; index < shared_array_buffers_.size(); ++index) {
+      if (shared_array_buffers_[index] == shared_array_buffer) {
+        return Just<uint32_t>(static_cast<uint32_t>(index));
+      }
+    }
+
+    size_t index = shared_array_buffers_.size();
+    shared_array_buffers_.emplace_back(isolate_, shared_array_buffer);
+    return Just<uint32_t>(static_cast<uint32_t>(index));
+  }
+
+  void* ReallocateBufferMemory(void* old_buffer, size_t size,
+                               size_t* actual_size) override {
+    // Not accurate, because we don't take into account reallocated buffers,
+    // but this is fine for testing.
+    current_memory_usage_ += size;
+    if (current_memory_usage_ > kMaxSerializerMemoryUsage) return nullptr;
+
+    void* result = realloc(old_buffer, size);
+    *actual_size = result ? size : 0;
+    return result;
+  }
+
+  void FreeBufferMemory(void* buffer) override { free(buffer); }
+
+ private:
+  Maybe<bool> PrepareTransfer(Local<Context> context, Local<Value> transfer) {
+    if (transfer->IsArray()) {
+      Local<Array> transfer_array = Local<Array>::Cast(transfer);
+      uint32_t length = transfer_array->Length();
+      for (uint32_t i = 0; i < length; ++i) {
+        Local<Value> element;
+        if (transfer_array->Get(context, i).ToLocal(&element)) {
+          if (!element->IsArrayBuffer()) {
+            Throw(isolate_, "Transfer array elements must be an ArrayBuffer");
+            break;
+          }
+
+          Local<ArrayBuffer> array_buffer = Local<ArrayBuffer>::Cast(element);
+          serializer_.TransferArrayBuffer(
+              static_cast<uint32_t>(array_buffers_.size()), array_buffer);
+          array_buffers_.emplace_back(isolate_, array_buffer);
+        } else {
+          return Nothing<bool>();
+        }
+      }
+      return Just(true);
+    } else if (transfer->IsUndefined()) {
+      return Just(true);
+    } else {
+      Throw(isolate_, "Transfer list must be an Array or undefined");
+      return Nothing<bool>();
+    }
+  }
+
+  template <typename T>
+  typename T::Contents MaybeExternalize(Local<T> array_buffer) {
+    if (array_buffer->IsExternal()) {
+      return array_buffer->GetContents();
+    } else {
+      typename T::Contents contents = array_buffer->Externalize();
+      data_->externalized_contents_.emplace_back(contents);
+      return contents;
+    }
+  }
+
+  Maybe<bool> FinalizeTransfer() {
+    for (const auto& global_array_buffer : array_buffers_) {
+      Local<ArrayBuffer> array_buffer =
+          Local<ArrayBuffer>::New(isolate_, global_array_buffer);
+      if (!array_buffer->IsNeuterable()) {
+        Throw(isolate_, "ArrayBuffer could not be transferred");
+        return Nothing<bool>();
+      }
+
+      ArrayBuffer::Contents contents = MaybeExternalize(array_buffer);
+      array_buffer->Neuter();
+      data_->array_buffer_contents_.push_back(contents);
+    }
+
+    for (const auto& global_shared_array_buffer : shared_array_buffers_) {
+      Local<SharedArrayBuffer> shared_array_buffer =
+          Local<SharedArrayBuffer>::New(isolate_, global_shared_array_buffer);
+      data_->shared_array_buffer_contents_.push_back(
+          MaybeExternalize(shared_array_buffer));
+    }
+
+    return Just(true);
+  }
+
+  Isolate* isolate_;
+  ValueSerializer serializer_;
+  std::unique_ptr<SerializationData> data_;
+  std::vector<Global<ArrayBuffer>> array_buffers_;
+  std::vector<Global<SharedArrayBuffer>> shared_array_buffers_;
+  size_t current_memory_usage_;
+
+  DISALLOW_COPY_AND_ASSIGN(Serializer);
+};
+
+class Deserializer : public ValueDeserializer::Delegate {
+ public:
+  Deserializer(Isolate* isolate, std::unique_ptr<SerializationData> data)
+      : isolate_(isolate),
+        deserializer_(isolate, data->data(), data->size(), this),
+        data_(std::move(data)) {
+    deserializer_.SetSupportsLegacyWireFormat(true);
+  }
+
+  MaybeLocal<Value> ReadValue(Local<Context> context) {
+    bool read_header;
+    if (!deserializer_.ReadHeader(context).To(&read_header)) {
+      return MaybeLocal<Value>();
+    }
+
+    uint32_t index = 0;
+    for (const auto& contents : data_->array_buffer_contents()) {
+      Local<ArrayBuffer> array_buffer =
+          ArrayBuffer::New(isolate_, contents.Data(), contents.ByteLength());
+      deserializer_.TransferArrayBuffer(index++, array_buffer);
+    }
+
+    index = 0;
+    for (const auto& contents : data_->shared_array_buffer_contents()) {
+      Local<SharedArrayBuffer> shared_array_buffer = SharedArrayBuffer::New(
+          isolate_, contents.Data(), contents.ByteLength());
+      deserializer_.TransferSharedArrayBuffer(index++, shared_array_buffer);
+    }
+
+    return deserializer_.ReadValue(context);
+  }
+
+ private:
+  Isolate* isolate_;
+  ValueDeserializer deserializer_;
+  std::unique_ptr<SerializationData> data_;
+
+  DISALLOW_COPY_AND_ASSIGN(Deserializer);
+};
+
+std::unique_ptr<SerializationData> Shell::SerializeValue(
+    Isolate* isolate, Local<Value> value, Local<Value> transfer) {
+  bool ok;
+  Local<Context> context = isolate->GetCurrentContext();
+  Serializer serializer(isolate);
+  if (serializer.WriteValue(context, value, transfer).To(&ok)) {
+    std::unique_ptr<SerializationData> data = serializer.Release();
+    base::LockGuard<base::Mutex> lock_guard(workers_mutex_.Pointer());
+    data->AppendExternalizedContentsTo(&externalized_contents_);
+    return data;
+  }
+  return nullptr;
 }
 
-
-MaybeLocal<Value> Shell::DeserializeValue(Isolate* isolate,
-                                          const SerializationData& data,
-                                          int* offset) {
-  DCHECK(offset);
-  EscapableHandleScope scope(isolate);
-  Local<Value> result;
-  SerializationTag tag = data.ReadTag(offset);
-
-  switch (tag) {
-    case kSerializationTagUndefined:
-      result = Undefined(isolate);
-      break;
-    case kSerializationTagNull:
-      result = Null(isolate);
-      break;
-    case kSerializationTagTrue:
-      result = True(isolate);
-      break;
-    case kSerializationTagFalse:
-      result = False(isolate);
-      break;
-    case kSerializationTagNumber:
-      result = Number::New(isolate, data.Read<double>(offset));
-      break;
-    case kSerializationTagString: {
-      int length = data.Read<int>(offset);
-      CHECK(length >= 0);
-      std::vector<char> buffer(length + 1);  // + 1 so it is never empty.
-      data.ReadMemory(&buffer[0], length, offset);
-      MaybeLocal<String> str =
-          String::NewFromUtf8(isolate, &buffer[0], NewStringType::kNormal,
-                              length).ToLocalChecked();
-      if (!str.IsEmpty()) result = str.ToLocalChecked();
-      break;
-    }
-    case kSerializationTagArray: {
-      uint32_t length = data.Read<uint32_t>(offset);
-      Local<Array> array = Array::New(isolate, length);
-      for (uint32_t i = 0; i < length; ++i) {
-        Local<Value> element_value;
-        CHECK(DeserializeValue(isolate, data, offset).ToLocal(&element_value));
-        array->Set(isolate->GetCurrentContext(), i, element_value).FromJust();
-      }
-      result = array;
-      break;
-    }
-    case kSerializationTagObject: {
-      int length = data.Read<int>(offset);
-      Local<Object> object = Object::New(isolate);
-      for (int i = 0; i < length; ++i) {
-        Local<Value> property_name;
-        CHECK(DeserializeValue(isolate, data, offset).ToLocal(&property_name));
-        Local<Value> property_value;
-        CHECK(DeserializeValue(isolate, data, offset).ToLocal(&property_value));
-        object->Set(isolate->GetCurrentContext(), property_name, property_value)
-            .FromJust();
-      }
-      result = object;
-      break;
-    }
-    case kSerializationTagArrayBuffer: {
-      int32_t byte_length = data.Read<int32_t>(offset);
-      Local<ArrayBuffer> array_buffer = ArrayBuffer::New(isolate, byte_length);
-      ArrayBuffer::Contents contents = array_buffer->GetContents();
-      DCHECK(static_cast<size_t>(byte_length) == contents.ByteLength());
-      data.ReadMemory(contents.Data(), byte_length, offset);
-      result = array_buffer;
-      break;
-    }
-    case kSerializationTagTransferredArrayBuffer: {
-      ArrayBuffer::Contents contents;
-      data.ReadArrayBufferContents(&contents, offset);
-      result = ArrayBuffer::New(isolate, contents.Data(), contents.ByteLength(),
-                                ArrayBufferCreationMode::kInternalized);
-      break;
-    }
-    case kSerializationTagTransferredSharedArrayBuffer: {
-      SharedArrayBuffer::Contents contents;
-      data.ReadSharedArrayBufferContents(&contents, offset);
-      result = SharedArrayBuffer::New(isolate, contents.Data(),
-                                      contents.ByteLength());
-      break;
-    }
-    default:
-      UNREACHABLE();
-  }
-
-  return scope.Escape(result);
+MaybeLocal<Value> Shell::DeserializeValue(
+    Isolate* isolate, std::unique_ptr<SerializationData> data) {
+  Local<Value> value;
+  Local<Context> context = isolate->GetCurrentContext();
+  Deserializer deserializer(isolate, std::move(data));
+  return deserializer.ReadValue(context);
 }
 
 
@@ -2889,13 +2817,7 @@ void Shell::CleanupWorkers() {
   // Now that all workers are terminated, we can re-enable Worker creation.
   base::LockGuard<base::Mutex> lock_guard(workers_mutex_.Pointer());
   allow_new_workers_ = true;
-
-  for (int i = 0; i < externalized_shared_contents_.length(); ++i) {
-    const SharedArrayBuffer::Contents& contents =
-        externalized_shared_contents_[i];
-    Shell::array_buffer_allocator->Free(contents.Data(), contents.ByteLength());
-  }
-  externalized_shared_contents_.Clear();
+  externalized_contents_.clear();
 }
 
 
@@ -3098,13 +3020,6 @@ int Shell::Main(int argc, char* argv[]) {
     CollectGarbage(isolate);
   }
   OnExit(isolate);
-  // Dump basic block profiling data.
-  if (i::BasicBlockProfiler* profiler =
-          reinterpret_cast<i::Isolate*>(isolate)->basic_block_profiler()) {
-    i::OFStream os(stdout);
-    os << *profiler;
-  }
-  isolate->Dispose();
   V8::Dispose();
   V8::ShutdownPlatform();
   delete g_platform;

@@ -72,11 +72,41 @@ bool NeedsToWriteLayoutQualifier(const TType &type)
     {
         return true;
     }
+
+    if (IsOpaqueType(type.getBasicType()) && layoutQualifier.binding != -1)
+    {
+        return true;
+    }
+
     if (IsImage(type.getBasicType()) && layoutQualifier.imageInternalFormat != EiifUnspecified)
     {
         return true;
     }
     return false;
+}
+
+class CommaSeparatedListItemPrefixGenerator
+{
+  public:
+    CommaSeparatedListItemPrefixGenerator() : mFirst(true) {}
+  private:
+    bool mFirst;
+
+    friend TInfoSinkBase &operator<<(TInfoSinkBase &out,
+                                     CommaSeparatedListItemPrefixGenerator &gen);
+};
+
+TInfoSinkBase &operator<<(TInfoSinkBase &out, CommaSeparatedListItemPrefixGenerator &gen)
+{
+    if (gen.mFirst)
+    {
+        gen.mFirst = false;
+    }
+    else
+    {
+        out << ", ";
+    }
+    return out;
 }
 
 }  // namespace
@@ -174,18 +204,32 @@ void TOutputGLSLBase::writeLayoutQualifier(const TType &type)
     const TLayoutQualifier &layoutQualifier = type.getLayoutQualifier();
     out << "layout(";
 
+    CommaSeparatedListItemPrefixGenerator listItemPrefix;
+
     if (type.getQualifier() == EvqFragmentOut || type.getQualifier() == EvqVertexIn)
     {
         if (layoutQualifier.location >= 0)
         {
-            out << "location = " << layoutQualifier.location;
+            out << listItemPrefix << "location = " << layoutQualifier.location;
         }
     }
 
-    if (IsImage(type.getBasicType()) && layoutQualifier.imageInternalFormat != EiifUnspecified)
+    if (IsOpaqueType(type.getBasicType()))
     {
-        ASSERT(type.getQualifier() == EvqTemporary || type.getQualifier() == EvqUniform);
-        out << getImageInternalFormatString(layoutQualifier.imageInternalFormat);
+        if (layoutQualifier.binding >= 0)
+        {
+            out << listItemPrefix << "binding = " << layoutQualifier.binding;
+        }
+    }
+
+    if (IsImage(type.getBasicType()))
+    {
+        if (layoutQualifier.imageInternalFormat != EiifUnspecified)
+        {
+            ASSERT(type.getQualifier() == EvqTemporary || type.getQualifier() == EvqUniform);
+            out << listItemPrefix
+                << getImageInternalFormatString(layoutQualifier.imageInternalFormat);
+        }
     }
 
     out << ") ";
@@ -714,6 +758,10 @@ bool TOutputGLSLBase::visitUnary(Visit visit, TIntermUnary *node)
         case EOpUnpackSnorm2x16:
         case EOpUnpackUnorm2x16:
         case EOpUnpackHalf2x16:
+        case EOpPackUnorm4x8:
+        case EOpPackSnorm4x8:
+        case EOpUnpackUnorm4x8:
+        case EOpUnpackSnorm4x8:
         case EOpLength:
         case EOpNormalize:
         case EOpDFdx:
@@ -725,6 +773,10 @@ bool TOutputGLSLBase::visitUnary(Visit visit, TIntermUnary *node)
         case EOpAny:
         case EOpAll:
         case EOpLogicalNotComponentWise:
+        case EOpBitfieldReverse:
+        case EOpBitCount:
+        case EOpFindLSB:
+        case EOpFindMSB:
             writeBuiltInFunctionTriplet(visit, node->getOp(), node->getUseEmulatedFunction());
             return true;
         default:
@@ -761,7 +813,6 @@ bool TOutputGLSLBase::visitIfElse(Visit visit, TIntermIfElse *node)
     node->getCondition()->traverse(this);
     out << ")\n";
 
-    incrementDepth(node);
     visitCodeBlock(node->getTrueBlock());
 
     if (node->getFalseBlock())
@@ -769,7 +820,6 @@ bool TOutputGLSLBase::visitIfElse(Visit visit, TIntermIfElse *node)
         out << "else\n";
         visitCodeBlock(node->getFalseBlock());
     }
-    decrementDepth();
     return false;
 }
 
@@ -812,7 +862,6 @@ bool TOutputGLSLBase::visitBlock(Visit visit, TIntermBlock *node)
         out << "{\n";
     }
 
-    incrementDepth(node);
     for (TIntermSequence::const_iterator iter = node->getSequence()->begin();
          iter != node->getSequence()->end(); ++iter)
     {
@@ -823,7 +872,6 @@ bool TOutputGLSLBase::visitBlock(Visit visit, TIntermBlock *node)
         if (isSingleStatement(curNode))
             out << ";\n";
     }
-    decrementDepth();
 
     // Scope the blocks except when at the global scope.
     if (mDepth > 0)
@@ -835,11 +883,9 @@ bool TOutputGLSLBase::visitBlock(Visit visit, TIntermBlock *node)
 
 bool TOutputGLSLBase::visitFunctionDefinition(Visit visit, TIntermFunctionDefinition *node)
 {
-    incrementDepth(node);
     TIntermFunctionPrototype *prototype = node->getFunctionPrototype();
     prototype->traverse(this);
     visitCodeBlock(node->getBody());
-    decrementDepth();
 
     // Fully processed; no need to visit children.
     return false;
@@ -879,7 +925,9 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
     TInfoSinkBase &out       = objSink();
     switch (node->getOp())
     {
-        case EOpFunctionCall:
+        case EOpCallFunctionInAST:
+        case EOpCallInternalRawFunction:
+        case EOpCallBuiltInFunction:
             // Function call.
             if (visit == PreVisit)
                 out << hashFunctionNameIfNeeded(node->getFunctionSymbolInfo()->getNameObj()) << "(";
@@ -933,6 +981,8 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpMix:
         case EOpStep:
         case EOpSmoothStep:
+        case EOpFrexp:
+        case EOpLdexp:
         case EOpDistance:
         case EOpDot:
         case EOpCross:
@@ -941,6 +991,12 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpRefract:
         case EOpMulMatrixComponentWise:
         case EOpOuterProduct:
+        case EOpBitfieldExtract:
+        case EOpBitfieldInsert:
+        case EOpUaddCarry:
+        case EOpUsubBorrow:
+        case EOpUmulExtended:
+        case EOpImulExtended:
         case EOpBarrier:
         case EOpMemoryBarrier:
         case EOpMemoryBarrierAtomicCounter:
@@ -986,8 +1042,6 @@ bool TOutputGLSLBase::visitLoop(Visit visit, TIntermLoop *node)
 {
     TInfoSinkBase &out = objSink();
 
-    incrementDepth(node);
-
     TLoopType loopType = node->getType();
 
     if (loopType == ELoopFor)  // for loop
@@ -1028,8 +1082,6 @@ bool TOutputGLSLBase::visitLoop(Visit visit, TIntermLoop *node)
         node->getCondition()->traverse(this);
         out << ");\n";
     }
-
-    decrementDepth();
 
     // No need to visit children. They have been already processed in
     // this function.

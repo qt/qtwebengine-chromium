@@ -8,12 +8,14 @@
 #define XFA_FDE_CSS_CFDE_CSSRULECOLLECTION_H_
 
 #include <map>
+#include <memory>
+#include <vector>
 
 #include "core/fxcrt/fx_basic.h"
 
 class CFDE_CSSDeclaration;
-class CFDE_CSSRule;
 class CFDE_CSSSelector;
+class CFDE_CSSStyleRule;
 class CFDE_CSSStyleSheet;
 class CFGAS_FontMgr;
 
@@ -21,58 +23,28 @@ class CFDE_CSSRuleCollection {
  public:
   class Data {
    public:
-    Data(CFDE_CSSSelector* pSel, CFDE_CSSDeclaration* pDecl, uint32_t dwPos);
+    Data(CFDE_CSSSelector* pSel, CFDE_CSSDeclaration* pDecl);
 
     CFDE_CSSSelector* const pSelector;
     CFDE_CSSDeclaration* const pDeclaration;
-    uint32_t dwPriority;
-    Data* pNext;
   };
 
   CFDE_CSSRuleCollection();
   ~CFDE_CSSRuleCollection();
 
-  void AddRulesFrom(const CFX_ArrayTemplate<CFDE_CSSStyleSheet*>& sheets,
-                    uint32_t dwMediaList,
-                    CFGAS_FontMgr* pFontMgr);
+  void AddRulesFrom(const CFDE_CSSStyleSheet* sheet, CFGAS_FontMgr* pFontMgr);
   void Clear();
   int32_t CountSelectors() const { return m_iSelectors; }
 
-  Data* GetIDRuleData(uint32_t dwIDHash) {
-    auto it = m_IDRules.find(dwIDHash);
-    return it != m_IDRules.end() ? it->second : nullptr;
-  }
+  const std::vector<std::unique_ptr<Data>>* GetTagRuleData(
+      const CFX_WideString& tagname) const;
 
-  Data* GetTagRuleData(uint32_t dwTagHash) {
-    auto it = m_TagRules.find(dwTagHash);
-    return it != m_TagRules.end() ? it->second : nullptr;
-  }
-
-  Data* GetClassRuleData(uint32_t dwIDHash) {
-    auto it = m_ClassRules.find(dwIDHash);
-    return it != m_ClassRules.end() ? it->second : nullptr;
-  }
-
-  Data* GetUniversalRuleData() { return m_pUniversalRules; }
-  Data* GetPseudoRuleData() { return m_pPseudoRules; }
-
- protected:
-  void AddRulesFrom(CFDE_CSSStyleSheet* pStyleSheet,
-                    CFDE_CSSRule* pRule,
-                    uint32_t dwMediaList,
+ private:
+  void AddRulesFrom(const CFDE_CSSStyleSheet* pStyleSheet,
+                    CFDE_CSSStyleRule* pRule,
                     CFGAS_FontMgr* pFontMgr);
-  void AddRuleTo(std::map<uint32_t, Data*>* pMap,
-                 uint32_t dwKey,
-                 CFDE_CSSSelector* pSel,
-                 CFDE_CSSDeclaration* pDecl);
-  bool AddRuleTo(Data** pList, Data* pData);
-  Data* NewRuleData(CFDE_CSSSelector* pSel, CFDE_CSSDeclaration* pDecl);
 
-  std::map<uint32_t, Data*> m_IDRules;
-  std::map<uint32_t, Data*> m_TagRules;
-  std::map<uint32_t, Data*> m_ClassRules;
-  Data* m_pUniversalRules;
-  Data* m_pPseudoRules;
+  std::map<uint32_t, std::vector<std::unique_ptr<Data>>> m_TagRules;
   int32_t m_iSelectors;
 };
 

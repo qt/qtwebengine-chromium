@@ -100,7 +100,6 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
                      this),
       clock_(configuration.clock),
       audio_(configuration.audio),
-      collision_detected_(false),
       last_process_time_(configuration.clock->TimeInMilliseconds()),
       last_bitrate_process_time_(configuration.clock->TimeInMilliseconds()),
       last_rtt_process_time_(configuration.clock->TimeInMilliseconds()),
@@ -112,11 +111,6 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
       remote_bitrate_(configuration.remote_bitrate_estimator),
       rtt_stats_(configuration.rtt_stats),
       rtt_ms_(0) {
-  // Make sure that RTCP objects are aware of our SSRC.
-  uint32_t SSRC = rtp_sender_.SSRC();
-  rtcp_sender_.SetSSRC(SSRC);
-  SetRtcpReceiverSsrcs(SSRC);
-
   // Make sure rtcp sender use same timestamp offset as rtp sender.
   rtcp_sender_.SetTimestampOffset(rtp_sender_.TimestampOffset());
 
@@ -211,9 +205,8 @@ void ModuleRtpRtcpImpl::Process() {
   if (rtcp_sender_.TimeToSendRTCPReport())
     rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpReport);
 
-  if (UpdateRTCPReceiveInformationTimers()) {
-    // A receiver has timed out.
-    rtcp_receiver_.UpdateTmmbr();
+  if (TMMBR() && rtcp_receiver_.UpdateTmmbrTimers()) {
+    rtcp_receiver_.NotifyTmmbrUpdated();
   }
 }
 
@@ -310,7 +303,6 @@ uint32_t ModuleRtpRtcpImpl::SSRC() const {
   return rtp_sender_.SSRC();
 }
 
-// Configure SSRC, default is a random number.
 void ModuleRtpRtcpImpl::SetSSRC(const uint32_t ssrc) {
   rtp_sender_.SetSSRC(ssrc);
   rtcp_sender_.SetSSRC(ssrc);
@@ -355,19 +347,11 @@ int32_t ModuleRtpRtcpImpl::SetSendingStatus(const bool sending) {
     if (rtcp_sender_.SetSendingStatus(GetFeedbackState(), sending) != 0) {
       LOG(LS_WARNING) << "Failed to send RTCP BYE";
     }
-
-    collision_detected_ = false;
-
-    // Generate a new SSRC for the next "call" if false
-    rtp_sender_.SetSendingStatus(sending);
-
-    // Make sure that RTCP objects are aware of our SSRC (it could have changed
-    // Due to collision)
-    uint32_t SSRC = rtp_sender_.SSRC();
-    rtcp_sender_.SetSSRC(SSRC);
-    SetRtcpReceiverSsrcs(SSRC);
-
-    return 0;
+    if (sending) {
+      // Update Rtcp receiver config, to track Rtx config changes from
+      // the SetRtxStatus and SetRtxSsrc methods.
+      SetRtcpReceiverSsrcs(rtp_sender_.SSRC());
+    }
   }
   return 0;
 }
@@ -408,14 +392,15 @@ bool ModuleRtpRtcpImpl::TimeToSendPacket(uint32_t ssrc,
                                          uint16_t sequence_number,
                                          int64_t capture_time_ms,
                                          bool retransmission,
-                                         int probe_cluster_id) {
+                                         const PacedPacketInfo& pacing_info) {
   return rtp_sender_.TimeToSendPacket(ssrc, sequence_number, capture_time_ms,
-                                      retransmission, probe_cluster_id);
+                                      retransmission, pacing_info);
 }
 
-size_t ModuleRtpRtcpImpl::TimeToSendPadding(size_t bytes,
-                                            int probe_cluster_id) {
-  return rtp_sender_.TimeToSendPadding(bytes, probe_cluster_id);
+size_t ModuleRtpRtcpImpl::TimeToSendPadding(
+    size_t bytes,
+    const PacedPacketInfo& pacing_info) {
+  return rtp_sender_.TimeToSendPadding(bytes, pacing_info);
 }
 
 size_t ModuleRtpRtcpImpl::MaxPayloadSize() const {
@@ -617,6 +602,15 @@ int32_t ModuleRtpRtcpImpl::DeregisterSendRtpHeaderExtension(
   return rtp_sender_.DeregisterRtpHeaderExtension(type);
 }
 
+bool ModuleRtpRtcpImpl::HasBweExtensions() const {
+  return rtp_sender_.IsRtpHeaderExtensionRegistered(
+             kRtpExtensionTransportSequenceNumber) ||
+         rtp_sender_.IsRtpHeaderExtensionRegistered(
+             kRtpExtensionAbsoluteSendTime) ||
+         rtp_sender_.IsRtpHeaderExtensionRegistered(
+             kRtpExtensionTransmissionTimeOffset);
+}
+
 // (TMMBR) Temporary Max Media Bit Rate.
 bool ModuleRtpRtcpImpl::TMMBR() const {
   return rtcp_sender_.TMMBR();
@@ -764,10 +758,8 @@ int32_t ModuleRtpRtcpImpl::RequestKeyFrame() {
   return -1;
 }
 
-int32_t ModuleRtpRtcpImpl::SendRTCPSliceLossIndication(
-    const uint8_t picture_id) {
-  return rtcp_sender_.SendRTCP(
-      GetFeedbackState(), kRtcpSli, 0, 0, false, picture_id);
+int32_t ModuleRtpRtcpImpl::SendRTCPSliceLossIndication(uint8_t picture_id) {
+  return rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpSli, 0, 0, picture_id);
 }
 
 void ModuleRtpRtcpImpl::SetUlpfecConfig(int red_payload_type,
@@ -785,24 +777,6 @@ void ModuleRtpRtcpImpl::SetRemoteSSRC(const uint32_t ssrc) {
   // Inform about the incoming SSRC.
   rtcp_sender_.SetRemoteSSRC(ssrc);
   rtcp_receiver_.SetRemoteSSRC(ssrc);
-
-  // Check for a SSRC collision.
-  if (rtp_sender_.SSRC() == ssrc && !collision_detected_) {
-    // If we detect a collision change the SSRC but only once.
-    collision_detected_ = true;
-    uint32_t new_ssrc = rtp_sender_.GenerateNewSSRC();
-    if (new_ssrc == 0) {
-      // Configured via API ignore.
-      return;
-    }
-    if (RtcpMode::kOff != rtcp_sender_.Status()) {
-      // Send RTCP bye on the current SSRC.
-      SendRTCP(kRtcpBye);
-    }
-    // Change local SSRC and inform all objects about the new SSRC.
-    rtcp_sender_.SetSSRC(new_ssrc);
-    SetRtcpReceiverSsrcs(new_ssrc);
-  }
 }
 
 void ModuleRtpRtcpImpl::BitrateSent(uint32_t* total_rate,
@@ -821,8 +795,7 @@ void ModuleRtpRtcpImpl::OnRequestSendReport() {
 
 int32_t ModuleRtpRtcpImpl::SendRTCPReferencePictureSelection(
     const uint64_t picture_id) {
-  return rtcp_sender_.SendRTCP(
-      GetFeedbackState(), kRtcpRpsi, 0, 0, false, picture_id);
+  return rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpRpsi, 0, 0, picture_id);
 }
 
 void ModuleRtpRtcpImpl::OnReceivedNack(
@@ -865,12 +838,6 @@ bool ModuleRtpRtcpImpl::LastReceivedNTP(
   *remote_sr =
       ((ntp_secs & 0x0000ffff) << 16) + ((ntp_frac & 0xffff0000) >> 16);
   return true;
-}
-
-bool ModuleRtpRtcpImpl::UpdateRTCPReceiveInformationTimers() {
-  // If this returns true this channel has timed out.
-  // Periodically check if this is true and if so call UpdateTMMBR.
-  return rtcp_receiver_.UpdateRTCPReceiveInformationTimers();
 }
 
 // Called from RTCPsender.

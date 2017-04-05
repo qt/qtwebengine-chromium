@@ -284,22 +284,12 @@ int64_t vp9_highbd_block_error_c(const tran_low_t *coeff,
   return error;
 }
 
-int64_t vp9_highbd_block_error_8bit_c(const tran_low_t *coeff,
-                                      const tran_low_t *dqcoeff,
-                                      intptr_t block_size, int64_t *ssz) {
-  // Note that the C versions of these 2 functions (vp9_block_error and
-  // vp9_highbd_block_error_8bit are the same, but the optimized assembly
-  // routines are not compatible in the non high bitdepth configuration, so
-  // they still cannot share the same name.
-  return vp9_block_error_c(coeff, dqcoeff, block_size, ssz);
-}
-
 static int64_t vp9_highbd_block_error_dispatch(const tran_low_t *coeff,
                                                const tran_low_t *dqcoeff,
                                                intptr_t block_size,
                                                int64_t *ssz, int bd) {
   if (bd == 8) {
-    return vp9_highbd_block_error_8bit(coeff, dqcoeff, block_size, ssz);
+    return vp9_block_error(coeff, dqcoeff, block_size, ssz);
   } else {
     return vp9_highbd_block_error(coeff, dqcoeff, block_size, ssz, bd);
   }
@@ -321,7 +311,7 @@ int64_t vp9_block_error_c(const tran_low_t *coeff, const tran_low_t *dqcoeff,
   return error;
 }
 
-int64_t vp9_block_error_fp_c(const int16_t *coeff, const int16_t *dqcoeff,
+int64_t vp9_block_error_fp_c(const tran_low_t *coeff, const tran_low_t *dqcoeff,
                              int block_size) {
   int i;
   int64_t error = 0;
@@ -358,7 +348,7 @@ static int cost_coeffs(MACROBLOCK *x, int plane, int block, TX_SIZE tx_size,
   unsigned int(*token_costs)[2][COEFF_CONTEXTS][ENTROPY_TOKENS] =
       x->token_costs[tx_size][type][is_inter_block(mi)];
   uint8_t token_cache[32 * 32];
-  int c, cost;
+  int cost;
 #if CONFIG_VP9_HIGHBITDEPTH
   const int *cat6_high_cost = vp9_get_high_cost_table(xd->bd);
 #else
@@ -373,10 +363,10 @@ static int cost_coeffs(MACROBLOCK *x, int plane, int block, TX_SIZE tx_size,
   if (eob == 0) {
     // single eob token
     cost = token_costs[0][0][pt][EOB_TOKEN];
-    c = 0;
   } else {
     if (use_fast_coef_costing) {
       int band_left = *band_count++;
+      int c;
 
       // dc token
       int v = qcoeff[0];
@@ -407,6 +397,7 @@ static int cost_coeffs(MACROBLOCK *x, int plane, int block, TX_SIZE tx_size,
 
     } else {  // !use_fast_coef_costing
       int band_left = *band_count++;
+      int c;
 
       // dc token
       int v = qcoeff[0];
@@ -1129,16 +1120,9 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
           ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                so->neighbors, cpi->sf.use_fast_coef_costing);
           tempa[idx] = templ[idy] = (x->plane[0].eobs[block] > 0) ? 1 : 0;
-#if CONFIG_VP9_HIGHBITDEPTH
-          distortion +=
-              vp9_highbd_block_error_8bit(
-                  coeff, BLOCK_OFFSET(pd->dqcoeff, block), 16, &unused) >>
-              2;
-#else
           distortion += vp9_block_error(coeff, BLOCK_OFFSET(pd->dqcoeff, block),
                                         16, &unused) >>
                         2;
-#endif
           if (RDCOST(x->rdmult, x->rddiv, ratey, distortion) >= best_rd)
             goto next;
           vp9_iht4x4_add(tx_type, BLOCK_OFFSET(pd->dqcoeff, block), dst,
@@ -1998,7 +1982,8 @@ static int64_t rd_pick_best_sub8x8_mode(
           vp9_set_mv_search_range(&x->mv_limits, &bsi->ref_mv[0]->as_mv);
 
           bestsme = vp9_full_pixel_search(
-              cpi, x, bsize, &mvp_full, step_param, sadpb,
+              cpi, x, bsize, &mvp_full, step_param, cpi->sf.mv.search_method,
+              sadpb,
               sf->mv.subpel_search_method != SUBPEL_TREE ? cost_list : NULL,
               &bsi->ref_mv[0]->as_mv, new_mv, INT_MAX, 1);
 
@@ -2403,9 +2388,9 @@ static void single_motion_search(VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
   mvp_full.col >>= 3;
   mvp_full.row >>= 3;
 
-  bestsme = vp9_full_pixel_search(cpi, x, bsize, &mvp_full, step_param, sadpb,
-                                  cond_cost_list(cpi, cost_list), &ref_mv,
-                                  &tmp_mv->as_mv, INT_MAX, 1);
+  bestsme = vp9_full_pixel_search(
+      cpi, x, bsize, &mvp_full, step_param, cpi->sf.mv.search_method, sadpb,
+      cond_cost_list(cpi, cost_list), &ref_mv, &tmp_mv->as_mv, INT_MAX, 1);
 
   x->mv_limits = tmp_mv_limits;
 
@@ -3041,7 +3026,10 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   const int *const rd_threshes = rd_opt->threshes[segment_id][bsize];
   const int *const rd_thresh_freq_fact = tile_data->thresh_freq_fact[bsize];
   int64_t mode_threshold[MAX_MODES];
-  int *mode_map = tile_data->mode_map[bsize];
+  int *tile_mode_map = tile_data->mode_map[bsize];
+  int mode_map[MAX_MODES];  // Maintain mode_map information locally to avoid
+                            // lock mechanism involved with reads from
+                            // tile_mode_map
   const int mode_search_skip_flags = sf->mode_search_skip_flags;
   int64_t mask_filter = 0;
   int64_t filter_cache[SWITCHABLE_FILTER_CONTEXTS];
@@ -3153,22 +3141,37 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
       ~(sf->intra_y_mode_mask[max_txsize_lookup[bsize]]);
 
   for (i = 0; i <= LAST_NEW_MV_INDEX; ++i) mode_threshold[i] = 0;
+
+#if CONFIG_MULTITHREAD
+  if (NULL != tile_data->enc_row_mt_mutex)
+    pthread_mutex_lock(tile_data->enc_row_mt_mutex);
+#endif
+
   for (i = LAST_NEW_MV_INDEX + 1; i < MAX_MODES; ++i)
     mode_threshold[i] = ((int64_t)rd_threshes[i] * rd_thresh_freq_fact[i]) >> 5;
 
   midx = sf->schedule_mode_search ? mode_skip_start : 0;
+
   while (midx > 4) {
     uint8_t end_pos = 0;
     for (i = 5; i < midx; ++i) {
-      if (mode_threshold[mode_map[i - 1]] > mode_threshold[mode_map[i]]) {
-        uint8_t tmp = mode_map[i];
-        mode_map[i] = mode_map[i - 1];
-        mode_map[i - 1] = tmp;
+      if (mode_threshold[tile_mode_map[i - 1]] >
+          mode_threshold[tile_mode_map[i]]) {
+        uint8_t tmp = tile_mode_map[i];
+        tile_mode_map[i] = tile_mode_map[i - 1];
+        tile_mode_map[i - 1] = tmp;
         end_pos = i;
       }
     }
     midx = end_pos;
   }
+
+  memcpy(mode_map, tile_mode_map, sizeof(mode_map));
+
+#if CONFIG_MULTITHREAD
+  if (NULL != tile_data->enc_row_mt_mutex)
+    pthread_mutex_unlock(tile_data->enc_row_mt_mutex);
+#endif
 
   for (midx = 0; midx < MAX_MODES; ++midx) {
     int mode_index = mode_map[midx];
@@ -3571,6 +3574,9 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   }
 
   if (best_mode_index < 0 || best_rd >= best_rd_so_far) {
+    // If adaptive interp filter is enabled, then the current leaf node of 8x8
+    // data is needed for sub8x8. Hence preserve the context.
+    if (cpi->new_mt && bsize == BLOCK_8X8) ctx->mic = *xd->mi[0];
     rd_cost->rate = INT_MAX;
     rd_cost->rdcost = INT64_MAX;
     return;
@@ -3597,7 +3603,11 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
 
   if (!cpi->rc.is_src_frame_alt_ref)
     vp9_update_rd_thresh_fact(tile_data->thresh_freq_fact,
-                              sf->adaptive_rd_thresh, bsize, best_mode_index);
+                              sf->adaptive_rd_thresh, bsize,
+#if CONFIG_MULTITHREAD
+                              tile_data->enc_row_mt_mutex,
+#endif
+                              best_mode_index);
 
   // macroblock modes
   *mi = best_mbmode;
@@ -3735,7 +3745,11 @@ void vp9_rd_pick_inter_mode_sb_seg_skip(VP9_COMP *cpi, TileDataEnc *tile_data,
          (cm->interp_filter == mi->interp_filter));
 
   vp9_update_rd_thresh_fact(tile_data->thresh_freq_fact,
-                            cpi->sf.adaptive_rd_thresh, bsize, THR_ZEROMV);
+                            cpi->sf.adaptive_rd_thresh, bsize,
+#if CONFIG_MULTITHREAD
+                            tile_data->enc_row_mt_mutex,
+#endif
+                            THR_ZEROMV);
 
   vp9_zero(best_pred_diff);
   vp9_zero(best_filter_diff);
@@ -3787,6 +3801,7 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
   int64_t filter_cache[SWITCHABLE_FILTER_CONTEXTS];
   int internal_active_edge =
       vp9_active_edge_sb(cpi, mi_row, mi_col) && vp9_internal_image_edge(cpi);
+  const int *const rd_thresh_freq_fact = tile_data->thresh_freq_fact[bsize];
 
   x->skip_encode = sf->skip_encode_frame && x->q_index < QIDX_SKIP_THRESH;
   memset(x->zcoeff_blk[TX_4X4], 0, 4);
@@ -3878,7 +3893,10 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
     if (!internal_active_edge &&
         rd_less_than_thresh(best_rd,
                             rd_opt->threshes[segment_id][bsize][ref_index],
-                            tile_data->thresh_freq_fact[bsize][ref_index]))
+#if CONFIG_MULTITHREAD
+                            tile_data->enc_row_mt_mutex,
+#endif
+                            &rd_thresh_freq_fact[ref_index]))
       continue;
 
     comp_pred = second_ref_frame > INTRA_FRAME;
@@ -4322,7 +4340,11 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
          !is_inter_block(&best_mbmode));
 
   vp9_update_rd_thresh_fact(tile_data->thresh_freq_fact, sf->adaptive_rd_thresh,
-                            bsize, best_ref_index);
+                            bsize,
+#if CONFIG_MULTITHREAD
+                            tile_data->enc_row_mt_mutex,
+#endif
+                            best_ref_index);
 
   // macroblock modes
   *mi = best_mbmode;

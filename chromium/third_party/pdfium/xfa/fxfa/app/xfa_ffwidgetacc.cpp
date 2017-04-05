@@ -183,7 +183,7 @@ bool CXFA_WidgetAcc::GetName(CFX_WideString& wsName, int32_t iNameType) {
   }
   m_pNode->GetSOMExpression(wsName);
   if (iNameType == 2 && wsName.GetLength() >= 15) {
-    CFX_WideStringC wsPre = FX_WSTRC(L"xfa[0].form[0].");
+    CFX_WideStringC wsPre = L"xfa[0].form[0].";
     if (wsPre == CFX_WideStringC(wsName.c_str(), wsPre.GetLength())) {
       wsName.Delete(0, wsPre.GetLength());
     }
@@ -678,9 +678,8 @@ int32_t CXFA_WidgetAcc::ExecuteScript(CXFA_Script script,
           pRefNode->SetUserData(XFA_CalcData, pGlobalData,
                                 &gs_XFADeleteCalcData);
         }
-        if (pGlobalData->m_Globals.Find(this) < 0) {
-          pGlobalData->m_Globals.Add(this);
-        }
+        if (!pdfium::ContainsValue(pGlobalData->m_Globals, this))
+          pGlobalData->m_Globals.push_back(this);
       }
     }
   }
@@ -728,12 +727,12 @@ void CXFA_WidgetAcc::CalcCaptionSize(CFX_SizeF& szCap) {
           ->m_pCapTextLayout.get();
   if (pCapTextLayout) {
     if (!bVert && eUIType != XFA_Element::Button) {
-      szCap.x = fCapReserve;
+      szCap.width = fCapReserve;
     }
     CFX_SizeF minSize;
     pCapTextLayout->CalcSize(minSize, szCap, szCap);
     if (bReserveExit) {
-      bVert ? szCap.y = fCapReserve : szCap.x = fCapReserve;
+      bVert ? szCap.height = fCapReserve : szCap.width = fCapReserve;
     }
   } else {
     FX_FLOAT fFontSize = 10.0f;
@@ -743,10 +742,10 @@ void CXFA_WidgetAcc::CalcCaptionSize(CFX_SizeF& szCap) {
       fFontSize = widgetfont.GetFontSize();
     }
     if (bVert) {
-      szCap.y = fCapReserve > 0 ? fCapReserve : fFontSize;
+      szCap.height = fCapReserve > 0 ? fCapReserve : fFontSize;
     } else {
-      szCap.x = fCapReserve > 0 ? fCapReserve : 0;
-      szCap.y = fFontSize;
+      szCap.width = fCapReserve > 0 ? fCapReserve : 0;
+      szCap.height = fFontSize;
     }
   }
   if (CXFA_Margin mgCap = caption.GetMargin()) {
@@ -756,11 +755,11 @@ void CXFA_WidgetAcc::CalcCaptionSize(CFX_SizeF& szCap) {
     mgCap.GetRightInset(fRightInset);
     mgCap.GetBottomInset(fBottomInset);
     if (bReserveExit) {
-      bVert ? (szCap.x += fLeftInset + fRightInset)
-            : (szCap.y += fTopInset + fBottomInset);
+      bVert ? (szCap.width += fLeftInset + fRightInset)
+            : (szCap.height += fTopInset + fBottomInset);
     } else {
-      szCap.x += fLeftInset + fRightInset;
-      szCap.y += fTopInset + fBottomInset;
+      szCap.width += fLeftInset + fRightInset;
+      szCap.height += fTopInset + fBottomInset;
     }
   }
 }
@@ -768,21 +767,21 @@ bool CXFA_WidgetAcc::CalculateFieldAutoSize(CFX_SizeF& size) {
   CFX_SizeF szCap;
   CalcCaptionSize(szCap);
   CFX_RectF rtUIMargin = GetUIMargin();
-  size.x += rtUIMargin.left + rtUIMargin.width;
-  size.y += rtUIMargin.top + rtUIMargin.height;
-  if (szCap.x > 0 && szCap.y > 0) {
+  size.width += rtUIMargin.left + rtUIMargin.width;
+  size.height += rtUIMargin.top + rtUIMargin.height;
+  if (szCap.width > 0 && szCap.height > 0) {
     int32_t iCapPlacement = GetCaption().GetPlacementType();
     switch (iCapPlacement) {
       case XFA_ATTRIBUTEENUM_Left:
       case XFA_ATTRIBUTEENUM_Right:
       case XFA_ATTRIBUTEENUM_Inline: {
-        size.x += szCap.x;
-        size.y = std::max(size.y, szCap.y);
+        size.width += szCap.width;
+        size.height = std::max(size.height, szCap.height);
       } break;
       case XFA_ATTRIBUTEENUM_Top:
       case XFA_ATTRIBUTEENUM_Bottom: {
-        size.y += szCap.y;
-        size.x = std::max(size.x, szCap.x);
+        size.height += szCap.height;
+        size.width = std::max(size.width, szCap.width);
       }
       default:
         break;
@@ -798,46 +797,47 @@ bool CXFA_WidgetAcc::CalculateWidgetAutoSize(CFX_SizeF& size) {
     mgWidget.GetTopInset(fTopInset);
     mgWidget.GetRightInset(fRightInset);
     mgWidget.GetBottomInset(fBottomInset);
-    size.x += fLeftInset + fRightInset;
-    size.y += fTopInset + fBottomInset;
+    size.width += fLeftInset + fRightInset;
+    size.height += fTopInset + fBottomInset;
   }
   CXFA_Para para = GetPara();
-  if (para) {
-    size.x += para.GetMarginLeft();
-    size.x += para.GetTextIndent();
-  }
-  FX_FLOAT fVal = 0, fMin = 0, fMax = 0;
+  if (para)
+    size.width += para.GetMarginLeft() + para.GetTextIndent();
+
+  FX_FLOAT fVal = 0;
+  FX_FLOAT fMin = 0;
+  FX_FLOAT fMax = 0;
   if (GetWidth(fVal)) {
-    size.x = fVal;
+    size.width = fVal;
   } else {
-    if (GetMinWidth(fMin)) {
-      size.x = std::max(size.x, fMin);
-    }
-    if (GetMaxWidth(fMax) && fMax > 0) {
-      size.x = std::min(size.x, fMax);
-    }
+    if (GetMinWidth(fMin))
+      size.width = std::max(size.width, fMin);
+    if (GetMaxWidth(fMax) && fMax > 0)
+      size.width = std::min(size.width, fMax);
   }
-  fVal = 0, fMin = 0, fMax = 0;
+  fVal = 0;
+  fMin = 0;
+  fMax = 0;
   if (GetHeight(fVal)) {
-    size.y = fVal;
+    size.height = fVal;
   } else {
-    if (GetMinHeight(fMin)) {
-      size.y = std::max(size.y, fMin);
-    }
-    if (GetMaxHeight(fMax) && fMax > 0) {
-      size.y = std::min(size.y, fMax);
-    }
+    if (GetMinHeight(fMin))
+      size.height = std::max(size.height, fMin);
+    if (GetMaxHeight(fMax) && fMax > 0)
+      size.height = std::min(size.height, fMax);
   }
   return true;
 }
+
 void CXFA_WidgetAcc::CalculateTextContentSize(CFX_SizeF& size) {
   FX_FLOAT fFontSize = GetFontSize();
   CFX_WideString wsText;
   GetValue(wsText, XFA_VALUEPICTURE_Display);
   if (wsText.IsEmpty()) {
-    size.y += fFontSize;
+    size.height += fFontSize;
     return;
   }
+
   FX_WCHAR wcEnter = '\n';
   FX_WCHAR wsLast = wsText.GetAt(wsText.GetLength() - 1);
   if (wsLast == wcEnter) {
@@ -863,11 +863,11 @@ void CXFA_WidgetAcc::CalculateTextContentSize(CFX_SizeF& size) {
                                         size);
 }
 bool CXFA_WidgetAcc::CalculateTextEditAutoSize(CFX_SizeF& size) {
-  if (size.x > 0) {
+  if (size.width > 0) {
     CFX_SizeF szOrz = size;
     CFX_SizeF szCap;
     CalcCaptionSize(szCap);
-    bool bCapExit = szCap.x > 0.01 && szCap.y > 0.01;
+    bool bCapExit = szCap.width > 0.01 && szCap.height > 0.01;
     int32_t iCapPlacement = XFA_ATTRIBUTEENUM_Unknown;
     if (bCapExit) {
       iCapPlacement = GetCaption().GetPlacementType();
@@ -875,39 +875,39 @@ bool CXFA_WidgetAcc::CalculateTextEditAutoSize(CFX_SizeF& size) {
         case XFA_ATTRIBUTEENUM_Left:
         case XFA_ATTRIBUTEENUM_Right:
         case XFA_ATTRIBUTEENUM_Inline: {
-          size.x -= szCap.x;
+          size.width -= szCap.width;
         }
         default:
           break;
       }
     }
     CFX_RectF rtUIMargin = GetUIMargin();
-    size.x -= rtUIMargin.left + rtUIMargin.width;
+    size.width -= rtUIMargin.left + rtUIMargin.width;
     CXFA_Margin mgWidget = GetMargin();
     if (mgWidget) {
       FX_FLOAT fLeftInset, fRightInset;
       mgWidget.GetLeftInset(fLeftInset);
       mgWidget.GetRightInset(fRightInset);
-      size.x -= fLeftInset + fRightInset;
+      size.width -= fLeftInset + fRightInset;
     }
     CalculateTextContentSize(size);
-    size.y += rtUIMargin.top + rtUIMargin.height;
+    size.height += rtUIMargin.top + rtUIMargin.height;
     if (bCapExit) {
       switch (iCapPlacement) {
         case XFA_ATTRIBUTEENUM_Left:
         case XFA_ATTRIBUTEENUM_Right:
         case XFA_ATTRIBUTEENUM_Inline: {
-          size.y = std::max(size.y, szCap.y);
+          size.height = std::max(size.height, szCap.height);
         } break;
         case XFA_ATTRIBUTEENUM_Top:
         case XFA_ATTRIBUTEENUM_Bottom: {
-          size.y += szCap.y;
+          size.height += szCap.height;
         }
         default:
           break;
       }
     }
-    size.x = szOrz.x;
+    size.width = szOrz.width;
     return CalculateWidgetAutoSize(size);
   }
   CalculateTextContentSize(size);
@@ -915,7 +915,7 @@ bool CXFA_WidgetAcc::CalculateTextEditAutoSize(CFX_SizeF& size) {
 }
 bool CXFA_WidgetAcc::CalculateCheckButtonAutoSize(CFX_SizeF& size) {
   FX_FLOAT fCheckSize = GetCheckButtonSize();
-  size.x = size.y = fCheckSize;
+  size = CFX_SizeF(fCheckSize, fCheckSize);
   return CalculateFieldAutoSize(size);
 }
 bool CXFA_WidgetAcc::CalculatePushButtonAutoSize(CFX_SizeF& size) {
@@ -928,16 +928,15 @@ bool CXFA_WidgetAcc::CalculateImageAutoSize(CFX_SizeF& size) {
   }
   size.clear();
   if (CFX_DIBitmap* pBitmap = GetImageImage()) {
-    CFX_RectF rtImage, rtFit;
-    rtImage.Set(0, 0, 0, 0);
-    rtFit.Set(0, 0, 0, 0);
     int32_t iImageXDpi = 0;
     int32_t iImageYDpi = 0;
     GetImageDpi(iImageXDpi, iImageYDpi);
-    rtImage.width =
-        XFA_UnitPx2Pt((FX_FLOAT)pBitmap->GetWidth(), (FX_FLOAT)iImageXDpi);
-    rtImage.height =
-        XFA_UnitPx2Pt((FX_FLOAT)pBitmap->GetHeight(), (FX_FLOAT)iImageYDpi);
+    CFX_RectF rtImage(
+        0, 0,
+        XFA_UnitPx2Pt((FX_FLOAT)pBitmap->GetWidth(), (FX_FLOAT)iImageXDpi),
+        XFA_UnitPx2Pt((FX_FLOAT)pBitmap->GetHeight(), (FX_FLOAT)iImageYDpi));
+
+    CFX_RectF rtFit;
     if (GetWidth(rtFit.width)) {
       GetWidthWithoutMargin(rtFit.width);
     } else {
@@ -948,8 +947,7 @@ bool CXFA_WidgetAcc::CalculateImageAutoSize(CFX_SizeF& size) {
     } else {
       rtFit.height = rtImage.height;
     }
-    size.x = rtFit.width;
-    size.y = rtFit.height;
+    size = rtFit.Size();
   }
   return CalculateWidgetAutoSize(size);
 }
@@ -959,16 +957,15 @@ bool CXFA_WidgetAcc::CalculateImageEditAutoSize(CFX_SizeF& size) {
   }
   size.clear();
   if (CFX_DIBitmap* pBitmap = GetImageEditImage()) {
-    CFX_RectF rtImage, rtFit;
-    rtImage.Set(0, 0, 0, 0);
-    rtFit.Set(0, 0, 0, 0);
     int32_t iImageXDpi = 0;
     int32_t iImageYDpi = 0;
     GetImageEditDpi(iImageXDpi, iImageYDpi);
-    rtImage.width =
-        XFA_UnitPx2Pt((FX_FLOAT)pBitmap->GetWidth(), (FX_FLOAT)iImageXDpi);
-    rtImage.height =
-        XFA_UnitPx2Pt((FX_FLOAT)pBitmap->GetHeight(), (FX_FLOAT)iImageYDpi);
+    CFX_RectF rtImage(
+        0, 0,
+        XFA_UnitPx2Pt((FX_FLOAT)pBitmap->GetWidth(), (FX_FLOAT)iImageXDpi),
+        XFA_UnitPx2Pt((FX_FLOAT)pBitmap->GetHeight(), (FX_FLOAT)iImageYDpi));
+
+    CFX_RectF rtFit;
     if (GetWidth(rtFit.width)) {
       GetWidthWithoutMargin(rtFit.width);
     } else {
@@ -979,8 +976,8 @@ bool CXFA_WidgetAcc::CalculateImageEditAutoSize(CFX_SizeF& size) {
     } else {
       rtFit.height = rtImage.height;
     }
-    size.x = rtFit.width;
-    size.y = rtFit.height;
+    size.width = rtFit.width;
+    size.height = rtFit.height;
   }
   return CalculateFieldAutoSize(size);
 }
@@ -1011,8 +1008,8 @@ bool CXFA_WidgetAcc::CalculateTextAutoSize(CFX_SizeF& size) {
   CXFA_TextLayout* pTextLayout =
       static_cast<CXFA_TextLayoutData*>(m_pLayoutData.get())->GetTextLayout();
   if (pTextLayout) {
-    size.x = pTextLayout->StartLayout(size.x);
-    size.y = pTextLayout->GetLayoutHeight();
+    size.width = pTextLayout->StartLayout(size.width);
+    size.height = pTextLayout->GetLayoutHeight();
   }
   return CalculateWidgetAutoSize(size);
 }
@@ -1142,9 +1139,9 @@ void CXFA_WidgetAcc::CalculateAccWidthAndHeight(XFA_Element eUIType,
     default:
       break;
   }
-  fWidth = sz.x;
-  m_pLayoutData->m_fWidgetHeight = sz.y;
-  fCalcHeight = sz.y;
+  fWidth = sz.width;
+  m_pLayoutData->m_fWidgetHeight = sz.height;
+  fCalcHeight = sz.height;
 }
 bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, FX_FLOAT& fCalcHeight) {
   XFA_Element eUIType = GetUIType();
@@ -1498,7 +1495,7 @@ CXFA_WidgetLayoutData* CXFA_WidgetAcc::GetWidgetLayoutData() {
 }
 
 CFX_RetainPtr<CFGAS_GEFont> CXFA_WidgetAcc::GetFDEFont() {
-  CFX_WideStringC wsFontName = FX_WSTRC(L"Courier");
+  CFX_WideStringC wsFontName = L"Courier";
   uint32_t dwFontStyle = 0;
   if (CXFA_Font font = GetFont()) {
     if (font.IsBold())
@@ -1542,7 +1539,7 @@ CXFA_Node* CXFA_TextProvider::GetTextNode(bool& bRichText) {
       CFX_WideString wsContentType;
       m_pTextNode->GetAttribute(XFA_ATTRIBUTE_ContentType, wsContentType,
                                 false);
-      if (wsContentType == FX_WSTRC(L"text/html")) {
+      if (wsContentType == L"text/html") {
         bRichText = true;
       }
     }
@@ -1558,7 +1555,7 @@ CXFA_Node* CXFA_TextProvider::GetTextNode(bool& bRichText) {
     if (pChildNode && pChildNode->GetElementType() == XFA_Element::ExData) {
       CFX_WideString wsContentType;
       pChildNode->GetAttribute(XFA_ATTRIBUTE_ContentType, wsContentType, false);
-      if (wsContentType == FX_WSTRC(L"text/html")) {
+      if (wsContentType == L"text/html") {
         bRichText = true;
       }
     }
@@ -1593,7 +1590,7 @@ CXFA_Node* CXFA_TextProvider::GetTextNode(bool& bRichText) {
     if (pChildNode && pChildNode->GetElementType() == XFA_Element::ExData) {
       CFX_WideString wsContentType;
       pChildNode->GetAttribute(XFA_ATTRIBUTE_ContentType, wsContentType, false);
-      if (wsContentType == FX_WSTRC(L"text/html")) {
+      if (wsContentType == L"text/html") {
         bRichText = true;
       }
     }
@@ -1608,11 +1605,10 @@ CXFA_Node* CXFA_TextProvider::GetTextNode(bool& bRichText) {
   while (pNode) {
     CFX_WideStringC wsName;
     pNode->TryCData(XFA_ATTRIBUTE_Name, wsName);
-    if (m_eType == XFA_TEXTPROVIDERTYPE_Rollover &&
-        wsName == FX_WSTRC(L"rollover")) {
+    if (m_eType == XFA_TEXTPROVIDERTYPE_Rollover && wsName == L"rollover") {
       return pNode;
     }
-    if (m_eType == XFA_TEXTPROVIDERTYPE_Down && wsName == FX_WSTRC(L"down")) {
+    if (m_eType == XFA_TEXTPROVIDERTYPE_Down && wsName == L"down") {
       return pNode;
     }
     pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling);

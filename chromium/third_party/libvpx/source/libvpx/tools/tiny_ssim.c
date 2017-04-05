@@ -117,17 +117,24 @@ double vp9_mse2psnr(double samples, double peak, double mse) {
 }
 
 int main(int argc, char *argv[]) {
-  FILE *f[2];
+  FILE *f[2] = { NULL, NULL }, *framestats = NULL;
   uint8_t *buf[2];
-  int w, h, n_frames, tl_skip = 0, tl_skips_remaining = 0;
-  double ssim = 0, psnravg = 0, psnrglb = 0;
-  double ssimy, ssimu, ssimv;
-  uint64_t psnry, psnru, psnrv;
+  int w, h, tl_skip = 0, tl_skips_remaining = 0;
+  double ssimavg = 0, ssimyavg = 0, ssimuavg = 0, ssimvavg = 0;
+  double psnrglb = 0, psnryglb = 0, psnruglb = 0, psnrvglb = 0;
+  double psnravg = 0, psnryavg = 0, psnruavg = 0, psnrvavg = 0;
+  double *ssimy = NULL, *ssimu = NULL, *ssimv = NULL;
+  uint64_t *psnry = NULL, *psnru = NULL, *psnrv = NULL;
+  size_t i, n_frames = 0, allocated_frames = 0;
+  int return_value = 0;
 
-  if (argc < 4) {
-    fprintf(stderr, "Usage: %s file1.yuv file2.yuv WxH [tl_skip={0,1,3}]\n",
+  if (argc < 4 || argc > 6) {
+    fprintf(stderr,
+            "Usage: %s file1.yuv file2.yuv WxH [tl_skip={0,1,3}] "
+            "[framestats.csv]\n",
             argv[0]);
-    return 1;
+    return_value = 1;
+    goto clean_up;
   }
   f[0] = strcmp(argv[1], "-") ? fopen(argv[1], "rb") : stdin;
   f[1] = strcmp(argv[2], "-") ? fopen(argv[2], "rb") : stdin;
@@ -137,18 +144,28 @@ int main(int argc, char *argv[]) {
   // in mode 10. 7 would be reasonable for comparing TL0 of a 4-layer encoding.
   if (argc > 4) {
     sscanf(argv[4], "%d", &tl_skip);
+    if (argc > 5) {
+      framestats = fopen(argv[5], "w");
+      if (!framestats) {
+        fprintf(stderr, "Could not open \"%s\" for writing: %s\n", argv[5],
+                strerror(errno));
+        return_value = 1;
+        goto clean_up;
+      }
+    }
   }
   if (!f[0] || !f[1]) {
     fprintf(stderr, "Could not open input files: %s\n", strerror(errno));
-    return 1;
+    return_value = 1;
+    goto clean_up;
   }
   if (w <= 0 || h <= 0 || w & 1 || h & 1) {
     fprintf(stderr, "Invalid size %dx%d\n", w, h);
-    return 1;
+    return_value = 1;
+    goto clean_up;
   }
   buf[0] = malloc(w * h * 3 / 2);
   buf[1] = malloc(w * h * 3 / 2);
-  n_frames = 0;
   while (1) {
     size_t r1, r2;
     r1 = fread(buf[0], w * h * 3 / 2, 1, f[0]);
@@ -165,36 +182,120 @@ int main(int argc, char *argv[]) {
     if (r1 && r2 && r1 != r2) {
       fprintf(stderr, "Failed to read data: %s [%d/%d]\n", strerror(errno),
               (int)r1, (int)r2);
-      return 1;
+      return_value = 1;
+      goto clean_up;
     } else if (r1 == 0 || r2 == 0) {
       break;
     }
 #define psnr_and_ssim(ssim, psnr, buf0, buf1, w, h) \
   ssim = vp8_ssim2(buf0, buf1, w, w, w, h);         \
   psnr = calc_plane_error(buf0, w, buf1, w, w, h);
-    psnr_and_ssim(ssimy, psnry, buf[0], buf[1], w, h);
-    psnr_and_ssim(ssimu, psnru, buf[0] + w * h, buf[1] + w * h, w / 2, h / 2);
-    psnr_and_ssim(ssimv, psnrv, buf[0] + w * h * 5 / 4, buf[1] + w * h * 5 / 4,
-                  w / 2, h / 2);
-    ssim += 0.8 * ssimy + 0.1 * (ssimu + ssimv);
-    psnravg +=
-        vp9_mse2psnr(w * h * 6 / 4, 255.0, (double)psnry + psnru + psnrv);
-    psnrglb += psnry + psnru + psnrv;
+    if (n_frames == allocated_frames) {
+      allocated_frames = allocated_frames == 0 ? 1024 : allocated_frames * 2;
+      ssimy = realloc(ssimy, allocated_frames * sizeof(*ssimy));
+      ssimu = realloc(ssimu, allocated_frames * sizeof(*ssimu));
+      ssimv = realloc(ssimv, allocated_frames * sizeof(*ssimv));
+
+      psnry = realloc(psnry, allocated_frames * sizeof(*psnry));
+      psnru = realloc(psnru, allocated_frames * sizeof(*psnru));
+      psnrv = realloc(psnrv, allocated_frames * sizeof(*psnrv));
+    }
+    psnr_and_ssim(ssimy[n_frames], psnry[n_frames], buf[0], buf[1], w, h);
+    psnr_and_ssim(ssimu[n_frames], psnru[n_frames], buf[0] + w * h,
+                  buf[1] + w * h, w / 2, h / 2);
+    psnr_and_ssim(ssimv[n_frames], psnrv[n_frames], buf[0] + w * h * 5 / 4,
+                  buf[1] + w * h * 5 / 4, w / 2, h / 2);
     n_frames++;
   }
   free(buf[0]);
   free(buf[1]);
-  ssim /= n_frames;
+
+  if (framestats) {
+    fprintf(framestats,
+            "ssim,ssim-y,ssim-u,ssim-v,psnr,psnr-y,psnr-u,psnr-v\n");
+  }
+
+  for (i = 0; i < n_frames; ++i) {
+    double frame_ssim;
+    double frame_psnr, frame_psnry, frame_psnru, frame_psnrv;
+
+    frame_ssim = 0.8 * ssimy[i] + 0.1 * (ssimu[i] + ssimv[i]);
+    ssimavg += frame_ssim;
+    ssimyavg += ssimy[i];
+    ssimuavg += ssimu[i];
+    ssimvavg += ssimv[i];
+
+    frame_psnr = vp9_mse2psnr(w * h * 6 / 4, 255.0,
+                              (double)psnry[i] + psnru[i] + psnrv[i]);
+    frame_psnry = vp9_mse2psnr(w * h * 4 / 4, 255.0, (double)psnry[i]);
+    frame_psnru = vp9_mse2psnr(w * h * 1 / 4, 255.0, (double)psnru[i]);
+    frame_psnrv = vp9_mse2psnr(w * h * 1 / 4, 255.0, (double)psnrv[i]);
+
+    psnravg += frame_psnr;
+    psnryavg += frame_psnry;
+    psnruavg += frame_psnru;
+    psnrvavg += frame_psnrv;
+
+    psnryglb += psnry[i];
+    psnruglb += psnru[i];
+    psnrvglb += psnrv[i];
+
+    if (framestats) {
+      fprintf(framestats, "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n", frame_ssim,
+              ssimy[i], ssimu[i], ssimv[i], frame_psnr, frame_psnry,
+              frame_psnru, frame_psnrv);
+    }
+  }
+
+  ssimavg /= n_frames;
+  ssimyavg /= n_frames;
+  ssimuavg /= n_frames;
+  ssimvavg /= n_frames;
+
+  printf("VpxSSIM: %lf\n", 100 * pow(ssimavg, 8.0));
+  printf("SSIM: %lf\n", ssimavg);
+  printf("SSIM-Y: %lf\n", ssimyavg);
+  printf("SSIM-U: %lf\n", ssimuavg);
+  printf("SSIM-V: %lf\n", ssimvavg);
+  puts("");
+
   psnravg /= n_frames;
-  psnrglb = vp9_mse2psnr((double)n_frames * w * h * 6 / 4, 255.0, psnrglb);
+  psnryavg /= n_frames;
+  psnruavg /= n_frames;
+  psnrvavg /= n_frames;
 
   printf("AvgPSNR: %lf\n", psnravg);
+  printf("AvgPSNR-Y: %lf\n", psnryavg);
+  printf("AvgPSNR-U: %lf\n", psnruavg);
+  printf("AvgPSNR-V: %lf\n", psnrvavg);
+  puts("");
+
+  psnrglb = psnryglb + psnruglb + psnrvglb;
+  psnrglb = vp9_mse2psnr((double)n_frames * w * h * 6 / 4, 255.0, psnrglb);
+  psnryglb = vp9_mse2psnr((double)n_frames * w * h * 4 / 4, 255.0, psnryglb);
+  psnruglb = vp9_mse2psnr((double)n_frames * w * h * 1 / 4, 255.0, psnruglb);
+  psnrvglb = vp9_mse2psnr((double)n_frames * w * h * 1 / 4, 255.0, psnrvglb);
+
   printf("GlbPSNR: %lf\n", psnrglb);
-  printf("SSIM: %lf\n", 100 * pow(ssim, 8.0));
-  printf("Nframes: %d\n", n_frames);
+  printf("GlbPSNR-Y: %lf\n", psnryglb);
+  printf("GlbPSNR-U: %lf\n", psnruglb);
+  printf("GlbPSNR-V: %lf\n", psnrvglb);
+  puts("");
 
-  if (strcmp(argv[1], "-")) fclose(f[0]);
-  if (strcmp(argv[2], "-")) fclose(f[1]);
+  printf("Nframes: %d\n", (int)n_frames);
 
-  return 0;
+clean_up:
+  if (f[0] && strcmp(argv[1], "-")) fclose(f[0]);
+  if (f[1] && strcmp(argv[2], "-")) fclose(f[1]);
+  if (framestats) fclose(framestats);
+
+  free(ssimy);
+  free(ssimu);
+  free(ssimv);
+
+  free(psnry);
+  free(psnru);
+  free(psnrv);
+
+  return return_value;
 }

@@ -12,18 +12,6 @@
 #include "xfa/fgas/crt/fgas_utils.h"
 #include "xfa/fgas/font/cfgas_fontmgr.h"
 
-enum FDE_CSSMEDIATYPE {
-  FDE_CSSMEDIATYPE_Braille = 0x01,
-  FDE_CSSMEDIATYPE_Emboss = 0x02,
-  FDE_CSSMEDIATYPE_Handheld = 0x04,
-  FDE_CSSMEDIATYPE_Print = 0x08,
-  FDE_CSSMEDIATYPE_Projection = 0x10,
-  FDE_CSSMEDIATYPE_Screen = 0x20,
-  FDE_CSSMEDIATYPE_TTY = 0x40,
-  FDE_CSSMEDIATYPE_TV = 0x80,
-  FDE_CSSMEDIATYPE_ALL = 0xFF,
-};
-
 enum FDE_CSSVALUETYPE {
   FDE_CSSVALUETYPE_Primitive = 1 << 0,
   FDE_CSSVALUETYPE_List = 1 << 1,
@@ -137,17 +125,7 @@ enum class FDE_CSSProperty : uint8_t {
   LAST_MARKER
 };
 
-enum class FDE_CSSPseudo : uint8_t { After, Before, NONE };
-
-enum class FDE_CSSSelectorType : uint8_t {
-  Element = 0,
-  Descendant,
-  Class,
-  Pseudo,
-  ID,
-};
-
-enum class FDE_CSSRuleType : uint8_t { Style, Media, FontFace };
+enum class FDE_CSSSelectorType : uint8_t { Element = 0, Descendant };
 
 enum class FDE_CSSLengthUnit : uint8_t {
   Auto,
@@ -203,18 +181,6 @@ enum FDE_CSSTEXTDECORATION {
   FDE_CSSTEXTDECORATION_LineThrough = 1 << 2,
   FDE_CSSTEXTDECORATION_Blink = 1 << 3,
   FDE_CSSTEXTDECORATION_Double = 1 << 4,
-};
-
-enum class FDE_CSSStyleSheetGroup : uint8_t {
-  UserAgent = 0,
-  User,
-  Author,
-};
-
-enum class FDE_CSSStyleSheetPriority : uint8_t {
-  High = 0,
-  Mid,
-  Low,
 };
 
 class FDE_CSSLength {

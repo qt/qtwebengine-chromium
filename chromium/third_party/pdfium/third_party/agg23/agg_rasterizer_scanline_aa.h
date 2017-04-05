@@ -390,10 +390,12 @@ public:
         unsigned cmd;
         vs.rewind(path_id);
         while(!is_stop(cmd = vs.vertex(&x, &y))) {
-            if (pMatrix) {
-                pMatrix->Transform(x, y);
-            }
-            add_vertex(x, y, cmd);
+          if (pMatrix) {
+            CFX_PointF ret = pMatrix->Transform(CFX_PointF(x, y));
+            x = ret.x;
+            y = ret.y;
+          }
+          add_vertex(x, y, cmd);
         }
     }
 private:

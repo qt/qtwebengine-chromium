@@ -6,7 +6,7 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("../build/webrtc.gni")
+import("../webrtc.gni")
 if (is_ios) {
   import("//build/config/ios/rules.gni")
 }
@@ -47,6 +47,8 @@ if (is_ios || is_mac) {
       "objc/Framework/Classes/RTCMetricsSampleInfo.mm",
       "objc/Framework/Classes/RTCSSLAdapter.mm",
       "objc/Framework/Classes/RTCTracing.mm",
+      "objc/Framework/Classes/helpers.h",
+      "objc/Framework/Classes/helpers.mm",
       "objc/Framework/Headers/WebRTC/RTCDispatcher.h",
       "objc/Framework/Headers/WebRTC/RTCFieldTrials.h",
       "objc/Framework/Headers/WebRTC/RTCLogging.h",
@@ -62,12 +64,25 @@ if (is_ios || is_mac) {
         "objc/Framework/Classes/RTCUIApplication.h",
         "objc/Framework/Classes/RTCUIApplication.mm",
         "objc/Framework/Classes/UIDevice+RTCDevice.mm",
-        "objc/Framework/Classes/helpers.h",
-        "objc/Framework/Classes/helpers.mm",
         "objc/Framework/Headers/WebRTC/RTCCameraPreviewView.h",
         "objc/Framework/Headers/WebRTC/UIDevice+RTCDevice.h",
       ]
+      if (current_cpu == "arm64") {
+        sources += [
+          "objc/Framework/Classes/Metal/RTCMTLNV12Renderer.h",
+          "objc/Framework/Classes/Metal/RTCMTLNV12Renderer.mm",
+          "objc/Framework/Classes/Metal/RTCMTLVideoView.m",
+        ]
+      }
+
       libs = [ "AVFoundation.framework" ]
+      if (current_cpu == "arm64") {
+        libs += [
+          "CoreVideo.framework",
+          "Metal.framework",
+          "MetalKit.framework",
+        ]
+      }
     }
     if (!build_with_chromium) {
       sources += [
@@ -219,7 +234,7 @@ if (is_ios || is_mac) {
 
     deps += [
       ":rtc_sdk_common_objc",
-      "../api:libjingle_peerconnection",
+      "../pc:libjingle_peerconnection",
     ]
 
     if (rtc_build_libyuv) {
@@ -291,6 +306,7 @@ if (is_ios || is_mac) {
         "objc/Framework/Headers/WebRTC/RTCMediaStreamTrack.h",
         "objc/Framework/Headers/WebRTC/RTCMetrics.h",
         "objc/Framework/Headers/WebRTC/RTCMetricsSampleInfo.h",
+        "objc/Framework/Headers/WebRTC/RTCMTLVideoView.h",
         "objc/Framework/Headers/WebRTC/RTCPeerConnection.h",
         "objc/Framework/Headers/WebRTC/RTCPeerConnectionFactory.h",
         "objc/Framework/Headers/WebRTC/RTCRtpCodecParameters.h",
@@ -317,7 +333,11 @@ if (is_ios || is_mac) {
         public_headers += [ "objc/Framework/Headers/WebRTC/RTCFileLogger.h" ]
       }
 
-      ldflags = [ "-all_load" ]
+      ldflags = [
+        "-all_load",
+        "-install_name",
+        "@rpath/$output_name.framework/$output_name",
+      ]
 
       deps = [
         ":rtc_sdk_peerconnection_objc",

@@ -188,7 +188,8 @@ bool ValidateES3TexImageParametersBase(Context *context,
             return false;
         }
 
-        if (!ValidCompressedImageSize(context, actualInternalFormat, width, height))
+        if (!ValidCompressedImageSize(context, actualInternalFormat, xoffset, yoffset, width,
+                                      height))
         {
             context->handleError(Error(GL_INVALID_OPERATION));
             return false;
@@ -989,42 +990,6 @@ bool ValidateFramebufferTextureLayer(Context *context,
     return true;
 }
 
-bool ValidateES3RenderbufferStorageParameters(gl::Context *context,
-                                              GLenum target,
-                                              GLsizei samples,
-                                              GLenum internalformat,
-                                              GLsizei width,
-                                              GLsizei height)
-{
-    if (!ValidateRenderbufferStorageParametersBase(context, target, samples, internalformat, width,
-                                                   height))
-    {
-        return false;
-    }
-
-    // The ES3 spec(section 4.4.2) states that the internal format must be sized and not an integer
-    // format if samples is greater than zero.
-    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalformat);
-    if ((formatInfo.componentType == GL_UNSIGNED_INT || formatInfo.componentType == GL_INT) &&
-        samples > 0)
-    {
-        context->handleError(Error(GL_INVALID_OPERATION));
-        return false;
-    }
-
-    // The behavior is different than the ANGLE version, which would generate a GL_OUT_OF_MEMORY.
-    const TextureCaps &formatCaps = context->getTextureCaps().get(internalformat);
-    if (static_cast<GLuint>(samples) > formatCaps.getMaxSamples())
-    {
-        context->handleError(
-            Error(GL_INVALID_OPERATION,
-                  "Samples must not be greater than maximum supported value for the format."));
-        return false;
-    }
-
-    return true;
-}
-
 bool ValidateInvalidateFramebuffer(Context *context,
                                    GLenum target,
                                    GLsizei numAttachments,
@@ -1263,6 +1228,142 @@ bool ValidateIsVertexArray(Context *context)
     }
 
     return true;
+}
+
+static bool ValidateBindBufferCommon(Context *context,
+                                     GLenum target,
+                                     GLuint index,
+                                     GLuint buffer,
+                                     GLintptr offset,
+                                     GLsizeiptr size)
+{
+    if (context->getClientMajorVersion() < 3)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION));
+        return false;
+    }
+
+    if (buffer != 0 && offset < 0)
+    {
+        context->handleError(Error(GL_INVALID_VALUE, "buffer is non-zero and offset is negative."));
+        return false;
+    }
+
+    if (!context->getGLState().isBindGeneratesResourceEnabled() &&
+        !context->isBufferGenerated(buffer))
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Buffer was not generated."));
+        return false;
+    }
+
+    const Caps &caps = context->getCaps();
+    switch (target)
+    {
+        case GL_TRANSFORM_FEEDBACK_BUFFER:
+        {
+            if (index >= caps.maxTransformFeedbackSeparateAttributes)
+            {
+                context->handleError(Error(GL_INVALID_VALUE,
+                                           "index is greater than or equal to the number of "
+                                           "TRANSFORM_FEEDBACK_BUFFER indexed binding points."));
+                return false;
+            }
+            if (buffer != 0 && ((offset % 4) != 0 || (size % 4) != 0))
+            {
+                context->handleError(
+                    Error(GL_INVALID_VALUE, "offset and size must be multiple of 4."));
+                return false;
+            }
+
+            TransformFeedback *curTransformFeedback =
+                context->getGLState().getCurrentTransformFeedback();
+            if (curTransformFeedback && curTransformFeedback->isActive())
+            {
+                context->handleError(Error(GL_INVALID_OPERATION,
+                                           "target is TRANSFORM_FEEDBACK_BUFFER and transform "
+                                           "feedback is currently active."));
+                return false;
+            }
+            break;
+        }
+        case GL_UNIFORM_BUFFER:
+        {
+            if (index >= caps.maxUniformBufferBindings)
+            {
+                context->handleError(Error(GL_INVALID_VALUE,
+                                           "index is greater than or equal to the number of "
+                                           "UNIFORM_BUFFER indexed binding points."));
+                return false;
+            }
+
+            if (buffer != 0 && (offset % caps.uniformBufferOffsetAlignment) != 0)
+            {
+                context->handleError(
+                    Error(GL_INVALID_VALUE,
+                          "offset must be multiple of value of UNIFORM_BUFFER_OFFSET_ALIGNMENT."));
+                return false;
+            }
+            break;
+        }
+        case GL_ATOMIC_COUNTER_BUFFER:
+        {
+            if (context->getClientVersion() < ES_3_1)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM, "ATOMIC_COUNTER_BUFFER is not supported in GLES3."));
+                return false;
+            }
+            if (index >= caps.maxAtomicCounterBufferBindings)
+            {
+                context->handleError(Error(GL_INVALID_VALUE,
+                                           "index is greater than or equal to the number of "
+                                           "ATOMIC_COUNTER_BUFFER indexed binding points."));
+                return false;
+            }
+            if (buffer != 0 && (offset % 4) != 0)
+            {
+                context->handleError(Error(GL_INVALID_VALUE, "offset must be a multiple of 4."));
+                return false;
+            }
+            break;
+        }
+        case GL_SHADER_STORAGE_BUFFER:
+        {
+            if (context->getClientVersion() < ES_3_1)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM, "ATOMIC_COUNTER_BUFFER is not supported in GLES3."));
+                return false;
+            }
+            break;
+        }
+        default:
+            context->handleError(Error(GL_INVALID_ENUM, "the target is not supported."));
+            return false;
+    }
+
+    return true;
+}
+
+bool ValidateBindBufferBase(Context *context, GLenum target, GLuint index, GLuint buffer)
+{
+    return ValidateBindBufferCommon(context, target, index, buffer, 0, 0);
+}
+
+bool ValidateBindBufferRange(Context *context,
+                             GLenum target,
+                             GLuint index,
+                             GLuint buffer,
+                             GLintptr offset,
+                             GLsizeiptr size)
+{
+    if (buffer != 0 && size <= 0)
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE, "buffer is non-zero and size is less than or equal to zero."));
+        return false;
+    }
+    return ValidateBindBufferCommon(context, target, index, buffer, offset, size);
 }
 
 bool ValidateProgramBinary(Context *context,
@@ -1620,6 +1721,12 @@ bool ValidateCompressedTexSubImage3D(Context *context,
     }
 
     const InternalFormat &formatInfo = GetInternalFormatInfo(format);
+    if (!formatInfo.compressed)
+    {
+        context->handleError(Error(GL_INVALID_ENUM, "Not a valid compressed texture format"));
+        return false;
+    }
+
     auto blockSizeOrErr =
         formatInfo.computeCompressedImageSize(GL_UNSIGNED_BYTE, gl::Extents(width, height, depth));
     if (blockSizeOrErr.isError())
@@ -1871,6 +1978,24 @@ bool ValidateIndexedStateQuery(ValidationContext *context,
                 return false;
             }
             break;
+        case GL_ATOMIC_COUNTER_BUFFER_START:
+        case GL_ATOMIC_COUNTER_BUFFER_SIZE:
+        case GL_ATOMIC_COUNTER_BUFFER_BINDING:
+            if (context->getClientVersion() < ES_3_1)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM,
+                          "Atomic Counter buffers are not supported in this version of GL"));
+                return false;
+            }
+            if (index >= caps.maxAtomicCounterBufferBindings)
+            {
+                context->handleError(
+                    Error(GL_INVALID_VALUE,
+                          "index is outside the valid range for GL_ATOMIC_COUNTER_BUFFER_BINDING"));
+                return false;
+            }
+            break;
         default:
             context->handleError(Error(GL_INVALID_ENUM));
             return false;
@@ -2094,6 +2219,48 @@ bool ValidateGetStringi(Context *context, GLenum name, GLuint index)
         default:
             context->handleError(Error(GL_INVALID_ENUM, "Invalid name."));
             return false;
+    }
+
+    return true;
+}
+
+bool ValidateRenderbufferStorageMultisample(ValidationContext *context,
+                                            GLenum target,
+                                            GLsizei samples,
+                                            GLenum internalformat,
+                                            GLsizei width,
+                                            GLsizei height)
+{
+    if (context->getClientMajorVersion() < 3)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION));
+        return false;
+    }
+
+    if (!ValidateRenderbufferStorageParametersBase(context, target, samples, internalformat, width,
+                                                   height))
+    {
+        return false;
+    }
+
+    // The ES3 spec(section 4.4.2) states that the internal format must be sized and not an integer
+    // format if samples is greater than zero.
+    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalformat);
+    if ((formatInfo.componentType == GL_UNSIGNED_INT || formatInfo.componentType == GL_INT) &&
+        samples > 0)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION));
+        return false;
+    }
+
+    // The behavior is different than the ANGLE version, which would generate a GL_OUT_OF_MEMORY.
+    const TextureCaps &formatCaps = context->getTextureCaps().get(internalformat);
+    if (static_cast<GLuint>(samples) > formatCaps.getMaxSamples())
+    {
+        context->handleError(
+            Error(GL_INVALID_OPERATION,
+                  "Samples must not be greater than maximum supported value for the format."));
+        return false;
     }
 
     return true;

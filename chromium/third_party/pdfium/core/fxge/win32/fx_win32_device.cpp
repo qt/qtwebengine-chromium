@@ -166,47 +166,45 @@ void SetPathToDC(HDC hDC,
                  const CFX_PathData* pPathData,
                  const CFX_Matrix* pMatrix) {
   BeginPath(hDC);
-  int nPoints = pPathData->GetPointCount();
-  FX_PATHPOINT* pPoints = pPathData->GetPoints();
-  for (int i = 0; i < nPoints; i++) {
-    FX_FLOAT posx = pPoints[i].m_PointX, posy = pPoints[i].m_PointY;
-    if (pMatrix) {
-      pMatrix->Transform(posx, posy);
-    }
-    int screen_x = FXSYS_round(posx), screen_y = FXSYS_round(posy);
-    int point_type = pPoints[i].m_Flag & FXPT_TYPE;
-    if (point_type == PT_MOVETO) {
-      MoveToEx(hDC, screen_x, screen_y, nullptr);
-    } else if (point_type == PT_LINETO) {
-      if (pPoints[i].m_PointY == pPoints[i - 1].m_PointY &&
-          pPoints[i].m_PointX == pPoints[i - 1].m_PointX) {
-        screen_x++;
-      }
-      LineTo(hDC, screen_x, screen_y);
-    } else if (point_type == PT_BEZIERTO) {
+
+  const std::vector<FX_PATHPOINT>& pPoints = pPathData->GetPoints();
+  for (size_t i = 0; i < pPoints.size(); i++) {
+    CFX_PointF pos = pPoints[i].m_Point;
+    if (pMatrix)
+      pos = pMatrix->Transform(pos);
+
+    CFX_Point screen(FXSYS_round(pos.x), FXSYS_round(pos.y));
+    FXPT_TYPE point_type = pPoints[i].m_Type;
+    if (point_type == FXPT_TYPE::MoveTo) {
+      MoveToEx(hDC, screen.x, screen.y, nullptr);
+    } else if (point_type == FXPT_TYPE::LineTo) {
+      if (pPoints[i].m_Point == pPoints[i - 1].m_Point)
+        screen.x++;
+
+      LineTo(hDC, screen.x, screen.y);
+    } else if (point_type == FXPT_TYPE::BezierTo) {
       POINT lppt[3];
-      lppt[0].x = screen_x;
-      lppt[0].y = screen_y;
-      posx = pPoints[i + 1].m_PointX;
-      posy = pPoints[i + 1].m_PointY;
-      if (pMatrix) {
-        pMatrix->Transform(posx, posy);
-      }
-      lppt[1].x = FXSYS_round(posx);
-      lppt[1].y = FXSYS_round(posy);
-      posx = pPoints[i + 2].m_PointX;
-      posy = pPoints[i + 2].m_PointY;
-      if (pMatrix) {
-        pMatrix->Transform(posx, posy);
-      }
-      lppt[2].x = FXSYS_round(posx);
-      lppt[2].y = FXSYS_round(posy);
+      lppt[0].x = screen.x;
+      lppt[0].y = screen.y;
+
+      pos = pPoints[i + 1].m_Point;
+      if (pMatrix)
+        pos = pMatrix->Transform(pos);
+
+      lppt[1].x = FXSYS_round(pos.x);
+      lppt[1].y = FXSYS_round(pos.y);
+
+      pos = pPoints[i + 2].m_Point;
+      if (pMatrix)
+        pos = pMatrix->Transform(pos);
+
+      lppt[2].x = FXSYS_round(pos.x);
+      lppt[2].y = FXSYS_round(pos.y);
       PolyBezierTo(hDC, lppt, 3);
       i += 2;
     }
-    if (pPoints[i].m_Flag & PT_CLOSEFIGURE) {
+    if (pPoints[i].m_CloseFigure)
       CloseFigure(hDC);
-    }
   }
   EndPath(hDC);
 }
@@ -315,11 +313,6 @@ unsigned clip_liang_barsky(FX_FLOAT x1,
   return np;
 }
 #endif  // _SKIA_SUPPORT_
-
-bool MatrixNoScaled(const CFX_Matrix* pMatrix) {
-  return pMatrix->GetA() == 1.0f && pMatrix->GetB() == 0 &&
-         pMatrix->GetC() == 0 && pMatrix->GetD() == 1.0f;
-}
 
 class CFX_Win32FallbackFontInfo final : public CFX_FolderFontInfo {
  public:
@@ -996,9 +989,9 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
   if (!(pGraphState || stroke_color == 0) &&
       !pPlatform->m_GdiplusExt.IsAvailable()) {
     CFX_FloatRect bbox_f = pPathData->GetBoundingBox();
-    if (pMatrix) {
-      bbox_f.Transform(pMatrix);
-    }
+    if (pMatrix)
+      pMatrix->TransformRect(bbox_f);
+
     FX_RECT bbox = bbox_f.GetInnerRect();
     if (bbox.Width() <= 0) {
       return DrawCosmeticLine(
@@ -1022,10 +1015,10 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
     if (bDrawAlpha ||
         ((m_DeviceClass != FXDC_PRINTER && !(fill_mode & FXFILL_FULLCOVER)) ||
          (pGraphState && pGraphState->m_DashCount))) {
-      if (!((!pMatrix || MatrixNoScaled(pMatrix)) && pGraphState &&
+      if (!((!pMatrix || !pMatrix->WillScale()) && pGraphState &&
             pGraphState->m_LineWidth == 1.f &&
-            (pPathData->GetPointCount() == 5 ||
-             pPathData->GetPointCount() == 4) &&
+            (pPathData->GetPoints().size() == 5 ||
+             pPathData->GetPoints().size() == 4) &&
             pPathData->IsRect())) {
         if (pPlatform->m_GdiplusExt.DrawPath(m_hDC, pPathData, pMatrix,
                                              pGraphState, fill_color,
@@ -1049,17 +1042,15 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
     hBrush = CreateBrush(fill_color);
     hBrush = (HBRUSH)SelectObject(m_hDC, hBrush);
   }
-  if (pPathData->GetPointCount() == 2 && pGraphState &&
+  if (pPathData->GetPoints().size() == 2 && pGraphState &&
       pGraphState->m_DashCount) {
-    FX_FLOAT x1 = pPathData->GetPointX(0);
-    FX_FLOAT y1 = pPathData->GetPointY(0);
-    FX_FLOAT x2 = pPathData->GetPointX(1);
-    FX_FLOAT y2 = pPathData->GetPointY(1);
+    CFX_PointF pos1 = pPathData->GetPoint(0);
+    CFX_PointF pos2 = pPathData->GetPoint(1);
     if (pMatrix) {
-      pMatrix->Transform(x1, y1);
-      pMatrix->Transform(x2, y2);
+      pos1 = pMatrix->Transform(pos1);
+      pos2 = pMatrix->Transform(pos2);
     }
-    DrawLine(x1, y1, x2, y2);
+    DrawLine(pos1.x, pos1.y, pos2.x, pos2.y);
   } else {
     SetPathToDC(m_hDC, pPathData, pMatrix);
     if (pGraphState && stroke_alpha) {
@@ -1113,7 +1104,7 @@ bool CGdiDeviceDriver::FillRectWithBlend(const FX_RECT* pRect,
 bool CGdiDeviceDriver::SetClip_PathFill(const CFX_PathData* pPathData,
                                         const CFX_Matrix* pMatrix,
                                         int fill_mode) {
-  if (pPathData->GetPointCount() == 5) {
+  if (pPathData->GetPoints().size() == 5) {
     CFX_FloatRect rectf;
     if (pPathData->IsRect(pMatrix, &rectf)) {
       FX_RECT rect = rectf.GetOuterRect();

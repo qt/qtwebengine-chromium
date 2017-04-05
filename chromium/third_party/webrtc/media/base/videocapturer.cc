@@ -16,7 +16,6 @@
 
 #include "webrtc/api/video/i420_buffer.h"
 #include "webrtc/api/video/video_frame.h"
-#include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 
 namespace cricket {
@@ -150,8 +149,8 @@ void VideoCapturer::OnSinkWantsChanged(const rtc::VideoSinkWants& wants) {
   apply_rotation_ = wants.rotation_applied;
 
   if (video_adapter()) {
-    video_adapter()->OnResolutionRequest(wants.max_pixel_count,
-                                         wants.max_pixel_count_step_up);
+    video_adapter()->OnResolutionRequest(wants.target_pixel_count,
+                                         wants.max_pixel_count);
   }
 }
 

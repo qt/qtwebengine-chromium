@@ -60,12 +60,12 @@ class CXFA_TextLayout {
   }
 
   bool m_bHasBlock;
-  CFX_Int32Array m_Blocks;
+  CFX_ArrayTemplate<int32_t> m_Blocks;
 
  private:
   void GetTextDataNode();
   CFDE_XMLNode* GetXMLContainerNode();
-  CFX_RTFBreak* CreateBreak(bool bDefault);
+  std::unique_ptr<CFX_RTFBreak> CreateBreak(bool bDefault);
   void InitBreak(FX_FLOAT fLineWidth);
   void InitBreak(CFDE_CSSComputedStyle* pStyle,
                  FDE_CSSDisplay eDisplay,
@@ -82,9 +82,9 @@ class CXFA_TextLayout {
   bool LoadRichText(CFDE_XMLNode* pXMLNode,
                     const CFX_SizeF& szText,
                     FX_FLOAT& fLinePos,
-                    CFDE_CSSComputedStyle* pParentStyle,
+                    const CFX_RetainPtr<CFDE_CSSComputedStyle>& pParentStyle,
                     bool bSavePieces,
-                    CXFA_LinkUserData* pLinkData = nullptr,
+                    CFX_RetainPtr<CXFA_LinkUserData> pLinkData,
                     bool bEndBreak = true,
                     bool bIsOl = false,
                     int32_t iLiCount = 0);
@@ -92,11 +92,11 @@ class CXFA_TextLayout {
                   FX_FLOAT& fLinePos,
                   FX_FLOAT fSpaceAbove,
                   bool bSavePieces);
-  void AppendTextLine(uint32_t dwStatus,
+  void AppendTextLine(CFX_RTFBreakType dwStatus,
                       FX_FLOAT& fLinePos,
                       bool bSavePieces,
                       bool bEndBreak = false);
-  void EndBreak(uint32_t dwStatus, FX_FLOAT& fLinePos, bool bDefault);
+  void EndBreak(CFX_RTFBreakType dwStatus, FX_FLOAT& fLinePos, bool bDefault);
   bool IsEnd(bool bSavePieces);
   void ProcessText(CFX_WideString& wsText);
   void UpdateAlign(FX_FLOAT fHeight, FX_FLOAT fBottom);

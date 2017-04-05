@@ -146,11 +146,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   metrics::Reset();
   VoiceEngine* voice_engine = VoiceEngine::Create();
   VoEBase* voe_base = VoEBase::GetInterface(voice_engine);
-  const std::string audio_filename =
-      test::ResourcePath("voice_engine/audio_long16", "pcm");
-  ASSERT_STRNE("", audio_filename.c_str());
-  FakeAudioDevice fake_audio_device(Clock::GetRealTimeClock(), audio_filename,
-                                    audio_rtp_speed);
+  FakeAudioDevice fake_audio_device(audio_rtp_speed, 48000, 256);
   EXPECT_EQ(0, voe_base->Init(&fake_audio_device, nullptr, decoder_factory_));
   VoEBase::ChannelConfig config;
   config.enable_voice_pacing = true;
@@ -264,16 +260,14 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
 
   Start();
 
-  fake_audio_device.Start();
+  audio_send_stream->Start();
   audio_receive_stream->Start();
-  EXPECT_EQ(0, voe_base->StartSend(send_channel_id));
 
   EXPECT_TRUE(observer.Wait())
       << "Timed out while waiting for audio and video to be synchronized.";
 
-  EXPECT_EQ(0, voe_base->StopSend(send_channel_id));
-  EXPECT_EQ(0, voe_base->StopPlayout(recv_channel_id));
-  fake_audio_device.Stop();
+  audio_send_stream->Stop();
+  audio_receive_stream->Stop();
 
   Stop();
   video_send_transport.StopSending();
@@ -294,7 +288,11 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   VoiceEngine::Delete(voice_engine);
 
   observer.PrintResults();
-  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AVSyncOffsetInMs"));
+
+  // In quick test synchronization may not be achieved in time.
+  if (field_trial::IsEnabled("WebRTC-QuickPerfTest")) {
+    EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AVSyncOffsetInMs"));
+  }
 }
 
 TEST_F(CallPerfTest, PlaysOutAudioAndVideoInSyncWithVideoNtpDrift) {
@@ -470,12 +468,7 @@ TEST_F(CallPerfTest, CaptureNtpTimeWithNetworkJitter) {
   const int kRunTimeMs = 20000;
   TestCaptureNtpTime(net_config, kThresholdMs, kStartTimeMs, kRunTimeMs);
 }
-#if defined(WEBRTC_ANDROID)
-// This test is disabled on android as it does not update
-// sinkWants below 320x180, the starting resolution for these
-// tests.
-#define ReceivesCpuOveruseAndUnderuse DISABLED_ReceivesCpuOveruseAndUnderuse
-#endif
+
 TEST_F(CallPerfTest, ReceivesCpuOveruseAndUnderuse) {
   class LoadObserver : public test::SendTest,
                        public test::FrameGeneratorCapturer::SinkWantsObserver {
@@ -488,6 +481,8 @@ TEST_F(CallPerfTest, ReceivesCpuOveruseAndUnderuse) {
     void OnFrameGeneratorCapturerCreated(
         test::FrameGeneratorCapturer* frame_generator_capturer) override {
       frame_generator_capturer->SetSinkWantsObserver(this);
+      // Set a high initial resolution to be sure that we can scale down.
+      frame_generator_capturer->ChangeResolution(1920, 1080);
     }
 
     // OnSinkWantsChanged is called when FrameGeneratorCapturer::AddOrUpdateSink
@@ -496,13 +491,20 @@ TEST_F(CallPerfTest, ReceivesCpuOveruseAndUnderuse) {
                             const rtc::VideoSinkWants& wants) override {
       // First expect CPU overuse. Then expect CPU underuse when the encoder
       // delay has been decreased.
-      if (wants.max_pixel_count) {
+      if (wants.target_pixel_count &&
+          *wants.target_pixel_count <
+              wants.max_pixel_count.value_or(std::numeric_limits<int>::max())) {
+        // On adapting up, ViEEncoder::VideoSourceProxy will set the target
+        // pixel count to a step up from the current and the max value to
+        // something higher than the target.
+        EXPECT_FALSE(expect_lower_resolution_wants_);
+        observation_complete_.Set();
+      } else if (wants.max_pixel_count) {
+        // On adapting down, ViEEncoder::VideoSourceProxy will set only the max
+        // pixel count, leaving the target unset.
         EXPECT_TRUE(expect_lower_resolution_wants_);
         expect_lower_resolution_wants_ = false;
         encoder_.SetDelay(2);
-      } else if (wants.max_pixel_count_step_up) {
-        EXPECT_FALSE(expect_lower_resolution_wants_);
-        observation_complete_.Set();
       }
     }
 
@@ -669,8 +671,9 @@ TEST_F(CallPerfTest, KeepsHighBitrateWhenReconfiguringSender) {
         EXPECT_EQ(2 * kDefaultWidth, config->width);
         EXPECT_EQ(2 * kDefaultHeight, config->height);
         EXPECT_GE(last_set_bitrate_kbps_, kReconfigureThresholdKbps);
-        EXPECT_NEAR(config->startBitrate, last_set_bitrate_kbps_,
-                    kPermittedReconfiguredBitrateDiffKbps)
+        EXPECT_GT(
+            config->startBitrate,
+            last_set_bitrate_kbps_ - kPermittedReconfiguredBitrateDiffKbps)
             << "Encoder reconfigured with bitrate too far away from last set.";
         observation_complete_.Set();
       }

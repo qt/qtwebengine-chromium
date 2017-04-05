@@ -28,7 +28,6 @@
 
 #include "webrtc/base/bytebuffer.h"
 #include "webrtc/base/checks.h"
-#include "webrtc/base/common.h"
 #include "webrtc/base/httpcommon.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/socketadapters.h"
@@ -186,8 +185,8 @@ int AsyncSSLSocket::Connect(const SocketAddress& addr) {
 void AsyncSSLSocket::OnConnectEvent(AsyncSocket * socket) {
   RTC_DCHECK(socket == socket_);
   // TODO: we could buffer output too...
-  VERIFY(sizeof(kSslClientHello) ==
-      DirectSend(kSslClientHello, sizeof(kSslClientHello)));
+  const int res = DirectSend(kSslClientHello, sizeof(kSslClientHello));
+  RTC_DCHECK_EQ(sizeof(kSslClientHello), res);
 }
 
 void AsyncSSLSocket::ProcessInput(char* data, size_t* len) {
@@ -282,7 +281,7 @@ int AsyncHttpsProxySocket::Close() {
   state_ = PS_ERROR;
   dest_.Clear();
   delete context_;
-  context_ = NULL;
+  context_ = nullptr;
   return BufferedReadAdapter::Close();
 }
 
@@ -845,69 +844,5 @@ void AsyncSocksProxyServerSocket::Error(int error) {
   SetError(SOCKET_EACCES);
   SignalCloseEvent(this, error);
 }
-
-///////////////////////////////////////////////////////////////////////////////
-
-LoggingSocketAdapter::LoggingSocketAdapter(AsyncSocket* socket,
-                                           LoggingSeverity level,
-                                           const char * label, bool hex_mode)
-    : AsyncSocketAdapter(socket), level_(level), hex_mode_(hex_mode) {
-  label_.append("[");
-  label_.append(label);
-  label_.append("]");
-}
-
-int LoggingSocketAdapter::Send(const void *pv, size_t cb) {
-  int res = AsyncSocketAdapter::Send(pv, cb);
-  if (res > 0)
-    LogMultiline(level_, label_.c_str(), false, pv, res, hex_mode_, &lms_);
-  return res;
-}
-
-int LoggingSocketAdapter::SendTo(const void *pv, size_t cb,
-                             const SocketAddress& addr) {
-  int res = AsyncSocketAdapter::SendTo(pv, cb, addr);
-  if (res > 0)
-    LogMultiline(level_, label_.c_str(), false, pv, res, hex_mode_, &lms_);
-  return res;
-}
-
-int LoggingSocketAdapter::Recv(void* pv, size_t cb, int64_t* timestamp) {
-  int res = AsyncSocketAdapter::Recv(pv, cb, timestamp);
-  if (res > 0)
-    LogMultiline(level_, label_.c_str(), true, pv, res, hex_mode_, &lms_);
-  return res;
-}
-
-int LoggingSocketAdapter::RecvFrom(void* pv,
-                                   size_t cb,
-                                   SocketAddress* paddr,
-                                   int64_t* timestamp) {
-  int res = AsyncSocketAdapter::RecvFrom(pv, cb, paddr, timestamp);
-  if (res > 0)
-    LogMultiline(level_, label_.c_str(), true, pv, res, hex_mode_, &lms_);
-  return res;
-}
-
-int LoggingSocketAdapter::Close() {
-  LogMultiline(level_, label_.c_str(), false, NULL, 0, hex_mode_, &lms_);
-  LogMultiline(level_, label_.c_str(), true, NULL, 0, hex_mode_, &lms_);
-  LOG_V(level_) << label_ << " Closed locally";
-  return socket_->Close();
-}
-
-void LoggingSocketAdapter::OnConnectEvent(AsyncSocket * socket) {
-  LOG_V(level_) << label_ << " Connected";
-  AsyncSocketAdapter::OnConnectEvent(socket);
-}
-
-void LoggingSocketAdapter::OnCloseEvent(AsyncSocket * socket, int err) {
-  LogMultiline(level_, label_.c_str(), false, NULL, 0, hex_mode_, &lms_);
-  LogMultiline(level_, label_.c_str(), true, NULL, 0, hex_mode_, &lms_);
-  LOG_V(level_) << label_ << " Closed with error: " << err;
-  AsyncSocketAdapter::OnCloseEvent(socket, err);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 
 }  // namespace rtc

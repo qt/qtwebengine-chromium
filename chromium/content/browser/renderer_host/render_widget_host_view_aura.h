@@ -109,7 +109,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   ui::TextInputClient* GetTextInputClient() override;
   bool HasFocus() const override;
-  bool IsSurfaceAvailableForCopy() const override;
   void Show() override;
   void Hide() override;
   bool IsShowing() override;
@@ -134,16 +133,15 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void Destroy() override;
   void SetTooltipText(const base::string16& tooltip_text) override;
   gfx::Size GetRequestedRendererSize() const override;
-  void CopyFromCompositingSurface(
-      const gfx::Rect& src_subrect,
-      const gfx::Size& dst_size,
-      const ReadbackRequestCallback& callback,
-      const SkColorType preferred_color_type) override;
-  void CopyFromCompositingSurfaceToVideoFrame(
-      const gfx::Rect& src_subrect,
-      const scoped_refptr<media::VideoFrame>& target,
+  bool IsSurfaceAvailableForCopy() const override;
+  void CopyFromSurface(const gfx::Rect& src_rect,
+                       const gfx::Size& output_size,
+                       const ReadbackRequestCallback& callback,
+                       const SkColorType color_type) override;
+  void CopyFromSurfaceToVideoFrame(
+      const gfx::Rect& src_rect,
+      scoped_refptr<media::VideoFrame> target,
       const base::Callback<void(const gfx::Rect&, bool)>& callback) override;
-  bool CanCopyToVideoFrame() const override;
   void BeginFrameSubscription(
       std::unique_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
   void EndFrameSubscription() override;
@@ -171,8 +169,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void ClearCompositorFrame() override;
   void DidStopFlinging() override;
   void OnDidNavigateMainFrameToNewPage() override;
-  void LockCompositingSurface() override;
-  void UnlockCompositingSurface() override;
   cc::FrameSinkId GetFrameSinkId() override;
   cc::FrameSinkId FrameSinkIdAtPoint(cc::SurfaceHittestDelegate* delegate,
                                      const gfx::Point& point,
@@ -451,13 +447,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Called when the parent window hierarchy for our window changes.
   void ParentHierarchyChanged();
 
-  // Helper function to be called whenever new selection information is
-  // received. It will update selection controller.
-  void SelectionUpdated(bool is_editable,
-                        bool is_empty_text_form_control,
-                        const gfx::SelectionBound& start,
-                        const gfx::SelectionBound& end);
-
   // Helper function to create a selection controller.
   void CreateSelectionController();
 
@@ -562,6 +551,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   bool virtual_keyboard_requested_;
 
   std::unique_ptr<ui::OnScreenKeyboardObserver> keyboard_observer_;
+
+  gfx::Point last_mouse_move_location_;
 #endif
 
   bool has_snapped_to_boundary_;

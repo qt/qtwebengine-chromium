@@ -31,6 +31,7 @@
 #include "vp9/encoder/vp9_encodemb.h"
 #include "vp9/encoder/vp9_encodemv.h"
 #include "vp9/encoder/vp9_encoder.h"
+#include "vp9/encoder/vp9_ethread.h"
 #include "vp9/encoder/vp9_extend.h"
 #include "vp9/encoder/vp9_firstpass.h"
 #include "vp9/encoder/vp9_mcomp.h"
@@ -41,8 +42,6 @@
 #define OUTPUT_FPF 0
 #define ARF_STATS_OUTPUT 0
 
-#define BOOST_BREAKOUT 12.5
-#define BOOST_FACTOR 12.5
 #define FACTOR_PT_LOW 0.70
 #define FACTOR_PT_HIGH 0.90
 #define FIRST_PASS_Q 10.0
@@ -107,13 +106,15 @@ static void output_stats(FIRSTPASS_STATS *stats,
     fpfile = fopen("firstpass.stt", "a");
 
     fprintf(fpfile,
-            "%12.0lf %12.4lf %12.0lf %12.0lf %12.0lf %12.0lf %12.4lf"
+            "%12.0lf %12.4lf %12.0lf %12.0lf %12.0lf %12.0lf %12.4lf %12.4lf"
             "%12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.4lf"
-            "%12.4lf %12.4lf %12.4lf %12.4lf %12.0lf %12.0lf %12.0lf %12.4lf"
+            "%12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.0lf %12.0lf %12.0lf"
+            "%12.4lf"
             "\n",
             stats->frame, stats->weight, stats->intra_error, stats->coded_error,
             stats->sr_coded_error, stats->frame_noise_energy, stats->pcnt_inter,
             stats->pcnt_motion, stats->pcnt_second_ref, stats->pcnt_neutral,
+            stats->pcnt_intra_low, stats->pcnt_intra_high,
             stats->intra_skip_pct, stats->intra_smooth_pct,
             stats->inactive_zone_rows, stats->inactive_zone_cols, stats->MVr,
             stats->mvr_abs, stats->MVc, stats->mvc_abs, stats->MVrv,
@@ -147,6 +148,8 @@ static void zero_stats(FIRSTPASS_STATS *section) {
   section->pcnt_neutral = 0.0;
   section->intra_skip_pct = 0.0;
   section->intra_smooth_pct = 0.0;
+  section->pcnt_intra_low = 0.0;
+  section->pcnt_intra_high = 0.0;
   section->inactive_zone_rows = 0.0;
   section->inactive_zone_cols = 0.0;
   section->MVr = 0.0;
@@ -176,6 +179,8 @@ static void accumulate_stats(FIRSTPASS_STATS *section,
   section->pcnt_neutral += frame->pcnt_neutral;
   section->intra_skip_pct += frame->intra_skip_pct;
   section->intra_smooth_pct += frame->intra_smooth_pct;
+  section->pcnt_intra_low += frame->pcnt_intra_low;
+  section->pcnt_intra_high += frame->pcnt_intra_high;
   section->inactive_zone_rows += frame->inactive_zone_rows;
   section->inactive_zone_cols += frame->inactive_zone_cols;
   section->MVr += frame->MVr;
@@ -203,6 +208,8 @@ static void subtract_stats(FIRSTPASS_STATS *section,
   section->pcnt_neutral -= frame->pcnt_neutral;
   section->intra_skip_pct -= frame->intra_skip_pct;
   section->intra_smooth_pct -= frame->intra_smooth_pct;
+  section->pcnt_intra_low -= frame->pcnt_intra_low;
+  section->pcnt_intra_high -= frame->pcnt_intra_high;
   section->inactive_zone_rows -= frame->inactive_zone_rows;
   section->inactive_zone_cols -= frame->inactive_zone_cols;
   section->MVr -= frame->MVr;
@@ -286,6 +293,9 @@ void vp9_end_first_pass(VP9_COMP *cpi) {
   } else {
     output_stats(&cpi->twopass.total_stats, cpi->output_pkt_list);
   }
+
+  vpx_free(cpi->twopass.fp_mb_float_stats);
+  cpi->twopass.fp_mb_float_stats = NULL;
 }
 
 static vpx_variance_fn_t get_block_variance_fn(BLOCK_SIZE bsize) {
@@ -460,8 +470,8 @@ static int scale_sse_threshold(VP9_COMMON *cm, int thresh) {
   if (cm->use_highbitdepth) {
     switch (cm->bit_depth) {
       case VPX_BITS_8: ret_val = thresh; break;
-      case VPX_BITS_10: ret_val = thresh >> 4; break;
-      case VPX_BITS_12: ret_val = thresh >> 8; break;
+      case VPX_BITS_10: ret_val = thresh << 4; break;
+      case VPX_BITS_12: ret_val = thresh << 8; break;
       default:
         assert(0 &&
                "cm->bit_depth should be VPX_BITS_8, "
@@ -646,37 +656,154 @@ static int fp_estimate_block_noise(MACROBLOCK *x, BLOCK_SIZE bsize) {
   return block_noise << 2;  // Scale << 2 to account for sampling.
 }
 
-#define INVALID_ROW -1
-void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
+// This function is called to test the functionality of row based
+// multi-threading in unit tests for bit-exactness
+static void accumulate_floating_point_stats(VP9_COMP *cpi,
+                                            TileDataEnc *first_tile_col) {
+  VP9_COMMON *const cm = &cpi->common;
   int mb_row, mb_col;
-  MACROBLOCK *const x = &cpi->td.mb;
+  first_tile_col->fp_data.intra_factor = 0;
+  first_tile_col->fp_data.brightness_factor = 0;
+  first_tile_col->fp_data.neutral_count = 0;
+  for (mb_row = 0; mb_row < cm->mb_rows; ++mb_row) {
+    for (mb_col = 0; mb_col < cm->mb_cols; ++mb_col) {
+      const int mb_index = mb_row * cm->mb_cols + mb_col;
+      first_tile_col->fp_data.intra_factor +=
+          cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_intra_factor;
+      first_tile_col->fp_data.brightness_factor +=
+          cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_brightness_factor;
+      first_tile_col->fp_data.neutral_count +=
+          cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_neutral_count;
+    }
+  }
+}
+
+static void first_pass_stat_calc(VP9_COMP *cpi, FIRSTPASS_STATS *fps,
+                                 FIRSTPASS_DATA *fp_acc_data) {
+  VP9_COMMON *const cm = &cpi->common;
+  // The minimum error here insures some bit allocation to frames even
+  // in static regions. The allocation per MB declines for larger formats
+  // where the typical "real" energy per MB also falls.
+  // Initial estimate here uses sqrt(mbs) to define the min_err, where the
+  // number of mbs is proportional to the image area.
+  const int num_mbs = (cpi->oxcf.resize_mode != RESIZE_NONE) ? cpi->initial_mbs
+                                                             : cpi->common.MBs;
+  const double min_err = 200 * sqrt(num_mbs);
+
+  // Clamp the image start to rows/2. This number of rows is discarded top
+  // and bottom as dead data so rows / 2 means the frame is blank.
+  if ((fp_acc_data->image_data_start_row > cm->mb_rows / 2) ||
+      (fp_acc_data->image_data_start_row == INVALID_ROW)) {
+    fp_acc_data->image_data_start_row = cm->mb_rows / 2;
+  }
+  // Exclude any image dead zone
+  if (fp_acc_data->image_data_start_row > 0) {
+    fp_acc_data->intra_skip_count =
+        VPXMAX(0, fp_acc_data->intra_skip_count -
+                      (fp_acc_data->image_data_start_row * cm->mb_cols * 2));
+  }
+
+  fp_acc_data->intra_factor = fp_acc_data->intra_factor / (double)num_mbs;
+  fp_acc_data->brightness_factor =
+      fp_acc_data->brightness_factor / (double)num_mbs;
+  fps->weight = fp_acc_data->intra_factor * fp_acc_data->brightness_factor;
+
+  fps->frame = cm->current_video_frame;
+  fps->spatial_layer_id = cpi->svc.spatial_layer_id;
+  fps->coded_error = (double)(fp_acc_data->coded_error >> 8) + min_err;
+  fps->sr_coded_error = (double)(fp_acc_data->sr_coded_error >> 8) + min_err;
+  fps->intra_error = (double)(fp_acc_data->intra_error >> 8) + min_err;
+  fps->frame_noise_energy =
+      (double)(fp_acc_data->frame_noise_energy) / (double)num_mbs;
+  fps->count = 1.0;
+  fps->pcnt_inter = (double)(fp_acc_data->intercount) / num_mbs;
+  fps->pcnt_second_ref = (double)(fp_acc_data->second_ref_count) / num_mbs;
+  fps->pcnt_neutral = (double)(fp_acc_data->neutral_count) / num_mbs;
+  fps->pcnt_intra_low = (double)(fp_acc_data->intra_count_low) / num_mbs;
+  fps->pcnt_intra_high = (double)(fp_acc_data->intra_count_high) / num_mbs;
+  fps->intra_skip_pct = (double)(fp_acc_data->intra_skip_count) / num_mbs;
+  fps->intra_smooth_pct = (double)(fp_acc_data->intra_smooth_count) / num_mbs;
+  fps->inactive_zone_rows = (double)(fp_acc_data->image_data_start_row);
+  // Currently set to 0 as most issues relate to letter boxing.
+  fps->inactive_zone_cols = (double)0;
+
+  if (fp_acc_data->mvcount > 0) {
+    fps->MVr = (double)(fp_acc_data->sum_mvr) / fp_acc_data->mvcount;
+    fps->mvr_abs = (double)(fp_acc_data->sum_mvr_abs) / fp_acc_data->mvcount;
+    fps->MVc = (double)(fp_acc_data->sum_mvc) / fp_acc_data->mvcount;
+    fps->mvc_abs = (double)(fp_acc_data->sum_mvc_abs) / fp_acc_data->mvcount;
+    fps->MVrv = ((double)(fp_acc_data->sum_mvrs) -
+                 ((double)(fp_acc_data->sum_mvr) * (fp_acc_data->sum_mvr) /
+                  fp_acc_data->mvcount)) /
+                fp_acc_data->mvcount;
+    fps->MVcv = ((double)(fp_acc_data->sum_mvcs) -
+                 ((double)(fp_acc_data->sum_mvc) * (fp_acc_data->sum_mvc) /
+                  fp_acc_data->mvcount)) /
+                fp_acc_data->mvcount;
+    fps->mv_in_out_count =
+        (double)(fp_acc_data->sum_in_vectors) / (fp_acc_data->mvcount * 2);
+    fps->pcnt_motion = (double)(fp_acc_data->mvcount) / num_mbs;
+  } else {
+    fps->MVr = 0.0;
+    fps->mvr_abs = 0.0;
+    fps->MVc = 0.0;
+    fps->mvc_abs = 0.0;
+    fps->MVrv = 0.0;
+    fps->MVcv = 0.0;
+    fps->mv_in_out_count = 0.0;
+    fps->pcnt_motion = 0.0;
+  }
+}
+
+static void accumulate_fp_mb_row_stat(TileDataEnc *this_tile,
+                                      FIRSTPASS_DATA *fp_acc_data) {
+  this_tile->fp_data.intra_factor += fp_acc_data->intra_factor;
+  this_tile->fp_data.brightness_factor += fp_acc_data->brightness_factor;
+  this_tile->fp_data.coded_error += fp_acc_data->coded_error;
+  this_tile->fp_data.sr_coded_error += fp_acc_data->sr_coded_error;
+  this_tile->fp_data.frame_noise_energy += fp_acc_data->frame_noise_energy;
+  this_tile->fp_data.intra_error += fp_acc_data->intra_error;
+  this_tile->fp_data.intercount += fp_acc_data->intercount;
+  this_tile->fp_data.second_ref_count += fp_acc_data->second_ref_count;
+  this_tile->fp_data.neutral_count += fp_acc_data->neutral_count;
+  this_tile->fp_data.intra_count_low += fp_acc_data->intra_count_low;
+  this_tile->fp_data.intra_count_high += fp_acc_data->intra_count_high;
+  this_tile->fp_data.intra_skip_count += fp_acc_data->intra_skip_count;
+  this_tile->fp_data.mvcount += fp_acc_data->mvcount;
+  this_tile->fp_data.sum_mvr += fp_acc_data->sum_mvr;
+  this_tile->fp_data.sum_mvr_abs += fp_acc_data->sum_mvr_abs;
+  this_tile->fp_data.sum_mvc += fp_acc_data->sum_mvc;
+  this_tile->fp_data.sum_mvc_abs += fp_acc_data->sum_mvc_abs;
+  this_tile->fp_data.sum_mvrs += fp_acc_data->sum_mvrs;
+  this_tile->fp_data.sum_mvcs += fp_acc_data->sum_mvcs;
+  this_tile->fp_data.sum_in_vectors += fp_acc_data->sum_in_vectors;
+  this_tile->fp_data.intra_smooth_count += fp_acc_data->intra_smooth_count;
+  this_tile->fp_data.image_data_start_row =
+      VPXMIN(this_tile->fp_data.image_data_start_row,
+             fp_acc_data->image_data_start_row) == INVALID_ROW
+          ? VPXMAX(this_tile->fp_data.image_data_start_row,
+                   fp_acc_data->image_data_start_row)
+          : VPXMIN(this_tile->fp_data.image_data_start_row,
+                   fp_acc_data->image_data_start_row);
+}
+
+void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
+                                       FIRSTPASS_DATA *fp_acc_data,
+                                       TileDataEnc *tile_data, MV *best_ref_mv,
+                                       int mb_row) {
+  int mb_col;
+  MACROBLOCK *const x = &td->mb;
   VP9_COMMON *const cm = &cpi->common;
   MACROBLOCKD *const xd = &x->e_mbd;
-  TileInfo tile;
+  TileInfo tile = tile_data->tile_info;
   struct macroblock_plane *const p = x->plane;
   struct macroblockd_plane *const pd = xd->plane;
-  const PICK_MODE_CONTEXT *ctx = &cpi->td.pc_root->none;
-  int i;
+  const PICK_MODE_CONTEXT *ctx = &td->pc_root->none;
+  int i, c;
+  int num_mb_cols = get_num_cols(tile_data->tile_info, 1);
 
   int recon_yoffset, recon_uvoffset;
-  int64_t intra_error = 0;
-  int64_t coded_error = 0;
-  int64_t sr_coded_error = 0;
-  int64_t frame_noise_energy = 0;
-
-  int sum_mvr = 0, sum_mvc = 0;
-  int sum_mvr_abs = 0, sum_mvc_abs = 0;
-  int64_t sum_mvrs = 0, sum_mvcs = 0;
-  int mvcount = 0;
-  int intercount = 0;
-  int second_ref_count = 0;
   const int intrapenalty = INTRA_MODE_PENALTY;
-  double neutral_count;
-  int intra_skip_count = 0;
-  int intra_smooth_count = 0;
-  int image_data_start_row = INVALID_ROW;
-  int sum_in_vectors = 0;
-  TWO_PASS *twopass = &cpi->twopass;
   const MV zero_mv = { 0, 0 };
   int recon_y_stride, recon_uv_stride, uv_mb_height;
 
@@ -688,10 +815,536 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
   LAYER_CONTEXT *const lc =
       is_two_pass_svc(cpi) ? &cpi->svc.layer_context[cpi->svc.spatial_layer_id]
                            : NULL;
-  double intra_factor;
-  double brightness_factor;
-  BufferPool *const pool = cm->buffer_pool;
   MODE_INFO mi_above, mi_left;
+
+  double mb_intra_factor;
+  double mb_brightness_factor;
+  double mb_neutral_count;
+
+  // First pass code requires valid last and new frame buffers.
+  assert(new_yv12 != NULL);
+  assert((lc != NULL) || frame_is_intra_only(cm) || (lst_yv12 != NULL));
+
+  if (lc != NULL) {
+    // Use either last frame or alt frame for motion search.
+    if (cpi->ref_frame_flags & VP9_LAST_FLAG) {
+      first_ref_buf = vp9_get_scaled_ref_frame(cpi, LAST_FRAME);
+      if (first_ref_buf == NULL)
+        first_ref_buf = get_ref_frame_buffer(cpi, LAST_FRAME);
+    }
+
+    if (cpi->ref_frame_flags & VP9_GOLD_FLAG) {
+      gld_yv12 = vp9_get_scaled_ref_frame(cpi, GOLDEN_FRAME);
+      if (gld_yv12 == NULL) {
+        gld_yv12 = get_ref_frame_buffer(cpi, GOLDEN_FRAME);
+      }
+    } else {
+      gld_yv12 = NULL;
+    }
+  }
+
+  xd->mi = cm->mi_grid_visible + xd->mi_stride * (mb_row << 1) +
+           (tile.mi_col_start >> 1);
+  xd->mi[0] = cm->mi + xd->mi_stride * (mb_row << 1) + (tile.mi_col_start >> 1);
+
+  for (i = 0; i < MAX_MB_PLANE; ++i) {
+    p[i].coeff = ctx->coeff_pbuf[i][1];
+    p[i].qcoeff = ctx->qcoeff_pbuf[i][1];
+    pd[i].dqcoeff = ctx->dqcoeff_pbuf[i][1];
+    p[i].eobs = ctx->eobs_pbuf[i][1];
+  }
+
+  recon_y_stride = new_yv12->y_stride;
+  recon_uv_stride = new_yv12->uv_stride;
+  uv_mb_height = 16 >> (new_yv12->y_height > new_yv12->uv_height);
+
+  // Reset above block coeffs.
+  recon_yoffset =
+      (mb_row * recon_y_stride * 16) + (tile.mi_col_start >> 1) * 16;
+  recon_uvoffset = (mb_row * recon_uv_stride * uv_mb_height) +
+                   (tile.mi_col_start >> 1) * uv_mb_height;
+
+  // Set up limit values for motion vectors to prevent them extending
+  // outside the UMV borders.
+  x->mv_limits.row_min = -((mb_row * 16) + BORDER_MV_PIXELS_B16);
+  x->mv_limits.row_max =
+      ((cm->mb_rows - 1 - mb_row) * 16) + BORDER_MV_PIXELS_B16;
+
+  for (mb_col = tile.mi_col_start >> 1, c = 0; mb_col < (tile.mi_col_end >> 1);
+       ++mb_col, c++) {
+    int this_error;
+    int this_intra_error;
+    const int use_dc_pred = (mb_col || mb_row) && (!mb_col || !mb_row);
+    const BLOCK_SIZE bsize = get_bsize(cm, mb_row, mb_col);
+    double log_intra;
+    int level_sample;
+    const int mb_index = mb_row * cm->mb_cols + mb_col;
+
+#if CONFIG_FP_MB_STATS
+    const int mb_index = mb_row * cm->mb_cols + mb_col;
+#endif
+
+    (*(cpi->row_mt_sync_read_ptr))(&tile_data->row_mt_sync, mb_row, c - 1);
+
+    // Adjust to the next column of MBs.
+    x->plane[0].src.buf = cpi->Source->y_buffer +
+                          mb_row * 16 * x->plane[0].src.stride + mb_col * 16;
+    x->plane[1].src.buf = cpi->Source->u_buffer +
+                          mb_row * uv_mb_height * x->plane[1].src.stride +
+                          mb_col * uv_mb_height;
+    x->plane[2].src.buf = cpi->Source->v_buffer +
+                          mb_row * uv_mb_height * x->plane[1].src.stride +
+                          mb_col * uv_mb_height;
+
+    vpx_clear_system_state();
+
+    xd->plane[0].dst.buf = new_yv12->y_buffer + recon_yoffset;
+    xd->plane[1].dst.buf = new_yv12->u_buffer + recon_uvoffset;
+    xd->plane[2].dst.buf = new_yv12->v_buffer + recon_uvoffset;
+    xd->mi[0]->sb_type = bsize;
+    xd->mi[0]->ref_frame[0] = INTRA_FRAME;
+    set_mi_row_col(xd, &tile, mb_row << 1, num_8x8_blocks_high_lookup[bsize],
+                   mb_col << 1, num_8x8_blocks_wide_lookup[bsize], cm->mi_rows,
+                   cm->mi_cols);
+    // Are edges available for intra prediction?
+    // Since the firstpass does not populate the mi_grid_visible,
+    // above_mi/left_mi must be overwritten with a nonzero value when edges
+    // are available.  Required by vp9_predict_intra_block().
+    xd->above_mi = (mb_row != 0) ? &mi_above : NULL;
+    xd->left_mi = ((mb_col << 1) > tile.mi_col_start) ? &mi_left : NULL;
+
+    // Do intra 16x16 prediction.
+    x->skip_encode = 0;
+    x->fp_src_pred = 0;
+    // Do intra prediction based on source pixels for tile boundaries
+    if ((mb_col == (tile.mi_col_start >> 1)) && mb_col != 0) {
+      xd->left_mi = &mi_left;
+      x->fp_src_pred = 1;
+    }
+    xd->mi[0]->mode = DC_PRED;
+    xd->mi[0]->tx_size =
+        use_dc_pred ? (bsize >= BLOCK_16X16 ? TX_16X16 : TX_8X8) : TX_4X4;
+    // Fix - zero the 16x16 block first. This ensures correct this_error for
+    // block sizes smaller than 16x16.
+    vp9_zero_array(x->plane[0].src_diff, 256);
+    vp9_encode_intra_block_plane(x, bsize, 0, 0);
+    this_error = vpx_get_mb_ss(x->plane[0].src_diff);
+    this_intra_error = this_error;
+
+    // Keep a record of blocks that have very low intra error residual
+    // (i.e. are in effect completely flat and untextured in the intra
+    // domain). In natural videos this is uncommon, but it is much more
+    // common in animations, graphics and screen content, so may be used
+    // as a signal to detect these types of content.
+    if (this_error < get_ul_intra_threshold(cm)) {
+      ++(fp_acc_data->intra_skip_count);
+    } else if ((mb_col > 0) &&
+               (fp_acc_data->image_data_start_row == INVALID_ROW)) {
+      fp_acc_data->image_data_start_row = mb_row;
+    }
+
+    // Blocks that are mainly smooth in the intra domain.
+    // Some special accounting for CQ but also these are better for testing
+    // noise levels.
+    if (this_error < get_smooth_intra_threshold(cm)) {
+      ++(fp_acc_data->intra_smooth_count);
+    }
+
+    // Special case noise measurement for first frame.
+    if (cm->current_video_frame == 0) {
+      if (this_intra_error < scale_sse_threshold(cm, LOW_I_THRESH)) {
+        fp_acc_data->frame_noise_energy += fp_estimate_block_noise(x, bsize);
+      } else {
+        fp_acc_data->frame_noise_energy += (int64_t)SECTION_NOISE_DEF;
+      }
+    }
+
+#if CONFIG_VP9_HIGHBITDEPTH
+    if (cm->use_highbitdepth) {
+      switch (cm->bit_depth) {
+        case VPX_BITS_8: break;
+        case VPX_BITS_10: this_error >>= 4; break;
+        case VPX_BITS_12: this_error >>= 8; break;
+        default:
+          assert(0 &&
+                 "cm->bit_depth should be VPX_BITS_8, "
+                 "VPX_BITS_10 or VPX_BITS_12");
+          return;
+      }
+    }
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+
+    vpx_clear_system_state();
+    log_intra = log(this_error + 1.0);
+    if (log_intra < 10.0) {
+      mb_intra_factor = 1.0 + ((10.0 - log_intra) * 0.05);
+      fp_acc_data->intra_factor += mb_intra_factor;
+      if (cpi->oxcf.ethread_bit_match)
+        cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_intra_factor =
+            mb_intra_factor;
+    } else {
+      fp_acc_data->intra_factor += 1.0;
+      if (cpi->oxcf.ethread_bit_match)
+        cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_intra_factor = 1.0;
+    }
+
+#if CONFIG_VP9_HIGHBITDEPTH
+    if (cm->use_highbitdepth)
+      level_sample = CONVERT_TO_SHORTPTR(x->plane[0].src.buf)[0];
+    else
+      level_sample = x->plane[0].src.buf[0];
+#else
+    level_sample = x->plane[0].src.buf[0];
+#endif
+    if ((level_sample < DARK_THRESH) && (log_intra < 9.0)) {
+      mb_brightness_factor = 1.0 + (0.01 * (DARK_THRESH - level_sample));
+      fp_acc_data->brightness_factor += mb_brightness_factor;
+      if (cpi->oxcf.ethread_bit_match)
+        cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_brightness_factor =
+            mb_brightness_factor;
+    } else {
+      fp_acc_data->brightness_factor += 1.0;
+      if (cpi->oxcf.ethread_bit_match)
+        cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_brightness_factor =
+            1.0;
+    }
+
+    // Intrapenalty below deals with situations where the intra and inter
+    // error scores are very low (e.g. a plain black frame).
+    // We do not have special cases in first pass for 0,0 and nearest etc so
+    // all inter modes carry an overhead cost estimate for the mv.
+    // When the error score is very low this causes us to pick all or lots of
+    // INTRA modes and throw lots of key frames.
+    // This penalty adds a cost matching that of a 0,0 mv to the intra case.
+    this_error += intrapenalty;
+
+    // Accumulate the intra error.
+    fp_acc_data->intra_error += (int64_t)this_error;
+
+#if CONFIG_FP_MB_STATS
+    if (cpi->use_fp_mb_stats) {
+      // initialization
+      cpi->twopass.frame_mb_stats_buf[mb_index] = 0;
+    }
+#endif
+
+    // Set up limit values for motion vectors to prevent them extending
+    // outside the UMV borders.
+    x->mv_limits.col_min = -((mb_col * 16) + BORDER_MV_PIXELS_B16);
+    x->mv_limits.col_max =
+        ((cm->mb_cols - 1 - mb_col) * 16) + BORDER_MV_PIXELS_B16;
+
+    // Other than for the first frame do a motion search.
+    if ((lc == NULL && cm->current_video_frame > 0) ||
+        (lc != NULL && lc->current_video_frame_in_layer > 0)) {
+      int tmp_err, motion_error, raw_motion_error;
+      // Assume 0,0 motion with no mv overhead.
+      MV mv = { 0, 0 }, tmp_mv = { 0, 0 };
+      struct buf_2d unscaled_last_source_buf_2d;
+
+      xd->plane[0].pre[0].buf = first_ref_buf->y_buffer + recon_yoffset;
+#if CONFIG_VP9_HIGHBITDEPTH
+      if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+        motion_error = highbd_get_prediction_error(
+            bsize, &x->plane[0].src, &xd->plane[0].pre[0], xd->bd);
+      } else {
+        motion_error =
+            get_prediction_error(bsize, &x->plane[0].src, &xd->plane[0].pre[0]);
+      }
+#else
+      motion_error =
+          get_prediction_error(bsize, &x->plane[0].src, &xd->plane[0].pre[0]);
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+
+      // Compute the motion error of the 0,0 motion using the last source
+      // frame as the reference. Skip the further motion search on
+      // reconstructed frame if this error is small.
+      unscaled_last_source_buf_2d.buf =
+          cpi->unscaled_last_source->y_buffer + recon_yoffset;
+      unscaled_last_source_buf_2d.stride = cpi->unscaled_last_source->y_stride;
+#if CONFIG_VP9_HIGHBITDEPTH
+      if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+        raw_motion_error = highbd_get_prediction_error(
+            bsize, &x->plane[0].src, &unscaled_last_source_buf_2d, xd->bd);
+      } else {
+        raw_motion_error = get_prediction_error(bsize, &x->plane[0].src,
+                                                &unscaled_last_source_buf_2d);
+      }
+#else
+      raw_motion_error = get_prediction_error(bsize, &x->plane[0].src,
+                                              &unscaled_last_source_buf_2d);
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+
+      // TODO(pengchong): Replace the hard-coded threshold
+      if (raw_motion_error > 25 || lc != NULL) {
+        // Test last reference frame using the previous best mv as the
+        // starting point (best reference) for the search.
+        first_pass_motion_search(cpi, x, best_ref_mv, &mv, &motion_error);
+
+        // If the current best reference mv is not centered on 0,0 then do a
+        // 0,0 based search as well.
+        if (!is_zero_mv(best_ref_mv)) {
+          tmp_err = INT_MAX;
+          first_pass_motion_search(cpi, x, &zero_mv, &tmp_mv, &tmp_err);
+
+          if (tmp_err < motion_error) {
+            motion_error = tmp_err;
+            mv = tmp_mv;
+          }
+        }
+
+        // Search in an older reference frame.
+        if (((lc == NULL && cm->current_video_frame > 1) ||
+             (lc != NULL && lc->current_video_frame_in_layer > 1)) &&
+            gld_yv12 != NULL) {
+          // Assume 0,0 motion with no mv overhead.
+          int gf_motion_error;
+
+          xd->plane[0].pre[0].buf = gld_yv12->y_buffer + recon_yoffset;
+#if CONFIG_VP9_HIGHBITDEPTH
+          if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+            gf_motion_error = highbd_get_prediction_error(
+                bsize, &x->plane[0].src, &xd->plane[0].pre[0], xd->bd);
+          } else {
+            gf_motion_error = get_prediction_error(bsize, &x->plane[0].src,
+                                                   &xd->plane[0].pre[0]);
+          }
+#else
+          gf_motion_error = get_prediction_error(bsize, &x->plane[0].src,
+                                                 &xd->plane[0].pre[0]);
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+
+          first_pass_motion_search(cpi, x, &zero_mv, &tmp_mv, &gf_motion_error);
+
+          if (gf_motion_error < motion_error && gf_motion_error < this_error)
+            ++(fp_acc_data->second_ref_count);
+
+          // Reset to last frame as reference buffer.
+          xd->plane[0].pre[0].buf = first_ref_buf->y_buffer + recon_yoffset;
+          xd->plane[1].pre[0].buf = first_ref_buf->u_buffer + recon_uvoffset;
+          xd->plane[2].pre[0].buf = first_ref_buf->v_buffer + recon_uvoffset;
+
+          // In accumulating a score for the older reference frame take the
+          // best of the motion predicted score and the intra coded error
+          // (just as will be done for) accumulation of "coded_error" for
+          // the last frame.
+          if (gf_motion_error < this_error)
+            fp_acc_data->sr_coded_error += gf_motion_error;
+          else
+            fp_acc_data->sr_coded_error += this_error;
+        } else {
+          fp_acc_data->sr_coded_error += motion_error;
+        }
+      } else {
+        fp_acc_data->sr_coded_error += motion_error;
+      }
+
+      // Start by assuming that intra mode is best.
+      best_ref_mv->row = 0;
+      best_ref_mv->col = 0;
+
+#if CONFIG_FP_MB_STATS
+      if (cpi->use_fp_mb_stats) {
+        // intra prediction statistics
+        cpi->twopass.frame_mb_stats_buf[mb_index] = 0;
+        cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_DCINTRA_MASK;
+        cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_MOTION_ZERO_MASK;
+        if (this_error > FPMB_ERROR_LARGE_TH) {
+          cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_ERROR_LARGE_MASK;
+        } else if (this_error < FPMB_ERROR_SMALL_TH) {
+          cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_ERROR_SMALL_MASK;
+        }
+      }
+#endif
+
+      if (motion_error <= this_error) {
+        vpx_clear_system_state();
+
+        // Keep a count of cases where the inter and intra were very close
+        // and very low. This helps with scene cut detection for example in
+        // cropped clips with black bars at the sides or top and bottom.
+        if (((this_error - intrapenalty) * 9 <= motion_error * 10) &&
+            (this_error < (2 * intrapenalty))) {
+          fp_acc_data->neutral_count += 1.0;
+          if (cpi->oxcf.ethread_bit_match)
+            cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_neutral_count =
+                1.0;
+          // Also track cases where the intra is not much worse than the inter
+          // and use this in limiting the GF/arf group length.
+        } else if ((this_error > NCOUNT_INTRA_THRESH) &&
+                   (this_error < (NCOUNT_INTRA_FACTOR * motion_error))) {
+          mb_neutral_count =
+              (double)motion_error / DOUBLE_DIVIDE_CHECK((double)this_error);
+          fp_acc_data->neutral_count += mb_neutral_count;
+          if (cpi->oxcf.ethread_bit_match)
+            cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_neutral_count =
+                mb_neutral_count;
+        }
+
+        mv.row *= 8;
+        mv.col *= 8;
+        this_error = motion_error;
+        xd->mi[0]->mode = NEWMV;
+        xd->mi[0]->mv[0].as_mv = mv;
+        xd->mi[0]->tx_size = TX_4X4;
+        xd->mi[0]->ref_frame[0] = LAST_FRAME;
+        xd->mi[0]->ref_frame[1] = NONE;
+        vp9_build_inter_predictors_sby(xd, mb_row << 1, mb_col << 1, bsize);
+        vp9_encode_sby_pass1(x, bsize);
+        fp_acc_data->sum_mvr += mv.row;
+        fp_acc_data->sum_mvr_abs += abs(mv.row);
+        fp_acc_data->sum_mvc += mv.col;
+        fp_acc_data->sum_mvc_abs += abs(mv.col);
+        fp_acc_data->sum_mvrs += mv.row * mv.row;
+        fp_acc_data->sum_mvcs += mv.col * mv.col;
+        ++(fp_acc_data->intercount);
+
+        *best_ref_mv = mv;
+
+#if CONFIG_FP_MB_STATS
+        if (cpi->use_fp_mb_stats) {
+          // inter prediction statistics
+          cpi->twopass.frame_mb_stats_buf[mb_index] = 0;
+          cpi->twopass.frame_mb_stats_buf[mb_index] &= ~FPMB_DCINTRA_MASK;
+          cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_MOTION_ZERO_MASK;
+          if (this_error > FPMB_ERROR_LARGE_TH) {
+            cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_ERROR_LARGE_MASK;
+          } else if (this_error < FPMB_ERROR_SMALL_TH) {
+            cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_ERROR_SMALL_MASK;
+          }
+        }
+#endif
+
+        if (!is_zero_mv(&mv)) {
+          ++(fp_acc_data->mvcount);
+
+#if CONFIG_FP_MB_STATS
+          if (cpi->use_fp_mb_stats) {
+            cpi->twopass.frame_mb_stats_buf[mb_index] &= ~FPMB_MOTION_ZERO_MASK;
+            // check estimated motion direction
+            if (mv.as_mv.col > 0 && mv.as_mv.col >= abs(mv.as_mv.row)) {
+              // right direction
+              cpi->twopass.frame_mb_stats_buf[mb_index] |=
+                  FPMB_MOTION_RIGHT_MASK;
+            } else if (mv.as_mv.row < 0 &&
+                       abs(mv.as_mv.row) >= abs(mv.as_mv.col)) {
+              // up direction
+              cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_MOTION_UP_MASK;
+            } else if (mv.as_mv.col < 0 &&
+                       abs(mv.as_mv.col) >= abs(mv.as_mv.row)) {
+              // left direction
+              cpi->twopass.frame_mb_stats_buf[mb_index] |=
+                  FPMB_MOTION_LEFT_MASK;
+            } else {
+              // down direction
+              cpi->twopass.frame_mb_stats_buf[mb_index] |=
+                  FPMB_MOTION_DOWN_MASK;
+            }
+          }
+#endif
+
+          // Does the row vector point inwards or outwards?
+          if (mb_row < cm->mb_rows / 2) {
+            if (mv.row > 0)
+              --(fp_acc_data->sum_in_vectors);
+            else if (mv.row < 0)
+              ++(fp_acc_data->sum_in_vectors);
+          } else if (mb_row > cm->mb_rows / 2) {
+            if (mv.row > 0)
+              ++(fp_acc_data->sum_in_vectors);
+            else if (mv.row < 0)
+              --(fp_acc_data->sum_in_vectors);
+          }
+
+          // Does the col vector point inwards or outwards?
+          if (mb_col < cm->mb_cols / 2) {
+            if (mv.col > 0)
+              --(fp_acc_data->sum_in_vectors);
+            else if (mv.col < 0)
+              ++(fp_acc_data->sum_in_vectors);
+          } else if (mb_col > cm->mb_cols / 2) {
+            if (mv.col > 0)
+              ++(fp_acc_data->sum_in_vectors);
+            else if (mv.col < 0)
+              --(fp_acc_data->sum_in_vectors);
+          }
+          fp_acc_data->frame_noise_energy += (int64_t)SECTION_NOISE_DEF;
+        } else if (this_intra_error < scale_sse_threshold(cm, LOW_I_THRESH)) {
+          fp_acc_data->frame_noise_energy += fp_estimate_block_noise(x, bsize);
+        } else {  // 0,0 mv but high error
+          fp_acc_data->frame_noise_energy += (int64_t)SECTION_NOISE_DEF;
+        }
+      } else {  // Intra < inter error
+        int scaled_low_intra_thresh = scale_sse_threshold(cm, LOW_I_THRESH);
+        if (this_intra_error < scaled_low_intra_thresh) {
+          fp_acc_data->frame_noise_energy += fp_estimate_block_noise(x, bsize);
+          if (motion_error < scaled_low_intra_thresh) {
+            fp_acc_data->intra_count_low += 1.0;
+          } else {
+            fp_acc_data->intra_count_high += 1.0;
+          }
+        } else {
+          fp_acc_data->frame_noise_energy += (int64_t)SECTION_NOISE_DEF;
+          fp_acc_data->intra_count_high += 1.0;
+        }
+      }
+    } else {
+      fp_acc_data->sr_coded_error += (int64_t)this_error;
+    }
+    fp_acc_data->coded_error += (int64_t)this_error;
+
+    recon_yoffset += 16;
+    recon_uvoffset += uv_mb_height;
+
+    // Accumulate row level stats to the corresponding tile stats
+    if (cpi->new_mt && mb_col == (tile.mi_col_end >> 1) - 1)
+      accumulate_fp_mb_row_stat(tile_data, fp_acc_data);
+
+    (*(cpi->row_mt_sync_write_ptr))(&tile_data->row_mt_sync, mb_row, c,
+                                    num_mb_cols);
+  }
+  vpx_clear_system_state();
+}
+
+static void first_pass_encode(VP9_COMP *cpi, FIRSTPASS_DATA *fp_acc_data) {
+  VP9_COMMON *const cm = &cpi->common;
+  int mb_row;
+  TileDataEnc tile_data;
+  TileInfo *tile = &tile_data.tile_info;
+  MV zero_mv = { 0, 0 };
+  MV best_ref_mv;
+  // Tiling is ignored in the first pass.
+  vp9_tile_init(tile, cm, 0, 0);
+
+  for (mb_row = 0; mb_row < cm->mb_rows; ++mb_row) {
+    best_ref_mv = zero_mv;
+    vp9_first_pass_encode_tile_mb_row(cpi, &cpi->td, fp_acc_data, &tile_data,
+                                      &best_ref_mv, mb_row);
+  }
+}
+
+void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
+  MACROBLOCK *const x = &cpi->td.mb;
+  VP9_COMMON *const cm = &cpi->common;
+  MACROBLOCKD *const xd = &x->e_mbd;
+  TWO_PASS *twopass = &cpi->twopass;
+
+  YV12_BUFFER_CONFIG *const lst_yv12 = get_ref_frame_buffer(cpi, LAST_FRAME);
+  YV12_BUFFER_CONFIG *gld_yv12 = get_ref_frame_buffer(cpi, GOLDEN_FRAME);
+  YV12_BUFFER_CONFIG *const new_yv12 = get_frame_new_buffer(cm);
+  const YV12_BUFFER_CONFIG *first_ref_buf = lst_yv12;
+
+  LAYER_CONTEXT *const lc =
+      is_two_pass_svc(cpi) ? &cpi->svc.layer_context[cpi->svc.spatial_layer_id]
+                           : NULL;
+  BufferPool *const pool = cm->buffer_pool;
+
+  FIRSTPASS_DATA fp_temp_data;
+  FIRSTPASS_DATA *fp_acc_data = &fp_temp_data;
+
+  vpx_clear_system_state();
+  vp9_zero(fp_temp_data);
+  fp_acc_data->image_data_start_row = INVALID_ROW;
 
   // First pass code requires valid last and new frame buffers.
   assert(new_yv12 != NULL);
@@ -702,12 +1355,6 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
     vp9_zero_array(cpi->twopass.frame_mb_stats_buf, cm->initial_mbs);
   }
 #endif
-
-  vpx_clear_system_state();
-
-  intra_factor = 0.0;
-  brightness_factor = 0.0;
-  neutral_count = 0.0;
 
   set_first_pass_params(cpi);
   vp9_set_quantizer(cm, find_fp_qindex(cm->bit_depth));
@@ -770,499 +1417,39 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
 
   vp9_frame_init_quantizer(cpi);
 
-  for (i = 0; i < MAX_MB_PLANE; ++i) {
-    p[i].coeff = ctx->coeff_pbuf[i][1];
-    p[i].qcoeff = ctx->qcoeff_pbuf[i][1];
-    pd[i].dqcoeff = ctx->dqcoeff_pbuf[i][1];
-    p[i].eobs = ctx->eobs_pbuf[i][1];
-  }
   x->skip_recode = 0;
 
   vp9_init_mv_probs(cm);
   vp9_initialize_rd_consts(cpi);
 
-  // Tiling is ignored in the first pass.
-  vp9_tile_init(&tile, cm, 0, 0);
+  cm->log2_tile_rows = 0;
 
-  recon_y_stride = new_yv12->y_stride;
-  recon_uv_stride = new_yv12->uv_stride;
-  uv_mb_height = 16 >> (new_yv12->y_height > new_yv12->uv_height);
-
-  for (mb_row = 0; mb_row < cm->mb_rows; ++mb_row) {
-    MV best_ref_mv = { 0, 0 };
-
-    // Reset above block coeffs.
-    recon_yoffset = (mb_row * recon_y_stride * 16);
-    recon_uvoffset = (mb_row * recon_uv_stride * uv_mb_height);
-
-    // Set up limit values for motion vectors to prevent them extending
-    // outside the UMV borders.
-    x->mv_limits.row_min = -((mb_row * 16) + BORDER_MV_PIXELS_B16);
-    x->mv_limits.row_max =
-        ((cm->mb_rows - 1 - mb_row) * 16) + BORDER_MV_PIXELS_B16;
-
-    for (mb_col = 0; mb_col < cm->mb_cols; ++mb_col) {
-      int this_error;
-      int this_intra_error;
-      const int use_dc_pred = (mb_col || mb_row) && (!mb_col || !mb_row);
-      const BLOCK_SIZE bsize = get_bsize(cm, mb_row, mb_col);
-      double log_intra;
-      int level_sample;
-
-#if CONFIG_FP_MB_STATS
-      const int mb_index = mb_row * cm->mb_cols + mb_col;
-#endif
-
-      vpx_clear_system_state();
-
-      xd->plane[0].dst.buf = new_yv12->y_buffer + recon_yoffset;
-      xd->plane[1].dst.buf = new_yv12->u_buffer + recon_uvoffset;
-      xd->plane[2].dst.buf = new_yv12->v_buffer + recon_uvoffset;
-      xd->mi[0]->sb_type = bsize;
-      xd->mi[0]->ref_frame[0] = INTRA_FRAME;
-      set_mi_row_col(xd, &tile, mb_row << 1, num_8x8_blocks_high_lookup[bsize],
-                     mb_col << 1, num_8x8_blocks_wide_lookup[bsize],
-                     cm->mi_rows, cm->mi_cols);
-      // Are edges available for intra prediction?
-      // Since the firstpass does not populate the mi_grid_visible,
-      // above_mi/left_mi must be overwritten with a nonzero value when edges
-      // are available.  Required by vp9_predict_intra_block().
-      xd->above_mi = (mb_row != 0) ? &mi_above : NULL;
-      xd->left_mi = (mb_col > tile.mi_col_start) ? &mi_left : NULL;
-
-      // Do intra 16x16 prediction.
-      x->skip_encode = 0;
-      xd->mi[0]->mode = DC_PRED;
-      xd->mi[0]->tx_size =
-          use_dc_pred ? (bsize >= BLOCK_16X16 ? TX_16X16 : TX_8X8) : TX_4X4;
-
-      // Set the 16x16 src_diff block to zero, which ensures correct this_error
-      // calculation for block sizes smaller than 16x16.
-      vp9_zero_array(x->plane[0].src_diff, 256);
-      vp9_encode_intra_block_plane(x, bsize, 0, 0);
-      this_error = vpx_get_mb_ss(x->plane[0].src_diff);
-      this_intra_error = this_error;
-
-      // Keep a record of blocks that have very low intra error residual
-      // (i.e. are in effect completely flat and untextured in the intra
-      // domain). In natural videos this is uncommon, but it is much more
-      // common in animations, graphics and screen content, so may be used
-      // as a signal to detect these types of content.
-      if (this_error < get_ul_intra_threshold(cm)) {
-        ++intra_skip_count;
-      } else if ((mb_col > 0) && (image_data_start_row == INVALID_ROW)) {
-        image_data_start_row = mb_row;
-      }
-
-      // Blocks that are mainly smooth in the intra domain.
-      // Some special accounting for CQ but also these are better for testing
-      // noise levels.
-      if (this_error < get_smooth_intra_threshold(cm)) {
-        ++intra_smooth_count;
-      }
-
-      // Special case noise measurement for first frame.
-      if (cm->current_video_frame == 0) {
-        if (this_intra_error < scale_sse_threshold(cm, LOW_I_THRESH)) {
-          frame_noise_energy += fp_estimate_block_noise(x, bsize);
-        } else {
-          frame_noise_energy += (int64_t)SECTION_NOISE_DEF;
-        }
-      }
-
-#if CONFIG_VP9_HIGHBITDEPTH
-      if (cm->use_highbitdepth) {
-        switch (cm->bit_depth) {
-          case VPX_BITS_8: break;
-          case VPX_BITS_10: this_error >>= 4; break;
-          case VPX_BITS_12: this_error >>= 8; break;
-          default:
-            assert(0 &&
-                   "cm->bit_depth should be VPX_BITS_8, "
-                   "VPX_BITS_10 or VPX_BITS_12");
-            return;
-        }
-      }
-#endif  // CONFIG_VP9_HIGHBITDEPTH
-
-      vpx_clear_system_state();
-      log_intra = log(this_error + 1.0);
-      if (log_intra < 10.0)
-        intra_factor += 1.0 + ((10.0 - log_intra) * 0.05);
-      else
-        intra_factor += 1.0;
-
-#if CONFIG_VP9_HIGHBITDEPTH
-      if (cm->use_highbitdepth)
-        level_sample = CONVERT_TO_SHORTPTR(x->plane[0].src.buf)[0];
-      else
-        level_sample = x->plane[0].src.buf[0];
-#else
-      level_sample = x->plane[0].src.buf[0];
-#endif
-      if ((level_sample < DARK_THRESH) && (log_intra < 9.0))
-        brightness_factor += 1.0 + (0.01 * (DARK_THRESH - level_sample));
-      else
-        brightness_factor += 1.0;
-
-      // Intrapenalty below deals with situations where the intra and inter
-      // error scores are very low (e.g. a plain black frame).
-      // We do not have special cases in first pass for 0,0 and nearest etc so
-      // all inter modes carry an overhead cost estimate for the mv.
-      // When the error score is very low this causes us to pick all or lots of
-      // INTRA modes and throw lots of key frames.
-      // This penalty adds a cost matching that of a 0,0 mv to the intra case.
-      this_error += intrapenalty;
-
-      // Accumulate the intra error.
-      intra_error += (int64_t)this_error;
-
-#if CONFIG_FP_MB_STATS
-      if (cpi->use_fp_mb_stats) {
-        // initialization
-        cpi->twopass.frame_mb_stats_buf[mb_index] = 0;
-      }
-#endif
-
-      // Set up limit values for motion vectors to prevent them extending
-      // outside the UMV borders.
-      x->mv_limits.col_min = -((mb_col * 16) + BORDER_MV_PIXELS_B16);
-      x->mv_limits.col_max =
-          ((cm->mb_cols - 1 - mb_col) * 16) + BORDER_MV_PIXELS_B16;
-
-      // Other than for the first frame do a motion search.
-      if ((lc == NULL && cm->current_video_frame > 0) ||
-          (lc != NULL && lc->current_video_frame_in_layer > 0)) {
-        int tmp_err, motion_error, raw_motion_error;
-        // Assume 0,0 motion with no mv overhead.
-        MV mv = { 0, 0 }, tmp_mv = { 0, 0 };
-        struct buf_2d unscaled_last_source_buf_2d;
-
-        xd->plane[0].pre[0].buf = first_ref_buf->y_buffer + recon_yoffset;
-#if CONFIG_VP9_HIGHBITDEPTH
-        if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
-          motion_error = highbd_get_prediction_error(
-              bsize, &x->plane[0].src, &xd->plane[0].pre[0], xd->bd);
-        } else {
-          motion_error = get_prediction_error(bsize, &x->plane[0].src,
-                                              &xd->plane[0].pre[0]);
-        }
-#else
-        motion_error =
-            get_prediction_error(bsize, &x->plane[0].src, &xd->plane[0].pre[0]);
-#endif  // CONFIG_VP9_HIGHBITDEPTH
-
-        // Compute the motion error of the 0,0 motion using the last source
-        // frame as the reference. Skip the further motion search on
-        // reconstructed frame if this error is small.
-        unscaled_last_source_buf_2d.buf =
-            cpi->unscaled_last_source->y_buffer + recon_yoffset;
-        unscaled_last_source_buf_2d.stride =
-            cpi->unscaled_last_source->y_stride;
-#if CONFIG_VP9_HIGHBITDEPTH
-        if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
-          raw_motion_error = highbd_get_prediction_error(
-              bsize, &x->plane[0].src, &unscaled_last_source_buf_2d, xd->bd);
-        } else {
-          raw_motion_error = get_prediction_error(bsize, &x->plane[0].src,
-                                                  &unscaled_last_source_buf_2d);
-        }
-#else
-        raw_motion_error = get_prediction_error(bsize, &x->plane[0].src,
-                                                &unscaled_last_source_buf_2d);
-#endif  // CONFIG_VP9_HIGHBITDEPTH
-
-        // TODO(pengchong): Replace the hard-coded threshold
-        if (raw_motion_error > 25 || lc != NULL) {
-          // Test last reference frame using the previous best mv as the
-          // starting point (best reference) for the search.
-          first_pass_motion_search(cpi, x, &best_ref_mv, &mv, &motion_error);
-
-          // If the current best reference mv is not centered on 0,0 then do a
-          // 0,0 based search as well.
-          if (!is_zero_mv(&best_ref_mv)) {
-            tmp_err = INT_MAX;
-            first_pass_motion_search(cpi, x, &zero_mv, &tmp_mv, &tmp_err);
-
-            if (tmp_err < motion_error) {
-              motion_error = tmp_err;
-              mv = tmp_mv;
-            }
-          }
-
-          // Search in an older reference frame.
-          if (((lc == NULL && cm->current_video_frame > 1) ||
-               (lc != NULL && lc->current_video_frame_in_layer > 1)) &&
-              gld_yv12 != NULL) {
-            // Assume 0,0 motion with no mv overhead.
-            int gf_motion_error;
-
-            xd->plane[0].pre[0].buf = gld_yv12->y_buffer + recon_yoffset;
-#if CONFIG_VP9_HIGHBITDEPTH
-            if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
-              gf_motion_error = highbd_get_prediction_error(
-                  bsize, &x->plane[0].src, &xd->plane[0].pre[0], xd->bd);
-            } else {
-              gf_motion_error = get_prediction_error(bsize, &x->plane[0].src,
-                                                     &xd->plane[0].pre[0]);
-            }
-#else
-            gf_motion_error = get_prediction_error(bsize, &x->plane[0].src,
-                                                   &xd->plane[0].pre[0]);
-#endif  // CONFIG_VP9_HIGHBITDEPTH
-
-            first_pass_motion_search(cpi, x, &zero_mv, &tmp_mv,
-                                     &gf_motion_error);
-
-            if (gf_motion_error < motion_error && gf_motion_error < this_error)
-              ++second_ref_count;
-
-            // Reset to last frame as reference buffer.
-            xd->plane[0].pre[0].buf = first_ref_buf->y_buffer + recon_yoffset;
-            xd->plane[1].pre[0].buf = first_ref_buf->u_buffer + recon_uvoffset;
-            xd->plane[2].pre[0].buf = first_ref_buf->v_buffer + recon_uvoffset;
-
-            // In accumulating a score for the older reference frame take the
-            // best of the motion predicted score and the intra coded error
-            // (just as will be done for) accumulation of "coded_error" for
-            // the last frame.
-            if (gf_motion_error < this_error)
-              sr_coded_error += gf_motion_error;
-            else
-              sr_coded_error += this_error;
-          } else {
-            sr_coded_error += motion_error;
-          }
-        } else {
-          sr_coded_error += motion_error;
-        }
-
-        // Start by assuming that intra mode is best.
-        best_ref_mv.row = 0;
-        best_ref_mv.col = 0;
-
-#if CONFIG_FP_MB_STATS
-        if (cpi->use_fp_mb_stats) {
-          // intra prediction statistics
-          cpi->twopass.frame_mb_stats_buf[mb_index] = 0;
-          cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_DCINTRA_MASK;
-          cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_MOTION_ZERO_MASK;
-          if (this_error > FPMB_ERROR_LARGE_TH) {
-            cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_ERROR_LARGE_MASK;
-          } else if (this_error < FPMB_ERROR_SMALL_TH) {
-            cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_ERROR_SMALL_MASK;
-          }
-        }
-#endif
-
-        if (motion_error <= this_error) {
-          vpx_clear_system_state();
-
-          // Keep a count of cases where the inter and intra were very close
-          // and very low. This helps with scene cut detection for example in
-          // cropped clips with black bars at the sides or top and bottom.
-          if (((this_error - intrapenalty) * 9 <= motion_error * 10) &&
-              (this_error < (2 * intrapenalty))) {
-            neutral_count += 1.0;
-            // Also track cases where the intra is not much worse than the inter
-            // and use this in limiting the GF/arf group length.
-          } else if ((this_error > NCOUNT_INTRA_THRESH) &&
-                     (this_error < (NCOUNT_INTRA_FACTOR * motion_error))) {
-            neutral_count +=
-                (double)motion_error / DOUBLE_DIVIDE_CHECK((double)this_error);
-          }
-
-          mv.row *= 8;
-          mv.col *= 8;
-          this_error = motion_error;
-          xd->mi[0]->mode = NEWMV;
-          xd->mi[0]->mv[0].as_mv = mv;
-          xd->mi[0]->tx_size = TX_4X4;
-          xd->mi[0]->ref_frame[0] = LAST_FRAME;
-          xd->mi[0]->ref_frame[1] = NONE;
-          vp9_build_inter_predictors_sby(xd, mb_row << 1, mb_col << 1, bsize);
-          vp9_encode_sby_pass1(x, bsize);
-          sum_mvr += mv.row;
-          sum_mvr_abs += abs(mv.row);
-          sum_mvc += mv.col;
-          sum_mvc_abs += abs(mv.col);
-          sum_mvrs += mv.row * mv.row;
-          sum_mvcs += mv.col * mv.col;
-          ++intercount;
-
-          best_ref_mv = mv;
-
-#if CONFIG_FP_MB_STATS
-          if (cpi->use_fp_mb_stats) {
-            // inter prediction statistics
-            cpi->twopass.frame_mb_stats_buf[mb_index] = 0;
-            cpi->twopass.frame_mb_stats_buf[mb_index] &= ~FPMB_DCINTRA_MASK;
-            cpi->twopass.frame_mb_stats_buf[mb_index] |= FPMB_MOTION_ZERO_MASK;
-            if (this_error > FPMB_ERROR_LARGE_TH) {
-              cpi->twopass.frame_mb_stats_buf[mb_index] |=
-                  FPMB_ERROR_LARGE_MASK;
-            } else if (this_error < FPMB_ERROR_SMALL_TH) {
-              cpi->twopass.frame_mb_stats_buf[mb_index] |=
-                  FPMB_ERROR_SMALL_MASK;
-            }
-          }
-#endif
-
-          if (!is_zero_mv(&mv)) {
-            ++mvcount;
-
-#if CONFIG_FP_MB_STATS
-            if (cpi->use_fp_mb_stats) {
-              cpi->twopass.frame_mb_stats_buf[mb_index] &=
-                  ~FPMB_MOTION_ZERO_MASK;
-              // check estimated motion direction
-              if (mv.as_mv.col > 0 && mv.as_mv.col >= abs(mv.as_mv.row)) {
-                // right direction
-                cpi->twopass.frame_mb_stats_buf[mb_index] |=
-                    FPMB_MOTION_RIGHT_MASK;
-              } else if (mv.as_mv.row < 0 &&
-                         abs(mv.as_mv.row) >= abs(mv.as_mv.col)) {
-                // up direction
-                cpi->twopass.frame_mb_stats_buf[mb_index] |=
-                    FPMB_MOTION_UP_MASK;
-              } else if (mv.as_mv.col < 0 &&
-                         abs(mv.as_mv.col) >= abs(mv.as_mv.row)) {
-                // left direction
-                cpi->twopass.frame_mb_stats_buf[mb_index] |=
-                    FPMB_MOTION_LEFT_MASK;
-              } else {
-                // down direction
-                cpi->twopass.frame_mb_stats_buf[mb_index] |=
-                    FPMB_MOTION_DOWN_MASK;
-              }
-            }
-#endif
-
-            // Does the row vector point inwards or outwards?
-            if (mb_row < cm->mb_rows / 2) {
-              if (mv.row > 0)
-                --sum_in_vectors;
-              else if (mv.row < 0)
-                ++sum_in_vectors;
-            } else if (mb_row > cm->mb_rows / 2) {
-              if (mv.row > 0)
-                ++sum_in_vectors;
-              else if (mv.row < 0)
-                --sum_in_vectors;
-            }
-
-            // Does the col vector point inwards or outwards?
-            if (mb_col < cm->mb_cols / 2) {
-              if (mv.col > 0)
-                --sum_in_vectors;
-              else if (mv.col < 0)
-                ++sum_in_vectors;
-            } else if (mb_col > cm->mb_cols / 2) {
-              if (mv.col > 0)
-                ++sum_in_vectors;
-              else if (mv.col < 0)
-                --sum_in_vectors;
-            }
-            frame_noise_energy += (int64_t)SECTION_NOISE_DEF;
-          } else if (this_intra_error < scale_sse_threshold(cm, LOW_I_THRESH)) {
-            frame_noise_energy += fp_estimate_block_noise(x, bsize);
-          } else {  // 0,0 mv but high error
-            frame_noise_energy += (int64_t)SECTION_NOISE_DEF;
-          }
-        } else {  // Intra < inter error
-          if (this_intra_error < scale_sse_threshold(cm, LOW_I_THRESH))
-            frame_noise_energy += fp_estimate_block_noise(x, bsize);
-          else
-            frame_noise_energy += (int64_t)SECTION_NOISE_DEF;
-        }
-      } else {
-        sr_coded_error += (int64_t)this_error;
-      }
-      coded_error += (int64_t)this_error;
-
-      // Adjust to the next column of MBs.
-      x->plane[0].src.buf += 16;
-      x->plane[1].src.buf += uv_mb_height;
-      x->plane[2].src.buf += uv_mb_height;
-
-      recon_yoffset += 16;
-      recon_uvoffset += uv_mb_height;
-    }
-
-    // Adjust to the next row of MBs.
-    x->plane[0].src.buf += 16 * x->plane[0].src.stride - 16 * cm->mb_cols;
-    x->plane[1].src.buf +=
-        uv_mb_height * x->plane[1].src.stride - uv_mb_height * cm->mb_cols;
-    x->plane[2].src.buf +=
-        uv_mb_height * x->plane[1].src.stride - uv_mb_height * cm->mb_cols;
-
-    vpx_clear_system_state();
-  }
-
-  // Clamp the image start to rows/2. This number of rows is discarded top
-  // and bottom as dead data so rows / 2 means the frame is blank.
-  if ((image_data_start_row > cm->mb_rows / 2) ||
-      (image_data_start_row == INVALID_ROW)) {
-    image_data_start_row = cm->mb_rows / 2;
-  }
-  // Exclude any image dead zone
-  if (image_data_start_row > 0) {
-    intra_skip_count =
-        VPXMAX(0, intra_skip_count - (image_data_start_row * cm->mb_cols * 2));
-  }
+  if (cpi->oxcf.ethread_bit_match && cpi->twopass.fp_mb_float_stats == NULL)
+    CHECK_MEM_ERROR(
+        cm, cpi->twopass.fp_mb_float_stats,
+        vpx_calloc(cm->MBs * sizeof(*cpi->twopass.fp_mb_float_stats), 1));
 
   {
     FIRSTPASS_STATS fps;
-    // The minimum error here insures some bit allocation to frames even
-    // in static regions. The allocation per MB declines for larger formats
-    // where the typical "real" energy per MB also falls.
-    // Initial estimate here uses sqrt(mbs) to define the min_err, where the
-    // number of mbs is proportional to the image area.
-    const int num_mbs = (cpi->oxcf.resize_mode != RESIZE_NONE)
-                            ? cpi->initial_mbs
-                            : cpi->common.MBs;
-    const double min_err = 200 * sqrt(num_mbs);
-
-    intra_factor = intra_factor / (double)num_mbs;
-    brightness_factor = brightness_factor / (double)num_mbs;
-    fps.weight = intra_factor * brightness_factor;
-
-    fps.frame = cm->current_video_frame;
-    fps.spatial_layer_id = cpi->svc.spatial_layer_id;
-    fps.coded_error = (double)(coded_error >> 8) + min_err;
-    fps.sr_coded_error = (double)(sr_coded_error >> 8) + min_err;
-    fps.intra_error = (double)(intra_error >> 8) + min_err;
-    fps.frame_noise_energy = (double)frame_noise_energy / (double)num_mbs;
-    fps.count = 1.0;
-    fps.pcnt_inter = (double)intercount / num_mbs;
-    fps.pcnt_second_ref = (double)second_ref_count / num_mbs;
-    fps.pcnt_neutral = (double)neutral_count / num_mbs;
-    fps.intra_skip_pct = (double)intra_skip_count / num_mbs;
-    fps.intra_smooth_pct = (double)intra_smooth_count / num_mbs;
-    fps.inactive_zone_rows = (double)image_data_start_row;
-    // Currently set to 0 as most issues relate to letter boxing.
-    fps.inactive_zone_cols = (double)0;
-
-    if (mvcount > 0) {
-      fps.MVr = (double)sum_mvr / mvcount;
-      fps.mvr_abs = (double)sum_mvr_abs / mvcount;
-      fps.MVc = (double)sum_mvc / mvcount;
-      fps.mvc_abs = (double)sum_mvc_abs / mvcount;
-      fps.MVrv =
-          ((double)sum_mvrs - ((double)sum_mvr * sum_mvr / mvcount)) / mvcount;
-      fps.MVcv =
-          ((double)sum_mvcs - ((double)sum_mvc * sum_mvc / mvcount)) / mvcount;
-      fps.mv_in_out_count = (double)sum_in_vectors / (mvcount * 2);
-      fps.pcnt_motion = (double)mvcount / num_mbs;
+    TileDataEnc *first_tile_col;
+    if (!cpi->new_mt) {
+      cm->log2_tile_cols = 0;
+      cpi->row_mt_sync_read_ptr = vp9_row_mt_sync_read_dummy;
+      cpi->row_mt_sync_write_ptr = vp9_row_mt_sync_write_dummy;
+      first_pass_encode(cpi, fp_acc_data);
+      first_pass_stat_calc(cpi, &fps, fp_acc_data);
     } else {
-      fps.MVr = 0.0;
-      fps.mvr_abs = 0.0;
-      fps.MVc = 0.0;
-      fps.mvc_abs = 0.0;
-      fps.MVrv = 0.0;
-      fps.MVcv = 0.0;
-      fps.mv_in_out_count = 0.0;
-      fps.pcnt_motion = 0.0;
+      cpi->row_mt_sync_read_ptr = vp9_row_mt_sync_read;
+      cpi->row_mt_sync_write_ptr = vp9_row_mt_sync_write;
+      if (cpi->oxcf.ethread_bit_match) {
+        cm->log2_tile_cols = 0;
+        vp9_zero_array(cpi->twopass.fp_mb_float_stats, cm->MBs);
+      }
+      vp9_encode_fp_row_mt(cpi);
+      first_tile_col = &cpi->tile_data[0];
+      if (cpi->oxcf.ethread_bit_match)
+        accumulate_floating_point_stats(cpi, first_tile_col);
+      first_pass_stat_calc(cpi, &fps, &(first_tile_col->fp_data));
     }
 
     // Dont allow a value of 0 for duration.
@@ -1359,6 +1546,7 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
   const RATE_CONTROL *const rc = &cpi->rc;
   const VP9EncoderConfig *const oxcf = &cpi->oxcf;
   TWO_PASS *const twopass = &cpi->twopass;
+  double last_group_rate_err;
 
   // Clamp the target rate to VBR min / max limts.
   const int target_rate =
@@ -1366,6 +1554,14 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
   double noise_factor = pow((section_noise / SECTION_NOISE_DEF), 0.5);
   noise_factor = fclamp(noise_factor, NOISE_FACTOR_MIN, NOISE_FACTOR_MAX);
   inactive_zone = fclamp(inactive_zone, 0.0, 1.0);
+
+  // based on recent history adjust expectations of bits per macroblock.
+  last_group_rate_err =
+      (double)twopass->rolling_arf_group_actual_bits /
+      DOUBLE_DIVIDE_CHECK((double)twopass->rolling_arf_group_target_bits);
+  last_group_rate_err = VPXMAX(0.25, VPXMIN(4.0, last_group_rate_err));
+  twopass->bpm_factor *= (3.0 + last_group_rate_err) / 4.0;
+  twopass->bpm_factor = VPXMAX(0.25, VPXMIN(4.0, twopass->bpm_factor));
 
   if (target_rate <= 0) {
     return rc->worst_quality;  // Highest value allowed
@@ -1376,7 +1572,6 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
     const int active_mbs = VPXMAX(1, num_mbs - (int)(num_mbs * inactive_zone));
     const double av_err_per_mb = section_err / active_mbs;
     const double speed_term = 1.0 + 0.04 * oxcf->speed;
-    double last_group_rate_err;
     const int target_norm_bits_per_mb =
         (int)(((uint64_t)target_rate << BPER_MB_NORMBITS) / active_mbs);
     int q;
@@ -1384,14 +1579,6 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
 
     if (is_two_pass_svc(cpi) && cpi->svc.spatial_layer_id > 0)
       is_svc_upper_layer = 1;
-
-    // based on recent history adjust expectations of bits per macroblock.
-    last_group_rate_err =
-        (double)twopass->rolling_arf_group_actual_bits /
-        DOUBLE_DIVIDE_CHECK((double)twopass->rolling_arf_group_target_bits);
-    last_group_rate_err = VPXMAX(0.25, VPXMIN(4.0, last_group_rate_err));
-    twopass->bpm_factor *= (3.0 + last_group_rate_err) / 4.0;
-    twopass->bpm_factor = VPXMAX(0.25, VPXMIN(4.0, twopass->bpm_factor));
 
     // Try and pick a max Q that will be high enough to encode the
     // content at the given rate.
@@ -1555,7 +1742,8 @@ static double get_sr_decay_rate(const VP9_COMP *cpi,
   if (((frame->coded_error / num_mbs) > LOW_CODED_ERR_PER_MB) &&
       ((frame->intra_error / DOUBLE_DIVIDE_CHECK(frame->coded_error)) <
        (double)NCOUNT_FRAME_II_THRESH)) {
-    modified_pct_inter = frame->pcnt_inter - frame->pcnt_neutral;
+    modified_pct_inter =
+        frame->pcnt_inter + frame->pcnt_intra_low - frame->pcnt_neutral;
   }
   modified_pcnt_intra = 100 * (1.0 - modified_pct_inter);
 
@@ -1665,7 +1853,7 @@ static void accumulate_frame_motion_stats(const FIRSTPASS_STATS *stats,
   }
 }
 
-#define BASELINE_ERR_PER_MB 1000.0
+#define BASELINE_ERR_PER_MB 12500.0
 static double calc_frame_boost(VP9_COMP *cpi, const FIRSTPASS_STATS *this_frame,
                                double *sr_accumulator,
                                double this_frame_mv_in_out, double max_boost) {
@@ -1694,12 +1882,12 @@ static double calc_frame_boost(VP9_COMP *cpi, const FIRSTPASS_STATS *this_frame,
     frame_boost += frame_boost * (this_frame_mv_in_out * 2.0);
 
   // Q correction and scalling
-  frame_boost = frame_boost * BOOST_FACTOR * boost_q_correction;
+  frame_boost = frame_boost * boost_q_correction;
 
   return VPXMIN(frame_boost, max_boost * boost_q_correction);
 }
 
-#define KF_BOOST_FACTOR 12.5
+#define KF_BASELINE_ERR_PER_MB 12500.0
 static double calc_kf_frame_boost(VP9_COMP *cpi,
                                   const FIRSTPASS_STATS *this_frame,
                                   double *sr_accumulator,
@@ -1716,7 +1904,7 @@ static double calc_kf_frame_boost(VP9_COMP *cpi,
   num_mbs = (int)VPXMAX(1, num_mbs * calculate_active_area(cpi, this_frame));
 
   // Underlying boost factor is based on inter error ratio.
-  frame_boost = (BASELINE_ERR_PER_MB * num_mbs) /
+  frame_boost = (KF_BASELINE_ERR_PER_MB * num_mbs) /
                 DOUBLE_DIVIDE_CHECK(this_frame->coded_error + *sr_accumulator);
 
   // Update the accumulator for second ref error difference.
@@ -1730,7 +1918,7 @@ static double calc_kf_frame_boost(VP9_COMP *cpi,
     frame_boost += frame_boost * (this_frame_mv_in_out * 2.0);
 
   // Q correction and scalling
-  frame_boost = frame_boost * KF_BOOST_FACTOR * boost_q_correction;
+  frame_boost = frame_boost * boost_q_correction;
 
   return VPXMIN(frame_boost, max_boost * boost_q_correction);
 }
@@ -1863,10 +2051,11 @@ static int64_t calculate_total_gf_group_bits(VP9_COMP *cpi,
   }
 
   // Clamp odd edge cases.
-  total_group_bits =
-      (total_group_bits < 0) ? 0 : (total_group_bits > twopass->kf_group_bits)
-                                       ? twopass->kf_group_bits
-                                       : total_group_bits;
+  total_group_bits = (total_group_bits < 0)
+                         ? 0
+                         : (total_group_bits > twopass->kf_group_bits)
+                               ? twopass->kf_group_bits
+                               : total_group_bits;
 
   // Clip based on user supplied data rate variability limit.
   if (total_group_bits > (int64_t)max_bits * rc->baseline_gf_interval)
@@ -2091,6 +2280,7 @@ static void adjust_group_arnr_filter(VP9_COMP *cpi, double section_noise,
 }
 
 // Analyse and define a gf/arf group.
+#define ARF_DECAY_BREAKOUT 0.10
 static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
@@ -2269,7 +2459,7 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
             ((mv_ratio_accumulator > mv_ratio_accumulator_thresh) ||
              (abs_mv_in_out_accumulator > abs_mv_in_out_thresh) ||
              (mv_in_out_accumulator < -mv_in_out_thresh) ||
-             ((boost_score - old_boost_score) < BOOST_BREAKOUT)))) {
+             (decay_accumulator < ARF_DECAY_BREAKOUT)))) {
       boost_score = old_boost_score;
       break;
     }
@@ -2300,8 +2490,12 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     rc->source_alt_ref_pending = 0;
   }
 
+#ifdef AGGRESSIVE_VBR
   // Limit maximum boost based on interval length.
+  rc->gfu_boost = VPXMIN((int)rc->gfu_boost, i * 140);
+#else
   rc->gfu_boost = VPXMIN((int)rc->gfu_boost, i * 200);
+#endif
 
   // Set the interval until the next gf.
   rc->baseline_gf_interval = i - (is_key_frame || rc->source_alt_ref_pending);
@@ -2335,7 +2529,7 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   gf_group_bits = calculate_total_gf_group_bits(cpi, gf_group_err);
 
   // Calculate an estimate of the maxq needed for the group.
-  // We are more agressive about correcting for sections
+  // We are more aggressive about correcting for sections
   // where there could be significant overshoot than for easier
   // sections where we do not wish to risk creating an overshoot
   // of the allocated bit budget.
@@ -2354,6 +2548,10 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
         group_av_noise, vbr_group_bits_per_frame);
     twopass->active_worst_quality =
         (tmp_q + (twopass->active_worst_quality * 3)) >> 2;
+
+    // Reset rolling actual and target bits counters for ARF groups.
+    twopass->rolling_arf_group_target_bits = 0;
+    twopass->rolling_arf_group_actual_bits = 0;
   }
 
   // Context Adjustment of ARNR filter strength
@@ -2388,10 +2586,6 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     // Default to starting GF groups at normal frame size.
     cpi->rc.next_frame_size_selector = UNSCALED;
   }
-
-  // Reset rolling actual and target bits counters for ARF groups.
-  twopass->rolling_arf_group_target_bits = 0;
-  twopass->rolling_arf_group_actual_bits = 0;
 }
 
 // Threshold for use of the lagging second reference frame. High second ref
@@ -2419,7 +2613,7 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
 // ratio in the next frame.
 #define II_IMPROVEMENT_THRESHOLD 3.5
 #define KF_II_MAX 128.0
-
+#define II_FACTOR 12.5
 static int test_candidate_kf(TWO_PASS *twopass,
                              const FIRSTPASS_STATS *last_frame,
                              const FIRSTPASS_STATS *this_frame,
@@ -2458,7 +2652,7 @@ static int test_candidate_kf(TWO_PASS *twopass,
 
     // Examine how well the key frame predicts subsequent frames.
     for (i = 0; i < 16; ++i) {
-      double next_iiratio = (BOOST_FACTOR * local_next_frame.intra_error /
+      double next_iiratio = (II_FACTOR * local_next_frame.intra_error /
                              DOUBLE_DIVIDE_CHECK(local_next_frame.coded_error));
 
       if (next_iiratio > KF_II_MAX) next_iiratio = KF_II_MAX;
@@ -2504,10 +2698,16 @@ static int test_candidate_kf(TWO_PASS *twopass,
 }
 
 #define FRAMES_TO_CHECK_DECAY 8
-#define KF_MAX_FRAME_BOOST 96.0
 #define MIN_KF_TOT_BOOST 300
-#define MAX_KF_TOT_BOOST 5400
 #define KF_BOOST_SCAN_MAX_FRAMES 32
+
+#ifdef AGGRESSIVE_VBR
+#define KF_MAX_FRAME_BOOST 80.0
+#define MAX_KF_TOT_BOOST 4800
+#else
+#define KF_MAX_FRAME_BOOST 96.0
+#define MAX_KF_TOT_BOOST 5400
+#endif
 
 static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   int i, j;

@@ -109,7 +109,6 @@
 #include "content/renderer/media/render_media_client.h"
 #include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
-#include "content/renderer/mojo/thread_safe_associated_interface_ptr_provider.h"
 #include "content/renderer/net_info_helper.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_frame_proxy.h"
@@ -146,6 +145,7 @@
 #include "services/ui/public/interfaces/constants.mojom.h"
 #include "skia/ext/event_tracer_impl.h"
 #include "skia/ext/skia_memory_dump_provider.h"
+#include "third_party/WebKit/public/platform/WebCache.h"
 #include "third_party/WebKit/public/platform/WebImageGenerator.h"
 #include "third_party/WebKit/public/platform/WebMemoryCoordinator.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -153,7 +153,6 @@
 #include "third_party/WebKit/public/platform/scheduler/child/compositor_worker_scheduler.h"
 #include "third_party/WebKit/public/platform/scheduler/child/webthread_impl_for_worker_scheduler.h"
 #include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
-#include "third_party/WebKit/public/web/WebCache.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -199,8 +198,8 @@
 #endif
 
 #include "content/public/common/service_manager_connection.h"
-#include "content/renderer/mus/render_widget_mus_connection.h"
 #include "content/renderer/mus/render_widget_window_tree_client_factory.h"
+#include "content/renderer/mus/renderer_window_tree_client.h"
 #include "services/ui/public/cpp/gpu/gpu.h"
 
 #if defined(ENABLE_IPC_FUZZER)
@@ -388,7 +387,8 @@ scoped_refptr<ui::ContextProviderCommandBuffer> CreateOffscreenContext(
   return make_scoped_refptr(new ui::ContextProviderCommandBuffer(
       std::move(gpu_channel_host), stream_id, stream_priority,
       gpu::kNullSurfaceHandle,
-      GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext"),
+      GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext/" +
+           ui::command_buffer_metrics::ContextTypeToString(type)),
       automatic_flushes, support_locking, limits, attributes, nullptr, type));
 }
 
@@ -593,6 +593,7 @@ RenderThreadImpl::RenderThreadImpl(
       renderer_scheduler_(std::move(scheduler)),
       main_message_loop_(std::move(main_message_loop)),
       categorized_worker_pool_(new CategorizedWorkerPool()),
+      is_scroll_animator_enabled_(false),
       renderer_binding_(this) {
   scoped_refptr<base::SingleThreadTaskRunner> test_task_counter;
   DCHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -628,11 +629,8 @@ void RenderThreadImpl::Init(
     gpu_ = ui::Gpu::Create(GetRemoteInterfaces(), GetIOTaskRunner());
   }
 
-  thread_safe_associated_interface_ptr_provider_ =
-      base::MakeUnique<ThreadSafeAssociatedInterfacePtrProvider>(channel());
-  thread_safe_render_message_filter_ =
-      thread_safe_associated_interface_ptr_provider_
-          ->CreateInterfacePtr<mojom::RenderMessageFilter>();
+  channel()->GetThreadSafeRemoteAssociatedInterface(
+      &thread_safe_render_message_filter_);
   shared_bitmap_manager_.reset(
       new ChildSharedBitmapManager(thread_safe_render_message_filter_));
 
@@ -704,8 +702,9 @@ void RenderThreadImpl::Init(
   AddFilter((new ServiceWorkerContextMessageFilter())->GetFilter());
 
 #if defined(USE_AURA)
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kUseMusInRenderer)) {
+  if (IsRunningInMash() &&
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kNoUseMusInRenderer)) {
     CreateRenderWidgetWindowTreeClientFactory(GetServiceManagerConnection());
   }
 #endif
@@ -775,8 +774,6 @@ void RenderThreadImpl::Init(
 #endif
   }
 
-  is_gpu_rasterization_enabled_ =
-      command_line.HasSwitch(switches::kEnableGpuRasterization);
   is_gpu_rasterization_forced_ =
       command_line.HasSwitch(switches::kForceGpuRasterization);
   is_async_worker_context_enabled_ =
@@ -818,10 +815,6 @@ void RenderThreadImpl::Init(
                  base::Unretained(this))));
 
   if (base::FeatureList::IsEnabled(features::kMemoryCoordinator)) {
-    // Currently it is not possible to enable both PurgeAndSuspend and
-    // MemoryCoordinator at the same time.
-    DCHECK(!base::FeatureList::IsEnabled(features::kPurgeAndSuspend));
-
     // Disable MemoryPressureListener when memory coordinator is enabled.
     base::MemoryPressureListener::SetNotificationsSuppressed(true);
 
@@ -894,6 +887,7 @@ void RenderThreadImpl::Init(
   record_purge_suspend_growth_metric_closure_.Reset(
       base::Bind(&RenderThreadImpl::RecordPurgeAndSuspendMemoryGrowthMetrics,
                  base::Unretained(this)));
+  needs_to_record_first_active_paint_ = false;
 
   base::MemoryCoordinatorClientRegistry::GetInstance()->Register(this);
 
@@ -919,7 +913,7 @@ void RenderThreadImpl::Shutdown() {
   // it will exit the process before the browser side is ready to exit.
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kSingleProcess))
-    _exit(0);
+    base::Process::TerminateCurrentProcessImmediately(0);
 }
 
 bool RenderThreadImpl::ShouldBeDestroyed() {
@@ -1126,8 +1120,7 @@ void RenderThreadImpl::InitializeWebKit(
       ->SetRuntimeFeaturesDefaultsBeforeBlinkInitialization();
 
   blink_platform_impl_.reset(new RendererBlinkPlatformImpl(
-      renderer_scheduler_.get(),
-      GetRemoteInterfaces()->GetWeakPtr()));
+      renderer_scheduler_.get(), GetRemoteInterfaces()->GetWeakPtr()));
   blink::initialize(blink_platform_impl_.get());
 
   v8::Isolate* isolate = blink::mainThreadIsolate();
@@ -1209,7 +1202,7 @@ void RenderThreadImpl::InitializeWebKit(
       kImageCacheSingleAllocationByteLimit);
 
   // Hook up blink's codecs so skia can call them
-  SkGraphics::SetImageGeneratorFromEncodedFactory(
+  SkGraphics::SetImageGeneratorFromEncodedDataFactory(
       blink::WebImageGenerator::create);
 
   if (command_line.HasSwitch(switches::kMemoryMetrics)) {
@@ -1349,7 +1342,7 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
       cc::ContextProvider::ScopedContextLock lock(
           shared_context_provider.get());
       if (lock.ContextGL()->GetGraphicsResetStatusKHR() == GL_NO_ERROR) {
-        return gpu_factories_.back();
+        return gpu_factories_.back().get();
       } else {
         scoped_refptr<base::SingleThreadTaskRunner> media_task_runner =
             GetMediaThreadTaskRunner();
@@ -1358,7 +1351,7 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
             base::Bind(
                 base::IgnoreResult(
                     &RendererGpuVideoAcceleratorFactories::CheckContextLost),
-                base::Unretained(gpu_factories_.back())));
+                base::Unretained(gpu_factories_.back().get())));
       }
     }
   }
@@ -1399,7 +1392,7 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
       media_task_runner, std::move(media_context_provider),
       enable_gpu_memory_buffer_video_frames, buffer_to_texture_target_map_,
       enable_video_accelerator));
-  return gpu_factories_.back();
+  return gpu_factories_.back().get();
 }
 
 scoped_refptr<ui::ContextProviderCommandBuffer>
@@ -1491,10 +1484,6 @@ void RenderThreadImpl::OnAssociatedInterfaceRequest(
 
 bool RenderThreadImpl::IsGpuRasterizationForced() {
   return is_gpu_rasterization_forced_;
-}
-
-bool RenderThreadImpl::IsGpuRasterizationEnabled() {
-  return is_gpu_rasterization_enabled_;
 }
 
 bool RenderThreadImpl::IsAsyncWorkerContextEnabled() {
@@ -1589,6 +1578,10 @@ bool RenderThreadImpl::IsThreadedAnimationEnabled() {
   return is_threaded_animation_enabled_;
 }
 
+bool RenderThreadImpl::IsScrollAnimatorEnabled() {
+  return is_scroll_animator_enabled_;
+}
+
 void RenderThreadImpl::OnRAILModeChanged(v8::RAILMode rail_mode) {
   blink::mainThreadIsolate()->SetRAILMode(rail_mode);
   blink::setRAILModeOnWorkerThreadIsolates(rail_mode);
@@ -1634,13 +1627,9 @@ void RenderThreadImpl::OnProcessBackgrounded(bool backgrounded) {
 
   if (backgrounded) {
     renderer_scheduler_->OnRendererBackgrounded();
+    needs_to_record_first_active_paint_ = false;
   } else {
     renderer_scheduler_->OnRendererForegrounded();
-    // TODO(tasak): after enabling MemoryCoordinator, remove this Notify
-    // and follow MemoryCoordinator's request.
-    if (base::FeatureList::IsEnabled(features::kPurgeAndSuspend))
-      base::MemoryCoordinatorClientRegistry::GetInstance()->Notify(
-          base::MemoryState::NORMAL);
 
     record_purge_suspend_metric_closure_.Cancel();
     record_purge_suspend_metric_closure_.Reset(
@@ -1658,15 +1647,8 @@ void RenderThreadImpl::OnProcessPurgeAndSuspend() {
   if (!RendererIsHidden())
     return;
 
-  // TODO(bashi): Enable the tab suspension when MemoryCoordinator is enabled.
-  if (base::FeatureList::IsEnabled(features::kMemoryCoordinator))
-    return;
-
   if (base::FeatureList::IsEnabled(features::kPurgeAndSuspend)) {
-    // TODO(tasak): After enabling MemoryCoordinator, remove this Notify
-    // and follow MemoryCoordinator's request.
-    base::MemoryCoordinatorClientRegistry::GetInstance()->Notify(
-        base::MemoryState::SUSPENDED);
+    base::MemoryCoordinatorClientRegistry::GetInstance()->PurgeMemory();
   }
   // Since purging is not a synchronous task (e.g. v8 GC, oilpan GC, ...),
   // we need to wait until the task is finished. So wait 15 seconds and
@@ -1676,6 +1658,7 @@ void RenderThreadImpl::OnProcessPurgeAndSuspend() {
   GetRendererScheduler()->DefaultTaskRunner()->PostDelayedTask(
       FROM_HERE, record_purge_suspend_metric_closure_.callback(),
       base::TimeDelta::FromSeconds(15));
+  needs_to_record_first_active_paint_ = true;
 }
 
 // TODO(tasak): Replace the following GetMallocUsage() with memory-infra
@@ -1819,7 +1802,7 @@ void RenderThreadImpl::RecordPurgeAndSuspendMemoryGrowthMetrics() const {
       "PurgeAndSuspend.Experimental.MemoryGrowth.BlinkGCKB",
       GET_MEMORY_GROWTH(memory_metrics, purge_and_suspend_memory_metrics_,
                         blink_gc_kb));
-  UMA_HISTOGRAM_MEMORY_MB(
+  UMA_HISTOGRAM_MEMORY_KB(
       "PurgeAndSuspend.Experimental.MemoryGrowth.MallocKB",
       GET_MEMORY_GROWTH(memory_metrics, purge_and_suspend_memory_metrics_,
                         malloc_mb) * 1024);
@@ -1827,32 +1810,14 @@ void RenderThreadImpl::RecordPurgeAndSuspendMemoryGrowthMetrics() const {
       "PurgeAndSuspend.Experimental.MemoryGrowth.DiscardableKB",
       GET_MEMORY_GROWTH(memory_metrics, purge_and_suspend_memory_metrics_,
                         discardable_kb));
-  UMA_HISTOGRAM_MEMORY_MB(
+  UMA_HISTOGRAM_MEMORY_KB(
       "PurgeAndSuspend.Experimental.MemoryGrowth.V8MainThreadIsolateKB",
       GET_MEMORY_GROWTH(memory_metrics, purge_and_suspend_memory_metrics_,
                         v8_main_thread_isolate_mb) * 1024);
-  UMA_HISTOGRAM_MEMORY_MB(
+  UMA_HISTOGRAM_MEMORY_KB(
       "PurgeAndSuspend.Experimental.MemoryGrowth.TotalAllocatedKB",
       GET_MEMORY_GROWTH(memory_metrics, purge_and_suspend_memory_metrics_,
                         total_allocated_mb) * 1024);
-}
-
-void RenderThreadImpl::OnProcessResume() {
-  ChildThreadImpl::OnProcessResume();
-
-  if (!RendererIsHidden())
-    return;
-
-  // TODO(bashi): Enable the tab suspension when MemoryCoordinator is enabled.
-  if (base::FeatureList::IsEnabled(features::kMemoryCoordinator))
-    return;
-
-  if (base::FeatureList::IsEnabled(features::kPurgeAndSuspend)) {
-    // TODO(tasak): after enabling MemoryCoordinator, remove this Notify
-    // and follow MemoryCoordinator's request.
-    base::MemoryCoordinatorClientRegistry::GetInstance()->Notify(
-        base::MemoryState::NORMAL);
-  }
 }
 
 scoped_refptr<gpu::GpuChannelHost> RenderThreadImpl::EstablishGpuChannelSync() {
@@ -1888,13 +1853,13 @@ RenderThreadImpl::CreateCompositorFrameSink(
     use_software = true;
 
 #if defined(USE_AURA)
-  if (GetServiceManagerConnection() && !use_software &&
-      command_line.HasSwitch(switches::kUseMusInRenderer)) {
-    RenderWidgetMusConnection* connection =
-        RenderWidgetMusConnection::GetOrCreate(routing_id);
-    return connection->CreateCompositorFrameSink(
-        frame_sink_id, gpu_->CreateContextProvider(EstablishGpuChannelSync()),
-        GetGpuMemoryBufferManager());
+  if (!use_software && IsRunningInMash() &&
+      !command_line.HasSwitch(switches::kNoUseMusInRenderer)) {
+    return RendererWindowTreeClient::Get(routing_id)
+        ->CreateCompositorFrameSink(
+            frame_sink_id,
+            gpu_->CreateContextProvider(EstablishGpuChannelSync()),
+            GetGpuMemoryBufferManager());
   }
 #endif
 
@@ -1987,8 +1952,8 @@ RenderThreadImpl::CreateCompositorFrameSink(
   if (sync_compositor_message_filter_) {
     return base::MakeUnique<SynchronousCompositorFrameSink>(
         std::move(context_provider), std::move(worker_context_provider),
-        GetGpuMemoryBufferManager(), routing_id, compositor_frame_sink_id,
-        CreateExternalBeginFrameSource(routing_id),
+        GetGpuMemoryBufferManager(), shared_bitmap_manager(), routing_id,
+        compositor_frame_sink_id, CreateExternalBeginFrameSource(routing_id),
         sync_compositor_message_filter_.get(),
         std::move(frame_swap_message_queue));
   }
@@ -2064,6 +2029,7 @@ gpu::GpuChannelHost* RenderThreadImpl::GetGpuChannel() {
 
 void RenderThreadImpl::CreateView(mojom::CreateViewParamsPtr params) {
   CompositorDependencies* compositor_deps = this;
+  is_scroll_animator_enabled_ = params->web_preferences.enable_scroll_animator;
   // When bringing in render_view, also bring in webkit's glue and jsbindings.
   RenderViewImpl::Create(compositor_deps, *params,
                          RenderWidget::ShowCallback());
@@ -2210,36 +2176,18 @@ void RenderThreadImpl::OnMemoryPressure(
 }
 
 void RenderThreadImpl::OnMemoryStateChange(base::MemoryState state) {
-  // TODO(hajimehoshi): Adjust the size of this memory usage according to
-  // |state|. RenderThreadImpl doesn't have a feature to limit memory usage at
-  // present.
   if (blink_platform_impl_) {
     blink::WebMemoryCoordinator::onMemoryStateChange(
         static_cast<blink::MemoryState>(state));
   }
-  switch (state) {
-    case base::MemoryState::NORMAL:
-      break;
-    case base::MemoryState::THROTTLED:
-      // TODO(bashi): Figure out what kind of strategy is suitable on
-      // THROTTLED state. crbug.com/674815
-#if defined(OS_ANDROID)
-      OnTrimMemoryImmediately();
-#else
-      OnSyncMemoryPressure(
-          base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE);
-#endif
-      ReleaseFreeMemory();
-      break;
-    case base::MemoryState::SUSPENDED:
-      OnTrimMemoryImmediately();
-      ReleaseFreeMemory();
-      ClearMemory();
-      break;
-    case base::MemoryState::UNKNOWN:
-      NOTREACHED();
-      break;
-  }
+}
+
+void RenderThreadImpl::OnPurgeMemory() {
+  OnTrimMemoryImmediately();
+  ReleaseFreeMemory();
+  ClearMemory();
+  if (blink_platform_impl_)
+    blink::WebMemoryCoordinator::onPurgeMemory();
 }
 
 void RenderThreadImpl::ClearMemory() {

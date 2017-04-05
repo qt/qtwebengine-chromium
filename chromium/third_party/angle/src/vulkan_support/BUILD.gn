@@ -16,6 +16,7 @@ vulkan_gypi =
                 [
                   rebase_path("vulkan.gypi"),
                   "--replace=<(angle_gen_path)=$target_gen_dir/angle",
+                  "--replace=<(glslang_path)=../$glslang_dir",
                   "--replace=<(spirv_headers_path)=../$spirv_headers_dir",
                   "--replace=<(spirv_tools_path)=../$spirv_tools_dir",
                   "--replace=<(vulkan_layers_path)=../$vulkan_layers_dir",
@@ -23,17 +24,29 @@ vulkan_gypi =
                 "scope",
                 [ "vulkan.gypi" ])
 
+# Subdirectory to place data files (e.g. layer JSON files).
+data_dir = "angledata"
+
+vulkan_gen_json_files_outputs = [
+  "$root_out_dir/$data_dir/VkLayer_core_validation.json",
+  "$root_out_dir/$data_dir/VkLayer_image.json",
+  "$root_out_dir/$data_dir/VkLayer_object_tracker.json",
+  "$root_out_dir/$data_dir/VkLayer_parameter_validation.json",
+  "$root_out_dir/$data_dir/VkLayer_swapchain.json",
+  "$root_out_dir/$data_dir/VkLayer_threading.json",
+  "$root_out_dir/$data_dir/VkLayer_unique_objects.json",
+]
+
 # Vulkan loader
 # -------------
 
 vulkan_gen_dir = "$target_gen_dir/angle/vulkan"
 raw_vulkan_gen_dir = rebase_path(vulkan_gen_dir)
-relative_vulkan_gen_dir = rebase_path(vulkan_gen_dir, root_build_dir)
 
 config("vulkan_loader_config") {
   include_dirs = rebase_path(vulkan_gypi.vulkan_loader_include_dirs, ".", "src")
   defines = [
-    "LAYERS_SOURCE_PATH=\"$relative_vulkan_gen_dir/json\"",
+    "LAYERS_SOURCE_PATH=\"$data_dir\"",
     "DEFAULT_VK_LAYERS_PATH=\".\"",
     "API_NAME=\"Vulkan\"",
   ]
@@ -196,12 +209,11 @@ action("vulkan_gen_json_files") {
       rebase_path(vulkan_gypi.vulkan_gen_json_files_sources_win, ".", "src")
 
   # The layer JSON files are part of the necessary data deps.
-  data = rebase_path(vulkan_gypi.vulkan_gen_json_files_sources_win, ".", "src")
-  outputs = vulkan_gypi.vulkan_gen_json_files_outputs
+  outputs = vulkan_gen_json_files_outputs
+  data = vulkan_gen_json_files_outputs
   args = [
     "$raw_vulkan_layers_dir/layers/windows",
-    "$raw_vulkan_gen_dir/json",
-    rebase_path(root_build_dir),
+    rebase_path("$root_out_dir/$data_dir"),
   ]
 }
 
@@ -297,6 +309,44 @@ static_library("spirv_tools") {
   public_configs = [ ":spirv_tools_config" ]
 }
 
+# glslang
+# -------
+
+config("glslang_config") {
+  include_dirs = [
+    glslang_dir,
+    "$glslang_dir/glslang/Public",
+  ]
+}
+
+config("glslang_internal_config") {
+  if (is_clang || !is_win) {
+    cflags = [
+      "-Wno-reorder",
+      "-Wno-ignored-qualifiers",
+    ]
+  }
+}
+
+static_library("glslang") {
+  sources = rebase_path(vulkan_gypi.glslang_sources, ".", "src")
+  public_configs = [ ":glslang_config" ]
+  configs += [ ":glslang_internal_config" ]
+
+  if (is_win) {
+    cflags = [
+      "/wd4100",  # Unreferenced formal parameter
+      "/wd4456",  # Declaration hides previous local declaration
+      "/wd4457",  # Declaration hides function parameter
+      "/wd4458",  # Declaration hides class member
+      "/wd4702",  # Unreachable code (from glslang_tab.cpp)
+      "/wd4718",  # Recursive call has no side effects (from PpContext.cpp)
+    ]
+
+    sources += rebase_path(vulkan_gypi.glslang_win_sources, ".", "src")
+  }
+}
+
 # The validation layers
 # ---------------------
 
@@ -359,6 +409,7 @@ foreach(index, layer_indexes) {
 # Use this target to include everything ANGLE needs for Vulkan.
 group("angle_vulkan") {
   deps = [
+    ":glslang",
     ":vulkan_loader",
   ]
   data_deps = [
@@ -367,5 +418,8 @@ group("angle_vulkan") {
   foreach(layer, layer_names) {
     data_deps += [ ":VkLayer_$layer" ]
   }
-  public_configs = [ ":vulkan_loader_config" ]
+  public_configs = [
+    ":vulkan_loader_config",
+    ":glslang_config",
+  ]
 }

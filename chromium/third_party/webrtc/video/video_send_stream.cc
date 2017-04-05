@@ -206,7 +206,7 @@ std::string VideoSendStream::Config::ToString() const {
   ss << "{encoder_settings: " << encoder_settings.ToString();
   ss << ", rtp: " << rtp.ToString();
   ss << ", pre_encode_callback: "
-     << (pre_encode_callback ? "(I420FrameCallback)" : "nullptr");
+     << (pre_encode_callback ? "(VideoSinkInterface)" : "nullptr");
   ss << ", post_encode_callback: "
      << (post_encode_callback ? "(EncodedFrameObserver)" : "nullptr");
   ss << ", render_delay_ms: " << render_delay_ms;
@@ -287,6 +287,21 @@ int CalculateMaxPadBitrateBps(std::vector<VideoStream> streams,
       std::max(pad_up_to_bitrate_bps, min_transmit_bitrate_bps);
 
   return pad_up_to_bitrate_bps;
+}
+
+uint32_t CalculateOverheadRateBps(int packets_per_second,
+                                  size_t overhead_bytes_per_packet,
+                                  uint32_t max_overhead_bps) {
+  uint32_t overhead_bps =
+      static_cast<uint32_t>(8 * overhead_bytes_per_packet * packets_per_second);
+  return std::min(overhead_bps, max_overhead_bps);
+}
+
+int CalculatePacketRate(uint32_t bitrate_bps, size_t packet_size_bytes) {
+  size_t packet_size_bits = 8 * packet_size_bytes;
+  // Ceil for int value of bitrate_bps / packet_size_bits.
+  return static_cast<int>((bitrate_bps + packet_size_bits - 1) /
+                          packet_size_bits);
 }
 
 }  // namespace
@@ -379,6 +394,8 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   void ConfigureSsrcs();
   void SignalEncoderTimedOut();
   void SignalEncoderActive();
+
+  const bool send_side_bwe_with_overhead_;
 
   SendStatisticsProxy* const stats_proxy_;
   const VideoSendStream::Config* const config_;
@@ -612,7 +629,8 @@ VideoSendStream::VideoSendStream(
       stats_proxy_(Clock::GetRealTimeClock(),
                    config,
                    encoder_config.content_type),
-      config_(std::move(config)) {
+      config_(std::move(config)),
+      content_type_(encoder_config.content_type) {
   vie_encoder_.reset(new ViEEncoder(
       num_cpu_cores, &stats_proxy_, config_.encoder_settings,
       config_.pre_encode_callback, config_.post_encode_callback));
@@ -675,6 +693,7 @@ void VideoSendStream::ReconfigureVideoEncoder(VideoEncoderConfig config) {
   // TODO(perkj): Some test cases in VideoSendStreamTest call
   // ReconfigureVideoEncoder from the network thread.
   // RTC_DCHECK_RUN_ON(&thread_checker_);
+  RTC_DCHECK(content_type_ == config.content_type);
   vie_encoder_->ConfigureEncoder(std::move(config), config_.rtp.max_packet_size,
                                  config_.rtp.nack.rtp_history_ms > 0);
 }
@@ -740,7 +759,9 @@ VideoSendStreamImpl::VideoSendStreamImpl(
     const VideoSendStream::Config* config,
     int initial_encoder_max_bitrate,
     std::map<uint32_t, RtpState> suspended_ssrcs)
-    : stats_proxy_(stats_proxy),
+    : send_side_bwe_with_overhead_(
+          webrtc::field_trial::IsEnabled("WebRTC-SendSideBwe-WithOverhead")),
+      stats_proxy_(stats_proxy),
       config_(config),
       suspended_ssrcs_(std::move(suspended_ssrcs)),
       module_process_thread_(nullptr),
@@ -797,9 +818,12 @@ VideoSendStreamImpl::VideoSendStreamImpl(
       config_->periodic_alr_bandwidth_probing);
 
   // RTP/RTCP initialization.
-  for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_) {
+
+  // We add the highest spatial layer first to ensure it'll be prioritized
+  // when sending padding, with the hope that the packet rate will be smaller,
+  // and that it's more important to protect than the lower layers.
+  for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_)
     packet_router_->AddRtpModule(rtp_rtcp);
-  }
 
   for (size_t i = 0; i < config_->rtp.extensions.size(); ++i) {
     const std::string& extension = config_->rtp.extensions[i].uri;
@@ -1010,7 +1034,8 @@ EncodedImageCallback::Result VideoSendStreamImpl::OnEncodedImage(
   if (config_->post_encode_callback) {
     config_->post_encode_callback->EncodedFrameCallback(
         EncodedFrame(encoded_image._buffer, encoded_image._length,
-                     encoded_image._frameType));
+                     encoded_image._frameType, encoded_image._encodedWidth,
+                     encoded_image._encodedHeight, encoded_image._timeStamp));
   }
   {
     rtc::CritScope lock(&encoder_activity_crit_sect_);
@@ -1203,36 +1228,40 @@ uint32_t VideoSendStreamImpl::OnBitrateUpdated(uint32_t bitrate_bps,
   RTC_DCHECK(payload_router_.IsActive())
       << "VideoSendStream::Start has not been called.";
 
-  if (webrtc::field_trial::FindFullName("WebRTC-SendSideBwe-WithOverhead") ==
-      "Enabled") {
-    // Subtract total overhead (transport + rtp) from bitrate.
-    size_t rtp_overhead;
-    {
-      rtc::CritScope lock(&overhead_bytes_per_packet_crit_);
-      rtp_overhead = overhead_bytes_per_packet_;
-    }
-    RTC_CHECK_GE(rtp_overhead, 0);
-    RTC_DCHECK_LT(rtp_overhead, config_->rtp.max_packet_size);
-    if (rtp_overhead >= config_->rtp.max_packet_size) {
-      LOG(LS_WARNING) << "RTP overhead (" << rtp_overhead << " bytes)"
-                      << "exceeds maximum packet size ("
-                      << config_->rtp.max_packet_size << " bytes)";
-
-      bitrate_bps = 0;
-    } else {
-      bitrate_bps =
-          static_cast<uint32_t>(static_cast<uint64_t>(bitrate_bps) *
-                                (config_->rtp.max_packet_size - rtp_overhead) /
-                                (config_->rtp.max_packet_size +
-                                 transport_overhead_bytes_per_packet_));
-    }
+  // Substract overhead from bitrate.
+  rtc::CritScope lock(&overhead_bytes_per_packet_crit_);
+  uint32_t payload_bitrate_bps = bitrate_bps;
+  if (send_side_bwe_with_overhead_) {
+    payload_bitrate_bps -= CalculateOverheadRateBps(
+        CalculatePacketRate(bitrate_bps,
+                            config_->rtp.max_packet_size +
+                                transport_overhead_bytes_per_packet_),
+        overhead_bytes_per_packet_ + transport_overhead_bytes_per_packet_,
+        bitrate_bps);
   }
 
   // Get the encoder target rate. It is the estimated network rate -
   // protection overhead.
   encoder_target_rate_bps_ = protection_bitrate_calculator_.SetTargetRates(
-      bitrate_bps, stats_proxy_->GetSendFrameRate(), fraction_loss, rtt);
-  uint32_t protection_bitrate = bitrate_bps - encoder_target_rate_bps_;
+      payload_bitrate_bps, stats_proxy_->GetSendFrameRate(), fraction_loss,
+      rtt);
+
+  uint32_t encoder_overhead_rate_bps =
+      send_side_bwe_with_overhead_
+          ? CalculateOverheadRateBps(
+                CalculatePacketRate(encoder_target_rate_bps_,
+                                    config_->rtp.max_packet_size +
+                                        transport_overhead_bytes_per_packet_ -
+                                        overhead_bytes_per_packet_),
+                overhead_bytes_per_packet_ +
+                    transport_overhead_bytes_per_packet_,
+                bitrate_bps - encoder_target_rate_bps_)
+          : 0;
+
+  // When the field trial "WebRTC-SendSideBwe-WithOverhead" is enabled
+  // protection_bitrate includes overhead.
+  uint32_t protection_bitrate =
+      bitrate_bps - (encoder_target_rate_bps_ + encoder_overhead_rate_bps);
 
   encoder_target_rate_bps_ =
       std::min(encoder_max_bitrate_bps_, encoder_target_rate_bps_);

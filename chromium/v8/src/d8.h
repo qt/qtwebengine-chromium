@@ -5,7 +5,10 @@
 #ifndef V8_D8_H_
 #define V8_D8_H_
 
+#include <iterator>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "src/allocation.h"
 #include "src/base/hashmap.h"
@@ -143,68 +146,86 @@ class SourceGroup {
   int end_offset_;
 };
 
-enum SerializationTag {
-  kSerializationTagUndefined,
-  kSerializationTagNull,
-  kSerializationTagTrue,
-  kSerializationTagFalse,
-  kSerializationTagNumber,
-  kSerializationTagString,
-  kSerializationTagArray,
-  kSerializationTagObject,
-  kSerializationTagArrayBuffer,
-  kSerializationTagTransferredArrayBuffer,
-  kSerializationTagTransferredSharedArrayBuffer,
-};
+// The backing store of an ArrayBuffer or SharedArrayBuffer, after
+// Externalize() has been called on it.
+class ExternalizedContents {
+ public:
+  explicit ExternalizedContents(const ArrayBuffer::Contents& contents)
+      : data_(contents.Data()), size_(contents.ByteLength()) {}
+  explicit ExternalizedContents(const SharedArrayBuffer::Contents& contents)
+      : data_(contents.Data()), size_(contents.ByteLength()) {}
+  ExternalizedContents(ExternalizedContents&& other)
+      : data_(other.data_), size_(other.size_) {
+    other.data_ = nullptr;
+    other.size_ = 0;
+  }
+  ExternalizedContents& operator=(ExternalizedContents&& other) {
+    if (this != &other) {
+      data_ = other.data_;
+      size_ = other.size_;
+      other.data_ = nullptr;
+      other.size_ = 0;
+    }
+    return *this;
+  }
+  ~ExternalizedContents();
 
+ private:
+  void* data_;
+  size_t size_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExternalizedContents);
+};
 
 class SerializationData {
  public:
-  SerializationData() {}
-  ~SerializationData();
+  SerializationData() : size_(0) {}
 
-  void WriteTag(SerializationTag tag);
-  void WriteMemory(const void* p, int length);
-  void WriteArrayBufferContents(const ArrayBuffer::Contents& contents);
-  void WriteSharedArrayBufferContents(
-      const SharedArrayBuffer::Contents& contents);
-
-  template <typename T>
-  void Write(const T& data) {
-    WriteMemory(&data, sizeof(data));
+  uint8_t* data() { return data_.get(); }
+  size_t size() { return size_; }
+  const std::vector<ArrayBuffer::Contents>& array_buffer_contents() {
+    return array_buffer_contents_;
+  }
+  const std::vector<SharedArrayBuffer::Contents>&
+  shared_array_buffer_contents() {
+    return shared_array_buffer_contents_;
   }
 
-  SerializationTag ReadTag(int* offset) const;
-  void ReadMemory(void* p, int length, int* offset) const;
-  void ReadArrayBufferContents(ArrayBuffer::Contents* contents,
-                               int* offset) const;
-  void ReadSharedArrayBufferContents(SharedArrayBuffer::Contents* contents,
-                                     int* offset) const;
-
-  template <typename T>
-  T Read(int* offset) const {
-    T value;
-    ReadMemory(&value, sizeof(value), offset);
-    return value;
+  void AppendExternalizedContentsTo(std::vector<ExternalizedContents>* to) {
+    to->insert(to->end(),
+               std::make_move_iterator(externalized_contents_.begin()),
+               std::make_move_iterator(externalized_contents_.end()));
+    externalized_contents_.clear();
   }
 
  private:
-  i::List<uint8_t> data_;
-  i::List<ArrayBuffer::Contents> array_buffer_contents_;
-  i::List<SharedArrayBuffer::Contents> shared_array_buffer_contents_;
+  struct DataDeleter {
+    void operator()(uint8_t* p) const { free(p); }
+  };
+
+  std::unique_ptr<uint8_t, DataDeleter> data_;
+  size_t size_;
+  std::vector<ArrayBuffer::Contents> array_buffer_contents_;
+  std::vector<SharedArrayBuffer::Contents> shared_array_buffer_contents_;
+  std::vector<ExternalizedContents> externalized_contents_;
+
+ private:
+  friend class Serializer;
+
+  DISALLOW_COPY_AND_ASSIGN(SerializationData);
 };
 
 
 class SerializationDataQueue {
  public:
-  void Enqueue(SerializationData* data);
-  bool Dequeue(SerializationData** data);
+  void Enqueue(std::unique_ptr<SerializationData> data);
+  bool Dequeue(std::unique_ptr<SerializationData>* data);
   bool IsEmpty();
   void Clear();
 
  private:
   base::Mutex mutex_;
-  i::List<SerializationData*> data_;
+  std::vector<std::unique_ptr<SerializationData>> data_;
 };
 
 
@@ -219,13 +240,13 @@ class Worker {
   // Post a message to the worker's incoming message queue. The worker will
   // take ownership of the SerializationData.
   // This function should only be called by the thread that created the Worker.
-  void PostMessage(SerializationData* data);
+  void PostMessage(std::unique_ptr<SerializationData> data);
   // Synchronously retrieve messages from the worker's outgoing message queue.
   // If there is no message in the queue, block until a message is available.
   // If there are no messages in the queue and the worker is no longer running,
   // return nullptr.
   // This function should only be called by the thread that created the Worker.
-  SerializationData* GetMessage();
+  std::unique_ptr<SerializationData> GetMessage();
   // Terminate the worker's event loop. Messages from the worker that have been
   // queued can still be read via GetMessage().
   // This function can be called by any thread.
@@ -283,7 +304,8 @@ class ShellOptions {
         natives_blob(NULL),
         snapshot_blob(NULL),
         trace_enabled(false),
-        trace_config(NULL) {}
+        trace_config(NULL),
+        lcov_file(NULL) {}
 
   ~ShellOptions() {
     delete[] isolate_sources;
@@ -314,6 +336,7 @@ class ShellOptions {
   const char* snapshot_blob;
   bool trace_enabled;
   const char* trace_config;
+  const char* lcov_file;
 };
 
 class Shell : public i::AllStatic {
@@ -335,16 +358,10 @@ class Shell : public i::AllStatic {
   static void CollectGarbage(Isolate* isolate);
   static void EmptyMessageQueues(Isolate* isolate);
 
-  // TODO(binji): stupid implementation for now. Is there an easy way to hash an
-  // object for use in base::HashMap? By pointer?
-  typedef i::List<Local<Object>> ObjectList;
-  static bool SerializeValue(Isolate* isolate, Local<Value> value,
-                             const ObjectList& to_transfer,
-                             ObjectList* seen_objects,
-                             SerializationData* out_data);
-  static MaybeLocal<Value> DeserializeValue(Isolate* isolate,
-                                            const SerializationData& data,
-                                            int* offset);
+  static std::unique_ptr<SerializationData> SerializeValue(
+      Isolate* isolate, Local<Value> value, Local<Value> transfer);
+  static MaybeLocal<Value> DeserializeValue(
+      Isolate* isolate, std::unique_ptr<SerializationData> data);
   static void CleanupWorkers();
   static int* LookupCounter(const char* name);
   static void* CreateHistogram(const char* name,
@@ -447,9 +464,11 @@ class Shell : public i::AllStatic {
   static base::LazyMutex workers_mutex_;
   static bool allow_new_workers_;
   static i::List<Worker*> workers_;
-  static i::List<SharedArrayBuffer::Contents> externalized_shared_contents_;
+  static std::vector<ExternalizedContents> externalized_contents_;
 
   static void WriteIgnitionDispatchCountersFile(v8::Isolate* isolate);
+  // Append LCOV coverage data to file.
+  static void WriteLcovData(v8::Isolate* isolate, const char* file);
   static Counter* GetCounter(const char* name, bool is_histogram);
   static Local<String> Stringify(Isolate* isolate, Local<Value> value);
   static void Initialize(Isolate* isolate);

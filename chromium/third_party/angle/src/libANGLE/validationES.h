@@ -49,6 +49,8 @@ bool ValidImageSizeParameters(const ValidationContext *context,
                               bool isSubImage);
 bool ValidCompressedImageSize(const ValidationContext *context,
                               GLenum internalFormat,
+                              GLint xoffset,
+                              GLint yoffset,
                               GLsizei width,
                               GLsizei height);
 bool ValidImageDataSize(ValidationContext *context,
@@ -74,19 +76,12 @@ Program *GetValidProgram(ValidationContext *context, GLuint id);
 Shader *GetValidShader(ValidationContext *context, GLuint id);
 
 bool ValidateAttachmentTarget(Context *context, GLenum attachment);
-bool ValidateRenderbufferStorageParametersBase(Context *context,
+bool ValidateRenderbufferStorageParametersBase(ValidationContext *context,
                                                GLenum target,
                                                GLsizei samples,
                                                GLenum internalformat,
                                                GLsizei width,
                                                GLsizei height);
-bool ValidateRenderbufferStorageParametersANGLE(Context *context,
-                                                GLenum target,
-                                                GLsizei samples,
-                                                GLenum internalformat,
-                                                GLsizei width,
-                                                GLsizei height);
-
 bool ValidateFramebufferRenderbufferParameters(Context *context,
                                                GLenum target,
                                                GLenum attachment,
@@ -196,6 +191,11 @@ bool ValidateProgramUniform(Context *context,
                             GLuint program,
                             GLint location,
                             GLsizei count);
+bool ValidateProgramUniform1iv(Context *context,
+                               GLuint program,
+                               GLint location,
+                               GLsizei count,
+                               const GLint *value);
 bool ValidateProgramUniformMatrix(Context *context,
                                   GLenum matrixType,
                                   GLuint program,
@@ -204,6 +204,7 @@ bool ValidateProgramUniformMatrix(Context *context,
                                   GLboolean transpose);
 
 bool ValidateUniform(Context *context, GLenum uniformType, GLint location, GLsizei count);
+bool ValidateUniform1iv(Context *context, GLint location, GLsizei count, const GLint *value);
 bool ValidateUniformMatrix(Context *context,
                            GLenum matrixType,
                            GLint location,

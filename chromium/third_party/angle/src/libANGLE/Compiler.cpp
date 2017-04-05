@@ -110,6 +110,11 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const ContextState &state)
     mResources.MaxFragmentAtomicCounterBuffers = caps.maxFragmentAtomicCounterBuffers;
     mResources.MaxCombinedAtomicCounterBuffers = caps.maxCombinedAtomicCounterBuffers;
     mResources.MaxAtomicCounterBufferSize      = caps.maxAtomicCounterBufferSize;
+
+    if (state.getClientMajorVersion() == 2 && !extensions.drawBuffers)
+    {
+        mResources.MaxDrawBuffers = 1;
+    }
 }
 
 Compiler::~Compiler()
@@ -185,6 +190,7 @@ ShHandle Compiler::getCompilerHandle(GLenum type)
         }
 
         *compiler = sh::ConstructCompiler(type, mSpec, mOutputType, &mResources);
+        ASSERT(*compiler);
         activeCompilerHandles++;
     }
 

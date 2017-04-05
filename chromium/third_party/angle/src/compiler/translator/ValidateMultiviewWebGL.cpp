@@ -31,6 +31,8 @@ class ValidateMultiviewTraverser : public TIntermTraverser
     // errors.
     static bool validate(TIntermBlock *root,
                          GLenum shaderType,
+                         const TSymbolTable &symbolTable,
+                         int shaderVersion,
                          bool multiview2,
                          TDiagnostics *diagnostics);
 
@@ -44,7 +46,11 @@ class ValidateMultiviewTraverser : public TIntermTraverser
     bool visitAggregate(Visit visit, TIntermAggregate *node) override;
 
   private:
-    ValidateMultiviewTraverser(GLenum shaderType, bool multiview2, TDiagnostics *diagnostics);
+    ValidateMultiviewTraverser(GLenum shaderType,
+                               const TSymbolTable &symbolTable,
+                               int shaderVersion,
+                               bool multiview2,
+                               TDiagnostics *diagnostics);
 
     static bool IsGLPosition(TIntermNode *node);
     static bool IsGLViewIDOVR(TIntermNode *node);
@@ -56,6 +62,8 @@ class ValidateMultiviewTraverser : public TIntermTraverser
     bool mValid;
     bool mMultiview2;
     GLenum mShaderType;
+    const TSymbolTable &mSymbolTable;
+    const int mShaderVersion;
 
     bool mInsideViewIDConditional;  // Only set if mMultiview2 is false.
     bool mInsideRestrictedAssignment;
@@ -67,22 +75,29 @@ class ValidateMultiviewTraverser : public TIntermTraverser
 
 bool ValidateMultiviewTraverser::validate(TIntermBlock *root,
                                           GLenum shaderType,
+                                          const TSymbolTable &symbolTable,
+                                          int shaderVersion,
                                           bool multiview2,
                                           TDiagnostics *diagnostics)
 {
-    ValidateMultiviewTraverser validate(shaderType, multiview2, diagnostics);
+    ValidateMultiviewTraverser validate(shaderType, symbolTable, shaderVersion, multiview2,
+                                        diagnostics);
     ASSERT(root);
     root->traverse(&validate);
     return validate.isValid();
 }
 
 ValidateMultiviewTraverser::ValidateMultiviewTraverser(GLenum shaderType,
+                                                       const TSymbolTable &symbolTable,
+                                                       int shaderVersion,
                                                        bool multiview2,
                                                        TDiagnostics *diagnostics)
     : TIntermTraverser(true, true, true),
       mValid(true),
       mMultiview2(multiview2),
       mShaderType(shaderType),
+      mSymbolTable(symbolTable),
+      mShaderVersion(shaderVersion),
       mInsideViewIDConditional(false),
       mInsideRestrictedAssignment(false),
       mGLPositionAllowed(multiview2),
@@ -339,39 +354,40 @@ bool ValidateMultiviewTraverser::visitAggregate(Visit visit, TIntermAggregate *n
     {
         // Check if the node is an user-defined function call or if an l-value is required, or if
         // there are possible visible side effects, such as image writes.
-        if (node->getOp() == EOpFunctionCall)
+        if (node->getOp() == EOpCallFunctionInAST)
         {
-            if (node->isUserDefined())
-            {
-                mDiagnostics->error(node->getLine(),
-                                    "Disallowed user defined function call inside assignment to "
-                                    "gl_Position.x when using OVR_multiview",
-                                    GetOperatorString(node->getOp()));
-                mValid = false;
-            }
-            else if (TFunction::unmangleName(node->getFunctionSymbolInfo()->getName()) ==
-                     "imageStore")
-            {
-                // TODO(oetuaho@nvidia.com): Record which built-in functions have side effects in
-                // the symbol info instead.
-                mDiagnostics->error(node->getLine(),
-                                    "Disallowed function call with side effects inside assignment "
-                                    "to gl_Position.x when using OVR_multiview",
-                                    GetOperatorString(node->getOp()));
-                mValid = false;
-            }
-        }
-        else if (node->getOp() == EOpModf)
-        {
-            // TODO(oetuaho@nvidia.com): It's quite hacky to hard-code modf - should maybe refactor
-            // out parameter detecting functionality in LValueTrackingTraverser so that it could be
-            // used here as well?
-            // LValueTrackingTraverser itself seems like a bad fit with the needs of this traverser.
             mDiagnostics->error(node->getLine(),
-                                "Disallowed use of a function with an out parameter inside "
-                                "assignment to gl_Position.x when using OVR_multiview",
+                                "Disallowed user defined function call inside assignment to "
+                                "gl_Position.x when using OVR_multiview",
                                 GetOperatorString(node->getOp()));
             mValid = false;
+        }
+        else if (node->getOp() == EOpCallBuiltInFunction &&
+                 TFunction::unmangleName(node->getFunctionSymbolInfo()->getName()) == "imageStore")
+        {
+            // TODO(oetuaho@nvidia.com): Record which built-in functions have side effects in
+            // the symbol info instead.
+            mDiagnostics->error(node->getLine(),
+                                "Disallowed function call with side effects inside assignment "
+                                "to gl_Position.x when using OVR_multiview",
+                                GetOperatorString(node->getOp()));
+            mValid = false;
+        }
+        else if (!node->isConstructor())
+        {
+            TFunction *builtInFunc = mSymbolTable.findBuiltInOp(node, mShaderVersion);
+            for (size_t paramIndex = 0u; paramIndex < builtInFunc->getParamCount(); ++paramIndex)
+            {
+                TQualifier qualifier = builtInFunc->getParam(paramIndex).type->getQualifier();
+                if (qualifier == EvqOut || qualifier == EvqInOut)
+                {
+                    mDiagnostics->error(node->getLine(),
+                                        "Disallowed use of a function with an out parameter inside "
+                                        "assignment to gl_Position.x when using OVR_multiview",
+                                        GetOperatorString(node->getOp()));
+                    mValid = false;
+                }
+            }
         }
     }
     return true;
@@ -381,6 +397,8 @@ bool ValidateMultiviewTraverser::visitAggregate(Visit visit, TIntermAggregate *n
 
 bool ValidateMultiviewWebGL(TIntermBlock *root,
                             GLenum shaderType,
+                            const TSymbolTable &symbolTable,
+                            int shaderVersion,
                             bool multiview2,
                             TDiagnostics *diagnostics)
 {
@@ -388,7 +406,8 @@ bool ValidateMultiviewWebGL(TIntermBlock *root,
     {
         return true;
     }
-    return ValidateMultiviewTraverser::validate(root, shaderType, multiview2, diagnostics);
+    return ValidateMultiviewTraverser::validate(root, shaderType, symbolTable, shaderVersion,
+                                                multiview2, diagnostics);
 }
 
 }  // namespace sh

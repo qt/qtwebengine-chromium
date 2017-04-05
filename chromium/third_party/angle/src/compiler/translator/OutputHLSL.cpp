@@ -178,7 +178,7 @@ void OutputHLSL::output(TIntermNode *treeRoot, TInfoSinkBase &objSink)
                                                            mShaderVersion);
     }
 
-    builtInFunctionEmulator.MarkBuiltInFunctionsForEmulation(treeRoot);
+    builtInFunctionEmulator.markBuiltInFunctionsForEmulation(treeRoot);
 
     // Now that we are done changing the AST, do the analyses need for HLSL generation
     CallDAG::InitResult success = mCallDag.init(treeRoot, nullptr);
@@ -201,7 +201,7 @@ void OutputHLSL::output(TIntermNode *treeRoot, TInfoSinkBase &objSink)
     objSink << mBody.c_str();
     objSink << mFooter.c_str();
 
-    builtInFunctionEmulator.Cleanup();
+    builtInFunctionEmulator.cleanup();
 }
 
 void OutputHLSL::makeFlaggedStructMaps(const std::vector<TIntermTyped *> &flaggedStructs)
@@ -739,7 +739,7 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
                "\n";
     }
 
-    builtInFunctionEmulator->OutputEmulatedFunctions(out);
+    builtInFunctionEmulator->outputEmulatedFunctions(out);
 }
 
 void OutputHLSL::visitSymbol(TIntermSymbol *node)
@@ -919,11 +919,9 @@ void OutputHLSL::outputEqual(Visit visit, const TType &type, TOperator op, TInfo
     }
 }
 
-bool OutputHLSL::ancestorEvaluatesToSamplerInStruct(Visit visit)
+bool OutputHLSL::ancestorEvaluatesToSamplerInStruct()
 {
-    // Inside InVisit the current node is already in the path.
-    const unsigned int initialN = visit == InVisit ? 1u : 0u;
-    for (unsigned int n = initialN; getAncestorNode(n) != nullptr; ++n)
+    for (unsigned int n = 0u; getAncestorNode(n) != nullptr; ++n)
     {
         TIntermNode *ancestor               = getAncestorNode(n);
         const TIntermBinary *ancestorBinary = ancestor->getAsBinaryNode();
@@ -1002,7 +1000,7 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
                 }
                 // ArrayReturnValueToOutParameter should have eliminated expressions where a
                 // function call is assigned.
-                ASSERT(rightAgg == nullptr || rightAgg->getOp() != EOpFunctionCall);
+                ASSERT(rightAgg == nullptr);
 
                 const TString &functionName = addArrayAssignmentFunction(node->getType());
                 outputTriplet(out, visit, (functionName + "(").c_str(), ", ", ")");
@@ -1126,7 +1124,7 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
                     return false;
                 }
             }
-            else if (ancestorEvaluatesToSamplerInStruct(visit))
+            else if (ancestorEvaluatesToSamplerInStruct())
             {
                 // All parts of an expression that access a sampler in a struct need to use _ as
                 // separator to access the sampler variable that has been moved out of the struct.
@@ -1163,7 +1161,7 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
             {
                 // All parts of an expression that access a sampler in a struct need to use _ as
                 // separator to access the sampler variable that has been moved out of the struct.
-                indexingReturnsSampler = ancestorEvaluatesToSamplerInStruct(visit);
+                indexingReturnsSampler = ancestorEvaluatesToSamplerInStruct();
             }
             if (visit == InVisit)
             {
@@ -1416,6 +1414,10 @@ bool OutputHLSL::visitUnary(Visit visit, TIntermUnary *node)
         case EOpUnpackSnorm2x16:
         case EOpUnpackUnorm2x16:
         case EOpUnpackHalf2x16:
+        case EOpPackUnorm4x8:
+        case EOpPackSnorm4x8:
+        case EOpUnpackUnorm4x8:
+        case EOpUnpackSnorm4x8:
             ASSERT(node->getUseEmulatedFunction());
             writeEmulatedFunctionTriplet(out, visit, node->getOp());
             break;
@@ -1474,6 +1476,22 @@ bool OutputHLSL::visitUnary(Visit visit, TIntermUnary *node)
             break;
         case EOpLogicalNotComponentWise:
             outputTriplet(out, visit, "(!", "", ")");
+            break;
+        case EOpBitfieldReverse:
+            outputTriplet(out, visit, "reversebits(", "", ")");
+            break;
+        case EOpBitCount:
+            outputTriplet(out, visit, "countbits(", "", ")");
+            break;
+        case EOpFindLSB:
+            // Note that it's unclear from the HLSL docs what this returns for 0, but this is tested
+            // in GLSLTest and results are consistent with GL.
+            outputTriplet(out, visit, "firstbitlow(", "", ")");
+            break;
+        case EOpFindMSB:
+            // Note that it's unclear from the HLSL docs what this returns for 0 or -1, but this is
+            // tested in GLSLTest and results are consistent with GL.
+            outputTriplet(out, visit, "firstbithigh(", "", ")");
             break;
         default:
             UNREACHABLE();
@@ -1741,12 +1759,14 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
 
     switch (node->getOp())
     {
-        case EOpFunctionCall:
+        case EOpCallBuiltInFunction:
+        case EOpCallFunctionInAST:
+        case EOpCallInternalRawFunction:
         {
             TIntermSequence *arguments = node->getSequence();
 
             bool lod0 = mInsideDiscontinuousLoop || mOutputLod0Function;
-            if (node->isUserDefined())
+            if (node->getOp() == EOpCallFunctionInAST)
             {
                 if (node->isArray())
                 {
@@ -1760,7 +1780,7 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
                 out << DisambiguateFunctionName(node->getSequence());
                 out << (lod0 ? "Lod0(" : "(");
             }
-            else if (node->getFunctionSymbolInfo()->getNameObj().isInternal())
+            else if (node->getOp() == EOpCallInternalRawFunction)
             {
                 // This path is used for internal functions that don't have their definitions in the
                 // AST, such as precision emulation functions.
@@ -1770,7 +1790,11 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
             {
                 TString name = TFunction::unmangleName(node->getFunctionSymbolInfo()->getName());
                 TBasicType samplerType = (*arguments)[0]->getAsTyped()->getType().getBasicType();
-                int coords             = (*arguments)[1]->getAsTyped()->getNominalSize();
+                int coords = 0;  // textureSize(gsampler2DMS) doesn't have a second argument.
+                if (arguments->size() > 1)
+                {
+                    coords = (*arguments)[1]->getAsTyped()->getNominalSize();
+                }
                 TString textureFunctionName = mTextureFunctionHLSL->useTextureFunction(
                     name, samplerType, coords, arguments->size(), lod0, mShaderType);
                 out << textureFunctionName << "(";
@@ -1973,6 +1997,11 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpSmoothStep:
             outputTriplet(out, visit, "smoothstep(", ", ", ")");
             break;
+        case EOpFrexp:
+        case EOpLdexp:
+            ASSERT(node->getUseEmulatedFunction());
+            writeEmulatedFunctionTriplet(out, visit, node->getOp());
+            break;
         case EOpDistance:
             outputTriplet(out, visit, "distance(", ", ", ")");
             break;
@@ -1998,6 +2027,15 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
             break;
         case EOpMulMatrixComponentWise:
             outputTriplet(out, visit, "(", " * ", ")");
+            break;
+        case EOpBitfieldExtract:
+        case EOpBitfieldInsert:
+        case EOpUaddCarry:
+        case EOpUsubBorrow:
+        case EOpUmulExtended:
+        case EOpImulExtended:
+            ASSERT(node->getUseEmulatedFunction());
+            writeEmulatedFunctionTriplet(out, visit, node->getOp());
             break;
         default:
             UNREACHABLE();

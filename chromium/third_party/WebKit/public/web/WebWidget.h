@@ -47,7 +47,7 @@
 namespace blink {
 
 class WebCompositeAndReadbackAsyncCallback;
-class WebInputEvent;
+class WebCoalescedInputEvent;
 class WebLayoutAndPaintAsyncCallback;
 class WebPagePopup;
 struct WebPoint;
@@ -116,7 +116,7 @@ class WebWidget {
   virtual void themeChanged() {}
 
   // Called to inform the WebWidget of an input event.
-  virtual WebInputEventResult handleInputEvent(const WebInputEvent&) {
+  virtual WebInputEventResult handleInputEvent(const WebCoalescedInputEvent&) {
     return WebInputEventResult::NotHandled;
   }
 
@@ -217,10 +217,6 @@ class WebWidget {
   virtual bool getCompositionCharacterBounds(WebVector<WebRect>& bounds) {
     return false;
   }
-
-  // Applies the range on the focused frame so that the text will later be
-  // replaced.
-  virtual void applyReplacementRange(const WebRange&) {}
 
  protected:
   ~WebWidget() {}

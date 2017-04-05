@@ -118,7 +118,7 @@ class APIPermission {
     kFirstRunPrivate,
     kFontSettings,
     kFullscreen,
-    kGcdPrivate,
+    kDeleted_GcdPrivate,
     kGcm,
     kGeolocation,
     kHid,
@@ -148,7 +148,7 @@ class APIPermission {
     kNativeMessaging,
     kNetworkingConfig,
     kNetworkingPrivate,
-    kNotificationProvider,
+    kDeleted_NotificationProvider,
     kNotifications,
     kOverrideEscFullscreen,
     kPageCapture,
@@ -242,6 +242,7 @@ class APIPermission {
     kDisplaySource,
     kClipboard,
     kNetworkingOnc,
+    kVirtualKeyboard,
     // Last entry: Add new entries above and ensure to update the
     // "ExtensionPermission3" enum in tools/metrics/histograms/histograms.xml
     // (by running update_extension_permission.py).

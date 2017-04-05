@@ -33,7 +33,7 @@ class CFXJS_ObjDefinition;
 
 // FXJS_V8 places no restrictions on this class; it merely passes it
 // on to caller-provided methods.
-class IJS_Context;  // A description of the event that caused JS execution.
+class IJS_EventContext;  // A description of the event that caused JS execution.
 
 enum FXJSOBJTYPE {
   FXJSOBJTYPE_DYNAMIC = 0,  // Created by native method and returned to JS.
@@ -142,16 +142,16 @@ class CFXJS_Engine {
   v8::Isolate* GetIsolate() const { return m_isolate; }
 
   // Always returns a valid, newly-created objDefnID.
-  int DefineObj(const wchar_t* sObjName,
+  int DefineObj(const char* sObjName,
                 FXJSOBJTYPE eObjType,
                 Constructor pConstructor,
                 Destructor pDestructor);
 
   void DefineObjMethod(int nObjDefnID,
-                       const wchar_t* sMethodName,
+                       const char* sMethodName,
                        v8::FunctionCallback pMethodCall);
   void DefineObjProperty(int nObjDefnID,
-                         const wchar_t* sPropName,
+                         const char* sPropName,
                          v8::AccessorGetterCallback pPropGet,
                          v8::AccessorSetterCallback pPropPut);
   void DefineObjAllProperties(int nObjDefnID,
@@ -160,9 +160,9 @@ class CFXJS_Engine {
                               v8::NamedPropertySetterCallback pPropPut,
                               v8::NamedPropertyDeleterCallback pPropDel);
   void DefineObjConst(int nObjDefnID,
-                      const wchar_t* sConstName,
+                      const char* sConstName,
                       v8::Local<v8::Value> pDefault);
-  void DefineGlobalMethod(const wchar_t* sMethodName,
+  void DefineGlobalMethod(const char* sMethodName,
                           v8::FunctionCallback pMethodCall);
   void DefineGlobalConst(const wchar_t* sConstName,
                          v8::FunctionCallback pConstGetter);
@@ -184,7 +184,8 @@ class CFXJS_Engine {
   v8::Local<v8::Value> NewNumber(double number);
   v8::Local<v8::Value> NewNumber(float number);
   v8::Local<v8::Value> NewBoolean(bool b);
-  v8::Local<v8::Value> NewString(const CFX_WideString& str);
+  v8::Local<v8::Value> NewString(const CFX_ByteStringC& str);
+  v8::Local<v8::Value> NewString(const CFX_WideStringC& str);
   v8::Local<v8::Date> NewDate(double d);
   v8::Local<v8::Object> NewFxDynamicObj(int nObjDefnID, bool bStatic = false);
 
@@ -221,7 +222,6 @@ class CFXJS_Engine {
   void SetConstArray(const CFX_WideString& name, v8::Local<v8::Array> array);
   v8::Local<v8::Array> GetConstArray(const CFX_WideString& name);
 
-  v8::Local<v8::String> WSToJSString(const CFX_WideString& wsPropertyName);
   void Error(const CFX_WideString& message);
 
  protected:

@@ -15,7 +15,6 @@
 #include "xfa/fde/css/cfde_cssdeclaration.h"
 #include "xfa/fde/css/cfde_cssenumvalue.h"
 #include "xfa/fde/css/cfde_cssnumbervalue.h"
-#include "xfa/fde/css/cfde_cssrule.h"
 #include "xfa/fde/css/cfde_cssstylerule.h"
 #include "xfa/fde/css/cfde_cssvaluelist.h"
 
@@ -33,13 +32,10 @@ class CFDE_CSSStyleSheetTest : public testing::Test {
                          size_t decl_count) {
     ASSERT(sheet_);
 
-    EXPECT_TRUE(sheet_->LoadFromBuffer(buf, FXSYS_wcslen(buf)));
+    EXPECT_TRUE(sheet_->LoadBuffer(buf, FXSYS_wcslen(buf)));
     EXPECT_EQ(sheet_->CountRules(), 1);
 
-    CFDE_CSSRule* rule = sheet_->GetRule(0);
-    EXPECT_EQ(rule->GetType(), FDE_CSSRuleType::Style);
-
-    CFDE_CSSStyleRule* style = static_cast<CFDE_CSSStyleRule*>(rule);
+    CFDE_CSSStyleRule* style = sheet_->GetRule(0);
     EXPECT_EQ(selectors.size(), style->CountSelectorLists());
 
     for (size_t i = 0; i < selectors.size(); i++) {
@@ -55,19 +51,19 @@ class CFDE_CSSStyleSheetTest : public testing::Test {
     ASSERT(decl_);
 
     bool important;
-    CFDE_CSSValue* v = decl_->GetProperty(prop, important);
+    CFX_RetainPtr<CFDE_CSSValue> v = decl_->GetProperty(prop, &important);
     EXPECT_EQ(v->GetType(), FDE_CSSPrimitiveType::Number);
-    EXPECT_EQ(static_cast<CFDE_CSSNumberValue*>(v)->Kind(), type);
-    EXPECT_EQ(static_cast<CFDE_CSSNumberValue*>(v)->Value(), val);
+    EXPECT_EQ(v.As<CFDE_CSSNumberValue>()->Kind(), type);
+    EXPECT_EQ(v.As<CFDE_CSSNumberValue>()->Value(), val);
   }
 
   void VerifyEnum(FDE_CSSProperty prop, FDE_CSSPropertyValue val) {
     ASSERT(decl_);
 
     bool important;
-    CFDE_CSSValue* v = decl_->GetProperty(prop, important);
+    CFX_RetainPtr<CFDE_CSSValue> v = decl_->GetProperty(prop, &important);
     EXPECT_EQ(v->GetType(), FDE_CSSPrimitiveType::Enum);
-    EXPECT_EQ(static_cast<CFDE_CSSEnumValue*>(v)->Value(), val);
+    EXPECT_EQ(v.As<CFDE_CSSEnumValue>()->Value(), val);
   }
 
   void VerifyList(FDE_CSSProperty prop,
@@ -75,14 +71,14 @@ class CFDE_CSSStyleSheetTest : public testing::Test {
     ASSERT(decl_);
 
     bool important;
-    CFDE_CSSValue* v = decl_->GetProperty(prop, important);
-    CFDE_CSSValueList* list = static_cast<CFDE_CSSValueList*>(v);
+    CFX_RetainPtr<CFDE_CSSValueList> list =
+        decl_->GetProperty(prop, &important).As<CFDE_CSSValueList>();
     EXPECT_EQ(list->CountValues(), pdfium::CollectionSize<int32_t>(values));
 
     for (size_t i = 0; i < values.size(); i++) {
-      CFDE_CSSValue* val = list->GetValue(i);
+      CFX_RetainPtr<CFDE_CSSValue> val = list->GetValue(i);
       EXPECT_EQ(val->GetType(), FDE_CSSPrimitiveType::Enum);
-      EXPECT_EQ(static_cast<CFDE_CSSEnumValue*>(val)->Value(), values[i]);
+      EXPECT_EQ(val.As<CFDE_CSSEnumValue>()->Value(), values[i]);
     }
   }
 
@@ -93,13 +89,10 @@ class CFDE_CSSStyleSheetTest : public testing::Test {
 TEST_F(CFDE_CSSStyleSheetTest, ParseMultipleSelectors) {
   const FX_WCHAR* buf =
       L"a { border: 10px; }\nb { text-decoration: underline; }";
-  EXPECT_TRUE(sheet_->LoadFromBuffer(buf, FXSYS_wcslen(buf)));
+  EXPECT_TRUE(sheet_->LoadBuffer(buf, FXSYS_wcslen(buf)));
   EXPECT_EQ(2, sheet_->CountRules());
 
-  CFDE_CSSRule* rule = sheet_->GetRule(0);
-  EXPECT_EQ(FDE_CSSRuleType::Style, rule->GetType());
-
-  CFDE_CSSStyleRule* style = static_cast<CFDE_CSSStyleRule*>(rule);
+  CFDE_CSSStyleRule* style = sheet_->GetRule(0);
   EXPECT_EQ(1UL, style->CountSelectorLists());
 
   bool found_selector = false;
@@ -123,10 +116,7 @@ TEST_F(CFDE_CSSStyleSheetTest, ParseMultipleSelectors) {
   VerifyFloat(FDE_CSSProperty::BorderBottomWidth, 10.0,
               FDE_CSSNumberType::Pixels);
 
-  rule = sheet_->GetRule(1);
-  EXPECT_EQ(FDE_CSSRuleType::Style, rule->GetType());
-
-  style = static_cast<CFDE_CSSStyleRule*>(rule);
+  style = sheet_->GetRule(1);
   EXPECT_EQ(1UL, style->CountSelectorLists());
 
   found_selector = false;
@@ -145,20 +135,61 @@ TEST_F(CFDE_CSSStyleSheetTest, ParseMultipleSelectors) {
              {FDE_CSSPropertyValue::Underline});
 }
 
+TEST_F(CFDE_CSSStyleSheetTest, ParseChildSelectors) {
+  const FX_WCHAR* buf = L"a b c { border: 10px; }";
+  EXPECT_TRUE(sheet_->LoadBuffer(buf, FXSYS_wcslen(buf)));
+  EXPECT_EQ(1, sheet_->CountRules());
+
+  CFDE_CSSStyleRule* style = sheet_->GetRule(0);
+  EXPECT_EQ(1UL, style->CountSelectorLists());
+
+  auto sel = style->GetSelectorList(0);
+  EXPECT_TRUE(sel != nullptr);
+  EXPECT_EQ(FX_HashCode_GetW(L"c", true), sel->GetNameHash());
+
+  sel = sel->GetNextSelector();
+  EXPECT_TRUE(sel != nullptr);
+  EXPECT_EQ(FX_HashCode_GetW(L"b", true), sel->GetNameHash());
+
+  sel = sel->GetNextSelector();
+  EXPECT_TRUE(sel != nullptr);
+  EXPECT_EQ(FX_HashCode_GetW(L"a", true), sel->GetNameHash());
+
+  sel = sel->GetNextSelector();
+  EXPECT_TRUE(sel == nullptr);
+
+  decl_ = style->GetDeclaration();
+  EXPECT_EQ(4UL, decl_->PropertyCountForTesting());
+
+  VerifyFloat(FDE_CSSProperty::BorderLeftWidth, 10.0,
+              FDE_CSSNumberType::Pixels);
+  VerifyFloat(FDE_CSSProperty::BorderRightWidth, 10.0,
+              FDE_CSSNumberType::Pixels);
+  VerifyFloat(FDE_CSSProperty::BorderTopWidth, 10.0, FDE_CSSNumberType::Pixels);
+  VerifyFloat(FDE_CSSProperty::BorderBottomWidth, 10.0,
+              FDE_CSSNumberType::Pixels);
+}
+
+TEST_F(CFDE_CSSStyleSheetTest, ParseUnhandledSelectors) {
+  const FX_WCHAR* buf = L"a > b { padding: 0; }";
+  EXPECT_TRUE(sheet_->LoadBuffer(buf, FXSYS_wcslen(buf)));
+  EXPECT_EQ(0, sheet_->CountRules());
+
+  buf = L"a[first] { padding: 0; }";
+  EXPECT_TRUE(sheet_->LoadBuffer(buf, FXSYS_wcslen(buf)));
+  EXPECT_EQ(0, sheet_->CountRules());
+
+  buf = L"a+b { padding: 0; }";
+  EXPECT_TRUE(sheet_->LoadBuffer(buf, FXSYS_wcslen(buf)));
+  EXPECT_EQ(0, sheet_->CountRules());
+
+  buf = L"a ^ b { padding: 0; }";
+  EXPECT_TRUE(sheet_->LoadBuffer(buf, FXSYS_wcslen(buf)));
+  EXPECT_EQ(0, sheet_->CountRules());
+}
+
 TEST_F(CFDE_CSSStyleSheetTest, ParseMultipleSelectorsCombined) {
   LoadAndVerifyDecl(L"a, b, c { border: 5px; }", {L"a", L"b", L"c"}, 4);
-}
-
-TEST_F(CFDE_CSSStyleSheetTest, ParseWithPseudo) {
-  // TODO(dsinclair): I think this is wrong, as the selector just becomes
-  // :before and we lose the a?
-  LoadAndVerifyDecl(L"a:before { border: 10px; }", {L":before"}, 4);
-}
-
-TEST_F(CFDE_CSSStyleSheetTest, ParseWithSelectorsAndPseudo) {
-  // TODO(dsinclair): I think this is wrong as we lose the b on the b:before
-  LoadAndVerifyDecl(L"a, b:before, c { border: 1px; }",
-                    {L"a", L":before", L"c"}, 4);
 }
 
 TEST_F(CFDE_CSSStyleSheetTest, ParseBorder) {

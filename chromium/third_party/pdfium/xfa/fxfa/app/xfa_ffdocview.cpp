@@ -155,7 +155,7 @@ void CXFA_FFDocView::ShowNullTestMsg() {
     iCount -= iRemain;
     CFX_WideString wsMsg;
     for (int32_t i = 0; i < iCount; i++) {
-      wsMsg += m_arrNullTestMsg[i] + FX_WSTRC(L"\n");
+      wsMsg += m_arrNullTestMsg[i] + L"\n";
     }
     if (iRemain > 0) {
       CFX_WideString wsTemp;
@@ -163,7 +163,7 @@ void CXFA_FFDocView::ShowNullTestMsg() {
           L"Message limit exceeded. Remaining %d "
           L"validation errors not reported.",
           iRemain);
-      wsMsg += FX_WSTRC(L"\n") + wsTemp;
+      wsMsg += L"\n" + wsTemp;
     }
     pAppProvider->MsgBox(wsMsg, pAppProvider->GetAppTitle(), XFA_MBICON_Status,
                          XFA_MB_OK);
@@ -551,10 +551,7 @@ void CXFA_FFDocView::AddInvalidateRect(CXFA_FFPageView* pPageView,
     m_mapPageInvalidate[pPageView]->Union(rtInvalidate);
     return;
   }
-  CFX_RectF* pRect = new CFX_RectF;
-  pRect->Set(rtInvalidate.left, rtInvalidate.top, rtInvalidate.width,
-             rtInvalidate.height);
-  m_mapPageInvalidate[pPageView].reset(pRect);
+  m_mapPageInvalidate[pPageView] = pdfium::MakeUnique<CFX_RectF>(rtInvalidate);
 }
 
 void CXFA_FFDocView::RunInvalidate() {
@@ -636,11 +633,12 @@ void CXFA_FFDocView::AddCalculateWidgetAcc(CXFA_WidgetAcc* pWidgetAcc) {
 }
 
 void CXFA_FFDocView::AddCalculateNodeNotify(CXFA_Node* pNodeChange) {
-  CXFA_CalcData* pGlobalData =
-      (CXFA_CalcData*)pNodeChange->GetUserData(XFA_CalcData);
-  int32_t iCount = pGlobalData ? pGlobalData->m_Globals.GetSize() : 0;
-  for (int32_t i = 0; i < iCount; i++) {
-    CXFA_WidgetAcc* pResultAcc = pGlobalData->m_Globals[i];
+  auto pGlobalData =
+      static_cast<CXFA_CalcData*>(pNodeChange->GetUserData(XFA_CalcData));
+  if (!pGlobalData)
+    return;
+
+  for (const auto& pResultAcc : pGlobalData->m_Globals) {
     if (!pResultAcc->GetNode()->HasRemovedChildren())
       AddCalculateWidgetAcc(pResultAcc);
   }
@@ -754,10 +752,8 @@ void CXFA_FFDocView::RunBindItems() {
     binditems.GetValueRef(wsValueRef);
     binditems.GetLabelRef(wsLabelRef);
     const bool bUseValue = wsLabelRef.IsEmpty() || wsLabelRef == wsValueRef;
-    const bool bLabelUseContent =
-        wsLabelRef.IsEmpty() || wsLabelRef == FX_WSTRC(L"$");
-    const bool bValueUseContent =
-        wsValueRef.IsEmpty() || wsValueRef == FX_WSTRC(L"$");
+    const bool bLabelUseContent = wsLabelRef.IsEmpty() || wsLabelRef == L"$";
+    const bool bValueUseContent = wsValueRef.IsEmpty() || wsValueRef == L"$";
     CFX_WideString wsValue;
     CFX_WideString wsLabel;
     uint32_t uValueHash = FX_HashCode_GetW(wsValueRef, false);

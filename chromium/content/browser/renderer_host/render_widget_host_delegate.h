@@ -184,6 +184,10 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Returns true if |render_widget_host| holds the mouse lock.
   virtual bool HasMouseLock(RenderWidgetHostImpl* render_widget_host);
 
+  // Returns the widget that holds the mouse lock or nullptr if the mouse isn't
+  // locked.
+  virtual RenderWidgetHostImpl* GetMouseLockWidget();
+
   // Called when the visibility of the RenderFrameProxyHost in outer
   // WebContents changes. This method is only called on an inner WebContents and
   // will eventually notify all the RenderWidgetHostViews belonging to that
@@ -217,6 +221,10 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
 
   // Allow the delegate to handle the cursor update. Returns true if handled.
   virtual bool OnUpdateDragCursor();
+
+  // Returns true if the provided RenderWidgetHostImpl matches the current
+  // RenderWidgetHost on the main frame, and false otherwise.
+  virtual bool IsWidgetForMainFrame(RenderWidgetHostImpl*);
 
   // Inner WebContents Helpers -------------------------------------------------
   //

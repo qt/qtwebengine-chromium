@@ -25,15 +25,15 @@
 
 #include "core/loader/ProgressTracker.h"
 
-#include "core/fetch/Resource.h"
-#include "core/fetch/ResourceFetcher.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/LocalFrameClient.h"
 #include "core/frame/Settings.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/FrameLoaderClient.h"
+#include "platform/loader/fetch/Resource.h"
+#include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/network/ResourceResponse.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/PtrUtil.h"
@@ -99,17 +99,17 @@ void ProgressTracker::reset() {
   m_finishedParsing = false;
 }
 
-FrameLoaderClient* ProgressTracker::frameLoaderClient() const {
+LocalFrameClient* ProgressTracker::localFrameClient() const {
   return m_frame->client();
 }
 
-void ProgressTracker::progressStarted() {
+void ProgressTracker::progressStarted(FrameLoadType type) {
   if (!m_frame->isLoading())
-    frameLoaderClient()->didStartLoading(NavigationToDifferentDocument);
+    localFrameClient()->didStartLoading(NavigationToDifferentDocument);
   reset();
   m_progressValue = initialProgressValue;
   m_frame->setIsLoading(true);
-  InspectorInstrumentation::frameStartedLoading(m_frame);
+  probe::frameStartedLoading(m_frame, type);
 }
 
 void ProgressTracker::progressCompleted() {
@@ -117,8 +117,8 @@ void ProgressTracker::progressCompleted() {
   m_frame->setIsLoading(false);
   sendFinalProgress();
   reset();
-  frameLoaderClient()->didStopLoading();
-  InspectorInstrumentation::frameStoppedLoading(m_frame);
+  localFrameClient()->didStopLoading();
+  probe::frameStoppedLoading(m_frame);
 }
 
 void ProgressTracker::finishedParsing() {
@@ -130,7 +130,7 @@ void ProgressTracker::sendFinalProgress() {
   if (m_progressValue == 1)
     return;
   m_progressValue = 1;
-  frameLoaderClient()->progressEstimateChanged(m_progressValue);
+  localFrameClient()->progressEstimateChanged(m_progressValue);
 }
 
 void ProgressTracker::willStartLoading(unsigned long identifier,
@@ -151,7 +151,7 @@ void ProgressTracker::willStartLoading(unsigned long identifier,
 
 void ProgressTracker::incrementProgress(unsigned long identifier,
                                         const ResourceResponse& response) {
-  ProgressItem* item = m_progressItems.get(identifier);
+  ProgressItem* item = m_progressItems.at(identifier);
   if (!item)
     return;
 
@@ -163,7 +163,7 @@ void ProgressTracker::incrementProgress(unsigned long identifier,
 }
 
 void ProgressTracker::incrementProgress(unsigned long identifier, int length) {
-  ProgressItem* item = m_progressItems.get(identifier);
+  ProgressItem* item = m_progressItems.at(identifier);
   if (!item)
     return;
 
@@ -224,14 +224,14 @@ void ProgressTracker::maybeSendProgress() {
       m_progressValue - m_lastNotifiedProgressValue;
   if (notificationProgressDelta >= progressNotificationInterval ||
       notifiedProgressTimeDelta >= progressNotificationTimeInterval) {
-    frameLoaderClient()->progressEstimateChanged(m_progressValue);
+    localFrameClient()->progressEstimateChanged(m_progressValue);
     m_lastNotifiedProgressValue = m_progressValue;
     m_lastNotifiedProgressTime = now;
   }
 }
 
 void ProgressTracker::completeProgress(unsigned long identifier) {
-  ProgressItem* item = m_progressItems.get(identifier);
+  ProgressItem* item = m_progressItems.at(identifier);
   if (!item)
     return;
 

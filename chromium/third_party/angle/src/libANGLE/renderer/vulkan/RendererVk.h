@@ -24,6 +24,7 @@ class AttributeMap;
 
 namespace rx
 {
+class GlslangWrapper;
 
 namespace vk
 {
@@ -53,15 +54,21 @@ class RendererVk : angle::NonCopyable
     vk::Error submitAndFinishCommandBuffer(const vk::CommandBuffer &commandBuffer);
     vk::Error waitThenFinishCommandBuffer(const vk::CommandBuffer &commandBuffer,
                                           const vk::Semaphore &waitSemaphore);
+    vk::Error finish();
 
     const gl::Caps &getNativeCaps() const;
     const gl::TextureCapsMap &getNativeTextureCaps() const;
     const gl::Extensions &getNativeExtensions() const;
     const gl::Limitations &getNativeLimitations() const;
 
-    vk::ErrorOrResult<vk::StagingImage> createStagingImage(TextureDimension dimension,
-                                                           const vk::Format &format,
-                                                           const gl::Extents &extent);
+    vk::Error createStagingImage(TextureDimension dimension,
+                                 const vk::Format &format,
+                                 const gl::Extents &extent,
+                                 vk::StagingImage *imageOut);
+
+    GlslangWrapper *getGlslangWrapper();
+
+    Serial getCurrentQueueSerial() const;
 
   private:
     void ensureCapsInitialized() const;
@@ -69,6 +76,8 @@ class RendererVk : angle::NonCopyable
                       gl::TextureCapsMap *outTextureCaps,
                       gl::Extensions *outExtensions,
                       gl::Limitations *outLimitations) const;
+    vk::Error submit(const VkSubmitInfo &submitInfo);
+    vk::Error checkInFlightCommands();
 
     mutable bool mCapsInitialized;
     mutable gl::Caps mNativeCaps;
@@ -87,9 +96,13 @@ class RendererVk : angle::NonCopyable
     VkQueue mQueue;
     uint32_t mCurrentQueueFamilyIndex;
     VkDevice mDevice;
-    VkCommandPool mCommandPool;
-    std::unique_ptr<vk::CommandBuffer> mCommandBuffer;
+    vk::CommandPool mCommandPool;
+    vk::CommandBuffer mCommandBuffer;
     uint32_t mHostVisibleMemoryIndex;
+    GlslangWrapper *mGlslangWrapper;
+    Serial mCurrentQueueSerial;
+    Serial mLastCompletedQueueSerial;
+    std::vector<vk::FenceAndCommandBuffer> mInFlightCommands;
 };
 
 }  // namespace rx

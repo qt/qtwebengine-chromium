@@ -396,12 +396,13 @@ bool CFX_ImageTransformer::Start() {
   CFX_Matrix stretch2dest(1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
                           (FX_FLOAT)(stretch_height));
   stretch2dest.Concat(
-      m_pMatrix->a / stretch_width, m_pMatrix->b / stretch_width,
-      m_pMatrix->c / stretch_height, m_pMatrix->d / stretch_height,
-      m_pMatrix->e, m_pMatrix->f);
+      CFX_Matrix(m_pMatrix->a / stretch_width, m_pMatrix->b / stretch_width,
+                 m_pMatrix->c / stretch_height, m_pMatrix->d / stretch_height,
+                 m_pMatrix->e, m_pMatrix->f));
   m_dest2stretch.SetReverse(stretch2dest);
+
   CFX_FloatRect clip_rect_f(result_clip);
-  clip_rect_f.Transform(&m_dest2stretch);
+  m_dest2stretch.TransformRect(clip_rect_f);
   m_StretchClip = clip_rect_f.GetOuterRect();
   m_StretchClip.Intersect(0, 0, stretch_width, stretch_height);
   m_Stretcher = pdfium::MakeUnique<CFX_ImageStretcher>(
@@ -455,7 +456,7 @@ bool CFX_ImageTransformer::Continue(IFX_Pause* pPause) {
   CFX_Matrix result2stretch(1.0f, 0.0f, 0.0f, 1.0f, (FX_FLOAT)(m_result.left),
                             (FX_FLOAT)(m_result.top));
   result2stretch.Concat(m_dest2stretch);
-  result2stretch.TranslateI(-m_StretchClip.left, -m_StretchClip.top);
+  result2stretch.Translate(-m_StretchClip.left, -m_StretchClip.top);
   if (!stretch_buf_mask && pTransformed->m_pAlphaMask) {
     pTransformed->m_pAlphaMask->Clear(0xff000000);
   } else if (pTransformed->m_pAlphaMask) {

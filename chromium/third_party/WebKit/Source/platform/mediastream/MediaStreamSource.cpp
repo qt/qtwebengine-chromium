@@ -69,13 +69,13 @@ void MediaStreamSource::setReadyState(ReadyState readyState) {
 }
 
 void MediaStreamSource::addObserver(MediaStreamSource::Observer* observer) {
-  m_observers.add(observer);
+  m_observers.insert(observer);
 }
 
 void MediaStreamSource::addAudioConsumer(AudioDestinationConsumer* consumer) {
   ASSERT(m_requiresConsumer);
   MutexLocker locker(m_audioConsumersLock);
-  m_audioConsumers.add(consumer);
+  m_audioConsumers.insert(consumer);
 }
 
 bool MediaStreamSource::removeAudioConsumer(
@@ -86,8 +86,12 @@ bool MediaStreamSource::removeAudioConsumer(
       m_audioConsumers.find(consumer);
   if (it == m_audioConsumers.end())
     return false;
-  m_audioConsumers.remove(it);
+  m_audioConsumers.erase(it);
   return true;
+}
+
+void MediaStreamSource::getSettings(WebMediaStreamTrack::Settings& settings) {
+  settings.deviceId = id();
 }
 
 void MediaStreamSource::setAudioFormat(size_t numberOfChannels,

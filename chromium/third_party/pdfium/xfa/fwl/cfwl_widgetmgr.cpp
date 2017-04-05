@@ -160,7 +160,10 @@ void CFWL_WidgetMgr::RepaintWidget(CFWL_Widget* pWidget,
     if (!pNative)
       return;
 
-    pWidget->TransformTo(pNative, transformedRect.left, transformedRect.top);
+    CFX_PointF pos = pWidget->TransformTo(
+        pNative, CFX_PointF(transformedRect.left, transformedRect.top));
+    transformedRect.left = pos.x;
+    transformedRect.top = pos.y;
   }
   AddRedrawCounts(pNative);
   m_pAdapter->RepaintWidget(pNative);
@@ -255,28 +258,25 @@ void CFWL_WidgetMgr::SetParent(CFWL_Widget* pParent, CFWL_Widget* pChild) {
 }
 
 CFWL_Widget* CFWL_WidgetMgr::GetWidgetAtPoint(CFWL_Widget* parent,
-                                              FX_FLOAT x,
-                                              FX_FLOAT y) {
+                                              const CFX_PointF& point) const {
   if (!parent)
     return nullptr;
 
-  FX_FLOAT x1;
-  FX_FLOAT y1;
+  CFX_PointF pos;
   CFWL_Widget* child = GetLastChildWidget(parent);
   while (child) {
     if ((child->GetStates() & FWL_WGTSTATE_Invisible) == 0) {
-      x1 = x;
-      y1 = y;
-      CFX_Matrix matrixOnParent;
       CFX_Matrix m;
       m.SetIdentity();
+
+      CFX_Matrix matrixOnParent;
       m.SetReverse(matrixOnParent);
-      m.TransformPoint(x1, y1);
+      pos = m.Transform(point);
+
       CFX_RectF bounds = child->GetWidgetRect();
-      if (bounds.Contains(x1, y1)) {
-        x1 -= bounds.left;
-        y1 -= bounds.top;
-        return GetWidgetAtPoint(child, x1, y1);
+      if (bounds.Contains(pos)) {
+        pos -= bounds.TopLeft();
+        return GetWidgetAtPoint(child, pos);
       }
     }
     child = GetPriorSiblingWidget(child);
@@ -320,17 +320,18 @@ CFWL_Widget* CFWL_WidgetMgr::GetRadioButtonGroupHeader(
   return nullptr;
 }
 
-void CFWL_WidgetMgr::GetSameGroupRadioButton(
-    CFWL_Widget* pRadioButton,
-    CFX_ArrayTemplate<CFWL_Widget*>& group) const {
+std::vector<CFWL_Widget*> CFWL_WidgetMgr::GetSameGroupRadioButton(
+    CFWL_Widget* pRadioButton) const {
   CFWL_Widget* pFirst = GetFirstSiblingWidget(pRadioButton);
   if (!pFirst)
     pFirst = pRadioButton;
 
-  int32_t iGroup = CountRadioButtonGroup(pFirst);
-  if (iGroup < 2)
-    return;
-  group.Add(GetRadioButtonGroupHeader(pRadioButton));
+  if (CountRadioButtonGroup(pFirst) < 2)
+    return std::vector<CFWL_Widget*>();
+
+  std::vector<CFWL_Widget*> group;
+  group.push_back(GetRadioButtonGroupHeader(pRadioButton));
+  return group;
 }
 
 CFWL_Widget* CFWL_WidgetMgr::GetDefaultButton(CFWL_Widget* pParent) const {
@@ -372,7 +373,7 @@ CFWL_WidgetMgr::Item* CFWL_WidgetMgr::GetWidgetMgrItem(
 bool CFWL_WidgetMgr::IsAbleNative(CFWL_Widget* pWidget) const {
   if (!pWidget)
     return false;
-  if (!pWidget->IsInstance(FX_WSTRC(FWL_CLASS_Form)))
+  if (!pWidget->IsInstance(FWL_CLASS_Form))
     return false;
 
   uint32_t dwStyles = pWidget->GetStyles();
@@ -427,23 +428,20 @@ void CFWL_WidgetMgr::OnDrawWidget(CFWL_Widget* pWidget,
   if (!pWidget || !pGraphics)
     return;
 
-  CFX_RectF clipCopy = pWidget->GetWidgetRect();
-  clipCopy.left = clipCopy.top = 0;
-
+  CFX_RectF clipCopy(0, 0, pWidget->GetWidgetRect().Size());
   CFX_RectF clipBounds;
 
-#if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_ || \
-    _FX_OS_ == _FX_LINUX_DESKTOP_ || _FX_OS_ == _FX_ANDROID_
-  pWidget->GetDelegate()->OnDrawWidget(pGraphics, pMatrix);
-  pGraphics->GetClipRect(clipBounds);
-  clipCopy = clipBounds;
-#elif _FX_OS_ == _FX_MACOSX_
+#if _FX_OS_ == _FX_MACOSX_
   if (IsFormDisabled()) {
+#endif  // _FX_OS_ == _FX_MACOSX_
+
     pWidget->GetDelegate()->OnDrawWidget(pGraphics, pMatrix);
-    pGraphics->GetClipRect(clipBounds);
+    clipBounds = pGraphics->GetClipRect();
     clipCopy = clipBounds;
+
+#if _FX_OS_ == _FX_MACOSX_
   } else {
-    clipBounds.Set(pMatrix->a, pMatrix->b, pMatrix->c, pMatrix->d);
+    clipBounds = CFX_RectF(pMatrix->a, pMatrix->b, pMatrix->c, pMatrix->d);
     const_cast<CFX_Matrix*>(pMatrix)->SetIdentity();  // FIXME: const cast.
     pWidget->GetDelegate()->OnDrawWidget(pGraphics, pMatrix);
   }
@@ -485,7 +483,9 @@ void CFWL_WidgetMgr::DrawChild(CFWL_Widget* parent,
       widgetMatrix.Concat(*pMatrix);
 
     if (!bFormDisable) {
-      widgetMatrix.TransformPoint(clipBounds.left, clipBounds.top);
+      CFX_PointF pos = widgetMatrix.Transform(clipBounds.TopLeft());
+      clipBounds.left = pos.x;
+      clipBounds.top = pos.y;
       clipBounds.Intersect(rtClip);
       if (clipBounds.IsEmpty())
         continue;
@@ -517,8 +517,7 @@ bool CFWL_WidgetMgr::IsNeedRepaint(CFWL_Widget* pWidget,
     return true;
   }
 
-  CFX_RectF rtWidget = pWidget->GetWidgetRect();
-  rtWidget.left = rtWidget.top = 0;
+  CFX_RectF rtWidget(0, 0, pWidget->GetWidgetRect().Size());
   pMatrix->TransformRect(rtWidget);
   if (!rtWidget.IntersectWith(rtDirty))
     return false;
@@ -529,11 +528,9 @@ bool CFWL_WidgetMgr::IsNeedRepaint(CFWL_Widget* pWidget,
     return true;
 
   CFX_RectF rtChilds;
-  rtChilds.Empty();
   bool bChildIntersectWithDirty = false;
   bool bOrginPtIntersectWidthChild = false;
-  bool bOrginPtIntersectWidthDirty =
-      rtDirty.Contains(rtWidget.left, rtWidget.top);
+  bool bOrginPtIntersectWidthDirty = rtDirty.Contains(rtWidget.TopLeft());
   static FWL_NEEDREPAINTHITDATA hitPoint[kNeedRepaintHitPoints];
   FXSYS_memset(hitPoint, 0, sizeof(hitPoint));
   FX_FLOAT fxPiece = rtWidget.width / kNeedRepaintHitPiece;
@@ -554,9 +551,8 @@ bool CFWL_WidgetMgr::IsNeedRepaint(CFWL_Widget* pWidget,
       rtWidget.height + rtWidget.top;
   do {
     CFX_RectF rect = pChild->GetWidgetRect();
-    CFX_RectF r = rect;
-    r.left += rtWidget.left;
-    r.top += rtWidget.top;
+    CFX_RectF r(rect.left + rtWidget.left, rect.top + rtWidget.top, rect.width,
+                rect.height);
     if (r.IsEmpty())
       continue;
     if (r.Contains(rtDirty))
@@ -564,7 +560,7 @@ bool CFWL_WidgetMgr::IsNeedRepaint(CFWL_Widget* pWidget,
     if (!bChildIntersectWithDirty && r.IntersectWith(rtDirty))
       bChildIntersectWithDirty = true;
     if (bOrginPtIntersectWidthDirty && !bOrginPtIntersectWidthChild)
-      bOrginPtIntersectWidthChild = rect.Contains(0, 0);
+      bOrginPtIntersectWidthChild = rect.Contains(CFX_PointF(0, 0));
 
     if (rtChilds.IsEmpty())
       rtChilds = rect;

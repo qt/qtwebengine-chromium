@@ -147,6 +147,22 @@ class Android(object):
       blueprint.write('}\n\n')
 
       blueprint.write('cc_defaults {\n')
+      blueprint.write('    name: "boringssl_crypto_test_sources",\n')
+      blueprint.write('    srcs: [\n')
+      for f in sorted(files['crypto_test']):
+        blueprint.write('        "%s",\n' % f)
+      blueprint.write('    ],\n')
+      blueprint.write('}\n\n')
+
+      blueprint.write('cc_defaults {\n')
+      blueprint.write('    name: "boringssl_ssl_test_sources",\n')
+      blueprint.write('    srcs: [\n')
+      for f in sorted(files['ssl_test']):
+        blueprint.write('        "%s",\n' % f)
+      blueprint.write('    ],\n')
+      blueprint.write('}\n\n')
+
+      blueprint.write('cc_defaults {\n')
       blueprint.write('    name: "boringssl_tests_sources",\n')
       blueprint.write('    srcs: [\n')
       for f in sorted(files['test']):
@@ -195,6 +211,8 @@ class Bazel(object):
       self.PrintVariableSection(
           out, 'ssl_internal_headers', files['ssl_internal_headers'])
       self.PrintVariableSection(out, 'ssl_sources', files['ssl'])
+      self.PrintVariableSection(out, 'ssl_c_sources', files['ssl_c'])
+      self.PrintVariableSection(out, 'ssl_cc_sources', files['ssl_cc'])
       self.PrintVariableSection(out, 'crypto_headers', files['crypto_headers'])
       self.PrintVariableSection(
           out, 'crypto_internal_headers', files['crypto_internal_headers'])
@@ -219,6 +237,10 @@ class Bazel(object):
         out.write('    "%s",\n' % PathOf(filename))
 
       out.write(']\n\n')
+
+      self.PrintVariableSection(out, 'crypto_test_sources',
+                                files['crypto_test'])
+      self.PrintVariableSection(out, 'ssl_test_sources', files['ssl_test'])
 
       out.write('def create_tests(copts, crypto, ssl):\n')
       name_counts = {}
@@ -330,9 +352,12 @@ class GN(object):
       self.firstSection = True
       out.write(self.header)
 
-      self.PrintVariableSection(out, '_test_support_sources',
+      self.PrintVariableSection(out, 'test_support_sources',
                                 files['test_support'] +
                                 files['test_support_headers'])
+      self.PrintVariableSection(out, 'crypto_test_sources',
+                                files['crypto_test'])
+      self.PrintVariableSection(out, 'ssl_test_sources', files['ssl_test'])
       out.write('\n')
 
       out.write('template("create_tests") {\n')
@@ -346,7 +371,7 @@ class GN(object):
         out.write('    sources = [\n')
         out.write('      "%s",\n' % test)
         out.write('    ]\n')
-        out.write('    sources += _test_support_sources\n')
+        out.write('    sources += test_support_sources\n')
         out.write('    if (defined(invoker.configs_exclude)) {\n')
         out.write('      configs -= invoker.configs_exclude\n')
         out.write('    }\n')
@@ -399,43 +424,6 @@ class GYP(object):
 
       gypi.write('  }\n}\n')
 
-    with open('boringssl_tests.gypi', 'w+') as test_gypi:
-      test_gypi.write(self.header + '{\n  \'targets\': [\n')
-
-      test_names = []
-      for test in sorted(files['test']):
-        test_name = 'boringssl_%s' % os.path.splitext(os.path.basename(test))[0]
-        test_gypi.write("""    {
-      'target_name': '%s',
-      'type': 'executable',
-      'dependencies': [
-        'boringssl.gyp:boringssl',
-      ],
-      'sources': [
-        '%s',
-        '<@(boringssl_test_support_sources)',
-      ],
-      # TODO(davidben): Fix size_t truncations in BoringSSL.
-      # https://crbug.com/429039
-      'msvs_disabled_warnings': [ 4267, ],
-    },\n""" % (test_name, test))
-        test_names.append(test_name)
-
-      test_names.sort()
-
-      test_gypi.write('  ],\n  \'variables\': {\n')
-
-      self.PrintVariableSection(test_gypi, 'boringssl_test_support_sources',
-                                files['test_support'] +
-                                files['test_support_headers'])
-
-      test_gypi.write('    \'boringssl_test_targets\': [\n')
-
-      for test in sorted(test_names):
-        test_gypi.write("""      '%s',\n""" % test)
-
-      test_gypi.write('    ],\n  }\n}\n')
-
 
 def FindCMakeFiles(directory):
   """Returns list of all CMakeLists.txt files recursively in directory."""
@@ -469,6 +457,10 @@ def AllFiles(dent, is_dir):
   """Filter function that can be passed to FindCFiles in order to include all
   sources."""
   return True
+
+
+def NotGTestMain(dent, is_dir):
+  return dent != 'gtest_main.cc'
 
 
 def SSLHeaderFiles(dent, is_dir):
@@ -611,9 +603,14 @@ def WriteAsmFiles(perlasms):
   return asmfiles
 
 
+def IsGTest(path):
+  with open(path) as f:
+    return "#include <gtest/gtest.h>" in f.read()
+
+
 def main(platforms):
   crypto_c_files = FindCFiles(os.path.join('src', 'crypto'), NoTests)
-  ssl_c_files = FindCFiles(os.path.join('src', 'ssl'), NoTests)
+  ssl_source_files = FindCFiles(os.path.join('src', 'ssl'), NoTests)
   tool_c_files = FindCFiles(os.path.join('src', 'tool'), NoTests)
   tool_h_files = FindHeaderFiles(os.path.join('src', 'tool'), AllFiles)
 
@@ -625,13 +622,22 @@ def main(platforms):
   crypto_c_files.append('err_data.c')
 
   test_support_c_files = FindCFiles(os.path.join('src', 'crypto', 'test'),
-                                    AllFiles)
+                                    NotGTestMain)
   test_support_h_files = (
       FindHeaderFiles(os.path.join('src', 'crypto', 'test'), AllFiles) +
       FindHeaderFiles(os.path.join('src', 'ssl', 'test'), AllFiles))
 
-  test_c_files = FindCFiles(os.path.join('src', 'crypto'), OnlyTests)
-  test_c_files += FindCFiles(os.path.join('src', 'ssl'), OnlyTests)
+  test_c_files = []
+  crypto_test_files = ['src/crypto/test/gtest_main.cc']
+  # TODO(davidben): Remove this loop once all tests are converted.
+  for path in FindCFiles(os.path.join('src', 'crypto'), OnlyTests):
+    if IsGTest(path):
+      crypto_test_files.append(path)
+    else:
+      test_c_files.append(path)
+
+  ssl_test_files = FindCFiles(os.path.join('src', 'ssl'), OnlyTests)
+  ssl_test_files.append('src/crypto/test/gtest_main.cc')
 
   fuzz_c_files = FindCFiles(os.path.join('src', 'fuzz'), NoTests)
 
@@ -653,8 +659,10 @@ def main(platforms):
 
   with open('src/util/all_tests.json', 'r') as f:
     tests = json.load(f)
-  # Skip tests for libdecrepit. Consumers import that manually.
-  tests = [test for test in tests if not test[0].startswith("decrepit/")]
+  # For now, GTest-based tests are specified manually.
+  tests = [test for test in tests if test[0] not in ['crypto/crypto_test',
+                                                     'decrepit/decrepit_test',
+                                                     'ssl/ssl_test']]
   test_binaries = set([test[0] for test in tests])
   test_sources = set([
       test.replace('.cc', '').replace('.c', '').replace(
@@ -674,10 +682,14 @@ def main(platforms):
       'crypto': crypto_c_files,
       'crypto_headers': crypto_h_files,
       'crypto_internal_headers': crypto_internal_h_files,
+      'crypto_test': sorted(crypto_test_files),
       'fuzz': fuzz_c_files,
-      'ssl': ssl_c_files,
+      'ssl': ssl_source_files,
+      'ssl_c': [s for s in ssl_source_files if s.endswith('.c')],
+      'ssl_cc': [s for s in ssl_source_files if s.endswith('.cc')],
       'ssl_headers': ssl_h_files,
       'ssl_internal_headers': ssl_internal_h_files,
+      'ssl_test': sorted(ssl_test_files),
       'tool': tool_c_files,
       'tool_headers': tool_h_files,
       'test': test_c_files,

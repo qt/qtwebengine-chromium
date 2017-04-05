@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <string>
-#include "util/util.h"
 #include "re2/filtered_re2.h"
+
+#include <stddef.h>
+#include <string>
+
+#include "util/util.h"
+#include "util/logging.h"
 #include "re2/prefilter.h"
 #include "re2/prefilter_tree.h"
 
@@ -13,6 +17,11 @@ namespace re2 {
 FilteredRE2::FilteredRE2()
     : compiled_(false),
       prefilter_tree_(new PrefilterTree()) {
+}
+
+FilteredRE2::FilteredRE2(int min_atom_len)
+    : compiled_(false),
+      prefilter_tree_(new PrefilterTree(min_atom_len)) {
 }
 
 FilteredRE2::~FilteredRE2() {
@@ -40,9 +49,14 @@ RE2::ErrorCode FilteredRE2::Add(const StringPiece& pattern,
   return code;
 }
 
-void FilteredRE2::Compile(vector<string>* atoms) {
-  if (compiled_ || re2_vec_.size() == 0) {
-    LOG(INFO) << "C: " << compiled_ << " S:" << re2_vec_.size();
+void FilteredRE2::Compile(std::vector<string>* atoms) {
+  if (compiled_) {
+    LOG(ERROR) << "Compile called already.";
+    return;
+  }
+
+  if (re2_vec_.empty()) {
+    LOG(ERROR) << "Compile called before Add.";
     return;
   }
 
@@ -63,12 +77,12 @@ int FilteredRE2::SlowFirstMatch(const StringPiece& text) const {
 }
 
 int FilteredRE2::FirstMatch(const StringPiece& text,
-                            const vector<int>& atoms) const {
+                            const std::vector<int>& atoms) const {
   if (!compiled_) {
-    LOG(DFATAL) << "FirstMatch called before Compile";
+    LOG(DFATAL) << "FirstMatch called before Compile.";
     return -1;
   }
-  vector<int> regexps;
+  std::vector<int> regexps;
   prefilter_tree_->RegexpsGivenStrings(atoms, &regexps);
   for (size_t i = 0; i < regexps.size(); i++)
     if (RE2::PartialMatch(text, *re2_vec_[regexps[i]]))
@@ -78,10 +92,10 @@ int FilteredRE2::FirstMatch(const StringPiece& text,
 
 bool FilteredRE2::AllMatches(
     const StringPiece& text,
-    const vector<int>& atoms,
-    vector<int>* matching_regexps) const {
+    const std::vector<int>& atoms,
+    std::vector<int>* matching_regexps) const {
   matching_regexps->clear();
-  vector<int> regexps;
+  std::vector<int> regexps;
   prefilter_tree_->RegexpsGivenStrings(atoms, &regexps);
   for (size_t i = 0; i < regexps.size(); i++)
     if (RE2::PartialMatch(text, *re2_vec_[regexps[i]]))
@@ -90,13 +104,13 @@ bool FilteredRE2::AllMatches(
 }
 
 void FilteredRE2::AllPotentials(
-    const vector<int>& atoms,
-    vector<int>* potential_regexps) const {
+    const std::vector<int>& atoms,
+    std::vector<int>* potential_regexps) const {
   prefilter_tree_->RegexpsGivenStrings(atoms, potential_regexps);
 }
 
-void FilteredRE2::RegexpsGivenStrings(const vector<int>& matched_atoms,
-                                      vector<int>* passed_regexps) {
+void FilteredRE2::RegexpsGivenStrings(const std::vector<int>& matched_atoms,
+                                      std::vector<int>* passed_regexps) {
   prefilter_tree_->RegexpsGivenStrings(matched_atoms, passed_regexps);
 }
 

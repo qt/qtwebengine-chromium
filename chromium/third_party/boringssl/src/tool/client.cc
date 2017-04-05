@@ -106,6 +106,11 @@ static const struct argument kArguments[] = {
       "Establish a second connection resuming the original connection.",
     },
     {
+      "-root-certs", kOptionalArgument,
+      "A filename containing one of more PEM root certificates. Implies that"
+      "verification is required.",
+    },
+    {
      "", kOptionalArgument, "",
     },
 };
@@ -272,21 +277,21 @@ bool Client(const std::vector<std::string> &args) {
   }
 
   if (args_map.count("-cipher") != 0 &&
-      !SSL_CTX_set_cipher_list(ctx.get(), args_map["-cipher"].c_str())) {
+      !SSL_CTX_set_strict_cipher_list(ctx.get(), args_map["-cipher"].c_str())) {
     fprintf(stderr, "Failed setting cipher list\n");
     return false;
   }
 
-  if (args_map.count("-max-version") != 0) {
-    uint16_t version;
-    if (!VersionFromString(&version, args_map["-max-version"])) {
-      fprintf(stderr, "Unknown protocol version: '%s'\n",
-              args_map["-max-version"].c_str());
-      return false;
-    }
-    if (!SSL_CTX_set_max_proto_version(ctx.get(), version)) {
-      return false;
-    }
+  uint16_t max_version = TLS1_3_VERSION;
+  if (args_map.count("-max-version") != 0 &&
+      !VersionFromString(&max_version, args_map["-max-version"])) {
+    fprintf(stderr, "Unknown protocol version: '%s'\n",
+            args_map["-max-version"].c_str());
+    return false;
+  }
+
+  if (!SSL_CTX_set_max_proto_version(ctx.get(), max_version)) {
+    return false;
   }
 
   if (args_map.count("-min-version") != 0) {
@@ -388,6 +393,16 @@ bool Client(const std::vector<std::string> &args) {
 
   if (args_map.count("-grease") != 0) {
     SSL_CTX_set_grease_enabled(ctx.get(), 1);
+  }
+
+  if (args_map.count("-root-certs") != 0) {
+    if (!SSL_CTX_load_verify_locations(
+            ctx.get(), args_map["-root-certs"].c_str(), nullptr)) {
+      fprintf(stderr, "Failed to load root certificates.\n");
+      ERR_print_errors_cb(PrintErrorCallback, stderr);
+      return false;
+    }
+    SSL_CTX_set_verify(ctx.get(), SSL_VERIFY_PEER, nullptr);
   }
 
   if (args_map.count("-resume") != 0 &&

@@ -488,7 +488,7 @@ FX_RECT CPDF_CIDFont::GetCharBBox(uint32_t charcode) {
                         CIDTransformToFloat(pTransform[4]) * 1000,
                         CIDTransformToFloat(pTransform[5]) * 1000);
       CFX_FloatRect rect_f(rect);
-      rect_f.Transform(&matrix);
+      matrix.TransformRect(rect_f);
       rect = rect_f.GetOuterRect();
     }
   }
@@ -608,7 +608,7 @@ int CPDF_CIDFont::GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) {
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_APPLE_
       return cid;
 #else
-      if (m_Flags & PDFFONT_SYMBOLIC)
+      if (m_Flags & FXFONT_SYMBOLIC)
         return cid;
 
       CFX_WideString uni_str = UnicodeFromCharCode(charcode);

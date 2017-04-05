@@ -327,7 +327,11 @@ class Renderer11 : public RendererD3D
     bool getLUID(LUID *adapterLuid) const override;
     VertexConversionType getVertexConversionType(gl::VertexFormatType vertexFormatType) const override;
     GLenum getVertexComponentType(gl::VertexFormatType vertexFormatType) const override;
+
+    // Warning: you should ensure binding really matches attrib.bindingIndex before using this
+    // function.
     gl::ErrorOrResult<unsigned int> getVertexSpaceRequired(const gl::VertexAttribute &attrib,
+                                                           const gl::VertexBinding &binding,
                                                            GLsizei count,
                                                            GLsizei instances) const override;
 
@@ -394,7 +398,8 @@ class Renderer11 : public RendererD3D
                                const GLvoid *indices,
                                GLsizei instances);
 
-    void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps,
+    void generateCaps(gl::Caps *outCaps,
+                      gl::TextureCapsMap *outTextureCaps,
                       gl::Extensions *outExtensions,
                       gl::Limitations *outLimitations) const override;
 
@@ -404,13 +409,13 @@ class Renderer11 : public RendererD3D
                            GLsizei count,
                            GLenum type,
                            const GLvoid *indices,
-                           const TranslatedIndexData *indexInfo,
+                           int baseVertex,
                            int instances);
     gl::Error drawTriangleFan(const gl::ContextState &data,
                               GLsizei count,
                               GLenum type,
                               const GLvoid *indices,
-                              int minIndex,
+                              int baseVertex,
                               int instances);
 
     gl::Error applyShaders(const gl::ContextState &data, GLenum drawMode);

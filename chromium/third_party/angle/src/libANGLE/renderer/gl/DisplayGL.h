@@ -43,7 +43,6 @@ class DisplayGL : public DisplayImpl
 
     egl::Error makeCurrent(egl::Surface *drawSurface, egl::Surface *readSurface, gl::Context *context) override;
 
-    virtual egl::Error getDriverVersion(std::string *version) const = 0;
     gl::Version getMaxSupportedESVersion() const override;
 
   protected:
@@ -51,6 +50,7 @@ class DisplayGL : public DisplayImpl
 
   private:
     virtual const FunctionsGL *getFunctionsGL() const = 0;
+    virtual egl::Error makeCurrentSurfaceless(gl::Context *context);
 
     RendererGL *mRenderer;
 

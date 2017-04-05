@@ -7,6 +7,8 @@
 #ifndef XFA_FDE_CFDE_TXTEDTTEXTSET_H_
 #define XFA_FDE_CFDE_TXTEDTTEXTSET_H_
 
+#include <vector>
+
 #include "xfa/fde/fde_visualset.h"
 
 class CFDE_TxtEdtPage;
@@ -18,20 +20,19 @@ class CFDE_TxtEdtTextSet : public IFDE_TextSet {
 
   // IFDE_VisualSet
   FDE_VISUALOBJTYPE GetType() override;
-  void GetRect(FDE_TEXTEDITPIECE* hVisualObj, CFX_RectF& rt) override;
+  CFX_RectF GetRect(const FDE_TEXTEDITPIECE& hVisualObj) override;
 
   // IFDE_TextSet
   int32_t GetString(FDE_TEXTEDITPIECE* pPiece, CFX_WideString& wsText) override;
   CFX_RetainPtr<CFGAS_GEFont> GetFont() override;
   FX_FLOAT GetFontSize() override;
   FX_ARGB GetFontColor() override;
-  int32_t GetDisplayPos(FDE_TEXTEDITPIECE* pPiece,
+  int32_t GetDisplayPos(const FDE_TEXTEDITPIECE& pPiece,
                         FXTEXT_CHARPOS* pCharPos,
                         bool bCharCode = false,
                         CFX_WideString* pWSForms = nullptr) override;
-  int32_t GetCharRects(const FDE_TEXTEDITPIECE* pPiece,
-                       CFX_RectFArray& rtArray,
-                       bool bBBox) override;
+  std::vector<CFX_RectF> GetCharRects(const FDE_TEXTEDITPIECE* pPiece,
+                                      bool bBBox) override;
 
  private:
   CFDE_TxtEdtPage* const m_pPage;

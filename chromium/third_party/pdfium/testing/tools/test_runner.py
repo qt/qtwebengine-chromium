@@ -107,9 +107,7 @@ class TestRunner:
     txt_path = os.path.join(self.working_dir, input_root + '.txt')
 
     with open(txt_path, 'w') as outfile:
-      # add Dr. Memory wrapper if exist
-      cmd_to_run = common.DrMemoryWrapper(self.drmem_wrapper, input_root)
-      cmd_to_run.extend([self.pdfium_test_path, pdf_path])
+      cmd_to_run = [self.pdfium_test_path, pdf_path]
       subprocess.check_call(cmd_to_run, stdout=outfile)
 
     cmd = [sys.executable, self.text_diff_path, expected_txt_path, txt_path]
@@ -117,16 +115,15 @@ class TestRunner:
 
 
   def TestPixel(self, input_root, pdf_path):
-    cmd_to_run = common.DrMemoryWrapper(self.drmem_wrapper, input_root)
-    cmd_to_run.extend([self.pdfium_test_path, '--send-events', '--png'])
+    cmd_to_run = [self.pdfium_test_path, '--send-events', '--png']
     if self.gold_results:
       cmd_to_run.append('--md5')
     cmd_to_run.append(pdf_path)
     return common.RunCommandExtractHashedFiles(cmd_to_run)
 
   def HandleResult(self, input_filename, input_path, result):
+    success, image_paths = result
     if self.gold_results:
-      success, image_paths = result
       if image_paths:
         for img_path, md5_hash in image_paths:
           # the output filename (without extension becomes the test name)
@@ -134,10 +131,10 @@ class TestRunner:
           self.gold_results.AddTestResult(test_name, md5_hash, img_path)
 
     if self.test_suppressor.IsResultSuppressed(input_filename):
-      if result:
+      if success:
         self.surprises.append(input_path)
     else:
-      if not result:
+      if not success:
         self.failures.append(input_path)
 
 
@@ -151,9 +148,6 @@ class TestRunner:
                       dest='num_workers', type='int',
                       help='run NUM_WORKERS jobs in parallel')
 
-    parser.add_option('--wrapper', default='', dest="wrapper",
-                      help='wrapper for running test under Dr. Memory')
-
     parser.add_option('--gold_properties', default='', dest="gold_properties",
                       help='Key value pairs that are written to the top level of the JSON file that is ingested by Gold.')
 
@@ -163,6 +157,9 @@ class TestRunner:
     parser.add_option('--gold_output_dir', default='', dest="gold_output_dir",
                       help='Path of where to write the JSON output to be uploaded to Gold.')
 
+    parser.add_option('--gold_ignore_hashes', default='', dest="gold_ignore_hashes",
+                      help='Path to a file with MD5 hashes we wish to ignore.')
+
     parser.add_option('--ignore_errors', action="store_true", dest="ignore_errors",
                       help='Prevents the return value from being non-zero when image comparison fails.')
 
@@ -171,8 +168,6 @@ class TestRunner:
     finder = common.DirectoryFinder(options.build_dir)
     self.fixup_path = finder.ScriptPath('fixup_pdf_template.py')
     self.text_diff_path = finder.ScriptPath('text_diff.py')
-
-    self.drmem_wrapper = options.wrapper
 
     self.source_dir = finder.TestingDir()
     if self.test_dir != 'corpus':
@@ -227,7 +222,8 @@ class TestRunner:
       self.gold_results = gold.GoldResults("pdfium",
                                            options.gold_output_dir,
                                            options.gold_properties,
-                                           options.gold_key)
+                                           options.gold_key,
+                                           options.gold_ignore_hashes)
 
     if options.num_workers > 1 and len(test_cases) > 1:
       try:
@@ -267,6 +263,7 @@ class TestRunner:
       print '\n\nSummary of Failures:'
       for failure in self.failures:
         print failure
-        if not options.ignore_errors:
-          return 1
+
+      if not options.ignore_errors:
+        return 1
     return 0

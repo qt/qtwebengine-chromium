@@ -17,6 +17,7 @@
 #include "libANGLE/VaryingPacking.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/features.h"
+#include "libANGLE/renderer/ContextImpl.h"
 #include "libANGLE/renderer/d3d/DynamicHLSL.h"
 #include "libANGLE/renderer/d3d/FramebufferD3D.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
@@ -1188,9 +1189,8 @@ gl::Error ProgramD3D::getPixelExecutableForOutputLayout(const std::vector<GLenum
     }
     else if (!infoLog)
     {
-        std::vector<char> tempCharBuffer(tempInfoLog.getLength() + 3);
-        tempInfoLog.getLog(static_cast<GLsizei>(tempInfoLog.getLength()), NULL, &tempCharBuffer[0]);
-        ERR("Error compiling dynamic pixel executable:\n%s\n", &tempCharBuffer[0]);
+        ERR() << "Error compiling dynamic pixel executable:" << std::endl
+              << tempInfoLog.str() << std::endl;
     }
 
     *outExectuable = pixelExecutable;
@@ -1234,9 +1234,8 @@ gl::Error ProgramD3D::getVertexExecutableForInputLayout(const gl::InputLayout &i
     }
     else if (!infoLog)
     {
-        std::vector<char> tempCharBuffer(tempInfoLog.getLength() + 3);
-        tempInfoLog.getLog(static_cast<GLsizei>(tempInfoLog.getLength()), NULL, &tempCharBuffer[0]);
-        ERR("Error compiling dynamic vertex executable:\n%s\n", &tempCharBuffer[0]);
+        ERR() << "Error compiling dynamic vertex executable:" << std::endl
+              << tempInfoLog.str() << std::endl;
     }
 
     *outExectuable = vertexExecutable;
@@ -1285,9 +1284,8 @@ gl::Error ProgramD3D::getGeometryExecutableForPrimitiveType(const gl::ContextSta
 
     if (!infoLog && error.isError())
     {
-        std::vector<char> tempCharBuffer(tempInfoLog.getLength() + 3);
-        tempInfoLog.getLog(static_cast<GLsizei>(tempInfoLog.getLength()), NULL, &tempCharBuffer[0]);
-        ERR("Error compiling dynamic geometry executable:\n%s\n", &tempCharBuffer[0]);
+        ERR() << "Error compiling dynamic geometry executable:" << std::endl
+              << tempInfoLog.str() << std::endl;
     }
 
     if (geometryExecutable != nullptr)
@@ -1454,7 +1452,8 @@ LinkResult ProgramD3D::compileComputeExecutable(gl::InfoLog &infoLog)
 
     if (computeExecutable == nullptr)
     {
-        ERR("Error compiling dynamic compute executable:\n%s\n", infoLog.str().c_str());
+        ERR() << "Error compiling dynamic compute executable:" << std::endl
+              << infoLog.str() << std::endl;
     }
     else
     {
@@ -1466,10 +1465,12 @@ LinkResult ProgramD3D::compileComputeExecutable(gl::InfoLog &infoLog)
     return mComputeExecutable.get() != nullptr;
 }
 
-LinkResult ProgramD3D::link(const gl::ContextState &data,
+LinkResult ProgramD3D::link(ContextImpl *contextImpl,
                             const gl::VaryingPacking &packing,
                             gl::InfoLog &infoLog)
 {
+    const auto &data = contextImpl->getContextState();
+
     reset();
 
     const gl::Shader *computeShader = mState.getAttachedComputeShader();

@@ -180,6 +180,10 @@ class TFunction : public TSymbol
         }
         return *mangledName;
     }
+
+    static const TString &GetMangledNameFromCall(const TString &unmangledFunctionName,
+                                                 TIntermSequence &arguments);
+
     const TType &getReturnType() const { return *returnType; }
 
     TOperator getBuiltInOp() const { return op; }
@@ -391,19 +395,24 @@ class TSymbolTable : angle::NonCopyable
         insertBuiltIn(level, EOpNull, ext, rvalue, name, ptype1, ptype2, ptype3, ptype4, ptype5);
     }
 
-    void insertBuiltIn(ESymbolLevel level,
-                       TOperator op,
-                       const TType *rvalue,
-                       const char *name,
-                       const TType *ptype1,
-                       const TType *ptype2 = 0,
-                       const TType *ptype3 = 0,
-                       const TType *ptype4 = 0,
-                       const TType *ptype5 = 0)
-    {
-        insertUnmangledBuiltInName(name, level);
-        insertBuiltIn(level, op, "", rvalue, name, ptype1, ptype2, ptype3, ptype4, ptype5);
-    }
+    void insertBuiltInOp(ESymbolLevel level,
+                         TOperator op,
+                         const TType *rvalue,
+                         const TType *ptype1,
+                         const TType *ptype2 = 0,
+                         const TType *ptype3 = 0,
+                         const TType *ptype4 = 0,
+                         const TType *ptype5 = 0);
+
+    void insertBuiltInOp(ESymbolLevel level,
+                         TOperator op,
+                         const char *ext,
+                         const TType *rvalue,
+                         const TType *ptype1,
+                         const TType *ptype2 = 0,
+                         const TType *ptype3 = 0,
+                         const TType *ptype4 = 0,
+                         const TType *ptype5 = 0);
 
     void insertBuiltInFunctionNoParameters(ESymbolLevel level,
                                            TOperator op,
@@ -418,6 +427,10 @@ class TSymbolTable : angle::NonCopyable
     TSymbol *findGlobal(const TString &name) const;
 
     TSymbol *findBuiltIn(const TString &name, int shaderVersion) const;
+
+    // Helper front-end for regular findBuiltIn that constructs the mangled function name from
+    // callNode.
+    TFunction *findBuiltInOp(TIntermAggregate *callNode, int shaderVersion) const;
 
     TSymbolTableLevel *getOuterLevel()
     {

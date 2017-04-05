@@ -35,7 +35,11 @@ void EmptyTest(CFX_SkiaDeviceDriver* driver, const State&) {
 }
 
 void CommonTest(CFX_SkiaDeviceDriver* driver, const State& state) {
-  FXTEXT_CHARPOS charPos[] = {{{0, 0, 0, 0}, 0, 1, 1, 4, false, false}};
+  FXTEXT_CHARPOS charPos[1];
+  charPos[0].m_Origin = CFX_PointF(0, 1);
+  charPos[0].m_GlyphIndex = 1;
+  charPos[0].m_FontCharWidth = 4;
+
   CFX_Font font;
   FX_FLOAT fontSize = 1;
   CFX_PathData clipPath, clipPath2;
@@ -46,7 +50,9 @@ void CommonTest(CFX_SkiaDeviceDriver* driver, const State& state) {
   driver->SaveState();
   CFX_PathData path1;
   path1.AppendRect(0, 0, 1, 2);
-  CFX_Matrix matrix, matrix2;
+
+  CFX_Matrix matrix;
+  CFX_Matrix matrix2;
   matrix2.Translate(1, 0);
   CFX_GraphStateData graphState;
   if (state.m_save == State::Save::kYes)

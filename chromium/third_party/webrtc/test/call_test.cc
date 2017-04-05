@@ -12,9 +12,9 @@
 
 #include <algorithm>
 
+#include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/config.h"
-#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/voice_engine/include/voe_base.h"
@@ -100,6 +100,10 @@ void CallTest::RunBaseTest(BaseTest* test) {
     test->ModifyFlexfecConfigs(&flexfec_receive_configs_);
   }
 
+  if (num_flexfec_streams_ > 0) {
+    CreateFlexfecStreams();
+    test->OnFlexfecStreamsCreated(flexfec_receive_streams_);
+  }
   if (num_video_streams_ > 0) {
     CreateVideoStreams();
     test->OnVideoStreamsCreated(video_send_stream_, video_receive_streams_);
@@ -107,10 +111,6 @@ void CallTest::RunBaseTest(BaseTest* test) {
   if (num_audio_streams_ > 0) {
     CreateAudioStreams();
     test->OnAudioStreamsCreated(audio_send_stream_, audio_receive_streams_);
-  }
-  if (num_flexfec_streams_ > 0) {
-    CreateFlexfecStreams();
-    test->OnFlexfecStreamsCreated(flexfec_receive_streams_);
   }
 
   if (num_video_streams_ > 0) {
@@ -140,16 +140,10 @@ void CallTest::Start() {
   for (VideoReceiveStream* video_recv_stream : video_receive_streams_)
     video_recv_stream->Start();
   if (audio_send_stream_) {
-    fake_send_audio_device_->Start();
     audio_send_stream_->Start();
-    EXPECT_EQ(0, voe_send_.base->StartSend(voe_send_.channel_id));
   }
   for (AudioReceiveStream* audio_recv_stream : audio_receive_streams_)
     audio_recv_stream->Start();
-  if (!audio_receive_streams_.empty()) {
-    fake_recv_audio_device_->Start();
-    EXPECT_EQ(0, voe_recv_.base->StartPlayout(voe_recv_.channel_id));
-  }
   for (FlexfecReceiveStream* flexfec_recv_stream : flexfec_receive_streams_)
     flexfec_recv_stream->Start();
   if (frame_generator_capturer_.get() != NULL)
@@ -161,15 +155,9 @@ void CallTest::Stop() {
     frame_generator_capturer_->Stop();
   for (FlexfecReceiveStream* flexfec_recv_stream : flexfec_receive_streams_)
     flexfec_recv_stream->Stop();
-  if (!audio_receive_streams_.empty()) {
-    fake_recv_audio_device_->Stop();
-    EXPECT_EQ(0, voe_recv_.base->StopPlayout(voe_recv_.channel_id));
-  }
   for (AudioReceiveStream* audio_recv_stream : audio_receive_streams_)
     audio_recv_stream->Stop();
   if (audio_send_stream_) {
-    fake_send_audio_device_->Stop();
-    EXPECT_EQ(0, voe_send_.base->StopSend(voe_send_.channel_id));
     audio_send_stream_->Stop();
   }
   for (VideoReceiveStream* video_recv_stream : video_receive_streams_)
@@ -212,7 +200,8 @@ void CallTest::CreateSendConfig(size_t num_video_streams,
     video_send_config_.encoder_settings.payload_type =
         kFakeVideoSendPayloadType;
     video_send_config_.rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeExtensionId));
+        RtpExtension(RtpExtension::kTransportSequenceNumberUri,
+                     kTransportSequenceNumberExtensionId));
     FillEncoderConfiguration(num_video_streams, &video_encoder_config_);
 
     for (size_t i = 0; i < num_video_streams; ++i)
@@ -226,7 +215,7 @@ void CallTest::CreateSendConfig(size_t num_video_streams,
     audio_send_config_.voe_channel_id = voe_send_.channel_id;
     audio_send_config_.rtp.ssrc = kAudioSendSsrc;
     audio_send_config_.send_codec_spec.codec_inst =
-        CodecInst{kAudioSendPayloadType, "ISAC", 16000, 480, 1, 32000};
+        CodecInst{kAudioSendPayloadType, "OPUS", 48000, 960, 2, 64000};
   }
 
   // TODO(brandtr): Update this when we support multistream protection.
@@ -243,7 +232,8 @@ void CallTest::CreateMatchingReceiveConfigs(Transport* rtcp_send_transport) {
   if (num_video_streams_ > 0) {
     RTC_DCHECK(!video_send_config_.rtp.ssrcs.empty());
     VideoReceiveStream::Config video_config(rtcp_send_transport);
-    video_config.rtp.remb = true;
+    video_config.rtp.remb = false;
+    video_config.rtp.transport_cc = true;
     video_config.rtp.local_ssrc = kReceiverLocalVideoSsrc;
     for (const RtpExtension& extension : video_send_config_.rtp.extensions)
       video_config.rtp.extensions.push_back(extension);
@@ -309,12 +299,8 @@ void CallTest::CreateFrameGeneratorCapturer(int framerate,
 }
 
 void CallTest::CreateFakeAudioDevices() {
-  fake_send_audio_device_.reset(new FakeAudioDevice(
-      clock_, test::ResourcePath("voice_engine/audio_long16", "pcm"),
-      DriftingClock::kNoDrift));
-  fake_recv_audio_device_.reset(new FakeAudioDevice(
-      clock_, test::ResourcePath("voice_engine/audio_long16", "pcm"),
-      DriftingClock::kNoDrift));
+  fake_send_audio_device_.reset(new FakeAudioDevice(1.f, 48000, 256));
+  fake_recv_audio_device_.reset(new FakeAudioDevice(1.f, 48000, 256));
 }
 
 void CallTest::CreateVideoStreams() {
@@ -352,17 +338,17 @@ void CallTest::CreateFlexfecStreams() {
 }
 
 void CallTest::DestroyStreams() {
-  if (video_send_stream_)
-    sender_call_->DestroyVideoSendStream(video_send_stream_);
-  video_send_stream_ = nullptr;
-  for (VideoReceiveStream* video_recv_stream : video_receive_streams_)
-    receiver_call_->DestroyVideoReceiveStream(video_recv_stream);
-
   if (audio_send_stream_)
     sender_call_->DestroyAudioSendStream(audio_send_stream_);
   audio_send_stream_ = nullptr;
   for (AudioReceiveStream* audio_recv_stream : audio_receive_streams_)
     receiver_call_->DestroyAudioReceiveStream(audio_recv_stream);
+
+  if (video_send_stream_)
+    sender_call_->DestroyVideoSendStream(video_send_stream_);
+  video_send_stream_ = nullptr;
+  for (VideoReceiveStream* video_recv_stream : video_receive_streams_)
+    receiver_call_->DestroyVideoReceiveStream(video_recv_stream);
 
   for (FlexfecReceiveStream* flexfec_recv_stream : flexfec_receive_streams_)
     receiver_call_->DestroyFlexfecReceiveStream(flexfec_recv_stream);

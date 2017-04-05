@@ -13,7 +13,7 @@
 
 class CXFA_FFBarcode : public CXFA_FFTextEdit {
  public:
-  CXFA_FFBarcode(CXFA_FFPageView* pPageView, CXFA_WidgetAcc* pDataAcc);
+  explicit CXFA_FFBarcode(CXFA_WidgetAcc* pDataAcc);
   ~CXFA_FFBarcode() override;
 
   // CXFA_FFTextEdit
@@ -22,8 +22,8 @@ class CXFA_FFBarcode : public CXFA_FFTextEdit {
                     CFX_Matrix* pMatrix,
                     uint32_t dwStatus) override;
   void UpdateWidgetProperty() override;
-  bool OnLButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) override;
-  bool OnRButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) override;
+  bool OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) override;
+  bool OnRButtonDown(uint32_t dwFlags, const CFX_PointF& point) override;
 };
 
 enum XFA_BARCODETYPEENUM {

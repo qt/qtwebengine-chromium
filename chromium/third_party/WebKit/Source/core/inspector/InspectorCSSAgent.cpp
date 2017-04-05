@@ -84,11 +84,13 @@
 #include "core/svg/SVGElement.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
-#include "platform/fonts/GlyphBuffer.h"
+#include "platform/fonts/shaping/CachingWordShaper.h"
 #include "platform/text/TextRun.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringConcatenate.h"
+
+namespace blink {
 
 namespace {
 
@@ -99,8 +101,6 @@ class FrontendOperationScope {
   FrontendOperationScope() { ++s_frontendOperationCounter; }
   ~FrontendOperationScope() { --s_frontendOperationCounter; }
 };
-
-using namespace blink;
 
 String createShorthandValue(Document* document,
                             const String& shorthand,
@@ -130,7 +130,7 @@ HeapVector<Member<CSSStyleRule>> filterDuplicateRules(CSSRuleList* ruleList) {
     if (!rule || rule->type() != CSSRule::kStyleRule ||
         uniqRulesSet.contains(rule))
       continue;
-    uniqRulesSet.add(rule);
+    uniqRulesSet.insert(rule);
     uniqRules.push_back(toCSSStyleRule(rule));
   }
   uniqRules.reverse();
@@ -307,8 +307,6 @@ static const char ruleRecordingEnabled[] = "ruleRecordingEnabled";
 }
 
 typedef blink::protocol::CSS::Backend::EnableCallback EnableCallback;
-
-namespace blink {
 
 enum ForcePseudoClassFlags {
   PseudoNone = 0,
@@ -775,7 +773,7 @@ void InspectorCSSAgent::fontsUpdated() {
 }
 
 void InspectorCSSAgent::activeStyleSheetsUpdated(Document* document) {
-  m_invalidatedDocuments.add(document);
+  m_invalidatedDocuments.insert(document);
 }
 
 void InspectorCSSAgent::updateActiveStyleSheets(Document* document) {
@@ -788,7 +786,7 @@ void InspectorCSSAgent::setActiveStyleSheets(
     Document* document,
     const HeapVector<Member<CSSStyleSheet>>& allSheetsVector) {
   HeapHashSet<Member<CSSStyleSheet>>* documentCSSStyleSheets =
-      m_documentToCSSStyleSheets.get(document);
+      m_documentToCSSStyleSheets.at(document);
   if (!documentCSSStyleSheets) {
     documentCSSStyleSheets = new HeapHashSet<Member<CSSStyleSheet>>();
     m_documentToCSSStyleSheets.set(document, documentCSSStyleSheets);
@@ -798,7 +796,7 @@ void InspectorCSSAgent::setActiveStyleSheets(
   HeapVector<Member<CSSStyleSheet>> addedSheets;
   for (CSSStyleSheet* cssStyleSheet : allSheetsVector) {
     if (removedSheets.contains(cssStyleSheet)) {
-      removedSheets.remove(cssStyleSheet);
+      removedSheets.erase(cssStyleSheet);
     } else {
       addedSheets.push_back(cssStyleSheet);
     }
@@ -806,10 +804,10 @@ void InspectorCSSAgent::setActiveStyleSheets(
 
   for (CSSStyleSheet* cssStyleSheet : removedSheets) {
     InspectorStyleSheet* inspectorStyleSheet =
-        m_cssStyleSheetToInspectorStyleSheet.get(cssStyleSheet);
+        m_cssStyleSheetToInspectorStyleSheet.at(cssStyleSheet);
     ASSERT(inspectorStyleSheet);
 
-    documentCSSStyleSheets->remove(cssStyleSheet);
+    documentCSSStyleSheets->erase(cssStyleSheet);
     if (m_idToInspectorStyleSheet.contains(inspectorStyleSheet->id())) {
       String id = unbindStyleSheet(inspectorStyleSheet);
       if (frontend())
@@ -819,7 +817,7 @@ void InspectorCSSAgent::setActiveStyleSheets(
 
   for (CSSStyleSheet* cssStyleSheet : addedSheets) {
       InspectorStyleSheet* newStyleSheet = bindStyleSheet(cssStyleSheet);
-      documentCSSStyleSheets->add(cssStyleSheet);
+      documentCSSStyleSheets->insert(cssStyleSheet);
       if (frontend()) {
         frontend()->styleSheetAdded(
             newStyleSheet->buildObjectForStyleSheetInfo());
@@ -831,7 +829,7 @@ void InspectorCSSAgent::setActiveStyleSheets(
 }
 
 void InspectorCSSAgent::documentDetached(Document* document) {
-  m_invalidatedDocuments.remove(document);
+  m_invalidatedDocuments.erase(document);
   setActiveStyleSheets(document, HeapVector<Member<CSSStyleSheet>>());
 }
 
@@ -1029,7 +1027,7 @@ InspectorCSSAgent::animationsForNode(Element* element) {
     // Find CSSOM wrapper.
     CSSKeyframesRule* cssKeyframesRule = nullptr;
     for (CSSStyleSheet* styleSheet :
-         *m_documentToCSSStyleSheets.get(ownerDocument)) {
+         *m_documentToCSSStyleSheets.at(ownerDocument)) {
       cssKeyframesRule = findKeyframesRule(styleSheet, keyframesRule);
       if (cssKeyframesRule)
         break;
@@ -1138,16 +1136,15 @@ void InspectorCSSAgent::collectPlatformFontsForLayoutObject(
     const ComputedStyle& style = layoutText->styleRef(box->isFirstLineStyle());
     const Font& font = style.font();
     TextRun run = box->constructTextRunForInspector(style);
-    TextRunPaintInfo paintInfo(run);
-    GlyphBuffer glyphBuffer;
-    font.buildGlyphBuffer(paintInfo, glyphBuffer);
-    for (unsigned i = 0; i < glyphBuffer.size(); ++i) {
-      const SimpleFontData* simpleFontData = glyphBuffer.fontDataAt(i);
+    CachingWordShaper shaper(font);
+    for (const auto& runFontData : shaper.runFontData(run)) {
+      const auto* simpleFontData = runFontData.m_fontData;
       String familyName = simpleFontData->platformData().fontFamilyName();
       if (familyName.isNull())
         familyName = "";
       fontStats->add(
-          std::make_pair(simpleFontData->isCustomFont() ? 1 : 0, familyName));
+          std::make_pair(simpleFontData->isCustomFont() ? 1 : 0, familyName),
+          runFontData.m_glyphCount);
     }
   }
 }
@@ -1593,7 +1590,7 @@ std::unique_ptr<protocol::CSS::CSSMedia> InspectorCSSAgent::buildMediaObject(
 
   InspectorStyleSheet* inspectorStyleSheet =
       parentStyleSheet
-          ? m_cssStyleSheetToInspectorStyleSheet.get(parentStyleSheet)
+          ? m_cssStyleSheetToInspectorStyleSheet.at(parentStyleSheet)
           : nullptr;
   std::unique_ptr<protocol::Array<protocol::CSS::MediaQuery>> mediaListArray =
       protocol::Array<protocol::CSS::MediaQuery>::create();
@@ -1796,7 +1793,7 @@ void InspectorCSSAgent::collectStyleSheets(
 InspectorStyleSheet* InspectorCSSAgent::bindStyleSheet(
     CSSStyleSheet* styleSheet) {
   InspectorStyleSheet* inspectorStyleSheet =
-      m_cssStyleSheetToInspectorStyleSheet.get(styleSheet);
+      m_cssStyleSheetToInspectorStyleSheet.at(styleSheet);
   if (!inspectorStyleSheet) {
     Document* document = styleSheet->ownerDocument();
     inspectorStyleSheet = InspectorStyleSheet::create(
@@ -1819,7 +1816,7 @@ String InspectorCSSAgent::unbindStyleSheet(
   String id = inspectorStyleSheet->id();
   m_idToInspectorStyleSheet.remove(id);
   if (inspectorStyleSheet->pageStyleSheet())
-    m_cssStyleSheetToInspectorStyleSheet.remove(
+    m_cssStyleSheetToInspectorStyleSheet.erase(
         inspectorStyleSheet->pageStyleSheet());
   return id;
 }
@@ -1854,7 +1851,7 @@ InspectorStyleSheet* InspectorCSSAgent::viaInspectorStyleSheet(
 
   flushPendingProtocolNotifications();
 
-  return m_cssStyleSheetToInspectorStyleSheet.get(&inspectorSheet);
+  return m_cssStyleSheetToInspectorStyleSheet.at(&inspectorSheet);
 }
 
 Response InspectorCSSAgent::assertInspectorStyleSheetForId(
@@ -2046,7 +2043,7 @@ void InspectorCSSAgent::resetPseudoStates() {
   for (auto& state : m_nodeIdToForcedPseudoState) {
     Element* element = toElement(m_domAgent->nodeForId(state.key));
     if (element && element->ownerDocument())
-      documentsToChange.add(element->ownerDocument());
+      documentsToChange.insert(element->ownerDocument());
   }
 
   m_nodeIdToForcedPseudoState.clear();
@@ -2129,7 +2126,7 @@ Response InspectorCSSAgent::setEffectivePropertyValueForNode(
 
   bool forceImportant = false;
   InspectorStyleSheetBase* inspectorStyleSheet = nullptr;
-  RefPtr<CSSRuleSourceData> sourceData;
+  CSSRuleSourceData* sourceData;
   // An absence of the parent rule means that given style is an inline style.
   if (style->parentRule()) {
     InspectorStyleSheet* styleSheet = bindStyleSheet(style->parentStyleSheet());
@@ -2154,8 +2151,7 @@ Response InspectorCSSAgent::setEffectivePropertyValueForNode(
   String longhand = getPropertyNameString(propertyId);
 
   int foundIndex = -1;
-  Vector<CSSPropertySourceData> properties =
-      sourceData->styleSourceData->propertyData;
+  Vector<CSSPropertySourceData>& properties = sourceData->propertyData;
   for (unsigned i = 0; i < properties.size(); ++i) {
     CSSPropertySourceData property = properties[properties.size() - i - 1];
     String name = property.name;
@@ -2332,7 +2328,7 @@ int InspectorCSSAgent::getStyleIndexForNode(
                              .build());
 
   size_t index = styleToIndexMap.size();
-  styleToIndexMap.add(std::move(style), index);
+  styleToIndexMap.insert(std::move(style), index);
   return index;
 }
 
@@ -2462,14 +2458,14 @@ Response InspectorCSSAgent::stopRuleUsageTracking(
   HeapVector<Member<Document>> documents = m_domAgent->documents();
   for (Document* document : documents) {
     HeapHashSet<Member<CSSStyleSheet>>* newSheetsVector =
-        m_documentToCSSStyleSheets.get(document);
+        m_documentToCSSStyleSheets.at(document);
 
     if (!newSheetsVector)
       continue;
 
     for (auto sheet : *newSheetsVector) {
       InspectorStyleSheet* styleSheet =
-          m_cssStyleSheetToInspectorStyleSheet.get(sheet);
+          m_cssStyleSheetToInspectorStyleSheet.at(sheet);
       const CSSRuleVector ruleVector = styleSheet->flatRules();
       for (auto rule : ruleVector) {
         if (rule->type() != CSSRule::kStyleRule)

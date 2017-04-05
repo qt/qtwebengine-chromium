@@ -44,13 +44,16 @@ enum class FPDFText_MarkedContent { Pass = 0, Done, Delay };
 
 enum class FPDFText_Direction { Left = -1, Right = 1 };
 
-struct FPDF_CHAR_INFO {
+class FPDF_CHAR_INFO {
+ public:
+  FPDF_CHAR_INFO();
+  ~FPDF_CHAR_INFO();
+
   FX_WCHAR m_Unicode;
   FX_WCHAR m_Charcode;
   int32_t m_Flag;
   FX_FLOAT m_FontSize;
-  FX_FLOAT m_OriginX;
-  FX_FLOAT m_OriginY;
+  CFX_PointF m_Origin;
   CFX_FloatRect m_CharBox;
   CPDF_TextObject* m_pTextObj;
   CFX_Matrix m_Matrix;
@@ -61,16 +64,20 @@ struct FPDF_SEGMENT {
   int m_nCount;
 };
 
-struct PAGECHAR_INFO {
+class PAGECHAR_INFO {
+ public:
+  PAGECHAR_INFO();
+  PAGECHAR_INFO(const PAGECHAR_INFO&);
+  ~PAGECHAR_INFO();
+
+  int m_Index;
   int m_CharCode;
   FX_WCHAR m_Unicode;
-  FX_FLOAT m_OriginX;
-  FX_FLOAT m_OriginY;
   int32_t m_Flag;
+  CFX_PointF m_Origin;
   CFX_FloatRect m_CharBox;
   CPDF_TextObject* m_pTextObj;
   CFX_Matrix m_Matrix;
-  int m_Index;
 };
 
 struct PDFTEXT_Obj {
@@ -91,13 +98,7 @@ class CPDF_TextPage {
   int CountChars() const;
   void GetCharInfo(int index, FPDF_CHAR_INFO* info) const;
   std::vector<CFX_FloatRect> GetRectArray(int start, int nCount) const;
-  int GetIndexAtPos(CFX_FloatPoint point,
-                    FX_FLOAT xTolerance,
-                    FX_FLOAT yTolerance) const;
-  int GetIndexAtPos(FX_FLOAT x,
-                    FX_FLOAT y,
-                    FX_FLOAT xTolerance,
-                    FX_FLOAT yTolerance) const;
+  int GetIndexAtPos(const CFX_PointF& point, const CFX_SizeF& tolerance) const;
   CFX_WideString GetTextByRect(const CFX_FloatRect& rect) const;
   CFX_WideString GetPageText(int start = 0, int nCount = -1) const;
   int CountRects(int start, int nCount);

@@ -19,6 +19,7 @@
 #include "webrtc/modules/desktop_capture/desktop_capturer.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_region.h"
+#include "webrtc/modules/desktop_capture/resolution_change_detector.h"
 #include "webrtc/modules/desktop_capture/screen_capture_frame_queue.h"
 #include "webrtc/modules/desktop_capture/shared_desktop_frame.h"
 #include "webrtc/modules/desktop_capture/win/dxgi_duplicator_controller.h"
@@ -58,13 +59,13 @@ class ScreenCapturerWinDirectx : public DesktopCapturer {
   // Returns desktop size of selected screen.
   DesktopSize SelectedDesktopSize() const;
 
+  // TODO(zijiehe): Merge |frames_| and |contexts_| into a single object.
   ScreenCaptureFrameQueue<SharedDesktopFrame> frames_;
+  ScreenCaptureFrameQueue<DxgiDuplicatorController::Context> contexts_;
   std::unique_ptr<SharedMemoryFactory> shared_memory_factory_;
   Callback* callback_ = nullptr;
-
-  DxgiDuplicatorController::Context context_;
-
   SourceId current_screen_id_ = kFullDesktopScreenId;
+  ResolutionChangeDetector resolution_change_detector_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(ScreenCapturerWinDirectx);
 };

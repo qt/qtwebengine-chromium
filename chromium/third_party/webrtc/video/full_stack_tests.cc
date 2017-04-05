@@ -280,6 +280,23 @@ TEST_F(FullStackTest, ConferenceMotionHd2000kbps100msLimitedQueue) {
   RunTest(conf_motion_hd);
 }
 
+#if !defined(RTC_DISABLE_VP9)
+TEST_F(FullStackTest, ConferenceMotionHd2000kbps100msLimitedQueueVP9) {
+  VideoQualityTest::Params conf_motion_hd;
+  conf_motion_hd.call.send_side_bwe = true;
+  conf_motion_hd.video = {true, 1280, 720, 50, 30000, 3000000, 3000000, false,
+                          "VP9", 1, 0, 0, false, false, "",
+                          "ConferenceMotion_1280_720_50"};
+  conf_motion_hd.analyzer = {
+      "conference_motion_hd_2000kbps_100ms_32pkts_queue_vp9", 0.0, 0.0,
+      kFullStackTestDurationSecs};
+  conf_motion_hd.pipe.queue_length_packets = 32;
+  conf_motion_hd.pipe.queue_delay_ms = 100;
+  conf_motion_hd.pipe.link_capacity_kbps = 2000;
+  RunTest(conf_motion_hd);
+}
+#endif
+
 TEST_F(FullStackTest, ScreenshareSlidesVP8_2TL) {
   VideoQualityTest::Params screenshare;
   screenshare.call.send_side_bwe = true;
@@ -343,6 +360,158 @@ TEST_F(FullStackTest, ScreenshareSlidesVP9_2SL) {
   screenshare.ss = {std::vector<VideoStream>(), 0, 2, 1};
   RunTest(screenshare);
 }
+
+TEST_F(FullStackTest, VP9SVC_3SL_High) {
+  VideoQualityTest::Params simulcast;
+  simulcast.call.send_side_bwe = true;
+  simulcast.video = {true,   1280,    720,     50,
+                     800000, 2500000, 2500000, false,
+                     "VP9",  1,       0,       400000,
+                     false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  simulcast.analyzer = {"vp9svc_3sl_high", 0.0, 0.0,
+                        kFullStackTestDurationSecs};
+  simulcast.logs = false;
+  simulcast.ss = {std::vector<VideoStream>(), 0, 3, 2};
+  RunTest(simulcast);
+}
+
+TEST_F(FullStackTest, VP9SVC_3SL_Medium) {
+  VideoQualityTest::Params simulcast;
+  simulcast.call.send_side_bwe = true;
+  simulcast.video = {true,   1280,    720,     50,
+                     800000, 2500000, 2500000, false,
+                     "VP9",  1,       0,       400000,
+                     false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  simulcast.analyzer = {"vp9svc_3sl_medium", 0.0, 0.0,
+                        kFullStackTestDurationSecs};
+  simulcast.logs = false;
+  simulcast.ss = {std::vector<VideoStream>(), 0, 3, 1};
+  RunTest(simulcast);
+}
+
+TEST_F(FullStackTest, VP9SVC_3SL_Low) {
+  VideoQualityTest::Params simulcast;
+  simulcast.call.send_side_bwe = true;
+  simulcast.video = {true,   1280,    720,     50,
+                     800000, 2500000, 2500000, false,
+                     "VP9",  1,       0,       400000,
+                     false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  simulcast.analyzer = {"vp9svc_3sl_low", 0.0, 0.0, kFullStackTestDurationSecs};
+  simulcast.logs = false;
+  simulcast.ss = {std::vector<VideoStream>(), 0, 3, 0};
+  RunTest(simulcast);
+}
 #endif  // !defined(RTC_DISABLE_VP9)
+
+TEST_F(FullStackTest, SimulcastVP8_3SL_High) {
+  VideoQualityTest::Params simulcast;
+  simulcast.call.send_side_bwe = true;
+  simulcast.video = {true,   1280,    720,     50,
+                     800000, 2500000, 2500000, false,
+                     "VP8",  1,       0,       400000,
+                     false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  simulcast.analyzer = {"simulcast_vp8_3sl_high", 0.0, 0.0,
+                        kFullStackTestDurationSecs};
+  simulcast.pipe.loss_percent = 0;
+  simulcast.pipe.queue_delay_ms = 100;
+  VideoQualityTest::Params video_params_high;
+  video_params_high.video = {
+      true,   1280,    720,     50,
+      800000, 2500000, 2500000, false,
+      "VP8",  1,       0,       400000,
+      false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  VideoQualityTest::Params video_params_medium;
+  video_params_medium.video = {
+      true,   640,    360,    50,
+      150000, 500000, 700000, false,
+      "VP8",  1,      0,      400000,
+      false,  false,  "",     "ConferenceMotion_1280_720_50"};
+  VideoQualityTest::Params video_params_low;
+  video_params_low.video = {
+      true,  320,    180,    50,
+      30000, 150000, 200000, false,
+      "VP8", 1,      0,      400000,
+      false, false,  "",     "ConferenceMotion_1280_720_50"};
+
+  std::vector<VideoStream> streams = {DefaultVideoStream(video_params_low),
+                                      DefaultVideoStream(video_params_medium),
+                                      DefaultVideoStream(video_params_high)};
+  simulcast.ss = {streams, 2, 1, 0};
+  RunTest(simulcast);
+}
+
+TEST_F(FullStackTest, SimulcastVP8_3SL_Medium) {
+  VideoQualityTest::Params simulcast;
+  simulcast.call.send_side_bwe = true;
+  simulcast.video = {true,   1280,    720,     50,
+                     800000, 2500000, 2500000, false,
+                     "VP8",  1,       0,       400000,
+                     false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  simulcast.analyzer = {"simulcast_vp8_3sl_medium", 0.0, 0.0,
+                        kFullStackTestDurationSecs};
+  simulcast.pipe.loss_percent = 0;
+  simulcast.pipe.queue_delay_ms = 100;
+  VideoQualityTest::Params video_params_high;
+  video_params_high.video = {
+      true,   1280,    720,     50,
+      800000, 2500000, 2500000, false,
+      "VP8",  1,       0,       400000,
+      false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  VideoQualityTest::Params video_params_medium;
+  video_params_medium.video = {
+      true,   640,    360,    50,
+      150000, 500000, 700000, false,
+      "VP8",  1,      0,      400000,
+      false,  false,  "",     "ConferenceMotion_1280_720_50"};
+  VideoQualityTest::Params video_params_low;
+  video_params_low.video = {
+      true,  320,    180,    50,
+      30000, 150000, 200000, false,
+      "VP8", 1,      0,      400000,
+      false, false,  "",     "ConferenceMotion_1280_720_50"};
+
+  std::vector<VideoStream> streams = {DefaultVideoStream(video_params_low),
+                                      DefaultVideoStream(video_params_medium),
+                                      DefaultVideoStream(video_params_high)};
+  simulcast.ss = {streams, 1, 1, 0};
+  RunTest(simulcast);
+}
+
+TEST_F(FullStackTest, SimulcastVP8_3SL_Low) {
+  VideoQualityTest::Params simulcast;
+  simulcast.call.send_side_bwe = true;
+  simulcast.video = {true,   1280,    720,     50,
+                     800000, 2500000, 2500000, false,
+                     "VP8",  1,       0,       400000,
+                     false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  simulcast.analyzer = {"simulcast_vp8_3sl_low", 0.0, 0.0,
+                        kFullStackTestDurationSecs};
+  simulcast.pipe.loss_percent = 0;
+  simulcast.pipe.queue_delay_ms = 100;
+  VideoQualityTest::Params video_params_high;
+  video_params_high.video = {
+      true,   1280,    720,     50,
+      800000, 2500000, 2500000, false,
+      "VP8",  1,       0,       400000,
+      false,  false,   "",      "ConferenceMotion_1280_720_50"};
+  VideoQualityTest::Params video_params_medium;
+  video_params_medium.video = {
+      true,   640,    360,    50,
+      150000, 500000, 700000, false,
+      "VP8",  1,      0,      400000,
+      false,  false,  "",     "ConferenceMotion_1280_720_50"};
+  VideoQualityTest::Params video_params_low;
+  video_params_low.video = {
+      true,  320,    180,    50,
+      30000, 150000, 200000, false,
+      "VP8", 1,      0,      400000,
+      false, false,  "",     "ConferenceMotion_1280_720_50"};
+
+  std::vector<VideoStream> streams = {DefaultVideoStream(video_params_low),
+                                      DefaultVideoStream(video_params_medium),
+                                      DefaultVideoStream(video_params_high)};
+  simulcast.ss = {streams, 0, 1, 0};
+  RunTest(simulcast);
+}
 
 }  // namespace webrtc

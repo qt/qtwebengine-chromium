@@ -16,6 +16,7 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
+#include "webrtc/modules/video_coding/include/video_coding_defines.h"
 #include "webrtc/modules/video_coding/jitter_estimator.h"
 #include "webrtc/modules/video_coding/timing.h"
 #include "webrtc/system_wrappers/include/clock.h"
@@ -34,7 +35,8 @@ constexpr int kMaxFramesHistory = 50;
 
 FrameBuffer::FrameBuffer(Clock* clock,
                          VCMJitterEstimator* jitter_estimator,
-                         VCMTiming* timing)
+                         VCMTiming* timing,
+                         VCMReceiveStatisticsCallback* stats_callback)
     : clock_(clock),
       new_countinuous_frame_event_(false, false),
       jitter_estimator_(jitter_estimator),
@@ -45,18 +47,17 @@ FrameBuffer::FrameBuffer(Clock* clock,
       num_frames_history_(0),
       num_frames_buffered_(0),
       stopped_(false),
-      protection_mode_(kProtectionNack) {}
+      protection_mode_(kProtectionNack),
+      stats_callback_(stats_callback) {}
 
-FrameBuffer::~FrameBuffer() {
-  UpdateHistograms();
-}
+FrameBuffer::~FrameBuffer() {}
 
 FrameBuffer::ReturnReason FrameBuffer::NextFrame(
     int64_t max_wait_time_ms,
     std::unique_ptr<FrameObject>* frame_out) {
-  int64_t latest_return_time = clock_->TimeInMilliseconds() + max_wait_time_ms;
+  int64_t latest_return_time_ms =
+      clock_->TimeInMilliseconds() + max_wait_time_ms;
   int64_t wait_ms = max_wait_time_ms;
-  FrameMap::iterator next_frame_it;
 
   do {
     int64_t now_ms = clock_->TimeInMilliseconds();
@@ -71,7 +72,7 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
       // Need to hold |crit_| in order to use |frames_|, therefore we
       // set it here in the loop instead of outside the loop in order to not
       // acquire the lock unnecesserily.
-      next_frame_it = frames_.end();
+      next_frame_it_ = frames_.end();
 
       // |frame_it| points to the first frame after the
       // |last_decoded_frame_it_|.
@@ -96,7 +97,7 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
         }
 
         FrameObject* frame = frame_it->second.frame.get();
-        next_frame_it = frame_it;
+        next_frame_it_ = frame_it;
         if (frame->RenderTime() == -1)
           frame->SetRenderTime(timing_->RenderTimeMs(frame->timestamp, now_ms));
         wait_ms = timing_->MaxWaitingTime(frame->RenderTime(), now_ms);
@@ -111,32 +112,42 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
       }
     }  // rtc::Critscope lock(&crit_);
 
-    wait_ms = std::min<int64_t>(wait_ms, latest_return_time - now_ms);
+    wait_ms = std::min<int64_t>(wait_ms, latest_return_time_ms - now_ms);
     wait_ms = std::max<int64_t>(wait_ms, 0);
   } while (new_countinuous_frame_event_.Wait(wait_ms));
 
   rtc::CritScope lock(&crit_);
-  if (next_frame_it != frames_.end()) {
-    std::unique_ptr<FrameObject> frame = std::move(next_frame_it->second.frame);
-    int64_t received_time = frame->ReceivedTime();
-    uint32_t timestamp = frame->timestamp;
+  int64_t now_ms = clock_->TimeInMilliseconds();
+  if (next_frame_it_ != frames_.end()) {
+    std::unique_ptr<FrameObject> frame =
+        std::move(next_frame_it_->second.frame);
 
-    int64_t frame_delay;
-    if (inter_frame_delay_.CalculateDelay(timestamp, &frame_delay,
-                                          received_time)) {
-      jitter_estimator_->UpdateEstimate(frame_delay, frame->size());
+    if (!frame->delayed_by_retransmission()) {
+      int64_t frame_delay;
+
+      if (inter_frame_delay_.CalculateDelay(frame->timestamp, &frame_delay,
+                                            frame->ReceivedTime())) {
+        jitter_estimator_->UpdateEstimate(frame_delay, frame->size());
+      }
+
+      float rtt_mult = protection_mode_ == kProtectionNackFEC ? 0.0 : 1.0;
+      timing_->SetJitterDelay(jitter_estimator_->GetJitterEstimate(rtt_mult));
+      timing_->UpdateCurrentDelay(frame->RenderTime(), now_ms);
     }
-    float rtt_mult = protection_mode_ == kProtectionNackFEC ? 0.0 : 1.0;
-    timing_->SetJitterDelay(jitter_estimator_->GetJitterEstimate(rtt_mult));
-    timing_->UpdateCurrentDelay(frame->RenderTime(),
-                                clock_->TimeInMilliseconds());
 
     UpdateJitterDelay();
 
-    PropagateDecodability(next_frame_it->second);
-    AdvanceLastDecodedFrame(next_frame_it);
+    PropagateDecodability(next_frame_it_->second);
+    AdvanceLastDecodedFrame(next_frame_it_);
+    last_decoded_frame_timestamp_ = frame->timestamp;
     *frame_out = std::move(frame);
     return kFrameFound;
+  } else if (latest_return_time_ms - now_ms > 0) {
+    // If |next_frame_it_ == frames_.end()| and there is still time left, it
+    // means that the frame buffer was cleared as the thread in this function
+    // was waiting to acquire |crit_| in order to return. Wait for the
+    // remaining time and then return.
+    return NextFrame(latest_return_time_ms - now_ms, frame_out);
   } else {
     return kTimeout;
   }
@@ -162,9 +173,8 @@ int FrameBuffer::InsertFrame(std::unique_ptr<FrameObject> frame) {
   rtc::CritScope lock(&crit_);
   RTC_DCHECK(frame);
 
-  ++num_total_frames_;
-  if (frame->num_references == 0)
-    ++num_key_frames_;
+  if (stats_callback_)
+    stats_callback_->OnCompleteFrame(frame->num_references == 0, frame->size());
 
   FrameKey key(frame->picture_id, frame->spatial_layer);
   int last_continuous_picture_id =
@@ -189,14 +199,27 @@ int FrameBuffer::InsertFrame(std::unique_ptr<FrameObject> frame) {
 
   if (last_decoded_frame_it_ != frames_.end() &&
       key < last_decoded_frame_it_->first) {
-    LOG(LS_WARNING) << "Frame with (picture_id:spatial_id) (" << key.picture_id
-                    << ":" << static_cast<int>(key.spatial_layer)
-                    << ") inserted after frame ("
-                    << last_decoded_frame_it_->first.picture_id << ":"
-                    << static_cast<int>(
-                           last_decoded_frame_it_->first.spatial_layer)
-                    << ") was handed off for decoding, dropping frame.";
-    return last_continuous_picture_id;
+    if (AheadOf(frame->timestamp, last_decoded_frame_timestamp_) &&
+        frame->num_references == 0) {
+      // If this frame has a newer timestamp but an earlier picture id then we
+      // assume there has been a jump in the picture id due to some encoder
+      // reconfiguration or some other reason. Even though this is not according
+      // to spec we can still continue to decode from this frame if it is a
+      // keyframe.
+      LOG(LS_WARNING) << "A jump in picture id was detected, clearing buffer.";
+      ClearFramesAndHistory();
+      last_continuous_picture_id = -1;
+    } else {
+      LOG(LS_WARNING) << "Frame with (picture_id:spatial_id) ("
+                      << key.picture_id << ":"
+                      << static_cast<int>(key.spatial_layer)
+                      << ") inserted after frame ("
+                      << last_decoded_frame_it_->first.picture_id << ":"
+                      << static_cast<int>(
+                             last_decoded_frame_it_->first.spatial_layer)
+                      << ") was handed off for decoding, dropping frame.";
+      return last_continuous_picture_id;
+    }
   }
 
   auto info = frames_.insert(std::make_pair(key, FrameInfo())).first;
@@ -365,29 +388,32 @@ bool FrameBuffer::UpdateFrameInfoWithIncomingFrame(const FrameObject& frame,
 }
 
 void FrameBuffer::UpdateJitterDelay() {
-  int unused;
-  int delay;
-  timing_->GetTimings(&unused, &unused, &unused, &unused, &delay, &unused,
-                      &unused);
+  if (!stats_callback_)
+    return;
 
-  accumulated_delay_ += delay;
-  ++accumulated_delay_samples_;
+  int decode_ms;
+  int max_decode_ms;
+  int current_delay_ms;
+  int target_delay_ms;
+  int jitter_buffer_ms;
+  int min_playout_delay_ms;
+  int render_delay_ms;
+  if (timing_->GetTimings(&decode_ms, &max_decode_ms, &current_delay_ms,
+                          &target_delay_ms, &jitter_buffer_ms,
+                          &min_playout_delay_ms, &render_delay_ms)) {
+    stats_callback_->OnFrameBufferTimingsUpdated(
+        decode_ms, max_decode_ms, current_delay_ms, target_delay_ms,
+        jitter_buffer_ms, min_playout_delay_ms, render_delay_ms);
+  }
 }
 
-void FrameBuffer::UpdateHistograms() const {
-  rtc::CritScope lock(&crit_);
-  if (num_total_frames_ > 0) {
-    int key_frames_permille = (static_cast<float>(num_key_frames_) * 1000.0f /
-                                   static_cast<float>(num_total_frames_) +
-                               0.5f);
-    RTC_HISTOGRAM_COUNTS_1000("WebRTC.Video.KeyFramesReceivedInPermille",
-                              key_frames_permille);
-  }
-
-  if (accumulated_delay_samples_ > 0) {
-    RTC_HISTOGRAM_COUNTS_10000("WebRTC.Video.JitterBufferDelayInMs",
-                               accumulated_delay_ / accumulated_delay_samples_);
-  }
+void FrameBuffer::ClearFramesAndHistory() {
+  frames_.clear();
+  last_decoded_frame_it_ = frames_.end();
+  last_continuous_frame_it_ = frames_.end();
+  next_frame_it_ = frames_.end();
+  num_frames_history_ = 0;
+  num_frames_buffered_ = 0;
 }
 
 }  // namespace video_coding

@@ -11,20 +11,22 @@
 
 #include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_string.h"
+#include "xfa/fde/css/cfde_csscustomproperty.h"
 #include "xfa/fde/css/fde_css.h"
 
 class CFDE_CSSValueList;
 
-class CFDE_CSSComputedStyle : public IFX_Retainable {
+class CFDE_CSSComputedStyle : public CFX_Retainable {
  public:
   class InheritedData {
    public:
     InheritedData();
+    ~InheritedData();
 
     FDE_CSSLength m_LetterSpacing;
     FDE_CSSLength m_WordSpacing;
     FDE_CSSLength m_TextIndent;
-    CFDE_CSSValueList* m_pFontFamily;
+    CFX_RetainPtr<CFDE_CSSValueList> m_pFontFamily;
     FX_FLOAT m_fFontSize;
     FX_FLOAT m_fLineHeight;
     FX_ARGB m_dwFontColor;
@@ -53,13 +55,6 @@ class CFDE_CSSComputedStyle : public IFX_Retainable {
     bool m_bHasBorder;
     bool m_bHasPadding;
   };
-
-  CFDE_CSSComputedStyle();
-  ~CFDE_CSSComputedStyle() override;
-
-  // IFX_Retainable
-  uint32_t Retain() override;
-  uint32_t Release() override;
 
   int32_t CountFontFamilies() const;
   const CFX_WideString GetFontFamily(int32_t index) const;
@@ -95,18 +90,22 @@ class CFDE_CSSComputedStyle : public IFX_Retainable {
   void SetNumberVerticalAlign(FX_FLOAT fAlign);
   void SetTextDecoration(uint32_t dwTextDecoration);
   void SetLetterSpacing(const FDE_CSSLength& letterSpacing);
-  void AddCustomStyle(const CFX_WideString& wsName,
-                      const CFX_WideString& wsValue);
+  void AddCustomStyle(const CFDE_CSSCustomProperty& prop);
 
-  bool GetCustomStyle(const CFX_WideStringC& wsName,
+  bool GetCustomStyle(const CFX_WideString& wsName,
                       CFX_WideString& wsValue) const;
 
   InheritedData m_InheritedData;
   NonInheritedData m_NonInheritedData;
 
  private:
-  uint32_t m_dwRefCount;
-  std::vector<CFX_WideString> m_CustomProperties;
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+
+  CFDE_CSSComputedStyle();
+  ~CFDE_CSSComputedStyle() override;
+
+  std::vector<CFDE_CSSCustomProperty> m_CustomProperties;
 };
 
 #endif  // XFA_FDE_CSS_CFDE_CSSCOMPUTEDSTYLE_H_

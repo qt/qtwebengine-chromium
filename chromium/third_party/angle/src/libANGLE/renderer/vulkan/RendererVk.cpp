@@ -19,6 +19,7 @@
 #include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/renderer/vulkan/CompilerVk.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
+#include "libANGLE/renderer/vulkan/GlslangWrapper.h"
 #include "libANGLE/renderer/vulkan/TextureVk.h"
 #include "libANGLE/renderer/vulkan/VertexArrayVk.h"
 #include "libANGLE/renderer/vulkan/formatutilsvk.h"
@@ -62,7 +63,7 @@ VkBool32 VKAPI_CALL DebugReportCallback(VkDebugReportFlagsEXT flags,
 {
     if ((flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) != 0)
     {
-        ANGLEPlatformCurrent()->logError(message);
+        ERR() << message;
 #if !defined(NDEBUG)
         // Abort the call in Debug builds.
         return VK_TRUE;
@@ -70,11 +71,12 @@ VkBool32 VKAPI_CALL DebugReportCallback(VkDebugReportFlagsEXT flags,
     }
     else if ((flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) != 0)
     {
-        ANGLEPlatformCurrent()->logWarning(message);
+        WARN() << message;
     }
     else
     {
-        ANGLEPlatformCurrent()->logInfo(message);
+        // Uncomment this if you want Vulkan spam.
+        // WARN() << message;
     }
 
     return VK_FALSE;
@@ -91,19 +93,40 @@ RendererVk::RendererVk()
       mQueue(VK_NULL_HANDLE),
       mCurrentQueueFamilyIndex(std::numeric_limits<uint32_t>::max()),
       mDevice(VK_NULL_HANDLE),
-      mCommandPool(VK_NULL_HANDLE),
-      mHostVisibleMemoryIndex(std::numeric_limits<uint32_t>::max())
+      mHostVisibleMemoryIndex(std::numeric_limits<uint32_t>::max()),
+      mGlslangWrapper(nullptr),
+      mCurrentQueueSerial(),
+      mLastCompletedQueueSerial(),
+      mInFlightCommands()
 {
+    ++mCurrentQueueSerial;
 }
 
 RendererVk::~RendererVk()
 {
-    mCommandBuffer.reset(nullptr);
-
-    if (mCommandPool)
+    if (!mInFlightCommands.empty())
     {
-        vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
-        mCommandPool = VK_NULL_HANDLE;
+        vk::Error error = finish();
+        if (error.isError())
+        {
+            ERR() << "Error during VK shutdown: " << error;
+        }
+    }
+
+    if (mGlslangWrapper)
+    {
+        GlslangWrapper::ReleaseReference();
+        mGlslangWrapper = nullptr;
+    }
+
+    if (mCommandBuffer.valid())
+    {
+        mCommandBuffer.destroy(mDevice);
+    }
+
+    if (mCommandPool.valid())
+    {
+        mCommandPool.destroy(mDevice);
     }
 
     if (mDevice)
@@ -154,7 +177,7 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs)
         const auto &cwd = angle::GetCWD();
         if (!cwd.valid())
         {
-            ANGLEPlatformCurrent()->logError("Error getting CWD for Vulkan layers init.");
+            ERR() << "Error getting CWD for Vulkan layers init.";
             mEnableValidationLayers = false;
         }
         else
@@ -194,12 +217,11 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs)
             // Generate an error if the attribute was requested, warning otherwise.
             if (attribs.contains(EGL_PLATFORM_ANGLE_ENABLE_VALIDATION_LAYER_ANGLE))
             {
-                ANGLEPlatformCurrent()->logError("Vulkan standard validation layers are missing.");
+                ERR() << "Vulkan standard validation layers are missing.";
             }
             else
             {
-                ANGLEPlatformCurrent()->logWarning(
-                    "Vulkan standard validation layers are missing.");
+                WARN() << "Vulkan standard validation layers are missing.";
             }
             mEnableValidationLayers = false;
         }
@@ -332,6 +354,8 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs)
     ANGLE_VK_CHECK(mHostVisibleMemoryIndex < std::numeric_limits<uint32_t>::max(),
                    VK_ERROR_INITIALIZATION_FAILED);
 
+    mGlslangWrapper = GlslangWrapper::GetReference();
+
     return vk::NoError();
 }
 
@@ -362,7 +386,7 @@ vk::Error RendererVk::initializeDevice(uint32_t queueFamilyIndex)
     {
         if (!HasStandardValidationLayer(deviceLayerProps))
         {
-            ANGLEPlatformCurrent()->logWarning("Vulkan standard validation layer is missing.");
+            WARN() << "Vulkan standard validation layer is missing.";
             mEnableValidationLayers = false;
         }
     }
@@ -413,9 +437,9 @@ vk::Error RendererVk::initializeDevice(uint32_t queueFamilyIndex)
     commandPoolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     commandPoolInfo.queueFamilyIndex = mCurrentQueueFamilyIndex;
 
-    ANGLE_VK_TRY(vkCreateCommandPool(mDevice, &commandPoolInfo, nullptr, &mCommandPool));
+    ANGLE_TRY(mCommandPool.init(mDevice, commandPoolInfo));
 
-    mCommandBuffer.reset(new vk::CommandBuffer(mDevice, mCommandPool));
+    mCommandBuffer.setCommandPool(&mCommandPool);
 
     return vk::NoError();
 }
@@ -507,12 +531,20 @@ void RendererVk::ensureCapsInitialized() const
     }
 }
 
-void RendererVk::generateCaps(gl::Caps * /*outCaps*/,
+void RendererVk::generateCaps(gl::Caps *outCaps,
                               gl::TextureCapsMap * /*outTextureCaps*/,
-                              gl::Extensions * /*outExtensions*/,
+                              gl::Extensions *outExtensions,
                               gl::Limitations * /* outLimitations */) const
 {
     // TODO(jmadill): Caps.
+    outCaps->maxDrawBuffers      = 1;
+    outCaps->maxVertexAttributes     = gl::MAX_VERTEX_ATTRIBS;
+    outCaps->maxVertexAttribBindings = gl::MAX_VERTEX_ATTRIB_BINDINGS;
+
+    // Enable this for simple buffer readback testing, but some functionality is missing.
+    // TODO(jmadill): Support full mapBufferRange extension.
+    outExtensions->mapBuffer      = true;
+    outExtensions->mapBufferRange = true;
 }
 
 const gl::Caps &RendererVk::getNativeCaps() const
@@ -541,7 +573,7 @@ const gl::Limitations &RendererVk::getNativeLimitations() const
 
 vk::CommandBuffer *RendererVk::getCommandBuffer()
 {
-    return mCommandBuffer.get();
+    return &mCommandBuffer;
 }
 
 vk::Error RendererVk::submitAndFinishCommandBuffer(const vk::CommandBuffer &commandBuffer)
@@ -565,10 +597,10 @@ vk::Error RendererVk::submitAndFinishCommandBuffer(const vk::CommandBuffer &comm
     submitInfo.pSignalSemaphores    = nullptr;
 
     // TODO(jmadill): Investigate how to properly submit command buffers.
-    ANGLE_VK_TRY(vkQueueSubmit(mQueue, 1, &submitInfo, VK_NULL_HANDLE));
+    ANGLE_TRY(submit(submitInfo));
 
     // Wait indefinitely for the queue to finish.
-    ANGLE_VK_TRY(vkQueueWaitIdle(mQueue));
+    ANGLE_TRY(finish());
 
     return vk::NoError();
 }
@@ -592,25 +624,95 @@ vk::Error RendererVk::waitThenFinishCommandBuffer(const vk::CommandBuffer &comma
     submitInfo.pSignalSemaphores    = nullptr;
 
     // TODO(jmadill): Investigate how to properly queue command buffer work.
-    ANGLE_VK_TRY(vkQueueSubmit(mQueue, 1, &submitInfo, VK_NULL_HANDLE));
+    ANGLE_TRY(submit(submitInfo));
 
     // Wait indefinitely for the queue to finish.
-    ANGLE_VK_TRY(vkQueueWaitIdle(mQueue));
+    ANGLE_TRY(finish());
 
     return vk::NoError();
 }
 
-vk::ErrorOrResult<vk::StagingImage> RendererVk::createStagingImage(TextureDimension dimension,
-                                                                   const vk::Format &format,
-                                                                   const gl::Extents &extent)
+vk::Error RendererVk::finish()
+{
+    ASSERT(mQueue != VK_NULL_HANDLE);
+    checkInFlightCommands();
+    ANGLE_VK_TRY(vkQueueWaitIdle(mQueue));
+    return vk::NoError();
+}
+
+vk::Error RendererVk::checkInFlightCommands()
+{
+    // Check if any in-flight command buffers are finished.
+    for (size_t index = 0; index < mInFlightCommands.size();)
+    {
+        auto *inFlightCommand = &mInFlightCommands[index];
+
+        bool done = false;
+        ANGLE_TRY_RESULT(inFlightCommand->finished(mDevice), done);
+        if (done)
+        {
+            ASSERT(inFlightCommand->queueSerial() > mLastCompletedQueueSerial);
+            mLastCompletedQueueSerial = inFlightCommand->queueSerial();
+            inFlightCommand->destroy(mDevice);
+            mInFlightCommands.erase(mInFlightCommands.begin() + index);
+        }
+        else
+        {
+            ++index;
+        }
+    }
+
+    return vk::NoError();
+}
+
+vk::Error RendererVk::submit(const VkSubmitInfo &submitInfo)
+{
+    checkInFlightCommands();
+
+    // Start a Fence to record when this command buffer finishes.
+    VkFenceCreateInfo fenceInfo;
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.pNext = nullptr;
+    fenceInfo.flags = 0;
+
+    vk::Fence fence;
+    ANGLE_TRY(fence.init(mDevice, fenceInfo));
+
+    ANGLE_VK_TRY(vkQueueSubmit(mQueue, 1, &submitInfo, fence.getHandle()));
+
+    // Store this command buffer in the in-flight list.
+    mInFlightCommands.emplace_back(vk::FenceAndCommandBuffer(mCurrentQueueSerial, std::move(fence),
+                                                             std::move(mCommandBuffer)));
+
+    // Sanity check.
+    ASSERT(mInFlightCommands.size() < 1000u);
+
+    // Increment the command buffer serial. If this fails, we need to restart ANGLE.
+    ANGLE_VK_CHECK(++mCurrentQueueSerial, VK_ERROR_OUT_OF_HOST_MEMORY);
+    return vk::NoError();
+}
+
+vk::Error RendererVk::createStagingImage(TextureDimension dimension,
+                                         const vk::Format &format,
+                                         const gl::Extents &extent,
+                                         vk::StagingImage *imageOut)
 {
     ASSERT(mHostVisibleMemoryIndex != std::numeric_limits<uint32_t>::max());
 
-    vk::StagingImage stagingImage(mDevice);
-    ANGLE_TRY(stagingImage.init(mCurrentQueueFamilyIndex, mHostVisibleMemoryIndex, dimension,
-                                format.native, extent));
+    ANGLE_TRY(imageOut->init(mDevice, mCurrentQueueFamilyIndex, mHostVisibleMemoryIndex, dimension,
+                             format.native, extent));
 
-    return std::move(stagingImage);
+    return vk::NoError();
+}
+
+GlslangWrapper *RendererVk::getGlslangWrapper()
+{
+    return mGlslangWrapper;
+}
+
+Serial RendererVk::getCurrentQueueSerial() const
+{
+    return mCurrentQueueSerial;
 }
 
 }  // namespace rx

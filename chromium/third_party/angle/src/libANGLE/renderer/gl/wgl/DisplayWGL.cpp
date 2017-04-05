@@ -346,9 +346,8 @@ egl::Error DisplayWGL::initialize(egl::Display *display)
     mHasRobustness = mFunctionsGL->getGraphicsResetStatus != nullptr;
     if (hasWGLCreateContextRobustness != mHasRobustness)
     {
-        ANGLEPlatformCurrent()->logWarning(
-            "WGL_ARB_create_context_robustness exists but unable to OpenGL context with "
-            "robustness.");
+        WARN() << "WGL_ARB_create_context_robustness exists but unable to OpenGL context with "
+                  "robustness.";
     }
 
     // Intel OpenGL ES drivers are not currently supported due to bugs in the driver and ANGLE
@@ -549,6 +548,7 @@ egl::ConfigSet DisplayWGL::generateConfigs()
         ((getAttrib(WGL_SWAP_METHOD_ARB) == WGL_SWAP_COPY_ARB) ? EGL_SWAP_BEHAVIOR_PRESERVED_BIT
                                                                : 0);
     config.optimalOrientation = optimalSurfaceOrientation;
+    config.colorComponentType = EGL_COLOR_COMPONENT_TYPE_FIXED_EXT;
 
     config.transparentType = EGL_NONE;
     config.transparentRedValue = 0;
@@ -660,6 +660,9 @@ void DisplayWGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->createContextRobustness = mHasRobustness;
 
     outExtensions->d3dTextureClientBuffer = mFunctionsWGL->hasExtension("WGL_NV_DX_interop2");
+
+    // Contexts are virtualized so textures can be shared globally
+    outExtensions->displayTextureShareGroup = true;
 }
 
 void DisplayWGL::generateCaps(egl::Caps *outCaps) const
@@ -678,12 +681,6 @@ egl::Error DisplayWGL::waitNative(EGLint engine,
                                   egl::Surface *readSurface) const
 {
     // Unimplemented as this is not needed for WGL
-    return egl::Error(EGL_SUCCESS);
-}
-
-egl::Error DisplayWGL::getDriverVersion(std::string *version) const
-{
-    *version = "";
     return egl::Error(EGL_SUCCESS);
 }
 

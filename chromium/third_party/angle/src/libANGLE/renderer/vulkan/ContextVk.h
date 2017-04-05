@@ -72,7 +72,7 @@ class ContextVk : public ContextImpl
     void popGroupMarker() override;
 
     // State sync with dirty bits.
-    void syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits) override;
+    void syncState(const gl::State::DirtyBits &dirtyBits) override;
 
     // Disjoint timer queries
     GLint getGPUDisjoint() override;
@@ -130,6 +130,7 @@ class ContextVk : public ContextImpl
 
   private:
     RendererVk *mRenderer;
+    vk::Pipeline mCurrentPipeline;
 };
 
 }  // namespace rx

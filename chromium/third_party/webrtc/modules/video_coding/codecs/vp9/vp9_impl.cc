@@ -83,7 +83,7 @@ VP9EncoderImpl::VP9EncoderImpl()
       // Use two spatial when screensharing with flexible mode.
       spatial_layer_(new ScreenshareLayersVP9(2)) {
   memset(&codec_, 0, sizeof(codec_));
-  memset(&svc_internal_.svc_params, 0, sizeof(vpx_svc_extra_cfg_t));
+  memset(&svc_params_, 0, sizeof(vpx_svc_extra_cfg_t));
   uint32_t seed = rtc::Time32();
   srand(seed);
 }
@@ -148,14 +148,14 @@ bool VP9EncoderImpl::SetSvcRates() {
     float total = 0;
 
     for (i = 0; i < num_spatial_layers_; ++i) {
-      if (svc_internal_.svc_params.scaling_factor_num[i] <= 0 ||
-          svc_internal_.svc_params.scaling_factor_den[i] <= 0) {
+      if (svc_params_.scaling_factor_num[i] <= 0 ||
+          svc_params_.scaling_factor_den[i] <= 0) {
         LOG(LS_ERROR) << "Scaling factors not specified!";
         return false;
       }
       rate_ratio[i] =
-          static_cast<float>(svc_internal_.svc_params.scaling_factor_num[i]) /
-          svc_internal_.svc_params.scaling_factor_den[i];
+          static_cast<float>(svc_params_.scaling_factor_num[i]) /
+          svc_params_.scaling_factor_den[i];
       total += rate_ratio[i];
     }
 
@@ -251,8 +251,8 @@ int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
   if (inst->VP9().numberOfTemporalLayers > 3) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
-  // libvpx currently supports only one or two spatial layers.
-  if (inst->VP9().numberOfSpatialLayers > 2) {
+  // libvpx probably does not support more than 3 spatial layers.
+  if (inst->VP9().numberOfSpatialLayers > 3) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
 
@@ -396,22 +396,22 @@ int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
   // Set QP-min/max per spatial and temporal layer.
   int tot_num_layers = num_spatial_layers_ * num_temporal_layers_;
   for (int i = 0; i < tot_num_layers; ++i) {
-    svc_internal_.svc_params.max_quantizers[i] = config_->rc_max_quantizer;
-    svc_internal_.svc_params.min_quantizers[i] = config_->rc_min_quantizer;
+    svc_params_.max_quantizers[i] = config_->rc_max_quantizer;
+    svc_params_.min_quantizers[i] = config_->rc_min_quantizer;
   }
   config_->ss_number_layers = num_spatial_layers_;
   if (ExplicitlyConfiguredSpatialLayers()) {
     for (int i = 0; i < num_spatial_layers_; ++i) {
       const auto& layer = codec_.spatialLayers[i];
-      svc_internal_.svc_params.scaling_factor_num[i] = layer.scaling_factor_num;
-      svc_internal_.svc_params.scaling_factor_den[i] = layer.scaling_factor_den;
+      svc_params_.scaling_factor_num[i] = layer.scaling_factor_num;
+      svc_params_.scaling_factor_den[i] = layer.scaling_factor_den;
     }
   } else {
     int scaling_factor_num = 256;
     for (int i = num_spatial_layers_ - 1; i >= 0; --i) {
       // 1:2 scaling in each dimension.
-      svc_internal_.svc_params.scaling_factor_num[i] = scaling_factor_num;
-      svc_internal_.svc_params.scaling_factor_den[i] = 256;
+      svc_params_.scaling_factor_num[i] = scaling_factor_num;
+      svc_params_.scaling_factor_den[i] = 256;
       if (codec_.mode != kScreensharing)
         scaling_factor_num /= 2;
     }
@@ -435,7 +435,7 @@ int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
       (num_temporal_layers_ > 1 || num_spatial_layers_ > 1) ? 1 : 0);
   if (num_temporal_layers_ > 1 || num_spatial_layers_ > 1) {
     vpx_codec_control(encoder_, VP9E_SET_SVC_PARAMETERS,
-                      &svc_internal_.svc_params);
+                      &svc_params_);
   }
   // Register callback for getting each spatial layer.
   vpx_codec_priv_output_cx_pkt_cb_pair_t cbp = {
@@ -648,11 +648,11 @@ void VP9EncoderImpl::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
     vp9_info->spatial_layer_resolution_present = true;
     for (size_t i = 0; i < vp9_info->num_spatial_layers; ++i) {
       vp9_info->width[i] = codec_.width *
-                           svc_internal_.svc_params.scaling_factor_num[i] /
-                           svc_internal_.svc_params.scaling_factor_den[i];
+                           svc_params_.scaling_factor_num[i] /
+                           svc_params_.scaling_factor_den[i];
       vp9_info->height[i] = codec_.height *
-                            svc_internal_.svc_params.scaling_factor_num[i] /
-                            svc_internal_.svc_params.scaling_factor_den[i];
+                            svc_params_.scaling_factor_num[i] /
+                            svc_params_.scaling_factor_den[i];
     }
     if (!vp9_info->flexible_mode) {
       vp9_info->gof.CopyGofInfoVP9(gof_);
@@ -932,7 +932,12 @@ int VP9DecoderImpl::Decode(const EncodedImage& input_image,
   // It may be released by libvpx during future vpx_codec_decode or
   // vpx_codec_destroy calls.
   img = vpx_codec_get_frame(decoder_, &iter);
-  int ret = ReturnFrame(img, input_image._timeStamp, input_image.ntp_time_ms_);
+  int qp;
+  vpx_codec_err_t vpx_ret =
+      vpx_codec_control(decoder_, VPXD_GET_LAST_QUANTIZER, &qp);
+  RTC_DCHECK_EQ(vpx_ret, VPX_CODEC_OK);
+  int ret =
+      ReturnFrame(img, input_image._timeStamp, input_image.ntp_time_ms_, qp);
   if (ret != 0) {
     return ret;
   }
@@ -941,7 +946,8 @@ int VP9DecoderImpl::Decode(const EncodedImage& input_image,
 
 int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img,
                                 uint32_t timestamp,
-                                int64_t ntp_time_ms) {
+                                int64_t ntp_time_ms,
+                                int qp) {
   if (img == NULL) {
     // Decoder OK and NULL image => No show frame.
     return WEBRTC_VIDEO_CODEC_NO_OUTPUT;
@@ -969,9 +975,8 @@ int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img,
                            0 /* render_time_ms */, webrtc::kVideoRotation_0);
   decoded_image.set_ntp_time_ms(ntp_time_ms);
 
-  int ret = decode_complete_callback_->Decoded(decoded_image);
-  if (ret != 0)
-    return ret;
+  decode_complete_callback_->Decoded(decoded_image, rtc::Optional<int32_t>(),
+                                     rtc::Optional<uint8_t>(qp));
   return WEBRTC_VIDEO_CODEC_OK;
 }
 

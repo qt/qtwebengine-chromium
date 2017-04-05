@@ -29,9 +29,18 @@ namespace webrtc {
 namespace {
 
 constexpr int kSampleRateHz = 48000;
-constexpr int kMinBitrateBps = 500;
+
+// Opus API allows a min bitrate of 500bps, but Opus documentation suggests
+// a minimum bitrate of 6kbps.
+constexpr int kMinBitrateBps = 6000;
+
 constexpr int kMaxBitrateBps = 512000;
+
+#if WEBRTC_OPUS_SUPPORT_120MS_PTIME
+constexpr int kSupportedFrameLengths[] = {20, 60, 120};
+#else
 constexpr int kSupportedFrameLengths[] = {20, 60};
+#endif
 
 // PacketLossFractionSmoother uses an exponential filter with a time constant
 // of -1.0 / ln(0.9999) = 10000 ms.
@@ -174,7 +183,9 @@ AudioEncoderOpus::AudioEncoderOpus(
     const Config& config,
     AudioNetworkAdaptorCreator&& audio_network_adaptor_creator,
     std::unique_ptr<SmoothingFilter> bitrate_smoother)
-    : packet_loss_rate_(0.0),
+    : send_side_bwe_with_overhead_(webrtc::field_trial::IsEnabled(
+          "WebRTC-SendSideBwe-WithOverhead")),
+      packet_loss_rate_(0.0),
       inst_(nullptr),
       packet_loss_fraction_smoother_(new PacketLossFractionSmoother(
           config.clock)),
@@ -314,8 +325,7 @@ void AudioEncoderOpus::OnReceivedUplinkBandwidth(
     bitrate_smoother_->AddSample(target_audio_bitrate_bps);
 
     ApplyAudioNetworkAdaptor();
-  } else if (webrtc::field_trial::FindFullName(
-                 "WebRTC-SendSideBwe-WithOverhead") == "Enabled") {
+  } else if (send_side_bwe_with_overhead_) {
     if (!overhead_bytes_per_packet_) {
       LOG(LS_INFO)
           << "AudioEncoderOpus: Overhead unknown, target audio bitrate "
@@ -536,10 +546,11 @@ AudioEncoderOpus::DefaultAudioNetworkAdaptorCreator(
   config.clock = clock;
   config.event_log = event_log;
   return std::unique_ptr<AudioNetworkAdaptor>(new AudioNetworkAdaptorImpl(
-      config, ControllerManagerImpl::Create(
-                  config_string, NumChannels(), supported_frame_lengths_ms(),
-                  num_channels_to_encode_, next_frame_length_ms_,
-                  GetTargetBitrate(), config_.fec_enabled, GetDtx(), clock)));
+      config,
+      ControllerManagerImpl::Create(
+          config_string, NumChannels(), supported_frame_lengths_ms(),
+          kMinBitrateBps, num_channels_to_encode_, next_frame_length_ms_,
+          GetTargetBitrate(), config_.fec_enabled, GetDtx(), clock)));
 }
 
 void AudioEncoderOpus::MaybeUpdateUplinkBandwidth() {

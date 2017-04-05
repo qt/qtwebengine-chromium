@@ -24,12 +24,6 @@ CCodec_ModuleMgr::CCodec_ModuleMgr()
       m_pJpxModule(new CCodec_JpxModule),
       m_pJbig2Module(new CCodec_Jbig2Module),
       m_pIccModule(new CCodec_IccModule),
-#ifdef PDF_ENABLE_XFA
-      m_pPngModule(new CCodec_PngModule),
-      m_pGifModule(new CCodec_GifModule),
-      m_pBmpModule(new CCodec_BmpModule),
-      m_pTiffModule(new CCodec_TiffModule),
-#endif  // PDF_ENABLE_XFA
       m_pFlateModule(new CCodec_FlateModule) {
 }
 
@@ -229,7 +223,7 @@ bool CCodec_BasicModule::A85Encode(const uint8_t* src_buf,
     uint32_t val = 0;
     int count = 0;
     while (pos < src_size) {
-      val += (uint32_t)(src_buf[pos] << (8 * (3 - pos)));
+      val += (uint32_t)(src_buf[pos]) << (8 * (3 - count));
       count++;
       pos++;
     }

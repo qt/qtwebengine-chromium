@@ -116,9 +116,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void StopSpeaking() override;
 #endif  // defined(OS_MACOSX)
 
-  void LockCompositingSurface() override;
-  void UnlockCompositingSurface() override;
-
   void WheelEventAck(const blink::WebMouseWheelEvent& event,
                      InputEventAckState ack_result) override;
 
@@ -130,8 +127,14 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 
  protected:
   friend class RenderWidgetHostView;
+  bool ShouldCreateNewSurfaceId(uint32_t compositor_frame_sink_id,
+                                const cc::CompositorFrame& frame) override;
 
  private:
+  void SendSurfaceInfoToEmbedderImpl(
+      const cc::SurfaceInfo& surface_info,
+      const cc::SurfaceSequence& sequence) override;
+
   RenderWidgetHostViewGuest(
       RenderWidgetHost* widget,
       BrowserPluginGuest* guest,

@@ -65,6 +65,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   int32_t DeregisterSendRtpHeaderExtension(RTPExtensionType type) override;
 
+  bool HasBweExtensions() const override;
+
   // Get start timestamp.
   uint32_t StartTimestamp() const override;
 
@@ -126,11 +128,12 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
                         uint16_t sequence_number,
                         int64_t capture_time_ms,
                         bool retransmission,
-                        int probe_cluster_id) override;
+                        const PacedPacketInfo& pacing_info) override;
 
   // Returns the number of padding bytes actually sent, which can be more or
   // less than |bytes|.
-  size_t TimeToSendPadding(size_t bytes, int probe_cluster_id) override;
+  size_t TimeToSendPadding(size_t bytes,
+                           const PacedPacketInfo& pacing_info) override;
 
   // RTCP part.
 
@@ -330,7 +333,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
   bool TimeToSendFullNackList(int64_t now) const;
 
   const bool audio_;
-  bool collision_detected_;
   int64_t last_process_time_;
   int64_t last_bitrate_process_time_;
   int64_t last_rtt_process_time_;

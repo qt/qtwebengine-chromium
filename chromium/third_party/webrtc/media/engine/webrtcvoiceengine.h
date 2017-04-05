@@ -30,6 +30,12 @@
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/pc/channel.h"
 
+namespace webrtc {
+namespace voe {
+class TransmitMixer;
+}  // namespace voe
+}  // namespace webrtc
+
 namespace cricket {
 
 class AudioDeviceModule;
@@ -75,10 +81,6 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
   void RegisterChannel(WebRtcVoiceMediaChannel* channel);
   void UnregisterChannel(WebRtcVoiceMediaChannel* channel);
 
-  // Called by WebRtcVoiceMediaChannel to set a gain offset from
-  // the default AGC target level.
-  bool AdjustAgcLevel(int delta);
-
   VoEWrapper* voe() { return voe_wrapper_.get(); }
   int GetLastEngineError();
 
@@ -109,6 +111,7 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
   int CreateVoEChannel();
   webrtc::AudioDeviceModule* adm();
   webrtc::AudioProcessing* apm();
+  webrtc::voe::TransmitMixer* transmit_mixer();
 
   AudioCodecs CollectRecvCodecs() const;
 
@@ -120,6 +123,8 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
   rtc::scoped_refptr<webrtc::AudioDecoderFactory> decoder_factory_;
   // Reference to the APM, owned by VoE.
   webrtc::AudioProcessing* apm_ = nullptr;
+  // Reference to the TransmitMixer, owned by VoE.
+  webrtc::voe::TransmitMixer* transmit_mixer_ = nullptr;
   // The primary instance of WebRtc VoiceEngine.
   std::unique_ptr<VoEWrapper> voe_wrapper_;
   rtc::scoped_refptr<webrtc::AudioState> audio_state_;
@@ -183,12 +188,6 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
   bool RemoveRecvStream(uint32_t ssrc) override;
   bool GetActiveStreams(AudioInfo::StreamList* actives) override;
   int GetOutputLevel() override;
-  int GetTimeSinceLastTyping() override;
-  void SetTypingDetectionParameters(int time_window,
-                                    int cost_per_typing,
-                                    int reporting_threshold,
-                                    int penalty_decay,
-                                    int type_event_delay) override;
   bool SetOutputVolume(uint32_t ssrc, double volume) override;
 
   bool CanInsertDtmf() override;
@@ -261,7 +260,6 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
   bool playout_ = false;
   bool send_ = false;
   webrtc::Call* const call_ = nullptr;
-  webrtc::Call::Config::BitrateConfig bitrate_config_;
 
   // SSRC of unsignalled receive stream, or -1 if there isn't one.
   int64_t default_recv_ssrc_ = -1;

@@ -867,6 +867,12 @@ TEST_F(RtpDepacketizerH264Test, TestTruncatedSingleStapANalu) {
   EXPECT_FALSE(depacketizer_->Parse(&payload, kPayload, sizeof(kPayload)));
 }
 
+TEST_F(RtpDepacketizerH264Test, TestStapAPacketWithTruncatedNalUnits) {
+  const uint8_t kPayload[] = { 0x58, 0xCB, 0xED, 0xDF};
+  RtpDepacketizer::ParsedPayload payload;
+  EXPECT_FALSE(depacketizer_->Parse(&payload, kPayload, sizeof(kPayload)));
+}
+
 TEST_F(RtpDepacketizerH264Test, TestTruncationJustAfterSingleStapANalu) {
   const uint8_t kPayload[] = {0x38, 0x27, 0x27};
   RtpDepacketizer::ParsedPayload payload;
@@ -887,6 +893,7 @@ TEST_F(RtpDepacketizerH264Test, TestSeiPacket) {
   RtpDepacketizer::ParsedPayload payload;
   ASSERT_TRUE(depacketizer_->Parse(&payload, kPayload, sizeof(kPayload)));
   const RTPVideoHeaderH264& h264 = payload.type.Video.codecHeader.H264;
+  EXPECT_EQ(kVideoFrameDelta, payload.frame_type);
   EXPECT_EQ(kH264SingleNalu, h264.packetization_type);
   EXPECT_EQ(kSei, h264.nalu_type);
   ASSERT_EQ(1u, h264.nalus_length);

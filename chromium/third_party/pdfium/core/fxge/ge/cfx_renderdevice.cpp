@@ -27,19 +27,19 @@ namespace {
 void AdjustGlyphSpace(std::vector<FXTEXT_GLYPHPOS>* pGlyphAndPos) {
   ASSERT(pGlyphAndPos->size() > 1);
   std::vector<FXTEXT_GLYPHPOS>& glyphs = *pGlyphAndPos;
-  bool bVertical = glyphs.back().m_OriginX == glyphs.front().m_OriginX;
-  if (!bVertical && (glyphs.back().m_OriginY != glyphs.front().m_OriginY))
+  bool bVertical = glyphs.back().m_Origin.x == glyphs.front().m_Origin.x;
+  if (!bVertical && (glyphs.back().m_Origin.y != glyphs.front().m_Origin.y))
     return;
 
   for (size_t i = glyphs.size() - 1; i > 1; --i) {
     FXTEXT_GLYPHPOS& next = glyphs[i];
-    int next_origin = bVertical ? next.m_OriginY : next.m_OriginX;
-    FX_FLOAT next_origin_f = bVertical ? next.m_fOriginY : next.m_fOriginX;
+    int next_origin = bVertical ? next.m_Origin.y : next.m_Origin.x;
+    FX_FLOAT next_origin_f = bVertical ? next.m_fOrigin.y : next.m_fOrigin.x;
 
     FXTEXT_GLYPHPOS& current = glyphs[i - 1];
-    int& current_origin = bVertical ? current.m_OriginY : current.m_OriginX;
+    int& current_origin = bVertical ? current.m_Origin.y : current.m_Origin.x;
     FX_FLOAT current_origin_f =
-        bVertical ? current.m_fOriginY : current.m_fOriginX;
+        bVertical ? current.m_fOrigin.y : current.m_fOrigin.x;
 
     int space = next_origin - current_origin;
     FX_FLOAT space_f = next_origin_f - current_origin_f;
@@ -346,6 +346,21 @@ bool ShouldDrawDeviceText(const CFX_Font* pFont, uint32_t text_flags) {
 
 }  // namespace
 
+FXTEXT_CHARPOS::FXTEXT_CHARPOS()
+    : m_GlyphIndex(0),
+      m_FontCharWidth(0),
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+      m_ExtGID(0),
+#endif
+      m_FallbackFontPosition(0),
+      m_bGlyphAdjust(false),
+      m_bFontStyle(false) {
+}
+
+FXTEXT_CHARPOS::FXTEXT_CHARPOS(const FXTEXT_CHARPOS&) = default;
+
+FXTEXT_CHARPOS::~FXTEXT_CHARPOS(){};
+
 CFX_RenderDevice::CFX_RenderDevice()
     : m_pBitmap(nullptr),
       m_Width(0),
@@ -473,25 +488,20 @@ bool CFX_RenderDevice::DrawPathWithBlend(const CFX_PathData* pPathData,
                                          int blend_type) {
   uint8_t stroke_alpha = pGraphState ? FXARGB_A(stroke_color) : 0;
   uint8_t fill_alpha = (fill_mode & 3) ? FXARGB_A(fill_color) : 0;
-  if (stroke_alpha == 0 && pPathData->GetPointCount() == 2) {
-    FX_PATHPOINT* pPoints = pPathData->GetPoints();
-    FX_FLOAT x1, x2, y1, y2;
+  const std::vector<FX_PATHPOINT>& pPoints = pPathData->GetPoints();
+  if (stroke_alpha == 0 && pPoints.size() == 2) {
+    CFX_PointF pos1 = pPoints[0].m_Point;
+    CFX_PointF pos2 = pPoints[1].m_Point;
     if (pObject2Device) {
-      pObject2Device->Transform(pPoints[0].m_PointX, pPoints[0].m_PointY, x1,
-                                y1);
-      pObject2Device->Transform(pPoints[1].m_PointX, pPoints[1].m_PointY, x2,
-                                y2);
-    } else {
-      x1 = pPoints[0].m_PointX;
-      y1 = pPoints[0].m_PointY;
-      x2 = pPoints[1].m_PointX;
-      y2 = pPoints[1].m_PointY;
+      pos1 = pObject2Device->Transform(pos1);
+      pos2 = pObject2Device->Transform(pos2);
     }
-    DrawCosmeticLine(x1, y1, x2, y2, fill_color, fill_mode, blend_type);
+    DrawCosmeticLine(pos1.x, pos1.y, pos2.x, pos2.y, fill_color, fill_mode,
+                     blend_type);
     return true;
   }
-  if ((pPathData->GetPointCount() == 5 || pPathData->GetPointCount() == 4) &&
-      stroke_alpha == 0) {
+
+  if ((pPoints.size() == 5 || pPoints.size() == 4) && stroke_alpha == 0) {
     CFX_FloatRect rect_f;
     if (!(fill_mode & FXFILL_RECT_AA) &&
         pPathData->IsRect(pObject2Device, &rect_f)) {
@@ -539,19 +549,25 @@ bool CFX_RenderDevice::DrawPathWithBlend(const CFX_PathData* pPathData,
       !(fill_mode & FX_FILL_TEXT_MODE)) {
     CFX_PathData newPath;
     bool bThin = false;
-    if (pPathData->GetZeroAreaPath(newPath, (CFX_Matrix*)pObject2Device, bThin,
-                                   !!m_pDeviceDriver->GetDriverType())) {
+    bool setIdentity = false;
+    if (pPathData->GetZeroAreaPath(pObject2Device,
+                                   !!m_pDeviceDriver->GetDriverType(), &newPath,
+                                   &bThin, &setIdentity)) {
       CFX_GraphStateData graphState;
       graphState.m_LineWidth = 0.0f;
+
       uint32_t strokecolor = fill_color;
       if (bThin)
         strokecolor = (((fill_alpha >> 2) << 24) | (strokecolor & 0x00ffffff));
-      CFX_Matrix* pMatrix = nullptr;
-      if (pObject2Device && !pObject2Device->IsIdentity())
-        pMatrix = (CFX_Matrix*)pObject2Device;
+
+      const CFX_Matrix* pMatrix = nullptr;
+      if (pObject2Device && !pObject2Device->IsIdentity() && !setIdentity)
+        pMatrix = pObject2Device;
+
       int smooth_path = FX_ZEROAREA_FILL;
       if (fill_mode & FXFILL_NOPATHSMOOTH)
         smooth_path |= FXFILL_NOPATHSMOOTH;
+
       m_pDeviceDriver->DrawPath(&newPath, pMatrix, &graphState, 0, strokecolor,
                                 smooth_path, blend_type);
     }
@@ -589,7 +605,8 @@ bool CFX_RenderDevice::DrawFillStrokePath(const CFX_PathData* pPathData,
     bbox = pPathData->GetBoundingBox();
   }
   if (pObject2Device)
-    bbox.Transform(pObject2Device);
+    pObject2Device->TransformRect(bbox);
+
   CFX_Matrix ctm = GetCTM();
   FX_FLOAT fScaleX = FXSYS_fabs(ctm.a);
   FX_FLOAT fScaleY = FXSYS_fabs(ctm.d);
@@ -612,8 +629,8 @@ bool CFX_RenderDevice::DrawFillStrokePath(const CFX_PathData* pPathData,
   CFX_Matrix matrix;
   if (pObject2Device)
     matrix = *pObject2Device;
-  matrix.TranslateI(-rect.left, -rect.top);
-  matrix.Concat(fScaleX, 0, 0, fScaleY, 0, 0);
+  matrix.Translate(-rect.left, -rect.top);
+  matrix.Concat(CFX_Matrix(fScaleX, 0, 0, fScaleY, 0, 0));
   if (!bitmap_device.GetDeviceDriver()->DrawPath(
           pPathData, &matrix, pGraphState, fill_color, stroke_color, fill_mode,
           blend_type)) {
@@ -675,9 +692,8 @@ bool CFX_RenderDevice::DrawCosmeticLine(FX_FLOAT x1,
   }
   CFX_GraphStateData graph_state;
   CFX_PathData path;
-  path.SetPointCount(2);
-  path.SetPoint(0, x1, y1, FXPT_MOVETO);
-  path.SetPoint(1, x2, y2, FXPT_LINETO);
+  path.AppendPoint(CFX_PointF(x1, y1), FXPT_TYPE::MoveTo, false);
+  path.AppendPoint(CFX_PointF(x2, y2), FXPT_TYPE::LineTo, false);
   return m_pDeviceDriver->DrawPath(&path, nullptr, &graph_state, 0, color,
                                    fill_mode, blend_type);
 }
@@ -860,6 +876,7 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
     char2device = *pText2Device;
     text2Device = *pText2Device;
   }
+
   char2device.Scale(font_size, -font_size);
   if (FXSYS_fabs(char2device.a) + FXSYS_fabs(char2device.b) > 50 * 1.0f ||
       ((m_DeviceClass == FXDC_PRINTER) &&
@@ -902,19 +919,21 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
   FX_FLOAT scale_x = FXSYS_fabs(matrixCTM.a);
   FX_FLOAT scale_y = FXSYS_fabs(matrixCTM.d);
   CFX_Matrix deviceCtm = char2device;
-  deviceCtm.Concat(scale_x, 0, 0, scale_y, 0, 0);
-  text2Device.Concat(scale_x, 0, 0, scale_y, 0, 0);
+  CFX_Matrix m(scale_x, 0, 0, scale_y, 0, 0);
+  deviceCtm.Concat(m);
+  text2Device.Concat(m);
+
   for (size_t i = 0; i < glyphs.size(); ++i) {
     FXTEXT_GLYPHPOS& glyph = glyphs[i];
     const FXTEXT_CHARPOS& charpos = pCharPos[i];
-    glyph.m_fOriginX = charpos.m_OriginX;
-    glyph.m_fOriginY = charpos.m_OriginY;
-    text2Device.Transform(glyph.m_fOriginX, glyph.m_fOriginY);
+
+    glyph.m_fOrigin = text2Device.Transform(charpos.m_Origin);
     if (anti_alias < FXFT_RENDER_MODE_LCD)
-      glyph.m_OriginX = FXSYS_round(glyph.m_fOriginX);
+      glyph.m_Origin.x = FXSYS_round(glyph.m_fOrigin.x);
     else
-      glyph.m_OriginX = (int)FXSYS_floor(glyph.m_fOriginX);
-    glyph.m_OriginY = FXSYS_round(glyph.m_fOriginY);
+      glyph.m_Origin.x = static_cast<int>(FXSYS_floor(glyph.m_fOrigin.x));
+    glyph.m_Origin.y = FXSYS_round(glyph.m_fOrigin.y);
+
     if (charpos.m_bGlyphAdjust) {
       CFX_Matrix new_matrix(
           charpos.m_AdjustMatrix[0], charpos.m_AdjustMatrix[1],
@@ -960,8 +979,8 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
         continue;
       const CFX_DIBitmap* pGlyph = &glyph.m_pGlyph->m_Bitmap;
       bitmap.TransferBitmap(
-          glyph.m_OriginX + glyph.m_pGlyph->m_Left - pixel_left,
-          glyph.m_OriginY - glyph.m_pGlyph->m_Top - pixel_top,
+          glyph.m_Origin.x + glyph.m_pGlyph->m_Left - pixel_left,
+          glyph.m_Origin.y - glyph.m_pGlyph->m_Top - pixel_top,
           pGlyph->GetWidth(), pGlyph->GetHeight(), pGlyph, 0, 0);
     }
     return SetBitMask(&bitmap, bmp_rect.left, bmp_rect.top, fill_color);
@@ -995,13 +1014,13 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
     if (!glyph.m_pGlyph)
       continue;
 
-    pdfium::base::CheckedNumeric<int> left = glyph.m_OriginX;
+    pdfium::base::CheckedNumeric<int> left = glyph.m_Origin.x;
     left += glyph.m_pGlyph->m_Left;
     left -= pixel_left;
     if (!left.IsValid())
       return false;
 
-    pdfium::base::CheckedNumeric<int> top = glyph.m_OriginY;
+    pdfium::base::CheckedNumeric<int> top = glyph.m_Origin.y;
     top -= glyph.m_pGlyph->m_Top;
     top -= pixel_top;
     if (!top.IsValid())
@@ -1021,14 +1040,16 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
     }
     bool bBGRStripe = !!(text_flags & FXTEXT_BGR_STRIPE);
     ncols /= 3;
-    int x_subpixel = (int)(glyph.m_fOriginX * 3) % 3;
-    int start_col = std::max(left.ValueOrDie(), 0);
+    int x_subpixel = static_cast<int>(glyph.m_fOrigin.x * 3) % 3;
+    int start_col =
+        pdfium::base::ValueOrDieForType<int>(pdfium::base::CheckMax(left, 0));
     pdfium::base::CheckedNumeric<int> end_col_safe = left;
     end_col_safe += ncols;
     if (!end_col_safe.IsValid())
       return false;
 
-    int end_col = std::min(end_col_safe.ValueOrDie(), dest_width);
+    int end_col =
+        std::min(static_cast<int>(end_col_safe.ValueOrDie<int>()), dest_width);
     if (start_col >= end_col)
       continue;
 
@@ -1058,16 +1079,19 @@ bool CFX_RenderDevice::DrawTextPath(int nChars,
     const FXTEXT_CHARPOS& charpos = pCharPos[iChar];
     CFX_Matrix matrix;
     if (charpos.m_bGlyphAdjust) {
-      matrix.Set(charpos.m_AdjustMatrix[0], charpos.m_AdjustMatrix[1],
-                 charpos.m_AdjustMatrix[2], charpos.m_AdjustMatrix[3], 0, 0);
+      matrix = CFX_Matrix(charpos.m_AdjustMatrix[0], charpos.m_AdjustMatrix[1],
+                          charpos.m_AdjustMatrix[2], charpos.m_AdjustMatrix[3],
+                          0, 0);
     }
-    matrix.Concat(font_size, 0, 0, font_size, charpos.m_OriginX,
-                  charpos.m_OriginY);
+    matrix.Concat(CFX_Matrix(font_size, 0, 0, font_size, charpos.m_Origin.x,
+                             charpos.m_Origin.y));
     const CFX_PathData* pPath =
         pFont->LoadGlyphPath(charpos.m_GlyphIndex, charpos.m_FontCharWidth);
     if (!pPath)
       continue;
+
     matrix.Concat(*pText2User);
+
     CFX_PathData TransformedPath(*pPath);
     TransformedPath.Transform(&matrix);
     if (fill_color || stroke_color) {

@@ -55,6 +55,8 @@ TName GetIndexFunctionName(const TType &type, bool write)
     }
     TString nameString = TFunction::mangleName(nameSink.c_str());
     TName name(nameString);
+    // TODO(oetuaho@nvidia.com): would be better to have the parameter types in the mangled name as
+    // well.
     name.setInternal(true);
     return name;
 }
@@ -111,11 +113,9 @@ TIntermTyped *EnsureSignedInt(TIntermTyped *node)
     if (node->getBasicType() == EbtInt)
         return node;
 
-    TIntermAggregate *convertedNode = new TIntermAggregate(EOpConstructInt);
-    convertedNode->setType(TType(EbtInt));
-    convertedNode->getSequence()->push_back(node);
-    convertedNode->setPrecisionFromChildren();
-    return convertedNode;
+    TIntermSequence *arguments = new TIntermSequence();
+    arguments->push_back(node);
+    return new TIntermAggregate(TType(EbtInt), EOpConstructInt, arguments);
 }
 
 TType GetFieldType(const TType &indexedType)
@@ -349,16 +349,16 @@ TIntermAggregate *CreateIndexFunctionCall(TIntermBinary *node,
                                           TIntermTyped *index)
 {
     ASSERT(node->getOp() == EOpIndexIndirect);
-    TIntermAggregate *indexingCall = new TIntermAggregate(EOpFunctionCall);
-    indexingCall->setLine(node->getLine());
-    indexingCall->setUserDefined();
-    indexingCall->getFunctionSymbolInfo()->setNameObj(
-        GetIndexFunctionName(indexedNode->getType(), false));
-    indexingCall->getSequence()->push_back(indexedNode);
-    indexingCall->getSequence()->push_back(index);
+    TIntermSequence *arguments = new TIntermSequence();
+    arguments->push_back(indexedNode);
+    arguments->push_back(index);
 
     TType fieldType = GetFieldType(indexedNode->getType());
-    indexingCall->setType(fieldType);
+    TIntermAggregate *indexingCall =
+        new TIntermAggregate(fieldType, EOpCallFunctionInAST, arguments);
+    indexingCall->setLine(node->getLine());
+    indexingCall->getFunctionSymbolInfo()->setNameObj(
+        GetIndexFunctionName(indexedNode->getType(), false));
     return indexingCall;
 }
 
@@ -520,6 +520,11 @@ void RemoveDynamicIndexing(TIntermNode *root,
         root->traverse(&traverser);
         traverser.updateTree();
     } while (traverser.usedTreeInsertion());
+    // TOOD(oetuaho@nvidia.com): It might be nicer to add the helper definitions also in the middle
+    // of traversal. Now the tree ends up in an inconsistent state in the middle, since there are
+    // function call nodes with no corresponding definition nodes. This needs special handling in
+    // TIntermLValueTrackingTraverser, and creates intricacies that are not easily apparent from a
+    // superficial reading of the code.
     traverser.insertHelperDefinitions(root);
     traverser.updateTree();
 }

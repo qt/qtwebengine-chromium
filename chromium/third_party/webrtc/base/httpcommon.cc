@@ -24,7 +24,6 @@
 #include "webrtc/base/arraysize.h"
 #include "webrtc/base/base64.h"
 #include "webrtc/base/checks.h"
-#include "webrtc/base/common.h"
 #include "webrtc/base/cryptstring.h"
 #include "webrtc/base/httpcommon-inl.h"
 #include "webrtc/base/httpcommon.h"
@@ -342,7 +341,7 @@ bool HttpDateToSeconds(const std::string& date, time_t* seconds) {
      1,  2,  3,  4,  5,  6,  7,  8,  9,  10,  11,  12
   };
 
-  RTC_DCHECK(NULL != seconds);
+  RTC_DCHECK(nullptr != seconds);
   struct tm tval;
   memset(&tval, 0, sizeof(tval));
   char month[4], zone[6];
@@ -482,9 +481,9 @@ void HttpData::setContent(const std::string& content_type,
 
 void HttpData::setDocumentAndLength(StreamInterface* document) {
   // TODO: Consider calling Rewind() here?
-  RTC_DCHECK(!hasHeader(HH_CONTENT_LENGTH, NULL));
-  RTC_DCHECK(!hasHeader(HH_TRANSFER_ENCODING, NULL));
-  RTC_DCHECK(document != NULL);
+  RTC_DCHECK(!hasHeader(HH_CONTENT_LENGTH, nullptr));
+  RTC_DCHECK(!hasHeader(HH_TRANSFER_ENCODING, nullptr));
+  RTC_DCHECK(document != nullptr);
   this->document.reset(document);
   size_t content_length = 0;
   if (this->document->GetAvailable(&content_length)) {
@@ -680,37 +679,6 @@ HttpResponseData::parseLeader(const char* line, size_t len) {
 // Http Authentication
 //////////////////////////////////////////////////////////////////////
 
-#define TEST_DIGEST 0
-#if TEST_DIGEST
-/*
-const char * const DIGEST_CHALLENGE =
-  "Digest realm=\"testrealm@host.com\","
-  " qop=\"auth,auth-int\","
-  " nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\","
-  " opaque=\"5ccc069c403ebaf9f0171e9517f40e41\"";
-const char * const DIGEST_METHOD = "GET";
-const char * const DIGEST_URI =
-  "/dir/index.html";;
-const char * const DIGEST_CNONCE =
-  "0a4f113b";
-const char * const DIGEST_RESPONSE =
-  "6629fae49393a05397450978507c4ef1";
-//user_ = "Mufasa";
-//pass_ = "Circle Of Life";
-*/
-const char * const DIGEST_CHALLENGE =
-  "Digest realm=\"Squid proxy-caching web server\","
-  " nonce=\"Nny4QuC5PwiSDixJ\","
-  " qop=\"auth\","
-  " stale=false";
-const char * const DIGEST_URI =
-  "/";
-const char * const DIGEST_CNONCE =
-  "6501d58e9a21cee1e7b5fec894ded024";
-const char * const DIGEST_RESPONSE =
-  "edffcb0829e755838b073a4a42de06bc";
-#endif
-
 std::string quote(const std::string& str) {
   std::string result;
   result.push_back('"');
@@ -749,14 +717,9 @@ HttpAuthResult HttpAuthenticate(
   const std::string& username, const CryptString& password,
   HttpAuthContext *& context, std::string& response, std::string& auth_method)
 {
-#if TEST_DIGEST
-  challenge = DIGEST_CHALLENGE;
-  len = strlen(challenge);
-#endif
-
   HttpAttributeList args;
   HttpParseAttributes(challenge, len, args);
-  HttpHasNthAttribute(args, 0, &auth_method, NULL);
+  HttpHasNthAttribute(args, 0, &auth_method, nullptr);
 
   if (context && (context->auth_method != auth_method))
     return HAR_IGNORE;
@@ -797,15 +760,9 @@ HttpAuthResult HttpAuthenticate(
     context = new HttpAuthContext(auth_method);
 
     std::string cnonce, ncount;
-#if TEST_DIGEST
-    method = DIGEST_METHOD;
-    uri    = DIGEST_URI;
-    cnonce = DIGEST_CNONCE;
-#else
     char buffer[256];
     sprintf(buffer, "%d", static_cast<int>(time(0)));
     cnonce = MD5(buffer);
-#endif
     ncount = "00000001";
 
     std::string realm, nonce, qop, opaque;
@@ -838,10 +795,6 @@ HttpAuthResult HttpAuthenticate(
     std::string HA2 = MD5(A2);
     std::string dig_response = MD5(HA1 + ":" + middle + ":" + HA2);
 
-#if TEST_DIGEST
-    RTC_DCHECK(strcmp(dig_response.c_str(), DIGEST_RESPONSE) == 0);
-#endif
-
     std::stringstream ss;
     ss << auth_method;
     ss << " username=" << quote(username);
@@ -872,7 +825,7 @@ HttpAuthResult HttpAuthenticate(
 
 #if 0 // Requires funky windows versions
     DWORD len = MAX_SPN;
-    if (DsMakeSpn("HTTP", server.HostAsURIString().c_str(), NULL,
+    if (DsMakeSpn("HTTP", server.HostAsURIString().c_str(), nullptr,
                   server.port(),
                   0, &len, spn) != ERROR_SUCCESS) {
       LOG_F(WARNING) << "(Negotiate) - DsMakeSpn failed";
@@ -922,9 +875,9 @@ HttpAuthResult HttpAuthenticate(
       steps = neg->steps;
 
       std::string challenge, decoded_challenge;
-      if (HttpHasNthAttribute(args, 1, &challenge, NULL)
-          && Base64::Decode(challenge, Base64::DO_STRICT,
-                            &decoded_challenge, NULL)) {
+      if (HttpHasNthAttribute(args, 1, &challenge, nullptr) &&
+          Base64::Decode(challenge, Base64::DO_STRICT, &decoded_challenge,
+                         nullptr)) {
         SecBuffer in_sec;
         in_sec.pvBuffer   = const_cast<char *>(decoded_challenge.data());
         in_sec.cbBuffer   = static_cast<unsigned long>(decoded_challenge.size());

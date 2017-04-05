@@ -9,7 +9,7 @@
 #include "fpdfsdk/javascript/JS_Define.h"
 #include "fpdfsdk/javascript/JS_Object.h"
 #include "fpdfsdk/javascript/JS_Value.h"
-#include "fpdfsdk/javascript/cjs_context.h"
+#include "fpdfsdk/javascript/cjs_event_context.h"
 
 namespace {
 
@@ -19,17 +19,15 @@ CPDFSDK_BAAnnot* ToBAAnnot(CPDFSDK_Annot* annot) {
 
 }  // namespace
 
-BEGIN_JS_STATIC_CONST(CJS_Annot)
-END_JS_STATIC_CONST()
+JSConstSpec CJS_Annot::ConstSpecs[] = {{0, JSConstSpec::Number, 0, 0}};
 
-BEGIN_JS_STATIC_PROP(CJS_Annot)
-JS_STATIC_PROP_ENTRY(hidden)
-JS_STATIC_PROP_ENTRY(name)
-JS_STATIC_PROP_ENTRY(type)
-END_JS_STATIC_PROP()
+JSPropertySpec CJS_Annot::PropertySpecs[] = {
+    {"hidden", get_hidden_static, set_hidden_static},
+    {"name", get_name_static, set_name_static},
+    {"type", get_type_static, set_type_static},
+    {0, 0, 0}};
 
-BEGIN_JS_STATIC_METHOD(CJS_Annot)
-END_JS_STATIC_METHOD()
+JSMethodSpec CJS_Annot::MethodSpecs[] = {{0, 0}};
 
 IMPLEMENT_JS_CLASS(CJS_Annot, Annot)
 
@@ -37,7 +35,9 @@ Annot::Annot(CJS_Object* pJSObject) : CJS_EmbedObj(pJSObject) {}
 
 Annot::~Annot() {}
 
-bool Annot::hidden(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError) {
+bool Annot::hidden(CJS_Runtime* pRuntime,
+                   CJS_PropValue& vp,
+                   CFX_WideString& sError) {
   if (vp.IsGetting()) {
     if (!m_pAnnot) {
       sError = JSGetStringFromID(IDS_STRING_JSBADOBJECT);
@@ -71,7 +71,9 @@ bool Annot::hidden(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError) {
   return true;
 }
 
-bool Annot::name(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError) {
+bool Annot::name(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError) {
   if (vp.IsGetting()) {
     if (!m_pAnnot) {
       sError = JSGetStringFromID(IDS_STRING_JSBADOBJECT);
@@ -92,7 +94,9 @@ bool Annot::name(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError) {
   return true;
 }
 
-bool Annot::type(IJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError) {
+bool Annot::type(CJS_Runtime* pRuntime,
+                 CJS_PropValue& vp,
+                 CFX_WideString& sError) {
   if (vp.IsSetting()) {
     sError = JSGetStringFromID(IDS_STRING_JSREADONLY);
     return false;

@@ -43,7 +43,6 @@
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/byteorder.h"
 #include "webrtc/base/checks.h"
-#include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/networkmonitor.h"
 #include "webrtc/base/nullsocketserver.h"
@@ -139,7 +138,9 @@ PhysicalSocket::PhysicalSocket(PhysicalSocketServer* ss, SOCKET s)
 
     int type = SOCK_STREAM;
     socklen_t len = sizeof(type);
-    VERIFY(0 == getsockopt(s_, SOL_SOCKET, SO_TYPE, (SockOptArg)&type, &len));
+    const int res =
+        getsockopt(s_, SOL_SOCKET, SO_TYPE, (SockOptArg)&type, &len);
+    RTC_DCHECK_EQ(0, res);
     udp_ = (SOCK_DGRAM == type);
   }
 }
@@ -189,8 +190,42 @@ SocketAddress PhysicalSocket::GetRemoteAddress() const {
 }
 
 int PhysicalSocket::Bind(const SocketAddress& bind_addr) {
+  SocketAddress copied_bind_addr = bind_addr;
+  // If a network binder is available, use it to bind a socket to an interface
+  // instead of bind(), since this is more reliable on an OS with a weak host
+  // model.
+  if (ss_->network_binder() && !bind_addr.IsAnyIP()) {
+    NetworkBindingResult result =
+        ss_->network_binder()->BindSocketToNetwork(s_, bind_addr.ipaddr());
+    if (result == NetworkBindingResult::SUCCESS) {
+      // Since the network binder handled binding the socket to the desired
+      // network interface, we don't need to (and shouldn't) include an IP in
+      // the bind() call; bind() just needs to assign a port.
+      copied_bind_addr.SetIP(GetAnyIP(copied_bind_addr.ipaddr().family()));
+    } else if (result == NetworkBindingResult::NOT_IMPLEMENTED) {
+      LOG(LS_INFO) << "Can't bind socket to network because "
+                      "network binding is not implemented for this OS.";
+    } else {
+      if (bind_addr.IsLoopbackIP()) {
+        // If we couldn't bind to a loopback IP (which should only happen in
+        // test scenarios), continue on. This may be expected behavior.
+        LOG(LS_VERBOSE) << "Binding socket to loopback address "
+                        << bind_addr.ipaddr().ToString()
+                        << " failed; result: " << static_cast<int>(result);
+      } else {
+        LOG(LS_WARNING) << "Binding socket to network address "
+                        << bind_addr.ipaddr().ToString()
+                        << " failed; result: " << static_cast<int>(result);
+        // If a network binding was attempted and failed, we should stop here
+        // and not try to use the socket. Otherwise, we may end up sending
+        // packets with an invalid source address.
+        // See: https://bugs.chromium.org/p/webrtc/issues/detail?id=7026
+        return -1;
+      }
+    }
+  }
   sockaddr_storage addr_storage;
-  size_t len = bind_addr.ToSockAddrStorage(&addr_storage);
+  size_t len = copied_bind_addr.ToSockAddrStorage(&addr_storage);
   sockaddr* addr = reinterpret_cast<sockaddr*>(&addr_storage);
   int err = ::bind(s_, addr, static_cast<int>(len));
   UpdateLastError();
@@ -200,14 +235,6 @@ int PhysicalSocket::Bind(const SocketAddress& bind_addr) {
     dbg_addr_.append(GetLocalAddress().ToString());
   }
 #endif
-  if (ss_->network_binder()) {
-    int result =
-        ss_->network_binder()->BindSocketToNetwork(s_, bind_addr.ipaddr());
-    if (result < 0) {
-      LOG(LS_INFO) << "Binding socket to network address "
-                   << bind_addr.ipaddr().ToString() << " result " << result;
-    }
-  }
   return err;
 }
 
@@ -688,6 +715,13 @@ int SocketDispatcher::GetDescriptor() {
 }
 
 bool SocketDispatcher::IsDescriptorClosed() {
+  if (udp_) {
+    // The MSG_PEEK trick doesn't work for UDP, since (at least in some
+    // circumstances) it requires reading an entire UDP packet, which would be
+    // bad for performance here. So, just check whether |s_| has been closed,
+    // which should be sufficient.
+    return s_ == INVALID_SOCKET;
+  }
   // We don't have a reliable way of distinguishing end-of-stream
   // from readability.  So test on each readable call.  Is this
   // inefficient?  Probably.
@@ -706,6 +740,11 @@ bool SocketDispatcher::IsDescriptorClosed() {
       // Returned during ungraceful peer shutdown.
       case ECONNRESET:
         return true;
+      // The normal blocking error; don't log anything.
+      case EWOULDBLOCK:
+      // Interrupted system call.
+      case EINTR:
+        return false;
       default:
         // Assume that all other errors are just blocking errors, meaning the
         // connection is still good but we just can't read from it right now.
@@ -835,9 +874,9 @@ class EventDispatcher : public Dispatcher {
     CritScope cs(&crit_);
     if (!fSignaled_) {
       const uint8_t b[1] = {0};
-      if (VERIFY(1 == write(afd_[1], b, sizeof(b)))) {
-        fSignaled_ = true;
-      }
+      const ssize_t res = write(afd_[1], b, sizeof(b));
+      RTC_DCHECK_EQ(1, res);
+      fSignaled_ = true;
     }
   }
 
@@ -850,7 +889,8 @@ class EventDispatcher : public Dispatcher {
     CritScope cs(&crit_);
     if (fSignaled_) {
       uint8_t b[4];  // Allow for reading more than 1 byte, but expect 1.
-      VERIFY(1 == read(afd_[0], b, sizeof(b)));
+      const ssize_t res = read(afd_[0], b, sizeof(b));
+      RTC_DCHECK_EQ(1, res);
       fSignaled_ = false;
     }
   }
@@ -1078,15 +1118,15 @@ class EventDispatcher : public Dispatcher {
   }
 
   ~EventDispatcher() {
-    if (hev_ != NULL) {
+    if (hev_ != nullptr) {
       ss_->Remove(this);
       WSACloseEvent(hev_);
-      hev_ = NULL;
+      hev_ = nullptr;
     }
   }
 
   virtual void Signal() {
-    if (hev_ != NULL)
+    if (hev_ != nullptr)
       WSASetEvent(hev_);
   }
 
@@ -1228,7 +1268,7 @@ void PhysicalSocketServer::Remove(Dispatcher *pdispatcher) {
 bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
   // Calculate timing information
 
-  struct timeval *ptvWait = NULL;
+  struct timeval* ptvWait = nullptr;
   struct timeval tvWait;
   struct timeval tvStop;
   if (cmsWait != kForever) {
@@ -1238,7 +1278,7 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
     ptvWait = &tvWait;
 
     // Calculate when to return in a timeval
-    gettimeofday(&tvStop, NULL);
+    gettimeofday(&tvStop, nullptr);
     tvStop.tv_sec += tvWait.tv_sec;
     tvStop.tv_usec += tvWait.tv_usec;
     if (tvStop.tv_usec >= 1000000) {
@@ -1290,7 +1330,7 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
     // < 0 means error
     // 0 means timeout
     // > 0 means count of descriptors ready
-    int n = select(fdmax + 1, &fdsRead, &fdsWrite, NULL, ptvWait);
+    int n = select(fdmax + 1, &fdsRead, &fdsWrite, nullptr, ptvWait);
 
     // If error, return error.
     if (n < 0) {
@@ -1365,7 +1405,7 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
       ptvWait->tv_sec = 0;
       ptvWait->tv_usec = 0;
       struct timeval tvT;
-      gettimeofday(&tvT, NULL);
+      gettimeofday(&tvT, nullptr);
       if ((tvStop.tv_sec > tvT.tv_sec)
           || ((tvStop.tv_sec == tvT.tv_sec)
               && (tvStop.tv_usec > tvT.tv_usec))) {
@@ -1433,7 +1473,7 @@ bool PhysicalSocketServer::InstallSignal(int signum, void (*handler)(int)) {
 #else
   act.sa_flags = 0;
 #endif
-  if (sigaction(signum, &act, NULL) != 0) {
+  if (sigaction(signum, &act, nullptr) != 0) {
     LOG_ERR(LS_ERROR) << "Couldn't set sigaction";
     return false;
   }

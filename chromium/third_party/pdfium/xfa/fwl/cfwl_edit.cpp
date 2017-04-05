@@ -49,10 +49,10 @@ void AddSquigglyPath(CFX_Path* pPathData,
                      FX_FLOAT fEndX,
                      FX_FLOAT fY,
                      FX_FLOAT fStep) {
-  pPathData->MoveTo(fStartX, fY);
+  pPathData->MoveTo(CFX_PointF(fStartX, fY));
   int i = 1;
   for (FX_FLOAT fx = fStartX + fStep; fx < fEndX; fx += fStep, ++i)
-    pPathData->LineTo(fx, fY + (i & 1) * fStep);
+    pPathData->LineTo(CFX_PointF(fx, fY + (i & 1) * fStep));
 }
 
 }  // namespace
@@ -112,7 +112,7 @@ CFX_RectF CFWL_Edit::GetAutosizedWidgetRect() {
     CFX_SizeF sz = CalcTextSize(
         m_EdtEngine.GetText(0, -1), m_pProperties->m_pThemeProvider,
         !!(m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_MultiLine));
-    rect.Set(0, 0, sz.x, sz.y);
+    rect = CFX_RectF(0, 0, sz);
   }
   InflateWidgetRect(rect);
   return rect;
@@ -142,18 +142,18 @@ void CFWL_Edit::Update() {
   InitCaret();
 }
 
-FWL_WidgetHit CFWL_Edit::HitTest(FX_FLOAT fx, FX_FLOAT fy) {
+FWL_WidgetHit CFWL_Edit::HitTest(const CFX_PointF& point) {
   if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_OuterScrollbar) {
     if (IsShowScrollBar(true)) {
-      if (m_pVertScrollBar->GetWidgetRect().Contains(fx, fy))
+      if (m_pVertScrollBar->GetWidgetRect().Contains(point))
         return FWL_WidgetHit::VScrollBar;
     }
     if (IsShowScrollBar(false)) {
-      if (m_pHorzScrollBar->GetWidgetRect().Contains(fx, fy))
+      if (m_pHorzScrollBar->GetWidgetRect().Contains(point))
         return FWL_WidgetHit::HScrollBar;
     }
   }
-  if (m_rtClient.Contains(fx, fy))
+  if (m_rtClient.Contains(point))
     return FWL_WidgetHit::Edit;
   return FWL_WidgetHit::Unknown;
 }
@@ -168,15 +168,14 @@ void CFWL_Edit::AddSpellCheckObj(CFX_Path& PathData,
   FX_FLOAT fY = 0.0f;
   FX_FLOAT fStep = 0.0f;
   IFDE_TxtEdtPage* pPage = m_EdtEngine.GetPage(0);
-  CFX_RectFArray rectArray;
-  CFX_RectF rectText;
   const FDE_TXTEDTPARAMS* txtEdtParams = m_EdtEngine.GetEditParams();
   FX_FLOAT fAsent = static_cast<FX_FLOAT>(txtEdtParams->pFont->GetAscent()) *
                     txtEdtParams->fFontSize / 1000;
-  pPage->CalcRangeRectArray(nStart, nCount, rectArray);
 
-  for (int i = 0; i < rectArray.GetSize(); i++) {
-    rectText = rectArray.GetAt(i);
+  std::vector<CFX_RectF> rectArray;
+  pPage->CalcRangeRectArray(nStart, nCount, &rectArray);
+
+  for (const auto& rectText : rectArray) {
     fY = rectText.top + fAsent + fOffSetY;
     fStep = txtEdtParams->fFontSize / 16.0f;
     fStartX = rectText.left + fOffSetX;
@@ -193,15 +192,11 @@ void CFWL_Edit::DrawSpellCheck(CFX_Graphics* pGraphics,
 
   CFX_Color crLine(0xFFFF0000);
   CFWL_EventCheckWord checkWordEvent(this);
-
   CFX_ByteString sLatinWord;
   CFX_Path pathSpell;
-  pathSpell.Create();
-
   int32_t nStart = 0;
   FX_FLOAT fOffSetX = m_rtEngine.left - m_fScrollOffsetX;
   FX_FLOAT fOffSetY = m_rtEngine.top - m_fScrollOffsetY + m_fVAlignOffset;
-
   CFX_WideString wsSpell = GetText();
   int32_t nContentLen = wsSpell.GetLength();
   for (int i = 0; i < nContentLen; i++) {
@@ -232,8 +227,7 @@ void CFWL_Edit::DrawSpellCheck(CFX_Graphics* pGraphics,
   }
   if (!pathSpell.IsEmpty()) {
     CFX_RectF rtClip = m_rtEngine;
-    CFX_Matrix mt;
-    mt.Set(1, 0, 0, 1, fOffSetX, fOffSetY);
+    CFX_Matrix mt(1, 0, 0, 1, fOffSetX, fOffSetY);
     if (pMatrix) {
       pMatrix->TransformRect(rtClip);
       mt.Concat(*pMatrix);
@@ -409,7 +403,6 @@ void CFWL_Edit::OnCaretChanged() {
   bool bRepaintContent = UpdateOffset();
   UpdateCaret();
   CFX_RectF rtInvalid;
-  rtInvalid.Set(0, 0, 0, 0);
   bool bRepaintScroll = false;
   if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_MultiLine) {
     CFWL_ScrollBar* pScroll = UpdateScroll();
@@ -502,10 +495,9 @@ void CFWL_Edit::DrawTextBk(CFX_Graphics* pGraphics,
 
   CFX_RectF rtScroll = m_pHorzScrollBar->GetWidgetRect();
 
-  CFX_RectF rtStatic;
-  rtStatic.Set(m_rtClient.right() - rtScroll.height,
-               m_rtClient.bottom() - rtScroll.height, rtScroll.height,
-               rtScroll.height);
+  CFX_RectF rtStatic(m_rtClient.right() - rtScroll.height,
+                     m_rtClient.bottom() - rtScroll.height, rtScroll.height,
+                     rtScroll.height);
   param.m_bStaticBackground = true;
   param.m_bMaximize = true;
   param.m_rtPart = rtStatic;
@@ -526,8 +518,7 @@ void CFWL_Edit::DrawContent(CFX_Graphics* pGraphics,
   CFX_RectF rtClip = m_rtEngine;
   FX_FLOAT fOffSetX = m_rtEngine.left - m_fScrollOffsetX;
   FX_FLOAT fOffSetY = m_rtEngine.top - m_fScrollOffsetY + m_fVAlignOffset;
-  CFX_Matrix mt;
-  mt.Set(1, 0, 0, 1, fOffSetX, fOffSetY);
+  CFX_Matrix mt(1, 0, 0, 1, fOffSetX, fOffSetY);
   if (pMatrix) {
     pMatrix->TransformRect(rtClip);
     mt.Concat(*pMatrix);
@@ -541,9 +532,8 @@ void CFWL_Edit::DrawContent(CFX_Graphics* pGraphics,
     int32_t nPageCharEnd = nPageCharStart + nPageCharCount - 1;
     int32_t nCharCount;
     int32_t nCharStart;
-    CFX_RectFArray rectArr;
-    int32_t i = 0;
-    for (i = 0; i < nSelCount; i++) {
+    std::vector<CFX_RectF> rectArr;
+    for (int32_t i = 0; i < nSelCount; i++) {
       nCharCount = m_EdtEngine.GetSelRange(i, &nCharStart);
       int32_t nCharEnd = nCharStart + nCharCount - 1;
       if (nCharEnd < nPageCharStart || nCharStart > nPageCharEnd)
@@ -552,17 +542,14 @@ void CFWL_Edit::DrawContent(CFX_Graphics* pGraphics,
       int32_t nBgn = std::max(nCharStart, nPageCharStart);
       int32_t nEnd = std::min(nCharEnd, nPageCharEnd);
       pPage->CalcRangeRectArray(nBgn - nPageCharStart, nEnd - nBgn + 1,
-                                rectArr);
+                                &rectArr);
     }
 
-    int32_t nCount = rectArr.GetSize();
     CFX_Path path;
-    path.Create();
-    for (i = 0; i < nCount; i++) {
-      rectArr[i].left += fOffSetX;
-      rectArr[i].top += fOffSetY;
-      path.AddRectangle(rectArr[i].left, rectArr[i].top, rectArr[i].width,
-                        rectArr[i].height);
+    for (auto& rect : rectArr) {
+      rect.left += fOffSetX;
+      rect.top += fOffSetY;
+      path.AddRectangle(rect.left, rect.top, rect.width, rect.height);
     }
     pGraphics->SetClipRect(rtClip);
 
@@ -589,13 +576,13 @@ void CFWL_Edit::DrawContent(CFX_Graphics* pGraphics,
   if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_CombText) {
     pGraphics->RestoreGraphState();
     CFX_Path path;
-    path.Create();
     int32_t iLimit = m_nLimit > 0 ? m_nLimit : 1;
     FX_FLOAT fStep = m_rtEngine.width / iLimit;
     FX_FLOAT fLeft = m_rtEngine.left + 1;
     for (int32_t i = 1; i < iLimit; i++) {
       fLeft += fStep;
-      path.AddLine(fLeft, m_rtClient.top, fLeft, m_rtClient.bottom());
+      path.AddLine(CFX_PointF(fLeft, m_rtClient.top),
+                   CFX_PointF(fLeft, m_rtClient.bottom()));
     }
 
     CFWL_ThemeBackground param;
@@ -786,8 +773,8 @@ void CFWL_Edit::UpdateVAlignment() {
     part.m_pWidget = this;
 
     CFX_SizeF pSpace = theme->GetSpaceAboveBelow(&part);
-    fSpaceAbove = pSpace.x;
-    fSpaceBelow = pSpace.y;
+    fSpaceAbove = pSpace.width;
+    fSpaceBelow = pSpace.height;
   }
   if (fSpaceAbove < 0.1f)
     fSpaceAbove = 0;
@@ -816,8 +803,7 @@ void CFWL_Edit::UpdateCaret() {
 
   rtFDE.Offset(m_rtEngine.left - m_fScrollOffsetX,
                m_rtEngine.top - m_fScrollOffsetY + m_fVAlignOffset);
-  CFX_RectF rtCaret;
-  rtCaret.Set(rtFDE.left, rtFDE.top, rtFDE.width, rtFDE.height);
+  CFX_RectF rtCaret(rtFDE.left, rtFDE.top, rtFDE.width, rtFDE.height);
 
   CFX_RectF rtClient = GetClientRect();
   rtCaret.Intersect(rtClient);
@@ -970,11 +956,11 @@ void CFWL_Edit::Layout() {
 
     CFX_RectF rtVertScr;
     if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_OuterScrollbar) {
-      rtVertScr.Set(m_rtClient.right() + kEditMargin, m_rtClient.top, fWidth,
-                    m_rtClient.height);
+      rtVertScr = CFX_RectF(m_rtClient.right() + kEditMargin, m_rtClient.top,
+                            fWidth, m_rtClient.height);
     } else {
-      rtVertScr.Set(m_rtClient.right() - fWidth, m_rtClient.top, fWidth,
-                    m_rtClient.height);
+      rtVertScr = CFX_RectF(m_rtClient.right() - fWidth, m_rtClient.top, fWidth,
+                            m_rtClient.height);
       if (bShowHorzScrollbar)
         rtVertScr.height -= fWidth;
       m_rtEngine.width -= fWidth;
@@ -992,11 +978,11 @@ void CFWL_Edit::Layout() {
 
     CFX_RectF rtHoriScr;
     if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_OuterScrollbar) {
-      rtHoriScr.Set(m_rtClient.left, m_rtClient.bottom() + kEditMargin,
-                    m_rtClient.width, fWidth);
+      rtHoriScr = CFX_RectF(m_rtClient.left, m_rtClient.bottom() + kEditMargin,
+                            m_rtClient.width, fWidth);
     } else {
-      rtHoriScr.Set(m_rtClient.left, m_rtClient.bottom() - fWidth,
-                    m_rtClient.width, fWidth);
+      rtHoriScr = CFX_RectF(m_rtClient.left, m_rtClient.bottom() - fWidth,
+                            m_rtClient.width, fWidth);
       if (bShowVertScrollbar)
         rtHoriScr.width -= fWidth;
       m_rtEngine.height -= fWidth;
@@ -1025,11 +1011,11 @@ void CFWL_Edit::LayoutScrollBar() {
       InitVerticalScrollBar();
       CFX_RectF rtVertScr;
       if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_OuterScrollbar) {
-        rtVertScr.Set(m_rtClient.right() + kEditMargin, m_rtClient.top, fWidth,
-                      m_rtClient.height);
+        rtVertScr = CFX_RectF(m_rtClient.right() + kEditMargin, m_rtClient.top,
+                              fWidth, m_rtClient.height);
       } else {
-        rtVertScr.Set(m_rtClient.right() - fWidth, m_rtClient.top, fWidth,
-                      m_rtClient.height);
+        rtVertScr = CFX_RectF(m_rtClient.right() - fWidth, m_rtClient.top,
+                              fWidth, m_rtClient.height);
         if (bShowHorzScrollbar)
           rtVertScr.height -= fWidth;
       }
@@ -1046,11 +1032,12 @@ void CFWL_Edit::LayoutScrollBar() {
       InitHorizontalScrollBar();
       CFX_RectF rtHoriScr;
       if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_OuterScrollbar) {
-        rtHoriScr.Set(m_rtClient.left, m_rtClient.bottom() + kEditMargin,
+        rtHoriScr =
+            CFX_RectF(m_rtClient.left, m_rtClient.bottom() + kEditMargin,
                       m_rtClient.width, fWidth);
       } else {
-        rtHoriScr.Set(m_rtClient.left, m_rtClient.bottom() - fWidth,
-                      m_rtClient.width, fWidth);
+        rtHoriScr = CFX_RectF(m_rtClient.left, m_rtClient.bottom() - fWidth,
+                              m_rtClient.width, fWidth);
         if (bShowVertScrollbar)
           rtHoriScr.width -= (fWidth);
       }
@@ -1065,9 +1052,9 @@ void CFWL_Edit::LayoutScrollBar() {
     UpdateScroll();
 }
 
-void CFWL_Edit::DeviceToEngine(CFX_PointF& pt) {
-  pt.x += m_fScrollOffsetX - m_rtEngine.left;
-  pt.y += m_fScrollOffsetY - m_rtEngine.top - m_fVAlignOffset;
+CFX_PointF CFWL_Edit::DeviceToEngine(const CFX_PointF& pt) {
+  return pt + CFX_PointF(m_fScrollOffsetX - m_rtEngine.left,
+                         m_fScrollOffsetY - m_rtEngine.top - m_fVAlignOffset);
 }
 
 void CFWL_Edit::InitVerticalScrollBar() {
@@ -1123,11 +1110,8 @@ void CFWL_Edit::ShowCaret(CFX_RectF* pRect) {
   if (!pDocEnvironment)
     return;
 
-  CFX_Matrix mt;
-  pXFAWidget->GetRotateMatrix(mt);
-
   CFX_RectF rt(*pRect);
-  mt.TransformRect(rt);
+  pXFAWidget->GetRotateMatrix().TransformRect(rt);
   pDocEnvironment->DisplayCaret(pXFAWidget, true, &rt);
 }
 
@@ -1279,10 +1263,8 @@ void CFWL_Edit::DoButtonDown(CFWL_MessageMouse* pMsg) {
   if (!pPage)
     return;
 
-  CFX_PointF pt(pMsg->m_fx, pMsg->m_fy);
-  DeviceToEngine(pt);
   bool bBefore = true;
-  int32_t nIndex = pPage->GetCharIndex(pt, bBefore);
+  int32_t nIndex = pPage->GetCharIndex(DeviceToEngine(pMsg->m_pos), bBefore);
   if (nIndex < 0)
     nIndex = 0;
 
@@ -1316,9 +1298,8 @@ void CFWL_Edit::OnFocusChanged(CFWL_Message* pMsg, bool bSet) {
   if (!bRepaint)
     return;
 
-  CFX_RectF rtInvalidate;
-  rtInvalidate.Set(0, 0, m_pProperties->m_rtWidget.width,
-                   m_pProperties->m_rtWidget.height);
+  CFX_RectF rtInvalidate(0, 0, m_pProperties->m_rtWidget.width,
+                         m_pProperties->m_rtWidget.height);
   RepaintRect(rtInvalidate);
 }
 
@@ -1358,10 +1339,8 @@ void CFWL_Edit::OnButtonDblClk(CFWL_MessageMouse* pMsg) {
   if (!pPage)
     return;
 
-  CFX_PointF pt(pMsg->m_fx, pMsg->m_fy);
-  DeviceToEngine(pt);
   int32_t nCount = 0;
-  int32_t nIndex = pPage->SelectWord(pt, nCount);
+  int32_t nIndex = pPage->SelectWord(DeviceToEngine(pMsg->m_pos), nCount);
   if (nIndex < 0)
     return;
 
@@ -1378,10 +1357,8 @@ void CFWL_Edit::OnMouseMove(CFWL_MessageMouse* pMsg) {
   if (!pPage)
     return;
 
-  CFX_PointF pt(pMsg->m_fx, pMsg->m_fy);
-  DeviceToEngine(pt);
   bool bBefore = true;
-  int32_t nIndex = pPage->GetCharIndex(pt, bBefore);
+  int32_t nIndex = pPage->GetCharIndex(DeviceToEngine(pMsg->m_pos), bBefore);
   m_EdtEngine.SetCaretPos(nIndex, bBefore);
   nIndex = m_EdtEngine.GetCaretPos();
   m_EdtEngine.ClearSelection();
@@ -1509,43 +1486,43 @@ bool CFWL_Edit::OnScroll(CFWL_ScrollBar* pScrollBar,
                          CFWL_EventScroll::Code dwCode,
                          FX_FLOAT fPos) {
   CFX_SizeF fs;
-  pScrollBar->GetRange(&fs.x, &fs.y);
+  pScrollBar->GetRange(&fs.width, &fs.height);
   FX_FLOAT iCurPos = pScrollBar->GetPos();
   FX_FLOAT fStep = pScrollBar->GetStepSize();
   switch (dwCode) {
     case CFWL_EventScroll::Code::Min: {
-      fPos = fs.x;
+      fPos = fs.width;
       break;
     }
     case CFWL_EventScroll::Code::Max: {
-      fPos = fs.y;
+      fPos = fs.height;
       break;
     }
     case CFWL_EventScroll::Code::StepBackward: {
       fPos -= fStep;
-      if (fPos < fs.x + fStep / 2) {
-        fPos = fs.x;
+      if (fPos < fs.width + fStep / 2) {
+        fPos = fs.width;
       }
       break;
     }
     case CFWL_EventScroll::Code::StepForward: {
       fPos += fStep;
-      if (fPos > fs.y - fStep / 2) {
-        fPos = fs.y;
+      if (fPos > fs.height - fStep / 2) {
+        fPos = fs.height;
       }
       break;
     }
     case CFWL_EventScroll::Code::PageBackward: {
       fPos -= pScrollBar->GetPageSize();
-      if (fPos < fs.x) {
-        fPos = fs.x;
+      if (fPos < fs.width) {
+        fPos = fs.width;
       }
       break;
     }
     case CFWL_EventScroll::Code::PageForward: {
       fPos += pScrollBar->GetPageSize();
-      if (fPos > fs.y) {
-        fPos = fs.y;
+      if (fPos > fs.height) {
+        fPos = fs.height;
       }
       break;
     }
@@ -1565,8 +1542,6 @@ bool CFWL_Edit::OnScroll(CFWL_ScrollBar* pScrollBar,
   UpdateCaret();
 
   CFX_RectF rect = GetWidgetRect();
-  CFX_RectF rtInvalidate;
-  rtInvalidate.Set(0, 0, rect.width + 2, rect.height + 2);
-  RepaintRect(rtInvalidate);
+  RepaintRect(CFX_RectF(0, 0, rect.width + 2, rect.height + 2));
   return true;
 }

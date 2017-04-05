@@ -116,9 +116,8 @@ const XFA_BARCODETYPEENUMINFO* XFA_GetBarcodeTypeByName(
 
 }  // namespace.
 
-CXFA_FFBarcode::CXFA_FFBarcode(CXFA_FFPageView* pPageView,
-                               CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFTextEdit(pPageView, pDataAcc) {}
+CXFA_FFBarcode::CXFA_FFBarcode(CXFA_WidgetAcc* pDataAcc)
+    : CXFA_FFTextEdit(pDataAcc) {}
 
 CXFA_FFBarcode::~CXFA_FFBarcode() {}
 
@@ -145,21 +144,20 @@ bool CXFA_FFBarcode::LoadWidget() {
 void CXFA_FFBarcode::RenderWidget(CFX_Graphics* pGS,
                                   CFX_Matrix* pMatrix,
                                   uint32_t dwStatus) {
-  if (!IsMatchVisibleStatus(dwStatus)) {
+  if (!IsMatchVisibleStatus(dwStatus))
     return;
-  }
-  CFX_Matrix mtRotate;
-  GetRotateMatrix(mtRotate);
-  if (pMatrix) {
+
+  CFX_Matrix mtRotate = GetRotateMatrix();
+  if (pMatrix)
     mtRotate.Concat(*pMatrix);
-  }
+
   CXFA_FFWidget::RenderWidget(pGS, &mtRotate, dwStatus);
   CXFA_Border borderUI = m_pDataAcc->GetUIBorder();
   DrawBorder(pGS, borderUI, m_rtUI, &mtRotate);
   RenderCaption(pGS, &mtRotate);
   CFX_RectF rtWidget = m_pNormalWidget->GetWidgetRect();
-  CFX_Matrix mt;
-  mt.Set(1, 0, 0, 1, rtWidget.left, rtWidget.top);
+
+  CFX_Matrix mt(1, 0, 0, 1, rtWidget.left, rtWidget.top);
   mt.Concat(mtRotate);
   m_pNormalWidget->DrawWidget(pGS, &mt);
 }
@@ -223,20 +221,18 @@ void CXFA_FFBarcode::UpdateWidgetProperty() {
   }
 }
 
-bool CXFA_FFBarcode::OnLButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) {
+bool CXFA_FFBarcode::OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
   CFWL_Barcode* pBarCodeWidget = (CFWL_Barcode*)m_pNormalWidget;
-  if (!pBarCodeWidget || pBarCodeWidget->IsProtectedType()) {
+  if (!pBarCodeWidget || pBarCodeWidget->IsProtectedType())
     return false;
-  }
-  if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open) {
+  if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open)
     return false;
-  }
-  return CXFA_FFTextEdit::OnLButtonDown(dwFlags, fx, fy);
+  return CXFA_FFTextEdit::OnLButtonDown(dwFlags, point);
 }
-bool CXFA_FFBarcode::OnRButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) {
+
+bool CXFA_FFBarcode::OnRButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
   CFWL_Barcode* pBarCodeWidget = (CFWL_Barcode*)m_pNormalWidget;
-  if (!pBarCodeWidget || pBarCodeWidget->IsProtectedType()) {
+  if (!pBarCodeWidget || pBarCodeWidget->IsProtectedType())
     return false;
-  }
-  return CXFA_FFTextEdit::OnRButtonDown(dwFlags, fx, fy);
+  return CXFA_FFTextEdit::OnRButtonDown(dwFlags, point);
 }

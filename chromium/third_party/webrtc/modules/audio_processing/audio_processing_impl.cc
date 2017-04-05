@@ -439,18 +439,11 @@ int AudioProcessingImpl::MaybeInitialize(
 }
 
 int AudioProcessingImpl::InitializeLocked() {
-  int capture_audiobuffer_num_channels;
-  if (private_submodules_->echo_canceller3) {
-    // TODO(peah): Ensure that the echo canceller can operate on more than one
-    // microphone channel.
-    RTC_DCHECK(!capture_nonlocked_.beamformer_enabled);
-    capture_audiobuffer_num_channels = 1;
-  } else {
-    capture_audiobuffer_num_channels =
-        capture_nonlocked_.beamformer_enabled
-            ? formats_.api_format.input_stream().num_channels()
-            : formats_.api_format.output_stream().num_channels();
-  }
+  const int capture_audiobuffer_num_channels =
+      capture_nonlocked_.beamformer_enabled
+          ? formats_.api_format.input_stream().num_channels()
+          : formats_.api_format.output_stream().num_channels();
+
   const int render_audiobuffer_num_output_frames =
       formats_.api_format.reverse_output_stream().num_frames() == 0
           ? formats_.render_processing_format.num_frames()
@@ -576,9 +569,7 @@ int AudioProcessingImpl::InitializeLocked(const ProcessingConfig& config) {
           submodule_states_.RenderMultiBandSubModulesActive());
   // TODO(aluebs): Remove this restriction once we figure out why the 3-band
   // splitting filter degrades the AEC performance.
-  // TODO(peah): Verify that the band splitting is needed for the AEC3.
-  if (render_processing_rate > kSampleRate32kHz &&
-      !capture_nonlocked_.echo_canceller3_enabled) {
+  if (render_processing_rate > kSampleRate32kHz) {
     render_processing_rate = submodule_states_.RenderMultiBandProcessingActive()
                                  ? kSampleRate32kHz
                                  : kSampleRate16kHz;
@@ -1162,6 +1153,14 @@ int AudioProcessingImpl::ProcessCaptureStreamLocked() {
     capture_buffer->SplitIntoFrequencyBands();
   }
 
+  if (private_submodules_->echo_canceller3) {
+    // Force down-mixing of the number of channels after the detection of
+    // capture signal saturation.
+    // TODO(peah): Look into ensuring that this kind of tampering with the
+    // AudioBuffer functionality should not be needed.
+    capture_buffer->set_num_channels(1);
+  }
+
   if (capture_nonlocked_.beamformer_enabled) {
     private_submodules_->beamformer->AnalyzeChunk(
         *capture_buffer->split_data_f());
@@ -1187,10 +1186,10 @@ int AudioProcessingImpl::ProcessCaptureStreamLocked() {
 
   if (private_submodules_->echo_canceller3) {
     private_submodules_->echo_canceller3->ProcessCapture(capture_buffer, false);
+  } else {
+    RETURN_ON_ERR(public_submodules_->echo_cancellation->ProcessCaptureAudio(
+        capture_buffer, stream_delay_ms()));
   }
-
-  RETURN_ON_ERR(public_submodules_->echo_cancellation->ProcessCaptureAudio(
-      capture_buffer, stream_delay_ms()));
 
   if (public_submodules_->echo_control_mobile->is_enabled() &&
       public_submodules_->noise_suppression->is_enabled()) {

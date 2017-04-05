@@ -6,7 +6,7 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("../build/webrtc.gni")
+import("../webrtc.gni")
 
 rtc_static_library("audio_coder") {
   sources = [
@@ -15,9 +15,9 @@ rtc_static_library("audio_coder") {
   ]
   deps = [
     "..:webrtc_common",
+    "../api/audio_codecs:builtin_audio_decoder_factory",
     "../modules/audio_coding",
     "../modules/audio_coding:audio_format_conversion",
-    "../modules/audio_coding:builtin_audio_decoder_factory",
     "../modules/audio_coding:rent_a_codec",
   ]
 
@@ -78,15 +78,12 @@ rtc_static_library("voice_engine") {
     "include/voe_base.h",
     "include/voe_codec.h",
     "include/voe_errors.h",
-    "include/voe_external_media.h",
     "include/voe_file.h",
     "include/voe_hardware.h",
     "include/voe_neteq_stats.h",
     "include/voe_network.h",
     "include/voe_rtp_rtcp.h",
-    "include/voe_video_sync.h",
     "include/voe_volume_control.h",
-    "monitor_module.cc",
     "monitor_module.h",
     "output_mixer.cc",
     "output_mixer.h",
@@ -96,6 +93,8 @@ rtc_static_library("voice_engine") {
     "statistics.h",
     "transmit_mixer.cc",
     "transmit_mixer.h",
+    "transport_feedback_packet_loss_tracker.cc",
+    "transport_feedback_packet_loss_tracker.h",
     "utility.cc",
     "utility.h",
     "voe_audio_processing_impl.cc",
@@ -104,8 +103,6 @@ rtc_static_library("voice_engine") {
     "voe_base_impl.h",
     "voe_codec_impl.cc",
     "voe_codec_impl.h",
-    "voe_external_media_impl.cc",
-    "voe_external_media_impl.h",
     "voe_file_impl.cc",
     "voe_file_impl.h",
     "voe_hardware_impl.cc",
@@ -116,8 +113,6 @@ rtc_static_library("voice_engine") {
     "voe_network_impl.h",
     "voe_rtp_rtcp_impl.cc",
     "voe_rtp_rtcp_impl.h",
-    "voe_video_sync_impl.cc",
-    "voe_video_sync_impl.h",
     "voe_volume_control_impl.cc",
     "voe_volume_control_impl.h",
     "voice_engine_defines.h",
@@ -150,13 +145,13 @@ rtc_static_library("voice_engine") {
     "../api:audio_mixer_api",
     "../api:call_api",
     "../api:transport_api",
+    "../api/audio_codecs:audio_codecs_api",
+    "../api/audio_codecs:builtin_audio_decoder_factory",
     "../audio/utility:audio_frame_operations",
     "../base:rtc_base_approved",
     "../common_audio",
     "../logging:rtc_event_log_api",
-    "../modules/audio_coding:audio_decoder_factory_interface",
     "../modules/audio_coding:audio_format_conversion",
-    "../modules/audio_coding:builtin_audio_decoder_factory",
     "../modules/audio_coding:rent_a_codec",
     "../modules/audio_conference_mixer",
     "../modules/audio_device",
@@ -275,7 +270,7 @@ if (rtc_include_tests) {
       "test/channel_transport/udp_socket_manager_unittest.cc",
       "test/channel_transport/udp_socket_wrapper_unittest.cc",
       "test/channel_transport/udp_transport_unittest.cc",
-      "transmit_mixer_unittest.cc",
+      "transport_feedback_packet_loss_tracker_unittest.cc",
       "utility_unittest.cc",
       "voe_audio_processing_unittest.cc",
       "voe_base_unittest.cc",
@@ -345,6 +340,7 @@ if (rtc_include_tests) {
         "//webrtc/system_wrappers/:system_wrappers_default",
         "//webrtc/test/:test_common",
         "//webrtc/test/:test_support",
+        "//webrtc/test/:video_test_common",
       ]
 
       sources = [
@@ -367,7 +363,6 @@ if (rtc_include_tests) {
         "test/auto_test/standard/codec_before_streaming_test.cc",
         "test/auto_test/standard/codec_test.cc",
         "test/auto_test/standard/dtmf_test.cc",
-        "test/auto_test/standard/external_media_test.cc",
         "test/auto_test/standard/file_before_streaming_test.cc",
         "test/auto_test/standard/file_test.cc",
         "test/auto_test/standard/hardware_before_initializing_test.cc",
@@ -377,17 +372,11 @@ if (rtc_include_tests) {
         "test/auto_test/standard/rtp_rtcp_before_streaming_test.cc",
         "test/auto_test/standard/rtp_rtcp_extensions.cc",
         "test/auto_test/standard/rtp_rtcp_test.cc",
-        "test/auto_test/standard/video_sync_test.cc",
         "test/auto_test/standard/voe_base_misc_test.cc",
         "test/auto_test/standard/volume_test.cc",
         "test/auto_test/voe_conference_test.cc",
-        "test/auto_test/voe_cpu_test.cc",
-        "test/auto_test/voe_cpu_test.h",
-        "test/auto_test/voe_output_test.cc",
         "test/auto_test/voe_standard_test.cc",
         "test/auto_test/voe_standard_test.h",
-        "test/auto_test/voe_stress_test.cc",
-        "test/auto_test/voe_stress_test.h",
         "test/auto_test/voe_test_defines.h",
         "test/auto_test/voe_test_interface.h",
       ]

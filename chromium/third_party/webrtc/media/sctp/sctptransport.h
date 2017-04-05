@@ -26,7 +26,6 @@
 // For SendDataParams/ReceiveDataParams.
 #include "webrtc/media/base/mediachannel.h"
 #include "webrtc/media/sctp/sctptransportinternal.h"
-#include "webrtc/p2p/base/transportchannel.h"
 
 // Defined by "usrsctplib/usrsctp.h"
 struct sockaddr_conn;
@@ -59,6 +58,7 @@ struct SctpInboundPacket;
 //  12. SctpTransport::SignalDataReceived(data)
 // [from the same thread, methods registered/connected to
 //  SctpTransport are called with the recieved data]
+// TODO(zhihuang): Rename "channel" to "transport" on network-level.
 class SctpTransport : public SctpTransportInternal,
                       public sigslot::has_slots<> {
  public:
@@ -67,11 +67,11 @@ class SctpTransport : public SctpTransportInternal,
   // methods can be called.
   // |channel| is required (must not be null).
   SctpTransport(rtc::Thread* network_thread,
-                cricket::TransportChannel* channel);
+                rtc::PacketTransportInternal* channel);
   ~SctpTransport() override;
 
   // SctpTransportInternal overrides (see sctptransportinternal.h for comments).
-  void SetTransportChannel(cricket::TransportChannel* channel) override;
+  void SetTransportChannel(rtc::PacketTransportInternal* channel) override;
   bool Start(int local_port, int remote_port) override;
   bool OpenStream(int sid) override;
   bool ResetStream(int sid) override;
@@ -108,8 +108,8 @@ class SctpTransport : public SctpTransportInternal,
   void SetReadyToSendData();
 
   // Callbacks from DTLS channel.
-  void OnWritableState(rtc::PacketTransportInterface* transport);
-  virtual void OnPacketRead(rtc::PacketTransportInterface* transport,
+  void OnWritableState(rtc::PacketTransportInternal* transport);
+  virtual void OnPacketRead(rtc::PacketTransportInternal* transport,
                             const char* data,
                             size_t len,
                             const rtc::PacketTime& packet_time,
@@ -140,7 +140,7 @@ class SctpTransport : public SctpTransportInternal,
   // Helps pass inbound/outbound packets asynchronously to the network thread.
   rtc::AsyncInvoker invoker_;
   // Underlying DTLS channel.
-  TransportChannel* transport_channel_;
+  rtc::PacketTransportInternal* transport_channel_;
   bool was_ever_writable_ = false;
   int local_port_ = kSctpDefaultPort;
   int remote_port_ = kSctpDefaultPort;
@@ -179,7 +179,7 @@ class SctpTransportFactory : public SctpTransportInternalFactory {
       : network_thread_(network_thread) {}
 
   std::unique_ptr<SctpTransportInternal> CreateSctpTransport(
-      TransportChannel* channel) override {
+      rtc::PacketTransportInternal* channel) override {
     return std::unique_ptr<SctpTransportInternal>(
         new SctpTransport(network_thread_, channel));
   }

@@ -20,10 +20,6 @@
 namespace gl
 {
 class Buffer;
-class State;
-class Program;
-struct VertexAttribute;
-struct VertexAttribCurrentValueData;
 
 enum PrimitiveType
 {
@@ -294,7 +290,15 @@ inline DestT *SafeGetImplAs(SrcT *src)
 {
     return src != nullptr ? GetAs<DestT>(src->getImplementation()) : nullptr;
 }
+
+// In some cases we want to retrieve an Impl object, while handling nullptr cases trivially.
+template <typename ObjT>
+auto SafeGetImpl(ObjT *src) -> decltype(src->getImplementation())
+{
+    return src ? src->getImplementation() : nullptr;
 }
+
+}  // namespace rx
 
 #include "angletypes.inl"
 

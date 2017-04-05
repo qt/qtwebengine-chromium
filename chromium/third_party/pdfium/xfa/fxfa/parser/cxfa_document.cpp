@@ -105,6 +105,16 @@ CXFA_Document::~CXFA_Document() {
   PurgeNodes();
 }
 
+CXFA_LayoutProcessor* CXFA_Document::GetLayoutProcessor() {
+  if (!m_pLayoutProcessor)
+    m_pLayoutProcessor = new CXFA_LayoutProcessor(this);
+  return m_pLayoutProcessor;
+}
+
+CXFA_LayoutProcessor* CXFA_Document::GetDocLayout() {
+  return GetLayoutProcessor();
+}
+
 void CXFA_Document::ClearLayoutData() {
   delete m_pLayoutProcessor;
   m_pLayoutProcessor = nullptr;
@@ -272,8 +282,7 @@ bool CXFA_Document::IsInteractive() {
   CXFA_Node* pFormFiller = pPDF->GetChild(0, XFA_Element::Interactive);
   if (pFormFiller) {
     m_dwDocFlags |= XFA_DOCFLAG_HasInteractive;
-    if (pFormFiller->TryContent(wsInteractive) &&
-        wsInteractive == FX_WSTRC(L"1")) {
+    if (pFormFiller->TryContent(wsInteractive) && wsInteractive == L"1") {
       m_dwDocFlags |= XFA_DOCFLAG_Interactive;
       return true;
     }
@@ -381,8 +390,7 @@ void CXFA_Document::DoProtoMerge() {
         wsURI = CFX_WideStringC(wsUseVal.c_str(), uSharpPos);
         FX_STRSIZE uLen = wsUseVal.GetLength();
         if (uLen >= uSharpPos + 5 &&
-            CFX_WideStringC(wsUseVal.c_str() + uSharpPos, 5) ==
-                FX_WSTRC(L"#som(") &&
+            CFX_WideStringC(wsUseVal.c_str() + uSharpPos, 5) == L"#som(" &&
             wsUseVal[uLen - 1] == ')') {
           wsSOM = CFX_WideStringC(wsUseVal.c_str() + uSharpPos + 5,
                                   uLen - 1 - uSharpPos - 5);
@@ -399,7 +407,7 @@ void CXFA_Document::DoProtoMerge() {
         wsSOM = CFX_WideStringC(wsUseVal.c_str(), wsUseVal.GetLength());
     }
 
-    if (!wsURI.IsEmpty() && wsURI != FX_WSTRC(L"."))
+    if (!wsURI.IsEmpty() && wsURI != L".")
       continue;
 
     CXFA_Node* pProtoNode = nullptr;

@@ -44,8 +44,9 @@ class State : angle::NonCopyable
                     const Extensions &extensions,
                     const Version &clientVersion,
                     bool debug,
-                    bool bindGeneratesResource);
-    void reset();
+                    bool bindGeneratesResource,
+                    bool clientArraysEnabled);
+    void reset(const Context *context);
 
     // State chunk getters
     const RasterizerState &getRasterizerState() const;
@@ -152,6 +153,9 @@ class State : angle::NonCopyable
     // GL_CHROMIUM_bind_generates_resource
     bool isBindGeneratesResourceEnabled() const;
 
+    // GL_ANGLE_client_arrays
+    bool areClientArraysEnabled() const;
+
     // Viewport state setter/getter
     void setViewportParams(GLint x, GLint y, GLsizei width, GLsizei height);
     const Rectangle &getViewport() const;
@@ -163,7 +167,7 @@ class State : angle::NonCopyable
     Texture *getTargetTexture(GLenum target) const;
     Texture *getSamplerTexture(unsigned int sampler, GLenum type) const;
     GLuint getSamplerTextureId(unsigned int sampler, GLenum type) const;
-    void detachTexture(const TextureMap &zeroTextures, GLuint texture);
+    void detachTexture(const Context *context, const TextureMap &zeroTextures, GLuint texture);
     void initializeZeroTextures(const TextureMap &zeroTextures);
 
     // Sampler object binding manipulation
@@ -176,7 +180,7 @@ class State : angle::NonCopyable
     void setRenderbufferBinding(Renderbuffer *renderbuffer);
     GLuint getRenderbufferId() const;
     Renderbuffer *getCurrentRenderbuffer() const;
-    void detachRenderbuffer(GLuint renderbuffer);
+    void detachRenderbuffer(const Context *context, GLuint renderbuffer);
 
     // Framebuffer binding manipulation
     void setReadFramebufferBinding(Framebuffer *framebuffer);
@@ -194,7 +198,7 @@ class State : angle::NonCopyable
     bool removeVertexArrayBinding(GLuint vertexArray);
 
     // Program binding manipulation
-    void setProgram(Program *newProgram);
+    void setProgram(const Context *context, Program *newProgram);
     Program *getProgram() const;
 
     // Transform feedback object (not buffer) binding manipulation
@@ -222,6 +226,14 @@ class State : angle::NonCopyable
     void setGenericUniformBufferBinding(Buffer *buffer);
     void setIndexedUniformBufferBinding(GLuint index, Buffer *buffer, GLintptr offset, GLsizeiptr size);
     const OffsetBindingPointer<Buffer> &getIndexedUniformBuffer(size_t index) const;
+
+    // GL_ATOMIC_COUNTER_BUFFER - Both indexed and generic targets
+    void setGenericAtomicCounterBufferBinding(Buffer *buffer);
+    void setIndexedAtomicCounterBufferBinding(GLuint index,
+                                              Buffer *buffer,
+                                              GLintptr offset,
+                                              GLsizeiptr size);
+    const OffsetBindingPointer<Buffer> &getIndexedAtomicCounterBuffer(size_t index) const;
 
     // GL_COPY_[READ/WRITE]_BUFFER
     void setCopyReadBufferBinding(Buffer *buffer);
@@ -433,6 +445,7 @@ class State : angle::NonCopyable
     GLenum mFragmentShaderDerivativeHint;
 
     bool mBindGeneratesResource;
+    bool mClientArraysEnabled;
 
     Rectangle mViewport;
     float mNearZ;
@@ -467,6 +480,9 @@ class State : angle::NonCopyable
     BufferVector mUniformBuffers;
 
     BindingPointer<TransformFeedback> mTransformFeedback;
+
+    BindingPointer<Buffer> mGenericAtomicCounterBuffer;
+    BufferVector mAtomicCounterBuffers;
 
     BindingPointer<Buffer> mCopyReadBuffer;
     BindingPointer<Buffer> mCopyWriteBuffer;

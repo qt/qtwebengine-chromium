@@ -632,6 +632,8 @@ StatsReport::StatsReport(const Id& id) : id_(id), timestamp_(0.0) {
   RTC_DCHECK(id_.get());
 }
 
+StatsReport::~StatsReport() = default;
+
 // static
 StatsReport::Id StatsReport::NewBandwidthEstimationId() {
   return Id(new RefCountedObject<BandwidthEstimationId>());
@@ -777,7 +779,7 @@ StatsReport* StatsCollection::ReplaceOrAddNew(const StatsReport::Id& id) {
   return InsertNew(id);
 }
 
-// Looks for a report with the given |id|.  If one is not found, NULL
+// Looks for a report with the given |id|.  If one is not found, null
 // will be returned.
 StatsReport* StatsCollection::Find(const StatsReport::Id& id) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());

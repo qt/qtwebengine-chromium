@@ -109,37 +109,37 @@ void CFX_PSRenderer::RestoreState(bool bKeepSaved) {
 
 void CFX_PSRenderer::OutputPath(const CFX_PathData* pPathData,
                                 const CFX_Matrix* pObject2Device) {
-  int nPoints = pPathData->GetPointCount();
   CFX_ByteTextBuf buf;
-  buf.EstimateSize(nPoints * 10);
-  for (int i = 0; i < nPoints; i++) {
-    uint8_t flag = pPathData->GetFlag(i);
-    FX_FLOAT x = pPathData->GetPointX(i);
-    FX_FLOAT y = pPathData->GetPointY(i);
-    if (pObject2Device) {
-      pObject2Device->Transform(x, y);
-    }
-    buf << x << " " << y;
-    switch (flag & FXPT_TYPE) {
-      case FXPT_MOVETO:
+  size_t size = pPathData->GetPoints().size();
+  buf.EstimateSize(size * 10);
+
+  for (size_t i = 0; i < size; i++) {
+    FXPT_TYPE type = pPathData->GetType(i);
+    bool closing = pPathData->IsClosingFigure(i);
+    CFX_PointF pos = pPathData->GetPoint(i);
+    if (pObject2Device)
+      pos = pObject2Device->Transform(pos);
+
+    buf << pos.x << " " << pos.y;
+    switch (type) {
+      case FXPT_TYPE::MoveTo:
         buf << " m ";
         break;
-      case FXPT_LINETO:
+      case FXPT_TYPE::LineTo:
         buf << " l ";
-        if (flag & FXPT_CLOSEFIGURE)
+        if (closing)
           buf << "h ";
         break;
-      case FXPT_BEZIERTO: {
-        FX_FLOAT x1 = pPathData->GetPointX(i + 1);
-        FX_FLOAT x2 = pPathData->GetPointX(i + 2);
-        FX_FLOAT y1 = pPathData->GetPointY(i + 1);
-        FX_FLOAT y2 = pPathData->GetPointY(i + 2);
+      case FXPT_TYPE::BezierTo: {
+        CFX_PointF pos1 = pPathData->GetPoint(i + 1);
+        CFX_PointF pos2 = pPathData->GetPoint(i + 2);
         if (pObject2Device) {
-          pObject2Device->Transform(x1, y1);
-          pObject2Device->Transform(x2, y2);
+          pos1 = pObject2Device->Transform(pos1);
+          pos2 = pObject2Device->Transform(pos2);
         }
-        buf << " " << x1 << " " << y1 << " " << x2 << " " << y2 << " c";
-        if (flag & FXPT_CLOSEFIGURE)
+        buf << " " << pos1.x << " " << pos1.y << " " << pos2.x << " " << pos2.y
+            << " c";
+        if (closing)
           buf << " h";
         buf << "\n";
         i += 2;
@@ -157,7 +157,8 @@ void CFX_PSRenderer::SetClip_PathFill(const CFX_PathData* pPathData,
   OutputPath(pPathData, pObject2Device);
   CFX_FloatRect rect = pPathData->GetBoundingBox();
   if (pObject2Device)
-    rect.Transform(pObject2Device);
+    pObject2Device->TransformRect(rect);
+
   m_ClipBox.left = static_cast<int>(rect.left);
   m_ClipBox.right = static_cast<int>(rect.left + rect.right);
   m_ClipBox.top = static_cast<int>(rect.top + rect.bottom);
@@ -184,7 +185,7 @@ void CFX_PSRenderer::SetClip_PathStroke(const CFX_PathData* pPathData,
   OutputPath(pPathData, nullptr);
   CFX_FloatRect rect = pPathData->GetBoundingBox(pGraphState->m_LineWidth,
                                                  pGraphState->m_MiterLimit);
-  rect.Transform(pObject2Device);
+  pObject2Device->TransformRect(rect);
   m_ClipBox.Intersect(rect.GetOuterRect());
   if (pObject2Device) {
     OUTPUT_PS("strokepath W n sm\n");
@@ -580,39 +581,42 @@ void CFX_PSRenderer::FindPSFontGlyph(CFX_FaceCache* pFaceCache,
     pPSFont->m_Glyphs[glyphindex].m_AdjustMatrix[3] = charpos.m_AdjustMatrix[3];
   }
   pPSFont->m_nGlyphs++;
+
   CFX_Matrix matrix;
-  if (charpos.m_bGlyphAdjust)
-    matrix.Set(charpos.m_AdjustMatrix[0], charpos.m_AdjustMatrix[1],
-               charpos.m_AdjustMatrix[2], charpos.m_AdjustMatrix[3], 0, 0);
-  matrix.Concat(1.0f, 0, 0, 1.0f, 0, 0);
+  if (charpos.m_bGlyphAdjust) {
+    matrix =
+        CFX_Matrix(charpos.m_AdjustMatrix[0], charpos.m_AdjustMatrix[1],
+                   charpos.m_AdjustMatrix[2], charpos.m_AdjustMatrix[3], 0, 0);
+  }
+  matrix.Concat(CFX_Matrix(1.0f, 0, 0, 1.0f, 0, 0));
   const CFX_PathData* pPathData = pFaceCache->LoadGlyphPath(
       pFont, charpos.m_GlyphIndex, charpos.m_FontCharWidth);
-  if (!pPathData) {
+  if (!pPathData)
     return;
-  }
+
   CFX_PathData TransformedPath(*pPathData);
-  if (charpos.m_bGlyphAdjust) {
+  if (charpos.m_bGlyphAdjust)
     TransformedPath.Transform(&matrix);
-  }
+
   CFX_ByteTextBuf buf;
   buf << "/X" << *ps_fontnum << " Ff/CharProcs get begin/" << glyphindex
       << "{n ";
-  for (int p = 0; p < TransformedPath.GetPointCount(); p++) {
-    FX_FLOAT x = TransformedPath.GetPointX(p), y = TransformedPath.GetPointY(p);
-    switch (TransformedPath.GetFlag(p) & FXPT_TYPE) {
-      case FXPT_MOVETO: {
-        buf << x << " " << y << " m\n";
+  for (size_t p = 0; p < TransformedPath.GetPoints().size(); p++) {
+    CFX_PointF point = TransformedPath.GetPoint(p);
+    switch (TransformedPath.GetType(p)) {
+      case FXPT_TYPE::MoveTo: {
+        buf << point.x << " " << point.y << " m\n";
         break;
       }
-      case FXPT_LINETO: {
-        buf << x << " " << y << " l\n";
+      case FXPT_TYPE::LineTo: {
+        buf << point.x << " " << point.y << " l\n";
         break;
       }
-      case FXPT_BEZIERTO: {
-        buf << x << " " << y << " " << TransformedPath.GetPointX(p + 1) << " "
-            << TransformedPath.GetPointY(p + 1) << " "
-            << TransformedPath.GetPointX(p + 2) << " "
-            << TransformedPath.GetPointY(p + 2) << " c\n";
+      case FXPT_TYPE::BezierTo: {
+        CFX_PointF point1 = TransformedPath.GetPoint(p + 1);
+        CFX_PointF point2 = TransformedPath.GetPoint(p + 2);
+        buf << point.x << " " << point.y << " " << point1.x << " " << point1.y
+            << " " << point2.x << " " << point2.y << " c\n";
         p += 2;
         break;
       }
@@ -656,7 +660,7 @@ bool CFX_PSRenderer::DrawText(int nChars,
       buf << "/X" << ps_fontnum << " Ff " << font_size << " Fs Sf ";
       last_fontnum = ps_fontnum;
     }
-    buf << pCharPos[i].m_OriginX << " " << pCharPos[i].m_OriginY << " m";
+    buf << pCharPos[i].m_Origin.x << " " << pCharPos[i].m_Origin.y << " m";
     CFX_ByteString hex;
     hex.Format("<%02X>", ps_glyphindex);
     buf << hex.AsStringC() << "Tj\n";

@@ -16,17 +16,24 @@
 #include <vector>
 
 #include "webrtc/base/sslstreamadapter.h"
+#include "webrtc/base/stringencode.h"
 #include "webrtc/p2p/base/icetransportinternal.h"
 #include "webrtc/p2p/base/jseptransport.h"
-#include "webrtc/p2p/base/packettransportinterface.h"
+#include "webrtc/p2p/base/packettransportinternal.h"
 
 namespace cricket {
+
+enum PacketFlags {
+  PF_NORMAL = 0x00,       // A normal packet.
+  PF_SRTP_BYPASS = 0x01,  // An encrypted SRTP packet; bypass any additional
+                          // crypto provided by the transport (e.g. DTLS)
+};
 
 // DtlsTransportInternal is an internal interface that does DTLS.
 // Once the public interface is supported,
 // (https://www.w3.org/TR/webrtc/#rtcdtlstransport-interface)
 // the DtlsTransportInterface will be split from this class.
-class DtlsTransportInternal : public rtc::PacketTransportInterface {
+class DtlsTransportInternal : public rtc::PacketTransportInternal {
  public:
   virtual ~DtlsTransportInternal() {}
 
@@ -91,8 +98,11 @@ class DtlsTransportInternal : public rtc::PacketTransportInterface {
 
   // Debugging description of this transport.
   std::string debug_name() const override {
-    return transport_name() + " " + std::to_string(component());
+    return transport_name() + " " + rtc::ToString(component());
   }
+
+ protected:
+  DtlsTransportInternal() {}
 
  private:
   RTC_DISALLOW_COPY_AND_ASSIGN(DtlsTransportInternal);

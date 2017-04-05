@@ -80,7 +80,6 @@ static int vp8_init_ctx(vpx_codec_ctx_t *ctx) {
 static vpx_codec_err_t vp8_init(vpx_codec_ctx_t *ctx,
                                 vpx_codec_priv_enc_mr_cfg_t *data) {
   vpx_codec_err_t res = VPX_CODEC_OK;
-  vpx_codec_alg_priv_t *priv = NULL;
   (void)data;
 
   vp8_rtcd();
@@ -92,7 +91,10 @@ static vpx_codec_err_t vp8_init(vpx_codec_ctx_t *ctx,
    * information becomes known.
    */
   if (!ctx->priv) {
+    vpx_codec_alg_priv_t *priv;
+
     if (vp8_init_ctx(ctx)) return VPX_CODEC_MEM_ERROR;
+
     priv = (vpx_codec_alg_priv_t *)ctx->priv;
 
     /* initialize number of fragments to zero */
@@ -102,8 +104,6 @@ static vpx_codec_err_t vp8_init(vpx_codec_ctx_t *ctx,
         (priv->base.init_flags & VPX_CODEC_USE_INPUT_FRAGMENTS);
 
     /*post processing level initialized to do nothing */
-  } else {
-    priv = (vpx_codec_alg_priv_t *)ctx->priv;
   }
 
   return res;
@@ -535,6 +535,14 @@ static vpx_codec_err_t vp8_get_reference(vpx_codec_alg_priv_t *ctx,
   }
 }
 
+static vpx_codec_err_t vp8_get_quantizer(vpx_codec_alg_priv_t *ctx,
+                                         va_list args) {
+  int *const arg = va_arg(args, int *);
+  if (arg == NULL) return VPX_CODEC_INVALID_PARAM;
+  *arg = vp8dx_get_quantizer(ctx->yv12_frame_buffers.pbi[0]);
+  return VPX_CODEC_OK;
+}
+
 static vpx_codec_err_t vp8_set_postproc(vpx_codec_alg_priv_t *ctx,
                                         va_list args) {
 #if CONFIG_POSTPROC
@@ -627,6 +635,7 @@ vpx_codec_ctrl_fn_map_t vp8_ctf_maps[] = {
   { VP8D_GET_LAST_REF_UPDATES, vp8_get_last_ref_updates },
   { VP8D_GET_FRAME_CORRUPTED, vp8_get_frame_corrupted },
   { VP8D_GET_LAST_REF_USED, vp8_get_last_ref_frame },
+  { VPXD_GET_LAST_QUANTIZER, vp8_get_quantizer },
   { VPXD_SET_DECRYPTOR, vp8_set_decryptor },
   { -1, NULL },
 };
