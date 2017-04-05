@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <memory>
 #include "webrtc/base/asyncsocket.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/diskcache.h"
 #include "webrtc/base/httpclient.h"
@@ -36,7 +37,7 @@ const size_t kCacheBody = 1;
 
 // Convert decimal string to integer
 bool HttpStringToUInt(const std::string& str, size_t* val) {
-  ASSERT(NULL != val);
+  RTC_DCHECK(NULL != val);
   char* eos = NULL;
   *val = strtoul(str.c_str(), &eos, 10);
   return (*eos == '\0');
@@ -336,16 +337,16 @@ StreamInterface* HttpClient::GetDocumentStream() {
 void HttpClient::start() {
   if (base_.mode() != HM_NONE) {
     // call reset() to abort an in-progress request
-    ASSERT(false);
+    RTC_NOTREACHED();
     return;
   }
 
-  ASSERT(!IsCacheActive());
+  RTC_DCHECK(!IsCacheActive());
 
   if (request().hasHeader(HH_TRANSFER_ENCODING, NULL)) {
     // Exact size must be known on the client.  Instead of using chunked
     // encoding, wrap data with auto-caching file or memory stream.
-    ASSERT(false);
+    RTC_NOTREACHED();
     return;
   }
 
@@ -402,7 +403,7 @@ void HttpClient::connect() {
   }
   StreamInterface* stream = pool_->RequestConnectedStream(server_, &stream_err);
   if (stream == NULL) {
-    ASSERT(0 != stream_err);
+    RTC_DCHECK(0 != stream_err);
     LOG(LS_ERROR) << "RequestConnectedStream error: " << stream_err;
     onHttpComplete(HM_CONNECT, HE_CONNECT_FAILED);
   } else {
@@ -452,8 +453,8 @@ bool HttpClient::ShouldRedirect(std::string* location) const {
 }
 
 bool HttpClient::BeginCacheFile() {
-  ASSERT(NULL != cache_);
-  ASSERT(CS_READY == cache_state_);
+  RTC_DCHECK(NULL != cache_);
+  RTC_DCHECK(CS_READY == cache_state_);
 
   std::string id = GetCacheID(request());
   CacheLock lock(cache_, id, true);
@@ -519,8 +520,8 @@ void HttpClient::CompleteCacheFile() {
 }
 
 bool HttpClient::CheckCache() {
-  ASSERT(NULL != cache_);
-  ASSERT(CS_READY == cache_state_);
+  RTC_DCHECK(NULL != cache_);
+  RTC_DCHECK(CS_READY == cache_state_);
 
   std::string id = GetCacheID(request());
   if (!cache_->HasResource(id)) {
@@ -614,7 +615,7 @@ HttpError HttpClient::ReadCacheBody(const std::string& id) {
 }
 
 bool HttpClient::PrepareValidate() {
-  ASSERT(CS_READY == cache_state_);
+  RTC_DCHECK(CS_READY == cache_state_);
   // At this point, request() contains the pending request, and response()
   // contains the cached response headers.  Reformat the request to validate
   // the cached content.
@@ -636,7 +637,7 @@ bool HttpClient::PrepareValidate() {
 }
 
 HttpError HttpClient::CompleteValidate() {
-  ASSERT(CS_VALIDATING == cache_state_);
+  RTC_DCHECK(CS_VALIDATING == cache_state_);
 
   std::string id = GetCacheID(request());
 
@@ -685,7 +686,7 @@ HttpError HttpClient::onHttpHeaderComplete(bool chunked, size_t& data_size) {
     // Continue processing response as normal
   }
 
-  ASSERT(!IsCacheActive());
+  RTC_DCHECK(!IsCacheActive());
   if ((request().verb == HV_HEAD) || !HttpCodeHasBody(response().scode)) {
     // HEAD requests and certain response codes contain no body
     data_size = 0;
@@ -756,7 +757,7 @@ void HttpClient::onHttpComplete(HttpMode mode, HttpError err) {
         request().document.reset();
       } else if (request().document && !request().document->Rewind()) {
         // Unable to replay the request document.
-        ASSERT(REDIRECT_ALWAYS == redirect_action_);
+        RTC_DCHECK(REDIRECT_ALWAYS == redirect_action_);
         err = HE_STREAM;
       }
       if (err == HE_NONE) {
@@ -815,7 +816,7 @@ void HttpClient::onHttpComplete(HttpMode mode, HttpError err) {
 void HttpClient::onHttpClosed(HttpError err) {
   // This shouldn't occur, since we return the stream to the pool upon command
   // completion.
-  ASSERT(false);
+  RTC_NOTREACHED();
 }
 
 //////////////////////////////////////////////////////////////////////

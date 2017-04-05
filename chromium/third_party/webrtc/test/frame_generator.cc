@@ -15,8 +15,10 @@
 
 #include <memory>
 
+#include "webrtc/api/video/i420_buffer.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/keep_ref_until_done.h"
+#include "webrtc/common_video/include/video_frame_buffer.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/frame_utils.h"
@@ -89,9 +91,9 @@ class YuvFileGenerator : public FrameGenerator {
         frame_buffer_(new uint8_t[frame_size_]),
         frame_display_count_(frame_repeat_count),
         current_display_count_(0) {
-    assert(width > 0);
-    assert(height > 0);
-    assert(frame_repeat_count > 0);
+    RTC_DCHECK_GT(width, 0);
+    RTC_DCHECK_GT(height, 0);
+    RTC_DCHECK_GT(frame_repeat_count, 0);
   }
 
   virtual ~YuvFileGenerator() {
@@ -161,7 +163,7 @@ class ScrollingImageFrameGenerator : public FrameGenerator {
         current_source_frame_(nullptr),
         file_generator_(files, source_width, source_height, 1) {
     RTC_DCHECK(clock_ != nullptr);
-    RTC_DCHECK_GT(num_frames_, 0u);
+    RTC_DCHECK_GT(num_frames_, 0);
     RTC_DCHECK_GE(source_height, target_height);
     RTC_DCHECK_GE(source_width, target_width);
     RTC_DCHECK_GE(scroll_time_ms, 0);
@@ -188,7 +190,7 @@ class ScrollingImageFrameGenerator : public FrameGenerator {
     }
     CropSourceToScrolledImage(scroll_factor);
 
-    return &current_frame_;
+    return current_frame_ ? &*current_frame_ : nullptr;
   }
 
   void UpdateSourceFrame(size_t frame_num) {
@@ -219,14 +221,14 @@ class ScrollingImageFrameGenerator : public FrameGenerator {
 
     rtc::scoped_refptr<VideoFrameBuffer> frame_buffer(
         current_source_frame_->video_frame_buffer());
-    current_frame_ = webrtc::VideoFrame(
+    current_frame_ = rtc::Optional<webrtc::VideoFrame>(webrtc::VideoFrame(
         new rtc::RefCountedObject<webrtc::WrappedI420Buffer>(
             target_width_, target_height_,
             &frame_buffer->DataY()[offset_y], frame_buffer->StrideY(),
             &frame_buffer->DataU()[offset_u], frame_buffer->StrideU(),
             &frame_buffer->DataV()[offset_v], frame_buffer->StrideV(),
             KeepRefUntilDone(frame_buffer)),
-        kVideoRotation_0, 0);
+        kVideoRotation_0, 0));
   }
 
   Clock* const clock_;
@@ -239,7 +241,7 @@ class ScrollingImageFrameGenerator : public FrameGenerator {
 
   size_t current_frame_num_;
   VideoFrame* current_source_frame_;
-  VideoFrame current_frame_;
+  rtc::Optional<VideoFrame> current_frame_;
   YuvFileGenerator file_generator_;
 };
 
@@ -287,7 +289,7 @@ FrameGenerator* FrameGenerator::CreateFromYuvFile(
     size_t width,
     size_t height,
     int frame_repeat_count) {
-  assert(!filenames.empty());
+  RTC_DCHECK(!filenames.empty());
   std::vector<FILE*> files;
   for (const std::string& filename : filenames) {
     FILE* file = fopen(filename.c_str(), "rb");
@@ -307,7 +309,7 @@ FrameGenerator* FrameGenerator::CreateScrollingInputFromYuvFiles(
     size_t target_height,
     int64_t scroll_time_ms,
     int64_t pause_time_ms) {
-  assert(!filenames.empty());
+  RTC_DCHECK(!filenames.empty());
   std::vector<FILE*> files;
   for (const std::string& filename : filenames) {
     FILE* file = fopen(filename.c_str(), "rb");

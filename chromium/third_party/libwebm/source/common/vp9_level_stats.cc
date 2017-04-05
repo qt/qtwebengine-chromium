@@ -47,10 +47,6 @@ void Vp9LevelStats::AddFrame(const Vp9HeaderParser& parser, int64_t time_ns) {
 
   total_compressed_size_ += parser.frame_size();
 
-  // TODO(fgalligan): Add support for other color formats. Currently assuming
-  // 420.
-  total_uncompressed_bits_ += (luma_picture_size * parser.bit_depth() * 3) / 2;
-
   while (!luma_window_.empty() &&
          luma_window_.front().first <
              (time_ns - (libwebm::kNanosecondsPerSecondi - 1))) {
@@ -63,12 +59,6 @@ void Vp9LevelStats::AddFrame(const Vp9HeaderParser& parser, int64_t time_ns) {
     max_luma_size_ = current_luma_size_;
     max_luma_end_ns_ = luma_window_.back().first;
   }
-
-  // Max luma sample rate does not take frame resizing into account. So
-  // I'm doing max number of frames in one second times max width times max
-  // height to generate Max luma sample rate.
-  if (luma_window_.size() > max_frames_in_one_second_)
-    max_frames_in_one_second_ = luma_window_.size();
 
   // Record CPB stats.
   // Remove all frames that are less than window size.
@@ -103,6 +93,10 @@ void Vp9LevelStats::AddFrame(const Vp9HeaderParser& parser, int64_t time_ns) {
   } else {
     ++frames_since_last_altref;
     ++displayed_frames;
+    // TODO(fgalligan): Add support for other color formats. Currently assuming
+    // 420.
+    total_uncompressed_bits_ +=
+        (luma_picture_size * parser.bit_depth() * 3) / 2;
   }
 
   // Count max reference frames.
@@ -138,8 +132,11 @@ Vp9Level Vp9LevelStats::GetLevel() const {
 
   int level_index = 0;
   Vp9Level max_level = LEVEL_UNKNOWN;
+  const double grace_multiplier =
+      max_luma_sample_rate_grace_percent_ / 100.0 + 1.0;
   for (int i = 0; i < kNumVp9Levels; ++i) {
-    if (max_luma_sample_rate <= Vp9LevelTable[i].max_luma_sample_rate) {
+    if (max_luma_sample_rate <=
+        Vp9LevelTable[i].max_luma_sample_rate * grace_multiplier) {
       if (max_level < Vp9LevelTable[i].level) {
         max_level = Vp9LevelTable[i].level;
         level_index = i;
@@ -210,18 +207,25 @@ Vp9Level Vp9LevelStats::GetLevel() const {
   return max_level;
 }
 
-int64_t Vp9LevelStats::GetMaxLumaSampleRate() const {
-  return max_luma_picture_size_ * max_frames_in_one_second_;
-}
+int64_t Vp9LevelStats::GetMaxLumaSampleRate() const { return max_luma_size_; }
 
 int64_t Vp9LevelStats::GetMaxLumaPictureSize() const {
   return max_luma_picture_size_;
 }
 
 double Vp9LevelStats::GetAverageBitRate() const {
-  const double duration_seconds =
-      ((duration_ns_ == -1) ? end_ns_ - start_ns_ : duration_ns_) /
+  const int64_t frame_duration_ns = end_ns_ - start_ns_;
+  double duration_seconds =
+      ((duration_ns_ == -1) ? frame_duration_ns : duration_ns_) /
       libwebm::kNanosecondsPerSecond;
+  if (estimate_last_frame_duration_ &&
+      (duration_ns_ == -1 || duration_ns_ <= frame_duration_ns)) {
+    const double sec_per_frame = frame_duration_ns /
+                                 libwebm::kNanosecondsPerSecond /
+                                 (displayed_frames - 1);
+    duration_seconds += sec_per_frame;
+  }
+
   return total_compressed_size_ / duration_seconds / 125.0;
 }
 

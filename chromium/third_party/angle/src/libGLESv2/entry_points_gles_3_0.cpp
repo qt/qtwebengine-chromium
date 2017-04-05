@@ -61,17 +61,7 @@ void GL_APIENTRY DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsize
             return;
         }
 
-        // As long as index validation is done, it doesn't matter whether the context receives a drawElements or
-        // a drawRangeElements call - the GL back-end is free to choose to call drawRangeElements based on the
-        // validated index range. If index validation is removed, adding drawRangeElements to the context interface
-        // should be reconsidered.
-        Error error =
-            context->drawRangeElements(mode, start, end, count, type, indices, indexRange);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->drawRangeElements(mode, start, end, count, type, indices, indexRange);
     }
 }
 
@@ -839,6 +829,26 @@ void GL_APIENTRY BindBufferBase(GLenum target, GLuint index, GLuint buffer)
             }
             break;
 
+          case GL_ATOMIC_COUNTER_BUFFER:
+              if (index >= caps.maxAtomicCounterBufferBindings)
+              {
+                  context->handleError(Error(
+                      GL_INVALID_VALUE,
+                      "Binding index must be less than GL_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS."));
+                  return;
+              }
+              break;
+
+          case GL_SHADER_STORAGE_BUFFER:
+              if (index >= caps.maxShaderStorageBufferBindings)
+              {
+                  context->handleError(Error(
+                      GL_INVALID_VALUE,
+                      "Binding index must be less than GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS."));
+                  return;
+              }
+              break;
+
           default:
               context->handleError(Error(GL_INVALID_ENUM));
             return;
@@ -872,6 +882,22 @@ void GL_APIENTRY BindBufferBase(GLenum target, GLuint index, GLuint buffer)
             context->bindIndexedUniformBuffer(buffer, index, 0, 0);
             context->bindGenericUniformBuffer(buffer);
             break;
+
+          case GL_ATOMIC_COUNTER_BUFFER:
+              if (buffer != 0)
+              {
+                  // Binding buffers to this binding point is not implemented yet.
+                  UNIMPLEMENTED();
+              }
+              break;
+
+          case GL_SHADER_STORAGE_BUFFER:
+              if (buffer != 0)
+              {
+                  // Binding buffers to this binding point is not implemented yet.
+                  UNIMPLEMENTED();
+              }
+              break;
 
           default:
             UNREACHABLE();
@@ -1391,28 +1417,15 @@ const GLubyte *GL_APIENTRY GetStringi(GLenum name, GLuint index)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (context->getClientMajorVersion() < 3)
+        if (!context->skipValidation() && !ValidateGetStringi(context, name, index))
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
-            return NULL;
+            return nullptr;
         }
 
-        if (name != GL_EXTENSIONS)
-        {
-            context->handleError(Error(GL_INVALID_ENUM));
-            return NULL;
-        }
-
-        if (index >= context->getExtensionStringCount())
-        {
-            context->handleError(Error(GL_INVALID_VALUE));
-            return NULL;
-        }
-
-        return reinterpret_cast<const GLubyte *>(context->getExtensionString(index));
+        return context->getStringi(name, index);
     }
 
-    return NULL;
+    return nullptr;
 }
 
 void GL_APIENTRY CopyBufferSubData(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size)
@@ -1679,12 +1692,7 @@ void GL_APIENTRY DrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GL
             return;
         }
 
-        Error error = context->drawArraysInstanced(mode, first, count, instanceCount);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->drawArraysInstanced(mode, first, count, instanceCount);
     }
 }
 
@@ -1708,13 +1716,7 @@ void GL_APIENTRY DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, 
             return;
         }
 
-        Error error =
-            context->drawElementsInstanced(mode, count, type, indices, instanceCount, indexRange);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->drawElementsInstanced(mode, count, type, indices, instanceCount, indexRange);
     }
 }
 
@@ -2400,7 +2402,7 @@ void GL_APIENTRY GetProgramBinary(GLuint program, GLsizei bufSize, GLsizei* leng
         Program *programObject = context->getProgram(program);
         ASSERT(programObject != nullptr);
 
-        Error error = programObject->saveBinary(binaryFormat, binary, bufSize, length);
+        Error error = programObject->saveBinary(context, binaryFormat, binary, bufSize, length);
         if (error.isError())
         {
             context->handleError(error);
@@ -2425,7 +2427,7 @@ void GL_APIENTRY ProgramBinary(GLuint program, GLenum binaryFormat, const GLvoid
         Program *programObject = context->getProgram(program);
         ASSERT(programObject != nullptr);
 
-        Error error = programObject->loadBinary(binaryFormat, binary, length);
+        Error error = programObject->loadBinary(context, binaryFormat, binary, length);
         if (error.isError())
         {
             context->handleError(error);

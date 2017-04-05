@@ -80,6 +80,7 @@ using namespace sh;
             TIntermAggregate *intermAggregate;
             TIntermBlock *intermBlock;
             TIntermDeclaration *intermDeclaration;
+            TIntermFunctionPrototype *intermFunctionPrototype;
             TIntermSwitch *intermSwitch;
             TIntermCase *intermCase;
         };
@@ -169,11 +170,12 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, void *scanner, cons
 %token <lex> MATRIX2 MATRIX3 MATRIX4 IN_QUAL OUT_QUAL INOUT_QUAL UNIFORM VARYING
 %token <lex> MATRIX2x3 MATRIX3x2 MATRIX2x4 MATRIX4x2 MATRIX3x4 MATRIX4x3
 %token <lex> CENTROID FLAT SMOOTH
-%token <lex> READONLY WRITEONLY COHERENT RESTRICT VOLATILE
+%token <lex> READONLY WRITEONLY COHERENT RESTRICT VOLATILE SHARED
 %token <lex> STRUCT VOID_TYPE WHILE
 %token <lex> SAMPLER2D SAMPLERCUBE SAMPLER_EXTERNAL_OES SAMPLER2DRECT SAMPLER2DARRAY
 %token <lex> ISAMPLER2D ISAMPLER3D ISAMPLERCUBE ISAMPLER2DARRAY
 %token <lex> USAMPLER2D USAMPLER3D USAMPLERCUBE USAMPLER2DARRAY
+%token <lex> SAMPLER2DMS ISAMPLER2DMS USAMPLER2DMS
 %token <lex> SAMPLER3D SAMPLER3DRECT SAMPLER2DSHADOW SAMPLERCUBESHADOW SAMPLER2DARRAYSHADOW
 %token <lex> IMAGE2D IIMAGE2D UIMAGE2D IMAGE3D IIMAGE3D UIMAGE3D IMAGE2DARRAY IIMAGE2DARRAY UIMAGE2DARRAY
 %token <lex> IMAGECUBE IIMAGECUBE UIMAGECUBE
@@ -932,7 +934,7 @@ storage_qualifier
     | INOUT_QUAL {
         if (!context->declaringFunction())
         {
-            context->error(@1, "invalid inout qualifier", "'inout' can be only used with function parameters");
+            context->error(@1, "invalid qualifier: can be only used with function parameters", "inout");
         }
         $$ = new TStorageQualifierWrapper(EvqInOut, @1);
     }
@@ -958,6 +960,11 @@ storage_qualifier
     }
     | VOLATILE {
         $$ = new TMemoryQualifierWrapper(EvqVolatile, @1);
+    }
+    | SHARED {
+        context->checkIsAtGlobalLevel(@1, "shared");
+        COMPUTE_ONLY("shared", @1);
+        $$ = new TStorageQualifierWrapper(EvqShared, @1);
     }
     ;
 
@@ -1005,6 +1012,9 @@ layout_qualifier_id
     }
     | IDENTIFIER EQUAL UINTCONSTANT {
         $$ = context->parseLayoutQualifier(*$1.string, @1, $3.i, @3);
+    }
+    | SHARED {
+        $$ = context->parseLayoutQualifier("shared", @1);
     }
     ;
 
@@ -1139,6 +1149,9 @@ type_specifier_nonarray
     | SAMPLER2DARRAY {
         $$.initialize(EbtSampler2DArray, @1);
     }
+    | SAMPLER2DMS {
+        $$.initialize(EbtSampler2DMS, @1);
+    }
     | ISAMPLER2D {
         $$.initialize(EbtISampler2D, @1);
     }
@@ -1151,6 +1164,9 @@ type_specifier_nonarray
     | ISAMPLER2DARRAY {
         $$.initialize(EbtISampler2DArray, @1);
     }
+    | ISAMPLER2DMS {
+        $$.initialize(EbtISampler2DMS, @1);
+    }
     | USAMPLER2D {
         $$.initialize(EbtUSampler2D, @1);
     }
@@ -1162,6 +1178,9 @@ type_specifier_nonarray
     }
     | USAMPLER2DARRAY {
         $$.initialize(EbtUSampler2DArray, @1);
+    }
+    | USAMPLER2DMS {
+        $$.initialize(EbtUSampler2DMS, @1);
     }
     | SAMPLER2DSHADOW {
         $$.initialize(EbtSampler2DShadow, @1);
@@ -1249,16 +1268,7 @@ struct_declaration_list
         $$ = $1;
     }
     | struct_declaration_list struct_declaration {
-        $$ = $1;
-        for (size_t i = 0; i < $2->size(); ++i) {
-            TField* field = (*$2)[i];
-            for (size_t j = 0; j < $$->size(); ++j) {
-                if ((*$$)[j]->name() == field->name()) {
-                    context->error(@2, "duplicate field name in structure:", "struct", field->name().c_str());
-                }
-            }
-            $$->push_back(field);
-        }
+        $$ = context->combineStructFieldLists($1, $2, @2);
     }
     ;
 
@@ -1519,10 +1529,10 @@ external_declaration
 
 function_definition
     : function_prototype {
-        context->parseFunctionDefinitionHeader(@1, &($1.function), &$1.intermAggregate);
+        context->parseFunctionDefinitionHeader(@1, &($1.function), &($1.intermFunctionPrototype));
     }
     compound_statement_no_new_scope {
-        $$ = context->addFunctionDefinition(*($1.function), $1.intermAggregate, $3, @1);
+        $$ = context->addFunctionDefinition($1.intermFunctionPrototype, $3, @1);
     }
     ;
 

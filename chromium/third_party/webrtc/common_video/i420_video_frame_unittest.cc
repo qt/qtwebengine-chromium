@@ -11,11 +11,12 @@
 #include <math.h>
 #include <string.h>
 
+#include "webrtc/api/video/video_frame.h"
 #include "webrtc/base/bind.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/test/fake_texture_frame.h"
 #include "webrtc/test/frame_utils.h"
 #include "webrtc/test/gtest.h"
-#include "webrtc/video_frame.h"
 
 namespace webrtc {
 
@@ -111,12 +112,6 @@ void CheckRotate(int width, int height, webrtc::VideoRotation rotation,
 
 }  // namespace
 
-TEST(TestVideoFrame, InitialValues) {
-  VideoFrame frame;
-  EXPECT_TRUE(frame.IsZeroSize());
-  EXPECT_EQ(kVideoRotation_0, frame.rotation());
-}
-
 TEST(TestVideoFrame, WidthHeightValues) {
   VideoFrame frame(I420Buffer::Create(10, 10, 10, 14, 90),
                    webrtc::kVideoRotation_0,
@@ -151,16 +146,12 @@ TEST(TestVideoFrame, ShallowCopy) {
   memset(buffer_y, 16, kSizeY);
   memset(buffer_u, 8, kSizeU);
   memset(buffer_v, 4, kSizeV);
-  // TODO(nisse): This new + Copy looks quite awkward. Consider adding
-  // an alternative I420Buffer::Create method.
+
   VideoFrame frame1(
-      I420Buffer::Copy(*rtc::scoped_refptr<VideoFrameBuffer>(
-          new rtc::RefCountedObject<webrtc::WrappedI420Buffer>(
-              width, height,
-              buffer_y, stride_y,
-              buffer_u, stride_u,
-              buffer_v, stride_v,
-              rtc::Callback0<void>([](){})))),
+      I420Buffer::Copy(width, height,
+                       buffer_y, stride_y,
+                       buffer_u, stride_u,
+                       buffer_v, stride_v),
       kRotation, 0);
   frame1.set_timestamp(timestamp);
   frame1.set_ntp_time_ms(ntp_time_ms);
@@ -290,11 +281,27 @@ class TestI420BufferRotate
 TEST_P(TestI420BufferRotate, Rotates) {
   rtc::scoped_refptr<VideoFrameBuffer> buffer = CreateGradient(640, 480);
   rtc::scoped_refptr<VideoFrameBuffer> rotated_buffer =
-      I420Buffer::Rotate(buffer, GetParam());
+      I420Buffer::Rotate(*buffer, GetParam());
   CheckRotate(640, 480, GetParam(), *rotated_buffer);
 }
 
 INSTANTIATE_TEST_CASE_P(Rotate, TestI420BufferRotate,
+                        ::testing::Values(kVideoRotation_0,
+                                          kVideoRotation_90,
+                                          kVideoRotation_180,
+                                          kVideoRotation_270));
+
+class TestI420BufferRotateOld
+    : public ::testing::TestWithParam<webrtc::VideoRotation> {};
+
+TEST_P(TestI420BufferRotateOld, Rotates) {
+  rtc::scoped_refptr<VideoFrameBuffer> buffer = CreateGradient(640, 480);
+  rtc::scoped_refptr<VideoFrameBuffer> rotated_buffer =
+      I420Buffer::Rotate(buffer, GetParam());
+  CheckRotate(640, 480, GetParam(), *rotated_buffer);
+}
+
+INSTANTIATE_TEST_CASE_P(Rotate, TestI420BufferRotateOld,
                         ::testing::Values(kVideoRotation_0,
                                           kVideoRotation_90,
                                           kVideoRotation_180,

@@ -29,7 +29,7 @@ enum LoadStatus {
 
 class CPDFXFA_Context : public IXFA_AppProvider {
  public:
-  CPDFXFA_Context(std::unique_ptr<CPDF_Document> pPDFDoc);
+  explicit CPDFXFA_Context(std::unique_ptr<CPDF_Document> pPDFDoc);
   ~CPDFXFA_Context() override;
 
   bool LoadXFADoc();
@@ -54,9 +54,10 @@ class CPDFXFA_Context : public IXFA_AppProvider {
   void ClearChangeMark();
 
   // IFXA_AppProvider:
-  void GetLanguage(CFX_WideString& wsLanguage) override;
-  void GetPlatform(CFX_WideString& wsPlatform) override;
-  void GetAppName(CFX_WideString& wsName) override;
+  CFX_WideString GetLanguage() override;
+  CFX_WideString GetPlatform() override;
+  CFX_WideString GetAppName() override;
+  CFX_WideString GetAppTitle() const override;
 
   void Beep(uint32_t dwType) override;
   int32_t MsgBox(const CFX_WideString& wsMessage,
@@ -67,7 +68,8 @@ class CPDFXFA_Context : public IXFA_AppProvider {
                           const CFX_WideString& wsTitle,
                           const CFX_WideString& wsDefaultAnswer,
                           bool bMark) override;
-  IFX_SeekableReadStream* DownloadURL(const CFX_WideString& wsURL) override;
+  CFX_RetainPtr<IFX_SeekableReadStream> DownloadURL(
+      const CFX_WideString& wsURL) override;
   bool PostRequestURL(const CFX_WideString& wsURL,
                       const CFX_WideString& wsData,
                       const CFX_WideString& wsContentType,
@@ -78,7 +80,6 @@ class CPDFXFA_Context : public IXFA_AppProvider {
                      const CFX_WideString& wsData,
                      const CFX_WideString& wsEncode) override;
 
-  void LoadString(int32_t iStringID, CFX_WideString& wsString) override;
   IFWL_AdapterTimerMgr* GetTimerMgr() override;
 
  protected:

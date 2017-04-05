@@ -10,9 +10,9 @@
 
 #include "webrtc/voice_engine/output_mixer.h"
 
+#include "webrtc/audio/utility/audio_frame_operations.h"
 #include "webrtc/base/format_macros.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/utility/include/audio_frame_operations.h"
 #include "webrtc/system_wrappers/include/file_wrapper.h"
 #include "webrtc/system_wrappers/include/trace.h"
 #include "webrtc/voice_engine/include/voe_external_media.h"
@@ -475,7 +475,7 @@ OutputMixer::DoOperationsOnCombinedSignal(bool feed_data_to_apm)
       if (_audioProcessingModulePtr->ProcessReverseStream(&_audioFrame) != 0) {
         WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId, -1),
                      "AudioProcessingModule::ProcessReverseStream() => error");
-        RTC_DCHECK(false);
+        RTC_NOTREACHED();
       }
     }
 

@@ -70,6 +70,11 @@ ShCompileOptions ShaderGL::prepareSourceAndReturnOptions(std::stringstream *sour
         options |= SH_EMULATE_ISNAN_FLOAT_FUNCTION;
     }
 
+    if (mWorkarounds.emulateAtan2Float)
+    {
+        options |= SH_EMULATE_ATAN2_FLOAT_FUNCTION;
+    }
+
     if (mWorkarounds.useUnusedBlocksWithStandardOrSharedLayout)
     {
         options |= SH_USE_UNUSED_STANDARD_SHARED_BLOCKS;
@@ -83,6 +88,11 @@ ShCompileOptions ShaderGL::prepareSourceAndReturnOptions(std::stringstream *sour
     if (mWorkarounds.removeInvariantAndCentroidForESSL3)
     {
         options |= SH_REMOVE_INVARIANT_AND_CENTROID_FOR_ESSL3;
+    }
+
+    if (mWorkarounds.rewriteFloatUnaryMinusOperator)
+    {
+        options |= SH_REWRITE_FLOAT_UNARY_MINUS_OPERATOR;
     }
 
     return options;
@@ -132,7 +142,7 @@ bool ShaderGL::postTranslateCompile(gl::Compiler *compiler, std::string *infoLog
 
 std::string ShaderGL::getDebugInfo() const
 {
-    return std::string();
+    return mData.getTranslatedSource();
 }
 
 GLuint ShaderGL::getShaderID() const

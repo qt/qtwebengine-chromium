@@ -23,6 +23,7 @@ namespace egl
 {
 
 class AttributeMap;
+struct ClientExtensions;
 struct Config;
 class Device;
 class Display;
@@ -100,12 +101,21 @@ Error ValidateSwapBuffersWithDamageEXT(const Display *display,
                                        EGLint *rects,
                                        EGLint n_rects);
 
+Error ValidateGetConfigAttrib(const Display *display, const Config *config, EGLint attribute);
+Error ValidateChooseConfig(const Display *display,
+                           const AttributeMap &attribs,
+                           EGLint configSize,
+                           EGLint *numConfig);
+Error ValidateGetConfigs(const Display *display, EGLint configSize, EGLint *numConfig);
+
 // Other validation
 Error ValidateCompatibleConfigs(const Display *display,
                                 const Config *config1,
                                 const Surface *surface,
                                 const Config *config2,
                                 EGLint surfaceType);
-}
+
+Error ValidatePlatformType(const ClientExtensions &clientExtensions, EGLint platformType);
+}  // namespace gl
 
 #endif // LIBANGLE_VALIDATIONEGL_H_

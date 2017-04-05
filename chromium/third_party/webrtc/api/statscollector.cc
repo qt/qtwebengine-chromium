@@ -104,7 +104,8 @@ void SetAudioProcessingStats(StatsReport* report,
                              int echo_delay_median_ms,
                              float aec_quality_min,
                              int echo_delay_std_ms,
-                             float residual_echo_likelihood) {
+                             float residual_echo_likelihood,
+                             float residual_echo_likelihood_recent_max) {
   report->AddBoolean(StatsReport::kStatsValueNameTypingNoiseState,
                      typing_noise_detected);
   if (aec_quality_min >= 0.0f) {
@@ -127,6 +128,11 @@ void SetAudioProcessingStats(StatsReport* report,
   if (residual_echo_likelihood >= 0.0f) {
     report->AddFloat(StatsReport::kStatsValueNameResidualEchoLikelihood,
                      residual_echo_likelihood);
+  }
+  if (residual_echo_likelihood_recent_max >= 0.0f) {
+    report->AddFloat(
+        StatsReport::kStatsValueNameResidualEchoLikelihoodRecentMax,
+        residual_echo_likelihood_recent_max);
   }
 }
 
@@ -187,7 +193,7 @@ void ExtractStats(const cricket::VoiceSenderInfo& info, StatsReport* report) {
       report, info.typing_noise_detected, info.echo_return_loss,
       info.echo_return_loss_enhancement, info.echo_delay_median_ms,
       info.aec_quality_min, info.echo_delay_std_ms,
-      info.residual_echo_likelihood);
+      info.residual_echo_likelihood, info.residual_echo_likelihood_recent_max);
 
   RTC_DCHECK_GE(info.audio_level, 0);
   const IntForAdd ints[] = {
@@ -251,8 +257,6 @@ void ExtractStats(const cricket::VideoSenderInfo& info, StatsReport* report) {
                      (info.adapt_reason & 0x2) > 0);
   report->AddBoolean(StatsReport::kStatsValueNameCpuLimitedResolution,
                      (info.adapt_reason & 0x1) > 0);
-  report->AddBoolean(StatsReport::kStatsValueNameViewLimitedResolution,
-                     (info.adapt_reason & 0x4) > 0);
   if (info.qp_sum)
     report->AddInt(StatsReport::kStatsValueNameQpSum, *info.qp_sum);
 
@@ -353,7 +357,7 @@ const char* IceCandidateTypeToStatsType(const std::string& candidate_type) {
   if (candidate_type == cricket::RELAY_PORT_TYPE) {
     return STATSREPORT_RELAY_PORT_TYPE;
   }
-  RTC_DCHECK(false);
+  RTC_NOTREACHED();
   return "unknown";
 }
 
@@ -372,7 +376,7 @@ const char* AdapterTypeToStatsType(rtc::AdapterType type) {
     case rtc::ADAPTER_TYPE_LOOPBACK:
       return STATSREPORT_ADAPTER_TYPE_LOOPBACK;
     default:
-      RTC_DCHECK(false);
+      RTC_NOTREACHED();
       return "";
   }
 }
@@ -677,8 +681,8 @@ void StatsCollector::ExtractSessionInfo() {
   report->AddBoolean(StatsReport::kStatsValueNameInitiator,
                      pc_->session()->initial_offerer());
 
-  SessionStats stats;
-  if (!pc_->session()->GetTransportStats(&stats)) {
+  std::unique_ptr<SessionStats> stats = pc_->session()->GetStats_s();
+  if (!stats) {
     return;
   }
 
@@ -688,9 +692,9 @@ void StatsCollector::ExtractSessionInfo() {
   // the proxy map directly from the session stats.
   // As is, if GetStats() failed, we could be using old (incorrect?) proxy
   // data.
-  proxy_to_transport_ = stats.proxy_to_transport;
+  proxy_to_transport_ = stats->proxy_to_transport;
 
-  for (const auto& transport_iter : stats.transport_stats) {
+  for (const auto& transport_iter : stats->transport_stats) {
     // Attempt to get a copy of the certificates from the transport and
     // expose them in stats reports.  All channels in a transport share the
     // same local and remote certificates.
@@ -942,7 +946,8 @@ void StatsCollector::UpdateReportFromAudioTrack(AudioTrackInterface* track,
         report, stats.typing_noise_detected, stats.echo_return_loss,
         stats.echo_return_loss_enhancement, stats.echo_delay_median_ms,
         stats.aec_quality_min, stats.echo_delay_std_ms,
-        stats.residual_echo_likelihood);
+        stats.residual_echo_likelihood,
+        stats.residual_echo_likelihood_recent_max);
 
     report->AddFloat(StatsReport::kStatsValueNameAecDivergentFilterFraction,
                      stats.aec_divergent_filter_fraction);

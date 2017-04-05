@@ -6,10 +6,10 @@
 
 #include "xfa/fxfa/app/xfa_ffcheckbutton.h"
 
-#include "xfa/fwl/core/cfwl_checkbox.h"
-#include "xfa/fwl/core/cfwl_msgmouse.h"
-#include "xfa/fwl/core/cfwl_widgetmgr.h"
-#include "xfa/fwl/core/fwl_noteimp.h"
+#include "xfa/fwl/cfwl_checkbox.h"
+#include "xfa/fwl/cfwl_messagemouse.h"
+#include "xfa/fwl/cfwl_notedriver.h"
+#include "xfa/fwl/cfwl_widgetmgr.h"
 #include "xfa/fxfa/app/xfa_ffexclgroup.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/xfa_ffapp.h"
@@ -28,13 +28,12 @@ CXFA_FFCheckButton::~CXFA_FFCheckButton() {}
 
 bool CXFA_FFCheckButton::LoadWidget() {
   CFWL_CheckBox* pCheckBox = new CFWL_CheckBox(GetFWLApp());
-  pCheckBox->Initialize();
   m_pNormalWidget = pCheckBox;
   m_pNormalWidget->SetLayoutItem(this);
 
-  IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
-  pNoteDriver->RegisterEventTarget(pWidget, pWidget);
+  CFWL_NoteDriver* pNoteDriver =
+      m_pNormalWidget->GetOwnerApp()->GetNoteDriver();
+  pNoteDriver->RegisterEventTarget(m_pNormalWidget, m_pNormalWidget);
 
   m_pOldDelegate = m_pNormalWidget->GetDelegate();
   m_pNormalWidget->SetDelegate(this);
@@ -193,8 +192,7 @@ void CXFA_FFCheckButton::CapLeftRightPlacement(CXFA_Margin mgCap) {
   }
 }
 void CXFA_FFCheckButton::AddUIMargin(int32_t iCapPlacement) {
-  CFX_RectF rtUIMargin;
-  m_pDataAcc->GetUIMargin(rtUIMargin);
+  CFX_RectF rtUIMargin = m_pDataAcc->GetUIMargin();
   m_rtUI.top -= rtUIMargin.top / 2 - rtUIMargin.height / 2;
   FX_FLOAT fLeftAddRight = rtUIMargin.left + rtUIMargin.width;
   FX_FLOAT fTopAddBottom = rtUIMargin.top + rtUIMargin.height;
@@ -238,8 +236,7 @@ void CXFA_FFCheckButton::RenderWidget(CFX_Graphics* pGS,
   CFX_Matrix mt;
   mt.Set(1, 0, 0, 1, m_rtCheckBox.left, m_rtCheckBox.top);
   mt.Concat(mtRotate);
-  GetApp()->GetWidgetMgrDelegate()->OnDrawWidget(m_pNormalWidget->GetWidget(),
-                                                 pGS, &mt);
+  GetApp()->GetWidgetMgrDelegate()->OnDrawWidget(m_pNormalWidget, pGS, &mt);
 }
 bool CXFA_FFCheckButton::OnLButtonUp(uint32_t dwFlags,
                                      FX_FLOAT fx,
@@ -248,13 +245,12 @@ bool CXFA_FFCheckButton::OnLButtonUp(uint32_t dwFlags,
     return false;
 
   SetButtonDown(false);
-  CFWL_MsgMouse ms;
+  CFWL_MessageMouse ms(nullptr, m_pNormalWidget);
   ms.m_dwCmd = FWL_MouseCommand::LeftButtonUp;
   ms.m_dwFlags = dwFlags;
   ms.m_fx = fx;
   ms.m_fy = fy;
   FWLToClient(ms.m_fx, ms.m_fy);
-  ms.m_pDstTarget = m_pNormalWidget->GetWidget();
   TranslateFWLMessage(&ms);
   return true;
 }
@@ -280,10 +276,12 @@ bool CXFA_FFCheckButton::IsDataChanged() {
 }
 void CXFA_FFCheckButton::SetFWLCheckState(XFA_CHECKSTATE eCheckState) {
   if (eCheckState == XFA_CHECKSTATE_Neutral) {
-    m_pNormalWidget->SetStates(FWL_STATE_CKB_Neutral, true);
+    m_pNormalWidget->SetStates(FWL_STATE_CKB_Neutral);
   } else {
-    m_pNormalWidget->SetStates(FWL_STATE_CKB_Checked,
-                               eCheckState == XFA_CHECKSTATE_On);
+    if (eCheckState == XFA_CHECKSTATE_On)
+      m_pNormalWidget->SetStates(FWL_STATE_CKB_Checked);
+    else
+      m_pNormalWidget->RemoveStates(FWL_STATE_CKB_Checked);
   }
 }
 bool CXFA_FFCheckButton::UpdateFWLData() {
@@ -302,8 +300,8 @@ void CXFA_FFCheckButton::OnProcessMessage(CFWL_Message* pMessage) {
 
 void CXFA_FFCheckButton::OnProcessEvent(CFWL_Event* pEvent) {
   CXFA_FFField::OnProcessEvent(pEvent);
-  switch (pEvent->GetClassID()) {
-    case CFWL_EventType::CheckStateChanged: {
+  switch (pEvent->GetType()) {
+    case CFWL_Event::Type::CheckStateChanged: {
       CXFA_EventParam eParam;
       eParam.m_eType = XFA_EVENT_Change;
       m_pDataAcc->GetValue(eParam.m_wsNewText, XFA_VALUEPICTURE_Raw);

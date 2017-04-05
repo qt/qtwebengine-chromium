@@ -10,7 +10,6 @@
 #include <set>
 
 #include "compiler/translator/IntermNode.h"
-#include "compiler/translator/LoopInfo.h"
 #include "compiler/translator/ParseContext.h"
 
 namespace sh
@@ -29,13 +28,16 @@ class TOutputGLSLBase : public TIntermTraverser
                     ShShaderOutput output,
                     ShCompileOptions compileOptions);
 
-    ShShaderOutput getShaderOutput() const
-    {
-        return mOutput;
-    }
+    ShShaderOutput getShaderOutput() const { return mOutput; }
+
+    // Return the original name if hash function pointer is NULL;
+    // otherwise return the hashed name. Has special handling for internal names, which are not
+    // hashed.
+    TString hashName(const TName &name);
 
   protected:
     TInfoSinkBase &objSink() { return mObjSink; }
+    void writeFloat(TInfoSinkBase &out, float f);
     void writeTriplet(Visit visit, const char *preStr, const char *inStr, const char *postStr);
     void writeLayoutQualifier(const TType &type);
     void writeInvariantQualifier(const TType &type);
@@ -55,18 +57,17 @@ class TOutputGLSLBase : public TIntermTraverser
     bool visitIfElse(Visit visit, TIntermIfElse *node) override;
     bool visitSwitch(Visit visit, TIntermSwitch *node) override;
     bool visitCase(Visit visit, TIntermCase *node) override;
+    bool visitFunctionPrototype(Visit visit, TIntermFunctionPrototype *node) override;
     bool visitFunctionDefinition(Visit visit, TIntermFunctionDefinition *node) override;
     bool visitAggregate(Visit visit, TIntermAggregate *node) override;
     bool visitBlock(Visit visit, TIntermBlock *node) override;
+    bool visitInvariantDeclaration(Visit visit, TIntermInvariantDeclaration *node) override;
     bool visitDeclaration(Visit visit, TIntermDeclaration *node) override;
     bool visitLoop(Visit visit, TIntermLoop *node) override;
     bool visitBranch(Visit visit, TIntermBranch *node) override;
 
     void visitCodeBlock(TIntermBlock *node);
 
-    // Return the original name if hash function pointer is NULL;
-    // otherwise return the hashed name.
-    TString hashName(const TName &name);
     // Same as hashName(), but without hashing built-in variables.
     TString hashVariableName(const TName &name);
     // Same as hashName(), but without hashing built-in functions and with unmangling.
@@ -81,7 +82,7 @@ class TOutputGLSLBase : public TIntermTraverser
     void declareInterfaceBlockLayout(const TInterfaceBlock *interfaceBlock);
     void declareInterfaceBlock(const TInterfaceBlock *interfaceBlock);
 
-    void writeBuiltInFunctionTriplet(Visit visit, const char *preStr, bool useEmulatedFunction);
+    void writeBuiltInFunctionTriplet(Visit visit, TOperator op, bool useEmulatedFunction);
 
     const char *mapQualifierToString(TQualifier qialifier);
 
@@ -90,9 +91,6 @@ class TOutputGLSLBase : public TIntermTraverser
 
     // This set contains all the ids of the structs from every scope.
     std::set<int> mDeclaredStructs;
-
-    // Stack of loops that need to be unrolled.
-    TLoopStack mLoopUnrollStack;
 
     ShArrayIndexClampingStrategy mClampingStrategy;
 

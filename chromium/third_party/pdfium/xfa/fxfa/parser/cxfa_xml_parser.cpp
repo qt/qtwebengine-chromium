@@ -6,7 +6,8 @@
 
 #include "xfa/fxfa/parser/cxfa_xml_parser.h"
 
-CXFA_XMLParser::CXFA_XMLParser(CFDE_XMLNode* pRoot, IFX_Stream* pStream)
+CXFA_XMLParser::CXFA_XMLParser(CFDE_XMLNode* pRoot,
+                               const CFX_RetainPtr<IFGAS_Stream>& pStream)
     : m_nElementStart(0),
       m_dwCheckStatus(0),
       m_dwCurrentCheckStatus(0),
@@ -26,10 +27,6 @@ CXFA_XMLParser::~CXFA_XMLParser() {
   m_NodeStack.RemoveAll(false);
   m_ws1.clear();
   m_ws2.clear();
-}
-
-void CXFA_XMLParser::Release() {
-  delete this;
 }
 
 int32_t CXFA_XMLParser::DoParser(IFX_Pause* pPause) {

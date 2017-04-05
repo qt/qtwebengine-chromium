@@ -6,18 +6,29 @@
 
 #include "drv_priv.h"
 #include "helpers.h"
+#include "util.h"
 
-const struct backend backend_evdi =
+static struct supported_combination combos[2] = {
+	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
+		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
+		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+};
+
+static int evdi_init(struct driver *drv)
+{
+	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
+	return drv_add_kms_flags(drv);
+}
+
+struct backend backend_evdi =
 {
 	.name = "evdi",
+	.init = evdi_init,
 	.bo_create = drv_dumb_bo_create,
 	.bo_destroy = drv_dumb_bo_destroy,
 	.bo_map = drv_dumb_bo_map,
-	.format_list = {
-		{DRV_FORMAT_XRGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_RENDERING},
-		{DRV_FORMAT_XRGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_LINEAR},
-		{DRV_FORMAT_ARGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_RENDERING},
-		{DRV_FORMAT_ARGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_LINEAR},
-	}
 };
 

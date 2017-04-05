@@ -12,6 +12,8 @@
 #include <windows.h>
 #endif
 
+#include "core/fxge/cfx_renderdevice.h"
+
 class IFX_RenderDeviceDriver;
 
 #if defined(PDFIUM_PRINT_TEXT_WITH_GDI)
@@ -23,6 +25,7 @@ extern bool g_pdfium_print_text_with_gdi;
 extern PDFiumEnsureTypefaceCharactersAccessible
     g_pdfium_typeface_accessible_func;
 #endif
+extern int g_pdfium_print_postscript_level;
 
 class CFX_WindowsDevice : public CFX_RenderDevice {
  public:

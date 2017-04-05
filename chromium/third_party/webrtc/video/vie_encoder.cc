@@ -14,164 +14,33 @@
 #include <limits>
 #include <utility>
 
+#include "webrtc/modules/video_coding/include/video_codec_initializer.h"
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/base/timeutils.h"
+#include "webrtc/common_video/include/video_bitrate_allocator.h"
 #include "webrtc/modules/pacing/paced_sender.h"
+#include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "webrtc/modules/video_coding/include/video_coding.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
 #include "webrtc/video/overuse_frame_detector.h"
 #include "webrtc/video/send_statistics_proxy.h"
 #include "webrtc/video_frame.h"
-
 namespace webrtc {
 
 namespace {
 // Time interval for logging frame counts.
 const int64_t kFrameLogIntervalMs = 60000;
-
-VideoCodecType PayloadNameToCodecType(const std::string& payload_name) {
-  if (payload_name == "VP8")
-    return kVideoCodecVP8;
-  if (payload_name == "VP9")
-    return kVideoCodecVP9;
-  if (payload_name == "H264")
-    return kVideoCodecH264;
-  return kVideoCodecGeneric;
-}
-
-VideoCodec VideoEncoderConfigToVideoCodec(
-    const VideoEncoderConfig& config,
-    const std::vector<VideoStream>& streams,
-    const std::string& payload_name,
-    int payload_type) {
-  static const int kEncoderMinBitrateKbps = 30;
-  RTC_DCHECK(!streams.empty());
-  RTC_DCHECK_GE(config.min_transmit_bitrate_bps, 0);
-
-  VideoCodec video_codec;
-  memset(&video_codec, 0, sizeof(video_codec));
-  video_codec.codecType = PayloadNameToCodecType(payload_name);
-
-  switch (config.content_type) {
-    case VideoEncoderConfig::ContentType::kRealtimeVideo:
-      video_codec.mode = kRealtimeVideo;
-      break;
-    case VideoEncoderConfig::ContentType::kScreen:
-      video_codec.mode = kScreensharing;
-      if (streams.size() == 1 &&
-          streams[0].temporal_layer_thresholds_bps.size() == 1) {
-        video_codec.targetBitrate =
-            streams[0].temporal_layer_thresholds_bps[0] / 1000;
-      }
-      break;
-  }
-
-  if (config.encoder_specific_settings)
-    config.encoder_specific_settings->FillEncoderSpecificSettings(&video_codec);
-
-  switch (video_codec.codecType) {
-    case kVideoCodecVP8: {
-      if (!config.encoder_specific_settings)
-        video_codec.codecSpecific.VP8 = VideoEncoder::GetDefaultVp8Settings();
-      video_codec.codecSpecific.VP8.numberOfTemporalLayers =
-          static_cast<unsigned char>(
-              streams.back().temporal_layer_thresholds_bps.size() + 1);
-      break;
-    }
-    case kVideoCodecVP9: {
-      if (!config.encoder_specific_settings)
-        video_codec.codecSpecific.VP9 = VideoEncoder::GetDefaultVp9Settings();
-      if (video_codec.mode == kScreensharing &&
-          config.encoder_specific_settings) {
-        video_codec.codecSpecific.VP9.flexibleMode = true;
-        // For now VP9 screensharing use 1 temporal and 2 spatial layers.
-        RTC_DCHECK_EQ(1, video_codec.codecSpecific.VP9.numberOfTemporalLayers);
-        RTC_DCHECK_EQ(2, video_codec.codecSpecific.VP9.numberOfSpatialLayers);
-      }
-      video_codec.codecSpecific.VP9.numberOfTemporalLayers =
-          static_cast<unsigned char>(
-              streams.back().temporal_layer_thresholds_bps.size() + 1);
-      break;
-    }
-    case kVideoCodecH264: {
-      if (!config.encoder_specific_settings)
-        video_codec.codecSpecific.H264 = VideoEncoder::GetDefaultH264Settings();
-      break;
-    }
-    default:
-      // TODO(pbos): Support encoder_settings codec-agnostically.
-      RTC_DCHECK(!config.encoder_specific_settings)
-          << "Encoder-specific settings for codec type not wired up.";
-      break;
-  }
-
-  strncpy(video_codec.plName, payload_name.c_str(), kPayloadNameSize - 1);
-  video_codec.plName[kPayloadNameSize - 1] = '\0';
-  video_codec.plType = payload_type;
-  video_codec.numberOfSimulcastStreams =
-      static_cast<unsigned char>(streams.size());
-  video_codec.minBitrate = streams[0].min_bitrate_bps / 1000;
-  if (video_codec.minBitrate < kEncoderMinBitrateKbps)
-    video_codec.minBitrate = kEncoderMinBitrateKbps;
-  RTC_DCHECK_LE(streams.size(), static_cast<size_t>(kMaxSimulcastStreams));
-  if (video_codec.codecType == kVideoCodecVP9) {
-    // If the vector is empty, bitrates will be configured automatically.
-    RTC_DCHECK(config.spatial_layers.empty() ||
-               config.spatial_layers.size() ==
-                   video_codec.codecSpecific.VP9.numberOfSpatialLayers);
-    RTC_DCHECK_LE(video_codec.codecSpecific.VP9.numberOfSpatialLayers,
-                  kMaxSimulcastStreams);
-    for (size_t i = 0; i < config.spatial_layers.size(); ++i)
-      video_codec.spatialLayers[i] = config.spatial_layers[i];
-  }
-  for (size_t i = 0; i < streams.size(); ++i) {
-    SimulcastStream* sim_stream = &video_codec.simulcastStream[i];
-    RTC_DCHECK_GT(streams[i].width, 0u);
-    RTC_DCHECK_GT(streams[i].height, 0u);
-    RTC_DCHECK_GT(streams[i].max_framerate, 0);
-    // Different framerates not supported per stream at the moment.
-    RTC_DCHECK_EQ(streams[i].max_framerate, streams[0].max_framerate);
-    RTC_DCHECK_GE(streams[i].min_bitrate_bps, 0);
-    RTC_DCHECK_GE(streams[i].target_bitrate_bps, streams[i].min_bitrate_bps);
-    RTC_DCHECK_GE(streams[i].max_bitrate_bps, streams[i].target_bitrate_bps);
-    RTC_DCHECK_GE(streams[i].max_qp, 0);
-
-    sim_stream->width = static_cast<uint16_t>(streams[i].width);
-    sim_stream->height = static_cast<uint16_t>(streams[i].height);
-    sim_stream->minBitrate = streams[i].min_bitrate_bps / 1000;
-    sim_stream->targetBitrate = streams[i].target_bitrate_bps / 1000;
-    sim_stream->maxBitrate = streams[i].max_bitrate_bps / 1000;
-    sim_stream->qpMax = streams[i].max_qp;
-    sim_stream->numberOfTemporalLayers = static_cast<unsigned char>(
-        streams[i].temporal_layer_thresholds_bps.size() + 1);
-
-    video_codec.width = std::max(video_codec.width,
-                                 static_cast<uint16_t>(streams[i].width));
-    video_codec.height = std::max(
-        video_codec.height, static_cast<uint16_t>(streams[i].height));
-    video_codec.minBitrate =
-        std::min(static_cast<uint16_t>(video_codec.minBitrate),
-                 static_cast<uint16_t>(streams[i].min_bitrate_bps / 1000));
-    video_codec.maxBitrate += streams[i].max_bitrate_bps / 1000;
-    video_codec.qpMax = std::max(video_codec.qpMax,
-                                 static_cast<unsigned int>(streams[i].max_qp));
-  }
-
-  if (video_codec.maxBitrate == 0) {
-    // Unset max bitrate -> cap to one bit per pixel.
-    video_codec.maxBitrate =
-        (video_codec.width * video_codec.height * video_codec.maxFramerate) /
-        1000;
-  }
-  if (video_codec.maxBitrate < kEncoderMinBitrateKbps)
-    video_codec.maxBitrate = kEncoderMinBitrateKbps;
-
-  RTC_DCHECK_GT(streams[0].max_framerate, 0);
-  video_codec.maxFramerate = streams[0].max_framerate;
-  return video_codec;
-}
+// We will never ask for a resolution lower than this.
+#if defined(WEBRTC_ANDROID)
+// TODO(kthelgason): Lower this limit when better testing
+// on MediaCodec and fallback implementations are in place.
+const int kMinPixelsPerFrame = 320 * 180;
+#else
+const int kMinPixelsPerFrame = 120 * 90;
+#endif
 
 // TODO(pbos): Lower these thresholds (to closer to 100%) when we handle
 // pipelining encoders better (multiple input frames before something comes
@@ -192,21 +61,24 @@ class ViEEncoder::ConfigureEncoderTask : public rtc::QueuedTask {
  public:
   ConfigureEncoderTask(ViEEncoder* vie_encoder,
                        VideoEncoderConfig config,
-                       size_t max_data_payload_length)
+                       size_t max_data_payload_length,
+                       bool nack_enabled)
       : vie_encoder_(vie_encoder),
         config_(std::move(config)),
-        max_data_payload_length_(max_data_payload_length) {}
+        max_data_payload_length_(max_data_payload_length),
+        nack_enabled_(nack_enabled) {}
 
  private:
   bool Run() override {
-    vie_encoder_->ConfigureEncoderOnTaskQueue(std::move(config_),
-                                              max_data_payload_length_);
+    vie_encoder_->ConfigureEncoderOnTaskQueue(
+        std::move(config_), max_data_payload_length_, nack_enabled_);
     return true;
   }
 
   ViEEncoder* const vie_encoder_;
   VideoEncoderConfig config_;
   size_t max_data_payload_length_;
+  bool nack_enabled_;
 };
 
 class ViEEncoder::EncodeTask : public rtc::QueuedTask {
@@ -215,10 +87,10 @@ class ViEEncoder::EncodeTask : public rtc::QueuedTask {
              ViEEncoder* vie_encoder,
              int64_t time_when_posted_in_ms,
              bool log_stats)
-      : vie_encoder_(vie_encoder),
+      : frame_(frame),
+        vie_encoder_(vie_encoder),
         time_when_posted_ms_(time_when_posted_in_ms),
         log_stats_(log_stats) {
-    frame_ = frame;
     ++vie_encoder_->posted_frames_waiting_for_encode_;
   }
 
@@ -313,7 +185,10 @@ class ViEEncoder::VideoSourceProxy {
     // The input video frame size will have a resolution with less than or
     // equal to |max_pixel_count| depending on how the source can scale the
     // input frame size.
-    sink_wants_.max_pixel_count = rtc::Optional<int>((pixel_count * 3) / 5);
+    const int pixels_wanted = (pixel_count * 3) / 5;
+    if (pixels_wanted < kMinPixelsPerFrame)
+      return;
+    sink_wants_.max_pixel_count = rtc::Optional<int>(pixels_wanted);
     sink_wants_.max_pixel_count_step_up = rtc::Optional<int>();
     if (source_)
       source_->AddOrUpdateSink(vie_encoder_, sink_wants_);
@@ -372,7 +247,8 @@ ViEEncoder::ViEEncoder(uint32_t number_of_cores,
       source_proxy_(new VideoSourceProxy(this)),
       sink_(nullptr),
       settings_(settings),
-      codec_type_(PayloadNameToCodecType(settings.payload_name)),
+      codec_type_(PayloadNameToCodecType(settings.payload_name)
+                      .value_or(VideoCodecType::kVideoCodecUnknown)),
       video_sender_(Clock::GetRealTimeClock(), this, this),
       overuse_detector_(Clock::GetRealTimeClock(),
                         GetCpuOveruseOptions(settings.full_overuse_time),
@@ -385,6 +261,7 @@ ViEEncoder::ViEEncoder(uint32_t number_of_cores,
       pending_encoder_reconfiguration_(false),
       encoder_start_bitrate_bps_(0),
       max_data_payload_length_(0),
+      nack_enabled_(false),
       last_observed_bitrate_bps_(0),
       encoder_paused_and_dropped_frame_(false),
       has_received_sli_(false),
@@ -392,17 +269,14 @@ ViEEncoder::ViEEncoder(uint32_t number_of_cores,
       has_received_rpsi_(false),
       picture_id_rpsi_(0),
       clock_(Clock::GetRealTimeClock()),
-      degradation_preference_(
-          VideoSendStream::DegradationPreference::kBalanced),
-      cpu_restricted_counter_(0),
-      last_frame_width_(0),
-      last_frame_height_(0),
+      scale_counter_(kScaleReasonSize, 0),
       last_captured_timestamp_(0),
       delta_ntp_internal_ms_(clock_->CurrentNtpInMilliseconds() -
                              clock_->TimeInMilliseconds()),
       last_frame_log_ms_(clock_->TimeInMilliseconds()),
       captured_frame_count_(0),
       dropped_frame_count_(0),
+      bitrate_observer_(nullptr),
       encoder_queue_("EncoderQueue") {
   encoder_queue_.PostTask([this] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
@@ -424,8 +298,11 @@ void ViEEncoder::Stop() {
   encoder_queue_.PostTask([this] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
     overuse_detector_.StopCheckForOveruse();
+    rate_allocator_.reset();
+    bitrate_observer_ = nullptr;
     video_sender_.RegisterExternalEncoder(nullptr, settings_.payload_type,
                                           false);
+    quality_scaler_ = nullptr;
     shutdown_event_.Set();
   });
 
@@ -445,6 +322,16 @@ void ViEEncoder::DeRegisterProcessThread() {
   module_process_thread_->DeRegisterModule(&video_sender_);
 }
 
+void ViEEncoder::SetBitrateObserver(
+    VideoBitrateAllocationObserver* bitrate_observer) {
+  RTC_DCHECK_RUN_ON(&thread_checker_);
+  encoder_queue_.PostTask([this, bitrate_observer] {
+    RTC_DCHECK_RUN_ON(&encoder_queue_);
+    RTC_DCHECK(!bitrate_observer_);
+    bitrate_observer_ = bitrate_observer;
+  });
+}
+
 void ViEEncoder::SetSource(
     rtc::VideoSourceInterface<VideoFrame>* source,
     const VideoSendStream::DegradationPreference& degradation_preference) {
@@ -452,17 +339,10 @@ void ViEEncoder::SetSource(
   source_proxy_->SetSource(source, degradation_preference);
   encoder_queue_.PostTask([this, degradation_preference] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
-    degradation_preference_ = degradation_preference;
-    // Set the stats for if we are currently CPU restricted. We are CPU
-    // restricted depending on degradation preference and
-    // if the overusedetector has currently detected overuse which is counted in
-    // |cpu_restricted_counter_|
-    // We do this on the encoder task queue to avoid a race with the stats set
-    // in ViEEncoder::NormalUsage and ViEEncoder::OveruseDetected.
-    stats_proxy_->SetCpuRestrictedResolution(
-        degradation_preference_ !=
-            VideoSendStream::DegradationPreference::kMaintainResolution &&
-        cpu_restricted_counter_ != 0);
+    scaling_enabled_ = (degradation_preference !=
+         VideoSendStream::DegradationPreference::kMaintainResolution);
+    stats_proxy_->SetResolutionRestrictionStats(
+        scaling_enabled_, scale_counter_[kCpu] > 0, scale_counter_[kQuality]);
   });
 }
 
@@ -482,19 +362,22 @@ void ViEEncoder::SetStartBitrate(int start_bitrate_bps) {
 }
 
 void ViEEncoder::ConfigureEncoder(VideoEncoderConfig config,
-                                  size_t max_data_payload_length) {
+                                  size_t max_data_payload_length,
+                                  bool nack_enabled) {
   encoder_queue_.PostTask(
       std::unique_ptr<rtc::QueuedTask>(new ConfigureEncoderTask(
-          this, std::move(config), max_data_payload_length)));
+          this, std::move(config), max_data_payload_length, nack_enabled)));
 }
 
 void ViEEncoder::ConfigureEncoderOnTaskQueue(VideoEncoderConfig config,
-                                             size_t max_data_payload_length) {
+                                             size_t max_data_payload_length,
+                                             bool nack_enabled) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
   RTC_DCHECK(sink_);
   LOG(LS_INFO) << "ConfigureEncoder requested.";
 
   max_data_payload_length_ = max_data_payload_length;
+  nack_enabled_ = nack_enabled;
   encoder_config_ = std::move(config);
   pending_encoder_reconfiguration_ = true;
 
@@ -518,8 +401,12 @@ void ViEEncoder::ReconfigureEncoder() {
       encoder_config_.video_stream_factory->CreateEncoderStreams(
           last_frame_info_->width, last_frame_info_->height, encoder_config_);
 
-  VideoCodec codec = VideoEncoderConfigToVideoCodec(
-      encoder_config_, streams, settings_.payload_name, settings_.payload_type);
+  VideoCodec codec;
+  if (!VideoCodecInitializer::SetupCodec(encoder_config_, settings_, streams,
+                                         nack_enabled_, &codec,
+                                         &rate_allocator_)) {
+    LOG(LS_ERROR) << "Failed to create encoder configuration.";
+  }
 
   codec.startBitrate =
       std::max(encoder_start_bitrate_bps_ / 1000, codec.minBitrate);
@@ -534,19 +421,35 @@ void ViEEncoder::ReconfigureEncoder() {
     RTC_DCHECK(success);
   }
 
-  rate_allocator_.reset(new SimulcastRateAllocator(codec));
+  video_sender_.UpdateChannelParemeters(rate_allocator_.get(),
+                                        bitrate_observer_);
+
   if (stats_proxy_) {
-    stats_proxy_->OnEncoderReconfigured(encoder_config_,
-                                        rate_allocator_->GetPreferedBitrate());
+    int framerate = stats_proxy_->GetSendFrameRate();
+    if (framerate == 0)
+      framerate = codec.maxFramerate;
+    stats_proxy_->OnEncoderReconfigured(
+        encoder_config_, rate_allocator_->GetPreferredBitrateBps(framerate));
   }
 
   pending_encoder_reconfiguration_ = false;
-  if (stats_proxy_) {
-    stats_proxy_->OnEncoderReconfigured(encoder_config_,
-                                        rate_allocator_->GetPreferedBitrate());
-  }
+
   sink_->OnEncoderConfigurationChanged(
       std::move(streams), encoder_config_.min_transmit_bitrate_bps);
+
+  const auto scaling_settings = settings_.encoder->GetScalingSettings();
+  if (scaling_enabled_ && scaling_settings.enabled) {
+    if (scaling_settings.thresholds) {
+      quality_scaler_.reset(
+          new QualityScaler(this, *(scaling_settings.thresholds)));
+    } else {
+      quality_scaler_.reset(new QualityScaler(this, codec_type_));
+    }
+  } else {
+    quality_scaler_.reset(nullptr);
+    stats_proxy_->SetResolutionRestrictionStats(
+        false, scale_counter_[kCpu] > 0, scale_counter_[kQuality]);
+  }
 }
 
 void ViEEncoder::OnFrame(const VideoFrame& video_frame) {
@@ -559,7 +462,7 @@ void ViEEncoder::OnFrame(const VideoFrame& video_frame) {
 
   // Capture time may come from clock with an offset and drift from clock_.
   int64_t capture_ntp_time_ms;
-  if (video_frame.ntp_time_ms() != 0) {
+  if (video_frame.ntp_time_ms() > 0) {
     capture_ntp_time_ms = video_frame.ntp_time_ms();
   } else if (video_frame.render_time_ms() != 0) {
     capture_ntp_time_ms = video_frame.render_time_ms() + delta_ntp_internal_ms_;
@@ -624,6 +527,7 @@ void ViEEncoder::TraceFrameDropEnd() {
 void ViEEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
                                   int64_t time_when_posted_in_ms) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
+
   if (pre_encode_callback_)
     pre_encode_callback_->OnFrame(video_frame);
 
@@ -641,18 +545,22 @@ void ViEEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
                  << ", texture=" << last_frame_info_->is_texture;
   }
 
+  int64_t now_ms = clock_->TimeInMilliseconds();
   if (pending_encoder_reconfiguration_) {
     ReconfigureEncoder();
+  } else if (!last_parameters_update_ms_ ||
+             now_ms - *last_parameters_update_ms_ >=
+                 vcm::VCMProcessTimer::kDefaultProcessIntervalMs) {
+    video_sender_.UpdateChannelParemeters(rate_allocator_.get(),
+                                          bitrate_observer_);
   }
+  last_parameters_update_ms_.emplace(now_ms);
 
   if (EncoderPaused()) {
     TraceFrameDropStart();
     return;
   }
   TraceFrameDropEnd();
-
-  last_frame_height_ = video_frame.height();
-  last_frame_width_ = video_frame.width();
 
   TRACE_EVENT_ASYNC_STEP0("webrtc", "Video", video_frame.render_time_ms(),
                           "Encode");
@@ -663,19 +571,15 @@ void ViEEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
     webrtc::CodecSpecificInfo codec_specific_info;
     codec_specific_info.codecType = webrtc::kVideoCodecVP8;
 
-      codec_specific_info.codecSpecific.VP8.hasReceivedRPSI =
-          has_received_rpsi_;
-      codec_specific_info.codecSpecific.VP8.hasReceivedSLI =
-          has_received_sli_;
-      codec_specific_info.codecSpecific.VP8.pictureIdRPSI =
-          picture_id_rpsi_;
-      codec_specific_info.codecSpecific.VP8.pictureIdSLI  =
-          picture_id_sli_;
-      has_received_sli_ = false;
-      has_received_rpsi_ = false;
+    codec_specific_info.codecSpecific.VP8.hasReceivedRPSI = has_received_rpsi_;
+    codec_specific_info.codecSpecific.VP8.hasReceivedSLI = has_received_sli_;
+    codec_specific_info.codecSpecific.VP8.pictureIdRPSI = picture_id_rpsi_;
+    codec_specific_info.codecSpecific.VP8.pictureIdSLI = picture_id_sli_;
+    has_received_sli_ = false;
+    has_received_rpsi_ = false;
 
-      video_sender_.AddVideoFrame(video_frame, &codec_specific_info);
-      return;
+    video_sender_.AddVideoFrame(video_frame, &codec_specific_info);
+    return;
   }
   video_sender_.AddVideoFrame(video_frame, nullptr);
 }
@@ -696,22 +600,31 @@ EncodedImageCallback::Result ViEEncoder::OnEncodedImage(
   // Encoded is called on whatever thread the real encoder implementation run
   // on. In the case of hardware encoders, there might be several encoders
   // running in parallel on different threads.
-  if (stats_proxy_) {
+  if (stats_proxy_)
     stats_proxy_->OnSendEncodedImage(encoded_image, codec_specific_info);
-  }
 
   EncodedImageCallback::Result result =
       sink_->OnEncodedImage(encoded_image, codec_specific_info, fragmentation);
 
   int64_t time_sent = clock_->TimeInMilliseconds();
   uint32_t timestamp = encoded_image._timeStamp;
-
-  encoder_queue_.PostTask([this, timestamp, time_sent] {
+  const int qp = encoded_image.qp_;
+  encoder_queue_.PostTask([this, timestamp, time_sent, qp] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
     overuse_detector_.FrameSent(timestamp, time_sent);
+    if (quality_scaler_)
+      quality_scaler_->ReportQP(qp);
   });
 
   return result;
+}
+
+void ViEEncoder::OnDroppedFrame() {
+  encoder_queue_.PostTask([this] {
+    RTC_DCHECK_RUN_ON(&encoder_queue_);
+    if (quality_scaler_)
+      quality_scaler_->ReportDroppedFrame();
+  });
 }
 
 void ViEEncoder::SendStatistics(uint32_t bit_rate, uint32_t frame_rate) {
@@ -770,13 +683,13 @@ void ViEEncoder::OnBitrateUpdated(uint32_t bitrate_bps,
                   << " rtt " << round_trip_time_ms;
 
   video_sender_.SetChannelParameters(bitrate_bps, fraction_lost,
-                                     round_trip_time_ms);
+                                     round_trip_time_ms, rate_allocator_.get(),
+                                     bitrate_observer_);
 
   encoder_start_bitrate_bps_ =
       bitrate_bps != 0 ? bitrate_bps : encoder_start_bitrate_bps_;
   bool video_is_suspended = bitrate_bps == 0;
-  bool video_suspension_changed =
-      video_is_suspended != (last_observed_bitrate_bps_ == 0);
+  bool video_suspension_changed = video_is_suspended != EncoderPaused();
   last_observed_bitrate_bps_ = bitrate_bps;
 
   if (stats_proxy_ && video_suspension_changed) {
@@ -786,47 +699,68 @@ void ViEEncoder::OnBitrateUpdated(uint32_t bitrate_bps,
   }
 }
 
-void ViEEncoder::OveruseDetected() {
+void ViEEncoder::ScaleDown(ScaleReason reason) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
-  if (degradation_preference_ ==
-          VideoSendStream::DegradationPreference::kMaintainResolution ||
-      cpu_restricted_counter_ >= kMaxCpuDowngrades) {
+  if (!scaling_enabled_)
     return;
-  }
-  LOG(LS_INFO) << "CPU overuse detected. Requesting lower resolution.";
   // Request lower resolution if the current resolution is lower than last time
   // we asked for the resolution to be lowered.
-  // Update stats accordingly.
-  int current_pixel_count = last_frame_height_ * last_frame_width_;
-  if (!max_pixel_count_ || current_pixel_count < *max_pixel_count_) {
-    max_pixel_count_ = rtc::Optional<int>(current_pixel_count);
-    max_pixel_count_step_up_ = rtc::Optional<int>();
-    stats_proxy_->OnCpuRestrictedResolutionChanged(true);
-    ++cpu_restricted_counter_;
-    source_proxy_->RequestResolutionLowerThan(current_pixel_count);
+  int current_pixel_count =
+      last_frame_info_ ? last_frame_info_->pixel_count() : 0;
+  if (max_pixel_count_ && current_pixel_count >= *max_pixel_count_)
+    return;
+  switch (reason) {
+    case kQuality:
+      stats_proxy_->OnQualityRestrictedResolutionChanged(
+          scale_counter_[reason] + 1);
+      break;
+    case kCpu:
+      if (scale_counter_[reason] >= kMaxCpuDowngrades)
+        return;
+      // Update stats accordingly.
+      stats_proxy_->OnCpuRestrictedResolutionChanged(true);
+      break;
+  }
+  max_pixel_count_ = rtc::Optional<int>(current_pixel_count);
+  max_pixel_count_step_up_ = rtc::Optional<int>();
+  ++scale_counter_[reason];
+  source_proxy_->RequestResolutionLowerThan(current_pixel_count);
+  LOG(LS_INFO) << "Scaling down resolution.";
+  for (size_t i = 0; i < kScaleReasonSize; ++i) {
+    LOG(LS_INFO) << "Scaled " << scale_counter_[i]
+                 << " times for reason: " << (i ? "cpu" : "quality");
   }
 }
 
-void ViEEncoder::NormalUsage() {
+void ViEEncoder::ScaleUp(ScaleReason reason) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
-  if (degradation_preference_ ==
-          VideoSendStream::DegradationPreference::kMaintainResolution ||
-      cpu_restricted_counter_ == 0) {
+  if (scale_counter_[reason] == 0 || !scaling_enabled_)
     return;
+  // Only scale if resolution is higher than last time
+  // we requested higher resolution.
+  int current_pixel_count =
+      last_frame_info_ ? last_frame_info_->pixel_count() : 0;
+  if (current_pixel_count <= max_pixel_count_step_up_.value_or(0))
+    return;
+  switch (reason) {
+    case kQuality:
+      stats_proxy_->OnQualityRestrictedResolutionChanged(
+          scale_counter_[reason] - 1);
+      break;
+    case kCpu:
+      // Update stats accordingly.
+      stats_proxy_->OnCpuRestrictedResolutionChanged(scale_counter_[reason] >
+                                                     1);
+      break;
   }
-
-  LOG(LS_INFO) << "CPU underuse detected. Requesting higher resolution.";
-  int current_pixel_count = last_frame_height_ * last_frame_width_;
-  // Request higher resolution if we are CPU restricted and the the current
-  // resolution is higher than last time we requested higher resolution.
-  // Update stats accordingly.
-  if (!max_pixel_count_step_up_ ||
-      current_pixel_count > *max_pixel_count_step_up_) {
-    max_pixel_count_ = rtc::Optional<int>();
-    max_pixel_count_step_up_ = rtc::Optional<int>(current_pixel_count);
-    --cpu_restricted_counter_;
-    stats_proxy_->OnCpuRestrictedResolutionChanged(cpu_restricted_counter_ > 0);
-    source_proxy_->RequestHigherResolutionThan(current_pixel_count);
+  max_pixel_count_ = rtc::Optional<int>();
+  max_pixel_count_step_up_ = rtc::Optional<int>(current_pixel_count);
+  --scale_counter_[reason];
+  source_proxy_->RequestHigherResolutionThan(current_pixel_count);
+  LOG(LS_INFO) << "Scaling up resolution.";
+  for (size_t i = 0; i < kScaleReasonSize; ++i) {
+    LOG(LS_INFO) << "Scaled " << scale_counter_[i]
+                 << " times for reason: " << (i ? "cpu" : "quality");
   }
 }
 

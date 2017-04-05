@@ -7,9 +7,9 @@
 #include "xfa/fxfa/app/xfa_ffbarcode.h"
 
 #include "core/fxcrt/fx_ext.h"
-#include "xfa/fwl/core/cfwl_barcode.h"
-#include "xfa/fwl/core/fwl_noteimp.h"
-#include "xfa/fwl/core/ifwl_app.h"
+#include "xfa/fwl/cfwl_app.h"
+#include "xfa/fwl/cfwl_barcode.h"
+#include "xfa/fwl/cfwl_notedriver.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fftextedit.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
@@ -92,7 +92,7 @@ const XFA_BARCODETYPEENUMINFO g_XFABarCodeTypeEnumData[] = {
 const int32_t g_iXFABarcodeTypeCount =
     sizeof(g_XFABarCodeTypeEnumData) / sizeof(XFA_BARCODETYPEENUMINFO);
 
-XFA_LPCBARCODETYPEENUMINFO XFA_GetBarcodeTypeByName(
+const XFA_BARCODETYPEENUMINFO* XFA_GetBarcodeTypeByName(
     const CFX_WideStringC& wsName) {
   if (wsName.IsEmpty())
     return nullptr;
@@ -102,7 +102,7 @@ XFA_LPCBARCODETYPEENUMINFO XFA_GetBarcodeTypeByName(
   int32_t iEnd = g_iXFABarcodeTypeCount - 1;
   do {
     int32_t iMid = (iStart + iEnd) / 2;
-    XFA_LPCBARCODETYPEENUMINFO pInfo = g_XFABarCodeTypeEnumData + iMid;
+    const XFA_BARCODETYPEENUMINFO* pInfo = g_XFABarCodeTypeEnumData + iMid;
     if (uHash == pInfo->uHash) {
       return pInfo;
     } else if (uHash < pInfo->uHash) {
@@ -124,13 +124,12 @@ CXFA_FFBarcode::~CXFA_FFBarcode() {}
 
 bool CXFA_FFBarcode::LoadWidget() {
   CFWL_Barcode* pFWLBarcode = new CFWL_Barcode(GetFWLApp());
-  pFWLBarcode->Initialize();
 
   m_pNormalWidget = pFWLBarcode;
   m_pNormalWidget->SetLayoutItem(this);
-  IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
-  pNoteDriver->RegisterEventTarget(pWidget, pWidget);
+  CFWL_NoteDriver* pNoteDriver =
+      m_pNormalWidget->GetOwnerApp()->GetNoteDriver();
+  pNoteDriver->RegisterEventTarget(m_pNormalWidget, m_pNormalWidget);
 
   m_pOldDelegate = m_pNormalWidget->GetDelegate();
   m_pNormalWidget->SetDelegate(this);
@@ -158,8 +157,7 @@ void CXFA_FFBarcode::RenderWidget(CFX_Graphics* pGS,
   CXFA_Border borderUI = m_pDataAcc->GetUIBorder();
   DrawBorder(pGS, borderUI, m_rtUI, &mtRotate);
   RenderCaption(pGS, &mtRotate);
-  CFX_RectF rtWidget;
-  m_pNormalWidget->GetWidgetRect(rtWidget);
+  CFX_RectF rtWidget = m_pNormalWidget->GetWidgetRect();
   CFX_Matrix mt;
   mt.Set(1, 0, 0, 1, rtWidget.left, rtWidget.top);
   mt.Concat(mtRotate);
@@ -170,7 +168,7 @@ void CXFA_FFBarcode::UpdateWidgetProperty() {
   CXFA_FFTextEdit::UpdateWidgetProperty();
   CFWL_Barcode* pBarCodeWidget = (CFWL_Barcode*)m_pNormalWidget;
   CFX_WideString wsType = GetDataAcc()->GetBarcodeType();
-  XFA_LPCBARCODETYPEENUMINFO pBarcodeTypeInfo =
+  const XFA_BARCODETYPEENUMINFO* pBarcodeTypeInfo =
       XFA_GetBarcodeTypeByName(wsType.AsStringC());
   if (!pBarcodeTypeInfo)
     return;

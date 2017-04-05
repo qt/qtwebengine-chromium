@@ -1095,7 +1095,7 @@ void Renderer11::generateDisplayExtensions(egl::DisplayExtensions *outExtensions
 gl::Error Renderer11::flush()
 {
     mDeviceContext->Flush();
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::finish()
@@ -1143,7 +1143,7 @@ gl::Error Renderer11::finish()
         }
     } while (result == S_FALSE);
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 bool Renderer11::isValidNativeWindow(EGLNativeWindowType window) const
@@ -1307,7 +1307,7 @@ gl::Error Renderer11::generateSwizzle(gl::Texture *texture)
         }
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::generateSwizzles(const gl::ContextState &data, gl::SamplerType type)
@@ -1345,6 +1345,7 @@ gl::Error Renderer11::setSamplerState(gl::SamplerType type,
                                       gl::Texture *texture,
                                       const gl::SamplerState &samplerState)
 {
+#if !defined(NDEBUG)
     // Make sure to add the level offset for our tiny compressed texture workaround
     TextureD3D *textureD3D = GetImplAs<TextureD3D>(texture);
 
@@ -1353,6 +1354,7 @@ gl::Error Renderer11::setSamplerState(gl::SamplerType type,
 
     // Storage should exist, texture should be complete
     ASSERT(storage);
+#endif  // !defined(NDEBUG)
 
     // Sampler metadata that's passed to shaders in uniforms is stored separately from rest of the
     // sampler state since having it in contiguous memory makes it possible to memcpy to a constant
@@ -1440,7 +1442,7 @@ gl::Error Renderer11::setTexture(gl::SamplerType type, int index, gl::Texture *t
 
     mStateManager.setShaderResource(type, index, textureSRV);
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::setUniformBuffers(const gl::ContextState &data,
@@ -1840,7 +1842,7 @@ gl::Error Renderer11::drawArraysImpl(const gl::ContextState &data,
         // Skip the draw call if rasterizer discard is enabled (or no fragment shader).
         if (!pixelExe || glState.getRasterizerState().rasterizerDiscard)
         {
-            return gl::Error(GL_NO_ERROR);
+            return gl::NoError();
         }
 
         ID3D11PixelShader *pixelShader = GetAs<ShaderExecutable11>(pixelExe)->getPixelShader();
@@ -1866,7 +1868,7 @@ gl::Error Renderer11::drawArraysImpl(const gl::ContextState &data,
         {
             mDeviceContext->Draw(count, 0);
         }
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
 
     if (mode == GL_LINE_LOOP)
@@ -1905,7 +1907,7 @@ gl::Error Renderer11::drawArraysImpl(const gl::ContextState &data,
         {
             mDeviceContext->DrawInstanced(count, instances, 0, 0);
         }
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
 
     // If the shader is writing to gl_PointSize, then pointsprites are being rendered.
@@ -1919,7 +1921,7 @@ gl::Error Renderer11::drawArraysImpl(const gl::ContextState &data,
     {
         mDeviceContext->Draw(count, 0);
     }
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::drawElementsImpl(const gl::ContextState &data,
@@ -1967,7 +1969,7 @@ gl::Error Renderer11::drawElementsImpl(const gl::ContextState &data,
         {
             mDeviceContext->DrawIndexedInstanced(count, instances, 0, -minIndex, 0);
         }
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
 
     // If the shader is writing to gl_PointSize, then pointsprites are being rendered.
@@ -1989,7 +1991,7 @@ gl::Error Renderer11::drawElementsImpl(const gl::ContextState &data,
     {
         mDeviceContext->DrawIndexed(count, 0, -minIndex);
     }
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::drawLineLoop(const gl::ContextState &data,
@@ -2177,6 +2179,9 @@ gl::Error Renderer11::drawTriangleFan(const gl::ContextState &data,
 
 gl::Error Renderer11::applyShaders(const gl::ContextState &data, GLenum drawMode)
 {
+    // This method is called single-threaded.
+    ANGLE_TRY(ensureHLSLCompilerInitialized());
+
     const auto &glState    = data.getState();
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(glState.getProgram());
     programD3D->updateCachedInputLayout(glState);
@@ -2414,7 +2419,7 @@ gl::Error Renderer11::applyUniforms(const ProgramD3D &programD3D,
         }
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 // SamplerMetadataD3D11 implementation
@@ -2973,7 +2978,7 @@ std::string Renderer11::getShaderModelSuffix() const
     }
 }
 
-const WorkaroundsD3D &RendererD3D::getWorkarounds() const
+const angle::WorkaroundsD3D &RendererD3D::getWorkarounds() const
 {
     if (!mWorkaroundsInitialized)
     {
@@ -3423,7 +3428,7 @@ gl::Error Renderer11::createRenderTarget(int width,
             d3d11::Format::Get(GL_NONE, mRenderer11DeviceCaps), width, height, 1, supportedSamples);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::createRenderTargetCopy(RenderTargetD3D *source, RenderTargetD3D **outRT)
@@ -3441,7 +3446,7 @@ gl::Error Renderer11::createRenderTargetCopy(RenderTargetD3D *source, RenderTarg
                                           0, source11->getTexture(),
                                           source11->getSubresourceIndex(), nullptr);
     *outRT = newRT;
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::loadExecutable(const void *function,
@@ -3455,15 +3460,14 @@ gl::Error Renderer11::loadExecutable(const void *function,
     {
         case SHADER_VERTEX:
         {
-            ID3D11VertexShader *vertexShader      = NULL;
-            ID3D11GeometryShader *streamOutShader = NULL;
+            ID3D11VertexShader *vertexShader      = nullptr;
+            ID3D11GeometryShader *streamOutShader = nullptr;
 
             HRESULT result = mDevice->CreateVertexShader(function, length, NULL, &vertexShader);
             ASSERT(SUCCEEDED(result));
             if (FAILED(result))
             {
-                return gl::Error(GL_OUT_OF_MEMORY, "Failed to create vertex shader, result: 0x%X.",
-                                 result);
+                return gl::OutOfMemory() << "Failed to create vertex shader, " << result;
             }
 
             if (!streamOutVaryings.empty())
@@ -3491,8 +3495,7 @@ gl::Error Renderer11::loadExecutable(const void *function,
                 ASSERT(SUCCEEDED(result));
                 if (FAILED(result))
                 {
-                    return gl::Error(GL_OUT_OF_MEMORY,
-                                     "Failed to create steam output shader, result: 0x%X.", result);
+                    return gl::OutOfMemory() << "Failed to create steam output shader, " << result;
                 }
             }
 
@@ -3502,14 +3505,13 @@ gl::Error Renderer11::loadExecutable(const void *function,
         break;
         case SHADER_PIXEL:
         {
-            ID3D11PixelShader *pixelShader = NULL;
+            ID3D11PixelShader *pixelShader = nullptr;
 
             HRESULT result = mDevice->CreatePixelShader(function, length, NULL, &pixelShader);
             ASSERT(SUCCEEDED(result));
             if (FAILED(result))
             {
-                return gl::Error(GL_OUT_OF_MEMORY, "Failed to create pixel shader, result: 0x%X.",
-                                 result);
+                return gl::OutOfMemory() << "Failed to create pixel shader, " << result;
             }
 
             *outExecutable = new ShaderExecutable11(function, length, pixelShader);
@@ -3517,17 +3519,30 @@ gl::Error Renderer11::loadExecutable(const void *function,
         break;
         case SHADER_GEOMETRY:
         {
-            ID3D11GeometryShader *geometryShader = NULL;
+            ID3D11GeometryShader *geometryShader = nullptr;
 
             HRESULT result = mDevice->CreateGeometryShader(function, length, NULL, &geometryShader);
             ASSERT(SUCCEEDED(result));
             if (FAILED(result))
             {
-                return gl::Error(GL_OUT_OF_MEMORY,
-                                 "Failed to create geometry shader, result: 0x%X.", result);
+                return gl::OutOfMemory() << "Failed to create geometry shader, " << result;
             }
 
             *outExecutable = new ShaderExecutable11(function, length, geometryShader);
+        }
+        break;
+        case SHADER_COMPUTE:
+        {
+            ID3D11ComputeShader *computeShader = nullptr;
+
+            HRESULT result = mDevice->CreateComputeShader(function, length, NULL, &computeShader);
+            ASSERT(SUCCEEDED(result));
+            if (FAILED(result))
+            {
+                return gl::OutOfMemory() << "Failed to create compute shader, " << result;
+            }
+
+            *outExecutable = new ShaderExecutable11(function, length, computeShader);
         }
         break;
         default:
@@ -3535,7 +3550,7 @@ gl::Error Renderer11::loadExecutable(const void *function,
             return gl::Error(GL_INVALID_OPERATION);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::compileToExecutable(gl::InfoLog &infoLog,
@@ -3543,28 +3558,33 @@ gl::Error Renderer11::compileToExecutable(gl::InfoLog &infoLog,
                                           ShaderType type,
                                           const std::vector<D3DVarying> &streamOutVaryings,
                                           bool separatedOutputBuffers,
-                                          const D3DCompilerWorkarounds &workarounds,
+                                          const angle::CompilerWorkaroundsD3D &workarounds,
                                           ShaderExecutableD3D **outExectuable)
 {
-    const char *profileType = NULL;
+    std::stringstream profileStream;
+
     switch (type)
     {
         case SHADER_VERTEX:
-            profileType = "vs";
+            profileStream << "vs";
             break;
         case SHADER_PIXEL:
-            profileType = "ps";
+            profileStream << "ps";
             break;
         case SHADER_GEOMETRY:
-            profileType = "gs";
+            profileStream << "gs";
+            break;
+        case SHADER_COMPUTE:
+            profileStream << "cs";
             break;
         default:
             UNREACHABLE();
             return gl::Error(GL_INVALID_OPERATION);
     }
 
-    std::string profile = FormatString("%s_%d_%d%s", profileType, getMajorShaderModel(),
-                                       getMinorShaderModel(), getShaderModelSuffix().c_str());
+    profileStream << "_" << getMajorShaderModel() << "_" << getMinorShaderModel()
+                  << getShaderModelSuffix();
+    std::string profile = profileStream.str();
 
     UINT flags = D3DCOMPILE_OPTIMIZATION_LEVEL2;
 
@@ -3610,7 +3630,7 @@ gl::Error Renderer11::compileToExecutable(gl::InfoLog &infoLog,
     if (!binary)
     {
         *outExectuable = NULL;
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
 
     gl::Error error = loadExecutable(binary->GetBufferPointer(), binary->GetBufferSize(), type,
@@ -3628,6 +3648,11 @@ gl::Error Renderer11::compileToExecutable(gl::InfoLog &infoLog,
     }
 
     return gl::NoError();
+}
+
+gl::Error Renderer11::ensureHLSLCompilerInitialized()
+{
+    return mCompiler.ensureInitialized();
 }
 
 UniformStorageD3D *Renderer11::createUniformStorage(size_t storageSize)
@@ -3965,7 +3990,7 @@ gl::Error Renderer11::packPixels(const TextureHelper11 &textureHelper,
 
     mDeviceContext->Unmap(readResource, 0);
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
@@ -4248,7 +4273,7 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Rectangle &readRectIn,
 
 bool Renderer11::isES3Capable() const
 {
-    return (d3d11_gl::GetMaximumClientVersion(mRenderer11DeviceCaps.featureLevel) > 2);
+    return (d3d11_gl::GetMaximumClientVersion(mRenderer11DeviceCaps.featureLevel).major > 2);
 };
 
 void Renderer11::onSwap()
@@ -4413,7 +4438,7 @@ void Renderer11::generateCaps(gl::Caps *outCaps,
                            outExtensions, outLimitations);
 }
 
-WorkaroundsD3D Renderer11::generateWorkarounds() const
+angle::WorkaroundsD3D Renderer11::generateWorkarounds() const
 {
     return d3d11::GenerateWorkarounds(mRenderer11DeviceCaps, mAdapterDescription);
 }
@@ -4577,7 +4602,7 @@ gl::Error Renderer11::getScratchMemoryBuffer(size_t requestedSize, MemoryBuffer 
 
 gl::Version Renderer11::getMaxSupportedESVersion() const
 {
-    return gl::Version(d3d11_gl::GetMaximumClientVersion(mRenderer11DeviceCaps.featureLevel), 0);
+    return d3d11_gl::GetMaximumClientVersion(mRenderer11DeviceCaps.featureLevel);
 }
 
 gl::DebugAnnotator *Renderer11::getAnnotator()

@@ -19,6 +19,7 @@
 #include "webrtc/modules/video_coding/jitter_estimator.h"
 #include "webrtc/modules/video_coding/timing.h"
 #include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/metrics.h"
 
 namespace webrtc {
 namespace video_coding {
@@ -45,6 +46,10 @@ FrameBuffer::FrameBuffer(Clock* clock,
       num_frames_buffered_(0),
       stopped_(false),
       protection_mode_(kProtectionNack) {}
+
+FrameBuffer::~FrameBuffer() {
+  UpdateHistograms();
+}
 
 FrameBuffer::ReturnReason FrameBuffer::NextFrame(
     int64_t max_wait_time_ms,
@@ -126,6 +131,8 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
     timing_->UpdateCurrentDelay(frame->RenderTime(),
                                 clock_->TimeInMilliseconds());
 
+    UpdateJitterDelay();
+
     PropagateDecodability(next_frame_it->second);
     AdvanceLastDecodedFrame(next_frame_it);
     *frame_out = std::move(frame);
@@ -154,6 +161,10 @@ void FrameBuffer::Stop() {
 int FrameBuffer::InsertFrame(std::unique_ptr<FrameObject> frame) {
   rtc::CritScope lock(&crit_);
   RTC_DCHECK(frame);
+
+  ++num_total_frames_;
+  if (frame->num_references == 0)
+    ++num_key_frames_;
 
   FrameKey key(frame->picture_id, frame->spatial_layer);
   int last_continuous_picture_id =
@@ -351,6 +362,32 @@ bool FrameBuffer::UpdateFrameInfoWithIncomingFrame(const FrameObject& frame,
                 info->second.num_missing_decodable);
 
   return true;
+}
+
+void FrameBuffer::UpdateJitterDelay() {
+  int unused;
+  int delay;
+  timing_->GetTimings(&unused, &unused, &unused, &unused, &delay, &unused,
+                      &unused);
+
+  accumulated_delay_ += delay;
+  ++accumulated_delay_samples_;
+}
+
+void FrameBuffer::UpdateHistograms() const {
+  rtc::CritScope lock(&crit_);
+  if (num_total_frames_ > 0) {
+    int key_frames_permille = (static_cast<float>(num_key_frames_) * 1000.0f /
+                                   static_cast<float>(num_total_frames_) +
+                               0.5f);
+    RTC_HISTOGRAM_COUNTS_1000("WebRTC.Video.KeyFramesReceivedInPermille",
+                              key_frames_permille);
+  }
+
+  if (accumulated_delay_samples_ > 0) {
+    RTC_HISTOGRAM_COUNTS_10000("WebRTC.Video.JitterBufferDelayInMs",
+                               accumulated_delay_ / accumulated_delay_samples_);
+  }
 }
 
 }  // namespace video_coding

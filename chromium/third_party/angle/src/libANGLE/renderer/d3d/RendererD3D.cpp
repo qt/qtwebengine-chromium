@@ -35,7 +35,8 @@ RendererD3D::RendererD3D(egl::Display *display)
       mCapsInitialized(false),
       mWorkaroundsInitialized(false),
       mDisjoint(false),
-      mDeviceLost(false)
+      mDeviceLost(false),
+      mWorkerThreadPool(4)
 {
 }
 
@@ -105,6 +106,8 @@ gl::Error RendererD3D::applyTextures(GLImplFactory *implFactory,
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(glState.getProgram());
 
     ASSERT(!programD3D->isSamplerMappingDirty());
+
+    // TODO(jmadill): Use the Program's sampler bindings.
 
     unsigned int samplerRange = programD3D->getUsedSamplerRange(shaderType);
     for (unsigned int samplerIndex = 0; samplerIndex < samplerRange; samplerIndex++)
@@ -367,6 +370,11 @@ const gl::Limitations &RendererD3D::getNativeLimitations() const
 {
     ensureCapsInitialized();
     return mNativeLimitations;
+}
+
+angle::WorkerThreadPool *RendererD3D::getWorkerThreadPool()
+{
+    return &mWorkerThreadPool;
 }
 
 }  // namespace rx

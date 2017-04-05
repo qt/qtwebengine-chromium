@@ -6,6 +6,8 @@
 
 #include "core/fpdfdoc/cpdf_variabletext.h"
 
+#include <algorithm>
+
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfdoc/cline.h"
 #include "core/fpdfdoc/cpvt_section.h"
@@ -13,6 +15,7 @@
 #include "core/fpdfdoc/cpvt_wordinfo.h"
 #include "core/fpdfdoc/csection.h"
 #include "core/fpdfdoc/ipvt_fontmap.h"
+#include "third_party/base/ptr_util.h"
 
 namespace {
 
@@ -1094,7 +1097,7 @@ bool CPDF_VariableText::IsLatinWord(uint16_t word) {
 
 CPDF_VariableText::Iterator* CPDF_VariableText::GetIterator() {
   if (!m_pVTIterator)
-    m_pVTIterator.reset(new CPDF_VariableText::Iterator(this));
+    m_pVTIterator = pdfium::MakeUnique<CPDF_VariableText::Iterator>(this);
   return m_pVTIterator.get();
 }
 

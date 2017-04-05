@@ -135,6 +135,7 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions, const gl::Caps &ren
     mTextures[GL_TEXTURE_CUBE_MAP].resize(rendererCaps.maxCombinedTextureImageUnits);
     mTextures[GL_TEXTURE_2D_ARRAY].resize(rendererCaps.maxCombinedTextureImageUnits);
     mTextures[GL_TEXTURE_3D].resize(rendererCaps.maxCombinedTextureImageUnits);
+    mTextures[GL_TEXTURE_2D_MULTISAMPLE].resize(rendererCaps.maxCombinedTextureImageUnits);
 
     mIndexedBuffers[GL_UNIFORM_BUFFER].resize(rendererCaps.maxCombinedUniformBlocks);
 
@@ -661,17 +662,71 @@ gl::Error StateManagerGL::setDrawElementsState(const gl::ContextState &data,
     return setGenericDrawState(data);
 }
 
-gl::Error StateManagerGL::pauseTransformFeedback(const gl::ContextState &data)
+gl::Error StateManagerGL::setDrawIndirectState(const gl::ContextState &data, GLenum type)
 {
-    // If the context is going to be changed, pause the previous context's transform feedback
-    if (data.getContext() != mPrevDrawContext)
+    const gl::State &state = data.getState();
+
+    const gl::VertexArray *vao = state.getVertexArray();
+    const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(vao);
+
+    if (type != GL_NONE)
     {
-        if (mPrevDrawTransformFeedback != nullptr)
+        ANGLE_TRY(vaoGL->syncElementArrayState());
+    }
+    bindVertexArray(vaoGL->getVertexArrayID(), vaoGL->getAppliedElementArrayBufferID());
+
+    gl::Buffer *drawIndirectBuffer = state.getDrawIndirectBuffer();
+    ASSERT(drawIndirectBuffer);
+    const BufferGL *bufferGL = GetImplAs<BufferGL>(drawIndirectBuffer);
+    bindBuffer(GL_DRAW_INDIRECT_BUFFER, bufferGL->getBufferID());
+
+    return setGenericDrawState(data);
+}
+
+void StateManagerGL::pauseTransformFeedback()
+{
+    if (mPrevDrawTransformFeedback != nullptr)
+    {
+        mPrevDrawTransformFeedback->syncPausedState(true);
+    }
+}
+
+void StateManagerGL::pauseAllQueries()
+{
+    for (QueryGL *prevQuery : mCurrentQueries)
+    {
+        prevQuery->pause();
+    }
+}
+
+void StateManagerGL::pauseQuery(GLenum type)
+{
+    for (QueryGL *prevQuery : mCurrentQueries)
+    {
+        if (prevQuery->getType() == type)
         {
-            mPrevDrawTransformFeedback->syncPausedState(true);
+            prevQuery->pause();
         }
     }
-    return gl::Error(GL_NO_ERROR);
+}
+
+void StateManagerGL::resumeAllQueries()
+{
+    for (QueryGL *prevQuery : mCurrentQueries)
+    {
+        prevQuery->resume();
+    }
+}
+
+void StateManagerGL::resumeQuery(GLenum type)
+{
+    for (QueryGL *prevQuery : mCurrentQueries)
+    {
+        if (prevQuery->getType() == type)
+        {
+            prevQuery->resume();
+        }
+    }
 }
 
 gl::Error StateManagerGL::onMakeCurrent(const gl::ContextState &data)
@@ -681,10 +736,7 @@ gl::Error StateManagerGL::onMakeCurrent(const gl::ContextState &data)
     // If the context has changed, pause the previous context's queries
     if (data.getContext() != mPrevDrawContext)
     {
-        for (QueryGL *prevQuery : mCurrentQueries)
-        {
-            prevQuery->pause();
-        }
+        pauseAllQueries();
     }
     mCurrentQueries.clear();
     mPrevDrawTransformFeedback = nullptr;
@@ -703,7 +755,7 @@ gl::Error StateManagerGL::onMakeCurrent(const gl::ContextState &data)
         }
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
@@ -737,8 +789,7 @@ gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
         }
     }
 
-    const std::vector<SamplerBindingGL> &appliedSamplerUniforms = programGL->getAppliedSamplerUniforms();
-    for (const SamplerBindingGL &samplerUniform : appliedSamplerUniforms)
+    for (const gl::SamplerBinding &samplerUniform : program->getSamplerBindings())
     {
         GLenum textureType = samplerUniform.textureType;
         for (GLuint textureUnitIndex : samplerUniform.boundTextureUnits)
@@ -807,7 +858,7 @@ gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
         mPrevDrawTransformFeedback = nullptr;
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 void StateManagerGL::setAttributeCurrentData(size_t index,
@@ -1542,6 +1593,9 @@ void StateManagerGL::syncState(const gl::State &state, const gl::State::DirtyBit
                 break;
             case gl::State::DIRTY_BIT_VERTEX_ARRAY_BINDING:
                 // TODO(jmadill): implement this
+                break;
+            case gl::State::DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING:
+                // TODO: implement this
                 break;
             case gl::State::DIRTY_BIT_PROGRAM_BINDING:
                 // TODO(jmadill): implement this

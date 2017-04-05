@@ -16,29 +16,20 @@ group("api") {
   public_deps = [
     ":libjingle_peerconnection",
   ]
-  if (is_android && !build_with_chromium) {
-    public_deps += [
-      ":libjingle_peerconnection_java",
-      ":libjingle_peerconnection_so",
-    ]
-  }
 }
 
 rtc_source_set("call_api") {
   sources = [
-    "call/audio_receive_stream.h",
-    "call/audio_send_stream.cc",
-    "call/audio_send_stream.h",
     "call/audio_sink.h",
-    "call/audio_state.h",
-    "call/flexfec_receive_stream.h",
   ]
 
   deps = [
     # TODO(kjellander): Add remaining dependencies when webrtc:4243 is done.
     ":audio_mixer_api",
+    ":transport_api",
     "..:webrtc_common",
     "../base:rtc_base_approved",
+    "../modules/audio_coding:audio_decoder_factory_interface",
     "../modules/audio_coding:audio_encoder_interface",
   ]
 }
@@ -53,6 +44,7 @@ config("libjingle_peerconnection_warnings_config") {
 }
 
 rtc_static_library("libjingle_peerconnection") {
+  check_includes = false  # TODO(kjellander): Remove (bugs.webrtc.org/6828)
   cflags = []
   sources = [
     "audiotrack.cc",
@@ -109,6 +101,8 @@ rtc_static_library("libjingle_peerconnection") {
     "statstypes.cc",
     "statstypes.h",
     "streamcollection.h",
+    "trackmediainfomap.cc",
+    "trackmediainfomap.h",
     "videocapturertracksource.cc",
     "videocapturertracksource.h",
     "videosourceproxy.h",
@@ -154,170 +148,6 @@ rtc_static_library("libjingle_peerconnection") {
   }
 }
 
-# Exclude the targets below from the Chromium build since they cannot be built
-# due to incompability with Chromium's logging implementation.
-if (is_android && !build_with_chromium) {
-  config("libjingle_peerconnection_jni_warnings_config") {
-    # The warnings below are enabled by default. Since GN orders compiler flags
-    # for a target before flags from configs, the only way to disable such
-    # warnings is by having them in a separate config, loaded from the target.
-    if (!is_win) {
-      cflags = [
-        "-Wno-sign-compare",
-        "-Wno-unused-variable",
-      ]
-    }
-  }
-
-  rtc_static_library("libjingle_peerconnection_jni") {
-    sources = [
-      "android/jni/androidmediacodeccommon.h",
-      "android/jni/androidmediadecoder_jni.cc",
-      "android/jni/androidmediadecoder_jni.h",
-      "android/jni/androidmediaencoder_jni.cc",
-      "android/jni/androidmediaencoder_jni.h",
-      "android/jni/androidmetrics_jni.cc",
-      "android/jni/androidnetworkmonitor_jni.cc",
-      "android/jni/androidnetworkmonitor_jni.h",
-      "android/jni/androidvideotracksource_jni.cc",
-      "android/jni/classreferenceholder.cc",
-      "android/jni/classreferenceholder.h",
-      "android/jni/jni_helpers.cc",
-      "android/jni/jni_helpers.h",
-      "android/jni/native_handle_impl.cc",
-      "android/jni/native_handle_impl.h",
-      "android/jni/peerconnection_jni.cc",
-      "android/jni/surfacetexturehelper_jni.cc",
-      "android/jni/surfacetexturehelper_jni.h",
-      "androidvideotracksource.cc",
-      "androidvideotracksource.h",
-    ]
-
-    configs += [ ":libjingle_peerconnection_jni_warnings_config" ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [
-        "//build/config/clang:extra_warnings",
-        "//build/config/clang:find_bad_constructs",
-      ]
-    }
-
-    # TODO(jschuh): Bug 1348: fix this warning.
-    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
-    if (is_win) {
-      cflags += [
-        "/wd4245",  # conversion from "int" to "size_t", signed/unsigned mismatch.
-        "/wd4389",  # signed/unsigned mismatch.
-      ]
-    }
-
-    deps = [
-      ":libjingle_peerconnection",
-      "../system_wrappers:field_trial_default",
-      "../system_wrappers:metrics_default",
-    ]
-
-    if (rtc_build_libyuv) {
-      deps += [ "$rtc_libyuv_dir" ]
-      public_deps = [
-        "$rtc_libyuv_dir",
-      ]
-    } else {
-      # Need to add a directory normally exported by libyuv.
-      include_dirs = [ "$rtc_libyuv_dir/include" ]
-    }
-  }
-
-  rtc_shared_library("libjingle_peerconnection_so") {
-    sources = [
-      "android/jni/jni_onload.cc",
-    ]
-
-    suppressed_configs += [ "//build/config/android:hide_native_jni_exports" ]
-
-    deps = [
-      ":libjingle_peerconnection",
-      ":libjingle_peerconnection_jni",
-    ]
-    output_extension = "so"
-  }
-}
-
-# Classes that don't require jni can be used in Chromium.
-if (is_android) {
-  android_library("libjingle_peerconnection_java") {
-    java_files = [
-      "../modules/audio_device/android/java/src/org/webrtc/voiceengine/BuildInfo.java",
-      "../modules/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioEffects.java",
-      "../modules/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioManager.java",
-      "../modules/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioRecord.java",
-      "../modules/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioTrack.java",
-      "../modules/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioUtils.java",
-      "android/java/src/org/webrtc/AudioSource.java",
-      "android/java/src/org/webrtc/AudioTrack.java",
-      "android/java/src/org/webrtc/CallSessionFileRotatingLogSink.java",
-      "android/java/src/org/webrtc/Camera1Capturer.java",
-      "android/java/src/org/webrtc/Camera1Enumerator.java",
-      "android/java/src/org/webrtc/Camera1Session.java",
-      "android/java/src/org/webrtc/Camera2Capturer.java",
-      "android/java/src/org/webrtc/Camera2Enumerator.java",
-      "android/java/src/org/webrtc/Camera2Session.java",
-      "android/java/src/org/webrtc/CameraCapturer.java",
-      "android/java/src/org/webrtc/CameraEnumerationAndroid.java",
-      "android/java/src/org/webrtc/CameraEnumerator.java",
-      "android/java/src/org/webrtc/CameraSession.java",
-      "android/java/src/org/webrtc/CameraVideoCapturer.java",
-      "android/java/src/org/webrtc/DataChannel.java",
-      "android/java/src/org/webrtc/EglBase.java",
-      "android/java/src/org/webrtc/EglBase10.java",
-      "android/java/src/org/webrtc/EglBase14.java",
-      "android/java/src/org/webrtc/EglRenderer.java",
-      "android/java/src/org/webrtc/FileVideoCapturer.java",
-      "android/java/src/org/webrtc/GlRectDrawer.java",
-      "android/java/src/org/webrtc/GlShader.java",
-      "android/java/src/org/webrtc/GlTextureFrameBuffer.java",
-      "android/java/src/org/webrtc/GlUtil.java",
-      "android/java/src/org/webrtc/IceCandidate.java",
-      "android/java/src/org/webrtc/MediaCodecVideoDecoder.java",
-      "android/java/src/org/webrtc/MediaCodecVideoEncoder.java",
-      "android/java/src/org/webrtc/MediaConstraints.java",
-      "android/java/src/org/webrtc/MediaSource.java",
-      "android/java/src/org/webrtc/MediaStream.java",
-      "android/java/src/org/webrtc/MediaStreamTrack.java",
-      "android/java/src/org/webrtc/Metrics.java",
-      "android/java/src/org/webrtc/NetworkMonitor.java",
-      "android/java/src/org/webrtc/NetworkMonitorAutoDetect.java",
-      "android/java/src/org/webrtc/PeerConnection.java",
-      "android/java/src/org/webrtc/PeerConnectionFactory.java",
-      "android/java/src/org/webrtc/RendererCommon.java",
-      "android/java/src/org/webrtc/RtpParameters.java",
-      "android/java/src/org/webrtc/RtpReceiver.java",
-      "android/java/src/org/webrtc/RtpSender.java",
-      "android/java/src/org/webrtc/ScreenCapturerAndroid.java",
-      "android/java/src/org/webrtc/SdpObserver.java",
-      "android/java/src/org/webrtc/SessionDescription.java",
-      "android/java/src/org/webrtc/StatsObserver.java",
-      "android/java/src/org/webrtc/StatsReport.java",
-      "android/java/src/org/webrtc/SurfaceTextureHelper.java",
-      "android/java/src/org/webrtc/SurfaceViewRenderer.java",
-      "android/java/src/org/webrtc/VideoCapturer.java",
-      "android/java/src/org/webrtc/VideoCapturerAndroid.java",
-      "android/java/src/org/webrtc/VideoFileRenderer.java",
-      "android/java/src/org/webrtc/VideoRenderer.java",
-      "android/java/src/org/webrtc/VideoRendererGui.java",
-      "android/java/src/org/webrtc/VideoSource.java",
-      "android/java/src/org/webrtc/VideoTrack.java",
-      "android/java/src/org/webrtc/YuvConverter.java",
-    ]
-
-    deps = [
-      "../base:base_java",
-    ]
-  }
-}
-
 rtc_source_set("rtc_stats_api") {
   cflags = []
   sources = [
@@ -339,6 +169,40 @@ rtc_source_set("audio_mixer_api") {
   deps = [
     "../base:rtc_base_approved",
   ]
+}
+
+rtc_source_set("transport_api") {
+  sources = [
+    "call/transport.h",
+  ]
+}
+
+rtc_source_set("video_frame_api") {
+  sources = [
+    "video/i420_buffer.cc",
+    "video/i420_buffer.h",
+    "video/video_frame.cc",
+    "video/video_frame.h",
+    "video/video_frame_buffer.h",
+    "video/video_rotation.h",
+  ]
+
+  deps = [
+    "../base:rtc_base_approved",
+    "../system_wrappers",
+  ]
+
+  # TODO(nisse): This logic is duplicated in multiple places.
+  # Define in a single place.
+  if (rtc_build_libyuv) {
+    deps += [ "$rtc_libyuv_dir" ]
+    public_deps = [
+      "$rtc_libyuv_dir",
+    ]
+  } else {
+    # Need to add a directory normally exported by libyuv.
+    include_dirs = [ "$rtc_libyuv_dir/include" ]
+  }
 }
 
 if (rtc_include_tests) {
@@ -363,12 +227,11 @@ if (rtc_include_tests) {
   }
 
   rtc_test("peerconnection_unittests") {
+    check_includes = false  # TODO(kjellander): Remove (bugs.webrtc.org/6828)
     testonly = true
     sources = [
       "datachannel_unittest.cc",
       "dtmfsender_unittest.cc",
-      "fakemetricsobserver.cc",
-      "fakemetricsobserver.h",
       "jsepsessiondescription_unittest.cc",
       "localaudiosource_unittest.cc",
       "mediaconstraintsinterface_unittest.cc",
@@ -378,6 +241,7 @@ if (rtc_include_tests) {
       "peerconnectionfactory_unittest.cc",
       "peerconnectioninterface_unittest.cc",
       "proxy_unittest.cc",
+      "rtcstats_integrationtest.cc",
       "rtcstatscollector_unittest.cc",
       "rtpsenderreceiver_unittest.cc",
       "sctputils_unittest.cc",
@@ -392,18 +256,24 @@ if (rtc_include_tests) {
       "test/fakevideotrackrenderer.h",
       "test/mock_datachannel.h",
       "test/mock_peerconnection.h",
+      "test/mock_rtpreceiver.h",
+      "test/mock_rtpsender.h",
       "test/mock_webrtcsession.h",
       "test/mockpeerconnectionobservers.h",
       "test/peerconnectiontestwrapper.cc",
       "test/peerconnectiontestwrapper.h",
+      "test/rtcstatsobtainer.h",
       "test/testsdpstrings.h",
+      "trackmediainfomap_unittest.cc",
       "videocapturertracksource_unittest.cc",
       "videotrack_unittest.cc",
       "webrtcsdp_unittest.cc",
       "webrtcsession_unittest.cc",
     ]
 
-    defines = [ "HAVE_SCTP" ]
+    if (rtc_enable_sctp) {
+      defines = [ "HAVE_SCTP" ]
+    }
 
     configs += [ ":peerconnection_unittests_config" ]
 
@@ -439,13 +309,14 @@ if (rtc_include_tests) {
         "test/androidtestinitializer.h",
       ]
       deps += [
-        ":libjingle_peerconnection_java",
-        ":libjingle_peerconnection_jni",
         "//testing/android/native_test:native_test_support",
+        "//webrtc/sdk/android:libjingle_peerconnection_java",
+        "//webrtc/sdk/android:libjingle_peerconnection_jni",
       ]
     }
 
     deps += [
+      ":fakemetricsobserver",
       ":libjingle_peerconnection",
       "..:webrtc_common",
       "../base:rtc_base_tests_utils",
@@ -462,34 +333,35 @@ if (rtc_include_tests) {
     }
   }
 
-  if (is_android) {
-    instrumentation_test_apk("libjingle_peerconnection_android_unittest") {
-      apk_name = "libjingle_peerconnection_android_unittest"
-      android_manifest = "androidtests/AndroidManifest.xml"
+  rtc_source_set("mock_audio_mixer") {
+    testonly = true
+    sources = [
+      "test/mock_audio_mixer.h",
+    ]
 
-      java_files = [
-        "androidtests/src/org/webrtc/Camera1CapturerUsingByteBufferTest.java",
-        "androidtests/src/org/webrtc/Camera1CapturerUsingTextureTest.java",
-        "androidtests/src/org/webrtc/Camera2CapturerTest.java",
-        "androidtests/src/org/webrtc/CameraVideoCapturerTestFixtures.java",
-        "androidtests/src/org/webrtc/EglRendererTest.java",
-        "androidtests/src/org/webrtc/GlRectDrawerTest.java",
-        "androidtests/src/org/webrtc/MediaCodecVideoEncoderTest.java",
-        "androidtests/src/org/webrtc/NetworkMonitorTest.java",
-        "androidtests/src/org/webrtc/PeerConnectionTest.java",
-        "androidtests/src/org/webrtc/RendererCommonTest.java",
-        "androidtests/src/org/webrtc/SurfaceTextureHelperTest.java",
-        "androidtests/src/org/webrtc/SurfaceViewRendererOnMeasureTest.java",
-        "androidtests/src/org/webrtc/WebRtcJniBootTest.java",
-      ]
+    public_deps = [
+      ":audio_mixer_api",
+    ]
 
-      deps = [
-        ":libjingle_peerconnection_java",
-        "../base:base_java",
-        "//base:base_java",
-      ]
+    deps = [
+      "//testing/gmock",
+      "//webrtc/test:test_support",
+    ]
+  }
 
-      shared_libraries = [ ":libjingle_peerconnection_so" ]
+  rtc_source_set("fakemetricsobserver") {
+    testonly = true
+    sources = [
+      "fakemetricsobserver.cc",
+      "fakemetricsobserver.h",
+    ]
+    deps = [
+      ":libjingle_peerconnection",
+      "../base:rtc_base_approved",
+    ]
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
 }

@@ -20,6 +20,10 @@ namespace webrtc {
 namespace {
 
 static const int64_t kPollIntervalMs = 20;
+static const int kExpectedHighVideoBitrateBps = 60000;
+static const int kExpectedHighAudioBitrateBps = 30000;
+static const int kLowBandwidthLimitBps = 20000;
+static const int kExpectedLowBitrateBps = 20000;
 
 std::vector<uint32_t> GenerateSsrcs(size_t num_streams, uint32_t ssrc_offset) {
   std::vector<uint32_t> ssrcs;
@@ -57,10 +61,6 @@ RampUpTester::RampUpTester(size_t num_video_streams,
                      this,
                      "BitrateStatsPollingThread") {
   EXPECT_LE(num_audio_streams_, 1u);
-  if (rtx_) {
-    for (size_t i = 0; i < video_ssrcs_.size(); ++i)
-      rtx_ssrc_map_[video_rtx_ssrcs_[i]] = video_ssrcs_[i];
-  }
 }
 
 RampUpTester::~RampUpTester() {
@@ -172,6 +172,10 @@ void RampUpTester::ModifyVideoConfigs(
     send_config->rtp.ulpfec.ulpfec_payload_type =
         test::CallTest::kUlpfecPayloadType;
     send_config->rtp.ulpfec.red_payload_type = test::CallTest::kRedPayloadType;
+    if (rtx_) {
+      send_config->rtp.ulpfec.red_rtx_payload_type =
+          test::CallTest::kRtxRedPayloadType;
+    }
   }
 
   size_t i = 0;
@@ -188,6 +192,10 @@ void RampUpTester::ModifyVideoConfigs(
           send_config->rtp.ulpfec.red_payload_type;
       recv_config.rtp.ulpfec.ulpfec_payload_type =
           send_config->rtp.ulpfec.ulpfec_payload_type;
+      if (rtx_) {
+        recv_config.rtp.ulpfec.red_rtx_payload_type =
+            send_config->rtp.ulpfec.red_rtx_payload_type;
+      }
     }
 
     if (rtx_) {
@@ -358,7 +366,7 @@ RampUpDownUpTester::RampUpDownUpTester(size_t num_video_streams,
       state_start_ms_(clock_->TimeInMilliseconds()),
       interval_start_ms_(clock_->TimeInMilliseconds()),
       sent_bytes_(0) {
-  forward_transport_config_.link_capacity_kbps = kHighBandwidthLimitBps / 1000;
+  forward_transport_config_.link_capacity_kbps = GetHighLinkCapacity();
 }
 
 RampUpDownUpTester::~RampUpDownUpTester() {}
@@ -410,12 +418,25 @@ std::string RampUpDownUpTester::GetModifierString() const {
   return str;
 }
 
+int RampUpDownUpTester::GetExpectedHighBitrate() const {
+  int expected_bitrate_bps = 0;
+  if (num_audio_streams_ > 0)
+    expected_bitrate_bps += kExpectedHighAudioBitrateBps;
+  if (num_video_streams_ > 0)
+    expected_bitrate_bps += kExpectedHighVideoBitrateBps;
+  return expected_bitrate_bps;
+}
+
+int RampUpDownUpTester::GetHighLinkCapacity() const {
+  return 4 * GetExpectedHighBitrate() / (3 * 1000);
+}
+
 void RampUpDownUpTester::EvolveTestState(int bitrate_bps, bool suspended) {
   int64_t now = clock_->TimeInMilliseconds();
   switch (test_state_) {
     case kFirstRampup: {
       EXPECT_FALSE(suspended);
-      if (bitrate_bps >= kExpectedHighBitrateBps) {
+      if (bitrate_bps >= GetExpectedHighBitrate()) {
         // The first ramp-up has reached the target bitrate. Change the
         // channel limit, and move to the next test state.
         forward_transport_config_.link_capacity_kbps =
@@ -438,8 +459,7 @@ void RampUpDownUpTester::EvolveTestState(int bitrate_bps, bool suspended) {
           suspended == check_suspend_state) {
         // The ramp-down was successful. Change the channel limit back to a
         // high value, and move to the next test state.
-        forward_transport_config_.link_capacity_kbps =
-            kHighBandwidthLimitBps / 1000;
+        forward_transport_config_.link_capacity_kbps = GetHighLinkCapacity();
         send_transport_->SetConfig(forward_transport_config_);
         test_state_ = kSecondRampup;
         webrtc::test::PrintResult("ramp_up_down_up", GetModifierString(),
@@ -452,7 +472,7 @@ void RampUpDownUpTester::EvolveTestState(int bitrate_bps, bool suspended) {
       break;
     }
     case kSecondRampup: {
-      if (bitrate_bps >= kExpectedHighBitrateBps && !suspended) {
+      if (bitrate_bps >= GetExpectedHighBitrate() && !suspended) {
         webrtc::test::PrintResult("ramp_up_down_up", GetModifierString(),
                                   "second_rampup", now - state_start_ms_, "ms",
                                   false);
@@ -475,123 +495,51 @@ class RampUpTest : public test::CallTest {
   }
 };
 
-TEST_F(RampUpTest, SingleStream) {
-  RampUpTester test(1, 0, 0, RtpExtension::kTimestampOffsetUri, false, false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, Simulcast) {
-  RampUpTester test(3, 0, 0, RtpExtension::kTimestampOffsetUri, false, false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, SimulcastWithRtx) {
-  RampUpTester test(3, 0, 0, RtpExtension::kTimestampOffsetUri, true, false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, SimulcastByRedWithRtx) {
-  RampUpTester test(3, 0, 0, RtpExtension::kTimestampOffsetUri, true, true);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, SingleStreamWithHighStartBitrate) {
-  RampUpTester test(1, 0, 0.9 * kSingleStreamTargetBps,
-                    RtpExtension::kTimestampOffsetUri, false, false);
-  RunBaseTest(&test);
-}
-
 static const uint32_t kStartBitrateBps = 60000;
 
-// Disabled: https://bugs.chromium.org/p/webrtc/issues/detail?id=5576
-TEST_F(RampUpTest, DISABLED_UpDownUpOneStream) {
-  RampUpDownUpTester test(1, 0, kStartBitrateBps, RtpExtension::kAbsSendTimeUri,
-                          false, false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, DISABLED_UpDownUpThreeStreams) {
-  RampUpDownUpTester test(3, 0, kStartBitrateBps, RtpExtension::kAbsSendTimeUri,
-                          false, false);
-  RunBaseTest(&test);
-}
-
-// Disabled: https://bugs.chromium.org/p/webrtc/issues/detail?id=5576
-TEST_F(RampUpTest, DISABLED_UpDownUpOneStreamRtx) {
-  RampUpDownUpTester test(1, 0, kStartBitrateBps, RtpExtension::kAbsSendTimeUri,
-                          true, false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, UpDownUpThreeStreamsRtx) {
-  RampUpDownUpTester test(3, 0, kStartBitrateBps, RtpExtension::kAbsSendTimeUri,
-                          true, false);
-  RunBaseTest(&test);
-}
-
-// Disabled: https://bugs.chromium.org/p/webrtc/issues/detail?id=5576
-TEST_F(RampUpTest, DISABLED_UpDownUpOneStreamByRedRtx) {
-  RampUpDownUpTester test(1, 0, kStartBitrateBps, RtpExtension::kAbsSendTimeUri,
-                          true, true);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, UpDownUpThreeStreamsByRedRtx) {
+TEST_F(RampUpTest, UpDownUpAbsSendTimeSimulcastRedRtx) {
   RampUpDownUpTester test(3, 0, kStartBitrateBps, RtpExtension::kAbsSendTimeUri,
                           true, true);
   RunBaseTest(&test);
 }
 
-TEST_F(RampUpTest, SendSideVideoUpDownUpRtx) {
+TEST_F(RampUpTest, UpDownUpTransportSequenceNumberRtx) {
   RampUpDownUpTester test(3, 0, kStartBitrateBps,
                           RtpExtension::kTransportSequenceNumberUri, true,
                           false);
   RunBaseTest(&test);
 }
 
-// TODO(holmer): Enable when audio bitrates are included in the bitrate
-//               allocation.
-TEST_F(RampUpTest, DISABLED_SendSideAudioVideoUpDownUpRtx) {
+TEST_F(RampUpTest, UpDownUpAudioVideoTransportSequenceNumberRtx) {
   RampUpDownUpTester test(3, 1, kStartBitrateBps,
                           RtpExtension::kTransportSequenceNumberUri, true,
                           false);
   RunBaseTest(&test);
 }
 
-TEST_F(RampUpTest, SendSideAudioOnlyUpDownUpRtx) {
+TEST_F(RampUpTest, UpDownUpAudioTransportSequenceNumberRtx) {
   RampUpDownUpTester test(0, 1, kStartBitrateBps,
                           RtpExtension::kTransportSequenceNumberUri, true,
                           false);
   RunBaseTest(&test);
 }
 
-TEST_F(RampUpTest, AbsSendTimeSingleStream) {
+TEST_F(RampUpTest, TOffsetSimulcastRedRtx) {
+  RampUpTester test(3, 0, 0, RtpExtension::kTimestampOffsetUri, true, true);
+  RunBaseTest(&test);
+}
+
+TEST_F(RampUpTest, AbsSendTime) {
   RampUpTester test(1, 0, 0, RtpExtension::kAbsSendTimeUri, false, false);
   RunBaseTest(&test);
 }
 
-TEST_F(RampUpTest, AbsSendTimeSimulcast) {
-  RampUpTester test(3, 0, 0, RtpExtension::kAbsSendTimeUri, false, false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, AbsSendTimeSimulcastWithRtx) {
-  RampUpTester test(3, 0, 0, RtpExtension::kAbsSendTimeUri, true, false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, AbsSendTimeSimulcastByRedWithRtx) {
+TEST_F(RampUpTest, AbsSendTimeSimulcastRedRtx) {
   RampUpTester test(3, 0, 0, RtpExtension::kAbsSendTimeUri, true, true);
   RunBaseTest(&test);
 }
 
-TEST_F(RampUpTest, AbsSendTimeSingleStreamWithHighStartBitrate) {
-  RampUpTester test(1, 0, 0.9 * kSingleStreamTargetBps,
-                    RtpExtension::kAbsSendTimeUri, false, false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, TransportSequenceNumberSingleStream) {
+TEST_F(RampUpTest, TransportSequenceNumber) {
   RampUpTester test(1, 0, 0, RtpExtension::kTransportSequenceNumberUri, false,
                     false);
   RunBaseTest(&test);
@@ -603,27 +551,9 @@ TEST_F(RampUpTest, TransportSequenceNumberSimulcast) {
   RunBaseTest(&test);
 }
 
-TEST_F(RampUpTest, TransportSequenceNumberSimulcastWithRtx) {
-  RampUpTester test(3, 0, 0, RtpExtension::kTransportSequenceNumberUri, true,
-                    false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, AudioVideoTransportSequenceNumberSimulcastWithRtx) {
-  RampUpTester test(3, 1, 0, RtpExtension::kTransportSequenceNumberUri, true,
-                    false);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, TransportSequenceNumberSimulcastByRedWithRtx) {
+TEST_F(RampUpTest, TransportSequenceNumberSimulcastRedRtx) {
   RampUpTester test(3, 0, 0, RtpExtension::kTransportSequenceNumberUri, true,
                     true);
-  RunBaseTest(&test);
-}
-
-TEST_F(RampUpTest, TransportSequenceNumberSingleStreamWithHighStartBitrate) {
-  RampUpTester test(1, 0, 0.9 * kSingleStreamTargetBps,
-                    RtpExtension::kTransportSequenceNumberUri, false, false);
   RunBaseTest(&test);
 }
 }  // namespace webrtc

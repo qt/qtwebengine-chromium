@@ -10,86 +10,13 @@
 #include <memory>
 #include <vector>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
-#include "xfa/fwl/core/fwl_error.h"
+#include "xfa/fgas/font/cfgas_gefont.h"
+#include "xfa/fwl/fwl_error.h"
 #include "xfa/fwl/theme/cfwl_utils.h"
 #include "xfa/fxgraphics/cfx_graphics.h"
-
-enum class CFWL_WidgetCapacity {
-  None = 0,
-
-  Today,
-  Sun,
-  Mon,
-  Tue,
-  Wed,
-  Thu,
-  Fri,
-  Sat,
-
-  January,
-  February,
-  March,
-  April,
-  May,
-  June,
-  July,
-  August,
-  September,
-  October,
-  November,
-  December,
-
-  BigIcon,
-  ComboFormHandler,
-  CXBorder,
-  CYBorder,
-  CYCaption,
-  CYNarrowCaption,
-  DatesCellHeight,
-  DatesCellWidth,
-  EdgeFlat,
-  EdgeRaised,
-  EdgeSunken,
-  Font,
-  FontSize,
-  HeaderBtnHeight,
-  HeaderBtnHMargin,
-  HeaderBtnVMargin,
-  HeaderBtnWidth,
-  HeaderHeight,
-  HeaderTextHeight,
-  HeaderTextHMargin,
-  HeaderTextVMargin,
-  HeaderTextWidth,
-  HeaderWidth,
-  Height,
-  HSepHeight,
-  HSepWidth,
-  LineHeight,
-  Margin,
-  ScrollBarWidth,
-  SepDOffset,
-  SepX,
-  SepY,
-  Size,
-  SmallIcon,
-  SpaceAboveBelow,
-  TextColor,
-  TextSelColor,
-  TodayFlagWidth,
-  TodayHeight,
-  TodayWidth,
-  UIMargin,
-  VSepHeight,
-  VSepWidth,
-  WeekHeight,
-  WeekNumHeight,
-  WeekNumWidth,
-  WeekWidth,
-  Width
-};
 
 class CFDE_TextOut;
 class CFGAS_GEFont;
@@ -97,7 +24,7 @@ class CFWL_ThemeBackground;
 class CFWL_ThemePart;
 class CFWL_ThemeText;
 class CFGAS_FontMgr;
-class IFWL_Widget;
+class CFWL_Widget;
 
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
 class CFX_FontSourceEnum_File;
@@ -110,55 +37,25 @@ class CFWL_WidgetTP {
   virtual void Initialize();
   virtual void Finalize();
 
-  virtual bool IsValidWidget(IFWL_Widget* pWidget);
-  virtual uint32_t GetThemeID(IFWL_Widget* pWidget);
-  virtual uint32_t SetThemeID(IFWL_Widget* pWidget, uint32_t dwThemeID);
-
   virtual void DrawBackground(CFWL_ThemeBackground* pParams);
   virtual void DrawText(CFWL_ThemeText* pParams);
-  virtual void* GetCapacity(CFWL_ThemePart* pThemePart,
-                            CFWL_WidgetCapacity dwCapacity);
-  virtual bool IsCustomizedLayout(IFWL_Widget* pWidget);
-  virtual void CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect);
 
-  void SetFont(IFWL_Widget* pWidget,
-               const FX_WCHAR* strFont,
-               FX_FLOAT fFontSize,
-               FX_ARGB rgbFont);
-  void SetFont(IFWL_Widget* pWidget,
-               CFGAS_GEFont* pFont,
-               FX_FLOAT fFontSize,
-               FX_ARGB rgbFont);
-  CFGAS_GEFont* GetFont(IFWL_Widget* pWidget);
+  const CFX_RetainPtr<CFGAS_GEFont>& GetFont() const { return m_pFDEFont; }
 
  protected:
+  struct CColorData {
+    FX_ARGB clrBorder[4];
+    FX_ARGB clrStart[4];
+    FX_ARGB clrEnd[4];
+    FX_ARGB clrSign[4];
+  };
+
   CFWL_WidgetTP();
 
+  void InitializeArrowColorData();
   void InitTTO();
   void FinalizeTTO();
 
-  void DrawEdge(CFX_Graphics* pGraphics,
-                uint32_t dwStyles,
-                const CFX_RectF* pRect,
-                CFX_Matrix* pMatrix = nullptr);
-  void Draw3DRect(CFX_Graphics* pGraphics,
-                  FWLTHEME_EDGE eType,
-                  FX_FLOAT fWidth,
-                  const CFX_RectF* pRect,
-                  FX_ARGB cr1,
-                  FX_ARGB cr2,
-                  FX_ARGB cr3,
-                  FX_ARGB cr4,
-                  CFX_Matrix* pMatrix = nullptr);
-  void Draw3DCircle(CFX_Graphics* pGraphics,
-                    FWLTHEME_EDGE eType,
-                    FX_FLOAT fWidth,
-                    const CFX_RectF* pRect,
-                    FX_ARGB cr1,
-                    FX_ARGB cr2,
-                    FX_ARGB cr3,
-                    FX_ARGB cr4,
-                    CFX_Matrix* pMatrix = nullptr);
   void DrawBorder(CFX_Graphics* pGraphics,
                   const CFX_RectF* pRect,
                   CFX_Matrix* pMatrix = nullptr);
@@ -179,24 +76,8 @@ class CFWL_WidgetTP {
                         CFX_Path* path,
                         int32_t fillMode = FXFILL_WINDING,
                         CFX_Matrix* pMatrix = nullptr);
-  void DrawAnnulusRect(CFX_Graphics* pGraphics,
-                       FX_ARGB fillColor,
-                       const CFX_RectF* pRect,
-                       FX_FLOAT fRingWidth = 1,
-                       CFX_Matrix* pMatrix = nullptr);
-  void DrawAnnulusCircle(CFX_Graphics* pGraphics,
-                         FX_ARGB fillColor,
-                         const CFX_RectF* pRect,
-                         FX_FLOAT fWidth = 1,
-                         CFX_Matrix* pMatrix = nullptr);
   void DrawFocus(CFX_Graphics* pGraphics,
                  const CFX_RectF* pRect,
-                 CFX_Matrix* pMatrix = nullptr);
-  void DrawArrow(CFX_Graphics* pGraphics,
-                 const CFX_RectF* pRect,
-                 FWLTHEME_DIRECTION eDict,
-                 FX_ARGB argbFill,
-                 bool bPressed,
                  CFX_Matrix* pMatrix = nullptr);
   void DrawArrow(CFX_Graphics* pGraphics,
                  const CFX_RectF* pRect,
@@ -212,18 +93,14 @@ class CFWL_WidgetTP {
                     FWLTHEME_DIRECTION eDict,
                     FWLTHEME_STATE eState,
                     CFX_Matrix* pMatrix = nullptr);
+
   uint32_t m_dwRefCount;
   std::unique_ptr<CFDE_TextOut> m_pTextOut;
-  CFGAS_GEFont* m_pFDEFont;
-  FX_FLOAT m_fValue;
-  uint32_t m_dwValue;
-  CFX_RectF m_rtMargin;
-  uint32_t m_dwThemeID;
+  CFX_RetainPtr<CFGAS_GEFont> m_pFDEFont;
+  std::unique_ptr<CColorData> m_pColorData;
 };
 
 void FWLTHEME_Release();
-uint32_t FWL_GetThemeLayout(uint32_t dwThemeID);
-uint32_t FWL_GetThemeColor(uint32_t dwThemeID);
 
 class CFWL_FontData {
  public:
@@ -236,7 +113,7 @@ class CFWL_FontData {
   bool LoadFont(const CFX_WideStringC& wsFontFamily,
                 uint32_t dwFontStyles,
                 uint16_t wCodePage);
-  CFGAS_GEFont* GetFont() const { return m_pFont.get(); }
+  CFX_RetainPtr<CFGAS_GEFont> GetFont() const { return m_pFont; }
 
  protected:
   CFX_WideString m_wsFamily;
@@ -246,7 +123,7 @@ class CFWL_FontData {
   std::unique_ptr<CFX_FontSourceEnum_File> m_pFontSource;
 #endif
   std::unique_ptr<CFGAS_FontMgr> m_pFontMgr;
-  std::unique_ptr<CFGAS_GEFont> m_pFont;
+  CFX_RetainPtr<CFGAS_GEFont> m_pFont;
 };
 
 class CFWL_FontManager {
@@ -254,9 +131,9 @@ class CFWL_FontManager {
   static CFWL_FontManager* GetInstance();
   static void DestroyInstance();
 
-  CFGAS_GEFont* FindFont(const CFX_WideStringC& wsFontFamily,
-                         uint32_t dwFontStyles,
-                         uint16_t dwCodePage);
+  CFX_RetainPtr<CFGAS_GEFont> FindFont(const CFX_WideStringC& wsFontFamily,
+                                       uint32_t dwFontStyles,
+                                       uint16_t dwCodePage);
 
  protected:
   CFWL_FontManager();

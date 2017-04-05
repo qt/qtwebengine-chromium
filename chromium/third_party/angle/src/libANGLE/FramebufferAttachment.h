@@ -131,18 +131,17 @@ class FramebufferAttachment final
     template <typename T>
     gl::Error getRenderTarget(T **rtOut) const
     {
-        // Cast through the pointer-to-pointer type
-        rx::FramebufferAttachmentRenderTarget *rtPtr = nullptr;
-        gl::Error error = getRenderTarget(&rtPtr);
-        *rtOut = static_cast<T*>(rtPtr);
-        return error;
+        static_assert(std::is_base_of<rx::FramebufferAttachmentRenderTarget, T>(),
+                      "Invalid RenderTarget class.");
+        return getRenderTargetImpl(
+            reinterpret_cast<rx::FramebufferAttachmentRenderTarget **>(rtOut));
     }
 
     bool operator==(const FramebufferAttachment &other) const;
     bool operator!=(const FramebufferAttachment &other) const;
 
   private:
-    gl::Error getRenderTarget(rx::FramebufferAttachmentRenderTarget **rtOut) const;
+    gl::Error getRenderTargetImpl(rx::FramebufferAttachmentRenderTarget **rtOut) const;
 
     GLenum mType;
     Target mTarget;
@@ -191,7 +190,8 @@ inline GLsizei FramebufferAttachment::getSamples() const
     return mResource->getAttachmentSamples(mTarget);
 }
 
-inline gl::Error FramebufferAttachment::getRenderTarget(rx::FramebufferAttachmentRenderTarget **rtOut) const
+inline gl::Error FramebufferAttachment::getRenderTargetImpl(
+    rx::FramebufferAttachmentRenderTarget **rtOut) const
 {
     return mResource->getAttachmentRenderTarget(mTarget, rtOut);
 }

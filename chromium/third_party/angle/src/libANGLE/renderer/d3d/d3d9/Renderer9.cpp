@@ -593,7 +593,7 @@ gl::Error Renderer9::flush()
         return gl::Error(GL_OUT_OF_MEMORY, "Failed to get event query data, result: 0x%X.", result);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::finish()
@@ -656,7 +656,7 @@ gl::Error Renderer9::finish()
 
     freeEventQuery(query);
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 bool Renderer9::isValidNativeWindow(EGLNativeWindowType window) const
@@ -807,7 +807,7 @@ gl::Error Renderer9::allocateEventQuery(IDirect3DQuery9 **outQuery)
         mEventQueryPool.pop_back();
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 void Renderer9::freeEventQuery(IDirect3DQuery9* query)
@@ -928,7 +928,7 @@ gl::Error Renderer9::setSamplerState(gl::SamplerType type, int index, gl::Textur
     appliedSampler.samplerState = samplerState;
     appliedSampler.baseLevel = baseLevel;
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::setTexture(gl::SamplerType type, int index, gl::Texture *texture)
@@ -976,7 +976,7 @@ gl::Error Renderer9::setTexture(gl::SamplerType type, int index, gl::Texture *te
 
     appliedTextures[index] = reinterpret_cast<uintptr_t>(d3dTexture);
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::setUniformBuffers(const gl::ContextState & /*data*/,
@@ -984,7 +984,7 @@ gl::Error Renderer9::setUniformBuffers(const gl::ContextState & /*data*/,
                                        const std::vector<GLint> & /*fragmentUniformBuffers*/)
 {
     // No effect in ES2/D3D9
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::updateState(Context9 *context, GLenum drawMode)
@@ -1128,7 +1128,7 @@ gl::Error Renderer9::getNullColorbuffer(GLImplFactory *implFactory,
         {
             mNullColorbufferCache[i].lruCount = ++mMaxNullColorbufferLRU;
             *outColorBuffer = mNullColorbufferCache[i].buffer;
-            return gl::Error(GL_NO_ERROR);
+            return gl::NoError();
         }
     }
 
@@ -1159,7 +1159,7 @@ gl::Error Renderer9::getNullColorbuffer(GLImplFactory *implFactory,
     oldest->height   = size.height;
 
     *outColorBuffer = nullbuffer;
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::applyRenderTarget(GLImplFactory *implFactory,
@@ -1264,7 +1264,7 @@ gl::Error Renderer9::applyRenderTarget(GLImplFactory *implFactory,
         mRenderTargetDescInitialized = true;
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::applyRenderTarget(GLImplFactory *implFactory,
@@ -1319,13 +1319,13 @@ gl::Error Renderer9::applyIndexBuffer(const gl::ContextState &data,
         mAppliedIBSerial = indexInfo->serial;
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::applyTransformFeedbackBuffers(const gl::State &state)
 {
     ASSERT(!state.isTransformFeedbackActiveUnpaused());
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::drawArraysImpl(const gl::ContextState &data,
@@ -1364,12 +1364,12 @@ gl::Error Renderer9::drawArraysImpl(const gl::ContextState &data,
             mDevice->DrawIndexedPrimitive(mPrimitiveType, 0, 0, count, 0, mPrimitiveCount);
         }
 
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
     else   // Regular case
     {
         mDevice->DrawPrimitive(mPrimitiveType, 0, mPrimitiveCount);
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
 }
 
@@ -1405,7 +1405,7 @@ gl::Error Renderer9::drawElementsImpl(const gl::ContextState &data,
                                           static_cast<UINT>(vertexCount), indexInfo.startIndex,
                                           mPrimitiveCount);
         }
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
 }
 
@@ -1594,7 +1594,7 @@ gl::Error Renderer9::drawLineLoop(GLsizei count, GLenum type, const GLvoid *indi
 
     mDevice->DrawIndexedPrimitive(D3DPT_LINESTRIP, -minIndex, minIndex, count, startIndex, count);
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 template <typename T>
@@ -1606,7 +1606,7 @@ static gl::Error drawPoints(IDirect3DDevice9* device, GLsizei count, const GLvoi
         device->DrawPrimitive(D3DPT_POINTLIST, indexValue, 1);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::drawIndexedPoints(GLsizei count, GLenum type, const GLvoid *indices, int minIndex, gl::Buffer *elementArrayBuffer)
@@ -1707,11 +1707,14 @@ gl::Error Renderer9::getCountingIB(size_t count, StaticIndexBufferInterface **ou
     }
 
     *outIB = mCountingIB;
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::applyShaders(const gl::ContextState &data, GLenum drawMode)
 {
+    // This method is called single-threaded.
+    ANGLE_TRY(ensureHLSLCompilerInitialized());
+
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(data.getState().getProgram());
     programD3D->updateCachedInputLayout(data.getState());
 
@@ -1802,7 +1805,7 @@ gl::Error Renderer9::applyUniforms(const ProgramD3D &programD3D,
     // Driver uniforms
     mStateManager.setShaderConstants();
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 void Renderer9::applyUniformnfv(const D3DUniform *targetUniform, const GLfloat *v)
@@ -2101,7 +2104,7 @@ gl::Error Renderer9::clear(const ClearParameters &clearParams,
         mDevice->Clear(0, NULL, dxClearFlags, color, depth, stencil);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 void Renderer9::markAllStateDirty()
@@ -2460,8 +2463,15 @@ gl::Error Renderer9::copyTexture(const gl::Texture *source,
                                  bool unpackPremultiplyAlpha,
                                  bool unpackUnmultiplyAlpha)
 {
-    UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    RECT rect;
+    rect.left   = sourceRect.x;
+    rect.top    = sourceRect.y;
+    rect.right  = sourceRect.x + sourceRect.width;
+    rect.bottom = sourceRect.y + sourceRect.height;
+
+    return mBlit->copyTexture2D(source, sourceLevel, rect, destFormat, destOffset, storage,
+                                destLevel, unpackFlipY, unpackPremultiplyAlpha,
+                                unpackUnmultiplyAlpha);
 }
 
 gl::Error Renderer9::copyCompressedTexture(const gl::Texture *source,
@@ -2536,7 +2546,7 @@ gl::Error Renderer9::createRenderTarget(int width, int height, GLenum format, GL
 
     *outRT = new TextureRenderTarget9(texture, 0, renderTarget, format, width, height, 1,
                                       supportedSamples);
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::createRenderTargetCopy(RenderTargetD3D *source, RenderTargetD3D **outRT)
@@ -2563,7 +2573,7 @@ gl::Error Renderer9::createRenderTargetCopy(RenderTargetD3D *source, RenderTarge
     }
 
     *outRT = newRT;
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::loadExecutable(const void *function,
@@ -2605,7 +2615,7 @@ gl::Error Renderer9::loadExecutable(const void *function,
         return gl::Error(GL_INVALID_OPERATION);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Renderer9::compileToExecutable(gl::InfoLog &infoLog,
@@ -2613,28 +2623,32 @@ gl::Error Renderer9::compileToExecutable(gl::InfoLog &infoLog,
                                          ShaderType type,
                                          const std::vector<D3DVarying> &streamOutVaryings,
                                          bool separatedOutputBuffers,
-                                         const D3DCompilerWorkarounds &workarounds,
+                                         const angle::CompilerWorkaroundsD3D &workarounds,
                                          ShaderExecutableD3D **outExectuable)
 {
     // Transform feedback is not supported in ES2 or D3D9
     ASSERT(streamOutVaryings.empty());
 
-    const char *profileType = NULL;
+    std::stringstream profileStream;
+
     switch (type)
     {
-      case SHADER_VERTEX:
-        profileType = "vs";
-        break;
-      case SHADER_PIXEL:
-        profileType = "ps";
-        break;
-      default:
-        UNREACHABLE();
-        return gl::Error(GL_INVALID_OPERATION);
+        case SHADER_VERTEX:
+            profileStream << "vs";
+            break;
+        case SHADER_PIXEL:
+            profileStream << "ps";
+            break;
+        default:
+            UNREACHABLE();
+            return gl::Error(GL_INVALID_OPERATION);
     }
-    unsigned int profileMajorVersion = (getMajorShaderModel() >= 3) ? 3 : 2;
-    unsigned int profileMinorVersion = 0;
-    std::string profile = FormatString("%s_%u_%u", profileType, profileMajorVersion, profileMinorVersion);
+
+    profileStream << "_" << ((getMajorShaderModel() >= 3) ? 3 : 2);
+    profileStream << "_"
+                  << "0";
+
+    std::string profile = profileStream.str();
 
     UINT flags = ANGLE_COMPILE_OPTIMIZATION_LEVEL;
 
@@ -2676,7 +2690,7 @@ gl::Error Renderer9::compileToExecutable(gl::InfoLog &infoLog,
     if (!binary)
     {
         *outExectuable = NULL;
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
 
     error = loadExecutable(binary->GetBufferPointer(), binary->GetBufferSize(), type,
@@ -2693,7 +2707,12 @@ gl::Error Renderer9::compileToExecutable(gl::InfoLog &infoLog,
         (*outExectuable)->appendDebugInfo(debugInfo);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
+}
+
+gl::Error Renderer9::ensureHLSLCompilerInitialized()
+{
+    return mCompiler.ensureInitialized();
 }
 
 UniformStorageD3D *Renderer9::createUniformStorage(size_t storageSize)
@@ -2756,7 +2775,7 @@ gl::Error Renderer9::copyToRenderTarget(IDirect3DSurface9 *dest, IDirect3DSurfac
         return gl::Error(GL_OUT_OF_MEMORY, "Failed to blit internal texture, result: 0x%X.", result);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 ImageD3D *Renderer9::createImage()
@@ -2775,7 +2794,7 @@ gl::Error Renderer9::generateMipmapUsingD3D(TextureStorage *storage,
                                             const gl::TextureState &textureState)
 {
     UNREACHABLE();
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 TextureStorage *Renderer9::createTextureStorage2D(SwapChainD3D *swapChain)
@@ -2889,7 +2908,7 @@ void Renderer9::generateCaps(gl::Caps *outCaps,
                           outExtensions, outLimitations);
 }
 
-WorkaroundsD3D Renderer9::generateWorkarounds() const
+angle::WorkaroundsD3D Renderer9::generateWorkarounds() const
 {
     return d3d9::GenerateWorkarounds();
 }
@@ -2906,7 +2925,7 @@ gl::Error Renderer9::clearTextures(gl::SamplerType samplerType, size_t rangeStar
         }
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 egl::Error Renderer9::getEGLDevice(DeviceImpl **device)

@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "xfa/fxfa/fxfa_basic.h"
 #include "xfa/fxfa/fxfa_widget.h"
 
@@ -37,55 +38,6 @@ class IXFA_WidgetIterator;
 #define XFA_IDCancel 2
 #define XFA_IDNo 3
 #define XFA_IDYes 4
-#define XFA_IDS_ValidateFailed 1
-#define XFA_IDS_CalcOverride 2
-#define XFA_IDS_ModifyField 3
-#define XFA_IDS_NotModifyField 4
-#define XFA_IDS_AppName 5
-#define XFA_IDS_Unable_TO_SET 8
-#define XFA_IDS_INVAlID_PROP_SET 13
-#define XFA_IDS_NOT_DEFAUL_VALUE 14
-#define XFA_IDS_UNABLE_SET_LANGUAGE 15
-#define XFA_IDS_UNABLE_SET_NUMPAGES 16
-#define XFA_IDS_UNABLE_SET_PLATFORM 17
-#define XFA_IDS_UNABLE_SET_VARIATION 19
-#define XFA_IDS_UNABLE_SET_VERSION 20
-#define XFA_IDS_UNABLE_SET_READY 21
-#define XFA_IDS_COMPILER_ERROR 35
-#define XFA_IDS_DIVIDE_ZERO 44
-#define XFA_IDS_ACCESS_PROPERTY_IN_NOT_OBJECT 61
-#define XFA_IDS_INDEX_OUT_OF_BOUNDS 64
-#define XFA_IDS_INCORRECT_NUMBER_OF_METHOD 65
-#define XFA_IDS_ARGUMENT_MISMATCH 66
-#define XFA_IDS_NOT_HAVE_PROPERTY 70
-#define XFA_IDS_VIOLATE_BOUNDARY 72
-#define XFA_IDS_SERVER_DENY 73
-#define XFA_IDS_StringWeekDay_Sun 74
-#define XFA_IDS_StringWeekDay_Mon 75
-#define XFA_IDS_StringWeekDay_Tue 76
-#define XFA_IDS_StringWeekDay_Wed 77
-#define XFA_IDS_StringWeekDay_Thu 78
-#define XFA_IDS_StringWeekDay_Fri 79
-#define XFA_IDS_StringWeekDay_Sat 80
-#define XFA_IDS_StringMonth_Jan 81
-#define XFA_IDS_StringMonth_Feb 82
-#define XFA_IDS_StringMonth_March 83
-#define XFA_IDS_StringMonth_April 84
-#define XFA_IDS_StringMonth_May 85
-#define XFA_IDS_StringMonth_June 86
-#define XFA_IDS_StringMonth_July 87
-#define XFA_IDS_StringMonth_Aug 88
-#define XFA_IDS_StringMonth_Sept 89
-#define XFA_IDS_StringMonth_Oct 90
-#define XFA_IDS_StringMonth_Nov 91
-#define XFA_IDS_StringMonth_Dec 92
-#define XFA_IDS_String_Today 93
-#define XFA_IDS_ValidateLimit 94
-#define XFA_IDS_ValidateNullWarning 95
-#define XFA_IDS_ValidateNullError 96
-#define XFA_IDS_ValidateWarning 97
-#define XFA_IDS_ValidateError 98
-#define XFA_IDS_ValidateNumberError 99
 
 #define XFA_DOCVIEW_View 0x00000000
 #define XFA_DOCVIEW_MasterPage 0x00000001
@@ -179,17 +131,22 @@ class IXFA_AppProvider {
   /**
    * Returns the language of the running host application. Such as zh_CN
    */
-  virtual void GetLanguage(CFX_WideString& wsLanguage) = 0;
+  virtual CFX_WideString GetLanguage() = 0;
 
   /**
    * Returns the platform of the machine running the script. Such as WIN
    */
-  virtual void GetPlatform(CFX_WideString& wsPlatform) = 0;
+  virtual CFX_WideString GetPlatform() = 0;
 
   /**
    * Get application name, such as Phantom.
    */
-  virtual void GetAppName(CFX_WideString& wsName) = 0;
+  virtual CFX_WideString GetAppName() = 0;
+
+  /**
+   * Get application message box title.
+   */
+  virtual CFX_WideString GetAppTitle() const = 0;
 
   /**
    * Causes the system to play a sound.
@@ -230,7 +187,8 @@ class IXFA_AppProvider {
    * @param[in] wsURL - http, ftp, such as
    * "http://www.w3.org/TR/REC-xml-names/".
    */
-  virtual IFX_SeekableReadStream* DownloadURL(const CFX_WideString& wsURL) = 0;
+  virtual CFX_RetainPtr<IFX_SeekableReadStream> DownloadURL(
+      const CFX_WideString& wsURL) = 0;
 
   /**
    * POST data to the given url.
@@ -266,7 +224,6 @@ class IXFA_AppProvider {
                              const CFX_WideString& wsData,
                              const CFX_WideString& wsEncode) = 0;
 
-  virtual void LoadString(int32_t iStringID, CFX_WideString& wsString) = 0;
   virtual IFWL_AdapterTimerMgr* GetTimerMgr() = 0;
 };
 
@@ -320,7 +277,7 @@ class IXFA_DocEnvironment {
   virtual bool SetGlobalProperty(CXFA_FFDoc* hDoc,
                                  const CFX_ByteStringC& szPropName,
                                  CFXJSE_Value* pValue) = 0;
-  virtual IFX_SeekableReadStream* OpenLinkedFile(
+  virtual CFX_RetainPtr<IFX_SeekableReadStream> OpenLinkedFile(
       CXFA_FFDoc* hDoc,
       const CFX_WideString& wsLink) = 0;
 };

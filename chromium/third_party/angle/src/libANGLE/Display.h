@@ -37,6 +37,13 @@ class Image;
 class Surface;
 class Stream;
 
+using SurfaceSet = std::set<Surface *>;
+
+struct DisplayState final : angle::NonCopyable
+{
+    SurfaceSet surfaceSet;
+};
+
 class Display final : angle::NonCopyable
 {
   public:
@@ -45,14 +52,14 @@ class Display final : angle::NonCopyable
     Error initialize();
     void terminate();
 
-    static egl::Display *GetDisplayFromDevice(void *native_display);
-    static egl::Display *GetDisplayFromAttribs(void *native_display, const AttributeMap &attribMap);
+    static egl::Display *GetDisplayFromDevice(Device *device);
+    static egl::Display *GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay,
+                                                     const AttributeMap &attribMap);
 
     static const ClientExtensions &getClientExtensions();
     static const std::string &getClientExtensionString();
 
     std::vector<const Config*> getConfigs(const egl::AttributeMap &attribs) const;
-    bool getConfigAttrib(const Config *configuration, EGLint attribute, EGLint *value);
 
     Error createWindowSurface(const Config *configuration, EGLNativeWindowType window, const AttributeMap &attribs,
                               Surface **outSurface);
@@ -116,11 +123,13 @@ class Display final : angle::NonCopyable
     const AttributeMap &getAttributeMap() const { return mAttributeMap; }
     EGLNativeDisplayType getNativeDisplayId() const { return mDisplayId; }
 
-    rx::DisplayImpl *getImplementation() { return mImplementation; }
+    rx::DisplayImpl *getImplementation() const { return mImplementation; }
     Device *getDevice() const;
     EGLenum getPlatform() const { return mPlatform; }
 
     gl::Version getMaxSupportedESVersion() const;
+
+    const DisplayState &getState() const { return mState; }
 
   private:
     Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDevice);
@@ -132,6 +141,7 @@ class Display final : angle::NonCopyable
     void initDisplayExtensions();
     void initVendorString();
 
+    DisplayState mState;
     rx::DisplayImpl *mImplementation;
 
     EGLNativeDisplayType mDisplayId;

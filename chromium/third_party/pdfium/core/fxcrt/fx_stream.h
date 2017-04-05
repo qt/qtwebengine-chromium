@@ -7,6 +7,7 @@
 #ifndef CORE_FXCRT_FX_STREAM_H_
 #define CORE_FXCRT_FX_STREAM_H_
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
@@ -14,10 +15,11 @@
 #include <direct.h>
 
 class CFindFileDataA;
-
 typedef CFindFileDataA FX_FileHandle;
 #define FX_FILESIZE int32_t
+
 #else
+
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -43,30 +45,17 @@ bool FX_GetNextFile(FX_FileHandle* handle,
 void FX_CloseFolder(FX_FileHandle* handle);
 FX_WCHAR FX_GetFolderSeparator();
 
-#define FX_GETBYTEOFFSET32(a) 0
-#define FX_GETBYTEOFFSET40(a) 0
-#define FX_GETBYTEOFFSET48(a) 0
-#define FX_GETBYTEOFFSET56(a) 0
-#define FX_GETBYTEOFFSET24(a) ((uint8_t)(a >> 24))
-#define FX_GETBYTEOFFSET16(a) ((uint8_t)(a >> 16))
-#define FX_GETBYTEOFFSET8(a) ((uint8_t)(a >> 8))
-#define FX_GETBYTEOFFSET0(a) ((uint8_t)(a))
 #define FX_FILEMODE_Write 0
 #define FX_FILEMODE_ReadOnly 1
 #define FX_FILEMODE_Truncate 2
 
-class IFX_WriteStream {
+class IFX_WriteStream : virtual public CFX_Retainable {
  public:
-  virtual ~IFX_WriteStream() {}
-  virtual void Release() = 0;
   virtual bool WriteBlock(const void* pData, size_t size) = 0;
 };
 
-class IFX_ReadStream {
+class IFX_ReadStream : virtual public CFX_Retainable {
  public:
-  virtual ~IFX_ReadStream() {}
-
-  virtual void Release() = 0;
   virtual bool IsEOF() = 0;
   virtual FX_FILESIZE GetPosition() = 0;
   virtual size_t ReadBlock(void* buffer, size_t size) = 0;
@@ -76,6 +65,7 @@ class IFX_SeekableWriteStream : public IFX_WriteStream {
  public:
   // IFX_WriteStream:
   bool WriteBlock(const void* pData, size_t size) override;
+
   virtual FX_FILESIZE GetSize() = 0;
   virtual bool Flush() = 0;
   virtual bool WriteBlock(const void* pData,
@@ -85,8 +75,10 @@ class IFX_SeekableWriteStream : public IFX_WriteStream {
 
 class IFX_SeekableReadStream : public IFX_ReadStream {
  public:
+  static CFX_RetainPtr<IFX_SeekableReadStream> CreateFromFilename(
+      const FX_CHAR* filename);
+
   // IFX_ReadStream:
-  void Release() override = 0;
   bool IsEOF() override;
   FX_FILESIZE GetPosition() override;
   size_t ReadBlock(void* buffer, size_t size) override;
@@ -95,16 +87,18 @@ class IFX_SeekableReadStream : public IFX_ReadStream {
   virtual FX_FILESIZE GetSize() = 0;
 };
 
-IFX_SeekableReadStream* FX_CreateFileRead(const FX_CHAR* filename);
-IFX_SeekableReadStream* FX_CreateFileRead(const FX_WCHAR* filename);
-
 class IFX_SeekableStream : public IFX_SeekableReadStream,
                            public IFX_SeekableWriteStream {
  public:
-  virtual IFX_SeekableStream* Retain() = 0;
+  static CFX_RetainPtr<IFX_SeekableStream> CreateFromFilename(
+      const FX_CHAR* filename,
+      uint32_t dwModes);
+
+  static CFX_RetainPtr<IFX_SeekableStream> CreateFromFilename(
+      const FX_WCHAR* filename,
+      uint32_t dwModes);
 
   // IFX_SeekableReadStream:
-  void Release() override = 0;
   bool IsEOF() override = 0;
   FX_FILESIZE GetPosition() override = 0;
   size_t ReadBlock(void* buffer, size_t size) override = 0;
@@ -119,25 +113,13 @@ class IFX_SeekableStream : public IFX_SeekableReadStream,
   bool Flush() override = 0;
 };
 
-IFX_SeekableStream* FX_CreateFileStream(const FX_CHAR* filename,
-                                        uint32_t dwModes);
-IFX_SeekableStream* FX_CreateFileStream(const FX_WCHAR* filename,
-                                        uint32_t dwModes);
-
-#ifdef PDF_ENABLE_XFA
-class IFX_FileAccess {
- public:
-  virtual ~IFX_FileAccess() {}
-  virtual void Release() = 0;
-  virtual IFX_FileAccess* Retain() = 0;
-  virtual void GetPath(CFX_WideString& wsPath) = 0;
-  virtual IFX_SeekableStream* CreateFileStream(uint32_t dwModes) = 0;
-};
-IFX_FileAccess* FX_CreateDefaultFileAccess(const CFX_WideStringC& wsPath);
-#endif  // PDF_ENABLE_XFA
-
 class IFX_MemoryStream : public IFX_SeekableStream {
  public:
+  static CFX_RetainPtr<IFX_MemoryStream> Create(uint8_t* pBuffer,
+                                                size_t nSize,
+                                                bool bTakeOver = false);
+  static CFX_RetainPtr<IFX_MemoryStream> Create(bool bConsecutive = false);
+
   virtual bool IsConsecutive() const = 0;
   virtual void EstimateSize(size_t nInitSize, size_t nGrowSize) = 0;
   virtual uint8_t* GetBuffer() const = 0;
@@ -147,15 +129,9 @@ class IFX_MemoryStream : public IFX_SeekableStream {
   virtual void DetachBuffer() = 0;
 };
 
-IFX_MemoryStream* FX_CreateMemoryStream(uint8_t* pBuffer,
-                                        size_t nSize,
-                                        bool bTakeOver = false);
-IFX_MemoryStream* FX_CreateMemoryStream(bool bConsecutive = false);
-
-class IFX_BufferRead : public IFX_ReadStream {
+class IFX_BufferedReadStream : public IFX_ReadStream {
  public:
   // IFX_ReadStream:
-  void Release() override = 0;
   bool IsEOF() override = 0;
   FX_FILESIZE GetPosition() override = 0;
   size_t ReadBlock(void* buffer, size_t size) override = 0;
@@ -165,6 +141,18 @@ class IFX_BufferRead : public IFX_ReadStream {
   virtual size_t GetBlockSize() = 0;
   virtual FX_FILESIZE GetBlockOffset() = 0;
 };
+
+#ifdef PDF_ENABLE_XFA
+class IFX_FileAccess : public CFX_Retainable {
+ public:
+  static CFX_RetainPtr<IFX_FileAccess> CreateDefault(
+      const CFX_WideStringC& wsPath);
+
+  virtual void GetPath(CFX_WideString& wsPath) = 0;
+  virtual CFX_RetainPtr<IFX_SeekableStream> CreateFileStream(
+      uint32_t dwModes) = 0;
+};
+#endif  // PDF_ENABLE_XFA
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
 class CFindFileData {

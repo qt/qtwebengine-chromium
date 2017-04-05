@@ -16,7 +16,8 @@
 
 #include <openssl/rand.h>
 
-#if !defined(OPENSSL_WINDOWS) && !defined(BORINGSSL_UNSAFE_DETERMINISTIC_MODE)
+#if !defined(OPENSSL_WINDOWS) && !defined(OPENSSL_FUCHSIA) && \
+    !defined(BORINGSSL_UNSAFE_DETERMINISTIC_MODE)
 
 #include <assert.h>
 #include <errno.h>
@@ -230,7 +231,7 @@ static void read_from_buffer(struct rand_buffer *buf,
   size_t remaining = BUF_SIZE - buf->used;
 
   while (requested > remaining) {
-    memcpy(out, &buf->rand[buf->used], remaining);
+    OPENSSL_memcpy(out, &buf->rand[buf->used], remaining);
     buf->used += remaining;
     out += remaining;
     requested -= remaining;
@@ -243,7 +244,7 @@ static void read_from_buffer(struct rand_buffer *buf,
     remaining = BUF_SIZE;
   }
 
-  memcpy(out, &buf->rand[buf->used], requested);
+  OPENSSL_memcpy(out, &buf->rand[buf->used], requested);
   buf->used += requested;
 }
 
@@ -267,4 +268,5 @@ void CRYPTO_sysrand(uint8_t *out, size_t requested) {
   }
 }
 
-#endif  /* !OPENSSL_WINDOWS && !BORINGSSL_UNSAFE_DETERMINISTIC_MODE */
+#endif /* !OPENSSL_WINDOWS && !defined(OPENSSL_FUCHSIA) && \
+          !BORINGSSL_UNSAFE_DETERMINISTIC_MODE */

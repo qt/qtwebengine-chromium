@@ -146,6 +146,7 @@
 #include <openssl/nid.h>
 #include <openssl/rand.h>
 
+#include "../crypto/internal.h"
 #include "internal.h"
 
 
@@ -231,7 +232,7 @@ static int tls1_prf(const SSL *ssl, uint8_t *out, size_t out_len,
     return 1;
   }
 
-  memset(out, 0, out_len);
+  OPENSSL_memset(out, 0, out_len);
 
   uint32_t algorithm_prf = ssl_get_algorithm_prf(ssl);
   if (algorithm_prf == SSL_HANDSHAKE_MAC_DEFAULT) {
@@ -258,9 +259,68 @@ static int tls1_prf(const SSL *ssl, uint8_t *out, size_t out_len,
   return 1;
 }
 
-int tls1_change_cipher_state(SSL *ssl, int which) {
+static int tls1_setup_key_block(SSL_HANDSHAKE *hs) {
+  SSL *const ssl = hs->ssl;
+  if (hs->key_block_len != 0) {
+    return 1;
+  }
+
+  SSL_SESSION *session = ssl->session;
+  if (ssl->s3->new_session != NULL) {
+    session = ssl->s3->new_session;
+  }
+
+  const EVP_AEAD *aead = NULL;
+  size_t mac_secret_len, fixed_iv_len;
+  if (session->cipher == NULL ||
+      !ssl_cipher_get_evp_aead(&aead, &mac_secret_len, &fixed_iv_len,
+                               session->cipher, ssl3_protocol_version(ssl))) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_CIPHER_OR_HASH_UNAVAILABLE);
+    return 0;
+  }
+  size_t key_len = EVP_AEAD_key_length(aead);
+  if (mac_secret_len > 0) {
+    /* For "stateful" AEADs (i.e. compatibility with pre-AEAD cipher suites) the
+     * key length reported by |EVP_AEAD_key_length| will include the MAC key
+     * bytes and initial implicit IV. */
+    if (key_len < mac_secret_len + fixed_iv_len) {
+      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+      return 0;
+    }
+    key_len -= mac_secret_len + fixed_iv_len;
+  }
+
+  assert(mac_secret_len < 256);
+  assert(key_len < 256);
+  assert(fixed_iv_len < 256);
+
+  ssl->s3->tmp.new_mac_secret_len = (uint8_t)mac_secret_len;
+  ssl->s3->tmp.new_key_len = (uint8_t)key_len;
+  ssl->s3->tmp.new_fixed_iv_len = (uint8_t)fixed_iv_len;
+
+  size_t key_block_len = SSL_get_key_block_len(ssl);
+
+  uint8_t *keyblock = OPENSSL_malloc(key_block_len);
+  if (keyblock == NULL) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+    return 0;
+  }
+
+  if (!SSL_generate_key_block(ssl, keyblock, key_block_len)) {
+    OPENSSL_free(keyblock);
+    return 0;
+  }
+
+  assert(key_block_len < 256);
+  hs->key_block_len = (uint8_t)key_block_len;
+  hs->key_block = keyblock;
+  return 1;
+}
+
+int tls1_change_cipher_state(SSL_HANDSHAKE *hs, int which) {
+  SSL *const ssl = hs->ssl;
   /* Ensure the key block is set up. */
-  if (!tls1_setup_key_block(ssl)) {
+  if (!tls1_setup_key_block(hs)) {
     return 0;
   }
 
@@ -276,9 +336,9 @@ int tls1_change_cipher_state(SSL *ssl, int which) {
   size_t mac_secret_len = ssl->s3->tmp.new_mac_secret_len;
   size_t key_len = ssl->s3->tmp.new_key_len;
   size_t iv_len = ssl->s3->tmp.new_fixed_iv_len;
-  assert((mac_secret_len + key_len + iv_len) * 2 == ssl->s3->hs->key_block_len);
+  assert((mac_secret_len + key_len + iv_len) * 2 == hs->key_block_len);
 
-  const uint8_t *key_data = ssl->s3->hs->key_block;
+  const uint8_t *key_data = hs->key_block;
   const uint8_t *client_write_mac_secret = key_data;
   key_data += mac_secret_len;
   const uint8_t *server_write_mac_secret = key_data;
@@ -330,63 +390,6 @@ int SSL_generate_key_block(const SSL *ssl, uint8_t *out, size_t out_len) {
       SSL_get_session(ssl)->master_key_length, TLS_MD_KEY_EXPANSION_CONST,
       TLS_MD_KEY_EXPANSION_CONST_SIZE, ssl->s3->server_random, SSL3_RANDOM_SIZE,
       ssl->s3->client_random, SSL3_RANDOM_SIZE);
-}
-
-int tls1_setup_key_block(SSL *ssl) {
-  if (ssl->s3->hs->key_block_len != 0) {
-    return 1;
-  }
-
-  SSL_SESSION *session = ssl->session;
-  if (ssl->s3->new_session != NULL) {
-    session = ssl->s3->new_session;
-  }
-
-  const EVP_AEAD *aead = NULL;
-  size_t mac_secret_len, fixed_iv_len;
-  if (session->cipher == NULL ||
-      !ssl_cipher_get_evp_aead(&aead, &mac_secret_len, &fixed_iv_len,
-                               session->cipher, ssl3_protocol_version(ssl))) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_CIPHER_OR_HASH_UNAVAILABLE);
-    return 0;
-  }
-  size_t key_len = EVP_AEAD_key_length(aead);
-  if (mac_secret_len > 0) {
-    /* For "stateful" AEADs (i.e. compatibility with pre-AEAD cipher suites) the
-     * key length reported by |EVP_AEAD_key_length| will include the MAC key
-     * bytes and initial implicit IV. */
-    if (key_len < mac_secret_len + fixed_iv_len) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
-      return 0;
-    }
-    key_len -= mac_secret_len + fixed_iv_len;
-  }
-
-  assert(mac_secret_len < 256);
-  assert(key_len < 256);
-  assert(fixed_iv_len < 256);
-
-  ssl->s3->tmp.new_mac_secret_len = (uint8_t)mac_secret_len;
-  ssl->s3->tmp.new_key_len = (uint8_t)key_len;
-  ssl->s3->tmp.new_fixed_iv_len = (uint8_t)fixed_iv_len;
-
-  size_t key_block_len = SSL_get_key_block_len(ssl);
-
-  uint8_t *keyblock = OPENSSL_malloc(key_block_len);
-  if (keyblock == NULL) {
-    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
-    return 0;
-  }
-
-  if (!SSL_generate_key_block(ssl, keyblock, key_block_len)) {
-    OPENSSL_free(keyblock);
-    return 0;
-  }
-
-  assert(key_block_len < 256);
-  ssl->s3->hs->key_block_len = (uint8_t)key_block_len;
-  ssl->s3->hs->key_block = keyblock;
-  return 1;
 }
 
 static int append_digest(const EVP_MD_CTX *ctx, uint8_t *out, size_t *out_len,
@@ -526,12 +529,13 @@ int SSL_export_keying_material(SSL *ssl, uint8_t *out, size_t out_len,
     return 0;
   }
 
-  memcpy(seed, ssl->s3->client_random, SSL3_RANDOM_SIZE);
-  memcpy(seed + SSL3_RANDOM_SIZE, ssl->s3->server_random, SSL3_RANDOM_SIZE);
+  OPENSSL_memcpy(seed, ssl->s3->client_random, SSL3_RANDOM_SIZE);
+  OPENSSL_memcpy(seed + SSL3_RANDOM_SIZE, ssl->s3->server_random,
+                 SSL3_RANDOM_SIZE);
   if (use_context) {
     seed[2 * SSL3_RANDOM_SIZE] = (uint8_t)(context_len >> 8);
     seed[2 * SSL3_RANDOM_SIZE + 1] = (uint8_t)context_len;
-    memcpy(seed + 2 * SSL3_RANDOM_SIZE + 2, context, context_len);
+    OPENSSL_memcpy(seed + 2 * SSL3_RANDOM_SIZE + 2, context, context_len);
   }
 
   int ret =

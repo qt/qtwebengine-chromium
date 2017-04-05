@@ -60,8 +60,10 @@ class FramebufferState final : angle::NonCopyable
 
     const FramebufferAttachment *getAttachment(GLenum attachment) const;
     const FramebufferAttachment *getReadAttachment() const;
+    const FramebufferAttachment *getFirstNonNullAttachment() const;
     const FramebufferAttachment *getFirstColorAttachment() const;
     const FramebufferAttachment *getDepthOrStencilAttachment() const;
+    const FramebufferAttachment *getStencilOrDepthStencilAttachment() const;
     const FramebufferAttachment *getColorAttachment(size_t colorAttachment) const;
     const FramebufferAttachment *getDepthAttachment() const;
     const FramebufferAttachment *getStencilAttachment() const;
@@ -91,6 +93,7 @@ class FramebufferState final : angle::NonCopyable
 
     std::vector<GLenum> mDrawBufferStates;
     GLenum mReadBufferState;
+    std::bitset<IMPLEMENTATION_MAX_DRAW_BUFFERS> mEnabledDrawBuffers;
 };
 
 class Framebuffer final : public LabeledObject, public angle::SignalReceiver
@@ -121,6 +124,7 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
     const FramebufferAttachment *getStencilbuffer() const;
     const FramebufferAttachment *getDepthStencilBuffer() const;
     const FramebufferAttachment *getDepthOrStencilbuffer() const;
+    const FramebufferAttachment *getStencilOrDepthStencilAttachment() const;
     const FramebufferAttachment *getReadColorbuffer() const;
     GLenum getReadColorbufferType() const;
     const FramebufferAttachment *getFirstColorbuffer() const;
@@ -145,6 +149,9 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
 
     // This method calls checkStatus.
     int getSamples(const ContextState &state);
+
+    Error getSamplePosition(size_t index, GLfloat *xy) const;
+
     GLenum checkStatus(const ContextState &state);
 
     // Helper for checkStatus == GL_FRAMEBUFFER_COMPLETE.
@@ -209,6 +216,9 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
 
     // angle::SignalReceiver implementation
     void signal(angle::SignalToken token) override;
+
+    bool formsRenderingFeedbackLoopWith(const State &state) const;
+    bool formsCopyingFeedbackLoopWith(GLuint copyTextureID, GLint copyTextureLevel) const;
 
   private:
     void detachResourceById(GLenum resourceType, GLuint resourceId);

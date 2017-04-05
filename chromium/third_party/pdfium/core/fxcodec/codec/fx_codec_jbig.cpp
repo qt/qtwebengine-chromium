@@ -7,12 +7,14 @@
 #include "core/fxcodec/codec/ccodec_jbig2module.h"
 
 #include <list>
+#include <memory>
 
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcodec/JBig2_DocumentContext.h"
 #include "core/fxcodec/jbig2/JBig2_Context.h"
 #include "core/fxcodec/jbig2/JBig2_Image.h"
 #include "core/fxcrt/fx_memory.h"
+#include "third_party/base/ptr_util.h"
 
 JBig2_DocumentContext::JBig2_DocumentContext() {}
 
@@ -21,7 +23,7 @@ JBig2_DocumentContext::~JBig2_DocumentContext() {}
 JBig2_DocumentContext* GetJBig2DocumentContext(
     std::unique_ptr<JBig2_DocumentContext>* pContextHolder) {
   if (!pContextHolder->get())
-    pContextHolder->reset(new JBig2_DocumentContext());
+    *pContextHolder = pdfium::MakeUnique<JBig2_DocumentContext>();
   return pContextHolder->get();
 }
 
@@ -61,9 +63,9 @@ FXCODEC_STATUS CCodec_Jbig2Module::StartDecode(
   pJbig2Context->m_dest_pitch = dest_pitch;
   pJbig2Context->m_pPause = pPause;
   FXSYS_memset(dest_buf, 0, height * dest_pitch);
-  pJbig2Context->m_pContext.reset(new CJBig2_Context(
+  pJbig2Context->m_pContext = pdfium::MakeUnique<CJBig2_Context>(
       global_stream, src_stream, pJBig2DocumentContext->GetSymbolDictCache(),
-      pPause, false));
+      pPause, false);
   if (!pJbig2Context->m_pContext)
     return FXCODEC_STATUS_ERROR;
 

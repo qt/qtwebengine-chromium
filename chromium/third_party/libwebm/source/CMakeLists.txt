@@ -18,6 +18,7 @@ option(ENABLE_WEBMINFO "Enables building webm_info." ON)
 option(ENABLE_TESTS "Enables tests." OFF)
 option(ENABLE_IWYU "Enables include-what-you-use support." OFF)
 option(ENABLE_WERROR "Enable warnings as errors." OFF)
+option(ENABLE_WEBM_PARSER "Enables new parser API." OFF)
 set(GTEST_SRC_DIR "${LIBWEBM_SRC_DIR}/../googletest" CACHE PATH
     "Path to Googletest git repository.")
 
@@ -25,8 +26,17 @@ set(GTEST_SRC_DIR "${LIBWEBM_SRC_DIR}/../googletest" CACHE PATH
 set(GTEST_BUILD_DIR "${CMAKE_BINARY_DIR}/googletest_build")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/build/cxx_flags.cmake")
-if (ENABLE_TESTS OR ENABLE_WEBMTS OR ENABLE_WEBMINFO)
+if (ENABLE_TESTS OR ENABLE_WEBMTS OR ENABLE_WEBMINFO OR ENABLE_WEBM_PARSER)
   include("${CMAKE_CURRENT_SOURCE_DIR}/build/cxx11_tests.cmake")
+
+  if (NOT HAVE_CXX11)
+    message(WARNING
+            "C++11 feature(s) not supported: tests, webmts and "
+            "webm_parser disabled.")
+    set(ENABLE_TESTS OFF)
+    set(ENABLE_WEBMTS OFF)
+    set(ENABLE_WEBM_PARSER OFF)
+  endif ()
 endif ()
 
 set(CMAKE_CXX_FLAGS "-D__STDC_CONSTANT_MACROS ${CMAKE_CXX_FLAGS}")
@@ -54,6 +64,105 @@ add_library(mkvparser STATIC
             "${LIBWEBM_SRC_DIR}/mkvparser/mkvreader.h"
             "${LIBWEBM_SRC_DIR}/common/webmids.h")
 
+
+# webm_parser section.
+# TODO(tomfinegan): move to webm_parser/CMakeLists.txt.
+# TODO(tomfinegan): add fuzzing target.
+# TODO(tomfinegan): add doxygen generation target.
+if (ENABLE_WEBM_PARSER)
+include_directories(webm_parser webm_parser/include)
+add_library(webm_parser STATIC
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/buffer_reader.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/callback.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/dom_types.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/element.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/file_reader.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/id.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/istream_reader.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/reader.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/status.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/include/webm/webm_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/ancestory.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/ancestory.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/audio_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/bit_utils.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/bit_utils.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/block_additions_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/block_group_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/block_header_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/block_header_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/block_more_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/block_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/block_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/bool_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/buffer_reader.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/byte_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/callback.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/chapter_atom_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/chapter_display_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/chapters_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/cluster_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/colour_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/content_enc_aes_settings_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/content_encoding_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/content_encodings_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/content_encryption_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/cue_point_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/cue_track_positions_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/cues_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/date_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/date_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/ebml_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/edition_entry_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/element_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/file_reader.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/float_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/float_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/id_element_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/id_element_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/id_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/id_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/info_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/int_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/istream_reader.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/master_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/master_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/master_value_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/mastering_metadata_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/parser_utils.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/parser_utils.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/projection_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/recursive_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/seek_head_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/seek_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/segment_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/segment_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/simple_tag_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/size_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/size_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/skip_callback.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/skip_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/skip_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/slices_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/tag_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/tags_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/targets_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/time_slice_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/track_entry_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/tracks_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/unknown_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/unknown_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/var_int_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/var_int_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/video_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/virtual_block_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/virtual_block_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/void_parser.cc"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/void_parser.h"
+            "${LIBWEBM_SRC_DIR}/webm_parser/src/webm_parser.cc")
+endif()
+
 # Libwebm section.
 add_library(webm STATIC
             "${LIBWEBM_SRC_DIR}/common/file_util.cc"
@@ -62,6 +171,9 @@ add_library(webm STATIC
             "${LIBWEBM_SRC_DIR}/common/hdr_util.h"
             "${LIBWEBM_SRC_DIR}/common/webmids.h")
 target_link_libraries(webm LINK_PUBLIC mkvmuxer mkvparser)
+if (ENABLE_WEBM_PARSER)
+  target_link_libraries(webm LINK_PUBLIC webm_parser)
+endif ()
 
 if (WIN32)
   # Use libwebm and libwebm.lib for project and library name on Windows (instead
@@ -72,21 +184,21 @@ endif ()
 
 include_directories("${LIBWEBM_SRC_DIR}")
 
-# Sample (mkvparser) section.
-add_executable(sample
-               "${LIBWEBM_SRC_DIR}/sample.cc")
-target_link_libraries(sample LINK_PUBLIC webm)
+# mkvparser_sample section.
+add_executable(mkvparser_sample
+               "${LIBWEBM_SRC_DIR}/mkvparser_sample.cc")
+target_link_libraries(mkvparser_sample LINK_PUBLIC webm)
 
-# Sample muxer section.
-add_executable(sample_muxer
-               "${LIBWEBM_SRC_DIR}/sample_muxer.cc"
+# mkvmuxer_sample section.
+add_executable(mkvmuxer_sample
+               "${LIBWEBM_SRC_DIR}/mkvmuxer_sample.cc"
                "${LIBWEBM_SRC_DIR}/sample_muxer_metadata.cc"
                "${LIBWEBM_SRC_DIR}/sample_muxer_metadata.h"
                "${LIBWEBM_SRC_DIR}/webvtt/vttreader.cc"
                "${LIBWEBM_SRC_DIR}/webvtt/vttreader.h"
                "${LIBWEBM_SRC_DIR}/webvtt/webvttparser.cc"
                "${LIBWEBM_SRC_DIR}/webvtt/webvttparser.h")
-target_link_libraries(sample_muxer LINK_PUBLIC webm)
+target_link_libraries(mkvmuxer_sample LINK_PUBLIC webm)
 
 # Dumpvtt section.
 add_executable(dumpvtt
@@ -120,11 +232,20 @@ add_executable(webm_info
 target_link_libraries(webm_info LINK_PUBLIC webm)
 endif ()
 
+if (ENABLE_WEBM_PARSER)
+# webm_parser_demo section.
+add_executable(webm_parser_demo
+               "${LIBWEBM_SRC_DIR}/webm_parser/demo/demo.cc")
+target_link_libraries(webm_parser_demo LINK_PUBLIC webm)
+endif ()
+
 if (ENABLE_WEBMTS)
   # webmts (PES/TS support) library section.
   add_library(webmts
               "${LIBWEBM_SRC_DIR}/common/libwebm_util.cc"
               "${LIBWEBM_SRC_DIR}/common/libwebm_util.h"
+              "${LIBWEBM_SRC_DIR}/common/video_frame.cc"
+              "${LIBWEBM_SRC_DIR}/common/video_frame.h"
               "${LIBWEBM_SRC_DIR}/m2ts/vpxpes2ts.cc"
               "${LIBWEBM_SRC_DIR}/m2ts/vpxpes2ts.h"
               "${LIBWEBM_SRC_DIR}/m2ts/vpxpes_parser.cc"
@@ -146,17 +267,17 @@ if (ENABLE_TESTS)
   add_subdirectory("${GTEST_SRC_DIR}" "${GTEST_BUILD_DIR}")
   include_directories("${GTEST_SRC_DIR}/googletest/include")
 
-  add_executable(muxer_tests
-                 "${LIBWEBM_SRC_DIR}/testing/muxer_tests.cc"
+  add_executable(mkvmuxer_tests
+                 "${LIBWEBM_SRC_DIR}/testing/mkvmuxer_tests.cc"
                  "${LIBWEBM_SRC_DIR}/testing/test_util.cc"
                  "${LIBWEBM_SRC_DIR}/testing/test_util.h")
-  target_link_libraries(muxer_tests LINK_PUBLIC gtest webm)
+  target_link_libraries(mkvmuxer_tests LINK_PUBLIC gtest webm)
 
-  add_executable(parser_tests
-                 "${LIBWEBM_SRC_DIR}/testing/parser_tests.cc"
+  add_executable(mkvparser_tests
+                 "${LIBWEBM_SRC_DIR}/testing/mkvparser_tests.cc"
                  "${LIBWEBM_SRC_DIR}/testing/test_util.cc"
                  "${LIBWEBM_SRC_DIR}/testing/test_util.h")
-  target_link_libraries(parser_tests LINK_PUBLIC gtest webm)
+  target_link_libraries(mkvparser_tests LINK_PUBLIC gtest webm)
 
   add_executable(vp9_header_parser_tests
                  "${LIBWEBM_SRC_DIR}/common/vp9_header_parser_tests.cc"
@@ -180,8 +301,81 @@ if (ENABLE_TESTS)
     add_executable(webm2pes_tests
                   "${LIBWEBM_SRC_DIR}/testing/test_util.cc"
                   "${LIBWEBM_SRC_DIR}/testing/test_util.h"
+                  "${LIBWEBM_SRC_DIR}/testing/video_frame_tests.cc"
                   "${LIBWEBM_SRC_DIR}/m2ts/tests/webm2pes_tests.cc")
     target_link_libraries(webm2pes_tests LINK_PUBLIC gtest webm webmts)
+  endif ()
+
+  # TODO(tomfinegan): Move to webm_parser/CMakeLists.txt.
+  if (ENABLE_WEBM_PARSER)
+    include_directories("${GTEST_SRC_DIR}/googlemock/include")
+    add_executable(webm_parser_tests
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/audio_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/bit_utils_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/block_additions_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/block_group_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/block_header_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/block_more_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/block_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/bool_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/buffer_reader_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/byte_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/callback_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/chapter_atom_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/chapter_display_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/chapters_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/cluster_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/colour_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/content_enc_aes_settings_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/content_encoding_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/content_encodings_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/content_encryption_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/cue_point_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/cue_track_positions_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/cues_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/date_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/ebml_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/edition_entry_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/element_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/float_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/id_element_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/id_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/info_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/int_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/istream_reader_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/limited_reader_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/master_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/master_value_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/mastering_metadata_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/parser_utils_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/projection_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/recursive_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/seek_head_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/seek_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/segment_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/simple_tag_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/size_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/skip_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/slices_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/tag_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/tags_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/targets_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/time_slice_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/track_entry_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/tracks_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/unknown_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/var_int_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/video_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/virtual_block_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/void_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/webm_parser_test.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/test_utils/element_parser_test.h"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/test_utils/limited_reader.cc"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/test_utils/limited_reader.h"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/test_utils/mock_callback.h"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/test_utils/parser_test.h"
+                   "${LIBWEBM_SRC_DIR}/webm_parser/tests/webm_parser_tests.cc")
+    target_link_libraries(webm_parser_tests LINK_PUBLIC gmock gtest webm)
   endif ()
 endif ()
 

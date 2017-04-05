@@ -11,6 +11,7 @@
 #include "common/utilities.h"
 
 #include "libANGLE/Buffer.h"
+#include "libANGLE/Config.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/Renderbuffer.h"
@@ -25,6 +26,86 @@ namespace gl
 
 namespace
 {
+template <typename ParamType>
+void QueryTexLevelParameterBase(const Texture *texture,
+                                GLenum target,
+                                GLint level,
+                                GLenum pname,
+                                ParamType *params)
+{
+    ASSERT(texture != nullptr);
+    const InternalFormat *info = texture->getTextureState().getImageDesc(target, level).format.info;
+
+    switch (pname)
+    {
+        case GL_TEXTURE_RED_TYPE:
+            *params = ConvertFromGLenum<ParamType>(info->redBits ? info->componentType : GL_NONE);
+            break;
+        case GL_TEXTURE_GREEN_TYPE:
+            *params = ConvertFromGLenum<ParamType>(info->greenBits ? info->componentType : GL_NONE);
+            break;
+        case GL_TEXTURE_BLUE_TYPE:
+            *params = ConvertFromGLenum<ParamType>(info->blueBits ? info->componentType : GL_NONE);
+            break;
+        case GL_TEXTURE_ALPHA_TYPE:
+            *params = ConvertFromGLenum<ParamType>(info->alphaBits ? info->componentType : GL_NONE);
+            break;
+        case GL_TEXTURE_DEPTH_TYPE:
+            *params = ConvertFromGLenum<ParamType>(info->depthBits ? info->componentType : GL_NONE);
+            break;
+        case GL_TEXTURE_RED_SIZE:
+            *params = ConvertFromGLuint<ParamType>(info->redBits);
+            break;
+        case GL_TEXTURE_GREEN_SIZE:
+            *params = ConvertFromGLuint<ParamType>(info->greenBits);
+            break;
+        case GL_TEXTURE_BLUE_SIZE:
+            *params = ConvertFromGLuint<ParamType>(info->blueBits);
+            break;
+        case GL_TEXTURE_ALPHA_SIZE:
+            *params = ConvertFromGLuint<ParamType>(info->alphaBits);
+            break;
+        case GL_TEXTURE_DEPTH_SIZE:
+            *params = ConvertFromGLuint<ParamType>(info->depthBits);
+            break;
+        case GL_TEXTURE_STENCIL_SIZE:
+            *params = ConvertFromGLuint<ParamType>(info->stencilBits);
+            break;
+        case GL_TEXTURE_SHARED_SIZE:
+            *params = ConvertFromGLuint<ParamType>(info->sharedBits);
+            break;
+        case GL_TEXTURE_INTERNAL_FORMAT:
+            *params =
+                ConvertFromGLenum<ParamType>(info->internalFormat ? info->internalFormat : GL_RGBA);
+            break;
+        case GL_TEXTURE_WIDTH:
+            *params =
+                ConvertFromGLint<ParamType>(static_cast<GLint>(texture->getWidth(target, level)));
+            break;
+        case GL_TEXTURE_HEIGHT:
+            *params =
+                ConvertFromGLint<ParamType>(static_cast<GLint>(texture->getHeight(target, level)));
+            break;
+        case GL_TEXTURE_DEPTH:
+            *params =
+                ConvertFromGLint<ParamType>(static_cast<GLint>(texture->getDepth(target, level)));
+            break;
+        case GL_TEXTURE_SAMPLES:
+            *params = ConvertFromGLint<ParamType>(texture->getSamples(target, level));
+            break;
+        case GL_TEXTURE_FIXED_SAMPLE_LOCATIONS:
+            *params =
+                ConvertFromGLboolean<ParamType>(texture->getFixedSampleLocations(target, level));
+            break;
+        case GL_TEXTURE_COMPRESSED:
+            *params = ConvertFromGLboolean<ParamType>(info->compressed);
+            break;
+        default:
+            UNREACHABLE();
+            break;
+    }
+}
+
 template <typename ParamType>
 void QueryTexParameterBase(const Texture *texture, GLenum pname, ParamType *params)
 {
@@ -155,6 +236,9 @@ void SetTexParameterBase(Texture *texture, GLenum pname, const ParamType *params
             break;
         case GL_TEXTURE_MAX_LOD:
             texture->setMaxLod(ConvertToGLfloat(params[0]));
+            break;
+        case GL_DEPTH_STENCIL_TEXTURE_MODE:
+            texture->setDepthStencilTextureMode(ConvertToGLenum(params[0]));
             break;
         case GL_TEXTURE_SRGB_DECODE_EXT:
             texture->setSRGBDecode(ConvertToGLenum(params[0]));
@@ -596,6 +680,24 @@ void QueryShaderiv(const Shader *shader, GLenum pname, GLint *params)
     }
 }
 
+void QueryTexLevelParameterfv(const Texture *texture,
+                              GLenum target,
+                              GLint level,
+                              GLenum pname,
+                              GLfloat *params)
+{
+    QueryTexLevelParameterBase(texture, target, level, pname, params);
+}
+
+void QueryTexLevelParameteriv(const Texture *texture,
+                              GLenum target,
+                              GLint level,
+                              GLenum pname,
+                              GLint *params)
+{
+    QueryTexLevelParameterBase(texture, target, level, pname, params);
+}
+
 void QueryTexParameterfv(const Texture *texture, GLenum pname, GLfloat *params)
 {
     QueryTexParameterBase(texture, pname, params);
@@ -769,4 +871,124 @@ void SetSamplerParameteriv(Sampler *sampler, GLenum pname, const GLint *params)
 {
     SetSamplerParameterBase(sampler, pname, params);
 }
+
+}  // namespace gl
+
+namespace egl
+{
+
+void QueryConfigAttrib(const Config *config, EGLint attribute, EGLint *value)
+{
+    ASSERT(config != nullptr);
+    switch (attribute)
+    {
+        case EGL_BUFFER_SIZE:
+            *value = config->bufferSize;
+            break;
+        case EGL_ALPHA_SIZE:
+            *value = config->alphaSize;
+            break;
+        case EGL_BLUE_SIZE:
+            *value = config->blueSize;
+            break;
+        case EGL_GREEN_SIZE:
+            *value = config->greenSize;
+            break;
+        case EGL_RED_SIZE:
+            *value = config->redSize;
+            break;
+        case EGL_DEPTH_SIZE:
+            *value = config->depthSize;
+            break;
+        case EGL_STENCIL_SIZE:
+            *value = config->stencilSize;
+            break;
+        case EGL_CONFIG_CAVEAT:
+            *value = config->configCaveat;
+            break;
+        case EGL_CONFIG_ID:
+            *value = config->configID;
+            break;
+        case EGL_LEVEL:
+            *value = config->level;
+            break;
+        case EGL_NATIVE_RENDERABLE:
+            *value = config->nativeRenderable;
+            break;
+        case EGL_NATIVE_VISUAL_ID:
+            *value = config->nativeVisualID;
+            break;
+        case EGL_NATIVE_VISUAL_TYPE:
+            *value = config->nativeVisualType;
+            break;
+        case EGL_SAMPLES:
+            *value = config->samples;
+            break;
+        case EGL_SAMPLE_BUFFERS:
+            *value = config->sampleBuffers;
+            break;
+        case EGL_SURFACE_TYPE:
+            *value = config->surfaceType;
+            break;
+        case EGL_TRANSPARENT_TYPE:
+            *value = config->transparentType;
+            break;
+        case EGL_TRANSPARENT_BLUE_VALUE:
+            *value = config->transparentBlueValue;
+            break;
+        case EGL_TRANSPARENT_GREEN_VALUE:
+            *value = config->transparentGreenValue;
+            break;
+        case EGL_TRANSPARENT_RED_VALUE:
+            *value = config->transparentRedValue;
+            break;
+        case EGL_BIND_TO_TEXTURE_RGB:
+            *value = config->bindToTextureRGB;
+            break;
+        case EGL_BIND_TO_TEXTURE_RGBA:
+            *value = config->bindToTextureRGBA;
+            break;
+        case EGL_MIN_SWAP_INTERVAL:
+            *value = config->minSwapInterval;
+            break;
+        case EGL_MAX_SWAP_INTERVAL:
+            *value = config->maxSwapInterval;
+            break;
+        case EGL_LUMINANCE_SIZE:
+            *value = config->luminanceSize;
+            break;
+        case EGL_ALPHA_MASK_SIZE:
+            *value = config->alphaMaskSize;
+            break;
+        case EGL_COLOR_BUFFER_TYPE:
+            *value = config->colorBufferType;
+            break;
+        case EGL_RENDERABLE_TYPE:
+            *value = config->renderableType;
+            break;
+        case EGL_MATCH_NATIVE_PIXMAP:
+            *value = false;
+            UNIMPLEMENTED();
+            break;
+        case EGL_CONFORMANT:
+            *value = config->conformant;
+            break;
+        case EGL_MAX_PBUFFER_WIDTH:
+            *value = config->maxPBufferWidth;
+            break;
+        case EGL_MAX_PBUFFER_HEIGHT:
+            *value = config->maxPBufferHeight;
+            break;
+        case EGL_MAX_PBUFFER_PIXELS:
+            *value = config->maxPBufferPixels;
+            break;
+        case EGL_OPTIMAL_SURFACE_ORIENTATION_ANGLE:
+            *value = config->optimalOrientation;
+            break;
+        default:
+            UNREACHABLE();
+            break;
+    }
 }
+
+}  // namespace egl

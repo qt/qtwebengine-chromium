@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
+#include <utility>
 
 #include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_safe_types.h"
@@ -36,16 +38,10 @@ void CFX_BinaryBuf::Clear() {
   m_DataSize = 0;
 }
 
-uint8_t* CFX_BinaryBuf::DetachBuffer() {
+std::unique_ptr<uint8_t, FxFreeDeleter> CFX_BinaryBuf::DetachBuffer() {
   m_DataSize = 0;
   m_AllocSize = 0;
-  return m_pBuffer.release();
-}
-
-void CFX_BinaryBuf::AttachData(uint8_t* buffer, FX_STRSIZE size) {
-  m_pBuffer.reset(buffer);
-  m_DataSize = size;
-  m_AllocSize = size;
+  return std::move(m_pBuffer);
 }
 
 void CFX_BinaryBuf::EstimateSize(FX_STRSIZE size, FX_STRSIZE step) {
@@ -234,7 +230,7 @@ CFX_FileBufferArchive::~CFX_FileBufferArchive() {}
 void CFX_FileBufferArchive::Clear() {
   m_Length = 0;
   m_pBuffer.reset();
-  m_pFile = nullptr;
+  m_pFile.Reset();
 }
 
 bool CFX_FileBufferArchive::Flush() {
@@ -285,7 +281,8 @@ int32_t CFX_FileBufferArchive::AppendString(const CFX_ByteStringC& lpsz) {
   return AppendBlock(lpsz.raw_str(), lpsz.GetLength());
 }
 
-void CFX_FileBufferArchive::AttachFile(IFX_WriteStream* pFile) {
+void CFX_FileBufferArchive::AttachFile(
+    const CFX_RetainPtr<IFX_WriteStream>& pFile) {
   ASSERT(pFile);
   m_pFile = pFile;
 }

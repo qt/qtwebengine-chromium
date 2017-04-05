@@ -6,6 +6,8 @@
 
 #include "xfa/fxfa/fm2js/xfa_expression.h"
 
+#include <utility>
+
 #include "core/fxcrt/fx_basic.h"
 
 namespace {
@@ -32,25 +34,18 @@ CXFA_FMFunctionDefinition::CXFA_FMFunctionDefinition(
     uint32_t line,
     bool isGlobal,
     const CFX_WideStringC& wsName,
-    std::unique_ptr<CFX_WideStringCArray> pArguments,
-    CFX_ArrayTemplate<CXFA_FMExpression*>* pExpressions)
+    std::vector<CFX_WideStringC>&& arguments,
+    std::vector<std::unique_ptr<CXFA_FMExpression>>&& expressions)
     : CXFA_FMExpression(line, XFA_FM_EXPTYPE_FUNC),
       m_wsName(wsName),
-      m_pArguments(std::move(pArguments)),
-      m_pExpressions(pExpressions),
+      m_pArguments(std::move(arguments)),
+      m_pExpressions(std::move(expressions)),
       m_isGlobal(isGlobal) {}
 
-CXFA_FMFunctionDefinition::~CXFA_FMFunctionDefinition() {
-  if (m_pExpressions) {
-    for (int i = 0; i < m_pExpressions->GetSize(); ++i)
-      delete m_pExpressions->GetAt(i);
-
-    delete m_pExpressions;
-  }
-}
+CXFA_FMFunctionDefinition::~CXFA_FMFunctionDefinition() {}
 
 void CXFA_FMFunctionDefinition::ToJavaScript(CFX_WideTextBuf& javascript) {
-  if (m_isGlobal && (!m_pExpressions || m_pExpressions->GetSize() == 0)) {
+  if (m_isGlobal && m_pExpressions.empty()) {
     javascript << FX_WSTRC(L"// comments only");
     return;
   }
@@ -65,35 +60,28 @@ void CXFA_FMFunctionDefinition::ToJavaScript(CFX_WideTextBuf& javascript) {
     javascript << m_wsName;
   }
   javascript << FX_WSTRC(L"(");
-  if (m_pArguments != 0) {
-    CFX_WideStringC identifier = 0;
-    for (int i = 0; i < m_pArguments->GetSize(); ++i) {
-      identifier = m_pArguments->GetAt(i);
-      if (identifier.GetAt(0) == L'!') {
-        CFX_WideString tempIdentifier =
-            EXCLAMATION_IN_IDENTIFIER + identifier.Mid(1);
-        javascript << tempIdentifier;
-      } else {
-        javascript << identifier;
-      }
-      if (i + 1 < m_pArguments->GetSize()) {
-        javascript << FX_WSTRC(L", ");
-      }
+  bool bNeedComma = false;
+  for (const auto& identifier : m_pArguments) {
+    if (bNeedComma)
+      javascript << FX_WSTRC(L", ");
+    if (identifier.GetAt(0) == L'!') {
+      CFX_WideString tempIdentifier =
+          EXCLAMATION_IN_IDENTIFIER + identifier.Mid(1);
+      javascript << tempIdentifier;
+    } else {
+      javascript << identifier;
     }
+    bNeedComma = true;
   }
   javascript << FX_WSTRC(L")\n{\n");
   javascript << FX_WSTRC(L"var ");
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << FX_WSTRC(L" = null;\n");
-  if (m_pExpressions) {
-    for (int i = 0; i < m_pExpressions->GetSize(); ++i) {
-      CXFA_FMExpression* e = m_pExpressions->GetAt(i);
-      if (i + 1 < m_pExpressions->GetSize()) {
-        e->ToJavaScript(javascript);
-      } else {
-        e->ToImpliedReturnJS(javascript);
-      }
-    }
+  for (const auto& expr : m_pExpressions) {
+    if (expr == m_pExpressions.back())
+      expr->ToImpliedReturnJS(javascript);
+    else
+      expr->ToJavaScript(javascript);
   }
   javascript << FX_WSTRC(L"return ");
   if (m_isGlobal) {
@@ -112,12 +100,13 @@ void CXFA_FMFunctionDefinition::ToJavaScript(CFX_WideTextBuf& javascript) {
 
 void CXFA_FMFunctionDefinition::ToImpliedReturnJS(CFX_WideTextBuf&) {}
 
-CXFA_FMVarExpression::CXFA_FMVarExpression(uint32_t line,
-                                           const CFX_WideStringC& wsName,
-                                           CXFA_FMExpression* pInit)
+CXFA_FMVarExpression::CXFA_FMVarExpression(
+    uint32_t line,
+    const CFX_WideStringC& wsName,
+    std::unique_ptr<CXFA_FMExpression> pInit)
     : CXFA_FMExpression(line, XFA_FM_EXPTYPE_VAR),
       m_wsName(wsName),
-      m_pInit(pInit) {}
+      m_pInit(std::move(pInit)) {}
 
 CXFA_FMVarExpression::~CXFA_FMVarExpression() {}
 
@@ -167,9 +156,11 @@ void CXFA_FMVarExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << FX_WSTRC(L";\n");
 }
 
-CXFA_FMExpExpression::CXFA_FMExpExpression(uint32_t line,
-                                           CXFA_FMSimpleExpression* pExpression)
-    : CXFA_FMExpression(line, XFA_FM_EXPTYPE_EXP), m_pExpression(pExpression) {}
+CXFA_FMExpExpression::CXFA_FMExpExpression(
+    uint32_t line,
+    std::unique_ptr<CXFA_FMSimpleExpression> pExpression)
+    : CXFA_FMExpression(line, XFA_FM_EXPTYPE_EXP),
+      m_pExpression(std::move(pExpression)) {}
 
 CXFA_FMExpExpression::~CXFA_FMExpExpression() {}
 
@@ -208,46 +199,34 @@ void CXFA_FMExpExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
 
 CXFA_FMBlockExpression::CXFA_FMBlockExpression(
     uint32_t line,
-    CFX_ArrayTemplate<CXFA_FMExpression*>* pExpressionList)
+    std::vector<std::unique_ptr<CXFA_FMExpression>>&& pExpressionList)
     : CXFA_FMExpression(line, XFA_FM_EXPTYPE_BLOCK),
-      m_pExpressionList(pExpressionList) {}
+      m_ExpressionList(std::move(pExpressionList)) {}
 
-CXFA_FMBlockExpression::~CXFA_FMBlockExpression() {
-  if (m_pExpressionList) {
-    for (int i = 0; i < m_pExpressionList->GetSize(); ++i)
-      delete m_pExpressionList->GetAt(i);
-
-    delete m_pExpressionList;
-  }
-}
+CXFA_FMBlockExpression::~CXFA_FMBlockExpression() {}
 
 void CXFA_FMBlockExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << FX_WSTRC(L"{\n");
-  if (m_pExpressionList) {
-    for (int i = 0; i < m_pExpressionList->GetSize(); ++i)
-      m_pExpressionList->GetAt(i)->ToJavaScript(javascript);
-  }
+  for (const auto& expr : m_ExpressionList)
+    expr->ToJavaScript(javascript);
   javascript << FX_WSTRC(L"}\n");
 }
 
 void CXFA_FMBlockExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << FX_WSTRC(L"{\n");
-  if (m_pExpressionList) {
-    for (int i = 0; i < m_pExpressionList->GetSize(); ++i) {
-      CXFA_FMExpression* e = m_pExpressionList->GetAt(i);
-      if (i + 1 == m_pExpressionList->GetSize()) {
-        e->ToImpliedReturnJS(javascript);
-      } else {
-        e->ToJavaScript(javascript);
-      }
-    }
+  for (const auto& expr : m_ExpressionList) {
+    if (expr == m_ExpressionList.back())
+      expr->ToImpliedReturnJS(javascript);
+    else
+      expr->ToJavaScript(javascript);
   }
   javascript << FX_WSTRC(L"}\n");
 }
 
-CXFA_FMDoExpression::CXFA_FMDoExpression(uint32_t line,
-                                         CXFA_FMExpression* pList)
-    : CXFA_FMExpression(line), m_pList(pList) {}
+CXFA_FMDoExpression::CXFA_FMDoExpression(
+    uint32_t line,
+    std::unique_ptr<CXFA_FMExpression> pList)
+    : CXFA_FMExpression(line), m_pList(std::move(pList)) {}
 
 CXFA_FMDoExpression::~CXFA_FMDoExpression() {}
 
@@ -259,14 +238,15 @@ void CXFA_FMDoExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   m_pList->ToImpliedReturnJS(javascript);
 }
 
-CXFA_FMIfExpression::CXFA_FMIfExpression(uint32_t line,
-                                         CXFA_FMSimpleExpression* pExpression,
-                                         CXFA_FMExpression* pIfExpression,
-                                         CXFA_FMExpression* pElseExpression)
+CXFA_FMIfExpression::CXFA_FMIfExpression(
+    uint32_t line,
+    std::unique_ptr<CXFA_FMSimpleExpression> pExpression,
+    std::unique_ptr<CXFA_FMExpression> pIfExpression,
+    std::unique_ptr<CXFA_FMExpression> pElseExpression)
     : CXFA_FMExpression(line, XFA_FM_EXPTYPE_IF),
-      m_pExpression(pExpression),
-      m_pIfExpression(pIfExpression),
-      m_pElseExpression(pElseExpression) {}
+      m_pExpression(std::move(pExpression)),
+      m_pIfExpression(std::move(pIfExpression)),
+      m_pElseExpression(std::move(pElseExpression)) {}
 
 CXFA_FMIfExpression::~CXFA_FMIfExpression() {}
 
@@ -330,11 +310,11 @@ void CXFA_FMLoopExpression::ToImpliedReturnJS(CFX_WideTextBuf&) {}
 
 CXFA_FMWhileExpression::CXFA_FMWhileExpression(
     uint32_t line,
-    CXFA_FMSimpleExpression* pCondition,
-    CXFA_FMExpression* pExpression)
+    std::unique_ptr<CXFA_FMSimpleExpression> pCondition,
+    std::unique_ptr<CXFA_FMExpression> pExpression)
     : CXFA_FMLoopExpression(line),
-      m_pCondition(pCondition),
-      m_pExpression(pExpression) {}
+      m_pCondition(std::move(pCondition)),
+      m_pExpression(std::move(pExpression)) {}
 
 CXFA_FMWhileExpression::~CXFA_FMWhileExpression() {}
 
@@ -388,20 +368,21 @@ void CXFA_FMContinueExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << FX_WSTRC(L"continue;\n");
 }
 
-CXFA_FMForExpression::CXFA_FMForExpression(uint32_t line,
-                                           const CFX_WideStringC& wsVariant,
-                                           CXFA_FMSimpleExpression* pAssignment,
-                                           CXFA_FMSimpleExpression* pAccessor,
-                                           int32_t iDirection,
-                                           CXFA_FMSimpleExpression* pStep,
-                                           CXFA_FMExpression* pList)
+CXFA_FMForExpression::CXFA_FMForExpression(
+    uint32_t line,
+    const CFX_WideStringC& wsVariant,
+    std::unique_ptr<CXFA_FMSimpleExpression> pAssignment,
+    std::unique_ptr<CXFA_FMSimpleExpression> pAccessor,
+    int32_t iDirection,
+    std::unique_ptr<CXFA_FMSimpleExpression> pStep,
+    std::unique_ptr<CXFA_FMExpression> pList)
     : CXFA_FMLoopExpression(line),
       m_wsVariant(wsVariant),
-      m_pAssignment(pAssignment),
-      m_pAccessor(pAccessor),
+      m_pAssignment(std::move(pAssignment)),
+      m_pAccessor(std::move(pAccessor)),
       m_iDirection(iDirection),
-      m_pStep(pStep),
-      m_pList(pList) {}
+      m_pStep(std::move(pStep)),
+      m_pList(std::move(pList)) {}
 
 CXFA_FMForExpression::~CXFA_FMForExpression() {}
 
@@ -508,21 +489,14 @@ void CXFA_FMForExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
 CXFA_FMForeachExpression::CXFA_FMForeachExpression(
     uint32_t line,
     const CFX_WideStringC& wsIdentifier,
-    CFX_ArrayTemplate<CXFA_FMSimpleExpression*>* pAccessors,
-    CXFA_FMExpression* pList)
+    std::vector<std::unique_ptr<CXFA_FMSimpleExpression>>&& pAccessors,
+    std::unique_ptr<CXFA_FMExpression> pList)
     : CXFA_FMLoopExpression(line),
       m_wsIdentifier(wsIdentifier),
-      m_pAccessors(pAccessors),
-      m_pList(pList) {}
+      m_pAccessors(std::move(pAccessors)),
+      m_pList(std::move(pList)) {}
 
-CXFA_FMForeachExpression::~CXFA_FMForeachExpression() {
-  if (m_pAccessors) {
-    for (int i = 0; i < m_pAccessors->GetSize(); ++i)
-      m_pAccessors->GetAt(i);
-
-    delete m_pAccessors;
-  }
-}
+CXFA_FMForeachExpression::~CXFA_FMForeachExpression() {}
 
 void CXFA_FMForeachExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << FX_WSTRC(L"{\n");
@@ -541,12 +515,10 @@ void CXFA_FMForeachExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << XFA_FM_EXPTypeToString(CONCATFMOBJECT);
   javascript << FX_WSTRC(L"(");
 
-  for (int i = 0; i < m_pAccessors->GetSize(); ++i) {
-    CXFA_FMSimpleExpression* s = m_pAccessors->GetAt(i);
-    s->ToJavaScript(javascript);
-    if (i + 1 < m_pAccessors->GetSize()) {
-      javascript << FX_WSTRC(L", ");
-    }
+  for (const auto& expr : m_pAccessors) {
+    expr->ToJavaScript(javascript);
+    if (expr != m_pAccessors.back())
+      javascript << L", ";
   }
   javascript << FX_WSTRC(L");\n");
   javascript << FX_WSTRC(L"var ");
@@ -592,12 +564,10 @@ void CXFA_FMForeachExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << FX_WSTRC(L" = ");
   javascript << XFA_FM_EXPTypeToString(CONCATFMOBJECT);
   javascript << FX_WSTRC(L"(");
-  for (int i = 0; i < m_pAccessors->GetSize(); ++i) {
-    CXFA_FMSimpleExpression* s = m_pAccessors->GetAt(i);
-    s->ToJavaScript(javascript);
-    if (i + 1 < m_pAccessors->GetSize()) {
-      javascript << FX_WSTRC(L", ");
-    }
+  for (const auto& expr : m_pAccessors) {
+    expr->ToJavaScript(javascript);
+    if (expr != m_pAccessors.back())
+      javascript << L", ";
   }
   javascript << FX_WSTRC(L");\n");
   javascript << FX_WSTRC(L"var ");

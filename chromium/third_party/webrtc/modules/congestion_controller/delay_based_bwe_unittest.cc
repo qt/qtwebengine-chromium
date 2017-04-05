@@ -116,6 +116,15 @@ TEST_F(DelayBasedBweTest, ProbeDetectionSlowerArrivalHighBitrate) {
   EXPECT_NEAR(bitrate_observer_.latest_bitrate(), 4000000u, 10000u);
 }
 
+TEST_F(DelayBasedBweTest, GetProbingInterval) {
+  int64_t default_interval_ms = bitrate_estimator_->GetProbingIntervalMs();
+  EXPECT_GT(default_interval_ms, 0);
+  CapacityDropTestHelper(1, true, 567, 0);
+  int64_t interval_ms = bitrate_estimator_->GetProbingIntervalMs();
+  EXPECT_GT(interval_ms, 0);
+  EXPECT_NE(interval_ms, default_interval_ms);
+}
+
 TEST_F(DelayBasedBweTest, InitialBehavior) {
   InitialBehaviorTestHelper(674840);
 }
@@ -129,7 +138,7 @@ TEST_F(DelayBasedBweTest, RateIncreaseRtpTimestamps) {
 }
 
 TEST_F(DelayBasedBweTest, CapacityDropOneStream) {
-  CapacityDropTestHelper(1, false, 633, 0);
+  CapacityDropTestHelper(1, false, 567, 0);
 }
 
 TEST_F(DelayBasedBweTest, CapacityDropPosOffsetChange) {
@@ -141,7 +150,7 @@ TEST_F(DelayBasedBweTest, CapacityDropNegOffsetChange) {
 }
 
 TEST_F(DelayBasedBweTest, CapacityDropOneStreamWrap) {
-  CapacityDropTestHelper(1, true, 633, 0);
+  CapacityDropTestHelper(1, true, 567, 0);
 }
 
 TEST_F(DelayBasedBweTest, TestTimestampGrouping) {
@@ -166,13 +175,11 @@ TEST_F(DelayBasedBweTest, TestLongTimeoutAndWrap) {
 class DelayBasedBweExperimentTest : public DelayBasedBweTest {
  public:
   DelayBasedBweExperimentTest()
-      : override_field_trials_("WebRTC-ImprovedBitrateEstimate/Enabled/") {}
-
- protected:
-  void SetUp() override {
+      : override_field_trials_("WebRTC-ImprovedBitrateEstimate/Enabled/") {
     bitrate_estimator_.reset(new DelayBasedBwe(&clock_));
   }
 
+ private:
   test::ScopedFieldTrials override_field_trials_;
 };
 
@@ -195,4 +202,67 @@ TEST_F(DelayBasedBweExperimentTest, CapacityDropNegOffsetChange) {
 TEST_F(DelayBasedBweExperimentTest, CapacityDropOneStreamWrap) {
   CapacityDropTestHelper(1, true, 333, 0);
 }
+
+class DelayBasedBweTrendlineExperimentTest : public DelayBasedBweTest {
+ public:
+  DelayBasedBweTrendlineExperimentTest()
+      : override_field_trials_("WebRTC-BweTrendlineFilter/Enabled-15,0.9,4/") {
+    bitrate_estimator_.reset(new DelayBasedBwe(&clock_));
+  }
+
+ private:
+  test::ScopedFieldTrials override_field_trials_;
+};
+
+TEST_F(DelayBasedBweTrendlineExperimentTest, RateIncreaseRtpTimestamps) {
+  RateIncreaseRtpTimestampsTestHelper(1240);
+}
+
+TEST_F(DelayBasedBweTrendlineExperimentTest, CapacityDropOneStream) {
+  CapacityDropTestHelper(1, false, 600, 0);
+}
+
+TEST_F(DelayBasedBweTrendlineExperimentTest, CapacityDropPosOffsetChange) {
+  CapacityDropTestHelper(1, false, 600, 30000);
+}
+
+TEST_F(DelayBasedBweTrendlineExperimentTest, CapacityDropNegOffsetChange) {
+  CapacityDropTestHelper(1, false, 1267, -30000);
+}
+
+TEST_F(DelayBasedBweTrendlineExperimentTest, CapacityDropOneStreamWrap) {
+  CapacityDropTestHelper(1, true, 600, 0);
+}
+
+class DelayBasedBweMedianSlopeExperimentTest : public DelayBasedBweTest {
+ public:
+  DelayBasedBweMedianSlopeExperimentTest()
+      : override_field_trials_("WebRTC-BweMedianSlopeFilter/Enabled-20,4/") {
+    bitrate_estimator_.reset(new DelayBasedBwe(&clock_));
+  }
+
+ private:
+  test::ScopedFieldTrials override_field_trials_;
+};
+
+TEST_F(DelayBasedBweMedianSlopeExperimentTest, RateIncreaseRtpTimestamps) {
+  RateIncreaseRtpTimestampsTestHelper(1240);
+}
+
+TEST_F(DelayBasedBweMedianSlopeExperimentTest, CapacityDropOneStream) {
+  CapacityDropTestHelper(1, false, 600, 0);
+}
+
+TEST_F(DelayBasedBweMedianSlopeExperimentTest, CapacityDropPosOffsetChange) {
+  CapacityDropTestHelper(1, false, 600, 30000);
+}
+
+TEST_F(DelayBasedBweMedianSlopeExperimentTest, CapacityDropNegOffsetChange) {
+  CapacityDropTestHelper(1, false, 1267, -30000);
+}
+
+TEST_F(DelayBasedBweMedianSlopeExperimentTest, CapacityDropOneStreamWrap) {
+  CapacityDropTestHelper(1, true, 600, 0);
+}
+
 }  // namespace webrtc

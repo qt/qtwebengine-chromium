@@ -30,7 +30,7 @@
 
 #include "web/ContextMenuClientImpl.h"
 
-#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
@@ -93,9 +93,10 @@ static WebURL urlFromFrame(LocalFrame* frame) {
     DocumentLoader* dl = frame->loader().documentLoader();
     if (dl) {
       WebDataSource* ds = WebDataSourceImpl::fromDocumentLoader(dl);
-      if (ds)
+      if (ds) {
         return ds->hasUnreachableURL() ? ds->unreachableURL()
-                                       : ds->request().url();
+                                       : ds->getRequest().url();
+      }
     }
   }
   return WebURL();
@@ -137,7 +138,7 @@ static String selectMisspellingAsync(LocalFrame* selectedFrame,
 
 bool ContextMenuClientImpl::shouldShowContextMenuFromTouch(
     const WebContextMenuData& data) {
-  return m_webView->page()->settings().alwaysShowContextMenuOnTouch() ||
+  return m_webView->page()->settings().getAlwaysShowContextMenuOnTouch() ||
          !data.linkURL.isEmpty() ||
          data.mediaType == WebContextMenuData::MediaTypeImage ||
          data.mediaType == WebContextMenuData::MediaTypeVideo ||
@@ -328,7 +329,7 @@ bool ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu,
       data.dictionarySuggestions = suggestions;
     } else if (m_webView->spellCheckClient()) {
       int misspelledOffset, misspelledLength;
-      m_webView->spellCheckClient()->spellCheck(
+      m_webView->spellCheckClient()->checkSpelling(
           data.misspelledWord, misspelledOffset, misspelledLength,
           &data.dictionarySuggestions);
     }
@@ -441,7 +442,7 @@ static void populateSubMenuItems(const Vector<ContextMenuItem>& inputMenu,
                              outputItem.subMenuItems);
         break;
     }
-    subItems.append(outputItem);
+    subItems.push_back(outputItem);
   }
 
   WebVector<WebMenuItemInfo> outputItems(subItems.size());

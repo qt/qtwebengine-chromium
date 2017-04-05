@@ -39,9 +39,10 @@ struct Config;
 
 struct SurfaceState final : angle::NonCopyable
 {
-    SurfaceState();
+    SurfaceState(const egl::Config *configIn);
 
     gl::Framebuffer *defaultFramebuffer;
+    const egl::Config *config;
 };
 
 class Surface : public gl::FramebufferAttachmentObject
@@ -53,8 +54,8 @@ class Surface : public gl::FramebufferAttachmentObject
 
     EGLint getType() const;
 
-    Error initialize();
-    Error swap();
+    Error initialize(const Display &display);
+    Error swap(const Display &display);
     Error swapWithDamage(EGLint *rects, EGLint n_rects);
     Error postSubBuffer(EGLint x, EGLint y, EGLint width, EGLint height);
     Error querySurfacePointerANGLE(EGLint attribute, void **value);
@@ -117,8 +118,6 @@ class Surface : public gl::FramebufferAttachmentObject
     bool mDestroyed;
 
     EGLint mType;
-
-    const egl::Config *mConfig;
 
     bool mPostSubBufferRequested;
     bool mFlexibleSurfaceCompatibilityRequested;

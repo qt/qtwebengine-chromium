@@ -13,6 +13,12 @@
 #include <cstddef>
 #include <string>
 
+namespace mkvparser {
+class IMkvReader;
+class MkvReader;
+class Segment;
+}
+
 namespace test {
 
 // constants for muxer and parser tests
@@ -51,6 +57,31 @@ std::string GetTestFilePath(const std::string& name);
 // Byte-wise comparison of two files |file1| and |file2|. Returns true if the
 // files match exactly, false otherwise.
 bool CompareFiles(const std::string& file1, const std::string& file2);
+
+// Returns true and sets |cues_offset| to the cues location within the MKV file
+// parsed by |segment| when the MKV file has cue points.
+bool HasCuePoints(const mkvparser::Segment* segment, std::int64_t* cues_offset);
+
+// Validates cue points. Assumes caller has already called Load() on |segment|.
+// Returns true when:
+//  All cue points point at clusters, OR
+//  Data parsed by |segment| has no cue points.
+bool ValidateCues(mkvparser::Segment* segment, mkvparser::IMkvReader* reader);
+
+// Parses |webm_file| using mkvparser and returns true when file parses
+// successfully (all clusters and blocks can be successfully walked). Second
+// variant allows further interaction with the parsed file via transferring
+// ownership of the mkvparser Segment and MkvReader to the caller via
+// |parser_out|.
+struct MkvParser {
+  MkvParser() = default;
+  ~MkvParser();
+  mkvparser::Segment* segment = nullptr;
+  mkvparser::MkvReader* reader = nullptr;
+};
+bool ParseMkvFile(const std::string& webm_file);
+bool ParseMkvFileReleaseParser(const std::string& webm_file,
+                               MkvParser* parser_out);
 
 }  // namespace test
 

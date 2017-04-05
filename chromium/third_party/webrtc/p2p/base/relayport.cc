@@ -11,6 +11,7 @@
 
 #include "webrtc/p2p/base/relayport.h"
 #include "webrtc/base/asyncpacketsocket.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
 
@@ -243,8 +244,8 @@ void RelayPort::SetReady() {
       // This is due to as mapped address stun attribute is used for allocated
       // address.
       AddAddress(iter->address, iter->address, rtc::SocketAddress(), proto_name,
-                 proto_name, "", RELAY_PORT_TYPE, ICE_TYPE_PREFERENCE_RELAY, 0,
-                 false);
+                 proto_name, "", RELAY_PORT_TYPE, ICE_TYPE_PREFERENCE_RELAY_UDP,
+                 0, false);
     }
     ready_ = true;
     SignalPortComplete(this);
@@ -270,7 +271,7 @@ bool RelayPort::HasMagicCookie(const char* data, size_t size) {
 void RelayPort::PrepareAddress() {
   // We initiate a connect on the first entry.  If this completes, it will fill
   // in the server address as the address of this port.
-  ASSERT(entries_.size() == 1);
+  RTC_DCHECK(entries_.size() == 1);
   entries_[0]->Connect();
   ready_ = false;
 }
@@ -341,7 +342,7 @@ int RelayPort::SendTo(const void* data, size_t size,
   // still be necessary).  Otherwise, we can't yet use this connection, so we
   // default to the first one.
   if (!entry || !entry->connected()) {
-    ASSERT(!entries_.empty());
+    RTC_DCHECK(!entries_.empty());
     entry = entries_[0];
     if (!entry->connected()) {
       error_ = ENOTCONN;
@@ -352,7 +353,7 @@ int RelayPort::SendTo(const void* data, size_t size,
   // Send the actual contents to the server using the usual mechanism.
   int sent = entry->SendTo(data, size, addr, options);
   if (sent <= 0) {
-    ASSERT(sent < 0);
+    RTC_DCHECK(sent < 0);
     error_ = entry->GetError();
     return SOCKET_ERROR;
   }
@@ -435,7 +436,7 @@ void RelayConnection::OnSendPacket(const void* data, size_t size,
   if (sent <= 0) {
     LOG(LS_VERBOSE) << "OnSendPacket: failed sending to " << GetAddress() <<
         strerror(socket_->GetError());
-    ASSERT(sent < 0);
+    RTC_DCHECK(sent < 0);
   }
 }
 
@@ -491,8 +492,9 @@ void RelayEntry::Connect() {
         rtc::SocketAddress(port_->ip(), 0),
         port_->min_port(), port_->max_port());
   } else if (ra->proto == PROTO_TCP || ra->proto == PROTO_SSLTCP) {
-    int opts = (ra->proto == PROTO_SSLTCP) ?
-     rtc::PacketSocketFactory::OPT_SSLTCP : 0;
+    int opts = (ra->proto == PROTO_SSLTCP)
+                   ? rtc::PacketSocketFactory::OPT_TLS_FAKE
+                   : 0;
     socket = port_->socket_factory()->CreateClientTcpSocket(
         rtc::SocketAddress(port_->ip(), 0), ra->address,
         port_->proxy(), port_->user_agent(), opts);
@@ -644,7 +646,7 @@ void RelayEntry::HandleConnectFailure(
 }
 
 void RelayEntry::OnMessage(rtc::Message *pmsg) {
-  ASSERT(pmsg->message_id == kMessageConnectTimeout);
+  RTC_DCHECK(pmsg->message_id == kMessageConnectTimeout);
   if (current_connection_) {
     const ProtocolAddress* ra = current_connection_->protocol_address();
     LOG(LS_WARNING) << "Relay " << ra->proto << " connection to " <<
@@ -683,7 +685,7 @@ void RelayEntry::OnReadPacket(
     const char* data, size_t size,
     const rtc::SocketAddress& remote_addr,
     const rtc::PacketTime& packet_time) {
-  // ASSERT(remote_addr == port_->server_addr());
+  // RTC_DCHECK(remote_addr == port_->server_addr());
   // TODO: are we worried about this?
 
   if (current_connection_ == NULL || socket != current_connection_->socket()) {

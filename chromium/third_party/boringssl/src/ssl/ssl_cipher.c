@@ -378,52 +378,6 @@ static const SSL_CIPHER kCiphers[] = {
       SSL_HANDSHAKE_MAC_SHA256,
     },
 
-    /* CECPQ1 (combined elliptic curve + post-quantum) suites. */
-
-    /* Cipher 16B7 */
-    {
-     TLS1_TXT_CECPQ1_RSA_WITH_CHACHA20_POLY1305_SHA256,
-     TLS1_CK_CECPQ1_RSA_WITH_CHACHA20_POLY1305_SHA256,
-     SSL_kCECPQ1,
-     SSL_aRSA,
-     SSL_CHACHA20POLY1305,
-     SSL_AEAD,
-     SSL_HANDSHAKE_MAC_SHA256,
-    },
-
-    /* Cipher 16B8 */
-    {
-     TLS1_TXT_CECPQ1_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-     TLS1_CK_CECPQ1_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-     SSL_kCECPQ1,
-     SSL_aECDSA,
-     SSL_CHACHA20POLY1305,
-     SSL_AEAD,
-     SSL_HANDSHAKE_MAC_SHA256,
-    },
-
-    /* Cipher 16B9 */
-    {
-     TLS1_TXT_CECPQ1_RSA_WITH_AES_256_GCM_SHA384,
-     TLS1_CK_CECPQ1_RSA_WITH_AES_256_GCM_SHA384,
-     SSL_kCECPQ1,
-     SSL_aRSA,
-     SSL_AES256GCM,
-     SSL_AEAD,
-     SSL_HANDSHAKE_MAC_SHA384,
-    },
-
-    /* Cipher 16BA */
-    {
-     TLS1_TXT_CECPQ1_ECDSA_WITH_AES_256_GCM_SHA384,
-     TLS1_CK_CECPQ1_ECDSA_WITH_AES_256_GCM_SHA384,
-     SSL_kCECPQ1,
-     SSL_aECDSA,
-     SSL_AES256GCM,
-     SSL_AEAD,
-     SSL_HANDSHAKE_MAC_SHA384,
-    },
-
     /* Cipher C009 */
     {
      TLS1_TXT_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
@@ -679,9 +633,8 @@ typedef struct cipher_alias_st {
 } CIPHER_ALIAS;
 
 static const CIPHER_ALIAS kCipherAliases[] = {
-    /* "ALL" doesn't include eNULL nor kCECPQ1. These must be explicitly
-     * enabled. */
-    {"ALL", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, 0},
+    /* "ALL" doesn't include eNULL. It must be explicitly enabled. */
+    {"ALL", ~0u, ~0u, ~SSL_eNULL, ~0u, 0},
 
     /* The "COMPLEMENTOFDEFAULT" rule is omitted. It matches nothing. */
 
@@ -696,16 +649,15 @@ static const CIPHER_ALIAS kCipherAliases[] = {
     {"DH", SSL_kDHE, ~0u, ~0u, ~0u, 0},
 
     {"kECDHE", SSL_kECDHE, ~0u, ~0u, ~0u, 0},
-    {"kCECPQ1", SSL_kCECPQ1, ~0u, ~0u, ~0u, 0},
     {"kEECDH", SSL_kECDHE, ~0u, ~0u, ~0u, 0},
     {"ECDH", SSL_kECDHE, ~0u, ~0u, ~0u, 0},
 
     {"kPSK", SSL_kPSK, ~0u, ~0u, ~0u, 0},
 
     /* server authentication aliases */
-    {"aRSA", ~SSL_kCECPQ1, SSL_aRSA, ~SSL_eNULL, ~0u, 0},
-    {"aECDSA", ~SSL_kCECPQ1, SSL_aECDSA, ~0u, ~0u, 0},
-    {"ECDSA", ~SSL_kCECPQ1, SSL_aECDSA, ~0u, ~0u, 0},
+    {"aRSA", ~0u, SSL_aRSA, ~SSL_eNULL, ~0u, 0},
+    {"aECDSA", ~0u, SSL_aECDSA, ~0u, ~0u, 0},
+    {"ECDSA", ~0u, SSL_aECDSA, ~0u, ~0u, 0},
     {"aPSK", ~0u, SSL_aPSK, ~0u, ~0u, 0},
 
     /* aliases combining key exchange and server authentication */
@@ -719,28 +671,27 @@ static const CIPHER_ALIAS kCipherAliases[] = {
     /* symmetric encryption aliases */
     {"3DES", ~0u, ~0u, SSL_3DES, ~0u, 0},
     {"AES128", ~0u, ~0u, SSL_AES128 | SSL_AES128GCM, ~0u, 0},
-    {"AES256", ~SSL_kCECPQ1, ~0u, SSL_AES256 | SSL_AES256GCM, ~0u, 0},
-    {"AES", ~SSL_kCECPQ1, ~0u, SSL_AES, ~0u, 0},
-    {"AESGCM", ~SSL_kCECPQ1, ~0u, SSL_AES128GCM | SSL_AES256GCM, ~0u, 0},
-    {"CHACHA20", ~SSL_kCECPQ1, ~0u, SSL_CHACHA20POLY1305 | SSL_CHACHA20POLY1305_OLD, ~0u,
+    {"AES256", ~0u, ~0u, SSL_AES256 | SSL_AES256GCM, ~0u, 0},
+    {"AES", ~0u, ~0u, SSL_AES, ~0u, 0},
+    {"AESGCM", ~0u, ~0u, SSL_AES128GCM | SSL_AES256GCM, ~0u, 0},
+    {"CHACHA20", ~0u, ~0u, SSL_CHACHA20POLY1305 | SSL_CHACHA20POLY1305_OLD, ~0u,
      0},
 
     /* MAC aliases */
-    {"MD5", ~0u, ~0u, ~0u, SSL_MD5, 0},
     {"SHA1", ~0u, ~0u, ~SSL_eNULL, SSL_SHA1, 0},
     {"SHA", ~0u, ~0u, ~SSL_eNULL, SSL_SHA1, 0},
-    {"SHA256", ~SSL_kCECPQ1, ~0u, ~0u, SSL_SHA256, 0},
-    {"SHA384", ~SSL_kCECPQ1, ~0u, ~0u, SSL_SHA384, 0},
+    {"SHA256", ~0u, ~0u, ~0u, SSL_SHA256, 0},
+    {"SHA384", ~0u, ~0u, ~0u, SSL_SHA384, 0},
 
     /* Legacy protocol minimum version aliases. "TLSv1" is intentionally the
      * same as "SSLv3". */
-    {"SSLv3", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, SSL3_VERSION},
-    {"TLSv1", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, SSL3_VERSION},
-    {"TLSv1.2", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, TLS1_2_VERSION},
+    {"SSLv3", ~0u, ~0u, ~SSL_eNULL, ~0u, SSL3_VERSION},
+    {"TLSv1", ~0u, ~0u, ~SSL_eNULL, ~0u, SSL3_VERSION},
+    {"TLSv1.2", ~0u, ~0u, ~SSL_eNULL, ~0u, TLS1_2_VERSION},
 
     /* Legacy strength classes. */
-    {"HIGH", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, 0},
-    {"FIPS", ~SSL_kCECPQ1, ~0u, ~SSL_eNULL, ~0u, 0},
+    {"HIGH", ~0u, ~0u, ~SSL_eNULL, ~0u, 0},
+    {"FIPS", ~0u, ~0u, ~SSL_eNULL, ~0u, 0},
 };
 
 static const size_t kCipherAliasesLen = OPENSSL_ARRAY_SIZE(kCipherAliases);
@@ -1121,7 +1072,7 @@ static int ssl_cipher_strength_sort(CIPHER_ORDER **head_p,
     OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     return 0;
   }
-  memset(number_uses, 0, (max_strength_bits + 1) * sizeof(int));
+  OPENSSL_memset(number_uses, 0, (max_strength_bits + 1) * sizeof(int));
 
   /* Now find the strength_bits values actually used. */
   curr = *head_p;
@@ -1485,7 +1436,7 @@ ssl_create_cipher_list(const SSL_PROTOCOL_METHOD *ssl_method,
   if (!pref_list->in_group_flags) {
     goto err;
   }
-  memcpy(pref_list->in_group_flags, in_group_flags, num_in_group_flags);
+  OPENSSL_memcpy(pref_list->in_group_flags, in_group_flags, num_in_group_flags);
   OPENSSL_free(in_group_flags);
   in_group_flags = NULL;
   if (*out_cipher_list != NULL) {
@@ -1521,7 +1472,7 @@ int SSL_CIPHER_is_AES(const SSL_CIPHER *cipher) {
 }
 
 int SSL_CIPHER_has_MD5_HMAC(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_mac & SSL_MD5) != 0;
+  return 0;
 }
 
 int SSL_CIPHER_has_SHA1_HMAC(const SSL_CIPHER *cipher) {
@@ -1530,6 +1481,10 @@ int SSL_CIPHER_has_SHA1_HMAC(const SSL_CIPHER *cipher) {
 
 int SSL_CIPHER_has_SHA256_HMAC(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_mac & SSL_SHA256) != 0;
+}
+
+int SSL_CIPHER_is_AEAD(const SSL_CIPHER *cipher) {
+  return (cipher->algorithm_mac & SSL_AEAD) != 0;
 }
 
 int SSL_CIPHER_is_AESGCM(const SSL_CIPHER *cipher) {
@@ -1574,8 +1529,8 @@ int SSL_CIPHER_is_ECDHE(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_mkey & SSL_kECDHE) != 0;
 }
 
-int SSL_CIPHER_is_CECPQ1(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_mkey & SSL_kCECPQ1) != 0;
+int SSL_CIPHER_is_static_RSA(const SSL_CIPHER *cipher) {
+  return (cipher->algorithm_mkey & SSL_kRSA) != 0;
 }
 
 uint16_t SSL_CIPHER_get_min_version(const SSL_CIPHER *cipher) {
@@ -1640,17 +1595,6 @@ const char *SSL_CIPHER_get_kx_name(const SSL_CIPHER *cipher) {
           return "UNKNOWN";
       }
 
-    case SSL_kCECPQ1:
-      switch (cipher->algorithm_auth) {
-        case SSL_aECDSA:
-          return "CECPQ1_ECDSA";
-        case SSL_aRSA:
-          return "CECPQ1_RSA";
-        default:
-          assert(0);
-          return "UNKNOWN";
-      }
-
     case SSL_kPSK:
       assert(cipher->algorithm_auth == SSL_aPSK);
       return "PSK";
@@ -1690,15 +1634,10 @@ static const char *ssl_cipher_get_enc_name(const SSL_CIPHER *cipher) {
 static const char *ssl_cipher_get_prf_name(const SSL_CIPHER *cipher) {
   switch (cipher->algorithm_prf) {
     case SSL_HANDSHAKE_MAC_DEFAULT:
-      /* Before TLS 1.2, the PRF component is the hash used in the HMAC, which is
-       * only ever MD5 or SHA-1. */
-      switch (cipher->algorithm_mac) {
-        case SSL_MD5:
-          return "MD5";
-        case SSL_SHA1:
-          return "SHA";
-      }
-      break;
+      /* Before TLS 1.2, the PRF component is the hash used in the HMAC, which
+       * is SHA-1 for all supported ciphers. */
+      assert(cipher->algorithm_mac == SSL_SHA1);
+      return "SHA";
     case SSL_HANDSHAKE_MAC_SHA256:
       return "SHA256";
     case SSL_HANDSHAKE_MAC_SHA384:
@@ -1814,10 +1753,6 @@ const char *SSL_CIPHER_description(const SSL_CIPHER *cipher, char *buf,
       kx = "ECDH";
       break;
 
-    case SSL_kCECPQ1:
-      kx = "CECPQ1";
-      break;
-
     case SSL_kPSK:
       kx = "PSK";
       break;
@@ -1891,10 +1826,6 @@ const char *SSL_CIPHER_description(const SSL_CIPHER *cipher, char *buf,
   }
 
   switch (alg_mac) {
-    case SSL_MD5:
-      mac = "MD5";
-      break;
-
     case SSL_SHA1:
       mac = "SHA1";
       break;
@@ -1962,8 +1893,7 @@ int ssl_cipher_uses_certificate_auth(const SSL_CIPHER *cipher) {
 int ssl_cipher_requires_server_key_exchange(const SSL_CIPHER *cipher) {
   /* Ephemeral Diffie-Hellman key exchanges require a ServerKeyExchange. */
   if (cipher->algorithm_mkey & SSL_kDHE ||
-      cipher->algorithm_mkey & SSL_kECDHE ||
-      cipher->algorithm_mkey & SSL_kCECPQ1) {
+      cipher->algorithm_mkey & SSL_kECDHE) {
     return 1;
   }
 
@@ -1985,19 +1915,9 @@ size_t ssl_cipher_get_record_split_len(const SSL_CIPHER *cipher) {
       return 0;
   }
 
-  size_t mac_len;
-  switch (cipher->algorithm_mac) {
-    case SSL_MD5:
-      mac_len = MD5_DIGEST_LENGTH;
-      break;
-    case SSL_SHA1:
-      mac_len = SHA_DIGEST_LENGTH;
-      break;
-    default:
-      return 0;
-  }
-
-  size_t ret = 1 + mac_len;
+  /* All supported TLS 1.0 ciphers use SHA-1. */
+  assert(cipher->algorithm_mac == SSL_SHA1);
+  size_t ret = 1 + SHA_DIGEST_LENGTH;
   ret += block_size - (ret % block_size);
   return ret;
 }

@@ -6,6 +6,9 @@
 
 #include "core/fpdfapi/font/font_int.h"
 
+#include <memory>
+#include <utility>
+
 #include "core/fpdfapi/cmaps/cmap_int.h"
 #include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/font/ttgsubtable.h"
@@ -15,6 +18,7 @@
 #include "core/fpdfapi/parser/cpdf_simple_parser.h"
 #include "core/fxcrt/fx_ext.h"
 #include "core/fxge/fx_freetype.h"
+#include "third_party/base/stl_util.h"
 
 namespace {
 
@@ -277,37 +281,34 @@ int GetCharSizeImpl(uint32_t charcode,
 
 }  // namespace
 
-CPDF_CMapManager::CPDF_CMapManager() {
-  FXSYS_memset(m_CID2UnicodeMaps, 0, sizeof m_CID2UnicodeMaps);
-}
-CPDF_CMapManager::~CPDF_CMapManager() {
-  for (const auto& pair : m_CMaps) {
-    delete pair.second;
-  }
-  m_CMaps.clear();
-  for (size_t i = 0; i < FX_ArraySize(m_CID2UnicodeMaps); ++i) {
-    delete m_CID2UnicodeMaps[i];
-  }
-}
-CPDF_CMap* CPDF_CMapManager::GetPredefinedCMap(const CFX_ByteString& name,
-                                               bool bPromptCJK) {
+CPDF_CMapManager::CPDF_CMapManager() {}
+
+CPDF_CMapManager::~CPDF_CMapManager() {}
+
+CFX_MaybeOwned<CPDF_CMap> CPDF_CMapManager::GetPredefinedCMap(
+    const CFX_ByteString& name,
+    bool bPromptCJK) {
   auto it = m_CMaps.find(name);
-  if (it != m_CMaps.end()) {
-    return it->second;
-  }
-  CPDF_CMap* pCMap = LoadPredefinedCMap(name, bPromptCJK);
-  if (!name.IsEmpty()) {
-    m_CMaps[name] = pCMap;
-  }
-  return pCMap;
+  if (it != m_CMaps.end())
+    return CFX_MaybeOwned<CPDF_CMap>(it->second.get());  // Unowned.
+
+  std::unique_ptr<CPDF_CMap> pCMap = LoadPredefinedCMap(name, bPromptCJK);
+  if (name.IsEmpty())
+    return CFX_MaybeOwned<CPDF_CMap>(std::move(pCMap));  // Owned.
+
+  CPDF_CMap* pUnowned = pCMap.get();
+  m_CMaps[name] = std::move(pCMap);
+  return CFX_MaybeOwned<CPDF_CMap>(pUnowned);  // Unowned.
 }
-CPDF_CMap* CPDF_CMapManager::LoadPredefinedCMap(const CFX_ByteString& name,
-                                                bool bPromptCJK) {
-  CPDF_CMap* pCMap = new CPDF_CMap;
+
+std::unique_ptr<CPDF_CMap> CPDF_CMapManager::LoadPredefinedCMap(
+    const CFX_ByteString& name,
+    bool bPromptCJK) {
+  auto pCMap = pdfium::MakeUnique<CPDF_CMap>();
   const FX_CHAR* pname = name.c_str();
-  if (*pname == '/') {
+  if (*pname == '/')
     pname++;
-  }
+
   pCMap->LoadPredefined(this, pname, bPromptCJK);
   return pCMap;
 }
@@ -316,11 +317,14 @@ CPDF_CID2UnicodeMap* CPDF_CMapManager::GetCID2UnicodeMap(CIDSet charset,
                                                          bool bPromptCJK) {
   if (!m_CID2UnicodeMaps[charset])
     m_CID2UnicodeMaps[charset] = LoadCID2UnicodeMap(charset, bPromptCJK);
-  return m_CID2UnicodeMaps[charset];
+
+  return m_CID2UnicodeMaps[charset].get();
 }
-CPDF_CID2UnicodeMap* CPDF_CMapManager::LoadCID2UnicodeMap(CIDSet charset,
-                                                          bool bPromptCJK) {
-  CPDF_CID2UnicodeMap* pMap = new CPDF_CID2UnicodeMap();
+
+std::unique_ptr<CPDF_CID2UnicodeMap> CPDF_CMapManager::LoadCID2UnicodeMap(
+    CIDSet charset,
+    bool bPromptCJK) {
+  auto pMap = pdfium::MakeUnique<CPDF_CID2UnicodeMap>();
   pMap->Load(this, charset, bPromptCJK);
   return pMap;
 }
@@ -403,14 +407,14 @@ void CPDF_CMapParser::ParseWord(const CFX_ByteStringC& word) {
     m_Status = 0;
   } else if (m_Status == 7) {
     if (word == "endcodespacerange") {
-      int nSegs = m_CodeRanges.GetSize();
+      uint32_t nSegs = pdfium::CollectionSize<uint32_t>(m_CodeRanges);
       if (nSegs > 1) {
         m_pCMap->m_CodingScheme = CPDF_CMap::MixedFourBytes;
         m_pCMap->m_nCodeRanges = nSegs;
         FX_Free(m_pCMap->m_pLeadingBytes);
         m_pCMap->m_pLeadingBytes =
             FX_Alloc2D(uint8_t, nSegs, sizeof(CMap_CodeRange));
-        FXSYS_memcpy(m_pCMap->m_pLeadingBytes, m_CodeRanges.GetData(),
+        FXSYS_memcpy(m_pCMap->m_pLeadingBytes, m_CodeRanges.data(),
                      nSegs * sizeof(CMap_CodeRange));
       } else if (nSegs == 1) {
         m_pCMap->m_CodingScheme = (m_CodeRanges[0].m_CharSize == 2)
@@ -424,9 +428,8 @@ void CPDF_CMapParser::ParseWord(const CFX_ByteStringC& word) {
       }
       if (m_CodeSeq % 2) {
         CMap_CodeRange range;
-        if (CMap_GetCodeRange(range, m_LastWord.AsStringC(), word)) {
-          m_CodeRanges.Add(range);
-        }
+        if (CMap_GetCodeRange(range, m_LastWord.AsStringC(), word))
+          m_CodeRanges.push_back(range);
       }
       m_CodeSeq++;
     }

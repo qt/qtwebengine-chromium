@@ -6,6 +6,12 @@
 
 #include "core/fxge/fx_font.h"
 
+#include <algorithm>
+#include <limits>
+#include <memory>
+#include <utility>
+#include <vector>
+
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fxge/cfx_facecache.h"
 #include "core/fxge/cfx_fontcache.h"
@@ -41,21 +47,27 @@ unsigned long FTStreamRead(FXFT_Stream stream,
 
   IFX_SeekableReadStream* pFile =
       static_cast<IFX_SeekableReadStream*>(stream->descriptor.pointer);
-  return pFile->ReadBlock(buffer, offset, count) ? count : 0;
+  if (!pFile)
+    return 0;
+
+  if (!pFile->ReadBlock(buffer, offset, count))
+    return 0;
+
+  return count;
 }
 
 void FTStreamClose(FXFT_Stream stream) {}
 
 bool LoadFileImp(FXFT_Library library,
                  FXFT_Face* Face,
-                 IFX_SeekableReadStream* pFile,
+                 const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
                  int32_t faceIndex,
                  std::unique_ptr<FXFT_StreamRec>* stream) {
-  std::unique_ptr<FXFT_StreamRec> stream1(new FXFT_StreamRec());
+  auto stream1 = pdfium::MakeUnique<FXFT_StreamRec>();
   stream1->base = nullptr;
   stream1->size = static_cast<unsigned long>(pFile->GetSize());
   stream1->pos = 0;
-  stream1->descriptor.pointer = pFile;
+  stream1->descriptor.pointer = static_cast<void*>(pFile.Get());
   stream1->close = FTStreamClose;
   stream1->read = FTStreamRead;
   FXFT_Open_Args args;
@@ -253,10 +265,6 @@ bool CFX_Font::LoadClone(const CFX_Font* pFont) {
     m_pSubstFont->m_Family = pFont->m_pSubstFont->m_Family;
     m_pSubstFont->m_ItalicAngle = pFont->m_pSubstFont->m_ItalicAngle;
   }
-  if (pFont->m_OtfFontData.GetSize()) {
-    m_OtfFontData.AttachData(pFont->m_OtfFontData.GetBuffer(),
-                             pFont->m_OtfFontData.GetSize());
-  }
   m_Face = pFont->m_Face;
   m_bEmbedded = pFont->m_bEmbedded;
   m_bVertical = pFont->m_bVertical;
@@ -280,10 +288,8 @@ void CFX_Font::SetFace(FXFT_Face face) {
 
 CFX_Font::~CFX_Font() {
 #ifdef PDF_ENABLE_XFA
-  if (m_bShallowCopy) {
-    m_OtfFontData.DetachBuffer();
+  if (m_bShallowCopy)
     return;
-  }
 #endif  // PDF_ENABLE_XFA
   if (m_Face) {
 #ifndef PDF_ENABLE_XFA
@@ -332,15 +338,15 @@ void CFX_Font::LoadSubst(const CFX_ByteString& face_name,
 }
 
 #ifdef PDF_ENABLE_XFA
-bool CFX_Font::LoadFile(IFX_SeekableReadStream* pFile,
+bool CFX_Font::LoadFile(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
                         int nFaceIndex,
                         int* pFaceCount) {
   m_bEmbedded = false;
 
   CFX_FontMgr* pFontMgr = CFX_GEModule::Get()->GetFontMgr();
   pFontMgr->InitFTLibrary();
-  FXFT_Library library = pFontMgr->GetFTLibrary();
 
+  FXFT_Library library = pFontMgr->GetFTLibrary();
   std::unique_ptr<FXFT_StreamRec> stream;
   if (!LoadFileImp(library, &m_Face, pFile, nFaceIndex, &stream))
     return false;
@@ -709,7 +715,7 @@ const CFX_PathData* CFX_Font::LoadGlyphPath(uint32_t glyph_index,
   return GetFaceCache()->LoadGlyphPath(this, glyph_index, dest_width);
 }
 
-#ifdef _SKIA_SUPPORT_
+#if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
 CFX_TypeFace* CFX_Font::GetDeviceCache() const {
   return GetFaceCache()->GetDeviceCache(this);
 }

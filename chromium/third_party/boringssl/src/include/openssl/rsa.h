@@ -322,7 +322,9 @@ OPENSSL_EXPORT int RSA_recover_crt_params(RSA *rsa);
  * hash function for generating the mask. If NULL, |Hash| is used. The |sLen|
  * argument specifies the expected salt length in bytes. If |sLen| is -1 then
  * the salt length is the same as the hash length. If -2, then the salt length
- * is maximal and is taken from the size of |EM|.
+ * is recovered and all values accepted.
+ *
+ * If unsure, use -1.
  *
  * It returns one on success or zero on error. */
 OPENSSL_EXPORT int RSA_verify_PKCS1_PSS_mgf1(RSA *rsa, const uint8_t *mHash,
@@ -515,7 +517,7 @@ OPENSSL_EXPORT int RSA_verify_PKCS1_PSS(RSA *rsa, const uint8_t *mHash,
                                         int sLen);
 
 /* RSA_padding_add_PKCS1_OAEP acts like |RSA_padding_add_PKCS1_OAEP_mgf1| but
- * the |md| and |mgf1md| paramaters of the latter are implicitly set to NULL,
+ * the |md| and |mgf1md| parameters of the latter are implicitly set to NULL,
  * which means SHA-1. */
 OPENSSL_EXPORT int RSA_padding_add_PKCS1_OAEP(uint8_t *to, unsigned to_len,
                                               const uint8_t *from,

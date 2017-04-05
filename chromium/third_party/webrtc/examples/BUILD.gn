@@ -15,9 +15,6 @@ if (is_android) {
 } else if (is_ios) {
   import("//build/config/ios/rules.gni")
 }
-if (is_linux) {
-  import("//build/config/linux/pkg_config.gni")
-}
 
 group("examples") {
   # This target shall build all targets in examples.
@@ -28,6 +25,7 @@ group("examples") {
     public_deps += [
       ":AppRTCMobile",
       ":AppRTCMobileTest",
+      ":AppRTCMobileTestStubbedVideoIO",
     ]
   }
 
@@ -62,12 +60,13 @@ if (is_android) {
       "//webrtc/base:base_java",
     ]
 
-    shared_libraries = [ "//webrtc/api:libjingle_peerconnection_so" ]
+    shared_libraries = [ "//webrtc/sdk/android:libjingle_peerconnection_so" ]
   }
 
   android_library("AppRTCMobile_javalib") {
     java_files = [
       "androidapp/src/org/appspot/apprtc/AppRTCAudioManager.java",
+      "androidapp/src/org/appspot/apprtc/AppRTCBluetoothManager.java",
       "androidapp/src/org/appspot/apprtc/AppRTCClient.java",
       "androidapp/src/org/appspot/apprtc/AppRTCProximitySensor.java",
       "androidapp/src/org/appspot/apprtc/CallActivity.java",
@@ -92,9 +91,10 @@ if (is_android) {
 
     deps = [
       ":AppRTCMobile_resources",
-      "//webrtc/api:libjingle_peerconnection_java",
       "//webrtc/base:base_java",
       "//webrtc/examples/androidapp/third_party/autobanh:autobanh_java",
+      "//webrtc/sdk/android:libjingle_peerconnection_java",
+      "//webrtc/sdk/android:libjingle_peerconnection_metrics_default_java",
     ]
   }
 
@@ -107,21 +107,39 @@ if (is_android) {
     apk_name = "AppRTCMobileTest"
     android_manifest = "androidtests/AndroidManifest.xml"
 
-    java_files = [
-      "androidtests/src/org/appspot/apprtc/test/FileVideoCapturerTest.java",
-      "androidtests/src/org/appspot/apprtc/test/PeerConnectionClientTest.java",
-      "androidtests/src/org/appspot/apprtc/test/VideoFileRendererTest.java",
-    ]
+    java_files = [ "androidtests/src/org/appspot/apprtc/test/PeerConnectionClientTest.java" ]
 
     apk_under_test = ":AppRTCMobile"
 
     deps = [
       ":AppRTCMobile_javalib",
-      "//webrtc/api:libjingle_peerconnection_java",
+      "//base:base_java_test_support",
+      "//third_party/android_support_test_runner:runner_java",
+      "//third_party/junit",
+      "//webrtc/sdk/android:libjingle_peerconnection_java",
+    ]
+  }
+
+  instrumentation_test_apk("AppRTCMobileTestStubbedVideoIO") {
+    apk_name = "AppRTCMobileTestStubbedVideoIO"
+    android_manifest = "androidtests/AndroidManifest.xml"
+
+    java_files = [ "androidtests/src/org/appspot/apprtc/test/ConnectActivityStubbedInputOutputTest.java" ]
+
+    apk_under_test = ":AppRTCMobile"
+
+    deps = [
+      ":AppRTCMobile_javalib",
+      "//third_party/android_support_test_runner:rules_java",
+      "//third_party/android_support_test_runner:runner_java",
+      "//third_party/espresso:espresso_all_java",
+      "//third_party/hamcrest:hamcrest_java",
+      "//third_party/junit",
+      "//webrtc/sdk/android:libjingle_peerconnection_java",
     ]
 
     data = [
-      "//webrtc/examples/androidtests/src/org/appspot/apprtc/test/capturetestvideo.y4m",
+      "//resources/reference_video_640x360_30fps.y4m",
     ]
   }
 }
@@ -190,8 +208,6 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       "objc/AppRTCMobile/ARDAppEngineClient.m",
       "objc/AppRTCMobile/ARDBitrateTracker.h",
       "objc/AppRTCMobile/ARDBitrateTracker.m",
-      "objc/AppRTCMobile/ARDCEODTURNClient.h",
-      "objc/AppRTCMobile/ARDCEODTURNClient.m",
       "objc/AppRTCMobile/ARDJoinResponse+Internal.h",
       "objc/AppRTCMobile/ARDJoinResponse.h",
       "objc/AppRTCMobile/ARDJoinResponse.m",
@@ -206,7 +222,9 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       "objc/AppRTCMobile/ARDSignalingMessage.m",
       "objc/AppRTCMobile/ARDStatsBuilder.h",
       "objc/AppRTCMobile/ARDStatsBuilder.m",
+      "objc/AppRTCMobile/ARDTURNClient+Internal.h",
       "objc/AppRTCMobile/ARDTURNClient.h",
+      "objc/AppRTCMobile/ARDTURNClient.m",
       "objc/AppRTCMobile/ARDWebSocketChannel.h",
       "objc/AppRTCMobile/ARDWebSocketChannel.m",
       "objc/AppRTCMobile/RTCIceCandidate+JSON.h",
@@ -431,18 +449,6 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
 }
 
 if (is_linux || is_win) {
-  if (is_linux) {
-    pkg_config("gtk2_config") {
-      # Gtk requires gmodule, but it does not list it as a dependency in some
-      # misconfigured systems.
-      packages = [
-        "gmodule-2.0",
-        "gtk+-2.0",
-        "gthread-2.0",
-      ]
-    }
-  }
-
   config("peerconnection_client_warnings_config") {
     cflags = []
     if (is_win && is_clang) {
@@ -496,6 +502,12 @@ if (is_linux || is_win) {
       cflags = [ "/wd4245" ]
       configs += [ "//build/config/win:windowed" ]
     }
+    deps = [
+      "//third_party/libyuv",
+      "//webrtc/api:libjingle_peerconnection",
+      "//webrtc/system_wrappers:field_trial_default",
+      "//webrtc/system_wrappers:metrics_default",
+    ]
     if (is_linux) {
       sources += [
         "peerconnection/client/linux/main.cc",
@@ -508,14 +520,8 @@ if (is_linux || is_win) {
         "Xext",
         "Xrender",
       ]
-      public_configs = [ ":gtk2_config" ]
+      deps += [ "//build/config/linux/gtk" ]
     }
-    deps = [
-      "//third_party/libyuv",
-      "//webrtc/api:libjingle_peerconnection",
-      "//webrtc/system_wrappers:field_trial_default",
-      "//webrtc/system_wrappers:metrics_default",
-    ]
     configs += [ ":peerconnection_client_warnings_config" ]
     if (rtc_build_json) {
       deps += [ "//third_party/jsoncpp" ]

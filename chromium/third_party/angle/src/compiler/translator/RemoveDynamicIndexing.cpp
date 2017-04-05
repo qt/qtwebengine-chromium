@@ -185,7 +185,7 @@ TIntermFunctionDefinition *GetIndexFunctionDefinition(TType type, bool write)
     type.setPrecision(EbpHigh);
 
     TType fieldType = GetFieldType(type);
-    int numCases = 0;
+    int numCases    = 0;
     if (type.isMatrix())
     {
         numCases = type.getCols();
@@ -195,18 +195,28 @@ TIntermFunctionDefinition *GetIndexFunctionDefinition(TType type, bool write)
         numCases = type.getNominalSize();
     }
 
-    TIntermAggregate *paramsNode = new TIntermAggregate(EOpParameters);
-    TQualifier baseQualifier = EvqInOut;
+    TIntermFunctionPrototype *prototypeNode = nullptr;
+    if (write)
+    {
+        prototypeNode = new TIntermFunctionPrototype(TType(EbtVoid));
+    }
+    else
+    {
+        prototypeNode = new TIntermFunctionPrototype(fieldType);
+    }
+    prototypeNode->getFunctionSymbolInfo()->setNameObj(GetIndexFunctionName(type, write));
+
+    TQualifier baseQualifier     = EvqInOut;
     if (!write)
         baseQualifier        = EvqIn;
     TIntermSymbol *baseParam = CreateBaseSymbol(type, baseQualifier);
-    paramsNode->getSequence()->push_back(baseParam);
+    prototypeNode->getSequence()->push_back(baseParam);
     TIntermSymbol *indexParam = CreateIndexSymbol();
-    paramsNode->getSequence()->push_back(indexParam);
+    prototypeNode->getSequence()->push_back(indexParam);
     if (write)
     {
         TIntermSymbol *valueParam = CreateValueSymbol(fieldType);
-        paramsNode->getSequence()->push_back(valueParam);
+        prototypeNode->getSequence()->push_back(valueParam);
     }
 
     TIntermBlock *statementList = new TIntermBlock();
@@ -276,16 +286,8 @@ TIntermFunctionDefinition *GetIndexFunctionDefinition(TType type, bool write)
     bodyNode->getSequence()->push_back(ifNode);
     bodyNode->getSequence()->push_back(useLastBlock);
 
-    TIntermFunctionDefinition *indexingFunction = nullptr;
-    if (write)
-    {
-        indexingFunction = new TIntermFunctionDefinition(TType(EbtVoid), paramsNode, bodyNode);
-    }
-    else
-    {
-        indexingFunction = new TIntermFunctionDefinition(fieldType, paramsNode, bodyNode);
-    }
-    indexingFunction->getFunctionSymbolInfo()->setNameObj(GetIndexFunctionName(type, write));
+    TIntermFunctionDefinition *indexingFunction =
+        new TIntermFunctionDefinition(prototypeNode, bodyNode);
     return indexingFunction;
 }
 
@@ -433,6 +435,18 @@ bool RemoveDynamicIndexingTraverser::visitBinary(Visit visit, TIntermBinary *nod
                     mRemoveIndexSideEffectsInSubtree = true;
                     return true;
                 }
+
+                TIntermBinary *leftBinary = node->getLeft()->getAsBinaryNode();
+                if (leftBinary != nullptr &&
+                    IntermNodePatternMatcher::IsDynamicIndexingOfVectorOrMatrix(leftBinary))
+                {
+                    // This is a case like:
+                    // mat2 m;
+                    // m[a][b]++;
+                    // Process the child node m[a] first.
+                    return true;
+                }
+
                 // TODO(oetuaho@nvidia.com): This is not optimal if the expression using the value
                 // only writes it and doesn't need the previous value. http://anglebug.com/1116
 

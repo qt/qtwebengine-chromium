@@ -18,6 +18,7 @@
 #include "core/fxcodec/jbig2/JBig2_SymbolDict.h"
 #include "core/fxcodec/jbig2/JBig2_TrdProc.h"
 #include "core/fxcrt/fx_basic.h"
+#include "third_party/base/ptr_util.h"
 
 CJBig2_SymbolDict* CJBig2_SDDProc::decode_Arith(
     CJBig2_ArithDecoder* pArithDecoder,
@@ -59,7 +60,7 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Arith(
   while ((uint32_t)(1 << nTmp) < (SDNUMINSYMS + SDNUMNEWSYMS)) {
     nTmp++;
   }
-  IAID.reset(new CJBig2_ArithIaidDecoder((uint8_t)nTmp));
+  IAID = pdfium::MakeUnique<CJBig2_ArithIaidDecoder>((uint8_t)nTmp);
   SDNEWSYMS = FX_Alloc(CJBig2_Image*, SDNUMNEWSYMS);
   FXSYS_memset(SDNEWSYMS, 0, SDNUMNEWSYMS * sizeof(CJBig2_Image*));
 
@@ -258,14 +259,16 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Arith(
     goto failed;
   }
 
-  pDict.reset(new CJBig2_SymbolDict);
+  pDict = pdfium::MakeUnique<CJBig2_SymbolDict>();
   I = J = 0;
   for (I = 0; I < SDNUMINSYMS + SDNUMNEWSYMS; I++) {
     if (EXFLAGS[I] && J < SDNUMEXSYMS) {
       if (I < SDNUMINSYMS) {
-        pDict->AddImage(SDINSYMS[I] ? new CJBig2_Image(*SDINSYMS[I]) : nullptr);
+        pDict->AddImage(SDINSYMS[I]
+                            ? pdfium::MakeUnique<CJBig2_Image>(*SDINSYMS[I])
+                            : nullptr);
       } else {
-        pDict->AddImage(SDNEWSYMS[I - SDNUMINSYMS]);
+        pDict->AddImage(pdfium::WrapUnique(SDNEWSYMS[I - SDNUMINSYMS]));
       }
       ++J;
     } else if (!EXFLAGS[I] && I >= SDNUMINSYMS) {
@@ -562,8 +565,8 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Huffman(
   }
   EXINDEX = 0;
   CUREXFLAG = 0;
-  pTable.reset(new CJBig2_HuffmanTable(HuffmanTable_B1, HuffmanTable_B1_Size,
-                                       HuffmanTable_HTOOB_B1));
+  pTable = pdfium::MakeUnique<CJBig2_HuffmanTable>(
+      HuffmanTable_B1, HuffmanTable_B1_Size, HuffmanTable_HTOOB_B1);
   EXFLAGS = FX_Alloc(bool, SDNUMINSYMS + SDNUMNEWSYMS);
   num_ex_syms = 0;
   while (EXINDEX < SDNUMINSYMS + SDNUMNEWSYMS) {
@@ -595,9 +598,11 @@ CJBig2_SymbolDict* CJBig2_SDDProc::decode_Huffman(
   for (I = 0; I < SDNUMINSYMS + SDNUMNEWSYMS; I++) {
     if (EXFLAGS[I] && J < SDNUMEXSYMS) {
       if (I < SDNUMINSYMS) {
-        pDict->AddImage(SDINSYMS[I] ? new CJBig2_Image(*SDINSYMS[I]) : nullptr);
+        pDict->AddImage(SDINSYMS[I]
+                            ? pdfium::MakeUnique<CJBig2_Image>(*SDINSYMS[I])
+                            : nullptr);
       } else {
-        pDict->AddImage(SDNEWSYMS[I - SDNUMINSYMS]);
+        pDict->AddImage(pdfium::WrapUnique(SDNEWSYMS[I - SDNUMINSYMS]));
       }
       ++J;
     } else if (!EXFLAGS[I] && I >= SDNUMINSYMS) {

@@ -77,10 +77,10 @@ static INLINE void IDCT4x4_1D(int16x4_t *d0s16, int16x4_t *d1s16,
   q15s32 = vmlsl_s16(q15s32, d19s16, *d0s16);
   q10s32 = vmlal_s16(q10s32, d19s16, *d2s16);
 
-  d26s16 = vqrshrn_n_s32(q13s32, 14);
-  d27s16 = vqrshrn_n_s32(q14s32, 14);
-  d29s16 = vqrshrn_n_s32(q15s32, 14);
-  d28s16 = vqrshrn_n_s32(q10s32, 14);
+  d26s16 = vrshrn_n_s32(q13s32, 14);
+  d27s16 = vrshrn_n_s32(q14s32, 14);
+  d29s16 = vrshrn_n_s32(q15s32, 14);
+  d28s16 = vrshrn_n_s32(q10s32, 14);
 
   q13s16 = vcombine_s16(d26s16, d27s16);
   q14s16 = vcombine_s16(d28s16, d29s16);
@@ -125,17 +125,17 @@ static INLINE void IADST4x4_1D(int16x4_t *d3s16, int16x4_t *d4s16,
   q14s32 = vaddq_s32(q11s32, q12s32);
   q10s32 = vsubq_s32(q10s32, q12s32);
 
-  d16s16 = vqrshrn_n_s32(q13s32, 14);
-  d17s16 = vqrshrn_n_s32(q14s32, 14);
-  d18s16 = vqrshrn_n_s32(q15s32, 14);
-  d19s16 = vqrshrn_n_s32(q10s32, 14);
+  d16s16 = vrshrn_n_s32(q13s32, 14);
+  d17s16 = vrshrn_n_s32(q14s32, 14);
+  d18s16 = vrshrn_n_s32(q15s32, 14);
+  d19s16 = vrshrn_n_s32(q10s32, 14);
 
   *q8s16 = vcombine_s16(d16s16, d17s16);
   *q9s16 = vcombine_s16(d18s16, d19s16);
 }
 
-void vp9_iht4x4_16_add_neon(const tran_low_t *input, uint8_t *dest,
-                            int dest_stride, int tx_type) {
+void vp9_iht4x4_16_add_neon(const tran_low_t *input, uint8_t *dest, int stride,
+                            int tx_type) {
   uint8x8_t d26u8, d27u8;
   int16x4_t d0s16, d1s16, d2s16, d3s16, d4s16, d5s16;
   uint32x2_t d26u32, d27u32;
@@ -151,7 +151,7 @@ void vp9_iht4x4_16_add_neon(const tran_low_t *input, uint8_t *dest,
 
   switch (tx_type) {
     case 0:  // idct_idct is not supported. Fall back to C
-      vp9_iht4x4_16_add_c(input, dest, dest_stride, tx_type);
+      vp9_iht4x4_16_add_c(input, dest, stride, tx_type);
       return;
     case 1:  // iadst_idct
       // generate constants
@@ -203,11 +203,11 @@ void vp9_iht4x4_16_add_neon(const tran_low_t *input, uint8_t *dest,
   q9s16 = vrshrq_n_s16(q9s16, 4);
 
   d26u32 = vld1_lane_u32((const uint32_t *)dest, d26u32, 0);
-  dest += dest_stride;
+  dest += stride;
   d26u32 = vld1_lane_u32((const uint32_t *)dest, d26u32, 1);
-  dest += dest_stride;
+  dest += stride;
   d27u32 = vld1_lane_u32((const uint32_t *)dest, d27u32, 0);
-  dest += dest_stride;
+  dest += stride;
   d27u32 = vld1_lane_u32((const uint32_t *)dest, d27u32, 1);
 
   q8u16 = vaddw_u8(vreinterpretq_u16_s16(q8s16), vreinterpret_u8_u32(d26u32));
@@ -217,10 +217,10 @@ void vp9_iht4x4_16_add_neon(const tran_low_t *input, uint8_t *dest,
   d27u8 = vqmovun_s16(vreinterpretq_s16_u16(q9u16));
 
   vst1_lane_u32((uint32_t *)dest, vreinterpret_u32_u8(d27u8), 1);
-  dest -= dest_stride;
+  dest -= stride;
   vst1_lane_u32((uint32_t *)dest, vreinterpret_u32_u8(d27u8), 0);
-  dest -= dest_stride;
+  dest -= stride;
   vst1_lane_u32((uint32_t *)dest, vreinterpret_u32_u8(d26u8), 1);
-  dest -= dest_stride;
+  dest -= stride;
   vst1_lane_u32((uint32_t *)dest, vreinterpret_u32_u8(d26u8), 0);
 }

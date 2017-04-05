@@ -26,7 +26,6 @@
 #define FDE_TTOSTYLE_Ellipsis 0x0080
 #define FDE_TTOSTYLE_LineWrap 0x0100
 #define FDE_TTOSTYLE_ArabicShapes 0x0200
-#define FDE_TTOSTYLE_RTL 0x0400
 #define FDE_TTOSTYLE_ArabicContext 0x0800
 #define FDE_TTOSTYLE_LastLineHeight 0x1000
 #define FDE_TTOALIGNMENT_TopLeft 0
@@ -55,11 +54,11 @@ struct FDE_TTOPIECE {
 };
 typedef CFX_MassArrayTemplate<FDE_TTOPIECE> CFDE_TTOPieceArray;
 
-class CFDE_TTOLine : public CFX_Target {
+class CFDE_TTOLine {
  public:
   CFDE_TTOLine();
   CFDE_TTOLine(const CFDE_TTOLine& ttoLine);
-  ~CFDE_TTOLine() override;
+  ~CFDE_TTOLine();
 
   int32_t AddPiece(int32_t index, const FDE_TTOPIECE& ttoPiece);
   int32_t GetSize() const;
@@ -75,12 +74,12 @@ class CFDE_TTOLine : public CFX_Target {
 };
 typedef CFX_ObjectMassArrayTemplate<CFDE_TTOLine> CFDE_TTOLineArray;
 
-class CFDE_TextOut : public CFX_Target {
+class CFDE_TextOut {
  public:
   CFDE_TextOut();
-  ~CFDE_TextOut() override;
+  ~CFDE_TextOut();
 
-  void SetFont(CFGAS_GEFont* pFont);
+  void SetFont(const CFX_RetainPtr<CFGAS_GEFont>& pFont);
   void SetFontSize(FX_FLOAT fFontSize);
   void SetTextColor(FX_ARGB color);
   void SetStyles(uint32_t dwStyles);
@@ -154,7 +153,7 @@ class CFDE_TextOut : public CFX_Target {
   void DrawLine(const FDE_TTOPIECE* pPiece, CFDE_Pen*& pPen);
 
   std::unique_ptr<CFX_TxtBreak> m_pTxtBreak;
-  CFGAS_GEFont* m_pFont;  // not owned.
+  CFX_RetainPtr<CFGAS_GEFont> m_pFont;
   FX_FLOAT m_fFontSize;
   FX_FLOAT m_fLineSpace;
   FX_FLOAT m_fLinePos;

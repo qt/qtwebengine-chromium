@@ -8,14 +8,13 @@
 #define XFA_FGAS_CRT_FGAS_UTILS_H_
 
 #include "core/fxcrt/fx_coordinates.h"
-#include "xfa/fgas/crt/fgas_memory.h"
 
 class FX_BASEARRAYDATA;
 
-class CFX_BaseArray : public CFX_Target {
+class CFX_BaseArray {
  protected:
   CFX_BaseArray(int32_t iGrowSize, int32_t iBlockSize);
-  ~CFX_BaseArray() override;
+  ~CFX_BaseArray();
 
   int32_t GetSize() const;
   int32_t GetBlockSize() const;
@@ -33,7 +32,7 @@ class CFX_BaseArray : public CFX_Target {
 template <class baseType>
 class CFX_BaseArrayTemplate : public CFX_BaseArray {
  public:
-  CFX_BaseArrayTemplate(int32_t iGrowSize)
+  explicit CFX_BaseArrayTemplate(int32_t iGrowSize)
       : CFX_BaseArray(iGrowSize, sizeof(baseType)) {}
   CFX_BaseArrayTemplate(int32_t iGrowSize, int32_t iBlockSize)
       : CFX_BaseArray(iGrowSize, iBlockSize) {}
@@ -77,10 +76,10 @@ class CFX_BaseArrayTemplate : public CFX_BaseArray {
   void RemoveAll(bool bLeaveMemory) { CFX_BaseArray::RemoveAll(bLeaveMemory); }
 };
 
-class CFX_BaseMassArrayImp : public CFX_Target {
+class CFX_BaseMassArrayImp {
  public:
   CFX_BaseMassArrayImp(int32_t iChunkSize, int32_t iBlockSize);
-  ~CFX_BaseMassArrayImp() override;
+  ~CFX_BaseMassArrayImp();
 
   uint8_t* AddSpace() { return AddSpaceTo(m_iBlockCount); }
   uint8_t* AddSpaceTo(int32_t index);
@@ -105,10 +104,10 @@ class CFX_BaseMassArrayImp : public CFX_Target {
               int32_t iSrcCount);
 };
 
-class CFX_BaseMassArray : public CFX_Target {
+class CFX_BaseMassArray {
  protected:
   CFX_BaseMassArray(int32_t iChunkSize, int32_t iBlockSize);
-  ~CFX_BaseMassArray() override;
+  ~CFX_BaseMassArray();
 
   int32_t GetSize() const;
   uint8_t* AddSpaceTo(int32_t index);
@@ -123,7 +122,7 @@ class CFX_BaseMassArray : public CFX_Target {
 template <class baseType>
 class CFX_MassArrayTemplate : public CFX_BaseMassArray {
  public:
-  CFX_MassArrayTemplate(int32_t iChunkSize)
+  explicit CFX_MassArrayTemplate(int32_t iChunkSize)
       : CFX_BaseMassArray(iChunkSize, sizeof(baseType)) {}
   CFX_MassArrayTemplate(int32_t iChunkSize, int32_t iBlockSize)
       : CFX_BaseMassArray(iChunkSize, iBlockSize) {}
@@ -171,7 +170,7 @@ class CFX_MassArrayTemplate : public CFX_BaseMassArray {
 template <class baseType>
 class CFX_ObjectMassArrayTemplate : public CFX_BaseMassArray {
  public:
-  CFX_ObjectMassArrayTemplate(int32_t iChunkSize)
+  explicit CFX_ObjectMassArrayTemplate(int32_t iChunkSize)
       : CFX_BaseMassArray(iChunkSize, sizeof(baseType)) {}
   ~CFX_ObjectMassArrayTemplate() { RemoveAll(false); }
 
@@ -251,10 +250,10 @@ class CFX_ObjectMassArrayTemplate : public CFX_BaseMassArray {
   }
 };
 
-class CFX_BaseDiscreteArray : public CFX_Target {
+class CFX_BaseDiscreteArray {
  protected:
   CFX_BaseDiscreteArray(int32_t iChunkSize, int32_t iBlockSize);
-  ~CFX_BaseDiscreteArray() override;
+  ~CFX_BaseDiscreteArray();
 
   uint8_t* AddSpaceTo(int32_t index);
   uint8_t* GetAt(int32_t index) const;
@@ -265,7 +264,7 @@ class CFX_BaseDiscreteArray : public CFX_Target {
 template <class baseType>
 class CFX_DiscreteArrayTemplate : public CFX_BaseDiscreteArray {
  public:
-  CFX_DiscreteArrayTemplate(int32_t iChunkSize)
+  explicit CFX_DiscreteArrayTemplate(int32_t iChunkSize)
       : CFX_BaseDiscreteArray(iChunkSize, sizeof(baseType)) {}
 
   baseType& GetAt(int32_t index, const baseType& defValue) const {
@@ -281,10 +280,10 @@ class CFX_DiscreteArrayTemplate : public CFX_BaseDiscreteArray {
   void RemoveAll() { CFX_BaseDiscreteArray::RemoveAll(); }
 };
 
-class CFX_BaseStack : public CFX_Target {
+class CFX_BaseStack {
  protected:
   CFX_BaseStack(int32_t iChunkSize, int32_t iBlockSize);
-  ~CFX_BaseStack() override;
+  ~CFX_BaseStack();
 
   uint8_t* Push();
   void Pop();
@@ -298,7 +297,7 @@ class CFX_BaseStack : public CFX_Target {
 template <class baseType>
 class CFX_StackTemplate : public CFX_BaseStack {
  public:
-  CFX_StackTemplate(int32_t iChunkSize)
+  explicit CFX_StackTemplate(int32_t iChunkSize)
       : CFX_BaseStack(iChunkSize, sizeof(baseType)) {}
 
   int32_t Push(const baseType& element) {
@@ -320,7 +319,7 @@ class CFX_StackTemplate : public CFX_BaseStack {
 template <class baseType>
 class CFX_ObjectStackTemplate : public CFX_BaseStack {
  public:
-  CFX_ObjectStackTemplate(int32_t iChunkSize)
+  explicit CFX_ObjectStackTemplate(int32_t iChunkSize)
       : CFX_BaseStack(iChunkSize, sizeof(baseType)) {}
   ~CFX_ObjectStackTemplate() { RemoveAll(false); }
 

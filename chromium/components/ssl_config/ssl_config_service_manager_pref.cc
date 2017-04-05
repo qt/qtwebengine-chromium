@@ -85,6 +85,10 @@ uint16_t SSLProtocolVersionFromString(const std::string& version_str) {
   return version;
 }
 
+const base::Feature kTLS13Feature{
+    "NegotiateTLS13", base::FEATURE_DISABLED_BY_DEFAULT,
+};
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -190,6 +194,12 @@ SSLConfigServiceManagerPref::SSLConfigServiceManagerPref(
       io_task_runner_(io_task_runner) {
   DCHECK(local_state);
 
+  if (base::FeatureList::IsEnabled(kTLS13Feature)) {
+    local_state->SetDefaultPrefValue(
+        ssl_config::prefs::kSSLVersionMax,
+        new base::StringValue(switches::kSSLVersionTLSv13));
+  }
+
   PrefChangeRegistrar::NamedChangeCallback local_state_callback =
       base::Bind(&SSLConfigServiceManagerPref::OnPreferenceChanged,
                  base::Unretained(this), local_state);
@@ -230,7 +240,7 @@ void SSLConfigServiceManagerPref::RegisterPrefs(PrefRegistrySimple* registry) {
       ssl_config::prefs::kCertRevocationCheckingRequiredLocalAnchors,
       default_config.rev_checking_required_local_anchors);
   registry->RegisterBooleanPref(ssl_config::prefs::kCertEnableSha1LocalAnchors,
-                                default_config.sha1_local_anchors_enabled);
+                                false);
   registry->RegisterStringPref(ssl_config::prefs::kSSLVersionMin,
                                std::string());
   registry->RegisterStringPref(ssl_config::prefs::kSSLVersionMax,

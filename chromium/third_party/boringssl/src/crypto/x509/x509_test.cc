@@ -17,6 +17,7 @@
 #include <assert.h>
 #include <string.h>
 
+#include <openssl/bio.h>
 #include <openssl/bytestring.h>
 #include <openssl/crypto.h>
 #include <openssl/digest.h>
@@ -25,7 +26,8 @@
 #include <openssl/pool.h>
 #include <openssl/x509.h>
 
-namespace bssl {
+#include "../internal.h"
+
 
 static const char kCrossSigningRootPEM[] =
     "-----BEGIN CERTIFICATE-----\n"
@@ -451,7 +453,8 @@ static bssl::UniquePtr<STACK_OF(X509_CRL)> CRLsToStack(
 static int Verify(X509 *leaf, const std::vector<X509 *> &roots,
                    const std::vector<X509 *> &intermediates,
                    const std::vector<X509_CRL *> &crls,
-                   unsigned long flags = 0) {
+                   unsigned long flags,
+                   bool use_additional_untrusted) {
   bssl::UniquePtr<STACK_OF(X509)> roots_stack(CertsToStack(roots));
   bssl::UniquePtr<STACK_OF(X509)> intermediates_stack(
       CertsToStack(intermediates));
@@ -470,8 +473,14 @@ static int Verify(X509 *leaf, const std::vector<X509 *> &roots,
     return X509_V_ERR_UNSPECIFIED;
   }
 
-  if (!X509_STORE_CTX_init(ctx.get(), store.get(), leaf,
-                           intermediates_stack.get())) {
+  if (use_additional_untrusted) {
+    X509_STORE_set0_additional_untrusted(store.get(),
+                                         intermediates_stack.get());
+  }
+
+  if (!X509_STORE_CTX_init(
+          ctx.get(), store.get(), leaf,
+          use_additional_untrusted ? nullptr : intermediates_stack.get())) {
     return X509_V_ERR_UNSPECIFIED;
   }
 
@@ -495,6 +504,24 @@ static int Verify(X509 *leaf, const std::vector<X509 *> &roots,
   }
 
   return X509_V_OK;
+}
+
+static int Verify(X509 *leaf, const std::vector<X509 *> &roots,
+                   const std::vector<X509 *> &intermediates,
+                   const std::vector<X509_CRL *> &crls,
+                   unsigned long flags = 0) {
+  const int r1 = Verify(leaf, roots, intermediates, crls, flags, false);
+  const int r2 = Verify(leaf, roots, intermediates, crls, flags, true);
+
+  if (r1 != r2) {
+    fprintf(stderr,
+            "Verify with, and without, use_additional_untrusted gave different "
+            "results: %d vs %d.\n",
+            r1, r2);
+    return false;
+  }
+
+  return r1;
 }
 
 static bool TestVerify() {
@@ -724,7 +751,7 @@ static bool TestSignCtx() {
   }
 
   // Test PKCS#1 v1.5.
-  ScopedEVP_MD_CTX md_ctx;
+  bssl::ScopedEVP_MD_CTX md_ctx;
   if (!EVP_DigestSignInit(md_ctx.get(), NULL, EVP_sha256(), NULL, pkey.get()) ||
       !SignatureRoundTrips(md_ctx.get(), pkey.get())) {
     fprintf(stderr, "RSA PKCS#1 with SHA-256 failed\n");
@@ -815,7 +842,7 @@ static bool TestFromBufferTrailingData() {
   }
 
   std::unique_ptr<uint8_t[]> trailing_data(new uint8_t[data_len + 1]);
-  memcpy(trailing_data.get(), data.get(), data_len);
+  OPENSSL_memcpy(trailing_data.get(), data.get(), data_len);
 
   bssl::UniquePtr<CRYPTO_BUFFER> buf_trailing_data(
       CRYPTO_BUFFER_new(trailing_data.get(), data_len + 1, nullptr));
@@ -928,7 +955,7 @@ static bool TestFromBufferReused() {
     return false;
   }
   if (i2d_len != static_cast<long>(data2_len) ||
-      memcmp(data2.get(), i2d, i2d_len) != 0) {
+      OPENSSL_memcmp(data2.get(), i2d, i2d_len) != 0) {
     fprintf(stderr, "TestFromBufferReused: i2d gave wrong result.\n");
     return false;
   }
@@ -941,7 +968,118 @@ static bool TestFromBufferReused() {
   return true;
 }
 
-static int Main() {
+static bool TestFailedParseFromBuffer() {
+  static const uint8_t kNonsense[] = {1, 2, 3, 4, 5};
+
+  bssl::UniquePtr<CRYPTO_BUFFER> buf(
+      CRYPTO_BUFFER_new(kNonsense, sizeof(kNonsense), nullptr));
+  if (!buf) {
+    return false;
+  }
+
+  bssl::UniquePtr<X509> cert(X509_parse_from_buffer(buf.get()));
+  if (cert) {
+    fprintf(stderr, "Nonsense somehow parsed.\n");
+    return false;
+  }
+  ERR_clear_error();
+
+  // Test a buffer with trailing data.
+  size_t data_len;
+  bssl::UniquePtr<uint8_t> data;
+  if (!PEMToDER(&data, &data_len, kRootCAPEM)) {
+    return false;
+  }
+
+  std::unique_ptr<uint8_t[]> data_with_trailing_byte(new uint8_t[data_len + 1]);
+  OPENSSL_memcpy(data_with_trailing_byte.get(), data.get(), data_len);
+  data_with_trailing_byte[data_len] = 0;
+
+  bssl::UniquePtr<CRYPTO_BUFFER> buf_with_trailing_byte(
+      CRYPTO_BUFFER_new(data_with_trailing_byte.get(), data_len + 1, nullptr));
+  if (!buf_with_trailing_byte) {
+    return false;
+  }
+
+  bssl::UniquePtr<X509> root(
+      X509_parse_from_buffer(buf_with_trailing_byte.get()));
+  if (root) {
+    fprintf(stderr, "Parsed buffer with trailing byte.\n");
+    return false;
+  }
+  ERR_clear_error();
+
+  return true;
+}
+
+static bool TestPrintUTCTIME() {
+  static const struct {
+    const char *val, *want;
+  } asn1_utctime_tests[] = {
+    {"", "Bad time value"},
+
+    // Correct RFC 5280 form. Test years < 2000 and > 2000.
+    {"090303125425Z", "Mar  3 12:54:25 2009 GMT"},
+    {"900303125425Z", "Mar  3 12:54:25 1990 GMT"},
+    {"000303125425Z", "Mar  3 12:54:25 2000 GMT"},
+
+    // Correct form, bad values.
+    {"000000000000Z", "Bad time value"},
+    {"999999999999Z", "Bad time value"},
+
+    // Missing components. Not legal RFC 5280, but permitted.
+    {"090303125425", "Mar  3 12:54:25 2009"},
+    {"9003031254", "Mar  3 12:54:00 1990"},
+    {"9003031254Z", "Mar  3 12:54:00 1990 GMT"},
+
+    // GENERALIZEDTIME confused for UTCTIME.
+    {"20090303125425Z", "Bad time value"},
+
+    // Legal ASN.1, but not legal RFC 5280.
+    {"9003031254+0800", "Bad time value"},
+    {"9003031254-0800", "Bad time value"},
+
+    // Trailing garbage.
+    {"9003031254Z ", "Bad time value"},
+  };
+
+  for (auto t : asn1_utctime_tests) {
+    bssl::UniquePtr<ASN1_UTCTIME> tm(ASN1_UTCTIME_new());
+    bssl::UniquePtr<BIO> bio(BIO_new(BIO_s_mem()));
+
+    // Use this instead of ASN1_UTCTIME_set() because some callers get
+    // type-confused and pass ASN1_GENERALIZEDTIME to ASN1_UTCTIME_print().
+    // ASN1_UTCTIME_set_string() is stricter, and would reject the inputs in
+    // question.
+    if (!ASN1_STRING_set(tm.get(), t.val, strlen(t.val))) {
+      fprintf(stderr, "ASN1_STRING_set\n");
+      return false;
+    }
+    const int ok = ASN1_UTCTIME_print(bio.get(), tm.get());
+
+    const uint8_t *contents;
+    size_t len;
+    if (!BIO_mem_contents(bio.get(), &contents, &len)) {
+      fprintf(stderr, "BIO_mem_contents\n");
+      return false;
+    }
+
+    if (ok != (strcmp(t.want, "Bad time value") != 0)) {
+      fprintf(stderr, "ASN1_UTCTIME_print(%s): bad return value\n", t.val);
+      return false;
+    }
+    if (len != strlen(t.want) || memcmp(contents, t.want, len)) {
+      fprintf(stderr, "ASN1_UTCTIME_print(%s): got %.*s, want %s\n", t.val,
+              static_cast<int>(len),
+              reinterpret_cast<const char *>(contents), t.want);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+int main() {
   CRYPTO_library_init();
 
   if (!TestVerify() ||
@@ -952,16 +1090,12 @@ static int Main() {
       !TestFromBuffer() ||
       !TestFromBufferTrailingData() ||
       !TestFromBufferModified() ||
-      !TestFromBufferReused()) {
+      !TestFromBufferReused() ||
+      !TestFailedParseFromBuffer() ||
+      !TestPrintUTCTIME()) {
     return 1;
   }
 
   printf("PASS\n");
   return 0;
-}
-
-}  // namespace bssl
-
-int main() {
-  return bssl::Main();
 }

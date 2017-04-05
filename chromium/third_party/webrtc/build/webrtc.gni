@@ -17,6 +17,9 @@ declare_args() {
   # Disable this to avoid building the Opus audio codec.
   rtc_include_opus = true
 
+  # Enable this to let the Opus audio codec change complexity on the fly.
+  rtc_opus_variable_complexity = false
+
   # Disable to use absolute header paths for some libraries.
   rtc_relative_path = true
 
@@ -37,12 +40,19 @@ declare_args() {
   # Disable the code for the intelligibility enhancer by default.
   rtc_enable_intelligibility_enhancer = false
 
+  # Enable when an external authentication mechanism is used for performing
+  # packet authentication for RTP packets instead of libsrtp.
+  rtc_enable_external_auth = build_with_chromium
+
   # Selects whether debug dumps for the audio processing module
   # should be generated.
   apm_debug_dump = false
 
   # Set this to true to enable BWE test logging.
   rtc_enable_bwe_test_logging = false
+
+  # Set this to disable building with support for SCTP data channels.
+  rtc_enable_sctp = true
 
   # Disable these to not build components which can be externally provided.
   rtc_build_expat = true
@@ -56,9 +66,6 @@ declare_args() {
   rtc_build_opus = true
   rtc_build_ssl = true
   rtc_build_usrsctp = true
-
-  # Disable by default.
-  rtc_have_dbus_glib = false
 
   # Enable to use the Mozilla internal settings.
   build_with_mozilla = false
@@ -117,6 +124,10 @@ declare_args() {
   # By default, use normal platform audio support or dummy audio, but don't
   # use file-based audio playout and record.
   rtc_use_dummy_audio_file_devices = false
+
+  # When set to true, test targets will declare the files needed to run memcheck
+  # as data dependencies. This is to enable memcheck execution on swarming bots.
+  rtc_use_memcheck = false
 
   # FFmpeg must be initialized for |H264DecoderImpl| to work. This can be done
   # by WebRTC during |H264DecoderImpl::InitDecode| or externally. FFmpeg must
@@ -310,6 +321,35 @@ template("rtc_shared_library") {
     public_configs = [ rtc_common_inherited_config ]
     if (defined(invoker.public_configs)) {
       public_configs += invoker.public_configs
+    }
+  }
+}
+
+# TODO(mbonadei): Merge this in android_library or create an
+# rtc_android_library. Waiting for hints from chromium:648244.
+if (is_android) {
+  template("android_shared_srcjar") {
+    action(target_name) {
+      check_includes = false
+      set_sources_assignment_filter([])
+      assert(defined(invoker.sources))
+
+      forward_variables_from(invoker,
+                             [
+                               "sources",
+                               "testonly",
+                               "visibility",
+                             ])
+      script = "//webrtc/build/generate_srcjar.py"
+      _srcjar_path = "${target_gen_dir}/${target_name}.srcjar"
+      _rebased_srcjar_path = rebase_path(_srcjar_path, root_build_dir)
+      _rebased_sources = rebase_path(invoker.sources, root_build_dir)
+
+      args = [ "--srcjar=$_rebased_srcjar_path" ] + _rebased_sources
+
+      outputs = [
+        _srcjar_path,
+      ]
     }
   }
 }

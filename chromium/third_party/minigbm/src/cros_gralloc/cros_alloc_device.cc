@@ -10,18 +10,37 @@ static struct cros_gralloc_bo *cros_gralloc_bo_create(struct driver *drv,
 						      int width, int height,
 						      int format, int usage)
 {
+	int32_t supported;
 	uint64_t drv_usage;
-	drv_format_t drv_format;
+	uint32_t drv_format;
 	struct cros_gralloc_bo *bo;
 
 	drv_format = cros_gralloc_convert_format(format);
 	drv_format = drv_resolve_format(drv, drv_format);
 	drv_usage = cros_gralloc_convert_flags(usage);
 
-	if (!drv_is_format_supported(drv, drv_format, drv_usage)) {
+	supported = drv_is_combination_supported(drv, drv_format, drv_usage,
+						 DRM_FORMAT_MOD_NONE);
+
+	if (!supported && (drv_usage & BO_USE_SCANOUT)) {
+		drv_usage &= ~BO_USE_SCANOUT;
+		supported = drv_is_combination_supported(drv, drv_format,
+							 drv_usage,
+							 DRM_FORMAT_MOD_NONE);
+	}
+
+	if (!supported && (drv_usage & BO_USE_RENDERING) &&
+	    (drv_usage && (BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN))) {
+		drv_usage &= ~BO_USE_RENDERING;
+		supported = drv_is_combination_supported(drv, drv_format,
+							 drv_usage,
+							 DRM_FORMAT_MOD_NONE);
+	}
+
+	if (!supported) {
 		cros_gralloc_error("Unsupported combination -- HAL format: %u, "
-				    "HAL flags: %u, drv_format: %u, "
-				    "drv_flags: %llu", format, usage,
+				   "HAL flags: %u, drv_format: %u, "
+				   "drv_flags: %llu", format, usage,
 				    drv_format, drv_usage);
 		return NULL;
 	}
@@ -36,6 +55,11 @@ static struct cros_gralloc_bo *cros_gralloc_bo_create(struct driver *drv,
 		return NULL;
 	}
 
+	/*
+	 * If there is a desire for more than one kernel buffer, this can be
+	 * removed once the ArcCodec and Wayland service have the ability to
+	 * send more than one fd. GL/Vulkan drivers may also have to modified.
+	 */
 	if (drv_num_buffers_per_bo(bo->bo) != 1) {
 		drv_bo_destroy(bo->bo);
 		delete bo;
@@ -50,31 +74,38 @@ static struct cros_gralloc_bo *cros_gralloc_bo_create(struct driver *drv,
 
 static struct cros_gralloc_handle *cros_gralloc_handle_from_bo(struct bo *bo)
 {
+	uint64_t mod;
+	size_t num_planes;
 	struct cros_gralloc_handle *hnd;
 
 	hnd = new cros_gralloc_handle();
 	memset(hnd, 0, sizeof(*hnd));
 
-	hnd->base.version = sizeof(hnd->base);
-	hnd->base.numFds = 1;
-	hnd->base.numInts = num_ints();
+	num_planes = drv_bo_get_num_planes(bo);
 
-	for (size_t p = 0; p < drv_bo_get_num_planes(bo); p++) {
-		hnd->data.strides[p] = drv_bo_get_plane_stride(bo, p);
-		hnd->data.offsets[p] = drv_bo_get_plane_offset(bo, p);
-		hnd->data.sizes[p] = drv_bo_get_plane_size(bo, p);
+	hnd->base.version = sizeof(hnd->base);
+	hnd->base.numFds = num_planes;
+	hnd->base.numInts = num_ints_handle() - num_planes;
+
+	for (size_t p = 0; p < num_planes; p++) {
+		hnd->fds[p] = drv_bo_get_plane_fd(bo, p);
+		hnd->strides[p] = drv_bo_get_plane_stride(bo, p);
+		hnd->offsets[p] = drv_bo_get_plane_offset(bo, p);
+		hnd->sizes[p] = drv_bo_get_plane_size(bo, p);
+
+		mod = drv_bo_get_plane_format_modifier(bo, p);
+		hnd->format_modifiers[p] = static_cast<uint32_t>(mod >> 32);
+		hnd->format_modifiers[p+1] = static_cast<uint32_t>(mod);
 	}
 
-	hnd->data.fds[0] = drv_bo_get_plane_fd(bo, 0);
-	hnd->data.width = drv_bo_get_width(bo);
-	hnd->data.height = drv_bo_get_height(bo);
-	hnd->data.format = drv_bo_get_format(bo);
+	hnd->width = drv_bo_get_width(bo);
+	hnd->height = drv_bo_get_height(bo);
+	hnd->format = drv_bo_get_format(bo);
 
 	hnd->magic = cros_gralloc_magic();
-	hnd->registrations = 0;
 
-	hnd->pixel_stride = hnd->data.strides[0];
-	hnd->pixel_stride /= drv_stride_from_format(hnd->data.format, 1, 0);
+	hnd->pixel_stride = hnd->strides[0];
+	hnd->pixel_stride /= drv_stride_from_format(hnd->format, 1, 0);
 
 	return hnd;
 }
@@ -90,13 +121,13 @@ static int cros_gralloc_alloc(alloc_device_t *dev, int w, int h, int format,
 		return CROS_GRALLOC_ERROR_NO_RESOURCES;
 
 	auto hnd = cros_gralloc_handle_from_bo(bo->bo);
-	hnd->format = static_cast<int32_t>(format);
+	hnd->droid_format = static_cast<int32_t>(format);
 	hnd->usage = static_cast<int32_t>(usage);
 
-	hnd->bo = reinterpret_cast<uint64_t>(bo);
+	mod->handles[hnd].registrations = 0;
+	mod->handles[hnd].bo = bo;
 	bo->hnd = hnd;
 
-	mod->handles.insert(reinterpret_cast<uint64_t>(&hnd->base));
 	mod->buffers[drv_bo_get_plane_handle(bo->bo, 0).u32] = bo;
 
 	*stride = static_cast<int>(hnd->pixel_stride);
@@ -122,7 +153,7 @@ static int cros_gralloc_free(alloc_device_t *dev, buffer_handle_t handle)
 		return CROS_GRALLOC_ERROR_BAD_HANDLE;
 	}
 
-	if (hnd->registrations > 0) {
+	if (mod->handles[hnd].registrations > 0) {
 		cros_gralloc_error("Deallocating before unregistering.");
 		return CROS_GRALLOC_ERROR_BAD_HANDLE;
 	}

@@ -4,28 +4,24 @@
 
 #include <memory>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_string.h"
+#include "xfa/fde/css/cfde_csssyntaxparser.h"
 #include "xfa/fde/css/fde_css.h"
-#include "xfa/fde/css/fde_csssyntax.h"
 #include "xfa/fgas/crt/fgas_stream.h"
 #include "xfa/fxfa/parser/cxfa_widetextread.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  CFDE_CSSSyntaxParser parser;
-
   CFX_WideString input = CFX_WideString::FromUTF8(
       CFX_ByteStringC(data, static_cast<FX_STRSIZE>(size)));
-  std::unique_ptr<IFX_Stream, ReleaseDeleter<IFX_Stream>> stream(
-      new CXFA_WideTextRead(input));
-  if (!stream)
-    return 0;
 
-  parser.Init(stream.get(), 1024);
+  CFDE_CSSSyntaxParser parser;
+  parser.Init(input.c_str(), size);
 
-  FDE_CSSSYNTAXSTATUS status = parser.DoSyntaxParse();
-  while (status != FDE_CSSSYNTAXSTATUS_Error &&
-         status != FDE_CSSSYNTAXSTATUS_EOS)
+  FDE_CSSSyntaxStatus status;
+  do {
     status = parser.DoSyntaxParse();
-
+  } while (status != FDE_CSSSyntaxStatus::Error &&
+           status != FDE_CSSSyntaxStatus::EOS);
   return 0;
 }

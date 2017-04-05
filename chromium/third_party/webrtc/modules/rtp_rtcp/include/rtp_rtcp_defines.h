@@ -15,6 +15,7 @@
 #include <list>
 #include <vector>
 
+#include "webrtc/common_types.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/typedefs.h"
@@ -44,7 +45,9 @@ struct AudioPayload {
 };
 
 struct VideoPayload {
-    RtpVideoCodecTypes   videoCodecType;
+  RtpVideoCodecTypes videoCodecType;
+  // The H264 profile only matters if videoCodecType == kRtpVideoH264.
+  H264::Profile h264_profile;
 };
 
 union PayloadUnion {
@@ -99,6 +102,7 @@ enum RTCPPacketType : uint32_t {
   kRtcpXrReceiverReferenceTime = 0x40000,
   kRtcpXrDlrrReportBlock = 0x80000,
   kRtcpTransportFeedback = 0x100000,
+  kRtcpXrTargetBitrate = 0x200000
 };
 
 enum KeyFrameRequestMethod { kKeyFrameReqPliRtcp, kKeyFrameReqFirRtcp };
@@ -223,9 +227,6 @@ class RtcpIntraFrameObserver {
 
   virtual void OnReceivedRPSI(uint32_t ssrc,
                               uint64_t picture_id) = 0;
-
-  // TODO(mflodman): Remove completely.
-  virtual void OnLocalSsrcChanged(uint32_t old_ssrc, uint32_t new_ssrc) {}
 
   virtual ~RtcpIntraFrameObserver() {}
 };

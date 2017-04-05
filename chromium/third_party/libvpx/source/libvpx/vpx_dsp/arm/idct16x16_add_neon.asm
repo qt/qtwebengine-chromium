@@ -8,8 +8,14 @@
 ;  be found in the AUTHORS file in the root of the source tree.
 ;
 
+    INCLUDE vpx_dsp/arm/idct_neon.asm.S
+
     EXPORT  |vpx_idct16x16_256_add_neon_pass1|
     EXPORT  |vpx_idct16x16_256_add_neon_pass2|
+    IF CONFIG_VP9_HIGHBITDEPTH
+    EXPORT  |vpx_idct16x16_256_add_neon_pass1_tran_low|
+    EXPORT  |vpx_idct16x16_256_add_neon_pass2_tran_low|
+    ENDIF
     EXPORT  |vpx_idct16x16_10_add_neon_pass1|
     EXPORT  |vpx_idct16x16_10_add_neon_pass2|
     ARM
@@ -36,12 +42,10 @@
     MEND
 
     AREA    Block, CODE, READONLY ; name this block of code
-;void |vpx_idct16x16_256_add_neon_pass1|(int16_t *input,
-;                                          int16_t *output, int output_stride)
+;void |vpx_idct16x16_256_add_neon_pass1|(const int16_t *input, int16_t *output)
 ;
-; r0  int16_t input
+; r0  const int16_t *input
 ; r1  int16_t *output
-; r2  int  output_stride)
 
 ; idct16 stage1 - stage6 on all the elements loaded in q8-q15. The output
 ; will be stored back into q8-q15 registers. This function will touch q0-q7
@@ -60,6 +64,7 @@
     vld2.s16        {q1,q2}, [r0]!
     vmov.s16        q15, q1
 
+idct16x16_256_add_neon_pass1
     ; cospi_28_64 = 3196
     movw            r3, #0x0c7c
 
@@ -100,12 +105,12 @@
     vdup.16         d3, r12                   ; duplicate cospi_20_64
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d8, q2, #14               ; >> 14
-    vqrshrn.s32     d9, q3, #14               ; >> 14
+    vrshrn.s32      d8, q2, #14               ; >> 14
+    vrshrn.s32      d9, q3, #14               ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d14, q5, #14              ; >> 14
-    vqrshrn.s32     d15, q6, #14              ; >> 14
+    vrshrn.s32      d14, q5, #14              ; >> 14
+    vrshrn.s32      d15, q6, #14              ; >> 14
 
     ; preloading to avoid stall
     ; cospi_16_64 = 11585
@@ -131,12 +136,12 @@
     vmlal.s16       q15, d23, d2
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d10, q2, #14              ; >> 14
-    vqrshrn.s32     d11, q3, #14              ; >> 14
+    vrshrn.s32      d10, q2, #14              ; >> 14
+    vrshrn.s32      d11, q3, #14              ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d12, q9, #14              ; >> 14
-    vqrshrn.s32     d13, q15, #14             ; >> 14
+    vrshrn.s32      d12, q9, #14              ; >> 14
+    vrshrn.s32      d13, q15, #14             ; >> 14
 
     ; stage 4
     vdup.16         d30, r3                   ; cospi_16_64
@@ -164,12 +169,12 @@
     vsub.s32        q1, q11, q1
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d16, q3, #14              ; >> 14
-    vqrshrn.s32     d17, q12, #14             ; >> 14
+    vrshrn.s32      d16, q3, #14              ; >> 14
+    vrshrn.s32      d17, q12, #14             ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d18, q13, #14             ; >> 14
-    vqrshrn.s32     d19, q1, #14              ; >> 14
+    vrshrn.s32      d18, q13, #14             ; >> 14
+    vrshrn.s32      d19, q1, #14              ; >> 14
 
     ; step1[2] * cospi_24_64 - step1[3] * cospi_8_64;
     ; step1[2] * cospi_8_64
@@ -189,12 +194,12 @@
     vmlsl.s16       q13, d29, d31
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d22, q0, #14              ; >> 14
-    vqrshrn.s32     d23, q1, #14              ; >> 14
+    vrshrn.s32      d22, q0, #14              ; >> 14
+    vrshrn.s32      d23, q1, #14              ; >> 14
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d20, q12, #14             ; >> 14
-    vqrshrn.s32     d21, q13, #14             ; >> 14
+    vrshrn.s32      d20, q12, #14             ; >> 14
+    vrshrn.s32      d21, q13, #14             ; >> 14
 
     vsub.s16        q13, q4, q5               ; step2[5] = step1[4] - step1[5];
     vadd.s16        q4, q4, q5                ; step2[4] = step1[4] + step1[5];
@@ -229,15 +234,15 @@
     vadd.s32        q10, q10, q12
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d10, q6, #14              ; >> 14
-    vqrshrn.s32     d11, q13, #14             ; >> 14
+    vrshrn.s32      d10, q6, #14              ; >> 14
+    vrshrn.s32      d11, q13, #14             ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d12, q9, #14              ; >> 14
-    vqrshrn.s32     d13, q10, #14             ; >> 14
+    vrshrn.s32      d12, q9, #14              ; >> 14
+    vrshrn.s32      d13, q10, #14             ; >> 14
 
     ; stage 6
-    vadd.s16        q8, q0, q15                ; step2[0] = step1[0] + step1[7];
+    vadd.s16        q8, q0, q15               ; step2[0] = step1[0] + step1[7];
     vadd.s16        q9, q1, q6                ; step2[1] = step1[1] + step1[6];
     vadd.s16        q10, q2, q5               ; step2[2] = step1[2] + step1[5];
     vadd.s16        q11, q3, q4               ; step2[3] = step1[3] + step1[4];
@@ -247,46 +252,54 @@
     vsub.s16        q15, q0, q15              ; step2[7] = step1[0] - step1[7];
 
     ; store the data
-    vst1.64         {d16}, [r1], r2
-    vst1.64         {d17}, [r1], r2
-    vst1.64         {d18}, [r1], r2
-    vst1.64         {d19}, [r1], r2
-    vst1.64         {d20}, [r1], r2
-    vst1.64         {d21}, [r1], r2
-    vst1.64         {d22}, [r1], r2
-    vst1.64         {d23}, [r1], r2
-    vst1.64         {d24}, [r1], r2
-    vst1.64         {d25}, [r1], r2
-    vst1.64         {d26}, [r1], r2
-    vst1.64         {d27}, [r1], r2
-    vst1.64         {d28}, [r1], r2
-    vst1.64         {d29}, [r1], r2
-    vst1.64         {d30}, [r1], r2
-    vst1.64         {d31}, [r1], r2
+    vst1.64         {q8-q9}, [r1]!
+    vst1.64         {q10-q11}, [r1]!
+    vst1.64         {q12-q13}, [r1]!
+    vst1.64         {q14-q15}, [r1]
 
     bx              lr
     ENDP  ; |vpx_idct16x16_256_add_neon_pass1|
 
-;void vpx_idct16x16_256_add_neon_pass2(int16_t *src,
-;                                        int16_t *output,
-;                                        int16_t *pass1Output,
-;                                        int16_t skip_adding,
-;                                        uint8_t *dest,
-;                                        int dest_stride)
+    IF CONFIG_VP9_HIGHBITDEPTH
+;void |vpx_idct16x16_256_add_neon_pass1_tran_low|(const tran_low_t *input,
+;                                                 int16_t *output)
 ;
-; r0  int16_t *src
-; r1  int16_t *output,
-; r2  int16_t *pass1Output,
-; r3  int16_t skip_adding,
-; r4  uint8_t *dest,
-; r5  int dest_stride)
+; r0  const tran_low_t *input
+; r1  int16_t *output
+
+|vpx_idct16x16_256_add_neon_pass1_tran_low| PROC
+    LOAD_TRAN_LOW_TO_S16X2 d16, d17, d18, d19, r0
+    LOAD_TRAN_LOW_TO_S16X2 d18, d19, d20, d21, r0
+    LOAD_TRAN_LOW_TO_S16X2 d20, d21, d22, d23, r0
+    LOAD_TRAN_LOW_TO_S16X2 d22, d23, d24, d25, r0
+    LOAD_TRAN_LOW_TO_S16X2 d24, d25, d26, d27, r0
+    LOAD_TRAN_LOW_TO_S16X2 d26, d27, d28, d29, r0
+    LOAD_TRAN_LOW_TO_S16X2 d28, d29, d30, d31, r0
+    LOAD_TRAN_LOW_TO_S16X2 d2, d3, d4, d5, r0
+    vmov.s16        q15, q1
+
+    b               idct16x16_256_add_neon_pass1
+    ENDP  ; |vpx_idct16x16_256_add_neon_pass1_tran_low|
+    ENDIF  ; CONFIG_VP9_HIGHBITDEPTH
+
+;void vpx_idct16x16_256_add_neon_pass2(const int16_t *src,
+;                                      int16_t *output,
+;                                      int16_t *pass1_output,
+;                                      int16_t skip_adding,
+;                                      uint8_t *dest,
+;                                      int stride)
+;
+; r0  const int16_t *src
+; r1  int16_t *output
+; r2  int16_t *pass1_output
+; r3  int16_t skip_adding
+; r4  uint8_t *dest
+; r5  int stride
 
 ; idct16 stage1 - stage7 on all the elements loaded in q8-q15. The output
 ; will be stored back into q8-q15 registers. This function will touch q0-q7
 ; registers and use them as buffer during calculation.
 |vpx_idct16x16_256_add_neon_pass2| PROC
-    push            {r3-r9}
-
     ; TODO(hkuang): Find a better way to load the elements.
     ; load elements of 1, 3, 5, 7, 9, 11, 13, 15 into q8 - q15
     vld2.s16        {q8,q9}, [r0]!
@@ -298,6 +311,9 @@
     vld2.s16        {q14,q15}, [r0]!
     vld2.s16        {q0,q1}, [r0]!
     vmov.s16        q15, q0;
+
+idct16x16_256_add_neon_pass2
+    push            {r3-r9}
 
     ; cospi_30_64 = 1606
     movw            r3, #0x0646
@@ -339,12 +355,12 @@
     vdup.16         d31, r12                  ; duplicate cospi_18_64
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d0, q2, #14               ; >> 14
-    vqrshrn.s32     d1, q3, #14               ; >> 14
+    vrshrn.s32      d0, q2, #14               ; >> 14
+    vrshrn.s32      d1, q3, #14               ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d14, q1, #14              ; >> 14
-    vqrshrn.s32     d15, q4, #14              ; >> 14
+    vrshrn.s32      d14, q1, #14              ; >> 14
+    vrshrn.s32      d15, q4, #14              ; >> 14
 
     ; preloading to avoid stall
     ; cospi_22_64 = 7723
@@ -373,12 +389,12 @@
     vdup.16         d31, r12                  ; duplicate cospi_10_64
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d2, q2, #14               ; >> 14
-    vqrshrn.s32     d3, q3, #14               ; >> 14
+    vrshrn.s32      d2, q2, #14               ; >> 14
+    vrshrn.s32      d3, q3, #14               ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d12, q4, #14              ; >> 14
-    vqrshrn.s32     d13, q5, #14              ; >> 14
+    vrshrn.s32      d12, q4, #14              ; >> 14
+    vrshrn.s32      d13, q5, #14              ; >> 14
 
     ; step1[10] * cospi_22_64
     vmull.s16       q11, d20, d30
@@ -407,12 +423,12 @@
     vdup.16         d31, r12                  ; duplicate cospi_26_64
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d4, q11, #14              ; >> 14
-    vqrshrn.s32     d5, q12, #14              ; >> 14
+    vrshrn.s32      d4, q11, #14              ; >> 14
+    vrshrn.s32      d5, q12, #14              ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d11, q5, #14              ; >> 14
-    vqrshrn.s32     d10, q4, #14              ; >> 14
+    vrshrn.s32      d11, q5, #14              ; >> 14
+    vrshrn.s32      d10, q4, #14              ; >> 14
 
     ; step1[11] * cospi_6_64
     vmull.s16       q10, d28, d30
@@ -434,12 +450,12 @@
     vadd.s16        q0, q0, q1                ; step1[8]=step2[8]+step2[9]
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d6, q10, #14              ; >> 14
-    vqrshrn.s32     d7, q11, #14              ; >> 14
+    vrshrn.s32      d6, q10, #14              ; >> 14
+    vrshrn.s32      d7, q11, #14              ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d8, q12, #14              ; >> 14
-    vqrshrn.s32     d9, q13, #14              ; >> 14
+    vrshrn.s32      d8, q12, #14              ; >> 14
+    vrshrn.s32      d9, q13, #14              ; >> 14
 
     ; stage 3
     vsub.s16        q10, q3, q2               ; step1[10]=-step2[10]+step2[11]
@@ -480,12 +496,12 @@
     vdup.16         d30, r12                  ; duplicate -cospi_8_64
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d12, q2, #14              ; >> 14
-    vqrshrn.s32     d13, q3, #14              ; >> 14
+    vrshrn.s32      d12, q2, #14              ; >> 14
+    vrshrn.s32      d13, q3, #14              ; >> 14
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d2, q4, #14               ; >> 14
-    vqrshrn.s32     d3, q5, #14               ; >> 14
+    vrshrn.s32      d2, q4, #14               ; >> 14
+    vrshrn.s32      d3, q5, #14               ; >> 14
 
     vmov.s16        q3, q11
     vmov.s16        q4, q12
@@ -507,12 +523,12 @@
     vmlal.s16       q9, d27, d31
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d4, q11, #14              ; >> 14
-    vqrshrn.s32     d5, q12, #14              ; >> 14
+    vrshrn.s32      d4, q11, #14              ; >> 14
+    vrshrn.s32      d5, q12, #14              ; >> 14
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d10, q8, #14              ; >> 14
-    vqrshrn.s32     d11, q9, #14              ; >> 14
+    vrshrn.s32      d10, q8, #14              ; >> 14
+    vrshrn.s32      d11, q9, #14              ; >> 14
 
     ; stage 5
     vadd.s16        q8, q0, q3                ; step1[8] = step2[8]+step2[11];
@@ -547,12 +563,12 @@
     vadd.s32        q4, q4, q1
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d4, q5, #14               ; >> 14
-    vqrshrn.s32     d5, q6, #14               ; >> 14
+    vrshrn.s32      d4, q5, #14               ; >> 14
+    vrshrn.s32      d5, q6, #14               ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d10, q10, #14             ; >> 14
-    vqrshrn.s32     d11, q4, #14              ; >> 14
+    vrshrn.s32      d10, q10, #14             ; >> 14
+    vrshrn.s32      d11, q4, #14              ; >> 14
 
     ; step1[11] * cospi_16_64
     vmull.s16       q0, d22, d14
@@ -571,21 +587,21 @@
     vadd.s32        q6, q6, q1
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d6, q10, #14              ; >> 14
-    vqrshrn.s32     d7, q4, #14               ; >> 14
+    vrshrn.s32      d6, q10, #14              ; >> 14
+    vrshrn.s32      d7, q4, #14               ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d8, q13, #14              ; >> 14
-    vqrshrn.s32     d9, q6, #14               ; >> 14
+    vrshrn.s32      d8, q13, #14              ; >> 14
+    vrshrn.s32      d9, q6, #14               ; >> 14
 
-    mov              r4, #16                  ; pass1Output stride
+    mov              r4, #16                  ; pass1_output stride
     ldr              r3, [sp]                 ; load skip_adding
     cmp              r3, #0                   ; check if need adding dest data
     beq              skip_adding_dest
 
     ldr              r7, [sp, #28]            ; dest used to save element 0-7
     mov              r9, r7                   ; save dest pointer for later use
-    ldr              r8, [sp, #32]            ; load dest_stride
+    ldr              r8, [sp, #32]            ; load stride
 
     ; stage 7
     ; load the data in pass1
@@ -599,8 +615,8 @@
     vadd.s16        q13, q1, q14              ; step2[1] + step2[14]
     vrshr.s16       q12, q12, #6              ; ROUND_POWER_OF_TWO
     vrshr.s16       q13, q13, #6              ; ROUND_POWER_OF_TWO
-    vaddw.u8        q12, q12, d12             ; + dest[j * dest_stride + i]
-    vaddw.u8        q13, q13, d13             ; + dest[j * dest_stride + i]
+    vaddw.u8        q12, q12, d12             ; + dest[j * stride + i]
+    vaddw.u8        q13, q13, d13             ; + dest[j * stride + i]
     vqmovun.s16     d12, q12                  ; clip pixel
     vqmovun.s16     d13, q13                  ; clip pixel
     vst1.64         {d12}, [r9], r8           ; store the data
@@ -613,8 +629,8 @@
     vadd.s16        q13, q11, q4              ; step2[3] + step2[12]
     vrshr.s16       q12, q12, #6              ; ROUND_POWER_OF_TWO
     vrshr.s16       q13, q13, #6              ; ROUND_POWER_OF_TWO
-    vaddw.u8        q12, q12, d12             ; + dest[j * dest_stride + i]
-    vaddw.u8        q13, q13, d13             ; + dest[j * dest_stride + i]
+    vaddw.u8        q12, q12, d12             ; + dest[j * stride + i]
+    vaddw.u8        q13, q13, d13             ; + dest[j * stride + i]
     vqmovun.s16     d12, q12                  ; clip pixel
     vqmovun.s16     d13, q13                  ; clip pixel
     vst1.64         {d12}, [r9], r8           ; store the data
@@ -631,8 +647,8 @@
     vadd.s16        q13, q1, q2               ; step2[5] + step2[10]
     vrshr.s16       q12, q12, #6              ; ROUND_POWER_OF_TWO
     vrshr.s16       q13, q13, #6              ; ROUND_POWER_OF_TWO
-    vaddw.u8        q12, q12, d12             ; + dest[j * dest_stride + i]
-    vaddw.u8        q13, q13, d13             ; + dest[j * dest_stride + i]
+    vaddw.u8        q12, q12, d12             ; + dest[j * stride + i]
+    vaddw.u8        q13, q13, d13             ; + dest[j * stride + i]
     vqmovun.s16     d12, q12                  ; clip pixel
     vqmovun.s16     d13, q13                  ; clip pixel
     vst1.64         {d12}, [r9], r8           ; store the data
@@ -645,8 +661,8 @@
     vadd.s16        q13, q11, q8              ; step2[7] + step2[8]
     vrshr.s16       q12, q12, #6              ; ROUND_POWER_OF_TWO
     vrshr.s16       q13, q13, #6              ; ROUND_POWER_OF_TWO
-    vaddw.u8        q12, q12, d12             ; + dest[j * dest_stride + i]
-    vaddw.u8        q13, q13, d13             ; + dest[j * dest_stride + i]
+    vaddw.u8        q12, q12, d12             ; + dest[j * stride + i]
+    vaddw.u8        q13, q13, d13             ; + dest[j * stride + i]
     vqmovun.s16     d12, q12                  ; clip pixel
     vqmovun.s16     d13, q13                  ; clip pixel
     vst1.64         {d12}, [r9], r8           ; store the data
@@ -658,42 +674,42 @@
 
     ; store the data  output 8,9,10,11,12,13,14,15
     vrshr.s16       q8, q8, #6                ; ROUND_POWER_OF_TWO
-    vaddw.u8        q8, q8, d12               ; + dest[j * dest_stride + i]
+    vaddw.u8        q8, q8, d12               ; + dest[j * stride + i]
     vqmovun.s16     d12, q8                   ; clip pixel
     vst1.64         {d12}, [r9], r8           ; store the data
     vld1.64         {d12}, [r7], r8           ; load destinatoin data
     vrshr.s16       q9, q9, #6
-    vaddw.u8        q9, q9, d13               ; + dest[j * dest_stride + i]
+    vaddw.u8        q9, q9, d13               ; + dest[j * stride + i]
     vqmovun.s16     d13, q9                   ; clip pixel
     vst1.64         {d13}, [r9], r8           ; store the data
     vld1.64         {d13}, [r7], r8           ; load destinatoin data
     vrshr.s16       q2, q2, #6
-    vaddw.u8        q2, q2, d12               ; + dest[j * dest_stride + i]
+    vaddw.u8        q2, q2, d12               ; + dest[j * stride + i]
     vqmovun.s16     d12, q2                   ; clip pixel
     vst1.64         {d12}, [r9], r8           ; store the data
     vld1.64         {d12}, [r7], r8           ; load destinatoin data
     vrshr.s16       q3, q3, #6
-    vaddw.u8        q3, q3, d13               ; + dest[j * dest_stride + i]
+    vaddw.u8        q3, q3, d13               ; + dest[j * stride + i]
     vqmovun.s16     d13, q3                   ; clip pixel
     vst1.64         {d13}, [r9], r8           ; store the data
     vld1.64         {d13}, [r7], r8           ; load destinatoin data
     vrshr.s16       q4, q4, #6
-    vaddw.u8        q4, q4, d12               ; + dest[j * dest_stride + i]
+    vaddw.u8        q4, q4, d12               ; + dest[j * stride + i]
     vqmovun.s16     d12, q4                   ; clip pixel
     vst1.64         {d12}, [r9], r8           ; store the data
     vld1.64         {d12}, [r7], r8           ; load destinatoin data
     vrshr.s16       q5, q5, #6
-    vaddw.u8        q5, q5, d13               ; + dest[j * dest_stride + i]
+    vaddw.u8        q5, q5, d13               ; + dest[j * stride + i]
     vqmovun.s16     d13, q5                   ; clip pixel
     vst1.64         {d13}, [r9], r8           ; store the data
     vld1.64         {d13}, [r7], r8           ; load destinatoin data
     vrshr.s16       q14, q14, #6
-    vaddw.u8        q14, q14, d12             ; + dest[j * dest_stride + i]
+    vaddw.u8        q14, q14, d12             ; + dest[j * stride + i]
     vqmovun.s16     d12, q14                  ; clip pixel
     vst1.64         {d12}, [r9], r8           ; store the data
     vld1.64         {d12}, [r7], r8           ; load destinatoin data
     vrshr.s16       q15, q15, #6
-    vaddw.u8        q15, q15, d13             ; + dest[j * dest_stride + i]
+    vaddw.u8        q15, q15, d13             ; + dest[j * stride + i]
     vqmovun.s16     d13, q15                  ; clip pixel
     vst1.64         {d13}, [r9], r8           ; store the data
     b               end_idct16x16_pass2
@@ -767,12 +783,41 @@ end_idct16x16_pass2
     bx              lr
     ENDP  ; |vpx_idct16x16_256_add_neon_pass2|
 
-;void |vpx_idct16x16_10_add_neon_pass1|(int16_t *input,
-;                                             int16_t *output, int output_stride)
+    IF CONFIG_VP9_HIGHBITDEPTH
+;void vpx_idct16x16_256_add_neon_pass2_tran_low(const tran_low_t *src,
+;                                               int16_t *output,
+;                                               int16_t *pass1_output,
+;                                               int16_t skip_adding,
+;                                               uint8_t *dest,
+;                                               int stride)
 ;
-; r0  int16_t input
+; r0  const tran_low_t *src
 ; r1  int16_t *output
-; r2  int  output_stride)
+; r2  int16_t *pass1_output
+; r3  int16_t skip_adding
+; r4  uint8_t *dest
+; r5  int stride
+
+|vpx_idct16x16_256_add_neon_pass2_tran_low| PROC
+    LOAD_TRAN_LOW_TO_S16X2 d16, d17, d18, d19, r0
+    LOAD_TRAN_LOW_TO_S16X2 d18, d19, d20, d21, r0
+    LOAD_TRAN_LOW_TO_S16X2 d20, d21, d22, d23, r0
+    LOAD_TRAN_LOW_TO_S16X2 d22, d23, d24, d25, r0
+    LOAD_TRAN_LOW_TO_S16X2 d24, d25, d26, d27, r0
+    LOAD_TRAN_LOW_TO_S16X2 d26, d27, d28, d29, r0
+    LOAD_TRAN_LOW_TO_S16X2 d28, d29, d30, d31, r0
+    LOAD_TRAN_LOW_TO_S16X2 d0, d1, d2, d3, r0
+    vmov.s16        q15, q0
+
+    b               idct16x16_256_add_neon_pass2
+    ENDP  ; |vpx_idct16x16_256_add_neon_pass2_tran_low|
+    ENDIF  ; CONFIG_VP9_HIGHBITDEPTH
+
+;void |vpx_idct16x16_10_add_neon_pass1|(const tran_low_t *input,
+;                                       int16_t *output)
+;
+; r0  const tran_low_t *input
+; r1  int16_t *output
 
 ; idct16 stage1 - stage6 on all the elements loaded in q8-q15. The output
 ; will be stored back into q8-q15 registers. This function will touch q0-q7
@@ -781,14 +826,14 @@ end_idct16x16_pass2
 
     ; TODO(hkuang): Find a better way to load the elements.
     ; load elements of 0, 2, 4, 6, 8, 10, 12, 14 into q8 - q15
-    vld2.s16        {q8,q9}, [r0]!
-    vld2.s16        {q9,q10}, [r0]!
-    vld2.s16        {q10,q11}, [r0]!
-    vld2.s16        {q11,q12}, [r0]!
-    vld2.s16        {q12,q13}, [r0]!
-    vld2.s16        {q13,q14}, [r0]!
-    vld2.s16        {q14,q15}, [r0]!
-    vld2.s16        {q1,q2}, [r0]!
+    LOAD_TRAN_LOW_TO_S16X2 d16, d17, d18, d19, r0
+    LOAD_TRAN_LOW_TO_S16X2 d18, d19, d20, d21, r0
+    LOAD_TRAN_LOW_TO_S16X2 d20, d21, d22, d23, r0
+    LOAD_TRAN_LOW_TO_S16X2 d22, d23, d24, d25, r0
+    LOAD_TRAN_LOW_TO_S16X2 d24, d25, d26, d27, r0
+    LOAD_TRAN_LOW_TO_S16X2 d26, d27, d28, d29, r0
+    LOAD_TRAN_LOW_TO_S16X2 d28, d29, d30, d31, r0
+    LOAD_TRAN_LOW_TO_S16X2 d2, d3, d4, d5, r0
     vmov.s16        q15, q1
 
     ; cospi_28_64*2 = 6392
@@ -846,12 +891,12 @@ end_idct16x16_pass2
     vadd.s32        q10, q10, q12
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d11, q15, #14             ; >> 14
-    vqrshrn.s32     d10, q6, #14              ; >> 14
+    vrshrn.s32      d11, q15, #14             ; >> 14
+    vrshrn.s32      d10, q6, #14              ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d12, q9, #14              ; >> 14
-    vqrshrn.s32     d13, q10, #14             ; >> 14
+    vrshrn.s32      d12, q9, #14              ; >> 14
+    vrshrn.s32      d13, q10, #14             ; >> 14
 
     ; stage 6
     vadd.s16        q2, q8, q7                ; step2[0] = step1[0] + step1[7];
@@ -864,39 +909,21 @@ end_idct16x16_pass2
     vsub.s16        q15, q8, q7               ; step2[7] = step1[0] - step1[7];
 
     ; store the data
-    vst1.64         {d4}, [r1], r2
-    vst1.64         {d5}, [r1], r2
-    vst1.64         {d18}, [r1], r2
-    vst1.64         {d19}, [r1], r2
-    vst1.64         {d20}, [r1], r2
-    vst1.64         {d21}, [r1], r2
-    vst1.64         {d22}, [r1], r2
-    vst1.64         {d23}, [r1], r2
-    vst1.64         {d24}, [r1], r2
-    vst1.64         {d25}, [r1], r2
-    vst1.64         {d26}, [r1], r2
-    vst1.64         {d27}, [r1], r2
-    vst1.64         {d28}, [r1], r2
-    vst1.64         {d29}, [r1], r2
-    vst1.64         {d30}, [r1], r2
-    vst1.64         {d31}, [r1], r2
+    vst1.64         {q2}, [r1]!
+    vst1.64         {q9-q10}, [r1]!
+    vst1.64         {q11-q12}, [r1]!
+    vst1.64         {q13-q14}, [r1]!
+    vst1.64         {q15}, [r1]
 
     bx              lr
     ENDP  ; |vpx_idct16x16_10_add_neon_pass1|
 
-;void vpx_idct16x16_10_add_neon_pass2(int16_t *src,
-;                                           int16_t *output,
-;                                           int16_t *pass1Output,
-;                                           int16_t skip_adding,
-;                                           uint8_t *dest,
-;                                           int dest_stride)
+;void vpx_idct16x16_10_add_neon_pass2(const tran_low_t *src, int16_t *output,
+;                                     int16_t *pass1_output)
 ;
-; r0  int16_t *src
-; r1  int16_t *output,
-; r2  int16_t *pass1Output,
-; r3  int16_t skip_adding,
-; r4  uint8_t *dest,
-; r5  int dest_stride)
+; r0  const tran_low_t *src
+; r1  int16_t *output
+; r2  int16_t *pass1_output
 
 ; idct16 stage1 - stage7 on all the elements loaded in q8-q15. The output
 ; will be stored back into q8-q15 registers. This function will touch q0-q7
@@ -906,14 +933,14 @@ end_idct16x16_pass2
 
     ; TODO(hkuang): Find a better way to load the elements.
     ; load elements of 1, 3, 5, 7, 9, 11, 13, 15 into q8 - q15
-    vld2.s16        {q8,q9}, [r0]!
-    vld2.s16        {q9,q10}, [r0]!
-    vld2.s16        {q10,q11}, [r0]!
-    vld2.s16        {q11,q12}, [r0]!
-    vld2.s16        {q12,q13}, [r0]!
-    vld2.s16        {q13,q14}, [r0]!
-    vld2.s16        {q14,q15}, [r0]!
-    vld2.s16        {q0,q1}, [r0]!
+    LOAD_TRAN_LOW_TO_S16X2 d16, d17, d18, d19, r0
+    LOAD_TRAN_LOW_TO_S16X2 d18, d19, d20, d21, r0
+    LOAD_TRAN_LOW_TO_S16X2 d20, d21, d22, d23, r0
+    LOAD_TRAN_LOW_TO_S16X2 d22, d23, d24, d25, r0
+    LOAD_TRAN_LOW_TO_S16X2 d24, d25, d26, d27, r0
+    LOAD_TRAN_LOW_TO_S16X2 d26, d27, d28, d29, r0
+    LOAD_TRAN_LOW_TO_S16X2 d28, d29, d30, d31, r0
+    LOAD_TRAN_LOW_TO_S16X2 d0, d1, d2, d3, r0
     vmov.s16        q15, q0;
 
     ; 2*cospi_30_64 = 3212
@@ -981,12 +1008,12 @@ end_idct16x16_pass2
     vdup.16          d30, r12                 ; duplicate -cospi_8_64
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d2, q12, #14              ; >> 14
-    vqrshrn.s32     d3, q5, #14               ; >> 14
+    vrshrn.s32      d2, q12, #14              ; >> 14
+    vrshrn.s32      d3, q5, #14               ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d12, q2, #14              ; >> 14
-    vqrshrn.s32     d13, q11, #14             ; >> 14
+    vrshrn.s32      d12, q2, #14              ; >> 14
+    vrshrn.s32      d13, q11, #14             ; >> 14
 
     ; - step1[13] * cospi_8_64
     vmull.s16       q10, d8, d30
@@ -1005,12 +1032,12 @@ end_idct16x16_pass2
     vmlal.s16       q9, d9, d31
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d4, q10, #14              ; >> 14
-    vqrshrn.s32     d5, q13, #14              ; >> 14
+    vrshrn.s32      d4, q10, #14              ; >> 14
+    vrshrn.s32      d5, q13, #14              ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d10, q8, #14              ; >> 14
-    vqrshrn.s32     d11, q9, #14              ; >> 14
+    vrshrn.s32      d10, q8, #14              ; >> 14
+    vrshrn.s32      d11, q9, #14              ; >> 14
 
     ; stage 5
     vadd.s16        q8, q0, q3                ; step1[8] = step2[8]+step2[11];
@@ -1045,12 +1072,12 @@ end_idct16x16_pass2
     vadd.s32        q1, q4, q1
 
     ; dct_const_round_shift(temp1)
-    vqrshrn.s32     d4, q5, #14               ; >> 14
-    vqrshrn.s32     d5, q6, #14               ; >> 14
+    vrshrn.s32      d4, q5, #14               ; >> 14
+    vrshrn.s32      d5, q6, #14               ; >> 14
 
     ; dct_const_round_shift(temp2)
-    vqrshrn.s32     d10, q0, #14              ; >> 14
-    vqrshrn.s32     d11, q1, #14              ; >> 14
+    vrshrn.s32      d10, q0, #14              ; >> 14
+    vrshrn.s32      d11, q1, #14              ; >> 14
 
     ; step1[11] * cospi_16_64
     vmull.s16       q0, d22, d14
@@ -1069,14 +1096,14 @@ end_idct16x16_pass2
     vadd.s32        q6, q6, q1
 
     ; dct_const_round_shift(input_dc * cospi_16_64)
-    vqrshrn.s32     d6, q10, #14              ; >> 14
-    vqrshrn.s32     d7, q4, #14               ; >> 14
+    vrshrn.s32      d6, q10, #14              ; >> 14
+    vrshrn.s32      d7, q4, #14               ; >> 14
 
     ; dct_const_round_shift((step1[11] + step1[12]) * cospi_16_64);
-    vqrshrn.s32     d8, q13, #14              ; >> 14
-    vqrshrn.s32     d9, q6, #14               ; >> 14
+    vrshrn.s32      d8, q13, #14              ; >> 14
+    vrshrn.s32      d9, q6, #14               ; >> 14
 
-    mov              r4, #16                  ; pass1Output stride
+    mov              r4, #16                  ; pass1_output stride
     ldr              r3, [sp]                 ; load skip_adding
 
     ; stage 7

@@ -28,11 +28,11 @@ bool CPDF_Type3Char::LoadBitmap(CPDF_RenderContext* pContext) {
   if (!pPageObj->IsImage())
     return false;
 
-  m_ImageMatrix = pPageObj->AsImage()->m_Matrix;
-  std::unique_ptr<CFX_DIBSource> pSource(
-      pPageObj->AsImage()->GetImage()->LoadDIBSource());
+  m_ImageMatrix = pPageObj->AsImage()->matrix();
+  std::unique_ptr<CFX_DIBSource> pSource =
+      pPageObj->AsImage()->GetImage()->LoadDIBSource();
   if (pSource)
-    m_pBitmap.reset(pSource->Clone());
+    m_pBitmap = pSource->Clone();
   m_pForm.reset();
   return true;
 }

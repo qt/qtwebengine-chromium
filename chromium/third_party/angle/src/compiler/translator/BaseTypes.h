@@ -31,14 +31,18 @@ enum TPrecision
     EbpLast
 };
 
-inline const char* getPrecisionString(TPrecision p)
+inline const char *getPrecisionString(TPrecision p)
 {
-    switch(p)
+    switch (p)
     {
-        case EbpHigh:   return "highp";
-        case EbpMedium: return "mediump";
-        case EbpLow:    return "lowp";
-        default:        return "mediump";  // Safest fallback
+        case EbpHigh:
+            return "highp";
+        case EbpMedium:
+            return "mediump";
+        case EbpLow:
+            return "lowp";
+        default:
+            return "mediump";  // Safest fallback
     }
 }
 
@@ -68,14 +72,17 @@ enum TBasicType
     EbtSampler2DArray,
     EbtSamplerExternalOES,  // Only valid if OES_EGL_image_external exists.
     EbtSampler2DRect,       // Only valid if GL_ARB_texture_rectangle exists.
+    EbtSampler2DMS,
     EbtISampler2D,
     EbtISampler3D,
     EbtISamplerCube,
     EbtISampler2DArray,
+    EbtISampler2DMS,
     EbtUSampler2D,
     EbtUSampler3D,
     EbtUSamplerCube,
     EbtUSampler2DArray,
+    EbtUSampler2DMS,
     EbtSampler2DShadow,
     EbtSamplerCubeShadow,
     EbtSampler2DArrayShadow,
@@ -85,6 +92,7 @@ enum TBasicType
     EbtGSamplerCube,     // non type: represents samplerCube, isamplerCube, and usamplerCube
     EbtGSampler2DArray,  // non type: represents sampler2DArray, isampler2DArray, and
                          // usampler2DArray
+    EbtGSampler2DMS,     // non type: represents sampler2DMS, isampler2DMS, and usampler2DMS
 
     // images
     EbtGuardImageBegin,
@@ -171,7 +179,7 @@ inline TBasicType convertGImageToUnsignedImage(TBasicType type)
     return EbtLast;
 }
 
-const char* getBasicString(TBasicType t);
+const char *getBasicString(TBasicType t);
 
 inline bool IsSampler(TBasicType type)
 {
@@ -198,27 +206,30 @@ inline bool IsIntegerSampler(TBasicType type)
 {
     switch (type)
     {
-      case EbtISampler2D:
-      case EbtISampler3D:
-      case EbtISamplerCube:
-      case EbtISampler2DArray:
-      case EbtUSampler2D:
-      case EbtUSampler3D:
-      case EbtUSamplerCube:
-      case EbtUSampler2DArray:
-        return true;
-      case EbtSampler2D:
-      case EbtSampler3D:
-      case EbtSamplerCube:
-      case EbtSamplerExternalOES:
-      case EbtSampler2DRect:
-      case EbtSampler2DArray:
-      case EbtSampler2DShadow:
-      case EbtSamplerCubeShadow:
-      case EbtSampler2DArrayShadow:
-        return false;
-      default:
-        assert(!IsSampler(type));
+        case EbtISampler2D:
+        case EbtISampler3D:
+        case EbtISamplerCube:
+        case EbtISampler2DArray:
+        case EbtISampler2DMS:
+        case EbtUSampler2D:
+        case EbtUSampler3D:
+        case EbtUSamplerCube:
+        case EbtUSampler2DArray:
+        case EbtUSampler2DMS:
+            return true;
+        case EbtSampler2D:
+        case EbtSampler3D:
+        case EbtSamplerCube:
+        case EbtSamplerExternalOES:
+        case EbtSampler2DRect:
+        case EbtSampler2DArray:
+        case EbtSampler2DShadow:
+        case EbtSamplerCubeShadow:
+        case EbtSampler2DArrayShadow:
+        case EbtSampler2DMS:
+            return false;
+        default:
+            assert(!IsSampler(type));
     }
 
     return false;
@@ -278,27 +289,30 @@ inline bool IsSampler2D(TBasicType type)
 {
     switch (type)
     {
-      case EbtSampler2D:
-      case EbtISampler2D:
-      case EbtUSampler2D:
-      case EbtSampler2DArray:
-      case EbtISampler2DArray:
-      case EbtUSampler2DArray:
-      case EbtSampler2DRect:
-      case EbtSamplerExternalOES:
-      case EbtSampler2DShadow:
-      case EbtSampler2DArrayShadow:
-        return true;
-      case EbtSampler3D:
-      case EbtISampler3D:
-      case EbtUSampler3D:
-      case EbtISamplerCube:
-      case EbtUSamplerCube:
-      case EbtSamplerCube:
-      case EbtSamplerCubeShadow:
-        return false;
-      default:
-        assert(!IsSampler(type));
+        case EbtSampler2D:
+        case EbtISampler2D:
+        case EbtUSampler2D:
+        case EbtSampler2DArray:
+        case EbtISampler2DArray:
+        case EbtUSampler2DArray:
+        case EbtSampler2DRect:
+        case EbtSamplerExternalOES:
+        case EbtSampler2DShadow:
+        case EbtSampler2DArrayShadow:
+        case EbtSampler2DMS:
+        case EbtISampler2DMS:
+        case EbtUSampler2DMS:
+            return true;
+        case EbtSampler3D:
+        case EbtISampler3D:
+        case EbtUSampler3D:
+        case EbtISamplerCube:
+        case EbtUSamplerCube:
+        case EbtSamplerCube:
+        case EbtSamplerCubeShadow:
+            return false;
+        default:
+            assert(!IsSampler(type));
     }
 
     return false;
@@ -308,27 +322,30 @@ inline bool IsSamplerCube(TBasicType type)
 {
     switch (type)
     {
-      case EbtSamplerCube:
-      case EbtISamplerCube:
-      case EbtUSamplerCube:
-      case EbtSamplerCubeShadow:
-        return true;
-      case EbtSampler2D:
-      case EbtSampler3D:
-      case EbtSamplerExternalOES:
-      case EbtSampler2DRect:
-      case EbtSampler2DArray:
-      case EbtISampler2D:
-      case EbtISampler3D:
-      case EbtISampler2DArray:
-      case EbtUSampler2D:
-      case EbtUSampler3D:
-      case EbtUSampler2DArray:
-      case EbtSampler2DShadow:
-      case EbtSampler2DArrayShadow:
-        return false;
-      default:
-        assert(!IsSampler(type));
+        case EbtSamplerCube:
+        case EbtISamplerCube:
+        case EbtUSamplerCube:
+        case EbtSamplerCubeShadow:
+            return true;
+        case EbtSampler2D:
+        case EbtSampler3D:
+        case EbtSamplerExternalOES:
+        case EbtSampler2DRect:
+        case EbtSampler2DArray:
+        case EbtSampler2DMS:
+        case EbtISampler2D:
+        case EbtISampler3D:
+        case EbtISampler2DArray:
+        case EbtISampler2DMS:
+        case EbtUSampler2D:
+        case EbtUSampler3D:
+        case EbtUSampler2DArray:
+        case EbtUSampler2DMS:
+        case EbtSampler2DShadow:
+        case EbtSampler2DArrayShadow:
+            return false;
+        default:
+            assert(!IsSampler(type));
     }
 
     return false;
@@ -338,27 +355,30 @@ inline bool IsSampler3D(TBasicType type)
 {
     switch (type)
     {
-      case EbtSampler3D:
-      case EbtISampler3D:
-      case EbtUSampler3D:
-        return true;
-      case EbtSampler2D:
-      case EbtSamplerCube:
-      case EbtSamplerExternalOES:
-      case EbtSampler2DRect:
-      case EbtSampler2DArray:
-      case EbtISampler2D:
-      case EbtISamplerCube:
-      case EbtISampler2DArray:
-      case EbtUSampler2D:
-      case EbtUSamplerCube:
-      case EbtUSampler2DArray:
-      case EbtSampler2DShadow:
-      case EbtSamplerCubeShadow:
-      case EbtSampler2DArrayShadow:
-        return false;
-      default:
-        assert(!IsSampler(type));
+        case EbtSampler3D:
+        case EbtISampler3D:
+        case EbtUSampler3D:
+            return true;
+        case EbtSampler2D:
+        case EbtSamplerCube:
+        case EbtSamplerExternalOES:
+        case EbtSampler2DRect:
+        case EbtSampler2DArray:
+        case EbtSampler2DMS:
+        case EbtISampler2D:
+        case EbtISamplerCube:
+        case EbtISampler2DArray:
+        case EbtISampler2DMS:
+        case EbtUSampler2D:
+        case EbtUSamplerCube:
+        case EbtUSampler2DArray:
+        case EbtUSampler2DMS:
+        case EbtSampler2DShadow:
+        case EbtSamplerCubeShadow:
+        case EbtSampler2DArrayShadow:
+            return false;
+        default:
+            assert(!IsSampler(type));
     }
 
     return false;
@@ -368,27 +388,30 @@ inline bool IsSamplerArray(TBasicType type)
 {
     switch (type)
     {
-      case EbtSampler2DArray:
-      case EbtISampler2DArray:
-      case EbtUSampler2DArray:
-      case EbtSampler2DArrayShadow:
-        return true;
-      case EbtSampler2D:
-      case EbtISampler2D:
-      case EbtUSampler2D:
-      case EbtSampler2DRect:
-      case EbtSamplerExternalOES:
-      case EbtSampler3D:
-      case EbtISampler3D:
-      case EbtUSampler3D:
-      case EbtISamplerCube:
-      case EbtUSamplerCube:
-      case EbtSamplerCube:
-      case EbtSampler2DShadow:
-      case EbtSamplerCubeShadow:
-        return false;
-      default:
-        assert(!IsSampler(type));
+        case EbtSampler2DArray:
+        case EbtISampler2DArray:
+        case EbtUSampler2DArray:
+        case EbtSampler2DArrayShadow:
+            return true;
+        case EbtSampler2D:
+        case EbtISampler2D:
+        case EbtUSampler2D:
+        case EbtSampler2DRect:
+        case EbtSamplerExternalOES:
+        case EbtSampler3D:
+        case EbtISampler3D:
+        case EbtUSampler3D:
+        case EbtISamplerCube:
+        case EbtUSamplerCube:
+        case EbtSamplerCube:
+        case EbtSampler2DShadow:
+        case EbtSamplerCubeShadow:
+        case EbtSampler2DMS:
+        case EbtISampler2DMS:
+        case EbtUSampler2DMS:
+            return false;
+        default:
+            assert(!IsSampler(type));
     }
 
     return false;
@@ -398,27 +421,30 @@ inline bool IsShadowSampler(TBasicType type)
 {
     switch (type)
     {
-      case EbtSampler2DShadow:
-      case EbtSamplerCubeShadow:
-      case EbtSampler2DArrayShadow:
-        return true;
-      case EbtISampler2D:
-      case EbtISampler3D:
-      case EbtISamplerCube:
-      case EbtISampler2DArray:
-      case EbtUSampler2D:
-      case EbtUSampler3D:
-      case EbtUSamplerCube:
-      case EbtUSampler2DArray:
-      case EbtSampler2D:
-      case EbtSampler3D:
-      case EbtSamplerCube:
-      case EbtSamplerExternalOES:
-      case EbtSampler2DRect:
-      case EbtSampler2DArray:
-        return false;
-      default:
-        assert(!IsSampler(type));
+        case EbtSampler2DShadow:
+        case EbtSamplerCubeShadow:
+        case EbtSampler2DArrayShadow:
+            return true;
+        case EbtISampler2D:
+        case EbtISampler3D:
+        case EbtISamplerCube:
+        case EbtISampler2DArray:
+        case EbtISampler2DMS:
+        case EbtUSampler2D:
+        case EbtUSampler3D:
+        case EbtUSamplerCube:
+        case EbtUSampler2DArray:
+        case EbtUSampler2DMS:
+        case EbtSampler2D:
+        case EbtSampler3D:
+        case EbtSamplerCube:
+        case EbtSamplerExternalOES:
+        case EbtSampler2DRect:
+        case EbtSampler2DArray:
+        case EbtSampler2DMS:
+            return false;
+        default:
+            assert(!IsSampler(type));
     }
 
     return false;
@@ -484,6 +510,8 @@ enum TQualifier
     EvqSecondaryFragColorEXT,  // EXT_blend_func_extended
     EvqSecondaryFragDataEXT,   // EXT_blend_func_extended
 
+    EvqViewIDOVR,  // OVR_multiview
+
     // built-ins written by the shader_framebuffer_fetch extension(s)
     EvqLastFragColor,
     EvqLastFragData,
@@ -500,6 +528,7 @@ enum TQualifier
     EvqCentroidIn,  // Implies smooth
 
     // GLSL ES 3.1 compute shader special variables
+    EvqShared,
     EvqComputeIn,
     EvqNumWorkGroups,
     EvqWorkGroupSize,
@@ -570,16 +599,20 @@ struct TLayoutQualifier
     // Image format layout qualifier
     TLayoutImageInternalFormat imageInternalFormat;
 
+    // OVR_multiview num_views.
+    int numViews;
+
     static TLayoutQualifier create()
     {
         TLayoutQualifier layoutQualifier;
 
-        layoutQualifier.location = -1;
+        layoutQualifier.location           = -1;
         layoutQualifier.locationsSpecified = 0;
-        layoutQualifier.matrixPacking = EmpUnspecified;
-        layoutQualifier.blockStorage = EbsUnspecified;
+        layoutQualifier.matrixPacking      = EmpUnspecified;
+        layoutQualifier.blockStorage       = EbsUnspecified;
 
         layoutQualifier.localSize.fill(-1);
+        layoutQualifier.numViews = -1;
 
         layoutQualifier.imageInternalFormat = EiifUnspecified;
         return layoutQualifier;
@@ -587,7 +620,7 @@ struct TLayoutQualifier
 
     bool isEmpty() const
     {
-        return location == -1 && matrixPacking == EmpUnspecified &&
+        return location == -1 && numViews == -1 && matrixPacking == EmpUnspecified &&
                blockStorage == EbsUnspecified && !localSize.isAnyValueSet() &&
                imageInternalFormat == EiifUnspecified;
     }
@@ -595,12 +628,16 @@ struct TLayoutQualifier
     bool isCombinationValid() const
     {
         bool workSizeSpecified = localSize.isAnyValueSet();
+        bool numViewsSet       = (numViews != -1);
         bool otherLayoutQualifiersSpecified =
             (location != -1 || matrixPacking != EmpUnspecified || blockStorage != EbsUnspecified ||
              imageInternalFormat != EiifUnspecified);
 
-        // we can have either the work group size specified, or the other layout qualifiers
-        return !(workSizeSpecified && otherLayoutQualifiersSpecified);
+        // we can have either the work group size specified, or number of views, or the other layout
+        // qualifiers.
+        return (workSizeSpecified ? 1 : 0) + (numViewsSet ? 1 : 0) +
+                   (otherLayoutQualifiersSpecified ? 1 : 0) <=
+               1;
     }
 
     bool isLocalSizeEqual(const sh::WorkGroupSize &localSizeIn) const
@@ -659,7 +696,7 @@ inline const char *getWorkGroupSizeString(size_t dimension)
 //
 // This is just for debug print out, carried along with the definitions above.
 //
-inline const char* getQualifierString(TQualifier q)
+inline const char *getQualifierString(TQualifier q)
 {
     // clang-format off
     switch(q)
@@ -692,6 +729,7 @@ inline const char* getQualifierString(TQualifier q)
     case EvqFragDepth:              return "FragDepth";
     case EvqSecondaryFragColorEXT:  return "SecondaryFragColorEXT";
     case EvqSecondaryFragDataEXT:   return "SecondaryFragDataEXT";
+    case EvqViewIDOVR:              return "ViewIDOVR";
     case EvqLastFragColor:          return "LastFragColor";
     case EvqLastFragData:           return "LastFragData";
     case EvqSmoothOut:              return "smooth out";
@@ -703,6 +741,7 @@ inline const char* getQualifierString(TQualifier q)
     case EvqCentroid:               return "centroid";
     case EvqFlat:                   return "flat";
     case EvqSmooth:                 return "smooth";
+    case EvqShared:                 return "shared";
     case EvqComputeIn:              return "in";
     case EvqNumWorkGroups:          return "NumWorkGroups";
     case EvqWorkGroupSize:          return "WorkGroupSize";
@@ -717,26 +756,37 @@ inline const char* getQualifierString(TQualifier q)
     // clang-format on
 }
 
-inline const char* getMatrixPackingString(TLayoutMatrixPacking mpq)
+inline const char *getMatrixPackingString(TLayoutMatrixPacking mpq)
 {
     switch (mpq)
     {
-    case EmpUnspecified:    return "mp_unspecified";
-    case EmpRowMajor:       return "row_major";
-    case EmpColumnMajor:    return "column_major";
-    default: UNREACHABLE(); return "unknown matrix packing";
+        case EmpUnspecified:
+            return "mp_unspecified";
+        case EmpRowMajor:
+            return "row_major";
+        case EmpColumnMajor:
+            return "column_major";
+        default:
+            UNREACHABLE();
+            return "unknown matrix packing";
     }
 }
 
-inline const char* getBlockStorageString(TLayoutBlockStorage bsq)
+inline const char *getBlockStorageString(TLayoutBlockStorage bsq)
 {
     switch (bsq)
     {
-    case EbsUnspecified:    return "bs_unspecified";
-    case EbsShared:         return "shared";
-    case EbsPacked:         return "packed";
-    case EbsStd140:         return "std140";
-    default: UNREACHABLE(); return "unknown block storage";
+        case EbsUnspecified:
+            return "bs_unspecified";
+        case EbsShared:
+            return "shared";
+        case EbsPacked:
+            return "packed";
+        case EbsStd140:
+            return "std140";
+        default:
+            UNREACHABLE();
+            return "unknown block storage";
     }
 }
 
@@ -778,4 +828,4 @@ inline const char *getImageInternalFormatString(TLayoutImageInternalFormat iifq)
 
 }  // namespace sh
 
-#endif // COMPILER_TRANSLATOR_BASETYPES_H_
+#endif  // COMPILER_TRANSLATOR_BASETYPES_H_

@@ -7,11 +7,12 @@
 #include "xfa/fwl/theme/cfwl_checkboxtp.h"
 
 #include "core/fxge/cfx_pathdata.h"
+#include "third_party/base/ptr_util.h"
 #include "xfa/fde/tto/fde_textout.h"
-#include "xfa/fwl/core/cfwl_themebackground.h"
-#include "xfa/fwl/core/cfwl_themetext.h"
-#include "xfa/fwl/core/ifwl_checkbox.h"
-#include "xfa/fwl/core/ifwl_widget.h"
+#include "xfa/fwl/cfwl_checkbox.h"
+#include "xfa/fwl/cfwl_themebackground.h"
+#include "xfa/fwl/cfwl_themetext.h"
+#include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
@@ -27,7 +28,7 @@ const int kSignPath = 100;
 #define CHECKBOX_COLOR_BOXRB2 (ArgbEncode(255, 255, 255, 255))
 
 CFWL_CheckBoxTP::CFWL_CheckBoxTP() : m_pThemeData(new CKBThemeData) {
-  SetThemeData(0);
+  SetThemeData();
 }
 
 CFWL_CheckBoxTP::~CFWL_CheckBoxTP() {
@@ -35,14 +36,14 @@ CFWL_CheckBoxTP::~CFWL_CheckBoxTP() {
     m_pCheckPath->Clear();
 }
 
-bool CFWL_CheckBoxTP::IsValidWidget(IFWL_Widget* pWidget) {
-  return pWidget && pWidget->GetClassID() == FWL_Type::CheckBox;
+void CFWL_CheckBoxTP::Initialize() {
+  CFWL_WidgetTP::Initialize();
+  InitTTO();
 }
 
-uint32_t CFWL_CheckBoxTP::SetThemeID(IFWL_Widget* pWidget, uint32_t dwThemeID) {
-  if (m_pThemeData)
-    SetThemeData(FWL_GetThemeColor(dwThemeID));
-  return CFWL_WidgetTP::SetThemeID(pWidget, dwThemeID);
+void CFWL_CheckBoxTP::Finalize() {
+  FinalizeTTO();
+  CFWL_WidgetTP::Finalize();
 }
 
 void CFWL_CheckBoxTP::DrawText(CFWL_ThemeText* pParams) {
@@ -53,16 +54,6 @@ void CFWL_CheckBoxTP::DrawText(CFWL_ThemeText* pParams) {
                                ? FWLTHEME_CAPACITY_TextDisColor
                                : FWLTHEME_CAPACITY_TextColor);
   CFWL_WidgetTP::DrawText(pParams);
-}
-
-void CFWL_CheckBoxTP::Initialize() {
-  InitTTO();
-  CFWL_WidgetTP::Initialize();
-}
-
-void CFWL_CheckBoxTP::Finalize() {
-  FinalizeTTO();
-  CFWL_WidgetTP::Finalize();
 }
 
 void CFWL_CheckBoxTP::DrawSignCheck(CFX_Graphics* pGraphics,
@@ -185,78 +176,47 @@ void CFWL_CheckBoxTP::DrawSignStar(CFX_Graphics* pGraphics,
   pGraphics->RestoreGraphState();
 }
 
-void CFWL_CheckBoxTP::SetThemeData(uint32_t dwID) {
+void CFWL_CheckBoxTP::SetThemeData() {
   uint32_t* pData = (uint32_t*)&m_pThemeData->clrBoxBk;
-  if (dwID) {
-    *pData++ = 0, *pData++ = 0, *pData++ = ArgbEncode(255, 220, 220, 215),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 240, 207),
-    *pData++ = ArgbEncode(255, 248, 179, 48),
-    *pData++ = ArgbEncode(255, 176, 176, 167),
-    *pData++ = ArgbEncode(255, 241, 239, 239),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 220, 220, 215),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 240, 207),
-    *pData++ = ArgbEncode(255, 248, 179, 48),
-    *pData++ = ArgbEncode(255, 176, 176, 167),
-    *pData++ = ArgbEncode(255, 241, 239, 239),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 220, 220, 215),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 240, 207),
-    *pData++ = ArgbEncode(255, 248, 179, 48),
-    *pData++ = ArgbEncode(255, 176, 176, 167),
-    *pData++ = ArgbEncode(255, 241, 239, 239),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 255, 255);
-    m_pThemeData->clrSignBorderNormal = ArgbEncode(255, 154, 167, 114);
-    m_pThemeData->clrSignBorderDisable = ArgbEncode(255, 202, 200, 187);
-    m_pThemeData->clrSignCheck = ArgbEncode(255, 164, 180, 138);
-    m_pThemeData->clrSignNeutral = ArgbEncode(2255, 28, 134, 26);
-    m_pThemeData->clrSignNeutralNormal = ArgbEncode(255, 114, 192, 113);
-    m_pThemeData->clrSignNeutralHover = ArgbEncode(255, 33, 161, 33);
-    m_pThemeData->clrSignNeutralPressed = ArgbEncode(255, 28, 134, 26);
-  } else {
-    *pData++ = 0, *pData++ = 0, *pData++ = ArgbEncode(255, 220, 220, 215),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 240, 207),
-    *pData++ = ArgbEncode(255, 248, 179, 48),
-    *pData++ = ArgbEncode(255, 176, 176, 167),
-    *pData++ = ArgbEncode(255, 241, 239, 239),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 220, 220, 215),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 240, 207),
-    *pData++ = ArgbEncode(255, 248, 179, 48),
-    *pData++ = ArgbEncode(255, 176, 176, 167),
-    *pData++ = ArgbEncode(255, 241, 239, 239),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 220, 220, 215),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 240, 207),
-    *pData++ = ArgbEncode(255, 248, 179, 48),
-    *pData++ = ArgbEncode(255, 176, 176, 167),
-    *pData++ = ArgbEncode(255, 241, 239, 239),
-    *pData++ = ArgbEncode(255, 255, 255, 255),
-    *pData++ = ArgbEncode(255, 255, 255, 255);
-    m_pThemeData->clrSignBorderNormal = ArgbEncode(255, 28, 81, 128);
-    m_pThemeData->clrSignBorderDisable = ArgbEncode(255, 202, 200, 187);
-    m_pThemeData->clrSignCheck = ArgbEncode(255, 28, 81, 128);
-    m_pThemeData->clrSignNeutral = ArgbEncode(255, 28, 134, 26);
-    m_pThemeData->clrSignNeutralNormal = ArgbEncode(255, 114, 192, 113);
-    m_pThemeData->clrSignNeutralHover = ArgbEncode(255, 33, 161, 33);
-    m_pThemeData->clrSignNeutralPressed = ArgbEncode(255, 28, 134, 26);
-  }
+
+  *pData++ = 0;
+  *pData++ = 0;
+  *pData++ = ArgbEncode(255, 220, 220, 215),
+  *pData++ = ArgbEncode(255, 255, 255, 255),
+  *pData++ = ArgbEncode(255, 255, 240, 207),
+  *pData++ = ArgbEncode(255, 248, 179, 48),
+  *pData++ = ArgbEncode(255, 176, 176, 167),
+  *pData++ = ArgbEncode(255, 241, 239, 239),
+  *pData++ = ArgbEncode(255, 255, 255, 255),
+  *pData++ = ArgbEncode(255, 255, 255, 255),
+  *pData++ = ArgbEncode(255, 220, 220, 215),
+  *pData++ = ArgbEncode(255, 255, 255, 255),
+  *pData++ = ArgbEncode(255, 255, 240, 207),
+  *pData++ = ArgbEncode(255, 248, 179, 48),
+  *pData++ = ArgbEncode(255, 176, 176, 167),
+  *pData++ = ArgbEncode(255, 241, 239, 239),
+  *pData++ = ArgbEncode(255, 255, 255, 255),
+  *pData++ = ArgbEncode(255, 255, 255, 255),
+  *pData++ = ArgbEncode(255, 220, 220, 215),
+  *pData++ = ArgbEncode(255, 255, 255, 255),
+  *pData++ = ArgbEncode(255, 255, 240, 207),
+  *pData++ = ArgbEncode(255, 248, 179, 48),
+  *pData++ = ArgbEncode(255, 176, 176, 167),
+  *pData++ = ArgbEncode(255, 241, 239, 239),
+  *pData++ = ArgbEncode(255, 255, 255, 255),
+  *pData++ = ArgbEncode(255, 255, 255, 255);
+  m_pThemeData->clrSignBorderNormal = ArgbEncode(255, 28, 81, 128);
+  m_pThemeData->clrSignBorderDisable = ArgbEncode(255, 202, 200, 187);
+  m_pThemeData->clrSignCheck = ArgbEncode(255, 28, 81, 128);
+  m_pThemeData->clrSignNeutral = ArgbEncode(255, 28, 134, 26);
+  m_pThemeData->clrSignNeutralNormal = ArgbEncode(255, 114, 192, 113);
+  m_pThemeData->clrSignNeutralHover = ArgbEncode(255, 33, 161, 33);
+  m_pThemeData->clrSignNeutralPressed = ArgbEncode(255, 28, 134, 26);
 }
 
 void CFWL_CheckBoxTP::InitCheckPath(FX_FLOAT fCheckLen) {
   if (!m_pCheckPath) {
-    m_pCheckPath.reset(new CFX_Path);
+    m_pCheckPath = pdfium::MakeUnique<CFX_Path>();
     m_pCheckPath->Create();
     FX_FLOAT fWidth = kSignPath;
     FX_FLOAT fHeight = -kSignPath;
@@ -334,7 +294,7 @@ void CFWL_CheckBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   }
 }
 
-void CFWL_CheckBoxTP::DrawCheckSign(IFWL_Widget* pWidget,
+void CFWL_CheckBoxTP::DrawCheckSign(CFWL_Widget* pWidget,
                                     CFX_Graphics* pGraphics,
                                     const CFX_RectF& pRtBox,
                                     int32_t iState,

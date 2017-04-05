@@ -20,8 +20,6 @@ class CFWL_CheckBoxTP : public CFWL_WidgetTP {
   // CFWL_WidgeTP
   void Initialize() override;
   void Finalize() override;
-  bool IsValidWidget(IFWL_Widget* pWidget) override;
-  uint32_t SetThemeID(IFWL_Widget* pWidget, uint32_t dwThemeID) override;
   void DrawText(CFWL_ThemeText* pParams) override;
   void DrawBackground(CFWL_ThemeBackground* pParams) override;
 
@@ -37,7 +35,7 @@ class CFWL_CheckBoxTP : public CFWL_WidgetTP {
     FX_ARGB clrSignNeutralPressed;
   };
 
-  void DrawCheckSign(IFWL_Widget* pWidget,
+  void DrawCheckSign(CFWL_Widget* pWidget,
                      CFX_Graphics* pGraphics,
                      const CFX_RectF& pRtBox,
                      int32_t iState,
@@ -67,11 +65,13 @@ class CFWL_CheckBoxTP : public CFWL_WidgetTP {
                     FX_ARGB argbFill,
                     CFX_Matrix* pMatrix);
 
-  void SetThemeData(uint32_t dwID);
   void InitCheckPath(FX_FLOAT fCheckLen);
 
   std::unique_ptr<CKBThemeData> m_pThemeData;
   std::unique_ptr<CFX_Path> m_pCheckPath;
+
+ private:
+  void SetThemeData();
 };
 
 #endif  // XFA_FWL_THEME_CFWL_CHECKBOXTP_H_

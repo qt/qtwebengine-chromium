@@ -21,7 +21,6 @@
 #include "libANGLE/Program.h"
 #include "libANGLE/Texture.h"
 #include "libANGLE/VertexArray.h"
-#include "libANGLE/VertexAttribute.h"
 #include "libANGLE/FramebufferAttachment.h"
 
 #include "libANGLE/validationES.h"
@@ -32,7 +31,6 @@
 
 #include "common/debug.h"
 #include "common/utilities.h"
-#include "common/version.h"
 
 namespace gl
 {
@@ -760,17 +758,12 @@ void GL_APIENTRY DrawArrays(GLenum mode, GLint first, GLsizei count)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateDrawArrays(context, mode, first, count, 0))
+        if (!ValidateDrawArrays(context, mode, first, count, 1))
         {
             return;
         }
 
-        Error error = context->drawArrays(mode, first, count);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->drawArrays(mode, first, count);
     }
 }
 
@@ -783,17 +776,12 @@ void GL_APIENTRY DrawElements(GLenum mode, GLsizei count, GLenum type, const GLv
     if (context)
     {
         IndexRange indexRange;
-        if (!ValidateDrawElements(context, mode, count, type, indices, 0, &indexRange))
+        if (!ValidateDrawElements(context, mode, count, type, indices, 1, &indexRange))
         {
             return;
         }
 
-        Error error = context->drawElements(mode, count, type, indices, indexRange);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->drawElements(mode, count, type, indices, indexRange);
     }
 }
 
@@ -837,12 +825,7 @@ void GL_APIENTRY Finish(void)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        Error error = context->finish();
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->finish();
     }
 }
 
@@ -853,12 +836,7 @@ void GL_APIENTRY Flush(void)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        Error error = context->flush();
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->flush();
     }
 }
 
@@ -1465,45 +1443,12 @@ const GLubyte *GL_APIENTRY GetString(GLenum name)
 
     if (context)
     {
-        switch (name)
+        if (!context->skipValidation() && !ValidateGetString(context, name))
         {
-            case GL_VENDOR:
-                return reinterpret_cast<const GLubyte *>("Google Inc.");
-
-            case GL_RENDERER:
-                return reinterpret_cast<const GLubyte *>(context->getRendererString());
-
-            case GL_VERSION:
-                if (context->getClientMajorVersion() == 2)
-                {
-                    return reinterpret_cast<const GLubyte *>(
-                        "OpenGL ES 2.0 (ANGLE " ANGLE_VERSION_STRING ")");
-                }
-                else
-                {
-                    return reinterpret_cast<const GLubyte *>(
-                        "OpenGL ES 3.0 (ANGLE " ANGLE_VERSION_STRING ")");
-                }
-
-            case GL_SHADING_LANGUAGE_VERSION:
-                if (context->getClientMajorVersion() == 2)
-                {
-                    return reinterpret_cast<const GLubyte *>(
-                        "OpenGL ES GLSL ES 1.00 (ANGLE " ANGLE_VERSION_STRING ")");
-                }
-                else
-                {
-                    return reinterpret_cast<const GLubyte *>(
-                        "OpenGL ES GLSL ES 3.00 (ANGLE " ANGLE_VERSION_STRING ")");
-                }
-
-            case GL_EXTENSIONS:
-                return reinterpret_cast<const GLubyte *>(context->getExtensionString());
-
-            default:
-                context->handleError(Error(GL_INVALID_ENUM));
             return nullptr;
         }
+
+        return context->getString(name);
     }
 
     return nullptr;
@@ -1840,9 +1785,8 @@ void GL_APIENTRY LineWidth(GLfloat width)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (width <= 0.0f)
+        if (!context->skipValidation() && !ValidateLineWidth(context, width))
         {
-            context->handleError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -2795,65 +2739,9 @@ void GL_APIENTRY VertexAttribPointer(GLuint index, GLint size, GLenum type, GLbo
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (index >= MAX_VERTEX_ATTRIBS)
+        if (!context->skipValidation() &&
+            !ValidateVertexAttribPointer(context, index, size, type, normalized, stride, ptr))
         {
-            context->handleError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        if (size < 1 || size > 4)
-        {
-            context->handleError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        switch (type)
-        {
-            case GL_BYTE:
-            case GL_UNSIGNED_BYTE:
-            case GL_SHORT:
-            case GL_UNSIGNED_SHORT:
-            case GL_FIXED:
-            case GL_FLOAT:
-                break;
-
-            case GL_HALF_FLOAT:
-            case GL_INT:
-            case GL_UNSIGNED_INT:
-            case GL_INT_2_10_10_10_REV:
-            case GL_UNSIGNED_INT_2_10_10_10_REV:
-                if (context->getClientMajorVersion() < 3)
-                {
-                    context->handleError(Error(GL_INVALID_ENUM));
-                    return;
-                }
-                break;
-
-            default:
-                context->handleError(Error(GL_INVALID_ENUM));
-                return;
-        }
-
-        if (stride < 0)
-        {
-            context->handleError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        if ((type == GL_INT_2_10_10_10_REV || type == GL_UNSIGNED_INT_2_10_10_10_REV) && size != 4)
-        {
-            context->handleError(Error(GL_INVALID_OPERATION));
-            return;
-        }
-
-        // [OpenGL ES 3.0.2] Section 2.8 page 24:
-        // An INVALID_OPERATION error is generated when a non-zero vertex array object
-        // is bound, zero is bound to the ARRAY_BUFFER buffer object binding point,
-        // and the pointer argument is not NULL.
-        if (context->getGLState().getVertexArray()->id() != 0 &&
-            context->getGLState().getArrayBufferId() == 0 && ptr != NULL)
-        {
-            context->handleError(Error(GL_INVALID_OPERATION));
             return;
         }
 

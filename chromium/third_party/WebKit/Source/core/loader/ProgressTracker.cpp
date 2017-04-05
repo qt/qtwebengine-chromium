@@ -99,9 +99,13 @@ void ProgressTracker::reset() {
   m_finishedParsing = false;
 }
 
+FrameLoaderClient* ProgressTracker::frameLoaderClient() const {
+  return m_frame->client();
+}
+
 void ProgressTracker::progressStarted() {
   if (!m_frame->isLoading())
-    m_frame->loader().client()->didStartLoading(NavigationToDifferentDocument);
+    frameLoaderClient()->didStartLoading(NavigationToDifferentDocument);
   reset();
   m_progressValue = initialProgressValue;
   m_frame->setIsLoading(true);
@@ -113,7 +117,7 @@ void ProgressTracker::progressCompleted() {
   m_frame->setIsLoading(false);
   sendFinalProgress();
   reset();
-  m_frame->loader().client()->didStopLoading();
+  frameLoaderClient()->didStopLoading();
   InspectorInstrumentation::frameStoppedLoading(m_frame);
 }
 
@@ -126,7 +130,7 @@ void ProgressTracker::sendFinalProgress() {
   if (m_progressValue == 1)
     return;
   m_progressValue = 1;
-  m_frame->loader().client()->progressEstimateChanged(m_progressValue);
+  frameLoaderClient()->progressEstimateChanged(m_progressValue);
 }
 
 void ProgressTracker::willStartLoading(unsigned long identifier,
@@ -137,12 +141,12 @@ void ProgressTracker::willStartLoading(unsigned long identifier,
   // on parsing completion, which corresponds to finishing parsing. For those
   // policies, don't consider resource load that start after DOMContentLoaded
   // finishes.
-  if (m_frame->settings()->progressBarCompletion() !=
+  if (m_frame->settings()->getProgressBarCompletion() !=
           ProgressBarCompletion::LoadEvent &&
       (m_finishedParsing || priority < ResourceLoadPriorityHigh))
     return;
-  m_progressItems.set(
-      identifier, makeUnique<ProgressItem>(progressItemDefaultEstimatedLength));
+  m_progressItems.set(identifier, WTF::makeUnique<ProgressItem>(
+                                      progressItemDefaultEstimatedLength));
 }
 
 void ProgressTracker::incrementProgress(unsigned long identifier,
@@ -187,12 +191,12 @@ void ProgressTracker::maybeSendProgress() {
   DCHECK_GE(estimatedBytesForPendingRequests, bytesReceived);
 
   if (m_finishedParsing) {
-    if (m_frame->settings()->progressBarCompletion() ==
+    if (m_frame->settings()->getProgressBarCompletion() ==
         ProgressBarCompletion::DOMContentLoaded) {
       sendFinalProgress();
       return;
     }
-    if (m_frame->settings()->progressBarCompletion() !=
+    if (m_frame->settings()->getProgressBarCompletion() !=
             ProgressBarCompletion::LoadEvent &&
         estimatedBytesForPendingRequests == bytesReceived) {
       sendFinalProgress();
@@ -220,7 +224,7 @@ void ProgressTracker::maybeSendProgress() {
       m_progressValue - m_lastNotifiedProgressValue;
   if (notificationProgressDelta >= progressNotificationInterval ||
       notifiedProgressTimeDelta >= progressNotificationTimeInterval) {
-    m_frame->loader().client()->progressEstimateChanged(m_progressValue);
+    frameLoaderClient()->progressEstimateChanged(m_progressValue);
     m_lastNotifiedProgressValue = m_progressValue;
     m_lastNotifiedProgressTime = now;
   }

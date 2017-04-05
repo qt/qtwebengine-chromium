@@ -52,20 +52,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   CFX_WideString input =
       CFX_WideString::FromUTF8(CFX_ByteStringC(data, safe_size.ValueOrDie()));
-  std::unique_ptr<IFX_Stream, ReleaseDeleter<IFX_Stream>> stream(
-      new CXFA_WideTextRead(input));
+  auto stream = pdfium::MakeRetain<CXFA_WideTextRead>(input);
   if (!stream)
     return 0;
 
-  std::unique_ptr<CFDE_XMLDoc> doc = pdfium::MakeUnique<CFDE_XMLDoc>();
-  std::unique_ptr<CFDE_XMLParser, ReleaseDeleter<CFDE_XMLParser>> parser(
-      new CXFA_XMLParser(doc->GetRoot(), stream.get()));
-
-  if (!doc->LoadXML(parser.release()))
+  auto doc = pdfium::MakeUnique<CFDE_XMLDoc>();
+  if (!doc->LoadXML(pdfium::MakeUnique<CXFA_XMLParser>(doc->GetRoot(), stream)))
     return 0;
 
-  int32_t load_result = doc->DoLoad(nullptr);
-  if (load_result < 100)
+  if (doc->DoLoad(nullptr) < 100)
     return 0;
 
   (void)XFA_FDEExtension_GetDocumentNode(doc.get());

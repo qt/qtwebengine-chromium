@@ -7,14 +7,17 @@
 #include "core/fpdfapi/page/cpdf_page.h"
 
 #include <set>
+#include <utility>
 
 #include "core/fpdfapi/cpdf_pagerendercontext.h"
+#include "core/fpdfapi/page/cpdf_contentparser.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/page/pageint.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
+#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 CPDF_Page::CPDF_Page(CPDF_Document* pDocument,
@@ -86,7 +89,7 @@ void CPDF_Page::StartParse() {
   if (m_ParseState == CONTENT_PARSED || m_ParseState == CONTENT_PARSING)
     return;
 
-  m_pParser.reset(new CPDF_ContentParser);
+  m_pParser = pdfium::MakeUnique<CPDF_ContentParser>();
   m_pParser->Start(this);
   m_ParseState = CONTENT_PARSING;
 }

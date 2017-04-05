@@ -48,62 +48,148 @@
 #include "core/fxge/cfx_windowsdevice.h"
 #endif
 
-UnderlyingDocumentType* UnderlyingFromFPDFDocument(FPDF_DOCUMENT doc) {
-  return static_cast<UnderlyingDocumentType*>(doc);
-}
+namespace {
 
-FPDF_DOCUMENT FPDFDocumentFromUnderlying(UnderlyingDocumentType* doc) {
-  return static_cast<FPDF_DOCUMENT>(doc);
-}
+// Also indicates whether library is currently initialized.
+CCodec_ModuleMgr* g_pCodecModule = nullptr;
 
-UnderlyingPageType* UnderlyingFromFPDFPage(FPDF_PAGE page) {
-  return static_cast<UnderlyingPageType*>(page);
-}
+void RenderPageImpl(CPDF_PageRenderContext* pContext,
+                    CPDF_Page* pPage,
+                    const CFX_Matrix& matrix,
+                    const FX_RECT& clipping_rect,
+                    int flags,
+                    bool bNeedToRestore,
+                    IFSDK_PAUSE_Adapter* pause) {
+  if (!pContext->m_pOptions)
+    pContext->m_pOptions = pdfium::MakeUnique<CPDF_RenderOptions>();
 
-CPDF_Document* CPDFDocumentFromFPDFDocument(FPDF_DOCUMENT doc) {
-#ifdef PDF_ENABLE_XFA
-  return doc ? UnderlyingFromFPDFDocument(doc)->GetPDFDoc() : nullptr;
-#else   // PDF_ENABLE_XFA
-  return UnderlyingFromFPDFDocument(doc);
+  if (flags & FPDF_LCD_TEXT)
+    pContext->m_pOptions->m_Flags |= RENDER_CLEARTYPE;
+  else
+    pContext->m_pOptions->m_Flags &= ~RENDER_CLEARTYPE;
+
+  if (flags & FPDF_NO_NATIVETEXT)
+    pContext->m_pOptions->m_Flags |= RENDER_NO_NATIVETEXT;
+  if (flags & FPDF_RENDER_LIMITEDIMAGECACHE)
+    pContext->m_pOptions->m_Flags |= RENDER_LIMITEDIMAGECACHE;
+  if (flags & FPDF_RENDER_FORCEHALFTONE)
+    pContext->m_pOptions->m_Flags |= RENDER_FORCE_HALFTONE;
+#ifndef PDF_ENABLE_XFA
+  if (flags & FPDF_RENDER_NO_SMOOTHTEXT)
+    pContext->m_pOptions->m_Flags |= RENDER_NOTEXTSMOOTH;
+  if (flags & FPDF_RENDER_NO_SMOOTHIMAGE)
+    pContext->m_pOptions->m_Flags |= RENDER_NOIMAGESMOOTH;
+  if (flags & FPDF_RENDER_NO_SMOOTHPATH)
+    pContext->m_pOptions->m_Flags |= RENDER_NOPATHSMOOTH;
 #endif  // PDF_ENABLE_XFA
+
+  // Grayscale output
+  if (flags & FPDF_GRAYSCALE) {
+    pContext->m_pOptions->m_ColorMode = RENDER_COLOR_GRAY;
+    pContext->m_pOptions->m_ForeColor = 0;
+    pContext->m_pOptions->m_BackColor = 0xffffff;
+  }
+
+  const CPDF_OCContext::UsageType usage =
+      (flags & FPDF_PRINTING) ? CPDF_OCContext::Print : CPDF_OCContext::View;
+  pContext->m_pOptions->m_AddFlags = flags >> 8;
+  pContext->m_pOptions->m_pOCContext =
+      new CPDF_OCContext(pPage->m_pDocument, usage);
+
+  pContext->m_pDevice->SaveState();
+  pContext->m_pDevice->SetClip_Rect(clipping_rect);
+
+  pContext->m_pContext = pdfium::MakeUnique<CPDF_RenderContext>(pPage);
+  pContext->m_pContext->AppendLayer(pPage, &matrix);
+
+  if (flags & FPDF_ANNOT) {
+    pContext->m_pAnnots = pdfium::MakeUnique<CPDF_AnnotList>(pPage);
+    bool bPrinting = pContext->m_pDevice->GetDeviceClass() != FXDC_DISPLAY;
+    pContext->m_pAnnots->DisplayAnnots(pPage, pContext->m_pContext.get(),
+                                       bPrinting, &matrix, false, nullptr);
+  }
+
+  pContext->m_pRenderer = pdfium::MakeUnique<CPDF_ProgressiveRenderer>(
+      pContext->m_pContext.get(), pContext->m_pDevice.get(),
+      pContext->m_pOptions.get());
+  pContext->m_pRenderer->Start(pause);
+  if (bNeedToRestore)
+    pContext->m_pDevice->RestoreState(false);
 }
 
-FPDF_DOCUMENT FPDFDocumentFromCPDFDocument(CPDF_Document* doc) {
+class CPDF_CustomAccess final : public IFX_SeekableReadStream {
+ public:
+  static CFX_RetainPtr<CPDF_CustomAccess> Create(FPDF_FILEACCESS* pFileAccess) {
+    return CFX_RetainPtr<CPDF_CustomAccess>(new CPDF_CustomAccess(pFileAccess));
+  }
+
+  // IFX_SeekableReadStream
+  FX_FILESIZE GetSize() override;
+  bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
+
+ private:
+  explicit CPDF_CustomAccess(FPDF_FILEACCESS* pFileAccess);
+
+  FPDF_FILEACCESS m_FileAccess;
+};
+
+CPDF_CustomAccess::CPDF_CustomAccess(FPDF_FILEACCESS* pFileAccess)
+    : m_FileAccess(*pFileAccess) {}
+
+FX_FILESIZE CPDF_CustomAccess::GetSize() {
+  return m_FileAccess.m_FileLen;
+}
+
+bool CPDF_CustomAccess::ReadBlock(void* buffer,
+                                  FX_FILESIZE offset,
+                                  size_t size) {
+  if (offset < 0)
+    return false;
+
+  FX_SAFE_FILESIZE newPos = pdfium::base::checked_cast<FX_FILESIZE>(size);
+  newPos += offset;
+  if (!newPos.IsValid() ||
+      newPos.ValueOrDie() > static_cast<FX_FILESIZE>(m_FileAccess.m_FileLen)) {
+    return false;
+  }
+  return !!m_FileAccess.m_GetBlock(m_FileAccess.m_Param, offset,
+                                   reinterpret_cast<uint8_t*>(buffer), size);
+}
+
 #ifdef PDF_ENABLE_XFA
-  return doc ? FPDFDocumentFromUnderlying(
-                   new CPDFXFA_Context(pdfium::WrapUnique(doc)))
-             : nullptr;
-#else   // PDF_ENABLE_XFA
-  return FPDFDocumentFromUnderlying(doc);
-#endif  // PDF_ENABLE_XFA
-}
+class CFPDF_FileStream : public IFX_SeekableStream {
+ public:
+  static CFX_RetainPtr<CFPDF_FileStream> Create(FPDF_FILEHANDLER* pFS) {
+    return CFX_RetainPtr<CFPDF_FileStream>(new CFPDF_FileStream(pFS));
+  }
+  ~CFPDF_FileStream() override;
 
-CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page) {
-#ifdef PDF_ENABLE_XFA
-  return page ? UnderlyingFromFPDFPage(page)->GetPDFPage() : nullptr;
-#else   // PDF_ENABLE_XFA
-  return UnderlyingFromFPDFPage(page);
-#endif  // PDF_ENABLE_XFA
-}
+  // IFX_SeekableStream:
+  FX_FILESIZE GetSize() override;
+  bool IsEOF() override;
+  FX_FILESIZE GetPosition() override;
+  bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
+  size_t ReadBlock(void* buffer, size_t size) override;
+  bool WriteBlock(const void* buffer, FX_FILESIZE offset, size_t size) override;
+  bool Flush() override;
 
-CFX_DIBitmap* CFXBitmapFromFPDFBitmap(FPDF_BITMAP bitmap) {
-  return static_cast<CFX_DIBitmap*>(bitmap);
-}
+  void SetPosition(FX_FILESIZE pos) { m_nCurPos = pos; }
 
-#ifdef PDF_ENABLE_XFA
+ protected:
+  explicit CFPDF_FileStream(FPDF_FILEHANDLER* pFS);
+
+  FPDF_FILEHANDLER* m_pFS;
+  FX_FILESIZE m_nCurPos;
+};
+
 CFPDF_FileStream::CFPDF_FileStream(FPDF_FILEHANDLER* pFS) {
   m_pFS = pFS;
   m_nCurPos = 0;
 }
 
-IFX_SeekableStream* CFPDF_FileStream::Retain() {
-  return this;
-}
-
-void CFPDF_FileStream::Release() {
+CFPDF_FileStream::~CFPDF_FileStream() {
   if (m_pFS && m_pFS->Release)
     m_pFS->Release(m_pFS->clientData);
-  delete this;
 }
 
 FX_FILESIZE CFPDF_FileStream::GetSize() {
@@ -175,32 +261,61 @@ bool CFPDF_FileStream::Flush() {
 }
 #endif  // PDF_ENABLE_XFA
 
-CPDF_CustomAccess::CPDF_CustomAccess(FPDF_FILEACCESS* pFileAccess)
-    : m_FileAccess(*pFileAccess) {}
+}  // namespace
 
-FX_FILESIZE CPDF_CustomAccess::GetSize() {
-  return m_FileAccess.m_FileLen;
+UnderlyingDocumentType* UnderlyingFromFPDFDocument(FPDF_DOCUMENT doc) {
+  return static_cast<UnderlyingDocumentType*>(doc);
 }
 
-void CPDF_CustomAccess::Release() {
-  delete this;
+FPDF_DOCUMENT FPDFDocumentFromUnderlying(UnderlyingDocumentType* doc) {
+  return static_cast<FPDF_DOCUMENT>(doc);
 }
 
-bool CPDF_CustomAccess::ReadBlock(void* buffer,
-                                  FX_FILESIZE offset,
-                                  size_t size) {
-  if (offset < 0)
-    return false;
-
-  FX_SAFE_FILESIZE newPos = pdfium::base::checked_cast<FX_FILESIZE>(size);
-  newPos += offset;
-  if (!newPos.IsValid() ||
-      newPos.ValueOrDie() > static_cast<FX_FILESIZE>(m_FileAccess.m_FileLen)) {
-    return false;
-  }
-  return !!m_FileAccess.m_GetBlock(m_FileAccess.m_Param, offset,
-                                   reinterpret_cast<uint8_t*>(buffer), size);
+UnderlyingPageType* UnderlyingFromFPDFPage(FPDF_PAGE page) {
+  return static_cast<UnderlyingPageType*>(page);
 }
+
+CPDF_Document* CPDFDocumentFromFPDFDocument(FPDF_DOCUMENT doc) {
+#ifdef PDF_ENABLE_XFA
+  return doc ? UnderlyingFromFPDFDocument(doc)->GetPDFDoc() : nullptr;
+#else   // PDF_ENABLE_XFA
+  return UnderlyingFromFPDFDocument(doc);
+#endif  // PDF_ENABLE_XFA
+}
+
+FPDF_DOCUMENT FPDFDocumentFromCPDFDocument(CPDF_Document* doc) {
+#ifdef PDF_ENABLE_XFA
+  return doc ? FPDFDocumentFromUnderlying(
+                   new CPDFXFA_Context(pdfium::WrapUnique(doc)))
+             : nullptr;
+#else   // PDF_ENABLE_XFA
+  return FPDFDocumentFromUnderlying(doc);
+#endif  // PDF_ENABLE_XFA
+}
+
+CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page) {
+#ifdef PDF_ENABLE_XFA
+  return page ? UnderlyingFromFPDFPage(page)->GetPDFPage() : nullptr;
+#else   // PDF_ENABLE_XFA
+  return UnderlyingFromFPDFPage(page);
+#endif  // PDF_ENABLE_XFA
+}
+
+CFX_DIBitmap* CFXBitmapFromFPDFBitmap(FPDF_BITMAP bitmap) {
+  return static_cast<CFX_DIBitmap*>(bitmap);
+}
+
+CFX_RetainPtr<IFX_SeekableReadStream> MakeSeekableReadStream(
+    FPDF_FILEACCESS* pFileAccess) {
+  return CPDF_CustomAccess::Create(pFileAccess);
+}
+
+#ifdef PDF_ENABLE_XFA
+CFX_RetainPtr<IFX_SeekableStream> MakeSeekableStream(
+    FPDF_FILEHANDLER* pFilehandler) {
+  return CFPDF_FileStream::Create(pFilehandler);
+}
+#endif  // PDF_ENABLE_XFA
 
 // 0 bit: FPDF_POLICY_MACHINETIME_ACCESS
 static uint32_t foxit_sandbox_policy = 0xFFFFFFFF;
@@ -227,18 +342,20 @@ FPDF_BOOL FSDK_IsSandBoxPolicyEnabled(FPDF_DWORD policy) {
   }
 }
 
-CCodec_ModuleMgr* g_pCodecModule = nullptr;
-
 DLLEXPORT void STDCALL FPDF_InitLibrary() {
   FPDF_InitLibraryWithConfig(nullptr);
 }
 
 DLLEXPORT void STDCALL
 FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* cfg) {
+  if (g_pCodecModule)
+    return;
+
   g_pCodecModule = new CCodec_ModuleMgr();
 
   CFX_GEModule* pModule = CFX_GEModule::Get();
   pModule->Init(cfg ? cfg->m_pUserFontPaths : nullptr, g_pCodecModule);
+
   CPDF_ModuleMgr* pModuleMgr = CPDF_ModuleMgr::Get();
   pModuleMgr->SetCodecModule(g_pCodecModule);
   pModuleMgr->InitPageModule();
@@ -256,6 +373,9 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* cfg) {
 }
 
 DLLEXPORT void STDCALL FPDF_DestroyLibrary() {
+  if (!g_pCodecModule)
+    return;
+
 #ifdef PDF_ENABLE_XFA
   BC_Library_Destory();
   FXJSE_Finalize();
@@ -309,7 +429,8 @@ DLLEXPORT void STDCALL FPDF_SetSandBoxPolicy(FPDF_DWORD policy,
   return FSDK_SetSandBoxPolicy(policy, enable);
 }
 
-#if defined(_WIN32) && defined(PDFIUM_PRINT_TEXT_WITH_GDI)
+#if defined(_WIN32)
+#if defined(PDFIUM_PRINT_TEXT_WITH_GDI)
 DLLEXPORT void STDCALL
 FPDF_SetTypefaceAccessibleFunc(PDFiumEnsureTypefaceCharactersAccessible func) {
   g_pdfium_typeface_accessible_func = func;
@@ -318,23 +439,29 @@ FPDF_SetTypefaceAccessibleFunc(PDFiumEnsureTypefaceCharactersAccessible func) {
 DLLEXPORT void STDCALL FPDF_SetPrintTextWithGDI(FPDF_BOOL use_gdi) {
   g_pdfium_print_text_with_gdi = !!use_gdi;
 }
-#endif
+#endif  // PDFIUM_PRINT_TEXT_WITH_GDI
+
+DLLEXPORT FPDF_BOOL STDCALL FPDF_SetPrintPostscriptLevel(int postscript_level) {
+  if (postscript_level != 0 && postscript_level != 2 && postscript_level != 3)
+    return FALSE;
+  g_pdfium_print_postscript_level = postscript_level;
+  return TRUE;
+}
+#endif  // defined(_WIN32)
 
 DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_LoadDocument(FPDF_STRING file_path,
                                                   FPDF_BYTESTRING password) {
   // NOTE: the creation of the file needs to be by the embedder on the
   // other side of this API.
-  IFX_SeekableReadStream* pFileAccess =
-      FX_CreateFileRead((const FX_CHAR*)file_path);
-  if (!pFileAccess) {
+  CFX_RetainPtr<IFX_SeekableReadStream> pFileAccess =
+      IFX_SeekableReadStream::CreateFromFilename((const FX_CHAR*)file_path);
+  if (!pFileAccess)
     return nullptr;
-  }
 
-  std::unique_ptr<CPDF_Parser> pParser(new CPDF_Parser);
+  auto pParser = pdfium::MakeUnique<CPDF_Parser>();
   pParser->SetPassword(password);
 
-  std::unique_ptr<CPDF_Document> pDocument(
-      new CPDF_Document(std::move(pParser)));
+  auto pDocument = pdfium::MakeUnique<CPDF_Document>(std::move(pParser));
   CPDF_Parser::Error error =
       pDocument->GetParser()->StartParse(pFileAccess, pDocument.get());
   if (error != CPDF_Parser::SUCCESS) {
@@ -379,25 +506,26 @@ DLLEXPORT FPDF_BOOL STDCALL FPDF_LoadXFA(FPDF_DOCUMENT document) {
 
 class CMemFile final : public IFX_SeekableReadStream {
  public:
-  CMemFile(uint8_t* pBuf, FX_FILESIZE size) : m_pBuf(pBuf), m_size(size) {}
+  static CFX_RetainPtr<CMemFile> Create(uint8_t* pBuf, FX_FILESIZE size) {
+    return CFX_RetainPtr<CMemFile>(new CMemFile(pBuf, size));
+  }
 
-  void Release() override { delete this; }
   FX_FILESIZE GetSize() override { return m_size; }
   bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override {
-    if (offset < 0) {
+    if (offset < 0)
       return false;
-    }
+
     FX_SAFE_FILESIZE newPos = pdfium::base::checked_cast<FX_FILESIZE>(size);
     newPos += offset;
-    if (!newPos.IsValid() || newPos.ValueOrDie() > m_size) {
+    if (!newPos.IsValid() || newPos.ValueOrDie() > m_size)
       return false;
-    }
+
     FXSYS_memcpy(buffer, m_pBuf + offset, size);
     return true;
   }
 
  private:
-  ~CMemFile() override {}
+  CMemFile(uint8_t* pBuf, FX_FILESIZE size) : m_pBuf(pBuf), m_size(size) {}
 
   uint8_t* const m_pBuf;
   const FX_FILESIZE m_size;
@@ -406,12 +534,11 @@ class CMemFile final : public IFX_SeekableReadStream {
 DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_LoadMemDocument(const void* data_buf,
                                                      int size,
                                                      FPDF_BYTESTRING password) {
-  CMemFile* pMemFile = new CMemFile((uint8_t*)data_buf, size);
-  std::unique_ptr<CPDF_Parser> pParser(new CPDF_Parser);
+  CFX_RetainPtr<CMemFile> pMemFile = CMemFile::Create((uint8_t*)data_buf, size);
+  auto pParser = pdfium::MakeUnique<CPDF_Parser>();
   pParser->SetPassword(password);
 
-  std::unique_ptr<CPDF_Document> pDocument(
-      new CPDF_Document(std::move(pParser)));
+  auto pDocument = pdfium::MakeUnique<CPDF_Document>(std::move(pParser));
   CPDF_Parser::Error error =
       pDocument->GetParser()->StartParse(pMemFile, pDocument.get());
   if (error != CPDF_Parser::SUCCESS) {
@@ -425,12 +552,12 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_LoadMemDocument(const void* data_buf,
 DLLEXPORT FPDF_DOCUMENT STDCALL
 FPDF_LoadCustomDocument(FPDF_FILEACCESS* pFileAccess,
                         FPDF_BYTESTRING password) {
-  CPDF_CustomAccess* pFile = new CPDF_CustomAccess(pFileAccess);
-  std::unique_ptr<CPDF_Parser> pParser(new CPDF_Parser);
+  CFX_RetainPtr<CPDF_CustomAccess> pFile =
+      CPDF_CustomAccess::Create(pFileAccess);
+  auto pParser = pdfium::MakeUnique<CPDF_Parser>();
   pParser->SetPassword(password);
 
-  std::unique_ptr<CPDF_Document> pDocument(
-      new CPDF_Document(std::move(pParser)));
+  auto pDocument = pdfium::MakeUnique<CPDF_Document>(std::move(pParser));
   CPDF_Parser::Error error =
       pDocument->GetParser()->StartParse(pFile, pDocument.get());
   if (error != CPDF_Parser::SUCCESS) {
@@ -538,6 +665,9 @@ DLLEXPORT void STDCALL FPDF_RenderPage(HDC dc,
   pPage->SetRenderContext(pdfium::WrapUnique(pContext));
 
   std::unique_ptr<CFX_DIBitmap> pBitmap;
+  // TODO: This results in unnecessary rasterization of some PDFs due to
+  // HasImageMask() returning true. If any image on the page is a mask, the
+  // entire page gets rasterized and the spool size gets huge.
   const bool bNewBitmap =
       pPage->BackgroundAlphaNeeded() || pPage->HasImageMask();
   if (bNewBitmap) {
@@ -597,6 +727,54 @@ DLLEXPORT void STDCALL FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
 
   FPDF_RenderPage_Retail(pContext, page, start_x, start_y, size_x, size_y,
                          rotate, flags, true, nullptr);
+
+#ifdef _SKIA_SUPPORT_PATHS_
+  pDevice->Flush();
+  pBitmap->UnPreMultiply();
+#endif
+  pPage->SetRenderContext(nullptr);
+}
+
+DLLEXPORT void STDCALL FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
+                                                       FPDF_PAGE page,
+                                                       const FS_MATRIX* matrix,
+                                                       const FS_RECTF* clipping,
+                                                       int flags) {
+  if (!bitmap)
+    return;
+
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
+  if (!pPage)
+    return;
+
+  CPDF_PageRenderContext* pContext = new CPDF_PageRenderContext;
+  pPage->SetRenderContext(pdfium::WrapUnique(pContext));
+  CFX_FxgeDevice* pDevice = new CFX_FxgeDevice;
+  pContext->m_pDevice.reset(pDevice);
+  CFX_DIBitmap* pBitmap = CFXBitmapFromFPDFBitmap(bitmap);
+  pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
+
+  CFX_Matrix transform_matrix = pPage->GetPageMatrix();
+  if (matrix) {
+    CFX_Matrix cmatrix;
+    cmatrix.a = matrix->a;
+    cmatrix.b = matrix->b;
+    cmatrix.c = matrix->c;
+    cmatrix.d = matrix->d;
+    cmatrix.e = matrix->e;
+    cmatrix.f = matrix->f;
+    transform_matrix.Concat(cmatrix);
+  }
+
+  CFX_FloatRect clipping_rect;
+  if (clipping) {
+    clipping_rect.left = clipping->left;
+    clipping_rect.bottom = clipping->bottom;
+    clipping_rect.right = clipping->right;
+    clipping_rect.top = clipping->top;
+  }
+  RenderPageImpl(pContext, pPage, transform_matrix, clipping_rect.ToFxRect(),
+                 flags, true, nullptr);
 
   pPage->SetRenderContext(nullptr);
 }
@@ -724,10 +902,10 @@ DLLEXPORT void STDCALL FPDF_PageToDevice(FPDF_PAGE page,
 DLLEXPORT FPDF_BITMAP STDCALL FPDFBitmap_Create(int width,
                                                 int height,
                                                 int alpha) {
-  std::unique_ptr<CFX_DIBitmap> pBitmap(new CFX_DIBitmap);
-  if (!pBitmap->Create(width, height, alpha ? FXDIB_Argb : FXDIB_Rgb32)) {
+  auto pBitmap = pdfium::MakeUnique<CFX_DIBitmap>();
+  if (!pBitmap->Create(width, height, alpha ? FXDIB_Argb : FXDIB_Rgb32))
     return nullptr;
-  }
+
   return pBitmap.release();
 }
 
@@ -810,62 +988,10 @@ void FPDF_RenderPage_Retail(CPDF_PageRenderContext* pContext,
   if (!pPage)
     return;
 
-  if (!pContext->m_pOptions)
-    pContext->m_pOptions = pdfium::MakeUnique<CPDF_RenderOptions>();
-
-  if (flags & FPDF_LCD_TEXT)
-    pContext->m_pOptions->m_Flags |= RENDER_CLEARTYPE;
-  else
-    pContext->m_pOptions->m_Flags &= ~RENDER_CLEARTYPE;
-  if (flags & FPDF_NO_NATIVETEXT)
-    pContext->m_pOptions->m_Flags |= RENDER_NO_NATIVETEXT;
-  if (flags & FPDF_RENDER_LIMITEDIMAGECACHE)
-    pContext->m_pOptions->m_Flags |= RENDER_LIMITEDIMAGECACHE;
-  if (flags & FPDF_RENDER_FORCEHALFTONE)
-    pContext->m_pOptions->m_Flags |= RENDER_FORCE_HALFTONE;
-#ifndef PDF_ENABLE_XFA
-  if (flags & FPDF_RENDER_NO_SMOOTHTEXT)
-    pContext->m_pOptions->m_Flags |= RENDER_NOTEXTSMOOTH;
-  if (flags & FPDF_RENDER_NO_SMOOTHIMAGE)
-    pContext->m_pOptions->m_Flags |= RENDER_NOIMAGESMOOTH;
-  if (flags & FPDF_RENDER_NO_SMOOTHPATH)
-    pContext->m_pOptions->m_Flags |= RENDER_NOPATHSMOOTH;
-#endif  // PDF_ENABLE_XFA
-  // Grayscale output
-  if (flags & FPDF_GRAYSCALE) {
-    pContext->m_pOptions->m_ColorMode = RENDER_COLOR_GRAY;
-    pContext->m_pOptions->m_ForeColor = 0;
-    pContext->m_pOptions->m_BackColor = 0xffffff;
-  }
-  const CPDF_OCContext::UsageType usage =
-      (flags & FPDF_PRINTING) ? CPDF_OCContext::Print : CPDF_OCContext::View;
-  pContext->m_pOptions->m_AddFlags = flags >> 8;
-  pContext->m_pOptions->m_pOCContext =
-      new CPDF_OCContext(pPage->m_pDocument, usage);
-
   CFX_Matrix matrix;
   pPage->GetDisplayMatrix(matrix, start_x, start_y, size_x, size_y, rotate);
-
-  pContext->m_pDevice->SaveState();
-  pContext->m_pDevice->SetClip_Rect(
-      FX_RECT(start_x, start_y, start_x + size_x, start_y + size_y));
-
-  pContext->m_pContext = pdfium::MakeUnique<CPDF_RenderContext>(pPage);
-  pContext->m_pContext->AppendLayer(pPage, &matrix);
-
-  if (flags & FPDF_ANNOT) {
-    pContext->m_pAnnots = pdfium::MakeUnique<CPDF_AnnotList>(pPage);
-    bool bPrinting = pContext->m_pDevice->GetDeviceClass() != FXDC_DISPLAY;
-    pContext->m_pAnnots->DisplayAnnots(pPage, pContext->m_pContext.get(),
-                                       bPrinting, &matrix, false, nullptr);
-  }
-
-  pContext->m_pRenderer = pdfium::MakeUnique<CPDF_ProgressiveRenderer>(
-      pContext->m_pContext.get(), pContext->m_pDevice.get(),
-      pContext->m_pOptions.get());
-  pContext->m_pRenderer->Start(pause);
-  if (bNeedToRestore)
-    pContext->m_pDevice->RestoreState(false);
+  FX_RECT rect(start_x, start_y, start_x + size_x, start_y + size_y);
+  RenderPageImpl(pContext, pPage, matrix, rect, flags, bNeedToRestore, pause);
 }
 
 DLLEXPORT int STDCALL FPDF_GetPageSizeByIndex(FPDF_DOCUMENT document,
@@ -1082,7 +1208,7 @@ DLLEXPORT FPDF_DEST STDCALL FPDF_GetNamedDest(FPDF_DOCUMENT document,
     int i = 0;
     for (const auto& it : *pDest) {
       bsName = it.first;
-      pDestObj = it.second;
+      pDestObj = it.second.get();
       if (!pDestObj)
         continue;
       if (i == index)
@@ -1107,7 +1233,7 @@ DLLEXPORT FPDF_DEST STDCALL FPDF_GetNamedDest(FPDF_DOCUMENT document,
   int len = utf16Name.GetLength();
   if (!buffer) {
     *buflen = len;
-  } else if (*buflen >= len) {
+  } else if (len <= *buflen) {
     memcpy(buffer, utf16Name.c_str(), len);
     *buflen = len;
   } else {

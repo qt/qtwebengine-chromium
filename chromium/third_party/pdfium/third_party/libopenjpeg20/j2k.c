@@ -5129,6 +5129,7 @@ static OPJ_BOOL opj_j2k_read_mct (      opj_j2k_t *p_j2k,
         OPJ_UINT32 l_tmp;
         OPJ_UINT32 l_indix;
         opj_mct_data_t * l_mct_data;
+        OPJ_BOOL new_mct = OPJ_FALSE;
 
         /* preconditions */
         assert(p_header_data != 00);
@@ -5191,7 +5192,7 @@ static OPJ_BOOL opj_j2k_read_mct (      opj_j2k_t *p_j2k,
                 }
 
                 l_mct_data = l_tcp->m_mct_records + l_tcp->m_nb_mct_records;
-                ++l_tcp->m_nb_mct_records;
+                new_mct = OPJ_TRUE;
         }
 
         if (l_mct_data->m_data) {
@@ -5221,6 +5222,9 @@ static OPJ_BOOL opj_j2k_read_mct (      opj_j2k_t *p_j2k,
 
         l_mct_data->m_data_size = p_header_size;
 
+        if (new_mct) {
+                ++l_tcp->m_nb_mct_records;
+        }
         return OPJ_TRUE;
 }
 
@@ -7191,6 +7195,10 @@ static OPJ_BOOL opj_j2k_read_header_procedure( opj_j2k_t *p_j2k,
 
                 /* read 2 bytes as the marker size */
                 opj_read_bytes(p_j2k->m_specific_param.m_decoder.m_header_data,&l_marker_size,2);
+                if (l_marker_size < 2) {
+                        opj_event_msg(p_manager, EVT_ERROR, "Invalid marker size\n");
+                        return OPJ_FALSE;
+                }
                 l_marker_size -= 2; /* Subtract the size of the marker ID already read */
 
                 /* Check if the marker size is compatible with the header data size */

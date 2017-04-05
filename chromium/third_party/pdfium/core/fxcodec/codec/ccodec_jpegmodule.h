@@ -7,6 +7,8 @@
 #ifndef CORE_FXCODEC_CODEC_CCODEC_JPEGMODULE_H_
 #define CORE_FXCODEC_CODEC_CCODEC_JPEGMODULE_H_
 
+#include <memory>
+
 #include "core/fxcrt/fx_system.h"
 
 class CCodec_ScanlineDecoder;
@@ -21,12 +23,12 @@ class CCodec_JpegModule {
  public:
   CCodec_JpegModule() {}
 
-  CCodec_ScanlineDecoder* CreateDecoder(const uint8_t* src_buf,
-                                        uint32_t src_size,
-                                        int width,
-                                        int height,
-                                        int nComps,
-                                        bool ColorTransform);
+  std::unique_ptr<CCodec_ScanlineDecoder> CreateDecoder(const uint8_t* src_buf,
+                                                        uint32_t src_size,
+                                                        int width,
+                                                        int height,
+                                                        int nComps,
+                                                        bool ColorTransform);
   bool LoadInfo(const uint8_t* src_buf,
                 uint32_t src_size,
                 int* width,
@@ -56,6 +58,12 @@ class CCodec_JpegModule {
   bool StartScanline(FXJPEG_Context* pContext, int down_scale);
   bool ReadScanline(FXJPEG_Context* pContext, uint8_t* dest_buf);
   uint32_t GetAvailInput(FXJPEG_Context* pContext, uint8_t** avail_buf_ptr);
+
+#if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
+  static bool JpegEncode(const CFX_DIBSource* pSource,
+                         uint8_t** dest_buf,
+                         FX_STRSIZE* dest_size);
+#endif
 };
 
 #endif  // CORE_FXCODEC_CODEC_CCODEC_JPEGMODULE_H_

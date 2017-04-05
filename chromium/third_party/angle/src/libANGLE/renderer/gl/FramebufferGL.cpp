@@ -85,10 +85,12 @@ static void BindFramebufferAttachment(const FunctionsGL *functions,
             const Texture *texture     = attachment->getTexture();
             const TextureGL *textureGL = GetImplAs<TextureGL>(texture);
 
-            if (texture->getTarget() == GL_TEXTURE_2D)
+            if (texture->getTarget() == GL_TEXTURE_2D ||
+                texture->getTarget() == GL_TEXTURE_2D_MULTISAMPLE)
             {
-                functions->framebufferTexture2D(GL_FRAMEBUFFER, attachmentPoint, GL_TEXTURE_2D,
-                                                textureGL->getTextureID(), attachment->mipLevel());
+                functions->framebufferTexture2D(GL_FRAMEBUFFER, attachmentPoint,
+                                                texture->getTarget(), textureGL->getTextureID(),
+                                                attachment->mipLevel());
             }
             else if (texture->getTarget() == GL_TEXTURE_CUBE_MAP)
             {
@@ -127,20 +129,25 @@ static void BindFramebufferAttachment(const FunctionsGL *functions,
 
 Error FramebufferGL::discard(size_t count, const GLenum *attachments)
 {
-    UNIMPLEMENTED();
-    return Error(GL_INVALID_OPERATION);
+    // glInvalidateFramebuffer accepts the same enums as glDiscardFramebufferEXT
+    return invalidate(count, attachments);
 }
 
 Error FramebufferGL::invalidate(size_t count, const GLenum *attachments)
 {
-    // Since this function is just a hint and not available until OpenGL 4.3, only call it if it is available.
+    // Since this function is just a hint, only call a native function if it exists.
     if (mFunctions->invalidateFramebuffer)
     {
         mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
         mFunctions->invalidateFramebuffer(GL_FRAMEBUFFER, static_cast<GLsizei>(count), attachments);
     }
+    else if (mFunctions->discardFramebuffer)
+    {
+        mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
+        mFunctions->discardFramebuffer(GL_FRAMEBUFFER, static_cast<GLsizei>(count), attachments);
+    }
 
-    return Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 Error FramebufferGL::invalidateSub(size_t count,
@@ -155,7 +162,7 @@ Error FramebufferGL::invalidateSub(size_t count,
                                              attachments, area.x, area.y, area.width, area.height);
     }
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
 Error FramebufferGL::clear(ContextImpl *context, GLbitfield mask)
@@ -164,7 +171,7 @@ Error FramebufferGL::clear(ContextImpl *context, GLbitfield mask)
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
     mFunctions->clear(mask);
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
 Error FramebufferGL::clearBufferfv(ContextImpl *context,
@@ -176,7 +183,7 @@ Error FramebufferGL::clearBufferfv(ContextImpl *context,
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
     mFunctions->clearBufferfv(buffer, drawbuffer, values);
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
 Error FramebufferGL::clearBufferuiv(ContextImpl *context,
@@ -188,7 +195,7 @@ Error FramebufferGL::clearBufferuiv(ContextImpl *context,
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
     mFunctions->clearBufferuiv(buffer, drawbuffer, values);
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
 Error FramebufferGL::clearBufferiv(ContextImpl *context,
@@ -200,7 +207,7 @@ Error FramebufferGL::clearBufferiv(ContextImpl *context,
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
     mFunctions->clearBufferiv(buffer, drawbuffer, values);
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
 Error FramebufferGL::clearBufferfi(ContextImpl *context,
@@ -213,7 +220,7 @@ Error FramebufferGL::clearBufferfi(ContextImpl *context,
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
     mFunctions->clearBufferfi(buffer, drawbuffer, depth, stencil);
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
 GLenum FramebufferGL::getImplementationColorReadFormat() const
@@ -284,7 +291,12 @@ Error FramebufferGL::blit(ContextImpl *context,
     const Framebuffer *destFramebuffer       = context->getGLState().getDrawFramebuffer();
 
     const FramebufferAttachment *colorReadAttachment = sourceFramebuffer->getReadColorbuffer();
-    GLsizei readAttachmentSamples                    = colorReadAttachment->getSamples();
+
+    GLsizei readAttachmentSamples = 0;
+    if (colorReadAttachment != nullptr)
+    {
+        readAttachmentSamples = colorReadAttachment->getSamples();
+    }
 
     bool needManualColorBlit = false;
 
@@ -354,6 +366,13 @@ Error FramebufferGL::blit(ContextImpl *context,
                                 destArea.x, destArea.y, destArea.x1(), destArea.y1(), blitMask,
                                 filter);
 
+    return gl::NoError();
+}
+
+gl::Error FramebufferGL::getSamplePosition(size_t index, GLfloat *xy) const
+{
+    mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
+    mFunctions->getMultisamplefv(GL_SAMPLE_POSITION, static_cast<GLuint>(index), xy);
     return gl::NoError();
 }
 

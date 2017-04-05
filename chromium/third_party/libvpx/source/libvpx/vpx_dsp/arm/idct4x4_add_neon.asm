@@ -18,11 +18,11 @@
     INCLUDE vpx_dsp/arm/idct_neon.asm.S
 
     AREA     Block, CODE, READONLY ; name this block of code
-;void vpx_idct4x4_16_add_neon(int16_t *input, uint8_t *dest, int dest_stride)
+;void vpx_idct4x4_16_add_neon(int16_t *input, uint8_t *dest, int stride)
 ;
 ; r0  int16_t input
 ; r1  uint8_t *dest
-; r2  int dest_stride)
+; r2  int stride)
 
 |vpx_idct4x4_16_add_neon| PROC
 
@@ -72,16 +72,15 @@
     ; do the transform on transposed rows
 
     ; stage 1
-    vadd.s16  d23, d16, d18         ; (input[0] + input[2])
-    vsub.s16  d24, d16, d18         ; (input[0] - input[2])
-
     vmull.s16 q15, d17, d22         ; input[1] * cospi_24_64
     vmull.s16 q1,  d17, d20         ; input[1] * cospi_8_64
 
     ; (input[0] + input[2]) * cospi_16_64;
     ; (input[0] - input[2]) * cospi_16_64;
-    vmull.s16 q13, d23, d21
-    vmull.s16 q14, d24, d21
+    vmull.s16 q8,  d16, d21
+    vmull.s16 q14, d18, d21
+    vadd.s32  q13, q8,  q14
+    vsub.s32  q14, q8,  q14
 
     ; input[1] * cospi_24_64 - input[3] * cospi_8_64;
     ; input[1] * cospi_8_64  + input[3] * cospi_24_64;
@@ -89,10 +88,10 @@
     vmlal.s16 q1,  d19, d22
 
     ; dct_const_round_shift
-    vqrshrn.s32 d26, q13, #14
-    vqrshrn.s32 d27, q14, #14
-    vqrshrn.s32 d29, q15, #14
-    vqrshrn.s32 d28, q1,  #14
+    vrshrn.s32 d26, q13, #14
+    vrshrn.s32 d27, q14, #14
+    vrshrn.s32 d29, q15, #14
+    vrshrn.s32 d28, q1,  #14
 
     ; stage 2
     ; output[0] = step[0] + step[3];
@@ -140,10 +139,10 @@
     vmlal.s16 q1,  d19, d22
 
     ; dct_const_round_shift
-    vqrshrn.s32 d26, q13, #14
-    vqrshrn.s32 d27, q14, #14
-    vqrshrn.s32 d29, q15, #14
-    vqrshrn.s32 d28, q1,  #14
+    vrshrn.s32 d26, q13, #14
+    vrshrn.s32 d27, q14, #14
+    vrshrn.s32 d29, q15, #14
+    vrshrn.s32 d28, q1,  #14
 
     ; stage 2
     ; output[0] = step[0] + step[3];
@@ -168,7 +167,7 @@
     vld1.32 {d27[1]}, [r1], r2
     vld1.32 {d27[0]}, [r1]  ; no post-increment
 
-    ; ROUND_POWER_OF_TWO(temp_out[j], 4) + dest[j * dest_stride + i]
+    ; ROUND_POWER_OF_TWO(temp_out[j], 4) + dest[j * stride + i]
     vaddw.u8 q8, q8, d26
     vaddw.u8 q9, q9, d27
 

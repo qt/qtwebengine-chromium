@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "webrtc/base/base64.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/stringutils.h"
@@ -118,7 +119,7 @@ static bool CreateCryptoParams(int tag, const std::string& cipher,
     return false;
   }
 
-  RTC_CHECK_EQ(static_cast<size_t>(master_key_len), master_key.size());
+  RTC_CHECK_EQ(master_key_len, master_key.size());
   std::string key = rtc::Base64::Encode(master_key);
 
   out->tag = tag;
@@ -364,7 +365,7 @@ class UsedIds {
     while (IsIdUsed(next_id_) && next_id_ >= min_allowed_id_) {
       --next_id_;
     }
-    ASSERT(next_id_ >= min_allowed_id_);
+    RTC_DCHECK(next_id_ >= min_allowed_id_);
     return next_id_;
   }
 
@@ -446,6 +447,9 @@ static bool AddStreamParams(MediaType media_type,
     return true;
   }
 
+  const bool include_flexfec_stream =
+      ContainsFlexfecCodec(content_description->codecs());
+
   MediaSessionOptions::Streams::const_iterator stream_it;
   for (stream_it = streams.begin();
        stream_it != streams.end(); ++stream_it) {
@@ -480,6 +484,21 @@ static bool AddStreamParams(MediaType media_type,
           stream_param.AddFidSsrc(ssrcs[i], rtx_ssrcs[i]);
         }
         content_description->set_multistream(true);
+      }
+      // Generate extra ssrc for include_flexfec_stream case.
+      if (include_flexfec_stream) {
+        // TODO(brandtr): Update when we support multistream protection.
+        if (ssrcs.size() == 1) {
+          std::vector<uint32_t> flexfec_ssrcs;
+          GenerateSsrcs(*current_streams, 1, &flexfec_ssrcs);
+          stream_param.AddFecFrSsrc(ssrcs[0], flexfec_ssrcs[0]);
+          content_description->set_multistream(true);
+        } else if (!ssrcs.empty()) {
+          LOG(LS_WARNING)
+              << "Our FlexFEC implementation only supports protecting "
+              << "a single media streams. This session has multiple "
+              << "media streams however, so no FlexFEC SSRC will be generated.";
+        }
       }
       stream_param.cname = options.rtcp_cname;
       stream_param.sync_label = stream_it->sync_label;
@@ -672,9 +691,8 @@ static bool UpdateCryptoParamsForBundle(const ContentGroup& bundle_group,
 
 template <class C>
 static bool ContainsRtxCodec(const std::vector<C>& codecs) {
-  typename std::vector<C>::const_iterator it;
-  for (it = codecs.begin(); it != codecs.end(); ++it) {
-    if (IsRtxCodec(*it)) {
+  for (const auto& codec : codecs) {
+    if (IsRtxCodec(codec)) {
       return true;
     }
   }
@@ -684,6 +702,21 @@ static bool ContainsRtxCodec(const std::vector<C>& codecs) {
 template <class C>
 static bool IsRtxCodec(const C& codec) {
   return stricmp(codec.name.c_str(), kRtxCodecName) == 0;
+}
+
+template <class C>
+static bool ContainsFlexfecCodec(const std::vector<C>& codecs) {
+  for (const auto& codec : codecs) {
+    if (IsFlexfecCodec(codec)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+template <class C>
+static bool IsFlexfecCodec(const C& codec) {
+  return stricmp(codec.name.c_str(), kFlexfecCodecName) == 0;
 }
 
 static TransportOptions GetTransportOptions(const MediaSessionOptions& options,
@@ -717,9 +750,6 @@ static bool CreateMediaContentOffer(
     MediaContentDescriptionImpl<C>* offer) {
   offer->AddCodecs(codecs);
 
-  if (secure_policy == SEC_REQUIRED) {
-    offer->set_crypto_required(CT_SDES);
-  }
   offer->set_rtcp_mux(options.rtcp_mux_enabled);
   if (offer->type() == cricket::MEDIA_TYPE_VIDEO) {
     offer->set_rtcp_reduced_size(true);
@@ -745,7 +775,7 @@ static bool CreateMediaContentOffer(
   }
 #endif
 
-  if (offer->crypto_required() == CT_SDES && offer->cryptos().empty()) {
+  if (secure_policy == SEC_REQUIRED && offer->cryptos().empty()) {
     return false;
   }
   return true;
@@ -1036,8 +1066,7 @@ static bool CreateMediaContentAnswer(
     }
   }
 
-  if (answer->cryptos().empty() &&
-      (offer->crypto_required() == CT_SDES || sdes_policy == SEC_REQUIRED)) {
+  if (answer->cryptos().empty() && sdes_policy == SEC_REQUIRED) {
     return false;
   }
 
@@ -1177,7 +1206,7 @@ std::string MediaTypeToString(MediaType type) {
       type_str = "data";
       break;
     default:
-      ASSERT(false);
+      RTC_NOTREACHED();
       break;
   }
   return type_str;
@@ -1199,7 +1228,7 @@ std::string MediaContentDirectionToString(MediaContentDirection direction) {
       dir_str = "sendrecv";
       break;
     default:
-      ASSERT(false);
+      RTC_NOTREACHED();
       break;
   }
 
@@ -1241,7 +1270,7 @@ void MediaSessionOptions::RemoveSendStream(MediaType type,
       return;
     }
   }
-  ASSERT(false);
+  RTC_NOTREACHED();
 }
 
 bool MediaSessionOptions::HasSendMediaStream(MediaType type) const {
@@ -1370,7 +1399,7 @@ SessionDescription* MediaSessionDescriptionFactory::CreateOffer(
         }
         data_added = true;
       } else {
-        ASSERT(false);
+        RTC_NOTREACHED();
       }
     }
   }
@@ -1441,7 +1470,7 @@ SessionDescription* MediaSessionDescriptionFactory::CreateAnswer(
           return NULL;
         }
       } else {
-        ASSERT(IsMediaContentOfType(&*it, MEDIA_TYPE_DATA));
+        RTC_DCHECK(IsMediaContentOfType(&*it, MEDIA_TYPE_DATA));
         if (!AddDataContentForAnswer(offer, options, current_description,
                                      &current_streams, answer.get())) {
           return NULL;

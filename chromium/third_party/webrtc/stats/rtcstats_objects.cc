@@ -19,16 +19,24 @@ const char* RTCDataChannelState::kClosed = "closed";
 
 const char* RTCStatsIceCandidatePairState::kFrozen = "frozen";
 const char* RTCStatsIceCandidatePairState::kWaiting = "waiting";
-const char* RTCStatsIceCandidatePairState::kInProgress = "inprogress";
+const char* RTCStatsIceCandidatePairState::kInProgress = "in-progress";
 const char* RTCStatsIceCandidatePairState::kFailed = "failed";
 const char* RTCStatsIceCandidatePairState::kSucceeded = "succeeded";
-const char* RTCStatsIceCandidatePairState::kCancelled = "cancelled";
 
 // Strings defined in https://tools.ietf.org/html/rfc5245.
 const char* RTCIceCandidateType::kHost = "host";
 const char* RTCIceCandidateType::kSrflx = "srflx";
 const char* RTCIceCandidateType::kPrflx = "prflx";
 const char* RTCIceCandidateType::kRelay = "relay";
+
+const char* RTCDtlsTransportState::kNew = "new";
+const char* RTCDtlsTransportState::kConnecting = "connecting";
+const char* RTCDtlsTransportState::kConnected = "connected";
+const char* RTCDtlsTransportState::kClosed = "closed";
+const char* RTCDtlsTransportState::kFailed = "failed";
+
+const char* RTCMediaStreamTrackKind::kAudio = "audio";
+const char* RTCMediaStreamTrackKind::kVideo = "video";
 
 WEBRTC_RTCSTATS_IMPL(RTCCertificateStats, RTCStats, "certificate",
     &fingerprint,
@@ -60,6 +68,44 @@ RTCCertificateStats::RTCCertificateStats(
 }
 
 RTCCertificateStats::~RTCCertificateStats() {
+}
+
+WEBRTC_RTCSTATS_IMPL(RTCCodecStats, RTCStats, "codec",
+    &payload_type,
+    &codec,
+    &clock_rate,
+    &channels,
+    &parameters,
+    &implementation);
+
+RTCCodecStats::RTCCodecStats(
+    const std::string& id, int64_t timestamp_us)
+    : RTCCodecStats(std::string(id), timestamp_us) {
+}
+
+RTCCodecStats::RTCCodecStats(
+    std::string&& id, int64_t timestamp_us)
+    : RTCStats(std::move(id), timestamp_us),
+      payload_type("payloadType"),
+      codec("codec"),
+      clock_rate("clockRate"),
+      channels("channels"),
+      parameters("parameters"),
+      implementation("implementation") {
+}
+
+RTCCodecStats::RTCCodecStats(
+    const RTCCodecStats& other)
+    : RTCStats(other.id(), other.timestamp_us()),
+      payload_type(other.payload_type),
+      codec(other.codec),
+      clock_rate(other.clock_rate),
+      channels(other.channels),
+      parameters(other.parameters),
+      implementation(other.implementation) {
+}
+
+RTCCodecStats::~RTCCodecStats() {
 }
 
 WEBRTC_RTCSTATS_IMPL(RTCDataChannelStats, RTCStats, "data-channel",
@@ -117,8 +163,8 @@ WEBRTC_RTCSTATS_IMPL(RTCIceCandidatePairStats, RTCStats, "candidate-pair",
     &readable,
     &bytes_sent,
     &bytes_received,
-    &total_rtt,
-    &current_rtt,
+    &total_round_trip_time,
+    &current_round_trip_time,
     &available_outgoing_bitrate,
     &available_incoming_bitrate,
     &requests_received,
@@ -150,8 +196,8 @@ RTCIceCandidatePairStats::RTCIceCandidatePairStats(
       readable("readable"),
       bytes_sent("bytesSent"),
       bytes_received("bytesReceived"),
-      total_rtt("totalRtt"),
-      current_rtt("currentRtt"),
+      total_round_trip_time("totalRoundTripTime"),
+      current_round_trip_time("currentRoundTripTime"),
       available_outgoing_bitrate("availableOutgoingBitrate"),
       available_incoming_bitrate("availableIncomingBitrate"),
       requests_received("requestsReceived"),
@@ -179,8 +225,8 @@ RTCIceCandidatePairStats::RTCIceCandidatePairStats(
       readable(other.readable),
       bytes_sent(other.bytes_sent),
       bytes_received(other.bytes_received),
-      total_rtt(other.total_rtt),
-      current_rtt(other.current_rtt),
+      total_round_trip_time(other.total_round_trip_time),
+      current_round_trip_time(other.current_round_trip_time),
       available_outgoing_bitrate(other.available_outgoing_bitrate),
       available_incoming_bitrate(other.available_incoming_bitrate),
       requests_received(other.requests_received),
@@ -199,37 +245,46 @@ RTCIceCandidatePairStats::~RTCIceCandidatePairStats() {
 }
 
 WEBRTC_RTCSTATS_IMPL(RTCIceCandidateStats, RTCStats, "ice-candidate",
+    &transport_id,
+    &is_remote,
     &ip,
     &port,
     &protocol,
     &candidate_type,
     &priority,
-    &url);
+    &url,
+    &deleted);
 
 RTCIceCandidateStats::RTCIceCandidateStats(
-    const std::string& id, int64_t timestamp_us)
-    : RTCIceCandidateStats(std::string(id), timestamp_us) {
+    const std::string& id, int64_t timestamp_us, bool is_remote)
+    : RTCIceCandidateStats(std::string(id), timestamp_us, is_remote) {
 }
 
 RTCIceCandidateStats::RTCIceCandidateStats(
-    std::string&& id, int64_t timestamp_us)
+    std::string&& id, int64_t timestamp_us, bool is_remote)
     : RTCStats(std::move(id), timestamp_us),
+      transport_id("transportId"),
+      is_remote("isRemote", is_remote),
       ip("ip"),
       port("port"),
       protocol("protocol"),
       candidate_type("candidateType"),
       priority("priority"),
-      url("url") {
+      url("url"),
+      deleted("deleted", false) {
 }
 
 RTCIceCandidateStats::RTCIceCandidateStats(const RTCIceCandidateStats& other)
     : RTCStats(other.id(), other.timestamp_us()),
+      transport_id(other.transport_id),
+      is_remote(other.is_remote),
       ip(other.ip),
       port(other.port),
       protocol(other.protocol),
       candidate_type(other.candidate_type),
       priority(other.priority),
-      url(other.url) {
+      url(other.url),
+      deleted(other.deleted) {
 }
 
 RTCIceCandidateStats::~RTCIceCandidateStats() {
@@ -239,12 +294,12 @@ const char RTCLocalIceCandidateStats::kType[] = "local-candidate";
 
 RTCLocalIceCandidateStats::RTCLocalIceCandidateStats(
     const std::string& id, int64_t timestamp_us)
-    : RTCIceCandidateStats(id, timestamp_us) {
+    : RTCIceCandidateStats(id, timestamp_us, false) {
 }
 
 RTCLocalIceCandidateStats::RTCLocalIceCandidateStats(
     std::string&& id, int64_t timestamp_us)
-    : RTCIceCandidateStats(std::move(id), timestamp_us) {
+    : RTCIceCandidateStats(std::move(id), timestamp_us, false) {
 }
 
 const char* RTCLocalIceCandidateStats::type() const {
@@ -255,12 +310,12 @@ const char RTCRemoteIceCandidateStats::kType[] = "remote-candidate";
 
 RTCRemoteIceCandidateStats::RTCRemoteIceCandidateStats(
     const std::string& id, int64_t timestamp_us)
-    : RTCIceCandidateStats(id, timestamp_us) {
+    : RTCIceCandidateStats(id, timestamp_us, true) {
 }
 
 RTCRemoteIceCandidateStats::RTCRemoteIceCandidateStats(
     std::string&& id, int64_t timestamp_us)
-    : RTCIceCandidateStats(std::move(id), timestamp_us) {
+    : RTCIceCandidateStats(std::move(id), timestamp_us, true) {
 }
 
 const char* RTCRemoteIceCandidateStats::type() const {
@@ -298,7 +353,7 @@ WEBRTC_RTCSTATS_IMPL(RTCMediaStreamTrackStats, RTCStats, "track",
     &remote_source,
     &ended,
     &detached,
-    &ssrc_ids,
+    &kind,
     &frame_width,
     &frame_height,
     &frames_per_second,
@@ -314,18 +369,18 @@ WEBRTC_RTCSTATS_IMPL(RTCMediaStreamTrackStats, RTCStats, "track",
     &echo_return_loss_enhancement);
 
 RTCMediaStreamTrackStats::RTCMediaStreamTrackStats(
-    const std::string& id, int64_t timestamp_us)
-    : RTCMediaStreamTrackStats(std::string(id), timestamp_us) {
+    const std::string& id, int64_t timestamp_us, const char* kind)
+    : RTCMediaStreamTrackStats(std::string(id), timestamp_us, kind) {
 }
 
 RTCMediaStreamTrackStats::RTCMediaStreamTrackStats(
-    std::string&& id, int64_t timestamp_us)
+    std::string&& id, int64_t timestamp_us, const char* kind)
     : RTCStats(std::move(id), timestamp_us),
       track_identifier("trackIdentifier"),
       remote_source("remoteSource"),
       ended("ended"),
       detached("detached"),
-      ssrc_ids("ssrcIds"),
+      kind("kind", kind),
       frame_width("frameWidth"),
       frame_height("frameHeight"),
       frames_per_second("framesPerSecond"),
@@ -339,6 +394,8 @@ RTCMediaStreamTrackStats::RTCMediaStreamTrackStats(
       audio_level("audioLevel"),
       echo_return_loss("echoReturnLoss"),
       echo_return_loss_enhancement("echoReturnLossEnhancement") {
+  RTC_DCHECK(kind == RTCMediaStreamTrackKind::kAudio ||
+             kind == RTCMediaStreamTrackKind::kVideo);
 }
 
 RTCMediaStreamTrackStats::RTCMediaStreamTrackStats(
@@ -348,7 +405,7 @@ RTCMediaStreamTrackStats::RTCMediaStreamTrackStats(
       remote_source(other.remote_source),
       ended(other.ended),
       detached(other.detached),
-      ssrc_ids(other.ssrc_ids),
+      kind(other.kind),
       frame_width(other.frame_width),
       frame_height(other.frame_height),
       frames_per_second(other.frames_per_second),
@@ -404,7 +461,8 @@ WEBRTC_RTCSTATS_IMPL(RTCRTPStreamStats, RTCStats, "rtp",
     &fir_count,
     &pli_count,
     &nack_count,
-    &sli_count);
+    &sli_count,
+    &qp_sum);
 
 RTCRTPStreamStats::RTCRTPStreamStats(
     const std::string& id, int64_t timestamp_us)
@@ -424,7 +482,8 @@ RTCRTPStreamStats::RTCRTPStreamStats(
       fir_count("firCount"),
       pli_count("pliCount"),
       nack_count("nackCount"),
-      sli_count("sliCount") {
+      sli_count("sliCount"),
+      qp_sum("qpSum") {
 }
 
 RTCRTPStreamStats::RTCRTPStreamStats(
@@ -440,7 +499,8 @@ RTCRTPStreamStats::RTCRTPStreamStats(
       fir_count(other.fir_count),
       pli_count(other.pli_count),
       nack_count(other.nack_count),
-      sli_count(other.sli_count) {
+      sli_count(other.sli_count),
+      qp_sum(other.qp_sum) {
 }
 
 RTCRTPStreamStats::~RTCRTPStreamStats() {
@@ -462,7 +522,8 @@ WEBRTC_RTCSTATS_IMPL(
     &burst_loss_rate,
     &burst_discard_rate,
     &gap_loss_rate,
-    &gap_discard_rate);
+    &gap_discard_rate,
+    &frames_decoded);
 
 RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(
     const std::string& id, int64_t timestamp_us)
@@ -486,7 +547,8 @@ RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(
       burst_loss_rate("burstLossRate"),
       burst_discard_rate("burstDiscardRate"),
       gap_loss_rate("gapLossRate"),
-      gap_discard_rate("gapDiscardRate") {
+      gap_discard_rate("gapDiscardRate"),
+      frames_decoded("framesDecoded") {
 }
 
 RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(
@@ -506,7 +568,8 @@ RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(
       burst_loss_rate(other.burst_loss_rate),
       burst_discard_rate(other.burst_discard_rate),
       gap_loss_rate(other.gap_loss_rate),
-      gap_discard_rate(other.gap_discard_rate) {
+      gap_discard_rate(other.gap_discard_rate),
+      frames_decoded(other.frames_decoded) {
 }
 
 RTCInboundRTPStreamStats::~RTCInboundRTPStreamStats() {
@@ -517,7 +580,8 @@ WEBRTC_RTCSTATS_IMPL(
     &packets_sent,
     &bytes_sent,
     &target_bitrate,
-    &round_trip_time);
+    &round_trip_time,
+    &frames_encoded);
 
 RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
     const std::string& id, int64_t timestamp_us)
@@ -530,7 +594,8 @@ RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
       packets_sent("packetsSent"),
       bytes_sent("bytesSent"),
       target_bitrate("targetBitrate"),
-      round_trip_time("roundTripTime") {
+      round_trip_time("roundTripTime"),
+      frames_encoded("framesEncoded") {
 }
 
 RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
@@ -539,7 +604,8 @@ RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
       packets_sent(other.packets_sent),
       bytes_sent(other.bytes_sent),
       target_bitrate(other.target_bitrate),
-      round_trip_time(other.round_trip_time) {
+      round_trip_time(other.round_trip_time),
+      frames_encoded(other.frames_encoded) {
 }
 
 RTCOutboundRTPStreamStats::~RTCOutboundRTPStreamStats() {
@@ -549,7 +615,7 @@ WEBRTC_RTCSTATS_IMPL(RTCTransportStats, RTCStats, "transport",
     &bytes_sent,
     &bytes_received,
     &rtcp_transport_stats_id,
-    &active_connection,
+    &dtls_state,
     &selected_candidate_pair_id,
     &local_certificate_id,
     &remote_certificate_id);
@@ -565,7 +631,7 @@ RTCTransportStats::RTCTransportStats(
       bytes_sent("bytesSent"),
       bytes_received("bytesReceived"),
       rtcp_transport_stats_id("rtcpTransportStatsId"),
-      active_connection("activeConnection"),
+      dtls_state("dtlsState"),
       selected_candidate_pair_id("selectedCandidatePairId"),
       local_certificate_id("localCertificateId"),
       remote_certificate_id("remoteCertificateId") {
@@ -577,7 +643,7 @@ RTCTransportStats::RTCTransportStats(
       bytes_sent(other.bytes_sent),
       bytes_received(other.bytes_received),
       rtcp_transport_stats_id(other.rtcp_transport_stats_id),
-      active_connection(other.active_connection),
+      dtls_state(other.dtls_state),
       selected_candidate_pair_id(other.selected_candidate_pair_id),
       local_certificate_id(other.local_certificate_id),
       remote_certificate_id(other.remote_certificate_id) {

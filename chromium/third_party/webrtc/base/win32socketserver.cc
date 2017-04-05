@@ -14,6 +14,7 @@
 #include <ws2tcpip.h>  // NOLINT
 
 #include "webrtc/base/byteorder.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/win32window.h"
@@ -250,11 +251,11 @@ bool Win32Socket::CreateT(int family, int type) {
 }
 
 int Win32Socket::Attach(SOCKET s) {
-  ASSERT(socket_ == INVALID_SOCKET);
+  RTC_DCHECK(socket_ == INVALID_SOCKET);
   if (socket_ != INVALID_SOCKET)
     return SOCKET_ERROR;
 
-  ASSERT(s != INVALID_SOCKET);
+  RTC_DCHECK(s != INVALID_SOCKET);
   if (s == INVALID_SOCKET)
     return SOCKET_ERROR;
 
@@ -303,7 +304,7 @@ SocketAddress Win32Socket::GetRemoteAddress() const {
 }
 
 int Win32Socket::Bind(const SocketAddress& addr) {
-  ASSERT(socket_ != INVALID_SOCKET);
+  RTC_DCHECK(socket_ != INVALID_SOCKET);
   if (socket_ == INVALID_SOCKET)
     return SOCKET_ERROR;
 
@@ -547,12 +548,12 @@ int Win32Socket::EstimateMTU(uint16_t* mtu) {
     }
   }
 
-  ASSERT(false);
+  RTC_NOTREACHED();
   return 0;
 }
 
 void Win32Socket::CreateSink() {
-  ASSERT(NULL == sink_);
+  RTC_DCHECK(NULL == sink_);
 
   // Create window
   sink_ = new EventSink(this);
@@ -562,7 +563,7 @@ void Win32Socket::CreateSink() {
 bool Win32Socket::SetAsync(int events) {
   if (NULL == sink_) {
     CreateSink();
-    ASSERT(NULL != sink_);
+    RTC_DCHECK(NULL != sink_);
   }
 
   // start the async select
@@ -618,7 +619,7 @@ int Win32Socket::TranslateOption(Option opt, int* slevel, int* sopt) {
       LOG(LS_WARNING) << "Socket::OPT_DSCP not supported.";
       return -1;
     default:
-      ASSERT(false);
+      RTC_NOTREACHED();
       return -1;
   }
   return 0;
@@ -792,7 +793,7 @@ bool Win32SocketServer::Wait(int cms, bool process_io) {
     } while (b && TimeSince(start) < cms);
   } else if (cms != 0) {
     // Sit and wait forever for a WakeUp. This is the Thread::Send case.
-    ASSERT(cms == -1);
+    RTC_DCHECK(cms == -1);
     MSG msg;
     b = GetMessage(&msg, NULL, s_wm_wakeup_id, s_wm_wakeup_id);
     {

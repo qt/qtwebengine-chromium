@@ -24,28 +24,29 @@
 
 namespace webrtc {
 namespace {
-int UpdateMeasurements(StreamSynchronization::Measurements* stream,
-                       RtpRtcp* rtp_rtcp, RtpReceiver* receiver) {
+bool UpdateMeasurements(StreamSynchronization::Measurements* stream,
+                        RtpRtcp* rtp_rtcp,
+                        RtpReceiver* receiver) {
   if (!receiver->Timestamp(&stream->latest_timestamp))
-    return -1;
+    return false;
   if (!receiver->LastReceivedTimeMs(&stream->latest_receive_time_ms))
-    return -1;
+    return false;
 
   uint32_t ntp_secs = 0;
   uint32_t ntp_frac = 0;
   uint32_t rtp_timestamp = 0;
   if (rtp_rtcp->RemoteNTP(&ntp_secs, &ntp_frac, nullptr, nullptr,
                           &rtp_timestamp) != 0) {
-    return -1;
+    return false;
   }
 
   bool new_rtcp_sr = false;
-  if (!UpdateRtcpList(ntp_secs, ntp_frac, rtp_timestamp, &stream->rtcp,
-                      &new_rtcp_sr)) {
-    return -1;
+  if (!stream->rtp_to_ntp.UpdateMeasurements(ntp_secs, ntp_frac, rtp_timestamp,
+                                             &new_rtcp_sr)) {
+    return false;
   }
 
-  return 0;
+  return true;
 }
 }  // namespace
 
@@ -124,13 +125,13 @@ void RtpStreamsSynchronizer::Process() {
       playout_buffer_delay_ms;
 
   int64_t last_video_receive_ms = video_measurement_.latest_receive_time_ms;
-  if (UpdateMeasurements(&video_measurement_, video_rtp_rtcp_,
-                         video_rtp_receiver_) != 0) {
+  if (!UpdateMeasurements(&video_measurement_, video_rtp_rtcp_,
+                          video_rtp_receiver_)) {
     return;
   }
 
-  if (UpdateMeasurements(&audio_measurement_, audio_rtp_rtcp_,
-                         audio_rtp_receiver_) != 0) {
+  if (!UpdateMeasurements(&audio_measurement_, audio_rtp_rtcp_,
+                          audio_rtp_receiver_)) {
     return;
   }
 
@@ -182,14 +183,14 @@ bool RtpStreamsSynchronizer::GetStreamSyncOffsetInMs(
   }
 
   int64_t latest_audio_ntp;
-  if (!RtpToNtpMs(playout_timestamp, audio_measurement_.rtcp,
-                  &latest_audio_ntp)) {
+  if (!audio_measurement_.rtp_to_ntp.Estimate(playout_timestamp,
+                                              &latest_audio_ntp)) {
     return false;
   }
 
   int64_t latest_video_ntp;
-  if (!RtpToNtpMs(frame.timestamp(), video_measurement_.rtcp,
-                  &latest_video_ntp)) {
+  if (!video_measurement_.rtp_to_ntp.Estimate(frame.timestamp(),
+                                              &latest_video_ntp)) {
     return false;
   }
 
@@ -199,7 +200,7 @@ bool RtpStreamsSynchronizer::GetStreamSyncOffsetInMs(
     latest_video_ntp += time_to_render_ms;
 
   *stream_offset_ms = latest_audio_ntp - latest_video_ntp;
-  *estimated_freq_khz = video_measurement_.rtcp.params.frequency_khz;
+  *estimated_freq_khz = video_measurement_.rtp_to_ntp.params().frequency_khz;
   return true;
 }
 

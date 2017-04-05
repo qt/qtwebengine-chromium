@@ -10,6 +10,7 @@
 
 #include "webrtc/voice_engine/voe_external_media_impl.h"
 
+#include "webrtc/audio/utility/audio_frame_operations.h"
 #include "webrtc/system_wrappers/include/trace.h"
 #include "webrtc/voice_engine/channel.h"
 #include "webrtc/voice_engine/include/voe_errors.h"
@@ -20,19 +21,13 @@
 namespace webrtc {
 
 VoEExternalMedia* VoEExternalMedia::GetInterface(VoiceEngine* voiceEngine) {
-#ifndef WEBRTC_VOICE_ENGINE_EXTERNAL_MEDIA_API
-  return NULL;
-#else
   if (NULL == voiceEngine) {
     return NULL;
   }
   VoiceEngineImpl* s = static_cast<VoiceEngineImpl*>(voiceEngine);
   s->AddRef();
   return s;
-#endif
 }
-
-#ifdef WEBRTC_VOICE_ENGINE_EXTERNAL_MEDIA_API
 
 VoEExternalMediaImpl::VoEExternalMediaImpl(voe::SharedData* shared)
     :
@@ -155,7 +150,7 @@ int VoEExternalMediaImpl::GetAudioFrame(int channel, int desired_sample_rate_hz,
       desired_sample_rate_hz == 0 ? -1 : desired_sample_rate_hz;
   auto ret = channelPtr->GetAudioFrameWithMuted(channel, frame);
   if (ret == MixerParticipant::AudioFrameInfo::kMuted) {
-    frame->Mute();
+    AudioFrameOperations::Mute(frame);
   }
   return ret == MixerParticipant::AudioFrameInfo::kError ? -1 : 0;
 }
@@ -177,7 +172,5 @@ int VoEExternalMediaImpl::SetExternalMixing(int channel, bool enable) {
   }
   return channelPtr->SetExternalMixing(enable);
 }
-
-#endif  // WEBRTC_VOICE_ENGINE_EXTERNAL_MEDIA_API
 
 }  // namespace webrtc

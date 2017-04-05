@@ -9,7 +9,7 @@
  */
 #include "webrtc/test/direct_transport.h"
 
-#include "webrtc/call.h"
+#include "webrtc/call/call.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/gtest.h"
 
@@ -28,6 +28,10 @@ DirectTransport::DirectTransport(const FakeNetworkPipe::Config& config,
       shutting_down_(false),
       fake_network_(clock_, config) {
   thread_.Start();
+  if (send_call_) {
+    send_call_->SignalChannelNetworkState(MediaType::AUDIO, kNetworkUp);
+    send_call_->SignalChannelNetworkState(MediaType::VIDEO, kNetworkUp);
+  }
 }
 
 DirectTransport::~DirectTransport() { StopSending(); }

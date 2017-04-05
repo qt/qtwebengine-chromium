@@ -11,7 +11,10 @@
 
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_name.h"
+#include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
+#include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_interform.h"
@@ -36,10 +39,11 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Annot* pAnnot,
 
   auto pAnnotDict =
       pdfium::MakeUnique<CPDF_Dictionary>(pDocument->GetByteStringPool());
-  pAnnotDict->SetNameFor("Type", "Annot");
-  pAnnotDict->SetNameFor("Subtype", "Popup");
-  pAnnotDict->SetStringFor("T", pParentDict->GetStringFor("T"));
-  pAnnotDict->SetStringFor("Contents", sContents.UTF8Encode());
+  pAnnotDict->SetNewFor<CPDF_Name>("Type", "Annot");
+  pAnnotDict->SetNewFor<CPDF_Name>("Subtype", "Popup");
+  pAnnotDict->SetNewFor<CPDF_String>("T", pParentDict->GetStringFor("T"),
+                                     false);
+  pAnnotDict->SetNewFor<CPDF_String>("Contents", sContents.UTF8Encode(), false);
 
   CFX_FloatRect rect = pParentDict->GetRectFor("Rect");
   rect.Normalize();
@@ -47,7 +51,7 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Annot* pAnnot,
   popupRect.Translate(rect.left, rect.bottom - popupRect.Height());
 
   pAnnotDict->SetRectFor("Rect", popupRect);
-  pAnnotDict->SetIntegerFor("F", 0);
+  pAnnotDict->SetNewFor<CPDF_Number>("F", 0);
 
   auto pPopupAnnot =
       pdfium::MakeUnique<CPDF_Annot>(std::move(pAnnotDict), pDocument);
@@ -102,7 +106,7 @@ void CPDF_AnnotList::DisplayPass(CPDF_Page* pPage,
                                  CFX_RenderDevice* pDevice,
                                  CPDF_RenderContext* pContext,
                                  bool bPrinting,
-                                 CFX_Matrix* pMatrix,
+                                 const CFX_Matrix* pMatrix,
                                  bool bWidgetPass,
                                  CPDF_RenderOptions* pOptions,
                                  FX_RECT* clip_rect) {
@@ -152,7 +156,7 @@ void CPDF_AnnotList::DisplayAnnots(CPDF_Page* pPage,
                                    CFX_RenderDevice* pDevice,
                                    CPDF_RenderContext* pContext,
                                    bool bPrinting,
-                                   CFX_Matrix* pUser2Device,
+                                   const CFX_Matrix* pUser2Device,
                                    uint32_t dwAnnotFlags,
                                    CPDF_RenderOptions* pOptions,
                                    FX_RECT* pClipRect) {
@@ -169,7 +173,7 @@ void CPDF_AnnotList::DisplayAnnots(CPDF_Page* pPage,
 void CPDF_AnnotList::DisplayAnnots(CPDF_Page* pPage,
                                    CPDF_RenderContext* pContext,
                                    bool bPrinting,
-                                   CFX_Matrix* pMatrix,
+                                   const CFX_Matrix* pMatrix,
                                    bool bShowWidget,
                                    CPDF_RenderOptions* pOptions) {
   uint32_t dwAnnotFlags = bShowWidget ? ANNOTFLAG_INVISIBLE | ANNOTFLAG_HIDDEN

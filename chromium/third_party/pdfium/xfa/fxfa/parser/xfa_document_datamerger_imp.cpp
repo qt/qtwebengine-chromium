@@ -6,7 +6,11 @@
 
 #include "xfa/fxfa/parser/xfa_document_datamerger_imp.h"
 
+#include <map>
+#include <vector>
+
 #include "core/fxcrt/fx_ext.h"
+#include "third_party/base/stl_util.h"
 #include "xfa/fde/xml/fde_xml_imp.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
@@ -149,9 +153,9 @@ void CreateDataBinding(CXFA_Node* pFormNode,
       case XFA_Element::ChoiceList:
         defValue.GetChildValueContent(wsValue);
         if (pWidgetData->GetChoiceListOpen() == XFA_ATTRIBUTEENUM_MultiSelect) {
-          CFX_WideStringArray wsSelTextArray;
+          std::vector<CFX_WideString> wsSelTextArray;
           pWidgetData->GetSelectedItemsValue(wsSelTextArray);
-          int32_t iSize = wsSelTextArray.GetSize();
+          int32_t iSize = pdfium::CollectionSize<int32_t>(wsSelTextArray);
           if (iSize >= 1) {
             CXFA_Node* pValue = nullptr;
             for (int32_t i = 0; i < iSize; i++) {
@@ -353,15 +357,14 @@ void CreateDataBinding(CXFA_Node* pFormNode,
 }
 
 CXFA_Node* GetGlobalBinding(CXFA_Document* pDocument, uint32_t dwNameHash) {
-  CXFA_Node* pNode = nullptr;
-  pDocument->m_rgGlobalBinding.Lookup(dwNameHash, pNode);
-  return pNode;
+  auto it = pDocument->m_rgGlobalBinding.find(dwNameHash);
+  return it != pDocument->m_rgGlobalBinding.end() ? it->second : nullptr;
 }
 
 void RegisterGlobalBinding(CXFA_Document* pDocument,
                            uint32_t dwNameHash,
                            CXFA_Node* pDataNode) {
-  pDocument->m_rgGlobalBinding.SetAt(dwNameHash, pDataNode);
+  pDocument->m_rgGlobalBinding[dwNameHash] = pDataNode;
 }
 
 CXFA_Node* ScopeMatchGlobalBinding(CXFA_Node* pDataScope,
@@ -750,7 +753,7 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
     if (eType == XFA_Element::SubformSet || eType == XFA_Element::Area) {
       sNodeIterator.MoveToNext();
     } else {
-      CFX_MapPtrTemplate<CXFA_Node*, CXFA_Node*> subformMapArray;
+      std::map<CXFA_Node*, CXFA_Node*> subformMapArray;
       CXFA_NodeArray nodeArray;
       for (; iMax < 0 || iCurRepeatIndex < iMax; iCurRepeatIndex++) {
         bool bSelfMatch = false;
@@ -769,15 +772,16 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
 
         CreateDataBinding(pSubformNode, pDataNode, true);
         ASSERT(pSubformNode);
-        subformMapArray.SetAt(pSubformNode, pDataNode);
+        subformMapArray[pSubformNode] = pDataNode;
         nodeArray.Add(pSubformNode);
       }
 
-      subformMapArray.GetStartPosition();
       for (int32_t iIndex = 0; iIndex < nodeArray.GetSize(); iIndex++) {
         CXFA_Node* pSubform = nodeArray[iIndex];
-        CXFA_Node* pDataNode =
-            reinterpret_cast<CXFA_Node*>(subformMapArray.GetValueAt(pSubform));
+        CXFA_Node* pDataNode = nullptr;
+        auto it = subformMapArray.find(pSubform);
+        if (it != subformMapArray.end())
+          pDataNode = it->second;
         for (CXFA_Node* pTemplateChild =
                  pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
              pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
@@ -791,7 +795,7 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
           }
         }
       }
-      subformMapArray.RemoveAll();
+      subformMapArray.clear();
     }
 
     for (; iMax < 0 || iCurRepeatIndex < iMax; iCurRepeatIndex++) {
@@ -1518,7 +1522,7 @@ void CXFA_Document::DoDataRemerge(bool bDoDataMerge) {
       pFormRoot->RemoveChild(pNode);
     pFormRoot->SetObject(XFA_ATTRIBUTE_BindingNode, nullptr);
   }
-  m_rgGlobalBinding.RemoveAll();
+  m_rgGlobalBinding.clear();
   if (bDoDataMerge)
     DoDataMerge();
 

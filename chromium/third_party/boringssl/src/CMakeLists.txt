@@ -174,6 +174,8 @@ elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
   set(ARCH "aarch64")
 elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "mips")
   # Just to avoid the “unknown processor” error.
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "ppc64le")
+  set(ARCH "ppc64le")
 else()
   message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
 endif()
@@ -190,6 +192,35 @@ if (${ARCH} STREQUAL "x86" AND APPLE)
   # but clang defaults to 64-bit builds on OS X unless otherwise told.
   # Set ARCH to x86_64 so clang and CMake agree. This is fixed in CMake 3.
   set(ARCH "x86_64")
+endif()
+
+if (MSAN)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "Cannot enable MSAN unless using Clang")
+  endif()
+
+  if (ASAN)
+    message(FATAL_ERROR "ASAN and MSAN are mutually exclusive")
+  endif()
+
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer")
+  set(OPENSSL_NO_ASM "1")
+endif()
+
+if (ASAN)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "Cannot enable ASAN unless using Clang")
+  endif()
+
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+  set(OPENSSL_NO_ASM "1")
+endif()
+
+if (GCOV)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs -ftest-coverage")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
 endif()
 
 if (OPENSSL_NO_ASM)

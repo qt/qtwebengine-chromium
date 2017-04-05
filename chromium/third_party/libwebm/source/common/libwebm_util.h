@@ -16,6 +16,8 @@
 
 namespace libwebm {
 
+const double kNanosecondsPerSecond = 1000000000.0;
+
 // fclose functor for wrapping FILE in std::unique_ptr.
 // TODO(tomfinegan): Move this to file_util once c++11 restrictions are
 //                   relaxed.
@@ -37,11 +39,12 @@ struct Range {
   const std::size_t offset;
   const std::size_t length;
 };
-
 typedef std::vector<Range> Ranges;
 
-// Converts |nanoseconds| to 90000 Hz clock ticks and returns the value.
+// Converts |nanoseconds| to 90000 Hz clock ticks and vice versa. Each return
+// the converted value.
 std::int64_t NanosecondsTo90KhzTicks(std::int64_t nanoseconds);
+std::int64_t Khz90TicksToNanoseconds(std::int64_t khz90_ticks);
 
 // Returns true and stores frame offsets and lengths in |frame_ranges| when
 // |frame| has a valid VP9 super frame index.
@@ -50,6 +53,10 @@ bool ParseVP9SuperFrameIndex(const std::uint8_t* frame,
 
 // Writes |val| to |fileptr| and returns true upon success.
 bool WriteUint8(std::uint8_t val, std::FILE* fileptr);
+
+// Reads 2 bytes from |buf| and returns them as a uint16_t. Returns 0 when |buf|
+// is a nullptr.
+std::uint16_t ReadUint16(const std::uint8_t* buf);
 
 }  // namespace libwebm
 

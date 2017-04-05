@@ -127,18 +127,20 @@
 #include <openssl/sha.h>
 #include <openssl/x509.h>
 
+#include "../crypto/internal.h"
 #include "internal.h"
 
 
-SSL_HANDSHAKE *ssl_handshake_new(enum ssl_hs_wait_t (*do_handshake)(SSL *ssl)) {
+SSL_HANDSHAKE *ssl_handshake_new(SSL *ssl) {
   SSL_HANDSHAKE *hs = OPENSSL_malloc(sizeof(SSL_HANDSHAKE));
   if (hs == NULL) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     return NULL;
   }
-  memset(hs, 0, sizeof(SSL_HANDSHAKE));
-  hs->do_handshake = do_handshake;
+  OPENSSL_memset(hs, 0, sizeof(SSL_HANDSHAKE));
+  hs->ssl = ssl;
   hs->wait = ssl_hs_ok;
+  hs->state = SSL_ST_INIT;
   return hs;
 }
 
@@ -148,6 +150,10 @@ void ssl_handshake_free(SSL_HANDSHAKE *hs) {
   }
 
   OPENSSL_cleanse(hs->secret, sizeof(hs->secret));
+  OPENSSL_cleanse(hs->client_handshake_secret,
+                  sizeof(hs->client_handshake_secret));
+  OPENSSL_cleanse(hs->server_handshake_secret,
+                  sizeof(hs->server_handshake_secret));
   OPENSSL_cleanse(hs->client_traffic_secret_0,
                   sizeof(hs->client_traffic_secret_0));
   OPENSSL_cleanse(hs->server_traffic_secret_0,
@@ -169,6 +175,8 @@ void ssl_handshake_free(SSL_HANDSHAKE *hs) {
     OPENSSL_free(hs->key_block);
   }
 
+  OPENSSL_free(hs->hostname);
+  EVP_PKEY_free(hs->peer_pubkey);
   OPENSSL_free(hs);
 }
 
@@ -259,8 +267,9 @@ int ssl3_write_message(SSL *ssl) {
   return 1;
 }
 
-int ssl3_send_finished(SSL *ssl, int a, int b) {
-  if (ssl->state == b) {
+int ssl3_send_finished(SSL_HANDSHAKE *hs, int a, int b) {
+  SSL *const ssl = hs->ssl;
+  if (hs->state == b) {
     return ssl->method->write_message(ssl);
   }
 
@@ -287,10 +296,10 @@ int ssl3_send_finished(SSL *ssl, int a, int b) {
     }
 
     if (ssl->server) {
-      memcpy(ssl->s3->previous_server_finished, finished, finished_len);
+      OPENSSL_memcpy(ssl->s3->previous_server_finished, finished, finished_len);
       ssl->s3->previous_server_finished_len = finished_len;
     } else {
-      memcpy(ssl->s3->previous_client_finished, finished, finished_len);
+      OPENSSL_memcpy(ssl->s3->previous_client_finished, finished, finished_len);
       ssl->s3->previous_client_finished_len = finished_len;
     }
   }
@@ -304,11 +313,12 @@ int ssl3_send_finished(SSL *ssl, int a, int b) {
     return -1;
   }
 
-  ssl->state = b;
+  hs->state = b;
   return ssl->method->write_message(ssl);
 }
 
-int ssl3_get_finished(SSL *ssl) {
+int ssl3_get_finished(SSL_HANDSHAKE *hs) {
+  SSL *const ssl = hs->ssl;
   int ret = ssl->method->ssl_get_message(ssl, SSL3_MT_FINISHED,
                                          ssl_dont_hash_message);
   if (ret <= 0) {
@@ -344,10 +354,10 @@ int ssl3_get_finished(SSL *ssl) {
     }
 
     if (ssl->server) {
-      memcpy(ssl->s3->previous_client_finished, finished, finished_len);
+      OPENSSL_memcpy(ssl->s3->previous_client_finished, finished, finished_len);
       ssl->s3->previous_client_finished_len = finished_len;
     } else {
-      memcpy(ssl->s3->previous_server_finished, finished, finished_len);
+      OPENSSL_memcpy(ssl->s3->previous_server_finished, finished, finished_len);
       ssl->s3->previous_server_finished_len = finished_len;
     }
   }
@@ -512,9 +522,9 @@ static int read_v2_client_hello(SSL *ssl, int *out_is_v2_client_hello) {
     rand_len = SSL3_RANDOM_SIZE;
   }
   uint8_t random[SSL3_RANDOM_SIZE];
-  memset(random, 0, SSL3_RANDOM_SIZE);
-  memcpy(random + (SSL3_RANDOM_SIZE - rand_len), CBS_data(&challenge),
-         rand_len);
+  OPENSSL_memset(random, 0, SSL3_RANDOM_SIZE);
+  OPENSSL_memcpy(random + (SSL3_RANDOM_SIZE - rand_len), CBS_data(&challenge),
+                 rand_len);
 
   /* Write out an equivalent SSLv3 ClientHello. */
   size_t max_v3_client_hello = SSL3_HM_HEADER_LENGTH + 2 /* version */ +
@@ -770,7 +780,7 @@ int ssl_verify_alarm_type(long type) {
 
 int ssl_parse_extensions(const CBS *cbs, uint8_t *out_alert,
                          const SSL_EXTENSION_TYPE *ext_types,
-                         size_t num_ext_types) {
+                         size_t num_ext_types, int ignore_unknown) {
   /* Reset everything. */
   for (size_t i = 0; i < num_ext_types; i++) {
     *ext_types[i].out_present = 0;
@@ -797,6 +807,9 @@ int ssl_parse_extensions(const CBS *cbs, uint8_t *out_alert,
     }
 
     if (ext_type == NULL) {
+      if (ignore_unknown) {
+        continue;
+      }
       OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
       *out_alert = SSL_AD_UNSUPPORTED_EXTENSION;
       return 0;

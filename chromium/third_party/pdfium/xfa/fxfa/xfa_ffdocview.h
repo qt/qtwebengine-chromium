@@ -9,6 +9,7 @@
 
 #include <map>
 #include <memory>
+#include <vector>
 
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/xfa_ffdoc.h"
@@ -37,7 +38,7 @@ enum XFA_DOCVIEW_LAYOUTSTATUS {
 };
 class CXFA_FFDocView {
  public:
-  CXFA_FFDocView(CXFA_FFDoc* pDoc);
+  explicit CXFA_FFDocView(CXFA_FFDoc* pDoc);
   ~CXFA_FFDocView();
 
   CXFA_FFDoc* GetDoc() { return m_pDoc; }
@@ -98,7 +99,7 @@ class CXFA_FFDocView {
                                        bool bRecursive,
                                        CXFA_Node* pExclude);
   bool m_bLayoutEvent;
-  CFX_WideStringArray m_arrNullTestMsg;
+  std::vector<CFX_WideString> m_arrNullTestMsg;
   CXFA_FFWidget* m_pListFocusWidget;
   bool m_bInLayoutStatus;
 
@@ -119,11 +120,11 @@ class CXFA_FFDocView {
   CXFA_FFWidget* m_pFocusWidget;          // not owned.
   CXFA_FFWidget* m_pOldFocusWidget;       // not owned.
   std::map<CXFA_FFPageView*, std::unique_ptr<CFX_RectF>> m_mapPageInvalidate;
-  CFX_ArrayTemplate<CXFA_WidgetAcc*> m_ValidateAccs;
-  CFX_ArrayTemplate<CXFA_WidgetAcc*> m_CalculateAccs;
-  CFX_ArrayTemplate<CXFA_Node*> m_BindItems;
-  CFX_ArrayTemplate<CXFA_Node*> m_NewAddedNodes;
-  CFX_ArrayTemplate<CXFA_Node*> m_IndexChangedSubforms;
+  std::vector<CXFA_WidgetAcc*> m_ValidateAccs;
+  std::vector<CXFA_WidgetAcc*> m_CalculateAccs;
+  std::vector<CXFA_Node*> m_BindItems;
+  std::vector<CXFA_Node*> m_NewAddedNodes;
+  std::vector<CXFA_Node*> m_IndexChangedSubforms;
   XFA_DOCVIEW_LAYOUTSTATUS m_iStatus;
   int32_t m_iLock;
   friend class CXFA_FFNotify;

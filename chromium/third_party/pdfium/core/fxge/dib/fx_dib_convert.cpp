@@ -4,8 +4,13 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#include <memory>
+#include <utility>
+
 #include "core/fxcodec/fx_codec.h"
+#include "core/fxcrt/cfx_maybe_owned.h"
 #include "core/fxge/fx_dib.h"
+#include "third_party/base/ptr_util.h"
 
 class CFX_Palette {
  public:
@@ -778,33 +783,34 @@ bool ConvertBuffer(FXDIB_Format dest_format,
   }
 }
 
-CFX_DIBitmap* CFX_DIBSource::CloneConvert(FXDIB_Format dest_format) const {
+std::unique_ptr<CFX_DIBitmap> CFX_DIBSource::CloneConvert(
+    FXDIB_Format dest_format) const {
   if (dest_format == GetFormat())
     return Clone(nullptr);
 
-  std::unique_ptr<CFX_DIBitmap> pClone(new CFX_DIBitmap);
+  std::unique_ptr<CFX_DIBitmap> pClone = pdfium::MakeUnique<CFX_DIBitmap>();
   if (!pClone->Create(m_Width, m_Height, dest_format))
     return nullptr;
 
-  CFX_DIBitmap* pSrcAlpha = nullptr;
+  CFX_MaybeOwned<CFX_DIBitmap> pSrcAlpha;
   if (HasAlpha()) {
-    pSrcAlpha = (GetFormat() == FXDIB_Argb) ? GetAlphaMask() : m_pAlphaMask;
+    if (GetFormat() == FXDIB_Argb)
+      pSrcAlpha = CloneAlphaMask();
+    else
+      pSrcAlpha = m_pAlphaMask;
+
     if (!pSrcAlpha)
       return nullptr;
   }
-
   bool ret = true;
   if (dest_format & 0x0200) {
     if (dest_format == FXDIB_Argb) {
-      ret = pSrcAlpha ? pClone->LoadChannel(FXDIB_Alpha, pSrcAlpha, FXDIB_Alpha)
-                      : pClone->LoadChannel(FXDIB_Alpha, 0xff);
+      ret = pSrcAlpha
+                ? pClone->LoadChannel(FXDIB_Alpha, pSrcAlpha.Get(), FXDIB_Alpha)
+                : pClone->LoadChannel(FXDIB_Alpha, 0xff);
     } else {
-      ret = pClone->CopyAlphaMask(pSrcAlpha);
+      ret = pClone->SetAlphaMask(pSrcAlpha.Get());
     }
-  }
-  if (pSrcAlpha && pSrcAlpha != m_pAlphaMask) {
-    delete pSrcAlpha;
-    pSrcAlpha = nullptr;
   }
   if (!ret)
     return nullptr;
@@ -815,8 +821,9 @@ CFX_DIBitmap* CFX_DIBSource::CloneConvert(FXDIB_Format dest_format) const {
     return nullptr;
   }
   if (pal_8bpp)
-    pClone->CopyPalette(pal_8bpp.get());
-  return pClone.release();
+    pClone->SetPalette(pal_8bpp.get());
+
+  return pClone;
 }
 
 bool CFX_DIBitmap::ConvertFormat(FXDIB_Format dest_format) {
@@ -861,7 +868,7 @@ bool CFX_DIBitmap::ConvertFormat(FXDIB_Format dest_format) {
     }
   } else if (dest_format & 0x0200) {
     if (src_format == FXDIB_Argb) {
-      pAlphaMask = GetAlphaMask();
+      pAlphaMask = CloneAlphaMask().release();
       if (!pAlphaMask) {
         FX_Free(dest_buf);
         return false;

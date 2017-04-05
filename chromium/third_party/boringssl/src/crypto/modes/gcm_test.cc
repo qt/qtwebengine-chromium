@@ -46,6 +46,13 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  * ==================================================================== */
 
+/* Per C99, various stdint.h and inttypes.h macros (the latter used by
+ * internal.h) are unavailable in C++ unless some macros are defined. C++11
+ * overruled this decision, but older Android NDKs still require it. */
+#if !defined(__STDC_CONSTANT_MACROS)
+#define __STDC_CONSTANT_MACROS
+#endif
+
 #include <stdio.h>
 #include <string.h>
 
@@ -343,7 +350,7 @@ static int run_test_case(unsigned test_num, const struct test_case *test) {
 
   CRYPTO_gcm128_init(&ctx, &aes_key, (block128_f) AES_encrypt);
   CRYPTO_gcm128_setiv(&ctx, &aes_key, nonce, nonce_len);
-  memset(out, 0, plaintext_len);
+  OPENSSL_memset(out, 0, plaintext_len);
   if (additional_data) {
     CRYPTO_gcm128_aad(&ctx, additional_data, additional_data_len);
   }
@@ -351,7 +358,7 @@ static int run_test_case(unsigned test_num, const struct test_case *test) {
     CRYPTO_gcm128_encrypt(&ctx, &aes_key, plaintext, out, plaintext_len);
   }
   if (!CRYPTO_gcm128_finish(&ctx, tag, tag_len) ||
-      (ciphertext && memcmp(out, ciphertext, plaintext_len) != 0)) {
+      (ciphertext && OPENSSL_memcmp(out, ciphertext, plaintext_len) != 0)) {
     fprintf(stderr, "%u: encrypt failed.\n", test_num);
     hexdump(stderr, "got :", out, plaintext_len);
     hexdump(stderr, "want:", ciphertext, plaintext_len);
@@ -359,7 +366,7 @@ static int run_test_case(unsigned test_num, const struct test_case *test) {
   }
 
   CRYPTO_gcm128_setiv(&ctx, &aes_key, nonce, nonce_len);
-  memset(out, 0, plaintext_len);
+  OPENSSL_memset(out, 0, plaintext_len);
   if (additional_data) {
     CRYPTO_gcm128_aad(&ctx, additional_data, additional_data_len);
   }
@@ -370,7 +377,7 @@ static int run_test_case(unsigned test_num, const struct test_case *test) {
     fprintf(stderr, "%u: decrypt failed.\n", test_num);
     goto out;
   }
-  if (plaintext && memcmp(out, plaintext, plaintext_len)) {
+  if (plaintext && OPENSSL_memcmp(out, plaintext, plaintext_len)) {
     fprintf(stderr, "%u: plaintext doesn't match.\n", test_num);
     goto out;
   }
@@ -388,11 +395,21 @@ out:
   return ret;
 }
 
+static bool TestByteSwap() {
+  return CRYPTO_bswap4(0x01020304) == 0x04030201 &&
+         CRYPTO_bswap8(UINT64_C(0x0102030405060708)) ==
+             UINT64_C(0x0807060504030201);
+}
+
 int main(void) {
   int ret = 0;
   unsigned i;
 
   CRYPTO_library_init();
+
+  if (!TestByteSwap()) {
+    ret = 1;
+  }
 
   for (i = 0; i < sizeof(test_cases) / sizeof(struct test_case); i++) {
     if (!run_test_case(i, &test_cases[i])) {

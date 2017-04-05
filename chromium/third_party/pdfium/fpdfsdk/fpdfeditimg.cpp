@@ -24,24 +24,47 @@ FPDFPageObj_NewImgeObj(FPDF_DOCUMENT document) {
   return pImageObj;
 }
 
-DLLEXPORT FPDF_BOOL STDCALL
-FPDFImageObj_LoadJpegFile(FPDF_PAGE* pages,
-                          int nCount,
-                          FPDF_PAGEOBJECT image_object,
-                          FPDF_FILEACCESS* fileAccess) {
+FPDF_BOOL FPDFImageObj_LoadJpegHelper(FPDF_PAGE* pages,
+                                      int nCount,
+                                      FPDF_PAGEOBJECT image_object,
+                                      FPDF_FILEACCESS* fileAccess,
+                                      bool inlineJpeg) {
   if (!image_object || !fileAccess || !pages)
     return false;
 
-  IFX_SeekableReadStream* pFile = new CPDF_CustomAccess(fileAccess);
+  CFX_RetainPtr<IFX_SeekableReadStream> pFile =
+      MakeSeekableReadStream(fileAccess);
   CPDF_ImageObject* pImgObj = reinterpret_cast<CPDF_ImageObject*>(image_object);
   for (int index = 0; index < nCount; index++) {
     CPDF_Page* pPage = CPDFPageFromFPDFPage(pages[index]);
     if (pPage)
       pImgObj->GetImage()->ResetCache(pPage, nullptr);
   }
-  pImgObj->GetImage()->SetJpegImage(pFile);
+
+  if (inlineJpeg)
+    pImgObj->GetImage()->SetJpegImageInline(pFile);
+  else
+    pImgObj->GetImage()->SetJpegImage(pFile);
 
   return true;
+}
+
+DLLEXPORT FPDF_BOOL STDCALL
+FPDFImageObj_LoadJpegFile(FPDF_PAGE* pages,
+                          int nCount,
+                          FPDF_PAGEOBJECT image_object,
+                          FPDF_FILEACCESS* fileAccess) {
+  return FPDFImageObj_LoadJpegHelper(pages, nCount, image_object, fileAccess,
+                                     false);
+}
+
+DLLEXPORT FPDF_BOOL STDCALL
+FPDFImageObj_LoadJpegFileInline(FPDF_PAGE* pages,
+                                int nCount,
+                                FPDF_PAGEOBJECT image_object,
+                                FPDF_FILEACCESS* fileAccess) {
+  return FPDFImageObj_LoadJpegHelper(pages, nCount, image_object, fileAccess,
+                                     true);
 }
 
 DLLEXPORT FPDF_BOOL STDCALL FPDFImageObj_SetMatrix(FPDF_PAGEOBJECT image_object,
@@ -55,12 +78,10 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFImageObj_SetMatrix(FPDF_PAGEOBJECT image_object,
     return false;
 
   CPDF_ImageObject* pImgObj = reinterpret_cast<CPDF_ImageObject*>(image_object);
-  pImgObj->m_Matrix.a = static_cast<FX_FLOAT>(a);
-  pImgObj->m_Matrix.b = static_cast<FX_FLOAT>(b);
-  pImgObj->m_Matrix.c = static_cast<FX_FLOAT>(c);
-  pImgObj->m_Matrix.d = static_cast<FX_FLOAT>(d);
-  pImgObj->m_Matrix.e = static_cast<FX_FLOAT>(e);
-  pImgObj->m_Matrix.f = static_cast<FX_FLOAT>(f);
+  pImgObj->set_matrix(
+      CFX_Matrix(static_cast<FX_FLOAT>(a), static_cast<FX_FLOAT>(b),
+                 static_cast<FX_FLOAT>(c), static_cast<FX_FLOAT>(d),
+                 static_cast<FX_FLOAT>(e), static_cast<FX_FLOAT>(f)));
   pImgObj->CalcBoundingBox();
   return true;
 }
@@ -78,7 +99,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFImageObj_SetBitmap(FPDF_PAGE* pages,
     if (pPage)
       pImgObj->GetImage()->ResetCache(pPage, nullptr);
   }
-  pImgObj->GetImage()->SetImage(reinterpret_cast<CFX_DIBitmap*>(bitmap), false);
+  pImgObj->GetImage()->SetImage(reinterpret_cast<CFX_DIBitmap*>(bitmap));
   pImgObj->CalcBoundingBox();
   return true;
 }

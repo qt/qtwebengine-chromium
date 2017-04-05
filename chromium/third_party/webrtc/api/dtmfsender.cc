@@ -14,6 +14,7 @@
 
 #include <string>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/thread.h"
 
@@ -80,12 +81,12 @@ DtmfSender::DtmfSender(AudioTrackInterface* track,
       provider_(provider),
       duration_(kDtmfDefaultDurationMs),
       inter_tone_gap_(kDtmfDefaultGapMs) {
-  ASSERT(track_ != NULL);
-  ASSERT(signaling_thread_ != NULL);
+  RTC_DCHECK(track_ != NULL);
+  RTC_DCHECK(signaling_thread_ != NULL);
   // TODO(deadbeef): Once we can use shared_ptr and weak_ptr,
   // do that instead of relying on a "destroyed" signal.
   if (provider_) {
-    ASSERT(provider_->GetOnDestroyedSignal() != NULL);
+    RTC_DCHECK(provider_->GetOnDestroyedSignal() != NULL);
     provider_->GetOnDestroyedSignal()->connect(
         this, &DtmfSender::OnProviderDestroyed);
   }
@@ -104,7 +105,7 @@ void DtmfSender::UnregisterObserver() {
 }
 
 bool DtmfSender::CanInsertDtmf() {
-  ASSERT(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   if (!provider_) {
     return false;
   }
@@ -113,7 +114,7 @@ bool DtmfSender::CanInsertDtmf() {
 
 bool DtmfSender::InsertDtmf(const std::string& tones, int duration,
                             int inter_tone_gap) {
-  ASSERT(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
 
   if (duration > kDtmfMaxDurationMs ||
       duration < kDtmfMinDurationMs ||
@@ -164,14 +165,14 @@ void DtmfSender::OnMessage(rtc::Message* msg) {
       break;
     }
     default: {
-      ASSERT(false);
+      RTC_NOTREACHED();
       break;
     }
   }
 }
 
 void DtmfSender::DoInsertDtmf() {
-  ASSERT(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
 
   // Get the first DTMF tone from the tone buffer. Unrecognized characters will
   // be ignored and skipped.
@@ -189,7 +190,7 @@ void DtmfSender::DoInsertDtmf() {
     if (!GetDtmfCode(tone, &code)) {
       // The find_first_of(kDtmfValidTones) should have guarantee |tone| is
       // a valid DTMF tone.
-      ASSERT(false);
+      RTC_NOTREACHED();
     }
   }
 

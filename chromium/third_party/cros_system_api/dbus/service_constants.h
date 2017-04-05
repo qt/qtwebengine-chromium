@@ -321,7 +321,7 @@ const char kManufacturerDataProperty[] = "ManufacturerData";
 const char kServiceDataProperty[] = "ServiceData";
 const char kGattServicesProperty[] = "GattServices";         // DEPRECATED
 const char kServicesResolvedProperty[] = "ServicesResolved";
-const char kAdvertisingDataFlagsProperty[] = "AdvertisingDataFlags";
+const char kAdvertisingDataFlagsProperty[] = "AdvertisingFlags";
 
 // Bluetooth Device errors.
 const char kErrorNotReady[] = "org.bluez.Error.NotReady";
@@ -863,6 +863,7 @@ const char kSystemClockServiceName[] = "org.torproject.tlsdate";
 // Methods.
 const char kSystemClockCanSet[] = "CanSetTime";
 const char kSystemClockSet[] = "SetTime";
+const char kSystemLastSyncInfo[] = "LastSyncInfo";
 
 // Signals.
 const char kSystemClockUpdated[] = "TimeUpdated";
@@ -906,6 +907,7 @@ const char kActiveProperty[] = "Active";
 const char kPluggedTimeProperty[] = "PluggedTime";
 const char kMicPositionsProperty[] = "MicPositions";
 const char kStableDeviceIdProperty[] = "StableDeviceId";
+const char kStableDeviceIdNewProperty[] = "StableDeviceIdNew";
 
 // Signals.
 const char kOutputVolumeChanged[] = "OutputVolumeChanged";

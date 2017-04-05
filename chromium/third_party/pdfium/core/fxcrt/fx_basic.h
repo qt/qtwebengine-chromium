@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_string.h"
@@ -39,11 +40,8 @@ class CFX_BinaryBuf {
   void InsertBlock(FX_STRSIZE pos, const void* pBuf, FX_STRSIZE size);
   void Delete(int start_index, int count);
 
-  // Takes ownership of |pBuf|.
-  void AttachData(uint8_t* pBuf, FX_STRSIZE size);
-
   // Releases ownership of |m_pBuffer| and returns it.
-  uint8_t* DetachBuffer();
+  std::unique_ptr<uint8_t, FxFreeDeleter> DetachBuffer();
 
  protected:
   void ExpandBuf(FX_STRSIZE size);
@@ -119,16 +117,14 @@ class CFX_FileBufferArchive {
   int32_t AppendByte(uint8_t byte);
   int32_t AppendDWord(uint32_t i);
   int32_t AppendString(const CFX_ByteStringC& lpsz);
-
-  // |pFile| must outlive the CFX_FileBufferArchive.
-  void AttachFile(IFX_WriteStream* pFile);
+  void AttachFile(const CFX_RetainPtr<IFX_WriteStream>& pFile);
 
  private:
   static const size_t kBufSize = 32768;
 
   size_t m_Length;
   std::unique_ptr<uint8_t, FxFreeDeleter> m_pBuffer;
-  IFX_WriteStream* m_pFile;
+  CFX_RetainPtr<IFX_WriteStream> m_pFile;
 };
 
 class CFX_CharMap {
@@ -318,114 +314,8 @@ class CFX_ArrayTemplate : public CFX_BasicArray {
 };
 
 #ifdef PDF_ENABLE_XFA
-typedef CFX_ArrayTemplate<CFX_WideStringC> CFX_WideStringCArray;
-typedef CFX_ArrayTemplate<FX_FLOAT> CFX_FloatArray;
 typedef CFX_ArrayTemplate<uint8_t> CFX_ByteArray;
 typedef CFX_ArrayTemplate<int32_t> CFX_Int32Array;
-
-template <class ObjectClass>
-class CFX_ObjectArray : public CFX_BasicArray {
- public:
-  CFX_ObjectArray() : CFX_BasicArray(sizeof(ObjectClass)) {}
-
-  ~CFX_ObjectArray() { RemoveAll(); }
-
-  void Add(const ObjectClass& data) {
-    new ((void*)InsertSpaceAt(m_nSize, 1)) ObjectClass(data);
-  }
-
-  ObjectClass& Add() {
-    return *(ObjectClass*)new ((void*)InsertSpaceAt(m_nSize, 1)) ObjectClass();
-  }
-
-  void* AddSpace() { return InsertSpaceAt(m_nSize, 1); }
-
-  int32_t Append(const CFX_ObjectArray& src,
-                 int32_t nStart = 0,
-                 int32_t nCount = -1) {
-    if (nCount == 0) {
-      return 0;
-    }
-    int32_t nSize = src.GetSize();
-    if (!nSize) {
-      return 0;
-    }
-    ASSERT(nStart > -1 && nStart < nSize);
-    if (nCount < 0) {
-      nCount = nSize;
-    }
-    if (nStart + nCount > nSize) {
-      nCount = nSize - nStart;
-    }
-    if (nCount < 1) {
-      return 0;
-    }
-    nSize = m_nSize;
-    InsertSpaceAt(m_nSize, nCount);
-    ObjectClass* pStartObj = (ObjectClass*)GetDataPtr(nSize);
-    nSize = nStart + nCount;
-    for (int32_t i = nStart; i < nSize; i++, pStartObj++) {
-      new ((void*)pStartObj) ObjectClass(src[i]);
-    }
-    return nCount;
-  }
-
-  int32_t Copy(const CFX_ObjectArray& src,
-               int32_t nStart = 0,
-               int32_t nCount = -1) {
-    if (nCount == 0) {
-      return 0;
-    }
-    int32_t nSize = src.GetSize();
-    if (!nSize) {
-      return 0;
-    }
-    ASSERT(nStart > -1 && nStart < nSize);
-    if (nCount < 0) {
-      nCount = nSize;
-    }
-    if (nStart + nCount > nSize) {
-      nCount = nSize - nStart;
-    }
-    if (nCount < 1) {
-      return 0;
-    }
-    RemoveAll();
-    SetSize(nCount);
-    ObjectClass* pStartObj = (ObjectClass*)m_pData;
-    nSize = nStart + nCount;
-    for (int32_t i = nStart; i < nSize; i++, pStartObj++) {
-      new ((void*)pStartObj) ObjectClass(src[i]);
-    }
-    return nCount;
-  }
-
-  int GetSize() const { return m_nSize; }
-
-  ObjectClass& operator[](int index) const {
-    ASSERT(index < m_nSize);
-    return *(ObjectClass*)CFX_BasicArray::GetDataPtr(index);
-  }
-
-  ObjectClass* GetDataPtr(int index) {
-    return (ObjectClass*)CFX_BasicArray::GetDataPtr(index);
-  }
-
-  void RemoveAt(int index) {
-    ASSERT(index < m_nSize);
-    ((ObjectClass*)GetDataPtr(index))->~ObjectClass();
-    CFX_BasicArray::RemoveAt(index, 1);
-  }
-
-  void RemoveAll() {
-    for (int i = 0; i < m_nSize; i++) {
-      ((ObjectClass*)GetDataPtr(i))->~ObjectClass();
-    }
-    CFX_BasicArray::SetSize(0);
-  }
-};
-typedef CFX_ObjectArray<CFX_ByteString> CFX_ByteStringArray;
-typedef CFX_ObjectArray<CFX_WideString> CFX_WideStringArray;
 #endif  // PDF_ENABLE_XFA
 
 template <class DataType, int FixedSize>
@@ -444,180 +334,6 @@ class CFX_FixedBufGrow {
   DataType m_FixedData[FixedSize];
   std::unique_ptr<DataType, FxFreeDeleter> m_pGrowData;
 };
-
-#ifdef PDF_ENABLE_XFA
-class CFX_MapPtrToPtr {
- protected:
-  struct CAssoc {
-    CAssoc* pNext;
-    void* key;
-    void* value;
-  };
-
- public:
-  CFX_MapPtrToPtr(int nBlockSize = 10);
-  ~CFX_MapPtrToPtr();
-
-  int GetCount() const { return m_nCount; }
-  bool IsEmpty() const { return m_nCount == 0; }
-
-  bool Lookup(void* key, void*& rValue) const;
-
-  void* GetValueAt(void* key) const;
-
-  void*& operator[](void* key);
-
-  void SetAt(void* key, void* newValue) { (*this)[key] = newValue; }
-
-  bool RemoveKey(void* key);
-
-  void RemoveAll();
-
-  FX_POSITION GetStartPosition() const {
-    return m_nCount == 0 ? nullptr : (FX_POSITION)-1;
-  }
-
-  void GetNextAssoc(FX_POSITION& rNextPosition,
-                    void*& rKey,
-                    void*& rValue) const;
-
-  uint32_t GetHashTableSize() const { return m_nHashTableSize; }
-
-  void InitHashTable(uint32_t hashSize, bool bAllocNow = true);
-
- protected:
-  CAssoc** m_pHashTable;
-
-  uint32_t m_nHashTableSize;
-
-  int m_nCount;
-
-  CAssoc* m_pFreeList;
-
-  struct CFX_Plex* m_pBlocks;
-
-  int m_nBlockSize;
-
-  uint32_t HashKey(void* key) const;
-
-  CAssoc* NewAssoc();
-
-  void FreeAssoc(CAssoc* pAssoc);
-
-  CAssoc* GetAssocAt(void* key, uint32_t& hash) const;
-};
-
-template <class KeyType, class ValueType>
-class CFX_MapPtrTemplate : public CFX_MapPtrToPtr {
- public:
-  CFX_MapPtrTemplate() : CFX_MapPtrToPtr(10) {}
-
-  bool Lookup(KeyType key, ValueType& rValue) const {
-    void* pValue = nullptr;
-    if (!CFX_MapPtrToPtr::Lookup((void*)(uintptr_t)key, pValue)) {
-      return false;
-    }
-    rValue = (ValueType)(uintptr_t)pValue;
-    return true;
-  }
-
-  ValueType& operator[](KeyType key) {
-    return (ValueType&)CFX_MapPtrToPtr::operator[]((void*)(uintptr_t)key);
-  }
-
-  void SetAt(KeyType key, ValueType newValue) {
-    CFX_MapPtrToPtr::SetAt((void*)(uintptr_t)key, (void*)(uintptr_t)newValue);
-  }
-
-  bool RemoveKey(KeyType key) {
-    return CFX_MapPtrToPtr::RemoveKey((void*)(uintptr_t)key);
-  }
-
-  void GetNextAssoc(FX_POSITION& rNextPosition,
-                    KeyType& rKey,
-                    ValueType& rValue) const {
-    void* pKey = nullptr;
-    void* pValue = nullptr;
-    CFX_MapPtrToPtr::GetNextAssoc(rNextPosition, pKey, pValue);
-    rKey = (KeyType)(uintptr_t)pKey;
-    rValue = (ValueType)(uintptr_t)pValue;
-  }
-};
-#endif  // PDF_ENABLE_XFA
-
-class CFX_PtrList {
- protected:
-  struct CNode {
-    CNode* pNext;
-    CNode* pPrev;
-    void* data;
-  };
-
- public:
-  CFX_PtrList(int nBlockSize = 10);
-
-  FX_POSITION GetHeadPosition() const { return (FX_POSITION)m_pNodeHead; }
-  FX_POSITION GetTailPosition() const { return (FX_POSITION)m_pNodeTail; }
-
-  void* GetNext(FX_POSITION& rPosition) const {
-    CNode* pNode = (CNode*)rPosition;
-    rPosition = (FX_POSITION)pNode->pNext;
-    return pNode->data;
-  }
-
-  void* GetPrev(FX_POSITION& rPosition) const {
-    CNode* pNode = (CNode*)rPosition;
-    rPosition = (FX_POSITION)pNode->pPrev;
-    return pNode->data;
-  }
-
-  FX_POSITION GetNextPosition(FX_POSITION pos) const {
-    return ((CNode*)pos)->pNext;
-  }
-
-  FX_POSITION GetPrevPosition(FX_POSITION pos) const {
-    return ((CNode*)pos)->pPrev;
-  }
-
-  void* GetAt(FX_POSITION rPosition) const {
-    CNode* pNode = (CNode*)rPosition;
-    return pNode->data;
-  }
-
-  int GetCount() const { return m_nCount; }
-  FX_POSITION AddTail(void* newElement);
-  FX_POSITION AddHead(void* newElement);
-
-  void SetAt(FX_POSITION pos, void* newElement) {
-    CNode* pNode = (CNode*)pos;
-    pNode->data = newElement;
-  }
-  FX_POSITION InsertAfter(FX_POSITION pos, void* newElement);
-
-  FX_POSITION Find(void* searchValue, FX_POSITION startAfter = nullptr) const;
-  FX_POSITION FindIndex(int index) const;
-
-  void RemoveAt(FX_POSITION pos);
-  void RemoveAll();
-
- protected:
-  CNode* m_pNodeHead;
-  CNode* m_pNodeTail;
-  int m_nCount;
-  CNode* m_pNodeFree;
-  struct CFX_Plex* m_pBlocks;
-  int m_nBlockSize;
-
-  CNode* NewNode(CNode* pPrev, CNode* pNext);
-  void FreeNode(CNode* pNode);
-
- public:
-  ~CFX_PtrList();
-};
-
-#ifdef PDF_ENABLE_XFA
-typedef void (*PD_CALLBACK_FREEDATA)(void* pData);
-#endif  // PDF_ENABLE_XFA
 
 class CFX_BitStream {
  public:

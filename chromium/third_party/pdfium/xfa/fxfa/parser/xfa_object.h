@@ -7,6 +7,7 @@
 #ifndef XFA_FXFA_PARSER_XFA_OBJECT_H_
 #define XFA_FXFA_PARSER_XFA_OBJECT_H_
 
+#include <map>
 #include <unordered_set>
 
 #include "fxjs/cfxjse_arguments.h"
@@ -90,9 +91,15 @@ class CXFA_Object : public CFXJSE_HostObject {
   void Script_ObjectClass_ClassName(CFXJSE_Value* pValue,
                                     bool bSetting,
                                     XFA_ATTRIBUTE eAttribute);
-  void ThrowException(int32_t iStringID, ...);
+
+  void ThrowInvalidPropertyException() const;
+  void ThrowArgumentMismatchException() const;
+  void ThrowIndexOutOfBoundsException() const;
+  void ThrowParamCountMismatchException(const CFX_WideString& method) const;
 
  protected:
+  void ThrowException(const FX_WCHAR* str, ...) const;
+
   CXFA_Document* const m_pDocument;
   const XFA_ObjectType m_objectType;
   const XFA_Element m_elementType;
@@ -121,6 +128,8 @@ enum XFA_SOM_MESSAGETYPE {
 using CXFA_NodeArray = CFX_ArrayTemplate<CXFA_Node*>;
 using CXFA_NodeStack = CFX_StackTemplate<CXFA_Node*>;
 using CXFA_NodeSet = std::unordered_set<CXFA_Node*>;
+
+typedef void (*PD_CALLBACK_FREEDATA)(void* pData);
 typedef void (*PD_CALLBACK_DUPLICATEDATA)(void*& pData);
 
 struct XFA_MAPDATABLOCKCALLBACKINFO {
@@ -138,8 +147,8 @@ struct XFA_MAPMODULEDATA {
   XFA_MAPMODULEDATA();
   ~XFA_MAPMODULEDATA();
 
-  CFX_MapPtrToPtr m_ValueMap;
-  CFX_MapPtrTemplate<void*, XFA_MAPDATABLOCK*> m_BufferMap;
+  std::map<void*, void*> m_ValueMap;
+  std::map<void*, XFA_MAPDATABLOCK*> m_BufferMap;
 };
 
 #define XFA_CalcRefCount (void*)(uintptr_t) FXBSTR_ID('X', 'F', 'A', 'R')
@@ -659,7 +668,7 @@ class CXFA_Node : public CXFA_Object {
                           bool bProtoAlso = true) const;
   bool HasMapModuleKey(void* pKey, bool bProtoAlso = false);
   void RemoveMapModuleKey(void* pKey = nullptr);
-  void MergeAllData(void* pDstModule, bool bUseSrcAttr = true);
+  void MergeAllData(void* pDstModule);
   void MoveBufferMapData(CXFA_Node* pDstModule, void* pKey);
   void MoveBufferMapData(CXFA_Node* pSrcModule,
                          CXFA_Node* pDstModule,
@@ -676,6 +685,11 @@ class CXFA_Node : public CXFA_Object {
   uint32_t m_dwNameHash;
   CXFA_Node* m_pAuxNode;
   XFA_MAPMODULEDATA* m_pMapModuleData;
+
+ private:
+  void ThrowMissingPropertyException(const CFX_WideString& obj,
+                                     const CFX_WideString& prop) const;
+  void ThrowTooManyOccurancesException(const CFX_WideString& obj) const;
 };
 
 class CXFA_ThisProxy : public CXFA_Object {

@@ -568,26 +568,53 @@ static bool TestModSqrt(FileTest *t, BN_CTX *ctx) {
   bssl::UniquePtr<BIGNUM> a = GetBIGNUM(t, "A");
   bssl::UniquePtr<BIGNUM> p = GetBIGNUM(t, "P");
   bssl::UniquePtr<BIGNUM> mod_sqrt = GetBIGNUM(t, "ModSqrt");
-  if (!a || !p || !mod_sqrt) {
+  bssl::UniquePtr<BIGNUM> mod_sqrt2(BN_new());
+  if (!a || !p || !mod_sqrt || !mod_sqrt2 ||
+      // There are two possible answers.
+      !BN_sub(mod_sqrt2.get(), p.get(), mod_sqrt.get())) {
     return false;
+  }
+
+  // -0 is 0, not P.
+  if (BN_is_zero(mod_sqrt.get())) {
+    BN_zero(mod_sqrt2.get());
   }
 
   bssl::UniquePtr<BIGNUM> ret(BN_new());
-  bssl::UniquePtr<BIGNUM> ret2(BN_new());
   if (!ret ||
-      !ret2 ||
-      !BN_mod_sqrt(ret.get(), a.get(), p.get(), ctx) ||
-      // There are two possible answers.
-      !BN_sub(ret2.get(), p.get(), ret.get())) {
+      !BN_mod_sqrt(ret.get(), a.get(), p.get(), ctx)) {
     return false;
   }
 
-  if (BN_cmp(ret2.get(), mod_sqrt.get()) != 0 &&
+  if (BN_cmp(ret.get(), mod_sqrt2.get()) != 0 &&
       !ExpectBIGNUMsEqual(t, "sqrt(A) (mod P)", mod_sqrt.get(), ret.get())) {
     return false;
   }
 
   return true;
+}
+
+static bool TestNotModSquare(FileTest *t, BN_CTX *ctx) {
+  bssl::UniquePtr<BIGNUM> not_mod_square = GetBIGNUM(t, "NotModSquare");
+  bssl::UniquePtr<BIGNUM> p = GetBIGNUM(t, "P");
+  bssl::UniquePtr<BIGNUM> ret(BN_new());
+  if (!not_mod_square || !p || !ret) {
+    return false;
+  }
+
+  if (BN_mod_sqrt(ret.get(), not_mod_square.get(), p.get(), ctx)) {
+    t->PrintLine("BN_mod_sqrt unexpectedly succeeded.");
+    return false;
+  }
+
+  uint32_t err = ERR_peek_error();
+  if (ERR_GET_LIB(err) == ERR_LIB_BN &&
+      ERR_GET_REASON(err) == BN_R_NOT_A_SQUARE) {
+    ERR_clear_error();
+    return true;
+  }
+
+  return false;
 }
 
 static bool TestModInv(FileTest *t, BN_CTX *ctx) {
@@ -602,15 +629,6 @@ static bool TestModInv(FileTest *t, BN_CTX *ctx) {
   if (!ret ||
       !BN_mod_inverse(ret.get(), a.get(), m.get(), ctx) ||
       !ExpectBIGNUMsEqual(t, "inv(A) (mod M)", mod_inv.get(), ret.get())) {
-    return false;
-  }
-
-  BN_set_flags(a.get(), BN_FLG_CONSTTIME);
-
-  if (!ret ||
-      !BN_mod_inverse(ret.get(), a.get(), m.get(), ctx) ||
-      !ExpectBIGNUMsEqual(t, "inv(A) (mod M) (constant-time)", mod_inv.get(),
-                          ret.get())) {
     return false;
   }
 
@@ -634,6 +652,7 @@ static const Test kTests[] = {
     {"ModExp", TestModExp},
     {"Exp", TestExp},
     {"ModSqrt", TestModSqrt},
+    {"NotModSquare", TestNotModSquare},
     {"ModInv", TestModInv},
 };
 
@@ -652,7 +671,7 @@ static bool RunTest(FileTest *t, void *arg) {
 static bool TestBN2BinPadded(BN_CTX *ctx) {
   uint8_t zeros[256], out[256], reference[128];
 
-  memset(zeros, 0, sizeof(zeros));
+  OPENSSL_memset(zeros, 0, sizeof(zeros));
 
   // Test edge case at 0.
   bssl::UniquePtr<BIGNUM> n(BN_new());
@@ -661,13 +680,13 @@ static bool TestBN2BinPadded(BN_CTX *ctx) {
             "BN_bn2bin_padded failed to encode 0 in an empty buffer.\n");
     return false;
   }
-  memset(out, -1, sizeof(out));
+  OPENSSL_memset(out, -1, sizeof(out));
   if (!BN_bn2bin_padded(out, sizeof(out), n.get())) {
     fprintf(stderr,
             "BN_bn2bin_padded failed to encode 0 in a non-empty buffer.\n");
     return false;
   }
-  if (memcmp(zeros, out, sizeof(out))) {
+  if (OPENSSL_memcmp(zeros, out, sizeof(out))) {
     fprintf(stderr, "BN_bn2bin_padded did not zero buffer.\n");
     return false;
   }
@@ -696,21 +715,98 @@ static bool TestBN2BinPadded(BN_CTX *ctx) {
     }
     // Exactly right size should encode.
     if (!BN_bn2bin_padded(out, bytes, n.get()) ||
-        memcmp(out, reference, bytes) != 0) {
+        OPENSSL_memcmp(out, reference, bytes) != 0) {
       fprintf(stderr, "BN_bn2bin_padded gave a bad result.\n");
       return false;
     }
     // Pad up one byte extra.
     if (!BN_bn2bin_padded(out, bytes + 1, n.get()) ||
-        memcmp(out + 1, reference, bytes) || memcmp(out, zeros, 1)) {
+        OPENSSL_memcmp(out + 1, reference, bytes) ||
+        OPENSSL_memcmp(out, zeros, 1)) {
       fprintf(stderr, "BN_bn2bin_padded gave a bad result.\n");
       return false;
     }
     // Pad up to 256.
     if (!BN_bn2bin_padded(out, sizeof(out), n.get()) ||
-        memcmp(out + sizeof(out) - bytes, reference, bytes) ||
-        memcmp(out, zeros, sizeof(out) - bytes)) {
+        OPENSSL_memcmp(out + sizeof(out) - bytes, reference, bytes) ||
+        OPENSSL_memcmp(out, zeros, sizeof(out) - bytes)) {
       fprintf(stderr, "BN_bn2bin_padded gave a bad result.\n");
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static bool TestLittleEndian() {
+  bssl::UniquePtr<BIGNUM> x(BN_new());
+  bssl::UniquePtr<BIGNUM> y(BN_new());
+  if (!x || !y) {
+    fprintf(stderr, "BN_new failed to malloc.\n");
+    return false;
+  }
+
+  // Test edge case at 0. Fill |out| with garbage to ensure |BN_bn2le_padded|
+  // wrote the result.
+  uint8_t out[256], zeros[256];
+  OPENSSL_memset(out, -1, sizeof(out));
+  OPENSSL_memset(zeros, 0, sizeof(zeros));
+  if (!BN_bn2le_padded(out, sizeof(out), x.get()) ||
+      OPENSSL_memcmp(zeros, out, sizeof(out))) {
+    fprintf(stderr, "BN_bn2le_padded failed to encode 0.\n");
+    return false;
+  }
+
+  if (!BN_le2bn(out, sizeof(out), y.get()) ||
+      BN_cmp(x.get(), y.get()) != 0) {
+    fprintf(stderr, "BN_le2bn failed to decode 0 correctly.\n");
+    return false;
+  }
+
+  // Test random numbers at various byte lengths.
+  for (size_t bytes = 128 - 7; bytes <= 128; bytes++) {
+    if (!BN_rand(x.get(), bytes * 8, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY)) {
+      ERR_print_errors_fp(stderr);
+      return false;
+    }
+
+    // Fill |out| with garbage to ensure |BN_bn2le_padded| wrote the result.
+    OPENSSL_memset(out, -1, sizeof(out));
+    if (!BN_bn2le_padded(out, sizeof(out), x.get())) {
+      fprintf(stderr, "BN_bn2le_padded failed to encode random value.\n");
+      return false;
+    }
+
+    // Compute the expected value by reversing the big-endian output.
+    uint8_t expected[sizeof(out)];
+    if (!BN_bn2bin_padded(expected, sizeof(expected), x.get())) {
+      return false;
+    }
+    for (size_t i = 0; i < sizeof(expected) / 2; i++) {
+      uint8_t tmp = expected[i];
+      expected[i] = expected[sizeof(expected) - 1 - i];
+      expected[sizeof(expected) - 1 - i] = tmp;
+    }
+
+    if (OPENSSL_memcmp(expected, out, sizeof(out))) {
+      fprintf(stderr, "BN_bn2le_padded failed to encode value correctly.\n");
+      hexdump(stderr, "Expected: ", expected, sizeof(expected));
+      hexdump(stderr, "Got:      ", out, sizeof(out));
+      return false;
+    }
+
+    // Make sure the decoding produces the same BIGNUM.
+    if (!BN_le2bn(out, bytes, y.get()) ||
+        BN_cmp(x.get(), y.get()) != 0) {
+      bssl::UniquePtr<char> x_hex(BN_bn2hex(x.get())),
+          y_hex(BN_bn2hex(y.get()));
+      if (!x_hex || !y_hex) {
+        return false;
+      }
+      fprintf(stderr, "BN_le2bn failed to decode value correctly.\n");
+      fprintf(stderr, "Expected: %s\n", x_hex.get());
+      hexdump(stderr, "Encoding: ", out, bytes);
+      fprintf(stderr, "Got:      %s\n", y_hex.get());
       return false;
     }
   }
@@ -894,7 +990,7 @@ static bool TestMPI() {
     }
 
     if (mpi_len != test.mpi_len ||
-        memcmp(test.mpi, scratch, mpi_len) != 0) {
+        OPENSSL_memcmp(test.mpi, scratch, mpi_len) != 0) {
       fprintf(stderr, "MPI test #%u failed:\n", (unsigned)i);
       hexdump(stderr, "Expected: ", test.mpi, test.mpi_len);
       hexdump(stderr, "Got:      ", scratch, mpi_len);
@@ -1034,7 +1130,8 @@ static bool TestASN1() {
     }
     bssl::UniquePtr<uint8_t> delete_der(der);
     if (der_len != test.der_len ||
-        memcmp(der, reinterpret_cast<const uint8_t*>(test.der), der_len) != 0) {
+        OPENSSL_memcmp(der, reinterpret_cast<const uint8_t *>(test.der),
+                       der_len) != 0) {
       fprintf(stderr, "Bad serialization.\n");
       return false;
     }
@@ -1145,42 +1242,35 @@ static bool TestNegativeZero(BN_CTX *ctx) {
     return false;
   }
 
-  for (int consttime = 0; consttime < 2; consttime++) {
-    bssl::UniquePtr<BIGNUM> numerator(BN_new()), denominator(BN_new());
-    if (!numerator || !denominator) {
-      return false;
-    }
+  bssl::UniquePtr<BIGNUM> numerator(BN_new()), denominator(BN_new());
+  if (!numerator || !denominator) {
+    return false;
+  }
 
-    if (consttime) {
-      BN_set_flags(numerator.get(), BN_FLG_CONSTTIME);
-      BN_set_flags(denominator.get(), BN_FLG_CONSTTIME);
-    }
+  // Test that BN_div never gives negative zero in the quotient.
+  if (!BN_set_word(numerator.get(), 1) ||
+      !BN_set_word(denominator.get(), 2)) {
+    return false;
+  }
+  BN_set_negative(numerator.get(), 1);
+  if (!BN_div(a.get(), b.get(), numerator.get(), denominator.get(), ctx)) {
+    return false;
+  }
+  if (!BN_is_zero(a.get()) || BN_is_negative(a.get())) {
+    fprintf(stderr, "Incorrect quotient.\n");
+    return false;
+  }
 
-    // Test that BN_div never gives negative zero in the quotient.
-    if (!BN_set_word(numerator.get(), 1) ||
-        !BN_set_word(denominator.get(), 2)) {
-      return false;
-    }
-    BN_set_negative(numerator.get(), 1);
-    if (!BN_div(a.get(), b.get(), numerator.get(), denominator.get(), ctx)) {
-      return false;
-    }
-    if (!BN_is_zero(a.get()) || BN_is_negative(a.get())) {
-      fprintf(stderr, "Incorrect quotient (consttime = %d).\n", consttime);
-      return false;
-    }
-
-    // Test that BN_div never gives negative zero in the remainder.
-    if (!BN_set_word(denominator.get(), 1)) {
-      return false;
-    }
-    if (!BN_div(a.get(), b.get(), numerator.get(), denominator.get(), ctx)) {
-      return false;
-    }
-    if (!BN_is_zero(b.get()) || BN_is_negative(b.get())) {
-      fprintf(stderr, "Incorrect remainder (consttime = %d).\n", consttime);
-      return false;
-    }
+  // Test that BN_div never gives negative zero in the remainder.
+  if (!BN_set_word(denominator.get(), 1)) {
+    return false;
+  }
+  if (!BN_div(a.get(), b.get(), numerator.get(), denominator.get(), ctx)) {
+    return false;
+  }
+  if (!BN_is_zero(b.get()) || BN_is_negative(b.get())) {
+    fprintf(stderr, "Incorrect remainder.\n");
+    return false;
   }
 
   // Test that BN_set_negative will not produce a negative zero.
@@ -1200,6 +1290,37 @@ static bool TestNegativeZero(BN_CTX *ctx) {
       strcmp(dec.get(), "-0") != 0 ||
       strcmp(hex.get(), "-0") != 0) {
     fprintf(stderr, "BN_bn2dec or BN_bn2hex failed with negative zero.\n");
+    return false;
+  }
+
+  // Test that |BN_rshift| and |BN_rshift1| will not produce a negative zero.
+  if (!BN_set_word(a.get(), 1)) {
+    return false;
+  }
+
+  BN_set_negative(a.get(), 1);
+  if (!BN_rshift(b.get(), a.get(), 1) ||
+      !BN_rshift1(c.get(), a.get())) {
+    return false;
+  }
+
+  if (!BN_is_zero(b.get()) || BN_is_negative(b.get())) {
+    fprintf(stderr, "BN_rshift(-1, 1) produced the wrong result.\n");
+    return false;
+  }
+
+  if (!BN_is_zero(c.get()) || BN_is_negative(c.get())) {
+    fprintf(stderr, "BN_rshift1(-1) produced the wrong result.\n");
+    return false;
+  }
+
+  // Test that |BN_div_word| will not produce a negative zero.
+  if (BN_div_word(a.get(), 2) == (BN_ULONG)-1) {
+    return false;
+  }
+
+  if (!BN_is_zero(a.get()) || BN_is_negative(a.get())) {
+    fprintf(stderr, "BN_div_word(-1, 2) produced the wrong result.\n");
     return false;
   }
 
@@ -1441,7 +1562,7 @@ static bool TestBN2Dec() {
   return true;
 }
 
-static bool TestBNSetU64() {
+static bool TestBNSetGetU64() {
   static const struct {
     const char *hex;
     uint64_t value;
@@ -1463,6 +1584,36 @@ static bool TestBNSetU64() {
       ERR_print_errors_fp(stderr);
       return false;
     }
+
+    uint64_t tmp;
+    if (!BN_get_u64(bn.get(), &tmp) || tmp != test.value) {
+      fprintf(stderr, "BN_get_u64 test failed for 0x%s.\n", test.hex);
+      return false;
+    }
+
+    BN_set_negative(bn.get(), 1);
+    if (!BN_get_u64(bn.get(), &tmp) || tmp != test.value) {
+      fprintf(stderr, "BN_get_u64 test failed for -0x%s.\n", test.hex);
+      return false;
+    }
+  }
+
+  // Test that BN_get_u64 fails on large numbers.
+  bssl::UniquePtr<BIGNUM> bn(BN_new());
+  if (!BN_lshift(bn.get(), BN_value_one(), 64)) {
+    return false;
+  }
+
+  uint64_t tmp;
+  if (BN_get_u64(bn.get(), &tmp)) {
+    fprintf(stderr, "BN_get_u64 of 2^64 unexpectedly succeeded.\n");
+    return false;
+  }
+
+  BN_set_negative(bn.get(), 1);
+  if (BN_get_u64(bn.get(), &tmp)) {
+    fprintf(stderr, "BN_get_u64 of -2^64 unexpectedly succeeded.\n");
+    return false;
   }
 
   return true;
@@ -1485,6 +1636,7 @@ int main(int argc, char *argv[]) {
       !TestDec2BN(ctx.get()) ||
       !TestHex2BN(ctx.get()) ||
       !TestASC2BN(ctx.get()) ||
+      !TestLittleEndian() ||
       !TestMPI() ||
       !TestRand() ||
       !TestASN1() ||
@@ -1494,7 +1646,7 @@ int main(int argc, char *argv[]) {
       !TestSmallPrime(ctx.get()) ||
       !TestCmpWord() ||
       !TestBN2Dec() ||
-      !TestBNSetU64()) {
+      !TestBNSetGetU64()) {
     return 1;
   }
 

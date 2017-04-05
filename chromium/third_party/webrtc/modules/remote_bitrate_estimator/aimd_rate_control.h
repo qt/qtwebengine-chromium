@@ -32,7 +32,7 @@ class AimdRateControl {
   void SetMinBitrate(int min_bitrate_bps);
   int64_t GetFeedbackInterval() const;
   // Returns true if the bitrate estimate hasn't been changed for more than
-  // an RTT, or if the incoming_bitrate is more than 5% above the current
+  // an RTT, or if the incoming_bitrate is less than half of the current
   // estimate. Should be used to decide if we should reduce the rate further
   // when over-using.
   bool TimeToReduceFurther(int64_t time_now,
@@ -42,6 +42,12 @@ class AimdRateControl {
   void SetRtt(int64_t rtt);
   void Update(const RateControlInput* input, int64_t now_ms);
   void SetEstimate(int bitrate_bps, int64_t now_ms);
+
+  // Returns the increase rate which is used when used bandwidth is near the
+  // maximal available bandwidth.
+  virtual int GetNearMaxIncreaseRateBps() const;
+
+  virtual rtc::Optional<int> GetLastBitrateDecreaseBps() const;
 
  private:
   // Update the target bitrate according based on, among other things,
@@ -56,8 +62,7 @@ class AimdRateControl {
                          int64_t now_ms);
   uint32_t MultiplicativeRateIncrease(int64_t now_ms, int64_t last_ms,
                                       uint32_t current_bitrate_bps) const;
-  uint32_t AdditiveRateIncrease(int64_t now_ms, int64_t last_ms,
-                                int64_t response_time_ms) const;
+  uint32_t AdditiveRateIncrease(int64_t now_ms, int64_t last_ms) const;
   void UpdateChangePeriod(int64_t now_ms);
   void UpdateMaxBitRateEstimate(float incoming_bit_rate_kbps);
   void ChangeState(const RateControlInput& input, int64_t now_ms);
@@ -79,6 +84,7 @@ class AimdRateControl {
   float beta_;
   int64_t rtt_;
   bool in_experiment_;
+  rtc::Optional<int> last_decrease_;
 };
 }  // namespace webrtc
 

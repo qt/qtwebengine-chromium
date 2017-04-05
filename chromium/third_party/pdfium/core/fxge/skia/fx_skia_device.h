@@ -7,6 +7,9 @@
 
 #if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
 
+#include <memory>
+#include <vector>
+
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/ifx_renderdevicedriver.h"
 
@@ -93,7 +96,9 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
                        int dest_top,
                        int bitmap_alpha,
                        int blend_type) override;
-#else
+#endif
+
+#ifdef _SKIA_SUPPORT_PATHS_
   void SetClipMask(const FX_RECT& clipBox, const SkPath& skClipPath);
 #endif
 
@@ -132,13 +137,11 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
                       FX_FLOAT font_size,
                       uint32_t color) override;
 
-#ifdef _SKIA_SUPPORT_
   bool DrawShading(const CPDF_ShadingPattern* pPattern,
                    const CFX_Matrix* pMatrix,
                    const FX_RECT& clip_rect,
                    int alpha,
                    bool bAlphaMode) override;
-#endif
 
   virtual uint8_t* GetBuffer() const;
 
@@ -146,8 +149,9 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
                    const CFX_GraphStateData* pGraphState,
                    const SkMatrix& matrix);
   void Clear(uint32_t color);
-  void Flush();
+  void Flush() override;
   SkPictureRecorder* GetRecorder() const { return m_pRecorder; }
+  void PreMultiply() { m_pBitmap->PreMultiply(); }
   static void PreMultiply(CFX_DIBitmap* pDIBitmap);
   SkCanvas* SkiaCanvas() { return m_pCanvas; }
   void DebugVerifyBitmapIsPreMultiplied() const;
@@ -161,7 +165,7 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
   SkCanvas* m_pCanvas;
   SkPictureRecorder* const m_pRecorder;
   std::unique_ptr<SkiaState> m_pCache;
-#ifndef _SKIA_SUPPORT_
+#ifdef _SKIA_SUPPORT_PATHS_
   std::unique_ptr<CFX_ClipRgn> m_pClipRgn;
   std::vector<std::unique_ptr<CFX_ClipRgn>> m_StateStack;
   int m_FillFlags;
@@ -169,6 +173,6 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
 #endif
   bool m_bGroupKnockout;
 };
-#endif  // defined(_SKIA_SUPPORT_)
+#endif  // defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
 
 #endif  // CORE_FXGE_SKIA_FX_SKIA_DEVICE_H_

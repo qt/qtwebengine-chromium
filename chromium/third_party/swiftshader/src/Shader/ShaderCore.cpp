@@ -425,10 +425,10 @@ namespace sw
 		Int2 tmp2 = UnpackLow(row0, row1);
 		Int2 tmp3 = UnpackLow(row2, row3);
 
-		row0 = As<Short4>(UnpackLow(tmp2, tmp3));
-		row1 = As<Short4>(UnpackHigh(tmp2, tmp3));
-		row2 = As<Short4>(UnpackLow(tmp0, tmp1));
-		row3 = As<Short4>(UnpackHigh(tmp0, tmp1));
+		row0 = UnpackLow(tmp2, tmp3);
+		row1 = UnpackHigh(tmp2, tmp3);
+		row2 = UnpackLow(tmp0, tmp1);
+		row3 = UnpackHigh(tmp0, tmp1);
 	}
 
 	void transpose4x4(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3)
@@ -475,18 +475,13 @@ namespace sw
 
 	void transpose2x4(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3)
 	{
-		row0 = UnpackLow(row0, row1);
-		row1 = Float4(row0.zw, row1.zw);
-		row2 = UnpackHigh(row0, row1);
-		row3 = Float4(row2.zw, row3.zw);
-	}
+		Float4 tmp01 = UnpackLow(row0, row1);
+		Float4 tmp23 = UnpackHigh(row0, row1);
 
-	void transpose2x4h(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3)
-	{
-		row0 = UnpackLow(row2, row3);
-		row1 = Float4(row0.zw, row1.zw);
-		row2 = UnpackHigh(row2, row3);
-		row3 = Float4(row2.zw, row3.zw);
+		row0 = tmp01;
+		row1 = Float4(tmp01.zw, row1.zw);
+		row2 = tmp23;
+		row3 = Float4(tmp23.zw, row3.zw);
 	}
 
 	void transpose4xN(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3, int N)

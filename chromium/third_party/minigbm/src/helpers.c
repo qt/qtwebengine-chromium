@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 The Chromium OS Authors. All rights reserved.
+ * Copyright 2014 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -11,135 +11,91 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <xf86drm.h>
+#include <xf86drmMode.h>
 
 #include "drv_priv.h"
 #include "helpers.h"
 #include "util.h"
-
-size_t drv_num_planes_from_format(uint32_t format)
-{
-	switch (format) {
-	case DRV_FORMAT_C8:
-	case DRV_FORMAT_R8:
-	case DRV_FORMAT_RG88:
-	case DRV_FORMAT_GR88:
-	case DRV_FORMAT_RGB332:
-	case DRV_FORMAT_BGR233:
-	case DRV_FORMAT_XRGB4444:
-	case DRV_FORMAT_XBGR4444:
-	case DRV_FORMAT_RGBX4444:
-	case DRV_FORMAT_BGRX4444:
-	case DRV_FORMAT_ARGB4444:
-	case DRV_FORMAT_ABGR4444:
-	case DRV_FORMAT_RGBA4444:
-	case DRV_FORMAT_BGRA4444:
-	case DRV_FORMAT_XRGB1555:
-	case DRV_FORMAT_XBGR1555:
-	case DRV_FORMAT_RGBX5551:
-	case DRV_FORMAT_BGRX5551:
-	case DRV_FORMAT_ARGB1555:
-	case DRV_FORMAT_ABGR1555:
-	case DRV_FORMAT_RGBA5551:
-	case DRV_FORMAT_BGRA5551:
-	case DRV_FORMAT_RGB565:
-	case DRV_FORMAT_BGR565:
-	case DRV_FORMAT_YUYV:
-	case DRV_FORMAT_YVYU:
-	case DRV_FORMAT_UYVY:
-	case DRV_FORMAT_VYUY:
-	case DRV_FORMAT_RGB888:
-	case DRV_FORMAT_BGR888:
-	case DRV_FORMAT_XRGB8888:
-	case DRV_FORMAT_XBGR8888:
-	case DRV_FORMAT_RGBX8888:
-	case DRV_FORMAT_BGRX8888:
-	case DRV_FORMAT_ARGB8888:
-	case DRV_FORMAT_ABGR8888:
-	case DRV_FORMAT_RGBA8888:
-	case DRV_FORMAT_BGRA8888:
-	case DRV_FORMAT_XRGB2101010:
-	case DRV_FORMAT_XBGR2101010:
-	case DRV_FORMAT_RGBX1010102:
-	case DRV_FORMAT_BGRX1010102:
-	case DRV_FORMAT_ARGB2101010:
-	case DRV_FORMAT_ABGR2101010:
-	case DRV_FORMAT_RGBA1010102:
-	case DRV_FORMAT_BGRA1010102:
-	case DRV_FORMAT_AYUV:
-		return 1;
-	case DRV_FORMAT_NV12:
-		return 2;
-	case DRV_FORMAT_YVU420:
-		return 3;
-	}
-
-	fprintf(stderr, "drv: UNKNOWN FORMAT %d\n", format);
-	return 0;
-}
 
 int drv_bpp_from_format(uint32_t format, size_t plane)
 {
 	assert(plane < drv_num_planes_from_format(format));
 
 	switch (format) {
-	case DRV_FORMAT_C8:
-	case DRV_FORMAT_R8:
-	case DRV_FORMAT_RGB332:
-	case DRV_FORMAT_BGR233:
+	case DRM_FORMAT_BGR233:
+	case DRM_FORMAT_C8:
+	case DRM_FORMAT_R8:
+	case DRM_FORMAT_RGB332:
+	case DRM_FORMAT_YVU420:
 		return 8;
 
-	case DRV_FORMAT_NV12:
-		return (plane == 0) ? 8 : 4;
-	case DRV_FORMAT_YVU420:
-		return (plane == 0) ? 8 : 2;
+	/*
+	 * NV12 is laid out as follows. Each letter represents a byte.
+	 * Y plane:
+	 * Y0_0, Y0_1, Y0_2, Y0_3, ..., Y0_N
+	 * Y1_0, Y1_1, Y1_2, Y1_3, ..., Y1_N
+	 * ...
+	 * YM_0, YM_1, YM_2, YM_3, ..., YM_N
+	 * CbCr plane:
+	 * Cb01_01, Cr01_01, Cb01_23, Cr01_23, ..., Cb01_(N-1)N, Cr01_(N-1)N
+	 * Cb23_01, Cr23_01, Cb23_23, Cr23_23, ..., Cb23_(N-1)N, Cr23_(N-1)N
+	 * ...
+	 * Cb(M-1)M_01, Cr(M-1)M_01, ..., Cb(M-1)M_(N-1)N, Cr(M-1)M_(N-1)N
+	 *
+	 * Pixel (0, 0) requires Y0_0, Cb01_01 and Cr01_01. Pixel (0, 1) requires
+	 * Y0_1, Cb01_01 and Cr01_01.  So for a single pixel, 2 bytes of luma data
+	 * are required.
+	 */
+	case DRM_FORMAT_NV12:
+		return (plane == 0) ? 8 : 16;
 
-	case DRV_FORMAT_RG88:
-	case DRV_FORMAT_GR88:
-	case DRV_FORMAT_XRGB4444:
-	case DRV_FORMAT_XBGR4444:
-	case DRV_FORMAT_RGBX4444:
-	case DRV_FORMAT_BGRX4444:
-	case DRV_FORMAT_ARGB4444:
-	case DRV_FORMAT_ABGR4444:
-	case DRV_FORMAT_RGBA4444:
-	case DRV_FORMAT_BGRA4444:
-	case DRV_FORMAT_XRGB1555:
-	case DRV_FORMAT_XBGR1555:
-	case DRV_FORMAT_RGBX5551:
-	case DRV_FORMAT_BGRX5551:
-	case DRV_FORMAT_ARGB1555:
-	case DRV_FORMAT_ABGR1555:
-	case DRV_FORMAT_RGBA5551:
-	case DRV_FORMAT_BGRA5551:
-	case DRV_FORMAT_RGB565:
-	case DRV_FORMAT_BGR565:
-	case DRV_FORMAT_YUYV:
-	case DRV_FORMAT_YVYU:
-	case DRV_FORMAT_UYVY:
-	case DRV_FORMAT_VYUY:
+	case DRM_FORMAT_ABGR1555:
+	case DRM_FORMAT_ABGR4444:
+	case DRM_FORMAT_ARGB1555:
+	case DRM_FORMAT_ARGB4444:
+	case DRM_FORMAT_BGR565:
+	case DRM_FORMAT_BGRA4444:
+	case DRM_FORMAT_BGRA5551:
+	case DRM_FORMAT_BGRX4444:
+	case DRM_FORMAT_BGRX5551:
+	case DRM_FORMAT_GR88:
+	case DRM_FORMAT_RG88:
+	case DRM_FORMAT_RGB565:
+	case DRM_FORMAT_RGBA4444:
+	case DRM_FORMAT_RGBA5551:
+	case DRM_FORMAT_RGBX4444:
+	case DRM_FORMAT_RGBX5551:
+	case DRM_FORMAT_UYVY:
+	case DRM_FORMAT_VYUY:
+	case DRM_FORMAT_XBGR1555:
+	case DRM_FORMAT_XBGR4444:
+	case DRM_FORMAT_XRGB1555:
+	case DRM_FORMAT_XRGB4444:
+	case DRM_FORMAT_YUYV:
+	case DRM_FORMAT_YVYU:
 		return 16;
 
-	case DRV_FORMAT_RGB888:
-	case DRV_FORMAT_BGR888:
+	case DRM_FORMAT_BGR888:
+	case DRM_FORMAT_RGB888:
 		return 24;
 
-	case DRV_FORMAT_XRGB8888:
-	case DRV_FORMAT_XBGR8888:
-	case DRV_FORMAT_RGBX8888:
-	case DRV_FORMAT_BGRX8888:
-	case DRV_FORMAT_ARGB8888:
-	case DRV_FORMAT_ABGR8888:
-	case DRV_FORMAT_RGBA8888:
-	case DRV_FORMAT_BGRA8888:
-	case DRV_FORMAT_XRGB2101010:
-	case DRV_FORMAT_XBGR2101010:
-	case DRV_FORMAT_RGBX1010102:
-	case DRV_FORMAT_BGRX1010102:
-	case DRV_FORMAT_ARGB2101010:
-	case DRV_FORMAT_ABGR2101010:
-	case DRV_FORMAT_RGBA1010102:
-	case DRV_FORMAT_BGRA1010102:
-	case DRV_FORMAT_AYUV:
+	case DRM_FORMAT_ABGR2101010:
+	case DRM_FORMAT_ABGR8888:
+	case DRM_FORMAT_ARGB2101010:
+	case DRM_FORMAT_ARGB8888:
+	case DRM_FORMAT_AYUV:
+	case DRM_FORMAT_BGRA1010102:
+	case DRM_FORMAT_BGRA8888:
+	case DRM_FORMAT_BGRX1010102:
+	case DRM_FORMAT_BGRX8888:
+	case DRM_FORMAT_RGBA1010102:
+	case DRM_FORMAT_RGBA8888:
+	case DRM_FORMAT_RGBX1010102:
+	case DRM_FORMAT_RGBX8888:
+	case DRM_FORMAT_XBGR2101010:
+	case DRM_FORMAT_XBGR8888:
+	case DRM_FORMAT_XRGB2101010:
+	case DRM_FORMAT_XRGB8888:
 		return 32;
 	}
 
@@ -153,32 +109,21 @@ int drv_bpp_from_format(uint32_t format, size_t plane)
  * buffer object.
  */
 int drv_bo_from_format(struct bo *bo, uint32_t width, uint32_t height,
-		       drv_format_t format)
+		       uint32_t format)
 {
 
-	switch (format) {
-	case DRV_FORMAT_YVU420:
-		bo->strides[0] = drv_stride_from_format(format, width, 0);
-		bo->strides[1] = drv_stride_from_format(format, width, 1);
-		bo->strides[2] = drv_stride_from_format(format, width, 2);
-		bo->sizes[0] = height * bo->strides[0];
-		bo->sizes[1] = bo->sizes[2] = (height / 2) * bo->strides[1];
-		bo->offsets[0] = 0;
-		bo->offsets[1] = bo->sizes[0];
-		bo->offsets[2] = bo->offsets[1] + bo->sizes[1];
-		break;
-	case DRV_FORMAT_NV12:
-		bo->strides[0] = drv_stride_from_format(format, width, 0);
-		bo->strides[1] = drv_stride_from_format(format, width, 1);
-		bo->sizes[0] = height * bo->strides[0];
-		bo->sizes[1] = height * bo->strides[1] / 2;
-		bo->offsets[0] = 0;
-		bo->offsets[1] = height * bo->strides[0];
-		break;
-	default:
-		bo->strides[0] = drv_stride_from_format(format, width, 0);
-		bo->sizes[0] = height * bo->strides[0];
-		bo->offsets[0] = 0;
+	size_t p, num_planes;
+	uint32_t offset = 0;
+
+	num_planes = drv_num_planes_from_format(format);
+	assert(num_planes);
+
+	for (p = 0; p < num_planes; p++) {
+		bo->strides[p] = drv_stride_from_format(format, width, p);
+		bo->sizes[p] = drv_size_from_format(format, bo->strides[p],
+						    height, p);
+		bo->offsets[p] = offset;
+		offset += bo->sizes[p];
 	}
 
 	bo->total_size = bo->offsets[bo->num_planes - 1] +
@@ -208,6 +153,8 @@ int drv_dumb_bo_create(struct bo *bo, uint32_t width, uint32_t height,
 		return ret;
 	}
 
+	bo->width = width;
+	bo->height = height;
 	bo->handles[0].u32 = create_dumb.handle;
 	bo->offsets[0] = 0;
 	bo->total_size = bo->sizes[0] = create_dumb.size;
@@ -328,5 +275,147 @@ uint32_t drv_log_base2(uint32_t value)
 	while (value >>= 1)
 		++ret;
 
+	return ret;
+}
+
+/* Inserts a combination into list -- caller should have lock on driver. */
+void drv_insert_supported_combination(struct driver *drv, uint32_t format,
+			              uint64_t usage, uint64_t modifier)
+{
+	struct combination_list_element *elem;
+
+	elem = calloc(1, sizeof(*elem));
+	elem->combination.format = format;
+	elem->combination.modifier = modifier;
+	elem->combination.usage = usage;
+	LIST_ADD(&elem->link, &drv->backend->combinations);
+}
+
+void drv_insert_combinations(struct driver *drv, struct supported_combination *combos,
+			     uint32_t size)
+{
+	unsigned int i;
+
+	pthread_mutex_lock(&drv->driver_lock);
+
+	for (i = 0; i < size; i++)
+		drv_insert_supported_combination(drv, combos[i].format,
+						 combos[i].usage,
+						 combos[i].modifier);
+
+	pthread_mutex_unlock(&drv->driver_lock);
+}
+
+void drv_modify_supported_combination(struct driver *drv, uint32_t format,
+				      uint64_t usage, uint64_t modifier)
+{
+	/*
+	 * Attempts to add the specified usage to an existing {format, modifier}
+	 * pair. If the pair is not present, a new combination is created.
+	 */
+	int found = 0;
+
+	pthread_mutex_lock(&drv->driver_lock);
+
+	list_for_each_entry(struct combination_list_element,
+			    elem, &drv->backend->combinations, link) {
+		if (elem->combination.format == format &&
+		    elem->combination.modifier == modifier) {
+			elem->combination.usage |= usage;
+			found = 1;
+		}
+	}
+
+
+	if (!found)
+		drv_insert_supported_combination(drv, format, usage, modifier);
+
+	pthread_mutex_unlock(&drv->driver_lock);
+}
+
+int drv_add_kms_flags(struct driver *drv)
+{
+	int ret;
+	uint32_t i, j;
+	uint64_t flag, usage;
+	drmModePlanePtr plane;
+	drmModePropertyPtr prop;
+	drmModePlaneResPtr resources;
+	drmModeObjectPropertiesPtr props;
+
+	/*
+	 * All current drivers can scanout XRGB8888/ARGB8888 as a primary plane.
+	 * Some older kernel versions can only return overlay planes, so add the
+	 * combination here. Note that the kernel disregards the alpha component
+	 * of ARGB unless it's an overlay plane.
+	 */
+	drv_modify_supported_combination(drv, DRM_FORMAT_XRGB8888,
+					 BO_USE_SCANOUT, 0);
+	drv_modify_supported_combination(drv, DRM_FORMAT_ARGB8888,
+					 BO_USE_SCANOUT, 0);
+
+	/*
+	 * The ability to return universal planes is only complete on
+	 * ChromeOS kernel versions >= v3.18.  The SET_CLIENT_CAP ioctl
+	 * therefore might return an error code, so don't check it.  If it
+	 * fails, it'll just return the plane list as overlay planes, which is
+	 * fine in our case (our drivers already have cursor bits set).
+	 * modetest in libdrm does the same thing.
+	 */
+	drmSetClientCap(drv->fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
+
+	resources = drmModeGetPlaneResources(drv->fd);
+	if (!resources)
+		goto err;
+
+	for (i = 0; i < resources->count_planes; i++) {
+
+		plane = drmModeGetPlane(drv->fd, resources->planes[i]);
+
+		if (!plane)
+			goto err;
+
+		props = drmModeObjectGetProperties(drv->fd, plane->plane_id,
+						   DRM_MODE_OBJECT_PLANE);
+		if (!props)
+			goto err;
+
+		for (j = 0; j < props->count_props; j++) {
+
+			prop = drmModeGetProperty(drv->fd, props->props[j]);
+			if (prop) {
+				if (strcmp(prop->name, "type") == 0) {
+					flag = props->prop_values[j];
+				}
+				drmModeFreeProperty(prop);
+			}
+		}
+
+		switch (flag) {
+		case DRM_PLANE_TYPE_OVERLAY:
+		case DRM_PLANE_TYPE_PRIMARY:
+			usage = BO_USE_SCANOUT;
+			break;
+		case DRM_PLANE_TYPE_CURSOR:
+			usage = BO_USE_CURSOR;
+			break;
+		default:
+			assert(0);
+		}
+
+		for (j = 0; j < plane->count_formats; j++)
+			drv_modify_supported_combination(drv, plane->formats[j],
+							 usage, 0);
+
+		drmModeFreeObjectProperties(props);
+		drmModeFreePlane(plane);
+
+	}
+
+	drmModeFreePlaneResources(resources);
+	return 0;
+
+err:
+	ret = -1;
 	return ret;
 }

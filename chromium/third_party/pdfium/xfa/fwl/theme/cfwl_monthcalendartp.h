@@ -19,12 +19,8 @@ class CFWL_MonthCalendarTP : public CFWL_WidgetTP {
   // CFWL_WidgetTP
   void Initialize() override;
   void Finalize() override;
-  bool IsValidWidget(IFWL_Widget* pWidget) override;
-  uint32_t SetThemeID(IFWL_Widget* pWidget, uint32_t dwThemeID) override;
   void DrawBackground(CFWL_ThemeBackground* pParams) override;
   void DrawText(CFWL_ThemeText* pParams) override;
-  void* GetCapacity(CFWL_ThemePart* pThemePart,
-                    CFWL_WidgetCapacity dwCapacity) override;
 
  protected:
   struct MCThemeData {
@@ -47,10 +43,12 @@ class CFWL_MonthCalendarTP : public CFWL_WidgetTP {
   void DrawHSeperator(CFWL_ThemeBackground* pParams, CFX_Matrix* pMatrix);
   void DrawWeekNumSep(CFWL_ThemeBackground* pParams, CFX_Matrix* pMatrix);
   FWLTHEME_STATE GetState(uint32_t dwFWLStates);
-  void SetThemeData(uint32_t dwThemeID);
 
   std::unique_ptr<MCThemeData> m_pThemeData;
   CFX_WideString wsResource;
+
+ private:
+  void SetThemeData();
 };
 
 #endif  // XFA_FWL_THEME_CFWL_MONTHCALENDARTP_H_

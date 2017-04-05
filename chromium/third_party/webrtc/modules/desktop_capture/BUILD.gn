@@ -9,8 +9,7 @@
 import("//build/config/ui.gni")
 import("../../build/webrtc.gni")
 
-use_desktop_capture_differ_sse2 =
-    !is_ios && (current_cpu == "x86" || current_cpu == "x64")
+use_desktop_capture_differ_sse2 = current_cpu == "x86" || current_cpu == "x64"
 
 rtc_static_library("primitives") {
   sources = [
@@ -23,9 +22,12 @@ rtc_static_library("primitives") {
     "desktop_region.h",
     "shared_desktop_frame.cc",
     "shared_desktop_frame.h",
+    "shared_memory.cc",
+    "shared_memory.h",
   ]
 
   deps = [
+    "../..:webrtc_common",
     "../../base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
   ]
 }
@@ -42,6 +44,11 @@ if (rtc_include_tests) {
       "rgba_color.cc",
       "rgba_color.h",
     ]
+
+    deps = [
+      ":primitives",
+      "../..:webrtc_common",
+    ]
   }
 
   source_set("screen_drawer") {
@@ -57,6 +64,12 @@ if (rtc_include_tests) {
       "screen_drawer_linux.cc",
       "screen_drawer_mac.cc",
       "screen_drawer_win.cc",
+    ]
+
+    deps = [
+      ":primitives",
+      "../../base:rtc_base_approved",
+      "../../system_wrappers",
     ]
   }
 
@@ -76,7 +89,12 @@ if (rtc_include_tests) {
       "fake_desktop_capturer.h",
       "mock_desktop_capturer_callback.cc",
       "mock_desktop_capturer_callback.h",
-      "screen_capturer_mock_objects.h",
+    ]
+
+    deps = [
+      ":primitives",
+      "../../base:rtc_base_approved",
+      "../../test:test_support",
     ]
   }
 }
@@ -94,8 +112,14 @@ rtc_static_library("desktop_capture") {
     "desktop_capture_options.h",
     "desktop_capturer.cc",
     "desktop_capturer.h",
+    "desktop_capturer_differ_wrapper.cc",
+    "desktop_capturer_differ_wrapper.h",
+    "desktop_frame_rotation.cc",
+    "desktop_frame_rotation.h",
     "desktop_frame_win.cc",
     "desktop_frame_win.h",
+    "differ_block.cc",
+    "differ_block.h",
     "mac/desktop_configuration.h",
     "mac/desktop_configuration.mm",
     "mac/desktop_configuration_monitor.cc",
@@ -116,8 +140,6 @@ rtc_static_library("desktop_capture") {
     "screen_capturer_helper.h",
     "screen_capturer_mac.mm",
     "screen_capturer_win.cc",
-    "shared_memory.cc",
-    "shared_memory.h",
     "win/cursor.cc",
     "win/cursor.h",
     "win/d3d_device.cc",
@@ -176,15 +198,6 @@ rtc_static_library("desktop_capture") {
     ]
   }
 
-  if (!is_ios) {
-    sources += [
-      "desktop_capturer_differ_wrapper.cc",
-      "desktop_capturer_differ_wrapper.h",
-      "differ_block.cc",
-      "differ_block.h",
-    ]
-  }
-
   if (is_mac) {
     libs = [
       "AppKit.framework",
@@ -202,8 +215,10 @@ rtc_static_library("desktop_capture") {
 
   deps = [
     ":primitives",
+    "../..:webrtc_common",
     "../../base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
     "../../system_wrappers",
+    "//third_party/libyuv",
   ]
 
   if (use_desktop_capture_differ_sse2) {

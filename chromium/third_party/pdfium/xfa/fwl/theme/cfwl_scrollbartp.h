@@ -17,11 +17,7 @@ class CFWL_ScrollBarTP : public CFWL_WidgetTP {
   ~CFWL_ScrollBarTP() override;
 
   // CFWL_WidgetTP
-  bool IsValidWidget(IFWL_Widget* pWidget) override;
-  uint32_t SetThemeID(IFWL_Widget* pWidget, uint32_t dwThemeID) override;
   void DrawBackground(CFWL_ThemeBackground* pParams) override;
-  void* GetCapacity(CFWL_ThemePart* pThemePart,
-                    CFWL_WidgetCapacity dwCapacity) override;
 
  protected:
   struct SBThemeData {
@@ -55,9 +51,11 @@ class CFWL_ScrollBarTP : public CFWL_WidgetTP {
                bool bVert,
                FWLTHEME_STATE eState,
                CFX_Matrix* pMatrix = nullptr);
-  void SetThemeData(uint32_t dwID);
 
   std::unique_ptr<SBThemeData> m_pThemeData;
+
+ private:
+  void SetThemeData();
 };
 
 #endif  // XFA_FWL_THEME_CFWL_SCROLLBARTP_H_

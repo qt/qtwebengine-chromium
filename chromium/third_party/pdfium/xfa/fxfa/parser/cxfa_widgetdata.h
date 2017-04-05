@@ -7,6 +7,8 @@
 #ifndef XFA_FXFA_PARSER_CXFA_WIDGETDATA_H_
 #define XFA_FXFA_PARSER_CXFA_WIDGETDATA_H_
 
+#include <vector>
+
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "xfa/fxfa/parser/cxfa_assist.h"
@@ -67,9 +69,8 @@ class CXFA_WidgetData : public CXFA_Data {
   bool GetMinHeight(FX_FLOAT& fMinHeight);
   bool GetMaxWidth(FX_FLOAT& fMaxWidth);
   bool GetMaxHeight(FX_FLOAT& fMaxHeight);
-  CXFA_Border GetUIBorder(bool bModified = false);
-  CXFA_Margin GetUIMargin(bool bModified = false);
-  void GetUIMargin(CFX_RectF& rtUIMargin);
+  CXFA_Border GetUIBorder();
+  CFX_RectF GetUIMargin();
   int32_t GetButtonHighlight();
   bool GetButtonRollover(CFX_WideString& wsRollover, bool& bRichText);
   bool GetButtonDown(CFX_WideString& wsDown, bool& bRichText);
@@ -97,12 +98,12 @@ class CXFA_WidgetData : public CXFA_Data {
   bool GetChoiceListItem(CFX_WideString& wsText,
                          int32_t nIndex,
                          bool bSaveValue = false);
-  void GetChoiceListItems(CFX_WideStringArray& wsTextArray,
+  void GetChoiceListItems(std::vector<CFX_WideString>& wsTextArray,
                           bool bSaveValue = false);
   int32_t CountSelectedItems();
   int32_t GetSelectedItem(int32_t nIndex = 0);
   void GetSelectedItems(CFX_Int32Array& iSelArray);
-  void GetSelectedItemsValue(CFX_WideStringArray& wsSelTextArray);
+  void GetSelectedItemsValue(std::vector<CFX_WideString>& wsSelTextArray);
   bool GetItemState(int32_t nIndex);
   void SetItemState(int32_t nIndex,
                     bool bSelected,

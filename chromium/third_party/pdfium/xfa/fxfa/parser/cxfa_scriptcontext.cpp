@@ -6,10 +6,13 @@
 
 #include "xfa/fxfa/parser/cxfa_scriptcontext.h"
 
+#include <utility>
+
 #include "core/fxcrt/fx_ext.h"
 #include "fxjs/cfxjse_arguments.h"
 #include "fxjs/cfxjse_class.h"
 #include "fxjs/cfxjse_value.h"
+#include "third_party/base/ptr_util.h"
 #include "xfa/fxfa/app/xfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
@@ -122,17 +125,12 @@ CXFA_ScriptContext::CXFA_ScriptContext(CXFA_Document* pDocument)
       m_eRunAtType(XFA_ATTRIBUTEENUM_Client) {}
 
 CXFA_ScriptContext::~CXFA_ScriptContext() {
-  FX_POSITION ps = m_mapVariableToContext.GetStartPosition();
-  while (ps) {
-    CXFA_Object* pScriptNode;
-    CFXJSE_Context* pVariableContext = nullptr;
-    m_mapVariableToContext.GetNextAssoc(ps, pScriptNode, pVariableContext);
-
+  for (const auto& pair : m_mapVariableToContext) {
+    CFXJSE_Context* pVariableContext = pair.second;
     delete ToThisProxy(pVariableContext->GetGlobalObject().get(), nullptr);
     delete pVariableContext;
   }
-  m_mapVariableToContext.RemoveAll();
-
+  m_mapVariableToContext.clear();
   m_upObjectArray.RemoveAll();
 }
 
@@ -140,8 +138,9 @@ void CXFA_ScriptContext::Initialize(v8::Isolate* pIsolate) {
   m_pIsolate = pIsolate;
   DefineJsContext();
   DefineJsClass();
-  m_ResolveProcessor.reset(new CXFA_ResolveProcessor);
+  m_ResolveProcessor = pdfium::MakeUnique<CXFA_ResolveProcessor>();
 }
+
 bool CXFA_ScriptContext::RunScript(XFA_SCRIPTLANGTYPE eScriptType,
                                    const CFX_WideStringC& wsScript,
                                    CFXJSE_Value* hRetValue,
@@ -457,7 +456,7 @@ CFXJSE_Context* CXFA_ScriptContext::CreateVariablesContext(
                              new CXFA_ThisProxy(pSubform, pScriptNode));
   RemoveBuiltInObjs(pVariablesContext);
   pVariablesContext->EnableCompatibleMode();
-  m_mapVariableToContext.SetAt(pScriptNode, pVariablesContext);
+  m_mapVariableToContext[pScriptNode] = pVariablesContext;
   return pVariablesContext;
 }
 CXFA_Object* CXFA_ScriptContext::GetVariablesThis(CXFA_Object* pObject,
@@ -480,7 +479,8 @@ bool CXFA_ScriptContext::RunVariablesScript(CXFA_Node* pScriptNode) {
   if (!pParent || pParent->GetElementType() != XFA_Element::Variables)
     return false;
 
-  if (m_mapVariableToContext.GetValueAt(pScriptNode))
+  auto it = m_mapVariableToContext.find(pScriptNode);
+  if (it != m_mapVariableToContext.end() && it->second)
     return true;
 
   CXFA_Node* pTextNode = pScriptNode->GetNodeItem(XFA_NODEITEM_FirstChild);
@@ -517,10 +517,11 @@ bool CXFA_ScriptContext::QueryVariableValue(CXFA_Node* pScriptNode,
       variablesNode->GetElementType() != XFA_Element::Variables)
     return false;
 
-  void* lpVariables = m_mapVariableToContext.GetValueAt(pScriptNode);
-  if (!lpVariables)
+  auto it = m_mapVariableToContext.find(pScriptNode);
+  if (it == m_mapVariableToContext.end() || !it->second)
     return false;
 
+  void* lpVariables = it->second;
   bool bRes = false;
   CFXJSE_Context* pVariableContext = static_cast<CFXJSE_Context*>(lpVariables);
   std::unique_ptr<CFXJSE_Value> pObject = pVariableContext->GetGlobalObject();

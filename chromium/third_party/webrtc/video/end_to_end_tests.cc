@@ -19,8 +19,9 @@
 #include "webrtc/base/event.h"
 #include "webrtc/base/file.h"
 #include "webrtc/base/optional.h"
+#include "webrtc/base/random.h"
 #include "webrtc/base/rate_limiter.h"
-#include "webrtc/call.h"
+#include "webrtc/call/call.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/media/base/fakevideorenderer.h"
@@ -42,9 +43,11 @@
 #include "webrtc/test/encoder_settings.h"
 #include "webrtc/test/fake_decoder.h"
 #include "webrtc/test/fake_encoder.h"
+#include "webrtc/test/field_trial.h"
 #include "webrtc/test/frame_generator.h"
 #include "webrtc/test/frame_generator_capturer.h"
 #include "webrtc/test/gtest.h"
+#include "webrtc/test/gmock.h"
 #include "webrtc/test/null_transport.h"
 #include "webrtc/test/rtcp_packet_parser.h"
 #include "webrtc/test/rtp_rtcp_observer.h"
@@ -55,11 +58,17 @@
 
 namespace webrtc {
 
+namespace {
+const char new_jb_enabled[] = "WebRTC-NewVideoJitterBuffer/Enabled/";
+const char new_jb_disabled[] = "WebRTC-NewVideoJitterBuffer/Disabled/";
+}  // anonymous namespace
+
 static const int kSilenceTimeoutMs = 2000;
 
-class EndToEndTest : public test::CallTest {
+class EndToEndTest : public test::CallTest,
+                     public ::testing::WithParamInterface<std::string> {
  public:
-  EndToEndTest() {}
+  EndToEndTest() : scoped_field_trial_(GetParam()) {}
 
   virtual ~EndToEndTest() {
     EXPECT_EQ(nullptr, video_send_stream_);
@@ -117,20 +126,24 @@ class EndToEndTest : public test::CallTest {
   void DecodesRetransmittedFrame(bool enable_rtx, bool enable_red);
   void ReceivesPliAndRecovers(int rtp_history_ms);
   void RespectsRtcpMode(RtcpMode rtcp_mode);
-  void TestXrReceiverReferenceTimeReport(bool enable_rrtr);
   void TestSendsSetSsrcs(size_t num_ssrcs, bool send_single_ssrc_first);
   void TestRtpStatePreservation(bool use_rtx, bool provoke_rtcpsr_before_rtp);
   void VerifyHistogramStats(bool use_rtx, bool use_red, bool screenshare);
   void VerifyNewVideoSendStreamsRespectNetworkState(
-      MediaType network_to_bring_down,
+      MediaType network_to_bring_up,
       VideoEncoder* encoder,
       Transport* transport);
   void VerifyNewVideoReceiveStreamsRespectNetworkState(
-      MediaType network_to_bring_down,
+      MediaType network_to_bring_up,
       Transport* transport);
+  test::ScopedFieldTrials scoped_field_trial_;
 };
 
-TEST_F(EndToEndTest, ReceiverCanBeStartedTwice) {
+INSTANTIATE_TEST_CASE_P(TestWithNewVideoJitterBuffer,
+                        EndToEndTest,
+                        ::testing::Values(new_jb_enabled, new_jb_disabled));
+
+TEST_P(EndToEndTest, ReceiverCanBeStartedTwice) {
   CreateCalls(Call::Config(&event_log_), Call::Config(&event_log_));
 
   test::NullTransport transport;
@@ -145,7 +158,7 @@ TEST_F(EndToEndTest, ReceiverCanBeStartedTwice) {
   DestroyStreams();
 }
 
-TEST_F(EndToEndTest, ReceiverCanBeStoppedTwice) {
+TEST_P(EndToEndTest, ReceiverCanBeStoppedTwice) {
   CreateCalls(Call::Config(&event_log_), Call::Config(&event_log_));
 
   test::NullTransport transport;
@@ -160,7 +173,7 @@ TEST_F(EndToEndTest, ReceiverCanBeStoppedTwice) {
   DestroyStreams();
 }
 
-TEST_F(EndToEndTest, ReceiverCanBeStoppedAndRestarted) {
+TEST_P(EndToEndTest, ReceiverCanBeStoppedAndRestarted) {
   CreateCalls(Call::Config(&event_log_), Call::Config(&event_log_));
 
   test::NullTransport transport;
@@ -176,7 +189,7 @@ TEST_F(EndToEndTest, ReceiverCanBeStoppedAndRestarted) {
   DestroyStreams();
 }
 
-TEST_F(EndToEndTest, RendersSingleDelayedFrame) {
+TEST_P(EndToEndTest, RendersSingleDelayedFrame) {
   static const int kWidth = 320;
   static const int kHeight = 240;
   // This constant is chosen to be higher than the timeout in the video_render
@@ -249,7 +262,7 @@ TEST_F(EndToEndTest, RendersSingleDelayedFrame) {
   DestroyStreams();
 }
 
-TEST_F(EndToEndTest, TransmitsFirstFrame) {
+TEST_P(EndToEndTest, TransmitsFirstFrame) {
   class Renderer : public rtc::VideoSinkInterface<VideoFrame> {
    public:
     Renderer() : event_(false, false) {}
@@ -302,7 +315,9 @@ class CodecObserver : public test::EndToEndTest,
                 const std::string& payload_name,
                 webrtc::VideoEncoder* encoder,
                 webrtc::VideoDecoder* decoder)
-      : EndToEndTest(2 * webrtc::EndToEndTest::kDefaultTimeoutMs),
+      : EndToEndTest(4 * webrtc::EndToEndTest::kDefaultTimeoutMs),
+        // TODO(hta): This timeout (120 seconds) is excessive.
+        // https://bugs.webrtc.org/6830
         no_frames_to_wait_for_(no_frames_to_wait_for),
         expected_rotation_(rotation_to_test),
         payload_name_(payload_name),
@@ -352,46 +367,66 @@ class CodecObserver : public test::EndToEndTest,
   int frame_counter_;
 };
 
-TEST_F(EndToEndTest, SendsAndReceivesVP8Rotation90) {
-  CodecObserver test(5, kVideoRotation_90, "VP8",
-                     VideoEncoder::Create(VideoEncoder::kVp8),
+TEST_P(EndToEndTest, SendsAndReceivesVP8) {
+  CodecObserver test(5, kVideoRotation_0, "VP8", VP8Encoder::Create(),
+                     VP8Decoder::Create());
+  RunBaseTest(&test);
+}
+
+TEST_P(EndToEndTest, SendsAndReceivesVP8Rotation90) {
+  CodecObserver test(5, kVideoRotation_90, "VP8", VP8Encoder::Create(),
                      VP8Decoder::Create());
   RunBaseTest(&test);
 }
 
 #if !defined(RTC_DISABLE_VP9)
-TEST_F(EndToEndTest, SendsAndReceivesVP9) {
-  CodecObserver test(500, kVideoRotation_0, "VP9",
-                     VideoEncoder::Create(VideoEncoder::kVp9),
+TEST_P(EndToEndTest, SendsAndReceivesVP9) {
+  CodecObserver test(500, kVideoRotation_0, "VP9", VP9Encoder::Create(),
                      VP9Decoder::Create());
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, SendsAndReceivesVP9VideoRotation90) {
-  CodecObserver test(5, kVideoRotation_90, "VP9",
-                     VideoEncoder::Create(VideoEncoder::kVp9),
+TEST_P(EndToEndTest, SendsAndReceivesVP9VideoRotation90) {
+  CodecObserver test(5, kVideoRotation_90, "VP9", VP9Encoder::Create(),
                      VP9Decoder::Create());
   RunBaseTest(&test);
 }
 #endif  // !defined(RTC_DISABLE_VP9)
 
 #if defined(WEBRTC_USE_H264)
-TEST_F(EndToEndTest, SendsAndReceivesH264) {
+TEST_P(EndToEndTest, SendsAndReceivesH264) {
   CodecObserver test(500, kVideoRotation_0, "H264",
-                     VideoEncoder::Create(VideoEncoder::kH264),
+                     H264Encoder::Create(cricket::VideoCodec("H264")),
                      H264Decoder::Create());
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, SendsAndReceivesH264VideoRotation90) {
+TEST_P(EndToEndTest, SendsAndReceivesH264VideoRotation90) {
   CodecObserver test(5, kVideoRotation_90, "H264",
-                     VideoEncoder::Create(VideoEncoder::kH264),
+                     H264Encoder::Create(cricket::VideoCodec("H264")),
                      H264Decoder::Create());
   RunBaseTest(&test);
 }
+
+TEST_P(EndToEndTest, SendsAndReceivesH264PacketizationMode0) {
+  cricket::VideoCodec codec = cricket::VideoCodec("H264");
+  codec.SetParam(cricket::kH264FmtpPacketizationMode, "0");
+  CodecObserver test(500, kVideoRotation_0, "H264", H264Encoder::Create(codec),
+                     H264Decoder::Create());
+  RunBaseTest(&test);
+}
+
+TEST_P(EndToEndTest, SendsAndReceivesH264PacketizationMode1) {
+  cricket::VideoCodec codec = cricket::VideoCodec("H264");
+  codec.SetParam(cricket::kH264FmtpPacketizationMode, "1");
+  CodecObserver test(500, kVideoRotation_0, "H264", H264Encoder::Create(codec),
+                     H264Decoder::Create());
+  RunBaseTest(&test);
+}
+
 #endif  // defined(WEBRTC_USE_H264)
 
-TEST_F(EndToEndTest, ReceiverUsesLocalSsrc) {
+TEST_P(EndToEndTest, ReceiverUsesLocalSsrc) {
   class SyncRtcpObserver : public test::EndToEndTest {
    public:
     SyncRtcpObserver() : EndToEndTest(kDefaultTimeoutMs) {}
@@ -414,7 +449,7 @@ TEST_F(EndToEndTest, ReceiverUsesLocalSsrc) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, ReceivesAndRetransmitsNack) {
+TEST_P(EndToEndTest, ReceivesAndRetransmitsNack) {
   static const int kNumberOfNacksToObserve = 2;
   static const int kLossBurstSize = 2;
   static const int kPacketsBetweenLossBursts = 9;
@@ -436,11 +471,12 @@ TEST_F(EndToEndTest, ReceivesAndRetransmitsNack) {
       if (dropped_packets_.find(header.sequenceNumber) !=
           dropped_packets_.end()) {
         retransmitted_packets_.insert(header.sequenceNumber);
-        if (nacks_left_ <= 0 &&
-            retransmitted_packets_.size() == dropped_packets_.size()) {
-          observation_complete_.Set();
-        }
         return SEND_PACKET;
+      }
+
+      if (nacks_left_ <= 0 &&
+          retransmitted_packets_.size() == dropped_packets_.size()) {
+        observation_complete_.Set();
       }
 
       ++sent_rtp_packets_;
@@ -496,7 +532,7 @@ TEST_F(EndToEndTest, ReceivesAndRetransmitsNack) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, ReceivesNackAndRetransmitsAudio) {
+TEST_P(EndToEndTest, ReceivesNackAndRetransmitsAudio) {
   class NackObserver : public test::EndToEndTest {
    public:
     NackObserver()
@@ -567,7 +603,7 @@ TEST_F(EndToEndTest, ReceivesNackAndRetransmitsAudio) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, CanReceiveUlpfec) {
+TEST_P(EndToEndTest, CanReceiveUlpfec) {
   class UlpfecRenderObserver : public test::EndToEndTest,
                                public rtc::VideoSinkInterface<VideoFrame> {
    public:
@@ -593,8 +629,9 @@ TEST_F(EndToEndTest, CanReceiveUlpfec) {
       if (protected_sequence_numbers_.count(header.sequenceNumber) != 0) {
         // Retransmitted packet, should not count.
         protected_sequence_numbers_.erase(header.sequenceNumber);
-        EXPECT_GT(protected_timestamps_.count(header.timestamp), 0u);
-        protected_timestamps_.erase(header.timestamp);
+        auto ts_it = protected_timestamps_.find(header.timestamp);
+        EXPECT_NE(ts_it, protected_timestamps_.end());
+        protected_timestamps_.erase(ts_it);
         return SEND_PACKET;
       }
 
@@ -655,18 +692,143 @@ TEST_F(EndToEndTest, CanReceiveUlpfec) {
 
     void PerformTest() override {
       EXPECT_TRUE(Wait())
-          << "Timed out waiting for dropped frames frames to be rendered.";
+          << "Timed out waiting for dropped frames to be rendered.";
     }
 
     rtc::CriticalSection crit_;
     std::set<uint32_t> protected_sequence_numbers_ GUARDED_BY(crit_);
-    std::set<uint32_t> protected_timestamps_ GUARDED_BY(crit_);
+    // Since several packets can have the same timestamp a multiset is used
+    // instead of a set.
+    std::multiset<uint32_t> protected_timestamps_ GUARDED_BY(crit_);
   } test;
 
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, ReceivedUlpfecPacketsNotNacked) {
+class FlexfecRenderObserver : public test::EndToEndTest,
+                              public rtc::VideoSinkInterface<VideoFrame> {
+ public:
+  static constexpr uint32_t kVideoLocalSsrc = 123;
+  static constexpr uint32_t kFlexfecLocalSsrc = 456;
+
+  explicit FlexfecRenderObserver(bool expect_flexfec_rtcp)
+      : test::EndToEndTest(test::CallTest::kDefaultTimeoutMs),
+        expect_flexfec_rtcp_(expect_flexfec_rtcp),
+        received_flexfec_rtcp_(false),
+        random_(0xcafef00d1) {}
+
+  size_t GetNumFlexfecStreams() const override { return 1; }
+
+ private:
+  Action OnSendRtp(const uint8_t* packet, size_t length) override {
+    rtc::CritScope lock(&crit_);
+    RTPHeader header;
+    EXPECT_TRUE(parser_->Parse(packet, length, &header));
+
+    uint8_t payload_type = header.payloadType;
+    if (payload_type != test::CallTest::kFakeVideoSendPayloadType) {
+      EXPECT_EQ(test::CallTest::kFlexfecPayloadType, payload_type);
+    }
+
+    // Is this a retransmitted media packet? From the perspective of FEC, this
+    // packet is then no longer dropped, so remove it from the list of
+    // dropped packets.
+    if (payload_type == test::CallTest::kFakeVideoSendPayloadType) {
+      auto seq_num_it = dropped_sequence_numbers_.find(header.sequenceNumber);
+      if (seq_num_it != dropped_sequence_numbers_.end()) {
+        dropped_sequence_numbers_.erase(seq_num_it);
+        auto ts_it = dropped_timestamps_.find(header.timestamp);
+        EXPECT_NE(ts_it, dropped_timestamps_.end());
+        dropped_timestamps_.erase(ts_it);
+
+        return SEND_PACKET;
+      }
+    }
+
+    // Simulate 5% packet loss. Record what media packets, and corresponding
+    // timestamps, that were dropped.
+    if (random_.Rand(1, 100) <= 5) {
+      if (payload_type == test::CallTest::kFakeVideoSendPayloadType) {
+        dropped_sequence_numbers_.insert(header.sequenceNumber);
+        dropped_timestamps_.insert(header.timestamp);
+      }
+
+      return DROP_PACKET;
+    }
+
+    return SEND_PACKET;
+  }
+
+  Action OnReceiveRtcp(const uint8_t* data, size_t length) override {
+    test::RtcpPacketParser parser;
+
+    parser.Parse(data, length);
+    if (parser.sender_ssrc() == kFlexfecLocalSsrc) {
+      EXPECT_EQ(1, parser.receiver_report()->num_packets());
+      const std::vector<rtcp::ReportBlock>& report_blocks =
+          parser.receiver_report()->report_blocks();
+      if (!report_blocks.empty()) {
+        EXPECT_EQ(1U, report_blocks.size());
+        EXPECT_EQ(test::CallTest::kFlexfecSendSsrc,
+                  report_blocks[0].source_ssrc());
+        received_flexfec_rtcp_ = true;
+      }
+    }
+
+    return SEND_PACKET;
+  }
+
+  void OnFrame(const VideoFrame& video_frame) override {
+    rtc::CritScope lock(&crit_);
+    // Rendering frame with timestamp of packet that was dropped -> FEC
+    // protection worked.
+    auto it = dropped_timestamps_.find(video_frame.timestamp());
+    if (it != dropped_timestamps_.end()) {
+      if (!expect_flexfec_rtcp_ || received_flexfec_rtcp_) {
+        observation_complete_.Set();
+      }
+    }
+  }
+
+  void ModifyVideoConfigs(
+      VideoSendStream::Config* send_config,
+      std::vector<VideoReceiveStream::Config>* receive_configs,
+      VideoEncoderConfig* encoder_config) override {
+    (*receive_configs)[0].rtp.local_ssrc = kVideoLocalSsrc;
+    (*receive_configs)[0].renderer = this;
+  }
+
+  void ModifyFlexfecConfigs(
+      std::vector<FlexfecReceiveStream::Config>* receive_configs) override {
+    (*receive_configs)[0].local_ssrc = kFlexfecLocalSsrc;
+  }
+
+  void PerformTest() override {
+    EXPECT_TRUE(Wait())
+        << "Timed out waiting for dropped frames to be rendered.";
+  }
+
+  rtc::CriticalSection crit_;
+  std::set<uint32_t> dropped_sequence_numbers_ GUARDED_BY(crit_);
+  // Since several packets can have the same timestamp a multiset is used
+  // instead of a set.
+  std::multiset<uint32_t> dropped_timestamps_ GUARDED_BY(crit_);
+  bool expect_flexfec_rtcp_;
+  bool received_flexfec_rtcp_;
+  Random random_;
+};
+
+TEST_P(EndToEndTest, ReceivesFlexfec) {
+  FlexfecRenderObserver test(false);
+  RunBaseTest(&test);
+}
+
+TEST_P(EndToEndTest, ReceivesFlexfecAndSendsCorrespondingRtcp) {
+  FlexfecRenderObserver test(true);
+  RunBaseTest(&test);
+}
+
+TEST_P(EndToEndTest, ReceivedUlpfecPacketsNotNacked) {
   class UlpfecNackObserver : public test::EndToEndTest {
    public:
     UlpfecNackObserver()
@@ -675,7 +837,7 @@ TEST_F(EndToEndTest, ReceivedUlpfecPacketsNotNacked) {
           ulpfec_sequence_number_(0),
           has_last_sequence_number_(false),
           last_sequence_number_(0),
-          encoder_(VideoEncoder::Create(VideoEncoder::EncoderType::kVp8)),
+          encoder_(VP8Encoder::Create()),
           decoder_(VP8Decoder::Create()) {}
 
    private:
@@ -843,7 +1005,7 @@ void EndToEndTest::DecodesRetransmittedFrame(bool enable_rtx, bool enable_red) {
           retransmission_ssrc_(enable_rtx ? kSendRtxSsrcs[0]
                                           : kVideoSendSsrcs[0]),
           retransmission_payload_type_(GetPayloadType(enable_rtx, enable_red)),
-          encoder_(VideoEncoder::Create(VideoEncoder::EncoderType::kVp8)),
+          encoder_(VP8Encoder::Create()),
           marker_bits_observed_(0),
           retransmitted_timestamp_(0) {}
 
@@ -928,7 +1090,7 @@ void EndToEndTest::DecodesRetransmittedFrame(bool enable_rtx, bool enable_red) {
       }
       // Configure encoding and decoding with VP8, since generic packetization
       // doesn't support FEC with NACK.
-      RTC_DCHECK_EQ(1u, (*receive_configs)[0].decoders.size());
+      RTC_DCHECK_EQ(1, (*receive_configs)[0].decoders.size());
       send_config->encoder_settings.encoder = encoder_.get();
       send_config->encoder_settings.payload_name = "VP8";
       (*receive_configs)[0].decoders[0].payload_name = "VP8";
@@ -964,19 +1126,19 @@ void EndToEndTest::DecodesRetransmittedFrame(bool enable_rtx, bool enable_red) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, DecodesRetransmittedFrame) {
+TEST_P(EndToEndTest, DecodesRetransmittedFrame) {
   DecodesRetransmittedFrame(false, false);
 }
 
-TEST_F(EndToEndTest, DecodesRetransmittedFrameOverRtx) {
+TEST_P(EndToEndTest, DecodesRetransmittedFrameOverRtx) {
   DecodesRetransmittedFrame(true, false);
 }
 
-TEST_F(EndToEndTest, DecodesRetransmittedFrameByRed) {
+TEST_P(EndToEndTest, DecodesRetransmittedFrameByRed) {
   DecodesRetransmittedFrame(false, true);
 }
 
-TEST_F(EndToEndTest, DecodesRetransmittedFrameByRedOverRtx) {
+TEST_P(EndToEndTest, DecodesRetransmittedFrameByRedOverRtx) {
   DecodesRetransmittedFrame(true, true);
 }
 
@@ -1060,15 +1222,18 @@ void EndToEndTest::ReceivesPliAndRecovers(int rtp_history_ms) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, ReceivesPliAndRecoversWithNack) {
+TEST_P(EndToEndTest, ReceivesPliAndRecoversWithNack) {
   ReceivesPliAndRecovers(1000);
 }
 
-TEST_F(EndToEndTest, ReceivesPliAndRecoversWithoutNack) {
+TEST_P(EndToEndTest, ReceivesPliAndRecoversWithoutNack) {
+  // This test makes no sense for the new video jitter buffer.
+  if (GetParam() == new_jb_enabled)
+    return;
   ReceivesPliAndRecovers(0);
 }
 
-TEST_F(EndToEndTest, UnknownRtpPacketGivesUnknownSsrcReturnCode) {
+TEST_P(EndToEndTest, UnknownRtpPacketGivesUnknownSsrcReturnCode) {
   class PacketInputObserver : public PacketReceiver {
    public:
     explicit PacketInputObserver(PacketReceiver* receiver)
@@ -1200,11 +1365,11 @@ void EndToEndTest::RespectsRtcpMode(RtcpMode rtcp_mode) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, UsesRtcpCompoundMode) {
+TEST_P(EndToEndTest, UsesRtcpCompoundMode) {
   RespectsRtcpMode(RtcpMode::kCompound);
 }
 
-TEST_F(EndToEndTest, UsesRtcpReducedSizeMode) {
+TEST_P(EndToEndTest, UsesRtcpReducedSizeMode) {
   RespectsRtcpMode(RtcpMode::kReducedSize);
 }
 
@@ -1242,7 +1407,7 @@ class MultiStreamTest {
 
     std::unique_ptr<VideoEncoder> encoders[kNumStreams];
     for (size_t i = 0; i < kNumStreams; ++i)
-      encoders[i].reset(VideoEncoder::Create(VideoEncoder::kVp8));
+      encoders[i].reset(VP8Encoder::Create());
 
     VideoSendStream* send_streams[kNumStreams];
     VideoReceiveStream* receive_streams[kNumStreams];
@@ -1328,7 +1493,7 @@ class MultiStreamTest {
 
 // Each renderer verifies that it receives the expected resolution, and as soon
 // as every renderer has received a frame, the test finishes.
-TEST_F(EndToEndTest, SendsAndReceivesMultipleStreams) {
+TEST_P(EndToEndTest, SendsAndReceivesMultipleStreams) {
   class VideoOutputObserver : public rtc::VideoSinkInterface<VideoFrame> {
    public:
     VideoOutputObserver(const MultiStreamTest::CodecSettings& settings,
@@ -1393,7 +1558,7 @@ TEST_F(EndToEndTest, SendsAndReceivesMultipleStreams) {
   tester.RunTest();
 }
 
-TEST_F(EndToEndTest, AssignsTransportSequenceNumbers) {
+TEST_P(EndToEndTest, AssignsTransportSequenceNumbers) {
   static const int kExtensionId = 5;
 
   class RtpExtensionHeaderObserver : public test::DirectTransport {
@@ -1660,32 +1825,32 @@ class TransportFeedbackTester : public test::EndToEndTest {
   Call* receiver_call_;
 };
 
-TEST_F(EndToEndTest, VideoReceivesTransportFeedback) {
+TEST_P(EndToEndTest, VideoReceivesTransportFeedback) {
   TransportFeedbackTester test(true, 1, 0);
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, VideoTransportFeedbackNotConfigured) {
+TEST_P(EndToEndTest, VideoTransportFeedbackNotConfigured) {
   TransportFeedbackTester test(false, 1, 0);
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, AudioReceivesTransportFeedback) {
+TEST_P(EndToEndTest, AudioReceivesTransportFeedback) {
   TransportFeedbackTester test(true, 0, 1);
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, AudioTransportFeedbackNotConfigured) {
+TEST_P(EndToEndTest, AudioTransportFeedbackNotConfigured) {
   TransportFeedbackTester test(false, 0, 1);
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, AudioVideoReceivesTransportFeedback) {
+TEST_P(EndToEndTest, AudioVideoReceivesTransportFeedback) {
   TransportFeedbackTester test(true, 1, 1);
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, ObserversEncodedFrames) {
+TEST_P(EndToEndTest, ObserversEncodedFrames) {
   class EncodedFrameTestObserver : public EncodedFrameObserver {
    public:
     EncodedFrameTestObserver()
@@ -1760,7 +1925,7 @@ TEST_F(EndToEndTest, ObserversEncodedFrames) {
   DestroyStreams();
 }
 
-TEST_F(EndToEndTest, ReceiveStreamSendsRemb) {
+TEST_P(EndToEndTest, ReceiveStreamSendsRemb) {
   class RembObserver : public test::EndToEndTest {
    public:
     RembObserver() : EndToEndTest(kDefaultTimeoutMs) {}
@@ -1789,7 +1954,7 @@ TEST_F(EndToEndTest, ReceiveStreamSendsRemb) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, VerifyBandwidthStats) {
+TEST_P(EndToEndTest, VerifyBandwidthStats) {
   class RtcpObserver : public test::EndToEndTest {
    public:
     RtcpObserver()
@@ -1835,7 +2000,7 @@ TEST_F(EndToEndTest, VerifyBandwidthStats) {
 // then have the test generate a REMB of 500 kbps and verify that the send BWE
 // is reduced to exactly 500 kbps. Then a REMB of 1000 kbps is generated and the
 // test verifies that the send BWE ramps back up to exactly 1000 kbps.
-TEST_F(EndToEndTest, RembWithSendSideBwe) {
+TEST_P(EndToEndTest, RembWithSendSideBwe) {
   class BweObserver : public test::EndToEndTest {
    public:
     BweObserver()
@@ -1968,7 +2133,7 @@ TEST_F(EndToEndTest, RembWithSendSideBwe) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, VerifyNackStats) {
+TEST_P(EndToEndTest, VerifyNackStats) {
   static const int kPacketNumberToDrop = 200;
   class NackObserver : public test::EndToEndTest {
    public:
@@ -2092,9 +2257,7 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
           use_red_(use_red),
           screenshare_(screenshare),
           // This test uses NACK, so to send FEC we can't use a fake encoder.
-          vp8_encoder_(
-              use_red ? VideoEncoder::Create(VideoEncoder::EncoderType::kVp8)
-                      : nullptr),
+          vp8_encoder_(use_red ? VP8Encoder::Create() : nullptr),
           sender_call_(nullptr),
           receiver_call_(nullptr),
           start_runtime_ms_(-1),
@@ -2271,6 +2434,9 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
   EXPECT_EQ(1, metrics::NumSamples(video_prefix + "EncodeTimeInMs"));
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.DecodeTimeInMs"));
 
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "NumberOfPauseEvents"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "PausedTimeInPercent"));
+
   EXPECT_EQ(1, metrics::NumSamples(video_prefix + "BitrateSentInKbps"));
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.BitrateReceivedInKbps"));
   EXPECT_EQ(1, metrics::NumSamples(video_prefix + "MediaBitrateSentInKbps"));
@@ -2302,108 +2468,25 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
             metrics::NumSamples("WebRTC.Video.ReceivedFecPacketsInPercent"));
 }
 
-TEST_F(EndToEndTest, VerifyHistogramStatsWithRtx) {
+TEST_P(EndToEndTest, VerifyHistogramStatsWithRtx) {
   const bool kEnabledRtx = true;
   const bool kEnabledRed = false;
   const bool kScreenshare = false;
   VerifyHistogramStats(kEnabledRtx, kEnabledRed, kScreenshare);
 }
 
-TEST_F(EndToEndTest, VerifyHistogramStatsWithRed) {
+TEST_P(EndToEndTest, VerifyHistogramStatsWithRed) {
   const bool kEnabledRtx = false;
   const bool kEnabledRed = true;
   const bool kScreenshare = false;
   VerifyHistogramStats(kEnabledRtx, kEnabledRed, kScreenshare);
 }
 
-TEST_F(EndToEndTest, VerifyHistogramStatsWithScreenshare) {
+TEST_P(EndToEndTest, VerifyHistogramStatsWithScreenshare) {
   const bool kEnabledRtx = false;
   const bool kEnabledRed = false;
   const bool kScreenshare = true;
   VerifyHistogramStats(kEnabledRtx, kEnabledRed, kScreenshare);
-}
-
-void EndToEndTest::TestXrReceiverReferenceTimeReport(bool enable_rrtr) {
-  static const int kNumRtcpReportPacketsToObserve = 5;
-  class RtcpXrObserver : public test::EndToEndTest {
-   public:
-    explicit RtcpXrObserver(bool enable_rrtr)
-        : EndToEndTest(kDefaultTimeoutMs),
-          enable_rrtr_(enable_rrtr),
-          sent_rtcp_sr_(0),
-          sent_rtcp_rr_(0),
-          sent_rtcp_rrtr_(0),
-          sent_rtcp_dlrr_(0) {}
-
-   private:
-    // Receive stream should send RR packets (and RRTR packets if enabled).
-    Action OnReceiveRtcp(const uint8_t* packet, size_t length) override {
-      rtc::CritScope lock(&crit_);
-      test::RtcpPacketParser parser;
-      EXPECT_TRUE(parser.Parse(packet, length));
-
-      sent_rtcp_rr_ += parser.receiver_report()->num_packets();
-      EXPECT_EQ(0, parser.sender_report()->num_packets());
-      EXPECT_GE(1, parser.xr()->num_packets());
-      if (parser.xr()->num_packets() > 0) {
-        if (parser.xr()->rrtr())
-          ++sent_rtcp_rrtr_;
-        EXPECT_FALSE(parser.xr()->dlrr());
-      }
-
-      return SEND_PACKET;
-    }
-    // Send stream should send SR packets (and DLRR packets if enabled).
-    Action OnSendRtcp(const uint8_t* packet, size_t length) override {
-      rtc::CritScope lock(&crit_);
-      test::RtcpPacketParser parser;
-      EXPECT_TRUE(parser.Parse(packet, length));
-
-      sent_rtcp_sr_ += parser.sender_report()->num_packets();
-      EXPECT_GE(1, parser.xr()->num_packets());
-      if (parser.xr()->num_packets() > 0) {
-        EXPECT_FALSE(parser.xr()->rrtr());
-        if (parser.xr()->dlrr())
-          ++sent_rtcp_dlrr_;
-      }
-
-      if (sent_rtcp_sr_ > kNumRtcpReportPacketsToObserve &&
-          sent_rtcp_rr_ > kNumRtcpReportPacketsToObserve) {
-        if (enable_rrtr_) {
-          EXPECT_LT(0, sent_rtcp_rrtr_);
-          EXPECT_LT(0, sent_rtcp_dlrr_);
-        } else {
-          EXPECT_EQ(0, sent_rtcp_rrtr_);
-          EXPECT_EQ(0, sent_rtcp_dlrr_);
-        }
-        observation_complete_.Set();
-      }
-      return SEND_PACKET;
-    }
-
-    void ModifyVideoConfigs(
-        VideoSendStream::Config* send_config,
-        std::vector<VideoReceiveStream::Config>* receive_configs,
-        VideoEncoderConfig* encoder_config) override {
-      (*receive_configs)[0].rtp.rtcp_mode = RtcpMode::kReducedSize;
-      (*receive_configs)[0].rtp.rtcp_xr.receiver_reference_time_report =
-          enable_rrtr_;
-    }
-
-    void PerformTest() override {
-      EXPECT_TRUE(Wait())
-          << "Timed out while waiting for RTCP SR/RR packets to be sent.";
-    }
-
-    rtc::CriticalSection crit_;
-    bool enable_rrtr_;
-    int sent_rtcp_sr_;
-    int sent_rtcp_rr_ GUARDED_BY(&crit_);
-    int sent_rtcp_rrtr_ GUARDED_BY(&crit_);
-    int sent_rtcp_dlrr_;
-  } test(enable_rrtr);
-
-  RunBaseTest(&test);
 }
 
 void EndToEndTest::TestSendsSetSsrcs(size_t num_ssrcs,
@@ -2524,7 +2607,7 @@ void EndToEndTest::TestSendsSetSsrcs(size_t num_ssrcs,
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, ReportsSetEncoderRates) {
+TEST_P(EndToEndTest, ReportsSetEncoderRates) {
   class EncoderRateStatsTest : public test::EndToEndTest,
                                public test::FakeEncoder {
    public:
@@ -2545,15 +2628,16 @@ TEST_F(EndToEndTest, ReportsSetEncoderRates) {
         std::vector<VideoReceiveStream::Config>* receive_configs,
         VideoEncoderConfig* encoder_config) override {
       send_config->encoder_settings.encoder = this;
-      RTC_DCHECK_EQ(1u, encoder_config->number_of_streams);
+      RTC_DCHECK_EQ(1, encoder_config->number_of_streams);
     }
 
-    int32_t SetRates(uint32_t new_target_bitrate, uint32_t framerate) override {
+    int32_t SetRateAllocation(const BitrateAllocation& rate_allocation,
+                              uint32_t framerate) override {
       // Make sure not to trigger on any default zero bitrates.
-      if (new_target_bitrate == 0)
+      if (rate_allocation.get_sum_bps() == 0)
         return 0;
       rtc::CritScope lock(&crit_);
-      bitrate_kbps_ = new_target_bitrate;
+      bitrate_kbps_ = rate_allocation.get_sum_kbps();
       observation_complete_.Set();
       return 0;
     }
@@ -2603,7 +2687,7 @@ TEST_F(EndToEndTest, ReportsSetEncoderRates) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, GetStats) {
+TEST_P(EndToEndTest, GetStats) {
   static const int kStartBitrateBps = 3000000;
   static const int kExpectedRenderDelayMs = 20;
 
@@ -2724,8 +2808,9 @@ TEST_F(EndToEndTest, GetStats) {
       RTC_DCHECK(send_stream_);
       VideoSendStream::Stats stats = send_stream_->GetStats();
 
+      size_t expected_num_streams = kNumSsrcs + expected_send_ssrcs_.size();
       send_stats_filled_["NumStreams"] |=
-          stats.substreams.size() == expected_send_ssrcs_.size();
+          stats.substreams.size() == expected_num_streams;
 
       send_stats_filled_["CpuOveruseMetrics"] |=
           stats.avg_encode_time_ms != 0 && stats.encode_usage_percent != 0;
@@ -2944,18 +3029,126 @@ TEST_F(EndToEndTest, GetStats) {
     ReceiveStreamRenderer receive_stream_renderer_;
   } test;
 
+  // TODO(philipel): Implement statistics for the new video jitter buffer.
+  if (GetParam() == new_jb_enabled)
+    return;
+
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, ReceiverReferenceTimeReportEnabled) {
-  TestXrReceiverReferenceTimeReport(true);
+class RtcpXrObserver : public test::EndToEndTest {
+ public:
+  RtcpXrObserver(bool enable_rrtr, bool enable_target_bitrate)
+      : EndToEndTest(test::CallTest::kDefaultTimeoutMs),
+        enable_rrtr_(enable_rrtr),
+        enable_target_bitrate_(enable_target_bitrate),
+        sent_rtcp_sr_(0),
+        sent_rtcp_rr_(0),
+        sent_rtcp_rrtr_(0),
+        sent_rtcp_target_bitrate_(false),
+        sent_rtcp_dlrr_(0) {}
+
+ private:
+  // Receive stream should send RR packets (and RRTR packets if enabled).
+  Action OnReceiveRtcp(const uint8_t* packet, size_t length) override {
+    rtc::CritScope lock(&crit_);
+    test::RtcpPacketParser parser;
+    EXPECT_TRUE(parser.Parse(packet, length));
+
+    sent_rtcp_rr_ += parser.receiver_report()->num_packets();
+    EXPECT_EQ(0, parser.sender_report()->num_packets());
+    EXPECT_GE(1, parser.xr()->num_packets());
+    if (parser.xr()->num_packets() > 0) {
+      if (parser.xr()->rrtr())
+        ++sent_rtcp_rrtr_;
+      EXPECT_FALSE(parser.xr()->dlrr());
+    }
+
+    return SEND_PACKET;
+  }
+  // Send stream should send SR packets (and DLRR packets if enabled).
+  Action OnSendRtcp(const uint8_t* packet, size_t length) override {
+    rtc::CritScope lock(&crit_);
+    test::RtcpPacketParser parser;
+    EXPECT_TRUE(parser.Parse(packet, length));
+
+    sent_rtcp_sr_ += parser.sender_report()->num_packets();
+    EXPECT_LE(parser.xr()->num_packets(), 1);
+    if (parser.xr()->num_packets() > 0) {
+      EXPECT_FALSE(parser.xr()->rrtr());
+      if (parser.xr()->dlrr())
+        ++sent_rtcp_dlrr_;
+      if (parser.xr()->target_bitrate())
+        sent_rtcp_target_bitrate_ = true;
+    }
+
+    if (sent_rtcp_sr_ > kNumRtcpReportPacketsToObserve &&
+        sent_rtcp_rr_ > kNumRtcpReportPacketsToObserve &&
+        (sent_rtcp_target_bitrate_ || !enable_target_bitrate_)) {
+      if (enable_rrtr_) {
+        EXPECT_GT(sent_rtcp_rrtr_, 0);
+        EXPECT_GT(sent_rtcp_dlrr_, 0);
+      } else {
+        EXPECT_EQ(sent_rtcp_rrtr_, 0);
+        EXPECT_EQ(sent_rtcp_dlrr_, 0);
+      }
+      EXPECT_EQ(enable_target_bitrate_, sent_rtcp_target_bitrate_);
+      observation_complete_.Set();
+    }
+    return SEND_PACKET;
+  }
+
+  void ModifyVideoConfigs(
+      VideoSendStream::Config* send_config,
+      std::vector<VideoReceiveStream::Config>* receive_configs,
+      VideoEncoderConfig* encoder_config) override {
+    if (enable_target_bitrate_) {
+      // TargetBitrate only signaled for screensharing.
+      encoder_config->content_type = VideoEncoderConfig::ContentType::kScreen;
+    }
+    (*receive_configs)[0].rtp.rtcp_mode = RtcpMode::kReducedSize;
+    (*receive_configs)[0].rtp.rtcp_xr.receiver_reference_time_report =
+        enable_rrtr_;
+  }
+
+  void PerformTest() override {
+    EXPECT_TRUE(Wait())
+        << "Timed out while waiting for RTCP SR/RR packets to be sent.";
+  }
+
+  static const int kNumRtcpReportPacketsToObserve = 5;
+
+  rtc::CriticalSection crit_;
+  const bool enable_rrtr_;
+  const bool enable_target_bitrate_;
+  int sent_rtcp_sr_;
+  int sent_rtcp_rr_ GUARDED_BY(&crit_);
+  int sent_rtcp_rrtr_ GUARDED_BY(&crit_);
+  bool sent_rtcp_target_bitrate_ GUARDED_BY(&crit_);
+  int sent_rtcp_dlrr_;
+};
+
+TEST_P(EndToEndTest, TestExtendedReportsWithRrtrWithoutTargetBitrate) {
+  RtcpXrObserver test(true, false);
+  RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, ReceiverReferenceTimeReportDisabled) {
-  TestXrReceiverReferenceTimeReport(false);
+TEST_P(EndToEndTest, TestExtendedReportsWithoutRrtrWithoutTargetBitrate) {
+  RtcpXrObserver test(false, false);
+  RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, TestReceivedRtpPacketStats) {
+TEST_P(EndToEndTest, TestExtendedReportsWithRrtrWithTargetBitrate) {
+  RtcpXrObserver test(true, true);
+  RunBaseTest(&test);
+}
+
+TEST_P(EndToEndTest, TestExtendedReportsWithoutRrtrWithTargetBitrate) {
+  RtcpXrObserver test(false, true);
+  RunBaseTest(&test);
+}
+
+TEST_P(EndToEndTest, TestReceivedRtpPacketStats) {
   static const size_t kNumRtpPacketsToSend = 5;
   class ReceivedRtpStatsObserver : public test::EndToEndTest {
    public:
@@ -2995,17 +3188,19 @@ TEST_F(EndToEndTest, TestReceivedRtpPacketStats) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, SendsSetSsrc) { TestSendsSetSsrcs(1, false); }
+TEST_P(EndToEndTest, SendsSetSsrc) {
+  TestSendsSetSsrcs(1, false);
+}
 
-TEST_F(EndToEndTest, SendsSetSimulcastSsrcs) {
+TEST_P(EndToEndTest, SendsSetSimulcastSsrcs) {
   TestSendsSetSsrcs(kNumSsrcs, false);
 }
 
-TEST_F(EndToEndTest, CanSwitchToUseAllSsrcs) {
+TEST_P(EndToEndTest, CanSwitchToUseAllSsrcs) {
   TestSendsSetSsrcs(kNumSsrcs, true);
 }
 
-TEST_F(EndToEndTest, DISABLED_RedundantPayloadsTransmittedOnAllSsrcs) {
+TEST_P(EndToEndTest, DISABLED_RedundantPayloadsTransmittedOnAllSsrcs) {
   class ObserveRedundantPayloads: public test::EndToEndTest {
    public:
     ObserveRedundantPayloads()
@@ -3119,7 +3314,7 @@ void EndToEndTest::TestRtpStatePreservation(bool use_rtx,
 
       if (encoder_config.number_of_streams > 1) {
         // Lower bitrates so that all streams send initially.
-        RTC_DCHECK_EQ(3u, encoder_config.number_of_streams);
+        RTC_DCHECK_EQ(3, encoder_config.number_of_streams);
         for (size_t i = 0; i < encoder_config.number_of_streams; ++i) {
           streams[i].min_bitrate_bps = 10000;
           streams[i].target_bitrate_bps = 15000;
@@ -3339,19 +3534,19 @@ void EndToEndTest::TestRtpStatePreservation(bool use_rtx,
   DestroyStreams();
 }
 
-TEST_F(EndToEndTest, RestartingSendStreamPreservesRtpState) {
+TEST_P(EndToEndTest, RestartingSendStreamPreservesRtpState) {
   TestRtpStatePreservation(false, false);
 }
 
-TEST_F(EndToEndTest, RestartingSendStreamPreservesRtpStatesWithRtx) {
+TEST_P(EndToEndTest, RestartingSendStreamPreservesRtpStatesWithRtx) {
   TestRtpStatePreservation(true, false);
 }
 
-TEST_F(EndToEndTest, RestartingSendStreamKeepsRtpAndRtcpTimestampsSynced) {
+TEST_P(EndToEndTest, RestartingSendStreamKeepsRtpAndRtcpTimestampsSynced) {
   TestRtpStatePreservation(true, true);
 }
 
-TEST_F(EndToEndTest, RespectsNetworkState) {
+TEST_P(EndToEndTest, RespectsNetworkState) {
   // TODO(pbos): Remove accepted downtime packets etc. when signaling network
   // down blocks until no more packets will be sent.
 
@@ -3545,7 +3740,7 @@ TEST_F(EndToEndTest, RespectsNetworkState) {
   RunBaseTest(&test);
 }
 
-TEST_F(EndToEndTest, CallReportsRttForSender) {
+TEST_P(EndToEndTest, CallReportsRttForSender) {
   static const int kSendDelayMs = 30;
   static const int kReceiveDelayMs = 70;
   CreateCalls(Call::Config(&event_log_), Call::Config(&event_log_));
@@ -3582,16 +3777,19 @@ TEST_F(EndToEndTest, CallReportsRttForSender) {
     SleepMs(10);
   }
 
+  sender_transport.StopSending();
+  receiver_transport.StopSending();
   Stop();
   DestroyStreams();
+  DestroyCalls();
 }
 
 void EndToEndTest::VerifyNewVideoSendStreamsRespectNetworkState(
-    MediaType network_to_bring_down,
+    MediaType network_to_bring_up,
     VideoEncoder* encoder,
     Transport* transport) {
   CreateSenderCall(Call::Config(&event_log_));
-  sender_call_->SignalChannelNetworkState(network_to_bring_down, kNetworkDown);
+  sender_call_->SignalChannelNetworkState(network_to_bring_up, kNetworkUp);
 
   CreateSendConfig(1, 0, 0, transport);
   video_send_config_.encoder_settings.encoder = encoder;
@@ -3607,12 +3805,11 @@ void EndToEndTest::VerifyNewVideoSendStreamsRespectNetworkState(
 }
 
 void EndToEndTest::VerifyNewVideoReceiveStreamsRespectNetworkState(
-    MediaType network_to_bring_down,
+    MediaType network_to_bring_up,
     Transport* transport) {
   Call::Config config(&event_log_);
   CreateCalls(config, config);
-  receiver_call_->SignalChannelNetworkState(network_to_bring_down,
-                                            kNetworkDown);
+  receiver_call_->SignalChannelNetworkState(network_to_bring_up, kNetworkUp);
 
   test::DirectTransport sender_transport(sender_call_.get());
   sender_transport.SetReceiver(receiver_call_->Receiver());
@@ -3631,7 +3828,7 @@ void EndToEndTest::VerifyNewVideoReceiveStreamsRespectNetworkState(
   DestroyStreams();
 }
 
-TEST_F(EndToEndTest, NewVideoSendStreamsRespectVideoNetworkDown) {
+TEST_P(EndToEndTest, NewVideoSendStreamsRespectVideoNetworkDown) {
   class UnusedEncoder : public test::FakeEncoder {
    public:
     UnusedEncoder() : FakeEncoder(Clock::GetRealTimeClock()) {}
@@ -3654,10 +3851,10 @@ TEST_F(EndToEndTest, NewVideoSendStreamsRespectVideoNetworkDown) {
   UnusedEncoder unused_encoder;
   UnusedTransport unused_transport;
   VerifyNewVideoSendStreamsRespectNetworkState(
-      MediaType::VIDEO, &unused_encoder, &unused_transport);
+      MediaType::AUDIO, &unused_encoder, &unused_transport);
 }
 
-TEST_F(EndToEndTest, NewVideoSendStreamsIgnoreAudioNetworkDown) {
+TEST_P(EndToEndTest, NewVideoSendStreamsIgnoreAudioNetworkDown) {
   class RequiredEncoder : public test::FakeEncoder {
    public:
     RequiredEncoder()
@@ -3682,17 +3879,17 @@ TEST_F(EndToEndTest, NewVideoSendStreamsIgnoreAudioNetworkDown) {
   RequiredTransport required_transport(true /*rtp*/, false /*rtcp*/);
   RequiredEncoder required_encoder;
   VerifyNewVideoSendStreamsRespectNetworkState(
-      MediaType::AUDIO, &required_encoder, &required_transport);
+      MediaType::VIDEO, &required_encoder, &required_transport);
 }
 
-TEST_F(EndToEndTest, NewVideoReceiveStreamsRespectVideoNetworkDown) {
+TEST_P(EndToEndTest, NewVideoReceiveStreamsRespectVideoNetworkDown) {
   UnusedTransport transport;
-  VerifyNewVideoReceiveStreamsRespectNetworkState(MediaType::VIDEO, &transport);
+  VerifyNewVideoReceiveStreamsRespectNetworkState(MediaType::AUDIO, &transport);
 }
 
-TEST_F(EndToEndTest, NewVideoReceiveStreamsIgnoreAudioNetworkDown) {
+TEST_P(EndToEndTest, NewVideoReceiveStreamsIgnoreAudioNetworkDown) {
   RequiredTransport transport(false /*rtp*/, true /*rtcp*/);
-  VerifyNewVideoReceiveStreamsRespectNetworkState(MediaType::AUDIO, &transport);
+  VerifyNewVideoReceiveStreamsRespectNetworkState(MediaType::VIDEO, &transport);
 }
 
 void VerifyEmptyNackConfig(const NackConfig& config) {
@@ -3709,7 +3906,17 @@ void VerifyEmptyUlpfecConfig(const UlpfecConfig& config) {
       << "Enabling RTX in ULPFEC requires rtpmap: rtx negotiation.";
 }
 
-TEST_F(EndToEndTest, VerifyDefaultSendConfigParameters) {
+void VerifyEmptyFlexfecConfig(
+    const VideoSendStream::Config::Rtp::Flexfec& config) {
+  EXPECT_EQ(-1, config.payload_type)
+      << "Enabling FlexFEC requires rtpmap: flexfec negotiation.";
+  EXPECT_EQ(0U, config.ssrc)
+      << "Enabling FlexFEC requires ssrc-group: FEC-FR negotiation.";
+  EXPECT_TRUE(config.protected_media_ssrcs.empty())
+      << "Enabling FlexFEC requires ssrc-group: FEC-FR negotiation.";
+}
+
+TEST_P(EndToEndTest, VerifyDefaultSendConfigParameters) {
   VideoSendStream::Config default_send_config(nullptr);
   EXPECT_EQ(0, default_send_config.rtp.nack.rtp_history_ms)
       << "Enabling NACK require rtcp-fb: nack negotiation.";
@@ -3720,9 +3927,10 @@ TEST_F(EndToEndTest, VerifyDefaultSendConfigParameters) {
 
   VerifyEmptyNackConfig(default_send_config.rtp.nack);
   VerifyEmptyUlpfecConfig(default_send_config.rtp.ulpfec);
+  VerifyEmptyFlexfecConfig(default_send_config.rtp.flexfec);
 }
 
-TEST_F(EndToEndTest, VerifyDefaultReceiveConfigParameters) {
+TEST_P(EndToEndTest, VerifyDefaultVideoReceiveConfigParameters) {
   VideoReceiveStream::Config default_receive_config(nullptr);
   EXPECT_EQ(RtcpMode::kCompound, default_receive_config.rtp.rtcp_mode)
       << "Reduced-size RTCP require rtcp-rsize to be negotiated.";
@@ -3740,7 +3948,18 @@ TEST_F(EndToEndTest, VerifyDefaultReceiveConfigParameters) {
   VerifyEmptyUlpfecConfig(default_receive_config.rtp.ulpfec);
 }
 
-TEST_F(EndToEndTest, TransportSeqNumOnAudioAndVideo) {
+TEST_P(EndToEndTest, VerifyDefaultFlexfecReceiveConfigParameters) {
+  test::NullTransport rtcp_send_transport;
+  FlexfecReceiveStream::Config default_receive_config(&rtcp_send_transport);
+  EXPECT_EQ(-1, default_receive_config.payload_type)
+      << "Enabling FlexFEC requires rtpmap: flexfec negotiation.";
+  EXPECT_EQ(0U, default_receive_config.remote_ssrc)
+      << "Enabling FlexFEC requires ssrc-group: FEC-FR negotiation.";
+  EXPECT_TRUE(default_receive_config.protected_media_ssrcs.empty())
+      << "Enabling FlexFEC requires ssrc-group: FEC-FR negotiation.";
+}
+
+TEST_P(EndToEndTest, TransportSeqNumOnAudioAndVideo) {
   static const int kExtensionId = 8;
   class TransportSequenceNumberTest : public test::EndToEndTest {
    public:
@@ -3851,7 +4070,7 @@ class EndToEndLogTest : public EndToEndTest {
   std::vector<std::string> paths_;
 };
 
-TEST_F(EndToEndLogTest, LogsEncodedFramesWhenRequested) {
+TEST_P(EndToEndLogTest, LogsEncodedFramesWhenRequested) {
   static const int kNumFramesToRecord = 10;
   class LogEncodingObserver : public test::EndToEndTest,
                               public EncodedFrameObserver {
@@ -3871,7 +4090,7 @@ TEST_F(EndToEndLogTest, LogsEncodedFramesWhenRequested) {
         VideoSendStream::Config* send_config,
         std::vector<VideoReceiveStream::Config>* receive_configs,
         VideoEncoderConfig* encoder_config) override {
-      encoder_.reset(VideoEncoder::Create(VideoEncoder::kVp8));
+      encoder_.reset(VP8Encoder::Create());
       decoder_.reset(VP8Decoder::Create());
 
       send_config->post_encode_callback = this;

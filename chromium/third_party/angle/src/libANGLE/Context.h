@@ -143,6 +143,7 @@ class Context final : public ValidationContext
     void bindPixelUnpackBuffer(GLuint bufferHandle);
     void useProgram(GLuint program);
     void bindTransformFeedback(GLuint transformFeedbackHandle);
+    void bindDrawIndirectBuffer(GLuint bufferHandle);
 
     Error beginQuery(GLenum target, GLuint query);
     Error endQuery(GLenum target);
@@ -288,27 +289,29 @@ class Context final : public ValidationContext
     void clearBufferiv(GLenum buffer, GLint drawbuffer, const GLint *values);
     void clearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil);
 
-    Error drawArrays(GLenum mode, GLint first, GLsizei count);
-    Error drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount);
+    void drawArrays(GLenum mode, GLint first, GLsizei count);
+    void drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount);
 
-    Error drawElements(GLenum mode,
-                       GLsizei count,
-                       GLenum type,
-                       const GLvoid *indices,
-                       const IndexRange &indexRange);
-    Error drawElementsInstanced(GLenum mode,
-                                GLsizei count,
-                                GLenum type,
-                                const GLvoid *indices,
-                                GLsizei instances,
-                                const IndexRange &indexRange);
-    Error drawRangeElements(GLenum mode,
-                            GLuint start,
-                            GLuint end,
-                            GLsizei count,
-                            GLenum type,
-                            const GLvoid *indices,
-                            const IndexRange &indexRange);
+    void drawElements(GLenum mode,
+                      GLsizei count,
+                      GLenum type,
+                      const GLvoid *indices,
+                      const IndexRange &indexRange);
+    void drawElementsInstanced(GLenum mode,
+                               GLsizei count,
+                               GLenum type,
+                               const GLvoid *indices,
+                               GLsizei instances,
+                               const IndexRange &indexRange);
+    void drawRangeElements(GLenum mode,
+                           GLuint start,
+                           GLuint end,
+                           GLsizei count,
+                           GLenum type,
+                           const GLvoid *indices,
+                           const IndexRange &indexRange);
+    void drawArraysIndirect(GLenum mode, const GLvoid *indirect);
+    void drawElementsIndirect(GLenum mode, GLenum type, const GLvoid *indirect);
 
     void blitFramebuffer(GLint srcX0,
                          GLint srcY0,
@@ -485,10 +488,8 @@ class Context final : public ValidationContext
 
     void generateMipmap(GLenum target);
 
-    GLboolean enableExtension(const char *name);
-
-    Error flush();
-    Error finish();
+    void flush();
+    void finish();
 
     void getBufferPointerv(GLenum target, GLenum pname, void **params);
     GLvoid *mapBuffer(GLenum target, GLenum access);
@@ -581,6 +582,15 @@ class Context final : public ValidationContext
     void bindFramebuffer(GLenum target, GLuint framebuffer);
     void bindRenderbuffer(GLenum target, GLuint renderbuffer);
 
+    void texStorage2DMultisample(GLenum target,
+                                 GLsizei samples,
+                                 GLenum internalformat,
+                                 GLsizei width,
+                                 GLsizei height,
+                                 GLboolean fixedsamplelocations);
+
+    void getMultisamplefv(GLenum pname, GLuint index, GLfloat *val);
+
     void copyBufferSubData(GLenum readTarget,
                            GLenum writeTarget,
                            GLintptr readOffset,
@@ -599,11 +609,13 @@ class Context final : public ValidationContext
     EGLenum getClientType() const;
     EGLenum getRenderBuffer() const;
 
-    const char *getRendererString() const;
+    const GLubyte *getString(GLenum name) const;
+    const GLubyte *getStringi(GLenum name, GLuint index) const;
 
-    const char *getExtensionString() const;
-    const char *getExtensionString(size_t idx) const;
     size_t getExtensionStringCount() const;
+
+    void requestExtension(const char *name);
+    size_t getRequestableExtensionStringCount() const;
 
     rx::ContextImpl *getImplementation() const { return mImplementation.get(); }
     const Workarounds &getWorkarounds() const;
@@ -628,6 +640,7 @@ class Context final : public ValidationContext
     void detachSampler(GLuint sampler);
 
     void initRendererString();
+    void initVersionStrings();
     void initExtensionStrings();
 
     void initCaps(bool webGLContext);
@@ -670,9 +683,13 @@ class Context final : public ValidationContext
     ResourceMap<TransformFeedback> mTransformFeedbackMap;
     HandleAllocator mTransformFeedbackAllocator;
 
+    const char *mVersionString;
+    const char *mShadingLanguageString;
     const char *mRendererString;
     const char *mExtensionString;
     std::vector<const char *> mExtensionStrings;
+    const char *mRequestableExtensionString;
+    std::vector<const char *> mRequestableExtensionStrings;
 
     // Recorded errors
     typedef std::set<GLenum> ErrorSet;

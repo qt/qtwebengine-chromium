@@ -20,19 +20,13 @@
 namespace webrtc {
 
 VoERTP_RTCP* VoERTP_RTCP::GetInterface(VoiceEngine* voiceEngine) {
-#ifndef WEBRTC_VOICE_ENGINE_RTP_RTCP_API
-  return NULL;
-#else
   if (NULL == voiceEngine) {
     return NULL;
   }
   VoiceEngineImpl* s = static_cast<VoiceEngineImpl*>(voiceEngine);
   s->AddRef();
   return s;
-#endif
 }
-
-#ifdef WEBRTC_VOICE_ENGINE_RTP_RTCP_API
 
 VoERTP_RTCPImpl::VoERTP_RTCPImpl(voe::SharedData* shared) : _shared(shared) {
   WEBRTC_TRACE(kTraceMemory, kTraceVoice, VoEId(_shared->instance_id(), -1),
@@ -311,7 +305,5 @@ int VoERTP_RTCPImpl::SetNACKStatus(int channel, bool enable, int maxNoPackets) {
   channelPtr->SetNACKStatus(enable, maxNoPackets);
   return 0;
 }
-
-#endif  // #ifdef WEBRTC_VOICE_ENGINE_RTP_RTCP_API
 
 }  // namespace webrtc

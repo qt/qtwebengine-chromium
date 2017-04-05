@@ -8,6 +8,7 @@
 #define CORE_FXGE_FX_FONT_H_
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "core/fxcrt/fx_system.h"
@@ -23,7 +24,7 @@ class CFX_GlyphBitmap;
 class CFX_PathData;
 class CFX_SizeGlyphCache;
 
-#ifdef _SKIA_SUPPORT_
+#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
 class SkTypeface;
 
 using CFX_TypeFace = SkTypeface;
@@ -110,7 +111,7 @@ class CFX_Font {
   CFX_SubstFont* GetSubstFont() const { return m_pSubstFont.get(); }
 
 #ifdef PDF_ENABLE_XFA
-  bool LoadFile(IFX_SeekableReadStream* pFile,
+  bool LoadFile(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
                 int nFaceIndex = 0,
                 int* pFaceCount = nullptr);
 
@@ -129,7 +130,7 @@ class CFX_Font {
                                          int& text_flags) const;
   const CFX_PathData* LoadGlyphPath(uint32_t glyph_index, int dest_width) const;
 
-#ifdef _SKIA_SUPPORT_
+#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
   CFX_TypeFace* GetDeviceCache() const;
 #endif
 
@@ -170,7 +171,6 @@ class CFX_Font {
 
 #ifdef PDF_ENABLE_XFA
  protected:
-  CFX_BinaryBuf m_OtfFontData;
   bool m_bShallowCopy;
   FXFT_StreamRec* m_pOwnedStream;
 #endif  // PDF_ENABLE_XFA
@@ -179,13 +179,9 @@ class CFX_Font {
   friend class CFX_FaceCache;
   CFX_PathData* LoadGlyphPathImpl(uint32_t glyph_index,
                                   int dest_width = 0) const;
-
- private:
   CFX_FaceCache* GetFaceCache() const;
-
   void ReleasePlatformResource();
   void DeleteFace();
-
   void ClearFaceCache();
 
   FXFT_Face m_Face;

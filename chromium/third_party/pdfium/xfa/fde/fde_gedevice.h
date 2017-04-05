@@ -8,18 +8,17 @@
 #define XFA_FDE_FDE_GEDEVICE_H_
 
 #include "core/fxge/cfx_renderdevice.h"
-#include "xfa/fgas/crt/fgas_memory.h"
+#include "xfa/fgas/font/cfgas_gefont.h"
 
 class CFDE_Brush;
 class CFDE_Path;
 class CFDE_Pen;
-class CFGAS_GEFont;
 class CFX_GraphStateData;
 
-class CFDE_RenderDevice : public CFX_Target {
+class CFDE_RenderDevice {
  public:
   CFDE_RenderDevice(CFX_RenderDevice* pDevice, bool bOwnerDevice);
-  ~CFDE_RenderDevice() override;
+  ~CFDE_RenderDevice();
 
   int32_t GetWidth() const;
   int32_t GetHeight() const;
@@ -39,7 +38,7 @@ class CFDE_RenderDevice : public CFX_Target {
                  const CFX_Matrix* pImgMatrix = nullptr,
                  const CFX_Matrix* pDevMatrix = nullptr);
   bool DrawString(CFDE_Brush* pBrush,
-                  CFGAS_GEFont* pFont,
+                  const CFX_RetainPtr<CFGAS_GEFont>& pFont,
                   const FXTEXT_CHARPOS* pCharPos,
                   int32_t iCount,
                   FX_FLOAT fFontSize,
@@ -100,13 +99,13 @@ class CFDE_RenderDevice : public CFX_Target {
                      const CFX_Matrix* pMatrix = nullptr);
 
   bool DrawSolidString(CFDE_Brush* pBrush,
-                       CFGAS_GEFont* pFont,
+                       const CFX_RetainPtr<CFGAS_GEFont>& pFont,
                        const FXTEXT_CHARPOS* pCharPos,
                        int32_t iCount,
                        FX_FLOAT fFontSize,
                        const CFX_Matrix* pMatrix);
   bool DrawStringPath(CFDE_Brush* pBrush,
-                      CFGAS_GEFont* pFont,
+                      const CFX_RetainPtr<CFGAS_GEFont>& pFont,
                       const FXTEXT_CHARPOS* pCharPos,
                       int32_t iCount,
                       FX_FLOAT fFontSize,

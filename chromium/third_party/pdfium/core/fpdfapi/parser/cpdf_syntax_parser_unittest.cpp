@@ -5,6 +5,7 @@
 #include <limits>
 #include <string>
 
+#include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fpdfapi/parser/cpdf_parser.h"
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
 #include "core/fxcrt/fx_ext.h"
@@ -16,10 +17,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Empty string.
     uint8_t data[] = "";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 0, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 0, false), 0);
     EXPECT_EQ("", parser.ReadHexString());
     EXPECT_EQ(0, parser.SavePos());
   }
@@ -27,10 +26,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Blank string.
     uint8_t data[] = "  ";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 2, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 2, false), 0);
     EXPECT_EQ("", parser.ReadHexString());
     EXPECT_EQ(2, parser.SavePos());
   }
@@ -38,10 +35,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Skips unknown characters.
     uint8_t data[] = "z12b";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 4, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 4, false), 0);
     EXPECT_EQ("\x12\xb0", parser.ReadHexString());
     EXPECT_EQ(4, parser.SavePos());
   }
@@ -49,10 +44,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Skips unknown characters.
     uint8_t data[] = "*<&*#$^&@1";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 10, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 10, false), 0);
     EXPECT_EQ("\x10", parser.ReadHexString());
     EXPECT_EQ(10, parser.SavePos());
   }
@@ -60,10 +53,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Skips unknown characters.
     uint8_t data[] = "\x80zab";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 4, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 4, false), 0);
     EXPECT_EQ("\xab", parser.ReadHexString());
     EXPECT_EQ(4, parser.SavePos());
   }
@@ -71,10 +62,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Skips unknown characters.
     uint8_t data[] = "\xffzab";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 4, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 4, false), 0);
     EXPECT_EQ("\xab", parser.ReadHexString());
     EXPECT_EQ(4, parser.SavePos());
   }
@@ -82,10 +71,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Regular conversion.
     uint8_t data[] = "1A2b>abcd";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 9, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 9, false), 0);
     EXPECT_EQ("\x1a\x2b", parser.ReadHexString());
     EXPECT_EQ(5, parser.SavePos());
   }
@@ -93,10 +80,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Position out of bounds.
     uint8_t data[] = "12ab>";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 5, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 5, false), 0);
     parser.RestorePos(5);
     EXPECT_EQ("", parser.ReadHexString());
 
@@ -117,10 +102,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Missing ending >.
     uint8_t data[] = "1A2b";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 4, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 4, false), 0);
     EXPECT_EQ("\x1a\x2b", parser.ReadHexString());
     EXPECT_EQ(4, parser.SavePos());
   }
@@ -128,10 +111,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Missing ending >.
     uint8_t data[] = "12abz";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 5, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 5, false), 0);
     EXPECT_EQ("\x12\xab", parser.ReadHexString());
     EXPECT_EQ(5, parser.SavePos());
   }
@@ -139,10 +120,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Uneven number of bytes.
     uint8_t data[] = "1A2>asdf";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 8, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 8, false), 0);
     EXPECT_EQ("\x1a\x20", parser.ReadHexString());
     EXPECT_EQ(4, parser.SavePos());
   }
@@ -150,10 +129,8 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Uneven number of bytes.
     uint8_t data[] = "1A2zasdf";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 8, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 8, false), 0);
     EXPECT_EQ("\x1a\x2a\xdf", parser.ReadHexString());
     EXPECT_EQ(8, parser.SavePos());
   }
@@ -161,11 +138,19 @@ TEST(cpdf_syntax_parser, ReadHexString) {
   {
     // Just ending character.
     uint8_t data[] = ">";
-    ScopedFileStream stream(FX_CreateMemoryStream(data, 1, false));
-
     CPDF_SyntaxParser parser;
-    parser.InitParser(stream.get(), 0);
+    parser.InitParser(IFX_MemoryStream::Create(data, 1, false), 0);
     EXPECT_EQ("", parser.ReadHexString());
     EXPECT_EQ(1, parser.SavePos());
   }
+}
+
+TEST(cpdf_syntax_parser, GetInvalidReference) {
+  CPDF_SyntaxParser parser;
+  // Data with a reference with number CPDF_Object::kInvalidObjNum
+  uint8_t data[] = "4294967295 0 R";
+  parser.InitParser(IFX_MemoryStream::Create(data, 14, false), 0);
+  std::unique_ptr<CPDF_Object> ref =
+      parser.GetObject(nullptr, CPDF_Object::kInvalidObjNum, 0, false);
+  EXPECT_FALSE(ref);
 }

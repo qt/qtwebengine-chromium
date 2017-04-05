@@ -7,6 +7,9 @@
 #ifndef XFA_FXFA_FXFA_WIDGET_H_
 #define XFA_FXFA_FXFA_WIDGET_H_
 
+#include <memory>
+
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxge/fx_dib.h"
 #include "xfa/fxfa/parser/cxfa_box.h"
@@ -73,7 +76,7 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   void UpdateUIDisplay(CXFA_FFWidget* pExcept = nullptr);
 
   CXFA_Node* GetDatasets();
-  CFGAS_GEFont* GetFDEFont();
+  CFX_RetainPtr<CFGAS_GEFont> GetFDEFont();
   FX_FLOAT GetFontSize();
   FX_ARGB GetTextColor();
   FX_FLOAT GetLineHeight();
@@ -88,11 +91,8 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   int32_t ProcessNullTestValidate(CXFA_Validate validate,
                                   int32_t iFlags,
                                   bool bVersionFlag);
-  void GetValidateCaptionName(CFX_WideString& wsCaptionName, bool bVersionFlag);
-  void GetValidateMessage(IXFA_AppProvider* pAppProvider,
-                          CFX_WideString& wsMessage,
-                          bool bError,
-                          bool bVersionFlag);
+  CFX_WideString GetValidateCaptionName(bool bVersionFlag);
+  CFX_WideString GetValidateMessage(bool bError, bool bVersionFlag);
   void CalcCaptionSize(CFX_SizeF& szCap);
   bool CalculateFieldAutoSize(CFX_SizeF& size);
   bool CalculateWidgetAutoSize(CFX_SizeF& size);

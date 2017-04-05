@@ -9,16 +9,11 @@
 
 #include <cctype>
 #include <cwctype>
+#include <memory>
 
 #include "core/fxcrt/fx_basic.h"
 
 #define FX_INVALID_OFFSET static_cast<uint32_t>(-1)
-
-// TODO(thestig) Using unique_ptr with ReleaseDeleter is still not ideal.
-// Come up or wait for something better. This appears in this file rather
-// than fx_stream.h due to include ordering restrictions.
-using ScopedFileStream =
-    std::unique_ptr<IFX_SeekableStream, ReleaseDeleter<IFX_SeekableStream>>;
 
 FX_FLOAT FXSYS_tan(FX_FLOAT a);
 FX_FLOAT FXSYS_logb(FX_FLOAT b, FX_FLOAT x);
@@ -91,40 +86,16 @@ void FX_Random_GenerateMT(uint32_t* pBuffer, int32_t iCount);
 void FX_Random_GenerateCrypto(uint32_t* pBuffer, int32_t iCount);
 
 #ifdef PDF_ENABLE_XFA
-typedef struct FX_GUID {
+struct FX_GUID {
   uint32_t data1;
   uint16_t data2;
   uint16_t data3;
   uint8_t data4[8];
-} FX_GUID, *FX_LPGUID;
-typedef FX_GUID const* FX_LPCGUID;
-void FX_GUID_CreateV4(FX_LPGUID pGUID);
-void FX_GUID_ToString(FX_LPCGUID pGUID,
+};
+void FX_GUID_CreateV4(FX_GUID* pGUID);
+void FX_GUID_ToString(const FX_GUID* pGUID,
                       CFX_ByteString& bsStr,
                       bool bSeparator = true);
 #endif  // PDF_ENABLE_XFA
-
-template <class baseType>
-class CFX_SSortTemplate {
- public:
-  void ShellSort(baseType* pArray, int32_t iCount) {
-    ASSERT(pArray && iCount > 0);
-    int32_t i, j, gap;
-    baseType v1, v2;
-    gap = iCount >> 1;
-    while (gap > 0) {
-      for (i = gap; i < iCount; i++) {
-        j = i - gap;
-        v1 = pArray[i];
-        while (j > -1 && (v2 = pArray[j]) > v1) {
-          pArray[j + gap] = v2;
-          j -= gap;
-        }
-        pArray[j + gap] = v1;
-      }
-      gap >>= 1;
-    }
-  }
-};
 
 #endif  // CORE_FXCRT_FX_EXT_H_

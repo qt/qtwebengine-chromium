@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 The Chromium OS Authors. All rights reserved.
+ * Copyright 2014 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -17,12 +17,30 @@
 #include "helpers.h"
 #include "util.h"
 
+static struct supported_combination combos[3] = {
+	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
+		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_NV12, DRM_FORMAT_MOD_NONE,
+		BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
+		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
+		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+};
+
+static int exynos_init(struct driver *drv)
+{
+	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
+	return drv_add_kms_flags(drv);
+}
+
 static int exynos_bo_create(struct bo *bo, uint32_t width, uint32_t height,
 			    uint32_t format, uint32_t flags)
 {
 	size_t plane;
 
-	if (format == DRV_FORMAT_NV12) {
+	if (format == DRM_FORMAT_NV12) {
 		uint32_t chroma_height;
 		/* V4L2 s5p-mfc requires width to be 16 byte aligned and height 32. */
 		width = ALIGN(width, 16);
@@ -34,7 +52,7 @@ static int exynos_bo_create(struct bo *bo, uint32_t width, uint32_t height,
 		bo->sizes[1] = bo->strides[1] * chroma_height + 64;
 		bo->offsets[0] = bo->offsets[1] = 0;
 		bo->total_size = bo->sizes[0] + bo->sizes[1];
-	} else if (format == DRV_FORMAT_XRGB8888 || format == DRV_FORMAT_ARGB8888) {
+	} else if (format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888) {
 		bo->strides[0] = drv_stride_from_format(format, width, 0);
 		bo->total_size = bo->sizes[0] = height * bo->strides[0];
 		bo->offsets[0] = 0;
@@ -86,19 +104,13 @@ cleanup_planes:
  * Use dumb mapping with exynos even though a GEM buffer is created.
  * libdrm does the same thing in exynos_drm.c
  */
-const struct backend backend_exynos =
+struct backend backend_exynos =
 {
 	.name = "exynos",
+	.init = exynos_init,
 	.bo_create = exynos_bo_create,
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_map = drv_dumb_bo_map,
-	.format_list = {
-		{DRV_FORMAT_XRGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_RENDERING},
-		{DRV_FORMAT_XRGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_LINEAR},
-		{DRV_FORMAT_ARGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_RENDERING},
-		{DRV_FORMAT_ARGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_LINEAR},
-		{DRV_FORMAT_NV12, DRV_BO_USE_SCANOUT | DRV_BO_USE_RENDERING},
-	}
 };
 
 #endif

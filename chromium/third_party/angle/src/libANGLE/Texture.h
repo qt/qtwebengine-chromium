@@ -50,11 +50,18 @@ struct ImageDesc final
     ImageDesc();
     ImageDesc(const Extents &size, const Format &format);
 
+    ImageDesc(const Extents &size,
+              const Format &format,
+              const GLsizei samples,
+              GLboolean fixedSampleLocations);
+
     ImageDesc(const ImageDesc &other) = default;
     ImageDesc &operator=(const ImageDesc &other) = default;
 
     Extents size;
     Format format;
+    GLsizei samples;
+    GLboolean fixedSampleLocations;
 };
 
 struct SwizzleState final
@@ -120,6 +127,11 @@ struct TextureState final : public angle::NonCopyable
                            GLuint maxLevel,
                            Extents baseSize,
                            const Format &format);
+    void setImageDescChainMultisample(Extents baseSize,
+                                      const Format &format,
+                                      GLsizei samples,
+                                      GLboolean fixedSampleLocations);
+
     void clearImageDesc(GLenum target, size_t level);
     void clearImageDescs();
 
@@ -131,6 +143,8 @@ struct TextureState final : public angle::NonCopyable
 
     GLuint mBaseLevel;
     GLuint mMaxLevel;
+
+    GLenum mDepthStencilTextureMode;
 
     bool mImmutableFormat;
     GLuint mImmutableLevels;
@@ -228,6 +242,9 @@ class Texture final : public egl::ImageSibling,
     void setMaxLevel(GLuint maxLevel);
     GLuint getMaxLevel() const;
 
+    void setDepthStencilTextureMode(GLenum mode);
+    GLenum getDepthStencilTextureMode() const;
+
     bool getImmutableFormat() const;
 
     GLuint getImmutableLevels() const;
@@ -240,6 +257,8 @@ class Texture final : public egl::ImageSibling,
     size_t getWidth(GLenum target, size_t level) const;
     size_t getHeight(GLenum target, size_t level) const;
     size_t getDepth(GLenum target, size_t level) const;
+    GLsizei getSamples(GLenum target, size_t level) const;
+    GLboolean getFixedSampleLocations(GLenum target, size_t level) const;
     const Format &getFormat(GLenum target, size_t level) const;
 
     bool isMipmapComplete() const;
@@ -301,6 +320,12 @@ class Texture final : public egl::ImageSibling,
     Error copyCompressedTexture(const Texture *source);
 
     Error setStorage(GLenum target, GLsizei levels, GLenum internalFormat, const Extents &size);
+
+    Error setStorageMultisample(GLenum target,
+                                GLsizei samples,
+                                GLint internalformat,
+                                const Extents &size,
+                                GLboolean fixedSampleLocations);
 
     Error setEGLImageTarget(GLenum target, egl::Image *imageTarget);
 
@@ -395,4 +420,4 @@ inline bool operator!=(const TextureState &a, const TextureState &b)
 }
 }
 
-#endif   // LIBANGLE_TEXTURE_H_
+#endif  // LIBANGLE_TEXTURE_H_

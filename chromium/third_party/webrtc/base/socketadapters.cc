@@ -27,6 +27,7 @@
 #include <algorithm>
 
 #include "webrtc/base/bytebuffer.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/httpcommon.h"
 #include "webrtc/base/logging.h"
@@ -96,7 +97,7 @@ void BufferedReadAdapter::BufferInput(bool on) {
 }
 
 void BufferedReadAdapter::OnReadEvent(AsyncSocket * socket) {
-  ASSERT(socket == socket_);
+  RTC_DCHECK(socket == socket_);
 
   if (!buffering_) {
     AsyncSocketAdapter::OnReadEvent(socket);
@@ -105,7 +106,7 @@ void BufferedReadAdapter::OnReadEvent(AsyncSocket * socket) {
 
   if (data_len_ >= buffer_size_) {
     LOG(INFO) << "Input buffer overflow";
-    ASSERT(false);
+    RTC_NOTREACHED();
     data_len_ = 0;
   }
 
@@ -183,7 +184,7 @@ int AsyncSSLSocket::Connect(const SocketAddress& addr) {
 }
 
 void AsyncSSLSocket::OnConnectEvent(AsyncSocket * socket) {
-  ASSERT(socket == socket_);
+  RTC_DCHECK(socket == socket_);
   // TODO: we could buffer output too...
   VERIFY(sizeof(kSslClientHello) ==
       DirectSend(kSslClientHello, sizeof(kSslClientHello)));
@@ -233,7 +234,7 @@ void AsyncSSLServerSocket::ProcessInput(char* data, size_t* len) {
   *len -= sizeof(kSslClientHello);
 
   // Clients should not send more data until the handshake is completed.
-  ASSERT(*len == 0);
+  RTC_DCHECK(*len == 0);
 
   // Send a server hello back to the client.
   DirectSend(kSslServerHello, sizeof(kSslServerHello));
@@ -556,7 +557,7 @@ void AsyncSocksProxySocket::OnConnectEvent(AsyncSocket* socket) {
 }
 
 void AsyncSocksProxySocket::ProcessInput(char* data, size_t* len) {
-  ASSERT(state_ < SS_TUNNEL);
+  RTC_DCHECK(state_ < SS_TUNNEL);
 
   ByteBufferReader response(data, *len);
 
@@ -714,7 +715,7 @@ AsyncSocksProxyServerSocket::AsyncSocksProxyServerSocket(AsyncSocket* socket)
 
 void AsyncSocksProxyServerSocket::ProcessInput(char* data, size_t* len) {
   // TODO: See if the whole message has arrived
-  ASSERT(state_ < SS_CONNECT_PENDING);
+  RTC_DCHECK(state_ < SS_CONNECT_PENDING);
 
   ByteBufferReader response(data, *len);
   if (state_ == SS_HELLO) {

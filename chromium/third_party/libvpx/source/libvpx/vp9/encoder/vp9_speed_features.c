@@ -182,6 +182,7 @@ static void set_good_speed_feature(VP9_COMP *cpi, VP9_COMMON *cm,
     sf->mv.subpel_iters_per_step = 1;
     sf->mode_skip_start = 10;
     sf->adaptive_pred_interp_filter = 1;
+    sf->allow_acl = 0;
 
     sf->intra_y_mode_mask[TX_32X32] = INTRA_DC_H_V;
     sf->intra_uv_mode_mask[TX_32X32] = INTRA_DC_H_V;
@@ -309,6 +310,8 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
   sf->use_fast_coef_costing = 1;
   sf->allow_exhaustive_searches = 0;
   sf->exhaustive_searches_thresh = INT_MAX;
+  sf->allow_acl = 0;
+  sf->copy_partition_flag = 0;
 
   if (speed >= 1) {
     sf->allow_txfm_domain_distortion = 1;
@@ -494,6 +497,18 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
 
   if (speed >= 8) {
     sf->adaptive_rd_thresh = 4;
+    // Disabled for now until the threshold is tuned.
+    sf->copy_partition_flag = 0;
+    if (sf->copy_partition_flag) {
+      if (cpi->prev_partition == NULL) {
+        cpi->prev_partition = (BLOCK_SIZE *)vpx_calloc(
+            cm->mi_stride * cm->mi_rows, sizeof(BLOCK_SIZE));
+      }
+      if (cpi->prev_segment_id == NULL) {
+        cpi->prev_segment_id =
+            (int8_t *)vpx_calloc(cm->mi_stride * cm->mi_rows, sizeof(int8_t));
+      }
+    }
     sf->mv.subpel_force_stop = (content == VP9E_CONTENT_SCREEN) ? 3 : 2;
     if (content == VP9E_CONTENT_SCREEN) sf->lpf_pick = LPF_PICK_MINIMAL_LPF;
     // Only keep INTRA_DC mode for speed 8.
@@ -505,7 +520,7 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
     if (!cpi->use_svc && cpi->oxcf.rc_mode == VPX_CBR &&
         content != VP9E_CONTENT_SCREEN) {
       // More aggressive short circuit for speed 8.
-      sf->short_circuit_low_temp_var = 2;
+      sf->short_circuit_low_temp_var = 3;
     }
     sf->limit_newmv_early_exit = 0;
   }
@@ -592,6 +607,7 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
   sf->tx_domain_thresh = 99.0;
   sf->allow_quant_coeff_opt = sf->optimize_coefficients;
   sf->quant_opt_thresh = 99.0;
+  sf->allow_acl = 1;
 
   for (i = 0; i < TX_SIZES; i++) {
     sf->intra_y_mode_mask[i] = INTRA_ALL;

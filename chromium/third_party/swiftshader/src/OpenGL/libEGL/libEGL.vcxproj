@@ -129,6 +129,7 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <BrowseInformation>true</BrowseInformation>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
@@ -158,6 +159,7 @@ copy "$(OutDir)libEGL.dll" "$(SolutionDir)lib\$(Configuration)_$(Platform)\trans
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <BrowseInformation>true</BrowseInformation>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
@@ -188,6 +190,7 @@ copy "$(OutDir)libEGL.dll" "$(SolutionDir)lib\$(Configuration)_$(Platform)\trans
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
@@ -218,6 +221,7 @@ copy "$(OutDir)libEGL.dll" "$(SolutionDir)lib\$(Configuration)_$(Platform)\trans
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
@@ -309,7 +313,7 @@ copy "$(OutDir)libEGL.dll" "$(SolutionDir)lib\$(Configuration)_$(Platform)\trans
     <ClCompile Include="Display.cpp" />
     <ClCompile Include="libEGL.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Surface.cpp" />
+    <ClCompile Include="EGLSurface.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\common\debug.h" />
@@ -325,7 +329,7 @@ copy "$(OutDir)libEGL.dll" "$(SolutionDir)lib\$(Configuration)_$(Platform)\trans
     <ClInclude Include="libEGL.hpp" />
     <ClInclude Include="main.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="Surface.h" />
+    <ClInclude Include="EGLSurface.h" />
     <ClInclude Include="Sync.hpp" />
     <ClInclude Include="Texture.hpp" />
   </ItemGroup>

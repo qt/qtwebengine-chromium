@@ -480,7 +480,7 @@ rtc::Optional<CodecInst> NetEqImpl::GetDecoder(int payload_type) const {
   ci.pltype = payload_type;
   std::strncpy(ci.plname, di->get_name().c_str(), sizeof(ci.plname));
   ci.plname[sizeof(ci.plname) - 1] = '\0';
-  ci.plfreq = di->IsRed() || di->IsDtmf() ? 8000 : di->SampleRateHz();
+  ci.plfreq = di->IsRed() ? 8000 : di->SampleRateHz();
   AudioDecoder* const decoder = di->GetDecoder();
   ci.channels = decoder ? decoder->Channels() : 1;
   return rtc::Optional<CodecInst>(ci);
@@ -1978,6 +1978,8 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
       prev_payload_type = packet->payload_type;
     }
 
+    const bool has_cng_packet =
+        decoder_database_->IsComfortNoise(packet->payload_type);
     // Store number of extracted samples.
     size_t packet_duration = 0;
     if (packet->frame) {
@@ -1986,7 +1988,7 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
       if (packet->priority.codec_level > 0) {
         stats_.SecondaryDecodedSamples(rtc::checked_cast<int>(packet_duration));
       }
-    } else if (!decoder_database_->IsComfortNoise(packet->payload_type)) {
+    } else if (!has_cng_packet) {
       LOG(LS_WARNING) << "Unknown payload type "
                       << static_cast<int>(packet->payload_type);
       RTC_NOTREACHED();
@@ -2005,7 +2007,8 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
     // Check what packet is available next.
     next_packet = packet_buffer_->PeekNextPacket();
     next_packet_available = false;
-    if (next_packet && prev_payload_type == next_packet->payload_type) {
+    if (next_packet && prev_payload_type == next_packet->payload_type &&
+        !has_cng_packet) {
       int16_t seq_no_diff = next_packet->sequence_number - prev_sequence_number;
       size_t ts_diff = next_packet->timestamp - prev_timestamp;
       if (seq_no_diff == 1 ||

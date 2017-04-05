@@ -12,6 +12,7 @@ import("../build/webrtc.gni")
 group("media") {
   public_deps = [
     ":rtc_media",
+    ":rtc_media_base",
   ]
 }
 
@@ -41,7 +42,7 @@ if (is_linux && rtc_use_gtk) {
   }
 }
 
-rtc_static_library("rtc_media") {
+rtc_static_library("rtc_media_base") {
   defines = []
   libs = []
   deps = []
@@ -53,7 +54,6 @@ rtc_static_library("rtc_media") {
     "base/codec.h",
     "base/cryptoparams.h",
     "base/device.h",
-    "base/hybriddataengine.h",
     "base/mediachannel.h",
     "base/mediaconstants.cc",
     "base/mediaconstants.h",
@@ -61,8 +61,6 @@ rtc_static_library("rtc_media") {
     "base/mediaengine.h",
     "base/rtpdataengine.cc",
     "base/rtpdataengine.h",
-    "base/rtpdump.cc",
-    "base/rtpdump.h",
     "base/rtputils.cc",
     "base/rtputils.h",
     "base/streamparams.cc",
@@ -81,11 +79,49 @@ rtc_static_library("rtc_media") {
     "base/videoframe.h",
     "base/videosourcebase.cc",
     "base/videosourcebase.h",
+  ]
+
+  configs += [ ":rtc_media_warnings_config" ]
+
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
+
+  include_dirs = []
+  if (rtc_build_libyuv) {
+    deps += [ "$rtc_libyuv_dir" ]
+    public_deps = [
+      "$rtc_libyuv_dir",
+    ]
+  } else {
+    # Need to add a directory normally exported by libyuv.
+    include_dirs += [ "$rtc_libyuv_dir/include" ]
+  }
+
+  deps += [
+    "..:webrtc_common",
+    "../base:rtc_base_approved",
+    "../p2p",
+  ]
+}
+
+rtc_static_library("rtc_media") {
+  defines = []
+  libs = []
+  deps = []
+  sources = [
+    "engine/internaldecoderfactory.cc",
+    "engine/internaldecoderfactory.h",
+    "engine/internalencoderfactory.cc",
+    "engine/internalencoderfactory.h",
     "engine/nullwebrtcvideoengine.h",
     "engine/payload_type_mapper.cc",
     "engine/payload_type_mapper.h",
     "engine/simulcast.cc",
     "engine/simulcast.h",
+    "engine/videodecodersoftwarefallbackwrapper.cc",
+    "engine/videodecodersoftwarefallbackwrapper.h",
     "engine/videoencodersoftwarefallbackwrapper.cc",
     "engine/videoencodersoftwarefallbackwrapper.h",
     "engine/webrtccommon.h",
@@ -104,9 +140,15 @@ rtc_static_library("rtc_media") {
     "engine/webrtcvoe.h",
     "engine/webrtcvoiceengine.cc",
     "engine/webrtcvoiceengine.h",
-    "sctp/sctpdataengine.cc",
-    "sctp/sctpdataengine.h",
+    "sctp/sctptransportinternal.h",
   ]
+
+  if (rtc_enable_sctp) {
+    sources += [
+      "sctp/sctptransport.cc",
+      "sctp/sctptransport.h",
+    ]
+  }
 
   configs += [ ":rtc_media_warnings_config" ]
 
@@ -140,7 +182,7 @@ rtc_static_library("rtc_media") {
     include_dirs += [ "$rtc_libyuv_dir/include" ]
   }
 
-  if (rtc_build_usrsctp) {
+  if (rtc_enable_sctp && rtc_build_usrsctp) {
     include_dirs += [
       # TODO(jiayl): move this into the public_configs of
       # //third_party/usrsctp/BUILD.gn.
@@ -164,14 +206,15 @@ rtc_static_library("rtc_media") {
     public_configs += [ ":gtk-lib" ]
   }
   deps += [
+    ":rtc_media_base",
     "..:webrtc_common",
     "../api:call_api",
+    "../api:transport_api",
     "../base:rtc_base_approved",
     "../call",
+    "../modules/audio_mixer:audio_mixer_impl",
     "../modules/video_coding",
-    "../p2p",
     "../system_wrappers",
-    "../video",
     "../voice_engine",
   ]
 }
@@ -226,7 +269,7 @@ if (rtc_include_tests) {
     }
 
     deps += [
-      "../base:rtc_base_tests_utils",
+      "../base:rtc_base_tests_main",
       "//testing/gtest",
     ]
     public_deps += [ "//testing/gmock" ]
@@ -279,7 +322,6 @@ if (rtc_include_tests) {
     sources = [
       "base/codec_unittest.cc",
       "base/rtpdataengine_unittest.cc",
-      "base/rtpdump_unittest.cc",
       "base/rtputils_unittest.cc",
       "base/streamparams_unittest.cc",
       "base/turnutils_unittest.cc",
@@ -288,16 +330,22 @@ if (rtc_include_tests) {
       "base/videocapturer_unittest.cc",
       "base/videocommon_unittest.cc",
       "base/videoengine_unittest.h",
+      "engine/internaldecoderfactory_unittest.cc",
       "engine/nullwebrtcvideoengine_unittest.cc",
       "engine/payload_type_mapper_unittest.cc",
       "engine/simulcast_unittest.cc",
+      "engine/videodecodersoftwarefallbackwrapper_unittest.cc",
       "engine/videoencodersoftwarefallbackwrapper_unittest.cc",
       "engine/webrtcmediaengine_unittest.cc",
       "engine/webrtcvideocapturer_unittest.cc",
+      "engine/webrtcvideoencoderfactory_unittest.cc",
       "engine/webrtcvideoengine2_unittest.cc",
       "engine/webrtcvoiceengine_unittest.cc",
-      "sctp/sctpdataengine_unittest.cc",
     ]
+
+    if (rtc_enable_sctp) {
+      sources += [ "sctp/sctptransport_unittest.cc" ]
+    }
 
     configs += [ ":rtc_media_unittests_config" ]
 

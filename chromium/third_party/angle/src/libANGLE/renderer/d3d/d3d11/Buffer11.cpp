@@ -1145,7 +1145,7 @@ gl::Error Buffer11::NativeStorage::map(size_t offset,
     }
     ASSERT(mappedResource.pData);
     *mapPointerOut = static_cast<uint8_t *>(mappedResource.pData) + offset;
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 void Buffer11::NativeStorage::unmap()
@@ -1354,7 +1354,7 @@ gl::Error Buffer11::EmulatedIndexedStorage::resize(size_t size, bool preserveDat
         mBufferSize = size;
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Buffer11::EmulatedIndexedStorage::map(size_t offset,
@@ -1364,7 +1364,7 @@ gl::Error Buffer11::EmulatedIndexedStorage::map(size_t offset,
 {
     ASSERT(!mMemoryBuffer.empty() && offset + length <= mMemoryBuffer.size());
     *mapPointerOut = mMemoryBuffer.data() + offset;
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 void Buffer11::EmulatedIndexedStorage::unmap()
@@ -1411,7 +1411,7 @@ gl::Error Buffer11::PackStorage::resize(size_t size, bool preserveData)
         mBufferSize = size;
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error Buffer11::PackStorage::map(size_t offset,
@@ -1430,7 +1430,7 @@ gl::Error Buffer11::PackStorage::map(size_t offset,
     mDataModified = (mDataModified || (access & GL_MAP_WRITE_BIT) != 0);
 
     *mapPointerOut = mMemoryBuffer.data() + offset;
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 void Buffer11::PackStorage::unmap()
@@ -1546,7 +1546,7 @@ gl::Error Buffer11::SystemMemoryStorage::map(size_t offset,
 {
     ASSERT(!mSystemCopy.empty() && offset + length <= mSystemCopy.size());
     *mapPointerOut = mSystemCopy.data() + offset;
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 void Buffer11::SystemMemoryStorage::unmap()

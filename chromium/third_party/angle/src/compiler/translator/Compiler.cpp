@@ -16,7 +16,6 @@
 #include "compiler/translator/DeferGlobalInitializers.h"
 #include "compiler/translator/EmulateGLFragColorBroadcast.h"
 #include "compiler/translator/EmulatePrecision.h"
-#include "compiler/translator/ForLoopUnroll.h"
 #include "compiler/translator/Initialize.h"
 #include "compiler/translator/InitializeParseContext.h"
 #include "compiler/translator/InitializeVariables.h"
@@ -31,6 +30,7 @@
 #include "compiler/translator/UseInterfaceBlockFields.h"
 #include "compiler/translator/ValidateLimitations.h"
 #include "compiler/translator/ValidateMaxParameters.h"
+#include "compiler/translator/ValidateMultiviewWebGL.h"
 #include "compiler/translator/ValidateOutputs.h"
 #include "compiler/translator/VariablePacker.h"
 #include "third_party/compiler/ArrayBoundsClamper.h"
@@ -113,7 +113,7 @@ bool RemoveInvariant(sh::GLenum shaderType,
         return true;
 
     if ((compileOptions & SH_REMOVE_INVARIANT_AND_CENTROID_FOR_ESSL3) != 0 &&
-        shaderVersion >= 300 && shaderType == GL_VERTEX_SHADER && IsGLSL410OrOlder(outputType))
+        shaderVersion >= 300 && shaderType == GL_VERTEX_SHADER)
         return true;
 
     return false;
@@ -121,7 +121,7 @@ bool RemoveInvariant(sh::GLenum shaderType,
 
 size_t GetGlobalMaxTokenSize(ShShaderSpec spec)
 {
-    // WebGL defines a max token legnth of 256, while ES2 leaves max token
+    // WebGL defines a max token length of 256, while ES2 leaves max token
     // size undefined. ES3 defines a max size of 1024 characters.
     switch (spec)
     {
@@ -132,12 +132,13 @@ size_t GetGlobalMaxTokenSize(ShShaderSpec spec)
     }
 }
 
-namespace {
+namespace
+{
 
 class TScopedPoolAllocator
 {
   public:
-    TScopedPoolAllocator(TPoolAllocator* allocator) : mAllocator(allocator)
+    TScopedPoolAllocator(TPoolAllocator *allocator) : mAllocator(allocator)
     {
         mAllocator->push();
         SetGlobalPoolAllocator(mAllocator);
@@ -149,13 +150,13 @@ class TScopedPoolAllocator
     }
 
   private:
-    TPoolAllocator* mAllocator;
+    TPoolAllocator *mAllocator;
 };
 
 class TScopedSymbolTableLevel
 {
   public:
-    TScopedSymbolTableLevel(TSymbolTable* table) : mTable(table)
+    TScopedSymbolTableLevel(TSymbolTable *table) : mTable(table)
     {
         ASSERT(mTable->atBuiltInLevel());
         mTable->push();
@@ -167,7 +168,7 @@ class TScopedSymbolTableLevel
     }
 
   private:
-    TSymbolTable* mTable;
+    TSymbolTable *mTable;
 };
 
 int MapSpecToShaderVersion(ShShaderSpec spec)
@@ -215,6 +216,7 @@ TCompiler::TCompiler(sh::GLenum type, ShShaderSpec spec, ShShaderOutput output)
       fragmentPrecisionHigh(false),
       clampingStrategy(SH_CLAMP_WITH_CLAMP_INTRINSIC),
       builtInFunctionEmulator(),
+      mDiagnostics(infoSink.info),
       mSourcePath(NULL),
       mComputeShaderLocalSizeDeclared(false),
       mTemporaryIndex(0)
@@ -235,12 +237,11 @@ bool TCompiler::shouldRunLoopAndIndexingValidation(ShCompileOptions compileOptio
            (compileOptions & SH_VALIDATE_LOOP_INDEXING);
 }
 
-bool TCompiler::Init(const ShBuiltInResources& resources)
+bool TCompiler::Init(const ShBuiltInResources &resources)
 {
-    shaderVersion = 100;
-    maxUniformVectors = (shaderType == GL_VERTEX_SHADER) ?
-        resources.MaxVertexUniformVectors :
-        resources.MaxFragmentUniformVectors;
+    shaderVersion     = 100;
+    maxUniformVectors = (shaderType == GL_VERTEX_SHADER) ? resources.MaxVertexUniformVectors
+                                                         : resources.MaxFragmentUniformVectors;
     maxExpressionComplexity = resources.MaxExpressionComplexity;
     maxCallStackDepth       = resources.MaxCallStackDepth;
     maxFunctionParameters   = resources.MaxFunctionParameters;
@@ -289,7 +290,7 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
     }
 
     TParseContext parseContext(symbolTable, extensionBehavior, shaderType, shaderSpec,
-                               compileOptions, true, infoSink, getResources());
+                               compileOptions, true, &mDiagnostics, getResources());
 
     parseContext.setFragmentPrecisionHighOnESSL1(fragmentPrecisionHigh);
     SetGlobalParseContext(&parseContext);
@@ -299,15 +300,14 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
     TScopedSymbolTableLevel scopedSymbolLevel(&symbolTable);
 
     // Parse shader.
-    bool success =
-        (PaParseStrings(numStrings - firstSource, &shaderStrings[firstSource], nullptr, &parseContext) == 0) &&
-        (parseContext.getTreeRoot() != nullptr);
+    bool success = (PaParseStrings(numStrings - firstSource, &shaderStrings[firstSource], nullptr,
+                                   &parseContext) == 0) &&
+                   (parseContext.getTreeRoot() != nullptr);
 
     shaderVersion = parseContext.getShaderVersion();
     if (success && MapSpecToShaderVersion(shaderSpec) < shaderVersion)
     {
-        infoSink.info.prefix(EPrefixError);
-        infoSink.info << "unsupported shader version";
+        mDiagnostics.globalError("unsupported shader version");
         success = false;
     }
 
@@ -321,10 +321,21 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         mComputeShaderLocalSizeDeclared = parseContext.isComputeShaderLocalSizeDeclared();
         mComputeShaderLocalSize         = parseContext.getComputeShaderLocalSize();
 
+        mNumViews = parseContext.getNumViews();
+
         root = parseContext.getTreeRoot();
 
         // Highp might have been auto-enabled based on shader version
         fragmentPrecisionHigh = parseContext.getFragmentPrecisionHigh();
+
+        if (success && (IsWebGLBasedSpec(shaderSpec) &&
+                        IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview") &&
+                        IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview2")))
+        {
+            // Can't enable both extensions at the same time.
+            mDiagnostics.globalError("Can't enable both OVR_multiview and OVR_multiview2");
+            success = false;
+        }
 
         // Disallow expressions deemed too complex.
         if (success && (compileOptions & SH_LIMIT_EXPRESSION_COMPLEXITY))
@@ -348,7 +359,8 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && !(compileOptions & SH_DONT_PRUNE_UNUSED_FUNCTIONS))
             success = pruneUnusedFunctions(root);
 
-        // Prune empty declarations to work around driver bugs and to keep declaration output simple.
+        // Prune empty declarations to work around driver bugs and to keep declaration output
+        // simple.
         if (success)
             PruneEmptyDeclarations(root);
 
@@ -358,34 +370,18 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && shouldRunLoopAndIndexingValidation(compileOptions))
             success = validateLimitations(root);
 
+        bool multiview2 = IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview2");
+        if (success && compileResources.OVR_multiview && IsWebGLBasedSpec(shaderSpec) &&
+            (IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview") || multiview2))
+            success = ValidateMultiviewWebGL(root, shaderType, multiview2, &mDiagnostics);
+
         // Fail compilation if precision emulation not supported.
         if (success && getResources().WEBGL_debug_shader_precision &&
             getPragma().debugShaderPrecision)
         {
             if (!EmulatePrecision::SupportedInLanguage(outputType))
             {
-                infoSink.info.prefix(EPrefixError);
-                infoSink.info << "Precision emulation not supported for this output type.";
-                success = false;
-            }
-        }
-
-        // Unroll for-loop markup needs to happen after validateLimitations pass.
-        if (success && (compileOptions & SH_UNROLL_FOR_LOOP_WITH_INTEGER_INDEX))
-        {
-            ForLoopUnrollMarker marker(ForLoopUnrollMarker::kIntegerIndex,
-                                       shouldRunLoopAndIndexingValidation(compileOptions));
-            root->traverse(&marker);
-        }
-        if (success && (compileOptions & SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX))
-        {
-            ForLoopUnrollMarker marker(ForLoopUnrollMarker::kSamplerArrayIndex,
-                                       shouldRunLoopAndIndexingValidation(compileOptions));
-            root->traverse(&marker);
-            if (marker.samplerArrayIndexIsFloatLoopIndex())
-            {
-                infoSink.info.prefix(EPrefixError);
-                infoSink.info << "sampler array index is float loop index";
+                mDiagnostics.globalError("Precision emulation not supported for this output type.");
                 success = false;
             }
         }
@@ -444,8 +440,7 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
                 success = enforcePackingRestrictions();
                 if (!success)
                 {
-                    infoSink.info.prefix(EPrefixError);
-                    infoSink.info << "too many uniforms";
+                    mDiagnostics.globalError("too many uniforms");
                 }
             }
             if (success && (compileOptions & SH_INIT_OUTPUT_VARIABLES))
@@ -506,17 +501,6 @@ bool TCompiler::compile(const char *const shaderStrings[],
         compileOptions |= SH_FLATTEN_PRAGMA_STDGL_INVARIANT_ALL;
     }
 
-    ShCompileOptions unrollFlags =
-        SH_UNROLL_FOR_LOOP_WITH_INTEGER_INDEX | SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX;
-    if ((compileOptions & SH_ADD_AND_TRUE_TO_LOOP_CONDITION) != 0 &&
-        (compileOptions & unrollFlags) != 0)
-    {
-        infoSink.info.prefix(EPrefixError);
-        infoSink.info
-            << "Unsupported compile flag combination: unroll & ADD_TRUE_TO_LOOP_CONDITION";
-        return false;
-    }
-
     TScopedPoolAllocator scopedAlloc(&allocator);
     TIntermBlock *root = compileTreeImpl(shaderStrings, numStrings, compileOptions);
 
@@ -537,14 +521,23 @@ bool TCompiler::compile(const char *const shaderStrings[],
 
 bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
 {
+    if (resources.MaxDrawBuffers < 1)
+    {
+        return false;
+    }
+    if (resources.EXT_blend_func_extended && resources.MaxDualSourceDrawBuffers < 1)
+    {
+        return false;
+    }
+
     compileResources = resources;
     setResourceString();
 
     assert(symbolTable.isEmpty());
-    symbolTable.push();   // COMMON_BUILTINS
-    symbolTable.push();   // ESSL1_BUILTINS
-    symbolTable.push();   // ESSL3_BUILTINS
-    symbolTable.push();   // ESSL3_1_BUILTINS
+    symbolTable.push();  // COMMON_BUILTINS
+    symbolTable.push();  // ESSL1_BUILTINS
+    symbolTable.push();  // ESSL3_BUILTINS
+    symbolTable.push();  // ESSL3_1_BUILTINS
 
     TPublicType integer;
     integer.initializeBasicType(EbtInt);
@@ -664,6 +657,7 @@ void TCompiler::clearResults()
     infoSink.info.erase();
     infoSink.obj.erase();
     infoSink.debug.erase();
+    mDiagnostics.resetErrorCount();
 
     attributes.clear();
     outputVariables.clear();
@@ -673,11 +667,13 @@ void TCompiler::clearResults()
     interfaceBlocks.clear();
     variablesCollected = false;
 
+    mNumViews = -1;
+
     builtInFunctionEmulator.Cleanup();
 
     nameMap.clear();
 
-    mSourcePath = NULL;
+    mSourcePath     = NULL;
     mTemporaryIndex = 0;
 }
 
@@ -685,17 +681,14 @@ bool TCompiler::initCallDag(TIntermNode *root)
 {
     mCallDag.clear();
 
-    switch (mCallDag.init(root, &infoSink.info))
+    switch (mCallDag.init(root, &mDiagnostics))
     {
         case CallDAG::INITDAG_SUCCESS:
             return true;
         case CallDAG::INITDAG_RECURSION:
-            infoSink.info.prefix(EPrefixError);
-            infoSink.info << "Function recursion detected";
-            return false;
         case CallDAG::INITDAG_UNDEFINED:
-            infoSink.info.prefix(EPrefixError);
-            infoSink.info << "Unimplemented function detected";
+            // Error message has already been written out.
+            ASSERT(mDiagnostics.numErrors() > 0);
             return false;
     }
 
@@ -709,7 +702,7 @@ bool TCompiler::checkCallDepth()
 
     for (size_t i = 0; i < mCallDag.size(); i++)
     {
-        int depth = 0;
+        int depth    = 0;
         auto &record = mCallDag.getRecordFromIndex(i);
 
         for (auto &calleeIndex : record.callees)
@@ -722,19 +715,19 @@ bool TCompiler::checkCallDepth()
         if (depth >= maxCallStackDepth)
         {
             // Trace back the function chain to have a meaningful info log.
-            infoSink.info.prefix(EPrefixError);
-            infoSink.info << "Call stack too deep (larger than " << maxCallStackDepth
-                          << ") with the following call chain: " << record.name;
+            std::stringstream errorStream;
+            errorStream << "Call stack too deep (larger than " << maxCallStackDepth
+                        << ") with the following call chain: " << record.name;
 
             int currentFunction = static_cast<int>(i);
-            int currentDepth = depth;
+            int currentDepth    = depth;
 
             while (currentFunction != -1)
             {
-                infoSink.info << " -> " << mCallDag.getRecordFromIndex(currentFunction).name;
+                errorStream << " -> " << mCallDag.getRecordFromIndex(currentFunction).name;
 
                 int nextFunction = -1;
-                for (auto& calleeIndex : mCallDag.getRecordFromIndex(currentFunction).callees)
+                for (auto &calleeIndex : mCallDag.getRecordFromIndex(currentFunction).callees)
                 {
                     if (depths[calleeIndex] == currentDepth - 1)
                     {
@@ -745,6 +738,9 @@ bool TCompiler::checkCallDepth()
 
                 currentFunction = nextFunction;
             }
+
+            std::string errorStr = errorStream.str();
+            mDiagnostics.globalError(errorStr.c_str());
 
             return false;
         }
@@ -765,8 +761,7 @@ bool TCompiler::tagUsedFunctions()
         }
     }
 
-    infoSink.info.prefix(EPrefixError);
-    infoSink.info << "Missing main()\n";
+    mDiagnostics.globalError("Missing main()");
     return false;
 }
 
@@ -794,23 +789,20 @@ class TCompiler::UnusedPredicate
     {
     }
 
-    bool operator ()(TIntermNode *node)
+    bool operator()(TIntermNode *node)
     {
-        const TIntermAggregate *asAggregate = node->getAsAggregate();
-        const TIntermFunctionDefinition *asFunction = node->getAsFunctionDefinition();
+        const TIntermFunctionPrototype *asFunctionPrototype   = node->getAsFunctionPrototypeNode();
+        const TIntermFunctionDefinition *asFunctionDefinition = node->getAsFunctionDefinition();
 
         const TFunctionSymbolInfo *functionInfo = nullptr;
 
-        if (asFunction)
+        if (asFunctionDefinition)
         {
-            functionInfo = asFunction->getFunctionSymbolInfo();
+            functionInfo = asFunctionDefinition->getFunctionSymbolInfo();
         }
-        else if (asAggregate)
+        else if (asFunctionPrototype)
         {
-            if (asAggregate->getOp() == EOpPrototype)
-            {
-                functionInfo = asAggregate->getFunctionSymbolInfo();
-            }
+            functionInfo = asFunctionPrototype->getFunctionSymbolInfo();
         }
         if (functionInfo == nullptr)
         {
@@ -821,7 +813,7 @@ class TCompiler::UnusedPredicate
         if (callDagIndex == CallDAG::InvalidIndex)
         {
             // This happens only for unimplemented prototypes which are thus unused
-            ASSERT(asAggregate && asAggregate->getOp() == EOpPrototype);
+            ASSERT(asFunctionPrototype);
             return true;
         }
 
@@ -841,47 +833,49 @@ bool TCompiler::pruneUnusedFunctions(TIntermBlock *root)
 
     if (!sequence->empty())
     {
-        sequence->erase(std::remove_if(sequence->begin(), sequence->end(), isUnused), sequence->end());
+        sequence->erase(std::remove_if(sequence->begin(), sequence->end(), isUnused),
+                        sequence->end());
     }
 
     return true;
 }
 
-bool TCompiler::validateOutputs(TIntermNode* root)
+bool TCompiler::validateOutputs(TIntermNode *root)
 {
     ValidateOutputs validateOutputs(getExtensionBehavior(), compileResources.MaxDrawBuffers);
     root->traverse(&validateOutputs);
-    return (validateOutputs.validateAndCountErrors(infoSink.info) == 0);
+    validateOutputs.validate(&mDiagnostics);
+    return (mDiagnostics.numErrors() == 0);
 }
 
-bool TCompiler::validateLimitations(TIntermNode* root)
+bool TCompiler::validateLimitations(TIntermNode *root)
 {
-    ValidateLimitations validate(shaderType, &infoSink.info);
+    ValidateLimitations validate(shaderType, &mDiagnostics);
     root->traverse(&validate);
-    return validate.numErrors() == 0;
+    return mDiagnostics.numErrors() == 0;
 }
 
-bool TCompiler::limitExpressionComplexity(TIntermNode* root)
+bool TCompiler::limitExpressionComplexity(TIntermNode *root)
 {
     TMaxDepthTraverser traverser(maxExpressionComplexity + 1);
     root->traverse(&traverser);
 
     if (traverser.getMaxDepth() > maxExpressionComplexity)
     {
-        infoSink.info << "Expression too complex.";
+        mDiagnostics.globalError("Expression too complex.");
         return false;
     }
 
     if (!ValidateMaxParameters::validate(root, maxFunctionParameters))
     {
-        infoSink.info << "Function has too many parameters.";
+        mDiagnostics.globalError("Function has too many parameters.");
         return false;
     }
 
     return true;
 }
 
-void TCompiler::collectVariables(TIntermNode* root)
+void TCompiler::collectVariables(TIntermNode *root)
 {
     if (!variablesCollected)
     {
@@ -912,7 +906,7 @@ bool TCompiler::enforcePackingRestrictions()
     return packer.CheckVariablesWithinPackingLimits(maxUniformVectors, expandedUniforms);
 }
 
-void TCompiler::initializeGLPosition(TIntermNode* root)
+void TCompiler::initializeGLPosition(TIntermNode *root)
 {
     InitVariableList list;
     sh::ShaderVariable var(GL_FLOAT_VEC4, 0);
@@ -958,7 +952,7 @@ void TCompiler::initializeOutputVariables(TIntermNode *root)
     InitializeVariables(root, list, symbolTable);
 }
 
-const TExtensionBehavior& TCompiler::getExtensionBehavior() const
+const TExtensionBehavior &TCompiler::getExtensionBehavior() const
 {
     return extensionBehavior;
 }
@@ -968,12 +962,12 @@ const char *TCompiler::getSourcePath() const
     return mSourcePath;
 }
 
-const ShBuiltInResources& TCompiler::getResources() const
+const ShBuiltInResources &TCompiler::getResources() const
 {
     return compileResources;
 }
 
-const ArrayBoundsClamper& TCompiler::getArrayBoundsClamper() const
+const ArrayBoundsClamper &TCompiler::getArrayBoundsClamper() const
 {
     return arrayBoundsClamper;
 }
@@ -983,7 +977,7 @@ ShArrayIndexClampingStrategy TCompiler::getArrayIndexClampingStrategy() const
     return clampingStrategy;
 }
 
-const BuiltInFunctionEmulator& TCompiler::getBuiltInFunctionEmulator() const
+const BuiltInFunctionEmulator &TCompiler::getBuiltInFunctionEmulator() const
 {
     return builtInFunctionEmulator;
 }

@@ -60,7 +60,9 @@
 #include <openssl/err.h>
 #include <openssl/mem.h>
 
+#include "../bn/internal.h"
 #include "../ec/internal.h"
+#include "../internal.h"
 
 
 int ECDSA_sign(int type, const uint8_t *digest, size_t digest_len, uint8_t *sig,
@@ -88,7 +90,7 @@ int ECDSA_verify(int type, const uint8_t *digest, size_t digest_len,
   /* Defend against potential laxness in the DER parser. */
   size_t der_len;
   if (!ECDSA_SIG_to_bytes(&der, &der_len, s) ||
-      der_len != sig_len || memcmp(sig, der, sig_len) != 0) {
+      der_len != sig_len || OPENSSL_memcmp(sig, der, sig_len) != 0) {
     /* This should never happen. crypto/bytestring is strictly DER. */
     OPENSSL_PUT_ERROR(ECDSA, ERR_R_INTERNAL_ERROR);
     goto err;
@@ -308,12 +310,9 @@ static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in, BIGNUM **kinvp,
   } while (BN_is_zero(r));
 
   /* Compute the inverse of k. The order is a prime, so use Fermat's Little
-   * Theorem. */
-  if (!BN_set_word(tmp, 2) ||
-      !BN_sub(tmp, order, tmp) ||
-      /* Note |ec_group_get_mont_data| may return NULL but |BN_mod_exp_mont|
-       * allows it to be. */
-      !BN_mod_exp_mont(k, k, tmp, order, ctx, ec_group_get_mont_data(group))) {
+   * Theorem. Note |ec_group_get_mont_data| may return NULL but
+   * |bn_mod_inverse_prime| allows this. */
+  if (!bn_mod_inverse_prime(k, k, order, ctx, ec_group_get_mont_data(group))) {
     OPENSSL_PUT_ERROR(ECDSA, ERR_R_BN_LIB);
     goto err;
   }

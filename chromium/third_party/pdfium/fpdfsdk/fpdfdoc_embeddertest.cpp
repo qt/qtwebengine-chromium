@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <string>
 
 #include "core/fxcrt/fx_string.h"
@@ -65,6 +66,16 @@ TEST_F(FPDFDocEmbeddertest, DestGetLocationInPage) {
   EXPECT_EQ(0, x);
   EXPECT_EQ(0, y);
   EXPECT_EQ(1, zoom);
+}
+
+TEST_F(FPDFDocEmbeddertest, BUG_680376) {
+  EXPECT_TRUE(OpenDocument("bug_680376.pdf"));
+
+  // Page number directly in item from Dests NameTree.
+  FPDF_DEST dest = FPDF_GetNamedDestByName(document(), "First");
+  EXPECT_TRUE(dest);
+  EXPECT_EQ(static_cast<unsigned long>(-1),
+            FPDFDest_GetPageIndex(document(), dest));
 }
 
 TEST_F(FPDFDocEmbeddertest, ActionGetFilePath) {
@@ -170,4 +181,58 @@ TEST_F(FPDFDocEmbeddertest, DeletePage) {
   EXPECT_EQ(1, FPDF_GetPageCount(document()));
   FPDFPage_Delete(document(), 0);
   EXPECT_EQ(0, FPDF_GetPageCount(document()));
+}
+
+TEST_F(FPDFDocEmbeddertest, NoPageLabels) {
+  EXPECT_TRUE(OpenDocument("about_blank.pdf"));
+  EXPECT_EQ(1, FPDF_GetPageCount(document()));
+
+  ASSERT_EQ(0u, FPDF_GetPageLabel(document(), 0, nullptr, 0));
+}
+
+TEST_F(FPDFDocEmbeddertest, GetPageLabels) {
+  EXPECT_TRUE(OpenDocument("page_labels.pdf"));
+  EXPECT_EQ(7, FPDF_GetPageCount(document()));
+
+  unsigned short buf[128];
+  EXPECT_EQ(0u, FPDF_GetPageLabel(document(), -2, buf, sizeof(buf)));
+  EXPECT_EQ(0u, FPDF_GetPageLabel(document(), -1, buf, sizeof(buf)));
+
+  const FX_WCHAR kExpectedPageLabel0[] = L"i";
+  ASSERT_EQ(4u, FPDF_GetPageLabel(document(), 0, buf, sizeof(buf)));
+  EXPECT_EQ(CFX_WideString(kExpectedPageLabel0),
+            CFX_WideString::FromUTF16LE(buf, FXSYS_len(kExpectedPageLabel0)));
+
+  const FX_WCHAR kExpectedPageLabel1[] = L"ii";
+  ASSERT_EQ(6u, FPDF_GetPageLabel(document(), 1, buf, sizeof(buf)));
+  EXPECT_EQ(CFX_WideString(kExpectedPageLabel1),
+            CFX_WideString::FromUTF16LE(buf, FXSYS_len(kExpectedPageLabel1)));
+
+  const FX_WCHAR kExpectedPageLabel2[] = L"1";
+  ASSERT_EQ(4u, FPDF_GetPageLabel(document(), 2, buf, sizeof(buf)));
+  EXPECT_EQ(CFX_WideString(kExpectedPageLabel2),
+            CFX_WideString::FromUTF16LE(buf, FXSYS_len(kExpectedPageLabel2)));
+
+  const FX_WCHAR kExpectedPageLabel3[] = L"2";
+  ASSERT_EQ(4u, FPDF_GetPageLabel(document(), 3, buf, sizeof(buf)));
+  EXPECT_EQ(CFX_WideString(kExpectedPageLabel3),
+            CFX_WideString::FromUTF16LE(buf, FXSYS_len(kExpectedPageLabel3)));
+
+  const FX_WCHAR kExpectedPageLabel4[] = L"zzA";
+  ASSERT_EQ(8u, FPDF_GetPageLabel(document(), 4, buf, sizeof(buf)));
+  EXPECT_EQ(CFX_WideString(kExpectedPageLabel4),
+            CFX_WideString::FromUTF16LE(buf, FXSYS_len(kExpectedPageLabel4)));
+
+  const FX_WCHAR kExpectedPageLabel5[] = L"zzB";
+  ASSERT_EQ(8u, FPDF_GetPageLabel(document(), 5, buf, sizeof(buf)));
+  EXPECT_EQ(CFX_WideString(kExpectedPageLabel5),
+            CFX_WideString::FromUTF16LE(buf, FXSYS_len(kExpectedPageLabel5)));
+
+  const FX_WCHAR kExpectedPageLabel6[] = L"";
+  ASSERT_EQ(2u, FPDF_GetPageLabel(document(), 6, buf, sizeof(buf)));
+  EXPECT_EQ(CFX_WideString(kExpectedPageLabel6),
+            CFX_WideString::FromUTF16LE(buf, FXSYS_len(kExpectedPageLabel6)));
+
+  ASSERT_EQ(0u, FPDF_GetPageLabel(document(), 7, buf, sizeof(buf)));
+  ASSERT_EQ(0u, FPDF_GetPageLabel(document(), 8, buf, sizeof(buf)));
 }

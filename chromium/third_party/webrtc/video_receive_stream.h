@@ -16,12 +16,12 @@
 #include <string>
 #include <vector>
 
+#include "webrtc/api/call/transport.h"
 #include "webrtc/base/platform_file.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/config.h"
 #include "webrtc/media/base/videosinkinterface.h"
-#include "webrtc/transport.h"
 
 namespace webrtc {
 
@@ -45,7 +45,10 @@ class VideoReceiveStream {
     // used to unpack incoming packets.
     std::string payload_name;
 
-    DecoderSpecificSettings decoder_specific;
+    // This map contains the codec specific parameters from SDP, i.e. the "fmtp"
+    // parameters. It is the same as cricket::CodecParameterMap used in
+    // cricket::VideoCodec.
+    std::map<std::string, std::string> codec_params;
   };
 
   struct Stats {

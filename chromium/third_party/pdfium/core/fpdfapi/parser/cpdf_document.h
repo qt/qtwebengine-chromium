@@ -9,6 +9,9 @@
 
 #include <functional>
 #include <memory>
+#include <set>
+#include <utility>
+#include <vector>
 
 #include "core/fpdfapi/parser/cpdf_indirect_object_holder.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
@@ -103,9 +106,9 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   // When this method is called, m_pTreeTraversal[level] exists.
   CPDF_Dictionary* TraversePDFPages(int iPage, int* nPagesToGo, size_t level);
   int FindPageIndex(CPDF_Dictionary* pNode,
-                    uint32_t& skip_count,
+                    uint32_t* skip_count,
                     uint32_t objnum,
-                    int& index,
+                    int* index,
                     int level = 0);
   std::unique_ptr<CPDF_Object> ParseIndirectObject(uint32_t objnum) override;
   void LoadDocInternal();
@@ -135,6 +138,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   std::vector<std::pair<CPDF_Dictionary*, size_t>> m_pTreeTraversal;
   // Index of the next page that will be traversed from the page tree.
   int m_iNextPageToTraverse;
+  bool m_bReachedMaxPageLevel;
   bool m_bLinearized;
   int m_iFirstPageNo;
   uint32_t m_dwFirstPageObjNum;
@@ -143,7 +147,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   std::unique_ptr<CPDF_DocRenderData> m_pDocRender;
   std::unique_ptr<JBig2_DocumentContext> m_pCodecContext;
   std::unique_ptr<CPDF_LinkList> m_pLinksContext;
-  CFX_ArrayTemplate<uint32_t> m_PageList;
+  std::vector<uint32_t> m_PageList;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_DOCUMENT_H_

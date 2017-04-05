@@ -160,7 +160,7 @@ RendererGL::~RendererGL()
 gl::Error RendererGL::flush()
 {
     mFunctions->flush();
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error RendererGL::finish()
@@ -181,7 +181,7 @@ gl::Error RendererGL::finish()
     }
 #endif
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
 }
 
 gl::Error RendererGL::drawArrays(const gl::ContextState &data,
@@ -271,7 +271,34 @@ gl::Error RendererGL::drawRangeElements(const gl::ContextState &data,
         mFunctions->drawRangeElements(mode, start, end, count, type, drawIndexPointer);
     }
 
-    return gl::Error(GL_NO_ERROR);
+    return gl::NoError();
+}
+
+gl::Error RendererGL::drawArraysIndirect(const gl::ContextState &data,
+                                         GLenum mode,
+                                         const GLvoid *indirect)
+{
+    ANGLE_TRY(mStateManager->setDrawIndirectState(data, GL_NONE));
+
+    if (!mSkipDrawCalls)
+    {
+        mFunctions->drawArraysIndirect(mode, indirect);
+    }
+    return gl::NoError();
+}
+
+gl::Error RendererGL::drawElementsIndirect(const gl::ContextState &data,
+                                           GLenum mode,
+                                           GLenum type,
+                                           const GLvoid *indirect)
+{
+    ANGLE_TRY(mStateManager->setDrawIndirectState(data, type));
+
+    if (!mSkipDrawCalls)
+    {
+        mFunctions->drawElementsIndirect(mode, type, indirect);
+    }
+    return gl::NoError();
 }
 
 void RendererGL::stencilFillPath(const gl::ContextState &state,

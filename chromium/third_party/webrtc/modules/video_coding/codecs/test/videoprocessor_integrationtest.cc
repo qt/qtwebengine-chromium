@@ -15,6 +15,7 @@
 #include "webrtc/modules/video_coding/codecs/test/videoprocessor.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
+#include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/include/video_coding.h"
@@ -113,6 +114,7 @@ class VideoProcessorIntegrationTest : public testing::Test {
   webrtc::test::TestConfig config_;
   VideoCodec codec_settings_;
   webrtc::test::VideoProcessor* processor_;
+  TemporalLayersFactory tl_factory_;
 
   // Quantities defined/updated for every encoder rate update.
   // Some quantities defined per temporal layer (at most 3 layers in this test).
@@ -153,7 +155,7 @@ class VideoProcessorIntegrationTest : public testing::Test {
 
   void SetUpCodecConfig() {
     if (codec_type_ == kVideoCodecH264) {
-      encoder_ = H264Encoder::Create();
+      encoder_ = H264Encoder::Create(cricket::VideoCodec("H264"));
       decoder_ = H264Decoder::Create();
       VideoCodingModule::Codec(kVideoCodecH264, &codec_settings_);
     } else if (codec_type_ == kVideoCodecVP8) {
@@ -700,17 +702,8 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeBitRateVP9) {
 // for the rate control metrics can be lower. One key frame (first frame only).
 // Note: quality after update should be higher but we currently compute quality
 // metrics averaged over whole sequence run.
-
-#if defined(WEBRTC_ANDROID)
-// Flaky on Android: https://bugs.chromium.org/p/webrtc/issues/detail?id=6057.
-#define MAYBE_ProcessNoLossChangeFrameRateFrameDropVP9 \
-  DISABLED_ProcessNoLossChangeFrameRateFrameDropVP9
-#else
-#define MAYBE_ProcessNoLossChangeFrameRateFrameDropVP9 \
-  ProcessNoLossChangeFrameRateFrameDropVP9
-#endif
 TEST_F(VideoProcessorIntegrationTest,
-       MAYBE_ProcessNoLossChangeFrameRateFrameDropVP9) {
+       ProcessNoLossChangeFrameRateFrameDropVP9) {
   config_.networking_config.packet_loss_probability = 0;
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
@@ -759,7 +752,8 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossDenoiserOnVP9) {
 // Run with no packet loss, at low bitrate.
 // spatial_resize is on, for this low bitrate expect one resize in sequence.
 // Resize happens on delta frame. Expect only one key frame (first frame).
-TEST_F(VideoProcessorIntegrationTest, ProcessNoLossSpatialResizeFrameDropVP9) {
+TEST_F(VideoProcessorIntegrationTest,
+       DISABLED_ProcessNoLossSpatialResizeFrameDropVP9) {
   config_.networking_config.packet_loss_probability = 0;
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
@@ -935,38 +929,6 @@ TEST_F(VideoProcessorIntegrationTest,
   SetRateControlMetrics(rc_metrics, 0, 40, 20, 75, 15, 60, 0, 1);
   SetRateControlMetrics(rc_metrics, 1, 10, 0, 25, 10, 35, 0, 0);
   SetRateControlMetrics(rc_metrics, 2, 0, 0, 20, 10, 15, 0, 0);
-  ProcessFramesAndVerify(quality_metrics, rate_profile, process_settings,
-                         rc_metrics);
-}
-
-// Run with no packet loss, at low bitrate. During this time we should've
-// resized once. Expect 2 key frames generated (first and one for resize).
-// Too slow to finish before timeout on iOS. See webrtc:4755.
-#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
-#define MAYBE_ProcessNoLossSpatialResizeFrameDropVP8 \
-  DISABLED_ProcessNoLossSpatialResizeFrameDropVP8
-#else
-#define MAYBE_ProcessNoLossSpatialResizeFrameDropVP8 \
-  ProcessNoLossSpatialResizeFrameDropVP8
-#endif
-TEST_F(VideoProcessorIntegrationTest,
-       MAYBE_ProcessNoLossSpatialResizeFrameDropVP8) {
-  config_.networking_config.packet_loss_probability = 0;
-  // Bitrate and frame rate profile.
-  RateProfile rate_profile;
-  SetRateProfilePars(&rate_profile, 0, 50, 30, 0);
-  rate_profile.frame_index_rate_update[1] = kNbrFramesLong + 1;
-  rate_profile.num_frames = kNbrFramesLong;
-  // Codec/network settings.
-  CodecConfigPars process_settings;
-  SetCodecParameters(&process_settings, kVideoCodecVP8, 0.0f, -1, 1, false,
-                     true, true, true);
-  // Metrics for expected quality.
-  QualityMetrics quality_metrics;
-  SetQualityMetrics(&quality_metrics, 25.0, 15.0, 0.70, 0.40);
-  // Metrics for rate control.
-  RateControlMetrics rc_metrics[1];
-  SetRateControlMetrics(rc_metrics, 0, 160, 80, 120, 20, 70, 1, 2);
   ProcessFramesAndVerify(quality_metrics, rate_profile, process_settings,
                          rc_metrics);
 }

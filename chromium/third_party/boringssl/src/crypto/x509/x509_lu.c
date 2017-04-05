@@ -188,7 +188,7 @@ X509_STORE *X509_STORE_new(void)
 
     if ((ret = (X509_STORE *)OPENSSL_malloc(sizeof(X509_STORE))) == NULL)
         return NULL;
-    memset(ret, 0, sizeof(*ret));
+    OPENSSL_memset(ret, 0, sizeof(*ret));
     CRYPTO_MUTEX_init(&ret->objs_lock);
     ret->objs = sk_X509_OBJECT_new(x509_object_cmp);
     if (ret->objs == NULL)
@@ -394,6 +394,11 @@ int X509_STORE_add_crl(X509_STORE *ctx, X509_CRL *x)
     CRYPTO_MUTEX_unlock_write(&ctx->objs_lock);
 
     return ret;
+}
+
+void X509_STORE_set0_additional_untrusted(X509_STORE *ctx,
+                                          STACK_OF(X509) *untrusted) {
+  ctx->additional_untrusted = untrusted;
 }
 
 int X509_OBJECT_up_ref_count(X509_OBJECT *a)

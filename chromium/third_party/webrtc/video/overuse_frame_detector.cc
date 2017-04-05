@@ -17,12 +17,12 @@
 #include <list>
 #include <map>
 
+#include "webrtc/api/video/video_frame.h"
 #include "webrtc/base/checks.h"
-#include "webrtc/base/exp_filter.h"
 #include "webrtc/base/logging.h"
+#include "webrtc/base/numerics/exp_filter.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/video_frame.h"
 
 #if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS)
 #include <mach/mach.h>
@@ -49,6 +49,7 @@ const int kMaxOverusesBeforeApplyRampupDelay = 4;
 const float kSampleDiffMs = 33.0f;
 const float kMaxExp = 7.0f;
 
+const auto kScaleReasonCpu = ScalingObserverInterface::ScaleReason::kCpu;
 }  // namespace
 
 CpuOveruseOptions::CpuOveruseOptions()
@@ -204,7 +205,7 @@ class OveruseFrameDetector::CheckOveruseTask : public rtc::QueuedTask {
 OveruseFrameDetector::OveruseFrameDetector(
     Clock* clock,
     const CpuOveruseOptions& options,
-    CpuOveruseObserver* observer,
+    ScalingObserverInterface* observer,
     EncodedFrameObserver* encoder_timing,
     CpuOveruseMetricsObserver* metrics_observer)
     : check_overuse_task_(nullptr),
@@ -370,13 +371,13 @@ void OveruseFrameDetector::CheckForOveruse() {
     ++num_overuse_detections_;
 
     if (observer_)
-      observer_->OveruseDetected();
+      observer_->ScaleDown(kScaleReasonCpu);
   } else if (IsUnderusing(*metrics_, now)) {
     last_rampup_time_ms_ = now;
     in_quick_rampup_ = true;
 
     if (observer_)
-      observer_->NormalUsage();
+      observer_->ScaleUp(kScaleReasonCpu);
   }
 
   int rampup_delay =

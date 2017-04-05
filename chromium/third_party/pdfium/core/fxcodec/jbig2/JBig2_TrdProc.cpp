@@ -12,6 +12,7 @@
 #include "core/fxcodec/jbig2/JBig2_ArithIntDecoder.h"
 #include "core/fxcodec/jbig2/JBig2_GrrdProc.h"
 #include "core/fxcodec/jbig2/JBig2_HuffmanDecoder.h"
+#include "third_party/base/ptr_util.h"
 
 CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
                                              JBig2ArithCtx* grContext) {
@@ -25,6 +26,7 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
 
   STRIPT *= SBSTRIPS;
   STRIPT = -STRIPT;
+  int32_t FIRSTS = 0;
   uint32_t NINSTANCES = 0;
   while (NINSTANCES < SBNUMINSTANCES) {
     int32_t DT;
@@ -34,7 +36,6 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
     DT *= SBSTRIPS;
     STRIPT = STRIPT + DT;
     bool bFirst = true;
-    int32_t FIRSTS = 0;
     int32_t CURS = 0;
     for (;;) {
       if (bFirst) {
@@ -242,16 +243,16 @@ CJBig2_Image* CJBig2_TRDProc::decode_Arith(CJBig2_ArithDecoder* pArithDecoder,
     pIARDY = pIDS->IARDY;
     pIAID = pIDS->IAID;
   } else {
-    IADT.reset(new CJBig2_ArithIntDecoder());
-    IAFS.reset(new CJBig2_ArithIntDecoder());
-    IADS.reset(new CJBig2_ArithIntDecoder());
-    IAIT.reset(new CJBig2_ArithIntDecoder());
-    IARI.reset(new CJBig2_ArithIntDecoder());
-    IARDW.reset(new CJBig2_ArithIntDecoder());
-    IARDH.reset(new CJBig2_ArithIntDecoder());
-    IARDX.reset(new CJBig2_ArithIntDecoder());
-    IARDY.reset(new CJBig2_ArithIntDecoder());
-    IAID.reset(new CJBig2_ArithIaidDecoder(SBSYMCODELEN));
+    IADT = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IAFS = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IADS = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IAIT = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IARI = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IARDW = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IARDH = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IARDX = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IARDY = pdfium::MakeUnique<CJBig2_ArithIntDecoder>();
+    IAID = pdfium::MakeUnique<CJBig2_ArithIaidDecoder>(SBSYMCODELEN);
     pIADT = IADT.get();
     pIAFS = IAFS.get();
     pIADS = IADS.get();

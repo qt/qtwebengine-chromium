@@ -16,6 +16,7 @@
 #include "webrtc/api/jsepsessiondescription.h"
 #include "webrtc/api/mediaconstraintsinterface.h"
 #include "webrtc/api/webrtcsession.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/sslidentity.h"
 
 using cricket::MediaSessionOptions;
@@ -200,7 +201,7 @@ WebRtcSessionDescriptionFactory::WebRtcSessionDescriptionFactory(
 }
 
 WebRtcSessionDescriptionFactory::~WebRtcSessionDescriptionFactory() {
-  ASSERT(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
 
   // Fail any requests that were asked for before identity generation completed.
   FailPendingRequests(kFailedDueToSessionShutdown);
@@ -248,8 +249,8 @@ void WebRtcSessionDescriptionFactory::CreateOffer(
   if (certificate_request_state_ == CERTIFICATE_WAITING) {
     create_session_description_requests_.push(request);
   } else {
-    ASSERT(certificate_request_state_ == CERTIFICATE_SUCCEEDED ||
-           certificate_request_state_ == CERTIFICATE_NOT_NEEDED);
+    RTC_DCHECK(certificate_request_state_ == CERTIFICATE_SUCCEEDED ||
+               certificate_request_state_ == CERTIFICATE_NOT_NEEDED);
     InternalCreateOffer(request);
   }
 }
@@ -290,8 +291,8 @@ void WebRtcSessionDescriptionFactory::CreateAnswer(
   if (certificate_request_state_ == CERTIFICATE_WAITING) {
     create_session_description_requests_.push(request);
   } else {
-    ASSERT(certificate_request_state_ == CERTIFICATE_SUCCEEDED ||
-           certificate_request_state_ == CERTIFICATE_NOT_NEEDED);
+    RTC_DCHECK(certificate_request_state_ == CERTIFICATE_SUCCEEDED ||
+               certificate_request_state_ == CERTIFICATE_NOT_NEEDED);
     InternalCreateAnswer(request);
   }
 }
@@ -331,13 +332,25 @@ void WebRtcSessionDescriptionFactory::OnMessage(rtc::Message* msg) {
       break;
     }
     default:
-      ASSERT(false);
+      RTC_NOTREACHED();
       break;
   }
 }
 
 void WebRtcSessionDescriptionFactory::InternalCreateOffer(
     CreateSessionDescriptionRequest request) {
+  if (session_->local_description()) {
+    for (const cricket::TransportInfo& transport :
+         session_->local_description()->description()->transport_infos()) {
+      // If the needs-ice-restart flag is set as described by JSEP, we should
+      // generate an offer with a new ufrag/password to trigger an ICE restart.
+      if (session_->NeedsIceRestart(transport.content_name)) {
+        request.options.transport_options[transport.content_name].ice_restart =
+            true;
+      }
+    }
+  }
+
   cricket::SessionDescription* desc(session_desc_factory_.CreateOffer(
       request.options, session_->local_description()
                            ? session_->local_description()->description()
@@ -351,7 +364,7 @@ void WebRtcSessionDescriptionFactory::InternalCreateOffer(
   // Just increase the version number by one each time when a new offer
   // is created regardless if it's identical to the previous one or not.
   // The |session_version_| is a uint64_t, the wrap around should not happen.
-  ASSERT(session_version_ + 1 > session_version_);
+  RTC_DCHECK(session_version_ + 1 > session_version_);
   JsepSessionDescription* offer(new JsepSessionDescription(
       JsepSessionDescription::kOffer));
   if (!offer->Initialize(desc, session_id_,
@@ -388,7 +401,7 @@ void WebRtcSessionDescriptionFactory::InternalCreateAnswer(
       // We should pass the current SSL role to the transport description
       // factory, if there is already an existing ongoing session.
       rtc::SSLRole ssl_role;
-      if (session_->GetSslRole(session_->GetChannel(content.name), &ssl_role)) {
+      if (session_->GetSslRole(content.name, &ssl_role)) {
         request.options.transport_options[content.name].prefer_passive_role =
             (rtc::SSL_SERVER == ssl_role);
       }
@@ -409,7 +422,7 @@ void WebRtcSessionDescriptionFactory::InternalCreateAnswer(
   // unrelated to the version number in the o line of the offer.
   // Get a new version number by increasing the |session_version_answer_|.
   // The |session_version_| is a uint64_t, the wrap around should not happen.
-  ASSERT(session_version_ + 1 > session_version_);
+  RTC_DCHECK(session_version_ + 1 > session_version_);
   JsepSessionDescription* answer(new JsepSessionDescription(
       JsepSessionDescription::kAnswer));
   if (!answer->Initialize(desc, session_id_,
@@ -435,7 +448,7 @@ void WebRtcSessionDescriptionFactory::InternalCreateAnswer(
 
 void WebRtcSessionDescriptionFactory::FailPendingRequests(
     const std::string& reason) {
-  ASSERT(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
   while (!create_session_description_requests_.empty()) {
     const CreateSessionDescriptionRequest& request =
         create_session_description_requests_.front();
@@ -465,7 +478,7 @@ void WebRtcSessionDescriptionFactory::PostCreateSessionDescriptionSucceeded(
 }
 
 void WebRtcSessionDescriptionFactory::OnCertificateRequestFailed() {
-  ASSERT(signaling_thread_->IsCurrent());
+  RTC_DCHECK(signaling_thread_->IsCurrent());
 
   LOG(LS_ERROR) << "Asynchronous certificate generation request failed.";
   certificate_request_state_ = CERTIFICATE_FAILED;

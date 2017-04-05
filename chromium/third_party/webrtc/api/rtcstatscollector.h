@@ -20,12 +20,15 @@
 #include "webrtc/api/datachannelinterface.h"
 #include "webrtc/api/stats/rtcstats_objects.h"
 #include "webrtc/api/stats/rtcstatsreport.h"
+#include "webrtc/api/trackmediainfomap.h"
 #include "webrtc/base/asyncinvoker.h"
+#include "webrtc/base/optional.h"
 #include "webrtc/base/refcount.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/base/sigslot.h"
 #include "webrtc/base/sslidentity.h"
 #include "webrtc/base/timeutils.h"
+#include "webrtc/media/base/mediachannel.h"
 
 namespace cricket {
 class Candidate;
@@ -39,6 +42,7 @@ namespace webrtc {
 
 class PeerConnection;
 struct SessionStats;
+struct ChannelNamePairs;
 
 class RTCStatsCollectorCallback : public virtual rtc::RefCountInterface {
  public:
@@ -68,13 +72,17 @@ class RTCStatsCollector : public virtual rtc::RefCountInterface,
   // calling |GetStatsReport| guarantees fresh stats.
   void ClearCachedStatsReport();
 
+  // If there is a |GetStatsReport| requests in-flight, waits until it has been
+  // completed. Must be called on the signaling thread.
+  void WaitForPendingRequest();
+
  protected:
   RTCStatsCollector(PeerConnection* pc, int64_t cache_lifetime_us);
+  ~RTCStatsCollector();
 
   // Stats gathering on a particular thread. Calls |AddPartialResults| before
   // returning. Virtual for the sake of testing.
   virtual void ProducePartialResultsOnSignalingThread(int64_t timestamp_us);
-  virtual void ProducePartialResultsOnWorkerThread(int64_t timestamp_us);
   virtual void ProducePartialResultsOnNetworkThread(int64_t timestamp_us);
 
   // Can be called on any thread.
@@ -91,15 +99,19 @@ class RTCStatsCollector : public virtual rtc::RefCountInterface,
   void DeliverCachedReport();
 
   // Produces |RTCCertificateStats|.
-  void ProduceCertificateStats_s(
+  void ProduceCertificateStats_n(
       int64_t timestamp_us,
       const std::map<std::string, CertificateStatsPair>& transport_cert_stats,
+      RTCStatsReport* report) const;
+  // Produces |RTCCodecStats|.
+  void ProduceCodecStats_n(
+      int64_t timestamp_us, const TrackMediaInfoMap& track_media_info_map,
       RTCStatsReport* report) const;
   // Produces |RTCDataChannelStats|.
   void ProduceDataChannelStats_s(
       int64_t timestamp_us, RTCStatsReport* report) const;
   // Produces |RTCIceCandidatePairStats| and |RTCIceCandidateStats|.
-  void ProduceIceCandidateAndPairStats_s(
+  void ProduceIceCandidateAndPairStats_n(
       int64_t timestamp_us, const SessionStats& session_stats,
       RTCStatsReport* report) const;
   // Produces |RTCMediaStreamStats| and |RTCMediaStreamTrackStats|.
@@ -109,18 +121,21 @@ class RTCStatsCollector : public virtual rtc::RefCountInterface,
   void ProducePeerConnectionStats_s(
       int64_t timestamp_us, RTCStatsReport* report) const;
   // Produces |RTCInboundRTPStreamStats| and |RTCOutboundRTPStreamStats|.
-  void ProduceRTPStreamStats_s(
+  void ProduceRTPStreamStats_n(
       int64_t timestamp_us, const SessionStats& session_stats,
+      const TrackMediaInfoMap& track_media_info_map,
       RTCStatsReport* report) const;
   // Produces |RTCTransportStats|.
-  void ProduceTransportStats_s(
+  void ProduceTransportStats_n(
       int64_t timestamp_us, const SessionStats& session_stats,
       const std::map<std::string, CertificateStatsPair>& transport_cert_stats,
       RTCStatsReport* report) const;
 
   // Helper function to stats-producing functions.
   std::map<std::string, CertificateStatsPair>
-  PrepareTransportCertificateStats_s(const SessionStats& session_stats) const;
+  PrepareTransportCertificateStats_n(const SessionStats& session_stats) const;
+  std::unique_ptr<TrackMediaInfoMap> PrepareTrackMediaInfoMap_s() const;
+  std::map<MediaStreamTrackInterface*, std::string> PrepareTrackToID_s() const;
 
   // Slots for signals (sigslot) that are wired up to |pc_|.
   void OnDataChannelCreated(DataChannel* channel);
@@ -138,6 +153,14 @@ class RTCStatsCollector : public virtual rtc::RefCountInterface,
   int64_t partial_report_timestamp_us_;
   rtc::scoped_refptr<RTCStatsReport> partial_report_;
   std::vector<rtc::scoped_refptr<RTCStatsCollectorCallback>> callbacks_;
+
+  // Set in |GetStatsReport|, read in |ProducePartialResultsOnNetworkThread| and
+  // |ProducePartialResultsOnSignalingThread|, reset after work is complete. Not
+  // passed as arguments to avoid copies. This is thread safe - when we
+  // set/reset we know there are no pending stats requests in progress.
+  std::unique_ptr<ChannelNamePairs> channel_name_pairs_;
+  std::unique_ptr<TrackMediaInfoMap> track_media_info_map_;
+  std::map<MediaStreamTrackInterface*, std::string> track_to_id_;
 
   // A timestamp, in microseconds, that is based on a timer that is
   // monotonically increasing. That is, even if the system clock is modified the

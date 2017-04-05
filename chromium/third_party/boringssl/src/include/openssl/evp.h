@@ -174,7 +174,7 @@ OPENSSL_EXPORT EC_KEY *EVP_PKEY_get1_EC_KEY(EVP_PKEY *pkey);
 OPENSSL_EXPORT int EVP_PKEY_assign(EVP_PKEY *pkey, int type, void *key);
 
 /* EVP_PKEY_set_type sets the type of |pkey| to |type|, which should be one of
- * the |EVP_PKEY_*| values. It returns one if sucessful or zero otherwise. If
+ * the |EVP_PKEY_*| values. It returns one if successful or zero otherwise. If
  * |pkey| is NULL, it simply reports whether the type is known. */
 OPENSSL_EXPORT int EVP_PKEY_set_type(EVP_PKEY *pkey, int type);
 
@@ -378,9 +378,10 @@ OPENSSL_EXPORT int PKCS5_PBKDF2_HMAC(const char *password, size_t password_len,
 /* PKCS5_PBKDF2_HMAC_SHA1 is the same as PKCS5_PBKDF2_HMAC, but with |digest|
  * fixed to |EVP_sha1|. */
 OPENSSL_EXPORT int PKCS5_PBKDF2_HMAC_SHA1(const char *password,
-                                          size_t password_len, const uint8_t *salt,
-                                          size_t salt_len, unsigned iterations,
-                                          size_t key_len, uint8_t *out_key);
+                                          size_t password_len,
+                                          const uint8_t *salt, size_t salt_len,
+                                          unsigned iterations, size_t key_len,
+                                          uint8_t *out_key);
 
 
 /* Public key contexts.
@@ -435,8 +436,8 @@ OPENSSL_EXPORT int EVP_PKEY_sign(EVP_PKEY_CTX *ctx, uint8_t *sig,
  * It returns one on success or zero on error. */
 OPENSSL_EXPORT int EVP_PKEY_verify_init(EVP_PKEY_CTX *ctx);
 
-/* EVP_PKEY_verify verifies that |sig_len| bytes from |sig| are a valid signature
- * for |data|.
+/* EVP_PKEY_verify verifies that |sig_len| bytes from |sig| are a valid
+ * signature for |data|.
  *
  * It returns one on success or zero on error. */
 OPENSSL_EXPORT int EVP_PKEY_verify(EVP_PKEY_CTX *ctx, const uint8_t *sig,
@@ -577,7 +578,10 @@ OPENSSL_EXPORT int EVP_PKEY_CTX_get_rsa_padding(EVP_PKEY_CTX *ctx,
 /* EVP_PKEY_CTX_set_rsa_pss_saltlen sets the length of the salt in a PSS-padded
  * signature. A value of -1 cause the salt to be the same length as the digest
  * in the signature. A value of -2 causes the salt to be the maximum length
- * that will fit. Otherwise the value gives the size of the salt in bytes.
+ * that will fit when signing and recovered from the signature when verifying.
+ * Otherwise the value gives the size of the salt in bytes.
+ *
+ * If unsure, use -1.
  *
  * Returns one on success or zero on error. */
 OPENSSL_EXPORT int EVP_PKEY_CTX_set_rsa_pss_saltlen(EVP_PKEY_CTX *ctx,

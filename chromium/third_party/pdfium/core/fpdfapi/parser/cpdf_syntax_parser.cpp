@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
 
+#include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "core/fpdfapi/cpdf_modulemgr.h"
@@ -384,8 +386,10 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObject(
     if (bIsNumber) {
       CFX_ByteString nextword2 = GetNextWord(nullptr);
       if (nextword2 == "R") {
-        return pdfium::MakeUnique<CPDF_Reference>(pObjList,
-                                                  FXSYS_atoui(word.c_str()));
+        uint32_t objnum = FXSYS_atoui(word.c_str());
+        if (objnum == CPDF_Object::kInvalidObjNum)
+          return nullptr;
+        return pdfium::MakeUnique<CPDF_Reference>(pObjList, objnum);
       }
     }
     m_Pos = SavedPos;
@@ -458,7 +462,7 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObject(
         continue;
 
       CFX_ByteString keyNoSlash(key.raw_str() + 1, key.GetLength() - 1);
-      pDict->SetFor(keyNoSlash, pObj.release());
+      pDict->SetFor(keyNoSlash, std::move(pObj));
     }
 
     // Only when this is a signature dictionary and has contents, we reset the
@@ -466,8 +470,7 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObject(
     if (pDict->IsSignatureDict() && dwSignValuePos) {
       CFX_AutoRestorer<FX_FILESIZE> save_pos(&m_Pos);
       m_Pos = dwSignValuePos;
-      pDict->SetFor("Contents",
-                    GetObject(pObjList, objnum, gennum, false).release());
+      pDict->SetFor("Contents", GetObject(pObjList, objnum, gennum, false));
     }
 
     FX_FILESIZE SavedPos = m_Pos;
@@ -476,9 +479,8 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObject(
       m_Pos = SavedPos;
       return std::move(pDict);
     }
-    return ReadStream(pDict.release(), objnum, gennum);
+    return ReadStream(std::move(pDict), objnum, gennum);
   }
-
   if (word == ">>")
     m_Pos = SavedObjPos;
 
@@ -505,8 +507,10 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObjectForStrict(
     if (bIsNumber) {
       CFX_ByteString nextword2 = GetNextWord(nullptr);
       if (nextword2 == "R") {
-        return pdfium::MakeUnique<CPDF_Reference>(pObjList,
-                                                  FXSYS_atoui(word.c_str()));
+        uint32_t objnum = FXSYS_atoui(word.c_str());
+        if (objnum == CPDF_Object::kInvalidObjNum)
+          return nullptr;
+        return pdfium::MakeUnique<CPDF_Reference>(pObjList, objnum);
       }
     }
     m_Pos = SavedPos;
@@ -576,7 +580,7 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObjectForStrict(
 
       if (key.GetLength() > 1) {
         pDict->SetFor(CFX_ByteString(key.c_str() + 1, key.GetLength() - 1),
-                      obj.release());
+                      std::move(obj));
       }
     }
 
@@ -586,10 +590,8 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObjectForStrict(
       m_Pos = SavedPos;
       return std::move(pDict);
     }
-
-    return ReadStream(pDict.release(), objnum, gennum);
+    return ReadStream(std::move(pDict), objnum, gennum);
   }
-
   if (word == ">>")
     m_Pos = SavedObjPos;
 
@@ -613,7 +615,7 @@ unsigned int CPDF_SyntaxParser::ReadEOLMarkers(FX_FILESIZE pos) {
 }
 
 std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
-    CPDF_Dictionary* pDict,
+    std::unique_ptr<CPDF_Dictionary> pDict,
     uint32_t objnum,
     uint32_t gennum) {
   CPDF_Object* pLenObj = pDict->GetObjectFor("Length");
@@ -692,10 +694,8 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
       }
 
       // Can't find "endstream" or "endobj".
-      if (endStreamOffset < 0 && endObjOffset < 0) {
-        delete pDict;
+      if (endStreamOffset < 0 && endObjOffset < 0)
         return nullptr;
-      }
 
       if (endStreamOffset < 0 && endObjOffset >= 0) {
         // Correct the position of end stream.
@@ -706,8 +706,8 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
       } else if (endStreamOffset > endObjOffset) {
         endStreamOffset = endObjOffset;
       }
-
       len = endStreamOffset;
+
       int numMarkers = ReadEOLMarkers(streamStartPos + endStreamOffset - 2);
       if (numMarkers == 2) {
         len -= 2;
@@ -717,41 +717,34 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
           len -= 1;
         }
       }
-
-      if (len < 0) {
-        delete pDict;
+      if (len < 0)
         return nullptr;
-      }
-      pDict->SetIntegerFor("Length", len);
+
+      pDict->SetNewFor<CPDF_Number>("Length", static_cast<int>(len));
     }
     m_Pos = streamStartPos;
   }
-
-  if (len < 0) {
-    delete pDict;
+  if (len < 0)
     return nullptr;
-  }
 
-  uint8_t* pData = nullptr;
+  std::unique_ptr<uint8_t, FxFreeDeleter> pData;
   if (len > 0) {
-    pData = FX_Alloc(uint8_t, len);
-    ReadBlock(pData, len);
+    pData.reset(FX_Alloc(uint8_t, len));
+    ReadBlock(pData.get(), len);
     if (pCryptoHandler) {
       CFX_BinaryBuf dest_buf;
       dest_buf.EstimateSize(pCryptoHandler->DecryptGetSize(len));
 
       void* context = pCryptoHandler->DecryptStart(objnum, gennum);
-      pCryptoHandler->DecryptStream(context, pData, len, dest_buf);
+      pCryptoHandler->DecryptStream(context, pData.get(), len, dest_buf);
       pCryptoHandler->DecryptFinish(context, dest_buf);
-
-      FX_Free(pData);
-      pData = dest_buf.GetBuffer();
       len = dest_buf.GetSize();
-      dest_buf.DetachBuffer();
+      pData = dest_buf.DetachBuffer();
     }
   }
 
-  auto pStream = pdfium::MakeUnique<CPDF_Stream>(pData, len, pDict);
+  auto pStream =
+      pdfium::MakeUnique<CPDF_Stream>(std::move(pData), len, std::move(pDict));
   streamStartPos = m_Pos;
   FXSYS_memset(m_WordBuffer, 0, kEndObjStr.GetLength() + 1);
   GetNextWordInternal(nullptr);
@@ -766,8 +759,9 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
   return pStream;
 }
 
-void CPDF_SyntaxParser::InitParser(IFX_SeekableReadStream* pFileAccess,
-                                   uint32_t HeaderOffset) {
+void CPDF_SyntaxParser::InitParser(
+    const CFX_RetainPtr<IFX_SeekableReadStream>& pFileAccess,
+    uint32_t HeaderOffset) {
   FX_Free(m_pFileBuf);
 
   m_pFileBuf = FX_Alloc(uint8_t, m_BufSize);

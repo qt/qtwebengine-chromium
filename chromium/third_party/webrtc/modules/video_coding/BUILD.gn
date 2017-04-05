@@ -18,7 +18,7 @@ rtc_static_library("video_coding") {
     "decoding_state.h",
     "encoded_frame.cc",
     "encoded_frame.h",
-    "fec_tables_xor.h",
+    "fec_rate_table.h",
     "frame_buffer.cc",
     "frame_buffer.h",
     "frame_buffer2.cc",
@@ -29,10 +29,13 @@ rtc_static_library("video_coding") {
     "generic_decoder.h",
     "generic_encoder.cc",
     "generic_encoder.h",
+    "h264_sprop_parameter_sets.cc",
+    "h264_sprop_parameter_sets.h",
     "h264_sps_pps_tracker.cc",
     "h264_sps_pps_tracker.h",
     "histogram.cc",
     "histogram.h",
+    "include/video_codec_initializer.h",
     "include/video_coding.h",
     "include/video_coding_defines.h",
     "inter_frame_delay.cc",
@@ -54,8 +57,6 @@ rtc_static_library("video_coding") {
     "packet.h",
     "packet_buffer.cc",
     "packet_buffer.h",
-    "percentile_filter.cc",
-    "percentile_filter.h",
     "protection_bitrate_calculator.cc",
     "protection_bitrate_calculator.h",
     "receiver.cc",
@@ -70,6 +71,7 @@ rtc_static_library("video_coding") {
     "timestamp_map.h",
     "timing.cc",
     "timing.h",
+    "video_codec_initializer.cc",
     "video_coding_impl.cc",
     "video_coding_impl.h",
     "video_receiver.cc",
@@ -91,13 +93,25 @@ rtc_static_library("video_coding") {
     ":webrtc_vp8",
     ":webrtc_vp9",
     "../..:webrtc_common",
+    "../../base:rtc_base",
+    "../../base:rtc_base_approved",
+    "../../base:rtc_numerics",
+    "../../base:rtc_task_queue",
     "../../common_video",
     "../../system_wrappers",
+    "../rtp_rtcp:rtp_rtcp",
+    "../utility:utility",
   ]
 }
 
 rtc_static_library("video_coding_utility") {
+  # TODO(ehmaldonado): Remove (bugs.webrtc.org/6828)
+  # Errors on cyclic dependency with :video_coding if enabled.
+  check_includes = false
+
   sources = [
+    "utility/default_video_bitrate_allocator.cc",
+    "utility/default_video_bitrate_allocator.h",
     "utility/frame_dropper.cc",
     "utility/frame_dropper.h",
     "utility/ivf_file_writer.cc",
@@ -120,12 +134,25 @@ rtc_static_library("video_coding_utility") {
   }
 
   deps = [
+    "../..:webrtc_common",
+    "../../base:rtc_base_approved",
+    "../../base:rtc_numerics",
     "../../common_video",
     "../../system_wrappers",
   ]
 }
 
 rtc_static_library("webrtc_h264") {
+  # TODO(ehmaldonado): Remove (bugs.webrtc.org/6828)
+  # Errors on cyclic dependency if enabled:
+  #   //webrtc/call:call ->
+  #   //webrtc/video:video ->
+  #   //webrtc/modules/video_coding:video_coding ->
+  #   //webrtc/modules/video_coding:webrtc_h264 ->
+  #   //webrtc/media:rtc_media ->
+  #   //webrtc/call:call
+  check_includes = false
+
   sources = [
     "codecs/h264/h264.cc",
     "codecs/h264/include/h264.h",
@@ -138,6 +165,8 @@ rtc_static_library("webrtc_h264") {
 
   defines = []
   deps = [
+    ":video_coding_utility",
+    "../../base:rtc_base_approved",
     "../../system_wrappers",
   ]
 
@@ -154,6 +183,7 @@ rtc_static_library("webrtc_h264") {
     ]
     deps += [
       "../../common_video",
+      "../../media:rtc_media_base",
       "//third_party/ffmpeg:ffmpeg",
       "//third_party/openh264:encoder",
     ]
@@ -172,6 +202,9 @@ rtc_static_library("webrtc_i420") {
   }
 
   deps = [
+    "../..:webrtc_common",
+    "../../base:rtc_base_approved",
+    "../../common_video:common_video",
     "../../system_wrappers",
   ]
 }
@@ -205,6 +238,7 @@ rtc_static_library("webrtc_vp8") {
   deps = [
     ":video_coding_utility",
     "../..:webrtc_common",
+    "../../base:rtc_base_approved",
     "../../common_video",
     "../../system_wrappers",
   ]
@@ -237,6 +271,7 @@ rtc_static_library("webrtc_vp9") {
 
   deps = [
     ":video_coding_utility",
+    "../../base:rtc_base_approved",
     "../../common_video",
     "../../system_wrappers",
   ]
@@ -266,6 +301,12 @@ if (rtc_include_tests) {
     }
 
     deps = [
+      ":video_coding",
+      ":video_coding_utility",
+      "../..:webrtc_common",
+      "../../base:rtc_base_approved",
+      "../../common_video:common_video",
+      "../../system_wrappers:system_wrappers",
       "../../test:test_support",
     ]
   }

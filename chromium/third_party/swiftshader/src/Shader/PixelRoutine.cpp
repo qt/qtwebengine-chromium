@@ -321,7 +321,7 @@ namespace sw
 			buffer += q * *Pointer<Int>(data + OFFSET(DrawData,stencilSliceB));
 		}
 
-		Byte8 value = As<Byte8>(Long1(*Pointer<UInt>(buffer)));
+		Byte8 value = *Pointer<Byte8>(buffer);
 		Byte8 valueCCW = value;
 
 		if(!state.noStencilMask)
@@ -355,10 +355,10 @@ namespace sw
 		switch(stencilCompareMode)
 		{
 		case STENCIL_ALWAYS:
-			value = Byte8(0xFFFFFFFFFFFFFFFF);
+			value = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
 			break;
 		case STENCIL_NEVER:
-			value = Byte8(0x0000000000000000);
+			value = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 			break;
 		case STENCIL_LESS:			// a < b ~ b > a
 			value += Byte8(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80);
@@ -369,7 +369,7 @@ namespace sw
 			break;
 		case STENCIL_NOTEQUAL:		// a != b ~ !(a == b)
 			value = CmpEQ(value, *Pointer<Byte8>(data + OFFSET(DrawData,stencil[CCW].referenceMaskedQ)));
-			value ^= Byte8(0xFFFFFFFFFFFFFFFF);
+			value ^= Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
 			break;
 		case STENCIL_LESSEQUAL:	// a <= b ~ (b > a) || (a == b)
 			equal = value;
@@ -387,7 +387,7 @@ namespace sw
 		case STENCIL_GREATEREQUAL:	// a >= b ~ !(a < b) ~ !(b > a)
 			value += Byte8(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80);
 			value = CmpGT(As<SByte8>(value), *Pointer<SByte8>(data + OFFSET(DrawData,stencil[CCW].referenceMaskedSignedQ)));
-			value ^= Byte8(0xFFFFFFFFFFFFFFFF);
+			value ^= Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
 			break;
 		default:
 			ASSERT(false);
@@ -763,7 +763,7 @@ namespace sw
 			buffer += q * *Pointer<Int>(data + OFFSET(DrawData,stencilSliceB));
 		}
 
-		Byte8 bufferValue = As<Byte8>(Long1(*Pointer<UInt>(buffer)));
+		Byte8 bufferValue = *Pointer<Byte8>(buffer);
 
 		Byte8 newValue;
 		stencilOperation(newValue, bufferValue, state.stencilPassOperation, state.stencilZFailOperation, state.stencilFailOperation, false, zMask, sMask);
@@ -799,7 +799,7 @@ namespace sw
 		bufferValue &= *Pointer<Byte8>(constants + OFFSET(Constants,invMaskB4Q) + 8 * cMask);
 		newValue |= bufferValue;
 
-		*Pointer<UInt>(buffer) = UInt(As<Long>(newValue));
+		*Pointer<Byte4>(buffer) = Byte4(newValue);
 	}
 
 	void PixelRoutine::stencilOperation(Byte8 &newValue, Byte8 &bufferValue, StencilOperation stencilPassOperation, StencilOperation stencilZFailOperation, StencilOperation stencilFailOperation, bool CCW, Int &zMask, Int &sMask)
@@ -843,7 +843,7 @@ namespace sw
 			output = bufferValue;
 			break;
 		case OPERATION_ZERO:
-			output = Byte8(0x0000000000000000);
+			output = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 			break;
 		case OPERATION_REPLACE:
 			output = *Pointer<Byte8>(data + OFFSET(DrawData,stencil[CCW].referenceQ));
@@ -855,7 +855,7 @@ namespace sw
 			output = SubSat(bufferValue, Byte8(1, 1, 1, 1, 1, 1, 1, 1));
 			break;
 		case OPERATION_INVERT:
-			output = bufferValue ^ Byte8(0xFFFFFFFFFFFFFFFF);
+			output = bufferValue ^ Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
 			break;
 		case OPERATION_INCR:
 			output = bufferValue + Byte8(1, 1, 1, 1, 1, 1, 1, 1);
@@ -868,7 +868,7 @@ namespace sw
 		}
 	}
 
-	void PixelRoutine::blendFactor(const Vector4s &blendFactor, const Vector4s &current, const Vector4s &pixel, BlendFactor blendFactorActive)
+	void PixelRoutine::blendFactor(Vector4s &blendFactor, const Vector4s &current, const Vector4s &pixel, BlendFactor blendFactorActive)
 	{
 		switch(blendFactorActive)
 		{
@@ -949,7 +949,7 @@ namespace sw
 		}
 	}
 
-	void PixelRoutine::blendFactorAlpha(const Vector4s &blendFactor, const Vector4s &current, const Vector4s &pixel, BlendFactor blendFactorAlphaActive)
+	void PixelRoutine::blendFactorAlpha(Vector4s &blendFactor, const Vector4s &current, const Vector4s &pixel, BlendFactor blendFactorAlphaActive)
 	{
 		switch(blendFactorAlphaActive)
 		{
@@ -1899,7 +1899,7 @@ namespace sw
 		}
 	}
 
-	void PixelRoutine::blendFactor(const Vector4f &blendFactor, const Vector4f &oC, const Vector4f &pixel, BlendFactor blendFactorActive)
+	void PixelRoutine::blendFactor(Vector4f &blendFactor, const Vector4f &oC, const Vector4f &pixel, BlendFactor blendFactorActive)
 	{
 		switch(blendFactorActive)
 		{
@@ -1970,7 +1970,7 @@ namespace sw
 		}
 	}
 
-	void PixelRoutine::blendFactorAlpha(const Vector4f &blendFactor, const Vector4f &oC, const Vector4f &pixel, BlendFactor blendFactorAlphaActive)
+	void PixelRoutine::blendFactorAlpha(Vector4f &blendFactor, const Vector4f &oC, const Vector4f &pixel, BlendFactor blendFactorAlphaActive)
 	{
 		switch(blendFactorAlphaActive)
 		{

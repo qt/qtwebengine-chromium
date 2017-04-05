@@ -97,6 +97,20 @@ gl::Error VertexArrayGL::syncDrawElementsState(const gl::AttributesMask &activeA
                          primitiveRestartEnabled, outIndices);
 }
 
+gl::Error VertexArrayGL::syncElementArrayState() const
+{
+    gl::Buffer *elementArrayBuffer = mData.getElementArrayBuffer().get();
+    ASSERT(elementArrayBuffer);
+    if (elementArrayBuffer != mAppliedElementArrayBuffer.get())
+    {
+        const BufferGL *bufferGL = GetImplAs<BufferGL>(elementArrayBuffer);
+        mStateManager->bindBuffer(GL_ELEMENT_ARRAY_BUFFER, bufferGL->getBufferID());
+        mAppliedElementArrayBuffer.set(elementArrayBuffer);
+    }
+
+    return gl::NoError();
+}
+
 gl::Error VertexArrayGL::syncDrawState(const gl::AttributesMask &activeAttributesMask,
                                        GLint first,
                                        GLsizei count,
@@ -138,16 +152,16 @@ gl::Error VertexArrayGL::syncDrawState(const gl::AttributesMask &activeAttribute
         }
     }
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
-Error VertexArrayGL::syncIndexData(GLsizei count,
-                                   GLenum type,
-                                   const GLvoid *indices,
-                                   bool primitiveRestartEnabled,
-                                   bool attributesNeedStreaming,
-                                   IndexRange *outIndexRange,
-                                   const GLvoid **outIndices) const
+gl::Error VertexArrayGL::syncIndexData(GLsizei count,
+                                       GLenum type,
+                                       const GLvoid *indices,
+                                       bool primitiveRestartEnabled,
+                                       bool attributesNeedStreaming,
+                                       IndexRange *outIndexRange,
+                                       const GLvoid **outIndices) const
 {
     ASSERT(outIndices);
 
@@ -218,7 +232,7 @@ Error VertexArrayGL::syncIndexData(GLsizei count,
         *outIndices = nullptr;
     }
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
 void VertexArrayGL::computeStreamingAttributeSizes(const gl::AttributesMask &activeAttributesMask,
@@ -261,7 +275,7 @@ gl::Error VertexArrayGL::streamAttributes(const gl::AttributesMask &activeAttrib
 
     if (streamingDataSize == 0)
     {
-        return gl::Error(GL_NO_ERROR);
+        return gl::NoError();
     }
 
     if (mStreamingArrayBuffer == 0)
@@ -362,7 +376,7 @@ gl::Error VertexArrayGL::streamAttributes(const gl::AttributesMask &activeAttrib
         return Error(GL_OUT_OF_MEMORY, "Failed to unmap the client data streaming buffer.");
     }
 
-    return Error(GL_NO_ERROR);
+    return NoError();
 }
 
 GLuint VertexArrayGL::getVertexArrayID() const

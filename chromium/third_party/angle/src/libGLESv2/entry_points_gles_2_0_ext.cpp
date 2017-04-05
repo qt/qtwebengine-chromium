@@ -276,12 +276,7 @@ void GL_APIENTRY DrawArraysInstancedANGLE(GLenum mode,
             return;
         }
 
-        Error error = context->drawArraysInstanced(mode, first, count, primcount);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->drawArraysInstanced(mode, first, count, primcount);
     }
 }
 
@@ -306,13 +301,7 @@ void GL_APIENTRY DrawElementsInstancedANGLE(GLenum mode,
             return;
         }
 
-        Error error =
-            context->drawElementsInstanced(mode, count, type, indices, primcount, indexRange);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->drawElementsInstanced(mode, count, type, indices, primcount, indexRange);
     }
 }
 
@@ -768,7 +757,7 @@ void GL_APIENTRY GetProgramBinaryOES(GLuint program, GLsizei bufSize, GLsizei *l
         Program *programObject = context->getProgram(program);
         ASSERT(programObject != nullptr);
 
-        Error error = programObject->saveBinary(binaryFormat, binary, bufSize, length);
+        Error error = programObject->saveBinary(context, binaryFormat, binary, bufSize, length);
         if (error.isError())
         {
             context->handleError(error);
@@ -793,7 +782,7 @@ void GL_APIENTRY ProgramBinaryOES(GLuint program, GLenum binaryFormat, const voi
         Program *programObject = context->getProgram(program);
         ASSERT(programObject != nullptr);
 
-        Error error = programObject->loadBinary(binaryFormat, binary, length);
+        Error error = programObject->loadBinary(context, binaryFormat, binary, length);
         if (error.isError())
         {
             context->handleError(error);
@@ -1952,22 +1941,20 @@ ANGLE_EXPORT void GL_APIENTRY CompressedCopyTextureCHROMIUM(GLuint sourceId, GLu
     }
 }
 
-GL_APICALL GLboolean GL_APIENTRY EnableExtensionANGLE(const GLchar *name)
+ANGLE_EXPORT void GL_APIENTRY RequestExtensionANGLE(const GLchar *name)
 {
     EVENT("(const GLchar *name = %p)", name);
 
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!context->skipValidation() && !ValidateEnableExtensionANGLE(context, name))
+        if (!context->skipValidation() && !ValidateRequestExtensionANGLE(context, name))
         {
-            return GL_FALSE;
+            return;
         }
 
-        return context->enableExtension(name) ? GL_TRUE : GL_FALSE;
+        context->requestExtension(name);
     }
-
-    return GL_FALSE;
 }
 
 ANGLE_EXPORT void GL_APIENTRY GetBooleanvRobustANGLE(GLenum pname,

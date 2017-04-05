@@ -14,6 +14,34 @@
 
 #include "drv_priv.h"
 #include "helpers.h"
+#include "util.h"
+
+static struct supported_combination combos[6] = {
+	{DRM_FORMAT_ABGR8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
+		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
+		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_RGB565, DRM_FORMAT_MOD_NONE,
+		BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
+		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_XBGR8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
+		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
+		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_YVU420, DRM_FORMAT_MOD_NONE,
+		BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
+		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+};
+
+static int mediatek_init(struct driver *drv)
+{
+	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
+	return drv_add_kms_flags(drv);
+}
 
 static int mediatek_bo_create(struct bo *bo, uint32_t width, uint32_t height,
 			      uint32_t format, uint32_t flags)
@@ -60,46 +88,27 @@ static void *mediatek_bo_map(struct bo *bo, struct map_info *data, size_t plane)
 		    bo->drv->fd, gem_map.offset);
 }
 
-static drv_format_t mediatek_resolve_format(drv_format_t format)
+static uint32_t mediatek_resolve_format(uint32_t format)
 {
 	switch (format) {
-	case DRV_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
+	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
 		/*HACK: See b/28671744 */
-		return DRV_FORMAT_XBGR8888;
-	case DRV_FORMAT_FLEX_YCbCr_420_888:
-		return DRV_FORMAT_YVU420;
+		return DRM_FORMAT_XBGR8888;
+	case DRM_FORMAT_FLEX_YCbCr_420_888:
+		return DRM_FORMAT_YVU420;
 	default:
 		return format;
 	}
 }
 
-const struct backend backend_mediatek =
+struct backend backend_mediatek =
 {
 	.name = "mediatek",
+	.init = mediatek_init,
 	.bo_create = mediatek_bo_create,
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_map = mediatek_bo_map,
 	.resolve_format = mediatek_resolve_format,
-	.format_list = {
-		{DRV_FORMAT_XRGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR |  DRV_BO_USE_RENDERING
-				      | DRV_BO_USE_SW_READ_RARELY | DRV_BO_USE_SW_WRITE_RARELY},
-		{DRV_FORMAT_XRGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_LINEAR
-				      | DRV_BO_USE_SW_READ_OFTEN | DRV_BO_USE_SW_WRITE_OFTEN},
-		{DRV_FORMAT_ARGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_RENDERING
-				      | DRV_BO_USE_SW_READ_RARELY | DRV_BO_USE_SW_WRITE_RARELY},
-		{DRV_FORMAT_ARGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_LINEAR |
-				      DRV_BO_USE_SW_READ_OFTEN | DRV_BO_USE_SW_WRITE_OFTEN},
-		{DRV_FORMAT_ABGR8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_RENDERING
-				      | DRV_BO_USE_SW_READ_OFTEN | DRV_BO_USE_SW_WRITE_OFTEN
-				      | DRV_BO_USE_SW_READ_RARELY | DRV_BO_USE_SW_WRITE_RARELY},
-		{DRV_FORMAT_XBGR8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_RENDERING
-				      | DRV_BO_USE_SW_READ_OFTEN | DRV_BO_USE_SW_WRITE_OFTEN
-				      | DRV_BO_USE_SW_READ_RARELY | DRV_BO_USE_SW_WRITE_RARELY},
-		{DRV_FORMAT_RGB565,   DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_RENDERING
-				      | DRV_BO_USE_SW_READ_RARELY | DRV_BO_USE_SW_WRITE_RARELY},
-		{DRV_FORMAT_YVU420,   DRV_BO_USE_RENDERING | DRV_BO_USE_SW_READ_RARELY |
-				      DRV_BO_USE_SW_WRITE_RARELY},
-	}
 };
 
 #endif

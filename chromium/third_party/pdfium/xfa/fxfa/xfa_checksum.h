@@ -7,6 +7,9 @@
 #ifndef XFA_FXFA_XFA_CHECKSUM_H_
 #define XFA_FXFA_XFA_CHECKSUM_H_
 
+#include <memory>
+
+#include "core/fdrm/crypto/fx_crypt.h"
 #include "xfa/fde/xml/cfx_saxreader.h"
 #include "xfa/fxfa/fxfa.h"
 
@@ -24,7 +27,7 @@ class CXFA_SAXContext {
 
 class CXFA_SAXReaderHandler {
  public:
-  CXFA_SAXReaderHandler(CXFA_ChecksumContext* pContext);
+  explicit CXFA_SAXReaderHandler(CXFA_ChecksumContext* pContext);
   ~CXFA_SAXReaderHandler();
 
   CXFA_SAXContext* OnTagEnter(const CFX_ByteStringC& bsTagName,
@@ -62,15 +65,15 @@ class CXFA_ChecksumContext {
 
   void StartChecksum();
   void Update(const CFX_ByteStringC& bsText);
-  bool UpdateChecksum(IFX_SeekableReadStream* pSrcFile,
+  bool UpdateChecksum(const CFX_RetainPtr<IFX_SeekableReadStream>& pSrcFile,
                       FX_FILESIZE offset = 0,
                       size_t size = 0);
   void FinishChecksum();
   CFX_ByteString GetChecksum() const;
 
  protected:
-  CFX_SAXReader* m_pSAXReader;
-  uint8_t* m_pByteContext;
+  std::unique_ptr<CFX_SAXReader> m_pSAXReader;
+  std::unique_ptr<CRYPT_sha1_context> m_pByteContext;
   CFX_ByteString m_bsChecksum;
 };
 

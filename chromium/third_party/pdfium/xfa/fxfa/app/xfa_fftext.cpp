@@ -6,10 +6,13 @@
 
 #include "xfa/fxfa/app/xfa_fftext.h"
 
-#include "xfa/fwl/core/fwl_widgetdef.h"
-#include "xfa/fwl/core/fwl_widgethit.h"
+#include "xfa/fwl/fwl_widgetdef.h"
+#include "xfa/fwl/fwl_widgethit.h"
+#include "xfa/fxfa/app/cxfa_linkuserdata.h"
+#include "xfa/fxfa/app/cxfa_pieceline.h"
+#include "xfa/fxfa/app/cxfa_textlayout.h"
 #include "xfa/fxfa/app/xfa_ffdraw.h"
-#include "xfa/fxfa/app/xfa_textlayout.h"
+#include "xfa/fxfa/app/xfa_textpiece.h"
 #include "xfa/fxfa/xfa_ffapp.h"
 #include "xfa/fxfa/xfa_ffdoc.h"
 #include "xfa/fxfa/xfa_ffpageview.h"
@@ -150,21 +153,17 @@ FWL_WidgetHit CXFA_FFText::OnHitTest(FX_FLOAT fx, FX_FLOAT fy) {
 }
 const FX_WCHAR* CXFA_FFText::GetLinkURLAtPoint(FX_FLOAT fx, FX_FLOAT fy) {
   CXFA_TextLayout* pTextLayout = m_pDataAcc->GetTextLayout();
-  if (!pTextLayout) {
+  if (!pTextLayout)
     return nullptr;
-  }
-  FX_FLOAT x(fx), y(fy);
+
+  FX_FLOAT x(fx);
+  FX_FLOAT y(fy);
   FWLToClient(x, y);
-  const CXFA_PieceLineArray* pPieceLines = pTextLayout->GetPieceLines();
-  int32_t iCount = pPieceLines->GetSize();
-  for (int32_t i = 0; i < iCount; i++) {
-    CXFA_PieceLine* pPieceLine = pPieceLines->GetAt(i);
-    int32_t iPieces = pPieceLine->m_textPieces.GetSize();
-    for (int32_t j = 0; j < iPieces; j++) {
-      XFA_TextPiece* pPiece = pPieceLine->m_textPieces.GetAt(j);
-      if (pPiece->pLinkData && pPiece->rtPiece.Contains(x, y)) {
+
+  for (const auto& pPieceLine : *pTextLayout->GetPieceLines()) {
+    for (const auto& pPiece : pPieceLine->m_textPieces) {
+      if (pPiece->pLinkData && pPiece->rtPiece.Contains(x, y))
         return pPiece->pLinkData->GetLinkURL();
-      }
     }
   }
   return nullptr;

@@ -22,7 +22,9 @@ ProgramVk::~ProgramVk()
 {
 }
 
-LinkResult ProgramVk::load(gl::InfoLog &infoLog, gl::BinaryInputStream *stream)
+LinkResult ProgramVk::load(const ContextImpl *contextImpl,
+                           gl::InfoLog &infoLog,
+                           gl::BinaryInputStream *stream)
 {
     UNIMPLEMENTED();
     return gl::Error(GL_INVALID_OPERATION);
@@ -39,7 +41,9 @@ void ProgramVk::setBinaryRetrievableHint(bool retrievable)
     UNIMPLEMENTED();
 }
 
-LinkResult ProgramVk::link(const gl::ContextState &data, gl::InfoLog &infoLog)
+LinkResult ProgramVk::link(const gl::ContextState &data,
+                           const gl::VaryingPacking &packing,
+                           gl::InfoLog &infoLog)
 {
     UNIMPLEMENTED();
     return gl::Error(GL_INVALID_OPERATION);

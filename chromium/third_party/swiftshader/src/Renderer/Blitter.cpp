@@ -40,9 +40,17 @@ namespace sw
 		blit(&color, sRect, dest, dRect, clearOptions);
 	}
 
-	void Blitter::blit(Surface *source, const SliceRect &sRect, Surface *dest, const SliceRect &dRect, bool filter)
+	void Blitter::blit(Surface *source, const SliceRect &sRect, Surface *dest, const SliceRect &dRect, bool filter, bool isStencil)
 	{
-		Blitter::Options options = filter ? static_cast<Blitter::Options>(WRITE_RGBA | FILTER_LINEAR) : WRITE_RGBA;
+		Blitter::Options options = WRITE_RGBA;
+		if(filter)
+		{
+			options = static_cast<Blitter::Options>(options | FILTER_LINEAR);
+		}
+		if(isStencil)
+		{
+			options = static_cast<Blitter::Options>(options | USE_STENCIL);
+		}
 		blit(source, sRect, dest, dRect, options);
 	}
 
@@ -321,6 +329,9 @@ namespace sw
 		case FORMAT_D32FS8_SHADOW:
 			c.x = *Pointer<Float>(element);
 			break;
+		case FORMAT_S8:
+			c.x = Float(Int(*Pointer<Byte>(element)));
+			break;
 		default:
 			return false;
 		}
@@ -348,8 +359,7 @@ namespace sw
 			if(writeRGBA)
 			{
 				UShort4 c0 = As<UShort4>(RoundShort4(c.zyxw));
-				Byte8 c1 = Pack(c0, c0);
-				*Pointer<UInt>(element) = UInt(As<Long>(c1));
+				*Pointer<Byte4>(element) = Byte4(Pack(c0, c0));
 			}
 			else
 			{
@@ -364,8 +374,7 @@ namespace sw
 			if(writeRGBA)
 			{
 				UShort4 c0 = As<UShort4>(RoundShort4(c));
-				Byte8 c1 = Pack(c0, c0);
-				*Pointer<UInt>(element) = UInt(As<Long>(c1));
+				*Pointer<Byte4>(element) = Byte4(Pack(c0, c0));
 			}
 			else
 			{
@@ -378,9 +387,8 @@ namespace sw
 		case FORMAT_X8R8G8B8:
 			if(writeRGBA)
 			{
-				UShort4 c0 = As<UShort4>(RoundShort4(c.zyxw));
-				Byte8 c1 = Pack(c0, c0);
-				*Pointer<UInt>(element) = UInt(As<Long>(c1)) | 0xFF000000;
+				UShort4 c0 = As<UShort4>(RoundShort4(c.zyxw)) | UShort4(0x0000, 0x0000, 0x0000, 0xFFFFu);
+				*Pointer<Byte4>(element) = Byte4(Pack(c0, c0));
 			}
 			else
 			{
@@ -394,9 +402,8 @@ namespace sw
 		case FORMAT_SRGB8_X8:
 			if(writeRGBA)
 			{
-				UShort4 c0 = As<UShort4>(RoundShort4(c));
-				Byte8 c1 = Pack(c0, c0);
-				*Pointer<UInt>(element) = UInt(As<Long>(c1)) | 0xFF000000;
+				UShort4 c0 = As<UShort4>(RoundShort4(c)) | UShort4(0x0000, 0x0000, 0x0000, 0xFFFFu);
+				*Pointer<Byte4>(element) = Byte4(Pack(c0, c0));
 			}
 			else
 			{
@@ -511,7 +518,7 @@ namespace sw
 		case FORMAT_G16R16I:
 			if(writeR && writeG)
 			{
-				*Pointer<UInt>(element) = UInt(As<Long>(Short4(RoundInt(c))));
+				*Pointer<Short2>(element) = Short2(Short4(RoundInt(c)));
 			}
 			else
 			{
@@ -553,7 +560,7 @@ namespace sw
 		case FORMAT_G16R16:
 			if(writeR && writeG)
 			{
-				*Pointer<UInt>(element) = UInt(As<Long>(UShort4(RoundInt(c))));
+				*Pointer<UShort2>(element) = UShort2(UShort4(RoundInt(c)));
 			}
 			else
 			{
@@ -688,6 +695,9 @@ namespace sw
 			break;
 		case FORMAT_D32FS8_SHADOW:
 			*Pointer<Float>(element) = c.x;
+			break;
+		case FORMAT_S8:
+			*Pointer<Byte>(element) = Byte(RoundInt(Float(c.x)));
 			break;
 		default:
 			return false;
@@ -978,7 +988,8 @@ namespace sw
 		case FORMAT_D32F_LOCKABLE:
 		case FORMAT_D32FS8_TEXTURE:
 		case FORMAT_D32FS8_SHADOW:
-			scale = vector(1.0f, 0.0f, 0.0f, 0.0f);
+		case FORMAT_S8:
+			scale = vector(1.0f, 1.0f, 1.0f, 1.0f);
 			break;
 		default:
 			return false;
@@ -1036,6 +1047,12 @@ namespace sw
 		return true;
 	}
 
+	Int Blitter::ComputeOffset(Int& x, Int& y, Int& pitchB, int bytes, bool quadLayout)
+	{
+		return (quadLayout ? (y & Int(~1)) : RValue<Int>(y)) * pitchB +
+		       (quadLayout ? ((y & Int(1)) << 1) + (x * 2) - (x & Int(1)) : RValue<Int>(x)) * bytes;
+	}
+
 	Routine *Blitter::generate(BlitState &state)
 	{
 		Function<Void(Pointer<Byte>)> function;
@@ -1063,6 +1080,10 @@ namespace sw
 			bool intSrc = Surface::isNonNormalizedInteger(state.sourceFormat);
 			bool intDst = Surface::isNonNormalizedInteger(state.destFormat);
 			bool intBoth = intSrc && intDst;
+			bool srcQuadLayout = Surface::hasQuadLayout(state.sourceFormat);
+			bool dstQuadLayout = Surface::hasQuadLayout(state.destFormat);
+			int srcBytes = Surface::bytes(state.sourceFormat);
+			int dstBytes = Surface::bytes(state.destFormat);
 
 			bool hasConstantColorI = false;
 			Int4 constantColorI;
@@ -1098,11 +1119,11 @@ namespace sw
 			For(Int j = y0d, j < y1d, j++)
 			{
 				Float x = x0;
-				Pointer<Byte> destLine = dest + j * dPitchB;
+				Pointer<Byte> destLine = dest + (dstQuadLayout ? j & Int(~1) : RValue<Int>(j)) * dPitchB;
 
 				For(Int i = x0d, i < x1d, i++)
 				{
-					Pointer<Byte> d = destLine + i * Surface::bytes(state.destFormat);
+					Pointer<Byte> d = destLine + (dstQuadLayout ? (((j & Int(1)) << 1) + (i * 2) - (i & Int(1))) : RValue<Int>(i)) * dstBytes;
 					if(hasConstantColorI)
 					{
 						if(!write(constantColorI, d, state.destFormat, state.options))
@@ -1120,7 +1141,11 @@ namespace sw
 					else if(intBoth) // Integer types do not support filtering
 					{
 						Int4 color; // When both formats are true integer types, we don't go to float to avoid losing precision
-						Pointer<Byte> s = source + Int(y) * sPitchB + Int(x) * Surface::bytes(state.sourceFormat);
+						Int X = Int(x);
+						Int Y = Int(y);
+
+						Pointer<Byte> s = source + ComputeOffset(X, Y, sPitchB, srcBytes, srcQuadLayout);
+
 						if(!read(color, s, state.sourceFormat))
 						{
 							return nullptr;
@@ -1140,7 +1165,7 @@ namespace sw
 							Int X = Int(x);
 							Int Y = Int(y);
 
-							Pointer<Byte> s = source + Y * sPitchB + X * Surface::bytes(state.sourceFormat);
+							Pointer<Byte> s = source + ComputeOffset(X, Y, sPitchB, srcBytes, srcQuadLayout);
 
 							if(!read(color, s, state.sourceFormat))
 							{
@@ -1158,10 +1183,10 @@ namespace sw
 							Int X1 = IfThenElse(X0 + 1 >= sWidth, X0, X0 + 1);
 							Int Y1 = IfThenElse(Y0 + 1 >= sHeight, Y0, Y0 + 1);
 
-							Pointer<Byte> s00 = source + Y0 * sPitchB + X0 * Surface::bytes(state.sourceFormat);
-							Pointer<Byte> s01 = source + Y0 * sPitchB + X1 * Surface::bytes(state.sourceFormat);
-							Pointer<Byte> s10 = source + Y1 * sPitchB + X0 * Surface::bytes(state.sourceFormat);
-							Pointer<Byte> s11 = source + Y1 * sPitchB + X1 * Surface::bytes(state.sourceFormat);
+							Pointer<Byte> s00 = source + ComputeOffset(X0, Y0, sPitchB, srcBytes, srcQuadLayout);
+							Pointer<Byte> s01 = source + ComputeOffset(X1, Y0, sPitchB, srcBytes, srcQuadLayout);
+							Pointer<Byte> s10 = source + ComputeOffset(X0, Y1, sPitchB, srcBytes, srcQuadLayout);
+							Pointer<Byte> s11 = source + ComputeOffset(X1, Y1, sPitchB, srcBytes, srcQuadLayout);
 
 							Float4 c00; if(!read(c00, s00, state.sourceFormat)) return nullptr;
 							Float4 c01; if(!read(c01, s01, state.sourceFormat)) return nullptr;
@@ -1214,9 +1239,10 @@ namespace sw
 
 		bool useSourceInternal = !source->isExternalDirty();
 		bool useDestInternal = !dest->isExternalDirty();
+		bool isStencil = ((options & USE_STENCIL) == USE_STENCIL);
 
-		state.sourceFormat = source->getFormat(useSourceInternal);
-		state.destFormat = dest->getFormat(useDestInternal);
+		state.sourceFormat = isStencil ? source->getStencilFormat() : source->getFormat(useSourceInternal);
+		state.destFormat = isStencil ? dest->getStencilFormat() : dest->getFormat(useDestInternal);
 		state.options = options;
 
 		criticalSection.lock();
@@ -1244,10 +1270,12 @@ namespace sw
 		bool isRGBA = ((options & WRITE_RGBA) == WRITE_RGBA);
 		bool isEntireDest = dest->isEntire(destRect);
 
-		data.source = source->lock(0, 0, sourceRect.slice, sw::LOCK_READONLY, sw::PUBLIC, useSourceInternal);
-		data.dest = dest->lock(0, 0, destRect.slice, isRGBA ? (isEntireDest ? sw::LOCK_DISCARD : sw::LOCK_WRITEONLY) : sw::LOCK_READWRITE, sw::PUBLIC, useDestInternal);
-		data.sPitchB = source->getPitchB(useSourceInternal);
-		data.dPitchB = dest->getPitchB(useDestInternal);
+		data.source = isStencil ? source->lockStencil(0, 0, 0, sw::PUBLIC) :
+		                          source->lock(0, 0, sourceRect.slice, sw::LOCK_READONLY, sw::PUBLIC, useSourceInternal);
+		data.dest = isStencil ? dest->lockStencil(0, 0, 0, sw::PUBLIC) :
+		                        dest->lock(0, 0, destRect.slice, isRGBA ? (isEntireDest ? sw::LOCK_DISCARD : sw::LOCK_WRITEONLY) : sw::LOCK_READWRITE, sw::PUBLIC, useDestInternal);
+		data.sPitchB = isStencil ? source->getStencilPitchB() : source->getPitchB(useSourceInternal);
+		data.dPitchB = isStencil ? dest->getStencilPitchB() : dest->getPitchB(useDestInternal);
 
 		data.w = 1.0f / (dRect.x1 - dRect.x0) * (sRect.x1 - sRect.x0);
 		data.h = 1.0f / (dRect.y1 - dRect.y0) * (sRect.y1 - sRect.y0);
@@ -1264,8 +1292,16 @@ namespace sw
 
 		blitFunction(&data);
 
-		source->unlock(useSourceInternal);
-		dest->unlock(useDestInternal);
+		if(isStencil)
+		{
+			source->unlockStencil();
+			dest->unlockStencil();
+		}
+		else
+		{
+			source->unlock(useSourceInternal);
+			dest->unlock(useDestInternal);
+		}
 
 		return true;
 	}

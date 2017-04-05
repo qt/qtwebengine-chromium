@@ -6,17 +6,13 @@
 
 #include "xfa/fwl/theme/cfwl_barcodetp.h"
 
-#include "xfa/fwl/core/cfwl_themebackground.h"
-#include "xfa/fwl/core/ifwl_barcode.h"
-#include "xfa/fwl/core/ifwl_widget.h"
+#include "xfa/fwl/cfwl_barcode.h"
+#include "xfa/fwl/cfwl_themebackground.h"
+#include "xfa/fwl/cfwl_widget.h"
 
 CFWL_BarcodeTP::CFWL_BarcodeTP() {}
 
 CFWL_BarcodeTP::~CFWL_BarcodeTP() {}
-
-bool CFWL_BarcodeTP::IsValidWidget(IFWL_Widget* pWidget) {
-  return pWidget && pWidget->GetClassID() == FWL_Type::Barcode;
-}
 
 void CFWL_BarcodeTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
@@ -25,11 +21,6 @@ void CFWL_BarcodeTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   switch (pParams->m_iPart) {
     case CFWL_Part::Border: {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
-      break;
-    }
-    case CFWL_Part::Edge: {
-      DrawEdge(pParams->m_pGraphics, pParams->m_pWidget->GetStyles(),
-               &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
     case CFWL_Part::Background: {

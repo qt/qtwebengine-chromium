@@ -6,6 +6,8 @@
 
 #include "core/fxcrt/extension.h"
 
+#include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "core/fxcrt/fx_basic.h"
@@ -17,46 +19,148 @@
 #include <ctime>
 #endif
 
+namespace {
+
 #ifdef PDF_ENABLE_XFA
 
-CFX_CRTFileAccess::CFX_CRTFileAccess() : m_RefCount(0) {}
+class CFX_CRTFileAccess : public IFX_FileAccess {
+ public:
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+
+  // IFX_FileAccess
+  void GetPath(CFX_WideString& wsPath) override;
+  CFX_RetainPtr<IFX_SeekableStream> CreateFileStream(uint32_t dwModes) override;
+
+  bool Init(const CFX_WideStringC& wsPath);
+
+ private:
+  CFX_CRTFileAccess();
+  ~CFX_CRTFileAccess() override;
+
+  CFX_WideString m_path;
+};
+
+CFX_CRTFileAccess::CFX_CRTFileAccess() {}
 
 CFX_CRTFileAccess::~CFX_CRTFileAccess() {}
-
-void CFX_CRTFileAccess::Release() {
-  if (--m_RefCount == 0)
-    delete this;
-}
-
-IFX_FileAccess* CFX_CRTFileAccess::Retain() {
-  m_RefCount++;
-  return (IFX_FileAccess*)this;
-}
 
 void CFX_CRTFileAccess::GetPath(CFX_WideString& wsPath) {
   wsPath = m_path;
 }
 
-IFX_SeekableStream* CFX_CRTFileAccess::CreateFileStream(uint32_t dwModes) {
-  return FX_CreateFileStream(m_path.c_str(), dwModes);
+CFX_RetainPtr<IFX_SeekableStream> CFX_CRTFileAccess::CreateFileStream(
+    uint32_t dwModes) {
+  return IFX_SeekableStream::CreateFromFilename(m_path.c_str(), dwModes);
 }
 
 bool CFX_CRTFileAccess::Init(const CFX_WideStringC& wsPath) {
   m_path = wsPath;
-  m_RefCount = 1;
   return true;
 }
 
 #endif  // PDF_ENABLE_XFA
 
+class CFX_CRTFileStream final : public IFX_SeekableStream {
+ public:
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+
+  // IFX_SeekableStream:
+  FX_FILESIZE GetSize() override;
+  bool IsEOF() override;
+  FX_FILESIZE GetPosition() override;
+  bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
+  size_t ReadBlock(void* buffer, size_t size) override;
+  bool WriteBlock(const void* buffer, FX_FILESIZE offset, size_t size) override;
+  bool Flush() override;
+
+ private:
+  explicit CFX_CRTFileStream(std::unique_ptr<IFXCRT_FileAccess> pFA);
+  ~CFX_CRTFileStream() override;
+
+  std::unique_ptr<IFXCRT_FileAccess> m_pFile;
+};
+
 CFX_CRTFileStream::CFX_CRTFileStream(std::unique_ptr<IFXCRT_FileAccess> pFA)
-    : m_pFile(std::move(pFA)), m_dwCount(1) {}
+    : m_pFile(std::move(pFA)) {}
 
 CFX_CRTFileStream::~CFX_CRTFileStream() {}
 
+FX_FILESIZE CFX_CRTFileStream::GetSize() {
+  return m_pFile->GetSize();
+}
+
+bool CFX_CRTFileStream::IsEOF() {
+  return GetPosition() >= GetSize();
+}
+
+FX_FILESIZE CFX_CRTFileStream::GetPosition() {
+  return m_pFile->GetPosition();
+}
+
+bool CFX_CRTFileStream::ReadBlock(void* buffer,
+                                  FX_FILESIZE offset,
+                                  size_t size) {
+  return m_pFile->ReadPos(buffer, size, offset) > 0;
+}
+
+size_t CFX_CRTFileStream::ReadBlock(void* buffer, size_t size) {
+  return m_pFile->Read(buffer, size);
+}
+
+bool CFX_CRTFileStream::WriteBlock(const void* buffer,
+                                   FX_FILESIZE offset,
+                                   size_t size) {
+  return !!m_pFile->WritePos(buffer, size, offset);
+}
+
+bool CFX_CRTFileStream::Flush() {
+  return m_pFile->Flush();
+}
+
+#define FX_MEMSTREAM_BlockSize (64 * 1024)
+#define FX_MEMSTREAM_Consecutive 0x01
+#define FX_MEMSTREAM_TakeOver 0x02
+
+class CFX_MemoryStream final : public IFX_MemoryStream {
+ public:
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+
+  // IFX_MemoryStream
+  FX_FILESIZE GetSize() override;
+  bool IsEOF() override;
+  FX_FILESIZE GetPosition() override;
+  bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
+  size_t ReadBlock(void* buffer, size_t size) override;
+  bool WriteBlock(const void* buffer, FX_FILESIZE offset, size_t size) override;
+  bool Flush() override;
+  bool IsConsecutive() const override;
+  void EstimateSize(size_t nInitSize, size_t nGrowSize) override;
+  uint8_t* GetBuffer() const override;
+  void AttachBuffer(uint8_t* pBuffer,
+                    size_t nSize,
+                    bool bTakeOver = false) override;
+  void DetachBuffer() override;
+
+ private:
+  explicit CFX_MemoryStream(bool bConsecutive);
+  CFX_MemoryStream(uint8_t* pBuffer, size_t nSize, bool bTakeOver);
+  ~CFX_MemoryStream() override;
+
+  bool ExpandBlocks(size_t size);
+
+  CFX_ArrayTemplate<uint8_t*> m_Blocks;
+  size_t m_nTotalSize;
+  size_t m_nCurSize;
+  size_t m_nCurPos;
+  size_t m_nGrowSize;
+  uint32_t m_dwFlags;
+};
+
 CFX_MemoryStream::CFX_MemoryStream(bool bConsecutive)
-    : m_dwCount(1),
-      m_nTotalSize(0),
+    : m_nTotalSize(0),
       m_nCurSize(0),
       m_nCurPos(0),
       m_nGrowSize(FX_MEMSTREAM_BlockSize) {
@@ -67,8 +171,7 @@ CFX_MemoryStream::CFX_MemoryStream(bool bConsecutive)
 CFX_MemoryStream::CFX_MemoryStream(uint8_t* pBuffer,
                                    size_t nSize,
                                    bool bTakeOver)
-    : m_dwCount(1),
-      m_nTotalSize(nSize),
+    : m_nTotalSize(nSize),
       m_nCurSize(nSize),
       m_nCurPos(0),
       m_nGrowSize(FX_MEMSTREAM_BlockSize) {
@@ -84,19 +187,6 @@ CFX_MemoryStream::~CFX_MemoryStream() {
     }
   }
   m_Blocks.RemoveAll();
-}
-
-IFX_SeekableStream* CFX_MemoryStream::Retain() {
-  m_dwCount++;
-  return this;
-}
-
-void CFX_MemoryStream::Release() {
-  uint32_t nCount = --m_dwCount;
-  if (nCount) {
-    return;
-  }
-  delete this;
 }
 
 FX_FILESIZE CFX_MemoryStream::GetSize() {
@@ -281,89 +371,56 @@ bool CFX_MemoryStream::ExpandBlocks(size_t size) {
   return true;
 }
 
-IFX_SeekableStream* CFX_CRTFileStream::Retain() {
-  m_dwCount++;
-  return this;
-}
-
-void CFX_CRTFileStream::Release() {
-  uint32_t nCount = --m_dwCount;
-  if (!nCount) {
-    delete this;
-  }
-}
-
-FX_FILESIZE CFX_CRTFileStream::GetSize() {
-  return m_pFile->GetSize();
-}
-
-bool CFX_CRTFileStream::IsEOF() {
-  return GetPosition() >= GetSize();
-}
-
-FX_FILESIZE CFX_CRTFileStream::GetPosition() {
-  return m_pFile->GetPosition();
-}
-
-bool CFX_CRTFileStream::ReadBlock(void* buffer,
-                                  FX_FILESIZE offset,
-                                  size_t size) {
-  return m_pFile->ReadPos(buffer, size, offset) > 0;
-}
-
-size_t CFX_CRTFileStream::ReadBlock(void* buffer, size_t size) {
-  return m_pFile->Read(buffer, size);
-}
-
-bool CFX_CRTFileStream::WriteBlock(const void* buffer,
-                                   FX_FILESIZE offset,
-                                   size_t size) {
-  return !!m_pFile->WritePos(buffer, size, offset);
-}
-
-bool CFX_CRTFileStream::Flush() {
-  return m_pFile->Flush();
-}
+}  // namespace
 
 #ifdef PDF_ENABLE_XFA
-IFX_FileAccess* FX_CreateDefaultFileAccess(const CFX_WideStringC& wsPath) {
+CFX_RetainPtr<IFX_FileAccess> IFX_FileAccess::CreateDefault(
+    const CFX_WideStringC& wsPath) {
   if (wsPath.GetLength() == 0)
     return nullptr;
 
-  CFX_CRTFileAccess* pFA = new CFX_CRTFileAccess;
+  auto pFA = pdfium::MakeRetain<CFX_CRTFileAccess>();
   pFA->Init(wsPath);
   return pFA;
 }
 #endif  // PDF_ENABLE_XFA
 
-IFX_SeekableStream* FX_CreateFileStream(const FX_CHAR* filename,
-                                        uint32_t dwModes) {
+// static
+CFX_RetainPtr<IFX_SeekableStream> IFX_SeekableStream::CreateFromFilename(
+    const FX_CHAR* filename,
+    uint32_t dwModes) {
   std::unique_ptr<IFXCRT_FileAccess> pFA(IFXCRT_FileAccess::Create());
   if (!pFA->Open(filename, dwModes))
     return nullptr;
-  return new CFX_CRTFileStream(std::move(pFA));
+  return pdfium::MakeRetain<CFX_CRTFileStream>(std::move(pFA));
 }
 
-IFX_SeekableStream* FX_CreateFileStream(const FX_WCHAR* filename,
-                                        uint32_t dwModes) {
+// static
+CFX_RetainPtr<IFX_SeekableStream> IFX_SeekableStream::CreateFromFilename(
+    const FX_WCHAR* filename,
+    uint32_t dwModes) {
   std::unique_ptr<IFXCRT_FileAccess> pFA(IFXCRT_FileAccess::Create());
   if (!pFA->Open(filename, dwModes))
     return nullptr;
-  return new CFX_CRTFileStream(std::move(pFA));
+  return pdfium::MakeRetain<CFX_CRTFileStream>(std::move(pFA));
 }
-IFX_SeekableReadStream* FX_CreateFileRead(const FX_CHAR* filename) {
-  return FX_CreateFileStream(filename, FX_FILEMODE_ReadOnly);
+
+// static
+CFX_RetainPtr<IFX_SeekableReadStream>
+IFX_SeekableReadStream::CreateFromFilename(const FX_CHAR* filename) {
+  return IFX_SeekableStream::CreateFromFilename(filename, FX_FILEMODE_ReadOnly);
 }
-IFX_SeekableReadStream* FX_CreateFileRead(const FX_WCHAR* filename) {
-  return FX_CreateFileStream(filename, FX_FILEMODE_ReadOnly);
+
+// static
+CFX_RetainPtr<IFX_MemoryStream> IFX_MemoryStream::Create(uint8_t* pBuffer,
+                                                         size_t dwSize,
+                                                         bool bTakeOver) {
+  return pdfium::MakeRetain<CFX_MemoryStream>(pBuffer, dwSize, bTakeOver);
 }
-IFX_MemoryStream* FX_CreateMemoryStream(uint8_t* pBuffer,
-                                        size_t dwSize,
-                                        bool bTakeOver) {
-  return new CFX_MemoryStream(pBuffer, dwSize, bTakeOver);
-}
-IFX_MemoryStream* FX_CreateMemoryStream(bool bConsecutive) {
-  return new CFX_MemoryStream(bConsecutive);
+
+// static
+CFX_RetainPtr<IFX_MemoryStream> IFX_MemoryStream::Create(bool bConsecutive) {
+  return pdfium::MakeRetain<CFX_MemoryStream>(bConsecutive);
 }
 
 FX_FLOAT FXSYS_tan(FX_FLOAT a) {
@@ -595,13 +652,13 @@ void FX_Random_GenerateCrypto(uint32_t* pBuffer, int32_t iCount) {
 }
 
 #ifdef PDF_ENABLE_XFA
-void FX_GUID_CreateV4(FX_LPGUID pGUID) {
+static const FX_CHAR gs_FX_pHexChars[] = "0123456789ABCDEF";
+void FX_GUID_CreateV4(FX_GUID* pGUID) {
   FX_Random_GenerateMT((uint32_t*)pGUID, 4);
   uint8_t& b = ((uint8_t*)pGUID)[6];
   b = (b & 0x0F) | 0x40;
 }
-const FX_CHAR* gs_FX_pHexChars = "0123456789ABCDEF";
-void FX_GUID_ToString(FX_LPCGUID pGUID,
+void FX_GUID_ToString(const FX_GUID* pGUID,
                       CFX_ByteString& bsStr,
                       bool bSeparator) {
   FX_CHAR* pBuf = bsStr.GetBuffer(40);

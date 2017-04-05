@@ -51,7 +51,8 @@
     [
         'compiler.gypi',
         'libGLESv2.gypi',
-        'libEGL.gypi'
+        'libEGL.gypi',
+        'vulkan_support/vulkan.gypi',
     ],
 
     'targets':
@@ -139,7 +140,25 @@
                             ],
                         },
                     },
+                    'sources':
+                    [
+                        '<@(libangle_common_win_sources)',
+                    ],
                 }],
+                ['OS=="mac"',
+                {
+                    'sources':
+                    [
+                        '<@(libangle_common_mac_sources)',
+                    ],
+                }],
+                ['OS=="linux"',
+                {
+                    'sources':
+                    [
+                        '<@(libangle_common_linux_sources)',
+                    ],
+                }]
             ],
         },
 

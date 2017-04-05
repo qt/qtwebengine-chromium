@@ -67,12 +67,6 @@ struct Codec {
   CodecParameterMap params;
   FeedbackParams feedback_params;
 
-  // Creates a codec with the given parameters.
-  Codec(int id, const std::string& name, int clockrate);
-  // Creates an empty codec.
-  Codec();
-  Codec(const Codec& c);
-  Codec(Codec&& c);
   virtual ~Codec();
 
   // Indicates if this codec is compatible with the specified codec.
@@ -106,6 +100,15 @@ struct Codec {
   bool operator!=(const Codec& c) const {
     return !(*this == c);
   }
+
+ protected:
+  // A Codec can't be created without a subclass.
+  // Creates a codec with the given parameters.
+  Codec(int id, const std::string& name, int clockrate);
+  // Creates an empty codec.
+  Codec();
+  Codec(const Codec& c);
+  Codec(Codec&& c);
 };
 
 struct AudioCodec : public Codec {
@@ -184,6 +187,9 @@ struct VideoCodec : public Codec {
   // don't make sense (such as max < min bitrate), and error is logged and
   // ValidateCodecFormat returns false.
   bool ValidateCodecFormat() const;
+
+ private:
+  void SetDefaultParameters();
 };
 
 struct DataCodec : public Codec {
@@ -212,7 +218,6 @@ const Codec* FindCodecById(const std::vector<Codec>& codecs, int payload_type) {
 
 bool CodecNamesEq(const std::string& name1, const std::string& name2);
 bool CodecNamesEq(const char* name1, const char* name2);
-webrtc::VideoCodecType CodecTypeFromName(const std::string& name);
 bool HasNack(const Codec& codec);
 bool HasRemb(const Codec& codec);
 bool HasTransportCc(const Codec& codec);

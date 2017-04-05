@@ -45,13 +45,16 @@ AudioSendStream::AudioSendStream(
     const webrtc::AudioSendStream::Config& config,
     const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
     rtc::TaskQueue* worker_queue,
+    PacketRouter* packet_router,
     CongestionController* congestion_controller,
     BitrateAllocator* bitrate_allocator,
-    RtcEventLog* event_log)
+    RtcEventLog* event_log,
+    RtcpRttStats* rtcp_rtt_stats)
     : worker_queue_(worker_queue),
       config_(config),
       audio_state_(audio_state),
-      bitrate_allocator_(bitrate_allocator) {
+      bitrate_allocator_(bitrate_allocator),
+      congestion_controller_(congestion_controller) {
   LOG(LS_INFO) << "AudioSendStream: " << config_.ToString();
   RTC_DCHECK_NE(config_.voe_channel_id, -1);
   RTC_DCHECK(audio_state_.get());
@@ -60,10 +63,10 @@ AudioSendStream::AudioSendStream(
   VoiceEngineImpl* voe_impl = static_cast<VoiceEngineImpl*>(voice_engine());
   channel_proxy_ = voe_impl->GetChannelProxy(config_.voe_channel_id);
   channel_proxy_->SetRtcEventLog(event_log);
+  channel_proxy_->SetRtcpRttStats(rtcp_rtt_stats);
   channel_proxy_->RegisterSenderCongestionControlObjects(
       congestion_controller->pacer(),
-      congestion_controller->GetTransportFeedbackObserver(),
-      congestion_controller->packet_router());
+      congestion_controller->GetTransportFeedbackObserver(), packet_router);
   channel_proxy_->SetRTCPStatus(true);
   channel_proxy_->SetLocalSSRC(config.rtp.ssrc);
   channel_proxy_->SetRTCP_CNAME(config.rtp.c_name);
@@ -79,9 +82,6 @@ AudioSendStream::AudioSendStream(
       channel_proxy_->SetSendAudioLevelIndicationStatus(true, extension.id);
     } else if (extension.uri == RtpExtension::kTransportSequenceNumberUri) {
       channel_proxy_->EnableSendTransportSequenceNumber(extension.id);
-    } else if (extension.uri == RtpExtension::kAbsSendTimeUri) {
-      LOG(LS_WARNING) << RtpExtension::kAbsSendTimeUri
-                      << " is no longer supported for audio.";
     } else {
       RTC_NOTREACHED() << "Registering unsupported RTP extension.";
     }
@@ -97,6 +97,7 @@ AudioSendStream::~AudioSendStream() {
   channel_proxy_->DeRegisterExternalTransport();
   channel_proxy_->ResetCongestionControlObjects();
   channel_proxy_->SetRtcEventLog(nullptr);
+  channel_proxy_->SetRtcpRttStats(nullptr);
 }
 
 void AudioSendStream::Start() {
@@ -135,10 +136,12 @@ void AudioSendStream::Stop() {
   }
 }
 
-bool AudioSendStream::SendTelephoneEvent(int payload_type, int event,
+bool AudioSendStream::SendTelephoneEvent(int payload_type,
+                                         int payload_frequency, int event,
                                          int duration_ms) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  return channel_proxy_->SetSendTelephoneEventPayloadType(payload_type) &&
+  return channel_proxy_->SetSendTelephoneEventPayloadType(payload_type,
+                                                          payload_frequency) &&
          channel_proxy_->SendTelephoneEventOutband(event, duration_ms);
 }
 
@@ -171,6 +174,7 @@ webrtc::AudioSendStream::Stats AudioSendStream::GetStats() const {
   if (codec->GetSendCodec(config_.voe_channel_id, codec_inst) != -1) {
     RTC_DCHECK_NE(codec_inst.pltype, -1);
     stats.codec_name = codec_inst.plname;
+    stats.codec_payload_type = rtc::Optional<int>(codec_inst.pltype);
 
     // Get data from the last remote RTCP report.
     for (const auto& block : channel_proxy_->GetRemoteRTCPReportBlocks()) {
@@ -207,6 +211,8 @@ webrtc::AudioSendStream::Stats AudioSendStream::GetStats() const {
       audio_processing_stats.echo_return_loss_enhancement.instant();
   stats.residual_echo_likelihood =
       audio_processing_stats.residual_echo_likelihood;
+  stats.residual_echo_likelihood_recent_max =
+      audio_processing_stats.residual_echo_likelihood_recent_max;
 
   internal::AudioState* audio_state =
       static_cast<internal::AudioState*>(audio_state_.get());
@@ -229,7 +235,8 @@ bool AudioSendStream::DeliverRtcp(const uint8_t* packet, size_t length) {
 
 uint32_t AudioSendStream::OnBitrateUpdated(uint32_t bitrate_bps,
                                            uint8_t fraction_loss,
-                                           int64_t rtt) {
+                                           int64_t rtt,
+                                           int64_t probing_interval_ms) {
   RTC_DCHECK_GE(bitrate_bps,
                 static_cast<uint32_t>(config_.min_bitrate_bps));
   // The bitrate allocator might allocate an higher than max configured bitrate
@@ -238,7 +245,7 @@ uint32_t AudioSendStream::OnBitrateUpdated(uint32_t bitrate_bps,
   if (bitrate_bps > max_bitrate_bps)
     bitrate_bps = max_bitrate_bps;
 
-  channel_proxy_->SetBitrate(bitrate_bps);
+  channel_proxy_->SetBitrate(bitrate_bps, probing_interval_ms);
 
   // The amount of audio protection is not exposed by the encoder, hence
   // always returning 0.
@@ -252,6 +259,7 @@ const webrtc::AudioSendStream::Config& AudioSendStream::config() const {
 
 void AudioSendStream::SetTransportOverhead(int transport_overhead_per_packet) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  congestion_controller_->SetTransportOverhead(transport_overhead_per_packet);
   channel_proxy_->SetTransportOverhead(transport_overhead_per_packet);
 }
 

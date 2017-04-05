@@ -6,10 +6,10 @@
 
 #include "xfa/fwl/theme/cfwl_scrollbartp.h"
 
-#include "xfa/fwl/core/cfwl_themebackground.h"
-#include "xfa/fwl/core/ifwl_scrollbar.h"
-#include "xfa/fwl/core/ifwl_themeprovider.h"
-#include "xfa/fwl/core/ifwl_widget.h"
+#include "xfa/fwl/cfwl_scrollbar.h"
+#include "xfa/fwl/cfwl_themebackground.h"
+#include "xfa/fwl/cfwl_widget.h"
+#include "xfa/fwl/ifwl_themeprovider.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
@@ -20,36 +20,16 @@ const float kPawLength = 12.5f;
 }  // namespace
 
 CFWL_ScrollBarTP::CFWL_ScrollBarTP() : m_pThemeData(new SBThemeData) {
-  SetThemeData(0);
+  SetThemeData();
 }
 
 CFWL_ScrollBarTP::~CFWL_ScrollBarTP() {}
-
-bool CFWL_ScrollBarTP::IsValidWidget(IFWL_Widget* pWidget) {
-  return pWidget && pWidget->GetClassID() == FWL_Type::ScrollBar;
-}
-
-void* CFWL_ScrollBarTP::GetCapacity(CFWL_ThemePart* pThemePart,
-                                    CFWL_WidgetCapacity dwCapacity) {
-  if (dwCapacity == CFWL_WidgetCapacity::Size) {
-    m_fValue = 5;
-    return &m_fValue;
-  }
-  return CFWL_WidgetTP::GetCapacity(pThemePart, dwCapacity);
-}
-
-uint32_t CFWL_ScrollBarTP::SetThemeID(IFWL_Widget* pWidget,
-                                      uint32_t dwThemeID) {
-  if (m_pThemeData)
-    SetThemeData(FWL_GetThemeColor(dwThemeID));
-  return CFWL_WidgetTP::SetThemeID(pWidget, dwThemeID);
-}
 
 void CFWL_ScrollBarTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
     return;
 
-  IFWL_Widget* pWidget = pParams->m_pWidget;
+  CFWL_Widget* pWidget = pParams->m_pWidget;
   FWLTHEME_STATE eState = FWLTHEME_STATE_Normal;
   if (pParams->m_dwStates & CFWL_PartState_Hovered)
     eState = FWLTHEME_STATE_Hover;
@@ -263,47 +243,27 @@ void CFWL_ScrollBarTP::DrawMaxMinBtn(CFX_Graphics* pGraphics,
   DrawArrowBtn(pGraphics, &rtArrowBtn, eDict, eState, pMatrix);
 }
 
-void CFWL_ScrollBarTP::SetThemeData(uint32_t dwID) {
+void CFWL_ScrollBarTP::SetThemeData() {
   m_pThemeData->clrPawColorLight[3] = ArgbEncode(0xff, 208, 223, 172);
   m_pThemeData->clrPawColorDark[3] = ArgbEncode(0xff, 140, 157, 115);
   m_pThemeData->clrBtnBK[3][0] = ArgbEncode(0xff, 164, 180, 139);
   m_pThemeData->clrBtnBK[3][1] = ArgbEncode(0xff, 141, 157, 115);
   m_pThemeData->clrBtnBorder[3] = ArgbEncode(0xff, 236, 233, 216);
-  if (dwID) {
-    m_pThemeData->clrPawColorLight[0] = ArgbEncode(0xff, 208, 223, 172);
-    m_pThemeData->clrPawColorDark[0] = ArgbEncode(0xff, 140, 157, 115);
-    m_pThemeData->clrBtnBK[0][0] = ArgbEncode(0xff, 162, 179, 141);
-    m_pThemeData->clrBtnBK[0][1] = ArgbEncode(0xff, 149, 167, 117);
-    m_pThemeData->clrBtnBorder[0] = ArgbEncode(0xff, 142, 153, 125);
-    m_pThemeData->clrPawColorLight[1] = ArgbEncode(0xff, 235, 245, 212);
-    m_pThemeData->clrPawColorDark[1] = ArgbEncode(0xff, 182, 198, 142);
-    m_pThemeData->clrBtnBK[1][0] = ArgbEncode(0xff, 200, 213, 170);
-    m_pThemeData->clrBtnBK[1][1] = ArgbEncode(0xff, 195, 208, 150);
-    m_pThemeData->clrBtnBorder[1] = ArgbEncode(0xff, 189, 203, 150);
-    m_pThemeData->clrPawColorLight[2] = ArgbEncode(0xff, 208, 223, 172);
-    m_pThemeData->clrPawColorDark[2] = ArgbEncode(0xff, 140, 157, 115);
-    m_pThemeData->clrBtnBK[2][0] = ArgbEncode(0xff, 164, 180, 139);
-    m_pThemeData->clrBtnBK[2][1] = ArgbEncode(0xff, 141, 157, 115);
-    m_pThemeData->clrBtnBorder[2] = ArgbEncode(0xff, 128, 146, 102);
-    m_pThemeData->clrTrackBKStart = ArgbEncode(0xff, 243, 241, 236);
-    m_pThemeData->clrTrackBKEnd = ArgbEncode(0xff, 254, 254, 251);
-  } else {
-    m_pThemeData->clrPawColorLight[0] = ArgbEncode(0xff, 238, 244, 254);
-    m_pThemeData->clrPawColorDark[0] = ArgbEncode(0xff, 140, 176, 248);
-    m_pThemeData->clrBtnBK[0][0] = ArgbEncode(0xff, 197, 213, 252);
-    m_pThemeData->clrBtnBK[0][1] = ArgbEncode(0xff, 182, 205, 251);
-    m_pThemeData->clrBtnBorder[0] = ArgbEncode(0xff, 148, 176, 221);
-    m_pThemeData->clrPawColorLight[1] = ArgbEncode(0xff, 252, 253, 255);
-    m_pThemeData->clrPawColorDark[1] = ArgbEncode(0xff, 156, 197, 255);
-    m_pThemeData->clrBtnBK[1][0] = ArgbEncode(0xff, 216, 232, 255);
-    m_pThemeData->clrBtnBK[1][1] = ArgbEncode(0xff, 204, 225, 255);
-    m_pThemeData->clrBtnBorder[1] = ArgbEncode(0xff, 218, 230, 254);
-    m_pThemeData->clrPawColorLight[2] = ArgbEncode(0xff, 207, 221, 253);
-    m_pThemeData->clrPawColorDark[2] = ArgbEncode(0xff, 131, 158, 216);
-    m_pThemeData->clrBtnBK[2][0] = ArgbEncode(0xff, 167, 190, 245);
-    m_pThemeData->clrBtnBK[2][1] = ArgbEncode(0xff, 146, 179, 249);
-    m_pThemeData->clrBtnBorder[2] = ArgbEncode(0xff, 124, 159, 211);
-    m_pThemeData->clrTrackBKStart = ArgbEncode(0xff, 243, 241, 236);
-    m_pThemeData->clrTrackBKEnd = ArgbEncode(0xff, 254, 254, 251);
-  }
+  m_pThemeData->clrPawColorLight[0] = ArgbEncode(0xff, 238, 244, 254);
+  m_pThemeData->clrPawColorDark[0] = ArgbEncode(0xff, 140, 176, 248);
+  m_pThemeData->clrBtnBK[0][0] = ArgbEncode(0xff, 197, 213, 252);
+  m_pThemeData->clrBtnBK[0][1] = ArgbEncode(0xff, 182, 205, 251);
+  m_pThemeData->clrBtnBorder[0] = ArgbEncode(0xff, 148, 176, 221);
+  m_pThemeData->clrPawColorLight[1] = ArgbEncode(0xff, 252, 253, 255);
+  m_pThemeData->clrPawColorDark[1] = ArgbEncode(0xff, 156, 197, 255);
+  m_pThemeData->clrBtnBK[1][0] = ArgbEncode(0xff, 216, 232, 255);
+  m_pThemeData->clrBtnBK[1][1] = ArgbEncode(0xff, 204, 225, 255);
+  m_pThemeData->clrBtnBorder[1] = ArgbEncode(0xff, 218, 230, 254);
+  m_pThemeData->clrPawColorLight[2] = ArgbEncode(0xff, 207, 221, 253);
+  m_pThemeData->clrPawColorDark[2] = ArgbEncode(0xff, 131, 158, 216);
+  m_pThemeData->clrBtnBK[2][0] = ArgbEncode(0xff, 167, 190, 245);
+  m_pThemeData->clrBtnBK[2][1] = ArgbEncode(0xff, 146, 179, 249);
+  m_pThemeData->clrBtnBorder[2] = ArgbEncode(0xff, 124, 159, 211);
+  m_pThemeData->clrTrackBKStart = ArgbEncode(0xff, 243, 241, 236);
+  m_pThemeData->clrTrackBKEnd = ArgbEncode(0xff, 254, 254, 251);
 }

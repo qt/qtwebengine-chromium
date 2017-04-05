@@ -9,6 +9,7 @@
 
 #include "angle_gl.h"
 #include "libANGLE/angletypes.h"
+#include "libANGLE/Version.h"
 
 #include <map>
 #include <set>
@@ -18,6 +19,8 @@
 
 namespace gl
 {
+
+struct Extensions;
 
 typedef std::set<GLuint> SupportedSampleSet;
 
@@ -45,6 +48,10 @@ struct TextureCaps
     GLuint getNearestSamples(GLuint requestedSamples) const;
 };
 
+TextureCaps GenerateMinimumTextureCaps(GLenum internalFormat,
+                                       const Version &clientVersion,
+                                       const Extensions &extensions);
+
 class TextureCapsMap
 {
   public:
@@ -65,6 +72,9 @@ class TextureCapsMap
     typedef std::map<GLenum, TextureCaps> InternalFormatToCapsMap;
     InternalFormatToCapsMap mCapsMap;
 };
+
+TextureCapsMap GenerateMinimumTextureCapsMap(const Version &clientVersion,
+                                             const Extensions &extensions);
 
 struct Extensions
 {
@@ -149,6 +159,12 @@ struct Extensions
     bool textureCompressionDXT1;
     bool textureCompressionDXT3;
     bool textureCompressionDXT5;
+
+    // GL_EXT_texture_compression_s3tc_srgb
+    // Implies that TextureCaps for GL_COMPRESSED_SRGB_S3TC_DXT1_EXT,
+    // GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT, GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT, and
+    // GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT
+    bool textureCompressionS3TCsRGB;
 
     // GL_KHR_texture_compression_astc_hdr
     bool textureCompressionASTCHDR;
@@ -299,6 +315,9 @@ struct Extensions
     // GL_ANGLE_webgl_compatibility
     bool webglCompatibility;
 
+    // GL_ANGLE_request_extension
+    bool requestExtension;
+
     // GL_CHROMIUM_bind_generates_resource
     bool bindGeneratesResource;
 
@@ -333,8 +352,8 @@ struct Extensions
 
 struct ExtensionInfo
 {
-    // If this extension can be enabled with glEnableExtension (GL_ANGLE_webgl_compatibility)
-    bool Enableable = false;
+    // If this extension can be enabled with glRequestExtension (GL_ANGLE_request_extension)
+    bool Requestable = false;
 
     // Pointer to a boolean member of the Extensions struct
     typedef bool(Extensions::*ExtensionBool);
@@ -374,11 +393,12 @@ struct TypePrecision
 
     void setIEEEFloat();
     void setTwosComplementInt(unsigned int bits);
+    void setSimulatedFloat(unsigned int range, unsigned int precision);
     void setSimulatedInt(unsigned int range);
 
     void get(GLint *returnRange, GLint *returnPrecision) const;
 
-    GLint range[2];
+    std::array<GLint, 2> range;
     GLint precision;
 };
 
@@ -510,6 +530,7 @@ struct Caps
     GLuint maxSamples;
 };
 
+Caps GenerateMinimumCaps(const Version &clientVersion);
 }
 
 namespace egl
@@ -657,6 +678,9 @@ struct ClientExtensions
     // EGL_ANGLE_platform_angle_null
     bool platformANGLENULL;
 
+    // EGL_ANGLE_platform_angle_vulkan
+    bool platformANGLEVulkan;
+
     // EGL_ANGLE_device_creation
     bool deviceCreation;
 
@@ -673,6 +697,6 @@ struct ClientExtensions
     bool clientGetAllProcAddresses;
 };
 
-}
+}  // namespace egl
 
 #endif // LIBANGLE_CAPS_H_

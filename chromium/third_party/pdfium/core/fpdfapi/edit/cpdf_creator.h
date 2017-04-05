@@ -8,7 +8,9 @@
 #define CORE_FPDFAPI_EDIT_CPDF_CREATOR_H_
 
 #include <memory>
+#include <vector>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_basic.h"
 
 class CPDF_Array;
@@ -32,7 +34,7 @@ class CPDF_Creator {
   ~CPDF_Creator();
 
   void RemoveSecurity();
-  bool Create(IFX_WriteStream* pFile, uint32_t flags = 0);
+  bool Create(const CFX_RetainPtr<IFX_WriteStream>& pFile, uint32_t flags = 0);
   int32_t Continue(IFX_Pause* pPause = nullptr);
   bool SetFileVersion(int32_t fileVersion = 17);
 
@@ -93,7 +95,7 @@ class CPDF_Creator {
   FX_POSITION m_Pos;
   FX_FILESIZE m_XrefStart;
   CFX_FileSizeListArray m_ObjectOffset;
-  CFX_ArrayTemplate<uint32_t> m_NewObjNumArray;
+  std::vector<uint32_t> m_NewObjNumArray;  // Sorted, ascending.
   std::unique_ptr<CPDF_Array> m_pIDArray;
   int32_t m_FileVersion;
 };

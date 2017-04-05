@@ -7,7 +7,7 @@
 #include "xfa/fde/cfde_txtedtdorecord_deleterange.h"
 
 #include "xfa/fde/cfde_txtedtengine.h"
-#include "xfa/fwl/core/ifwl_edit.h"
+#include "xfa/fwl/cfwl_edit.h"
 
 CFDE_TxtEdtDoRecord_DeleteRange::CFDE_TxtEdtDoRecord_DeleteRange(
     CFDE_TxtEdtEngine* pEngine,
@@ -36,7 +36,7 @@ bool CFDE_TxtEdtDoRecord_DeleteRange::Undo() const {
   FDE_TXTEDTPARAMS& Param = m_pEngine->m_Param;
   m_pEngine->m_ChangeInfo.nChangeType = FDE_TXTEDT_TEXTCHANGE_TYPE_Insert;
   m_pEngine->m_ChangeInfo.wsDelete = m_wsRange;
-  Param.pEventSink->On_TextChanged(m_pEngine, m_pEngine->m_ChangeInfo);
+  Param.pEventSink->OnTextChanged(m_pEngine->m_ChangeInfo);
   m_pEngine->SetCaretPos(m_nCaret, true);
   return true;
 }
@@ -49,7 +49,7 @@ bool CFDE_TxtEdtDoRecord_DeleteRange::Redo() const {
   FDE_TXTEDTPARAMS& Param = m_pEngine->m_Param;
   m_pEngine->m_ChangeInfo.nChangeType = FDE_TXTEDT_TEXTCHANGE_TYPE_Insert;
   m_pEngine->m_ChangeInfo.wsDelete = m_wsRange;
-  Param.pEventSink->On_TextChanged(m_pEngine, m_pEngine->m_ChangeInfo);
+  Param.pEventSink->OnTextChanged(m_pEngine->m_ChangeInfo);
   m_pEngine->SetCaretPos(m_nIndex, true);
   return true;
 }

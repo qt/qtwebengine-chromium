@@ -6,21 +6,15 @@
 
 #include "xfa/fxfa/parser/cxfa_widetextread.h"
 
+#include <algorithm>
+
 #include "core/fxcrt/fx_ext.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
 
 CXFA_WideTextRead::CXFA_WideTextRead(const CFX_WideString& wsBuffer)
-    : m_wsBuffer(wsBuffer), m_iPosition(0), m_iRefCount(1) {}
+    : m_wsBuffer(wsBuffer), m_iPosition(0) {}
 
-void CXFA_WideTextRead::Release() {
-  if (--m_iRefCount < 1)
-    delete this;
-}
-
-IFX_Stream* CXFA_WideTextRead::Retain() {
-  m_iRefCount++;
-  return this;
-}
+CXFA_WideTextRead::~CXFA_WideTextRead() {}
 
 uint32_t CXFA_WideTextRead::GetAccessModes() const {
   return FX_STREAMACCESS_Read | FX_STREAMACCESS_Text;
@@ -96,9 +90,10 @@ uint16_t CXFA_WideTextRead::SetCodePage(uint16_t wCodePage) {
   return GetCodePage();
 }
 
-IFX_Stream* CXFA_WideTextRead::CreateSharedStream(uint32_t dwAccess,
-                                                  int32_t iOffset,
-                                                  int32_t iLength) {
+CFX_RetainPtr<IFGAS_Stream> CXFA_WideTextRead::CreateSharedStream(
+    uint32_t dwAccess,
+    int32_t iOffset,
+    int32_t iLength) {
   return nullptr;
 }
 

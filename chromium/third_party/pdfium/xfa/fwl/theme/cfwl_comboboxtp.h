@@ -15,10 +15,7 @@ class CFWL_ComboBoxTP : public CFWL_WidgetTP {
   ~CFWL_ComboBoxTP() override;
 
   // CFWL_WidgetTP
-  bool IsValidWidget(IFWL_Widget* pWidget) override;
   void DrawBackground(CFWL_ThemeBackground* pParams) override;
-  void* GetCapacity(CFWL_ThemePart* pThemePart,
-                    CFWL_WidgetCapacity dwCapacity) override;
 
  protected:
   void DrawDropDownButton(CFWL_ThemeBackground* pParams,

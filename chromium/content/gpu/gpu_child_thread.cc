@@ -12,6 +12,7 @@
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_local.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/threading/worker_pool.h"
 #include "build/build_config.h"
 #include "content/child/child_process.h"
@@ -50,7 +51,7 @@
 
 #if defined(OS_ANDROID)
 #include "media/base/android/media_client_android.h"
-#include "media/gpu/avda_surface_tracker.h"
+#include "media/gpu/avda_codec_allocator.h"
 #endif
 
 namespace content {
@@ -186,10 +187,6 @@ GpuChildThread::GpuChildThread(
 }
 
 GpuChildThread::~GpuChildThread() {
-  while (!deferred_messages_.empty()) {
-    delete deferred_messages_.front();
-    deferred_messages_.pop();
-  }
 }
 
 void GpuChildThread::Shutdown() {
@@ -217,6 +214,11 @@ void GpuChildThread::Init(const base::Time& process_start_time) {
 void GpuChildThread::OnFieldTrialGroupFinalized(const std::string& trial_name,
                                                 const std::string& group_name) {
   Send(new GpuHostMsg_FieldTrialActivated(trial_name));
+}
+
+void GpuChildThread::CreateGpuMainService(
+    ui::mojom::GpuMainAssociatedRequest request) {
+  // TODO(sad): Implement.
 }
 
 bool GpuChildThread::Send(IPC::Message* msg) {
@@ -319,7 +321,8 @@ void GpuChildThread::OnInitialize(const gpu::GpuPreferences& gpu_preferences) {
   gpu_info_.initialization_time = base::Time::Now() - process_start_time_;
   Send(new GpuHostMsg_Initialized(!dead_on_arrival_, gpu_info_));
   while (!deferred_messages_.empty()) {
-    Send(deferred_messages_.front());
+    const LogMessage& log = deferred_messages_.front();
+    Send(new GpuHostMsg_OnLogMessage(log.severity, log.header, log.message));
     deferred_messages_.pop();
   }
 
@@ -359,7 +362,8 @@ void GpuChildThread::OnInitialize(const gpu::GpuPreferences& gpu_preferences) {
       new media::MediaGpuChannelManager(gpu_channel_manager_.get()));
 
   // Only set once per process instance.
-  service_factory_.reset(new GpuServiceFactory);
+  service_factory_.reset(
+      new GpuServiceFactory(media_gpu_channel_manager_->AsWeakPtr()));
 
   GetInterfaceRegistry()->AddInterface(base::Bind(
       &GpuChildThread::BindServiceFactoryRequest, base::Unretained(this)));
@@ -509,7 +513,7 @@ void GpuChildThread::OnWakeUpGpu() {
 }
 
 void GpuChildThread::OnDestroyingVideoSurface(int surface_id) {
-  media::AVDASurfaceTracker::GetInstance()->NotifyDestroyingSurface(surface_id);
+  media::AVDACodecAllocator::Instance()->OnSurfaceDestroyed(surface_id);
   Send(new GpuHostMsg_DestroyingVideoSurfaceAck(surface_id));
 }
 #endif

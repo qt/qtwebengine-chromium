@@ -6,20 +6,17 @@
 
 #include "xfa/fwl/theme/cfwl_edittp.h"
 
-#include "xfa/fwl/core/cfwl_themebackground.h"
-#include "xfa/fwl/core/ifwl_edit.h"
-#include "xfa/fwl/core/ifwl_widget.h"
+#include "xfa/fwl/cfwl_edit.h"
+#include "xfa/fwl/cfwl_themebackground.h"
+#include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fxfa/app/xfa_fwltheme.h"
 #include "xfa/fxfa/xfa_ffwidget.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
 CFWL_EditTP::CFWL_EditTP() {}
-CFWL_EditTP::~CFWL_EditTP() {}
 
-bool CFWL_EditTP::IsValidWidget(IFWL_Widget* pWidget) {
-  return pWidget && pWidget->GetClassID() == FWL_Type::Edit;
-}
+CFWL_EditTP::~CFWL_EditTP() {}
 
 void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (CFWL_Part::CombTextLine == pParams->m_iPart) {
@@ -45,18 +42,11 @@ void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case CFWL_Part::Edge: {
-      DrawEdge(pParams->m_pGraphics, pParams->m_pWidget->GetStyles(),
-               &pParams->m_rtPart, &pParams->m_matrix);
-      break;
-    }
     case CFWL_Part::Background: {
       if (pParams->m_pPath) {
         CFX_Graphics* pGraphics = pParams->m_pGraphics;
         pGraphics->SaveGraphState();
-        CFX_Color crSelected(FWL_GetThemeColor(m_dwThemeID) == 0
-                                 ? FWLTHEME_COLOR_BKSelected
-                                 : FWLTHEME_COLOR_Green_BKSelected);
+        CFX_Color crSelected(FWLTHEME_COLOR_BKSelected);
         pGraphics->SetFillColor(&crSelected);
         pGraphics->FillPath(pParams->m_pPath, FXFILL_WINDING,
                             &pParams->m_matrix);
@@ -95,14 +85,4 @@ void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
     default:
       break;
   }
-}
-
-void CFWL_EditTP::Initialize() {
-  InitTTO();
-  CFWL_WidgetTP::Initialize();
-}
-
-void CFWL_EditTP::Finalize() {
-  FinalizeTTO();
-  CFWL_WidgetTP::Finalize();
 }

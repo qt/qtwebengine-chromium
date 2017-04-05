@@ -33,28 +33,10 @@ namespace gl
 const unsigned int Float32One = 0x3F800000;
 const unsigned short Float16One = 0x3C00;
 
-struct Vector4
+template<typename T>
+inline bool isPow2(T x)
 {
-    Vector4() {}
-    Vector4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
-
-    float x;
-    float y;
-    float z;
-    float w;
-};
-
-struct Vector2
-{
-    Vector2() {}
-    Vector2(float x, float y) : x(x), y(y) {}
-
-    float x;
-    float y;
-};
-
-inline bool isPow2(int x)
-{
+    static_assert(std::is_integral<T>::value, "isPow2 must be called on an integer type.");
     return (x & (x - 1)) == 0 && (x != 0);
 }
 

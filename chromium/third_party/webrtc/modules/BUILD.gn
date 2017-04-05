@@ -66,6 +66,7 @@ if (rtc_include_tests) {
     deps = [
       "..:webrtc_common",
       "../common_video",
+      "../media:rtc_media_base",
       "../modules/audio_coding",
       "../modules/audio_coding:audio_format_conversion",
       "../modules/rtp_rtcp",
@@ -73,8 +74,7 @@ if (rtc_include_tests) {
       "../modules/video_coding",
       "../modules/video_coding:video_codecs_test_framework",
       "../system_wrappers",
-      "../test:test_support",
-      "../test:test_support_main",
+      "../test:test_main",
       "//testing/gmock",
       "//testing/gtest",
     ]
@@ -138,10 +138,6 @@ if (rtc_include_tests) {
   }
 
   modules_unittests_resources = [
-    "//data/audio_processing/output_data_fixed.pb",
-    "//data/audio_processing/output_data_float.pb",
-    "//data/audio_processing/output_data_mac.pb",
-    "//data/voice_engine/audio_tiny48.wav",
     "//resources/att-downlink.rx",
     "//resources/att-uplink.rx",
     "//resources/audio_coding/neteq_opus.rtp",
@@ -161,6 +157,9 @@ if (rtc_include_tests) {
     "//resources/audio_processing/agc/agc_vad.dat",
     "//resources/audio_processing/agc/agc_voicing_prob.dat",
     "//resources/audio_processing/agc/agc_with_circular_buffer.dat",
+    "//resources/audio_processing/output_data_fixed.pb",
+    "//resources/audio_processing/output_data_float.pb",
+    "//resources/audio_processing/output_data_mac.pb",
     "//resources/audio_processing/transient/ajm-macbook-1-spke16m.pcm",
     "//resources/audio_processing/transient/audio16kHz.pcm",
     "//resources/audio_processing/transient/audio32kHz.pcm",
@@ -232,12 +231,11 @@ if (rtc_include_tests) {
     "//resources/synthetic-trace.rx",
     "//resources/tmobile-downlink.rx",
     "//resources/tmobile-uplink.rx",
-    "//resources/utility/encapsulated_pcm16b_8khz.wav",
-    "//resources/utility/encapsulated_pcmu_8khz.wav",
     "//resources/verizon3g-downlink.rx",
     "//resources/verizon3g-uplink.rx",
     "//resources/verizon4g-downlink.rx",
     "//resources/verizon4g-uplink.rx",
+    "//resources/voice_engine/audio_tiny48.wav",
   ]
 
   if (is_ios) {
@@ -264,7 +262,6 @@ if (rtc_include_tests) {
       "audio_coding/audio_network_adaptor/frame_length_controller_unittest.cc",
       "audio_coding/audio_network_adaptor/mock/mock_controller.h",
       "audio_coding/audio_network_adaptor/mock/mock_controller_manager.h",
-      "audio_coding/audio_network_adaptor/smoothing_filter_unittest.cc",
     ]
     deps = [
       "audio_coding:audio_network_adaptor",
@@ -308,7 +305,6 @@ if (rtc_include_tests) {
       "audio_coding/codecs/opus/audio_encoder_opus_unittest.cc",
       "audio_coding/codecs/opus/opus_unittest.cc",
       "audio_coding/codecs/red/audio_encoder_copy_red_unittest.cc",
-      "audio_coding/neteq/audio_classifier_unittest.cc",
       "audio_coding/neteq/audio_multi_vector_unittest.cc",
       "audio_coding/neteq/audio_vector_unittest.cc",
       "audio_coding/neteq/background_noise_unittest.cc",
@@ -395,15 +391,19 @@ if (rtc_include_tests) {
       "congestion_controller/delay_based_bwe_unittest.cc",
       "congestion_controller/delay_based_bwe_unittest_helper.cc",
       "congestion_controller/delay_based_bwe_unittest_helper.h",
+      "congestion_controller/median_slope_estimator_unittest.cc",
       "congestion_controller/probe_bitrate_estimator_unittest.cc",
       "congestion_controller/probe_controller_unittest.cc",
+      "congestion_controller/probing_interval_estimator_unittest.cc",
       "congestion_controller/transport_feedback_adapter_unittest.cc",
+      "congestion_controller/trendline_estimator_unittest.cc",
       "media_file/media_file_unittest.cc",
       "module_common_types_unittest.cc",
       "pacing/alr_detector_unittest.cc",
       "pacing/bitrate_prober_unittest.cc",
       "pacing/paced_sender_unittest.cc",
       "pacing/packet_router_unittest.cc",
+      "remote_bitrate_estimator/aimd_rate_control_unittest.cc",
       "remote_bitrate_estimator/include/mock/mock_remote_bitrate_estimator.h",
       "remote_bitrate_estimator/include/mock/mock_remote_bitrate_observer.h",
       "remote_bitrate_estimator/inter_arrival_unittest.cc",
@@ -418,13 +418,13 @@ if (rtc_include_tests) {
       "remote_bitrate_estimator/test/bwe_unittest.cc",
       "remote_bitrate_estimator/test/estimators/nada_unittest.cc",
       "remote_bitrate_estimator/test/metric_recorder_unittest.cc",
+      "rtp_rtcp/mocks/mock_rtp_rtcp.h",
       "rtp_rtcp/source/byte_io_unittest.cc",
       "rtp_rtcp/source/fec_test_helper.cc",
       "rtp_rtcp/source/fec_test_helper.h",
       "rtp_rtcp/source/flexfec_header_reader_writer_unittest.cc",
       "rtp_rtcp/source/flexfec_receiver_unittest.cc",
       "rtp_rtcp/source/flexfec_sender_unittest.cc",
-      "rtp_rtcp/source/mock/mock_rtp_payload_strategy.h",
       "rtp_rtcp/source/nack_rtx_unittest.cc",
       "rtp_rtcp/source/packet_loss_stats_unittest.cc",
       "rtp_rtcp/source/playout_delay_oracle_unittest.cc",
@@ -470,6 +470,7 @@ if (rtc_include_tests) {
       "rtp_rtcp/source/rtp_payload_registry_unittest.cc",
       "rtp_rtcp/source/rtp_rtcp_impl_unittest.cc",
       "rtp_rtcp/source/rtp_sender_unittest.cc",
+      "rtp_rtcp/source/rtp_utility_unittest.cc",
       "rtp_rtcp/source/time_util_unittest.cc",
       "rtp_rtcp/source/ulpfec_generator_unittest.cc",
       "rtp_rtcp/source/ulpfec_header_reader_writer_unittest.cc",
@@ -480,8 +481,6 @@ if (rtc_include_tests) {
       "rtp_rtcp/test/testAPI/test_api_audio.cc",
       "rtp_rtcp/test/testAPI/test_api_rtcp.cc",
       "rtp_rtcp/test/testAPI/test_api_video.cc",
-      "utility/source/audio_frame_operations_unittest.cc",
-      "utility/source/file_player_unittests.cc",
       "utility/source/process_thread_impl_unittest.cc",
       "video_coding/codecs/test/packet_manipulator_unittest.cc",
       "video_coding/codecs/test/stats_unittest.cc",
@@ -494,13 +493,13 @@ if (rtc_include_tests) {
       "video_coding/codecs/vp8/simulcast_unittest.h",
       "video_coding/decoding_state_unittest.cc",
       "video_coding/frame_buffer2_unittest.cc",
+      "video_coding/h264_sprop_parameter_sets_unittest.cc",
       "video_coding/h264_sps_pps_tracker_unittest.cc",
       "video_coding/histogram_unittest.cc",
       "video_coding/include/mock/mock_vcm_callbacks.h",
       "video_coding/jitter_buffer_unittest.cc",
       "video_coding/jitter_estimator_tests.cc",
       "video_coding/nack_module_unittest.cc",
-      "video_coding/percentile_filter_unittest.cc",
       "video_coding/protection_bitrate_calculator_unittest.cc",
       "video_coding/receiver_unittest.cc",
       "video_coding/rtp_frame_reference_finder_unittest.cc",
@@ -509,6 +508,7 @@ if (rtc_include_tests) {
       "video_coding/test/stream_generator.cc",
       "video_coding/test/stream_generator.h",
       "video_coding/timing_unittest.cc",
+      "video_coding/utility/default_video_bitrate_allocator_unittest.cc",
       "video_coding/utility/frame_dropper_unittest.cc",
       "video_coding/utility/ivf_file_writer_unittest.cc",
       "video_coding/utility/moving_average_unittest.cc",
@@ -519,8 +519,6 @@ if (rtc_include_tests) {
       "video_coding/video_receiver_unittest.cc",
       "video_coding/video_sender_unittest.cc",
       "video_processing/test/denoiser_test.cc",
-      "video_processing/test/video_processing_unittest.cc",
-      "video_processing/test/video_processing_unittest.h",
     ]
 
     if (apm_debug_dump) {
@@ -544,6 +542,10 @@ if (rtc_include_tests) {
           [ "video_coding/codecs/vp9/vp9_screenshare_layers_unittest.cc" ]
     }
 
+    if (rtc_use_h264) {
+      sources += [ "video_coding/codecs/h264/h264_encoder_impl_unittest.cc" ]
+    }
+
     if (rtc_desktop_capture_supported || is_android) {
       deps += [ "desktop_capture" ]
       sources += [
@@ -557,12 +559,16 @@ if (rtc_include_tests) {
       sources += [
         "desktop_capture/desktop_and_cursor_composer_unittest.cc",
         "desktop_capture/desktop_capturer_differ_wrapper_unittest.cc",
+        "desktop_capture/desktop_frame_rotation_unittest.cc",
         "desktop_capture/mouse_cursor_monitor_unittest.cc",
         "desktop_capture/rgba_color_unittest.cc",
         "desktop_capture/screen_capturer_helper_unittest.cc",
         "desktop_capture/screen_capturer_mac_unittest.cc",
         "desktop_capture/screen_capturer_mock_objects.h",
         "desktop_capture/screen_capturer_unittest.cc",
+        "desktop_capture/test_utils.cc",
+        "desktop_capture/test_utils.h",
+        "desktop_capture/test_utils_unittest.cc",
         "desktop_capture/win/cursor_unittest.cc",
         "desktop_capture/win/cursor_unittest_resources.h",
         "desktop_capture/win/cursor_unittest_resources.rc",
@@ -587,6 +593,12 @@ if (rtc_include_tests) {
         "audio_processing:audioproc_unittest_proto",
       ]
       sources += [
+        "audio_processing/aec3/block_framer_unittest.cc",
+        "audio_processing/aec3/block_processor_unittest.cc",
+        "audio_processing/aec3/cascaded_biquad_filter_unittest.cc",
+        "audio_processing/aec3/echo_canceller3_unittest.cc",
+        "audio_processing/aec3/frame_blocker_unittest.cc",
+        "audio_processing/aec3/mock/mock_block_processor.h",
         "audio_processing/audio_processing_impl_locking_unittest.cc",
         "audio_processing/audio_processing_impl_unittest.cc",
         "audio_processing/audio_processing_unittest.cc",
@@ -594,13 +606,15 @@ if (rtc_include_tests) {
         "audio_processing/echo_control_mobile_unittest.cc",
         "audio_processing/echo_detector/circular_buffer_unittest.cc",
         "audio_processing/echo_detector/mean_variance_estimator_unittest.cc",
+        "audio_processing/echo_detector/moving_max_unittest.cc",
         "audio_processing/echo_detector/normalized_covariance_estimator_unittest.cc",
         "audio_processing/gain_control_unittest.cc",
-        "audio_processing/high_pass_filter_unittest.cc",
         "audio_processing/level_controller/level_controller_unittest.cc",
         "audio_processing/level_estimator_unittest.cc",
+        "audio_processing/low_cut_filter_unittest.cc",
         "audio_processing/noise_suppression_unittest.cc",
         "audio_processing/residual_echo_detector_unittest.cc",
+        "audio_processing/rms_level_unittest.cc",
         "audio_processing/test/bitexactness_tools.cc",
         "audio_processing/test/bitexactness_tools.h",
         "audio_processing/test/debug_dump_replayer.cc",
@@ -618,7 +632,7 @@ if (rtc_include_tests) {
     # TODO(jschuh): bugs.webrtc.org/1348: fix this warning.
     configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
-    if (!build_with_chromium && is_clang) {
+    if ((!build_with_chromium || is_win) && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
@@ -633,14 +647,16 @@ if (rtc_include_tests) {
     deps += [
       ":audio_network_adaptor_unittests",
       "..:webrtc_common",
+      "../api:transport_api",
       "../base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
+      "../base:rtc_base_tests_utils",
       "../common_audio",
       "../common_video",
       "../system_wrappers",
+      "../system_wrappers:metrics_default",
       "../test:rtp_test_utils",
       "../test:test_common",
-      "../test:test_support",
-      "../test:test_support_main",
+      "../test:test_main",
       "../test:video_test_common",
       "audio_coding",
       "audio_coding:acm_receive_test",
@@ -682,7 +698,7 @@ if (rtc_include_tests) {
     if (is_android) {
       deps += [
         "//testing/android/native_test:native_test_support",
-        "//webrtc/api:libjingle_peerconnection_java",
+        "//webrtc/sdk/android:libjingle_peerconnection_java",
       ]
 
       # Need to disable error due to the line in
@@ -740,7 +756,7 @@ if (rtc_include_tests) {
       "..:webrtc_common",
       "../base:rtc_base_approved",
       "../test:test_common",
-      "../test:test_support_main",
+      "../test:test_main",
       "remote_bitrate_estimator:bwe_simulator_lib",
       "video_capture",
       "//testing/gmock",

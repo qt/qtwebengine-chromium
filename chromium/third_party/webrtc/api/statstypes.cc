@@ -57,7 +57,7 @@ const char* InternalTypeToString(StatsReport::StatsType type) {
     case StatsReport::kStatsReportTypeDataChannel:
       return "datachannel";
   }
-  RTC_DCHECK(false);
+  RTC_NOTREACHED();
   return nullptr;
 }
 
@@ -576,6 +576,8 @@ const char* StatsReport::Value::display_name() const {
       return "remoteCertificateId";
     case kStatsValueNameResidualEchoLikelihood:
       return "googResidualEchoLikelihood";
+    case kStatsValueNameResidualEchoLikelihoodRecentMax:
+      return "googResidualEchoLikelihoodRecentMax";
     case kStatsValueNameRetransmitBitrate:
       return "googRetransmitBitrate";
     case kStatsValueNameRtt:
@@ -598,8 +600,6 @@ const char* StatsReport::Value::display_name() const {
       return "googTrackId";
     case kStatsValueNameTypingNoiseState:
       return "googTypingNoiseState";
-    case kStatsValueNameViewLimitedResolution:
-      return "googViewLimitedResolution";
     case kStatsValueNameWritable:
       return "googWritable";
   }

@@ -23,7 +23,6 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/browser_process.h"
@@ -1177,8 +1176,14 @@ bool TabsUpdateFunction::RunAsync() {
 
   int tab_index = -1;
   TabStripModel* tab_strip = NULL;
-  if (!GetTabById(tab_id, browser_context(), include_incognito(), NULL,
+  Browser* browser = nullptr;
+  if (!GetTabById(tab_id, browser_context(), include_incognito(), &browser,
                   &tab_strip, &contents, &tab_index, &error_)) {
+    return false;
+  }
+
+  if (!ExtensionTabUtil::BrowserSupportsTabs(browser)) {
+    error_ = keys::kNoCurrentWindowError;
     return false;
   }
 
@@ -1255,6 +1260,11 @@ bool TabsUpdateFunction::RunAsync() {
                                       &opener_contents, nullptr))
       return false;
 
+    if (tab_strip->GetIndexOfWebContents(opener_contents) ==
+        TabStripModel::kNoTab) {
+      error_ = "Tab opener must be in the same window as the updated tab.";
+      return false;
+    }
     tab_strip->SetOpenerOfWebContentsAt(tab_index, opener_contents);
   }
 
@@ -1547,10 +1557,11 @@ ExtensionFunction::ResponseAction TabsReloadFunction::Run() {
                          WindowOpenDisposition::CURRENT_TAB,
                          ui::PAGE_TRANSITION_RELOAD, false);
     current_browser->OpenURL(params);
-  } else if (bypass_cache) {
-    web_contents->GetController().ReloadBypassingCache(true);
   } else {
-    web_contents->GetController().Reload(true);
+    web_contents->GetController().Reload(
+        bypass_cache ? content::ReloadType::BYPASSING_CACHE
+                     : content::ReloadType::NORMAL,
+        true);
   }
 
   return RespondNow(NoArguments());

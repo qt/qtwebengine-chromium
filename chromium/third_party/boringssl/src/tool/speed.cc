@@ -29,7 +29,6 @@
 #include <openssl/ec.h>
 #include <openssl/ecdsa.h>
 #include <openssl/ec_key.h>
-#include <openssl/newhope.h>
 #include <openssl/nid.h>
 #include <openssl/rand.h>
 #include <openssl/rsa.h>
@@ -44,6 +43,7 @@ OPENSSL_MSVC_PRAGMA(warning(pop))
 #include <time.h>
 #endif
 
+#include "../crypto/internal.h"
 #include "internal.h"
 
 
@@ -209,18 +209,18 @@ static bool SpeedAEADChunk(const EVP_AEAD *aead, const std::string &name,
   const size_t overhead_len = EVP_AEAD_max_overhead(aead);
 
   std::unique_ptr<uint8_t[]> key(new uint8_t[key_len]);
-  memset(key.get(), 0, key_len);
+  OPENSSL_memset(key.get(), 0, key_len);
   std::unique_ptr<uint8_t[]> nonce(new uint8_t[nonce_len]);
-  memset(nonce.get(), 0, nonce_len);
+  OPENSSL_memset(nonce.get(), 0, nonce_len);
   std::unique_ptr<uint8_t[]> in_storage(new uint8_t[chunk_len + kAlignment]);
   std::unique_ptr<uint8_t[]> out_storage(new uint8_t[chunk_len + overhead_len + kAlignment]);
   std::unique_ptr<uint8_t[]> ad(new uint8_t[ad_len]);
-  memset(ad.get(), 0, ad_len);
+  OPENSSL_memset(ad.get(), 0, ad_len);
 
   uint8_t *const in = align(in_storage.get(), kAlignment);
-  memset(in, 0, chunk_len);
+  OPENSSL_memset(in, 0, chunk_len);
   uint8_t *const out = align(out_storage.get(), kAlignment);
-  memset(out, 0, chunk_len + overhead_len);
+  OPENSSL_memset(out, 0, chunk_len + overhead_len);
 
   if (!EVP_AEAD_CTX_init_with_direction(ctx.get(), aead, key.get(), key_len,
                                         EVP_AEAD_DEFAULT_TAG_LENGTH,
@@ -382,7 +382,7 @@ static bool SpeedECDSACurve(const std::string &name, int nid,
     return false;
   }
   uint8_t digest[20];
-  memset(digest, 42, sizeof(digest));
+  OPENSSL_memset(digest, 42, sizeof(digest));
   unsigned sig_len;
 
   TimeResults results;
@@ -463,7 +463,7 @@ static bool Speed25519(const std::string &selected) {
 
   if (!TimeFunction(&results, []() -> bool {
         uint8_t out[32], in[32];
-        memset(in, 0, sizeof(in));
+        OPENSSL_memset(in, 0, sizeof(in));
         X25519_public_from_private(out, in);
         return true;
       })) {
@@ -475,8 +475,8 @@ static bool Speed25519(const std::string &selected) {
 
   if (!TimeFunction(&results, []() -> bool {
         uint8_t out[32], in1[32], in2[32];
-        memset(in1, 0, sizeof(in1));
-        memset(in2, 0, sizeof(in2));
+        OPENSSL_memset(in1, 0, sizeof(in1));
+        OPENSSL_memset(in2, 0, sizeof(in2));
         in1[0] = 1;
         in2[0] = 9;
         return X25519(out, in1, in2) == 1;
@@ -534,34 +534,6 @@ static bool SpeedSPAKE2(const std::string &selected) {
 
   results.Print("SPAKE2 over Ed25519");
 
-  return true;
-}
-
-static bool SpeedNewHope(const std::string &selected) {
-  if (!selected.empty() && selected.find("newhope") == std::string::npos) {
-    return true;
-  }
-
-  TimeResults results;
-  bssl::UniquePtr<NEWHOPE_POLY> sk(NEWHOPE_POLY_new());
-  uint8_t acceptmsg[NEWHOPE_ACCEPTMSG_LENGTH];
-  RAND_bytes(acceptmsg, sizeof(acceptmsg));
-
-  if (!TimeFunction(&results, [&sk, &acceptmsg]() -> bool {
-        uint8_t key[SHA256_DIGEST_LENGTH];
-        uint8_t offermsg[NEWHOPE_OFFERMSG_LENGTH];
-        NEWHOPE_offer(offermsg, sk.get());
-        if (!NEWHOPE_finish(key, sk.get(), acceptmsg,
-                            NEWHOPE_ACCEPTMSG_LENGTH)) {
-          return false;
-        }
-        return true;
-      })) {
-    fprintf(stderr, "failed to exchange key.\n");
-    return false;
-  }
-
-  results.Print("newhope key exchange");
   return true;
 }
 
@@ -654,6 +626,12 @@ bool Speed(const std::vector<std::string> &args) {
                  kLegacyADLen, selected) ||
       !SpeedAEAD(EVP_aead_aes_256_cbc_sha1_tls(), "AES-256-CBC-SHA1",
                  kLegacyADLen, selected) ||
+#if !defined(OPENSSL_SMALL)
+      !SpeedAEAD(EVP_aead_aes_128_gcm_siv(), "AES-128-GCM-SIV", kTLSADLen,
+                 selected) ||
+      !SpeedAEAD(EVP_aead_aes_256_gcm_siv(), "AES-256-GCM-SIV", kTLSADLen,
+                 selected) ||
+#endif
       !SpeedHash(EVP_sha1(), "SHA-1", selected) ||
       !SpeedHash(EVP_sha256(), "SHA-256", selected) ||
       !SpeedHash(EVP_sha512(), "SHA-512", selected) ||
@@ -661,8 +639,7 @@ bool Speed(const std::vector<std::string> &args) {
       !SpeedECDH(selected) ||
       !SpeedECDSA(selected) ||
       !Speed25519(selected) ||
-      !SpeedSPAKE2(selected) ||
-      !SpeedNewHope(selected)) {
+      !SpeedSPAKE2(selected)) {
     return false;
   }
 

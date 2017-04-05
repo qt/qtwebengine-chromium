@@ -17,19 +17,26 @@
 #include "Reactor.hpp"
 #include "Routine.hpp"
 
+#include "Optimizer.hpp"
+
 #include "src/IceTypes.h"
 #include "src/IceCfg.h"
 #include "src/IceELFStreamer.h"
 #include "src/IceGlobalContext.h"
 #include "src/IceCfgNode.h"
 #include "src/IceELFObjectWriter.h"
+#include "src/IceGlobalInits.h"
 
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_os_ostream.h"
 
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#else
+#include <sys/mman.h>
+#endif
 
 #include <mutex>
 #include <limits>
@@ -52,13 +59,30 @@ namespace
 
 namespace sw
 {
-	class Value : public Ice::Variable {};
-	class Constant : public Ice::Constant {};
+	enum EmulatedType
+	{
+		EmulatedShift = 16,
+		EmulatedV2 = 2 << EmulatedShift,
+		EmulatedV4 = 4 << EmulatedShift,
+		EmulatedV8 = 8 << EmulatedShift,
+		EmulatedBits = EmulatedV2 | EmulatedV4 | EmulatedV8,
+
+		Type_v2i32 = Ice::IceType_v4i32 | EmulatedV2,
+		Type_v4i16 = Ice::IceType_v8i16 | EmulatedV4,
+		Type_v2i16 = Ice::IceType_v8i16 | EmulatedV2,
+		Type_v8i8 =  Ice::IceType_v16i8 | EmulatedV8,
+		Type_v4i8 =  Ice::IceType_v16i8 | EmulatedV4,
+		Type_v2f32 = Ice::IceType_v4f32 | EmulatedV2,
+	};
+
+	class Value : public Ice::Operand {};
+	class SwitchCases : public Ice::InstSwitch {};
 	class BasicBlock : public Ice::CfgNode {};
 
 	Ice::Type T(Type *t)
 	{
-		return (Ice::Type)reinterpret_cast<std::intptr_t>(t);
+		static_assert(Ice::IceType_NUM < EmulatedBits, "Ice::Type overlaps with our emulated types!");
+		return (Ice::Type)(reinterpret_cast<std::intptr_t>(t) & ~EmulatedBits);
 	}
 
 	Type *T(Ice::Type t)
@@ -66,14 +90,14 @@ namespace sw
 		return reinterpret_cast<Type*>(t);
 	}
 
-	Value *V(Ice::Variable *v)
+	Type *T(EmulatedType t)
 	{
-		return reinterpret_cast<Value*>(v);
+		return reinterpret_cast<Type*>(t);
 	}
 
-	Constant *C(Ice::Constant *c)
+	Value *V(Ice::Operand *v)
 	{
-		return reinterpret_cast<Constant*>(c);
+		return reinterpret_cast<Value*>(v);
 	}
 
 	BasicBlock *B(Ice::CfgNode *b)
@@ -83,9 +107,136 @@ namespace sw
 
 	Optimization optimization[10] = {InstructionCombining, Disabled};
 
+	using ElfHeader = std::conditional<sizeof(void*) == 8, Elf64_Ehdr, Elf32_Ehdr>::type;
+	using SectionHeader = std::conditional<sizeof(void*) == 8, Elf64_Shdr, Elf32_Shdr>::type;
+
+	inline const SectionHeader *sectionHeader(const ElfHeader *elfHeader)
+	{
+		return reinterpret_cast<const SectionHeader*>((intptr_t)elfHeader + elfHeader->e_shoff);
+	}
+
+	inline const SectionHeader *elfSection(const ElfHeader *elfHeader, int index)
+	{
+		return &sectionHeader(elfHeader)[index];
+	}
+
+	static void *relocateSymbol(const ElfHeader *elfHeader, const Elf32_Rel &relocation, const SectionHeader &relocationTable)
+	{
+		const SectionHeader *target = elfSection(elfHeader, relocationTable.sh_info);
+
+		intptr_t address = (intptr_t)elfHeader + target->sh_offset;
+		int32_t *patchSite = (int*)(address + relocation.r_offset);
+		uint32_t index = relocation.getSymbol();
+		int table = relocationTable.sh_link;
+		void *symbolValue = nullptr;
+
+		if(index != SHN_UNDEF)
+		{
+			if(table == SHN_UNDEF) return nullptr;
+			const SectionHeader *symbolTable = elfSection(elfHeader, table);
+
+			uint32_t symtab_entries = symbolTable->sh_size / symbolTable->sh_entsize;
+			if(index >= symtab_entries)
+			{
+				assert(index < symtab_entries && "Symbol Index out of range");
+				return nullptr;
+			}
+
+			intptr_t symbolAddress = (intptr_t)elfHeader + symbolTable->sh_offset;
+			Elf32_Sym &symbol = ((Elf32_Sym*)symbolAddress)[index];
+			uint16_t section = symbol.st_shndx;
+
+			if(section != SHN_UNDEF && section < SHN_LORESERVE)
+			{
+				const SectionHeader *target = elfSection(elfHeader, symbol.st_shndx);
+				symbolValue = reinterpret_cast<void*>((intptr_t)elfHeader + symbol.st_value + target->sh_offset);
+			}
+			else
+			{
+				return nullptr;
+			}
+		}
+
+		switch(relocation.getType())
+		{
+		case R_386_NONE:
+			// No relocation
+			break;
+		case R_386_32:
+			*patchSite = (int32_t)((intptr_t)symbolValue + *patchSite);
+			break;
+	//	case R_386_PC32:
+	//		*patchSite = (int32_t)((intptr_t)symbolValue + *patchSite - (intptr_t)patchSite);
+	//		break;
+		default:
+			assert(false && "Unsupported relocation type");
+			return nullptr;
+		}
+
+		return symbolValue;
+	}
+
+	static void *relocateSymbol(const ElfHeader *elfHeader, const Elf64_Rela &relocation, const SectionHeader &relocationTable)
+	{
+		const SectionHeader *target = elfSection(elfHeader, relocationTable.sh_info);
+
+		intptr_t address = (intptr_t)elfHeader + target->sh_offset;
+		int32_t *patchSite = (int*)(address + relocation.r_offset);
+		uint32_t index = relocation.getSymbol();
+		int table = relocationTable.sh_link;
+		void *symbolValue = nullptr;
+
+		if(index != SHN_UNDEF)
+		{
+			if(table == SHN_UNDEF) return nullptr;
+			const SectionHeader *symbolTable = elfSection(elfHeader, table);
+
+			uint32_t symtab_entries = symbolTable->sh_size / symbolTable->sh_entsize;
+			if(index >= symtab_entries)
+			{
+				assert(index < symtab_entries && "Symbol Index out of range");
+				return nullptr;
+			}
+
+			intptr_t symbolAddress = (intptr_t)elfHeader + symbolTable->sh_offset;
+			Elf64_Sym &symbol = ((Elf64_Sym*)symbolAddress)[index];
+			uint16_t section = symbol.st_shndx;
+
+			if(section != SHN_UNDEF && section < SHN_LORESERVE)
+			{
+				const SectionHeader *target = elfSection(elfHeader, symbol.st_shndx);
+				symbolValue = reinterpret_cast<void*>((intptr_t)elfHeader + symbol.st_value + target->sh_offset);
+			}
+			else
+			{
+				return nullptr;
+			}
+		}
+
+		switch(relocation.getType())
+		{
+		case R_X86_64_NONE:
+			// No relocation
+			break;
+		case R_X86_64_64:
+			*(int64_t*)patchSite = (int64_t)((intptr_t)symbolValue + *(int64_t*)patchSite) + relocation.r_addend;
+			break;
+		case R_X86_64_PC32:
+			*patchSite = (int32_t)((intptr_t)symbolValue + *patchSite - (intptr_t)patchSite) + relocation.r_addend;
+			break;
+		case R_X86_64_32S:
+			*patchSite = (int32_t)((intptr_t)symbolValue + *patchSite) + relocation.r_addend;
+			break;
+		default:
+			assert(false && "Unsupported relocation type");
+			return nullptr;
+		}
+
+		return symbolValue;
+	}
+
 	void *loadImage(uint8_t *const elfImage)
 	{
-		using ElfHeader = std::conditional<sizeof(void*) == 8, Elf64_Ehdr, Elf32_Ehdr>::type;
 		ElfHeader *elfHeader = (ElfHeader*)elfImage;
 
 		if(!elfHeader->checkMagic())
@@ -93,15 +244,41 @@ namespace sw
 			return nullptr;
 		}
 
-		using SectionHeader = std::conditional<sizeof(void*) == 8, Elf64_Shdr, Elf32_Shdr>::type;
+		// Expect ELF bitness to match platform
+		assert(sizeof(void*) == 8 ? elfHeader->getFileClass() == ELFCLASS64 : elfHeader->getFileClass() == ELFCLASS32);
+		assert(sizeof(void*) == 8 ? elfHeader->e_machine == EM_X86_64 : elfHeader->e_machine == EM_386);
+
 		SectionHeader *sectionHeader = (SectionHeader*)(elfImage + elfHeader->e_shoff);
 		void *entry = nullptr;
 
 		for(int i = 0; i < elfHeader->e_shnum; i++)
 		{
-			if(sectionHeader[i].sh_type == SHT_PROGBITS && sectionHeader[i].sh_flags & SHF_EXECINSTR)
+			if(sectionHeader[i].sh_type == SHT_PROGBITS)
 			{
-				entry = elfImage + sectionHeader[i].sh_offset;
+				if(sectionHeader[i].sh_flags & SHF_EXECINSTR)
+				{
+					entry = elfImage + sectionHeader[i].sh_offset;
+				}
+			}
+			else if(sectionHeader[i].sh_type == SHT_REL)
+			{
+				assert(sizeof(void*) == 4 && "UNIMPLEMENTED");   // Only expected/implemented for 32-bit code
+
+				for(int index = 0; index < sectionHeader[i].sh_size / sectionHeader[i].sh_entsize; index++)
+				{
+					const Elf32_Rel &relocation = ((const Elf32_Rel*)(elfImage + sectionHeader[i].sh_offset))[index];
+					void *symbol = relocateSymbol(elfHeader, relocation, sectionHeader[i]);
+				}
+			}
+			else if(sectionHeader[i].sh_type == SHT_RELA)
+			{
+				assert(sizeof(void*) == 8 && "UNIMPLEMENTED");   // Only expected/implemented for 64-bit code
+
+				for(int index = 0; index < sectionHeader[i].sh_size / sectionHeader[i].sh_entsize; index++)
+				{
+					const Elf64_Rela &relocation = ((const Elf64_Rela*)(elfImage + sectionHeader[i].sh_offset))[index];
+					void *symbol = relocateSymbol(elfHeader, relocation, sectionHeader[i]);
+				}
 			}
 		}
 
@@ -119,12 +296,20 @@ namespace sw
 
 		T *allocate(size_type n)
 		{
-			return (T*)VirtualAlloc(NULL, sizeof(T) * n, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			#if defined(_WIN32)
+				return (T*)VirtualAlloc(NULL, sizeof(T) * n, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			#else
+				return (T*)mmap(nullptr, sizeof(T) * n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			#endif
 		}
 
 		void deallocate(T *p, size_type n)
 		{
-			VirtualFree(p, 0, MEM_RELEASE);
+			#if defined(_WIN32)
+				VirtualFree(p, 0, MEM_RELEASE);
+			#else
+				munmap(p, sizeof(T) * n);
+			#endif
 		}
 	};
 
@@ -134,7 +319,7 @@ namespace sw
 		ELFMemoryStreamer &operator=(const ELFMemoryStreamer &) = delete;
 
 	public:
-		ELFMemoryStreamer() : Routine()
+		ELFMemoryStreamer() : Routine(), entry(nullptr)
 		{
 			position = 0;
 			buffer.reserve(0x1000);
@@ -142,11 +327,13 @@ namespace sw
 
 		virtual ~ELFMemoryStreamer()
 		{
-			if(buffer.size() != 0)
-			{
-				DWORD exeProtection;
-				VirtualProtect(&buffer[0], buffer.size(), oldProtection, &exeProtection);
-			}
+			#if defined(_WIN32)
+				if(buffer.size() != 0)
+				{
+					DWORD exeProtection;
+					VirtualProtect(&buffer[0], buffer.size(), oldProtection, &exeProtection);
+				}
+			#endif
 		}
 
 		void write8(uint8_t Value) override
@@ -178,40 +365,60 @@ namespace sw
 
 		const void *getEntry() override
 		{
-			VirtualProtect(&buffer[0], buffer.size(), PAGE_EXECUTE_READ, &oldProtection);
-			position = std::numeric_limits<std::size_t>::max();  // Can't write more data after this
+			if(!entry)
+			{
+				#if defined(_WIN32)
+					VirtualProtect(&buffer[0], buffer.size(), PAGE_EXECUTE_READWRITE, &oldProtection);
+				#else
+					mprotect(&buffer[0], buffer.size(), PROT_READ | PROT_WRITE | PROT_EXEC);
+				#endif
 
-			return loadImage(&buffer[0]);
+				position = std::numeric_limits<std::size_t>::max();   // Can't stream more data after this
+
+				entry = loadImage(&buffer[0]);
+			}
+
+			return entry;
 		}
 
 	private:
+		void *entry;
 		std::vector<uint8_t, ExecutableAllocator<uint8_t>> buffer;
 		std::size_t position;
+
+		#if defined(_WIN32)
 		DWORD oldProtection;
+		#endif
 	};
 
 	Nucleus::Nucleus()
 	{
 		::codegenMutex.lock();   // Reactor is currently not thread safe
 
-		Ice::ClFlags::Flags.setTargetArch(sizeof(void*) == 8 ? Ice::Target_X8664 : Ice::Target_X8632);
-		Ice::ClFlags::Flags.setOutFileType(Ice::FT_Elf);
-		Ice::ClFlags::Flags.setOptLevel(Ice::Opt_2);
-		Ice::ClFlags::Flags.setApplicationBinaryInterface(Ice::ABI_Platform);
+		Ice::ClFlags &Flags = Ice::ClFlags::Flags;
+		Ice::ClFlags::getParsedClFlags(Flags);
 
-		std::unique_ptr<Ice::Ostream> cout(new llvm::raw_os_ostream(std::cout));
+		Flags.setTargetArch(sizeof(void*) == 8 ? Ice::Target_X8664 : Ice::Target_X8632);
+		Flags.setOutFileType(Ice::FT_Elf);
+		Flags.setOptLevel(Ice::Opt_2);
+		Flags.setApplicationBinaryInterface(Ice::ABI_Platform);
+		Flags.setTargetInstructionSet(Ice::X86InstructionSet_SSE4_1);
+		Flags.setVerbose(false ? Ice::IceV_All : Ice::IceV_None);
+
+		static llvm::raw_os_ostream cout(std::cout);
+		static llvm::raw_os_ostream cerr(std::cerr);
 
 		if(false)   // Write out to a file
 		{
 			std::error_code errorCode;
 			::out = new Ice::Fdstream("out.o", errorCode, llvm::sys::fs::F_None);
 			::elfFile = new Ice::ELFFileStreamer(*out);
-			::context = new Ice::GlobalContext(cout.get(), cout.get(), cout.get(), elfFile);
+			::context = new Ice::GlobalContext(&cout, &cout, &cerr, elfFile);
 		}
 		else
 		{
 			ELFMemoryStreamer *elfMemory = new ELFMemoryStreamer();
-			::context = new Ice::GlobalContext(cout.get(), cout.get(), cout.get(), elfMemory);
+			::context = new Ice::GlobalContext(&cout, &cout, &cerr, elfMemory);
 			::routine = elfMemory;
 		}
 	}
@@ -239,31 +446,47 @@ namespace sw
 		std::string asciiName(wideName.begin(), wideName.end());
 		::function->setFunctionName(Ice::GlobalString::createWithString(::context, asciiName));
 
+		optimize();
+
 		::function->translate();
+		assert(!::function->hasError());
+
+		auto *globals = ::function->getGlobalInits().release();
+
+		if(globals && !globals->empty())
+		{
+			::context->getGlobals()->merge(globals);
+		}
 
 		::context->emitFileHeader();
 		::function->emitIAS();
 		auto assembler = ::function->releaseAssembler();
-		::context->getObjectWriter()->writeFunctionCode(::function->getFunctionName(), false, assembler.get());
-		::context->getObjectWriter()->writeNonUserSections();
+		auto objectWriter = ::context->getObjectWriter();
+		assembler->alignFunction();
+		objectWriter->writeFunctionCode(::function->getFunctionName(), false, assembler.get());
+		::context->lowerGlobals("last");
+		::context->lowerConstants();
+		::context->lowerJumpTables();
+		objectWriter->setUndefinedSyms(::context->getConstantExternSyms());
+		objectWriter->writeNonUserSections();
 
 		return ::routine;
 	}
 
 	void Nucleus::optimize()
 	{
+		sw::optimize(::function);
 	}
 
 	Value *Nucleus::allocateStackVariable(Type *t, int arraySize)
 	{
-		assert(arraySize == 0 && "UNIMPLEMENTED");
-
 		Ice::Type type = T(t);
-		int size = Ice::typeWidthInBytes(type);
+		int typeSize = Ice::typeWidthInBytes(type);
+		int totalSize = typeSize * (arraySize ? arraySize : 1);
 
-		auto bytes = Ice::ConstantInteger32::create(::context, type, size);
+		auto bytes = Ice::ConstantInteger32::create(::context, type, totalSize);
 		auto address = ::function->makeVariable(T(getPointerType(t)));
-		auto alloca = Ice::InstAlloca::create(::function, address, bytes, size);
+		auto alloca = Ice::InstAlloca::create(::function, address, bytes, typeSize);
 		::function->getEntryNode()->getInsts().push_front(alloca);
 
 		return V(address);
@@ -281,13 +504,8 @@ namespace sw
 
 	void Nucleus::setInsertBlock(BasicBlock *basicBlock)
 	{
-		assert(::basicBlock->getInsts().back().getTerminatorEdges().size() >= 0 && "Previous basic block must have a terminator");
+	//	assert(::basicBlock->getInsts().back().getTerminatorEdges().size() >= 0 && "Previous basic block must have a terminator");
 		::basicBlock = basicBlock;
-	}
-
-	BasicBlock *Nucleus::getPredecessor(BasicBlock *basicBlock)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
 	}
 
 	void Nucleus::createFunction(Type *ReturnType, std::vector<Type*> &Params)
@@ -314,12 +532,14 @@ namespace sw
 
 	void Nucleus::createRetVoid()
 	{
-		assert(false && "UNIMPLEMENTED");
+		Ice::InstRet *ret = Ice::InstRet::create(::function);
+		::basicBlock->appendInst(ret);
 	}
 
 	void Nucleus::createRet(Value *v)
 	{
-		assert(false && "UNIMPLEMENTED");
+		Ice::InstRet *ret = Ice::InstRet::create(::function, v);
+		::basicBlock->appendInst(ret);
 	}
 
 	void Nucleus::createBr(BasicBlock *dest)
@@ -336,7 +556,7 @@ namespace sw
 
 	static Value *createArithmetic(Ice::InstArithmetic::OpKind op, Value *lhs, Value *rhs)
 	{
-		assert(lhs->getType() == rhs->getType());
+		assert(lhs->getType() == rhs->getType() || (llvm::isa<Ice::Constant>(rhs) && (op == Ice::InstArithmetic::Shl || Ice::InstArithmetic::Lshr || Ice::InstArithmetic::Ashr)));
 
 		Ice::Variable *result = ::function->makeVariable(lhs->getType());
 		Ice::InstArithmetic *arithmetic = Ice::InstArithmetic::create(::function, op, result, lhs, rhs);
@@ -435,59 +655,155 @@ namespace sw
 		return createArithmetic(Ice::InstArithmetic::Xor, lhs, rhs);
 	}
 
-	Value *Nucleus::createAssign(Constant *constant)
+	static Ice::Variable *createAssign(Ice::Operand *constant)
 	{
 		Ice::Variable *value = ::function->makeVariable(constant->getType());
 		auto assign = Ice::InstAssign::create(::function, value, constant);
 		::basicBlock->appendInst(assign);
 
-		return V(value);
+		return value;
 	}
 
 	Value *Nucleus::createNeg(Value *v)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createSub(createNullValue(T(v->getType())), v);
 	}
 
 	Value *Nucleus::createFNeg(Value *v)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		double c[4] = {-0.0, -0.0, -0.0, -0.0};
+		Value *negativeZero = Ice::isVectorType(v->getType()) ?
+		                      createConstantVector(c, T(v->getType())) :
+		                      V(::context->getConstantFloat(-0.0f));
+
+		return createFSub(negativeZero, v);
 	}
 
 	Value *Nucleus::createNot(Value *v)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		if(Ice::isScalarIntegerType(v->getType()))
+		{
+			return createXor(v, V(::context->getConstantInt(v->getType(), -1)));
+		}
+		else   // Vector
+		{
+			int64_t c[4] = {-1, -1, -1, -1};
+			return createXor(v, createConstantVector(c, T(v->getType())));
+		}
 	}
 
 	Value *Nucleus::createLoad(Value *ptr, Type *type, bool isVolatile, unsigned int align)
 	{
-		Ice::Variable *value = ::function->makeVariable(T(type));
-		auto load = Ice::InstLoad::create(::function, value, ptr, align);
-		::basicBlock->appendInst(load);
-		return V(value);
+		int valueType = (int)reinterpret_cast<intptr_t>(type);
+		Ice::Variable *result = ::function->makeVariable(T(type));
+
+		if(valueType & EmulatedBits)
+		{
+			switch(valueType)
+			{
+			case Type_v4i8:
+			case Type_v2i16:
+				{
+					const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::LoadSubVector, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+					auto target = ::context->getConstantUndef(Ice::IceType_i32);
+					auto load = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+					load->addArg(ptr);
+					load->addArg(::context->getConstantInt32(4));
+					::basicBlock->appendInst(load);
+				}
+				break;
+			case Type_v2i32:
+			case Type_v8i8:
+			case Type_v4i16:
+			case Type_v2f32:
+				{
+					const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::LoadSubVector, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+					auto target = ::context->getConstantUndef(Ice::IceType_i32);
+					auto load = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+					load->addArg(ptr);
+					load->addArg(::context->getConstantInt32(8));
+					::basicBlock->appendInst(load);
+				}
+				break;
+			default: assert(false && "UNIMPLEMENTED");
+			}
+		}
+		else
+		{
+			auto load = Ice::InstLoad::create(::function, result, ptr, align);
+			::basicBlock->appendInst(load);
+		}
+
+		return V(result);
 	}
 
 	Value *Nucleus::createStore(Value *value, Value *ptr, Type *type, bool isVolatile, unsigned int align)
 	{
-		auto store = Ice::InstStore::create(::function, value, ptr, align);
-		::basicBlock->appendInst(store);
-		return value;
-	}
+		int valueType = (int)reinterpret_cast<intptr_t>(type);
 
-	Constant *Nucleus::createStore(Constant *constant, Value *ptr, Type *type, bool isVolatile, unsigned int align)
-	{
-		auto store = Ice::InstStore::create(::function, constant, ptr, align);
-		::basicBlock->appendInst(store);
-		return constant;
+		if(valueType & EmulatedBits)
+		{
+			switch(valueType)
+			{
+			case Type_v4i8:
+			case Type_v2i16:
+				{
+					const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::StoreSubVector, Ice::Intrinsics::SideEffects_T, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_T};
+					auto target = ::context->getConstantUndef(Ice::IceType_i32);
+					auto store = Ice::InstIntrinsicCall::create(::function, 3, nullptr, target, intrinsic);
+					store->addArg(value);
+					store->addArg(ptr);
+					store->addArg(::context->getConstantInt32(4));
+					::basicBlock->appendInst(store);
+				}
+				break;
+			case Type_v2i32:
+			case Type_v8i8:
+			case Type_v4i16:
+			case Type_v2f32:
+				{
+					const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::StoreSubVector, Ice::Intrinsics::SideEffects_T, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_T};
+					auto target = ::context->getConstantUndef(Ice::IceType_i32);
+					auto store = Ice::InstIntrinsicCall::create(::function, 3, nullptr, target, intrinsic);
+					store->addArg(value);
+					store->addArg(ptr);
+					store->addArg(::context->getConstantInt32(8));
+					::basicBlock->appendInst(store);
+				}
+				break;
+			default: assert(false && "UNIMPLEMENTED");
+			}
+		}
+		else
+		{
+			assert(T(value->getType()) == type);
+
+			auto store = Ice::InstStore::create(::function, value, ptr, align);
+			::basicBlock->appendInst(store);
+		}
+
+		return value;
 	}
 
 	Value *Nucleus::createGEP(Value *ptr, Type *type, Value *index)
 	{
 		assert(index->getType() == Ice::IceType_i32);
 
+		if(auto *constant = llvm::dyn_cast<Ice::ConstantInteger32>(index))
+		{
+			int32_t offset = constant->getValue() * (int)Ice::typeWidthInBytes(T(type));
+
+			if(offset == 0)
+			{
+				return ptr;
+			}
+
+			return createAdd(ptr, createConstantInt(offset));
+		}
+
 		if(!Ice::isByteSizedType(T(type)))
 		{
-			index = createMul(index, createAssign(createConstantInt((int)Ice::typeWidthInBytes(T(type)))));
+			index = createMul(index, createConstantInt((int)Ice::typeWidthInBytes(T(type))));
 		}
 
 		if(sizeof(void*) == 8)
@@ -505,7 +821,7 @@ namespace sw
 
 	static Value *createCast(Ice::InstCast::OpKind op, Value *v, Type *destType)
 	{
-		if(T(v->getType()) == destType)
+		if(v->getType() == T(destType))
 		{
 			return v;
 		}
@@ -562,135 +878,147 @@ namespace sw
 		return createCast(Ice::InstCast::Bitcast, v, destType);
 	}
 
-	Value *Nucleus::createIntCast(Value *v, Type *destType, bool isSigned)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpEQ(Value *lhs, Value *rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpNE(Value *lhs, Value *rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpUGT(Value *lhs, Value *rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpUGE(Value *lhs, Value *rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpULT(Value *lhs, Value *rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpULE(Value *lhs, Value *rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpSGT(Value *lhs, Value *rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpSGE(Value *lhs, Value *rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Value *Nucleus::createICmpSLT(Value *lhs, Value *rhs)
+	static Value *createIntCompare(Ice::InstIcmp::ICond condition, Value *lhs, Value *rhs)
 	{
 		assert(lhs->getType() == rhs->getType());
 
-		auto result = ::function->makeVariable(Ice::IceType_i1);
-		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Slt, result, lhs, rhs);
+		auto result = ::function->makeVariable(Ice::isScalarIntegerType(lhs->getType()) ? Ice::IceType_i1 : lhs->getType());
+		auto cmp = Ice::InstIcmp::create(::function, condition, result, lhs, rhs);
 		::basicBlock->appendInst(cmp);
 
 		return V(result);
 	}
 
+	Value *Nucleus::createICmpEQ(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Eq, lhs, rhs);
+	}
+
+	Value *Nucleus::createICmpNE(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Ne, lhs, rhs);
+	}
+
+	Value *Nucleus::createICmpUGT(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Ugt, lhs, rhs);
+	}
+
+	Value *Nucleus::createICmpUGE(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Uge, lhs, rhs);
+	}
+
+	Value *Nucleus::createICmpULT(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Ult, lhs, rhs);
+	}
+
+	Value *Nucleus::createICmpULE(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Ule, lhs, rhs);
+	}
+
+	Value *Nucleus::createICmpSGT(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Sgt, lhs, rhs);
+	}
+
+	Value *Nucleus::createICmpSGE(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Sge, lhs, rhs);
+	}
+
+	Value *Nucleus::createICmpSLT(Value *lhs, Value *rhs)
+	{
+		return createIntCompare(Ice::InstIcmp::Slt, lhs, rhs);
+	}
+
 	Value *Nucleus::createICmpSLE(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createIntCompare(Ice::InstIcmp::Sle, lhs, rhs);
+	}
+
+	static Value *createFloatCompare(Ice::InstFcmp::FCond condition, Value *lhs, Value *rhs)
+	{
+		assert(lhs->getType() == rhs->getType());
+		assert(Ice::isScalarFloatingType(lhs->getType()) || lhs->getType() == Ice::IceType_v4f32);
+
+		auto result = ::function->makeVariable(Ice::isScalarFloatingType(lhs->getType()) ? Ice::IceType_i1 : Ice::IceType_v4i32);
+		auto cmp = Ice::InstFcmp::create(::function, condition, result, lhs, rhs);
+		::basicBlock->appendInst(cmp);
+
+		return V(result);
 	}
 
 	Value *Nucleus::createFCmpOEQ(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Oeq, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpOGT(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Ogt, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpOGE(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Oge, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpOLT(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Olt, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpOLE(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Ole, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpONE(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::One, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpORD(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Ord, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpUNO(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Uno, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpUEQ(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Ueq, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpUGT(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Ugt, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpUGE(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Uge, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpULT(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Ult, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpULE(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Ule, lhs, rhs);
 	}
 
 	Value *Nucleus::createFCmpUNE(Value *lhs, Value *rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createFloatCompare(Ice::InstFcmp::Une, lhs, rhs);
 	}
 
 	Value *Nucleus::createExtractElement(Value *vector, Type *type, int index)
@@ -731,22 +1059,32 @@ namespace sw
 
 	Value *Nucleus::createSelect(Value *C, Value *ifTrue, Value *ifFalse)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		assert(ifTrue->getType() == ifFalse->getType());
+
+		auto result = ::function->makeVariable(ifTrue->getType());
+		auto *select = Ice::InstSelect::create(::function, result, C, ifTrue, ifFalse);
+		::basicBlock->appendInst(select);
+
+		return V(result);
 	}
 
-	Value *Nucleus::createSwitch(Value *v, BasicBlock *Dest, unsigned NumCases)
+	SwitchCases *Nucleus::createSwitch(Value *control, BasicBlock *defaultBranch, unsigned numCases)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		auto switchInst = Ice::InstSwitch::create(::function, numCases, control, defaultBranch);
+		::basicBlock->appendInst(switchInst);
+
+		return reinterpret_cast<SwitchCases*>(switchInst);
 	}
 
-	void Nucleus::addSwitchCase(Value *Switch, int Case, BasicBlock *Branch)
+	void Nucleus::addSwitchCase(SwitchCases *switchCases, int label, BasicBlock *branch)
 	{
-		assert(false && "UNIMPLEMENTED"); return;
+		switchCases->addBranch(label, label, branch);
 	}
 
 	void Nucleus::createUnreachable()
 	{
-		assert(false && "UNIMPLEMENTED");
+		Ice::InstUnreachable *unreachable = Ice::InstUnreachable::create(::function);
+		::basicBlock->appendInst(unreachable);
 	}
 
 	static Value *createSwizzle4(Value *val, unsigned char select)
@@ -764,12 +1102,17 @@ namespace sw
 
 	static Value *createMask4(Value *lhs, Value *rhs, unsigned char select)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
+		int64_t mask[4] = {0, 0, 0, 0};
 
-	Constant *Nucleus::createConstantPointer(const void *address, Type *Ty, bool isConstant, unsigned int Align)
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		mask[(select >> 0) & 0x03] = -1;
+		mask[(select >> 2) & 0x03] = -1;
+		mask[(select >> 4) & 0x03] = -1;
+		mask[(select >> 6) & 0x03] = -1;
+
+		Value *condition = Nucleus::createConstantVector(mask, T(Ice::IceType_v4i1));
+		Value *result = Nucleus::createSelect(condition, rhs, lhs);
+
+		return result;
 	}
 
 	Type *Nucleus::getPointerType(Type *ElementType)
@@ -784,64 +1127,174 @@ namespace sw
 		}
 	}
 
-	Constant *Nucleus::createNullValue(Type *Ty)
+	Value *Nucleus::createNullValue(Type *Ty)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		if(Ice::isVectorType(T(Ty)))
+		{
+			int64_t c[4] = {0, 0, 0, 0};
+			return createConstantVector(c, Ty);
+		}
+		else
+		{
+			return V(::context->getConstantZero(T(Ty)));
+		}
 	}
 
-	Constant *Nucleus::createConstantInt(int64_t i)
+	Value *Nucleus::createConstantLong(int64_t i)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return V(::context->getConstantInt64(i));
 	}
 
-	Constant *Nucleus::createConstantInt(int i)
+	Value *Nucleus::createConstantInt(int i)
 	{
-		return C(::context->getConstantInt32(i));
+		return V(::context->getConstantInt32(i));
 	}
 
-	Constant *Nucleus::createConstantInt(unsigned int i)
+	Value *Nucleus::createConstantInt(unsigned int i)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return V(::context->getConstantInt32(i));
 	}
 
-	Constant *Nucleus::createConstantBool(bool b)
+	Value *Nucleus::createConstantBool(bool b)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return V(::context->getConstantInt1(b));
 	}
 
-	Constant *Nucleus::createConstantByte(signed char i)
+	Value *Nucleus::createConstantByte(signed char i)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return V(::context->getConstantInt8(i));
 	}
 
-	Constant *Nucleus::createConstantByte(unsigned char i)
+	Value *Nucleus::createConstantByte(unsigned char i)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return V(::context->getConstantInt8(i));
 	}
 
-	Constant *Nucleus::createConstantShort(short i)
+	Value *Nucleus::createConstantShort(short i)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return V(::context->getConstantInt16(i));
 	}
 
-	Constant *Nucleus::createConstantShort(unsigned short i)
+	Value *Nucleus::createConstantShort(unsigned short i)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return V(::context->getConstantInt16(i));
 	}
 
-	Constant *Nucleus::createConstantFloat(float x)
+	Value *Nucleus::createConstantFloat(float x)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return V(::context->getConstantFloat(x));
 	}
 
-	Constant *Nucleus::createNullPointer(Type *Ty)
+	Value *Nucleus::createNullPointer(Type *Ty)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return createNullValue(T(sizeof(void*) == 8 ? Ice::IceType_i64 : Ice::IceType_i32));
 	}
 
-	Constant *Nucleus::createConstantVector(Constant *const *Vals, unsigned NumVals)
+	Value *Nucleus::createConstantVector(const int64_t *constants, Type *type)
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		const int vectorSize = 16;
+		assert(Ice::typeWidthInBytes(T(type)) == vectorSize);
+		const int alignment = vectorSize;
+		auto globalPool = ::function->getGlobalPool();
+
+		const int64_t *i = constants;
+		const double *f = reinterpret_cast<const double*>(constants);
+		Ice::VariableDeclaration::DataInitializer *dataInitializer = nullptr;
+
+		switch((int)reinterpret_cast<intptr_t>(type))
+		{
+		case Ice::IceType_v4i32:
+		case Ice::IceType_v4i1:
+			{
+				const int initializer[4] = {(int)i[0], (int)i[1], (int)i[2], (int)i[3]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		case Ice::IceType_v4f32:
+			{
+				const float initializer[4] = {(float)f[0], (float)f[1], (float)f[2], (float)f[3]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		case Ice::IceType_v8i16:
+		case Ice::IceType_v8i1:
+			{
+				const short initializer[8] = {(short)i[0], (short)i[1], (short)i[2], (short)i[3], (short)i[4], (short)i[5], (short)i[6], (short)i[7]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		case Ice::IceType_v16i8:
+		case Ice::IceType_v16i1:
+			{
+				const char initializer[16] = {(char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[4], (char)i[5], (char)i[6], (char)i[7], (char)i[8], (char)i[9], (char)i[10], (char)i[11], (char)i[12], (char)i[13], (char)i[14], (char)i[15]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		case Type_v2i32:
+			{
+				const int initializer[4] = {(int)i[0], (int)i[1], (int)i[0], (int)i[1]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		case Type_v2f32:
+			{
+				const float initializer[4] = {(float)f[0], (float)f[1], (float)f[0], (float)f[1]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		case Type_v4i16:
+			{
+				const short initializer[8] = {(short)i[0], (short)i[1], (short)i[2], (short)i[3], (short)i[0], (short)i[1], (short)i[2], (short)i[3]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		case Type_v8i8:
+			{
+				const char initializer[16] = {(char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[4], (char)i[5], (char)i[6], (char)i[7], (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[4], (char)i[5], (char)i[6], (char)i[7]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		case Type_v4i8:
+			{
+				const char initializer[16] = {(char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[0], (char)i[1], (char)i[2], (char)i[3]};
+				static_assert(sizeof(initializer) == vectorSize, "!");
+				dataInitializer = Ice::VariableDeclaration::DataInitializer::create(globalPool, (const char*)initializer, vectorSize);
+			}
+			break;
+		default:
+			assert(false && "Unknown constant vector type" && type);
+		}
+
+		auto name = Ice::GlobalString::createWithoutString(::context);
+		auto *variableDeclaration = Ice::VariableDeclaration::create(globalPool);
+		variableDeclaration->setName(name);
+		variableDeclaration->setAlignment(alignment);
+		variableDeclaration->setIsConstant(true);
+		variableDeclaration->addInitializer(dataInitializer);
+
+		::function->addGlobal(variableDeclaration);
+
+		constexpr int32_t offset = 0;
+		Ice::Operand *ptr = ::context->getConstantSym(offset, name);
+
+		Ice::Variable *result = ::function->makeVariable(T(type));
+		auto load = Ice::InstLoad::create(::function, result, ptr, alignment);
+		::basicBlock->appendInst(load);
+
+		return V(result);
+	}
+
+	Value *Nucleus::createConstantVector(const double *constants, Type *type)
+	{
+		return createConstantVector((const int64_t*)constants, type);
 	}
 
 	Type *Void::getType()
@@ -880,14 +1333,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<Bool> Bool::operator=(RValue<Bool> rhs) const
+	RValue<Bool> Bool::operator=(RValue<Bool> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Bool> Bool::operator=(const Bool &rhs) const
+	RValue<Bool> Bool::operator=(const Bool &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -895,7 +1348,7 @@ namespace sw
 		return RValue<Bool>(value);
 	}
 
-	RValue<Bool> Bool::operator=(const Reference<Bool> &rhs) const
+	RValue<Bool> Bool::operator=(const Reference<Bool> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -920,7 +1373,7 @@ namespace sw
 
 	Type *Bool::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_i1);
 	}
 
 	Byte::Byte(Argument<Byte> argument)
@@ -980,14 +1433,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<Byte> Byte::operator=(RValue<Byte> rhs) const
+	RValue<Byte> Byte::operator=(RValue<Byte> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Byte> Byte::operator=(const Byte &rhs) const
+	RValue<Byte> Byte::operator=(const Byte &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -995,7 +1448,7 @@ namespace sw
 		return RValue<Byte>(value);
 	}
 
-	RValue<Byte> Byte::operator=(const Reference<Byte> &rhs) const
+	RValue<Byte> Byte::operator=(const Reference<Byte> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -1053,52 +1506,52 @@ namespace sw
 		return RValue<Byte>(Nucleus::createLShr(lhs.value, rhs.value));
 	}
 
-	RValue<Byte> operator+=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator+=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Byte> operator-=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator-=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<Byte> operator*=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator*=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-	RValue<Byte> operator/=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator/=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs / rhs;
 	}
 
-	RValue<Byte> operator%=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator%=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs % rhs;
 	}
 
-	RValue<Byte> operator&=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator&=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<Byte> operator|=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator|=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<Byte> operator^=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator^=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<Byte> operator<<=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator<<=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<Byte> operator>>=(const Byte &lhs, RValue<Byte> rhs)
+	RValue<Byte> operator>>=(Byte &lhs, RValue<Byte> rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -1118,35 +1571,29 @@ namespace sw
 		return RValue<Byte>(Nucleus::createNot(val.value));
 	}
 
-	RValue<Byte> operator++(const Byte &val, int)   // Post-increment
+	RValue<Byte> operator++(Byte &val, int)   // Post-increment
 	{
 		RValue<Byte> res = val;
-
-		assert(false && "UNIMPLEMENTED");
-
+		val += Byte(1);
 		return res;
 	}
 
-	const Byte &operator++(const Byte &val)   // Pre-increment
+	const Byte &operator++(Byte &val)   // Pre-increment
 	{
-		assert(false && "UNIMPLEMENTED");
-
+		val += Byte(1);
 		return val;
 	}
 
-	RValue<Byte> operator--(const Byte &val, int)   // Post-decrement
+	RValue<Byte> operator--(Byte &val, int)   // Post-decrement
 	{
 		RValue<Byte> res = val;
-
-		assert(false && "UNIMPLEMENTED");
-
+		val -= Byte(1);
 		return res;
 	}
 
-	const Byte &operator--(const Byte &val)   // Pre-decrement
+	const Byte &operator--(Byte &val)   // Pre-decrement
 	{
-		assert(false && "UNIMPLEMENTED");
-
+		val -= Byte(1);
 		return val;
 	}
 
@@ -1230,14 +1677,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<SByte> SByte::operator=(RValue<SByte> rhs) const
+	RValue<SByte> SByte::operator=(RValue<SByte> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<SByte> SByte::operator=(const SByte &rhs) const
+	RValue<SByte> SByte::operator=(const SByte &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -1245,7 +1692,7 @@ namespace sw
 		return RValue<SByte>(value);
 	}
 
-	RValue<SByte> SByte::operator=(const Reference<SByte> &rhs) const
+	RValue<SByte> SByte::operator=(const Reference<SByte> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -1303,52 +1750,52 @@ namespace sw
 		return RValue<SByte>(Nucleus::createAShr(lhs.value, rhs.value));
 	}
 
-	RValue<SByte> operator+=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator+=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<SByte> operator-=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator-=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<SByte> operator*=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator*=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-	RValue<SByte> operator/=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator/=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs / rhs;
 	}
 
-	RValue<SByte> operator%=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator%=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs % rhs;
 	}
 
-	RValue<SByte> operator&=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator&=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<SByte> operator|=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator|=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<SByte> operator^=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator^=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<SByte> operator<<=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator<<=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<SByte> operator>>=(const SByte &lhs, RValue<SByte> rhs)
+	RValue<SByte> operator>>=(SByte &lhs, RValue<SByte> rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -1368,38 +1815,29 @@ namespace sw
 		return RValue<SByte>(Nucleus::createNot(val.value));
 	}
 
-	RValue<SByte> operator++(const SByte &val, int)   // Post-increment
+	RValue<SByte> operator++(SByte &val, int)   // Post-increment
 	{
 		RValue<SByte> res = val;
-
-		assert(false && "UNIMPLEMENTED");
-
+		val += SByte(1);
 		return res;
 	}
 
-	const SByte &operator++(const SByte &val)   // Pre-increment
+	const SByte &operator++(SByte &val)   // Pre-increment
 	{
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val += SByte(1);
 		return val;
 	}
 
-	RValue<SByte> operator--(const SByte &val, int)   // Post-decrement
+	RValue<SByte> operator--(SByte &val, int)   // Post-decrement
 	{
 		RValue<SByte> res = val;
-
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val -= SByte(1);
 		return res;
 	}
 
-	const SByte &operator--(const SByte &val)   // Pre-decrement
+	const SByte &operator--(SByte &val)   // Pre-decrement
 	{
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val -= SByte(1);
 		return val;
 	}
 
@@ -1435,7 +1873,7 @@ namespace sw
 
 	Type *SByte::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_i8);
 	}
 
 	Short::Short(Argument<Short> argument)
@@ -1476,14 +1914,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<Short> Short::operator=(RValue<Short> rhs) const
+	RValue<Short> Short::operator=(RValue<Short> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Short> Short::operator=(const Short &rhs) const
+	RValue<Short> Short::operator=(const Short &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -1491,7 +1929,7 @@ namespace sw
 		return RValue<Short>(value);
 	}
 
-	RValue<Short> Short::operator=(const Reference<Short> &rhs) const
+	RValue<Short> Short::operator=(const Reference<Short> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -1549,52 +1987,52 @@ namespace sw
 		return RValue<Short>(Nucleus::createAShr(lhs.value, rhs.value));
 	}
 
-	RValue<Short> operator+=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator+=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Short> operator-=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator-=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<Short> operator*=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator*=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-	RValue<Short> operator/=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator/=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs / rhs;
 	}
 
-	RValue<Short> operator%=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator%=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs % rhs;
 	}
 
-	RValue<Short> operator&=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator&=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<Short> operator|=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator|=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<Short> operator^=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator^=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<Short> operator<<=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator<<=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<Short> operator>>=(const Short &lhs, RValue<Short> rhs)
+	RValue<Short> operator>>=(Short &lhs, RValue<Short> rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -1614,39 +2052,29 @@ namespace sw
 		return RValue<Short>(Nucleus::createNot(val.value));
 	}
 
-	RValue<Short> operator++(const Short &val, int)   // Post-increment
+	RValue<Short> operator++(Short &val, int)   // Post-increment
 	{
 		RValue<Short> res = val;
-
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val += Short(1);
 		return res;
 	}
 
-	const Short &operator++(const Short &val)   // Pre-increment
+	const Short &operator++(Short &val)   // Pre-increment
 	{
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val += Short(1);
 		return val;
 	}
 
-	RValue<Short> operator--(const Short &val, int)   // Post-decrement
+	RValue<Short> operator--(Short &val, int)   // Post-decrement
 	{
 		RValue<Short> res = val;
-
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val -= Short(1);
 		return res;
 	}
 
-	const Short &operator--(const Short &val)   // Pre-decrement
+	const Short &operator--(Short &val)   // Pre-decrement
 	{
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val -= Short(1);
 		return val;
 	}
 
@@ -1682,7 +2110,7 @@ namespace sw
 
 	Type *Short::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_i16);
 	}
 
 	UShort::UShort(Argument<UShort> argument)
@@ -1730,14 +2158,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<UShort> UShort::operator=(RValue<UShort> rhs) const
+	RValue<UShort> UShort::operator=(RValue<UShort> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<UShort> UShort::operator=(const UShort &rhs) const
+	RValue<UShort> UShort::operator=(const UShort &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -1745,7 +2173,7 @@ namespace sw
 		return RValue<UShort>(value);
 	}
 
-	RValue<UShort> UShort::operator=(const Reference<UShort> &rhs) const
+	RValue<UShort> UShort::operator=(const Reference<UShort> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -1803,52 +2231,52 @@ namespace sw
 		return RValue<UShort>(Nucleus::createLShr(lhs.value, rhs.value));
 	}
 
-	RValue<UShort> operator+=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator+=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<UShort> operator-=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator-=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<UShort> operator*=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator*=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-	RValue<UShort> operator/=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator/=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs / rhs;
 	}
 
-	RValue<UShort> operator%=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator%=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs % rhs;
 	}
 
-	RValue<UShort> operator&=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator&=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<UShort> operator|=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator|=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<UShort> operator^=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator^=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<UShort> operator<<=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator<<=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<UShort> operator>>=(const UShort &lhs, RValue<UShort> rhs)
+	RValue<UShort> operator>>=(UShort &lhs, RValue<UShort> rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -1868,39 +2296,29 @@ namespace sw
 		return RValue<UShort>(Nucleus::createNot(val.value));
 	}
 
-	RValue<UShort> operator++(const UShort &val, int)   // Post-increment
+	RValue<UShort> operator++(UShort &val, int)   // Post-increment
 	{
 		RValue<UShort> res = val;
-
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val += UShort(1);
 		return res;
 	}
 
-	const UShort &operator++(const UShort &val)   // Pre-increment
+	const UShort &operator++(UShort &val)   // Pre-increment
 	{
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val += UShort(1);
 		return val;
 	}
 
-	RValue<UShort> operator--(const UShort &val, int)   // Post-decrement
+	RValue<UShort> operator--(UShort &val, int)   // Post-decrement
 	{
 		RValue<UShort> res = val;
-
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val -= UShort(1);
 		return res;
 	}
 
-	const UShort &operator--(const UShort &val)   // Pre-decrement
+	const UShort &operator--(UShort &val)   // Pre-decrement
 	{
-		assert(false && "UNIMPLEMENTED");
-		assert(false && "UNIMPLEMENTED");
-
+		val -= UShort(1);
 		return val;
 	}
 
@@ -1936,73 +2354,69 @@ namespace sw
 
 	Type *UShort::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_i16);
+	}
+
+	Byte4::Byte4(RValue<Byte8> cast)
+	{
+	//	xyzw.parent = this;
+
+		storeValue(Nucleus::createBitCast(cast.value, getType()));
+	}
+
+	Byte4::Byte4(const Reference<Byte4> &rhs)
+	{
+	//	xyzw.parent = this;
+
+		Value *value = rhs.loadValue();
+		storeValue(value);
 	}
 
 	Type *Byte4::getType()
 	{
-		#if 0
-			return VectorType::get(Byte::getType(), 4);
-		#else
-			return UInt::getType();   // FIXME
-		#endif
+		return T(Type_v4i8);
 	}
 
 	Type *SByte4::getType()
 	{
-		#if 0
-			return VectorType::get(SByte::getType(), 4);
-		#else
-			return Int::getType();   // FIXME
-		#endif
+		return T(Type_v4i8);
 	}
 
 	Byte8::Byte8()
 	{
-	//	xyzw.parent = this;
 	}
 
 	Byte8::Byte8(uint8_t x0, uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4, uint8_t x5, uint8_t x6, uint8_t x7)
 	{
-	//	xyzw.parent = this;
-	}
-
-	Byte8::Byte8(int64_t x)
-	{
-	//	xyzw.parent = this;
+		int64_t constantVector[8] = {x0, x1, x2, x3, x4, x5, x6, x7};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	Byte8::Byte8(RValue<Byte8> rhs)
 	{
-	//	xyzw.parent = this;
-
 		storeValue(rhs.value);
 	}
 
 	Byte8::Byte8(const Byte8 &rhs)
 	{
-	//	xyzw.parent = this;
-
 		Value *value = rhs.loadValue();
 		storeValue(value);
 	}
 
 	Byte8::Byte8(const Reference<Byte8> &rhs)
 	{
-	//	xyzw.parent = this;
-
 		Value *value = rhs.loadValue();
 		storeValue(value);
 	}
 
-	RValue<Byte8> Byte8::operator=(RValue<Byte8> rhs) const
+	RValue<Byte8> Byte8::operator=(RValue<Byte8> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Byte8> Byte8::operator=(const Byte8 &rhs) const
+	RValue<Byte8> Byte8::operator=(const Byte8 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2010,7 +2424,7 @@ namespace sw
 		return RValue<Byte8>(value);
 	}
 
-	RValue<Byte8> Byte8::operator=(const Reference<Byte8> &rhs) const
+	RValue<Byte8> Byte8::operator=(const Reference<Byte8> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2020,12 +2434,12 @@ namespace sw
 
 	RValue<Byte8> operator+(RValue<Byte8> lhs, RValue<Byte8> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		return RValue<Byte8>(Nucleus::createAdd(lhs.value, rhs.value));
 	}
 
 	RValue<Byte8> operator-(RValue<Byte8> lhs, RValue<Byte8> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		return RValue<Byte8>(Nucleus::createSub(lhs.value, rhs.value));
 	}
 
 //	RValue<Byte8> operator*(RValue<Byte8> lhs, RValue<Byte8> rhs)
@@ -2045,75 +2459,75 @@ namespace sw
 
 	RValue<Byte8> operator&(RValue<Byte8> lhs, RValue<Byte8> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		return RValue<Byte8>(Nucleus::createAnd(lhs.value, rhs.value));
 	}
 
 	RValue<Byte8> operator|(RValue<Byte8> lhs, RValue<Byte8> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		return RValue<Byte8>(Nucleus::createOr(lhs.value, rhs.value));
 	}
 
 	RValue<Byte8> operator^(RValue<Byte8> lhs, RValue<Byte8> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		return RValue<Byte8>(Nucleus::createXor(lhs.value, rhs.value));
 	}
 
 //	RValue<Byte8> operator<<(RValue<Byte8> lhs, unsigned char rhs)
 //	{
-//		return RValue<Byte8>(Nucleus::createShl(lhs.value, rhs.value));
+//		return RValue<Byte8>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 //	}
 
 //	RValue<Byte8> operator>>(RValue<Byte8> lhs, unsigned char rhs)
 //	{
-//		return RValue<Byte8>(Nucleus::createLShr(lhs.value, rhs.value));
+//		return RValue<Byte8>(Nucleus::createLShr(lhs.value, V(::context->getConstantInt32(rhs))));
 //	}
 
-	RValue<Byte8> operator+=(const Byte8 &lhs, RValue<Byte8> rhs)
+	RValue<Byte8> operator+=(Byte8 &lhs, RValue<Byte8> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Byte8> operator-=(const Byte8 &lhs, RValue<Byte8> rhs)
+	RValue<Byte8> operator-=(Byte8 &lhs, RValue<Byte8> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-//	RValue<Byte8> operator*=(const Byte8 &lhs, RValue<Byte8> rhs)
+//	RValue<Byte8> operator*=(Byte8 &lhs, RValue<Byte8> rhs)
 //	{
 //		return lhs = lhs * rhs;
 //	}
 
-//	RValue<Byte8> operator/=(const Byte8 &lhs, RValue<Byte8> rhs)
+//	RValue<Byte8> operator/=(Byte8 &lhs, RValue<Byte8> rhs)
 //	{
 //		return lhs = lhs / rhs;
 //	}
 
-//	RValue<Byte8> operator%=(const Byte8 &lhs, RValue<Byte8> rhs)
+//	RValue<Byte8> operator%=(Byte8 &lhs, RValue<Byte8> rhs)
 //	{
 //		return lhs = lhs % rhs;
 //	}
 
-	RValue<Byte8> operator&=(const Byte8 &lhs, RValue<Byte8> rhs)
+	RValue<Byte8> operator&=(Byte8 &lhs, RValue<Byte8> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<Byte8> operator|=(const Byte8 &lhs, RValue<Byte8> rhs)
+	RValue<Byte8> operator|=(Byte8 &lhs, RValue<Byte8> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<Byte8> operator^=(const Byte8 &lhs, RValue<Byte8> rhs)
+	RValue<Byte8> operator^=(Byte8 &lhs, RValue<Byte8> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-//	RValue<Byte8> operator<<=(const Byte8 &lhs, RValue<Byte8> rhs)
+//	RValue<Byte8> operator<<=(Byte8 &lhs, RValue<Byte8> rhs)
 //	{
 //		return lhs = lhs << rhs;
 //	}
 
-//	RValue<Byte8> operator>>=(const Byte8 &lhs, RValue<Byte8> rhs)
+//	RValue<Byte8> operator>>=(Byte8 &lhs, RValue<Byte8> rhs)
 //	{
 //		return lhs = lhs >> rhs;
 //	}
@@ -2135,47 +2549,74 @@ namespace sw
 
 	RValue<Byte8> AddSat(RValue<Byte8> x, RValue<Byte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v16i8);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::AddSaturateUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto paddusb = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		paddusb->addArg(x.value);
+		paddusb->addArg(y.value);
+		::basicBlock->appendInst(paddusb);
+
+		return RValue<Byte8>(V(result));
 	}
 
 	RValue<Byte8> SubSat(RValue<Byte8> x, RValue<Byte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v16i8);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::SubtractSaturateUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto psubusw = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		psubusw->addArg(x.value);
+		psubusw->addArg(y.value);
+		::basicBlock->appendInst(psubusw);
+
+		return RValue<Byte8>(V(result));
 	}
 
 	RValue<Short4> Unpack(RValue<Byte4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		int shuffle[16] = {0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7};   // Real type is v16i8
+		return RValue<Short4>(Nucleus::createShuffleVector(x.value, x.value, shuffle));
 	}
 
 	RValue<Short4> UnpackLow(RValue<Byte8> x, RValue<Byte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		int shuffle[16] = {0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23};   // Real type is v16i8
+		return RValue<Short4>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
 	}
 
 	RValue<Short4> UnpackHigh(RValue<Byte8> x, RValue<Byte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		int shuffle[16] = {0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23};   // Real type is v16i8
+		auto lowHigh = RValue<Byte16>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
+		return As<Short4>(Swizzle(As<Int4>(lowHigh), 0xEE));
 	}
 
 	RValue<Int> SignMask(RValue<Byte8> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_i32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::SignMask, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto movmsk = Ice::InstIntrinsicCall::create(::function, 1, result, target, intrinsic);
+		movmsk->addArg(x.value);
+		::basicBlock->appendInst(movmsk);
+
+		return RValue<Int>(V(result));
 	}
 
 //	RValue<Byte8> CmpGT(RValue<Byte8> x, RValue<Byte8> y)
 //	{
-//		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+//		return RValue<Byte8>(createIntCompare(Ice::InstIcmp::Ugt, x.value, y.value));
 //	}
 
 	RValue<Byte8> CmpEQ(RValue<Byte8> x, RValue<Byte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		return RValue<Byte8>(Nucleus::createSExt(Nucleus::createICmpEQ(x.value, y.value), Int4::getType()));
 	}
 
 	Type *Byte8::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Type_v8i8);
 	}
 
 	SByte8::SByte8()
@@ -2187,14 +2628,10 @@ namespace sw
 	{
 	//	xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
-	}
+		int64_t constantVector[8] = { x0, x1, x2, x3, x4, x5, x6, x7 };
+		Value *vector = V(Nucleus::createConstantVector(constantVector, getType()));
 
-	SByte8::SByte8(int64_t x)
-	{
-	//	xyzw.parent = this;
-
-		assert(false && "UNIMPLEMENTED");
+		storeValue(Nucleus::createBitCast(vector, getType()));
 	}
 
 	SByte8::SByte8(RValue<SByte8> rhs)
@@ -2220,14 +2657,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<SByte8> SByte8::operator=(RValue<SByte8> rhs) const
+	RValue<SByte8> SByte8::operator=(RValue<SByte8> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<SByte8> SByte8::operator=(const SByte8 &rhs) const
+	RValue<SByte8> SByte8::operator=(const SByte8 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2235,7 +2672,7 @@ namespace sw
 		return RValue<SByte8>(value);
 	}
 
-	RValue<SByte8> SByte8::operator=(const Reference<SByte8> &rhs) const
+	RValue<SByte8> SByte8::operator=(const Reference<SByte8> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2245,12 +2682,12 @@ namespace sw
 
 	RValue<SByte8> operator+(RValue<SByte8> lhs, RValue<SByte8> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<SByte8>(V(nullptr));
+		return RValue<SByte8>(Nucleus::createAdd(lhs.value, rhs.value));
 	}
 
 	RValue<SByte8> operator-(RValue<SByte8> lhs, RValue<SByte8> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<SByte8>(V(nullptr));
+		return RValue<SByte8>(Nucleus::createSub(lhs.value, rhs.value));
 	}
 
 //	RValue<SByte8> operator*(RValue<SByte8> lhs, RValue<SByte8> rhs)
@@ -2285,60 +2722,60 @@ namespace sw
 
 //	RValue<SByte8> operator<<(RValue<SByte8> lhs, unsigned char rhs)
 //	{
-//		return RValue<SByte8>(Nucleus::createShl(lhs.value, rhs.value));
+//		return RValue<SByte8>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 //	}
 
 //	RValue<SByte8> operator>>(RValue<SByte8> lhs, unsigned char rhs)
 //	{
-//		return RValue<SByte8>(Nucleus::createAShr(lhs.value, rhs.value));
+//		return RValue<SByte8>(Nucleus::createAShr(lhs.value, V(::context->getConstantInt32(rhs))));
 //	}
 
-	RValue<SByte8> operator+=(const SByte8 &lhs, RValue<SByte8> rhs)
+	RValue<SByte8> operator+=(SByte8 &lhs, RValue<SByte8> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<SByte8> operator-=(const SByte8 &lhs, RValue<SByte8> rhs)
+	RValue<SByte8> operator-=(SByte8 &lhs, RValue<SByte8> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-//	RValue<SByte8> operator*=(const SByte8 &lhs, RValue<SByte8> rhs)
+//	RValue<SByte8> operator*=(SByte8 &lhs, RValue<SByte8> rhs)
 //	{
 //		return lhs = lhs * rhs;
 //	}
 
-//	RValue<SByte8> operator/=(const SByte8 &lhs, RValue<SByte8> rhs)
+//	RValue<SByte8> operator/=(SByte8 &lhs, RValue<SByte8> rhs)
 //	{
 //		return lhs = lhs / rhs;
 //	}
 
-//	RValue<SByte8> operator%=(const SByte8 &lhs, RValue<SByte8> rhs)
+//	RValue<SByte8> operator%=(SByte8 &lhs, RValue<SByte8> rhs)
 //	{
 //		return lhs = lhs % rhs;
 //	}
 
-	RValue<SByte8> operator&=(const SByte8 &lhs, RValue<SByte8> rhs)
+	RValue<SByte8> operator&=(SByte8 &lhs, RValue<SByte8> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<SByte8> operator|=(const SByte8 &lhs, RValue<SByte8> rhs)
+	RValue<SByte8> operator|=(SByte8 &lhs, RValue<SByte8> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<SByte8> operator^=(const SByte8 &lhs, RValue<SByte8> rhs)
+	RValue<SByte8> operator^=(SByte8 &lhs, RValue<SByte8> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-//	RValue<SByte8> operator<<=(const SByte8 &lhs, RValue<SByte8> rhs)
+//	RValue<SByte8> operator<<=(SByte8 &lhs, RValue<SByte8> rhs)
 //	{
 //		return lhs = lhs << rhs;
 //	}
 
-//	RValue<SByte8> operator>>=(const SByte8 &lhs, RValue<SByte8> rhs)
+//	RValue<SByte8> operator>>=(SByte8 &lhs, RValue<SByte8> rhs)
 //	{
 //		return lhs = lhs >> rhs;
 //	}
@@ -2360,42 +2797,68 @@ namespace sw
 
 	RValue<SByte8> AddSat(RValue<SByte8> x, RValue<SByte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<SByte8>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v16i8);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::AddSaturateSigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto paddsb = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		paddsb->addArg(x.value);
+		paddsb->addArg(y.value);
+		::basicBlock->appendInst(paddsb);
+
+		return RValue<SByte8>(V(result));
 	}
 
 	RValue<SByte8> SubSat(RValue<SByte8> x, RValue<SByte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<SByte8>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v16i8);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::SubtractSaturateSigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto psubsb = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		psubsb->addArg(x.value);
+		psubsb->addArg(y.value);
+		::basicBlock->appendInst(psubsb);
+
+		return RValue<SByte8>(V(result));
 	}
 
 	RValue<Short4> UnpackLow(RValue<SByte8> x, RValue<SByte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		int shuffle[16] = {0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23};   // Real type is v16i8
+		return RValue<Short4>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
 	}
 
 	RValue<Short4> UnpackHigh(RValue<SByte8> x, RValue<SByte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		int shuffle[16] = {0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23};   // Real type is v16i8
+		auto lowHigh = RValue<Byte16>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
+		return As<Short4>(Swizzle(As<Int4>(lowHigh), 0xEE));
 	}
 
 	RValue<Int> SignMask(RValue<SByte8> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_i32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::SignMask, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto movmsk = Ice::InstIntrinsicCall::create(::function, 1, result, target, intrinsic);
+		movmsk->addArg(x.value);
+		::basicBlock->appendInst(movmsk);
+
+		return RValue<Int>(V(result));
 	}
 
 	RValue<Byte8> CmpGT(RValue<SByte8> x, RValue<SByte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		return RValue<Byte8>(createIntCompare(Ice::InstIcmp::Sgt, x.value, y.value));
 	}
 
 	RValue<Byte8> CmpEQ(RValue<SByte8> x, RValue<SByte8> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		return RValue<Byte8>(Nucleus::createSExt(Nucleus::createICmpEQ(x.value, y.value), Int4::getType()));
 	}
 
 	Type *SByte8::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Type_v8i8);
 	}
 
 	Byte16::Byte16(RValue<Byte16> rhs)
@@ -2421,14 +2884,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<Byte16> Byte16::operator=(RValue<Byte16> rhs) const
+	RValue<Byte16> Byte16::operator=(RValue<Byte16> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Byte16> Byte16::operator=(const Byte16 &rhs) const
+	RValue<Byte16> Byte16::operator=(const Byte16 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2436,7 +2899,7 @@ namespace sw
 		return RValue<Byte16>(value);
 	}
 
-	RValue<Byte16> Byte16::operator=(const Reference<Byte16> &rhs) const
+	RValue<Byte16> Byte16::operator=(const Reference<Byte16> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2446,25 +2909,53 @@ namespace sw
 
 	Type *Byte16::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_v16i8);
 	}
 
 	Type *SByte16::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_v16i8);
+	}
+
+	Short2::Short2(RValue<Short4> cast)
+	{
+		storeValue(Nucleus::createBitCast(cast.value, getType()));
+	}
+
+	Type *Short2::getType()
+	{
+		return T(Type_v2i16);
+	}
+
+	UShort2::UShort2(RValue<UShort4> cast)
+	{
+		storeValue(Nucleus::createBitCast(cast.value, getType()));
+	}
+
+	Type *UShort2::getType()
+	{
+		return T(Type_v2i16);
 	}
 
 	Short4::Short4(RValue<Int> cast)
 	{
-		Value *extend = Nucleus::createZExt(cast.value, Long::getType());
-		Value *swizzle = Swizzle(RValue<Short4>(extend), 0x00).value;
+		Value *vector = loadValue();
+		Value *insert = Nucleus::createInsertElement(vector, cast.value, 0);
+		Value *swizzle = Swizzle(RValue<Short4>(insert), 0x00).value;
 
 		storeValue(swizzle);
 	}
 
 	Short4::Short4(RValue<Int4> cast)
 	{
-		assert(false && "UNIMPLEMENTED");
+		int pshufb[16] = {0, 1, 4, 5, 8, 9, 12, 13, 0, 1, 4, 5, 8, 9, 12, 13};
+		Value *byte16 = Nucleus::createBitCast(cast.value, Byte16::getType());
+		Value *packed = Nucleus::createShuffleVector(byte16, byte16, pshufb);
+
+		Value *int2 = RValue<Int2>(Int2(RValue<Int4>(packed))).value;
+		Value *short4 = Nucleus::createBitCast(int2, Short4::getType());
+
+		storeValue(short4);
 	}
 
 //	Short4::Short4(RValue<Float> cast)
@@ -2485,14 +2976,16 @@ namespace sw
 	{
 		//	xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		int64_t constantVector[4] = {xyzw, xyzw, xyzw, xyzw};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	Short4::Short4(short x, short y, short z, short w)
 	{
-	//	xyzw.parent = this;
+		//	xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		int64_t constantVector[4] = {x, y, z, w};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	Short4::Short4(RValue<Short4> rhs)
@@ -2539,14 +3032,14 @@ namespace sw
 		storeValue(rhs.loadValue());
 	}
 
-	RValue<Short4> Short4::operator=(RValue<Short4> rhs) const
+	RValue<Short4> Short4::operator=(RValue<Short4> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Short4> Short4::operator=(const Short4 &rhs) const
+	RValue<Short4> Short4::operator=(const Short4 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2554,7 +3047,7 @@ namespace sw
 		return RValue<Short4>(value);
 	}
 
-	RValue<Short4> Short4::operator=(const Reference<Short4> &rhs) const
+	RValue<Short4> Short4::operator=(const Reference<Short4> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2562,14 +3055,14 @@ namespace sw
 		return RValue<Short4>(value);
 	}
 
-	RValue<Short4> Short4::operator=(RValue<UShort4> rhs) const
+	RValue<Short4> Short4::operator=(RValue<UShort4> rhs)
 	{
 		storeValue(rhs.value);
 
 		return RValue<Short4>(rhs);
 	}
 
-	RValue<Short4> Short4::operator=(const UShort4 &rhs) const
+	RValue<Short4> Short4::operator=(const UShort4 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2577,7 +3070,7 @@ namespace sw
 		return RValue<Short4>(value);
 	}
 
-	RValue<Short4> Short4::operator=(const Reference<UShort4> &rhs) const
+	RValue<Short4> Short4::operator=(const Reference<UShort4> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2587,17 +3080,17 @@ namespace sw
 
 	RValue<Short4> operator+(RValue<Short4> lhs, RValue<Short4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createAdd(lhs.value, rhs.value));
 	}
 
 	RValue<Short4> operator-(RValue<Short4> lhs, RValue<Short4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createSub(lhs.value, rhs.value));
 	}
 
 	RValue<Short4> operator*(RValue<Short4> lhs, RValue<Short4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createMul(lhs.value, rhs.value));
 	}
 
 //	RValue<Short4> operator/(RValue<Short4> lhs, RValue<Short4> rhs)
@@ -2612,103 +3105,75 @@ namespace sw
 
 	RValue<Short4> operator&(RValue<Short4> lhs, RValue<Short4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createAnd(lhs.value, rhs.value));
 	}
 
 	RValue<Short4> operator|(RValue<Short4> lhs, RValue<Short4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createOr(lhs.value, rhs.value));
 	}
 
 	RValue<Short4> operator^(RValue<Short4> lhs, RValue<Short4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createXor(lhs.value, rhs.value));
 	}
 
 	RValue<Short4> operator<<(RValue<Short4> lhs, unsigned char rhs)
 	{
-	//	return RValue<Short4>(Nucleus::createShl(lhs.value, rhs.value));
-
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<Short4> operator>>(RValue<Short4> lhs, unsigned char rhs)
 	{
-	//	return RValue<Short4>(Nucleus::createAShr(lhs.value, rhs.value));
-
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createAShr(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
-	RValue<Short4> operator<<(RValue<Short4> lhs, RValue<Long1> rhs)
-	{
-	//	return RValue<Short4>(Nucleus::createShl(lhs.value, rhs.value));
-
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
-	}
-
-	RValue<Short4> operator>>(RValue<Short4> lhs, RValue<Long1> rhs)
-	{
-	//	return RValue<Short4>(Nucleus::createAShr(lhs.value, rhs.value));
-
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
-	}
-
-	RValue<Short4> operator+=(const Short4 &lhs, RValue<Short4> rhs)
+	RValue<Short4> operator+=(Short4 &lhs, RValue<Short4> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Short4> operator-=(const Short4 &lhs, RValue<Short4> rhs)
+	RValue<Short4> operator-=(Short4 &lhs, RValue<Short4> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<Short4> operator*=(const Short4 &lhs, RValue<Short4> rhs)
+	RValue<Short4> operator*=(Short4 &lhs, RValue<Short4> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-//	RValue<Short4> operator/=(const Short4 &lhs, RValue<Short4> rhs)
+//	RValue<Short4> operator/=(Short4 &lhs, RValue<Short4> rhs)
 //	{
 //		return lhs = lhs / rhs;
 //	}
 
-//	RValue<Short4> operator%=(const Short4 &lhs, RValue<Short4> rhs)
+//	RValue<Short4> operator%=(Short4 &lhs, RValue<Short4> rhs)
 //	{
 //		return lhs = lhs % rhs;
 //	}
 
-	RValue<Short4> operator&=(const Short4 &lhs, RValue<Short4> rhs)
+	RValue<Short4> operator&=(Short4 &lhs, RValue<Short4> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<Short4> operator|=(const Short4 &lhs, RValue<Short4> rhs)
+	RValue<Short4> operator|=(Short4 &lhs, RValue<Short4> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<Short4> operator^=(const Short4 &lhs, RValue<Short4> rhs)
+	RValue<Short4> operator^=(Short4 &lhs, RValue<Short4> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<Short4> operator<<=(const Short4 &lhs, unsigned char rhs)
+	RValue<Short4> operator<<=(Short4 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<Short4> operator>>=(const Short4 &lhs, unsigned char rhs)
-	{
-		return lhs = lhs >> rhs;
-	}
-
-	RValue<Short4> operator<<=(const Short4 &lhs, RValue<Long1> rhs)
-	{
-		return lhs = lhs << rhs;
-	}
-
-	RValue<Short4> operator>>=(const Short4 &lhs, RValue<Long1> rhs)
+	RValue<Short4> operator>>=(Short4 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -2720,92 +3185,165 @@ namespace sw
 
 	RValue<Short4> operator-(RValue<Short4> val)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createNeg(val.value));
 	}
 
 	RValue<Short4> operator~(RValue<Short4> val)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createNot(val.value));
 	}
 
 	RValue<Short4> RoundShort4(RValue<Float4> cast)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		RValue<Int4> int4 = RoundInt(cast);
+		return As<Short4>(Pack(int4, int4));
 	}
 
 	RValue<Short4> Max(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v8i1);
+		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Sle, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<Short4>(V(result));
 	}
 
 	RValue<Short4> Min(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v8i1);
+		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Sgt, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<Short4>(V(result));
 	}
 
 	RValue<Short4> AddSat(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::AddSaturateSigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto paddsw = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		paddsw->addArg(x.value);
+		paddsw->addArg(y.value);
+		::basicBlock->appendInst(paddsw);
+
+		return RValue<Short4>(V(result));
 	}
 
 	RValue<Short4> SubSat(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::SubtractSaturateSigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto psubsw = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		psubsw->addArg(x.value);
+		psubsw->addArg(y.value);
+		::basicBlock->appendInst(psubsw);
+
+		return RValue<Short4>(V(result));
 	}
 
 	RValue<Short4> MulHigh(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::MultiplyHighSigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto pmulhw = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		pmulhw->addArg(x.value);
+		pmulhw->addArg(y.value);
+		::basicBlock->appendInst(pmulhw);
+
+		return RValue<Short4>(V(result));
 	}
 
 	RValue<Int2> MulAdd(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::MultiplyAddPairs, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto pmaddwd = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		pmaddwd->addArg(x.value);
+		pmaddwd->addArg(y.value);
+		::basicBlock->appendInst(pmaddwd);
+
+		return RValue<Int2>(V(result));
 	}
 
 	RValue<SByte8> Pack(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<SByte8>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v16i8);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::VectorPackSigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto pack = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		pack->addArg(x.value);
+		pack->addArg(y.value);
+		::basicBlock->appendInst(pack);
+
+		return As<SByte8>(Swizzle(As<Int4>(V(result)), 0x88));
 	}
 
 	RValue<Int2> UnpackLow(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		int shuffle[8] = {0, 8, 1, 9, 2, 10, 3, 11};   // Real type is v8i16
+		return RValue<Int2>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
 	}
 
 	RValue<Int2> UnpackHigh(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		int shuffle[8] = {0, 8, 1, 9, 2, 10, 3, 11};   // Real type is v8i16
+		auto lowHigh = RValue<Short8>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
+		return As<Int2>(Swizzle(As<Int4>(lowHigh), 0xEE));
 	}
 
 	RValue<Short4> Swizzle(RValue<Short4> x, unsigned char select)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		// Real type is v8i16
+		int shuffle[8] =
+		{
+			(select >> 0) & 0x03,
+			(select >> 2) & 0x03,
+			(select >> 4) & 0x03,
+			(select >> 6) & 0x03,
+			(select >> 0) & 0x03,
+			(select >> 2) & 0x03,
+			(select >> 4) & 0x03,
+			(select >> 6) & 0x03,
+		};
+
+		return RValue<Short4>(Nucleus::createShuffleVector(x.value, x.value, shuffle));
 	}
 
 	RValue<Short4> Insert(RValue<Short4> val, RValue<Short> element, int i)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createInsertElement(val.value, element.value, i));
 	}
 
 	RValue<Short> Extract(RValue<Short4> val, int i)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short>(V(nullptr));
+		return RValue<Short>(Nucleus::createExtractElement(val.value, Int::getType(), i));
 	}
 
 	RValue<Short4> CmpGT(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(createIntCompare(Ice::InstIcmp::Sgt, x.value, y.value));
 	}
 
 	RValue<Short4> CmpEQ(RValue<Short4> x, RValue<Short4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short4>(V(nullptr));
+		return RValue<Short4>(Nucleus::createSExt(Nucleus::createICmpEQ(x.value, y.value), Int4::getType()));
 	}
 
 	Type *Short4::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Type_v4i16);
 	}
 
 	UShort4::UShort4(RValue<Int4> cast)
@@ -2815,7 +3353,22 @@ namespace sw
 
 	UShort4::UShort4(RValue<Float4> cast, bool saturate)
 	{
-		assert(false && "UNIMPLEMENTED");
+		if(saturate)
+		{
+			if(true)   // SSE 4.1
+			{
+				Int4 int4(Min(cast, Float4(0xFFFF)));   // packusdw takes care of 0x0000 saturation
+				*this = As<Short4>(Pack(As<UInt4>(int4), As<UInt4>(int4)));
+			}
+			else
+			{
+				*this = Short4(Int4(Max(Min(cast, Float4(0xFFFF)), Float4(0x0000))));
+			}
+		}
+		else
+		{
+			*this = Short4(Int4(cast));
+		}
 	}
 
 	UShort4::UShort4()
@@ -2825,16 +3378,18 @@ namespace sw
 
 	UShort4::UShort4(unsigned short xyzw)
 	{
-		//	xyzw.parent = this;
+	//	xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		int64_t constantVector[4] = {xyzw, xyzw, xyzw, xyzw};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	UShort4::UShort4(unsigned short x, unsigned short y, unsigned short z, unsigned short w)
 	{
 	//	xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		int64_t constantVector[4] = {x, y, z, w};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	UShort4::UShort4(RValue<UShort4> rhs)
@@ -2883,14 +3438,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<UShort4> UShort4::operator=(RValue<UShort4> rhs) const
+	RValue<UShort4> UShort4::operator=(RValue<UShort4> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<UShort4> UShort4::operator=(const UShort4 &rhs) const
+	RValue<UShort4> UShort4::operator=(const UShort4 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2898,7 +3453,7 @@ namespace sw
 		return RValue<UShort4>(value);
 	}
 
-	RValue<UShort4> UShort4::operator=(const Reference<UShort4> &rhs) const
+	RValue<UShort4> UShort4::operator=(const Reference<UShort4> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2906,14 +3461,14 @@ namespace sw
 		return RValue<UShort4>(value);
 	}
 
-	RValue<UShort4> UShort4::operator=(RValue<Short4> rhs) const
+	RValue<UShort4> UShort4::operator=(RValue<Short4> rhs)
 	{
 		storeValue(rhs.value);
 
 		return RValue<UShort4>(rhs);
 	}
 
-	RValue<UShort4> UShort4::operator=(const Short4 &rhs) const
+	RValue<UShort4> UShort4::operator=(const Short4 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2921,7 +3476,7 @@ namespace sw
 		return RValue<UShort4>(value);
 	}
 
-	RValue<UShort4> UShort4::operator=(const Reference<Short4> &rhs) const
+	RValue<UShort4> UShort4::operator=(const Reference<Short4> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -2931,87 +3486,122 @@ namespace sw
 
 	RValue<UShort4> operator+(RValue<UShort4> lhs, RValue<UShort4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		return RValue<UShort4>(Nucleus::createAdd(lhs.value, rhs.value));
 	}
 
 	RValue<UShort4> operator-(RValue<UShort4> lhs, RValue<UShort4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		return RValue<UShort4>(Nucleus::createSub(lhs.value, rhs.value));
 	}
 
 	RValue<UShort4> operator*(RValue<UShort4> lhs, RValue<UShort4> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		return RValue<UShort4>(Nucleus::createMul(lhs.value, rhs.value));
+	}
+
+	RValue<UShort4> operator&(RValue<UShort4> lhs, RValue<UShort4> rhs)
+	{
+		return RValue<UShort4>(Nucleus::createAnd(lhs.value, rhs.value));
+	}
+
+	RValue<UShort4> operator|(RValue<UShort4> lhs, RValue<UShort4> rhs)
+	{
+		return RValue<UShort4>(Nucleus::createOr(lhs.value, rhs.value));
+	}
+
+	RValue<UShort4> operator^(RValue<UShort4> lhs, RValue<UShort4> rhs)
+	{
+		return RValue<UShort4>(Nucleus::createXor(lhs.value, rhs.value));
 	}
 
 	RValue<UShort4> operator<<(RValue<UShort4> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		return RValue<UShort4>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<UShort4> operator>>(RValue<UShort4> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		return RValue<UShort4>(Nucleus::createLShr(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
-	RValue<UShort4> operator<<(RValue<UShort4> lhs, RValue<Long1> rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
-	}
-
-	RValue<UShort4> operator>>(RValue<UShort4> lhs, RValue<Long1> rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
-	}
-
-	RValue<UShort4> operator<<=(const UShort4 &lhs, unsigned char rhs)
+	RValue<UShort4> operator<<=(UShort4 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<UShort4> operator>>=(const UShort4 &lhs, unsigned char rhs)
-	{
-		return lhs = lhs >> rhs;
-	}
-
-	RValue<UShort4> operator<<=(const UShort4 &lhs, RValue<Long1> rhs)
-	{
-		return lhs = lhs << rhs;
-	}
-
-	RValue<UShort4> operator>>=(const UShort4 &lhs, RValue<Long1> rhs)
+	RValue<UShort4> operator>>=(UShort4 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
 
 	RValue<UShort4> operator~(RValue<UShort4> val)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		return RValue<UShort4>(Nucleus::createNot(val.value));
 	}
 
 	RValue<UShort4> Max(RValue<UShort4> x, RValue<UShort4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v8i1);
+		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Ule, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<UShort4>(V(result));
 	}
 
 	RValue<UShort4> Min(RValue<UShort4> x, RValue<UShort4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v8i1);
+		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Ugt, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<UShort4>(V(result));
 	}
 
 	RValue<UShort4> AddSat(RValue<UShort4> x, RValue<UShort4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::AddSaturateUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto paddusw = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		paddusw->addArg(x.value);
+		paddusw->addArg(y.value);
+		::basicBlock->appendInst(paddusw);
+
+		return RValue<UShort4>(V(result));
 	}
 
 	RValue<UShort4> SubSat(RValue<UShort4> x, RValue<UShort4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::SubtractSaturateUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto psubusw = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		psubusw->addArg(x.value);
+		psubusw->addArg(y.value);
+		::basicBlock->appendInst(psubusw);
+
+		return RValue<UShort4>(V(result));
 	}
 
 	RValue<UShort4> MulHigh(RValue<UShort4> x, RValue<UShort4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::MultiplyHighUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto pmulhuw = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		pmulhuw->addArg(x.value);
+		pmulhuw->addArg(y.value);
+		::basicBlock->appendInst(pmulhuw);
+
+		return RValue<UShort4>(V(result));
 	}
 
 	RValue<UShort4> Average(RValue<UShort4> x, RValue<UShort4> y)
@@ -3021,19 +3611,28 @@ namespace sw
 
 	RValue<Byte8> Pack(RValue<UShort4> x, RValue<UShort4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Byte8>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v16i8);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::VectorPackUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto pack = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		pack->addArg(x.value);
+		pack->addArg(y.value);
+		::basicBlock->appendInst(pack);
+
+		return As<Byte8>(Swizzle(As<Int4>(V(result)), 0x88));
 	}
 
 	Type *UShort4::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Type_v4i16);
 	}
 
 	Short8::Short8(short c0, short c1, short c2, short c3, short c4, short c5, short c6, short c7)
 	{
 	//	xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		int64_t constantVector[8] = {c0, c1, c2, c3, c4, c5, c6, c7};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	Short8::Short8(RValue<Short8> rhs)
@@ -3053,7 +3652,10 @@ namespace sw
 
 	Short8::Short8(RValue<Short4> lo, RValue<Short4> hi)
 	{
-		assert(false && "UNIMPLEMENTED");
+		int shuffle[8] = {0, 1, 2, 3, 8, 9, 10, 11};   // Real type is v8i16
+		Value *packed = Nucleus::createShuffleVector(lo.value, hi.value, shuffle);
+
+		storeValue(packed);
 	}
 
 	RValue<Short8> operator+(RValue<Short8> lhs, RValue<Short8> rhs)
@@ -3068,12 +3670,12 @@ namespace sw
 
 	RValue<Short8> operator<<(RValue<Short8> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short8>(V(nullptr));
+		return RValue<Short8>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<Short8> operator>>(RValue<Short8> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short8>(V(nullptr));
+		return RValue<Short8>(Nucleus::createAShr(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<Int4> MulAdd(RValue<Short8> x, RValue<Short8> y)
@@ -3083,7 +3685,8 @@ namespace sw
 
 	RValue<Int4> Abs(RValue<Int4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int4>(V(nullptr));
+		auto negative = x >> 31;
+		return (x ^ negative) - negative;
 	}
 
 	RValue<Short8> MulHigh(RValue<Short8> x, RValue<Short8> y)
@@ -3093,44 +3696,42 @@ namespace sw
 
 	Type *Short8::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_v8i16);
 	}
 
 	UShort8::UShort8(unsigned short c0, unsigned short c1, unsigned short c2, unsigned short c3, unsigned short c4, unsigned short c5, unsigned short c6, unsigned short c7)
 	{
-	//	xyzw.parent = this;
-
-		assert(false && "UNIMPLEMENTED");
+		int64_t constantVector[8] = {c0, c1, c2, c3, c4, c5, c6, c7};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	UShort8::UShort8(RValue<UShort8> rhs)
 	{
-	//	xyzw.parent = this;
-
 		storeValue(rhs.value);
 	}
 
 	UShort8::UShort8(const Reference<UShort8> &rhs)
 	{
-	//	xyzw.parent = this;
-
 		Value *value = rhs.loadValue();
 		storeValue(value);
 	}
 
 	UShort8::UShort8(RValue<UShort4> lo, RValue<UShort4> hi)
 	{
-		assert(false && "UNIMPLEMENTED");
+		int shuffle[8] = {0, 1, 2, 3, 8, 9, 10, 11};   // Real type is v8i16
+		Value *packed = Nucleus::createShuffleVector(lo.value, hi.value, shuffle);
+
+		storeValue(packed);
 	}
 
-	RValue<UShort8> UShort8::operator=(RValue<UShort8> rhs) const
+	RValue<UShort8> UShort8::operator=(RValue<UShort8> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<UShort8> UShort8::operator=(const UShort8 &rhs) const
+	RValue<UShort8> UShort8::operator=(const UShort8 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3138,7 +3739,7 @@ namespace sw
 		return RValue<UShort8>(value);
 	}
 
-	RValue<UShort8> UShort8::operator=(const Reference<UShort8> &rhs) const
+	RValue<UShort8> UShort8::operator=(const Reference<UShort8> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3153,12 +3754,12 @@ namespace sw
 
 	RValue<UShort8> operator<<(RValue<UShort8> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort8>(V(nullptr));
+		return RValue<UShort8>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<UShort8> operator>>(RValue<UShort8> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort8>(V(nullptr));
+		return RValue<UShort8>(Nucleus::createLShr(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<UShort8> operator+(RValue<UShort8> lhs, RValue<UShort8> rhs)
@@ -3171,7 +3772,7 @@ namespace sw
 		return RValue<UShort8>(Nucleus::createMul(lhs.value, rhs.value));
 	}
 
-	RValue<UShort8> operator+=(const UShort8 &lhs, RValue<UShort8> rhs)
+	RValue<UShort8> operator+=(UShort8 &lhs, RValue<UShort8> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
@@ -3199,7 +3800,7 @@ namespace sw
 
 	Type *UShort8::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_v8i16);
 	}
 
 	Int::Int(Argument<Int> argument)
@@ -3297,26 +3898,26 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<Int> Int::operator=(int rhs) const
+	RValue<Int> Int::operator=(int rhs)
 	{
 		return RValue<Int>(storeValue(Nucleus::createConstantInt(rhs)));
 	}
 
-	RValue<Int> Int::operator=(RValue<Int> rhs) const
+	RValue<Int> Int::operator=(RValue<Int> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Int> Int::operator=(RValue<UInt> rhs) const
+	RValue<Int> Int::operator=(RValue<UInt> rhs)
 	{
 		storeValue(rhs.value);
 
 		return RValue<Int>(rhs);
 	}
 
-	RValue<Int> Int::operator=(const Int &rhs) const
+	RValue<Int> Int::operator=(const Int &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3324,7 +3925,7 @@ namespace sw
 		return RValue<Int>(value);
 	}
 
-	RValue<Int> Int::operator=(const Reference<Int> &rhs) const
+	RValue<Int> Int::operator=(const Reference<Int> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3332,7 +3933,7 @@ namespace sw
 		return RValue<Int>(value);
 	}
 
-	RValue<Int> Int::operator=(const UInt &rhs) const
+	RValue<Int> Int::operator=(const UInt &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3340,7 +3941,7 @@ namespace sw
 		return RValue<Int>(value);
 	}
 
-	RValue<Int> Int::operator=(const Reference<UInt> &rhs) const
+	RValue<Int> Int::operator=(const Reference<UInt> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3398,52 +3999,52 @@ namespace sw
 		return RValue<Int>(Nucleus::createAShr(lhs.value, rhs.value));
 	}
 
-	RValue<Int> operator+=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator+=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Int> operator-=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator-=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<Int> operator*=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator*=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-	RValue<Int> operator/=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator/=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs / rhs;
 	}
 
-	RValue<Int> operator%=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator%=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs % rhs;
 	}
 
-	RValue<Int> operator&=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator&=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<Int> operator|=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator|=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<Int> operator^=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator^=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<Int> operator<<=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator<<=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<Int> operator>>=(const Int &lhs, RValue<Int> rhs)
+	RValue<Int> operator>>=(Int &lhs, RValue<Int> rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -3463,30 +4064,30 @@ namespace sw
 		return RValue<Int>(Nucleus::createNot(val.value));
 	}
 
-	RValue<Int> operator++(const Int &val, int)   // Post-increment
+	RValue<Int> operator++(Int &val, int)   // Post-increment
 	{
-		auto oldValue = val.loadValue();
-		auto newValue = ::function->makeVariable(Ice::IceType_i32);
-		auto inc = Ice::InstArithmetic::create(::function, Ice::InstArithmetic::Add, newValue, oldValue, ::context->getConstantInt32(1));
-		::basicBlock->appendInst(inc);
-		val.storeValue(V(newValue));
-
-		return RValue<Int>(oldValue);
+		RValue<Int> res = val;
+		val += 1;
+		return res;
 	}
 
-	const Int &operator++(const Int &val)   // Pre-increment
+	const Int &operator++(Int &val)   // Pre-increment
 	{
-		assert(false && "UNIMPLEMENTED"); return val;
+		val += 1;
+		return val;
 	}
 
-	RValue<Int> operator--(const Int &val, int)   // Post-decrement
+	RValue<Int> operator--(Int &val, int)   // Post-decrement
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int>(V(nullptr));
+		RValue<Int> res = val;
+		val -= 1;
+		return res;
 	}
 
-	const Int &operator--(const Int &val)   // Pre-decrement
+	const Int &operator--(Int &val)   // Pre-decrement
 	{
-		assert(false && "UNIMPLEMENTED"); return val;
+		val -= 1;
+		return val;
 	}
 
 	RValue<Bool> operator<(RValue<Int> lhs, RValue<Int> rhs)
@@ -3536,7 +4137,13 @@ namespace sw
 
 	RValue<Int> RoundInt(RValue<Float> cast)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int>(V(nullptr));
+		RValue<Float> rounded = Round(cast);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_i32);
+		auto round = Ice::InstCast::create(::function, Ice::InstCast::Fptosi, result, rounded.value);
+		::basicBlock->appendInst(round);
+
+		return RValue<Int>(V(result));
 	}
 
 	Type *Int::getType()
@@ -3567,19 +4174,19 @@ namespace sw
 		storeValue(rhs.value);
 	}
 
-	RValue<Long> Long::operator=(int64_t rhs) const
+	RValue<Long> Long::operator=(int64_t rhs)
 	{
-		return RValue<Long>(storeValue(Nucleus::createConstantInt(rhs)));
+		return RValue<Long>(storeValue(Nucleus::createConstantLong(rhs)));
 	}
 
-	RValue<Long> Long::operator=(RValue<Long> rhs) const
+	RValue<Long> Long::operator=(RValue<Long> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Long> Long::operator=(const Long &rhs) const
+	RValue<Long> Long::operator=(const Long &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3587,7 +4194,7 @@ namespace sw
 		return RValue<Long>(value);
 	}
 
-	RValue<Long> Long::operator=(const Reference<Long> &rhs) const
+	RValue<Long> Long::operator=(const Reference<Long> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3605,12 +4212,12 @@ namespace sw
 		return RValue<Long>(Nucleus::createSub(lhs.value, rhs.value));
 	}
 
-	RValue<Long> operator+=(const Long &lhs, RValue<Long> rhs)
+	RValue<Long> operator+=(Long &lhs, RValue<Long> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Long> operator-=(const Long &lhs, RValue<Long> rhs)
+	RValue<Long> operator-=(Long &lhs, RValue<Long> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
@@ -3622,32 +4229,7 @@ namespace sw
 
 	Type *Long::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	Long1::Long1(const RValue<UInt> cast)
-	{
-		assert(false && "UNIMPLEMENTED");
-	}
-
-	Long1::Long1(RValue<Long1> rhs)
-	{
-		storeValue(rhs.value);
-	}
-
-	Type *Long1::getType()
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
-	}
-
-	RValue<Long2> UnpackHigh(RValue<Long2> x, RValue<Long2> y)
-	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Long2>(V(nullptr));
-	}
-
-	Type *Long2::getType()
-	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_i64);
 	}
 
 	UInt::UInt(Argument<UInt> argument)
@@ -3671,7 +4253,18 @@ namespace sw
 
 	UInt::UInt(RValue<Float> cast)
 	{
-		assert(false && "UNIMPLEMENTED");
+		// Smallest positive value representable in UInt, but not in Int
+		const unsigned int ustart = 0x80000000u;
+		const float ustartf = float(ustart);
+
+		// If the value is negative, store 0, otherwise store the result of the conversion
+		storeValue((~(As<Int>(cast) >> 31) &
+		// Check if the value can be represented as an Int
+			IfThenElse(cast >= ustartf,
+		// If the value is too large, subtract ustart and re-add it after conversion.
+				As<Int>(As<UInt>(Int(cast - Float(ustartf))) + UInt(ustart)),
+		// Otherwise, just convert normally
+				Int(cast))).value);
 	}
 
 	UInt::UInt()
@@ -3722,26 +4315,26 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<UInt> UInt::operator=(unsigned int rhs) const
+	RValue<UInt> UInt::operator=(unsigned int rhs)
 	{
 		return RValue<UInt>(storeValue(Nucleus::createConstantInt(rhs)));
 	}
 
-	RValue<UInt> UInt::operator=(RValue<UInt> rhs) const
+	RValue<UInt> UInt::operator=(RValue<UInt> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<UInt> UInt::operator=(RValue<Int> rhs) const
+	RValue<UInt> UInt::operator=(RValue<Int> rhs)
 	{
 		storeValue(rhs.value);
 
 		return RValue<UInt>(rhs);
 	}
 
-	RValue<UInt> UInt::operator=(const UInt &rhs) const
+	RValue<UInt> UInt::operator=(const UInt &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3749,7 +4342,7 @@ namespace sw
 		return RValue<UInt>(value);
 	}
 
-	RValue<UInt> UInt::operator=(const Reference<UInt> &rhs) const
+	RValue<UInt> UInt::operator=(const Reference<UInt> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3757,7 +4350,7 @@ namespace sw
 		return RValue<UInt>(value);
 	}
 
-	RValue<UInt> UInt::operator=(const Int &rhs) const
+	RValue<UInt> UInt::operator=(const Int &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3765,7 +4358,7 @@ namespace sw
 		return RValue<UInt>(value);
 	}
 
-	RValue<UInt> UInt::operator=(const Reference<Int> &rhs) const
+	RValue<UInt> UInt::operator=(const Reference<Int> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -3823,52 +4416,52 @@ namespace sw
 		return RValue<UInt>(Nucleus::createLShr(lhs.value, rhs.value));
 	}
 
-	RValue<UInt> operator+=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator+=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<UInt> operator-=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator-=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<UInt> operator*=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator*=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-	RValue<UInt> operator/=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator/=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs / rhs;
 	}
 
-	RValue<UInt> operator%=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator%=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs % rhs;
 	}
 
-	RValue<UInt> operator&=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator&=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<UInt> operator|=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator|=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<UInt> operator^=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator^=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<UInt> operator<<=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator<<=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<UInt> operator>>=(const UInt &lhs, RValue<UInt> rhs)
+	RValue<UInt> operator>>=(UInt &lhs, RValue<UInt> rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -3888,24 +4481,30 @@ namespace sw
 		return RValue<UInt>(Nucleus::createNot(val.value));
 	}
 
-	RValue<UInt> operator++(const UInt &val, int)   // Post-increment
+	RValue<UInt> operator++(UInt &val, int)   // Post-increment
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt>(V(nullptr));
+		RValue<UInt> res = val;
+		val += 1;
+		return res;
 	}
 
-	const UInt &operator++(const UInt &val)   // Pre-increment
+	const UInt &operator++(UInt &val)   // Pre-increment
 	{
-		assert(false && "UNIMPLEMENTED"); return val;
+		val += 1;
+		return val;
 	}
 
-	RValue<UInt> operator--(const UInt &val, int)   // Post-decrement
+	RValue<UInt> operator--(UInt &val, int)   // Post-decrement
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt>(V(nullptr));
+		RValue<UInt> res = val;
+		val -= 1;
+		return res;
 	}
 
-	const UInt &operator--(const UInt &val)   // Pre-decrement
+	const UInt &operator--(UInt &val)   // Pre-decrement
 	{
-		assert(false && "UNIMPLEMENTED"); return val;
+		val -= 1;
+		return val;
 	}
 
 	RValue<UInt> Max(RValue<UInt> x, RValue<UInt> y)
@@ -3960,7 +4559,7 @@ namespace sw
 
 	Type *UInt::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_i32);
 	}
 
 //	Int2::Int2(RValue<Int> cast)
@@ -3979,11 +4578,7 @@ namespace sw
 
 	Int2::Int2(RValue<Int4> cast)
 	{
-		Value *long2 = Nucleus::createBitCast(cast.value, Long2::getType());
-		Value *element = Nucleus::createExtractElement(long2, Long2::getType(), 0);
-		Value *int2 = Nucleus::createBitCast(element, Int2::getType());
-
-		storeValue(int2);
+		storeValue(Nucleus::createBitCast(cast.value, getType()));
 	}
 
 	Int2::Int2()
@@ -3995,7 +4590,8 @@ namespace sw
 	{
 	//	xy.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		int64_t constantVector[2] = {x, y};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	Int2::Int2(RValue<Int2> rhs)
@@ -4023,17 +4619,20 @@ namespace sw
 
 	Int2::Int2(RValue<Int> lo, RValue<Int> hi)
 	{
-		assert(false && "UNIMPLEMENTED");
+		int shuffle[4] = {0, 4, 1, 5};
+		Value *packed = Nucleus::createShuffleVector(Int4(lo).loadValue(), Int4(hi).loadValue(), shuffle);
+
+		storeValue(Nucleus::createBitCast(packed, Int2::getType()));
 	}
 
-	RValue<Int2> Int2::operator=(RValue<Int2> rhs) const
+	RValue<Int2> Int2::operator=(RValue<Int2> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Int2> Int2::operator=(const Int2 &rhs) const
+	RValue<Int2> Int2::operator=(const Int2 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -4041,7 +4640,7 @@ namespace sw
 		return RValue<Int2>(value);
 	}
 
-	RValue<Int2> Int2::operator=(const Reference<Int2> &rhs) const
+	RValue<Int2> Int2::operator=(const Reference<Int2> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -4051,12 +4650,12 @@ namespace sw
 
 	RValue<Int2> operator+(RValue<Int2> lhs, RValue<Int2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createAdd(lhs.value, rhs.value));
 	}
 
 	RValue<Int2> operator-(RValue<Int2> lhs, RValue<Int2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createSub(lhs.value, rhs.value));
 	}
 
 //	RValue<Int2> operator*(RValue<Int2> lhs, RValue<Int2> rhs)
@@ -4076,95 +4675,75 @@ namespace sw
 
 	RValue<Int2> operator&(RValue<Int2> lhs, RValue<Int2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createAnd(lhs.value, rhs.value));
 	}
 
 	RValue<Int2> operator|(RValue<Int2> lhs, RValue<Int2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createOr(lhs.value, rhs.value));
 	}
 
 	RValue<Int2> operator^(RValue<Int2> lhs, RValue<Int2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createXor(lhs.value, rhs.value));
 	}
 
 	RValue<Int2> operator<<(RValue<Int2> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<Int2> operator>>(RValue<Int2> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createAShr(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
-	RValue<Int2> operator<<(RValue<Int2> lhs, RValue<Long1> rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
-	}
-
-	RValue<Int2> operator>>(RValue<Int2> lhs, RValue<Long1> rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
-	}
-
-	RValue<Int2> operator+=(const Int2 &lhs, RValue<Int2> rhs)
+	RValue<Int2> operator+=(Int2 &lhs, RValue<Int2> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Int2> operator-=(const Int2 &lhs, RValue<Int2> rhs)
+	RValue<Int2> operator-=(Int2 &lhs, RValue<Int2> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-//	RValue<Int2> operator*=(const Int2 &lhs, RValue<Int2> rhs)
+//	RValue<Int2> operator*=(Int2 &lhs, RValue<Int2> rhs)
 //	{
 //		return lhs = lhs * rhs;
 //	}
 
-//	RValue<Int2> operator/=(const Int2 &lhs, RValue<Int2> rhs)
+//	RValue<Int2> operator/=(Int2 &lhs, RValue<Int2> rhs)
 //	{
 //		return lhs = lhs / rhs;
 //	}
 
-//	RValue<Int2> operator%=(const Int2 &lhs, RValue<Int2> rhs)
+//	RValue<Int2> operator%=(Int2 &lhs, RValue<Int2> rhs)
 //	{
 //		return lhs = lhs % rhs;
 //	}
 
-	RValue<Int2> operator&=(const Int2 &lhs, RValue<Int2> rhs)
+	RValue<Int2> operator&=(Int2 &lhs, RValue<Int2> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<Int2> operator|=(const Int2 &lhs, RValue<Int2> rhs)
+	RValue<Int2> operator|=(Int2 &lhs, RValue<Int2> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<Int2> operator^=(const Int2 &lhs, RValue<Int2> rhs)
+	RValue<Int2> operator^=(Int2 &lhs, RValue<Int2> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<Int2> operator<<=(const Int2 &lhs, unsigned char rhs)
+	RValue<Int2> operator<<=(Int2 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<Int2> operator>>=(const Int2 &lhs, unsigned char rhs)
-	{
-		return lhs = lhs >> rhs;
-	}
-
-	RValue<Int2> operator<<=(const Int2 &lhs, RValue<Long1> rhs)
-	{
-		return lhs = lhs << rhs;
-	}
-
-	RValue<Int2> operator>>=(const Int2 &lhs, RValue<Long1> rhs)
+	RValue<Int2> operator>>=(Int2 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -4181,32 +4760,35 @@ namespace sw
 
 	RValue<Int2> operator~(RValue<Int2> val)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createNot(val.value));
 	}
 
-	RValue<Long1> UnpackLow(RValue<Int2> x, RValue<Int2> y)
+	RValue<Short4> UnpackLow(RValue<Int2> x, RValue<Int2> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Long1>(V(nullptr));
+		int shuffle[4] = {0, 4, 1, 5};   // Real type is v4i32
+		return As<Short4>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
 	}
 
-	RValue<Long1> UnpackHigh(RValue<Int2> x, RValue<Int2> y)
+	RValue<Short4> UnpackHigh(RValue<Int2> x, RValue<Int2> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Long1>(V(nullptr));
+		int shuffle[16] = {0, 4, 1, 5};   // Real type is v4i32
+		auto lowHigh = RValue<Int4>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
+		return As<Short4>(Swizzle(lowHigh, 0xEE));
 	}
 
 	RValue<Int> Extract(RValue<Int2> val, int i)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int>(V(nullptr));
+		return RValue<Int>(Nucleus::createExtractElement(val.value, Int::getType(), i));
 	}
 
 	RValue<Int2> Insert(RValue<Int2> val, RValue<Int> element, int i)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int2>(V(nullptr));
+		return RValue<Int2>(Nucleus::createInsertElement(val.value, element.value, i));
 	}
 
 	Type *Int2::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Type_v2i32);
 	}
 
 	UInt2::UInt2()
@@ -4218,7 +4800,8 @@ namespace sw
 	{
 	//	xy.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		int64_t constantVector[2] = {x, y};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	UInt2::UInt2(RValue<UInt2> rhs)
@@ -4244,14 +4827,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<UInt2> UInt2::operator=(RValue<UInt2> rhs) const
+	RValue<UInt2> UInt2::operator=(RValue<UInt2> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<UInt2> UInt2::operator=(const UInt2 &rhs) const
+	RValue<UInt2> UInt2::operator=(const UInt2 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -4259,7 +4842,7 @@ namespace sw
 		return RValue<UInt2>(value);
 	}
 
-	RValue<UInt2> UInt2::operator=(const Reference<UInt2> &rhs) const
+	RValue<UInt2> UInt2::operator=(const Reference<UInt2> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -4269,12 +4852,12 @@ namespace sw
 
 	RValue<UInt2> operator+(RValue<UInt2> lhs, RValue<UInt2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
+		return RValue<UInt2>(Nucleus::createAdd(lhs.value, rhs.value));
 	}
 
 	RValue<UInt2> operator-(RValue<UInt2> lhs, RValue<UInt2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
+		return RValue<UInt2>(Nucleus::createSub(lhs.value, rhs.value));
 	}
 
 //	RValue<UInt2> operator*(RValue<UInt2> lhs, RValue<UInt2> rhs)
@@ -4294,95 +4877,75 @@ namespace sw
 
 	RValue<UInt2> operator&(RValue<UInt2> lhs, RValue<UInt2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
+		return RValue<UInt2>(Nucleus::createAnd(lhs.value, rhs.value));
 	}
 
 	RValue<UInt2> operator|(RValue<UInt2> lhs, RValue<UInt2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
+		return RValue<UInt2>(Nucleus::createOr(lhs.value, rhs.value));
 	}
 
 	RValue<UInt2> operator^(RValue<UInt2> lhs, RValue<UInt2> rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
+		return RValue<UInt2>(Nucleus::createXor(lhs.value, rhs.value));
 	}
 
 	RValue<UInt2> operator<<(RValue<UInt2> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
+		return RValue<UInt2>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<UInt2> operator>>(RValue<UInt2> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
+		return RValue<UInt2>(Nucleus::createLShr(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
-	RValue<UInt2> operator<<(RValue<UInt2> lhs, RValue<Long1> rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
-	}
-
-	RValue<UInt2> operator>>(RValue<UInt2> lhs, RValue<Long1> rhs)
-	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt2>(V(nullptr));
-	}
-
-	RValue<UInt2> operator+=(const UInt2 &lhs, RValue<UInt2> rhs)
+	RValue<UInt2> operator+=(UInt2 &lhs, RValue<UInt2> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<UInt2> operator-=(const UInt2 &lhs, RValue<UInt2> rhs)
+	RValue<UInt2> operator-=(UInt2 &lhs, RValue<UInt2> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-//	RValue<UInt2> operator*=(const UInt2 &lhs, RValue<UInt2> rhs)
+//	RValue<UInt2> operator*=(UInt2 &lhs, RValue<UInt2> rhs)
 //	{
 //		return lhs = lhs * rhs;
 //	}
 
-//	RValue<UInt2> operator/=(const UInt2 &lhs, RValue<UInt2> rhs)
+//	RValue<UInt2> operator/=(UInt2 &lhs, RValue<UInt2> rhs)
 //	{
 //		return lhs = lhs / rhs;
 //	}
 
-//	RValue<UInt2> operator%=(const UInt2 &lhs, RValue<UInt2> rhs)
+//	RValue<UInt2> operator%=(UInt2 &lhs, RValue<UInt2> rhs)
 //	{
 //		return lhs = lhs % rhs;
 //	}
 
-	RValue<UInt2> operator&=(const UInt2 &lhs, RValue<UInt2> rhs)
+	RValue<UInt2> operator&=(UInt2 &lhs, RValue<UInt2> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<UInt2> operator|=(const UInt2 &lhs, RValue<UInt2> rhs)
+	RValue<UInt2> operator|=(UInt2 &lhs, RValue<UInt2> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<UInt2> operator^=(const UInt2 &lhs, RValue<UInt2> rhs)
+	RValue<UInt2> operator^=(UInt2 &lhs, RValue<UInt2> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<UInt2> operator<<=(const UInt2 &lhs, unsigned char rhs)
+	RValue<UInt2> operator<<=(UInt2 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<UInt2> operator>>=(const UInt2 &lhs, unsigned char rhs)
-	{
-		return lhs = lhs >> rhs;
-	}
-
-	RValue<UInt2> operator<<=(const UInt2 &lhs, RValue<Long1> rhs)
-	{
-		return lhs = lhs << rhs;
-	}
-
-	RValue<UInt2> operator>>=(const UInt2 &lhs, RValue<Long1> rhs)
+	RValue<UInt2> operator>>=(UInt2 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -4404,17 +4967,44 @@ namespace sw
 
 	Type *UInt2::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Type_v2i32);
 	}
 
 	Int4::Int4(RValue<Byte4> cast)
 	{
-		assert(false && "UNIMPLEMENTED");
+		Value *x = Nucleus::createBitCast(cast.value, Int::getType());
+		Value *a = Nucleus::createInsertElement(loadValue(), x, 0);
+
+		Value *e;
+		int swizzle[16] = {0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23};
+		Value *b = Nucleus::createBitCast(a, Byte16::getType());
+		Value *c = Nucleus::createShuffleVector(b, V(Nucleus::createNullValue(Byte16::getType())), swizzle);
+
+		int swizzle2[8] = {0, 8, 1, 9, 2, 10, 3, 11};
+		Value *d = Nucleus::createBitCast(c, Short8::getType());
+		e = Nucleus::createShuffleVector(d, V(Nucleus::createNullValue(Short8::getType())), swizzle2);
+
+		Value *f = Nucleus::createBitCast(e, Int4::getType());
+		storeValue(f);
 	}
 
 	Int4::Int4(RValue<SByte4> cast)
 	{
-		assert(false && "UNIMPLEMENTED");
+		Value *x = Nucleus::createBitCast(cast.value, Int::getType());
+		Value *a = Nucleus::createInsertElement(loadValue(), x, 0);
+
+		Value *e;
+		int swizzle[16] = {0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7};
+		Value *b = Nucleus::createBitCast(a, Byte16::getType());
+		Value *c = Nucleus::createShuffleVector(b, b, swizzle);
+
+		int swizzle2[8] = {0, 0, 1, 1, 2, 2, 3, 3};
+		Value *d = Nucleus::createBitCast(c, Short8::getType());
+		e = Nucleus::createShuffleVector(d, d, swizzle2);
+
+		Value *f = Nucleus::createBitCast(e, Int4::getType());
+		Value *g = Nucleus::createAShr(f, V(::context->getConstantInt32(24)));
+		storeValue(g);
 	}
 
 	Int4::Int4(RValue<Float4> cast)
@@ -4428,12 +5018,19 @@ namespace sw
 
 	Int4::Int4(RValue<Short4> cast)
 	{
-		assert(false && "UNIMPLEMENTED");
+		int swizzle[8] = {0, 0, 1, 1, 2, 2, 3, 3};
+		Value *c = Nucleus::createShuffleVector(cast.value, cast.value, swizzle);
+		Value *d = Nucleus::createBitCast(c, Int4::getType());
+		Value *e = Nucleus::createAShr(d, V(::context->getConstantInt32(16)));
+		storeValue(e);
 	}
 
 	Int4::Int4(RValue<UShort4> cast)
 	{
-		assert(false && "UNIMPLEMENTED");
+		int swizzle[8] = {0, 8, 1, 9, 2, 10, 3, 11};
+		Value *c = Nucleus::createShuffleVector(cast.value, Short8(0, 0, 0, 0, 0, 0, 0, 0).loadValue(), swizzle);
+		Value *d = Nucleus::createBitCast(c, Int4::getType());
+		storeValue(d);
 	}
 
 	Int4::Int4()
@@ -4465,13 +5062,8 @@ namespace sw
 	{
 	//	xyzw.parent = this;
 
-		Constant *constantVector[4];
-		constantVector[0] = Nucleus::createConstantInt(x);
-		constantVector[1] = Nucleus::createConstantInt(y);
-		constantVector[2] = Nucleus::createConstantInt(z);
-		constantVector[3] = Nucleus::createConstantInt(w);
-
-		storeValue(Nucleus::createConstantVector(constantVector, 4));
+		int64_t constantVector[4] = {x, y, z, w};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	Int4::Int4(RValue<Int4> rhs)
@@ -4522,14 +5114,23 @@ namespace sw
 
 	Int4::Int4(RValue<Int2> lo, RValue<Int2> hi)
 	{
-		assert(false && "UNIMPLEMENTED");
+		int shuffle[4] = {0, 1, 4, 5};   // Real type is v4i32
+		Value *packed = Nucleus::createShuffleVector(lo.value, hi.value, shuffle);
+
+		storeValue(packed);
 	}
 
 	Int4::Int4(RValue<Int> rhs)
 	{
 	//	xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		Value *vector = loadValue();
+		Value *insert = Nucleus::createInsertElement(vector, rhs.value, 0);
+
+		int swizzle[4] = {0, 0, 0, 0};
+		Value *replicate = Nucleus::createShuffleVector(insert, insert, swizzle);
+
+		storeValue(replicate);
 	}
 
 	Int4::Int4(const Int &rhs)
@@ -4546,14 +5147,14 @@ namespace sw
 		*this = RValue<Int>(rhs.loadValue());
 	}
 
-	RValue<Int4> Int4::operator=(RValue<Int4> rhs) const
+	RValue<Int4> Int4::operator=(RValue<Int4> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Int4> Int4::operator=(const Int4 &rhs) const
+	RValue<Int4> Int4::operator=(const Int4 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -4561,7 +5162,7 @@ namespace sw
 		return RValue<Int4>(value);
 	}
 
-	RValue<Int4> Int4::operator=(const Reference<Int4> &rhs) const
+	RValue<Int4> Int4::operator=(const Reference<Int4> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -4611,12 +5212,12 @@ namespace sw
 
 	RValue<Int4> operator<<(RValue<Int4> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int4>(V(nullptr));
+		return RValue<Int4>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<Int4> operator>>(RValue<Int4> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int4>(V(nullptr));
+		return RValue<Int4>(Nucleus::createAShr(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<Int4> operator<<(RValue<Int4> lhs, RValue<Int4> rhs)
@@ -4629,52 +5230,52 @@ namespace sw
 		return RValue<Int4>(Nucleus::createAShr(lhs.value, rhs.value));
 	}
 
-	RValue<Int4> operator+=(const Int4 &lhs, RValue<Int4> rhs)
+	RValue<Int4> operator+=(Int4 &lhs, RValue<Int4> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Int4> operator-=(const Int4 &lhs, RValue<Int4> rhs)
+	RValue<Int4> operator-=(Int4 &lhs, RValue<Int4> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<Int4> operator*=(const Int4 &lhs, RValue<Int4> rhs)
+	RValue<Int4> operator*=(Int4 &lhs, RValue<Int4> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-//	RValue<Int4> operator/=(const Int4 &lhs, RValue<Int4> rhs)
+//	RValue<Int4> operator/=(Int4 &lhs, RValue<Int4> rhs)
 //	{
 //		return lhs = lhs / rhs;
 //	}
 
-//	RValue<Int4> operator%=(const Int4 &lhs, RValue<Int4> rhs)
+//	RValue<Int4> operator%=(Int4 &lhs, RValue<Int4> rhs)
 //	{
 //		return lhs = lhs % rhs;
 //	}
 
-	RValue<Int4> operator&=(const Int4 &lhs, RValue<Int4> rhs)
+	RValue<Int4> operator&=(Int4 &lhs, RValue<Int4> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<Int4> operator|=(const Int4 &lhs, RValue<Int4> rhs)
+	RValue<Int4> operator|=(Int4 &lhs, RValue<Int4> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<Int4> operator^=(const Int4 &lhs, RValue<Int4> rhs)
+	RValue<Int4> operator^=(Int4 &lhs, RValue<Int4> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<Int4> operator<<=(const Int4 &lhs, unsigned char rhs)
+	RValue<Int4> operator<<=(Int4 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<Int4> operator>>=(const Int4 &lhs, unsigned char rhs)
+	RValue<Int4> operator>>=(Int4 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -4726,22 +5327,52 @@ namespace sw
 
 	RValue<Int4> Max(RValue<Int4> x, RValue<Int4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Sle, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<Int4>(V(result));
 	}
 
 	RValue<Int4> Min(RValue<Int4> x, RValue<Int4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Sgt, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<Int4>(V(result));
 	}
 
 	RValue<Int4> RoundInt(RValue<Float4> cast)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int4>(V(nullptr));
+		RValue<Float4> rounded = Round(cast);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+		auto round = Ice::InstCast::create(::function, Ice::InstCast::Fptosi, result, rounded.value);
+		::basicBlock->appendInst(round);
+
+		return RValue<Int4>(V(result));
 	}
 
 	RValue<Short8> Pack(RValue<Int4> x, RValue<Int4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Short8>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::VectorPackSigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto pack = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		pack->addArg(x.value);
+		pack->addArg(y.value);
+		::basicBlock->appendInst(pack);
+
+		return RValue<Short8>(V(result));
 	}
 
 	RValue<Int> Extract(RValue<Int4> x, int i)
@@ -4756,7 +5387,14 @@ namespace sw
 
 	RValue<Int> SignMask(RValue<Int4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_i32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::SignMask, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto movmsk = Ice::InstIntrinsicCall::create(::function, 1, result, target, intrinsic);
+		movmsk->addArg(x.value);
+		::basicBlock->appendInst(movmsk);
+
+		return RValue<Int>(V(result));
 	}
 
 	RValue<Int4> Swizzle(RValue<Int4> x, unsigned char select)
@@ -4766,14 +5404,25 @@ namespace sw
 
 	Type *Int4::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_v4i32);
 	}
 
 	UInt4::UInt4(RValue<Float4> cast)
 	{
 	//	xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		// Smallest positive value representable in UInt, but not in Int
+		const unsigned int ustart = 0x80000000u;
+		const float ustartf = float(ustart);
+
+		// Check if the value can be represented as an Int
+		Int4 uiValue = CmpNLT(cast, Float4(ustartf));
+		// If the value is too large, subtract ustart and re-add it after conversion.
+		uiValue = (uiValue & As<Int4>(As<UInt4>(Int4(cast - Float4(ustartf))) + UInt4(ustart))) |
+		// Otherwise, just convert normally
+		          (~uiValue & Int4(cast));
+		// If the value is negative, store 0, otherwise store the result of the conversion
+		storeValue((~(As<Int4>(cast) >> 31) & uiValue).value);
 	}
 
 	UInt4::UInt4()
@@ -4805,13 +5454,8 @@ namespace sw
 	{
 	//	xyzw.parent = this;
 
-		Constant *constantVector[4];
-		constantVector[0] = Nucleus::createConstantInt(x);
-		constantVector[1] = Nucleus::createConstantInt(y);
-		constantVector[2] = Nucleus::createConstantInt(z);
-		constantVector[3] = Nucleus::createConstantInt(w);
-
-		storeValue(Nucleus::createConstantVector(constantVector, 4));
+		int64_t constantVector[4] = {x, y, z, w};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	UInt4::UInt4(RValue<UInt4> rhs)
@@ -4862,17 +5506,20 @@ namespace sw
 
 	UInt4::UInt4(RValue<UInt2> lo, RValue<UInt2> hi)
 	{
-		assert(false && "UNIMPLEMENTED");
+		int shuffle[4] = {0, 1, 4, 5};   // Real type is v4i32
+		Value *packed = Nucleus::createShuffleVector(lo.value, hi.value, shuffle);
+
+		storeValue(packed);
 	}
 
-	RValue<UInt4> UInt4::operator=(RValue<UInt4> rhs) const
+	RValue<UInt4> UInt4::operator=(RValue<UInt4> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<UInt4> UInt4::operator=(const UInt4 &rhs) const
+	RValue<UInt4> UInt4::operator=(const UInt4 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -4880,7 +5527,7 @@ namespace sw
 		return RValue<UInt4>(value);
 	}
 
-	RValue<UInt4> UInt4::operator=(const Reference<UInt4> &rhs) const
+	RValue<UInt4> UInt4::operator=(const Reference<UInt4> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -4930,12 +5577,12 @@ namespace sw
 
 	RValue<UInt4> operator<<(RValue<UInt4> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt4>(V(nullptr));
+		return RValue<UInt4>(Nucleus::createShl(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<UInt4> operator>>(RValue<UInt4> lhs, unsigned char rhs)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt4>(V(nullptr));
+		return RValue<UInt4>(Nucleus::createLShr(lhs.value, V(::context->getConstantInt32(rhs))));
 	}
 
 	RValue<UInt4> operator<<(RValue<UInt4> lhs, RValue<UInt4> rhs)
@@ -4948,52 +5595,52 @@ namespace sw
 		return RValue<UInt4>(Nucleus::createLShr(lhs.value, rhs.value));
 	}
 
-	RValue<UInt4> operator+=(const UInt4 &lhs, RValue<UInt4> rhs)
+	RValue<UInt4> operator+=(UInt4 &lhs, RValue<UInt4> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<UInt4> operator-=(const UInt4 &lhs, RValue<UInt4> rhs)
+	RValue<UInt4> operator-=(UInt4 &lhs, RValue<UInt4> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<UInt4> operator*=(const UInt4 &lhs, RValue<UInt4> rhs)
+	RValue<UInt4> operator*=(UInt4 &lhs, RValue<UInt4> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-//	RValue<UInt4> operator/=(const UInt4 &lhs, RValue<UInt4> rhs)
+//	RValue<UInt4> operator/=(UInt4 &lhs, RValue<UInt4> rhs)
 //	{
 //		return lhs = lhs / rhs;
 //	}
 
-//	RValue<UInt4> operator%=(const UInt4 &lhs, RValue<UInt4> rhs)
+//	RValue<UInt4> operator%=(UInt4 &lhs, RValue<UInt4> rhs)
 //	{
 //		return lhs = lhs % rhs;
 //	}
 
-	RValue<UInt4> operator&=(const UInt4 &lhs, RValue<UInt4> rhs)
+	RValue<UInt4> operator&=(UInt4 &lhs, RValue<UInt4> rhs)
 	{
 		return lhs = lhs & rhs;
 	}
 
-	RValue<UInt4> operator|=(const UInt4 &lhs, RValue<UInt4> rhs)
+	RValue<UInt4> operator|=(UInt4 &lhs, RValue<UInt4> rhs)
 	{
 		return lhs = lhs | rhs;
 	}
 
-	RValue<UInt4> operator^=(const UInt4 &lhs, RValue<UInt4> rhs)
+	RValue<UInt4> operator^=(UInt4 &lhs, RValue<UInt4> rhs)
 	{
 		return lhs = lhs ^ rhs;
 	}
 
-	RValue<UInt4> operator<<=(const UInt4 &lhs, unsigned char rhs)
+	RValue<UInt4> operator<<=(UInt4 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs << rhs;
 	}
 
-	RValue<UInt4> operator>>=(const UInt4 &lhs, unsigned char rhs)
+	RValue<UInt4> operator>>=(UInt4 &lhs, unsigned char rhs)
 	{
 		return lhs = lhs >> rhs;
 	}
@@ -5045,22 +5692,46 @@ namespace sw
 
 	RValue<UInt4> Max(RValue<UInt4> x, RValue<UInt4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Ule, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<UInt4>(V(result));
 	}
 
 	RValue<UInt4> Min(RValue<UInt4> x, RValue<UInt4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UInt4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+		auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Ugt, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<UInt4>(V(result));
 	}
 
 	RValue<UShort8> Pack(RValue<UInt4> x, RValue<UInt4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<UShort8>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::VectorPackUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto pack = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		pack->addArg(x.value);
+		pack->addArg(y.value);
+		::basicBlock->appendInst(pack);
+
+		return RValue<UShort8>(V(result));
 	}
 
 	Type *UInt4::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Ice::IceType_v4i32);
 	}
 
 	Float::Float(RValue<Int> cast)
@@ -5096,14 +5767,14 @@ namespace sw
 		storeValue(value);
 	}
 
-	RValue<Float> Float::operator=(RValue<Float> rhs) const
+	RValue<Float> Float::operator=(RValue<Float> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Float> Float::operator=(const Float &rhs) const
+	RValue<Float> Float::operator=(const Float &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -5111,7 +5782,7 @@ namespace sw
 		return RValue<Float>(value);
 	}
 
-	RValue<Float> Float::operator=(const Reference<Float> &rhs) const
+	RValue<Float> Float::operator=(const Reference<Float> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -5139,22 +5810,22 @@ namespace sw
 		return RValue<Float>(Nucleus::createFDiv(lhs.value, rhs.value));
 	}
 
-	RValue<Float> operator+=(const Float &lhs, RValue<Float> rhs)
+	RValue<Float> operator+=(Float &lhs, RValue<Float> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Float> operator-=(const Float &lhs, RValue<Float> rhs)
+	RValue<Float> operator-=(Float &lhs, RValue<Float> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<Float> operator*=(const Float &lhs, RValue<Float> rhs)
+	RValue<Float> operator*=(Float &lhs, RValue<Float> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-	RValue<Float> operator/=(const Float &lhs, RValue<Float> rhs)
+	RValue<Float> operator/=(Float &lhs, RValue<Float> rhs)
 	{
 		return lhs = lhs / rhs;
 	}
@@ -5216,42 +5887,49 @@ namespace sw
 
 	RValue<Float> Rcp_pp(RValue<Float> x, bool exactAtPow2)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float>(V(nullptr));
+		return 1.0f / x;
 	}
 
 	RValue<Float> RcpSqrt_pp(RValue<Float> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float>(V(nullptr));
+		return Rcp_pp(Sqrt(x));
 	}
 
 	RValue<Float> Sqrt(RValue<Float> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::Sqrt, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto sqrt = Ice::InstIntrinsicCall::create(::function, 1, result, target, intrinsic);
+		sqrt->addArg(x.value);
+		::basicBlock->appendInst(sqrt);
+
+		return RValue<Float>(V(result));
 	}
 
 	RValue<Float> Round(RValue<Float> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float>(V(nullptr));
+		return Float4(Round(Float4(x))).x;
 	}
 
 	RValue<Float> Trunc(RValue<Float> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float>(V(nullptr));
+		return Float4(Trunc(Float4(x))).x;
 	}
 
 	RValue<Float> Frac(RValue<Float> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float>(V(nullptr));
+		return Float4(Frac(Float4(x))).x;
 	}
 
 	RValue<Float> Floor(RValue<Float> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float>(V(nullptr));
+		return Float4(Floor(Float4(x))).x;
 	}
 
 	RValue<Float> Ceil(RValue<Float> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float>(V(nullptr));
+		return Float4(Ceil(Float4(x))).x;
 	}
 
 	Type *Float::getType()
@@ -5261,32 +5939,32 @@ namespace sw
 
 	Float2::Float2(RValue<Float4> cast)
 	{
-	//	xyzw.parent = this;
-
-		Value *int64x2 = Nucleus::createBitCast(cast.value, Long2::getType());
-		Value *int64 = Nucleus::createExtractElement(int64x2, Long::getType(), 0);
-		Value *float2 = Nucleus::createBitCast(int64, Float2::getType());
-
-		storeValue(float2);
+		storeValue(Nucleus::createBitCast(cast.value, getType()));
 	}
 
 	Type *Float2::getType()
 	{
-		assert(false && "UNIMPLEMENTED"); return nullptr;
+		return T(Type_v2f32);
 	}
 
 	Float4::Float4(RValue<Byte4> cast)
 	{
 		xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		Value *a = Int4(cast).loadValue();
+		Value *xyzw = Nucleus::createSIToFP(a, Float4::getType());
+
+		storeValue(xyzw);
 	}
 
 	Float4::Float4(RValue<SByte4> cast)
 	{
 		xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		Value *a = Int4(cast).loadValue();
+		Value *xyzw = Nucleus::createSIToFP(a, Float4::getType());
+
+		storeValue(xyzw);
 	}
 
 	Float4::Float4(RValue<Short4> cast)
@@ -5352,13 +6030,8 @@ namespace sw
 	{
 		xyzw.parent = this;
 
-		Constant *constantVector[4];
-		constantVector[0] = Nucleus::createConstantFloat(x);
-		constantVector[1] = Nucleus::createConstantFloat(y);
-		constantVector[2] = Nucleus::createConstantFloat(z);
-		constantVector[3] = Nucleus::createConstantFloat(w);
-
-		storeValue(Nucleus::createConstantVector(constantVector, 4));
+		double constantVector[4] = {x, y, z, w};
+		storeValue(Nucleus::createConstantVector(constantVector, getType()));
 	}
 
 	Float4::Float4(RValue<Float4> rhs)
@@ -5388,7 +6061,13 @@ namespace sw
 	{
 		xyzw.parent = this;
 
-		assert(false && "UNIMPLEMENTED");
+		Value *vector = loadValue();
+		Value *insert = Nucleus::createInsertElement(vector, rhs.value, 0);
+
+		int swizzle[4] = {0, 0, 0, 0};
+		Value *replicate = Nucleus::createShuffleVector(insert, insert, swizzle);
+
+		storeValue(replicate);
 	}
 
 	Float4::Float4(const Float &rhs)
@@ -5405,19 +6084,19 @@ namespace sw
 		*this = RValue<Float>(rhs.loadValue());
 	}
 
-	RValue<Float4> Float4::operator=(float x) const
+	RValue<Float4> Float4::operator=(float x)
 	{
 		return *this = Float4(x, x, x, x);
 	}
 
-	RValue<Float4> Float4::operator=(RValue<Float4> rhs) const
+	RValue<Float4> Float4::operator=(RValue<Float4> rhs)
 	{
 		storeValue(rhs.value);
 
 		return rhs;
 	}
 
-	RValue<Float4> Float4::operator=(const Float4 &rhs) const
+	RValue<Float4> Float4::operator=(const Float4 &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -5425,7 +6104,7 @@ namespace sw
 		return RValue<Float4>(value);
 	}
 
-	RValue<Float4> Float4::operator=(const Reference<Float4> &rhs) const
+	RValue<Float4> Float4::operator=(const Reference<Float4> &rhs)
 	{
 		Value *value = rhs.loadValue();
 		storeValue(value);
@@ -5433,17 +6112,17 @@ namespace sw
 		return RValue<Float4>(value);
 	}
 
-	RValue<Float4> Float4::operator=(RValue<Float> rhs) const
+	RValue<Float4> Float4::operator=(RValue<Float> rhs)
 	{
 		return *this = Float4(rhs);
 	}
 
-	RValue<Float4> Float4::operator=(const Float &rhs) const
+	RValue<Float4> Float4::operator=(const Float &rhs)
 	{
 		return *this = Float4(rhs);
 	}
 
-	RValue<Float4> Float4::operator=(const Reference<Float> &rhs) const
+	RValue<Float4> Float4::operator=(const Reference<Float> &rhs)
 	{
 		return *this = Float4(rhs);
 	}
@@ -5473,27 +6152,27 @@ namespace sw
 		return RValue<Float4>(Nucleus::createFRem(lhs.value, rhs.value));
 	}
 
-	RValue<Float4> operator+=(const Float4 &lhs, RValue<Float4> rhs)
+	RValue<Float4> operator+=(Float4 &lhs, RValue<Float4> rhs)
 	{
 		return lhs = lhs + rhs;
 	}
 
-	RValue<Float4> operator-=(const Float4 &lhs, RValue<Float4> rhs)
+	RValue<Float4> operator-=(Float4 &lhs, RValue<Float4> rhs)
 	{
 		return lhs = lhs - rhs;
 	}
 
-	RValue<Float4> operator*=(const Float4 &lhs, RValue<Float4> rhs)
+	RValue<Float4> operator*=(Float4 &lhs, RValue<Float4> rhs)
 	{
 		return lhs = lhs * rhs;
 	}
 
-	RValue<Float4> operator/=(const Float4 &lhs, RValue<Float4> rhs)
+	RValue<Float4> operator/=(Float4 &lhs, RValue<Float4> rhs)
 	{
 		return lhs = lhs / rhs;
 	}
 
-	RValue<Float4> operator%=(const Float4 &lhs, RValue<Float4> rhs)
+	RValue<Float4> operator%=(Float4 &lhs, RValue<Float4> rhs)
 	{
 		return lhs = lhs % rhs;
 	}
@@ -5510,42 +6189,64 @@ namespace sw
 
 	RValue<Float4> Abs(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		Value *vector = Nucleus::createBitCast(x.value, Int4::getType());
+		int64_t constantVector[4] = {0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF};
+		Value *result = Nucleus::createAnd(vector, V(Nucleus::createConstantVector(constantVector, Int4::getType())));
+
+		return As<Float4>(result);
 	}
 
 	RValue<Float4> Max(RValue<Float4> x, RValue<Float4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+		auto cmp = Ice::InstFcmp::create(::function, Ice::InstFcmp::Ule, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<Float4>(V(result));
 	}
 
 	RValue<Float4> Min(RValue<Float4> x, RValue<Float4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+		auto cmp = Ice::InstFcmp::create(::function, Ice::InstFcmp::Ugt, condition, x.value, y.value);
+		::basicBlock->appendInst(cmp);
+
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		auto select = Ice::InstSelect::create(::function, result, condition, y.value, x.value);
+		::basicBlock->appendInst(select);
+
+		return RValue<Float4>(V(result));
 	}
 
 	RValue<Float4> Rcp_pp(RValue<Float4> x, bool exactAtPow2)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		return Float4(1.0f) / x;
 	}
 
 	RValue<Float4> RcpSqrt_pp(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		return Rcp_pp(Sqrt(x));
 	}
 
 	RValue<Float4> Sqrt(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::Sqrt, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto sqrt = Ice::InstIntrinsicCall::create(::function, 1, result, target, intrinsic);
+		sqrt->addArg(x.value);
+		::basicBlock->appendInst(sqrt);
+
+		return RValue<Float4>(V(result));
 	}
 
-	RValue<Float4> Insert(const Float4 &val, RValue<Float> element, int i)
+	RValue<Float4> Insert(RValue<Float4> x, RValue<Float> element, int i)
 	{
-		Value *value = val.loadValue();
-		Value *insert = Nucleus::createInsertElement(value, element.value, i);
-
-		val = RValue<Float4>(insert);
-
-		return val;
+		return RValue<Float4>(Nucleus::createInsertElement(x.value, element.value, i));
 	}
 
 	RValue<Float> Extract(RValue<Float4> x, int i)
@@ -5560,31 +6261,48 @@ namespace sw
 
 	RValue<Float4> ShuffleLowHigh(RValue<Float4> x, RValue<Float4> y, unsigned char imm)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		int shuffle[4] =
+		{
+			((imm >> 0) & 0x03) + 0,
+			((imm >> 2) & 0x03) + 0,
+			((imm >> 4) & 0x03) + 4,
+			((imm >> 6) & 0x03) + 4,
+		};
+
+		return RValue<Float4>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
 	}
 
 	RValue<Float4> UnpackLow(RValue<Float4> x, RValue<Float4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		int shuffle[4] = {0, 4, 1, 5};
+		return RValue<Float4>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
 	}
 
 	RValue<Float4> UnpackHigh(RValue<Float4> x, RValue<Float4> y)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		int shuffle[4] = {2, 6, 3, 7};
+		return RValue<Float4>(Nucleus::createShuffleVector(x.value, y.value, shuffle));
 	}
 
 	RValue<Float4> Mask(Float4 &lhs, RValue<Float4> rhs, unsigned char select)
 	{
 		Value *vector = lhs.loadValue();
-		Value *shuffle = createMask4(vector, rhs.value, select);
-		lhs.storeValue(shuffle);
+		Value *result = createMask4(vector, rhs.value, select);
+		lhs.storeValue(result);
 
-		return RValue<Float4>(shuffle);
+		return RValue<Float4>(result);
 	}
 
 	RValue<Int> SignMask(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Int>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_i32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::SignMask, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto movmsk = Ice::InstIntrinsicCall::create(::function, 1, result, target, intrinsic);
+		movmsk->addArg(x.value);
+		::basicBlock->appendInst(movmsk);
+
+		return RValue<Int>(V(result));
 	}
 
 	RValue<Int4> CmpEQ(RValue<Float4> x, RValue<Float4> y)
@@ -5619,27 +6337,59 @@ namespace sw
 
 	RValue<Float4> Round(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::Round, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto round = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		round->addArg(x.value);
+		round->addArg(::context->getConstantInt32(0));
+		::basicBlock->appendInst(round);
+
+		return RValue<Float4>(V(result));
 	}
 
 	RValue<Float4> Trunc(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::Round, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto round = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		round->addArg(x.value);
+		round->addArg(::context->getConstantInt32(3));
+		::basicBlock->appendInst(round);
+
+		return RValue<Float4>(V(result));
 	}
 
 	RValue<Float4> Frac(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		return x - Floor(x);
 	}
 
 	RValue<Float4> Floor(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::Round, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto round = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		round->addArg(x.value);
+		round->addArg(::context->getConstantInt32(1));
+		::basicBlock->appendInst(round);
+
+		return RValue<Float4>(V(result));
 	}
 
 	RValue<Float4> Ceil(RValue<Float4> x)
 	{
-		assert(false && "UNIMPLEMENTED"); return RValue<Float4>(V(nullptr));
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::Round, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+		auto target = ::context->getConstantUndef(Ice::IceType_i32);
+		auto round = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+		round->addArg(x.value);
+		round->addArg(::context->getConstantInt32(2));
+		::basicBlock->appendInst(round);
+
+		return RValue<Float4>(V(result));
 	}
 
 	Type *Float4::getType()
@@ -5662,17 +6412,17 @@ namespace sw
 		return RValue<Pointer<Byte>>(Nucleus::createGEP(lhs.value, Byte::getType(), offset.value));
 	}
 
-	RValue<Pointer<Byte>> operator+=(const Pointer<Byte> &lhs, int offset)
+	RValue<Pointer<Byte>> operator+=(Pointer<Byte> &lhs, int offset)
 	{
 		return lhs = lhs + offset;
 	}
 
-	RValue<Pointer<Byte>> operator+=(const Pointer<Byte> &lhs, RValue<Int> offset)
+	RValue<Pointer<Byte>> operator+=(Pointer<Byte> &lhs, RValue<Int> offset)
 	{
 		return lhs = lhs + offset;
 	}
 
-	RValue<Pointer<Byte>> operator+=(const Pointer<Byte> &lhs, RValue<UInt> offset)
+	RValue<Pointer<Byte>> operator+=(Pointer<Byte> &lhs, RValue<UInt> offset)
 	{
 		return lhs = lhs + offset;
 	}
@@ -5692,17 +6442,17 @@ namespace sw
 		return lhs + -offset;
 	}
 
-	RValue<Pointer<Byte>> operator-=(const Pointer<Byte> &lhs, int offset)
+	RValue<Pointer<Byte>> operator-=(Pointer<Byte> &lhs, int offset)
 	{
 		return lhs = lhs - offset;
 	}
 
-	RValue<Pointer<Byte>> operator-=(const Pointer<Byte> &lhs, RValue<Int> offset)
+	RValue<Pointer<Byte>> operator-=(Pointer<Byte> &lhs, RValue<Int> offset)
 	{
 		return lhs = lhs - offset;
 	}
 
-	RValue<Pointer<Byte>> operator-=(const Pointer<Byte> &lhs, RValue<UInt> offset)
+	RValue<Pointer<Byte>> operator-=(Pointer<Byte> &lhs, RValue<UInt> offset)
 	{
 		return lhs = lhs - offset;
 	}
@@ -5714,27 +6464,11 @@ namespace sw
 		Nucleus::createUnreachable();
 	}
 
-	void Return(bool ret)
+	void Return(RValue<Int> ret)
 	{
-		Ice::Operand *Ret = Ice::ConstantInteger32::create(::context, Ice::IceType_i32, ret ? 1 : 0);
-		Ice::InstRet *retu = Ice::InstRet::create(::function, Ret);
-		::basicBlock->appendInst(retu);
-	}
-
-	void Return(const Int &ret)
-	{
-		Ice::InstRet *retu = Ice::InstRet::create(::function, ret.loadValue());
-		::basicBlock->appendInst(retu);
-	}
-
-	BasicBlock *beginLoop()
-	{
-		BasicBlock *loopBB = Nucleus::createBasicBlock();
-
-		Nucleus::createBr(loopBB);
-		Nucleus::setInsertBlock(loopBB);
-
-		return loopBB;
+		Nucleus::createRet(ret.value);
+		Nucleus::setInsertBlock(Nucleus::createBasicBlock());
+		Nucleus::createUnreachable();
 	}
 
 	bool branch(RValue<Bool> cmp, BasicBlock *bodyBB, BasicBlock *endBB)
@@ -5745,16 +6479,8 @@ namespace sw
 		return true;
 	}
 
-	bool elseBlock(BasicBlock *falseBB)
-	{
-		Nucleus::setInsertBlock(falseBB);
-
-		return true;
-	}
-
 	RValue<Long> Ticks()
 	{
 		assert(false && "UNIMPLEMENTED"); return RValue<Long>(V(nullptr));
 	}
 }
-

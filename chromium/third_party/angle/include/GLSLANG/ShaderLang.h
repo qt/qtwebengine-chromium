@@ -20,19 +20,12 @@
 // and the shading language compiler.
 //
 
-namespace sh
-{
-// GLenum alias
-typedef unsigned int GLenum;
-}
-
-// Must be included after GLenum proxy typedef
 // Note: make sure to increment ANGLE_SH_VERSION when changing ShaderVars.h
 #include "ShaderVars.h"
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 167
+#define ANGLE_SH_VERSION 171
 
 enum ShShaderSpec
 {
@@ -68,12 +61,15 @@ enum ShShaderOutput
     // Prefer using these to specify HLSL output type:
     SH_HLSL_3_0_OUTPUT       = 0x8B48,  // D3D 9
     SH_HLSL_4_1_OUTPUT       = 0x8B49,  // D3D 11
-    SH_HLSL_4_0_FL9_3_OUTPUT = 0x8B4A   // D3D 11 feature level 9_3
+    SH_HLSL_4_0_FL9_3_OUTPUT = 0x8B4A,  // D3D 11 feature level 9_3
+
+    // Output specialized GLSL to be fed to glslang for Vulkan SPIR.
+    SH_GLSL_VULKAN_OUTPUT = 0x8B4B,
 };
 
 // Compile options.
-
-using ShCompileOptions = uint64_t;
+// The Compile options type is defined in ShaderVars.h, to allow ANGLE to import the ShaderVars
+// header without needing the ShaderLang header. This avoids some conflicts with glslang.
 
 const ShCompileOptions SH_VALIDATE                           = 0;
 const ShCompileOptions SH_VALIDATE_LOOP_INDEXING             = UINT64_C(1) << 0;
@@ -82,12 +78,29 @@ const ShCompileOptions SH_OBJECT_CODE                        = UINT64_C(1) << 2;
 const ShCompileOptions SH_VARIABLES                          = UINT64_C(1) << 3;
 const ShCompileOptions SH_LINE_DIRECTIVES                    = UINT64_C(1) << 4;
 const ShCompileOptions SH_SOURCE_PATH                        = UINT64_C(1) << 5;
-const ShCompileOptions SH_UNROLL_FOR_LOOP_WITH_INTEGER_INDEX = UINT64_C(1) << 6;
-// If a sampler array index happens to be a loop index,
-//   1) if its type is integer, unroll the loop.
-//   2) if its type is float, fail the shader compile.
-// This is to work around a mac driver bug.
-const ShCompileOptions SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX = UINT64_C(1) << 7;
+
+// This flag will keep invariant declaration for input in fragment shader for GLSL >=4.20 on AMD.
+// From GLSL >= 4.20, it's optional to add invariant for fragment input, but GPU vendors have
+// different implementations about this. Some drivers forbid invariant in fragment for GLSL>= 4.20,
+// e.g. Linux Mesa, some drivers treat that as optional, e.g. NVIDIA, some drivers require invariant
+// must match between vertex and fragment shader, e.g. AMD. The behavior on AMD is obviously wrong.
+// Remove invariant for input in fragment shader to workaround the restriction on Intel Mesa.
+// But don't remove on AMD Linux to avoid triggering the bug on AMD.
+const ShCompileOptions SH_DONT_REMOVE_INVARIANT_FOR_FRAGMENT_INPUT = UINT64_C(1) << 6;
+
+// Due to spec difference between GLSL 4.1 or lower and ESSL3, some platforms (for example, Mac OSX
+// core profile) require a variable's "invariant"/"centroid" qualifiers to match between vertex and
+// fragment shader. A simple solution to allow such shaders to link is to omit the two qualifiers.
+// AMD driver in Linux requires invariant qualifier to match between vertex and fragment shaders,
+// while ESSL3 disallows invariant qualifier in fragment shader and GLSL >= 4.2 doesn't require
+// invariant qualifier to match between shaders. Remove invariant qualifier from vertex shader to
+// workaround AMD driver bug.
+// Note that the two flags take effect on ESSL3 input shaders translated to GLSL 4.1 or lower and to
+// GLSL 4.2 or newer on Linux AMD.
+// TODO(zmo): This is not a good long-term solution. Simply dropping these qualifiers may break some
+// developers' content. A more complex workaround of dynamically generating, compiling, and
+// re-linking shaders that use these qualifiers should be implemented.
+const ShCompileOptions SH_REMOVE_INVARIANT_AND_CENTROID_FOR_ESSL3 = UINT64_C(1) << 7;
 
 // This flag works around bug in Intel Mac drivers related to abs(i) where
 // i is an integer.
@@ -193,23 +206,17 @@ const ShCompileOptions SH_EMULATE_ISNAN_FLOAT_FUNCTION = UINT64_C(1) << 27;
 // layout qualifier to be considered active. The uniform block itself is also considered active.
 const ShCompileOptions SH_USE_UNUSED_STANDARD_SHARED_BLOCKS = UINT64_C(1) << 28;
 
-// This flag will keep invariant declaration for input in fragment shader for GLSL >=4.20 on AMD.
-// From GLSL >= 4.20, it's optional to add invariant for fragment input, but GPU vendors have
-// different implementations about this. Some drivers forbid invariant in fragment for GLSL>= 4.20,
-// e.g. Linux Mesa, some drivers treat that as optional, e.g. NVIDIA, some drivers require invariant
-// must match between vertex and fragment shader, e.g. AMD. The behavior on AMD is obviously wrong.
-// Remove invariant for input in fragment shader to workaround the restriction on Intel Mesa.
-// But don't remove on AMD Linux to avoid triggering the bug on AMD.
-const ShCompileOptions SH_DONT_REMOVE_INVARIANT_FOR_FRAGMENT_INPUT = UINT64_C(1) << 29;
+// This flag works around a bug in unary minus operator on float numbers on Intel
+// Mac OSX 10.11 drivers. It works by translating -float into 0.0 - float.
+const ShCompileOptions SH_REWRITE_FLOAT_UNARY_MINUS_OPERATOR = UINT64_C(1) << 29;
 
-// Due to spec difference between GLSL 4.1 or lower and ESSL3, some platforms (for example, Mac OSX
-// core profile) require a variable's "invariant"/"centroid" qualifiers to match between vertex and
-// fragment shader. A simple solution to allow such shaders to link is to omit the two qualifiers.
-// Note that the two flags only take effect on ESSL3 input shaders translated to GLSL 4.1 or lower.
-// TODO(zmo): This is not a good long-term solution. Simply dropping these qualifiers may break some
-// developers' content. A more complex workaround of dynamically generating, compiling, and
-// re-linking shaders that use these qualifiers should be implemented.
-const ShCompileOptions SH_REMOVE_INVARIANT_AND_CENTROID_FOR_ESSL3 = UINT64_C(1) << 30;
+// This flag works around a bug in evaluating atan(y, x) on some NVIDIA OpenGL drivers.
+// It works by using an expression to emulate this function.
+const ShCompileOptions SH_EMULATE_ATAN2_FLOAT_FUNCTION = UINT64_C(1) << 30;
+
+// Set to 1 to translate gl_ViewID_OVR to an uniform so that the extension can be emulated.
+// "uniform highp uint webgl_angle_ViewID_OVR".
+const ShCompileOptions SH_TRANSLATE_VIEWID_OVR_TO_UNIFORM = UINT64_C(1) << 31;
 
 // Defines alternate strategies for implementing array index clamping.
 enum ShArrayIndexClampingStrategy
@@ -256,6 +263,7 @@ struct ShBuiltInResources
     int EXT_shader_framebuffer_fetch;
     int NV_shader_framebuffer_fetch;
     int ARM_shader_framebuffer_fetch;
+    int OVR_multiview;
 
     // Set to 1 to enable replacing GL_EXT_draw_buffers #extension directives
     // with GL_NV_draw_buffers in ESSL output. This flag can be used to emulate
@@ -281,6 +289,9 @@ struct ShBuiltInResources
     // Value of GL_MAX_DUAL_SOURCE_DRAW_BUFFERS for OpenGL output context.
     // GLES SL version 100 gl_MaxDualSourceDrawBuffersEXT value for EXT_blend_func_extended.
     int MaxDualSourceDrawBuffers;
+
+    // Value of GL_MAX_VIEWS_OVR.
+    int MaxViewsOVR;
 
     // Name Hashing.
     // Set a 64 bit hash function to enable user-defined name hashing.
@@ -371,149 +382,6 @@ struct ShBuiltInResources
 // If handle creation fails, 0 will be returned.
 //
 using ShHandle = void *;
-
-//
-// Driver must call this first, once, before doing any other
-// compiler operations.
-// If the function succeeds, the return value is true, else false.
-//
-bool ShInitialize();
-//
-// Driver should call this at shutdown.
-// If the function succeeds, the return value is true, else false.
-//
-bool ShFinalize();
-
-//
-// Initialize built-in resources with minimum expected values.
-// Parameters:
-// resources: The object to initialize. Will be comparable with memcmp.
-//
-void ShInitBuiltInResources(ShBuiltInResources *resources);
-
-//
-// Returns the a concatenated list of the items in ShBuiltInResources as a
-// null-terminated string.
-// This function must be updated whenever ShBuiltInResources is changed.
-// Parameters:
-// handle: Specifies the handle of the compiler to be used.
-const std::string &ShGetBuiltInResourcesString(const ShHandle handle);
-
-//
-// Driver calls these to create and destroy compiler objects.
-//
-// Returns the handle of constructed compiler, null if the requested compiler is
-// not supported.
-// Parameters:
-// type: Specifies the type of shader - GL_FRAGMENT_SHADER or GL_VERTEX_SHADER.
-// spec: Specifies the language spec the compiler must conform to -
-//       SH_GLES2_SPEC or SH_WEBGL_SPEC.
-// output: Specifies the output code type - for example SH_ESSL_OUTPUT, SH_GLSL_OUTPUT,
-//         SH_HLSL_3_0_OUTPUT or SH_HLSL_4_1_OUTPUT. Note: Each output type may only
-//         be supported in some configurations.
-// resources: Specifies the built-in resources.
-ShHandle ShConstructCompiler(sh::GLenum type,
-                             ShShaderSpec spec,
-                             ShShaderOutput output,
-                             const ShBuiltInResources *resources);
-void ShDestruct(ShHandle handle);
-
-//
-// Compiles the given shader source.
-// If the function succeeds, the return value is true, else false.
-// Parameters:
-// handle: Specifies the handle of compiler to be used.
-// shaderStrings: Specifies an array of pointers to null-terminated strings
-//                containing the shader source code.
-// numStrings: Specifies the number of elements in shaderStrings array.
-// compileOptions: A mask containing the following parameters:
-// SH_VALIDATE: Validates shader to ensure that it conforms to the spec
-//              specified during compiler construction.
-// SH_VALIDATE_LOOP_INDEXING: Validates loop and indexing in the shader to
-//                            ensure that they do not exceed the minimum
-//                            functionality mandated in GLSL 1.0 spec,
-//                            Appendix A, Section 4 and 5.
-//                            There is no need to specify this parameter when
-//                            compiling for WebGL - it is implied.
-// SH_INTERMEDIATE_TREE: Writes intermediate tree to info log.
-//                       Can be queried by calling sh::GetInfoLog().
-// SH_OBJECT_CODE: Translates intermediate tree to glsl or hlsl shader.
-//                 Can be queried by calling sh::GetObjectCode().
-// SH_VARIABLES: Extracts attributes, uniforms, and varyings.
-//               Can be queried by calling ShGetVariableInfo().
-//
-bool ShCompile(const ShHandle handle,
-               const char *const shaderStrings[],
-               size_t numStrings,
-               ShCompileOptions compileOptions);
-
-// Clears the results from the previous compilation.
-void ShClearResults(const ShHandle handle);
-
-// Return the version of the shader language.
-int ShGetShaderVersion(const ShHandle handle);
-
-// Return the currently set language output type.
-ShShaderOutput ShGetShaderOutputType(const ShHandle handle);
-
-// Returns null-terminated information log for a compiled shader.
-// Parameters:
-// handle: Specifies the compiler
-const std::string &ShGetInfoLog(const ShHandle handle);
-
-// Returns null-terminated object code for a compiled shader.
-// Parameters:
-// handle: Specifies the compiler
-const std::string &ShGetObjectCode(const ShHandle handle);
-
-// Returns a (original_name, hash) map containing all the user defined
-// names in the shader, including variable names, function names, struct
-// names, and struct field names.
-// Parameters:
-// handle: Specifies the compiler
-const std::map<std::string, std::string> *ShGetNameHashingMap(const ShHandle handle);
-
-// Shader variable inspection.
-// Returns a pointer to a list of variables of the designated type.
-// (See ShaderVars.h for type definitions, included above)
-// Returns NULL on failure.
-// Parameters:
-// handle: Specifies the compiler
-const std::vector<sh::Uniform> *ShGetUniforms(const ShHandle handle);
-const std::vector<sh::Varying> *ShGetVaryings(const ShHandle handle);
-const std::vector<sh::Attribute> *ShGetAttributes(const ShHandle handle);
-const std::vector<sh::OutputVariable> *ShGetOutputVariables(const ShHandle handle);
-const std::vector<sh::InterfaceBlock> *ShGetInterfaceBlocks(const ShHandle handle);
-sh::WorkGroupSize ShGetComputeShaderLocalGroupSize(const ShHandle handle);
-
-// Returns true if the passed in variables pack in maxVectors following
-// the packing rules from the GLSL 1.017 spec, Appendix A, section 7.
-// Returns false otherwise. Also look at the SH_ENFORCE_PACKING_RESTRICTIONS
-// flag above.
-// Parameters:
-// maxVectors: the available rows of registers.
-// variables: an array of variables.
-bool ShCheckVariablesWithinPackingLimits(int maxVectors,
-                                         const std::vector<sh::ShaderVariable> &variables);
-
-// Gives the compiler-assigned register for an interface block.
-// The method writes the value to the output variable "indexOut".
-// Returns true if it found a valid interface block, false otherwise.
-// Parameters:
-// handle: Specifies the compiler
-// interfaceBlockName: Specifies the interface block
-// indexOut: output variable that stores the assigned register
-bool ShGetInterfaceBlockRegister(const ShHandle handle,
-                                 const std::string &interfaceBlockName,
-                                 unsigned int *indexOut);
-
-// Gives a map from uniform names to compiler-assigned registers in the default
-// interface block. Note that the map contains also registers of samplers that
-// have been extracted from structs.
-const std::map<std::string, unsigned int> *ShGetUniformRegisterMap(const ShHandle handle);
-
-// Temporary duplicate of the scoped APIs, to be removed when we roll ANGLE and fix Chromium.
-// TODO(jmadill): Consolidate with these APIs once we roll ANGLE.
 
 namespace sh
 {
@@ -626,6 +494,7 @@ const std::vector<sh::Attribute> *GetAttributes(const ShHandle handle);
 const std::vector<sh::OutputVariable> *GetOutputVariables(const ShHandle handle);
 const std::vector<sh::InterfaceBlock> *GetInterfaceBlocks(const ShHandle handle);
 sh::WorkGroupSize GetComputeShaderLocalGroupSize(const ShHandle handle);
+int GetVertexShaderNumViews(const ShHandle handle);
 
 // Returns true if the passed in variables pack in maxVectors followingthe packing rules from the
 // GLSL 1.017 spec, Appendix A, section 7.

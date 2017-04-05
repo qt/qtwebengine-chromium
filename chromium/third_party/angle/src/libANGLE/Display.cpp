@@ -55,12 +55,14 @@
 
 #if defined(ANGLE_ENABLE_NULL)
 #include "libANGLE/renderer/null/DisplayNULL.h"
-#endif
+#endif  // defined(ANGLE_ENABLE_NULL)
 
-namespace egl
-{
+#if defined(ANGLE_ENABLE_VULKAN)
+#include "libANGLE/renderer/vulkan/DisplayVk.h"
+#endif  // defined(ANGLE_ENABLE_VULKAN)
 
-namespace
+// The log messages prepend the class name, so make this part of the angle namespace.
+namespace angle
 {
 
 class DefaultPlatform : public angle::Platform
@@ -68,20 +70,49 @@ class DefaultPlatform : public angle::Platform
 public:
     DefaultPlatform() {}
     ~DefaultPlatform() override {}
+
+    void logError(const char *errorMessage) override;
+    void logWarning(const char *warningMessage) override;
+    void logInfo(const char *infoMessage) override;
 };
 
-DefaultPlatform *defaultPlatform = nullptr;
+std::unique_ptr<DefaultPlatform> g_defaultPlatform = nullptr;
+
+void DefaultPlatform::logError(const char *errorMessage)
+{
+    ERR("%s", errorMessage);
+}
+
+void DefaultPlatform::logWarning(const char *warningMessage)
+{
+    // TODO(jmadill): Fix this
+    ERR("%s", warningMessage);
+}
+
+void DefaultPlatform::logInfo(const char *infoMessage)
+{
+    // Uncomment this if you want Vulkan spam.
+    // ERR("%s", infoMessage);
+}
+
+}  // namespace angle
+
+namespace egl
+{
+
+namespace
+{
 
 void InitDefaultPlatformImpl()
 {
     if (ANGLEPlatformCurrent() == nullptr)
     {
-        if (defaultPlatform == nullptr)
+        if (!angle::g_defaultPlatform)
         {
-            defaultPlatform = new DefaultPlatform();
+            angle::g_defaultPlatform.reset(new angle::DefaultPlatform());
         }
 
-        ANGLEPlatformInitialize(defaultPlatform);
+        ANGLEPlatformInitialize(angle::g_defaultPlatform.get());
     }
 }
 
@@ -108,7 +139,7 @@ static DevicePlatformDisplayMap *GetDevicePlatformDisplayMap()
     return &displays;
 }
 
-rx::DisplayImpl *CreateDisplayFromDevice(Device *eglDevice)
+rx::DisplayImpl *CreateDisplayFromDevice(Device *eglDevice, const DisplayState &state)
 {
     rx::DisplayImpl *impl = nullptr;
 
@@ -116,7 +147,7 @@ rx::DisplayImpl *CreateDisplayFromDevice(Device *eglDevice)
     {
 #if defined(ANGLE_ENABLE_D3D11)
         case EGL_D3D11_DEVICE_ANGLE:
-            impl = new rx::DisplayD3D();
+            impl = new rx::DisplayD3D(state);
             break;
 #endif
 #if defined(ANGLE_ENABLE_D3D9)
@@ -139,107 +170,119 @@ rx::DisplayImpl *CreateDisplayFromDevice(Device *eglDevice)
     return impl;
 }
 
-rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap)
+rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap, const DisplayState &state)
 {
     rx::DisplayImpl *impl = nullptr;
     EGLAttrib displayType =
         attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
     switch (displayType)
     {
-      case EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE:
+        case EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE:
 #if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
-        // Default to D3D displays
-        impl = new rx::DisplayD3D();
+            // Default to D3D displays
+            impl = new rx::DisplayD3D(state);
 #elif defined(ANGLE_USE_X11)
-        impl = new rx::DisplayGLX();
+            impl = new rx::DisplayGLX(state);
 #elif defined(ANGLE_PLATFORM_APPLE)
-        impl = new rx::DisplayCGL();
+            impl = new rx::DisplayCGL(state);
 #elif defined(ANGLE_USE_OZONE)
-        impl = new rx::DisplayOzone();
+            impl = new rx::DisplayOzone(state);
 #elif defined(ANGLE_PLATFORM_ANDROID)
-        impl = new rx::DisplayAndroid();
+            impl = new rx::DisplayAndroid(state);
 #else
-        // No display available
-        UNREACHABLE();
+            // No display available
+            UNREACHABLE();
 #endif
-        break;
+            break;
 
-      case EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE:
-      case EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE:
+        case EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE:
+        case EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE:
 #if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
-        impl = new rx::DisplayD3D();
+            impl = new rx::DisplayD3D(state);
 #else
-        // A D3D display was requested on a platform that doesn't support it
-        UNREACHABLE();
+            // A D3D display was requested on a platform that doesn't support it
+            UNREACHABLE();
 #endif
-        break;
+            break;
 
-      case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
+        case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
 #if defined(ANGLE_ENABLE_OPENGL)
 #if defined(ANGLE_PLATFORM_WINDOWS)
-        impl = new rx::DisplayWGL();
+            impl = new rx::DisplayWGL(state);
 #elif defined(ANGLE_USE_X11)
-        impl = new rx::DisplayGLX();
+            impl = new rx::DisplayGLX(state);
 #elif defined(ANGLE_PLATFORM_APPLE)
-        impl = new rx::DisplayCGL();
+            impl = new rx::DisplayCGL(state);
 #elif defined(ANGLE_USE_OZONE)
-        // This might work but has never been tried, so disallow for now.
-        impl = nullptr;
+            // This might work but has never been tried, so disallow for now.
+            impl = nullptr;
 #elif defined(ANGLE_PLATFORM_ANDROID)
-        // No GL support on this platform, fail display creation.
-        impl = nullptr;
+            // No GL support on this platform, fail display creation.
+            impl = nullptr;
 #else
 #error Unsupported OpenGL platform.
 #endif
 #else
-        UNREACHABLE();
-#endif
-        break;
+            // No display available
+            UNREACHABLE();
+#endif  // defined(ANGLE_ENABLE_OPENGL)
+            break;
 
+        case EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE:
 #if defined(ANGLE_ENABLE_OPENGL)
-      case EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE:
 #if defined(ANGLE_PLATFORM_WINDOWS)
-        impl = new rx::DisplayWGL();
+            impl = new rx::DisplayWGL(state);
 #elif defined(ANGLE_USE_X11)
-        impl = new rx::DisplayGLX();
+            impl = new rx::DisplayGLX(state);
 #elif defined(ANGLE_USE_OZONE)
-        impl = new rx::DisplayOzone();
+            impl = new rx::DisplayOzone(state);
 #elif defined(ANGLE_PLATFORM_ANDROID)
-        impl = new rx::DisplayAndroid();
+            impl = new rx::DisplayAndroid(state);
 #else
-        // No GLES support on this platform, fail display creation.
-        impl = nullptr;
+            // No GLES support on this platform, fail display creation.
+            impl = nullptr;
 #endif
-        break;
-#endif
+#endif  // defined(ANGLE_ENABLE_OPENGL)
+            break;
 
+        case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
+#if defined(ANGLE_ENABLE_VULKAN)
+            impl = new rx::DisplayVk(state);
+#else
+            // No display available
+            UNREACHABLE();
+#endif  // defined(ANGLE_ENABLE_VULKAN)
+            break;
+
+        case EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE:
 #if defined(ANGLE_ENABLE_NULL)
-      case EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE:
-          impl = new rx::DisplayNULL();
-          break;
-#endif
+            impl = new rx::DisplayNULL(state);
+#else
+            // No display available
+            UNREACHABLE();
+#endif  // defined(ANGLE_ENABLE_NULL)
+            break;
 
-      default:
-        UNREACHABLE();
-        break;
+        default:
+            UNREACHABLE();
+            break;
     }
 
     return impl;
 }
 
-}
+}  // anonymous namespace
 
-Display *Display::GetDisplayFromAttribs(void *native_display, const AttributeMap &attribMap)
+Display *Display::GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay,
+                                              const AttributeMap &attribMap)
 {
     // Initialize the global platform if not already
     InitDefaultPlatformImpl();
 
     Display *display = nullptr;
 
-    EGLNativeDisplayType displayId = reinterpret_cast<EGLNativeDisplayType>(native_display);
-
     ANGLEPlatformDisplayMap *displays            = GetANGLEPlatformDisplayMap();
-    ANGLEPlatformDisplayMap::const_iterator iter = displays->find(displayId);
+    ANGLEPlatformDisplayMap::const_iterator iter = displays->find(nativeDisplay);
     if (iter != displays->end())
     {
         display = iter->second;
@@ -248,19 +291,19 @@ Display *Display::GetDisplayFromAttribs(void *native_display, const AttributeMap
     if (display == nullptr)
     {
         // Validate the native display
-        if (!Display::isValidNativeDisplay(displayId))
+        if (!Display::isValidNativeDisplay(nativeDisplay))
         {
             return NULL;
         }
 
-        display = new Display(EGL_PLATFORM_ANGLE_ANGLE, displayId, nullptr);
-        displays->insert(std::make_pair(displayId, display));
+        display = new Display(EGL_PLATFORM_ANGLE_ANGLE, nativeDisplay, nullptr);
+        displays->insert(std::make_pair(nativeDisplay, display));
     }
 
     // Apply new attributes if the display is not initialized yet.
     if (!display->isInitialized())
     {
-        rx::DisplayImpl *impl = CreateDisplayFromAttribs(attribMap);
+        rx::DisplayImpl *impl = CreateDisplayFromAttribs(attribMap, display->getState());
         if (impl == nullptr)
         {
             // No valid display implementation for these attributes
@@ -273,15 +316,14 @@ Display *Display::GetDisplayFromAttribs(void *native_display, const AttributeMap
     return display;
 }
 
-Display *Display::GetDisplayFromDevice(void *native_display)
+Display *Display::GetDisplayFromDevice(Device *device)
 {
     // Initialize the global platform if not already
     InitDefaultPlatformImpl();
 
     Display *display = nullptr;
 
-    Device *eglDevice = reinterpret_cast<Device *>(native_display);
-    ASSERT(Device::IsValidDevice(eglDevice));
+    ASSERT(Device::IsValidDevice(device));
 
     ANGLEPlatformDisplayMap *anglePlatformDisplays   = GetANGLEPlatformDisplayMap();
     DevicePlatformDisplayMap *devicePlatformDisplays = GetDevicePlatformDisplayMap();
@@ -290,7 +332,7 @@ Display *Display::GetDisplayFromDevice(void *native_display)
     for (auto &displayMapEntry : *anglePlatformDisplays)
     {
         egl::Display *iterDisplay = displayMapEntry.second;
-        if (iterDisplay->getDevice() == eglDevice)
+        if (iterDisplay->getDevice() == device)
         {
             display = iterDisplay;
         }
@@ -299,7 +341,7 @@ Display *Display::GetDisplayFromDevice(void *native_display)
     if (display == nullptr)
     {
         // See if the eglDevice is in use by a Display created using the DEVICE platform
-        DevicePlatformDisplayMap::const_iterator iter = devicePlatformDisplays->find(eglDevice);
+        DevicePlatformDisplayMap::const_iterator iter = devicePlatformDisplays->find(device);
         if (iter != devicePlatformDisplays->end())
         {
             display = iter->second;
@@ -309,14 +351,14 @@ Display *Display::GetDisplayFromDevice(void *native_display)
     if (display == nullptr)
     {
         // Otherwise create a new Display
-        display = new Display(EGL_PLATFORM_DEVICE_EXT, 0, eglDevice);
-        devicePlatformDisplays->insert(std::make_pair(eglDevice, display));
+        display = new Display(EGL_PLATFORM_DEVICE_EXT, 0, device);
+        devicePlatformDisplays->insert(std::make_pair(device, display));
     }
 
     // Apply new attributes if the display is not initialized yet.
     if (!display->isInitialized())
     {
-        rx::DisplayImpl *impl = CreateDisplayFromDevice(eglDevice);
+        rx::DisplayImpl *impl = CreateDisplayFromDevice(device, display->getState());
         display->setAttributes(impl, egl::AttributeMap());
     }
 
@@ -466,9 +508,9 @@ void Display::terminate()
         destroyStream(*mStreamSet.begin());
     }
 
-    while (!mImplementation->getSurfaceSet().empty())
+    while (!mState.surfaceSet.empty())
     {
-        destroySurface(*mImplementation->getSurfaceSet().begin());
+        destroySurface(*mState.surfaceSet.begin());
     }
 
     mConfigSet.clear();
@@ -482,6 +524,8 @@ void Display::terminate()
 
     mImplementation->terminate();
 
+    mDeviceLost = false;
+
     mInitialized = false;
 
     // Never de-init default platform.. terminate is not that final.
@@ -490,59 +534,6 @@ void Display::terminate()
 std::vector<const Config*> Display::getConfigs(const egl::AttributeMap &attribs) const
 {
     return mConfigSet.filter(attribs);
-}
-
-bool Display::getConfigAttrib(const Config *configuration, EGLint attribute, EGLint *value)
-{
-    switch (attribute)
-    {
-      case EGL_BUFFER_SIZE:               *value = configuration->bufferSize;             break;
-      case EGL_ALPHA_SIZE:                *value = configuration->alphaSize;              break;
-      case EGL_BLUE_SIZE:                 *value = configuration->blueSize;               break;
-      case EGL_GREEN_SIZE:                *value = configuration->greenSize;              break;
-      case EGL_RED_SIZE:                  *value = configuration->redSize;                break;
-      case EGL_DEPTH_SIZE:                *value = configuration->depthSize;              break;
-      case EGL_STENCIL_SIZE:              *value = configuration->stencilSize;            break;
-      case EGL_CONFIG_CAVEAT:             *value = configuration->configCaveat;           break;
-      case EGL_CONFIG_ID:                 *value = configuration->configID;               break;
-      case EGL_LEVEL:                     *value = configuration->level;                  break;
-      case EGL_NATIVE_RENDERABLE:         *value = configuration->nativeRenderable;       break;
-      case EGL_NATIVE_VISUAL_ID:          *value = configuration->nativeVisualID;         break;
-      case EGL_NATIVE_VISUAL_TYPE:        *value = configuration->nativeVisualType;       break;
-      case EGL_SAMPLES:                   *value = configuration->samples;                break;
-      case EGL_SAMPLE_BUFFERS:            *value = configuration->sampleBuffers;          break;
-      case EGL_SURFACE_TYPE:              *value = configuration->surfaceType;            break;
-      case EGL_TRANSPARENT_TYPE:          *value = configuration->transparentType;        break;
-      case EGL_TRANSPARENT_BLUE_VALUE:    *value = configuration->transparentBlueValue;   break;
-      case EGL_TRANSPARENT_GREEN_VALUE:   *value = configuration->transparentGreenValue;  break;
-      case EGL_TRANSPARENT_RED_VALUE:     *value = configuration->transparentRedValue;    break;
-      case EGL_BIND_TO_TEXTURE_RGB:       *value = configuration->bindToTextureRGB;       break;
-      case EGL_BIND_TO_TEXTURE_RGBA:      *value = configuration->bindToTextureRGBA;      break;
-      case EGL_MIN_SWAP_INTERVAL:         *value = configuration->minSwapInterval;        break;
-      case EGL_MAX_SWAP_INTERVAL:         *value = configuration->maxSwapInterval;        break;
-      case EGL_LUMINANCE_SIZE:            *value = configuration->luminanceSize;          break;
-      case EGL_ALPHA_MASK_SIZE:           *value = configuration->alphaMaskSize;          break;
-      case EGL_COLOR_BUFFER_TYPE:         *value = configuration->colorBufferType;        break;
-      case EGL_RENDERABLE_TYPE:           *value = configuration->renderableType;         break;
-      case EGL_MATCH_NATIVE_PIXMAP:       *value = false; UNIMPLEMENTED();                break;
-      case EGL_CONFORMANT:                *value = configuration->conformant;             break;
-      case EGL_MAX_PBUFFER_WIDTH:         *value = configuration->maxPBufferWidth;        break;
-      case EGL_MAX_PBUFFER_HEIGHT:        *value = configuration->maxPBufferHeight;       break;
-      case EGL_MAX_PBUFFER_PIXELS:        *value = configuration->maxPBufferPixels;       break;
-
-      case EGL_OPTIMAL_SURFACE_ORIENTATION_ANGLE:
-          if (!getExtensions().surfaceOrientation)
-          {
-              return false;
-          }
-          *value = configuration->optimalOrientation;
-          break;
-
-      default:
-        return false;
-    }
-
-    return true;
 }
 
 Error Display::createWindowSurface(const Config *configuration, EGLNativeWindowType window, const AttributeMap &attribs,
@@ -555,11 +546,11 @@ Error Display::createWindowSurface(const Config *configuration, EGLNativeWindowT
 
     std::unique_ptr<Surface> surface(
         new WindowSurface(mImplementation, configuration, window, attribs));
-    ANGLE_TRY(surface->initialize());
+    ANGLE_TRY(surface->initialize(*this));
 
     ASSERT(outSurface != nullptr);
     *outSurface = surface.release();
-    mImplementation->getSurfaceSet().insert(*outSurface);
+    mState.surfaceSet.insert(*outSurface);
 
     WindowSurfaceMap *windowSurfaces = GetWindowSurfaces();
     ASSERT(windowSurfaces && windowSurfaces->find(window) == windowSurfaces->end());
@@ -578,11 +569,11 @@ Error Display::createPbufferSurface(const Config *configuration, const Attribute
     }
 
     std::unique_ptr<Surface> surface(new PbufferSurface(mImplementation, configuration, attribs));
-    ANGLE_TRY(surface->initialize());
+    ANGLE_TRY(surface->initialize(*this));
 
     ASSERT(outSurface != nullptr);
     *outSurface = surface.release();
-    mImplementation->getSurfaceSet().insert(*outSurface);
+    mState.surfaceSet.insert(*outSurface);
 
     return egl::Error(EGL_SUCCESS);
 }
@@ -602,11 +593,11 @@ Error Display::createPbufferFromClientBuffer(const Config *configuration,
 
     std::unique_ptr<Surface> surface(
         new PbufferSurface(mImplementation, configuration, buftype, clientBuffer, attribs));
-    ANGLE_TRY(surface->initialize());
+    ANGLE_TRY(surface->initialize(*this));
 
     ASSERT(outSurface != nullptr);
     *outSurface = surface.release();
-    mImplementation->getSurfaceSet().insert(*outSurface);
+    mState.surfaceSet.insert(*outSurface);
 
     return egl::Error(EGL_SUCCESS);
 }
@@ -623,11 +614,11 @@ Error Display::createPixmapSurface(const Config *configuration, NativePixmapType
 
     std::unique_ptr<Surface> surface(
         new PixmapSurface(mImplementation, configuration, nativePixmap, attribs));
-    ANGLE_TRY(surface->initialize());
+    ANGLE_TRY(surface->initialize(*this));
 
     ASSERT(outSurface != nullptr);
     *outSurface = surface.release();
-    mImplementation->getSurfaceSet().insert(*outSurface);
+    mState.surfaceSet.insert(*outSurface);
 
     return egl::Error(EGL_SUCCESS);
 }
@@ -760,7 +751,8 @@ void Display::destroySurface(Surface *surface)
         ASSERT(surfaceRemoved);
     }
 
-    mImplementation->destroySurface(surface);
+    mState.surfaceSet.erase(surface);
+    surface->onDestroy();
 }
 
 void Display::destroyImage(egl::Image *image)
@@ -848,8 +840,7 @@ bool Display::isValidContext(const gl::Context *context) const
 
 bool Display::isValidSurface(const Surface *surface) const
 {
-    return mImplementation->getSurfaceSet().find(const_cast<Surface *>(surface)) !=
-           mImplementation->getSurfaceSet().end();
+    return mState.surfaceSet.find(const_cast<Surface *>(surface)) != mState.surfaceSet.end();
 }
 
 bool Display::isValidImage(const Image *image) const
@@ -895,6 +886,10 @@ static ClientExtensions GenerateClientExtensions()
     extensions.deviceCreation      = true;
     extensions.deviceCreationD3D11 = true;
     extensions.experimentalPresentPath = true;
+#endif
+
+#if defined(ANGLE_ENABLE_VULKAN)
+    extensions.platformANGLEVulkan = true;
 #endif
 
 #if defined(ANGLE_USE_X11)
@@ -1030,4 +1025,4 @@ gl::Version Display::getMaxSupportedESVersion() const
 {
     return mImplementation->getMaxSupportedESVersion();
 }
-}
+}  // namespace egl

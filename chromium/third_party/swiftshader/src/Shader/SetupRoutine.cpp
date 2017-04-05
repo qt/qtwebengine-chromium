@@ -114,13 +114,13 @@ namespace sw
 				{
 					If(A > 0.0f)
 					{
-						*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) =  Byte8(0xFFFFFFFFFFFFFFFF);
-						*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0x0000000000000000);
+						*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+						*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 					}
 					Else
 					{
-						*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) =  Byte8(0x0000000000000000);
-						*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0xFFFFFFFFFFFFFFFF);
+						*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+						*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
 					}
 				}
 
@@ -133,8 +133,8 @@ namespace sw
 			{
 				if(state.twoSidedStencil)
 				{
-					*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) =  Byte8(0xFFFFFFFFFFFFFFFF);
-					*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0x0000000000000000);
+					*Pointer<Byte8>(primitive + OFFSET(Primitive,clockwiseMask)) = Byte8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+					*Pointer<Byte8>(primitive + OFFSET(Primitive,invClockwiseMask)) = Byte8(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 				}
 			}
 
@@ -555,31 +555,29 @@ namespace sw
 		}
 	}
 
-	void SetupRoutine::edge(Pointer<Byte> &primitive, Pointer<Byte> &data, const Int &X1, const Int &Y1, const Int &X2, const Int &Y2, Int &q)
+	void SetupRoutine::edge(Pointer<Byte> &primitive, Pointer<Byte> &data, const Int &Xa, const Int &Ya, const Int &Xb, const Int &Yb, Int &q)
 	{
-		If(Y1 != Y2)
+		If(Ya != Yb)
 		{
-			Int xMin = *Pointer<Int>(data + OFFSET(DrawData,scissorX0));
-			Int xMax = *Pointer<Int>(data + OFFSET(DrawData,scissorX1));
+			Bool swap = Yb < Ya;
 
-			Bool swap = Y2 < Y1;
-
-			Pointer<Byte> leftEdge = primitive + q * sizeof(Primitive) + OFFSET(Primitive,outline->left);
-			Pointer<Byte> rightEdge = primitive + q * sizeof(Primitive) + OFFSET(Primitive,outline->right);
-			Pointer<Byte> edge = IfThenElse(swap, rightEdge, leftEdge);
-
-			Int X0 = X1;
-			Int Y0 = Y1;
-			X1 = IfThenElse(swap, X2, X1);
-			X2 = IfThenElse(swap, X0, X2);
-			Y1 = IfThenElse(swap, Y2, Y1);
-			Y2 = IfThenElse(swap, Y0, Y2);
+			Int X1 = IfThenElse(swap, Xb, Xa);
+			Int X2 = IfThenElse(swap, Xa, Xb);
+			Int Y1 = IfThenElse(swap, Yb, Ya);
+			Int Y2 = IfThenElse(swap, Ya, Yb);
 
 			Int y1 = Max((Y1 + 0x0000000F) >> 4, *Pointer<Int>(data + OFFSET(DrawData,scissorY0)));
 			Int y2 = Min((Y2 + 0x0000000F) >> 4, *Pointer<Int>(data + OFFSET(DrawData,scissorY1)));
 
 			If(y1 < y2)
 			{
+				Int xMin = *Pointer<Int>(data + OFFSET(DrawData,scissorX0));
+				Int xMax = *Pointer<Int>(data + OFFSET(DrawData,scissorX1));
+
+				Pointer<Byte> leftEdge = primitive + q * sizeof(Primitive) + OFFSET(Primitive,outline->left);
+				Pointer<Byte> rightEdge = primitive + q * sizeof(Primitive) + OFFSET(Primitive,outline->right);
+				Pointer<Byte> edge = IfThenElse(swap, rightEdge, leftEdge);
+
 				// Deltas
 				Int DX12 = X2 - X1;
 				Int DY12 = Y2 - Y1;
@@ -587,10 +585,10 @@ namespace sw
 				Int FDX12 = DX12 << 4;
 				Int FDY12 = DY12 << 4;
 
-				Int X = DX12 * ((y1 << 4) - Y1) + X1 * DY12;
-				Int x = X / FDY12;     // Edge
-				Int d = X % FDY12;     // Error-term
-				Int ceil = -d >> 31;   // Ceiling division: remainder <= 0
+				Int X = DX12 * ((y1 << 4) - Y1) + (X1 & 0x0000000F) * DY12;
+				Int x = (X1 >> 4) + X / FDY12;   // Edge
+				Int d = X % FDY12;               // Error-term
+				Int ceil = -d >> 31;             // Ceiling division: remainder <= 0
 				x -= ceil;
 				d -= ceil & FDY12;
 

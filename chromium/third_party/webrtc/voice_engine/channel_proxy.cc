@@ -136,9 +136,11 @@ uint32_t ChannelProxy::GetDelayEstimate() const {
   return channel()->GetDelayEstimate();
 }
 
-bool ChannelProxy::SetSendTelephoneEventPayloadType(int payload_type) {
+bool ChannelProxy::SetSendTelephoneEventPayloadType(int payload_type,
+                                                    int payload_frequency) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  return channel()->SetSendTelephoneEventPayloadType(payload_type) == 0;
+  return channel()->SetSendTelephoneEventPayloadType(payload_type,
+                                                     payload_frequency) == 0;
 }
 
 bool ChannelProxy::SendTelephoneEventOutband(int event, int duration_ms) {
@@ -146,9 +148,9 @@ bool ChannelProxy::SendTelephoneEventOutband(int event, int duration_ms) {
   return channel()->SendTelephoneEventOutband(event, duration_ms) == 0;
 }
 
-void ChannelProxy::SetBitrate(int bitrate_bps) {
+void ChannelProxy::SetBitrate(int bitrate_bps, int64_t probing_interval_ms) {
   // May be called on different threads and needs to be handled by the channel.
-  channel()->SetBitRate(bitrate_bps);
+  channel()->SetBitRate(bitrate_bps, probing_interval_ms);
 }
 
 void ChannelProxy::SetSink(std::unique_ptr<AudioSinkInterface> sink) {
@@ -245,6 +247,11 @@ void ChannelProxy::AssociateSendChannel(
 void ChannelProxy::DisassociateSendChannel() {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   channel()->set_associate_send_channel(ChannelOwner(nullptr));
+}
+
+void ChannelProxy::SetRtcpRttStats(RtcpRttStats* rtcp_rtt_stats) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel()->SetRtcpRttStats(rtcp_rtt_stats);
 }
 
 Channel* ChannelProxy::channel() const {

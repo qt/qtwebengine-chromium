@@ -20,6 +20,7 @@
 #include <openssl/x509v3.h>
 #ifndef OPENSSL_IS_BORINGSSL
 #include <openssl/dtls1.h>
+#include <openssl/ssl.h>
 #endif
 
 #include <memory>
@@ -37,6 +38,10 @@
 #include "webrtc/base/stringutils.h"
 #include "webrtc/base/timeutils.h"
 #include "webrtc/base/thread.h"
+
+namespace {
+  bool g_use_time_callback_for_testing = false;
+}
 
 namespace rtc {
 
@@ -63,10 +68,11 @@ static SrtpCipherMapEntry SrtpCipherMap[] = {
 #endif
 
 #ifdef OPENSSL_IS_BORINGSSL
-static void TimeCallback(const SSL* ssl, struct timeval* out_clock) {
-  uint64_t time = TimeNanos();
+// Not used in production code. Actual time should be relative to Jan 1, 1970.
+static void TimeCallbackForTesting(const SSL* ssl, struct timeval* out_clock) {
+  int64_t time = TimeNanos();
   out_clock->tv_sec = time / kNumNanosecsPerSec;
-  out_clock->tv_usec = time / kNumNanosecsPerMicrosec;
+  out_clock->tv_usec = (time % kNumNanosecsPerSec) / kNumNanosecsPerMicrosec;
 }
 #else  // #ifdef OPENSSL_IS_BORINGSSL
 
@@ -1042,27 +1048,26 @@ SSL_CTX* OpenSSLStreamAdapter::SetupSSLContext() {
     return NULL;
 
 #ifdef OPENSSL_IS_BORINGSSL
-  SSL_CTX_set_min_version(ctx, ssl_mode_ == SSL_MODE_DTLS ?
+  SSL_CTX_set_min_proto_version(ctx, ssl_mode_ == SSL_MODE_DTLS ?
       DTLS1_VERSION : TLS1_VERSION);
   switch (ssl_max_version_) {
     case SSL_PROTOCOL_TLS_10:
-      SSL_CTX_set_max_version(ctx, ssl_mode_ == SSL_MODE_DTLS ?
+      SSL_CTX_set_max_proto_version(ctx, ssl_mode_ == SSL_MODE_DTLS ?
           DTLS1_VERSION : TLS1_VERSION);
       break;
     case SSL_PROTOCOL_TLS_11:
-      SSL_CTX_set_max_version(ctx, ssl_mode_ == SSL_MODE_DTLS ?
+      SSL_CTX_set_max_proto_version(ctx, ssl_mode_ == SSL_MODE_DTLS ?
           DTLS1_VERSION : TLS1_1_VERSION);
       break;
     case SSL_PROTOCOL_TLS_12:
     default:
-      SSL_CTX_set_max_version(ctx, ssl_mode_ == SSL_MODE_DTLS ?
+      SSL_CTX_set_max_proto_version(ctx, ssl_mode_ == SSL_MODE_DTLS ?
           DTLS1_2_VERSION : TLS1_2_VERSION);
       break;
   }
-  // Set a time callback for BoringSSL because:
-  // 1. Our time function is more accurate (doesn't just use gettimeofday).
-  // 2. This allows us to inject a fake clock for testing.
-  SSL_CTX_set_current_time_cb(ctx, &TimeCallback);
+  if (g_use_time_callback_for_testing) {
+    SSL_CTX_set_current_time_cb(ctx, &TimeCallbackForTesting);
+  }
 #endif
 
   if (identity_ && !identity_->ConfigureIdentity(ctx)) {
@@ -1261,6 +1266,10 @@ bool OpenSSLStreamAdapter::IsAcceptableCipher(const std::string& cipher,
   }
 
   return false;
+}
+
+void OpenSSLStreamAdapter::enable_time_callback_for_testing() {
+  g_use_time_callback_for_testing = true;
 }
 
 }  // namespace rtc

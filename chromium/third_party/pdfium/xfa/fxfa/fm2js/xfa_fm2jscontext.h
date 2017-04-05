@@ -7,6 +7,9 @@
 #ifndef XFA_FXFA_FM2JS_XFA_FM2JSCONTEXT_H_
 #define XFA_FXFA_FM2JS_XFA_FM2JSCONTEXT_H_
 
+#include <memory>
+#include <vector>
+
 #include "fxjs/cfxjse_arguments.h"
 #include "fxjs/cfxjse_context.h"
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
@@ -398,11 +401,11 @@ class CXFA_FM2JSContext : public CFXJSE_HostObject {
   static bool simpleValueCompare(CFXJSE_Value* pThis,
                                  CFXJSE_Value* firstValue,
                                  CFXJSE_Value* secondValue);
-  static void unfoldArgs(CFXJSE_Value* pThis,
-                         CFXJSE_Arguments& args,
-                         CFXJSE_Value**& resultValues,
-                         int32_t& iCount,
-                         int32_t iStart = 0);
+  static void unfoldArgs(
+      CFXJSE_Value* pThis,
+      CFXJSE_Arguments& args,
+      std::vector<std::unique_ptr<CFXJSE_Value>>* resultValues,
+      int32_t iStart = 0);
   static void GetObjectDefaultValue(CFXJSE_Value* pObjectValue,
                                     CFXJSE_Value* pDefaultValue);
   static bool SetObjectDefaultValue(CFXJSE_Value* pObjectValue,
@@ -421,12 +424,12 @@ class CXFA_FM2JSContext : public CFXJSE_HostObject {
                                 XFA_RESOLVENODE_RS& resoveNodeRS,
                                 bool bdotAccessor = true,
                                 bool bHasNoResolveName = false);
-  static void ParseResolveResult(CFXJSE_Value* pThis,
-                                 const XFA_RESOLVENODE_RS& resoveNodeRS,
-                                 CFXJSE_Value* pParentValue,
-                                 CFXJSE_Value**& resultValues,
-                                 int32_t& iSize,
-                                 bool& bAttribute);
+  static void ParseResolveResult(
+      CFXJSE_Value* pThis,
+      const XFA_RESOLVENODE_RS& resoveNodeRS,
+      CFXJSE_Value* pParentValue,
+      std::vector<std::unique_ptr<CFXJSE_Value>>* resultValues,
+      bool* bAttribute);
 
   static std::unique_ptr<CFXJSE_Value> GetSimpleValue(CFXJSE_Value* pThis,
                                                       CFXJSE_Arguments& args,
@@ -450,7 +453,16 @@ class CXFA_FM2JSContext : public CFXJSE_HostObject {
  private:
   v8::Isolate* GetScriptRuntime() const { return m_pIsolate; }
   CXFA_Document* GetDocument() const { return m_pDocument; }
-  void ThrowException(int32_t iStringID, ...);
+
+  void ThrowNoDefaultPropertyException(const CFX_ByteStringC& name) const;
+  void ThrowCompilerErrorException() const;
+  void ThrowDivideByZeroException() const;
+  void ThrowServerDeniedException() const;
+  void ThrowPropertyNotInObjectException(const CFX_WideString& name,
+                                         const CFX_WideString& exp) const;
+  void ThrowArgumentMismatchException() const;
+  void ThrowParamCountMismatchException(const CFX_WideString& method) const;
+  void ThrowException(const FX_WCHAR* str, ...) const;
 
   v8::Isolate* m_pIsolate;
   CFXJSE_Class* m_pFMClass;

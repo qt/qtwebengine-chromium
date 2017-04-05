@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "webrtc/base/event.h"
-#include "webrtc/call.h"
+#include "webrtc/call/call.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/test/call_test.h"
 
@@ -100,7 +100,6 @@ class RampUpTester : public test::EndToEndTest {
   std::vector<uint32_t> video_ssrcs_;
   std::vector<uint32_t> video_rtx_ssrcs_;
   std::vector<uint32_t> audio_ssrcs_;
-  SsrcMap rtx_ssrc_map_;
 
   rtc::PlatformThread poller_thread_;
 };
@@ -119,15 +118,13 @@ class RampUpDownUpTester : public RampUpTester {
   bool PollStats() override;
 
  private:
-  static const int kHighBandwidthLimitBps = 80000;
-  static const int kExpectedHighBitrateBps = 60000;
-  static const int kLowBandwidthLimitBps = 20000;
-  static const int kExpectedLowBitrateBps = 20000;
   enum TestStates { kFirstRampup, kLowRate, kSecondRampup };
 
   Call::Config GetReceiverCallConfig() override;
 
   std::string GetModifierString() const;
+  int GetExpectedHighBitrate() const;
+  int GetHighLinkCapacity() const;
   void EvolveTestState(int bitrate_bps, bool suspended);
 
   TestStates test_state_;

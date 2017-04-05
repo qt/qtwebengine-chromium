@@ -17,21 +17,21 @@
 #include <string>
 #include <utility>
 
-#include "webrtc/api/call/audio_receive_stream.h"
-#include "webrtc/api/call/audio_send_stream.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/rate_statistics.h"
-#include "webrtc/call.h"
+#include "webrtc/call/audio_receive_stream.h"
+#include "webrtc/call/audio_send_stream.h"
+#include "webrtc/call/call.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/bitrate_controller/include/bitrate_controller.h"
 #include "webrtc/modules/congestion_controller/include/congestion_controller.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
+#include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
+#include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
 
@@ -449,9 +449,14 @@ class BitrateObserver : public CongestionController::Observer,
  public:
   BitrateObserver() : last_bitrate_bps_(0), bitrate_updated_(false) {}
 
+  // TODO(minyue): remove this when old OnNetworkChanged is deprecated. See
+  // https://bugs.chromium.org/p/webrtc/issues/detail?id=6796
+  using CongestionController::Observer::OnNetworkChanged;
+
   void OnNetworkChanged(uint32_t bitrate_bps,
                         uint8_t fraction_loss,
-                        int64_t rtt_ms) override {
+                        int64_t rtt_ms,
+                        int64_t probing_interval_ms) override {
     last_bitrate_bps_ = bitrate_bps;
     bitrate_updated_ = true;
   }
@@ -645,7 +650,7 @@ void EventLogAnalyzer::CreateAudioLevelGraph(Plot* plot) {
   }
 
   plot->SetXAxis(0, call_duration_s_, "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetYAxis(-127, 0, "Audio playout level (dBov)", kBottomMargin,
+  plot->SetYAxis(-127, 0, "Audio level (dBov)", kBottomMargin,
                  kTopMargin);
   plot->SetTitle("Audio level");
 }
@@ -938,7 +943,9 @@ void EventLogAnalyzer::CreateBweSimulationGraph(Plot* plot) {
   SimulatedClock clock(0);
   BitrateObserver observer;
   RtcEventLogNullImpl null_event_log;
-  CongestionController cc(&clock, &observer, &observer, &null_event_log);
+  PacketRouter packet_router;
+  CongestionController cc(&clock, &observer, &observer, &null_event_log,
+                          &packet_router);
   // TODO(holmer): Log the call config and use that here instead.
   static const uint32_t kDefaultStartBitrateBps = 300000;
   cc.SetBweBitrates(0, kDefaultStartBitrateBps, -1);
@@ -1159,6 +1166,34 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
   plot->SetXAxis(0, call_duration_s_, "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 10, "Delay (ms)", kBottomMargin, kTopMargin);
   plot->SetTitle("Network Delay Change.");
+}
+
+std::vector<std::pair<int64_t, int64_t>> EventLogAnalyzer::GetFrameTimestamps()
+    const {
+  std::vector<std::pair<int64_t, int64_t>> timestamps;
+  size_t largest_stream_size = 0;
+  const std::vector<LoggedRtpPacket>* largest_video_stream = nullptr;
+  // Find the incoming video stream with the most number of packets that is
+  // not rtx.
+  for (const auto& kv : rtp_packets_) {
+    if (kv.first.GetDirection() == kIncomingPacket &&
+        video_ssrcs_.find(kv.first) != video_ssrcs_.end() &&
+        rtx_ssrcs_.find(kv.first) == rtx_ssrcs_.end() &&
+        kv.second.size() > largest_stream_size) {
+      largest_stream_size = kv.second.size();
+      largest_video_stream = &kv.second;
+    }
+  }
+  if (largest_video_stream == nullptr) {
+    for (auto& packet : *largest_video_stream) {
+      if (packet.header.markerBit) {
+        int64_t capture_ms = packet.header.timestamp / 90.0;
+        int64_t arrival_ms = packet.timestamp / 1000.0;
+        timestamps.push_back(std::make_pair(capture_ms, arrival_ms));
+      }
+    }
+  }
+  return timestamps;
 }
 }  // namespace plotting
 }  // namespace webrtc

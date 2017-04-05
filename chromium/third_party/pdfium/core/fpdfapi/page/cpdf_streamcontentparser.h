@@ -52,21 +52,23 @@ class CPDF_StreamContentParser {
  private:
   struct ContentParam {
     enum Type { OBJECT = 0, NUMBER, NAME };
+
+    ContentParam();
+    ~ContentParam();
+
     Type m_Type;
-    union {
-      struct {
-        bool m_bInteger;
-        union {
-          int m_Integer;
-          FX_FLOAT m_Float;
-        };
-      } m_Number;
-      CPDF_Object* m_pObject;
-      struct {
-        int m_Len;
-        char m_Buffer[32];
-      } m_Name;
-    };
+    std::unique_ptr<CPDF_Object> m_pObject;
+    struct {
+      bool m_bInteger;
+      union {
+        int m_Integer;
+        FX_FLOAT m_Float;
+      };
+    } m_Number;
+    struct {
+      int m_Len;
+      char m_Buffer[32];
+    } m_Name;
   };
 
   static const int kParamBufSize = 16;
@@ -76,7 +78,7 @@ class CPDF_StreamContentParser {
   static OpCodes InitializeOpCodes();
 
   void AddNumberParam(const FX_CHAR* str, int len);
-  void AddObjectParam(CPDF_Object* pObj);
+  void AddObjectParam(std::unique_ptr<CPDF_Object> pObj);
   void AddNameParam(const FX_CHAR* name, int size);
   int GetNextParamPos();
   void ClearAllParams();
@@ -214,8 +216,6 @@ class CPDF_StreamContentParser {
   uint8_t m_PathClipType;
   CFX_ByteString m_LastImageName;
   CPDF_Image* m_pLastImage;
-  CPDF_Dictionary* m_pLastImageDict;
-  CPDF_Dictionary* m_pLastCloneImageDict;
   bool m_bColored;
   FX_FLOAT m_Type3Data[6];
   bool m_bResourceMissing;

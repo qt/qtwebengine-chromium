@@ -17,6 +17,7 @@
 #include "webrtc/base/logging.h"
 #include "webrtc/common_types.h"
 #include "webrtc/config.h"
+#include "webrtc/media/base/mediaconstants.h"
 #include "webrtc/modules/pacing/packet_router.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
@@ -26,6 +27,7 @@
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/ulpfec_receiver.h"
 #include "webrtc/modules/video_coding/frame_object.h"
+#include "webrtc/modules/video_coding/h264_sprop_parameter_sets.h"
 #include "webrtc/modules/video_coding/h264_sps_pps_tracker.h"
 #include "webrtc/modules/video_coding/packet_buffer.h"
 #include "webrtc/modules/video_coding/video_coding_impl.h"
@@ -106,7 +108,6 @@ RtpStreamReceiver::RtpStreamReceiver(
       remb_(remb),
       process_thread_(process_thread),
       ntp_estimator_(clock_),
-      rtp_payload_registry_(RTPPayloadStrategy::CreateStrategy(false)),
       rtp_header_parser_(RtpHeaderParser::Create()),
       rtp_receiver_(RtpReceiver::CreateVideoReceiver(clock_,
                                                      this,
@@ -169,12 +170,12 @@ RtpStreamReceiver::RtpStreamReceiver(
                                             kv.first);
   }
 
-  if (IsFecEnabled()) {
+  if (IsUlpfecEnabled()) {
     VideoCodec ulpfec_codec = {};
     ulpfec_codec.codecType = kVideoCodecULPFEC;
     strncpy(ulpfec_codec.plName, "ulpfec", sizeof(ulpfec_codec.plName));
     ulpfec_codec.plType = config_.rtp.ulpfec.ulpfec_payload_type;
-    RTC_CHECK(SetReceiveCodec(ulpfec_codec));
+    RTC_CHECK(AddReceiveCodec(ulpfec_codec));
   }
 
   if (IsRedEnabled()) {
@@ -182,7 +183,7 @@ RtpStreamReceiver::RtpStreamReceiver(
     red_codec.codecType = kVideoCodecRED;
     strncpy(red_codec.plName, "red", sizeof(red_codec.plName));
     red_codec.plType = config_.rtp.ulpfec.red_payload_type;
-    RTC_CHECK(SetReceiveCodec(red_codec));
+    RTC_CHECK(AddReceiveCodec(red_codec));
     if (config_.rtp.ulpfec.red_rtx_payload_type != -1) {
       rtp_payload_registry_.SetRtxPayloadType(
           config_.rtp.ulpfec.red_rtx_payload_type,
@@ -224,17 +225,20 @@ RtpStreamReceiver::~RtpStreamReceiver() {
   UpdateHistograms();
 }
 
-bool RtpStreamReceiver::SetReceiveCodec(const VideoCodec& video_codec) {
+bool RtpStreamReceiver::AddReceiveCodec(
+    const VideoCodec& video_codec,
+    const std::map<std::string, std::string>& codec_params) {
+  pt_codec_params_.insert(make_pair(video_codec.plType, codec_params));
+  return AddReceiveCodec(video_codec);
+}
+
+bool RtpStreamReceiver::AddReceiveCodec(const VideoCodec& video_codec) {
   int8_t old_pltype = -1;
-  if (rtp_payload_registry_.ReceivePayloadType(
-          video_codec.plName, kVideoPayloadTypeFrequency, 0,
-          video_codec.maxBitrate, &old_pltype) != -1) {
+  if (rtp_payload_registry_.ReceivePayloadType(video_codec, &old_pltype) !=
+      -1) {
     rtp_payload_registry_.DeRegisterReceivePayload(old_pltype);
   }
-
-  return rtp_receiver_->RegisterReceivePayload(
-             video_codec.plName, video_codec.plType, kVideoPayloadTypeFrequency,
-             0, 0) == 0;
+  return rtp_payload_registry_.RegisterReceivePayload(video_codec) == 0;
 }
 
 uint32_t RtpStreamReceiver::GetRemoteSsrc() const {
@@ -263,6 +267,14 @@ int32_t RtpStreamReceiver::OnReceivedPayloadData(
     packet.timesNacked = nack_module_->OnReceivedPacket(packet);
 
     if (packet.codec == kVideoCodecH264) {
+      // Only when we start to receive packets will we know what payload type
+      // that will be used. When we know the payload type insert the correct
+      // sps/pps into the tracker.
+      if (packet.payloadType != last_payload_type_) {
+        last_payload_type_ = packet.payloadType;
+        InsertSpsPpsIntoTracker(packet.payloadType);
+      }
+
       switch (tracker_.CopyAndFixBitstream(&packet)) {
         case video_coding::H264SpsPpsTracker::kRequestKeyframe:
           keyframe_request_sender_->RequestKeyFrame();
@@ -278,7 +290,7 @@ int32_t RtpStreamReceiver::OnReceivedPayloadData(
       packet.dataPtr = data;
     }
 
-    packet_buffer_->InsertPacket(packet);
+    packet_buffer_->InsertPacket(&packet);
   } else {
     if (video_receiver_->IncomingPacket(payload_data, payload_size,
                                         rtp_header_with_ntp) != 0) {
@@ -383,7 +395,7 @@ int32_t RtpStreamReceiver::SliceLossIndicationRequest(
       static_cast<uint8_t>(picture_id));
 }
 
-bool RtpStreamReceiver::IsFecEnabled() const {
+bool RtpStreamReceiver::IsUlpfecEnabled() const {
   return config_.rtp.ulpfec.ulpfec_payload_type != -1;
 }
 
@@ -624,6 +636,14 @@ bool RtpStreamReceiver::IsPacketRetransmitted(const RTPHeader& header,
 
 void RtpStreamReceiver::UpdateHistograms() {
   FecPacketCounter counter = ulpfec_receiver_->GetPacketCounter();
+  if (counter.first_packet_time_ms == -1)
+    return;
+
+  int64_t elapsed_sec =
+      (clock_->TimeInMilliseconds() - counter.first_packet_time_ms) / 1000;
+  if (elapsed_sec < metrics::kMinRunTimeInSeconds)
+    return;
+
   if (counter.num_packets > 0) {
     RTC_HISTOGRAM_PERCENTAGE(
         "WebRTC.Video.ReceivedFecPacketsInPercent",
@@ -644,6 +664,27 @@ void RtpStreamReceiver::EnableReceiveRtpHeaderExtension(
   RTC_DCHECK(RtpExtension::IsSupportedForVideo(extension));
   RTC_CHECK(rtp_header_parser_->RegisterRtpHeaderExtension(
       StringToRtpExtensionType(extension), id));
+}
+
+void RtpStreamReceiver::InsertSpsPpsIntoTracker(uint8_t payload_type) {
+  auto codec_params_it = pt_codec_params_.find(payload_type);
+  if (codec_params_it == pt_codec_params_.end())
+    return;
+
+  LOG(LS_INFO) << "Found out of band supplied codec parameters for"
+               << " payload type: " << payload_type;
+
+  H264SpropParameterSets sprop_decoder;
+  auto sprop_base64_it =
+      codec_params_it->second.find(cricket::kH264FmtpSpropParameterSets);
+
+  if (sprop_base64_it == codec_params_it->second.end())
+    return;
+
+  if (!sprop_decoder.DecodeSprop(sprop_base64_it->second))
+    return;
+
+  tracker_.InsertSpsPps(sprop_decoder.sps_nalu(), sprop_decoder.pps_nalu());
 }
 
 }  // namespace webrtc

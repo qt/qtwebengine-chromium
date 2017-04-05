@@ -6,6 +6,7 @@
 
 #include "core/fxcrt/xml_int.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "core/fxcrt/fx_ext.h"
@@ -67,16 +68,33 @@ bool g_FXCRT_XML_IsNameChar(uint8_t ch) {
   return !!(g_FXCRT_XML_ByteTypes[ch] & FXCRTM_XML_CHARTYPE_NameChar);
 }
 
-}  // namespace
+class CXML_DataBufAcc : public IFX_BufferedReadStream {
+ public:
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+
+  // IFX_BufferedReadStream
+  bool IsEOF() override;
+  FX_FILESIZE GetPosition() override;
+  size_t ReadBlock(void* buffer, size_t size) override;
+  bool ReadNextBlock(bool bRestart) override;
+  const uint8_t* GetBlockBuffer() override;
+  size_t GetBlockSize() override;
+  FX_FILESIZE GetBlockOffset() override;
+
+ private:
+  CXML_DataBufAcc(const uint8_t* pBuffer, size_t size);
+  ~CXML_DataBufAcc() override;
+
+  const uint8_t* m_pBuffer;
+  size_t m_dwSize;
+  size_t m_dwCurPos;
+};
 
 CXML_DataBufAcc::CXML_DataBufAcc(const uint8_t* pBuffer, size_t size)
     : m_pBuffer(pBuffer), m_dwSize(size), m_dwCurPos(0) {}
 
 CXML_DataBufAcc::~CXML_DataBufAcc() {}
-
-void CXML_DataBufAcc::Release() {
-  delete this;
-}
 
 bool CXML_DataBufAcc::IsEOF() {
   return m_dwCurPos >= m_dwSize;
@@ -113,17 +131,39 @@ FX_FILESIZE CXML_DataBufAcc::GetBlockOffset() {
   return 0;
 }
 
-CXML_DataStmAcc::CXML_DataStmAcc(IFX_SeekableReadStream* pFileRead)
+class CXML_DataStmAcc : public IFX_BufferedReadStream {
+ public:
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+
+  // IFX_BufferedReadStream
+  bool IsEOF() override;
+  FX_FILESIZE GetPosition() override;
+  size_t ReadBlock(void* buffer, size_t size) override;
+  bool ReadNextBlock(bool bRestart) override;
+  const uint8_t* GetBlockBuffer() override;
+  size_t GetBlockSize() override;
+  FX_FILESIZE GetBlockOffset() override;
+
+ private:
+  explicit CXML_DataStmAcc(
+      const CFX_RetainPtr<IFX_SeekableReadStream>& pFileRead);
+  ~CXML_DataStmAcc() override;
+
+  CFX_RetainPtr<IFX_SeekableReadStream> m_pFileRead;
+  uint8_t* m_pBuffer;
+  FX_FILESIZE m_nStart;
+  size_t m_dwSize;
+};
+
+CXML_DataStmAcc::CXML_DataStmAcc(
+    const CFX_RetainPtr<IFX_SeekableReadStream>& pFileRead)
     : m_pFileRead(pFileRead), m_pBuffer(nullptr), m_nStart(0), m_dwSize(0) {
   ASSERT(m_pFileRead);
 }
 
 CXML_DataStmAcc::~CXML_DataStmAcc() {
   FX_Free(m_pBuffer);
-}
-
-void CXML_DataStmAcc::Release() {
-  delete this;
 }
 
 bool CXML_DataStmAcc::IsEOF() {
@@ -168,42 +208,37 @@ FX_FILESIZE CXML_DataStmAcc::GetBlockOffset() {
   return m_nStart;
 }
 
+}  // namespace
+
 CXML_Parser::CXML_Parser()
-    : m_pDataAcc(nullptr),
-      m_bOwnedStream(false),
-      m_nOffset(0),
+    : m_nOffset(0),
       m_bSaveSpaceChars(false),
       m_pBuffer(nullptr),
       m_dwBufferSize(0),
       m_nBufferOffset(0),
       m_dwIndex(0) {}
 
-CXML_Parser::~CXML_Parser() {
-  if (m_bOwnedStream) {
-    m_pDataAcc->Release();
-  }
-}
+CXML_Parser::~CXML_Parser() {}
 
 bool CXML_Parser::Init(uint8_t* pBuffer, size_t size) {
-  m_pDataAcc = new CXML_DataBufAcc(pBuffer, size);
-  return Init(true);
+  m_pDataAcc = pdfium::MakeRetain<CXML_DataBufAcc>(pBuffer, size);
+  return Init();
 }
 
-bool CXML_Parser::Init(IFX_SeekableReadStream* pFileRead) {
-  m_pDataAcc = new CXML_DataStmAcc(pFileRead);
-  return Init(true);
+bool CXML_Parser::Init(const CFX_RetainPtr<IFX_SeekableReadStream>& pFileRead) {
+  m_pDataAcc = pdfium::MakeRetain<CXML_DataStmAcc>(pFileRead);
+  return Init();
 }
 
-bool CXML_Parser::Init(IFX_BufferRead* pBuffer) {
+bool CXML_Parser::Init(const CFX_RetainPtr<IFX_BufferedReadStream>& pBuffer) {
   if (!pBuffer)
     return false;
 
   m_pDataAcc = pBuffer;
-  return Init(false);
+  return Init();
 }
 
-bool CXML_Parser::Init(bool bOwndedStream) {
-  m_bOwnedStream = bOwndedStream;
+bool CXML_Parser::Init() {
   m_nOffset = 0;
   return ReadNextBlock();
 }
@@ -657,24 +692,29 @@ CXML_Element* CXML_Element::Parse(const void* pBuffer,
   }
   return XML_ContinueParse(parser, bSaveSpaceChars, pParsedSize);
 }
-CXML_Element* CXML_Element::Parse(IFX_SeekableReadStream* pFile,
-                                  bool bSaveSpaceChars,
-                                  FX_FILESIZE* pParsedSize) {
+
+CXML_Element* CXML_Element::Parse(
+    const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
+    bool bSaveSpaceChars,
+    FX_FILESIZE* pParsedSize) {
   CXML_Parser parser;
-  if (!parser.Init(pFile)) {
+  if (!parser.Init(pFile))
     return nullptr;
-  }
+
   return XML_ContinueParse(parser, bSaveSpaceChars, pParsedSize);
 }
-CXML_Element* CXML_Element::Parse(IFX_BufferRead* pBuffer,
-                                  bool bSaveSpaceChars,
-                                  FX_FILESIZE* pParsedSize) {
+
+CXML_Element* CXML_Element::Parse(
+    const CFX_RetainPtr<IFX_BufferedReadStream>& pBuffer,
+    bool bSaveSpaceChars,
+    FX_FILESIZE* pParsedSize) {
   CXML_Parser parser;
-  if (!parser.Init(pBuffer)) {
+  if (!parser.Init(pBuffer))
     return nullptr;
-  }
+
   return XML_ContinueParse(parser, bSaveSpaceChars, pParsedSize);
 }
+
 CXML_Element::CXML_Element() : m_QSpaceName(), m_TagName(), m_AttrMap() {}
 CXML_Element::CXML_Element(const CFX_ByteStringC& qSpace,
                            const CFX_ByteStringC& tagName)

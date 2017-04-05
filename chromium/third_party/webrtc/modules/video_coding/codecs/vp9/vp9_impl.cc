@@ -26,6 +26,7 @@
 #include "webrtc/base/keep_ref_until_done.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/trace_event.h"
+#include "webrtc/common_video/include/video_frame_buffer.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/video_coding/codecs/vp9/screenshare_layers.h"
@@ -77,6 +78,7 @@ VP9EncoderImpl::VP9EncoderImpl()
       frames_since_kf_(0),
       num_temporal_layers_(0),
       num_spatial_layers_(0),
+      is_flexible_mode_(false),
       frames_encoded_(0),
       // Use two spatial when screensharing with flexible mode.
       spatial_layer_(new ScreenshareLayersVP9(2)) {
@@ -193,24 +195,28 @@ bool VP9EncoderImpl::SetSvcRates() {
   return true;
 }
 
-int VP9EncoderImpl::SetRates(uint32_t new_bitrate_kbit,
-                             uint32_t new_framerate) {
+int VP9EncoderImpl::SetRateAllocation(
+    const BitrateAllocation& bitrate_allocation,
+    uint32_t frame_rate) {
   if (!inited_) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
   if (encoder_->err) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
-  if (new_framerate < 1) {
+  if (frame_rate < 1) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
   // Update bit rate
-  if (codec_.maxBitrate > 0 && new_bitrate_kbit > codec_.maxBitrate) {
-    new_bitrate_kbit = codec_.maxBitrate;
+  if (codec_.maxBitrate > 0 &&
+      bitrate_allocation.get_sum_kbps() > codec_.maxBitrate) {
+    return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
-  config_->rc_target_bitrate = new_bitrate_kbit;
-  codec_.maxFramerate = new_framerate;
-  spatial_layer_->ConfigureBitrate(new_bitrate_kbit, 0);
+
+  // TODO(sprang): Actually use BitrateAllocation layer info.
+  config_->rc_target_bitrate = bitrate_allocation.get_sum_kbps();
+  codec_.maxFramerate = frame_rate;
+  spatial_layer_->ConfigureBitrate(bitrate_allocation.get_sum_kbps(), 0);
 
   if (!SetSvcRates()) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
@@ -481,9 +487,6 @@ int VP9EncoderImpl::Encode(const VideoFrame& input_image,
   if (!inited_) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
-  if (input_image.IsZeroSize()) {
-    return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
-  }
   if (encoded_complete_callback_ == NULL) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
@@ -492,8 +495,8 @@ int VP9EncoderImpl::Encode(const VideoFrame& input_image,
   if (frame_types && frame_types->size() > 0) {
     frame_type = (*frame_types)[0];
   }
-  RTC_DCHECK_EQ(input_image.width(), static_cast<int>(raw_->d_w));
-  RTC_DCHECK_EQ(input_image.height(), static_cast<int>(raw_->d_h));
+  RTC_DCHECK_EQ(input_image.width(), raw_->d_w);
+  RTC_DCHECK_EQ(input_image.height(), raw_->d_h);
 
   // Set input image for use in the callback.
   // This was necessary since you need some information from input_image.

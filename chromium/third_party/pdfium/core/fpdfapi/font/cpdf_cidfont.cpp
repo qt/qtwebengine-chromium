@@ -19,6 +19,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "third_party/base/numerics/safe_math.h"
+#include "third_party/base/ptr_util.h"
 
 namespace {
 
@@ -199,8 +200,7 @@ bool IsMetricForCID(const uint32_t* pEntry, uint16_t CID) {
 }  // namespace
 
 CPDF_CIDFont::CPDF_CIDFont()
-    : m_pCMap(nullptr),
-      m_pCID2UnicodeMap(nullptr),
+    : m_pCID2UnicodeMap(nullptr),
       m_bCIDIsGID(false),
       m_bAnsiWidthsFixed(false),
       m_bAdobeCourierStd(false) {
@@ -359,8 +359,7 @@ bool CPDF_CIDFont::Load() {
     if (!m_pCMap)
       return false;
   } else if (CPDF_Stream* pStream = pEncoding->AsStream()) {
-    m_pCMap = new CPDF_CMap;
-    m_pAllocatedCMap.reset(m_pCMap);
+    m_pCMap = pdfium::MakeUnique<CPDF_CMap>();
     CPDF_StreamAcc acc;
     acc.LoadAllData(pStream, false);
     m_pCMap->LoadEmbedded(acc.GetData(), acc.GetSize());
@@ -390,7 +389,7 @@ bool CPDF_CIDFont::Load() {
   m_DefaultWidth = pCIDFontDict->GetIntegerFor("DW", 1000);
   CPDF_Array* pWidthArray = pCIDFontDict->GetArrayFor("W");
   if (pWidthArray)
-    LoadMetricsArray(pWidthArray, m_WidthList, 1);
+    LoadMetricsArray(pWidthArray, &m_WidthList, 1);
   if (!IsEmbedded())
     LoadSubstFont();
 
@@ -398,7 +397,7 @@ bool CPDF_CIDFont::Load() {
     CPDF_Object* pmap = pCIDFontDict->GetDirectObjectFor("CIDToGIDMap");
     if (pmap) {
       if (CPDF_Stream* pStream = pmap->AsStream()) {
-        m_pStreamAcc.reset(new CPDF_StreamAcc);
+        m_pStreamAcc = pdfium::MakeUnique<CPDF_StreamAcc>();
         m_pStreamAcc->LoadAllData(pStream, false);
       } else if (pmap->GetString() == "Identity") {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
@@ -415,7 +414,7 @@ bool CPDF_CIDFont::Load() {
   if (IsVertWriting()) {
     pWidthArray = pCIDFontDict->GetArrayFor("W2");
     if (pWidthArray)
-      LoadMetricsArray(pWidthArray, m_VertMetrics, 3);
+      LoadMetricsArray(pWidthArray, &m_VertMetrics, 3);
     CPDF_Array* pDefaultArray = pCIDFontDict->GetArrayFor("DW2");
     if (pDefaultArray) {
       m_DefaultVY = pDefaultArray->GetIntegerAt(0);
@@ -504,9 +503,9 @@ int CPDF_CIDFont::GetCharWidthF(uint32_t charcode) {
     return (charcode >= 32 && charcode < 127) ? 500 : 0;
 
   uint16_t cid = CIDFromCharCode(charcode);
-  int size = m_WidthList.GetSize();
-  const uint32_t* pList = m_WidthList.GetData();
-  for (int i = 0; i < size; i += 3) {
+  size_t size = m_WidthList.size();
+  const uint32_t* pList = m_WidthList.data();
+  for (size_t i = 0; i < size; i += 3) {
     const uint32_t* pEntry = pList + i;
     if (IsMetricForCID(pEntry, cid))
       return static_cast<int>(pEntry[2]);
@@ -515,10 +514,10 @@ int CPDF_CIDFont::GetCharWidthF(uint32_t charcode) {
 }
 
 short CPDF_CIDFont::GetVertWidth(uint16_t CID) const {
-  uint32_t vertsize = m_VertMetrics.GetSize() / 5;
+  size_t vertsize = m_VertMetrics.size() / 5;
   if (vertsize) {
-    const uint32_t* pTable = m_VertMetrics.GetData();
-    for (uint32_t i = 0; i < vertsize; i++) {
+    const uint32_t* pTable = m_VertMetrics.data();
+    for (size_t i = 0; i < vertsize; i++) {
       const uint32_t* pEntry = pTable + (i * 5);
       if (IsMetricForCID(pEntry, CID))
         return static_cast<short>(pEntry[2]);
@@ -528,10 +527,10 @@ short CPDF_CIDFont::GetVertWidth(uint16_t CID) const {
 }
 
 void CPDF_CIDFont::GetVertOrigin(uint16_t CID, short& vx, short& vy) const {
-  uint32_t vertsize = m_VertMetrics.GetSize() / 5;
+  size_t vertsize = m_VertMetrics.size() / 5;
   if (vertsize) {
-    const uint32_t* pTable = m_VertMetrics.GetData();
-    for (uint32_t i = 0; i < vertsize; i++) {
+    const uint32_t* pTable = m_VertMetrics.data();
+    for (size_t i = 0; i < vertsize; i++) {
       const uint32_t* pEntry = pTable + (i * 5);
       if (IsMetricForCID(pEntry, CID)) {
         vx = static_cast<short>(pEntry[3]);
@@ -541,9 +540,9 @@ void CPDF_CIDFont::GetVertOrigin(uint16_t CID, short& vx, short& vy) const {
     }
   }
   uint32_t dwWidth = m_DefaultWidth;
-  int size = m_WidthList.GetSize();
-  const uint32_t* pList = m_WidthList.GetData();
-  for (int i = 0; i < size; i += 3) {
+  size_t size = m_WidthList.size();
+  const uint32_t* pList = m_WidthList.data();
+  for (size_t i = 0; i < size; i += 3) {
     const uint32_t* pEntry = pList + i;
     if (IsMetricForCID(pEntry, CID)) {
       dwWidth = pEntry[2];
@@ -581,7 +580,7 @@ int CPDF_CIDFont::GetGlyphIndex(uint32_t unicode, bool* pVertGlyph) {
   if (error || !m_Font.GetSubData())
     return index;
 
-  m_pTTGSUBTable.reset(new CFX_CTTGSUBTable);
+  m_pTTGSUBTable = pdfium::MakeUnique<CFX_CTTGSUBTable>();
   m_pTTGSUBTable->LoadGSUBTable((FT_Bytes)m_Font.GetSubData());
   return GetVerticalGlyph(index, pVertGlyph);
 }
@@ -770,7 +769,7 @@ void CPDF_CIDFont::LoadSubstFont() {
 }
 
 void CPDF_CIDFont::LoadMetricsArray(CPDF_Array* pArray,
-                                    CFX_ArrayTemplate<uint32_t>& result,
+                                    std::vector<uint32_t>* result,
                                     int nElements) {
   int width_status = 0;
   int iCurElement = 0;
@@ -786,10 +785,10 @@ void CPDF_CIDFont::LoadMetricsArray(CPDF_Array* pArray,
         return;
 
       for (size_t j = 0; j < pObjArray->GetCount(); j += nElements) {
-        result.Add(first_code);
-        result.Add(first_code);
+        result->push_back(first_code);
+        result->push_back(first_code);
         for (int k = 0; k < nElements; k++)
-          result.Add(pObjArray->GetIntegerAt(j + k));
+          result->push_back(pObjArray->GetIntegerAt(j + k));
         first_code++;
       }
       width_status = 0;
@@ -803,10 +802,10 @@ void CPDF_CIDFont::LoadMetricsArray(CPDF_Array* pArray,
         iCurElement = 0;
       } else {
         if (!iCurElement) {
-          result.Add(first_code);
-          result.Add(last_code);
+          result->push_back(first_code);
+          result->push_back(last_code);
         }
-        result.Add(pObj->GetInteger());
+        result->push_back(pObj->GetInteger());
         iCurElement++;
         if (iCurElement == nElements)
           width_status = 0;

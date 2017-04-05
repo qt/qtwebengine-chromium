@@ -25,9 +25,18 @@ const uint32_t kFirstSsrc = 17;
 const uint32_t kSecondSsrc = 42;
 const uint32_t kFirstRtxSsrc = 18;
 const uint32_t kSecondRtxSsrc = 43;
-
+const uint32_t kFlexFecSsrc = 55;
+const int kFpsPeriodicIntervalMs = 2000;
+const int kWidth = 640;
+const int kHeight = 480;
 const int kQpIdx0 = 21;
 const int kQpIdx1 = 39;
+const CodecSpecificInfo kDefaultCodecInfo = []() {
+  CodecSpecificInfo codec_info;
+  codec_info.codecType = kVideoCodecVP8;
+  codec_info.codecSpecific.VP8.simulcastIdx = 0;
+  return codec_info;
+}();
 }  // namespace
 
 class SendStatisticsProxyTest : public ::testing::Test {
@@ -58,6 +67,32 @@ class SendStatisticsProxyTest : public ::testing::Test {
     config.rtp.rtx.ssrcs.push_back(kSecondRtxSsrc);
     config.rtp.ulpfec.red_payload_type = 17;
     return config;
+  }
+
+  VideoSendStream::Config GetTestConfigWithFlexFec() {
+    VideoSendStream::Config config(nullptr);
+    config.rtp.ssrcs.push_back(kFirstSsrc);
+    config.rtp.ssrcs.push_back(kSecondSsrc);
+    config.rtp.rtx.ssrcs.push_back(kFirstRtxSsrc);
+    config.rtp.rtx.ssrcs.push_back(kSecondRtxSsrc);
+    config.rtp.flexfec.payload_type = 50;
+    config.rtp.flexfec.ssrc = kFlexFecSsrc;
+    return config;
+  }
+
+  VideoSendStream::StreamStats GetStreamStats(uint32_t ssrc) {
+    VideoSendStream::Stats stats = statistics_proxy_->GetStats();
+    std::map<uint32_t, VideoSendStream::StreamStats>::iterator it =
+        stats.substreams.find(ssrc);
+    EXPECT_NE(it, stats.substreams.end());
+    return it->second;
+  }
+
+  void UpdateDataCounters(uint32_t ssrc) {
+    StreamDataCountersCallback* proxy =
+        static_cast<StreamDataCountersCallback*>(statistics_proxy_.get());
+    StreamDataCounters counters;
+    proxy->DataCountersUpdated(counters, ssrc);
   }
 
   void ExpectEqual(VideoSendStream::Stats one, VideoSendStream::Stats other) {
@@ -333,9 +368,6 @@ TEST_F(SendStatisticsProxyTest, OnSendEncodedImageWithoutQpQpSumWontExist) {
 }
 
 TEST_F(SendStatisticsProxyTest, SwitchContentTypeUpdatesHistograms) {
-  const int kWidth = 640;
-  const int kHeight = 480;
-
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
 
@@ -351,10 +383,110 @@ TEST_F(SendStatisticsProxyTest, SwitchContentTypeUpdatesHistograms) {
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.InputWidthInPixels"));
 }
 
-TEST_F(SendStatisticsProxyTest, CpuLimitedResolutionUpdated) {
-  const int kWidth = 640;
-  const int kHeight = 480;
+TEST_F(SendStatisticsProxyTest, InputResolutionHistogramsAreUpdated) {
+  for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
+    statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
 
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.InputWidthInPixels"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.InputWidthInPixels", kWidth));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.InputHeightInPixels"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.InputHeightInPixels", kHeight));
+}
+
+TEST_F(SendStatisticsProxyTest, SentResolutionHistogramsAreUpdated) {
+  EncodedImage encoded_image;
+  encoded_image._encodedWidth = kWidth;
+  encoded_image._encodedHeight = kHeight;
+  for (int i = 0; i <= SendStatisticsProxy::kMinRequiredMetricsSamples; ++i) {
+    encoded_image._timeStamp = i + 1;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  }
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.SentWidthInPixels"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.SentWidthInPixels", kWidth));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.SentHeightInPixels"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.SentHeightInPixels", kHeight));
+}
+
+TEST_F(SendStatisticsProxyTest, InputFpsHistogramIsUpdated) {
+  const int kFps = 20;
+  const int kMinPeriodicSamples = 6;
+  int frames = kMinPeriodicSamples * kFpsPeriodicIntervalMs * kFps / 1000;
+  for (int i = 0; i <= frames; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
+  }
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.InputFramesPerSecond"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.InputFramesPerSecond", kFps));
+}
+
+TEST_F(SendStatisticsProxyTest, SentFpsHistogramIsUpdated) {
+  EncodedImage encoded_image;
+  const int kFps = 20;
+  const int kMinPeriodicSamples = 6;
+  int frames = kMinPeriodicSamples * kFpsPeriodicIntervalMs * kFps / 1000 + 1;
+  for (int i = 0; i <= frames; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    encoded_image._timeStamp = i + 1;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  }
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.SentFramesPerSecond"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.SentFramesPerSecond", kFps));
+}
+
+TEST_F(SendStatisticsProxyTest, InputFpsHistogramExcludesSuspendedTime) {
+  const int kFps = 20;
+  const int kSuspendTimeMs = 10000;
+  const int kMinPeriodicSamples = 6;
+  int frames = kMinPeriodicSamples * kFpsPeriodicIntervalMs * kFps / 1000;
+  for (int i = 0; i < frames; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
+  }
+  // Suspend.
+  statistics_proxy_->OnSuspendChange(true);
+  fake_clock_.AdvanceTimeMilliseconds(kSuspendTimeMs);
+
+  for (int i = 0; i < frames; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
+  }
+  // Suspended time interval should not affect the framerate.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.InputFramesPerSecond"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.InputFramesPerSecond", kFps));
+}
+
+TEST_F(SendStatisticsProxyTest, SentFpsHistogramExcludesSuspendedTime) {
+  EncodedImage encoded_image;
+  const int kFps = 20;
+  const int kSuspendTimeMs = 10000;
+  const int kMinPeriodicSamples = 6;
+  int frames = kMinPeriodicSamples * kFpsPeriodicIntervalMs * kFps / 1000;
+  for (int i = 0; i <= frames; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    encoded_image._timeStamp = i + 1;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  }
+  // Suspend.
+  statistics_proxy_->OnSuspendChange(true);
+  fake_clock_.AdvanceTimeMilliseconds(kSuspendTimeMs);
+
+  for (int i = 0; i <= frames; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    encoded_image._timeStamp = i + 1;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  }
+  // Suspended time interval should not affect the framerate.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.SentFramesPerSecond"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.SentFramesPerSecond", kFps));
+}
+
+TEST_F(SendStatisticsProxyTest, CpuLimitedResolutionUpdated) {
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
 
@@ -383,6 +515,114 @@ TEST_F(SendStatisticsProxyTest, CodecTypeHistogramIsUpdated) {
   fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
   statistics_proxy_.reset();
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.Encoder.CodecType"));
+}
+
+TEST_F(SendStatisticsProxyTest, PauseEventHistogramIsUpdated) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+
+  // Min runtime has passed.
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.NumberOfPauseEvents"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.NumberOfPauseEvents", 0));
+}
+
+TEST_F(SendStatisticsProxyTest,
+       PauseEventHistogramIsNotUpdatedIfMinRuntimeHasNotPassed) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+
+  // Min runtime has not passed.
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000 - 1);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.NumberOfPauseEvents"));
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.PausedTimeInPercent"));
+}
+
+TEST_F(SendStatisticsProxyTest,
+       PauseEventHistogramIsNotUpdatedIfNoMediaIsSent) {
+  // First RTP packet not sent.
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.NumberOfPauseEvents"));
+}
+
+TEST_F(SendStatisticsProxyTest, NoPauseEvent) {
+  // First RTP packet sent and min runtime passed.
+  UpdateDataCounters(kFirstSsrc);
+
+  // No change. Video: 10000 ms, paused: 0 ms (0%).
+  statistics_proxy_->OnSetEncoderTargetRate(50000);
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
+  statistics_proxy_->OnSetEncoderTargetRate(0);  // VideoSendStream::Stop
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.NumberOfPauseEvents"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.NumberOfPauseEvents", 0));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.PausedTimeInPercent"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.PausedTimeInPercent", 0));
+}
+
+TEST_F(SendStatisticsProxyTest, OnePauseEvent) {
+  // First RTP packet sent and min runtime passed.
+  UpdateDataCounters(kFirstSsrc);
+
+  // One change. Video: 7000 ms, paused: 3000 ms (30%).
+  statistics_proxy_->OnSetEncoderTargetRate(50000);
+  fake_clock_.AdvanceTimeMilliseconds(7000);
+  statistics_proxy_->OnSetEncoderTargetRate(0);
+  fake_clock_.AdvanceTimeMilliseconds(3000);
+  statistics_proxy_->OnSetEncoderTargetRate(0);  // VideoSendStream::Stop
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.NumberOfPauseEvents"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.NumberOfPauseEvents", 1));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.PausedTimeInPercent"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.PausedTimeInPercent", 30));
+}
+
+TEST_F(SendStatisticsProxyTest, TwoPauseEvents) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+
+  // Two changes. Video: 19000 ms, paused: 1000 ms (5%).
+  statistics_proxy_->OnSetEncoderTargetRate(0);
+  fake_clock_.AdvanceTimeMilliseconds(1000);
+  statistics_proxy_->OnSetEncoderTargetRate(50000);  // Starts on bitrate > 0.
+  fake_clock_.AdvanceTimeMilliseconds(7000);
+  statistics_proxy_->OnSetEncoderTargetRate(60000);
+  fake_clock_.AdvanceTimeMilliseconds(3000);
+  statistics_proxy_->OnSetEncoderTargetRate(0);
+  fake_clock_.AdvanceTimeMilliseconds(250);
+  statistics_proxy_->OnSetEncoderTargetRate(0);
+  fake_clock_.AdvanceTimeMilliseconds(750);
+  statistics_proxy_->OnSetEncoderTargetRate(60000);
+  fake_clock_.AdvanceTimeMilliseconds(5000);
+  statistics_proxy_->OnSetEncoderTargetRate(50000);
+  fake_clock_.AdvanceTimeMilliseconds(4000);
+  statistics_proxy_->OnSetEncoderTargetRate(0);  // VideoSendStream::Stop
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.NumberOfPauseEvents"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.NumberOfPauseEvents", 2));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.PausedTimeInPercent"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.PausedTimeInPercent", 5));
+}
+
+TEST_F(SendStatisticsProxyTest,
+       PausedTimeHistogramIsNotUpdatedIfMinRuntimeHasNotPassed) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
+
+  // Min runtime has not passed.
+  statistics_proxy_->OnSetEncoderTargetRate(50000);
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000 - 1);
+  statistics_proxy_->OnSetEncoderTargetRate(0);  // VideoSendStream::Stop
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.PausedTimeInPercent"));
 }
 
 TEST_F(SendStatisticsProxyTest, VerifyQpHistogramStats_Vp8) {
@@ -540,10 +780,10 @@ TEST_F(SendStatisticsProxyTest,
 TEST_F(SendStatisticsProxyTest,
        QualityLimitedHistogramsNotUpdatedWhenDisabled) {
   EncodedImage encoded_image;
-  // encoded_image.adapt_reason_.quality_resolution_downscales disabled by
-  // default: -1
+  statistics_proxy_->SetResolutionRestrictionStats(false /* scaling_enabled */,
+                                                   0, 0);
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
-    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+    statistics_proxy_->OnSendEncodedImage(encoded_image, &kDefaultCodecInfo);
 
   // Histograms are updated when the statistics_proxy_ is deleted.
   statistics_proxy_.reset();
@@ -555,11 +795,9 @@ TEST_F(SendStatisticsProxyTest,
 
 TEST_F(SendStatisticsProxyTest,
        QualityLimitedHistogramsUpdatedWhenEnabled_NoResolutionDownscale) {
-  const int kDownscales = 0;
   EncodedImage encoded_image;
-  encoded_image.adapt_reason_.quality_resolution_downscales = kDownscales;
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
-    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+    statistics_proxy_->OnSendEncodedImage(encoded_image, &kDefaultCodecInfo);
 
   // Histograms are updated when the statistics_proxy_ is deleted.
   statistics_proxy_.reset();
@@ -576,10 +814,9 @@ TEST_F(SendStatisticsProxyTest,
        QualityLimitedHistogramsUpdatedWhenEnabled_TwoResolutionDownscales) {
   const int kDownscales = 2;
   EncodedImage encoded_image;
-  encoded_image.adapt_reason_.quality_resolution_downscales = kDownscales;
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(kDownscales);
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
-    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
-
+    statistics_proxy_->OnSendEncodedImage(encoded_image, &kDefaultCodecInfo);
   // Histograms are updated when the statistics_proxy_ is deleted.
   statistics_proxy_.reset();
   EXPECT_EQ(
@@ -601,26 +838,32 @@ TEST_F(SendStatisticsProxyTest, GetStatsReportsBandwidthLimitedResolution) {
   EncodedImage encoded_image;
   statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
-  // Resolution not scaled.
-  encoded_image.adapt_reason_.bw_resolutions_disabled = 0;
-  encoded_image.adapt_reason_.quality_resolution_downscales = 0;
-  statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
-  EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
-  // Resolution scaled due to bandwidth.
+
+  // Simulcast disabled resolutions
   encoded_image.adapt_reason_.bw_resolutions_disabled = 1;
-  encoded_image.adapt_reason_.quality_resolution_downscales = 0;
   statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
-  // Resolution not scaled.
+
   encoded_image.adapt_reason_.bw_resolutions_disabled = 0;
-  encoded_image.adapt_reason_.quality_resolution_downscales = 0;
   statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
+
   // Resolution scaled due to quality.
-  encoded_image.adapt_reason_.bw_resolutions_disabled = 0;
-  encoded_image.adapt_reason_.quality_resolution_downscales = 1;
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(1);
   statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
+}
+
+TEST_F(SendStatisticsProxyTest, GetStatsReportsTargetMediaBitrate) {
+  // Initially zero.
+  EXPECT_EQ(0, statistics_proxy_->GetStats().target_media_bitrate_bps);
+
+  const int kBitrate = 100000;
+  statistics_proxy_->OnSetEncoderTargetRate(kBitrate);
+  EXPECT_EQ(kBitrate, statistics_proxy_->GetStats().target_media_bitrate_bps);
+
+  statistics_proxy_->OnSetEncoderTargetRate(0);
+  EXPECT_EQ(0, statistics_proxy_->GetStats().target_media_bitrate_bps);
 }
 
 TEST_F(SendStatisticsProxyTest, NoSubstreams) {
@@ -824,6 +1067,99 @@ TEST_F(SendStatisticsProxyTest, ResetsRtcpCountersOnContentChange) {
                 4 * 100 / 5));
 }
 
+TEST_F(SendStatisticsProxyTest, GetStatsReportsIsFlexFec) {
+  statistics_proxy_.reset(
+      new SendStatisticsProxy(&fake_clock_, GetTestConfigWithFlexFec(),
+                              VideoEncoderConfig::ContentType::kRealtimeVideo));
+
+  StreamDataCountersCallback* proxy =
+      static_cast<StreamDataCountersCallback*>(statistics_proxy_.get());
+  StreamDataCounters counters;
+  proxy->DataCountersUpdated(counters, kFirstSsrc);
+  proxy->DataCountersUpdated(counters, kFlexFecSsrc);
+
+  EXPECT_FALSE(GetStreamStats(kFirstSsrc).is_flexfec);
+  EXPECT_TRUE(GetStreamStats(kFlexFecSsrc).is_flexfec);
+}
+
+TEST_F(SendStatisticsProxyTest, SendBitratesAreReportedWithFlexFecEnabled) {
+  statistics_proxy_.reset(
+      new SendStatisticsProxy(&fake_clock_, GetTestConfigWithFlexFec(),
+                              VideoEncoderConfig::ContentType::kRealtimeVideo));
+
+  StreamDataCountersCallback* proxy =
+      static_cast<StreamDataCountersCallback*>(statistics_proxy_.get());
+
+  StreamDataCounters counters;
+  StreamDataCounters rtx_counters;
+  proxy->DataCountersUpdated(counters, kFirstSsrc);
+  proxy->DataCountersUpdated(counters, kSecondSsrc);
+  proxy->DataCountersUpdated(rtx_counters, kFirstRtxSsrc);
+  proxy->DataCountersUpdated(rtx_counters, kSecondRtxSsrc);
+  proxy->DataCountersUpdated(counters, kFlexFecSsrc);
+
+  counters.transmitted.header_bytes = 5000;
+  counters.transmitted.packets = 20;
+  counters.transmitted.padding_bytes = 10000;
+  counters.transmitted.payload_bytes = 20000;
+  counters.retransmitted.header_bytes = 400;
+  counters.retransmitted.packets = 2;
+  counters.retransmitted.padding_bytes = 1000;
+  counters.retransmitted.payload_bytes = 2000;
+  counters.fec = counters.retransmitted;
+  rtx_counters.transmitted = counters.transmitted;
+
+  fake_clock_.AdvanceTimeMilliseconds(1000 * metrics::kMinRunTimeInSeconds);
+  proxy->DataCountersUpdated(counters, kFirstSsrc);
+  proxy->DataCountersUpdated(counters, kSecondSsrc);
+  proxy->DataCountersUpdated(rtx_counters, kFirstRtxSsrc);
+  proxy->DataCountersUpdated(rtx_counters, kSecondRtxSsrc);
+  proxy->DataCountersUpdated(counters, kFlexFecSsrc);
+
+  // Reset stats proxy causes histograms to be reported.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.BitrateSentInKbps"));
+  EXPECT_EQ(1,
+            metrics::NumEvents(
+                "WebRTC.Video.BitrateSentInKbps",
+                static_cast<int>((counters.transmitted.TotalBytes() * 4 * 8) /
+                                 metrics::kMinRunTimeInSeconds / 1000)));
+
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.MediaBitrateSentInKbps"));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   "WebRTC.Video.MediaBitrateSentInKbps",
+                   static_cast<int>((counters.MediaPayloadBytes() * 2 * 8) /
+                                    metrics::kMinRunTimeInSeconds / 1000)));
+
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.PaddingBitrateSentInKbps"));
+  EXPECT_EQ(1,
+            metrics::NumEvents(
+                "WebRTC.Video.PaddingBitrateSentInKbps",
+                static_cast<int>((counters.transmitted.padding_bytes * 4 * 8) /
+                                 metrics::kMinRunTimeInSeconds / 1000)));
+
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.RetransmittedBitrateSentInKbps"));
+  EXPECT_EQ(1,
+            metrics::NumEvents(
+                "WebRTC.Video.RetransmittedBitrateSentInKbps",
+                static_cast<int>((counters.retransmitted.TotalBytes() * 2 * 8) /
+                                 metrics::kMinRunTimeInSeconds / 1000)));
+
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.RtxBitrateSentInKbps"));
+  EXPECT_EQ(
+      1, metrics::NumEvents(
+             "WebRTC.Video.RtxBitrateSentInKbps",
+             static_cast<int>((rtx_counters.transmitted.TotalBytes() * 2 * 8) /
+                              metrics::kMinRunTimeInSeconds / 1000)));
+
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.FecBitrateSentInKbps"));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   "WebRTC.Video.FecBitrateSentInKbps",
+                   static_cast<int>((counters.fec.TotalBytes() * 2 * 8) /
+                                    metrics::kMinRunTimeInSeconds / 1000)));
+}
+
 TEST_F(SendStatisticsProxyTest, ResetsRtpCountersOnContentChange) {
   StreamDataCountersCallback* proxy =
       static_cast<StreamDataCountersCallback*>(statistics_proxy_.get());
@@ -835,15 +1171,15 @@ TEST_F(SendStatisticsProxyTest, ResetsRtpCountersOnContentChange) {
   proxy->DataCountersUpdated(rtx_counters, kFirstRtxSsrc);
   proxy->DataCountersUpdated(rtx_counters, kSecondRtxSsrc);
 
-  counters.transmitted.header_bytes = 400;
+  counters.transmitted.header_bytes = 5000;
   counters.transmitted.packets = 20;
-  counters.transmitted.padding_bytes = 1000;
-  counters.transmitted.payload_bytes = 2000;
+  counters.transmitted.padding_bytes = 10000;
+  counters.transmitted.payload_bytes = 20000;
 
-  counters.retransmitted.header_bytes = 40;
+  counters.retransmitted.header_bytes = 400;
   counters.retransmitted.packets = 2;
-  counters.retransmitted.padding_bytes = 100;
-  counters.retransmitted.payload_bytes = 200;
+  counters.retransmitted.padding_bytes = 1000;
+  counters.retransmitted.payload_bytes = 2000;
 
   counters.fec = counters.retransmitted;
 
@@ -898,7 +1234,7 @@ TEST_F(SendStatisticsProxyTest, ResetsRtpCountersOnContentChange) {
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.FecBitrateSentInKbps"));
   EXPECT_EQ(1, metrics::NumEvents(
                    "WebRTC.Video.FecBitrateSentInKbps",
-                   static_cast<int>((rtx_counters.fec.TotalBytes() * 2 * 8) /
+                   static_cast<int>((counters.fec.TotalBytes() * 2 * 8) /
                                     metrics::kMinRunTimeInSeconds / 1000)));
 
   // New start time but same counter values.
@@ -965,7 +1301,7 @@ TEST_F(SendStatisticsProxyTest, ResetsRtpCountersOnContentChange) {
       1, metrics::NumSamples("WebRTC.Video.Screenshare.FecBitrateSentInKbps"));
   EXPECT_EQ(1, metrics::NumEvents(
                    "WebRTC.Video.Screenshare.FecBitrateSentInKbps",
-                   static_cast<int>((rtx_counters.fec.TotalBytes() * 2 * 8) /
+                   static_cast<int>((counters.fec.TotalBytes() * 2 * 8) /
                                     metrics::kMinRunTimeInSeconds / 1000)));
 }
 

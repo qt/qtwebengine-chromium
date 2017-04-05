@@ -30,13 +30,12 @@ void SetInternalFunctionName(TFunctionSymbolInfo *functionInfo, const char *name
     functionInfo->setNameObj(nameObj);
 }
 
-TIntermAggregate *CreateFunctionPrototypeNode(const char *name, const int functionId)
+TIntermFunctionPrototype *CreateFunctionPrototypeNode(const char *name, const int functionId)
 {
-    TIntermAggregate *functionNode = new TIntermAggregate(EOpPrototype);
+    TType returnType(EbtVoid);
+    TIntermFunctionPrototype *functionNode = new TIntermFunctionPrototype(returnType);
 
     SetInternalFunctionName(functionNode->getFunctionSymbolInfo(), name);
-    TType returnType(EbtVoid);
-    functionNode->setType(returnType);
     functionNode->getFunctionSymbolInfo()->setId(functionId);
     return functionNode;
 }
@@ -45,14 +44,8 @@ TIntermFunctionDefinition *CreateFunctionDefinitionNode(const char *name,
                                                         TIntermBlock *functionBody,
                                                         const int functionId)
 {
-    TType returnType(EbtVoid);
-    TIntermAggregate *paramsNode = new TIntermAggregate(EOpParameters);
-    TIntermFunctionDefinition *functionNode =
-        new TIntermFunctionDefinition(returnType, paramsNode, functionBody);
-
-    SetInternalFunctionName(functionNode->getFunctionSymbolInfo(), name);
-    functionNode->getFunctionSymbolInfo()->setId(functionId);
-    return functionNode;
+    TIntermFunctionPrototype *prototypeNode = CreateFunctionPrototypeNode(name, functionId);
+    return new TIntermFunctionDefinition(prototypeNode, functionBody);
 }
 
 TIntermAggregate *CreateFunctionCallNode(const char *name, const int functionId)
@@ -141,18 +134,18 @@ void DeferGlobalInitializersTraverser::insertInitFunction(TIntermBlock *root)
     {
         return;
     }
-    const int initFunctionId  = TSymbolTable::nextUniqueId();
+    const int initFunctionId = TSymbolTable::nextUniqueId();
 
     const char *functionName = "initializeDeferredGlobals";
 
     // Add function prototype to the beginning of the shader
-    TIntermAggregate *functionPrototypeNode =
+    TIntermFunctionPrototype *functionPrototypeNode =
         CreateFunctionPrototypeNode(functionName, initFunctionId);
     root->getSequence()->insert(root->getSequence()->begin(), functionPrototypeNode);
 
     // Add function definition to the end of the shader
     TIntermBlock *functionBodyNode = new TIntermBlock();
-    TIntermSequence *functionBody = functionBodyNode->getSequence();
+    TIntermSequence *functionBody  = functionBodyNode->getSequence();
     for (const auto &deferredInit : mDeferredInitializers)
     {
         functionBody->push_back(deferredInit);

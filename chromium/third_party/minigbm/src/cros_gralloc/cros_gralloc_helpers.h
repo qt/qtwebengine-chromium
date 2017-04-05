@@ -7,6 +7,7 @@
 #ifndef CROS_GRALLOC_HELPERS_H
 #define CROS_GRALLOC_HELPERS_H
 
+#include "../drv.h"
 #include "cros_gralloc_handle.h"
 
 #include <hardware/gralloc.h>
@@ -44,14 +45,9 @@ constexpr uint32_t cros_gralloc_magic(void)
 	return 0xABCDDCBA;
 }
 
-constexpr uint32_t num_ints(void)
+constexpr uint32_t num_ints_handle()
 {
-	/*
-	 * numFds in our case is one. Subtract that from our numInts
-	 * calculation.
-	 */
-	return ((sizeof(struct cros_gralloc_handle)
-		- offsetof(cros_gralloc_handle, data)) / sizeof(int)) - 1;
+	return ((sizeof(struct cros_gralloc_handle)) / sizeof(int));
 }
 
 constexpr uint32_t sw_access(void)
@@ -71,7 +67,7 @@ constexpr uint32_t sw_write(void)
 
 uint64_t cros_gralloc_convert_flags(int flags);
 
-drv_format_t cros_gralloc_convert_format(int format);
+uint32_t cros_gralloc_convert_format(int format);
 
 int32_t cros_gralloc_rendernode_open(struct driver **drv);
 
@@ -84,7 +80,7 @@ void cros_gralloc_log(const char *prefix, const char *file, int line,
 
 #define cros_gralloc_error(...)                                     \
 	do {                                                        \
-		cros_gralloc_log("cros_gralloc_error", __FILE__,    \
+		cros_gralloc_log("CROS_GRALLOC_ERROR", __FILE__,    \
 				 __LINE__, __VA_ARGS__);            \
 	} while (0)
 

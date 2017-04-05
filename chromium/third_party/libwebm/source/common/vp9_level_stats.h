@@ -73,7 +73,7 @@ class Vp9LevelStats {
         current_luma_size_(0),
         max_luma_size_(0),
         max_luma_end_ns_(0),
-        max_frames_in_one_second_(0),
+        max_luma_sample_rate_grace_percent_(1.5),
         first_altref(true),
         frames_since_last_altref(0),
         minimum_altref_distance(std::numeric_limits<int>::max()),
@@ -88,7 +88,8 @@ class Vp9LevelStats {
         total_uncompressed_bits_(0),
         frames_refreshed_(0),
         max_frames_refreshed_(0),
-        max_column_tiles_(0) {}
+        max_column_tiles_(0),
+        estimate_last_frame_duration_(true) {}
 
   ~Vp9LevelStats() = default;
   Vp9LevelStats(Vp9LevelStats&& other) = delete;
@@ -135,6 +136,21 @@ class Vp9LevelStats {
   // not explictly set by this function then this class will use end - start
   // as the duration.
   void set_duration(int64_t time_ns) { duration_ns_ = time_ns; }
+  double max_luma_sample_rate_grace_percent() const {
+    return max_luma_sample_rate_grace_percent_;
+  }
+  void set_max_luma_sample_rate_grace_percent(double percent) {
+    max_luma_sample_rate_grace_percent_ = percent;
+  }
+  bool estimate_last_frame_duration() const {
+    return estimate_last_frame_duration_;
+  }
+
+  // If true try to estimate the last frame's duration if the stream's duration
+  // is not set or the stream's duration equals the last frame's timestamp.
+  void set_estimate_last_frame_duration(bool flag) {
+    estimate_last_frame_duration_ = flag;
+  }
 
  private:
   int frames;
@@ -153,7 +169,14 @@ class Vp9LevelStats {
   int64_t current_luma_size_;
   int64_t max_luma_size_;
   int64_t max_luma_end_ns_;
-  size_t max_frames_in_one_second_;
+
+  // MaxLumaSampleRate = (ExampleFrameRate + ExampleFrameRate /
+  // MinimumAltrefDistance) * MaxLumaPictureSize. For levels 1-4
+  // ExampleFrameRate / MinimumAltrefDistance is non-integer, so using a sliding
+  // window of one frame to calculate MaxLumaSampleRate may have frames >
+  // (ExampleFrameRate + ExampleFrameRate / MinimumAltrefDistance) in the
+  // window. In order to address this issue, a grace percent of 1.5 was added.
+  double max_luma_sample_rate_grace_percent_;
 
   bool first_altref;
   int frames_since_last_altref;
@@ -177,6 +200,8 @@ class Vp9LevelStats {
   int max_frames_refreshed_;
 
   int max_column_tiles_;
+
+  bool estimate_last_frame_duration_;
 };
 
 }  // namespace vp9_parser

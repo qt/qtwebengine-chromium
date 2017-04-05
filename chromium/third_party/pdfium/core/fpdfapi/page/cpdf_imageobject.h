@@ -20,7 +20,6 @@ class CPDF_ImageObject : public CPDF_PageObject {
   ~CPDF_ImageObject() override;
 
   // CPDF_PageObject
-  CPDF_ImageObject* Clone() const override;
   Type GetType() const override;
   void Transform(const CFX_Matrix& matrix) override;
   bool IsImage() const override;
@@ -32,11 +31,13 @@ class CPDF_ImageObject : public CPDF_PageObject {
   void SetOwnedImage(std::unique_ptr<CPDF_Image> pImage);
   void SetUnownedImage(CPDF_Image* pImage);
 
-  CFX_Matrix m_Matrix;
+  void set_matrix(const CFX_Matrix& matrix) { m_Matrix = matrix; }
+  const CFX_Matrix& matrix() const { return m_Matrix; }
 
  private:
   void Release();
 
+  CFX_Matrix m_Matrix;
   CPDF_Image* m_pImage;
   bool m_pImageOwned;
 };

@@ -10,10 +10,10 @@
 
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
+#include "third_party/base/ptr_util.h"
 #include "xfa/fde/cfde_path.h"
 #include "xfa/fde/fde_gedevice.h"
 #include "xfa/fde/fde_object.h"
-#include "xfa/fgas/crt/fgas_memory.h"
 #include "xfa/fgas/crt/fgas_utils.h"
 #include "xfa/fgas/layout/fgas_textbreak.h"
 
@@ -45,7 +45,7 @@ CFDE_TextOut::~CFDE_TextOut() {
   m_ttoLines.RemoveAll(false);
 }
 
-void CFDE_TextOut::SetFont(CFGAS_GEFont* pFont) {
+void CFDE_TextOut::SetFont(const CFX_RetainPtr<CFGAS_GEFont>& pFont) {
   ASSERT(pFont);
   m_pFont = pFont;
   m_pTxtBreak->SetFont(pFont);
@@ -72,9 +72,6 @@ void CFDE_TextOut::SetStyles(uint32_t dwStyles) {
   }
   if (dwStyles & FDE_TTOSTYLE_ArabicShapes) {
     m_dwTxtBkStyles |= FX_TXTLAYOUTSTYLE_ArabicShapes;
-  }
-  if (dwStyles & FDE_TTOSTYLE_RTL) {
-    m_dwTxtBkStyles |= FX_TXTLAYOUTSTYLE_RTLReadingOrder;
   }
   if (dwStyles & FDE_TTOSTYLE_ArabicContext) {
     m_dwTxtBkStyles |= FX_TXTLAYOUTSTYLE_ArabicContext;
@@ -132,12 +129,12 @@ void CFDE_TextOut::SetDIBitmap(CFX_DIBitmap* pDIB) {
   m_pRenderDevice.reset();
   CFX_FxgeDevice* device = new CFX_FxgeDevice;
   device->Attach(pDIB, false, nullptr, false);
-  m_pRenderDevice.reset(new CFDE_RenderDevice(device, false));
+  m_pRenderDevice = pdfium::MakeUnique<CFDE_RenderDevice>(device, false);
 }
 
 void CFDE_TextOut::SetRenderDevice(CFX_RenderDevice* pDevice) {
   ASSERT(pDevice);
-  m_pRenderDevice.reset(new CFDE_RenderDevice(pDevice, false));
+  m_pRenderDevice = pdfium::MakeUnique<CFDE_RenderDevice>(pDevice, false);
 }
 
 void CFDE_TextOut::SetClipRect(const CFX_Rect& rtClip) {

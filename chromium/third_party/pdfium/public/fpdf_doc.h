@@ -7,6 +7,7 @@
 #ifndef PUBLIC_FPDF_DOC_H_
 #define PUBLIC_FPDF_DOC_H_
 
+// NOLINTNEXTLINE(build/include)
 #include "fpdfview.h"
 
 #ifdef __cplusplus
@@ -67,7 +68,7 @@ FPDFBookmark_GetNextSibling(FPDF_DOCUMENT document, FPDF_BOOKMARK bookmark);
 // |buflen| parameters.
 //
 // Regardless of the platform, the |buffer| is always in UTF-16LE encoding. The
-// string is terminated by a UTF16 NUL character. If |buflen| is less then the
+// string is terminated by a UTF16 NUL character. If |buflen| is less than the
 // required length, or |buffer| is NULL, |buffer| will not be modified.
 DLLEXPORT unsigned long STDCALL FPDFBookmark_GetTitle(FPDF_BOOKMARK bookmark,
                                                       void* buffer,
@@ -141,7 +142,7 @@ DLLEXPORT FPDF_DEST STDCALL FPDFAction_GetDest(FPDF_DOCUMENT document,
 // NUL character.
 //
 // Regardless of the platform, the |buffer| is always in UTF-16LE encoding.
-// If |buflen| is less then the returned length, or |buffer| is NULL, |buffer|
+// If |buflen| is less than the returned length, or |buffer| is NULL, |buffer|
 // will not be modified.
 DLLEXPORT unsigned long STDCALL
 FPDFAction_GetFilePath(FPDF_ACTION action, void* buffer, unsigned long buflen);
@@ -155,7 +156,7 @@ FPDFAction_GetFilePath(FPDF_ACTION action, void* buffer, unsigned long buflen);
 //
 // Returns the number of bytes in the URI path, including trailing zeros.
 //
-// The |buffer| is always encoded in 7-bit ASCII. If |buflen| is less then the
+// The |buffer| is always encoded in 7-bit ASCII. If |buflen| is less than the
 // returned length, or |buffer| is NULL, |buffer| will not be modified.
 DLLEXPORT unsigned long STDCALL FPDFAction_GetURIPath(FPDF_DOCUMENT document,
                                                       FPDF_ACTION action,
@@ -280,25 +281,42 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFLink_GetQuadPoints(FPDF_LINK linkAnnot,
 
 // Get meta-data |tag| content from |document|.
 //
-//   doc    - handle to the document
-//   tag    - the tag to retrieve. The tag can be one of:
-//              Title, Author, Subject, Keywords, Creator, Producer,
-//              CreationDate, or ModDate.
-//            For detailed explanations of these tags and their respective
-//            values, please refer to PDF Reference 1.6, section 10.2.1,
-//            'Document Information Dictionary'.
-//   buffer - a buffer for the title. May be NULL.
-//   buflen - the length of the buffer, in bytes. May be 0.
+//   document - handle to the document.
+//   tag      - the tag to retrieve. The tag can be one of:
+//                Title, Author, Subject, Keywords, Creator, Producer,
+//                CreationDate, or ModDate.
+//              For detailed explanations of these tags and their respective
+//              values, please refer to PDF Reference 1.6, section 10.2.1,
+//              'Document Information Dictionary'.
+//   buffer   - a buffer for the tag. May be NULL.
+//   buflen   - the length of the buffer, in bytes. May be 0.
 //
-// Returns the number of bytes in the title, including trailing zeros.
+// Returns the number of bytes in the tag, including trailing zeros.
 //
 // The |buffer| is always encoded in UTF-16LE. The |buffer| is followed by two
 // bytes of zeros indicating the end of the string.  If |buflen| is less than
 // the returned length, or |buffer| is NULL, |buffer| will not be modified.
-DLLEXPORT unsigned long STDCALL FPDF_GetMetaText(FPDF_DOCUMENT doc,
+DLLEXPORT unsigned long STDCALL FPDF_GetMetaText(FPDF_DOCUMENT document,
                                                  FPDF_BYTESTRING tag,
                                                  void* buffer,
                                                  unsigned long buflen);
+
+// Get the page label for |page_index| from |document|.
+//
+//   document    - handle to the document.
+//   page_index  - the 0-based index of the page.
+//   buffer      - a buffer for the page label. May be NULL.
+//   buflen      - the length of the buffer, in bytes. May be 0.
+//
+// Returns the number of bytes in the page label, including trailing zeros.
+//
+// The |buffer| is always encoded in UTF-16LE. The |buffer| is followed by two
+// bytes of zeros indicating the end of the string.  If |buflen| is less than
+// the returned length, or |buffer| is NULL, |buffer| will not be modified.
+DLLEXPORT unsigned long STDCALL FPDF_GetPageLabel(FPDF_DOCUMENT document,
+                                                  int page_index,
+                                                  void* buffer,
+                                                  unsigned long buflen);
 
 #ifdef __cplusplus
 }  // extern "C"

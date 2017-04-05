@@ -78,7 +78,6 @@ add_subdirectory(conf)
 add_subdirectory(chacha)
 add_subdirectory(poly1305)
 add_subdirectory(curve25519)
-add_subdirectory(newhope)
 
 # Level 1, depends only on 0.*
 add_subdirectory(digest)
@@ -172,7 +171,6 @@ add_library(
   $<TARGET_OBJECTS:x509>
   $<TARGET_OBJECTS:x509v3>
   $<TARGET_OBJECTS:pkcs8_lib>
-  $<TARGET_OBJECTS:newhope>
 )
 
 if(NOT MSVC AND NOT ANDROID)
@@ -182,7 +180,7 @@ endif()
 add_executable(
   constant_time_test
 
-  constant_time_test.c
+  constant_time_test.cc
 
   $<TARGET_OBJECTS:test_support>
 )
@@ -204,7 +202,7 @@ add_dependencies(all_tests thread_test)
 add_executable(
   refcount_test
 
-  refcount_test.c
+  refcount_test.cc
 )
 
 target_link_libraries(refcount_test crypto)

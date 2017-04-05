@@ -13,10 +13,11 @@
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfdoc/cpdf_interform.h"
 #include "core/fpdfdoc/cpdf_nametree.h"
-#include "fpdfsdk/cpdfsdk_annotiterator.h"
+#include "fpdfsdk/cpdfsdk_annotiteration.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_interform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
@@ -505,12 +506,16 @@ bool Document::removeField(IJS_Context* cc,
   CJS_Runtime* pRuntime = pContext->GetJSRuntime();
   CFX_WideString sFieldName = params[0].ToCFXWideString(pRuntime);
   CPDFSDK_InterForm* pInterForm = m_pFormFillEnv->GetInterForm();
-  std::vector<CPDFSDK_Widget*> widgets;
+  std::vector<CPDFSDK_Annot::ObservedPtr> widgets;
   pInterForm->GetWidgets(sFieldName, &widgets);
   if (widgets.empty())
     return true;
 
-  for (CPDFSDK_Widget* pWidget : widgets) {
+  for (const auto& pAnnot : widgets) {
+    CPDFSDK_Widget* pWidget = static_cast<CPDFSDK_Widget*>(pAnnot.Get());
+    if (!pWidget)
+      continue;
+
     CFX_FloatRect rcAnnot = pWidget->GetRect();
     --rcAnnot.left;
     --rcAnnot.bottom;
@@ -796,27 +801,33 @@ bool Document::info(IJS_Context* cc,
   CJS_Runtime* pRuntime = pContext->GetJSRuntime();
 
   v8::Local<v8::Object> pObj = pRuntime->NewFxDynamicObj(-1);
-  pRuntime->PutObjectString(pObj, L"Author", cwAuthor);
-  pRuntime->PutObjectString(pObj, L"Title", cwTitle);
-  pRuntime->PutObjectString(pObj, L"Subject", cwSubject);
-  pRuntime->PutObjectString(pObj, L"Keywords", cwKeywords);
-  pRuntime->PutObjectString(pObj, L"Creator", cwCreator);
-  pRuntime->PutObjectString(pObj, L"Producer", cwProducer);
-  pRuntime->PutObjectString(pObj, L"CreationDate", cwCreationDate);
-  pRuntime->PutObjectString(pObj, L"ModDate", cwModDate);
-  pRuntime->PutObjectString(pObj, L"Trapped", cwTrapped);
+  pRuntime->PutObjectProperty(pObj, L"Author", pRuntime->NewString(cwAuthor));
+  pRuntime->PutObjectProperty(pObj, L"Title", pRuntime->NewString(cwTitle));
+  pRuntime->PutObjectProperty(pObj, L"Subject", pRuntime->NewString(cwSubject));
+  pRuntime->PutObjectProperty(pObj, L"Keywords",
+                              pRuntime->NewString(cwKeywords));
+  pRuntime->PutObjectProperty(pObj, L"Creator", pRuntime->NewString(cwCreator));
+  pRuntime->PutObjectProperty(pObj, L"Producer",
+                              pRuntime->NewString(cwProducer));
+  pRuntime->PutObjectProperty(pObj, L"CreationDate",
+                              pRuntime->NewString(cwCreationDate));
+  pRuntime->PutObjectProperty(pObj, L"ModDate", pRuntime->NewString(cwModDate));
+  pRuntime->PutObjectProperty(pObj, L"Trapped", pRuntime->NewString(cwTrapped));
 
   // It's to be compatible to non-standard info dictionary.
   for (const auto& it : *pDictionary) {
     const CFX_ByteString& bsKey = it.first;
-    CPDF_Object* pValueObj = it.second;
+    CPDF_Object* pValueObj = it.second.get();
     CFX_WideString wsKey = CFX_WideString::FromUTF8(bsKey.AsStringC());
     if (pValueObj->IsString() || pValueObj->IsName()) {
-      pRuntime->PutObjectString(pObj, wsKey, pValueObj->GetUnicodeText());
+      pRuntime->PutObjectProperty(
+          pObj, wsKey, pRuntime->NewString(pValueObj->GetUnicodeText()));
     } else if (pValueObj->IsNumber()) {
-      pRuntime->PutObjectNumber(pObj, wsKey, (float)pValueObj->GetNumber());
+      pRuntime->PutObjectProperty(pObj, wsKey,
+                                  pRuntime->NewNumber(pValueObj->GetNumber()));
     } else if (pValueObj->IsBoolean()) {
-      pRuntime->PutObjectBoolean(pObj, wsKey, !!pValueObj->GetInteger());
+      pRuntime->PutObjectProperty(
+          pObj, wsKey, pRuntime->NewBoolean(!!pValueObj->GetInteger()));
     }
   }
   vp << pObj;
@@ -844,7 +855,8 @@ bool Document::getPropertyInternal(IJS_Context* cc,
     }
     CFX_WideString csProperty;
     vp >> csProperty;
-    pDictionary->SetStringFor(propName, PDF_EncodeText(csProperty));
+    pDictionary->SetNewFor<CPDF_String>(propName, PDF_EncodeText(csProperty),
+                                        false);
     m_pFormFillEnv->SetChangeMark();
   }
   return true;
@@ -1106,16 +1118,16 @@ bool Document::getAnnot(IJS_Context* cc,
   if (!pPageView)
     return false;
 
-  CPDFSDK_AnnotIterator annotIterator(pPageView, false);
+  CPDFSDK_AnnotIteration annotIteration(pPageView, false);
   CPDFSDK_BAAnnot* pSDKBAAnnot = nullptr;
-  while (CPDFSDK_Annot* pSDKAnnotCur = annotIterator.Next()) {
-    CPDFSDK_BAAnnot* pBAAnnot = static_cast<CPDFSDK_BAAnnot*>(pSDKAnnotCur);
+  for (const auto& pSDKAnnotCur : annotIteration) {
+    CPDFSDK_BAAnnot* pBAAnnot =
+        static_cast<CPDFSDK_BAAnnot*>(pSDKAnnotCur.Get());
     if (pBAAnnot && pBAAnnot->GetAnnotName() == swAnnotName) {
       pSDKBAAnnot = pBAAnnot;
       break;
     }
   }
-
   if (!pSDKBAAnnot)
     return false;
 
@@ -1134,7 +1146,6 @@ bool Document::getAnnot(IJS_Context* cc,
     return false;
 
   pAnnot->SetSDKAnnot(pSDKBAAnnot);
-
   vRet = CJS_Value(pRuntime, pJS_Annot);
   return true;
 }
@@ -1161,13 +1172,12 @@ bool Document::getAnnots(IJS_Context* cc,
     if (!pPageView)
       return false;
 
-    CPDFSDK_AnnotIterator annotIterator(pPageView, false);
-    while (CPDFSDK_Annot* pSDKAnnotCur = annotIterator.Next()) {
-      CPDFSDK_BAAnnot* pSDKBAAnnot =
-          static_cast<CPDFSDK_BAAnnot*>(pSDKAnnotCur);
-      if (!pSDKBAAnnot)
+    CPDFSDK_AnnotIteration annotIteration(pPageView, false);
+    for (const auto& pSDKAnnotCur : annotIteration) {
+      if (!pSDKAnnotCur) {
+        sError = JSGetStringFromID(IDS_STRING_JSBADOBJECT);
         return false;
-
+      }
       v8::Local<v8::Object> pObj =
           pRuntime->NewFxDynamicObj(CJS_Annot::g_nObjDefnID);
       if (pObj.IsEmpty())
@@ -1182,11 +1192,10 @@ bool Document::getAnnots(IJS_Context* cc,
       if (!pAnnot)
         return false;
 
-      pAnnot->SetSDKAnnot(pSDKBAAnnot);
+      pAnnot->SetSDKAnnot(static_cast<CPDFSDK_BAAnnot*>(pSDKAnnotCur.Get()));
       annots.SetElement(pRuntime, i, CJS_Value(pRuntime, pJS_Annot));
     }
   }
-
   vRet = CJS_Value(pRuntime, annots);
   return true;
 }

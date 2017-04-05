@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 The Chromium OS Authors. All rights reserved.
+ * Copyright 2016 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -36,6 +36,19 @@ enum {
 	FAMILY_CZ,
 	FAMILY_PI,
 	FAMILY_LAST,
+};
+
+static struct supported_combination combos[5] = {
+	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN},
+	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_RENDERING | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_XBGR8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_RENDERING | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN},
+	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_RENDERING | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
 };
 
 static int amdgpu_set_metadata(int fd, uint32_t handle,
@@ -148,7 +161,7 @@ static int amdgpu_addrlib_compute(void *addrlib, uint32_t width,
 
 	/* Set the requested tiling mode. */
 	addr_surf_info_in.tileMode = ADDR_TM_2D_TILED_THIN1;
-	if (usage & (DRV_BO_USE_CURSOR | DRV_BO_USE_LINEAR))
+	if (usage & (BO_USE_CURSOR | BO_USE_LINEAR))
 		addr_surf_info_in.tileMode = ADDR_TM_LINEAR_ALIGNED;
 	if (width <= 16 || height <= 16)
 		addr_surf_info_in.tileMode = ADDR_TM_1D_TILED_THIN1;
@@ -166,7 +179,7 @@ static int amdgpu_addrlib_compute(void *addrlib, uint32_t width,
 	addr_surf_info_in.flags.noStencil = 1;
 
 	/* Set the micro tile type. */
-	if (usage & DRV_BO_USE_SCANOUT)
+	if (usage & BO_USE_SCANOUT)
 		addr_surf_info_in.tileType = ADDR_DISPLAYABLE;
 	else
 		addr_surf_info_in.tileType = ADDR_NON_DISPLAYABLE;
@@ -283,7 +296,8 @@ static int amdgpu_init(struct driver *drv)
 
 	drv->priv = addrlib;
 
-	return 0;
+	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
+	return drv_add_kms_flags(drv);
 }
 
 static void amdgpu_close(struct driver *drv)
@@ -338,21 +352,12 @@ static int amdgpu_bo_create(struct bo *bo, uint32_t width, uint32_t height,
 	return ret;
 }
 
-const struct backend backend_amdgpu = {
+struct backend backend_amdgpu = {
 	.name = "amdgpu",
 	.init = amdgpu_init,
 	.close = amdgpu_close,
 	.bo_create = amdgpu_bo_create,
 	.bo_destroy = drv_gem_bo_destroy,
-	.format_list = {
-		/* Linear support */
-		{DRV_FORMAT_XRGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_LINEAR},
-		{DRV_FORMAT_ARGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_CURSOR | DRV_BO_USE_LINEAR},
-		/* Blocklinear support */
-		{DRV_FORMAT_XRGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_RENDERING},
-		{DRV_FORMAT_ARGB8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_RENDERING},
-		{DRV_FORMAT_XBGR8888, DRV_BO_USE_SCANOUT | DRV_BO_USE_RENDERING},
-	}
 };
 
 #endif

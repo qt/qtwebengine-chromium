@@ -26,7 +26,9 @@ class CPDF_SyntaxParser {
   explicit CPDF_SyntaxParser(const CFX_WeakPtr<CFX_ByteStringPool>& pPool);
   ~CPDF_SyntaxParser();
 
-  void InitParser(IFX_SeekableReadStream* pFileAccess, uint32_t HeaderOffset);
+  void InitParser(const CFX_RetainPtr<IFX_SeekableReadStream>& pFileAccess,
+                  uint32_t HeaderOffset);
+
   FX_FILESIZE SavePos() const { return m_Pos; }
   void RestorePos(FX_FILESIZE pos) { m_Pos = pos; }
 
@@ -75,9 +77,10 @@ class CPDF_SyntaxParser {
   CFX_ByteString ReadString();
   CFX_ByteString ReadHexString();
   unsigned int ReadEOLMarkers(FX_FILESIZE pos);
-  std::unique_ptr<CPDF_Stream> ReadStream(CPDF_Dictionary* pDict,
-                                          uint32_t objnum,
-                                          uint32_t gennum);
+  std::unique_ptr<CPDF_Stream> ReadStream(
+      std::unique_ptr<CPDF_Dictionary> pDict,
+      uint32_t objnum,
+      uint32_t gennum);
 
   inline bool CheckPosition(FX_FILESIZE pos) {
     return m_BufOffset >= pos ||
@@ -86,7 +89,7 @@ class CPDF_SyntaxParser {
 
   FX_FILESIZE m_Pos;
   uint32_t m_MetadataObjnum;
-  IFX_SeekableReadStream* m_pFileAccess;
+  CFX_RetainPtr<IFX_SeekableReadStream> m_pFileAccess;
   FX_FILESIZE m_HeaderOffset;
   FX_FILESIZE m_FileLen;
   uint8_t* m_pFileBuf;

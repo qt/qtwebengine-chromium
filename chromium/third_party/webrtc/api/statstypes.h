@@ -202,6 +202,7 @@ class StatsReport {
     kStatsValueNameRemoteCertificateId,
     kStatsValueNameRenderDelayMs,
     kStatsValueNameResidualEchoLikelihood,
+    kStatsValueNameResidualEchoLikelihoodRecentMax,
     kStatsValueNameRetransmitBitrate,
     kStatsValueNameRtt,
     kStatsValueNameSecondaryDecodedRate,
@@ -214,7 +215,6 @@ class StatsReport {
     kStatsValueNameTransmitBitrate,
     kStatsValueNameTransportType,
     kStatsValueNameTypingNoiseState,
-    kStatsValueNameViewLimitedResolution,
     kStatsValueNameWritable,
   };
 

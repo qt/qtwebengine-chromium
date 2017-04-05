@@ -6,6 +6,8 @@
 
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 
+#include <utility>
+
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_interform.h"
@@ -90,7 +92,7 @@ bool CPDFXFA_Context::LoadXFADoc() {
   if (!pApp)
     return false;
 
-  m_pXFADoc.reset(pApp->CreateDoc(&m_DocEnv, m_pPDFDoc.get()));
+  m_pXFADoc = pApp->CreateDoc(&m_DocEnv, m_pPDFDoc.get());
   if (!m_pXFADoc) {
     SetLastError(FPDF_ERR_XFALOAD);
     return false;
@@ -229,19 +231,20 @@ v8::Isolate* CPDFXFA_Context::GetJSERuntime() const {
   return runtime->GetIsolate();
 }
 
-void CPDFXFA_Context::GetAppName(CFX_WideString& wsName) {
-  if (m_pFormFillEnv)
-    wsName = m_pFormFillEnv->FFI_GetAppName();
+CFX_WideString CPDFXFA_Context::GetAppTitle() const {
+  return L"PDFium";
 }
 
-void CPDFXFA_Context::GetLanguage(CFX_WideString& wsLanguage) {
-  if (m_pFormFillEnv)
-    wsLanguage = m_pFormFillEnv->GetLanguage();
+CFX_WideString CPDFXFA_Context::GetAppName() {
+  return m_pFormFillEnv ? m_pFormFillEnv->FFI_GetAppName() : L"";
 }
 
-void CPDFXFA_Context::GetPlatform(CFX_WideString& wsPlatform) {
-  if (m_pFormFillEnv)
-    wsPlatform = m_pFormFillEnv->GetPlatform();
+CFX_WideString CPDFXFA_Context::GetLanguage() {
+  return m_pFormFillEnv ? m_pFormFillEnv->GetLanguage() : L"";
+}
+
+CFX_WideString CPDFXFA_Context::GetPlatform() {
+  return m_pFormFillEnv ? m_pFormFillEnv->GetPlatform() : L"";
 }
 
 void CPDFXFA_Context::Beep(uint32_t dwType) {
@@ -326,7 +329,7 @@ CFX_WideString CPDFXFA_Context::Response(const CFX_WideString& wsQuestion,
   return wsAnswer;
 }
 
-IFX_SeekableReadStream* CPDFXFA_Context::DownloadURL(
+CFX_RetainPtr<IFX_SeekableReadStream> CPDFXFA_Context::DownloadURL(
     const CFX_WideString& wsURL) {
   return m_pFormFillEnv ? m_pFormFillEnv->DownloadFromURL(wsURL.c_str())
                         : nullptr;
@@ -353,103 +356,6 @@ bool CPDFXFA_Context::PutRequestURL(const CFX_WideString& wsURL,
   return m_pFormFillEnv &&
          m_pFormFillEnv->PutRequestURL(wsURL.c_str(), wsData.c_str(),
                                        wsEncode.c_str());
-}
-
-void CPDFXFA_Context::LoadString(int32_t iStringID, CFX_WideString& wsString) {
-  switch (iStringID) {
-    case XFA_IDS_ValidateFailed:
-      wsString = L"%s validation failed";
-      return;
-    case XFA_IDS_CalcOverride:
-      wsString = L"Calculate Override";
-      return;
-    case XFA_IDS_ModifyField:
-      wsString = L"Are you sure you want to modify this field?";
-      return;
-    case XFA_IDS_NotModifyField:
-      wsString = L"You are not allowed to modify this field.";
-      return;
-    case XFA_IDS_AppName:
-      wsString = L"pdfium";
-      return;
-    case XFA_IDS_Unable_TO_SET:
-      wsString = L"Unable to set ";
-      return;
-    case XFA_IDS_INVAlID_PROP_SET:
-      wsString = L"Invalid property set operation.";
-      return;
-    case XFA_IDS_NOT_DEFAUL_VALUE:
-      wsString = L" doesn't have a default property.";
-      return;
-    case XFA_IDS_UNABLE_SET_LANGUAGE:
-      wsString = L"Unable to set language value.";
-      return;
-    case XFA_IDS_UNABLE_SET_NUMPAGES:
-      wsString = L"Unable to set numPages value.";
-      return;
-    case XFA_IDS_UNABLE_SET_PLATFORM:
-      wsString = L"Unable to set platform value.";
-      return;
-    case XFA_IDS_UNABLE_SET_VARIATION:
-      wsString = L"Unable to set variation value.";
-      return;
-    case XFA_IDS_UNABLE_SET_VERSION:
-      wsString = L"Unable to set version value.";
-      return;
-    case XFA_IDS_UNABLE_SET_READY:
-      wsString = L"Unable to set ready value.";
-      return;
-    case XFA_IDS_COMPILER_ERROR:
-      wsString = L"Compiler error.";
-      return;
-    case XFA_IDS_DIVIDE_ZERO:
-      wsString = L"Divide by zero.";
-      return;
-    case XFA_IDS_ACCESS_PROPERTY_IN_NOT_OBJECT:
-      wsString =
-          L"An attempt was made to reference property '%s' of a non-object in "
-          L"SOM expression %s.";
-      return;
-    case XFA_IDS_INDEX_OUT_OF_BOUNDS:
-      wsString = L"Index value is out of bounds.";
-      return;
-    case XFA_IDS_INCORRECT_NUMBER_OF_METHOD:
-      wsString = L"Incorrect number of parameters calling method '%s'.";
-      return;
-    case XFA_IDS_ARGUMENT_MISMATCH:
-      wsString = L"Argument mismatch in property or function argument.";
-      return;
-    case XFA_IDS_NOT_HAVE_PROPERTY:
-      wsString = L"'%s' doesn't have property '%s'.";
-      return;
-    case XFA_IDS_VIOLATE_BOUNDARY:
-      wsString =
-          L"The element [%s] has violated its allowable number of occurrences.";
-      return;
-    case XFA_IDS_SERVER_DENY:
-      wsString = L"Server does not permit.";
-      return;
-    case XFA_IDS_ValidateLimit:
-      wsString =
-          L"Message limit exceeded. Remaining %d validation errors not "
-          L"reported.";
-      return;
-    case XFA_IDS_ValidateNullWarning:
-      wsString =
-          L"%s cannot be blank. To ignore validations for %s, click Ignore.";
-      return;
-    case XFA_IDS_ValidateNullError:
-      wsString = L"%s cannot be blank.";
-      return;
-    case XFA_IDS_ValidateWarning:
-      wsString =
-          L"The value you entered for %s is invalid. To ignore validations for "
-          L"%s, click Ignore.";
-      return;
-    case XFA_IDS_ValidateError:
-      wsString = L"The value you entered for %s is invalid.";
-      return;
-  }
 }
 
 IFWL_AdapterTimerMgr* CPDFXFA_Context::GetTimerMgr() {

@@ -24,6 +24,7 @@
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/test/testsupport/trace_to_stderr.h"
+#include "webrtc/typedefs.h"
 #include "webrtc/voice_engine/include/voe_audio_processing.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 #include "webrtc/voice_engine/include/voe_codec.h"
@@ -37,7 +38,6 @@
 #include "webrtc/voice_engine/include/voe_video_sync.h"
 #include "webrtc/voice_engine/include/voe_volume_control.h"
 #include "webrtc/voice_engine/test/channel_transport/channel_transport.h"
-#include "webrtc/voice_engine_configurations.h"
 
 DEFINE_bool(use_log_file, false,
     "Output logs to a file; by default they will be printed to stderr.");
@@ -229,20 +229,8 @@ void RunTest(std::string out_path) {
   bool experimental_ns_enabled = false;
   bool debug_recording_started = false;
 
-#if defined(WEBRTC_ANDROID)
-  std::string resource_path = "/sdcard/";
-#else
-  std::string resource_path = webrtc::test::ProjectRootPath();
-  if (resource_path == webrtc::test::kCannotFindProjectRootDir) {
-    printf("*** Unable to get project root directory. "
-           "File playing may fail. ***\n");
-    // Fall back to the current directory.
-    resource_path = "./";
-  } else {
-    resource_path += "data/voice_engine/";
-  }
-#endif
-  const std::string audio_filename = resource_path + "audio_long16.pcm";
+  const std::string audio_filename =
+      webrtc::test::ResourcePath("voice_engine/audio_long16", "pcm");
 
   const std::string play_filename = out_path + "recorded_playout.pcm";
   const std::string mic_filename = out_path + "recorded_mic.pcm";

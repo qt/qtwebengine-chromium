@@ -6,16 +6,12 @@
 
 #include "xfa/fwl/theme/cfwl_datetimepickertp.h"
 
-#include "xfa/fwl/core/cfwl_themebackground.h"
-#include "xfa/fwl/core/ifwl_datetimepicker.h"
+#include "xfa/fwl/cfwl_datetimepicker.h"
+#include "xfa/fwl/cfwl_themebackground.h"
 
 CFWL_DateTimePickerTP::CFWL_DateTimePickerTP() {}
 
 CFWL_DateTimePickerTP::~CFWL_DateTimePickerTP() {}
-
-bool CFWL_DateTimePickerTP::IsValidWidget(IFWL_Widget* pWidget) {
-  return pWidget && pWidget->GetClassID() == FWL_Type::DateTimePicker;
-}
 
 void CFWL_DateTimePickerTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
@@ -24,11 +20,6 @@ void CFWL_DateTimePickerTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   switch (pParams->m_iPart) {
     case CFWL_Part::Border: {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
-      break;
-    }
-    case CFWL_Part::Edge: {
-      DrawEdge(pParams->m_pGraphics, pParams->m_pWidget->GetStyles(),
-               &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
     case CFWL_Part::DropDownButton: {

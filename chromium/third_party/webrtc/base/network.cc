@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/networkmonitor.h"
 #include "webrtc/base/socket.h"  // includes something that makes windows happy
@@ -110,7 +111,7 @@ std::string AdapterTypeToString(AdapterType type) {
     case ADAPTER_TYPE_LOOPBACK:
       return "Loopback";
     default:
-      RTC_DCHECK(false) << "Invalid type " << type;
+      RTC_NOTREACHED() << "Invalid type " << type;
       return std::string();
   }
 }
@@ -265,7 +266,7 @@ void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
       if (current_list.ips[0].family() == AF_INET) {
         stats->ipv4_network_count++;
       } else {
-        ASSERT(current_list.ips[0].family() == AF_INET6);
+        RTC_DCHECK(current_list.ips[0].family() == AF_INET6);
         stats->ipv6_network_count++;
       }
     }
@@ -301,7 +302,7 @@ void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
       if (!existing_net->active()) {
         *changed = true;
       }
-      ASSERT(net->active());
+      RTC_DCHECK(net->active());
       if (existing_net != net) {
         delete net;
       }
@@ -407,7 +408,7 @@ void BasicNetworkManager::OnNetworksChanged() {
 
 bool BasicNetworkManager::CreateNetworks(bool include_ignored,
                                          NetworkList* networks) const {
-  ASSERT(false);
+  RTC_NOTREACHED();
   LOG(LS_WARNING) << "BasicNetworkManager doesn't work on NaCl yet";
   return false;
 }
@@ -739,7 +740,7 @@ void BasicNetworkManager::StartUpdating() {
 }
 
 void BasicNetworkManager::StopUpdating() {
-  ASSERT(Thread::Current() == thread_);
+  RTC_DCHECK(Thread::Current() == thread_);
   if (!start_count_)
     return;
 
@@ -785,7 +786,7 @@ void BasicNetworkManager::OnMessage(Message* msg) {
       break;
     }
     default:
-      ASSERT(false);
+      RTC_NOTREACHED();
   }
 }
 
@@ -825,9 +826,9 @@ AdapterType BasicNetworkManager::GetAdapterTypeFromName(
 }
 
 IPAddress BasicNetworkManager::QueryDefaultLocalAddress(int family) const {
-  ASSERT(thread_ == Thread::Current());
-  ASSERT(thread_->socketserver() != nullptr);
-  ASSERT(family == AF_INET || family == AF_INET6);
+  RTC_DCHECK(thread_ == Thread::Current());
+  RTC_DCHECK(thread_->socketserver() != nullptr);
+  RTC_DCHECK(family == AF_INET || family == AF_INET6);
 
   std::unique_ptr<AsyncSocket> socket(
       thread_->socketserver()->CreateAsyncSocket(family, SOCK_DGRAM));
@@ -854,7 +855,7 @@ void BasicNetworkManager::UpdateNetworksOnce() {
   if (!start_count_)
     return;
 
-  ASSERT(Thread::Current() == thread_);
+  RTC_DCHECK(Thread::Current() == thread_);
 
   NetworkList list;
   if (!CreateNetworks(false, &list)) {

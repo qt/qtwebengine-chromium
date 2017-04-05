@@ -6,11 +6,17 @@
 
 #include "xfa/fxfa/app/xfa_ffchoicelist.h"
 
-#include "xfa/fwl/core/cfwl_combobox.h"
-#include "xfa/fwl/core/cfwl_listbox.h"
-#include "xfa/fwl/core/fwl_noteimp.h"
-#include "xfa/fwl/core/ifwl_app.h"
-#include "xfa/fwl/core/ifwl_edit.h"
+#include <vector>
+
+#include "third_party/base/ptr_util.h"
+#include "third_party/base/stl_util.h"
+#include "xfa/fwl/cfwl_app.h"
+#include "xfa/fwl/cfwl_combobox.h"
+#include "xfa/fwl/cfwl_edit.h"
+#include "xfa/fwl/cfwl_eventselectchanged.h"
+#include "xfa/fwl/cfwl_listbox.h"
+#include "xfa/fwl/cfwl_notedriver.h"
+#include "xfa/fwl/cfwl_widgetproperties.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
@@ -25,31 +31,31 @@ CXFA_FFListBox::CXFA_FFListBox(CXFA_FFPageView* pPageView,
 
 CXFA_FFListBox::~CXFA_FFListBox() {
   if (m_pNormalWidget) {
-    IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-    CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
-    pNoteDriver->UnregisterEventTarget(pWidget);
+    CFWL_NoteDriver* pNoteDriver =
+        m_pNormalWidget->GetOwnerApp()->GetNoteDriver();
+    pNoteDriver->UnregisterEventTarget(m_pNormalWidget);
   }
 }
 
 bool CXFA_FFListBox::LoadWidget() {
-  CFWL_ListBox* pListBox = new CFWL_ListBox(GetFWLApp());
-  pListBox->Initialize();
+  CFWL_ListBox* pListBox = new CFWL_ListBox(
+      GetFWLApp(), pdfium::MakeUnique<CFWL_WidgetProperties>(), nullptr);
   pListBox->ModifyStyles(FWL_WGTSTYLE_VScroll | FWL_WGTSTYLE_NoBackground,
                          0xFFFFFFFF);
   m_pNormalWidget = (CFWL_Widget*)pListBox;
   m_pNormalWidget->SetLayoutItem(this);
 
-  IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
-  pNoteDriver->RegisterEventTarget(pWidget, pWidget);
+  CFWL_NoteDriver* pNoteDriver =
+      m_pNormalWidget->GetOwnerApp()->GetNoteDriver();
+  pNoteDriver->RegisterEventTarget(m_pNormalWidget, m_pNormalWidget);
 
   m_pOldDelegate = m_pNormalWidget->GetDelegate();
   m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
 
-  CFX_WideStringArray wsLabelArray;
+  std::vector<CFX_WideString> wsLabelArray;
   m_pDataAcc->GetChoiceListItems(wsLabelArray, false);
-  int32_t iItems = wsLabelArray.GetSize();
+  int32_t iItems = pdfium::CollectionSize<int32_t>(wsLabelArray);
   for (int32_t i = 0; i < iItems; i++) {
     pListBox->AddString(wsLabelArray[i].AsStringC());
   }
@@ -63,7 +69,7 @@ bool CXFA_FFListBox::LoadWidget() {
   m_pDataAcc->GetSelectedItems(iSelArray);
   int32_t iSelCount = iSelArray.GetSize();
   for (int32_t j = 0; j < iSelCount; j++) {
-    CFWL_ListItem* item = pListBox->GetItem(iSelArray[j]);
+    CFWL_ListItem* item = pListBox->GetItem(nullptr, iSelArray[j]);
     pListBox->SetSelItem(item, true);
   }
   m_pNormalWidget->UnlockUpdate();
@@ -97,8 +103,8 @@ bool CXFA_FFListBox::IsDataChanged() {
     return true;
 
   for (int32_t i = 0; i < iSels; ++i) {
-    CFWL_ListItem* hlistItem = pListBox->GetItem(iSelArray[i]);
-    if (!(pListBox->GetItemStates(hlistItem) & FWL_ITEMSTATE_LTB_Selected))
+    CFWL_ListItem* hlistItem = pListBox->GetItem(nullptr, iSelArray[i]);
+    if (!(hlistItem->GetStates() & FWL_ITEMSTATE_LTB_Selected))
       return true;
   }
   return false;
@@ -148,7 +154,7 @@ bool CXFA_FFListBox::UpdateFWLData() {
   m_pNormalWidget->Update();
   return true;
 }
-void CXFA_FFListBox::OnSelectChanged(IFWL_Widget* pWidget,
+void CXFA_FFListBox::OnSelectChanged(CFWL_Widget* pWidget,
                                      const CFX_Int32Array& arrSels) {
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Change;
@@ -157,8 +163,10 @@ void CXFA_FFListBox::OnSelectChanged(IFWL_Widget* pWidget,
   CFWL_ListBox* pListBox = (CFWL_ListBox*)m_pNormalWidget;
   int32_t iSels = pListBox->CountSelItems();
   if (iSels > 0) {
-    pListBox->GetItemText(pListBox->GetSelItem(0), eParam.m_wsNewText);
+    CFWL_ListItem* item = pListBox->GetSelItem(0);
+    eParam.m_wsNewText = item ? item->GetText() : L"";
   }
+
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Change, &eParam);
 }
 void CXFA_FFListBox::SetItemState(int32_t nIndex, bool bSelected) {
@@ -175,13 +183,13 @@ void CXFA_FFListBox::InsertItem(const CFX_WideStringC& wsLabel,
   AddInvalidateRect();
 }
 void CXFA_FFListBox::DeleteItem(int32_t nIndex) {
-  if (nIndex < 0) {
-    ((CFWL_ListBox*)m_pNormalWidget)->DeleteAll();
-  } else {
-    ((CFWL_ListBox*)m_pNormalWidget)
-        ->DeleteString(((CFWL_ListBox*)m_pNormalWidget)->GetItem(nIndex));
-  }
-  m_pNormalWidget->Update();
+  CFWL_ListBox* listBox = static_cast<CFWL_ListBox*>(m_pNormalWidget);
+  if (nIndex < 0)
+    listBox->DeleteAll();
+  else
+    listBox->DeleteString(listBox->GetItem(nullptr, nIndex));
+
+  listBox->Update();
   AddInvalidateRect();
 }
 
@@ -191,10 +199,10 @@ void CXFA_FFListBox::OnProcessMessage(CFWL_Message* pMessage) {
 
 void CXFA_FFListBox::OnProcessEvent(CFWL_Event* pEvent) {
   CXFA_FFField::OnProcessEvent(pEvent);
-  switch (pEvent->GetClassID()) {
-    case CFWL_EventType::SelectChanged: {
+  switch (pEvent->GetType()) {
+    case CFWL_Event::Type::SelectChanged: {
       CFX_Int32Array arrSels;
-      OnSelectChanged(m_pNormalWidget->GetWidget(), arrSels);
+      OnSelectChanged(m_pNormalWidget, arrSels);
       break;
     }
     default:
@@ -222,33 +230,29 @@ bool CXFA_FFComboBox::GetBBox(CFX_RectF& rtBox,
 }
 
 bool CXFA_FFComboBox::PtInActiveRect(FX_FLOAT fx, FX_FLOAT fy) {
-  if (!m_pNormalWidget) {
+  if (!m_pNormalWidget)
     return false;
-  }
-  CFX_RectF rtWidget;
-  ((CFWL_ComboBox*)m_pNormalWidget)->GetBBox(rtWidget);
-  if (rtWidget.Contains(fx, fy)) {
-    return true;
-  }
-  return false;
+  return static_cast<CFWL_ComboBox*>(m_pNormalWidget)
+      ->GetBBox()
+      .Contains(fx, fy);
 }
+
 bool CXFA_FFComboBox::LoadWidget() {
   CFWL_ComboBox* pComboBox = new CFWL_ComboBox(GetFWLApp());
-  pComboBox->Initialize();
   m_pNormalWidget = (CFWL_Widget*)pComboBox;
   m_pNormalWidget->SetLayoutItem(this);
 
-  IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
-  pNoteDriver->RegisterEventTarget(pWidget, pWidget);
+  CFWL_NoteDriver* pNoteDriver =
+      m_pNormalWidget->GetOwnerApp()->GetNoteDriver();
+  pNoteDriver->RegisterEventTarget(m_pNormalWidget, m_pNormalWidget);
 
   m_pOldDelegate = m_pNormalWidget->GetDelegate();
   m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
 
-  CFX_WideStringArray wsLabelArray;
+  std::vector<CFX_WideString> wsLabelArray;
   m_pDataAcc->GetChoiceListItems(wsLabelArray, false);
-  int32_t iItems = wsLabelArray.GetSize();
+  int32_t iItems = pdfium::CollectionSize<int32_t>(wsLabelArray);
   for (int32_t i = 0; i < iItems; i++) {
     pComboBox->AddString(wsLabelArray[i].AsStringC());
   }
@@ -314,16 +318,14 @@ bool CXFA_FFComboBox::CommitData() {
 }
 bool CXFA_FFComboBox::IsDataChanged() {
   CFWL_ComboBox* pFWLcombobox = ((CFWL_ComboBox*)m_pNormalWidget);
-  CFX_WideString wsText;
-  pFWLcombobox->GetEditText(wsText);
+  CFX_WideString wsText = pFWLcombobox->GetEditText();
   int32_t iCursel = pFWLcombobox->GetCurSel();
   if (iCursel >= 0) {
-    CFX_WideString wsSel;
-    pFWLcombobox->GetTextByIndex(iCursel, wsSel);
-    if (wsSel == wsText) {
+    CFX_WideString wsSel = pFWLcombobox->GetTextByIndex(iCursel);
+    if (wsSel == wsText)
       m_pDataAcc->GetChoiceListItem(wsText, iCursel, true);
-    }
   }
+
   CFX_WideString wsOldValue;
   m_pDataAcc->GetValue(wsOldValue, XFA_VALUEPICTURE_Raw);
   if (wsOldValue != wsText) {
@@ -336,7 +338,7 @@ void CXFA_FFComboBox::FWLEventSelChange(CXFA_EventParam* pParam) {
   pParam->m_eType = XFA_EVENT_Change;
   pParam->m_pTarget = m_pDataAcc;
   CFWL_ComboBox* pFWLcombobox = ((CFWL_ComboBox*)m_pNormalWidget);
-  pFWLcombobox->GetEditText(pParam->m_wsNewText);
+  pParam->m_wsNewText = pFWLcombobox->GetEditText();
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Change, pParam);
 }
 uint32_t CXFA_FFComboBox::GetAlignment() {
@@ -472,16 +474,14 @@ void CXFA_FFComboBox::DeleteItem(int32_t nIndex) {
   m_pNormalWidget->Update();
   AddInvalidateRect();
 }
-void CXFA_FFComboBox::OnTextChanged(IFWL_Widget* pWidget,
+void CXFA_FFComboBox::OnTextChanged(CFWL_Widget* pWidget,
                                     const CFX_WideString& wsChanged) {
   CXFA_EventParam eParam;
   m_pDataAcc->GetValue(eParam.m_wsPrevText, XFA_VALUEPICTURE_Raw);
   eParam.m_wsChange = wsChanged;
   FWLEventSelChange(&eParam);
 }
-void CXFA_FFComboBox::OnSelectChanged(IFWL_Widget* pWidget,
-                                      const CFX_Int32Array& arrSels,
-                                      bool bLButtonUp) {
+void CXFA_FFComboBox::OnSelectChanged(CFWL_Widget* pWidget, bool bLButtonUp) {
   CXFA_EventParam eParam;
   m_pDataAcc->GetValue(eParam.m_wsPrevText, XFA_VALUEPICTURE_Raw);
   FWLEventSelChange(&eParam);
@@ -490,13 +490,13 @@ void CXFA_FFComboBox::OnSelectChanged(IFWL_Widget* pWidget,
     m_pDocView->SetFocusWidgetAcc(nullptr);
   }
 }
-void CXFA_FFComboBox::OnPreOpen(IFWL_Widget* pWidget) {
+void CXFA_FFComboBox::OnPreOpen(CFWL_Widget* pWidget) {
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_PreOpen;
   eParam.m_pTarget = m_pDataAcc;
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_PreOpen, &eParam);
 }
-void CXFA_FFComboBox::OnPostOpen(IFWL_Widget* pWidget) {
+void CXFA_FFComboBox::OnPostOpen(CFWL_Widget* pWidget) {
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_PostOpen;
   eParam.m_pTarget = m_pDataAcc;
@@ -509,24 +509,24 @@ void CXFA_FFComboBox::OnProcessMessage(CFWL_Message* pMessage) {
 
 void CXFA_FFComboBox::OnProcessEvent(CFWL_Event* pEvent) {
   CXFA_FFField::OnProcessEvent(pEvent);
-  switch (pEvent->GetClassID()) {
-    case CFWL_EventType::SelectChanged: {
-      CFWL_EvtCmbSelChanged* postEvent = (CFWL_EvtCmbSelChanged*)pEvent;
-      OnSelectChanged(m_pNormalWidget->GetWidget(), postEvent->iArraySels,
-                      postEvent->bLButtonUp);
+  switch (pEvent->GetType()) {
+    case CFWL_Event::Type::SelectChanged: {
+      CFWL_EventSelectChanged* postEvent =
+          static_cast<CFWL_EventSelectChanged*>(pEvent);
+      OnSelectChanged(m_pNormalWidget, postEvent->bLButtonUp);
       break;
     }
-    case CFWL_EventType::EditChanged: {
+    case CFWL_Event::Type::EditChanged: {
       CFX_WideString wsChanged;
-      OnTextChanged(m_pNormalWidget->GetWidget(), wsChanged);
+      OnTextChanged(m_pNormalWidget, wsChanged);
       break;
     }
-    case CFWL_EventType::PreDropDown: {
-      OnPreOpen(m_pNormalWidget->GetWidget());
+    case CFWL_Event::Type::PreDropDown: {
+      OnPreOpen(m_pNormalWidget);
       break;
     }
-    case CFWL_EventType::PostDropDown: {
-      OnPostOpen(m_pNormalWidget->GetWidget());
+    case CFWL_Event::Type::PostDropDown: {
+      OnPostOpen(m_pNormalWidget);
       break;
     }
     default:

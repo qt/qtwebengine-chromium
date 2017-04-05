@@ -152,27 +152,15 @@ CongestionController::CongestionController(
     Clock* clock,
     Observer* observer,
     RemoteBitrateObserver* remote_bitrate_observer,
-    RtcEventLog* event_log)
-    : clock_(clock),
-      observer_(observer),
-      packet_router_(new PacketRouter()),
-      pacer_(new PacedSender(clock_, packet_router_.get())),
-      remote_bitrate_estimator_(
-          new WrappingBitrateEstimator(remote_bitrate_observer, clock_)),
-      bitrate_controller_(
-          BitrateController::CreateBitrateController(clock_, event_log)),
-      probe_controller_(new ProbeController(pacer_.get(), clock_)),
-      retransmission_rate_limiter_(
-          new RateLimiter(clock, kRetransmitWindowSizeMs)),
-      remote_estimator_proxy_(clock_, packet_router_.get()),
-      transport_feedback_adapter_(clock_, bitrate_controller_.get()),
-      min_bitrate_bps_(congestion_controller::GetMinBitrateBps()),
-      max_bitrate_bps_(0),
-      last_reported_bitrate_bps_(0),
-      last_reported_fraction_loss_(0),
-      last_reported_rtt_(0),
-      network_state_(kNetworkUp) {
-  Init();
+    RtcEventLog* event_log,
+    PacketRouter* packet_router)
+    : CongestionController(
+          clock,
+          observer,
+          remote_bitrate_observer,
+          event_log,
+          packet_router,
+          std::unique_ptr<PacedSender>(new PacedSender(clock, packet_router))) {
 }
 
 CongestionController::CongestionController(
@@ -180,11 +168,11 @@ CongestionController::CongestionController(
     Observer* observer,
     RemoteBitrateObserver* remote_bitrate_observer,
     RtcEventLog* event_log,
-    std::unique_ptr<PacketRouter> packet_router,
+    PacketRouter* packet_router,
     std::unique_ptr<PacedSender> pacer)
     : clock_(clock),
       observer_(observer),
-      packet_router_(std::move(packet_router)),
+      packet_router_(packet_router),
       pacer_(std::move(pacer)),
       remote_bitrate_estimator_(
           new WrappingBitrateEstimator(remote_bitrate_observer, clock_)),
@@ -195,7 +183,7 @@ CongestionController::CongestionController(
       probe_controller_(new ProbeController(pacer_.get(), clock_)),
       retransmission_rate_limiter_(
           new RateLimiter(clock, kRetransmitWindowSizeMs)),
-      remote_estimator_proxy_(clock_, packet_router_.get()),
+      remote_estimator_proxy_(clock_, packet_router_),
       transport_feedback_adapter_(clock_, bitrate_controller_.get()),
       min_bitrate_bps_(congestion_controller::GetMinBitrateBps()),
       max_bitrate_bps_(0),
@@ -203,14 +191,27 @@ CongestionController::CongestionController(
       last_reported_fraction_loss_(0),
       last_reported_rtt_(0),
       network_state_(kNetworkUp) {
-  Init();
+  transport_feedback_adapter_.InitBwe();
+  transport_feedback_adapter_.SetMinBitrate(min_bitrate_bps_);
 }
 
 CongestionController::~CongestionController() {}
 
-void CongestionController::Init() {
-  transport_feedback_adapter_.InitBwe();
-  transport_feedback_adapter_.SetMinBitrate(min_bitrate_bps_);
+void CongestionController::OnReceivedPacket(int64_t arrival_time_ms,
+                                            size_t payload_size,
+                                            const RTPHeader& header) {
+  // Send-side BWE.
+  if (header.extension.hasTransportSequenceNumber) {
+    remote_estimator_proxy_.IncomingPacket(arrival_time_ms, payload_size,
+                                           header);
+    return;
+  }
+
+  // Receive-side BWE.
+  if (remote_bitrate_estimator_) {
+    remote_bitrate_estimator_->IncomingPacket(arrival_time_ms, payload_size,
+                                              header);
+  }
 }
 
 void CongestionController::SetBweBitrates(int min_bitrate_bps,
@@ -275,6 +276,10 @@ RateLimiter* CongestionController::GetRetransmissionRateLimiter() {
   return retransmission_rate_limiter_.get();
 }
 
+void CongestionController::EnablePeriodicAlrProbing(bool enable) {
+  probe_controller_->EnablePeriodicAlrProbing(enable);
+}
+
 void CongestionController::SetAllocatedSendBitrateLimits(
     int min_send_bitrate_bps,
     int max_padding_bitrate_bps) {
@@ -297,10 +302,21 @@ void CongestionController::SignalNetworkState(NetworkState state) {
     rtc::CritScope cs(&critsect_);
     network_state_ = state;
   }
+  probe_controller_->OnNetworkStateChanged(state);
   MaybeTriggerOnNetworkChanged();
 }
 
+void CongestionController::SetTransportOverhead(
+    size_t transport_overhead_bytes_per_packet) {
+  transport_feedback_adapter_.SetTransportOverhead(
+      transport_overhead_bytes_per_packet);
+}
+
 void CongestionController::OnSentPacket(const rtc::SentPacket& sent_packet) {
+  // We're not interested in packets without an id, which may be stun packets,
+  // etc, sent on the same transport.
+  if (sent_packet.packet_id == -1)
+    return;
   transport_feedback_adapter_.OnSentPacket(sent_packet.packet_id,
                                            sent_packet.send_time_ms);
 }
@@ -318,6 +334,7 @@ int64_t CongestionController::TimeUntilNextProcess() {
 void CongestionController::Process() {
   bitrate_controller_->Process();
   remote_bitrate_estimator_->Process();
+  probe_controller_->Process();
   MaybeTriggerOnNetworkChanged();
 }
 
@@ -341,7 +358,9 @@ void CongestionController::MaybeTriggerOnNetworkChanged() {
   bitrate_bps = IsNetworkDown() || IsSendQueueFull() ? 0 : bitrate_bps;
 
   if (HasNetworkParametersToReportChanged(bitrate_bps, fraction_loss, rtt)) {
-    observer_->OnNetworkChanged(bitrate_bps, fraction_loss, rtt);
+    observer_->OnNetworkChanged(
+        bitrate_bps, fraction_loss, rtt,
+        transport_feedback_adapter_.GetProbingIntervalMs());
     remote_estimator_proxy_.OnBitrateChanged(bitrate_bps);
   }
 }

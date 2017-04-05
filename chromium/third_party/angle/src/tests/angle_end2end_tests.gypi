@@ -35,6 +35,7 @@
             '<(angle_path)/src/tests/gl_tests/DrawBuffersTest.cpp',
             '<(angle_path)/src/tests/gl_tests/DrawElementsTest.cpp',
             '<(angle_path)/src/tests/gl_tests/DXT1CompressedTextureTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/DXTSRGBCompressedTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ETCTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/FenceSyncTests.cpp',
             '<(angle_path)/src/tests/gl_tests/FramebufferMixedSamplesTest.cpp',
@@ -70,6 +71,7 @@
             '<(angle_path)/src/tests/gl_tests/StateChangeTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SwizzleTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SyncQueriesTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/TextureMultisampleTest.cpp',
             '<(angle_path)/src/tests/gl_tests/TextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/TimerQueriesTest.cpp',
             '<(angle_path)/src/tests/gl_tests/TransformFeedbackTest.cpp',
@@ -86,6 +88,7 @@
             '<(angle_path)/src/tests/egl_tests/EGLRobustnessTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLSanityCheckTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLSurfaceTest.cpp',
+            '<(angle_path)/src/tests/egl_tests/EGLVulkanEXTTest.cpp',
             '<(angle_path)/src/tests/test_utils/ANGLETest.cpp',
             '<(angle_path)/src/tests/test_utils/ANGLETest.h',
             '<(angle_path)/src/tests/test_utils/angle_test_configs.cpp',
@@ -97,10 +100,6 @@
         'angle_end2end_tests_win_sources':
         [
             '<(angle_path)/src/tests/gl_tests/D3DImageFormatConversionTest.cpp',
-            '<(angle_path)/src/tests/gl_tests/D3DTextureTest.cpp',
-            '<(angle_path)/src/tests/gl_tests/D3D11EmulatedIndexedBufferTest.cpp',
-            '<(angle_path)/src/tests/gl_tests/D3D11FormatTablesTest.cpp',
-            '<(angle_path)/src/tests/gl_tests/D3D11InputLayoutCacheTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLDeviceTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLPresentPathD3D11Test.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLStreamTest.cpp',
@@ -115,7 +114,11 @@
     },
     'dependencies':
     [
-        '<(angle_path)/src/angle.gyp:libANGLE',
+        '<(angle_path)/src/angle.gyp:angle_image_util',
+        # We use the D3D11 config for enabling Debug runtime error logging.
+        '<(angle_path)/src/angle.gyp:libANGLE_d3d11_config',
+        # This lets us filter test configs more intelligently.
+        '<(angle_path)/src/angle.gyp:libANGLE_renderer_config',
         '<(angle_path)/src/angle.gyp:libEGL',
         '<(angle_path)/src/angle.gyp:libGLESv2',
         '<(angle_path)/src/tests/tests.gyp:angle_test_support',

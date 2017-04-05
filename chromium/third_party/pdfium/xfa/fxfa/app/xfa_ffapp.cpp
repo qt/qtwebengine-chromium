@@ -7,11 +7,15 @@
 #include "xfa/fxfa/xfa_ffapp.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
+#include <vector>
 
+#include "third_party/base/ptr_util.h"
+#include "third_party/base/stl_util.h"
 #include "xfa/fgas/font/cfgas_fontmgr.h"
-#include "xfa/fwl/core/cfwl_widgetmgr.h"
-#include "xfa/fwl/core/fwl_noteimp.h"
+#include "xfa/fwl/cfwl_notedriver.h"
+#include "xfa/fwl/cfwl_widgetmgr.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 #include "xfa/fxfa/app/xfa_fwltheme.h"
 #include "xfa/fxfa/xfa_ffdoc.h"
@@ -19,10 +23,25 @@
 #include "xfa/fxfa/xfa_ffwidgethandler.h"
 #include "xfa/fxfa/xfa_fontmgr.h"
 
+namespace {
+
+class CXFA_FileRead : public IFX_SeekableReadStream {
+ public:
+  explicit CXFA_FileRead(const std::vector<CPDF_Stream*>& streams);
+  ~CXFA_FileRead() override;
+
+  // IFX_SeekableReadStream
+  FX_FILESIZE GetSize() override;
+  bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
+
+ private:
+  std::vector<std::unique_ptr<CPDF_StreamAcc>> m_Data;
+};
+
 CXFA_FileRead::CXFA_FileRead(const std::vector<CPDF_Stream*>& streams) {
   for (CPDF_Stream* pStream : streams) {
-    CPDF_StreamAcc& acc = m_Data.Add();
-    acc.LoadAllData(pStream);
+    m_Data.push_back(pdfium::MakeUnique<CPDF_StreamAcc>());
+    m_Data.back()->LoadAllData(pStream);
   }
 }
 
@@ -30,35 +49,32 @@ CXFA_FileRead::~CXFA_FileRead() {}
 
 FX_FILESIZE CXFA_FileRead::GetSize() {
   uint32_t dwSize = 0;
-  int32_t iCount = m_Data.GetSize();
-  for (int32_t i = 0; i < iCount; i++) {
-    CPDF_StreamAcc& acc = m_Data[i];
-    dwSize += acc.GetSize();
-  }
+  for (const auto& acc : m_Data)
+    dwSize += acc->GetSize();
   return dwSize;
 }
 
 bool CXFA_FileRead::ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) {
-  int32_t iCount = m_Data.GetSize();
+  int32_t iCount = pdfium::CollectionSize<int32_t>(m_Data);
   int32_t index = 0;
   while (index < iCount) {
-    CPDF_StreamAcc& acc = m_Data[index];
-    FX_FILESIZE dwSize = acc.GetSize();
-    if (offset < dwSize) {
+    const auto& acc = m_Data[index];
+    FX_FILESIZE dwSize = acc->GetSize();
+    if (offset < dwSize)
       break;
-    }
+
     offset -= dwSize;
     index++;
   }
   while (index < iCount) {
-    CPDF_StreamAcc& acc = m_Data[index];
-    uint32_t dwSize = acc.GetSize();
+    const auto& acc = m_Data[index];
+    uint32_t dwSize = acc->GetSize();
     size_t dwRead = std::min(size, static_cast<size_t>(dwSize - offset));
-    FXSYS_memcpy(buffer, acc.GetData() + offset, dwRead);
+    FXSYS_memcpy(buffer, acc->GetData() + offset, dwRead);
     size -= dwRead;
-    if (size == 0) {
+    if (size == 0)
       return true;
-    }
+
     buffer = (uint8_t*)buffer + dwRead;
     offset = 0;
     index++;
@@ -66,45 +82,42 @@ bool CXFA_FileRead::ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) {
   return false;
 }
 
-void CXFA_FileRead::Release() {
-  delete this;
+}  // namespace
+
+CFX_RetainPtr<IFX_SeekableReadStream> MakeSeekableReadStream(
+    const std::vector<CPDF_Stream*>& streams) {
+  return CFX_RetainPtr<IFX_SeekableReadStream>(new CXFA_FileRead(streams));
 }
 
 CXFA_FFApp::CXFA_FFApp(IXFA_AppProvider* pProvider)
     : m_pProvider(pProvider),
       m_pWidgetMgrDelegate(nullptr),
-      m_pFWLApp(new IFWL_App(this)) {
-}
+      m_pFWLApp(new CFWL_App(this)) {}
 
 CXFA_FFApp::~CXFA_FFApp() {}
 
 CXFA_FFDocHandler* CXFA_FFApp::GetDocHandler() {
   if (!m_pDocHandler)
-    m_pDocHandler.reset(new CXFA_FFDocHandler);
+    m_pDocHandler = pdfium::MakeUnique<CXFA_FFDocHandler>();
   return m_pDocHandler.get();
 }
 
-CXFA_FFDoc* CXFA_FFApp::CreateDoc(IXFA_DocEnvironment* pDocEnvironment,
-                                  IFX_SeekableReadStream* pStream,
-                                  bool bTakeOverFile) {
-  std::unique_ptr<CXFA_FFDoc> pDoc(new CXFA_FFDoc(this, pDocEnvironment));
-  bool bSuccess = pDoc->OpenDoc(pStream, bTakeOverFile);
-  return bSuccess ? pDoc.release() : nullptr;
-}
-
-CXFA_FFDoc* CXFA_FFApp::CreateDoc(IXFA_DocEnvironment* pDocEnvironment,
-                                  CPDF_Document* pPDFDoc) {
+std::unique_ptr<CXFA_FFDoc> CXFA_FFApp::CreateDoc(
+    IXFA_DocEnvironment* pDocEnvironment,
+    CPDF_Document* pPDFDoc) {
   if (!pPDFDoc)
     return nullptr;
 
-  std::unique_ptr<CXFA_FFDoc> pDoc(new CXFA_FFDoc(this, pDocEnvironment));
-  bool bSuccess = pDoc->OpenDoc(pPDFDoc);
-  return bSuccess ? pDoc.release() : nullptr;
+  auto pDoc = pdfium::MakeUnique<CXFA_FFDoc>(this, pDocEnvironment);
+  if (!pDoc->OpenDoc(pPDFDoc))
+    return nullptr;
+
+  return pDoc;
 }
 
 void CXFA_FFApp::SetDefaultFontMgr(std::unique_ptr<CXFA_DefFontMgr> pFontMgr) {
   if (!m_pFontMgr)
-    m_pFontMgr.reset(new CXFA_FontMgr());
+    m_pFontMgr = pdfium::MakeUnique<CXFA_FontMgr>();
   m_pFontMgr->SetDefFontMgr(std::move(pFontMgr));
 }
 
@@ -117,7 +130,7 @@ CFGAS_FontMgr* CXFA_FFApp::GetFDEFontMgr() {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
     m_pFDEFontMgr = CFGAS_FontMgr::Create(FX_GetDefFontEnumerator());
 #else
-    m_pFontSource.reset(new CFX_FontSourceEnum_File);
+    m_pFontSource = pdfium::MakeUnique<CFX_FontSourceEnum_File>();
     m_pFDEFontMgr = CFGAS_FontMgr::Create(m_pFontSource.get());
 #endif
   }
@@ -126,14 +139,14 @@ CFGAS_FontMgr* CXFA_FFApp::GetFDEFontMgr() {
 
 CXFA_FWLTheme* CXFA_FFApp::GetFWLTheme() {
   if (!m_pFWLTheme)
-    m_pFWLTheme.reset(new CXFA_FWLTheme(this));
+    m_pFWLTheme = pdfium::MakeUnique<CXFA_FWLTheme>(this);
   return m_pFWLTheme.get();
 }
 
 CXFA_FWLAdapterWidgetMgr* CXFA_FFApp::GetWidgetMgr(
-    IFWL_WidgetMgrDelegate* pDelegate) {
+    CFWL_WidgetMgrDelegate* pDelegate) {
   if (!m_pAdapterWidgetMgr) {
-    m_pAdapterWidgetMgr.reset(new CXFA_FWLAdapterWidgetMgr);
+    m_pAdapterWidgetMgr = pdfium::MakeUnique<CXFA_FWLAdapterWidgetMgr>();
     pDelegate->OnSetCapability(FWL_WGTMGR_DisableForm);
     m_pWidgetMgrDelegate = pDelegate;
   }

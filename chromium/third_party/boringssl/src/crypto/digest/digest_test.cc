@@ -23,12 +23,11 @@
 #include <openssl/err.h>
 #include <openssl/md4.h>
 #include <openssl/md5.h>
+#include <openssl/nid.h>
 #include <openssl/sha.h>
 
 #include "../internal.h"
 
-
-namespace bssl {
 
 struct MD {
   // name is the name of the digest.
@@ -161,7 +160,7 @@ static bool CompareDigest(const TestVector *test,
 }
 
 static int TestDigest(const TestVector *test) {
-  ScopedEVP_MD_CTX ctx;
+  bssl::ScopedEVP_MD_CTX ctx;
 
   // Test the input provided.
   if (!EVP_DigestInit_ex(ctx.get(), test->md.func(), NULL)) {
@@ -237,16 +236,24 @@ static int TestDigest(const TestVector *test) {
 }
 
 static int TestGetters() {
-  if (EVP_get_digestbyname("RSA-SHA512") == NULL ||
-      EVP_get_digestbyname("sha512WithRSAEncryption") == NULL ||
-      EVP_get_digestbyname("nonsense") != NULL) {
+  if (EVP_get_digestbyname("RSA-SHA512") != EVP_sha512() ||
+      EVP_get_digestbyname("sha512WithRSAEncryption") != EVP_sha512() ||
+      EVP_get_digestbyname("nonsense") != NULL ||
+      EVP_get_digestbyname("SHA512") != EVP_sha512() ||
+      EVP_get_digestbyname("sha512") != EVP_sha512()) {
+    return false;
+  }
+
+  if (EVP_get_digestbynid(NID_sha512) != EVP_sha512() ||
+      EVP_get_digestbynid(NID_sha512WithRSAEncryption) != NULL ||
+      EVP_get_digestbynid(NID_undef) != NULL) {
     return false;
   }
 
   return true;
 }
 
-static int Main() {
+int main() {
   CRYPTO_library_init();
 
   for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(kTestVectors); i++) {
@@ -262,10 +269,4 @@ static int Main() {
 
   printf("PASS\n");
   return 0;
-}
-
-}  // namespace bssl
-
-int main() {
-  return bssl::Main();
 }

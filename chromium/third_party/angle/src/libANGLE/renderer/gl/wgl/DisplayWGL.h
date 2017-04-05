@@ -21,7 +21,7 @@ class FunctionsWGL;
 class DisplayWGL : public DisplayGL
 {
   public:
-    DisplayWGL();
+    DisplayWGL(const egl::DisplayState &state);
     ~DisplayWGL() override;
 
     egl::Error initialize(egl::Display *display) override;
@@ -29,19 +29,15 @@ class DisplayWGL : public DisplayGL
 
     // Surface creation
     SurfaceImpl *createWindowSurface(const egl::SurfaceState &state,
-                                     const egl::Config *configuration,
                                      EGLNativeWindowType window,
                                      const egl::AttributeMap &attribs) override;
     SurfaceImpl *createPbufferSurface(const egl::SurfaceState &state,
-                                      const egl::Config *configuration,
                                       const egl::AttributeMap &attribs) override;
     SurfaceImpl *createPbufferFromClientBuffer(const egl::SurfaceState &state,
-                                               const egl::Config *configuration,
                                                EGLenum buftype,
                                                EGLClientBuffer clientBuffer,
                                                const egl::AttributeMap &attribs) override;
     SurfaceImpl *createPixmapSurface(const egl::SurfaceState &state,
-                                     const egl::Config *configuration,
                                      NativePixmapType nativePixmap,
                                      const egl::AttributeMap &attribs) override;
 

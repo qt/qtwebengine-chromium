@@ -4,6 +4,8 @@
 
 #include "xfa/fde/xml/fde_xml_imp.h"
 
+#include <memory>
+
 #include "testing/gtest/include/gtest/gtest.h"
 #include "xfa/fgas/crt/fgas_stream.h"
 
@@ -24,15 +26,14 @@ TEST(CFDE_XMLSyntaxParser, CData) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -82,15 +83,14 @@ TEST(CFDE_XMLSyntaxParser, CDataWithInnerScript) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -129,15 +129,14 @@ TEST(CFDE_XMLSyntaxParser, ArrowBangArrow) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -172,15 +171,14 @@ TEST(CFDE_XMLSyntaxParser, ArrowBangBracketArrow) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -209,15 +207,14 @@ TEST(CFDE_XMLSyntaxParser, IncompleteCData) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -246,15 +243,14 @@ TEST(CFDE_XMLSyntaxParser, UnClosedCData) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -283,15 +279,14 @@ TEST(CFDE_XMLSyntaxParser, EmptyCData) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -330,15 +325,14 @@ TEST(CFDE_XMLSyntaxParser, Comment) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -373,15 +367,14 @@ TEST(CFDE_XMLSyntaxParser, IncorrectCommentStart) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -416,15 +409,14 @@ TEST(CFDE_XMLSyntaxParser, CommentEmpty) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -459,15 +451,14 @@ TEST(CFDE_XMLSyntaxParser, CommentThreeDash) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -494,15 +485,14 @@ TEST(CFDE_XMLSyntaxParser, CommentTwoDash) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -533,15 +523,14 @@ TEST(CFDE_XMLSyntaxParser, Entities) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -573,15 +562,14 @@ TEST(CFDE_XMLSyntaxParser, EntityOverflowHex) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 
@@ -613,15 +601,14 @@ TEST(CFDE_XMLSyntaxParser, EntityOverflowDecimal) {
 
   // We * sizeof(FX_WCHAR) because we pass in the uint8_t, not the FX_WCHAR.
   size_t len = FXSYS_wcslen(input) * sizeof(FX_WCHAR);
-  std::unique_ptr<IFX_Stream> stream(IFX_Stream::CreateStream(
-      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0));
+  CFX_RetainPtr<IFGAS_Stream> stream = IFGAS_Stream::CreateStream(
+      reinterpret_cast<uint8_t*>(const_cast<FX_WCHAR*>(input)), len, 0);
   CFDE_XMLSyntaxParser parser;
-  parser.Init(stream.get(), 256);
-
-  CFX_WideString data;
-
+  parser.Init(stream, 256);
   EXPECT_EQ(FDE_XmlSyntaxResult::ElementOpen, parser.DoSyntaxParse());
   EXPECT_EQ(FDE_XmlSyntaxResult::TagName, parser.DoSyntaxParse());
+
+  CFX_WideString data;
   parser.GetTagName(data);
   EXPECT_EQ(L"script", data);
 

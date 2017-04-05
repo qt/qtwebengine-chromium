@@ -6,6 +6,9 @@
 
 #include "core/fxge/dib/dib_int.h"
 
+#include <memory>
+#include <utility>
+
 #include "core/fxge/fx_dib.h"
 #include "third_party/base/ptr_util.h"
 
@@ -175,23 +178,24 @@ class CFX_BilinearMatrix : public CPDF_FixedMatrix {
     y1 /= base;
   }
 };
-CFX_DIBitmap* CFX_DIBSource::SwapXY(bool bXFlip,
-                                    bool bYFlip,
-                                    const FX_RECT* pDestClip) const {
+
+std::unique_ptr<CFX_DIBitmap> CFX_DIBSource::SwapXY(
+    bool bXFlip,
+    bool bYFlip,
+    const FX_RECT* pDestClip) const {
   FX_RECT dest_clip(0, 0, m_Height, m_Width);
-  if (pDestClip) {
+  if (pDestClip)
     dest_clip.Intersect(*pDestClip);
-  }
-  if (dest_clip.IsEmpty()) {
+  if (dest_clip.IsEmpty())
     return nullptr;
-  }
-  CFX_DIBitmap* pTransBitmap = new CFX_DIBitmap;
-  int result_height = dest_clip.Height(), result_width = dest_clip.Width();
-  if (!pTransBitmap->Create(result_width, result_height, GetFormat())) {
-    delete pTransBitmap;
+
+  auto pTransBitmap = pdfium::MakeUnique<CFX_DIBitmap>();
+  int result_height = dest_clip.Height();
+  int result_width = dest_clip.Width();
+  if (!pTransBitmap->Create(result_width, result_height, GetFormat()))
     return nullptr;
-  }
-  pTransBitmap->CopyPalette(m_pPalette.get());
+
+  pTransBitmap->SetPalette(m_pPalette.get());
   int dest_pitch = pTransBitmap->GetPitch();
   uint8_t* dest_buf = pTransBitmap->GetBuffer();
   int row_start = bXFlip ? m_Height - dest_clip.right : dest_clip.left;
@@ -273,6 +277,7 @@ CFX_DIBitmap* CFX_DIBSource::SwapXY(bool bXFlip,
   }
   return pTransBitmap;
 }
+
 #define FIX16_005 0.05f
 FX_RECT FXDIB_SwapClipBox(FX_RECT& clip,
                           int width,
@@ -298,23 +303,25 @@ FX_RECT FXDIB_SwapClipBox(FX_RECT& clip,
   return rect;
 }
 
-CFX_DIBitmap* CFX_DIBSource::TransformTo(const CFX_Matrix* pDestMatrix,
-                                         int& result_left,
-                                         int& result_top,
-                                         uint32_t flags,
-                                         const FX_RECT* pDestClip) const {
+std::unique_ptr<CFX_DIBitmap> CFX_DIBSource::TransformTo(
+    const CFX_Matrix* pDestMatrix,
+    int& result_left,
+    int& result_top,
+    uint32_t flags,
+    const FX_RECT* pDestClip) const {
   CFX_ImageTransformer transformer(this, pDestMatrix, flags, pDestClip);
   transformer.Start();
   transformer.Continue(nullptr);
   result_left = transformer.result().left;
   result_top = transformer.result().top;
-  return transformer.DetachBitmap().release();
+  return transformer.DetachBitmap();
 }
 
-CFX_DIBitmap* CFX_DIBSource::StretchTo(int dest_width,
-                                       int dest_height,
-                                       uint32_t flags,
-                                       const FX_RECT* pClip) const {
+std::unique_ptr<CFX_DIBitmap> CFX_DIBSource::StretchTo(
+    int dest_width,
+    int dest_height,
+    uint32_t flags,
+    const FX_RECT* pClip) const {
   FX_RECT clip_rect(0, 0, FXSYS_abs(dest_width), FXSYS_abs(dest_height));
   if (pClip)
     clip_rect.Intersect(*pClip);
@@ -330,7 +337,8 @@ CFX_DIBitmap* CFX_DIBSource::StretchTo(int dest_width,
                                clip_rect, flags);
   if (stretcher.Start())
     stretcher.Continue(nullptr);
-  return storer.Detach().release();
+
+  return storer.Detach();
 }
 
 CFX_ImageTransformer::CFX_ImageTransformer(const CFX_DIBSource* pSrc,
@@ -409,9 +417,8 @@ bool CFX_ImageTransformer::Continue(IFX_Pause* pPause) {
       return true;
 
     if (m_Storer.GetBitmap()) {
-      std::unique_ptr<CFX_DIBitmap> swapped(
+      m_Storer.Replace(
           m_Storer.GetBitmap()->SwapXY(m_pMatrix->c > 0, m_pMatrix->b < 0));
-      m_Storer.Replace(std::move(swapped));
     }
     return false;
   }

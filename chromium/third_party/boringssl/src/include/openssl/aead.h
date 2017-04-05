@@ -64,7 +64,7 @@ extern "C" {
  *
  * The "seal" and "open" operations are atomic - an entire message must be
  * encrypted or decrypted in a single call. Large messages may have to be split
- * up in order to accomodate this. When doing so, be mindful of the need not to
+ * up in order to accommodate this. When doing so, be mindful of the need not to
  * repeat nonces and the possibility that an attacker could duplicate, reorder
  * or drop message chunks. For example, using a single key for a given (large)
  * message and sealing chunks with nonces counting from zero would be secure as
@@ -113,6 +113,14 @@ OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_ctr_hmac_sha256(void);
 /* EVP_aead_aes_256_ctr_hmac_sha256 is AES-256 in CTR mode with HMAC-SHA256 for
  * authentication. See |EVP_aead_aes_128_ctr_hmac_sha256| for details. */
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_ctr_hmac_sha256(void);
+
+/* EVP_aead_aes_128_gcm_siv is AES-128 in GCM-SIV mode. See
+ * https://tools.ietf.org/html/draft-irtf-cfrg-gcmsiv-02 */
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_gcm_siv(void);
+
+/* EVP_aead_aes_256_gcm_siv is AES-256 in GCM-SIV mode. See
+ * https://tools.ietf.org/html/draft-irtf-cfrg-gcmsiv-02 */
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_gcm_siv(void);
 
 /* EVP_has_aes_hardware returns one if we enable hardware support for fast and
  * constant-time AES-GCM. */

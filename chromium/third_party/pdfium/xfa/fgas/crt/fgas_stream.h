@@ -7,6 +7,7 @@
 #ifndef XFA_FGAS_CRT_FGAS_STREAM_H_
 #define XFA_FGAS_CRT_FGAS_STREAM_H_
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_system.h"
 
@@ -26,24 +27,23 @@ enum FX_STREAMSEEK {
   FX_STREAMSEEK_End,
 };
 
-class IFX_Stream {
+class IFGAS_Stream : public CFX_Retainable {
  public:
-  static IFX_Stream* CreateStream(IFX_SeekableReadStream* pFileRead,
-                                  uint32_t dwAccess);
-  static IFX_Stream* CreateStream(IFX_SeekableWriteStream* pFileWrite,
-                                  uint32_t dwAccess);
-  static IFX_Stream* CreateStream(uint8_t* pData,
-                                  int32_t length,
-                                  uint32_t dwAccess);
-  static IFX_Stream* CreateTextStream(IFX_Stream* pBaseStream,
-                                      bool bDeleteOnRelease);
-  virtual ~IFX_Stream() {}
-  virtual void Release() = 0;
-  virtual IFX_Stream* Retain() = 0;
+  static CFX_RetainPtr<IFGAS_Stream> CreateStream(
+      const CFX_RetainPtr<IFX_SeekableReadStream>& pFileRead,
+      uint32_t dwAccess);
+  static CFX_RetainPtr<IFGAS_Stream> CreateStream(
+      const CFX_RetainPtr<IFX_SeekableWriteStream>& pFileWrite,
+      uint32_t dwAccess);
+  static CFX_RetainPtr<IFGAS_Stream> CreateStream(uint8_t* pData,
+                                                  int32_t length,
+                                                  uint32_t dwAccess);
+  static CFX_RetainPtr<IFGAS_Stream> CreateTextStream(
+      const CFX_RetainPtr<IFGAS_Stream>& pBaseStream);
 
-  virtual IFX_Stream* CreateSharedStream(uint32_t dwAccess,
-                                         int32_t iOffset,
-                                         int32_t iLength) = 0;
+  virtual CFX_RetainPtr<IFGAS_Stream> CreateSharedStream(uint32_t dwAccess,
+                                                         int32_t iOffset,
+                                                         int32_t iLength) = 0;
 
   virtual uint32_t GetAccessModes() const = 0;
   virtual int32_t GetLength() const = 0;
@@ -61,9 +61,9 @@ class IFX_Stream {
   virtual int32_t GetBOM(uint8_t bom[4]) const = 0;
   virtual uint16_t GetCodePage() const = 0;
   virtual uint16_t SetCodePage(uint16_t wCodePage) = 0;
+
+  CFX_RetainPtr<IFX_SeekableReadStream> MakeSeekableReadStream();
 };
 
-IFX_SeekableReadStream* FX_CreateFileRead(IFX_Stream* pBaseStream,
-                                          bool bReleaseStream);
 
 #endif  // XFA_FGAS_CRT_FGAS_STREAM_H_

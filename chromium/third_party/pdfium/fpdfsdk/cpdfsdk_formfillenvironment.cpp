@@ -462,8 +462,8 @@ FPDF_FILEHANDLER* CPDFSDK_FormFillEnvironment::OpenFile(int fileType,
   return nullptr;
 }
 
-IFX_SeekableReadStream* CPDFSDK_FormFillEnvironment::DownloadFromURL(
-    const FX_WCHAR* url) {
+CFX_RetainPtr<IFX_SeekableReadStream>
+CPDFSDK_FormFillEnvironment::DownloadFromURL(const FX_WCHAR* url) {
   if (!m_pInfo || !m_pInfo->FFI_DownloadFromURL)
     return nullptr;
 
@@ -472,8 +472,7 @@ IFX_SeekableReadStream* CPDFSDK_FormFillEnvironment::DownloadFromURL(
       (FPDF_WIDESTRING)bstrURL.GetBuffer(bstrURL.GetLength());
 
   FPDF_LPFILEHANDLER fileHandler = m_pInfo->FFI_DownloadFromURL(m_pInfo, wsURL);
-
-  return new CFPDF_FileStream(fileHandler);
+  return MakeSeekableStream(fileHandler);
 }
 
 CFX_WideString CPDFSDK_FormFillEnvironment::PostRequestURL(

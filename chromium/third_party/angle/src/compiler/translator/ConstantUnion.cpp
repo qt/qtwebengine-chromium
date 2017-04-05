@@ -7,7 +7,6 @@
 
 #include "compiler/translator/ConstantUnion.h"
 
-#include "base/numerics/safe_math.h"
 #include "common/mathutil.h"
 #include "compiler/translator/Diagnostics.h"
 
@@ -17,52 +16,52 @@ namespace sh
 namespace
 {
 
-template <typename T>
-T CheckedSum(base::CheckedNumeric<T> lhs,
-             base::CheckedNumeric<T> rhs,
-             TDiagnostics *diag,
-             const TSourceLoc &line)
+float CheckedSum(float lhs, float rhs, TDiagnostics *diag, const TSourceLoc &line)
 {
-    ASSERT(lhs.IsValid() && rhs.IsValid());
-    auto result = lhs + rhs;
-    if (!result.IsValid())
+    float result = lhs + rhs;
+    if (gl::isNaN(result) && !gl::isNaN(lhs) && !gl::isNaN(rhs))
     {
-        diag->error(line, "Addition out of range", "*", "");
-        return 0;
+        diag->warning(line, "Constant folded undefined addition generated NaN", "+");
     }
-    return result.ValueOrDefault(0);
+    else if (gl::isInf(result) && !gl::isInf(lhs) && !gl::isInf(rhs))
+    {
+        diag->warning(line, "Constant folded addition overflowed to infinity", "+");
+    }
+    return result;
 }
 
-template <typename T>
-T CheckedDiff(base::CheckedNumeric<T> lhs,
-              base::CheckedNumeric<T> rhs,
-              TDiagnostics *diag,
-              const TSourceLoc &line)
+float CheckedDiff(float lhs, float rhs, TDiagnostics *diag, const TSourceLoc &line)
 {
-    ASSERT(lhs.IsValid() && rhs.IsValid());
-    auto result = lhs - rhs;
-    if (!result.IsValid())
+    float result = lhs - rhs;
+    if (gl::isNaN(result) && !gl::isNaN(lhs) && !gl::isNaN(rhs))
     {
-        diag->error(line, "Difference out of range", "*", "");
-        return 0;
+        diag->warning(line, "Constant folded undefined subtraction generated NaN", "-");
     }
-    return result.ValueOrDefault(0);
+    else if (gl::isInf(result) && !gl::isInf(lhs) && !gl::isInf(rhs))
+    {
+        diag->warning(line, "Constant folded subtraction overflowed to infinity", "-");
+    }
+    return result;
 }
 
-template <typename T>
-T CheckedMul(base::CheckedNumeric<T> lhs,
-             base::CheckedNumeric<T> rhs,
-             TDiagnostics *diag,
-             const TSourceLoc &line)
+float CheckedMul(float lhs, float rhs, TDiagnostics *diag, const TSourceLoc &line)
 {
-    ASSERT(lhs.IsValid() && rhs.IsValid());
-    auto result = lhs * rhs;
-    if (!result.IsValid())
+    float result = lhs * rhs;
+    if (gl::isNaN(result) && !gl::isNaN(lhs) && !gl::isNaN(rhs))
     {
-        diag->error(line, "Multiplication out of range", "*", "");
-        return 0;
+        diag->warning(line, "Constant folded undefined multiplication generated NaN", "*");
     }
-    return result.ValueOrDefault(0);
+    else if (gl::isInf(result) && !gl::isInf(lhs) && !gl::isInf(rhs))
+    {
+        diag->warning(line, "Constant folded multiplication overflowed to infinity", "*");
+    }
+    return result;
+}
+
+bool IsValidShiftOffset(const TConstantUnion &rhs)
+{
+    return (rhs.getType() == EbtInt && (rhs.getIConst() >= 0 && rhs.getIConst() <= 31)) ||
+           (rhs.getType() == EbtUInt && rhs.getUConst() <= 31u);
 }
 
 }  // anonymous namespace
@@ -293,7 +292,7 @@ TConstantUnion TConstantUnion::add(const TConstantUnion &lhs,
             returnValue.setUConst(gl::WrappingSum<unsigned int>(lhs.uConst, rhs.uConst));
             break;
         case EbtFloat:
-            returnValue.setFConst(CheckedSum<float>(lhs.fConst, rhs.fConst, diag, line));
+            returnValue.setFConst(CheckedSum(lhs.fConst, rhs.fConst, diag, line));
             break;
         default:
             UNREACHABLE();
@@ -319,7 +318,7 @@ TConstantUnion TConstantUnion::sub(const TConstantUnion &lhs,
             returnValue.setUConst(gl::WrappingDiff<unsigned int>(lhs.uConst, rhs.uConst));
             break;
         case EbtFloat:
-            returnValue.setFConst(CheckedDiff<float>(lhs.fConst, rhs.fConst, diag, line));
+            returnValue.setFConst(CheckedDiff(lhs.fConst, rhs.fConst, diag, line));
             break;
         default:
             UNREACHABLE();
@@ -347,7 +346,7 @@ TConstantUnion TConstantUnion::mul(const TConstantUnion &lhs,
             returnValue.setUConst(lhs.uConst * rhs.uConst);
             break;
         case EbtFloat:
-            returnValue.setFConst(CheckedMul<float>(lhs.fConst, rhs.fConst, diag, line));
+            returnValue.setFConst(CheckedMul(lhs.fConst, rhs.fConst, diag, line));
             break;
         default:
             UNREACHABLE();
@@ -384,10 +383,9 @@ TConstantUnion TConstantUnion::rshift(const TConstantUnion &lhs,
     TConstantUnion returnValue;
     ASSERT(lhs.type == EbtInt || lhs.type == EbtUInt);
     ASSERT(rhs.type == EbtInt || rhs.type == EbtUInt);
-    if ((rhs.type == EbtInt && (rhs.iConst < 0 || rhs.iConst > 31)) ||
-        (rhs.type == EbtUInt && rhs.uConst > 31u))
+    if (!IsValidShiftOffset(rhs))
     {
-        diag->error(line, "Undefined shift (operand out of range)", ">>", "");
+        diag->warning(line, "Undefined shift (operand out of range)", ">>");
         switch (lhs.type)
         {
             case EbtInt:
@@ -423,7 +421,7 @@ TConstantUnion TConstantUnion::rshift(const TConstantUnion &lhs,
                 // ESSL 3.00.6 section 5.9: "If E1 is a signed integer, the right-shift will extend
                 // the sign bit." In C++ shifting negative integers is undefined, so we implement
                 // extending the sign bit manually.
-                int lhsSafe        = lhs.iConst;
+                int lhsSafe = lhs.iConst;
                 if (lhsSafe == std::numeric_limits<int>::min())
                 {
                     // The min integer needs special treatment because only bit it has set is the
@@ -491,10 +489,9 @@ TConstantUnion TConstantUnion::lshift(const TConstantUnion &lhs,
     TConstantUnion returnValue;
     ASSERT(lhs.type == EbtInt || lhs.type == EbtUInt);
     ASSERT(rhs.type == EbtInt || rhs.type == EbtUInt);
-    if ((rhs.type == EbtInt && (rhs.iConst < 0 || rhs.iConst > 31)) ||
-        (rhs.type == EbtUInt && rhs.uConst > 31u))
+    if (!IsValidShiftOffset(rhs))
     {
-        diag->error(line, "Undefined shift (operand out of range)", "<<", "");
+        diag->warning(line, "Undefined shift (operand out of range)", "<<");
         switch (lhs.type)
         {
             case EbtInt:

@@ -9,6 +9,7 @@
 
 #include "libANGLE/Framebuffer.h"
 
+#include "common/BitSetIterator.h"
 #include "common/Optional.h"
 #include "common/utilities.h"
 #include "libANGLE/Config.h"
@@ -46,6 +47,7 @@ FramebufferState::FramebufferState()
       mReadBufferState(GL_COLOR_ATTACHMENT0_EXT)
 {
     mDrawBufferStates[0] = GL_COLOR_ATTACHMENT0_EXT;
+    mEnabledDrawBuffers.set(0);
 }
 
 FramebufferState::FramebufferState(const Caps &caps)
@@ -96,10 +98,24 @@ const FramebufferAttachment *FramebufferState::getAttachment(GLenum attachment) 
 
 const FramebufferAttachment *FramebufferState::getReadAttachment() const
 {
+    if (mReadBufferState == GL_NONE)
+    {
+        return nullptr;
+    }
     ASSERT(mReadBufferState == GL_BACK || (mReadBufferState >= GL_COLOR_ATTACHMENT0 && mReadBufferState <= GL_COLOR_ATTACHMENT15));
     size_t readIndex = (mReadBufferState == GL_BACK ? 0 : static_cast<size_t>(mReadBufferState - GL_COLOR_ATTACHMENT0));
     ASSERT(readIndex < mColorAttachments.size());
     return mColorAttachments[readIndex].isAttached() ? &mColorAttachments[readIndex] : nullptr;
+}
+
+const FramebufferAttachment *FramebufferState::getFirstNonNullAttachment() const
+{
+    auto *colorAttachment = getFirstColorAttachment();
+    if (colorAttachment)
+    {
+        return colorAttachment;
+    }
+    return getDepthOrStencilAttachment();
 }
 
 const FramebufferAttachment *FramebufferState::getFirstColorAttachment() const
@@ -128,6 +144,15 @@ const FramebufferAttachment *FramebufferState::getDepthOrStencilAttachment() con
     return nullptr;
 }
 
+const FramebufferAttachment *FramebufferState::getStencilOrDepthStencilAttachment() const
+{
+    if (mStencilAttachment.isAttached())
+    {
+        return &mStencilAttachment;
+    }
+    return getDepthStencilAttachment();
+}
+
 const FramebufferAttachment *FramebufferState::getColorAttachment(size_t colorAttachment) const
 {
     ASSERT(colorAttachment < mColorAttachments.size());
@@ -151,8 +176,7 @@ const FramebufferAttachment *FramebufferState::getDepthStencilAttachment() const
     // A valid depth-stencil attachment has the same resource bound to both the
     // depth and stencil attachment points.
     if (mDepthAttachment.isAttached() && mStencilAttachment.isAttached() &&
-        mDepthAttachment.type() == mStencilAttachment.type() &&
-        mDepthAttachment.id() == mStencilAttachment.id())
+        mDepthAttachment == mStencilAttachment)
     {
         return &mDepthAttachment;
     }
@@ -216,6 +240,12 @@ const gl::FramebufferAttachment *FramebufferState::getDrawBuffer(size_t drawBuff
 size_t FramebufferState::getDrawBufferCount() const
 {
     return mDrawBufferStates.size();
+}
+
+Error Framebuffer::getSamplePosition(size_t index, GLfloat *xy) const
+{
+    ANGLE_TRY(mImpl->getSamplePosition(index, xy));
+    return gl::NoError();
 }
 
 bool FramebufferState::colorAttachmentsAreUniqueImages() const
@@ -357,6 +387,11 @@ const FramebufferAttachment *Framebuffer::getDepthOrStencilbuffer() const
     return mState.getDepthOrStencilAttachment();
 }
 
+const FramebufferAttachment *Framebuffer::getStencilOrDepthStencilAttachment() const
+{
+    return mState.getStencilOrDepthStencilAttachment();
+}
+
 const FramebufferAttachment *Framebuffer::getReadColorbuffer() const
 {
     return mState.getReadAttachment();
@@ -402,6 +437,15 @@ void Framebuffer::setDrawBuffers(size_t count, const GLenum *buffers)
     std::copy(buffers, buffers + count, drawStates.begin());
     std::fill(drawStates.begin() + count, drawStates.end(), GL_NONE);
     mDirtyBits.set(DIRTY_BIT_DRAW_BUFFERS);
+
+    mState.mEnabledDrawBuffers.reset();
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (drawStates[index] != GL_NONE && mState.mColorAttachments[index].isAttached())
+        {
+            mState.mEnabledDrawBuffers.set(index);
+        }
+    }
 }
 
 const FramebufferAttachment *Framebuffer::getDrawBuffer(size_t drawBuffer) const
@@ -823,7 +867,31 @@ Error Framebuffer::blit(rx::ContextImpl *context,
                         GLbitfield mask,
                         GLenum filter)
 {
-    return mImpl->blit(context, sourceArea, destArea, mask, filter);
+    GLbitfield blitMask = mask;
+
+    // Note that blitting is called against draw framebuffer.
+    // See the code in gl::Context::blitFramebuffer.
+    if ((mask & GL_COLOR_BUFFER_BIT) && !hasEnabledDrawBuffer())
+    {
+        blitMask &= ~GL_COLOR_BUFFER_BIT;
+    }
+
+    if ((mask & GL_STENCIL_BUFFER_BIT) && mState.getStencilAttachment() == nullptr)
+    {
+        blitMask &= ~GL_STENCIL_BUFFER_BIT;
+    }
+
+    if ((mask & GL_DEPTH_BUFFER_BIT) && mState.getDepthAttachment() == nullptr)
+    {
+        blitMask &= ~GL_DEPTH_BUFFER_BIT;
+    }
+
+    if (!blitMask)
+    {
+        return NoError();
+    }
+
+    return mImpl->blit(context, sourceArea, destArea, blitMask, filter);
 }
 
 int Framebuffer::getSamples(const ContextState &state)
@@ -903,6 +971,9 @@ void Framebuffer::setAttachment(GLenum type,
                 mState.mColorAttachments[colorIndex].attach(type, binding, textureIndex, resource);
                 mDirtyBits.set(DIRTY_BIT_COLOR_ATTACHMENT_0 + colorIndex);
                 BindResourceChannel(&mDirtyColorAttachmentBindings[colorIndex], resource);
+
+                bool enabled = (type != GL_NONE && getDrawBufferState(colorIndex) != GL_NONE);
+                mState.mEnabledDrawBuffers.set(colorIndex, enabled);
             }
             break;
         }
@@ -933,6 +1004,56 @@ void Framebuffer::signal(SignalToken token)
 bool Framebuffer::complete(const ContextState &state)
 {
     return (checkStatus(state) == GL_FRAMEBUFFER_COMPLETE);
+}
+
+bool Framebuffer::formsRenderingFeedbackLoopWith(const State &state) const
+{
+    const Program *program = state.getProgram();
+
+    // TODO(jmadill): Default framebuffer feedback loops.
+    if (mId == 0)
+    {
+        return false;
+    }
+
+    // The bitset will skip inactive draw buffers.
+    for (GLuint drawIndex : angle::IterateBitSet(mState.mEnabledDrawBuffers))
+    {
+        const FramebufferAttachment *attachment = getDrawBuffer(drawIndex);
+        if (attachment && attachment->type() == GL_TEXTURE)
+        {
+            // Validate the feedback loop.
+            if (program->samplesFromTexture(state, attachment->id()))
+            {
+                return true;
+            }
+        }
+    }
+
+    // TODO(jmadill): Validate depth-stencil feedback loop.
+    return false;
+}
+
+bool Framebuffer::formsCopyingFeedbackLoopWith(GLuint copyTextureID, GLint copyTextureLevel) const
+{
+    if (mId == 0)
+    {
+        // It seems impossible to form a texture copying feedback loop with the default FBO.
+        return false;
+    }
+
+    const FramebufferAttachment *readAttachment = getReadColorbuffer();
+    ASSERT(readAttachment);
+
+    if (readAttachment->isTextureWithId(copyTextureID))
+    {
+        // TODO(jmadill): 3D/Array texture layers.
+        if (readAttachment->getTextureImageIndex().mipIndex == copyTextureLevel)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace gl

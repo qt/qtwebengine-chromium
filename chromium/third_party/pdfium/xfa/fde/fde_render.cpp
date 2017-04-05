@@ -6,9 +6,9 @@
 
 #include "xfa/fde/fde_render.h"
 
+#include "third_party/base/ptr_util.h"
 #include "xfa/fde/fde_gedevice.h"
 #include "xfa/fde/fde_object.h"
-#include "xfa/fgas/crt/fgas_memory.h"
 
 #define FDE_PATHRENDER_Stroke 1
 #define FDE_PATHRENDER_Fill 2
@@ -38,7 +38,7 @@ bool CFDE_RenderContext::StartRender(CFDE_RenderDevice* pRenderDevice,
   m_pRenderDevice = pRenderDevice;
   m_Transform = tmDoc2Device;
   if (!m_pIterator)
-    m_pIterator.reset(new CFDE_VisualSetIterator);
+    m_pIterator = pdfium::MakeUnique<CFDE_VisualSetIterator>();
 
   return m_pIterator->AttachCanvas(pCanvasSet) && m_pIterator->FilterObjects();
 }
@@ -107,7 +107,7 @@ void CFDE_RenderContext::RenderText(IFDE_TextSet* pTextSet,
   ASSERT(m_pRenderDevice);
   ASSERT(pTextSet && pText);
 
-  CFGAS_GEFont* pFont = pTextSet->GetFont();
+  CFX_RetainPtr<CFGAS_GEFont> pFont = pTextSet->GetFont();
   if (!pFont)
     return;
 
@@ -116,7 +116,7 @@ void CFDE_RenderContext::RenderText(IFDE_TextSet* pTextSet,
     return;
 
   if (!m_pBrush)
-    m_pBrush.reset(new CFDE_Brush);
+    m_pBrush = pdfium::MakeUnique<CFDE_Brush>();
 
   if (m_CharPos.size() < static_cast<size_t>(iCount))
     m_CharPos.resize(iCount, FXTEXT_CHARPOS());

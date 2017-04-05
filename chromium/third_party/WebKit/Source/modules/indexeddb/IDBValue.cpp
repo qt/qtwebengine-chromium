@@ -30,13 +30,13 @@ IDBValue::IDBValue(PassRefPtr<SharedBuffer> data,
                    IDBKey* primaryKey,
                    const IDBKeyPath& keyPath)
     : m_data(data),
-      m_blobData(makeUnique<Vector<RefPtr<BlobDataHandle>>>()),
-      m_blobInfo(wrapUnique(new Vector<WebBlobInfo>(webBlobInfo.size()))),
+      m_blobData(WTF::makeUnique<Vector<RefPtr<BlobDataHandle>>>()),
+      m_blobInfo(WTF::wrapUnique(new Vector<WebBlobInfo>(webBlobInfo.size()))),
       m_primaryKey(primaryKey && primaryKey->isValid() ? primaryKey : nullptr),
       m_keyPath(keyPath) {
   for (size_t i = 0; i < webBlobInfo.size(); ++i) {
     const WebBlobInfo& info = (*m_blobInfo)[i] = webBlobInfo[i];
-    m_blobData->append(
+    m_blobData->push_back(
         BlobDataHandle::create(info.uuid(), info.type(), info.size()));
   }
 }
@@ -45,14 +45,14 @@ IDBValue::IDBValue(const IDBValue* value,
                    IDBKey* primaryKey,
                    const IDBKeyPath& keyPath)
     : m_data(value->m_data),
-      m_blobData(makeUnique<Vector<RefPtr<BlobDataHandle>>>()),
+      m_blobData(WTF::makeUnique<Vector<RefPtr<BlobDataHandle>>>()),
       m_blobInfo(
-          wrapUnique(new Vector<WebBlobInfo>(value->m_blobInfo->size()))),
+          WTF::wrapUnique(new Vector<WebBlobInfo>(value->m_blobInfo->size()))),
       m_primaryKey(primaryKey),
       m_keyPath(keyPath) {
   for (size_t i = 0; i < value->m_blobInfo->size(); ++i) {
     const WebBlobInfo& info = (*m_blobInfo)[i] = value->m_blobInfo->at(i);
-    m_blobData->append(
+    m_blobData->push_back(
         BlobDataHandle::create(info.uuid(), info.type(), info.size()));
   }
 }
@@ -82,7 +82,7 @@ Vector<String> IDBValue::getUUIDs() const {
   Vector<String> uuids;
   uuids.reserveCapacity(m_blobInfo->size());
   for (const auto& info : *m_blobInfo)
-    uuids.append(info.uuid());
+    uuids.push_back(info.uuid());
   return uuids;
 }
 

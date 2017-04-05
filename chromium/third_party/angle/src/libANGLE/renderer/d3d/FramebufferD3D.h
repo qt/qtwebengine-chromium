@@ -30,7 +30,6 @@ namespace rx
 {
 class RendererD3D;
 class RenderTargetD3D;
-struct WorkaroundsD3D;
 
 struct ClearParameters
 {
@@ -99,6 +98,8 @@ class FramebufferD3D : public FramebufferImpl
     void syncState(const gl::Framebuffer::DirtyBits &dirtyBits) override;
 
     const gl::AttachmentList &getColorAttachmentsForRender() const;
+
+    gl::Error getSamplePosition(size_t index, GLfloat *xy) const override;
 
   private:
     virtual gl::Error clearImpl(ContextImpl *impl, const ClearParameters &clearParams) = 0;

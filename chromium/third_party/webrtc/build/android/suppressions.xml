@@ -7,17 +7,12 @@
        to suppress.py. -->
   <issue id="NewApi"></issue>
 
-  <issue id="Locale" severity="ignore"/>
-  <issue id="SdCardPath" severity="ignore"/>
-  <issue id="UseValueOf" severity="ignore"/>
   <issue id="InlinedApi" severity="ignore"/>
-  <issue id="DefaultLocale" severity="ignore"/>
   <issue id="Assert" severity="ignore"/>
   <issue id="UseSparseArrays" severity="ignore"/>
 
   <issue id="LongLogTag" severity="ignore"/>
   <issue id="Registered" severity="ignore"/>
-  <issue id="Recycle" severity="ignore"/>
   <issue id="MissingPermission" severity="ignore"/>
   <issue id="CommitPrefEdits" severity="ignore"/>
   <issue id="UnusedResources" severity="ignore"/>
@@ -27,7 +22,6 @@
   <issue id="RelativeOverlap" severity="ignore"/>
   <issue id="RtlCompat" severity="ignore"/>
   <issue id="IconMissingDensityFolder" severity="ignore"/>
-  <issue id="WrongCall" severity="ignore"/>
   <issue id="NewApi" severity="ignore"/>
   <issue id="OldTargetApi" severity="ignore"/>
 

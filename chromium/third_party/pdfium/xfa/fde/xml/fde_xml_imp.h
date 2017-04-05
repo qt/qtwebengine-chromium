@@ -7,9 +7,11 @@
 #ifndef XFA_FDE_XML_FDE_XML_IMP_H_
 #define XFA_FDE_XML_FDE_XML_IMP_H_
 
+#include <memory>
+#include <vector>
+
 #include "core/fxcrt/fx_system.h"
 #include "xfa/fde/xml/fde_xml.h"
-#include "xfa/fgas/crt/fgas_memory.h"
 #include "xfa/fgas/crt/fgas_stream.h"
 #include "xfa/fgas/crt/fgas_utils.h"
 
@@ -19,10 +21,10 @@ class CFDE_XMLElement;
 class CFDE_XMLText;
 class CFDE_XMLDoc;
 class CFDE_XMLDOMParser;
-class CFDE_XMLParser;
 class CFDE_XMLSyntaxParser;
+class IFDE_XMLParser;
 
-class CFDE_XMLNode : public CFX_Target {
+class CFDE_XMLNode {
  public:
   enum NodeItem {
     Root = 0,
@@ -40,7 +42,7 @@ class CFDE_XMLNode : public CFX_Target {
   };
 
   CFDE_XMLNode();
-  ~CFDE_XMLNode() override;
+  virtual ~CFDE_XMLNode();
 
   virtual void Release();
   virtual FDE_XMLNODETYPE GetType() const;
@@ -63,7 +65,7 @@ class CFDE_XMLNode : public CFX_Target {
   bool InsertNodeItem(CFDE_XMLNode::NodeItem eItem, CFDE_XMLNode* pNode);
   CFDE_XMLNode* RemoveNodeItem(CFDE_XMLNode::NodeItem eItem);
 
-  void SaveXMLNode(IFX_Stream* pXMLStream);
+  void SaveXMLNode(const CFX_RetainPtr<IFGAS_Stream>& pXMLStream);
 
   CFDE_XMLNode* m_pParent;
   CFDE_XMLNode* m_pChild;
@@ -103,8 +105,8 @@ class CFDE_XMLInstruction : public CFDE_XMLNode {
   void RemoveData(int32_t index);
 
   CFX_WideString m_wsTarget;
-  CFX_WideStringArray m_Attributes;
-  CFX_WideStringArray m_TargetData;
+  std::vector<CFX_WideString> m_Attributes;
+  std::vector<CFX_WideString> m_TargetData;
 };
 
 class CFDE_XMLElement : public CFDE_XMLNode {
@@ -146,7 +148,7 @@ class CFDE_XMLElement : public CFDE_XMLNode {
   void SetTextData(const CFX_WideString& wsText);
 
   CFX_WideString m_wsTag;
-  CFX_WideStringArray m_Attributes;
+  std::vector<CFX_WideString> m_Attributes;
 };
 
 class CFDE_XMLText : public CFDE_XMLNode {
@@ -188,41 +190,40 @@ class CFDE_XMLCharData : public CFDE_XMLDeclaration {
   CFX_WideString m_wsCharData;
 };
 
-class CFDE_XMLDoc : public CFX_Target {
+class CFDE_XMLDoc {
  public:
   CFDE_XMLDoc();
-  ~CFDE_XMLDoc() override;
+  ~CFDE_XMLDoc();
 
-  bool LoadXML(CFDE_XMLParser* pXMLParser);
+  bool LoadXML(std::unique_ptr<IFDE_XMLParser> pXMLParser);
   int32_t DoLoad(IFX_Pause* pPause = nullptr);
   void CloseXML();
   CFDE_XMLNode* GetRoot() const { return m_pRoot; }
-  void SaveXML(IFX_Stream* pXMLStream = nullptr, bool bSaveBOM = true);
-  void SaveXMLNode(IFX_Stream* pXMLStream, CFDE_XMLNode* pNode);
+  void SaveXML(CFX_RetainPtr<IFGAS_Stream>& pXMLStream, bool bSaveBOM = true);
+  void SaveXMLNode(const CFX_RetainPtr<IFGAS_Stream>& pXMLStream,
+                   CFDE_XMLNode* pNode);
 
  protected:
   void Reset(bool bInitRoot);
   void ReleaseParser();
 
-  IFX_Stream* m_pStream;
+  CFX_RetainPtr<IFGAS_Stream> m_pStream;
   int32_t m_iStatus;
   CFDE_XMLNode* m_pRoot;
   CFDE_XMLSyntaxParser* m_pSyntaxParser;
-  CFDE_XMLParser* m_pXMLParser;
+  std::unique_ptr<IFDE_XMLParser> m_pXMLParser;
 };
 
-class CFDE_XMLParser {
+class IFDE_XMLParser {
  public:
-  virtual ~CFDE_XMLParser() {}
-
-  virtual void Release() = 0;
+  virtual ~IFDE_XMLParser() {}
   virtual int32_t DoParser(IFX_Pause* pPause) = 0;
 };
 
-class CFDE_BlockBuffer : public CFX_Target {
+class CFDE_BlockBuffer {
  public:
   explicit CFDE_BlockBuffer(int32_t iAllocStep = 1024 * 1024);
-  ~CFDE_BlockBuffer() override;
+  ~CFDE_BlockBuffer();
 
   bool InitBuffer(int32_t iBufferSize = 1024 * 1024);
   bool IsInitialized() { return m_iBufferSize / m_iAllocStep >= 1; }
@@ -255,13 +256,13 @@ class CFDE_BlockBuffer : public CFX_Target {
   int32_t m_iStartPosition;
 };
 
-class CFDE_XMLSyntaxParser : public CFX_Target {
+class CFDE_XMLSyntaxParser {
  public:
   CFDE_XMLSyntaxParser();
-  ~CFDE_XMLSyntaxParser() override;
+  ~CFDE_XMLSyntaxParser();
 
   void Release() { delete this; }
-  void Init(IFX_Stream* pStream,
+  void Init(const CFX_RetainPtr<IFGAS_Stream>& pStream,
             int32_t iXMLPlaneSize,
             int32_t iTextDataSize = 256);
 
@@ -320,7 +321,7 @@ class CFDE_XMLSyntaxParser : public CFX_Target {
 
   void ParseTextChar(FX_WCHAR ch);
 
-  IFX_Stream* m_pStream;
+  CFX_RetainPtr<IFGAS_Stream> m_pStream;
   int32_t m_iXMLPlaneSize;
   int32_t m_iCurrentPos;
   int32_t m_iCurrentNodeNum;

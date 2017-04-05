@@ -16,23 +16,24 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/api/call/audio_state.h"
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/networkroute.h"
 #include "webrtc/base/scoped_ref_ptr.h"
-#include "webrtc/base/stream.h"
 #include "webrtc/base/thread_checker.h"
-#include "webrtc/call.h"
+#include "webrtc/call/audio_state.h"
+#include "webrtc/call/call.h"
 #include "webrtc/config.h"
 #include "webrtc/media/base/rtputils.h"
 #include "webrtc/media/engine/webrtccommon.h"
 #include "webrtc/media/engine/webrtcvoe.h"
+#include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/pc/channel.h"
 
 namespace cricket {
 
 class AudioDeviceModule;
+class AudioMixer;
 class AudioSource;
 class VoEWrapper;
 class WebRtcVoiceMediaChannel;
@@ -47,11 +48,13 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
 
   WebRtcVoiceEngine(
       webrtc::AudioDeviceModule* adm,
-      const rtc::scoped_refptr<webrtc::AudioDecoderFactory>& decoder_factory);
+      const rtc::scoped_refptr<webrtc::AudioDecoderFactory>& decoder_factory,
+      rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer);
   // Dependency injection for testing.
   WebRtcVoiceEngine(
       webrtc::AudioDeviceModule* adm,
       const rtc::scoped_refptr<webrtc::AudioDecoderFactory>& decoder_factory,
+      rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer,
       VoEWrapper* voe_wrapper);
   ~WebRtcVoiceEngine() override;
 
@@ -87,6 +90,10 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
 
   // Stops AEC dump.
   void StopAecDump();
+
+  const webrtc::AudioProcessing::Config& GetApmConfigForTest() const {
+    return apm_config_;
+  }
 
  private:
   // Every option that is "set" will be applied. Every option not "set" will be
@@ -133,6 +140,8 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
   rtc::Optional<bool> experimental_ns_;
   rtc::Optional<bool> intelligibility_enhancer_;
   rtc::Optional<bool> level_control_;
+
+  webrtc::AudioProcessing::Config apm_config_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(WebRtcVoiceEngine);
 };
@@ -245,12 +254,14 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
   int max_send_bitrate_bps_ = 0;
   AudioOptions options_;
   rtc::Optional<int> dtmf_payload_type_;
-  bool desired_playout_ = false;
+  int dtmf_payload_freq_ = -1;
   bool recv_transport_cc_enabled_ = false;
   bool recv_nack_enabled_ = false;
+  bool desired_playout_ = false;
   bool playout_ = false;
   bool send_ = false;
   webrtc::Call* const call_ = nullptr;
+  webrtc::Call::Config::BitrateConfig bitrate_config_;
 
   // SSRC of unsignalled receive stream, or -1 if there isn't one.
   int64_t default_recv_ssrc_ = -1;

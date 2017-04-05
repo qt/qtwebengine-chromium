@@ -245,7 +245,7 @@ uint32_t RunLengthDecode(const uint8_t* src_buf,
   return std::min(i + 1, src_size);
 }
 
-CCodec_ScanlineDecoder* FPDFAPI_CreateFaxDecoder(
+std::unique_ptr<CCodec_ScanlineDecoder> FPDFAPI_CreateFaxDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,
@@ -273,7 +273,7 @@ CCodec_ScanlineDecoder* FPDFAPI_CreateFaxDecoder(
       Columns, Rows);
 }
 
-CCodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
+std::unique_ptr<CCodec_ScanlineDecoder> FPDFAPI_CreateFlateDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,
@@ -288,9 +288,8 @@ CCodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
     Colors = pParams->GetIntegerFor("Colors", 1);
     BitsPerComponent = pParams->GetIntegerFor("BitsPerComponent", 8);
     Columns = pParams->GetIntegerFor("Columns", 1);
-    if (!CheckFlateDecodeParams(Colors, BitsPerComponent, Columns)) {
+    if (!CheckFlateDecodeParams(Colors, BitsPerComponent, Columns))
       return nullptr;
-    }
   }
   return CPDF_ModuleMgr::Get()->GetFlateModule()->CreateDecoder(
       src_buf, src_size, width, height, nComps, bpc, predictor, Colors,
@@ -501,7 +500,7 @@ CFX_ByteString PDF_EncodeText(const FX_WCHAR* pString, int len) {
   dest_buf2[1] = 0xff;
   dest_buf2 += 2;
   for (int j = 0; j < len; j++) {
-    *dest_buf2++ = pString[i] >> 8;
+    *dest_buf2++ = pString[j] >> 8;
     *dest_buf2++ = (uint8_t)pString[j];
   }
   result.ReleaseBuffer(encLen);

@@ -9,6 +9,7 @@
 
 #include <memory>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "xfa/fde/ifde_txtedtengine.h"
 
 class CFDE_TxtEdtBuf;
@@ -28,12 +29,10 @@ class CFDE_TxtEdtEngine {
   int32_t CountPages() const;
   IFDE_TxtEdtPage* GetPage(int32_t nIndex);
 
-  void SetTextByStream(IFX_Stream* pStream);
+  void SetTextByStream(const CFX_RetainPtr<IFGAS_Stream>& pStream);
   void SetText(const CFX_WideString& wsText);
   int32_t GetTextLength() const;
-  void GetText(CFX_WideString& wsText,
-               int32_t nStart,
-               int32_t nCount = -1) const;
+  CFX_WideString GetText(int32_t nStart, int32_t nCount) const;
   void ClearText();
 
   int32_t GetCaretRect(CFX_RectF& rtCaret) const;
@@ -56,11 +55,11 @@ class CFDE_TxtEdtEngine {
   void SetLimit(int32_t nLimit);
   void SetAliasChar(FX_WCHAR wcAlias);
 
-  void RemoveSelRange(int32_t nStart, int32_t nCount = -1);
+  void RemoveSelRange(int32_t nStart, int32_t nCount);
 
-  void AddSelRange(int32_t nStart, int32_t nCount = -1);
+  void AddSelRange(int32_t nStart, int32_t nCount);
   int32_t CountSelRanges() const;
-  int32_t GetSelRange(int32_t nIndex, int32_t& nStart) const;
+  int32_t GetSelRange(int32_t nIndex, int32_t* nStart) const;
   void ClearSelection();
 
   bool Redo(const IFDE_TxtEdtDoRecord* pRecord);
@@ -70,7 +69,6 @@ class CFDE_TxtEdtEngine {
   int32_t DoLayout(IFX_Pause* pPause);
   void EndLayout();
 
-  bool Optimize(IFX_Pause* pPause = nullptr);
   int32_t CountParags() const;
   CFDE_TxtEdtParag* GetParag(int32_t nParagIndex) const;
   IFX_CharIter* CreateCharIter();
@@ -102,18 +100,14 @@ class CFDE_TxtEdtEngine {
   };
 
   void Inner_Insert(int32_t nStart, const FX_WCHAR* lpText, int32_t nLength);
-  void GetPreDeleteText(CFX_WideString& wsText,
-                        int32_t nIndex,
-                        int32_t nLength);
-  void GetPreInsertText(CFX_WideString& wsText,
-                        int32_t nIndex,
-                        const FX_WCHAR* lpText,
-                        int32_t nLength);
-  void GetPreReplaceText(CFX_WideString& wsText,
-                         int32_t nIndex,
-                         int32_t nOriginLength,
-                         const FX_WCHAR* lpText,
-                         int32_t nLength);
+  CFX_WideString GetPreDeleteText(int32_t nIndex, int32_t nLength);
+  CFX_WideString GetPreInsertText(int32_t nIndex,
+                                  const FX_WCHAR* lpText,
+                                  int32_t nLength);
+  CFX_WideString GetPreReplaceText(int32_t nIndex,
+                                   int32_t nOriginLength,
+                                   const FX_WCHAR* lpText,
+                                   int32_t nLength);
 
   void Inner_DeleteRange(int32_t nStart, int32_t nCount = -1);
   void DeleteRange_DoRecord(int32_t nStart, int32_t nCount, bool bSel = false);

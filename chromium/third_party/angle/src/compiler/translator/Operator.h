@@ -12,12 +12,8 @@
 //
 enum TOperator
 {
-    EOpNull,            // if in a node, should only mean a node is still being built
+    EOpNull,  // if in a node, should only mean a node is still being built
     EOpFunctionCall,
-    EOpParameters,      // an aggregate listing the parameters to a function
-
-    EOpInvariantDeclaration, // Specialized declarations for attributing invariance
-    EOpPrototype,
 
     //
     // Unary operators
@@ -26,7 +22,6 @@ enum TOperator
     EOpNegative,
     EOpPositive,
     EOpLogicalNot,
-    EOpVectorLogicalNot,
     EOpBitwiseNot,
 
     EOpPostIncrement,
@@ -35,7 +30,8 @@ enum TOperator
     EOpPreDecrement,
 
     //
-    // binary operations
+    // binary operations (ones with special GLSL syntax are used in TIntermBinary nodes, others in
+    // TIntermAggregate nodes)
     //
 
     EOpAdd,
@@ -43,20 +39,28 @@ enum TOperator
     EOpMul,
     EOpDiv,
     EOpIMod,
+
     EOpEqual,
     EOpNotEqual,
-    EOpVectorEqual,
-    EOpVectorNotEqual,
     EOpLessThan,
     EOpGreaterThan,
     EOpLessThanEqual,
     EOpGreaterThanEqual,
+
+    EOpEqualComponentWise,
+    EOpNotEqualComponentWise,
+    EOpLessThanComponentWise,
+    EOpLessThanEqualComponentWise,
+    EOpGreaterThanComponentWise,
+    EOpGreaterThanEqualComponentWise,
+
     EOpComma,
 
     EOpVectorTimesScalar,
     EOpVectorTimesMatrix,
     EOpMatrixTimesVector,
     EOpMatrixTimesScalar,
+    EOpMatrixTimesMatrix,
 
     EOpLogicalOr,
     EOpLogicalXor,
@@ -75,7 +79,7 @@ enum TOperator
     EOpIndexDirectInterfaceBlock,
 
     //
-    // Built-in functions potentially mapped to operators
+    // Built-in functions mapped to operators (either unary or with multiple parameters)
     //
 
     EOpRadians,
@@ -142,12 +146,11 @@ enum TOperator
     EOpReflect,
     EOpRefract,
 
-    EOpDFdx,            // Fragment only, OES_standard_derivatives extension
-    EOpDFdy,            // Fragment only, OES_standard_derivatives extension
-    EOpFwidth,          // Fragment only, OES_standard_derivatives extension
+    EOpDFdx,    // Fragment only, OES_standard_derivatives extension
+    EOpDFdy,    // Fragment only, OES_standard_derivatives extension
+    EOpFwidth,  // Fragment only, OES_standard_derivatives extension
 
-    EOpMatrixTimesMatrix,
-
+    EOpMulMatrixComponentWise,
     EOpOuterProduct,
     EOpTranspose,
     EOpDeterminant,
@@ -155,12 +158,13 @@ enum TOperator
 
     EOpAny,
     EOpAll,
+    EOpLogicalNotComponentWise,
 
     //
     // Branch
     //
 
-    EOpKill,            // Fragment only
+    EOpKill,  // Fragment only
     EOpReturn,
     EOpBreak,
     EOpContinue,
@@ -217,11 +221,20 @@ enum TOperator
     EOpBitShiftRightAssign,
     EOpBitwiseAndAssign,
     EOpBitwiseXorAssign,
-    EOpBitwiseOrAssign
+    EOpBitwiseOrAssign,
+
+    //  barriers
+    EOpBarrier,
+    EOpMemoryBarrier,
+    EOpMemoryBarrierAtomicCounter,
+    EOpMemoryBarrierBuffer,
+    EOpMemoryBarrierImage,
+    EOpMemoryBarrierShared,
+    EOpGroupMemoryBarrier
 };
 
 // Returns the string corresponding to the operator in GLSL
-const char* GetOperatorString(TOperator op);
+const char *GetOperatorString(TOperator op);
 
 // Say whether or not a binary or unary operation changes the value of a variable.
 bool IsAssignment(TOperator op);

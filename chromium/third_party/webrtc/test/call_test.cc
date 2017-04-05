@@ -15,6 +15,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/config.h"
 #include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
+#include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 
@@ -52,6 +53,7 @@ void CallTest::RunBaseTest(BaseTest* test) {
     CreateVoiceEngines();
     AudioState::Config audio_state_config;
     audio_state_config.voice_engine = voe_send_.voice_engine;
+    audio_state_config.audio_mixer = AudioMixerImpl::Create();
     send_config.audio_state = AudioState::Create(audio_state_config);
   }
   CreateSenderCall(send_config);
@@ -60,6 +62,7 @@ void CallTest::RunBaseTest(BaseTest* test) {
     if (num_audio_streams_ > 0) {
       AudioState::Config audio_state_config;
       audio_state_config.voice_engine = voe_recv_.voice_engine;
+      audio_state_config.audio_mixer = AudioMixerImpl::Create();
       recv_config.audio_state = AudioState::Create(audio_state_config);
     }
     CreateReceiverCall(recv_config);
@@ -71,6 +74,10 @@ void CallTest::RunBaseTest(BaseTest* test) {
   if (test->ShouldCreateReceivers()) {
     send_transport_->SetReceiver(receiver_call_->Receiver());
     receive_transport_->SetReceiver(sender_call_->Receiver());
+    if (num_video_streams_ > 0)
+      receiver_call_->SignalChannelNetworkState(MediaType::VIDEO, kNetworkUp);
+    if (num_audio_streams_ > 0)
+      receiver_call_->SignalChannelNetworkState(MediaType::AUDIO, kNetworkUp);
   } else {
     // Sender-only call delivers to itself.
     send_transport_->SetReceiver(sender_call_->Receiver());
@@ -195,8 +202,8 @@ void CallTest::CreateSendConfig(size_t num_video_streams,
                                 size_t num_flexfec_streams,
                                 Transport* send_transport) {
   RTC_DCHECK(num_video_streams <= kNumSsrcs);
-  RTC_DCHECK_LE(num_audio_streams, 1u);
-  RTC_DCHECK_LE(num_flexfec_streams, 1u);
+  RTC_DCHECK_LE(num_audio_streams, 1);
+  RTC_DCHECK_LE(num_flexfec_streams, 1);
   RTC_DCHECK(num_audio_streams == 0 || voe_send_.channel_id >= 0);
   if (num_video_streams > 0) {
     video_send_config_ = VideoSendStream::Config(send_transport);
@@ -224,8 +231,8 @@ void CallTest::CreateSendConfig(size_t num_video_streams,
 
   // TODO(brandtr): Update this when we support multistream protection.
   if (num_flexfec_streams > 0) {
-    video_send_config_.rtp.flexfec.flexfec_payload_type = kFlexfecPayloadType;
-    video_send_config_.rtp.flexfec.flexfec_ssrc = kFlexfecSendSsrc;
+    video_send_config_.rtp.flexfec.payload_type = kFlexfecPayloadType;
+    video_send_config_.rtp.flexfec.ssrc = kFlexfecSendSsrc;
     video_send_config_.rtp.flexfec.protected_media_ssrcs = {kVideoSendSsrcs[0]};
   }
 }
@@ -253,7 +260,7 @@ void CallTest::CreateMatchingReceiveConfigs(Transport* rtcp_send_transport) {
     }
   }
 
-  RTC_DCHECK_GE(1u, num_audio_streams_);
+  RTC_DCHECK_GE(1, num_audio_streams_);
   if (num_audio_streams_ == 1) {
     RTC_DCHECK_LE(0, voe_send_.channel_id);
     AudioReceiveStream::Config audio_config;
@@ -268,11 +275,14 @@ void CallTest::CreateMatchingReceiveConfigs(Transport* rtcp_send_transport) {
   // TODO(brandtr): Update this when we support multistream protection.
   RTC_DCHECK(num_flexfec_streams_ <= 1);
   if (num_flexfec_streams_ == 1) {
-    FlexfecReceiveStream::Config flexfec_config;
-    flexfec_config.flexfec_payload_type = kFlexfecPayloadType;
-    flexfec_config.flexfec_ssrc = kFlexfecSendSsrc;
-    flexfec_config.protected_media_ssrcs = {kVideoSendSsrcs[0]};
-    flexfec_receive_configs_.push_back(flexfec_config);
+    FlexfecReceiveStream::Config config(rtcp_send_transport);
+    config.payload_type = kFlexfecPayloadType;
+    config.remote_ssrc = kFlexfecSendSsrc;
+    config.protected_media_ssrcs = {kVideoSendSsrcs[0]};
+    config.local_ssrc = kReceiverLocalVideoSsrc;
+    for (const RtpExtension& extension : video_send_config_.rtp.extensions)
+      config.rtp_header_extensions.push_back(extension);
+    flexfec_receive_configs_.push_back(config);
   }
 }
 

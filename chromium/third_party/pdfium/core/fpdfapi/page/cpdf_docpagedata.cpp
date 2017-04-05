@@ -7,7 +7,9 @@
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
 
 #include <algorithm>
+#include <memory>
 #include <set>
+#include <utility>
 
 #include "core/fdrm/crypto/fx_crypt.h"
 #include "core/fpdfapi/cpdf_modulemgr.h"
@@ -21,6 +23,7 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "third_party/base/stl_util.h"
 
@@ -141,9 +144,9 @@ CPDF_Font* CPDF_DocPageData::GetFont(CPDF_Dictionary* pFontDict) {
     return nullptr;
 
   if (pFontData) {
-    pFontData->reset(pFont.release());
+    pFontData->reset(std::move(pFont));
   } else {
-    pFontData = new CPDF_CountedFont(pFont.release());
+    pFontData = new CPDF_CountedFont(std::move(pFont));
     m_FontMap[pFontDict] = pFontData;
   }
   return pFontData->AddRef();
@@ -176,9 +179,9 @@ CPDF_Font* CPDF_DocPageData::GetStandardFont(const CFX_ByteString& fontName,
   }
 
   CPDF_Dictionary* pDict = m_pPDFDoc->NewIndirect<CPDF_Dictionary>();
-  pDict->SetNameFor("Type", "Font");
-  pDict->SetNameFor("Subtype", "Type1");
-  pDict->SetNameFor("BaseFont", fontName);
+  pDict->SetNewFor<CPDF_Name>("Type", "Font");
+  pDict->SetNewFor<CPDF_Name>("Subtype", "Type1");
+  pDict->SetNewFor<CPDF_Name>("BaseFont", fontName);
   if (pEncoding) {
     pDict->SetFor("Encoding",
                   pEncoding->Realize(m_pPDFDoc->GetByteStringPool()));
@@ -188,7 +191,7 @@ CPDF_Font* CPDF_DocPageData::GetStandardFont(const CFX_ByteString& fontName,
   if (!pFont)
     return nullptr;
 
-  CPDF_CountedFont* fontData = new CPDF_CountedFont(pFont.release());
+  CPDF_CountedFont* fontData = new CPDF_CountedFont(std::move(pFont));
   m_FontMap[pDict] = fontData;
   return fontData->AddRef();
 }
@@ -291,11 +294,11 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceImpl(
   if (!pCS)
     return nullptr;
 
-  if (!csData) {
-    csData = new CPDF_CountedColorSpace(pCS.release());
-    m_ColorSpaceMap[pCSObj] = csData;
+  if (csData) {
+    csData->reset(std::move(pCS));
   } else {
-    csData->reset(pCS.release());
+    csData = new CPDF_CountedColorSpace(std::move(pCS));
+    m_ColorSpaceMap[pCSObj] = csData;
   }
   return csData->AddRef();
 }
@@ -346,29 +349,31 @@ CPDF_Pattern* CPDF_DocPageData::GetPattern(CPDF_Object* pPatternObj,
       return ptData->AddRef();
     }
   }
-  CPDF_Pattern* pPattern = nullptr;
+  std::unique_ptr<CPDF_Pattern> pPattern;
   if (bShading) {
-    pPattern = new CPDF_ShadingPattern(m_pPDFDoc, pPatternObj, true, matrix);
+    pPattern = pdfium::MakeUnique<CPDF_ShadingPattern>(m_pPDFDoc, pPatternObj,
+                                                       true, matrix);
   } else {
     CPDF_Dictionary* pDict = pPatternObj ? pPatternObj->GetDict() : nullptr;
     if (pDict) {
       int type = pDict->GetIntegerFor("PatternType");
       if (type == CPDF_Pattern::TILING) {
-        pPattern = new CPDF_TilingPattern(m_pPDFDoc, pPatternObj, matrix);
+        pPattern = pdfium::MakeUnique<CPDF_TilingPattern>(m_pPDFDoc,
+                                                          pPatternObj, matrix);
       } else if (type == CPDF_Pattern::SHADING) {
-        pPattern =
-            new CPDF_ShadingPattern(m_pPDFDoc, pPatternObj, false, matrix);
+        pPattern = pdfium::MakeUnique<CPDF_ShadingPattern>(
+            m_pPDFDoc, pPatternObj, false, matrix);
       }
     }
   }
   if (!pPattern)
     return nullptr;
 
-  if (!ptData) {
-    ptData = new CPDF_CountedPattern(pPattern);
-    m_PatternMap[pPatternObj] = ptData;
+  if (ptData) {
+    ptData->reset(std::move(pPattern));
   } else {
-    ptData->reset(pPattern);
+    ptData = new CPDF_CountedPattern(std::move(pPattern));
+    m_PatternMap[pPatternObj] = ptData;
   }
   return ptData->AddRef();
 }
@@ -399,8 +404,8 @@ CPDF_Image* CPDF_DocPageData::GetImage(uint32_t dwStreamObjNum) {
   if (it != m_ImageMap.end())
     return it->second->AddRef();
 
-  CPDF_CountedImage* pCountedImage =
-      new CPDF_CountedImage(new CPDF_Image(m_pPDFDoc, dwStreamObjNum));
+  CPDF_CountedImage* pCountedImage = new CPDF_CountedImage(
+      pdfium::MakeUnique<CPDF_Image>(m_pPDFDoc, dwStreamObjNum));
   m_ImageMap[dwStreamObjNum] = pCountedImage;
   return pCountedImage->AddRef();
 }
@@ -445,9 +450,8 @@ CPDF_IccProfile* CPDF_DocPageData::GetIccProfile(
     if (it_copied_stream != m_IccProfileMap.end())
       return it_copied_stream->second->AddRef();
   }
-  CPDF_IccProfile* pProfile =
-      new CPDF_IccProfile(stream.GetData(), stream.GetSize());
-  CPDF_CountedIccProfile* ipData = new CPDF_CountedIccProfile(pProfile);
+  CPDF_CountedIccProfile* ipData = new CPDF_CountedIccProfile(
+      pdfium::MakeUnique<CPDF_IccProfile>(stream.GetData(), stream.GetSize()));
   m_IccProfileMap[pIccProfileStream] = ipData;
   m_HashProfileMap[bsDigest] = pIccProfileStream;
   return ipData->AddRef();
@@ -486,10 +490,11 @@ CPDF_StreamAcc* CPDF_DocPageData::GetFontFileStreamAcc(
                      pFontDict->GetIntegerFor("Length3");
   org_size = std::max(org_size, 0);
 
-  CPDF_StreamAcc* pFontFile = new CPDF_StreamAcc;
-  pFontFile->LoadAllData(pFontStream, false, org_size);
+  auto pFontAcc = pdfium::MakeUnique<CPDF_StreamAcc>();
+  pFontAcc->LoadAllData(pFontStream, false, org_size);
 
-  CPDF_CountedStreamAcc* pCountedFont = new CPDF_CountedStreamAcc(pFontFile);
+  CPDF_CountedStreamAcc* pCountedFont =
+      new CPDF_CountedStreamAcc(std::move(pFontAcc));
   m_FontFileMap[pFontStream] = pCountedFont;
   return pCountedFont->AddRef();
 }

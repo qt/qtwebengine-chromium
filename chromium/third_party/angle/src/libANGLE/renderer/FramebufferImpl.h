@@ -72,6 +72,8 @@ class FramebufferImpl : angle::NonCopyable
 
     virtual void syncState(const gl::Framebuffer::DirtyBits &dirtyBits) = 0;
 
+    virtual gl::Error getSamplePosition(size_t index, GLfloat *xy) const = 0;
+
     const gl::FramebufferState &getState() const { return mState; }
 
   protected:

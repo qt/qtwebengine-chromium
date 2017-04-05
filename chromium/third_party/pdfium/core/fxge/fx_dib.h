@@ -213,30 +213,33 @@ class CFX_DIBSource {
     SetPaletteEntry(index, color);
   }
 
-  void CopyPalette(const uint32_t* pSrcPal);
+  // Copies into internally-owned palette.
+  void SetPalette(const uint32_t* pSrcPal);
 
-  CFX_DIBitmap* Clone(const FX_RECT* pClip = nullptr) const;
-  CFX_DIBitmap* CloneConvert(FXDIB_Format format) const;
+  std::unique_ptr<CFX_DIBitmap> Clone(const FX_RECT* pClip = nullptr) const;
+  std::unique_ptr<CFX_DIBitmap> CloneConvert(FXDIB_Format format) const;
+  std::unique_ptr<CFX_DIBitmap> StretchTo(int dest_width,
+                                          int dest_height,
+                                          uint32_t flags = 0,
+                                          const FX_RECT* pClip = nullptr) const;
+  std::unique_ptr<CFX_DIBitmap> TransformTo(
+      const CFX_Matrix* pMatrix,
+      int& left,
+      int& top,
+      uint32_t flags = 0,
+      const FX_RECT* pClip = nullptr) const;
+  std::unique_ptr<CFX_DIBitmap> SwapXY(bool bXFlip,
+                                       bool bYFlip,
+                                       const FX_RECT* pClip = nullptr) const;
+  std::unique_ptr<CFX_DIBitmap> FlipImage(bool bXFlip, bool bYFlip) const;
 
-  CFX_DIBitmap* StretchTo(int dest_width,
-                          int dest_height,
-                          uint32_t flags = 0,
-                          const FX_RECT* pClip = nullptr) const;
-  CFX_DIBitmap* TransformTo(const CFX_Matrix* pMatrix,
-                            int& left,
-                            int& top,
-                            uint32_t flags = 0,
-                            const FX_RECT* pClip = nullptr) const;
+  std::unique_ptr<CFX_DIBitmap> CloneAlphaMask(
+      const FX_RECT* pClip = nullptr) const;
 
-  CFX_DIBitmap* GetAlphaMask(const FX_RECT* pClip = nullptr) const;
-  bool CopyAlphaMask(const CFX_DIBSource* pAlphaMask,
-                     const FX_RECT* pClip = nullptr);
+  // Copies into internally-owned mask.
+  bool SetAlphaMask(const CFX_DIBSource* pAlphaMask,
+                    const FX_RECT* pClip = nullptr);
 
-  CFX_DIBitmap* SwapXY(bool bXFlip,
-                       bool bYFlip,
-                       const FX_RECT* pClip = nullptr) const;
-
-  CFX_DIBitmap* FlipImage(bool bXFlip, bool bYFlip) const;
 
   void GetOverlapRect(int& dest_left,
                       int& dest_top,
@@ -248,7 +251,7 @@ class CFX_DIBSource {
                       int& src_top,
                       const CFX_ClipRgn* pClipRgn);
 
-#if defined _SKIA_SUPPORT_
+#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
   void DebugVerifyBitmapIsPreMultiplied(void* buffer = nullptr) const;
 #endif
 
@@ -307,14 +310,14 @@ class CFX_DIBitmap : public CFX_DIBSource {
   void SetPixel(int x, int y, uint32_t color);
 
   bool LoadChannel(FXDIB_Channel destChannel,
-                   const CFX_DIBSource* pSrcBitmap,
+                   CFX_DIBSource* pSrcBitmap,
                    FXDIB_Channel srcChannel);
 
   bool LoadChannel(FXDIB_Channel destChannel, int value);
 
   bool MultiplyAlpha(int alpha);
 
-  bool MultiplyAlpha(const CFX_DIBSource* pAlphaMask);
+  bool MultiplyAlpha(CFX_DIBSource* pAlphaMask);
 
   bool TransferBitmap(int dest_left,
                       int dest_top,
@@ -371,10 +374,24 @@ class CFX_DIBitmap : public CFX_DIBSource {
 
   bool ConvertColorScale(uint32_t forecolor, uint32_t backcolor);
 
+#if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
+  void PreMultiply();
+#endif
+#if defined _SKIA_SUPPORT_PATHS_
+  void UnPreMultiply();
+#endif
+
  protected:
   bool GetGrayData(void* pIccTransform = nullptr);
 
+#if defined _SKIA_SUPPORT_PATHS_
+  enum class Format { kCleared, kPreMultiplied, kUnPreMultiplied };
+#endif
+
   uint8_t* m_pBuffer;
+#if defined _SKIA_SUPPORT_PATHS_
+  Format m_nFormat;
+#endif
   bool m_bExtBuf;
 };
 

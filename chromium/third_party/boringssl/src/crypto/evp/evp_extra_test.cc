@@ -27,7 +27,8 @@
 #include <openssl/pkcs8.h>
 #include <openssl/rsa.h>
 
-namespace bssl {
+#include "../internal.h"
+
 
 // kExampleRSAKeyDER is an RSA private key in ASN.1, DER format. Of course, you
 // should never use this key anywhere but in an example.
@@ -371,7 +372,7 @@ static bssl::UniquePtr<EVP_PKEY> LoadExampleRSAKey() {
 
 static bool TestEVP_DigestSignInit(void) {
   bssl::UniquePtr<EVP_PKEY> pkey = LoadExampleRSAKey();
-  ScopedEVP_MD_CTX md_ctx;
+  bssl::ScopedEVP_MD_CTX md_ctx;
   if (!pkey ||
       !EVP_DigestSignInit(md_ctx.get(), NULL, EVP_sha256(), NULL, pkey.get()) ||
       !EVP_DigestSignUpdate(md_ctx.get(), kMsg, sizeof(kMsg))) {
@@ -409,7 +410,7 @@ static bool TestEVP_DigestSignInit(void) {
 
 static bool TestEVP_DigestVerifyInit(void) {
   bssl::UniquePtr<EVP_PKEY> pkey = LoadExampleRSAKey();
-  ScopedEVP_MD_CTX md_ctx;
+  bssl::ScopedEVP_MD_CTX md_ctx;
   if (!pkey ||
       !EVP_DigestVerifyInit(md_ctx.get(), NULL, EVP_sha256(), NULL,
                             pkey.get()) ||
@@ -470,7 +471,7 @@ static bool TestVerifyRecover() {
     return false;
   }
 
-  if (memcmp(recovered.data(), kDummyHash, sizeof(kDummyHash)) != 0) {
+  if (OPENSSL_memcmp(recovered.data(), kDummyHash, sizeof(kDummyHash)) != 0) {
     fprintf(stderr, "verify_recover got wrong value.\n");
     ERR_print_errors_fp(stderr);
     return false;
@@ -591,7 +592,7 @@ static bool TestEVPMarshalEmptyPublicKey(void) {
   if (!empty) {
     return false;
   }
-  ScopedCBB cbb;
+  bssl::ScopedCBB cbb;
   if (EVP_marshal_public_key(cbb.get(), empty.get())) {
     fprintf(stderr, "Marshalled empty public key.\n");
     return false;
@@ -670,7 +671,7 @@ static bool Testd2i_PrivateKey(void) {
   return true;
 }
 
-static int Main(void) {
+int main() {
   CRYPTO_library_init();
 
   if (!TestEVP_DigestSignInit()) {
@@ -717,10 +718,4 @@ static int Main(void) {
 
   printf("PASS\n");
   return 0;
-}
-
-}  // namespace bssl
-
-int main() {
-  return bssl::Main();
 }

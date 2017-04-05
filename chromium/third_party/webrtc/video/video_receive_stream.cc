@@ -19,6 +19,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/optional.h"
+#include "webrtc/common_video/h264/profile_level_id.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/congestion_controller/include/congestion_controller.h"
 #include "webrtc/modules/utility/include/process_thread.h"
@@ -51,10 +52,9 @@ std::string VideoReceiveStream::Decoder::ToString() const {
   ss << "{decoder: " << (decoder ? "(VideoDecoder)" : "nullptr");
   ss << ", payload_type: " << payload_type;
   ss << ", payload_name: " << payload_name;
-  ss << ", decoder_specific: {";
-  ss << " h264_extra_settings: "
-     << (decoder_specific.h264_extra_settings ? "(h264_extra_settings)"
-                                              : "nullptr");
+  ss << ", codec_params: {";
+  for (const auto& it : codec_params)
+    ss << it.first << ": " << it.second;
   ss << '}';
   ss << '}';
 
@@ -170,6 +170,8 @@ VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
     *(codec.VP9()) = VideoEncoder::GetDefaultVp9Settings();
   } else if (codec.codecType == kVideoCodecH264) {
     *(codec.H264()) = VideoEncoder::GetDefaultH264Settings();
+    codec.H264()->profile =
+        H264::ParseSdpProfileLevelId(decoder.codec_params)->profile;
   }
 
   codec.width = 320;
@@ -187,6 +189,7 @@ namespace internal {
 VideoReceiveStream::VideoReceiveStream(
     int num_cpu_cores,
     CongestionController* congestion_controller,
+    PacketRouter* packet_router,
     VideoReceiveStream::Config config,
     webrtc::VoiceEngine* voice_engine,
     ProcessThread* process_thread,
@@ -200,9 +203,9 @@ VideoReceiveStream::VideoReceiveStream(
       decode_thread_(DecodeThreadFunction, this, "DecodingThread"),
       congestion_controller_(congestion_controller),
       call_stats_(call_stats),
-      video_receiver_(clock_, nullptr, this, this, this),
-      stats_proxy_(&config_, clock_),
       timing_(new VCMTiming(clock_)),
+      video_receiver_(clock_, nullptr, this, timing_.get(), this, this),
+      stats_proxy_(&config_, clock_),
       rtp_stream_receiver_(
           &video_receiver_,
           congestion_controller_->GetRemoteBitrateEstimator(
@@ -210,7 +213,7 @@ VideoReceiveStream::VideoReceiveStream(
           &transport_adapter_,
           call_stats_->rtcp_rtt_stats(),
           congestion_controller_->pacer(),
-          congestion_controller_->packet_router(),
+          packet_router,
           remb,
           &config_,
           &stats_proxy_,
@@ -292,7 +295,7 @@ void VideoReceiveStream::Start() {
     call_stats_->RegisterStatsObserver(&rtp_stream_receiver_);
 
     if (rtp_stream_receiver_.IsRetransmissionsEnabled() &&
-        rtp_stream_receiver_.IsFecEnabled()) {
+        rtp_stream_receiver_.IsUlpfecEnabled()) {
       frame_buffer_->SetProtectionMode(kProtectionNackFEC);
     }
   }
@@ -312,9 +315,10 @@ void VideoReceiveStream::Start() {
   for (const Decoder& decoder : config_.decoders) {
     video_receiver_.RegisterExternalDecoder(decoder.decoder,
                                             decoder.payload_type);
-
+    // TODO(johan): make Decoder.codec_params accessible for RtpStreamReceiver
+    // which holds H264SpsPpsTracker
     VideoCodec codec = CreateDecoderVideoCodec(decoder);
-    RTC_CHECK(rtp_stream_receiver_.SetReceiveCodec(codec));
+    RTC_CHECK(rtp_stream_receiver_.AddReceiveCodec(codec));
     RTC_CHECK_EQ(VCM_OK, video_receiver_.RegisterReceiveCodec(
                              &codec, num_cpu_cores_, false));
   }
@@ -322,7 +326,7 @@ void VideoReceiveStream::Start() {
   video_stream_decoder_.reset(new VideoStreamDecoder(
       &video_receiver_, &rtp_stream_receiver_, &rtp_stream_receiver_,
       rtp_stream_receiver_.IsRetransmissionsEnabled(),
-      rtp_stream_receiver_.IsFecEnabled(), &stats_proxy_, renderer,
+      rtp_stream_receiver_.IsUlpfecEnabled(), &stats_proxy_, renderer,
       config_.pre_render_callback));
   // Register the channel to receive stats updates.
   call_stats_->RegisterStatsObserver(video_stream_decoder_.get());

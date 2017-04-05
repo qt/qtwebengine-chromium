@@ -17,6 +17,11 @@
 
 #include <map>
 
+namespace gl
+{
+class VaryingPacking;
+}
+
 namespace sh
 {
 struct BlockMemberInfo;
@@ -26,17 +31,23 @@ namespace rx
 {
 using LinkResult = gl::ErrorOrResult<bool>;
 
+class ContextImpl;
+
 class ProgramImpl : angle::NonCopyable
 {
   public:
     ProgramImpl(const gl::ProgramState &state) : mState(state) {}
     virtual ~ProgramImpl() {}
 
-    virtual LinkResult load(gl::InfoLog &infoLog, gl::BinaryInputStream *stream) = 0;
+    virtual LinkResult load(const ContextImpl *contextImpl,
+                            gl::InfoLog &infoLog,
+                            gl::BinaryInputStream *stream)  = 0;
     virtual gl::Error save(gl::BinaryOutputStream *stream) = 0;
     virtual void setBinaryRetrievableHint(bool retrievable) = 0;
 
-    virtual LinkResult link(const gl::ContextState &data, gl::InfoLog &infoLog) = 0;
+    virtual LinkResult link(const gl::ContextState &data,
+                            const gl::VaryingPacking &packing,
+                            gl::InfoLog &infoLog) = 0;
     virtual GLboolean validate(const gl::Caps &caps, gl::InfoLog *infoLog) = 0;
 
     virtual void setUniform1fv(GLint location, GLsizei count, const GLfloat *v) = 0;

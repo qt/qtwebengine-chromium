@@ -23,6 +23,7 @@
 #include "webrtc/api/jsepicecandidate.h"
 #include "webrtc/api/jsepsessiondescription.h"
 #include "webrtc/base/arraysize.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/messagedigest.h"
@@ -33,7 +34,7 @@
 #include "webrtc/media/base/cryptoparams.h"
 #include "webrtc/media/base/mediaconstants.h"
 #include "webrtc/media/base/rtputils.h"
-#include "webrtc/media/sctp/sctpdataengine.h"
+#include "webrtc/media/sctp/sctptransportinternal.h"
 #include "webrtc/p2p/base/candidate.h"
 #include "webrtc/p2p/base/p2pconstants.h"
 #include "webrtc/p2p/base/port.h"
@@ -108,6 +109,7 @@ static const char kLineTypeAttributes = 'a';
 static const char kAttributeGroup[] = "group";
 static const char kAttributeMid[] = "mid";
 static const char kAttributeMsid[] = "msid";
+static const char kAttributeBundleOnly[] = "bundle-only";
 static const char kAttributeRtcpMux[] = "rtcp-mux";
 static const char kAttributeRtcpReducedSize[] = "rtcp-rsize";
 static const char kAttributeSsrc[] = "ssrc";
@@ -275,6 +277,7 @@ static bool ParseContent(const std::string& message,
                          const std::vector<int>& payload_types,
                          size_t* pos,
                          std::string* content_name,
+                         bool* bundle_only,
                          MediaContentDescription* media_desc,
                          TransportDescription* transport,
                          std::vector<JsepIceCandidate*>* candidates,
@@ -578,8 +581,8 @@ void CreateTracksFromSsrcInfos(const SsrcInfoVec& ssrc_infos,
                                const std::string& msid_stream_id,
                                const std::string& msid_track_id,
                                StreamParamsVec* tracks) {
-  ASSERT(tracks != NULL);
-  ASSERT(msid_stream_id.empty() == msid_track_id.empty());
+  RTC_DCHECK(tracks != NULL);
+  RTC_DCHECK(msid_stream_id.empty() == msid_track_id.empty());
   for (SsrcInfoVec::const_iterator ssrc_info = ssrc_infos.begin();
        ssrc_info != ssrc_infos.end(); ++ssrc_info) {
     if (ssrc_info->cname.empty()) {
@@ -662,7 +665,7 @@ static int GetCandidatePreferenceFromType(const std::string& type) {
   } else if (type == cricket::RELAY_PORT_TYPE) {
     preference = kPreferenceRelayed;
   } else {
-    ASSERT(false);
+    RTC_NOTREACHED();
   }
   return preference;
 }
@@ -828,7 +831,7 @@ std::string SdpSerialize(const JsepSessionDescription& jdesc,
     std::string group_line = kAttrGroup;
     const cricket::ContentGroup* group =
         desc->GetGroupByName(cricket::GROUP_TYPE_BUNDLE);
-    ASSERT(group != NULL);
+    RTC_DCHECK(group != NULL);
     const cricket::ContentNames& content_names = group->content_names();
     for (cricket::ContentNames::const_iterator it = content_names.begin();
          it != content_names.end(); ++it) {
@@ -885,9 +888,9 @@ std::string SdpSerializeCandidate(const cricket::Candidate& candidate) {
   BuildCandidate(candidates, true, &message);
   // From WebRTC draft section 4.8.1.1 candidate-attribute will be
   // just candidate:<candidate> not a=candidate:<blah>CRLF
-  ASSERT(message.find("a=") == 0);
+  RTC_DCHECK(message.find("a=") == 0);
   message.erase(0, 2);
-  ASSERT(message.find(kLineBreak) == message.size() - 2);
+  RTC_DCHECK(message.find(kLineBreak) == message.size() - 2);
   message.resize(message.size() - 2);
   return message;
 }
@@ -935,7 +938,7 @@ bool SdpDeserialize(const std::string& message,
 bool SdpDeserializeCandidate(const std::string& message,
                              JsepIceCandidate* jcandidate,
                              SdpParseError* error) {
-  ASSERT(jcandidate != NULL);
+  RTC_DCHECK(jcandidate != NULL);
   Candidate candidate;
   if (!ParseCandidate(message, &candidate, error, true)) {
     return false;
@@ -948,7 +951,7 @@ bool SdpDeserializeCandidate(const std::string& transport_name,
                              const std::string& message,
                              cricket::Candidate* candidate,
                              SdpParseError* error) {
-  ASSERT(candidate != nullptr);
+  RTC_DCHECK(candidate != nullptr);
   if (!ParseCandidate(message, candidate, error, true)) {
     return false;
   }
@@ -958,7 +961,7 @@ bool SdpDeserializeCandidate(const std::string& transport_name,
 
 bool ParseCandidate(const std::string& message, Candidate* candidate,
                     SdpParseError* error, bool is_raw) {
-  ASSERT(candidate != NULL);
+  RTC_DCHECK(candidate != NULL);
 
   // Get the first line from |message|.
   std::string first_line = message;
@@ -1034,6 +1037,15 @@ bool ParseCandidate(const std::string& message, Candidate* candidate,
   cricket::ProtocolType protocol;
   if (!StringToProto(transport.c_str(), &protocol)) {
     return ParseFailed(first_line, "Unsupported transport type.", error);
+  }
+  switch (protocol) {
+    case cricket::PROTO_UDP:
+    case cricket::PROTO_TCP:
+    case cricket::PROTO_SSLTCP:
+      // Supported protocol.
+      break;
+    default:
+      return ParseFailed(first_line, "Unsupported transport type.", error);
   }
 
   std::string candidate_type;
@@ -1203,7 +1215,7 @@ void BuildMediaDescription(const ContentInfo* content_info,
                            const std::vector<Candidate>& candidates,
                            bool unified_plan_sdp,
                            std::string* message) {
-  ASSERT(message != NULL);
+  RTC_DCHECK(message != NULL);
   if (content_info == NULL || message == NULL) {
     return;
   }
@@ -1215,7 +1227,7 @@ void BuildMediaDescription(const ContentInfo* content_info,
   const MediaContentDescription* media_desc =
       static_cast<const MediaContentDescription*>(
           content_info->description);
-  ASSERT(media_desc != NULL);
+  RTC_DCHECK(media_desc != NULL);
 
   int sctp_port = cricket::kSctpDefaultPort;
 
@@ -1230,7 +1242,7 @@ void BuildMediaDescription(const ContentInfo* content_info,
   else if (media_type == cricket::MEDIA_TYPE_DATA)
     type = kMediaTypeData;
   else
-    ASSERT(false);
+    RTC_NOTREACHED();
 
   std::string fmt;
   if (media_type == cricket::MEDIA_TYPE_VIDEO) {
@@ -1282,13 +1294,19 @@ void BuildMediaDescription(const ContentInfo* content_info,
     fmt = " 0";
   }
 
-  // The port number in the m line will be updated later when associate with
+  // The port number in the m line will be updated later when associated with
   // the candidates.
+  //
+  // A port value of 0 indicates that the m= section is rejected.
   // RFC 3264
   // To reject an offered stream, the port number in the corresponding stream in
   // the answer MUST be set to zero.
-  const std::string& port = content_info->rejected ?
-      kMediaPortRejected : kDummyPort;
+  //
+  // However, the BUNDLE draft adds a new meaning to port zero, when used along
+  // with a=bundle-only.
+  const std::string& port =
+      (content_info->rejected || content_info->bundle_only) ? kMediaPortRejected
+                                                            : kDummyPort;
 
   rtc::SSLFingerprint* fp = (transport_info) ?
       transport_info->description.identity_fingerprint.get() : NULL;
@@ -1304,6 +1322,12 @@ void BuildMediaDescription(const ContentInfo* content_info,
   if (media_desc->bandwidth() >= 1000) {
     InitLine(kLineTypeSessionBandwidth, kApplicationSpecificMaximum, &os);
     os << kSdpDelimiterColon << (media_desc->bandwidth() / 1000);
+    AddLine(os.str(), message);
+  }
+
+  // Add the a=bundle-only line.
+  if (content_info->bundle_only) {
+    InitAttrLine(kAttributeBundleOnly, &os);
     AddLine(os.str(), message);
   }
 
@@ -1695,8 +1719,8 @@ bool GetParameter(const std::string& name,
 void BuildRtpMap(const MediaContentDescription* media_desc,
                  const MediaType media_type,
                  std::string* message) {
-  ASSERT(message != NULL);
-  ASSERT(media_desc != NULL);
+  RTC_DCHECK(message != NULL);
+  RTC_DCHECK(media_desc != NULL);
   std::ostringstream os;
   if (media_type == cricket::MEDIA_TYPE_VIDEO) {
     const VideoContentDescription* video_desc =
@@ -1725,7 +1749,7 @@ void BuildRtpMap(const MediaContentDescription* media_desc,
     for (std::vector<cricket::AudioCodec>::const_iterator it =
              audio_desc->codecs().begin();
          it != audio_desc->codecs().end(); ++it) {
-      ASSERT(!it->name.empty());
+      RTC_DCHECK(!it->name.empty());
       // RFC 4566
       // a=rtpmap:<payload type> <encoding name>/<clock rate>
       // [/<encodingparameters>]
@@ -1757,7 +1781,7 @@ void BuildRtpMap(const MediaContentDescription* media_desc,
     if (GetMinValue(maxptimes, &min_maxptime)) {
       AddAttributeLine(kCodecParamMaxPTime, min_maxptime, message);
     }
-    ASSERT(min_maxptime > max_minptime);
+    RTC_DCHECK(min_maxptime > max_minptime);
     // Populate the ptime attribute with the smallest ptime or the largest
     // minptime, whichever is the largest, for all codecs under the same m-line.
     int ptime = INT_MAX;
@@ -1807,7 +1831,7 @@ void BuildCandidate(const std::vector<Candidate>& candidates,
       type = kCandidatePrflx;
       // Peer reflexive candidate may be signaled for being removed.
     } else {
-      ASSERT(false);
+      RTC_NOTREACHED();
       // Never write out candidates if we don't know the type.
       continue;
     }
@@ -2033,7 +2057,7 @@ bool ParseSessionDescription(const std::string& message, size_t* pos,
 bool ParseGroupAttribute(const std::string& line,
                          cricket::SessionDescription* desc,
                          SdpParseError* error) {
-  ASSERT(desc != NULL);
+  RTC_DCHECK(desc != NULL);
 
   // RFC 5888 and draft-holmberg-mmusic-sdp-bundle-negotiation-00
   // a=group:BUNDLE video voice
@@ -2210,6 +2234,7 @@ static C* ParseContentDescription(const std::string& message,
                                   const std::vector<int>& payload_types,
                                   size_t* pos,
                                   std::string* content_name,
+                                  bool* bundle_only,
                                   TransportDescription* transport,
                                   std::vector<JsepIceCandidate*>* candidates,
                                   webrtc::SdpParseError* error) {
@@ -2225,12 +2250,12 @@ static C* ParseContentDescription(const std::string& message,
       *content_name = cricket::CN_DATA;
       break;
     default:
-      ASSERT(false);
+      RTC_NOTREACHED();
       break;
   }
   if (!ParseContent(message, media_type, mline_index, protocol, payload_types,
-                    pos, content_name, media_desc, transport, candidates,
-                    error)) {
+                    pos, content_name, bundle_only, media_desc, transport,
+                    candidates, error)) {
     delete media_desc;
     return NULL;
   }
@@ -2260,7 +2285,7 @@ bool ParseMediaDescription(const std::string& message,
                            cricket::SessionDescription* desc,
                            std::vector<JsepIceCandidate*>* candidates,
                            SdpParseError* error) {
-  ASSERT(desc != NULL);
+  RTC_DCHECK(desc != NULL);
   std::string line;
   int mline_index = -1;
 
@@ -2277,12 +2302,12 @@ bool ParseMediaDescription(const std::string& message,
     if (fields.size() < expected_min_fields) {
       return ParseFailedExpectMinFieldNum(line, expected_min_fields, error);
     }
-    bool rejected = false;
+    bool port_rejected = false;
     // RFC 3264
     // To reject an offered stream, the port number in the corresponding stream
     // in the answer MUST be set to zero.
     if (fields[1] == kMediaPortRejected) {
-      rejected = true;
+      port_rejected = true;
     }
 
     std::string protocol = fields[2];
@@ -2314,19 +2339,23 @@ bool ParseMediaDescription(const std::string& message,
 
     std::unique_ptr<MediaContentDescription> content;
     std::string content_name;
+    bool bundle_only = false;
     if (HasAttribute(line, kMediaTypeVideo)) {
       content.reset(ParseContentDescription<VideoContentDescription>(
           message, cricket::MEDIA_TYPE_VIDEO, mline_index, protocol,
-          payload_types, pos, &content_name, &transport, candidates, error));
+          payload_types, pos, &content_name, &bundle_only, &transport,
+          candidates, error));
     } else if (HasAttribute(line, kMediaTypeAudio)) {
       content.reset(ParseContentDescription<AudioContentDescription>(
           message, cricket::MEDIA_TYPE_AUDIO, mline_index, protocol,
-          payload_types, pos, &content_name, &transport, candidates, error));
+          payload_types, pos, &content_name, &bundle_only, &transport,
+          candidates, error));
     } else if (HasAttribute(line, kMediaTypeData)) {
       DataContentDescription* data_desc =
           ParseContentDescription<DataContentDescription>(
               message, cricket::MEDIA_TYPE_DATA, mline_index, protocol,
-              payload_types, pos, &content_name, &transport, candidates, error);
+              payload_types, pos, &content_name, &bundle_only, &transport,
+              candidates, error);
       content.reset(data_desc);
 
       int p;
@@ -2341,6 +2370,25 @@ bool ParseMediaDescription(const std::string& message,
     if (!content.get()) {
       // ParseContentDescription returns NULL if failed.
       return false;
+    }
+
+    bool content_rejected = false;
+    // A port of 0 is not interpreted as a rejected m= section when it's
+    // used along with a=bundle-only.
+    if (bundle_only) {
+      if (!port_rejected) {
+        // Usage of bundle-only with a nonzero port is unspecified. So just
+        // ignore bundle-only if we see this.
+        bundle_only = false;
+        LOG(LS_WARNING)
+            << "a=bundle-only attribute observed with a nonzero "
+            << "port; this usage is unspecified so the attribute is being "
+            << "ignored.";
+      }
+    } else {
+      // If not using bundle-only, interpret port 0 in the normal way; the m=
+      // section is being rejected.
+      content_rejected = port_rejected;
     }
 
     if (IsRtp(protocol)) {
@@ -2358,10 +2406,9 @@ bool ParseMediaDescription(const std::string& message,
     }
     content->set_protocol(protocol);
     desc->AddContent(content_name,
-                     IsDtlsSctp(protocol) ? cricket::NS_JINGLE_DRAFT_SCTP :
-                                            cricket::NS_JINGLE_RTP,
-                     rejected,
-                     content.release());
+                     IsDtlsSctp(protocol) ? cricket::NS_JINGLE_DRAFT_SCTP
+                                          : cricket::NS_JINGLE_RTP,
+                     content_rejected, bundle_only, content.release());
     // Create TransportInfo with the media level "ice-pwd" and "ice-ufrag".
     TransportInfo transport_info(content_name, transport);
 
@@ -2385,8 +2432,7 @@ bool VerifyCodec(const cricket::Codec& codec) {
   // Codec has not been populated correctly unless the name has been set. This
   // can happen if an SDP has an fmtp or rtcp-fb with a payload type but doesn't
   // have a corresponding "rtpmap" line.
-  cricket::Codec default_codec;
-  return default_codec.name != codec.name;
+  return !codec.name.empty();
 }
 
 bool VerifyAudioCodecs(const AudioContentDescription* audio_desc) {
@@ -2538,13 +2584,14 @@ bool ParseContent(const std::string& message,
                   const std::vector<int>& payload_types,
                   size_t* pos,
                   std::string* content_name,
+                  bool* bundle_only,
                   MediaContentDescription* media_desc,
                   TransportDescription* transport,
                   std::vector<JsepIceCandidate*>* candidates,
                   SdpParseError* error) {
-  ASSERT(media_desc != NULL);
-  ASSERT(content_name != NULL);
-  ASSERT(transport != NULL);
+  RTC_DCHECK(media_desc != NULL);
+  RTC_DCHECK(content_name != NULL);
+  RTC_DCHECK(transport != NULL);
 
   if (media_type == cricket::MEDIA_TYPE_AUDIO) {
     MaybeCreateStaticPayloadAudioCodecs(
@@ -2598,6 +2645,8 @@ bool ParseContent(const std::string& message,
                         << cricket::kDataMaxBandwidth / 1000 << "kbps.";
             return ParseFailed(line, description.str(), error);
           }
+          // Prevent integer overflow.
+          b = std::min(b, INT_MAX / 1000);
           media_desc->set_bandwidth(b * 1000);
         }
       }
@@ -2620,6 +2669,8 @@ bool ParseContent(const std::string& message,
         return false;
       }
       *content_name = mline_id;
+    } else if (HasAttribute(line, kAttributeBundleOnly)) {
+      *bundle_only = true;
     } else if (HasAttribute(line, kAttributeCandidate)) {
       Candidate candidate;
       if (!ParseCandidate(line, &candidate, error, false)) {
@@ -2795,10 +2846,10 @@ bool ParseContent(const std::string& message,
   // Update the candidates with the media level "ice-pwd" and "ice-ufrag".
   for (Candidates::iterator it = candidates_orig.begin();
        it != candidates_orig.end(); ++it) {
-    ASSERT((*it).username().empty() ||
-           (*it).username() == transport->ice_ufrag);
+    RTC_DCHECK((*it).username().empty() ||
+               (*it).username() == transport->ice_ufrag);
     (*it).set_username(transport->ice_ufrag);
-    ASSERT((*it).password().empty());
+    RTC_DCHECK((*it).password().empty());
     (*it).set_password(transport->ice_pwd);
     candidates->push_back(
         new JsepIceCandidate(mline_id, mline_index, *it));
@@ -2808,7 +2859,7 @@ bool ParseContent(const std::string& message,
 
 bool ParseSsrcAttribute(const std::string& line, SsrcInfoVec* ssrc_infos,
                         SdpParseError* error) {
-  ASSERT(ssrc_infos != NULL);
+  RTC_DCHECK(ssrc_infos != NULL);
   // RFC 5576
   // a=ssrc:<ssrc-id> <attribute>
   // a=ssrc:<ssrc-id> <attribute>:<value>
@@ -2887,7 +2938,7 @@ bool ParseSsrcAttribute(const std::string& line, SsrcInfoVec* ssrc_infos,
 bool ParseSsrcGroupAttribute(const std::string& line,
                              SsrcGroupVec* ssrc_groups,
                              SdpParseError* error) {
-  ASSERT(ssrc_groups != NULL);
+  RTC_DCHECK(ssrc_groups != NULL);
   // RFC 5576
   // a=ssrc-group:<semantics> <ssrc-id> ...
   std::vector<std::string> fields;

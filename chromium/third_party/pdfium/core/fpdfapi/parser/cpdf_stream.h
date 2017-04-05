@@ -18,8 +18,11 @@ class CPDF_Stream : public CPDF_Object {
  public:
   CPDF_Stream();
 
-  // Takes ownership of |pData| and |pDict|.
-  CPDF_Stream(uint8_t* pData, uint32_t size, CPDF_Dictionary* pDict);
+  // Takes ownership of |pData|.
+  CPDF_Stream(std::unique_ptr<uint8_t, FxFreeDeleter> pData,
+              uint32_t size,
+              std::unique_ptr<CPDF_Dictionary> pDict);
+
   ~CPDF_Stream() override;
 
   // CPDF_Object:
@@ -37,15 +40,18 @@ class CPDF_Stream : public CPDF_Object {
   // Does not takes onwership of |pData|, copies into internally-owned buffer.
   void SetData(const uint8_t* pData, uint32_t size);
 
-  void InitStream(const uint8_t* pData, uint32_t size, CPDF_Dictionary* pDict);
-  void InitStreamFromFile(IFX_SeekableReadStream* pFile,
-                          CPDF_Dictionary* pDict);
+  void InitStream(const uint8_t* pData,
+                  uint32_t size,
+                  std::unique_ptr<CPDF_Dictionary> pDict);
+  void InitStreamFromFile(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
+                          std::unique_ptr<CPDF_Dictionary> pDict);
 
   bool ReadRawData(FX_FILESIZE start_pos,
                    uint8_t* pBuf,
                    uint32_t buf_size) const;
 
   bool IsMemoryBased() const { return m_bMemoryBased; }
+  bool HasFilter() const;
 
  protected:
   std::unique_ptr<CPDF_Object> CloneNonCyclic(
@@ -56,7 +62,7 @@ class CPDF_Stream : public CPDF_Object {
   uint32_t m_dwSize = 0;
   std::unique_ptr<CPDF_Dictionary> m_pDict;
   std::unique_ptr<uint8_t, FxFreeDeleter> m_pDataBuf;
-  IFX_SeekableReadStream* m_pFile = nullptr;
+  CFX_RetainPtr<IFX_SeekableReadStream> m_pFile;
 };
 
 inline CPDF_Stream* ToStream(CPDF_Object* obj) {

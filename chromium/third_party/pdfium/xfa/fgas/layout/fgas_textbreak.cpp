@@ -11,7 +11,8 @@
 #include "core/fxcrt/fx_arabic.h"
 #include "core/fxcrt/fx_arb.h"
 #include "core/fxcrt/fx_memory.h"
-#include "xfa/fgas/font/fgas_gefont.h"
+#include "third_party/base/ptr_util.h"
+#include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fgas/layout/fgas_linebreak.h"
 #include "xfa/fgas/layout/fgas_unicode.h"
 
@@ -70,8 +71,8 @@ CFX_TxtBreak::CFX_TxtBreak(uint32_t dwPolicies)
       m_iCharSpace(0) {
   m_bPagination = (m_dwPolicies & FX_TXTBREAKPOLICY_Pagination) != 0;
   int32_t iSize = m_bPagination ? sizeof(CFX_Char) : sizeof(CFX_TxtChar);
-  m_pTxtLine1.reset(new CFX_TxtLine(iSize));
-  m_pTxtLine2.reset(new CFX_TxtLine(iSize));
+  m_pTxtLine1 = pdfium::MakeUnique<CFX_TxtLine>(iSize);
+  m_pTxtLine2 = pdfium::MakeUnique<CFX_TxtLine>(iSize);
   m_pCurLine = m_pTxtLine1.get();
   ResetArabicContext();
 }
@@ -111,13 +112,10 @@ void CFX_TxtBreak::SetLayoutStyles(uint32_t dwLayoutStyles) {
   m_iRotation %= 4;
 }
 
-void CFX_TxtBreak::SetFont(CFGAS_GEFont* pFont) {
-  if (!pFont) {
+void CFX_TxtBreak::SetFont(const CFX_RetainPtr<CFGAS_GEFont>& pFont) {
+  if (!pFont || pFont == m_pFont)
     return;
-  }
-  if (m_pFont == pFont) {
-    return;
-  }
+
   SetBreakStatus();
   m_pFont = pFont;
   m_iDefChar = 0;
@@ -1213,7 +1211,7 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
   const FX_WCHAR* pStr = pTxtRun->wsStr.c_str();
   int32_t* pWidths = pTxtRun->pWidths;
   int32_t iLength = pTxtRun->iLength - 1;
-  CFGAS_GEFont* pFont = pTxtRun->pFont;
+  CFX_RetainPtr<CFGAS_GEFont> pFont = pTxtRun->pFont;
   uint32_t dwStyles = pTxtRun->dwStyles;
   CFX_RectF rtText(*pTxtRun->pRect);
   bool bRTLPiece = (pTxtRun->dwCharStyles & FX_TXTCHARSTYLE_OddBidiLevel) != 0;
@@ -1470,7 +1468,7 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
         if (chartype == FX_CHARTYPE_Combination) {
           CFX_Rect rtBBox;
           rtBBox.Reset();
-          if (pFont->GetCharBBox(wForm, rtBBox, false)) {
+          if (pFont->GetCharBBox(wForm, &rtBBox, false)) {
             pCharPos->m_OriginY =
                 fYBase + fFontSize -
                 fFontSize * (FX_FLOAT)rtBBox.height / (FX_FLOAT)iMaxHeight;
@@ -1481,7 +1479,7 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
                 FX_CHARTYPE_Combination) {
               CFX_Rect rtBox;
               rtBox.Reset();
-              if (pFont->GetCharBBox(wLast, rtBox, false)) {
+              if (pFont->GetCharBBox(wLast, &rtBox, false)) {
                 pCharPos->m_OriginY -= fFontSize * rtBox.height / iMaxHeight;
               }
             }
@@ -1496,7 +1494,7 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
         if (!bAdjusted && bVerticalChar && (dwProps & 0x00010000) != 0) {
           CFX_Rect rtBBox;
           rtBBox.Reset();
-          if (pFont->GetCharBBox(wForm, rtBBox, false)) {
+          if (pFont->GetCharBBox(wForm, &rtBBox, false)) {
             ptOffset.x = fFontSize * (850 - rtBBox.right()) / iMaxHeight;
             ptOffset.y = fFontSize * (iAscent - rtBBox.top - 150) / iMaxHeight;
           }
@@ -1592,9 +1590,9 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
 int32_t CFX_TxtBreak::GetCharRects(const FX_TXTRUN* pTxtRun,
                                    CFX_RectFArray& rtArray,
                                    bool bCharBBox) const {
-  if (!pTxtRun || pTxtRun->iLength < 1) {
+  if (!pTxtRun || pTxtRun->iLength < 1)
     return 0;
-  }
+
   IFX_TxtAccess* pAccess = pTxtRun->pAccess;
   const FDE_TEXTEDITPIECE* pIdentity = pTxtRun->pIdentity;
   const FX_WCHAR* pStr = pTxtRun->wsStr.c_str();
@@ -1605,15 +1603,15 @@ int32_t CFX_TxtBreak::GetCharRects(const FX_TXTRUN* pTxtRun,
   FX_FLOAT fFontSize = pTxtRun->fFontSize;
   int32_t iFontSize = FXSYS_round(fFontSize * 20.0f);
   FX_FLOAT fScale = fFontSize / 1000.0f;
-  CFGAS_GEFont* pFont = pTxtRun->pFont;
-  if (!pFont) {
+  CFX_RetainPtr<CFGAS_GEFont> pFont = pTxtRun->pFont;
+  if (!pFont)
     bCharBBox = false;
-  }
+
   CFX_Rect bbox;
   bbox.Set(0, 0, 0, 0);
-  if (bCharBBox) {
-    bCharBBox = pFont->GetBBox(bbox);
-  }
+  if (bCharBBox)
+    bCharBBox = pFont->GetBBox(&bbox);
+
   FX_FLOAT fLeft = std::max(0.0f, bbox.left * fScale);
   FX_FLOAT fHeight = FXSYS_fabs(bbox.height * fScale);
   rtArray.RemoveAll();

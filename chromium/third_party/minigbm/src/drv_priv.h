@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 The Chromium OS Authors. All rights reserved.
+ * Copyright 2016 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -13,6 +13,7 @@
 #include <sys/types.h>
 
 #include "drv.h"
+#include "list.h"
 
 struct bo
 {
@@ -37,7 +38,7 @@ struct driver {
 	void *priv;
 	void *buffer_table;
 	void *map_table;
-	pthread_mutex_t table_lock;
+	pthread_mutex_t driver_lock;
 };
 
 struct map_info {
@@ -45,6 +46,18 @@ struct map_info {
 	size_t length;
 	uint32_t handle;
 	int32_t refcount;
+	void *priv;
+};
+
+struct supported_combination {
+	uint32_t format;
+	uint64_t modifier;
+	uint64_t usage;
+};
+
+struct combination_list_element {
+	struct supported_combination combination;
+	struct list_head link;
 };
 
 struct backend
@@ -53,15 +66,17 @@ struct backend
 	int (*init)(struct driver *drv);
 	void (*close)(struct driver *drv);
 	int (*bo_create)(struct bo *bo, uint32_t width, uint32_t height,
-			 drv_format_t format, uint32_t flags);
+			 uint32_t format, uint32_t flags);
+	int (*bo_create_with_modifiers)(struct bo *bo,
+					uint32_t width, uint32_t height,
+					uint32_t format,
+					const uint64_t *modifiers,
+					uint32_t count);
 	void* (*bo_map)(struct bo *bo, struct map_info *data, size_t plane);
+	int (*bo_unmap)(struct bo *bo, struct map_info *data);
 	int (*bo_destroy)(struct bo *bo);
-	drv_format_t (*resolve_format)(drv_format_t format);
-	struct format_supported {
-		drv_format_t format;
-		uint64_t usage;
-	}
-	format_list[19];
+	uint32_t (*resolve_format)(uint32_t format);
+	struct list_head combinations;
 };
 
 #endif

@@ -8,8 +8,10 @@
 #define CORE_FPDFAPI_FONT_CPDF_CIDFONT_H_
 
 #include <memory>
+#include <vector>
 
 #include "core/fpdfapi/font/cpdf_font.h"
+#include "core/fxcrt/cfx_maybe_owned.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
@@ -48,7 +50,6 @@ class CPDF_CIDFont : public CPDF_Font {
                        int& offset) const override;
   int CountChar(const FX_CHAR* pString, int size) const override;
   int AppendChar(FX_CHAR* str, uint32_t charcode) const override;
-  int GetCharSize(uint32_t charcode) const override;
   bool IsVertWriting() const override;
   bool IsUnicodeCompatible() const override;
   bool Load() override;
@@ -59,19 +60,19 @@ class CPDF_CIDFont : public CPDF_Font {
   const uint8_t* GetCIDTransform(uint16_t CID) const;
   short GetVertWidth(uint16_t CID) const;
   void GetVertOrigin(uint16_t CID, short& vx, short& vy) const;
+  int GetCharSize(uint32_t charcode) const;
 
  protected:
   void LoadGB2312();
   int GetGlyphIndex(uint32_t unicodeb, bool* pVertGlyph);
   int GetVerticalGlyph(int index, bool* pVertGlyph);
   void LoadMetricsArray(CPDF_Array* pArray,
-                        CFX_ArrayTemplate<uint32_t>& result,
+                        std::vector<uint32_t>* result,
                         int nElements);
   void LoadSubstFont();
   FX_WCHAR GetUnicodeFromCharCode(uint32_t charcode) const;
 
-  CPDF_CMap* m_pCMap;
-  std::unique_ptr<CPDF_CMap> m_pAllocatedCMap;
+  CFX_MaybeOwned<CPDF_CMap> m_pCMap;
   CPDF_CID2UnicodeMap* m_pCID2UnicodeMap;
   CIDSet m_Charset;
   bool m_bType1;
@@ -80,10 +81,10 @@ class CPDF_CIDFont : public CPDF_Font {
   std::unique_ptr<CPDF_StreamAcc> m_pStreamAcc;
   bool m_bAnsiWidthsFixed;
   FX_RECT m_CharBBox[256];
-  CFX_ArrayTemplate<uint32_t> m_WidthList;
+  std::vector<uint32_t> m_WidthList;
   short m_DefaultVY;
   short m_DefaultW1;
-  CFX_ArrayTemplate<uint32_t> m_VertMetrics;
+  std::vector<uint32_t> m_VertMetrics;
   bool m_bAdobeCourierStd;
   std::unique_ptr<CFX_CTTGSUBTable> m_pTTGSUBTable;
 };

@@ -12,6 +12,7 @@
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/cfx_unicodeencoding.h"
+#include "third_party/base/ptr_util.h"
 #include "xfa/fxgraphics/cagg_graphics.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
@@ -597,7 +598,7 @@ FWL_Error CFX_Graphics::Create(int32_t width,
 
   m_type = FX_CONTEXT_Device;
   m_info.isAntialiasing = isAntialiasing;
-  m_aggGraphics.reset(new CAGG_Graphics);
+  m_aggGraphics = pdfium::MakeUnique<CAGG_Graphics>();
   return m_aggGraphics->Create(this, width, height, format);
 }
 
@@ -1229,8 +1230,8 @@ FWL_Error CFX_Graphics::RenderDeviceDrawImage(CFX_DIBSource* source,
          point.x, point.y);
   m2.Concat(m1);
   int32_t left, top;
-  std::unique_ptr<CFX_DIBitmap> bmp1(source->FlipImage(false, true));
-  std::unique_ptr<CFX_DIBitmap> bmp2(bmp1->TransformTo(&m2, left, top));
+  std::unique_ptr<CFX_DIBitmap> bmp1 = source->FlipImage(false, true);
+  std::unique_ptr<CFX_DIBitmap> bmp2 = bmp1->TransformTo(&m2, left, top);
   CFX_RectF r;
   GetClipRect(r);
   CFX_DIBitmap* bitmap = m_renderDevice->GetBitmap();
@@ -1256,14 +1257,14 @@ FWL_Error CFX_Graphics::RenderDeviceStretchImage(CFX_DIBSource* source,
   if (matrix) {
     m1.Concat(*matrix);
   }
-  std::unique_ptr<CFX_DIBitmap> bmp1(
-      source->StretchTo((int32_t)rect.Width(), (int32_t)rect.Height()));
+  std::unique_ptr<CFX_DIBitmap> bmp1 =
+      source->StretchTo((int32_t)rect.Width(), (int32_t)rect.Height());
   CFX_Matrix m2;
   m2.Set(rect.Width(), 0.0, 0.0, rect.Height(), rect.left, rect.top);
   m2.Concat(m1);
   int32_t left, top;
-  std::unique_ptr<CFX_DIBitmap> bmp2(bmp1->FlipImage(false, true));
-  std::unique_ptr<CFX_DIBitmap> bmp3(bmp2->TransformTo(&m2, left, top));
+  std::unique_ptr<CFX_DIBitmap> bmp2 = bmp1->FlipImage(false, true);
+  std::unique_ptr<CFX_DIBitmap> bmp3 = bmp2->TransformTo(&m2, left, top);
   CFX_RectF r;
   GetClipRect(r);
   CFX_DIBitmap* bitmap = m_renderDevice->GetBitmap();
@@ -1486,8 +1487,8 @@ FWL_Error CFX_Graphics::SetDIBitsWithMatrix(CFX_DIBSource* source,
           0);
     m.Concat(*matrix);
     int32_t left, top;
-    std::unique_ptr<CFX_DIBitmap> bmp1(source->FlipImage(false, true));
-    std::unique_ptr<CFX_DIBitmap> bmp2(bmp1->TransformTo(&m, left, top));
+    std::unique_ptr<CFX_DIBitmap> bmp1 = source->FlipImage(false, true);
+    std::unique_ptr<CFX_DIBitmap> bmp2 = bmp1->TransformTo(&m, left, top);
     m_renderDevice->SetDIBits(bmp2.get(), left, top);
   }
   return FWL_Error::Succeeded;

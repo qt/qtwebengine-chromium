@@ -42,6 +42,7 @@
 #include "webrtc/base/arraysize.h"
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/byteorder.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/networkmonitor.h"
@@ -311,7 +312,7 @@ int PhysicalSocket::Send(const void* pv, size_t cb) {
   UpdateLastError();
   MaybeRemapSendError();
   // We have seen minidumps where this may be false.
-  ASSERT(sent <= static_cast<int>(cb));
+  RTC_DCHECK(sent <= static_cast<int>(cb));
   if ((sent > 0 && sent < static_cast<int>(cb)) ||
       (sent < 0 && IsBlockingError(GetError()))) {
     enabled_events_ |= DE_WRITE;
@@ -336,7 +337,7 @@ int PhysicalSocket::SendTo(const void* buffer,
   UpdateLastError();
   MaybeRemapSendError();
   // We have seen minidumps where this may be false.
-  ASSERT(sent <= static_cast<int>(length));
+  RTC_DCHECK(sent <= static_cast<int>(length));
   if ((sent > 0 && sent < static_cast<int>(length)) ||
       (sent < 0 && IsBlockingError(GetError()))) {
     enabled_events_ |= DE_WRITE;
@@ -479,7 +480,7 @@ int PhysicalSocket::EstimateMTU(uint16_t* mtu) {
     }
   }
 
-  ASSERT(false);
+  RTC_NOTREACHED();
   return -1;
 #elif defined(WEBRTC_MAC)
   // No simple way to do this on Mac OS X.
@@ -498,7 +499,7 @@ int PhysicalSocket::EstimateMTU(uint16_t* mtu) {
     return err;
   }
 
-  ASSERT((0 <= value) && (value <= 65536));
+  RTC_DCHECK((0 <= value) && (value <= 65536));
   *mtu = value;
   return 0;
 #elif defined(__native_client__)
@@ -595,7 +596,7 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
     case OPT_RTP_SENDTIME_EXTN_ID:
       return -1;  // No logging is necessary as this not a OS socket option.
     default:
-      ASSERT(false);
+      RTC_NOTREACHED();
       return -1;
   }
   return 0;
@@ -624,7 +625,7 @@ SocketDispatcher::~SocketDispatcher() {
 }
 
 bool SocketDispatcher::Initialize() {
-  ASSERT(s_ != INVALID_SOCKET);
+  RTC_DCHECK(s_ != INVALID_SOCKET);
   // Must be a non-blocking
 #if defined(WEBRTC_WIN)
   u_long argp = 1;
@@ -854,7 +855,7 @@ class EventDispatcher : public Dispatcher {
     }
   }
 
-  void OnEvent(uint32_t ff, int err) override { ASSERT(false); }
+  void OnEvent(uint32_t ff, int err) override { RTC_NOTREACHED(); }
 
   int GetDescriptor() override { return afd_[0]; }
 
@@ -889,7 +890,7 @@ class PosixSignalHandler {
 
   // Returns true if the given signal number is set.
   bool IsSignalSet(int signum) const {
-    ASSERT(signum < static_cast<int>(arraysize(received_signal_)));
+    RTC_DCHECK(signum < static_cast<int>(arraysize(received_signal_)));
     if (signum < static_cast<int>(arraysize(received_signal_))) {
       return received_signal_[signum];
     } else {
@@ -899,7 +900,7 @@ class PosixSignalHandler {
 
   // Clears the given signal number.
   void ClearSignal(int signum) {
-    ASSERT(signum < static_cast<int>(arraysize(received_signal_)));
+    RTC_DCHECK(signum < static_cast<int>(arraysize(received_signal_)));
     if (signum < static_cast<int>(arraysize(received_signal_))) {
       received_signal_[signum] = false;
     }
@@ -1051,61 +1052,6 @@ class PosixSignalDispatcher : public Dispatcher {
   PhysicalSocketServer *owner_;
 };
 
-class FileDispatcher: public Dispatcher, public AsyncFile {
- public:
-  FileDispatcher(int fd, PhysicalSocketServer *ss) : ss_(ss), fd_(fd) {
-    set_readable(true);
-
-    ss_->Add(this);
-
-    fcntl(fd_, F_SETFL, fcntl(fd_, F_GETFL, 0) | O_NONBLOCK);
-  }
-
-  ~FileDispatcher() override {
-    ss_->Remove(this);
-  }
-
-  SocketServer* socketserver() { return ss_; }
-
-  int GetDescriptor() override { return fd_; }
-
-  bool IsDescriptorClosed() override { return false; }
-
-  uint32_t GetRequestedEvents() override { return flags_; }
-
-  void OnPreEvent(uint32_t ff) override {}
-
-  void OnEvent(uint32_t ff, int err) override {
-    if ((ff & DE_READ) != 0)
-      SignalReadEvent(this);
-    if ((ff & DE_WRITE) != 0)
-      SignalWriteEvent(this);
-    if ((ff & DE_CLOSE) != 0)
-      SignalCloseEvent(this, err);
-  }
-
-  bool readable() override { return (flags_ & DE_READ) != 0; }
-
-  void set_readable(bool value) override {
-    flags_ = value ? (flags_ | DE_READ) : (flags_ & ~DE_READ);
-  }
-
-  bool writable() override { return (flags_ & DE_WRITE) != 0; }
-
-  void set_writable(bool value) override {
-    flags_ = value ? (flags_ | DE_WRITE) : (flags_ & ~DE_WRITE);
-  }
-
- private:
-  PhysicalSocketServer* ss_;
-  int fd_;
-  int flags_;
-};
-
-AsyncFile* PhysicalSocketServer::CreateFile(int fd) {
-  return new FileDispatcher(fd, this);
-}
-
 #endif // WEBRTC_POSIX
 
 #if defined(WEBRTC_WIN)
@@ -1199,7 +1145,7 @@ PhysicalSocketServer::~PhysicalSocketServer() {
   signal_dispatcher_.reset();
 #endif
   delete signal_wakeup_;
-  ASSERT(dispatchers_.empty());
+  RTC_DCHECK(dispatchers_.empty());
 }
 
 void PhysicalSocketServer::WakeUp() {
@@ -1325,7 +1271,7 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
       for (size_t i = 0; i < dispatchers_.size(); ++i) {
         // Query dispatchers for read and write wait state
         Dispatcher *pdispatcher = dispatchers_[i];
-        ASSERT(pdispatcher);
+        RTC_DCHECK(pdispatcher);
         if (!process_io && (pdispatcher != signal_wakeup_))
           continue;
         int fd = pdispatcher->GetDescriptor();
@@ -1426,7 +1372,7 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
         ptvWait->tv_sec = tvStop.tv_sec - tvT.tv_sec;
         ptvWait->tv_usec = tvStop.tv_usec - tvT.tv_usec;
         if (ptvWait->tv_usec < 0) {
-          ASSERT(ptvWait->tv_sec > 0);
+          RTC_DCHECK(ptvWait->tv_sec > 0);
           ptvWait->tv_usec += 1000000;
           ptvWait->tv_sec -= 1;
         }
@@ -1530,7 +1476,7 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
           event_owners.push_back(disp);
         }
       }
-      ASSERT(iterators_.back() == &i);
+      RTC_DCHECK(iterators_.back() == &i);
       iterators_.pop_back();
     }
 
@@ -1554,7 +1500,7 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
       // Failed?
       // TODO(pthatcher): need a better strategy than this!
       WSAGetLastError();
-      ASSERT(false);
+      RTC_NOTREACHED();
       return false;
     } else if (dw == WSA_WAIT_TIMEOUT) {
       // Timeout?
@@ -1633,9 +1579,9 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
             }
           }
         }
-        ASSERT(iterators_.back() == &end);
+        RTC_DCHECK(iterators_.back() == &end);
         iterators_.pop_back();
-        ASSERT(iterators_.back() == &i);
+        RTC_DCHECK(iterators_.back() == &i);
         iterators_.pop_back();
       }
 

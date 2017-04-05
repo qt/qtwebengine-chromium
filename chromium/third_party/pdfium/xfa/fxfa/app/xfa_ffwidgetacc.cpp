@@ -8,15 +8,17 @@
 
 #include <algorithm>
 #include <memory>
+#include <vector>
 
 #include "fxjs/cfxjse_value.h"
+#include "third_party/base/ptr_util.h"
+#include "third_party/base/stl_util.h"
 #include "xfa/fde/tto/fde_textout.h"
 #include "xfa/fde/xml/fde_xml_imp.h"
 #include "xfa/fxfa/app/xfa_ffcheckbutton.h"
 #include "xfa/fxfa/app/xfa_ffchoicelist.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
-#include "xfa/fxfa/app/xfa_textlayout.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_scriptcontext.h"
@@ -58,9 +60,9 @@ class CXFA_TextLayoutData : public CXFA_WidgetLayoutData {
     if (m_pTextLayout)
       return;
 
-    m_pTextProvider.reset(
-        new CXFA_TextProvider(pAcc, XFA_TEXTPROVIDERTYPE_Text));
-    m_pTextLayout.reset(new CXFA_TextLayout(m_pTextProvider.get()));
+    m_pTextProvider =
+        pdfium::MakeUnique<CXFA_TextProvider>(pAcc, XFA_TEXTPROVIDERTYPE_Text);
+    m_pTextLayout = pdfium::MakeUnique<CXFA_TextLayout>(m_pTextProvider.get());
   }
 
  private:
@@ -118,14 +120,15 @@ class CXFA_FieldLayoutData : public CXFA_WidgetLayoutData {
       return false;
     m_pCapTextProvider.reset(
         new CXFA_TextProvider(pAcc, XFA_TEXTPROVIDERTYPE_Caption));
-    m_pCapTextLayout.reset(new CXFA_TextLayout(m_pCapTextProvider.get()));
+    m_pCapTextLayout =
+        pdfium::MakeUnique<CXFA_TextLayout>(m_pCapTextProvider.get());
     return true;
   }
 
   std::unique_ptr<CXFA_TextLayout> m_pCapTextLayout;
   std::unique_ptr<CXFA_TextProvider> m_pCapTextProvider;
   std::unique_ptr<CFDE_TextOut> m_pTextOut;
-  std::unique_ptr<CFX_FloatArray> m_pFieldSplitArray;
+  std::vector<FX_FLOAT> m_FieldSplitArray;
 };
 
 class CXFA_TextEditData : public CXFA_FieldLayoutData {
@@ -376,8 +379,7 @@ void CXFA_WidgetAcc::ProcessScriptTestValidate(CXFA_Validate validate,
       if (!pAppProvider) {
         return;
       }
-      CFX_WideString wsTitle;
-      pAppProvider->LoadString(XFA_IDS_AppName, wsTitle);
+      CFX_WideString wsTitle = pAppProvider->GetAppTitle();
       CFX_WideString wsScriptMsg;
       validate.GetScriptMessageText(wsScriptMsg);
       int32_t eScriptTest = validate.GetScriptTest();
@@ -385,7 +387,7 @@ void CXFA_WidgetAcc::ProcessScriptTestValidate(CXFA_Validate validate,
         if (GetNode()->IsUserInteractive())
           return;
         if (wsScriptMsg.IsEmpty())
-          GetValidateMessage(pAppProvider, wsScriptMsg, false, bVersionFlag);
+          wsScriptMsg = GetValidateMessage(false, bVersionFlag);
 
         if (bVersionFlag) {
           pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Warning,
@@ -397,9 +399,8 @@ void CXFA_WidgetAcc::ProcessScriptTestValidate(CXFA_Validate validate,
           GetNode()->SetFlag(XFA_NodeFlag_UserInteractive, false);
         }
       } else {
-        if (wsScriptMsg.IsEmpty()) {
-          GetValidateMessage(pAppProvider, wsScriptMsg, true, bVersionFlag);
-        }
+        if (wsScriptMsg.IsEmpty())
+          wsScriptMsg = GetValidateMessage(true, bVersionFlag);
         pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Error, XFA_MB_OK);
       }
     }
@@ -426,20 +427,18 @@ int32_t CXFA_WidgetAcc::ProcessFormatTestValidate(CXFA_Validate validate,
       }
       CFX_WideString wsFormatMsg;
       validate.GetFormatMessageText(wsFormatMsg);
-      CFX_WideString wsTitle;
-      pAppProvider->LoadString(XFA_IDS_AppName, wsTitle);
+      CFX_WideString wsTitle = pAppProvider->GetAppTitle();
       int32_t eFormatTest = validate.GetFormatTest();
       if (eFormatTest == XFA_ATTRIBUTEENUM_Error) {
-        if (wsFormatMsg.IsEmpty()) {
-          GetValidateMessage(pAppProvider, wsFormatMsg, true, bVersionFlag);
-        }
+        if (wsFormatMsg.IsEmpty())
+          wsFormatMsg = GetValidateMessage(true, bVersionFlag);
         pAppProvider->MsgBox(wsFormatMsg, wsTitle, XFA_MBICON_Error, XFA_MB_OK);
         return XFA_EVENTERROR_Success;
       }
       if (GetNode()->IsUserInteractive())
         return XFA_EVENTERROR_NotExist;
       if (wsFormatMsg.IsEmpty())
-        GetValidateMessage(pAppProvider, wsFormatMsg, false, bVersionFlag);
+        wsFormatMsg = GetValidateMessage(false, bVersionFlag);
 
       if (bVersionFlag) {
         pAppProvider->MsgBox(wsFormatMsg, wsTitle, XFA_MBICON_Warning,
@@ -476,7 +475,7 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
     }
     if (!wsNullMsg.IsEmpty()) {
       if (eNullTest != XFA_ATTRIBUTEENUM_Disabled) {
-        m_pDocView->m_arrNullTestMsg.Add(wsNullMsg);
+        m_pDocView->m_arrNullTestMsg.push_back(wsNullMsg);
         return XFA_EVENTERROR_Error;
       }
       return XFA_EVENTERROR_Success;
@@ -492,15 +491,12 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
     return XFA_EVENTERROR_NotExist;
   }
   CFX_WideString wsCaptionName;
-  CFX_WideString wsTitle;
-  pAppProvider->LoadString(XFA_IDS_AppName, wsTitle);
+  CFX_WideString wsTitle = pAppProvider->GetAppTitle();
   switch (eNullTest) {
     case XFA_ATTRIBUTEENUM_Error: {
       if (wsNullMsg.IsEmpty()) {
-        GetValidateCaptionName(wsCaptionName, bVersionFlag);
-        CFX_WideString wsError;
-        pAppProvider->LoadString(XFA_IDS_ValidateNullError, wsError);
-        wsNullMsg.Format(wsError.c_str(), wsCaptionName.c_str());
+        wsCaptionName = GetValidateCaptionName(bVersionFlag);
+        wsNullMsg.Format(L"%s cannot be blank.", wsCaptionName.c_str());
       }
       pAppProvider->MsgBox(wsNullMsg, wsTitle, XFA_MBICON_Status, XFA_MB_OK);
       return XFA_EVENTERROR_Error;
@@ -510,11 +506,10 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
         return true;
 
       if (wsNullMsg.IsEmpty()) {
-        GetValidateCaptionName(wsCaptionName, bVersionFlag);
-        CFX_WideString wsWarning;
-        pAppProvider->LoadString(XFA_IDS_ValidateNullWarning, wsWarning);
-        wsNullMsg.Format(wsWarning.c_str(), wsCaptionName.c_str(),
-                         wsCaptionName.c_str());
+        wsCaptionName = GetValidateCaptionName(bVersionFlag);
+        wsNullMsg.Format(
+            L"%s cannot be blank. To ignore validations for %s, click Ignore.",
+            wsCaptionName.c_str(), wsCaptionName.c_str());
       }
       if (pAppProvider->MsgBox(wsNullMsg, wsTitle, XFA_MBICON_Warning,
                                XFA_MB_YesNo) == XFA_IDYes) {
@@ -528,46 +523,44 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
   }
   return XFA_EVENTERROR_Success;
 }
-void CXFA_WidgetAcc::GetValidateCaptionName(CFX_WideString& wsCaptionName,
-                                            bool bVersionFlag) {
+
+CFX_WideString CXFA_WidgetAcc::GetValidateCaptionName(bool bVersionFlag) {
+  CFX_WideString wsCaptionName;
+
   if (!bVersionFlag) {
-    CXFA_Caption caption = GetCaption();
-    if (caption) {
-      CXFA_Value capValue = caption.GetValue();
-      if (capValue) {
-        CXFA_Text capText = capValue.GetText();
-        if (capText) {
+    if (CXFA_Caption caption = GetCaption()) {
+      if (CXFA_Value capValue = caption.GetValue()) {
+        if (CXFA_Text capText = capValue.GetText())
           capText.GetContent(wsCaptionName);
-        }
       }
     }
   }
-  if (wsCaptionName.IsEmpty()) {
+  if (wsCaptionName.IsEmpty())
     GetName(wsCaptionName);
-  }
+
+  return wsCaptionName;
 }
-void CXFA_WidgetAcc::GetValidateMessage(IXFA_AppProvider* pAppProvider,
-                                        CFX_WideString& wsMessage,
-                                        bool bError,
-                                        bool bVersionFlag) {
-  CFX_WideString wsCaptionName;
-  GetValidateCaptionName(wsCaptionName, bVersionFlag);
-  CFX_WideString wsError;
+
+CFX_WideString CXFA_WidgetAcc::GetValidateMessage(bool bError,
+                                                  bool bVersionFlag) {
+  CFX_WideString wsCaptionName = GetValidateCaptionName(bVersionFlag);
+  CFX_WideString wsMessage;
   if (bVersionFlag) {
-    pAppProvider->LoadString(XFA_IDS_ValidateFailed, wsError);
-    wsMessage.Format(wsError.c_str(), wsCaptionName.c_str());
-    return;
+    wsMessage.Format(L"%s validation failed", wsCaptionName.c_str());
+    return wsMessage;
   }
   if (bError) {
-    pAppProvider->LoadString(XFA_IDS_ValidateError, wsError);
-    wsMessage.Format(wsError.c_str(), wsCaptionName.c_str());
-    return;
+    wsMessage.Format(L"The value you entered for %s is invalid.",
+                     wsCaptionName.c_str());
+    return wsMessage;
   }
-  CFX_WideString wsWarning;
-  pAppProvider->LoadString(XFA_IDS_ValidateWarning, wsWarning);
-  wsMessage.Format(wsWarning.c_str(), wsCaptionName.c_str(),
-                   wsCaptionName.c_str());
+  wsMessage.Format(
+      L"The value you entered for %s is invalid. To ignore "
+      L"validations for %s, click Ignore.",
+      wsCaptionName.c_str(), wsCaptionName.c_str());
+  return wsMessage;
 }
+
 int32_t CXFA_WidgetAcc::ProcessValidate(int32_t iFlags) {
   if (GetElementType() == XFA_Element::Draw) {
     return XFA_EVENTERROR_NotExist;
@@ -774,8 +767,7 @@ void CXFA_WidgetAcc::CalcCaptionSize(CFX_SizeF& szCap) {
 bool CXFA_WidgetAcc::CalculateFieldAutoSize(CFX_SizeF& size) {
   CFX_SizeF szCap;
   CalcCaptionSize(szCap);
-  CFX_RectF rtUIMargin;
-  GetUIMargin(rtUIMargin);
+  CFX_RectF rtUIMargin = GetUIMargin();
   size.x += rtUIMargin.left + rtUIMargin.width;
   size.y += rtUIMargin.top + rtUIMargin.height;
   if (szCap.x > 0 && szCap.y > 0) {
@@ -855,7 +847,7 @@ void CXFA_WidgetAcc::CalculateTextContentSize(CFX_SizeF& size) {
   CXFA_FieldLayoutData* layoutData =
       static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get());
   if (!layoutData->m_pTextOut) {
-    layoutData->m_pTextOut.reset(new CFDE_TextOut);
+    layoutData->m_pTextOut = pdfium::MakeUnique<CFDE_TextOut>();
     CFDE_TextOut* pTextOut = layoutData->m_pTextOut.get();
     pTextOut->SetFont(GetFDEFont());
     pTextOut->SetFontSize(fFontSize);
@@ -889,8 +881,7 @@ bool CXFA_WidgetAcc::CalculateTextEditAutoSize(CFX_SizeF& size) {
           break;
       }
     }
-    CFX_RectF rtUIMargin;
-    GetUIMargin(rtUIMargin);
+    CFX_RectF rtUIMargin = GetUIMargin();
     size.x -= rtUIMargin.left + rtUIMargin.width;
     CXFA_Margin mgWidget = GetMargin();
     if (mgWidget) {
@@ -1174,8 +1165,7 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, FX_FLOAT& fCalcHeight) {
       mgWidget.GetTopInset(fTopInset);
       mgWidget.GetBottomInset(fBottomInset);
     }
-    CFX_RectF rtUIMargin;
-    GetUIMargin(rtUIMargin);
+    CFX_RectF rtUIMargin = GetUIMargin();
     fTopInset += rtUIMargin.top;
     fBottomInset += rtUIMargin.width;
   }
@@ -1239,14 +1229,11 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, FX_FLOAT& fCalcHeight) {
     }
     iLinesCount = pFieldData->m_pTextOut->GetTotalLines();
   }
-  if (!pFieldData->m_pFieldSplitArray) {
-    pFieldData->m_pFieldSplitArray.reset(new CFX_FloatArray);
-  }
-  CFX_FloatArray* pFieldArray = pFieldData->m_pFieldSplitArray.get();
-  int32_t iFieldSplitCount = pFieldArray->GetSize();
+  std::vector<FX_FLOAT>* pFieldArray = &pFieldData->m_FieldSplitArray;
+  int32_t iFieldSplitCount = pdfium::CollectionSize<int32_t>(*pFieldArray);
   for (int32_t i = 0; i < iBlockIndex * 3; i += 3) {
-    iLinesCount -= (int32_t)pFieldArray->GetAt(i + 1);
-    fHeight -= pFieldArray->GetAt(i + 2);
+    iLinesCount -= (int32_t)(*pFieldArray)[i + 1];
+    fHeight -= (*pFieldArray)[i + 2];
   }
   if (iLinesCount == 0) {
     return false;
@@ -1275,20 +1262,18 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, FX_FLOAT& fCalcHeight) {
           break;
       }
     }
-    if (fStartOffset < 0.1f) {
+    if (fStartOffset < 0.1f)
       fStartOffset = 0;
-    }
   }
   for (int32_t i = iBlockIndex - 1; iBlockIndex > 0 && i < iBlockIndex; i++) {
-    fStartOffset = pFieldArray->GetAt(i * 3) - pFieldArray->GetAt(i * 3 + 2);
-    if (fStartOffset < 0.1f) {
+    fStartOffset = (*pFieldArray)[i * 3] - (*pFieldArray)[i * 3 + 2];
+    if (fStartOffset < 0.1f)
       fStartOffset = 0;
-    }
   }
   if (iFieldSplitCount / 3 == (iBlockIndex + 1)) {
-    pFieldArray->SetAt(0, fStartOffset);
+    (*pFieldArray)[0] = fStartOffset;
   } else {
-    pFieldArray->Add(fStartOffset);
+    pFieldArray->push_back(fStartOffset);
   }
   XFA_VERSION version = GetDoc()->GetXFADoc()->GetCurVersionMode();
   bool bCanSplitNoContent = false;
@@ -1321,22 +1306,22 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, FX_FLOAT& fCalcHeight) {
     }
     if (fStartOffset + XFA_FLOAT_PERCISION >= fCalcHeight) {
       if (iFieldSplitCount / 3 == (iBlockIndex + 1)) {
-        pFieldArray->SetAt(iBlockIndex * 3 + 1, 0);
-        pFieldArray->SetAt(iBlockIndex * 3 + 2, fCalcHeight);
+        (*pFieldArray)[iBlockIndex * 3 + 1] = 0;
+        (*pFieldArray)[iBlockIndex * 3 + 2] = fCalcHeight;
       } else {
-        pFieldArray->Add(0);
-        pFieldArray->Add(fCalcHeight);
+        pFieldArray->push_back(0);
+        pFieldArray->push_back(fCalcHeight);
       }
       return false;
     }
     if (fCalcHeight - fStartOffset < fLineHeight) {
       fCalcHeight = fStartOffset;
       if (iFieldSplitCount / 3 == (iBlockIndex + 1)) {
-        pFieldArray->SetAt(iBlockIndex * 3 + 1, 0);
-        pFieldArray->SetAt(iBlockIndex * 3 + 2, fCalcHeight);
+        (*pFieldArray)[iBlockIndex * 3 + 1] = 0;
+        (*pFieldArray)[iBlockIndex * 3 + 2] = fCalcHeight;
       } else {
-        pFieldArray->Add(0);
-        pFieldArray->Add(fCalcHeight);
+        pFieldArray->push_back(0);
+        pFieldArray->push_back(fCalcHeight);
       }
       return true;
     }
@@ -1347,11 +1332,11 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, FX_FLOAT& fCalcHeight) {
     if (iLineNum >= iLinesCount) {
       if (fCalcHeight - fStartOffset - fTextHeight >= fFontSize) {
         if (iFieldSplitCount / 3 == (iBlockIndex + 1)) {
-          pFieldArray->SetAt(iBlockIndex * 3 + 1, (FX_FLOAT)iLinesCount);
-          pFieldArray->SetAt(iBlockIndex * 3 + 2, fCalcHeight);
+          (*pFieldArray)[iBlockIndex * 3 + 1] = (FX_FLOAT)iLinesCount;
+          (*pFieldArray)[iBlockIndex * 3 + 2] = fCalcHeight;
         } else {
-          pFieldArray->Add((FX_FLOAT)iLinesCount);
-          pFieldArray->Add(fCalcHeight);
+          pFieldArray->push_back((FX_FLOAT)iLinesCount);
+          pFieldArray->push_back(fCalcHeight);
         }
         return false;
       }
@@ -1369,11 +1354,11 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, FX_FLOAT& fCalcHeight) {
       FX_FLOAT fSplitHeight =
           iLineNum * fLineHeight + fCapReserve + fStartOffset;
       if (iFieldSplitCount / 3 == (iBlockIndex + 1)) {
-        pFieldArray->SetAt(iBlockIndex * 3 + 1, (FX_FLOAT)iLineNum);
-        pFieldArray->SetAt(iBlockIndex * 3 + 2, fSplitHeight);
+        (*pFieldArray)[iBlockIndex * 3 + 1] = (FX_FLOAT)iLineNum;
+        (*pFieldArray)[iBlockIndex * 3 + 2] = fSplitHeight;
       } else {
-        pFieldArray->Add((FX_FLOAT)iLineNum);
-        pFieldArray->Add(fSplitHeight);
+        pFieldArray->push_back((FX_FLOAT)iLineNum);
+        pFieldArray->push_back(fSplitHeight);
       }
       if (fabs(fSplitHeight - fCalcHeight) < XFA_FLOAT_PERCISION) {
         return false;
@@ -1391,25 +1376,25 @@ void CXFA_WidgetAcc::InitLayoutData() {
   }
   switch (GetUIType()) {
     case XFA_Element::Text:
-      m_pLayoutData.reset(new CXFA_TextLayoutData);
+      m_pLayoutData = pdfium::MakeUnique<CXFA_TextLayoutData>();
       return;
     case XFA_Element::TextEdit:
-      m_pLayoutData.reset(new CXFA_TextEditData);
+      m_pLayoutData = pdfium::MakeUnique<CXFA_TextEditData>();
       return;
     case XFA_Element::Image:
-      m_pLayoutData.reset(new CXFA_ImageLayoutData);
+      m_pLayoutData = pdfium::MakeUnique<CXFA_ImageLayoutData>();
       return;
     case XFA_Element::ImageEdit:
-      m_pLayoutData.reset(new CXFA_ImageEditData);
+      m_pLayoutData = pdfium::MakeUnique<CXFA_ImageEditData>();
       return;
     default:
       break;
   }
   if (GetElementType() == XFA_Element::Field) {
-    m_pLayoutData.reset(new CXFA_FieldLayoutData);
+    m_pLayoutData = pdfium::MakeUnique<CXFA_FieldLayoutData>();
     return;
   }
-  m_pLayoutData.reset(new CXFA_WidgetLayoutData);
+  m_pLayoutData = pdfium::MakeUnique<CXFA_WidgetLayoutData>();
 }
 
 void CXFA_WidgetAcc::StartTextLayout(FX_FLOAT& fCalcWidth,
@@ -1512,19 +1497,18 @@ CXFA_WidgetLayoutData* CXFA_WidgetAcc::GetWidgetLayoutData() {
   return m_pLayoutData.get();
 }
 
-CFGAS_GEFont* CXFA_WidgetAcc::GetFDEFont() {
+CFX_RetainPtr<CFGAS_GEFont> CXFA_WidgetAcc::GetFDEFont() {
   CFX_WideStringC wsFontName = FX_WSTRC(L"Courier");
   uint32_t dwFontStyle = 0;
   if (CXFA_Font font = GetFont()) {
-    if (font.IsBold()) {
+    if (font.IsBold())
       dwFontStyle |= FX_FONTSTYLE_Bold;
-    }
-    if (font.IsItalic()) {
+    if (font.IsItalic())
       dwFontStyle |= FX_FONTSTYLE_Italic;
-    }
     font.GetTypeface(wsFontName);
   }
-  CXFA_FFDoc* pDoc = GetDoc();
+
+  auto pDoc = GetDoc();
   return pDoc->GetApp()->GetXFAFontMgr()->GetFont(pDoc, wsFontName,
                                                   dwFontStyle);
 }

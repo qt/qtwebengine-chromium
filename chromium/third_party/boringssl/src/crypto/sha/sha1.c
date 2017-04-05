@@ -60,15 +60,18 @@
 
 #include <openssl/mem.h>
 
+#include "../internal.h"
+
 
 #if !defined(OPENSSL_NO_ASM) &&                         \
     (defined(OPENSSL_X86) || defined(OPENSSL_X86_64) || \
-     defined(OPENSSL_ARM) || defined(OPENSSL_AARCH64))
+     defined(OPENSSL_ARM) || defined(OPENSSL_AARCH64) || \
+     defined(OPENSSL_PPC64LE))
 #define SHA1_ASM
 #endif
 
 int SHA1_Init(SHA_CTX *sha) {
-  memset(sha, 0, sizeof(SHA_CTX));
+  OPENSSL_memset(sha, 0, sizeof(SHA_CTX));
   sha->h[0] = 0x67452301UL;
   sha->h[1] = 0xefcdab89UL;
   sha->h[2] = 0x98badcfeUL;

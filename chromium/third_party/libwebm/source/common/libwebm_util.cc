@@ -13,9 +13,13 @@
 namespace libwebm {
 
 std::int64_t NanosecondsTo90KhzTicks(std::int64_t nanoseconds) {
-  const double kNanosecondsPerSecond = 1000000000.0;
   const double pts_seconds = nanoseconds / kNanosecondsPerSecond;
   return static_cast<std::int64_t>(pts_seconds * 90000);
+}
+
+std::int64_t Khz90TicksToNanoseconds(std::int64_t ticks) {
+  const double seconds = ticks / 90000.0;
+  return static_cast<std::int64_t>(seconds * kNanosecondsPerSecond);
 }
 
 bool ParseVP9SuperFrameIndex(const std::uint8_t* frame,
@@ -36,7 +40,7 @@ bool ParseVP9SuperFrameIndex(const std::uint8_t* frame,
     const std::size_t index_length = 2 + length_field_size * num_frames;
 
     if (frame_length < index_length) {
-      std::fprintf(stderr, "Webm2Pes: Invalid superframe index size.\n");
+      std::fprintf(stderr, "VP9Parse: Invalid superframe index size.\n");
       return false;
     }
 
@@ -61,13 +65,13 @@ bool ParseVP9SuperFrameIndex(const std::uint8_t* frame,
       }
 
       if (static_cast<int>(frame_ranges->size()) != num_frames) {
-        std::fprintf(stderr, "Webm2Pes: superframe index parse failed.\n");
+        std::fprintf(stderr, "VP9Parse: superframe index parse failed.\n");
         return false;
       }
 
       parse_ok = true;
     } else {
-      std::fprintf(stderr, "Webm2Pes: Invalid superframe index.\n");
+      std::fprintf(stderr, "VP9Parse: Invalid superframe index.\n");
     }
   }
   return parse_ok;
@@ -77,6 +81,12 @@ bool WriteUint8(std::uint8_t val, std::FILE* fileptr) {
   if (fileptr == nullptr)
     return false;
   return (std::fputc(val, fileptr) == val);
+}
+
+std::uint16_t ReadUint16(const std::uint8_t* buf) {
+  if (buf == nullptr)
+    return 0;
+  return ((buf[0] << 8) | buf[1]);
 }
 
 }  // namespace libwebm

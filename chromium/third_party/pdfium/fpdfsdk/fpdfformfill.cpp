@@ -138,6 +138,10 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
 #endif  // PDF_ENABLE_XFA
 
   pDevice->RestoreState(false);
+#ifdef _SKIA_SUPPORT_PATHS_
+  pDevice->Flush();
+  CFXBitmapFromFPDFBitmap(bitmap)->UnPreMultiply();
+#endif
   delete options.m_pOCContext;
   options.m_pOCContext = nullptr;
 }

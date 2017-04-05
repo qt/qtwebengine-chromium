@@ -11,14 +11,25 @@
 #define LIBANGLE_RENDERER_VULKAN_FRAMEBUFFERVK_H_
 
 #include "libANGLE/renderer/FramebufferImpl.h"
+#include "libANGLE/renderer/vulkan/renderervk_utils.h"
 
 namespace rx
 {
+class RenderTargetVk;
+class WindowSurfaceVk;
 
 class FramebufferVk : public FramebufferImpl
 {
   public:
-    FramebufferVk(const gl::FramebufferState &state);
+    // Factory methods so we don't have to use constructors with overloads.
+    static FramebufferVk *CreateUserFBO(const gl::FramebufferState &state);
+
+    // The passed-in SurfaceVK must be destroyed after this FBO is destroyed. Our Surface code is
+    // ref-counted on the number of 'current' contexts, so we shouldn't get any dangling surface
+    // references. See Surface::setIsCurrent(bool).
+    static FramebufferVk *CreateDefaultFBO(const gl::FramebufferState &state,
+                                           WindowSurfaceVk *backbuffer);
+
     ~FramebufferVk() override;
 
     gl::Error discard(size_t count, const GLenum *attachments) override;
@@ -63,6 +74,25 @@ class FramebufferVk : public FramebufferImpl
     bool checkStatus() const override;
 
     void syncState(const gl::Framebuffer::DirtyBits &dirtyBits) override;
+
+    gl::Error getSamplePosition(size_t index, GLfloat *xy) const override;
+
+    gl::Error beginRenderPass(VkDevice device,
+                              vk::CommandBuffer *commandBuffer,
+                              const gl::State &glState);
+
+    gl::ErrorOrResult<vk::RenderPass *> getRenderPass(VkDevice device);
+
+  private:
+    FramebufferVk(const gl::FramebufferState &state);
+    FramebufferVk(const gl::FramebufferState &state, WindowSurfaceVk *backbuffer);
+
+    gl::ErrorOrResult<vk::Framebuffer *> getFramebuffer(VkDevice device);
+
+    WindowSurfaceVk *mBackbuffer;
+
+    vk::RenderPass mRenderPass;
+    vk::Framebuffer mFramebuffer;
 };
 
 }  // namespace rx

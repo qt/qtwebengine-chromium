@@ -11,8 +11,10 @@
 #ifndef WEBRTC_MODULES_VIDEO_CODING_CODECS_TEST_VIDEOPROCESSOR_H_
 #define WEBRTC_MODULES_VIDEO_CODING_CODECS_TEST_VIDEOPROCESSOR_H_
 
+#include <memory>
 #include <string>
 
+#include "webrtc/api/video/video_frame.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
@@ -20,9 +22,11 @@
 #include "webrtc/modules/video_coding/codecs/test/stats.h"
 #include "webrtc/test/testsupport/frame_reader.h"
 #include "webrtc/test/testsupport/frame_writer.h"
-#include "webrtc/video_frame.h"
 
 namespace webrtc {
+
+class VideoBitrateAllocator;
+
 namespace test {
 
 // Defines which frame types shall be excluded from packet loss and when.
@@ -103,9 +107,6 @@ struct TestConfig {
   // If printing of information to stdout shall be performed during processing.
   bool verbose;
 };
-
-// Returns a string representation of the enum value.
-const char* VideoCodecTypeToStr(webrtc::VideoCodecType e);
 
 // Handles encoding/decoding of video using the VideoEncoder/VideoDecoder
 // interfaces. This is done in a sequential manner in order to be able to
@@ -191,6 +192,7 @@ class VideoProcessorImpl : public VideoProcessor {
 
   webrtc::VideoEncoder* encoder_;
   webrtc::VideoDecoder* decoder_;
+  std::unique_ptr<VideoBitrateAllocator> bitrate_allocator_;
   FrameReader* frame_reader_;
   FrameWriter* frame_writer_;
   PacketManipulator* packet_manipulator_;
@@ -202,7 +204,6 @@ class VideoProcessorImpl : public VideoProcessor {
   // Keep track of the last successful frame, since we need to write that
   // when decoding fails:
   uint8_t* last_successful_frame_buffer_;
-  webrtc::VideoFrame source_frame_;
   // To keep track of if we have excluded the first key frame from packet loss:
   bool first_key_frame_has_been_excluded_;
   // To tell the decoder previous frame have been dropped due to packet loss:

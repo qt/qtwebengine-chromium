@@ -7,6 +7,7 @@
 #ifndef CORE_FPDFAPI_PARSER_CPDF_REFERENCE_H_
 #define CORE_FPDFAPI_PARSER_CPDF_REFERENCE_H_
 
+#include <memory>
 #include <set>
 
 #include "core/fpdfapi/parser/cpdf_object.h"
@@ -15,7 +16,7 @@ class CPDF_IndirectObjectHolder;
 
 class CPDF_Reference : public CPDF_Object {
  public:
-  CPDF_Reference(CPDF_IndirectObjectHolder* pDoc, int objnum);
+  CPDF_Reference(CPDF_IndirectObjectHolder* pDoc, uint32_t objnum);
   ~CPDF_Reference() override;
 
   // CPDF_Object:

@@ -106,6 +106,7 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
         ret->crldp = NULL;
         ret->buf = NULL;
         CRYPTO_new_ex_data(&ret->ex_data);
+        CRYPTO_MUTEX_init(&ret->lock);
         break;
 
     case ASN1_OP_D2I_PRE:
@@ -120,6 +121,7 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
         break;
 
     case ASN1_OP_FREE_POST:
+        CRYPTO_MUTEX_cleanup(&ret->lock);
         CRYPTO_free_ex_data(&g_ex_data_class, ret, &ret->ex_data);
         X509_CERT_AUX_free(ret->aux);
         ASN1_OCTET_STRING_free(ret->skid);
@@ -129,9 +131,7 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
         GENERAL_NAMES_free(ret->altname);
         NAME_CONSTRAINTS_free(ret->nc);
         CRYPTO_BUFFER_free(ret->buf);
-
-        if (ret->name != NULL)
-            OPENSSL_free(ret->name);
+        OPENSSL_free(ret->name);
         break;
 
     }
@@ -162,8 +162,8 @@ X509 *X509_parse_from_buffer(CRYPTO_BUFFER *buf) {
   X509 *x509p = x509;
   X509 *ret = d2i_X509(&x509p, &inp, CRYPTO_BUFFER_len(buf));
   if (ret == NULL ||
-      (inp - CRYPTO_BUFFER_data(buf)) != (ptrdiff_t) CRYPTO_BUFFER_len(buf)) {
-    X509_free(x509);
+      inp - CRYPTO_BUFFER_data(buf) != (ptrdiff_t)CRYPTO_BUFFER_len(buf)) {
+    X509_free(x509p);
     return NULL;
   }
   assert(x509p == x509);

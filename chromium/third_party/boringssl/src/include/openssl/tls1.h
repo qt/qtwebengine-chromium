@@ -213,6 +213,7 @@ extern "C" {
 #define TLSEXT_TYPE_supported_versions 43
 #define TLSEXT_TYPE_cookie 44
 #define TLSEXT_TYPE_psk_key_exchange_modes 45
+#define TLSEXT_TYPE_ticket_early_data_info 46
 
 /* ExtensionType value from RFC5746 */
 #define TLSEXT_TYPE_renegotiate 0xff01
@@ -225,6 +226,9 @@ extern "C" {
 
 /* This is not an IANA defined extension number */
 #define TLSEXT_TYPE_channel_id 30032
+
+/* This is not an IANA defined extension number */
+#define TLSEXT_TYPE_short_header 27463
 
 /* status request value from RFC 3546 */
 #define TLSEXT_STATUSTYPE_ocsp 1
@@ -425,12 +429,6 @@ extern "C" {
 #define TLS1_CK_AES_256_GCM_SHA384 0x03001302
 #define TLS1_CK_CHACHA20_POLY1305_SHA256 0x03001303
 
-/* CECPQ1 ciphersuites.  These are specific to BoringSSL and not standard. */
-#define TLS1_CK_CECPQ1_RSA_WITH_CHACHA20_POLY1305_SHA256 0x030016B7
-#define TLS1_CK_CECPQ1_ECDSA_WITH_CHACHA20_POLY1305_SHA256 0x030016B8
-#define TLS1_CK_CECPQ1_RSA_WITH_AES_256_GCM_SHA384 0x030016B9
-#define TLS1_CK_CECPQ1_ECDSA_WITH_AES_256_GCM_SHA384 0x030016BA
-
 /* XXX
  * Inconsistency alert:
  * The OpenSSL names of ciphers with ephemeral DH here include the string
@@ -606,8 +604,8 @@ extern "C" {
 #define TLS1_TXT_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256 \
   "ECDHE-PSK-CHACHA20-POLY1305"
 
-/* TODO(davidben): Remove this. Historically, the TXT names for CHACHA20_POLY1305
- * were missing 'SHA256'. */
+/* TODO(davidben): Remove this. Historically, the TXT names for
+ * CHACHA20_POLY1305 were missing 'SHA256'. */
 #define TLS1_TXT_ECDHE_RSA_WITH_CHACHA20_POLY1305 \
   TLS1_TXT_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 
@@ -615,16 +613,6 @@ extern "C" {
 #define TLS1_TXT_AES_128_GCM_SHA256 "AEAD-AES128-GCM-SHA256"
 #define TLS1_TXT_AES_256_GCM_SHA384 "AEAD-AES256-GCM-SHA384"
 #define TLS1_TXT_CHACHA20_POLY1305_SHA256 "AEAD-CHACHA20-POLY1305-SHA256"
-
-/* CECPQ1 ciphersuites.  These are specific to BoringSSL and not standard. */
-#define TLS1_TXT_CECPQ1_RSA_WITH_CHACHA20_POLY1305_SHA256 \
-  "CECPQ1-RSA-CHACHA20-POLY1305-SHA256"
-#define TLS1_TXT_CECPQ1_ECDSA_WITH_CHACHA20_POLY1305_SHA256 \
-  "CECPQ1-ECDSA-CHACHA20-POLY1305-SHA256"
-#define TLS1_TXT_CECPQ1_RSA_WITH_AES_256_GCM_SHA384 \
-  "CECPQ1-RSA-AES256-GCM-SHA384"
-#define TLS1_TXT_CECPQ1_ECDSA_WITH_AES_256_GCM_SHA384 \
-  "CECPQ1-ECDSA-AES256-GCM-SHA384"
 
 
 #define TLS_CT_RSA_SIGN 1

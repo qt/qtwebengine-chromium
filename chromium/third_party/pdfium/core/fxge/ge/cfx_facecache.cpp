@@ -7,6 +7,8 @@
 #include "core/fxge/cfx_facecache.h"
 
 #include <algorithm>
+#include <limits>
+#include <memory>
 
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
@@ -16,7 +18,7 @@
 #include "core/fxge/ge/fx_text_int.h"
 #include "third_party/base/numerics/safe_math.h"
 
-#ifdef _SKIA_SUPPORT_
+#if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #endif
@@ -76,7 +78,7 @@ void ContrastAdjust(uint8_t* pDataIn,
 
 CFX_FaceCache::CFX_FaceCache(FXFT_Face face)
     : m_Face(face)
-#ifdef _SKIA_SUPPORT_
+#if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
       ,
       m_pTypeface(nullptr)
 #endif
@@ -84,7 +86,7 @@ CFX_FaceCache::CFX_FaceCache(FXFT_Face face)
 }
 
 CFX_FaceCache::~CFX_FaceCache() {
-#ifdef _SKIA_SUPPORT_
+#if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
   SkSafeUnref(m_pTypeface);
 #endif
 }
@@ -300,7 +302,8 @@ const CFX_GlyphBitmap* CFX_FaceCache::LoadGlyphBitmap(const CFX_Font* pFont,
   }
 #endif
   CFX_ByteString FaceGlyphsKey(keygen.m_Key, keygen.m_KeyLen);
-#if _FXM_PLATFORM_ != _FXM_PLATFORM_APPLE_ || defined _SKIA_SUPPORT_
+#if _FXM_PLATFORM_ != _FXM_PLATFORM_APPLE_ || defined _SKIA_SUPPORT_ || \
+    defined _SKIA_SUPPORT_PATHS_
   return LookUpGlyphBitmap(pFont, pMatrix, FaceGlyphsKey, glyph_index,
                            bFontStyle, dest_width, anti_alias);
 #else
@@ -348,7 +351,7 @@ const CFX_GlyphBitmap* CFX_FaceCache::LoadGlyphBitmap(const CFX_Font* pFont,
 #endif
 }
 
-#ifdef _SKIA_SUPPORT_
+#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
 CFX_TypeFace* CFX_FaceCache::GetDeviceCache(const CFX_Font* pFont) {
   if (!m_pTypeface) {
     m_pTypeface =
