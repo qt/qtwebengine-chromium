@@ -119,8 +119,7 @@ class BLINK_PLATFORM_EXPORT TaskQueueImpl final : public TaskQueue {
 
     bool operator<=(const DelayedWakeUp& other) const {
       if (time == other.time) {
-        DCHECK_NE(sequence_num, other.sequence_num);
-        return (sequence_num - other.sequence_num) < 0;
+        return (sequence_num - other.sequence_num) <= 0;
       }
       return time < other.time;
     }
