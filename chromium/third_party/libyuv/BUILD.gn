@@ -7,6 +7,7 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("libyuv.gni")
+import("//build/config/features.gni")
 import("//testing/test.gni")
 
 config("libyuv_config") {
@@ -39,7 +40,7 @@ group("default") {
 group("libyuv") {
   public_configs = [ ":libyuv_config" ]
 
-  if (is_win && target_cpu == "x64") {
+  if (is_win && target_cpu == "x64" && !use_qt) {
     public_deps = [
       ":libyuv_internal(//build/toolchain/win:clang_x64)",
     ]
