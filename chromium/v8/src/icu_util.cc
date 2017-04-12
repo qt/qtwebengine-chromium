@@ -12,8 +12,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "unicode/putil.h"
-#include "unicode/udata.h"
+#include "third_party/icu/source/common/unicode/putil.h"
+#include "third_party/icu/source/common/unicode/udata.h"
 
 #include "src/base/build_config.h"
 #include "src/base/file-utils.h"

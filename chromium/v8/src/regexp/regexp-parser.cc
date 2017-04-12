@@ -13,7 +13,7 @@
 #include "src/utils.h"
 
 #ifdef V8_I18N_SUPPORT
-#include "unicode/uset.h"
+#include "third_party/icu/source/common/unicode/uset.h"
 #endif  // V8_I18N_SUPPORT
 
 namespace v8 {

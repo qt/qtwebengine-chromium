@@ -27,8 +27,8 @@
 #include "src/unicode-decoder.h"
 
 #ifdef V8_I18N_SUPPORT
-#include "unicode/uset.h"
-#include "unicode/utypes.h"
+#include "third_party/icu/source/common/unicode/uset.h"
+#include "third_party/icu/source/common/unicode/utypes.h"
 #endif  // V8_I18N_SUPPORT
 
 #ifndef V8_INTERPRETED_REGEXP
