@@ -25,6 +25,7 @@ extern "C" {
 // Disable deprecated features which result in spammy compile warnings.  This
 // list of defines must mirror those in the 'defines' section of FFmpeg's
 // BUILD.gn file or the headers below will generate different structures!
+#if !defined(USE_SYSTEM_FFMPEG)
 #define FF_API_CONVERGENCE_DURATION 0
 // Upstream libavcodec/utils.c still uses the deprecated
 // av_dup_packet(), causing deprecation warnings.
@@ -33,6 +34,7 @@ extern "C" {
 // (In this case, the fix is replacing the call with a new function.)
 // In the meantime, we directly disable those warnings in the C file.
 //#define FF_API_AVPACKET_OLD_API 0
+#endif
 
 // Temporarily disable possible loss of data warning.
 // TODO(scherkus): fix and upstream the compiler warnings.
