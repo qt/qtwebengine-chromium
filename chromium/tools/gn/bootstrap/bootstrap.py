@@ -997,6 +997,8 @@ def build_gn_with_gn(temp_gn, build_dir, options):
   cmd = [temp_gn, 'gen', build_dir, '--args=%s' % gn_gen_args,
           "--root="+SRC_ROOT
          ]
+  if sys.executable:
+    cmd.append('--script-executable=%s' % sys.executable)
   check_call(cmd)
 
   cmd = ['ninja', '-C', build_dir, '-w', 'dupbuild=err']
