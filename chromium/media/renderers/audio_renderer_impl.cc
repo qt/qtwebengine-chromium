@@ -399,7 +399,7 @@ void AudioRendererImpl::OnDeviceInfoReceived(
   current_decoder_config_ = stream->audio_decoder_config();
   DCHECK(current_decoder_config_.IsValidConfig());
 
-  const AudioParameters& hw_params = output_device_info.output_params();
+  AudioParameters hw_params = output_device_info.output_params();
   ChannelLayout hw_channel_layout =
       hw_params.IsValid() ? hw_params.channel_layout() : CHANNEL_LAYOUT_NONE;
 
