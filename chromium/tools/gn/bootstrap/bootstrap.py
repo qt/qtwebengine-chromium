@@ -823,6 +823,8 @@ def build_gn_with_gn(temp_gn, build_dir, options):
   if not options.debug:
     gn_gen_args += ' is_debug=false'
   cmd = [temp_gn, 'gen', build_dir, '--args=%s' % gn_gen_args]
+  if sys.executable:
+    cmd.append('--script-executable=%s' % sys.executable)
   check_call(cmd)
 
   cmd = ['ninja', '-C', build_dir]
