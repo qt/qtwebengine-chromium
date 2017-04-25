@@ -386,7 +386,7 @@ void AudioRendererImpl::Initialize(DemuxerStream* stream,
   init_cb_ = BindToCurrentLoop(init_cb);
 
   auto output_device_info = sink_->GetOutputDeviceInfo();
-  const AudioParameters& hw_params = output_device_info.output_params();
+  const AudioParameters hw_params = output_device_info.output_params();
   AudioCodec codec = stream->audio_decoder_config().codec();
   if (auto* mc = GetMediaClient())
     is_passthrough_ = mc->IsSupportedBitstreamAudioCodec(codec);
