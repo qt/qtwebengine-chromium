@@ -367,7 +367,7 @@ void AudioRendererImpl::Initialize(DemuxerStream* stream,
   init_cb_ = BindToCurrentLoop(init_cb);
 
   auto output_device_info = sink_->GetOutputDeviceInfo();
-  const AudioParameters& hw_params = output_device_info.output_params();
+  const AudioParameters hw_params = output_device_info.output_params();
   expecting_config_changes_ = stream->SupportsConfigChanges();
   if (!expecting_config_changes_ || !hw_params.IsValid() ||
       hw_params.format() == AudioParameters::AUDIO_FAKE ||
