@@ -44,13 +44,11 @@
 #include "v8/include/v8-initialization.h"
 #include "v8/include/v8-snapshot.h"
 
-#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
-#if BUILDFLAG(IS_ANDROID)
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA) && BUILDFLAG(IS_ANDROID)
 #include "base/android/apk_assets.h"
 #elif BUILDFLAG(IS_MAC)
 #include "base/mac/foundation_util.h"
 #endif
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
 
 namespace gin {
 
