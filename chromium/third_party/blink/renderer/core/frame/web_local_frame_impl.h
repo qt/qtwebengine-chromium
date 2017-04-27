@@ -214,7 +214,8 @@ class CORE_EXPORT WebLocalFrameImpl final
   WebString SelectionAsMarkup() const override;
   void TextSelectionChanged(const WebString& selection_text,
                             uint32_t offset,
-                            const gfx::Range& range) override;
+                            const gfx::Range& range,
+                            bool);
   bool SelectAroundCaret(mojom::blink::SelectionGranularity granularity,
                          bool should_show_handle,
                          bool should_show_context_menu);

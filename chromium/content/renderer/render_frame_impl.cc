@@ -2077,7 +2077,8 @@ void RenderFrameImpl::PepperSelectionChanged(
   // We have no reason to believe the locally cached last synced selection is
   // invalid so we do not need to force the update if it matches our last synced
   // value.
-  SyncSelectionIfRequired(blink::SyncCondition::kNotForced, false);
+  SyncSelectionIfRequired(blink::SyncCondition::kNotForced, false /* is_empty_selection */,
+                          true /* user_initiated */);
 }
 
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
@@ -2479,9 +2480,11 @@ void RenderFrameImpl::PluginDidStopLoading() {
 
 void RenderFrameImpl::SetSelectedText(const std::u16string& selection_text,
                                       size_t offset,
-                                      const gfx::Range& range) {
+                                      const gfx::Range& range,
+                                      bool user_initiated) {
   GetWebFrame()->TextSelectionChanged(WebString::FromUTF16(selection_text),
-                                      static_cast<uint32_t>(offset), range);
+                                      static_cast<uint32_t>(offset), range,
+                                      user_initiated);
 }
 
 void RenderFrameImpl::AddMessageToConsole(
@@ -4241,10 +4244,20 @@ void RenderFrameImpl::AbortClientNavigation() {
 
 void RenderFrameImpl::DidChangeSelection(bool is_empty_selection,
                                          blink::SyncCondition force_sync) {
-  if (!GetLocalRootWebFrameWidget()->HandlingInputEvent() &&
-      !GetLocalRootWebFrameWidget()->HandlingSelectRange())
-    return;
+  bool user_initiated =
+    GetLocalRootWebFrameWidget()->HandlingInputEvent() ||
+    GetLocalRootWebFrameWidget()->HandlingSelectRange();
 
+  if (!user_initiated) {
+    // Do not update text input state unnecessarily when text selection remains
+    // empty.
+    if (is_empty_selection && selection_text_.empty())
+      return;
+
+    // Ignore selection change of text replacement triggered by IME composition.
+    if (GetLocalRootWebFrameWidget()->ImeCompositionReplacement())
+      return;
+  }
 
   // UpdateTextInputState should be called before SyncSelectionIfRequired.
   // UpdateTextInputState may send TextInputStateChanged to notify the focus
@@ -4252,7 +4265,7 @@ void RenderFrameImpl::DidChangeSelection(bool is_empty_selection,
   // to notify the selection was changed.  Focus change should be notified
   // before selection change.
   GetLocalRootWebFrameWidget()->UpdateTextInputState();
-  SyncSelectionIfRequired(force_sync, is_empty_selection);
+  SyncSelectionIfRequired(force_sync, is_empty_selection, user_initiated);
 }
 
 void RenderFrameImpl::OnMainFrameIntersectionChanged(
@@ -5634,10 +5647,12 @@ void RenderFrameImpl::UpdateEncoding(WebFrame* frame,
   }
 }
 
-void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync, bool is_empty_selection) {
+void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync,
+                                              bool is_empty_selection,
+                                              bool user_initiated) {
   std::u16string text;
   size_t offset = 0;
-  gfx::Range range;
+  gfx::Range range = gfx::Range::InvalidRange();
 #if BUILDFLAG(ENABLE_PLUGINS)
   if (focused_pepper_plugin_) {
     focused_pepper_plugin_->GetSurroundingText(&text, &range);
@@ -5648,31 +5663,37 @@ void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync, b
   if (!is_empty_selection) {
     WebRange selection =
         frame_->GetInputMethodController()->GetSelectionOffsets();
-    if (selection.IsNull())
-      return;
 
-    range = gfx::Range(selection.StartOffset(), selection.EndOffset());
+    // When clearing text selection from JavaScript the selection range
+    // might be null but the selected text still have to be updated.
+    // Do not cancel sync selection if the clear was not user initiated.
+    if (!selection.IsNull()) {
+      range = gfx::Range(selection.StartOffset(), selection.EndOffset());
 
-    if (frame_->GetInputMethodController()->TextInputType() !=
-        blink::kWebTextInputTypeNone) {
-      // If current focused element is editable, we will send 100 more chars
-      // before and after selection. It is for input method surrounding text
-      // feature.
-      if (selection.StartOffset() > kExtraCharsBeforeAndAfterSelection)
-        offset = selection.StartOffset() - kExtraCharsBeforeAndAfterSelection;
-      else
-        offset = 0;
-      size_t length =
-          selection.EndOffset() - offset + kExtraCharsBeforeAndAfterSelection;
-      text = frame_->RangeAsText(WebRange(offset, length)).Utf16();
-    } else {
-      offset = selection.StartOffset();
-      text = frame_->SelectionAsText().Utf16();
-      // http://crbug.com/101435
-      // In some case, frame->selectionAsText() returned text's length is not
-      // equal to the length returned from frame_->GetSelectionOffsets(). So we
-      // have to set the range according to text.length().
-      range.set_end(range.start() + text.length());
+      if (frame_->GetInputMethodController()->TextInputType() !=
+          blink::kWebTextInputTypeNone) {
+        // If current focused element is editable, we will send 100 more chars
+        // before and after selection. It is for input method surrounding text
+        // feature.
+        if (selection.StartOffset() > kExtraCharsBeforeAndAfterSelection)
+          offset = selection.StartOffset() - kExtraCharsBeforeAndAfterSelection;
+        else
+          offset = 0;
+        size_t length =
+            selection.EndOffset() - offset + kExtraCharsBeforeAndAfterSelection;
+        text = frame_->RangeAsText(WebRange(offset, length)).Utf16();
+      } else {
+        offset = selection.StartOffset();
+        text = frame_->SelectionAsText().Utf16();
+        // http://crbug.com/101435
+        // In some case, frame->selectionAsText() returned text's length is not
+        // equal to the length returned from
+        // GetWebWidget()->caretOrSelectionRange().
+        // So we have to set the range according to text.length().
+        range.set_end(range.start() + text.length());
+      }
+    } else if (user_initiated) {
+        return;
     }
   }
 
@@ -5688,7 +5709,7 @@ void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync, b
     selection_text_ = text;
     selection_text_offset_ = offset;
     selection_range_ = range;
-    SetSelectedText(text, offset, range);
+    SetSelectedText(text, offset, range, user_initiated);
   }
   GetLocalRootWebFrameWidget()->UpdateSelectionBounds();
 }

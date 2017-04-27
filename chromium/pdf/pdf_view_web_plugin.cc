@@ -244,7 +244,7 @@ class BlinkContainerWrapper final : public PdfViewWebPlugin::ContainerWrapper {
     blink::WebLocalFrame* frame = GetFrame();
     frame->View()->SetFocusedFrame(frame);
 
-    frame->TextSelectionChanged(selection_text, offset, range);
+    frame->TextSelectionChanged(selection_text, offset, range, /* user_initiated = */true);
   }
 
   std::unique_ptr<blink::WebAssociatedURLLoader> CreateAssociatedURLLoader(

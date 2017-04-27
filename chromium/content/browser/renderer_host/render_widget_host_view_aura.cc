@@ -2752,7 +2752,8 @@ void RenderWidgetHostViewAura::OnTextSelectionChanged(
           ui::ClipboardBuffer::kSelection)) {
     const TextInputManager::TextSelection* selection =
         GetTextInputManager()->GetTextSelection(focused_view);
-    if (selection->selected_text().length()) {
+    if (selection->selected_text().length()
+          && selection->user_initiated()) {
       // Set the ClipboardBuffer::kSelection to the ui::Clipboard.
       ui::ScopedClipboardWriter clipboard_writer(
           ui::ClipboardBuffer::kSelection);
