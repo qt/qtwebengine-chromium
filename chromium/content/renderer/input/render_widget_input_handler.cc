@@ -182,7 +182,8 @@ RenderWidgetInputHandler::RenderWidgetInputHandler(
       handling_input_event_(false),
       handling_event_overscroll_(nullptr),
       handling_event_type_(WebInputEvent::kUndefined),
-      suppress_next_char_events_(false) {
+      suppress_next_char_events_(false),
+      ime_composition_replacement_(false) {
   DCHECK(delegate);
   DCHECK(widget);
   delegate->SetInputHandler(this);
