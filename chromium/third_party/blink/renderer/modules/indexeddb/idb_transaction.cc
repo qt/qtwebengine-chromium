@@ -127,6 +127,7 @@ IDBTransaction::IDBTransaction(ExecutionContext* execution_context,
       open_db_request_(open_db_request),
       mode_(mojom::blink::IDBTransactionMode::VersionChange),
       durability_(mojom::blink::IDBTransactionDurability::Default),
+      scope_(),
       state_(kInactive),
       old_database_metadata_(old_metadata) {
   DCHECK(database_);

@@ -157,7 +157,7 @@ CookieMonsterChangeDispatcher::AddCallbackForCookie(
       std::move(callback));
 
   LinkSubscription(subscription.get());
-  return subscription;
+  return std::move(subscription);
 }
 
 std::unique_ptr<CookieChangeSubscription>
@@ -174,7 +174,7 @@ CookieMonsterChangeDispatcher::AddCallbackForUrl(
       std::move(callback));
 
   LinkSubscription(subscription.get());
-  return subscription;
+  return std::move(subscription);
 }
 
 std::unique_ptr<CookieChangeSubscription>
@@ -188,7 +188,7 @@ CookieMonsterChangeDispatcher::AddCallbackForAllChanges(
       CookiePartitionKeyCollection::ContainsAll(), std::move(callback));
 
   LinkSubscription(subscription.get());
-  return subscription;
+  return std::move(subscription);
 }
 
 void CookieMonsterChangeDispatcher::DispatchChange(
