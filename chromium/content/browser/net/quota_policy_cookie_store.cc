@@ -44,6 +44,7 @@ QuotaPolicyCookieStore::~QuotaPolicyCookieStore() {
 CookieStoreConfig::CookieStoreConfig()
     : restore_old_session_cookies(false),
       persist_session_cookies(false),
+      storage_policy(nullptr),
       crypto_delegate(nullptr) {
   // Default to an in-memory cookie store.
 }

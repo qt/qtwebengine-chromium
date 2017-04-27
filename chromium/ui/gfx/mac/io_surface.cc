@@ -206,7 +206,7 @@ void IOSurfaceSetColorSpace(IOSurfaceRef io_surface,
   }
 
   // Special-case BT2020_NCL.
-  if (__builtin_available(macos 10.12, *)) {
+  if (base::mac::IsAtLeastOS10_12()) {
     const ColorSpace kBt2020(
         ColorSpace::PrimaryID::BT2020, ColorSpace::TransferID::SMPTEST2084,
         ColorSpace::MatrixID::BT2020_NCL, ColorSpace::RangeID::LIMITED);

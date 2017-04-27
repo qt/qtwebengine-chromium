@@ -878,7 +878,8 @@ SSLServerContextImpl::SSLServerContextImpl(
     const SSLServerConfig& ssl_server_config)
     : ssl_server_config_(ssl_server_config),
       cert_(certificate),
-      key_(key.Copy()) {
+      key_(key.Copy()),
+      private_key_(nullptr) {
   CHECK(key_);
   Init();
 }

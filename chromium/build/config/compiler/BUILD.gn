@@ -516,7 +516,7 @@ config("compiler") {
     }
   }
 
-  if (is_clang && !is_nacl && !use_xcode_clang) {
+  if (is_clang && !is_nacl && !use_xcode_clang && !use_qt) {
     cflags += [ "-fcrash-diagnostics-dir=" +
                 rebase_path("//tools/clang/crashreports", root_build_dir) ]
 

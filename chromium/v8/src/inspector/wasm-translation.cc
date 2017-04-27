@@ -49,7 +49,7 @@ struct WasmSourceInformation {
     std::sort(reverse_offset_table.begin(), reverse_offset_table.end(), cmp);
   }
 
-  WasmSourceInformation() = default;
+  WasmSourceInformation() {}
 };
 
 class WasmTranslation::TranslatorImpl {
