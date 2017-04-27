@@ -36,7 +36,7 @@ std::unique_ptr<MultiBuffer::DataProvider> ResourceMultiBuffer::CreateWriter(
   auto writer = std::make_unique<ResourceMultiBufferDataProvider>(
       url_data_, pos, is_client_audio_element, task_runner_);
   writer->Start();
-  return writer;
+  return std::move(writer);
 }
 
 bool ResourceMultiBuffer::RangeSupported() const {

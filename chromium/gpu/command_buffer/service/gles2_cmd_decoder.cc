@@ -20188,7 +20188,7 @@ std::unique_ptr<AbstractTexture> GLES2DecoderImpl::CreateAbstractTexture(
                          base::Unretained(this)));
   abstract_textures_.insert(abstract_texture.get());
 
-  return abstract_texture;
+  return std::unique_ptr<AbstractTexture>(abstract_texture.release());
 }
 
 void GLES2DecoderImpl::OnAbstractTextureDestroyed(
