@@ -9,6 +9,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_piece.h"
 #import "base/task/sequenced_task_runner.h"
