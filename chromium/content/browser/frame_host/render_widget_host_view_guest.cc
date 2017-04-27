@@ -416,8 +416,9 @@ void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
 
 void RenderWidgetHostViewGuest::SelectionChanged(const base::string16& text,
                                                  size_t offset,
-                                                 const gfx::Range& range) {
-  platform_view_->SelectionChanged(text, offset, range);
+                                                 const gfx::Range& range,
+                                                 bool user_initiated) {
+  platform_view_->SelectionChanged(text, offset, range, user_initiated);
 }
 
 void RenderWidgetHostViewGuest::SelectionBoundsChanged(

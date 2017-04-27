@@ -66,6 +66,13 @@ class CONTENT_EXPORT RenderWidgetInputHandler {
     context_menu_source_type_ = source_type;
   }
 
+  bool ime_composition_replacement() const {
+      return ime_composition_replacement_;
+  }
+  void set_ime_composition_replacement(bool ime_composition_replacement) {
+      ime_composition_replacement_ = ime_composition_replacement;
+  }
+
  private:
   RenderWidgetInputHandlerDelegate* const delegate_;
 
@@ -87,6 +94,10 @@ class CONTENT_EXPORT RenderWidgetInputHandler {
 
   // Indicates if the next sequence of Char events should be suppressed or not.
   bool suppress_next_char_events_;
+
+  // Used to suppress notification about text selection changes triggered by
+  // IME composition when it replaces text.
+  bool ime_composition_replacement_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetInputHandler);
 };

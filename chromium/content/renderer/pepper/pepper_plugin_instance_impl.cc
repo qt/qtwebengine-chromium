@@ -1382,7 +1382,7 @@ void PepperPluginInstanceImpl::SetSelectedText(
     const base::string16& selected_text) {
   selected_text_ = selected_text;
   gfx::Range range(0, selected_text.length());
-  render_frame_->SetSelectedText(selected_text, 0, range);
+  render_frame_->SetSelectedText(selected_text, 0, range, true);
 }
 
 void PepperPluginInstanceImpl::SetLinkUnderCursor(const std::string& url) {
