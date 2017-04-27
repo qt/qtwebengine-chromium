@@ -158,7 +158,7 @@ bool IOSurfaceSetColorSpace(IOSurfaceRef io_surface,
   // also not available in some SDK versions.
   // https://crbug.com/1101041: Introduces the HDR copier.
   // https://crbug.com/1061723: Discussion of issues related to HLG.
-  if (__builtin_available(macos 10.15, *)) {
+  if (base::mac::IsAtLeastOS10_15()) {
     if (color_space == ColorSpace(ColorSpace::PrimaryID::BT2020,
                                   ColorSpace::TransferID::SMPTEST2084,
                                   ColorSpace::MatrixID::BT2020_NCL,
