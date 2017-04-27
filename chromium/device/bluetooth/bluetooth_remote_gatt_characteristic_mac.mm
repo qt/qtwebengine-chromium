@@ -386,7 +386,7 @@ void BluetoothRemoteGattCharacteristicMac::DidDiscoverDescriptors() {
         new BluetoothRemoteGattDescriptorMac(this, cb_descriptor);
     const std::string& identifier = gatt_descriptor_mac->GetIdentifier();
     auto result_iter = gatt_descriptor_macs_.insert(
-        {identifier, base::WrapUnique(gatt_descriptor_mac)});
+        std::make_pair(identifier, base::WrapUnique(gatt_descriptor_mac)));
     DCHECK(result_iter.second);
     GetMacAdapter()->NotifyGattDescriptorAdded(gatt_descriptor_mac);
     VLOG(1) << *gatt_descriptor_mac << ": New descriptor.";
