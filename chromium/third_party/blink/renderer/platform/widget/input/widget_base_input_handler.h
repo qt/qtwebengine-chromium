@@ -86,6 +86,13 @@ class PLATFORM_EXPORT WidgetBaseInputHandler {
   // cursor.
   bool DidChangeCursor(const ui::Cursor& cursor);
 
+  bool ime_composition_replacement() const {
+      return ime_composition_replacement_;
+  }
+  void set_ime_composition_replacement(bool ime_composition_replacement) {
+      ime_composition_replacement_ = ime_composition_replacement;
+  }
+
  private:
   class HandlingState;
   struct InjectScrollGestureParams {
@@ -126,6 +133,10 @@ class PLATFORM_EXPORT WidgetBaseInputHandler {
   bool last_injected_gesture_was_begin_ = false;
 
   const bool supports_buffered_touch_ = false;
+
+  // Used to suppress notification about text selection changes triggered by
+  // IME composition when it replaces text.
+  bool ime_composition_replacement_ = false;
 
   base::WeakPtrFactory<WidgetBaseInputHandler> weak_ptr_factory_{this};
 };

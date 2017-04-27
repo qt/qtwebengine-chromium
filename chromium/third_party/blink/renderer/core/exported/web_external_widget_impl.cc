@@ -112,6 +112,10 @@ void WebExternalWidgetImpl::SetHandlingInputEvent(bool handling) {
   widget_base_->input_handler().set_handling_input_event(handling);
 }
 
+bool WebExternalWidgetImpl::ImeCompositionReplacement() {
+  return widget_base_->input_handler().ime_composition_replacement();
+}
+
 void WebExternalWidgetImpl::ProcessInputEventSynchronouslyForTesting(
     const WebCoalescedInputEvent& event,
     HandledEventCallback callback) {

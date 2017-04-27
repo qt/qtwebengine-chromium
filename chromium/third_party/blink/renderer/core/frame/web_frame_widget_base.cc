@@ -1165,6 +1165,10 @@ void WebFrameWidgetBase::SetHandlingInputEvent(bool handling) {
   widget_base_->input_handler().set_handling_input_event(handling);
 }
 
+bool WebFrameWidgetBase::ImeCompositionReplacement() {
+  return widget_base_->input_handler().ime_composition_replacement();
+}
+
 void WebFrameWidgetBase::ProcessInputEventSynchronouslyForTesting(
     const WebCoalescedInputEvent& event,
     HandledEventCallback callback) {
@@ -2082,7 +2086,7 @@ void WebFrameWidgetBase::Replace(const String& word) {
   if (!focused_frame->HasSelection())
     focused_frame->SelectWordAroundCaret();
   focused_frame->ReplaceSelection(word);
-  focused_frame->Client()->SyncSelectionIfRequired(false);
+  focused_frame->Client()->SyncSelectionIfRequired(false, true /* user_initiated */);
 }
 
 void WebFrameWidgetBase::ReplaceMisspelling(const String& word) {
