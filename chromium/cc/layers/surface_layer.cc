@@ -143,7 +143,7 @@ std::unique_ptr<LayerImpl> SurfaceLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) const {
   auto layer_impl = SurfaceLayerImpl::Create(
       tree_impl, id(), update_submission_state_callback_.Read(*this));
-  return layer_impl;
+  return std::move(layer_impl);
 }
 
 bool SurfaceLayer::HasDrawableContent() const {

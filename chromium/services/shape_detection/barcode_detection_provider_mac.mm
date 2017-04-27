@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "services/shape_detection/barcode_detection_impl_mac.h"
@@ -36,7 +37,7 @@ void BarcodeDetectionProviderMac::CreateBarcodeDetection(
     vision_api_ = VisionAPIInterface::Create();
 
   // Vision Framework needs at least MAC OS X 10.13.
-  if (@available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     if (!BarcodeDetectionImplMacVision::IsBlockedMacOSVersion()) {
       auto impl =
           std::make_unique<BarcodeDetectionImplMacVision>(std::move(options));
@@ -67,7 +68,7 @@ void BarcodeDetectionProviderMac::EnumerateSupportedFormats(
     vision_api_ = VisionAPIInterface::Create();
 
   // Vision Framework needs at least MAC OS X 10.13.
-  if (@available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     // Vision recognizes more barcode symbologies than Core Image Framework.
     supported_formats_ = BarcodeDetectionImplMacVision::GetSupportedSymbologies(
         vision_api_.get());
