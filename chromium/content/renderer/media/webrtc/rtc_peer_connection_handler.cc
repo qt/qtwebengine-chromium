@@ -1719,7 +1719,7 @@ RTCPeerConnectionHandler::AddTrack(
       PerSessionWebRTCAPIMetrics::GetInstance()->IncrementStreamCounter();
     }
   }
-  return web_transceiver;
+  return std::unique_ptr<blink::WebRTCRtpTransceiver>(web_transceiver.release());
 }
 
 void RTCPeerConnectionHandler::AddTrackOnSignalingThread(
@@ -1848,7 +1848,7 @@ RTCPeerConnectionHandler::RemoveTrackUnifiedPlan(
   }
   std::unique_ptr<blink::WebRTCRtpTransceiver> web_transceiver =
       std::move(transceiver);
-  return web_transceiver;
+  return std::unique_ptr<blink::WebRTCRtpTransceiver>(web_transceiver.release());
 }
 
 void RTCPeerConnectionHandler::RemoveTrackUnifiedPlanOnSignalingThread(

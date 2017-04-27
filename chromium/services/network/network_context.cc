@@ -1894,7 +1894,7 @@ URLRequestContextOwner NetworkContext::ApplyContextParamsToBuilder(
                 network_context);
         if (out_context_network_delegate)
           *out_context_network_delegate = context_network_delegate.get();
-        return context_network_delegate;
+        return std::unique_ptr<net::NetworkDelegate>(context_network_delegate.release());
       },
       params_.get(), &context_network_delegate_, this));
 
