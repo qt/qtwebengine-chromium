@@ -1512,7 +1512,7 @@ RTCPeerConnectionHandler::AddTrack(
           ->IncrementStreamCounter();
     }
   }
-  return platform_transceiver;
+  return std::unique_ptr<RTCRtpTransceiverPlatform>(platform_transceiver.release());
 }
 
 void RTCPeerConnectionHandler::AddTrackOnSignalingThread(
@@ -1586,7 +1586,7 @@ RTCPeerConnectionHandler::RemoveTrack(blink::RTCRtpSenderPlatform* web_sender) {
   }
   std::unique_ptr<RTCRtpTransceiverPlatform> platform_transceiver =
       std::move(transceiver);
-  return platform_transceiver;
+  return std::unique_ptr<RTCRtpTransceiverPlatform>(platform_transceiver.release());
 }
 
 void RTCPeerConnectionHandler::RemoveTrackOnSignalingThread(
