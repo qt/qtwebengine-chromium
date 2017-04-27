@@ -991,8 +991,9 @@ SSLServerContextImpl::SSLServerContextImpl(
     std::vector<bssl::UniquePtr<CRYPTO_BUFFER>> cert_chain,
     EVP_PKEY* pkey,
     const SSLServerConfig& ssl_server_config)
-    : ssl_server_config_(ssl_server_config),
-      cert_chain_(std::move(cert_chain)) {
+    : ssl_server_config_(ssl_server_config)
+    , cert_chain_(std::move(cert_chain))
+    , private_key_(nullptr) {
   CHECK(pkey);
   pkey_ = bssl::UpRef(pkey);
   Init();
