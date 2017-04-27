@@ -1658,7 +1658,7 @@ GLES2DecoderPassthroughImpl::CreateAbstractTexture(GLenum target,
       std::make_unique<PassthroughAbstractTextureImpl>(texture, this);
 
   abstract_textures_.insert(abstract_texture.get());
-  return abstract_texture;
+  return std::unique_ptr<AbstractTexture>(abstract_texture.release());
 }
 
 void GLES2DecoderPassthroughImpl::OnAbstractTextureDestroyed(

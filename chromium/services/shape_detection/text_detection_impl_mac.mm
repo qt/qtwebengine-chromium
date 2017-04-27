@@ -19,7 +19,7 @@ namespace shape_detection {
 void TextDetectionImpl::Create(
     mojo::PendingReceiver<mojom::TextDetection> receiver) {
   // Text detection needs at least MAC OS X 10.11.
-  if (@available(macOS 10.11, *)) {
+  if (base::mac::IsAtLeastOS10_11()) {
     mojo::MakeSelfOwnedReceiver(std::make_unique<TextDetectionImplMac>(),
                                 std::move(receiver));
   }

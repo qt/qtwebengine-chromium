@@ -226,7 +226,7 @@ SecKeyAlgorithm GetSecKeyAlgorithm(uint16_t algorithm) {
 
   // RSA-PSS is only available in macOS 10.13 and up. In earlier versions, we
   // use a fallback path (see GetSecKeyAlgorithmWithFallback).
-  if (__builtin_available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     switch (algorithm) {
       case SSL_SIGN_RSA_PSS_SHA512:
         return kSecKeyAlgorithmRSASignatureDigestPSSSHA512;
@@ -356,7 +356,7 @@ scoped_refptr<SSLPrivateKey> CreateSSLPrivateKeyForSecKey(
   if (!pubkey)
     return nullptr;
 
-  if (__builtin_available(macOS 10.12, *)) {
+  if (base::mac::IsAtLeastOS10_12()) {
     return base::MakeRefCounted<ThreadedSSLPrivateKey>(
         std::make_unique<SSLPlatformKeySecKey>(std::move(pubkey), private_key),
         GetSSLPlatformKeyTaskRunner());
