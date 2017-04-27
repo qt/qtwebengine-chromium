@@ -756,7 +756,7 @@ std::unique_ptr<GLHelper::ScalerInterface> GLHelperScaling::CreateScaler(
                                        std::move(ret));
   }
   ret->SetChainProperties(scale_from, scale_to, swizzle);
-  return ret;
+  return std::move(ret);
 }
 
 std::unique_ptr<GLHelper::ScalerInterface>
@@ -770,7 +770,7 @@ GLHelperScaling::CreateGrayscalePlanerizer(bool flipped_source,
   auto result = std::make_unique<ScalerImpl>(gl_, this, stage, nullptr);
   result->SetColorWeights(0, kRGBtoGrayscaleColorWeights);
   result->SetChainProperties(stage.scale_from, stage.scale_to, swizzle);
-  return result;
+  return std::move(result);
 }
 
 std::unique_ptr<GLHelper::ScalerInterface>
@@ -801,7 +801,7 @@ GLHelperScaling::CreateI420Planerizer(int plane,
       NOTREACHED();
   }
   result->SetChainProperties(stage.scale_from, stage.scale_to, swizzle);
-  return result;
+  return std::unique_ptr<GLHelper::ScalerInterface>(std::move(result));
 }
 
 std::unique_ptr<GLHelper::ScalerInterface>
@@ -820,7 +820,7 @@ GLHelperScaling::CreateI420MrtPass1Planerizer(bool flipped_source,
   result->SetColorWeights(1, kRGBtoUColorWeights);
   result->SetColorWeights(2, kRGBtoVColorWeights);
   result->SetChainProperties(stage.scale_from, stage.scale_to, swizzle);
-  return result;
+  return std::unique_ptr<GLHelper::ScalerInterface>(std::move(result));
 }
 
 std::unique_ptr<GLHelper::ScalerInterface>
@@ -834,7 +834,7 @@ GLHelperScaling::CreateI420MrtPass2Planerizer(bool swizzle) {
                              swizzle};
   auto result = std::make_unique<ScalerImpl>(gl_, this, stage, nullptr);
   result->SetChainProperties(stage.scale_from, stage.scale_to, swizzle);
-  return result;
+  return std::unique_ptr<GLHelper::ScalerInterface>(std::move(result));
 }
 
 // Triangle strip coordinates, used to sweep the entire source area when

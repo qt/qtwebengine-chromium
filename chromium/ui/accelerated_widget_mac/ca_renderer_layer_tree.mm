@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/mac/mac_util.h"
 #include "base/mac/sdk_forward_declarations.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -81,7 +82,7 @@ bool AVSampleBufferDisplayLayerEnqueueCVPixelBuffer(
 
   [av_layer enqueueSampleBuffer:sample_buffer];
 
-  if (@available(macOS 10.10, *)) {
+  if (base::mac::IsAtLeastOS10_10()) {
     AVQueuedSampleBufferRenderingStatus status = [av_layer status];
     switch (status) {
       case AVQueuedSampleBufferRenderingStatusUnknown:

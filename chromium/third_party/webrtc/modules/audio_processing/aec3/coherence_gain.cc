@@ -58,7 +58,7 @@ int CmpFloat(const void* a, const void* b) {
 
 CoherenceGain::CoherenceGain(int sample_rate_hz, size_t num_bands_to_compute)
     : num_bands_to_compute_(num_bands_to_compute),
-      sample_rate_scaler_(sample_rate_hz >= 16000 ? 2 : 1) {
+      sample_rate_scaler_(sample_rate_hz >= 16000 ? 2 : 1), fft_() {
   spectra_.Cye.Clear();
   spectra_.Cxy.Clear();
   spectra_.Pe.fill(0.f);

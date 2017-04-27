@@ -286,6 +286,10 @@ typedef void (^VNRequestCompletionHandler)(VNRequest* request, NSError* error);
     : VNImageBasedRequest<VNFaceObservationAccepting>
 @end
 
+#ifndef NS_STRING_ENUM
+#define NS_STRING_ENUM
+#endif
+
 // VNImageRequestHandler forward declarations.
 typedef NSString* VNImageOption NS_STRING_ENUM;
 

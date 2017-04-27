@@ -137,6 +137,7 @@ IDBTransaction::IDBTransaction(ExecutionContext* execution_context,
       mode_(kWebIDBTransactionModeVersionChange),
       state_(kInactive),
       old_database_metadata_(old_metadata),
+      scope_(),
       event_queue_(
           EventQueue::Create(execution_context, TaskType::kInternalIndexedDB)) {
   DCHECK(database_);

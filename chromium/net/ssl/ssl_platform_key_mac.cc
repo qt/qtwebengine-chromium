@@ -211,7 +211,7 @@ SecKeyAlgorithm GetSecKeyAlgorithm(uint16_t algorithm) {
       return kSecKeyAlgorithmECDSASignatureDigestX962SHA1;
   }
 
-  if (__builtin_available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     switch (algorithm) {
       case SSL_SIGN_RSA_PSS_SHA512:
         return kSecKeyAlgorithmRSASignatureDigestPSSSHA512;
@@ -298,7 +298,7 @@ scoped_refptr<SSLPrivateKey> CreateSSLPrivateKeyForSecKey(
   if (!GetClientCertInfo(certificate, &key_type, &max_length))
     return nullptr;
 
-  if (__builtin_available(macOS 10.12, *)) {
+  if (base::mac::IsAtLeastOS10_12()) {
     return base::MakeRefCounted<ThreadedSSLPrivateKey>(
         std::make_unique<SSLPlatformKeySecKey>(key_type, max_length,
                                                private_key),
