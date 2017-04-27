@@ -1521,6 +1521,7 @@ void WidgetBase::ImeSetComposition(
   }
 
   ImeEventGuard guard(weak_ptr_factory_.GetWeakPtr());
+  input_handler_.set_ime_composition_replacement(replacement_range.IsValid());
   if (!frame_widget->SetComposition(text, ime_text_spans, replacement_range,
                                     selection_start, selection_end,
                                     ime_state)) {
@@ -1532,6 +1533,7 @@ void WidgetBase::ImeSetComposition(
       host->ImeCancelComposition();
     }
   }
+  input_handler_.set_ime_composition_replacement(false);
   UpdateCompositionInfo(false /* not an immediate request */);
 }
 
