@@ -235,7 +235,8 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // Notifies the browser of text selection changes made.
   virtual void SetSelectedText(const base::string16& selection_text,
                                size_t offset,
-                               const gfx::Range& range) = 0;
+                               const gfx::Range& range,
+                               bool user_initiated) = 0;
 
   // Notifies the frame's RenderView that the zoom has changed.
   virtual void SetZoomLevel(double zoom_level) = 0;

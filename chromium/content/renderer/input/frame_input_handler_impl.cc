@@ -222,7 +222,7 @@ void FrameInputHandlerImpl::Replace(const base::string16& word) {
   if (!frame->HasSelection())
     frame->SelectWordAroundCaret();
   frame->ReplaceSelection(blink::WebString::FromUTF16(word));
-  render_frame_->SyncSelectionIfRequired();
+  render_frame_->SyncSelectionIfRequired(word.empty(), true);
 }
 
 void FrameInputHandlerImpl::ReplaceMisspelling(const base::string16& word) {
