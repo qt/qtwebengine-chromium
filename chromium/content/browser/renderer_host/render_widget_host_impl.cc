@@ -2229,9 +2229,11 @@ void RenderWidgetHostImpl::GetSnapshotFromBrowser(
 
 void RenderWidgetHostImpl::SelectionChanged(const std::u16string& text,
                                             uint32_t offset,
-                                            const gfx::Range& range) {
+                                            const gfx::Range& range,
+                                            bool user_initiated) {
   if (view_) {
-    view_->SelectionChanged(text, static_cast<size_t>(offset), range);
+    view_->SelectionChanged(text, static_cast<size_t>(offset), range,
+                            user_initiated);
   }
 }
 
