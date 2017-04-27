@@ -2529,7 +2529,8 @@ void RenderWidgetHostViewAura::OnTextSelectionChanged(
 #if defined(USE_X11)
   const TextInputManager::TextSelection* selection =
       GetTextInputManager()->GetTextSelection(focused_view);
-  if (selection->selected_text().length()) {
+  if (selection->selected_text().length()
+          && selection->user_initiated()) {
     // Set the ClipboardType::kSelection to the ui::Clipboard.
     ui::ScopedClipboardWriter clipboard_writer(ui::ClipboardType::kSelection);
     clipboard_writer.WriteText(selection->selected_text());
