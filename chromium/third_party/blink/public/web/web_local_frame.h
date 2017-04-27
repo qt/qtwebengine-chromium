@@ -524,7 +524,8 @@ class BLINK_EXPORT WebLocalFrame : public WebFrame {
 
   virtual void TextSelectionChanged(const WebString& selection_text,
                                     uint32_t offset,
-                                    const gfx::Range& range) = 0;
+                                    const gfx::Range& range,
+                                    bool user_initiated) = 0;
 
   // DEPRECATED: Use moveRangeSelection.
   virtual void SelectRange(const gfx::Point& base,
