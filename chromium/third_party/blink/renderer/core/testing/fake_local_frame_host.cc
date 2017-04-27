@@ -167,7 +167,8 @@ void FakeLocalFrameHost::FocusedElementChanged(
 
 void FakeLocalFrameHost::TextSelectionChanged(const WTF::String& text,
                                               uint32_t offset,
-                                              const gfx::Range& range) {}
+                                              const gfx::Range& range,
+                                              bool user_initiated) {}
 void FakeLocalFrameHost::ShowPopupMenu(
     mojo::PendingRemote<mojom::blink::PopupMenuClient> popup_client,
     const gfx::Rect& bounds,
