@@ -133,7 +133,8 @@ IDBTransaction::IDBTransaction(ExecutionContext* execution_context,
       open_db_request_(open_db_request),
       mode_(kWebIDBTransactionModeVersionChange),
       state_(kInactive),
-      old_database_metadata_(old_metadata) {
+      old_database_metadata_(old_metadata),
+      scope_() {
   DCHECK(database_);
   DCHECK(open_db_request_);
   DCHECK(scope_.IsEmpty());

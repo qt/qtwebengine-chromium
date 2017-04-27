@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/mac/mac_util.h"
 #include "base/mac/sdk_forward_declarations.h"
 #import "ui/base/cocoa/nsview_additions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
@@ -115,7 +116,7 @@ static NSView* g_childBeingDrawnTo = nil;
 }
 
 - (void)cr_setAccessibilityLabel:(NSString*)label {
-  if (@available(macOS 10.10, *)) {
+  if (base::mac::IsAtLeastOS10_10()) {
     self.accessibilityLabel = label;
   } else {
     [self accessibilitySetOverrideValue:label
