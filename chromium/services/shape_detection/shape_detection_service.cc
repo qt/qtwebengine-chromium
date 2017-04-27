@@ -15,6 +15,7 @@
 #include "services/shape_detection/barcode_detection_provider_impl.h"
 #include "services/shape_detection/face_detection_provider_win.h"
 #elif defined(OS_MAC)
+#include "base/mac/mac_util.h"
 #include "services/shape_detection/barcode_detection_provider_mac.h"
 #include "services/shape_detection/face_detection_provider_mac.h"
 #elif BUILDFLAG(GOOGLE_CHROME_BRANDING) && BUILDFLAG(IS_ASH)

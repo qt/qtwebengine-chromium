@@ -129,6 +129,7 @@ IDBTransaction::IDBTransaction(
       durability_(mojom::IDBTransactionDurability::Default),
       state_(kInactive),
       old_database_metadata_(old_metadata),
+      scope_(),
       event_queue_(
           MakeGarbageCollected<EventQueue>(execution_context,
                                            TaskType::kDatabaseAccess)) {
