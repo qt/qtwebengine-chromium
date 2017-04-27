@@ -1356,8 +1356,9 @@ WebString WebLocalFrameImpl::SelectionAsMarkup() const {
 
 void WebLocalFrameImpl::TextSelectionChanged(const WebString& selection_text,
                                              uint32_t offset,
-                                             const gfx::Range& range) {
-  GetFrame()->TextSelectionChanged(selection_text, offset, range);
+                                             const gfx::Range& range,
+                                             bool user_initiated) {
+  GetFrame()->TextSelectionChanged(selection_text, offset, range, user_initiated);
 }
 
 bool WebLocalFrameImpl::SelectWordAroundCaret() {
