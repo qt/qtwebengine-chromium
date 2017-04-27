@@ -23,7 +23,7 @@ class CORE_EXPORT ReferrerScriptInfo {
   STACK_ALLOCATED();
 
  public:
-  ReferrerScriptInfo() {}
+  ReferrerScriptInfo() : nonce_() {}
   ReferrerScriptInfo(const KURL& base_url,
                      network::mojom::CredentialsMode credentials_mode,
                      const String& nonce,

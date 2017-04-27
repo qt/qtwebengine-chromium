@@ -124,6 +124,7 @@ IDBTransaction::IDBTransaction(
       mode_(mojom::IDBTransactionMode::VersionChange),
       state_(kInactive),
       old_database_metadata_(old_metadata),
+      scope_(),
       event_queue_(
           MakeGarbageCollected<EventQueue>(execution_context,
                                            TaskType::kDatabaseAccess)) {

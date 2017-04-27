@@ -126,7 +126,7 @@ std::unique_ptr<LayerImpl> SurfaceLayer::CreateLayerImpl(
   auto layer_impl = SurfaceLayerImpl::Create(tree_impl, id(),
                                              update_submission_state_callback_);
   layer_impl->set_may_contain_video(may_contain_video_);
-  return layer_impl;
+  return std::unique_ptr<LayerImpl>(layer_impl.release());
 }
 
 bool SurfaceLayer::HasDrawableContent() const {
