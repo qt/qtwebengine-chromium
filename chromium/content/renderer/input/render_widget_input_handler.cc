@@ -199,7 +199,8 @@ RenderWidgetInputHandler::RenderWidgetInputHandler(
       handling_event_overscroll_(nullptr),
       handling_event_type_(WebInputEvent::kUndefined),
       context_menu_source_type_(ui::MENU_SOURCE_MOUSE),
-      suppress_next_char_events_(false) {
+      suppress_next_char_events_(false),
+      ime_composition_replacement_(false) {
   DCHECK(delegate);
   DCHECK(widget);
   delegate->SetInputHandler(this);

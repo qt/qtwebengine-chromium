@@ -1602,6 +1602,7 @@ void RenderWidget::OnImeSetComposition(
   }
 #endif
   ImeEventGuard guard(this);
+  input_handler_->set_ime_composition_replacement(replacement_range.IsValid());
   blink::WebInputMethodController* controller = GetInputMethodController();
   if (!controller ||
       !controller->SetComposition(
@@ -1616,6 +1617,7 @@ void RenderWidget::OnImeSetComposition(
     // sure we are in a consistent state.
     Send(new InputHostMsg_ImeCancelComposition(routing_id()));
   }
+  input_handler_->set_ime_composition_replacement(false);
   UpdateCompositionInfo(false /* not an immediate request */);
 }
 
