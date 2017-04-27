@@ -647,7 +647,8 @@ class ConfiguredProxyResolutionService::PacFileDeciderPoller {
         dhcp_pac_file_fetcher_(dhcp_pac_file_fetcher),
         last_error_(init_net_error),
         last_script_data_(init_script_data),
-        last_poll_time_(TimeTicks::Now()) {
+        last_poll_time_(TimeTicks::Now()),
+        default_poll_policy_() {
     // Set the initial poll delay.
     next_poll_mode_ = poll_policy()->GetNextDelay(
         last_error_, TimeDelta::FromSeconds(-1), &next_poll_delay_);

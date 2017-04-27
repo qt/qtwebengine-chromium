@@ -38,7 +38,10 @@ class PLATFORM_EXPORT ScriptFetchOptions final {
   // credentials mode, once spec decision is made at
   // https://github.com/whatwg/html/pull/3656.
   ScriptFetchOptions()
-      : parser_state_(ParserDisposition::kNotParserInserted),
+      : nonce_(),
+        integrity_metadata_(),
+        integrity_attribute_(),
+        parser_state_(ParserDisposition::kNotParserInserted),
         credentials_mode_(network::mojom::CredentialsMode::kOmit),
         referrer_policy_(network::mojom::ReferrerPolicy::kDefault),
         importance_(mojom::FetchImportanceMode::kImportanceAuto) {}

@@ -55,7 +55,7 @@ WebSocketHandshakeStreamCreateHelper::CreateHttp2Stream(
       session, connect_delegate_, requested_subprotocols_, extensions,
       request_);
   request_->OnHttp2HandshakeStreamCreated(stream.get());
-  return stream;
+  return std::unique_ptr<WebSocketHandshakeStreamBase>(stream.release());
 }
 
 }  // namespace net

@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/mac/mac_util.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "services/shape_detection/face_detection_impl_mac.h"
@@ -29,7 +30,7 @@ void FaceDetectionProviderMac::CreateFaceDetection(
     mojo::PendingReceiver<mojom::FaceDetection> receiver,
     mojom::FaceDetectorOptionsPtr options) {
   // Vision Framework needs at least MAC OS X 10.13.
-  if (@available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     // Vision is more accurate than Core Image Framework, but it also needs more
     // processing time.
     if (!options->fast_mode) {
