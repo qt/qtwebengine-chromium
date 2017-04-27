@@ -80,6 +80,13 @@ class CONTENT_EXPORT RenderWidgetInputHandler {
   // to the browser.
   bool ProcessTouchAction(cc::TouchAction touch_action);
 
+  bool ime_composition_replacement() const {
+      return ime_composition_replacement_;
+  }
+  void set_ime_composition_replacement(bool ime_composition_replacement) {
+      ime_composition_replacement_ = ime_composition_replacement;
+  }
+
   // Process the new cursor and returns true if it has changed from the last
   // cursor.
   bool DidChangeCursor(const WebCursor& cursor);
@@ -122,6 +129,10 @@ class CONTENT_EXPORT RenderWidgetInputHandler {
 
   // Indicates if the next sequence of Char events should be suppressed or not.
   bool suppress_next_char_events_ = false;
+
+  // Used to suppress notification about text selection changes triggered by
+  // IME composition when it replaces text.
+  bool ime_composition_replacement_;
 
   // Whether the last injected scroll gesture was a GestureScrollBegin. Used to
   // determine which GestureScrollUpdate is the first in a gesture sequence for

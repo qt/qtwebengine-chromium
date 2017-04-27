@@ -4089,9 +4089,10 @@ void RenderFrameHostImpl::OnDidStopLoading() {
 
 void RenderFrameHostImpl::OnSelectionChanged(const base::string16& text,
                                              uint32_t offset,
-                                             const gfx::Range& range) {
+                                             const gfx::Range& range,
+                                             bool user_initiated) {
   has_selection_ = !text.empty();
-  GetRenderWidgetHost()->SelectionChanged(text, offset, range);
+  GetRenderWidgetHost()->SelectionChanged(text, offset, range, user_initiated);
 }
 
 void RenderFrameHostImpl::FocusedElementChanged(

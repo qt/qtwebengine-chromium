@@ -814,10 +814,11 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ContextMenu,
 // Notification that the text selection has changed.
 // Note: The second parameter is the character based offset of the
 // base::string16 text in the document.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_SelectionChanged,
+IPC_MESSAGE_ROUTED4(FrameHostMsg_SelectionChanged,
                     base::string16 /* text covers the selection range */,
                     uint32_t /* the offset of the text in the document */,
-                    gfx::Range /* selection range in the document */)
+                    gfx::Range /* selection range in the document */,
+                    bool /* selection is triggered by user input */)
 
 // Displays a dialog to confirm that the user wants to navigate away from the
 // page. Replies true if yes, and false otherwise. The reply string is ignored,

@@ -466,7 +466,8 @@ class CONTENT_EXPORT RenderFrameImpl
   bool IsFTPDirectoryListing() override;
   void SetSelectedText(const base::string16& selection_text,
                        size_t offset,
-                       const gfx::Range& range) override;
+                       const gfx::Range& range,
+                       bool user_initiated) override;
   void AddMessageToConsole(blink::mojom::ConsoleMessageLevel level,
                            const std::string& message) override;
   PreviewsState GetPreviewsState() override;
@@ -885,7 +886,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // it has changed.
   // TODO(varunjain): delete this method once we figure out how to keep
   // selection handles in sync with the webpage.
-  void SyncSelectionIfRequired(bool is_empty_selection);
+  void SyncSelectionIfRequired(bool is_empty_selection, bool user_initiated);
 
   void ScrollFocusedEditableElementIntoRect(const gfx::Rect& rect);
   void ResetHasScrolledFocusedEditableIntoView();

@@ -1608,7 +1608,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDidStopLoading();
   void OnSelectionChanged(const base::string16& text,
                           uint32_t offset,
-                          const gfx::Range& range);
+                          const gfx::Range& range,
+                          bool user_initiated);
   void OnSetNeedsOcclusionTracking(bool needs_tracking);
   void OnFrameDidCallFocus();
   void OnSaveImageFromDataURL(const std::string& url_str);

@@ -2029,6 +2029,7 @@ void RenderWidget::OnImeSetComposition(
   }
 #endif
   ImeEventGuard guard(weak_ptr_factory_.GetWeakPtr());
+  input_handler_->set_ime_composition_replacement(replacement_range.IsValid());
   blink::WebInputMethodController* controller = GetInputMethodController();
   if (!controller ||
       !controller->SetComposition(
@@ -2045,6 +2046,7 @@ void RenderWidget::OnImeSetComposition(
       host->ImeCancelComposition();
     }
   }
+  input_handler_->set_ime_composition_replacement(false);
   UpdateCompositionInfo(false /* not an immediate request */);
 }
 
