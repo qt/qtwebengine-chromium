@@ -228,7 +228,8 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // Notifies the browser of text selection changes made.
   virtual void SetSelectedText(const base::string16& selection_text,
                                size_t offset,
-                               const gfx::Range& range) = 0;
+                               const gfx::Range& range,
+                               bool user_initiated) = 0;
 
   // Ensures that builtin mojo bindings modules are available in |context|.
   virtual void EnsureMojoBuiltinsAreAvailable(
