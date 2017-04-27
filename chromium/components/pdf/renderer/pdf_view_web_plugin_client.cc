@@ -198,7 +198,7 @@ void PdfViewWebPluginClient::TextSelectionChanged(
     const blink::WebString& selection_text,
     uint32_t offset,
     const gfx::Range& range) {
-  GetFrame()->TextSelectionChanged(selection_text, offset, range);
+  GetFrame()->TextSelectionChanged(selection_text, offset, range, /* user_initiated = */true);
 }
 
 std::unique_ptr<blink::WebAssociatedURLLoader>
