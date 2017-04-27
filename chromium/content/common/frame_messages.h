@@ -1301,10 +1301,11 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ContextMenu, content::ContextMenuParams)
 // Notification that the text selection has changed.
 // Note: The second parameter is the character based offset of the
 // base::string16 text in the document.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_SelectionChanged,
+IPC_MESSAGE_ROUTED4(FrameHostMsg_SelectionChanged,
                     base::string16 /* text covers the selection range */,
                     uint32_t /* the offset of the text in the document */,
-                    gfx::Range /* selection range in the document */)
+                    gfx::Range /* selection range in the document */,
+                    bool /* selection is triggered by user input */)
 
 // A request to run a JavaScript dialog.
 IPC_SYNC_MESSAGE_ROUTED3_2(FrameHostMsg_RunJavaScriptDialog,

@@ -216,6 +216,7 @@ RenderWidgetInputHandler::RenderWidgetInputHandler(
       handling_injected_scroll_params_(nullptr),
       handling_event_type_(WebInputEvent::kUndefined),
       suppress_next_char_events_(false),
+      ime_composition_replacement_(false),
       last_injected_gesture_was_begin_(false) {
   DCHECK(delegate);
   DCHECK(widget);
