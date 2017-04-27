@@ -379,7 +379,8 @@ interface LocalFrameHost {
   // base::string16 text in the document.
   TextSelectionChanged(mojo_base.mojom.BigString16 text,
                        uint32 offset,
-                       gfx.mojom.Range range);
+                       gfx.mojom.Range range,
+                       bool user_initiated);
 
   // Show a popup menu using native controls on Mac or Android.
   // The popup menu is hidden when the mojo channel is closed.

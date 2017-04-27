@@ -104,12 +104,14 @@ class CONTENT_EXPORT TextInputManager {
 
     void SetSelection(const base::string16& text,
                       size_t offset,
-                      const gfx::Range& range);
+                      const gfx::Range& range,
+                      bool user_initiated);
 
     const base::string16& selected_text() const { return selected_text_; }
     size_t offset() const { return offset_; }
     const gfx::Range& range() const { return range_; }
     const base::string16& text() const { return text_; }
+    bool user_initiated() const { return user_initiated_; }
 
    private:
     // The offset of the text stored in |text| relative to the start of the web
@@ -128,6 +130,9 @@ class CONTENT_EXPORT TextInputManager {
     // Part of the text on the page which includes the highlighted text plus
     // possibly several characters before and after it.
     base::string16 text_;
+
+    // True if text selection is triggered by user input.
+    bool user_initiated_ = false;
   };
 
   explicit TextInputManager(bool should_do_learning);
@@ -201,7 +206,8 @@ class CONTENT_EXPORT TextInputManager {
   void SelectionChanged(RenderWidgetHostViewBase* view,
                         const base::string16& text,
                         size_t offset,
-                        const gfx::Range& range);
+                        const gfx::Range& range,
+                        bool user_initiated);
 
   // Registers the given |view| for tracking its TextInputState. This is called
   // by any view which has updates in its TextInputState (whether tab's RWHV or

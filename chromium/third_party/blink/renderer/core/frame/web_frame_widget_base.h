@@ -325,6 +325,7 @@ class CORE_EXPORT WebFrameWidgetBase
   void SetCursor(const ui::Cursor& cursor) override;
   bool HandlingInputEvent() override;
   void SetHandlingInputEvent(bool handling) override;
+  bool ImeCompositionReplacement() override;
   void ProcessInputEventSynchronouslyForTesting(const WebCoalescedInputEvent&,
                                                 HandledEventCallback) override;
   WebInputEventResult DispatchBufferedTouchEvents() override;
