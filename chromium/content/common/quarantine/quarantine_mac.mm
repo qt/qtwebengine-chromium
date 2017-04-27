@@ -239,7 +239,10 @@ bool AddQuarantineMetadataToFile(const base::FilePath& file,
   if (@available(macos 10.10, *)) {
     success = GetQuarantineProperties(file, &properties);
   } else {
+#if !defined(MAC_OS_X_VERSION_10_10) || \
+    MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_10
     success = GetQuarantinePropertiesDeprecated(file, &properties);
+#endif
   }
 
   if (!success)
@@ -283,7 +286,12 @@ bool AddQuarantineMetadataToFile(const base::FilePath& file,
   if (@available(macos 10.10, *)) {
     return SetQuarantineProperties(file, properties);
   } else {
+#if !defined(MAC_OS_X_VERSION_10_10) || \
+    MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_10
     return SetQuarantinePropertiesDeprecated(file, properties);
+#else
+    return false;
+#endif
   }
 }
 
@@ -317,7 +325,10 @@ bool IsFileQuarantined(const base::FilePath& file,
   if (@available(macos 10.10, *)) {
     success = GetQuarantineProperties(file, &properties);
   } else {
+#if !defined(MAC_OS_X_VERSION_10_10) || \
+    MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_10
     success = GetQuarantinePropertiesDeprecated(file, &properties);
+#endif
   }
 
   if (!success || !properties)
