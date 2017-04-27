@@ -714,7 +714,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Called from a RenderFrameHost when the text selection has changed.
   void SelectionChanged(const std::u16string& text,
                         uint32_t offset,
-                        const gfx::Range& range);
+                        const gfx::Range& range,
+                        bool user_initiated);
 
   size_t in_flight_event_count() const { return in_flight_event_count_; }
 

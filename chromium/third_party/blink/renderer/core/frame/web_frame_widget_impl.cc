@@ -2400,6 +2400,11 @@ void WebFrameWidgetImpl::SetHandlingInputEvent(bool handling) {
   widget_base_->input_handler().set_handling_input_event(handling);
 }
 
+bool WebFrameWidgetImpl::ImeCompositionReplacement()
+{
+    return widget_base_->input_handler().ime_composition_replacement();
+}
+
 void WebFrameWidgetImpl::ProcessInputEventSynchronouslyForTesting(
     const WebCoalescedInputEvent& event,
     WidgetBaseInputHandler::HandledEventCallback callback) {
@@ -3593,7 +3598,8 @@ void WebFrameWidgetImpl::Replace(const String& word) {
   // If the resulting selection is not actually a change in selection, we do not
   // need to explicitly notify about the selection change.
   focused_frame->Client()->SyncSelectionIfRequired(
-      blink::SyncCondition::kNotForced);
+      blink::SyncCondition::kNotForced, false /* is_empty_selection */,
+      true /* user_initiated */);
 }
 
 void WebFrameWidgetImpl::ReplaceMisspelling(const String& word) {

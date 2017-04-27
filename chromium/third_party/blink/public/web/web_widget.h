@@ -153,6 +153,8 @@ class WebWidget {
   // Set state that the widget is in the process of handling input events.
   virtual void SetHandlingInputEvent(bool handling) = 0;
 
+  virtual bool ImeCompositionReplacement() = 0;
+
   // Process the input event, blocking until complete.
   virtual void ProcessInputEventSynchronouslyForTesting(
       const WebCoalescedInputEvent&) = 0;

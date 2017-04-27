@@ -2078,7 +2078,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                              blink::mojom::FocusType focus_type) override;
   void TextSelectionChanged(const std::u16string& text,
                             uint32_t offset,
-                            const gfx::Range& range) override;
+                            const gfx::Range& range,
+                            bool user_initiated) override;
   void ShowPopupMenu(
       mojo::PendingRemote<blink::mojom::PopupMenuClient> popup_client,
       const gfx::Rect& bounds,

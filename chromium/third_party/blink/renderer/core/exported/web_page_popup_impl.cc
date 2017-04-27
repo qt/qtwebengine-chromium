@@ -479,6 +479,10 @@ void WebPagePopupImpl::SetHandlingInputEvent(bool handling) {
   widget_base_->input_handler().set_handling_input_event(handling);
 }
 
+bool WebPagePopupImpl::ImeCompositionReplacement() {
+  return widget_base_->input_handler().ime_composition_replacement();
+}
+
 void WebPagePopupImpl::ProcessInputEventSynchronouslyForTesting(
     const WebCoalescedInputEvent& event) {
   widget_base_->input_handler().HandleInputEvent(event, nullptr,
