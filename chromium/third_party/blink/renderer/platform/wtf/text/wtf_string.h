@@ -65,7 +65,7 @@ class WTF_EXPORT String {
   static constexpr size_type npos = kNotFound;
 
   // Construct a null string, distinguishable from an empty string.
-  String() = default;
+  String() {}
 
   // Construct a string with UTF-16 data.
   explicit String(base::span<const UChar> utf16_data);
