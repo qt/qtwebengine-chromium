@@ -720,7 +720,7 @@ class BLINK_EXPORT WebLocalFrameClient {
   // TextInputState may have changed call DidChangeSelection instead.
   // If the browser selection may not match the last synced
   // value, SyncCondition::kForced can be passed to force a sync.
-  virtual void SyncSelectionIfRequired(SyncCondition force_sync, bool is_empty_selection) {}
+  virtual void SyncSelectionIfRequired(SyncCondition force_sync, bool is_empty_selection, bool user_initiated) {}
 
   // TODO(https://crbug.com/787252): Remove the methods below and use the
   // Supplement mechanism.

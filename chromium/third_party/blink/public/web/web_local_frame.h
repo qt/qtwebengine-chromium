@@ -479,7 +479,8 @@ class WebLocalFrame : public WebFrame {
 
   virtual void TextSelectionChanged(const WebString& selection_text,
                                     uint32_t offset,
-                                    const gfx::Range& range) = 0;
+                                    const gfx::Range& range,
+                                    bool user_initiated) = 0;
 
   // Expands the selection to a word around the caret and returns
   // true. Does nothing and returns false if there is no caret or
