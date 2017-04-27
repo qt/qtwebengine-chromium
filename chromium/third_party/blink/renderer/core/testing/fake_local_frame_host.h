@@ -107,7 +107,8 @@ class FakeLocalFrameHost : public mojom::blink::LocalFrameHost {
                              blink::mojom::FocusType focus_type) override;
   void TextSelectionChanged(const WTF::String& text,
                             uint32_t offset,
-                            const gfx::Range& range) override;
+                            const gfx::Range& range,
+                            bool user_initiated) override;
   void ShowPopupMenu(
       mojo::PendingRemote<mojom::blink::PopupMenuClient> popup_client,
       const gfx::Rect& bounds,
