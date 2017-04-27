@@ -66,7 +66,7 @@ class WTF_EXPORT String {
 
  public:
   // Construct a null string, distinguishable from an empty string.
-  String() = default;
+  String() {}
 
   // Construct a string with UTF-16 data.
   String(const UChar* characters, unsigned length);

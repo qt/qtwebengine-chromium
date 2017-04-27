@@ -1908,7 +1908,7 @@ RTCPeerConnectionHandler::AddTrack(
           ->IncrementStreamCounter();
     }
   }
-  return platform_transceiver;
+  return std::unique_ptr<RTCRtpTransceiverPlatform>(platform_transceiver.release());
 }
 
 void RTCPeerConnectionHandler::AddTrackOnSignalingThread(
@@ -2044,7 +2044,7 @@ RTCPeerConnectionHandler::RemoveTrackUnifiedPlan(
   }
   std::unique_ptr<RTCRtpTransceiverPlatform> platform_transceiver =
       std::move(transceiver);
-  return platform_transceiver;
+  return std::unique_ptr<RTCRtpTransceiverPlatform>(platform_transceiver.release());
 }
 
 void RTCPeerConnectionHandler::RemoveTrackUnifiedPlanOnSignalingThread(

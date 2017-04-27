@@ -36,7 +36,10 @@ class PLATFORM_EXPORT ScriptFetchOptions final {
   // string, parser metadata is "not-parser-inserted", credentials mode is
   // "same-origin", and referrer policy is the empty string." [spec text]
   ScriptFetchOptions()
-      : parser_state_(ParserDisposition::kNotParserInserted),
+      : nonce_(),
+        integrity_metadata_(),
+        integrity_attribute_(),
+        parser_state_(ParserDisposition::kNotParserInserted),
         credentials_mode_(network::mojom::CredentialsMode::kSameOrigin),
         referrer_policy_(network::mojom::ReferrerPolicy::kDefault),
         importance_(mojom::FetchImportanceMode::kImportanceAuto) {}

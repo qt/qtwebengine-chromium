@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/memory/ptr_util.h"
 #include "base/optional.h"
 #include "base/stl_util.h"
@@ -35,7 +36,7 @@ namespace mac {
 void TouchIdAuthenticator::IsAvailable(
     AuthenticatorConfig config,
     base::OnceCallback<void(bool is_available)> callback) {
-  if (__builtin_available(macOS 10.12.2, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     TouchIdContext::TouchIdAvailable(std::move(config), std::move(callback));
     return;
   }
@@ -85,7 +86,7 @@ void TouchIdAuthenticator::InitializeAuthenticator(base::OnceClosure callback) {
 
 void TouchIdAuthenticator::MakeCredential(CtapMakeCredentialRequest request,
                                           MakeCredentialCallback callback) {
-  if (__builtin_available(macOS 10.12.2, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     DCHECK(!operation_);
     operation_ = std::make_unique<MakeCredentialOperation>(
         std::move(request), &credential_store_, std::move(callback));
@@ -98,7 +99,7 @@ void TouchIdAuthenticator::MakeCredential(CtapMakeCredentialRequest request,
 void TouchIdAuthenticator::GetAssertion(CtapGetAssertionRequest request,
                                         CtapGetAssertionOptions options,
                                         GetAssertionCallback callback) {
-  if (__builtin_available(macOS 10.12.2, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     DCHECK(!operation_);
     operation_ = std::make_unique<GetAssertionOperation>(
         std::move(request), &credential_store_, std::move(callback));

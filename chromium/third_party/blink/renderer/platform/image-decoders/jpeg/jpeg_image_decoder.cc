@@ -1171,7 +1171,7 @@ cc::ImageHeaderMetadata JPEGImageDecoder::MakeMetadataForDecodeAcceleration()
 // If you need a specific implementation for other J_COLOR_SPACE values,
 // please add a full template specialization for this function below.
 template <J_COLOR_SPACE colorSpace>
-void SetPixel(ImageFrame::PixelData*, JSAMPARRAY samples, int column) = delete;
+void SetPixel(ImageFrame::PixelData*, JSAMPARRAY samples, int column);
 
 // Used only for debugging with libjpeg (instead of libjpeg-turbo).
 template <>

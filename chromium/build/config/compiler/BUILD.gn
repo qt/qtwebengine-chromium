@@ -527,7 +527,7 @@ config("compiler") {
     ldflags += [ "-Wl,-z,keep-text-section-prefix" ]
   }
 
-  if (is_clang && !is_nacl && !use_xcode_clang) {
+  if (is_clang && !is_nacl && !use_xcode_clang && !use_qt) {
     cflags += [ "-fcrash-diagnostics-dir=" + clang_diagnostic_dir ]
 
     # TODO(hans): Remove this once Clang generates better optimized debug info
@@ -2375,7 +2375,7 @@ config("symbols") {
     # All configs using /DEBUG should include this:
     configs = [ ":win_pdbaltpath" ]
 
-    if (is_clang) {
+    if (is_clang && !use_qt) {
       # Use constructor debug mode. This option reduces debug info more than
       # -fno-standalone-debug by emitting class type information only when
       # constructors are emitted.
@@ -2415,7 +2415,7 @@ config("symbols") {
     }
 
     # TODO(https://crbug.com/1050118): Investigate missing debug info on mac.
-    if (is_clang && !is_nacl && !use_xcode_clang && !is_apple) {
+    if (is_clang && !is_nacl && !use_xcode_clang && !is_apple && !use_qt) {
       cflags += [
         "-Xclang",
         "-debug-info-kind=constructor",

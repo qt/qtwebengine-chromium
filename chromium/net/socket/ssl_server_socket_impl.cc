@@ -927,7 +927,8 @@ SSLServerContextImpl::SSLServerContextImpl(
     X509Certificate* certificate,
     EVP_PKEY* pkey,
     const SSLServerConfig& ssl_server_config)
-    : ssl_server_config_(ssl_server_config), cert_(certificate) {
+    : ssl_server_config_(ssl_server_config), cert_(certificate),
+      private_key_(nullptr) {
   CHECK(pkey);
   pkey_ = bssl::UpRef(pkey);
   Init();

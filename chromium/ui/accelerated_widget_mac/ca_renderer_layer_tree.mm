@@ -13,6 +13,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/mac/foundation_util.h"
 #include "base/trace_event/trace_event.h"
 #include "components/metal_util/hdr_copier_layer.h"

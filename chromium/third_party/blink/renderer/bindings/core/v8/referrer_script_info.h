@@ -28,7 +28,7 @@ class CORE_EXPORT ReferrerScriptInfo {
     kClassicScriptCORSCrossOrigin,
     kOther
   };
-  ReferrerScriptInfo() {}
+  ReferrerScriptInfo() : nonce_() {}
   ReferrerScriptInfo(const KURL& base_url,
                      network::mojom::CredentialsMode credentials_mode,
                      const String& nonce,
