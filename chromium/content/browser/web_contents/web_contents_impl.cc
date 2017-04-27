@@ -580,7 +580,7 @@ std::unique_ptr<WebContents> WebContents::CreateWithSessionStorage(
   new_contents->Init(params);
   if (outer_web_contents)
     outer_web_contents->InnerWebContentsCreated(new_contents.get());
-  return new_contents;
+  return std::unique_ptr<WebContents>(new_contents.release());
 }
 
 void WebContentsImpl::FriendWrapper::AddCreatedCallbackForTesting(
@@ -2939,7 +2939,7 @@ std::unique_ptr<WebContents> WebContentsImpl::Clone() {
   tc->GetController().CopyStateFrom(&primary_frame_tree_.controller(), true);
   observers_.NotifyObservers(&WebContentsObserver::DidCloneToNewWebContents,
                              this, tc.get());
-  return tc;
+  return std::unique_ptr<WebContents>(tc.release());
 }
 
 WebContents* WebContentsImpl::DeprecatedGetWebContents() {
