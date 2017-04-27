@@ -227,7 +227,7 @@ WebWorkerFetchContextImpl::CloneForNestedWorker() {
 
   child_preference_watchers_.AddPtr(std::move(preference_watcher));
 
-  return new_context;
+  return std::unique_ptr<blink::WebWorkerFetchContext>(new_context.release());
 }
 
 void WebWorkerFetchContextImpl::InitializeOnWorkerThread() {
@@ -275,7 +275,7 @@ WebWorkerFetchContextImpl::CreateURLLoaderFactory() {
   if (blink::ServiceWorkerUtils::IsServicificationEnabled())
     ResetServiceWorkerURLLoaderFactory();
 
-  return factory;
+  return std::unique_ptr<blink::WebURLLoaderFactory>(factory.release());
 }
 
 std::unique_ptr<blink::WebURLLoaderFactory>

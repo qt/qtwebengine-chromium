@@ -15,6 +15,7 @@
 #include "services/shape_detection/face_detection_provider_win.h"
 #elif defined(OS_MACOSX)
 #include <dlfcn.h>
+#include "base/mac/mac_util.h"
 #include "services/shape_detection/barcode_detection_provider_mac.h"
 #include "services/shape_detection/face_detection_provider_mac.h"
 #else
@@ -36,7 +37,7 @@ std::unique_ptr<service_manager::Service> ShapeDetectionService::Create() {
 
 ShapeDetectionService::ShapeDetectionService() {
 #if defined(OS_MACOSX)
-  if (__builtin_available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     vision_framework_ =
         dlopen("/System/Library/Frameworks/Vision.framework/Vision", RTLD_LAZY);
   }
@@ -45,7 +46,7 @@ ShapeDetectionService::ShapeDetectionService() {
 
 ShapeDetectionService::~ShapeDetectionService() {
 #if defined(OS_MACOSX)
-  if (__builtin_available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     if (vision_framework_)
       dlclose(vision_framework_);
   }

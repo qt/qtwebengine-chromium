@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/shape_detection/barcode_detection_impl_mac.h"
 #include "services/shape_detection/barcode_detection_impl_mac_vision.h"
@@ -29,7 +30,7 @@ void BarcodeDetectionProviderMac::CreateBarcodeDetection(
     mojom::BarcodeDetectionRequest request,
     mojom::BarcodeDetectorOptionsPtr options) {
   // Vision Framework needs at least MAC OS X 10.13.
-  if (@available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     auto impl =
         std::make_unique<BarcodeDetectionImplMacVision>(std::move(options));
     auto* impl_ptr = impl.get();
@@ -39,7 +40,7 @@ void BarcodeDetectionProviderMac::CreateBarcodeDetection(
   }
 
   // Barcode detection needs at least MAC OS X 10.10.
-  if (@available(macOS 10.10, *)) {
+  if (base::mac::IsAtLeastOS10_10()) {
     mojo::MakeStrongBinding(std::make_unique<BarcodeDetectionImplMac>(),
                             std::move(request));
   }
@@ -48,7 +49,7 @@ void BarcodeDetectionProviderMac::CreateBarcodeDetection(
 void BarcodeDetectionProviderMac::EnumerateSupportedFormats(
     EnumerateSupportedFormatsCallback callback) {
   // Vision Framework needs at least MAC OS X 10.13.
-  if (@available(macOS 10.13, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     // Vision recognizes more barcode symbologies than Core Image Framework.
     std::move(callback).Run(
         {mojom::BarcodeFormat::AZTEC, mojom::BarcodeFormat::CODE_128,
@@ -61,7 +62,7 @@ void BarcodeDetectionProviderMac::EnumerateSupportedFormats(
   }
 
   // Barcode detection needs at least MAC OS X 10.10.
-  if (@available(macOS 10.10, *)) {
+  if (base::mac::IsAtLeastOS10_10()) {
     // Mac implementation supports only one BarcodeFormat.
     std::move(callback).Run({mojom::BarcodeFormat::QR_CODE});
     return;
