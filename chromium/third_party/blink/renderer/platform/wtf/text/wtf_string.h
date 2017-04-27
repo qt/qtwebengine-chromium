@@ -145,7 +145,7 @@ class WTF_EXPORT String {
   // [string.cons] --------------------------------------------------
 
   // Construct a null string, distinguishable from an empty string.
-  String() = default;
+  String() {}
 
   // Construct a string with UTF-16 data.
   explicit String(base::span<const UChar> utf16_data);

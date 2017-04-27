@@ -220,7 +220,7 @@
 #define HAVE_DECL_STRSEP 1
 
 /* Define to 1 if you have the <endian.h> header file. */
-#define HAVE_ENDIAN_H 1
+#define HAVE_ENDIAN_H 0
 
 /* Define to 1 if you have the 'faccessat' function. */
 #define HAVE_FACCESSAT 1
