@@ -361,7 +361,7 @@ NetworkService::CreateNetworkContextWithBuilder(
       std::make_unique<NetworkContext>(this, std::move(request),
                                        std::move(params), std::move(builder));
   *url_request_context = network_context->url_request_context();
-  return network_context;
+  return std::move(network_context);
 }
 
 std::unique_ptr<NetworkService> NetworkService::CreateForTesting() {

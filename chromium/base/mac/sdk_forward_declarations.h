@@ -218,9 +218,11 @@ BASE_EXPORT extern NSString* const CIDetectorTypeText;
 #if !defined(MAC_OS_X_VERSION_10_12) || \
     MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_12
 
+#ifndef TOOLKIT_QT
 @interface NSWindow (SierraSDK)
 @property(class) BOOL allowsAutomaticWindowTabbing;
 @end
+#endif
 
 #endif  // MAC_OS_X_VERSION_10_12
 
@@ -283,6 +285,10 @@ typedef void (^VNRequestCompletionHandler)(VNRequest* request, NSError* error);
 @interface VNDetectFaceLandmarksRequest
     : VNImageBasedRequest<VNFaceObservationAccepting>
 @end
+
+#ifndef NS_STRING_ENUM
+#define NS_STRING_ENUM
+#endif
 
 // VNImageRequestHandler forward declarations.
 typedef NSString* VNImageOption NS_STRING_ENUM;

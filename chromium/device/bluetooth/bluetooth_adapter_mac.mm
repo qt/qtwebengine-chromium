@@ -102,7 +102,7 @@ base::WeakPtr<BluetoothAdapterMac> BluetoothAdapterMac::CreateAdapterForTest(
 // static
 BluetoothUUID BluetoothAdapterMac::BluetoothUUIDWithCBUUID(CBUUID* uuid) {
   // UUIDString only available OS X >= 10.10.
-  if (@available(macOS 10.10, *)) {
+  if (base::mac::IsAtLeastOS10_10()) {
     std::string uuid_c_string = base::SysNSStringToUTF8([uuid UUIDString]);
     return device::BluetoothUUID(uuid_c_string);
   } else {

@@ -694,6 +694,7 @@ class ProxyResolutionService::PacFileDeciderPoller {
         last_error_(init_net_error),
         last_script_data_(init_script_data),
         last_poll_time_(TimeTicks::Now()),
+        default_poll_policy_(),
         weak_factory_(this) {
     // Set the initial poll delay.
     next_poll_mode_ = poll_policy()->GetNextDelay(
