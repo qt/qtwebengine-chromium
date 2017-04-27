@@ -136,7 +136,7 @@ bool IOSurfaceSetColorSpace(IOSurfaceRef io_surface,
       color_space_name = kCGColorSpaceExtendedLinearSRGB;
     }
   }
-  if (__builtin_available(macos 10.15, *)) {
+  if (base::mac::IsAtLeastOS10_15()) {
     if (color_space == ColorSpace(ColorSpace::PrimaryID::BT2020,
                                   ColorSpace::TransferID::SMPTEST2084,
                                   ColorSpace::MatrixID::BT2020_NCL,

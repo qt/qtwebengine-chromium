@@ -518,7 +518,7 @@ config("compiler") {
     ldflags += [ "-Wl,-z,keep-text-section-prefix" ]
   }
 
-  if (is_clang && !is_nacl && !use_xcode_clang) {
+  if (is_clang && !is_nacl && !use_xcode_clang && !use_qt) {
     cflags += [ "-fcrash-diagnostics-dir=" +
                 rebase_path("//tools/clang/crashreports", root_build_dir) ]
 
@@ -2271,7 +2271,7 @@ config("symbols") {
     # All configs using /DEBUG should include this:
     configs = [ ":win_pdbaltpath" ]
 
-    if (is_clang) {
+    if (is_clang && !use_qt) {
       # Use constructor debug mode. This option reduces debug info more than
       # -fno-standalone-debug by emitting class type information only when
       # constructors are emitted.
@@ -2318,7 +2318,7 @@ config("symbols") {
       cflags += [ "-g2" ]
     }
 
-    if (is_clang && !is_nacl && !use_xcode_clang) {
+    if (is_clang && !is_nacl && !use_xcode_clang && !use_qt) {
       cflags += [
         "-Xclang",
         "-debug-info-kind=constructor",
