@@ -288,7 +288,7 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
   // there are slight differences, like we only bump last update check time on
   // OK status.
 
-  if (response_head.headers->response_code() / 100 != 2) {
+  if (response_head.headers && response_head.headers->response_code() / 100 != 2) {
     // Non-2XX HTTP status code is handled as an error.
     std::string error_message =
         base::StringPrintf(kServiceWorkerBadHTTPResponseError,
@@ -326,7 +326,7 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
     // Check the path restriction defined in the spec:
     // https://w3c.github.io/ServiceWorker/#service-worker-script-response
     std::string service_worker_allowed;
-    bool has_header = response_head.headers->EnumerateHeader(
+    bool has_header = response_head.headers && response_head.headers->EnumerateHeader(
         nullptr, kServiceWorkerAllowed, &service_worker_allowed);
     std::string error_message;
     if (!ServiceWorkerUtils::IsPathRestrictionSatisfied(
