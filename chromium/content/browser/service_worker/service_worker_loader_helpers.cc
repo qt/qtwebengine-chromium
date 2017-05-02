@@ -22,7 +22,7 @@ bool CheckResponseHead(
     blink::ServiceWorkerStatusCode* out_service_worker_status,
     network::URLLoaderCompletionStatus* out_completion_status,
     std::string* out_error_message) {
-  if (response_head.headers->response_code() / 100 != 2) {
+  if (response_head.headers && response_head.headers->response_code() / 100 != 2) {
     // Non-2XX HTTP status code is handled as an error.
     *out_completion_status =
         network::URLLoaderCompletionStatus(net::ERR_INVALID_RESPONSE);
