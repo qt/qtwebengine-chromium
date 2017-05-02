@@ -157,6 +157,9 @@ TrialTokenValidator::GetValidTokensFromHeaders(
   if (!IsTrialPossibleOnOrigin(origin.GetURL()))
     return tokens;
 
+  if (!headers)
+    return tokens;
+
   size_t iter = 0;
   std::string token;
   while (headers->EnumerateHeader(&iter, "Origin-Trial", &token)) {
