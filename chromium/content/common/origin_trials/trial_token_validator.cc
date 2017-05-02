@@ -101,12 +101,14 @@ TrialTokenValidator::GetValidTokensFromHeaders(
 
   size_t iter = 0;
   std::string token;
-  while (headers->EnumerateHeader(&iter, "Origin-Trial", &token)) {
-    std::string token_feature;
-    if (TrialTokenValidator::ValidateToken(token, origin, &token_feature) ==
-        blink::WebOriginTrialTokenStatus::kSuccess) {
-      (*tokens)[token_feature].push_back(token);
-    }
+  if (headers) {
+      while (headers->EnumerateHeader(&iter, "Origin-Trial", &token)) {
+        std::string token_feature;
+        if (TrialTokenValidator::ValidateToken(token, origin, &token_feature) ==
+            blink::WebOriginTrialTokenStatus::kSuccess) {
+          (*tokens)[token_feature].push_back(token);
+        }
+      }
   }
   return tokens;
 }
