@@ -445,7 +445,8 @@ void HttpResponseInfo::Persist(base::Pickle* pickle,
                       HttpResponseHeaders::PERSIST_SANS_SECURITY_STATE;
   }
 
-  headers->Persist(pickle, persist_options);
+  if (headers.get())
+    headers->Persist(pickle, persist_options);
 
   if (ssl_info.is_valid()) {
     ssl_info.cert->Persist(pickle);
