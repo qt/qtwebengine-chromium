@@ -143,13 +143,13 @@ net::LoadState ServiceWorkerWriteToCacheJob::GetLoadState() const {
 }
 
 bool ServiceWorkerWriteToCacheJob::GetCharset(std::string* charset) {
-  if (!http_info())
+  if (!http_info() || !http_info()->headers)
     return false;
   return http_info()->headers->GetCharset(charset);
 }
 
 bool ServiceWorkerWriteToCacheJob::GetMimeType(std::string* mime_type) const {
-  if (!http_info())
+  if (!http_info() || !http_info()->headers)
     return false;
   return http_info()->headers->GetMimeType(mime_type);
 }
@@ -312,7 +312,8 @@ void ServiceWorkerWriteToCacheJob::OnResponseStarted(net::URLRequest* request,
     NotifyStartErrorHelper(error, kServiceWorkerFetchScriptError);
     return;
   }
-  if (request->GetResponseCode() / 100 != 2) {
+  if (request->url().SchemeIsHTTPOrHTTPS()
+      && request->GetResponseCode() / 100 != 2) {
     std::string error_message = base::StringPrintf(
         kServiceWorkerBadHTTPResponseError, request->GetResponseCode());
     NotifyStartErrorHelper(net::ERR_INVALID_RESPONSE, error_message);
@@ -416,7 +417,8 @@ bool ServiceWorkerWriteToCacheJob::CheckPathRestriction(
     net::URLRequest* request) {
   std::string service_worker_allowed;
   const net::HttpResponseHeaders* headers = request->response_headers();
-  bool has_header = headers->EnumerateHeader(nullptr, kServiceWorkerAllowed,
+  bool has_header = headers
+                 && headers->EnumerateHeader(nullptr, kServiceWorkerAllowed,
                                              &service_worker_allowed);
 
   std::string error_message;
