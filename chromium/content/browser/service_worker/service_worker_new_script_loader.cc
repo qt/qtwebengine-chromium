@@ -213,7 +213,7 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
     // Check the path restriction defined in the spec:
     // https://w3c.github.io/ServiceWorker/#service-worker-script-response
     std::string service_worker_allowed;
-    bool has_header = response_head->headers->EnumerateHeader(
+    bool has_header = response_head->headers && response_head->headers->EnumerateHeader(
         nullptr, ServiceWorkerConsts::kServiceWorkerAllowed,
         &service_worker_allowed);
     if (!ServiceWorkerUtils::IsPathRestrictionSatisfied(
