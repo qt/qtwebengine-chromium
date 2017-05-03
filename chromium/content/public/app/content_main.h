@@ -57,6 +57,7 @@ struct ContentMainParams {
   // on the MessageLoop. It's owned by the test code.
   base::Closure* ui_task;
 
+  bool setup_signal_handlers;
 #if defined(USE_AURA)
   aura::Env::Mode env_mode = aura::Env::Mode::LOCAL;
 #endif
