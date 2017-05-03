@@ -949,6 +949,9 @@ WebInputEventResult EventHandler::handleMouseReleaseEvent(
   HitTestRequest request(hitType);
   MouseEventWithHitTestResults mev =
       EventHandlingUtil::performMouseEventHitTest(m_frame, request, mouseEvent);
+  Node* releaseNode = (mev.innerNode() && mev.innerNode()->isTextNode())
+                          ? FlatTreeTraversal::parent(*mev.innerNode())
+                          : mev.innerNode();
   LocalFrame* subframe =
       m_capturingMouseEventsNode.get()
           ? subframeForTargetNode(m_capturingMouseEventsNode.get())
@@ -981,7 +984,7 @@ WebInputEventResult EventHandler::handleMouseReleaseEvent(
       mev.event(), Vector<WebMouseEvent>());
 
   WebInputEventResult clickEventResult =
-      m_mouseEventManager->dispatchMouseClickIfNeeded(mev);
+      m_mouseEventManager->dispatchMouseClickIfNeeded(mev, releaseNode);
 
   m_scrollManager->clearResizeScrollableArea(false);
 
@@ -1690,8 +1693,9 @@ GestureEventWithHitTestResults EventHandler::hitTestResultForGestureEvent(
     if (!hitFrame)
       hitFrame = m_frame;
     hitTestResult = EventHandlingUtil::hitTestResultInFrame(
-        hitFrame, hitFrame->view()->rootFrameToContents(
-                      flooredIntPoint(adjustedEvent.positionInRootFrame())),
+        hitFrame,
+        hitFrame->view()->rootFrameToContents(
+            flooredIntPoint(adjustedEvent.positionInRootFrame())),
         (hitType | HitTestRequest::ReadOnly) & ~HitTestRequest::ListBased);
   }
 
