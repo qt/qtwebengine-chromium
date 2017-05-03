@@ -39,9 +39,9 @@ grit("components_resources") {
     defines += [ "HIDE_ERROR_MESSAGE_FOR_DINO_PAGE" ]
   }
 
-  deps = [
-    ":compressed_about_credits",
-  ]
+#  deps = [
+#    ":compressed_about_credits",
+#  ]
 }
 
 grit("components_scaled_resources") {
