@@ -34,9 +34,9 @@ grit("components_resources") {
   ]
   defines = [ "enable_print_preview=$enable_print_preview" ]
 
-  deps = [
-    ":compressed_about_credits",
-  ]
+#  deps = [
+#    ":compressed_about_credits",
+#  ]
 }
 
 grit("components_scaled_resources") {
