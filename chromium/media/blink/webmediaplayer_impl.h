@@ -171,6 +171,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   bool copyVideoTextureToPlatformTexture(gpu::gles2::GLES2Interface* gl,
                                          unsigned int texture,
+                                         unsigned int internal_format,
+                                         unsigned int type,
                                          bool premultiply_alpha,
                                          bool flip_y) override;
 
@@ -707,6 +709,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   // Whether the video requires a user gesture to resume after it was paused in
   // the background. Affects the value of ShouldPauseVideoWhenHidden().
   bool video_locked_when_paused_when_hidden_ = false;
+
+  base::CancelableCallback<void(base::TimeTicks)> frame_time_report_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerImpl);
 };

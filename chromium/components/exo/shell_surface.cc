@@ -596,7 +596,7 @@ void ShellSurface::SetGeometry(const gfx::Rect& geometry) {
 void ShellSurface::SetRectangularShadowEnabled(bool enabled) {
   TRACE_EVENT1("exo", "ShellSurface::SetRectangularShadowEnabled", "enabled",
                enabled);
-  shadow_underlay_in_surface_ = false;
+  pending_shadow_underlay_in_surface_ = false;
   shadow_enabled_ = enabled;
 }
 
@@ -604,7 +604,7 @@ void ShellSurface::SetRectangularShadow_DEPRECATED(
     const gfx::Rect& content_bounds) {
   TRACE_EVENT1("exo", "ShellSurface::SetRectangularShadow_DEPRECATED",
                "content_bounds", content_bounds.ToString());
-  shadow_underlay_in_surface_ = false;
+  pending_shadow_underlay_in_surface_ = false;
   shadow_content_bounds_ = content_bounds;
   shadow_enabled_ = !content_bounds.IsEmpty();
 }
@@ -613,7 +613,7 @@ void ShellSurface::SetRectangularSurfaceShadow(
     const gfx::Rect& content_bounds) {
   TRACE_EVENT1("exo", "ShellSurface::SetRectangularSurfaceShadow",
                "content_bounds", content_bounds.ToString());
-  shadow_underlay_in_surface_ = true;
+  pending_shadow_underlay_in_surface_ = true;
   shadow_content_bounds_ = content_bounds;
   shadow_enabled_ = !content_bounds.IsEmpty();
 }
@@ -847,13 +847,26 @@ base::string16 ShellSurface::GetWindowTitle() const {
   return title_;
 }
 
+void ShellSurface::SaveWindowPlacement(const gfx::Rect& bounds,
+                                       ui::WindowShowState show_state) {
+  if (bounds_mode_ != BoundsMode::CLIENT)
+    WidgetDelegate::SaveWindowPlacement(bounds, show_state);
+}
+
+bool ShellSurface::GetSavedWindowPlacement(
+    const views::Widget* widget,
+    gfx::Rect* bounds,
+    ui::WindowShowState* show_state) const {
+  if (bounds_mode_ != BoundsMode::CLIENT)
+    return WidgetDelegate::GetSavedWindowPlacement(widget, bounds, show_state);
+  return false;
+}
+
 void ShellSurface::WindowClosing() {
   if (resizer_)
     EndDrag(true /* revert */);
   SetEnabled(false);
   widget_ = nullptr;
-  shadow_overlay_ = nullptr;
-  shadow_underlay_ = nullptr;
 }
 
 views::Widget* ShellSurface::GetWidget() {
@@ -1143,8 +1156,7 @@ void ShellSurface::CreateShellSurfaceWidget(ui::WindowShowState show_state) {
 
   // Allow the client to request bounds that do not fill the entire work area
   // when maximized, or the entire display when fullscreen.
-  window_state->set_allow_set_bounds_in_maximized(
-      bounds_mode_ == BoundsMode::CLIENT);
+  window_state->set_allow_set_bounds_direct(bounds_mode_ == BoundsMode::CLIENT);
 
   // Notify client of initial state if different than normal.
   if (window_state->GetStateType() != ash::wm::WINDOW_STATE_TYPE_NORMAL &&
@@ -1388,7 +1400,7 @@ void ShellSurface::UpdateWidgetBounds() {
   ash::wm::WindowState* window_state =
       ash::wm::GetWindowState(widget_->GetNativeWindow());
   if (window_state->IsMaximizedOrFullscreenOrPinned() &&
-      !window_state->allow_set_bounds_in_maximized()) {
+      !window_state->allow_set_bounds_direct()) {
     return;
   }
 
@@ -1449,8 +1461,23 @@ void ShellSurface::UpdateSurfaceBounds() {
 void ShellSurface::UpdateShadow() {
   if (!widget_ || !surface_)
     return;
+  if (shadow_underlay_in_surface_ != pending_shadow_underlay_in_surface_) {
+    shadow_underlay_in_surface_ = pending_shadow_underlay_in_surface_;
+    shadow_overlay_.reset();
+    shadow_underlay_.reset();
+  }
+
   aura::Window* window = widget_->GetNativeWindow();
-  if (!shadow_enabled_) {
+
+  bool underlay_capture_events =
+      WMHelper::GetInstance()->IsSpokenFeedbackEnabled() && widget_->IsActive();
+  bool black_background_enabled =
+      ((widget_->IsFullscreen() || widget_->IsMaximized()) ||
+       underlay_capture_events) &&
+      ash::wm::GetWindowState(window)->allow_set_bounds_direct() &&
+      window->layer()->GetTargetTransform().IsIdentity();
+
+  if (!shadow_enabled_ && !black_background_enabled) {
     wm::SetShadowElevation(window, wm::ShadowElevation::NONE);
     if (shadow_underlay_)
       shadow_underlay_->Hide();
@@ -1497,11 +1524,12 @@ void ShellSurface::UpdateShadow() {
 
     // Always create and show the underlay, even in maximized/fullscreen.
     if (!shadow_underlay_) {
-      shadow_underlay_ = new aura::Window(nullptr);
+      shadow_underlay_ = base::MakeUnique<aura::Window>(nullptr);
+      shadow_underlay_->set_owned_by_parent(false);
       shadow_underlay_event_handler_ =
           base::MakeUnique<ShadowUnderlayEventHandler>();
       shadow_underlay_->SetTargetHandler(shadow_underlay_event_handler_.get());
-      DCHECK(shadow_underlay_->owned_by_parent());
+      DCHECK(!shadow_underlay_->owned_by_parent());
       // Ensure the background area inside the shadow is solid black.
       // Clients that provide translucent contents should not be using
       // rectangular shadows as this method requires opaque contents to
@@ -1510,17 +1538,13 @@ void ShellSurface::UpdateShadow() {
       shadow_underlay_->layer()->SetColor(SK_ColorBLACK);
       DCHECK(shadow_underlay_->layer()->fills_bounds_opaquely());
       if (shadow_underlay_in_surface_) {
-        surface_->window()->AddChild(shadow_underlay_);
-        surface_->window()->StackChildAtBottom(shadow_underlay_);
+        surface_->window()->AddChild(shadow_underlay());
+        surface_->window()->StackChildAtBottom(shadow_underlay());
       } else {
-        window->AddChild(shadow_underlay_);
-        window->StackChildAtBottom(shadow_underlay_);
+        window->AddChild(shadow_underlay());
+        window->StackChildAtBottom(shadow_underlay());
       }
     }
-
-    bool underlay_capture_events =
-        WMHelper::GetInstance()->IsSpokenFeedbackEnabled() &&
-        widget_->IsActive();
 
     float shadow_underlay_opacity = shadow_background_opacity_;
 
@@ -1531,10 +1555,7 @@ void ShellSurface::UpdateShadow() {
     //    thus the background can be visible).
     // 3) the window has no transform (the transformed background may
     //    not cover the entire background, e.g. overview mode).
-    if ((widget_->IsFullscreen() || widget_->IsMaximized() ||
-         underlay_capture_events) &&
-        ash::wm::GetWindowState(window)->allow_set_bounds_in_maximized() &&
-        window->layer()->GetTargetTransform().IsIdentity()) {
+    if (black_background_enabled) {
       if (shadow_underlay_in_surface_) {
         shadow_underlay_bounds = gfx::Rect(surface_->window()->bounds().size());
       } else {
@@ -1558,6 +1579,9 @@ void ShellSurface::UpdateShadow() {
 
     shadow_underlay_->SetBounds(shadow_underlay_bounds);
 
+    if (!shadow_underlay_->IsVisible())
+      shadow_underlay_->Show();
+
     // TODO(oshima): Setting to the same value should be no-op.
     // crbug.com/642223.
     if (shadow_underlay_opacity !=
@@ -1565,25 +1589,24 @@ void ShellSurface::UpdateShadow() {
       shadow_underlay_->layer()->SetOpacity(shadow_underlay_opacity);
     }
 
-    shadow_underlay_->Show();
-
     wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
     // Maximized/Fullscreen window does not create a shadow.
     if (!shadow)
       return;
 
     if (!shadow_overlay_) {
-      shadow_overlay_ = new aura::Window(nullptr);
-      DCHECK(shadow_overlay_->owned_by_parent());
+      shadow_overlay_ = base::MakeUnique<aura::Window>(nullptr);
+      shadow_overlay_->set_owned_by_parent(false);
+      DCHECK(!shadow_overlay_->owned_by_parent());
       shadow_overlay_->set_ignore_events(true);
       shadow_overlay_->Init(ui::LAYER_NOT_DRAWN);
       shadow_overlay_->layer()->Add(shadow->layer());
-      window->AddChild(shadow_overlay_);
+      window->AddChild(shadow_overlay());
 
       if (shadow_underlay_in_surface_) {
-        window->StackChildBelow(shadow_overlay_, surface_->window());
+        window->StackChildBelow(shadow_overlay(), surface_->window());
       } else {
-        window->StackChildAbove(shadow_overlay_, shadow_underlay_);
+        window->StackChildAbove(shadow_overlay(), shadow_underlay());
       }
       shadow_overlay_->Show();
     }
