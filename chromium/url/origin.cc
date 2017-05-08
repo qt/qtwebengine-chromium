@@ -149,7 +149,7 @@ GURL Origin::GetURL() const {
     return GURL("file:///");
 
   if (scheme() == kQrcScheme)
-    return GURL("qrc:///");
+    return GURL("qrc://");
 
   GURL tuple_url(tuple_.GetURL());
 
