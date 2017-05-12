@@ -121,7 +121,14 @@ void PingLoader::sendViolationReport(LocalFrame* frame, const KURL& reportURL, P
 {
     ResourceRequest request(reportURL);
     request.setHTTPMethod(HTTPNames::POST);
-    request.setHTTPContentType(type == ContentSecurityPolicyViolationReport ? "application/csp-report" : "application/json");
+    switch (type) {
+      case ContentSecurityPolicyViolationReport:
+        request.setHTTPContentType("application/csp-report");
+        break;
+      case XSSAuditorViolationReport:
+        request.setHTTPContentType("application/xss-auditor-report");
+        break;
+    }
     request.setHTTPBody(report);
     finishPingRequestInitialization(request, frame);
 
