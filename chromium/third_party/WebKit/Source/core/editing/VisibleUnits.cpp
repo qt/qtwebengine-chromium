@@ -2186,8 +2186,10 @@ static LayoutObject* associatedLayoutObjectOf(const Node& node, int offsetInNode
             return nullptr;
         // TODO(yosin): We're not sure when |firstLetterLayoutObject| has
         // multiple child layout object.
-        ASSERT(firstLetterLayoutObject->slowFirstChild() == firstLetterLayoutObject->slowLastChild());
-        return firstLetterLayoutObject->slowFirstChild();
+        LayoutObject* child = firstLetterLayoutObject->slowFirstChild();
+        RELEASE_ASSERT(child && child->isText());
+        ASSERT(child ==  firstLetterLayoutObject->slowLastChild());
+        return child;
     }
     // TODO(yosin): We should rename |LayoutTextFramge::length()| instead of
     // |end()|, once |LayoutTextFramge| has it. See http://crbug.com/545789

@@ -633,12 +633,12 @@ void TextIteratorAlgorithm<Strategy>::handleTextNodeFirstLetter(LayoutTextFragme
         return;
 
     LayoutObject* firstLetter = pseudoLayoutObject->slowFirstChild();
-    ASSERT(firstLetter);
 
-    m_remainingTextBox = m_textBox;
-    m_textBox = toLayoutText(firstLetter)->firstTextBox();
     m_sortedTextBoxes.clear();
+    m_remainingTextBox = m_textBox;
+    ASSERT(firstLetter && firstLetter->isText());
     m_firstLetterText = toLayoutText(firstLetter);
+    m_textBox = m_firstLetterText->firstTextBox();
 }
 
 template<typename Strategy>
