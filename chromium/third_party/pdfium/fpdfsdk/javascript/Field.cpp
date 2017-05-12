@@ -2882,7 +2882,8 @@ bool Field::buttonGetIcon(IJS_Context* cc,
 
   v8::Local<v8::Object> pObj =
       pRuntime->NewFxDynamicObj(CJS_Icon::g_nObjDefnID);
-  ASSERT(pObj.IsEmpty() == false);
+  if (pObj.IsEmpty())
+    return false;
 
   CJS_Icon* pJS_Icon = static_cast<CJS_Icon*>(pRuntime->GetObjectPrivate(pObj));
   Icon* pIcon = (Icon*)pJS_Icon->GetEmbedObject();
@@ -3032,7 +3033,8 @@ bool Field::getArray(IJS_Context* cc,
   for (const auto& pStr : swSort) {
     v8::Local<v8::Object> pObj =
         pRuntime->NewFxDynamicObj(CJS_Field::g_nObjDefnID);
-    ASSERT(!pObj.IsEmpty());
+    if (pObj.IsEmpty())
+      return false;
 
     CJS_Field* pJSField =
         static_cast<CJS_Field*>(pRuntime->GetObjectPrivate(pObj));
