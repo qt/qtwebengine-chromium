@@ -140,6 +140,7 @@ public:
     // coordinate/rely on the browser process to help dispatch/coordinate work.
     LocalFrame* deprecatedLocalMainFrame() const { return toLocalFrame(m_mainFrame); }
 
+    void willUnloadDocument(const Document&);
     void documentDetached(Document*);
 
     bool openedByDOM() const;

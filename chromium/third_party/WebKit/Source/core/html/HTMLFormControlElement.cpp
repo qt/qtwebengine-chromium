@@ -483,7 +483,7 @@ void HTMLFormControlElement::findCustomValidationMessageTextDirection(const Stri
 void HTMLFormControlElement::updateVisibleValidationMessage()
 {
     Page* page = document().page();
-    if (!page || page->visibilityState() != PageVisibilityStateVisible)
+    if (!page || page->visibilityState() != PageVisibilityStateVisible || document().unloadStarted())
         return;
   if (page->suspended())
     return;
