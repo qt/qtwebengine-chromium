@@ -133,6 +133,7 @@ LayerTreeHost::LayerTreeHost(InitParams* params, CompositorMode mode)
       device_scale_factor_(1.f),
       painted_device_scale_factor_(1.f),
       visible_(false),
+      content_source_id_(0),
       page_scale_factor_(1.f),
       min_page_scale_factor_(1.f),
       max_page_scale_factor_(1.f),
@@ -363,6 +364,9 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   sync_tree->SetDeviceScaleFactor(device_scale_factor_);
   sync_tree->set_painted_device_scale_factor(painted_device_scale_factor_);
   host_impl->SetDebugState(debug_state_);
+
+  sync_tree->set_content_source_id(content_source_id_);
+
   if (pending_page_scale_animation_) {
     sync_tree->SetPendingPageScaleAnimation(
         std::move(pending_page_scale_animation_));
@@ -515,6 +519,14 @@ void LayerTreeHost::SetNeedsDisplayOnAllLayers() {
     }
   }
 }
+
+void LayerTreeHost::SetContentSourceId(uint32_t id) {
+  if (content_source_id_ == id)
+    return;
+  content_source_id_ = id;
+  SetNeedsCommit();
+}
+
 
 const RendererCapabilities& LayerTreeHost::GetRendererCapabilities() const {
   return proxy_->GetRendererCapabilities();

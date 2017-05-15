@@ -253,6 +253,9 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void SetDeviceScaleFactor(float device_scale_factor);
   void SetPaintedDeviceScaleFactor(float painted_device_scale_factor);
 
+  void SetContentSourceId(uint32_t);
+  uint32_t content_source_id() const { return content_source_id_; }
+
   float device_scale_factor() const { return device_scale_factor_; }
 
   void UpdateTopControlsState(TopControlsState constraints,
@@ -491,6 +494,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   float painted_device_scale_factor_;
 
   bool visible_;
+
+  uint32_t content_source_id_;
 
   float page_scale_factor_;
   float min_page_scale_factor_;

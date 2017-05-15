@@ -92,6 +92,7 @@ class CONTENT_EXPORT RenderWidgetCompositor
   cc::ManagedMemoryPolicy GetGpuMemoryPolicy(
       const cc::ManagedMemoryPolicy& policy);
   void SetPaintedDeviceScaleFactor(float device_scale);
+  void SetContentSourceId(uint32_t);
 
   // WebLayerTreeView implementation.
   void setRootLayer(const blink::WebLayer& layer) override;

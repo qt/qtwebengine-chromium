@@ -477,7 +477,8 @@ RenderWidget::RenderWidget(CompositorDependencies* compositor_deps,
       popup_origin_scale_for_emulation_(0.f),
       frame_swap_message_queue_(new FrameSwapMessageQueue()),
       resizing_mode_selector_(new ResizingModeSelector()),
-      has_host_context_menu_location_(false) {
+      has_host_context_menu_location_(false),
+      current_content_source_id_(0) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
   DCHECK(RenderThread::Get());
@@ -1251,6 +1252,7 @@ void RenderWidget::initializeLayerTreeView() {
   compositor_ = RenderWidgetCompositor::Create(this, compositor_deps_);
   compositor_->setViewportSize(physical_backing_size_);
   OnDeviceScaleFactorChanged();
+  compositor_->SetContentSourceId(current_content_source_id_);
   // For background pages and certain tests, we don't want to trigger
   // OutputSurface creation.
   if (compositor_never_visible_ || !RenderThreadImpl::current())
@@ -2115,6 +2117,15 @@ void RenderWidget::didUpdateTextOfFocusedElementByNonUserInput() {
 #if defined(OS_ANDROID)
   text_field_is_dirty_ = true;
 #endif
+}
+
+uint32_t RenderWidget::GetContentSourceId() {
+  return current_content_source_id_;
+}
+
+void RenderWidget::IncrementContentSourceId() {
+  if (compositor_)
+    compositor_->SetContentSourceId(++current_content_source_id_);
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>

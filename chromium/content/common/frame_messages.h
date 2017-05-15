@@ -276,6 +276,11 @@ IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
   // True if the document for the load is enforcing strict mixed content
   // checking.
   IPC_STRUCT_MEMBER(bool, should_enforce_strict_mixed_content_checking)
+
+  // This is a non-decreasing value that the browser process can use to
+  // identify and discard compositor frames that correspond to now-unloaded
+  // web content.
+  IPC_STRUCT_MEMBER(uint32_t, content_source_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameMsg_PostMessage_Params)

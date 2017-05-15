@@ -1135,4 +1135,8 @@ void RenderWidgetCompositor::SetPaintedDeviceScaleFactor(
   layer_tree_host_->SetPaintedDeviceScaleFactor(device_scale);
 }
 
+void RenderWidgetCompositor::SetContentSourceId(uint32_t id) {
+  layer_tree_host_->SetContentSourceId(id);
+}
+
 }  // namespace content
