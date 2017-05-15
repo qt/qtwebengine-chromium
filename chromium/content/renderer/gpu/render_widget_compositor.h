@@ -106,6 +106,7 @@ class CONTENT_EXPORT RenderWidgetCompositor
   void OnHandleCompositorProto(const std::vector<uint8_t>& proto);
   void SetPaintedDeviceScaleFactor(float device_scale);
   void SetDeviceColorSpace(const gfx::ColorSpace& color_space);
+  void SetContentSourceId(uint32_t);
 
   // WebLayerTreeView implementation.
   void setRootLayer(const blink::WebLayer& layer) override;

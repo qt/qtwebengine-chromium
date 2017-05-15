@@ -111,6 +111,11 @@ struct StructTraits<cc::mojom::CompositorFrameMetadataDataView,
     return metadata.referenced_surfaces;
   }
 
+  static uint32_t content_source_id(
+      const cc::CompositorFrameMetadata& metadata) {
+    return metadata.content_source_id;
+  }
+
   static bool Read(cc::mojom::CompositorFrameMetadataDataView data,
                    cc::CompositorFrameMetadata* out);
 };

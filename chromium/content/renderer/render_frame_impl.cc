@@ -3605,6 +3605,7 @@ void RenderFrameImpl::didCommitProvisionalLoad(
   // For new page navigations, the browser process needs to be notified of the
   // first paint of that page, so it can cancel the timer that waits for it.
   if (is_main_frame_ && !navigation_state->WasWithinSamePage()) {
+    GetRenderWidget()->IncrementContentSourceId();
     render_view_->QueueMessage(
         new ViewHostMsg_DidFirstPaintAfterLoad(render_view_->routing_id_),
         MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE);
@@ -4826,6 +4827,8 @@ void RenderFrameImpl::SendDidCommitProvisionalLoad(
     params.page_state = SingleHistoryItemToPageState(item);
     post_id = ExtractPostId(item);
   }
+
+  params.content_source_id = GetRenderWidget()->GetContentSourceId();
 
   // When using subframe navigation entries, method and post id are set for all
   // frames. Otherwise, they are only set for the main frame navigation.

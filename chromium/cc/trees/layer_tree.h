@@ -125,6 +125,9 @@ class CC_EXPORT LayerTree : public MutatorHostClient {
     return inputs_.painted_device_scale_factor;
   }
 
+  void SetContentSourceId(uint32_t);
+  uint32_t content_source_id() const { return inputs_.content_source_id_; }
+
   void SetDeviceColorSpace(const gfx::ColorSpace& device_color_space);
   const gfx::ColorSpace& device_color_space() const {
     return inputs_.device_color_space;
@@ -263,6 +266,8 @@ class CC_EXPORT LayerTree : public MutatorHostClient {
     float min_page_scale_factor;
     float max_page_scale_factor;
     gfx::ColorSpace device_color_space;
+
+    uint32_t content_source_id_;
 
     SkColor background_color;
     bool has_transparent_background;

@@ -82,6 +82,12 @@ class CC_EXPORT CompositorFrameMetadata {
   // This is the set of Surfaces that are referenced by this frame.
   std::vector<SurfaceId> referenced_surfaces;
 
+  // This is a value that allows the browser to associate compositor frames
+  // with the content that they represent -- typically top-level page loads.
+  // TODO(kenrb, fsamuel): This should eventually by SurfaceID, when they
+  // become available in all renderer processes. See https://crbug.com/695579.
+  uint32_t content_source_id = 0;
+
  private:
   CompositorFrameMetadata(const CompositorFrameMetadata& other);
   CompositorFrameMetadata operator=(const CompositorFrameMetadata&) = delete;

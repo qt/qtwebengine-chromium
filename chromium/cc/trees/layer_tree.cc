@@ -30,6 +30,7 @@ LayerTree::Inputs::Inputs()
       page_scale_factor(1.f),
       min_page_scale_factor(1.f),
       max_page_scale_factor(1.f),
+      content_source_id_(0),
       background_color(SK_ColorWHITE),
       has_transparent_background(false),
       have_scroll_event_handlers(false),
@@ -215,6 +216,13 @@ void LayerTree::SetDeviceColorSpace(const gfx::ColorSpace& device_color_space) {
       this, [](Layer* layer) { layer->SetNeedsDisplay(); });
 }
 
+void LayerTree::SetContentSourceId(uint32_t id) {
+  if (inputs_.content_source_id_ == id)
+    return;
+  inputs_.content_source_id_ = id;
+  SetNeedsCommit();
+}
+
 void LayerTree::RegisterLayer(Layer* layer) {
   DCHECK(!LayerById(layer->id()));
   DCHECK(!in_paint_layer_contents_);
@@ -396,6 +404,8 @@ void LayerTree::PushPropertiesTo(LayerTreeImpl* tree_impl,
       inputs_.painted_device_scale_factor);
 
   tree_impl->SetDeviceColorSpace(inputs_.device_color_space);
+
+  tree_impl->set_content_source_id(inputs_.content_source_id_);
 
   if (inputs_.pending_page_scale_animation) {
     tree_impl->SetPendingPageScaleAnimation(

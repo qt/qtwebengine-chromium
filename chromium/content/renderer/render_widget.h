@@ -415,6 +415,9 @@ class CONTENT_EXPORT RenderWidget
   // Helper to convert |point| using ConvertWindowToViewport().
   gfx::Point ConvertWindowPointToViewport(const gfx::Point& point);
 
+  uint32_t GetContentSourceId();
+  void IncrementContentSourceId();
+
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
   // without ref-counting is an error.
@@ -858,6 +861,19 @@ class CONTENT_EXPORT RenderWidget
   // being handled. If the current event results in starting a drag/drop
   // session, this info is sent to the browser along with other drag/drop info.
   DragEventSourceInfo possible_drag_event_info_;
+
+  // This is initialized to zero and is incremented on each non-same-page
+  // navigation commit by RenderFrameImpl. At that time it is sent to the
+  // compositor so that it can tag compositor frames, and RenderFrameImpl is
+  // responsible for sending it to the browser process to be used to match
+  // each compositor frame to the most recent page navigation before it was
+  // generated.
+  // This only applies to main frames, and is not touched for subframe
+  // RenderWidgets, where there is no concern around displaying unloaded
+  // content.
+  // TODO(kenrb, fsamuel): This should be removed when SurfaceIDs can be used
+  // to replace it. See https://crbug.com/695579.
+  uint32_t current_content_source_id_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidget);
 };
