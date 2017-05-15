@@ -137,6 +137,8 @@ class FrameBuffer {
                                         FrameMap::iterator info)
       EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
+  void ClearFramesAndHistory() EXCLUSIVE_LOCKS_REQUIRED(crit_);
+
   FrameMap frames_ GUARDED_BY(crit_);
 
   rtc::CriticalSection crit_;
@@ -145,6 +147,7 @@ class FrameBuffer {
   VCMJitterEstimator* const jitter_estimator_ GUARDED_BY(crit_);
   VCMTiming* const timing_ GUARDED_BY(crit_);
   VCMInterFrameDelay inter_frame_delay_ GUARDED_BY(crit_);
+  uint32_t last_decoded_frame_timestamp_ GUARDED_BY(crit_);
   FrameMap::iterator last_decoded_frame_it_ GUARDED_BY(crit_);
   FrameMap::iterator last_continuous_frame_it_ GUARDED_BY(crit_);
   int num_frames_history_ GUARDED_BY(crit_);
