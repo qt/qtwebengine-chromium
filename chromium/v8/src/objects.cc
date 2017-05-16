@@ -17082,7 +17082,13 @@ Handle<Derived> HashTable<Derived, Shape, Key>::New(
   if (capacity > HashTable::kMaxCapacity) {
     v8::internal::Heap::FatalProcessOutOfMemory("invalid table size", true);
   }
+  return New(isolate, capacity, pretenure);
+}
 
+template <typename Derived, typename Shape, typename Key>
+Handle<Derived> HashTable<Derived, Shape, Key>::New(Isolate* isolate,
+                                                    int capacity,
+                                                    PretenureFlag pretenure) {
   Factory* factory = isolate->factory();
   int length = EntryToIndex(capacity);
   Handle<FixedArray> array = factory->NewFixedArray(length, pretenure);
@@ -17094,7 +17100,6 @@ Handle<Derived> HashTable<Derived, Shape, Key>::New(
   table->SetCapacity(capacity);
   return table;
 }
-
 
 // Find entry for key otherwise return kNotFound.
 template <typename Derived, typename Shape>
@@ -17363,6 +17368,10 @@ template Handle<SeededNumberDictionary>
 Dictionary<SeededNumberDictionary, SeededNumberDictionaryShape, uint32_t>::
     New(Isolate*, int at_least_space_for, PretenureFlag pretenure);
 
+template Handle<SeededNumberDictionary>
+Dictionary<SeededNumberDictionary, SeededNumberDictionaryShape,
+           uint32_t>::NewEmpty(Isolate*, PretenureFlag pretenure);
+
 template Handle<UnseededNumberDictionary>
 Dictionary<UnseededNumberDictionary, UnseededNumberDictionaryShape, uint32_t>::
     New(Isolate*, int at_least_space_for, PretenureFlag pretenure);
@@ -17370,6 +17379,10 @@ Dictionary<UnseededNumberDictionary, UnseededNumberDictionaryShape, uint32_t>::
 template Handle<NameDictionary>
 Dictionary<NameDictionary, NameDictionaryShape, Handle<Name> >::
     New(Isolate*, int n, PretenureFlag pretenure);
+
+template Handle<NameDictionary>
+Dictionary<NameDictionary, NameDictionaryShape, Handle<Name>>::NewEmpty(
+    Isolate*, PretenureFlag pretenure);
 
 template Handle<GlobalDictionary>
 Dictionary<GlobalDictionary, GlobalDictionaryShape, Handle<Name> >::New(
@@ -18152,6 +18165,17 @@ Handle<FixedArray> Dictionary<Derived, Shape, Key>::BuildIterationIndicesArray(
   return iteration_order;
 }
 
+
+template <typename Derived, typename Shape, typename Key>
+Handle<Derived> Dictionary<Derived, Shape, Key>::NewEmpty(
+    Isolate* isolate, PretenureFlag pretenure) {
+  Handle<Derived> dict = DerivedHashTable::New(isolate, 1, pretenure);
+  // Attempt to add one element to the empty dictionary must cause reallocation.
+  DCHECK(!dict->HasSufficientCapacityToAdd(1));
+  // Initialize the next enumeration index.
+  dict->SetNextEnumerationIndex(PropertyDetails::kInitialIndex);
+  return dict;
+}
 
 template <typename Derived, typename Shape, typename Key>
 Handle<FixedArray>
