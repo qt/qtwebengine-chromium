@@ -85,6 +85,8 @@ const struct {
 } kGLImplementationNamePairs[] = {
     {kGLImplementationDesktopName, kANGLEImplementationNoneName,
      GLImplementationParts(kGLImplementationDesktopGL)},
+    {kGLImplementationCoreProfileName, kANGLEImplementationNoneName,
+      GLImplementationParts(kGLImplementationDesktopGLCoreProfile)},
     {kGLImplementationSwiftShaderName, kANGLEImplementationNoneName,
      GLImplementationParts(kGLImplementationSwiftShaderGL)},
 #if defined(OS_APPLE)
