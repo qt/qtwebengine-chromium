@@ -421,6 +421,8 @@ bool IsIDNComponentSafe(const base::char16* str,
       icu::UnicodeString(
           // Lone katakana no, so, or n
           L"[^\\p{Katakana}][\u30ce\u30f3\u30bd][^\\p{Katakana}]"
+          // - Disalow mixing of Latin and Canadian Syllabary.
+          L"|[\\p{sc=cans}].*[a-z]|[a-z].*[\\p{sc=cans}]"
           // Repeating Japanese accent characters
           L"|[\u3099\u309a\u309b\u309c][\u3099\u309a\u309b\u309c]"),
       0, status);
@@ -447,6 +449,8 @@ bool IsIDNComponentSafe(const base::char16* str,
       icu::UnicodeString(
           // Lone katakana no, so, or n
           "[^\\p{Katakana}][\\u30ce\\u30f3\\u30bd][^\\p{Katakana}]"
+          // - Disalow mixing of Latin and Canadian Syllabary.
+          "|[\\p{sc=cans}].*[a-z]|[a-z].*[\\p{sc=cans}]"
           // Repeating Japanese accent characters
           "|[\\u3099\\u309a\\u309b\\u309c][\\u3099\\u309a\\u309b\\u309c]"),
       0, status);
