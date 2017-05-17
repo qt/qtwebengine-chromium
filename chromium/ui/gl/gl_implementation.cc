@@ -133,6 +133,8 @@ const struct {
 } kGLImplementationNamePairs[] = {
     {kGLImplementationDesktopName, kANGLEImplementationNoneName,
      GLImplementationParts(kGLImplementationDesktopGL)},
+    {kGLImplementationCoreProfileName, kANGLEImplementationNoneName,
+      GLImplementationParts(kGLImplementationDesktopGLCoreProfile)},
 #if BUILDFLAG(IS_APPLE)
     {kGLImplementationAppleName, kANGLEImplementationNoneName,
      GLImplementationParts(kGLImplementationAppleGL)},
