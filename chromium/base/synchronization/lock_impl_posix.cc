@@ -75,8 +75,9 @@ LockImpl::LockImpl() {
     DCHECK_EQ(rv, 0) << ". " << SystemErrorCodeToString(rv);
   }
 #endif
-#ifndef NDEBUG
+#if !defined(NDEBUG) && 0
   // In debug, setup attributes for lock error checking.
+  // -- Disabled due to erroneous EDEADLK errors when sandboxed.
   rv = pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_ERRORCHECK);
   DCHECK_EQ(rv, 0) << ". " << SystemErrorCodeToString(rv);
 #endif
