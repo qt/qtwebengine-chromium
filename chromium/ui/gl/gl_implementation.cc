@@ -29,6 +29,7 @@ const struct {
   GLImplementation implementation;
 } kGLImplementationNamePairs[] = {
   { kGLImplementationDesktopName, kGLImplementationDesktopGL },
+  { kGLImplementationCoreProfileName, kGLImplementationDesktopGLCoreProfile },
   { kGLImplementationOSMesaName, kGLImplementationOSMesaGL },
 #if defined(OS_MACOSX)
   { kGLImplementationAppleName, kGLImplementationAppleGL },
