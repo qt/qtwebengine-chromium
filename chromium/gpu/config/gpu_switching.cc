@@ -57,7 +57,9 @@ bool SwitchableGPUsSupported(const GPUInfo& gpu_info,
       (command_line.GetSwitchValueASCII(switches::kUseGL) !=
            gl::kGLImplementationDesktopName &&
        command_line.GetSwitchValueASCII(switches::kUseGL) !=
-           gl::kGLImplementationANGLEName)) {
+           gl::kGLImplementationANGLEName &&
+       command_line.GetSwitchValueASCII(switches::kUseGL) !=
+           gl::kGLImplementationCoreProfileName)) {
     return false;
   }
   if (gpu_info.secondary_gpus.size() != 1) {
