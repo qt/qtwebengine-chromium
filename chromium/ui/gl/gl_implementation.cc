@@ -130,6 +130,8 @@ const struct {
 } kGLImplementationNamePairs[] = {
     {kGLImplementationDesktopName, kANGLEImplementationNoneName,
      GLImplementationParts(kGLImplementationDesktopGL)},
+    {kGLImplementationCoreProfileName, kANGLEImplementationNoneName,
+      GLImplementationParts(kGLImplementationDesktopGLCoreProfile)},
     {kGLImplementationEGLName, kANGLEImplementationNoneName,
      GLImplementationParts(kGLImplementationEGLGLES2)},
     {kGLImplementationANGLEName, kANGLEImplementationNoneName,
