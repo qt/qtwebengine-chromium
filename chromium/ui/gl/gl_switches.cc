@@ -8,6 +8,7 @@
 namespace gl {
 
 const char kGLImplementationDesktopName[] = "desktop";
+const char kGLImplementationCoreProfileName[] = "core_profile";
 const char kGLImplementationOSMesaName[] = "osmesa";
 const char kGLImplementationAppleName[] = "apple";
 const char kGLImplementationEGLName[] = "egl";
