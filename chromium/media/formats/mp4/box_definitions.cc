@@ -105,8 +105,17 @@ bool SampleAuxiliaryInformationOffset::Parse(BoxReader* reader) {
     RCHECK(reader->SkipBytes(8));
 
   uint32_t count;
-  RCHECK(reader->Read4(&count) &&
-         reader->HasBytes(count * (reader->version() == 1 ? 8 : 4)));
+  RCHECK(reader->Read4(&count));
+  int bytes_per_offset = reader->version() == 1 ? 8 : 4;
+
+  base::CheckedNumeric<size_t> bytes_needed =
+      base::CheckedNumeric<size_t>(bytes_per_offset);
+  bytes_needed *= count;
+  RCHECK_MEDIA_LOGGED(bytes_needed.IsValid(), reader->media_log(),
+                      "Extreme SAIO count exceeds implementation limit.");
+  RCHECK(reader->HasBytes(bytes_needed.ValueOrDie()));
+
+  RCHECK(count <= offsets.max_size());
   offsets.resize(count);
 
   for (uint32_t i = 0; i < count; i++) {
@@ -338,11 +347,16 @@ bool EditList::Parse(BoxReader* reader) {
   uint32_t count;
   RCHECK(reader->ReadFullBoxHeader() && reader->Read4(&count));
 
-  if (reader->version() == 1) {
-    RCHECK(reader->HasBytes(count * 20));
-  } else {
-    RCHECK(reader->HasBytes(count * 12));
-  }
+  const size_t bytes_per_edit = reader->version() == 1 ? 20 : 12;
+
+  base::CheckedNumeric<size_t> bytes_needed =
+      base::CheckedNumeric<size_t>(bytes_per_edit);
+  bytes_needed *= count;
+  RCHECK_MEDIA_LOGGED(bytes_needed.IsValid(), reader->media_log(),
+                      "Extreme ELST count exceeds implementation limit.");
+  RCHECK(reader->HasBytes(bytes_needed.ValueOrDie()));
+
+  RCHECK(count <= edits.max_size());
   edits.resize(count);
 
   for (std::vector<EditListEntry>::iterator edit = edits.begin();
@@ -855,16 +869,32 @@ bool TrackFragmentRun::Parse(BoxReader* reader) {
 
   int fields = sample_duration_present + sample_size_present +
       sample_flags_present + sample_composition_time_offsets_present;
-  RCHECK(reader->HasBytes(fields * sample_count));
+  const size_t bytes_per_field = 4;
 
-  if (sample_duration_present)
+  base::CheckedNumeric<size_t> bytes_needed(fields);
+  bytes_needed *= bytes_per_field;
+  bytes_needed *= sample_count;
+  RCHECK_MEDIA_LOGGED(
+      bytes_needed.IsValid(), reader->media_log(),
+      "Extreme TRUN sample count exceeds implementation limit.");
+  RCHECK(reader->HasBytes(bytes_needed.ValueOrDie()));
+
+  if (sample_duration_present) {
+    RCHECK(sample_count <= sample_durations.max_size());
     sample_durations.resize(sample_count);
-  if (sample_size_present)
+  }
+  if (sample_size_present) {
+    RCHECK(sample_count <= sample_sizes.max_size());
     sample_sizes.resize(sample_count);
-  if (sample_flags_present)
+  }
+  if (sample_flags_present) {
+    RCHECK(sample_count <= sample_flags.max_size());
     sample_flags.resize(sample_count);
-  if (sample_composition_time_offsets_present)
+  }
+  if (sample_composition_time_offsets_present) {
+    RCHECK(sample_count <= sample_composition_time_offsets.max_size());
     sample_composition_time_offsets.resize(sample_count);
+  }
 
   for (uint32_t i = 0; i < sample_count; ++i) {
     if (sample_duration_present)
@@ -906,6 +936,16 @@ bool SampleToGroup::Parse(BoxReader* reader) {
 
   uint32_t count;
   RCHECK(reader->Read4(&count));
+
+  const size_t bytes_per_entry = 8;
+  base::CheckedNumeric<size_t> bytes_needed =
+      base::CheckedNumeric<size_t>(bytes_per_entry);
+  bytes_needed *= count;
+  RCHECK_MEDIA_LOGGED(bytes_needed.IsValid(), reader->media_log(),
+                      "Extreme SBGP count exceeds implementation limit.");
+  RCHECK(reader->HasBytes(bytes_needed.ValueOrDie()));
+
+  RCHECK(count <= entries.max_size());
   entries.resize(count);
   for (uint32_t i = 0; i < count; ++i) {
     RCHECK(reader->Read4(&entries[i].sample_count) &&
@@ -944,6 +984,19 @@ bool SampleGroupDescription::Parse(BoxReader* reader) {
 
   uint32_t count;
   RCHECK(reader->Read4(&count));
+
+  // Check that we have at least two bytes for each entry before allocating a
+  // potentially huge entries vector. In reality each entry will require a
+  // variable number of bytes in excess of 2.
+  const int bytes_per_entry = 2;
+  base::CheckedNumeric<size_t> bytes_needed =
+      base::CheckedNumeric<size_t>(bytes_per_entry);
+  bytes_needed *= count;
+  RCHECK_MEDIA_LOGGED(bytes_needed.IsValid(), reader->media_log(),
+                      "Extreme SGPD count exceeds implementation limit.");
+  RCHECK(reader->HasBytes(bytes_needed.ValueOrDie()));
+
+  RCHECK(count <= entries.max_size());
   entries.resize(count);
   for (uint32_t i = 0; i < count; ++i) {
     if (version == 1) {
@@ -1024,9 +1077,10 @@ bool IndependentAndDisposableSamples::Parse(BoxReader* reader) {
   RCHECK(reader->version() == 0);
   RCHECK(reader->flags() == 0);
 
-  int sample_count = reader->size() - reader->pos();
+  size_t sample_count = reader->size() - reader->pos();
+  RCHECK(sample_count <= sample_depends_on_.max_size());
   sample_depends_on_.resize(sample_count);
-  for (int i = 0; i < sample_count; ++i) {
+  for (size_t i = 0; i < sample_count; ++i) {
     uint8_t sample_info;
     RCHECK(reader->Read1(&sample_info));
 
