@@ -36,7 +36,13 @@ bool ParamTraits<mojo::MessagePipeHandle>::Read(const base::Pickle* m,
   mojo::ScopedMessagePipeHandle handle;
   if (!MojoMessageHelper::ReadMessagePipeFrom(m, iter, &handle))
     return false;
-  DCHECK(handle.is_valid());
+
+  // Remove DCHECK as a workaround to fix CHROME_IPC_LOGGING.
+  if (!handle.is_valid()) {
+      DLOG(ERROR) << "Mojo handle is invalid";
+      return false;
+  }
+
   *r = handle.release();
   return true;
 }
