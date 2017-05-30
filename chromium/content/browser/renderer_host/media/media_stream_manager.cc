@@ -1231,6 +1231,15 @@ void MediaStreamManager::SetUpRequest(const std::string& label) {
     return;
   }
 
+  const bool is_audio_only_desktop_capture =
+    (!is_screen_capture && request->audio_type() == blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE);
+  if (is_audio_only_desktop_capture) {
+    FinalizeRequestFailed(label,
+                          request,
+                          blink::MEDIA_DEVICE_NOT_SUPPORTED);
+    return;
+  }
+
   if (!is_tab_capture && !is_screen_capture && !is_display_capture) {
     if (IsDeviceMediaType(request->audio_type()) ||
         IsDeviceMediaType(request->video_type())) {
