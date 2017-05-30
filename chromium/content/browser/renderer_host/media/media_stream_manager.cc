@@ -1115,6 +1115,15 @@ void MediaStreamManager::SetupRequest(const std::string& label) {
     return;
   }
 
+  const bool is_audio_only_desktop_capture =
+    (!is_screen_capture && audio_type == MEDIA_DESKTOP_AUDIO_CAPTURE);
+  if (is_audio_only_desktop_capture) {
+    FinalizeRequestFailed(label,
+                          request,
+                          MEDIA_DEVICE_NOT_SUPPORTED);
+    return;
+  }
+
   if (!is_web_contents_capture && !is_screen_capture) {
     if (audio_type == MEDIA_DEVICE_AUDIO_CAPTURE ||
         video_type == MEDIA_DEVICE_VIDEO_CAPTURE) {
