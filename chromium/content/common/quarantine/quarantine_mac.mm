@@ -330,7 +330,10 @@ bool IsFileQuarantined(const base::FilePath& file,
   if (base::mac::IsAtLeastOS10_10()) {
     success = GetQuarantineProperties(file, &properties);
   } else {
+#if !defined(MAC_OS_X_VERSION_10_10) || \
+    MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_10
     success = GetQuarantinePropertiesDeprecated(file, &properties);
+#endif
   }
 
   if (!success || !properties)
