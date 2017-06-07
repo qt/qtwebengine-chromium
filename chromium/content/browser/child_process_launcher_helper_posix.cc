@@ -13,6 +13,7 @@
 #include "content/browser/posix_file_descriptor_info_impl.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_descriptor_keys.h"
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
 #include "mojo/public/cpp/platform/platform_channel_endpoint.h"
@@ -112,6 +113,15 @@ std::unique_ptr<PosixFileDescriptorInfo> CreateDefaultPosixFilesToMap(
     base::GlobalDescriptors::Key key = kContentDynamicDescriptorStart;
     service_manager::SharedFileSwitchValueBuilder file_switch_value_builder;
     for (const auto& key_path_iter : required_files_map) {
+
+#if !defined(V8_USE_EXTERNAL_STARTUP_DATA)
+      if (key_path_iter.first == content::kV8NativesDataDescriptor ||
+          key_path_iter.first == content::kV8SnapshotDataDescriptor ||
+          key_path_iter.first == content::kV8ContextSnapshotDataDescriptor) {
+        continue;
+      }
+#endif  // !V8_USE_EXTERNAL_STARTUP_DATA
+
       base::MemoryMappedFile::Region region;
       base::PlatformFile file =
           OpenFileIfNecessary(key_path_iter.second, &region);
