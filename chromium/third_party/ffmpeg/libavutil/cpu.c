@@ -20,6 +20,8 @@
 // Chromium: Windows doesn't provide stdatomic.h, so use the compat version.
 #if defined(_MSC_VER)
 #include <compat/atomics/win32/stdatomic.h>
+#elif defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__) < 409
+#include <compat/atomics/gcc/stdatomic.h>
 #else
 #include <stdatomic.h>
 #endif
