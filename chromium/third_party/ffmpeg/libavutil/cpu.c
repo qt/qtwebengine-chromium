@@ -17,7 +17,12 @@
  */
 
 #include <stdint.h>
+// GCC 4.8 doesn't provide stdatomic.h, so use the compat version.
+#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__) < 409
+#include <compat/atomics/gcc/stdatomic.h>
+#else
 #include <stdatomic.h>
+#endif
 
 #include "cpu.h"
 #include "cpu_internal.h"

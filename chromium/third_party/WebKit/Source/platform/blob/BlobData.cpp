@@ -291,7 +291,7 @@ BlobDataHandle::BlobDataHandle(std::unique_ptr<BlobData> data, long long size)
 
     size_t current_memory_population = 0;
     Vector<DataElementPtr> elements;
-    const DataElementPtr null_element = nullptr;
+    const DataElementPtr null_element(nullptr);
     BlobBytesProvider* last_bytes_provider = nullptr;
     RefPtr<WebTaskRunner> file_runner = Platform::Current()->FileTaskRunner();
 
