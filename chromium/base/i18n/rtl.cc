@@ -198,7 +198,7 @@ TextDirection GetTextDirectionForLocale(const char* locale_name) {
 }
 
 TextDirection GetFirstStrongCharacterDirection(const string16& text) {
-  const UChar* string = text.c_str();
+  const UChar* string = reinterpret_cast<const UChar*>(text.c_str());
   size_t length = text.length();
   size_t position = 0;
   while (position < length) {
@@ -214,7 +214,7 @@ TextDirection GetFirstStrongCharacterDirection(const string16& text) {
 }
 
 TextDirection GetLastStrongCharacterDirection(const string16& text) {
-  const UChar* string = text.c_str();
+  const UChar* string = reinterpret_cast<const UChar*>(text.c_str());
   size_t position = text.length();
   while (position > 0) {
     UChar32 character;
@@ -229,7 +229,7 @@ TextDirection GetLastStrongCharacterDirection(const string16& text) {
 }
 
 TextDirection GetStringDirection(const string16& text) {
-  const UChar* string = text.c_str();
+  const UChar* string = reinterpret_cast<const UChar*>(text.c_str());
   size_t length = text.length();
   size_t position = 0;
 
@@ -360,7 +360,7 @@ bool UnadjustStringForLocaleDirection(string16* text) {
 #endif  // !OS_WIN
 
 bool StringContainsStrongRTLChars(const string16& text) {
-  const UChar* string = text.c_str();
+  const UChar* string = reinterpret_cast<const UChar*>(text.c_str());
   size_t length = text.length();
   size_t position = 0;
   while (position < length) {

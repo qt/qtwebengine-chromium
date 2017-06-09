@@ -35,6 +35,8 @@
 #include <algorithm>
 #include <iosfwd>
 
+#include "third_party/icu/source/common/unicode/uvernum.h"
+
 #ifdef __OBJC__
 #include <objc/objc.h>
 #endif
@@ -84,8 +86,13 @@ class WTF_EXPORT String {
 
   // Construct a string with UTF-16 data, from a null-terminated source.
   String(const UChar*);
+#if U_ICU_VERSION_MAJOR_NUM < 59
   String(const char16_t* chars)
       : String(reinterpret_cast<const UChar*>(chars)) {}
+#else
+  String(const uint16_t* chars)
+      : String(reinterpret_cast<const UChar*>(chars)) {}
+#endif
 
   // Construct a string with latin1 data.
   String(const LChar* characters, unsigned length);

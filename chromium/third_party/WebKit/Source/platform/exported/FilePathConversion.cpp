@@ -18,7 +18,7 @@ base::FilePath WebStringToFilePath(const WebString& webString) {
   String str = webString;
   if (!str.is8Bit()) {
     return base::FilePath::FromUTF16Unsafe(
-        base::StringPiece16(str.characters16(), str.length()));
+        base::StringPiece16((const base::char16*)str.characters16(), str.length()));
   }
 
 #if OS(POSIX)

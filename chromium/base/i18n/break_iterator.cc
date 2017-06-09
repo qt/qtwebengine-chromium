@@ -59,9 +59,9 @@ bool BreakIterator::Init() {
       return false;
   }
   if (break_type_ == RULE_BASED) {
-    iter_ = ubrk_openRules(rules_.c_str(),
+    iter_ = ubrk_openRules(reinterpret_cast<const UChar*>(rules_.c_str()),
                            static_cast<int32_t>(rules_.length()),
-                           string_.data(),
+                           reinterpret_cast<const UChar*>(string_.data()),
                            static_cast<int32_t>(string_.size()),
                            &parse_error,
                            &status);
@@ -72,7 +72,7 @@ bool BreakIterator::Init() {
   } else {
     iter_ = ubrk_open(break_type,
                       NULL,
-                      string_.data(),
+                      reinterpret_cast<const UChar*>(string_.data()),
                       static_cast<int32_t>(string_.size()),
                       &status);
     if (U_FAILURE(status)) {
@@ -128,7 +128,7 @@ bool BreakIterator::Advance() {
 bool BreakIterator::SetText(const base::char16* text, const size_t length) {
   UErrorCode status = U_ZERO_ERROR;
   ubrk_setText(static_cast<UBreakIterator*>(iter_),
-               text, length, &status);
+               reinterpret_cast<const UChar*>(text), length, &status);
   pos_ = 0;  // implicit when ubrk_setText is done
   prev_ = npos;
   if (U_FAILURE(status)) {

@@ -75,7 +75,7 @@ class TextRunCollection {
     } else {
       bidi_ = ubidi_open();
       UErrorCode uerror = U_ZERO_ERROR;
-      ubidi_setPara(bidi_, text_.data(), text_.size(), run.rtl, NULL, &uerror);
+      ubidi_setPara(bidi_, reinterpret_cast<const UChar*>(text_.data()), text_.size(), run.rtl, NULL, &uerror);
       if (U_SUCCESS(uerror))
         num_runs_ = ubidi_countRuns(bidi_, &uerror);
     }

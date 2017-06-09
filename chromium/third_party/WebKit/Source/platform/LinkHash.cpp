@@ -51,7 +51,7 @@ static bool resolveRelative(const KURL& base,
                                 relativeUTF8.length(), 0, buffer, &parsed);
   }
   return url::ResolveRelative(baseUTF8.data(), baseUTF8.length(), base.parsed(),
-                              relative.characters16(), relative.length(), 0,
+                              (const base::char16*)relative.characters16(), relative.length(), 0,
                               buffer, &parsed);
 }
 

@@ -44,7 +44,7 @@ bool BiDiLineIterator::Open(const string16& text, TextDirection direction) {
   bidi_ = ubidi_openSized(static_cast<int>(text.length()), 0, &error);
   if (U_FAILURE(error))
     return false;
-  ubidi_setPara(bidi_, text.data(), static_cast<int>(text.length()),
+  ubidi_setPara(bidi_, reinterpret_cast<const UChar*>(text.data()), static_cast<int>(text.length()),
                 GetParagraphLevelForDirection(direction), NULL, &error);
   return (U_SUCCESS(error) == TRUE);
 }

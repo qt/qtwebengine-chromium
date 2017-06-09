@@ -58,7 +58,7 @@ namespace {
 // For the NSS PKCS#12 library, must convert PRUnichars (shorts) to
 // a buffer of octets.  Must handle byte order correctly.
 // TODO: Is there a Mozilla way to do this?  In the string lib?
-void unicodeToItem(const PRUnichar *uni, SECItem *item)
+void unicodeToItem(const base::char16 *uni, SECItem *item)
 {
   int len = 0;
   while (uni[len++] != 0);

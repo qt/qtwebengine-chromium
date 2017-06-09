@@ -343,7 +343,7 @@ IDNSpoofChecker::IDNSpoofChecker() {
 
 bool IDNSpoofChecker::Check(base::StringPiece16 label, bool is_tld_ascii) {
   UErrorCode status = U_ZERO_ERROR;
-  int32_t result = uspoof_check(checker_, label.data(),
+  int32_t result = uspoof_check(checker_, (const UChar*)label.data(),
                                 base::checked_cast<int32_t>(label.size()),
                                 NULL, &status);
   // If uspoof_check fails (due to library failure), or if any of the checks
@@ -351,7 +351,7 @@ bool IDNSpoofChecker::Check(base::StringPiece16 label, bool is_tld_ascii) {
   if (U_FAILURE(status) || (result & USPOOF_ALL_CHECKS))
     return false;
 
-  icu::UnicodeString label_string(FALSE, label.data(),
+  icu::UnicodeString label_string(FALSE, (const UChar*)label.data(),
                                   base::checked_cast<int32_t>(label.size()));
 
   // A punycode label with 'xn--' prefix is not subject to the URL
@@ -595,7 +595,7 @@ bool IDNToUnicodeOneComponent(const base::char16* comp,
       // code units, |status| will be U_BUFFER_OVERFLOW_ERROR and we'll try
       // the conversion again, but with a sufficiently large buffer.
       output_length = uidna_labelToUnicode(
-          uidna, comp, static_cast<int32_t>(comp_len), &(*out)[original_length],
+          uidna, (const UChar*)comp, static_cast<int32_t>(comp_len), (UChar*)&(*out)[original_length],
           output_length, &info, &status);
     } while ((status == U_BUFFER_OVERFLOW_ERROR && info.errors == 0));
 

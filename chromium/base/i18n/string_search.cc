@@ -20,8 +20,8 @@ FixedPatternStringSearchIgnoringCaseAndAccents(const string16& find_this)
   const string16& dummy = find_this_;
 
   UErrorCode status = U_ZERO_ERROR;
-  search_ = usearch_open(find_this_.data(), find_this_.size(),
-                         dummy.data(), dummy.size(),
+  search_ = usearch_open(reinterpret_cast<const UChar*>(find_this_.data()), find_this_.size(),
+                         reinterpret_cast<const UChar*>(dummy.data()), dummy.size(),
                          uloc_getDefault(),
                          NULL,  // breakiter
                          &status);
@@ -41,7 +41,7 @@ FixedPatternStringSearchIgnoringCaseAndAccents::
 bool FixedPatternStringSearchIgnoringCaseAndAccents::Search(
     const string16& in_this, size_t* match_index, size_t* match_length) {
   UErrorCode status = U_ZERO_ERROR;
-  usearch_setText(search_, in_this.data(), in_this.size(), &status);
+  usearch_setText(search_, reinterpret_cast<const UChar *>(in_this.data()), in_this.size(), &status);
 
   // Default to basic substring search if usearch fails. According to
   // http://icu-project.org/apiref/icu4c/usearch_8h.html, usearch_open will fail

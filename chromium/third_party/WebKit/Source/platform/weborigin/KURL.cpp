@@ -103,7 +103,7 @@ class KURLCharsetConverter final : public url::CharsetConverter {
                         int inputLength,
                         url::CanonOutput* output) override {
     CString encoded = m_encoding->encode(
-        String(input, inputLength), WTF::URLEncodedEntitiesForUnencodables);
+        String((const UChar*)input, inputLength), WTF::URLEncodedEntitiesForUnencodables);
     output->Append(encoded.data(), static_cast<int>(encoded.length()));
   }
 
@@ -326,7 +326,7 @@ String KURL::lastPathComponent() const {
   if (m_string.is8Bit())
     url::ExtractFileName(asURLChar8Subtle(m_string), path, &file);
   else
-    url::ExtractFileName(m_string.characters16(), path, &file);
+    url::ExtractFileName((const base::char16*)m_string.characters16(), path, &file);
 
   // Bug: https://bugs.webkit.org/show_bug.cgi?id=21015 this function returns
   // a null string when the path is empty, which we duplicate here.
@@ -355,7 +355,7 @@ unsigned short KURL::port() const {
   ASSERT(!m_string.isNull());
   int port = m_string.is8Bit()
                  ? url::ParsePort(asURLChar8Subtle(m_string), m_parsed.port)
-                 : url::ParsePort(m_string.characters16(), m_parsed.port);
+                 : url::ParsePort((const base::char16*)m_string.characters16(), m_parsed.port);
   ASSERT(port != url::PORT_UNSPECIFIED);  // Checked port.len <= 0 before.
 
   if (port == url::PORT_INVALID ||
@@ -647,7 +647,7 @@ bool KURL::isHierarchical() const {
     return false;
   return m_string.is8Bit()
              ? url::IsStandard(asURLChar8Subtle(m_string), m_parsed.scheme)
-             : url::IsStandard(m_string.characters16(), m_parsed.scheme);
+             : url::IsStandard((const base::char16*)m_string.characters16(), m_parsed.scheme);
 }
 
 bool equalIgnoringFragmentIdentifier(const KURL& a, const KURL& b) {
@@ -700,7 +700,7 @@ unsigned KURL::pathAfterLastSlash() const {
   if (m_string.is8Bit())
     url::ExtractFileName(asURLChar8Subtle(m_string), m_parsed.path, &filename);
   else
-    url::ExtractFileName(m_string.characters16(), m_parsed.path, &filename);
+    url::ExtractFileName((const base::char16*)m_string.characters16(), m_parsed.path, &filename);
   return filename.begin;
 }
 
@@ -711,7 +711,7 @@ bool protocolIs(const String& url, const char* protocol) {
   if (url.is8Bit())
     return url::FindAndCompareScheme(asURLChar8Subtle(url), url.length(),
                                      protocol, 0);
-  return url::FindAndCompareScheme(url.characters16(), url.length(), protocol,
+  return url::FindAndCompareScheme((const base::char16*)url.characters16(), url.length(), protocol,
                                    0);
 }
 
@@ -744,7 +744,7 @@ void KURL::init(const KURL& base,
                                      charsetConverter, &output, &m_parsed);
   } else {
     m_isValid = url::ResolveRelative(baseUTF8.data(), baseUTF8.length(),
-                                     base.m_parsed, relative.characters16(),
+                                     base.m_parsed, (const base::char16*)relative.characters16(),
                                      clampTo<int>(relative.length()),
                                      charsetConverter, &output, &m_parsed);
   }

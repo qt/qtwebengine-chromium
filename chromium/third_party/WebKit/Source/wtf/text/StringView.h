@@ -83,8 +83,10 @@ class WTF_EXPORT StringView {
         m_characters16(chars),
         m_length(length) {}
   StringView(const UChar* chars);
+#if U_ICU_VERSION_MAJOR_NUM < 59
   StringView(const char16_t* chars)
       : StringView(reinterpret_cast<const UChar*>(chars)) {}
+#endif
 
 #if DCHECK_IS_ON()
   ~StringView();

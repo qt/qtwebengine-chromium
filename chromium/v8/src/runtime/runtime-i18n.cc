@@ -24,6 +24,7 @@
 #include "third_party/icu/source/common/unicode/ucurr.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "third_party/icu/source/common/unicode/unistr.h"
+#include "third_party/icu/source/common/unicode/ustring.h"
 #include "third_party/icu/source/common/unicode/uversion.h"
 #include "third_party/icu/source/i18n/unicode/calendar.h"
 #include "third_party/icu/source/i18n/unicode/coll.h"

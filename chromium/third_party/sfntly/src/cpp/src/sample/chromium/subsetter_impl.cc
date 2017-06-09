@@ -23,6 +23,7 @@
 #include <map>
 #include <set>
 
+#include "base/i18n/unicodestring.h"
 #include "sfntly/table/bitmap/eblc_table.h"
 #include "sfntly/table/bitmap/ebdt_table.h"
 #include "sfntly/table/bitmap/index_sub_table.h"

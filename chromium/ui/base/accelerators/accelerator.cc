@@ -216,7 +216,7 @@ base::string16 Accelerator::GetShortcutText() const {
       key = LOWORD(::MapVirtualKeyW(key_code_, MAPVK_VK_TO_CHAR));
     shortcut += key;
 #elif defined(USE_AURA) || defined(OS_MACOSX)
-    const uint16_t c = DomCodeToUsLayoutCharacter(
+    const base::char16 c = DomCodeToUsLayoutCharacter(
         UsLayoutKeyboardCodeToDomCode(key_code_), false);
     if (c != 0)
       shortcut +=

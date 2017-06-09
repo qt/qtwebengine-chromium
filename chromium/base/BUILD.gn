@@ -103,6 +103,10 @@ if (is_nacl) {
 
     configs += [ ":base_implementation" ]
 
+    if (!is_win) {
+      deps = [ "//third_party/icu:icuuc" ]
+    }
+
     visibility = [ ":base" ]
   }
 }
@@ -1065,6 +1069,10 @@ component("base") {
     ":debugging_flags",
   ]
 
+  if (!is_win) {
+    public_deps += [ "//third_party/icu:icuuc" ]
+  }
+
   # Needed for <atomic> if using newer C++ library than sysroot
   if (!use_sysroot && (is_android || is_linux) && !use_qt) {
     libs = [ "atomic" ]
@@ -1564,6 +1572,7 @@ component("i18n") {
     "i18n/time_formatting.h",
     "i18n/timezone.cc",
     "i18n/timezone.h",
+    "i18n/unicodestring.h",
     "i18n/utf8_validator_tables.cc",
     "i18n/utf8_validator_tables.h",
   ]
