@@ -215,6 +215,8 @@ class WEB_EXPORT ChromeClientImpl final : public ChromeClient {
 
   double lastFrameTimeMonotonic() const override;
 
+  void registerPopupOpeningObserver(PopupOpeningObserver*) override;
+  void unregisterPopupOpeningObserver(PopupOpeningObserver*) override;
   void notifyPopupOpeningObservers() const;
 
   void installSupplements(LocalFrame&) override;
@@ -223,8 +225,6 @@ class WEB_EXPORT ChromeClientImpl final : public ChromeClient {
   explicit ChromeClientImpl(WebViewImpl*);
 
   bool isChromeClientImpl() const override { return true; }
-  void registerPopupOpeningObserver(PopupOpeningObserver*) override;
-  void unregisterPopupOpeningObserver(PopupOpeningObserver*) override;
 
   void setCursor(const WebCursorInfo&, LocalFrame*);
 

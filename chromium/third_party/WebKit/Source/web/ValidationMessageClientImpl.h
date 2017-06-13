@@ -26,6 +26,7 @@
 #ifndef ValidationMessageClientImpl_h
 #define ValidationMessageClientImpl_h
 
+#include "core/page/PopupOpeningObserver.h"
 #include "core/page/ValidationMessageClient.h"
 #include "platform/Timer.h"
 #include "platform/geometry/IntRect.h"
@@ -39,7 +40,8 @@ class WebViewImpl;
 
 class ValidationMessageClientImpl final
     : public GarbageCollectedFinalized<ValidationMessageClientImpl>,
-      public ValidationMessageClient {
+      public ValidationMessageClient,
+      private PopupOpeningObserver {
   USING_GARBAGE_COLLECTED_MIXIN(ValidationMessageClientImpl);
 
  public:
@@ -63,6 +65,9 @@ class ValidationMessageClientImpl final
   void willUnloadDocument(const Document&) override;
   void documentDetached(const Document&) override;
   void willBeDestroyed() override;
+
+  // PopupOpeningObserver function
+  void willOpenPopup() override;
 
   WebViewImpl& m_webView;
   Member<const Element> m_currentAnchor;

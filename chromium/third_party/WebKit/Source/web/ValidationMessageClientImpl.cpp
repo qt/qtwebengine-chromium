@@ -83,6 +83,7 @@ void ValidationMessageClientImpl::showValidationMessage(
   m_webView.client()->showValidationMessage(
       anchorInViewport, m_message, toWebTextDirection(messageDir), subMessage,
       toWebTextDirection(subMessageDir));
+  m_webView.chromeClient().registerPopupOpeningObserver(this);
 
   m_finishTime =
       monotonicallyIncreasingTime() +
@@ -101,6 +102,7 @@ void ValidationMessageClientImpl::hideValidationMessage(const Element& anchor) {
   m_message = String();
   m_finishTime = 0;
   m_webView.client()->hideValidationMessage();
+  m_webView.chromeClient().unregisterPopupOpeningObserver(this);
 }
 
 bool ValidationMessageClientImpl::isValidationMessageVisible(
@@ -144,6 +146,11 @@ void ValidationMessageClientImpl::checkAnchorStatus(TimerBase*) {
 }
 
 void ValidationMessageClientImpl::willBeDestroyed() {
+  if (m_currentAnchor)
+    hideValidationMessage(*m_currentAnchor);
+}
+
+void ValidationMessageClientImpl::willOpenPopup() {
   if (m_currentAnchor)
     hideValidationMessage(*m_currentAnchor);
 }

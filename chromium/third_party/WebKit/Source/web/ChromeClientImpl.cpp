@@ -674,6 +674,7 @@ void ChromeClientImpl::dispatchViewportPropertiesDidChange(
 }
 
 void ChromeClientImpl::printDelegate(LocalFrame* frame) {
+  notifyPopupOpeningObservers();
   if (m_webView->client())
     m_webView->client()->printPage(WebLocalFrameImpl::fromFrame(frame));
 }
