@@ -691,10 +691,12 @@ static void gatherSecurityPolicyViolationEventData(SecurityPolicyViolationEventI
         // If this load was blocked via 'frame-ancestors', then the URL of |document| has not yet
         // been initialized. In this case, we'll set both 'documentURI' and 'blockedURI' to the
         // blocked document's URL.
-        init.setDocumentURI(blockedURL.string());
-        init.setBlockedURI(blockedURL.string());
+        String strippedURL = stripURLForUseInReport(document, blockedURL);
+        init.setDocumentURI(strippedURL);
+        init.setBlockedURI(strippedURL);
     } else {
-        init.setDocumentURI(document->url().string());
+        String strippedURL = stripURLForUseInReport(document, document->url());
+        init.setDocumentURI(strippedURL);
         init.setBlockedURI(stripURLForUseInReport(document, blockedURL));
     }
     init.setReferrer(document->referrer());
