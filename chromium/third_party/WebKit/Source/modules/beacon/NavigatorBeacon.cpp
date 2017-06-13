@@ -120,9 +120,9 @@ bool NavigatorBeacon::sendBeacon(
       if (RuntimeEnabledFeatures::
               sendBeaconThrowForBlobWithNonSimpleTypeEnabled()) {
         exceptionState.throwSecurityError(
-            "sendBeacon() with a Blob whose type is not CORS-safelisted MIME "
-            "type is disallowed experimentally. See http://crbug.com/490015 "
-            "for details.");
+            "sendBeacon() with a Blob whose type is not any of the "
+            "CORS-safelisted values for the Content-Type request header is "
+            "disabled temporarily. See http://crbug.com/490015 for details.");
         return false;
       }
     }
