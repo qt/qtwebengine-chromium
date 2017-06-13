@@ -129,7 +129,7 @@ class AsmWasmBuilderImpl final : public AstVisitor<AsmWasmBuilderImpl> {
         continue;
       }
       RECURSE(Visit(stmt));
-      if (stmt->IsJump()) break;
+      // Not stopping when a jump statement is found.
     }
   }
 
