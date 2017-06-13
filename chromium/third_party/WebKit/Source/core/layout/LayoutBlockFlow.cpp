@@ -3041,7 +3041,6 @@ void LayoutBlockFlow::removeChild(LayoutObject* oldChild) {
 void LayoutBlockFlow::moveAllChildrenIncludingFloatsTo(LayoutBlock* toBlock,
                                                        bool fullRemoveInsert) {
   LayoutBlockFlow* toBlockFlow = toLayoutBlockFlow(toBlock);
-  moveAllChildrenTo(toBlockFlow, fullRemoveInsert);
 
   // When a portion of the layout tree is being detached, anonymous blocks
   // will be combined as their children are deleted. In this process, the
@@ -3078,6 +3077,7 @@ void LayoutBlockFlow::moveAllChildrenIncludingFloatsTo(LayoutBlock* toBlock,
       toBlockFlow->m_floatingObjects->add(floatingObject.unsafeClone());
     }
   }
+  moveAllChildrenTo(toBlockFlow, fullRemoveInsert);
 }
 
 void LayoutBlockFlow::childBecameFloatingOrOutOfFlow(LayoutBox* child) {
