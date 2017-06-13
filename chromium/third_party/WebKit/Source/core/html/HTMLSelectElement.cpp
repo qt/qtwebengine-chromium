@@ -1504,8 +1504,12 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event) {
         !mouseEvent->buttonDown())
       return;
 
-    if (Page* page = document().page())
+    if (LayoutObject* object = layoutObject())
+      object->frameView()->updateAllLifecyclePhasesExceptPaint();
+
+    if (Page* page = document().page()) {
       page->autoscrollController().startAutoscrollForSelection(layoutObject());
+    }
     // Mousedown didn't happen in this element.
     if (m_lastOnChangeSelection.isEmpty())
       return;
