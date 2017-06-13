@@ -253,7 +253,7 @@ void LayoutMultiColumnFlowThread::evacuateAndDestroy()
     // container, we need to unregister the flow thread, so that they aren't just re-added again to
     // the flow thread that we're trying to empty.
     multicolContainer->resetMultiColumnFlowThread();
-    moveAllChildrenTo(multicolContainer, true);
+    moveAllChildrenIncludingFloatsTo(multicolContainer, true);
 
     // We used to manually nuke the line box tree here, but that should happen automatically when
     // moving children around (the code above).
