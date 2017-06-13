@@ -88,7 +88,7 @@ class AsmWasmBuilderImpl : public AstVisitor {
     for (int i = 0; i < stmts->length(); ++i) {
       Statement* stmt = stmts->at(i);
       RECURSE(Visit(stmt));
-      if (stmt->IsJump()) break;
+      // Not stopping when a jump statement is found.
     }
   }
 
