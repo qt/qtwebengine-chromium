@@ -187,7 +187,8 @@ GLWindowSystemBindingInfo::GLWindowSystemBindingInfo()
 
 std::string GetGLExtensionsFromCurrentContext() {
   if (WillUseGLGetStringForExtensions()) {
-    return reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+    const char* str = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+    return str ? str : std::string();
   }
 
   std::vector<std::string> exts;
