@@ -432,6 +432,9 @@ bool IsIDNComponentSafe(const base::char16* str,
           "[\\u2010\\u2024\\u2027\\u2028\\u2029\\u2039\\u203a\\u2044\\u205f]"
           "[\\u2154-\\u2156][\\u2159-\\u215b][\\u215f\\u2215\\u23ae"
           "\\u29f6\\u29f8\\u2afb\\u2afd][\\u2ff0-\\u2ffb][\\u3014"
+#if defined(OS_MACOSX)
+          "\\u0f8cu\\u0f8du\\u0f8eu\\u0f8fu"
+#endif
           "\\u3015\\u3033\\u3164\\u321d\\u321e\\u33ae\\u33af\\u33c6\\u33df\\ufe"
           "14"
           "\\ufe15\\ufe3f\\ufe5d\\ufe5e\\ufeff\\uff0e\\uff06\\uff61\\uffa0\\uff"
