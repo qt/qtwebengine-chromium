@@ -485,6 +485,8 @@ void HTMLFormControlElement::updateVisibleValidationMessage()
     Page* page = document().page();
     if (!page || page->visibilityState() != PageVisibilityStateVisible)
         return;
+  if (page->suspended())
+    return;
     String message;
     if (layoutObject() && willValidate())
         message = validationMessage().stripWhiteSpace();
