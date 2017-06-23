@@ -33,6 +33,10 @@ if (is_win && is_official_build) {
 if (remove_webcore_debug_symbols) {
   core_config_remove += [ "//build/config/compiler:default_symbols" ]
   core_config_add += remove_webcore_symbols_config
+  if (is_debug) {
+    core_config_remove += [ "//build/config/compiler:default_optimization" ]
+    core_config_add += [ "//build/config/compiler:optimize_size_only" ]
+  }
 }
 
 # Use this target type to link core targets.
