@@ -1836,6 +1836,9 @@ component("platform") {
   if (!is_debug && !optimize_for_size) {
     configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
+  } else {
+    configs -= [ "//build/config/compiler:default_optimization" ]
+    configs += blink_optimization_config
   }
 
   configs -= [ "//build/config/compiler:default_symbols" ]

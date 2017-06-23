@@ -32,6 +32,8 @@ declare_args() {
   #   -1 means auto-set according to debug/release and platform.
   blink_symbol_level = -1
 
+  blink_optimize_size_only = false
+
   # If true, defaults image interpolation to low quality.
   use_low_quality_image_interpolation = is_android
 
@@ -87,6 +89,12 @@ if (use_blink_v8_binding_new_idl_union) {
   feature_defines_list += [ "USE_BLINK_V8_BINDING_NEW_IDL_UNION" ]
 }
 
+if (blink_symbol_level == 0) {
+  if (is_debug) {
+    blink_optimize_size_only = true
+  }
+}
+
 if (blink_symbol_level == 2) {
   blink_symbols_config = [ "//build/config/compiler:symbols" ]
 } else if (blink_symbol_level == 1) {
@@ -98,4 +106,10 @@ if (blink_symbol_level == 2) {
   blink_symbols_config = [ "//build/config/compiler:no_symbols" ]
 } else {
   blink_symbols_config = [ "//build/config/compiler:default_symbols" ]
+}
+
+if (blink_optimize_size_only) {
+  blink_optimization_config = [ "//build/config/compiler:optimize_size_only" ]
+} else {
+  blink_optimization_config = [ "//build/config/compiler:default_optimization" ]
 }
