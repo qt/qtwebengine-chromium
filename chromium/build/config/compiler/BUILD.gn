@@ -2502,6 +2502,14 @@ config("no_optimize") {
   }
 }
 
+config("optimize_size_only") {
+  if (is_win) {
+    cflags = [ "/O1" ]
+  } else {
+    cflags = [ "-Os" ]
+  }
+}
+
 # Turns up the optimization level. Used to explicitly enable -O2 instead of
 # -Os for select targets on platforms that use optimize_for_size. No-op
 # elsewhere.
