@@ -58,5 +58,9 @@ set_defaults("blink_modules_sources") {
   if (remove_webcore_debug_symbols) {
     configs -= [ "//build/config/compiler:default_symbols" ]
     configs += [ "//build/config/compiler:no_symbols" ]
+    if (is_debug) {
+      configs -= [ "//build/config/compiler:default_optimization" ]
+      configs += [ "//build/config/compiler:optimize_size_only" ]
+    }
   }
 }
