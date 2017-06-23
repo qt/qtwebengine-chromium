@@ -193,6 +193,12 @@ template("gcc_toolchain") {
       nm = "nm"
     }
 
+    if (defined(toolchain_args.gnu_thin_archive) && toolchain_args.gnu_thin_archive) {
+      arcommand = "rcsDT"
+    } else {
+      arcommand = "rcsD"
+    }
+
     if (defined(invoker.shlib_extension)) {
       default_shlib_extension = invoker.shlib_extension
     } else {
@@ -329,7 +335,7 @@ template("gcc_toolchain") {
       } else {
         extra_arflags = "rcsD"
       }
-      command = "$python_path \"$ar_wrapper\"$whitelist_flag --output={{output}} --ar=\"$ar\" {{arflags}} $extra_arflags @\"$rspfile\""
+      command = "$python_path \"$ar_wrapper\"$whitelist_flag --output={{output}} --ar=\"$ar\" {{arflags}} $arcommand @\"$rspfile\""
       description = "AR {{output}}"
       rspfile_content = "{{inputs}}"
       outputs = [

@@ -29,6 +29,10 @@ declare_args() {
   # http://blog.llvm.org/2016/06/thinlto-scalable-and-incremental-lto.html
   use_thin_lto = false
 
+  # Use GNU ar's thin archive mode to avoid duplicating binary code more
+  # than necessary.
+  gnu_thin_archive = is_linux
+
   # If this is set to true, or if LLVM_FORCE_HEAD_REVISION is set to 1
   # in the environment, we use the revision in the llvm repo to determine
   # the CLANG_REVISION to use, instead of the version hard-coded into
