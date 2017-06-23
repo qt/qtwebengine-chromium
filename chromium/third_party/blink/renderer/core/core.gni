@@ -25,6 +25,9 @@ core_config_remove = []
 if (!is_debug && !optimize_for_size) {
   core_config_remove += [ "//build/config/compiler:default_optimization" ]
   core_config_add += [ "//build/config/compiler:optimize_max" ]
+} else {
+  core_config_remove += [ "//build/config/compiler:default_optimization" ]
+  core_config_add += blink_optimization_config
 }
 if (using_mismatched_sample_profile) {
   core_config_remove += [ "//build/config/compiler:afdo_optimize_size" ]

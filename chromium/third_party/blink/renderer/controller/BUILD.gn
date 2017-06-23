@@ -107,6 +107,8 @@ component("controller") {
 
   configs -= [ "//build/config/compiler:default_symbols" ]
   configs += blink_symbols_config
+  configs -= [ "//build/config/compiler:default_optimization" ]
+  configs += blink_optimization_config
 
   # These targets are not necessary to build the Blink renderer, however, these
   # targets are quite useful for Blink developers to get error if any when
