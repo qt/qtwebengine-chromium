@@ -275,6 +275,11 @@ component("wtf") {
     configs -= [ "//build/config/compiler:afdo_optimize_size" ]
   }
 
+  if (is_debug || optimize_for_size) {
+    configs -= [ "//build/config/compiler:default_optimization" ]
+    configs += blink_optimization_config
+  }
+
   configs -= [ "//build/config/compiler:default_symbols" ]
   configs += blink_symbols_config
 }

@@ -2153,6 +2153,14 @@ config("no_optimize") {
   }
 }
 
+config("optimize_size_only") {
+  if (is_win) {
+    cflags = [ "/O1" ]
+  } else {
+    cflags = [ "-Os" ]
+  }
+}
+
 # Turns up the optimization level. On Windows, this implies whole program
 # optimization and link-time code generation which is very expensive and should
 # be used sparingly.
