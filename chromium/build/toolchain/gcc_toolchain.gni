@@ -11,6 +11,9 @@ import("//build/toolchain/clang_static_analyzer.gni")
 import("//build/toolchain/goma.gni")
 import("//build/toolchain/toolchain.gni")
 
+# Import features.gni for the "use_qt" argument to be available.
+import("//build/config/features.gni")
+
 if (is_nacl) {
   # To keep NaCl variables out of builds that don't include NaCl, all
   # variables defined in nacl/config.gni referenced here should be protected by
@@ -198,6 +201,12 @@ template("gcc_toolchain") {
       nm = "nm"
     }
 
+    if (defined(toolchain_args.gnu_thin_archive) && toolchain_args.gnu_thin_archive) {
+      arcommand = "rcsDT"
+    } else {
+      arcommand = "rcsD"
+    }
+
     if (defined(invoker.shlib_extension)) {
       default_shlib_extension = invoker.shlib_extension
     } else {
@@ -334,7 +343,9 @@ template("gcc_toolchain") {
       # POSIX-like toolchains such as NaCl on Windows).
       ar_wrapper =
           rebase_path("//build/toolchain/gcc_ar_wrapper.py", root_build_dir)
-      if (current_os == "aix") {
+      if (use_qt) {
+        extra_arflags = arcommand
+      } else if (current_os == "aix") {
         # We use slightly different arflags for AIX.
         extra_arflags = "rcsT"
       } else {
