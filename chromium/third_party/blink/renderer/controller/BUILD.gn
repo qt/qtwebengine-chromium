@@ -62,6 +62,8 @@ component("controller") {
 
   configs -= [ "//build/config/compiler:default_symbols" ]
   configs += blink_symbols_config
+  configs -= [ "//build/config/compiler:default_optimization" ]
+  configs += blink_optimization_config
 }
 
 group("webkit_unit_tests_data") {
