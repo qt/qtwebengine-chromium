@@ -153,14 +153,29 @@ bool BrowserPpapiHostImpl::IsPotentiallySecurePluginContext(
 void BrowserPpapiHostImpl::AddInstance(
     PP_Instance instance,
     const PepperRendererInstanceData& renderer_instance_data) {
-  DCHECK(!instance_map_.contains(instance));
-  instance_map_.add(instance,
-                    base::MakeUnique<InstanceData>(renderer_instance_data));
+  // NOTE: 'instance' may be coming from a compromised renderer process. We
+  // take care here to make sure an attacker can't overwrite data for an
+  // existing plugin instance.
+  // See http://crbug.com/733548.
+  if (instance_map_.find(instance) == instance_map_.end()) {
+    instance_map_.add(instance,
+        base::MakeUnique<InstanceData>(renderer_instance_data));
+  } else {
+    NOTREACHED();
+  }
 }
 
 void BrowserPpapiHostImpl::DeleteInstance(PP_Instance instance) {
-  int erased = instance_map_.erase(instance);
-  DCHECK_EQ(1, erased);
+  // NOTE: 'instance' may be coming from a compromised renderer process. We
+  // take care here to make sure an attacker can't cause a UAF by deleting a
+  // non-existent plugin instance.
+  // See http://crbug.com/733548.
+  auto it = instance_map_.find(instance);
+  if (it != instance_map_.end()) {
+    instance_map_.erase(it);
+  } else {
+    NOTREACHED();
+  }
 }
 
 void BrowserPpapiHostImpl::AddInstanceObserver(PP_Instance instance,
