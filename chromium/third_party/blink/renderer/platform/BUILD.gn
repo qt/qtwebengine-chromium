@@ -1599,6 +1599,8 @@ jumbo_component("platform") {
 
   configs -= [ "//build/config/compiler:default_symbols" ]
   configs += blink_symbols_config
+  configs -= [ "//build/config/compiler:default_optimization" ]
+  configs += blink_optimization_config
 }
 
 source_set("geometry_mojom_traits") {

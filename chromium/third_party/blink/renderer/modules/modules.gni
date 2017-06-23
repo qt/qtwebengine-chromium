@@ -59,4 +59,6 @@ set_defaults("blink_modules_sources") {
   ]
   configs -= [ "//build/config/compiler:default_symbols" ]
   configs += blink_symbols_config
+  configs -= [ "//build/config/compiler:default_optimization" ]
+  configs += blink_optimization_config
 }
