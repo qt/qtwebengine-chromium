@@ -3326,12 +3326,15 @@ void RenderFrameImpl::didCreateDataSource(blink::WebLocalFrame* frame,
   }
 
   // Carry over the user agent override flag, if it exists.
-  blink::WebView* webview = render_view_->webview();
-  if (content_initiated && webview && webview->mainFrame() &&
-      webview->mainFrame()->isWebLocalFrame() &&
-      webview->mainFrame()->dataSource()) {
-    DocumentState* old_document_state =
-        DocumentState::FromDataSource(webview->mainFrame()->dataSource());
+  if (content_initiated) {
+    blink::WebView* webview = render_view_->webview();
+    blink::WebDataSource *lastDataSource = nullptr;
+    if (webview && webview->mainFrame() && webview->mainFrame()->isWebLocalFrame())
+      lastDataSource = webview->mainFrame()->dataSource();
+    if (!lastDataSource && frame->opener() && frame->opener()->isWebLocalFrame())
+      lastDataSource = frame->opener()->dataSource();
+    DocumentState* old_document_state = lastDataSource ?
+        DocumentState::FromDataSource(lastDataSource) : nullptr;
     if (old_document_state) {
       InternalDocumentStateData* internal_data =
           InternalDocumentStateData::FromDocumentState(document_state);
