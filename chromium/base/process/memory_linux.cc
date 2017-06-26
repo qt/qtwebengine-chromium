@@ -60,6 +60,7 @@ void* __libc_pvalloc(size_t size);
 #endif
 void* __libc_memalign(size_t alignment, size_t size);
 
+#if !defined(TOOLKIT_QT) // QTBUG-61521,QTBUG-60565
 // Overriding the system memory allocation functions:
 //
 // For security reasons, we want malloc failures to be fatal. Too much code
@@ -129,6 +130,7 @@ int posix_memalign(void** ptr, size_t alignment, size_t size) {
   *ptr = memalign(alignment, size);
   return 0;
 }
+#endif // TOOLKIT_QT
 
 }  // extern C
 
