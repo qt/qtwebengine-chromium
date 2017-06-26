@@ -225,6 +225,9 @@ void SetupSandbox(const base::CommandLine& parsed_command_line) {
   // RenderSandboxHostLinux needs to be initialized even if the sandbox and
   // zygote are both disabled. It initializes the renderer socket.
   RenderSandboxHostLinux::GetInstance()->Init();
+  
+  if (parsed_command_line.HasSwitch(switches::kSingleProcess))
+    return;
 
   if (parsed_command_line.HasSwitch(switches::kNoZygote) &&
       !parsed_command_line.HasSwitch(switches::kNoSandbox)) {
