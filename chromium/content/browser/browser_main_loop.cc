@@ -255,6 +255,9 @@ void SetupSandbox(const base::CommandLine& parsed_command_line) {
   // zygote are both disabled. It initializes the sandboxed process socket.
   SandboxHostLinux::GetInstance()->Init();
 
+  if (parsed_command_line.HasSwitch(switches::kSingleProcess))
+    return;
+
   if (parsed_command_line.HasSwitch(switches::kNoZygote) &&
       !parsed_command_line.HasSwitch(switches::kNoSandbox)) {
     LOG(ERROR) << "--no-sandbox should be used together with --no--zygote";
