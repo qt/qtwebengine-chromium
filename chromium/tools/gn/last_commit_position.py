@@ -60,6 +60,8 @@ def FetchCommitPosition(directory):
   max_lines = 2048
 
   proc = RunGitCommand(directory, ['log'])
+  if proc == None:
+    return None
   for i in range(max_lines):
     line = proc.stdout.readline()
     if not line:
