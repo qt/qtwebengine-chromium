@@ -218,6 +218,9 @@ void SetupSandbox(const base::CommandLine& parsed_command_line) {
   // zygote are both disabled. It initializes the renderer socket.
   RenderSandboxHostLinux::GetInstance()->Init();
 
+  if (parsed_command_line.HasSwitch(switches::kSingleProcess))
+    return;
+
   if (parsed_command_line.HasSwitch(switches::kNoZygote)) {
     CHECK(parsed_command_line.HasSwitch(switches::kNoSandbox))
         << "--no-sandbox should be used together with --no--zygote";
