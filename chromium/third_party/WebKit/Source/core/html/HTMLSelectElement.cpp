@@ -1551,6 +1551,9 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
         if (mouseEvent->button() != LeftButton || !mouseEvent->buttonDown())
             return;
 
+        if (LayoutObject* object = layoutObject())
+            object->frameView()->updateAllLifecyclePhases();
+
         if (Page* page = document().page())
             page->autoscrollController().startAutoscrollForSelection(layoutObject());
         // Mousedown didn't happen in this element.

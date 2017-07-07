@@ -534,8 +534,14 @@ WebInputEventResult EventHandler::handleMouseDraggedEvent(const MouseEventWithHi
 
     if (m_mouseDownMayStartAutoscroll && !panScrollInProgress()) {
         if (AutoscrollController* controller = autoscrollController()) {
-            controller->startAutoscrollForSelection(layoutObject);
-            m_mouseDownMayStartAutoscroll = false;
+            // Avoid updating the lifecycle unless it's possible to autoscroll.
+            layoutObject->frameView()->updateAllLifecyclePhases();
+            // The lifecycle update above may have invalidated the previous layout.
+            layoutObject = targetNode->layoutObject();
+            if (layoutObject) {
+                controller->startAutoscrollForSelection(layoutObject);
+                m_mouseDownMayStartAutoscroll = false;
+            }
         }
     }
 
