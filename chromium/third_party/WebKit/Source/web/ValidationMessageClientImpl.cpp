@@ -111,8 +111,7 @@ void ValidationMessageClientImpl::willUnloadDocument(const Document& document) {
 }
 
 void ValidationMessageClientImpl::documentDetached(const Document& document) {
-    DCHECK(!m_currentAnchor || m_currentAnchor->document() != document)
-        << "willUnloadDocument() should be called beforehand.";
+    ASSERT(!m_currentAnchor || m_currentAnchor->document() != document);
 }
 
 void ValidationMessageClientImpl::checkAnchorStatus(Timer<ValidationMessageClientImpl>*)
