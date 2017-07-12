@@ -7,7 +7,8 @@
 #ifndef XFA_FXFA_PARSER_CXFA_NODEHELPER_H_
 #define XFA_FXFA_PARSER_CXFA_NODEHELPER_H_
 
-#include "xfa/fxfa/parser/xfa_object.h"
+#include <vector>
+
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 
 class CXFA_ScriptContext;
@@ -23,7 +24,7 @@ class CXFA_NodeHelper {
   ~CXFA_NodeHelper();
 
   CXFA_Node* ResolveNodes_GetOneChild(CXFA_Node* parent,
-                                      const FX_WCHAR* pwsName,
+                                      const wchar_t* pwsName,
                                       bool bIsClassName = false);
   CXFA_Node* ResolveNodes_GetParent(
       CXFA_Node* pNode,
@@ -31,17 +32,17 @@ class CXFA_NodeHelper {
 
   int32_t NodeAcc_TraverseSiblings(CXFA_Node* parent,
                                    uint32_t dNameHash,
-                                   CXFA_NodeArray* pSiblings,
+                                   std::vector<CXFA_Node*>* pSiblings,
                                    XFA_LOGIC_TYPE eLogicType,
                                    bool bIsClassName = false,
                                    bool bIsFindProperty = true);
   int32_t NodeAcc_TraverseAnySiblings(CXFA_Node* parent,
                                       uint32_t dNameHash,
-                                      CXFA_NodeArray* pSiblings,
+                                      std::vector<CXFA_Node*>* pSiblings,
                                       bool bIsClassName = false);
   int32_t CountSiblings(CXFA_Node* pNode,
                         XFA_LOGIC_TYPE eLogicType,
-                        CXFA_NodeArray* pSiblings,
+                        std::vector<CXFA_Node*>* pSiblings,
                         bool bIsClassName = false);
   int32_t GetIndex(CXFA_Node* pNode,
                    XFA_LOGIC_TYPE eLogicType = XFA_LOGIC_NoTransparent,
@@ -60,7 +61,6 @@ class CXFA_NodeHelper {
   void SetCreateNodeType(CXFA_Node* refNode);
   bool NodeIsProperty(CXFA_Node* refNode);
 
- public:
   XFA_Element m_eLastCreateType;
   CXFA_Node* m_pCreateParent;
   int32_t m_iCreateCount;

@@ -47,12 +47,9 @@ static vpx_codec_err_t decoder_init(vpx_codec_ctx_t *ctx,
     ctx->priv->init_flags = ctx->init_flags;
     priv->si.sz = sizeof(priv->si);
     priv->flushed = 0;
-    // Only do frame parallel decode when threads > 1.
-    priv->frame_parallel_decode =
-        (ctx->config.dec && (ctx->config.dec->threads > 1) &&
-         (ctx->init_flags & VPX_CODEC_USE_FRAME_THREADING))
-            ? 1
-            : 0;
+    // TODO(jzern): remnants of frame-level parallel decoding should be
+    // removed. cf., https://bugs.chromium.org/p/webm/issues/detail?id=1395
+    priv->frame_parallel_decode = 0;
     if (ctx->config.dec) {
       priv->cfg = *ctx->config.dec;
       ctx->config.dec = &priv->cfg;
@@ -1053,7 +1050,10 @@ static vpx_codec_ctrl_fn_map_t decoder_ctrl_maps[] = {
 CODEC_INTERFACE(vpx_codec_vp9_dx) = {
   "WebM Project VP9 Decoder" VERSION_STRING,
   VPX_CODEC_INTERNAL_ABI_VERSION,
-  VPX_CODEC_CAP_DECODER | VP9_CAP_POSTPROC |
+#if CONFIG_VP9_HIGHBITDEPTH
+  VPX_CODEC_CAP_HIGHBITDEPTH |
+#endif
+      VPX_CODEC_CAP_DECODER | VP9_CAP_POSTPROC |
       VPX_CODEC_CAP_EXTERNAL_FRAME_BUFFER,  // vpx_codec_caps_t
   decoder_init,                             // vpx_codec_init_fn_t
   decoder_destroy,                          // vpx_codec_destroy_fn_t

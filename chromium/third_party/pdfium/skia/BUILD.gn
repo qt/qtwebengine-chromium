@@ -33,12 +33,20 @@ config("skia_config") {
     "//third_party/skia/include/pipe",
     "//third_party/skia/include/ports",
     "//third_party/skia/include/utils",
-
-    # TODO(dsinclair): Right way to use //third_party/freetype?
-    "//third_party/freetype/include",
   ]
 
   defines = []
+
+  if (is_win) {
+    defines += [ "SK_FREETYPE_MINIMUM_RUNTIME_VERSION=(((FREETYPE_MAJOR) * 0x01000000) | ((FREETYPE_MINOR) * 0x00010000) | ((FREETYPE_PATCH) * 0x00000100))" ]
+  }
+
+  if (is_component_build) {
+    defines += [
+      "SKIA_DLL",
+      "GR_GL_IGNORE_ES3_MSAA=0",
+    ]
+  }
 
   if (skia_support_gpu) {
     include_dirs += [
@@ -92,6 +100,10 @@ config("skia_library_config") {
   }
 
   defines = []
+
+  if (is_component_build) {
+    defines += [ "SKIA_IMPLEMENTATION=1" ]
+  }
 
   if (current_cpu == "arm") {
     if (arm_use_neon) {
@@ -225,12 +237,10 @@ component("skia") {
 
   # Remove unused util files include in utils.gypi
   sources -= [
-    "//third_party/skia/src/utils/SkBoundaryPatch.cpp",
     "//third_party/skia/src/utils/SkCamera.cpp",
     "//third_party/skia/src/utils/SkDumpCanvas.cpp",
     "//third_party/skia/src/utils/SkFrontBufferedStream.cpp",
     "//third_party/skia/src/utils/SkInterpolator.cpp",
-    "//third_party/skia/src/utils/SkMeshUtils.cpp",
     "//third_party/skia/src/utils/SkParsePath.cpp",
   ]
 
@@ -306,7 +316,8 @@ component("skia") {
 
   deps = [
     ":skia_opts",
-    "../third_party:fx_zlib",
+    "//:freetype_common",
+    "//third_party/zlib:zlib",
   ]
 
   if (is_linux) {

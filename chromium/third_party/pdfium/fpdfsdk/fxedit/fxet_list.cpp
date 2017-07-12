@@ -6,9 +6,13 @@
 
 #include "fpdfsdk/fxedit/fxet_list.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "core/fpdfdoc/cpvt_word.h"
 #include "fpdfsdk/fxedit/fxet_edit.h"
 #include "fpdfsdk/pdfwindow/PWL_ListBox.h"
+#include "third_party/base/stl_util.h"
 
 CFX_ListItem::CFX_ListItem()
     : m_pEdit(new CFX_Edit),
@@ -53,11 +57,11 @@ void CFX_ListItem::SetText(const CFX_WideString& text) {
   m_pEdit->SetText(text);
 }
 
-void CFX_ListItem::SetFontSize(FX_FLOAT fFontSize) {
+void CFX_ListItem::SetFontSize(float fFontSize) {
   m_pEdit->SetFontSize(fFontSize);
 }
 
-FX_FLOAT CFX_ListItem::GetItemHeight() const {
+float CFX_ListItem::GetItemHeight() const {
   return m_pEdit->GetContentRect().Height();
 }
 
@@ -83,108 +87,46 @@ void CFX_ListContainer::SetPlateRect(const CFX_FloatRect& rect) {
 
 CPLST_Select::CPLST_Select() {}
 
-CPLST_Select::~CPLST_Select() {
-  for (int32_t i = 0, sz = m_aItems.GetSize(); i < sz; i++)
-    delete m_aItems.GetAt(i);
-
-  m_aItems.RemoveAll();
-}
+CPLST_Select::~CPLST_Select() {}
 
 void CPLST_Select::Add(int32_t nItemIndex) {
-  int32_t nIndex = Find(nItemIndex);
-
-  if (nIndex < 0) {
-    m_aItems.Add(new CPLST_Select_Item(nItemIndex, 1));
-  } else {
-    if (CPLST_Select_Item* pItem = m_aItems.GetAt(nIndex)) {
-      pItem->nState = 1;
-    }
-  }
+  m_Items[nItemIndex] = SELECTING;
 }
 
 void CPLST_Select::Add(int32_t nBeginIndex, int32_t nEndIndex) {
-  if (nBeginIndex > nEndIndex) {
-    int32_t nTemp = nEndIndex;
-    nEndIndex = nBeginIndex;
-    nBeginIndex = nTemp;
-  }
+  if (nBeginIndex > nEndIndex)
+    std::swap(nBeginIndex, nEndIndex);
 
-  for (int32_t i = nBeginIndex; i <= nEndIndex; i++)
+  for (int32_t i = nBeginIndex; i <= nEndIndex; ++i)
     Add(i);
 }
 
 void CPLST_Select::Sub(int32_t nItemIndex) {
-  for (int32_t i = m_aItems.GetSize() - 1; i >= 0; i--) {
-    if (CPLST_Select_Item* pItem = m_aItems.GetAt(i))
-      if (pItem->nItemIndex == nItemIndex)
-        pItem->nState = -1;
-  }
+  auto it = m_Items.find(nItemIndex);
+  if (it != m_Items.end())
+    it->second = DESELECTING;
 }
 
 void CPLST_Select::Sub(int32_t nBeginIndex, int32_t nEndIndex) {
-  if (nBeginIndex > nEndIndex) {
-    int32_t nTemp = nEndIndex;
-    nEndIndex = nBeginIndex;
-    nBeginIndex = nTemp;
-  }
+  if (nBeginIndex > nEndIndex)
+    std::swap(nBeginIndex, nEndIndex);
 
-  for (int32_t i = nBeginIndex; i <= nEndIndex; i++)
+  for (int32_t i = nBeginIndex; i <= nEndIndex; ++i)
     Sub(i);
 }
 
-int32_t CPLST_Select::Find(int32_t nItemIndex) const {
-  for (int32_t i = 0, sz = m_aItems.GetSize(); i < sz; i++) {
-    if (CPLST_Select_Item* pItem = m_aItems.GetAt(i)) {
-      if (pItem->nItemIndex == nItemIndex)
-        return i;
-    }
-  }
-
-  return -1;
-}
-
-bool CPLST_Select::IsExist(int32_t nItemIndex) const {
-  return Find(nItemIndex) >= 0;
-}
-
-int32_t CPLST_Select::GetCount() const {
-  return m_aItems.GetSize();
-}
-
-int32_t CPLST_Select::GetItemIndex(int32_t nIndex) const {
-  if (nIndex >= 0 && nIndex < m_aItems.GetSize())
-    if (CPLST_Select_Item* pItem = m_aItems.GetAt(nIndex))
-      return pItem->nItemIndex;
-
-  return -1;
-}
-
-int32_t CPLST_Select::GetState(int32_t nIndex) const {
-  if (nIndex >= 0 && nIndex < m_aItems.GetSize())
-    if (CPLST_Select_Item* pItem = m_aItems.GetAt(nIndex))
-      return pItem->nState;
-
-  return 0;
-}
-
 void CPLST_Select::DeselectAll() {
-  for (int32_t i = 0, sz = m_aItems.GetSize(); i < sz; i++) {
-    if (CPLST_Select_Item* pItem = m_aItems.GetAt(i)) {
-      pItem->nState = -1;
-    }
-  }
+  for (auto& item : m_Items)
+    item.second = DESELECTING;
 }
 
 void CPLST_Select::Done() {
-  for (int32_t i = m_aItems.GetSize() - 1; i >= 0; i--) {
-    if (CPLST_Select_Item* pItem = m_aItems.GetAt(i)) {
-      if (pItem->nState == -1) {
-        delete pItem;
-        m_aItems.RemoveAt(i);
-      } else {
-        pItem->nState = 0;
-      }
-    }
+  auto it = m_Items.begin();
+  while (it != m_Items.end()) {
+    if (it->second == DESELECTING)
+      it = m_Items.erase(it);
+    else
+      (it++)->second = NORMAL;
   }
 }
 
@@ -373,14 +315,13 @@ CFX_FloatRect CFX_ListCtrl::GetItemRect(int32_t nIndex) const {
 }
 
 CFX_FloatRect CFX_ListCtrl::GetItemRectInternal(int32_t nIndex) const {
-  if (CFX_ListItem* pListItem = m_aListItems.GetAt(nIndex)) {
-    CFX_FloatRect rcItem = pListItem->GetRect();
-    rcItem.left = 0.0f;
-    rcItem.right = GetPlateRect().Width();
-    return InnerToOuter(CLST_Rect(rcItem));
-  }
+  if (!pdfium::IndexInBounds(m_ListItems, nIndex) || !m_ListItems[nIndex])
+    return CFX_FloatRect();
 
-  return CFX_FloatRect();
+  CFX_FloatRect rcItem = m_ListItems[nIndex]->GetRect();
+  rcItem.left = 0.0f;
+  rcItem.right = GetPlateRect().Width();
+  return InnerToOuter(CLST_Rect(rcItem));
 }
 
 int32_t CFX_ListCtrl::GetCaret() const {
@@ -468,20 +409,10 @@ void CFX_ListCtrl::InvalidateItem(int32_t nItemIndex) {
 }
 
 void CFX_ListCtrl::SelectItems() {
-  for (int32_t i = 0, sz = m_aSelItems.GetCount(); i < sz; i++) {
-    int32_t nItemIndex = m_aSelItems.GetItemIndex(i);
-    int32_t nState = m_aSelItems.GetState(i);
-
-    switch (nState) {
-      case 1:
-        SetMultipleSelect(nItemIndex, true);
-        break;
-      case -1:
-        SetMultipleSelect(nItemIndex, false);
-        break;
-    }
+  for (const auto& item : m_aSelItems) {
+    if (item.second != CPLST_Select::NORMAL)
+      SetMultipleSelect(item.first, item.second == CPLST_Select::SELECTING);
   }
-
   m_aSelItems.Done();
 }
 
@@ -542,7 +473,7 @@ void CFX_ListCtrl::SetScrollPos(const CFX_PointF& point) {
   SetScrollPosY(point.y);
 }
 
-void CFX_ListCtrl::SetScrollPosY(FX_FLOAT fy) {
+void CFX_ListCtrl::SetScrollPosY(float fy) {
   if (!IsFloatEqual(m_ptScrollPos.y, fy)) {
     CFX_FloatRect rcPlate = GetPlateRect();
     CFX_FloatRect rcContent = GetContentRectInternal();
@@ -579,19 +510,18 @@ CFX_FloatRect CFX_ListCtrl::GetContentRect() const {
 }
 
 void CFX_ListCtrl::ReArrange(int32_t nItemIndex) {
-  FX_FLOAT fPosY = 0.0f;
-
-  if (CFX_ListItem* pPrevItem = m_aListItems.GetAt(nItemIndex - 1))
-    fPosY = pPrevItem->GetRect().bottom;
-
-  for (int32_t i = nItemIndex, sz = m_aListItems.GetSize(); i < sz; i++) {
-    if (CFX_ListItem* pListItem = m_aListItems.GetAt(i)) {
-      FX_FLOAT fListItemHeight = pListItem->GetItemHeight();
+  float fPosY = 0.0f;
+  if (pdfium::IndexInBounds(m_ListItems, nItemIndex - 1) &&
+      m_ListItems[nItemIndex - 1]) {
+    fPosY = m_ListItems[nItemIndex - 1]->GetRect().bottom;
+  }
+  for (const auto& pListItem : m_ListItems) {
+    if (pListItem) {
+      float fListItemHeight = pListItem->GetItemHeight();
       pListItem->SetRect(CLST_Rect(0.0f, fPosY, 0.0f, fPosY + fListItemHeight));
       fPosY += fListItemHeight;
     }
   }
-
   SetContentRect(CLST_Rect(0.0f, 0.0f, 0.0f, fPosY));
   SetScrollInfo();
 }
@@ -606,7 +536,6 @@ void CFX_ListCtrl::SetTopItem(int32_t nIndex) {
 
 int32_t CFX_ListCtrl::GetTopItem() const {
   int32_t nItemIndex = GetItemIndex(GetBTPoint());
-
   if (!IsItemVisible(nItemIndex) && IsItemVisible(nItemIndex + 1))
     nItemIndex += 1;
 
@@ -614,11 +543,7 @@ int32_t CFX_ListCtrl::GetTopItem() const {
 }
 
 void CFX_ListCtrl::Empty() {
-  for (int32_t i = 0, sz = m_aListItems.GetSize(); i < sz; i++)
-    delete m_aListItems.GetAt(i);
-
-  m_aListItems.RemoveAll();
-
+  m_ListItems.clear();
   InvalidateItem(-1);
 }
 
@@ -628,33 +553,23 @@ void CFX_ListCtrl::Cancel() {
 
 int32_t CFX_ListCtrl::GetItemIndex(const CFX_PointF& point) const {
   CFX_PointF pt = OuterToInner(OutToIn(point));
-
   bool bFirst = true;
   bool bLast = true;
-
-  for (int32_t i = 0, sz = m_aListItems.GetSize(); i < sz; i++) {
-    if (CFX_ListItem* pListItem = m_aListItems.GetAt(i)) {
-      CLST_Rect rcListItem = pListItem->GetRect();
-
-      if (IsFloatBigger(pt.y, rcListItem.top)) {
-        bFirst = false;
-      }
-
-      if (IsFloatSmaller(pt.y, rcListItem.bottom)) {
-        bLast = false;
-      }
-
-      if (pt.y >= rcListItem.top && pt.y < rcListItem.bottom) {
-        return i;
-      }
-    }
+  for (const auto& pListItem : m_ListItems) {
+    if (!pListItem)
+      continue;
+    CLST_Rect rcListItem = pListItem->GetRect();
+    if (IsFloatBigger(pt.y, rcListItem.top))
+      bFirst = false;
+    if (IsFloatSmaller(pt.y, rcListItem.bottom))
+      bLast = false;
+    if (pt.y >= rcListItem.top && pt.y < rcListItem.bottom)
+      return &pListItem - &m_ListItems.front();
   }
-
   if (bFirst)
     return 0;
   if (bLast)
-    return m_aListItems.GetSize() - 1;
-
+    return pdfium::CollectionSize<int32_t>(m_ListItems) - 1;
   return -1;
 }
 
@@ -668,81 +583,76 @@ void CFX_ListCtrl::SetFontMap(IPVT_FontMap* pFontMap) {
   m_pFontMap = pFontMap;
 }
 
-void CFX_ListCtrl::SetFontSize(FX_FLOAT fFontSize) {
+void CFX_ListCtrl::SetFontSize(float fFontSize) {
   m_fFontSize = fFontSize;
 }
 
 void CFX_ListCtrl::AddItem(const CFX_WideString& str) {
-  CFX_ListItem* pListItem = new CFX_ListItem();
+  auto pListItem = pdfium::MakeUnique<CFX_ListItem>();
   pListItem->SetFontMap(m_pFontMap);
   pListItem->SetFontSize(m_fFontSize);
   pListItem->SetText(str);
-  m_aListItems.Add(pListItem);
+  m_ListItems.push_back(std::move(pListItem));
 }
 
 CFX_Edit* CFX_ListCtrl::GetItemEdit(int32_t nIndex) const {
-  if (CFX_ListItem* pListItem = m_aListItems.GetAt(nIndex)) {
-    return pListItem->GetEdit();
-  }
-
-  return nullptr;
+  if (!pdfium::IndexInBounds(m_ListItems, nIndex) || !m_ListItems[nIndex])
+    return nullptr;
+  return m_ListItems[nIndex]->GetEdit();
 }
 
 int32_t CFX_ListCtrl::GetCount() const {
-  return m_aListItems.GetSize();
+  return pdfium::CollectionSize<int32_t>(m_ListItems);
 }
 
 CFX_FloatRect CFX_ListCtrl::GetPlateRect() const {
   return CFX_ListContainer::GetPlateRect();
 }
 
-FX_FLOAT CFX_ListCtrl::GetFontSize() const {
+float CFX_ListCtrl::GetFontSize() const {
   return m_fFontSize;
 }
 
-FX_FLOAT CFX_ListCtrl::GetFirstHeight() const {
-  if (CFX_ListItem* pListItem = m_aListItems.GetAt(0)) {
-    return pListItem->GetItemHeight();
-  }
+float CFX_ListCtrl::GetFirstHeight() const {
+  if (m_ListItems.empty() || !m_ListItems.front())
+    return 1.0f;
 
-  return 1.0f;
+  return m_ListItems.front()->GetItemHeight();
 }
 
 int32_t CFX_ListCtrl::GetFirstSelected() const {
-  for (int32_t i = 0, sz = m_aListItems.GetSize(); i < sz; i++) {
-    if (CFX_ListItem* pListItem = m_aListItems.GetAt(i)) {
-      if (pListItem->IsSelected())
-        return i;
-    }
+  int32_t i = 0;
+  for (const auto& pListItem : m_ListItems) {
+    if (pListItem && pListItem->IsSelected())
+      return i;
+    ++i;
   }
   return -1;
 }
 
 int32_t CFX_ListCtrl::GetLastSelected() const {
-  for (int32_t i = m_aListItems.GetSize() - 1; i >= 0; i--) {
-    if (CFX_ListItem* pListItem = m_aListItems.GetAt(i)) {
-      if (pListItem->IsSelected())
-        return i;
-    }
+  for (auto iter = m_ListItems.rbegin(); iter != m_ListItems.rend(); ++iter) {
+    if (*iter && (*iter)->IsSelected())
+      return &*iter - &m_ListItems.front();
   }
   return -1;
 }
 
-FX_WCHAR CFX_ListCtrl::Toupper(FX_WCHAR c) const {
+wchar_t CFX_ListCtrl::Toupper(wchar_t c) const {
   if ((c >= 'a') && (c <= 'z'))
     c = c - ('a' - 'A');
   return c;
 }
 
-int32_t CFX_ListCtrl::FindNext(int32_t nIndex, FX_WCHAR nChar) const {
+int32_t CFX_ListCtrl::FindNext(int32_t nIndex, wchar_t nChar) const {
   int32_t nCircleIndex = nIndex;
-
-  for (int32_t i = 0, sz = m_aListItems.GetSize(); i < sz; i++) {
+  int32_t sz = pdfium::CollectionSize<int32_t>(m_ListItems);
+  for (int32_t i = 0; i < sz; i++) {
     nCircleIndex++;
     if (nCircleIndex >= sz)
       nCircleIndex = 0;
 
-    if (CFX_ListItem* pListItem = m_aListItems.GetAt(nCircleIndex)) {
+    if (CFX_ListItem* pListItem = m_ListItems[nCircleIndex].get()) {
       if (Toupper(pListItem->GetFirstChar()) == Toupper(nChar))
         return nCircleIndex;
     }
@@ -752,15 +662,13 @@ int32_t CFX_ListCtrl::FindNext(int32_t nIndex, FX_WCHAR nChar) const {
 }
 
 bool CFX_ListCtrl::IsItemSelected(int32_t nIndex) const {
-  if (CFX_ListItem* pListItem = m_aListItems.GetAt(nIndex))
-    return pListItem->IsSelected();
-  return false;
+  return pdfium::IndexInBounds(m_ListItems, nIndex) && m_ListItems[nIndex] &&
+         m_ListItems[nIndex]->IsSelected();
 }
 
-void CFX_ListCtrl::SetItemSelect(int32_t nItemIndex, bool bSelected) {
-  if (CFX_ListItem* pListItem = m_aListItems.GetAt(nItemIndex)) {
-    pListItem->SetSelect(bSelected);
-  }
+void CFX_ListCtrl::SetItemSelect(int32_t nIndex, bool bSelected) {
+  if (pdfium::IndexInBounds(m_ListItems, nIndex) && m_ListItems[nIndex])
+    m_ListItems[nIndex]->SetSelect(bSelected);
 }
 
 void CFX_ListCtrl::SetMultipleSel(bool bMultiple) {
@@ -772,13 +680,12 @@ bool CFX_ListCtrl::IsMultipleSel() const {
 }
 
 bool CFX_ListCtrl::IsValid(int32_t nItemIndex) const {
-  return nItemIndex >= 0 && nItemIndex < m_aListItems.GetSize();
+  return pdfium::IndexInBounds(m_ListItems, nItemIndex);
 }
 
 CFX_WideString CFX_ListCtrl::GetItemText(int32_t nIndex) const {
-  if (CFX_ListItem* pListItem = m_aListItems.GetAt(nIndex)) {
-    return pListItem->GetText();
-  }
+  if (pdfium::IndexInBounds(m_ListItems, nIndex) && m_ListItems[nIndex])
+    return m_ListItems[nIndex]->GetText();
 
   return L"";
 }

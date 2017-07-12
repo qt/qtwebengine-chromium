@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "webrtc/base/ignore_wundef.h"
+#include "webrtc/base/protobuf_utils.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/controller_manager.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/mock/mock_controller.h"
 #include "webrtc/system_wrappers/include/clock.h"
@@ -273,7 +274,7 @@ constexpr int kInitialFrameLengthMs = 60;
 constexpr int kMinBitrateBps = 6000;
 
 ControllerManagerStates CreateControllerManager(
-    const std::string& config_string) {
+    const ProtoString& config_string) {
   ControllerManagerStates states;
   states.simulated_clock.reset(new SimulatedClock(kClockInitialTime));
   constexpr size_t kNumEncoderChannels = 2;
@@ -299,10 +300,10 @@ void CheckControllersOrder(const std::vector<Controller*>& controllers,
   ASSERT_EQ(expected_types.size(), controllers.size());
 
   // We also check that the controllers follow the initial settings.
-  AudioNetworkAdaptor::EncoderRuntimeConfig encoder_config;
+  AudioEncoderRuntimeConfig encoder_config;
 
   for (size_t i = 0; i < controllers.size(); ++i) {
-    AudioNetworkAdaptor::EncoderRuntimeConfig encoder_config;
+    AudioEncoderRuntimeConfig encoder_config;
     // We check the order of |controllers| by judging their decisions.
     controllers[i]->MakeDecision(&encoder_config);
 
@@ -345,7 +346,7 @@ TEST(ControllerManagerTest, CreateFromConfigStringAndCheckDefaultOrder) {
   AddFrameLengthControllerConfig(&config);
   AddBitrateControllerConfig(&config);
 
-  std::string config_string;
+  ProtoString config_string;
   config.SerializeToString(&config_string);
 
   auto states = CreateControllerManager(config_string);
@@ -376,7 +377,7 @@ TEST(ControllerManagerTest, CreateFromConfigStringAndCheckReordering) {
 
   AddBitrateControllerConfig(&config);
 
-  std::string config_string;
+  ProtoString config_string;
   config.SerializeToString(&config_string);
 
   auto states = CreateControllerManager(config_string);

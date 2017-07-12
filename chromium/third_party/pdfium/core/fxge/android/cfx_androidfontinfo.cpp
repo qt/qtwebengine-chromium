@@ -30,7 +30,7 @@ void* CFX_AndroidFontInfo::MapFont(int weight,
                                    bool bItalic,
                                    int charset,
                                    int pitch_family,
-                                   const FX_CHAR* face,
+                                   const char* face,
                                    int& iExact) {
   if (!m_pFontMgr)
     return nullptr;
@@ -50,7 +50,7 @@ void* CFX_AndroidFontInfo::MapFont(int weight,
                                 FPF_MATCHFONT_REPLACEANSI);
 }
 
-void* CFX_AndroidFontInfo::GetFont(const FX_CHAR* face) {
+void* CFX_AndroidFontInfo::GetFont(const char* face) {
   return nullptr;
 }
 
@@ -63,19 +63,19 @@ uint32_t CFX_AndroidFontInfo::GetFontData(void* hFont,
   return static_cast<CFPF_SkiaFont*>(hFont)->GetFontData(table, buffer, size);
 }
 
-bool CFX_AndroidFontInfo::GetFaceName(void* hFont, CFX_ByteString& name) {
+bool CFX_AndroidFontInfo::GetFaceName(void* hFont, CFX_ByteString* name) {
   if (!hFont)
     return false;
 
-  name = static_cast<CFPF_SkiaFont*>(hFont)->GetFamilyName();
+  *name = static_cast<CFPF_SkiaFont*>(hFont)->GetFamilyName();
   return true;
 }
 
-bool CFX_AndroidFontInfo::GetFontCharset(void* hFont, int& charset) {
+bool CFX_AndroidFontInfo::GetFontCharset(void* hFont, int* charset) {
   if (!hFont)
     return false;
 
-  charset = static_cast<CFPF_SkiaFont*>(hFont)->GetCharset();
+  *charset = static_cast<CFPF_SkiaFont*>(hFont)->GetCharset();
   return false;
 }
 

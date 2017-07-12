@@ -21,11 +21,12 @@
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/ptr_util.h"
+#include "third_party/base/stl_util.h"
 
 namespace {
 
 struct PDF_PSOpName {
-  const FX_CHAR* name;
+  const char* name;
   PDF_PSOP op;
 };
 
@@ -70,12 +71,8 @@ bool IsValidBitsPerSample(uint32_t x) {
 }
 
 // See PDF Reference 1.7, page 170.
-FX_FLOAT PDF_Interpolate(FX_FLOAT x,
-                         FX_FLOAT xmin,
-                         FX_FLOAT xmax,
-                         FX_FLOAT ymin,
-                         FX_FLOAT ymax) {
-  FX_FLOAT divisor = xmax - xmin;
+float PDF_Interpolate(float x, float xmin, float xmax, float ymin, float ymax) {
+  float divisor = xmax - xmin;
   return ymin + (divisor ? (x - xmin) * (ymax - ymin) / divisor : 0);
 }
 
@@ -86,20 +83,20 @@ class CPDF_PSFunc : public CPDF_Function {
 
   // CPDF_Function
   bool v_Init(CPDF_Object* pObj) override;
-  bool v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const override;
+  bool v_Call(float* inputs, float* results) const override;
 
  private:
   CPDF_PSEngine m_PS;
 };
 
 bool CPDF_PSFunc::v_Init(CPDF_Object* pObj) {
-  CPDF_StreamAcc acc;
-  acc.LoadAllData(pObj->AsStream(), false);
-  return m_PS.Parse(reinterpret_cast<const FX_CHAR*>(acc.GetData()),
-                    acc.GetSize());
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pObj->AsStream());
+  pAcc->LoadAllData(false);
+  return m_PS.Parse(reinterpret_cast<const char*>(pAcc->GetData()),
+                    pAcc->GetSize());
 }
 
-bool CPDF_PSFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const {
+bool CPDF_PSFunc::v_Call(float* inputs, float* results) const {
   CPDF_PSEngine& PS = const_cast<CPDF_PSEngine&>(m_PS);
   PS.Reset();
   for (uint32_t i = 0; i < m_nInputs; i++)
@@ -120,11 +117,13 @@ class CPDF_PSOP {
     ASSERT(m_op != PSOP_CONST);
     ASSERT(m_op != PSOP_PROC);
   }
-  explicit CPDF_PSOP(FX_FLOAT value) : m_op(PSOP_CONST), m_value(value) {}
-  explicit CPDF_PSOP(std::unique_ptr<CPDF_PSProc> proc)
-      : m_op(PSOP_PROC), m_value(0), m_proc(std::move(proc)) {}
+  explicit CPDF_PSOP(float value) : m_op(PSOP_CONST), m_value(value) {}
+  CPDF_PSOP()
+      : m_op(PSOP_PROC),
+        m_value(0),
+        m_proc(pdfium::MakeUnique<CPDF_PSProc>()) {}
 
-  FX_FLOAT GetFloatValue() const {
+  float GetFloatValue() const {
     if (m_op == PSOP_CONST)
       return m_value;
 
@@ -142,7 +141,7 @@ class CPDF_PSOP {
 
  private:
   const PDF_PSOP m_op;
-  const FX_FLOAT m_value;
+  const float m_value;
   std::unique_ptr<CPDF_PSProc> m_proc;
 };
 
@@ -184,29 +183,23 @@ bool CPDF_PSProc::Execute(CPDF_PSEngine* pEngine) {
   return true;
 }
 
-CPDF_PSEngine::CPDF_PSEngine() {
-  m_StackCount = 0;
-}
+CPDF_PSEngine::CPDF_PSEngine() : m_StackCount(0) {}
+
 CPDF_PSEngine::~CPDF_PSEngine() {}
-void CPDF_PSEngine::Push(FX_FLOAT v) {
-  if (m_StackCount == PSENGINE_STACKSIZE) {
-    return;
-  }
-  m_Stack[m_StackCount++] = v;
+
+void CPDF_PSEngine::Push(float v) {
+  if (m_StackCount < PSENGINE_STACKSIZE)
+    m_Stack[m_StackCount++] = v;
 }
-FX_FLOAT CPDF_PSEngine::Pop() {
-  if (m_StackCount == 0) {
-    return 0;
-  }
-  return m_Stack[--m_StackCount];
+
+float CPDF_PSEngine::Pop() {
+  return m_StackCount > 0 ? m_Stack[--m_StackCount] : 0;
 }
-bool CPDF_PSEngine::Parse(const FX_CHAR* str, int size) {
-  CPDF_SimpleParser parser((uint8_t*)str, size);
+
+bool CPDF_PSEngine::Parse(const char* str, int size) {
+  CPDF_SimpleParser parser(reinterpret_cast<const uint8_t*>(str), size);
   CFX_ByteStringC word = parser.GetWord();
-  if (word != "{") {
-    return false;
-  }
-  return m_MainProc.Parse(&parser, 0);
+  return word == "{" ? m_MainProc.Parse(&parser, 0) : false;
 }
 
 bool CPDF_PSProc::Parse(CPDF_SimpleParser* parser, int depth) {
@@ -215,42 +208,37 @@ bool CPDF_PSProc::Parse(CPDF_SimpleParser* parser, int depth) {
 
   while (1) {
     CFX_ByteStringC word = parser->GetWord();
-    if (word.IsEmpty()) {
+    if (word.IsEmpty())
       return false;
-    }
-    if (word == "}") {
+
+    if (word == "}")
       return true;
-    }
+
     if (word == "{") {
-      std::unique_ptr<CPDF_PSProc> proc(new CPDF_PSProc);
-      std::unique_ptr<CPDF_PSOP> op(new CPDF_PSOP(std::move(proc)));
-      m_Operators.push_back(std::move(op));
-      if (!m_Operators.back()->GetProc()->Parse(parser, depth + 1)) {
+      m_Operators.push_back(pdfium::MakeUnique<CPDF_PSOP>());
+      if (!m_Operators.back()->GetProc()->Parse(parser, depth + 1))
         return false;
-      }
-    } else {
-      bool found = false;
-      for (const PDF_PSOpName& op_name : kPsOpNames) {
-        if (word == CFX_ByteStringC(op_name.name)) {
-          std::unique_ptr<CPDF_PSOP> op(new CPDF_PSOP(op_name.op));
-          m_Operators.push_back(std::move(op));
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        std::unique_ptr<CPDF_PSOP> op(new CPDF_PSOP(FX_atof(word)));
-        m_Operators.push_back(std::move(op));
+      continue;
+    }
+
+    std::unique_ptr<CPDF_PSOP> op;
+    for (const PDF_PSOpName& op_name : kPsOpNames) {
+      if (word == CFX_ByteStringC(op_name.name)) {
+        op = pdfium::MakeUnique<CPDF_PSOP>(op_name.op);
+        break;
       }
     }
+    if (!op)
+      op = pdfium::MakeUnique<CPDF_PSOP>(FX_atof(word));
+    m_Operators.push_back(std::move(op));
   }
 }
 
 bool CPDF_PSEngine::DoOperator(PDF_PSOP op) {
   int i1;
   int i2;
-  FX_FLOAT d1;
-  FX_FLOAT d2;
+  float d1;
+  float d2;
   FX_SAFE_INT32 result;
   switch (op) {
     case PSOP_ADD:
@@ -301,15 +289,15 @@ bool CPDF_PSEngine::DoOperator(PDF_PSOP op) {
       break;
     case PSOP_ABS:
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_fabs(d1));
+      Push((float)fabs(d1));
       break;
     case PSOP_CEILING:
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_ceil(d1));
+      Push((float)ceil(d1));
       break;
     case PSOP_FLOOR:
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_floor(d1));
+      Push((float)floor(d1));
       break;
     case PSOP_ROUND:
       d1 = Pop();
@@ -321,20 +309,20 @@ bool CPDF_PSEngine::DoOperator(PDF_PSOP op) {
       break;
     case PSOP_SQRT:
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_sqrt(d1));
+      Push((float)sqrt(d1));
       break;
     case PSOP_SIN:
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_sin(d1 * FX_PI / 180.0f));
+      Push((float)sin(d1 * FX_PI / 180.0f));
       break;
     case PSOP_COS:
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_cos(d1 * FX_PI / 180.0f));
+      Push((float)cos(d1 * FX_PI / 180.0f));
       break;
     case PSOP_ATAN:
       d2 = Pop();
       d1 = Pop();
-      d1 = (FX_FLOAT)(FXSYS_atan2(d1, d2) * 180.0 / FX_PI);
+      d1 = (float)(atan2(d1, d2) * 180.0 / FX_PI);
       if (d1 < 0) {
         d1 += 360;
       }
@@ -343,15 +331,15 @@ bool CPDF_PSEngine::DoOperator(PDF_PSOP op) {
     case PSOP_EXP:
       d2 = Pop();
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_pow(d1, d2));
+      Push((float)FXSYS_pow(d1, d2));
       break;
     case PSOP_LN:
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_log(d1));
+      Push((float)log(d1));
       break;
     case PSOP_LOG:
       d1 = Pop();
-      Push((FX_FLOAT)FXSYS_log10(d1));
+      Push((float)log10(d1));
       break;
     case PSOP_CVI:
       i1 = (int)Pop();
@@ -469,9 +457,9 @@ bool CPDF_PSEngine::DoOperator(PDF_PSOP op) {
       j %= n;
       if (j > 0)
         j -= n;
-      auto begin_it = std::begin(m_Stack) + m_StackCount - n;
-      auto middle_it = begin_it - j;
-      auto end_it = std::begin(m_Stack) + m_StackCount;
+      auto* begin_it = std::begin(m_Stack) + m_StackCount - n;
+      auto* middle_it = begin_it - j;
+      auto* end_it = std::begin(m_Stack) + m_StackCount;
       std::rotate(begin_it, middle_it, end_it);
       break;
     }
@@ -499,8 +487,8 @@ bool CPDF_SampledFunc::v_Init(CPDF_Object* pObj) {
     return false;
 
   m_SampleMax = 0xffffffff >> (32 - m_nBitsPerSample);
-  m_pSampleStream = pdfium::MakeUnique<CPDF_StreamAcc>();
-  m_pSampleStream->LoadAllData(pStream, false);
+  m_pSampleStream = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+  m_pSampleStream->LoadAllData(false);
   FX_SAFE_UINT32 nTotalSampleBits = 1;
   m_EncodeInfo.resize(m_nInputs);
   for (uint32_t i = 0; i < m_nInputs; i++) {
@@ -514,7 +502,7 @@ bool CPDF_SampledFunc::v_Init(CPDF_Object* pObj) {
     } else {
       m_EncodeInfo[i].encode_min = 0;
       m_EncodeInfo[i].encode_max =
-          m_EncodeInfo[i].sizes == 1 ? 1 : (FX_FLOAT)m_EncodeInfo[i].sizes - 1;
+          m_EncodeInfo[i].sizes == 1 ? 1 : (float)m_EncodeInfo[i].sizes - 1;
     }
   }
   nTotalSampleBits *= m_nBitsPerSample;
@@ -539,10 +527,10 @@ bool CPDF_SampledFunc::v_Init(CPDF_Object* pObj) {
   return true;
 }
 
-bool CPDF_SampledFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const {
+bool CPDF_SampledFunc::v_Call(float* inputs, float* results) const {
   int pos = 0;
-  CFX_FixedBufGrow<FX_FLOAT, 16> encoded_input_buf(m_nInputs);
-  FX_FLOAT* encoded_input = encoded_input_buf;
+  CFX_FixedBufGrow<float, 16> encoded_input_buf(m_nInputs);
+  float* encoded_input = encoded_input_buf;
   CFX_FixedBufGrow<uint32_t, 32> int_buf(m_nInputs * 2);
   uint32_t* index = int_buf;
   uint32_t* blocksize = index + m_nInputs;
@@ -554,8 +542,8 @@ bool CPDF_SampledFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const {
     encoded_input[i] =
         PDF_Interpolate(inputs[i], m_pDomains[i * 2], m_pDomains[i * 2 + 1],
                         m_EncodeInfo[i].encode_min, m_EncodeInfo[i].encode_max);
-    index[i] = std::min((uint32_t)std::max(0.f, encoded_input[i]),
-                        m_EncodeInfo[i].sizes - 1);
+    index[i] = pdfium::clamp(static_cast<uint32_t>(encoded_input[i]), 0U,
+                             m_EncodeInfo[i].sizes - 1);
     pos += index[i] * blocksize[i];
   }
   FX_SAFE_INT32 bits_to_output = m_nOutputs;
@@ -580,11 +568,11 @@ bool CPDF_SampledFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const {
   for (uint32_t j = 0; j < m_nOutputs; j++, bitpos += m_nBitsPerSample) {
     uint32_t sample =
         GetBits32(pSampleData, bitpos.ValueOrDie(), m_nBitsPerSample);
-    FX_FLOAT encoded = (FX_FLOAT)sample;
+    float encoded = (float)sample;
     for (uint32_t i = 0; i < m_nInputs; i++) {
       if (index[i] == m_EncodeInfo[i].sizes - 1) {
         if (index[i] == 0)
-          encoded = encoded_input[i] * (FX_FLOAT)sample;
+          encoded = encoded_input[i] * (float)sample;
       } else {
         FX_SAFE_INT32 bitpos2 = blocksize[i];
         bitpos2 += pos;
@@ -595,12 +583,12 @@ bool CPDF_SampledFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const {
           return false;
         uint32_t sample1 =
             GetBits32(pSampleData, bitpos2.ValueOrDie(), m_nBitsPerSample);
-        encoded += (encoded_input[i] - index[i]) *
-                   ((FX_FLOAT)sample1 - (FX_FLOAT)sample);
+        encoded +=
+            (encoded_input[i] - index[i]) * ((float)sample1 - (float)sample);
       }
     }
     results[j] =
-        PDF_Interpolate(encoded, 0, (FX_FLOAT)m_SampleMax,
+        PDF_Interpolate(encoded, 0, (float)m_SampleMax,
                         m_DecodeInfo[j].decode_min, m_DecodeInfo[j].decode_max);
   }
   return true;
@@ -615,39 +603,42 @@ CPDF_ExpIntFunc::~CPDF_ExpIntFunc() {
   FX_Free(m_pBeginValues);
   FX_Free(m_pEndValues);
 }
+
 bool CPDF_ExpIntFunc::v_Init(CPDF_Object* pObj) {
   CPDF_Dictionary* pDict = pObj->GetDict();
-  if (!pDict) {
+  if (!pDict)
     return false;
-  }
+
   CPDF_Array* pArray0 = pDict->GetArrayFor("C0");
   if (m_nOutputs == 0) {
     m_nOutputs = 1;
-    if (pArray0) {
+    if (pArray0)
       m_nOutputs = pArray0->GetCount();
-    }
   }
+
   CPDF_Array* pArray1 = pDict->GetArrayFor("C1");
-  m_pBeginValues = FX_Alloc2D(FX_FLOAT, m_nOutputs, 2);
-  m_pEndValues = FX_Alloc2D(FX_FLOAT, m_nOutputs, 2);
+  m_pBeginValues = FX_Alloc2D(float, m_nOutputs, 2);
+  m_pEndValues = FX_Alloc2D(float, m_nOutputs, 2);
   for (uint32_t i = 0; i < m_nOutputs; i++) {
     m_pBeginValues[i] = pArray0 ? pArray0->GetFloatAt(i) : 0.0f;
     m_pEndValues[i] = pArray1 ? pArray1->GetFloatAt(i) : 1.0f;
   }
+
   m_Exponent = pDict->GetFloatFor("N");
   m_nOrigOutputs = m_nOutputs;
-  if (m_nOutputs && m_nInputs > INT_MAX / m_nOutputs) {
+  if (m_nOutputs && m_nInputs > INT_MAX / m_nOutputs)
     return false;
-  }
+
   m_nOutputs *= m_nInputs;
   return true;
 }
-bool CPDF_ExpIntFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const {
+
+bool CPDF_ExpIntFunc::v_Call(float* inputs, float* results) const {
   for (uint32_t i = 0; i < m_nInputs; i++)
     for (uint32_t j = 0; j < m_nOrigOutputs; j++) {
       results[i * m_nOrigOutputs + j] =
           m_pBeginValues[j] +
-          (FX_FLOAT)FXSYS_pow(inputs[i], m_Exponent) *
+          FXSYS_pow(inputs[i], m_Exponent) *
               (m_pEndValues[j] - m_pBeginValues[j]);
     }
   return true;
@@ -699,7 +690,7 @@ bool CPDF_StitchFunc::v_Init(CPDF_Object* pObj) {
 
     m_pSubFunctions.push_back(std::move(pFunc));
   }
-  m_pBounds = FX_Alloc(FX_FLOAT, nSubs + 1);
+  m_pBounds = FX_Alloc(float, nSubs + 1);
   m_pBounds[0] = m_pDomains[0];
   pArray = pDict->GetArrayFor("Bounds");
   if (!pArray)
@@ -707,7 +698,7 @@ bool CPDF_StitchFunc::v_Init(CPDF_Object* pObj) {
   for (uint32_t i = 0; i < nSubs - 1; i++)
     m_pBounds[i + 1] = pArray->GetFloatAt(i);
   m_pBounds[nSubs] = m_pDomains[1];
-  m_pEncode = FX_Alloc2D(FX_FLOAT, nSubs, 2);
+  m_pEncode = FX_Alloc2D(float, nSubs, 2);
   pArray = pDict->GetArrayFor("Encode");
   if (!pArray)
     return false;
@@ -717,8 +708,8 @@ bool CPDF_StitchFunc::v_Init(CPDF_Object* pObj) {
   return true;
 }
 
-bool CPDF_StitchFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* outputs) const {
-  FX_FLOAT input = inputs[0];
+bool CPDF_StitchFunc::v_Call(float* inputs, float* outputs) const {
+  float input = inputs[0];
   size_t i;
   for (i = 0; i < m_pSubFunctions.size() - 1; i++) {
     if (input < m_pBounds[i + 1])
@@ -727,7 +718,7 @@ bool CPDF_StitchFunc::v_Call(FX_FLOAT* inputs, FX_FLOAT* outputs) const {
   input = PDF_Interpolate(input, m_pBounds[i], m_pBounds[i + 1],
                           m_pEncode[i * 2], m_pEncode[i * 2 + 1]);
   int nresults;
-  m_pSubFunctions[i]->Call(&input, kRequiredNumInputs, outputs, nresults);
+  m_pSubFunctions[i]->Call(&input, kRequiredNumInputs, outputs, &nresults);
   return true;
 }
 
@@ -792,7 +783,7 @@ bool CPDF_Function::Init(CPDF_Object* pObj) {
   if (m_nInputs == 0)
     return false;
 
-  m_pDomains = FX_Alloc2D(FX_FLOAT, m_nInputs, 2);
+  m_pDomains = FX_Alloc2D(float, m_nInputs, 2);
   for (uint32_t i = 0; i < m_nInputs * 2; i++) {
     m_pDomains[i] = pDomains->GetFloatAt(i);
   }
@@ -800,7 +791,7 @@ bool CPDF_Function::Init(CPDF_Object* pObj) {
   m_nOutputs = 0;
   if (pRanges) {
     m_nOutputs = pRanges->GetCount() / 2;
-    m_pRanges = FX_Alloc2D(FX_FLOAT, m_nOutputs, 2);
+    m_pRanges = FX_Alloc2D(float, m_nOutputs, 2);
     for (uint32_t i = 0; i < m_nOutputs * 2; i++)
       m_pRanges[i] = pRanges->GetFloatAt(i);
   }
@@ -808,37 +799,34 @@ bool CPDF_Function::Init(CPDF_Object* pObj) {
   if (!v_Init(pObj))
     return false;
   if (m_pRanges && m_nOutputs > old_outputs) {
-    m_pRanges = FX_Realloc(FX_FLOAT, m_pRanges, m_nOutputs * 2);
+    m_pRanges = FX_Realloc(float, m_pRanges, m_nOutputs * 2);
     if (m_pRanges) {
-      FXSYS_memset(m_pRanges + (old_outputs * 2), 0,
-                   sizeof(FX_FLOAT) * (m_nOutputs - old_outputs) * 2);
+      memset(m_pRanges + (old_outputs * 2), 0,
+             sizeof(float) * (m_nOutputs - old_outputs) * 2);
     }
   }
   return true;
 }
 
-bool CPDF_Function::Call(FX_FLOAT* inputs,
+bool CPDF_Function::Call(float* inputs,
                          uint32_t ninputs,
-                         FX_FLOAT* results,
-                         int& nresults) const {
-  if (m_nInputs != ninputs) {
+                         float* results,
+                         int* nresults) const {
+  if (m_nInputs != ninputs)
     return false;
-  }
-  nresults = m_nOutputs;
+
+  *nresults = m_nOutputs;
   for (uint32_t i = 0; i < m_nInputs; i++) {
-    if (inputs[i] < m_pDomains[i * 2])
-      inputs[i] = m_pDomains[i * 2];
-    else if (inputs[i] > m_pDomains[i * 2 + 1])
-      inputs[i] = m_pDomains[i * 2] + 1;
+    inputs[i] =
+        pdfium::clamp(inputs[i], m_pDomains[i * 2], m_pDomains[i * 2 + 1]);
   }
   v_Call(inputs, results);
-  if (m_pRanges) {
-    for (uint32_t i = 0; i < m_nOutputs; i++) {
-      if (results[i] < m_pRanges[i * 2])
-        results[i] = m_pRanges[i * 2];
-      else if (results[i] > m_pRanges[i * 2 + 1])
-        results[i] = m_pRanges[i * 2 + 1];
-    }
+  if (!m_pRanges)
+    return true;
+
+  for (uint32_t i = 0; i < m_nOutputs; i++) {
+    results[i] =
+        pdfium::clamp(results[i], m_pRanges[i * 2], m_pRanges[i * 2 + 1]);
   }
   return true;
 }

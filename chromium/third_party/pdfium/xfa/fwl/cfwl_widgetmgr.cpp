@@ -13,7 +13,7 @@
 #include "xfa/fwl/cfwl_form.h"
 #include "xfa/fwl/cfwl_notedriver.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
-#include "xfa/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
 
 namespace {
 
@@ -383,8 +383,8 @@ bool CFWL_WidgetMgr::IsAbleNative(CFWL_Widget* pWidget) const {
 }
 
 void CFWL_WidgetMgr::GetAdapterPopupPos(CFWL_Widget* pWidget,
-                                        FX_FLOAT fMinHeight,
-                                        FX_FLOAT fMaxHeight,
+                                        float fMinHeight,
+                                        float fMaxHeight,
                                         const CFX_RectF& rtAnchor,
                                         CFX_RectF& rtPopup) const {
   m_pAdapter->GetPopupPos(pWidget, fMinHeight, fMaxHeight, rtAnchor, rtPopup);
@@ -532,9 +532,9 @@ bool CFWL_WidgetMgr::IsNeedRepaint(CFWL_Widget* pWidget,
   bool bOrginPtIntersectWidthChild = false;
   bool bOrginPtIntersectWidthDirty = rtDirty.Contains(rtWidget.TopLeft());
   static FWL_NEEDREPAINTHITDATA hitPoint[kNeedRepaintHitPoints];
-  FXSYS_memset(hitPoint, 0, sizeof(hitPoint));
-  FX_FLOAT fxPiece = rtWidget.width / kNeedRepaintHitPiece;
-  FX_FLOAT fyPiece = rtWidget.height / kNeedRepaintHitPiece;
+  memset(hitPoint, 0, sizeof(hitPoint));
+  float fxPiece = rtWidget.width / kNeedRepaintHitPiece;
+  float fyPiece = rtWidget.height / kNeedRepaintHitPiece;
   hitPoint[2].hitPoint.x = hitPoint[6].hitPoint.x = rtWidget.left;
   hitPoint[0].hitPoint.x = hitPoint[3].hitPoint.x = hitPoint[7].hitPoint.x =
       hitPoint[10].hitPoint.x = fxPiece + rtWidget.left;

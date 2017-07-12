@@ -55,10 +55,10 @@ CJS_Value::CJS_Value(CJS_Runtime* pRuntime, CJS_Object* pObj) {
     m_pValue = pObj->ToV8Object();
 }
 
-CJS_Value::CJS_Value(CJS_Runtime* pRuntime, const FX_WCHAR* pWstr)
+CJS_Value::CJS_Value(CJS_Runtime* pRuntime, const wchar_t* pWstr)
     : m_pValue(pRuntime->NewString(pWstr)) {}
 
-CJS_Value::CJS_Value(CJS_Runtime* pRuntime, const FX_CHAR* pStr)
+CJS_Value::CJS_Value(CJS_Runtime* pRuntime, const char* pStr)
     : m_pValue(pRuntime->NewString(CFX_WideString::FromLocal(pStr).c_str())) {}
 
 CJS_Value::CJS_Value(CJS_Runtime* pRuntime, const CJS_Array& array)
@@ -267,7 +267,7 @@ void CJS_PropValue::operator>>(CFX_ByteString& str) const {
   str = m_Value.ToCFXByteString(m_pJSRuntime);
 }
 
-void CJS_PropValue::operator<<(const FX_WCHAR* str) {
+void CJS_PropValue::operator<<(const wchar_t* str) {
   ASSERT(!m_bIsSetting);
   m_Value = CJS_Value(m_pJSRuntime, str);
 }
@@ -501,7 +501,7 @@ int _isfinite(double v) {
 }
 
 double _toInteger(double n) {
-  return (n >= 0) ? FXSYS_floor(n) : -FXSYS_floor(-n);
+  return (n >= 0) ? floor(n) : -floor(-n);
 }
 
 bool _isLeapYear(int year) {
@@ -509,9 +509,8 @@ bool _isLeapYear(int year) {
 }
 
 int _DayFromYear(int y) {
-  return (int)(365 * (y - 1970.0) + FXSYS_floor((y - 1969.0) / 4) -
-               FXSYS_floor((y - 1901.0) / 100) +
-               FXSYS_floor((y - 1601.0) / 400));
+  return (int)(365 * (y - 1970.0) + floor((y - 1969.0) / 4) -
+               floor((y - 1901.0) / 100) + floor((y - 1601.0) / 400));
 }
 
 double _TimeFromYear(int y) {
@@ -529,7 +528,7 @@ double _TimeFromYearMonth(int y, int m) {
 }
 
 int _Day(double t) {
-  return (int)FXSYS_floor(t / 86400000);
+  return (int)floor(t / 86400000);
 }
 
 int _YearFromTime(double t) {
@@ -699,7 +698,7 @@ double JS_MakeDay(int nYear, int nMonth, int nDate) {
   double y = _toInteger(nYear);
   double m = _toInteger(nMonth);
   double dt = _toInteger(nDate);
-  double ym = y + FXSYS_floor((double)m / 12);
+  double ym = y + floor((double)m / 12);
   double mn = _Mod(m, 12);
 
   double t = _TimeFromYearMonth((int)ym, (int)mn);

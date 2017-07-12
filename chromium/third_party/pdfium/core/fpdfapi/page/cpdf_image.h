@@ -11,6 +11,7 @@
 
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fxcrt/cfx_maybe_owned.h"
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_system.h"
 
 class CFX_DIBSource;
@@ -20,12 +21,10 @@ class CPDF_Page;
 class IFX_Pause;
 class IFX_SeekableReadStream;
 
-class CPDF_Image {
+class CPDF_Image : public CFX_Retainable {
  public:
-  explicit CPDF_Image(CPDF_Document* pDoc);
-  CPDF_Image(CPDF_Document* pDoc, std::unique_ptr<CPDF_Stream> pStream);
-  CPDF_Image(CPDF_Document* pDoc, uint32_t dwStreamObjNum);
-  ~CPDF_Image();
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
   void ConvertStreamToIndirectObject();
 
@@ -44,28 +43,33 @@ class CPDF_Image {
   bool IsMask() const { return m_bIsMask; }
   bool IsInterpol() const { return m_bInterpolate; }
 
-  std::unique_ptr<CFX_DIBSource> LoadDIBSource() const;
+  CFX_RetainPtr<CFX_DIBSource> LoadDIBSource() const;
 
-  void SetImage(const CFX_DIBitmap* pDIBitmap);
+  void SetImage(const CFX_RetainPtr<CFX_DIBitmap>& pDIBitmap);
   void SetJpegImage(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile);
   void SetJpegImageInline(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile);
 
-  void ResetCache(CPDF_Page* pPage, const CFX_DIBitmap* pDIBitmap);
-
+  void ResetCache(CPDF_Page* pPage,
+                  const CFX_RetainPtr<CFX_DIBitmap>& pDIBitmap);
   bool StartLoadDIBSource(CPDF_Dictionary* pFormResource,
                           CPDF_Dictionary* pPageResource,
                           bool bStdCS = false,
                           uint32_t GroupFamily = 0,
                           bool bLoadMask = false);
   bool Continue(IFX_Pause* pPause);
-  CFX_DIBSource* DetachBitmap();
-  CFX_DIBSource* DetachMask();
+  CFX_RetainPtr<CFX_DIBSource> DetachBitmap();
+  CFX_RetainPtr<CFX_DIBSource> DetachMask();
 
-  CFX_DIBSource* m_pDIBSource = nullptr;
-  CFX_DIBSource* m_pMask = nullptr;
+  CFX_RetainPtr<CFX_DIBSource> m_pDIBSource;
+  CFX_RetainPtr<CFX_DIBSource> m_pMask;
   uint32_t m_MatteColor = 0;
 
  private:
+  explicit CPDF_Image(CPDF_Document* pDoc);
+  CPDF_Image(CPDF_Document* pDoc, std::unique_ptr<CPDF_Stream> pStream);
+  CPDF_Image(CPDF_Document* pDoc, uint32_t dwStreamObjNum);
+  ~CPDF_Image() override;
+
   void FinishInitialization();
   std::unique_ptr<CPDF_Dictionary> InitJPEG(uint8_t* pData, uint32_t size);
 

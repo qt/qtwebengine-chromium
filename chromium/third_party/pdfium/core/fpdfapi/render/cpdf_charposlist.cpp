@@ -20,9 +20,9 @@ CPDF_CharPosList::~CPDF_CharPosList() {
 }
 
 void CPDF_CharPosList::Load(const std::vector<uint32_t>& charCodes,
-                            const std::vector<FX_FLOAT>& charPos,
+                            const std::vector<float>& charPos,
                             CPDF_Font* pFont,
-                            FX_FLOAT FontSize) {
+                            float FontSize) {
   int nChars = pdfium::CollectionSize<int>(charCodes);
   m_pCharPos = FX_Alloc(FXTEXT_CHARPOS, nChars);
   m_nChars = 0;
@@ -39,19 +39,23 @@ void CPDF_CharPosList::Load(const std::vector<uint32_t>& charCodes,
       charpos.m_bFontStyle = true;
 
     charpos.m_GlyphIndex = pFont->GlyphFromCharCode(CharCode, &bVert);
-    if (charpos.m_GlyphIndex != static_cast<uint32_t>(-1)) {
+    uint32_t GlyphID = charpos.m_GlyphIndex;
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+    charpos.m_ExtGID = pFont->GlyphFromCharCodeExt(CharCode);
+    GlyphID = charpos.m_ExtGID;
+#endif
+    if (GlyphID != static_cast<uint32_t>(-1)) {
       charpos.m_FallbackFontPosition = -1;
     } else {
       charpos.m_FallbackFontPosition =
           pFont->FallbackFontFromCharcode(CharCode);
       charpos.m_GlyphIndex = pFont->FallbackGlyphFromCharcode(
           charpos.m_FallbackFontPosition, CharCode);
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+      charpos.m_ExtGID = charpos.m_GlyphIndex;
+#endif
     }
 
-// TODO(npm): Figure out how this affects m_ExtGID
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-    charpos.m_ExtGID = pFont->GlyphFromCharCodeExt(CharCode);
-#endif
     if (!pFont->IsEmbedded() && !pFont->IsCIDFont())
       charpos.m_FontCharWidth = pFont->GetCharWidthF(CharCode);
     else

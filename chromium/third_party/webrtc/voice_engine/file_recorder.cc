@@ -12,6 +12,7 @@
 
 #include <list>
 
+#include "webrtc/base/logging.h"
 #include "webrtc/base/platform_thread.h"
 #include "webrtc/common_audio/resampler/include/resampler.h"
 #include "webrtc/common_types.h"
@@ -19,7 +20,6 @@
 #include "webrtc/modules/media_file/media_file.h"
 #include "webrtc/modules/media_file/media_file_defines.h"
 #include "webrtc/system_wrappers/include/event_wrapper.h"
-#include "webrtc/system_wrappers/include/logging.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/voice_engine/coder.h"
 
@@ -31,8 +31,6 @@ namespace {
 enum { MAX_AUDIO_BUFFER_IN_SAMPLES = 60 * 32 };
 enum { MAX_AUDIO_BUFFER_IN_BYTES = MAX_AUDIO_BUFFER_IN_SAMPLES * 2 };
 enum { kMaxAudioBufferQueueLength = 100 };
-
-class CriticalSectionWrapper;
 
 class FileRecorderImpl : public FileRecorder {
  public:

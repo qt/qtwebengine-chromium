@@ -20,8 +20,8 @@ class CXFA_FFNotify {
   void OnPageEvent(CXFA_ContainerLayoutItem* pSender, uint32_t dwEvent);
 
   void OnWidgetListItemAdded(CXFA_WidgetData* pSender,
-                             const FX_WCHAR* pLabel,
-                             const FX_WCHAR* pValue,
+                             const wchar_t* pLabel,
+                             const wchar_t* pValue,
                              int32_t iIndex);
   void OnWidgetListItemRemoved(CXFA_WidgetData* pSender, int32_t iIndex);
 
@@ -44,11 +44,11 @@ class CXFA_FFNotify {
                             CXFA_LayoutItem* pSender);
 
   void StartFieldDrawLayout(CXFA_Node* pItem,
-                            FX_FLOAT& fCalcWidth,
-                            FX_FLOAT& fCalcHeight);
+                            float& fCalcWidth,
+                            float& fCalcHeight);
   bool FindSplitPos(CXFA_Node* pItem,
                     int32_t iBlockIndex,
-                    FX_FLOAT& fCalcHeightPos);
+                    float& fCalcHeightPos);
   bool RunScript(CXFA_Node* pScript, CXFA_Node* pFormItem);
   int32_t ExecEventByDeepFirst(CXFA_Node* pFormNode,
                                XFA_EVENTTYPE eEventType,

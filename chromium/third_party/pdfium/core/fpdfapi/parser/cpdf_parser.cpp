@@ -40,11 +40,11 @@ uint32_t GetVarInt(const uint8_t* p, int32_t n) {
   return result;
 }
 
-int32_t GetStreamNCount(CPDF_StreamAcc* pObjStream) {
+int32_t GetStreamNCount(const CFX_RetainPtr<CPDF_StreamAcc>& pObjStream) {
   return pObjStream->GetDict()->GetIntegerFor("N");
 }
 
-int32_t GetStreamFirst(CPDF_StreamAcc* pObjStream) {
+int32_t GetStreamFirst(const CFX_RetainPtr<CPDF_StreamAcc>& pObjStream) {
   return pObjStream->GetDict()->GetIntegerFor("First");
 }
 
@@ -100,8 +100,8 @@ void CPDF_Parser::SetEncryptDictionary(CPDF_Dictionary* pDict) {
   m_pEncryptDict = pDict;
 }
 
-CPDF_CryptoHandler* CPDF_Parser::GetCryptoHandler() {
-  return m_pSyntax->m_pCryptoHandler.get();
+CFX_RetainPtr<CPDF_CryptoHandler> CPDF_Parser::GetCryptoHandler() const {
+  return m_pSyntax->m_pCryptoHandler;
 }
 
 CFX_RetainPtr<IFX_SeekableReadStream> CPDF_Parser::GetFileAccess() const {
@@ -143,13 +143,13 @@ CPDF_Parser::Error CPDF_Parser::StartParse(
     return FORMAT_ERROR;
 
   if (std::isdigit(ch))
-    m_FileVersion = FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(ch)) * 10;
+    m_FileVersion = FXSYS_toDecimalDigit(static_cast<wchar_t>(ch)) * 10;
 
   if (!m_pSyntax->GetCharAt(7, ch))
     return FORMAT_ERROR;
 
   if (std::isdigit(ch))
-    m_FileVersion += FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(ch));
+    m_FileVersion += FXSYS_toDecimalDigit(static_cast<wchar_t>(ch));
 
   if (m_pSyntax->m_FileLen < m_pSyntax->m_HeaderOffset + 9)
     return FORMAT_ERROR;
@@ -240,30 +240,25 @@ CPDF_Parser::Error CPDF_Parser::SetEncryptHandler() {
 
   if (m_pEncryptDict) {
     CFX_ByteString filter = m_pEncryptDict->GetStringFor("Filter");
-    std::unique_ptr<CPDF_SecurityHandler> pSecurityHandler;
-    Error err = HANDLER_ERROR;
-    if (filter == "Standard") {
-      pSecurityHandler = pdfium::MakeUnique<CPDF_SecurityHandler>();
-      err = PASSWORD_ERROR;
-    }
-    if (!pSecurityHandler)
+    if (filter != "Standard")
       return HANDLER_ERROR;
 
+    std::unique_ptr<CPDF_SecurityHandler> pSecurityHandler =
+        pdfium::MakeUnique<CPDF_SecurityHandler>();
     if (!pSecurityHandler->OnInit(this, m_pEncryptDict))
-      return err;
+      return PASSWORD_ERROR;
 
     m_pSecurityHandler = std::move(pSecurityHandler);
-    std::unique_ptr<CPDF_CryptoHandler> pCryptoHandler(
-        m_pSecurityHandler->CreateCryptoHandler());
+    auto pCryptoHandler = pdfium::MakeRetain<CPDF_CryptoHandler>();
     if (!pCryptoHandler->Init(m_pEncryptDict, m_pSecurityHandler.get()))
       return HANDLER_ERROR;
-    m_pSyntax->SetEncrypt(std::move(pCryptoHandler));
+    m_pSyntax->SetEncrypt(pCryptoHandler);
   }
   return SUCCESS;
 }
 
 void CPDF_Parser::ReleaseEncryptHandler() {
-  m_pSyntax->m_pCryptoHandler.reset();
+  m_pSyntax->m_pCryptoHandler.Reset();
   m_pSecurityHandler.reset();
 }
 
@@ -627,7 +622,7 @@ bool CPDF_Parser::RebuildCrossRef() {
           if (std::isdigit(byte)) {
             start_pos = pos + i;
             state = ParserState::kObjNum;
-            objnum = FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(byte));
+            objnum = FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
           } else if (byte == 't') {
             state = ParserState::kTrailer;
             inside_index = 1;
@@ -643,7 +638,7 @@ bool CPDF_Parser::RebuildCrossRef() {
         case ParserState::kObjNum:
           if (std::isdigit(byte)) {
             objnum =
-                objnum * 10 + FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(byte));
+                objnum * 10 + FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
           } else if (PDFCharIsWhitespace(byte)) {
             state = ParserState::kPostObjNum;
           } else {
@@ -657,7 +652,7 @@ bool CPDF_Parser::RebuildCrossRef() {
           if (std::isdigit(byte)) {
             start_pos1 = pos + i;
             state = ParserState::kGenNum;
-            gennum = FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(byte));
+            gennum = FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
           } else if (byte == 't') {
             state = ParserState::kTrailer;
             inside_index = 1;
@@ -670,7 +665,7 @@ bool CPDF_Parser::RebuildCrossRef() {
         case ParserState::kGenNum:
           if (std::isdigit(byte)) {
             gennum =
-                gennum * 10 + FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(byte));
+                gennum * 10 + FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
           } else if (PDFCharIsWhitespace(byte)) {
             state = ParserState::kPostGenNum;
           } else {
@@ -685,7 +680,7 @@ bool CPDF_Parser::RebuildCrossRef() {
             inside_index = 1;
           } else if (std::isdigit(byte)) {
             objnum = gennum;
-            gennum = FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(byte));
+            gennum = FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
             start_pos = start_pos1;
             start_pos1 = pos + i;
             state = ParserState::kGenNum;
@@ -997,11 +992,11 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
     return false;
 
   uint32_t totalWidth = dwAccWidth.ValueOrDie();
-  CPDF_StreamAcc acc;
-  acc.LoadAllData(pStream);
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+  pAcc->LoadAllData();
 
-  const uint8_t* pData = acc.GetData();
-  uint32_t dwTotalSize = acc.GetSize();
+  const uint8_t* pData = pAcc->GetData();
+  uint32_t dwTotalSize = pAcc->GetSize();
   uint32_t segindex = 0;
   for (uint32_t i = 0; i < arrIndex.size(); i++) {
     int32_t startnum = arrIndex[i].first;
@@ -1114,7 +1109,8 @@ std::unique_ptr<CPDF_Object> CPDF_Parser::ParseIndirectObject(
   if (GetObjectType(objnum) != 2)
     return nullptr;
 
-  CPDF_StreamAcc* pObjStream = GetObjectStream(m_ObjectInfo[objnum].pos);
+  CFX_RetainPtr<CPDF_StreamAcc> pObjStream =
+      GetObjectStream(m_ObjectInfo[objnum].pos);
   if (!pObjStream)
     return nullptr;
 
@@ -1141,10 +1137,10 @@ std::unique_ptr<CPDF_Object> CPDF_Parser::ParseIndirectObject(
   return syntax.GetObject(pObjList, 0, 0, true);
 }
 
-CPDF_StreamAcc* CPDF_Parser::GetObjectStream(uint32_t objnum) {
+CFX_RetainPtr<CPDF_StreamAcc> CPDF_Parser::GetObjectStream(uint32_t objnum) {
   auto it = m_ObjectStreamMap.find(objnum);
   if (it != m_ObjectStreamMap.end())
-    return it->second.get();
+    return it->second;
 
   if (!m_pDocument)
     return nullptr;
@@ -1154,9 +1150,9 @@ CPDF_StreamAcc* CPDF_Parser::GetObjectStream(uint32_t objnum) {
   if (!pStream)
     return nullptr;
 
-  CPDF_StreamAcc* pStreamAcc = new CPDF_StreamAcc;
-  pStreamAcc->LoadAllData(pStream);
-  m_ObjectStreamMap[objnum].reset(pStreamAcc);
+  auto pStreamAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+  pStreamAcc->LoadAllData();
+  m_ObjectStreamMap[objnum] = pStreamAcc;
   return pStreamAcc;
 }
 
@@ -1190,7 +1186,8 @@ void CPDF_Parser::GetIndirectBinary(uint32_t objnum,
     return;
 
   if (GetObjectType(objnum) == 2) {
-    CPDF_StreamAcc* pObjStream = GetObjectStream(m_ObjectInfo[objnum].pos);
+    CFX_RetainPtr<CPDF_StreamAcc> pObjStream =
+        GetObjectStream(m_ObjectInfo[objnum].pos);
     if (!pObjStream)
       return;
 
@@ -1217,7 +1214,7 @@ void CPDF_Parser::GetIndirectBinary(uint32_t objnum,
       }
 
       pBuffer = FX_Alloc(uint8_t, size);
-      FXSYS_memcpy(pBuffer, pData + thisoff + offset, size);
+      memcpy(pBuffer, pData + thisoff + offset, size);
       return;
     }
     return;

@@ -9,10 +9,10 @@
 
 #include <memory>
 
+#include "fxbarcode/BC_Library.h"
 #include "xfa/fwl/cfwl_edit.h"
 #include "xfa/fwl/cfwl_scrollbar.h"
 #include "xfa/fwl/cfwl_widget.h"
-#include "xfa/fxbarcode/BC_Library.h"
 
 class CFWL_WidgetProperties;
 class CFX_Barcode;
@@ -33,9 +33,8 @@ enum FWL_BCDAttribute {
   FWL_BCDATTRIBUTE_WIDENARROWRATIO = 1 << 7,
   FWL_BCDATTRIBUTE_STARTCHAR = 1 << 8,
   FWL_BCDATTRIBUTE_ENDCHAR = 1 << 9,
-  FWL_BCDATTRIBUTE_VERSION = 1 << 10,
-  FWL_BCDATTRIBUTE_ECLEVEL = 1 << 11,
-  FWL_BCDATTRIBUTE_TRUNCATED = 1 << 12
+  FWL_BCDATTRIBUTE_ECLEVEL = 1 << 10,
+  FWL_BCDATTRIBUTE_TRUNCATED = 1 << 11,
 };
 
 class CFWL_Barcode : public CFWL_Edit {
@@ -63,8 +62,8 @@ class CFWL_Barcode : public CFWL_Edit {
   void SetPrintChecksum(bool printChecksum);
   void SetTextLocation(BC_TEXT_LOC location);
   void SetWideNarrowRatio(int32_t ratio);
-  void SetStartChar(FX_CHAR startChar);
-  void SetEndChar(FX_CHAR endChar);
+  void SetStartChar(char startChar);
+  void SetEndChar(char endChar);
   void SetErrorCorrectionLevel(int32_t ecLevel);
   void SetTruncated(bool truncated);
 
@@ -83,8 +82,8 @@ class CFWL_Barcode : public CFWL_Edit {
   bool m_bPrintChecksum;
   BC_TEXT_LOC m_eTextLocation;
   int32_t m_nWideNarrowRatio;
-  FX_CHAR m_cStartChar;
-  FX_CHAR m_cEndChar;
+  char m_cStartChar;
+  char m_cEndChar;
   int32_t m_nECLevel;
   bool m_bTruncated;
   uint32_t m_dwAttributeMask;

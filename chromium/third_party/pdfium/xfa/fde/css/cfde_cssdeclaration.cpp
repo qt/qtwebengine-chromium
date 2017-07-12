@@ -23,9 +23,9 @@ uint8_t Hex2Dec(uint8_t hexHigh, uint8_t hexLow) {
   return (FXSYS_toHexDigit(hexHigh) << 4) + FXSYS_toHexDigit(hexLow);
 }
 
-bool ParseCSSNumber(const FX_WCHAR* pszValue,
+bool ParseCSSNumber(const wchar_t* pszValue,
                     int32_t iValueLen,
-                    FX_FLOAT& fValue,
+                    float& fValue,
                     FDE_CSSNumberType& eUnit) {
   ASSERT(pszValue && iValueLen > 0);
   int32_t iUsedLen = 0;
@@ -50,7 +50,7 @@ bool ParseCSSNumber(const FX_WCHAR* pszValue,
 }  // namespace
 
 // static
-bool CFDE_CSSDeclaration::ParseCSSString(const FX_WCHAR* pszValue,
+bool CFDE_CSSDeclaration::ParseCSSString(const wchar_t* pszValue,
                                          int32_t iValueLen,
                                          int32_t* iOffset,
                                          int32_t* iLength) {
@@ -58,7 +58,7 @@ bool CFDE_CSSDeclaration::ParseCSSString(const FX_WCHAR* pszValue,
   *iOffset = 0;
   *iLength = iValueLen;
   if (iValueLen >= 2) {
-    FX_WCHAR first = pszValue[0], last = pszValue[iValueLen - 1];
+    wchar_t first = pszValue[0], last = pszValue[iValueLen - 1];
     if ((first == '\"' && last == '\"') || (first == '\'' && last == '\'')) {
       *iOffset = 1;
       *iLength -= 2;
@@ -68,7 +68,7 @@ bool CFDE_CSSDeclaration::ParseCSSString(const FX_WCHAR* pszValue,
 }
 
 // static.
-bool CFDE_CSSDeclaration::ParseCSSColor(const FX_WCHAR* pszValue,
+bool CFDE_CSSDeclaration::ParseCSSColor(const wchar_t* pszValue,
                                         int32_t iValueLen,
                                         FX_ARGB* dwColor) {
   ASSERT(pszValue && iValueLen > 0);
@@ -100,7 +100,7 @@ bool CFDE_CSSDeclaration::ParseCSSColor(const FX_WCHAR* pszValue,
       return false;
 
     uint8_t rgb[3] = {0};
-    FX_FLOAT fValue;
+    float fValue;
     FDE_CSSPrimitiveType eType;
     CFDE_CSSValueListParser list(pszValue + 4, iValueLen - 5, ',');
     for (int32_t i = 0; i < 3; ++i) {
@@ -159,7 +159,7 @@ void CFDE_CSSDeclaration::AddProperty(const FDE_CSSPropertyTable* pTable,
                                       const CFX_WideStringC& value) {
   ASSERT(!value.IsEmpty());
 
-  const FX_WCHAR* pszValue = value.c_str();
+  const wchar_t* pszValue = value.c_str();
   int32_t iValueLen = value.GetLength();
 
   bool bImportant = false;
@@ -277,9 +277,9 @@ void CFDE_CSSDeclaration::AddProperty(const CFX_WideString& prop,
 }
 
 CFX_RetainPtr<CFDE_CSSValue> CFDE_CSSDeclaration::ParseNumber(
-    const FX_WCHAR* pszValue,
+    const wchar_t* pszValue,
     int32_t iValueLen) {
-  FX_FLOAT fValue;
+  float fValue;
   FDE_CSSNumberType eUnit;
   if (!ParseCSSNumber(pszValue, iValueLen, fValue, eUnit))
     return nullptr;
@@ -287,7 +287,7 @@ CFX_RetainPtr<CFDE_CSSValue> CFDE_CSSDeclaration::ParseNumber(
 }
 
 CFX_RetainPtr<CFDE_CSSValue> CFDE_CSSDeclaration::ParseEnum(
-    const FX_WCHAR* pszValue,
+    const wchar_t* pszValue,
     int32_t iValueLen) {
   const FDE_CSSPropertyValueTable* pValue =
       FDE_GetCSSPropertyValueByName(CFX_WideStringC(pszValue, iValueLen));
@@ -296,7 +296,7 @@ CFX_RetainPtr<CFDE_CSSValue> CFDE_CSSDeclaration::ParseEnum(
 }
 
 CFX_RetainPtr<CFDE_CSSValue> CFDE_CSSDeclaration::ParseColor(
-    const FX_WCHAR* pszValue,
+    const wchar_t* pszValue,
     int32_t iValueLen) {
   FX_ARGB dwColor;
   if (!ParseCSSColor(pszValue, iValueLen, &dwColor))
@@ -305,7 +305,7 @@ CFX_RetainPtr<CFDE_CSSValue> CFDE_CSSDeclaration::ParseColor(
 }
 
 CFX_RetainPtr<CFDE_CSSValue> CFDE_CSSDeclaration::ParseString(
-    const FX_WCHAR* pszValue,
+    const wchar_t* pszValue,
     int32_t iValueLen) {
   int32_t iOffset;
   if (!ParseCSSString(pszValue, iValueLen, &iOffset, &iValueLen))
@@ -320,10 +320,10 @@ CFX_RetainPtr<CFDE_CSSValue> CFDE_CSSDeclaration::ParseString(
 
 void CFDE_CSSDeclaration::ParseValueListProperty(
     const FDE_CSSPropertyTable* pTable,
-    const FX_WCHAR* pszValue,
+    const wchar_t* pszValue,
     int32_t iValueLen,
     bool bImportant) {
-  FX_WCHAR separator =
+  wchar_t separator =
       (pTable->eName == FDE_CSSProperty::FontFamily) ? ',' : ' ';
   CFDE_CSSValueListParser parser(pszValue, iValueLen, separator);
 
@@ -334,7 +334,7 @@ void CFDE_CSSDeclaration::ParseValueListProperty(
     switch (eType) {
       case FDE_CSSPrimitiveType::Number:
         if (dwType & FDE_CSSVALUETYPE_MaybeNumber) {
-          FX_FLOAT fValue;
+          float fValue;
           FDE_CSSNumberType eNumType;
           if (ParseCSSNumber(pszValue, iValueLen, fValue, eNumType))
             list.push_back(
@@ -444,7 +444,7 @@ void CFDE_CSSDeclaration::Add4ValuesProperty(
 }
 
 bool CFDE_CSSDeclaration::ParseBorderProperty(
-    const FX_WCHAR* pszValue,
+    const wchar_t* pszValue,
     int32_t iValueLen,
     CFX_RetainPtr<CFDE_CSSValue>& pWidth) const {
   pWidth.Reset(nullptr);
@@ -457,7 +457,7 @@ bool CFDE_CSSDeclaration::ParseBorderProperty(
         if (pWidth)
           continue;
 
-        FX_FLOAT fValue;
+        float fValue;
         FDE_CSSNumberType eNumType;
         if (ParseCSSNumber(pszValue, iValueLen, fValue, eNumType))
           pWidth = pdfium::MakeRetain<CFDE_CSSNumberValue>(eNumType, fValue);
@@ -497,7 +497,7 @@ bool CFDE_CSSDeclaration::ParseBorderProperty(
   return true;
 }
 
-void CFDE_CSSDeclaration::ParseFontProperty(const FX_WCHAR* pszValue,
+void CFDE_CSSDeclaration::ParseFontProperty(const wchar_t* pszValue,
                                             int32_t iValueLen,
                                             bool bImportant) {
   CFDE_CSSValueListParser parser(pszValue, iValueLen, '/');
@@ -569,7 +569,7 @@ void CFDE_CSSDeclaration::ParseFontProperty(const FX_WCHAR* pszValue,
         break;
       }
       case FDE_CSSPrimitiveType::Number: {
-        FX_FLOAT fValue;
+        float fValue;
         FDE_CSSNumberType eNumType;
         if (!ParseCSSNumber(pszValue, iValueLen, fValue, eNumType))
           break;

@@ -16,11 +16,12 @@
 #include "webrtc/test/gmock.h"
 #include "webrtc/test/gtest.h"
 
-using testing::ElementsAreArray;
-using testing::make_tuple;
-
 namespace webrtc {
 namespace {
+using ::testing::ElementsAreArray;
+using ::testing::IsEmpty;
+using ::testing::make_tuple;
+
 constexpr int8_t kPayloadType = 100;
 constexpr uint32_t kSsrc = 0x12345678;
 constexpr uint16_t kSeqNum = 88;
@@ -116,6 +117,52 @@ TEST(RtpPacketTest, CreateWith2Extensions) {
               ElementsAreArray(packet.data(), packet.size()));
 }
 
+TEST(RtpPacketTest, CreateWithExtensionsWithoutManager) {
+  RtpPacketToSend packet(nullptr);
+  packet.SetPayloadType(kPayloadType);
+  packet.SetSequenceNumber(kSeqNum);
+  packet.SetTimestamp(kTimestamp);
+  packet.SetSsrc(kSsrc);
+
+  auto raw = packet.AllocateRawExtension(kTransmissionOffsetExtensionId,
+                                         TransmissionOffset::kValueSizeBytes);
+  EXPECT_EQ(raw.size(), TransmissionOffset::kValueSizeBytes);
+  TransmissionOffset::Write(raw.data(), kTimeOffset);
+
+  raw = packet.AllocateRawExtension(kAudioLevelExtensionId,
+                                    AudioLevel::kValueSizeBytes);
+  EXPECT_EQ(raw.size(), AudioLevel::kValueSizeBytes);
+  AudioLevel::Write(raw.data(), kVoiceActive, kAudioLevel);
+
+  EXPECT_THAT(kPacketWithTOAndAL,
+              ElementsAreArray(packet.data(), packet.size()));
+}
+
+TEST(RtpPacketTest, CreateWithMaxSizeHeaderExtension) {
+  const size_t kMaxExtensionSize = 16;
+  const int kId = 1;
+  const uint8_t kValue[16] = "123456789abcdef";
+
+  // Write packet with a custom extension.
+  RtpPacketToSend packet(nullptr);
+  packet.SetRawExtension(kId, kValue);
+  // Using different size for same id is not allowed.
+  EXPECT_TRUE(packet.AllocateRawExtension(kId, kMaxExtensionSize - 1).empty());
+
+  packet.SetPayloadSize(42);
+  // Rewriting allocated extension is allowed.
+  EXPECT_EQ(packet.AllocateRawExtension(kId, kMaxExtensionSize).size(),
+            kMaxExtensionSize);
+  // Adding another extension after payload is set is not allowed.
+  EXPECT_TRUE(packet.AllocateRawExtension(kId + 1, kMaxExtensionSize).empty());
+
+  // Read packet with the custom extension.
+  RtpPacketReceived parsed;
+  EXPECT_TRUE(parsed.Parse(packet.Buffer()));
+  auto read_raw = parsed.GetRawExtension(kId);
+  EXPECT_THAT(read_raw, ElementsAreArray(kValue, kMaxExtensionSize));
+}
+
 TEST(RtpPacketTest, SetReservedExtensionsAfterPayload) {
   const size_t kPayloadSize = 4;
   RtpPacketToSend::ExtensionManager extensions;
@@ -125,7 +172,7 @@ TEST(RtpPacketTest, SetReservedExtensionsAfterPayload) {
   RtpPacketToSend packet(&extensions);
 
   EXPECT_TRUE(packet.ReserveExtension<TransmissionOffset>());
-  packet.AllocatePayload(kPayloadSize);
+  packet.SetPayloadSize(kPayloadSize);
   // Can't set extension after payload.
   EXPECT_FALSE(packet.SetExtension<AudioLevel>(kVoiceActive, kAudioLevel));
   // Unless reserved.
@@ -154,7 +201,7 @@ TEST(RtpPacketTest, CreateUnalignedPadding) {
   packet.SetSequenceNumber(kSeqNum);
   packet.SetTimestamp(kTimestamp);
   packet.SetSsrc(kSsrc);
-  packet.AllocatePayload(kPayloadSize);
+  packet.SetPayloadSize(kPayloadSize);
   Random r(0x123456789);
 
   EXPECT_LT(packet.size(), packet.capacity());
@@ -298,6 +345,40 @@ TEST(RtpPacketTest, ParseWithExtensionDelayed) {
   EXPECT_EQ(kTimeOffset, time_offset);
   EXPECT_EQ(0u, packet.payload_size());
   EXPECT_EQ(0u, packet.padding_size());
+}
+
+TEST(RtpPacketTest, ParseWithoutExtensionManager) {
+  RtpPacketReceived packet;
+  EXPECT_TRUE(packet.Parse(kPacketWithTO, sizeof(kPacketWithTO)));
+
+  EXPECT_FALSE(packet.HasRawExtension(kAudioLevelExtensionId));
+  EXPECT_TRUE(packet.GetRawExtension(kAudioLevelExtensionId).empty());
+
+  EXPECT_TRUE(packet.HasRawExtension(kTransmissionOffsetExtensionId));
+
+  int32_t time_offset = 0;
+  auto raw_extension = packet.GetRawExtension(kTransmissionOffsetExtensionId);
+  EXPECT_EQ(raw_extension.size(), TransmissionOffset::kValueSizeBytes);
+  EXPECT_TRUE(TransmissionOffset::Parse(raw_extension, &time_offset));
+
+  EXPECT_EQ(time_offset, kTimeOffset);
+}
+
+TEST(RtpPacketTest, RawExtensionFunctionsAcceptZeroIdAndReturnFalse) {
+  RtpPacketReceived::ExtensionManager extensions;
+  RtpPacketReceived packet(&extensions);
+  // Use ExtensionManager to set kInvalidId to 0 to demonstrate natural way for
+  // using zero value as a parameter to Packet::*RawExtension functions.
+  const int kInvalidId = extensions.GetId(TransmissionOffset::kId);
+  ASSERT_EQ(kInvalidId, 0);
+
+  ASSERT_TRUE(packet.Parse(kPacket, sizeof(kPacket)));
+
+  EXPECT_FALSE(packet.HasRawExtension(kInvalidId));
+  EXPECT_THAT(packet.GetRawExtension(kInvalidId), IsEmpty());
+  const uint8_t kExtension[] = {'e', 'x', 't'};
+  EXPECT_FALSE(packet.SetRawExtension(kInvalidId, kExtension));
+  EXPECT_THAT(packet.AllocateRawExtension(kInvalidId, 3), IsEmpty());
 }
 
 }  // namespace webrtc

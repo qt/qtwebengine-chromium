@@ -1000,7 +1000,7 @@ gl::Error Renderer9::updateState(Context9 *context, GLenum drawMode)
     // Applies the render target surface, depth stencil surface, viewport rectangle and
     // scissor rectangle to the renderer
     gl::Framebuffer *framebuffer = glState.getDrawFramebuffer();
-    ASSERT(framebuffer && !framebuffer->hasAnyDirtyBit() && framebuffer->complete(data));
+    ASSERT(framebuffer && !framebuffer->hasAnyDirtyBit() && framebuffer->cachedComplete());
 
     ANGLE_TRY(applyRenderTarget(context, framebuffer));
 
@@ -2463,11 +2463,14 @@ gl::Error Renderer9::copyTexture(const gl::Texture *source,
                                  GLenum destFormat,
                                  const gl::Offset &destOffset,
                                  TextureStorage *storage,
+                                 GLenum destTarget,
                                  GLint destLevel,
                                  bool unpackFlipY,
                                  bool unpackPremultiplyAlpha,
                                  bool unpackUnmultiplyAlpha)
 {
+    ASSERT(destTarget == GL_TEXTURE_2D);
+
     RECT rect;
     rect.left   = sourceRect.x;
     rect.top    = sourceRect.y;

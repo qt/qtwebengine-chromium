@@ -59,13 +59,6 @@ namespace sw
 
 	FrameBufferAndroid::~FrameBufferAndroid()
 	{
-		if(buffer)
-		{
-			// Probably doesn't have to cancel assuming a success queueing earlier
-			cancelBuffer(nativeWindow, buffer, -1);
-			buffer = nullptr;
-		}
-
 		nativeWindow->common.decRef(&nativeWindow->common);
 	}
 
@@ -75,15 +68,13 @@ namespace sw
 
 		if(buffer)
 		{
-			queueBuffer(nativeWindow, buffer, -1);
-
 			if(locked)
 			{
 				locked = nullptr;
 				unlock();
 			}
 
-			buffer->common.decRef(&buffer->common);
+			queueBuffer(nativeWindow, buffer, -1);
 		}
 	}
 
@@ -93,8 +84,6 @@ namespace sw
 		{
 			return nullptr;
 		}
-
-		buffer->common.incRef(&buffer->common);
 
 		if(gralloc->lock(gralloc, buffer->handle,
 		                 GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN,

@@ -28,9 +28,8 @@ void CFX_BinaryBuf::Delete(int start_index, int count) {
       start_index > m_DataSize - count) {
     return;
   }
-  FXSYS_memmove(m_pBuffer.get() + start_index,
-                m_pBuffer.get() + start_index + count,
-                m_DataSize - start_index - count);
+  memmove(m_pBuffer.get() + start_index, m_pBuffer.get() + start_index + count,
+          m_DataSize - start_index - count);
   m_DataSize -= count;
 }
 
@@ -72,9 +71,9 @@ void CFX_BinaryBuf::AppendBlock(const void* pBuf, FX_STRSIZE size) {
 
   ExpandBuf(size);
   if (pBuf) {
-    FXSYS_memcpy(m_pBuffer.get() + m_DataSize, pBuf, size);
+    memcpy(m_pBuffer.get() + m_DataSize, pBuf, size);
   } else {
-    FXSYS_memset(m_pBuffer.get() + m_DataSize, 0, size);
+    memset(m_pBuffer.get() + m_DataSize, 0, size);
   }
   m_DataSize += size;
 }
@@ -86,12 +85,12 @@ void CFX_BinaryBuf::InsertBlock(FX_STRSIZE pos,
     return;
 
   ExpandBuf(size);
-  FXSYS_memmove(m_pBuffer.get() + pos + size, m_pBuffer.get() + pos,
-                m_DataSize - pos);
+  memmove(m_pBuffer.get() + pos + size, m_pBuffer.get() + pos,
+          m_DataSize - pos);
   if (pBuf) {
-    FXSYS_memcpy(m_pBuffer.get() + pos, pBuf, size);
+    memcpy(m_pBuffer.get() + pos, pBuf, size);
   } else {
-    FXSYS_memset(m_pBuffer.get() + pos, 0, size);
+    memset(m_pBuffer.get() + pos, 0, size);
   }
   m_DataSize += size;
 }
@@ -117,7 +116,7 @@ CFX_ByteTextBuf& CFX_ByteTextBuf::operator<<(uint32_t i) {
 
 CFX_ByteTextBuf& CFX_ByteTextBuf::operator<<(double f) {
   char buf[32];
-  FX_STRSIZE len = FX_ftoa((FX_FLOAT)f, buf);
+  FX_STRSIZE len = FX_ftoa((float)f, buf);
   AppendBlock(buf, len);
   return *this;
 }
@@ -127,19 +126,19 @@ CFX_ByteTextBuf& CFX_ByteTextBuf::operator<<(const CFX_ByteTextBuf& buf) {
   return *this;
 }
 
-void CFX_WideTextBuf::AppendChar(FX_WCHAR ch) {
-  ExpandBuf(sizeof(FX_WCHAR));
-  *(FX_WCHAR*)(m_pBuffer.get() + m_DataSize) = ch;
-  m_DataSize += sizeof(FX_WCHAR);
+void CFX_WideTextBuf::AppendChar(wchar_t ch) {
+  ExpandBuf(sizeof(wchar_t));
+  *(wchar_t*)(m_pBuffer.get() + m_DataSize) = ch;
+  m_DataSize += sizeof(wchar_t);
 }
 
 CFX_WideTextBuf& CFX_WideTextBuf::operator<<(const CFX_WideStringC& str) {
-  AppendBlock(str.c_str(), str.GetLength() * sizeof(FX_WCHAR));
+  AppendBlock(str.c_str(), str.GetLength() * sizeof(wchar_t));
   return *this;
 }
 
 CFX_WideTextBuf& CFX_WideTextBuf::operator<<(const CFX_WideString& str) {
-  AppendBlock(str.c_str(), str.GetLength() * sizeof(FX_WCHAR));
+  AppendBlock(str.c_str(), str.GetLength() * sizeof(wchar_t));
   return *this;
 }
 
@@ -147,29 +146,29 @@ CFX_WideTextBuf& CFX_WideTextBuf::operator<<(int i) {
   char buf[32];
   FXSYS_itoa(i, buf, 10);
   FX_STRSIZE len = FXSYS_strlen(buf);
-  ExpandBuf(len * sizeof(FX_WCHAR));
-  FX_WCHAR* str = (FX_WCHAR*)(m_pBuffer.get() + m_DataSize);
+  ExpandBuf(len * sizeof(wchar_t));
+  wchar_t* str = (wchar_t*)(m_pBuffer.get() + m_DataSize);
   for (FX_STRSIZE j = 0; j < len; j++) {
     *str++ = buf[j];
   }
-  m_DataSize += len * sizeof(FX_WCHAR);
+  m_DataSize += len * sizeof(wchar_t);
   return *this;
 }
 
 CFX_WideTextBuf& CFX_WideTextBuf::operator<<(double f) {
   char buf[32];
-  FX_STRSIZE len = FX_ftoa((FX_FLOAT)f, buf);
-  ExpandBuf(len * sizeof(FX_WCHAR));
-  FX_WCHAR* str = (FX_WCHAR*)(m_pBuffer.get() + m_DataSize);
+  FX_STRSIZE len = FX_ftoa((float)f, buf);
+  ExpandBuf(len * sizeof(wchar_t));
+  wchar_t* str = (wchar_t*)(m_pBuffer.get() + m_DataSize);
   for (FX_STRSIZE i = 0; i < len; i++) {
     *str++ = buf[i];
   }
-  m_DataSize += len * sizeof(FX_WCHAR);
+  m_DataSize += len * sizeof(wchar_t);
   return *this;
 }
 
-CFX_WideTextBuf& CFX_WideTextBuf::operator<<(const FX_WCHAR* lpsz) {
-  AppendBlock(lpsz, FXSYS_wcslen(lpsz) * sizeof(FX_WCHAR));
+CFX_WideTextBuf& CFX_WideTextBuf::operator<<(const wchar_t* lpsz) {
+  AppendBlock(lpsz, FXSYS_wcslen(lpsz) * sizeof(wchar_t));
   return *this;
 }
 
@@ -254,7 +253,7 @@ int32_t CFX_FileBufferArchive::AppendBlock(const void* pBuf, size_t size) {
   size_t temp_size = size;
   while (temp_size) {
     size_t buf_size = std::min(kBufSize - m_Length, temp_size);
-    FXSYS_memcpy(m_pBuffer.get() + m_Length, buffer, buf_size);
+    memcpy(m_pBuffer.get() + m_Length, buffer, buf_size);
     m_Length += buf_size;
     if (m_Length == kBufSize) {
       if (!Flush()) {

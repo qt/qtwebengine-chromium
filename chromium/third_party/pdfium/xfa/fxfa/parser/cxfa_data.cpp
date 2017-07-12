@@ -8,7 +8,7 @@
 
 #include "core/fxcrt/fx_ext.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
-#include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
 // Static.
 FX_ARGB CXFA_Data::ToColor(const CFX_WideStringC& wsValue) {
@@ -17,7 +17,7 @@ FX_ARGB CXFA_Data::ToColor(const CFX_WideStringC& wsValue) {
     return 0xff000000;
 
   int cc = 0;
-  const FX_WCHAR* str = wsValue.c_str();
+  const wchar_t* str = wsValue.c_str();
   int len = wsValue.GetLength();
   while (FXSYS_iswspace(str[cc]) && cc < len)
     cc++;
@@ -66,7 +66,7 @@ XFA_Element CXFA_Data::GetElementType() const {
 }
 
 bool CXFA_Data::TryMeasure(XFA_ATTRIBUTE eAttr,
-                           FX_FLOAT& fValue,
+                           float& fValue,
                            bool bUseDefault) const {
   CXFA_Measurement ms;
   if (m_pNode->TryMeasure(eAttr, ms, bUseDefault)) {
@@ -76,7 +76,7 @@ bool CXFA_Data::TryMeasure(XFA_ATTRIBUTE eAttr,
   return false;
 }
 
-bool CXFA_Data::SetMeasure(XFA_ATTRIBUTE eAttr, FX_FLOAT fValue) {
+bool CXFA_Data::SetMeasure(XFA_ATTRIBUTE eAttr, float fValue) {
   CXFA_Measurement ms(fValue, XFA_UNIT_Pt);
   return m_pNode->SetMeasure(eAttr, ms);
 }

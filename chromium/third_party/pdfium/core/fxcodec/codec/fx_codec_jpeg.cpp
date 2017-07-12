@@ -12,6 +12,7 @@
 #include "core/fxcodec/codec/codec_int.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxge/dib/cfx_dibsource.h"
 #include "core/fxge/fx_dib.h"
 #include "third_party/base/ptr_util.h"
 
@@ -185,9 +186,9 @@ CCodec_JpegDecoder::CCodec_JpegDecoder() {
   m_pScanlineBuf = nullptr;
   m_bStarted = false;
   m_bInited = false;
-  FXSYS_memset(&cinfo, 0, sizeof(cinfo));
-  FXSYS_memset(&jerr, 0, sizeof(jerr));
-  FXSYS_memset(&src, 0, sizeof(src));
+  memset(&cinfo, 0, sizeof(cinfo));
+  memset(&jerr, 0, sizeof(jerr));
+  memset(&src, 0, sizeof(src));
   m_nDefaultScaleDenom = 1;
 }
 
@@ -253,8 +254,7 @@ bool CCodec_JpegDecoder::Create(const uint8_t* src_buf,
   src.fill_input_buffer = _src_fill_buffer;
   src.resync_to_restart = _src_resync;
   m_bJpegTransform = ColorTransform;
-  if (src_size > 1 &&
-      FXSYS_memcmp(src_buf + src_size - 2, "\xFF\xD9", 2) != 0) {
+  if (src_size > 1 && memcmp(src_buf + src_size - 2, "\xFF\xD9", 2) != 0) {
     ((uint8_t*)src_buf)[src_size - 2] = 0xFF;
     ((uint8_t*)src_buf)[src_size - 1] = 0xD9;
   }
@@ -484,7 +484,7 @@ uint32_t CCodec_JpegModule::GetAvailInput(FXJPEG_Context* ctx,
 
 #if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
 #define JPEG_BLOCK_SIZE 1048576
-bool CCodec_JpegModule::JpegEncode(const CFX_DIBSource* pSource,
+bool CCodec_JpegModule::JpegEncode(const CFX_RetainPtr<CFX_DIBSource>& pSource,
                                    uint8_t** dest_buf,
                                    FX_STRSIZE* dest_size) {
   struct jpeg_error_mgr jerr;

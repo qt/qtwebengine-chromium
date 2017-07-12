@@ -36,7 +36,7 @@ int TT2PDF(int m, FXFT_Face face) {
 }
 
 bool FT_UseTTCharmap(FXFT_Face face, int platform_id, int encoding_id) {
-  auto* pCharMap = FXFT_Get_Face_Charmaps(face);
+  auto** pCharMap = FXFT_Get_Face_Charmaps(face);
   for (int i = 0; i < FXFT_Get_Face_CharmapCount(face); i++) {
     if (FXFT_Get_Charmap_PlatformID(pCharMap[i]) == platform_id &&
         FXFT_Get_Charmap_EncodingID(pCharMap[i]) == encoding_id) {
@@ -71,8 +71,8 @@ CPDF_Font* CFX_StockFontArray::SetFont(uint32_t index,
 }
 
 CPDF_FontGlobals::CPDF_FontGlobals() {
-  FXSYS_memset(m_EmbeddedCharsets, 0, sizeof(m_EmbeddedCharsets));
-  FXSYS_memset(m_EmbeddedToUnicodes, 0, sizeof(m_EmbeddedToUnicodes));
+  memset(m_EmbeddedCharsets, 0, sizeof(m_EmbeddedCharsets));
+  memset(m_EmbeddedToUnicodes, 0, sizeof(m_EmbeddedToUnicodes));
 }
 
 CPDF_FontGlobals::~CPDF_FontGlobals() {}
@@ -100,11 +100,11 @@ CFX_WideString CPDF_ToUnicodeMap::Lookup(uint32_t charcode) const {
   auto it = m_Map.find(charcode);
   if (it != m_Map.end()) {
     uint32_t value = it->second;
-    FX_WCHAR unicode = (FX_WCHAR)(value & 0xffff);
+    wchar_t unicode = (wchar_t)(value & 0xffff);
     if (unicode != 0xffff) {
       return unicode;
     }
-    const FX_WCHAR* buf = m_MultiCharBuf.GetBuffer();
+    const wchar_t* buf = m_MultiCharBuf.GetBuffer();
     uint32_t buf_len = m_MultiCharBuf.GetLength();
     if (!buf || buf_len == 0) {
       return CFX_WideString();
@@ -125,7 +125,7 @@ CFX_WideString CPDF_ToUnicodeMap::Lookup(uint32_t charcode) const {
   return CFX_WideString();
 }
 
-uint32_t CPDF_ToUnicodeMap::ReverseLookup(FX_WCHAR unicode) const {
+uint32_t CPDF_ToUnicodeMap::ReverseLookup(wchar_t unicode) const {
   for (const auto& pair : m_Map) {
     if (pair.second == static_cast<uint32_t>(unicode))
       return pair.first;
@@ -155,9 +155,9 @@ uint32_t CPDF_ToUnicodeMap::StringToCode(const CFX_ByteStringC& str) {
 static CFX_WideString StringDataAdd(CFX_WideString str) {
   CFX_WideString ret;
   int len = str.GetLength();
-  FX_WCHAR value = 1;
+  wchar_t value = 1;
   for (int i = len - 1; i >= 0; --i) {
-    FX_WCHAR ch = str[i] + value;
+    wchar_t ch = str[i] + value;
     if (ch < str[i]) {
       ret.Insert(0, 0);
     } else {
@@ -181,7 +181,7 @@ CFX_WideString CPDF_ToUnicodeMap::StringToWideString(
   CFX_WideString result;
   if (str[0] == '<') {
     int byte_pos = 0;
-    FX_WCHAR ch = 0;
+    wchar_t ch = 0;
     for (int i = 1; i < len && std::isxdigit(str[i]); ++i) {
       ch = ch * 16 + FXSYS_toHexDigit(str[i]);
       byte_pos++;
@@ -208,9 +208,9 @@ uint32_t CPDF_ToUnicodeMap::GetUnicode() {
 
 void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
   CIDSet cid_set = CIDSET_UNKNOWN;
-  CPDF_StreamAcc stream;
-  stream.LoadAllData(pStream, false);
-  CPDF_SimpleParser parser(stream.GetData(), stream.GetSize());
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+  pAcc->LoadAllData(false);
+  CPDF_SimpleParser parser(pAcc->GetData(), pAcc->GetSize());
   while (1) {
     CFX_ByteStringC word = parser.GetWord();
     if (word.IsEmpty()) {

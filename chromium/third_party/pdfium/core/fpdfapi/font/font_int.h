@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "core/fpdfapi/font/cpdf_cidfont.h"
-#include "core/fxcrt/cfx_maybe_owned.h"
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_basic.h"
 
 class CPDF_CID2UnicodeMap;
@@ -31,17 +31,17 @@ class CPDF_CMapManager {
   CPDF_CMapManager();
   ~CPDF_CMapManager();
 
-  CFX_MaybeOwned<CPDF_CMap> GetPredefinedCMap(const CFX_ByteString& name,
-                                              bool bPromptCJK);
+  CFX_RetainPtr<CPDF_CMap> GetPredefinedCMap(const CFX_ByteString& name,
+                                             bool bPromptCJK);
   CPDF_CID2UnicodeMap* GetCID2UnicodeMap(CIDSet charset, bool bPromptCJK);
 
  private:
-  std::unique_ptr<CPDF_CMap> LoadPredefinedCMap(const CFX_ByteString& name,
-                                                bool bPromptCJK);
+  CFX_RetainPtr<CPDF_CMap> LoadPredefinedCMap(const CFX_ByteString& name,
+                                              bool bPromptCJK);
   std::unique_ptr<CPDF_CID2UnicodeMap> LoadCID2UnicodeMap(CIDSet charset,
                                                           bool bPromptCJK);
 
-  std::map<CFX_ByteString, std::unique_ptr<CPDF_CMap>> m_CMaps;
+  std::map<CFX_ByteString, CFX_RetainPtr<CPDF_CMap>> m_CMaps;
   std::unique_ptr<CPDF_CID2UnicodeMap> m_CID2UnicodeMaps[6];
 };
 
@@ -127,7 +127,7 @@ enum CIDCoding : uint8_t {
   CIDCODING_UTF16,
 };
 
-class CPDF_CMap {
+class CPDF_CMap : public CFX_Retainable {
  public:
   enum CodingScheme : uint8_t {
     OneByte,
@@ -136,8 +136,8 @@ class CPDF_CMap {
     MixedFourBytes
   };
 
-  CPDF_CMap();
-  ~CPDF_CMap();
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
   void LoadPredefined(CPDF_CMapManager* pMgr,
                       const CFX_ByteString& name,
@@ -148,13 +148,16 @@ class CPDF_CMap {
   bool IsVertWriting() const;
   uint16_t CIDFromCharCode(uint32_t charcode) const;
   int GetCharSize(uint32_t charcode) const;
-  uint32_t GetNextChar(const FX_CHAR* pString, int nStrLen, int& offset) const;
-  int CountChar(const FX_CHAR* pString, int size) const;
-  int AppendChar(FX_CHAR* str, uint32_t charcode) const;
+  uint32_t GetNextChar(const char* pString, int nStrLen, int& offset) const;
+  int CountChar(const char* pString, int size) const;
+  int AppendChar(char* str, uint32_t charcode) const;
 
  private:
   friend class CPDF_CMapParser;
   friend class CPDF_CIDFont;
+
+  CPDF_CMap();
+  ~CPDF_CMap() override;
 
   CFX_ByteString m_PredefinedCMap;
   bool m_bVertical;
@@ -176,7 +179,7 @@ class CPDF_CID2UnicodeMap {
 
   bool IsLoaded();
   void Load(CPDF_CMapManager* pMgr, CIDSet charset, bool bPromptCJK);
-  FX_WCHAR UnicodeFromCID(uint16_t CID);
+  wchar_t UnicodeFromCID(uint16_t CID);
 
  private:
   CIDSet m_Charset;
@@ -192,7 +195,7 @@ class CPDF_ToUnicodeMap {
   void Load(CPDF_Stream* pStream);
 
   CFX_WideString Lookup(uint32_t charcode) const;
-  uint32_t ReverseLookup(FX_WCHAR unicode) const;
+  uint32_t ReverseLookup(wchar_t unicode) const;
 
  private:
   friend class fpdf_font_StringToCode_Test;

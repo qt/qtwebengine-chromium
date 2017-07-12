@@ -26,6 +26,10 @@ rtc_source_set("rtc_event_log_api") {
   sources = [
     "rtc_event_log/rtc_event_log.h",
   ]
+  deps = [
+    "../base:rtc_base_approved",
+    "../call:call_interfaces",
+  ]
 }
 
 rtc_static_library("rtc_event_log_impl") {
@@ -41,9 +45,13 @@ rtc_static_library("rtc_event_log_impl") {
   deps = [
     ":rtc_event_log_api",
     "..:webrtc_common",
+    "../base:protobuf_utils",
+    "../base:rtc_base_approved",
     "../call:call_interfaces",
     "../modules/audio_coding:audio_network_adaptor",
+    "../modules/remote_bitrate_estimator:remote_bitrate_estimator",
     "../modules/rtp_rtcp",
+    "../system_wrappers",
   ]
 
   if (rtc_enable_protobuf) {
@@ -71,14 +79,24 @@ if (rtc_enable_protobuf) {
     ]
 
     public_deps = [
+      ":rtc_event_log_api",
       ":rtc_event_log_proto",
       "..:webrtc_common",
+      "../call:call_interfaces",
+      "../modules/audio_coding:audio_network_adaptor",
+      "../modules/remote_bitrate_estimator:remote_bitrate_estimator",
+      "../modules/rtp_rtcp:rtp_rtcp",
+      "../system_wrappers",
     ]
 
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
+    deps = [
+      "../base:protobuf_utils",
+      "../base:rtc_base_approved",
+    ]
   }
 
   if (rtc_include_tests) {
@@ -92,9 +110,14 @@ if (rtc_enable_protobuf) {
       deps = [
         ":rtc_event_log_impl",
         ":rtc_event_log_parser",
+        "../base:rtc_base_approved",
+        "../base:rtc_base_tests_utils",
         "../call",
+        "../modules/audio_coding:audio_network_adaptor",
+        "../modules/remote_bitrate_estimator:remote_bitrate_estimator",
         "../modules/rtp_rtcp",
         "../system_wrappers:metrics_default",
+        "../test:test_support",
         "//testing/gmock",
         "//testing/gtest",
       ]
@@ -137,6 +160,7 @@ if (rtc_enable_protobuf) {
         ":rtc_event_log_impl",
         ":rtc_event_log_parser",
         "../base:rtc_base_approved",
+        "../call:call_interfaces",
 
         # TODO(kwiberg): Remove this dependency.
         "../api/audio_codecs:audio_codecs_api",

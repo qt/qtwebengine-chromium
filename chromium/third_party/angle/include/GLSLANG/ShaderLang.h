@@ -25,7 +25,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 172
+#define ANGLE_SH_VERSION 174
 
 enum ShShaderSpec
 {
@@ -264,6 +264,7 @@ struct ShBuiltInResources
     int NV_shader_framebuffer_fetch;
     int ARM_shader_framebuffer_fetch;
     int OVR_multiview;
+    int EXT_YUV_target;
 
     // Set to 1 to enable replacing GL_EXT_draw_buffers #extension directives
     // with GL_NV_draw_buffers in ESSL output. This flag can be used to emulate
@@ -328,6 +329,9 @@ struct ShBuiltInResources
 
     // maximum total number of image uniforms in a program
     int MaxCombinedImageUniforms;
+
+    // maximum number of uniform locations
+    int MaxUniformLocations;
 
     // maximum number of ssbos and images in a shader
     int MaxCombinedShaderOutputResources;

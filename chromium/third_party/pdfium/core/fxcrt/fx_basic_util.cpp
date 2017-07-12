@@ -4,17 +4,18 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcrt/fx_basic.h"
-#include "core/fxcrt/fx_ext.h"
-
 #include <algorithm>
 #include <cctype>
 #include <limits>
 #include <memory>
 
+#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/fx_ext.h"
+#include "third_party/base/ptr_util.h"
+
 bool FX_atonum(const CFX_ByteStringC& strc, void* pData) {
   if (strc.Find('.') != -1) {
-    FX_FLOAT* pFloat = static_cast<FX_FLOAT*>(pData);
+    float* pFloat = static_cast<float*>(pData);
     *pFloat = FX_atof(strc);
     return false;
   }
@@ -69,7 +70,7 @@ bool FX_atonum(const CFX_ByteStringC& strc, void* pData) {
   return true;
 }
 
-static const FX_FLOAT fraction_scales[] = {
+static const float fraction_scales[] = {
     0.1f,         0.01f,         0.001f,        0.0001f,
     0.00001f,     0.000001f,     0.0000001f,    0.00000001f,
     0.000000001f, 0.0000000001f, 0.00000000001f};
@@ -78,11 +79,11 @@ int FXSYS_FractionalScaleCount() {
   return FX_ArraySize(fraction_scales);
 }
 
-FX_FLOAT FXSYS_FractionalScale(size_t scale_factor, int value) {
+float FXSYS_FractionalScale(size_t scale_factor, int value) {
   return fraction_scales[scale_factor] * value;
 }
 
-FX_FLOAT FX_atof(const CFX_ByteStringC& strc) {
+float FX_atof(const CFX_ByteStringC& strc) {
   if (strc.IsEmpty())
     return 0.0;
 
@@ -100,7 +101,7 @@ FX_FLOAT FX_atof(const CFX_ByteStringC& strc) {
       break;
     cc++;
   }
-  FX_FLOAT value = 0;
+  float value = 0;
   while (cc < len) {
     if (strc[cc] == '.')
       break;
@@ -122,6 +123,10 @@ FX_FLOAT FX_atof(const CFX_ByteStringC& strc) {
   return bNegative ? -value : value;
 }
 
+float FX_atof(const CFX_WideStringC& wsStr) {
+  return FX_atof(FX_UTF8Encode(wsStr).c_str());
+}
+
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_ && _MSC_VER < 1900
 void FXSYS_snprintf(char* str,
                     size_t size,
@@ -140,9 +145,9 @@ void FXSYS_vsnprintf(char* str, size_t size, const char* fmt, va_list ap) {
 }
 #endif  // _FXM_PLATFORM_WINDOWS_ && _MSC_VER < 1900
 
-FX_FileHandle* FX_OpenFolder(const FX_CHAR* path) {
+FX_FileHandle* FX_OpenFolder(const char* path) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-  std::unique_ptr<CFindFileDataA> pData(new CFindFileDataA);
+  auto pData = pdfium::MakeUnique<CFindFileDataA>();
   pData->m_Handle = FindFirstFileExA((CFX_ByteString(path) + "/*.*").c_str(),
                                      FindExInfoStandard, &pData->m_FindData,
                                      FindExSearchNameMatch, nullptr, 0);
@@ -197,39 +202,12 @@ void FX_CloseFolder(FX_FileHandle* handle) {
 #endif
 }
 
-FX_WCHAR FX_GetFolderSeparator() {
+wchar_t FX_GetFolderSeparator() {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
   return '\\';
 #else
   return '/';
 #endif
-}
-
-CFX_Matrix_3by3 CFX_Matrix_3by3::Inverse() {
-  FX_FLOAT det =
-      a * (e * i - f * h) - b * (i * d - f * g) + c * (d * h - e * g);
-  if (FXSYS_fabs(det) < 0.0000001)
-    return CFX_Matrix_3by3();
-
-  return CFX_Matrix_3by3(
-      (e * i - f * h) / det, -(b * i - c * h) / det, (b * f - c * e) / det,
-      -(d * i - f * g) / det, (a * i - c * g) / det, -(a * f - c * d) / det,
-      (d * h - e * g) / det, -(a * h - b * g) / det, (a * e - b * d) / det);
-}
-
-CFX_Matrix_3by3 CFX_Matrix_3by3::Multiply(const CFX_Matrix_3by3& m) {
-  return CFX_Matrix_3by3(
-      a * m.a + b * m.d + c * m.g, a * m.b + b * m.e + c * m.h,
-      a * m.c + b * m.f + c * m.i, d * m.a + e * m.d + f * m.g,
-      d * m.b + e * m.e + f * m.h, d * m.c + e * m.f + f * m.i,
-      g * m.a + h * m.d + i * m.g, g * m.b + h * m.e + i * m.h,
-      g * m.c + h * m.f + i * m.i);
-}
-
-CFX_Vector_3by1 CFX_Matrix_3by3::TransformVector(const CFX_Vector_3by1& v) {
-  return CFX_Vector_3by1(a * v.a + b * v.b + c * v.c,
-                         d * v.a + e * v.b + f * v.c,
-                         g * v.a + h * v.b + i * v.c);
 }
 
 uint32_t GetBits32(const uint8_t* pData, int bitpos, int nbits) {

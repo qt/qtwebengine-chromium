@@ -82,15 +82,14 @@ class IceObserver {
  public:
   IceObserver() {}
   // Called any time the IceConnectionState changes
-  // TODO(honghaiz): Change the name to OnIceConnectionStateChange so as to
-  // conform to the w3c standard.
-  virtual void OnIceConnectionChange(
+  virtual void OnIceConnectionStateChange(
       PeerConnectionInterface::IceConnectionState new_state) {}
   // Called any time the IceGatheringState changes
   virtual void OnIceGatheringChange(
       PeerConnectionInterface::IceGatheringState new_state) {}
   // New Ice candidate have been found.
-  virtual void OnIceCandidate(const IceCandidateInterface* candidate) = 0;
+  virtual void OnIceCandidate(
+      std::unique_ptr<IceCandidateInterface> candidate) = 0;
 
   // Some local ICE candidates have been removed.
   virtual void OnIceCandidatesRemoved(

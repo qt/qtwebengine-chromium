@@ -8,10 +8,12 @@
 #define XFA_FXFA_PARSER_CXFA_DOCUMENT_H_
 
 #include <map>
+#include <memory>
+#include <unordered_set>
+#include <vector>
 
 #include "xfa/fxfa/fxfa.h"
-#include "xfa/fxfa/parser/xfa_localemgr.h"
-#include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/parser/cxfa_localemgr.h"
 
 enum XFA_VERSION {
   XFA_VERSION_UNKNOWN = 0,
@@ -69,7 +71,7 @@ class CXFA_Document {
   CXFA_LocaleMgr* GetLocalMgr();
   CXFA_Object* GetXFAObject(XFA_HashCode wsNodeNameHash);
   CXFA_Node* GetNodeByID(CXFA_Node* pRoot, const CFX_WideStringC& wsID);
-  CXFA_Node* GetNotBindNode(CXFA_ObjArray& arrayNodes);
+  CXFA_Node* GetNotBindNode(const std::vector<CXFA_Object*>& arrayNodes);
   CXFA_LayoutProcessor* GetLayoutProcessor();
   CXFA_LayoutProcessor* GetDocLayout();
   CXFA_ScriptContext* GetScriptContext();
@@ -85,7 +87,7 @@ class CXFA_Document {
 
   bool IsInteractive();
   XFA_VERSION GetCurVersionMode() { return m_eCurVersionMode; }
-  XFA_VERSION RecognizeXFAVersionNumber(CFX_WideString& wsTemplateNS);
+  XFA_VERSION RecognizeXFAVersionNumber(const CFX_WideString& wsTemplateNS);
 
   CXFA_Node* CreateNode(uint32_t dwPacket, XFA_Element eElement);
   CXFA_Node* CreateNode(const XFA_PACKETINFO* pPacket, XFA_Element eElement);
@@ -104,21 +106,21 @@ class CXFA_Document {
   void ClearLayoutData();
 
   std::map<uint32_t, CXFA_Node*> m_rgGlobalBinding;
-  CXFA_NodeArray m_pPendingPageSet;
+  std::vector<CXFA_Node*> m_pPendingPageSet;
 
- protected:
+ private:
   CXFA_DocumentParser* m_pParser;
-  CXFA_ScriptContext* m_pScriptContext;
-  CXFA_LayoutProcessor* m_pLayoutProcessor;
   CXFA_Node* m_pRootNode;
-  CXFA_LocaleMgr* m_pLocalMgr;
-  CScript_DataWindow* m_pScriptDataWindow;
-  CScript_EventPseudoModel* m_pScriptEvent;
-  CScript_HostPseudoModel* m_pScriptHost;
-  CScript_LogPseudoModel* m_pScriptLog;
-  CScript_LayoutPseudoModel* m_pScriptLayout;
-  CScript_SignaturePseudoModel* m_pScriptSignature;
-  CXFA_NodeSet m_PurgeNodes;
+  std::unique_ptr<CXFA_ScriptContext> m_pScriptContext;
+  std::unique_ptr<CXFA_LayoutProcessor> m_pLayoutProcessor;
+  std::unique_ptr<CXFA_LocaleMgr> m_pLocalMgr;
+  std::unique_ptr<CScript_DataWindow> m_pScriptDataWindow;
+  std::unique_ptr<CScript_EventPseudoModel> m_pScriptEvent;
+  std::unique_ptr<CScript_HostPseudoModel> m_pScriptHost;
+  std::unique_ptr<CScript_LogPseudoModel> m_pScriptLog;
+  std::unique_ptr<CScript_LayoutPseudoModel> m_pScriptLayout;
+  std::unique_ptr<CScript_SignaturePseudoModel> m_pScriptSignature;
+  std::unordered_set<CXFA_Node*> m_PurgeNodes;
   XFA_VERSION m_eCurVersionMode;
   uint32_t m_dwDocFlags;
 };

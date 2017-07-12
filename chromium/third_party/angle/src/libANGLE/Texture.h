@@ -100,6 +100,8 @@ struct TextureState final : public angle::NonCopyable
     bool isCubeComplete() const;
     bool isSamplerComplete(const SamplerState &samplerState, const ContextState &data) const;
 
+    void invalidateCompletenessCache();
+
     const ImageDesc &getImageDesc(GLenum target, size_t level) const;
 
     GLenum getTarget() const { return mTarget; }
@@ -157,19 +159,15 @@ struct TextureState final : public angle::NonCopyable
     {
         SamplerCompletenessCache();
 
-        bool cacheValid;
-
         // All values that affect sampler completeness that are not stored within
         // the texture itself
         SamplerState samplerState;
-        bool filterable;
-        GLint clientVersion;
-        bool supportsNPOT;
 
         // Result of the sampler completeness with the above parameters
         bool samplerComplete;
     };
-    mutable SamplerCompletenessCache mCompletenessCache;
+
+    mutable std::unordered_map<ContextID, SamplerCompletenessCache> mCompletenessCache;
 };
 
 bool operator==(const TextureState &a, const TextureState &b);
@@ -313,14 +311,20 @@ class Texture final : public egl::ImageSibling,
                        const Framebuffer *source);
 
     Error copyTexture(const Context *context,
+                      GLenum target,
+                      size_t level,
                       GLenum internalFormat,
                       GLenum type,
+                      size_t sourceLevel,
                       bool unpackFlipY,
                       bool unpackPremultiplyAlpha,
                       bool unpackUnmultiplyAlpha,
                       const Texture *source);
     Error copySubTexture(const Context *context,
+                         GLenum target,
+                         size_t level,
                          const Offset &destOffset,
+                         size_t sourceLevel,
                          const Rectangle &sourceArea,
                          bool unpackFlipY,
                          bool unpackPremultiplyAlpha,
@@ -347,6 +351,8 @@ class Texture final : public egl::ImageSibling,
 
     egl::Surface *getBoundSurface() const;
     egl::Stream *getBoundStream() const;
+
+    void invalidateCompletenessCache();
 
     rx::TextureImpl *getImplementation() const { return mTexture; }
 

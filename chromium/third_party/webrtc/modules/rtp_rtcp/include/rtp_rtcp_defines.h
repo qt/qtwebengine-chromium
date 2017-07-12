@@ -15,6 +15,7 @@
 #include <list>
 #include <vector>
 
+#include "webrtc/base/deprecation.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/system_wrappers/include/clock.h"
@@ -95,8 +96,6 @@ enum RTCPPacketType : uint32_t {
   kRtcpSrReq = 0x0400,
   kRtcpXrVoipMetric = 0x0800,
   kRtcpApp = 0x1000,
-  kRtcpSli = 0x4000,
-  kRtcpRpsi = 0x8000,
   kRtcpRemb = 0x10000,
   kRtcpTransmissionTimeOffset = 0x20000,
   kRtcpXrReceiverReferenceTime = 0x40000,
@@ -222,11 +221,11 @@ class RtcpIntraFrameObserver {
  public:
   virtual void OnReceivedIntraFrameRequest(uint32_t ssrc) = 0;
 
-  virtual void OnReceivedSLI(uint32_t ssrc,
-                             uint8_t picture_id) = 0;
+  RTC_DEPRECATED virtual void OnReceivedSLI(uint32_t ssrc,
+                             uint8_t picture_id) {}
 
-  virtual void OnReceivedRPSI(uint32_t ssrc,
-                              uint64_t picture_id) = 0;
+  RTC_DEPRECATED virtual void OnReceivedRPSI(uint32_t ssrc,
+                              uint64_t picture_id) {}
 
   virtual ~RtcpIntraFrameObserver() {}
 };
@@ -244,48 +243,72 @@ class RtcpBandwidthObserver {
   virtual ~RtcpBandwidthObserver() {}
 };
 
-struct PacketInfo {
-  PacketInfo(int64_t arrival_time_ms, uint16_t sequence_number)
-      : PacketInfo(-1,
-                   arrival_time_ms,
-                   -1,
-                   sequence_number,
-                   0,
-                   PacedPacketInfo()) {}
+struct PacketFeedback {
+  PacketFeedback(int64_t arrival_time_ms, uint16_t sequence_number)
+      : PacketFeedback(-1,
+                       arrival_time_ms,
+                       -1,
+                       sequence_number,
+                       0,
+                       0,
+                       0,
+                       PacedPacketInfo()) {}
 
-  PacketInfo(int64_t arrival_time_ms,
-             int64_t send_time_ms,
-             uint16_t sequence_number,
-             size_t payload_size,
-             const PacedPacketInfo& pacing_info)
-      : PacketInfo(-1,
-                   arrival_time_ms,
-                   send_time_ms,
-                   sequence_number,
-                   payload_size,
-                   pacing_info) {}
+  PacketFeedback(int64_t arrival_time_ms,
+                 int64_t send_time_ms,
+                 uint16_t sequence_number,
+                 size_t payload_size,
+                 const PacedPacketInfo& pacing_info)
+      : PacketFeedback(-1,
+                       arrival_time_ms,
+                       send_time_ms,
+                       sequence_number,
+                       payload_size,
+                       0,
+                       0,
+                       pacing_info) {}
 
-  PacketInfo(int64_t creation_time_ms,
-             int64_t arrival_time_ms,
-             int64_t send_time_ms,
-             uint16_t sequence_number,
-             size_t payload_size,
-             const PacedPacketInfo& pacing_info)
+  PacketFeedback(int64_t creation_time_ms,
+                 uint16_t sequence_number,
+                 size_t payload_size,
+                 uint16_t local_net_id,
+                 uint16_t remote_net_id,
+                 const PacedPacketInfo& pacing_info)
+      : PacketFeedback(creation_time_ms,
+                       -1,
+                       -1,
+                       sequence_number,
+                       payload_size,
+                       local_net_id,
+                       remote_net_id,
+                       pacing_info) {}
+
+  PacketFeedback(int64_t creation_time_ms,
+                 int64_t arrival_time_ms,
+                 int64_t send_time_ms,
+                 uint16_t sequence_number,
+                 size_t payload_size,
+                 uint16_t local_net_id,
+                 uint16_t remote_net_id,
+                 const PacedPacketInfo& pacing_info)
       : creation_time_ms(creation_time_ms),
         arrival_time_ms(arrival_time_ms),
         send_time_ms(send_time_ms),
         sequence_number(sequence_number),
         payload_size(payload_size),
+        local_net_id(local_net_id),
+        remote_net_id(remote_net_id),
         pacing_info(pacing_info) {}
 
   static constexpr int kNotAProbe = -1;
+  static constexpr int64_t kNotReceived = -1;
 
   // NOTE! The variable |creation_time_ms| is not used when testing equality.
   //       This is due to |creation_time_ms| only being used by SendTimeHistory
   //       for book-keeping, and is of no interest outside that class.
-  // TODO(philipel): Remove |creation_time_ms| from PacketInfo when cleaning up
-  //                 SendTimeHistory.
-  bool operator==(const PacketInfo& rhs) const {
+  // TODO(philipel): Remove |creation_time_ms| from PacketFeedback when cleaning
+  //                 up SendTimeHistory.
+  bool operator==(const PacketFeedback& rhs) const {
     return arrival_time_ms == rhs.arrival_time_ms &&
            send_time_ms == rhs.send_time_ms &&
            sequence_number == rhs.sequence_number &&
@@ -295,7 +318,8 @@ struct PacketInfo {
   // Time corresponding to when this object was created.
   int64_t creation_time_ms;
   // Time corresponding to when the packet was received. Timestamped with the
-  // receiver's clock.
+  // receiver's clock. For unreceived packet, the sentinel value kNotReceived
+  // is used.
   int64_t arrival_time_ms;
   // Time corresponding to when the packet was sent, timestamped with the
   // sender's clock.
@@ -305,6 +329,9 @@ struct PacketInfo {
   uint16_t sequence_number;
   // Size of the packet excluding RTP headers.
   size_t payload_size;
+  // The network route ids that this packet is associated with.
+  uint16_t local_net_id;
+  uint16_t remote_net_id;
   // Pacing information about this packet.
   PacedPacketInfo pacing_info;
 };
@@ -315,13 +342,23 @@ class TransportFeedbackObserver {
   virtual ~TransportFeedbackObserver() {}
 
   // Note: Transport-wide sequence number as sequence number.
-  virtual void AddPacket(uint16_t sequence_number,
+  virtual void AddPacket(uint32_t ssrc,
+                         uint16_t sequence_number,
                          size_t length,
                          const PacedPacketInfo& pacing_info) = 0;
 
   virtual void OnTransportFeedback(const rtcp::TransportFeedback& feedback) = 0;
 
-  virtual std::vector<PacketInfo> GetTransportFeedbackVector() const = 0;
+  virtual std::vector<PacketFeedback> GetTransportFeedbackVector() const = 0;
+};
+
+class PacketFeedbackObserver {
+ public:
+  virtual ~PacketFeedbackObserver() = default;
+
+  virtual void OnPacketAdded(uint32_t ssrc, uint16_t seq_num) = 0;
+  virtual void OnPacketFeedbackVector(
+      const std::vector<PacketFeedback>& packet_feedback_vector) = 0;
 };
 
 class RtcpRttStats {

@@ -91,6 +91,9 @@
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/media/base/mediachannel.h"
 #include "webrtc/media/base/videocapturer.h"
+#include "webrtc/modules/audio_coding/codecs/audio_encoder_factory.h"
+// TODO(ossu): Remove this once downstream projects have been updated.
+#include "webrtc/modules/audio_coding/codecs/builtin_audio_encoder_factory.h"
 #include "webrtc/p2p/base/portallocator.h"
 
 namespace rtc {
@@ -332,6 +335,12 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // experimental
     bool disable_ipv6 = false;
 
+    // If set to true, don't gather IPv6 ICE candidates on Wi-Fi.
+    // Only intended to be used on specific devices. Certain phones disable IPv6
+    // when the screen is turned off and it would be better to just disable the
+    // IPv6 ICE candidates on Wi-Fi in those cases.
+    bool disable_ipv6_on_wifi = false;
+
     // If set to true, use RTP data channels instead of SCTP.
     // TODO(deadbeef): Remove this. We no longer commit to supporting RTP data
     // channels, though some applications are still working on moving off of
@@ -512,9 +521,6 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   // remote peer is notified.
   virtual void RemoveStream(MediaStreamInterface* stream) = 0;
 
-  // TODO(deadbeef): Make the following two methods pure virtual once
-  // implemented by all subclasses of PeerConnectionInterface.
-
   // Add a new MediaStreamTrack to be sent on this PeerConnection, and return
   // the newly created RtpSender.
   //
@@ -522,15 +528,11 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   // with.
   virtual rtc::scoped_refptr<RtpSenderInterface> AddTrack(
       MediaStreamTrackInterface* track,
-      std::vector<MediaStreamInterface*> streams) {
-    return nullptr;
-  }
+      std::vector<MediaStreamInterface*> streams) = 0;
 
   // Remove an RtpSender from this PeerConnection.
   // Returns true on success.
-  virtual bool RemoveTrack(RtpSenderInterface* sender) {
-    return false;
-  }
+  virtual bool RemoveTrack(RtpSenderInterface* sender) = 0;
 
   // Returns pointer to a DtmfSender on success. Otherwise returns null.
   //
@@ -649,12 +651,14 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
                             const MediaConstraintsInterface* constraints) {}
 
   // Sets the local session description.
-  // JsepInterface takes the ownership of |desc| even if it fails.
+  // The PeerConnection takes the ownership of |desc| even if it fails.
   // The |observer| callback will be called when done.
+  // TODO(deadbeef): Change |desc| to be a unique_ptr, to make it clear
+  // that this method always takes ownership of it.
   virtual void SetLocalDescription(SetSessionDescriptionObserver* observer,
                                    SessionDescriptionInterface* desc) = 0;
   // Sets the remote session description.
-  // JsepInterface takes the ownership of |desc| even if it fails.
+  // The PeerConnection takes the ownership of |desc| even if it fails.
   // The |observer| callback will be called when done.
   virtual void SetRemoteDescription(SetSessionDescriptionObserver* observer,
                                     SessionDescriptionInterface* desc) = 0;
@@ -774,21 +778,15 @@ class PeerConnectionObserver {
   // pointer version.
 
   // Triggered when media is received on a new stream from remote peer.
-  virtual void OnAddStream(rtc::scoped_refptr<MediaStreamInterface> stream) {}
-  // Deprecated; please use the version that uses a scoped_refptr.
-  virtual void OnAddStream(MediaStreamInterface* stream) {}
+  virtual void OnAddStream(rtc::scoped_refptr<MediaStreamInterface> stream) = 0;
 
   // Triggered when a remote peer close a stream.
-  virtual void OnRemoveStream(rtc::scoped_refptr<MediaStreamInterface> stream) {
-  }
-  // Deprecated; please use the version that uses a scoped_refptr.
-  virtual void OnRemoveStream(MediaStreamInterface* stream) {}
+  virtual void OnRemoveStream(
+      rtc::scoped_refptr<MediaStreamInterface> stream) = 0;
 
   // Triggered when a remote peer opens a data channel.
   virtual void OnDataChannel(
-      rtc::scoped_refptr<DataChannelInterface> data_channel) {}
-  // Deprecated; please use the version that uses a scoped_refptr.
-  virtual void OnDataChannel(DataChannelInterface* data_channel) {}
+      rtc::scoped_refptr<DataChannelInterface> data_channel) = 0;
 
   // Triggered when renegotiation is needed. For example, an ICE restart
   // has begun.
@@ -990,14 +988,6 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   PeerConnectionFactoryInterface() {}
   ~PeerConnectionFactoryInterface() {} // NOLINT
 };
-
-// TODO(ossu): Remove these and define a real builtin audio encoder factory
-// instead.
-class AudioEncoderFactory : public rtc::RefCountInterface {};
-inline rtc::scoped_refptr<AudioEncoderFactory>
-CreateBuiltinAudioEncoderFactory() {
-  return nullptr;
-}
 
 // Create a new instance of PeerConnectionFactoryInterface.
 //

@@ -9,7 +9,7 @@
 
 #include "libANGLE/renderer/d3d/d3d11/VertexArray11.h"
 
-#include "common/BitSetIterator.h"
+#include "common/bitset_utils.h"
 #include "libANGLE/renderer/d3d/d3d11/Buffer11.h"
 
 using namespace angle;
@@ -25,7 +25,7 @@ VertexArray11::VertexArray11(const gl::VertexArrayState &data)
 {
     for (size_t attribIndex = 0; attribIndex < mCurrentBuffers.size(); ++attribIndex)
     {
-        mOnBufferDataDirty.emplace_back(this, static_cast<SignalToken>(attribIndex));
+        mOnBufferDataDirty.emplace_back(this, static_cast<uint32_t>(attribIndex));
     }
 }
 
@@ -40,7 +40,7 @@ VertexArray11::~VertexArray11()
     }
 }
 
-void VertexArray11::syncState(const gl::VertexArray::DirtyBits &dirtyBits)
+void VertexArray11::syncState(ContextImpl *contextImpl, const gl::VertexArray::DirtyBits &dirtyBits)
 {
     for (auto dirtyBit : angle::IterateBitSet(dirtyBits))
     {
@@ -51,6 +51,24 @@ void VertexArray11::syncState(const gl::VertexArray::DirtyBits &dirtyBits)
         // TODO(jiawei.shao@intel.com): Vertex Attrib Bindings
         ASSERT(index == mData.getBindingIndexFromAttribIndex(index));
         mAttribsToUpdate.set(index);
+    }
+}
+
+void VertexArray11::flushAttribUpdates(const gl::State &state)
+{
+    const gl::Program *program  = state.getProgram();
+    const auto &activeLocations = program->getActiveAttribLocationsMask();
+
+    if (mAttribsToUpdate.any())
+    {
+        // Skip attrib locations the program doesn't use.
+        const auto &activeToUpdate = (mAttribsToUpdate & activeLocations);
+
+        for (auto toUpdateIndex : angle::IterateBitSet(activeToUpdate))
+        {
+            mAttribsToUpdate.reset(toUpdateIndex);
+            updateVertexAttribStorage(toUpdateIndex);
+        }
     }
 }
 
@@ -94,7 +112,7 @@ void VertexArray11::updateVertexAttribStorage(size_t attribIndex)
     {
         // Note that for static callbacks, promotion to a static buffer from a dynamic buffer means
         // we need to tag dynamic buffers with static callbacks.
-        BroadcastChannel *newChannel = nullptr;
+        BroadcastChannel<> *newChannel = nullptr;
         if (newBuffer11 != nullptr)
         {
             switch (newStorageType)
@@ -115,29 +133,24 @@ void VertexArray11::updateVertexAttribStorage(size_t attribIndex)
     }
 }
 
+bool VertexArray11::hasDynamicAttrib(const gl::State &state)
+{
+    flushAttribUpdates(state);
+    return mDynamicAttribsMask.any();
+}
+
 gl::Error VertexArray11::updateDirtyAndDynamicAttribs(VertexDataManager *vertexDataManager,
                                                       const gl::State &state,
                                                       GLint start,
                                                       GLsizei count,
                                                       GLsizei instances)
 {
+    flushAttribUpdates(state);
+
     const gl::Program *program  = state.getProgram();
     const auto &activeLocations = program->getActiveAttribLocationsMask();
-
-    if (mAttribsToUpdate.any())
-    {
-        // Skip attrib locations the program doesn't use.
-        const auto &activeToUpdate = (mAttribsToUpdate & activeLocations);
-
-        for (auto toUpdateIndex : angle::IterateBitSet(activeToUpdate))
-        {
-            mAttribsToUpdate.reset(toUpdateIndex);
-            updateVertexAttribStorage(toUpdateIndex);
-        }
-    }
-
-    const auto &attribs = mData.getVertexAttributes();
-    const auto &bindings = mData.getVertexBindings();
+    const auto &attribs         = mData.getVertexAttributes();
+    const auto &bindings        = mData.getVertexBindings();
 
     if (mAttribsToTranslate.any())
     {
@@ -153,8 +166,8 @@ gl::Error VertexArray11::updateDirtyAndDynamicAttribs(VertexDataManager *vertexD
                 state.getVertexAttribCurrentValue(static_cast<unsigned int>(dirtyAttribIndex));
 
             // Record basic attrib info
-            translatedAttrib->attribute        = &attribs[dirtyAttribIndex];
-            translatedAttrib->binding = &bindings[translatedAttrib->attribute->bindingIndex];
+            translatedAttrib->attribute = &attribs[dirtyAttribIndex];
+            translatedAttrib->binding   = &bindings[translatedAttrib->attribute->bindingIndex];
             translatedAttrib->currentValueType = currentValue.Type;
             translatedAttrib->divisor          = translatedAttrib->binding->divisor;
 
@@ -207,12 +220,12 @@ const std::vector<TranslatedAttribute> &VertexArray11::getTranslatedAttribs() co
     return mTranslatedAttribs;
 }
 
-void VertexArray11::signal(SignalToken token)
+void VertexArray11::signal(uint32_t channelID)
 {
-    ASSERT(mAttributeStorageTypes[token] != VertexStorageType::CURRENT_VALUE);
+    ASSERT(mAttributeStorageTypes[channelID] != VertexStorageType::CURRENT_VALUE);
 
     // This can change a buffer's storage, we'll need to re-check.
-    mAttribsToUpdate.set(token);
+    mAttribsToUpdate.set(channelID);
 }
 
 void VertexArray11::clearDirtyAndPromoteDynamicAttribs(const gl::State &state, GLsizei count)

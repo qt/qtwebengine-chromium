@@ -33,6 +33,7 @@ class OffscreenSurfaceVk : public SurfaceImpl
     egl::Error querySurfacePointerANGLE(EGLint attribute, void **value) override;
     egl::Error bindTexImage(gl::Texture *texture, EGLint buffer) override;
     egl::Error releaseTexImage(EGLint buffer) override;
+    egl::Error getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc) override;
     void setSwapInterval(EGLint interval) override;
 
     // width and height can change with client window resizing
@@ -68,6 +69,7 @@ class WindowSurfaceVk : public SurfaceImpl, public ResourceVk
     egl::Error querySurfacePointerANGLE(EGLint attribute, void **value) override;
     egl::Error bindTexImage(gl::Texture *texture, EGLint buffer) override;
     egl::Error releaseTexImage(EGLint buffer) override;
+    egl::Error getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc) override;
     void setSwapInterval(EGLint interval) override;
 
     // width and height can change with client window resizing
@@ -94,7 +96,8 @@ class WindowSurfaceVk : public SurfaceImpl, public ResourceVk
     VkSwapchainKHR mSwapchain;
 
     RenderTargetVk mRenderTarget;
-    vk::Semaphore mPresentCompleteSemaphore;
+    vk::Semaphore mImageAvailableSemaphore;
+    vk::Semaphore mRenderingCompleteSemaphore;
 
     uint32_t mCurrentSwapchainImageIndex;
     std::vector<vk::Image> mSwapchainImages;

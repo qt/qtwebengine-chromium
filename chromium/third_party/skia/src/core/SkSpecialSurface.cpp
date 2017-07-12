@@ -93,13 +93,20 @@ private:
 
 sk_sp<SkSpecialSurface> SkSpecialSurface::MakeFromBitmap(const SkIRect& subset, SkBitmap& bm,
                                                          const SkSurfaceProps* props) {
+    if (subset.isEmpty() || !SkSurfaceValidateRasterInfo(bm.info(), bm.rowBytes())) {
+        return nullptr;
+    }
     return sk_make_sp<SkSpecialSurface_Raster>(sk_ref_sp(bm.pixelRef()), subset, props);
 }
 
 sk_sp<SkSpecialSurface> SkSpecialSurface::MakeRaster(const SkImageInfo& info,
                                                      const SkSurfaceProps* props) {
-    sk_sp<SkPixelRef> pr(SkMallocPixelRef::NewZeroed(info, 0, nullptr));
-    if (nullptr == pr.get()) {
+    if (!SkSurfaceValidateRasterInfo(info)) {
+        return nullptr;
+    }
+
+    sk_sp<SkPixelRef> pr = SkMallocPixelRef::MakeZeroed(info, 0, nullptr);
+    if (!pr) {
         return nullptr;
     }
 
@@ -136,7 +143,7 @@ public:
     ~SkSpecialSurface_Gpu() override { }
 
     sk_sp<SkSpecialImage> onMakeImageSnapshot() override {
-        if (!fRenderTargetContext->asTexture()) {
+        if (!fRenderTargetContext->asTextureProxy()) {
             return nullptr;
         }
         sk_sp<SkSpecialImage> tmp(SkSpecialImage::MakeDeferredFromGpu(

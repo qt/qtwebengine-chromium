@@ -53,7 +53,7 @@ uint32_t DecodeAllScanlines(std::unique_ptr<CCodec_ScanlineDecoder> pDecoder,
     if (!pLine)
       break;
 
-    FXSYS_memcpy(dest_buf + row * pitch, pLine, pitch);
+    memcpy(dest_buf + row * pitch, pLine, pitch);
   }
   return pDecoder->GetSrcOffset();
 }
@@ -62,7 +62,7 @@ uint32_t PDF_DecodeInlineStream(const uint8_t* src_buf,
                                 uint32_t limit,
                                 int width,
                                 int height,
-                                CFX_ByteString& decoder,
+                                const CFX_ByteString& decoder,
                                 CPDF_Dictionary* pParam,
                                 uint8_t*& dest_buf,
                                 uint32_t& dest_size) {
@@ -94,7 +94,7 @@ uint32_t PDF_DecodeInlineStream(const uint8_t* src_buf,
     return RunLengthDecode(src_buf, limit, dest_buf, dest_size);
   dest_size = 0;
   dest_buf = 0;
-  return (uint32_t)-1;
+  return 0xFFFFFFFF;
 }
 
 }  // namespace
@@ -184,7 +184,7 @@ std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     if (OrigSize > m_Size - m_Pos)
       OrigSize = m_Size - m_Pos;
     pData.reset(FX_Alloc(uint8_t, OrigSize));
-    FXSYS_memcpy(pData.get(), m_pBuf + m_Pos, OrigSize);
+    memcpy(pData.get(), m_pBuf + m_Pos, OrigSize);
     dwStreamSize = OrigSize;
     m_Pos += OrigSize;
   } else {
@@ -217,7 +217,7 @@ std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     }
     m_Pos = dwSavePos;
     pData.reset(FX_Alloc(uint8_t, dwStreamSize));
-    FXSYS_memcpy(pData.get(), m_pBuf + m_Pos, dwStreamSize);
+    memcpy(pData.get(), m_pBuf + m_Pos, dwStreamSize);
     m_Pos += dwStreamSize;
   }
   pDict->SetNewFor<CPDF_Number>("Length", (int)dwStreamSize);
@@ -500,7 +500,7 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
         break;
       case 1:
         if (ch >= '0' && ch <= '7') {
-          iEscCode = FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(ch));
+          iEscCode = FXSYS_toDecimalDigit(static_cast<wchar_t>(ch));
           status = 2;
           break;
         }
@@ -526,7 +526,7 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
       case 2:
         if (ch >= '0' && ch <= '7') {
           iEscCode =
-              iEscCode * 8 + FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(ch));
+              iEscCode * 8 + FXSYS_toDecimalDigit(static_cast<wchar_t>(ch));
           status = 3;
         } else {
           buf.AppendChar(iEscCode);
@@ -537,7 +537,7 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
       case 3:
         if (ch >= '0' && ch <= '7') {
           iEscCode =
-              iEscCode * 8 + FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(ch));
+              iEscCode * 8 + FXSYS_toDecimalDigit(static_cast<wchar_t>(ch));
           buf.AppendChar(iEscCode);
           status = 0;
         } else {

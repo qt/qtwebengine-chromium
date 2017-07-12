@@ -8,18 +8,20 @@
 
 #include <map>
 #include <memory>
+#include <utility>
 
 #include "core/fpdfapi/font/cpdf_type3char.h"
 #include "core/fpdfapi/font/cpdf_type3font.h"
 #include "core/fpdfapi/render/cpdf_type3glyphs.h"
 #include "core/fxge/fx_dib.h"
 #include "core/fxge/fx_font.h"
+#include "third_party/base/ptr_util.h"
 
 namespace {
 
 struct CPDF_UniqueKeyGen {
   void Generate(int count, ...);
-  FX_CHAR m_Key[128];
+  char m_Key[128];
   int m_KeyLen;
 };
 
@@ -51,7 +53,8 @@ bool IsScanLine8bpp(uint8_t* pBuf, int width) {
   return false;
 }
 
-int DetectFirstLastScan(const CFX_DIBitmap* pBitmap, bool bFirst) {
+int DetectFirstLastScan(const CFX_RetainPtr<CFX_DIBitmap>& pBitmap,
+                        bool bFirst) {
   int height = pBitmap->GetHeight();
   int pitch = pBitmap->GetPitch();
   int width = pBitmap->GetWidth();
@@ -79,16 +82,12 @@ int DetectFirstLastScan(const CFX_DIBitmap* pBitmap, bool bFirst) {
 
 CPDF_Type3Cache::CPDF_Type3Cache(CPDF_Type3Font* pFont) : m_pFont(pFont) {}
 
-CPDF_Type3Cache::~CPDF_Type3Cache() {
-  for (const auto& pair : m_SizeMap)
-    delete pair.second;
-  m_SizeMap.clear();
-}
+CPDF_Type3Cache::~CPDF_Type3Cache() {}
 
 CFX_GlyphBitmap* CPDF_Type3Cache::LoadGlyph(uint32_t charcode,
                                             const CFX_Matrix* pMatrix,
-                                            FX_FLOAT retinaScaleX,
-                                            FX_FLOAT retinaScaleY) {
+                                            float retinaScaleX,
+                                            float retinaScaleY) {
   CPDF_UniqueKeyGen keygen;
   keygen.Generate(
       4, FXSYS_round(pMatrix->a * 10000), FXSYS_round(pMatrix->b * 10000),
@@ -97,10 +96,11 @@ CFX_GlyphBitmap* CPDF_Type3Cache::LoadGlyph(uint32_t charcode,
   CPDF_Type3Glyphs* pSizeCache;
   auto it = m_SizeMap.find(FaceGlyphsKey);
   if (it == m_SizeMap.end()) {
-    pSizeCache = new CPDF_Type3Glyphs;
-    m_SizeMap[FaceGlyphsKey] = pSizeCache;
+    auto pNew = pdfium::MakeUnique<CPDF_Type3Glyphs>();
+    pSizeCache = pNew.get();
+    m_SizeMap[FaceGlyphsKey] = std::move(pNew);
   } else {
-    pSizeCache = it->second;
+    pSizeCache = it->second.get();
   }
   auto it2 = pSizeCache->m_GlyphMap.find(charcode);
   if (it2 != pSizeCache->m_GlyphMap.end())
@@ -115,30 +115,30 @@ CFX_GlyphBitmap* CPDF_Type3Cache::LoadGlyph(uint32_t charcode,
 CFX_GlyphBitmap* CPDF_Type3Cache::RenderGlyph(CPDF_Type3Glyphs* pSize,
                                               uint32_t charcode,
                                               const CFX_Matrix* pMatrix,
-                                              FX_FLOAT retinaScaleX,
-                                              FX_FLOAT retinaScaleY) {
+                                              float retinaScaleX,
+                                              float retinaScaleY) {
   const CPDF_Type3Char* pChar = m_pFont->LoadChar(charcode);
   if (!pChar || !pChar->m_pBitmap)
     return nullptr;
 
-  CFX_DIBitmap* pBitmap = pChar->m_pBitmap.get();
+  CFX_RetainPtr<CFX_DIBitmap> pBitmap = pChar->m_pBitmap;
   CFX_Matrix image_matrix = pChar->m_ImageMatrix;
   CFX_Matrix text_matrix(pMatrix->a, pMatrix->b, pMatrix->c, pMatrix->d, 0, 0);
   image_matrix.Concat(text_matrix);
 
-  std::unique_ptr<CFX_DIBitmap> pResBitmap;
+  CFX_RetainPtr<CFX_DIBitmap> pResBitmap;
   int left = 0;
   int top = 0;
-  if (FXSYS_fabs(image_matrix.b) < FXSYS_fabs(image_matrix.a) / 100 &&
-      FXSYS_fabs(image_matrix.c) < FXSYS_fabs(image_matrix.d) / 100) {
+  if (fabs(image_matrix.b) < fabs(image_matrix.a) / 100 &&
+      fabs(image_matrix.c) < fabs(image_matrix.d) / 100) {
     int top_line = DetectFirstLastScan(pBitmap, true);
     int bottom_line = DetectFirstLastScan(pBitmap, false);
     if (top_line == 0 && bottom_line == pBitmap->GetHeight() - 1) {
-      FX_FLOAT top_y = image_matrix.d + image_matrix.f;
-      FX_FLOAT bottom_y = image_matrix.f;
+      float top_y = image_matrix.d + image_matrix.f;
+      float bottom_y = image_matrix.f;
       bool bFlipped = top_y > bottom_y;
       if (bFlipped) {
-        FX_FLOAT temp = top_y;
+        float temp = top_y;
         top_y = bottom_y;
         bottom_y = temp;
       }
@@ -166,6 +166,6 @@ CFX_GlyphBitmap* CPDF_Type3Cache::RenderGlyph(CPDF_Type3Glyphs* pSize,
   CFX_GlyphBitmap* pGlyph = new CFX_GlyphBitmap;
   pGlyph->m_Left = left;
   pGlyph->m_Top = -top;
-  pGlyph->m_Bitmap.TakeOver(pResBitmap.get());
+  pGlyph->m_pBitmap->TakeOver(std::move(pResBitmap));
   return pGlyph;
 }

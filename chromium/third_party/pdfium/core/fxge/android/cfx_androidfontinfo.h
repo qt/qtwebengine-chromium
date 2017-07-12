@@ -27,15 +27,15 @@ class CFX_AndroidFontInfo : public IFX_SystemFontInfo {
                 bool bItalic,
                 int charset,
                 int pitch_family,
-                const FX_CHAR* face,
+                const char* face,
                 int& bExact) override;
-  void* GetFont(const FX_CHAR* face) override;
+  void* GetFont(const char* face) override;
   uint32_t GetFontData(void* hFont,
                        uint32_t table,
                        uint8_t* buffer,
                        uint32_t size) override;
-  bool GetFaceName(void* hFont, CFX_ByteString& name) override;
-  bool GetFontCharset(void* hFont, int& charset) override;
+  bool GetFaceName(void* hFont, CFX_ByteString* name) override;
+  bool GetFontCharset(void* hFont, int* charset) override;
   void DeleteFont(void* hFont) override;
 
  protected:

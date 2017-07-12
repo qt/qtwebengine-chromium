@@ -12,6 +12,7 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/ignore_wundef.h"
+#include "webrtc/base/protobuf_utils.h"
 
 #ifdef WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP
 RTC_PUSH_IGNORING_WUNDEF()
@@ -34,7 +35,7 @@ using audio_network_adaptor::debug_dump::EncoderRuntimeConfig;
 
 void DumpEventToFile(const Event& event, FileWrapper* dump_file) {
   RTC_CHECK(dump_file->is_open());
-  std::string dump_data;
+  ProtoString dump_data;
   event.SerializeToString(&dump_data);
   int32_t size = event.ByteSize();
   dump_file->Write(&size, sizeof(size));
@@ -49,9 +50,8 @@ class DebugDumpWriterImpl final : public DebugDumpWriter {
   explicit DebugDumpWriterImpl(FILE* file_handle);
   ~DebugDumpWriterImpl() override = default;
 
-  void DumpEncoderRuntimeConfig(
-      const AudioNetworkAdaptor::EncoderRuntimeConfig& config,
-      int64_t timestamp) override;
+  void DumpEncoderRuntimeConfig(const AudioEncoderRuntimeConfig& config,
+                                int64_t timestamp) override;
 
   void DumpNetworkMetrics(const Controller::NetworkMetrics& metrics,
                           int64_t timestamp) override;
@@ -94,12 +94,17 @@ void DebugDumpWriterImpl::DumpNetworkMetrics(
   if (metrics.rtt_ms)
     dump_metrics->set_rtt_ms(*metrics.rtt_ms);
 
+  if (metrics.uplink_recoverable_packet_loss_fraction) {
+    dump_metrics->set_uplink_recoverable_packet_loss_fraction(
+        *metrics.uplink_recoverable_packet_loss_fraction);
+  }
+
   DumpEventToFile(event, dump_file_.get());
 #endif  // WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP
 }
 
 void DebugDumpWriterImpl::DumpEncoderRuntimeConfig(
-    const AudioNetworkAdaptor::EncoderRuntimeConfig& config,
+    const AudioEncoderRuntimeConfig& config,
     int64_t timestamp) {
 #ifdef WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP
   Event event;

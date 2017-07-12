@@ -49,9 +49,9 @@ void CFX_GlyphMap::SetAt(int key, int value) {
 }
 
 bool CFX_GlyphMap::Lookup(int key, int& value) {
-  void* pResult = FXSYS_bsearch(&key, m_Buffer.GetBuffer(),
-                                m_Buffer.GetSize() / sizeof(_IntPair),
-                                sizeof(_IntPair), _CompareInt);
+  void* pResult =
+      bsearch(&key, m_Buffer.GetBuffer(), m_Buffer.GetSize() / sizeof(_IntPair),
+              sizeof(_IntPair), _CompareInt);
   if (!pResult) {
     return false;
   }
@@ -127,9 +127,8 @@ bool CFX_CTTGSUBTable::GetVerticalGlyphSub(uint32_t glyphnum,
                                            uint32_t* vglyphnum,
                                            TFeature* Feature) {
   for (int index : Feature->LookupListIndices) {
-    if (index < 0 || index >= pdfium::CollectionSize<int>(LookupList.Lookups))
+    if (!pdfium::IndexInBounds(LookupList.Lookups, index))
       continue;
-
     if (LookupList.Lookups[index].LookupType == 1 &&
         GetVerticalGlyphSub2(glyphnum, vglyphnum, &LookupList.Lookups[index])) {
       return true;
@@ -144,7 +143,7 @@ bool CFX_CTTGSUBTable::GetVerticalGlyphSub2(uint32_t glyphnum,
   for (const auto& subTable : Lookup->SubTables) {
     switch (subTable->SubstFormat) {
       case 1: {
-        auto tbl1 = static_cast<TSingleSubstFormat1*>(subTable.get());
+        auto* tbl1 = static_cast<TSingleSubstFormat1*>(subTable.get());
         if (GetCoverageIndex(tbl1->Coverage.get(), glyphnum) >= 0) {
           *vglyphnum = glyphnum + tbl1->DeltaGlyphID;
           return true;
@@ -152,10 +151,9 @@ bool CFX_CTTGSUBTable::GetVerticalGlyphSub2(uint32_t glyphnum,
         break;
       }
       case 2: {
-        auto tbl2 = static_cast<TSingleSubstFormat2*>(subTable.get());
+        auto* tbl2 = static_cast<TSingleSubstFormat2*>(subTable.get());
         int index = GetCoverageIndex(tbl2->Coverage.get(), glyphnum);
-        if (index >= 0 &&
-            index < pdfium::CollectionSize<int>(tbl2->Substitutes)) {
+        if (pdfium::IndexInBounds(tbl2->Substitutes, index)) {
           *vglyphnum = tbl2->Substitutes[index];
           return true;
         }

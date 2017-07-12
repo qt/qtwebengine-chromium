@@ -39,13 +39,14 @@ class Surface;
 namespace gl
 {
 class Context;
+class ContextState;
 class Framebuffer;
 class Renderbuffer;
 class State;
 class Texture;
 class TextureCapsMap;
+class ValidationContext;
 struct Caps;
-class ContextState;
 struct Extensions;
 struct ImageIndex;
 struct Rectangle;
@@ -114,7 +115,10 @@ class FramebufferState final : angle::NonCopyable
     bool mWebGLDepthStencilConsistent;
 };
 
-class Framebuffer final : public LabeledObject, public angle::SignalReceiver
+using OnAttachmentDirtyReceiver = angle::SignalReceiver<>;
+using OnAttachmentDirtyBinding  = angle::ChannelBinding<>;
+
+class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
 {
   public:
     // Constructor to build application-defined framebuffers
@@ -174,7 +178,7 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
     bool usingExtendedDrawBuffers() const;
 
     // This method calls checkStatus.
-    int getSamples(const ContextState &state);
+    int getSamples(const Context *context);
 
     Error getSamplePosition(size_t index, GLfloat *xy) const;
 
@@ -187,10 +191,17 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
     void setDefaultSamples(GLint defaultSamples);
     void setDefaultFixedSampleLocations(GLboolean defaultFixedSampleLocations);
 
-    GLenum checkStatus(const ContextState &state);
+    void invalidateCompletenessCache();
+
+    GLenum checkStatus(const Context *context);
+
+    // TODO(jmadill): Remove this kludge.
+    GLenum checkStatus(const ValidationContext *context);
+    int getSamples(const ValidationContext *context);
 
     // Helper for checkStatus == GL_FRAMEBUFFER_COMPLETE.
-    bool complete(const ContextState &state);
+    bool complete(const Context *context);
+    bool cachedComplete() const;
 
     bool hasValidDepthStencil() const;
 
@@ -231,7 +242,7 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
                GLbitfield mask,
                GLenum filter);
 
-    enum DirtyBitType
+    enum DirtyBitType : uint32_t
     {
         DIRTY_BIT_COLOR_ATTACHMENT_0,
         DIRTY_BIT_COLOR_ATTACHMENT_MAX =
@@ -251,10 +262,10 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
     typedef std::bitset<DIRTY_BIT_MAX> DirtyBits;
     bool hasAnyDirtyBit() const { return mDirtyBits.any(); }
 
-    void syncState();
+    void syncState(const Context *context);
 
     // angle::SignalReceiver implementation
-    void signal(angle::SignalToken token) override;
+    void signal(uint32_t token) override;
 
     bool formsRenderingFeedbackLoopWith(const State &state) const;
     bool formsCopyingFeedbackLoopWith(GLuint copyTextureID,
@@ -267,7 +278,7 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
                                   GLenum matchType,
                                   GLuint matchId,
                                   size_t dirtyBit);
-    GLenum checkStatusImpl(const ContextState &state);
+    GLenum checkStatusImpl(const Context *context);
     void commitWebGL1DepthStencilIfConsistent();
 
     void setAttachmentImpl(GLenum type,
@@ -280,9 +291,9 @@ class Framebuffer final : public LabeledObject, public angle::SignalReceiver
     GLuint mId;
 
     Optional<GLenum> mCachedStatus;
-    std::vector<angle::ChannelBinding> mDirtyColorAttachmentBindings;
-    angle::ChannelBinding mDirtyDepthAttachmentBinding;
-    angle::ChannelBinding mDirtyStencilAttachmentBinding;
+    std::vector<OnAttachmentDirtyBinding> mDirtyColorAttachmentBindings;
+    OnAttachmentDirtyBinding mDirtyDepthAttachmentBinding;
+    OnAttachmentDirtyBinding mDirtyStencilAttachmentBinding;
 
     DirtyBits mDirtyBits;
 };

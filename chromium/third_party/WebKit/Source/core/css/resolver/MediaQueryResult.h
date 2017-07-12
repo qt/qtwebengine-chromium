@@ -25,26 +25,24 @@
 #define MediaQueryResult_h
 
 #include "core/css/MediaQueryExp.h"
-#include "wtf/Noncopyable.h"
+#include "platform/wtf/Noncopyable.h"
 
 namespace blink {
 
-class MediaQueryResult : public GarbageCollected<MediaQueryResult> {
-  WTF_MAKE_NONCOPYABLE(MediaQueryResult);
+class MediaQueryResult {
+  DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 
  public:
   MediaQueryResult(const MediaQueryExp& expr, bool result)
-      : m_expression(&expr), m_result(result) {}
+      : expression_(expr), result_(result) {}
 
-  DEFINE_INLINE_TRACE() { visitor->trace(m_expression); }
+  const MediaQueryExp& Expression() const { return expression_; }
 
-  const MediaQueryExp* expression() const { return m_expression; }
-
-  bool result() const { return m_result; }
+  bool Result() const { return result_; }
 
  private:
-  Member<const MediaQueryExp> m_expression;
-  bool m_result;
+  const MediaQueryExp expression_;
+  bool result_;
 };
 
 }  // namespace blink

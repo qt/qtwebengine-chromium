@@ -21,6 +21,11 @@
 #if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/core/SkTypeface.h"
+
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#include "third_party/skia/include/ports/SkFontMgr.h"
+#include "third_party/skia/include/ports/SkFontMgr_empty.h"
+#endif
 #endif
 
 namespace {
@@ -44,7 +49,7 @@ void ContrastAdjust(uint8_t* pDataIn,
                     int nDstRowBytes) {
   int col, row, temp;
   int max = 0, min = 255;
-  FX_FLOAT rate;
+  float rate;
   for (row = 0; row < nHeight; row++) {
     uint8_t* pRow = pDataIn + row * nSrcRowBytes;
     for (col = 0; col < nWidth; col++) {
@@ -55,10 +60,10 @@ void ContrastAdjust(uint8_t* pDataIn,
   }
   temp = max - min;
   if (temp == 0 || temp == 255) {
-    int rowbytes = std::min(FXSYS_abs(nSrcRowBytes), nDstRowBytes);
+    int rowbytes = std::min(abs(nSrcRowBytes), nDstRowBytes);
     for (row = 0; row < nHeight; row++) {
-      FXSYS_memcpy(pDataOut + row * nDstRowBytes, pDataIn + row * nSrcRowBytes,
-                   rowbytes);
+      memcpy(pDataOut + row * nDstRowBytes, pDataIn + row * nSrcRowBytes,
+             rowbytes);
     }
     return;
   }
@@ -165,8 +170,9 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(const CFX_Font* pFont,
     else
       level = CFX_Font::s_WeightPow_11[index];
 
-    level = level * (FXSYS_abs(static_cast<int>(ft_matrix.xx)) +
-                     FXSYS_abs(static_cast<int>(ft_matrix.xy))) /
+    level = level *
+            (abs(static_cast<int>(ft_matrix.xx)) +
+             abs(static_cast<int>(ft_matrix.xy))) /
             36655;
     FXFT_Outline_Embolden(FXFT_Get_Glyph_Outline(m_Face),
                           level.ValueOrDefault(0));
@@ -182,14 +188,14 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(const CFX_Font* pFont,
     return nullptr;
   int dib_width = bmwidth;
   CFX_GlyphBitmap* pGlyphBitmap = new CFX_GlyphBitmap;
-  pGlyphBitmap->m_Bitmap.Create(
+  pGlyphBitmap->m_pBitmap->Create(
       dib_width, bmheight,
       anti_alias == FXFT_RENDER_MODE_MONO ? FXDIB_1bppMask : FXDIB_8bppMask);
   pGlyphBitmap->m_Left = FXFT_Get_Glyph_BitmapLeft(m_Face);
   pGlyphBitmap->m_Top = FXFT_Get_Glyph_BitmapTop(m_Face);
-  int dest_pitch = pGlyphBitmap->m_Bitmap.GetPitch();
+  int dest_pitch = pGlyphBitmap->m_pBitmap->GetPitch();
   int src_pitch = FXFT_Get_Bitmap_Pitch(FXFT_Get_Glyph_Bitmap(m_Face));
-  uint8_t* pDestBuf = pGlyphBitmap->m_Bitmap.GetBuffer();
+  uint8_t* pDestBuf = pGlyphBitmap->m_pBitmap->GetBuffer();
   uint8_t* pSrcBuf =
       (uint8_t*)FXFT_Get_Bitmap_Buffer(FXFT_Get_Glyph_Bitmap(m_Face));
   if (anti_alias != FXFT_RENDER_MODE_MONO &&
@@ -205,15 +211,14 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(const CFX_Font* pFont,
       }
     }
   } else {
-    FXSYS_memset(pDestBuf, 0, dest_pitch * bmheight);
+    memset(pDestBuf, 0, dest_pitch * bmheight);
     if (anti_alias == FXFT_RENDER_MODE_MONO &&
         FXFT_Get_Bitmap_PixelMode(FXFT_Get_Glyph_Bitmap(m_Face)) ==
             FXFT_PIXEL_MODE_MONO) {
-      int rowbytes =
-          FXSYS_abs(src_pitch) > dest_pitch ? dest_pitch : FXSYS_abs(src_pitch);
+      int rowbytes = abs(src_pitch) > dest_pitch ? dest_pitch : abs(src_pitch);
       for (int row = 0; row < bmheight; row++) {
-        FXSYS_memcpy(pDestBuf + row * dest_pitch, pSrcBuf + row * src_pitch,
-                     rowbytes);
+        memcpy(pDestBuf + row * dest_pitch, pSrcBuf + row * src_pitch,
+               rowbytes);
       }
     } else {
       ContrastAdjust(pSrcBuf, pDestBuf, bmwidth, bmheight, src_pitch,
@@ -359,6 +364,13 @@ CFX_TypeFace* CFX_FaceCache::GetDeviceCache(const CFX_Font* pFont) {
             new SkMemoryStream(pFont->GetFontData(), pFont->GetSize()))
             .release();
   }
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+  if (!m_pTypeface) {
+    sk_sp<SkFontMgr> customMgr(SkFontMgr_New_Custom_Empty());
+    m_pTypeface = customMgr->createFromStream(
+        new SkMemoryStream(pFont->GetFontData(), pFont->GetSize()));
+  }
+#endif
   return m_pTypeface;
 }
 #endif

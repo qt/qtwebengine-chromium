@@ -145,10 +145,9 @@ class Renderer11 : public RendererD3D
                                 const std::vector<GLint> &vertexUniformBuffers,
                                 const std::vector<GLint> &fragmentUniformBuffers) override;
 
-    gl::Error updateState(const gl::ContextState &data, GLenum drawMode);
+    gl::Error updateState(ContextImpl *contextImpl, GLenum drawMode);
 
     bool applyPrimitiveType(GLenum mode, GLsizei count, bool usesPointSize);
-    gl::Error applyRenderTarget(gl::Framebuffer *frameBuffer);
     gl::Error applyUniforms(const ProgramD3D &programD3D,
                             GLenum drawMode,
                             const std::vector<D3DUniform *> &uniformArray) override;
@@ -219,6 +218,7 @@ class Renderer11 : public RendererD3D
                           GLenum destFormat,
                           const gl::Offset &destOffset,
                           TextureStorage *storage,
+                          GLenum destTarget,
                           GLint destLevel,
                           bool unpackFlipY,
                           bool unpackPremultiplyAlpha,
@@ -374,10 +374,15 @@ class Renderer11 : public RendererD3D
                                   GLsizei instances,
                                   const gl::IndexRange &indexRange);
 
+    gl::Error genericDrawIndirect(Context11 *context,
+                                  GLenum mode,
+                                  GLenum type,
+                                  const GLvoid *indirect);
+
     // Necessary hack for default framebuffers in D3D.
     FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
 
-    gl::Error getScratchMemoryBuffer(size_t requestedSize, MemoryBuffer **bufferOut);
+    gl::Error getScratchMemoryBuffer(size_t requestedSize, angle::MemoryBuffer **bufferOut);
 
     gl::Version getMaxSupportedESVersion() const override;
 
@@ -397,6 +402,16 @@ class Renderer11 : public RendererD3D
                                GLenum type,
                                const GLvoid *indices,
                                GLsizei instances);
+    gl::Error drawArraysIndirectImpl(const gl::ContextState &data,
+                                     GLenum mode,
+                                     const GLvoid *indirect);
+    gl::Error drawElementsIndirectImpl(const gl::ContextState &data,
+                                       GLenum mode,
+                                       GLenum type,
+                                       const GLvoid *indirect);
+
+    // Support directly using indirect draw buffer.
+    bool supportsFastIndirectDraw(const gl::State &state, GLenum mode, GLenum type);
 
     void generateCaps(gl::Caps *outCaps,
                       gl::TextureCapsMap *outTextureCaps,
@@ -574,8 +589,7 @@ class Renderer11 : public RendererD3D
 
     std::vector<GLuint> mScratchIndexDataBuffer;
 
-    MemoryBuffer mScratchMemoryBuffer;
-    unsigned int mScratchMemoryBufferResetCounter;
+    angle::ScratchBuffer mScratchMemoryBuffer;
 
     gl::DebugAnnotator *mAnnotator;
 

@@ -377,6 +377,20 @@ bool ValidateRenderbufferStorageMultisample(ValidationContext *context,
                                             GLsizei width,
                                             GLsizei height);
 
+bool ValidateVertexAttribIPointer(ValidationContext *context,
+                                  GLuint index,
+                                  GLint size,
+                                  GLenum type,
+                                  GLsizei stride,
+                                  const GLvoid *pointer);
+
+bool ValidateGetSynciv(Context *context,
+                       GLsync sync,
+                       GLenum pname,
+                       GLsizei bufSize,
+                       GLsizei *length,
+                       GLint *values);
+
 }  // namespace gl
 
 #endif // LIBANGLE_VALIDATION_ES3_H_

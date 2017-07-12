@@ -67,14 +67,26 @@ static void set_good_speed_feature_framesize_dependent(VP9_COMP *cpi,
                                                        int speed) {
   VP9_COMMON *const cm = &cpi->common;
 
+  // speed 0 features
+  sf->partition_search_breakout_thr.dist = (1 << 20);
+  sf->partition_search_breakout_thr.rate = 80;
+
+  // Currently, the machine-learning based partition search early termination
+  // is only used while VPXMIN(cm->width, cm->height) >= 480 and speed = 0.
+  if (VPXMIN(cm->width, cm->height) >= 480) {
+    sf->ml_partition_search_early_termination = 1;
+  }
+
   if (speed >= 1) {
+    sf->ml_partition_search_early_termination = 0;
+
     if (VPXMIN(cm->width, cm->height) >= 720) {
       sf->disable_split_mask =
           cm->show_frame ? DISABLE_ALL_SPLIT : DISABLE_ALL_INTER_SPLIT;
-      sf->partition_search_breakout_dist_thr = (1 << 23);
+      sf->partition_search_breakout_thr.dist = (1 << 23);
     } else {
       sf->disable_split_mask = DISABLE_COMPOUND_SPLIT;
-      sf->partition_search_breakout_dist_thr = (1 << 21);
+      sf->partition_search_breakout_thr.dist = (1 << 21);
     }
   }
 
@@ -83,12 +95,12 @@ static void set_good_speed_feature_framesize_dependent(VP9_COMP *cpi,
       sf->disable_split_mask =
           cm->show_frame ? DISABLE_ALL_SPLIT : DISABLE_ALL_INTER_SPLIT;
       sf->adaptive_pred_interp_filter = 0;
-      sf->partition_search_breakout_dist_thr = (1 << 24);
-      sf->partition_search_breakout_rate_thr = 120;
+      sf->partition_search_breakout_thr.dist = (1 << 24);
+      sf->partition_search_breakout_thr.rate = 120;
     } else {
       sf->disable_split_mask = LAST_AND_INTRA_SPLIT_ONLY;
-      sf->partition_search_breakout_dist_thr = (1 << 22);
-      sf->partition_search_breakout_rate_thr = 100;
+      sf->partition_search_breakout_thr.dist = (1 << 22);
+      sf->partition_search_breakout_thr.rate = 100;
     }
     sf->rd_auto_partition_min_limit = set_partition_min_limit(cm);
 
@@ -108,14 +120,14 @@ static void set_good_speed_feature_framesize_dependent(VP9_COMP *cpi,
     if (VPXMIN(cm->width, cm->height) >= 720) {
       sf->disable_split_mask = DISABLE_ALL_SPLIT;
       sf->schedule_mode_search = cm->base_qindex < 220 ? 1 : 0;
-      sf->partition_search_breakout_dist_thr = (1 << 25);
-      sf->partition_search_breakout_rate_thr = 200;
+      sf->partition_search_breakout_thr.dist = (1 << 25);
+      sf->partition_search_breakout_thr.rate = 200;
     } else {
       sf->max_intra_bsize = BLOCK_32X32;
       sf->disable_split_mask = DISABLE_ALL_INTER_SPLIT;
       sf->schedule_mode_search = cm->base_qindex < 175 ? 1 : 0;
-      sf->partition_search_breakout_dist_thr = (1 << 23);
-      sf->partition_search_breakout_rate_thr = 120;
+      sf->partition_search_breakout_thr.dist = (1 << 23);
+      sf->partition_search_breakout_thr.rate = 120;
     }
   }
 
@@ -129,24 +141,29 @@ static void set_good_speed_feature_framesize_dependent(VP9_COMP *cpi,
   }
 
   if (speed >= 4) {
+    sf->partition_search_breakout_thr.rate = 300;
     if (VPXMIN(cm->width, cm->height) >= 720) {
-      sf->partition_search_breakout_dist_thr = (1 << 26);
+      sf->partition_search_breakout_thr.dist = (1 << 26);
     } else {
-      sf->partition_search_breakout_dist_thr = (1 << 24);
+      sf->partition_search_breakout_thr.dist = (1 << 24);
     }
     sf->disable_split_mask = DISABLE_ALL_SPLIT;
+  }
+
+  if (speed >= 5) {
+    sf->partition_search_breakout_thr.rate = 500;
   }
 }
 
 static double tx_dom_thresholds[6] = { 99.0, 14.0, 12.0, 8.0, 4.0, 0.0 };
 static double qopt_thresholds[6] = { 99.0, 12.0, 10.0, 4.0, 2.0, 0.0 };
 
-static void set_good_speed_feature(VP9_COMP *cpi, VP9_COMMON *cm,
-                                   SPEED_FEATURES *sf, int speed) {
+static void set_good_speed_feature_framesize_independent(VP9_COMP *cpi,
+                                                         VP9_COMMON *cm,
+                                                         SPEED_FEATURES *sf,
+                                                         int speed) {
   const int boosted = frame_is_boosted(cpi);
 
-  sf->partition_search_breakout_dist_thr = (1 << 20);
-  sf->partition_search_breakout_rate_thr = 80;
   sf->tx_size_search_breakout = 1;
   sf->adaptive_rd_thresh = 1;
   sf->allow_skip_recode = 1;
@@ -245,7 +262,6 @@ static void set_good_speed_feature(VP9_COMP *cpi, VP9_COMMON *cm,
     sf->use_fast_coef_updates = ONE_LOOP_REDUCED;
     sf->use_fast_coef_costing = 1;
     sf->motion_field_mode_search = !boosted;
-    sf->partition_search_breakout_rate_thr = 300;
   }
 
   if (speed >= 5) {
@@ -257,7 +273,6 @@ static void set_good_speed_feature(VP9_COMP *cpi, VP9_COMMON *cm,
       sf->intra_y_mode_mask[i] = INTRA_DC;
       sf->intra_uv_mode_mask[i] = INTRA_DC;
     }
-    sf->partition_search_breakout_rate_thr = 500;
     sf->mv.reduce_first_step_size = 1;
     sf->simple_model_rd_from_var = 1;
   }
@@ -287,10 +302,11 @@ static void set_rt_speed_feature_framesize_dependent(VP9_COMP *cpi,
   }
 
   if (speed >= 5) {
+    sf->partition_search_breakout_thr.rate = 200;
     if (VPXMIN(cm->width, cm->height) >= 720) {
-      sf->partition_search_breakout_dist_thr = (1 << 25);
+      sf->partition_search_breakout_thr.dist = (1 << 25);
     } else {
-      sf->partition_search_breakout_dist_thr = (1 << 23);
+      sf->partition_search_breakout_thr.dist = (1 << 23);
     }
   }
 
@@ -300,13 +316,14 @@ static void set_rt_speed_feature_framesize_dependent(VP9_COMP *cpi,
   }
 }
 
-static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
-                                 vp9e_tune_content content) {
+static void set_rt_speed_feature_framesize_independent(
+    VP9_COMP *cpi, SPEED_FEATURES *sf, int speed, vp9e_tune_content content) {
   VP9_COMMON *const cm = &cpi->common;
   const int is_keyframe = cm->frame_type == KEY_FRAME;
   const int frames_since_key = is_keyframe ? 0 : cpi->rc.frames_since_key;
   sf->static_segmentation = 0;
   sf->adaptive_rd_thresh = 1;
+  sf->adaptive_rd_thresh_row_mt = 0;
   sf->use_fast_coef_costing = 1;
   sf->allow_exhaustive_searches = 0;
   sf->exhaustive_searches_thresh = INT_MAX;
@@ -439,7 +456,6 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
     sf->adaptive_rd_thresh = 2;
     // This feature is only enabled when partition search is disabled.
     sf->reuse_inter_pred_sby = 1;
-    sf->partition_search_breakout_rate_thr = 200;
     sf->coeff_prob_appx_step = 4;
     sf->use_fast_coef_updates = is_keyframe ? TWO_LOOP : ONE_LOOP_REDUCED;
     sf->mode_search_skip_flags = FLAG_SKIP_INTRA_DIRMISMATCH;
@@ -465,9 +481,9 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
       sf->short_circuit_flat_blocks = 1;
     }
     if (cpi->oxcf.rc_mode == VPX_CBR &&
-        cpi->oxcf.content != VP9E_CONTENT_SCREEN && !cpi->use_svc) {
+        cpi->oxcf.content != VP9E_CONTENT_SCREEN) {
       sf->limit_newmv_early_exit = 1;
-      sf->bias_golden = 1;
+      if (!cpi->use_svc) sf->bias_golden = 1;
     }
   }
 
@@ -478,8 +494,7 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
     sf->mv.search_method = NSTEP;
     sf->mv.reduce_first_step_size = 1;
     sf->skip_encode_sb = 0;
-    if (!cpi->use_svc && cpi->oxcf.rc_mode == VPX_CBR &&
-        content != VP9E_CONTENT_SCREEN) {
+    if (cpi->oxcf.rc_mode == VPX_CBR && content != VP9E_CONTENT_SCREEN) {
       // Enable short circuit for low temporal variance.
       sf->short_circuit_low_temp_var = 1;
     }
@@ -495,12 +510,12 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
       sf->mv.search_method = NSTEP;
       sf->mv.fullpel_search_step_param = 6;
     }
-    if (!cpi->use_svc && !cpi->resize_pending && !cpi->resize_state &&
-        !cpi->external_resize && cpi->oxcf.resize_mode == RESIZE_NONE)
-      sf->use_source_sad = 1;
+    if (!cpi->external_resize) sf->use_source_sad = 1;
     if (sf->use_source_sad) {
-      if (cpi->content_state_sb == NULL) {
-        cpi->content_state_sb = (uint8_t *)vpx_calloc(
+      if (cpi->content_state_sb_fd == NULL &&
+          (!cpi->use_svc ||
+           cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1)) {
+        cpi->content_state_sb_fd = (uint8_t *)vpx_calloc(
             (cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1), sizeof(uint8_t));
       }
     }
@@ -509,30 +524,14 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
   if (speed >= 8) {
     sf->adaptive_rd_thresh = 4;
     // Enable partition copy
-    if (!cpi->use_svc && !cpi->resize_pending && !cpi->resize_state &&
-        !cpi->external_resize && cpi->oxcf.resize_mode == RESIZE_NONE)
+    if (!cpi->use_svc && !cpi->resize_pending && cpi->resize_state == ORIG &&
+        !cpi->external_resize && cpi->oxcf.resize_mode == RESIZE_NONE) {
       sf->copy_partition_flag = 1;
-
-    if (sf->copy_partition_flag) {
-      cpi->max_copied_frame = 5;
-      if (cpi->prev_partition == NULL) {
-        cpi->prev_partition = (BLOCK_SIZE *)vpx_calloc(
-            cm->mi_stride * cm->mi_rows, sizeof(BLOCK_SIZE));
-      }
-      if (cpi->prev_segment_id == NULL) {
-        cpi->prev_segment_id = (int8_t *)vpx_calloc(
-            (cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1), sizeof(int8_t));
-      }
-      if (cpi->prev_variance_low == NULL) {
-        cpi->prev_variance_low = (uint8_t *)vpx_calloc(
-            (cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1) * 25,
-            sizeof(uint8_t));
-      }
-      if (cpi->copied_frame_cnt == NULL) {
-        cpi->copied_frame_cnt = (uint8_t *)vpx_calloc(
-            (cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1), sizeof(uint8_t));
-      }
+      cpi->max_copied_frame = 4;
     }
+
+    if (cpi->row_mt && cpi->oxcf.max_threads > 1)
+      sf->adaptive_rd_thresh_row_mt = 1;
 
     sf->mv.subpel_force_stop = (content == VP9E_CONTENT_SCREEN) ? 3 : 2;
     if (content == VP9E_CONTENT_SCREEN) sf->lpf_pick = LPF_PICK_MINIMAL_LPF;
@@ -554,9 +553,20 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf, int speed,
             vp9_noise_estimate_extract_level(&cpi->noise_estimate);
         if (noise_level >= kMedium) sf->short_circuit_low_temp_var = 2;
       }
+      // Since the short_circuit_low_temp_var is used, reduce the
+      // adaptive_rd_thresh level.
+      if (cm->width > 320 && cm->height > 240)
+        sf->adaptive_rd_thresh = 1;
+      else
+        sf->adaptive_rd_thresh = 2;
     }
     sf->limit_newmv_early_exit = 0;
-    sf->use_simple_block_yrd = 0;
+    if (cm->width > 320 && cm->height > 240) sf->use_simple_block_yrd = 1;
+  }
+  // Turn off adaptive_rd_thresh if row_mt is on for speed 5, 6, 7.
+  if (speed >= 5 && speed < 8 && cpi->row_mt && cpi->num_workers > 1) {
+    sf->adaptive_rd_thresh = 0;
+    sf->adaptive_rd_thresh_row_mt = 0;
   }
 }
 
@@ -565,6 +575,12 @@ void vp9_set_speed_features_framesize_dependent(VP9_COMP *cpi) {
   const VP9EncoderConfig *const oxcf = &cpi->oxcf;
   RD_OPT *const rd = &cpi->rd;
   int i;
+
+  // best quality defaults
+  // Some speed-up features even for best quality as minimal impact on quality.
+  sf->partition_search_breakout_thr.dist = (1 << 19);
+  sf->partition_search_breakout_thr.rate = 80;
+  sf->ml_partition_search_early_termination = 0;
 
   if (oxcf->mode == REALTIME) {
     set_rt_speed_feature_framesize_dependent(cpi, sf, oxcf->speed);
@@ -591,11 +607,17 @@ void vp9_set_speed_features_framesize_dependent(VP9_COMP *cpi) {
   // With row based multi-threading, the following speed features
   // have to be disabled to guarantee that bitstreams encoded with single thread
   // and multiple threads match
-  if (cpi->oxcf.ethread_bit_match) {
+  if (cpi->oxcf.row_mt_bit_exact) {
     sf->adaptive_rd_thresh = 0;
     sf->allow_exhaustive_searches = 0;
     sf->adaptive_pred_interp_filter = 0;
   }
+
+  // This is only used in motion vector unit test.
+  if (cpi->oxcf.motion_vector_unit_test == 1)
+    cpi->find_fractional_mv_step = vp9_return_max_sub_pixel_mv;
+  else if (cpi->oxcf.motion_vector_unit_test == 2)
+    cpi->find_fractional_mv_step = vp9_return_min_sub_pixel_mv;
 }
 
 void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
@@ -688,13 +710,12 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
   // Some speed-up features even for best quality as minimal impact on quality.
   sf->adaptive_rd_thresh = 1;
   sf->tx_size_search_breakout = 1;
-  sf->partition_search_breakout_dist_thr = (1 << 19);
-  sf->partition_search_breakout_rate_thr = 80;
 
   if (oxcf->mode == REALTIME)
-    set_rt_speed_feature(cpi, sf, oxcf->speed, oxcf->content);
+    set_rt_speed_feature_framesize_independent(cpi, sf, oxcf->speed,
+                                               oxcf->content);
   else if (oxcf->mode == GOOD)
-    set_good_speed_feature(cpi, cm, sf, oxcf->speed);
+    set_good_speed_feature_framesize_independent(cpi, cm, sf, oxcf->speed);
 
   cpi->full_search_sad = vp9_full_search_sad;
   cpi->diamond_search_sad = vp9_diamond_search_sad;
@@ -762,9 +783,15 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
   // With row based multi-threading, the following speed features
   // have to be disabled to guarantee that bitstreams encoded with single thread
   // and multiple threads match
-  if (cpi->oxcf.ethread_bit_match) {
+  if (cpi->oxcf.row_mt_bit_exact) {
     sf->adaptive_rd_thresh = 0;
     sf->allow_exhaustive_searches = 0;
     sf->adaptive_pred_interp_filter = 0;
   }
+
+  // This is only used in motion vector unit test.
+  if (cpi->oxcf.motion_vector_unit_test == 1)
+    cpi->find_fractional_mv_step = vp9_return_max_sub_pixel_mv;
+  else if (cpi->oxcf.motion_vector_unit_test == 2)
+    cpi->find_fractional_mv_step = vp9_return_min_sub_pixel_mv;
 }

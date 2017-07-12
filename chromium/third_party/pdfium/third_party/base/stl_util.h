@@ -10,6 +10,7 @@
 #include <set>
 
 #include "third_party/base/numerics/safe_conversions.h"
+#include "third_party/base/stl_util.h"
 
 namespace pdfium {
 
@@ -44,6 +45,13 @@ ResultType CollectionSize(const Collection& collection) {
   return pdfium::base::checked_cast<ResultType>(collection.size());
 }
 
+// Convenience routine for "int-fected" code, to handle signed indicies. The
+// compiler can deduce the type, making this more convenient than the above.
+template <typename IndexType, typename Collection>
+bool IndexInBounds(const Collection& collection, IndexType index) {
+  return index >= 0 && index < CollectionSize<IndexType>(collection);
+}
+
 // Track the addition of an object to a set, removing it automatically when
 // the ScopedSetInsertion goes out of scope.
 template <typename T>
@@ -59,6 +67,12 @@ class ScopedSetInsertion {
   std::set<T>* const m_Set;
   const T m_Entry;
 };
+
+// std::clamp(), some day.
+template <class T>
+constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
+  return std::min(std::max(v, lo), hi);
+}
 
 }  // namespace pdfium
 

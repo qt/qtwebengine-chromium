@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "fpdfsdk/fpdfxfa/cpdfxfa_docenvironment.h"
-#include "xfa/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
 
 class CJS_Runtime;
 class CPDFSDK_FormFillEnvironment;
@@ -37,7 +37,7 @@ class CPDFXFA_Context : public IXFA_AppProvider {
   CPDF_Document* GetPDFDoc() { return m_pPDFDoc.get(); }
   CXFA_FFDoc* GetXFADoc() { return m_pXFADoc.get(); }
   CXFA_FFDocView* GetXFADocView() { return m_pXFADocView; }
-  int GetDocType() const { return m_iDocType; }
+  XFA_DocType GetDocType() const { return m_iDocType; }
   v8::Isolate* GetJSERuntime() const;
   CXFA_FFApp* GetXFAApp() { return m_pXFAApp.get(); }
 
@@ -98,7 +98,7 @@ class CPDFXFA_Context : public IXFA_AppProvider {
  private:
   void CloseXFADoc();
 
-  int m_iDocType;
+  XFA_DocType m_iDocType;
 
   std::unique_ptr<CPDF_Document> m_pPDFDoc;
   std::unique_ptr<CXFA_FFDoc> m_pXFADoc;

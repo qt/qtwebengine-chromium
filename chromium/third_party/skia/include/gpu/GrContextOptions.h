@@ -40,10 +40,6 @@ struct GrContextOptions {
         immediately. Intended to ease debugging. */
     bool fImmediateMode = false;
 
-    /** For debugging purposes turn each GrDrawOp's bounds into a clip rect. This is used to
-        verify that the clip bounds are conservative. */
-    bool fClipDrawOpsToBounds = false;
-
     /** For debugging, override the default maximum look-back or look-ahead window for GrOp
         combining. */
     int fMaxOpCombineLookback = -1;
@@ -98,15 +94,23 @@ struct GrContextOptions {
         kAAHairline        = 1 << 3,
         kAAConvex          = 1 << 4,
         kAALinearizing     = 1 << 5,
-        kPLS               = 1 << 6,
-        kDistanceField     = 1 << 7,
-        kTessellating      = 1 << 8,
-        kDefault           = 1 << 9,
+        kSmall             = 1 << 6,
+        kTessellating      = 1 << 7,
+        kDefault           = 1 << 8,
 
-        kAll               = kDefault | (kDefault - 1)
+        kAll               = kDefault | (kDefault - 1),
+
+        // For legacy. To be removed when updated in Android.
+        kDistanceField     = kSmall
     };
 
     GpuPathRenderers fGpuPathRenderers = GpuPathRenderers::kAll;
+
+    /**
+     * Bugs on certain drivers cause stencil buffers to leak. This flag causes Skia to avoid
+     * allocating stencil buffers and use alternate rasterization paths, avoiding the leak.
+     */
+    bool fAvoidStencilBuffers = false;
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(GrContextOptions::GpuPathRenderers)

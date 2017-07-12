@@ -15,12 +15,20 @@
 using sk_gpu_test::GrContextFactory;
 #endif
 
+#if defined(SK_BUILD_FOR_ANDROID) || defined(SK_BUILD_FOR_IOS)
+#    define DEFAULT_GPU_CONFIG "gles"
+#else
+#    define DEFAULT_GPU_CONFIG "gl"
+#endif
+
 static const char defaultConfigs[] =
-    "8888 gpu nonrendering"
+    "8888 " DEFAULT_GPU_CONFIG " nonrendering "
 #if defined(SK_BUILD_FOR_WIN)
     " angle_d3d11_es2"
 #endif
     ;
+
+#undef DEFAULT_GPU_CONFIG
 
 static const struct {
     const char* predefinedConfig;
@@ -28,39 +36,47 @@ static const struct {
     const char* options;
 } gPredefinedConfigs[] ={
 #if SK_SUPPORT_GPU
-    { "gpu",                   "gpu", "" },
     { "gl",                    "gpu", "api=gl" },
-    { "msaa4",                 "gpu", "samples=4" },
+    { "gles",                  "gpu", "api=gles" },
     { "glmsaa4",               "gpu", "api=gl,samples=4" },
-    { "msaa16",                "gpu", "samples=16" },
-    { "nvpr4",                 "gpu", "nvpr=true,samples=4" },
+    { "glmsaa8" ,              "gpu", "api=gl,samples=8" },
+    { "glesmsaa4",             "gpu", "api=gles,samples=4" },
     { "glnvpr4",               "gpu", "api=gl,nvpr=true,samples=4" },
-    { "nvpr16",                "gpu", "nvpr=true,samples=16" },
-    { "nvprdit4",              "gpu", "nvpr=true,samples=4,dit=true" },
+    { "glnvpr8" ,              "gpu", "api=gl,nvpr=true,samples=8" },
     { "glnvprdit4",            "gpu", "api=gl,nvpr=true,samples=4,dit=true" },
-    { "nvprdit16",             "gpu", "nvpr=true,samples=16,dit=true" },
+    { "glnvprdit8" ,           "gpu", "api=gl,nvpr=true,samples=8,dit=true" },
+    { "glesnvpr4",             "gpu", "api=gles,nvpr=true,samples=4" },
+    { "glesnvprdit4",          "gpu", "api=gles,nvpr=true,samples=4,dit=true" },
     { "glinst",                "gpu", "api=gl,inst=true" },
     { "glinst4",               "gpu", "api=gl,inst=true,samples=4" },
     { "glinstdit4",            "gpu", "api=gl,inst=true,samples=4,dit=true" },
-    { "glinst16",              "gpu", "api=gl,inst=true,samples=16" },
-    { "glinstdit16",           "gpu", "api=gl,inst=true,samples=16,dit=true" },
-    { "esinst",                "gpu", "api=gles,inst=true" },
-    { "esinst4",               "gpu", "api=gles,inst=true,samples=4" },
-    { "esinstdit4",            "gpu", "api=gles,inst=true,samples=4,dit=true" },
-    { "gpuf16",                "gpu", "color=f16" },
-    { "gpusrgb",               "gpu", "color=srgb" },
+    { "glinst8" ,              "gpu", "api=gl,inst=true,samples=8" },
+    { "glinstdit8" ,           "gpu", "api=gl,inst=true,samples=8,dit=true" },
+    { "glesinst",              "gpu", "api=gles,inst=true" },
+    { "glesinst4",             "gpu", "api=gles,inst=true,samples=4" },
+    { "glesinstdit4",          "gpu", "api=gles,inst=true,samples=4,dit=true" },
+    { "glf16",                 "gpu", "api=gl,color=f16" },
+    { "glsrgb",                "gpu", "api=gl,color=srgb" },
+    { "glsrgbnl",              "gpu", "api=gl,color=srgbnl" },
+    { "glesf16",               "gpu", "api=gles,color=f16" },
+    { "glessrgb",              "gpu", "api=gles,color=srgb" },
+    { "glessrgbnl",            "gpu", "api=gles,color=srgbnl" },
     { "glsrgb",                "gpu", "api=gl,color=srgb" },
     { "glwide",                "gpu", "api=gl,color=f16_wide" },
     { "glnarrow",              "gpu", "api=gl,color=f16_narrow" },
-    { "gpudft",                "gpu", "dit=true" },
-    { "gpudebug",              "gpu", "api=debug" },
-    { "gpunull",               "gpu", "api=null" },
-    { "debug",                 "gpu", "api=debug" },
-    { "nullgpu",               "gpu", "api=null" },
+    { "glnostencils",          "gpu", "api=gl,stencils=false" },
+    { "glessrgb",              "gpu", "api=gles,color=srgb" },
+    { "gleswide",              "gpu", "api=gles,color=f16_wide" },
+    { "glesnarrow",            "gpu", "api=gles,color=f16_narrow" },
+    { "gldft",                 "gpu", "api=gl,dit=true" },
+    { "glesdft",               "gpu", "api=gles,dit=true" },
+    { "debuggl",               "gpu", "api=debuggl" },
+    { "nullgl",                "gpu", "api=nullgl" },
     { "angle_d3d11_es2",       "gpu", "api=angle_d3d11_es2" },
     { "angle_d3d11_es3",       "gpu", "api=angle_d3d11_es3" },
     { "angle_d3d9_es2",        "gpu", "api=angle_d3d9_es2" },
     { "angle_d3d11_es2_msaa4", "gpu", "api=angle_d3d11_es2,samples=4" },
+    { "angle_d3d11_es2_msaa8", "gpu", "api=angle_d3d11_es2,samples=8" },
     { "angle_gl_es2",          "gpu", "api=angle_gl_es2" },
     { "angle_gl_es3",          "gpu", "api=angle_gl_es3" },
     { "commandbuffer",         "gpu", "api=commandbuffer" }
@@ -72,7 +88,7 @@ static const struct {
     ,{ "vksrgb",               "gpu", "api=vulkan,color=srgb" }
     ,{ "vkwide",               "gpu", "api=vulkan,color=f16_wide" }
     ,{ "vkmsaa4",              "gpu", "api=vulkan,samples=4" }
-    ,{ "vkmsaa16",             "gpu", "api=vulkan,samples=16" }
+    ,{ "vkmsaa8",              "gpu", "api=vulkan,samples=8" }
 #endif
 
 #else
@@ -99,14 +115,14 @@ static const char configExtendedHelp[] =
 #if SK_SUPPORT_GPU
     "\n"
     "gpu[api=string,color=string,dit=bool,nvpr=bool,inst=bool,samples=int]\n"
-    "\tapi\ttype: string\tdefault: native.\n"
+    "\tapi\ttype: string\trequired\n"
     "\t    Select graphics API to use with gpu backend.\n"
     "\t    Options:\n"
     "\t\tnative\t\t\tUse platform default OpenGL or OpenGL ES backend.\n"
     "\t\tgl    \t\t\tUse OpenGL.\n"
     "\t\tgles  \t\t\tUse OpenGL ES.\n"
-    "\t\tdebug \t\t\tUse debug OpenGL.\n"
-    "\t\tnull  \t\t\tUse null OpenGL.\n"
+    "\t\tdebuggl \t\t\tUse debug OpenGL.\n"
+    "\t\tnullgl \t\t\tUse null OpenGL.\n"
     "\t\tangle_d3d9_es2\t\t\tUse OpenGL ES2 on the ANGLE Direct3D9 backend.\n"
     "\t\tangle_d3d11_es2\t\t\tUse OpenGL ES2 on the ANGLE Direct3D11 backend.\n"
     "\t\tangle_d3d11_es3\t\t\tUse OpenGL ES3 on the ANGLE Direct3D11 backend.\n"
@@ -136,6 +152,8 @@ static const char configExtendedHelp[] =
     "\t    Use NV_path_rendering OpenGL and OpenGL ES extension.\n"
     "\tsamples\ttype: int\tdefault: 0.\n"
     "\t    Use multisampling with N samples.\n"
+    "\tstencils\ttype: bool\tdefault: true.\n"
+    "\t    Allow the use of stencil buffers.\n"
     "\n"
     "Predefined configs:\n\n"
     // Help text for pre-defined configs is auto-generated from gPredefinedConfigs
@@ -166,7 +184,7 @@ SkCommandLineConfig::~SkCommandLineConfig() {
 SkCommandLineConfigGpu::SkCommandLineConfigGpu(
     const SkString& tag, const SkTArray<SkString>& viaParts, ContextType contextType, bool useNVPR,
     bool useInstanced, bool useDIText, int samples, SkColorType colorType,
-    sk_sp<SkColorSpace> colorSpace)
+    sk_sp<SkColorSpace> colorSpace, bool useStencilBuffers)
         : SkCommandLineConfig(tag, SkString("gpu"), viaParts)
         , fContextType(contextType)
         , fContextOverrides(ContextOverrides::kNone)
@@ -194,6 +212,9 @@ SkCommandLineConfigGpu::SkCommandLineConfigGpu(
     if (fColorSpace) {
         fContextOverrides |= ContextOverrides::kRequireSRGBSupport;
         fContextOverrides |= ContextOverrides::kAllowSRGBWithoutDecodeControl;
+    }
+    if (!useStencilBuffers) {
+        fContextOverrides |= ContextOverrides::kAvoidStencilBuffers;
     }
 }
 static bool parse_option_int(const SkString& value, int* outInt) {
@@ -229,11 +250,11 @@ static bool parse_option_gpu_api(const SkString& value,
         *outContextType = GrContextFactory::kGLES_ContextType;
         return true;
     }
-    if (value.equals("debug")) {
+    if (value.equals("debuggl")) {
         *outContextType = GrContextFactory::kDebugGL_ContextType;
         return true;
     }
-    if (value.equals("null")) {
+    if (value.equals("nullgl")) {
         *outContextType = GrContextFactory::kNullGL_ContextType;
         return true;
     }
@@ -290,10 +311,12 @@ static bool parse_option_gpu_color(const SkString& value,
         return false;
     }
 
-    // First, figure out color gamut that we'll work in (default to sRGB)
     const bool linearGamma = commands[0].equals("f16");
-    *outColorSpace = linearGamma ? SkColorSpace::MakeSRGBLinear()
-                                 : SkColorSpace::MakeSRGB();
+    SkColorSpace::Gamut gamut = SkColorSpace::kSRGB_Gamut;
+    SkColorSpace::RenderTargetGamma gamma = linearGamma ? SkColorSpace::kLinear_RenderTargetGamma
+                                                        : SkColorSpace::kSRGB_RenderTargetGamma;
+    *outColorSpace = SkColorSpace::MakeRGB(gamma, gamut);
+
     if (commands.count() == 2) {
         if (commands[1].equals("srgb")) {
             // sRGB gamut (which is our default)
@@ -306,10 +329,7 @@ static bool parse_option_gpu_color(const SkString& value,
             };
             SkMatrix44 wideGamutRGBMatrix(SkMatrix44::kUninitialized_Constructor);
             wideGamutRGBMatrix.set3x3RowMajorf(gWideGamutRGB_toXYZD50);
-            *outColorSpace = SkColorSpace::MakeRGB(linearGamma
-                                                          ? SkColorSpace::kLinear_RenderTargetGamma
-                                                          : SkColorSpace::kSRGB_RenderTargetGamma,
-                                                   wideGamutRGBMatrix);
+            *outColorSpace = SkColorSpace::MakeRGB(gamma, wideGamutRGBMatrix);
         } else if (commands[1].equals("narrow")) {
             // NarrowGamut RGB (an artifically smaller than sRGB gamut)
             SkColorSpacePrimaries primaries ={
@@ -320,10 +340,7 @@ static bool parse_option_gpu_color(const SkString& value,
             };
             SkMatrix44 narrowGamutRGBMatrix(SkMatrix44::kUninitialized_Constructor);
             primaries.toXYZD50(&narrowGamutRGBMatrix);
-            *outColorSpace = SkColorSpace::MakeRGB(linearGamma
-                                                          ? SkColorSpace::kLinear_RenderTargetGamma
-                                                          : SkColorSpace::kSRGB_RenderTargetGamma,
-                                                   narrowGamutRGBMatrix);
+            *outColorSpace = SkColorSpace::MakeRGB(gamma, narrowGamutRGBMatrix);
         } else {
             // Unknown color gamut
             return false;
@@ -335,7 +352,7 @@ static bool parse_option_gpu_color(const SkString& value,
         *outColorType = kRGBA_F16_SkColorType;
         return true;
     }
-    if (commands[0].equals("srgb")) {
+    if (commands[0].equals("srgb") || commands[0].equals("srgbnl")) {
         *outColorType = kRGBA_8888_SkColorType;
         return true;
     }
@@ -347,7 +364,7 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString& tag,
                                                       const SkString& options) {
     // Defaults for GPU backend.
     bool seenAPI = false;
-    SkCommandLineConfigGpu::ContextType contextType = GrContextFactory::kNativeGL_ContextType;
+    SkCommandLineConfigGpu::ContextType contextType = GrContextFactory::kGL_ContextType;
     bool seenUseNVPR = false;
     bool useNVPR = false;
     bool seenUseInstanced = false;
@@ -359,6 +376,8 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString& tag,
     bool seenColor = false;
     SkColorType colorType = kRGBA_8888_SkColorType;
     sk_sp<SkColorSpace> colorSpace = nullptr;
+    bool seenUseStencils = false;
+    bool useStencils = true;
 
     SkTArray<SkString> optionParts;
     SkStrSplit(options.c_str(), ",", kStrict_SkStrSplitMode, &optionParts);
@@ -389,13 +408,19 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString& tag,
         } else if (key.equals("color") && !seenColor) {
             valueOk = parse_option_gpu_color(value, &colorType, &colorSpace);
             seenColor = true;
+        } else if (key.equals("stencils") && !seenUseStencils) {
+            valueOk = parse_option_bool(value, &useStencils);
+            seenUseStencils = true;
         }
         if (!valueOk) {
             return nullptr;
         }
     }
+    if (!seenAPI) {
+        return nullptr;
+    }
     return new SkCommandLineConfigGpu(tag, vias, contextType, useNVPR, useInstanced, useDIText,
-                                      samples, colorType, colorSpace);
+                                      samples, colorType, colorSpace, useStencils);
 }
 #endif
 

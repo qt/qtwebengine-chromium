@@ -19,9 +19,10 @@
 #include "cc/surfaces/surface_sequence.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
-#include "content/common/content_security_policy/content_security_policy.h"
+#include "content/common/content_security_policy/csp_context.h"
 #include "content/common/content_security_policy_header.h"
 #include "content/common/download/mhtml_save_status.h"
+#include "content/common/features.h"
 #include "content/common/frame_message_enums.h"
 #include "content/common/frame_owner_properties.h"
 #include "content/common/frame_replication_state.h"
@@ -94,17 +95,17 @@ IPC_ENUM_TRAITS_MAX_VALUE(FrameMsg_Navigate_Type::Value,
 IPC_ENUM_TRAITS_MAX_VALUE(FrameMsg_UILoadMetricsReportType::Value,
                           FrameMsg_UILoadMetricsReportType::REPORT_TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebContextMenuData::MediaType,
-                          blink::WebContextMenuData::MediaTypeLast)
+                          blink::WebContextMenuData::kMediaTypeLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebContextMenuData::InputFieldType,
-                          blink::WebContextMenuData::InputFieldTypeLast)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebFocusType, blink::WebFocusTypeLast)
+                          blink::WebContextMenuData::kInputFieldTypeLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebFocusType, blink::kWebFocusTypeLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebFrameOwnerProperties::ScrollingMode,
-                          blink::WebFrameOwnerProperties::ScrollingMode::Last)
+                          blink::WebFrameOwnerProperties::ScrollingMode::kLast)
 IPC_ENUM_TRAITS_MAX_VALUE(content::StopFindAction,
                           content::STOP_FIND_ACTION_LAST)
 IPC_ENUM_TRAITS(blink::WebSandboxFlags)  // Bitmask.
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebTreeScopeType,
-                          blink::WebTreeScopeType::Last)
+                          blink::WebTreeScopeType::kLast)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::MenuSourceType, ui::MENU_SOURCE_TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(content::FileChooserParams::Mode,
                           content::FileChooserParams::Save)
@@ -112,11 +113,13 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::CSPDirective::Name,
                           content::CSPDirective::NameLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebFeaturePolicyFeature,
                           blink::WebFeaturePolicyFeature::LAST_FEATURE)
+IPC_ENUM_TRAITS_MAX_VALUE(content::CSPDisposition,
+                          content::CSPDisposition::LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebFindOptions)
   IPC_STRUCT_TRAITS_MEMBER(forward)
-  IPC_STRUCT_TRAITS_MEMBER(matchCase)
-  IPC_STRUCT_TRAITS_MEMBER(findNext)
+  IPC_STRUCT_TRAITS_MEMBER(match_case)
+  IPC_STRUCT_TRAITS_MEMBER(find_next)
   IPC_STRUCT_TRAITS_MEMBER(force)
 IPC_STRUCT_TRAITS_END()
 
@@ -177,6 +180,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameOwnerProperties)
   IPC_STRUCT_TRAITS_MEMBER(margin_height)
   IPC_STRUCT_TRAITS_MEMBER(allow_fullscreen)
   IPC_STRUCT_TRAITS_MEMBER(allow_payment_request)
+  IPC_STRUCT_TRAITS_MEMBER(is_display_none)
   IPC_STRUCT_TRAITS_MEMBER(required_csp)
   IPC_STRUCT_TRAITS_MEMBER(allowed_features)
 IPC_STRUCT_TRAITS_END()
@@ -243,10 +247,10 @@ IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
   // The POST body identifier. -1 if it doesn't exist.
   IPC_STRUCT_MEMBER(int64_t, post_id)
 
-  // Whether the frame navigation resulted in no change to the documents within
-  // the page. For example, the navigation may have just resulted in scrolling
-  // to a named anchor.
-  IPC_STRUCT_MEMBER(bool, was_within_same_page)
+  // Whether the frame navigation resulted in no change of the document within
+  // the frame. For example, the navigation may have just resulted in
+  // scrolling to a named anchor.
+  IPC_STRUCT_MEMBER(bool, was_within_same_document)
 
   // The status code of the HTTP request.
   IPC_STRUCT_MEMBER(int, http_status_code)
@@ -332,6 +336,12 @@ IPC_STRUCT_BEGIN(FrameMsg_PostMessage_Params)
   IPC_STRUCT_MEMBER(std::vector<content::MessagePort>, message_ports)
 IPC_STRUCT_END()
 
+IPC_STRUCT_TRAITS_BEGIN(content::SourceLocation)
+  IPC_STRUCT_TRAITS_MEMBER(url)
+  IPC_STRUCT_TRAITS_MEMBER(line_number)
+  IPC_STRUCT_TRAITS_MEMBER(column_number)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(referrer)
@@ -347,6 +357,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(navigation_start)
   IPC_STRUCT_TRAITS_MEMBER(method)
   IPC_STRUCT_TRAITS_MEMBER(post_data)
+  IPC_STRUCT_TRAITS_MEMBER(source_location)
+  IPC_STRUCT_TRAITS_MEMBER(should_check_main_world_csp)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::BeginNavigationParams)
@@ -360,6 +372,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::BeginNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(searchable_form_encoding)
   IPC_STRUCT_TRAITS_MEMBER(initiator_origin)
   IPC_STRUCT_TRAITS_MEMBER(client_side_redirect_url)
+  IPC_STRUCT_TRAITS_MEMBER(is_form_submission)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::StartNavigationParams)
@@ -404,7 +417,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RequestNavigationParams)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ParsedFeaturePolicyDeclaration)
-  IPC_STRUCT_TRAITS_MEMBER(feature_name)
+  IPC_STRUCT_TRAITS_MEMBER(feature)
   IPC_STRUCT_TRAITS_MEMBER(matches_all_origins)
   IPC_STRUCT_TRAITS_MEMBER(origins)
 IPC_STRUCT_TRAITS_END()
@@ -515,9 +528,6 @@ IPC_STRUCT_BEGIN(FrameMsg_SerializeAsMHTML_Params)
 
   // Salt used for |digests_of_uris_to_skip|.
   IPC_STRUCT_MEMBER(std::string, salt)
-
-  // If |is_last_frame| is true, then an MHTML footer will be generated.
-  IPC_STRUCT_MEMBER(bool, is_last_frame)
 IPC_STRUCT_END()
 
 // This message is used to send hittesting data from the renderer in order
@@ -561,17 +571,27 @@ IPC_STRUCT_TRAITS_BEGIN(content::CSPDirective)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ContentSecurityPolicy)
-  IPC_STRUCT_TRAITS_MEMBER(disposition)
-  IPC_STRUCT_TRAITS_MEMBER(source)
+  IPC_STRUCT_TRAITS_MEMBER(header)
   IPC_STRUCT_TRAITS_MEMBER(directives)
   IPC_STRUCT_TRAITS_MEMBER(report_endpoints)
-  IPC_STRUCT_TRAITS_MEMBER(header)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ContentSecurityPolicyHeader)
   IPC_STRUCT_TRAITS_MEMBER(header_value)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(source)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::CSPViolationParams)
+  IPC_STRUCT_TRAITS_MEMBER(directive)
+  IPC_STRUCT_TRAITS_MEMBER(effective_directive)
+  IPC_STRUCT_TRAITS_MEMBER(console_message)
+  IPC_STRUCT_TRAITS_MEMBER(blocked_url)
+  IPC_STRUCT_TRAITS_MEMBER(report_endpoints)
+  IPC_STRUCT_TRAITS_MEMBER(header)
+  IPC_STRUCT_TRAITS_MEMBER(disposition)
+  IPC_STRUCT_TRAITS_MEMBER(after_redirect)
+  IPC_STRUCT_TRAITS_MEMBER(source_location)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::FileChooserFileInfo)
@@ -595,7 +615,16 @@ IPC_STRUCT_TRAITS_BEGIN(content::FileChooserParams)
   IPC_STRUCT_TRAITS_MEMBER(requestor)
 IPC_STRUCT_TRAITS_END()
 
-#if defined(USE_EXTERNAL_POPUP_MENU)
+IPC_STRUCT_BEGIN(FrameMsg_MixedContentFound_Params)
+  IPC_STRUCT_MEMBER(GURL, main_resource_url)
+  IPC_STRUCT_MEMBER(GURL, mixed_content_url)
+  IPC_STRUCT_MEMBER(content::RequestContextType, request_context_type)
+  IPC_STRUCT_MEMBER(bool, was_allowed)
+  IPC_STRUCT_MEMBER(bool, had_redirect)
+  IPC_STRUCT_MEMBER(content::SourceLocation, source_location)
+IPC_STRUCT_END()
+
+#if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 // This message is used for supporting popup menus on Mac OS X and Android using
 // native controls. See the FrameHostMsg_ShowPopup message.
 IPC_STRUCT_BEGIN(FrameHostMsg_ShowPopup_Params)
@@ -779,8 +808,7 @@ IPC_MESSAGE_ROUTED2(FrameMsg_ExtractSmartClipData,
                     gfx::Rect /* rect */)
 
 // Change the accessibility mode in the renderer process.
-IPC_MESSAGE_ROUTED1(FrameMsg_SetAccessibilityMode,
-                    AccessibilityMode)
+IPC_MESSAGE_ROUTED1(FrameMsg_SetAccessibilityMode, content::AccessibilityMode)
 
 // Dispatch a load event in the iframe element containing this frame.
 IPC_MESSAGE_ROUTED0(FrameMsg_DispatchLoad)
@@ -795,8 +823,8 @@ IPC_MESSAGE_ROUTED2(FrameMsg_DidUpdateName,
                     std::string /* unique_name */)
 
 // Updates replicated ContentSecurityPolicy in a frame proxy.
-IPC_MESSAGE_ROUTED1(FrameMsg_AddContentSecurityPolicy,
-                    content::ContentSecurityPolicyHeader)
+IPC_MESSAGE_ROUTED1(FrameMsg_AddContentSecurityPolicies,
+                    std::vector<content::ContentSecurityPolicyHeader>)
 
 // Resets ContentSecurityPolicy in a frame proxy / in RemoteSecurityContext.
 IPC_MESSAGE_ROUTED0(FrameMsg_ResetContentSecurityPolicy)
@@ -865,7 +893,7 @@ IPC_MESSAGE_ROUTED3(FrameMsg_ActivateNearestFindResult,
 IPC_MESSAGE_ROUTED1(FrameMsg_FindMatchRects, int /* current_version */)
 #endif
 
-#if defined(USE_EXTERNAL_POPUP_MENU)
+#if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 #if defined(OS_MACOSX)
 IPC_MESSAGE_ROUTED1(FrameMsg_SelectPopupMenuItem,
                     int /* selected index, -1 means no selection */)
@@ -879,12 +907,14 @@ IPC_MESSAGE_ROUTED2(FrameMsg_SelectPopupMenuItems,
 // PlzNavigate
 // Tells the renderer that a navigation is ready to commit.  The renderer should
 // request |stream_url| to get access to the stream containing the body of the
-// response.
-IPC_MESSAGE_ROUTED4(FrameMsg_CommitNavigation,
-                    content::ResourceResponseHead,    /* response */
-                    GURL,                             /* stream_url */
-                    content::CommonNavigationParams,  /* common_params */
-                    content::RequestNavigationParams  /* request_params */)
+// response. When --enable-network-service is in effect, |stream_url| is not
+// used, and instead the data is passed to the renderer in |handle|.
+IPC_MESSAGE_ROUTED5(FrameMsg_CommitNavigation,
+                    content::ResourceResponseHead,   /* response */
+                    GURL,                            /* stream_url */
+                    mojo::DataPipeConsumerHandle,    /* handle */
+                    content::CommonNavigationParams, /* common_params */
+                    content::RequestNavigationParams /* request_params */)
 
 // PlzNavigate
 // Tells the renderer that a navigation failed with the error code |error_code|
@@ -894,6 +924,12 @@ IPC_MESSAGE_ROUTED4(FrameMsg_FailedNavigation,
                     content::RequestNavigationParams, /* request_params */
                     bool,                             /* stale_copy_in_cache */
                     int                               /* error_code */)
+
+// PlzNavigate
+// Tells the renderer that a navigation was blocked because a content security
+// policy was violated.
+IPC_MESSAGE_ROUTED1(FrameMsg_ReportContentSecurityPolicyViolation,
+                    content::CSPViolationParams /* violation_params */)
 
 // Request to enumerate and return links to all savable resources in the frame
 // Note: this covers only the immediate frame / doesn't cover subframes.
@@ -986,12 +1022,8 @@ IPC_MESSAGE_ROUTED1(FrameMsg_BlinkFeatureUsageReport,
 // Informs the renderer that mixed content was found by the browser. The
 // included data is used for instance to report to the CSP policy and to log to
 // the frame console.
-IPC_MESSAGE_ROUTED5(FrameMsg_MixedContentFound,
-                    GURL,                        /* main_resource_url */
-                    GURL,                        /* mixed_content_url */
-                    content::RequestContextType, /* request_context_type */
-                    bool,                        /* was_allowed */
-                    bool)                        /* had_redirect */
+IPC_MESSAGE_ROUTED1(FrameMsg_MixedContentFound,
+                    FrameMsg_MixedContentFound_Params)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -1079,9 +1111,8 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_DidSetFeaturePolicyHeader,
 // headers and/or policies that might have been inherited from the parent frame)
 // or when a new policy has been discovered afterwards (i.e. found in a
 // dynamically added or a static <meta> element).
-IPC_MESSAGE_ROUTED2(FrameHostMsg_DidAddContentSecurityPolicy,
-                    content::ContentSecurityPolicyHeader,
-                    std::vector<content::ContentSecurityPolicy>)
+IPC_MESSAGE_ROUTED1(FrameHostMsg_DidAddContentSecurityPolicies,
+                    std::vector<content::ContentSecurityPolicy> /* policies */)
 
 // Sent when the frame starts enforcing an insecure request policy. Sending
 // this information in DidCommitProvisionalLoad isn't sufficient; this
@@ -1364,12 +1395,6 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_BeforeUnload_ACK,
 // Indicates that the current frame has swapped out, after a SwapOut message.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_SwapOut_ACK)
 
-// Forwards an input event to a child.
-// TODO(nick): Temporary bridge, revisit once the browser process can route
-// input directly to subframes. http://crbug.com/339659
-IPC_MESSAGE_ROUTED1(FrameHostMsg_ForwardInputEvent,
-                    IPC::WebInputEventPointer /* event */)
-
 // Tells the parent that a child's frame rect has changed (or the rect/scroll
 // position of a child's ancestor has changed).
 IPC_MESSAGE_ROUTED1(FrameHostMsg_FrameRectChanged, gfx::Rect /* frame_rect */)
@@ -1481,6 +1506,11 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_BeginNavigation,
                     content::CommonNavigationParams,
                     content::BeginNavigationParams)
 
+// PlzNavigate
+// Tells the browser to abort an ongoing renderer-initiated navigation. This is
+// used when the page calls document.open.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_AbortNavigation)
+
 // Sent as a response to FrameMsg_VisualStateRequest.
 // The message is delivered using RenderWidget::QueueMessage.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_VisualStateResponse, uint64_t /* id */)
@@ -1506,6 +1536,10 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_RouteMessageEvent,
 
 // Sent when the renderer displays insecure content in a secure origin.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidDisplayInsecureContent)
+
+// Sent when the renderer displays a form containing a non-secure action target
+// url on a page in a secure origin.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DidContainInsecureFormAction)
 
 // Sent when the renderer runs insecure content in a secure origin.
 IPC_MESSAGE_ROUTED2(FrameHostMsg_DidRunInsecureContent,
@@ -1579,7 +1613,7 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_HittestData, FrameHostMsg_HittestData_Params)
 // FrameMsg_RunFileChooserResponse message.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_RunFileChooser, content::FileChooserParams)
 
-#if defined(USE_EXTERNAL_POPUP_MENU)
+#if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 
 // Message to show/hide a popup menu using native controls.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_ShowPopup,
@@ -1614,6 +1648,8 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_FindMatchRects_Reply,
 IPC_MESSAGE_ROUTED2(FrameHostMsg_GetNearestFindResult_Reply,
                     int /* nfr_request_id */,
                     float /* distance */)
+
+IPC_MESSAGE_ROUTED0(FrameHostMsg_NavigationHandledByEmbedder)
 #endif
 
 // Adding a new message? Stick to the sort order above: first platform

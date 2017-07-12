@@ -367,6 +367,361 @@ TEST_F(SendStatisticsProxyTest, OnSendEncodedImageWithoutQpQpSumWontExist) {
   EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
 }
 
+TEST_F(SendStatisticsProxyTest, SetCpuScalingUpdatesStats) {
+  EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
+  statistics_proxy_->SetCpuScalingStats(-1);
+  EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
+  statistics_proxy_->SetCpuScalingStats(0);
+  EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
+  statistics_proxy_->SetCpuScalingStats(1);
+  EXPECT_TRUE(statistics_proxy_->GetStats().cpu_limited_resolution);
+}
+
+TEST_F(SendStatisticsProxyTest, SetQualityScalingUpdatesStats) {
+  EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
+  statistics_proxy_->SetQualityScalingStats(-1);
+  EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
+  statistics_proxy_->SetQualityScalingStats(0);
+  EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
+  statistics_proxy_->SetQualityScalingStats(1);
+  EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
+}
+
+TEST_F(SendStatisticsProxyTest, GetStatsReportsCpuResolutionChanges) {
+  EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
+  EXPECT_EQ(0, statistics_proxy_->GetStats().number_of_cpu_adapt_changes);
+
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+  EXPECT_TRUE(statistics_proxy_->GetStats().cpu_limited_resolution);
+  EXPECT_EQ(1, statistics_proxy_->GetStats().number_of_cpu_adapt_changes);
+
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(false);
+  EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
+  EXPECT_EQ(2, statistics_proxy_->GetStats().number_of_cpu_adapt_changes);
+}
+
+TEST_F(SendStatisticsProxyTest, GetStatsReportsQualityResolutionChanges) {
+  EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
+  EXPECT_EQ(0, statistics_proxy_->GetStats().number_of_quality_adapt_changes);
+
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(1);
+  EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
+  EXPECT_EQ(1, statistics_proxy_->GetStats().number_of_quality_adapt_changes);
+
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(2);
+  EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
+  EXPECT_EQ(2, statistics_proxy_->GetStats().number_of_quality_adapt_changes);
+
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(1);
+  EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
+  EXPECT_EQ(3, statistics_proxy_->GetStats().number_of_quality_adapt_changes);
+
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(0);
+  EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
+  EXPECT_EQ(4, statistics_proxy_->GetStats().number_of_quality_adapt_changes);
+}
+
+TEST_F(SendStatisticsProxyTest, AdaptChangesNotReported_ScalingNotEnabled) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Min runtime has passed.
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(0,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+}
+
+TEST_F(SendStatisticsProxyTest, AdaptChangesNotReported_MinRuntimeNotPassed) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Enable scaling.
+  statistics_proxy_->SetQualityScalingStats(0);
+  statistics_proxy_->SetCpuScalingStats(0);
+  // Min runtime has not passed.
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000 - 1);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(0,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+}
+
+TEST_F(SendStatisticsProxyTest, ZeroCpuAdaptChangesReported) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Enable scaling.
+  statistics_proxy_->SetCpuScalingStats(0);
+  // Min runtime has passed.
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Cpu", 0));
+}
+
+TEST_F(SendStatisticsProxyTest, ZeroQualityAdaptChangesReported) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Enable scaling.
+  statistics_proxy_->SetQualityScalingStats(0);
+  // Min runtime has passed.
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+  EXPECT_EQ(
+      1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Quality", 0));
+}
+
+TEST_F(SendStatisticsProxyTest, CpuAdaptChangesReported) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Enable scaling.
+  // Adapt changes: 1, elapsed time: 10 sec => 6 per minute.
+  statistics_proxy_->SetCpuScalingStats(0);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Cpu", 6));
+}
+
+TEST_F(SendStatisticsProxyTest, AdaptChangesStatsExcludesDisabledTime) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+
+  // Disable scaling.
+  statistics_proxy_->SetQualityScalingStats(-1);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+
+  // Enable scaling.
+  // Adapt changes: 2, elapsed time: 20 sec.
+  statistics_proxy_->SetQualityScalingStats(0);
+  fake_clock_.AdvanceTimeMilliseconds(5000);
+  statistics_proxy_->SetQualityScalingStats(1);
+  fake_clock_.AdvanceTimeMilliseconds(9000);
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(1);
+  fake_clock_.AdvanceTimeMilliseconds(6000);
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(2);
+
+  // Disable scaling.
+  statistics_proxy_->SetQualityScalingStats(-1);
+  fake_clock_.AdvanceTimeMilliseconds(30000);
+
+  // Enable scaling.
+  // Adapt changes: 1, elapsed time: 10 sec.
+  statistics_proxy_->SetQualityScalingStats(0);
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(1);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+
+  // Disable scaling.
+  statistics_proxy_->SetQualityScalingStats(-1);
+  fake_clock_.AdvanceTimeMilliseconds(5000);
+  statistics_proxy_->SetQualityScalingStats(-1);
+  fake_clock_.AdvanceTimeMilliseconds(20000);
+
+  // Adapt changes: 3, elapsed time: 30 sec => 6 per minute.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+  EXPECT_EQ(
+      1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Quality", 6));
+}
+
+TEST_F(SendStatisticsProxyTest,
+       AdaptChangesNotReported_ScalingNotEnabledVideoResumed) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+
+  // Suspend and resume video.
+  statistics_proxy_->OnSuspendChange(true);
+  fake_clock_.AdvanceTimeMilliseconds(5000);
+  statistics_proxy_->OnSuspendChange(false);
+
+  // Min runtime has passed but scaling not enabled.
+  fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(0,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+}
+
+TEST_F(SendStatisticsProxyTest, QualityAdaptChangesStatsExcludesSuspendedTime) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+
+  // Enable scaling.
+  // Adapt changes: 2, elapsed time: 20 sec.
+  statistics_proxy_->SetQualityScalingStats(0);
+  fake_clock_.AdvanceTimeMilliseconds(20000);
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(1);
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(2);
+
+  // Suspend and resume video.
+  statistics_proxy_->OnSuspendChange(true);
+  fake_clock_.AdvanceTimeMilliseconds(30000);
+  statistics_proxy_->OnSuspendChange(false);
+
+  // Adapt changes: 1, elapsed time: 10 sec.
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(3);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+
+  // Adapt changes: 3, elapsed time: 30 sec => 6 per minute.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+  EXPECT_EQ(
+      1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Quality", 6));
+}
+
+TEST_F(SendStatisticsProxyTest, CpuAdaptChangesStatsExcludesSuspendedTime) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+
+  // Video not suspended.
+  statistics_proxy_->OnSuspendChange(false);
+  fake_clock_.AdvanceTimeMilliseconds(30000);
+
+  // Enable scaling.
+  // Adapt changes: 1, elapsed time: 20 sec.
+  statistics_proxy_->SetCpuScalingStats(0);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+
+  // Video not suspended, stats time already started.
+  statistics_proxy_->OnSuspendChange(false);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+
+  // Disable scaling.
+  statistics_proxy_->SetCpuScalingStats(-1);
+  fake_clock_.AdvanceTimeMilliseconds(30000);
+
+  // Suspend and resume video, stats time not started when scaling not enabled.
+  statistics_proxy_->OnSuspendChange(true);
+  fake_clock_.AdvanceTimeMilliseconds(30000);
+  statistics_proxy_->OnSuspendChange(false);
+  fake_clock_.AdvanceTimeMilliseconds(30000);
+
+  // Enable scaling.
+  // Adapt changes: 1, elapsed time: 10 sec.
+  statistics_proxy_->SetCpuScalingStats(0);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+
+  // Adapt changes: 2, elapsed time: 30 sec => 4 per minute.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Cpu", 4));
+}
+
+TEST_F(SendStatisticsProxyTest, AdaptChangesStatsNotStartedIfVideoSuspended) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+
+  // Video suspended.
+  statistics_proxy_->OnSuspendChange(true);
+
+  // Enable scaling, stats time not started when suspended.
+  statistics_proxy_->SetCpuScalingStats(0);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+
+  // Resume video, stats time started.
+  // Adapt changes: 1, elapsed time: 10 sec.
+  statistics_proxy_->OnSuspendChange(false);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+
+  // Adapt changes: 1, elapsed time: 10 sec => 6 per minute.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Cpu", 6));
+}
+
+TEST_F(SendStatisticsProxyTest, AdaptChangesStatsRestartsOnFirstSentPacket) {
+  // Send first packet, scaling enabled.
+  // Elapsed time before first packet is sent should be excluded.
+  statistics_proxy_->SetQualityScalingStats(0);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  UpdateDataCounters(kFirstSsrc);
+
+  // Adapt changes: 1, elapsed time: 10 sec.
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_->OnQualityRestrictedResolutionChanged(1);
+  UpdateDataCounters(kFirstSsrc);
+
+  // Adapt changes: 1, elapsed time: 10 sec => 6 per minute.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+  EXPECT_EQ(
+      1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Quality", 6));
+}
+
+TEST_F(SendStatisticsProxyTest, AdaptChangesStatsStartedAfterFirstSentPacket) {
+  // Enable and disable scaling.
+  statistics_proxy_->SetCpuScalingStats(0);
+  fake_clock_.AdvanceTimeMilliseconds(60000);
+  statistics_proxy_->SetCpuScalingStats(-1);
+
+  // Send first packet, scaling disabled.
+  // Elapsed time before first packet is sent should be excluded.
+  UpdateDataCounters(kFirstSsrc);
+  fake_clock_.AdvanceTimeMilliseconds(60000);
+
+  // Enable scaling.
+  statistics_proxy_->SetCpuScalingStats(0);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  UpdateDataCounters(kFirstSsrc);
+
+  // Adapt changes: 1, elapsed time: 20 sec.
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+
+  // Adapt changes: 1, elapsed time: 20 sec => 3 per minute.
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Cpu", 3));
+}
+
+TEST_F(SendStatisticsProxyTest, AdaptChangesReportedAfterContentSwitch) {
+  // First RTP packet sent, scaling enabled.
+  UpdateDataCounters(kFirstSsrc);
+  statistics_proxy_->SetCpuScalingStats(0);
+
+  // Adapt changes: 2, elapsed time: 15 sec => 8 per minute.
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+  fake_clock_.AdvanceTimeMilliseconds(6000);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+  fake_clock_.AdvanceTimeMilliseconds(9000);
+
+  // Switch content type, real-time stats should be updated.
+  VideoEncoderConfig config;
+  config.content_type = VideoEncoderConfig::ContentType::kScreen;
+  statistics_proxy_->OnEncoderReconfigured(config, 50);
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Cpu", 8));
+  EXPECT_EQ(0,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+
+  // First RTP packet sent, scaling enabled.
+  UpdateDataCounters(kFirstSsrc);
+  statistics_proxy_->SetCpuScalingStats(0);
+
+  // Adapt changes: 4, elapsed time: 120 sec => 2 per minute.
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+  statistics_proxy_->OnCpuRestrictedResolutionChanged(true);
+  fake_clock_.AdvanceTimeMilliseconds(120000);
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples(
+                   "WebRTC.Video.Screenshare.AdaptChangesPerMinute.Cpu"));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   "WebRTC.Video.Screenshare.AdaptChangesPerMinute.Cpu", 2));
+  EXPECT_EQ(0, metrics::NumSamples(
+                   "WebRTC.Video.Screenshare.AdaptChangesPerMinute.Quality"));
+}
+
 TEST_F(SendStatisticsProxyTest, SwitchContentTypeUpdatesHistograms) {
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
@@ -779,9 +1134,9 @@ TEST_F(SendStatisticsProxyTest,
 
 TEST_F(SendStatisticsProxyTest,
        QualityLimitedHistogramsNotUpdatedWhenDisabled) {
+  const int kNumDownscales = -1;
   EncodedImage encoded_image;
-  statistics_proxy_->SetResolutionRestrictionStats(false /* scaling_enabled */,
-                                                   0, 0);
+  statistics_proxy_->SetQualityScalingStats(kNumDownscales);
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnSendEncodedImage(encoded_image, &kDefaultCodecInfo);
 
@@ -795,7 +1150,9 @@ TEST_F(SendStatisticsProxyTest,
 
 TEST_F(SendStatisticsProxyTest,
        QualityLimitedHistogramsUpdatedWhenEnabled_NoResolutionDownscale) {
+  const int kNumDownscales = 0;
   EncodedImage encoded_image;
+  statistics_proxy_->SetQualityScalingStats(kNumDownscales);
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnSendEncodedImage(encoded_image, &kDefaultCodecInfo);
 

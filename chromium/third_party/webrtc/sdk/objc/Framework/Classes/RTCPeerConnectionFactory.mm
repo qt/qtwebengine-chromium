@@ -21,6 +21,7 @@
 #import "RTCVideoTrack+Private.h"
 #import "WebRTC/RTCLogging.h"
 
+#include "objcvideotracksource.h"
 #include "videotoolboxvideocodecfactory.h"
 
 @implementation RTCPeerConnectionFactory {
@@ -85,6 +86,12 @@
     (nullable RTCMediaConstraints *)constraints {
   return [[RTCAVFoundationVideoSource alloc] initWithFactory:self
                                                  constraints:constraints];
+}
+
+- (RTCVideoSource *)videoSource {
+  rtc::scoped_refptr<webrtc::ObjcVideoTrackSource> objcVideoTrackSource(
+      new rtc::RefCountedObject<webrtc::ObjcVideoTrackSource>());
+  return [[RTCVideoSource alloc] initWithNativeVideoSource:objcVideoTrackSource];
 }
 
 - (RTCVideoTrack *)videoTrackWithSource:(RTCVideoSource *)source

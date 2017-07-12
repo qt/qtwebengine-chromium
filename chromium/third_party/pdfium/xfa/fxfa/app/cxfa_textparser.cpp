@@ -15,16 +15,18 @@
 #include "xfa/fde/css/cfde_cssstyleselector.h"
 #include "xfa/fde/css/cfde_cssstylesheet.h"
 #include "xfa/fde/css/fde_css.h"
+#include "xfa/fde/xml/cfde_xmlelement.h"
+#include "xfa/fde/xml/cfde_xmlnode.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fgas/font/cfgas_fontmgr.h"
 #include "xfa/fxfa/app/cxfa_csstagprovider.h"
 #include "xfa/fxfa/app/cxfa_textparsecontext.h"
 #include "xfa/fxfa/app/cxfa_texttabstopscontext.h"
 #include "xfa/fxfa/app/xfa_ffwidgetacc.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_fontmgr.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
-#include "xfa/fxfa/xfa_ffapp.h"
-#include "xfa/fxfa/xfa_ffdoc.h"
-#include "xfa/fxfa/xfa_fontmgr.h"
 
 namespace {
 
@@ -43,21 +45,13 @@ enum class TabStopStatus {
 CXFA_TextParser::CXFA_TextParser()
     : m_bParsed(false), m_cssInitialized(false) {}
 
-CXFA_TextParser::~CXFA_TextParser() {
-  for (auto& pair : m_mapXMLNodeToParseContext) {
-    if (pair.second)
-      delete pair.second;
-  }
-}
+CXFA_TextParser::~CXFA_TextParser() {}
 
 void CXFA_TextParser::Reset() {
-  for (auto& pair : m_mapXMLNodeToParseContext) {
-    if (pair.second)
-      delete pair.second;
-  }
   m_mapXMLNodeToParseContext.clear();
   m_bParsed = false;
 }
+
 void CXFA_TextParser::InitCSSData(CXFA_TextProvider* pTextProvider) {
   if (!pTextProvider)
     return;
@@ -67,12 +61,8 @@ void CXFA_TextParser::InitCSSData(CXFA_TextProvider* pTextProvider) {
     CFGAS_FontMgr* pFontMgr = pDoc->GetApp()->GetFDEFontMgr();
     ASSERT(pFontMgr);
     m_pSelector = pdfium::MakeUnique<CFDE_CSSStyleSelector>(pFontMgr);
-    FX_FLOAT fFontSize = 10;
     CXFA_Font font = pTextProvider->GetFontNode();
-    if (font) {
-      fFontSize = font.GetFontSize();
-    }
-    m_pSelector->SetDefFontSize(fFontSize);
+    m_pSelector->SetDefFontSize(font ? font.GetFontSize() : 10.0f);
   }
 
   if (m_cssInitialized)
@@ -85,7 +75,7 @@ void CXFA_TextParser::InitCSSData(CXFA_TextProvider* pTextProvider) {
 }
 
 std::unique_ptr<CFDE_CSSStyleSheet> CXFA_TextParser::LoadDefaultSheetStyle() {
-  static const FX_WCHAR s_pStyle[] =
+  static const wchar_t s_pStyle[] =
       L"html,body,ol,p,ul{display:block}"
       L"li{display:list-item}"
       L"ol,ul{padding-left:33px;margin:1.12em 0}"
@@ -106,8 +96,8 @@ CFX_RetainPtr<CFDE_CSSComputedStyle> CXFA_TextParser::CreateRootStyle(
   CXFA_Font font = pTextProvider->GetFontNode();
   CXFA_Para para = pTextProvider->GetParaNode();
   auto pStyle = m_pSelector->CreateComputedStyle(nullptr);
-  FX_FLOAT fLineHeight = 0;
-  FX_FLOAT fFontSize = 10;
+  float fLineHeight = 0;
+  float fFontSize = 10;
 
   if (para) {
     fLineHeight = para.GetLineHeight();
@@ -171,7 +161,7 @@ CFX_RetainPtr<CFDE_CSSComputedStyle> CXFA_TextParser::CreateStyle(
     return pNewStyle;
 
   uint32_t dwDecoration = pParentStyle->GetTextDecoration();
-  FX_FLOAT fBaseLine = 0;
+  float fBaseLine = 0;
   if (pParentStyle->GetVerticalAlign() == FDE_CSSVerticalAlign::Number)
     fBaseLine = pParentStyle->GetNumberVerticalAlign();
 
@@ -191,7 +181,7 @@ CFX_RetainPtr<CFDE_CSSComputedStyle> CXFA_TextParser::ComputeStyle(
   if (it == m_mapXMLNodeToParseContext.end())
     return nullptr;
 
-  CXFA_TextParseContext* pContext = it->second;
+  CXFA_TextParseContext* pContext = it->second.get();
   if (!pContext)
     return nullptr;
 
@@ -231,7 +221,7 @@ void CXFA_TextParser::ParseRichText(CFDE_XMLNode* pXMLNode,
   CFX_RetainPtr<CFDE_CSSComputedStyle> pNewStyle;
   if ((tagProvider->GetTagName() != L"body") ||
       (tagProvider->GetTagName() != L"html")) {
-    CXFA_TextParseContext* pTextContext = new CXFA_TextParseContext;
+    auto pTextContext = pdfium::MakeUnique<CXFA_TextParseContext>();
     FDE_CSSDisplay eDisplay = FDE_CSSDisplay::Inline;
     if (!tagProvider->m_bContent) {
       auto declArray =
@@ -247,7 +237,7 @@ void CXFA_TextParser::ParseRichText(CFDE_XMLNode* pXMLNode,
       eDisplay = pNewStyle->GetDisplay();
     }
     pTextContext->SetDisplay(eDisplay);
-    m_mapXMLNodeToParseContext[pXMLNode] = pTextContext;
+    m_mapXMLNodeToParseContext[pXMLNode] = std::move(pTextContext);
   }
 
   for (CFDE_XMLNode* pXMLChild =
@@ -287,12 +277,11 @@ std::unique_ptr<CXFA_CSSTagProvider> CXFA_TextParser::ParseTagInfo(
   CFX_WideString wsName;
   if (pXMLNode->GetType() == FDE_XMLNODE_Element) {
     CFDE_XMLElement* pXMLElement = static_cast<CFDE_XMLElement*>(pXMLNode);
-    pXMLElement->GetLocalTagName(wsName);
+    wsName = pXMLElement->GetLocalTagName();
     tagProvider->SetTagName(wsName);
     tagProvider->m_bTagAvailable = TagValidate(wsName);
 
-    CFX_WideString wsValue;
-    pXMLElement->GetString(L"style", wsValue);
+    CFX_WideString wsValue = pXMLElement->GetString(L"style");
     if (!wsValue.IsEmpty())
       tagProvider->SetAttribute(L"style", wsValue);
   } else if (pXMLNode->GetType() == FDE_XMLNODE_Text) {
@@ -307,7 +296,7 @@ int32_t CXFA_TextParser::GetVAlign(CXFA_TextProvider* pTextProvider) const {
   return para ? para.GetVerticalAlign() : XFA_ATTRIBUTEENUM_Top;
 }
 
-FX_FLOAT CXFA_TextParser::GetTabInterval(CFDE_CSSComputedStyle* pStyle) const {
+float CXFA_TextParser::GetTabInterval(CFDE_CSSComputedStyle* pStyle) const {
   CFX_WideString wsValue;
   if (pStyle && pStyle->GetCustomStyle(L"tab-interval", wsValue))
     return CXFA_Measurement(wsValue.AsStringC()).ToUnit(XFA_UNIT_Pt);
@@ -361,8 +350,8 @@ CFX_RetainPtr<CFGAS_GEFont> CXFA_TextParser::GetFont(
   return pFontMgr->GetFont(pDoc, wsFamily, dwStyle);
 }
 
-FX_FLOAT CXFA_TextParser::GetFontSize(CXFA_TextProvider* pTextProvider,
-                                      CFDE_CSSComputedStyle* pStyle) const {
+float CXFA_TextParser::GetFontSize(CXFA_TextProvider* pTextProvider,
+                                   CFDE_CSSComputedStyle* pStyle) const {
   if (pStyle)
     return pStyle->GetFontSize();
 
@@ -383,7 +372,7 @@ int32_t CXFA_TextParser::GetHorScale(CXFA_TextProvider* pTextProvider,
     while (pXMLNode) {
       auto it = m_mapXMLNodeToParseContext.find(pXMLNode);
       if (it != m_mapXMLNodeToParseContext.end()) {
-        CXFA_TextParseContext* pContext = it->second;
+        CXFA_TextParseContext* pContext = it->second.get();
         if (pContext && pContext->m_pParentStyle &&
             pContext->m_pParentStyle->GetCustomStyle(
                 L"xfa-font-horizontal-scale", wsValue)) {
@@ -466,8 +455,8 @@ FX_ARGB CXFA_TextParser::GetColor(CXFA_TextProvider* pTextProvider,
   return 0xFF000000;
 }
 
-FX_FLOAT CXFA_TextParser::GetBaseline(CXFA_TextProvider* pTextProvider,
-                                      CFDE_CSSComputedStyle* pStyle) const {
+float CXFA_TextParser::GetBaseline(CXFA_TextProvider* pTextProvider,
+                                   CFDE_CSSComputedStyle* pStyle) const {
   if (pStyle) {
     if (pStyle->GetVerticalAlign() == FDE_CSSVerticalAlign::Number)
       return pStyle->GetNumberVerticalAlign();
@@ -477,18 +466,18 @@ FX_FLOAT CXFA_TextParser::GetBaseline(CXFA_TextProvider* pTextProvider,
   return 0;
 }
 
-FX_FLOAT CXFA_TextParser::GetLineHeight(CXFA_TextProvider* pTextProvider,
-                                        CFDE_CSSComputedStyle* pStyle,
-                                        bool bFirst,
-                                        FX_FLOAT fVerScale) const {
-  FX_FLOAT fLineHeight = 0;
+float CXFA_TextParser::GetLineHeight(CXFA_TextProvider* pTextProvider,
+                                     CFDE_CSSComputedStyle* pStyle,
+                                     bool bFirst,
+                                     float fVerScale) const {
+  float fLineHeight = 0;
   if (pStyle)
     fLineHeight = pStyle->GetLineHeight();
   else if (CXFA_Para para = pTextProvider->GetParaNode())
     fLineHeight = para.GetLineHeight();
 
   if (bFirst) {
-    FX_FLOAT fFontSize = GetFontSize(pTextProvider, pStyle);
+    float fFontSize = GetFontSize(pTextProvider, pStyle);
     if (fLineHeight < 0.1f)
       fLineHeight = fFontSize;
     else
@@ -510,15 +499,13 @@ bool CXFA_TextParser::GetEmbbedObj(CXFA_TextProvider* pTextProvider,
   bool bRet = false;
   if (pXMLNode->GetType() == FDE_XMLNODE_Element) {
     CFDE_XMLElement* pElement = static_cast<CFDE_XMLElement*>(pXMLNode);
-    CFX_WideString wsAttr;
-    pElement->GetString(L"xfa:embed", wsAttr);
+    CFX_WideString wsAttr = pElement->GetString(L"xfa:embed");
     if (wsAttr.IsEmpty())
       return false;
     if (wsAttr.GetAt(0) == L'#')
       wsAttr.Delete(0);
 
-    CFX_WideString ws;
-    pElement->GetString(L"xfa:embedType", ws);
+    CFX_WideString ws = pElement->GetString(L"xfa:embedType");
     if (ws.IsEmpty())
       ws = L"som";
     else
@@ -528,8 +515,7 @@ bool CXFA_TextParser::GetEmbbedObj(CXFA_TextProvider* pTextProvider,
     if (!bURI && ws != L"som")
       return false;
 
-    ws.clear();
-    pElement->GetString(L"xfa:embedMode", ws);
+    ws = pElement->GetString(L"xfa:embedMode");
     if (ws.IsEmpty())
       ws = L"formatted";
     else
@@ -547,7 +533,7 @@ bool CXFA_TextParser::GetEmbbedObj(CXFA_TextProvider* pTextProvider,
 CXFA_TextParseContext* CXFA_TextParser::GetParseContextFromMap(
     CFDE_XMLNode* pXMLNode) {
   auto it = m_mapXMLNodeToParseContext.find(pXMLNode);
-  return it != m_mapXMLNodeToParseContext.end() ? it->second : nullptr;
+  return it != m_mapXMLNodeToParseContext.end() ? it->second.get() : nullptr;
 }
 
 bool CXFA_TextParser::GetTabstops(CFDE_CSSComputedStyle* pStyle,
@@ -562,12 +548,12 @@ bool CXFA_TextParser::GetTabstops(CFDE_CSSComputedStyle* pStyle,
   }
 
   int32_t iLength = wsValue.GetLength();
-  const FX_WCHAR* pTabStops = wsValue.c_str();
+  const wchar_t* pTabStops = wsValue.c_str();
   int32_t iCur = 0;
   int32_t iLast = 0;
   CFX_WideString wsAlign;
   TabStopStatus eStatus = TabStopStatus::None;
-  FX_WCHAR ch;
+  wchar_t ch;
   while (iCur < iLength) {
     ch = pTabStops[iCur];
     switch (eStatus) {
@@ -618,7 +604,7 @@ bool CXFA_TextParser::GetTabstops(CFDE_CSSComputedStyle* pStyle,
         if (ch == ' ') {
           uint32_t dwHashCode = FX_HashCode_GetW(wsAlign.AsStringC(), true);
           CXFA_Measurement ms(CFX_WideStringC(pTabStops + iLast, iCur - iLast));
-          FX_FLOAT fPos = ms.ToUnit(XFA_UNIT_Pt);
+          float fPos = ms.ToUnit(XFA_UNIT_Pt);
           pTabstopContext->Append(dwHashCode, fPos);
           wsAlign.clear();
           eStatus = TabStopStatus::None;
@@ -633,7 +619,7 @@ bool CXFA_TextParser::GetTabstops(CFDE_CSSComputedStyle* pStyle,
   if (!wsAlign.IsEmpty()) {
     uint32_t dwHashCode = FX_HashCode_GetW(wsAlign.AsStringC(), true);
     CXFA_Measurement ms(CFX_WideStringC(pTabStops + iLast, iCur - iLast));
-    FX_FLOAT fPos = ms.ToUnit(XFA_UNIT_Pt);
+    float fPos = ms.ToUnit(XFA_UNIT_Pt);
     pTabstopContext->Append(dwHashCode, fPos);
   }
   return true;

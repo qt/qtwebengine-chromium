@@ -45,50 +45,52 @@ extern const size_t kFXTextLayoutVerticalMirrorSize;
 extern const uint16_t kFXTextLayoutBidiMirror[];
 extern const size_t kFXTextLayoutBidiMirrorSize;
 
-uint32_t FX_GetUnicodeProperties(FX_WCHAR wch);
-FX_WCHAR FX_GetMirrorChar(FX_WCHAR wch, bool bRTL, bool bVertical);
+uint32_t FX_GetUnicodeProperties(wchar_t wch);
+wchar_t FX_GetMirrorChar(wchar_t wch, bool bRTL, bool bVertical);
 
 #ifdef PDF_ENABLE_XFA
-enum FX_CHARBREAKPROP {
-  FX_CBP_OP = 0,
-  FX_CBP_CL = 1,
-  FX_CBP_QU = 2,
-  FX_CBP_GL = 3,
-  FX_CBP_NS = 4,
-  FX_CBP_EX = 5,
-  FX_CBP_SY = 6,
-  FX_CBP_IS = 7,
-  FX_CBP_PR = 8,
-  FX_CBP_PO = 9,
-  FX_CBP_NU = 10,
-  FX_CBP_AL = 11,
-  FX_CBP_ID = 12,
-  FX_CBP_IN = 13,
-  FX_CBP_HY = 14,
-  FX_CBP_BA = 15,
-  FX_CBP_BB = 16,
-  FX_CBP_B2 = 17,
-  FX_CBP_ZW = 18,
-  FX_CBP_CM = 19,
-  FX_CBP_WJ = 20,
-  FX_CBP_H2 = 21,
-  FX_CBP_H3 = 22,
-  FX_CBP_JL = 23,
-  FX_CBP_JV = 24,
-  FX_CBP_JT = 25,
 
-  FX_CBP_BK = 26,
-  FX_CBP_CR = 27,
-  FX_CBP_LF = 28,
-  FX_CBP_NL = 29,
-  FX_CBP_SA = 30,
-  FX_CBP_SG = 31,
-  FX_CBP_CB = 32,
-  FX_CBP_XX = 33,
-  FX_CBP_AI = 34,
-  FX_CBP_SP = 35,
-  FX_CBP_TB = 37,
+// As defined in http://www.unicode.org/reports/tr14/
+enum FXCHAR_BREAKPROP {
+  FX_CBP_OP = 0,   // Opening Punctuation
+  FX_CBP_CL = 1,   // Closing Punctuation
+  FX_CBP_QU = 2,   // Ambiguous Quotation
+  FX_CBP_GL = 3,   // Non-breaking ("Glue")
+  FX_CBP_NS = 4,   // Non Starter
+  FX_CBP_EX = 5,   // Exclamation/Interrogation
+  FX_CBP_SY = 6,   // Symbols Allowing Breaks
+  FX_CBP_IS = 7,   // Infix Separator (Numeric)
+  FX_CBP_PR = 8,   // Prefix (Numeric)
+  FX_CBP_PO = 9,   // Postfix (Numeric)
+  FX_CBP_NU = 10,  // Numeric
+  FX_CBP_AL = 11,  // Ordinary Alphabetic and Symbol Characters
+  FX_CBP_ID = 12,  // Ideographic
+  FX_CBP_IN = 13,  // Inseparable
+  FX_CBP_HY = 14,  // Hyphen
+  FX_CBP_BA = 15,  // Break Opportunity After
+  FX_CBP_BB = 16,  // Break Opportunity Before
+  FX_CBP_B2 = 17,  // Break Opportunity Before and After
+  FX_CBP_ZW = 18,  // Zero Width Space
+  FX_CBP_CM = 19,  // Attached Characters and Combining Marks
+  FX_CBP_WJ = 20,  // Word Joiner
+  FX_CBP_H2 = 21,  // Hangul LV Syllable
+  FX_CBP_H3 = 22,  // Hangul LVT Syllable
+  FX_CBP_JL = 23,  // Hangul Leading Jamo
+  FX_CBP_JV = 24,  // Hangul Vowel Jamo
+  FX_CBP_JT = 25,  // Hangul Trailing Jamo
+
+  FX_CBP_BK = 26,  // Mandatory Break
+  FX_CBP_CR = 27,  // Carriage Return
+  FX_CBP_LF = 28,  // Line Feed
+  FX_CBP_NL = 29,  // Next Line
+  FX_CBP_SA = 30,  // Complex Context (South East Asian)
+  FX_CBP_SG = 31,  // Surrogate
+  FX_CBP_CB = 32,  // Contingent Break Opportunity
+  FX_CBP_XX = 33,  // Unknown
+  FX_CBP_AI = 34,  // Ambiguous (Alphabetic or Ideographic)
+  FX_CBP_SP = 35,  // Space
   FX_CBP_NONE = 36,
+  FX_CBP_TB = 37,  // ?
 };
 
 #define FX_CHARTYPEBITS 11
@@ -112,92 +114,10 @@ inline FX_CHARTYPE GetCharTypeFromProp(uint32_t prop) {
   return static_cast<FX_CHARTYPE>(prop & FX_CHARTYPEBITSMASK);
 }
 
-bool FX_IsCtrlCode(FX_WCHAR ch);
-FX_WCHAR FX_GetMirrorChar(FX_WCHAR wch,
-                          uint32_t dwProps,
-                          bool bRTL,
-                          bool bVertical);
-class CFX_Char {
- public:
-  CFX_Char()
-      : m_wCharCode(0),
-        m_nBreakType(0),
-        m_dwCharProps(0),
-        m_iCharWidth(0),
-        m_iHorizontalScale(100),
-        m_iVerticalScale(100) {}
-
-  CFX_Char(uint16_t wCharCode, uint32_t dwCharProps)
-      : m_wCharCode(wCharCode),
-        m_nBreakType(0),
-        m_dwCharProps(dwCharProps),
-        m_iCharWidth(0),
-        m_iHorizontalScale(100),
-        m_iVerticalScale(100) {}
-
-  FX_CHARTYPE GetCharType() const { return GetCharTypeFromProp(m_dwCharProps); }
-
-  uint16_t m_wCharCode;
-  uint8_t m_nBreakType;
-  uint32_t m_dwCharProps;
-  int32_t m_iCharWidth;
-  int32_t m_iHorizontalScale;
-  int32_t m_iVerticalScale;
-};
-
-class CFX_TxtChar : public CFX_Char {
- public:
-  CFX_TxtChar()
-      : m_nRotation(0),
-        m_dwCharStyles(0),
-        m_dwStatus(0),
-        m_iBidiClass(0),
-        m_iBidiLevel(0),
-        m_iBidiPos(0),
-        m_iBidiOrder(0),
-        m_pUserData(nullptr) {}
-
-  int8_t m_nRotation;
-  uint32_t m_dwCharStyles;
-  uint32_t m_dwStatus;
-  int16_t m_iBidiClass;
-  int16_t m_iBidiLevel;
-  int16_t m_iBidiPos;
-  int16_t m_iBidiOrder;
-  void* m_pUserData;
-};
-
-enum class CFX_RTFBreakType { None = 0, Piece, Line, Paragraph, Page };
-
-class CFX_RTFChar : public CFX_Char {
- public:
-  CFX_RTFChar();
-  CFX_RTFChar(const CFX_RTFChar& other);
-  ~CFX_RTFChar();
-
-  CFX_RTFBreakType m_dwStatus;
-  int32_t m_iFontSize;
-  int32_t m_iFontHeight;
-  int16_t m_iBidiClass;
-  int16_t m_iBidiLevel;
-  int16_t m_iBidiPos;
-  int16_t m_iBidiOrder;
-  uint32_t m_dwIdentity;
-  CFX_RetainPtr<CFX_Retainable> m_pUserData;
-};
-
-inline CFX_RTFChar::CFX_RTFChar()
-    : m_dwStatus(CFX_RTFBreakType::None),
-      m_iFontSize(0),
-      m_iFontHeight(0),
-      m_iBidiClass(0),
-      m_iBidiLevel(0),
-      m_iBidiPos(0),
-      m_dwIdentity(0),
-      m_pUserData(nullptr) {}
-
-inline CFX_RTFChar::CFX_RTFChar(const CFX_RTFChar& other) = default;
-inline CFX_RTFChar::~CFX_RTFChar() = default;
+wchar_t FX_GetMirrorChar(wchar_t wch,
+                         uint32_t dwProps,
+                         bool bRTL,
+                         bool bVertical);
 
 #endif  // PDF_ENABLE_XFA
 

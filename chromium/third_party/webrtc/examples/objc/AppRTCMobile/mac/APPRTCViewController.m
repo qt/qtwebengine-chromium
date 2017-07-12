@@ -12,10 +12,13 @@
 
 #import <AVFoundation/AVFoundation.h>
 
+#import "WebRTC/RTCMTLNSVideoView.h"
 #import "WebRTC/RTCNSGLVideoView.h"
 #import "WebRTC/RTCVideoTrack.h"
 
 #import "ARDAppClient.h"
+#import "ARDCaptureController.h"
+#import "ARDSettingsModel.h"
 
 static NSUInteger const kContentWidth = 900;
 static NSUInteger const kRoomFieldWidth = 200;
@@ -34,8 +37,8 @@ static NSUInteger const kBottomViewHeight = 200;
 @interface APPRTCMainView : NSView
 
 @property(nonatomic, weak) id<APPRTCMainViewDelegate> delegate;
-@property(nonatomic, readonly) RTCNSGLVideoView* localVideoView;
-@property(nonatomic, readonly) RTCNSGLVideoView* remoteVideoView;
+@property(nonatomic, readonly) NSView<RTCVideoRenderer>* localVideoView;
+@property(nonatomic, readonly) NSView<RTCVideoRenderer>* remoteVideoView;
 
 - (void)displayLogMessage:(NSString*)message;
 
@@ -168,10 +171,10 @@ static NSUInteger const kBottomViewHeight = 200;
     roomString = [NSUUID UUID].UUIDString;
     roomString = [roomString stringByReplacingOccurrencesOfString:@"-" withString:@""];
   }
-
   [self.delegate appRTCMainView:self
                  didEnterRoomId:roomString
                        loopback:_loopbackButton.intValue];
+  [self setNeedsUpdateConstraints:YES];
 }
 
 #pragma mark - RTCNSGLVideoViewDelegate
@@ -213,25 +216,41 @@ static NSUInteger const kBottomViewHeight = 200;
   [_scrollView setDocumentView:_logView];
   [self addSubview:_scrollView];
 
-  NSOpenGLPixelFormatAttribute attributes[] = {
-    NSOpenGLPFADoubleBuffer,
-    NSOpenGLPFADepthSize, 24,
-    NSOpenGLPFAOpenGLProfile,
-    NSOpenGLProfileVersion3_2Core,
-    0
-  };
-  NSOpenGLPixelFormat* pixelFormat =
-      [[NSOpenGLPixelFormat alloc] initWithAttributes:attributes];
-  _remoteVideoView = [[RTCNSGLVideoView alloc] initWithFrame:NSZeroRect
-                                                 pixelFormat:pixelFormat];
-  [_remoteVideoView setTranslatesAutoresizingMaskIntoConstraints:NO];
-  _remoteVideoView.delegate = self;
-  [self addSubview:_remoteVideoView];
 
-  _localVideoView = [[RTCNSGLVideoView alloc] initWithFrame:NSZeroRect
-                                                 pixelFormat:pixelFormat];
+// NOTE (daniela): Ignoring Clang diagonstic here.
+// We're performing run time check to make sure class is available on runtime.
+// If not we're providing sensible default.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpartial-availability"
+  if ([RTCMTLNSVideoView class]) {
+    _remoteVideoView = [[RTCMTLNSVideoView alloc] initWithFrame:NSZeroRect];
+    _localVideoView = [[RTCMTLNSVideoView alloc] initWithFrame:NSZeroRect];
+  } else {
+    NSOpenGLPixelFormatAttribute attributes[] = {
+      NSOpenGLPFADoubleBuffer,
+      NSOpenGLPFADepthSize, 24,
+      NSOpenGLPFAOpenGLProfile,
+      NSOpenGLProfileVersion3_2Core,
+      0
+    };
+    NSOpenGLPixelFormat* pixelFormat =
+    [[NSOpenGLPixelFormat alloc] initWithAttributes:attributes];
+
+    RTCNSGLVideoView* remote =
+        [[RTCNSGLVideoView alloc] initWithFrame:NSZeroRect pixelFormat:pixelFormat];
+    remote.delegate = self;
+    _remoteVideoView = remote;
+
+    RTCNSGLVideoView* local =
+        [[RTCNSGLVideoView alloc] initWithFrame:NSZeroRect pixelFormat:pixelFormat];
+    local.delegate = self;
+    _localVideoView = local;
+  }
+#pragma clang diagnostic pop
+
+  [_remoteVideoView setTranslatesAutoresizingMaskIntoConstraints:NO];
+  [self addSubview:_remoteVideoView];
   [_localVideoView setTranslatesAutoresizingMaskIntoConstraints:NO];
-  _localVideoView.delegate = self;
   [self addSubview:_localVideoView];
 }
 
@@ -281,6 +300,7 @@ static NSUInteger const kBottomViewHeight = 200;
   ARDAppClient* _client;
   RTCVideoTrack* _localVideoTrack;
   RTCVideoTrack* _remoteVideoTrack;
+  ARDCaptureController* _captureController;
 }
 
 - (void)dealloc {
@@ -335,6 +355,14 @@ static NSUInteger const kBottomViewHeight = 200;
     didChangeConnectionState:(RTCIceConnectionState)state {
 }
 
+- (void)appClient:(ARDAppClient*)client
+    didCreateLocalCapturer:(RTCCameraVideoCapturer*)localCapturer {
+  _captureController =
+      [[ARDCaptureController alloc] initWithCapturer:localCapturer
+                                            settings:[[ARDSettingsModel alloc] init]];
+  [_captureController startCapture];
+}
+
 - (void)appClient:(ARDAppClient *)client
     didReceiveLocalVideoTrack:(RTCVideoTrack *)localVideoTrack {
   _localVideoTrack = localVideoTrack;
@@ -368,9 +396,10 @@ static NSUInteger const kBottomViewHeight = 200;
     return;
   }
 
-  [_client disconnect];
-  ARDAppClient *client = [[ARDAppClient alloc] initWithDelegate:self];
+  [self disconnect];
+  ARDAppClient* client = [[ARDAppClient alloc] initWithDelegate:self];
   [client connectToRoomWithId:roomId
+                     settings:[[ARDSettingsModel alloc] init]  // Use default settings.
                    isLoopback:isLoopback
                   isAudioOnly:NO
             shouldMakeAecDump:NO
@@ -401,6 +430,8 @@ static NSUInteger const kBottomViewHeight = 200;
 
 - (void)disconnect {
   [self resetUI];
+  [_captureController stopCapture];
+  _captureController = nil;
   [_client disconnect];
 }
 

@@ -35,6 +35,8 @@ enum BufferUsage
     BUFFER_USAGE_STAGING,
     BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK,
     BUFFER_USAGE_INDEX,
+    // TODO: possibly share this buffer type with shader storage buffers.
+    BUFFER_USAGE_INDIRECT,
     BUFFER_USAGE_PIXEL_UNPACK,
     BUFFER_USAGE_PIXEL_PACK,
     BUFFER_USAGE_UNIFORM,
@@ -101,8 +103,8 @@ class Buffer11 : public BufferD3D
     // We use two set of dirty events. Static buffers are marked dirty whenever
     // data changes, because they must be re-translated. Direct buffers only need to be
     // updated when the underlying ID3D11Buffer pointer changes - hopefully far less often.
-    angle::BroadcastChannel *getStaticBroadcastChannel();
-    angle::BroadcastChannel *getDirectBroadcastChannel();
+    angle::BroadcastChannel<> *getStaticBroadcastChannel();
+    angle::BroadcastChannel<> *getDirectBroadcastChannel();
 
   private:
     class BufferStorage;
@@ -160,8 +162,8 @@ class Buffer11 : public BufferD3D
     size_t mConstantBufferStorageAdditionalSize;
     unsigned int mMaxConstantBufferLruCount;
 
-    angle::BroadcastChannel mStaticBroadcastChannel;
-    angle::BroadcastChannel mDirectBroadcastChannel;
+    angle::BroadcastChannel<> mStaticBroadcastChannel;
+    angle::BroadcastChannel<> mDirectBroadcastChannel;
 };
 
 }  // namespace rx

@@ -13,8 +13,8 @@
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fftextedit.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
-#include "xfa/fxfa/xfa_ffpageview.h"
-#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
 
 namespace {
 
@@ -174,9 +174,9 @@ void CXFA_FFBarcode::UpdateWidgetProperty() {
   pBarCodeWidget->SetType(pBarcodeTypeInfo->eBCType);
   CXFA_WidgetAcc* pAcc = GetDataAcc();
   int32_t intVal;
-  FX_CHAR charVal;
+  char charVal;
   bool boolVal;
-  FX_FLOAT floatVal;
+  float floatVal;
   if (pAcc->GetBarcodeAttribute_CharEncoding(intVal)) {
     pBarCodeWidget->SetCharEncoding((BC_CHAR_ENCODING)intVal);
   }

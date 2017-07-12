@@ -186,20 +186,7 @@ uint32_t RTPSender::NackOverheadRate() const {
 int32_t RTPSender::RegisterRtpHeaderExtension(RTPExtensionType type,
                                               uint8_t id) {
   rtc::CritScope lock(&send_critsect_);
-  switch (type) {
-    case kRtpExtensionVideoRotation:
-    case kRtpExtensionPlayoutDelay:
-    case kRtpExtensionTransmissionTimeOffset:
-    case kRtpExtensionAbsoluteSendTime:
-    case kRtpExtensionAudioLevel:
-    case kRtpExtensionTransportSequenceNumber:
-      return rtp_header_extension_map_.Register(type, id);
-    case kRtpExtensionNone:
-    case kRtpExtensionNumberOfExtensions:
-      LOG(LS_ERROR) << "Invalid RTP extension type for registration.";
-      return -1;
-  }
-  return -1;
+  return rtp_header_extension_map_.RegisterByType(id, type) ? 0 : -1;
 }
 
 bool RTPSender::IsRtpHeaderExtensionRegistered(RTPExtensionType type) const {
@@ -276,14 +263,10 @@ int32_t RTPSender::DeRegisterSendPayload(int8_t payload_type) {
   return 0;
 }
 
+// TODO(nisse): Delete this method, only used internally and by test code.
 void RTPSender::SetSendPayloadType(int8_t payload_type) {
   rtc::CritScope lock(&send_critsect_);
   payload_type_ = payload_type;
-}
-
-int8_t RTPSender::SendPayloadType() const {
-  rtc::CritScope lock(&send_critsect_);
-  return payload_type_;
 }
 
 void RTPSender::SetMaxRtpPacketSize(size_t max_packet_size) {
@@ -1260,7 +1243,7 @@ void RTPSender::AddPacketToTransportFeedback(
   }
 
   if (transport_feedback_observer_) {
-    transport_feedback_observer_->AddPacket(packet_id, packet_size,
+    transport_feedback_observer_->AddPacket(SSRC(), packet_id, packet_size,
                                             pacing_info);
   }
 }

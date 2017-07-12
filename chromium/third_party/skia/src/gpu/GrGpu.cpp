@@ -57,9 +57,10 @@ void GrGpu::disconnect(DisconnectType) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 
-bool GrGpu::makeCopyForTextureParams(int width, int height, const GrSamplerParams& textureParams,
-                                     GrTextureProducer::CopyParams* copyParams,
-                                     SkScalar scaleAdjust[2]) const {
+bool GrGpu::isACopyNeededForTextureParams(int width, int height,
+                                          const GrSamplerParams& textureParams,
+                                          GrTextureProducer::CopyParams* copyParams,
+                                          SkScalar scaleAdjust[2]) const {
     const GrCaps& caps = *this->caps();
     if (textureParams.isTiled() && !caps.npotTextureTileSupport() &&
         (!SkIsPow2(width) || !SkIsPow2(height))) {
@@ -187,14 +188,6 @@ GrTexture* GrGpu::createTexture(const GrSurfaceDesc& origDesc, SkBudgeted budget
                 fStats.incTextureUploads();
             }
         }
-        // This is a current work around to get discards into newly created textures. Once we are in
-        // MDB world, we should remove this code a rely on the draw target having specified load
-        // operations.
-        if (isRT && texels.empty()) {
-            GrRenderTarget* rt = tex->asRenderTarget();
-            SkASSERT(rt);
-            rt->discard();
-        }
     }
     return tex;
 }
@@ -217,21 +210,23 @@ sk_sp<GrTexture> GrGpu::wrapBackendTexture(const GrBackendTextureDesc& desc,
     if (!tex) {
         return nullptr;
     }
-    // TODO: defer this and attach dynamically
-    GrRenderTarget* tgt = tex->asRenderTarget();
-    if (tgt && !fContext->resourceProvider()->attachStencilAttachment(tgt)) {
-        return nullptr;
+
+    if (!this->caps()->avoidStencilBuffers()) {
+        // TODO: defer this and attach dynamically
+        GrRenderTarget* tgt = tex->asRenderTarget();
+        if (tgt && !fContext->resourceProvider()->attachStencilAttachment(tgt)) {
+            return nullptr;
+        }
     }
     return tex;
 }
 
-sk_sp<GrRenderTarget> GrGpu::wrapBackendRenderTarget(const GrBackendRenderTargetDesc& desc,
-                                                     GrWrapOwnership ownership) {
+sk_sp<GrRenderTarget> GrGpu::wrapBackendRenderTarget(const GrBackendRenderTargetDesc& desc) {
     if (!this->caps()->isConfigRenderable(desc.fConfig, desc.fSampleCnt > 0)) {
         return nullptr;
     }
     this->handleDirtyContext();
-    return this->onWrapBackendRenderTarget(desc, ownership);
+    return this->onWrapBackendRenderTarget(desc);
 }
 
 sk_sp<GrRenderTarget> GrGpu::wrapBackendTextureAsRenderTarget(const GrBackendTextureDesc& desc) {

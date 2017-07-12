@@ -33,6 +33,7 @@
 #include "fpdfsdk/javascript/ijs_runtime.h"
 #include "public/fpdf_ext.h"
 #include "public/fpdf_progressive.h"
+#include "third_party/base/allocator/partition_allocator/partition_alloc.h"
 #include "third_party/base/numerics/safe_conversions_impl.h"
 #include "third_party/base/ptr_util.h"
 
@@ -40,8 +41,8 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #include "fpdfsdk/fpdfxfa/cxfa_fwladaptertimermgr.h"
+#include "fxbarcode/BC_Library.h"
 #include "public/fpdf_formfill.h"
-#include "xfa/fxbarcode/BC_Library.h"
 #endif  // PDF_ENABLE_XFA
 
 #ifdef PDF_ENABLE_XFA_BMP
@@ -367,6 +368,7 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* cfg) {
   if (g_pCodecModule)
     return;
 
+  FXMEM_InitalizePartitionAlloc();
   g_pCodecModule = new CCodec_ModuleMgr();
 
   CFX_GEModule* pModule = CFX_GEModule::Get();
@@ -490,7 +492,7 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_LoadDocument(FPDF_STRING file_path,
   // NOTE: the creation of the file needs to be by the embedder on the
   // other side of this API.
   CFX_RetainPtr<IFX_SeekableReadStream> pFileAccess =
-      IFX_SeekableReadStream::CreateFromFilename((const FX_CHAR*)file_path);
+      IFX_SeekableReadStream::CreateFromFilename((const char*)file_path);
   if (!pFileAccess)
     return nullptr;
 
@@ -556,7 +558,7 @@ class CMemFile final : public IFX_SeekableReadStream {
     if (!newPos.IsValid() || newPos.ValueOrDie() > m_size)
       return false;
 
-    FXSYS_memcpy(buffer, m_pBuf + offset, size);
+    memcpy(buffer, m_pBuf + offset, size);
     return true;
   }
 
@@ -700,41 +702,39 @@ DLLEXPORT void STDCALL FPDF_RenderPage(HDC dc,
   CPDF_PageRenderContext* pContext = new CPDF_PageRenderContext;
   pPage->SetRenderContext(pdfium::WrapUnique(pContext));
 
-  std::unique_ptr<CFX_DIBitmap> pBitmap;
+  CFX_RetainPtr<CFX_DIBitmap> pBitmap;
   // TODO: This results in unnecessary rasterization of some PDFs due to
   // HasImageMask() returning true. If any image on the page is a mask, the
   // entire page gets rasterized and the spool size gets huge.
   const bool bNewBitmap =
       pPage->BackgroundAlphaNeeded() || pPage->HasImageMask();
   if (bNewBitmap) {
-    pBitmap = pdfium::MakeUnique<CFX_DIBitmap>();
+    pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
     pBitmap->Create(size_x, size_y, FXDIB_Argb);
     pBitmap->Clear(0x00ffffff);
     CFX_FxgeDevice* pDevice = new CFX_FxgeDevice;
     pContext->m_pDevice = pdfium::WrapUnique(pDevice);
-    pDevice->Attach(pBitmap.get(), false, nullptr, false);
+    pDevice->Attach(pBitmap, false, nullptr, false);
   } else {
     pContext->m_pDevice = pdfium::MakeUnique<CFX_WindowsDevice>(dc);
   }
-
   FPDF_RenderPage_Retail(pContext, page, start_x, start_y, size_x, size_y,
                          rotate, flags, true, nullptr);
 
   if (bNewBitmap) {
     CFX_WindowsDevice WinDC(dc);
     if (WinDC.GetDeviceCaps(FXDC_DEVICE_CLASS) == FXDC_PRINTER) {
-      std::unique_ptr<CFX_DIBitmap> pDst = pdfium::MakeUnique<CFX_DIBitmap>();
+      auto pDst = pdfium::MakeRetain<CFX_DIBitmap>();
       int pitch = pBitmap->GetPitch();
       pDst->Create(size_x, size_y, FXDIB_Rgb32);
-      FXSYS_memset(pDst->GetBuffer(), -1, pitch * size_y);
-      pDst->CompositeBitmap(0, 0, size_x, size_y, pBitmap.get(), 0, 0,
-                            FXDIB_BLEND_NORMAL, nullptr, false, nullptr);
-      WinDC.StretchDIBits(pDst.get(), 0, 0, size_x, size_y);
+      memset(pDst->GetBuffer(), -1, pitch * size_y);
+      pDst->CompositeBitmap(0, 0, size_x, size_y, pBitmap, 0, 0,
+                            FXDIB_BLEND_NORMAL, nullptr, false);
+      WinDC.StretchDIBits(pDst, 0, 0, size_x, size_y);
     } else {
-      WinDC.SetDIBits(pBitmap.get(), 0, 0);
+      WinDC.SetDIBits(pBitmap, 0, 0);
     }
   }
-
   pPage->SetRenderContext(nullptr);
 }
 #endif  // defined(_WIN32)
@@ -756,11 +756,12 @@ DLLEXPORT void STDCALL FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
 
   CPDF_PageRenderContext* pContext = new CPDF_PageRenderContext;
   pPage->SetRenderContext(pdfium::WrapUnique(pContext));
+
   CFX_FxgeDevice* pDevice = new CFX_FxgeDevice;
   pContext->m_pDevice.reset(pDevice);
-  CFX_DIBitmap* pBitmap = CFXBitmapFromFPDFBitmap(bitmap);
-  pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
 
+  CFX_RetainPtr<CFX_DIBitmap> pBitmap(CFXBitmapFromFPDFBitmap(bitmap));
+  pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
   FPDF_RenderPage_Retail(pContext, page, start_x, start_y, size_x, size_y,
                          rotate, flags, true, nullptr);
 
@@ -785,9 +786,11 @@ DLLEXPORT void STDCALL FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
 
   CPDF_PageRenderContext* pContext = new CPDF_PageRenderContext;
   pPage->SetRenderContext(pdfium::WrapUnique(pContext));
+
   CFX_FxgeDevice* pDevice = new CFX_FxgeDevice;
   pContext->m_pDevice.reset(pDevice);
-  CFX_DIBitmap* pBitmap = CFXBitmapFromFPDFBitmap(bitmap);
+
+  CFX_RetainPtr<CFX_DIBitmap> pBitmap(CFXBitmapFromFPDFBitmap(bitmap));
   pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
 
   CFX_Matrix transform_matrix = pPage->GetPageMatrix();
@@ -891,8 +894,8 @@ DLLEXPORT void STDCALL FPDF_DeviceToPage(FPDF_PAGE page,
   CFX_Matrix device2page;
   device2page.SetReverse(page2device);
 
-  CFX_PointF pos = device2page.Transform(CFX_PointF(
-      static_cast<FX_FLOAT>(device_x), static_cast<FX_FLOAT>(device_y)));
+  CFX_PointF pos = device2page.Transform(
+      CFX_PointF(static_cast<float>(device_x), static_cast<float>(device_y)));
 
   *page_x = pos.x;
   *page_y = pos.y;
@@ -921,7 +924,7 @@ DLLEXPORT void STDCALL FPDF_PageToDevice(FPDF_PAGE page,
   CFX_Matrix page2device =
       pPage->GetDisplayMatrix(start_x, start_y, size_x, size_y, rotate);
   CFX_PointF pos = page2device.Transform(
-      CFX_PointF(static_cast<FX_FLOAT>(page_x), static_cast<FX_FLOAT>(page_y)));
+      CFX_PointF(static_cast<float>(page_x), static_cast<float>(page_y)));
 
   *device_x = FXSYS_round(pos.x);
   *device_y = FXSYS_round(pos.y);
@@ -931,11 +934,11 @@ DLLEXPORT void STDCALL FPDF_PageToDevice(FPDF_PAGE page,
 DLLEXPORT FPDF_BITMAP STDCALL FPDFBitmap_Create(int width,
                                                 int height,
                                                 int alpha) {
-  auto pBitmap = pdfium::MakeUnique<CFX_DIBitmap>();
+  auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!pBitmap->Create(width, height, alpha ? FXDIB_Argb : FXDIB_Rgb32))
     return nullptr;
 
-  return pBitmap.release();
+  return pBitmap.Leak();
 }
 
 DLLEXPORT FPDF_BITMAP STDCALL FPDFBitmap_CreateEx(int width,
@@ -960,9 +963,9 @@ DLLEXPORT FPDF_BITMAP STDCALL FPDFBitmap_CreateEx(int width,
     default:
       return nullptr;
   }
-  CFX_DIBitmap* pBitmap = new CFX_DIBitmap;
+  auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   pBitmap->Create(width, height, fx_format, (uint8_t*)first_scan, stride);
-  return pBitmap;
+  return pBitmap.Leak();
 }
 
 DLLEXPORT void STDCALL FPDFBitmap_FillRect(FPDF_BITMAP bitmap,
@@ -975,7 +978,7 @@ DLLEXPORT void STDCALL FPDFBitmap_FillRect(FPDF_BITMAP bitmap,
     return;
 
   CFX_FxgeDevice device;
-  CFX_DIBitmap* pBitmap = CFXBitmapFromFPDFBitmap(bitmap);
+  CFX_RetainPtr<CFX_DIBitmap> pBitmap(CFXBitmapFromFPDFBitmap(bitmap));
   device.Attach(pBitmap, false, nullptr, false);
   if (!pBitmap->HasAlpha())
     color |= 0xFF000000;
@@ -1000,7 +1003,8 @@ DLLEXPORT int STDCALL FPDFBitmap_GetStride(FPDF_BITMAP bitmap) {
 }
 
 DLLEXPORT void STDCALL FPDFBitmap_Destroy(FPDF_BITMAP bitmap) {
-  delete CFXBitmapFromFPDFBitmap(bitmap);
+  CFX_RetainPtr<CFX_DIBitmap> destroyer;
+  destroyer.Unleak(CFXBitmapFromFPDFBitmap(bitmap));
 }
 
 void FPDF_RenderPage_Retail(CPDF_PageRenderContext* pContext,
@@ -1153,7 +1157,7 @@ DLLEXPORT FPDF_RESULT STDCALL FPDF_BStr_Init(FPDF_BSTR* str) {
   if (!str)
     return -1;
 
-  FXSYS_memset(str, 0, sizeof(FPDF_BSTR));
+  memset(str, 0, sizeof(FPDF_BSTR));
   return 0;
 }
 
@@ -1182,7 +1186,7 @@ DLLEXPORT FPDF_RESULT STDCALL FPDF_BStr_Set(FPDF_BSTR* str,
     str->str = FX_Alloc(char, length + 1);
 
   str->str[length] = 0;
-  FXSYS_memcpy(str->str, bstr, length);
+  memcpy(str->str, bstr, length);
   str->len = length;
 
   return 0;
@@ -1245,7 +1249,7 @@ DLLEXPORT FPDF_DEST STDCALL FPDF_GetNamedDest(FPDF_DOCUMENT document,
       i++;
     }
   } else {
-    pDestObj = nameTree.LookupValue(index, bsName);
+    pDestObj = nameTree.LookupValueAndName(index, &bsName);
   }
   if (!pDestObj)
     return nullptr;

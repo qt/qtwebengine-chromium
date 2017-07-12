@@ -132,7 +132,7 @@ class StunUInt16ListAttribute;
 class StunMessage {
  public:
   StunMessage();
-  virtual ~StunMessage();
+  virtual ~StunMessage() = default;
 
   int type() const { return type_; }
   size_t length() const { return length_; }
@@ -159,7 +159,7 @@ class StunMessage {
   const StunUInt16ListAttribute* GetUnknownAttributes() const;
 
   // Takes ownership of the specified attribute and adds it to the message.
-  void AddAttribute(StunAttribute* attr);
+  void AddAttribute(std::unique_ptr<StunAttribute> attr);
 
   // Validates that a raw STUN message has a correct MESSAGE-INTEGRITY value.
   // This can't currently be done on a StunMessage, since it is affected by
@@ -199,7 +199,7 @@ class StunMessage {
   uint16_t type_;
   uint16_t length_;
   std::string transaction_id_;
-  std::vector<StunAttribute*>* attrs_;
+  std::vector<std::unique_ptr<StunAttribute>> attrs_;
 };
 
 // Base class for all STUN/TURN attributes.
@@ -232,13 +232,15 @@ class StunAttribute {
                                StunMessage* owner);
   // TODO: Allow these create functions to take parameters, to reduce
   // the amount of work callers need to do to initialize attributes.
-  static StunAddressAttribute* CreateAddress(uint16_t type);
-  static StunXorAddressAttribute* CreateXorAddress(uint16_t type);
-  static StunUInt32Attribute* CreateUInt32(uint16_t type);
-  static StunUInt64Attribute* CreateUInt64(uint16_t type);
-  static StunByteStringAttribute* CreateByteString(uint16_t type);
-  static StunErrorCodeAttribute* CreateErrorCode();
-  static StunUInt16ListAttribute* CreateUnknownAttributes();
+  static std::unique_ptr<StunAddressAttribute> CreateAddress(uint16_t type);
+  static std::unique_ptr<StunXorAddressAttribute> CreateXorAddress(
+      uint16_t type);
+  static std::unique_ptr<StunUInt32Attribute> CreateUInt32(uint16_t type);
+  static std::unique_ptr<StunUInt64Attribute> CreateUInt64(uint16_t type);
+  static std::unique_ptr<StunByteStringAttribute> CreateByteString(
+      uint16_t type);
+  static std::unique_ptr<StunErrorCodeAttribute> CreateErrorCode();
+  static std::unique_ptr<StunUInt16ListAttribute> CreateUnknownAttributes();
 
  protected:
   StunAttribute(uint16_t type, uint16_t length);
@@ -411,7 +413,7 @@ class StunByteStringAttribute : public StunAttribute {
 // Implements STUN attributes that record an error code.
 class StunErrorCodeAttribute : public StunAttribute {
  public:
-  static const uint16_t MIN_SIZE = 4;
+  static const uint16_t MIN_SIZE;
   StunErrorCodeAttribute(uint16_t type, int code, const std::string& reason);
   StunErrorCodeAttribute(uint16_t type, uint16_t length);
   ~StunErrorCodeAttribute();

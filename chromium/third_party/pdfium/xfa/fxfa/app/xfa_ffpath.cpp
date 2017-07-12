@@ -7,10 +7,10 @@
 #include "xfa/fxfa/app/xfa_ffpath.h"
 
 #include "xfa/fxfa/app/xfa_ffdraw.h"
-#include "xfa/fxfa/xfa_ffapp.h"
-#include "xfa/fxfa/xfa_ffdoc.h"
-#include "xfa/fxfa/xfa_ffpageview.h"
-#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
@@ -20,8 +20,8 @@ CXFA_FFLine::~CXFA_FFLine() {}
 
 void CXFA_FFLine::GetRectFromHand(CFX_RectF& rect,
                                   int32_t iHand,
-                                  FX_FLOAT fLineWidth) {
-  FX_FLOAT fHalfWidth = fLineWidth / 2.0f;
+                                  float fLineWidth) {
+  float fHalfWidth = fLineWidth / 2.0f;
   if (rect.height < 1.0f) {
     switch (iHand) {
       case XFA_ATTRIBUTEENUM_Left:
@@ -64,7 +64,7 @@ void CXFA_FFLine::RenderWidget(CFX_Graphics* pGS,
   CXFA_Line lineObj = value.GetLine();
   FX_ARGB lineColor = 0xFF000000;
   int32_t iStrokeType = 0;
-  FX_FLOAT fLineWidth = 1.0f;
+  float fLineWidth = 1.0f;
   int32_t iCap = 0;
   CXFA_Edge edge = lineObj.GetEdge();
   if (edge) {

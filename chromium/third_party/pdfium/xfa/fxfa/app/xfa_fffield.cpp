@@ -17,11 +17,12 @@
 #include "xfa/fwl/cfwl_widgetmgr.h"
 #include "xfa/fxfa/app/cxfa_textlayout.h"
 #include "xfa/fxfa/app/xfa_fwltheme.h"
-#include "xfa/fxfa/xfa_ffapp.h"
-#include "xfa/fxfa/xfa_ffdoc.h"
-#include "xfa/fxfa/xfa_ffdocview.h"
-#include "xfa/fxfa/xfa_ffpageview.h"
-#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_ffdocview.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
@@ -94,7 +95,7 @@ void CXFA_FFField::DrawFocus(CFX_Graphics* pGS, CFX_Matrix* pMatrix) {
   if (m_dwStatus & XFA_WidgetStatus_Focused) {
     CFX_Color cr(0xFF000000);
     pGS->SetStrokeColor(&cr);
-    FX_FLOAT DashPattern[2] = {1, 1};
+    float DashPattern[2] = {1, 1};
     pGS->SetLineDash(0.0f, DashPattern, 2);
     pGS->SetLineWidth(0, false);
 
@@ -124,7 +125,7 @@ void CXFA_FFField::SetEditScrollOffset() {
   XFA_Element eType = m_pDataAcc->GetUIType();
   if (eType == XFA_Element::TextEdit || eType == XFA_Element::NumericEdit ||
       eType == XFA_Element::PasswordEdit) {
-    FX_FLOAT fScrollOffset = 0;
+    float fScrollOffset = 0;
     CXFA_FFField* pPrev = static_cast<CXFA_FFField*>(GetPrev());
     if (pPrev) {
       CFX_RectF rtMargin = m_pDataAcc->GetUIMargin();
@@ -153,7 +154,7 @@ void CXFA_FFField::CapPlacement() {
   CXFA_Margin mgWidget = m_pDataAcc->GetMargin();
   if (mgWidget) {
     CXFA_LayoutItem* pItem = this;
-    FX_FLOAT fLeftInset = 0, fRightInset = 0, fTopInset = 0, fBottomInset = 0;
+    float fLeftInset = 0, fRightInset = 0, fTopInset = 0, fBottomInset = 0;
     mgWidget.GetLeftInset(fLeftInset);
     mgWidget.GetRightInset(fRightInset);
     mgWidget.GetTopInset(fTopInset);
@@ -171,7 +172,7 @@ void CXFA_FFField::CapPlacement() {
   }
 
   XFA_ATTRIBUTEENUM iCapPlacement = XFA_ATTRIBUTEENUM_Unknown;
-  FX_FLOAT fCapReserve = 0;
+  float fCapReserve = 0;
   CXFA_Caption caption = m_pDataAcc->GetCaption();
   if (caption && caption.GetPresence() != XFA_ATTRIBUTEENUM_Hidden) {
     iCapPlacement = (XFA_ATTRIBUTEENUM)caption.GetPlacementType();
@@ -260,8 +261,8 @@ void CXFA_FFField::CapTopBottomPlacement(CXFA_Caption caption,
       m_rtCaption.top += m_rtCaption.height;
     }
   }
-  FX_FLOAT fWidth = rtUIMargin.left + rtUIMargin.width;
-  FX_FLOAT fHeight = m_rtCaption.height + rtUIMargin.top + rtUIMargin.height;
+  float fWidth = rtUIMargin.left + rtUIMargin.width;
+  float fHeight = m_rtCaption.height + rtUIMargin.top + rtUIMargin.height;
   if (fWidth > rtWidget.width) {
     m_rtUI.width += fWidth - rtWidget.width;
   }
@@ -287,8 +288,8 @@ void CXFA_FFField::CapLeftRightPlacement(CXFA_Caption caption,
       m_rtCaption.top += m_rtCaption.height;
     }
   }
-  FX_FLOAT fWidth = m_rtCaption.width + rtUIMargin.left + rtUIMargin.width;
-  FX_FLOAT fHeight = rtUIMargin.top + rtUIMargin.height;
+  float fWidth = m_rtCaption.width + rtUIMargin.left + rtUIMargin.width;
+  float fHeight = rtUIMargin.top + rtUIMargin.height;
   if (fWidth > rtWidget.width) {
     m_rtUI.width += fWidth - rtWidget.width;
     if (iCapPlacement == XFA_ATTRIBUTEENUM_Right) {
@@ -323,7 +324,7 @@ void CXFA_FFField::SetFWLRect() {
   if (rtUi.width < 1.0)
     rtUi.width = 1.0;
   if (!m_pDataAcc->GetDoc()->GetXFADoc()->IsInteractive()) {
-    FX_FLOAT fFontSize = m_pDataAcc->GetFontSize();
+    float fFontSize = m_pDataAcc->GetFontSize();
     if (rtUi.height < fFontSize) {
       rtUi.height = fFontSize;
     }
@@ -563,7 +564,7 @@ void CXFA_FFField::LayoutCaption() {
   if (!pCapTextLayout)
     return;
 
-  FX_FLOAT fHeight = 0;
+  float fHeight = 0;
   pCapTextLayout->Layout(CFX_SizeF(m_rtCaption.width, m_rtCaption.height),
                          &fHeight);
   if (m_rtCaption.height < fHeight)

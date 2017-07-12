@@ -391,6 +391,25 @@ void InsertBuiltInFunctions(sh::GLenum type,
                                   float4);
     }
 
+    if (resources.EXT_YUV_target)
+    {
+        const TType *samplerExternal2DY2YEXT = TCache::getType(EbtSamplerExternal2DY2YEXT);
+
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float4, "texture",
+                                  samplerExternal2DY2YEXT, float2);
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float4, "textureProj",
+                                  samplerExternal2DY2YEXT, float3);
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float4, "textureProj",
+                                  samplerExternal2DY2YEXT, float4);
+
+        const TType *yuvCscStandardEXT = TCache::getType(EbtYuvCscStandardEXT);
+
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float3, "rgb_2_yuv", float3,
+                                  yuvCscStandardEXT);
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float3, "yuv_2_rgb", float3,
+                                  yuvCscStandardEXT);
+    }
+
     if (type == GL_FRAGMENT_SHADER)
     {
         symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "texture", gsampler2D, float2, float1);
@@ -412,6 +431,18 @@ void InsertBuiltInFunctions(sh::GLenum type,
                                       float3, float1);
             symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "textureProj", samplerExternalOES,
                                       float4, float1);
+        }
+
+        if (resources.EXT_YUV_target)
+        {
+            const TType *samplerExternal2DY2YEXT = TCache::getType(EbtSamplerExternal2DY2YEXT);
+
+            symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float4, "texture",
+                                      samplerExternal2DY2YEXT, float2, float1);
+            symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float4, "textureProj",
+                                      samplerExternal2DY2YEXT, float3, float1);
+            symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float4, "textureProj",
+                                      samplerExternal2DY2YEXT, float4, float1);
         }
     }
 
@@ -450,6 +481,14 @@ void InsertBuiltInFunctions(sh::GLenum type,
         const TType *samplerExternalOES = TCache::getType(EbtSamplerExternalOES);
 
         symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "textureSize", samplerExternalOES, int1);
+    }
+
+    if (resources.EXT_YUV_target)
+    {
+        const TType *samplerExternal2DY2YEXT = TCache::getType(EbtSamplerExternal2DY2YEXT);
+
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", int2, "textureSize",
+                                  samplerExternal2DY2YEXT, int1);
     }
 
     if (type == GL_FRAGMENT_SHADER)
@@ -530,6 +569,14 @@ void InsertBuiltInFunctions(sh::GLenum type,
 
         symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "texelFetch", samplerExternalOES, int2,
                                   int1);
+    }
+
+    if (resources.EXT_YUV_target)
+    {
+        const TType *samplerExternal2DY2YEXT = TCache::getType(EbtSamplerExternal2DY2YEXT);
+
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, "GL_EXT_YUV_target", float4, "texelFetch",
+                                  samplerExternal2DY2YEXT, int2, int1);
     }
 
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "texelFetchOffset", gsampler2D, int2, int1,
@@ -643,9 +690,9 @@ void InsertBuiltInFunctions(sh::GLenum type,
     symbolTable.insert(COMMON_BUILTINS, depthRangeParameters);
     TVariable *depthRange = new TVariable(NewPoolTString("gl_DepthRange"), TType(depthRangeStruct));
     depthRange->setQualifier(EvqUniform);
-    // Ensure we evaluate the mangled name for depth range, so we allocate to the current scope.
-    depthRangeParameters->getType().getMangledName();
-    depthRange->getType().getMangledName();
+    // Do lazy initialization for depth range, so we allocate to the current scope.
+    depthRangeParameters->getType().realize();
+    depthRange->getType().realize();
     symbolTable.insert(COMMON_BUILTINS, depthRange);
 
     //
@@ -905,6 +952,10 @@ void InitExtensionBehavior(const ShBuiltInResources &resources, TExtensionBehavi
     {
         extBehavior["GL_OVR_multiview"]  = EBhUndefined;
         extBehavior["GL_OVR_multiview2"] = EBhUndefined;
+    }
+    if (resources.EXT_YUV_target)
+    {
+        extBehavior["GL_EXT_YUV_target"] = EBhUndefined;
     }
 }
 

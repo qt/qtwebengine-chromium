@@ -24,9 +24,7 @@
 
 namespace webrtc {
 
-class CriticalSectionWrapper;
 class RtcEventLog;
-struct PacketInfo;
 
 // Deprecated
 // TODO(perkj): Remove BitrateObserver when no implementations use it.
@@ -55,11 +53,11 @@ class BitrateController : public Module {
   // Deprecated:
   // TODO(perkj): BitrateObserver has been deprecated and is not used in WebRTC.
   // Remove this method once other other projects does not use it.
-  static BitrateController* CreateBitrateController(Clock* clock,
+  static BitrateController* CreateBitrateController(const Clock* clock,
                                                     BitrateObserver* observer,
                                                     RtcEventLog* event_log);
 
-  static BitrateController* CreateBitrateController(Clock* clock,
+  static BitrateController* CreateBitrateController(const Clock* clock,
                                                     RtcEventLog* event_log);
 
   virtual ~BitrateController() {}

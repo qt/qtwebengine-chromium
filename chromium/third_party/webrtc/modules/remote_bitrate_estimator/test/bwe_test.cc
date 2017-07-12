@@ -380,7 +380,7 @@ void BweTest::RunFairnessTest(BandwidthEstimatorType bwe_type,
   PrintResults(capacity_kbps, total_utilization.GetBitrateStats(),
                flow_delay_ms, flow_throughput_kbps);
 
-  if (field_trial::IsEnabled("WebRTC-QuickPerfTest")) {
+  if (!field_trial::IsEnabled("WebRTC-QuickPerfTest")) {
     for (int i : all_flow_ids) {
       metric_recorders[i]->PlotThroughputHistogram(
           title, flow_name, static_cast<int>(num_media_flows), 0);
@@ -769,7 +769,8 @@ void BweTest::RunLongTcpFairness(BandwidthEstimatorType bwe_type) {
   // max_delay_ms = 1000;
 
   std::string title("5.6_Long_TCP_Fairness");
-  std::string flow_name(bwe_names[bwe_type] + 'x' + bwe_names[kTcpEstimator]);
+  std::string flow_name = std::string() +
+      bwe_names[bwe_type] + 'x' + bwe_names[kTcpEstimator];
 
   RunFairnessTest(bwe_type, kNumRmcatFlows, kNumTcpFlows, kRunTimeS,
                   kCapacityKbps, max_delay_ms, rtt_ms, kMaxJitterMs, kOffSetsMs,

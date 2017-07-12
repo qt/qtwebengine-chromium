@@ -1,4 +1,4 @@
-/* $Id: tif_strip.c,v 1.36 2015-06-07 22:35:40 bfriesen Exp $ */
+/* $Id: tif_strip.c,v 1.37 2016-11-09 23:00:49 erouault Exp $ */
 
 /*
  * Copyright (c) 1991-1997 Sam Leffler

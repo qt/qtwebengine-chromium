@@ -29,6 +29,7 @@
 namespace es2
 {
 	struct Color;
+	class Framebuffer;
 
 	unsigned int UniformComponentCount(GLenum type);
 	GLenum UniformComponentType(GLenum type);
@@ -46,7 +47,7 @@ namespace es2
 	GLenum ValidateCompressedFormat(GLenum format, GLint clientVersion, bool expectCompressedFormats);
 	GLenum ValidateSubImageParams(bool compressed, GLsizei width, GLsizei height, GLint xoffset, GLint yoffset, GLenum target, GLint level, GLenum sizedInternalFormat, Texture *texture);
 	GLenum ValidateSubImageParams(bool compressed, GLsizei width, GLsizei height, GLsizei depth, GLint xoffset, GLint yoffset, GLint zoffset, GLenum target, GLint level, GLenum sizedInternalFormat, Texture *texture);
-	bool ValidReadPixelsFormatType(GLenum internalFormat, GLenum internalType, GLenum format, GLenum type, GLint clientVersion);
+	bool IsValidReadPixelsFormatType(const Framebuffer *framebuffer, GLenum format, GLenum type, GLint clientVersion);
 	bool IsDepthTexture(GLenum format);
 	bool IsStencilTexture(GLenum format);
 	bool IsCubemapTextureTarget(GLenum target);
@@ -54,9 +55,9 @@ namespace es2
 	bool IsTextureTarget(GLenum target);
 	bool ValidateTextureFormatType(GLenum format, GLenum type, GLint internalformat, GLint clientVersion);
 
-	bool IsColorRenderable(GLenum internalformat, GLint clientVersion);
-	bool IsDepthRenderable(GLenum internalformat);
-	bool IsStencilRenderable(GLenum internalformat);
+	bool IsColorRenderable(GLenum internalformat, GLint clientVersion, bool isTexture);
+	bool IsDepthRenderable(GLenum internalformat, GLint clientVersion);
+	bool IsStencilRenderable(GLenum internalformat, GLint clientVersion);
 
 	// Parse the base uniform name and array index.  Returns the base name of the uniform. outSubscript is
 	// set to GL_INVALID_INDEX if the provided name is not an array or the array index is invalid.

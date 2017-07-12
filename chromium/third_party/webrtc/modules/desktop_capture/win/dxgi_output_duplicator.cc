@@ -33,8 +33,8 @@ namespace {
 // Timeout for AcquireNextFrame() call.
 // DxgiDuplicatorController leverages external components to do the capture
 // scheduling. So here DxgiOutputDuplicator does not need to actively wait for a
-// new frame. 1 millisecond is the minimium value AcquireNextFrame() accepts.
-const int kAcquireTimeoutMs = 1;
+// new frame.
+const int kAcquireTimeoutMs = 0;
 
 DesktopRect RECTToDesktopRect(const RECT& rect) {
   return DesktopRect::MakeLTRB(rect.left, rect.top, rect.right, rect.bottom);
@@ -67,7 +67,7 @@ DxgiOutputDuplicator::DxgiOutputDuplicator(const D3dDevice& device,
       desktop_rect_(RECTToDesktopRect(desc.DesktopCoordinates)) {
   RTC_DCHECK(output_);
   RTC_DCHECK(!desktop_rect_.is_empty());
-  RTC_DCHECK(desktop_rect_.left() >= 0 && desktop_rect_.top() >= 0);
+  RTC_DCHECK(desktop_rect_.width() > 0 && desktop_rect_.height() > 0);
 }
 
 DxgiOutputDuplicator::DxgiOutputDuplicator(DxgiOutputDuplicator&& other) =
@@ -301,20 +301,35 @@ bool DxgiOutputDuplicator::DoDetectUpdatedRegion(
   dirty_rects_count = buff_size / sizeof(RECT);
 
   while (move_rects_count > 0) {
-    updated_region->AddRect(
-        RotateRect(DesktopRect::MakeXYWH(move_rects->SourcePoint.x,
-                                         move_rects->SourcePoint.y,
-                                         move_rects->DestinationRect.right -
-                                             move_rects->DestinationRect.left,
-                                         move_rects->DestinationRect.bottom -
-                                             move_rects->DestinationRect.top),
-                   unrotated_size_, rotation_));
-    updated_region->AddRect(
-        RotateRect(DesktopRect::MakeLTRB(move_rects->DestinationRect.left,
-                                         move_rects->DestinationRect.top,
-                                         move_rects->DestinationRect.right,
-                                         move_rects->DestinationRect.bottom),
-                   unrotated_size_, rotation_));
+    // DirectX capturer API may randomly return unmoved move_rects, which should
+    // be skipped to avoid unnecessary wasting of differing and encoding
+    // resources.
+    // By using testing application it2me_standalone_host_main, this check
+    // reduces average capture time by 0.375% (4.07 -> 4.055), and average
+    // encode time by 0.313% (8.042 -> 8.016) without other impacts.
+    if (move_rects->SourcePoint.x != move_rects->DestinationRect.left ||
+        move_rects->SourcePoint.y != move_rects->DestinationRect.top) {
+      updated_region->AddRect(
+          RotateRect(DesktopRect::MakeXYWH(move_rects->SourcePoint.x,
+                                           move_rects->SourcePoint.y,
+                                           move_rects->DestinationRect.right -
+                                               move_rects->DestinationRect.left,
+                                           move_rects->DestinationRect.bottom -
+                                               move_rects->DestinationRect.top),
+                     unrotated_size_, rotation_));
+      updated_region->AddRect(
+          RotateRect(DesktopRect::MakeLTRB(move_rects->DestinationRect.left,
+                                           move_rects->DestinationRect.top,
+                                           move_rects->DestinationRect.right,
+                                           move_rects->DestinationRect.bottom),
+                     unrotated_size_, rotation_));
+    } else {
+      LOG(LS_INFO) << "Unmoved move_rect detected, ["
+                   << move_rects->DestinationRect.left << ", "
+                   << move_rects->DestinationRect.top << "] - ["
+                   << move_rects->DestinationRect.right << ", "
+                   << move_rects->DestinationRect.bottom << "].";
+    }
     move_rects++;
     move_rects_count--;
   }
@@ -364,6 +379,11 @@ int64_t DxgiOutputDuplicator::num_frames_captured() const {
   RTC_DCHECK_EQ(!!last_frame_, num_frames_captured_ > 0);
 #endif
   return num_frames_captured_;
+}
+
+void DxgiOutputDuplicator::TranslateRect(const DesktopVector& position) {
+  desktop_rect_.Translate(position);
+  RTC_DCHECK(desktop_rect_.left() >= 0 && desktop_rect_.top() >= 0);
 }
 
 }  // namespace webrtc

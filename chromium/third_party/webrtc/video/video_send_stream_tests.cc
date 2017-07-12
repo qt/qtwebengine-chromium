@@ -64,7 +64,7 @@ class VideoSendStreamTest : public test::CallTest {
 };
 
 TEST_F(VideoSendStreamTest, CanStartStartedStream) {
-  CreateSenderCall(Call::Config(&event_log_));
+  CreateSenderCall(Call::Config(event_log_.get()));
 
   test::NullTransport transport;
   CreateSendConfig(1, 0, 0, &transport);
@@ -75,7 +75,7 @@ TEST_F(VideoSendStreamTest, CanStartStartedStream) {
 }
 
 TEST_F(VideoSendStreamTest, CanStopStoppedStream) {
-  CreateSenderCall(Call::Config(&event_log_));
+  CreateSenderCall(Call::Config(event_log_.get()));
 
   test::NullTransport transport;
   CreateSendConfig(1, 0, 0, &transport);
@@ -438,8 +438,9 @@ class UlpfecObserver : public test::EndToEndTest {
     FakeNetworkPipe::Config config;
     config.loss_percent = 5;
     config.queue_delay_ms = kNetworkDelayMs;
-    return new test::PacketTransport(sender_call, this,
-                                     test::PacketTransport::kSender, config);
+    return new test::PacketTransport(
+        sender_call, this, test::PacketTransport::kSender,
+        VideoSendStreamTest::payload_type_map_, config);
   }
 
   void ModifyVideoConfigs(
@@ -517,14 +518,16 @@ TEST_F(VideoSendStreamTest, DoesUtilizeUlpfecForH264WithoutNackEnabled) {
   RunBaseTest(&test);
 }
 
-TEST_F(VideoSendStreamTest, DoesUtilizeUlpfecForVp8WithNackEnabled) {
+// Disabled as flaky, see https://crbug.com/webrtc/7285 for details.
+TEST_F(VideoSendStreamTest, DISABLED_DoesUtilizeUlpfecForVp8WithNackEnabled) {
   std::unique_ptr<VideoEncoder> encoder(VP8Encoder::Create());
   UlpfecObserver test(false, true, true, true, "VP8", encoder.get());
   RunBaseTest(&test);
 }
 
 #if !defined(RTC_DISABLE_VP9)
-TEST_F(VideoSendStreamTest, DoesUtilizeUlpfecForVp9WithNackEnabled) {
+// Disabled as flaky, see https://crbug.com/webrtc/7285 for details.
+TEST_F(VideoSendStreamTest, DISABLED_DoesUtilizeUlpfecForVp9WithNackEnabled) {
   std::unique_ptr<VideoEncoder> encoder(VP9Encoder::Create());
   UlpfecObserver test(false, true, true, true, "VP9", encoder.get());
   RunBaseTest(&test);
@@ -591,8 +594,9 @@ class FlexfecObserver : public test::EndToEndTest {
     FakeNetworkPipe::Config config;
     config.loss_percent = 5;
     config.queue_delay_ms = kNetworkDelayMs;
-    return new test::PacketTransport(sender_call, this,
-                                     test::PacketTransport::kSender, config);
+    return new test::PacketTransport(
+        sender_call, this, test::PacketTransport::kSender,
+        VideoSendStreamTest::payload_type_map_, config);
   }
 
   void ModifyVideoConfigs(
@@ -917,7 +921,7 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
     }
 
     Call::Config GetSenderCallConfig() override {
-      Call::Config config(&event_log_);
+      Call::Config config(event_log_.get());
       const int kMinBitrateBps = 30000;
       config.bitrate_config.min_bitrate_bps = kMinBitrateBps;
       return config;
@@ -1261,7 +1265,8 @@ TEST_F(VideoSendStreamTest, PaddingIsPrimarilyRetransmissions) {
       config.link_capacity_kbps = kCapacityKbps;
       config.queue_delay_ms = kNetworkDelayMs;
       return new test::PacketTransport(sender_call, this,
-                                       test::PacketTransport::kSender, config);
+                                       test::PacketTransport::kSender,
+                                       payload_type_map_, config);
     }
 
     void ModifyVideoConfigs(
@@ -1533,7 +1538,9 @@ class MaxPaddingSetTest : public test::SendTest {
         send_stream_config_(nullptr),
         packets_sent_(0),
         running_without_padding_(test_switch_content_type),
-        stream_resetter_(stream_reset_fun) {}
+        stream_resetter_(stream_reset_fun) {
+    RTC_DCHECK(stream_resetter_);
+  }
 
   void OnVideoStreamsCreated(
       VideoSendStream* send_stream,
@@ -1596,8 +1603,6 @@ class MaxPaddingSetTest : public test::SendTest {
     if (RunningWithoutPadding()) {
       ASSERT_TRUE(
           content_switch_event_.Wait(test::CallTest::kDefaultTimeoutMs));
-      rtc::CritScope lock(&crit_);
-      RTC_DCHECK(stream_resetter_);
       (*stream_resetter_)(send_stream_config_, encoder_config_);
     }
 
@@ -1707,7 +1712,7 @@ TEST_F(VideoSendStreamTest,
     int last_initialized_frame_height_ GUARDED_BY(&crit_);
   };
 
-  CreateSenderCall(Call::Config(&event_log_));
+  CreateSenderCall(Call::Config(event_log_.get()));
   test::NullTransport transport;
   CreateSendConfig(1, 0, 0, &transport);
   EncoderObserver encoder;
@@ -1763,7 +1768,7 @@ TEST_F(VideoSendStreamTest, CanReconfigureToUseStartBitrateAbovePreviousMax) {
     int start_bitrate_kbps_ GUARDED_BY(crit_);
   };
 
-  CreateSenderCall(Call::Config(&event_log_));
+  CreateSenderCall(Call::Config(event_log_.get()));
 
   test::NullTransport transport;
   CreateSendConfig(1, 0, 0, &transport);
@@ -1853,7 +1858,7 @@ TEST_F(VideoSendStreamTest, VideoSendStreamStopSetEncoderRateToZero) {
     rtc::Optional<int> bitrate_kbps_ GUARDED_BY(crit_);
   };
 
-  CreateSenderCall(Call::Config(&event_log_));
+  CreateSenderCall(Call::Config(event_log_.get()));
 
   test::NullTransport transport;
   CreateSendConfig(1, 0, 0, &transport);
@@ -1909,7 +1914,7 @@ TEST_F(VideoSendStreamTest, CapturesTextureAndVideoFrames) {
   };
 
   // Initialize send stream.
-  CreateSenderCall(Call::Config(&event_log_));
+  CreateSenderCall(Call::Config(event_log_.get()));
 
   test::NullTransport transport;
   CreateSendConfig(1, 0, 0, &transport);
@@ -1938,7 +1943,7 @@ TEST_F(VideoSendStreamTest, CapturesTextureAndVideoFrames) {
   video_send_stream_->Start();
   test::FrameForwarder forwarder;
   video_send_stream_->SetSource(
-      &forwarder, VideoSendStream::DegradationPreference::kBalanced);
+      &forwarder, VideoSendStream::DegradationPreference::kMaintainFramerate);
   for (size_t i = 0; i < input_frames.size(); i++) {
     forwarder.IncomingCapturedFrame(input_frames[i]);
     // Wait until the output frame is received before sending the next input
@@ -1947,7 +1952,7 @@ TEST_F(VideoSendStreamTest, CapturesTextureAndVideoFrames) {
   }
   video_send_stream_->Stop();
   video_send_stream_->SetSource(
-      nullptr, VideoSendStream::DegradationPreference::kBalanced);
+      nullptr, VideoSendStream::DegradationPreference::kMaintainFramerate);
 
   // Test if the input and output frames are the same. render_time_ms and
   // timestamp are not compared because capturer sets those values.
@@ -2541,7 +2546,7 @@ TEST_F(VideoSendStreamTest, ReconfigureBitratesSetsEncoderBitratesCorrectly) {
     }
 
     Call::Config GetSenderCallConfig() override {
-      Call::Config config(&event_log_);
+      Call::Config config(event_log_.get());
       config.bitrate_config.min_bitrate_bps = kMinBitrateKbps * 1000;
       config.bitrate_config.start_bitrate_bps = kStartBitrateKbps * 1000;
       config.bitrate_config.max_bitrate_bps = kMaxBitrateKbps * 1000;
@@ -2744,7 +2749,7 @@ class Vp9HeaderObserver : public test::SendTest {
   virtual void InspectHeader(const RTPVideoHeaderVP9& vp9) = 0;
 
  private:
-  const int kVp9PayloadType = 105;
+  const int kVp9PayloadType = test::CallTest::kVideoSendPayloadType;
 
   class VideoStreamFactory
       : public VideoEncoderConfig::VideoStreamFactoryInterface {
@@ -3149,7 +3154,13 @@ TEST_F(VideoSendStreamTest, Vp9NonFlexModeSmallResolution) {
   RunBaseTest(&test);
 }
 
-TEST_F(VideoSendStreamTest, Vp9FlexModeRefCount) {
+#if defined(WEBRTC_ANDROID)
+// Crashes on Android; bugs.webrtc.org/7401
+#define MAYBE_Vp9FlexModeRefCount DISABLED_Vp9FlexModeRefCount
+#else
+#define MAYBE_Vp9FlexModeRefCount Vp9FlexModeRefCount
+#endif
+TEST_F(VideoSendStreamTest, MAYBE_Vp9FlexModeRefCount) {
   class FlexibleMode : public Vp9HeaderObserver {
     void ModifyVideoConfigsHook(
         VideoSendStream::Config* send_config,
@@ -3177,7 +3188,7 @@ TEST_F(VideoSendStreamTest, Vp9FlexModeRefCount) {
 
 void VideoSendStreamTest::TestRequestSourceRotateVideo(
     bool support_orientation_ext) {
-  CreateSenderCall(Call::Config(&event_log_));
+  CreateSenderCall(Call::Config(event_log_.get()));
 
   test::NullTransport transport;
   CreateSendConfig(1, 0, 0, &transport);
@@ -3190,7 +3201,7 @@ void VideoSendStreamTest::TestRequestSourceRotateVideo(
   CreateVideoStreams();
   test::FrameForwarder forwarder;
   video_send_stream_->SetSource(
-      &forwarder, VideoSendStream::DegradationPreference::kBalanced);
+      &forwarder, VideoSendStream::DegradationPreference::kMaintainFramerate);
 
   EXPECT_TRUE(forwarder.sink_wants().rotation_applied !=
               support_orientation_ext);

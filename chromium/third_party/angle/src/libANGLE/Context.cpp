@@ -204,6 +204,11 @@ bool GetClientArraysEnabled(const egl::AttributeMap &attribs)
     return (attribs.get(EGL_CONTEXT_CLIENT_ARRAYS_ENABLED_ANGLE, EGL_TRUE) == EGL_TRUE);
 }
 
+bool GetRobustResourceInit(const egl::AttributeMap &attribs)
+{
+    return (attribs.get(EGL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE, EGL_FALSE) == EGL_TRUE);
+}
+
 std::string GetObjectLabelFromPointer(GLsizei length, const GLchar *label)
 {
     std::string labelName;
@@ -267,7 +272,8 @@ Context::Context(rx::EGLImplFactory *implFactory,
       mRobustAccess(GetRobustAccess(attribs)),
       mCurrentSurface(nullptr),
       mSurfacelessFramebuffer(nullptr),
-      mWebGLContext(GetWebGLContext(attribs))
+      mWebGLContext(GetWebGLContext(attribs)),
+      mScratchBuffer(1000u)
 {
     if (mRobustAccess)
     {
@@ -278,7 +284,8 @@ Context::Context(rx::EGLImplFactory *implFactory,
     initWorkarounds();
 
     mGLState.initialize(mCaps, mExtensions, getClientVersion(), GetDebug(attribs),
-                        GetBindGeneratesResource(attribs), GetClientArraysEnabled(attribs));
+                        GetBindGeneratesResource(attribs), GetClientArraysEnabled(attribs),
+                        GetRobustResourceInit(attribs));
 
     mFenceNVHandleAllocator.setBaseHandle(0);
 
@@ -313,6 +320,12 @@ Context::Context(rx::EGLImplFactory *implFactory,
         for (unsigned int i = 0; i < mCaps.maxAtomicCounterBufferBindings; i++)
         {
             bindIndexedAtomicCounterBuffer(0, i, 0, 0);
+        }
+
+        bindGenericShaderStorageBuffer(0);
+        for (unsigned int i = 0; i < mCaps.maxShaderStorageBufferBindings; i++)
+        {
+            bindIndexedShaderStorageBuffer(0, i, 0, 0);
         }
     }
 
@@ -800,6 +813,11 @@ void Context::deleteSampler(GLuint sampler)
 
 void Context::deleteTransformFeedback(GLuint transformFeedback)
 {
+    if (transformFeedback == 0)
+    {
+        return;
+    }
+
     auto iter = mTransformFeedbackMap.find(transformFeedback);
     if (iter != mTransformFeedbackMap.end())
     {
@@ -987,7 +1005,7 @@ void Context::bindDrawIndirectBuffer(GLuint bufferHandle)
 void Context::bindElementArrayBuffer(GLuint bufferHandle)
 {
     Buffer *buffer = mState.mBuffers->checkBufferAllocation(mImplementation.get(), bufferHandle);
-    mGLState.getVertexArray()->setElementArrayBuffer(buffer);
+    mGLState.setElementArrayBuffer(buffer);
 }
 
 void Context::bindTexture(GLenum target, GLuint handle)
@@ -1025,6 +1043,15 @@ void Context::bindVertexArray(GLuint vertexArrayHandle)
 {
     VertexArray *vertexArray = checkVertexArrayAllocation(vertexArrayHandle);
     mGLState.setVertexArrayBinding(vertexArray);
+}
+
+void Context::bindVertexBuffer(GLuint bindingIndex,
+                               GLuint bufferHandle,
+                               GLintptr offset,
+                               GLsizei stride)
+{
+    Buffer *buffer = mState.mBuffers->checkBufferAllocation(mImplementation.get(), bufferHandle);
+    mGLState.bindVertexBuffer(bindingIndex, buffer, offset, stride);
 }
 
 void Context::bindSampler(GLuint textureUnit, GLuint samplerHandle)
@@ -1078,6 +1105,21 @@ void Context::bindIndexedAtomicCounterBuffer(GLuint bufferHandle,
 {
     Buffer *buffer = mState.mBuffers->checkBufferAllocation(mImplementation.get(), bufferHandle);
     mGLState.setIndexedAtomicCounterBufferBinding(index, buffer, offset, size);
+}
+
+void Context::bindGenericShaderStorageBuffer(GLuint bufferHandle)
+{
+    Buffer *buffer = mState.mBuffers->checkBufferAllocation(mImplementation.get(), bufferHandle);
+    mGLState.setGenericShaderStorageBufferBinding(buffer);
+}
+
+void Context::bindIndexedShaderStorageBuffer(GLuint bufferHandle,
+                                             GLuint index,
+                                             GLintptr offset,
+                                             GLsizeiptr size)
+{
+    Buffer *buffer = mState.mBuffers->checkBufferAllocation(mImplementation.get(), bufferHandle);
+    mGLState.setIndexedShaderStorageBufferBinding(index, buffer, offset, size);
 }
 
 void Context::bindCopyReadBuffer(GLuint bufferHandle)
@@ -1534,7 +1576,7 @@ void Context::getIntegerv(GLenum pname, GLint *params)
           *params = mCaps.shaderStorageBufferOffsetAlignment;
           break;
       default:
-          mGLState.getIntegerv(mState, pname, params);
+          mGLState.getIntegerv(this, pname, params);
           break;
     }
 }
@@ -1650,6 +1692,62 @@ void Context::getBooleani_v(GLenum target, GLuint index, GLboolean *data)
     {
         CastIndexedStateValues(this, nativeType, target, index, numParams, data);
     }
+}
+
+void Context::getBufferParameteriv(GLenum target, GLenum pname, GLint *params)
+{
+    Buffer *buffer = mGLState.getTargetBuffer(target);
+    QueryBufferParameteriv(buffer, pname, params);
+}
+
+void Context::getFramebufferAttachmentParameteriv(GLenum target,
+                                                  GLenum attachment,
+                                                  GLenum pname,
+                                                  GLint *params)
+{
+    const Framebuffer *framebuffer = mGLState.getTargetFramebuffer(target);
+    QueryFramebufferAttachmentParameteriv(framebuffer, attachment, pname, params);
+}
+
+void Context::getRenderbufferParameteriv(GLenum target, GLenum pname, GLint *params)
+{
+    Renderbuffer *renderbuffer = mGLState.getCurrentRenderbuffer();
+    QueryRenderbufferiv(this, renderbuffer, pname, params);
+}
+
+void Context::getTexParameterfv(GLenum target, GLenum pname, GLfloat *params)
+{
+    Texture *texture = getTargetTexture(target);
+    QueryTexParameterfv(texture, pname, params);
+}
+
+void Context::getTexParameteriv(GLenum target, GLenum pname, GLint *params)
+{
+    Texture *texture = getTargetTexture(target);
+    QueryTexParameteriv(texture, pname, params);
+}
+void Context::texParameterf(GLenum target, GLenum pname, GLfloat param)
+{
+    Texture *texture = getTargetTexture(target);
+    SetTexParameterf(texture, pname, param);
+}
+
+void Context::texParameterfv(GLenum target, GLenum pname, const GLfloat *params)
+{
+    Texture *texture = getTargetTexture(target);
+    SetTexParameterfv(texture, pname, params);
+}
+
+void Context::texParameteri(GLenum target, GLenum pname, GLint param)
+{
+    Texture *texture = getTargetTexture(target);
+    SetTexParameteri(texture, pname, param);
+}
+
+void Context::texParameteriv(GLenum target, GLenum pname, const GLint *params)
+{
+    Texture *texture = getTargetTexture(target);
+    SetTexParameteriv(texture, pname, params);
 }
 
 void Context::drawArrays(GLenum mode, GLint first, GLsizei count)
@@ -1975,6 +2073,23 @@ void Context::programPathFragmentInputGen(GLuint program,
     programObject->pathFragmentInputGen(location, genMode, components, coeffs);
 }
 
+GLuint Context::getProgramResourceIndex(GLuint program, GLenum programInterface, const GLchar *name)
+{
+    const auto *programObject = getProgram(program);
+    return QueryProgramResourceIndex(programObject, programInterface, name);
+}
+
+void Context::getProgramResourceName(GLuint program,
+                                     GLenum programInterface,
+                                     GLuint index,
+                                     GLsizei bufSize,
+                                     GLsizei *length,
+                                     GLchar *name)
+{
+    const auto *programObject = getProgram(program);
+    QueryProgramResourceName(programObject, programInterface, index, bufSize, length, name);
+}
+
 void Context::handleError(const Error &error)
 {
     if (error.isError())
@@ -2271,10 +2386,7 @@ void Context::getSamplerParameterfv(GLuint sampler, GLenum pname, GLfloat *param
 void Context::programParameteri(GLuint program, GLenum pname, GLint value)
 {
     gl::Program *programObject = getProgram(program);
-    ASSERT(programObject != nullptr);
-
-    ASSERT(pname == GL_PROGRAM_BINARY_RETRIEVABLE_HINT);
-    programObject->setBinaryRetrievableHint(value != GL_FALSE);
+    SetProgramParameteri(programObject, pname, value);
 }
 
 void Context::initRendererString()
@@ -2404,6 +2516,16 @@ void Context::requestExtension(const char *name)
     // Re-create the compiler with the requested extensions enabled.
     SafeDelete(mCompiler);
     mCompiler = new Compiler(mImplementation.get(), mState);
+
+    // Invalidate all cached completenesses for textures and framebuffer. Some extensions make new
+    // formats renderable or sampleable.
+    mState.mTextures->invalidateTextureComplenessCache();
+    for (auto &zeroTexture : mZeroTextures)
+    {
+        zeroTexture.second->invalidateCompletenessCache();
+    }
+
+    mState.mFramebuffers->invalidateFramebufferComplenessCache();
 }
 
 size_t Context::getRequestableExtensionStringCount() const
@@ -2476,6 +2598,10 @@ void Context::initCaps(const egl::DisplayExtensions &displayExtensions)
 
     // Explicitly enable GL_ANGLE_robust_client_memory
     mExtensions.robustClientMemory = true;
+
+    // Determine robust resource init availability from EGL.
+    mExtensions.robustResourceInitialization =
+        displayExtensions.createContextRobustResourceInitialization;
 
     // Apply implementation limits
     mCaps.maxVertexAttributes = std::min<GLuint>(mCaps.maxVertexAttributes, MAX_VERTEX_ATTRIBS);
@@ -2556,7 +2682,7 @@ void Context::syncRendererState()
     const State::DirtyBits &dirtyBits = mGLState.getDirtyBits();
     mImplementation->syncState(dirtyBits);
     mGLState.clearDirtyBits();
-    mGLState.syncDirtyObjects();
+    mGLState.syncDirtyObjects(this);
 }
 
 void Context::syncRendererState(const State::DirtyBits &bitMask,
@@ -2565,8 +2691,7 @@ void Context::syncRendererState(const State::DirtyBits &bitMask,
     const State::DirtyBits &dirtyBits = (mGLState.getDirtyBits() & bitMask);
     mImplementation->syncState(dirtyBits);
     mGLState.clearDirtyBits(dirtyBits);
-
-    mGLState.syncDirtyObjects(objectMask);
+    mGLState.syncDirtyObjects(this, objectMask);
 }
 
 void Context::blitFramebuffer(GLint srcX0,
@@ -2667,7 +2792,7 @@ void Context::copyTexImage2D(GLenum target,
                              GLint border)
 {
     // Only sync the read FBO
-    mGLState.syncDirtyObject(GL_READ_FRAMEBUFFER);
+    mGLState.syncDirtyObject(this, GL_READ_FRAMEBUFFER);
 
     Rectangle sourceArea(x, y, width, height);
 
@@ -2692,7 +2817,7 @@ void Context::copyTexSubImage2D(GLenum target,
     }
 
     // Only sync the read FBO
-    mGLState.syncDirtyObject(GL_READ_FRAMEBUFFER);
+    mGLState.syncDirtyObject(this, GL_READ_FRAMEBUFFER);
 
     Offset destOffset(xoffset, yoffset, 0);
     Rectangle sourceArea(x, y, width, height);
@@ -2719,7 +2844,7 @@ void Context::copyTexSubImage3D(GLenum target,
     }
 
     // Only sync the read FBO
-    mGLState.syncDirtyObject(GL_READ_FRAMEBUFFER);
+    mGLState.syncDirtyObject(this, GL_READ_FRAMEBUFFER);
 
     Offset destOffset(xoffset, yoffset, zoffset);
     Rectangle sourceArea(x, y, width, height);
@@ -2845,7 +2970,7 @@ void Context::readBuffer(GLenum mode)
 void Context::discardFramebuffer(GLenum target, GLsizei numAttachments, const GLenum *attachments)
 {
     // Only sync the FBO
-    mGLState.syncDirtyObject(target);
+    mGLState.syncDirtyObject(this, target);
 
     Framebuffer *framebuffer = mGLState.getTargetFramebuffer(target);
     ASSERT(framebuffer);
@@ -2860,12 +2985,12 @@ void Context::invalidateFramebuffer(GLenum target,
                                     const GLenum *attachments)
 {
     // Only sync the FBO
-    mGLState.syncDirtyObject(target);
+    mGLState.syncDirtyObject(this, target);
 
     Framebuffer *framebuffer = mGLState.getTargetFramebuffer(target);
     ASSERT(framebuffer);
 
-    if (framebuffer->checkStatus(mState) != GL_FRAMEBUFFER_COMPLETE)
+    if (framebuffer->checkStatus(this) != GL_FRAMEBUFFER_COMPLETE)
     {
         return;
     }
@@ -2882,12 +3007,12 @@ void Context::invalidateSubFramebuffer(GLenum target,
                                        GLsizei height)
 {
     // Only sync the FBO
-    mGLState.syncDirtyObject(target);
+    mGLState.syncDirtyObject(this, target);
 
     Framebuffer *framebuffer = mGLState.getTargetFramebuffer(target);
     ASSERT(framebuffer);
 
-    if (framebuffer->checkStatus(mState) != GL_FRAMEBUFFER_COMPLETE)
+    if (framebuffer->checkStatus(this) != GL_FRAMEBUFFER_COMPLETE)
     {
         return;
     }
@@ -3077,7 +3202,10 @@ void Context::generateMipmap(GLenum target)
 }
 
 void Context::copyTextureCHROMIUM(GLuint sourceId,
+                                  GLint sourceLevel,
+                                  GLenum destTarget,
                                   GLuint destId,
+                                  GLint destLevel,
                                   GLint internalFormat,
                                   GLenum destType,
                                   GLboolean unpackFlipY,
@@ -3088,13 +3216,16 @@ void Context::copyTextureCHROMIUM(GLuint sourceId,
 
     gl::Texture *sourceTexture = getTexture(sourceId);
     gl::Texture *destTexture   = getTexture(destId);
-    handleError(destTexture->copyTexture(this, internalFormat, destType, unpackFlipY == GL_TRUE,
-                                         unpackPremultiplyAlpha == GL_TRUE,
-                                         unpackUnmultiplyAlpha == GL_TRUE, sourceTexture));
+    handleError(destTexture->copyTexture(
+        this, destTarget, destLevel, internalFormat, destType, sourceLevel, unpackFlipY == GL_TRUE,
+        unpackPremultiplyAlpha == GL_TRUE, unpackUnmultiplyAlpha == GL_TRUE, sourceTexture));
 }
 
 void Context::copySubTextureCHROMIUM(GLuint sourceId,
+                                     GLint sourceLevel,
+                                     GLenum destTarget,
                                      GLuint destId,
+                                     GLint destLevel,
                                      GLint xoffset,
                                      GLint yoffset,
                                      GLint x,
@@ -3117,9 +3248,9 @@ void Context::copySubTextureCHROMIUM(GLuint sourceId,
     gl::Texture *destTexture   = getTexture(destId);
     Offset offset(xoffset, yoffset, 0);
     Rectangle area(x, y, width, height);
-    handleError(destTexture->copySubTexture(this, offset, area, unpackFlipY == GL_TRUE,
-                                            unpackPremultiplyAlpha == GL_TRUE,
-                                            unpackUnmultiplyAlpha == GL_TRUE, sourceTexture));
+    handleError(destTexture->copySubTexture(
+        this, destTarget, destLevel, offset, sourceLevel, area, unpackFlipY == GL_TRUE,
+        unpackPremultiplyAlpha == GL_TRUE, unpackUnmultiplyAlpha == GL_TRUE, sourceTexture));
 }
 
 void Context::compressedCopyTextureCHROMIUM(GLuint sourceId, GLuint destId)
@@ -3505,6 +3636,34 @@ void Context::vertexAttribPointer(GLuint index,
                                   normalized == GL_TRUE, false, stride, ptr);
 }
 
+void Context::vertexAttribFormat(GLuint attribIndex,
+                                 GLint size,
+                                 GLenum type,
+                                 GLboolean normalized,
+                                 GLuint relativeOffset)
+{
+    mGLState.setVertexAttribFormat(attribIndex, size, type, normalized == GL_TRUE, false,
+                                   relativeOffset);
+}
+
+void Context::vertexAttribIFormat(GLuint attribIndex,
+                                  GLint size,
+                                  GLenum type,
+                                  GLuint relativeOffset)
+{
+    mGLState.setVertexAttribFormat(attribIndex, size, type, false, true, relativeOffset);
+}
+
+void Context::vertexAttribBinding(GLuint attribIndex, GLuint bindingIndex)
+{
+    mGLState.setVertexAttribBinding(attribIndex, bindingIndex);
+}
+
+void Context::setVertexBindingDivisor(GLuint bindingIndex, GLuint divisor)
+{
+    mGLState.setVertexBindingDivisor(bindingIndex, divisor);
+}
+
 void Context::viewport(GLint x, GLint y, GLsizei width, GLsizei height)
 {
     mGLState.setViewportParams(x, y, width, height);
@@ -3727,11 +3886,7 @@ void Context::bindBuffer(GLenum target, GLuint buffer)
             bindGenericAtomicCounterBuffer(buffer);
             break;
         case GL_SHADER_STORAGE_BUFFER:
-            if (buffer != 0)
-            {
-                // Binding buffers to this binding point is not implemented yet.
-                UNIMPLEMENTED();
-            }
+            bindGenericShaderStorageBuffer(buffer);
             break;
         case GL_DRAW_INDIRECT_BUFFER:
             bindDrawIndirectBuffer(buffer);
@@ -3776,11 +3931,8 @@ void Context::bindBufferRange(GLenum target,
             bindGenericAtomicCounterBuffer(buffer);
             break;
         case GL_SHADER_STORAGE_BUFFER:
-            if (buffer != 0)
-            {
-                // Binding buffers to this binding point is not implemented yet.
-                UNIMPLEMENTED();
-            }
+            bindIndexedShaderStorageBuffer(buffer, index, offset, size);
+            bindGenericShaderStorageBuffer(buffer);
             break;
         default:
             UNREACHABLE();
@@ -3824,7 +3976,7 @@ void Context::texStorage2DMultisample(GLenum target,
 
 void Context::getMultisamplefv(GLenum pname, GLuint index, GLfloat *val)
 {
-    mGLState.syncDirtyObject(GL_READ_FRAMEBUFFER);
+    mGLState.syncDirtyObject(this, GL_READ_FRAMEBUFFER);
     const Framebuffer *framebuffer = mGLState.getReadFramebuffer();
 
     switch (pname)
@@ -3863,6 +4015,12 @@ void Context::renderbufferStorageMultisample(GLenum target,
         renderbuffer->setStorageMultisample(samples, convertedInternalFormat, width, height));
 }
 
+void Context::getSynciv(GLsync sync, GLenum pname, GLsizei bufSize, GLsizei *length, GLint *values)
+{
+    const FenceSync *syncObject = getFenceSync(sync);
+    handleError(QuerySynciv(syncObject, pname, bufSize, length, values));
+}
+
 void Context::getFramebufferParameteriv(GLenum target, GLenum pname, GLint *params)
 {
     Framebuffer *framebuffer = mGLState.getTargetFramebuffer(target);
@@ -3873,6 +4031,25 @@ void Context::setFramebufferParameteri(GLenum target, GLenum pname, GLint param)
 {
     Framebuffer *framebuffer = mGLState.getTargetFramebuffer(target);
     SetFramebufferParameteri(framebuffer, pname, param);
+}
+
+Error Context::getScratchBuffer(size_t requestedSize, angle::MemoryBuffer **scratchBufferOut) const
+{
+    if (!mScratchBuffer.get(requestedSize, scratchBufferOut))
+    {
+        return gl::OutOfMemory() << "Failed to allocate internal buffer.";
+    }
+    return gl::NoError();
+}
+
+void Context::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ)
+{
+    if (numGroupsX == 0u || numGroupsY == 0u || numGroupsZ == 0u)
+    {
+        return;
+    }
+
+    mImplementation->dispatchCompute(numGroupsX, numGroupsY, numGroupsZ);
 }
 
 }  // namespace gl

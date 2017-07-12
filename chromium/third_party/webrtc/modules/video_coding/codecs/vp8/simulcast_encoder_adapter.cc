@@ -18,7 +18,7 @@
 #include "webrtc/api/video/i420_buffer.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/modules/video_coding/codecs/vp8/screenshare_layers.h"
-#include "webrtc/modules/video_coding/utility/simulcast_rate_allocator.h"
+#include "webrtc/modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
 #include "webrtc/system_wrappers/include/clock.h"
 
 namespace {
@@ -73,9 +73,6 @@ int VerifyCodec(const webrtc::VideoCodec* inst) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
   if (inst->width <= 1 || inst->height <= 1) {
-    return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
-  }
-  if (inst->VP8().feedbackModeOn && inst->numberOfSimulcastStreams > 1) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
   if (inst->VP8().automaticResizeOn && inst->numberOfSimulcastStreams > 1) {

@@ -31,21 +31,39 @@ void CPDF_LinkExtract::ExtractLinks() {
 }
 
 void CPDF_LinkExtract::ParseLink() {
-  int start = 0, pos = 0;
-  int TotalChar = m_pTextPage->CountChars();
-  while (pos < TotalChar) {
+  int start = 0;
+  int pos = 0;
+  int nTotalChar = m_pTextPage->CountChars();
+  bool bAfterHyphen = false;
+  bool bLineBreak = false;
+  while (pos < nTotalChar) {
     FPDF_CHAR_INFO pageChar;
     m_pTextPage->GetCharInfo(pos, &pageChar);
     if (pageChar.m_Flag == FPDFTEXT_CHAR_GENERATED ||
-        pageChar.m_Unicode == 0x20 || pos == TotalChar - 1) {
+        pageChar.m_Unicode == TEXT_SPACE_CHAR || pos == nTotalChar - 1) {
       int nCount = pos - start;
-      if (pos == TotalChar - 1)
+      if (pos == nTotalChar - 1) {
         nCount++;
+      } else if (bAfterHyphen && (pageChar.m_Unicode == TEXT_LINEFEED_CHAR ||
+                                  pageChar.m_Unicode == TEXT_RETURN_CHAR)) {
+        // Handle text breaks with a hyphen to the next line.
+        bLineBreak = true;
+        pos++;
+        continue;
+      }
       CFX_WideString strBeCheck;
       strBeCheck = m_pTextPage->GetPageText(start, nCount);
+      if (bLineBreak) {
+        strBeCheck.Remove(TEXT_LINEFEED_CHAR);
+        strBeCheck.Remove(TEXT_RETURN_CHAR);
+        bLineBreak = false;
+      }
+      // Replace the generated code with the hyphen char.
+      strBeCheck.Replace(L"\xfffe", TEXT_HYPHEN);
+
       if (strBeCheck.GetLength() > 5) {
         while (strBeCheck.GetLength() > 0) {
-          FX_WCHAR ch = strBeCheck.GetAt(strBeCheck.GetLength() - 1);
+          wchar_t ch = strBeCheck.GetAt(strBeCheck.GetLength() - 1);
           if (ch == L')' || ch == L',' || ch == L'>' || ch == L'.') {
             strBeCheck = strBeCheck.Mid(0, strBeCheck.GetLength() - 1);
             nCount--;
@@ -60,6 +78,9 @@ void CPDF_LinkExtract::ParseLink() {
       }
       start = ++pos;
     } else {
+      bAfterHyphen = (pageChar.m_Flag == FPDFTEXT_CHAR_HYPHEN ||
+                      (pageChar.m_Flag == FPDFTEXT_CHAR_NORMAL &&
+                       pageChar.m_Unicode == TEXT_HYPHEN_CHAR));
       pos++;
     }
   }
@@ -101,7 +122,7 @@ bool CPDF_LinkExtract::CheckMailLink(CFX_WideString& str) {
   // Check the local part.
   int pPos = aPos;  // Used to track the position of '@' or '.'.
   for (int i = aPos - 1; i >= 0; i--) {
-    FX_WCHAR ch = str.GetAt(i);
+    wchar_t ch = str.GetAt(i);
     if (ch == L'_' || ch == L'-' || FXSYS_iswalnum(ch))
       continue;
 
@@ -137,7 +158,7 @@ bool CPDF_LinkExtract::CheckMailLink(CFX_WideString& str) {
   int nLen = str.GetLength();
   pPos = 0;  // Used to track the position of '.'.
   for (int i = aPos + 1; i < nLen; i++) {
-    FX_WCHAR wch = str.GetAt(i);
+    wchar_t wch = str.GetAt(i);
     if (wch == L'-' || FXSYS_iswalnum(wch))
       continue;
 

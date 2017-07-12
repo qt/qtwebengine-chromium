@@ -129,6 +129,10 @@ config("ffmpegsumo_warnings") {
       # autorename_libavformat_utils.c
       "-Wno-sometimes-uninitialized",
 
+      # clock_gettime is marked as 10.12+ in the 10.12 SDK, but ffmpeg does
+      # correctly check for that before calling.
+      "-Wno-unguarded-availability",
+
       # ffmpeg contains static functions in header files, which lead
       # to unused function warnings. There are a few legit unused
       # functions too.
@@ -180,7 +184,6 @@ target(link_target_type, "ffmpeg_internal") {
     # with it disabled (in the case of av_dup_packet()), and has no FF_API*
     # gate for avcodec_encode_{audio,video}2() or AVStream.codec.  In the
     # meantime, we directly disable those warnings locally in the C files.
-
   ]
 
   # So we can append below and assume they're defined.
@@ -221,6 +224,16 @@ target(link_target_type, "ffmpeg_internal") {
     configs += [ "//build/config/compiler:optimize_no_wpo" ]
   } else {
     configs += [ "//build/config/compiler:optimize_max" ]
+  }
+
+  if (!is_clang) {
+    if (is_posix) {
+      # GCC didn't add stdatomic.h until version 4.9.
+      include_dirs += [ "compat/atomics/gcc" ]
+    } else if (is_win) {
+      # Windows doesn't provide stdatomic.h, so use the compat version.
+      include_dirs += [ "compat/atomics/win32" ]
+    }
   }
 
   if (is_posix) {

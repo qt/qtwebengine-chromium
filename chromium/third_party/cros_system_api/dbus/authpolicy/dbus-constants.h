@@ -16,7 +16,8 @@ const char kAuthPolicyJoinADDomain[] = "JoinADDomain";
 const char kAuthPolicyRefreshUserPolicy[] = "RefreshUserPolicy";
 const char kAuthPolicyRefreshDevicePolicy[] = "RefreshDevicePolicy";
 
-// Enum values.
+// D-Bus call error codes. These values are written to logs. New enum values can
+// be added, but existing enums must never be renumbered or deleted and reused.
 enum ErrorType {
   // Everything is A-OK!
   ERROR_NONE = 0,
@@ -66,6 +67,12 @@ enum ErrorType {
   ERROR_USER_HIT_JOIN_QUOTA = 22,
   // Kinit or smbclient failed to contact Key Distribution Center.
   ERROR_CONTACTING_KDC_FAILED = 23,
+  // Kerberos credentials cache not found.
+  ERROR_NO_CREDENTIALS_CACHE_FOUND = 24,
+  // Kerberos ticket expired while renewing credentials.
+  ERROR_KERBEROS_TICKET_EXPIRED = 25,
+  // klist exited with unspecified error.
+  ERROR_KLIST_FAILED = 26,
   // Should be the last.
   ERROR_COUNT,
 };

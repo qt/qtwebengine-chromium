@@ -8,10 +8,11 @@
 
 #include "fxjs/cfxjse_class.h"
 #include "fxjs/cfxjse_value.h"
+#include "third_party/base/ptr_util.h"
 
 namespace {
 
-const FX_CHAR szCompatibleModeScript[] =
+const char szCompatibleModeScript[] =
     "(function(global, list) {\n"
     "  'use strict';\n"
     "  var objname;\n"
@@ -187,7 +188,7 @@ CFXJSE_Context::CFXJSE_Context(v8::Isolate* pIsolate) : m_pIsolate(pIsolate) {}
 CFXJSE_Context::~CFXJSE_Context() {}
 
 std::unique_ptr<CFXJSE_Value> CFXJSE_Context::GetGlobalObject() {
-  std::unique_ptr<CFXJSE_Value> pValue(new CFXJSE_Value(m_pIsolate));
+  auto pValue = pdfium::MakeUnique<CFXJSE_Value>(m_pIsolate);
 
   CFXJSE_ScopeUtil_IsolateHandleContext scope(this);
   v8::Local<v8::Context> hContext =
@@ -202,7 +203,7 @@ void CFXJSE_Context::EnableCompatibleMode() {
   ExecuteScript(szCompatibleModeScript, nullptr, nullptr);
 }
 
-bool CFXJSE_Context::ExecuteScript(const FX_CHAR* szScript,
+bool CFXJSE_Context::ExecuteScript(const char* szScript,
                                    CFXJSE_Value* lpRetValue,
                                    CFXJSE_Value* lpNewThisObject) {
   CFXJSE_ScopeUtil_IsolateHandleContext scope(this);

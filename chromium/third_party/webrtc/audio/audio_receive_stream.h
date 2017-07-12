@@ -12,6 +12,7 @@
 #define WEBRTC_AUDIO_AUDIO_RECEIVE_STREAM_H_
 
 #include <memory>
+#include <vector>
 
 #include "webrtc/api/audio/audio_mixer.h"
 #include "webrtc/audio/audio_state.h"
@@ -46,8 +47,10 @@ class AudioReceiveStream final : public webrtc::AudioReceiveStream,
   void Start() override;
   void Stop() override;
   webrtc::AudioReceiveStream::Stats GetStats() const override;
+  int GetOutputLevel() const override;
   void SetSink(std::unique_ptr<AudioSinkInterface> sink) override;
   void SetGain(float gain) override;
+  std::vector<webrtc::RtpSource> GetSources() const override;
 
   // TODO(nisse): Intended to be part of an RtpPacketReceiver interface.
   void OnRtpPacket(const RtpPacketReceived& packet);

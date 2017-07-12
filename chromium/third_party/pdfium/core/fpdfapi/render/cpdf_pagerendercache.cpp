@@ -48,7 +48,7 @@ void CPDF_PageRenderCache::CacheOptimization(int32_t dwLimitCacheSize) {
     pCACHEINFO[i].time = it.second->GetTimeCount();
     pCACHEINFO[i++].pStream = it.second->GetStream();
   }
-  FXSYS_qsort(pCACHEINFO, nCount, sizeof(CACHEINFO), compare);
+  qsort(pCACHEINFO, nCount, sizeof(CACHEINFO), compare);
   uint32_t nTimeCount = m_nTimeCount;
 
   // Check if time value is about to roll over and reset all entries.
@@ -124,8 +124,9 @@ bool CPDF_PageRenderCache::Continue(IFX_Pause* pPause) {
   return false;
 }
 
-void CPDF_PageRenderCache::ResetBitmap(CPDF_Stream* pStream,
-                                       const CFX_DIBitmap* pBitmap) {
+void CPDF_PageRenderCache::ResetBitmap(
+    CPDF_Stream* pStream,
+    const CFX_RetainPtr<CFX_DIBitmap>& pBitmap) {
   CPDF_ImageCacheEntry* pEntry;
   const auto it = m_ImageCache.find(pStream);
   if (it == m_ImageCache.end()) {

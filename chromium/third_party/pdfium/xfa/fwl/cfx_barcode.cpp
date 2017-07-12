@@ -6,17 +6,17 @@
 
 #include "xfa/fwl/cfx_barcode.h"
 
-#include "xfa/fxbarcode/cbc_codabar.h"
-#include "xfa/fxbarcode/cbc_code128.h"
-#include "xfa/fxbarcode/cbc_code39.h"
-#include "xfa/fxbarcode/cbc_codebase.h"
-#include "xfa/fxbarcode/cbc_datamatrix.h"
-#include "xfa/fxbarcode/cbc_ean13.h"
-#include "xfa/fxbarcode/cbc_ean8.h"
-#include "xfa/fxbarcode/cbc_pdf417i.h"
-#include "xfa/fxbarcode/cbc_qrcode.h"
-#include "xfa/fxbarcode/cbc_upca.h"
-#include "xfa/fxbarcode/utils.h"
+#include "fxbarcode/cbc_codabar.h"
+#include "fxbarcode/cbc_code128.h"
+#include "fxbarcode/cbc_code39.h"
+#include "fxbarcode/cbc_codebase.h"
+#include "fxbarcode/cbc_datamatrix.h"
+#include "fxbarcode/cbc_ean13.h"
+#include "fxbarcode/cbc_ean8.h"
+#include "fxbarcode/cbc_pdf417i.h"
+#include "fxbarcode/cbc_qrcode.h"
+#include "fxbarcode/cbc_upca.h"
+#include "fxbarcode/utils.h"
 
 namespace {
 
@@ -160,7 +160,7 @@ bool CFX_Barcode::SetFont(CFX_Font* pFont) {
   }
 }
 
-bool CFX_Barcode::SetFontSize(FX_FLOAT size) {
+bool CFX_Barcode::SetFontSize(float size) {
   switch (GetType()) {
     case BC_CODE39:
     case BC_CODABAR:
@@ -235,8 +235,8 @@ bool CFX_Barcode::SetWideNarrowRatio(int32_t ratio) {
   return m_pBCEngine && memptr ? (m_pBCEngine.get()->*memptr)(ratio) : false;
 }
 
-bool CFX_Barcode::SetStartChar(FX_CHAR start) {
-  typedef bool (CBC_CodeBase::*memptrtype)(FX_CHAR);
+bool CFX_Barcode::SetStartChar(char start) {
+  typedef bool (CBC_CodeBase::*memptrtype)(char);
   memptrtype memptr = nullptr;
   switch (GetType()) {
     case BC_CODABAR:
@@ -248,8 +248,8 @@ bool CFX_Barcode::SetStartChar(FX_CHAR start) {
   return m_pBCEngine && memptr ? (m_pBCEngine.get()->*memptr)(start) : false;
 }
 
-bool CFX_Barcode::SetEndChar(FX_CHAR end) {
-  typedef bool (CBC_CodeBase::*memptrtype)(FX_CHAR);
+bool CFX_Barcode::SetEndChar(char end) {
+  typedef bool (CBC_CodeBase::*memptrtype)(char);
   memptrtype memptr = nullptr;
   switch (GetType()) {
     case BC_CODABAR:
@@ -259,19 +259,6 @@ bool CFX_Barcode::SetEndChar(FX_CHAR end) {
       break;
   }
   return m_pBCEngine && memptr ? (m_pBCEngine.get()->*memptr)(end) : false;
-}
-
-bool CFX_Barcode::SetVersion(int32_t version) {
-  typedef bool (CBC_CodeBase::*memptrtype)(int32_t);
-  memptrtype memptr = nullptr;
-  switch (GetType()) {
-    case BC_QR_CODE:
-      memptr = (memptrtype)&CBC_QRCode::SetVersion;
-      break;
-    default:
-      break;
-  }
-  return m_pBCEngine && memptr ? (m_pBCEngine.get()->*memptr)(version) : false;
 }
 
 bool CFX_Barcode::SetErrorCorrectionLevel(int32_t level) {

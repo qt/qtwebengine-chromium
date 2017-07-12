@@ -15,7 +15,6 @@
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
-#include "core/fxge/dib/dib_int.h"
 #include "core/fxge/fx_freetype.h"
 #include "core/fxge/ge/fx_text_int.h"
 #include "third_party/base/ptr_util.h"
@@ -25,7 +24,7 @@
 #error Expected CGFLOAT_IS_DOUBLE to be defined by CoreGraphics headers
 #endif
 
-void* CQuartz2D::createGraphics(CFX_DIBitmap* pBitmap) {
+void* CQuartz2D::createGraphics(const CFX_RetainPtr<CFX_DIBitmap>& pBitmap) {
   if (!pBitmap)
     return nullptr;
   CGBitmapInfo bmpInfo = kCGBitmapByteOrder32Little;
@@ -77,7 +76,7 @@ void CQuartz2D::setGraphicsTextMatrix(void* graphics, CFX_Matrix* matrix) {
 
 bool CQuartz2D::drawGraphicsString(void* graphics,
                                    void* font,
-                                   FX_FLOAT fontSize,
+                                   float fontSize,
                                    uint16_t* glyphIndices,
                                    CGPoint* glyphPositions,
                                    int32_t charsCount,

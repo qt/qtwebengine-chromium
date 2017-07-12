@@ -17,7 +17,7 @@ void OutputFunction(TInfoSinkBase &out, const char *str, TFunctionSymbolInfo *in
 {
     const char *internal = info->getNameObj().isInternal() ? " (internal function)" : "";
     out << str << internal << ": " << info->getNameObj().getString() << " (symbol id "
-        << info->getId() << ")";
+        << info->getId().get() << ")";
 }
 
 //
@@ -609,9 +609,14 @@ void TOutputTraverser::visitConstantUnion(TIntermConstantUnion *node)
                 out << node->getUnionArrayPointer()[i].getUConst();
                 out << " (const uint)\n";
                 break;
+            case EbtYuvCscStandardEXT:
+                out << getYuvCscStandardEXTString(
+                    node->getUnionArrayPointer()[i].getYuvCscStandardEXTConst());
+                out << " (const yuvCscStandardEXT)\n";
+                break;
             default:
                 out.prefix(SH_ERROR);
-                out << "Unknown constant";
+                out << "Unknown constant\n";
                 break;
         }
     }

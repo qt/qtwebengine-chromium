@@ -21,12 +21,13 @@
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
-#include "xfa/fxfa/parser/xfa_localevalue.h"
-#include "xfa/fxfa/xfa_ffapp.h"
-#include "xfa/fxfa/xfa_ffdoc.h"
-#include "xfa/fxfa/xfa_ffdocview.h"
-#include "xfa/fxfa/xfa_ffpageview.h"
-#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_ffdocview.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/parser/cxfa_localevalue.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
 CXFA_FFTextEdit::CXFA_FFTextEdit(CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFField(pDataAcc), m_pOldDelegate(nullptr) {}
@@ -521,10 +522,9 @@ bool CXFA_FFDateTimeEdit::LoadWidget() {
       case XFA_Element::Date: {
         if (!wsText.IsEmpty()) {
           CXFA_LocaleValue lcValue = XFA_GetLocaleValue(m_pDataAcc);
-          CFX_Unitime date = lcValue.GetDate();
-          if ((FX_UNITIME)date != 0) {
+          CFX_DateTime date = lcValue.GetDate();
+          if (date.IsSet())
             pWidget->SetCurSel(date.GetYear(), date.GetMonth(), date.GetDay());
-          }
         }
       } break;
       default:
@@ -618,10 +618,10 @@ bool CXFA_FFDateTimeEdit::UpdateFWLData() {
   ((CFWL_DateTimePicker*)m_pNormalWidget)->SetEditText(wsText);
   if (IsFocused() && !wsText.IsEmpty()) {
     CXFA_LocaleValue lcValue = XFA_GetLocaleValue(m_pDataAcc);
-    CFX_Unitime date = lcValue.GetDate();
+    CFX_DateTime date = lcValue.GetDate();
     if (lcValue.IsValid()) {
-      if ((FX_UNITIME)date != 0) {
-        ((CFWL_DateTimePicker*)m_pNormalWidget)
+      if (date.IsSet()) {
+        static_cast<CFWL_DateTimePicker*>(m_pNormalWidget)
             ->SetCurSel(date.GetYear(), date.GetMonth(), date.GetDay());
       }
     }
@@ -647,9 +647,8 @@ void CXFA_FFDateTimeEdit::OnSelectChanged(CFWL_Widget* pWidget,
   CFX_WideString wsPicture;
   m_pDataAcc->GetPictureContent(wsPicture, XFA_VALUEPICTURE_Edit);
   CXFA_LocaleValue date(XFA_VT_DATE, GetDoc()->GetXFADoc()->GetLocalMgr());
-  CFX_Unitime dt;
-  dt.Set(iYear, iMonth, iDay);
-  date.SetDate(dt);
+  date.SetDate(CFX_DateTime(iYear, iMonth, iDay, 0, 0, 0, 0));
+
   CFX_WideString wsDate;
   date.FormatPatterns(wsDate, wsPicture, m_pDataAcc->GetLocal(),
                       XFA_VALUEPICTURE_Edit);

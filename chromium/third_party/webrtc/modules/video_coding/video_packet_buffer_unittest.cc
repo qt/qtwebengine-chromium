@@ -212,7 +212,7 @@ TEST_F(TestPacketBuffer, ExpandBufferOverflow) {
 
   for (int i = 0; i < kMaxSize; ++i)
     EXPECT_TRUE(Insert(seq_num + i, kKeyFrame, kFirst, kLast));
-  EXPECT_FALSE(Insert(seq_num + kMaxSize + 1, kKeyFrame, kFirst, kLast));
+  EXPECT_TRUE(Insert(seq_num + kMaxSize + 1, kKeyFrame, kFirst, kLast));
 }
 
 TEST_F(TestPacketBuffer, OnePacketOneFrame) {
@@ -465,7 +465,7 @@ TEST_F(TestPacketBuffer, DontLeakPayloadData) {
   EXPECT_FALSE(Insert(1, kKeyFrame, kFirst, kNotLast, 5, data3));
 
   // Expect to free data4 upon insertion (packet buffer is full).
-  EXPECT_FALSE(Insert(2 + kMaxSize, kKeyFrame, kFirst, kNotLast, 5, data4));
+  EXPECT_TRUE(Insert(2 + kMaxSize, kKeyFrame, kFirst, kNotLast, 5, data4));
 }
 
 TEST_F(TestPacketBuffer, ContinuousSeqNumDoubleMarkerBit) {
@@ -475,6 +475,49 @@ TEST_F(TestPacketBuffer, ContinuousSeqNumDoubleMarkerBit) {
   Insert(3, kKeyFrame, kNotFirst, kLast);
 
   EXPECT_EQ(0UL, frames_from_callback_.size());
+}
+
+TEST_F(TestPacketBuffer, OneH264FrameFillBuffer) {
+  VCMPacket packet;
+  packet.seqNum = 0;
+  packet.codec = kVideoCodecH264;
+  packet.dataPtr = nullptr;
+  packet.sizeBytes = 0;
+  packet.is_first_packet_in_frame = true;
+  packet.markerBit = false;
+  packet_buffer_->InsertPacket(&packet);
+
+  packet.is_first_packet_in_frame = false;
+  for (int i = 1; i < kStartSize - 1; ++i) {
+    packet.seqNum = i;
+    packet_buffer_->InsertPacket(&packet);
+  }
+
+  packet.seqNum = kStartSize - 1;
+  packet.markerBit = true;
+  packet_buffer_->InsertPacket(&packet);
+
+  EXPECT_EQ(1UL, frames_from_callback_.size());
+  CheckFrame(0);
+}
+
+TEST_F(TestPacketBuffer, OneH264FrameMaxSeqNum) {
+  VCMPacket packet;
+  packet.seqNum = 65534;
+  packet.codec = kVideoCodecH264;
+  packet.dataPtr = nullptr;
+  packet.sizeBytes = 0;
+  packet.is_first_packet_in_frame = true;
+  packet.markerBit = false;
+  packet_buffer_->InsertPacket(&packet);
+
+  packet.is_first_packet_in_frame = false;
+  packet.seqNum = 65535;
+  packet.markerBit = true;
+  packet_buffer_->InsertPacket(&packet);
+
+  EXPECT_EQ(1UL, frames_from_callback_.size());
+  CheckFrame(65534);
 }
 
 }  // namespace video_coding

@@ -225,7 +225,7 @@ CFX_ByteString CPDF_SyntaxParser::ReadString() {
         break;
       case ReadStatus::Backslash:
         if (ch >= '0' && ch <= '7') {
-          iEscCode = FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(ch));
+          iEscCode = FXSYS_toDecimalDigit(static_cast<wchar_t>(ch));
           status = ReadStatus::Octal;
           break;
         }
@@ -251,7 +251,7 @@ CFX_ByteString CPDF_SyntaxParser::ReadString() {
       case ReadStatus::Octal:
         if (ch >= '0' && ch <= '7') {
           iEscCode =
-              iEscCode * 8 + FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(ch));
+              iEscCode * 8 + FXSYS_toDecimalDigit(static_cast<wchar_t>(ch));
           status = ReadStatus::FinishOctal;
         } else {
           buf.AppendChar(iEscCode);
@@ -263,7 +263,7 @@ CFX_ByteString CPDF_SyntaxParser::ReadString() {
         status = ReadStatus::Normal;
         if (ch >= '0' && ch <= '7') {
           iEscCode =
-              iEscCode * 8 + FXSYS_toDecimalDigit(static_cast<FX_WCHAR>(ch));
+              iEscCode * 8 + FXSYS_toDecimalDigit(static_cast<wchar_t>(ch));
           buf.AppendChar(iEscCode);
         } else {
           buf.AppendChar(iEscCode);
@@ -358,7 +358,7 @@ void CPDF_SyntaxParser::ToNextWord() {
 
 CFX_ByteString CPDF_SyntaxParser::GetNextWord(bool* bIsNumber) {
   GetNextWordInternal(bIsNumber);
-  return CFX_ByteString((const FX_CHAR*)m_WordBuffer, m_WordSize);
+  return CFX_ByteString((const char*)m_WordBuffer, m_WordSize);
 }
 
 CFX_ByteString CPDF_SyntaxParser::GetKeyword() {
@@ -405,13 +405,13 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObject(
   if (word == "(") {
     CFX_ByteString str = ReadString();
     if (m_pCryptoHandler && bDecrypt)
-      m_pCryptoHandler->Decrypt(objnum, gennum, str);
+      str = m_pCryptoHandler->Decrypt(objnum, gennum, str);
     return pdfium::MakeUnique<CPDF_String>(m_pPool, str, false);
   }
   if (word == "<") {
     CFX_ByteString str = ReadHexString();
     if (m_pCryptoHandler && bDecrypt)
-      m_pCryptoHandler->Decrypt(objnum, gennum, str);
+      str = m_pCryptoHandler->Decrypt(objnum, gennum, str);
     return pdfium::MakeUnique<CPDF_String>(m_pPool, str, true);
   }
   if (word == "[") {
@@ -526,17 +526,17 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObjectForStrict(
   if (word == "(") {
     CFX_ByteString str = ReadString();
     if (m_pCryptoHandler)
-      m_pCryptoHandler->Decrypt(objnum, gennum, str);
+      str = m_pCryptoHandler->Decrypt(objnum, gennum, str);
     return pdfium::MakeUnique<CPDF_String>(m_pPool, str, false);
   }
   if (word == "<") {
     CFX_ByteString str = ReadHexString();
     if (m_pCryptoHandler)
-      m_pCryptoHandler->Decrypt(objnum, gennum, str);
+      str = m_pCryptoHandler->Decrypt(objnum, gennum, str);
     return pdfium::MakeUnique<CPDF_String>(m_pPool, str, true);
   }
   if (word == "[") {
-    std::unique_ptr<CPDF_Array> pArray = pdfium::MakeUnique<CPDF_Array>();
+    auto pArray = pdfium::MakeUnique<CPDF_Array>();
     while (std::unique_ptr<CPDF_Object> pObj =
                GetObject(pObjList, objnum, gennum, true)) {
       pArray->Add(std::move(pObj));
@@ -635,7 +635,7 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
   const CFX_ByteStringC kEndObjStr("endobj");
 
   CPDF_CryptoHandler* pCryptoHandler =
-      objnum == m_MetadataObjnum ? nullptr : m_pCryptoHandler.get();
+      objnum == m_MetadataObjnum ? nullptr : m_pCryptoHandler.Get();
   if (!pCryptoHandler) {
     bool bSearchForKeyword = true;
     if (len >= 0) {
@@ -645,13 +645,13 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
         m_Pos = pos.ValueOrDie();
 
       m_Pos += ReadEOLMarkers(m_Pos);
-      FXSYS_memset(m_WordBuffer, 0, kEndStreamStr.GetLength() + 1);
+      memset(m_WordBuffer, 0, kEndStreamStr.GetLength() + 1);
       GetNextWordInternal(nullptr);
       // Earlier version of PDF specification doesn't require EOL marker before
       // 'endstream' keyword. If keyword 'endstream' follows the bytes in
       // specified length, it signals the end of stream.
-      if (FXSYS_memcmp(m_WordBuffer, kEndStreamStr.raw_str(),
-                       kEndStreamStr.GetLength()) == 0) {
+      if (memcmp(m_WordBuffer, kEndStreamStr.raw_str(),
+                 kEndStreamStr.GetLength()) == 0) {
         bSearchForKeyword = false;
       }
     }
@@ -724,6 +724,10 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
     }
     m_Pos = streamStartPos;
   }
+  // Read up to the end of the buffer. Note, we allow zero length streams as
+  // we need to pass them through when we are importing pages into a new
+  // document.
+  len = std::min(len, m_FileLen - m_Pos - m_HeaderOffset);
   if (len < 0)
     return nullptr;
 
@@ -742,18 +746,16 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
       pData = dest_buf.DetachBuffer();
     }
   }
-
   auto pStream =
       pdfium::MakeUnique<CPDF_Stream>(std::move(pData), len, std::move(pDict));
   streamStartPos = m_Pos;
-  FXSYS_memset(m_WordBuffer, 0, kEndObjStr.GetLength() + 1);
+  memset(m_WordBuffer, 0, kEndObjStr.GetLength() + 1);
   GetNextWordInternal(nullptr);
 
   int numMarkers = ReadEOLMarkers(m_Pos);
   if (m_WordSize == static_cast<unsigned int>(kEndObjStr.GetLength()) &&
       numMarkers != 0 &&
-      FXSYS_memcmp(m_WordBuffer, kEndObjStr.raw_str(),
-                   kEndObjStr.GetLength()) == 0) {
+      memcmp(m_WordBuffer, kEndObjStr.raw_str(), kEndObjStr.GetLength()) == 0) {
     m_Pos = streamStartPos;
   }
   return pStream;
@@ -781,7 +783,7 @@ uint32_t CPDF_SyntaxParser::GetDirectNum() {
     return 0;
 
   m_WordBuffer[m_WordSize] = 0;
-  return FXSYS_atoui(reinterpret_cast<const FX_CHAR*>(m_WordBuffer));
+  return FXSYS_atoui(reinterpret_cast<const char*>(m_WordBuffer));
 }
 
 bool CPDF_SyntaxParser::IsWholeWord(FX_FILESIZE startpos,
@@ -909,6 +911,6 @@ FX_FILESIZE CPDF_SyntaxParser::FindTag(const CFX_ByteStringC& tag,
 }
 
 void CPDF_SyntaxParser::SetEncrypt(
-    std::unique_ptr<CPDF_CryptoHandler> pCryptoHandler) {
-  m_pCryptoHandler = std::move(pCryptoHandler);
+    const CFX_RetainPtr<CPDF_CryptoHandler>& pCryptoHandler) {
+  m_pCryptoHandler = pCryptoHandler;
 }

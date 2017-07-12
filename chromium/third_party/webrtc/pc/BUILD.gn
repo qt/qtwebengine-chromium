@@ -19,7 +19,7 @@ group("pc") {
 }
 
 config("rtc_pc_config") {
-  defines = [ "HAVE_SRTP" ]
+  defines = []
   if (rtc_enable_sctp) {
     defines += [ "HAVE_SCTP" ]
   }
@@ -38,12 +38,16 @@ rtc_static_library("rtc_pc") {
     "channelmanager.h",
     "currentspeakermonitor.cc",
     "currentspeakermonitor.h",
+    "externalhmac.cc",
+    "externalhmac.h",
     "mediamonitor.cc",
     "mediamonitor.h",
     "mediasession.cc",
     "mediasession.h",
     "rtcpmuxfilter.cc",
     "rtcpmuxfilter.h",
+    "rtptransport.cc",
+    "rtptransport.h",
     "srtpfilter.cc",
     "srtpfilter.h",
     "voicechannel.h",
@@ -55,12 +59,6 @@ rtc_static_library("rtc_pc") {
     "../media",
   ]
 
-  if (build_with_chromium) {
-    sources += [
-      "externalhmac.cc",
-      "externalhmac.h",
-    ]
-  }
   if (rtc_build_libsrtp) {
     deps += [ "//third_party/libsrtp" ]
   }
@@ -92,6 +90,8 @@ rtc_static_library("libjingle_peerconnection") {
     "datachannel.h",
     "dtmfsender.cc",
     "dtmfsender.h",
+    "iceserverparsing.cc",
+    "iceserverparsing.h",
     "jsepicecandidate.cc",
     "jsepsessiondescription.cc",
     "localaudiosource.cc",
@@ -147,6 +147,7 @@ rtc_static_library("libjingle_peerconnection") {
     ":rtc_pc",
     "../api:call_api",
     "../api:rtc_stats_api",
+    "../api/video_codecs:video_codecs_api",
     "../call",
     "../media",
     "../stats",
@@ -282,11 +283,12 @@ if (rtc_include_tests) {
       "datachannel_unittest.cc",
       "dtmfsender_unittest.cc",
       "fakemediacontroller.h",
+      "iceserverparsing_unittest.cc",
       "jsepsessiondescription_unittest.cc",
       "localaudiosource_unittest.cc",
       "mediaconstraintsinterface_unittest.cc",
       "mediastream_unittest.cc",
-      "peerconnection_unittest.cc",
+      "peerconnection_integrationtest.cc",
       "peerconnectionendtoend_unittest.cc",
       "peerconnectionfactory_unittest.cc",
       "peerconnectioninterface_unittest.cc",

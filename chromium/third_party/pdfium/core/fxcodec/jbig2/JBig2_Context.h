@@ -40,8 +40,8 @@ using CJBig2_CachePair =
 
 class CJBig2_Context {
  public:
-  CJBig2_Context(CPDF_StreamAcc* pGlobalStream,
-                 CPDF_StreamAcc* pSrcStream,
+  CJBig2_Context(const CFX_RetainPtr<CPDF_StreamAcc>& pGlobalStream,
+                 const CFX_RetainPtr<CPDF_StreamAcc>& pSrcStream,
                  std::list<CJBig2_CachePair>* pSymbolDictCache,
                  IFX_Pause* pPause,
                  bool bIsGlobal);
@@ -54,7 +54,7 @@ class CJBig2_Context {
                        IFX_Pause* pPause);
 
   int32_t Continue(IFX_Pause* pPause);
-  FXCODEC_STATUS GetProcessingStatus() { return m_ProcessingStatus; }
+  FXCODEC_STATUS GetProcessingStatus() const { return m_ProcessingStatus; }
 
  private:
   int32_t decode_SquentialOrgnazation(IFX_Pause* pPause);

@@ -21,14 +21,15 @@
 #include "public/fpdf_edit.h"
 
 #ifdef PDF_ENABLE_XFA
+#include "core/fxcrt/cfx_checksumcontext.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cxfa_fwladaptertimermgr.h"
 #include "public/fpdf_formfill.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
-#include "xfa/fxfa/xfa_checksum.h"
-#include "xfa/fxfa/xfa_ffapp.h"
-#include "xfa/fxfa/xfa_ffdocview.h"
-#include "xfa/fxfa/xfa_ffwidgethandler.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdocview.h"
+#include "xfa/fxfa/cxfa_ffwidgethandler.h"
+#include "xfa/fxfa/cxfa_widgetacciterator.h"
 #endif
 
 #if _FX_OS_ == _FX_ANDROID_
@@ -40,10 +41,14 @@
 class CFX_IFileWrite final : public IFX_WriteStream {
  public:
   static CFX_RetainPtr<CFX_IFileWrite> Create();
+
   bool Init(FPDF_FILEWRITE* pFileWriteStruct);
   bool WriteBlock(const void* pData, size_t size) override;
 
  protected:
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+
   CFX_IFileWrite();
   ~CFX_IFileWrite() override {}
 
@@ -51,7 +56,7 @@ class CFX_IFileWrite final : public IFX_WriteStream {
 };
 
 CFX_RetainPtr<CFX_IFileWrite> CFX_IFileWrite::Create() {
-  return CFX_RetainPtr<CFX_IFileWrite>(new CFX_IFileWrite());
+  return pdfium::MakeRetain<CFX_IFileWrite>();
 }
 
 CFX_IFileWrite::CFX_IFileWrite() : m_pFileWriteStruct(nullptr) {}
@@ -81,9 +86,10 @@ bool SaveXFADocumentData(
   if (!pContext)
     return false;
 
-  if (pContext->GetDocType() != DOCTYPE_DYNAMIC_XFA &&
-      pContext->GetDocType() != DOCTYPE_STATIC_XFA)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static) {
     return true;
+  }
 
   CXFA_FFDocView* pXFADocView = pContext->GetXFADocView();
   if (!pXFADocView)
@@ -125,18 +131,16 @@ bool SaveXFADocumentData(
     else if (pPDFObj->GetString() == "template")
       iTemplate = i + 1;
   }
-  std::unique_ptr<CXFA_ChecksumContext> pChecksum(new CXFA_ChecksumContext);
+  auto pChecksum = pdfium::MakeUnique<CFX_ChecksumContext>();
   pChecksum->StartChecksum();
 
   // template
   if (iTemplate > -1) {
     CPDF_Stream* pTemplateStream = pArray->GetStreamAt(iTemplate);
-    CPDF_StreamAcc streamAcc;
-    streamAcc.LoadAllData(pTemplateStream);
-    uint8_t* pData = (uint8_t*)streamAcc.GetData();
-    uint32_t dwSize2 = streamAcc.GetSize();
-    CFX_RetainPtr<IFX_SeekableStream> pTemplate =
-        IFX_MemoryStream::Create(pData, dwSize2);
+    auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pTemplateStream);
+    pAcc->LoadAllData();
+    CFX_RetainPtr<IFX_SeekableStream> pTemplate = IFX_MemoryStream::Create(
+        const_cast<uint8_t*>(pAcc->GetData()), pAcc->GetSize());
     pChecksum->UpdateChecksum(pTemplate);
   }
   CPDF_Stream* pFormStream = nullptr;
@@ -223,8 +227,8 @@ bool SendPostSaveToXFADoc(CPDFXFA_Context* pContext) {
   if (!pContext)
     return false;
 
-  if (pContext->GetDocType() != DOCTYPE_DYNAMIC_XFA &&
-      pContext->GetDocType() != DOCTYPE_STATIC_XFA)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return true;
 
   CXFA_FFDocView* pXFADocView = pContext->GetXFADocView();
@@ -247,8 +251,8 @@ bool SendPostSaveToXFADoc(CPDFXFA_Context* pContext) {
 bool SendPreSaveToXFADoc(
     CPDFXFA_Context* pContext,
     std::vector<CFX_RetainPtr<IFX_SeekableStream>>* fileList) {
-  if (pContext->GetDocType() != DOCTYPE_DYNAMIC_XFA &&
-      pContext->GetDocType() != DOCTYPE_STATIC_XFA)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return true;
 
   CXFA_FFDocView* pXFADocView = pContext->GetXFADocView();

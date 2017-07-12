@@ -5,9 +5,6 @@ COMMON_C_INCLUDES := \
 	$(LOCAL_PATH)/../../../include \
 	$(LOCAL_PATH)/../ \
 	$(LOCAL_PATH)/../../ \
-	$(LOCAL_PATH)/../../../third_party/LLVM/include-android \
-	$(LOCAL_PATH)/../../../third_party/LLVM/include \
-	$(LOCAL_PATH)/../../../third_party/LLVM/lib/Target/X86 \
 	$(LOCAL_PATH)/../../Renderer/ \
 	$(LOCAL_PATH)/../../Common/ \
 	$(LOCAL_PATH)/../../Shader/ \
@@ -27,7 +24,8 @@ COMMON_CFLAGS := \
 	-msse2 \
 	-D__STDC_CONSTANT_MACROS \
 	-D__STDC_LIMIT_MACROS \
-	-std=c++11
+	-std=c++11 \
+	-DANDROID_PLATFORM_SDK_VERSION=$(PLATFORM_SDK_VERSION)
 
 ifneq (16,${PLATFORM_SDK_VERSION})
 COMMON_CFLAGS += -Xclang -fuse-init-array

@@ -77,7 +77,7 @@ class BLINK_PLATFORM_EXPORT WorkQueue {
   // pretends to be empty as far as the WorkQueueSets is concrned.
   TaskQueueImpl::Task TakeTaskFromWorkQueue();
 
-  const char* name() const { return name_; }
+  const char* GetName() const { return name_; }
 
   TaskQueueImpl* task_queue() const { return task_queue_; }
 
@@ -115,7 +115,7 @@ class BLINK_PLATFORM_EXPORT WorkQueue {
   bool BlockedByFence() const;
 
  private:
-  WTF::Deque<TaskQueueImpl::Task> work_queue_;
+  TaskQueueImpl::TaskDeque work_queue_;
   WorkQueueSets* work_queue_sets_;   // NOT OWNED.
   TaskQueueImpl* const task_queue_;  // NOT OWNED.
   size_t work_queue_set_index_;

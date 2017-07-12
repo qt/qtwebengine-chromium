@@ -17,14 +17,15 @@
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 
 namespace webrtc {
+class RtcEventLog;
 
 class ProbeBitrateEstimator {
  public:
-  ProbeBitrateEstimator();
+  explicit ProbeBitrateEstimator(RtcEventLog* event_log);
 
   // Should be called for every probe packet we receive feedback about.
   // Returns the estimated bitrate if the probe completes a valid cluster.
-  int HandleProbeAndEstimateBitrate(const PacketInfo& packet_info);
+  int HandleProbeAndEstimateBitrate(const PacketFeedback& packet_feedback);
 
  private:
   struct AggregatedCluster {
@@ -42,6 +43,7 @@ class ProbeBitrateEstimator {
   void EraseOldClusters(int64_t timestamp_ms);
 
   std::map<int, AggregatedCluster> clusters_;
+  RtcEventLog* const event_log_;
 };
 
 }  // namespace webrtc

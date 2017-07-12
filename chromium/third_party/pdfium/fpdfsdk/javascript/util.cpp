@@ -46,14 +46,14 @@ namespace {
 // Map PDF-style directives to equivalent wcsftime directives. Not
 // all have direct equivalents, though.
 struct TbConvert {
-  const FX_WCHAR* lpszJSMark;
-  const FX_WCHAR* lpszCppMark;
+  const wchar_t* lpszJSMark;
+  const wchar_t* lpszCppMark;
 };
 
 // Map PDF-style directives lacking direct wcsftime directives to
 // the value with which they will be replaced.
 struct TbConvertAdditional {
-  const FX_WCHAR* lpszJSMark;
+  const wchar_t* lpszJSMark;
   int iValue;
 };
 
@@ -113,9 +113,10 @@ bool util::printf(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError) {
-  int iSize = params.size();
+  const size_t iSize = params.size();
   if (iSize < 1)
     return false;
+
   std::wstring c_ConvChar(params[0].ToCFXWideString(pRuntime).c_str());
   std::vector<std::wstring> c_strConvers;
   int iOffset = 0;
@@ -134,19 +135,19 @@ bool util::printf(CJS_Runtime* pRuntime,
 
   std::wstring c_strResult;
   std::wstring c_strFormat;
-  for (int iIndex = 0; iIndex < (int)c_strConvers.size(); iIndex++) {
+  for (size_t iIndex = 0; iIndex < c_strConvers.size(); ++iIndex) {
     c_strFormat = c_strConvers[iIndex];
     if (iIndex == 0) {
       c_strResult = c_strFormat;
       continue;
     }
 
-    CFX_WideString strSegment;
     if (iIndex >= iSize) {
       c_strResult += c_strFormat;
       continue;
     }
 
+    CFX_WideString strSegment;
     switch (ParseDataType(&c_strFormat)) {
       case UTIL_INT:
         strSegment.Format(c_strFormat.c_str(), params[iIndex].ToInt(pRuntime));
@@ -175,12 +176,12 @@ bool util::printd(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
                   CFX_WideString& sError) {
-  int iSize = params.size();
+  const size_t iSize = params.size();
   if (iSize < 2)
     return false;
 
-  CJS_Value p1 = params[0];
-  CJS_Value p2 = params[1];
+  const CJS_Value& p1 = params[0];
+  const CJS_Value& p2 = params[1];
   CJS_Date jsDate;
   if (!p2.ConvertToDate(pRuntime, jsDate)) {
     sError = JSGetStringFromID(IDS_STRING_JSPRINT1);
@@ -318,7 +319,7 @@ bool util::printx(CJS_Runtime* pRuntime,
 
 enum CaseMode { kPreserveCase, kUpperCase, kLowerCase };
 
-static FX_WCHAR TranslateCase(FX_WCHAR input, CaseMode eMode) {
+static wchar_t TranslateCase(wchar_t input, CaseMode eMode) {
   if (eMode == kLowerCase && input >= 'A' && input <= 'Z')
     return input | 0x20;
   if (eMode == kUpperCase && input >= 'a' && input <= 'z')
@@ -421,8 +422,7 @@ bool util::scand(CJS_Runtime* pRuntime,
                  const std::vector<CJS_Value>& params,
                  CJS_Value& vRet,
                  CFX_WideString& sError) {
-  int iSize = params.size();
-  if (iSize < 2)
+  if (params.size() < 2)
     return false;
 
   CFX_WideString sFormat = params[0].ToCFXWideString(pRuntime);
@@ -456,7 +456,7 @@ bool util::byteToChar(CJS_Runtime* pRuntime,
     return false;
   }
 
-  CFX_WideString wStr(static_cast<FX_WCHAR>(arg));
+  CFX_WideString wStr(static_cast<wchar_t>(arg));
   vRet = CJS_Value(pRuntime, wStr.c_str());
   return true;
 }

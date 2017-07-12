@@ -113,6 +113,8 @@ all_platforms="${all_platforms} armv7s-darwin-gcc"
 all_platforms="${all_platforms} armv8-linux-gcc"
 all_platforms="${all_platforms} mips32-linux-gcc"
 all_platforms="${all_platforms} mips64-linux-gcc"
+all_platforms="${all_platforms} ppc64-linux-gcc"
+all_platforms="${all_platforms} ppc64le-linux-gcc"
 all_platforms="${all_platforms} sparc-solaris-gcc"
 all_platforms="${all_platforms} x86-android-gcc"
 all_platforms="${all_platforms} x86-darwin8-gcc"
@@ -225,6 +227,7 @@ ARCH_LIST="
     mips
     x86
     x86_64
+    ppc
 "
 ARCH_EXT_LIST_X86="
     mmx
@@ -246,6 +249,8 @@ ARCH_EXT_LIST="
     mips64
 
     ${ARCH_EXT_LIST_X86}
+
+    vsx
 "
 HAVE_LIST="
     ${ARCH_EXT_LIST}
@@ -257,7 +262,6 @@ EXPERIMENT_LIST="
     spatial_svc
     fp_mb_stats
     emulate_hardware
-    misc_fixes
 "
 CONFIG_LIST="
     dependency_tracking
@@ -590,11 +594,9 @@ process_toolchain() {
         if enabled mips || [ -z "${INLINE}" ]; then
           enabled extra_warnings || check_add_cflags -Wno-unused-function
         fi
-        if ! enabled vp9_highbitdepth; then
-          # Avoid this warning for third_party C++ sources. Some reorganization
-          # would be needed to apply this only to test/*.cc.
-          check_cflags -Wshorten-64-to-32 && add_cflags_only -Wshorten-64-to-32
-        fi
+        # Avoid this warning for third_party C++ sources. Some reorganization
+        # would be needed to apply this only to test/*.cc.
+        check_cflags -Wshorten-64-to-32 && add_cflags_only -Wshorten-64-to-32
     fi
 
     if enabled icc; then

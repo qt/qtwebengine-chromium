@@ -8,8 +8,11 @@
 
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/render/cpdf_dibtransferfunc.h"
+#include "core/fxge/dib/cfx_dibsource.h"
 
 CPDF_TransferFunc::CPDF_TransferFunc(CPDF_Document* pDoc) : m_pPDFDoc(pDoc) {}
+
+CPDF_TransferFunc::~CPDF_TransferFunc() {}
 
 FX_COLORREF CPDF_TransferFunc::TranslateColor(FX_COLORREF rgb) const {
   return FXSYS_RGB(m_Samples[FXSYS_GetRValue(rgb)],
@@ -17,9 +20,10 @@ FX_COLORREF CPDF_TransferFunc::TranslateColor(FX_COLORREF rgb) const {
                    m_Samples[512 + FXSYS_GetBValue(rgb)]);
 }
 
-CFX_DIBSource* CPDF_TransferFunc::TranslateImage(const CFX_DIBSource* pSrc,
-                                                 bool bAutoDropSrc) {
-  CPDF_DIBTransferFunc* pDest = new CPDF_DIBTransferFunc(this);
-  pDest->LoadSrc(pSrc, bAutoDropSrc);
+CFX_RetainPtr<CFX_DIBSource> CPDF_TransferFunc::TranslateImage(
+    const CFX_RetainPtr<CFX_DIBSource>& pSrc) {
+  CFX_RetainPtr<CPDF_TransferFunc> pHolder(this);
+  auto pDest = pdfium::MakeRetain<CPDF_DIBTransferFunc>(pHolder);
+  pDest->LoadSrc(pSrc);
   return pDest;
 }

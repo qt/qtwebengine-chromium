@@ -10,9 +10,11 @@
 
 #include "webrtc/modules/audio_processing/audio_processing_impl.h"
 
+#include <math.h>
 #include <algorithm>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/base/platform_file.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/common_audio/audio_converter.h"
@@ -41,7 +43,6 @@
 #include "webrtc/modules/audio_processing/voice_detection_impl.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/system_wrappers/include/file_wrapper.h"
-#include "webrtc/system_wrappers/include/logging.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
@@ -562,18 +563,26 @@ int AudioProcessingImpl::InitializeLocked(const ProcessingConfig& config) {
   capture_nonlocked_.capture_processing_format =
       StreamConfig(capture_processing_rate);
 
-  int render_processing_rate = FindNativeProcessRateToUse(
-      std::min(formats_.api_format.reverse_input_stream().sample_rate_hz(),
-               formats_.api_format.reverse_output_stream().sample_rate_hz()),
-      submodule_states_.CaptureMultiBandSubModulesActive() ||
-          submodule_states_.RenderMultiBandSubModulesActive());
+  int render_processing_rate;
+  if (!config_.echo_canceller3.enabled) {
+    render_processing_rate = FindNativeProcessRateToUse(
+        std::min(formats_.api_format.reverse_input_stream().sample_rate_hz(),
+                 formats_.api_format.reverse_output_stream().sample_rate_hz()),
+        submodule_states_.CaptureMultiBandSubModulesActive() ||
+            submodule_states_.RenderMultiBandSubModulesActive());
+  } else {
+    render_processing_rate = capture_processing_rate;
+  }
+
   // TODO(aluebs): Remove this restriction once we figure out why the 3-band
   // splitting filter degrades the AEC performance.
-  if (render_processing_rate > kSampleRate32kHz) {
+  if (render_processing_rate > kSampleRate32kHz &&
+      !config_.echo_canceller3.enabled) {
     render_processing_rate = submodule_states_.RenderMultiBandProcessingActive()
                                  ? kSampleRate32kHz
                                  : kSampleRate16kHz;
   }
+
   // If the forward sample rate is 8 kHz, the render stream is also processed
   // at this rate.
   if (capture_nonlocked_.capture_processing_format.sample_rate_hz() ==
@@ -1137,6 +1146,10 @@ int AudioProcessingImpl::ProcessCaptureStreamLocked() {
   }
 
   if (private_submodules_->echo_canceller3) {
+    const int new_agc_level = gain_control()->stream_analog_level();
+    capture_.echo_path_gain_change =
+        abs(capture_.previous_agc_level - new_agc_level) > 5;
+    capture_.previous_agc_level = new_agc_level;
     private_submodules_->echo_canceller3->AnalyzeCapture(capture_buffer);
   }
 
@@ -1185,7 +1198,8 @@ int AudioProcessingImpl::ProcessCaptureStreamLocked() {
   }
 
   if (private_submodules_->echo_canceller3) {
-    private_submodules_->echo_canceller3->ProcessCapture(capture_buffer, false);
+    private_submodules_->echo_canceller3->ProcessCapture(
+        capture_buffer, capture_.echo_path_gain_change);
   } else {
     RETURN_ON_ERR(public_submodules_->echo_cancellation->ProcessCaptureAudio(
         capture_buffer, stream_delay_ms()));
@@ -1440,9 +1454,7 @@ int AudioProcessingImpl::ProcessRenderStreamLocked() {
   QueueRenderAudio(render_buffer);
   // TODO(peah): Perform the queueing ínside QueueRenderAudiuo().
   if (private_submodules_->echo_canceller3) {
-    if (!private_submodules_->echo_canceller3->AnalyzeRender(render_buffer)) {
-      // TODO(peah): Lock and empty render queue, and try again.
-    }
+    private_submodules_->echo_canceller3->AnalyzeRender(render_buffer);
   }
 
   if (submodule_states_.RenderMultiBandProcessingActive() &&
@@ -1616,10 +1628,14 @@ AudioProcessing::AudioProcessingStatistics AudioProcessingImpl::GetStatistics()
         metrics.echo_return_loss_enhancement);
     stats.residual_echo_return_loss.Set(metrics.residual_echo_return_loss);
   }
-  stats.residual_echo_likelihood =
-      private_submodules_->residual_echo_detector->echo_likelihood();
-  stats.residual_echo_likelihood_recent_max =
-      private_submodules_->residual_echo_detector->echo_likelihood_recent_max();
+  {
+    rtc::CritScope cs_capture(&crit_capture_);
+    stats.residual_echo_likelihood =
+        private_submodules_->residual_echo_detector->echo_likelihood();
+    stats.residual_echo_likelihood_recent_max =
+        private_submodules_->residual_echo_detector
+            ->echo_likelihood_recent_max();
+  }
   public_submodules_->echo_cancellation->GetDelayMetrics(
       &stats.delay_median, &stats.delay_standard_deviation,
       &stats.fraction_poor_delays);
@@ -1875,11 +1891,11 @@ int AudioProcessingImpl::WriteInitMessage() {
   audioproc::Init* msg = debug_dump_.capture.event_msg->mutable_init();
   msg->set_sample_rate(formats_.api_format.input_stream().sample_rate_hz());
 
-  msg->set_num_input_channels(static_cast<google::protobuf::int32>(
+  msg->set_num_input_channels(static_cast<int32_t>(
       formats_.api_format.input_stream().num_channels()));
-  msg->set_num_output_channels(static_cast<google::protobuf::int32>(
+  msg->set_num_output_channels(static_cast<int32_t>(
       formats_.api_format.output_stream().num_channels()));
-  msg->set_num_reverse_channels(static_cast<google::protobuf::int32>(
+  msg->set_num_reverse_channels(static_cast<int32_t>(
       formats_.api_format.reverse_input_stream().num_channels()));
   msg->set_reverse_sample_rate(
       formats_.api_format.reverse_input_stream().sample_rate_hz());
@@ -1949,7 +1965,7 @@ int AudioProcessingImpl::WriteConfigMessage(bool forced) {
   }
   config.set_experiments_description(experiments_description);
 
-  std::string serialized_config = config.SerializeAsString();
+  ProtoString serialized_config = config.SerializeAsString();
   if (!forced &&
       debug_dump_.capture.last_serialized_config == serialized_config) {
     return kNoError;
@@ -1983,7 +1999,9 @@ AudioProcessingImpl::ApmCaptureState::ApmCaptureState(
       array_geometry(array_geometry),
       target_direction(target_direction),
       capture_processing_format(kSampleRate16kHz),
-      split_rate(kSampleRate16kHz) {}
+      split_rate(kSampleRate16kHz),
+      previous_agc_level(0),
+      echo_path_gain_change(false) {}
 
 AudioProcessingImpl::ApmCaptureState::~ApmCaptureState() = default;
 

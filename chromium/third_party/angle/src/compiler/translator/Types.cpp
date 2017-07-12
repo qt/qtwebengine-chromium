@@ -33,6 +33,8 @@ const char *getBasicString(TBasicType t)
             return "uint";
         case EbtBool:
             return "bool";
+        case EbtYuvCscStandardEXT:
+            return "yuvCscStandardEXT";
         case EbtSampler2D:
             return "sampler2D";
         case EbtSampler3D:
@@ -41,6 +43,8 @@ const char *getBasicString(TBasicType t)
             return "samplerCube";
         case EbtSamplerExternalOES:
             return "samplerExternalOES";
+        case EbtSamplerExternal2DY2YEXT:
+            return "__samplerExternal2DY2YEXT";
         case EbtSampler2DRect:
             return "sampler2DRect";
         case EbtSampler2DArray:
@@ -292,6 +296,9 @@ TString TType::buildMangledName() const
         case EbtBool:
             mangledName += 'b';
             break;
+        case EbtYuvCscStandardEXT:
+            mangledName += "ycs";
+            break;
         case EbtSampler2D:
             mangledName += "s2";
             break;
@@ -306,6 +313,9 @@ TString TType::buildMangledName() const
             break;
         case EbtSamplerExternalOES:
             mangledName += "sext";
+            break;
+        case EbtSamplerExternal2DY2YEXT:
+            mangledName += "sext2y2y";
             break;
         case EbtSampler2DRect:
             mangledName += "s2r";
@@ -443,6 +453,36 @@ size_t TType::getObjectSize() const
     }
 
     return totalSize;
+}
+
+int TType::getLocationCount() const
+{
+    int count = 1;
+
+    if (getBasicType() == EbtStruct)
+    {
+        count = structure->getLocationCount();
+    }
+
+    if (isArray())
+    {
+        if (count == 0)
+        {
+            return 0;
+        }
+
+        unsigned int currentArraySize = getArraySize();
+        if (currentArraySize > static_cast<unsigned int>(std::numeric_limits<int>::max() / count))
+        {
+            count = std::numeric_limits<int>::max();
+        }
+        else
+        {
+            count *= static_cast<int>(currentArraySize);
+        }
+    }
+
+    return count;
 }
 
 TStructure::TStructure(const TString *name, TFieldList *fields)
@@ -583,15 +623,33 @@ TString TFieldListCollection::buildMangledName(const TString &mangledNamePrefix)
 size_t TFieldListCollection::calculateObjectSize() const
 {
     size_t size = 0;
-    for (size_t i = 0; i < mFields->size(); ++i)
+    for (const TField *field : *mFields)
     {
-        size_t fieldSize = (*mFields)[i]->type()->getObjectSize();
+        size_t fieldSize = field->type()->getObjectSize();
         if (fieldSize > INT_MAX - size)
             size = INT_MAX;
         else
             size += fieldSize;
     }
     return size;
+}
+
+int TFieldListCollection::getLocationCount() const
+{
+    int count = 0;
+    for (const TField *field : *mFields)
+    {
+        int fieldCount = field->type()->getLocationCount();
+        if (fieldCount > std::numeric_limits<int>::max() - count)
+        {
+            count = std::numeric_limits<int>::max();
+        }
+        else
+        {
+            count += fieldCount;
+        }
+    }
+    return count;
 }
 
 int TStructure::calculateDeepestNesting() const

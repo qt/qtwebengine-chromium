@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/buildflag_header.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/compiler/pgo/pgo.gni")
@@ -35,6 +34,8 @@ if (is_android) {
   import("//media/cdm/ppapi/cdm_paths.gni")
   import("//third_party/icu/config.gni")
 }
+
+assert(!is_ios, "Chromium/iOS shouldn't use anything in //chrome")
 
 if (enable_resource_whitelist_generation) {
   chrome_resource_whitelist = "$target_gen_dir/chrome_resource_whitelist.txt"
@@ -191,6 +192,7 @@ if (!is_android && !is_mac) {
         "//content:sandbox_helper_win",
         "//content/public/common:static_switches",
         "//crypto",
+        "//gpu/config:crash_keys",
         "//sandbox",
       ]
       data_deps = [
@@ -241,7 +243,6 @@ if (!is_android && !is_mac) {
         # Needed to use the master_preferences functions
         "//chrome/installer/util:with_no_strings",
         "//content/public/app:both",
-        "//pdf",
 
         # For headless mode.
         "//headless:headless_shell_lib",
@@ -253,6 +254,12 @@ if (!is_android && !is_mac) {
       ]
 
       ldflags = [ "-pie" ]
+
+      # Chrome OS debug builds for arm need to pass --long-plt to the linker.
+      # See https://bugs.chromium.org/p/chromium/issues/detail?id=583532
+      if (is_chromeos && is_debug && target_cpu == "arm") {
+        ldflags += [ "-Wl,--long-plt" ]
+      }
 
       if (use_pango || use_cairo) {
         # Needed for chrome_main.cc initialization of libraries.
@@ -385,7 +392,6 @@ if (is_win) {
       deps += [
         ":child_dependencies",
         "//content/public/app:both",
-        "//pdf",
       ]
     }
 
@@ -426,7 +432,6 @@ if (is_win) {
         "//components/browser_watcher:browser_watcher_client",
         "//components/crash/content/app",
         "//content/public/app:child",
-        "//pdf",
       ]
 
       ldflags = [
@@ -482,20 +487,18 @@ if (is_win) {
     }
   }
 
-  if (enable_xpc_notifications) {
-    bundle_data("chrome_framework_services") {
-      sources = [
-        "$root_out_dir/AlertNotificationService.xpc",
-      ]
+  bundle_data("chrome_framework_services") {
+    sources = [
+      "$root_out_dir/AlertNotificationService.xpc",
+    ]
 
-      outputs = [
-        "{{bundle_root_dir}}/XPCServices/{{source_file_part}}",
-      ]
+    outputs = [
+      "{{bundle_root_dir}}/XPCServices/{{source_file_part}}",
+    ]
 
-      public_deps = [
-        "//chrome/browser/ui/cocoa/notifications:alert_notification_xpc_service",
-      ]
-    }
+    public_deps = [
+      "//chrome/browser/ui/cocoa/notifications:alert_notification_xpc_service",
+    ]
   }
 
   tweak_info_plist("chrome_app_plist") {
@@ -551,7 +554,7 @@ if (is_win) {
   }
 
   compiled_action("chrome_app_strings") {
-    tool = "//chrome/tools/mac_helpers:infoplist_strings_tool"
+    tool = "//chrome/tools/build/mac:infoplist_strings_tool"
 
     inputs = [
       chrome_version_file,
@@ -1086,7 +1089,6 @@ if (is_win) {
       "//components/policy:generated",
       "//content/public/app:both",
       "//headless:headless_shell_lib",
-      "//pdf",
       "//third_party/cld",
     ]
 
@@ -1115,6 +1117,7 @@ if (is_win) {
       framework_contents = [
         "Helpers",
         "Resources",
+        "XPCServices",
       ]
 
       if (is_chrome_branded) {
@@ -1128,9 +1131,6 @@ if (is_win) {
       }
       if (_should_bundle_widevine) {
         framework_contents += [ "Libraries" ]
-      }
-      if (enable_xpc_notifications) {
-        framework_contents += [ "XPCServices" ]
       }
     }
 
@@ -1150,6 +1150,7 @@ if (is_win) {
       ":chrome_framework_helpers",
       ":chrome_framework_plugins",
       ":chrome_framework_resources",
+      ":chrome_framework_services",
       ":packed_resources",
       ":widevine_cdm_library",
       "//build/config/sanitizers:deps",
@@ -1158,10 +1159,6 @@ if (is_win) {
 
     if (is_chrome_branded) {
       deps += [ ":default_apps" ]
-    }
-
-    if (enable_xpc_notifications) {
-      deps += [ ":chrome_framework_services" ]
     }
 
     ldflags = [
@@ -1239,6 +1236,7 @@ if (is_win) {
     # the list of _dsyms in :chrome_dsym_archive.
     _chrome_symbols_sources = [
       _framework_binary_path,
+      "$root_out_dir/AlertNotificationService.xpc/Contents/MacOS/AlertNotificationService",
       "$root_out_dir/$chrome_helper_name.app/Contents/MacOS/$chrome_helper_name",
       "$root_out_dir/$chrome_product_full_name.app/Contents/MacOS/$chrome_product_full_name",
       "$root_out_dir/crashpad_handler",
@@ -1270,6 +1268,7 @@ if (is_win) {
         ":chrome_framework",
         ":chrome_helper_app",
         "//breakpad:dump_syms",
+        "//chrome/browser/ui/cocoa/notifications:alert_notification_xpc_service",
         "//third_party/crashpad/crashpad/handler:crashpad_handler",
       ]
     }
@@ -1282,6 +1281,7 @@ if (is_win) {
       # directory it cannot be listed as a source file). The targets that
       # generate both the dSYM and binary image are listed in deps.
       _dsyms = [
+        "$root_out_dir/AlertNotificationService.dSYM",
         "$root_out_dir/$chrome_framework_name.dSYM",
         "$root_out_dir/$chrome_helper_name.dSYM",
         "$root_out_dir/$chrome_product_full_name.dSYM",
@@ -1303,6 +1303,7 @@ if (is_win) {
         ":chrome_app",
         ":chrome_framework",
         ":chrome_helper_app",
+        "//chrome/browser/ui/cocoa/notifications:alert_notification_xpc_service",
         "//third_party/crashpad/crashpad/handler:crashpad_handler",
       ]
     }
@@ -1360,6 +1361,7 @@ group("child_dependencies") {
     "//chrome/utility",
     "//components/sync",
     "//content/public/child",
+    "//pdf",
     "//third_party/WebKit/public:blink_devtools_frontend_resources",
   ]
 
@@ -1457,7 +1459,7 @@ group("extra_resources") {
     "//chrome/browser/resources:webapks_ui_resources",
   ]
 
-  if (!is_android && !is_ios) {
+  if (!is_android) {
     public_deps += [
       "//chrome/browser/resources:component_extension_resources",
       "//chrome/browser/resources:options_resources",
@@ -1588,19 +1590,25 @@ if (is_android) {
 
   java_cpp_enum("page_info_connection_type_javagen") {
     sources = [
-      "browser/ui/android/page_info/website_settings_popup_android.h",
+      "browser/ui/android/page_info/page_info_popup_android.h",
     ]
   }
 
-  java_cpp_enum("website_settings_action_javagen") {
+  java_cpp_enum("page_info_action_javagen") {
     sources = [
-      "browser/ui/website_settings/website_settings.h",
+      "browser/ui/page_info/page_info.h",
     ]
   }
 
   java_cpp_enum("quick_action_category_enum_javagen") {
     sources = [
       "browser/android/contextualsearch/resolved_search_term.h",
+    ]
+  }
+
+  java_cpp_enum("offline_pages_enum_javagen") {
+    sources = [
+      "browser/android/offline_pages/offline_page_utils.h",
     ]
   }
 

@@ -78,22 +78,12 @@ FramebufferVk *FramebufferVk::CreateDefaultFBO(const gl::FramebufferState &state
 }
 
 FramebufferVk::FramebufferVk(const gl::FramebufferState &state)
-    : FramebufferImpl(state),
-      mBackbuffer(nullptr),
-      mRenderPass(),
-      mFramebuffer(),
-      mDirtyRenderPass(true),
-      mDirtyFramebuffer(true)
+    : FramebufferImpl(state), mBackbuffer(nullptr), mRenderPass(), mFramebuffer()
 {
 }
 
 FramebufferVk::FramebufferVk(const gl::FramebufferState &state, WindowSurfaceVk *backbuffer)
-    : FramebufferImpl(state),
-      mBackbuffer(backbuffer),
-      mRenderPass(),
-      mFramebuffer(),
-      mDirtyRenderPass(true),
-      mDirtyFramebuffer(true)
+    : FramebufferImpl(state), mBackbuffer(backbuffer), mRenderPass(), mFramebuffer()
 {
 }
 
@@ -322,8 +312,10 @@ gl::Error FramebufferVk::readPixels(ContextImpl *context,
 
     PackPixels(params, angleFormat, inputPitch, mapPointer, reinterpret_cast<uint8_t *>(pixels));
 
-    stagingImage.getImage().destroy(renderer->getDevice());
     stagingImage.getDeviceMemory().unmap(device);
+    renderer->enqueueGarbage(renderer->getCurrentQueueSerial(), std::move(stagingImage));
+
+    stagingImage.getImage().destroy(renderer->getDevice());
 
     stagingImage.destroy(device);
 
@@ -346,16 +338,23 @@ bool FramebufferVk::checkStatus() const
     return bool();
 }
 
-void FramebufferVk::syncState(const gl::Framebuffer::DirtyBits &dirtyBits)
+void FramebufferVk::syncState(ContextImpl *contextImpl, const gl::Framebuffer::DirtyBits &dirtyBits)
 {
+    auto contextVk = GetAs<ContextVk>(contextImpl);
+
+    ASSERT(dirtyBits.any());
+
     // TODO(jmadill): Smarter update.
-    mDirtyRenderPass  = true;
-    mDirtyFramebuffer = true;
+    mRenderPass.destroy(contextVk->getDevice());
+    mFramebuffer.destroy(contextVk->getDevice());
+
+    // TODO(jmadill): Use pipeline cache.
+    contextVk->invalidateCurrentPipeline();
 }
 
 gl::ErrorOrResult<vk::RenderPass *> FramebufferVk::getRenderPass(VkDevice device)
 {
-    if (mRenderPass.valid() && !mDirtyRenderPass)
+    if (mRenderPass.valid())
     {
         return &mRenderPass;
     }
@@ -459,15 +458,13 @@ gl::ErrorOrResult<vk::RenderPass *> FramebufferVk::getRenderPass(VkDevice device
 
     mRenderPass.retain(device, std::move(renderPass));
 
-    mDirtyRenderPass = false;
-
     return &mRenderPass;
 }
 
 gl::ErrorOrResult<vk::Framebuffer *> FramebufferVk::getFramebuffer(VkDevice device)
 {
     // If we've already created our cached Framebuffer, return it.
-    if (mFramebuffer.valid() && !mDirtyFramebuffer)
+    if (mFramebuffer.valid())
     {
         return &mFramebuffer;
     }
@@ -529,8 +526,6 @@ gl::ErrorOrResult<vk::Framebuffer *> FramebufferVk::getFramebuffer(VkDevice devi
     ANGLE_TRY(static_cast<gl::Error>(framebuffer.init(device, framebufferInfo)));
 
     mFramebuffer.retain(device, std::move(framebuffer));
-
-    mDirtyFramebuffer = false;
 
     return &mFramebuffer;
 }

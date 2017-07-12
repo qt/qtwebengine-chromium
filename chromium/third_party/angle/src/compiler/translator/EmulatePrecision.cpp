@@ -431,9 +431,10 @@ TIntermAggregate *createInternalFunctionCallNode(const TType &type,
                                                  TString name,
                                                  TIntermSequence *arguments)
 {
-    TName nameObj(TFunction::GetMangledNameFromCall(name, *arguments));
+    TName nameObj(name);
     nameObj.setInternal(true);
-    TIntermAggregate *callNode = new TIntermAggregate(type, EOpCallInternalRawFunction, arguments);
+    TIntermAggregate *callNode =
+        TIntermAggregate::Create(type, EOpCallInternalRawFunction, arguments);
     callNode->getFunctionSymbolInfo()->setNameObj(nameObj);
     return callNode;
 }

@@ -10,6 +10,7 @@
 #include "xfa/fxfa/parser/cxfa_containerlayoutitem.h"
 #include "xfa/fxfa/parser/cxfa_contentlayoutitem.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
 void XFA_ReleaseLayoutItem(CXFA_LayoutItem* pLayoutItem) {
   CXFA_LayoutItem* pNode = pLayoutItem->m_pFirstChild;
@@ -64,7 +65,7 @@ CXFA_ContainerLayoutItem* CXFA_LayoutItem::GetPage() const {
 CFX_RectF CXFA_LayoutItem::GetRect(bool bRelative) const {
   ASSERT(m_bIsContentLayoutItem);
 
-  auto pThis = static_cast<const CXFA_ContentLayoutItem*>(this);
+  auto* pThis = static_cast<const CXFA_ContentLayoutItem*>(this);
   CFX_PointF sPos = pThis->m_sPos;
   CFX_SizeF sSize = pThis->m_sSize;
   if (bRelative)

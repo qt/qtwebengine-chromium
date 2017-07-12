@@ -27,8 +27,8 @@ static void bmp_free_func(void* p) {
 }
 };
 static void bmp_error_data(bmp_decompress_struct_p bmp_ptr,
-                           const FX_CHAR* err_msg) {
-  FXSYS_strncpy((char*)bmp_ptr->err_ptr, err_msg, BMP_MAX_ERROR_SIZE - 1);
+                           const char* err_msg) {
+  strncpy((char*)bmp_ptr->err_ptr, err_msg, BMP_MAX_ERROR_SIZE - 1);
   longjmp(bmp_ptr->jmpbuf, 1);
 }
 static void bmp_read_scanline(bmp_decompress_struct_p bmp_ptr,
@@ -56,20 +56,20 @@ FXBMP_Context* CCodec_BmpModule::Start() {
   if (!p)
     return nullptr;
 
-  FXSYS_memset(p, 0, sizeof(FXBMP_Context));
+  memset(p, 0, sizeof(FXBMP_Context));
   if (!p)
     return nullptr;
 
   p->m_AllocFunc = bmp_alloc_func;
   p->m_FreeFunc = bmp_free_func;
   p->bmp_ptr = nullptr;
-  p->parent_ptr = (void*)this;
+  p->parent_ptr = this;
   p->bmp_ptr = bmp_create_decompress();
   if (!p->bmp_ptr) {
     FX_Free(p);
     return nullptr;
   }
-  p->bmp_ptr->context_ptr = (void*)p;
+  p->bmp_ptr->context_ptr = p;
   p->bmp_ptr->err_ptr = m_szLastError;
   p->bmp_ptr->bmp_error_fn = bmp_error_data;
   p->bmp_ptr->bmp_get_row_fn = bmp_read_scanline;

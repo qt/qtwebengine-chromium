@@ -18,6 +18,7 @@
 
 #include "webrtc/api/audio_codecs/audio_decoder_factory.h"
 #include "webrtc/api/call/transport.h"
+#include "webrtc/api/rtpreceiverinterface.h"
 #include "webrtc/base/optional.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/common_types.h"
@@ -116,6 +117,8 @@ class AudioReceiveStream {
   virtual void Stop() = 0;
 
   virtual Stats GetStats() const = 0;
+  // TODO(solenberg): Remove, once AudioMonitor is gone.
+  virtual int GetOutputLevel() const = 0;
 
   // Sets an audio sink that receives unmixed audio from the receive stream.
   // Ownership of the sink is passed to the stream and can be used by the
@@ -130,6 +133,8 @@ class AudioReceiveStream {
   // Sets playback gain of the stream, applied when mixing, and thus after it
   // is potentially forwarded to any attached AudioSinkInterface implementation.
   virtual void SetGain(float gain) = 0;
+
+  virtual std::vector<RtpSource> GetSources() const = 0;
 
  protected:
   virtual ~AudioReceiveStream() {}

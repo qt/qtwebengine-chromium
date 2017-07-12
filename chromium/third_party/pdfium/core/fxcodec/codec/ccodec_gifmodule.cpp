@@ -29,8 +29,8 @@ static void gif_free_func(void* p) {
 };
 
 static void gif_error_data(gif_decompress_struct_p gif_ptr,
-                           const FX_CHAR* err_msg) {
-  FXSYS_strncpy((char*)gif_ptr->err_ptr, err_msg, GIF_MAX_ERROR_SIZE - 1);
+                           const char* err_msg) {
+  strncpy((char*)gif_ptr->err_ptr, err_msg, GIF_MAX_ERROR_SIZE - 1);
   longjmp(gif_ptr->jmpbuf, 1);
 }
 
@@ -88,17 +88,17 @@ FXGIF_Context* CCodec_GifModule::Start() {
   if (!p)
     return nullptr;
 
-  FXSYS_memset(p, 0, sizeof(FXGIF_Context));
+  memset(p, 0, sizeof(FXGIF_Context));
   p->m_AllocFunc = gif_alloc_func;
   p->m_FreeFunc = gif_free_func;
   p->gif_ptr = nullptr;
-  p->parent_ptr = (void*)this;
+  p->parent_ptr = this;
   p->gif_ptr = gif_create_decompress();
   if (!p->gif_ptr) {
     FX_Free(p);
     return nullptr;
   }
-  p->gif_ptr->context_ptr = (void*)p;
+  p->gif_ptr->context_ptr = p;
   p->gif_ptr->err_ptr = m_szLastError;
   p->gif_ptr->gif_error_fn = gif_error_data;
   p->gif_ptr->gif_ask_buf_for_pal_fn = gif_ask_buf_for_pal;
@@ -177,7 +177,7 @@ int32_t CCodec_GifModule::LoadFrame(FXGIF_Context* ctx,
           buf += size;
           size = *buf++;
           if (size == 20) {
-            FXSYS_memcpy(pAttribute->m_strTime, buf, size);
+            memcpy(pAttribute->m_strTime, buf, size);
           }
         }
       }

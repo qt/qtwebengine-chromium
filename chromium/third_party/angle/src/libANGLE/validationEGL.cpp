@@ -464,6 +464,21 @@ Error ValidateCreateContext(Display *display, Config *configuration, gl::Context
               }
               break;
 
+          case EGL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE:
+              if (!display->getExtensions().createContextRobustResourceInitialization)
+              {
+                  return Error(EGL_BAD_ATTRIBUTE,
+                               "Attribute EGL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE "
+                               "requires EGL_ANGLE_create_context_robust_resource_initialization.");
+              }
+              if (value != EGL_TRUE && value != EGL_FALSE)
+              {
+                  return Error(EGL_BAD_ATTRIBUTE,
+                               "EGL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE must be "
+                               "either EGL_TRUE or EGL_FALSE.");
+              }
+              break;
+
           default:
               return Error(EGL_BAD_ATTRIBUTE, "Unknown attribute.");
         }
@@ -1778,6 +1793,54 @@ Error ValidateStreamPostD3DTextureNV12ANGLE(const Display *display,
     }
 
     return stream->validateD3D11NV12Texture(texture);
+}
+
+Error ValidateGetSyncValuesCHROMIUM(const Display *display,
+                                    const Surface *surface,
+                                    const EGLuint64KHR *ust,
+                                    const EGLuint64KHR *msc,
+                                    const EGLuint64KHR *sbc)
+{
+    ANGLE_TRY(ValidateDisplay(display));
+
+    const DisplayExtensions &displayExtensions = display->getExtensions();
+    if (!displayExtensions.getSyncValues)
+    {
+        return Error(EGL_BAD_ACCESS, "getSyncValues extension not active");
+    }
+
+    if (display->isDeviceLost())
+    {
+        return Error(EGL_CONTEXT_LOST, "Context is lost.");
+    }
+
+    if (surface == EGL_NO_SURFACE)
+    {
+        return Error(EGL_BAD_SURFACE, "getSyncValues surface cannot be EGL_NO_SURFACE");
+    }
+
+    if (!surface->directComposition())
+    {
+        return Error(EGL_BAD_SURFACE,
+                     "getSyncValues surface requires Direct Composition to be enabled");
+    }
+
+    if (ust == nullptr)
+    {
+        return egl::Error(EGL_BAD_PARAMETER, "ust is null");
+    }
+
+    if (msc == nullptr)
+    {
+        return egl::Error(EGL_BAD_PARAMETER, "msc is null");
+    }
+
+    if (sbc == nullptr)
+    {
+        return egl::Error(EGL_BAD_PARAMETER, "sbc is null");
+    }
+
+    return Error(EGL_SUCCESS);
 }
 
 Error ValidateSwapBuffersWithDamageEXT(const Display *display,

@@ -7,12 +7,15 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_colorspace.h"
+#include "core/fxcodec/codec/cjpx_decoder.h"
 #include "core/fxcodec/codec/codec_int.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "third_party/base/ptr_util.h"
 #include "third_party/lcms2-2.6/include/lcms2.h"
 #include "third_party/libopenjpeg20/openjpeg.h"
 
@@ -42,24 +45,6 @@ OPJ_SIZE_T opj_read_from_memory(void* p_buffer,
   memcpy(p_buffer, &srcData->src_data[srcData->offset], readlength);
   srcData->offset += readlength;
   return readlength;
-}
-
-OPJ_SIZE_T opj_write_from_memory(void* p_buffer,
-                                 OPJ_SIZE_T nb_bytes,
-                                 void* p_user_data) {
-  DecodeData* srcData = static_cast<DecodeData*>(p_user_data);
-  if (!srcData || !srcData->src_data || srcData->src_size == 0) {
-    return static_cast<OPJ_SIZE_T>(-1);
-  }
-  // Writes at EOF return an error code.
-  if (srcData->offset >= srcData->src_size) {
-    return static_cast<OPJ_SIZE_T>(-1);
-  }
-  OPJ_SIZE_T bufferLength = srcData->src_size - srcData->offset;
-  OPJ_SIZE_T writeLength = nb_bytes < bufferLength ? nb_bytes : bufferLength;
-  memcpy(&srcData->src_data[srcData->offset], p_buffer, writeLength);
-  srcData->offset += writeLength;
-  return writeLength;
 }
 
 OPJ_OFF_T opj_skip_from_memory(OPJ_OFF_T nb_bytes, void* p_user_data) {
@@ -132,7 +117,6 @@ opj_stream_t* fx_opj_stream_create_memory_stream(DecodeData* data,
   opj_stream_set_user_data(l_stream, data, nullptr);
   opj_stream_set_user_data_length(l_stream, data->src_size);
   opj_stream_set_read_function(l_stream, opj_read_from_memory);
-  opj_stream_set_write_function(l_stream, opj_write_from_memory);
   opj_stream_set_skip_function(l_stream, opj_skip_from_memory);
   opj_stream_set_seek_function(l_stream, opj_seek_from_memory);
   return l_stream;
@@ -580,9 +564,9 @@ void color_apply_icc_profile(opj_image_t* image) {
     image->comps[1] = image->comps[0];
     image->comps[2] = image->comps[0];
     image->comps[1].data = FX_Alloc(int, (size_t)max);
-    FXSYS_memset(image->comps[1].data, 0, sizeof(int) * (size_t)max);
+    memset(image->comps[1].data, 0, sizeof(int) * (size_t)max);
     image->comps[2].data = FX_Alloc(int, (size_t)max);
-    FXSYS_memset(image->comps[2].data, 0, sizeof(int) * (size_t)max);
+    memset(image->comps[2].data, 0, sizeof(int) * (size_t)max);
     image->numcomps += 2;
     r = image->comps[0].data;
     for (int i = 0; i < max; ++i) {
@@ -688,24 +672,6 @@ void color_apply_conversion(opj_image_t* image) {
     return;
   }
 }
-class CJPX_Decoder {
- public:
-  explicit CJPX_Decoder(CPDF_ColorSpace* cs);
-  ~CJPX_Decoder();
-  bool Init(const unsigned char* src_data, uint32_t src_size);
-  void GetInfo(uint32_t* width, uint32_t* height, uint32_t* components);
-  bool Decode(uint8_t* dest_buf,
-              int pitch,
-              const std::vector<uint8_t>& offsets);
-
- private:
-  const uint8_t* m_SrcData;
-  uint32_t m_SrcSize;
-  opj_image_t* image;
-  opj_codec_t* l_codec;
-  opj_stream_t* l_stream;
-  const CPDF_ColorSpace* const m_ColorSpace;
-};
 
 CJPX_Decoder::CJPX_Decoder(CPDF_ColorSpace* cs)
     : image(nullptr), l_codec(nullptr), l_stream(nullptr), m_ColorSpace(cs) {}
@@ -741,7 +707,7 @@ bool CJPX_Decoder::Init(const unsigned char* src_data, uint32_t src_size) {
   opj_set_default_decoder_parameters(&parameters);
   parameters.decod_format = 0;
   parameters.cod_format = 3;
-  if (FXSYS_memcmp(m_SrcData, szJP2Header, sizeof(szJP2Header)) == 0) {
+  if (memcmp(m_SrcData, szJP2Header, sizeof(szJP2Header)) == 0) {
     l_codec = opj_create_decompress(OPJ_CODEC_JP2);
     parameters.decod_format = 1;
   } else {
@@ -822,7 +788,7 @@ bool CJPX_Decoder::Decode(uint8_t* dest_buf,
   if (pitch<(int)(image->comps[0].w * 8 * image->numcomps + 31)>> 5 << 2)
     return false;
 
-  FXSYS_memset(dest_buf, 0xff, image->y1 * pitch);
+  memset(dest_buf, 0xff, image->y1 * pitch);
   std::vector<uint8_t*> channel_bufs(image->numcomps);
   std::vector<int> adjust_comps(image->numcomps);
   for (uint32_t i = 0; i < image->numcomps; i++) {
@@ -891,13 +857,15 @@ bool CJPX_Decoder::Decode(uint8_t* dest_buf,
 }
 
 CCodec_JpxModule::CCodec_JpxModule() {}
+
 CCodec_JpxModule::~CCodec_JpxModule() {}
 
-CJPX_Decoder* CCodec_JpxModule::CreateDecoder(const uint8_t* src_buf,
-                                              uint32_t src_size,
-                                              CPDF_ColorSpace* cs) {
-  std::unique_ptr<CJPX_Decoder> decoder(new CJPX_Decoder(cs));
-  return decoder->Init(src_buf, src_size) ? decoder.release() : nullptr;
+std::unique_ptr<CJPX_Decoder> CCodec_JpxModule::CreateDecoder(
+    const uint8_t* src_buf,
+    uint32_t src_size,
+    CPDF_ColorSpace* cs) {
+  auto decoder = pdfium::MakeUnique<CJPX_Decoder>(cs);
+  return decoder->Init(src_buf, src_size) ? std::move(decoder) : nullptr;
 }
 
 void CCodec_JpxModule::GetImageInfo(CJPX_Decoder* pDecoder,
@@ -912,8 +880,4 @@ bool CCodec_JpxModule::Decode(CJPX_Decoder* pDecoder,
                               int pitch,
                               const std::vector<uint8_t>& offsets) {
   return pDecoder->Decode(dest_data, pitch, offsets);
-}
-
-void CCodec_JpxModule::DestroyDecoder(CJPX_Decoder* pDecoder) {
-  delete pDecoder;
 }

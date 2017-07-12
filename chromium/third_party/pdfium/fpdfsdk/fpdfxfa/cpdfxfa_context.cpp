@@ -20,13 +20,14 @@
 #include "public/fpdf_formfill.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
+#include "xfa/fxfa/cxfa_deffontmgr.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
-#include "xfa/fxfa/xfa_ffapp.h"
-#include "xfa/fxfa/xfa_ffdoc.h"
-#include "xfa/fxfa/xfa_ffdocview.h"
-#include "xfa/fxfa/xfa_ffpageview.h"
-#include "xfa/fxfa/xfa_ffwidgethandler.h"
-#include "xfa/fxfa/xfa_fontmgr.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_ffdocview.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_ffwidgethandler.h"
+#include "xfa/fxfa/cxfa_fontmgr.h"
 
 #ifndef _WIN32
 extern void SetLastError(int err);
@@ -34,7 +35,7 @@ extern int GetLastError();
 #endif
 
 CPDFXFA_Context::CPDFXFA_Context(std::unique_ptr<CPDF_Document> pPDFDoc)
-    : m_iDocType(DOCTYPE_PDF),
+    : m_iDocType(XFA_DocType::PDF),
       m_pPDFDoc(std::move(pPDFDoc)),
       m_pFormFillEnv(nullptr),
       m_pXFADocView(nullptr),
@@ -114,12 +115,12 @@ bool CPDFXFA_Context::LoadXFADoc() {
   m_pXFADoc->StopLoad();
   m_pXFADoc->GetXFADoc()->InitScriptContext(GetJSERuntime());
 
-  if (m_pXFADoc->GetDocType() == XFA_DOCTYPE_Dynamic)
-    m_iDocType = DOCTYPE_DYNAMIC_XFA;
+  if (m_pXFADoc->GetDocType() == XFA_DocType::Dynamic)
+    m_iDocType = XFA_DocType::Dynamic;
   else
-    m_iDocType = DOCTYPE_STATIC_XFA;
+    m_iDocType = XFA_DocType::Static;
 
-  m_pXFADocView = m_pXFADoc->CreateDocView(XFA_DOCVIEW_View);
+  m_pXFADocView = m_pXFADoc->CreateDocView();
   if (m_pXFADocView->StartLayout() < 0) {
     CloseXFADoc();
     SetLastError(FPDF_ERR_XFALAYOUT);
@@ -138,11 +139,11 @@ int CPDFXFA_Context::GetPageCount() const {
     return 0;
 
   switch (m_iDocType) {
-    case DOCTYPE_PDF:
-    case DOCTYPE_STATIC_XFA:
+    case XFA_DocType::PDF:
+    case XFA_DocType::Static:
       if (m_pPDFDoc)
         return m_pPDFDoc->GetPageCount();
-    case DOCTYPE_DYNAMIC_XFA:
+    case XFA_DocType::Dynamic:
       if (m_pXFADoc)
         return m_pXFADocView->CountPageViews();
     default:
@@ -172,10 +173,8 @@ CPDFXFA_Page* CPDFXFA_Context::GetXFAPage(int page_index) {
     pPage->Release();
     return nullptr;
   }
-  if (page_index >= 0 &&
-      page_index < pdfium::CollectionSize<int>(m_XFAPageList)) {
+  if (pdfium::IndexInBounds(m_XFAPageList, page_index))
     m_XFAPageList[page_index] = pPage;
-  }
   return pPage;
 }
 
@@ -186,7 +185,7 @@ CPDFXFA_Page* CPDFXFA_Context::GetXFAPage(CXFA_FFPageView* pPage) const {
   if (!m_pXFADoc)
     return nullptr;
 
-  if (m_iDocType != DOCTYPE_DYNAMIC_XFA)
+  if (m_iDocType != XFA_DocType::Dynamic)
     return nullptr;
 
   for (CPDFXFA_Page* pTempPage : m_XFAPageList) {
@@ -203,20 +202,17 @@ void CPDFXFA_Context::DeletePage(int page_index) {
   if (m_pPDFDoc)
     m_pPDFDoc->DeletePage(page_index);
 
-  if (page_index < 0 ||
-      page_index >= pdfium::CollectionSize<int>(m_XFAPageList)) {
+  if (!pdfium::IndexInBounds(m_XFAPageList, page_index))
     return;
-  }
+
   if (CPDFXFA_Page* pPage = m_XFAPageList[page_index])
     pPage->Release();
 }
 
 void CPDFXFA_Context::RemovePage(CPDFXFA_Page* page) {
   int page_index = page->GetPageIndex();
-  if (page_index >= 0 &&
-      page_index < pdfium::CollectionSize<int>(m_XFAPageList)) {
+  if (pdfium::IndexInBounds(m_XFAPageList, page_index))
     m_XFAPageList[page_index] = nullptr;
-  }
 }
 
 void CPDFXFA_Context::ClearChangeMark() {

@@ -130,6 +130,7 @@ TParseContext::TParseContext(TSymbolTable &symt,
       mMaxNumViews(resources.MaxViewsOVR),
       mMaxImageUnits(resources.MaxImageUnits),
       mMaxCombinedTextureImageUnits(resources.MaxCombinedTextureImageUnits),
+      mMaxUniformLocations(resources.MaxUniformLocations),
       mDeclaringFunction(false)
 {
     mComputeShaderLocalSize.fill(-1);
@@ -845,8 +846,13 @@ void TParseContext::checkLocationIsNotSpecified(const TSourceLoc &location,
 {
     if (layoutQualifier.location != -1)
     {
-        error(location, "invalid layout qualifier: only valid on program inputs and outputs",
-              "location");
+        const char *errorMsg = "invalid layout qualifier: only valid on program inputs and outputs";
+        if (mShaderVersion >= 310)
+        {
+            errorMsg =
+                "invalid layout qualifier: only valid on program inputs, outputs, and uniforms";
+        }
+        error(location, errorMsg, "location");
     }
 }
 
@@ -1182,6 +1188,15 @@ void TParseContext::singleDeclarationErrorCheck(const TPublicType &publicType,
         return;
     }
 
+    if ((publicType.qualifier != EvqTemporary && publicType.qualifier != EvqGlobal &&
+         publicType.qualifier != EvqConst) &&
+        publicType.getBasicType() == EbtYuvCscStandardEXT)
+    {
+        error(identifierLocation, "cannot be used with a yuvCscStandardEXT",
+              getQualifierString(publicType.qualifier));
+        return;
+    }
+
     // check for layout qualifier issues
     const TLayoutQualifier layoutQualifier = publicType.layoutQualifier;
 
@@ -1199,9 +1214,38 @@ void TParseContext::singleDeclarationErrorCheck(const TPublicType &publicType,
         return;
     }
 
-    if (publicType.qualifier != EvqVertexIn && publicType.qualifier != EvqFragmentOut)
+    bool canHaveLocation =
+        publicType.qualifier == EvqVertexIn || publicType.qualifier == EvqFragmentOut;
+
+    if (mShaderVersion >= 310 && publicType.qualifier == EvqUniform)
+    {
+        canHaveLocation = true;
+
+        // Valid uniform declarations can't be unsized arrays since uniforms can't be initialized.
+        // But invalid shaders may still reach here with an unsized array declaration.
+        if (!publicType.isUnsizedArray())
+        {
+            TType type(publicType);
+            checkUniformLocationInRange(identifierLocation, type.getLocationCount(),
+                                        publicType.layoutQualifier);
+        }
+    }
+    if (!canHaveLocation)
     {
         checkLocationIsNotSpecified(identifierLocation, publicType.layoutQualifier);
+    }
+
+    if (publicType.qualifier == EvqFragmentOut)
+    {
+        if (layoutQualifier.location != -1 && layoutQualifier.yuv == true)
+        {
+            error(identifierLocation, "invalid layout qualifier combination", "yuv");
+            return;
+        }
+    }
+    else
+    {
+        checkYuvIsNotSpecified(identifierLocation, layoutQualifier.yuv);
     }
 
     if (IsImage(publicType.getBasicType()))
@@ -1369,6 +1413,25 @@ void TParseContext::checkSamplerBindingIsValid(const TSourceLoc &location,
     }
 }
 
+void TParseContext::checkUniformLocationInRange(const TSourceLoc &location,
+                                                int objectLocationCount,
+                                                const TLayoutQualifier &layoutQualifier)
+{
+    int loc = layoutQualifier.location;
+    if (loc >= 0 && loc + objectLocationCount > mMaxUniformLocations)
+    {
+        error(location, "Uniform location out of range", "location");
+    }
+}
+
+void TParseContext::checkYuvIsNotSpecified(const TSourceLoc &location, bool yuv)
+{
+    if (yuv != false)
+    {
+        error(location, "invalid layout qualifier: only valid on program outputs", "yuv");
+    }
+}
+
 void TParseContext::functionCallLValueErrorCheck(const TFunction *fnCandidate,
                                                  TIntermAggregate *fnCall)
 {
@@ -1380,11 +1443,9 @@ void TParseContext::functionCallLValueErrorCheck(const TFunction *fnCandidate,
             TIntermTyped *argument = (*(fnCall->getSequence()))[i]->getAsTyped();
             if (!checkCanBeLValue(argument->getLine(), "assign", argument))
             {
-                TString unmangledName =
-                    TFunction::unmangleName(fnCall->getFunctionSymbolInfo()->getName());
                 error(argument->getLine(),
                       "Constant value cannot be passed for 'out' or 'inout' parameters.",
-                      unmangledName.c_str());
+                      fnCall->getFunctionSymbolInfo()->getName().c_str());
                 return;
             }
         }
@@ -2307,6 +2368,8 @@ void TParseContext::parseGlobalLayoutQualifier(const TTypeQualifierBuilder &type
 
     checkInternalFormatIsNotSpecified(typeQualifier.line, layoutQualifier.imageInternalFormat);
 
+    checkYuvIsNotSpecified(typeQualifier.line, layoutQualifier.yuv);
+
     if (typeQualifier.qualifier == EvqComputeIn)
     {
         if (mComputeShaderLocalSizeDeclared &&
@@ -2425,7 +2488,8 @@ TIntermFunctionPrototype *TParseContext::createPrototypeNodeFromFunction(
     const TSourceLoc &location,
     bool insertParametersToSymbolTable)
 {
-    TIntermFunctionPrototype *prototype = new TIntermFunctionPrototype(function.getReturnType());
+    TIntermFunctionPrototype *prototype =
+        new TIntermFunctionPrototype(function.getReturnType(), TSymbolUniqueId(function));
     // TODO(oetuaho@nvidia.com): Instead of converting the function information here, the node could
     // point to the data that already exists in the symbol table.
     prototype->getFunctionSymbolInfo()->setFromFunction(function);
@@ -2738,9 +2802,8 @@ TIntermTyped *TParseContext::addConstructor(TIntermSequence *arguments,
         return TIntermTyped::CreateZero(type);
     }
 
-    TIntermAggregate *constructorNode = new TIntermAggregate(type, op, arguments);
+    TIntermAggregate *constructorNode = TIntermAggregate::CreateConstructor(type, op, arguments);
     constructorNode->setLine(line);
-    ASSERT(constructorNode->isConstructor());
 
     TIntermTyped *constConstructor =
         intermediate.foldAggregateBuiltIn(constructorNode, mDiagnostics);
@@ -2784,6 +2847,8 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
 
     // TODO(oetuaho): Remove this and support binding for blocks.
     checkBindingIsNotSpecified(typeQualifier.line, typeQualifier.layoutQualifier.binding);
+
+    checkYuvIsNotSpecified(typeQualifier.line, typeQualifier.layoutQualifier.yuv);
 
     TLayoutQualifier blockLayoutQualifier = typeQualifier.layoutQualifier;
     checkLocationIsNotSpecified(typeQualifier.line, blockLayoutQualifier);
@@ -3270,6 +3335,11 @@ TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierTyp
     {
         error(qualifierTypeLine, "invalid layout qualifier: location requires an argument",
               qualifierType.c_str());
+    }
+    else if (qualifierType == "yuv" && isExtensionEnabled("GL_EXT_YUV_target") &&
+             mShaderType == GL_FRAGMENT_SHADER)
+    {
+        qualifier.yuv = true;
     }
     else if (qualifierType == "rgba32f")
     {
@@ -4205,16 +4275,13 @@ void TParseContext::checkTextureOffsetConst(TIntermAggregate *functionCall)
     const TString &name        = functionCall->getFunctionSymbolInfo()->getName();
     TIntermNode *offset        = nullptr;
     TIntermSequence *arguments = functionCall->getSequence();
-    if (name.compare(0, 16, "texelFetchOffset") == 0 ||
-        name.compare(0, 16, "textureLodOffset") == 0 ||
-        name.compare(0, 20, "textureProjLodOffset") == 0 ||
-        name.compare(0, 17, "textureGradOffset") == 0 ||
-        name.compare(0, 21, "textureProjGradOffset") == 0)
+    if (name == "texelFetchOffset" || name == "textureLodOffset" ||
+        name == "textureProjLodOffset" || name == "textureGradOffset" ||
+        name == "textureProjGradOffset")
     {
         offset = arguments->back();
     }
-    else if (name.compare(0, 13, "textureOffset") == 0 ||
-             name.compare(0, 17, "textureProjOffset") == 0)
+    else if (name == "textureOffset" || name == "textureProjOffset")
     {
         // A bias parameter might follow the offset parameter.
         ASSERT(arguments->size() >= 3);
@@ -4225,9 +4292,8 @@ void TParseContext::checkTextureOffsetConst(TIntermAggregate *functionCall)
         TIntermConstantUnion *offsetConstantUnion = offset->getAsConstantUnion();
         if (offset->getAsTyped()->getQualifier() != EvqConst || !offsetConstantUnion)
         {
-            TString unmangledName = TFunction::unmangleName(name);
             error(functionCall->getLine(), "Texture offset must be a constant expression",
-                  unmangledName.c_str());
+                  name.c_str());
         }
         else
         {
@@ -4461,7 +4527,7 @@ TIntermTyped *TParseContext::addNonConstructorFunctionCall(TFunction *fnCall,
                 else
                 {
                     TIntermAggregate *callNode =
-                        new TIntermAggregate(fnCandidate->getReturnType(), op, arguments);
+                        TIntermAggregate::Create(fnCandidate->getReturnType(), op, arguments);
                     callNode->setLine(loc);
 
                     // Some built-in functions have out parameters too.
@@ -4489,19 +4555,13 @@ TIntermTyped *TParseContext::addNonConstructorFunctionCall(TFunction *fnCall,
                 // This needs to happen after the function info including name is set.
                 if (builtIn)
                 {
-                    callNode = new TIntermAggregate(fnCandidate->getReturnType(),
-                                                    EOpCallBuiltInFunction, arguments);
-                    // Note that name needs to be set before texture function type is determined.
-                    callNode->getFunctionSymbolInfo()->setFromFunction(*fnCandidate);
-                    callNode->setBuiltInFunctionPrecision();
+                    callNode = TIntermAggregate::CreateBuiltInFunctionCall(*fnCandidate, arguments);
                     checkTextureOffsetConst(callNode);
                     checkImageMemoryAccessForBuiltinFunctions(callNode);
                 }
                 else
                 {
-                    callNode = new TIntermAggregate(fnCandidate->getReturnType(),
-                                                    EOpCallFunctionInAST, arguments);
-                    callNode->getFunctionSymbolInfo()->setFromFunction(*fnCandidate);
+                    callNode = TIntermAggregate::CreateFunctionCall(*fnCandidate, arguments);
                     checkImageMemoryAccessForUserDefinedFunctions(fnCandidate, callNode);
                 }
 

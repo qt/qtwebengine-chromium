@@ -39,8 +39,8 @@ namespace guest_view {
 namespace {
 
 using WebContentsGuestViewMap = std::map<const WebContents*, GuestViewBase*>;
-static base::LazyInstance<WebContentsGuestViewMap> webcontents_guestview_map =
-    LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<WebContentsGuestViewMap>::DestructorAtExit
+    webcontents_guestview_map = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -75,7 +75,7 @@ class GuestViewBase::OwnerContentsObserver : public WebContentsObserver {
     // If the embedder navigates to a different page then destroy the guest.
     if (!navigation_handle->IsInMainFrame() ||
         !navigation_handle->HasCommitted() ||
-        navigation_handle->IsSamePage()) {
+        navigation_handle->IsSameDocument()) {
       return;
     }
 
@@ -139,7 +139,7 @@ class GuestViewBase::OwnerContentsObserver : public WebContentsObserver {
     if (destroyed_)
       return;
     destroyed_ = true;
-    guest_->Destroy();
+    guest_->Destroy(true);
   }
 
   DISALLOW_COPY_AND_ASSIGN(OwnerContentsObserver);
@@ -161,7 +161,7 @@ class GuestViewBase::OpenerLifetimeObserver : public WebContentsObserver {
       return;
 
     // If the opener is destroyed then destroy the guest.
-    guest_->Destroy();
+    guest_->Destroy(true);
   }
 
  private:
@@ -442,7 +442,7 @@ void GuestViewBase::DidDetach() {
       element_instance_id_));
   element_instance_id_ = kInstanceIDNone;
   if (!CanRunInDetachedState())
-    Destroy();
+    Destroy(true);
 }
 
 bool GuestViewBase::HandleFindForEmbedder(
@@ -477,7 +477,7 @@ const GURL& GuestViewBase::GetOwnerSiteURL() const {
   return owner_web_contents()->GetLastCommittedURL();
 }
 
-void GuestViewBase::Destroy() {
+void GuestViewBase::Destroy(bool also_delete) {
   if (is_being_destroyed_)
     return;
 
@@ -510,7 +510,8 @@ void GuestViewBase::Destroy() {
       RemoveGuest(guest_instance_id_);
   pending_events_.clear();
 
-  delete web_contents();
+  if (also_delete)
+    delete web_contents();
 }
 
 void GuestViewBase::SetAttachParams(const base::DictionaryValue& params) {
@@ -598,6 +599,8 @@ void GuestViewBase::RenderViewReady() {
 }
 
 void GuestViewBase::WebContentsDestroyed() {
+  Destroy(false);
+
   // Let the derived class know that its WebContents is in the process of
   // being destroyed. web_contents() is still valid at this point.
   // TODO(fsamuel): This allows for reentrant code into WebContents during
@@ -695,9 +698,9 @@ bool GuestViewBase::ShouldFocusPageAfterCrash() {
 
 bool GuestViewBase::PreHandleGestureEvent(WebContents* source,
                                           const blink::WebGestureEvent& event) {
-  return event.type() == blink::WebGestureEvent::GesturePinchBegin ||
-         event.type() == blink::WebGestureEvent::GesturePinchUpdate ||
-         event.type() == blink::WebGestureEvent::GesturePinchEnd;
+  return event.GetType() == blink::WebGestureEvent::kGesturePinchBegin ||
+         event.GetType() == blink::WebGestureEvent::kGesturePinchUpdate ||
+         event.GetType() == blink::WebGestureEvent::kGesturePinchEnd;
 }
 
 void GuestViewBase::UpdatePreferredSize(WebContents* target_web_contents,

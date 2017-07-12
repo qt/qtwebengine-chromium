@@ -12,13 +12,15 @@
 
 #include <algorithm>
 #include <limits>
+#include <numeric>
 #include <utility>
 
 #include "webrtc/base/arraysize.h"
 #include "webrtc/base/checks.h"
+#include "webrtc/base/location.h"
 #include "webrtc/base/logging.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/base/timeutils.h"
+#include "webrtc/base/trace_event.h"
 #include "webrtc/common_video/include/video_bitrate_allocator.h"
 #include "webrtc/modules/pacing/paced_sender.h"
 #include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
@@ -31,7 +33,6 @@
 namespace webrtc {
 
 namespace {
-using DegradationPreference = VideoSendStream::DegradationPreference;
 
 // Time interval for logging frame counts.
 const int64_t kFrameLogIntervalMs = 60000;
@@ -41,6 +42,7 @@ const int64_t kFrameLogIntervalMs = 60000;
 // on MediaCodec and fallback implementations are in place.
 // See https://bugs.chromium.org/p/webrtc/issues/detail?id=7206
 const int kMinPixelsPerFrame = 320 * 180;
+const int kMinFramerateFps = 2;
 
 // The maximum number of frames to drop at beginning of stream
 // to try and achieve desired bitrate.
@@ -149,21 +151,23 @@ class ViEEncoder::VideoSourceProxy {
  public:
   explicit VideoSourceProxy(ViEEncoder* vie_encoder)
       : vie_encoder_(vie_encoder),
-        degradation_preference_(DegradationPreference::kMaintainResolution),
+        degradation_preference_(
+            VideoSendStream::DegradationPreference::kDegradationDisabled),
         source_(nullptr) {}
 
-  void SetSource(rtc::VideoSourceInterface<VideoFrame>* source,
-                 const DegradationPreference& degradation_preference) {
+  void SetSource(
+      rtc::VideoSourceInterface<VideoFrame>* source,
+      const VideoSendStream::DegradationPreference& degradation_preference) {
     // Called on libjingle's worker thread.
     RTC_DCHECK_CALLED_SEQUENTIALLY(&main_checker_);
     rtc::VideoSourceInterface<VideoFrame>* old_source = nullptr;
     rtc::VideoSinkWants wants;
     {
       rtc::CritScope lock(&crit_);
+      degradation_preference_ = degradation_preference;
       old_source = source_;
       source_ = source;
-      degradation_preference_ = degradation_preference;
-      wants = current_wants();
+      wants = GetActiveSinkWants();
     }
 
     if (old_source != source && old_source != nullptr) {
@@ -180,19 +184,38 @@ class ViEEncoder::VideoSourceProxy {
   void SetWantsRotationApplied(bool rotation_applied) {
     rtc::CritScope lock(&crit_);
     sink_wants_.rotation_applied = rotation_applied;
-    disabled_scaling_sink_wants_.rotation_applied = rotation_applied;
-    if (source_) {
-      source_->AddOrUpdateSink(vie_encoder_, current_wants());
+    if (source_)
+      source_->AddOrUpdateSink(vie_encoder_, sink_wants_);
+  }
+
+  rtc::VideoSinkWants GetActiveSinkWants() EXCLUSIVE_LOCKS_REQUIRED(&crit_) {
+    rtc::VideoSinkWants wants = sink_wants_;
+    // Clear any constraints from the current sink wants that don't apply to
+    // the used degradation_preference.
+    switch (degradation_preference_) {
+      case VideoSendStream::DegradationPreference::kBalanced:
+        FALLTHROUGH();
+      case VideoSendStream::DegradationPreference::kMaintainFramerate:
+        wants.max_framerate_fps = std::numeric_limits<int>::max();
+        break;
+      case VideoSendStream::DegradationPreference::kMaintainResolution:
+        wants.max_pixel_count = std::numeric_limits<int>::max();
+        wants.target_pixel_count.reset();
+        break;
+      case VideoSendStream::DegradationPreference::kDegradationDisabled:
+        wants.max_pixel_count = std::numeric_limits<int>::max();
+        wants.target_pixel_count.reset();
+        wants.max_framerate_fps = std::numeric_limits<int>::max();
     }
+    return wants;
   }
 
   void RequestResolutionLowerThan(int pixel_count) {
     // Called on the encoder task queue.
     rtc::CritScope lock(&crit_);
     if (!IsResolutionScalingEnabledLocked()) {
-      // This can happen since |degradation_preference_| is set on
-      // libjingle's worker thread but the adaptation is done on the encoder
-      // task queue.
+      // This can happen since |degradation_preference_| is set on libjingle's
+      // worker thread but the adaptation is done on the encoder task queue.
       return;
     }
     // The input video frame size will have a resolution with less than or
@@ -201,51 +224,99 @@ class ViEEncoder::VideoSourceProxy {
     const int pixels_wanted = (pixel_count * 3) / 5;
     if (pixels_wanted < kMinPixelsPerFrame)
       return;
-    sink_wants_.max_pixel_count = rtc::Optional<int>(pixels_wanted);
+    sink_wants_.max_pixel_count = pixels_wanted;
     sink_wants_.target_pixel_count = rtc::Optional<int>();
     if (source_)
-      source_->AddOrUpdateSink(vie_encoder_, sink_wants_);
+      source_->AddOrUpdateSink(vie_encoder_, GetActiveSinkWants());
+  }
+
+  void RequestFramerateLowerThan(int framerate_fps) {
+    // Called on the encoder task queue.
+    rtc::CritScope lock(&crit_);
+    if (!IsFramerateScalingEnabledLocked()) {
+      // This can happen since |degradation_preference_| is set on libjingle's
+      // worker thread but the adaptation is done on the encoder task queue.
+      return;
+    }
+    // The input video frame rate will be scaled down to 2/3 of input fps,
+    // rounding down.
+    const int framerate_wanted =
+        std::max(kMinFramerateFps, (framerate_fps * 2) / 3);
+    sink_wants_.max_framerate_fps = framerate_wanted;
+    if (source_)
+      source_->AddOrUpdateSink(vie_encoder_, GetActiveSinkWants());
   }
 
   void RequestHigherResolutionThan(int pixel_count) {
     rtc::CritScope lock(&crit_);
     if (!IsResolutionScalingEnabledLocked()) {
-      // This can happen since |degradation_preference_| is set on
-      // libjingle's worker thread but the adaptation is done on the encoder
-      // task queue.
+      // This can happen since |degradation_preference_| is set on libjingle's
+      // worker thread but the adaptation is done on the encoder task queue.
       return;
     }
-    // On step down we request at most 3/5 the pixel count of the previous
-    // resolution, so in order to take "one step up" we request a resolution as
-    // close as possible to 5/3 of the current resolution. The actual pixel
-    // count selected depends on the capabilities of the source. In order to not
-    // take a too large step up, we cap the requested pixel count to be at most
-    // four time the current number of pixels.
-    sink_wants_.target_pixel_count = rtc::Optional<int>((pixel_count * 5) / 3);
-    sink_wants_.max_pixel_count = rtc::Optional<int>(pixel_count * 4);
+
+    if (pixel_count == std::numeric_limits<int>::max()) {
+      // Remove any constraints.
+      sink_wants_.target_pixel_count.reset();
+      sink_wants_.max_pixel_count = std::numeric_limits<int>::max();
+    } else {
+      // On step down we request at most 3/5 the pixel count of the previous
+      // resolution, so in order to take "one step up" we request a resolution
+      // as close as possible to 5/3 of the current resolution. The actual pixel
+      // count selected depends on the capabilities of the source. In order to
+      // not take a too large step up, we cap the requested pixel count to be at
+      // most four time the current number of pixels.
+      sink_wants_.target_pixel_count =
+          rtc::Optional<int>((pixel_count * 5) / 3);
+      sink_wants_.max_pixel_count = pixel_count * 4;
+    }
     if (source_)
-      source_->AddOrUpdateSink(vie_encoder_, sink_wants_);
+      source_->AddOrUpdateSink(vie_encoder_, GetActiveSinkWants());
+  }
+
+  void RequestHigherFramerateThan(int framerate_fps) {
+    // Called on the encoder task queue.
+    rtc::CritScope lock(&crit_);
+    if (!IsFramerateScalingEnabledLocked()) {
+      // This can happen since |degradation_preference_| is set on libjingle's
+      // worker thread but the adaptation is done on the encoder task queue.
+      return;
+    }
+    if (framerate_fps == std::numeric_limits<int>::max()) {
+      // Remove any restrains.
+      sink_wants_.max_framerate_fps = std::numeric_limits<int>::max();
+    } else {
+      // The input video frame rate will be scaled up to the last step, with
+      // rounding.
+      const int framerate_wanted = (framerate_fps * 3) / 2;
+      sink_wants_.max_framerate_fps = framerate_wanted;
+    }
+    if (source_)
+      source_->AddOrUpdateSink(vie_encoder_, GetActiveSinkWants());
   }
 
  private:
   bool IsResolutionScalingEnabledLocked() const
       EXCLUSIVE_LOCKS_REQUIRED(&crit_) {
-    return degradation_preference_ !=
-           DegradationPreference::kMaintainResolution;
+    return degradation_preference_ ==
+               VideoSendStream::DegradationPreference::kMaintainFramerate ||
+           degradation_preference_ ==
+               VideoSendStream::DegradationPreference::kBalanced;
   }
 
-  const rtc::VideoSinkWants& current_wants() const
+  bool IsFramerateScalingEnabledLocked() const
       EXCLUSIVE_LOCKS_REQUIRED(&crit_) {
-    return IsResolutionScalingEnabledLocked() ? sink_wants_
-                                              : disabled_scaling_sink_wants_;
+    // TODO(sprang): Also accept kBalanced here?
+    return degradation_preference_ ==
+           VideoSendStream::DegradationPreference::kMaintainResolution;
   }
 
   rtc::CriticalSection crit_;
   rtc::SequencedTaskChecker main_checker_;
   ViEEncoder* const vie_encoder_;
   rtc::VideoSinkWants sink_wants_ GUARDED_BY(&crit_);
-  rtc::VideoSinkWants disabled_scaling_sink_wants_ GUARDED_BY(&crit_);
-  DegradationPreference degradation_preference_ GUARDED_BY(&crit_);
+  VideoSendStream::DegradationPreference degradation_preference_
+      GUARDED_BY(&crit_);
   rtc::VideoSourceInterface<VideoFrame>* source_ GUARDED_BY(&crit_);
 
   RTC_DISALLOW_COPY_AND_ASSIGN(VideoSourceProxy);
@@ -278,13 +349,9 @@ ViEEncoder::ViEEncoder(uint32_t number_of_cores,
       nack_enabled_(false),
       last_observed_bitrate_bps_(0),
       encoder_paused_and_dropped_frame_(false),
-      has_received_sli_(false),
-      picture_id_sli_(0),
-      has_received_rpsi_(false),
-      picture_id_rpsi_(0),
       clock_(Clock::GetRealTimeClock()),
-      scale_counter_(kScaleReasonSize, 0),
-      degradation_preference_(DegradationPreference::kMaintainResolution),
+      degradation_preference_(
+          VideoSendStream::DegradationPreference::kDegradationDisabled),
       last_captured_timestamp_(0),
       delta_ntp_internal_ms_(clock_->CurrentNtpInMilliseconds() -
                              clock_->TimeInMilliseconds()),
@@ -310,7 +377,7 @@ ViEEncoder::~ViEEncoder() {
 
 void ViEEncoder::Stop() {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  source_proxy_->SetSource(nullptr, DegradationPreference());
+  source_proxy_->SetSource(nullptr, VideoSendStream::DegradationPreference());
   encoder_queue_.PostTask([this] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
     overuse_detector_.StopCheckForOveruse();
@@ -329,7 +396,7 @@ void ViEEncoder::RegisterProcessThread(ProcessThread* module_process_thread) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   RTC_DCHECK(!module_process_thread_);
   module_process_thread_ = module_process_thread;
-  module_process_thread_->RegisterModule(&video_sender_);
+  module_process_thread_->RegisterModule(&video_sender_, RTC_FROM_HERE);
   module_process_thread_checker_.DetachFromThread();
 }
 
@@ -350,17 +417,24 @@ void ViEEncoder::SetBitrateObserver(
 
 void ViEEncoder::SetSource(
     rtc::VideoSourceInterface<VideoFrame>* source,
-    const VideoSendStream::DegradationPreference& degradation_preference) {
+    const VideoSendStream::VideoSendStream::DegradationPreference&
+        degradation_preference) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   source_proxy_->SetSource(source, degradation_preference);
   encoder_queue_.PostTask([this, degradation_preference] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
-
+    if (degradation_preference_ != degradation_preference) {
+      // Reset adaptation state, so that we're not tricked into thinking there's
+      // an already pending request of the same type.
+      last_adaptation_request_.reset();
+    }
     degradation_preference_ = degradation_preference;
-    initial_rampup_ =
-        degradation_preference_ != DegradationPreference::kMaintainResolution
-            ? 0
-            : kMaxInitialFramedrop;
+    bool allow_scaling =
+        degradation_preference_ ==
+            VideoSendStream::DegradationPreference::kMaintainFramerate ||
+        degradation_preference_ ==
+            VideoSendStream::DegradationPreference::kBalanced;
+    initial_rampup_ = allow_scaling ? 0 : kMaxInitialFramedrop;
     ConfigureQualityScaler();
   });
 }
@@ -463,8 +537,23 @@ void ViEEncoder::ConfigureQualityScaler() {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
   const auto scaling_settings = settings_.encoder->GetScalingSettings();
   const bool degradation_preference_allows_scaling =
-      degradation_preference_ != DegradationPreference::kMaintainResolution;
-  if (degradation_preference_allows_scaling && scaling_settings.enabled) {
+      degradation_preference_ ==
+          VideoSendStream::DegradationPreference::kMaintainFramerate ||
+      degradation_preference_ ==
+          VideoSendStream::DegradationPreference::kBalanced;
+  const bool quality_scaling_allowed =
+      degradation_preference_allows_scaling && scaling_settings.enabled;
+
+  const std::vector<int>& scale_counters = GetScaleCounters();
+  stats_proxy_->SetCpuScalingStats(
+      degradation_preference_allows_scaling ? scale_counters[kCpu] : -1);
+  stats_proxy_->SetQualityScalingStats(
+      quality_scaling_allowed ? scale_counters[kQuality] : -1);
+
+  if (quality_scaling_allowed) {
+    // Abort if quality scaler has already been configured.
+    if (quality_scaler_.get() != nullptr)
+      return;
     // Drop frames and scale down until desired quality is achieved.
     if (scaling_settings.thresholds) {
       quality_scaler_.reset(
@@ -476,9 +565,6 @@ void ViEEncoder::ConfigureQualityScaler() {
     quality_scaler_.reset(nullptr);
     initial_rampup_ = kMaxInitialFramedrop;
   }
-  stats_proxy_->SetResolutionRestrictionStats(
-      degradation_preference_allows_scaling, scale_counter_[kCpu] > 0,
-      scale_counter_[kQuality]);
 }
 
 void ViEEncoder::OnFrame(const VideoFrame& video_frame) {
@@ -609,20 +695,6 @@ void ViEEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
 
   overuse_detector_.FrameCaptured(video_frame, time_when_posted_us);
 
-  if (codec_type_ == webrtc::kVideoCodecVP8) {
-    webrtc::CodecSpecificInfo codec_specific_info;
-    codec_specific_info.codecType = webrtc::kVideoCodecVP8;
-
-    codec_specific_info.codecSpecific.VP8.hasReceivedRPSI = has_received_rpsi_;
-    codec_specific_info.codecSpecific.VP8.hasReceivedSLI = has_received_sli_;
-    codec_specific_info.codecSpecific.VP8.pictureIdRPSI = picture_id_rpsi_;
-    codec_specific_info.codecSpecific.VP8.pictureIdSLI = picture_id_sli_;
-    has_received_sli_ = false;
-    has_received_rpsi_ = false;
-
-    video_sender_.AddVideoFrame(video_frame, &codec_specific_info);
-    return;
-  }
   video_sender_.AddVideoFrame(video_frame, nullptr);
 }
 
@@ -673,26 +745,6 @@ void ViEEncoder::SendStatistics(uint32_t bit_rate, uint32_t frame_rate) {
   stats_proxy_->OnEncoderStatsUpdate(frame_rate, bit_rate);
 }
 
-void ViEEncoder::OnReceivedSLI(uint8_t picture_id) {
-  if (!encoder_queue_.IsCurrent()) {
-    encoder_queue_.PostTask([this, picture_id] { OnReceivedSLI(picture_id); });
-    return;
-  }
-  RTC_DCHECK_RUN_ON(&encoder_queue_);
-  picture_id_sli_ = picture_id;
-  has_received_sli_ = true;
-}
-
-void ViEEncoder::OnReceivedRPSI(uint64_t picture_id) {
-  if (!encoder_queue_.IsCurrent()) {
-    encoder_queue_.PostTask([this, picture_id] { OnReceivedRPSI(picture_id); });
-    return;
-  }
-  RTC_DCHECK_RUN_ON(&encoder_queue_);
-  picture_id_rpsi_ = picture_id;
-  has_received_rpsi_ = true;
-}
-
 void ViEEncoder::OnReceivedIntraFrameRequest(size_t stream_index) {
   if (!encoder_queue_.IsCurrent()) {
     encoder_queue_.PostTask(
@@ -741,79 +793,193 @@ void ViEEncoder::OnBitrateUpdated(uint32_t bitrate_bps,
 
 void ViEEncoder::AdaptDown(AdaptReason reason) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
-  if (degradation_preference_ != DegradationPreference::kBalanced)
-    return;
-  RTC_DCHECK(static_cast<bool>(last_frame_info_));
-  int current_pixel_count = last_frame_info_->pixel_count();
-  if (last_adaptation_request_ &&
-      last_adaptation_request_->mode_ == AdaptationRequest::Mode::kAdaptDown &&
-      current_pixel_count >= last_adaptation_request_->input_pixel_count_) {
-    // Don't request lower resolution if the current resolution is not lower
-    // than the last time we asked for the resolution to be lowered.
-    return;
+  AdaptationRequest adaptation_request = {
+      last_frame_info_->pixel_count(),
+      stats_proxy_->GetStats().input_frame_rate,
+      AdaptationRequest::Mode::kAdaptDown};
+  bool downgrade_requested =
+      last_adaptation_request_ &&
+      last_adaptation_request_->mode_ == AdaptationRequest::Mode::kAdaptDown;
+
+  int max_downgrades = 0;
+  switch (degradation_preference_) {
+    case VideoSendStream::DegradationPreference::kBalanced:
+      FALLTHROUGH();
+    case VideoSendStream::DegradationPreference::kMaintainFramerate:
+      max_downgrades = kMaxCpuResolutionDowngrades;
+      if (downgrade_requested &&
+          adaptation_request.input_pixel_count_ >=
+              last_adaptation_request_->input_pixel_count_) {
+        // Don't request lower resolution if the current resolution is not
+        // lower than the last time we asked for the resolution to be lowered.
+        return;
+      }
+      break;
+    case VideoSendStream::DegradationPreference::kMaintainResolution:
+      max_downgrades = kMaxCpuFramerateDowngrades;
+      if (adaptation_request.framerate_fps_ <= 0 ||
+          (downgrade_requested &&
+           adaptation_request.framerate_fps_ < kMinFramerateFps)) {
+        // If no input fps estimate available, can't determine how to scale down
+        // framerate. Otherwise, don't request lower framerate if we don't have
+        // a valid frame rate. Since framerate, unlike resolution, is a measure
+        // we have to estimate, and can fluctuate naturally over time, don't
+        // make the same kind of limitations as for resolution, but trust the
+        // overuse detector to not trigger too often.
+        return;
+      }
+      break;
+    case VideoSendStream::DegradationPreference::kDegradationDisabled:
+      return;
   }
-  last_adaptation_request_.emplace(AdaptationRequest{
-      current_pixel_count, AdaptationRequest::Mode::kAdaptDown});
+
+  last_adaptation_request_.emplace(adaptation_request);
+  const std::vector<int>& scale_counter = GetScaleCounters();
 
   switch (reason) {
     case kQuality:
-      stats_proxy_->OnQualityRestrictedResolutionChanged(
-          scale_counter_[reason] + 1);
+      stats_proxy_->OnQualityRestrictedResolutionChanged(scale_counter[reason] +
+                                                         1);
       break;
     case kCpu:
-      if (scale_counter_[reason] >= kMaxCpuDowngrades)
+      if (scale_counter[reason] >= max_downgrades)
         return;
       // Update stats accordingly.
       stats_proxy_->OnCpuRestrictedResolutionChanged(true);
       break;
   }
-  ++scale_counter_[reason];
-  source_proxy_->RequestResolutionLowerThan(current_pixel_count);
-  LOG(LS_INFO) << "Scaling down resolution.";
+
+  IncrementScaleCounter(reason, 1);
+
+  switch (degradation_preference_) {
+    case VideoSendStream::DegradationPreference::kBalanced:
+      FALLTHROUGH();
+    case VideoSendStream::DegradationPreference::kMaintainFramerate:
+      source_proxy_->RequestResolutionLowerThan(
+          adaptation_request.input_pixel_count_);
+      LOG(LS_INFO) << "Scaling down resolution.";
+      break;
+    case VideoSendStream::DegradationPreference::kMaintainResolution:
+      source_proxy_->RequestFramerateLowerThan(
+          adaptation_request.framerate_fps_);
+      LOG(LS_INFO) << "Scaling down framerate.";
+      break;
+    case VideoSendStream::DegradationPreference::kDegradationDisabled:
+      RTC_NOTREACHED();
+  }
+
   for (size_t i = 0; i < kScaleReasonSize; ++i) {
-    LOG(LS_INFO) << "Scaled " << scale_counter_[i]
+    LOG(LS_INFO) << "Scaled " << GetScaleCounters()[i]
                  << " times for reason: " << (i ? "cpu" : "quality");
   }
 }
 
 void ViEEncoder::AdaptUp(AdaptReason reason) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
-  if (scale_counter_[reason] == 0 ||
-      degradation_preference_ != DegradationPreference::kBalanced) {
+  int scale_counter = GetScaleCounters()[reason];
+  if (scale_counter == 0)
     return;
+  RTC_DCHECK_GT(scale_counter, 0);
+  AdaptationRequest adaptation_request = {
+      last_frame_info_->pixel_count(),
+      stats_proxy_->GetStats().input_frame_rate,
+      AdaptationRequest::Mode::kAdaptUp};
+
+  bool adapt_up_requested =
+      last_adaptation_request_ &&
+      last_adaptation_request_->mode_ == AdaptationRequest::Mode::kAdaptUp;
+  switch (degradation_preference_) {
+    case VideoSendStream::DegradationPreference::kBalanced:
+      FALLTHROUGH();
+    case VideoSendStream::DegradationPreference::kMaintainFramerate:
+      if (adapt_up_requested &&
+          adaptation_request.input_pixel_count_ <=
+              last_adaptation_request_->input_pixel_count_) {
+        // Don't request higher resolution if the current resolution is not
+        // higher than the last time we asked for the resolution to be higher.
+        return;
+      }
+      break;
+    case VideoSendStream::DegradationPreference::kMaintainResolution:
+      // TODO(sprang): Don't request higher framerate if we are already at
+      // max requested fps?
+      break;
+    case VideoSendStream::DegradationPreference::kDegradationDisabled:
+      return;
   }
-  // Only scale if resolution is higher than last time we requested higher
-  // resolution.
-  RTC_DCHECK(static_cast<bool>(last_frame_info_));
-  int current_pixel_count = last_frame_info_->pixel_count();
-  if (last_adaptation_request_ &&
-      last_adaptation_request_->mode_ == AdaptationRequest::Mode::kAdaptUp &&
-      current_pixel_count <= last_adaptation_request_->input_pixel_count_) {
-    // Don't request higher resolution if the current resolution is not higher
-    // than the last time we asked for the resolution to be higher.
-    return;
-  }
-  last_adaptation_request_.emplace(AdaptationRequest{
-      current_pixel_count, AdaptationRequest::Mode::kAdaptUp});
+
+  last_adaptation_request_.emplace(adaptation_request);
 
   switch (reason) {
     case kQuality:
-      stats_proxy_->OnQualityRestrictedResolutionChanged(
-          scale_counter_[reason] - 1);
+      stats_proxy_->OnQualityRestrictedResolutionChanged(scale_counter - 1);
       break;
     case kCpu:
       // Update stats accordingly.
-      stats_proxy_->OnCpuRestrictedResolutionChanged(scale_counter_[reason] >
-                                                     1);
+      stats_proxy_->OnCpuRestrictedResolutionChanged(scale_counter > 1);
       break;
   }
-  --scale_counter_[reason];
-  source_proxy_->RequestHigherResolutionThan(current_pixel_count);
-  LOG(LS_INFO) << "Scaling up resolution.";
+
+  // Decrease counter of how many times we have scaled down, for this
+  // degradation preference mode and reason.
+  IncrementScaleCounter(reason, -1);
+
+  // Get a sum of how many times have scaled down, in total, for this
+  // degradation preference mode. If it is 0, remove any restraints.
+  const std::vector<int>& current_scale_counters = GetScaleCounters();
+  const int scale_sum = std::accumulate(current_scale_counters.begin(),
+                                        current_scale_counters.end(), 0);
+  switch (degradation_preference_) {
+    case VideoSendStream::DegradationPreference::kBalanced:
+      FALLTHROUGH();
+    case VideoSendStream::DegradationPreference::kMaintainFramerate:
+      if (scale_sum == 0) {
+        LOG(LS_INFO) << "Removing resolution down-scaling setting.";
+        source_proxy_->RequestHigherResolutionThan(
+            std::numeric_limits<int>::max());
+      } else {
+        source_proxy_->RequestHigherResolutionThan(
+            adaptation_request.input_pixel_count_);
+        LOG(LS_INFO) << "Scaling up resolution.";
+      }
+      break;
+    case VideoSendStream::DegradationPreference::kMaintainResolution:
+      if (scale_sum == 0) {
+        LOG(LS_INFO) << "Removing framerate down-scaling setting.";
+        source_proxy_->RequestHigherFramerateThan(
+            std::numeric_limits<int>::max());
+      } else {
+        source_proxy_->RequestHigherFramerateThan(
+            adaptation_request.framerate_fps_);
+        LOG(LS_INFO) << "Scaling up framerate.";
+      }
+      break;
+    case VideoSendStream::DegradationPreference::kDegradationDisabled:
+      RTC_NOTREACHED();
+  }
+
   for (size_t i = 0; i < kScaleReasonSize; ++i) {
-    LOG(LS_INFO) << "Scaled " << scale_counter_[i]
+    LOG(LS_INFO) << "Scaled " << current_scale_counters[i]
                  << " times for reason: " << (i ? "cpu" : "quality");
   }
+}
+
+const std::vector<int>& ViEEncoder::GetScaleCounters() {
+  auto it = scale_counters_.find(degradation_preference_);
+  if (it == scale_counters_.end()) {
+    scale_counters_[degradation_preference_].resize(kScaleReasonSize);
+    return scale_counters_[degradation_preference_];
+  }
+  return it->second;
+}
+
+void ViEEncoder::IncrementScaleCounter(int reason, int delta) {
+  // Get the counters and validate. This may also lazily initialize the state.
+  const std::vector<int>& counter = GetScaleCounters();
+  if (delta < 0) {
+    RTC_DCHECK_GE(counter[reason], delta);
+  }
+  scale_counters_[degradation_preference_][reason] += delta;
 }
 
 }  // namespace webrtc

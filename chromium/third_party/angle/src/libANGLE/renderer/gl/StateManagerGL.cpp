@@ -11,7 +11,7 @@
 #include <limits>
 #include <string.h>
 
-#include "common/BitSetIterator.h"
+#include "common/bitset_utils.h"
 #include "common/mathutil.h"
 #include "common/matrix_utils.h"
 #include "libANGLE/ContextState.h"
@@ -683,6 +683,12 @@ gl::Error StateManagerGL::setDrawIndirectState(const gl::ContextState &data, GLe
     return setGenericDrawState(data);
 }
 
+gl::Error StateManagerGL::setDispatchComputeState(const gl::ContextState &data)
+{
+    setGenericShaderState(data);
+    return gl::NoError();
+}
+
 void StateManagerGL::pauseTransformFeedback()
 {
     if (mPrevDrawTransformFeedback != nullptr)
@@ -734,13 +740,13 @@ gl::Error StateManagerGL::onMakeCurrent(const gl::ContextState &data)
     const gl::State &state = data.getState();
 
     // If the context has changed, pause the previous context's queries
-    if (data.getContext() != mPrevDrawContext)
+    if (data.getContextID() != mPrevDrawContext)
     {
         pauseAllQueries();
     }
     mCurrentQueries.clear();
     mPrevDrawTransformFeedback = nullptr;
-    mPrevDrawContext           = data.getContext();
+    mPrevDrawContext           = data.getContextID();
 
     // Set the current query state
     for (GLenum queryType : QueryTypes)
@@ -1805,9 +1811,4 @@ void StateManagerGL::setTextureCubemapSeamlessEnabled(bool enabled)
     }
 }
 
-GLuint StateManagerGL::getBoundBuffer(GLenum type)
-{
-    ASSERT(mBuffers.find(type) != mBuffers.end());
-    return mBuffers[type];
-}
 }

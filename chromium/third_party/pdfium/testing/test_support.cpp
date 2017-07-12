@@ -9,6 +9,7 @@
 
 #include <string>
 
+#include "core/fxcrt/fx_memory.h"
 #include "testing/utils/path_service.h"
 
 #ifdef PDF_ENABLE_V8
@@ -210,3 +211,14 @@ int TestSaver::WriteBlockCallback(FPDF_FILEWRITE* pFileWrite,
   pThis->m_String.append(static_cast<const char*>(data), size);
   return 1;
 }
+
+namespace pdfium {
+
+void FPDF_Test::SetUp() {
+  FXMEM_InitalizePartitionAlloc();
+}
+
+void FPDF_Test::TearDown() {
+}
+
+}  // namespace pdfium

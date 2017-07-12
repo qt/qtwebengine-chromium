@@ -21,6 +21,7 @@
 #define FPDF_GetAValue(argb) ((uint8_t)((argb) >> 24))
 
 // The page object constants.
+#define FPDF_PAGEOBJ_UNKNOWN 0
 #define FPDF_PAGEOBJ_TEXT 1
 #define FPDF_PAGEOBJ_PATH 2
 #define FPDF_PAGEOBJ_IMAGE 3
@@ -29,6 +30,9 @@
 
 #define FPDF_FILLMODE_ALTERNATE 1
 #define FPDF_FILLMODE_WINDING 2
+
+#define FPDF_FONT_TYPE1 1
+#define FPDF_FONT_TRUETYPE 2
 
 #ifdef __cplusplus
 extern "C" {
@@ -132,6 +136,14 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFPage_GenerateContent(FPDF_PAGE page);
 DLLEXPORT FPDF_BOOL STDCALL
 FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject);
 
+// Get type of |pageObject|.
+//
+//   pageObject - handle to a page object.
+//
+// Returns one of the FPDF_PAGEOBJ_* values on success, FPDF_PAGEOBJ_UNKNOWN on
+// error.
+DLLEXPORT int STDCALL FPDFPageObj_GetType(FPDF_PAGEOBJECT pageObject);
+
 // Transform |pageObject| by the given matrix.
 //
 //   page_object - handle to a page object.
@@ -177,6 +189,15 @@ DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
                                                 double f);
 
 // Create a new image object.
+//
+//   document - handle to a document.
+//
+// Returns a handle to a new image object.
+DLLEXPORT FPDF_PAGEOBJECT STDCALL
+FPDFPageObj_NewImageObj(FPDF_DOCUMENT document);
+
+// Create a new image object.
+// DEPRECATED. Please use FPDFPageObj_NewImageObj() above.
 //
 //   document - handle to a document.
 //
@@ -322,6 +343,21 @@ DLLEXPORT FPDF_BOOL FPDFPath_SetFillColor(FPDF_PAGEOBJECT path,
                                           unsigned int B,
                                           unsigned int A);
 
+// Get the fill RGBA of a path. Range of values: 0 - 255.
+//
+// path   - the handle to the path object.
+// R      - the red component of the path fill color.
+// G      - the green component of the path fill color.
+// B      - the blue component of the path fill color.
+// A      - the fill alpha of the path.
+//
+// Returns TRUE on success.
+DLLEXPORT FPDF_BOOL FPDFPath_GetFillColor(FPDF_PAGEOBJECT path,
+                                          unsigned int* R,
+                                          unsigned int* G,
+                                          unsigned int* B,
+                                          unsigned int* A);
+
 // Move a path's current point.
 //
 // path   - the handle to the path object.
@@ -406,17 +442,22 @@ DLLEXPORT FPDF_PAGEOBJECT STDCALL FPDFPageObj_NewTextObj(FPDF_DOCUMENT document,
 DLLEXPORT FPDF_BOOL STDCALL FPDFText_SetText(FPDF_PAGEOBJECT text_object,
                                              FPDF_BYTESTRING text);
 
-// Returns a type 1 font object loaded from a stream of data. The font is loaded
+// Returns a font object loaded from a stream of data. The font is loaded
 // into the document. The caller does not need to free the returned object.
 //
-// document - handle to the document.
-// data     - the stream of data, which will be copied by the font object.
-// size     - size of the stream, in bytes.
+// document   - handle to the document.
+// data       - the stream of data, which will be copied by the font object.
+// size       - size of the stream, in bytes.
+// font_type  - FPDF_FONT_TYPE1 or FPDF_FONT_TRUETYPE depending on the font
+// type.
+// cid        - a boolean specifying if the font is a CID font or not.
 //
 // Returns NULL on failure
-DLLEXPORT FPDF_FONT STDCALL FPDFText_LoadType1Font(FPDF_DOCUMENT document,
-                                                   const uint8_t* data,
-                                                   uint32_t size);
+DLLEXPORT FPDF_FONT STDCALL FPDFText_LoadFont(FPDF_DOCUMENT document,
+                                              const uint8_t* data,
+                                              uint32_t size,
+                                              int font_type,
+                                              FPDF_BOOL cid);
 
 #ifdef __cplusplus
 }  // extern "C"

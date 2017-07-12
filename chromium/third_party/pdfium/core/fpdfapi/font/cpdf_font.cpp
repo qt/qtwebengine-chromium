@@ -61,7 +61,7 @@ CPDF_Font::CPDF_Font()
 
 CPDF_Font::~CPDF_Font() {
   if (m_pFontFile) {
-    m_pDocument->GetPageData()->ReleaseFontFileStreamAcc(
+    m_pDocument->GetPageData()->MaybePurgeFontFileStreamAcc(
         m_pFontFile->GetStream()->AsStream());
   }
 }
@@ -118,7 +118,7 @@ bool CPDF_Font::IsUnicodeCompatible() const {
   return false;
 }
 
-int CPDF_Font::CountChar(const FX_CHAR* pString, int size) const {
+int CPDF_Font::CountChar(const char* pString, int size) const {
   return size;
 }
 
@@ -131,19 +131,15 @@ bool CPDF_Font::IsVertWriting() const {
   return pCIDFont ? pCIDFont->IsVertWriting() : m_Font.IsVertical();
 }
 
-int CPDF_Font::AppendChar(FX_CHAR* buf, uint32_t charcode) const {
-  *buf = static_cast<FX_CHAR>(charcode);
+int CPDF_Font::AppendChar(char* buf, uint32_t charcode) const {
+  *buf = static_cast<char>(charcode);
   return 1;
 }
 
-void CPDF_Font::AppendChar(CFX_ByteString& str, uint32_t charcode) const {
+void CPDF_Font::AppendChar(CFX_ByteString* str, uint32_t charcode) const {
   char buf[4];
   int len = AppendChar(buf, charcode);
-  if (len == 1) {
-    str += buf[0];
-  } else {
-    str += CFX_ByteString(buf, len);
-  }
+  *str += CFX_ByteStringC(buf, len);
 }
 
 CFX_WideString CPDF_Font::UnicodeFromCharCode(uint32_t charcode) const {
@@ -153,7 +149,7 @@ CFX_WideString CPDF_Font::UnicodeFromCharCode(uint32_t charcode) const {
   return m_pToUnicodeMap ? m_pToUnicodeMap->Lookup(charcode) : CFX_WideString();
 }
 
-uint32_t CPDF_Font::CharCodeFromUnicode(FX_WCHAR unicode) const {
+uint32_t CPDF_Font::CharCodeFromUnicode(wchar_t unicode) const {
   if (!m_bToUnicodeLoaded)
     LoadUnicodeMap();
 
@@ -219,7 +215,7 @@ void CPDF_Font::LoadFontDescriptor(CPDF_Dictionary* pFontDesc) {
   const uint8_t* pFontData = m_pFontFile->GetData();
   uint32_t dwFontSize = m_pFontFile->GetSize();
   if (!m_Font.LoadEmbedded(pFontData, dwFontSize)) {
-    m_pDocument->GetPageData()->ReleaseFontFileStreamAcc(
+    m_pDocument->GetPageData()->MaybePurgeFontFileStreamAcc(
         m_pFontFile->GetStream()->AsStream());
     m_pFontFile = nullptr;
   }
@@ -281,7 +277,7 @@ void CPDF_Font::LoadUnicodeMap() const {
   m_pToUnicodeMap->Load(pStream);
 }
 
-int CPDF_Font::GetStringWidth(const FX_CHAR* pString, int size) {
+int CPDF_Font::GetStringWidth(const char* pString, int size) {
   int offset = 0;
   int width = 0;
   while (offset < size) {
@@ -341,7 +337,7 @@ std::unique_ptr<CPDF_Font> CPDF_Font::Create(CPDF_Document* pDoc,
   return pFont->Load() ? std::move(pFont) : nullptr;
 }
 
-uint32_t CPDF_Font::GetNextChar(const FX_CHAR* pString,
+uint32_t CPDF_Font::GetNextChar(const char* pString,
                                 int nStrLen,
                                 int& offset) const {
   if (offset < 0 || nStrLen < 1) {
@@ -429,7 +425,7 @@ bool CPDF_Font::IsStandardFont() const {
   return true;
 }
 
-const FX_CHAR* CPDF_Font::GetAdobeCharName(
+const char* CPDF_Font::GetAdobeCharName(
     int iBaseEncoding,
     const std::vector<CFX_ByteString>& charnames,
     int charcode) {
@@ -441,7 +437,7 @@ const FX_CHAR* CPDF_Font::GetAdobeCharName(
   if (!charnames.empty() && !charnames[charcode].IsEmpty())
     return charnames[charcode].c_str();
 
-  const FX_CHAR* name = nullptr;
+  const char* name = nullptr;
   if (iBaseEncoding)
     name = PDF_CharNameFromPredefinedCharSet(iBaseEncoding, charcode);
   return name && name[0] ? name : nullptr;
@@ -458,13 +454,15 @@ uint32_t CPDF_Font::FallbackFontFromCharcode(uint32_t charcode) {
 }
 
 int CPDF_Font::FallbackGlyphFromCharcode(int fallbackFont, uint32_t charcode) {
-  if (fallbackFont < 0 ||
-      fallbackFont >= pdfium::CollectionSize<int>(m_FontFallbacks)) {
+  if (!pdfium::IndexInBounds(m_FontFallbacks, fallbackFont))
     return -1;
-  }
+
+  CFX_WideString str = UnicodeFromCharCode(charcode);
+  uint32_t unicode = !str.IsEmpty() ? str.GetAt(0) : charcode;
   int glyph =
-      FXFT_Get_Char_Index(m_FontFallbacks[fallbackFont]->GetFace(), charcode);
-  if (glyph == 0 || glyph == 0xffff)
+      FXFT_Get_Char_Index(m_FontFallbacks[fallbackFont]->GetFace(), unicode);
+  if (glyph == 0)
     return -1;
+
   return glyph;
 }

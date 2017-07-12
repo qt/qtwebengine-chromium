@@ -89,8 +89,9 @@ void vp9_temporal_filter_init(void) {
   for (i = 1; i < 512; ++i) fixed_divide[i] = 0x80000 / i;
 }
 
-void vp9_temporal_filter_apply_c(uint8_t *frame1, unsigned int stride,
-                                 uint8_t *frame2, unsigned int block_width,
+void vp9_temporal_filter_apply_c(const uint8_t *frame1, unsigned int stride,
+                                 const uint8_t *frame2,
+                                 unsigned int block_width,
                                  unsigned int block_height, int strength,
                                  int filter_weight, unsigned int *accumulator,
                                  uint16_t *count) {
@@ -152,11 +153,11 @@ void vp9_temporal_filter_apply_c(uint8_t *frame1, unsigned int stride,
 
 #if CONFIG_VP9_HIGHBITDEPTH
 void vp9_highbd_temporal_filter_apply_c(
-    uint8_t *frame1_8, unsigned int stride, uint8_t *frame2_8,
+    const uint8_t *frame1_8, unsigned int stride, const uint8_t *frame2_8,
     unsigned int block_width, unsigned int block_height, int strength,
     int filter_weight, unsigned int *accumulator, uint16_t *count) {
-  uint16_t *frame1 = CONVERT_TO_SHORTPTR(frame1_8);
-  uint16_t *frame2 = CONVERT_TO_SHORTPTR(frame2_8);
+  const uint16_t *frame1 = CONVERT_TO_SHORTPTR(frame1_8);
+  const uint16_t *frame2 = CONVERT_TO_SHORTPTR(frame2_8);
   unsigned int i, j, k;
   int modifier;
   int byte = 0;
@@ -225,6 +226,7 @@ static uint32_t temporal_filter_find_matching_mb_c(VP9_COMP *cpi,
   uint32_t distortion;
   uint32_t sse;
   int cost_list[5];
+  const MvLimits tmp_mv_limits = x->mv_limits;
 
   MV best_ref_mv1 = { 0, 0 };
   MV best_ref_mv1_full; /* full-pixel value of best_ref_mv1 */
@@ -245,9 +247,14 @@ static uint32_t temporal_filter_find_matching_mb_c(VP9_COMP *cpi,
   step_param = mv_sf->reduce_first_step_size;
   step_param = VPXMIN(step_param, MAX_MVSEARCH_STEPS - 2);
 
+  vp9_set_mv_search_range(&x->mv_limits, &best_ref_mv1);
+
   vp9_full_pixel_search(cpi, x, BLOCK_16X16, &best_ref_mv1_full, step_param,
                         search_method, sadpb, cond_cost_list(cpi, cost_list),
                         &best_ref_mv1, ref_mv, 0, 0);
+
+  /* restore UMV window */
+  x->mv_limits = tmp_mv_limits;
 
   // Ignore mv costing by sending NULL pointer instead of cost array
   bestsme = cpi->find_fractional_mv_step(
@@ -766,7 +773,7 @@ void vp9_temporal_filter(VP9_COMP *cpi, int distance) {
   set_error_per_bit(&cpi->td.mb, rdmult);
   vp9_initialize_me_consts(cpi, &cpi->td.mb, ARNR_FILT_QINDEX);
 
-  if (!cpi->new_mt)
+  if (!cpi->row_mt)
     temporal_filter_iterate_c(cpi);
   else
     vp9_temporal_filter_row_mt(cpi);

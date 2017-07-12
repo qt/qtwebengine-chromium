@@ -7,34 +7,37 @@
 #include "xfa/fxfa/parser/xfa_utils.h"
 
 #include "core/fxcrt/fx_ext.h"
-#include "xfa/fde/xml/fde_xml_imp.h"
+#include "xfa/fde/xml/cfde_xmlchardata.h"
+#include "xfa/fde/xml/cfde_xmlelement.h"
+#include "xfa/fde/xml/cfde_xmlnode.h"
+#include "xfa/fde/xml/cfde_xmltext.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
+#include "xfa/fxfa/parser/cxfa_localemgr.h"
+#include "xfa/fxfa/parser/cxfa_localevalue.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/xfa_basic_data.h"
-#include "xfa/fxfa/parser/xfa_localemgr.h"
-#include "xfa/fxfa/parser/xfa_localevalue.h"
-#include "xfa/fxfa/parser/xfa_object.h"
 
 namespace {
 
-const FX_DOUBLE fraction_scales[] = {0.1,
-                                     0.01,
-                                     0.001,
-                                     0.0001,
-                                     0.00001,
-                                     0.000001,
-                                     0.0000001,
-                                     0.00000001,
-                                     0.000000001,
-                                     0.0000000001,
-                                     0.00000000001,
-                                     0.000000000001,
-                                     0.0000000000001,
-                                     0.00000000000001,
-                                     0.000000000000001,
-                                     0.0000000000000001};
+const double fraction_scales[] = {0.1,
+                                  0.01,
+                                  0.001,
+                                  0.0001,
+                                  0.00001,
+                                  0.000001,
+                                  0.0000001,
+                                  0.00000001,
+                                  0.000000001,
+                                  0.0000000001,
+                                  0.00000000001,
+                                  0.000000000001,
+                                  0.0000000000001,
+                                  0.00000000000001,
+                                  0.000000000000001,
+                                  0.0000000000000001};
 
-FX_DOUBLE WideStringToDouble(const CFX_WideString& wsStringVal) {
+double WideStringToDouble(const CFX_WideString& wsStringVal) {
   CFX_WideString wsValue = wsStringVal;
   wsValue.TrimLeft();
   wsValue.TrimRight();
@@ -44,7 +47,7 @@ FX_DOUBLE WideStringToDouble(const CFX_WideString& wsStringVal) {
   int32_t cc = 0;
   bool bNegative = false;
   bool bExpSign = false;
-  const FX_WCHAR* str = wsValue.c_str();
+  const wchar_t* str = wsValue.c_str();
   int32_t len = wsValue.GetLength();
   if (str[0] == '+') {
     cc++;
@@ -67,25 +70,23 @@ FX_DOUBLE WideStringToDouble(const CFX_WideString& wsStringVal) {
   }
   nIntegral = bNegative ? -nIntegral : nIntegral;
   int32_t scale = 0;
-  FX_DOUBLE fraction = 0.0;
+  double fraction = 0.0;
   if (cc < len && str[cc] == '.') {
     cc++;
     while (cc < len) {
-      fraction += fraction_scales[scale] * (str[cc] - '0');
+      fraction += XFA_GetFractionalScale(scale) * (str[cc] - '0');
       scale++;
       cc++;
-      if (cc == len) {
+      if (cc == len)
+        break;
+      if (scale == XFA_GetMaxFractionalScale() || str[cc] == 'E' ||
+          str[cc] == 'e') {
         break;
       }
-      if (scale == sizeof(fraction_scales) / sizeof(FX_DOUBLE) ||
-          str[cc] == 'E' || str[cc] == 'e') {
-        break;
-      }
-      if (!FXSYS_isDecimalDigit(str[cc])) {
+      if (!FXSYS_isDecimalDigit(str[cc]))
         return 0;
-      }
     }
-    dwFractional = (uint32_t)(fraction * 4294967296.0);
+    dwFractional = static_cast<uint32_t>(fraction * 4294967296.0);
   }
   if (cc < len && (str[cc] == 'E' || str[cc] == 'e')) {
     cc++;
@@ -98,23 +99,32 @@ FX_DOUBLE WideStringToDouble(const CFX_WideString& wsStringVal) {
       }
     }
     while (cc < len) {
-      if (str[cc] == '.' || !FXSYS_isDecimalDigit(str[cc])) {
+      if (str[cc] == '.' || !FXSYS_isDecimalDigit(str[cc]))
         return 0;
-      }
+
       nExponent = nExponent * 10 + str[cc] - '0';
       cc++;
     }
     nExponent = bExpSign ? -nExponent : nExponent;
   }
-  FX_DOUBLE dValue = (dwFractional / 4294967296.0);
+
+  double dValue = dwFractional / 4294967296.0;
   dValue = nIntegral + (nIntegral >= 0 ? dValue : -dValue);
-  if (nExponent != 0) {
-    dValue *= FXSYS_pow(10, (FX_FLOAT)nExponent);
-  }
+  if (nExponent != 0)
+    dValue *= FXSYS_pow(10, static_cast<float>(nExponent));
+
   return dValue;
 }
 
 }  // namespace
+
+double XFA_GetFractionalScale(uint32_t idx) {
+  return fraction_scales[idx];
+}
+
+int XFA_GetMaxFractionalScale() {
+  return FX_ArraySize(fraction_scales);
+}
 
 CXFA_LocaleValue XFA_GetLocaleValue(CXFA_WidgetData* pWidgetData) {
   CXFA_Node* pNodeValue =
@@ -167,8 +177,7 @@ void XFA_GetPlainTextFromRichText(CFDE_XMLNode* pXMLNode,
   switch (pXMLNode->GetType()) {
     case FDE_XMLNODE_Element: {
       CFDE_XMLElement* pXMLElement = static_cast<CFDE_XMLElement*>(pXMLNode);
-      CFX_WideString wsTag;
-      pXMLElement->GetLocalTagName(wsTag);
+      CFX_WideString wsTag = pXMLElement->GetLocalTagName();
       uint32_t uTag = FX_HashCode_GetW(wsTag.AsStringC(), true);
       if (uTag == 0x0001f714) {
         wsPlainText += L"\n";
@@ -182,17 +191,15 @@ void XFA_GetPlainTextFromRichText(CFDE_XMLNode* pXMLNode,
           wsPlainText += L"\n";
         }
       }
-    } break;
-    case FDE_XMLNODE_Text: {
-      CFX_WideString wsContent;
-      static_cast<CFDE_XMLText*>(pXMLNode)->GetText(wsContent);
-      wsPlainText += wsContent;
-    } break;
+      break;
+    }
+    case FDE_XMLNODE_Text:
     case FDE_XMLNODE_CharData: {
-      CFX_WideString wsCharData;
-      static_cast<CFDE_XMLCharData*>(pXMLNode)->GetCharData(wsCharData);
-      wsPlainText += wsCharData;
-    } break;
+      CFX_WideString wsContent =
+          static_cast<CFDE_XMLText*>(pXMLNode)->GetText();
+      wsPlainText += wsContent;
+      break;
+    }
     default:
       break;
   }
@@ -221,7 +228,7 @@ bool XFA_FieldIsMultiListBox(CXFA_Node* pFieldNode) {
   return bRet;
 }
 
-FX_DOUBLE XFA_ByteStringToDouble(const CFX_ByteStringC& szStringVal) {
+double XFA_ByteStringToDouble(const CFX_ByteStringC& szStringVal) {
   CFX_WideString wsValue = CFX_WideString::FromUTF8(szStringVal);
   return WideStringToDouble(wsValue);
 }
@@ -328,10 +335,10 @@ const XFA_PROPERTY* XFA_GetPropertyOfElement(XFA_Element eElement,
   if (!pProperties || iCount < 1)
     return nullptr;
 
-  auto it = std::find_if(pProperties, pProperties + iCount,
-                         [eProperty](const XFA_PROPERTY& prop) {
-                           return prop.eName == eProperty;
-                         });
+  auto* it = std::find_if(pProperties, pProperties + iCount,
+                          [eProperty](const XFA_PROPERTY& prop) {
+                            return prop.eName == eProperty;
+                          });
   if (it == pProperties + iCount)
     return nullptr;
 
@@ -375,10 +382,11 @@ XFA_Element XFA_GetElementTypeForName(const CFX_WideStringC& wsName) {
 
   uint32_t uHash = FX_HashCode_GetW(wsName, false);
   const XFA_ELEMENTINFO* pEnd = g_XFAElementData + g_iXFAElementCount;
-  auto pInfo = std::lower_bound(g_XFAElementData, pEnd, uHash,
-                                [](const XFA_ELEMENTINFO& info, uint32_t hash) {
-                                  return info.uHash < hash;
-                                });
+  auto* pInfo =
+      std::lower_bound(g_XFAElementData, pEnd, uHash,
+                       [](const XFA_ELEMENTINFO& info, uint32_t hash) {
+                         return info.uHash < hash;
+                       });
   if (pInfo < pEnd && pInfo->uHash == uHash)
     return pInfo->eName;
   return XFA_Element::Unknown;

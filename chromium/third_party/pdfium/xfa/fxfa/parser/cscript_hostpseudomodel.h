@@ -7,9 +7,10 @@
 #ifndef XFA_FXFA_PARSER_CSCRIPT_HOSTPSEUDOMODEL_H_
 #define XFA_FXFA_PARSER_CSCRIPT_HOSTPSEUDOMODEL_H_
 
-#include "fxjs/cfxjse_arguments.h"
-#include "xfa/fxfa/parser/cxfa_document.h"
-#include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/parser/cxfa_object.h"
+
+class CFXJSE_Arguments;
+class CXFA_Document;
 
 class CScript_HostPseudoModel : public CXFA_Object {
  public:
@@ -50,12 +51,10 @@ class CScript_HostPseudoModel : public CXFA_Object {
   void PageDown(CFXJSE_Arguments* pArguments);
   void CurrentDateTime(CFXJSE_Arguments* pArguments);
 
- protected:
+ private:
   bool ValidateArgsForMsg(CFXJSE_Arguments* pArguments,
                           int32_t iArgIndex,
                           CFX_WideString& wsValue);
-
- private:
   void ThrowSetLanguageException() const;
   void ThrowSetNumPagesException() const;
   void ThrowSetPlatformException() const;

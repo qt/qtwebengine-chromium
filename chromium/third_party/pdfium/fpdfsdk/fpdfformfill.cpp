@@ -29,9 +29,16 @@
 #ifdef PDF_ENABLE_XFA
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
-#include "xfa/fxfa/xfa_ffdocview.h"
-#include "xfa/fxfa/xfa_ffpageview.h"
-#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_ffdocview.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
+
+static_assert(static_cast<int>(XFA_DocType::PDF) == DOCTYPE_PDF,
+              "PDF doctype must match");
+static_assert(static_cast<int>(XFA_DocType::Dynamic) == DOCTYPE_DYNAMIC_XFA,
+              "Dynamic XFA doctype must match");
+static_assert(static_cast<int>(XFA_DocType::Static) == DOCTYPE_STATIC_XFA,
+              "Static XFA doctype must match");
 #endif  // PDF_ENABLE_XFA
 
 namespace {
@@ -102,11 +109,12 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
       pPage->GetDisplayMatrix(start_x, start_y, size_x, size_y, rotate);
   FX_RECT clip(start_x, start_y, start_x + size_x, start_y + size_y);
 
-  std::unique_ptr<CFX_FxgeDevice> pDevice(new CFX_FxgeDevice);
+  auto pDevice = pdfium::MakeUnique<CFX_FxgeDevice>();
 #ifdef _SKIA_SUPPORT_
   pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
 #endif
-  pDevice->Attach(CFXBitmapFromFPDFBitmap(bitmap), false, nullptr, false);
+  CFX_RetainPtr<CFX_DIBitmap> holder(CFXBitmapFromFPDFBitmap(bitmap));
+  pDevice->Attach(holder, false, nullptr, false);
   pDevice->SaveState();
   pDevice->SetClip_Rect(clip);
 
@@ -140,7 +148,7 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
   pDevice->RestoreState(false);
 #ifdef _SKIA_SUPPORT_PATHS_
   pDevice->Flush();
-  CFXBitmapFromFPDFBitmap(bitmap)->UnPreMultiply();
+  holder->UnPreMultiply();
 #endif
 }
 
@@ -156,8 +164,8 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
   if (pPage) {
     CPDF_InterForm interform(pPage->m_pDocument);
     CPDF_FormControl* pFormCtrl = interform.GetControlAtPoint(
-        pPage, CFX_PointF(static_cast<FX_FLOAT>(page_x),
-                          static_cast<FX_FLOAT>(page_y)),
+        pPage,
+        CFX_PointF(static_cast<float>(page_x), static_cast<float>(page_y)),
         nullptr);
     if (!pFormCtrl)
       return -1;
@@ -198,8 +206,8 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
     rcWidget.bottom -= 1.0f;
     rcWidget.top += 1.0f;
 
-    if (rcWidget.Contains(CFX_PointF(static_cast<FX_FLOAT>(page_x),
-                                     static_cast<FX_FLOAT>(page_y)))) {
+    if (rcWidget.Contains(CFX_PointF(static_cast<float>(page_x),
+                                     static_cast<float>(page_y)))) {
       return FPDF_FORMFIELD_XFA;
     }
     pXFAAnnot = pWidgetIterator->MoveToNext();
@@ -227,8 +235,7 @@ DLLEXPORT int STDCALL FPDFPage_FormFieldZOrderAtPoint(FPDF_FORMHANDLE hHandle,
   CPDF_InterForm interform(pPage->m_pDocument);
   int z_order = -1;
   (void)interform.GetControlAtPoint(
-      pPage,
-      CFX_PointF(static_cast<FX_FLOAT>(page_x), static_cast<FX_FLOAT>(page_y)),
+      pPage, CFX_PointF(static_cast<float>(page_x), static_cast<float>(page_y)),
       &z_order);
   return z_order;
 }
@@ -318,7 +325,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
   if (!pPageView)
     return false;
 
-  CFX_PointF pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
+  CFX_PointF pt((float)page_x, (float)page_y);
   return pPageView->OnLButtonUp(pt, modifier);
 }
 
@@ -343,7 +350,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
   if (!pPageView)
     return false;
 
-  CFX_PointF pt((FX_FLOAT)page_x, (FX_FLOAT)page_y);
+  CFX_PointF pt((float)page_x, (float)page_y);
   return pPageView->OnRButtonUp(pt, modifier);
 }
 #endif  // PDF_ENABLE_XFA
@@ -424,9 +431,10 @@ DLLEXPORT void STDCALL FPDF_Widget_Undo(FPDF_DOCUMENT document,
     return;
 
   CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
-  if (pContext->GetDocType() != XFA_DOCTYPE_Dynamic &&
-      pContext->GetDocType() != XFA_DOCTYPE_Static)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static) {
     return;
+  }
 
   static_cast<CXFA_FFWidget*>(hWidget)->Undo();
 }
@@ -437,8 +445,8 @@ DLLEXPORT void STDCALL FPDF_Widget_Redo(FPDF_DOCUMENT document,
     return;
 
   CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
-  if (pContext->GetDocType() != XFA_DOCTYPE_Dynamic &&
-      pContext->GetDocType() != XFA_DOCTYPE_Static)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return;
 
   static_cast<CXFA_FFWidget*>(hWidget)->Redo();
@@ -450,8 +458,8 @@ DLLEXPORT void STDCALL FPDF_Widget_SelectAll(FPDF_DOCUMENT document,
     return;
 
   CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
-  if (pContext->GetDocType() != XFA_DOCTYPE_Dynamic &&
-      pContext->GetDocType() != XFA_DOCTYPE_Static)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return;
 
   static_cast<CXFA_FFWidget*>(hWidget)->SelectAll();
@@ -465,8 +473,8 @@ DLLEXPORT void STDCALL FPDF_Widget_Copy(FPDF_DOCUMENT document,
     return;
 
   CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
-  if (pContext->GetDocType() != XFA_DOCTYPE_Dynamic &&
-      pContext->GetDocType() != XFA_DOCTYPE_Static)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return;
 
   CFX_WideString wsCpText;
@@ -481,9 +489,9 @@ DLLEXPORT void STDCALL FPDF_Widget_Copy(FPDF_DOCUMENT document,
 
   uint32_t real_size = len < *size ? len : *size;
   if (real_size > 0) {
-    FXSYS_memcpy((void*)wsText,
-                 bsCpText.GetBuffer(real_size * sizeof(unsigned short)),
-                 real_size * sizeof(unsigned short));
+    memcpy((void*)wsText,
+           bsCpText.GetBuffer(real_size * sizeof(unsigned short)),
+           real_size * sizeof(unsigned short));
     bsCpText.ReleaseBuffer(real_size * sizeof(unsigned short));
   }
   *size = real_size;
@@ -497,8 +505,8 @@ DLLEXPORT void STDCALL FPDF_Widget_Cut(FPDF_DOCUMENT document,
     return;
 
   CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
-  if (pContext->GetDocType() != XFA_DOCTYPE_Dynamic &&
-      pContext->GetDocType() != XFA_DOCTYPE_Static)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return;
 
   CFX_WideString wsCpText;
@@ -513,9 +521,9 @@ DLLEXPORT void STDCALL FPDF_Widget_Cut(FPDF_DOCUMENT document,
 
   uint32_t real_size = len < *size ? len : *size;
   if (real_size > 0) {
-    FXSYS_memcpy((void*)wsText,
-                 bsCpText.GetBuffer(real_size * sizeof(unsigned short)),
-                 real_size * sizeof(unsigned short));
+    memcpy((void*)wsText,
+           bsCpText.GetBuffer(real_size * sizeof(unsigned short)),
+           real_size * sizeof(unsigned short));
     bsCpText.ReleaseBuffer(real_size * sizeof(unsigned short));
   }
   *size = real_size;
@@ -529,8 +537,8 @@ DLLEXPORT void STDCALL FPDF_Widget_Paste(FPDF_DOCUMENT document,
     return;
 
   CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
-  if (pContext->GetDocType() != XFA_DOCTYPE_Dynamic &&
-      pContext->GetDocType() != XFA_DOCTYPE_Static)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return;
 
   CFX_WideString wstr = CFX_WideString::FromUTF16LE(wsText, size);
@@ -547,8 +555,8 @@ FPDF_Widget_ReplaceSpellCheckWord(FPDF_DOCUMENT document,
     return;
 
   CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
-  if (pContext->GetDocType() != XFA_DOCTYPE_Dynamic &&
-      pContext->GetDocType() != XFA_DOCTYPE_Static)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return;
 
   CFX_PointF ptPopup;
@@ -568,8 +576,8 @@ FPDF_Widget_GetSpellCheckWords(FPDF_DOCUMENT document,
     return;
 
   CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
-  if (pContext->GetDocType() != XFA_DOCTYPE_Dynamic &&
-      pContext->GetDocType() != XFA_DOCTYPE_Static)
+  if (pContext->GetDocType() != XFA_DocType::Dynamic &&
+      pContext->GetDocType() != XFA_DocType::Static)
     return;
 
   std::vector<CFX_ByteString>* sSuggestWords = new std::vector<CFX_ByteString>;
@@ -607,7 +615,7 @@ FPDF_StringHandleGetStringByIndex(FPDF_STRINGHANDLE sHandle,
 
   uint32_t real_size = len < *size ? len : *size;
   if (real_size > 0)
-    FXSYS_memcpy((void*)bsText, (*sSuggestWords)[index].c_str(), real_size);
+    memcpy((void*)bsText, (*sSuggestWords)[index].c_str(), real_size);
   *size = real_size;
   return true;
 }

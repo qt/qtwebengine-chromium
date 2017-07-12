@@ -33,11 +33,11 @@ CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& ar, const CFX_Matrix& matrix) {
   return ar;
 }
 
-bool GetColor(const CPDF_Color* pColor, FX_FLOAT* rgb) {
+bool GetColor(const CPDF_Color* pColor, float* rgb) {
   int intRGB[3];
   if (!pColor ||
       pColor->GetColorSpace() != CPDF_ColorSpace::GetStockCS(PDFCS_DEVICERGB) ||
-      !pColor->GetRGB(intRGB[0], intRGB[1], intRGB[2])) {
+      !pColor->GetRGB(&intRGB[0], &intRGB[1], &intRGB[2])) {
     return false;
   }
   rgb[0] = intRGB[0] / 255.0f;
@@ -114,7 +114,7 @@ void CPDF_PageContentGenerator::ProcessImage(CFX_ByteTextBuf* buf,
   }
   *buf << "q " << pImageObj->matrix() << " cm ";
 
-  CPDF_Image* pImage = pImageObj->GetImage();
+  CFX_RetainPtr<CPDF_Image> pImage = pImageObj->GetImage();
   if (pImage->IsInline())
     return;
 
@@ -129,7 +129,7 @@ void CPDF_PageContentGenerator::ProcessImage(CFX_ByteTextBuf* buf,
   uint32_t dwObjNum = pStream->GetObjNum();
   CFX_ByteString name = RealizeResource(dwObjNum, "XObject");
   if (bWasInline)
-    pImageObj->SetUnownedImage(m_pDocument->GetPageData()->GetImage(dwObjNum));
+    pImageObj->SetImage(m_pDocument->GetPageData()->GetImage(dwObjNum));
 
   *buf << "/" << PDF_NameEncode(name) << " Do Q\n";
 }
@@ -201,17 +201,17 @@ void CPDF_PageContentGenerator::ProcessPath(CFX_ByteTextBuf* buf,
 void CPDF_PageContentGenerator::ProcessGraphics(CFX_ByteTextBuf* buf,
                                                 CPDF_PageObject* pPageObj) {
   *buf << "q ";
-  FX_FLOAT fillColor[3];
+  float fillColor[3];
   if (GetColor(pPageObj->m_ColorState.GetFillColor(), fillColor)) {
     *buf << fillColor[0] << " " << fillColor[1] << " " << fillColor[2]
          << " rg ";
   }
-  FX_FLOAT strokeColor[3];
+  float strokeColor[3];
   if (GetColor(pPageObj->m_ColorState.GetStrokeColor(), strokeColor)) {
     *buf << strokeColor[0] << " " << strokeColor[1] << " " << strokeColor[2]
          << " RG ";
   }
-  FX_FLOAT lineWidth = pPageObj->m_GraphState.GetLineWidth();
+  float lineWidth = pPageObj->m_GraphState.GetLineWidth();
   if (lineWidth != 1.0f)
     *buf << lineWidth << " w ";
 
@@ -243,24 +243,35 @@ void CPDF_PageContentGenerator::ProcessGraphics(CFX_ByteTextBuf* buf,
 // Tj sets the actual text, <####...> is used when specifying charcodes.
 void CPDF_PageContentGenerator::ProcessText(CFX_ByteTextBuf* buf,
                                             CPDF_TextObject* pTextObj) {
-  // TODO(npm): Add support for something other than standard type1 fonts.
   *buf << "BT " << pTextObj->GetTextMatrix() << " Tm ";
   CPDF_Font* pFont = pTextObj->GetFont();
   if (!pFont)
     pFont = CPDF_Font::GetStockFont(m_pDocument, "Helvetica");
   FontData fontD;
+  if (pFont->IsType1Font())
+    fontD.type = "Type1";
+  else if (pFont->IsTrueTypeFont())
+    fontD.type = "TrueType";
+  else if (pFont->IsCIDFont())
+    fontD.type = "Type0";
+  else
+    return;
   fontD.baseFont = pFont->GetBaseFont();
   auto it = m_pPage->m_FontsMap.find(fontD);
   CFX_ByteString dictName;
   if (it != m_pPage->m_FontsMap.end()) {
     dictName = it->second;
   } else {
-    auto fontDict = pdfium::MakeUnique<CPDF_Dictionary>();
-    fontDict->SetNewFor<CPDF_Name>("Type", "Font");
-    fontDict->SetNewFor<CPDF_Name>("Subtype", "Type1");
-    fontDict->SetNewFor<CPDF_Name>("BaseFont", fontD.baseFont);
-    CPDF_Object* pDict = m_pDocument->AddIndirectObject(std::move(fontDict));
-    uint32_t dwObjNum = pDict->GetObjNum();
+    uint32_t dwObjNum = pFont->GetFontDict()->GetObjNum();
+    if (!dwObjNum) {
+      // In this case we assume it must be a standard font
+      auto fontDict = pdfium::MakeUnique<CPDF_Dictionary>();
+      fontDict->SetNewFor<CPDF_Name>("Type", "Font");
+      fontDict->SetNewFor<CPDF_Name>("Subtype", fontD.type);
+      fontDict->SetNewFor<CPDF_Name>("BaseFont", fontD.baseFont);
+      CPDF_Object* pDict = m_pDocument->AddIndirectObject(std::move(fontDict));
+      dwObjNum = pDict->GetObjNum();
+    }
     dictName = RealizeResource(dwObjNum, "Font");
     m_pPage->m_FontsMap[fontD] = dictName;
   }
@@ -268,9 +279,8 @@ void CPDF_PageContentGenerator::ProcessText(CFX_ByteTextBuf* buf,
        << " Tf ";
   CFX_ByteString text;
   for (uint32_t charcode : pTextObj->m_CharCodes) {
-    if (charcode == CPDF_Font::kInvalidCharCode)
-      continue;
-    pFont->AppendChar(text, charcode);
+    if (charcode != CPDF_Font::kInvalidCharCode)
+      pFont->AppendChar(&text, charcode);
   }
   *buf << PDF_EncodeString(text, true) << " Tj ET\n";
 }

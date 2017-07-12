@@ -7,17 +7,21 @@
 #ifndef XFA_FXFA_PARSER_CXFA_VALUEARRAY_H_
 #define XFA_FXFA_PARSER_CXFA_VALUEARRAY_H_
 
+#include <memory>
+#include <vector>
+
 #include "fxjs/cfxjse_value.h"
 #include "xfa/fxfa/fxfa.h"
 
-class CXFA_ValueArray : public CFX_ArrayTemplate<CFXJSE_Value*> {
+class CXFA_ValueArray {
  public:
   explicit CXFA_ValueArray(v8::Isolate* pIsolate);
   ~CXFA_ValueArray();
 
-  void GetAttributeObject(CXFA_ObjArray& objArray);
+  std::vector<CXFA_Object*> GetAttributeObject();
 
   v8::Isolate* const m_pIsolate;
+  std::vector<std::unique_ptr<CFXJSE_Value>> m_Values;
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_VALUEARRAY_H_

@@ -8,7 +8,7 @@
 
 #include "libANGLE/renderer/gl/ProgramGL.h"
 
-#include "common/BitSetIterator.h"
+#include "common/bitset_utils.h"
 #include "common/angleutils.h"
 #include "common/debug.h"
 #include "common/string_utils.h"
@@ -109,6 +109,11 @@ void ProgramGL::setBinaryRetrievableHint(bool retrievable)
         mFunctions->programParameteri(mProgramID, GL_PROGRAM_BINARY_RETRIEVABLE_HINT,
                                       retrievable ? GL_TRUE : GL_FALSE);
     }
+}
+
+void ProgramGL::setSeparable(bool separable)
+{
+    mFunctions->programParameteri(mProgramID, GL_PROGRAM_SEPARABLE, separable ? GL_TRUE : GL_FALSE);
 }
 
 LinkResult ProgramGL::link(ContextImpl *contextImpl,

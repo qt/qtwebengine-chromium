@@ -6,13 +6,14 @@
 
 #include "fpdfsdk/pdfwindow/PWL_Edit.h"
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfdoc/cpvt_word.h"
 #include "core/fxcrt/fx_safe_types.h"
-#include "core/fxcrt/fx_xml.h"
+#include "core/fxcrt/xml/cxml_element.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -101,7 +102,7 @@ void CPWL_Edit::RePosChildWnd() {
 
 CFX_FloatRect CPWL_Edit::GetClientRect() const {
   CFX_FloatRect rcClient = CPWL_Utils::DeflateRect(
-      GetWindowRect(), (FX_FLOAT)(GetBorderWidth() + GetInnerBorderWidth()));
+      GetWindowRect(), (float)(GetBorderWidth() + GetInnerBorderWidth()));
 
   if (CPWL_ScrollBar* pVSB = GetVScrollBar()) {
     if (pVSB->IsVisible()) {
@@ -329,7 +330,7 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
     switch (GetBorderStyle()) {
       case BorderStyle::SOLID: {
         CFX_GraphStateData gsd;
-        gsd.m_LineWidth = (FX_FLOAT)GetBorderWidth();
+        gsd.m_LineWidth = (float)GetBorderWidth();
 
         CFX_PathData path;
 
@@ -355,12 +356,12 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
       }
       case BorderStyle::DASH: {
         CFX_GraphStateData gsd;
-        gsd.m_LineWidth = (FX_FLOAT)GetBorderWidth();
+        gsd.m_LineWidth = (float)GetBorderWidth();
 
         gsd.SetDashCount(2);
-        gsd.m_DashArray[0] = (FX_FLOAT)GetBorderDash().nDash;
-        gsd.m_DashArray[1] = (FX_FLOAT)GetBorderDash().nGap;
-        gsd.m_DashPhase = (FX_FLOAT)GetBorderDash().nPhase;
+        gsd.m_DashArray[0] = (float)GetBorderDash().nDash;
+        gsd.m_DashArray[1] = (float)GetBorderDash().nGap;
+        gsd.m_DashPhase = (float)GetBorderDash().nPhase;
 
         CFX_PathData path;
         for (int32_t i = 0; i < nCharArray - 1; i++) {
@@ -463,7 +464,7 @@ void CPWL_Edit::OnKillFocus() {
   m_bFocus = false;
 }
 
-void CPWL_Edit::SetCharSpace(FX_FLOAT fCharSpace) {
+void CPWL_Edit::SetCharSpace(float fCharSpace) {
   m_pEdit->SetCharSpace(fCharSpace);
 }
 
@@ -527,16 +528,16 @@ bool CPWL_Edit::IsTextFull() const {
   return m_pEdit->IsTextFull();
 }
 
-FX_FLOAT CPWL_Edit::GetCharArrayAutoFontSize(CPDF_Font* pFont,
-                                             const CFX_FloatRect& rcPlate,
-                                             int32_t nCharArray) {
+float CPWL_Edit::GetCharArrayAutoFontSize(CPDF_Font* pFont,
+                                          const CFX_FloatRect& rcPlate,
+                                          int32_t nCharArray) {
   if (pFont && !pFont->IsStandardFont()) {
     FX_RECT rcBBox;
     pFont->GetFontBBox(rcBBox);
 
     CFX_FloatRect rcCell = rcPlate;
-    FX_FLOAT xdiv = rcCell.Width() / nCharArray * 1000.0f / rcBBox.Width();
-    FX_FLOAT ydiv = -rcCell.Height() * 1000.0f / rcBBox.Height();
+    float xdiv = rcCell.Width() / nCharArray * 1000.0f / rcBBox.Width();
+    float ydiv = -rcCell.Height() * 1000.0f / rcBBox.Height();
 
     return xdiv < ydiv ? xdiv : ydiv;
   }
@@ -551,8 +552,8 @@ void CPWL_Edit::SetCharArray(int32_t nCharArray) {
 
     if (HasFlag(PWS_AUTOFONTSIZE)) {
       if (IPVT_FontMap* pFontMap = GetFontMap()) {
-        FX_FLOAT fFontSize = GetCharArrayAutoFontSize(
-            pFontMap->GetPDFFont(0), GetClientRect(), nCharArray);
+        float fFontSize = GetCharArrayAutoFontSize(pFontMap->GetPDFFont(0),
+                                                   GetClientRect(), nCharArray);
         if (fFontSize > 0.0f) {
           m_pEdit->SetAutoFontSize(false, true);
           m_pEdit->SetFontSize(fFontSize);
@@ -791,21 +792,8 @@ void CPWL_Edit::OnInsertText(const CPVT_WordPlace& place,
 
 CPVT_WordRange CPWL_Edit::CombineWordRange(const CPVT_WordRange& wr1,
                                            const CPVT_WordRange& wr2) {
-  CPVT_WordRange wrRet;
-
-  if (wr1.BeginPos.WordCmp(wr2.BeginPos) < 0) {
-    wrRet.BeginPos = wr1.BeginPos;
-  } else {
-    wrRet.BeginPos = wr2.BeginPos;
-  }
-
-  if (wr1.EndPos.WordCmp(wr2.EndPos) < 0) {
-    wrRet.EndPos = wr2.EndPos;
-  } else {
-    wrRet.EndPos = wr1.EndPos;
-  }
-
-  return wrRet;
+  return CPVT_WordRange(std::min(wr1.BeginPos, wr2.BeginPos),
+                        std::max(wr1.EndPos, wr2.EndPos));
 }
 
 CPVT_WordRange CPWL_Edit::GetLatinWordsRange(const CFX_PointF& point) const {

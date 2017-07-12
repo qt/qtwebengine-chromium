@@ -68,6 +68,18 @@ void AudioNetworkAdaptorImpl::SetUplinkPacketLossFraction(
   UpdateNetworkMetrics(network_metrics);
 }
 
+void AudioNetworkAdaptorImpl::SetUplinkRecoverablePacketLossFraction(
+    float uplink_recoverable_packet_loss_fraction) {
+  last_metrics_.uplink_recoverable_packet_loss_fraction =
+      rtc::Optional<float>(uplink_recoverable_packet_loss_fraction);
+  DumpNetworkMetrics();
+
+  Controller::NetworkMetrics network_metrics;
+  network_metrics.uplink_recoverable_packet_loss_fraction =
+      rtc::Optional<float>(uplink_recoverable_packet_loss_fraction);
+  UpdateNetworkMetrics(network_metrics);
+}
+
 void AudioNetworkAdaptorImpl::SetRtt(int rtt_ms) {
   last_metrics_.rtt_ms = rtc::Optional<int>(rtt_ms);
   DumpNetworkMetrics();
@@ -100,9 +112,8 @@ void AudioNetworkAdaptorImpl::SetOverhead(size_t overhead_bytes_per_packet) {
   UpdateNetworkMetrics(network_metrics);
 }
 
-AudioNetworkAdaptor::EncoderRuntimeConfig
-AudioNetworkAdaptorImpl::GetEncoderRuntimeConfig() {
-  EncoderRuntimeConfig config;
+AudioEncoderRuntimeConfig AudioNetworkAdaptorImpl::GetEncoderRuntimeConfig() {
+  AudioEncoderRuntimeConfig config;
   for (auto& controller :
        controller_manager_->GetSortedControllers(last_metrics_))
     controller->MakeDecision(&config);

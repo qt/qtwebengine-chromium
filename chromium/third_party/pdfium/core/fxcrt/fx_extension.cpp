@@ -9,9 +9,11 @@
 #include <algorithm>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_ext.h"
+#include "third_party/base/stl_util.h"
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
 #include <wincrypt.h>
@@ -151,7 +153,7 @@ class CFX_MemoryStream final : public IFX_MemoryStream {
 
   bool ExpandBlocks(size_t size);
 
-  CFX_ArrayTemplate<uint8_t*> m_Blocks;
+  std::vector<uint8_t*> m_Blocks;
   size_t m_nTotalSize;
   size_t m_nCurSize;
   size_t m_nCurPos;
@@ -175,18 +177,16 @@ CFX_MemoryStream::CFX_MemoryStream(uint8_t* pBuffer,
       m_nCurSize(nSize),
       m_nCurPos(0),
       m_nGrowSize(FX_MEMSTREAM_BlockSize) {
-  m_Blocks.Add(pBuffer);
+  m_Blocks.push_back(pBuffer);
   m_dwFlags =
       FX_MEMSTREAM_Consecutive | (bTakeOver ? FX_MEMSTREAM_TakeOver : 0);
 }
 
 CFX_MemoryStream::~CFX_MemoryStream() {
   if (m_dwFlags & FX_MEMSTREAM_TakeOver) {
-    for (int32_t i = 0; i < m_Blocks.GetSize(); i++) {
-      FX_Free(m_Blocks[i]);
-    }
+    for (uint8_t* pBlock : m_Blocks)
+      FX_Free(pBlock);
   }
-  m_Blocks.RemoveAll();
 }
 
 FX_FILESIZE CFX_MemoryStream::GetSize() {
@@ -216,7 +216,7 @@ bool CFX_MemoryStream::ReadBlock(void* buffer,
 
   m_nCurPos = newPos.ValueOrDie();
   if (m_dwFlags & FX_MEMSTREAM_Consecutive) {
-    FXSYS_memcpy(buffer, m_Blocks[0] + (size_t)offset, size);
+    memcpy(buffer, m_Blocks[0] + (size_t)offset, size);
     return true;
   }
   size_t nStartBlock = (size_t)offset / m_nGrowSize;
@@ -226,7 +226,7 @@ bool CFX_MemoryStream::ReadBlock(void* buffer,
     if (nRead > size) {
       nRead = size;
     }
-    FXSYS_memcpy(buffer, m_Blocks[(int)nStartBlock] + (size_t)offset, nRead);
+    memcpy(buffer, m_Blocks[(int)nStartBlock] + (size_t)offset, nRead);
     buffer = ((uint8_t*)buffer) + nRead;
     size -= nRead;
     nStartBlock++;
@@ -261,18 +261,13 @@ bool CFX_MemoryStream::WriteBlock(const void* buffer,
     m_nCurPos = newPos.ValueOrDie();
     if (m_nCurPos > m_nTotalSize) {
       m_nTotalSize = (m_nCurPos + m_nGrowSize - 1) / m_nGrowSize * m_nGrowSize;
-      if (m_Blocks.GetSize() < 1) {
-        uint8_t* block = FX_Alloc(uint8_t, m_nTotalSize);
-        m_Blocks.Add(block);
+      if (m_Blocks.empty()) {
+        m_Blocks.push_back(FX_Alloc(uint8_t, m_nTotalSize));
       } else {
         m_Blocks[0] = FX_Realloc(uint8_t, m_Blocks[0], m_nTotalSize);
       }
-      if (!m_Blocks[0]) {
-        m_Blocks.RemoveAll();
-        return false;
-      }
     }
-    FXSYS_memcpy(m_Blocks[0] + (size_t)offset, buffer, size);
+    memcpy(m_Blocks[0] + (size_t)offset, buffer, size);
     if (m_nCurSize < m_nCurPos) {
       m_nCurSize = m_nCurPos;
     }
@@ -296,7 +291,7 @@ bool CFX_MemoryStream::WriteBlock(const void* buffer,
     if (nWrite > size) {
       nWrite = size;
     }
-    FXSYS_memcpy(m_Blocks[(int)nStartBlock] + (size_t)offset, buffer, nWrite);
+    memcpy(m_Blocks[(int)nStartBlock] + (size_t)offset, buffer, nWrite);
     buffer = ((uint8_t*)buffer) + nWrite;
     size -= nWrite;
     nStartBlock++;
@@ -315,19 +310,18 @@ bool CFX_MemoryStream::IsConsecutive() const {
 
 void CFX_MemoryStream::EstimateSize(size_t nInitSize, size_t nGrowSize) {
   if (m_dwFlags & FX_MEMSTREAM_Consecutive) {
-    if (m_Blocks.GetSize() < 1) {
-      uint8_t* pBlock =
-          FX_Alloc(uint8_t, std::max(nInitSize, static_cast<size_t>(4096)));
-      m_Blocks.Add(pBlock);
+    if (m_Blocks.empty()) {
+      m_Blocks.push_back(
+          FX_Alloc(uint8_t, std::max(nInitSize, static_cast<size_t>(4096))));
     }
     m_nGrowSize = std::max(nGrowSize, static_cast<size_t>(4096));
-  } else if (m_Blocks.GetSize() < 1) {
+  } else if (m_Blocks.empty()) {
     m_nGrowSize = std::max(nGrowSize, static_cast<size_t>(4096));
   }
 }
 
 uint8_t* CFX_MemoryStream::GetBuffer() const {
-  return m_Blocks.GetSize() ? m_Blocks[0] : nullptr;
+  return !m_Blocks.empty() ? m_Blocks.front() : nullptr;
 }
 
 void CFX_MemoryStream::AttachBuffer(uint8_t* pBuffer,
@@ -336,36 +330,38 @@ void CFX_MemoryStream::AttachBuffer(uint8_t* pBuffer,
   if (!(m_dwFlags & FX_MEMSTREAM_Consecutive))
     return;
 
-  m_Blocks.RemoveAll();
-  m_Blocks.Add(pBuffer);
-  m_nTotalSize = m_nCurSize = nSize;
+  m_Blocks.clear();
+  m_Blocks.push_back(pBuffer);
+  m_nTotalSize = nSize;
+  m_nCurSize = nSize;
   m_nCurPos = 0;
   m_dwFlags =
       FX_MEMSTREAM_Consecutive | (bTakeOver ? FX_MEMSTREAM_TakeOver : 0);
 }
 
 void CFX_MemoryStream::DetachBuffer() {
-  if (!(m_dwFlags & FX_MEMSTREAM_Consecutive)) {
+  if (!(m_dwFlags & FX_MEMSTREAM_Consecutive))
     return;
-  }
-  m_Blocks.RemoveAll();
-  m_nTotalSize = m_nCurSize = m_nCurPos = 0;
+
+  m_Blocks.clear();
+  m_nTotalSize = 0;
+  m_nCurSize = 0;
+  m_nCurPos = 0;
   m_dwFlags = FX_MEMSTREAM_TakeOver;
 }
 
 bool CFX_MemoryStream::ExpandBlocks(size_t size) {
-  if (m_nCurSize < size) {
+  if (m_nCurSize < size)
     m_nCurSize = size;
-  }
-  if (size <= m_nTotalSize) {
+
+  if (size <= m_nTotalSize)
     return true;
-  }
-  int32_t iCount = m_Blocks.GetSize();
+
   size = (size - m_nTotalSize + m_nGrowSize - 1) / m_nGrowSize;
-  m_Blocks.SetSize(m_Blocks.GetSize() + (int32_t)size);
+  size_t iCount = m_Blocks.size();
+  m_Blocks.resize(iCount + size);
   while (size--) {
-    uint8_t* pBlock = FX_Alloc(uint8_t, m_nGrowSize);
-    m_Blocks.SetAt(iCount++, pBlock);
+    m_Blocks[iCount++] = FX_Alloc(uint8_t, m_nGrowSize);
     m_nTotalSize += m_nGrowSize;
   }
   return true;
@@ -387,7 +383,7 @@ CFX_RetainPtr<IFX_FileAccess> IFX_FileAccess::CreateDefault(
 
 // static
 CFX_RetainPtr<IFX_SeekableStream> IFX_SeekableStream::CreateFromFilename(
-    const FX_CHAR* filename,
+    const char* filename,
     uint32_t dwModes) {
   std::unique_ptr<IFXCRT_FileAccess> pFA(IFXCRT_FileAccess::Create());
   if (!pFA->Open(filename, dwModes))
@@ -397,7 +393,7 @@ CFX_RetainPtr<IFX_SeekableStream> IFX_SeekableStream::CreateFromFilename(
 
 // static
 CFX_RetainPtr<IFX_SeekableStream> IFX_SeekableStream::CreateFromFilename(
-    const FX_WCHAR* filename,
+    const wchar_t* filename,
     uint32_t dwModes) {
   std::unique_ptr<IFXCRT_FileAccess> pFA(IFXCRT_FileAccess::Create());
   if (!pFA->Open(filename, dwModes))
@@ -407,7 +403,7 @@ CFX_RetainPtr<IFX_SeekableStream> IFX_SeekableStream::CreateFromFilename(
 
 // static
 CFX_RetainPtr<IFX_SeekableReadStream>
-IFX_SeekableReadStream::CreateFromFilename(const FX_CHAR* filename) {
+IFX_SeekableReadStream::CreateFromFilename(const char* filename) {
   return IFX_SeekableStream::CreateFromFilename(filename, FX_FILEMODE_ReadOnly);
 }
 
@@ -423,15 +419,7 @@ CFX_RetainPtr<IFX_MemoryStream> IFX_MemoryStream::Create(bool bConsecutive) {
   return pdfium::MakeRetain<CFX_MemoryStream>(bConsecutive);
 }
 
-FX_FLOAT FXSYS_tan(FX_FLOAT a) {
-  return (FX_FLOAT)tan(a);
-}
-FX_FLOAT FXSYS_logb(FX_FLOAT b, FX_FLOAT x) {
-  return FXSYS_log(x) / FXSYS_log(b);
-}
-FX_FLOAT FXSYS_strtof(const FX_CHAR* pcsStr,
-                      int32_t iLength,
-                      int32_t* pUsedLen) {
+float FXSYS_strtof(const char* pcsStr, int32_t iLength, int32_t* pUsedLen) {
   ASSERT(pcsStr);
   if (iLength < 0) {
     iLength = (int32_t)FXSYS_strlen(pcsStr);
@@ -440,9 +428,8 @@ FX_FLOAT FXSYS_strtof(const FX_CHAR* pcsStr,
       CFX_WideString::FromLocal(CFX_ByteStringC(pcsStr, iLength));
   return FXSYS_wcstof(ws.c_str(), iLength, pUsedLen);
 }
-FX_FLOAT FXSYS_wcstof(const FX_WCHAR* pwsStr,
-                      int32_t iLength,
-                      int32_t* pUsedLen) {
+
+float FXSYS_wcstof(const wchar_t* pwsStr, int32_t iLength, int32_t* pUsedLen) {
   ASSERT(pwsStr);
   if (iLength < 0) {
     iLength = (int32_t)FXSYS_wcslen(pwsStr);
@@ -459,9 +446,9 @@ FX_FLOAT FXSYS_wcstof(const FX_WCHAR* pwsStr,
       iUsedLen++;
       break;
   }
-  FX_FLOAT fValue = 0.0f;
+  float fValue = 0.0f;
   while (iUsedLen < iLength) {
-    FX_WCHAR wch = pwsStr[iUsedLen];
+    wchar_t wch = pwsStr[iUsedLen];
     if (wch >= L'0' && wch <= L'9') {
       fValue = fValue * 10.0f + (wch - L'0');
     } else {
@@ -470,9 +457,9 @@ FX_FLOAT FXSYS_wcstof(const FX_WCHAR* pwsStr,
     iUsedLen++;
   }
   if (iUsedLen < iLength && pwsStr[iUsedLen] == L'.') {
-    FX_FLOAT fPrecise = 0.1f;
+    float fPrecise = 0.1f;
     while (++iUsedLen < iLength) {
-      FX_WCHAR wch = pwsStr[iUsedLen];
+      wchar_t wch = pwsStr[iUsedLen];
       if (wch >= L'0' && wch <= L'9') {
         fValue += (wch - L'0') * fPrecise;
         fPrecise *= 0.1f;
@@ -486,9 +473,7 @@ FX_FLOAT FXSYS_wcstof(const FX_WCHAR* pwsStr,
   }
   return bNegtive ? -fValue : fValue;
 }
-FX_WCHAR* FXSYS_wcsncpy(FX_WCHAR* dstStr,
-                        const FX_WCHAR* srcStr,
-                        size_t count) {
+wchar_t* FXSYS_wcsncpy(wchar_t* dstStr, const wchar_t* srcStr, size_t count) {
   ASSERT(dstStr && srcStr && count > 0);
   for (size_t i = 0; i < count; ++i)
     if ((dstStr[i] = srcStr[i]) == L'\0') {
@@ -496,24 +481,24 @@ FX_WCHAR* FXSYS_wcsncpy(FX_WCHAR* dstStr,
     }
   return dstStr;
 }
-int32_t FXSYS_wcsnicmp(const FX_WCHAR* s1, const FX_WCHAR* s2, size_t count) {
+int32_t FXSYS_wcsnicmp(const wchar_t* s1, const wchar_t* s2, size_t count) {
   ASSERT(s1 && s2 && count > 0);
-  FX_WCHAR wch1 = 0, wch2 = 0;
+  wchar_t wch1 = 0, wch2 = 0;
   while (count-- > 0) {
-    wch1 = (FX_WCHAR)FXSYS_tolower(*s1++);
-    wch2 = (FX_WCHAR)FXSYS_tolower(*s2++);
+    wch1 = (wchar_t)FXSYS_tolower(*s1++);
+    wch2 = (wchar_t)FXSYS_tolower(*s2++);
     if (wch1 != wch2) {
       break;
     }
   }
   return wch1 - wch2;
 }
-int32_t FXSYS_strnicmp(const FX_CHAR* s1, const FX_CHAR* s2, size_t count) {
+int32_t FXSYS_strnicmp(const char* s1, const char* s2, size_t count) {
   ASSERT(s1 && s2 && count > 0);
-  FX_CHAR ch1 = 0, ch2 = 0;
+  char ch1 = 0, ch2 = 0;
   while (count-- > 0) {
-    ch1 = (FX_CHAR)FXSYS_tolower(*s1++);
-    ch2 = (FX_CHAR)FXSYS_tolower(*s2++);
+    ch1 = (char)FXSYS_tolower(*s1++);
+    ch2 = (char)FXSYS_tolower(*s2++);
     if (ch1 != ch2) {
       break;
     }
@@ -612,7 +597,7 @@ void FX_Random_GenerateBase(uint32_t* pBuffer, int32_t iCount) {
   ::GetSystemTime(&st1);
   do {
     ::GetSystemTime(&st2);
-  } while (FXSYS_memcmp(&st1, &st2, sizeof(SYSTEMTIME)) == 0);
+  } while (memcmp(&st1, &st2, sizeof(SYSTEMTIME)) == 0);
   uint32_t dwHash1 =
       FX_HashCode_GetA(CFX_ByteStringC((uint8_t*)&st1, sizeof(st1)), true);
   uint32_t dwHash2 =
@@ -652,25 +637,25 @@ void FX_Random_GenerateCrypto(uint32_t* pBuffer, int32_t iCount) {
 }
 
 #ifdef PDF_ENABLE_XFA
-static const FX_CHAR gs_FX_pHexChars[] = "0123456789ABCDEF";
+static const char gs_FX_pHexChars[] = "0123456789ABCDEF";
+
 void FX_GUID_CreateV4(FX_GUID* pGUID) {
   FX_Random_GenerateMT((uint32_t*)pGUID, 4);
   uint8_t& b = ((uint8_t*)pGUID)[6];
   b = (b & 0x0F) | 0x40;
 }
-void FX_GUID_ToString(const FX_GUID* pGUID,
-                      CFX_ByteString& bsStr,
-                      bool bSeparator) {
-  FX_CHAR* pBuf = bsStr.GetBuffer(40);
-  uint8_t b;
+
+CFX_ByteString FX_GUID_ToString(const FX_GUID* pGUID, bool bSeparator) {
+  CFX_ByteString bsStr;
+  char* pBuf = bsStr.GetBuffer(40);
   for (int32_t i = 0; i < 16; i++) {
-    b = ((const uint8_t*)pGUID)[i];
+    uint8_t b = reinterpret_cast<const uint8_t*>(pGUID)[i];
     *pBuf++ = gs_FX_pHexChars[b >> 4];
     *pBuf++ = gs_FX_pHexChars[b & 0x0F];
-    if (bSeparator && (i == 3 || i == 5 || i == 7 || i == 9)) {
+    if (bSeparator && (i == 3 || i == 5 || i == 7 || i == 9))
       *pBuf++ = L'-';
     }
-  }
   bsStr.ReleaseBuffer(bSeparator ? 36 : 32);
+  return bsStr;
 }
 #endif  // PDF_ENABLE_XFA

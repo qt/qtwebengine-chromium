@@ -7,6 +7,10 @@
 #ifndef CORE_FXGE_WIN32_DWRITE_INT_H_
 #define CORE_FXGE_WIN32_DWRITE_INT_H_
 
+#include "core/fxcrt/fx_coordinates.h"
+#include "core/fxge/dib/cfx_dibitmap.h"
+#include "core/fxge/fx_dib.h"
+
 #ifndef DECLSPEC_UUID
 #if (_MSC_VER >= 1100) && defined(__cplusplus)
 #define DECLSPEC_UUID(x) __declspec(uuid(x))
@@ -39,21 +43,22 @@ class CDWriteExt {
   void* DwCreateFontFaceFromStream(uint8_t* pData,
                                    uint32_t size,
                                    int simulation_style);
-  bool DwCreateRenderingTarget(CFX_DIBitmap* pSrc, void** renderTarget);
+  bool DwCreateRenderingTarget(const CFX_RetainPtr<CFX_DIBitmap>& pSrc,
+                               void** renderTarget);
   void DwDeleteRenderingTarget(void* renderTarget);
   bool DwRendingString(void* renderTarget,
                        CFX_ClipRgn* pClipRgn,
                        FX_RECT& stringRect,
                        CFX_Matrix* pMatrix,
                        void* font,
-                       FX_FLOAT font_size,
+                       float font_size,
                        FX_ARGB text_color,
                        int glyph_count,
                        unsigned short* glyph_indices,
-                       FX_FLOAT baselineOriginX,
-                       FX_FLOAT baselineOriginY,
+                       float baselineOriginX,
+                       float baselineOriginY,
                        void* glyph_offsets,
-                       FX_FLOAT* glyph_advances);
+                       float* glyph_advances);
   void DwDeleteFont(void* pFont);
 
  protected:

@@ -7,7 +7,8 @@
 #include "xfa/fxfa/parser/cxfa_stroke.h"
 
 #include "xfa/fxfa/parser/cxfa_measurement.h"
-#include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
+#include "xfa/fxfa/parser/xfa_utils.h"
 
 int32_t CXFA_Stroke::GetPresence() const {
   return m_pNode ? m_pNode->GetEnum(XFA_ATTRIBUTE_Presence)
@@ -25,7 +26,7 @@ int32_t CXFA_Stroke::GetStrokeType() const {
                  : XFA_ATTRIBUTEENUM_Solid;
 }
 
-FX_FLOAT CXFA_Stroke::GetThickness() const {
+float CXFA_Stroke::GetThickness() const {
   return GetMSThickness().ToUnit(XFA_UNIT_Pt);
 }
 
@@ -80,7 +81,7 @@ bool CXFA_Stroke::IsInverted() const {
   return m_pNode ? m_pNode->GetBoolean(XFA_ATTRIBUTE_Inverted) : false;
 }
 
-FX_FLOAT CXFA_Stroke::GetRadius() const {
+float CXFA_Stroke::GetRadius() const {
   return m_pNode ? m_pNode->GetMeasure(XFA_ATTRIBUTE_Radius).ToUnit(XFA_UNIT_Pt)
                  : 0;
 }
@@ -88,7 +89,7 @@ FX_FLOAT CXFA_Stroke::GetRadius() const {
 bool CXFA_Stroke::SameStyles(CXFA_Stroke stroke, uint32_t dwFlags) const {
   if (m_pNode == stroke.GetNode())
     return true;
-  if (FXSYS_fabs(GetThickness() - stroke.GetThickness()) >= 0.01f)
+  if (fabs(GetThickness() - stroke.GetThickness()) >= 0.01f)
     return false;
   if ((dwFlags & XFA_STROKE_SAMESTYLE_NoPresence) == 0 &&
       IsVisible() != stroke.IsVisible()) {
@@ -99,7 +100,7 @@ bool CXFA_Stroke::SameStyles(CXFA_Stroke stroke, uint32_t dwFlags) const {
   if (GetColor() != stroke.GetColor())
     return false;
   if ((dwFlags & XFA_STROKE_SAMESTYLE_Corner) != 0 &&
-      FXSYS_fabs(GetRadius() - stroke.GetRadius()) >= 0.01f) {
+      fabs(GetRadius() - stroke.GetRadius()) >= 0.01f) {
     return false;
   }
   return true;

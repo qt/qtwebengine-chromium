@@ -29,7 +29,7 @@ class IPDF_FormNotify;
 
 CPDF_Font* AddNativeInterFormFont(CPDF_Dictionary*& pFormDict,
                                   CPDF_Document* pDocument,
-                                  CFX_ByteString& csNameTag);
+                                  CFX_ByteString* csNameTag);
 
 class CPDF_InterForm {
  public:
@@ -39,9 +39,9 @@ class CPDF_InterForm {
   static void SetUpdateAP(bool bUpdateAP);
   static bool IsUpdateAPEnabled();
   static CFX_ByteString GenerateNewResourceName(const CPDF_Dictionary* pResDict,
-                                                const FX_CHAR* csType,
+                                                const char* csType,
                                                 int iMinLen,
-                                                const FX_CHAR* csPrefix);
+                                                const char* csPrefix);
   static CPDF_Font* AddStandardFont(CPDF_Document* pDocument,
                                     CFX_ByteString csFontName);
   static CFX_ByteString GetNativeFont(uint8_t iCharSet, void* pLogFont);
@@ -94,7 +94,7 @@ class CPDF_InterForm {
   friend class CPDF_FormField;
 
   void LoadField(CPDF_Dictionary* pFieldDict, int nLevel);
-  CPDF_FormField* AddTerminalField(CPDF_Dictionary* pFieldDict);
+  void AddTerminalField(CPDF_Dictionary* pFieldDict);
   CPDF_FormControl* AddControl(CPDF_FormField* pField,
                                CPDF_Dictionary* pWidgetDict);
   void FDF_ImportField(CPDF_Dictionary* pField,

@@ -17,7 +17,6 @@
 #include "compiler/translator/EmulateGLFragColorBroadcast.h"
 #include "compiler/translator/EmulatePrecision.h"
 #include "compiler/translator/Initialize.h"
-#include "compiler/translator/InitializeParseContext.h"
 #include "compiler/translator/InitializeVariables.h"
 #include "compiler/translator/ParseContext.h"
 #include "compiler/translator/PruneEmptyDeclarations.h"
@@ -293,7 +292,6 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
                                compileOptions, true, &mDiagnostics, getResources());
 
     parseContext.setFragmentPrecisionHighOnESSL1(fragmentPrecisionHigh);
-    SetGlobalParseContext(&parseContext);
 
     // We preserve symbols at the built-in level from compile-to-compile.
     // Start pushing the user-defined symbols at global level.
@@ -368,7 +366,8 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             success = validateOutputs(root);
 
         if (success && shouldRunLoopAndIndexingValidation(compileOptions))
-            success = validateLimitations(root);
+            success =
+                ValidateLimitations(root, shaderType, symbolTable, shaderVersion, &mDiagnostics);
 
         bool multiview2 = IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview2");
         if (success && compileResources.OVR_multiview && IsWebGLBasedSpec(shaderSpec) &&
@@ -406,9 +405,6 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             ((compileOptions & SH_INIT_GL_POSITION) ||
              (outputType == SH_GLSL_COMPATIBILITY_OUTPUT)))
             initializeGLPosition(root);
-
-        if (success && RemoveInvariant(shaderType, shaderVersion, outputType, compileOptions))
-            sh::RemoveInvariantDeclaration(root);
 
         // This pass might emit short circuits so keep it before the short circuit unfolding
         if (success && (compileOptions & SH_REWRITE_DO_WHILE_LOOPS))
@@ -450,6 +446,11 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             }
         }
 
+        // Removing invariant declarations must be done after collecting variables.
+        // Otherwise, built-in invariant declarations don't apply.
+        if (success && RemoveInvariant(shaderType, shaderVersion, outputType, compileOptions))
+            sh::RemoveInvariantDeclaration(root);
+
         if (success && (compileOptions & SH_SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS))
         {
             ScalarizeVecAndMatConstructorArgs(root, shaderType, fragmentPrecisionHigh,
@@ -475,7 +476,6 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         }
     }
 
-    SetGlobalParseContext(NULL);
     if (success)
         return root;
 
@@ -569,6 +569,8 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
     initSamplerDefaultPrecision(EbtSamplerCube);
     // SamplerExternalOES is specified in the extension to have default precision.
     initSamplerDefaultPrecision(EbtSamplerExternalOES);
+    // SamplerExternal2DY2YEXT is specified in the extension to have default precision.
+    initSamplerDefaultPrecision(EbtSamplerExternal2DY2YEXT);
     // It isn't specified whether Sampler2DRect has default precision.
     initSamplerDefaultPrecision(EbtSampler2DRect);
 
@@ -616,6 +618,7 @@ void TCompiler::setResourceString()
         << ":EXT_shader_framebuffer_fetch:" << compileResources.EXT_shader_framebuffer_fetch
         << ":NV_shader_framebuffer_fetch:" << compileResources.NV_shader_framebuffer_fetch
         << ":ARM_shader_framebuffer_fetch:" << compileResources.ARM_shader_framebuffer_fetch
+        << ":EXT_YUV_target:" << compileResources.EXT_YUV_target
         << ":MaxVertexOutputVectors:" << compileResources.MaxVertexOutputVectors
         << ":MaxFragmentInputVectors:" << compileResources.MaxFragmentInputVectors
         << ":MinProgramTexelOffset:" << compileResources.MinProgramTexelOffset
@@ -755,7 +758,7 @@ bool TCompiler::tagUsedFunctions()
     // Search from main, starting from the end of the DAG as it usually is the root.
     for (size_t i = mCallDag.size(); i-- > 0;)
     {
-        if (mCallDag.getRecordFromIndex(i).name == "main(")
+        if (mCallDag.getRecordFromIndex(i).name == "main")
         {
             internalTagUsedFunction(i);
             return true;
@@ -847,13 +850,6 @@ bool TCompiler::validateOutputs(TIntermNode *root)
     root->traverse(&validateOutputs);
     validateOutputs.validate(&mDiagnostics);
     return (mDiagnostics.numErrors() == 0);
-}
-
-bool TCompiler::validateLimitations(TIntermNode *root)
-{
-    ValidateLimitations validate(shaderType, &mDiagnostics);
-    root->traverse(&validate);
-    return mDiagnostics.numErrors() == 0;
 }
 
 bool TCompiler::limitExpressionComplexity(TIntermNode *root)

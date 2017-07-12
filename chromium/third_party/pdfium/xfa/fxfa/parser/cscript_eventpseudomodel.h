@@ -8,7 +8,7 @@
 #define XFA_FXFA_PARSER_CSCRIPT_EVENTPSEUDOMODEL_H_
 
 #include "fxjs/cfxjse_arguments.h"
-#include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/parser/cxfa_object.h"
 
 enum class XFA_Event {
   Change = 0,
@@ -63,7 +63,7 @@ class CScript_EventPseudoModel : public CXFA_Object {
   void Emit(CFXJSE_Arguments* pArguments);
   void Reset(CFXJSE_Arguments* pArguments);
 
- protected:
+ private:
   void Property(CFXJSE_Value* pValue, XFA_Event dwFlag, bool bSetting);
 };
 

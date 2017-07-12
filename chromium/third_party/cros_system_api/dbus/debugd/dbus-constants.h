@@ -11,13 +11,11 @@ const char kDebugdServicePath[] = "/org/chromium/debugd";
 const char kDebugdServiceName[] = "org.chromium.debugd";
 
 // Methods.
-const char kCupsAddPrinter[] = "CupsAddPrinter";  // DEPRECATED
 const char kCupsAddManuallyConfiguredPrinter[] =
     "CupsAddManuallyConfiguredPrinter";
 const char kCupsAddAutoConfiguredPrinter[] = "CupsAddAutoConfiguredPrinter";
 const char kCupsRemovePrinter[] = "CupsRemovePrinter";
 const char kDumpDebugLogs[] = "DumpDebugLogs";
-const char kGetDebugLogs[] = "GetDebugLogs";
 const char kGetInterfaces[] = "GetInterfaces";
 const char kGetModemStatus[] = "GetModemStatus";
 const char kGetNetworkStatus[] = "GetNetworkStatus";
@@ -57,6 +55,16 @@ enum DevFeatureFlag {
   DEV_FEATURE_SYSTEM_ROOT_PASSWORD_SET = 1 << 5,
   DEV_FEATURE_CHROME_REMOTE_DEBUGGING_ENABLED = 1 << 6,
 };
+
+// CupsAdd* error codes
+enum CupsResult {
+  CUPS_SUCCESS = 0,
+  CUPS_FATAL = 1,
+  CUPS_INVALID_PPD = 2,
+  CUPS_LPADMIN_FAILURE = 3,
+  CUPS_AUTOCONF_FAILURE = 4,
+};
+
 }  // namespace debugd
 
 #endif  // SYSTEM_API_DBUS_DEBUGD_DBUS_CONSTANTS_H_

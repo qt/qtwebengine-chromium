@@ -10,15 +10,24 @@
 #include "core/fpdfapi/page/cpdf_pathobject.h"
 #include "core/fpdfapi/page/cpdf_textobject.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_parser.h"
+#include "core/fpdfapi/parser/cpdf_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/test_support.h"
 #include "third_party/base/ptr_util.h"
 
-class CPDF_PageContentGeneratorTest : public testing::Test {
+class CPDF_PageContentGeneratorTest : public pdfium::FPDF_Test {
  protected:
-  void SetUp() override { CPDF_ModuleMgr::Get()->InitPageModule(); }
+  void SetUp() override {
+    FPDF_Test::SetUp();
+    CPDF_ModuleMgr::Get()->InitPageModule();
+  }
 
-  void TearDown() override { CPDF_ModuleMgr::Destroy(); }
+  void TearDown() override {
+    CPDF_ModuleMgr::Destroy();
+    FPDF_Test::TearDown();
+  }
 
   void TestProcessPath(CPDF_PageContentGenerator* pGen,
                        CFX_ByteTextBuf* buf,
@@ -107,11 +116,11 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessGraphics) {
   pPathObj->m_FillType = FXFILL_WINDING;
   pPathObj->m_bStroke = true;
 
-  FX_FLOAT rgb[3] = {0.5f, 0.7f, 0.35f};
+  float rgb[3] = {0.5f, 0.7f, 0.35f};
   CPDF_ColorSpace* pCS = CPDF_ColorSpace::GetStockCS(PDFCS_DEVICERGB);
   pPathObj->m_ColorState.SetFillColor(pCS, rgb, 3);
 
-  FX_FLOAT rgb2[3] = {1, 0.9f, 0};
+  float rgb2[3] = {1, 0.9f, 0};
   pPathObj->m_ColorState.SetStrokeColor(pCS, rgb2, 3);
   pPathObj->m_GeneralState.SetFillAlpha(0.5f);
   pPathObj->m_GeneralState.SetStrokeAlpha(0.8f);
@@ -151,7 +160,8 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessGraphics) {
             pathString2.Mid(55, pathString2.GetLength() - 83));
 }
 
-TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
+TEST_F(CPDF_PageContentGeneratorTest, ProcessStandardText) {
+  // Checking font whose font dictionary is not yet indirect object.
   auto pDoc = pdfium::MakeUnique<CPDF_Document>(nullptr);
   pDoc->CreateNewDoc();
   CPDF_Dictionary* pPageDict = pDoc->CreateNewPage(0);
@@ -175,4 +185,55 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
   EXPECT_EQ("Font", fontDict->GetStringFor("Type"));
   EXPECT_EQ("Type1", fontDict->GetStringFor("Subtype"));
   EXPECT_EQ("Times-Roman", fontDict->GetStringFor("BaseFont"));
+}
+
+TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
+  // Checking font whose font dictionary is already an indirect object.
+  auto pDoc = pdfium::MakeUnique<CPDF_Document>(nullptr);
+  pDoc->CreateNewDoc();
+  CPDF_Dictionary* pPageDict = pDoc->CreateNewPage(0);
+  auto pTestPage = pdfium::MakeUnique<CPDF_Page>(pDoc.get(), pPageDict, false);
+  CPDF_PageContentGenerator generator(pTestPage.get());
+
+  CFX_ByteTextBuf buf;
+  {
+    // Set the text object font and text
+    auto pTextObj = pdfium::MakeUnique<CPDF_TextObject>();
+    CPDF_Dictionary* pDict = pDoc->NewIndirect<CPDF_Dictionary>();
+    pDict->SetNewFor<CPDF_Name>("Type", "Font");
+    pDict->SetNewFor<CPDF_Name>("Subtype", "TrueType");
+    CPDF_Font* pFont = CPDF_Font::GetStockFont(pDoc.get(), "Arial");
+    pDict->SetNewFor<CPDF_Name>("BaseFont", pFont->GetBaseFont());
+
+    CPDF_Dictionary* pDesc = pDoc->NewIndirect<CPDF_Dictionary>();
+    pDesc->SetNewFor<CPDF_Name>("Type", "FontDescriptor");
+    pDesc->SetNewFor<CPDF_Name>("FontName", pFont->GetBaseFont());
+    pDict->SetNewFor<CPDF_Reference>("FontDescriptor", pDoc.get(),
+                                     pDesc->GetObjNum());
+
+    CPDF_Font* loadedFont = pDoc->LoadFont(pDict);
+    pTextObj->m_TextState.SetFont(loadedFont);
+    pTextObj->m_TextState.SetFontSize(15.5f);
+    pTextObj->SetText("I am indirect");
+
+    TestProcessText(&generator, &buf, pTextObj.get());
+  }
+
+  CFX_ByteString textString = buf.MakeString();
+  EXPECT_LT(63, textString.GetLength());
+  EXPECT_EQ("BT 1 0 0 1 0 0 Tm /", textString.Left(19));
+  EXPECT_EQ(" 15.5 Tf <4920616D20696E646972656374> Tj ET\n",
+            textString.Right(44));
+  CPDF_Dictionary* fontDict = TestGetResource(
+      &generator, "Font", textString.Mid(19, textString.GetLength() - 63));
+  ASSERT_TRUE(fontDict);
+  EXPECT_TRUE(fontDict->GetObjNum());
+  EXPECT_EQ("Font", fontDict->GetStringFor("Type"));
+  EXPECT_EQ("TrueType", fontDict->GetStringFor("Subtype"));
+  EXPECT_EQ("Helvetica", fontDict->GetStringFor("BaseFont"));
+  CPDF_Dictionary* fontDesc = fontDict->GetDictFor("FontDescriptor");
+  ASSERT_TRUE(fontDesc);
+  EXPECT_TRUE(fontDesc->GetObjNum());
+  EXPECT_EQ("FontDescriptor", fontDesc->GetStringFor("Type"));
+  EXPECT_EQ("Helvetica", fontDesc->GetStringFor("FontName"));
 }

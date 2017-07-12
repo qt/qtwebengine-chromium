@@ -9,14 +9,15 @@
  */
 
 #include <list>
+#include <map>
 #include <memory>
 
 #include "webrtc/call/audio_state.h"
 #include "webrtc/call/call.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/modules/audio_coding/codecs/mock/mock_audio_decoder_factory.h"
 #include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
 #include "webrtc/test/gtest.h"
+#include "webrtc/test/mock_audio_decoder_factory.h"
 #include "webrtc/test/mock_transport.h"
 #include "webrtc/test/mock_voice_engine.h"
 
@@ -141,6 +142,11 @@ TEST(CallTest, CreateDestroy_AssociateAudioSendReceiveStreams_RecvFirst) {
             new testing::NiceMock<test::MockVoEChannelProxy>();
         EXPECT_CALL(*channel_proxy, GetAudioDecoderFactory())
             .WillRepeatedly(testing::ReturnRef(decoder_factory));
+        EXPECT_CALL(*channel_proxy, SetReceiveCodecs(testing::_))
+            .WillRepeatedly(testing::Invoke(
+                [](const std::map<int, SdpAudioFormat>& codecs) {
+                  EXPECT_THAT(codecs, testing::IsEmpty());
+                }));
         // If being called for the send channel, save a pointer to the channel
         // proxy for later.
         if (channel_id == kRecvChannelId) {
@@ -188,6 +194,11 @@ TEST(CallTest, CreateDestroy_AssociateAudioSendReceiveStreams_SendFirst) {
             new testing::NiceMock<test::MockVoEChannelProxy>();
         EXPECT_CALL(*channel_proxy, GetAudioDecoderFactory())
             .WillRepeatedly(testing::ReturnRef(decoder_factory));
+        EXPECT_CALL(*channel_proxy, SetReceiveCodecs(testing::_))
+            .WillRepeatedly(testing::Invoke(
+                [](const std::map<int, SdpAudioFormat>& codecs) {
+                  EXPECT_THAT(codecs, testing::IsEmpty());
+                }));
         // If being called for the send channel, save a pointer to the channel
         // proxy for later.
         if (channel_id == kRecvChannelId) {

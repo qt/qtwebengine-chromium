@@ -33,7 +33,6 @@ config("common_inherited_config") {
       "FEATURE_ENABLE_VOICEMAIL",
       "EXPAT_RELATIVE_PATH",
       "GTEST_RELATIVE_PATH",
-      "NO_MAIN_THREAD_WRAPPING",
       "NO_SOUND_SYSTEM",
       "WEBRTC_CHROMIUM_BUILD",
     ]
@@ -101,6 +100,12 @@ config("common_config") {
   cflags_cc = []
   defines = []
 
+  if (rtc_enable_protobuf) {
+    defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
+  } else {
+    defines += [ "WEBRTC_ENABLE_PROTOBUF=0" ]
+  }
+
   if (rtc_restrict_logging) {
     defines += [ "WEBRTC_RESTRICT_LOGGING" ]
   }
@@ -131,7 +136,6 @@ config("common_config") {
       # targets, there's no point including the defines in that config here.
       # TODO(kjellander): Cleanup unused ones and move defines closer to the
       # source when webrtc:4256 is completed.
-      "HAVE_SRTP",
       "HAVE_WEBRTC_VIDEO",
       "HAVE_WEBRTC_VOICE",
       "LOGGING_INSIDE_WEBRTC",
@@ -232,17 +236,7 @@ if (!build_with_chromium) {
       "call.h",
       "config.h",
     ]
-
-    # complete_static_lib doesn't work on Mac since libtool cannot support
-    # multiple objects with the same filenames (https://bugs.webrtc.org/6418).
-    if (is_win || is_linux || is_android) {
-      complete_static_lib = true
-    } else {
-      # TODO(kjellander): Remove this whenever possible. GN's static_library
-      # target type requires at least one object to avoid errors linking.
-      sources += [ "no_op_function.cc" ]
-    }
-
+    complete_static_lib = true
     defines = []
 
     deps = [
@@ -297,6 +291,7 @@ if (!build_with_chromium) {
         "modules:modules_unittests",
         "modules/audio_coding:audio_coding_tests",
         "modules/audio_processing:audio_processing_tests",
+        "modules/remote_bitrate_estimator:bwe_simulations_tests",
         "modules/rtp_rtcp:test_packet_masks_metrics",
         "modules/video_capture:video_capture_internal_impl",
         "modules/video_coding:plot_videoprocessor_integrationtest",
@@ -309,7 +304,6 @@ if (!build_with_chromium) {
         "video:screenshare_loopback",
         "video:video_loopback",
         "video:video_tests",
-        "voice_engine:voe_cmd_test",
         "voice_engine:voice_engine_unittests",
       ]
       if (is_android) {
@@ -327,7 +321,10 @@ if (!build_with_chromium) {
         ]
       }
       if (rtc_enable_protobuf) {
-        deps += [ "logging:rtc_event_log2rtp_dump" ]
+        deps += [
+          "audio:low_bandwidth_audio_test",
+          "logging:rtc_event_log2rtp_dump",
+        ]
       }
     }
   }

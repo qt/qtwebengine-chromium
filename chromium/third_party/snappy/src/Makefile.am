@@ -19,5 +19,13 @@ noinst_PROGRAMS = $(TESTS)
 EXTRA_DIST = autogen.sh testdata/alice29.txt testdata/asyoulik.txt testdata/baddata1.snappy testdata/baddata2.snappy testdata/baddata3.snappy testdata/geo.protodata testdata/fireworks.jpeg testdata/html testdata/html_x_4 testdata/kppkn.gtb testdata/lcet10.txt testdata/paper-100k.pdf testdata/plrabn12.txt testdata/urls.10K
 dist_doc_DATA = ChangeLog COPYING INSTALL NEWS README format_description.txt framing_format.txt
 
+pkgconfigdir = $(libdir)/pkgconfig
+nodist_pkgconfig_DATA = snappy.pc
+
 libtool: $(LIBTOOL_DEPS)
 	$(SHELL) ./config.status --recheck
+
+# Needed by autoconf because we use README.md instead of README.
+# See http://stackoverflow.com/q/15013672/
+README: README.md
+	cat $< > $@.tmp

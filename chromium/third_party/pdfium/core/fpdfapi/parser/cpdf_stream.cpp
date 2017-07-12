@@ -57,7 +57,7 @@ void CPDF_Stream::InitStream(const uint8_t* pData,
   m_pFile = nullptr;
   m_pDataBuf.reset(FX_Alloc(uint8_t, size));
   if (pData)
-    FXSYS_memcpy(m_pDataBuf.get(), pData, size);
+    memcpy(m_pDataBuf.get(), pData, size);
   m_dwSize = size;
   if (m_pDict)
     m_pDict->SetNewFor<CPDF_Number>("Length", static_cast<int>(m_dwSize));
@@ -83,17 +83,17 @@ std::unique_ptr<CPDF_Object> CPDF_Stream::CloneNonCyclic(
     bool bDirect,
     std::set<const CPDF_Object*>* pVisited) const {
   pVisited->insert(this);
-  CPDF_StreamAcc acc;
-  acc.LoadAllData(this, true);
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(this);
+  pAcc->LoadAllData(true);
 
-  uint32_t streamSize = acc.GetSize();
+  uint32_t streamSize = pAcc->GetSize();
   CPDF_Dictionary* pDict = GetDict();
   std::unique_ptr<CPDF_Dictionary> pNewDict;
   if (pDict && !pdfium::ContainsKey(*pVisited, pDict)) {
     pNewDict = ToDictionary(
         static_cast<CPDF_Object*>(pDict)->CloneNonCyclic(bDirect, pVisited));
   }
-  return pdfium::MakeUnique<CPDF_Stream>(acc.DetachData(), streamSize,
+  return pdfium::MakeUnique<CPDF_Stream>(pAcc->DetachData(), streamSize,
                                          std::move(pNewDict));
 }
 
@@ -101,7 +101,7 @@ void CPDF_Stream::SetData(const uint8_t* pData, uint32_t size) {
   m_bMemoryBased = true;
   m_pDataBuf.reset(FX_Alloc(uint8_t, size));
   if (pData)
-    FXSYS_memcpy(m_pDataBuf.get(), pData, size);
+    memcpy(m_pDataBuf.get(), pData, size);
   m_dwSize = size;
   if (!m_pDict)
     m_pDict = pdfium::MakeUnique<CPDF_Dictionary>();
@@ -117,7 +117,7 @@ bool CPDF_Stream::ReadRawData(FX_FILESIZE offset,
     return m_pFile->ReadBlock(buf, offset, size);
 
   if (m_pDataBuf)
-    FXSYS_memcpy(buf, m_pDataBuf.get() + offset, size);
+    memcpy(buf, m_pDataBuf.get() + offset, size);
 
   return true;
 }
@@ -127,7 +127,7 @@ bool CPDF_Stream::HasFilter() const {
 }
 
 CFX_WideString CPDF_Stream::GetUnicodeText() const {
-  CPDF_StreamAcc stream;
-  stream.LoadAllData(this, false);
-  return PDF_DecodeText(stream.GetData(), stream.GetSize());
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(this);
+  pAcc->LoadAllData(false);
+  return PDF_DecodeText(pAcc->GetData(), pAcc->GetSize());
 }

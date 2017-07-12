@@ -16,7 +16,6 @@
 
 #include "webrtc/system_wrappers/include/event_wrapper.h"
 #include "webrtc/typedefs.h"
-#include "webrtc/voice_engine/include/voe_neteq_stats.h"
 #include "webrtc/voice_engine/test/auto_test/automated_mode.h"
 #include "webrtc/voice_engine/test/auto_test/voe_test_defines.h"
 #include "webrtc/voice_engine/voice_engine_defines.h"
@@ -44,14 +43,10 @@ void SubAPIManager::DisplayStatus() const {
     TEST_LOG("  File\n");
   if (_hardware)
     TEST_LOG("  Hardware\n");
-  if (_netEqStats)
-    TEST_LOG("  NetEqStats\n");
   if (_network)
     TEST_LOG("  Network\n");
   if (_rtp_rtcp)
     TEST_LOG("  RTP_RTCP\n");
-  if (_volumeControl)
-    TEST_LOG("  VolumeControl\n");
   if (_apm)
     TEST_LOG("  AudioProcessing\n");
   ANL();
@@ -64,14 +59,10 @@ void SubAPIManager::DisplayStatus() const {
     TEST_LOG("  File\n");
   if (!_hardware)
     TEST_LOG("  Hardware\n");
-  if (!_netEqStats)
-    TEST_LOG("  NetEqStats\n");
   if (!_network)
     TEST_LOG("  Network\n");
   if (!_rtp_rtcp)
     TEST_LOG("  RTP_RTCP\n");
-  if (!_volumeControl)
-    TEST_LOG("  VolumeControl\n");
   if (!_apm)
     TEST_LOG("  AudioProcessing\n");
   ANL();

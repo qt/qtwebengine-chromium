@@ -28,8 +28,8 @@
 //
 // Various stubs for the open-source version of Snappy.
 
-#ifndef UTIL_SNAPPY_OPENSOURCE_SNAPPY_STUBS_INTERNAL_H_
-#define UTIL_SNAPPY_OPENSOURCE_SNAPPY_STUBS_INTERNAL_H_
+#ifndef THIRD_PARTY_SNAPPY_OPENSOURCE_SNAPPY_STUBS_INTERNAL_H_
+#define THIRD_PARTY_SNAPPY_OPENSOURCE_SNAPPY_STUBS_INTERNAL_H_
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -58,10 +58,6 @@
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
 #endif
-
-// Pull in std::min, std::ostream, and the likes. This is safe because this
-// header file is never used from any public header files.
-using namespace std;
 
 // The size of an array, if known at compile-time.
 // Will give unexpected results if used on a pointer.
@@ -116,6 +112,15 @@ static const int64 kint64max = static_cast<int64>(0x7FFFFFFFFFFFFFFFLL);
 // sub-architectures.
 //
 // This is a mess, but there's not much we can do about it.
+//
+// To further complicate matters, only LDR instructions (single reads) are
+// allowed to be unaligned, not LDRD (two reads) or LDM (many reads). Unless we
+// explicitly tell the compiler that these accesses can be unaligned, it can and
+// will combine accesses. On armcc, the way to signal this is done by accessing
+// through the type (uint32 __packed *), but GCC has no such attribute
+// (it ignores __attribute__((packed)) on individual variables). However,
+// we can tell it that a _struct_ is unaligned, which has the same effect,
+// so we do that.
 
 #elif defined(__arm__) && \
       !defined(__ARM_ARCH_4__) && \
@@ -131,11 +136,39 @@ static const int64 kint64max = static_cast<int64>(0x7FFFFFFFFFFFFFFFLL);
       !defined(__ARM_ARCH_6ZK__) && \
       !defined(__ARM_ARCH_6T2__)
 
-#define UNALIGNED_LOAD16(_p) (*reinterpret_cast<const uint16 *>(_p))
-#define UNALIGNED_LOAD32(_p) (*reinterpret_cast<const uint32 *>(_p))
+#if __GNUC__
+#define ATTRIBUTE_PACKED __attribute__((__packed__))
+#else
+#define ATTRIBUTE_PACKED
+#endif
 
-#define UNALIGNED_STORE16(_p, _val) (*reinterpret_cast<uint16 *>(_p) = (_val))
-#define UNALIGNED_STORE32(_p, _val) (*reinterpret_cast<uint32 *>(_p) = (_val))
+namespace base {
+namespace internal {
+
+struct Unaligned16Struct {
+  uint16 value;
+  uint8 dummy;  // To make the size non-power-of-two.
+} ATTRIBUTE_PACKED;
+
+struct Unaligned32Struct {
+  uint32 value;
+  uint8 dummy;  // To make the size non-power-of-two.
+} ATTRIBUTE_PACKED;
+
+}  // namespace internal
+}  // namespace base
+
+#define UNALIGNED_LOAD16(_p) \
+    ((reinterpret_cast<const ::snappy::base::internal::Unaligned16Struct *>(_p))->value)
+#define UNALIGNED_LOAD32(_p) \
+    ((reinterpret_cast<const ::snappy::base::internal::Unaligned32Struct *>(_p))->value)
+
+#define UNALIGNED_STORE16(_p, _val) \
+    ((reinterpret_cast< ::snappy::base::internal::Unaligned16Struct *>(_p))->value = \
+         (_val))
+#define UNALIGNED_STORE32(_p, _val) \
+    ((reinterpret_cast< ::snappy::base::internal::Unaligned32Struct *>(_p))->value = \
+         (_val))
 
 // TODO(user): NEON supports unaligned 64-bit loads and stores.
 // See if that would be more efficient on platforms supporting it,
@@ -187,20 +220,6 @@ inline void UNALIGNED_STORE64(void *p, uint64 v) {
 }
 
 #endif
-
-// This can be more efficient than UNALIGNED_LOAD64 + UNALIGNED_STORE64
-// on some platforms, in particular ARM.
-inline void UnalignedCopy64(const void *src, void *dst) {
-  if (sizeof(void *) == 8) {
-    UNALIGNED_STORE64(dst, UNALIGNED_LOAD64(src));
-  } else {
-    const char *src_char = reinterpret_cast<const char *>(src);
-    char *dst_char = reinterpret_cast<char *>(dst);
-
-    UNALIGNED_STORE32(dst_char, UNALIGNED_LOAD32(src_char));
-    UNALIGNED_STORE32(dst_char + 4, UNALIGNED_LOAD32(src_char + 4));
-  }
-}
 
 // The following guarantees declaration of the byte swap functions.
 #ifdef WORDS_BIGENDIAN
@@ -488,4 +507,4 @@ inline char* string_as_array(string* str) {
 
 }  // namespace snappy
 
-#endif  // UTIL_SNAPPY_OPENSOURCE_SNAPPY_STUBS_INTERNAL_H_
+#endif  // THIRD_PARTY_SNAPPY_OPENSOURCE_SNAPPY_STUBS_INTERNAL_H_

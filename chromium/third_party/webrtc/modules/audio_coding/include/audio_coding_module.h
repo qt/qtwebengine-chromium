@@ -20,6 +20,7 @@
 #include "webrtc/base/function_view.h"
 #include "webrtc/base/optional.h"
 #include "webrtc/common_types.h"
+#include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module_typedefs.h"
 #include "webrtc/modules/audio_coding/neteq/include/neteq.h"
 #include "webrtc/modules/include/module.h"
@@ -483,6 +484,10 @@ class AudioCodingModule {
   //   the sampling frequency in Hertz.
   //
   virtual int32_t PlayoutFrequency() const = 0;
+
+  // Replace any existing decoders with the given payload type -> decoder map.
+  virtual void SetReceiveCodecs(
+      const std::map<int, SdpAudioFormat>& codecs) = 0;
 
   // Registers a decoder for the given payload type. Returns true iff
   // successful.

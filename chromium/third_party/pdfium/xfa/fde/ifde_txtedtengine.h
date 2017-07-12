@@ -11,7 +11,6 @@
 #include "xfa/fgas/font/cfgas_fontmgr.h"
 
 class CFDE_TxtEdtEngine;
-class IFDE_TxtEdtPage;
 class CFWL_Edit;
 
 #define FDE_TEXTEDITMODE_MultiLines (1L << 0)
@@ -74,24 +73,22 @@ struct FDE_TXTEDTPARAMS {
   FDE_TXTEDTPARAMS();
   ~FDE_TXTEDTPARAMS();
 
-  FX_FLOAT fPlateWidth;
-  FX_FLOAT fPlateHeight;
+  float fPlateWidth;
+  float fPlateHeight;
   int32_t nLineCount;
   uint32_t dwLayoutStyles;
   uint32_t dwAlignment;
   uint32_t dwMode;
   CFX_RetainPtr<CFGAS_GEFont> pFont;
-  FX_FLOAT fFontSize;
+  float fFontSize;
   FX_ARGB dwFontColor;
-  FX_FLOAT fLineSpace;
-  FX_FLOAT fTabWidth;
-  bool bTabEquidistant;
-  FX_WCHAR wDefChar;
-  FX_WCHAR wLineBreakChar;
-  int32_t nCharRotation;
+  float fLineSpace;
+  float fTabWidth;
+  wchar_t wDefChar;
+  wchar_t wLineBreakChar;
   int32_t nLineEnd;
   int32_t nHorzScale;
-  FX_FLOAT fCharSpace;
+  float fCharSpace;
   CFWL_Edit* pEventSink;
 };
 

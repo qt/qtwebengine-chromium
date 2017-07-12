@@ -93,8 +93,8 @@ CFX_ByteString PDF_NameDecode(const CFX_ByteStringC& bstr) {
 
   int size = bstr.GetLength();
   CFX_ByteString result;
-  FX_CHAR* pDestStart = result.GetBuffer(size);
-  FX_CHAR* pDest = pDestStart;
+  char* pDestStart = result.GetBuffer(size);
+  char* pDest = pDestStart;
   for (int i = 0; i < size; i++) {
     if (bstr[i] == '#' && i < size - 2) {
       *pDest++ =
@@ -132,7 +132,7 @@ CFX_ByteString PDF_NameEncode(const CFX_ByteString& orig) {
     return orig;
 
   CFX_ByteString res;
-  FX_CHAR* dest_buf = res.GetBuffer(dest_len);
+  char* dest_buf = res.GetBuffer(dest_len);
   dest_len = 0;
   for (i = 0; i < src_len; i++) {
     uint8_t ch = src_buf[i];
@@ -208,9 +208,9 @@ CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& buf, const CPDF_Object* pObj) {
     case CPDF_Object::STREAM: {
       const CPDF_Stream* p = pObj->AsStream();
       buf << p->GetDict() << "stream\r\n";
-      CPDF_StreamAcc acc;
-      acc.LoadAllData(p, true);
-      buf.AppendBlock(acc.GetData(), acc.GetSize());
+      auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(p);
+      pAcc->LoadAllData(true);
+      buf.AppendBlock(pAcc->GetData(), pAcc->GetSize());
       buf << "\r\nendstream";
       break;
     }

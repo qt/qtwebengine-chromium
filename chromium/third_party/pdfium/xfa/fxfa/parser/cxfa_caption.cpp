@@ -7,7 +7,7 @@
 #include "xfa/fxfa/parser/cxfa_caption.h"
 
 #include "xfa/fxfa/parser/cxfa_measurement.h"
-#include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
 CXFA_Caption::CXFA_Caption(CXFA_Node* pNode) : CXFA_Data(pNode) {}
 
@@ -23,7 +23,7 @@ int32_t CXFA_Caption::GetPlacementType() {
   return eAttr;
 }
 
-FX_FLOAT CXFA_Caption::GetReserve() {
+float CXFA_Caption::GetReserve() {
   CXFA_Measurement ms;
   m_pNode->TryMeasure(XFA_ATTRIBUTE_Reserve, ms);
   return ms.ToUnit(XFA_UNIT_Pt);

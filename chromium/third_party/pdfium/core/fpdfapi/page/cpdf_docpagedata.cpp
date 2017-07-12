@@ -82,11 +82,7 @@ void CPDF_DocPageData::Clear(bool bForceRelease) {
 
   for (auto it = m_IccProfileMap.begin(); it != m_IccProfileMap.end();) {
     auto curr_it = it++;
-    CPDF_CountedIccProfile* ipData = curr_it->second;
-    if (!ipData->get())
-      continue;
-
-    if (bForceRelease || ipData->use_count() < 2) {
+    if (bForceRelease || curr_it->second->HasOneRef()) {
       for (auto hash_it = m_HashProfileMap.begin();
            hash_it != m_HashProfileMap.end(); ++hash_it) {
         if (curr_it->first == hash_it->second) {
@@ -94,37 +90,17 @@ void CPDF_DocPageData::Clear(bool bForceRelease) {
           break;
         }
       }
-      delete ipData->get();
-      delete ipData;
       m_IccProfileMap.erase(curr_it);
     }
   }
 
   for (auto it = m_FontFileMap.begin(); it != m_FontFileMap.end();) {
     auto curr_it = it++;
-    CPDF_CountedStreamAcc* pCountedFont = curr_it->second;
-    if (!pCountedFont->get())
-      continue;
-
-    if (bForceRelease || pCountedFont->use_count() < 2) {
-      delete pCountedFont->get();
-      delete pCountedFont;
+    if (bForceRelease || curr_it->second->HasOneRef())
       m_FontFileMap.erase(curr_it);
-    }
   }
 
-  for (auto it = m_ImageMap.begin(); it != m_ImageMap.end();) {
-    auto curr_it = it++;
-    CPDF_CountedImage* pCountedImage = curr_it->second;
-    if (!pCountedImage->get())
-      continue;
-
-    if (bForceRelease || pCountedImage->use_count() < 2) {
-      delete pCountedImage->get();
-      delete pCountedImage;
-      m_ImageMap.erase(curr_it);
-    }
-  }
+  m_ImageMap.clear();
 }
 
 CPDF_Font* CPDF_DocPageData::GetFont(CPDF_Dictionary* pFontDict) {
@@ -398,91 +374,66 @@ void CPDF_DocPageData::ReleasePattern(const CPDF_Object* pPatternObj) {
   pPattern->clear();
 }
 
-CPDF_Image* CPDF_DocPageData::GetImage(uint32_t dwStreamObjNum) {
+CFX_RetainPtr<CPDF_Image> CPDF_DocPageData::GetImage(uint32_t dwStreamObjNum) {
   ASSERT(dwStreamObjNum);
   auto it = m_ImageMap.find(dwStreamObjNum);
   if (it != m_ImageMap.end())
-    return it->second->AddRef();
+    return it->second;
 
-  CPDF_CountedImage* pCountedImage = new CPDF_CountedImage(
-      pdfium::MakeUnique<CPDF_Image>(m_pPDFDoc, dwStreamObjNum));
-  m_ImageMap[dwStreamObjNum] = pCountedImage;
-  return pCountedImage->AddRef();
+  auto pImage = pdfium::MakeRetain<CPDF_Image>(m_pPDFDoc, dwStreamObjNum);
+  m_ImageMap[dwStreamObjNum] = pImage;
+  return pImage;
 }
 
-void CPDF_DocPageData::ReleaseImage(uint32_t dwStreamObjNum) {
+void CPDF_DocPageData::MaybePurgeImage(uint32_t dwStreamObjNum) {
   ASSERT(dwStreamObjNum);
   auto it = m_ImageMap.find(dwStreamObjNum);
-  if (it == m_ImageMap.end())
-    return;
-
-  CPDF_CountedImage* pCountedImage = it->second;
-  if (!pCountedImage)
-    return;
-
-  pCountedImage->RemoveRef();
-  if (pCountedImage->use_count() > 1)
-    return;
-
-  // We have item only in m_ImageMap cache. Clean it.
-  delete pCountedImage->get();
-  delete pCountedImage;
-  m_ImageMap.erase(it);
+  if (it != m_ImageMap.end() && it->second->HasOneRef())
+    m_ImageMap.erase(it);
 }
 
-CPDF_IccProfile* CPDF_DocPageData::GetIccProfile(
-    CPDF_Stream* pIccProfileStream) {
-  if (!pIccProfileStream)
+CFX_RetainPtr<CPDF_IccProfile> CPDF_DocPageData::GetIccProfile(
+    CPDF_Stream* pProfileStream) {
+  if (!pProfileStream)
     return nullptr;
 
-  auto it = m_IccProfileMap.find(pIccProfileStream);
+  auto it = m_IccProfileMap.find(pProfileStream);
   if (it != m_IccProfileMap.end())
-    return it->second->AddRef();
+    return it->second;
 
-  CPDF_StreamAcc stream;
-  stream.LoadAllData(pIccProfileStream, false);
+  auto pAccessor = pdfium::MakeRetain<CPDF_StreamAcc>(pProfileStream);
+  pAccessor->LoadAllData(false);
+
   uint8_t digest[20];
-  CRYPT_SHA1Generate(stream.GetData(), stream.GetSize(), digest);
+  CRYPT_SHA1Generate(pAccessor->GetData(), pAccessor->GetSize(), digest);
+
   CFX_ByteString bsDigest(digest, 20);
   auto hash_it = m_HashProfileMap.find(bsDigest);
   if (hash_it != m_HashProfileMap.end()) {
     auto it_copied_stream = m_IccProfileMap.find(hash_it->second);
     if (it_copied_stream != m_IccProfileMap.end())
-      return it_copied_stream->second->AddRef();
+      return it_copied_stream->second;
   }
-  CPDF_CountedIccProfile* ipData = new CPDF_CountedIccProfile(
-      pdfium::MakeUnique<CPDF_IccProfile>(stream.GetData(), stream.GetSize()));
-  m_IccProfileMap[pIccProfileStream] = ipData;
-  m_HashProfileMap[bsDigest] = pIccProfileStream;
-  return ipData->AddRef();
+  auto pProfile = pdfium::MakeRetain<CPDF_IccProfile>(
+      pProfileStream, pAccessor->GetData(), pAccessor->GetSize());
+  m_IccProfileMap[pProfileStream] = pProfile;
+  m_HashProfileMap[bsDigest] = pProfileStream;
+  return pProfile;
 }
 
-void CPDF_DocPageData::ReleaseIccProfile(const CPDF_IccProfile* pIccProfile) {
-  ASSERT(pIccProfile);
-
-  for (auto it = m_IccProfileMap.begin(); it != m_IccProfileMap.end(); ++it) {
-    CPDF_CountedIccProfile* profile = it->second;
-    if (profile->get() != pIccProfile)
-      continue;
-
-    profile->RemoveRef();
-    if (profile->use_count() > 1)
-      continue;
-    // We have item only in m_IccProfileMap cache. Clean it.
-    delete profile->get();
-    delete profile;
+void CPDF_DocPageData::MaybePurgeIccProfile(CPDF_Stream* pProfileStream) {
+  ASSERT(pProfileStream);
+  auto it = m_IccProfileMap.find(pProfileStream);
+  if (it != m_IccProfileMap.end() && it->second->HasOneRef())
     m_IccProfileMap.erase(it);
-    return;
-  }
 }
 
-CPDF_StreamAcc* CPDF_DocPageData::GetFontFileStreamAcc(
+CFX_RetainPtr<CPDF_StreamAcc> CPDF_DocPageData::GetFontFileStreamAcc(
     CPDF_Stream* pFontStream) {
   ASSERT(pFontStream);
-
   auto it = m_FontFileMap.find(pFontStream);
   if (it != m_FontFileMap.end())
-    return it->second->AddRef();
+    return it->second;
 
   CPDF_Dictionary* pFontDict = pFontStream->GetDict();
   int32_t org_size = pFontDict->GetIntegerFor("Length1") +
@@ -490,36 +441,20 @@ CPDF_StreamAcc* CPDF_DocPageData::GetFontFileStreamAcc(
                      pFontDict->GetIntegerFor("Length3");
   org_size = std::max(org_size, 0);
 
-  auto pFontAcc = pdfium::MakeUnique<CPDF_StreamAcc>();
-  pFontAcc->LoadAllData(pFontStream, false, org_size);
-
-  CPDF_CountedStreamAcc* pCountedFont =
-      new CPDF_CountedStreamAcc(std::move(pFontAcc));
-  m_FontFileMap[pFontStream] = pCountedFont;
-  return pCountedFont->AddRef();
+  auto pFontAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pFontStream);
+  pFontAcc->LoadAllData(false, org_size);
+  m_FontFileMap[pFontStream] = pFontAcc;
+  return pFontAcc;
 }
 
-void CPDF_DocPageData::ReleaseFontFileStreamAcc(
+void CPDF_DocPageData::MaybePurgeFontFileStreamAcc(
     const CPDF_Stream* pFontStream) {
   if (!pFontStream)
     return;
 
   auto it = m_FontFileMap.find(pFontStream);
-  if (it == m_FontFileMap.end())
-    return;
-
-  CPDF_CountedStreamAcc* pCountedStream = it->second;
-  if (!pCountedStream)
-    return;
-
-  pCountedStream->RemoveRef();
-  if (pCountedStream->use_count() > 1)
-    return;
-
-  // We have item only in m_FontFileMap cache. Clean it.
-  delete pCountedStream->get();
-  delete pCountedStream;
-  m_FontFileMap.erase(it);
+  if (it != m_FontFileMap.end() && it->second->HasOneRef())
+    m_FontFileMap.erase(it);
 }
 
 CPDF_CountedColorSpace* CPDF_DocPageData::FindColorSpacePtr(

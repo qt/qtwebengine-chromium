@@ -9,12 +9,14 @@
 
 #include <memory>
 
-#include "xfa/fde/xml/fde_xml_imp.h"
 #include "xfa/fxfa/fxfa_basic.h"
 
 class CXFA_Document;
 class CXFA_Node;
-class CXFA_XMLParser;
+class CFDE_XMLDoc;
+class CFDE_XMLInstruction;
+class CFDE_XMLNode;
+class CFDE_XMLParser;
 class IFX_SeekableReadStream;
 class IFX_Pause;
 class IFGAS_Stream;
@@ -76,7 +78,7 @@ class CXFA_SimpleParser {
                         CFDE_XMLInstruction* pXMLInstruction,
                         XFA_XDPPACKET ePacketID);
 
-  CXFA_XMLParser* m_pXMLParser;
+  CFDE_XMLParser* m_pXMLParser;
   std::unique_ptr<CFDE_XMLDoc> m_pXMLDoc;
   CFX_RetainPtr<IFGAS_Stream> m_pStream;
   CFX_RetainPtr<IFX_SeekableReadStream> m_pFileRead;

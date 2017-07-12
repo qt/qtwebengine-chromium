@@ -83,16 +83,16 @@ class CPDF_PSEngine {
   CPDF_PSEngine();
   ~CPDF_PSEngine();
 
-  bool Parse(const FX_CHAR* str, int size);
+  bool Parse(const char* str, int size);
   bool Execute();
   bool DoOperator(PDF_PSOP op);
   void Reset() { m_StackCount = 0; }
-  void Push(FX_FLOAT value);
-  FX_FLOAT Pop();
+  void Push(float value);
+  float Pop();
   uint32_t GetStackSize() const { return m_StackCount; }
 
  private:
-  FX_FLOAT m_Stack[PSENGINE_STACKSIZE];
+  float m_Stack[PSENGINE_STACKSIZE];
   uint32_t m_StackCount;
   CPDF_PSProc m_MainProc;
 };

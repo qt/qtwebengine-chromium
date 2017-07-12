@@ -33,7 +33,7 @@ const int RemoteEstimatorProxy::kDefaultSendIntervalMs = 100;
 static constexpr int64_t kMaxTimeMs =
     std::numeric_limits<int64_t>::max() / 1000;
 
-RemoteEstimatorProxy::RemoteEstimatorProxy(Clock* clock,
+RemoteEstimatorProxy::RemoteEstimatorProxy(const Clock* clock,
                                            PacketRouter* packet_router)
     : clock_(clock),
       packet_router_(packet_router),
@@ -44,13 +44,6 @@ RemoteEstimatorProxy::RemoteEstimatorProxy(Clock* clock,
       send_interval_ms_(kDefaultSendIntervalMs) {}
 
 RemoteEstimatorProxy::~RemoteEstimatorProxy() {}
-
-void RemoteEstimatorProxy::IncomingPacketFeedbackVector(
-    const std::vector<PacketInfo>& packet_feedback_vector) {
-  rtc::CritScope cs(&lock_);
-  for (PacketInfo info : packet_feedback_vector)
-    OnPacketArrival(info.sequence_number, info.arrival_time_ms);
-}
 
 void RemoteEstimatorProxy::IncomingPacket(int64_t arrival_time_ms,
                                           size_t payload_size,

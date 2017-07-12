@@ -15,6 +15,8 @@
 #include <string>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor.h"
+#include "webrtc/modules/remote_bitrate_estimator/include/bwe_defines.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
@@ -47,14 +49,14 @@ BandwidthUsage GetRuntimeDetectorState(
     rtclog::DelayBasedBweUpdate::DetectorState detector_state) {
   switch (detector_state) {
     case rtclog::DelayBasedBweUpdate::BWE_NORMAL:
-      return kBwNormal;
+      return BandwidthUsage::kBwNormal;
     case rtclog::DelayBasedBweUpdate::BWE_UNDERUSING:
-      return kBwUnderusing;
+      return BandwidthUsage::kBwUnderusing;
     case rtclog::DelayBasedBweUpdate::BWE_OVERUSING:
-      return kBwOverusing;
+      return BandwidthUsage::kBwOverusing;
   }
   RTC_NOTREACHED();
-  return kBwNormal;
+  return BandwidthUsage::kBwNormal;
 }
 
 rtclog::BweProbeResult::ResultType GetProbeResultType(
@@ -537,19 +539,17 @@ void RtcEventLogTestHelper::VerifyBweDelayEvent(
             GetRuntimeDetectorState(bwe_event.detector_state()));
 
   // Check consistency of the parser.
-  int32_t parsed_bitrate;
-  BandwidthUsage parsed_detector_state;
-  parsed_log.GetDelayBasedBweUpdate(index, &parsed_bitrate,
-                                    &parsed_detector_state);
-  EXPECT_EQ(bitrate, parsed_bitrate);
-  EXPECT_EQ(detector_state, parsed_detector_state);
+  ParsedRtcEventLog::BweDelayBasedUpdate res =
+      parsed_log.GetDelayBasedBweUpdate(index);
+  EXPECT_EQ(res.bitrate_bps, bitrate);
+  EXPECT_EQ(res.detector_state, detector_state);
 }
 
 void RtcEventLogTestHelper::VerifyAudioNetworkAdaptation(
     const ParsedRtcEventLog& parsed_log,
     size_t index,
-    const AudioNetworkAdaptor::EncoderRuntimeConfig& config) {
-  AudioNetworkAdaptor::EncoderRuntimeConfig parsed_config;
+    const AudioEncoderRuntimeConfig& config) {
+  AudioEncoderRuntimeConfig parsed_config;
   parsed_log.GetAudioNetworkAdaptation(index, &parsed_config);
   EXPECT_EQ(config.bitrate_bps, parsed_config.bitrate_bps);
   EXPECT_EQ(config.enable_dtx, parsed_config.enable_dtx);

@@ -17,8 +17,11 @@
 #include <utility>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/location.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/optional.h"
+#include "webrtc/base/trace_event.h"
+#include "webrtc/common_types.h"
 #include "webrtc/common_video/h264/profile_level_id.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_receiver.h"
@@ -140,15 +143,8 @@ VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
 
   codec.plType = decoder.payload_type;
   strncpy(codec.plName, decoder.payload_name.c_str(), sizeof(codec.plName));
-  if (decoder.payload_name == "VP8") {
-    codec.codecType = kVideoCodecVP8;
-  } else if (decoder.payload_name == "VP9") {
-    codec.codecType = kVideoCodecVP9;
-  } else if (decoder.payload_name == "H264") {
-    codec.codecType = kVideoCodecH264;
-  } else {
-    codec.codecType = kVideoCodecGeneric;
-  }
+  codec.codecType =
+      PayloadNameToCodecType(decoder.payload_name).value_or(kVideoCodecGeneric);
 
   if (codec.codecType == kVideoCodecVP8) {
     *(codec.VP8()) = VideoEncoder::GetDefaultVp8Settings();
@@ -174,7 +170,6 @@ namespace internal {
 
 VideoReceiveStream::VideoReceiveStream(
     int num_cpu_cores,
-    bool protected_by_flexfec,
     PacketRouter* packet_router,
     VideoReceiveStream::Config config,
     ProcessThread* process_thread,
@@ -183,7 +178,6 @@ VideoReceiveStream::VideoReceiveStream(
     : transport_adapter_(config.rtcp_send_transport),
       config_(std::move(config)),
       num_cpu_cores_(num_cpu_cores),
-      protected_by_flexfec_(protected_by_flexfec),
       process_thread_(process_thread),
       clock_(Clock::GetRealTimeClock()),
       decode_thread_(DecodeThreadFunction, this, "DecodingThread"),
@@ -227,8 +221,8 @@ VideoReceiveStream::VideoReceiveStream(
   frame_buffer_.reset(new video_coding::FrameBuffer(
       clock_, jitter_estimator_.get(), timing_.get(), &stats_proxy_));
 
-  process_thread_->RegisterModule(&video_receiver_);
-  process_thread_->RegisterModule(&rtp_stream_sync_);
+  process_thread_->RegisterModule(&video_receiver_, RTC_FROM_HERE);
+  process_thread_->RegisterModule(&rtp_stream_sync_, RTC_FROM_HERE);
 }
 
 VideoReceiveStream::~VideoReceiveStream() {
@@ -269,8 +263,8 @@ void VideoReceiveStream::Start() {
   if (decode_thread_.IsRunning())
     return;
 
-  bool protected_by_fec =
-      protected_by_flexfec_ || rtp_stream_receiver_.IsUlpfecEnabled();
+  bool protected_by_fec = config_.rtp.protected_by_flexfec ||
+                          rtp_stream_receiver_.IsUlpfecEnabled();
 
   frame_buffer_->Start();
   call_stats_->RegisterStatsObserver(&rtp_stream_receiver_);
@@ -392,11 +386,14 @@ EncodedImageCallback::Result VideoReceiveStream::OnEncodedImage(
     const CodecSpecificInfo* codec_specific_info,
     const RTPFragmentationHeader* fragmentation) {
   stats_proxy_.OnPreDecode(encoded_image, codec_specific_info);
+  size_t simulcast_idx = 0;
+  if (codec_specific_info->codecType == kVideoCodecVP8) {
+    simulcast_idx = codec_specific_info->codecSpecific.VP8.simulcastIdx;
+  }
   if (config_.pre_decode_callback) {
-    config_.pre_decode_callback->EncodedFrameCallback(
-        EncodedFrame(encoded_image._buffer, encoded_image._length,
-                     encoded_image._frameType, encoded_image._encodedWidth,
-                     encoded_image._encodedHeight, encoded_image._timeStamp));
+    config_.pre_decode_callback->EncodedFrameCallback(EncodedFrame(
+        encoded_image._buffer, encoded_image._length, encoded_image._frameType,
+        simulcast_idx, encoded_image._timeStamp));
   }
   {
     rtc::CritScope lock(&ivf_writer_lock_);
@@ -472,13 +469,16 @@ bool VideoReceiveStream::DecodeThreadFunction(void* ptr) {
 }
 
 bool VideoReceiveStream::Decode() {
+  TRACE_EVENT0("webrtc", "VideoReceiveStream::Decode");
   static const int kMaxWaitForFrameMs = 3000;
   std::unique_ptr<video_coding::FrameObject> frame;
   video_coding::FrameBuffer::ReturnReason res =
       frame_buffer_->NextFrame(kMaxWaitForFrameMs, &frame);
 
-  if (res == video_coding::FrameBuffer::ReturnReason::kStopped)
+  if (res == video_coding::FrameBuffer::ReturnReason::kStopped) {
+    video_receiver_.DecodingStopped();
     return false;
+  }
 
   if (frame) {
     if (video_receiver_.Decode(frame.get()) == VCM_OK)

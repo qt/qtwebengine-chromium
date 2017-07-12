@@ -62,7 +62,7 @@ void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
                              uint32_t dwDstFormat = Icc_FORMAT_DEFAULT) {
   nSrcComponents = 0;
   cmsHPROFILE srcProfile =
-      cmsOpenProfileFromMem((void*)pSrcProfileData, dwSrcProfileSize);
+      cmsOpenProfileFromMem(pSrcProfileData, dwSrcProfileSize);
   if (!srcProfile)
     return nullptr;
 
@@ -70,8 +70,7 @@ void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
   if (!pDstProfileData && dwDstProfileSize == 0 && nDstComponents == 3) {
     dstProfile = cmsCreate_sRGBProfile();
   } else {
-    dstProfile =
-        cmsOpenProfileFromMem((void*)pDstProfileData, dwDstProfileSize);
+    dstProfile = cmsOpenProfileFromMem(pDstProfileData, dwDstProfileSize);
   }
   if (!dstProfile) {
     cmsCloseProfile(srcProfile);
@@ -154,33 +153,32 @@ void IccLib_DestroyTransform(void* pTransform) {
   cmsDeleteTransform(((CLcmsCmm*)pTransform)->m_hTransform);
   delete (CLcmsCmm*)pTransform;
 }
+
 void IccLib_Translate(void* pTransform,
                       uint32_t nSrcComponents,
-                      FX_FLOAT* pSrcValues,
-                      FX_FLOAT* pDestValues) {
-  if (!pTransform) {
+                      const float* pSrcValues,
+                      float* pDestValues) {
+  if (!pTransform)
     return;
-  }
+
   CLcmsCmm* p = (CLcmsCmm*)pTransform;
   uint8_t output[4];
   if (p->m_bLab) {
     CFX_FixedBufGrow<double, 16> inputs(nSrcComponents);
     double* input = inputs;
-    for (uint32_t i = 0; i < nSrcComponents; i++) {
+    for (uint32_t i = 0; i < nSrcComponents; i++)
       input[i] = pSrcValues[i];
-    }
     cmsDoTransform(p->m_hTransform, input, output, 1);
   } else {
     CFX_FixedBufGrow<uint8_t, 16> inputs(nSrcComponents);
     uint8_t* input = inputs;
     for (uint32_t i = 0; i < nSrcComponents; i++) {
-      if (pSrcValues[i] > 1.0f) {
+      if (pSrcValues[i] > 1.0f)
         input[i] = 255;
-      } else if (pSrcValues[i] < 0) {
+      else if (pSrcValues[i] < 0)
         input[i] = 0;
-      } else {
-        input[i] = (int)(pSrcValues[i] * 255.0f);
-      }
+      else
+        input[i] = static_cast<int>(pSrcValues[i] * 255.0f);
     }
     cmsDoTransform(p->m_hTransform, input, output, 1);
   }
@@ -201,12 +199,14 @@ void IccLib_Translate(void* pTransform,
       break;
   }
 }
+
 void IccLib_TranslateImage(void* pTransform,
                            unsigned char* pDest,
                            const unsigned char* pSrc,
                            int32_t pixels) {
-  cmsDoTransform(((CLcmsCmm*)pTransform)->m_hTransform, (void*)pSrc, pDest,
-                 pixels);
+  if (!pTransform)
+    return;
+  cmsDoTransform(((CLcmsCmm*)pTransform)->m_hTransform, pSrc, pDest, pixels);
 }
 
 CCodec_IccModule::CCodec_IccModule() : m_nComponents(0) {}
@@ -225,17 +225,20 @@ void* CCodec_IccModule::CreateTransform_sRGB(const uint8_t* pProfileData,
 void CCodec_IccModule::DestroyTransform(void* pTransform) {
   IccLib_DestroyTransform(pTransform);
 }
+
 void CCodec_IccModule::Translate(void* pTransform,
-                                 FX_FLOAT* pSrcValues,
-                                 FX_FLOAT* pDestValues) {
+                                 const float* pSrcValues,
+                                 float* pDestValues) {
   IccLib_Translate(pTransform, m_nComponents, pSrcValues, pDestValues);
 }
+
 void CCodec_IccModule::TranslateScanline(void* pTransform,
                                          uint8_t* pDest,
                                          const uint8_t* pSrc,
                                          int32_t pixels) {
   IccLib_TranslateImage(pTransform, pDest, pSrc, pixels);
 }
+
 const uint8_t g_CMYKSamples[81 * 81 * 3] = {
     255, 255, 255, 225, 226, 228, 199, 200, 202, 173, 174, 178, 147, 149, 152,
     123, 125, 128, 99,  99,  102, 69,  70,  71,  34,  30,  31,  255, 253, 229,
@@ -1551,6 +1554,7 @@ const uint8_t g_CMYKSamples[81 * 81 * 3] = {
     33,  28,  32,  22,  19,  23,  11,  6,   10,  1,   0,   0,   0,   0,   0,
     0,   0,   0,
 };
+
 void AdobeCMYK_to_sRGB1(uint8_t c,
                         uint8_t m,
                         uint8_t y,
@@ -1631,13 +1635,13 @@ void AdobeCMYK_to_sRGB1(uint8_t c,
   G = fix_g >> 8;
   B = fix_b >> 8;
 }
-void AdobeCMYK_to_sRGB(FX_FLOAT c,
-                       FX_FLOAT m,
-                       FX_FLOAT y,
-                       FX_FLOAT k,
-                       FX_FLOAT& R,
-                       FX_FLOAT& G,
-                       FX_FLOAT& B) {
+void AdobeCMYK_to_sRGB(float c,
+                       float m,
+                       float y,
+                       float k,
+                       float& R,
+                       float& G,
+                       float& B) {
   // Convert to uint8_t with round-to-nearest. Avoid using FXSYS_round because
   // it is incredibly expensive with VC++ (tested on VC++ 2015) because round()
   // is very expensive.

@@ -79,6 +79,17 @@ if (!rtc_build_ssl) {
   }
 }
 
+source_set("protobuf_utils") {
+  sources = [
+    "protobuf_utils.h",
+  ]
+  if (rtc_enable_protobuf) {
+    public_deps = [
+      "//third_party/protobuf:protobuf_lite",
+    ]
+  }
+}
+
 # The subset of rtc_base approved for use outside of libjingle.
 rtc_static_library("rtc_base_approved") {
   defines = []
@@ -138,6 +149,7 @@ rtc_static_library("rtc_base_approved") {
     "platform_thread.cc",
     "platform_thread.h",
     "platform_thread_types.h",
+    "ptr_util.h",
     "race_checker.cc",
     "race_checker.h",
     "random.cc",
@@ -155,6 +167,8 @@ rtc_static_library("rtc_base_approved") {
     "safe_conversions_impl.h",
     "sanitizer.h",
     "scoped_ref_ptr.h",
+    "string_to_number.cc",
+    "string_to_number.h",
     "stringencode.cc",
     "stringencode.h",
     "stringutils.cc",
@@ -271,6 +285,9 @@ rtc_static_library("rtc_base_approved") {
       }
     }
   }
+  if (is_nacl) {
+    deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
+  }
 }
 
 config("enable_libevent_config") {
@@ -346,19 +363,6 @@ config("rtc_base_warnings_config") {
       "-Wno-missing-braces",
     ]
   }
-}
-
-# TODO(nisse): This target is temporarily split out, to aid moving the
-# code over to Chrome. It should be deleted from webrtc soon.
-rtc_static_library("rtc_task_runner") {
-  sources = [
-    "task.cc",
-    "task.h",
-    "taskparent.cc",
-    "taskparent.h",
-    "taskrunner.cc",
-    "taskrunner.h",
-  ]
 }
 
 rtc_static_library("rtc_base") {
@@ -556,11 +560,8 @@ rtc_static_library("rtc_base") {
 
   if (is_ios || is_mac) {
     sources += [
-      "maccocoathreadhelper.h",
-      "maccocoathreadhelper.mm",
       "macifaddrs_converter.cc",
-      "scoped_autorelease_pool.h",
-      "scoped_autorelease_pool.mm",
+      "thread_darwin.mm",
     ]
   }
 
@@ -792,6 +793,7 @@ if (rtc_include_tests) {
       "ratetracker_unittest.cc",
       "refcountedobject_unittest.cc",
       "safe_compare_unittest.cc",
+      "string_to_number_unittest.cc",
       "stringencode_unittest.cc",
       "stringutils_unittest.cc",
       "swap_queue_unittest.cc",
@@ -862,6 +864,7 @@ if (rtc_include_tests) {
       "network_unittest.cc",
       "optionsfile_unittest.cc",
       "proxy_unittest.cc",
+      "ptr_util_unittest.cc",
       "ratelimiter_unittest.cc",
       "rollingaccumulator_unittest.cc",
       "rtccertificate_unittest.cc",
@@ -873,7 +876,6 @@ if (rtc_include_tests) {
       "sigslot_unittest.cc",
       "sigslottester_unittest.cc",
       "stream_unittest.cc",
-      "task_unittest.cc",
       "testclient_unittest.cc",
       "thread_unittest.cc",
     ]
@@ -895,7 +897,6 @@ if (rtc_include_tests) {
     }
     deps = [
       ":rtc_base_tests_main",
-      ":rtc_task_runner",
     ]
     public_deps = [
       ":rtc_base",

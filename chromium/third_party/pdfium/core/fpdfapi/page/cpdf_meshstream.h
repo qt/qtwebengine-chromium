@@ -23,9 +23,9 @@ class CPDF_MeshVertex {
   ~CPDF_MeshVertex();
 
   CFX_PointF position;
-  FX_FLOAT r;
-  FX_FLOAT g;
-  FX_FLOAT b;
+  float r;
+  float g;
+  float b;
 };
 
 class CFX_Matrix;
@@ -39,6 +39,7 @@ class CPDF_MeshStream {
                   const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
                   CPDF_Stream* pShadingStream,
                   CPDF_ColorSpace* pCS);
+  ~CPDF_MeshStream();
 
   bool Load();
 
@@ -48,7 +49,7 @@ class CPDF_MeshStream {
 
   uint32_t ReadFlag();
   CFX_PointF ReadCoords();
-  std::tuple<FX_FLOAT, FX_FLOAT, FX_FLOAT> ReadColor();
+  std::tuple<float, float, float> ReadColor();
 
   bool ReadVertex(const CFX_Matrix& pObject2Bitmap,
                   CPDF_MeshVertex* vertex,
@@ -74,13 +75,13 @@ class CPDF_MeshStream {
   uint32_t m_nComponents;
   uint32_t m_CoordMax;
   uint32_t m_ComponentMax;
-  FX_FLOAT m_xmin;
-  FX_FLOAT m_xmax;
-  FX_FLOAT m_ymin;
-  FX_FLOAT m_ymax;
-  FX_FLOAT m_ColorMin[kMaxComponents];
-  FX_FLOAT m_ColorMax[kMaxComponents];
-  CPDF_StreamAcc m_Stream;
+  float m_xmin;
+  float m_xmax;
+  float m_ymin;
+  float m_ymax;
+  float m_ColorMin[kMaxComponents];
+  float m_ColorMax[kMaxComponents];
+  CFX_RetainPtr<CPDF_StreamAcc> m_pStream;
   CFX_BitStream m_BitStream;
 };
 

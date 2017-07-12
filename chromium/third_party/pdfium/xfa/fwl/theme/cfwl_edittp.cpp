@@ -10,7 +10,7 @@
 #include "xfa/fwl/cfwl_themebackground.h"
 #include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fxfa/app/xfa_fwltheme.h"
-#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
@@ -22,7 +22,7 @@ void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (CFWL_Part::CombTextLine == pParams->m_iPart) {
     CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
     FX_ARGB cr = 0xFF000000;
-    FX_FLOAT fWidth = 1.0f;
+    float fWidth = 1.0f;
     if (CXFA_Border borderUI = pWidget->GetDataAcc()->GetUIBorder()) {
       CXFA_Edge edge = borderUI.GetEdge(0);
       if (edge) {
@@ -74,7 +74,7 @@ void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
     }
     case CFWL_Part::CombTextLine: {
       FX_ARGB cr = 0xFF000000;
-      FX_FLOAT fWidth = 1.0f;
+      float fWidth = 1.0f;
       CFX_Color crLine(cr);
       pParams->m_pGraphics->SetStrokeColor(&crLine);
       pParams->m_pGraphics->SetLineWidth(fWidth);

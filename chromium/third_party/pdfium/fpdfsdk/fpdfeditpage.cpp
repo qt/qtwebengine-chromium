@@ -104,7 +104,7 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
   if (!pDoc)
     return nullptr;
 
-  page_index = std::min(std::max(page_index, 0), pDoc->GetPageCount());
+  page_index = pdfium::clamp(page_index, 0, pDoc->GetPageCount());
   CPDF_Dictionary* pPageDict = pDoc->CreateNewPage(page_index);
   if (!pPageDict)
     return nullptr;
@@ -112,8 +112,8 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
   CPDF_Array* pMediaBoxArray = pPageDict->SetNewFor<CPDF_Array>("MediaBox");
   pMediaBoxArray->AddNew<CPDF_Number>(0);
   pMediaBoxArray->AddNew<CPDF_Number>(0);
-  pMediaBoxArray->AddNew<CPDF_Number>(static_cast<FX_FLOAT>(width));
-  pMediaBoxArray->AddNew<CPDF_Number>(static_cast<FX_FLOAT>(height));
+  pMediaBoxArray->AddNew<CPDF_Number>(static_cast<float>(width));
+  pMediaBoxArray->AddNew<CPDF_Number>(static_cast<float>(height));
   pPageDict->SetNewFor<CPDF_Number>("Rotate", 0);
   pPageDict->SetNewFor<CPDF_Dictionary>("Resources");
 
@@ -246,6 +246,14 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
   return false;
 }
 
+DLLEXPORT int STDCALL FPDFPageObj_GetType(FPDF_PAGEOBJECT pageObject) {
+  if (!pageObject)
+    return FPDF_PAGEOBJ_UNKNOWN;
+
+  CPDF_PageObject* pPageObj = reinterpret_cast<CPDF_PageObject*>(pageObject);
+  return pPageObj->GetType();
+}
+
 DLLEXPORT FPDF_BOOL STDCALL FPDFPage_GenerateContent(FPDF_PAGE page) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!IsPageObject(pPage))
@@ -267,8 +275,7 @@ DLLEXPORT void STDCALL FPDFPageObj_Transform(FPDF_PAGEOBJECT page_object,
   if (!pPageObj)
     return;
 
-  CFX_Matrix matrix((FX_FLOAT)a, (FX_FLOAT)b, (FX_FLOAT)c, (FX_FLOAT)d,
-                    (FX_FLOAT)e, (FX_FLOAT)f);
+  CFX_Matrix matrix((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
   pPageObj->Transform(matrix);
 }
 
@@ -287,8 +294,8 @@ DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
   for (size_t i = 0; i < AnnotList.Count(); ++i) {
     CPDF_Annot* pAnnot = AnnotList.GetAt(i);
     CFX_FloatRect rect = pAnnot->GetRect();  // transformAnnots Rectangle
-    CFX_Matrix matrix((FX_FLOAT)a, (FX_FLOAT)b, (FX_FLOAT)c, (FX_FLOAT)d,
-                      (FX_FLOAT)e, (FX_FLOAT)f);
+    CFX_Matrix matrix((float)a, (float)b, (float)c, (float)d, (float)e,
+                      (float)f);
     matrix.TransformRect(rect);
 
     CPDF_Array* pRectArray = pAnnot->GetAnnotDict()->GetArrayFor("Rect");

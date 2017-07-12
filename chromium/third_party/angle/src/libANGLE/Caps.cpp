@@ -214,7 +214,8 @@ Extensions::Extensions()
       textureNorm16(false),
       pathRendering(false),
       surfacelessContext(false),
-      clientArrays(false)
+      clientArrays(false),
+      robustResourceInitialization(false)
 {
 }
 
@@ -598,7 +599,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_texture_storage"] = esOnlyExtension(&Extensions::textureStorage);
         map["GL_OES_texture_npot"] = enableableExtension(&Extensions::textureNPOT);
         map["GL_EXT_draw_buffers"] = enableableExtension(&Extensions::drawBuffers);
-        map["GL_EXT_texture_filter_anisotropic"] = esOnlyExtension(&Extensions::textureFilterAnisotropic);
+        map["GL_EXT_texture_filter_anisotropic"] = enableableExtension(&Extensions::textureFilterAnisotropic);
         map["GL_EXT_occlusion_query_boolean"] = esOnlyExtension(&Extensions::occlusionQueryBoolean);
         map["GL_NV_fence"] = esOnlyExtension(&Extensions::fence);
         map["GL_ANGLE_timer_query"] = esOnlyExtension(&Extensions::timerQuery);
@@ -648,6 +649,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_CHROMIUM_path_rendering"] = esOnlyExtension(&Extensions::pathRendering);
         map["GL_OES_surfaceless_context"] = esOnlyExtension(&Extensions::surfacelessContext);
         map["GL_ANGLE_client_arrays"] = esOnlyExtension(&Extensions::clientArrays);
+        map["GL_ANGLE_robust_resource_initialization"] = esOnlyExtension(&Extensions::robustResourceInitialization);
         // clang-format on
 
         return map;
@@ -1033,11 +1035,13 @@ DisplayExtensions::DisplayExtensions()
       streamProducerD3DTextureNV12(false),
       createContextWebGLCompatibility(false),
       createContextBindGeneratesResource(false),
+      getSyncValues(false),
       swapBuffersWithDamage(false),
       pixelFormatFloat(false),
       surfacelessContext(false),
       displayTextureShareGroup(false),
-      createContextClientArrays(false)
+      createContextClientArrays(false),
+      createContextRobustResourceInitialization(false)
 {
 }
 
@@ -1074,11 +1078,13 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_stream_producer_d3d_texture_nv12",          streamProducerD3DTextureNV12,       &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_webgl_compatibility",        createContextWebGLCompatibility,    &extensionStrings);
     InsertExtensionString("EGL_CHROMIUM_create_context_bind_generates_resource", createContextBindGeneratesResource, &extensionStrings);
+    InsertExtensionString("EGL_CHROMIUM_sync_control",                           getSyncValues,                      &extensionStrings);
     InsertExtensionString("EGL_EXT_swap_buffers_with_damage",                    swapBuffersWithDamage,              &extensionStrings);
     InsertExtensionString("EGL_EXT_pixel_format_float",                          pixelFormatFloat,                   &extensionStrings);
     InsertExtensionString("EGL_KHR_surfaceless_context",                         surfacelessContext,                 &extensionStrings);
     InsertExtensionString("EGL_ANGLE_display_texture_share_group",               displayTextureShareGroup,           &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_client_arrays",              createContextClientArrays,          &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_create_context_robust_resource_initialization", createContextRobustResourceInitialization, &extensionStrings);
     // TODO(jmadill): Enable this when complete.
     //InsertExtensionString("KHR_create_context_no_error",                       createContextNoError,               &extensionStrings);
     // clang-format on

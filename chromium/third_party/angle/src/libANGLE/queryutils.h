@@ -18,6 +18,8 @@ namespace gl
 {
 class Buffer;
 class Context;
+class Error;
+class FenceSync;
 class Framebuffer;
 class Program;
 class Renderbuffer;
@@ -95,6 +97,12 @@ void QueryInternalFormativ(const TextureCaps &format, GLenum pname, GLsizei bufS
 
 void QueryFramebufferParameteriv(const Framebuffer *framebuffer, GLenum pname, GLint *params);
 
+Error QuerySynciv(const FenceSync *sync,
+                  GLenum pname,
+                  GLsizei bufSize,
+                  GLsizei *length,
+                  GLint *values);
+
 void SetTexParameterf(Texture *texture, GLenum pname, GLfloat param);
 void SetTexParameterfv(Texture *texture, GLenum pname, const GLfloat *params);
 void SetTexParameteri(Texture *texture, GLenum pname, GLint param);
@@ -106,6 +114,19 @@ void SetSamplerParameteri(Sampler *sampler, GLenum pname, GLint param);
 void SetSamplerParameteriv(Sampler *sampler, GLenum pname, const GLint *params);
 
 void SetFramebufferParameteri(Framebuffer *framebuffer, GLenum pname, GLint param);
+
+void SetProgramParameteri(Program *program, GLenum pname, GLint value);
+
+GLuint QueryProgramResourceIndex(const Program *program,
+                                 GLenum programInterface,
+                                 const GLchar *name);
+
+void QueryProgramResourceName(const Program *program,
+                              GLenum programInterface,
+                              GLuint index,
+                              GLsizei bufSize,
+                              GLsizei *length,
+                              GLchar *name);
 
 }  // namespace gl
 

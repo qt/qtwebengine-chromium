@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "core/fxcrt/cfx_retain_ptr.h"
+#include "xfa/fxfa/cxfa_widgetacc.h"
 #include "xfa/fxfa/fxfa_basic.h"
-#include "xfa/fxfa/fxfa_widget.h"
 
 class CFGAS_GEFont;
 class CFX_Graphics;
@@ -39,24 +39,15 @@ class IXFA_WidgetIterator;
 #define XFA_IDNo 3
 #define XFA_IDYes 4
 
-#define XFA_DOCVIEW_View 0x00000000
-#define XFA_DOCVIEW_MasterPage 0x00000001
-#define XFA_DOCVIEW_Design 0x00000002
-#define XFA_DOCTYPE_Dynamic 0
-#define XFA_DOCTYPE_Static 1
-#define XFA_DOCTYPE_XDP 2
+// Note, values match fpdf_formfill.h DOCTYPE_* flags.
+enum class XFA_DocType { PDF = 0, Dynamic = 1, Static = 2 };
+
 #define XFA_PARSESTATUS_StatusErr -3
 #define XFA_PARSESTATUS_StreamErr -2
 #define XFA_PARSESTATUS_SyntaxErr -1
 #define XFA_PARSESTATUS_Ready 0
 #define XFA_PARSESTATUS_Done 100
-#define XFA_VALIDATE_preSubmit 1
-#define XFA_VALIDATE_prePrint 2
-#define XFA_VALIDATE_preExecute 3
-#define XFA_VALIDATE_preSave 4
 
-#define XFA_INVALIDATE_AllPages 0x00000000
-#define XFA_INVALIDATE_CurrentPage 0x00000001
 #define XFA_PRINTOPT_ShowDialog 0x00000001
 #define XFA_PRINTOPT_CanCancel 0x00000002
 #define XFA_PRINTOPT_ShrinkPage 0x00000004
@@ -233,14 +224,13 @@ class IXFA_DocEnvironment {
 
   virtual void SetChangeMark(CXFA_FFDoc* hDoc) = 0;
   virtual void InvalidateRect(CXFA_FFPageView* pPageView,
-                              const CFX_RectF& rt,
-                              uint32_t dwFlags) = 0;
+                              const CFX_RectF& rt) = 0;
   virtual void DisplayCaret(CXFA_FFWidget* hWidget,
                             bool bVisible,
                             const CFX_RectF* pRtAnchor) = 0;
   virtual bool GetPopupPos(CXFA_FFWidget* hWidget,
-                           FX_FLOAT fMinPopup,
-                           FX_FLOAT fMaxPopup,
+                           float fMinPopup,
+                           float fMaxPopup,
                            const CFX_RectF& rtAnchor,
                            CFX_RectF& rtPopup) = 0;
   virtual bool PopupMenu(CXFA_FFWidget* hWidget, CFX_PointF ptPopup) = 0;

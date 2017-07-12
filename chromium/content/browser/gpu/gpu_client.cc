@@ -41,7 +41,8 @@ void GpuClient::OnError() {
 void GpuClient::OnEstablishGpuChannel(
     const EstablishGpuChannelCallback& callback,
     const IPC::ChannelHandle& channel,
-    const gpu::GPUInfo& gpu_info) {
+    const gpu::GPUInfo& gpu_info,
+    GpuProcessHost::EstablishChannelStatus status) {
   mojo::ScopedMessagePipeHandle channel_handle;
   channel_handle.reset(channel.mojo_handle);
   callback.Run(render_process_id_, std::move(channel_handle), gpu_info);
@@ -55,10 +56,11 @@ void GpuClient::OnCreateGpuMemoryBuffer(
 
 void GpuClient::EstablishGpuChannel(
     const EstablishGpuChannelCallback& callback) {
-  GpuProcessHost* host =
-      GpuProcessHost::Get(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED);
+  GpuProcessHost* host = GpuProcessHost::Get();
   if (!host) {
-    OnEstablishGpuChannel(callback, IPC::ChannelHandle(), gpu::GPUInfo());
+    OnEstablishGpuChannel(
+        callback, IPC::ChannelHandle(), gpu::GPUInfo(),
+        GpuProcessHost::EstablishChannelStatus::GPU_ACCESS_DENIED);
     return;
   }
 

@@ -73,6 +73,11 @@ bool NeedsToWriteLayoutQualifier(const TType &type)
         return true;
     }
 
+    if (type.getQualifier() == EvqFragmentOut && layoutQualifier.yuv == true)
+    {
+        return true;
+    }
+
     if (IsOpaqueType(type.getBasicType()) && layoutQualifier.binding != -1)
     {
         return true;
@@ -211,6 +216,14 @@ void TOutputGLSLBase::writeLayoutQualifier(const TType &type)
         if (layoutQualifier.location >= 0)
         {
             out << listItemPrefix << "location = " << layoutQualifier.location;
+        }
+    }
+
+    if (type.getQualifier() == EvqFragmentOut)
+    {
+        if (layoutQualifier.yuv == true)
+        {
+            out << listItemPrefix << "yuv";
         }
     }
 
@@ -413,6 +426,9 @@ const TConstantUnion *TOutputGLSLBase::writeConstantUnion(const TType &type,
                     break;
                 case EbtBool:
                     out << pConstUnion->getBConst();
+                    break;
+                case EbtYuvCscStandardEXT:
+                    out << getYuvCscStandardEXTString(pConstUnion->getYuvCscStandardEXTConst());
                     break;
                 default:
                     UNREACHABLE();
@@ -910,7 +926,7 @@ bool TOutputGLSLBase::visitFunctionPrototype(Visit visit, TIntermFunctionPrototy
     if (type.isArray())
         out << arrayBrackets(type);
 
-    out << " " << hashFunctionNameIfNeeded(node->getFunctionSymbolInfo()->getNameObj());
+    out << " " << hashFunctionNameIfNeeded(*node->getFunctionSymbolInfo());
 
     out << "(";
     writeFunctionParameters(*(node->getSequence()));
@@ -930,7 +946,17 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpCallBuiltInFunction:
             // Function call.
             if (visit == PreVisit)
-                out << hashFunctionNameIfNeeded(node->getFunctionSymbolInfo()->getNameObj()) << "(";
+            {
+                if (node->getOp() == EOpCallBuiltInFunction)
+                {
+                    out << translateTextureFunction(node->getFunctionSymbolInfo()->getName());
+                }
+                else
+                {
+                    out << hashFunctionNameIfNeeded(*node->getFunctionSymbolInfo());
+                }
+                out << "(";
+            }
             else if (visit == InVisit)
                 out << ", ";
             else
@@ -1180,22 +1206,17 @@ TString TOutputGLSLBase::hashVariableName(const TName &name)
     return hashName(name);
 }
 
-TString TOutputGLSLBase::hashFunctionNameIfNeeded(const TName &mangledName)
+TString TOutputGLSLBase::hashFunctionNameIfNeeded(const TFunctionSymbolInfo &info)
 {
-    TString mangledStr = mangledName.getString();
-    TString name       = TFunction::unmangleName(mangledStr);
-    if (mSymbolTable.findBuiltIn(mangledStr, mShaderVersion) != nullptr || name == "main")
-        return translateTextureFunction(name);
-    if (mangledName.isInternal())
+    if (info.isMain() || info.getNameObj().isInternal())
     {
         // Internal function names are outputted as-is - they may refer to functions manually added
         // to the output shader source that are not included in the AST at all.
-        return name;
+        return info.getName();
     }
     else
     {
-        TName nameObj(name);
-        return hashName(nameObj);
+        return hashName(info.getNameObj());
     }
 }
 

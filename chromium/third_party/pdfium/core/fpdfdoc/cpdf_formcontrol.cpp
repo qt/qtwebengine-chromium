@@ -20,7 +20,7 @@
 
 namespace {
 
-const FX_CHAR* const g_sHighlightingMode[] = {
+const char* const g_sHighlightingMode[] = {
     // Must match order of HighlightingMode enum.
     "N", "I", "O", "P", "T"};
 
@@ -216,13 +216,13 @@ FX_ARGB CPDF_FormControl::GetColor(int& iColorType,
   return GetMK().GetColor(iColorType, csEntry);
 }
 
-FX_FLOAT CPDF_FormControl::GetOriginalColor(int index,
-                                            const CFX_ByteString& csEntry) {
+float CPDF_FormControl::GetOriginalColor(int index,
+                                         const CFX_ByteString& csEntry) {
   return GetMK().GetOriginalColor(index, csEntry);
 }
 
 void CPDF_FormControl::GetOriginalColor(int& iColorType,
-                                        FX_FLOAT fc[4],
+                                        float fc[4],
                                         const CFX_ByteString& csEntry) {
   GetMK().GetOriginalColor(iColorType, fc, csEntry);
 }
@@ -280,10 +280,9 @@ CPDF_DefaultAppearance CPDF_FormControl::GetDefaultAppearance() {
 }
 
 CPDF_Font* CPDF_FormControl::GetDefaultControlFont() {
+  float fFontSize;
   CPDF_DefaultAppearance cDA = GetDefaultAppearance();
-  CFX_ByteString csFontNameTag;
-  FX_FLOAT fFontSize;
-  cDA.GetFont(csFontNameTag, fFontSize);
+  CFX_ByteString csFontNameTag = cDA.GetFont(&fFontSize);
   if (csFontNameTag.IsEmpty())
     return nullptr;
 

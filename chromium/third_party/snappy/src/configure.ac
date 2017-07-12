@@ -1,14 +1,15 @@
 m4_define([snappy_major], [1])
 m4_define([snappy_minor], [1])
-m4_define([snappy_patchlevel], [2])
+m4_define([snappy_patchlevel], [4])
 
 # Libtool shared library interface versions (current:revision:age)
 # Update this value for every release!  (A:B:C will map to foo.so.(A-C).C.B)
 # http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-m4_define([snappy_ltversion], [3:1:2])
+m4_define([snappy_ltversion], [4:1:3])
 
 AC_INIT([snappy], [snappy_major.snappy_minor.snappy_patchlevel])
 AC_CONFIG_MACRO_DIR([m4])
+AC_CONFIG_AUX_DIR([.])
 
 # These are flags passed to automake (though they look like gcc flags!)
 AM_INIT_AUTOMAKE([-Wall])
@@ -129,5 +130,5 @@ AC_SUBST([SNAPPY_PATCHLEVEL])
 AC_SUBST([SNAPPY_LTVERSION], snappy_ltversion)
 
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile snappy-stubs-public.h])
+AC_CONFIG_FILES([Makefile snappy-stubs-public.h snappy.pc])
 AC_OUTPUT

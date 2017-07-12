@@ -14,6 +14,7 @@
 namespace gl
 {
 class Context;
+class ValidationContext;
 
 bool ValidateGetBooleani_v(Context *context, GLenum target, GLuint index, GLboolean *data);
 bool ValidateGetBooleani_vRobustANGLE(Context *context,
@@ -55,6 +56,40 @@ bool ValidationGetFramebufferParameteri(Context *context,
                                         GLenum target,
                                         GLenum pname,
                                         GLint *params);
+
+bool ValidateGetProgramResourceIndex(Context *context,
+                                     GLuint program,
+                                     GLenum programInterface,
+                                     const GLchar *name);
+bool ValidateGetProgramResourceName(Context *context,
+                                    GLuint program,
+                                    GLenum programInterface,
+                                    GLuint index,
+                                    GLsizei bufSize,
+                                    GLsizei *length,
+                                    GLchar *name);
+
+bool ValidateBindVertexBuffer(ValidationContext *context,
+                              GLuint bindingIndex,
+                              GLuint buffer,
+                              GLintptr offset,
+                              GLsizei stride);
+bool ValidateVertexAttribFormat(ValidationContext *context,
+                                GLuint attribIndex,
+                                GLint size,
+                                GLenum type,
+                                GLuint relativeOffset,
+                                GLboolean pureInteger);
+bool ValidateVertexAttribBinding(ValidationContext *context,
+                                 GLuint attribIndex,
+                                 GLuint bindingIndex);
+bool ValidateVertexBindingDivisor(ValidationContext *context, GLuint bindingIndex, GLuint divisor);
+
+bool ValidateDispatchCompute(Context *context,
+                             GLuint numGroupsX,
+                             GLuint numGroupsY,
+                             GLuint numGroupsZ);
+
 }  // namespace gl
 
 #endif  // LIBANGLE_VALIDATION_ES31_H_

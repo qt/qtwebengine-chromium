@@ -8,26 +8,21 @@
 
 #include <algorithm>
 
+#include "core/fxcrt/cfx_wordbreak.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_txtedtbuf.h"
 #include "xfa/fde/cfde_txtedtengine.h"
 #include "xfa/fde/cfde_txtedtparag.h"
 #include "xfa/fde/cfde_txtedttextset.h"
-#include "xfa/fde/cfx_wordbreak.h"
 #include "xfa/fde/ifde_txtedtengine.h"
-#include "xfa/fde/ifde_txtedtpage.h"
+#include "xfa/fgas/layout/fgas_textbreak.h"
 
 namespace {
 
 const double kTolerance = 0.1f;
 
 }  // namespace
-
-IFDE_TxtEdtPage* IFDE_TxtEdtPage::Create(CFDE_TxtEdtEngine* pEngine,
-                                         int32_t nIndex) {
-  return new CFDE_TxtEdtPage(pEngine, nIndex);
-}
 
 CFDE_TxtEdtPage::CFDE_TxtEdtPage(CFDE_TxtEdtEngine* pEngine, int32_t nPageIndex)
     : m_pEditEngine(pEngine),
@@ -114,7 +109,7 @@ int32_t CFDE_TxtEdtPage::GetCharIndex(const CFX_PointF& fPoint, bool& bBefore) {
             bBefore = true;
             return m_pEditEngine->GetTextBufLength();
           }
-          FX_WCHAR wChar = m_pEditEngine->GetTextBuf()->GetCharByIndex(nCaret);
+          wchar_t wChar = m_pEditEngine->GetTextBuf()->GetCharByIndex(nCaret);
           if (wChar == L'\n' || wChar == L'\r') {
             if (wChar == L'\n') {
               if (m_pEditEngine->GetTextBuf()->GetCharByIndex(nCaret - 1) ==
@@ -163,7 +158,7 @@ int32_t CFDE_TxtEdtPage::GetDisplayPos(const CFX_RectF& rtClip,
   }
   if ((nCharPosCount * 5) < (m_nCharCount << 2)) {
     FXTEXT_CHARPOS* pTemp = FX_Alloc(FXTEXT_CHARPOS, nCharPosCount);
-    FXSYS_memcpy(pTemp, pCharPos, sizeof(FXTEXT_CHARPOS) * nCharPosCount);
+    memcpy(pTemp, pCharPos, sizeof(FXTEXT_CHARPOS) * nCharPosCount);
     FX_Free(pCharPos);
     pCharPos = pTemp;
   }
@@ -220,7 +215,7 @@ int32_t CFDE_TxtEdtPage::SelectWord(const CFX_PointF& fPoint, int32_t& nCount) {
   if (nIndex < 0) {
     return -1;
   }
-  std::unique_ptr<CFX_WordBreak> pIter(new CFX_WordBreak);
+  auto pIter = pdfium::MakeUnique<CFX_WordBreak>();
   pIter->Attach(new CFDE_TxtEdtBuf::Iterator(pBuf));
   pIter->SetAt(nIndex);
   nCount = pIter->GetWordLength();
@@ -239,14 +234,14 @@ int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox,
   }
   CFDE_TxtEdtBuf* pBuf = m_pEditEngine->GetTextBuf();
   const FDE_TXTEDTPARAMS* pParams = m_pEditEngine->GetEditParams();
-  FX_WCHAR wcAlias = 0;
+  wchar_t wcAlias = 0;
   if (pParams->dwMode & FDE_TEXTEDITMODE_Password) {
     wcAlias = m_pEditEngine->GetAliasChar();
   }
-  m_pIter.reset(new CFDE_TxtEdtBuf::Iterator(static_cast<CFDE_TxtEdtBuf*>(pBuf),
-                                             wcAlias));
+  m_pIter = pdfium::MakeUnique<CFDE_TxtEdtBuf::Iterator>(
+      static_cast<CFDE_TxtEdtBuf*>(pBuf), wcAlias);
   CFX_TxtBreak* pBreak = m_pEditEngine->GetTextBreak();
-  pBreak->EndBreak(FX_TXTBREAK_ParagraphBreak);
+  pBreak->EndBreak(CFX_BreakType::Paragraph);
   pBreak->ClearBreakPieces();
   int32_t nPageLineCount = m_pEditEngine->GetPageLineCount();
   int32_t nStartLine = nPageLineCount * m_nPageIndex;
@@ -267,57 +262,57 @@ int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox,
   m_pEndParag->GetLineRange(nEndLine - nEndLineInParag, nPageEnd, nTemp);
   nPageEnd += (nTemp - 1);
 
-  FX_FLOAT fLineStart = 0.0f;
-  FX_FLOAT fLineStep = pParams->fLineSpace;
-  FX_FLOAT fLinePos = fLineStart;
+  float fLineStart = 0.0f;
+  float fLineStep = pParams->fLineSpace;
+  float fLinePos = fLineStart;
   if (!m_pTextSet)
     m_pTextSet = pdfium::MakeUnique<CFDE_TxtEdtTextSet>(this);
 
   m_Pieces.clear();
-  uint32_t dwBreakStatus = FX_TXTBREAK_None;
+  CFX_BreakType dwBreakStatus = CFX_BreakType::None;
   int32_t nPieceStart = 0;
 
   m_CharWidths.resize(nPageEnd - nPageStart + 1, 0);
-  pBreak->EndBreak(FX_TXTBREAK_ParagraphBreak);
+  pBreak->EndBreak(CFX_BreakType::Paragraph);
   pBreak->ClearBreakPieces();
   m_nPageStart = nPageStart;
   m_nCharCount = nPageEnd - nPageStart + 1;
   bool bReload = false;
-  FX_FLOAT fDefCharWidth = 0;
+  float fDefCharWidth = 0;
   std::unique_ptr<IFX_CharIter> pIter(m_pIter->Clone());
   pIter->SetAt(nPageStart);
   m_pIter->SetAt(nPageStart);
   bool bFirstPiece = true;
   do {
     if (bReload) {
-      dwBreakStatus = pBreak->EndBreak(FX_TXTBREAK_ParagraphBreak);
+      dwBreakStatus = pBreak->EndBreak(CFX_BreakType::Paragraph);
     } else {
-      FX_WCHAR wAppend = pIter->GetChar();
+      wchar_t wAppend = pIter->GetChar();
       dwBreakStatus = pBreak->AppendChar(wAppend);
     }
-    if (pIter->GetAt() == nPageEnd && dwBreakStatus < FX_TXTBREAK_LineBreak) {
-      dwBreakStatus = pBreak->EndBreak(FX_TXTBREAK_ParagraphBreak);
-    }
-    if (dwBreakStatus > FX_TXTBREAK_PieceBreak) {
+    if (pIter->GetAt() == nPageEnd && CFX_BreakTypeNoneOrPiece(dwBreakStatus))
+      dwBreakStatus = pBreak->EndBreak(CFX_BreakType::Paragraph);
+
+    if (!CFX_BreakTypeNoneOrPiece(dwBreakStatus)) {
       int32_t nPieceCount = pBreak->CountBreakPieces();
       for (int32_t j = 0; j < nPieceCount; j++) {
-        const CFX_TxtPiece* pPiece = pBreak->GetBreakPiece(j);
+        const CFX_BreakPiece* pPiece = pBreak->GetBreakPieceUnstable(j);
         FDE_TEXTEDITPIECE TxtEdtPiece;
-        FXSYS_memset(&TxtEdtPiece, 0, sizeof(FDE_TEXTEDITPIECE));
+        memset(&TxtEdtPiece, 0, sizeof(FDE_TEXTEDITPIECE));
         TxtEdtPiece.nBidiLevel = pPiece->m_iBidiLevel;
         TxtEdtPiece.nCount = pPiece->GetLength();
         TxtEdtPiece.nStart = nPieceStart;
         TxtEdtPiece.dwCharStyles = pPiece->m_dwCharStyles;
-        if (FX_IsOdd(pPiece->m_iBidiLevel)) {
+        if (FX_IsOdd(pPiece->m_iBidiLevel))
           TxtEdtPiece.dwCharStyles |= FX_TXTCHARSTYLE_OddBidiLevel;
-        }
-        FX_FLOAT fParaBreakWidth = 0.0f;
-        if (pPiece->m_dwStatus > FX_TXTBREAK_PieceBreak) {
-          FX_WCHAR wRtChar = pParams->wLineBreakChar;
+
+        float fParaBreakWidth = 0.0f;
+        if (!CFX_BreakTypeNoneOrPiece(pPiece->m_dwStatus)) {
+          wchar_t wRtChar = pParams->wLineBreakChar;
           if (TxtEdtPiece.nCount >= 2) {
-            FX_WCHAR wChar = pBuf->GetCharByIndex(
+            wchar_t wChar = pBuf->GetCharByIndex(
                 m_nPageStart + TxtEdtPiece.nStart + TxtEdtPiece.nCount - 1);
-            FX_WCHAR wCharPre = pBuf->GetCharByIndex(
+            wchar_t wCharPre = pBuf->GetCharByIndex(
                 m_nPageStart + TxtEdtPiece.nStart + TxtEdtPiece.nCount - 2);
             if (wChar == wRtChar) {
               fParaBreakWidth += fDefCharWidth;
@@ -326,7 +321,7 @@ int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox,
               fParaBreakWidth += fDefCharWidth;
             }
           } else if (TxtEdtPiece.nCount >= 1) {
-            FX_WCHAR wChar = pBuf->GetCharByIndex(
+            wchar_t wChar = pBuf->GetCharByIndex(
                 m_nPageStart + TxtEdtPiece.nStart + TxtEdtPiece.nCount - 1);
             if (wChar == wRtChar) {
               fParaBreakWidth += fDefCharWidth;
@@ -334,10 +329,10 @@ int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox,
           }
         }
 
-        TxtEdtPiece.rtPiece.left = (FX_FLOAT)pPiece->m_iStartPos / 20000.0f;
+        TxtEdtPiece.rtPiece.left = (float)pPiece->m_iStartPos / 20000.0f;
         TxtEdtPiece.rtPiece.top = fLinePos;
         TxtEdtPiece.rtPiece.width =
-            (FX_FLOAT)pPiece->m_iWidth / 20000.0f + fParaBreakWidth;
+            (float)pPiece->m_iWidth / 20000.0f + fParaBreakWidth;
         TxtEdtPiece.rtPiece.height = pParams->fLineSpace;
 
         if (bFirstPiece) {
@@ -349,20 +344,20 @@ int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox,
         nPieceStart += TxtEdtPiece.nCount;
         m_Pieces.push_back(TxtEdtPiece);
         for (int32_t k = 0; k < TxtEdtPiece.nCount; k++) {
-          CFX_Char* ptc = pPiece->GetCharPtr(k);
-          m_CharWidths[TxtEdtPiece.nStart + k] = ptc->m_iCharWidth;
+          m_CharWidths[TxtEdtPiece.nStart + k] =
+              pPiece->GetChar(k)->m_iCharWidth;
         }
       }
       fLinePos += fLineStep;
       pBreak->ClearBreakPieces();
     }
-    if (pIter->GetAt() == nPageEnd && dwBreakStatus == FX_TXTBREAK_LineBreak) {
+    if (pIter->GetAt() == nPageEnd && dwBreakStatus == CFX_BreakType::Line) {
       bReload = true;
       pIter->Next(true);
     }
   } while (pIter->Next(false) && (pIter->GetAt() <= nPageEnd));
   if (m_rtPageContents.left != 0) {
-    FX_FLOAT fDelta = 0.0f;
+    float fDelta = 0.0f;
     if (m_rtPageContents.width < pParams->fPlateWidth) {
       if (pParams->dwAlignment & FDE_TEXTEDITALIGN_Right) {
         fDelta = pParams->fPlateWidth - m_rtPageContents.width;
@@ -377,7 +372,7 @@ int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox,
         }
       }
     }
-    FX_FLOAT fOffset = m_rtPageContents.left - fDelta;
+    float fOffset = m_rtPageContents.left - fDelta;
     for (auto& piece : m_Pieces)
       piece.rtPiece.Offset(-fOffset, 0.0f);
 
@@ -417,35 +412,36 @@ const CFX_RectF& CFDE_TxtEdtPage::GetContentsBox() {
   return m_rtPageContents;
 }
 
-FX_POSITION CFDE_TxtEdtPage::GetFirstPosition() {
-  if (m_Pieces.empty())
-    return nullptr;
-  return (FX_POSITION)1;
+size_t CFDE_TxtEdtPage::GetFirstPosition() {
+  return m_Pieces.empty() ? 0 : 1;
 }
 
-FDE_TEXTEDITPIECE* CFDE_TxtEdtPage::GetNext(FX_POSITION& pos,
+FDE_TEXTEDITPIECE* CFDE_TxtEdtPage::GetNext(size_t* pos,
                                             IFDE_VisualSet*& pVisualSet) {
+  ASSERT(pos);
+
   if (!m_pTextSet) {
-    pos = nullptr;
+    *pos = 0;
     return nullptr;
   }
-  int32_t nPos = (int32_t)(uintptr_t)pos;
+
+  size_t nPos = *pos;
   pVisualSet = m_pTextSet.get();
-  if (nPos + 1 > pdfium::CollectionSize<int32_t>(m_Pieces))
-    pos = nullptr;
+  if (nPos + 1 > m_Pieces.size())
+    *pos = 0;
   else
-    pos = (FX_POSITION)(uintptr_t)(nPos + 1);
+    *pos = nPos + 1;
 
   return &m_Pieces[nPos - 1];
 }
 
-FX_WCHAR CFDE_TxtEdtPage::GetChar(const FDE_TEXTEDITPIECE* pIdentity,
-                                  int32_t index) const {
+wchar_t CFDE_TxtEdtPage::GetChar(const FDE_TEXTEDITPIECE* pIdentity,
+                                 int32_t index) const {
   int32_t nIndex = m_nPageStart + pIdentity->nStart + index;
   if (nIndex != m_pIter->GetAt())
     m_pIter->SetAt(nIndex);
 
-  FX_WCHAR wChar = m_pIter->GetChar();
+  wchar_t wChar = m_pIter->GetChar();
   m_pIter->Next();
   return wChar;
 }
@@ -458,7 +454,7 @@ int32_t CFDE_TxtEdtPage::GetWidth(const FDE_TEXTEDITPIECE* pIdentity,
 
 void CFDE_TxtEdtPage::NormalizePt2Rect(CFX_PointF& ptF,
                                        const CFX_RectF& rtF,
-                                       FX_FLOAT fTolerance) const {
+                                       float fTolerance) const {
   if (rtF.Contains(ptF))
     return;
   if (ptF.x < rtF.left)

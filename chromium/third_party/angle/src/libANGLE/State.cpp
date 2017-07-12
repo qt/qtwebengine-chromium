@@ -11,7 +11,7 @@
 #include <limits>
 #include <string.h>
 
-#include "common/BitSetIterator.h"
+#include "common/bitset_utils.h"
 #include "common/matrix_utils.h"
 #include "common/mathutil.h"
 #include "libANGLE/Context.h"
@@ -62,7 +62,8 @@ State::State()
       mPrimitiveRestart(false),
       mMultiSampling(false),
       mSampleAlphaToOne(false),
-      mFramebufferSRGB(true)
+      mFramebufferSRGB(true),
+      mRobustResourceInit(false)
 {
 }
 
@@ -75,7 +76,8 @@ void State::initialize(const Caps &caps,
                        const Version &clientVersion,
                        bool debug,
                        bool bindGeneratesResource,
-                       bool clientArraysEnabled)
+                       bool clientArraysEnabled,
+                       bool robustResourceInit)
 {
     mMaxDrawBuffers = caps.maxDrawBuffers;
     mMaxCombinedTextureImageUnits = caps.maxCombinedTextureImageUnits;
@@ -177,6 +179,7 @@ void State::initialize(const Caps &caps,
         mSamplerTextures[GL_TEXTURE_2D_MULTISAMPLE].resize(caps.maxCombinedTextureImageUnits);
 
         mAtomicCounterBuffers.resize(caps.maxAtomicCounterBufferBindings);
+        mShaderStorageBuffers.resize(caps.maxShaderStorageBufferBindings);
     }
     if (extensions.eglImageExternal || extensions.eglStreamConsumerExternal)
     {
@@ -214,6 +217,8 @@ void State::initialize(const Caps &caps,
     mPathStencilFunc = GL_ALWAYS;
     mPathStencilRef  = 0;
     mPathStencilMask = std::numeric_limits<GLuint>::max();
+
+    mRobustResourceInit = robustResourceInit;
 }
 
 void State::reset(const Context *context)
@@ -262,6 +267,12 @@ void State::reset(const Context *context)
 
     mGenericAtomicCounterBuffer.set(nullptr);
     for (auto &buf : mAtomicCounterBuffers)
+    {
+        buf.set(nullptr);
+    }
+
+    mGenericShaderStorageBuffer.set(nullptr);
+    for (auto &buf : mShaderStorageBuffers)
     {
         buf.set(nullptr);
     }
@@ -697,6 +708,8 @@ bool State::getEnableFeature(GLenum feature) const
           return areClientArraysEnabled();
       case GL_FRAMEBUFFER_SRGB_EXT:
           return getFramebufferSRGB();
+      case GL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE:
+          return mRobustResourceInit;
       default:                               UNREACHABLE(); return false;
     }
 }
@@ -1035,6 +1048,45 @@ bool State::removeVertexArrayBinding(GLuint vertexArray)
     return false;
 }
 
+void State::setElementArrayBuffer(Buffer *buffer)
+{
+    getVertexArray()->setElementArrayBuffer(buffer);
+    mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
+}
+
+void State::bindVertexBuffer(GLuint bindingIndex,
+                             Buffer *boundBuffer,
+                             GLintptr offset,
+                             GLsizei stride)
+{
+    getVertexArray()->bindVertexBuffer(bindingIndex, boundBuffer, offset, stride);
+    mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
+}
+
+void State::setVertexAttribBinding(GLuint attribIndex, GLuint bindingIndex)
+{
+    getVertexArray()->setVertexAttribBinding(attribIndex, bindingIndex);
+    mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
+}
+
+void State::setVertexAttribFormat(GLuint attribIndex,
+                                  GLint size,
+                                  GLenum type,
+                                  bool normalized,
+                                  bool pureInteger,
+                                  GLuint relativeOffset)
+{
+    getVertexArray()->setVertexAttribFormat(attribIndex, size, type, normalized, pureInteger,
+                                            relativeOffset);
+    mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
+}
+
+void State::setVertexBindingDivisor(GLuint bindingIndex, GLuint divisor)
+{
+    getVertexArray()->setVertexBindingDivisor(bindingIndex, divisor);
+    mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
+}
+
 void State::setProgram(const Context *context, Program *newProgram)
 {
     if (mProgram != newProgram)
@@ -1185,6 +1237,26 @@ const OffsetBindingPointer<Buffer> &State::getIndexedAtomicCounterBuffer(size_t 
     return mAtomicCounterBuffers[index];
 }
 
+void State::setGenericShaderStorageBufferBinding(Buffer *buffer)
+{
+    mGenericShaderStorageBuffer.set(buffer);
+}
+
+void State::setIndexedShaderStorageBufferBinding(GLuint index,
+                                                 Buffer *buffer,
+                                                 GLintptr offset,
+                                                 GLsizeiptr size)
+{
+    ASSERT(static_cast<size_t>(index) < mShaderStorageBuffers.size());
+    mShaderStorageBuffers[index].set(buffer, offset, size);
+}
+
+const OffsetBindingPointer<Buffer> &State::getIndexedShaderStorageBuffer(size_t index) const
+{
+    ASSERT(static_cast<size_t>(index) < mShaderStorageBuffers.size());
+    return mShaderStorageBuffers[index];
+}
+
 void State::setCopyReadBufferBinding(Buffer *buffer)
 {
     mCopyReadBuffer.set(buffer);
@@ -1222,8 +1294,7 @@ Buffer *State::getTargetBuffer(GLenum target) const
       case GL_ATOMIC_COUNTER_BUFFER:
           return mGenericAtomicCounterBuffer.get();
       case GL_SHADER_STORAGE_BUFFER:
-          UNIMPLEMENTED();
-          return nullptr;
+          return mGenericShaderStorageBuffer.get();
       case GL_DRAW_INDIRECT_BUFFER:
           return mDrawIndirectBuffer.get();
       default: UNREACHABLE();            return NULL;
@@ -1232,10 +1303,10 @@ Buffer *State::getTargetBuffer(GLenum target) const
 
 void State::detachBuffer(GLuint bufferName)
 {
-    BindingPointer<Buffer> *buffers[] = {&mArrayBuffer,        &mGenericAtomicCounterBuffer,
-                                         &mCopyReadBuffer,     &mCopyWriteBuffer,
-                                         &mDrawIndirectBuffer, &mPack.pixelBuffer,
-                                         &mUnpack.pixelBuffer, &mGenericUniformBuffer};
+    BindingPointer<Buffer> *buffers[] = {
+        &mArrayBuffer,        &mGenericAtomicCounterBuffer, &mCopyReadBuffer,
+        &mCopyWriteBuffer,    &mDrawIndirectBuffer,         &mPack.pixelBuffer,
+        &mUnpack.pixelBuffer, &mGenericUniformBuffer,       &mGenericShaderStorageBuffer};
     for (auto buffer : buffers)
     {
         if (buffer->id() == bufferName)
@@ -1589,6 +1660,9 @@ void State::getBooleanv(GLenum pname, GLboolean *params)
       case GL_FRAMEBUFFER_SRGB_EXT:
           *params = getFramebufferSRGB() ? GL_TRUE : GL_FALSE;
           break;
+      case GL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE:
+          *params = mRobustResourceInit ? GL_TRUE : GL_FALSE;
+          break;
       default:
         UNREACHABLE();
         break;
@@ -1638,7 +1712,7 @@ void State::getFloatv(GLenum pname, GLfloat *params)
     }
 }
 
-void State::getIntegerv(const ContextState &data, GLenum pname, GLint *params)
+void State::getIntegerv(const Context *context, GLenum pname, GLint *params)
 {
     if (pname >= GL_DRAW_BUFFER0_EXT && pname <= GL_DRAW_BUFFER15_EXT)
     {
@@ -1725,14 +1799,14 @@ void State::getIntegerv(const ContextState &data, GLenum pname, GLint *params)
       case GL_SAMPLES:
         {
             gl::Framebuffer *framebuffer = mDrawFramebuffer;
-            if (framebuffer->checkStatus(data) == GL_FRAMEBUFFER_COMPLETE)
+            if (framebuffer->checkStatus(context) == GL_FRAMEBUFFER_COMPLETE)
             {
                 switch (pname)
                 {
                   case GL_SAMPLE_BUFFERS:
-                    if (framebuffer->getSamples(data) != 0)
-                    {
-                        *params = 1;
+                      if (framebuffer->getSamples(context) != 0)
+                      {
+                          *params = 1;
                     }
                     else
                     {
@@ -1740,8 +1814,8 @@ void State::getIntegerv(const ContextState &data, GLenum pname, GLint *params)
                     }
                     break;
                   case GL_SAMPLES:
-                    *params = framebuffer->getSamples(data);
-                    break;
+                      *params = framebuffer->getSamples(context);
+                      break;
                 }
             }
             else
@@ -1889,6 +1963,9 @@ void State::getIntegerv(const ContextState &data, GLenum pname, GLint *params)
       case GL_ATOMIC_COUNTER_BUFFER_BINDING:
           *params = mGenericAtomicCounterBuffer.id();
           break;
+      case GL_SHADER_STORAGE_BUFFER_BINDING:
+          *params = mGenericShaderStorageBuffer.id();
+          break;
       default:
         UNREACHABLE();
         break;
@@ -1927,6 +2004,26 @@ void State::getIntegeri_v(GLenum target, GLuint index, GLint *data)
           ASSERT(static_cast<size_t>(index) < mAtomicCounterBuffers.size());
           *data = mAtomicCounterBuffers[index].id();
           break;
+      case GL_SHADER_STORAGE_BUFFER_BINDING:
+          ASSERT(static_cast<size_t>(index) < mShaderStorageBuffers.size());
+          *data = mShaderStorageBuffers[index].id();
+          break;
+      case GL_VERTEX_BINDING_BUFFER:
+          ASSERT(static_cast<size_t>(index) < mVertexArray->getMaxBindings());
+          *data = mVertexArray->getVertexBinding(index).buffer.id();
+          break;
+      case GL_VERTEX_BINDING_DIVISOR:
+          ASSERT(static_cast<size_t>(index) < mVertexArray->getMaxBindings());
+          *data = mVertexArray->getVertexBinding(index).divisor;
+          break;
+      case GL_VERTEX_BINDING_OFFSET:
+          ASSERT(static_cast<size_t>(index) < mVertexArray->getMaxBindings());
+          *data = static_cast<GLuint>(mVertexArray->getVertexBinding(index).offset);
+          break;
+      case GL_VERTEX_BINDING_STRIDE:
+          ASSERT(static_cast<size_t>(index) < mVertexArray->getMaxBindings());
+          *data = mVertexArray->getVertexBinding(index).stride;
+          break;
       default:
           UNREACHABLE();
           break;
@@ -1960,6 +2057,14 @@ void State::getInteger64i_v(GLenum target, GLuint index, GLint64 *data)
       case GL_ATOMIC_COUNTER_BUFFER_SIZE:
           ASSERT(static_cast<size_t>(index) < mAtomicCounterBuffers.size());
           *data = mAtomicCounterBuffers[index].getSize();
+          break;
+      case GL_SHADER_STORAGE_BUFFER_START:
+          ASSERT(static_cast<size_t>(index) < mShaderStorageBuffers.size());
+          *data = mShaderStorageBuffers[index].getOffset();
+          break;
+      case GL_SHADER_STORAGE_BUFFER_SIZE:
+          ASSERT(static_cast<size_t>(index) < mShaderStorageBuffers.size());
+          *data = mShaderStorageBuffers[index].getSize();
           break;
       default:
           UNREACHABLE();
@@ -1999,15 +2104,15 @@ bool State::hasMappedBuffer(GLenum target) const
     }
 }
 
-void State::syncDirtyObjects()
+void State::syncDirtyObjects(const Context *context)
 {
     if (!mDirtyObjects.any())
         return;
 
-    syncDirtyObjects(mDirtyObjects);
+    syncDirtyObjects(context, mDirtyObjects);
 }
 
-void State::syncDirtyObjects(const DirtyObjects &bitset)
+void State::syncDirtyObjects(const Context *context, const DirtyObjects &bitset)
 {
     for (auto dirtyObject : angle::IterateBitSet(bitset))
     {
@@ -2015,15 +2120,15 @@ void State::syncDirtyObjects(const DirtyObjects &bitset)
         {
             case DIRTY_OBJECT_READ_FRAMEBUFFER:
                 ASSERT(mReadFramebuffer);
-                mReadFramebuffer->syncState();
+                mReadFramebuffer->syncState(context);
                 break;
             case DIRTY_OBJECT_DRAW_FRAMEBUFFER:
                 ASSERT(mDrawFramebuffer);
-                mDrawFramebuffer->syncState();
+                mDrawFramebuffer->syncState(context);
                 break;
             case DIRTY_OBJECT_VERTEX_ARRAY:
                 ASSERT(mVertexArray);
-                mVertexArray->syncImplState();
+                mVertexArray->syncImplState(context);
                 break;
             case DIRTY_OBJECT_PROGRAM:
                 // TODO(jmadill): implement this
@@ -2037,7 +2142,7 @@ void State::syncDirtyObjects(const DirtyObjects &bitset)
     mDirtyObjects &= ~bitset;
 }
 
-void State::syncDirtyObject(GLenum target)
+void State::syncDirtyObject(const Context *context, GLenum target)
 {
     DirtyObjects localSet;
 
@@ -2061,7 +2166,7 @@ void State::syncDirtyObject(GLenum target)
             break;
     }
 
-    syncDirtyObjects(localSet);
+    syncDirtyObjects(context, localSet);
 }
 
 void State::setObjectDirty(GLenum target)

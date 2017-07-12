@@ -80,7 +80,7 @@ class FramebufferGL : public FramebufferImpl
 
     bool checkStatus() const override;
 
-    void syncState(const gl::Framebuffer::DirtyBits &dirtyBits) override;
+    void syncState(ContextImpl *contextImpl, const gl::Framebuffer::DirtyBits &dirtyBits) override;
 
     GLuint getFramebufferID() const;
     bool isDefault() const;
@@ -88,6 +88,11 @@ class FramebufferGL : public FramebufferImpl
   private:
     void syncClearState(ContextImpl *context, GLbitfield mask);
     void syncClearBufferState(ContextImpl *context, GLenum buffer, GLint drawBuffer);
+
+    bool modifyInvalidateAttachmentsForEmulatedDefaultFBO(
+        size_t count,
+        const GLenum *attachments,
+        std::vector<GLenum> *modifiedAttachments) const;
 
     gl::Error readPixelsRowByRowWorkaround(const gl::Rectangle &area,
                                            GLenum format,

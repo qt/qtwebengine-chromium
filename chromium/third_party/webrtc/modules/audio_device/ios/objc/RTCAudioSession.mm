@@ -86,12 +86,14 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
                selector:@selector(handleApplicationDidBecomeActive:)
                    name:UIApplicationDidBecomeActiveNotification
                  object:nil];
+    RTCLog(@"RTCAudioSession (%p): init.", self);
   }
   return self;
 }
 
 - (void)dealloc {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+  RTCLog(@"RTCAudioSession (%p): dealloc.", self);
 }
 
 - (NSString *)description {
@@ -167,6 +169,7 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
 
 // TODO(tkchin): Check for duplicates.
 - (void)addDelegate:(id<RTCAudioSessionDelegate>)delegate {
+  RTCLog(@"Adding delegate: (%p)", delegate);
   if (!delegate) {
     return;
   }
@@ -177,6 +180,7 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
 }
 
 - (void)removeDelegate:(id<RTCAudioSessionDelegate>)delegate {
+  RTCLog(@"Removing delegate: (%p)", delegate);
   if (!delegate) {
     return;
   }
@@ -188,6 +192,9 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
     [self removeZeroedDelegates];
   }
 }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wthread-safety-analysis"
 
 - (void)lockForConfiguration {
   _crit.Enter();
@@ -205,6 +212,8 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
     _crit.Leave();
   }
 }
+
+#pragma clang diagnostic pop
 
 #pragma mark - AVAudioSession proxy methods
 
@@ -541,12 +550,14 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
 }
 
 - (void)handleApplicationDidBecomeActive:(NSNotification *)notification {
+  RTCLog(@"Application became active after an interruption. Treating as interruption "
+         " end. isInterrupted changed from %d to 0.", self.isInterrupted);
   if (self.isInterrupted) {
-    RTCLog(@"Application became active after an interruption. Treating as interruption end.");
     self.isInterrupted = NO;
     [self updateAudioSessionAfterEvent];
-    [self notifyDidEndInterruptionWithShouldResumeSession:YES];
   }
+  // Always treat application becoming active as an interruption end event.
+  [self notifyDidEndInterruptionWithShouldResumeSession:YES];
 }
 
 #pragma mark - Private

@@ -16,6 +16,7 @@
 
 #include "utilities.h"
 
+#include "Framebuffer.h"
 #include "main.h"
 #include "mathutil.h"
 #include "Context.h"
@@ -596,82 +597,118 @@ namespace es2
 		return GL_NONE;
 	}
 
-	bool ValidReadPixelsFormatType(GLenum internalFormat, GLenum internalType, GLenum format, GLenum type, GLint clientVersion)
+	bool IsValidReadPixelsFormatType(const Framebuffer *framebuffer, GLenum format, GLenum type, GLint clientVersion)
 	{
-		switch(format)
+		// GL_NV_read_depth
+		if(format == GL_DEPTH_COMPONENT)
 		{
-		case GL_RGBA:
-			switch(type)
-			{
-			case GL_UNSIGNED_BYTE:
-				break;
-			case GL_UNSIGNED_INT_2_10_10_10_REV:
-				return (clientVersion >= 3) && (internalFormat == GL_RGB10_A2);
-			case GL_FLOAT:
-				return (clientVersion >= 3) && (internalType == GL_FLOAT);
-			default:
-				return false;
-			}
-			break;
-		case GL_RGBA_INTEGER:
-			if(clientVersion < 3)
+			Renderbuffer *depthbuffer = framebuffer->getDepthbuffer();
+
+			if(!depthbuffer)
 			{
 				return false;
 			}
-			switch(type)
-			{
-			case GL_INT:
-				if(internalType != GL_INT)
-				{
-					return false;
-				}
-				break;
-			case GL_UNSIGNED_INT:
-				if(internalType != GL_UNSIGNED_INT)
-				{
-					return false;
-				}
-				break;
-			default:
-				return false;
-			}
-			break;
-		case GL_BGRA_EXT:
-			switch(type)
-			{
-			case GL_UNSIGNED_BYTE:
-			case GL_UNSIGNED_SHORT_4_4_4_4_REV_EXT:
-			case GL_UNSIGNED_SHORT_1_5_5_5_REV_EXT:
-				break;
-			default:
-				return false;
-			}
-			break;
-		case GL_RG_EXT:
-		case GL_RED_EXT:
-			return (clientVersion >= 3) && (type == GL_UNSIGNED_BYTE);
-		case GL_DEPTH_COMPONENT:
-			if(internalFormat != format)
-			{
-				return false;
-			}
+
 			switch(type)
 			{
 			case GL_UNSIGNED_SHORT:
 			case GL_FLOAT:
-				if(internalType != type)
-				{
-					return false;
-				}
-				break;
+				return true;
 			default:
+				UNIMPLEMENTED();
 				return false;
 			}
-			break;
-		default:
+		}
+
+		Renderbuffer *colorbuffer = framebuffer->getColorbuffer(0);
+
+		if(!colorbuffer)
+		{
 			return false;
 		}
-		return true;
+
+		sw::Format internalformat = colorbuffer->getInternalFormat();
+
+		if(sw::Surface::isNormalizedInteger(internalformat))
+		{
+			// Combination always supported by normalized fixed-point rendering surfaces.
+			if(format == GL_RGBA && type == GL_UNSIGNED_BYTE)
+			{
+				return true;
+			}
+
+			// GL_EXT_read_format_bgra combinations.
+			if(format == GL_BGRA_EXT)
+			{
+				if(type == GL_UNSIGNED_BYTE ||
+				   type == GL_UNSIGNED_SHORT_4_4_4_4_REV_EXT ||
+				   type == GL_UNSIGNED_SHORT_1_5_5_5_REV_EXT)
+				{
+					return true;
+				}
+			}
+		}
+		else if(sw::Surface::isFloatFormat(internalformat))
+		{
+			// Combination always supported by floating-point rendering surfaces.
+			// Supported in OpenGL ES 2.0 due to GL_EXT_color_buffer_half_float.
+			if(format == GL_RGBA && type == GL_FLOAT)
+			{
+				return true;
+			}
+		}
+		else if(sw::Surface::isSignedNonNormalizedInteger(internalformat))
+		{
+			ASSERT(clientVersion >= 3);
+
+			if(format == GL_RGBA_INTEGER && type == GL_INT)
+			{
+				return true;
+			}
+		}
+		else if(sw::Surface::isUnsignedNonNormalizedInteger(internalformat))
+		{
+			ASSERT(clientVersion >= 3);
+
+			if(format == GL_RGBA_INTEGER && type == GL_UNSIGNED_INT)
+			{
+				return true;
+			}
+		}
+		else UNREACHABLE(internalformat);
+
+		// GL_IMPLEMENTATION_COLOR_READ_FORMAT / GL_IMPLEMENTATION_COLOR_READ_TYPE
+		GLenum implementationReadFormat = GL_NONE;
+		GLenum implementationReadType = GL_NONE;
+		switch(format)
+		{
+		default:
+			implementationReadFormat = framebuffer->getImplementationColorReadFormat();
+			implementationReadType = framebuffer->getImplementationColorReadType();
+			break;
+		case GL_DEPTH_COMPONENT:
+			implementationReadFormat = framebuffer->getDepthReadFormat();
+			implementationReadType = framebuffer->getDepthReadType();
+			break;
+		}
+
+		if(format == implementationReadFormat && type == implementationReadType)
+		{
+			return true;
+		}
+
+		// Additional third combination accepted by OpenGL ES 3.0.
+		if(internalformat == sw::FORMAT_A2B10G10R10)
+		{
+			ASSERT(clientVersion >= 3);
+
+			if(format == GL_RGBA && type == GL_UNSIGNED_INT_2_10_10_10_REV)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	bool IsDepthTexture(GLenum format)
@@ -1001,12 +1038,13 @@ namespace es2
 		return true;
 	}
 
-	bool IsColorRenderable(GLenum internalformat, GLint clientVersion)
+	bool IsColorRenderable(GLenum internalformat, GLint clientVersion, bool isTexture)
 	{
 		switch(internalformat)
 		{
 		case GL_RGB:
 		case GL_RGBA:
+			return isTexture;
 		case GL_RGBA4:
 		case GL_RGB5_A1:
 		case GL_RGB565:
@@ -1016,6 +1054,10 @@ namespace es2
 		case GL_RG16F:
 		case GL_RGB16F:
 		case GL_RGBA16F:
+		case GL_R32F:
+		case GL_RG32F:
+		case GL_RGB32F:
+		case GL_RGBA32F:
 		case GL_BGRA8_EXT:
 			return true;
 		case GL_R8:
@@ -1041,11 +1083,6 @@ namespace es2
 		case GL_RGBA16I:
 		case GL_RGBA32I:
 		case GL_RGBA32UI:
-		case GL_R11F_G11F_B10F:
-		case GL_R32F:
-		case GL_RG32F:
-		case GL_RGB32F:
-		case GL_RGBA32F:
 			return clientVersion >= 3;
 		case GL_DEPTH_COMPONENT24:
 		case GL_DEPTH_COMPONENT32_OES:
@@ -1062,17 +1099,18 @@ namespace es2
 		return false;
 	}
 
-	bool IsDepthRenderable(GLenum internalformat)
+	bool IsDepthRenderable(GLenum internalformat, GLint clientVersion)
 	{
 		switch(internalformat)
 		{
 		case GL_DEPTH_COMPONENT24:
-		case GL_DEPTH_COMPONENT32_OES:
-		case GL_DEPTH_COMPONENT32F:
-		case GL_DEPTH32F_STENCIL8:
 		case GL_DEPTH_COMPONENT16:
-		case GL_DEPTH24_STENCIL8_OES:
+		case GL_DEPTH24_STENCIL8_OES:    // GL_OES_packed_depth_stencil
+		case GL_DEPTH_COMPONENT32_OES:   // GL_OES_depth32
 			return true;
+		case GL_DEPTH32F_STENCIL8:
+		case GL_DEPTH_COMPONENT32F:
+			return clientVersion >= 3;
 		case GL_STENCIL_INDEX8:
 		case GL_R8:
 		case GL_R8UI:
@@ -1121,14 +1159,15 @@ namespace es2
 		return false;
 	}
 
-	bool IsStencilRenderable(GLenum internalformat)
+	bool IsStencilRenderable(GLenum internalformat, GLint clientVersion)
 	{
 		switch(internalformat)
 		{
-		case GL_DEPTH32F_STENCIL8:
 		case GL_STENCIL_INDEX8:
 		case GL_DEPTH24_STENCIL8_OES:
 			return true;
+		case GL_DEPTH32F_STENCIL8:
+			return clientVersion >= 3;
 		case GL_R8:
 		case GL_R8UI:
 		case GL_R8I:
@@ -1878,7 +1917,7 @@ namespace sw2es
 				return GL_SIGNED_NORMALIZED;
 			default:
 				UNREACHABLE(format);
-				return 0;
+				return GL_NONE;
 			}
 		case GL_DEPTH_ATTACHMENT:
 		case GL_STENCIL_ATTACHMENT:
@@ -1886,7 +1925,7 @@ namespace sw2es
 			return GL_FLOAT;
 		default:
 			UNREACHABLE(attachment);
-			return 0;
+			return GL_NONE;
 		}
 	}
 

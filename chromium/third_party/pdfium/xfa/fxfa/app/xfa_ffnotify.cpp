@@ -24,12 +24,13 @@
 #include "xfa/fxfa/app/xfa_fftextedit.h"
 #include "xfa/fxfa/app/xfa_ffwidgetacc.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
-#include "xfa/fxfa/xfa_ffapp.h"
-#include "xfa/fxfa/xfa_ffdoc.h"
-#include "xfa/fxfa/xfa_ffdocview.h"
-#include "xfa/fxfa/xfa_ffpageview.h"
-#include "xfa/fxfa/xfa_ffwidget.h"
-#include "xfa/fxfa/xfa_ffwidgethandler.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_ffdocview.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_ffwidgethandler.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
 static void XFA_FFDeleteWidgetAcc(void* pData) {
   delete static_cast<CXFA_WidgetAcc*>(pData);
@@ -49,8 +50,8 @@ void CXFA_FFNotify::OnPageEvent(CXFA_ContainerLayoutItem* pSender,
 }
 
 void CXFA_FFNotify::OnWidgetListItemAdded(CXFA_WidgetData* pSender,
-                                          const FX_WCHAR* pLabel,
-                                          const FX_WCHAR* pValue,
+                                          const wchar_t* pLabel,
+                                          const wchar_t* pValue,
                                           int32_t iIndex) {
   CXFA_WidgetAcc* pWidgetAcc = static_cast<CXFA_WidgetAcc*>(pSender);
   if (pWidgetAcc->GetUIType() != XFA_Element::ChoiceList)
@@ -171,8 +172,8 @@ CXFA_LayoutItem* CXFA_FFNotify::OnCreateLayoutItem(CXFA_Node* pNode) {
 }
 
 void CXFA_FFNotify::StartFieldDrawLayout(CXFA_Node* pItem,
-                                         FX_FLOAT& fCalcWidth,
-                                         FX_FLOAT& fCalcHeight) {
+                                         float& fCalcWidth,
+                                         float& fCalcHeight) {
   CXFA_WidgetAcc* pAcc = static_cast<CXFA_WidgetAcc*>(pItem->GetWidgetData());
   if (!pAcc)
     return;
@@ -182,7 +183,7 @@ void CXFA_FFNotify::StartFieldDrawLayout(CXFA_Node* pItem,
 
 bool CXFA_FFNotify::FindSplitPos(CXFA_Node* pItem,
                                  int32_t iBlockIndex,
-                                 FX_FLOAT& fCalcHeightPos) {
+                                 float& fCalcHeightPos) {
   CXFA_WidgetAcc* pAcc = static_cast<CXFA_WidgetAcc*>(pItem->GetWidgetData());
   return pAcc && pAcc->FindSplitPos(iBlockIndex, fCalcHeightPos);
 }
@@ -262,8 +263,9 @@ void CXFA_FFNotify::OpenDropDownList(CXFA_FFWidget* hWidget) {
   pDocView->UpdateDocView();
 }
 CFX_WideString CXFA_FFNotify::GetCurrentDateTime() {
-  CFX_Unitime dataTime;
+  CFX_DateTime dataTime;
   dataTime.Now();
+
   CFX_WideString wsDateTime;
   wsDateTime.Format(L"%d%02d%02dT%02d%02d%02d", dataTime.GetYear(),
                     dataTime.GetMonth(), dataTime.GetDay(), dataTime.GetHour(),

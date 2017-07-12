@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "third_party/base/ptr_util.h"
-#include "xfa/fde/tto/fde_textout.h"
+#include "xfa/fde/cfde_textout.h"
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/cfwl_event.h"
 #include "xfa/fwl/cfwl_formproxy.h"
@@ -161,8 +161,8 @@ void CFWL_Form::DrawBackground(CFX_Graphics* pGraphics,
 CFX_RectF CFWL_Form::GetEdgeRect() {
   CFX_RectF rtEdge = m_rtRelative;
   if (m_pProperties->m_dwStyles & FWL_WGTSTYLE_Border) {
-    FX_FLOAT fCX = GetBorderSize(true);
-    FX_FLOAT fCY = GetBorderSize(false);
+    float fCX = GetBorderSize(true);
+    float fCY = GetBorderSize(false);
     rtEdge.Deflate(fCX, fCY, fCX, fCY);
   }
   return rtEdge;

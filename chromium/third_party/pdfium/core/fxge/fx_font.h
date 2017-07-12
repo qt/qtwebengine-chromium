@@ -13,6 +13,7 @@
 
 #include "core/fxcrt/fx_system.h"
 #include "core/fxge/cfx_substfont.h"
+#include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_dib.h"
 #include "core/fxge/fx_freetype.h"
 
@@ -222,10 +223,18 @@ class CFX_FontFaceInfo {
 
 class CFX_GlyphBitmap {
  public:
+  CFX_GlyphBitmap();
+  ~CFX_GlyphBitmap();
+
   int m_Top;
   int m_Left;
-  CFX_DIBitmap m_Bitmap;
+  CFX_RetainPtr<CFX_DIBitmap> m_pBitmap;
 };
+
+inline CFX_GlyphBitmap::CFX_GlyphBitmap()
+    : m_pBitmap(pdfium::MakeRetain<CFX_DIBitmap>()) {}
+
+inline CFX_GlyphBitmap::~CFX_GlyphBitmap() {}
 
 class FXTEXT_GLYPHPOS {
  public:
@@ -240,8 +249,8 @@ class FXTEXT_GLYPHPOS {
 
 FX_RECT FXGE_GetGlyphsBBox(const std::vector<FXTEXT_GLYPHPOS>& glyphs,
                            int anti_alias,
-                           FX_FLOAT retinaScaleX = 1.0f,
-                           FX_FLOAT retinaScaleY = 1.0f);
+                           float retinaScaleX = 1.0f,
+                           float retinaScaleY = 1.0f);
 
 CFX_ByteString GetNameFromTT(const uint8_t* name_table,
                              uint32_t name_table_size,

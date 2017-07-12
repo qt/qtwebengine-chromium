@@ -26,6 +26,7 @@
 #include "webrtc/modules/audio_coding/neteq/rtcp.h"
 #include "webrtc/modules/audio_coding/neteq/statistics_calculator.h"
 #include "webrtc/modules/audio_coding/neteq/tick_timer.h"
+#include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -109,6 +110,8 @@ class NetEqImpl : public webrtc::NetEq {
                    uint32_t receive_timestamp) override;
 
   int GetAudio(AudioFrame* audio_frame, bool* muted) override;
+
+  void SetCodecs(const std::map<int, SdpAudioFormat>& codecs) override;
 
   int RegisterPayloadType(NetEqDecoder codec,
                           const std::string& codec_name,

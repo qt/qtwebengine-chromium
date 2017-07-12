@@ -20,8 +20,11 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
+#include "webrtc/base/protobuf_utils.h"
 #include "webrtc/call/call.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
+#include "webrtc/modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor.h"
+#include "webrtc/modules/remote_bitrate_estimator/include/bwe_defines.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 
 namespace webrtc {
@@ -95,14 +98,14 @@ BandwidthUsage GetRuntimeDetectorState(
     rtclog::DelayBasedBweUpdate::DetectorState detector_state) {
   switch (detector_state) {
     case rtclog::DelayBasedBweUpdate::BWE_NORMAL:
-      return kBwNormal;
+      return BandwidthUsage::kBwNormal;
     case rtclog::DelayBasedBweUpdate::BWE_UNDERUSING:
-      return kBwUnderusing;
+      return BandwidthUsage::kBwUnderusing;
     case rtclog::DelayBasedBweUpdate::BWE_OVERUSING:
-      return kBwOverusing;
+      return BandwidthUsage::kBwOverusing;
   }
   RTC_NOTREACHED();
-  return kBwNormal;
+  return BandwidthUsage::kBwNormal;
 }
 
 std::pair<uint64_t, bool> ParseVarInt(std::istream& stream) {
@@ -127,8 +130,8 @@ std::pair<uint64_t, bool> ParseVarInt(std::istream& stream) {
 
 void GetHeaderExtensions(
     std::vector<RtpExtension>* header_extensions,
-    const google::protobuf::RepeatedPtrField<rtclog::RtpHeaderExtension>&
-        proto_header_extensions) {
+    const RepeatedPtrField<rtclog::RtpHeaderExtension>&
+    proto_header_extensions) {
   header_extensions->clear();
   for (auto& p : proto_header_extensions) {
     RTC_CHECK(p.has_name());
@@ -488,10 +491,8 @@ void ParsedRtcEventLog::GetLossBasedBweUpdate(size_t index,
   }
 }
 
-void ParsedRtcEventLog::GetDelayBasedBweUpdate(
-    size_t index,
-    int32_t* bitrate_bps,
-    BandwidthUsage* detector_state) const {
+ParsedRtcEventLog::BweDelayBasedUpdate
+ParsedRtcEventLog::GetDelayBasedBweUpdate(size_t index) const {
   RTC_CHECK_LT(index, GetNumberOfEvents());
   const rtclog::Event& event = events_[index];
   RTC_CHECK(event.has_type());
@@ -499,19 +500,19 @@ void ParsedRtcEventLog::GetDelayBasedBweUpdate(
   RTC_CHECK(event.has_delay_based_bwe_update());
   const rtclog::DelayBasedBweUpdate& delay_event =
       event.delay_based_bwe_update();
+
+  BweDelayBasedUpdate res;
+  res.timestamp = GetTimestamp(index);
   RTC_CHECK(delay_event.has_bitrate_bps());
-  if (bitrate_bps != nullptr) {
-    *bitrate_bps = delay_event.bitrate_bps();
-  }
+  res.bitrate_bps = delay_event.bitrate_bps();
   RTC_CHECK(delay_event.has_detector_state());
-  if (detector_state != nullptr) {
-    *detector_state = GetRuntimeDetectorState(delay_event.detector_state());
-  }
+  res.detector_state = GetRuntimeDetectorState(delay_event.detector_state());
+  return res;
 }
 
 void ParsedRtcEventLog::GetAudioNetworkAdaptation(
     size_t index,
-    AudioNetworkAdaptor::EncoderRuntimeConfig* config) const {
+    AudioEncoderRuntimeConfig* config) const {
   RTC_CHECK_LT(index, GetNumberOfEvents());
   const rtclog::Event& event = events_[index];
   RTC_CHECK(event.has_type());
@@ -534,4 +535,58 @@ void ParsedRtcEventLog::GetAudioNetworkAdaptation(
         rtc::Optional<float>(ana_event.uplink_packet_loss_fraction());
 }
 
+ParsedRtcEventLog::BweProbeClusterCreatedEvent
+ParsedRtcEventLog::GetBweProbeClusterCreated(size_t index) const {
+  RTC_CHECK_LT(index, GetNumberOfEvents());
+  const rtclog::Event& event = events_[index];
+  RTC_CHECK(event.has_type());
+  RTC_CHECK_EQ(event.type(), rtclog::Event::BWE_PROBE_CLUSTER_CREATED_EVENT);
+  RTC_CHECK(event.has_probe_cluster());
+  const rtclog::BweProbeCluster& pcc_event = event.probe_cluster();
+  BweProbeClusterCreatedEvent res;
+  res.timestamp = GetTimestamp(index);
+  RTC_CHECK(pcc_event.has_id());
+  res.id = pcc_event.id();
+  RTC_CHECK(pcc_event.has_bitrate_bps());
+  res.bitrate_bps = pcc_event.bitrate_bps();
+  RTC_CHECK(pcc_event.has_min_packets());
+  res.min_packets = pcc_event.min_packets();
+  RTC_CHECK(pcc_event.has_min_bytes());
+  res.min_bytes = pcc_event.min_bytes();
+  return res;
+}
+
+ParsedRtcEventLog::BweProbeResultEvent ParsedRtcEventLog::GetBweProbeResult(
+    size_t index) const {
+  RTC_CHECK_LT(index, GetNumberOfEvents());
+  const rtclog::Event& event = events_[index];
+  RTC_CHECK(event.has_type());
+  RTC_CHECK_EQ(event.type(), rtclog::Event::BWE_PROBE_RESULT_EVENT);
+  RTC_CHECK(event.has_probe_result());
+  const rtclog::BweProbeResult& pr_event = event.probe_result();
+  BweProbeResultEvent res;
+  res.timestamp = GetTimestamp(index);
+  RTC_CHECK(pr_event.has_id());
+  res.id = pr_event.id();
+
+  RTC_CHECK(pr_event.has_result());
+  if (pr_event.result() == rtclog::BweProbeResult::SUCCESS) {
+    RTC_CHECK(pr_event.has_bitrate_bps());
+    res.bitrate_bps = rtc::Optional<uint64_t>(pr_event.bitrate_bps());
+  } else if (pr_event.result() ==
+             rtclog::BweProbeResult::INVALID_SEND_RECEIVE_INTERVAL) {
+    res.failure_reason =
+        rtc::Optional<ProbeFailureReason>(kInvalidSendReceiveInterval);
+  } else if (pr_event.result() ==
+             rtclog::BweProbeResult::INVALID_SEND_RECEIVE_RATIO) {
+    res.failure_reason =
+        rtc::Optional<ProbeFailureReason>(kInvalidSendReceiveRatio);
+  } else if (pr_event.result() == rtclog::BweProbeResult::TIMEOUT) {
+    res.failure_reason = rtc::Optional<ProbeFailureReason>(kTimeout);
+  } else {
+    RTC_NOTREACHED();
+  }
+
+  return res;
+}
 }  // namespace webrtc

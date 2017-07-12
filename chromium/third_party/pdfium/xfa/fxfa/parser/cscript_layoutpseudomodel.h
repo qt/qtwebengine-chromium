@@ -7,8 +7,9 @@
 #ifndef XFA_FXFA_PARSER_CSCRIPT_LAYOUTPSEUDOMODEL_H_
 #define XFA_FXFA_PARSER_CSCRIPT_LAYOUTPSEUDOMODEL_H_
 
-#include "fxjs/cfxjse_arguments.h"
-#include "xfa/fxfa/parser/xfa_object.h"
+#include <vector>
+
+#include "xfa/fxfa/parser/cxfa_object.h"
 
 enum XFA_LAYOUTMODEL_HWXY {
   XFA_LAYOUTMODEL_H,
@@ -17,6 +18,7 @@ enum XFA_LAYOUTMODEL_HWXY {
   XFA_LAYOUTMODEL_Y
 };
 
+class CFXJSE_Arguments;
 class CXFA_LayoutProcessor;
 
 class CScript_LayoutPseudoModel : public CXFA_Object {
@@ -48,15 +50,12 @@ class CScript_LayoutPseudoModel : public CXFA_Object {
   void SheetCount(CFXJSE_Arguments* pArguments);
   void AbsPage(CFXJSE_Arguments* pArguments);
 
- protected:
-  void GetObjArray(CXFA_LayoutProcessor* pDocLayout,
-                   int32_t iPageNo,
-                   const CFX_WideString& wsType,
-                   bool bOnPageArea,
-                   CXFA_NodeArray& retArray);
-  void PageImp(CFXJSE_Arguments* pArguments, bool bAbsPage);
-
  private:
+  std::vector<CXFA_Node*> GetObjArray(CXFA_LayoutProcessor* pDocLayout,
+                                      int32_t iPageNo,
+                                      const CFX_WideString& wsType,
+                                      bool bOnPageArea);
+  void PageImp(CFXJSE_Arguments* pArguments, bool bAbsPage);
   void ThrowSetReadyException() const;
 };
 

@@ -51,10 +51,6 @@ def _ParseArgs():
 
 
 def main():
-  print 'This test is currently disabled (https://bugs.webrtc.org/7185)'
-  return 0
-
-  # pylint: disable=W0101
   logging.basicConfig(level=logging.INFO)
 
   args = _ParseArgs()
@@ -73,12 +69,12 @@ def main():
     _RunCommand(['gn', 'gen', build_dir_x86])
     _RunCommand(['ninja', '-C', build_dir_x86, 'frame_analyzer'])
 
-  toolchain_dir = os.path.join(SRC_DIR, 'tools-webrtc',
-      'video_quality_toolchain')
+  tools_dir = os.path.join(SRC_DIR, 'tools-webrtc')
+  toolchain_dir = os.path.join(tools_dir, 'video_quality_toolchain')
 
   # Download ffmpeg and zxing.
-  download_script = os.path.join(toolchain_dir, 'download.py')
-  _RunCommand([sys.executable, download_script])
+  download_script = os.path.join(tools_dir, 'download_tools.py')
+  _RunCommand([sys.executable, download_script, toolchain_dir])
 
   # Run the Espresso code.
   test_script = os.path.join(build_dir_android,
@@ -93,10 +89,10 @@ def main():
 
   ffmpeg_path = os.path.join(toolchain_dir, 'linux', 'ffmpeg')
 
-  def convert_video(input_video, output_video):
+  def ConvertVideo(input_video, output_video):
     _RunCommand([ffmpeg_path, '-y', '-i', input_video, output_video])
 
-  convert_video(test_video, test_video_yuv)
+  ConvertVideo(test_video, test_video_yuv)
 
   reference_video = os.path.join(SRC_DIR,
       'resources', 'reference_video_640x360_30fps.y4m')
@@ -104,7 +100,7 @@ def main():
   reference_video_yuv = os.path.join(temp_dir,
       'reference_video_640x360_30fps.yuv')
 
-  convert_video(reference_video, reference_video_yuv)
+  ConvertVideo(reference_video, reference_video_yuv)
 
   # Run compare script.
   compare_script = os.path.join(SRC_DIR, 'webrtc', 'tools',

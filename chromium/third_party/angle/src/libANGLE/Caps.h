@@ -354,6 +354,9 @@ struct Extensions
 
     // GL_ANGLE_client_arrays
     bool clientArrays;
+
+    // GL_ANGLE_robust_resource_initialization
+    bool robustResourceInitialization;
 };
 
 struct ExtensionInfo
@@ -440,7 +443,7 @@ struct Caps
     GLuint64 maxServerWaitTimeout;
 
     // ES 3.1 (April 29, 2015) Table 20.41: Implementation dependent values (cont.)
-    GLuint maxVertexAttribRelativeOffset;
+    GLint maxVertexAttribRelativeOffset;
     GLuint maxVertexAttribBindings;
     GLint maxVertexAttribStride;
     GLuint maxElementsIndices;
@@ -641,6 +644,9 @@ struct DisplayExtensions
     // EGL_CHROMIUM_create_context_bind_generates_resource
     bool createContextBindGeneratesResource;
 
+    // EGL_CHROMIUM_get_sync_values
+    bool getSyncValues;
+
     // EGL_EXT_swap_buffers_with_damage
     bool swapBuffersWithDamage;
 
@@ -655,6 +661,9 @@ struct DisplayExtensions
 
     // EGL_ANGLE_create_context_client_arrays
     bool createContextClientArrays;
+
+    // EGL_ANGLE_create_context_robust_resource_initialization
+    bool createContextRobustResourceInitialization;
 };
 
 struct DeviceExtensions

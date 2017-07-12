@@ -11,13 +11,16 @@
 
 #include "core/fxcrt/fx_ext.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fde/xml/fde_xml_imp.h"
+#include "xfa/fde/xml/cfde_xmlelement.h"
+#include "xfa/fde/xml/cfde_xmlnode.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
+#include "xfa/fxfa/parser/cxfa_localemgr.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/cxfa_occur.h"
 #include "xfa/fxfa/parser/cxfa_scriptcontext.h"
-#include "xfa/fxfa/parser/xfa_localemgr.h"
-#include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/parser/cxfa_traversestrategy_xfacontainernode.h"
+#include "xfa/fxfa/parser/cxfa_traversestrategy_xfanode.h"
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
@@ -153,17 +156,16 @@ void CreateDataBinding(CXFA_Node* pFormNode,
       case XFA_Element::ChoiceList:
         defValue.GetChildValueContent(wsValue);
         if (pWidgetData->GetChoiceListOpen() == XFA_ATTRIBUTEENUM_MultiSelect) {
-          std::vector<CFX_WideString> wsSelTextArray;
-          pWidgetData->GetSelectedItemsValue(wsSelTextArray);
-          int32_t iSize = pdfium::CollectionSize<int32_t>(wsSelTextArray);
-          if (iSize >= 1) {
-            CXFA_Node* pValue = nullptr;
-            for (int32_t i = 0; i < iSize; i++) {
-              pValue = pDataNode->CreateSamePacketNode(XFA_Element::DataValue);
+          std::vector<CFX_WideString> wsSelTextArray =
+              pWidgetData->GetSelectedItemsValue();
+          if (!wsSelTextArray.empty()) {
+            for (const auto& text : wsSelTextArray) {
+              CXFA_Node* pValue =
+                  pDataNode->CreateSamePacketNode(XFA_Element::DataValue);
               pValue->SetCData(XFA_ATTRIBUTE_Name, L"value");
               pValue->CreateXMLMappingNode();
               pDataNode->InsertChild(pValue);
-              pValue->SetCData(XFA_ATTRIBUTE_Value, wsSelTextArray[i]);
+              pValue->SetCData(XFA_ATTRIBUTE_Value, text);
             }
           } else {
             CFDE_XMLNode* pXMLNode = pDataNode->GetXMLMappingNode();
@@ -282,14 +284,15 @@ void CreateDataBinding(CXFA_Node* pFormNode,
         CFDE_XMLElement* pXMLDataElement =
             static_cast<CFDE_XMLElement*>(pDataNode->GetXMLMappingNode());
         ASSERT(pXMLDataElement);
-        CFX_WideString wsContentType;
-        CFX_WideString wsHref;
-        pXMLDataElement->GetString(L"xfa:contentType", wsContentType);
+
+        CFX_WideString wsContentType =
+            pXMLDataElement->GetString(L"xfa:contentType");
         if (!wsContentType.IsEmpty()) {
           pDataNode->SetCData(XFA_ATTRIBUTE_ContentType, wsContentType);
           image.SetContentType(wsContentType);
         }
-        pXMLDataElement->GetString(L"href", wsHref);
+
+        CFX_WideString wsHref = pXMLDataElement->GetString(L"href");
         if (!wsHref.IsEmpty())
           image.SetHref(wsHref);
       }
@@ -297,20 +300,19 @@ void CreateDataBinding(CXFA_Node* pFormNode,
     }
     case XFA_Element::ChoiceList:
       if (pWidgetData->GetChoiceListOpen() == XFA_ATTRIBUTEENUM_MultiSelect) {
-        CXFA_NodeArray items;
-        pDataNode->GetNodeList(items);
-        int32_t iCounts = items.GetSize();
-        if (iCounts > 0) {
+        std::vector<CXFA_Node*> items = pDataNode->GetNodeList();
+        if (!items.empty()) {
+          bool single = items.size() == 1;
           wsNormalizeValue.clear();
           CFX_WideString wsItem;
-          for (int32_t i = 0; i < iCounts; i++) {
-            items[i]->TryContent(wsItem);
-            wsItem = (iCounts == 1) ? wsItem : wsItem + L"\n";
+          for (CXFA_Node* pNode : items) {
+            pNode->TryContent(wsItem);
+            wsItem = single ? wsItem : wsItem + L"\n";
             wsNormalizeValue += wsItem;
           }
           CXFA_ExData exData = defValue.GetExData();
           ASSERT(exData);
-          exData.SetContentType(iCounts == 1 ? L"text/plain" : L"text/xml");
+          exData.SetContentType(single ? L"text/plain" : L"text/xml");
         }
         FormValueNode_SetChildContent(defValue.GetNode(), wsNormalizeValue,
                                       XFA_Element::ExData);
@@ -464,12 +466,12 @@ CXFA_Node* FindDataRefDataNode(CXFA_Document* pDocument,
                                                 pTemplateNode);
   if (rs.dwFlags == XFA_RESOLVENODE_RSTYPE_CreateNodeAll ||
       rs.dwFlags == XFA_RESOLVENODE_RSTYPE_CreateNodeMidAll ||
-      rs.nodes.GetSize() > 1) {
-    return pDocument->GetNotBindNode(rs.nodes);
+      rs.objects.size() > 1) {
+    return pDocument->GetNotBindNode(rs.objects);
   }
 
   if (rs.dwFlags == XFA_RESOLVENODE_RSTYPE_CreateNodeOne) {
-    CXFA_Object* pObject = (rs.nodes.GetSize() > 0) ? rs.nodes[0] : nullptr;
+    CXFA_Object* pObject = !rs.objects.empty() ? rs.objects.front() : nullptr;
     CXFA_Node* pNode = ToNode(pObject);
     return (bForceBind || !pNode || !pNode->HasBindItem()) ? pNode : nullptr;
   }
@@ -492,7 +494,7 @@ bool NeedGenerateForm(CXFA_Node* pTemplateChild, bool bUseInstanceManager) {
 CXFA_Node* CloneOrMergeInstanceManager(CXFA_Document* pDocument,
                                        CXFA_Node* pFormParent,
                                        CXFA_Node* pTemplateNode,
-                                       CXFA_NodeArray& subforms) {
+                                       std::vector<CXFA_Node*>* subforms) {
   CFX_WideStringC wsSubformName = pTemplateNode->GetCData(XFA_ATTRIBUTE_Name);
   CFX_WideString wsInstMgrNodeName = L"_" + wsSubformName;
   uint32_t dwInstNameHash =
@@ -518,7 +520,7 @@ CXFA_Node* CloneOrMergeInstanceManager(CXFA_Document* pDocument,
 
       CXFA_Node* pNextNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling);
       pFormParent->RemoveChild(pNode);
-      subforms.Add(pNode);
+      subforms->push_back(pNode);
       pNode = pNextNode;
     }
     pFormParent->RemoveChild(pExistingNode);
@@ -653,39 +655,31 @@ CXFA_Node* FindMatchingDataNode(
   return pResult;
 }
 
-void SortRecurseRecord(CFX_ArrayTemplate<RecurseRecord>& rgRecords,
+void SortRecurseRecord(std::vector<RecurseRecord>* rgRecords,
                        CXFA_Node* pDataScope,
                        bool bChoiceMode) {
-  int32_t iCount = rgRecords.GetSize();
-  CFX_ArrayTemplate<RecurseRecord> rgResultRecord;
-  for (CXFA_Node* pChildNode = pDataScope->GetNodeItem(XFA_NODEITEM_FirstChild);
-       pChildNode;
-       pChildNode = pChildNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    for (int32_t i = 0; i < iCount; i++) {
-      CXFA_Node* pNode = rgRecords[i].pDataChild;
-      if (pChildNode == pNode) {
-        RecurseRecord sNewRecord = {rgRecords[i].pTemplateChild, pNode};
-        rgResultRecord.Add(sNewRecord);
-        rgRecords.RemoveAt(i);
-        iCount--;
+  std::vector<RecurseRecord> rgResultRecord;
+  for (CXFA_Node* pNode = pDataScope->GetNodeItem(XFA_NODEITEM_FirstChild);
+       pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+    auto it = std::find_if(rgRecords->begin(), rgRecords->end(),
+                           [pNode](const RecurseRecord& record) {
+                             return pNode == record.pDataChild;
+                           });
+    if (it != rgRecords->end()) {
+      rgResultRecord.push_back(*it);
+      rgRecords->erase(it);
+      if (bChoiceMode)
         break;
-      }
     }
-    if (bChoiceMode && rgResultRecord.GetSize() > 0)
-      break;
   }
+  if (rgResultRecord.empty())
+    return;
 
-  if (rgResultRecord.GetSize() > 0) {
-    if (!bChoiceMode) {
-      for (int32_t i = 0; i < iCount; i++) {
-        RecurseRecord sNewRecord = {rgRecords[i].pTemplateChild,
-                                    rgRecords[i].pDataChild};
-        rgResultRecord.Add(sNewRecord);
-      }
-    }
-    rgRecords.RemoveAll();
-    rgRecords.Copy(rgResultRecord);
+  if (!bChoiceMode) {
+    rgResultRecord.insert(rgResultRecord.end(), rgRecords->begin(),
+                          rgRecords->end());
   }
+  *rgRecords = rgResultRecord;
 }
 
 CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
@@ -700,13 +694,13 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
   bool bUseInstanceManager =
       pFormParentNode->GetElementType() != XFA_Element::Area;
   CXFA_Node* pInstMgrNode = nullptr;
-  CXFA_NodeArray subformArray;
-  CXFA_NodeArray* pSearchArray = nullptr;
+  std::vector<CXFA_Node*> subformArray;
+  std::vector<CXFA_Node*>* pSearchArray = nullptr;
   if (!bOneInstance &&
       (eType == XFA_Element::SubformSet || eType == XFA_Element::Subform)) {
     pInstMgrNode = bUseInstanceManager ? CloneOrMergeInstanceManager(
                                              pDocument, pFormParentNode,
-                                             pTemplateNode, subformArray)
+                                             pTemplateNode, &subformArray)
                                        : nullptr;
     if (CXFA_Node* pOccurTemplateNode =
             pTemplateNode->GetFirstChildByClass(XFA_Element::Occur)) {
@@ -724,10 +718,9 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
       pSearchArray = &subformArray;
       if (pFormParentNode->GetElementType() == XFA_Element::PageArea) {
         bOneInstance = true;
-        if (subformArray.GetSize() < 1)
+        if (subformArray.empty())
           pSearchArray = nullptr;
-      } else if ((pTemplateNode->GetNameHash() == 0) &&
-                 (subformArray.GetSize() < 1)) {
+      } else if (pTemplateNode->GetNameHash() == 0 && subformArray.empty()) {
         pSearchArray = nullptr;
       }
     }
@@ -753,7 +746,7 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
       sNodeIterator.MoveToNext();
     } else {
       std::map<CXFA_Node*, CXFA_Node*> subformMapArray;
-      CXFA_NodeArray nodeArray;
+      std::vector<CXFA_Node*> nodeArray;
       for (; iMax < 0 || iCurRepeatIndex < iMax; iCurRepeatIndex++) {
         bool bSelfMatch = false;
         XFA_ATTRIBUTEENUM eBindMatch = XFA_ATTRIBUTEENUM_None;
@@ -772,11 +765,10 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
         CreateDataBinding(pSubformNode, pDataNode, true);
         ASSERT(pSubformNode);
         subformMapArray[pSubformNode] = pDataNode;
-        nodeArray.Add(pSubformNode);
+        nodeArray.push_back(pSubformNode);
       }
 
-      for (int32_t iIndex = 0; iIndex < nodeArray.GetSize(); iIndex++) {
-        CXFA_Node* pSubform = nodeArray[iIndex];
+      for (CXFA_Node* pSubform : nodeArray) {
         CXFA_Node* pDataNode = nullptr;
         auto it = subformMapArray.find(pSubform);
         if (it != subformMapArray.end())
@@ -818,8 +810,8 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
         if (!pFirstInstance)
           pFirstInstance = pSubformSetNode;
 
-        CFX_ArrayTemplate<RecurseRecord> rgItemMatchList;
-        CFX_ArrayTemplate<CXFA_Node*> rgItemUnmatchList;
+        std::vector<RecurseRecord> rgItemMatchList;
+        std::vector<CXFA_Node*> rgItemUnmatchList;
         for (CXFA_Node* pTemplateChild =
                  pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
              pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
@@ -837,42 +829,39 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
               if (pDataMatch) {
                 RecurseRecord sNewRecord = {pTemplateChild, pDataMatch};
                 if (bSelfMatch)
-                  rgItemMatchList.InsertAt(0, sNewRecord);
+                  rgItemMatchList.insert(rgItemMatchList.begin(), sNewRecord);
                 else
-                  rgItemMatchList.Add(sNewRecord);
+                  rgItemMatchList.push_back(sNewRecord);
               } else {
-                rgItemUnmatchList.Add(pTemplateChild);
+                rgItemUnmatchList.push_back(pTemplateChild);
               }
             } else {
-              rgItemUnmatchList.Add(pTemplateChild);
+              rgItemUnmatchList.push_back(pTemplateChild);
             }
           }
         }
 
         switch (eRelation) {
           case XFA_ATTRIBUTEENUM_Choice: {
-            ASSERT(rgItemMatchList.GetSize());
-            SortRecurseRecord(rgItemMatchList, pDataScope, true);
+            ASSERT(!rgItemMatchList.empty());
+            SortRecurseRecord(&rgItemMatchList, pDataScope, true);
             pDocument->DataMerge_CopyContainer(
-                rgItemMatchList[0].pTemplateChild, pSubformSetNode, pDataScope,
-                false, true, true);
+                rgItemMatchList.front().pTemplateChild, pSubformSetNode,
+                pDataScope, false, true, true);
             break;
           }
           case XFA_ATTRIBUTEENUM_Unordered: {
-            if (rgItemMatchList.GetSize()) {
-              SortRecurseRecord(rgItemMatchList, pDataScope, false);
-              for (int32_t i = 0, count = rgItemMatchList.GetSize(); i < count;
-                   i++) {
-                pDocument->DataMerge_CopyContainer(
-                    rgItemMatchList[i].pTemplateChild, pSubformSetNode,
-                    pDataScope, false, true, true);
+            if (!rgItemMatchList.empty()) {
+              SortRecurseRecord(&rgItemMatchList, pDataScope, false);
+              for (const auto& matched : rgItemMatchList) {
+                pDocument->DataMerge_CopyContainer(matched.pTemplateChild,
+                                                   pSubformSetNode, pDataScope,
+                                                   false, true, true);
               }
             }
-            for (int32_t i = 0, count = rgItemUnmatchList.GetSize(); i < count;
-                 i++) {
-              pDocument->DataMerge_CopyContainer(rgItemUnmatchList[i],
-                                                 pSubformSetNode, pDataScope,
-                                                 false, true, true);
+            for (auto* unmatched : rgItemUnmatchList) {
+              pDocument->DataMerge_CopyContainer(unmatched, pSubformSetNode,
+                                                 pDataScope, false, true, true);
             }
             break;
           }
@@ -904,14 +893,14 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
     if (iCurRepeatIndex == 0 && bAccessedDataDOM == false) {
       int32_t iLimit = iMax;
       if (pInstMgrNode && pTemplateNode->GetNameHash() == 0) {
-        iLimit = subformArray.GetSize();
+        iLimit = pdfium::CollectionSize<int32_t>(subformArray);
         if (iLimit < iMin)
           iLimit = iInit;
       }
 
       for (; (iLimit < 0 || iCurRepeatIndex < iLimit); iCurRepeatIndex++) {
         if (pInstMgrNode) {
-          if (pSearchArray && pSearchArray->GetSize() < 1) {
+          if (pSearchArray && pSearchArray->empty()) {
             if (pTemplateNode->GetNameHash() != 0)
               break;
             pSearchArray = nullptr;
@@ -1158,7 +1147,7 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
           pDocument->GetScriptContext()->ResolveObjects(pDataScope, wsRef, rs,
                                                         dFlags, pTemplateNode);
           CXFA_Object* pObject =
-              (rs.nodes.GetSize() > 0) ? rs.nodes[0] : nullptr;
+              !rs.objects.empty() ? rs.objects.front() : nullptr;
           pDataNode = ToNode(pObject);
           if (pDataNode) {
             CreateDataBinding(pFormNode, pDataNode,
@@ -1247,21 +1236,21 @@ CXFA_Node* XFA_DataMerge_FindFormDOMInstance(CXFA_Document* pDocument,
   return nullptr;
 }
 
-CXFA_Node* XFA_NodeMerge_CloneOrMergeContainer(CXFA_Document* pDocument,
-                                               CXFA_Node* pFormParent,
-                                               CXFA_Node* pTemplateNode,
-                                               bool bRecursive,
-                                               CXFA_NodeArray* pSubformArray) {
+CXFA_Node* XFA_NodeMerge_CloneOrMergeContainer(
+    CXFA_Document* pDocument,
+    CXFA_Node* pFormParent,
+    CXFA_Node* pTemplateNode,
+    bool bRecursive,
+    std::vector<CXFA_Node*>* pSubformArray) {
   CXFA_Node* pExistingNode = nullptr;
   if (!pSubformArray) {
     pExistingNode = XFA_DataMerge_FindFormDOMInstance(
         pDocument, pTemplateNode->GetElementType(),
         pTemplateNode->GetNameHash(), pFormParent);
-  } else if (pSubformArray->GetSize() > 0) {
-    pExistingNode = pSubformArray->GetAt(0);
-    pSubformArray->RemoveAt(0);
+  } else if (!pSubformArray->empty()) {
+    pExistingNode = pSubformArray->front();
+    pSubformArray->erase(pSubformArray->begin());
   }
-
   if (pExistingNode) {
     if (pSubformArray) {
       pFormParent->InsertChild(pExistingNode);
@@ -1354,9 +1343,10 @@ void CXFA_Document::DataMerge_UpdateBindingRelations(
   UpdateBindingRelations(this, pFormUpdateRoot, pDataScope, true, false);
 }
 
-CXFA_Node* CXFA_Document::GetNotBindNode(CXFA_ObjArray& arrayNodes) {
-  for (int32_t i = 0; i < arrayNodes.GetSize(); i++) {
-    CXFA_Node* pNode = arrayNodes[i]->AsNode();
+CXFA_Node* CXFA_Document::GetNotBindNode(
+    const std::vector<CXFA_Object*>& arrayObjects) {
+  for (CXFA_Object* pObject : arrayObjects) {
+    CXFA_Node* pNode = pObject->AsNode();
     if (pNode && !pNode->HasBindItem())
       return pNode;
   }
@@ -1482,7 +1472,7 @@ void CXFA_Document::DoDataMerge() {
   CXFA_Node* pPageSetNode =
       pSubformSetNode->GetFirstChildByClass(XFA_Element::PageSet);
   while (pPageSetNode) {
-    m_pPendingPageSet.Add(pPageSetNode);
+    m_pPendingPageSet.push_back(pPageSetNode);
     CXFA_Node* pNextPageSetNode =
         pPageSetNode->GetNextSameClassSibling(XFA_Element::PageSet);
     pSubformSetNode->RemoveChild(pPageSetNode);

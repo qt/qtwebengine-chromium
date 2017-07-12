@@ -476,8 +476,8 @@ void CompileDownloadQueryOrderBy(
     DownloadQuery* query) {
   // TODO(benjhayden): Consider switching from LazyInstance to explicit string
   // comparisons.
-  static base::LazyInstance<SortTypeMap> sorter_types =
-    LAZY_INSTANCE_INITIALIZER;
+  static base::LazyInstance<SortTypeMap>::DestructorAtExit sorter_types =
+      LAZY_INSTANCE_INITIALIZER;
   if (sorter_types.Get().empty())
     InitSortTypeMap(sorter_types.Pointer());
 
@@ -509,8 +509,8 @@ void RunDownloadQuery(
     DownloadQuery::DownloadVector* results) {
   // TODO(benjhayden): Consider switching from LazyInstance to explicit string
   // comparisons.
-  static base::LazyInstance<FilterTypeMap> filter_types =
-    LAZY_INSTANCE_INITIALIZER;
+  static base::LazyInstance<FilterTypeMap>::DestructorAtExit filter_types =
+      LAZY_INSTANCE_INITIALIZER;
   if (filter_types.Get().empty())
     InitFilterTypeMap(filter_types.Pointer());
 
@@ -1524,7 +1524,7 @@ void DownloadsGetFileIconFunction::OnIconURLExtracted(const std::string& url) {
     return;
   }
   RecordApiFunctions(DOWNLOADS_FUNCTION_GET_FILE_ICON);
-  SetResult(base::MakeUnique<base::StringValue>(url));
+  SetResult(base::MakeUnique<base::Value>(url));
   SendResponse(true);
 }
 
@@ -1824,9 +1824,9 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
       if (!data->json().HasKey(iter.key()) ||
           (data->json().Get(iter.key(), &old_value) &&
            !iter.value().Equals(old_value))) {
-        delta->Set(iter.key() + ".current", iter.value().DeepCopy());
+        delta->Set(iter.key() + ".current", iter.value().CreateDeepCopy());
         if (old_value)
-          delta->Set(iter.key() + ".previous", old_value->DeepCopy());
+          delta->Set(iter.key() + ".previous", old_value->CreateDeepCopy());
         changed = true;
       }
     }
@@ -1839,7 +1839,7 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
     if ((new_fields.find(iter.key()) == new_fields.end()) &&
         IsDownloadDeltaField(iter.key())) {
       // estimatedEndTime disappears after completion, but bytesReceived stays.
-      delta->Set(iter.key() + ".previous", iter.value().DeepCopy());
+      delta->Set(iter.key() + ".previous", iter.value().CreateDeepCopy());
       changed = true;
     }
   }

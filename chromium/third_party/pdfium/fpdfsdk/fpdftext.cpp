@@ -134,9 +134,9 @@ DLLEXPORT int STDCALL FPDFText_GetCharIndexAtPos(FPDF_TEXTPAGE text_page,
 
   CPDF_TextPage* textpage = CPDFTextPageFromFPDFTextPage(text_page);
   return textpage->GetIndexAtPos(
-      CFX_PointF(static_cast<FX_FLOAT>(x), static_cast<FX_FLOAT>(y)),
-      CFX_SizeF(static_cast<FX_FLOAT>(xTolerance),
-                static_cast<FX_FLOAT>(yTolerance)));
+      CFX_PointF(static_cast<float>(x), static_cast<float>(y)),
+      CFX_SizeF(static_cast<float>(xTolerance),
+                static_cast<float>(yTolerance)));
 }
 
 DLLEXPORT int STDCALL FPDFText_GetText(FPDF_TEXTPAGE text_page,
@@ -155,8 +155,8 @@ DLLEXPORT int STDCALL FPDFText_GetText(FPDF_TEXTPAGE text_page,
     str = str.Left(count);
 
   CFX_ByteString cbUTF16str = str.UTF16LE_Encode();
-  FXSYS_memcpy(result, cbUTF16str.GetBuffer(cbUTF16str.GetLength()),
-               cbUTF16str.GetLength());
+  memcpy(result, cbUTF16str.GetBuffer(cbUTF16str.GetLength()),
+         cbUTF16str.GetLength());
   cbUTF16str.ReleaseBuffer(cbUTF16str.GetLength());
 
   return cbUTF16str.GetLength() / sizeof(unsigned short);
@@ -201,8 +201,7 @@ DLLEXPORT int STDCALL FPDFText_GetBoundedText(FPDF_TEXTPAGE text_page,
     return 0;
 
   CPDF_TextPage* textpage = CPDFTextPageFromFPDFTextPage(text_page);
-  CFX_FloatRect rect((FX_FLOAT)left, (FX_FLOAT)bottom, (FX_FLOAT)right,
-                     (FX_FLOAT)top);
+  CFX_FloatRect rect((float)left, (float)bottom, (float)right, (float)top);
   CFX_WideString str = textpage->GetTextByRect(rect);
 
   if (buflen <= 0 || !buffer)
@@ -211,8 +210,8 @@ DLLEXPORT int STDCALL FPDFText_GetBoundedText(FPDF_TEXTPAGE text_page,
   CFX_ByteString cbUTF16Str = str.UTF16LE_Encode();
   int len = cbUTF16Str.GetLength() / sizeof(unsigned short);
   int size = buflen > len ? len : buflen;
-  FXSYS_memcpy(buffer, cbUTF16Str.GetBuffer(size * sizeof(unsigned short)),
-               size * sizeof(unsigned short));
+  memcpy(buffer, cbUTF16Str.GetBuffer(size * sizeof(unsigned short)),
+         size * sizeof(unsigned short));
   cbUTF16Str.ReleaseBuffer(size * sizeof(unsigned short));
 
   return size;
@@ -312,7 +311,7 @@ DLLEXPORT int STDCALL FPDFLink_GetURL(FPDF_PAGELINK link_page,
   int size = std::min(required, buflen);
   if (size > 0) {
     int buf_size = size * sizeof(unsigned short);
-    FXSYS_memcpy(buffer, cbUTF16URL.GetBuffer(buf_size), buf_size);
+    memcpy(buffer, cbUTF16URL.GetBuffer(buf_size), buf_size);
   }
   return size;
 }

@@ -1854,7 +1854,10 @@ ANGLE_EXPORT void GL_APIENTRY ProgramPathFragmentInputGenCHROMIUM(GLuint program
 }
 
 ANGLE_EXPORT void GL_APIENTRY CopyTextureCHROMIUM(GLuint sourceId,
+                                                  GLint sourceLevel,
+                                                  GLenum destTarget,
                                                   GLuint destId,
+                                                  GLint destLevel,
                                                   GLint internalFormat,
                                                   GLenum destType,
                                                   GLboolean unpackFlipY,
@@ -1862,30 +1865,35 @@ ANGLE_EXPORT void GL_APIENTRY CopyTextureCHROMIUM(GLuint sourceId,
                                                   GLboolean unpackUnmultiplyAlpha)
 {
     EVENT(
-        "(GLuint sourceId = %u, GLuint destId = %u, GLint internalFormat = 0x%X, GLenum destType = "
+        "(GLuint sourceId = %u, GLint sourceLevel = %d, GLenum destTarget = 0x%X, GLuint destId = "
+        "%u, GLint destLevel = %d, GLint internalFormat = 0x%X, GLenum destType = "
         "0x%X, GLboolean unpackFlipY = %u, GLboolean unpackPremultiplyAlpha = %u, GLboolean "
         "unpackUnmultiplyAlpha = %u)",
-        sourceId, destId, internalFormat, destType, unpackFlipY, unpackPremultiplyAlpha,
-        unpackUnmultiplyAlpha);
+        sourceId, sourceLevel, destTarget, destId, destLevel, internalFormat, destType, unpackFlipY,
+        unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
 
     Context *context = GetValidGlobalContext();
     if (context)
     {
         if (!context->skipValidation() &&
-            !ValidateCopyTextureCHROMIUM(context, sourceId, destId, internalFormat, destType,
-                                         unpackFlipY, unpackPremultiplyAlpha,
-                                         unpackUnmultiplyAlpha))
+            !ValidateCopyTextureCHROMIUM(context, sourceId, sourceLevel, destTarget, destId,
+                                         destLevel, internalFormat, destType, unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha))
         {
             return;
         }
 
-        context->copyTextureCHROMIUM(sourceId, destId, internalFormat, destType, unpackFlipY,
-                                     unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
+        context->copyTextureCHROMIUM(sourceId, sourceLevel, destTarget, destId, destLevel,
+                                     internalFormat, destType, unpackFlipY, unpackPremultiplyAlpha,
+                                     unpackUnmultiplyAlpha);
     }
 }
 
 ANGLE_EXPORT void GL_APIENTRY CopySubTextureCHROMIUM(GLuint sourceId,
+                                                     GLint sourceLevel,
+                                                     GLenum destTarget,
                                                      GLuint destId,
+                                                     GLint destLevel,
                                                      GLint xoffset,
                                                      GLint yoffset,
                                                      GLint x,
@@ -1897,25 +1905,27 @@ ANGLE_EXPORT void GL_APIENTRY CopySubTextureCHROMIUM(GLuint sourceId,
                                                      GLboolean unpackUnmultiplyAlpha)
 {
     EVENT(
-        "(GLuint sourceId = %u, GLuint destId = %u, , GLboolean unpackFlipY = %u, GLint xoffset = "
+        "(GLuint sourceId = %u, GLint sourceLevel = %d, GLenum destTarget = 0x%X, GLuint destId = "
+        "%u, GLint destLevel = %d, GLint xoffset = "
         "%d, GLint yoffset = %d, GLint x = %d, GLint y = %d, GLsizei width = %d, GLsizei height = "
         "%d, GLboolean unpackPremultiplyAlpha = %u, GLboolean unpackUnmultiplyAlpha = %u)",
-        sourceId, destId, xoffset, yoffset, x, y, width, height, unpackFlipY,
-        unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
+        sourceId, sourceLevel, destTarget, destId, destLevel, xoffset, yoffset, x, y, width, height,
+        unpackFlipY, unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
 
     Context *context = GetValidGlobalContext();
     if (context)
     {
         if (!context->skipValidation() &&
-            !ValidateCopySubTextureCHROMIUM(context, sourceId, destId, xoffset, yoffset, x, y,
-                                            width, height, unpackFlipY, unpackPremultiplyAlpha,
-                                            unpackUnmultiplyAlpha))
+            !ValidateCopySubTextureCHROMIUM(
+                context, sourceId, sourceLevel, destTarget, destId, destLevel, xoffset, yoffset, x,
+                y, width, height, unpackFlipY, unpackPremultiplyAlpha, unpackUnmultiplyAlpha))
         {
             return;
         }
 
-        context->copySubTextureCHROMIUM(sourceId, destId, xoffset, yoffset, x, y, width, height,
-                                        unpackFlipY, unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
+        context->copySubTextureCHROMIUM(sourceId, sourceLevel, destTarget, destId, destLevel,
+                                        xoffset, yoffset, x, y, width, height, unpackFlipY,
+                                        unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
     }
 }
 
@@ -2377,20 +2387,24 @@ ANGLE_EXPORT void GL_APIENTRY ReadPixelsRobustANGLE(GLint x,
                                                     GLenum type,
                                                     GLsizei bufSize,
                                                     GLsizei *length,
+                                                    GLsizei *columns,
+                                                    GLsizei *rows,
                                                     void *pixels)
 {
     EVENT(
         "(GLint x = %d, GLint y = %d, GLsizei width = %d, GLsizei height = %d, "
         "GLenum format = 0x%X, GLenum type = 0x%X, GLsizei bufsize = %d, GLsizei* length = "
-        "0x%0.8p, GLvoid* pixels = 0x%0.8p)",
-        x, y, width, height, format, type, bufSize, length, pixels);
+        "0x%0.8p, GLsizei* columns = 0x%0.8p, GLsizei* rows = 0x%0.8p, GLvoid* pixels = 0x%0.8p)",
+        x, y, width, height, format, type, bufSize, length, columns, rows, pixels);
 
     Context *context = GetValidGlobalContext();
     if (context)
     {
         GLsizei writeLength = 0;
+        GLsizei writeColumns = 0;
+        GLsizei writeRows    = 0;
         if (!ValidateReadPixelsRobustANGLE(context, x, y, width, height, format, type, bufSize,
-                                           &writeLength, pixels))
+                                           &writeLength, &writeColumns, &writeRows, pixels))
         {
             return;
         }
@@ -2398,6 +2412,8 @@ ANGLE_EXPORT void GL_APIENTRY ReadPixelsRobustANGLE(GLint x,
         context->readPixels(x, y, width, height, format, type, pixels);
 
         SetRobustLengthParam(length, writeLength);
+        SetRobustLengthParam(columns, writeColumns);
+        SetRobustLengthParam(rows, writeRows);
     }
 }
 
@@ -3098,20 +3114,24 @@ ANGLE_EXPORT void GL_APIENTRY ReadnPixelsRobustANGLE(GLint x,
                                                      GLenum type,
                                                      GLsizei bufSize,
                                                      GLsizei *length,
+                                                     GLsizei *columns,
+                                                     GLsizei *rows,
                                                      void *data)
 {
     EVENT(
         "(GLint x = %d, GLint y = %d, GLsizei width = %d, GLsizei height = %d, "
         "GLenum format = 0x%X, GLenum type = 0x%X, GLsizei bufsize = %d, GLsizei* length = "
-        "0x%0.8p, GLvoid *data = 0x%0.8p)",
-        x, y, width, height, format, type, bufSize, length, data);
+        "0x%0.8p, GLsizei* columns = 0x%0.8p, GLsizei* rows = 0x%0.8p, GLvoid *data = 0x%0.8p)",
+        x, y, width, height, format, type, bufSize, length, columns, rows, data);
 
     Context *context = GetValidGlobalContext();
     if (context)
     {
         GLsizei writeLength = 0;
+        GLsizei writeColumns = 0;
+        GLsizei writeRows    = 0;
         if (!ValidateReadnPixelsRobustANGLE(context, x, y, width, height, format, type, bufSize,
-                                            &writeLength, data))
+                                            &writeLength, &writeColumns, &writeRows, data))
         {
             return;
         }
@@ -3119,6 +3139,8 @@ ANGLE_EXPORT void GL_APIENTRY ReadnPixelsRobustANGLE(GLint x,
         context->readPixels(x, y, width, height, format, type, data);
 
         SetRobustLengthParam(length, writeLength);
+        SetRobustLengthParam(columns, writeColumns);
+        SetRobustLengthParam(rows, writeRows);
     }
 }
 

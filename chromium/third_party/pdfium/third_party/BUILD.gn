@@ -9,9 +9,11 @@ import("../pdfium.gni")
 group("third_party") {
   deps = [
     ":bigint",
-    ":fx_freetype",
     ":pdfium_base",
   ]
+  if (pdf_bundle_freetype) {
+    deps += [ ":fx_freetype" ]
+  }
 }
 
 config("pdfium_third_party_config") {
@@ -38,64 +40,148 @@ static_library("bigint") {
   ]
 }
 
-config("fx_freetype_warnings") {
-  visibility = [ ":*" ]
-  if (is_clang) {
-    # open_face_PS_from_sfnt_stream() and open_face_from_buffer() in
-    # ftbase.h are unused.
-    cflags = [ "-Wno-unused-function" ]
+if (pdf_bundle_freetype) {
+  config("fx_freetype_warnings") {
+    visibility = [ ":*" ]
+    if (is_clang) {
+      # open_face_PS_from_sfnt_stream() and open_face_from_buffer() in
+      # ftbase.h are unused.
+      #
+      # ttgload.c casts from unsigned int to unsigned long to void*.
+      cflags = [
+        "-Wno-unused-function",
+        "-Wno-int-to-void-pointer-cast",
+      ]
+    }
   }
-}
 
-# Tests may link against this even if the production library doesn't,
-# so it needs to be separate from it.
-static_library("fx_freetype") {
-  configs -= [ "//build/config/compiler:chromium_code" ]
-  configs += [
-    "//build/config/compiler:no_chromium_code",
-    ":pdfium_third_party_config",
-
-    # Must be after no_chromium_code for warning flags to be ordered correctly.
-    ":fx_freetype_warnings",
-  ]
-  defines = [ "FT2_BUILD_LIBRARY" ]
-  sources = [
-    "freetype/include/freetype/freetype.h",
-    "freetype/include/freetype/ftmm.h",
-    "freetype/include/freetype/ftotval.h",
-    "freetype/include/freetype/ftoutln.h",
-    "freetype/include/freetype/internal/ftobjs.h",
-    "freetype/include/freetype/internal/ftstream.h",
-    "freetype/include/freetype/internal/tttypes.h",
-    "freetype/include/freetype/tttables.h",
-    "freetype/include/ft2build.h",
-    "freetype/src/base/ftbase.c",
-    "freetype/src/base/ftbase.h",
-    "freetype/src/base/ftbitmap.c",
-    "freetype/src/base/ftglyph.c",
-    "freetype/src/base/ftinit.c",
-    "freetype/src/base/ftlcdfil.c",
-    "freetype/src/base/ftmm.c",
-    "freetype/src/base/ftsystem.c",
-    "freetype/src/cff/cff.c",
-    "freetype/src/cff/cffobjs.h",
-    "freetype/src/cff/cfftypes.h",
-    "freetype/src/cid/type1cid.c",
-    "freetype/src/psaux/psaux.c",
-    "freetype/src/pshinter/pshinter.c",
-    "freetype/src/psnames/psmodule.c",
-    "freetype/src/raster/raster.c",
-    "freetype/src/sfnt/sfnt.c",
-    "freetype/src/smooth/smooth.c",
-    "freetype/src/truetype/truetype.c",
-    "freetype/src/type1/type1.c",
-  ]
-  if (pdf_use_skia || pdf_use_skia_paths) {
-    sources += [
-      "freetype/src/base/ftfntfmt.c",
-      "freetype/src/base/ftfstype.c",
-      "freetype/src/base/fttype1.c",
+  config("freetype_public_includes_config") {
+    # The relative freetype/include path points to PDFium's custom config.
+    # The absolute path points to whatever copy of FreeType is in
+    # //third_party/freetype.
+    include_dirs = [
+      "freetype/include",
+      "//third_party/freetype/src/include",
     ]
+    defines = [
+      "FT_CONFIG_MODULES_H=<freetype-custom-config/ftmodule.h>",
+      "FT_CONFIG_OPTIONS_H=<freetype-custom-config/ftoption.h>",
+    ]
+  }
+
+  # Tests may link against this even if the production library doesn't,
+  # so it needs to be separate from it.
+  static_library("fx_freetype") {
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      "//build/config/compiler:no_chromium_code",
+      ":pdfium_third_party_config",
+
+      # Must be after no_chromium_code for warning flags to be ordered correctly.
+      ":fx_freetype_warnings",
+    ]
+
+    public_configs = [ ":freetype_public_includes_config" ]
+
+    defines = [ "FT2_BUILD_LIBRARY" ]
+    sources = [
+      "//third_party/freetype/src/include/freetype/config/ftconfig.h",
+      "//third_party/freetype/src/include/freetype/config/ftheader.h",
+      "//third_party/freetype/src/include/freetype/config/ftstdlib.h",
+      "//third_party/freetype/src/include/freetype/freetype.h",
+      "//third_party/freetype/src/include/freetype/ftadvanc.h",
+      "//third_party/freetype/src/include/freetype/ftbitmap.h",
+      "//third_party/freetype/src/include/freetype/ftcffdrv.h",
+      "//third_party/freetype/src/include/freetype/fterrdef.h",
+      "//third_party/freetype/src/include/freetype/fterrors.h",
+      "//third_party/freetype/src/include/freetype/ftglyph.h",
+      "//third_party/freetype/src/include/freetype/ftgzip.h",
+      "//third_party/freetype/src/include/freetype/ftimage.h",
+      "//third_party/freetype/src/include/freetype/ftincrem.h",
+      "//third_party/freetype/src/include/freetype/ftlcdfil.h",
+      "//third_party/freetype/src/include/freetype/ftlist.h",
+      "//third_party/freetype/src/include/freetype/ftmm.h",
+      "//third_party/freetype/src/include/freetype/ftmodapi.h",
+      "//third_party/freetype/src/include/freetype/ftmoderror.h",
+      "//third_party/freetype/src/include/freetype/ftobjs.h",
+      "//third_party/freetype/src/include/freetype/ftotval.h",
+      "//third_party/freetype/src/include/freetype/ftoutln.h",
+      "//third_party/freetype/src/include/freetype/ftrender.h",
+      "//third_party/freetype/src/include/freetype/ftsizes.h",
+      "//third_party/freetype/src/include/freetype/ftsnames.h",
+      "//third_party/freetype/src/include/freetype/ftstream.h",
+      "//third_party/freetype/src/include/freetype/ftsystem.h",
+      "//third_party/freetype/src/include/freetype/fttrigon.h",
+      "//third_party/freetype/src/include/freetype/ftttdrv.h",
+      "//third_party/freetype/src/include/freetype/fttypes.h",
+      "//third_party/freetype/src/include/freetype/internal/autohint.h",
+      "//third_party/freetype/src/include/freetype/internal/ftcalc.h",
+      "//third_party/freetype/src/include/freetype/internal/ftdebug.h",
+      "//third_party/freetype/src/include/freetype/internal/ftdriver.h",
+      "//third_party/freetype/src/include/freetype/internal/ftgloadr.h",
+      "//third_party/freetype/src/include/freetype/internal/fthash.h",
+      "//third_party/freetype/src/include/freetype/internal/ftmemory.h",
+      "//third_party/freetype/src/include/freetype/internal/ftobjs.h",
+      "//third_party/freetype/src/include/freetype/internal/ftpic.h",
+      "//third_party/freetype/src/include/freetype/internal/ftrfork.h",
+      "//third_party/freetype/src/include/freetype/internal/ftserv.h",
+      "//third_party/freetype/src/include/freetype/internal/ftstream.h",
+      "//third_party/freetype/src/include/freetype/internal/ftvalid.h",
+      "//third_party/freetype/src/include/freetype/internal/internal.h",
+      "//third_party/freetype/src/include/freetype/internal/psaux.h",
+      "//third_party/freetype/src/include/freetype/internal/pshints.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svcid.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svfntfmt.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svgldict.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svkern.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svmetric.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svmm.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svpostnm.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svprop.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svpscmap.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svpsinfo.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svsfnt.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svttcmap.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svtteng.h",
+      "//third_party/freetype/src/include/freetype/internal/services/svttglyf.h",
+      "//third_party/freetype/src/include/freetype/internal/sfnt.h",
+      "//third_party/freetype/src/include/freetype/internal/t1types.h",
+      "//third_party/freetype/src/include/freetype/internal/tttypes.h",
+      "//third_party/freetype/src/include/freetype/t1tables.h",
+      "//third_party/freetype/src/include/freetype/ttnameid.h",
+      "//third_party/freetype/src/include/freetype/tttables.h",
+      "//third_party/freetype/src/include/freetype/tttags.h",
+      "//third_party/freetype/src/include/ft2build.h",
+      "//third_party/freetype/src/src/base/ftbase.c",
+      "//third_party/freetype/src/src/base/ftbase.h",
+      "//third_party/freetype/src/src/base/ftbitmap.c",
+      "//third_party/freetype/src/src/base/ftglyph.c",
+      "//third_party/freetype/src/src/base/ftinit.c",
+      "//third_party/freetype/src/src/base/ftlcdfil.c",
+      "//third_party/freetype/src/src/base/ftmm.c",
+      "//third_party/freetype/src/src/base/ftsystem.c",
+      "//third_party/freetype/src/src/cff/cff.c",
+      "//third_party/freetype/src/src/cff/cffobjs.h",
+      "//third_party/freetype/src/src/cff/cfftypes.h",
+      "//third_party/freetype/src/src/cid/type1cid.c",
+      "//third_party/freetype/src/src/psaux/psaux.c",
+      "//third_party/freetype/src/src/pshinter/pshinter.c",
+      "//third_party/freetype/src/src/psnames/psmodule.c",
+      "//third_party/freetype/src/src/raster/raster.c",
+      "//third_party/freetype/src/src/sfnt/sfnt.c",
+      "//third_party/freetype/src/src/smooth/smooth.c",
+      "//third_party/freetype/src/src/truetype/truetype.c",
+      "//third_party/freetype/src/src/type1/type1.c",
+    ]
+    if (pdf_use_skia || pdf_use_skia_paths) {
+      sources += [
+        "//third_party/freetype/src/include/freetype/ftfntfmt.h",
+        "//third_party/freetype/src/include/freetype/ftsynth.h",
+        "//third_party/freetype/src/src/base/ftfntfmt.c",
+        "//third_party/freetype/src/src/base/ftfstype.c",
+        "//third_party/freetype/src/src/base/fttype1.c",
+      ]
+    }
   }
 }
 
@@ -194,83 +280,42 @@ static_library("fx_lcms2") {
   ]
 }
 
-# This is only used for standalone builds.
-config("jpeg_warnings") {
-  visibility = [ ":*" ]
-  if (is_clang) {
-    cflags = [ "-Wno-shift-negative-value" ]
+if (!build_with_chromium) {
+  declare_args() {
+    # Uses system libjpeg. If true, overrides use_libjpeg_turbo.
+    use_system_libjpeg = false
+
+    # Uses libjpeg_turbo as the jpeg implementation. Has no effect if
+    # use_system_libjpeg is set.
+    use_libjpeg_turbo = true
   }
-}
 
-static_library("jpeg") {
-  configs -= [ "//build/config/compiler:chromium_code" ]
-  configs += [
-    "//build/config/compiler:no_chromium_code",
-    ":pdfium_third_party_config",
+  config("system_libjpeg_config") {
+    libs = [ "jpeg" ]
+    defines = [ "USE_SYSTEM_LIBJPEG" ]
+  }
 
-    # Must be after no_chromium_code for warning flags to be ordered correctly.
-    ":jpeg_warnings",
-  ]
-  sources = [
-    "libjpeg/cderror.h",
-    "libjpeg/cdjpeg.h",
-    "libjpeg/fpdfapi_jcapimin.c",
-    "libjpeg/fpdfapi_jcapistd.c",
-    "libjpeg/fpdfapi_jccoefct.c",
-    "libjpeg/fpdfapi_jccolor.c",
-    "libjpeg/fpdfapi_jcdctmgr.c",
-    "libjpeg/fpdfapi_jchuff.c",
-    "libjpeg/fpdfapi_jcinit.c",
-    "libjpeg/fpdfapi_jcmainct.c",
-    "libjpeg/fpdfapi_jcmarker.c",
-    "libjpeg/fpdfapi_jcmaster.c",
-    "libjpeg/fpdfapi_jcomapi.c",
-    "libjpeg/fpdfapi_jcparam.c",
-    "libjpeg/fpdfapi_jcphuff.c",
-    "libjpeg/fpdfapi_jcprepct.c",
-    "libjpeg/fpdfapi_jcsample.c",
-    "libjpeg/fpdfapi_jctrans.c",
-    "libjpeg/fpdfapi_jdapimin.c",
-    "libjpeg/fpdfapi_jdapistd.c",
-    "libjpeg/fpdfapi_jdcoefct.c",
-    "libjpeg/fpdfapi_jdcolor.c",
-    "libjpeg/fpdfapi_jddctmgr.c",
-    "libjpeg/fpdfapi_jdhuff.c",
-    "libjpeg/fpdfapi_jdinput.c",
-    "libjpeg/fpdfapi_jdmainct.c",
-    "libjpeg/fpdfapi_jdmarker.c",
-    "libjpeg/fpdfapi_jdmaster.c",
-    "libjpeg/fpdfapi_jdmerge.c",
-    "libjpeg/fpdfapi_jdphuff.c",
-    "libjpeg/fpdfapi_jdpostct.c",
-    "libjpeg/fpdfapi_jdsample.c",
-    "libjpeg/fpdfapi_jdtrans.c",
-    "libjpeg/fpdfapi_jerror.c",
-    "libjpeg/fpdfapi_jfdctfst.c",
-    "libjpeg/fpdfapi_jfdctint.c",
-    "libjpeg/fpdfapi_jidctfst.c",
-    "libjpeg/fpdfapi_jidctint.c",
-    "libjpeg/fpdfapi_jidctred.c",
-    "libjpeg/fpdfapi_jmemmgr.c",
-    "libjpeg/fpdfapi_jmemnobs.c",
-    "libjpeg/fpdfapi_jutils.c",
-    "libjpeg/jchuff.h",
-    "libjpeg/jconfig.h",
-    "libjpeg/jdct.h",
-    "libjpeg/jdhuff.h",
-    "libjpeg/jerror.h",
-    "libjpeg/jinclude.h",
-    "libjpeg/jmemsys.h",
-    "libjpeg/jmorecfg.h",
-    "libjpeg/jpegint.h",
-    "libjpeg/jpeglib.h",
-    "libjpeg/jversion.h",
-    "libjpeg/makefile",
-    "libjpeg/transupp.h",
-  ]
-  deps = [
-    "..:fxcrt",
-  ]
+  config("libjpeg_turbo_config") {
+    defines = [ "USE_LIBJPEG_TURBO=1" ]
+  }
+
+  # This is a meta target that forwards to the system's libjpeg,
+  # third_party/libjpeg, or third_party/libjpeg_turbo depending on the build args
+  # declared in this file.
+  group("jpeg") {
+    if (use_system_libjpeg) {
+      public_configs = [ ":system_libjpeg_config" ]
+    } else if (use_libjpeg_turbo) {
+      public_deps = [
+        "//third_party/libjpeg_turbo:libjpeg",
+      ]
+      public_configs = [ ":libjpeg_turbo_config" ]
+    } else {
+      public_deps = [
+        "//third_party/libjpeg:libjpeg",
+      ]
+    }
+  }
 }
 
 config("fx_libopenjpeg_warnings") {
@@ -349,6 +394,9 @@ static_library("fx_lpng") {
 
   defines = []
   cflags = []
+  deps = [
+    "//third_party/zlib",
+  ]
 
   if (current_cpu == "x86" || current_cpu == "x64") {
     sources += [
@@ -387,6 +435,7 @@ if (pdf_enable_xfa) {
     }
     deps = [
       "//third_party:jpeg",
+      "//third_party/zlib",
     ]
     sources = [
       "libtiff/tif_aux.c",
@@ -430,43 +479,6 @@ if (pdf_enable_xfa) {
   }
 }
 
-# TODO(dsinclair): Remove if fixed upstream. https://crbug.com/507712
-config("fx_zlib_warnings") {
-  visibility = [ ":*" ]
-  if (is_clang) {
-    cflags = [ "-Wno-shift-negative-value" ]
-  }
-}
-
-static_library("fx_zlib") {
-  configs -= [ "//build/config/compiler:chromium_code" ]
-  configs += [
-    "//build/config/compiler:no_chromium_code",
-    ":pdfium_third_party_config",
-
-    # Must be after no_chromium_code for warning flags to be ordered correctly.
-    ":fx_zlib_warnings",
-  ]
-  sources = [
-    "zlib_v128/adler32.c",
-    "zlib_v128/compress.c",
-    "zlib_v128/crc32.c",
-    "zlib_v128/deflate.c",
-    "zlib_v128/gzclose.c",
-    "zlib_v128/gzlib.c",
-    "zlib_v128/gzread.c",
-    "zlib_v128/gzwrite.c",
-    "zlib_v128/infback.c",
-    "zlib_v128/inffast.c",
-    "zlib_v128/inflate.c",
-    "zlib_v128/inftrees.c",
-    "zlib_v128/trees.c",
-    "zlib_v128/uncompr.c",
-    "zlib_v128/zutil.c",
-  ]
-}
-
-# Can not be a static library due to lack of .cc files.
 source_set("pdfium_base") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
@@ -474,6 +486,18 @@ source_set("pdfium_base") {
     ":pdfium_third_party_config",
   ]
   sources = [
+    "base/allocator/partition_allocator/address_space_randomization.cc",
+    "base/allocator/partition_allocator/address_space_randomization.h",
+    "base/allocator/partition_allocator/oom.h",
+    "base/allocator/partition_allocator/page_allocator.cc",
+    "base/allocator/partition_allocator/page_allocator.h",
+    "base/allocator/partition_allocator/partition_alloc.cc",
+    "base/allocator/partition_allocator/partition_alloc.h",
+    "base/allocator/partition_allocator/spin_lock.cc",
+    "base/allocator/partition_allocator/spin_lock.h",
+    "base/base_export.h",
+    "base/bits.h",
+    "base/compiler_specific.h",
     "base/logging.h",
     "base/macros.h",
     "base/numerics/safe_conversions.h",
@@ -482,5 +506,8 @@ source_set("pdfium_base") {
     "base/numerics/safe_math_impl.h",
     "base/ptr_util.h",
     "base/stl_util.h",
+    "base/sys_byteorder.h",
+    "base/template_util.h",
+    "build/build_config.h",
   ]
 }

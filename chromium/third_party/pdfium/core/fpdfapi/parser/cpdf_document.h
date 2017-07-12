@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/fpdfapi/page/cpdf_image.h"
 #include "core/fpdfapi/parser/cpdf_indirect_object_holder.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fpdfdoc/cpdf_linklist.h"
@@ -26,7 +27,6 @@ class CPDF_DocRenderData;
 class CPDF_Font;
 class CPDF_FontEncoding;
 class CPDF_IccProfile;
-class CPDF_Image;
 class CPDF_LinearizedHeader;
 class CPDF_Parser;
 class CPDF_Pattern;
@@ -78,9 +78,9 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
                             bool bShading,
                             const CFX_Matrix& matrix);
 
-  CPDF_Image* LoadImageFromPageData(uint32_t dwStreamObjNum);
-  CPDF_StreamAcc* LoadFontFile(CPDF_Stream* pStream);
-  CPDF_IccProfile* LoadIccProfile(CPDF_Stream* pStream);
+  CFX_RetainPtr<CPDF_Image> LoadImageFromPageData(uint32_t dwStreamObjNum);
+  CFX_RetainPtr<CPDF_StreamAcc> LoadFontFile(CPDF_Stream* pStream);
+  CFX_RetainPtr<CPDF_IccProfile> LoadIccProfile(CPDF_Stream* pStream);
 
   void LoadDoc();
   void LoadLinearizedDoc(const CPDF_LinearizedHeader* pLinearizationParams);
@@ -89,7 +89,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   void CreateNewDoc();
   CPDF_Dictionary* CreateNewPage(int iPage);
 
-  CPDF_Font* AddStandardFont(const FX_CHAR* font, CPDF_FontEncoding* pEncoding);
+  CPDF_Font* AddStandardFont(const char* font, CPDF_FontEncoding* pEncoding);
   CPDF_Font* AddFont(CFX_Font* pFont, int charset, bool bVert);
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
   CPDF_Font* AddWindowsFont(LOGFONTA* pLogFont,
@@ -119,7 +119,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
       int charset,
       bool bVert,
       CFX_ByteString basefont,
-      std::function<void(FX_WCHAR, FX_WCHAR, CPDF_Array*)> Insert);
+      std::function<void(wchar_t, wchar_t, CPDF_Array*)> Insert);
   bool InsertDeletePDFPage(CPDF_Dictionary* pPages,
                            int nPagesToGo,
                            CPDF_Dictionary* pPageDict,

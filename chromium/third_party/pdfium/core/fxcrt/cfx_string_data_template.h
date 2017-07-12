@@ -35,7 +35,8 @@ class CFX_StringDataTemplate {
     int usableLen = (totalSize - overhead) / sizeof(CharType);
     ASSERT(usableLen >= nLen);
 
-    void* pData = FX_Alloc(uint8_t, totalSize);
+    void* pData = pdfium::base::PartitionAllocGeneric(
+        gStringPartitionAllocator.root(), totalSize, "CFX_StringDataTemplate");
     return new (pData) CFX_StringDataTemplate(nLen, usableLen);
   }
 
@@ -54,7 +55,8 @@ class CFX_StringDataTemplate {
   void Retain() { ++m_nRefs; }
   void Release() {
     if (--m_nRefs <= 0)
-      FX_Free(this);
+      pdfium::base::PartitionFreeGeneric(gStringPartitionAllocator.root(),
+                                         this);
   }
 
   bool CanOperateInPlace(FX_STRSIZE nTotalLen) const {
@@ -63,13 +65,13 @@ class CFX_StringDataTemplate {
 
   void CopyContents(const CFX_StringDataTemplate& other) {
     ASSERT(other.m_nDataLength <= m_nAllocLength);
-    FXSYS_memcpy(m_String, other.m_String,
-                 (other.m_nDataLength + 1) * sizeof(CharType));
+    memcpy(m_String, other.m_String,
+           (other.m_nDataLength + 1) * sizeof(CharType));
   }
 
   void CopyContents(const CharType* pStr, FX_STRSIZE nLen) {
     ASSERT(nLen >= 0 && nLen <= m_nAllocLength);
-    FXSYS_memcpy(m_String, pStr, nLen * sizeof(CharType));
+    memcpy(m_String, pStr, nLen * sizeof(CharType));
     m_String[nLen] = 0;
   }
 
@@ -77,7 +79,7 @@ class CFX_StringDataTemplate {
                       const CharType* pStr,
                       FX_STRSIZE nLen) {
     ASSERT(offset >= 0 && nLen >= 0 && offset + nLen <= m_nAllocLength);
-    FXSYS_memcpy(m_String + offset, pStr, nLen * sizeof(CharType));
+    memcpy(m_String + offset, pStr, nLen * sizeof(CharType));
     m_String[offset + nLen] = 0;
   }
 
@@ -110,7 +112,7 @@ class CFX_StringDataTemplate {
   ~CFX_StringDataTemplate() = delete;
 };
 
-extern template class CFX_StringDataTemplate<FX_CHAR>;
-extern template class CFX_StringDataTemplate<FX_WCHAR>;
+extern template class CFX_StringDataTemplate<char>;
+extern template class CFX_StringDataTemplate<wchar_t>;
 
 #endif  // CORE_FXCRT_CFX_STRING_DATA_TEMPLATE_H_

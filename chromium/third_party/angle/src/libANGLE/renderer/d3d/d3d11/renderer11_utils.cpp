@@ -1224,8 +1224,14 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
         static_cast<GLuint>(GetMaximumVertexOutputVectors(featureLevel)) * 4;
     caps->maxVertexTextureImageUnits =
         static_cast<GLuint>(GetMaximumVertexTextureUnits(featureLevel));
-    // Vertex Attrib Bindings not supported.
+
+    // Vertex Attribute Bindings are emulated on D3D11.
     caps->maxVertexAttribBindings = caps->maxVertexAttributes;
+    // Experimental testing confirmed there is no explicit limit on maximum buffer offset in D3D11.
+    caps->maxVertexAttribRelativeOffset = std::numeric_limits<GLint>::max();
+    // Experimental testing confirmed 2048 is the maximum stride that D3D11 can support on all
+    // platforms.
+    caps->maxVertexAttribStride = 2048;
 
     // Fragment shader limits
     caps->maxFragmentUniformComponents =
@@ -1255,6 +1261,9 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     // Aggregate shader limits
     caps->maxUniformBufferBindings = caps->maxVertexUniformBlocks + caps->maxFragmentUniformBlocks;
     caps->maxUniformBlockSize = GetMaximumConstantBufferSize(featureLevel);
+
+    // TODO(oetuaho): Get a more accurate limit. For now using the minimum requirement for GLES 3.1.
+    caps->maxUniformLocations = 1024;
 
     // With DirectX 11.1, constant buffer offset and size must be a multiple of 16 constants of 16 bytes each.
     // https://msdn.microsoft.com/en-us/library/windows/desktop/hh404649%28v=vs.85%29.aspx
@@ -1688,6 +1697,29 @@ D3D11_QUERY ConvertQueryType(GLenum queryType)
             UNREACHABLE();
             return D3D11_QUERY_EVENT;
     }
+}
+
+// Get the D3D11 write mask covering all color channels of a given format
+UINT8 GetColorMask(const gl::InternalFormat *formatInfo)
+{
+    UINT8 mask = 0;
+    if (formatInfo->redBits > 0)
+    {
+        mask |= D3D11_COLOR_WRITE_ENABLE_RED;
+    }
+    if (formatInfo->greenBits > 0)
+    {
+        mask |= D3D11_COLOR_WRITE_ENABLE_GREEN;
+    }
+    if (formatInfo->blueBits > 0)
+    {
+        mask |= D3D11_COLOR_WRITE_ENABLE_BLUE;
+    }
+    if (formatInfo->alphaBits > 0)
+    {
+        mask |= D3D11_COLOR_WRITE_ENABLE_ALPHA;
+    }
+    return mask;
 }
 
 }  // namespace gl_d3d11

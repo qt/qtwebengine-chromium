@@ -13,7 +13,7 @@
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxge/fx_dib.h"
-#include "xfa/fxbarcode/BC_Library.h"
+#include "fxbarcode/BC_Library.h"
 
 class CBC_CodeBase;
 class CFX_Font;
@@ -46,15 +46,14 @@ class CFX_Barcode {
   bool SetCalChecksum(bool state);
 
   bool SetFont(CFX_Font* pFont);
-  bool SetFontSize(FX_FLOAT size);
+  bool SetFontSize(float size);
   bool SetFontColor(FX_ARGB color);
 
   bool SetTextLocation(BC_TEXT_LOC location);
 
   bool SetWideNarrowRatio(int32_t ratio);
-  bool SetStartChar(FX_CHAR start);
-  bool SetEndChar(FX_CHAR end);
-  bool SetVersion(int32_t version);
+  bool SetStartChar(char start);
+  bool SetEndChar(char end);
   bool SetErrorCorrectionLevel(int32_t level);
   bool SetTruncated(bool truncated);
 

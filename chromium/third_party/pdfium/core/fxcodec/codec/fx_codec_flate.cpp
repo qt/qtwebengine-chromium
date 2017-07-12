@@ -13,83 +13,86 @@
 
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/fx_ext.h"
+#include "third_party/base/numerics/safe_conversions.h"
 #include "third_party/base/ptr_util.h"
-#include "third_party/zlib_v128/zlib.h"
+#include "third_party/zlib/zlib.h"
 
 extern "C" {
+
 static void* my_alloc_func(void* opaque,
                            unsigned int items,
                            unsigned int size) {
   return FX_Alloc2D(uint8_t, items, size);
 }
+
 static void my_free_func(void* opaque, void* address) {
   FX_Free(address);
-}
-static int FPDFAPI_FlateGetTotalOut(void* context) {
-  return ((z_stream*)context)->total_out;
-}
-static int FPDFAPI_FlateGetTotalIn(void* context) {
-  return ((z_stream*)context)->total_in;
-}
-
-static bool FPDFAPI_FlateCompress(unsigned char* dest_buf,
-                                  unsigned long* dest_size,
-                                  const unsigned char* src_buf,
-                                  unsigned long src_size) {
-  return compress(dest_buf, dest_size, src_buf, src_size) == Z_OK;
-}
-
-void* FPDFAPI_FlateInit(void* (*alloc_func)(void*, unsigned int, unsigned int),
-                        void (*free_func)(void*, void*)) {
-  z_stream* p = (z_stream*)alloc_func(0, 1, sizeof(z_stream));
-  if (!p)
-    return nullptr;
-
-  FXSYS_memset(p, 0, sizeof(z_stream));
-  p->zalloc = alloc_func;
-  p->zfree = free_func;
-  inflateInit(p);
-  return p;
-}
-
-void FPDFAPI_FlateInput(void* context,
-                        const unsigned char* src_buf,
-                        unsigned int src_size) {
-  ((z_stream*)context)->next_in = (unsigned char*)src_buf;
-  ((z_stream*)context)->avail_in = src_size;
-}
-
-int FPDFAPI_FlateOutput(void* context,
-                        unsigned char* dest_buf,
-                        unsigned int dest_size) {
-  ((z_stream*)context)->next_out = dest_buf;
-  ((z_stream*)context)->avail_out = dest_size;
-  unsigned int pre_pos = (unsigned int)FPDFAPI_FlateGetTotalOut(context);
-  int ret = inflate((z_stream*)context, Z_SYNC_FLUSH);
-  unsigned int post_pos = (unsigned int)FPDFAPI_FlateGetTotalOut(context);
-  unsigned int written = post_pos - pre_pos;
-  if (written < dest_size) {
-    FXSYS_memset(dest_buf + written, '\0', dest_size - written);
-  }
-  return ret;
-}
-
-int FPDFAPI_FlateGetAvailIn(void* context) {
-  return ((z_stream*)context)->avail_in;
-}
-
-int FPDFAPI_FlateGetAvailOut(void* context) {
-  return ((z_stream*)context)->avail_out;
-}
-
-void FPDFAPI_FlateEnd(void* context) {
-  inflateEnd((z_stream*)context);
-  ((z_stream*)context)->zfree(0, context);
 }
 
 }  // extern "C"
 
 namespace {
+
+uint32_t FlateGetPossiblyTruncatedTotalOut(void* context) {
+  return pdfium::base::saturated_cast<uint32_t>(
+      static_cast<z_stream*>(context)->total_out);
+}
+
+uint32_t FlateGetPossiblyTruncatedTotalIn(void* context) {
+  return pdfium::base::saturated_cast<uint32_t>(
+      static_cast<z_stream*>(context)->total_in);
+}
+
+bool FlateCompress(unsigned char* dest_buf,
+                   unsigned long* dest_size,
+                   const unsigned char* src_buf,
+                   uint32_t src_size) {
+  return compress(dest_buf, dest_size, src_buf, src_size) == Z_OK;
+}
+
+void* FlateInit() {
+  z_stream* p = FX_Alloc(z_stream, 1);
+  memset(p, 0, sizeof(z_stream));
+  p->zalloc = my_alloc_func;
+  p->zfree = my_free_func;
+  inflateInit(p);
+  return p;
+}
+
+void FlateInput(void* context,
+                const unsigned char* src_buf,
+                uint32_t src_size) {
+  static_cast<z_stream*>(context)->next_in =
+      const_cast<unsigned char*>(src_buf);
+  static_cast<z_stream*>(context)->avail_in = src_size;
+}
+
+uint32_t FlateOutput(void* context,
+                     unsigned char* dest_buf,
+                     uint32_t dest_size) {
+  static_cast<z_stream*>(context)->next_out = dest_buf;
+  static_cast<z_stream*>(context)->avail_out = dest_size;
+  uint32_t pre_pos = FlateGetPossiblyTruncatedTotalOut(context);
+  int ret = inflate(static_cast<z_stream*>(context), Z_SYNC_FLUSH);
+
+  uint32_t post_pos = FlateGetPossiblyTruncatedTotalOut(context);
+  ASSERT(post_pos >= pre_pos);
+
+  uint32_t written = post_pos - pre_pos;
+  if (written < dest_size)
+    memset(dest_buf + written, '\0', dest_size - written);
+
+  return ret;
+}
+
+uint32_t FlateGetAvailOut(void* context) {
+  return static_cast<z_stream*>(context)->avail_out;
+}
+
+void FlateEnd(void* context) {
+  inflateEnd(static_cast<z_stream*>(context));
+  static_cast<z_stream*>(context)->zfree(0, context);
+}
 
 class CLZWDecoder {
  public:
@@ -158,7 +161,7 @@ int CLZWDecoder::Decode(uint8_t* dest_buf,
   m_pOutput = dest_buf;
   m_Early = bEarlyChange ? 1 : 0;
   m_nCodes = 0;
-  uint32_t old_code = (uint32_t)-1;
+  uint32_t old_code = 0xFFFFFFFF;
   uint8_t last_char = 0;
   while (1) {
     if (m_InPos + m_CodeLen > src_size * 8) {
@@ -190,20 +193,19 @@ int CLZWDecoder::Decode(uint8_t* dest_buf,
       }
       m_OutPos++;
       last_char = (uint8_t)code;
-      if (old_code != (uint32_t)-1) {
+      if (old_code != 0xFFFFFFFF)
         AddCode(old_code, last_char);
-      }
       old_code = code;
     } else if (code == 256) {
       m_CodeLen = 9;
       m_nCodes = 0;
-      old_code = (uint32_t)-1;
+      old_code = 0xFFFFFFFF;
     } else if (code == 257) {
       break;
     } else {
-      if (old_code == (uint32_t)-1) {
+      if (old_code == 0xFFFFFFFF)
         return 2;
-      }
+
       m_StackLen = 0;
       if (code >= m_nCodes + 258) {
         if (m_StackLen < sizeof(m_DecodeStack)) {
@@ -242,9 +244,9 @@ int CLZWDecoder::Decode(uint8_t* dest_buf,
 
 uint8_t PathPredictor(int a, int b, int c) {
   int p = a + b - c;
-  int pa = FXSYS_abs(p - a);
-  int pb = FXSYS_abs(p - b);
-  int pc = FXSYS_abs(p - c);
+  int pa = abs(p - a);
+  int pb = abs(p - b);
+  int pc = abs(p - c);
   if (pa <= pb && pa <= pc)
     return (uint8_t)a;
   if (pb <= pc)
@@ -288,7 +290,7 @@ void PNG_PredictLine(uint8_t* pDestData,
   int BytesPerPixel = (bpc * nColors + 7) / 8;
   uint8_t tag = pSrcData[0];
   if (tag == 0) {
-    FXSYS_memmove(pDestData, pSrcData + 1, row_size);
+    memmove(pDestData, pSrcData + 1, row_size);
     return;
   }
   for (int byte = 0; byte < row_size; byte++) {
@@ -370,7 +372,7 @@ bool PNG_Predictor(uint8_t*& data_buf,
       if ((row + 1) * (move_size + 1) > (int)data_size) {
         move_size = last_row_size - 1;
       }
-      FXSYS_memmove(pDestData, pSrcData + 1, move_size);
+      memmove(pDestData, pSrcData + 1, move_size);
       pSrcData += move_size + 1;
       pDestData += move_size;
       byte_cnt += move_size;
@@ -505,109 +507,66 @@ void FlateUncompress(const uint8_t* src_buf,
                      uint8_t*& dest_buf,
                      uint32_t& dest_size,
                      uint32_t& offset) {
-  uint32_t guess_size = orig_size ? orig_size : src_size * 2;
-  const uint32_t kStepSize = 10240;
-  uint32_t alloc_step = orig_size ? kStepSize : std::min(src_size, kStepSize);
-  static const uint32_t kMaxInitialAllocSize = 10000000;
-  if (guess_size > kMaxInitialAllocSize) {
-    guess_size = kMaxInitialAllocSize;
-    alloc_step = kMaxInitialAllocSize;
-  }
-  uint32_t buf_size = guess_size;
-  uint32_t last_buf_size = buf_size;
-
   dest_buf = nullptr;
   dest_size = 0;
-  void* context = FPDFAPI_FlateInit(my_alloc_func, my_free_func);
+  void* context = FlateInit();
   if (!context)
     return;
 
+  FlateInput(context, src_buf, src_size);
+
+  const uint32_t kMaxInitialAllocSize = 10000000;
+  uint32_t guess_size = orig_size ? orig_size : src_size * 2;
+  guess_size = std::min(guess_size, kMaxInitialAllocSize);
+
+  uint32_t buf_size = guess_size;
+  uint32_t last_buf_size = buf_size;
   std::unique_ptr<uint8_t, FxFreeDeleter> guess_buf(
       FX_Alloc(uint8_t, guess_size + 1));
   guess_buf.get()[guess_size] = '\0';
 
-  FPDFAPI_FlateInput(context, src_buf, src_size);
-
-  if (src_size < kStepSize) {
-    // This is the old implementation.
-    uint8_t* cur_buf = guess_buf.get();
-    while (1) {
-      int32_t ret = FPDFAPI_FlateOutput(context, cur_buf, buf_size);
-      if (ret != Z_OK)
-        break;
-      int32_t avail_buf_size = FPDFAPI_FlateGetAvailOut(context);
-      if (avail_buf_size != 0)
-        break;
-
-      uint32_t old_size = guess_size;
-      guess_size += alloc_step;
-      if (guess_size < old_size || guess_size + 1 < guess_size) {
-        FPDFAPI_FlateEnd(context);
-        return;
-      }
-
-      {
-        uint8_t* new_buf =
-            FX_Realloc(uint8_t, guess_buf.release(), guess_size + 1);
-        guess_buf.reset(new_buf);
-      }
-      guess_buf.get()[guess_size] = '\0';
-      cur_buf = guess_buf.get() + old_size;
-      buf_size = guess_size - old_size;
-    }
-    dest_size = FPDFAPI_FlateGetTotalOut(context);
-    offset = FPDFAPI_FlateGetTotalIn(context);
-    if (guess_size / 2 > dest_size) {
-      {
-        uint8_t* new_buf =
-            FX_Realloc(uint8_t, guess_buf.release(), dest_size + 1);
-        guess_buf.reset(new_buf);
-      }
-      guess_size = dest_size;
-      guess_buf.get()[guess_size] = '\0';
-    }
-    dest_buf = guess_buf.release();
-  } else {
-    std::vector<uint8_t*> result_tmp_bufs;
-    uint8_t* cur_buf = guess_buf.release();
-    while (1) {
-      int32_t ret = FPDFAPI_FlateOutput(context, cur_buf, buf_size);
-      int32_t avail_buf_size = FPDFAPI_FlateGetAvailOut(context);
-      if (ret != Z_OK) {
-        last_buf_size = buf_size - avail_buf_size;
-        result_tmp_bufs.push_back(cur_buf);
-        break;
-      }
-      if (avail_buf_size != 0) {
-        last_buf_size = buf_size - avail_buf_size;
-        result_tmp_bufs.push_back(cur_buf);
-        break;
-      }
+  std::vector<uint8_t*> result_tmp_bufs;
+  uint8_t* cur_buf = guess_buf.release();
+  while (1) {
+    uint32_t ret = FlateOutput(context, cur_buf, buf_size);
+    uint32_t avail_buf_size = FlateGetAvailOut(context);
+    if (ret != Z_OK || avail_buf_size != 0) {
+      last_buf_size = buf_size - avail_buf_size;
       result_tmp_bufs.push_back(cur_buf);
-      cur_buf = FX_Alloc(uint8_t, buf_size + 1);
-      cur_buf[buf_size] = '\0';
+      break;
     }
-    dest_size = FPDFAPI_FlateGetTotalOut(context);
-    offset = FPDFAPI_FlateGetTotalIn(context);
-    if (result_tmp_bufs.size() == 1) {
-      dest_buf = result_tmp_bufs[0];
-    } else {
-      uint8_t* result_buf = FX_Alloc(uint8_t, dest_size);
-      uint32_t result_pos = 0;
-      for (size_t i = 0; i < result_tmp_bufs.size(); i++) {
-        uint8_t* tmp_buf = result_tmp_bufs[i];
-        uint32_t tmp_buf_size = buf_size;
-        if (i == result_tmp_bufs.size() - 1) {
-          tmp_buf_size = last_buf_size;
-        }
-        FXSYS_memcpy(result_buf + result_pos, tmp_buf, tmp_buf_size);
-        result_pos += tmp_buf_size;
-        FX_Free(result_tmp_bufs[i]);
-      }
-      dest_buf = result_buf;
-    }
+    result_tmp_bufs.push_back(cur_buf);
+    cur_buf = FX_Alloc(uint8_t, buf_size + 1);
+    cur_buf[buf_size] = '\0';
   }
-  FPDFAPI_FlateEnd(context);
+
+  // The TotalOut size returned from the library may not be big enough to
+  // handle the content the library returns. We can only handle items
+  // up to 4GB in size.
+  dest_size = FlateGetPossiblyTruncatedTotalOut(context);
+  offset = FlateGetPossiblyTruncatedTotalIn(context);
+  if (result_tmp_bufs.size() == 1) {
+    dest_buf = result_tmp_bufs[0];
+  } else {
+    uint8_t* result_buf = FX_Alloc(uint8_t, dest_size);
+    uint32_t result_pos = 0;
+    uint32_t remaining = dest_size;
+    for (size_t i = 0; i < result_tmp_bufs.size(); i++) {
+      uint8_t* tmp_buf = result_tmp_bufs[i];
+      uint32_t tmp_buf_size = buf_size;
+      if (i == result_tmp_bufs.size() - 1)
+        tmp_buf_size = last_buf_size;
+
+      uint32_t cp_size = std::min(tmp_buf_size, remaining);
+      memcpy(result_buf + result_pos, tmp_buf, cp_size);
+      result_pos += cp_size;
+      remaining -= cp_size;
+
+      FX_Free(result_tmp_bufs[i]);
+    }
+    dest_buf = result_buf;
+  }
+  FlateEnd(context);
 }
 
 }  // namespace
@@ -656,15 +615,16 @@ CCodec_FlateScanlineDecoder::CCodec_FlateScanlineDecoder() {
   m_pPredictRaw = nullptr;
   m_LeftOver = 0;
 }
+
 CCodec_FlateScanlineDecoder::~CCodec_FlateScanlineDecoder() {
   FX_Free(m_pScanline);
   FX_Free(m_pLastLine);
   FX_Free(m_pPredictBuffer);
   FX_Free(m_pPredictRaw);
-  if (m_pFlate) {
-    FPDFAPI_FlateEnd(m_pFlate);
-  }
+  if (m_pFlate)
+    FlateEnd(m_pFlate);
 }
+
 void CCodec_FlateScanlineDecoder::Create(const uint8_t* src_buf,
                                          uint32_t src_size,
                                          int width,
@@ -709,28 +669,30 @@ void CCodec_FlateScanlineDecoder::Create(const uint8_t* src_buf,
     }
   }
 }
+
 bool CCodec_FlateScanlineDecoder::v_Rewind() {
-  if (m_pFlate) {
-    FPDFAPI_FlateEnd(m_pFlate);
-  }
-  m_pFlate = FPDFAPI_FlateInit(my_alloc_func, my_free_func);
-  if (!m_pFlate) {
+  if (m_pFlate)
+    FlateEnd(m_pFlate);
+
+  m_pFlate = FlateInit();
+  if (!m_pFlate)
     return false;
-  }
-  FPDFAPI_FlateInput(m_pFlate, m_SrcBuf, m_SrcSize);
+
+  FlateInput(m_pFlate, m_SrcBuf, m_SrcSize);
   m_LeftOver = 0;
   return true;
 }
+
 uint8_t* CCodec_FlateScanlineDecoder::v_GetNextLine() {
   if (m_Predictor) {
     if (m_Pitch == m_PredictPitch) {
       if (m_Predictor == 2) {
-        FPDFAPI_FlateOutput(m_pFlate, m_pPredictRaw, m_PredictPitch + 1);
+        FlateOutput(m_pFlate, m_pPredictRaw, m_PredictPitch + 1);
         PNG_PredictLine(m_pScanline, m_pPredictRaw, m_pLastLine,
                         m_BitsPerComponent, m_Colors, m_Columns);
-        FXSYS_memcpy(m_pLastLine, m_pScanline, m_PredictPitch);
+        memcpy(m_pLastLine, m_pScanline, m_PredictPitch);
       } else {
-        FPDFAPI_FlateOutput(m_pFlate, m_pScanline, m_Pitch);
+        FlateOutput(m_pFlate, m_pScanline, m_Pitch);
         TIFF_PredictLine(m_pScanline, m_PredictPitch, m_bpc, m_nComps,
                          m_OutputWidth);
       }
@@ -739,38 +701,38 @@ uint8_t* CCodec_FlateScanlineDecoder::v_GetNextLine() {
       size_t read_leftover =
           m_LeftOver > bytes_to_go ? bytes_to_go : m_LeftOver;
       if (read_leftover) {
-        FXSYS_memcpy(m_pScanline,
-                     m_pPredictBuffer + m_PredictPitch - m_LeftOver,
-                     read_leftover);
+        memcpy(m_pScanline, m_pPredictBuffer + m_PredictPitch - m_LeftOver,
+               read_leftover);
         m_LeftOver -= read_leftover;
         bytes_to_go -= read_leftover;
       }
       while (bytes_to_go) {
         if (m_Predictor == 2) {
-          FPDFAPI_FlateOutput(m_pFlate, m_pPredictRaw, m_PredictPitch + 1);
+          FlateOutput(m_pFlate, m_pPredictRaw, m_PredictPitch + 1);
           PNG_PredictLine(m_pPredictBuffer, m_pPredictRaw, m_pLastLine,
                           m_BitsPerComponent, m_Colors, m_Columns);
-          FXSYS_memcpy(m_pLastLine, m_pPredictBuffer, m_PredictPitch);
+          memcpy(m_pLastLine, m_pPredictBuffer, m_PredictPitch);
         } else {
-          FPDFAPI_FlateOutput(m_pFlate, m_pPredictBuffer, m_PredictPitch);
+          FlateOutput(m_pFlate, m_pPredictBuffer, m_PredictPitch);
           TIFF_PredictLine(m_pPredictBuffer, m_PredictPitch, m_BitsPerComponent,
                            m_Colors, m_Columns);
         }
         size_t read_bytes =
             m_PredictPitch > bytes_to_go ? bytes_to_go : m_PredictPitch;
-        FXSYS_memcpy(m_pScanline + m_Pitch - bytes_to_go, m_pPredictBuffer,
-                     read_bytes);
+        memcpy(m_pScanline + m_Pitch - bytes_to_go, m_pPredictBuffer,
+               read_bytes);
         m_LeftOver += m_PredictPitch - read_bytes;
         bytes_to_go -= read_bytes;
       }
     }
   } else {
-    FPDFAPI_FlateOutput(m_pFlate, m_pScanline, m_Pitch);
+    FlateOutput(m_pFlate, m_pScanline, m_Pitch);
   }
   return m_pScanline;
 }
+
 uint32_t CCodec_FlateScanlineDecoder::GetSrcOffset() {
-  return FPDFAPI_FlateGetTotalIn(m_pFlate);
+  return FlateGetPossiblyTruncatedTotalIn(m_pFlate);
 }
 
 std::unique_ptr<CCodec_ScanlineDecoder> CCodec_FlateModule::CreateDecoder(
@@ -813,8 +775,8 @@ uint32_t CCodec_FlateModule::FlateOrLZWDecode(bool bLZW,
   }
   if (bLZW) {
     {
-      std::unique_ptr<CLZWDecoder> decoder(new CLZWDecoder);
-      dest_size = (uint32_t)-1;
+      auto decoder = pdfium::MakeUnique<CLZWDecoder>();
+      dest_size = 0xFFFFFFFF;
       offset = src_size;
       int err =
           decoder->Decode(nullptr, dest_size, src_buf, offset, bEarlyChange);
@@ -823,7 +785,7 @@ uint32_t CCodec_FlateModule::FlateOrLZWDecode(bool bLZW,
       }
     }
     {
-      std::unique_ptr<CLZWDecoder> decoder(new CLZWDecoder);
+      auto decoder = pdfium::MakeUnique<CLZWDecoder>();
       dest_buf = FX_Alloc(uint8_t, dest_size + 1);
       dest_buf[dest_size] = '\0';
       decoder->Decode(dest_buf, dest_size, src_buf, offset, bEarlyChange);
@@ -852,7 +814,7 @@ bool CCodec_FlateModule::Encode(const uint8_t* src_buf,
   *dest_size = src_size + src_size / 1000 + 12;
   *dest_buf = FX_Alloc(uint8_t, *dest_size);
   unsigned long temp_size = *dest_size;
-  if (!FPDFAPI_FlateCompress(*dest_buf, &temp_size, src_buf, src_size))
+  if (!FlateCompress(*dest_buf, &temp_size, src_buf, src_size))
     return false;
 
   *dest_size = (uint32_t)temp_size;
@@ -864,7 +826,7 @@ bool CCodec_FlateModule::PngEncode(const uint8_t* src_buf,
                                    uint8_t** dest_buf,
                                    uint32_t* dest_size) {
   uint8_t* pSrcBuf = FX_Alloc(uint8_t, src_size);
-  FXSYS_memcpy(pSrcBuf, src_buf, src_size);
+  memcpy(pSrcBuf, src_buf, src_size);
   PNG_PredictorEncode(&pSrcBuf, &src_size);
   bool ret = Encode(pSrcBuf, src_size, dest_buf, dest_size);
   FX_Free(pSrcBuf);

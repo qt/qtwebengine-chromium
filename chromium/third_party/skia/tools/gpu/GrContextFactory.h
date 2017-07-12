@@ -83,9 +83,6 @@ public:
         kLastContextType = kVulkan_ContextType
     };
 
-    //! OpenGL or OpenGL ES context depending on the platform. To be removed.
-    static const ContextType kNativeGL_ContextType;
-
     static const int kContextTypeCnt = kLastContextType + 1;
 
     /**
@@ -97,22 +94,11 @@ public:
         kDisableNVPR                   = 0x1,
         kUseInstanced                  = 0x2,
         kAllowSRGBWithoutDecodeControl = 0x4,
+        kAvoidStencilBuffers           = 0x8,
 
-        kRequireNVPRSupport            = 0x8,
-        kRequireSRGBSupport            = 0x10
+        kRequireNVPRSupport            = 0x10,
+        kRequireSRGBSupport            = 0x20,
     };
-
-    static ContextType NativeContextTypeForBackend(GrBackend backend) {
-        switch (backend) {
-            case kOpenGL_GrBackend:
-                return kNativeGL_ContextType;
-            case kVulkan_GrBackend:
-                return kVulkan_ContextType;
-            default:
-                SkFAIL("Unknown backend");
-                return kNullGL_ContextType;
-        }
-    }
 
     static bool IsRenderingContext(ContextType type) {
         switch (type) {

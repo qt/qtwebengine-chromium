@@ -200,6 +200,16 @@ FieldAccess AccessBuilder::ForJSGeneratorObjectInputOrDebugPos() {
 }
 
 // static
+FieldAccess AccessBuilder::ForJSAsyncGeneratorObjectAwaitInputOrDebugPos() {
+  FieldAccess access = {
+      kTaggedBase,         JSAsyncGeneratorObject::kAwaitInputOrDebugPosOffset,
+      Handle<Name>(),      MaybeHandle<Map>(),
+      Type::NonInternal(), MachineType::AnyTagged(),
+      kFullWriteBarrier};
+  return access;
+}
+
+// static
 FieldAccess AccessBuilder::ForJSGeneratorObjectRegisterFile() {
   FieldAccess access = {
       kTaggedBase,         JSGeneratorObject::kRegisterFileOffset,
@@ -727,9 +737,9 @@ FieldAccess AccessBuilder::ForArgumentsCallee() {
 FieldAccess AccessBuilder::ForFixedArraySlot(
     size_t index, WriteBarrierKind write_barrier_kind) {
   int offset = FixedArray::OffsetOfElementAt(static_cast<int>(index));
-  FieldAccess access = {kTaggedBase,         offset,
-                        Handle<Name>(),      MaybeHandle<Map>(),
-                        Type::NonInternal(), MachineType::AnyTagged(),
+  FieldAccess access = {kTaggedBase,       offset,
+                        Handle<Name>(),    MaybeHandle<Map>(),
+                        Type::Any(),       MachineType::AnyTagged(),
                         write_barrier_kind};
   return access;
 }

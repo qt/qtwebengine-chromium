@@ -45,8 +45,8 @@ ScopedFontTransform::~ScopedFontTransform() {
 
 FX_RECT FXGE_GetGlyphsBBox(const std::vector<FXTEXT_GLYPHPOS>& glyphs,
                            int anti_alias,
-                           FX_FLOAT retinaScaleX,
-                           FX_FLOAT retinaScaleY) {
+                           float retinaScaleX,
+                           float retinaScaleY) {
   FX_RECT rect(0, 0, 0, 0);
   bool bStarted = false;
   for (const FXTEXT_GLYPHPOS& glyph : glyphs) {
@@ -59,7 +59,7 @@ FX_RECT FXGE_GetGlyphsBBox(const std::vector<FXTEXT_GLYPHPOS>& glyphs,
     if (!char_left.IsValid())
       continue;
 
-    FX_SAFE_INT32 char_width = pGlyph->m_Bitmap.GetWidth();
+    FX_SAFE_INT32 char_width = pGlyph->m_pBitmap->GetWidth();
     char_width /= retinaScaleX;
     if (anti_alias == FXFT_RENDER_MODE_LCD)
       char_width /= 3;
@@ -75,7 +75,7 @@ FX_RECT FXGE_GetGlyphsBBox(const std::vector<FXTEXT_GLYPHPOS>& glyphs,
     if (!char_top.IsValid())
       continue;
 
-    FX_SAFE_INT32 char_height = pGlyph->m_Bitmap.GetHeight();
+    FX_SAFE_INT32 char_height = pGlyph->m_pBitmap->GetHeight();
     char_height /= retinaScaleY;
     if (!char_height.IsValid())
       continue;

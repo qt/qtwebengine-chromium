@@ -5,16 +5,16 @@
  * found in the LICENSE file.
  */
 
-
 #include "GrGLCaps.h"
-
 #include "GrContextOptions.h"
 #include "GrGLContext.h"
 #include "GrGLRenderTarget.h"
+#include "GrGLTexture.h"
 #include "GrShaderCaps.h"
-#include "instanced/GLInstancedRendering.h"
+#include "GrSurfaceProxyPriv.h"
 #include "SkTSearch.h"
 #include "SkTSort.h"
+#include "instanced/GLInstancedRendering.h"
 
 GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
                    const GrGLContextInfo& ctxInfo,
@@ -53,6 +53,7 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fDoManualMipmapping = false;
     fSRGBDecodeDisableSupport = false;
     fSRGBDecodeDisableAffectsMipmaps = false;
+    fClearToBoundaryValuesIsBroken = false;
 
     fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;
 
@@ -290,17 +291,6 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
             ctxInfo.glslGeneration() >= k330_GrGLSLGeneration; // We use this value for GLSL ES 3.0.
     }
 
-    if (ctxInfo.hasExtension("GL_EXT_shader_pixel_local_storage")) {
-        #define GL_MAX_SHADER_PIXEL_LOCAL_STORAGE_FAST_SIZE_EXT 0x8F63
-        GR_GL_GetIntegerv(gli, GL_MAX_SHADER_PIXEL_LOCAL_STORAGE_FAST_SIZE_EXT,
-                          &shaderCaps->fPixelLocalStorageSize);
-        shaderCaps->fPLSPathRenderingSupport = shaderCaps->fFBFetchSupport;
-    }
-    else {
-        shaderCaps->fPixelLocalStorageSize = 0;
-        shaderCaps->fPLSPathRenderingSupport = false;
-    }
-
     // Protect ourselves against tracking huge amounts of texture state.
     static const uint8_t kMaxSaneSamplers = 32;
     GrGLint maxSamplers;
@@ -355,23 +345,6 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
      * GrCaps fields
      **************************************************************************/
 
-    // We need dual source blending and the ability to disable multisample in order to support mixed
-    // samples in every corner case. We only use mixed samples if the stencil-and-cover path
-    // renderer is available and enabled; no other path renderers support this feature.
-    if (fMultisampleDisableSupport &&
-        shaderCaps->dualSourceBlendingSupport() &&
-        fShaderCaps->pathRenderingSupport() &&
-        (contextOptions.fGpuPathRenderers & GrContextOptions::GpuPathRenderers::kStencilAndCover)) {
-        fUsesMixedSamples = ctxInfo.hasExtension("GL_NV_framebuffer_mixed_samples") ||
-                ctxInfo.hasExtension("GL_CHROMIUM_framebuffer_mixed_samples");
-        // Workaround NVIDIA bug related to glInvalidateFramebuffer and mixed samples.
-        if (fUsesMixedSamples && (kNVIDIA_GrGLDriver == ctxInfo.driver() ||
-                                  kChromium_GrGLDriver == ctxInfo.driver())) {
-            fDiscardRenderTargetSupport = false;
-            fInvalidateFBType = kNone_InvalidateFBType;
-        }
-    }
-
     // SGX and Mali GPUs that are based on a tiled-deferred architecture that have trouble with
     // frequently changing VBOs. We've measured a performance increase using non-VBO vertex
     // data for dynamic content on these GPUs. Perhaps we should read the renderer string and
@@ -384,24 +357,12 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         fPreferClientSideDynamicBuffers = true;
     }
 
-    // fUsesMixedSamples must be set before calling initFSAASupport.
-    this->initFSAASupport(ctxInfo, gli);
-    this->initBlendEqationSupport(ctxInfo);
-    this->initStencilFormats(ctxInfo);
-
-    if (kGL_GrGLStandard == standard) {
-        // we could also look for GL_ATI_separate_stencil extension or
-        // GL_EXT_stencil_two_side but they use different function signatures
-        // than GL2.0+ (and than each other).
-        fTwoSidedStencilSupport = (ctxInfo.version() >= GR_GL_VER(2,0));
-        // supported on GL 1.4 and higher or by extension
-        fStencilWrapOpsSupport = (ctxInfo.version() >= GR_GL_VER(1,4)) ||
-                                  ctxInfo.hasExtension("GL_EXT_stencil_wrap");
-    } else {
-        // ES 2 has two sided stencil and stencil wrap
-        fTwoSidedStencilSupport = true;
-        fStencilWrapOpsSupport = true;
+    if (!contextOptions.fAvoidStencilBuffers) {
+        // To reduce surface area, if we avoid stencil buffers, we also disable MSAA.
+        this->initFSAASupport(contextOptions, ctxInfo, gli);
+        this->initStencilSupport(ctxInfo);
     }
+    this->initBlendEqationSupport(ctxInfo);
 
     if (kGL_GrGLStandard == standard) {
         fMapBufferFlags = kCanMap_MapFlag; // we require VBO support and the desktop VBO
@@ -490,28 +451,14 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
                            kQualcomm_GrGLVendor != ctxInfo.vendor();
 #endif
 
-    // initFSAASupport() must have been called before this point
-    if (GrGLCaps::kES_IMG_MsToTexture_MSFBOType == fMSFBOType) {
-        GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES_IMG, &fMaxStencilSampleCount);
-    } else if (GrGLCaps::kNone_MSFBOType != fMSFBOType) {
-        GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES, &fMaxStencilSampleCount);
-    }
-    // We only have a use for raster multisample if there is coverage modulation from mixed samples.
-    if (fUsesMixedSamples && ctxInfo.hasExtension("GL_EXT_raster_multisample")) {
-        GR_GL_GetIntegerv(gli, GR_GL_MAX_RASTER_SAMPLES, &fMaxRasterSamples);
-        // This is to guard against platforms that may not support as many samples for
-        // glRasterSamples as they do for framebuffers.
-        fMaxStencilSampleCount = SkTMin(fMaxStencilSampleCount, fMaxRasterSamples);
-    }
-    fMaxColorSampleCount = fMaxStencilSampleCount;
-
     if (ctxInfo.hasExtension("GL_EXT_window_rectangles")) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_WINDOW_RECTANGLES, &fMaxWindowRectangles);
     }
 
     if (kPowerVR54x_GrGLRenderer == ctxInfo.renderer() ||
         kPowerVRRogue_GrGLRenderer == ctxInfo.renderer() ||
-        kAdreno3xx_GrGLRenderer == ctxInfo.renderer()) {
+        (kAdreno3xx_GrGLRenderer == ctxInfo.renderer() &&
+         ctxInfo.driver() != kChromium_GrGLDriver)) {
         fUseDrawInsteadOfClear = true;
     }
 
@@ -627,6 +574,13 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     fSRGBDecodeDisableSupport = ctxInfo.hasExtension("GL_EXT_texture_sRGB_decode");
     fSRGBDecodeDisableAffectsMipmaps = fSRGBDecodeDisableSupport &&
         kChromium_GrGLDriver != ctxInfo.driver();
+
+    // See http://crbug.com/710443
+#ifdef SK_BUILD_FOR_MAC
+    if (kIntel6xxx_GrGLRenderer == ctxInfo.renderer()) {
+        fClearToBoundaryValuesIsBroken = true;
+    }
+#endif
 
     // Requires fTextureRedSupport, fTextureSwizzleSupport, msaa support, ES compatibility have
     // already been detected.
@@ -1007,7 +961,25 @@ bool GrGLCaps::readPixelsSupported(GrPixelConfig surfaceConfig,
            fConfigTable[surfaceConfig].fSecondReadPixelsFormat.fType == readType;
 }
 
-void GrGLCaps::initFSAASupport(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
+void GrGLCaps::initFSAASupport(const GrContextOptions& contextOptions, const GrGLContextInfo& ctxInfo,
+                               const GrGLInterface* gli) {
+    // We need dual source blending and the ability to disable multisample in order to support mixed
+    // samples in every corner case. We only use mixed samples if the stencil-and-cover path
+    // renderer is available and enabled; no other path renderers support this feature.
+    if (fMultisampleDisableSupport &&
+        this->shaderCaps()->dualSourceBlendingSupport() &&
+        this->shaderCaps()->pathRenderingSupport() &&
+        (contextOptions.fGpuPathRenderers & GrContextOptions::GpuPathRenderers::kStencilAndCover)) {
+        fUsesMixedSamples = ctxInfo.hasExtension("GL_NV_framebuffer_mixed_samples") ||
+                ctxInfo.hasExtension("GL_CHROMIUM_framebuffer_mixed_samples");
+        // Workaround NVIDIA bug related to glInvalidateFramebuffer and mixed samples.
+        if (fUsesMixedSamples && (kNVIDIA_GrGLDriver == ctxInfo.driver() ||
+                                  kChromium_GrGLDriver == ctxInfo.driver())) {
+            fDiscardRenderTargetSupport = false;
+            fInvalidateFBType = kNone_InvalidateFBType;
+        }
+    }
+
     if (kGL_GrGLStandard != ctxInfo.standard()) {
         // We prefer the EXT/IMG extension over ES3 MSAA because we've observed
         // ES3 driver bugs on at least one device with a tiled GPU (N10).
@@ -1029,6 +1001,7 @@ void GrGLCaps::initFSAASupport(const GrGLContextInfo& ctxInfo, const GrGLInterfa
         // is available.
         if (ctxInfo.version() >= GR_GL_VER(3, 0)) {
             fBlitFramebufferFlags = kNoFormatConversionForMSAASrc_BlitFramebufferFlag |
+                                    kNoMSAADst_BlitFramebufferFlag |
                                     kRectsMustMatchForMSAASrc_BlitFramebufferFlag;
         } else if (ctxInfo.hasExtension("GL_CHROMIUM_framebuffer_multisample") ||
                    ctxInfo.hasExtension("GL_ANGLE_framebuffer_blit")) {
@@ -1037,7 +1010,8 @@ void GrGLCaps::initFSAASupport(const GrGLContextInfo& ctxInfo, const GrGLInterfa
             fBlitFramebufferFlags = kNoScalingOrMirroring_BlitFramebufferFlag |
                                     kResolveMustBeFull_BlitFrambufferFlag |
                                     kNoMSAADst_BlitFramebufferFlag |
-                                    kNoFormatConversion_BlitFramebufferFlag;
+                                    kNoFormatConversion_BlitFramebufferFlag |
+                                    kRectsMustMatchForMSAASrc_BlitFramebufferFlag;
         }
     } else {
         if (fUsesMixedSamples) {
@@ -1053,6 +1027,20 @@ void GrGLCaps::initFSAASupport(const GrGLContextInfo& ctxInfo, const GrGLInterfa
             fBlitFramebufferFlags = 0;
         }
     }
+
+    if (GrGLCaps::kES_IMG_MsToTexture_MSFBOType == fMSFBOType) {
+        GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES_IMG, &fMaxStencilSampleCount);
+    } else if (GrGLCaps::kNone_MSFBOType != fMSFBOType) {
+        GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES, &fMaxStencilSampleCount);
+    }
+    // We only have a use for raster multisample if there is coverage modulation from mixed samples.
+    if (fUsesMixedSamples && ctxInfo.hasExtension("GL_EXT_raster_multisample")) {
+        GR_GL_GetIntegerv(gli, GR_GL_MAX_RASTER_SAMPLES, &fMaxRasterSamples);
+        // This is to guard against platforms that may not support as many samples for
+        // glRasterSamples as they do for framebuffers.
+        fMaxStencilSampleCount = SkTMin(fMaxStencilSampleCount, fMaxRasterSamples);
+    }
+    fMaxColorSampleCount = fMaxStencilSampleCount;
 }
 
 void GrGLCaps::initBlendEqationSupport(const GrGLContextInfo& ctxInfo) {
@@ -1107,7 +1095,7 @@ namespace {
 const GrGLuint kUnknownBitCount = GrGLStencilAttachment::kUnknownBitCount;
 }
 
-void GrGLCaps::initStencilFormats(const GrGLContextInfo& ctxInfo) {
+void GrGLCaps::initStencilSupport(const GrGLContextInfo& ctxInfo) {
 
     // Build up list of legal stencil formats (though perhaps not supported on
     // the particular gpu/driver) from most preferred to least.
@@ -1156,6 +1144,20 @@ void GrGLCaps::initStencilFormats(const GrGLContextInfo& ctxInfo) {
         if (ctxInfo.hasExtension("GL_OES_stencil4")) {
             fStencilFormats.push_back() = gS4;
         }
+    }
+    // Set up additional stencil properties.
+    if (kGL_GrGLStandard == ctxInfo.standard()) {
+        // we could also look for GL_ATI_separate_stencil extension or
+        // GL_EXT_stencil_two_side but they use different function signatures
+        // than GL2.0+ (and than each other).
+        fTwoSidedStencilSupport = (ctxInfo.version() >= GR_GL_VER(2,0));
+        // supported on GL 1.4 and higher or by extension
+        fStencilWrapOpsSupport = (ctxInfo.version() >= GR_GL_VER(1,4)) ||
+                                  ctxInfo.hasExtension("GL_EXT_stencil_wrap");
+    } else {
+        // ES 2 has two sided stencil and stencil wrap
+        fTwoSidedStencilSupport = true;
+        fStencilWrapOpsSupport = true;
     }
 }
 
@@ -1266,9 +1268,10 @@ static GrGLenum precision_to_gl_float_type(GrSLPrecision p) {
         return GR_GL_MEDIUM_FLOAT;
     case kHigh_GrSLPrecision:
         return GR_GL_HIGH_FLOAT;
+    default:
+        SkFAIL("Unexpected precision type.");
+        return -1;
     }
-    SkFAIL("Unknown precision.");
-    return -1;
 }
 
 static GrGLenum shader_type_to_gl_shader(GrShaderType type) {
@@ -2077,6 +2080,93 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
         SkASSERT(defaultEntry.fFormats.fExternalType != fConfigTable[i].fFormats.fExternalType);
     }
 #endif
+}
+
+bool GrGLCaps::initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
+                                  bool* rectsMustMatch, bool* disallowSubrect) const {
+    // By default, we don't require rects to match.
+    *rectsMustMatch = false;
+
+    // By default, we allow subrects.
+    *disallowSubrect = false;
+
+    // If the src is a texture, we can implement the blit as a draw assuming the config is
+    // renderable.
+    if (src->asTextureProxy() && this->isConfigRenderable(src->config(), false)) {
+        desc->fOrigin = kBottomLeft_GrSurfaceOrigin;
+        desc->fFlags = kRenderTarget_GrSurfaceFlag;
+        desc->fConfig = src->config();
+        return true;
+    }
+
+    {
+        // The only way we could see a non-GR_GL_TEXTURE_2D texture would be if it were
+        // wrapped. In that case the proxy would already be instantiated.
+        const GrTexture* srcTexture = src->priv().peekTexture();
+        const GrGLTexture* glSrcTexture = static_cast<const GrGLTexture*>(srcTexture);
+        if (glSrcTexture && glSrcTexture->target() != GR_GL_TEXTURE_2D) {
+            // Not supported for FBO blit or CopyTexSubImage
+            return false;
+        }
+    }
+
+    // We look for opportunities to use CopyTexSubImage, or fbo blit. If neither are
+    // possible and we return false to fallback to creating a render target dst for render-to-
+    // texture. This code prefers CopyTexSubImage to fbo blit and avoids triggering temporary fbo
+    // creation. It isn't clear that avoiding temporary fbo creation is actually optimal.
+    GrSurfaceOrigin originForBlitFramebuffer = kDefault_GrSurfaceOrigin;
+    bool rectsMustMatchForBlitFramebuffer = false;
+    bool disallowSubrectForBlitFramebuffer = false;
+    if (src->numColorSamples() &&
+        (this->blitFramebufferSupportFlags() & kResolveMustBeFull_BlitFrambufferFlag)) {
+        rectsMustMatchForBlitFramebuffer = true;
+        disallowSubrectForBlitFramebuffer = true;
+        // Mirroring causes rects to mismatch later, don't allow it.
+        originForBlitFramebuffer = src->origin();
+    } else if (src->numColorSamples() && (this->blitFramebufferSupportFlags() &
+                                          kRectsMustMatchForMSAASrc_BlitFramebufferFlag)) {
+        rectsMustMatchForBlitFramebuffer = true;
+        // Mirroring causes rects to mismatch later, don't allow it.
+        originForBlitFramebuffer = src->origin();
+    } else if (this->blitFramebufferSupportFlags() & kNoScalingOrMirroring_BlitFramebufferFlag) {
+        originForBlitFramebuffer = src->origin();
+    }
+
+    // Check for format issues with glCopyTexSubImage2D
+    if (this->bgraIsInternalFormat() && kBGRA_8888_GrPixelConfig == src->config()) {
+        // glCopyTexSubImage2D doesn't work with this config. If the bgra can be used with fbo blit
+        // then we set up for that, otherwise fail.
+        if (this->canConfigBeFBOColorAttachment(kBGRA_8888_GrPixelConfig)) {
+            desc->fOrigin = originForBlitFramebuffer;
+            desc->fConfig = kBGRA_8888_GrPixelConfig;
+            *rectsMustMatch = rectsMustMatchForBlitFramebuffer;
+            *disallowSubrect = disallowSubrectForBlitFramebuffer;
+            return true;
+        }
+        return false;
+    }
+
+    {
+        bool srcIsMSAARenderbuffer = src->desc().fSampleCnt > 0 && this->usesMSAARenderBuffers();
+        if (srcIsMSAARenderbuffer) {
+            // It's illegal to call CopyTexSubImage2D on a MSAA renderbuffer. Set up for FBO
+            // blit or fail.
+            if (this->canConfigBeFBOColorAttachment(src->config())) {
+                desc->fOrigin = originForBlitFramebuffer;
+                desc->fConfig = src->config();
+                *rectsMustMatch = rectsMustMatchForBlitFramebuffer;
+                *disallowSubrect = disallowSubrectForBlitFramebuffer;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    // We'll do a CopyTexSubImage. Make the dst a plain old texture.
+    desc->fConfig = src->config();
+    desc->fOrigin = src->origin();
+    desc->fFlags = kNone_GrSurfaceFlags;
+    return true;
 }
 
 void GrGLCaps::onApplyOptionsOverrides(const GrContextOptions& options) {

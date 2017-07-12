@@ -21,6 +21,10 @@
 #include "webrtc/voice_engine/voice_engine_impl.h"
 
 namespace webrtc {
+namespace voe {
+class TransmitMixer;
+}  // namespace voe
+
 namespace test {
 
 // NOTE: This class inherits from VoiceEngineImpl so that its clients will be
@@ -48,9 +52,16 @@ class MockVoiceEngine : public VoiceEngineImpl {
               new testing::NiceMock<webrtc::test::MockVoEChannelProxy>();
           EXPECT_CALL(*proxy, GetAudioDecoderFactory())
               .WillRepeatedly(testing::ReturnRef(decoder_factory_));
+          EXPECT_CALL(*proxy, SetReceiveCodecs(testing::_))
+              .WillRepeatedly(testing::Invoke(
+                  [](const std::map<int, SdpAudioFormat>& codecs) {
+                    EXPECT_THAT(codecs, testing::IsEmpty());
+                  }));
           return proxy;
         }));
 
+    ON_CALL(mock_audio_device_, TimeUntilNextProcess())
+        .WillByDefault(testing::Return(1000));
     ON_CALL(*this, audio_device_module())
         .WillByDefault(testing::Return(&mock_audio_device_));
     ON_CALL(*this, audio_processing())
@@ -72,46 +83,6 @@ class MockVoiceEngine : public VoiceEngineImpl {
     return std::unique_ptr<voe::ChannelProxy>(ChannelProxyFactory(channel_id));
   }
 
-  // VoEAudioProcessing
-  MOCK_METHOD2(SetNsStatus, int(bool enable, NsModes mode));
-  MOCK_METHOD2(GetNsStatus, int(bool& enabled, NsModes& mode));
-  MOCK_METHOD2(SetAgcStatus, int(bool enable, AgcModes mode));
-  MOCK_METHOD2(GetAgcStatus, int(bool& enabled, AgcModes& mode));
-  MOCK_METHOD1(SetAgcConfig, int(AgcConfig config));
-  MOCK_METHOD1(GetAgcConfig, int(AgcConfig& config));
-  MOCK_METHOD2(SetEcStatus, int(bool enable, EcModes mode));
-  MOCK_METHOD2(GetEcStatus, int(bool& enabled, EcModes& mode));
-  MOCK_METHOD1(EnableDriftCompensation, int(bool enable));
-  MOCK_METHOD0(DriftCompensationEnabled, bool());
-  MOCK_METHOD1(SetDelayOffsetMs, void(int offset));
-  MOCK_METHOD0(DelayOffsetMs, int());
-  MOCK_METHOD2(SetAecmMode, int(AecmModes mode, bool enableCNG));
-  MOCK_METHOD2(GetAecmMode, int(AecmModes& mode, bool& enabledCNG));
-  MOCK_METHOD1(EnableHighPassFilter, int(bool enable));
-  MOCK_METHOD0(IsHighPassFilterEnabled, bool());
-  MOCK_METHOD1(VoiceActivityIndicator, int(int channel));
-  MOCK_METHOD1(SetEcMetricsStatus, int(bool enable));
-  MOCK_METHOD1(GetEcMetricsStatus, int(bool& enabled));
-  MOCK_METHOD4(GetEchoMetrics, int(int& ERL, int& ERLE, int& RERL, int& A_NLP));
-  MOCK_METHOD3(GetEcDelayMetrics,
-               int(int& delay_median,
-                   int& delay_std,
-                   float& fraction_poor_delays));
-  MOCK_METHOD1(StartDebugRecording, int(const char* fileNameUTF8));
-  MOCK_METHOD1(StartDebugRecording, int(FILE* file_handle));
-  MOCK_METHOD0(StopDebugRecording, int());
-  MOCK_METHOD1(SetTypingDetectionStatus, int(bool enable));
-  MOCK_METHOD1(GetTypingDetectionStatus, int(bool& enabled));
-  MOCK_METHOD1(TimeSinceLastTyping, int(int& seconds));
-  MOCK_METHOD5(SetTypingDetectionParameters,
-               int(int timeWindow,
-                   int costPerTyping,
-                   int reportingThreshold,
-                   int penaltyDecay,
-                   int typeEventDelay));
-  MOCK_METHOD1(EnableStereoChannelSwapping, void(bool enable));
-  MOCK_METHOD0(IsStereoChannelSwappingEnabled, bool());
-
   // VoEBase
   MOCK_METHOD1(RegisterVoiceEngineObserver, int(VoiceEngineObserver& observer));
   MOCK_METHOD0(DeRegisterVoiceEngineObserver, int());
@@ -122,6 +93,7 @@ class MockVoiceEngine : public VoiceEngineImpl {
           const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory));
   MOCK_METHOD0(audio_processing, AudioProcessing*());
   MOCK_METHOD0(audio_device_module, AudioDeviceModule*());
+  MOCK_METHOD0(transmit_mixer, voe::TransmitMixer*());
   MOCK_METHOD0(Terminate, int());
   MOCK_METHOD0(CreateChannel, int());
   MOCK_METHOD1(CreateChannel, int(const ChannelConfig& config));
@@ -208,35 +180,6 @@ class MockVoiceEngine : public VoiceEngineImpl {
                int(OutStream* stream, CodecInst* compression));
   MOCK_METHOD0(StopRecordingMicrophone, int());
 
-  // VoEHardware
-  MOCK_METHOD1(GetNumOfRecordingDevices, int(int& devices));
-  MOCK_METHOD1(GetNumOfPlayoutDevices, int(int& devices));
-  MOCK_METHOD3(GetRecordingDeviceName,
-               int(int index, char strNameUTF8[128], char strGuidUTF8[128]));
-  MOCK_METHOD3(GetPlayoutDeviceName,
-               int(int index, char strNameUTF8[128], char strGuidUTF8[128]));
-  MOCK_METHOD2(SetRecordingDevice,
-               int(int index, StereoChannel recordingChannel));
-  MOCK_METHOD1(SetPlayoutDevice, int(int index));
-  MOCK_METHOD1(SetAudioDeviceLayer, int(AudioLayers audioLayer));
-  MOCK_METHOD1(GetAudioDeviceLayer, int(AudioLayers& audioLayer));
-  MOCK_METHOD1(SetRecordingSampleRate, int(unsigned int samples_per_sec));
-  MOCK_CONST_METHOD1(RecordingSampleRate, int(unsigned int* samples_per_sec));
-  MOCK_METHOD1(SetPlayoutSampleRate, int(unsigned int samples_per_sec));
-  MOCK_CONST_METHOD1(PlayoutSampleRate, int(unsigned int* samples_per_sec));
-  MOCK_CONST_METHOD0(BuiltInAECIsAvailable, bool());
-  MOCK_METHOD1(EnableBuiltInAEC, int(bool enable));
-  MOCK_CONST_METHOD0(BuiltInAGCIsAvailable, bool());
-  MOCK_METHOD1(EnableBuiltInAGC, int(bool enable));
-  MOCK_CONST_METHOD0(BuiltInNSIsAvailable, bool());
-  MOCK_METHOD1(EnableBuiltInNS, int(bool enable));
-
-  // VoENetEqStats
-  MOCK_METHOD2(GetNetworkStatistics,
-               int(int channel, NetworkStatistics& stats));
-  MOCK_CONST_METHOD2(GetDecodingCallStatistics,
-                     int(int channel, AudioDecodingCallStats* stats));
-
   // VoENetwork
   MOCK_METHOD2(RegisterExternalTransport,
                int(int channel, Transport& transport));
@@ -288,23 +231,6 @@ class MockVoiceEngine : public VoiceEngineImpl {
   MOCK_METHOD3(GetREDStatus,
                int(int channel, bool& enable, int& redPayloadtype));
   MOCK_METHOD3(SetNACKStatus, int(int channel, bool enable, int maxNoPackets));
-
-  // VoEVolumeControl
-  MOCK_METHOD1(SetSpeakerVolume, int(unsigned int volume));
-  MOCK_METHOD1(GetSpeakerVolume, int(unsigned int& volume));
-  MOCK_METHOD1(SetMicVolume, int(unsigned int volume));
-  MOCK_METHOD1(GetMicVolume, int(unsigned int& volume));
-  MOCK_METHOD2(SetInputMute, int(int channel, bool enable));
-  MOCK_METHOD2(GetInputMute, int(int channel, bool& enabled));
-  MOCK_METHOD1(GetSpeechInputLevel, int(unsigned int& level));
-  MOCK_METHOD2(GetSpeechOutputLevel, int(int channel, unsigned int& level));
-  MOCK_METHOD1(GetSpeechInputLevelFullRange, int(unsigned int& level));
-  MOCK_METHOD2(GetSpeechOutputLevelFullRange,
-               int(int channel, unsigned& level));
-  MOCK_METHOD2(SetChannelOutputVolumeScaling, int(int channel, float scaling));
-  MOCK_METHOD2(GetChannelOutputVolumeScaling, int(int channel, float& scaling));
-  MOCK_METHOD3(SetOutputVolumePan, int(int channel, float left, float right));
-  MOCK_METHOD3(GetOutputVolumePan, int(int channel, float& left, float& right));
 
  private:
   // TODO(ossu): I'm not particularly happy about keeping the decoder factory

@@ -14,8 +14,8 @@
     {
         'angle_unittests_sources':
         [
-            '<(angle_path)/src/common/BitSetIterator_unittest.cpp',
             '<(angle_path)/src/common/Optional_unittest.cpp',
+            '<(angle_path)/src/common/bitset_utils_unittest.cpp',
             '<(angle_path)/src/common/mathutil_unittest.cpp',
             '<(angle_path)/src/common/matrix_utils_unittest.cpp',
             '<(angle_path)/src/common/string_utils_unittest.cpp',
@@ -47,6 +47,7 @@
             '<(angle_path)/src/libANGLE/validationES_unittest.cpp',
             '<(angle_path)/src/tests/angle_unittests_utils.h',
             '<(angle_path)/src/tests/compiler_tests/API_test.cpp',
+            '<(angle_path)/src/tests/compiler_tests/AppendixALimitations_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/CollectVariables_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/ConstantFolding_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/ConstantFoldingNaN_test.cpp',
@@ -55,6 +56,7 @@
             '<(angle_path)/src/tests/compiler_tests/DebugShaderPrecision_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/EmulateGLFragColorBroadcast_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/ExpressionLimit_test.cpp',
+            '<(angle_path)/src/tests/compiler_tests/EXT_YUV_target_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/EXT_blend_func_extended_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/FloatLex_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/FragDepth_test.cpp',
@@ -63,6 +65,7 @@
             '<(angle_path)/src/tests/compiler_tests/NV_draw_buffers_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/Pack_Unpack_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/PruneEmptyDeclarations_test.cpp',
+            '<(angle_path)/src/tests/compiler_tests/PrunePureLiteralStatements_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/PruneUnusedFunctions_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/QualificationOrderESSL31_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/QualificationOrder_test.cpp',

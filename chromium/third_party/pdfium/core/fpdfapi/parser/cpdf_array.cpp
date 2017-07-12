@@ -57,8 +57,11 @@ std::unique_ptr<CPDF_Object> CPDF_Array::CloneNonCyclic(
   pVisited->insert(this);
   auto pCopy = pdfium::MakeUnique<CPDF_Array>();
   for (const auto& pValue : m_Objects) {
-    if (!pdfium::ContainsKey(*pVisited, pValue.get()))
-      pCopy->m_Objects.push_back(pValue->CloneNonCyclic(bDirect, pVisited));
+    if (!pdfium::ContainsKey(*pVisited, pValue.get())) {
+      std::set<const CPDF_Object*> visited(*pVisited);
+      if (auto obj = pValue->CloneNonCyclic(bDirect, &visited))
+        pCopy->m_Objects.push_back(std::move(obj));
+    }
   }
   return std::move(pCopy);
 }
@@ -108,7 +111,7 @@ int CPDF_Array::GetIntegerAt(size_t i) const {
   return m_Objects[i]->GetInteger();
 }
 
-FX_FLOAT CPDF_Array::GetNumberAt(size_t i) const {
+float CPDF_Array::GetNumberAt(size_t i) const {
   if (i >= m_Objects.size())
     return 0;
   return m_Objects[i]->GetNumber();

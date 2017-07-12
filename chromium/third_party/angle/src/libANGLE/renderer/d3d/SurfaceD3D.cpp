@@ -61,7 +61,6 @@ SurfaceD3D::SurfaceD3D(const egl::SurfaceState &state,
             ASSERT(mD3DTexture != nullptr);
             mD3DTexture->AddRef();
             mRenderer->getD3DTextureInfo(mD3DTexture, &mWidth, &mHeight, &mRenderTargetFormat);
-            mDepthStencilFormat = GL_NONE;
             break;
 
         default:
@@ -113,6 +112,11 @@ egl::Error SurfaceD3D::bindTexImage(gl::Texture *, EGLint)
 egl::Error SurfaceD3D::releaseTexImage(EGLint)
 {
     return egl::Error(EGL_SUCCESS);
+}
+
+egl::Error SurfaceD3D::getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc)
+{
+    return mSwapChain->getSyncValues(ust, msc, sbc);
 }
 
 egl::Error SurfaceD3D::resetSwapChain()

@@ -7,6 +7,7 @@
 #ifndef CORE_FPDFAPI_EDIT_CPDF_CREATOR_H_
 #define CORE_FPDFAPI_EDIT_CPDF_CREATOR_H_
 
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -43,14 +44,12 @@ class CPDF_Creator {
   friend class CPDF_XRefStream;
 
   bool Create(uint32_t flags);
-  void ResetStandardSecurity();
   void Clear();
 
   void InitOldObjNumOffsets();
   void InitNewObjNumOffsets();
   void InitID(bool bDefault = true);
 
-  void AppendNewObjNum(uint32_t objbum);
   int32_t AppendObjectNumberToXRef(uint32_t objnum);
 
   int32_t WriteDoc_Stage1(IFX_Pause* pPause);
@@ -80,21 +79,19 @@ class CPDF_Creator {
   bool m_bSecurityChanged;
   CPDF_Dictionary* m_pEncryptDict;
   uint32_t m_dwEncryptObjNum;
-  bool m_bEncryptCloned;
-  CPDF_CryptoHandler* m_pCryptoHandler;
-  // Whether this owns the crypto handler |m_pCryptoHandler|.
-  bool m_bLocalCryptoHandler;
+  CFX_RetainPtr<CPDF_CryptoHandler> m_pCryptoHandler;
   CPDF_Object* m_pMetadata;
   std::unique_ptr<CPDF_XRefStream> m_pXRefStream;
   int32_t m_ObjectStreamSize;
   uint32_t m_dwLastObjNum;
   CFX_FileBufferArchive m_File;
   FX_FILESIZE m_Offset;
+  FX_FILESIZE m_SavedOffset;
   int32_t m_iStage;
   uint32_t m_dwFlags;
-  FX_POSITION m_Pos;
+  uint32_t m_CurObjNum;
   FX_FILESIZE m_XrefStart;
-  CFX_FileSizeListArray m_ObjectOffset;
+  std::map<uint32_t, FX_FILESIZE> m_ObjectOffsets;
   std::vector<uint32_t> m_NewObjNumArray;  // Sorted, ascending.
   std::unique_ptr<CPDF_Array> m_pIDArray;
   int32_t m_FileVersion;

@@ -8,11 +8,13 @@
 #define XFA_FDE_CFDE_TXTEDTENGINE_H_
 
 #include <memory>
+#include <vector>
 
 #include "core/fxcrt/cfx_retain_ptr.h"
 #include "xfa/fde/ifde_txtedtengine.h"
 
 class CFDE_TxtEdtBuf;
+class CFDE_TxtEdtPage;
 class CFDE_TxtEdtParag;
 class CFX_TxtBreak;
 class IFDE_TxtEdtDoRecord;
@@ -27,7 +29,7 @@ class CFDE_TxtEdtEngine {
   FDE_TXTEDTPARAMS* GetEditParams();
 
   int32_t CountPages() const;
-  IFDE_TxtEdtPage* GetPage(int32_t nIndex);
+  CFDE_TxtEdtPage* GetPage(int32_t nIndex);
 
   void SetTextByStream(const CFX_RetainPtr<IFGAS_Stream>& pStream);
   void SetText(const CFX_WideString& wsText);
@@ -45,7 +47,7 @@ class CFDE_TxtEdtEngine {
   void Unlock();
   bool IsLocked() const;
 
-  int32_t Insert(int32_t nStart, const FX_WCHAR* lpText, int32_t nLength);
+  int32_t Insert(int32_t nStart, const wchar_t* lpText, int32_t nLength);
   int32_t Delete(int32_t nStart, bool bBackspace = false);
   int32_t DeleteRange(int32_t nStart, int32_t nCount = -1);
   int32_t Replace(int32_t nStart,
@@ -53,7 +55,7 @@ class CFDE_TxtEdtEngine {
                   const CFX_WideString& wsReplace);
 
   void SetLimit(int32_t nLimit);
-  void SetAliasChar(FX_WCHAR wcAlias);
+  void SetAliasChar(wchar_t wcAlias);
 
   void RemoveSelRange(int32_t nStart, int32_t nCount);
 
@@ -82,7 +84,7 @@ class CFDE_TxtEdtEngine {
                      int32_t nStartLineofParag,
                      int32_t nLineIndex,
                      int32_t& nStartLine) const;
-  FX_WCHAR GetAliasChar() const { return m_wcAliasChar; }
+  wchar_t GetAliasChar() const { return m_wcAliasChar; }
 
  private:
   friend class CFDE_TxtEdtDoRecord_Insert;
@@ -99,14 +101,14 @@ class CFDE_TxtEdtEngine {
     int32_t nCharIndex;
   };
 
-  void Inner_Insert(int32_t nStart, const FX_WCHAR* lpText, int32_t nLength);
+  void Inner_Insert(int32_t nStart, const wchar_t* lpText, int32_t nLength);
   CFX_WideString GetPreDeleteText(int32_t nIndex, int32_t nLength);
   CFX_WideString GetPreInsertText(int32_t nIndex,
-                                  const FX_WCHAR* lpText,
+                                  const wchar_t* lpText,
                                   int32_t nLength);
   CFX_WideString GetPreReplaceText(int32_t nIndex,
                                    int32_t nOriginLength,
-                                   const FX_WCHAR* lpText,
+                                   const wchar_t* lpText,
                                    int32_t nLength);
 
   void Inner_DeleteRange(int32_t nStart, int32_t nCount = -1);
@@ -119,7 +121,7 @@ class CFDE_TxtEdtEngine {
   void UpdatePages();
   void UpdateTxtBreak();
 
-  bool ReplaceParagEnd(FX_WCHAR*& lpText,
+  bool ReplaceParagEnd(wchar_t*& lpText,
                        int32_t& nLength,
                        bool bPreIsCR = false);
   void RecoverParagEnd(CFX_WideString& wsText) const;
@@ -149,14 +151,14 @@ class CFDE_TxtEdtEngine {
   std::unique_ptr<CFDE_TxtEdtBuf> m_pTxtBuf;
   std::unique_ptr<CFX_TxtBreak> m_pTextBreak;
   FDE_TXTEDTPARAMS m_Param;
-  CFX_ArrayTemplate<IFDE_TxtEdtPage*> m_PagePtrArray;
-  CFX_ArrayTemplate<CFDE_TxtEdtParag*> m_ParagPtrArray;
-  CFX_ArrayTemplate<FDE_TXTEDTSELRANGE*> m_SelRangePtrArr;
+  std::vector<std::unique_ptr<CFDE_TxtEdtPage>> m_PagePtrArray;
+  std::vector<std::unique_ptr<CFDE_TxtEdtParag>> m_ParagPtrArray;
+  std::vector<std::unique_ptr<FDE_TXTEDTSELRANGE>> m_SelRangePtrArr;
   int32_t m_nPageLineCount;
   int32_t m_nLineCount;
   int32_t m_nAnchorPos;
   int32_t m_nLayoutPos;
-  FX_FLOAT m_fCaretPosReserve;
+  float m_fCaretPosReserve;
   int32_t m_nCaret;
   bool m_bBefore;
   int32_t m_nCaretPage;
@@ -164,10 +166,10 @@ class CFDE_TxtEdtEngine {
   uint32_t m_dwFindFlags;
   bool m_bLock;
   int32_t m_nLimit;
-  FX_WCHAR m_wcAliasChar;
+  wchar_t m_wcAliasChar;
   int32_t m_nFirstLineEnd;
   bool m_bAutoLineEnd;
-  FX_WCHAR m_wLineEnd;
+  wchar_t m_wLineEnd;
   FDE_TXTEDT_TEXTCHANGE_INFO m_ChangeInfo;
 };
 

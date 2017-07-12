@@ -216,6 +216,9 @@ bool ValidCap(const Context *context, GLenum cap, bool queryOnly)
         case GL_SAMPLE_MASK:
             return context->getClientVersion() >= Version(3, 1);
 
+        case GL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE:
+            return queryOnly && context->getExtensions().robustResourceInitialization;
+
         default:
             return false;
     }
@@ -230,11 +233,21 @@ bool ValidateReadPixelsBase(ValidationContext *context,
                             GLenum type,
                             GLsizei bufSize,
                             GLsizei *length,
+                            GLsizei *columns,
+                            GLsizei *rows,
                             GLvoid *pixels)
 {
     if (length != nullptr)
     {
         *length = 0;
+    }
+    if (rows != nullptr)
+    {
+        *rows = 0;
+    }
+    if (columns != nullptr)
+    {
+        *columns = 0;
     }
 
     if (width < 0 || height < 0)
@@ -245,13 +258,13 @@ bool ValidateReadPixelsBase(ValidationContext *context,
 
     auto readFramebuffer = context->getGLState().getReadFramebuffer();
 
-    if (readFramebuffer->checkStatus(context->getContextState()) != GL_FRAMEBUFFER_COMPLETE)
+    if (readFramebuffer->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
     }
 
-    if (readFramebuffer->id() != 0 && readFramebuffer->getSamples(context->getContextState()) != 0)
+    if (readFramebuffer->id() != 0 && readFramebuffer->getSamples(context) != 0)
     {
         context->handleError(Error(GL_INVALID_OPERATION));
         return false;
@@ -317,8 +330,7 @@ bool ValidateReadPixelsBase(ValidationContext *context,
     size_t endByte = endByteOrErr.getResult();
     if (bufSize >= 0)
     {
-
-        if (static_cast<size_t>(bufSize) < endByte)
+        if (pixelPackBuffer == nullptr && static_cast<size_t>(bufSize) < endByte)
         {
             context->handleError(
                 Error(GL_INVALID_OPERATION, "bufSize must be at least %u bytes.", endByte));
@@ -341,7 +353,7 @@ bool ValidateReadPixelsBase(ValidationContext *context,
         }
     }
 
-    if (length != nullptr)
+    if (pixelPackBuffer == nullptr && length != nullptr)
     {
         if (endByte > static_cast<size_t>(std::numeric_limits<GLsizei>::max()))
         {
@@ -351,6 +363,39 @@ bool ValidateReadPixelsBase(ValidationContext *context,
         }
 
         *length = static_cast<GLsizei>(endByte);
+    }
+
+    auto getClippedExtent = [](GLint start, GLsizei length, int bufferSize) {
+        angle::CheckedNumeric<int> clippedExtent(length);
+        if (start < 0)
+        {
+            // "subtract" the area that is less than 0
+            clippedExtent += start;
+        }
+
+        const int readExtent = start + length;
+        if (readExtent > bufferSize)
+        {
+            // Subtract the region to the right of the read buffer
+            clippedExtent -= (readExtent - bufferSize);
+        }
+
+        if (!clippedExtent.IsValid())
+        {
+            return 0;
+        }
+
+        return std::max(clippedExtent.ValueOrDie(), 0);
+    };
+
+    if (columns != nullptr)
+    {
+        *columns = getClippedExtent(x, width, readBuffer->getSize().width);
+    }
+
+    if (rows != nullptr)
+    {
+        *rows = getClippedExtent(y, height, readBuffer->getSize().height);
     }
 
     return true;
@@ -1108,7 +1153,18 @@ bool ValidateGetVertexAttribBase(Context *context,
             case GL_VERTEX_ATTRIB_ARRAY_INTEGER:
                 if (context->getClientMajorVersion() < 3)
                 {
-                    context->handleError(Error(GL_INVALID_ENUM, "pname requires OpenGL ES 3.0."));
+                    context->handleError(Error(
+                        GL_INVALID_ENUM, "GL_VERTEX_ATTRIB_ARRAY_INTEGER requires OpenGL ES 3.0."));
+                    return false;
+                }
+                break;
+
+            case GL_VERTEX_ATTRIB_BINDING:
+            case GL_VERTEX_ATTRIB_RELATIVE_OFFSET:
+                if (context->getClientVersion() < ES_3_1)
+                {
+                    context->handleError(
+                        Error(GL_INVALID_ENUM, "Vertex Attrib Bindings require OpenGL ES 3.1."));
                     return false;
                 }
                 break;
@@ -1714,6 +1770,12 @@ bool CompressedTextureFormatRequiresExactSize(GLenum internalFormat)
         case GL_COMPRESSED_RGBA_S3TC_DXT3_ANGLE:
         case GL_COMPRESSED_RGBA_S3TC_DXT5_ANGLE:
         case GL_ETC1_RGB8_LOSSY_DECODE_ANGLE:
+        case GL_COMPRESSED_RGB8_LOSSY_DECODE_ETC2_ANGLE:
+        case GL_COMPRESSED_SRGB8_LOSSY_DECODE_ETC2_ANGLE:
+        case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_LOSSY_DECODE_ETC2_ANGLE:
+        case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_LOSSY_DECODE_ETC2_ANGLE:
+        case GL_COMPRESSED_RGBA8_LOSSY_DECODE_ETC2_EAC_ANGLE:
+        case GL_COMPRESSED_SRGB8_ALPHA8_LOSSY_DECODE_ETC2_EAC_ANGLE:
             return true;
 
         default:
@@ -1845,6 +1907,53 @@ bool ValidQueryType(const Context *context, GLenum queryType)
         default:
             return false;
     }
+}
+
+bool ValidateWebGLVertexAttribPointer(ValidationContext *context,
+                                      GLenum type,
+                                      GLboolean normalized,
+                                      GLsizei stride,
+                                      const GLvoid *ptr,
+                                      bool pureInteger)
+{
+    ASSERT(context->getExtensions().webglCompatibility);
+
+    // WebGL 1.0 [Section 6.11] Vertex Attribute Data Stride
+    // The WebGL API supports vertex attribute data strides up to 255 bytes. A call to
+    // vertexAttribPointer will generate an INVALID_VALUE error if the value for the stride
+    // parameter exceeds 255.
+    constexpr GLsizei kMaxWebGLStride = 255;
+    if (stride > kMaxWebGLStride)
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE, "Stride is over the maximum stride allowed by WebGL."));
+        return false;
+    }
+
+    // WebGL 1.0 [Section 6.4] Buffer Offset and Stride Requirements
+    // The offset arguments to drawElements and vertexAttribPointer, and the stride argument to
+    // vertexAttribPointer, must be a multiple of the size of the data type passed to the call,
+    // or an INVALID_OPERATION error is generated.
+    VertexFormatType internalType = GetVertexFormatType(type, normalized, 1, pureInteger);
+    size_t typeSize               = GetVertexFormatTypeSize(internalType);
+
+    ASSERT(isPow2(typeSize) && typeSize > 0);
+    size_t sizeMask = (typeSize - 1);
+    if ((reinterpret_cast<intptr_t>(ptr) & sizeMask) != 0)
+    {
+        context->handleError(
+            Error(GL_INVALID_OPERATION, "Offset is not a multiple of the type size."));
+        return false;
+    }
+
+    if ((stride & sizeMask) != 0)
+    {
+        context->handleError(
+            Error(GL_INVALID_OPERATION, "Stride is not a multiple of the type size."));
+        return false;
+    }
+
+    return true;
 }
 
 Program *GetValidProgram(ValidationContext *context, GLuint id)
@@ -2093,19 +2202,19 @@ bool ValidateBlitFramebufferParameters(ValidationContext *context,
         return false;
     }
 
-    if (readFramebuffer->checkStatus(context->getContextState()) != GL_FRAMEBUFFER_COMPLETE)
+    if (readFramebuffer->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
     }
 
-    if (drawFramebuffer->checkStatus(context->getContextState()) != GL_FRAMEBUFFER_COMPLETE)
+    if (drawFramebuffer->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
     }
 
-    if (drawFramebuffer->getSamples(context->getContextState()) != 0)
+    if (drawFramebuffer->getSamples(context) != 0)
     {
         context->handleError(Error(GL_INVALID_OPERATION));
         return false;
@@ -2259,7 +2368,8 @@ bool ValidateReadPixels(ValidationContext *context,
                         GLenum type,
                         GLvoid *pixels)
 {
-    return ValidateReadPixelsBase(context, x, y, width, height, format, type, -1, nullptr, pixels);
+    return ValidateReadPixelsBase(context, x, y, width, height, format, type, -1, nullptr, nullptr,
+                                  nullptr, pixels);
 }
 
 bool ValidateReadPixelsRobustANGLE(ValidationContext *context,
@@ -2271,6 +2381,8 @@ bool ValidateReadPixelsRobustANGLE(ValidationContext *context,
                                    GLenum type,
                                    GLsizei bufSize,
                                    GLsizei *length,
+                                   GLsizei *columns,
+                                   GLsizei *rows,
                                    GLvoid *pixels)
 {
     if (!ValidateRobustEntryPoint(context, bufSize))
@@ -2279,7 +2391,7 @@ bool ValidateReadPixelsRobustANGLE(ValidationContext *context,
     }
 
     if (!ValidateReadPixelsBase(context, x, y, width, height, format, type, bufSize, length,
-                                pixels))
+                                columns, rows, pixels))
     {
         return false;
     }
@@ -2309,7 +2421,7 @@ bool ValidateReadnPixelsEXT(Context *context,
     }
 
     return ValidateReadPixelsBase(context, x, y, width, height, format, type, bufSize, nullptr,
-                                  pixels);
+                                  nullptr, nullptr, pixels);
 }
 
 bool ValidateReadnPixelsRobustANGLE(ValidationContext *context,
@@ -2321,6 +2433,8 @@ bool ValidateReadnPixelsRobustANGLE(ValidationContext *context,
                                     GLenum type,
                                     GLsizei bufSize,
                                     GLsizei *length,
+                                    GLsizei *columns,
+                                    GLsizei *rows,
                                     GLvoid *data)
 {
     if (!ValidateRobustEntryPoint(context, bufSize))
@@ -2328,7 +2442,8 @@ bool ValidateReadnPixelsRobustANGLE(ValidationContext *context,
         return false;
     }
 
-    if (!ValidateReadPixelsBase(context, x, y, width, height, format, type, bufSize, length, data))
+    if (!ValidateReadPixelsBase(context, x, y, width, height, format, type, bufSize, length,
+                                columns, rows, data))
     {
         return false;
     }
@@ -2934,8 +3049,8 @@ bool ValidateStateQuery(ValidationContext *context,
         case GL_IMPLEMENTATION_COLOR_READ_TYPE:
         case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
         {
-            if (context->getGLState().getReadFramebuffer()->checkStatus(
-                    context->getContextState()) != GL_FRAMEBUFFER_COMPLETE)
+            if (context->getGLState().getReadFramebuffer()->checkStatus(context) !=
+                GL_FRAMEBUFFER_COMPLETE)
             {
                 context->handleError(Error(GL_INVALID_OPERATION));
                 return false;
@@ -3038,13 +3153,13 @@ bool ValidateCopyTexImageParametersBase(ValidationContext *context,
 
     const auto &state    = context->getGLState();
     auto readFramebuffer = state.getReadFramebuffer();
-    if (readFramebuffer->checkStatus(context->getContextState()) != GL_FRAMEBUFFER_COMPLETE)
+    if (readFramebuffer->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
     }
 
-    if (readFramebuffer->id() != 0 && readFramebuffer->getSamples(context->getContextState()) != 0)
+    if (readFramebuffer->id() != 0 && readFramebuffer->getSamples(context) != 0)
     {
         context->handleError(Error(GL_INVALID_OPERATION));
         return false;
@@ -3242,7 +3357,7 @@ bool ValidateDrawBase(ValidationContext *context, GLenum mode, GLsizei count)
         }
     }
 
-    if (framebuffer->checkStatus(context->getContextState()) != GL_FRAMEBUFFER_COMPLETE)
+    if (framebuffer->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
@@ -3494,6 +3609,15 @@ bool ValidateDrawElements(ValidationContext *context,
                                        "indices must be a multiple of the element type size."));
             return false;
         }
+
+        // [WebGL 1.0] Section 6.4 Buffer Offset and Stride Requirements
+        // In addition the offset argument to drawElements must be non-negative or an INVALID_VALUE
+        // error is generated.
+        if (reinterpret_cast<intptr_t>(indices) < 0)
+        {
+            context->handleError(Error(GL_INVALID_VALUE, "Offset < 0."));
+            return false;
+        }
     }
 
     if (context->getExtensions().webglCompatibility ||
@@ -3514,20 +3638,31 @@ bool ValidateDrawElements(ValidationContext *context,
     {
         if (elementArrayBuffer)
         {
-            GLint64 offset = reinterpret_cast<GLint64>(indices);
-            GLint64 byteCount =
-                static_cast<GLint64>(typeBytes) * static_cast<GLint64>(count) + offset;
+            // The max possible type size is 8 and count is on 32 bits so doing the multiplication
+            // in a 64 bit integer is safe. Also we are guaranteed that here count > 0.
+            static_assert(std::is_same<int, GLsizei>::value, "GLsizei isn't the expected type");
+            constexpr uint64_t kMaxTypeSize = 8;
+            constexpr uint64_t kIntMax      = std::numeric_limits<int>::max();
+            constexpr uint64_t kUint64Max   = std::numeric_limits<uint64_t>::max();
+            static_assert(kIntMax < kUint64Max / kMaxTypeSize, "");
 
-            // check for integer overflows
-            if (static_cast<GLuint>(count) > (std::numeric_limits<GLuint>::max() / typeBytes) ||
-                byteCount > static_cast<GLint64>(std::numeric_limits<GLuint>::max()))
+            uint64_t typeSize     = typeBytes;
+            uint64_t elementCount = static_cast<uint64_t>(count);
+            ASSERT(elementCount > 0 && typeSize <= kMaxTypeSize);
+
+            // Doing the multiplication here is overflow-safe
+            uint64_t elementDataSizeNoOffset = typeSize * elementCount;
+
+            // The offset can be any value, check for overflows
+            uint64_t offset = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(indices));
+            if (elementDataSizeNoOffset > kUint64Max - offset)
             {
-                context->handleError(Error(GL_OUT_OF_MEMORY, "Integer overflow."));
+                context->handleError(Error(GL_INVALID_OPERATION, "Integer overflow."));
                 return false;
             }
 
-            // Check for reading past the end of the bound buffer object
-            if (byteCount > elementArrayBuffer->getSize())
+            uint64_t elementDataSizeWithOffset = elementDataSizeNoOffset + offset;
+            if (elementDataSizeWithOffset > static_cast<uint64_t>(elementArrayBuffer->getSize()))
             {
                 context->handleError(
                     Error(GL_INVALID_OPERATION, "Index buffer is not big enough for the draw."));
@@ -5162,6 +5297,14 @@ bool ValidateGetProgramiv(Context *context, GLuint program, GLenum pname, GLsize
             }
             break;
 
+        case GL_PROGRAM_SEPARABLE:
+            if (context->getClientVersion() < Version(3, 1))
+            {
+                context->handleError(Error(GL_INVALID_ENUM, "Querying requires at least ES 3.1."));
+                return false;
+            }
+            break;
+
         default:
             context->handleError(Error(GL_INVALID_ENUM, "Unknown parameter name."));
             return false;
@@ -5693,6 +5836,123 @@ bool ValidateGetInternalFormativRobustANGLE(Context *context,
     if (!ValidateRobustBufferSize(context, bufSize, *length))
     {
         return false;
+    }
+
+    return true;
+}
+
+bool ValidateVertexFormatBase(ValidationContext *context,
+                              GLuint attribIndex,
+                              GLint size,
+                              GLenum type,
+                              GLboolean pureInteger)
+{
+    const Caps &caps = context->getCaps();
+    if (attribIndex >= caps.maxVertexAttributes)
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE, "attribindex must be smaller than MAX_VERTEX_ATTRIBS."));
+        return false;
+    }
+
+    if (size < 1 || size > 4)
+    {
+        context->handleError(Error(GL_INVALID_VALUE, "size must be between one and four."));
+    }
+
+    switch (type)
+    {
+        case GL_BYTE:
+        case GL_UNSIGNED_BYTE:
+        case GL_SHORT:
+        case GL_UNSIGNED_SHORT:
+            break;
+
+        case GL_INT:
+        case GL_UNSIGNED_INT:
+            if (context->getClientMajorVersion() < 3)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM, "Vertex type not supported before OpenGL ES 3.0."));
+                return false;
+            }
+            break;
+
+        case GL_FIXED:
+        case GL_FLOAT:
+            if (pureInteger)
+            {
+                context->handleError(Error(GL_INVALID_ENUM, "Type is not integer."));
+                return false;
+            }
+            break;
+
+        case GL_HALF_FLOAT:
+            if (context->getClientMajorVersion() < 3)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM, "Vertex type not supported before OpenGL ES 3.0."));
+                return false;
+            }
+            if (pureInteger)
+            {
+                context->handleError(Error(GL_INVALID_ENUM, "Type is not integer."));
+                return false;
+            }
+            break;
+
+        case GL_INT_2_10_10_10_REV:
+        case GL_UNSIGNED_INT_2_10_10_10_REV:
+            if (context->getClientMajorVersion() < 3)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM, "Vertex type not supported before OpenGL ES 3.0."));
+                return false;
+            }
+            if (pureInteger)
+            {
+                context->handleError(Error(GL_INVALID_ENUM, "Type is not integer."));
+                return false;
+            }
+            if (size != 4)
+            {
+                context->handleError(Error(GL_INVALID_OPERATION,
+                                           "Type is INT_2_10_10_10_REV or "
+                                           "UNSIGNED_INT_2_10_10_10_REV and size is not 4."));
+                return false;
+            }
+            break;
+
+        default:
+            context->handleError(Error(GL_INVALID_ENUM, "Invalid vertex type."));
+            return false;
+    }
+
+    return true;
+}
+
+// Perform validation from WebGL 2 section 5.10 "Invalid Clears":
+// In the WebGL 2 API, trying to perform a clear when there is a mismatch between the type of the
+// specified clear value and the type of a buffer that is being cleared generates an
+// INVALID_OPERATION error instead of producing undefined results
+bool ValidateWebGLFramebufferAttachmentClearType(ValidationContext *context,
+                                                 GLint drawbuffer,
+                                                 const GLenum *validComponentTypes,
+                                                 size_t validComponentTypeCount)
+{
+    const FramebufferAttachment *attachment =
+        context->getGLState().getDrawFramebuffer()->getDrawBuffer(drawbuffer);
+    if (attachment)
+    {
+        GLenum componentType = attachment->getFormat().info->componentType;
+        const GLenum *end    = validComponentTypes + validComponentTypeCount;
+        if (std::find(validComponentTypes, end, componentType) == end)
+        {
+            context->handleError(
+                Error(GL_INVALID_OPERATION,
+                      "No defined conversion between clear value and attachment format."));
+            return false;
+        }
     }
 
     return true;

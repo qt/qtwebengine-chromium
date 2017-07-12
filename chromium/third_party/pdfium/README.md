@@ -36,7 +36,7 @@ authentication instructions. **Note that you must authenticate with your
 @google.com credentials**. Enter "0" if asked for a project-id.
 
 Once you've done this, the toolchain will be installed automatically for
-you in [the step](#GenBuild) below.
+you in the [Generate the build files](#GenBuild) step below.
 
 The toolchain will be in `depot_tools\win_toolchain\vs_files\<hash>`, and windbg
 can be found in `depot_tools\win_toolchain\vs_files\<hash>\win_sdk\Debuggers`.
@@ -58,15 +58,12 @@ gclient sync
 cd pdfium
 ```
 
-##<a name="GenBuild"></a> Generate the build files
+## Generate the build files
 
 We use GN to generate the build files and
-[Ninja](http://martine.github.io/ninja/) (also included with the depot\_tools
-checkout) to execute the build files.
-
-```
-gn gen <directory>
-```
+[Ninja](http://martine.github.io/ninja/)
+to execute the build files.  Both of these are included with the
+depot\_tools checkout.
 
 ### Selecting build configuration
 
@@ -90,17 +87,20 @@ pdf_is_standalone = true  # Set for a non-embedded build.
 is_component_build = false # Disable component build (must be false)
 
 clang_use_chrome_plugins = false  # Currently must be false.
-use_sysroot = false  # Currently must be false on Linux.
+use_sysroot = false  # Currently must be false on Linux, but entirely omitted on windows.
 ```
 
 Note, you must set `pdf_is_standalone = true` if you want the sample
 applications like `pdfium_test` to build.
 
-When complete the arguments will be stored in `<directory>/args.gn`.
+When complete the arguments will be stored in `<directory>/args.gn`, and
+GN will automatically use the new arguments to generate build files.
+Should your files fail to generate, please double-check that you have set
+use\_sysroot as indicated above.
 
 ## Building the code
 
-If you used Ninja, you can build the sample program by:
+You can build the sample program by:
 `ninja -C <directory>/pdfium_test` You can build the entire product (which
 includes a few unit tests) by: `ninja -C <directory>`.
 

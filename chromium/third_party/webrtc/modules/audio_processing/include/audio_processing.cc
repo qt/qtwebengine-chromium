@@ -31,5 +31,4 @@ Beamforming::Beamforming(bool enabled,
 
 Beamforming::~Beamforming() {}
 
-
 }  // namespace webrtc

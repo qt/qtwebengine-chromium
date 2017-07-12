@@ -19,7 +19,7 @@
 
 class CQuartz2D {
  public:
-  void* createGraphics(CFX_DIBitmap* bitmap);
+  void* createGraphics(const CFX_RetainPtr<CFX_DIBitmap>& bitmap);
   void destroyGraphics(void* graphics);
 
   void* CreateFont(const uint8_t* pFontData, uint32_t dwFontSize);
@@ -27,7 +27,7 @@ class CQuartz2D {
   void setGraphicsTextMatrix(void* graphics, CFX_Matrix* matrix);
   bool drawGraphicsString(void* graphics,
                           void* font,
-                          FX_FLOAT fontSize,
+                          float fontSize,
                           uint16_t* glyphIndices,
                           CGPoint* glyphPositions,
                           int32_t chars,

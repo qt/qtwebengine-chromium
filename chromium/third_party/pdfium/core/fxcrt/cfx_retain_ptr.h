@@ -22,7 +22,7 @@ class CFX_RetainPtr {
 
   CFX_RetainPtr() {}
   CFX_RetainPtr(const CFX_RetainPtr& that) : CFX_RetainPtr(that.Get()) {}
-  CFX_RetainPtr(CFX_RetainPtr&& that) { Swap(that); }
+  CFX_RetainPtr(CFX_RetainPtr&& that) noexcept { Swap(that); }
 
   // Deliberately implicit to allow returning nullptrs.
   CFX_RetainPtr(std::nullptr_t ptr) {}
@@ -44,13 +44,18 @@ class CFX_RetainPtr {
   T* Get() const { return m_pObj.get(); }
   void Swap(CFX_RetainPtr& that) { m_pObj.swap(that.m_pObj); }
 
-  // TODO(tsepez): temporary scaffolding, to be removed.
+  // Useful for passing notion of object ownership across a C API.
   T* Leak() { return m_pObj.release(); }
   void Unleak(T* ptr) { m_pObj.reset(ptr); }
 
   CFX_RetainPtr& operator=(const CFX_RetainPtr& that) {
     if (*this != that)
       Reset(that.Get());
+    return *this;
+  }
+
+  CFX_RetainPtr& operator=(CFX_RetainPtr&& that) {
+    m_pObj.reset(that.Leak());
     return *this;
   }
 

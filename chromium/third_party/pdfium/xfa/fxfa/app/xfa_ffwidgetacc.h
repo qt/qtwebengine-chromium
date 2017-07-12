@@ -9,7 +9,7 @@
 
 #include "core/fxcrt/fx_string.h"
 #include "xfa/fxfa/app/cxfa_textlayout.h"
-#include "xfa/fxfa/fxfa_widget.h"
+#include "xfa/fxfa/cxfa_widgetacc.h"
 #include "xfa/fxfa/parser/cxfa_font.h"
 #include "xfa/fxfa/parser/cxfa_para.h"
 
@@ -44,7 +44,7 @@ class CXFA_TextProvider {
                     const CFX_WideString& wsAttr,
                     CFX_WideString& wsValue);
 
- protected:
+ private:
   CXFA_WidgetAcc* m_pWidgetAcc;
   XFA_TEXTPROVIDERTYPE m_eType;
   CXFA_Node* m_pTextNode;

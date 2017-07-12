@@ -16,9 +16,8 @@
 
 CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
                                              JBig2ArithCtx* grContext) {
-  std::unique_ptr<CJBig2_HuffmanDecoder> pHuffmanDecoder(
-      new CJBig2_HuffmanDecoder(pStream));
-  std::unique_ptr<CJBig2_Image> SBREG(new CJBig2_Image(SBW, SBH));
+  auto pHuffmanDecoder = pdfium::MakeUnique<CJBig2_HuffmanDecoder>(pStream);
+  auto SBREG = pdfium::MakeUnique<CJBig2_Image>(SBW, SBH);
   SBREG->fill(SBDEFPIXEL);
   int32_t STRIPT;
   if (pHuffmanDecoder->decodeAValue(SBHUFFDT, &STRIPT) != 0)
@@ -70,7 +69,7 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
         CURT = nVal;
       }
       int32_t TI = STRIPT + CURT;
-      int32_t nVal = 0;
+      pdfium::base::CheckedNumeric<int32_t> nVal = 0;
       int32_t nBits = 0;
       uint32_t IDI;
       for (;;) {
@@ -78,11 +77,15 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
         if (pStream->read1Bit(&nTmp) != 0)
           return nullptr;
 
-        nVal = (nVal << 1) | nTmp;
+        nVal <<= 1;
+        if (!nVal.IsValid())
+          return nullptr;
+
+        nVal |= nTmp;
         nBits++;
         for (IDI = 0; IDI < SBNUMSYMS; IDI++) {
           if ((nBits == SBSYMCODES[IDI].codelen) &&
-              (nVal == SBSYMCODES[IDI].code)) {
+              (nVal.ValueOrDie() == SBSYMCODES[IDI].code)) {
             break;
           }
         }
@@ -102,11 +105,12 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
         int32_t RDHI;
         int32_t RDXI;
         int32_t RDYI;
+        int32_t HUFFRSIZE;
         if ((pHuffmanDecoder->decodeAValue(SBHUFFRDW, &RDWI) != 0) ||
             (pHuffmanDecoder->decodeAValue(SBHUFFRDH, &RDHI) != 0) ||
             (pHuffmanDecoder->decodeAValue(SBHUFFRDX, &RDXI) != 0) ||
             (pHuffmanDecoder->decodeAValue(SBHUFFRDY, &RDYI) != 0) ||
-            (pHuffmanDecoder->decodeAValue(SBHUFFRSIZE, &nVal) != 0)) {
+            (pHuffmanDecoder->decodeAValue(SBHUFFRSIZE, &HUFFRSIZE) != 0)) {
           return nullptr;
         }
         pStream->alignByte();
@@ -120,7 +124,7 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
         if ((int)(WOI + RDWI) < 0 || (int)(HOI + RDHI) < 0)
           return nullptr;
 
-        std::unique_ptr<CJBig2_GRRDProc> pGRRD(new CJBig2_GRRDProc());
+        auto pGRRD = pdfium::MakeUnique<CJBig2_GRRDProc>();
         pGRRD->GRW = WOI + RDWI;
         pGRRD->GRH = HOI + RDHI;
         pGRRD->GRTEMPLATE = SBRTEMPLATE;
@@ -134,8 +138,7 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
         pGRRD->GRAT[3] = SBRAT[3];
 
         {
-          std::unique_ptr<CJBig2_ArithDecoder> pArithDecoder(
-              new CJBig2_ArithDecoder(pStream));
+          auto pArithDecoder = pdfium::MakeUnique<CJBig2_ArithDecoder>(pStream);
           IBI = pGRRD->decode(pArithDecoder.get(), grContext);
           if (!IBI)
             return nullptr;
@@ -143,7 +146,7 @@ CJBig2_Image* CJBig2_TRDProc::decode_Huffman(CJBig2_BitStream* pStream,
 
         pStream->alignByte();
         pStream->offset(2);
-        if ((uint32_t)nVal != (pStream->getOffset() - nTmp)) {
+        if (static_cast<uint32_t>(HUFFRSIZE) != (pStream->getOffset() - nTmp)) {
           delete IBI;
           return nullptr;
         }
@@ -264,7 +267,7 @@ CJBig2_Image* CJBig2_TRDProc::decode_Arith(CJBig2_ArithDecoder* pArithDecoder,
     pIARDY = IARDY.get();
     pIAID = IAID.get();
   }
-  std::unique_ptr<CJBig2_Image> SBREG(new CJBig2_Image(SBW, SBH));
+  auto SBREG = pdfium::MakeUnique<CJBig2_Image>(SBW, SBH);
   SBREG->fill(SBDEFPIXEL);
   int32_t STRIPT;
   if (!pIADT->decode(pArithDecoder, &STRIPT))
@@ -335,7 +338,7 @@ CJBig2_Image* CJBig2_TRDProc::decode_Arith(CJBig2_ArithDecoder* pArithDecoder,
         if ((int)(WOI + RDWI) < 0 || (int)(HOI + RDHI) < 0)
           return nullptr;
 
-        std::unique_ptr<CJBig2_GRRDProc> pGRRD(new CJBig2_GRRDProc());
+        auto pGRRD = pdfium::MakeUnique<CJBig2_GRRDProc>();
         pGRRD->GRW = WOI + RDWI;
         pGRRD->GRH = HOI + RDHI;
         pGRRD->GRTEMPLATE = SBRTEMPLATE;

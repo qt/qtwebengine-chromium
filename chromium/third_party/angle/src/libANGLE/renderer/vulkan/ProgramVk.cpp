@@ -53,6 +53,11 @@ void ProgramVk::setBinaryRetrievableHint(bool retrievable)
     UNIMPLEMENTED();
 }
 
+void ProgramVk::setSeparable(bool separable)
+{
+    UNIMPLEMENTED();
+}
+
 LinkResult ProgramVk::link(ContextImpl *contextImpl,
                            const gl::VaryingPacking &packing,
                            gl::InfoLog &infoLog)
@@ -102,6 +107,9 @@ LinkResult ProgramVk::link(ContextImpl *contextImpl,
 
     mLinkedVertexModule.retain(device, std::move(vertexModule));
     mLinkedFragmentModule.retain(device, std::move(fragmentModule));
+
+    // TODO(jmadill): Use pipeline cache.
+    context->invalidateCurrentPipeline();
 
     return true;
 }

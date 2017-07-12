@@ -26,6 +26,7 @@
 #include "webrtc/modules/desktop_capture/desktop_frame_rotation.h"
 #include "webrtc/modules/desktop_capture/shared_desktop_frame.h"
 #include "webrtc/modules/desktop_capture/win/d3d_device.h"
+#include "webrtc/modules/desktop_capture/win/dxgi_context.h"
 #include "webrtc/modules/desktop_capture/win/dxgi_texture.h"
 
 namespace webrtc {
@@ -34,12 +35,7 @@ namespace webrtc {
 // video card. None of functions in this class is thread-safe.
 class DxgiOutputDuplicator {
  public:
-  struct Context {
-    // The updated region DxgiOutputDuplicator::DetectUpdatedRegion() output
-    // during last Duplicate() function call. It's always relative to the
-    // (0, 0).
-    DesktopRegion updated_region;
-  };
+  using Context = DxgiOutputContext;
 
   // Creates an instance of DxgiOutputDuplicator from a D3dDevice and one of its
   // IDXGIOutput1. Caller must maintain the lifetime of device, to make sure it
@@ -79,6 +75,9 @@ class DxgiOutputDuplicator {
   // How many frames have been captured by this DxigOutputDuplicator.
   int64_t num_frames_captured() const;
 
+  // Moves |desktop_rect_|. See DxgiDuplicatorController::TranslateRect().
+  void TranslateRect(const DesktopVector& position);
+
  private:
   // Calls DoDetectUpdatedRegion(). If it fails, this function sets the
   // |updated_region| as entire UntranslatedDesktopRect().
@@ -113,7 +112,7 @@ class DxgiOutputDuplicator {
 
   const D3dDevice device_;
   const Microsoft::WRL::ComPtr<IDXGIOutput1> output_;
-  const DesktopRect desktop_rect_;
+  DesktopRect desktop_rect_;
   Microsoft::WRL::ComPtr<IDXGIOutputDuplication> duplication_;
   DXGI_OUTDUPL_DESC desc_;
   std::vector<uint8_t> metadata_;

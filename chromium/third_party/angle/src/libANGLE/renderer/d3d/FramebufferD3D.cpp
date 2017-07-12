@@ -8,7 +8,7 @@
 
 #include "libANGLE/renderer/d3d/FramebufferD3D.h"
 
-#include "common/BitSetIterator.h"
+#include "common/bitset_utils.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/FramebufferAttachment.h"
@@ -296,7 +296,8 @@ bool FramebufferD3D::checkStatus() const
     return true;
 }
 
-void FramebufferD3D::syncState(const gl::Framebuffer::DirtyBits &dirtyBits)
+void FramebufferD3D::syncState(ContextImpl *contextImpl,
+                               const gl::Framebuffer::DirtyBits &dirtyBits)
 {
     bool invalidateColorAttachmentCache = false;
 

@@ -17,6 +17,8 @@
 #include <utility>
 
 #include "webrtc/api/video/i420_buffer.h"
+#include "webrtc/api/video_codecs/video_decoder.h"
+#include "webrtc/api/video_codecs/video_encoder.h"
 #include "webrtc/base/copyonwritebuffer.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/stringutils.h"
@@ -35,12 +37,11 @@
 #include "webrtc/media/engine/webrtcvoiceengine.h"
 #include "webrtc/modules/video_coding/codecs/vp8/simulcast_encoder_adapter.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
-#include "webrtc/video_decoder.h"
-#include "webrtc/video_encoder.h"
+
+using DegradationPreference = webrtc::VideoSendStream::DegradationPreference;
 
 namespace cricket {
 namespace {
-
 // If this field trial is enabled, we will enable sending FlexFEC and disable
 // sending ULPFEC whenever the former has been negotiated. Receiving FlexFEC
 // is enabled whenever FlexFEC has been negotiated.
@@ -409,7 +410,7 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::ConfigureVideoEncoderSettings(
       vp9_settings.numberOfSpatialLayers = GetDefaultVp9SpatialLayers();
     }
     // VP9 denoising is disabled by default.
-    vp9_settings.denoisingOn = codec_default_denoising ? false : denoising;
+    vp9_settings.denoisingOn = codec_default_denoising ? true : denoising;
     vp9_settings.frameDroppingOn = frame_dropping;
     return new rtc::RefCountedObject<
         webrtc::VideoEncoderConfig::Vp9EncoderSpecificSettings>(vp9_settings);
@@ -715,8 +716,10 @@ bool WebRtcVideoChannel2::GetChangedSendParameters(
 
   // Handle max bitrate.
   if (params.max_bandwidth_bps != send_params_.max_bandwidth_bps &&
-      params.max_bandwidth_bps >= 0) {
-    // 0 uncaps max bitrate (-1).
+      params.max_bandwidth_bps >= -1) {
+    // 0 or -1 uncaps max bitrate.
+    // TODO(pbos): Reconsider how 0 should be treated. It is not mentioned as a
+    // special value and might very well be used for stopping sending.
     changed_params->max_bandwidth_bps = rtc::Optional<int>(
         params.max_bandwidth_bps == 0 ? -1 : params.max_bandwidth_bps);
   }
@@ -760,6 +763,15 @@ bool WebRtcVideoChannel2::SetSendParameters(const VideoSendParameters& params) {
   }
 
   if (changed_params.codec || changed_params.max_bandwidth_bps) {
+    if (params.max_bandwidth_bps == -1) {
+      // Unset the global max bitrate (max_bitrate_bps) if max_bandwidth_bps is
+      // -1, which corresponds to no "b=AS" attribute in SDP. Note that the
+      // global max bitrate may be set below in GetBitrateConfigForCodec, from
+      // the codec max bitrate.
+      // TODO(pbos): This should be reconsidered (codec max bitrate should
+      // probably not affect global call max bitrate).
+      bitrate_config_.max_bitrate_bps = -1;
+    }
     if (send_codec_) {
       // TODO(holmer): Changing the codec parameters shouldn't necessarily mean
       // that we change the min/max of bandwidth estimation. Reevaluate this.
@@ -1626,24 +1638,33 @@ bool WebRtcVideoChannel2::WebRtcVideoSendStream::SetVideoSend(
   }
 
   if (source_ && stream_) {
-    stream_->SetSource(
-        nullptr, webrtc::VideoSendStream::DegradationPreference::kBalanced);
+    stream_->SetSource(nullptr, DegradationPreference::kDegradationDisabled);
   }
   // Switch to the new source.
   source_ = source;
   if (source && stream_) {
-    // Do not adapt resolution for screen content as this will likely
-    // result in blurry and unreadable text.
-    // |this| acts like a VideoSource to make sure SinkWants are handled on the
-    // correct thread.
-    stream_->SetSource(
-        this, enable_cpu_overuse_detection_ &&
-                      !parameters_.options.is_screencast.value_or(false)
-                  ? webrtc::VideoSendStream::DegradationPreference::kBalanced
-                  : webrtc::VideoSendStream::DegradationPreference::
-                        kMaintainResolution);
+    stream_->SetSource(this, GetDegradationPreference());
   }
   return true;
+}
+
+webrtc::VideoSendStream::DegradationPreference
+WebRtcVideoChannel2::WebRtcVideoSendStream::GetDegradationPreference() const {
+  // Do not adapt resolution for screen content as this will likely
+  // result in blurry and unreadable text.
+  // |this| acts like a VideoSource to make sure SinkWants are handled on the
+  // correct thread.
+  DegradationPreference degradation_preference;
+  if (!enable_cpu_overuse_detection_) {
+    degradation_preference = DegradationPreference::kDegradationDisabled;
+  } else {
+    if (parameters_.options.is_screencast.value_or(false)) {
+      degradation_preference = DegradationPreference::kMaintainResolution;
+    } else {
+      degradation_preference = DegradationPreference::kMaintainFramerate;
+    }
+  }
+  return degradation_preference;
 }
 
 const std::vector<uint32_t>&
@@ -2084,16 +2105,7 @@ void WebRtcVideoChannel2::WebRtcVideoSendStream::RecreateWebRtcStream() {
   parameters_.encoder_config.encoder_specific_settings = NULL;
 
   if (source_) {
-    // Do not adapt resolution for screen content as this will likely result in
-    // blurry and unreadable text.
-    // |this| acts like a VideoSource to make sure SinkWants are handled on the
-    // correct thread.
-    stream_->SetSource(
-        this, enable_cpu_overuse_detection_ &&
-                      !parameters_.options.is_screencast.value_or(false)
-                  ? webrtc::VideoSendStream::DegradationPreference::kBalanced
-                  : webrtc::VideoSendStream::DegradationPreference::
-                        kMaintainResolution);
+    stream_->SetSource(this, GetDegradationPreference());
   }
 
   // Call stream_->Start() if necessary conditions are met.
@@ -2311,12 +2323,18 @@ void WebRtcVideoChannel2::WebRtcVideoReceiveStream::RecreateWebRtcStream() {
     call_->DestroyFlexfecReceiveStream(flexfec_stream_);
     flexfec_stream_ = nullptr;
   }
-  if (flexfec_config_.IsCompleteAndEnabled()) {
+  const bool use_flexfec = flexfec_config_.IsCompleteAndEnabled();
+  // TODO(nisse): There are way too many copies here. And why isn't
+  // the argument to CreateVideoReceiveStream a const ref?
+  webrtc::VideoReceiveStream::Config config = config_.Copy();
+  config.rtp.protected_by_flexfec = use_flexfec;
+  stream_ = call_->CreateVideoReceiveStream(config.Copy());
+  stream_->Start();
+
+  if (use_flexfec) {
     flexfec_stream_ = call_->CreateFlexfecReceiveStream(flexfec_config_);
     flexfec_stream_->Start();
   }
-  stream_ = call_->CreateVideoReceiveStream(config_.Copy());
-  stream_->Start();
 }
 
 void WebRtcVideoChannel2::WebRtcVideoReceiveStream::ClearDecoders(

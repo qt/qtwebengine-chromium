@@ -8,7 +8,7 @@
 
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
 
-#include "common/BitSetIterator.h"
+#include "common/bitset_utils.h"
 #include "common/utilities.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/FramebufferAttachment.h"
@@ -260,7 +260,7 @@ D3DUniform::D3DUniform(GLenum typeIn,
         data = new uint8_t[bytes];
         memset(data, 0, bytes);
 
-        // TODO(jmadill): is this correct with non-square matrices?
+        // Use the row count as register count, will work for non-square matrices.
         registerCount = gl::VariableRowCount(type) * elementCount();
     }
 }
@@ -1128,6 +1128,10 @@ void ProgramD3D::setBinaryRetrievableHint(bool /* retrievable */)
 {
 }
 
+void ProgramD3D::setSeparable(bool /* separable */)
+{
+}
+
 gl::Error ProgramD3D::getPixelExecutableForFramebuffer(const gl::Framebuffer *fbo,
                                                        ShaderExecutableD3D **outExecutable)
 {
@@ -1902,7 +1906,6 @@ void ProgramD3D::defineUniformsAndAssignRegisters()
     if (computeShader)
     {
         for (const sh::Uniform &computeUniform : computeShader->getUniforms())
-
         {
             if (computeUniform.staticUse)
             {
@@ -1914,7 +1917,6 @@ void ProgramD3D::defineUniformsAndAssignRegisters()
     {
         const gl::Shader *vertexShader = mState.getAttachedVertexShader();
         for (const sh::Uniform &vertexUniform : vertexShader->getUniforms())
-
         {
             if (vertexUniform.staticUse)
             {
@@ -1962,7 +1964,7 @@ void ProgramD3D::defineUniformBase(const gl::Shader *shader,
 
     unsigned int startRegister = shaderD3D->getUniformRegister(uniform.name);
     ShShaderOutput outputType = shaderD3D->getCompilerOutputType();
-    sh::HLSLBlockEncoder encoder(sh::HLSLBlockEncoder::GetStrategyFor(outputType));
+    sh::HLSLBlockEncoder encoder(sh::HLSLBlockEncoder::GetStrategyFor(outputType), true);
     encoder.skipRegisters(startRegister);
 
     defineUniform(shader->getType(), uniform, uniform.name, &encoder, uniformMap);
@@ -2192,7 +2194,7 @@ size_t ProgramD3D::getUniformBlockInfo(const sh::InterfaceBlock &interfaceBlock)
 
     // define member uniforms
     sh::Std140BlockEncoder std140Encoder;
-    sh::HLSLBlockEncoder hlslEncoder(sh::HLSLBlockEncoder::ENCODE_PACKED);
+    sh::HLSLBlockEncoder hlslEncoder(sh::HLSLBlockEncoder::ENCODE_PACKED, false);
     sh::BlockLayoutEncoder *encoder = nullptr;
 
     if (interfaceBlock.layout == sh::BLOCKLAYOUT_STANDARD)
@@ -2413,6 +2415,8 @@ void ProgramD3D::gatherTransformFeedbackVaryings(const gl::VaryingPacking &varyi
         }
         else
         {
+            size_t subscript     = GL_INVALID_INDEX;
+            std::string baseName = gl::ParseResourceName(tfVaryingName, &subscript);
             for (const auto &registerInfo : varyingPacking.getRegisterList())
             {
                 const auto &varying   = *registerInfo.packedVarying->varying;
@@ -2428,7 +2432,8 @@ void ProgramD3D::gatherTransformFeedbackVaryings(const gl::VaryingPacking &varyi
 
                 // There can be more than one register assigned to a particular varying, and each
                 // register needs its own stream out entry.
-                if (tfVaryingName == varying.name)
+                if (baseName == registerInfo.packedVarying->varying->name &&
+                    (subscript == GL_INVALID_INDEX || subscript == registerInfo.varyingArrayIndex))
                 {
                     mStreamOutVaryings.push_back(D3DVarying(
                         varyingSemantic, registerInfo.semanticIndex, componentCount, outputSlot));

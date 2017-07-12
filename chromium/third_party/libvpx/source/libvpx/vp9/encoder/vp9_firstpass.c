@@ -884,7 +884,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
     const int mb_index = mb_row * cm->mb_cols + mb_col;
 #endif
 
-    (*(cpi->row_mt_sync_read_ptr))(&tile_data->row_mt_sync, mb_row, c - 1);
+    (*(cpi->row_mt_sync_read_ptr))(&tile_data->row_mt_sync, mb_row, c);
 
     // Adjust to the next column of MBs.
     x->plane[0].src.buf = cpi->Source->y_buffer +
@@ -979,12 +979,12 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
     if (log_intra < 10.0) {
       mb_intra_factor = 1.0 + ((10.0 - log_intra) * 0.05);
       fp_acc_data->intra_factor += mb_intra_factor;
-      if (cpi->oxcf.ethread_bit_match)
+      if (cpi->oxcf.row_mt_bit_exact)
         cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_intra_factor =
             mb_intra_factor;
     } else {
       fp_acc_data->intra_factor += 1.0;
-      if (cpi->oxcf.ethread_bit_match)
+      if (cpi->oxcf.row_mt_bit_exact)
         cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_intra_factor = 1.0;
     }
 
@@ -999,12 +999,12 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
     if ((level_sample < DARK_THRESH) && (log_intra < 9.0)) {
       mb_brightness_factor = 1.0 + (0.01 * (DARK_THRESH - level_sample));
       fp_acc_data->brightness_factor += mb_brightness_factor;
-      if (cpi->oxcf.ethread_bit_match)
+      if (cpi->oxcf.row_mt_bit_exact)
         cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_brightness_factor =
             mb_brightness_factor;
     } else {
       fp_acc_data->brightness_factor += 1.0;
-      if (cpi->oxcf.ethread_bit_match)
+      if (cpi->oxcf.row_mt_bit_exact)
         cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_brightness_factor =
             1.0;
     }
@@ -1166,7 +1166,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
         if (((this_error - intrapenalty) * 9 <= motion_error * 10) &&
             (this_error < (2 * intrapenalty))) {
           fp_acc_data->neutral_count += 1.0;
-          if (cpi->oxcf.ethread_bit_match)
+          if (cpi->oxcf.row_mt_bit_exact)
             cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_neutral_count =
                 1.0;
           // Also track cases where the intra is not much worse than the inter
@@ -1176,7 +1176,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
           mb_neutral_count =
               (double)motion_error / DOUBLE_DIVIDE_CHECK((double)this_error);
           fp_acc_data->neutral_count += mb_neutral_count;
-          if (cpi->oxcf.ethread_bit_match)
+          if (cpi->oxcf.row_mt_bit_exact)
             cpi->twopass.fp_mb_float_stats[mb_index].frame_mb_neutral_count =
                 mb_neutral_count;
         }
@@ -1297,7 +1297,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
     recon_uvoffset += uv_mb_height;
 
     // Accumulate row level stats to the corresponding tile stats
-    if (cpi->new_mt && mb_col == (tile.mi_col_end >> 1) - 1)
+    if (cpi->row_mt && mb_col == (tile.mi_col_end >> 1) - 1)
       accumulate_fp_mb_row_stat(tile_data, fp_acc_data);
 
     (*(cpi->row_mt_sync_write_ptr))(&tile_data->row_mt_sync, mb_row, c,
@@ -1424,7 +1424,7 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
 
   cm->log2_tile_rows = 0;
 
-  if (cpi->oxcf.ethread_bit_match && cpi->twopass.fp_mb_float_stats == NULL)
+  if (cpi->oxcf.row_mt_bit_exact && cpi->twopass.fp_mb_float_stats == NULL)
     CHECK_MEM_ERROR(
         cm, cpi->twopass.fp_mb_float_stats,
         vpx_calloc(cm->MBs * sizeof(*cpi->twopass.fp_mb_float_stats), 1));
@@ -1432,7 +1432,7 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
   {
     FIRSTPASS_STATS fps;
     TileDataEnc *first_tile_col;
-    if (!cpi->new_mt) {
+    if (!cpi->row_mt) {
       cm->log2_tile_cols = 0;
       cpi->row_mt_sync_read_ptr = vp9_row_mt_sync_read_dummy;
       cpi->row_mt_sync_write_ptr = vp9_row_mt_sync_write_dummy;
@@ -1441,13 +1441,13 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
     } else {
       cpi->row_mt_sync_read_ptr = vp9_row_mt_sync_read;
       cpi->row_mt_sync_write_ptr = vp9_row_mt_sync_write;
-      if (cpi->oxcf.ethread_bit_match) {
+      if (cpi->oxcf.row_mt_bit_exact) {
         cm->log2_tile_cols = 0;
         vp9_zero_array(cpi->twopass.fp_mb_float_stats, cm->MBs);
       }
       vp9_encode_fp_row_mt(cpi);
       first_tile_col = &cpi->tile_data[0];
-      if (cpi->oxcf.ethread_bit_match)
+      if (cpi->oxcf.row_mt_bit_exact)
         accumulate_floating_point_stats(cpi, first_tile_col);
       first_pass_stat_calc(cpi, &fps, &(first_tile_col->fp_data));
     }
@@ -1546,7 +1546,6 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
   const RATE_CONTROL *const rc = &cpi->rc;
   const VP9EncoderConfig *const oxcf = &cpi->oxcf;
   TWO_PASS *const twopass = &cpi->twopass;
-  double last_group_rate_err;
 
   // Clamp the target rate to VBR min / max limts.
   const int target_rate =
@@ -1554,14 +1553,6 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
   double noise_factor = pow((section_noise / SECTION_NOISE_DEF), 0.5);
   noise_factor = fclamp(noise_factor, NOISE_FACTOR_MIN, NOISE_FACTOR_MAX);
   inactive_zone = fclamp(inactive_zone, 0.0, 1.0);
-
-  // based on recent history adjust expectations of bits per macroblock.
-  last_group_rate_err =
-      (double)twopass->rolling_arf_group_actual_bits /
-      DOUBLE_DIVIDE_CHECK((double)twopass->rolling_arf_group_target_bits);
-  last_group_rate_err = VPXMAX(0.25, VPXMIN(4.0, last_group_rate_err));
-  twopass->bpm_factor *= (3.0 + last_group_rate_err) / 4.0;
-  twopass->bpm_factor = VPXMAX(0.25, VPXMIN(4.0, twopass->bpm_factor));
 
   if (target_rate <= 0) {
     return rc->worst_quality;  // Highest value allowed
@@ -1572,6 +1563,7 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
     const int active_mbs = VPXMAX(1, num_mbs - (int)(num_mbs * inactive_zone));
     const double av_err_per_mb = section_err / active_mbs;
     const double speed_term = 1.0 + 0.04 * oxcf->speed;
+    double last_group_rate_err;
     const int target_norm_bits_per_mb =
         (int)(((uint64_t)target_rate << BPER_MB_NORMBITS) / active_mbs);
     int q;
@@ -1579,6 +1571,14 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
 
     if (is_two_pass_svc(cpi) && cpi->svc.spatial_layer_id > 0)
       is_svc_upper_layer = 1;
+
+    // based on recent history adjust expectations of bits per macroblock.
+    last_group_rate_err =
+        (double)twopass->rolling_arf_group_actual_bits /
+        DOUBLE_DIVIDE_CHECK((double)twopass->rolling_arf_group_target_bits);
+    last_group_rate_err = VPXMAX(0.25, VPXMIN(4.0, last_group_rate_err));
+    twopass->bpm_factor *= (3.0 + last_group_rate_err) / 4.0;
+    twopass->bpm_factor = VPXMAX(0.25, VPXMIN(4.0, twopass->bpm_factor));
 
     // Try and pick a max Q that will be high enough to encode the
     // content at the given rate.
@@ -2548,10 +2548,6 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
         group_av_noise, vbr_group_bits_per_frame);
     twopass->active_worst_quality =
         (tmp_q + (twopass->active_worst_quality * 3)) >> 2;
-
-    // Reset rolling actual and target bits counters for ARF groups.
-    twopass->rolling_arf_group_target_bits = 0;
-    twopass->rolling_arf_group_actual_bits = 0;
   }
 
   // Context Adjustment of ARNR filter strength
@@ -2586,6 +2582,10 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     // Default to starting GF groups at normal frame size.
     cpi->rc.next_frame_size_selector = UNSCALED;
   }
+
+  // Reset rolling actual and target bits counters for ARF groups.
+  twopass->rolling_arf_group_target_bits = 0;
+  twopass->rolling_arf_group_actual_bits = 0;
 }
 
 // Threshold for use of the lagging second reference frame. High second ref

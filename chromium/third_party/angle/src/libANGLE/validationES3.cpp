@@ -626,13 +626,13 @@ bool ValidateES3CopyTexImageParametersBase(ValidationContext *context,
     gl::Framebuffer *framebuffer = state.getReadFramebuffer();
     GLuint readFramebufferID     = framebuffer->id();
 
-    if (framebuffer->checkStatus(context->getContextState()) != GL_FRAMEBUFFER_COMPLETE)
+    if (framebuffer->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
     }
 
-    if (readFramebufferID != 0 && framebuffer->getSamples(context->getContextState()) != 0)
+    if (readFramebufferID != 0 && framebuffer->getSamples(context) != 0)
     {
         context->handleError(Error(GL_INVALID_OPERATION));
         return false;
@@ -1030,8 +1030,7 @@ bool ValidateClearBuffer(ValidationContext *context)
         return false;
     }
 
-    if (context->getGLState().getDrawFramebuffer()->checkStatus(context->getContextState()) !=
-        GL_FRAMEBUFFER_COMPLETE)
+    if (context->getGLState().getDrawFramebuffer()->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
@@ -1309,8 +1308,8 @@ static bool ValidateBindBufferCommon(Context *context,
         {
             if (context->getClientVersion() < ES_3_1)
             {
-                context->handleError(
-                    Error(GL_INVALID_ENUM, "ATOMIC_COUNTER_BUFFER is not supported in GLES3."));
+                context->handleError(Error(
+                    GL_INVALID_ENUM, "ATOMIC_COUNTER_BUFFER is not supported before GLES 3.1"));
                 return false;
             }
             if (index >= caps.maxAtomicCounterBufferBindings)
@@ -1332,7 +1331,21 @@ static bool ValidateBindBufferCommon(Context *context,
             if (context->getClientVersion() < ES_3_1)
             {
                 context->handleError(
-                    Error(GL_INVALID_ENUM, "ATOMIC_COUNTER_BUFFER is not supported in GLES3."));
+                    Error(GL_INVALID_ENUM, "SHADER_STORAGE_BUFFER is not supported in GLES3."));
+                return false;
+            }
+            if (index >= caps.maxShaderStorageBufferBindings)
+            {
+                context->handleError(Error(GL_INVALID_VALUE,
+                                           "index is greater than or equal to the number of "
+                                           "SHADER_STORAGE_BUFFER indexed binding points."));
+                return false;
+            }
+            if (buffer != 0 && (offset % caps.shaderStorageBufferOffsetAlignment) != 0)
+            {
+                context->handleError(Error(
+                    GL_INVALID_VALUE,
+                    "offset must be multiple of value of SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT."));
                 return false;
             }
             break;
@@ -1421,6 +1434,22 @@ bool ValidateProgramParameteri(Context *context, GLuint program, GLenum pname, G
             }
             break;
 
+        case GL_PROGRAM_SEPARABLE:
+            if (context->getClientVersion() < ES_3_1)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM, "PROGRAM_SEPARABLE is not supported before GLES 3.1"));
+                return false;
+            }
+
+            if (value != GL_FALSE && value != GL_TRUE)
+            {
+                context->handleError(Error(
+                    GL_INVALID_VALUE, "Invalid value, expected GL_FALSE or GL_TRUE: %i", value));
+                return false;
+            }
+            break;
+
         default:
             context->handleError(Error(GL_INVALID_ENUM, "Invalid pname: 0x%X", pname));
             return false;
@@ -1465,6 +1494,15 @@ bool ValidateClearBufferiv(ValidationContext *context,
                 context->handleError(Error(GL_INVALID_VALUE));
                 return false;
             }
+            if (context->getExtensions().webglCompatibility)
+            {
+                constexpr GLenum validComponentTypes[] = {GL_INT};
+                if (ValidateWebGLFramebufferAttachmentClearType(
+                        context, drawbuffer, validComponentTypes, ArraySize(validComponentTypes)))
+                {
+                    return false;
+                }
+            }
             break;
 
         case GL_STENCIL:
@@ -1497,6 +1535,15 @@ bool ValidateClearBufferuiv(ValidationContext *context,
                 context->handleError(Error(GL_INVALID_VALUE));
                 return false;
             }
+            if (context->getExtensions().webglCompatibility)
+            {
+                constexpr GLenum validComponentTypes[] = {GL_UNSIGNED_INT};
+                if (ValidateWebGLFramebufferAttachmentClearType(
+                        context, drawbuffer, validComponentTypes, ArraySize(validComponentTypes)))
+                {
+                    return false;
+                }
+            }
             break;
 
         default:
@@ -1520,6 +1567,16 @@ bool ValidateClearBufferfv(ValidationContext *context,
             {
                 context->handleError(Error(GL_INVALID_VALUE));
                 return false;
+            }
+            if (context->getExtensions().webglCompatibility)
+            {
+                constexpr GLenum validComponentTypes[] = {GL_FLOAT, GL_UNSIGNED_NORMALIZED,
+                                                          GL_SIGNED_NORMALIZED};
+                if (ValidateWebGLFramebufferAttachmentClearType(
+                        context, drawbuffer, validComponentTypes, ArraySize(validComponentTypes)))
+                {
+                    return false;
+                }
             }
             break;
 
@@ -1970,6 +2027,7 @@ bool ValidateIndexedStateQuery(ValidationContext *context,
                 return false;
             }
             break;
+
         case GL_MAX_COMPUTE_WORK_GROUP_SIZE:
         case GL_MAX_COMPUTE_WORK_GROUP_COUNT:
             if (index >= 3u)
@@ -1978,6 +2036,7 @@ bool ValidateIndexedStateQuery(ValidationContext *context,
                 return false;
             }
             break;
+
         case GL_ATOMIC_COUNTER_BUFFER_START:
         case GL_ATOMIC_COUNTER_BUFFER_SIZE:
         case GL_ATOMIC_COUNTER_BUFFER_BINDING:
@@ -1993,6 +2052,45 @@ bool ValidateIndexedStateQuery(ValidationContext *context,
                 context->handleError(
                     Error(GL_INVALID_VALUE,
                           "index is outside the valid range for GL_ATOMIC_COUNTER_BUFFER_BINDING"));
+                return false;
+            }
+            break;
+
+        case GL_SHADER_STORAGE_BUFFER_START:
+        case GL_SHADER_STORAGE_BUFFER_SIZE:
+        case GL_SHADER_STORAGE_BUFFER_BINDING:
+            if (context->getClientVersion() < ES_3_1)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM,
+                          "Shader storage buffers are not supported in this version of GL"));
+                return false;
+            }
+            if (index >= caps.maxShaderStorageBufferBindings)
+            {
+                context->handleError(
+                    Error(GL_INVALID_VALUE,
+                          "index is outside the valid range for GL_SHADER_STORAGE_BUFFER_BINDING"));
+                return false;
+            }
+            break;
+
+        case GL_VERTEX_BINDING_BUFFER:
+        case GL_VERTEX_BINDING_DIVISOR:
+        case GL_VERTEX_BINDING_OFFSET:
+        case GL_VERTEX_BINDING_STRIDE:
+            if (context->getClientVersion() < ES_3_1)
+            {
+                context->handleError(
+                    Error(GL_INVALID_ENUM,
+                          "Vertex Attrib Bindings are not supported in this version of GL"));
+                return false;
+            }
+            if (index >= caps.maxVertexAttribBindings)
+            {
+                context->handleError(
+                    Error(GL_INVALID_VALUE,
+                          "bindingindex must be smaller than MAX_VERTEX_ATTRIB_BINDINGS."));
                 return false;
             }
             break;
@@ -2261,6 +2359,119 @@ bool ValidateRenderbufferStorageMultisample(ValidationContext *context,
             Error(GL_INVALID_OPERATION,
                   "Samples must not be greater than maximum supported value for the format."));
         return false;
+    }
+
+    return true;
+}
+
+bool ValidateVertexAttribIPointer(ValidationContext *context,
+                                  GLuint index,
+                                  GLint size,
+                                  GLenum type,
+                                  GLsizei stride,
+                                  const GLvoid *pointer)
+{
+    if (context->getClientMajorVersion() < 3)
+    {
+        context->handleError(
+            Error(GL_INVALID_OPERATION, "VertexAttribIPointer requires OpenGL ES 3.0 or higher."));
+        return false;
+    }
+
+    if (!ValidateVertexFormatBase(context, index, size, type, true))
+    {
+        return false;
+    }
+
+    if (stride < 0)
+    {
+        context->handleError(Error(GL_INVALID_VALUE, "stride cannot be negative."));
+        return false;
+    }
+
+    const Caps &caps = context->getCaps();
+    if (context->getClientVersion() >= ES_3_1)
+    {
+        if (stride > caps.maxVertexAttribStride)
+        {
+            context->handleError(
+                Error(GL_INVALID_VALUE, "stride cannot be greater than MAX_VERTEX_ATTRIB_STRIDE."));
+            return false;
+        }
+
+        // [OpenGL ES 3.1] Section 10.3.1 page 245:
+        // glVertexAttribBinding is part of the equivalent code of VertexAttribIPointer, so its
+        // validation should be inherited.
+        if (index >= caps.maxVertexAttribBindings)
+        {
+            context->handleError(
+                Error(GL_INVALID_VALUE, "index must be smaller than MAX_VERTEX_ATTRIB_BINDINGS."));
+            return false;
+        }
+    }
+
+    // [OpenGL ES 3.0.2] Section 2.8 page 24:
+    // An INVALID_OPERATION error is generated when a non-zero vertex array object
+    // is bound, zero is bound to the ARRAY_BUFFER buffer object binding point,
+    // and the pointer argument is not NULL.
+    if (context->getGLState().getVertexArrayId() != 0 &&
+        context->getGLState().getArrayBufferId() == 0 && pointer != nullptr)
+    {
+        context->handleError(
+            Error(GL_INVALID_OPERATION,
+                  "Client data cannot be used with a non-default vertex array object."));
+        return false;
+    }
+
+    if (context->getExtensions().webglCompatibility)
+    {
+        if (!ValidateWebGLVertexAttribPointer(context, type, false, stride, pointer, true))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ValidateGetSynciv(Context *context,
+                       GLsync sync,
+                       GLenum pname,
+                       GLsizei bufSize,
+                       GLsizei *length,
+                       GLint *values)
+{
+    if (context->getClientMajorVersion() < 3)
+    {
+        context->handleError(
+            Error(GL_INVALID_OPERATION, "GetSynciv requires OpenGL ES 3.0 or higher."));
+        return false;
+    }
+
+    if (bufSize < 0)
+    {
+        context->handleError(Error(GL_INVALID_VALUE, "bufSize cannot be negative."));
+        return false;
+    }
+
+    FenceSync *fenceSync = context->getFenceSync(sync);
+    if (!fenceSync)
+    {
+        context->handleError(Error(GL_INVALID_VALUE, "Invalid sync object."));
+        return false;
+    }
+
+    switch (pname)
+    {
+        case GL_OBJECT_TYPE:
+        case GL_SYNC_CONDITION:
+        case GL_SYNC_FLAGS:
+        case GL_SYNC_STATUS:
+            break;
+
+        default:
+            context->handleError(Error(GL_INVALID_ENUM, "Invalid pname."));
+            return false;
     }
 
     return true;

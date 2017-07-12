@@ -16,11 +16,15 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/event.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/protobuf_utils.h"
 #include "webrtc/base/swap_queue.h"
 #include "webrtc/base/thread_checker.h"
 #include "webrtc/base/timeutils.h"
 #include "webrtc/call/call.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log_helper_thread.h"
+#include "webrtc/modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor.h"
+#include "webrtc/modules/remote_bitrate_estimator/include/bwe_defines.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/app.h"
@@ -28,16 +32,15 @@
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/extended_jitter_report.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/psfb.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/rtpfb.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sdes.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
 #include "webrtc/system_wrappers/include/file_wrapper.h"
-#include "webrtc/system_wrappers/include/logging.h"
 
 #ifdef ENABLE_RTC_EVENT_LOG
-// Files generated at build-time by the protobuf compiler.
+// *.pb.h files are generated at build-time by the protobuf compiler.
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
 #include "external/webrtc/webrtc/logging/rtc_event_log/rtc_event_log.pb.h"
 #else
@@ -85,7 +88,7 @@ class RtcEventLogImpl final : public RtcEventLog {
   void LogDelayBasedBweUpdate(int32_t bitrate_bps,
                               BandwidthUsage detector_state) override;
   void LogAudioNetworkAdaptation(
-      const AudioNetworkAdaptor::EncoderRuntimeConfig& config) override;
+      const AudioEncoderRuntimeConfig& config) override;
   void LogProbeClusterCreated(int id,
                               int bitrate_bps,
                               int min_probes,
@@ -504,7 +507,7 @@ void RtcEventLogImpl::LogDelayBasedBweUpdate(int32_t bitrate_bps,
 }
 
 void RtcEventLogImpl::LogAudioNetworkAdaptation(
-    const AudioNetworkAdaptor::EncoderRuntimeConfig& config) {
+    const AudioEncoderRuntimeConfig& config) {
   std::unique_ptr<rtclog::Event> event(new rtclog::Event());
   event->set_timestamp_us(rtc::TimeMicros());
   event->set_type(rtclog::Event::AUDIO_NETWORK_ADAPTATION_EVENT);
@@ -583,7 +586,7 @@ bool RtcEventLog::ParseRtcEventLog(const std::string& file_name,
   if (!dump_file->OpenFile(file_name.c_str(), true)) {
     return false;
   }
-  std::string dump_buffer;
+  ProtoString dump_buffer;
   while ((bytes_read = dump_file->Read(tmp_buffer, sizeof(tmp_buffer))) > 0) {
     dump_buffer.append(tmp_buffer, bytes_read);
   }

@@ -4,27 +4,35 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/fxfa/parser/xfa_object.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
 #include <map>
 #include <memory>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "core/fxcrt/cfx_decimal.h"
 #include "core/fxcrt/fx_ext.h"
 #include "fxjs/cfxjse_value.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fde/xml/fde_xml_imp.h"
+#include "xfa/fde/xml/cfde_xmlelement.h"
+#include "xfa/fde/xml/cfde_xmlnode.h"
+#include "xfa/fde/xml/cfde_xmltext.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fxfa/app/xfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/parser/cxfa_arraynodelist.h"
+#include "xfa/fxfa/parser/cxfa_attachnodelist.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
 #include "xfa/fxfa/parser/cxfa_occur.h"
 #include "xfa/fxfa/parser/cxfa_scriptcontext.h"
 #include "xfa/fxfa/parser/cxfa_simple_parser.h"
+#include "xfa/fxfa/parser/cxfa_traversestrategy_xfacontainernode.h"
 #include "xfa/fxfa/parser/xfa_basic_data.h"
 
 namespace {
@@ -44,7 +52,7 @@ XFA_MAPDATABLOCKCALLBACKINFO deleteWideStringCallBack = {XFA_DeleteWideString,
                                                          XFA_CopyWideString};
 
 void XFA_DataNodeDeleteBindItem(void* pData) {
-  delete static_cast<CXFA_NodeArray*>(pData);
+  delete static_cast<std::vector<CXFA_Node*>*>(pData);
 }
 
 XFA_MAPDATABLOCKCALLBACKINFO deleteBindItemCallBack = {
@@ -80,32 +88,24 @@ int32_t GetCount(CXFA_Node* pInstMgrNode) {
   return iCount;
 }
 
-void SortNodeArrayByDocumentIdx(const CXFA_NodeSet& rgNodeSet,
-                                CXFA_NodeArray& rgNodeArray,
-                                CFX_ArrayTemplate<int32_t>& rgIdxArray) {
-  int32_t iCount = pdfium::CollectionSize<int32_t>(rgNodeSet);
-  rgNodeArray.SetSize(iCount);
-  rgIdxArray.SetSize(iCount);
-  if (iCount == 0)
-    return;
+std::vector<CXFA_Node*> NodesSortedByDocumentIdx(
+    const std::unordered_set<CXFA_Node*>& rgNodeSet) {
+  if (rgNodeSet.empty())
+    return std::vector<CXFA_Node*>();
 
-  int32_t iIndex = -1;
-  int32_t iTotalIndex = -1;
+  std::vector<CXFA_Node*> rgNodeArray;
   CXFA_Node* pCommonParent =
       (*rgNodeSet.begin())->GetNodeItem(XFA_NODEITEM_Parent);
   for (CXFA_Node* pNode = pCommonParent->GetNodeItem(XFA_NODEITEM_FirstChild);
-       pNode && iIndex < iCount;
-       pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    iTotalIndex++;
-    if (pdfium::ContainsValue(rgNodeSet, pNode)) {
-      iIndex++;
-      rgNodeArray[iIndex] = pNode;
-      rgIdxArray[iIndex] = iTotalIndex;
-    }
+       pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+    if (pdfium::ContainsValue(rgNodeSet, pNode))
+      rgNodeArray.push_back(pNode);
   }
+  return rgNodeArray;
 }
 
-using CXFA_NodeSetPair = std::pair<CXFA_NodeSet, CXFA_NodeSet>;
+using CXFA_NodeSetPair =
+    std::pair<std::unordered_set<CXFA_Node*>, std::unordered_set<CXFA_Node*>>;
 using CXFA_NodeSetPairMap =
     std::map<uint32_t, std::unique_ptr<CXFA_NodeSetPair>>;
 using CXFA_NodeSetPairMapMap =
@@ -128,8 +128,8 @@ CXFA_NodeSetPair* NodeSetPairForNode(CXFA_Node* pNode,
   return (*pNodeSetPairMap)[dwNameHash].get();
 }
 
-void ReorderDataNodes(const CXFA_NodeSet& sSet1,
-                      const CXFA_NodeSet& sSet2,
+void ReorderDataNodes(const std::unordered_set<CXFA_Node*>& sSet1,
+                      const std::unordered_set<CXFA_Node*>& sSet2,
                       bool bInsertBefore) {
   CXFA_NodeSetPairMapMap rgMap;
   for (CXFA_Node* pNode : sSet1) {
@@ -156,26 +156,21 @@ void ReorderDataNodes(const CXFA_NodeSet& sSet1,
       if (!pNodeSetPair)
         continue;
       if (!pNodeSetPair->first.empty() && !pNodeSetPair->second.empty()) {
-        CXFA_NodeArray rgNodeArray1;
-        CXFA_NodeArray rgNodeArray2;
-        CFX_ArrayTemplate<int32_t> rgIdxArray1;
-        CFX_ArrayTemplate<int32_t> rgIdxArray2;
-        SortNodeArrayByDocumentIdx(pNodeSetPair->first, rgNodeArray1,
-                                   rgIdxArray1);
-        SortNodeArrayByDocumentIdx(pNodeSetPair->second, rgNodeArray2,
-                                   rgIdxArray2);
+        std::vector<CXFA_Node*> rgNodeArray1 =
+            NodesSortedByDocumentIdx(pNodeSetPair->first);
+        std::vector<CXFA_Node*> rgNodeArray2 =
+            NodesSortedByDocumentIdx(pNodeSetPair->second);
         CXFA_Node* pParentNode = nullptr;
         CXFA_Node* pBeforeNode = nullptr;
         if (bInsertBefore) {
-          pBeforeNode = rgNodeArray2[0];
+          pBeforeNode = rgNodeArray2.front();
           pParentNode = pBeforeNode->GetNodeItem(XFA_NODEITEM_Parent);
         } else {
-          CXFA_Node* pLastNode = rgNodeArray2[rgIdxArray2.GetSize() - 1];
+          CXFA_Node* pLastNode = rgNodeArray2.back();
           pParentNode = pLastNode->GetNodeItem(XFA_NODEITEM_Parent);
           pBeforeNode = pLastNode->GetNodeItem(XFA_NODEITEM_NextSibling);
         }
-        for (int32_t iIdx = 0; iIdx < rgIdxArray1.GetSize(); iIdx++) {
-          CXFA_Node* pCurNode = rgNodeArray1[iIdx];
+        for (auto* pCurNode : rgNodeArray1) {
           pParentNode->RemoveChild(pCurNode);
           pParentNode->InsertChild(pCurNode, pBeforeNode);
         }
@@ -235,8 +230,8 @@ void InsertItem(CXFA_Node* pInstMgrNode,
     pInstMgrNode->GetNodeItem(XFA_NODEITEM_Parent)
         ->InsertChild(pNewInstance, pNextSibling);
     if (bMoveDataBindingNodes) {
-      CXFA_NodeSet sNew;
-      CXFA_NodeSet sAfter;
+      std::unordered_set<CXFA_Node*> sNew;
+      std::unordered_set<CXFA_Node*> sAfter;
       CXFA_NodeIteratorTemplate<CXFA_Node,
                                 CXFA_TraverseStrategy_XFAContainerNode>
           sIteratorNew(pNewInstance);
@@ -266,8 +261,8 @@ void InsertItem(CXFA_Node* pInstMgrNode,
     pInstMgrNode->GetNodeItem(XFA_NODEITEM_Parent)
         ->InsertChild(pNewInstance, pBeforeInstance);
     if (bMoveDataBindingNodes) {
-      CXFA_NodeSet sNew;
-      CXFA_NodeSet sBefore;
+      std::unordered_set<CXFA_Node*> sNew;
+      std::unordered_set<CXFA_Node*> sBefore;
       CXFA_NodeIteratorTemplate<CXFA_Node,
                                 CXFA_TraverseStrategy_XFAContainerNode>
           sIteratorNew(pNewInstance);
@@ -348,7 +343,7 @@ CXFA_Node* CreateInstance(CXFA_Node* pInstMgrNode, bool bDataMerge) {
 struct XFA_ExecEventParaInfo {
  public:
   uint32_t m_uHash;
-  const FX_WCHAR* m_lpcEventName;
+  const wchar_t* m_lpcEventName;
   XFA_EVENTTYPE m_eventType;
   uint32_t m_validFlags;
 };
@@ -406,11 +401,11 @@ void StrToRGB(const CFX_WideString& strRGB,
   g = 0;
   b = 0;
 
-  FX_WCHAR zero = '0';
+  wchar_t zero = '0';
   int32_t iIndex = 0;
   int32_t iLen = strRGB.GetLength();
   for (int32_t i = 0; i < iLen; ++i) {
-    FX_WCHAR ch = strRGB.GetAt(i);
+    wchar_t ch = strRGB.GetAt(i);
     if (ch == L',')
       ++iIndex;
     if (iIndex > 2)
@@ -522,22 +517,21 @@ CXFA_Node* CXFA_Node::Clone(bool bRecursive) {
   MergeAllData(pClone);
   pClone->UpdateNameHash();
   if (IsNeedSavingXMLNode()) {
-    CFDE_XMLNode* pCloneXML = nullptr;
+    std::unique_ptr<CFDE_XMLNode> pCloneXML;
     if (IsAttributeInXML()) {
       CFX_WideString wsName;
       GetAttribute(XFA_ATTRIBUTE_Name, wsName, false);
-      CFDE_XMLElement* pCloneXMLElement = new CFDE_XMLElement(wsName);
+      auto pCloneXMLElement = pdfium::MakeUnique<CFDE_XMLElement>(wsName);
       CFX_WideStringC wsValue = GetCData(XFA_ATTRIBUTE_Value);
       if (!wsValue.IsEmpty()) {
         pCloneXMLElement->SetTextData(CFX_WideString(wsValue));
       }
-      pCloneXML = pCloneXMLElement;
-      pCloneXMLElement = nullptr;
+      pCloneXML.reset(pCloneXMLElement.release());
       pClone->SetEnum(XFA_ATTRIBUTE_Contains, XFA_ATTRIBUTEENUM_Unknown);
     } else {
-      pCloneXML = m_pXMLNode->Clone(false);
+      pCloneXML = m_pXMLNode->Clone();
     }
-    pClone->SetXMLMappingNode(pCloneXML);
+    pClone->SetXMLMappingNode(pCloneXML.release());
     pClone->SetFlag(XFA_NodeFlag_OwnXMLNode, false);
   }
   if (bRecursive) {
@@ -612,34 +606,18 @@ CXFA_Node* CXFA_Node::GetNodeItem(XFA_NODEITEM eItem,
   return pNode;
 }
 
-int32_t CXFA_Node::GetNodeList(CXFA_NodeArray& nodes,
-                               uint32_t dwTypeFilter,
-                               XFA_Element eTypeFilter,
-                               int32_t iLevel) {
-  if (--iLevel < 0) {
-    return nodes.GetSize();
-  }
+std::vector<CXFA_Node*> CXFA_Node::GetNodeList(uint32_t dwTypeFilter,
+                                               XFA_Element eTypeFilter) {
+  std::vector<CXFA_Node*> nodes;
   if (eTypeFilter != XFA_Element::Unknown) {
-    CXFA_Node* pChild = m_pChild;
-    while (pChild) {
-      if (pChild->GetElementType() == eTypeFilter) {
-        nodes.Add(pChild);
-        if (iLevel > 0) {
-          GetNodeList(nodes, dwTypeFilter, eTypeFilter, iLevel);
-        }
-      }
-      pChild = pChild->m_pNext;
+    for (CXFA_Node* pChild = m_pChild; pChild; pChild = pChild->m_pNext) {
+      if (pChild->GetElementType() == eTypeFilter)
+        nodes.push_back(pChild);
     }
   } else if (dwTypeFilter ==
              (XFA_NODEFILTER_Children | XFA_NODEFILTER_Properties)) {
-    CXFA_Node* pChild = m_pChild;
-    while (pChild) {
-      nodes.Add(pChild);
-      if (iLevel > 0) {
-        GetNodeList(nodes, dwTypeFilter, eTypeFilter, iLevel);
-      }
-      pChild = pChild->m_pNext;
-    }
+    for (CXFA_Node* pChild = m_pChild; pChild; pChild = pChild->m_pNext)
+      nodes.push_back(pChild);
   } else if (dwTypeFilter != 0) {
     bool bFilterChildren = !!(dwTypeFilter & XFA_NODEFILTER_Children);
     bool bFilterProperties = !!(dwTypeFilter & XFA_NODEFILTER_Properties);
@@ -651,26 +629,26 @@ int32_t CXFA_Node::GetNodeList(CXFA_NodeArray& nodes,
           GetElementType(), pChild->GetElementType(), XFA_XDPPACKET_UNKNOWN);
       if (pProperty) {
         if (bFilterProperties) {
-          nodes.Add(pChild);
+          nodes.push_back(pChild);
         } else if (bFilterOneOfProperties &&
                    (pProperty->uFlags & XFA_PROPERTYFLAG_OneOf)) {
-          nodes.Add(pChild);
+          nodes.push_back(pChild);
         } else if (bFilterChildren &&
                    (pChild->GetElementType() == XFA_Element::Variables ||
                     pChild->GetElementType() == XFA_Element::PageSet)) {
-          nodes.Add(pChild);
+          nodes.push_back(pChild);
         }
       } else if (bFilterChildren) {
-        nodes.Add(pChild);
+        nodes.push_back(pChild);
       }
       pChild = pChild->m_pNext;
     }
-    if (bFilterOneOfProperties && nodes.GetSize() < 1) {
+    if (bFilterOneOfProperties && nodes.empty()) {
       int32_t iProperties = 0;
       const XFA_PROPERTY* pProperty =
           XFA_GetElementProperties(GetElementType(), iProperties);
       if (!pProperty || iProperties < 1)
-        return 0;
+        return nodes;
       for (int32_t i = 0; i < iProperties; i++) {
         if (pProperty[i].uFlags & XFA_PROPERTYFLAG_DefaultOneOf) {
           const XFA_PACKETINFO* pPacket = XFA_GetPacketByID(GetPacketID());
@@ -680,13 +658,13 @@ int32_t CXFA_Node::GetNodeList(CXFA_NodeArray& nodes,
             break;
           InsertChild(pNewNode, nullptr);
           pNewNode->SetFlag(XFA_NodeFlag_Initialized, true);
-          nodes.Add(pNewNode);
+          nodes.push_back(pNewNode);
           break;
         }
       }
     }
   }
-  return nodes.GetSize();
+  return nodes;
 }
 
 CXFA_Node* CXFA_Node::CreateSamePacketNode(XFA_Element eType,
@@ -729,74 +707,72 @@ CXFA_Node* CXFA_Node::GetBindData() {
   return static_cast<CXFA_Node*>(GetObject(XFA_ATTRIBUTE_BindingNode));
 }
 
-int32_t CXFA_Node::GetBindItems(CXFA_NodeArray& formItems) {
+std::vector<CXFA_Node*> CXFA_Node::GetBindItems() {
   if (BindsFormItems()) {
-    CXFA_NodeArray* pItems = nullptr;
-    TryObject(XFA_ATTRIBUTE_BindingNode, (void*&)pItems);
-    formItems.Copy(*pItems);
-    return formItems.GetSize();
+    void* pBinding = nullptr;
+    TryObject(XFA_ATTRIBUTE_BindingNode, pBinding);
+    return *static_cast<std::vector<CXFA_Node*>*>(pBinding);
   }
+  std::vector<CXFA_Node*> result;
   CXFA_Node* pFormNode =
       static_cast<CXFA_Node*>(GetObject(XFA_ATTRIBUTE_BindingNode));
   if (pFormNode)
-    formItems.Add(pFormNode);
-  return formItems.GetSize();
+    result.push_back(pFormNode);
+  return result;
 }
 
 int32_t CXFA_Node::AddBindItem(CXFA_Node* pFormNode) {
   ASSERT(pFormNode);
   if (BindsFormItems()) {
-    CXFA_NodeArray* pItems = nullptr;
-    TryObject(XFA_ATTRIBUTE_BindingNode, (void*&)pItems);
-    ASSERT(pItems);
-    if (pItems->Find(pFormNode) < 0) {
-      pItems->Add(pFormNode);
-    }
-    return pItems->GetSize();
+    void* pBinding = nullptr;
+    TryObject(XFA_ATTRIBUTE_BindingNode, pBinding);
+    auto* pItems = static_cast<std::vector<CXFA_Node*>*>(pBinding);
+    if (!pdfium::ContainsValue(*pItems, pFormNode))
+      pItems->push_back(pFormNode);
+    return pdfium::CollectionSize<int32_t>(*pItems);
   }
   CXFA_Node* pOldFormItem =
       static_cast<CXFA_Node*>(GetObject(XFA_ATTRIBUTE_BindingNode));
   if (!pOldFormItem) {
     SetObject(XFA_ATTRIBUTE_BindingNode, pFormNode);
     return 1;
-  } else if (pOldFormItem == pFormNode) {
-    return 1;
   }
-  CXFA_NodeArray* pItems = new CXFA_NodeArray;
+  if (pOldFormItem == pFormNode)
+    return 1;
+
+  std::vector<CXFA_Node*>* pItems = new std::vector<CXFA_Node*>;
   SetObject(XFA_ATTRIBUTE_BindingNode, pItems, &deleteBindItemCallBack);
-  pItems->Add(pOldFormItem);
-  pItems->Add(pFormNode);
+  pItems->push_back(pOldFormItem);
+  pItems->push_back(pFormNode);
   m_uNodeFlags |= XFA_NodeFlag_BindFormItems;
   return 2;
 }
 
 int32_t CXFA_Node::RemoveBindItem(CXFA_Node* pFormNode) {
   if (BindsFormItems()) {
-    CXFA_NodeArray* pItems = nullptr;
-    TryObject(XFA_ATTRIBUTE_BindingNode, (void*&)pItems);
-    ASSERT(pItems);
-    int32_t iIndex = pItems->Find(pFormNode);
-    int32_t iCount = pItems->GetSize();
-    if (iIndex >= 0) {
-      if (iIndex != iCount - 1)
-        pItems->SetAt(iIndex, pItems->GetAt(iCount - 1));
-      pItems->RemoveAt(iCount - 1);
-      if (iCount == 2) {
-        CXFA_Node* pLastFormNode = pItems->GetAt(0);
-        SetObject(XFA_ATTRIBUTE_BindingNode, pLastFormNode);
+    void* pBinding = nullptr;
+    TryObject(XFA_ATTRIBUTE_BindingNode, pBinding);
+    auto* pItems = static_cast<std::vector<CXFA_Node*>*>(pBinding);
+    auto iter = std::find(pItems->begin(), pItems->end(), pFormNode);
+    if (iter != pItems->end()) {
+      *iter = pItems->back();
+      pItems->pop_back();
+      if (pItems->size() == 1) {
+        SetObject(XFA_ATTRIBUTE_BindingNode,
+                  (*pItems)[0]);  // Invalidates pItems.
         m_uNodeFlags &= ~XFA_NodeFlag_BindFormItems;
+        return 1;
       }
-      iCount--;
     }
-    return iCount;
+    return pdfium::CollectionSize<int32_t>(*pItems);
   }
   CXFA_Node* pOldFormItem =
       static_cast<CXFA_Node*>(GetObject(XFA_ATTRIBUTE_BindingNode));
-  if (pOldFormItem == pFormNode) {
-    SetObject(XFA_ATTRIBUTE_BindingNode, nullptr);
-    pOldFormItem = nullptr;
-  }
-  return pOldFormItem ? 1 : 0;
+  if (pOldFormItem != pFormNode)
+    return pOldFormItem ? 1 : 0;
+
+  SetObject(XFA_ATTRIBUTE_BindingNode, nullptr);
+  return 0;
 }
 
 bool CXFA_Node::HasBindItem() {
@@ -836,10 +812,7 @@ CXFA_WidgetData* CXFA_Node::GetContainerWidgetData() {
       if (!pDataNode)
         return nullptr;
       pFieldWidgetData = nullptr;
-      CXFA_NodeArray formNodes;
-      pDataNode->GetBindItems(formNodes);
-      for (int32_t i = 0; i < formNodes.GetSize(); i++) {
-        CXFA_Node* pFormNode = formNodes.GetAt(i);
+      for (CXFA_Node* pFormNode : pDataNode->GetBindItems()) {
         if (!pFormNode || pFormNode->HasRemovedChildren())
           continue;
         pFieldWidgetData = pFormNode->GetWidgetData();
@@ -1016,16 +989,16 @@ void CXFA_Node::Script_TreeClass_ResolveNode(CFXJSE_Arguments* pArguments) {
     return;
   }
   if (resoveNodeRS.dwFlags == XFA_RESOVENODE_RSTYPE_Nodes) {
-    CXFA_Object* pNode = resoveNodeRS.nodes[0];
+    CXFA_Object* pObject = resoveNodeRS.objects.front();
     pArguments->GetReturnValue()->Assign(
-        pScriptContext->GetJSValueFromMap(pNode));
+        pScriptContext->GetJSValueFromMap(pObject));
   } else {
     const XFA_SCRIPTATTRIBUTEINFO* lpAttributeInfo =
         resoveNodeRS.pScriptAttribute;
     if (lpAttributeInfo && lpAttributeInfo->eValueType == XFA_SCRIPT_Object) {
       std::unique_ptr<CFXJSE_Value> pValue(
           new CFXJSE_Value(pScriptContext->GetRuntime()));
-      (resoveNodeRS.nodes[0]->*(lpAttributeInfo->lpfnCallback))(
+      (resoveNodeRS.objects.front()->*(lpAttributeInfo->lpfnCallback))(
           pValue.get(), false, (XFA_ATTRIBUTE)lpAttributeInfo->eAttribute);
       pArguments->GetReturnValue()->Assign(pValue.get());
     } else {
@@ -1068,18 +1041,16 @@ void CXFA_Node::Script_Som_ResolveNodeList(CFXJSE_Value* pValue,
                                  resoveNodeRS, dwFlag);
   CXFA_ArrayNodeList* pNodeList = new CXFA_ArrayNodeList(m_pDocument);
   if (resoveNodeRS.dwFlags == XFA_RESOVENODE_RSTYPE_Nodes) {
-    for (int32_t i = 0; i < resoveNodeRS.nodes.GetSize(); i++) {
-      if (resoveNodeRS.nodes[i]->IsNode())
-        pNodeList->Append(resoveNodeRS.nodes[i]->AsNode());
+    for (CXFA_Object* pObject : resoveNodeRS.objects) {
+      if (pObject->IsNode())
+        pNodeList->Append(pObject->AsNode());
     }
   } else {
     CXFA_ValueArray valueArray(pScriptContext->GetRuntime());
-    if (resoveNodeRS.GetAttributeResult(valueArray) > 0) {
-      CXFA_ObjArray objectArray;
-      valueArray.GetAttributeObject(objectArray);
-      for (int32_t i = 0; i < objectArray.GetSize(); i++) {
-        if (objectArray[i]->IsNode())
-          pNodeList->Append(objectArray[i]->AsNode());
+    if (resoveNodeRS.GetAttributeResult(&valueArray) > 0) {
+      for (CXFA_Object* pObject : valueArray.GetAttributeObject()) {
+        if (pObject->IsNode())
+          pNodeList->Append(pObject->AsNode());
       }
     }
   }
@@ -1331,13 +1302,16 @@ void CXFA_Node::Script_NodeClass_LoadXML(CFXJSE_Arguments* pArguments) {
     pFakeRoot->SetCData(XFA_ATTRIBUTE_ContentType,
                         CFX_WideString(wsContentType));
   }
-  CFDE_XMLNode* pFakeXMLRoot = pFakeRoot->GetXMLMappingNode();
+
+  std::unique_ptr<CFDE_XMLNode> pFakeXMLRoot(pFakeRoot->GetXMLMappingNode());
   if (!pFakeXMLRoot) {
     CFDE_XMLNode* pThisXMLRoot = GetXMLMappingNode();
-    pFakeXMLRoot = pThisXMLRoot ? pThisXMLRoot->Clone(false) : nullptr;
+    pFakeXMLRoot = pThisXMLRoot ? pThisXMLRoot->Clone() : nullptr;
   }
-  if (!pFakeXMLRoot)
-    pFakeXMLRoot = new CFDE_XMLElement(CFX_WideString(GetClassName()));
+  if (!pFakeXMLRoot) {
+    pFakeXMLRoot =
+        pdfium::MakeUnique<CFDE_XMLElement>(CFX_WideString(GetClassName()));
+  }
 
   if (bIgnoreRoot) {
     CFDE_XMLNode* pXMLChild = pXMLNode->GetNodeItem(CFDE_XMLNode::FirstChild);
@@ -1355,57 +1329,54 @@ void CXFA_Node::Script_NodeClass_LoadXML(CFXJSE_Arguments* pArguments) {
     }
     pFakeXMLRoot->InsertChildNode(pXMLNode);
   }
-  pParser->ConstructXFANode(pFakeRoot, pFakeXMLRoot);
+  pParser->ConstructXFANode(pFakeRoot, pFakeXMLRoot.get());
   pFakeRoot = pParser->GetRootNode();
-  if (pFakeRoot) {
-    if (bOverwrite) {
-      CXFA_Node* pChild = GetNodeItem(XFA_NODEITEM_FirstChild);
-      CXFA_Node* pNewChild = pFakeRoot->GetNodeItem(XFA_NODEITEM_FirstChild);
-      int32_t index = 0;
-      while (pNewChild) {
-        CXFA_Node* pItem = pNewChild->GetNodeItem(XFA_NODEITEM_NextSibling);
-        pFakeRoot->RemoveChild(pNewChild);
-        InsertChild(index++, pNewChild);
-        pNewChild->SetFlag(XFA_NodeFlag_Initialized, true);
-        pNewChild = pItem;
-      }
-      while (pChild) {
-        CXFA_Node* pItem = pChild->GetNodeItem(XFA_NODEITEM_NextSibling);
-        RemoveChild(pChild);
-        pFakeRoot->InsertChild(pChild);
-        pChild = pItem;
-      }
-      if (GetPacketID() == XFA_XDPPACKET_Form &&
-          GetElementType() == XFA_Element::ExData) {
-        CFDE_XMLNode* pTempXMLNode = GetXMLMappingNode();
-        SetXMLMappingNode(pFakeXMLRoot);
-        SetFlag(XFA_NodeFlag_OwnXMLNode, false);
-        if (pTempXMLNode && !pTempXMLNode->GetNodeItem(CFDE_XMLNode::Parent)) {
-          pFakeXMLRoot = pTempXMLNode;
-        } else {
-          pFakeXMLRoot = nullptr;
-        }
-      }
-      MoveBufferMapData(pFakeRoot, this, XFA_CalcData, true);
-    } else {
-      CXFA_Node* pChild = pFakeRoot->GetNodeItem(XFA_NODEITEM_FirstChild);
-      while (pChild) {
-        CXFA_Node* pItem = pChild->GetNodeItem(XFA_NODEITEM_NextSibling);
-        pFakeRoot->RemoveChild(pChild);
-        InsertChild(pChild);
-        pChild->SetFlag(XFA_NodeFlag_Initialized, true);
-        pChild = pItem;
-      }
+  if (!pFakeRoot)
+    return;
+
+  if (bOverwrite) {
+    CXFA_Node* pChild = GetNodeItem(XFA_NODEITEM_FirstChild);
+    CXFA_Node* pNewChild = pFakeRoot->GetNodeItem(XFA_NODEITEM_FirstChild);
+    int32_t index = 0;
+    while (pNewChild) {
+      CXFA_Node* pItem = pNewChild->GetNodeItem(XFA_NODEITEM_NextSibling);
+      pFakeRoot->RemoveChild(pNewChild);
+      InsertChild(index++, pNewChild);
+      pNewChild->SetFlag(XFA_NodeFlag_Initialized, true);
+      pNewChild = pItem;
     }
-    if (pFakeXMLRoot) {
-      pFakeRoot->SetXMLMappingNode(pFakeXMLRoot);
-      pFakeRoot->SetFlag(XFA_NodeFlag_OwnXMLNode, false);
+    while (pChild) {
+      CXFA_Node* pItem = pChild->GetNodeItem(XFA_NODEITEM_NextSibling);
+      RemoveChild(pChild);
+      pFakeRoot->InsertChild(pChild);
+      pChild = pItem;
     }
-    pFakeRoot->SetFlag(XFA_NodeFlag_HasRemovedChildren, false);
+    if (GetPacketID() == XFA_XDPPACKET_Form &&
+        GetElementType() == XFA_Element::ExData) {
+      CFDE_XMLNode* pTempXMLNode = GetXMLMappingNode();
+      SetXMLMappingNode(pFakeXMLRoot.release());
+      SetFlag(XFA_NodeFlag_OwnXMLNode, false);
+      if (pTempXMLNode && !pTempXMLNode->GetNodeItem(CFDE_XMLNode::Parent))
+        pFakeXMLRoot.reset(pTempXMLNode);
+      else
+        pFakeXMLRoot = nullptr;
+    }
+    MoveBufferMapData(pFakeRoot, this, XFA_CalcData, true);
   } else {
-    delete pFakeXMLRoot;
-    pFakeXMLRoot = nullptr;
+    CXFA_Node* pChild = pFakeRoot->GetNodeItem(XFA_NODEITEM_FirstChild);
+    while (pChild) {
+      CXFA_Node* pItem = pChild->GetNodeItem(XFA_NODEITEM_NextSibling);
+      pFakeRoot->RemoveChild(pChild);
+      InsertChild(pChild);
+      pChild->SetFlag(XFA_NodeFlag_Initialized, true);
+      pChild = pItem;
+    }
   }
+  if (pFakeXMLRoot) {
+    pFakeRoot->SetXMLMappingNode(pFakeXMLRoot.release());
+    pFakeRoot->SetFlag(XFA_NodeFlag_OwnXMLNode, false);
+  }
+  pFakeRoot->SetFlag(XFA_NodeFlag_HasRemovedChildren, false);
 }
 
 void CXFA_Node::Script_NodeClass_SaveFilteredXML(CFXJSE_Arguments* pArguments) {
@@ -1440,11 +1411,8 @@ void CXFA_Node::Script_NodeClass_SaveXML(CFXJSE_Arguments* pArguments) {
     }
     CFX_RetainPtr<IFX_MemoryStream> pMemoryStream =
         IFX_MemoryStream::Create(true);
-
-    // Note: ambiguious below without static_cast.
-    CFX_RetainPtr<IFGAS_Stream> pStream = IFGAS_Stream::CreateStream(
-        CFX_RetainPtr<IFX_SeekableWriteStream>(pMemoryStream),
-        FX_STREAMACCESS_Text | FX_STREAMACCESS_Write | FX_STREAMACCESS_Append);
+    CFX_RetainPtr<IFGAS_Stream> pStream =
+        IFGAS_Stream::CreateWriteStream(pMemoryStream);
 
     if (!pStream) {
       pArguments->GetReturnValue()->SetString(bsXMLHeader);
@@ -1552,12 +1520,11 @@ void CXFA_Node::Script_NodeClass_OneOfChild(CFXJSE_Value* pValue,
     ThrowInvalidPropertyException();
     return;
   }
-
-  CXFA_NodeArray properts;
-  int32_t iSize = GetNodeList(properts, XFA_NODEFILTER_OneOfProperty);
-  if (iSize > 0) {
+  std::vector<CXFA_Node*> properties =
+      GetNodeList(XFA_NODEFILTER_OneOfProperty);
+  if (!properties.empty()) {
     pValue->Assign(
-        m_pDocument->GetScriptContext()->GetJSValueFromMap(properts[0]));
+        m_pDocument->GetScriptContext()->GetJSValueFromMap(properties.front()));
   }
 }
 
@@ -1826,8 +1793,8 @@ void CXFA_Node::Script_Attribute_String(CFXJSE_Value* pValue,
         XFA_RESOLVENODE_RS resoveNodeRS;
         int32_t iRet = m_pDocument->GetScriptContext()->ResolveObjects(
             pProtoRoot, wsSOM.AsStringC(), resoveNodeRS, dwFlag);
-        if (iRet > 0 && resoveNodeRS.nodes[0]->IsNode()) {
-          pProtoNode = resoveNodeRS.nodes[0]->AsNode();
+        if (iRet > 0 && resoveNodeRS.objects.front()->IsNode()) {
+          pProtoNode = resoveNodeRS.objects.front()->AsNode();
         }
       } else if (!wsID.IsEmpty()) {
         pProtoNode = m_pDocument->GetNodeByID(pProtoRoot, wsID.AsStringC());
@@ -1998,22 +1965,17 @@ void CXFA_Node::Script_Som_DefaultValue(CFXJSE_Value* pValue,
     CFX_WideString wsFormatValue(wsNewValue);
     CXFA_WidgetData* pContainerWidgetData = nullptr;
     if (GetPacketID() == XFA_XDPPACKET_Datasets) {
-      CXFA_NodeArray formNodes;
-      GetBindItems(formNodes);
       CFX_WideString wsPicture;
-      for (int32_t i = 0; i < formNodes.GetSize(); i++) {
-        CXFA_Node* pFormNode = formNodes.GetAt(i);
-        if (!pFormNode || pFormNode->HasRemovedChildren()) {
+      for (CXFA_Node* pFormNode : GetBindItems()) {
+        if (!pFormNode || pFormNode->HasRemovedChildren())
           continue;
-        }
         pContainerWidgetData = pFormNode->GetContainerWidgetData();
         if (pContainerWidgetData) {
           pContainerWidgetData->GetPictureContent(wsPicture,
                                                   XFA_VALUEPICTURE_DataBind);
         }
-        if (!wsPicture.IsEmpty()) {
+        if (!wsPicture.IsEmpty())
           break;
-        }
         pContainerWidgetData = nullptr;
       }
     } else if (GetPacketID() == XFA_XDPPACKET_Form) {
@@ -2032,7 +1994,7 @@ void CXFA_Node::Script_Som_DefaultValue(CFXJSE_Value* pValue,
       pValue->SetInteger(FXSYS_wtoi(content.c_str()));
     } else if (eType == XFA_Element::Float || eType == XFA_Element::Decimal) {
       CFX_Decimal decimal(content.AsStringC());
-      pValue->SetFloat((FX_FLOAT)(double)decimal);
+      pValue->SetFloat((float)(double)decimal);
     } else {
       pValue->SetString(content.UTF8Encode().AsStringC());
     }
@@ -2253,7 +2215,7 @@ void CXFA_Node::Script_Field_DefaultValue(CFXJSE_Value* pValue,
           pValue->SetString(content.UTF8Encode().AsStringC());
         } else {
           CFX_Decimal decimal(content.AsStringC());
-          pValue->SetFloat((FX_FLOAT)(double)decimal);
+          pValue->SetFloat((float)(double)decimal);
         }
       } else if (pNode && pNode->GetElementType() == XFA_Element::Integer) {
         pValue->SetInteger(FXSYS_wtoi(content.c_str()));
@@ -2261,7 +2223,7 @@ void CXFA_Node::Script_Field_DefaultValue(CFXJSE_Value* pValue,
         pValue->SetBoolean(FXSYS_wtoi(content.c_str()) == 0 ? false : true);
       } else if (pNode && pNode->GetElementType() == XFA_Element::Float) {
         CFX_Decimal decimal(content.AsStringC());
-        pValue->SetFloat((FX_FLOAT)(double)decimal);
+        pValue->SetFloat((float)(double)decimal);
       } else {
         pValue->SetString(content.UTF8Encode().AsStringC());
       }
@@ -3310,7 +3272,7 @@ void CXFA_Node::Script_Form_FormNodes(CFXJSE_Arguments* pArguments) {
     return;
   }
 
-  CXFA_NodeArray formItems;
+  std::vector<CXFA_Node*> formItems;
   CXFA_ArrayNodeList* pFormNodes = new CXFA_ArrayNodeList(m_pDocument);
   pFormNodes->SetArrayNodeList(formItems);
   pArguments->GetReturnValue()->SetObject(
@@ -3413,9 +3375,8 @@ void CXFA_Node::Script_Packet_GetAttribute(CFXJSE_Arguments* pArguments) {
   CFX_WideString wsAttributeValue;
   CFDE_XMLNode* pXMLNode = GetXMLMappingNode();
   if (pXMLNode && pXMLNode->GetType() == FDE_XMLNODE_Element) {
-    static_cast<CFDE_XMLElement*>(pXMLNode)->GetString(
-        CFX_WideString::FromUTF8(bsAttributeName.AsStringC()).c_str(),
-        wsAttributeValue);
+    wsAttributeValue = static_cast<CFDE_XMLElement*>(pXMLNode)->GetString(
+        CFX_WideString::FromUTF8(bsAttributeName.AsStringC()).c_str());
   }
   pArguments->GetReturnValue()->SetString(
       wsAttributeValue.UTF8Encode().AsStringC());
@@ -3469,7 +3430,7 @@ void CXFA_Node::Script_Packet_Content(CFXJSE_Value* pValue,
     CFDE_XMLNode* pXMLNode = GetXMLMappingNode();
     if (pXMLNode && pXMLNode->GetType() == FDE_XMLNODE_Element) {
       CFDE_XMLElement* pXMLElement = static_cast<CFDE_XMLElement*>(pXMLNode);
-      pXMLElement->GetTextData(wsTextData);
+      wsTextData = pXMLElement->GetTextData();
     }
     pValue->SetString(wsTextData.UTF8Encode().AsStringC());
   }
@@ -3783,13 +3744,13 @@ bool CXFA_Node::TryMeasure(XFA_ATTRIBUTE eAttr,
   void* pValue;
   int32_t iBytes;
   if (GetMapModuleBuffer(pKey, pValue, iBytes) && iBytes == sizeof(mValue)) {
-    FXSYS_memcpy(&mValue, pValue, sizeof(mValue));
+    memcpy(&mValue, pValue, sizeof(mValue));
     return true;
   }
   if (bUseDefault &&
       XFA_GetAttributeDefaultValue(pValue, GetElementType(), eAttr,
                                    XFA_ATTRIBUTETYPE_Measure, m_ePacket)) {
-    FXSYS_memcpy(&mValue, pValue, sizeof(mValue));
+    memcpy(&mValue, pValue, sizeof(mValue));
     return true;
   }
   return false;
@@ -3842,8 +3803,7 @@ bool CXFA_Node::SetCData(XFA_ATTRIBUTE eAttr,
                      GetNodeItem(XFA_NODEITEM_FirstChild);
                  pChildDataNode; pChildDataNode = pChildDataNode->GetNodeItem(
                                      XFA_NODEITEM_NextSibling)) {
-              CXFA_NodeArray formNodes;
-              if (pChildDataNode->GetBindItems(formNodes) > 0) {
+              if (!pChildDataNode->GetBindItems().empty()) {
                 bDeleteChildren = false;
                 break;
               }
@@ -3900,8 +3860,7 @@ bool CXFA_Node::SetAttributeValue(const CFX_WideString& wsValue,
                      GetNodeItem(XFA_NODEITEM_FirstChild);
                  pChildDataNode; pChildDataNode = pChildDataNode->GetNodeItem(
                                      XFA_NODEITEM_NextSibling)) {
-              CXFA_NodeArray formNodes;
-              if (pChildDataNode->GetBindItems(formNodes) > 0) {
+              if (!pChildDataNode->GetBindItems().empty()) {
                 bDeleteChildren = false;
                 break;
               }
@@ -3947,7 +3906,7 @@ bool CXFA_Node::TryCData(XFA_ATTRIBUTE eAttr,
   void* pValue = nullptr;
   if (XFA_GetAttributeDefaultValue(pValue, GetElementType(), eAttr,
                                    XFA_ATTRIBUTETYPE_Cdata, m_ePacket)) {
-    wsValue = (const FX_WCHAR*)pValue;
+    wsValue = (const wchar_t*)pValue;
     return true;
   }
   return false;
@@ -3975,7 +3934,7 @@ bool CXFA_Node::TryCData(XFA_ATTRIBUTE eAttr,
   void* pValue = nullptr;
   if (XFA_GetAttributeDefaultValue(pValue, GetElementType(), eAttr,
                                    XFA_ATTRIBUTETYPE_Cdata, m_ePacket)) {
-    wsValue = (CFX_WideStringC)(const FX_WCHAR*)pValue;
+    wsValue = (CFX_WideStringC)(const wchar_t*)pValue;
     return true;
   }
   return false;
@@ -4018,10 +3977,14 @@ bool CXFA_Node::SetValue(XFA_ATTRIBUTE eAttr,
           static_cast<CFDE_XMLElement*>(m_pXMLNode)
               ->SetString(pInfo->pName, pValue ? L"1" : L"0");
           break;
-        case XFA_ATTRIBUTETYPE_Integer:
+        case XFA_ATTRIBUTETYPE_Integer: {
+          CFX_WideString wsValue;
+          wsValue.Format(
+              L"%d", static_cast<int32_t>(reinterpret_cast<uintptr_t>(pValue)));
           static_cast<CFDE_XMLElement*>(m_pXMLNode)
-              ->SetInteger(pInfo->pName, (int32_t)(uintptr_t)pValue);
+              ->SetString(pInfo->pName, wsValue);
           break;
+        }
         default:
           ASSERT(0);
       }
@@ -4058,7 +4021,7 @@ bool CXFA_Node::TryUserData(void* pKey, void*& pData, bool bProtoAlso) {
   if (!GetMapModuleBuffer(pKey, pData, iBytes, bProtoAlso)) {
     return false;
   }
-  return iBytes == sizeof(void*) && FXSYS_memcpy(&pData, pData, iBytes);
+  return iBytes == sizeof(void*) && memcpy(&pData, pData, iBytes);
 }
 
 bool CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
@@ -4080,7 +4043,7 @@ bool CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
         CXFA_Node* pBind = GetBindData();
         if (bSyncData && pBind) {
           std::vector<CFX_WideString> wsSaveTextArray;
-          int32_t iSize = 0;
+          size_t iSize = 0;
           if (!wsContent.IsEmpty()) {
             int32_t iStart = 0;
             int32_t iLength = wsContent.GetLength();
@@ -4098,7 +4061,7 @@ bool CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
                     wsContent.Mid(iStart, iLength - iStart));
               }
             }
-            iSize = pdfium::CollectionSize<int32_t>(wsSaveTextArray);
+            iSize = wsSaveTextArray.size();
           }
           if (iSize == 0) {
             while (CXFA_Node* pChildNode =
@@ -4106,11 +4069,11 @@ bool CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
               pBind->RemoveChild(pChildNode);
             }
           } else {
-            CXFA_NodeArray valueNodes;
-            int32_t iDatas = pBind->GetNodeList(
-                valueNodes, XFA_NODEFILTER_Children, XFA_Element::DataValue);
+            std::vector<CXFA_Node*> valueNodes = pBind->GetNodeList(
+                XFA_NODEFILTER_Children, XFA_Element::DataValue);
+            size_t iDatas = valueNodes.size();
             if (iDatas < iSize) {
-              int32_t iAddNodes = iSize - iDatas;
+              size_t iAddNodes = iSize - iDatas;
               CXFA_Node* pValueNodes = nullptr;
               while (iAddNodes-- > 0) {
                 pValueNodes =
@@ -4121,7 +4084,7 @@ bool CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
               }
               pValueNodes = nullptr;
             } else if (iDatas > iSize) {
-              int32_t iDelNodes = iDatas - iSize;
+              size_t iDelNodes = iDatas - iSize;
               while (iDelNodes-- > 0) {
                 pBind->RemoveChild(pBind->GetNodeItem(XFA_NODEITEM_FirstChild));
               }
@@ -4136,12 +4099,10 @@ bool CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
               i++;
             }
           }
-          CXFA_NodeArray nodeArray;
-          pBind->GetBindItems(nodeArray);
-          for (int32_t i = 0; i < nodeArray.GetSize(); i++) {
-            if (nodeArray[i] != this) {
-              nodeArray[i]->SetScriptContent(wsContent, wsContent, bNotify,
-                                             bScriptModify, false);
+          for (CXFA_Node* pArrayNode : pBind->GetBindItems()) {
+            if (pArrayNode != this) {
+              pArrayNode->SetScriptContent(wsContent, wsContent, bNotify,
+                                           bScriptModify, false);
             }
           }
         }
@@ -4159,12 +4120,10 @@ bool CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
       if (pBindNode && bSyncData) {
         pBindNode->SetScriptContent(wsContent, wsXMLValue, bNotify,
                                     bScriptModify, false);
-        CXFA_NodeArray nodeArray;
-        pBindNode->GetBindItems(nodeArray);
-        for (int32_t i = 0; i < nodeArray.GetSize(); i++) {
-          if (nodeArray[i] != this) {
-            nodeArray[i]->SetScriptContent(wsContent, wsContent, bNotify, true,
-                                           false);
+        for (CXFA_Node* pArrayNode : pBindNode->GetBindItems()) {
+          if (pArrayNode != this) {
+            pArrayNode->SetScriptContent(wsContent, wsContent, bNotify, true,
+                                         false);
           }
         }
       }
@@ -4223,11 +4182,9 @@ bool CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
   if (pNode) {
     SetAttributeValue(wsContent, wsXMLValue, bNotify, bScriptModify);
     if (pBindNode && bSyncData) {
-      CXFA_NodeArray nodeArray;
-      pBindNode->GetBindItems(nodeArray);
-      for (int32_t i = 0; i < nodeArray.GetSize(); i++) {
-        nodeArray[i]->SetScriptContent(wsContent, wsContent, bNotify,
-                                       bScriptModify, false);
+      for (CXFA_Node* pArrayNode : pBindNode->GetBindItems()) {
+        pArrayNode->SetScriptContent(wsContent, wsContent, bNotify,
+                                     bScriptModify, false);
       }
     }
     return true;
@@ -4347,7 +4304,7 @@ bool CXFA_Node::TryNamespace(CFX_WideString& wsNamespace) {
     if (!pXMLNode || pXMLNode->GetType() != FDE_XMLNODE_Element) {
       return false;
     }
-    static_cast<CFDE_XMLElement*>(pXMLNode)->GetNamespaceURI(wsNamespace);
+    wsNamespace = static_cast<CFDE_XMLElement*>(pXMLNode)->GetNamespaceURI();
     return true;
   } else if (GetPacketID() == XFA_XDPPACKET_Datasets) {
     CFDE_XMLNode* pXMLNode = GetXMLMappingNode();
@@ -4361,9 +4318,9 @@ bool CXFA_Node::TryNamespace(CFX_WideString& wsNamespace) {
         GetEnum(XFA_ATTRIBUTE_Contains) == XFA_ATTRIBUTEENUM_MetaData) {
       return XFA_FDEExtension_ResolveNamespaceQualifier(
           static_cast<CFDE_XMLElement*>(pXMLNode),
-          GetCData(XFA_ATTRIBUTE_QualifiedName), wsNamespace);
+          GetCData(XFA_ATTRIBUTE_QualifiedName), &wsNamespace);
     }
-    static_cast<CFDE_XMLElement*>(pXMLNode)->GetNamespaceURI(wsNamespace);
+    wsNamespace = static_cast<CFDE_XMLElement*>(pXMLNode)->GetNamespaceURI();
     return true;
   } else {
     CXFA_Node* pModelNode = GetModelNode();
@@ -4896,7 +4853,7 @@ bool CXFA_Node::GetMapModuleValue(void* pKey, void*& pValue) {
 
 void CXFA_Node::SetMapModuleString(void* pKey, const CFX_WideStringC& wsValue) {
   SetMapModuleBuffer(pKey, (void*)wsValue.c_str(),
-                     wsValue.GetLength() * sizeof(FX_WCHAR));
+                     wsValue.GetLength() * sizeof(wchar_t));
 }
 
 bool CXFA_Node::GetMapModuleString(void* pKey, CFX_WideStringC& wsValue) {
@@ -4905,7 +4862,7 @@ bool CXFA_Node::GetMapModuleString(void* pKey, CFX_WideStringC& wsValue) {
   if (!GetMapModuleBuffer(pKey, pValue, iBytes)) {
     return false;
   }
-  wsValue = CFX_WideStringC((const FX_WCHAR*)pValue, iBytes / sizeof(FX_WCHAR));
+  wsValue = CFX_WideStringC((const wchar_t*)pValue, iBytes / sizeof(wchar_t));
   return true;
 }
 
@@ -4933,7 +4890,7 @@ void CXFA_Node::SetMapModuleBuffer(
 
   pBuffer->pCallbackInfo = pCallbackInfo;
   pBuffer->iBytes = iBytes;
-  FXSYS_memcpy(pBuffer->GetData(), pValue, iBytes);
+  memcpy(pBuffer->GetData(), pValue, iBytes);
 }
 
 bool CXFA_Node::GetMapModuleBuffer(void* pKey,
@@ -5050,8 +5007,7 @@ void CXFA_Node::MergeAllData(void* pDstModule) {
     }
     pDstBuffer->pCallbackInfo = pSrcBuffer->pCallbackInfo;
     pDstBuffer->iBytes = pSrcBuffer->iBytes;
-    FXSYS_memcpy(pDstBuffer->GetData(), pSrcBuffer->GetData(),
-                 pSrcBuffer->iBytes);
+    memcpy(pDstBuffer->GetData(), pSrcBuffer->GetData(), pSrcBuffer->iBytes);
     if (pDstBuffer->pCallbackInfo && pDstBuffer->pCallbackInfo->pCopy) {
       pDstBuffer->pCallbackInfo->pCopy(*(void**)pDstBuffer->GetData());
     }

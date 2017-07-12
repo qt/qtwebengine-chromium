@@ -217,7 +217,7 @@ namespace sw
 		LOCK_DISCARD
 	};
 
-	class Surface
+	class [[clang::lto_visibility_public]] Surface
 	{
 	private:
 		struct Buffer
@@ -337,7 +337,10 @@ namespace sw
 		static bool isSRGBreadable(Format format);
 		static bool isSRGBwritable(Format format);
 		static bool isCompressed(Format format);
+		static bool isSignedNonNormalizedInteger(Format format);
+		static bool isUnsignedNonNormalizedInteger(Format format);
 		static bool isNonNormalizedInteger(Format format);
+		static bool isNormalizedInteger(Format format);
 		static int componentCount(Format format);
 
 		static void setTexturePalette(unsigned int *palette);

@@ -10,10 +10,10 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/user_metrics.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
-#include "components/browsing_data/content/storage_partition_http_cache_data_remover.h"
 #include "components/guest_view/browser/guest_view_event.h"
 #include "components/guest_view/browser/guest_view_manager.h"
 #include "components/guest_view/common/guest_view_constants.h"
@@ -35,7 +35,6 @@
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
-#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/browser_side_navigation_policy.h"
@@ -212,8 +211,8 @@ double ConvertZoomLevelToZoomFactor(double zoom_level) {
 
 using WebViewKey = std::pair<int, int>;
 using WebViewKeyToIDMap = std::map<WebViewKey, int>;
-static base::LazyInstance<WebViewKeyToIDMap> web_view_key_to_id_map =
-    LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<WebViewKeyToIDMap>::DestructorAtExit
+    web_view_key_to_id_map = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -336,8 +335,7 @@ void WebViewGuest::CreateWebContents(
   // creation. If the validation fails, treat it as a bad message and kill the
   // renderer process.
   if (!base::IsStringUTF8(storage_partition_id)) {
-    content::RecordAction(
-        base::UserMetricsAction("BadMessageTerminate_BPGM"));
+    base::RecordAction(base::UserMetricsAction("BadMessageTerminate_BPGM"));
     owner_render_process_host->Shutdown(content::RESULT_CODE_KILLED_BAD_MESSAGE,
                                         false);
     callback.Run(nullptr);
@@ -762,7 +760,7 @@ void WebViewGuest::SetUserAgentOverride(
     const std::string& user_agent_override) {
   is_overriding_user_agent_ = !user_agent_override.empty();
   if (is_overriding_user_agent_) {
-    content::RecordAction(UserMetricsAction("WebView.Guest.OverrideUA"));
+    base::RecordAction(UserMetricsAction("WebView.Guest.OverrideUA"));
   }
   web_contents()->SetUserAgentOverride(user_agent_override);
 }
@@ -772,7 +770,7 @@ void WebViewGuest::Stop() {
 }
 
 void WebViewGuest::Terminate() {
-  content::RecordAction(UserMetricsAction("WebView.Guest.Terminate"));
+  base::RecordAction(UserMetricsAction("WebView.Guest.Terminate"));
   base::ProcessHandle process_handle =
       web_contents()->GetRenderProcessHost()->GetHandle();
   if (process_handle)
@@ -783,7 +781,7 @@ void WebViewGuest::Terminate() {
 bool WebViewGuest::ClearData(base::Time remove_since,
                              uint32_t removal_mask,
                              const base::Closure& callback) {
-  content::RecordAction(UserMetricsAction("WebView.Guest.ClearData"));
+  base::RecordAction(UserMetricsAction("WebView.Guest.ClearData"));
   content::StoragePartition* partition =
       content::BrowserContext::GetStoragePartition(
           web_contents()->GetBrowserContext(),
@@ -804,12 +802,10 @@ bool WebViewGuest::ClearData(base::Time remove_since,
     base::Closure cache_removal_done_callback = base::Bind(
         &WebViewGuest::ClearDataInternal, weak_ptr_factory_.GetWeakPtr(),
         remove_since, removal_mask, callback);
-    // StoragePartitionHttpCacheDataRemover removes itself when it is done.
     // components/, move |ClearCache| to WebViewGuest: http//crbug.com/471287.
-    browsing_data::StoragePartitionHttpCacheDataRemover::CreateForRange(
-        partition, remove_since, base::Time::Now())
-        ->Remove(cache_removal_done_callback);
-
+    partition->ClearHttpAndMediaCaches(remove_since, base::Time::Now(),
+                                       base::Callback<bool(const GURL&)>(),
+                                       cache_removal_done_callback);
     return true;
   }
 
@@ -891,8 +887,8 @@ void WebViewGuest::DidFinishNavigation(
 
 void WebViewGuest::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
-  // loadStart shouldn't be sent for same page navigations.
-  if (navigation_handle->IsSamePage())
+  // loadStart shouldn't be sent for same document navigations.
+  if (navigation_handle->IsSameDocument())
     return;
 
   std::unique_ptr<base::DictionaryValue> args(new base::DictionaryValue());
@@ -1094,36 +1090,36 @@ bool WebViewGuest::HandleKeyboardShortcuts(
     return false;
   }
 
-  if (event.type() != blink::WebInputEvent::RawKeyDown)
+  if (event.GetType() != blink::WebInputEvent::kRawKeyDown)
     return false;
 
   // If the user hits the escape key without any modifiers then unlock the
   // mouse if necessary.
-  if ((event.windowsKeyCode == ui::VKEY_ESCAPE) &&
-      !(event.modifiers() & blink::WebInputEvent::InputModifiers)) {
+  if ((event.windows_key_code == ui::VKEY_ESCAPE) &&
+      !(event.GetModifiers() & blink::WebInputEvent::kInputModifiers)) {
     return web_contents()->GotResponseToLockMouseRequest(false);
   }
 
 #if defined(OS_MACOSX)
-  if (event.modifiers() != blink::WebInputEvent::MetaKey)
+  if (event.GetModifiers() != blink::WebInputEvent::kMetaKey)
     return false;
 
-  if (event.windowsKeyCode == ui::VKEY_OEM_4) {
+  if (event.windows_key_code == ui::VKEY_OEM_4) {
     Go(-1);
     return true;
   }
 
-  if (event.windowsKeyCode == ui::VKEY_OEM_6) {
+  if (event.windows_key_code == ui::VKEY_OEM_6) {
     Go(1);
     return true;
   }
 #else
-  if (event.windowsKeyCode == ui::VKEY_BROWSER_BACK) {
+  if (event.windows_key_code == ui::VKEY_BROWSER_BACK) {
     Go(-1);
     return true;
   }
 
-  if (event.windowsKeyCode == ui::VKEY_BROWSER_FORWARD) {
+  if (event.windows_key_code == ui::VKEY_BROWSER_FORWARD) {
     Go(1);
     return true;
   }
@@ -1487,16 +1483,15 @@ void WebViewGuest::RequestNewWindowPermission(WindowOpenDisposition disposition,
   request_info.SetInteger(webview::kInitialHeight, initial_bounds.height());
   request_info.SetInteger(webview::kInitialWidth, initial_bounds.width());
   request_info.Set(webview::kTargetURL,
-                   new base::StringValue(new_window_info.url.spec()));
-  request_info.Set(webview::kName, new base::StringValue(new_window_info.name));
+                   new base::Value(new_window_info.url.spec()));
+  request_info.Set(webview::kName, new base::Value(new_window_info.name));
   request_info.SetInteger(webview::kWindowID, guest->guest_instance_id());
   // We pass in partition info so that window-s created through newwindow
   // API can use it to set their partition attribute.
   request_info.Set(webview::kStoragePartitionId,
-                   new base::StringValue(storage_partition_id));
-  request_info.Set(
-      webview::kWindowOpenDisposition,
-      new base::StringValue(WindowOpenDispositionToString(disposition)));
+                   new base::Value(storage_partition_id));
+  request_info.Set(webview::kWindowOpenDisposition,
+                   new base::Value(WindowOpenDispositionToString(disposition)));
 
   web_view_permission_helper_->
       RequestPermission(WEB_VIEW_PERMISSION_TYPE_NEW_WINDOW,
@@ -1530,7 +1525,7 @@ void WebViewGuest::OnWebViewNewWindowResponse(
     return;
 
   if (!allow)
-    guest->Destroy();
+    guest->Destroy(true);
 }
 
 void WebViewGuest::OnFullscreenPermissionDecided(

@@ -7,13 +7,19 @@
 #ifndef XFA_FXFA_PARSER_XFA_DOCUMENT_DATAMERGER_IMP_H_
 #define XFA_FXFA_PARSER_XFA_DOCUMENT_DATAMERGER_IMP_H_
 
-#include "xfa/fxfa/parser/xfa_object.h"
+#include <vector>
 
-CXFA_Node* XFA_NodeMerge_CloneOrMergeContainer(CXFA_Document* pDocument,
-                                               CXFA_Node* pFormParent,
-                                               CXFA_Node* pTemplateNode,
-                                               bool bRecursive,
-                                               CXFA_NodeArray* pSubformArray);
+#include "xfa/fxfa/fxfa_basic.h"
+
+class CXFA_Document;
+class CXFA_Node;
+
+CXFA_Node* XFA_NodeMerge_CloneOrMergeContainer(
+    CXFA_Document* pDocument,
+    CXFA_Node* pFormParent,
+    CXFA_Node* pTemplateNode,
+    bool bRecursive,
+    std::vector<CXFA_Node*>* pSubformArray);
 CXFA_Node* XFA_DataMerge_FindDataScope(CXFA_Node* pParentFormNode);
 CXFA_Node* XFA_DataMerge_FindFormDOMInstance(CXFA_Document* pDocument,
                                              XFA_Element eType,

@@ -16,12 +16,16 @@
 
 #include "subsetter_impl.h"
 
+#include <limits.h>
 #include <string.h>
 
 #include <algorithm>
 #include <iterator>
 #include <map>
 #include <set>
+
+#include <unicode/unistr.h>
+#include <unicode/uversion.h>
 
 #include "sfntly/table/bitmap/eblc_table.h"
 #include "sfntly/table/bitmap/ebdt_table.h"
@@ -267,6 +271,10 @@ bool SetupGlyfBuilders(Font::Builder* font_builder,
     for (int32_t j = last_glyph_id + 1; j <= *i; ++j) {
       loca_list[j] = last_offset;
     }
+
+    if (last_offset > INT_MAX - length)
+      return false;
+
     last_offset += length;
     loca_list[*i + 1] = last_offset;
     last_glyph_id = *i;
@@ -376,14 +384,14 @@ bool InitializeBitmapBuilder(EbdtTable::Builder* ebdt, EblcTable::Builder* eblc,
 
 void CopyBigGlyphMetrics(BigGlyphMetrics::Builder* source,
                          BigGlyphMetrics::Builder* target) {
-  target->SetHeight(static_cast<byte_t>(source->Height()));
-  target->SetWidth(static_cast<byte_t>(source->Width()));
-  target->SetHoriBearingX(static_cast<byte_t>(source->HoriBearingX()));
-  target->SetHoriBearingY(static_cast<byte_t>(source->HoriBearingY()));
-  target->SetHoriAdvance(static_cast<byte_t>(source->HoriAdvance()));
-  target->SetVertBearingX(static_cast<byte_t>(source->VertBearingX()));
-  target->SetVertBearingY(static_cast<byte_t>(source->VertBearingY()));
-  target->SetVertAdvance(static_cast<byte_t>(source->VertAdvance()));
+  target->SetHeight(static_cast<uint8_t>(source->Height()));
+  target->SetWidth(static_cast<uint8_t>(source->Width()));
+  target->SetHoriBearingX(static_cast<uint8_t>(source->HoriBearingX()));
+  target->SetHoriBearingY(static_cast<uint8_t>(source->HoriBearingY()));
+  target->SetHoriAdvance(static_cast<uint8_t>(source->HoriAdvance()));
+  target->SetVertBearingX(static_cast<uint8_t>(source->VertBearingX()));
+  target->SetVertBearingY(static_cast<uint8_t>(source->VertBearingY()));
+  target->SetVertAdvance(static_cast<uint8_t>(source->VertAdvance()));
 }
 
 CALLER_ATTACH IndexSubTable::Builder*

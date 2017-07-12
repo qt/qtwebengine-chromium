@@ -7,12 +7,12 @@
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 
 #include "base/lazy_instance.h"
+#include "base/memory/ptr_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api_constants.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api_helpers.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/tab_contents/retargeting_details.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/extensions/api/web_navigation.h"
@@ -45,7 +45,7 @@ namespace {
 
 typedef std::map<content::WebContents*, WebNavigationTabObserver*>
     TabObserverMap;
-static base::LazyInstance<TabObserverMap> g_tab_observer =
+static base::LazyInstance<TabObserverMap>::DestructorAtExit g_tab_observer =
     LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
@@ -76,17 +76,13 @@ WebNavigationEventRouter::WebNavigationEventRouter(Profile* profile)
     : profile_(profile), browser_tab_strip_tracker_(this, this, nullptr) {
   CHECK(registrar_.IsEmpty());
   registrar_.Add(this,
-                 chrome::NOTIFICATION_RETARGETING,
-                 content::NotificationService::AllSources());
-  registrar_.Add(this,
                  chrome::NOTIFICATION_TAB_ADDED,
                  content::NotificationService::AllSources());
   registrar_.Add(this,
                  content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
                  content::NotificationService::AllSources());
 
-  browser_tab_strip_tracker_.Init(
-      BrowserTabStripTracker::InitWith::ALL_BROWERS);
+  browser_tab_strip_tracker_.Init();
 }
 
 WebNavigationEventRouter::~WebNavigationEventRouter() {
@@ -121,14 +117,6 @@ void WebNavigationEventRouter::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_RETARGETING: {
-      Profile* profile = content::Source<Profile>(source).ptr();
-      if (profile->GetOriginalProfile() == profile_) {
-        Retargeting(
-            content::Details<const RetargetingDetails>(details).ptr());
-      }
-      break;
-    }
 
     case chrome::NOTIFICATION_TAB_ADDED:
       TabAdded(content::Details<content::WebContents>(details).ptr());
@@ -143,40 +131,40 @@ void WebNavigationEventRouter::Observe(
   }
 }
 
-void WebNavigationEventRouter::Retargeting(const RetargetingDetails* details) {
-  if (details->source_render_frame_id == 0)
+void WebNavigationEventRouter::RecordNewWebContents(
+    content::WebContents* source_web_contents,
+    int source_render_process_id,
+    int source_render_frame_id,
+    GURL target_url,
+    content::WebContents* target_web_contents,
+    bool not_yet_in_tabstrip) {
+  if (source_render_frame_id == 0)
     return;
   WebNavigationTabObserver* tab_observer =
-      WebNavigationTabObserver::Get(details->source_web_contents);
+      WebNavigationTabObserver::Get(source_web_contents);
   if (!tab_observer) {
     // If you hit this DCHECK(), please add reproduction steps to
     // http://crbug.com/109464.
-    DCHECK(GetViewType(details->source_web_contents) != VIEW_TYPE_TAB_CONTENTS);
+    DCHECK(GetViewType(source_web_contents) != VIEW_TYPE_TAB_CONTENTS);
     return;
   }
   const FrameNavigationState& frame_navigation_state =
       tab_observer->frame_navigation_state();
 
   content::RenderFrameHost* frame_host = content::RenderFrameHost::FromID(
-      details->source_render_process_id, details->source_render_frame_id);
+      source_render_process_id, source_render_frame_id);
   if (!frame_navigation_state.CanSendEvents(frame_host))
     return;
 
   // If the WebContents isn't yet inserted into a tab strip, we need to delay
   // the extension event until the WebContents is fully initialized.
-  if (details->not_yet_in_tabstrip) {
-    pending_web_contents_[details->target_web_contents] =
-        PendingWebContents(details->source_web_contents,
-                           frame_host,
-                           details->target_web_contents,
-                           details->target_url);
+  if (not_yet_in_tabstrip) {
+    pending_web_contents_[target_web_contents] = PendingWebContents(
+        source_web_contents, frame_host, target_web_contents, target_url);
   } else {
     helpers::DispatchOnCreatedNavigationTarget(
-        details->source_web_contents,
-        details->target_web_contents->GetBrowserContext(),
-        frame_host,
-        details->target_web_contents,
-        details->target_url);
+        source_web_contents, target_web_contents->GetBrowserContext(),
+        frame_host, target_web_contents, target_url);
   }
 }
 
@@ -266,7 +254,7 @@ void WebNavigationTabObserver::RenderFrameHostChanged(
 
 void WebNavigationTabObserver::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (navigation_handle->IsSamePage() ||
+  if (navigation_handle->IsSameDocument() ||
       !FrameNavigationState::IsValidUrl(navigation_handle->GetURL())) {
     return;
   }
@@ -384,7 +372,8 @@ void WebNavigationTabObserver::DidOpenRequestedURL(
     const content::Referrer& referrer,
     WindowOpenDisposition disposition,
     ui::PageTransition transition,
-    bool started_from_context_menu) {
+    bool started_from_context_menu,
+    bool renderer_initiated) {
   if (!navigation_state_.CanSendEvents(source_render_frame_host))
     return;
 
@@ -398,11 +387,16 @@ void WebNavigationTabObserver::DidOpenRequestedURL(
       disposition != WindowOpenDisposition::OFF_THE_RECORD)
     return;
 
-  helpers::DispatchOnCreatedNavigationTarget(web_contents(),
-                                             new_contents->GetBrowserContext(),
-                                             source_render_frame_host,
-                                             new_contents,
-                                             url);
+  WebNavigationAPI* api = WebNavigationAPI::GetFactoryInstance()->Get(
+      web_contents()->GetBrowserContext());
+  WebNavigationEventRouter* router = api->web_navigation_event_router_.get();
+  if (!router)
+    return;
+
+  router->RecordNewWebContents(web_contents(),
+                               source_render_frame_host->GetProcess()->GetID(),
+                               source_render_frame_host->GetRoutingID(), url,
+                               new_contents, renderer_initiated);
 }
 
 void WebNavigationTabObserver::WebContentsDestroyed() {
@@ -428,7 +422,7 @@ void WebNavigationTabObserver::HandleCommit(
 
   navigation_state_.StartTrackingDocumentLoad(
       navigation_handle->GetRenderFrameHost(), navigation_handle->GetURL(),
-      navigation_handle->IsSamePage(),
+      navigation_handle->IsSameDocument(),
       false);  // is_error_page
 
   events::HistogramValue histogram_value = events::UNKNOWN;
@@ -436,7 +430,7 @@ void WebNavigationTabObserver::HandleCommit(
   if (is_reference_fragment_navigation) {
     histogram_value = events::WEB_NAVIGATION_ON_REFERENCE_FRAGMENT_UPDATED;
     event_name = web_navigation::OnReferenceFragmentUpdated::kEventName;
-  } else if (navigation_handle->IsSamePage()) {
+  } else if (navigation_handle->IsSameDocument()) {
     histogram_value = events::WEB_NAVIGATION_ON_HISTORY_STATE_UPDATED;
     event_name = web_navigation::OnHistoryStateUpdated::kEventName;
   } else {
@@ -451,7 +445,7 @@ void WebNavigationTabObserver::HandleError(
   if (navigation_handle->HasCommitted()) {
     navigation_state_.StartTrackingDocumentLoad(
         navigation_handle->GetRenderFrameHost(), navigation_handle->GetURL(),
-        navigation_handle->IsSamePage(),
+        navigation_handle->IsSameDocument(),
         true);  // is_error_page
   }
 
@@ -483,7 +477,7 @@ ExtensionFunction::ResponseAction WebNavigationGetFrameFunction::Run() {
                                     include_incognito(), nullptr, nullptr,
                                     &web_contents, nullptr) ||
       !web_contents) {
-    return RespondNow(OneArgument(base::Value::CreateNullValue()));
+    return RespondNow(OneArgument(base::MakeUnique<base::Value>()));
   }
 
   WebNavigationTabObserver* observer =
@@ -497,11 +491,11 @@ ExtensionFunction::ResponseAction WebNavigationGetFrameFunction::Run() {
       ExtensionApiFrameIdMap::Get()->GetRenderFrameHostById(web_contents,
                                                             frame_id);
   if (!frame_navigation_state.IsValidFrame(render_frame_host))
-    return RespondNow(OneArgument(base::Value::CreateNullValue()));
+    return RespondNow(OneArgument(base::MakeUnique<base::Value>()));
 
   GURL frame_url = frame_navigation_state.GetUrl(render_frame_host);
   if (!frame_navigation_state.IsValidUrl(frame_url))
-    return RespondNow(OneArgument(base::Value::CreateNullValue()));
+    return RespondNow(OneArgument(base::MakeUnique<base::Value>()));
 
   GetFrame::Results::Details frame_details;
   frame_details.url = frame_url.spec();
@@ -523,7 +517,7 @@ ExtensionFunction::ResponseAction WebNavigationGetAllFramesFunction::Run() {
                                     include_incognito(), nullptr, nullptr,
                                     &web_contents, nullptr) ||
       !web_contents) {
-    return RespondNow(OneArgument(base::Value::CreateNullValue()));
+    return RespondNow(OneArgument(base::MakeUnique<base::Value>()));
   }
 
   WebNavigationTabObserver* observer =
@@ -579,8 +573,8 @@ void WebNavigationAPI::Shutdown() {
   EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
-static base::LazyInstance<BrowserContextKeyedAPIFactory<WebNavigationAPI> >
-    g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<WebNavigationAPI>>::
+    DestructorAtExit g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 BrowserContextKeyedAPIFactory<WebNavigationAPI>*

@@ -7,20 +7,28 @@
 #ifndef CORE_FPDFAPI_RENDER_CPDF_TRANSFERFUNC_H_
 #define CORE_FPDFAPI_RENDER_CPDF_TRANSFERFUNC_H_
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxge/fx_dib.h"
 
 class CPDF_Document;
+class CFX_DIBSource;
 
-class CPDF_TransferFunc {
+class CPDF_TransferFunc : public CFX_Retainable {
  public:
-  explicit CPDF_TransferFunc(CPDF_Document* pDoc);
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
   FX_COLORREF TranslateColor(FX_COLORREF src) const;
-  CFX_DIBSource* TranslateImage(const CFX_DIBSource* pSrc, bool bAutoDropSrc);
+  CFX_RetainPtr<CFX_DIBSource> TranslateImage(
+      const CFX_RetainPtr<CFX_DIBSource>& pSrc);
 
   CPDF_Document* const m_pPDFDoc;
   bool m_bIdentity;
   uint8_t m_Samples[256 * 3];
+
+ private:
+  explicit CPDF_TransferFunc(CPDF_Document* pDoc);
+  ~CPDF_TransferFunc() override;
 };
 
 #endif  // CORE_FPDFAPI_RENDER_CPDF_TRANSFERFUNC_H_

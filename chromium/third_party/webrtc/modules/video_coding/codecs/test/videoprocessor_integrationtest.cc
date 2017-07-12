@@ -122,7 +122,7 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeBitRateVP9) {
   SetQualityThresholds(&quality_thresholds, 35.5, 30.0, 0.90, 0.85);
   // Thresholds for rate control.
   RateControlThresholds rc_thresholds[3];
-  SetRateControlThresholds(rc_thresholds, 0, 0, 30, 20, 20, 30, 0, 1);
+  SetRateControlThresholds(rc_thresholds, 0, 0, 30, 20, 20, 35, 0, 1);
   SetRateControlThresholds(rc_thresholds, 1, 2, 0, 20, 20, 60, 0, 0);
   SetRateControlThresholds(rc_thresholds, 2, 0, 0, 25, 20, 40, 0, 0);
   ProcessFramesAndVerify(quality_thresholds, rate_profile, process_settings,
@@ -155,9 +155,9 @@ TEST_F(VideoProcessorIntegrationTest,
   SetQualityThresholds(&quality_thresholds, 31.5, 18.0, 0.80, 0.43);
   // Thresholds for rate control.
   RateControlThresholds rc_thresholds[3];
-  SetRateControlThresholds(rc_thresholds, 0, 38, 50, 75, 15, 45, 0, 1);
-  SetRateControlThresholds(rc_thresholds, 1, 10, 0, 40, 10, 30, 0, 0);
-  SetRateControlThresholds(rc_thresholds, 2, 5, 0, 30, 5, 20, 0, 0);
+  SetRateControlThresholds(rc_thresholds, 0, 45, 50, 95, 15, 45, 0, 1);
+  SetRateControlThresholds(rc_thresholds, 1, 20, 0, 50, 10, 30, 0, 0);
+  SetRateControlThresholds(rc_thresholds, 2, 5, 0, 30, 5, 25, 0, 0);
   ProcessFramesAndVerify(quality_thresholds, rate_profile, process_settings,
                          rc_thresholds, nullptr /* visualization_params */);
 }
@@ -273,6 +273,31 @@ TEST_F(VideoProcessorIntegrationTest, Process10PercentPacketLoss) {
   // Thresholds for expected quality.
   QualityThresholds quality_thresholds;
   SetQualityThresholds(&quality_thresholds, 19.0, 16.0, 0.50, 0.35);
+  // Thresholds for rate control.
+  RateControlThresholds rc_thresholds[1];
+  SetRateControlThresholds(rc_thresholds, 0, 0, 40, 20, 10, 15, 0, 1);
+  ProcessFramesAndVerify(quality_thresholds, rate_profile, process_settings,
+                         rc_thresholds, nullptr /* visualization_params */);
+}
+
+// This test is identical to VideoProcessorIntegrationTest.ProcessZeroPacketLoss
+// except that |batch_mode| is turned on. The main point of this test is to see
+// that the reported stats are not wildly varying between batch mode and the
+// regular online mode.
+TEST_F(VideoProcessorIntegrationTest, ProcessInBatchMode) {
+  // Bit rate and frame rate profile.
+  RateProfile rate_profile;
+  SetRateProfile(&rate_profile, 0, 500, 30, 0);
+  rate_profile.frame_index_rate_update[1] = kNumFramesShort + 1;
+  rate_profile.num_frames = kNumFramesShort;
+  // Codec/network settings.
+  CodecParams process_settings;
+  SetCodecParams(&process_settings, kVideoCodecVP8, kHwCodec, kUseSingleCore,
+                 0.0f, -1, 1, false, true, true, false, 352, 288, "foreman_cif",
+                 false /* verbose_logging */, true /* batch_mode */);
+  // Thresholds for expected quality.
+  QualityThresholds quality_thresholds;
+  SetQualityThresholds(&quality_thresholds, 34.95, 33.0, 0.90, 0.89);
   // Thresholds for rate control.
   RateControlThresholds rc_thresholds[1];
   SetRateControlThresholds(rc_thresholds, 0, 0, 40, 20, 10, 15, 0, 1);

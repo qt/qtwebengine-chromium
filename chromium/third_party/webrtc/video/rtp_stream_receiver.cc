@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/location.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/common_types.h"
 #include "webrtc/config.h"
@@ -36,7 +37,6 @@
 #include "webrtc/system_wrappers/include/field_trial.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 #include "webrtc/system_wrappers/include/timestamp_extrapolator.h"
-#include "webrtc/system_wrappers/include/trace.h"
 #include "webrtc/video/receive_statistics_proxy.h"
 #include "webrtc/video/vie_remb.h"
 
@@ -72,8 +72,6 @@ std::unique_ptr<RtpRtcp> CreateRtpRtcpModule(
   configuration.transport_feedback_callback = nullptr;
 
   std::unique_ptr<RtpRtcp> rtp_rtcp(RtpRtcp::CreateRtpRtcp(configuration));
-  rtp_rtcp->SetSendingStatus(false);
-  rtp_rtcp->SetSendingMediaStatus(false);
   rtp_rtcp->SetRTCPStatus(RtcpMode::kCompound);
 
   return rtp_rtcp;
@@ -117,7 +115,7 @@ RtpStreamReceiver::RtpStreamReceiver(
       complete_frame_callback_(complete_frame_callback),
       keyframe_request_sender_(keyframe_request_sender),
       timing_(timing) {
-  packet_router_->AddRtpModule(rtp_rtcp_.get());
+  packet_router_->AddReceiveRtpModule(rtp_rtcp_.get());
   rtp_receive_statistics_->RegisterRtpStatisticsCallback(receive_stats_proxy);
   rtp_receive_statistics_->RegisterRtcpStatisticsCallback(receive_stats_proxy);
 
@@ -184,12 +182,12 @@ RtpStreamReceiver::RtpStreamReceiver(
   // Stats callback for CNAME changes.
   rtp_rtcp_->RegisterRtcpStatisticsCallback(receive_stats_proxy);
 
-  process_thread_->RegisterModule(rtp_rtcp_.get());
+  process_thread_->RegisterModule(rtp_rtcp_.get(), RTC_FROM_HERE);
 
   if (config_.rtp.nack.rtp_history_ms != 0) {
     nack_module_.reset(
         new NackModule(clock_, nack_sender, keyframe_request_sender));
-    process_thread_->RegisterModule(nack_module_.get());
+    process_thread_->RegisterModule(nack_module_.get(), RTC_FROM_HERE);
   }
 
   packet_buffer_ = video_coding::PacketBuffer::Create(
@@ -204,7 +202,7 @@ RtpStreamReceiver::~RtpStreamReceiver() {
 
   process_thread_->DeRegisterModule(rtp_rtcp_.get());
 
-  packet_router_->RemoveRtpModule(rtp_rtcp_.get());
+  packet_router_->RemoveReceiveRtpModule(rtp_rtcp_.get());
   rtp_rtcp_->SetREMBStatus(false);
   if (config_.rtp.remb) {
     remb_->RemoveReceiveChannel(rtp_rtcp_.get());
@@ -367,12 +365,6 @@ void RtpStreamReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
 
 int32_t RtpStreamReceiver::RequestKeyFrame() {
   return rtp_rtcp_->RequestKeyFrame();
-}
-
-int32_t RtpStreamReceiver::SliceLossIndicationRequest(
-    const uint64_t picture_id) {
-  return rtp_rtcp_->SendRTCPSliceLossIndication(
-      static_cast<uint8_t>(picture_id));
 }
 
 bool RtpStreamReceiver::IsUlpfecEnabled() const {

@@ -21,6 +21,55 @@ using namespace angle;
 namespace gl
 {
 
+namespace
+{
+
+bool ValidateNamedProgramInterface(GLenum programInterface)
+{
+    switch (programInterface)
+    {
+        case GL_UNIFORM:
+        case GL_UNIFORM_BLOCK:
+        case GL_PROGRAM_INPUT:
+        case GL_PROGRAM_OUTPUT:
+        case GL_TRANSFORM_FEEDBACK_VARYING:
+        case GL_BUFFER_VARIABLE:
+        case GL_SHADER_STORAGE_BLOCK:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool ValidateProgramResourceIndex(const Program *programObject,
+                                  GLenum programInterface,
+                                  GLuint index)
+{
+    switch (programInterface)
+    {
+        case GL_PROGRAM_INPUT:
+            return (index < static_cast<GLuint>(programObject->getActiveAttributeCount()));
+
+        case GL_PROGRAM_OUTPUT:
+            return (index < static_cast<GLuint>(programObject->getOutputResourceCount()));
+
+        // TODO(Jie): more interfaces.
+        case GL_UNIFORM:
+        case GL_UNIFORM_BLOCK:
+        case GL_TRANSFORM_FEEDBACK_VARYING:
+        case GL_BUFFER_VARIABLE:
+        case GL_SHADER_STORAGE_BLOCK:
+            UNIMPLEMENTED();
+            return false;
+
+        default:
+            UNREACHABLE();
+            return false;
+    }
+}
+
+}  // anonymous namespace
+
 bool ValidateGetBooleani_v(Context *context, GLenum target, GLuint index, GLboolean *data)
 {
     if (context->getClientVersion() < ES_3_1)
@@ -502,6 +551,279 @@ bool ValidationGetFramebufferParameteri(Context *context,
             Error(GL_INVALID_OPERATION, "Default framebuffer is bound to target."));
         return false;
     }
+    return true;
+}
+
+bool ValidateGetProgramResourceIndex(Context *context,
+                                     GLuint program,
+                                     GLenum programInterface,
+                                     const GLchar *name)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Context does not support GLES 3.1."));
+        return false;
+    }
+
+    Program *programObject = GetValidProgram(context, program);
+    if (programObject == nullptr)
+    {
+        return false;
+    }
+
+    if (!ValidateNamedProgramInterface(programInterface))
+    {
+        context->handleError(
+            Error(GL_INVALID_ENUM, "Invalid program interface: 0x%X", programInterface));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateBindVertexBuffer(ValidationContext *context,
+                              GLuint bindingIndex,
+                              GLuint buffer,
+                              GLintptr offset,
+                              GLsizei stride)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Context does not support GLES3.1."));
+        return false;
+    }
+
+    if (!context->isBufferGenerated(buffer))
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Buffer is not generated."));
+        return false;
+    }
+
+    const Caps &caps = context->getCaps();
+    if (bindingIndex >= caps.maxVertexAttribBindings)
+    {
+        context->handleError(Error(
+            GL_INVALID_VALUE, "bindingindex must be smaller than MAX_VERTEX_ATTRIB_BINDINGS."));
+        return false;
+    }
+
+    if (offset < 0)
+    {
+        context->handleError(Error(GL_INVALID_VALUE, "offset cannot be negative."));
+        return false;
+    }
+
+    if (stride < 0 || stride > caps.maxVertexAttribStride)
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE, "stride must be between 0 and MAX_VERTEX_ATTRIB_STRIDE."));
+        return false;
+    }
+
+    // [OpenGL ES 3.1] Section 10.3.1 page 244:
+    // An INVALID_OPERATION error is generated if the default vertex array object is bound.
+    if (context->getGLState().getVertexArrayId() == 0)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Default vertex array buffer is bound."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateVertexBindingDivisor(ValidationContext *context, GLuint bindingIndex, GLuint divisor)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Context does not support GLES3.1."));
+        return false;
+    }
+
+    const Caps &caps = context->getCaps();
+    if (bindingIndex >= caps.maxVertexAttribBindings)
+    {
+        context->handleError(Error(
+            GL_INVALID_VALUE, "bindingindex must be smaller than MAX_VERTEX_ATTRIB_BINDINGS."));
+        return false;
+    }
+
+    // [OpenGL ES 3.1] Section 10.3.1 page 243:
+    // An INVALID_OPERATION error is generated if the default vertex array object is bound.
+    if (context->getGLState().getVertexArrayId() == 0)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Default vertex array object is bound."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateVertexAttribFormat(ValidationContext *context,
+                                GLuint attribIndex,
+                                GLint size,
+                                GLenum type,
+                                GLuint relativeOffset,
+                                GLboolean pureInteger)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Context does not support GLES3.1."));
+        return false;
+    }
+
+    const Caps &caps = context->getCaps();
+    if (relativeOffset > static_cast<GLuint>(caps.maxVertexAttribRelativeOffset))
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE,
+                  "relativeOffset cannot be greater than MAX_VERTEX_ATTRIB_RELATIVE_OFFSET."));
+        return false;
+    }
+
+    // [OpenGL ES 3.1] Section 10.3.1 page 243:
+    // An INVALID_OPERATION error is generated if the default vertex array object is bound.
+    if (context->getGLState().getVertexArrayId() == 0)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Default vertex array object is bound."));
+        return false;
+    }
+
+    return ValidateVertexFormatBase(context, attribIndex, size, type, pureInteger);
+}
+
+bool ValidateVertexAttribBinding(ValidationContext *context,
+                                 GLuint attribIndex,
+                                 GLuint bindingIndex)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Context does not support GLES3.1."));
+        return false;
+    }
+
+    // [OpenGL ES 3.1] Section 10.3.1 page 243:
+    // An INVALID_OPERATION error is generated if the default vertex array object is bound.
+    if (context->getGLState().getVertexArrayId() == 0)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Default vertex array object is bound."));
+        return false;
+    }
+
+    const Caps &caps = context->getCaps();
+    if (attribIndex >= caps.maxVertexAttributes)
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE, "attribindex must be smaller than MAX_VERTEX_ATTRIBS."));
+        return false;
+    }
+
+    if (bindingIndex >= caps.maxVertexAttribBindings)
+    {
+        context->handleError(Error(GL_INVALID_VALUE,
+                                   "bindingindex must be smaller than MAX_VERTEX_ATTRIB_BINDINGS"));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateGetProgramResourceName(Context *context,
+                                    GLuint program,
+                                    GLenum programInterface,
+                                    GLuint index,
+                                    GLsizei bufSize,
+                                    GLsizei *length,
+                                    GLchar *name)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Context does not support GLES3.1."));
+        return false;
+    }
+
+    Program *programObject = GetValidProgram(context, program);
+    if (programObject == nullptr)
+    {
+        return false;
+    }
+
+    if (!ValidateNamedProgramInterface(programInterface))
+    {
+        context->handleError(
+            Error(GL_INVALID_ENUM, "Invalid program interface: 0x%X", programInterface));
+        return false;
+    }
+
+    if (!ValidateProgramResourceIndex(programObject, programInterface, index))
+    {
+        context->handleError(Error(GL_INVALID_VALUE, "Invalid index: %d", index));
+        return false;
+    }
+
+    if (bufSize < 0)
+    {
+        context->handleError(Error(GL_INVALID_VALUE, "Invalid bufSize: %d", bufSize));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateDispatchCompute(Context *context,
+                             GLuint numGroupsX,
+                             GLuint numGroupsY,
+                             GLuint numGroupsZ)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Context does not support GLES3.1."));
+        return false;
+    }
+
+    const State &state = context->getGLState();
+    Program *program   = state.getProgram();
+
+    if (program == nullptr)
+    {
+        context->handleError(
+            Error(GL_INVALID_OPERATION, "No active program object for the compute shader stage."));
+        return false;
+    }
+
+    if (program->isLinked() == false || program->getAttachedComputeShader() == nullptr)
+    {
+        context->handleError(Error(
+            GL_INVALID_OPERATION,
+            "Program has not been successfully linked, or program contains no compute shaders."));
+        return false;
+    }
+
+    const Caps &caps = context->getCaps();
+    if (numGroupsX > caps.maxComputeWorkGroupCount[0])
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE,
+                  "num_groups_x cannot be greater than MAX_COMPUTE_WORK_GROUP_COUNT[0](%u).",
+                  caps.maxComputeWorkGroupCount[0]));
+        return false;
+    }
+    if (numGroupsY > caps.maxComputeWorkGroupCount[1])
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE,
+                  "num_groups_y cannot be greater than MAX_COMPUTE_WORK_GROUP_COUNT[1](%u).",
+                  caps.maxComputeWorkGroupCount[1]));
+        return false;
+    }
+    if (numGroupsZ > caps.maxComputeWorkGroupCount[2])
+    {
+        context->handleError(
+            Error(GL_INVALID_VALUE,
+                  "num_groups_z cannot be greater than MAX_COMPUTE_WORK_GROUP_COUNT[2](%u).",
+                  caps.maxComputeWorkGroupCount[2]));
+        return false;
+    }
+
     return true;
 }
 

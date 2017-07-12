@@ -4,7 +4,7 @@
 # found in the LICENSE file.
 
 declare_args() {
-  skia_use_system_libjpeg_turbo = false
+  skia_use_system_libjpeg_turbo = is_official_build
 }
 
 import("../third_party.gni")
@@ -67,12 +67,12 @@ if (skia_use_system_libjpeg_turbo) {
       "../externals/libjpeg-turbo/jutils.c",
     ]
 
-    if (current_cpu == "arm" && current_os != "ios") {
+    if (current_cpu == "arm" && !is_ios) {
       sources += [
         "../externals/libjpeg-turbo/simd/jsimd_arm.c",
         "../externals/libjpeg-turbo/simd/jsimd_arm_neon.S",
       ]
-    } else if (current_cpu == "arm64" && current_os != "ios") {
+    } else if (current_cpu == "arm64" && !is_ios) {
       sources += [
         "../externals/libjpeg-turbo/simd/jsimd_arm64.c",
         "../externals/libjpeg-turbo/simd/jsimd_arm64_neon.S",

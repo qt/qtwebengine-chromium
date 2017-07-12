@@ -43,6 +43,7 @@ rtc_source_set("video_test_common") {
     "frame_utils.h",
     "vcm_capturer.cc",
     "vcm_capturer.h",
+    "video_capturer.cc",
     "video_capturer.h",
   ]
 
@@ -52,8 +53,8 @@ rtc_source_set("video_test_common") {
   }
 
   deps = [
-    ":video_test_support",
     "../common_video",
+    "../media:rtc_media_base",
     "../modules/video_capture:video_capture_module",
   ]
 }
@@ -123,6 +124,7 @@ rtc_source_set("fileutils") {
     sources += [ "testsupport/iosfileutils.mm" ]
     configs += [ "//build/config/compiler:enable_arc" ]
   }
+  visibility = [ ":*" ]
 }
 
 rtc_source_set("video_test_support") {
@@ -255,6 +257,7 @@ if (is_ios) {
 rtc_test("test_support_unittests") {
   deps = []
   sources = [
+    "fake_audio_device_unittest.cc",
     "fake_network_pipe_unittest.cc",
     "frame_generator_unittest.cc",
     "rtp_file_reader_unittest.cc",
@@ -292,10 +295,12 @@ rtc_test("test_support_unittests") {
   }
 
   deps += [
+    ":direct_transport",
     ":fileutils_unittests",
     ":test_common",
     ":test_main",
     ":video_test_common",
+    ":video_test_support",
     "../modules/video_capture",
     "//testing/gmock",
     "//testing/gtest",
@@ -396,7 +401,9 @@ rtc_source_set("test_common") {
     ":fake_audio_device",
     ":rtp_test_utils",
     ":test_support",
+    ":video_test_common",
     "..:webrtc_common",
+    "../api/video_codecs:video_codecs_api",
     "../audio",
     "../base:rtc_base_approved",
     "../call",
@@ -406,6 +413,9 @@ rtc_source_set("test_common") {
     "//testing/gmock",
     "//testing/gtest",
   ]
+  if (!is_android) {
+    deps += [ "../modules/video_capture:video_capture_internal_impl" ]
+  }
 }
 
 config("test_renderer_exported_config") {
@@ -475,8 +485,15 @@ rtc_source_set("test_renderer") {
 
   deps = [
     ":test_support",
-    ":video_test_common",
     "../modules/media_file",
     "//testing/gtest",
+  ]
+}
+
+rtc_source_set("audio_codec_mocks") {
+  testonly = true
+  sources = [
+    "mock_audio_decoder.h",
+    "mock_audio_decoder_factory.h",
   ]
 }

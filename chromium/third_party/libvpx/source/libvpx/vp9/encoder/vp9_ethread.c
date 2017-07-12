@@ -77,8 +77,9 @@ static void create_enc_workers(VP9_COMP *cpi, int num_workers) {
     int allocated_workers = num_workers;
 
     // While using SVC, we need to allocate threads according to the highest
-    // resolution.
-    if (cpi->use_svc) {
+    // resolution. When row based multithreading is enabled, it is OK to
+    // allocate more threads than the number of max tile columns.
+    if (cpi->use_svc && !cpi->row_mt) {
       int max_tile_cols = get_max_tile_cols(cpi);
       allocated_workers = VPXMIN(cpi->oxcf.max_threads, max_tile_cols);
     }
@@ -319,7 +320,7 @@ void vp9_row_mt_sync_read(VP9RowMTSync *const row_mt_sync, int r, int c) {
     pthread_mutex_t *const mutex = &row_mt_sync->mutex_[r - 1];
     pthread_mutex_lock(mutex);
 
-    while (c > row_mt_sync->cur_col[r - 1] - nsync) {
+    while (c > row_mt_sync->cur_col[r - 1] - nsync + 1) {
       pthread_cond_wait(&row_mt_sync->cond_[r - 1], mutex);
     }
     pthread_mutex_unlock(mutex);
@@ -348,7 +349,7 @@ void vp9_row_mt_sync_write(VP9RowMTSync *const row_mt_sync, int r, int c,
 
   if (c < cols - 1) {
     cur = c;
-    if (c % nsync) sig = 0;
+    if (c % nsync != nsync - 1) sig = 0;
   } else {
     cur = cols + nsync;
   }
@@ -615,7 +616,6 @@ void vp9_encode_tiles_row_mt(VP9_COMP *cpi) {
   for (i = 0; i < num_workers; i++) {
     EncWorkerData *thread_data;
     thread_data = &cpi->tile_thr_data[i];
-
     // Before encoding a frame, copy the thread data from cpi.
     if (thread_data->td != &cpi->td) {
       thread_data->td->mb = cpi->td.mb;
@@ -624,6 +624,23 @@ void vp9_encode_tiles_row_mt(VP9_COMP *cpi) {
     if (thread_data->td->counts != &cpi->common.counts) {
       memcpy(thread_data->td->counts, &cpi->common.counts,
              sizeof(cpi->common.counts));
+    }
+
+    // Handle use_nonrd_pick_mode case.
+    if (cpi->sf.use_nonrd_pick_mode) {
+      MACROBLOCK *const x = &thread_data->td->mb;
+      MACROBLOCKD *const xd = &x->e_mbd;
+      struct macroblock_plane *const p = x->plane;
+      struct macroblockd_plane *const pd = xd->plane;
+      PICK_MODE_CONTEXT *ctx = &thread_data->td->pc_root->none;
+      int j;
+
+      for (j = 0; j < MAX_MB_PLANE; ++j) {
+        p[j].coeff = ctx->coeff_pbuf[j][0];
+        p[j].qcoeff = ctx->qcoeff_pbuf[j][0];
+        pd[j].dqcoeff = ctx->dqcoeff_pbuf[j][0];
+        p[j].eobs = ctx->eobs_pbuf[j][0];
+      }
     }
   }
 

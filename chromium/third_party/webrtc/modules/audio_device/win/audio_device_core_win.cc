@@ -406,8 +406,6 @@ bool AudioDeviceWindowsCore::CoreAudioIsSupported()
 
 AudioDeviceWindowsCore::AudioDeviceWindowsCore(const int32_t id) :
     _comInit(ScopedCOMInitializer::kMTA),
-    _critSect(*CriticalSectionWrapper::CreateCriticalSection()),
-    _volumeMutex(*CriticalSectionWrapper::CreateCriticalSection()),
     _id(id),
     _ptrAudioBuffer(NULL),
     _ptrEnumerator(NULL),
@@ -524,6 +522,7 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore(const int32_t id) :
     // list of number of channels to use on recording side
     _recChannelsPrioList[0] = 2;    // stereo is prio 1
     _recChannelsPrioList[1] = 1;    // mono is prio 2
+    _recChannelsPrioList[2] = 4;    // quad is prio 3
 
     // list of number of channels to use on playout side
     _playChannelsPrioList[0] = 2;    // stereo is prio 1
@@ -637,9 +636,6 @@ AudioDeviceWindowsCore::~AudioDeviceWindowsCore()
                 "AudioDeviceWindowsCore::~AudioDeviceWindowsCore() the Avrt DLL module is now unloaded");
         }
     }
-
-    delete &_critSect;
-    delete &_volumeMutex;
 }
 
 // ============================================================================
@@ -679,7 +675,7 @@ int32_t AudioDeviceWindowsCore::ActiveAudioLayer(AudioDeviceModule::AudioLayer& 
 // ----------------------------------------------------------------------------
 
 AudioDeviceGeneric::InitStatus AudioDeviceWindowsCore::Init() {
-  CriticalSectionScoped lock(&_critSect);
+  rtc::CritScope lock(&_critSect);
 
   if (_initialized) {
     return InitStatus::OK;
@@ -708,7 +704,7 @@ AudioDeviceGeneric::InitStatus AudioDeviceWindowsCore::Init() {
 int32_t AudioDeviceWindowsCore::Terminate()
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (!_initialized) {
         return 0;
@@ -750,7 +746,7 @@ bool AudioDeviceWindowsCore::Initialized() const
 int32_t AudioDeviceWindowsCore::InitSpeaker()
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_playing)
     {
@@ -832,7 +828,7 @@ int32_t AudioDeviceWindowsCore::InitSpeaker()
 int32_t AudioDeviceWindowsCore::InitMicrophone()
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_recording)
     {
@@ -877,6 +873,7 @@ int32_t AudioDeviceWindowsCore::InitMicrophone()
         return -1;
     }
 
+    SAFE_RELEASE(_ptrCaptureVolume);
     ret = _ptrDeviceIn->Activate(__uuidof(IAudioEndpointVolume),
                                  CLSCTX_ALL,
                                  NULL,
@@ -921,7 +918,7 @@ bool AudioDeviceWindowsCore::MicrophoneIsInitialized() const
 int32_t AudioDeviceWindowsCore::SpeakerVolumeIsAvailable(bool& available)
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_ptrDeviceOut == NULL)
     {
@@ -966,7 +963,7 @@ int32_t AudioDeviceWindowsCore::SetSpeakerVolume(uint32_t volume)
 {
 
     {
-        CriticalSectionScoped lock(&_critSect);
+        rtc::CritScope lock(&_critSect);
 
         if (!_speakerIsInitialized)
         {
@@ -1009,7 +1006,7 @@ int32_t AudioDeviceWindowsCore::SpeakerVolume(uint32_t& volume) const
 {
 
     {
-        CriticalSectionScoped lock(&_critSect);
+        rtc::CritScope lock(&_critSect);
 
         if (!_speakerIsInitialized)
         {
@@ -1121,7 +1118,7 @@ int32_t AudioDeviceWindowsCore::SpeakerVolumeStepSize(uint16_t& stepSize) const
 int32_t AudioDeviceWindowsCore::SpeakerMuteIsAvailable(bool& available)
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_ptrDeviceOut == NULL)
     {
@@ -1160,7 +1157,7 @@ Exit:
 int32_t AudioDeviceWindowsCore::SetSpeakerMute(bool enable)
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (!_speakerIsInitialized)
     {
@@ -1240,7 +1237,7 @@ Exit:
 int32_t AudioDeviceWindowsCore::MicrophoneMuteIsAvailable(bool& available)
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_ptrDeviceIn == NULL)
     {
@@ -1400,7 +1397,7 @@ int32_t AudioDeviceWindowsCore::StereoRecordingIsAvailable(bool& available)
 int32_t AudioDeviceWindowsCore::SetStereoRecording(bool enable)
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (enable)
     {
@@ -1451,7 +1448,7 @@ int32_t AudioDeviceWindowsCore::StereoPlayoutIsAvailable(bool& available)
 int32_t AudioDeviceWindowsCore::SetStereoPlayout(bool enable)
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (enable)
     {
@@ -1490,7 +1487,7 @@ int32_t AudioDeviceWindowsCore::StereoPlayout(bool& enabled) const
 
 int32_t AudioDeviceWindowsCore::SetAGC(bool enable)
 {
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
     _AGC = enable;
     return 0;
 }
@@ -1501,7 +1498,7 @@ int32_t AudioDeviceWindowsCore::SetAGC(bool enable)
 
 bool AudioDeviceWindowsCore::AGC() const
 {
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
     return _AGC;
 }
 
@@ -1512,7 +1509,7 @@ bool AudioDeviceWindowsCore::AGC() const
 int32_t AudioDeviceWindowsCore::MicrophoneVolumeIsAvailable(bool& available)
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_ptrDeviceIn == NULL)
     {
@@ -1551,7 +1548,7 @@ int32_t AudioDeviceWindowsCore::SetMicrophoneVolume(uint32_t volume)
     WEBRTC_TRACE(kTraceStream, kTraceAudioDevice, _id, "AudioDeviceWindowsCore::SetMicrophoneVolume(volume=%u)", volume);
 
     {
-        CriticalSectionScoped lock(&_critSect);
+        rtc::CritScope lock(&_critSect);
 
         if (!_microphoneIsInitialized)
         {
@@ -1592,7 +1589,7 @@ Exit:
 int32_t AudioDeviceWindowsCore::MicrophoneVolume(uint32_t& volume) const
 {
     {
-        CriticalSectionScoped lock(&_critSect);
+        rtc::CritScope lock(&_critSect);
 
         if (!_microphoneIsInitialized)
         {
@@ -1687,7 +1684,7 @@ int32_t AudioDeviceWindowsCore::MicrophoneVolumeStepSize(uint16_t& stepSize) con
 int16_t AudioDeviceWindowsCore::PlayoutDevices()
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_RefreshDeviceList(eRender) != -1)
     {
@@ -1718,7 +1715,7 @@ int32_t AudioDeviceWindowsCore::SetPlayoutDevice(uint16_t index)
         return -1;
     }
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     HRESULT hr(S_OK);
 
@@ -1773,7 +1770,7 @@ int32_t AudioDeviceWindowsCore::SetPlayoutDevice(AudioDeviceModule::WindowsDevic
         role = eCommunications;
     }
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     // Refresh the list of rendering endpoint devices
     _RefreshDeviceList(eRender);
@@ -1843,7 +1840,7 @@ int32_t AudioDeviceWindowsCore::PlayoutDeviceName(
         memset(guid, 0, kAdmMaxGuidSize);
     }
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     int32_t ret(-1);
     WCHAR szDeviceName[MAX_PATH];
@@ -1923,7 +1920,7 @@ int32_t AudioDeviceWindowsCore::RecordingDeviceName(
         memset(guid, 0, kAdmMaxGuidSize);
     }
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     int32_t ret(-1);
     WCHAR szDeviceName[MAX_PATH];
@@ -1977,7 +1974,7 @@ int32_t AudioDeviceWindowsCore::RecordingDeviceName(
 int16_t AudioDeviceWindowsCore::RecordingDevices()
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_RefreshDeviceList(eCapture) != -1)
     {
@@ -2008,7 +2005,7 @@ int32_t AudioDeviceWindowsCore::SetRecordingDevice(uint16_t index)
         return -1;
     }
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     HRESULT hr(S_OK);
 
@@ -2063,7 +2060,7 @@ int32_t AudioDeviceWindowsCore::SetRecordingDevice(AudioDeviceModule::WindowsDev
         role = eCommunications;
     }
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     // Refresh the list of capture endpoint devices
     _RefreshDeviceList(eCapture);
@@ -2153,7 +2150,7 @@ int32_t AudioDeviceWindowsCore::RecordingIsAvailable(bool& available)
 int32_t AudioDeviceWindowsCore::InitPlayout()
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_playing)
     {
@@ -2257,8 +2254,22 @@ int32_t AudioDeviceWindowsCore::InitPlayout()
             }
             else
             {
-                WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nChannels=%d, nSamplesPerSec=%d is not supported",
-                    Wfx.nChannels, Wfx.nSamplesPerSec);
+                if (pWfxClosestMatch)
+                {
+                    LOG(INFO) << "nChannels=" << Wfx.nChannels <<
+                        ", nSamplesPerSec=" << Wfx.nSamplesPerSec <<
+                        " is not supported. Closest match: " <<
+                        "nChannels=" << pWfxClosestMatch->nChannels <<
+                        ", nSamplesPerSec=" << pWfxClosestMatch->nSamplesPerSec;
+                    CoTaskMemFree(pWfxClosestMatch);
+                    pWfxClosestMatch = NULL;
+                }
+                else
+                {
+                    LOG(INFO) << "nChannels=" << Wfx.nChannels <<
+                        ", nSamplesPerSec=" << Wfx.nSamplesPerSec <<
+                        " is not supported. No closest match.";
+                }
             }
         }
         if (hr == S_OK)
@@ -2329,15 +2340,6 @@ int32_t AudioDeviceWindowsCore::InitPlayout()
     if (FAILED(hr))
     {
         WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id, "IAudioClient::Initialize() failed:");
-        if (pWfxClosestMatch != NULL)
-        {
-            WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id, "closest mix format: #channels=%d, samples/sec=%d, bits/sample=%d",
-                pWfxClosestMatch->nChannels, pWfxClosestMatch->nSamplesPerSec, pWfxClosestMatch->wBitsPerSample);
-        }
-        else
-        {
-            WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id, "no format suggested");
-        }
     }
     EXIT_ON_ERROR(hr);
 
@@ -2488,7 +2490,7 @@ int32_t AudioDeviceWindowsCore::InitRecordingDMO()
 int32_t AudioDeviceWindowsCore::InitRecording()
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     if (_recording)
     {
@@ -2531,7 +2533,7 @@ int32_t AudioDeviceWindowsCore::InitRecording()
 
     HRESULT hr = S_OK;
     WAVEFORMATEX* pWfxIn = NULL;
-    WAVEFORMATEX Wfx = WAVEFORMATEX();
+    WAVEFORMATEXTENSIBLE Wfx = WAVEFORMATEXTENSIBLE();
     WAVEFORMATEX* pWfxClosestMatch = NULL;
 
     // Create COM object with IAudioClient interface.
@@ -2565,9 +2567,12 @@ int32_t AudioDeviceWindowsCore::InitRecording()
     }
 
     // Set wave format
-    Wfx.wFormatTag = WAVE_FORMAT_PCM;
-    Wfx.wBitsPerSample = 16;
-    Wfx.cbSize = 0;
+    Wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+    Wfx.Format.wBitsPerSample = 16;
+    Wfx.Format.cbSize = 22;
+    Wfx.dwChannelMask = 0;
+    Wfx.Samples.wValidBitsPerSample = Wfx.Format.wBitsPerSample;
+    Wfx.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
 
     const int freqs[6] = {48000, 44100, 16000, 96000, 32000, 8000};
     hr = S_FALSE;
@@ -2577,16 +2582,18 @@ int32_t AudioDeviceWindowsCore::InitRecording()
     {
         for (unsigned int chan = 0; chan < sizeof(_recChannelsPrioList)/sizeof(_recChannelsPrioList[0]); chan++)
         {
-            Wfx.nChannels = _recChannelsPrioList[chan];
-            Wfx.nSamplesPerSec = freqs[freq];
-            Wfx.nBlockAlign = Wfx.nChannels * Wfx.wBitsPerSample / 8;
-            Wfx.nAvgBytesPerSec = Wfx.nSamplesPerSec * Wfx.nBlockAlign;
+            Wfx.Format.nChannels = _recChannelsPrioList[chan];
+            Wfx.Format.nSamplesPerSec = freqs[freq];
+            Wfx.Format.nBlockAlign = Wfx.Format.nChannels *
+                                     Wfx.Format.wBitsPerSample / 8;
+            Wfx.Format.nAvgBytesPerSec = Wfx.Format.nSamplesPerSec *
+                                         Wfx.Format.nBlockAlign;
             // If the method succeeds and the audio endpoint device supports the specified stream format,
             // it returns S_OK. If the method succeeds and provides a closest match to the specified format,
             // it returns S_FALSE.
             hr = _ptrClientIn->IsFormatSupported(
                                   AUDCLNT_SHAREMODE_SHARED,
-                                  &Wfx,
+                                  (WAVEFORMATEX*)&Wfx,
                                   &pWfxClosestMatch);
             if (hr == S_OK)
             {
@@ -2594,8 +2601,22 @@ int32_t AudioDeviceWindowsCore::InitRecording()
             }
             else
             {
-                WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nChannels=%d, nSamplesPerSec=%d is not supported",
-                    Wfx.nChannels, Wfx.nSamplesPerSec);
+                if (pWfxClosestMatch)
+                {
+                    LOG(INFO) << "nChannels=" << Wfx.Format.nChannels <<
+                        ", nSamplesPerSec=" << Wfx.Format.nSamplesPerSec <<
+                        " is not supported. Closest match: " <<
+                        "nChannels=" << pWfxClosestMatch->nChannels <<
+                        ", nSamplesPerSec=" << pWfxClosestMatch->nSamplesPerSec;
+                    CoTaskMemFree(pWfxClosestMatch);
+                    pWfxClosestMatch = NULL;
+                }
+                else
+                {
+                    LOG(INFO) << "nChannels=" << Wfx.Format.nChannels <<
+                        ", nSamplesPerSec=" << Wfx.Format.nSamplesPerSec <<
+                        " is not supported. No closest match.";
+                }
             }
         }
         if (hr == S_OK)
@@ -2604,19 +2625,20 @@ int32_t AudioDeviceWindowsCore::InitRecording()
 
     if (hr == S_OK)
     {
-        _recAudioFrameSize = Wfx.nBlockAlign;
-        _recSampleRate = Wfx.nSamplesPerSec;
-        _recBlockSize = Wfx.nSamplesPerSec/100;
-        _recChannels = Wfx.nChannels;
+        _recAudioFrameSize = Wfx.Format.nBlockAlign;
+        _recSampleRate = Wfx.Format.nSamplesPerSec;
+        _recBlockSize = Wfx.Format.nSamplesPerSec/100;
+        _recChannels = Wfx.Format.nChannels;
 
         WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "VoE selected this capturing format:");
-        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "wFormatTag        : 0x%X (%u)", Wfx.wFormatTag, Wfx.wFormatTag);
-        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nChannels         : %d", Wfx.nChannels);
-        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nSamplesPerSec    : %d", Wfx.nSamplesPerSec);
-        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nAvgBytesPerSec   : %d", Wfx.nAvgBytesPerSec);
-        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nBlockAlign       : %d", Wfx.nBlockAlign);
-        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "wBitsPerSample    : %d", Wfx.wBitsPerSample);
-        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "cbSize            : %d", Wfx.cbSize);
+        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "wFormatTag        : 0x%X (%u)", Wfx.Format.wFormatTag,
+                                                                                          Wfx.Format.wFormatTag);
+        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nChannels         : %d", Wfx.Format.nChannels);
+        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nSamplesPerSec    : %d", Wfx.Format.nSamplesPerSec);
+        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nAvgBytesPerSec   : %d", Wfx.Format.nAvgBytesPerSec);
+        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "nBlockAlign       : %d", Wfx.Format.nBlockAlign);
+        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "wBitsPerSample    : %d", Wfx.Format.wBitsPerSample);
+        WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "cbSize            : %d", Wfx.Format.cbSize);
         WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "Additional settings:");
         WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "_recAudioFrameSize: %d", _recAudioFrameSize);
         WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "_recBlockSize     : %d", _recBlockSize);
@@ -2630,22 +2652,13 @@ int32_t AudioDeviceWindowsCore::InitRecording()
                           AUDCLNT_STREAMFLAGS_NOPERSIST,        // volume and mute settings for an audio session will not persist across system restarts
                           0,                                    // required for event-driven shared mode
                           0,                                    // periodicity
-                          &Wfx,                                 // selected wave format
+                          (WAVEFORMATEX*)&Wfx,                  // selected wave format
                           NULL);                                // session GUID
 
 
     if (hr != S_OK)
     {
         WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id, "IAudioClient::Initialize() failed:");
-        if (pWfxClosestMatch != NULL)
-        {
-            WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id, "closest mix format: #channels=%d, samples/sec=%d, bits/sample=%d",
-                pWfxClosestMatch->nChannels, pWfxClosestMatch->nSamplesPerSec, pWfxClosestMatch->wBitsPerSample);
-        }
-        else
-        {
-            WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id, "no format suggested");
-        }
     }
     EXIT_ON_ERROR(hr);
 
@@ -2728,7 +2741,7 @@ int32_t AudioDeviceWindowsCore::StartRecording()
     }
 
     {
-        CriticalSectionScoped critScoped(&_critSect);
+        rtc::CritScope critScoped(&_critSect);
 
         // Create thread which will drive the capturing
         LPTHREAD_START_ROUTINE lpStartAddress = WSAPICaptureThread;
@@ -2978,7 +2991,7 @@ int32_t AudioDeviceWindowsCore::StartPlayout()
     }
 
     {
-        CriticalSectionScoped critScoped(&_critSect);
+        rtc::CritScope critScoped(&_critSect);
 
         // Create thread which will drive the rendering.
         assert(_hPlayThread == NULL);
@@ -3028,7 +3041,7 @@ int32_t AudioDeviceWindowsCore::StopPlayout()
     }
 
     {
-        CriticalSectionScoped critScoped(&_critSect) ;
+        rtc::CritScope critScoped(&_critSect) ;
 
         if (_hPlayThread == NULL)
         {
@@ -3061,7 +3074,7 @@ int32_t AudioDeviceWindowsCore::StopPlayout()
     }
 
     {
-        CriticalSectionScoped critScoped(&_critSect);
+        rtc::CritScope critScoped(&_critSect);
         WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id,
             "webrtc_core_audio_render_thread is now closed");
 
@@ -3105,7 +3118,7 @@ int32_t AudioDeviceWindowsCore::StopPlayout()
 
 int32_t AudioDeviceWindowsCore::PlayoutDelay(uint16_t& delayMS) const
 {
-    CriticalSectionScoped critScoped(&_critSect);
+    rtc::CritScope critScoped(&_critSect);
     delayMS = static_cast<uint16_t>(_sndCardPlayDelay);
     return 0;
 }
@@ -3116,7 +3129,7 @@ int32_t AudioDeviceWindowsCore::PlayoutDelay(uint16_t& delayMS) const
 
 int32_t AudioDeviceWindowsCore::RecordingDelay(uint16_t& delayMS) const
 {
-    CriticalSectionScoped critScoped(&_critSect);
+    rtc::CritScope critScoped(&_critSect);
     delayMS = static_cast<uint16_t>(_sndCardRecDelay);
     return 0;
 }
@@ -3136,7 +3149,7 @@ bool AudioDeviceWindowsCore::Playing() const
 int32_t AudioDeviceWindowsCore::SetPlayoutBuffer(const AudioDeviceModule::BufferType type, uint16_t sizeMS)
 {
 
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
 
     _playBufType = type;
 
@@ -3154,7 +3167,7 @@ int32_t AudioDeviceWindowsCore::SetPlayoutBuffer(const AudioDeviceModule::Buffer
 
 int32_t AudioDeviceWindowsCore::PlayoutBuffer(AudioDeviceModule::BufferType& type, uint16_t& sizeMS) const
 {
-    CriticalSectionScoped lock(&_critSect);
+    rtc::CritScope lock(&_critSect);
     type = _playBufType;
 
     if (type == AudioDeviceModule::kFixedBufferSize)
@@ -3755,7 +3768,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO()
 
         while (keepRecording)
         {
-            CriticalSectionScoped critScoped(&_critSect);
+            rtc::CritScope critScoped(&_critSect);
 
             DWORD dwStatus = 0;
             {

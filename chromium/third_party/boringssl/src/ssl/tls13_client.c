@@ -23,7 +23,6 @@
 #include <openssl/err.h>
 #include <openssl/mem.h>
 #include <openssl/stack.h>
-#include <openssl/x509.h>
 
 #include "../crypto/internal.h"
 #include "internal.h"
@@ -38,6 +37,7 @@ enum client_hs_state_t {
   state_process_server_certificate,
   state_process_server_certificate_verify,
   state_process_server_finished,
+  state_send_end_of_early_data,
   state_send_client_certificate,
   state_send_client_certificate_verify,
   state_complete_client_certificate_verify,
@@ -145,7 +145,11 @@ static enum ssl_hs_wait_t do_process_hello_retry_request(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_send_second_client_hello(SSL_HANDSHAKE *hs) {
-  if (!ssl_write_client_hello(hs)) {
+  SSL *const ssl = hs->ssl;
+  /* TODO(svaldez): Ensure that we set can_early_write to false since 0-RTT is
+   * rejected if we receive a HelloRetryRequest. */
+  if (!ssl->method->set_write_state(ssl, NULL) ||
+      !ssl_write_client_hello(hs)) {
     return ssl_hs_error;
   }
 
@@ -199,12 +203,11 @@ static enum ssl_hs_wait_t do_process_server_hello(SSL_HANDSHAKE *hs) {
   }
 
   /* Parse out the extensions. */
-  int have_key_share = 0, have_pre_shared_key = 0, have_short_header = 0;
-  CBS key_share, pre_shared_key, short_header;
+  int have_key_share = 0, have_pre_shared_key = 0;
+  CBS key_share, pre_shared_key;
   const SSL_EXTENSION_TYPE ext_types[] = {
       {TLSEXT_TYPE_key_share, &have_key_share, &key_share},
       {TLSEXT_TYPE_pre_shared_key, &have_pre_shared_key, &pre_shared_key},
-      {TLSEXT_TYPE_short_header, &have_short_header, &short_header},
   };
 
   uint8_t alert = SSL_AD_DECODE_ERROR;
@@ -256,11 +259,10 @@ static enum ssl_hs_wait_t do_process_server_hello(SSL_HANDSHAKE *hs) {
       ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
       return ssl_hs_error;
     }
-    ssl_set_session(ssl, NULL);
 
     /* Resumption incorporates fresh key material, so refresh the timeout. */
     ssl_session_renew_timeout(ssl, hs->new_session,
-                              ssl->initial_ctx->session_psk_dhe_timeout);
+                              ssl->session_ctx->session_psk_dhe_timeout);
   } else if (!ssl_get_new_session(hs, 0)) {
     ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
     return ssl_hs_error;
@@ -268,17 +270,6 @@ static enum ssl_hs_wait_t do_process_server_hello(SSL_HANDSHAKE *hs) {
 
   hs->new_session->cipher = cipher;
   hs->new_cipher = cipher;
-
-  /* Store the initial negotiated ALPN in the session. */
-  if (ssl->s3->alpn_selected != NULL) {
-    hs->new_session->early_alpn =
-        BUF_memdup(ssl->s3->alpn_selected, ssl->s3->alpn_selected_len);
-    if (hs->new_session->early_alpn == NULL) {
-      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
-      return ssl_hs_error;
-    }
-    hs->new_session->early_alpn_len = ssl->s3->alpn_selected_len;
-  }
 
   /* The PRF hash is now known. Set up the key schedule. */
   if (!tls13_init_key_schedule(hs)) {
@@ -318,27 +309,16 @@ static enum ssl_hs_wait_t do_process_server_hello(SSL_HANDSHAKE *hs) {
   }
   OPENSSL_free(dhe_secret);
 
-  /* Negotiate short record headers. */
-  if (have_short_header) {
-    if (CBS_len(&short_header) != 0) {
-      OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
-      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-      return ssl_hs_error;
-    }
-
-    if (!ssl->ctx->short_header_enabled) {
-      OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
-      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNSUPPORTED_EXTENSION);
-      return ssl_hs_error;
-    }
-
-    ssl->s3->short_header = 1;
-  }
-
   if (!ssl_hash_current_message(hs) ||
       !tls13_derive_handshake_secrets(hs) ||
       !tls13_set_traffic_key(ssl, evp_aead_open, hs->server_handshake_secret,
-                             hs->hash_len) ||
+                             hs->hash_len)) {
+    return ssl_hs_error;
+  }
+
+  /* If not sending early data, set client traffic keys now so that alerts are
+   * encrypted. */
+  if (!hs->early_data_offered &&
       !tls13_set_traffic_key(ssl, evp_aead_seal, hs->client_handshake_secret,
                              hs->hash_len)) {
     return ssl_hs_error;
@@ -364,6 +344,36 @@ static enum ssl_hs_wait_t do_process_encrypted_extensions(SSL_HANDSHAKE *hs) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
     ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
     return ssl_hs_error;
+  }
+
+  /* Store the negotiated ALPN in the session. */
+  if (ssl->s3->alpn_selected != NULL) {
+    hs->new_session->early_alpn =
+        BUF_memdup(ssl->s3->alpn_selected, ssl->s3->alpn_selected_len);
+    if (hs->new_session->early_alpn == NULL) {
+      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+      return ssl_hs_error;
+    }
+    hs->new_session->early_alpn_len = ssl->s3->alpn_selected_len;
+  }
+
+  if (ssl->early_data_accepted) {
+    if (ssl->session->cipher != hs->new_session->cipher ||
+        ssl->session->early_alpn_len != ssl->s3->alpn_selected_len ||
+        OPENSSL_memcmp(ssl->session->early_alpn, ssl->s3->alpn_selected,
+                       ssl->s3->alpn_selected_len) != 0) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_ALPN_MISMATCH_ON_EARLY_DATA);
+      return ssl_hs_error;
+    }
+    if (ssl->s3->tlsext_channel_id_valid) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_CHANNEL_ID_ON_EARLY_DATA);
+      return ssl_hs_error;
+    }
+  }
+
+  /* Release offered session now that it is no longer needed. */
+  if (ssl->s3->session_reused) {
+    ssl_set_session(ssl, NULL);
   }
 
   if (!ssl_hash_current_message(hs)) {
@@ -402,8 +412,9 @@ static enum ssl_hs_wait_t do_process_certificate_request(SSL_HANDSHAKE *hs) {
   }
 
   uint8_t alert = SSL_AD_DECODE_ERROR;
-  STACK_OF(X509_NAME) *ca_sk = ssl_parse_client_CA_list(ssl, &alert, &cbs);
-  if (ca_sk == NULL) {
+  STACK_OF(CRYPTO_BUFFER) *ca_names =
+      ssl_parse_client_CA_list(ssl, &alert, &cbs);
+  if (ca_names == NULL) {
     ssl3_send_alert(ssl, SSL3_AL_FATAL, alert);
     return ssl_hs_error;
   }
@@ -413,14 +424,15 @@ static enum ssl_hs_wait_t do_process_certificate_request(SSL_HANDSHAKE *hs) {
   if (!CBS_get_u16_length_prefixed(&cbs, &extensions) ||
       CBS_len(&cbs) != 0) {
     ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-    sk_X509_NAME_pop_free(ca_sk, X509_NAME_free);
+    sk_CRYPTO_BUFFER_pop_free(ca_names, CRYPTO_BUFFER_free);
     OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
     return ssl_hs_error;
   }
 
   hs->cert_request = 1;
-  sk_X509_NAME_pop_free(hs->ca_names, X509_NAME_free);
-  hs->ca_names = ca_sk;
+  sk_CRYPTO_BUFFER_pop_free(hs->ca_names, CRYPTO_BUFFER_free);
+  hs->ca_names = ca_names;
+  ssl->ctx->x509_method->hs_flush_cached_ca_names(hs);
 
   if (!ssl_hash_current_message(hs)) {
     return ssl_hs_error;
@@ -458,7 +470,7 @@ static enum ssl_hs_wait_t do_process_server_certificate_verify(
 static enum ssl_hs_wait_t do_process_server_finished(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
   if (!ssl_check_message_type(ssl, SSL3_MT_FINISHED) ||
-      !tls13_process_finished(hs) ||
+      !tls13_process_finished(hs, 0 /* don't use saved value */) ||
       !ssl_hash_current_message(hs) ||
       /* Update the secret to the master secret and derive traffic keys. */
       !tls13_advance_key_schedule(hs, kZeroes, hs->hash_len) ||
@@ -467,12 +479,32 @@ static enum ssl_hs_wait_t do_process_server_finished(SSL_HANDSHAKE *hs) {
   }
 
   ssl->method->received_flight(ssl);
+  hs->tls13_state = state_send_end_of_early_data;
+  return ssl_hs_ok;
+}
+
+static enum ssl_hs_wait_t do_send_end_of_early_data(SSL_HANDSHAKE *hs) {
+  SSL *const ssl = hs->ssl;
+  /* TODO(svaldez): Stop sending early data. */
+  if (ssl->early_data_accepted &&
+      !ssl->method->add_alert(ssl, SSL3_AL_WARNING,
+                              TLS1_AD_END_OF_EARLY_DATA)) {
+    return ssl_hs_error;
+  }
+
+  if (hs->early_data_offered &&
+      !tls13_set_traffic_key(ssl, evp_aead_seal, hs->client_handshake_secret,
+                             hs->hash_len)) {
+    return ssl_hs_error;
+  }
+
   hs->tls13_state = state_send_client_certificate;
   return ssl_hs_ok;
 }
 
 static enum ssl_hs_wait_t do_send_client_certificate(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
+
   /* The peer didn't request a certificate. */
   if (!hs->cert_request) {
     hs->tls13_state = state_complete_second_flight;
@@ -493,7 +525,7 @@ static enum ssl_hs_wait_t do_send_client_certificate(SSL_HANDSHAKE *hs) {
     }
   }
 
-  if (!ssl_auto_chain_if_needed(ssl) ||
+  if (!ssl->ctx->x509_method->ssl_auto_chain_if_needed(ssl) ||
       !tls13_add_certificate(hs)) {
     return ssl_hs_error;
   }
@@ -598,6 +630,9 @@ enum ssl_hs_wait_t tls13_client_handshake(SSL_HANDSHAKE *hs) {
       case state_process_server_finished:
         ret = do_process_server_finished(hs);
         break;
+      case state_send_end_of_early_data:
+        ret = do_send_end_of_early_data(hs);
+        break;
       case state_send_client_certificate:
         ret = do_send_client_certificate(hs);
         break;
@@ -648,18 +683,9 @@ int tls13_process_new_session_ticket(SSL *ssl) {
   }
 
   /* Cap the renewable lifetime by the server advertised value. This avoids
-   * wasting bandwidth on 0-RTT when we know the server will reject it.
-   *
-   * TODO(davidben): This dance where we're not sure if long or uint32_t is
-   * bigger is silly. session->timeout should not be a long to begin with.
-   * https://crbug.com/boringssl/155. */
-#if LONG_MAX < 0xffffffff
-  if (server_timeout > LONG_MAX) {
-    server_timeout = LONG_MAX;
-  }
-#endif
-  if (session->timeout > (long)server_timeout) {
-    session->timeout = (long)server_timeout;
+   * wasting bandwidth on 0-RTT when we know the server will reject it. */
+  if (session->timeout > server_timeout) {
+    session->timeout = server_timeout;
   }
 
   /* Parse out the extensions. */
@@ -678,7 +704,7 @@ int tls13_process_new_session_ticket(SSL *ssl) {
     goto err;
   }
 
-  if (have_early_data_info && ssl->ctx->enable_early_data) {
+  if (have_early_data_info && ssl->cert->enable_early_data) {
     if (!CBS_get_u32(&early_data_info, &session->ticket_max_early_data) ||
         CBS_len(&early_data_info) != 0) {
       ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);

@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "core/fpdfapi/font/cpdf_font.h"
-#include "core/fxcrt/cfx_maybe_owned.h"
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
@@ -36,7 +36,7 @@ class CPDF_CIDFont : public CPDF_Font {
   CPDF_CIDFont();
   ~CPDF_CIDFont() override;
 
-  static FX_FLOAT CIDTransformToFloat(uint8_t ch);
+  static float CIDTransformToFloat(uint8_t ch);
 
   // CPDF_Font:
   bool IsCIDFont() const override;
@@ -45,16 +45,16 @@ class CPDF_CIDFont : public CPDF_Font {
   int GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) override;
   int GetCharWidthF(uint32_t charcode) override;
   FX_RECT GetCharBBox(uint32_t charcode) override;
-  uint32_t GetNextChar(const FX_CHAR* pString,
+  uint32_t GetNextChar(const char* pString,
                        int nStrLen,
                        int& offset) const override;
-  int CountChar(const FX_CHAR* pString, int size) const override;
-  int AppendChar(FX_CHAR* str, uint32_t charcode) const override;
+  int CountChar(const char* pString, int size) const override;
+  int AppendChar(char* str, uint32_t charcode) const override;
   bool IsVertWriting() const override;
   bool IsUnicodeCompatible() const override;
   bool Load() override;
   CFX_WideString UnicodeFromCharCode(uint32_t charcode) const override;
-  uint32_t CharCodeFromUnicode(FX_WCHAR Unicode) const override;
+  uint32_t CharCodeFromUnicode(wchar_t Unicode) const override;
 
   uint16_t CIDFromCharCode(uint32_t charcode) const;
   const uint8_t* GetCIDTransform(uint16_t CID) const;
@@ -70,15 +70,15 @@ class CPDF_CIDFont : public CPDF_Font {
                         std::vector<uint32_t>* result,
                         int nElements);
   void LoadSubstFont();
-  FX_WCHAR GetUnicodeFromCharCode(uint32_t charcode) const;
+  wchar_t GetUnicodeFromCharCode(uint32_t charcode) const;
 
-  CFX_MaybeOwned<CPDF_CMap> m_pCMap;
+  CFX_RetainPtr<CPDF_CMap> m_pCMap;
   CPDF_CID2UnicodeMap* m_pCID2UnicodeMap;
   CIDSet m_Charset;
   bool m_bType1;
   bool m_bCIDIsGID;
   uint16_t m_DefaultWidth;
-  std::unique_ptr<CPDF_StreamAcc> m_pStreamAcc;
+  CFX_RetainPtr<CPDF_StreamAcc> m_pStreamAcc;
   bool m_bAnsiWidthsFixed;
   FX_RECT m_CharBBox[256];
   std::vector<uint32_t> m_WidthList;

@@ -13,10 +13,10 @@
 #include "xfa/fxfa/app/cxfa_textlayout.h"
 #include "xfa/fxfa/app/xfa_ffdraw.h"
 #include "xfa/fxfa/app/xfa_textpiece.h"
-#include "xfa/fxfa/xfa_ffapp.h"
-#include "xfa/fxfa/xfa_ffdoc.h"
-#include "xfa/fxfa/xfa_ffpageview.h"
-#include "xfa/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
+#include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxgraphics/cfx_graphics.h"
 
 CXFA_FFText::CXFA_FFText(CXFA_WidgetAcc* pDataAcc) : CXFA_FFDraw(pDataAcc) {}
@@ -46,10 +46,10 @@ void CXFA_FFText::RenderWidget(CFX_Graphics* pGS,
     if (!pItem->GetPrev() && !pItem->GetNext()) {
       XFA_RectWidthoutMargin(rtText, mgWidget);
     } else {
-      FX_FLOAT fLeftInset;
-      FX_FLOAT fRightInset;
-      FX_FLOAT fTopInset = 0;
-      FX_FLOAT fBottomInset = 0;
+      float fLeftInset;
+      float fRightInset;
+      float fTopInset = 0;
+      float fBottomInset = 0;
       mgWidget.GetLeftInset(fLeftInset);
       mgWidget.GetRightInset(fRightInset);
       if (!pItem->GetPrev())
@@ -75,13 +75,13 @@ bool CXFA_FFText::IsLoaded() {
 bool CXFA_FFText::PerformLayout() {
   CXFA_FFDraw::PerformLayout();
   CXFA_TextLayout* pTextLayout = m_pDataAcc->GetTextLayout();
-  if (!pTextLayout) {
+  if (!pTextLayout)
     return false;
-  }
-  if (!pTextLayout->m_bHasBlock) {
+
+  if (!pTextLayout->m_bHasBlock)
     return true;
-  }
-  pTextLayout->m_Blocks.RemoveAll();
+
+  pTextLayout->m_Blocks.clear();
   CXFA_LayoutItem* pItem = this;
   if (!pItem->GetPrev() && !pItem->GetNext()) {
     return true;
@@ -91,11 +91,11 @@ bool CXFA_FFText::PerformLayout() {
     CFX_RectF rtText = pItem->GetRect(false);
     if (CXFA_Margin mgWidget = m_pDataAcc->GetMargin()) {
       if (!pItem->GetPrev()) {
-        FX_FLOAT fTopInset;
+        float fTopInset;
         mgWidget.GetTopInset(fTopInset);
         rtText.height -= fTopInset;
       } else if (!pItem->GetNext()) {
-        FX_FLOAT fBottomInset;
+        float fBottomInset;
         mgWidget.GetBottomInset(fBottomInset);
         rtText.height -= fBottomInset;
       }
@@ -111,7 +111,7 @@ bool CXFA_FFText::OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
   if (!GetRectWithoutRotate().Contains(point))
     return false;
 
-  const FX_WCHAR* wsURLContent = GetLinkURLAtPoint(point);
+  const wchar_t* wsURLContent = GetLinkURLAtPoint(point);
   if (!wsURLContent)
     return false;
 
@@ -128,7 +128,7 @@ bool CXFA_FFText::OnLButtonUp(uint32_t dwFlags, const CFX_PointF& point) {
     return false;
 
   SetButtonDown(false);
-  const FX_WCHAR* wsURLContent = GetLinkURLAtPoint(point);
+  const wchar_t* wsURLContent = GetLinkURLAtPoint(point);
   if (!wsURLContent)
     return false;
 
@@ -145,7 +145,7 @@ FWL_WidgetHit CXFA_FFText::OnHitTest(const CFX_PointF& point) {
   return FWL_WidgetHit::HyperLink;
 }
 
-const FX_WCHAR* CXFA_FFText::GetLinkURLAtPoint(const CFX_PointF& point) {
+const wchar_t* CXFA_FFText::GetLinkURLAtPoint(const CFX_PointF& point) {
   CXFA_TextLayout* pTextLayout = m_pDataAcc->GetTextLayout();
   if (!pTextLayout)
     return nullptr;

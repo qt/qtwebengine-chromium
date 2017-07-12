@@ -15,7 +15,7 @@
 
 static std::map<int32_t, CPWL_Timer*>& GetPWLTimeMap() {
   // Leak the object at shutdown.
-  static auto timeMap = new std::map<int32_t, CPWL_Timer*>;
+  static auto* timeMap = new std::map<int32_t, CPWL_Timer*>;
   return *timeMap;
 }
 
@@ -319,7 +319,7 @@ void CPWL_Wnd::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
 
     if (HasFlag(PWS_BORDER)) {
       sThis << CPWL_Utils::GetBorderAppStream(
-          rectWnd, (FX_FLOAT)GetBorderWidth(), GetBorderColor(),
+          rectWnd, (float)GetBorderWidth(), GetBorderColor(),
           GetBorderLeftTopColor(GetBorderStyle()),
           GetBorderRightBottomColor(GetBorderStyle()), GetBorderStyle(),
           GetBorderDash());
@@ -350,14 +350,14 @@ void CPWL_Wnd::DrawThisAppearance(CFX_RenderDevice* pDevice,
   if (!rectWnd.IsEmpty()) {
     if (HasFlag(PWS_BACKGROUND)) {
       CFX_FloatRect rcClient = CPWL_Utils::DeflateRect(
-          rectWnd, (FX_FLOAT)(GetBorderWidth() + GetInnerBorderWidth()));
+          rectWnd, (float)(GetBorderWidth() + GetInnerBorderWidth()));
       CPWL_Utils::DrawFillRect(pDevice, pUser2Device, rcClient,
                                GetBackgroundColor(), GetTransparency());
     }
 
     if (HasFlag(PWS_BORDER))
       CPWL_Utils::DrawBorder(pDevice, pUser2Device, rectWnd,
-                             (FX_FLOAT)GetBorderWidth(), GetBorderColor(),
+                             (float)GetBorderWidth(), GetBorderColor(),
                              GetBorderLeftTopColor(GetBorderStyle()),
                              GetBorderRightBottomColor(GetBorderStyle()),
                              GetBorderStyle(), GetTransparency());
@@ -412,7 +412,7 @@ void CPWL_Wnd::InvalidateRect(CFX_FloatRect* pRect) {
       return false;                                                \
     if (!IsWndCaptureKeyboard(this))                               \
       return false;                                                \
-    for (const auto& pChild : m_Children) {                        \
+    for (auto* pChild : m_Children) {                              \
       if (pChild && IsWndCaptureKeyboard(pChild))                  \
         return pChild->key_method_name(nChar, nFlag);              \
     }                                                              \
@@ -428,7 +428,7 @@ PWL_IMPLEMENT_KEY_METHOD(OnChar)
     if (!IsValid() || !IsVisible() || !IsEnabled())                            \
       return false;                                                            \
     if (IsWndCaptureMouse(this)) {                                             \
-      for (const auto& pChild : m_Children) {                                  \
+      for (auto* pChild : m_Children) {                                        \
         if (pChild && IsWndCaptureMouse(pChild)) {                             \
           return pChild->mouse_method_name(pChild->ParentToChild(point),       \
                                            nFlag);                             \
@@ -437,7 +437,7 @@ PWL_IMPLEMENT_KEY_METHOD(OnChar)
       SetCursor();                                                             \
       return false;                                                            \
     }                                                                          \
-    for (const auto& pChild : m_Children) {                                    \
+    for (auto* pChild : m_Children) {                                          \
       if (pChild && pChild->WndHitTest(pChild->ParentToChild(point))) {        \
         return pChild->mouse_method_name(pChild->ParentToChild(point), nFlag); \
       }                                                                        \
@@ -465,7 +465,7 @@ bool CPWL_Wnd::OnMouseWheel(short zDelta,
   if (!IsWndCaptureKeyboard(this))
     return false;
 
-  for (const auto& pChild : m_Children) {
+  for (auto* pChild : m_Children) {
     if (pChild && IsWndCaptureKeyboard(pChild))
       return pChild->OnMouseWheel(zDelta, pChild->ParentToChild(point), nFlag);
   }
@@ -520,7 +520,7 @@ CFX_FloatRect CPWL_Wnd::GetWindowRect() const {
 CFX_FloatRect CPWL_Wnd::GetClientRect() const {
   CFX_FloatRect rcWindow = GetWindowRect();
   CFX_FloatRect rcClient = CPWL_Utils::DeflateRect(
-      rcWindow, (FX_FLOAT)(GetBorderWidth() + GetInnerBorderWidth()));
+      rcWindow, (float)(GetBorderWidth() + GetInnerBorderWidth()));
   if (CPWL_ScrollBar* pVSB = GetVScrollBar())
     rcClient.right -= pVSB->GetScrollBarWidth();
 
@@ -628,7 +628,7 @@ void CPWL_Wnd::SetCapture() {
 }
 
 void CPWL_Wnd::ReleaseCapture() {
-  for (const auto& pChild : m_Children) {
+  for (auto* pChild : m_Children) {
     if (pChild)
       pChild->ReleaseCapture();
   }
@@ -674,7 +674,7 @@ void CPWL_Wnd::SetVisible(bool bVisible) {
   if (!IsValid())
     return;
 
-  for (const auto& pChild : m_Children) {
+  for (auto* pChild : m_Children) {
     if (pChild)
       pChild->SetVisible(bVisible);
   }
@@ -700,7 +700,7 @@ bool CPWL_Wnd::IsReadOnly() const {
 
 void CPWL_Wnd::RePosChildWnd() {
   CFX_FloatRect rcContent = CPWL_Utils::DeflateRect(
-      GetWindowRect(), (FX_FLOAT)(GetBorderWidth() + GetInnerBorderWidth()));
+      GetWindowRect(), (float)(GetBorderWidth() + GetInnerBorderWidth()));
 
   CPWL_ScrollBar* pVSB = GetVScrollBar();
 
@@ -767,11 +767,11 @@ CFX_FloatRect CPWL_Wnd::GetFocusRect() const {
   return CPWL_Utils::InflateRect(GetWindowRect(), 1);
 }
 
-FX_FLOAT CPWL_Wnd::GetFontSize() const {
+float CPWL_Wnd::GetFontSize() const {
   return m_sPrivateParam.fFontSize;
 }
 
-void CPWL_Wnd::SetFontSize(FX_FLOAT fFontSize) {
+void CPWL_Wnd::SetFontSize(float fFontSize) {
   m_sPrivateParam.fFontSize = fFontSize;
 }
 
@@ -818,7 +818,7 @@ int32_t CPWL_Wnd::GetTransparency() {
 }
 
 void CPWL_Wnd::SetTransparency(int32_t nTransparency) {
-  for (const auto& pChild : m_Children) {
+  for (auto* pChild : m_Children) {
     if (pChild)
       pChild->SetTransparency(nTransparency);
   }
@@ -892,7 +892,7 @@ void CPWL_Wnd::EnableWindow(bool bEnable) {
   if (m_bEnabled == bEnable)
     return;
 
-  for (const auto& pChild : m_Children) {
+  for (auto* pChild : m_Children) {
     if (pChild)
       pChild->EnableWindow(bEnable);
   }

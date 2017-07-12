@@ -45,8 +45,8 @@ FXCODEC_STATUS CCodec_Jbig2Module::StartDecode(
     std::unique_ptr<JBig2_DocumentContext>* pContextHolder,
     uint32_t width,
     uint32_t height,
-    CPDF_StreamAcc* src_stream,
-    CPDF_StreamAcc* global_stream,
+    const CFX_RetainPtr<CPDF_StreamAcc>& src_stream,
+    const CFX_RetainPtr<CPDF_StreamAcc>& global_stream,
     uint8_t* dest_buf,
     uint32_t dest_pitch,
     IFX_Pause* pPause) {
@@ -62,44 +62,34 @@ FXCODEC_STATUS CCodec_Jbig2Module::StartDecode(
   pJbig2Context->m_dest_buf = dest_buf;
   pJbig2Context->m_dest_pitch = dest_pitch;
   pJbig2Context->m_pPause = pPause;
-  FXSYS_memset(dest_buf, 0, height * dest_pitch);
+  memset(dest_buf, 0, height * dest_pitch);
   pJbig2Context->m_pContext = pdfium::MakeUnique<CJBig2_Context>(
       global_stream, src_stream, pJBig2DocumentContext->GetSymbolDictCache(),
       pPause, false);
-  if (!pJbig2Context->m_pContext)
-    return FXCODEC_STATUS_ERROR;
-
   int ret = pJbig2Context->m_pContext->getFirstPage(dest_buf, width, height,
                                                     dest_pitch, pPause);
-  if (pJbig2Context->m_pContext->GetProcessingStatus() ==
-      FXCODEC_STATUS_DECODE_FINISH) {
-    pJbig2Context->m_pContext.reset();
-    if (ret != JBIG2_SUCCESS)
-      return FXCODEC_STATUS_ERROR;
-
-    int dword_size = height * dest_pitch / 4;
-    uint32_t* dword_buf = (uint32_t*)dest_buf;
-    for (int i = 0; i < dword_size; i++)
-      dword_buf[i] = ~dword_buf[i];
-    return FXCODEC_STATUS_DECODE_FINISH;
-  }
-  return pJbig2Context->m_pContext->GetProcessingStatus();
+  return Decode(pJbig2Context, ret);
 }
 
 FXCODEC_STATUS CCodec_Jbig2Module::ContinueDecode(
     CCodec_Jbig2Context* pJbig2Context,
     IFX_Pause* pPause) {
   int ret = pJbig2Context->m_pContext->Continue(pPause);
-  if (pJbig2Context->m_pContext->GetProcessingStatus() !=
-      FXCODEC_STATUS_DECODE_FINISH) {
-    return pJbig2Context->m_pContext->GetProcessingStatus();
-  }
+  return Decode(pJbig2Context, ret);
+}
+
+FXCODEC_STATUS CCodec_Jbig2Module::Decode(CCodec_Jbig2Context* pJbig2Context,
+                                          int result) {
+  FXCODEC_STATUS status = pJbig2Context->m_pContext->GetProcessingStatus();
+  if (status != FXCODEC_STATUS_DECODE_FINISH)
+    return status;
+
   pJbig2Context->m_pContext.reset();
-  if (ret != JBIG2_SUCCESS)
+  if (result != JBIG2_SUCCESS)
     return FXCODEC_STATUS_ERROR;
 
   int dword_size = pJbig2Context->m_height * pJbig2Context->m_dest_pitch / 4;
-  uint32_t* dword_buf = (uint32_t*)pJbig2Context->m_dest_buf;
+  uint32_t* dword_buf = reinterpret_cast<uint32_t*>(pJbig2Context->m_dest_buf);
   for (int i = 0; i < dword_size; i++)
     dword_buf[i] = ~dword_buf[i];
   return FXCODEC_STATUS_DECODE_FINISH;

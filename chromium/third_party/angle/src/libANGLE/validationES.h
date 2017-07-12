@@ -65,6 +65,13 @@ bool ValidImageDataSize(ValidationContext *context,
 
 bool ValidQueryType(const Context *context, GLenum queryType);
 
+bool ValidateWebGLVertexAttribPointer(ValidationContext *context,
+                                      GLenum type,
+                                      GLboolean normalized,
+                                      GLsizei stride,
+                                      const GLvoid *ptr,
+                                      bool pureInteger);
+
 // Returns valid program if id is a valid program name
 // Errors INVALID_OPERATION if valid shader is given and returns NULL
 // Errors INVALID_VALUE otherwise and returns NULL
@@ -117,6 +124,8 @@ bool ValidateReadPixelsRobustANGLE(ValidationContext *context,
                                    GLenum type,
                                    GLsizei bufSize,
                                    GLsizei *length,
+                                   GLsizei *columns,
+                                   GLsizei *rows,
                                    GLvoid *pixels);
 bool ValidateReadnPixelsEXT(Context *context,
                             GLint x,
@@ -136,6 +145,8 @@ bool ValidateReadnPixelsRobustANGLE(ValidationContext *context,
                                     GLenum type,
                                     GLsizei bufSize,
                                     GLsizei *length,
+                                    GLsizei *columns,
+                                    GLsizei *rows,
                                     GLvoid *data);
 
 bool ValidateGenQueriesEXT(gl::Context *context, GLsizei n);
@@ -602,6 +613,7 @@ bool ValidateGetInternalFormativ(Context *context,
                                  GLenum pname,
                                  GLsizei bufSize,
                                  GLint *params);
+
 bool ValidateGetInternalFormativRobustANGLE(Context *context,
                                             GLenum target,
                                             GLenum internalformat,
@@ -609,6 +621,17 @@ bool ValidateGetInternalFormativRobustANGLE(Context *context,
                                             GLsizei bufSize,
                                             GLsizei *length,
                                             GLint *params);
+
+bool ValidateVertexFormatBase(ValidationContext *context,
+                              GLuint attribIndex,
+                              GLint size,
+                              GLenum type,
+                              GLboolean pureInteger);
+
+bool ValidateWebGLFramebufferAttachmentClearType(ValidationContext *context,
+                                                 GLint drawbuffer,
+                                                 const GLenum *validComponentTypes,
+                                                 size_t validComponentTypeCount);
 
 // Error messages shared here for use in testing.
 extern const char *g_ExceedsMaxElementErrorMessage;

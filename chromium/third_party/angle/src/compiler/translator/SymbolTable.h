@@ -41,6 +41,22 @@
 namespace sh
 {
 
+// Encapsulates a unique id for a symbol.
+class TSymbolUniqueId
+{
+  public:
+    POOL_ALLOCATOR_NEW_DELETE();
+    TSymbolUniqueId();
+    TSymbolUniqueId(const TSymbol &symbol);
+    TSymbolUniqueId(const TSymbolUniqueId &) = default;
+    TSymbolUniqueId &operator=(const TSymbolUniqueId &) = default;
+
+    int get() const;
+
+  private:
+    int mId;
+};
+
 // Symbol base class. (Can build functions or variables out of these...)
 class TSymbol : angle::NonCopyable
 {
@@ -158,12 +174,6 @@ class TFunction : public TSymbol
     ~TFunction() override;
     bool isFunction() const override { return true; }
 
-    static TString mangleName(const TString &name) { return name + '('; }
-    static TString unmangleName(const TString &mangledName)
-    {
-        return TString(mangledName.c_str(), mangledName.find_first_of('('));
-    }
-
     void addParameter(const TConstParameter &p)
     {
         parameters.push_back(p);
@@ -181,8 +191,8 @@ class TFunction : public TSymbol
         return *mangledName;
     }
 
-    static const TString &GetMangledNameFromCall(const TString &unmangledFunctionName,
-                                                 TIntermSequence &arguments);
+    static const TString &GetMangledNameFromCall(const TString &functionName,
+                                                 const TIntermSequence &arguments);
 
     const TType &getReturnType() const { return *returnType; }
 
@@ -427,10 +437,6 @@ class TSymbolTable : angle::NonCopyable
     TSymbol *findGlobal(const TString &name) const;
 
     TSymbol *findBuiltIn(const TString &name, int shaderVersion) const;
-
-    // Helper front-end for regular findBuiltIn that constructs the mangled function name from
-    // callNode.
-    TFunction *findBuiltInOp(TIntermAggregate *callNode, int shaderVersion) const;
 
     TSymbolTableLevel *getOuterLevel()
     {

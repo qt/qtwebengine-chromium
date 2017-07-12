@@ -8,7 +8,6 @@
         # These file lists are shared with the GN build.
         'libangle_common_sources':
         [
-            'common/BitSetIterator.h',
             'common/Color.h',
             'common/Color.inl',
             'common/Float16ToFloat32.cpp',
@@ -17,6 +16,7 @@
             'common/Optional.h',
             'common/angleutils.cpp',
             'common/angleutils.h',
+            'common/bitset_utils.h',
             'common/debug.cpp',
             'common/debug.h',
             'common/mathutil.cpp',
@@ -68,6 +68,10 @@
             'gpu_info_util/SystemInfo.cpp',
             'gpu_info_util/SystemInfo.h',
             'gpu_info_util/SystemInfo_internal.h',
+        ],
+        'libangle_gpu_info_util_win_sources':
+        [
+            'gpu_info_util/SystemInfo_win.cpp',
         ],
         'libangle_gpu_info_util_linux_sources':
         [
@@ -182,6 +186,8 @@
             'libANGLE/TransformFeedback.h',
             'libANGLE/Uniform.cpp',
             'libANGLE/Uniform.h',
+            'libANGLE/UniformLinker.cpp',
+            'libANGLE/UniformLinker.h',
             'libANGLE/VaryingPacking.cpp',
             'libANGLE/VaryingPacking.h',
             'libANGLE/Version.h',
@@ -242,7 +248,6 @@
             'libANGLE/renderer/load_functions_table_autogen.cpp',
             'libANGLE/renderer/renderer_utils.cpp',
             'libANGLE/renderer/renderer_utils.h',
-            'libANGLE/signal_utils.cpp',
             'libANGLE/signal_utils.h',
             'libANGLE/validationEGL.cpp',
             'libANGLE/validationEGL.h',

@@ -12,7 +12,7 @@
 
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fde/tto/fde_textout.h"
+#include "xfa/fde/cfde_textout.h"
 #include "xfa/fwl/cfwl_datetimepicker.h"
 #include "xfa/fwl/cfwl_formproxy.h"
 #include "xfa/fwl/cfwl_messagemouse.h"
@@ -90,7 +90,6 @@ CFWL_MonthCalendar::CFWL_MonthCalendar(
     CFWL_Widget* pOuter)
     : CFWL_Widget(app, std::move(properties), pOuter),
       m_bInitialized(false),
-      m_pDateTime(new CFX_DateTime),
       m_iCurYear(2011),
       m_iCurMonth(1),
       m_iYear(2011),
@@ -415,8 +414,8 @@ CFX_SizeF CFWL_MonthCalendar::CalcSize() {
   CFWL_ThemePart params;
   params.m_pWidget = this;
   IFWL_ThemeProvider* pTheme = m_pProperties->m_pThemeProvider;
-  FX_FLOAT fMaxWeekW = 0.0f;
-  FX_FLOAT fMaxWeekH = 0.0f;
+  float fMaxWeekW = 0.0f;
+  float fMaxWeekH = 0.0f;
 
   for (uint32_t i = 0; i < 7; ++i) {
     CFX_SizeF sz = CalcTextSize(GetCapacityForDay(pTheme, params, i),
@@ -425,8 +424,8 @@ CFX_SizeF CFWL_MonthCalendar::CalcSize() {
     fMaxWeekH = (fMaxWeekH >= sz.height) ? fMaxWeekH : sz.height;
   }
 
-  FX_FLOAT fDayMaxW = 0.0f;
-  FX_FLOAT fDayMaxH = 0.0f;
+  float fDayMaxW = 0.0f;
+  float fDayMaxH = 0.0f;
   for (int day = 10; day <= 31; day++) {
     CFX_WideString wsDay;
     wsDay.Format(L"%d", day);
@@ -434,16 +433,16 @@ CFX_SizeF CFWL_MonthCalendar::CalcSize() {
     fDayMaxW = (fDayMaxW >= sz.width) ? fDayMaxW : sz.width;
     fDayMaxH = (fDayMaxH >= sz.height) ? fDayMaxH : sz.height;
   }
-  m_szCell.width = FX_FLOAT((fMaxWeekW >= fDayMaxW) ? (int)(fMaxWeekW + 0.5)
-                                                    : (int)(fDayMaxW + 0.5));
+  m_szCell.width = float((fMaxWeekW >= fDayMaxW) ? (int)(fMaxWeekW + 0.5)
+                                                 : (int)(fDayMaxW + 0.5));
   m_szCell.height = (fMaxWeekH >= fDayMaxH) ? fMaxWeekH : fDayMaxH;
 
   CFX_SizeF fs;
   fs.width = m_szCell.width * MONTHCAL_COLUMNS +
              MONTHCAL_HMARGIN * MONTHCAL_COLUMNS * 2 +
              MONTHCAL_HEADER_BTN_HMARGIN * 2;
-  FX_FLOAT fMonthMaxW = 0.0f;
-  FX_FLOAT fMonthMaxH = 0.0f;
+  float fMonthMaxW = 0.0f;
+  float fMonthMaxH = 0.0f;
 
   for (uint32_t i = 0; i < 12; ++i) {
     CFX_SizeF sz = CalcTextSize(GetCapacityForMonth(pTheme, params, i),
@@ -472,8 +471,8 @@ CFX_SizeF CFWL_MonthCalendar::CalcSize() {
 }
 
 void CFWL_MonthCalendar::CalcHeadSize() {
-  FX_FLOAT fHeadHMargin = (m_rtClient.width - m_szHead.width) / 2;
-  FX_FLOAT fHeadVMargin = (m_szCell.width - m_szHead.height) / 2;
+  float fHeadHMargin = (m_rtClient.width - m_szHead.width) / 2;
+  float fHeadVMargin = (m_szCell.width - m_szHead.height) / 2;
   m_rtHeadText = CFX_RectF(m_rtClient.left + fHeadHMargin,
                            m_rtClient.top + MONTHCAL_HEADER_BTN_VMARGIN +
                                MONTHCAL_VMARGIN + fHeadVMargin,
@@ -527,8 +526,8 @@ void CFWL_MonthCalendar::Layout() {
 void CFWL_MonthCalendar::CalDateItem() {
   bool bNewWeek = false;
   int32_t iWeekOfMonth = 0;
-  FX_FLOAT fLeft = m_rtDates.left;
-  FX_FLOAT fTop = m_rtDates.top;
+  float fLeft = m_rtDates.left;
+  float fTop = m_rtDates.top;
   for (const auto& pDateInfo : m_arrDates) {
     if (bNewWeek) {
       iWeekOfMonth++;
@@ -570,9 +569,9 @@ void CFWL_MonthCalendar::ClearDateItem() {
 }
 
 void CFWL_MonthCalendar::ResetDateItem() {
-  m_pDateTime->Set(m_iCurYear, m_iCurMonth, 1);
   int32_t iDays = FX_DaysInMonth(m_iCurYear, m_iCurMonth);
-  int32_t iDayOfWeek = m_pDateTime->GetDayOfWeek();
+  int32_t iDayOfWeek =
+      CFX_DateTime(m_iCurYear, m_iCurMonth, 1, 0, 0, 0, 0).GetDayOfWeek();
   for (int32_t i = 0; i < iDays; i++) {
     if (iDayOfWeek >= 7)
       iDayOfWeek = 0;
@@ -674,10 +673,10 @@ void CFWL_MonthCalendar::JumpToToday() {
 
 CFX_WideString CFWL_MonthCalendar::GetHeadText(int32_t iYear, int32_t iMonth) {
   ASSERT(iMonth > 0 && iMonth < 13);
-  static const FX_WCHAR* const pMonth[] = {
-      L"January",   L"February", L"March",    L"April",
-      L"May",       L"June",     L"July",     L"August",
-      L"September", L"October",  L"November", L"December"};
+  static const wchar_t* const pMonth[] = {L"January", L"February", L"March",
+                                          L"April",   L"May",      L"June",
+                                          L"July",    L"August",   L"September",
+                                          L"October", L"November", L"December"};
   CFX_WideString wsHead;
   wsHead.Format(L"%s, %d", pMonth[iMonth - 1], iYear);
   return wsHead;
