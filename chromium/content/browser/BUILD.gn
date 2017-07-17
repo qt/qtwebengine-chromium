@@ -12,6 +12,7 @@ import("//ppapi/features/features.gni")
 import("//printing/features/features.gni")
 import("//third_party/WebKit/public/public_features.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
+import("//ui/gl/ui_gl.gni")
 
 source_set("browser") {
   # Only the public target should depend on this. All other targets (even
@@ -2238,6 +2239,10 @@ source_set("browser") {
       "speech/speech_recognition_dispatcher_host.cc",
       "speech/speech_recognition_dispatcher_host.h",
     ]
+  }
+
+  if (enable_swiftshader) {
+    deps += [ "//third_party/swiftshader" ]
   }
 
   if (is_linux && use_dbus) {
