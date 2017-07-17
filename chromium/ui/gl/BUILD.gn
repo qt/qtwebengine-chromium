@@ -17,8 +17,6 @@ declare_args() {
   enable_gpu_service_logging = false
 }
 
-use_glx = use_x11 || ozone_platform_x11
-
 if (is_android) {
   import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
@@ -343,8 +341,10 @@ component("gl") {
     data_deps += [
       "//third_party/angle:libEGL",
       "//third_party/angle:libGLESv2",
-      "//third_party/swiftshader",
     ]
+    if (enable_swiftshader) {
+      data_deps += [ "//third_party/swiftshader" ]
+    }
   }
   if (is_mac) {
     sources += [
