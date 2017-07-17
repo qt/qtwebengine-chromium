@@ -23,6 +23,7 @@ import("//remoting/remoting_enable.gni")
 import("//third_party/openh264/openh264_args.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 import("//ui/base/ui_features.gni")
+import("//ui/gl/features.gni")
 import("//ui/ozone/ozone.gni")
 import("//ui/webui/webui_features.gni")
 import("//v8/gni/snapshot_toolchain.gni")
@@ -478,7 +479,7 @@ group("gn_all") {
     ]
   }
 
-  if ((is_win || is_mac || is_linux || is_chromeos || is_fuchsia) &&
+  if (enable_swiftshader &&
       (target_cpu == "x86" || target_cpu == "x64")) {
     deps += [ "//third_party/swiftshader" ]
   }
