@@ -10,14 +10,7 @@ import("//ui/gl/features.gni")
 import("//ui/ozone/ozone.gni")
 import("//testing/test.gni")
 
-declare_args() {
-  enable_swiftshader = (is_win || (is_linux && use_x11) ||
-                        (is_chromeos && ozone_platform_x11)) &&
-                       (target_cpu == "x86" || target_cpu == "x64")
-}
-
-use_egl = is_win || is_android || is_linux || is_fuchsia
-use_glx = use_x11 || ozone_platform_x11
+import("//ui/gl/ui_gl.gni")
 
 if (is_android) {
   import("//build/config/android/config.gni")
@@ -295,8 +288,10 @@ component("gl") {
       "//third_party/angle:libEGL",
       "//third_party/angle:libGLESv2",
       "//third_party/mesa:osmesa",
-      "//third_party/swiftshader",
     ]
+    if (enable_swiftshader) {
+      data_deps += [ "//third_party/swiftshader" ]
+    }
   }
   if (is_mac) {
     sources += [
