@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/chrome_build.gni")
+import("//build/config/ui.gni")
+import("//ui/ozone/ozone.gni")
+
 declare_args() {
   # Whether ANGLE should be linked statically
   # False by default, enabling currently supported only on Android
@@ -16,3 +20,17 @@ declare_args() {
   # SPIRV-Cross
   use_dawn = false
 }
+
+declare_args() {
+  enable_swiftshader = (is_win || is_linux || (is_mac && use_egl) ||
+                        is_chromeos || is_fuchsia) &&
+                       (target_cpu == "x86" || target_cpu == "x64" ||
+                        target_cpu == "arm" || target_cpu == "arm64" ||
+                        target_cpu == "mipsel" || target_cpu == "mips64el")
+
+  # Whether service side logging (actual calls into the GL driver) is enabled
+  # or not.
+  enable_gpu_service_logging = false
+}
+
+use_glx = use_x11 || ozone_platform_x11
