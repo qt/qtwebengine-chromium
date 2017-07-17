@@ -526,7 +526,7 @@ group("gn_all") {
     ]
   }
 
-  if ((is_win || is_mac || is_linux || is_chromeos || is_fuchsia) &&
+  if (enable_swiftshader &&
       (target_cpu == "x86" || target_cpu == "x64")) {
     deps += [ "//third_party/swiftshader" ]
   }
