@@ -342,10 +342,12 @@ component("gl") {
       "//ui/gfx/mojom:dxgi_info",
     ]
 
-    data_deps += [
-      "//third_party/swiftshader/src/Vulkan:icd_file",
-      "//third_party/swiftshader/src/Vulkan:swiftshader_libvulkan",
-    ]
+    if (enable_swiftshader) {
+      data_deps += [
+        "//third_party/swiftshader/src/Vulkan:icd_file",
+        "//third_party/swiftshader/src/Vulkan:swiftshader_libvulkan",
+      ]
+    }
     if (!use_static_angle) {
       data_deps += [
         "//third_party/angle:libEGL",
